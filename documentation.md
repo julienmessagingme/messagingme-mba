@@ -603,11 +603,34 @@ outils** (sinon il n'a pas une réponse dégradée, il en a une INVENTÉE) et il
 La connexion passe par un pooler dont le rôle est superuser : **la RLS serait contournée**. Le filtrage
 `tenant_id = $1` sur CHAQUE requête est donc le SEUL contrôle.
 
-`scopeTenant` (`src/http/scope.ts`) est ce contrôle, pour plus de 230 routes, et il **ÉCHOUE FERMÉ** : sans
-`req.auth`, il refuse au lieu de rendre le tenant pris dans l'URL. Un garde-fou de `buildServer` couvre les
-modules à routes `:tenantId`, tenu par `tests/scope-tenant.test.ts`. Sa couverture est **dérivée** du registre
-des modules de routes (`modulesDeRoutes`, `src/server.ts`), où chaque module déclare sa classe d'accès : il n'y
-a aucune liste de modules à tenir à jour.
+`scopeTenant` (`src/http/scope.ts`) est la RÈGLE de ce contrôle pour toutes les routes `:tenantId` de la
+console, et elle **ÉCHOUE FERMÉ** : sans `req.auth`, elle refuse au lieu de rendre le tenant pris dans l'URL.
+Un garde-fou de `buildServer` couvre les modules à routes `:tenantId`, tenu par `tests/scope-tenant.test.ts`.
+Sa couverture est **dérivée** du registre des modules de routes (`modulesDeRoutes`, `src/server.ts`), où
+chaque module déclare sa classe d'accès : il n'y a aucune liste de modules à tenir à jour.
+
+🔴 **LA RÈGLE S'APPLIQUE AU MONTAGE, JAMAIS DANS UN HANDLER** (lot 3 de l'audit ponytail, 2026-09-26). `entree`
+(`src/server.ts`) monte chaque module déclaré `acces: 'tenant'` par `monterAvecEtapeEspace`, qui ajoute l'étape
+`etapeEspace` EN DERNIER à la chaîne `preHandler` de chacune de ses routes `:tenantId` : après la garde
+d'authentification (qui pose `req.auth`), après la garde de rôle et le plafond coûteux, donc exactement là où
+se trouvait la première instruction du handler. Elle refuse en 403 `{ error: 'tenant interdit' }`. Le handler
+lit l'espace par `espaceVerifie(req)`, qui **LÈVE** si l'étape n'a pas tourné : une route oubliée rend un 500
+opaque, jamais un espace non vérifié. Trois choses à savoir :
+- **le critère est la CLASSE du module, puis le chemin.** Les modules `jeton-ops` (`/ops/credits/:tenantId`)
+  portent aussi des `:tenantId`, sans session : ils ne passent pas par le poseur, leur autorité est le jeton
+  d'exploitation ;
+- **les routes d'un module `tenant` SANS `:tenantId` ne reçoivent pas l'étape** : les trois routes de campagne
+  adressées par `:campaignId` s'isolent par `req.auth.tenantId` et le filtre du store, et `/m/:fichier` est
+  publique ;
+- **un `addHook('preHandler')` de contexte ne convient pas** : il tourne AVANT les gardes de route, donc sans
+  `req.auth`, et refuserait toute la console. Et le poseur construit toujours une NOUVELLE chaîne : celle d'un
+  module est souvent partagée (`requireAdmin` est un seul tableau), un `push` y empilerait l'étape.
+
+Un test qui monte un module à la main passe par `monterAvecEtapeEspace`, comme la production, jamais par un
+contournement dans `src/`. La preuve se lit sur le serveur CONSTRUIT (`tests/serveur-sonde.ts` monte le vrai
+registre avec les vraies gardes, sans base) : `tests/scope-tenant.test.ts` exige que chaque route `:tenantId`
+d'un module `tenant` finisse par l'étape, une seule fois et derrière au moins une garde, qu'aucune autre ne la
+porte, et qu'une session d'un autre espace y soit refusée avant le handler, sans un seul appel de dépendance.
 
 ### Identité d'un contact : un numéro OU un BSUID
 
@@ -1076,14 +1099,30 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 |---|---|---|
 | Filtre d'origine Cloudflare | NPM, hôtes `api.` et `mba.` (`DEPLOY.md`) | un appel direct sur l'IP du VPS qui contournerait Cloudflare |
 | Signature du webhook | avant de lire le corps | un tiers qui se ferait passer pour Meta |
-| `scopeTenant` | toute route `:tenantId` | l'accès aux données d'un autre client (IDOR) |
-| `requireAdmin` / `forbidNonAdmin` | écritures | un opérateur d'inbox qui modifierait la configuration |
+| `etapeEspace` (règle `scopeTenant`), posée au montage | toute route `:tenantId` d'un module `tenant` (§ 5) | l'accès aux données d'un autre client (IDOR) |
+| `requireAdmin` (`g.admin`, au montage) ; `forbidNonAdmin` dans le handler des seuls modules sur `g.auth` | écritures | un opérateur d'inbox qui modifierait la configuration |
 | Plafonds de débit | routes authentifiées | l'épuisement par un client, volontaire ou non |
 | `OPS_TOKEN` | `/ops` | l'exploitation cross-tenant |
 | Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée | une session d'admin ouverte avec le seul mot de passe |
 | `urlRecuperable` + `resolutionPublique` | toute URL saisie par un client | le SSRF vers le réseau interne |
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
 | En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
+
+🔴 **LE RÔLE ADMIN SE POSE AU MONTAGE, ET `forbidNonAdmin` NE VIT QUE LÀ OÙ UN AGENT PASSE LA GARDE** (lot 3 de
+l'audit ponytail, 2026-09-26). Un module monté sur `g.admin` (`[requireAuth, makeRequireRole(['admin'])]`)
+refuse un agent ou un manager AVANT le handler, avec le même 403 que `forbidNonAdmin`
+(`{ error: 'action réservée aux administrateurs' }`) : un second refus dans ses handlers ne pouvait jamais
+répondre, il a été retiré. Les modules montés sur `g.auth` (leur LECTURE est ouverte à un agent) gardent
+`forbidNonAdmin` sur leurs écritures, et c'est alors leur SEULE barrière de rôle. Deux modules admin gardent
+délibérément les deux : `mbaAssistant` (décision écrite dans `src/server.ts`) et `contacts`, dont les lectures
+de conformité sont composées sur `g.admin` : tant que ce n'est pas corrigé, retirer ses refus d'écriture ferait
+dépendre la purge et l'action en masse de cette composition.
+
+⚠️ **LA BARRIÈRE D'UN MODULE ADMIN TIENT DONC À UN MOT DU REGISTRE** (`g.admin` dans son entrée). Le remplacer
+par `g.auth` ne casse ni le typecheck ni un test de module monté avec une garde ouverte. `tests/role-admin.test.ts`
+le voit, sur le serveur construit : chaque route qui a perdu son `forbidNonAdmin` refuse un agent et un manager
+(403, même corps, handler jamais atteint), un admin l'atteint, et dans l'autre sens les écritures des modules
+`g.auth` refusent toujours un agent DANS le handler.
 
 🔴 **LES EN-TÊTES DE SÉCURITÉ SONT ENFORÇANTS CÔTÉ API ET EN OBSERVATION CÔTÉ CONSOLE** (2026-09-10). La
 surface de l'API est petite et connue (du JSON, deux redirections, des images, deux pages HTML d'erreur de
@@ -1802,9 +1841,9 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 
 | Module | Ce qu'il porte |
 |---|---|
-| `src/http/scope.ts` | `scopeTenant` (le contrôle d'accès tenant), `nonEmpty`, `estUuid` |
+| `src/http/scope.ts` | `scopeTenant` (la RÈGLE d'accès tenant), `etapeEspace` et `monterAvecEtapeEspace` (où elle s'applique : au montage des modules `tenant`, jamais dans un handler), `espaceVerifie` (ce qu'un handler de route `:tenantId` lit : l'espace vérifié, et il lève sans l'étape), `nonEmpty`, `estUuid` |
 | `src/api/modele-envoi.ts` | ce qu'un envoi de l'API sait d'un template : `modeleLuDe` (la construction de la lecture partagée `templateVarInfo` ET du catalogue `/v1/templates`), `raisonNonEnvoyable` (ce qu'aucun envoi ne peut faire partir) et `verdictModele`. Le catalogue n'annonce que ce que l'envoi accepte |
-| `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée. Monter une route ailleurs la sort du garde-fou sans qu'aucune erreur ne le dise |
+| `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée, comme l'étape d'espace (posée par `entree` sur les seuls modules `tenant`). Monter une route ailleurs la sort du garde-fou et de l'étape : si elle lit l'espace par `espaceVerifie`, elle rend un 500 au lieu de servir, sinon aucune erreur ne le dit |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | résoudre un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) |
 | `src/crm/identity.ts` -> `waIdOfTarget` | la règle wa_id pour une cible d'envoi |
 | `src/api/fiche.ts` -> `resoudreFiche` | 🔴 trouver la fiche d'une personne à partir des clés reçues par l'API publique. Une seconde résolution divergerait sur la règle multi-clés, et une personne aurait deux fiches |

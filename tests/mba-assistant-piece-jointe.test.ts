@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import Fastify from 'fastify';
 import { registerMbaAssistant, type MbaAssistantDeps } from '../src/http/mba-assistant';
+import { monterAvecEtapeEspace } from '../src/http/scope';
 import { calculerCompletion } from '../src/mba/completion';
 import {
   magasinPiecesJointes, typeMetaDuContenu, DUREE_PIECE_MS, MAX_PIECES_PAR_ESPACE, MAX_OCTETS_MAGASIN,
@@ -75,7 +76,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string } = {
   app.addHook('preHandler', async (req) => {
     (req as { auth?: unknown }).auth = { userId: 'u1', tenantId: 't1', role: opts.role ?? 'admin' };
   });
-  registerMbaAssistant(app, deps, gardeOuverte);
+  monterAvecEtapeEspace(app, () => registerMbaAssistant(app, deps, gardeOuverte));
   return { app, journal, pieces };
 }
 
@@ -108,11 +109,6 @@ describe('le dépôt', () => {
   it('un non-admin ne dépose rien', async () => {
     const m = monter({}, { role: 'agent' });
     expect((await deposer(m.app, 'manuel.pdf', 'application/pdf', PDF)).statusCode).toBe(403);
-  });
-
-  it('⚠️ sans magasin, 503 : le reste de la conversation continue', async () => {
-    const m = monter({ pieces: undefined });
-    expect((await deposer(m.app, 'manuel.pdf', 'application/pdf', PDF)).statusCode).toBe(503);
   });
 });
 

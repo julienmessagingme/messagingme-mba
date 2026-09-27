@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentRequetesRouteDeps } from '../src/http/agent-requetes';
 import { LabelRequeteDejaPris, type RequeteConnecteur } from '../src/agent/requetes';
+import { requetesInertes } from './routes-inertes';
 
 /**
  * Routes des REQUÊTES de connecteur (migration 0105).
@@ -54,6 +55,7 @@ function app(
   };
   const requete = { ...REQUETE, ...over };
   const deps: AgentRequetesRouteDeps = {
+    ...requetesInertes,
     lister: async () => [requete],
     parId: async (tenant, id) => (tenant === 't1' && id === RQ ? requete : null),
     creer: async (_t, input) => {
@@ -572,6 +574,7 @@ describe('requêtes : le bouton Test', () => {
     const srvMcp = buildServer({
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
       agentRequetes: {
+        ...requetesInertes,
         lister: async () => [REQUETE], parId: async () => REQUETE,
         creer: async () => REQUETE, patch: async () => REQUETE, supprimer: async () => true,
         clesDeChamps: async () => [],
@@ -590,6 +593,7 @@ describe('requêtes : le bouton Test', () => {
     const srv2 = buildServer({
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
       agentRequetes: {
+        ...requetesInertes,
         lister: async () => [REQUETE], parId: async () => REQUETE,
         creer: async () => REQUETE, patch: async () => REQUETE, supprimer: async () => true,
         clesDeChamps: async () => [], ...deps,

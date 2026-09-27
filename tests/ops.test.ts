@@ -4,6 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { OpsRouteDeps } from '../src/http/ops';
 import { capturerJournal } from './journal';
+import { opsInerte } from './routes-inertes';
 
 const OPS = 'ops-secret-token-of-at-least-32-bytes!!';
 
@@ -13,6 +14,7 @@ const OVERVIEW: Awaited<ReturnType<OpsRouteDeps['getTenantOverview']>> = [
 
 function app(opsToken = OPS, over: Partial<OpsRouteDeps> = {}) {
   const deps: OpsRouteDeps = {
+    ...opsInerte,
     getTenantOverview: async () => OVERVIEW,
     getGlobalDaily: async () => [{ date: '2026-07-11', count: 5 }],
     getQueueLoad: async () => [{ queue: 'webhook', backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }],
@@ -184,13 +186,6 @@ describe('solde prépayé sur /ops', () => {
     expect(vus).toEqual([]);
     await server.close();
   });
-
-  it('une instance sans solde câblé rend 503, pas une erreur', async () => {
-    const server = app(OPS, {});
-    expect((await server.inject({ method: 'GET', url: `/ops/credits/${T1}`, ...withTok(OPS) })).statusCode).toBe(503);
-    expect((await server.inject({ method: 'POST', url: `/ops/credits/${T1}`, ...withTok(OPS), payload: recharge(1000) })).statusCode).toBe(503);
-    await server.close();
-  });
 });
 
 
@@ -250,12 +245,6 @@ describe('équité : les groupes qui attendent le plus', () => {
 
 describe('jobs morts : les voir, puis les rejouer', () => {
   const mort = (id: string, queue: string) => ({ id, queue, data: { x: id }, creeLe: '2026-09-01T00:00:00.000Z', erreur: 'boom' });
-
-  it('la route de lecture est ABSENTE sans la dépendance : rien ne s’expose par défaut', async () => {
-    const a = app(OPS, {});
-    expect((await a.inject({ method: 'GET', url: '/ops/dlq', headers: { 'x-ops-token': OPS } })).statusCode).toBe(404);
-    await a.close();
-  });
 
   it('lit les jobs morts', async () => {
     const a = app(OPS, { listerJobsMorts: async () => [mort('j1', 'webhook')] });
@@ -460,13 +449,6 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
     const srv = app(OPS, { deposerJetonPub: async () => DEPOSEE });
     const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps });
     expect(res.statusCode).toBe(401);
-    await srv.close();
-  });
-
-  it('🔴 sans la dépendance -> 503, jamais un 404 qui ferait croire à une faute de frappe', async () => {
-    const srv = app();
-    const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) });
-    expect(res.statusCode).toBe(503);
     await srv.close();
   });
 });

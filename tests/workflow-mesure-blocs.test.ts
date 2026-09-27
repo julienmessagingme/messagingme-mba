@@ -1,7 +1,10 @@
 import { jamaisDesabonne } from './consentement';
+import { aucuneMesure, avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect } from 'vitest';
 import { walk } from '../src/workflow/engine';
 import { WorkflowExecutor } from '../src/workflow/executor';
+import type { WorkflowExecutorDeps } from '../src/workflow/executor';
+import type { RunState, WorkflowRunRow } from '../src/workflow/run-store.pg';
 import type { WorkflowGraph } from '../src/workflow/graph';
 
 /**
@@ -40,11 +43,14 @@ describe('walk : chaque action sait de quel bloc elle vient', () => {
 /** Exécuteur à dépendances minimales. `mesures` capte ce qui serait écrit dans le journal des blocs. */
 function executeur(graph: WorkflowGraph, opts: { envoiRate?: boolean; sansDep?: boolean } = {}) {
   const mesures: Array<Record<string, unknown>> = [];
-  const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null };
-  const deps: Record<string, unknown> = {
+  const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null } as unknown as WorkflowRunRow;
+  // 🔴 PLUS DE `Record<string, unknown>` NI DE `as never` : ce faux mentait au compilateur, et il lui manquait
+  // `sendQuestion` sans que personne le voie.
+  const deps: WorkflowExecutorDeps = {
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
     // Requis par le contrat : un demarrage remplace le parcours en cours. Ce faux n exerce que l avance.
-    runs: { findWaitingByWaId: async () => run, setState: async () => {}, closeActiveByWaId: async () => [], start: async () => ({ id: 'r1' }) },
+    runs: avecGardesDEtatInertes({ findWaitingByWaId: async () => run, setState: async () => {}, closeActiveByWaId: async () => [], start: async () => ({ id: 'r1' }) }),
     getGraph: async () => graph,
     applyTag: async () => {},
     setField: async () => {},
@@ -53,12 +59,13 @@ function executeur(graph: WorkflowGraph, opts: { envoiRate?: boolean; sansDep?: 
     sendTemplate: async () => (opts.envoiRate === true ? 'template refusé par Meta' : undefined),
     sendQuickMessage: async () => (opts.envoiRate === true ? 'message refusé' : undefined),
     sendFlow: async () => {},
-    escalateToHuman: async () => {},
+    sendQuestion: async () => {},
+    // `sansDep` : la valeur inerte, qui reproduit l'ancienne absence de la dépendance (requise depuis le lot 3).
+    recordNodeEvent: opts.sansDep === true
+      ? aucuneMesure
+      : async (e): Promise<void> => { mesures.push(e); },
   };
-  if (opts.sansDep !== true) {
-    deps.recordNodeEvent = async (e: Record<string, unknown>): Promise<void> => { mesures.push(e); };
-  }
-  return { ex: new WorkflowExecutor(deps as never), mesures };
+  return { ex: new WorkflowExecutor(deps), mesures };
 }
 
 /** Un bloc qui attend une réponse, suivi d'un second message. */
@@ -119,7 +126,9 @@ describe('mesure des ENVOIS, sur leur issue réelle', () => {
 });
 
 describe('garde-fous', () => {
-  it('🔴 câblage SANS la dépendance -> aucune mesure, et le parcours se déroule normalement', async () => {
+  it('🔴 câblage SANS mesure -> aucune mesure, et le parcours se déroule normalement', async () => {
+    // La dépendance est requise depuis le lot 3 de l'audit ponytail : ce cas prouve que `aucuneMesure` reproduit
+    // exactement l'ancienne absence.
     const { ex, mesures } = executeur(graphe(), { sansDep: true });
     await expect(ex.advance('t1', '33600000001', 'msg1', 'Oui')).resolves.not.toThrow();
     expect(mesures).toEqual([]);
@@ -128,18 +137,19 @@ describe('garde-fous', () => {
   it('🔴 une mesure qui ÉCHOUE n’interrompt pas le parcours', async () => {
     // Un tableau de bord incomplet est un désagrément ; un message qui ne part pas parce qu'un compteur a
     // trébuché est un incident. L'échec reste visible en console.
-    const etats: Array<Record<string, unknown>> = [];
-    const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null };
+    const etats: RunState[] = [];
+    const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null } as unknown as WorkflowRunRow;
     const envoyes: string[] = [];
     const ex = new WorkflowExecutor({
+      ...depsInertes,
       estDesabonne: jamaisDesabonne,
-      runs: { findWaitingByWaId: async () => run, setState: async (_id: string, st: Record<string, unknown>) => { etats.push(st); }, closeActiveByWaId: async () => [], start: async () => ({ id: 'r1' }) },
+      runs: avecGardesDEtatInertes({ findWaitingByWaId: async () => run, setState: async (_id: string, st: RunState) => { etats.push(st); }, closeActiveByWaId: async () => [], start: async () => ({ id: 'r1' }) }),
       getGraph: async () => graphe(),
       applyTag: async () => {}, setField: async () => {}, removeTag: async () => {}, clearField: async () => {},
-      sendTemplate: async () => {}, sendFlow: async () => {}, escalateToHuman: async () => {},
+      sendTemplate: async () => {}, sendFlow: async () => {}, sendQuestion: async () => {}, escalateToHuman: async () => {},
       sendQuickMessage: async (_t: string, _w: string, body: string): Promise<void> => { envoyes.push(body); },
       recordNodeEvent: async (): Promise<void> => { throw new Error('base indisponible'); },
-    } as never);
+    });
 
     await ex.advance('t1', '33600000001', 'msg1', 'Oui');
     expect(envoyes).toEqual(['Très bien']); // le message est bien parti malgré la panne de mesure

@@ -7,7 +7,7 @@ import type { FlowRow } from '../flow/store.pg';
 import type { UserFieldType, UserFieldDef } from '../crm/types';
 import { WHATSAPP_OPTIN_FIELD_KEY } from '../crm/fields';
 import type { Guard } from '../auth/middleware';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 
 export interface FlowRouteDeps {
   /** Client flows Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
@@ -192,8 +192,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
   const opts = { preHandler: garde, bodyLimit: 7 * 1024 * 1024 };
 
   app.post('/tenants/:tenantId/flows', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
 
     const b = (req.body ?? {}) as { name?: unknown; screens?: unknown; elements?: unknown; cta?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
@@ -216,8 +215,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
 
   // Édition d'un flow DRAFT : réécrit le flow_json (/assets multipart) + le store. PUBLISHED -> 409 (immuable).
   app.patch('/tenants/:tenantId/flows/:flowId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };
 
     const b = (req.body ?? {}) as { name?: unknown; screens?: unknown; elements?: unknown; cta?: unknown };
@@ -251,8 +249,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
 
   // « Dupliquer pour modifier » (D10) : clone un flow en un NOUVEAU DRAFT (ref frais). Meta AVANT store.
   app.post('/tenants/:tenantId/flows/:flowId/duplicate', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };
 
     const source = await deps.getFlow(flowId, tenant);
@@ -277,8 +274,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
   });
 
   app.get('/tenants/:tenantId/flows', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ flows: await deps.listFlows(tenant) });
   });
 
@@ -300,8 +296,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
    *    reste une décision explicite, bouton « Supprimer ».
    */
   app.post('/tenants/:tenantId/flows/refresh', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
 
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
@@ -336,8 +331,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
   });
 
   app.post('/tenants/:tenantId/flows/:flowId/publish', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };
     if (!(await deps.belongsTo(flowId, tenant))) return reply.code(404).send({ error: 'flow inconnu' });
     await (await deps.flowsFor(tenant)).publish(flowId);
@@ -349,8 +343,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
   // Meta AVANT le store : si Meta refuse (flow encore rattaché à un template approuvé), on remonte SON message
   // (errorHandler global) et on ne touche pas la base -> pas d'orphelin « supprimé chez nous, vivant chez Meta ».
   app.delete('/tenants/:tenantId/flows/:flowId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };
     const flow = await deps.getFlow(flowId, tenant);
     if (!flow) return reply.code(404).send({ error: 'flow inconnu' });

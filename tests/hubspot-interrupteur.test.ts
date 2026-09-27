@@ -9,6 +9,7 @@ import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-d
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SettingsRouteDeps } from '../src/http/settings';
 import type { AccountRouteDeps } from '../src/http/account';
+import { compteInerte, reglagesInertes } from './routes-inertes';
 
 /**
  * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, design validé par Julien le 2026-09-25).
@@ -37,6 +38,7 @@ function reglages(o: { portail?: SettingsRouteDeps['hubspotPortalConnecte']; ini
   const ecrits: Array<{ tenant: string; actif: boolean }> = [];
   let courant = o.initial ?? false;
   const settings: SettingsRouteDeps = {
+    ...reglagesInertes,
     hubspotPortalConnecte: o.portail ?? sansPortailHubspot,
     getSettings: async () => ({
       mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
@@ -144,17 +146,12 @@ describe('l’interrupteur HubSpot : lecture et écriture', () => {
     expect(ecrits).toEqual([]);
     await srv.close();
   });
-
-  it('écriture non câblée : 503, jamais un « enregistré » qui n’écrit rien', async () => {
-    const { srv } = reglages({ cable: false });
-    expect((await srv.inject({ method: 'PATCH', url: URL_ACTIF, ...h(tok.admin), payload: { actif: true } })).statusCode).toBe(503);
-    await srv.close();
-  });
 });
 
 function compte(over: Partial<AccountRouteDeps> = {}) {
   const appels: string[] = [];
   const deps: AccountRouteDeps = {
+    ...compteInerte,
     getPhoneNumber: async () => null,
     pullStatus: async () => null,
     saveStatus: async () => {},

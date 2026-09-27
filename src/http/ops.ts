@@ -69,7 +69,7 @@ export interface ConnexionPubDeposee {
 
 export interface OpsRouteDeps {
   /**
-   * DÉPOSER UN JETON PUBLICITAIRE CRÉÉ À LA MAIN. Absent -> la route répond 503.
+   * DÉPOSER UN JETON PUBLICITAIRE CRÉÉ À LA MAIN.
    *
    * 🔴 POURQUOI CETTE ROUTE EXISTE, ET POURQUOI ELLE EST DANS `/ops`. Le parcours de connexion de
    * l'écran Publicités ne peut PAS servir le portefeuille Meta qui possède notre application : Meta
@@ -82,7 +82,7 @@ export interface OpsRouteDeps {
    * par un JETON d'exploitation, pas par une session. Le jeton publicitaire déposé est chiffré par le
    * câblage, jamais gardé en clair, et n'est JAMAIS renvoyé dans la réponse.
    */
-  deposerJetonPub?(tenantId: string, jeton: string, comptePubId: string, pageId: string): Promise<ConnexionPubDeposee>;
+  deposerJetonPub(tenantId: string, jeton: string, comptePubId: string, pageId: string): Promise<ConnexionPubDeposee>;
 
   /**
    * Les compteurs d'usage de l'API publique. ABSENT -> `/ops/usage` rend une liste vide.
@@ -93,70 +93,64 @@ export interface OpsRouteDeps {
    */
   usage?: { compteurs(): unknown[] };
   /**
-   * LA GRILLE DE PRIX GLOBALE (migration 0168). Absentes -> les deux routes rendent 503 plutôt que de
-   * laisser croire au geste, comme le verrou d'espace et la révocation de clé.
+   * LA GRILLE DE PRIX GLOBALE (migration 0168).
    */
-  lireGrillePrix?(): Promise<GrillePrix>;
+  lireGrillePrix(): Promise<GrillePrix>;
   /** `par` = la NOTE : le jeton d'exploitation est partagé, c'est la seule trace de qui a changé un prix. */
-  ecrireGrillePrix?(grille: GrillePrix, par: string): Promise<void>;
+  ecrireGrillePrix(grille: GrillePrix, par: string): Promise<void>;
   /**
    * POSE OU RETIRE LE VERROU D'UN ESPACE (`tenants.status`). Rend `false` si l'espace est inconnu.
    *
    * 🔴 IL N'EXISTAIT AUCUN MOYEN DE POSER CE VERROU (mesuré le 2026-09-14) : il était lu par la garde de
    * session, et écrit par personne. Aucune route, aucun script, aucun écran. Un interrupteur sans bouton.
    *
-   * ⚠️ Optionnel : une instance qui ne l'a pas câblé répond 503 plutôt que de laisser croire au geste.
-   *
    * ⚠️ ELLE NE CONSERVE PAS LA NOTE : seul le statut s'écrit en base. Le POURQUOI d'un verrou vit dans une
    * seule trace, la ligne `ops_verrou_espace` que la route écrit, et qu'un test lit.
    */
-  verrouillerEspace?(tenantId: string, verrouille: boolean, note: string): Promise<boolean>;
+  verrouillerEspace(tenantId: string, verrouille: boolean, note: string): Promise<boolean>;
   /**
    * Ouvre une session d'OBSERVATION dans l'espace d'un client : rend un jeton de session en LECTURE SEULE.
-   *
-   * Optionnelle : absente, la route n'est pas montée. C'est volontaire : une instance qui n'a pas
-   * explicitement câblé cette capacité ne doit pas l'exposer.
    */
-  observerTenant?(tenantId: string): Promise<{ token: string; tenantName: string } | null>;
+  observerTenant(tenantId: string): Promise<{ token: string; tenantName: string } | null>;
   getTenantOverview(): Promise<TenantOverviewRow[]>;
   getGlobalDaily(days: number): Promise<GlobalDailyPoint[]>;
   getQueueLoad(): Promise<QueueLoadRow[]>;
   /**
    * Les GROUPES qui attendent le plus (équité, SLO 3). Vide quand rien n'attend, ce qui est l'état normal.
    *
-   * Optionnelle : absente -> `queuesParGroupe: []`, aucun site de construction cassé. C'est une lecture de
-   * confort d'exploitation, pas une garantie : elle ne doit rien faire échouer.
+   * C'est une lecture de confort d'exploitation, pas une garantie : son ÉCHEC rend `queuesParGroupe: []` et ne
+   * fait rien échouer.
    */
-  getQueueLoadParGroupe?(): Promise<QueueGroupLoadRow[]>;
+  getQueueLoadParGroupe(): Promise<QueueGroupLoadRow[]>;
   /**
    * La latence RÉELLE par file sur une fenêtre : le p95 que le document de SLO croyait lire dans la jauge
-   * d'âge (constat A4 de l'audit externe du 2026-09-02). Optionnelle et best-effort, comme l'équité : elle
-   * sert à VOIR, elle ne garantit rien, et un écran d'exploitation ne tombe pas parce qu'une mesure manque.
+   * d'âge (constat A4 de l'audit externe du 2026-09-02). Best-effort, comme l'équité : elle sert à VOIR, elle
+   * ne garantit rien, et un écran d'exploitation ne tombe pas parce qu'une mesure échoue.
    */
-  getQueueLatence?(fenetreHeures: number): Promise<QueueLatenceRow[]>;
+  getQueueLatence(fenetreHeures: number): Promise<QueueLatenceRow[]>;
   /**
-   * Les jobs MORTS (file d'échec), les plus anciens d'abord. Lecture pure. Absente -> route non montée.
+   * Les jobs MORTS (file d'échec), les plus anciens d'abord. Lecture pure.
    *
    * 🔴 Pour un `webhook`, un job mort est un MESSAGE DE CLIENT jamais traité, et c'est le pire cas du dépôt
    * parce qu'il est silencieux : le client a écrit, le scénario n'a pas avancé, personne ne le sait.
    */
-  listerJobsMorts?(limite: number): Promise<JobMortRow[]>;
+  listerJobsMorts(limite: number): Promise<JobMortRow[]>;
   /** Ré-enfile un job dans sa file d'origine. Doit être la MÊME file que celle des jobs vivants. */
-  reenfiler?(queue: string, data: unknown): Promise<void>;
+  reenfiler(queue: string, data: unknown): Promise<void>;
   /** Retire de la file d'échec les jobs RÉ-ENFILÉS. Appelée APRÈS l'enfilement, jamais avant. */
-  oublierJobsMorts?(ids: string[]): Promise<number>;
-  /** Signal de vie du worker (item 4.9). OPTIONNEL : omis -> `worker: null` dans le payload, aucun site de
-   *  construction cassé. Distinct des files (queues) : prouve que le PROCESS worker vit, pas que les files se vident. */
-  getWorkerHeartbeat?(): Promise<WorkerHeartbeatRow | null>;
+  oublierJobsMorts(ids: string[]): Promise<number>;
+  /** Signal de vie du worker (item 4.9). `null` -> `worker: null` dans le payload. Distinct des files (queues) :
+   *  prouve que le PROCESS worker vit, pas que les files se vident. */
+  getWorkerHeartbeat(): Promise<WorkerHeartbeatRow | null>;
   /**
    * Le solde prépayé d'un workspace, en micro-euros, avec son journal. `null` = espace inconnu.
    *
    * ⚠️ Distinguer « inconnu » de « zéro » n'est pas cosmétique : un opérateur qui lit 0 sur un identifiant mal
    * tapé croit voir un client à sec et le recharge, sur un espace qui n'existe pas.
    */
-  soldeAgent?(tenantId: string): Promise<{ soldeMicroEur: number; mouvements: unknown[] } | null>;
-  /** Recharge le solde. Rend le nouveau solde, ou `null` si l'espace est inconnu. Absente -> route non montée. */
-  rechargerAgent?(tenantId: string, montantMicroEur: number, note: string): Promise<number | null>;
+  soldeAgent(tenantId: string): Promise<{ soldeMicroEur: number; mouvements: unknown[] } | null>;
+  /** Recharge le solde. Rend le nouveau solde, ou `null` si l'espace est inconnu. */
+  rechargerAgent(tenantId: string, montantMicroEur: number, note: string): Promise<number | null>;
   /**
    * RÉVOQUE la clé de modèle d'un espace : chez Vercel, puis chez nous (2026-09-09).
    *
@@ -175,25 +169,25 @@ export interface OpsRouteDeps {
    * par minute lue en base, seul canal par lequel le worker peut se montrer (`/ops` est servi par l'API, qui
    * ne voit jamais le pool de l'autre process).
    *
-   * Optionnelles, comme le reste de cet écran : absentes -> la carte n'a rien à afficher, tout le reste
+   * Best-effort, comme le reste de cet écran : une lecture en échec laisse la carte vide, tout le reste
    * continue. Une mesure ne doit jamais faire tomber ce qu'elle mesure, ni l'écran qui la montre.
    */
-  etatPoolInstantane?(): { process: string; total: number; libres: number; enAttente: number; max: number; maxMsDepuisDemarrage: number };
-  lireAttentesPool?(minutes: number): Promise<unknown[]>;
+  etatPoolInstantane(): { process: string; total: number; libres: number; enAttente: number; max: number; maxMsDepuisDemarrage: number };
+  lireAttentesPool(minutes: number): Promise<unknown[]>;
   /**
    * LANCE LE BALAYAGE DU RISQUE DE DÉSENGAGEMENT d'un espace, tout de suite (lot 7 de l'API publique). Rend son
-   * bilan, ou `null` si l'espace est inconnu. Absent -> la route répond 503.
+   * bilan, ou `null` si l'espace est inconnu.
    */
-  balayerRisque?(tenantId: string): Promise<BilanRisque | null>;
+  balayerRisque(tenantId: string): Promise<BilanRisque | null>;
   /**
    * RÉINITIALISE LE SECOND FACTEUR d'une personne, par son adresse (plan du 2026-09-25, tâche 6). Rend son identité
-   * et le nombre d'espaces où elle a un compte, ou `null` si l'adresse est inconnue. Absent -> 503.
+   * et le nombre d'espaces où elle a un compte, ou `null` si l'adresse est inconnue.
    *
    * 🔴 C'EST LE SEUL CHEMIN pour une personne qui a des comptes dans PLUSIEURS espaces : un admin d'espace n'a pas à
    * affaiblir un compte chez un autre client (`DELETE /tenants/:tenantId/users/:userId/mfa` rend 409). Le câblage
    * écrit `mfa.reinitialise` dans chacun de ses espaces, sans acteur : le jeton d'exploitation est partagé.
    */
-  reinitialiserMfa?(email: string): Promise<{ identityId: string; espaces: number } | null>;
+  reinitialiserMfa(email: string): Promise<{ identityId: string; espaces: number } | null>;
 }
 
 /**
@@ -262,7 +256,6 @@ export function registerOps(
    * qui l'a faite et pourquoi ne se relit pas six mois plus tard.
    */
   app.post('/ops/verrou/:tenantId', opts, async (req, reply) => {
-    if (!deps.verrouillerEspace) return reply.code(503).send({ error: 'verrou non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
     const corps = (req.body ?? {}) as { verrouille?: unknown; note?: unknown };
@@ -281,18 +274,18 @@ export function registerOps(
       deps.getTenantOverview(),
       deps.getGlobalDaily(14),
       deps.getQueueLoad(),
-      deps.getWorkerHeartbeat ? deps.getWorkerHeartbeat() : Promise.resolve(null),
+      deps.getWorkerHeartbeat(),
       // Best-effort : une lecture d'équité en échec ne doit pas priver l'exploitation de tout le reste de
       // l'écran. Elle sert à VOIR, elle ne garantit rien.
-      deps.getQueueLoadParGroupe ? deps.getQueueLoadParGroupe().catch(() => []) : Promise.resolve([]),
+      deps.getQueueLoadParGroupe().catch(() => []),
       // Même doctrine, et elle compte doublement ici : la table de la migration 0109 peut ne pas exister
       // encore, et un écran d'exploitation qui tombe le jour d'un déploiement est exactement ce qu'on ne veut pas.
-      deps.lireAttentesPool ? deps.lireAttentesPool(180).catch(() => []) : Promise.resolve([]),
+      deps.lireAttentesPool(180).catch(() => []),
       // Fenêtre de 24 h : assez longue pour que le p95 ait un sens, assez courte pour qu'il décrive
       // AUJOURD'HUI. Sur sept jours, un incident d'il y a six jours tiendrait encore le chiffre.
-      deps.getQueueLatence ? deps.getQueueLatence(24).catch(() => []) : Promise.resolve([]),
+      deps.getQueueLatence(24).catch(() => []),
     ]);
-    const poolInstantane = deps.etatPoolInstantane ? deps.etatPoolInstantane() : null;
+    const poolInstantane = deps.etatPoolInstantane();
     return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe, poolInstantane, attentesPool, latences });
   });
 
@@ -325,53 +318,48 @@ export function registerOps(
    * La LECTURE d'abord, et c'est délibéré : rejouer sans regarder, c'est relancer en masse des traitements
    * qui ont échoué pour une raison qu'on n'a pas corrigée.
    */
-  if (deps.listerJobsMorts) {
-    app.get('/ops/dlq', opts, async (req, reply) => {
-      const brut = (req.query as { limit?: unknown }).limit;
-      const limite = typeof brut === 'string' && /^\d+$/.test(brut) ? Number(brut) : 50;
-      return reply.code(200).send({ jobs: await deps.listerJobsMorts!(limite) });
-    });
-  }
+  app.get('/ops/dlq', opts, async (req, reply) => {
+    const brut = (req.query as { limit?: unknown }).limit;
+    const limite = typeof brut === 'string' && /^\d+$/.test(brut) ? Number(brut) : 50;
+    return reply.code(200).send({ jobs: await deps.listerJobsMorts(limite) });
+  });
 
-  if (deps.listerJobsMorts && deps.reenfiler && deps.oublierJobsMorts) {
-    app.post('/ops/dlq/replay', opts, async (req, reply) => {
-      const b = (req.body ?? {}) as { queue?: unknown; limit?: unknown };
-      // La file est OBLIGATOIRE : un rejeu « tout » relancerait des campagnes et des webhooks d'un coup,
-      // sur des causes d'échec différentes qu'on n'a pas toutes corrigées.
-      if (typeof b.queue !== 'string' || b.queue.trim() === '') {
-        return reply.code(400).send({ error: 'queue requise (la file d’origine, ex. « webhook »)' });
-      }
-      const queue = b.queue.trim();
-      const limite = typeof b.limit === 'number' && Number.isFinite(b.limit) ? Math.trunc(b.limit) : 10;
-      if (limite < 1 || limite > MAX_REJEU) {
-        return reply.code(400).send({ error: `limit entre 1 et ${MAX_REJEU}` });
-      }
-      const morts = (await deps.listerJobsMorts!(200)).filter((j) => j.queue === queue).slice(0, limite);
-      if (morts.length === 0) return reply.code(200).send({ rejoues: 0, oublies: 0 });
+  app.post('/ops/dlq/replay', opts, async (req, reply) => {
+    const b = (req.body ?? {}) as { queue?: unknown; limit?: unknown };
+    // La file est OBLIGATOIRE : un rejeu « tout » relancerait des campagnes et des webhooks d'un coup,
+    // sur des causes d'échec différentes qu'on n'a pas toutes corrigées.
+    if (typeof b.queue !== 'string' || b.queue.trim() === '') {
+      return reply.code(400).send({ error: 'queue requise (la file d’origine, ex. « webhook »)' });
+    }
+    const queue = b.queue.trim();
+    const limite = typeof b.limit === 'number' && Number.isFinite(b.limit) ? Math.trunc(b.limit) : 10;
+    if (limite < 1 || limite > MAX_REJEU) {
+      return reply.code(400).send({ error: `limit entre 1 et ${MAX_REJEU}` });
+    }
+    const morts = (await deps.listerJobsMorts(200)).filter((j) => j.queue === queue).slice(0, limite);
+    if (morts.length === 0) return reply.code(200).send({ rejoues: 0, oublies: 0 });
 
-      // 🔴 ENFILER PUIS OUBLIER, et l'ordre est choisi. Un crash entre les deux produit un DOUBLON ;
-      // l'ordre inverse produirait une PERTE. Le doublon est rattrapé partout où ça compte (déduplication
-      // du message entrant, réclamation atomique d'un destinataire, verrou de run), la perte nulle part.
-      const rejoues: string[] = [];
-      for (const j of morts) {
-        try {
-          await deps.reenfiler!(j.queue, j.data);
-          rejoues.push(j.id);
-        } catch (err) {
-          // On s'arrête au premier échec d'enfilement plutôt que d'insister : si la file refuse, elle
-          // refusera aussi les suivants, et ce qui a déjà été enfilé doit être oublié proprement.
-          // eslint-disable-next-line no-console
-          console.error(`ops dlq replay: enfilement impossible pour ${j.id}`, messageDe(err));
-          break;
-        }
+    // 🔴 ENFILER PUIS OUBLIER, et l'ordre est choisi. Un crash entre les deux produit un DOUBLON ;
+    // l'ordre inverse produirait une PERTE. Le doublon est rattrapé partout où ça compte (déduplication
+    // du message entrant, réclamation atomique d'un destinataire, verrou de run), la perte nulle part.
+    const rejoues: string[] = [];
+    for (const j of morts) {
+      try {
+        await deps.reenfiler(j.queue, j.data);
+        rejoues.push(j.id);
+      } catch (err) {
+        // On s'arrête au premier échec d'enfilement plutôt que d'insister : si la file refuse, elle
+        // refusera aussi les suivants, et ce qui a déjà été enfilé doit être oublié proprement.
+        // eslint-disable-next-line no-console
+        console.error(`ops dlq replay: enfilement impossible pour ${j.id}`, messageDe(err));
+        break;
       }
-      const oublies = await deps.oublierJobsMorts!(rejoues);
-      return reply.code(200).send({ rejoues: rejoues.length, oublies });
-    });
-  }
+    }
+    const oublies = await deps.oublierJobsMorts(rejoues);
+    return reply.code(200).send({ rejoues: rejoues.length, oublies });
+  });
 
   app.post('/ops/observe', opts, async (req, reply) => {
-    if (!deps.observerTenant) return reply.code(503).send({ error: 'observation non disponible sur cette instance' });
     const tenantId = (req.body as { tenantId?: unknown } | null)?.tenantId;
     if (typeof tenantId !== 'string' || tenantId.trim() === '') {
       return reply.code(400).send({ error: 'tenantId requis' });
@@ -388,7 +376,6 @@ export function registerOps(
 
   /** Le solde prépayé d'un workspace et son journal. Lecture, comme le reste de la surface. */
   app.get('/ops/credits/:tenantId', opts, async (req, reply) => {
-    if (!deps.soldeAgent) return reply.code(503).send({ error: 'solde agent non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     // Un identifiant mal formé part tel quel dans un `where id = $1` sur une colonne `uuid` : Postgres LÈVE
     // (`22P02`), donc 500, dont Cloudflare remplace le corps par sa page d'erreur. Une adresse tapée de
@@ -438,7 +425,6 @@ export function registerOps(
   });
 
   app.post('/ops/credits/:tenantId', opts, async (req, reply) => {
-    if (!deps.rechargerAgent) return reply.code(503).send({ error: 'rechargement non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
     const corps = (req.body ?? {}) as { montantMicroEur?: unknown; note?: unknown };
@@ -469,7 +455,6 @@ export function registerOps(
    * ne sert à rien et qu'on croirait bon.
    */
   app.post('/ops/pubs/connexion/:tenantId', opts, async (req, reply) => {
-    if (!deps.deposerJetonPub) return reply.code(503).send({ error: 'dépôt de jeton publicitaire non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
     const corps = (req.body ?? {}) as { jeton?: unknown; comptePubId?: unknown; pageId?: unknown; note?: unknown };
@@ -516,7 +501,6 @@ export function registerOps(
    * secondes. Un espace verrouillé n'est pas sauté ici (c'est un geste explicite), contrairement à la nuit.
    */
   app.post('/ops/risque/:tenantId', opts, async (req, reply) => {
-    if (!deps.balayerRisque) return reply.code(503).send({ error: 'balayage du risque non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
     const corps = (req.body ?? {}) as { note?: unknown };
@@ -536,7 +520,6 @@ export function registerOps(
    * retiré.
    */
   app.get('/ops/prix', opts, async (_req, reply) => {
-    if (!deps.lireGrillePrix) return reply.code(503).send({ error: 'grille de prix non disponible sur cette instance' });
     return reply.code(200).send({ prix: await deps.lireGrillePrix(), bornes: BORNES_GRILLE });
   });
 
@@ -556,7 +539,6 @@ export function registerOps(
    * qui a changé un prix et pourquoi. Un prix qui change sans trace est ce qu'un audit reproche en premier.
    */
   app.patch('/ops/prix', opts, async (req, reply) => {
-    if (!deps.ecrireGrillePrix) return reply.code(503).send({ error: 'grille de prix non disponible sur cette instance' });
     const corps = (req.body ?? {}) as { note?: unknown };
     const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
     if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui change le prix, et pourquoi' });
@@ -576,7 +558,6 @@ export function registerOps(
    * pourquoi. La ligne de journal porte l'identité, pas l'adresse.
    */
   app.post('/ops/mfa/reinitialiser', opts, async (req, reply) => {
-    if (!deps.reinitialiserMfa) return reply.code(503).send({ error: 'réinitialisation non disponible sur cette instance' });
     const corps = (req.body ?? {}) as { email?: unknown; note?: unknown };
     const email = typeof corps.email === 'string' ? corps.email.trim().toLowerCase() : '';
     if (!/^[^\s@]+@[^\s@]+$/.test(email)) return reply.code(400).send({ error: 'email requis' });

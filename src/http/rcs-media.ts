@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { typeImage, octetsDepuisDataUrl, mimeDeExtension, TAILLE_IMAGE_MAX } from '../rcs/image';
 import type { MimeImage } from '../rcs/image';
 import type { RcsMediaResume, RcsMediaFichier } from '../rcs/media-store.pg';
@@ -38,14 +38,12 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/rcs/media', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ media: await deps.list(tenant) });
   });
 
   app.post('/tenants/:tenantId/rcs/media', { ...opts, bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
 
     const body = (req.body ?? {}) as { dataUrl?: unknown; nom?: unknown };
@@ -70,8 +68,7 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
   });
 
   app.delete('/tenants/:tenantId/rcs/media/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     // Un identifiant mal formé partait tel quel dans un `where id = $2` sur une colonne `uuid` : Postgres

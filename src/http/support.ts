@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { RateLimiter } from '../auth/rate-limit';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 import { texteDe } from '../lib/erreur';
 
 export interface SupportRouteDeps {
@@ -11,10 +11,9 @@ export interface SupportRouteDeps {
   sendSupport(input: { tenantId: string; userId: string | null; email: string | null; subject: string; message: string }): Promise<void>;
   /**
    * Email du compte AUTHENTIFIÉ, résolu en base depuis `req.auth.userId`. C'est lui qui sert de reply-to.
-   * Optionnel pour ne pas casser les suites qui construisent des deps minimales ; absent -> pas de reply-to,
-   * jamais une adresse venue du client.
+   * `null` -> pas de reply-to, jamais une adresse venue du client.
    */
-  getUserEmail?(userId: string): Promise<string | null>;
+  getUserEmail(userId: string): Promise<string | null>;
 }
 
 const SUBJECT_MAX = 200;
@@ -35,8 +34,7 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, ga
   const limiter = new RateLimiter(5, 60_000);
 
   app.post('/tenants/:tenantId/support', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const userId = req.auth?.userId ?? null;
     // Le 403 tenant reste prioritaire (il ne coûte rien et ne doit pas consommer de quota). Sans identité,
     // on retombe sur l'IP : moins bon, mais mieux que pas de plafond du tout.
@@ -52,7 +50,7 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, ga
     // Reply-to résolu EN BASE depuis le compte authentifié, jamais lu dans le corps de la requête : sinon
     // n'importe quel compte pouvait faire répondre l'équipe à l'adresse de son choix. Une panne de lookup ne
     // bloque pas l'envoi, elle le prive seulement de son reply-to.
-    const email = userId ? await deps.getUserEmail?.(userId).catch(() => null) ?? null : null;
+    const email = userId ? await deps.getUserEmail(userId).catch(() => null) : null;
 
     try {
       await deps.sendSupport({

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerPubs, type PubsRouteDeps } from '../src/http/pubs';
+import { monterAvecEtapeEspace } from '../src/http/scope';
 import type { ConnexionPub } from '../src/pubs/connexion.pg';
 import type { ActifsAccordes } from '../src/meta/pubs';
 import type { ChampsBrouillon } from '../src/pubs/brouillons.pg';
@@ -45,7 +46,7 @@ function app(over: Partial<PubsRouteDeps> = {}, role = 'admin'): FastifyInstance
   const garde = async (req: { auth?: { tenantId: string; userId: string; role: string } }): Promise<void> => {
     req.auth = { tenantId: TENANT, userId: 'u-1', role };
   };
-  registerPubs(srv, deps, garde as never, async () => {});
+  monterAvecEtapeEspace(srv, () => registerPubs(srv, deps, garde as never, async () => {}));
   return srv;
 }
 

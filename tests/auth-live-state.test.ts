@@ -7,6 +7,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { UserStateLoader } from '../src/auth/middleware';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
 import type { InboxRouteDeps } from '../src/http/inbox';
+import { campagnesInertes, inboxInerte } from './routes-inertes';
 
 // Re-vérification par requête de l'état du compte (getUserState) : révoqué/supprimé -> 401 immédiat,
 // rôle rafraîchi depuis la base -> un changement de rôle prend effet sans attendre l'expiration du JWT.
@@ -20,6 +21,7 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const campaigns: CampaignRouteDeps = {
+  ...campagnesInertes,
   repo: {} as CampaignRouteDeps['repo'],
   queue: new FakeQueue(),
   phoneNumberBelongsToTenant: async () => true,
@@ -37,6 +39,7 @@ const campaigns: CampaignRouteDeps = {
   listPhoneNumbers: async () => [],
 };
 const inbox: InboxRouteDeps = {
+  ...inboxInerte,
   estDesabonne: jamaisDesabonne,
   listConversations: async () => [],
   getConversationContext: async () => null,

@@ -7,7 +7,7 @@ import { NomOutilDejaPris } from '../agent/catalog';
 import { OUTILS_MAISON, outilExpose, outilMaison, paramsInitiaux, type OutilExpose } from '../agent/outils-maison';
 import { risqueAuMoins, risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import type { SortieAgent } from '../agent/agent-store';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { OutilNonActivable } from '../agent/catalog';
 import { gestesSchema } from '../agent/gestes';
 
@@ -41,7 +41,7 @@ export interface AgentToolsRouteDeps {
    * reste, c'est sa garde. Les fusionner ferait une route dont la moitié des gardes ne s'appliquent qu'à la
    * moitié des corps, et c'est ainsi qu'on finit par accepter un `handler` inventé.
    */
-  ajouterConnecteur?(tenantId: string, agentId: string, outil: {
+  ajouterConnecteur(tenantId: string, agentId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: OutilComplet['risk'];
     /** Ce que CET agent fait de la réponse, et les champs qu'il lit quand il l'intègre (migration 0150). */
@@ -54,7 +54,7 @@ export interface AgentToolsRouteDeps {
    * On la LIT ici plutôt que de faire confiance au corps de la requête HTTP, parce que le risque plancher et
    * le résumé de ce qui sera envoyé en dérivent, et qu'ils doivent décrire l'appel RÉEL.
    */
-  requetePourOutil?(tenantId: string, requeteId: string): Promise<RequeteConnecteur | null>;
+  requetePourOutil(tenantId: string, requeteId: string): Promise<RequeteConnecteur | null>;
   patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null>;
   activer(tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
   autonomie(tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
@@ -130,9 +130,8 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
   const base = '/tenants/:tenantId/agents/:agentId/tools';
 
   function contexte(req: { params: unknown; auth?: { tenantId: string; userId: string } }):
-  { tenant: string; agentId: string; userId: string } | { code: 403 | 404; error: string } {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return { code: 403, error: 'tenant interdit' };
+  { tenant: string; agentId: string; userId: string } | { code: 404; error: string } {
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return { code: 404, error: 'agent introuvable' };
     // L'identité de l'activateur vient du JETON. Sans jeton, il n'y a personne à nommer et l'activation est
@@ -211,9 +210,6 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
   app.post(`${base}/connecteur`, opts, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
-    if (!deps.ajouterConnecteur || !deps.requetePourOutil) {
-      return reply.code(503).send({ error: 'les connecteurs ne sont pas disponibles sur cette instance' });
-    }
     const parse = ajoutConnecteurSchema.safeParse(req.body ?? {});
     if (!parse.success) {
       return reply.code(400).send({ error: 'requête, nom et mots requis' });

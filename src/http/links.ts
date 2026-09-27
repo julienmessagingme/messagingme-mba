@@ -37,10 +37,9 @@ export interface LinksRouteDeps {
    * Résout un jeton public en identifiant de contact, dans l'espace du lien. `null` = jeton inconnu.
    *
    * ⚠️ `tenantId` vient du LIEN, pas de l'URL : un jeton qui désignerait un contact d'un autre espace ne doit
-   * pas se voir attribuer ce clic-ci. Optionnelle : absente, les clics restent anonymes, ce qui est
-   * exactement le comportement d'avant.
+   * pas se voir attribuer ce clic-ci.
    */
-  contactParJeton?(tenantId: string, jeton: string): Promise<string | null>;
+  contactParJeton(tenantId: string, jeton: string): Promise<string | null>;
   /**
    * Remonte le clic comme SIGNAL (spec 2026-09-24, § 8), seulement quand on sait QUI a cliqué : un clic
    * anonyme n'a pas de fiche, donc pas de profil à mettre à jour chez l'outil du client.
@@ -121,7 +120,7 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       // QUI a cliqué. Résolu seulement si l'URL portait un jeton BIEN FORMÉ : un jeton mal formé ne vaut pas
       // un aller-retour en base, cette route recevant aussi des robots et des scans.
       let contactId: string | null = null;
-      if (estJeton(jeton) && deps.contactParJeton) {
+      if (estJeton(jeton)) {
         // ⚠️ L'espace vient du LIEN, jamais de l'URL : un jeton d'un autre client ne doit pas s'attribuer ce
         // clic-ci. Et l'échec de la résolution ne bloque rien : on compte le clic sans savoir qui.
         contactId = await deps.contactParJeton(lien.tenantId, jeton).catch(() => null);

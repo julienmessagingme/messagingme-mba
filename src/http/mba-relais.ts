@@ -50,7 +50,7 @@ export interface MbaRelaisDeps {
   appeler(p: AppelConnecteur): Promise<SortieResolveur>;
   journal: JournalAppels;
   /** La FORME de l'en-tête du numéro, tant que la macro n'est pas mesurée. Jamais sa valeur. */
-  journaliserForme?(forme: string): void;
+  journaliserForme(forme: string): void;
   /** Les gestes maison (tag, information), exécutés sans système tiers (spec 2026-09-21-outils-maison-mba). */
   maison: DepsMaison;
   /**
@@ -101,7 +101,7 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     //    n'appelle JAMAIS le système du client sans contact identifié.
     const brut = req.headers[ENTETE_CONTACT_META.toLowerCase()];
     const valeur = Array.isArray(brut) ? brut[0] : brut;
-    deps.journaliserForme?.(formeEntete(valeur));
+    deps.journaliserForme(formeEntete(valeur));
     const waId = waIdDepuisEntete(valeur);
     if (waId === null) return refus('le client n’est pas identifié : son numéro WhatsApp manque');
     const contact = await deps.contact(tenant, waId);

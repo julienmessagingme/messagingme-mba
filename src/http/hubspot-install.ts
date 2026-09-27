@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { buildInstallUrl } from '../hubspot/install-link';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 
 export interface HubspotInstallRouteDeps {
   /** Origine publique du connecteur (HUBSPOT_CONNECTOR_PUBLIC_URL). Vide -> 503. */
@@ -25,8 +25,7 @@ export function registerHubspotInstall(app: FastifyInstance, deps: HubspotInstal
   const now = deps.now ?? (() => Date.now());
 
   app.post('/tenants/:tenantId/hubspot/install-link', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
 
     const b = (req.body ?? {}) as { grant?: unknown };
     let grant: string | undefined;

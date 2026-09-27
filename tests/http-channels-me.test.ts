@@ -374,17 +374,6 @@ describe('Channels Me : les liens de chaine', () => {
     await server.close();
   });
 
-  it('la mesure de banalite est FACULTATIVE : sans elle, la creation passe', async () => {
-    // Une mesure indisponible ne doit pas empecher un client de creer un lien.
-    const { server } = app({ messagesContenantLaPhrase: undefined });
-    const res = await server.inject({
-      method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
-      payload: { workflowId: WF_ID, phrase: 'Je veux recevoir la newsletter' },
-    });
-    expect(res.statusCode).toBe(201);
-    await server.close();
-  });
-
   it('cree le lien et son automation compagnon, SANS rien allumer', async () => {
     const { server, cap } = app();
     const res = await server.inject({
@@ -738,19 +727,13 @@ describe('Channels Me : publier', () => {
     await server.close();
   });
 
-  it('demande d activation non cablee : 503 explicite, pas une page d incident', async () => {
+  it('demande d activation : 200, pas une page d incident', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/channels-me/activation-request', ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(200);
     await server.close();
-
-    // Le meme montage, prive de la dependance optionnelle : c'est ce qui permet a un cablage de test de
-    // monter le module sans notification.
-    const { server: nu, cap } = app({ demanderActivation: undefined });
-    const r = await nu.inject({ method: 'POST', url: '/tenants/t1/channels-me/activation-request', ...h(adminTok), payload: {} });
-    expect(r.statusCode).toBe(503);
-    expect(cap.demandes).toEqual([]);
-    await nu.close();
+    // ⚠️ La seconde moitié, « non câblée -> 503 », est partie au lot 3 de l'audit ponytail : la dépendance est
+    // requise, et ce 503 n'était atteignable que par un test.
   });
 
   it('🔴 trop de demandes d activation : 429 au dela du plafond (3/min, en memoire, sans base ni reseau)', async () => {

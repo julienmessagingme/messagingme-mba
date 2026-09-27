@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentSourcesRouteDeps } from '../src/http/agent-sources';
 import { LabelSourceDejaPris, type SourceVue } from '../src/agent/sources';
+import { journalMuet } from './routes-inertes';
 
 /**
  * Routes des SOURCES externes d'outils (lot L2).
@@ -42,6 +43,7 @@ function app(over: Partial<SourceVue> = {}, epreuve?: AgentSourcesRouteDeps['epr
   };
   const source = { ...SOURCE, ...over };
   const deps: AgentSourcesRouteDeps = {
+    audit: journalMuet,
     lister: async () => [source],
     parId: async (tenant, id) => (tenant === 't1' && id === SRC ? source : null),
     creer: async (_t, input) => {

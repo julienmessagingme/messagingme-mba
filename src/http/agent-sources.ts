@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import { LabelSourceDejaPris, type SourceVue } from '../agent/sources';
 import { construireCible } from '../agent/http-cible';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
@@ -24,7 +24,7 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 
 export interface AgentSourcesRouteDeps {
   /**
-   * Journal d'audit (2026-09-16). Optionnel : absent -> aucune trace (câblages de test).
+   * Journal d'audit (2026-09-16). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`.
    *
    * 🔴 UN CONNECTEUR EST LA SORTIE DE L'ESPACE. Il porte l'adresse du système du client et son secret : c'est
    * par lui que des données quittent le produit, et c'est lui que l'agent de Meta appelle EN DIRECT. Changer
@@ -34,7 +34,7 @@ export interface AgentSourcesRouteDeps {
    * d'authentification et l'HÔTE. L'hôte répond à « où partent les données », qui est la question ; le chemin
    * complet et le secret donneraient de quoi rejouer l'appel depuis une table qu'on ne purge jamais.
    */
-  audit?: AuditSink;
+  audit: AuditSink;
   lister(tenantId: string): Promise<SourceVue[]>;
   parId(tenantId: string, id: string): Promise<SourceVue | null>;
   creer(tenantId: string, input: { kind: 'http'; label: string; baseUrl: string; authKind: 'none' | 'bearer' | 'header'; authHeaderName?: string; authSecret?: string }): Promise<SourceVue>;
@@ -108,8 +108,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
   const base = '/tenants/:tenantId/agent-sources';
 
   app.get(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     /**
      * 🔴 SEULEMENT LES CONNECTEURS HTTP (2026-09-17). Cet écran s'appelle « Connecteurs API », son
      * formulaire demande une adresse de BASE sous laquelle on compose des chemins, et son bouton
@@ -149,8 +148,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
   }
 
   app.post(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const parse = creationSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'libellé, adresse et mode d’authentification requis' });
     const { label, baseUrl, authKind, authHeaderName, authSecret } = parse.data;
@@ -175,8 +173,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
   });
 
   app.patch(`${base}/:id`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'source introuvable' });
     const parse = patchSchema.safeParse(req.body ?? {});
@@ -210,8 +207,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
   });
 
   app.delete(`${base}/:id`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'source introuvable' });
     const actuelle = await connecteurHttp(tenant, id);
@@ -227,8 +223,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
   });
 
   app.post(`${base}/:id/epreuve`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'source introuvable' });
     const parse = epreuveSchema.safeParse(req.body ?? {});

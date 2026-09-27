@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { WorkflowExecutor, envoieParWhatsApp } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
@@ -52,8 +53,8 @@ class FakeRuns {
 }
 
 /**
- * Le monde : UNE garde (`delie.vrai`), les effets dans l'ordre où ils partent. `avecVerification: false` retire la
- * vérification préalable, c'est-à-dire le câblage d'avant ce correctif.
+ * Le monde : UNE garde (`delie.vrai`), les effets dans l'ordre où ils partent. `avecVerification: false` pose la
+ * valeur inerte `numeroJamaisDelie` (la dépendance est requise), c'est-à-dire le câblage d'avant ce correctif.
  */
 function monde(graph: WorkflowGraph, o: { avecVerification?: boolean } = {}) {
   const delie = { vrai: true };
@@ -61,8 +62,9 @@ function monde(graph: WorkflowGraph, o: { avecVerification?: boolean } = {}) {
   const garde = (): void => { if (delie.vrai) throw new NumeroDelieError('pn1'); };
   const runs = new FakeRuns();
   const deps: WorkflowExecutorDeps = {
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
-    runs,
+    runs: avecGardesDEtatInertes(runs),
     getGraph: async () => graph,
     applyTag: async (_t, waId, tag) => { effets.push(`tag ${tag} ${waId}`); },
     setField: async () => {},

@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -37,15 +38,16 @@ function executor(mayAct: boolean | undefined, trace: Trace) {
     currentNode: 'n1', status: 'waiting', lastMessageId: null,
   } as WorkflowRunRow;
   const deps: WorkflowExecutorDeps = {
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
-    runs: {
+    runs: avecGardesDEtatInertes({
       start: async () => ({ id: 'r1' }),
       findWaitingByWaId: async () => run,
       setState: async (_id, state) => { trace.states.push(state); },
       // Ferme le parcours precedent : requis par le contrat depuis que « lancer un scenario remplace
       // celui en cours ». Le compteur sert aux tests qui verifient QUE la fermeture a bien eu lieu.
       closeActiveByWaId: async () => [],
-    },
+    }),
     getGraph: async () => GRAPH,
     removeTag: async () => {},
     clearField: async () => {},
@@ -90,7 +92,9 @@ describe('gel du scénario quand le fil ne nous appartient pas', () => {
     expect(trace.sent).toEqual([]);
   });
 
-  it('dep ABSENT -> rien n’est bloqué (rétro-compatibilité des suites existantes)', async () => {
+  it('valeur inerte (`filToujoursANous`, l’ancienne absence) -> rien n’est bloqué', async () => {
+    // `mayAct` est requis depuis le lot 3 de l'audit ponytail : ce cas prouve que la valeur inerte que les
+    // fixtures reçoivent reproduit exactement l'ancienne absence de la dépendance.
     const trace: Trace = { sent: [], states: [] };
     await executor(undefined, trace).advance('t1', '33611', 'm1');
     expect(trace.sent).toEqual(['suite']);

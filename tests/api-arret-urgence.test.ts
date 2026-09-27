@@ -6,6 +6,7 @@ import { sha256Hex } from '../src/lib/signature';
 import { cleApiDeTest } from './aide/cle-api';
 import { capturerJournal } from './journal';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
+import { opsInerte } from './routes-inertes';
 
 /**
  * L'ARRÊT D'URGENCE D'UN ESPACE, sur la surface publique.
@@ -105,6 +106,7 @@ describe('le geste qui pose et retire le verrou', () => {
       queue: new FakeQueue(),
       opsToken: 'jeton-ops',
       ops: {
+        ...opsInerte,
         ...opsMuet,
         verrouillerEspace: over.verrouillerEspace ?? (async (tenantId, verrouille, note) => {
           appels.push({ tenantId, verrouille, note });

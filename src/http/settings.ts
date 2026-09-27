@@ -1,10 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { TenantSettings, MbaHandoffMode } from '../settings/store.pg';
 import type { BusinessHours, DayHours } from '../workflow/conditions';
 import { withinBusinessHours } from '../workflow/conditions';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { estFrequenceMention, FREQUENCES_MENTION_IA, type FrequenceMentionIa } from '../agent/agent-store';
 import {
   estModeTransfert, MODES_TRANSFERT, MODE_TRANSFERT_DEFAUT, type ModeTransfert,
@@ -18,9 +17,9 @@ export interface SettingsRouteDeps {
    * Le canal RCS est-il exploitable pour ce tenant ? Vrai dès qu'un agent RCS lui est rattaché. Volontairement
    * DÉRIVÉ de l'état réel plutôt que porté par un réglage à basculer : le jour où l'agent est validé et
    * enregistré, l'outil s'allume seul, et il n'existe aucun état où l'interface promet un canal qui ne peut
-   * pas envoyer. Absent du câblage -> false, donc briques éteintes.
+   * pas envoyer.
    */
-  rcsEnabledFor?(tenantId: string): Promise<boolean>;
+  rcsEnabledFor(tenantId: string): Promise<boolean>;
   setMbaEnabled(tenantId: string, enabled: boolean): Promise<void>;
   setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
@@ -37,11 +36,11 @@ export interface SettingsRouteDeps {
   /** Quand l'agent de Meta passe la main à un humain (écran « Activation »). */
   setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void>;
   /**
-   * Applique `handoff.enabled` chez Meta. Optionnelle : absente, le choix est enregistré en base et c'est le
-   * balayage qui l'appliquera. Best-effort : un échec ne fait PAS échouer l'enregistrement, sinon Meta
-   * injoignable empêcherait le client de régler son propre outil.
+   * Applique `handoff.enabled` chez Meta. Best-effort : un échec ne fait PAS échouer l'enregistrement (le
+   * choix est en base, et c'est le balayage qui l'appliquera), sinon Meta injoignable empêcherait le client
+   * de régler son propre outil.
    */
-  applyMbaHandoffEnabled?(tenantId: string, enabled: boolean): Promise<void>;
+  applyMbaHandoffEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /**
    * UN PORTAIL HUBSPOT EST-IL LIE A CET ESPACE ? (lot 9, 2026-09-23)
    *
@@ -73,32 +72,26 @@ export interface SettingsRouteDeps {
   /**
    * Les requêtes de connecteur de l'espace (Tools > Connecteurs API), réduites à ce que l'écran affiche.
    *
-   * ⚠️ Optionnelle : absente, l'écran du Consentement dit que le branchement n'est pas disponible plutôt que
-   * de proposer une liste vide, qui se lirait « vous n'avez aucun connecteur » et serait un mensonge.
    */
-  listerRequetesConnecteur?(tenantId: string): Promise<Array<{ id: string; label: string }>>;
+  listerRequetesConnecteur(tenantId: string): Promise<Array<{ id: string; label: string }>>;
   /** Branche (ou débranche, avec `null`) le connecteur prévenu à chaque désabonnement. */
-  setOptoutRequestId?(tenantId: string, requestId: string | null): Promise<void>;
+  setOptoutRequestId(tenantId: string, requestId: string | null): Promise<void>;
   /** Règle QUAND les agents de cet espace annoncent qu'ils sont des IA (migration 0140). */
-  setMentionIaFrequence?(tenantId: string, frequence: FrequenceMentionIa): Promise<void>;
+  setMentionIaFrequence(tenantId: string, frequence: FrequenceMentionIa): Promise<void>;
   /**
    * QUAND L'ÉQUIPE EST JOIGNABLE POUR LES AGENTS IA (migration 0156).
    *
-   * ⚠️ Absente -> la route rend 503 plutôt que d'accepter un réglage qui n'irait nulle part. C'est l'idiome
-   * de ses voisines : un écran qui dirait « enregistré » sans rien écrire est pire qu'un écran indisponible.
    */
-  setAgentTransfertMode?(tenantId: string, mode: ModeTransfert): Promise<void>;
+  setAgentTransfertMode(tenantId: string, mode: ModeTransfert): Promise<void>;
   /**
-   * Autorise (ou non) les agents à PRENDRE une conversation du pot commun (migration 0160). Absente -> la
-   * route rend 503, comme ses voisines : un écran qui dirait « enregistré » sans rien écrire est pire qu'un
-   * écran indisponible.
+   * Autorise (ou non) les agents à PRENDRE une conversation du pot commun (migration 0160).
    */
-  setAgentsPeuventPrendre?(tenantId: string, actif: boolean): Promise<void>;
+  setAgentsPeuventPrendre(tenantId: string, actif: boolean): Promise<void>;
   /**
-   * Allume ou éteint l'interrupteur HubSpot de l'espace (migration 0179). Absente -> la route rend 503, comme
-   * ses voisines : un écran qui dirait « enregistré » sans rien écrire est pire qu'un écran indisponible.
+   * Allume ou éteint l'interrupteur HubSpot de l'espace (migration 0179). Toujours câblé, contrairement à
+   * `disconnectHubspot` (Compte), qui dépend de `HUBSPOT_SERVICE_URL`.
    */
-  setHubspotActif?(tenantId: string, actif: boolean): Promise<void>;
+  setHubspotActif(tenantId: string, actif: boolean): Promise<void>;
   /**
    * Les agents de l'espace et la PHRASE que chacun dit.
    *
@@ -107,7 +100,7 @@ export interface SettingsRouteDeps {
    * (« Vous échangez avec un assistant automatique. »). Sur un écran de conformité, montrer un réglage sans
    * montrer le texte qu'il déclenche, c'est promettre une vérification qu'on ne permet pas de faire.
    */
-  listerAgentsPourConformite?(tenantId: string): Promise<Array<{ id: string; label: string; status: string; mentionIa: string }>>;
+  listerAgentsPourConformite(tenantId: string): Promise<Array<{ id: string; label: string; status: string; mentionIa: string }>>;
 }
 
 /** Fuseau IANA valide ? (Intl throw sur un identifiant inconnu.) */
@@ -169,10 +162,9 @@ export function registerSettings(
   const optsEncadrement = { preHandler: gardeEncadrement };
 
   app.get('/tenants/:tenantId/settings', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const settings = await deps.getSettings(tenant);
-    const rcsEnabled = deps.rcsEnabledFor ? await deps.rcsEnabledFor(tenant) : false;
+    const rcsEnabled = await deps.rcsEnabledFor(tenant);
     // ⚠️ EN PARALLELE, pas en cascade : cette route est sur le chemin d'ouverture de plusieurs ecrans, et
     // les deux lectures sont independantes.
     // ⚠️ Une panne de lecture vaut « pas relié » ICI, et seulement ici : c'est un drapeau d'AFFICHAGE, et
@@ -182,9 +174,7 @@ export function registerSettings(
   });
 
   app.put('/tenants/:tenantId/settings', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const mbaEnabled = (req.body as { mbaEnabled?: unknown } | null)?.mbaEnabled;
     if (typeof mbaEnabled !== 'boolean') return reply.code(400).send({ error: 'mbaEnabled (booléen) requis' });
     await deps.setMbaEnabled(tenant, mbaEnabled);
@@ -194,9 +184,7 @@ export function registerSettings(
   // Toggle « Campagnes via données HubSpot » (admin-only). Route dédiée pour ne pas surcharger le PUT ci-dessus
   // (qui exige mbaEnabled). OFF -> aucun appel au connecteur ; ON -> le client devra re-consentir crm.lists.read.
   app.patch('/tenants/:tenantId/settings/hubspot-lists', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const enabled = (req.body as { enabled?: unknown } | null)?.enabled;
     if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled (booléen) requis' });
     await deps.setHubspotListsEnabled(tenant, enabled);
@@ -223,10 +211,7 @@ export function registerSettings(
    * (`messageDErreur`, `web/lib/http.ts`), et RIEN n'a été écrit.
    */
   app.patch('/tenants/:tenantId/settings/hubspot-actif', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
-    if (!deps.setHubspotActif) return reply.code(503).send({ error: 'réglage indisponible' });
+    const tenant = espaceVerifie(req);
     const actif = (req.body as { actif?: unknown } | null)?.actif;
     // Un booléen, rien d'autre : une valeur bancale ne doit pas se lire « allumé » ni « éteint » par accident.
     if (typeof actif !== 'boolean') return reply.code(400).send({ error: 'actif (booléen) requis' });
@@ -263,9 +248,7 @@ export function registerSettings(
    * docblock voisin, lui-même faux depuis longtemps.
    */
   app.get('/tenants/:tenantId/settings/poussee-optout', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.listerRequetesConnecteur) return reply.code(503).send({ error: 'connecteurs indisponibles' });
+    const tenant = espaceVerifie(req);
     const { optoutRequestId } = await deps.getSettings(tenant);
     return reply.code(200).send({ requestId: optoutRequestId, requetes: await deps.listerRequetesConnecteur(tenant) });
   });
@@ -282,10 +265,7 @@ export function registerSettings(
    * clé étrangère de la migration 0139 ne suffirait pas, elle ignore le tenant.
    */
   app.patch('/tenants/:tenantId/settings/poussee-optout', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
-    if (!deps.setOptoutRequestId || !deps.listerRequetesConnecteur) return reply.code(503).send({ error: 'connecteurs indisponibles' });
+    const tenant = espaceVerifie(req);
     const brut = (req.body as { requestId?: unknown } | null)?.requestId;
     if (brut === null) {
       await deps.setOptoutRequestId(tenant, null);
@@ -316,15 +296,14 @@ export function registerSettings(
    * dit, plutôt que de laisser croire que la politique couvre tout ce qui parle sur l'espace.
    */
   app.get('/tenants/:tenantId/settings/mention-ia', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { mentionIaFrequence } = await deps.getSettings(tenant);
     return reply.code(200).send({
       // `null` en base veut dire « rien n'a jamais été réglé ici » : l'écran montre le défaut EFFECTIF,
       // celui que le runtime appliquera, pas une case vide qui ne dirait rien de ce qui se passe.
       frequence: mentionIaFrequence ?? 'session',
       reglee: mentionIaFrequence !== null,
-      agents: deps.listerAgentsPourConformite ? await deps.listerAgentsPourConformite(tenant) : [],
+      agents: await deps.listerAgentsPourConformite(tenant),
     });
   });
 
@@ -339,10 +318,7 @@ export function registerSettings(
    * offrir de revenir à « rien » le ferait retomber sur un défaut qu'il n'a pas choisi.
    */
   app.patch('/tenants/:tenantId/settings/mention-ia', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
-    if (!deps.setMentionIaFrequence) return reply.code(503).send({ error: 'réglage indisponible' });
+    const tenant = espaceVerifie(req);
     const brut = (req.body as { frequence?: unknown } | null)?.frequence;
     if (!estFrequenceMention(brut)) {
       // 400 et non 500 : Cloudflare remplace le corps des 5xx, et c'est un message destiné à l'utilisateur.
@@ -364,8 +340,7 @@ export function registerSettings(
    * vous » sans ligne de travail derrière serait un mensonge poli.
    */
   app.get('/tenants/:tenantId/settings/transfert-agent', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentTransfertMode } = await deps.getSettings(tenant);
     return reply.code(200).send({
       // Le défaut EFFECTIF, celui que le runtime appliquera, jamais une case vide : même raison que sa
@@ -377,10 +352,7 @@ export function registerSettings(
 
   /** ...et son écriture, ADMIN SEULEMENT, comme tout ce qui change ce qu'un robot dit à de vrais contacts. */
   app.patch('/tenants/:tenantId/settings/transfert-agent', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
-    if (!deps.setAgentTransfertMode) return reply.code(503).send({ error: 'réglage indisponible' });
+    const tenant = espaceVerifie(req);
     const brut = (req.body as { mode?: unknown } | null)?.mode;
     if (!estModeTransfert(brut)) {
       // 400 et non 500 : Cloudflare remplace le corps des 5xx, et c'est un message destiné à l'utilisateur.
@@ -402,16 +374,13 @@ export function registerSettings(
    * personne n'a, et rien d'autre. La règle : `peutPrendre` (`src/inbox/assignment.ts`).
    */
   app.get('/tenants/:tenantId/settings/agents-peuvent-prendre', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentsPeuventPrendre } = await deps.getSettings(tenant);
     return reply.code(200).send({ actif: agentsPeuventPrendre });
   });
 
   app.patch('/tenants/:tenantId/settings/agents-peuvent-prendre', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.setAgentsPeuventPrendre) return reply.code(503).send({ error: 'réglage indisponible' });
+    const tenant = espaceVerifie(req);
     const actif = (req.body as { actif?: unknown } | null)?.actif;
     // Un booléen, rien d'autre : une valeur bancale ne doit pas se lire « activé » par accident.
     if (typeof actif !== 'boolean') return reply.code(400).send({ error: 'actif (booléen) requis' });
@@ -436,9 +405,7 @@ export function registerSettings(
    * valeur qui casse la promesse « le client finit toujours par avoir une réponse ».
    */
   app.patch('/tenants/:tenantId/settings/control-handback', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const raw = (req.body as { seconds?: unknown } | null)?.seconds;
     if (raw === null) {
       await deps.setControlHandbackSeconds(tenant, null);
@@ -479,31 +446,27 @@ export function registerSettings(
    */
 
   app.patch('/tenants/:tenantId/settings/mba-handoff', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const mode = (req.body as { mode?: unknown } | null)?.mode;
     if (mode !== 'always' && mode !== 'business_hours' && mode !== 'never') {
       return reply.code(400).send({ error: "mode invalide ('always' | 'business_hours' | 'never')" });
     }
     await deps.setMbaHandoffMode(tenant, mode);
     let applique = false;
-    if (deps.applyMbaHandoffEnabled) {
-      // Pour `business_hours` seulement, l'état À CET INSTANT : le client règle souvent son outil pendant ses
-      // heures d'ouverture, et verrait sinon un passage de main éteint jusqu'au balayage suivant. Les deux
-      // autres modes n'ont pas besoin de relire les horaires.
-      let voulu = mode === 'always';
-      if (mode === 'business_hours') {
-        const s = await deps.getSettings(tenant);
-        voulu = withinBusinessHours(new Date(), s.timezone, s.businessHours);
-      }
-      try {
-        await deps.applyMbaHandoffEnabled(tenant, voulu);
-        applique = true;
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`mba-handoff: application chez Meta impossible pour ${tenant}:`, messageDe(err));
-      }
+    // Pour `business_hours` seulement, l'état À CET INSTANT : le client règle souvent son outil pendant ses
+    // heures d'ouverture, et verrait sinon un passage de main éteint jusqu'au balayage suivant. Les deux
+    // autres modes n'ont pas besoin de relire les horaires.
+    let voulu = mode === 'always';
+    if (mode === 'business_hours') {
+      const s = await deps.getSettings(tenant);
+      voulu = withinBusinessHours(new Date(), s.timezone, s.businessHours);
+    }
+    try {
+      await deps.applyMbaHandoffEnabled(tenant, voulu);
+      applique = true;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`mba-handoff: application chez Meta impossible pour ${tenant}:`, messageDe(err));
     }
     return reply.code(200).send({ mbaHandoffMode: mode, appliqueChezMeta: applique });
   });
@@ -511,9 +474,7 @@ export function registerSettings(
 
   // Fuseau horaire du tenant (admin-only). Base de NOW / weekday / heures d'ouverture du node condition.
   app.patch('/tenants/:tenantId/settings/timezone', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const tz = (req.body as { timezone?: unknown } | null)?.timezone;
     if (!isValidTimeZone(tz)) return reply.code(400).send({ error: 'timezone IANA invalide (ex. Europe/Paris)' });
     await deps.setTimezone(tenant, tz);
@@ -522,9 +483,7 @@ export function registerSettings(
 
   // Heures d'ouverture par jour (admin-only). Corps { '0'..'6': { closed, open 'HH:MM', close 'HH:MM' } }.
   app.patch('/tenants/:tenantId/settings/business-hours', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const hours = normalizeBusinessHours((req.body as { businessHours?: unknown } | null)?.businessHours);
     if (hours === null) return reply.code(400).send({ error: 'businessHours invalide (7 jours, HH:MM, close > open)' });
     await deps.setBusinessHours(tenant, hours);

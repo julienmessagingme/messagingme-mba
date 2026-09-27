@@ -12,6 +12,7 @@ import type { JournalAppels } from '../src/agent/catalog';
 import { cleApiDeTest } from './aide/cle-api';
 import { baseDuRelais } from '../src/mba/relais';
 import { corpsOutilMeta } from '../src/mba/publication';
+import { relaisMbaInerte } from './routes-inertes';
 
 /**
  * La route du relais du Meta Business Agent (spec 2026-09-21-relais-mba-design.md).
@@ -41,6 +42,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     .ajouter(CLE_CONTACTS, { id: 'k2', tenantId: 't1', scopes: ['contacts:write'] })
     .ajouter(CLE_AUTRE_ESPACE, { id: 'k3', tenantId: 't2', scopes: ['mba:relais'] });
   const mbaRelais: MbaRelaisDeps = {
+    ...relaisMbaInerte,
     numeroDuTenant: async (t) => (t === 't1' ? 'pn1' : 'pn2'),
     // Le faux REFUSE ce que le vrai refuse : il ne rend que les outils de l'espace ET du consommateur demandés.
     outilsActifs: async (t, c) => (t === 't1' && c === 'mba:pn1' ? [OUTIL] : []),

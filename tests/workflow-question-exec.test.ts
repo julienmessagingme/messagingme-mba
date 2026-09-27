@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -49,15 +50,16 @@ interface Capture {
 
 function monter(graph: WorkflowGraph, run: WorkflowRunRow | null, cap: Capture, over: Partial<WorkflowExecutorDeps> = {}) {
   const deps: WorkflowExecutorDeps = {
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
-    runs: {
+    runs: avecGardesDEtatInertes({
       start: async (_t: string, _w: string, _wa: string, _c: string | null, state: RunState) => { cap.etats.push({ id: 'r1', state }); return { id: 'r1' }; },
       findWaitingByWaId: async () => run,
       setState: async (id: string, state: RunState) => { cap.etats.push({ id, state }); },
       // Ferme le parcours precedent : requis par le contrat depuis que « lancer un scenario remplace
       // celui en cours ». Le compteur sert aux tests qui verifient QUE la fermeture a bien eu lieu.
       closeActiveByWaId: async () => [],
-    },
+    }),
     getGraph: async () => graph,
     applyTag: async (_t, _w, tag) => { cap.tags.push(tag); },
     setField: async () => {},

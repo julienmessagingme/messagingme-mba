@@ -7,6 +7,7 @@ import type { AgentsRouteDeps } from '../src/http/agents';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
 import { avertissements, manquesAvantActivation, type EtatPourLint } from '../src/agent/setup/lint';
 import { ficheVide } from '../src/agent/fiche';
+import { agentsInertes } from './routes-inertes';
 
 /**
  * Le blocage dur avant activation.
@@ -116,6 +117,7 @@ const COMPLET: AgentComplet = {
 function app(etat: EtatPourLint | null, modeles?: AgentsRouteDeps['modelesProposes']) {
   const cap = { patches: [] as PatchAgent[] };
   const deps: AgentsRouteDeps = {
+    ...agentsInertes,
     ...(modeles ? { modelesProposes: modeles } : {}),
     listActifs: async (): Promise<AgentResume[]> => [],
     listToutes: async (): Promise<AgentResume[]> => [],
@@ -254,20 +256,11 @@ describe('les manques se LISENT, sans rien tenter', () => {
     expect(cap.patches).toHaveLength(0);
   });
 
-  it('agent inconnu -> 404, câblage absent -> 503, jamais une liste vide qui dirait « tout va bien »', async () => {
+  it('agent inconnu -> 404, jamais une liste vide qui dirait « tout va bien »', async () => {
+    // ⚠️ La moitié « câblage absent -> 503 » est partie au lot 3 de l'audit ponytail : `etatPourLint` est
+    // requise, le câblage de production la fournit toujours, et ce 503 n'était atteignable que par un test.
     const { srv } = app(null);
     expect((await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/manques`, ...h(adminTok) })).statusCode).toBe(404);
-
-    const sansLint = buildServer({
-      queue: new FakeQueue(),
-      auth: { users: noUsers, secret: SECRET },
-      agents: {
-        listActifs: async (): Promise<AgentResume[]> => [], listToutes: async (): Promise<AgentResume[]> => [],
-        complet: async () => COMPLET, create: async () => COMPLET, patch: async () => COMPLET, remove: async () => true,
-        modeleParDefaut: 'modele-config',
-      },
-    });
-    expect((await sansLint.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/manques`, ...h(adminTok) })).statusCode).toBe(503);
   });
 
   it('tenant croisé -> 403', async () => {

@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 import { cheminValide, litChemin, estScalaire } from '../webhook-entrant/chemin';
 import { cibleValide, MAX_REGLES } from '../webhook-entrant/mapping';
 import type { RegleMapping } from '../webhook-entrant/mapping';
@@ -21,7 +20,7 @@ const MAX_COOLDOWN = 7 * 24 * 3600;
 
 export interface WebhooksAdminRouteDeps {
   /**
-   * Journal d'audit (2026-09-16). Optionnel : absent -> aucune trace (câblages de test).
+   * Journal d'audit (2026-09-16). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`.
    *
    * 🔴 UN WEBHOOK EST UNE PORTE D'ENTRÉE DANS L'ESPACE. L'adresse qu'on crée ici est appelée par un tiers, et
    * ce qu'il envoie devient des contacts, parfois les destinataires d'une campagne « au fil de l'eau ». Savoir
@@ -32,7 +31,7 @@ export interface WebhooksAdminRouteDeps {
    * devinable, le secret ce qui l'authentifie : les graver dans une table jamais purgée donnerait de quoi
    * rejouer la porte bien après sa fermeture.
    */
-  audit?: AuditSink;
+  audit: AuditSink;
   list(tenantId: string): Promise<WebhookRow[]>;
   get(tenantId: string, id: string): Promise<WebhookRow | null>;
   create(tenantId: string, input: WebhookInput): Promise<{ id: string; code: string }>;
@@ -47,9 +46,9 @@ export interface WebhooksAdminRouteDeps {
   /**
    * Nom d'une campagne AU FIL DE L'EAU encore vivante nourrie par ce webhook, s'il y en a une. Interroge la
    * SUPPRESSION : couper l'adresse laisserait la campagne « en cours » sans qu'elle ne reçoive plus jamais
-   * rien. Absente du câblage -> aucune garde (comportement d'avant les campagnes au fil de l'eau).
+   * rien.
    */
-  campagneVivante?(tenantId: string, webhookId: string): Promise<string | null>;
+  campagneVivante(tenantId: string, webhookId: string): Promise<string | null>;
   /** Base publique des URLs (`config.APP_URL`) : l'écran affiche l'URL complète à coller chez le tiers. */
   baseUrl: string;
 }
@@ -177,16 +176,12 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   const avecUrl = (w: WebhookRow): WebhookRow & { url: string } => ({ ...w, url: urlPublique(deps.baseUrl, w.code) });
 
   app.get('/tenants/:tenantId/webhooks', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ webhooks: (await deps.list(tenant)).map(avecUrl) });
   });
 
   app.get('/tenants/:tenantId/webhooks/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const w = await deps.get(tenant, id);
     if (!w) return reply.code(404).send({ error: 'webhook inconnu' });
@@ -194,9 +189,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   });
 
   app.post('/tenants/:tenantId/webhooks', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const parsed = parseBody(req.body, null, null);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
     if (parsed.input.workflowId !== null && !(await deps.workflowBelongsToTenant(parsed.input.workflowId, tenant))) {
@@ -210,9 +203,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   });
 
   app.patch('/tenants/:tenantId/webhooks/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     // Relecture systématique : le mapping se valide CONTRE le dernier payload reçu, et le corps est partiel
     // alors que le store écrit un état complet.
@@ -231,19 +222,15 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   });
 
   app.delete('/tenants/:tenantId/webhooks/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     // Une campagne au fil de l'eau vit de cette adresse : la supprimer la transformerait en coquille « en
     // cours » qui ne recevrait plus rien, sans le moindre signal. On refuse, en la NOMMANT, plutôt que de
     // laisser l'opérateur découvrir le trou des semaines plus tard. 409 (et pas 5xx) : Cloudflare remplace le
     // corps de toute réponse 5xx, le message n'arriverait jamais à l'écran.
-    if (deps.campagneVivante) {
-      const campagne = await deps.campagneVivante(tenant, id);
-      if (campagne !== null) {
-        return reply.code(409).send({ error: `La campagne « ${campagne} » se nourrit de ce webhook. Arrête-la avant de supprimer l'adresse.` });
-      }
+    const campagne = await deps.campagneVivante(tenant, id);
+    if (campagne !== null) {
+      return reply.code(409).send({ error: `La campagne « ${campagne} » se nourrit de ce webhook. Arrête-la avant de supprimer l'adresse.` });
     }
     const ok = await deps.remove(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'webhook inconnu' });
@@ -253,9 +240,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
 
   /** Pose un secret neuf. Le clair n'est rendu QU'ICI, une seule fois, comme une clé d'API. */
   app.post('/tenants/:tenantId/webhooks/:id/secret', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const secret = await deps.rotateSecret(tenant, id);
     if (secret === null) return reply.code(404).send({ error: 'webhook inconnu' });
@@ -265,9 +250,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   });
 
   app.delete('/tenants/:tenantId/webhooks/:id/secret', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const ok = await deps.clearSecret(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'webhook inconnu' });
@@ -277,9 +260,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
 
   /** « Oublier ce payload » : le JSON d'un tiers peut porter des données personnelles qu'on n'a pas demandées. */
   app.delete('/tenants/:tenantId/webhooks/:id/payload', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const ok = await deps.forgetPayload(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'webhook inconnu' });

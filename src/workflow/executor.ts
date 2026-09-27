@@ -127,9 +127,10 @@ export interface WorkflowExecutorDeps {
      * Écrit l'état SEULEMENT si le parcours vit encore. `false` = il a été clos entre-temps, donc l'écriture
      * l'aurait RESSUSCITÉ avec une échéance, et il aurait parlé au client depuis un scénario abandonné.
      *
-     * OPTIONNELLE : absente -> `setState` inconditionnel, comportement d'avant (fixtures de test).
+     * REQUISE depuis le lot 3 de l'audit ponytail (2026-09-26) : le seul câblage de production (`wiring.ts`) la fournit toujours. Les
+     * fixtures passent `avecGardesDEtatInertes` (`tests/executeur-inerte.ts`), qui délègue à `setState`.
      */
-    setStateSiVivant?(tenantId: string, id: string, state: RunState): Promise<boolean>;
+    setStateSiVivant(tenantId: string, id: string, state: RunState): Promise<boolean>;
     /**
      * Écriture CONDITIONNELLE : n'écrit que si le run attend TOUJOURS sur `nodeId`. `false` = il a bougé
      * entre-temps, donc quelqu'un d'autre l'a fait avancer, et notre écriture serait un retour en arrière.
@@ -137,9 +138,10 @@ export interface WorkflowExecutorDeps {
      * `token` clôture l'écriture par le JETON du tour : un porteur de bail périmé ne doit pas pouvoir écrire
      * par-dessus celui qui a repris le tour. `null` = aucune réservation n'a eu lieu, garde d'avant.
      *
-     * OPTIONNELLE : absente -> `setState` inconditionnel, comportement d'avant (fixtures de test).
+     * REQUISE depuis le lot 3 de l'audit ponytail (2026-09-26) : le seul câblage de production (`wiring.ts`) la fournit toujours. Les
+     * fixtures passent `avecGardesDEtatInertes` (`tests/executeur-inerte.ts`), qui délègue à `setState`.
      */
-    setStateSiEncoreSur?(tenantId: string, id: string, nodeId: string | null, state: RunState, token?: string | null): Promise<boolean>;
+    setStateSiEncoreSur(tenantId: string, id: string, nodeId: string | null, state: RunState, token?: string | null): Promise<boolean>;
     /**
      * RÉSERVE le tour d'avance AVANT tout envoi (migration 0104). `null` = un autre traitement le tient,
      * l'appelant sort SANS RIEN FAIRE. C'est ce qui ferme le double envoi, que l'écriture conditionnelle ne
@@ -169,16 +171,15 @@ export interface WorkflowExecutorDeps {
   /** Vide un champ du contact = retire la clé (bloc Action « vider un champ »). */
   clearField(tenantId: string, waId: string, key: string): Promise<void>;
   /**
-   * Pose le consentement marketing du contact (bloc « Action » d'un scénario). Optionnelle : absente, le bloc
-   * est un no-op silencieux plutôt qu'une erreur, comme les autres actions sur un câblage partiel.
+   * Pose le consentement marketing du contact (bloc « Action » d'un scénario). Requise : le câblage de
+   * production la fournit toujours, et les fixtures qui ne la regardent pas passent `consentementNonEcrit`.
    */
-  setOptIn?(tenantId: string, waId: string, value: 'opted_in' | 'opted_out'): Promise<void>;
+  setOptIn(tenantId: string, waId: string, value: 'opted_in' | 'opted_out'): Promise<void>;
   /**
-   * Enregistre une mesure par bloc (Analytics > Mes tableaux). Optionnelle : absente -> aucune mesure, et le
-   * parcours se déroule exactement comme avant. Aucune donnée n'existait avant cette dep, donc rien ne peut
-   * régresser en son absence.
+   * Enregistre une mesure par bloc (Analytics > Mes tableaux). Requise : le câblage de production la fournit
+   * toujours, et les fixtures qui ne mesurent rien passent `aucuneMesure`.
    */
-  recordNodeEvent?(e: {
+  recordNodeEvent(e: {
     tenantId: string; workflowId: string; nodeId: string; waId: string;
     kind: 'sent' | 'failed' | 'reply_button' | 'reply_text'; handle?: string; metaMessageId?: string;
   }): Promise<void>;
@@ -222,10 +223,10 @@ export interface WorkflowExecutorDeps {
    * scénario repartait de zéro et l'e-mail partait une seconde fois. `runFrom` l'appelle donc AVANT tout effet,
    * dès que le parcours calculé contient un envoi WhatsApp (`envoieParWhatsApp`).
    *
-   * OPTIONNELLE, et c'est sûr : absente, rien ne part pour autant (la garde du point de passage tient), seul le
-   * rejeu décrit ci-dessus redevient possible. Les fixtures de test n'ont rien à câbler.
+   * REQUISE : le câblage de production la fournit toujours (un no-op en `DRY_RUN`). Les fixtures qui ne
+   * regardent pas le numéro passent `numeroJamaisDelie`.
    */
-  verifierNumeroWhatsApp?(tenantId: string): Promise<void>;
+  verifierNumeroWhatsApp(tenantId: string): Promise<void>;
   /** Envoie un message hors template : interactif (texte + 2-3 réponses rapides, OU un bouton de lien),
    *  image légendée, ou simple texte, selon ce que porte le bloc. Atteint via `advance` (après réponse du
    *  contact) ou `startFromNode` (fenêtre vérifiée par l'appelant) : toujours EN fenêtre 24 h. */
@@ -272,10 +273,11 @@ export interface WorkflowExecutorDeps {
    *  l'opérateur sans aucun moyen de savoir pourquoi il n'avait rien reçu (vécu le 2026-08-25). */
   sendEmail?(tenantId: string, waId: string, action: SendEmailAction): Promise<string | void>;
   /**
-   * Canal RCS. ABSENT = un bloc `rcs_message` n'envoie rien et part TOUJOURS sur sa sortie « non joignable ».
-   * Jamais d'envoi muet, jamais de parcours bloqué sur un canal non câblé.
+   * Canal RCS, toujours câblé en production. Un espace SANS agent RCS (`agentIdFor` rend `null`) : un bloc
+   * `rcs_message` n'envoie rien et part TOUJOURS sur sa sortie « non joignable ». Jamais d'envoi muet, jamais
+   * de parcours bloqué sur un canal absent. Les fixtures passent `rcsSansAgent`.
    */
-  rcs?: {
+  rcs: {
     sender: RcsSender;
     /** Agent RCS du tenant (`rcs_agents.agent_id`). null = tenant sans agent configuré. */
     agentIdFor(tenantId: string): Promise<string | null>;
@@ -293,25 +295,25 @@ export interface WorkflowExecutorDeps {
      *
      * Best-effort chez l'appelant : un échec de journal ne doit jamais faire échouer un envoi déjà parti.
      */
-    recordOutbound?(tenantId: string, waId: string, msg: { body: string; messageId: string }): Promise<void>;
+    recordOutbound(tenantId: string, waId: string, msg: { body: string; messageId: string }): Promise<void>;
     /**
      * Jeton public du contact qui porte ce numéro, pour savoir QUI a cliqué sur un lien du message.
      *
-     * OPTIONNELLE, et sans elle les liens partent tracés mais anonymes : c'est exactement l'état d'avant le
-     * 2026-09-02. Un scénario envoie à UNE personne à la fois, donc une lecture unitaire est ici le bon
-     * geste ; le chargement en un seul énoncé reste réservé au chemin de masse (les campagnes).
+     * `null` = liens tracés mais anonymes, c'est exactement l'état d'avant le 2026-09-02. Un scénario envoie à
+     * UNE personne à la fois, donc une lecture unitaire est ici le bon geste ; le chargement en un seul énoncé
+     * reste réservé au chemin de masse (les campagnes).
      */
-    jetonPour?(tenantId: string, waId: string): Promise<string | null>;
+    jetonPour(tenantId: string, waId: string): Promise<string | null>;
   };
   /** Horloge (tests). Absente -> Date.now(). Sert à l'échéance d'un bloc Attente. */
   now?: () => number;
   /**
    * La fenêtre de service 24 h est-elle ouverte pour ce contact ? Utilisée à la REPRISE d'un parcours endormi :
    * la fenêtre court depuis le dernier message DU CONTACT, pas depuis notre dernière action, donc même une
-   * attente courte peut la voir se fermer. Absente -> on considère la fenêtre fermée (fail-closed) : mieux
-   * vaut ne pas envoyer que se faire refuser par Meta et compter l'envoi comme parti.
+   * attente courte peut la voir se fermer. Dans le doute, fermée (fail-closed) : mieux vaut ne pas envoyer que
+   * se faire refuser par Meta et compter l'envoi comme parti. Les fixtures passent `fenetreToujoursFermee`.
    */
-  isWindowOpen?: (tenantId: string, waId: string) => Promise<boolean>;
+  isWindowOpen: (tenantId: string, waId: string) => Promise<boolean>;
   /**
    * REND la main à l'app sur un fil (inverse d'`escalateToHuman`). Appelé au lancement d'une campagne : c'est
    * un envoi VOULU par un opérateur, donc le scénario reprend la conduite du fil. Sans ça, le scénario
@@ -327,21 +329,21 @@ export interface WorkflowExecutorDeps {
    * démarrage qu'on sait condamné doit échouer TOUT DE SUITE, avec sa raison, plutôt que de produire un
    * parcours mort sans trace.
    *
-   * ⚠️ `void` reste accepté pour les câblages qui ne savent pas le dire (tests, e2e) : traité comme un
-   * succès, c'est-à-dire le comportement historique.
+   * ⚠️ `void` reste accepté pour les câblages qui ne savent pas le dire (tests) : traité comme un succès,
+   * c'est-à-dire le comportement historique. Les fixtures passent `repriseSansObjection`.
    */
-  reclaimControl?: (tenantId: string, waId: string) => Promise<boolean | void>;
+  reclaimControl: (tenantId: string, waId: string) => Promise<boolean | void>;
   /**
    * Le scénario a-t-il le droit d'écrire dans ce fil ? false dès qu'un opérateur (`app_human`) ou l'agent
-   * de Meta (`mba`) le détient. OPTIONNEL : absent, tout est permis, ce qui préserve le comportement des
-   * suites de tests qui construisent des deps minimales. En production il est toujours câblé.
+   * de Meta (`mba`) le détient. REQUIS : en production il est toujours câblé, et les fixtures qui ne
+   * regardent pas le contrôle du fil passent `filToujoursANous`, qui DIT qu'elles permettent tout.
    */
-  mayAct?(tenantId: string, waId: string): Promise<boolean>;
+  mayAct(tenantId: string, waId: string): Promise<boolean>;
   /**
    * Construit le CONTEXTE d'évaluation d'un contact (état contact : fields/tags/opt-in/attributs + fuseau &
-   * horaires du tenant + `now`) pour les blocs `condition` et le bloc `field` en mode NOW. OPTIONNEL : absent,
-   * les conditions prennent la branche 'false' DÉTERMINISTE et un bloc field NOW pose une valeur vide -> préserve
-   * les suites de tests à deps minimales. Renvoie null si le contact est introuvable -> même repli 'false'.
+   * horaires du tenant + `now`) pour les blocs `condition` et le bloc `field` en mode NOW. Renvoie null si le
+   * contact est introuvable : les conditions prennent alors la branche 'false' DÉTERMINISTE et un bloc field
+   * NOW pose une valeur vide. Les fixtures passent `contexteIntrouvable`, qui produit ce repli.
    */
   /**
    * Le contexte d'évaluation. `besoins` dit ce que le graphe réclame VRAIMENT, pour ne pas payer une lecture
@@ -349,11 +351,11 @@ export interface WorkflowExecutorDeps {
    * scénarios n'en a que faire. Même doctrine que `buildCtx`, qui ne construit ce contexte que si le graphe a
    * une condition ou un bloc de date.
    */
-  evalContext?(tenantId: string, waId: string, besoins?: { derniereSaisie: boolean }): Promise<EvalContext | null>;
+  evalContext(tenantId: string, waId: string, besoins?: { derniereSaisie: boolean }): Promise<EvalContext | null>;
   /**
    * Le run vient d'atteindre un bloc `inbox` : la conversation passe à un humain (control_owner=app_human).
    * Sans ça, atteindre le bloc inbox n'était qu'un arrêt de run silencieux, et le badge d'inbox affichait encore
-   * « le scénario répond » alors que plus rien n'avançait (trou A.5). OPTIONNEL : absent -> comportement historique.
+   * « le scénario répond » alors que plus rien n'avançait (trou A.5). Les fixtures passent `personneNeReprend`.
    */
   /**
    * `assigneA` : le membre que le bloc « passer a un humain » designe, `null` = au pot commun.
@@ -373,7 +375,7 @@ export interface WorkflowExecutorDeps {
    * contact n'attend rien à cet instant, et rendre ces fils collants les soustrairait à l'agent pour toujours.
    * Un paramètre REQUIS oblige chaque appelant à trancher ; un optionnel aurait laissé le défaut décider.
    */
-  escalateToHuman?(tenantId: string, waId: string, assigneA: string | null, escalade: boolean): Promise<void>;
+  escalateToHuman(tenantId: string, waId: string, assigneA: string | null, escalade: boolean): Promise<void>;
   /**
    * Joue un appel de la bibliothèque (Tools > Connecteurs API) pour ce contact, et rend ce qu'il faut ranger
    * dans un champ.
@@ -410,24 +412,25 @@ export interface WorkflowExecutorDeps {
    */
   varsFor?(tenantId: string, waId: string): Promise<Record<string, string | null>>;
   /**
-   * État des conversations tenues par un bloc agent. OPTIONNEL, comme les autres deps de ce fichier : absent,
-   * aucun bloc agent ne peut être servi, ce qui préserve les suites de tests à deps minimales et l'intégration.
+   * État des conversations tenues par un bloc agent. OPTIONNEL, bien que toujours câblé en production : absent,
+   * aucun bloc agent ne peut être servi, et AUCUNE valeur inerte ne reproduit cette absence (une fausse session
+   * s'ouvrirait et enfilerait un tour). Laissé optionnel au lot 3 de l'audit ponytail, en attente d'arbitrage.
    */
   agentSessions?: AgentSessionStore;
   /**
-   * Enfile un tour d'agent. OPTIONNEL : absent -> no-op, le run reste simplement en attente sur le bloc.
+   * Enfile un tour d'agent. Les fixtures passent `aucunTourEnfile` : le run reste alors en attente sur le bloc.
    * Un tour est un appel modèle plus N appels d'outils (3 à 20 s), il ne peut donc pas se jouer dans le
    * handler de webhook, qui tiendrait la connexion Meta ouverte tout ce temps.
    */
-  enqueueAgentTurn?(job: AgentTurnJob): Promise<void>;
+  enqueueAgentTurn(job: AgentTurnJob): Promise<void>;
   /**
    * L'agent de Meta est-il allumé sur le numéro de ce tenant ?
    *
    * Il décide de DEUX choses : qu'une étape sans choix cesse de bloquer le parcours (l'agent répond à la place,
-   * les actions du scénario continuent), et qu'on rende le fil à Meta en fin de chaîne. ABSENT ou faux -> le
-   * comportement historique est conservé au caractère près, ce qui est le cas de tous les clients aujourd'hui.
+   * les actions du scénario continuent), et qu'on rende le fil à Meta en fin de chaîne. Faux -> le
+   * comportement historique est conservé au caractère près. Les fixtures passent `agentDeMetaEteint`.
    */
-  mbaActifPour?(tenantId: string): Promise<boolean>;
+  mbaActifPour(tenantId: string): Promise<boolean>;
   /**
    * Rend le fil à l'agent de Meta (`thread_control` action `release`).
    *
@@ -444,9 +447,9 @@ export interface WorkflowExecutorDeps {
    * DÉRIVÉ en base (un entrant plus récent que la dernière ouverture du fil), donc il apparaît déjà dans l'Inbox.
    * C'était le repli prévu au plan, il existait déjà.
    *
-   * ABSENT -> aucun release. Best-effort : un échec ne fait jamais échouer un parcours.
+   * Best-effort : un échec ne fait jamais échouer un parcours. Les fixtures passent `filJamaisRendu`.
    */
-  releaseToMba?(tenantId: string, waId: string): Promise<void>;
+  releaseToMba(tenantId: string, waId: string): Promise<void>;
   /**
    * TRANSMET À L'AGENT DE META le message « à côté » du client, une fois le fil rendu (spec
    * 2026-09-21-outils-maison-mba, § 5) : sans lui, l'agent ne parlerait qu'au message SUIVANT du client, et la
@@ -454,15 +457,16 @@ export interface WorkflowExecutorDeps {
    * et seulement sur un vrai message WhatsApp : une fin normale n'a rien à transmettre, un bouton sans suite va à un
    * humain, et une réaction ou un rapport RCS ne sont pas des messages. `messageId` désigne le message à transmettre.
    *
-   * ABSENT -> rien n'est transmis. Best-effort, comme le release : un échec ne fait jamais échouer un parcours.
+   * Best-effort, comme le release : un échec ne fait jamais échouer un parcours. Les fixtures passent
+   * `rienATransmettre`.
    */
-  transmettreHorsParcours?(tenantId: string, waId: string, messageId: string): Promise<void>;
+  transmettreHorsParcours(tenantId: string, waId: string, messageId: string): Promise<void>;
   /**
    * Publie « ce tag vient d'être posé » pour les automations. Appelée UNIQUEMENT sur un démarrage unitaire
    * (réponse d'un contact, automation, test), jamais depuis une campagne : voir la note de `apply`.
-   * Absente -> aucune publication (rétro-compatible).
+   * Les fixtures passent `aucunEvenement`.
    */
-  emitTagAdded?(tenantId: string, waId: string, tag: string): Promise<void>;
+  emitTagAdded(tenantId: string, waId: string, tag: string): Promise<void>;
 }
 
 /** Message RCS porté par un bloc. null = bloc NON configuré : on ne devine pas un contenu, on part en repli. */
@@ -547,7 +551,6 @@ export class WorkflowExecutor {
    * n'est jamais bloqué par une panne de sa plomberie.
    */
   private async buildCtx(tenantId: string, waId: string, graph: WorkflowGraph): Promise<EvalContext | undefined> {
-    if (!this.deps.evalContext) return undefined;
     // Les valeurs DYNAMIQUES d'un bloc « poser un champ » : `maintenant` et `derniere_saisie`. Une valeur
     // fixe n'a besoin d'aucun contexte, donc d'aucune requête.
     const valeurDynamique = (n: { type: string; data: Record<string, unknown> }): string | null => {
@@ -604,7 +607,6 @@ export class WorkflowExecutor {
     a: { body: string; buttons: WorkflowButton[]; mediaUrl?: string; lien?: LienBouton },
   ): Promise<SendRefusal> {
     const rcs = this.deps.rcs;
-    if (!rcs) return 'canal RCS non câblé sur ce serveur';
     const agentId = await rcs.agentIdFor(tenantId);
     if (!agentId) return "le canal RCS n'est pas activé sur cet espace";
     // 🔴 LE BOUTON DE LIEN A UN ÉQUIVALENT RCS NATIF (`openUrl`), et l'ignorer aurait fait partir le message
@@ -654,13 +656,11 @@ export class WorkflowExecutor {
    * rien à cliquer. Best-effort : un échec de lecture rend un lien anonyme, jamais un envoi raté.
    */
   private async jetonRcs(tenantId: string, waId: string, msg: RcsOutbound): Promise<string | undefined> {
-    const lire = this.deps.rcs?.jetonPour;
-    if (!lire || !aDesLiensTracables(msg)) return undefined;
-    return (await lire(tenantId, waId).catch(() => null)) ?? undefined;
+    if (!aDesLiensTracables(msg)) return undefined;
+    return (await this.deps.rcs.jetonPour(tenantId, waId).catch(() => null)) ?? undefined;
   }
 
   private async journaliserRcs(tenantId: string, waId: string, msg: RcsOutbound, messageId: string): Promise<void> {
-    if (!this.deps.rcs?.recordOutbound) return;
     try {
       await this.deps.rcs.recordOutbound(tenantId, waId, { body: apercuRcsSortant(msg), messageId });
     } catch (err) {
@@ -776,7 +776,7 @@ export class WorkflowExecutor {
            * le bac à sable. Mettre en forme est justement le travail que ce bloc existe pour faire.
            */
           // ⚠️ Le contexte n'est lu QUE pour un vrai champ : « maintenant » ne touche pas la base.
-          const evalCtxFields = a.champSource === CHAMP_MAINTENANT || !this.deps.evalContext
+          const evalCtxFields = a.champSource === CHAMP_MAINTENANT
             ? null
             : (await this.deps.evalContext(tenantId, waId))?.fields;
           const entree = a.champSource === CHAMP_MAINTENANT
@@ -790,12 +790,11 @@ export class WorkflowExecutor {
         }
       }
       else if (a.kind === 'clearField') await this.deps.clearField(tenantId, waId, a.key);
-      else if (a.kind === 'optIn') await this.deps.setOptIn?.(tenantId, waId, a.value);
+      else if (a.kind === 'optIn') await this.deps.setOptIn(tenantId, waId, a.value);
       // Best-effort STRICT (contrairement aux canaux WhatsApp/RCS ci-dessous, qui peuvent refuser tout le run) :
       // un envoi email raté (boîte/modèle supprimé, SMTP injoignable, destinataire vide) est journalisé mais ne
       // doit JAMAIS arrêter le parcours ni compter comme un refus. `sendEmail` absente (deps minimales de test,
-      // dont l'intégration Postgres) -> no-op silencieux via l'optional chaining, même contrat qu'une dep
-      // optionnelle non câblée ailleurs dans ce fichier (ex. `setOptIn` ci-dessus).
+      // dont l'intégration Postgres) -> no-op silencieux.
       else if (a.kind === 'sendEmail') {
         // Dep absente (suites à deps minimales) : no-op TOTAL, on ne mesure rien non plus. Mesurer ici
         // inventerait un « envoyé » pour un câblage qui n'existe pas.
@@ -871,7 +870,7 @@ export class WorkflowExecutor {
     }
     // Publication APRÈS toutes les actions, et seulement sur un chemin unitaire. Best-effort : la pose du tag
     // est acquise, un incident de file ne doit pas faire échouer le parcours en cours.
-    if (emitEvents && posedTags.length > 0 && this.deps.emitTagAdded) {
+    if (emitEvents && posedTags.length > 0) {
       for (const tag of posedTags) {
         try { await this.deps.emitTagAdded(tenantId, waId, tag); } catch { /* best-effort */ }
       }
@@ -895,7 +894,7 @@ export class WorkflowExecutor {
     handle?: string,
     metaMessageId?: string,
   ): Promise<void> {
-    if (!this.deps.recordNodeEvent || !workflowId) return;
+    if (!workflowId) return;
     try {
       await this.deps.recordNodeEvent({
         tenantId, workflowId, nodeId, waId, kind,
@@ -944,7 +943,7 @@ export class WorkflowExecutor {
     status?: RunStatus;
   }): Promise<boolean> {
     const { tenantId, waId } = run;
-    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
+    if (!(await this.deps.mayAct(tenantId, waId))) {
       // eslint-disable-next-line no-console
       console.log(`workflow ${run.workflowId}: fil repris par un humain ou par MBA pendant l'attente, reprise annulée pour ${waId}`);
       await this.cloreSessionDuRun(tenantId, run.id, 'erreur');
@@ -1026,7 +1025,7 @@ export class WorkflowExecutor {
     let aExecuter = actions;
     let fenetreFermee = false;
     if (reveilleUnAgent || actions.some((e) => aBesoinFenetre(e.action))) {
-      const ouverte = this.deps.isWindowOpen ? await this.deps.isWindowOpen(tenantId, waId) : false;
+      const ouverte = await this.deps.isWindowOpen(tenantId, waId);
       if (!ouverte) {
         fenetreFermee = true;
         aExecuter = actions.filter((e) => !aBesoinFenetre(e.action));
@@ -1046,7 +1045,7 @@ export class WorkflowExecutor {
       // ⚠️ AUCUN AFFECTATAIRE ICI, et ce n est pas un oubli : on n a atteint aucun bloc « passer a un
       // humain », c est la fenetre de 24 h qui s est fermee. Personne n a designe qui doit traiter ce fil.
       // Et AUCUNE ESCALADE : c'est un reveil, le contact n'a rien ecrit et n'attend rien a cet instant.
-      if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
+      await this.deps.escalateToHuman(tenantId, waId, null, false);
       return false;
     }
     // Refus au réveil sans qu'aucun message ne parte : le contact n'a rien reçu. Laisser le run en attente le
@@ -1061,14 +1060,14 @@ export class WorkflowExecutor {
         if (!(await this.ecrireSiVivant(tenantId, run.id, { currentNode: null, status: 'inbox' }))) return false;
         // Remontee SANS bloc « passer a un humain » : pas d affectataire, le fil part au pot commun. Pas
         // d'escalade non plus : au REVEIL, personne n'attend (voir le contrat de `escalateToHuman`).
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
+        await this.deps.escalateToHuman(tenantId, waId, null, false);
         return false;
       }
     }
     // 🔴 SI LE PARCOURS VIT ENCORE. Un autre chemin a pu le clore pendant nos envois (une campagne le fait
     // desormais par destinataire) : ecrire sans regarder le ressusciterait AVEC son echeance.
     if (!(await this.ecrireSiVivant(tenantId, run.id, { ...restToState(rest, this.now()), channel: canal }))) return false;
-    if (rest.status === 'inbox' && this.deps.escalateToHuman) {
+    if (rest.status === 'inbox') {
       await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
@@ -1138,7 +1137,7 @@ export class WorkflowExecutor {
     // session vivante par parcours », et l'échec emporterait tout le réveil. On la réutilise.
     const session = (await this.deps.agentSessions.byRun(tenantId, run.id))
       ?? (await this.deps.agentSessions.open({ tenantId, runId: run.id, agentId, nodeId, waId }));
-    await this.deps.enqueueAgentTurn?.({
+    await this.deps.enqueueAgentTurn({
       tenantId,
       runId: run.id,
       sessionId: session.id,
@@ -1156,15 +1155,15 @@ export class WorkflowExecutor {
    * joignable en RCS ?). C'est ICI, et NULLE PART ailleurs, que cette IO est faite.
    *
    * Envoi réussi -> le run attend une réponse SUR ce bloc, exactement comme après un template.
-   * Non joignable, opt-out, agent absent, canal non câblé, bloc sans texte -> aucun envoi, et on repart
+   * Non joignable, opt-out, agent absent, bloc sans texte -> aucun envoi, et on repart
    * immédiatement par la sortie « non joignable ». Sortie non câblée -> parcours terminé, et surtout JAMAIS
    * la sortie « envoyé » : promettre la suite à un contact qui n'a rien reçu est le pire des deux mondes.
    *
    * Les actions des walks successifs sont ACCUMULÉES : l'appelant les applique en un lot, comme avant.
    */
-  /** L'agent est-il allumé pour ce tenant ? Absent -> false, donc rien ne change. */
+  /** L'agent est-il allumé pour ce tenant ? */
   private async mbaActif(tenantId: string): Promise<boolean> {
-    return this.deps.mbaActifPour ? this.deps.mbaActifPour(tenantId) : false;
+    return this.deps.mbaActifPour(tenantId);
   }
 
   /**
@@ -1173,12 +1172,11 @@ export class WorkflowExecutor {
    * ferait échouer un envoi déjà parti.
    */
   private async rendreLaMainAMba(tenantId: string, waId: string, opts: { transmettre?: string } = {}): Promise<void> {
-    if (!this.deps.releaseToMba) return;
     if (!(await this.mbaActif(tenantId))) return; // gate : aucun appel Meta si l'agent n'est pas allumé
     try {
       await this.deps.releaseToMba(tenantId, waId);
       // APRÈS le release, jamais avant : tant que nous tenons le fil, l'agent de Meta n'a pas la parole.
-      if (opts.transmettre !== undefined && this.deps.transmettreHorsParcours) {
+      if (opts.transmettre !== undefined) {
         await this.deps.transmettreHorsParcours(tenantId, waId, opts.transmettre);
       }
     } catch (err) {
@@ -1209,7 +1207,7 @@ export class WorkflowExecutor {
 
       const nodeId = r.rest.nodeId;
       const brut = rcsOutboundOf(graph.nodes.find((n) => n.id === nodeId));
-      const agentId = this.deps.rcs ? await this.deps.rcs.agentIdFor(tenantId) : null;
+      const agentId = await this.deps.rcs.agentIdFor(tenantId);
       let envoye = false;
       // 🔴 Ce parcours n'est pas qu'un calcul : il ENVOIE, jusqu'à `MAX_RCS_ENCHAINES` messages d'affilée. Une
       // garde posée uniquement dans `apply` aurait donc laissé passer le chemin RCS, qui est justement celui
@@ -1220,7 +1218,7 @@ export class WorkflowExecutor {
         console.warn(`rcs: envoi INTERROMPU pour ${waId} au bloc ${nodeId} (${perduAvantRcs})`);
         return { actions, rest: r.rest, canal };
       }
-      if (this.deps.rcs && agentId && brut) {
+      if (agentId && brut) {
         // Variables `{{prenom}}` du contact. La fiche n'est lue QUE si le message en porte : un bloc sans
         // variable, qui est le cas courant, ne déclenche aucune requête supplémentaire.
         const msg = this.deps.rcs.varsFor && aDesVariables(brut)
@@ -1262,15 +1260,8 @@ export class WorkflowExecutor {
    *
    * Point de passage unique des trois écritures de `resume` : elles avaient chacune leur `setState`
    * inconditionnel, et il aurait fallu poser la garde trois fois, donc l'oublier une fois.
-   *
-   * Repli sur `setState` quand la garde n'est pas câblée (fixtures) : le comportement d'avant, pas une
-   * absence de comportement.
    */
   private async ecrireSiVivant(tenantId: string, runId: string, state: RunState): Promise<boolean> {
-    if (!this.deps.runs.setStateSiVivant) {
-      await this.deps.runs.setState(runId, state);
-      return true;
-    }
     const vivant = await this.deps.runs.setStateSiVivant(tenantId, runId, state);
     if (!vivant) {
       // eslint-disable-next-line no-console
@@ -1324,12 +1315,12 @@ export class WorkflowExecutor {
       // première réponse du contact, qui recevait entre-temps la réponse de l'agent de Meta. Mesuré sur la
       // campagne « test4 ». Échouer ici fait remonter la raison jusqu'au destinataire (`campaign_recipients.error`),
       // qui est le seul endroit où quelqu'un ira la lire.
-      if (this.deps.reclaimControl && (await this.deps.reclaimControl(tenantId, contact.waId)) === false) {
+      if ((await this.deps.reclaimControl(tenantId, contact.waId)) === false) {
         // eslint-disable-next-line no-console
         console.warn(`workflow ${workflowId}: fil NON repris pour ${contact.waId}, run non démarré (l'agent de Meta le tient et Meta a refusé de le rendre)`);
         return "le fil est tenu par l'agent de Meta et Meta a refusé de le rendre : le scénario n'a pas démarré, il aurait été bloqué dès la première réponse du contact.";
       }
-    } else if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, contact.waId))) {
+    } else if (!(await this.deps.mayAct(tenantId, contact.waId))) {
       // eslint-disable-next-line no-console
       console.log(`workflow ${workflowId}: fil détenu par un humain ou par MBA, run non démarré pour ${contact.waId}`);
       return "la conversation est tenue par un opérateur (ou par MBA) : ce déclenchement automatique n'écrit pas dedans. Rends la main depuis l'Inbox pour la rouvrir.";
@@ -1382,7 +1373,7 @@ export class WorkflowExecutor {
      * vérification et un envoi WhatsApp plus loin dans la même liste, les envois d'avant sont partis et le suivant
      * est refusé. Quelques secondes, une fois, pour les parcours qui démarrent à cet instant.
      */
-    if (this.deps.verifierNumeroWhatsApp && envoieParWhatsApp(actions, apresWalk)) {
+    if (envoieParWhatsApp(actions, apresWalk)) {
       await this.deps.verifierNumeroWhatsApp(tenantId);
     }
     const { refus, partis, canal } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true, workflowId, apresWalk);
@@ -1456,7 +1447,7 @@ export class WorkflowExecutor {
     // n'a rien promis, donc rien n'est attendu. La conversation passe quand même à `app_human`, comme avant.
     // ⚠️ Une campagne qui ENVOIE puis passe la main garde son escalade : là, le contact a bien reçu un message
     // et le client a délibérément demandé que l'équipe prenne le relais.
-    if (rest.status === 'inbox' && this.deps.escalateToHuman) {
+    if (rest.status === 'inbox') {
       await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null, partis > 0);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, contact.waId);
@@ -1631,7 +1622,7 @@ export class WorkflowExecutor {
     if (!input.code.startsWith('nod_')) return { ok: false, raison: `code de bloc inconnu : ${input.code}` };
     const cible = graph.nodes.find((n) => String(n.data.code ?? '') === input.code);
     if (!cible) return { ok: false, raison: `code de bloc inconnu : ${input.code}` };
-    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
+    if (!(await this.deps.mayAct(tenantId, waId))) {
       return { ok: false, raison: 'le fil est tenu par quelqu un d autre' };
     }
     const canal: RunChannel = run.channel ?? 'whatsapp';
@@ -1749,10 +1740,6 @@ export class WorkflowExecutor {
      * porteur de bail périmé ne peut plus écrire par-dessus celui qui a repris le tour.
      */
     const ecrire = async (state: RunState): Promise<boolean> => {
-      if (!this.deps.runs.setStateSiEncoreSur) {
-        await this.deps.runs.setState(run.id, state);
-        return true;
-      }
       const ecrit = await this.deps.runs.setStateSiEncoreSur(tenantId, run.id, run.currentNode, state, jeton);
       if (!ecrit) {
         // eslint-disable-next-line no-console
@@ -1778,7 +1765,7 @@ export class WorkflowExecutor {
     // contact, qui n'a aucune raison d'écrire une seconde fois puisqu'il vient d'être servi par quelqu'un
     // d'autre. Un parcours gelé est donc mort en pratique, et le dire est le minimum tant que personne ne
     // le relance.
-    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
+    if (!(await this.deps.mayAct(tenantId, waId))) {
       // eslint-disable-next-line no-console
       console.warn(`workflow ${run.workflowId}: avance GELEE pour ${waId} (run ${run.id}), le fil ne nous appartient pas (opérateur ou Meta Business Agent) sur le bloc ${run.currentNode ?? 'null'} (message ${messageId}) ; le run reste waiting et ne repartira qu'au prochain message du contact`);
       return;
@@ -1867,7 +1854,7 @@ export class WorkflowExecutor {
         // panne, poser le drapeau rendrait le fil COLLANT (l'agent de Meta ne le reprendrait plus jamais) pour
         // rien : le contact vient d'ecrire, donc « A traiter » le porte deja par son `last_direction`.
         const finDeliberee = session?.status === 'sortie';
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, finDeliberee);
+        await this.deps.escalateToHuman(tenantId, waId, null, finDeliberee);
         return;
       }
       // ⚠️ ORDRE : on enfile AVANT de marquer le message consommé, comme partout ailleurs dans ce fichier
@@ -1888,7 +1875,7 @@ export class WorkflowExecutor {
         console.warn(`workflow ${run.workflowId}: tour d'agent NON enfilé pour ${waId} (run ${run.id}) : ${perduAvantTour}`);
         return;
       }
-      await this.deps.enqueueAgentTurn?.({
+      await this.deps.enqueueAgentTurn({
         tenantId,
         runId: run.id,
         sessionId: session.id,
@@ -1953,7 +1940,7 @@ export class WorkflowExecutor {
         // cliquer, donc `last_direction` est ENTRANT et « À traiter » porte déjà cette conversation. Le drapeau
         // n'ajouterait que la collance (le fil ne repartirait plus jamais chez l'agent de Meta), sans rien
         // montrer de plus à l'équipe.
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
+        await this.deps.escalateToHuman(tenantId, waId, null, false);
       } else {
         // (a) : son message part aussi chez l'agent de Meta, qui y répond (réponse « à côté »). 🔴 Seulement un
         // VRAI message WhatsApp : cette branche reçoit aussi une réaction (sa charge porte le message visé) et un
@@ -1977,12 +1964,12 @@ export class WorkflowExecutor {
         // Remontee a l humain sans qu aucun bloc ne l ait demande (envoi refuse, fenetre fermee) : personne
         // n a designe d affectataire, le fil part au pot commun. ⚠️ PAS D'ESCALADE : le contact vient d'ecrire,
         // donc « A traiter » la porte deja par son `last_direction` entrant (meme raison qu'au bouton sans suite).
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
+        await this.deps.escalateToHuman(tenantId, waId, null, false);
         return;
       }
     }
     await ecrire({ ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
-    if (rest.status === 'inbox' && this.deps.escalateToHuman) {
+    if (rest.status === 'inbox') {
       await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true);
     }
     // Chaîne terminée sans attendre de choix : l'agent reprend. `waiting` garde la main (le scénario attend un

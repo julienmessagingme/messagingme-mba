@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ContactsRouteDeps } from '../src/http/contacts';
 import type { ContactHistory, ContactSend, ResumeContact } from '../src/crm/contact-history.pg';
+import { contactsInertes } from './routes-inertes';
 
 /**
  * Route d'historique d'un contact.
@@ -55,6 +56,7 @@ function app(
   resume?: ContactsRouteDeps['getResumeContact'],
 ) {
   const contacts: ContactsRouteDeps = {
+    ...contactsInertes,
     applyEdits: async () => null,
     applyEditsMany: async () => 0,
     listUserFields: async () => [],
@@ -196,15 +198,6 @@ describe('GET /tenants/:t/contacts/:id/bilan', () => {
     await a.close();
   });
 
-  it('câblage absent -> 503, et l’historique continue de répondre', async () => {
-    // C'est tout l'intérêt des deux routes : une instance sans jeton Meta ne peut pas chiffrer, et la fiche
-    // contact doit quand même s'ouvrir.
-    const a = app(known);
-    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/bilan', ...h(adminTok) })).statusCode).toBe(503);
-    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/history', ...h(adminTok) })).statusCode).toBe(200);
-    await a.close();
-  });
-
   it('tenant croisé -> 403', async () => {
     const a = app(known, undefined, async () => BILAN);
     expect((await a.inject({ method: 'GET', url: '/tenants/AUTRE/contacts/c1/bilan', ...h(adminTok) })).statusCode).toBe(403);
@@ -284,15 +277,6 @@ describe('GET /tenants/:t/contacts/:id/resume', () => {
   it('sans jeton -> 401', async () => {
     const a = app(known, undefined, undefined, async () => RESUME);
     expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/resume' })).statusCode).toBe(401);
-    await a.close();
-  });
-
-  it('cablage absent -> 503, et la fiche continue de s’ouvrir', async () => {
-    // Une instance en retard ne sert pas cette route ; l'ecran n'affiche alors pas le bloc, et le reste de
-    // la fiche repond normalement. C'est le meme arbitrage que pour le bilan.
-    const a = app(known);
-    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/resume', ...h(adminTok) })).statusCode).toBe(503);
-    expect((await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/history', ...h(adminTok) })).statusCode).toBe(200);
     await a.close();
   });
 });

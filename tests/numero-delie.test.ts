@@ -20,6 +20,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
 import { jamaisDesabonne } from './consentement';
+import { inboxInerte } from './routes-inertes';
 
 /**
  * LE NUMÉRO DÉLIÉ (migration 0180, bloc « Canaux et services » de l'Accueil) : les trois effets qui se tiennent
@@ -443,6 +444,7 @@ describe('une réponse d’Inbox depuis un numéro délié', () => {
   it('🔴 409 avec la phrase, jamais un 500 opaque, et rien n’est enregistré comme parti', async () => {
     const traces: string[] = [];
     const deps: InboxRouteDeps = {
+      ...inboxInerte,
       estDesabonne: jamaisDesabonne,
       listConversations: async () => [],
       getConversationContext: async () => ({ waId: '33611', windowOpen: true, lastInboundAt: '2026-09-25T00:00:00.000Z' }),

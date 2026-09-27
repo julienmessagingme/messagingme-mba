@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { HubspotServiceError } from '../crm/hubspot-service';
 import type { HubspotDealPipeline } from '../crm/hubspot-service';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 
 export interface HubspotPipelinesRouteDeps {
   /**
@@ -30,8 +30,7 @@ export function registerHubspotPipelines(app: FastifyInstance, deps: HubspotPipe
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/hubspot/deal-stages', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     try {
       return reply.code(200).send({ connected: true, pipelines: await deps.fetchDealStages(tenant) });
     } catch (err) {

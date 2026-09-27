@@ -5,6 +5,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
+import { inboxInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -21,6 +22,7 @@ function app(over: Partial<InboxRouteDeps> = {}, windowOpen = false) {
   const journal: Journal = [];
   const priseDeControle: string[] = [];
   const deps: InboxRouteDeps = {
+    ...inboxInerte,
     estDesabonne: jamaisDesabonne,
     listConversations: async () => [],
     getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen, lastInboundAt: null } : null),
@@ -111,13 +113,6 @@ describe('Envoyer un RCS depuis l inbox', () => {
     await a.close();
   });
 
-  it('repond 422 quand le canal RCS n est pas cable du tout', async () => {
-    const { a } = app({ sendRcsFromInbox: undefined });
-    const r = await a.inject(envoi());
-    expect(r.statusCode).toBe(422);
-    await a.close();
-  });
-
   it('exige un message de la bibliotheque', async () => {
     const { a, journal } = app();
     expect((await a.inject(envoi({}))).statusCode).toBe(400);
@@ -176,14 +171,6 @@ describe('Variables d un template resolues pour la conversation', () => {
     const r = await a.inject({ method: 'GET', url, ...auth() });
     expect(r.statusCode).toBe(200);
     expect(r.json()).toEqual({ values: ['Julien', 'Lyon'], labels: ['prenom', 'ville'] });
-    await a.close();
-  });
-
-  it('rend du VIDE plutot qu une erreur quand la resolution n est pas cablee', async () => {
-    const { a } = app({ resolveTemplateParams: undefined });
-    const r = await a.inject({ method: 'GET', url, ...auth() });
-    expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ values: [], labels: [] });
     await a.close();
   });
 

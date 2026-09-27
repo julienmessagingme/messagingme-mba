@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from '../consentement';
+import { depsInertes } from '../executeur-inerte';
 import { grilleDepuisLigne } from '../../src/stats/prix';
 import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -1676,6 +1677,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
     const sends: string[] = [];
     const ex = new WorkflowExecutor({
+      ...depsInertes,
       estDesabonne: jamaisDesabonne,
       runs: runStore,
       getGraph: async (id, t) => (await wfStore.getById(id, t))?.graph ?? null,

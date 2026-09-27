@@ -1,9 +1,10 @@
-import { gardeOuverte } from './gardes';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import Fastify from 'fastify';
 import { registerHistorique, LIGNES_HISTORIQUE_PAR_DEFAUT } from '../src/http/historique';
+import { monterAvecEtapeEspace } from '../src/http/scope';
+import { makeRequireRole } from '../src/auth/middleware';
 import { MAX_LIGNES_HISTORIQUE, type FiltreHistorique, type LigneHistoriqueLue } from '../src/reglages/historique';
 
 /**
@@ -24,6 +25,13 @@ const ligne = (sur: Partial<LigneHistoriqueLue> = {}): LigneHistoriqueLue => ({
   at: '2026-09-15T08:00:00.000Z', ...sur,
 });
 
+/**
+ * ⚠️ LA GARDE DE RÔLE EST CELLE DE LA PRODUCTION, et plus une garde ouverte. La route reposait son propre
+ * `forbidNonAdmin` ; il a été retiré le 2026-09-26 (lot 3 de l'audit ponytail), le module étant monté sur
+ * `g.admin`, c'est-à-dire `[requireAuth, makeRequireRole(['admin'])]`. L'identité est posée par le hook
+ * ci-dessous (qui tient lieu de `requireAuth`), le rôle est vérifié par la VRAIE garde. Que le registre
+ * monte bien ce module sur `g.admin`, c'est `tests/role-admin.test.ts` qui le prouve.
+ */
 function monter(opts: { role?: string; tenantId?: string; lignes?: LigneHistoriqueLue[] } = {}) {
   const vus: FiltreHistorique[] = [];
   const app = Fastify();
@@ -32,12 +40,12 @@ function monter(opts: { role?: string; tenantId?: string; lignes?: LigneHistoriq
       userId: 'u1', tenantId: opts.tenantId ?? 't1', role: opts.role ?? 'admin',
     };
   });
-  registerHistorique(app, {
+  monterAvecEtapeEspace(app, () => registerHistorique(app, {
     historique: {
       ecrire: async () => {},
       lister: async (_t, f) => { vus.push(f); return opts.lignes ?? [ligne()]; },
     },
-  }, gardeOuverte);
+  }, makeRequireRole(['admin'])));
   return { app, vus };
 }
 
@@ -50,6 +58,7 @@ describe('le contrôle d’accès', () => {
     const m = monter({ role: 'agent' });
     const r = await lire(m.app, 'surface=mba');
     expect(r.statusCode).toBe(403);
+    expect(r.json()).toEqual({ error: 'action réservée aux administrateurs' });
     expect(m.vus).toEqual([]);
   });
 

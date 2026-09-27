@@ -4,10 +4,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import Fastify from 'fastify';
 import { registerAgentKnowledge, type AgentKnowledgeRouteDeps } from '../src/http/agent-knowledge';
+import { monterAvecEtapeEspace } from '../src/http/scope';
 import { registerAgentSetup, type AgentSetupRouteDeps } from '../src/http/agent-setup';
 import { ENTRETIEN_VIERGE, type EntretienComplet } from '../src/agent/setup/entretien-store';
 import { ficheVide } from '../src/agent/fiche';
 import type { FicheConnaissance } from '../src/agent/knowledge';
+import { assistantAgentInerte, connaissanceInerte } from './routes-inertes';
 
 /**
  * L'HISTORIQUE CÔTÉ AGENT IA.
@@ -37,6 +39,8 @@ function monterConnaissance(opts: { sansJournal?: boolean } = {}) {
   let base = [fiche(F1, 'Horaires'), fiche(F2, 'Livraisons')];
 
   const deps: AgentKnowledgeRouteDeps = {
+    // `sansJournal` : la valeur inerte, un journal muet (la dépendance est requise depuis le lot 3 de l'audit ponytail).
+    ...connaissanceInerte,
     lister: async () => base,
     creer: async () => null,
     modifier: async () => null,
@@ -56,7 +60,7 @@ function monterConnaissance(opts: { sansJournal?: boolean } = {}) {
   app.addHook('preHandler', async (req) => {
     (req as { auth?: unknown }).auth = { userId: 'u1', tenantId: 't1', role: 'admin' };
   });
-  registerAgentKnowledge(app, deps, gardeOuverte);
+  monterAvecEtapeEspace(app, () => registerAgentKnowledge(app, deps, gardeOuverte));
   return { app, lignes, reste: () => base };
 }
 
@@ -97,8 +101,8 @@ describe('la suppression d’une fiche', () => {
     expect(m.lignes).toEqual([]);
   });
 
-  it('⚠️ sans journal, la suppression marche quand même', async () => {
-    // Une instance sans historique doit continuer de fonctionner : un journal manquant n'est pas une panne.
+  it('⚠️ journal muet, la suppression marche quand même', async () => {
+    // Un journal qui n'écrit rien n'est pas une panne : la suppression ne dépend pas de lui.
     const m = monterConnaissance({ sansJournal: true });
     expect((await m.app.inject({ method: 'DELETE', url: urlFiche(F1) })).statusCode).toBe(204);
     expect(m.reste().map((f) => f.id)).toEqual([F2]);
@@ -108,6 +112,8 @@ describe('la suppression d’une fiche', () => {
 function monterSetup(opts: { entretien?: EntretienComplet; emails?: Record<string, string>; sansResolveur?: boolean } = {}) {
   let appels = 0;
   const deps = {
+    // `sansResolveur` : la valeur inerte, qui ne résout aucune adresse (requise depuis le lot 3 de l'audit ponytail).
+    ...assistantAgentInerte,
     etatCourant: async () => ({
       label: 'Agent', mentionIaFrequence: 'session' as const, inactiviteMinutes: 30,
       fiche: { ...ficheVide(), objectif: 'Aider.' }, outils: [], titresConnaissance: [],
@@ -127,7 +133,7 @@ function monterSetup(opts: { entretien?: EntretienComplet; emails?: Record<strin
   app.addHook('preHandler', async (req) => {
     (req as { auth?: unknown }).auth = { userId: 'u1', tenantId: 't1', role: 'admin' };
   });
-  registerAgentSetup(app, deps, gardeOuverte);
+  monterAvecEtapeEspace(app, () => registerAgentSetup(app, deps, gardeOuverte));
   return { app, appels: () => appels };
 }
 
@@ -160,7 +166,7 @@ describe('l’auteur du fil', () => {
     expect(m.appels()).toBe(0);
   });
 
-  it('⚠️ sans résolveur, l’écran s’ouvre quand même', async () => {
+  it('⚠️ un résolveur qui ne connaît personne, l’écran s’ouvre quand même', async () => {
     const m = monterSetup({ entretien: fil([{ role: 'user', content: 'x' }], ['u1']), sansResolveur: true });
     const r = await m.app.inject({ method: 'GET', url: `/tenants/t1/agents/${AG}/setup` });
     expect(r.statusCode).toBe(200);

@@ -4,6 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { SignJWT } from 'jose';
 import { signSession, verifySession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
+import { inboxInerte, opsInerte } from './routes-inertes';
 
 /**
  * Session d'OBSERVATION : entrer dans l'espace d'un client depuis la surface d'exploitation, pour voir ce
@@ -28,6 +29,7 @@ function app(over: Record<string, unknown> = {}) {
     auth: { users: noUsers, secret: SECRET },
     opsToken: OPS,
     ops: {
+      ...opsInerte,
       getTenantOverview: async () => [],
       getGlobalDaily: async () => [],
       getQueueLoad: async () => [],
@@ -39,6 +41,7 @@ function app(over: Record<string, unknown> = {}) {
     },
     // Une route de LECTURE et une route d'ÉCRITURE, pour éprouver les deux côtés de la garde.
     inbox: {
+      ...inboxInerte,
       listConversations: async () => [],
       getConversationContext: async () => ({ waId: '33611', windowOpen: true, lastInboundAt: null }),
       getMessages: async () => [],
@@ -96,13 +99,6 @@ describe('POST /ops/observe : ouvrir la porte', () => {
     const a = app({ observerTenant: async (t: string) => { vus.push(t); return null; } });
     expect((await a.inject({ method: 'POST', url: '/ops/observe', ...avecOps(OPS), payload: { tenantId: 'nope' } })).statusCode).toBe(404);
     expect(vus).toEqual([]);
-    await a.close();
-  });
-
-  it('la route n’est PAS montée si la capacité n’est pas câblée', async () => {
-    // Une instance qui n'a pas explicitement câblé cette capacité ne doit pas l'exposer.
-    const a = app({ observerTenant: undefined });
-    expect((await a.inject({ method: 'POST', url: '/ops/observe', ...avecOps(OPS), payload: { tenantId: CONNU } })).statusCode).toBe(503);
     await a.close();
   });
 });

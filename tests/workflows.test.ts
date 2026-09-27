@@ -4,9 +4,10 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { WorkflowRouteDeps } from '../src/http/workflows';
-import type { WorkflowRow } from '../src/workflow/store.pg';
+import type { WorkflowResumeRow, WorkflowRow } from '../src/workflow/store.pg';
 import { WorkflowUtiliseParLienChaine } from '../src/workflow/store.pg';
 import { aucunePubliciteUtilise } from './pubs-fixtures';
+import { scenariosInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 // Un identifiant qui a la FORME d'un uuid : les routes refusent desormais en 404 ce qui n'en est pas un,
@@ -30,6 +31,13 @@ const sampleRow = (over: Partial<WorkflowRow> = {}): WorkflowRow => ({
   createdAt: '2026-07-13T00:00:00.000Z', updatedAt: '2026-07-13T00:00:00.000Z', ...over,
 });
 
+/** Le résumé que la liste sert (requis depuis le lot 3 de l'audit ponytail) : la ligne de `sampleRow`, sans graphe. */
+const resumeW1: WorkflowResumeRow = {
+  id: W1, tenantId: 't1', name: 'Onboarding', code: null,
+  createdAt: '2026-07-13T00:00:00.000Z', updatedAt: '2026-07-13T00:00:00.000Z', publishedAt: null,
+  nodeCount: 1, hasDraft: false, campaignEligible: true, canalOuverture: 'whatsapp',
+};
+
 function app(over: Partial<WorkflowRouteDeps> = {}) {
   const cap = {
     created: [] as Array<{ name: string; graph: unknown }>, updated: [] as Array<{ id: string; patch: unknown }>,
@@ -37,10 +45,12 @@ function app(over: Partial<WorkflowRouteDeps> = {}) {
     journal: [] as Array<{ action: string; userId: string | null; target: string }>,
   };
   const deps: WorkflowRouteDeps = {
+    ...scenariosInertes,
     createWorkflow: async (_t, name, graph) => { cap.created.push({ name, graph }); return { id: 'wNew' }; },
     tenantCode: async () => 'k7m2p3',
     publicitesQuiUtilisent: aucunePubliciteUtilise,
     listWorkflows: async () => [sampleRow()],
+    listWorkflowsResume: async () => [resumeW1],
     getWorkflow: async (id) => (id === W1 ? sampleRow() : null),
     updateWorkflow: async (id, _t, patch) => { cap.updated.push({ id, patch }); return { trouve: id === W1, brouillon: true }; },
     publishWorkflow: async (id) => { cap.publies.push(id); return id === W1 ? sampleRow({ publishedAt: '2026-09-01T10:00:00.000Z' }) : null; },
@@ -392,13 +402,6 @@ describe('POST /tenants/:t/workflows/:id/publish', () => {
     await server.close();
   });
 
-  it('instance sans store de publication -> 503, pas un 500', async () => {
-    const { server } = app({ publishWorkflow: undefined });
-    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/publish`, ...h(adminTok), payload: {} });
-    expect(res.statusCode).toBe(503);
-    await server.close();
-  });
-
   it('le PATCH dit s’il reste un brouillon à publier : c’est lui qui allume le bouton', async () => {
     const { server } = app();
     const avec = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: validGraph } });
@@ -432,15 +435,6 @@ describe('GET /workflows : le RÉSUMÉ, jamais les graphes', () => {
     // La preuve qui compte : aucun graphe dans la charge utile.
     expect(w).not.toHaveProperty('graph');
     expect(w).not.toHaveProperty('draftGraph');
-    await server.close();
-  });
-
-  it('sans résumé câblé, la route retombe sur l’ancien comportement', async () => {
-    // Rétro-compatibilité assumée : une instance qui ne câble pas le résumé continue de servir les graphes,
-    // et rien ne casse. C'est ce qui permet aux câblages de test de ne rien changer.
-    const { server } = app({});
-    const res = await server.inject({ method: 'GET', url: '/tenants/t1/workflows', ...h(adminTok) });
-    expect(res.json<{ workflows: Array<Record<string, unknown>> }>().workflows[0]).toHaveProperty('graph');
     await server.close();
   });
 });

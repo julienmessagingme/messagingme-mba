@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { OutilBibliotheque } from '../agent/catalog';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 
 /**
  * La BIBLIOTHÈQUE d'outils d'un espace (migration 0127) : les connecteurs que les agents IA peuvent brancher.
@@ -30,8 +30,7 @@ export function registerAgentCatalogue(app: FastifyInstance, deps: AgentCatalogu
   const base = '/tenants/:tenantId/agent-tools';
 
   app.get(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ outils: await deps.listCatalogue(tenant) });
   });
 }

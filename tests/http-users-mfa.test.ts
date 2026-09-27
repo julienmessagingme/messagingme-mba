@@ -7,6 +7,7 @@ import type { UsersRouteDeps } from '../src/http/users';
 import type { OpsRouteDeps } from '../src/http/ops';
 import type { AuditSink } from '../src/audit/journal';
 import { MfaEnMemoire } from './mfa';
+import { membresInertes } from './routes-inertes';
 
 /**
  * RÉINITIALISER LE SECOND FACTEUR D'UN MEMBRE (plan du 2026-09-25, tâche 6), par un admin de l'espace, et par
@@ -32,6 +33,7 @@ function app() {
   const journal: Array<{ tenant: string; action: string; target: string; acteur: string | null }> = [];
   const audit: AuditSink = async (tenant, actor, action, target) => { journal.push({ tenant, action, target: target.id, acteur: actor.userId }); };
   const deps: UsersRouteDeps = {
+    ...membresInertes,
     audit,
     listUsers: async () => [],
     setUserRole: async () => 'ok',

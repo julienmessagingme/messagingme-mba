@@ -29,9 +29,9 @@ export type ScopeMcp = 'mcp:read' | 'mcp:write';
 export interface DepsMcp extends DepsRepondre {
   listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
   getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
-  getControlOwner?(tenantId: string, waId: string): Promise<ControlOwner>;
-  getAssignee?(tenantId: string, conversationId: string): Promise<string | null | undefined>;
-  setAssignee?(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
+  getControlOwner(tenantId: string, waId: string): Promise<ControlOwner>;
+  getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
+  setAssignee(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
   /** Recherche de contacts (le même moteur de filtres que le mini-CRM). */
   chercherContacts(tenantId: string, filtres: ContactFilters, limit: number, offset: number): Promise<ContactRow[]>;
   contactParTelephone(tenantId: string, phoneE164: string): Promise<ContactRow | null>;
@@ -168,8 +168,8 @@ export const OUTILS: OutilMcp[] = [
       const id = texteObligatoire(args, 'conversation_id', 100);
       const ctx = await contexteOuRefus(deps, tenantId, id);
       const [owner, assignee] = await Promise.all([
-        deps.getControlOwner?.(tenantId, ctx.waId) ?? Promise.resolve(undefined),
-        deps.getAssignee?.(tenantId, id) ?? Promise.resolve(undefined),
+        deps.getControlOwner(tenantId, ctx.waId),
+        deps.getAssignee(tenantId, id),
       ]);
       return {
         conversation_id: id,
@@ -381,7 +381,6 @@ export const OUTILS: OutilMcp[] = [
     },
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
-      if (!deps.setAssignee) throw new RefusOutil('affectation indisponible sur cette instance');
       const brut = args.member_id;
       // `null` explicite = libérer. Toute autre forme qu'une chaîne non vide est refusée : une valeur
       // bancale ne doit pas se traduire par une libération silencieuse, qui rouvre le fil à tout le monde.

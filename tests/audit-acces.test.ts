@@ -1,12 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { registerUsers } from '../src/http/users';
+import { monterAvecEtapeEspace } from '../src/http/scope';
 import { registerApiKeys } from '../src/http/api-keys';
 import { registerWebhooksAdmin } from '../src/http/webhooks-admin';
 import { registerAgentSources } from '../src/http/agent-sources';
 import type { AuditSink } from '../src/audit/journal';
 import { detailSansDonneesPersonnelles, PgAuditStore } from '../src/audit/store.pg';
 import type { PreHandler } from '../src/auth/middleware';
+import { membresInertes } from './routes-inertes';
 
 /**
  * LE JOURNAL D'AUDIT COUVRE LES ACCÈS (lot 1 du plan `2026-09-15-audit-des-actions-sensibles.md`).
@@ -44,7 +46,8 @@ const gardeQuiPose: PreHandler = async (req) => {
 /** Une app montée avec cette garde : ce qu'on éprouve est le journal, pas l'authentification. */
 async function appUsers(audit: AuditSink) {
   const app = Fastify();
-  registerUsers(app, {
+  monterAvecEtapeEspace(app, () => registerUsers(app, {
+    ...membresInertes,
     audit,
     listUsers: async () => [],
     setUserRole: async () => 'ok',
@@ -52,7 +55,7 @@ async function appUsers(audit: AuditSink) {
     deleteUser: async () => 'ok',
     createPendingUser: async () => ({ id: 'u-neuf', email: 'x@y.z', role: 'agent', tenantId: 't1', disabled: false, name: null, createdAt: new Date().toISOString(), lastLoginAt: null }) as never,
     createInviteToken: async () => 'jeton',
-  }, gardeQuiPose);
+  }, gardeQuiPose));
   await app.ready();
   return app;
 }
@@ -100,13 +103,14 @@ describe('les actions sur les COMPTES laissent une trace', () => {
      */
     const h = harnais();
     const app = Fastify();
-    registerUsers(app, {
+    monterAvecEtapeEspace(app, () => registerUsers(app, {
+      ...membresInertes,
       audit: h.audit,
       listUsers: async () => [],
       setUserRole: async () => 'last_admin',
       setUserDisabled: async () => 'not_found',
       deleteUser: async () => 'last_admin',
-    }, gardeQuiPose);
+    }, gardeQuiPose));
     await app.ready();
     expect((await app.inject({ method: 'PATCH', url: '/tenants/t1/users/u2/role', payload: { role: 'agent' } })).statusCode).toBe(409);
     expect((await app.inject({ method: 'PATCH', url: '/tenants/t1/users/u2/disabled', payload: { disabled: true } })).statusCode).toBe(404);
@@ -118,12 +122,12 @@ describe('les actions sur les COMPTES laissent une trace', () => {
 describe('les CLÉS D’API laissent une trace', () => {
   async function appCles(audit: AuditSink, revoqueOk = true) {
     const app = Fastify();
-    registerApiKeys(app, {
+    monterAvecEtapeEspace(app, () => registerApiKeys(app, {
       audit,
       createKey: async () => ({ id: 'k1', key: 'mm_secret_en_clair' }),
       listKeys: async () => [],
       revokeKey: async () => revoqueOk,
-    }, gardeQuiPose);
+    }, gardeQuiPose));
     await app.ready();
     return app;
   }
@@ -168,7 +172,7 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
   it('🔴 créer un webhook est tracé, sans son CODE : le code EST le secret de l’adresse', async () => {
     const h = harnais();
     const app = Fastify();
-    registerWebhooksAdmin(app, {
+    monterAvecEtapeEspace(app, () => registerWebhooksAdmin(app, {
       audit: h.audit,
       baseUrl: 'https://api.exemple.test',
       list: async () => [], get: async () => null,
@@ -177,7 +181,7 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
       rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
       forgetPayload: async () => true,
       workflowBelongsToTenant: async () => true,
-    } as never, gardeQuiPose);
+    } as never, gardeQuiPose));
     await app.ready();
     const r = await app.inject({ method: 'POST', url: '/tenants/t1/webhooks', payload: { name: 'Zapier' } });
     expect(r.statusCode).toBe(201);
@@ -189,13 +193,13 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
   it('🔴 poser puis retirer le secret d’un webhook donne DEUX lignes distinguables', async () => {
     const h = harnais();
     const app = Fastify();
-    registerWebhooksAdmin(app, {
+    monterAvecEtapeEspace(app, () => registerWebhooksAdmin(app, {
       audit: h.audit, baseUrl: 'https://api.exemple.test',
       list: async () => [], get: async () => null,
       create: async () => ({ id: 'w1', code: 'c' }), update: async () => true, remove: async () => true,
       rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
       forgetPayload: async () => true, workflowBelongsToTenant: async () => true,
-    } as never, gardeQuiPose);
+    } as never, gardeQuiPose));
     await app.ready();
     await app.inject({ method: 'POST', url: '/tenants/t1/webhooks/w1/secret' });
     await app.inject({ method: 'DELETE', url: '/tenants/t1/webhooks/w1/secret' });
@@ -213,14 +217,14 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
      */
     const h = harnais();
     const app = Fastify();
-    registerAgentSources(app, {
+    monterAvecEtapeEspace(app, () => registerAgentSources(app, {
       audit: h.audit,
       lister: async () => [],
       parId: async () => ({ id: 's1', baseUrl: 'https://crm.client.fr/v1/secret-path', authKind: 'bearer', authHeaderName: null, aAuthentification: true, outilsActifs: 0 }) as never,
       creer: async () => ({ id: 's1' }) as never,
       patch: async () => ({ id: 's1' }) as never,
       supprimer: async () => true,
-    } as never, gardeQuiPose);
+    } as never, gardeQuiPose));
     await app.ready();
     const r = await app.inject({
       method: 'POST', url: '/tenants/t1/agent-sources',

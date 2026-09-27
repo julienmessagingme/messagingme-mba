@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from './consentement';
+import { aucunJetonRcs, avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect } from 'vitest';
 import { parseGraph } from '../src/workflow/graph';
 import type { WorkflowGraph } from '../src/workflow/graph';
@@ -47,6 +48,7 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
   const quickWhatsApp: string[] = [];
   const fil: Array<{ body: string; messageId: string }> = [];
   const deps: WorkflowExecutorDeps = {
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
     getGraph: async () => graph,
     applyTag: async (_t, _w, tag) => {
@@ -62,7 +64,7 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
     sendFlow: async () => {},
     sendQuestion: async () => {},
     now: () => 1_000,
-    runs: {
+    runs: avecGardesDEtatInertes({
       start: async (_tenantId: string, _workflowId: string, _waId: string, _contactId: string | null, state: RunState) => {
         etats.push({ ...state });
         return { id: 'run-1' };
@@ -75,9 +77,9 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
       findWaitingByWaId: async () => (enAttenteSur
         ? { id: 'run-1', tenantId: 't1', workflowId: 'w1', waId: '33600000002', currentNode: enAttenteSur, status: 'waiting' as const, lastMessageId: null, channel: canal, grapheFige: null }
         : null),
-    },
+    }),
     ...(avecRcs
-      ? { rcs: { sender: rcsSender, agentIdFor: async () => 'agent-1', recordOutbound: async (_t: string, _w: string, m: { body: string; messageId: string }) => { fil.push(m); }, ...(vars ? { varsFor: async () => vars } : {}) } }
+      ? { rcs: { sender: rcsSender, agentIdFor: async () => 'agent-1', recordOutbound: async (_t: string, _w: string, m: { body: string; messageId: string }) => { fil.push(m); }, jetonPour: aucunJetonRcs, ...(vars ? { varsFor: async () => vars } : {}) } }
       : {}),
   };
   return { provider, deps, etats, tags, templates, quickWhatsApp, fil, executor: new WorkflowExecutor(deps) };
@@ -447,7 +449,7 @@ describe('bloc RCS a l execution', () => {
       sendFlow: async () => 'fenêtre de 24 h fermée (131047)',
       sendQuestion: async () => 'fenêtre de 24 h fermée (131047)',
       escalateToHuman: async (_t, waId) => { remontees.push(waId); },
-      runs: { ...deps.runs, setState: async (_id, state) => { etats.push({ ...state }); } },
+      runs: avecGardesDEtatInertes({ ...deps.runs, setState: async (_id, state) => { etats.push({ ...state }); } }),
     });
     await executor.rcsDelivered('t1', '33600000002', 'msg-2');
     expect(remontees).toEqual(['33600000002']);

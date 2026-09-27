@@ -21,9 +21,9 @@ export interface RcsCallbackRouteDeps {
   onMo(tenantId: string, mo: RcsMo): Promise<void>;
   /**
    * Garde le dernier corps reçu, AVANT toute tentative de lecture. Best-effort : une trace ratée ne doit pas
-   * faire perdre le rappel lui-même. Optionnelle (câblages de test).
+   * faire perdre le rappel lui-même.
    */
-  noterRappel?(tenantId: string, corps: unknown): Promise<void>;
+  noterRappel(tenantId: string, corps: unknown): Promise<void>;
 }
 
 /**
@@ -112,12 +112,10 @@ export function registerRcsCallback(
     const payload = req.body;
     // Tracé AVANT d'essayer de le comprendre : c'est ce corps-là qu'on voudra lire le jour où notre lecture
     // se trompe, et c'est exactement ce qui a manqué le 2026-08-24. Best-effort, jamais bloquant.
-    if (deps.noterRappel) {
-      await deps.noterRappel(canal.tenantId, payload).catch((err: unknown) => {
-        // eslint-disable-next-line no-console
-        console.error('trace du rappel RCS ignorée:', messageDe(err));
-      });
-    }
+    await deps.noterRappel(canal.tenantId, payload).catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error('trace du rappel RCS ignorée:', messageDe(err));
+    });
     const estRapport = estDlr(payload);
     const evenement = estRapport ? parseRcsDlr(payload) : parseRcsMo(payload);
     // Corps illisible : 200 (cf. en-tête). On le journalise, sinon un rappel qui n'arrive « nulle part » est

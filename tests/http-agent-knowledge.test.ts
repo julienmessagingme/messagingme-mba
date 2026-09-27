@@ -7,6 +7,7 @@ import type { AgentKnowledgeRouteDeps } from '../src/http/agent-knowledge';
 import type { FicheAEcrire, FicheConnaissance } from '../src/agent/knowledge';
 import type { PageDistante } from '../src/lib/page-distante';
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE } from '../src/agent/scrape';
+import { connaissanceInerte } from './routes-inertes';
 
 /**
  * Routes de la base de connaissance d'un agent IA.
@@ -49,6 +50,7 @@ function app(page?: PageDistante | Error) {
     lues: [] as string[],
   };
   const deps: AgentKnowledgeRouteDeps = {
+    ...connaissanceInerte,
     lister: async (tenant, agentId) => { cap.listes.push({ tenant, agentId }); return [FICHE]; },
     creer: async (tenant, agentId, fiche) => {
       cap.crees.push({ tenant, agentId, fiche });
@@ -225,6 +227,7 @@ describe('base de connaissance : import d’une page', () => {
     const srv = buildServer({
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
       agentKnowledge: {
+        ...connaissanceInerte,
         lister: async () => [], creer: async () => null, modifier: async () => null,
         supprimer: async () => false, remplacerSource: async () => null,
       },
@@ -249,6 +252,7 @@ describe('base de connaissance : parcourir un site (crawl)', () => {
     const lues: string[] = [];
     const remplacements: string[] = [];
     const deps: AgentKnowledgeRouteDeps = {
+      ...connaissanceInerte,
       lister: async () => [FICHE],
       creer: async () => FICHE,
       modifier: async () => FICHE,

@@ -2,19 +2,18 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { isUserFieldType, isSystemFieldKey, isReservedFieldLabel, slugify } from '../crm/fields';
 import type { UserFieldDef, UserFieldType } from '../crm/types';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 
 export interface FieldsRouteDeps {
   listFields(tenantId: string): Promise<UserFieldDef[]>;
-  /** Code client racine (optionnel) : renvoyé au GET pour que le front calcule les codes des champs SYSTÈME
-   *  (`fld_<client>_sys_<key>`, déterministes, pas de ligne DB). Absent -> réponse sans tenantCode (rétro-compatible). */
-  tenantCode?(tenantId: string): Promise<string>;
+  /** Code client racine : renvoyé au GET pour que le front calcule les codes des champs SYSTÈME
+   *  (`fld_<client>_sys_<key>`, déterministes, pas de ligne DB). Vide -> réponse sans tenantCode. */
+  tenantCode(tenantId: string): Promise<string>;
   createField(tenantId: string, def: UserFieldDef): Promise<'created' | 'exists'>;
   updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean>;
   deleteField(tenantId: string, key: string): Promise<boolean>;
-  /** Combien de fiches ont chaque champ rempli. Optionnelle : absente, la route répond un relevé vide
-   *  plutôt qu'une erreur, et le sélecteur se contente de ne rien afficher. */
-  fieldUsage?(tenantId: string): Promise<{ total: number; parChamp: Record<string, number> }>;
+  /** Combien de fiches ont chaque champ rempli. Un relevé vide : le sélecteur se contente de ne rien afficher. */
+  fieldUsage(tenantId: string): Promise<{ total: number; parChamp: Record<string, number> }>;
 }
 
 /**
@@ -31,24 +30,20 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
    * DÉCLARÉE AVANT `/user-fields/:key` : « usage » n'est pas une clé de champ.
    */
   app.get('/tenants/:tenantId/user-fields/usage', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.fieldUsage) return reply.code(200).send({ total: 0, parChamp: {} });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send(await deps.fieldUsage(tenant));
   });
 
   app.get('/tenants/:tenantId/user-fields', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const fields = await deps.listFields(tenant);
-    const tenantCode = deps.tenantCode ? await deps.tenantCode(tenant) : undefined;
+    const tenantCode = await deps.tenantCode(tenant);
     return reply.code(200).send({ fields, ...(tenantCode ? { tenantCode } : {}) });
   });
 
   // Créer un champ perso : la clé est dérivée du libellé (slug). 409 si la clé existe déjà.
   app.post('/tenants/:tenantId/user-fields', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { label?: unknown; type?: unknown };
     if (!nonEmpty(b.label)) return reply.code(400).send({ error: 'label requis' });
     if (typeof b.type !== 'string' || !isUserFieldType(b.type)) return reply.code(400).send({ error: 'type invalide (text|number|date|datetime|boolean|url)' });
@@ -62,8 +57,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
   });
 
   app.patch('/tenants/:tenantId/user-fields/:key', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { key } = req.params as { key: string };
     if (isSystemFieldKey(key)) return reply.code(403).send({ error: 'champ système (non modifiable)' });
     const b = (req.body ?? {}) as { label?: unknown; type?: unknown };
@@ -86,8 +80,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
   });
 
   app.delete('/tenants/:tenantId/user-fields/:key', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { key } = req.params as { key: string };
     if (isSystemFieldKey(key)) return reply.code(403).send({ error: 'champ système (non supprimable)' });
     const ok = await deps.deleteField(tenant, key);

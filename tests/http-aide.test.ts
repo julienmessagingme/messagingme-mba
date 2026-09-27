@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { registerAide } from '../src/http/aide';
+import { monterAvecEtapeEspace } from '../src/http/scope';
 import type { QuestionAide, ReponseAide } from '../src/aide/repondre';
+import { aideInerte } from './routes-inertes';
 
 /**
  * LA ROUTE DU BOT D'AIDE.
@@ -26,7 +28,7 @@ function app(over: { repondre?: (q: QuestionAide) => Promise<ReponseAide> } = {}
   const garde = async (req: { auth?: unknown }): Promise<void> => {
     if (auth) (req as { auth?: unknown }).auth = { tenantId: auth.tenantId, userId, role: auth.role };
   };
-  registerAide(server, over.repondre ? { repondre: over.repondre } : {}, garde as never);
+  monterAvecEtapeEspace(server, () => registerAide(server, { ...aideInerte, ...(over.repondre ? { repondre: over.repondre } : {}) }, garde as never));
   return Object.assign(server, { changerUtilisateur: (u: string) => { userId = u; } });
 }
 

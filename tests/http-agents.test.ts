@@ -9,6 +9,14 @@ import { capturerJournal } from './journal';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from '../src/agent/agent-store';
 import { ficheVide } from '../src/agent/fiche';
+import { agentsInertes } from './routes-inertes';
+import type { EtatPourLint } from '../src/agent/setup/lint';
+
+/** Un agent que le lint laisse activer (mêmes champs que `COMPLET_LINT`, `tests/agent-setup-lint.test.ts`). */
+const ETAT_PRET: EtatPourLint = {
+  fiche: { ...ficheVide(), objectif: 'Cerner le besoin.', reglesTransfert: 'Remboursement.', sorties: [{ code: 'fini', label: 'Fini' }] },
+  fichesConnaissance: 1, outilsActifs: 1, handlersActifs: ['chercher_connaissance'], outilsMcpDebranches: [],
+};
 
 /**
  * Routes des agents IA. Un agent ACTIF est proposable dans un scénario, donc il finira par écrire à de vrais
@@ -59,6 +67,7 @@ function app(cleModele?: (tenant: string) => Promise<unknown>, extra?: Partial<A
     patches: [] as Array<{ tenant: string; id: string; patch: PatchAgent }>,
   };
   const deps: AgentsRouteDeps = {
+    ...agentsInertes,
     listActifs: async (t) => { cap.listes.push(`actifs:${t}`); return ACTIFS; },
     listToutes: async (t) => { cap.listes.push(`toutes:${t}`); return TOUTES; },
     complet: async (_t, id) => (id === AG1 ? COMPLET : null),
@@ -269,7 +278,8 @@ describe('routes agents : modification', () => {
   });
 
   it('🔴 activer un agent est possible, c est le seul geste qui le rend proposable', async () => {
-    const { cap, srv } = app();
+    // Un agent COMPLET : le lint d'activation est toujours câblé depuis le lot 3 de l'audit ponytail.
+    const { cap, srv } = app(undefined, { etatPourLint: async () => ETAT_PRET });
     const res = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { status: 'active' } });
     expect(res.statusCode).toBe(200);
     expect(cap.patches[0]?.patch).toEqual({ status: 'active' });
@@ -342,6 +352,7 @@ describe('routes agents : le modèle par défaut', () => {
     const srv = buildServer({
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
       agents: {
+        ...agentsInertes,
         listActifs: async () => [], listToutes: async () => [], complet: async () => null,
         create: async () => COMPLET, patch: async () => null, remove: async () => false,
         modeleParDefaut: '',
@@ -358,15 +369,6 @@ describe('GET /tenants/:tenantId/agents/:agentId/messages', () => {
     const res = await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG1}/messages`, ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ messages: 412, jours: 30 });
-  });
-
-  it('🔴 rend null, PAS zéro, quand la dépendance est absente', async () => {
-    // Même convention que `/consommation` juste à côté : un zéro se lirait « cet agent n a parlé à
-    // personne », alors que la vérité est « cette instance ne sait pas compter ».
-    const { srv } = app();
-    const res = await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG1}/messages`, ...h(adminTok) });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ messages: null, jours: 30 });
   });
 
   it('🔴 refuse un identifiant d agent mal formé AVANT de toucher au store', async () => {

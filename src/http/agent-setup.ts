@@ -16,7 +16,7 @@ import {
   urlDeConnaissance,
 } from '../agent/setup/couverture';
 import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
 import { microEurosDepuisDollars } from '../agent/devise';
 import { direPanneModele } from '../llm/errors';
@@ -63,10 +63,10 @@ export interface AgentSetupRouteDeps {
    * lui, ne peut afficher qu'un nom : le faire résoudre par le navigateur ajouterait un appel à chaque
    * ouverture d'onglet, et donnerait à voir la liste des comptes de l'espace pour afficher deux adresses.
    *
-   * ⚠️ OPTIONNEL : sans lui, le fil s'affiche avec « auteur inconnu », ce qui est le comportement des tours
+   * ⚠️ Son ÉCHEC laisse le fil s'afficher avec « auteur inconnu », ce qui est le comportement des tours
    * d'avant la migration. Un journal sans auteur reste lisible ; un écran qui refuse de s'ouvrir, non.
    */
-  emailsDesMembres?(tenantId: string): Promise<Record<string, string>>;
+  emailsDesMembres(tenantId: string): Promise<Record<string, string>>;
   /**
    * LE COMPTEUR DE NOTRE DÉPENSE, partagé avec l'assistant du Meta Business Agent.
    *
@@ -79,16 +79,15 @@ export interface AgentSetupRouteDeps {
    * multiplierait notre exposition par le nombre de robots, c'est-à-dire par un chiffre que le client
    * contrôle lui-même.
    *
-   * ⚠️ OPTIONNEL : sans lui, l'assistant fonctionne SANS plafond, exactement comme avant. C'est le
-   * comportement qu'il faut pour un serveur de test, et c'est aussi pourquoi le câblage est gardé par un test.
+   * REQUIS depuis le lot 3 de l'audit ponytail (2026-09-26) : le câblage de production le fournit toujours.
    */
-  depenses?: DepenseStore;
-  /** Le plafond mensuel, en euros. 0 ou absent = pas de plafond. */
-  plafondEuros?: number;
-  tauxEurParDollar?: number;
+  depenses: DepenseStore;
+  /** Le plafond mensuel, en euros. 0 = pas de plafond (`ASSISTANT_PLAFOND_EUROS_MOIS`). */
+  plafondEuros: number;
+  tauxEurParDollar: number;
   /**
    * Écrit une fiche de connaissance. Sert aux PIÈCES JOINTES : un document joint devient des fiches, c'est
-   * tout l'intérêt de pouvoir en joindre un. Absente, la route de pièce jointe n'est pas montée.
+   * tout l'intérêt de pouvoir en joindre un.
    */
   /**
    * Ecrit les fiches d'une piece jointe, EN REMPLACANT celles que le meme fichier avait deja produites.
@@ -99,12 +98,12 @@ export interface AgentSetupRouteDeps {
    * donc l'ecran ne pouvait pas dire d'ou elle venait. C'est la coherence que Julien demandait le
    * 2026-09-08 : le fichier joint en parlant au robot, et la fiche qui en decoule, doivent se retrouver.
    */
-  ecrireFichesDocument?(
+  ecrireFichesDocument(
     tenantId: string, agentId: string, nom: string, fiches: Array<{ titre: string; corps: string }>,
   ): Promise<{ retirees: number; ecrites: number } | null>;
-  /** L'entretien persisté. ABSENT : la route répond 503 plutôt que de retomber sur un entretien sans mémoire,
-   *  qui redeviendrait non déterministe sans que personne ne le voie. */
-  entretiens?: EntretienStore;
+  /** L'entretien persisté. Requis : un entretien sans mémoire redeviendrait non déterministe sans que personne
+   *  ne le voie. */
+  entretiens: EntretienStore;
   /** Appel du modèle. Injecté pour rester testable sans réseau ; absent, la route répond 503. */
   /** ⚠️ `tenantId` decide QUELLE CLE paie l'appel (2026-09-09) : le bac a sable est du temps de modele, et
    *  il se paie sur le credit du client comme le reste. */
@@ -119,7 +118,7 @@ export interface AgentSetupRouteDeps {
    * (celui de la production) REFUSE une part `image_url` avec un 400 au corps vide. Réutiliser le modèle
    * d'entretien aurait livré une pièce jointe image morte, avec une erreur illisible.
    */
-  modeleVision?: string;
+  modeleVision: string;
 }
 
 const corpsSchema = z.object({
@@ -171,11 +170,10 @@ const DELAI_MS = 45_000;
 /**
  * LE PLAFOND, LU AVANT L'APPEL. `true` = on peut parler.
  *
- * ⚠️ Un dépôt de dépense ABSENT laisse passer : une instance sans compteur doit fonctionner, et c'est le
- * câblage, gardé par un test, qui garantit qu'il est là en production.
+ * ⚠️ Un plafond à 0 laisse passer : c'est `ASSISTANT_PLAFOND_EUROS_MOIS=0`, le plafond désactivé.
  */
 async function budgetOuvert(deps: AgentSetupRouteDeps, tenantId: string): Promise<boolean> {
-  if (!deps.depenses || !deps.plafondEuros) return true;
+  if (!deps.plafondEuros) return true;
   return resteDuBudget(await deps.depenses.lire(tenantId, moisDe(new Date())), deps.plafondEuros) > 0;
 }
 
@@ -186,9 +184,8 @@ async function budgetOuvert(deps: AgentSetupRouteDeps, tenantId: string): Promis
  * coût d'UN tour. Même règle que l'assistant du Meta Business Agent.
  */
 async function noterDepense(deps: AgentSetupRouteDeps, tenantId: string, coutDollars: number): Promise<void> {
-  if (!deps.depenses) return;
   await deps.depenses.ajouter(tenantId, moisDe(new Date()),
-    microEurosDepuisDollars(coutDollars, deps.tauxEurParDollar ?? 1));
+    microEurosDepuisDollars(coutDollars, deps.tauxEurParDollar));
 }
 
 /** L'avancement, tel que l'écran l'affiche. Le total est celui de l'ordre du jour EFFECTIF : un client dont
@@ -227,11 +224,9 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
 
   /** Contrôle d'accès commun aux trois routes : tenant du jeton, agent existant DE CE TENANT. */
   const ouvrir = async (req: FastifyRequest, reply: FastifyReply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) { reply.code(403).send({ error: 'tenant interdit' }); return null; }
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) { reply.code(404).send({ error: 'agent introuvable' }); return null; }
-    if (!deps.entretiens) { reply.code(503).send({ error: 'assistant de construction indisponible' }); return null; }
     const etat = await deps.etatCourant(tenant, agentId);
     if (!etat) { reply.code(404).send({ error: 'agent introuvable' }); return null; }
     return { tenant, agentId, etat, entretiens: deps.entretiens };
@@ -264,7 +259,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      * ⚠️ ON NE RÉSOUT QUE S'IL Y A QUELQUE CHOSE À RÉSOUDRE : un fil entièrement anonyme (les tours d'avant
      * la migration 0147, et les réponses de l'assistant) ne doit pas coûter une requête à chaque ouverture.
      */
-    const emails = auteurs.some((a) => a !== null) && deps.emailsDesMembres
+    const emails = auteurs.some((a) => a !== null)
       ? await deps.emailsDesMembres(ctx.tenant).catch(() => ({} as Record<string, string>))
       : {};
     return reply.code(200).send({
@@ -334,7 +329,6 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
   app.post('/tenants/:tenantId/agents/:agentId/setup/piece-jointe', optsPiece, async (req, reply) => {
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
-    if (!deps.ecrireFichesDocument) return reply.code(503).send({ error: 'pièces jointes indisponibles sur ce serveur' });
     const parse = pieceSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'nom et dataUrl requis' });
 
@@ -355,7 +349,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     if (reconnu.nature === 'image') {
       // Refus EXPLICITE plutôt qu'un appel voué à un 400 illisible : sans modèle de vision, on le dit, et les
       // documents continuent de passer par ailleurs (ils n'ont besoin d'aucun modèle).
-      const vision = (deps.modeleVision ?? '').trim();
+      const vision = deps.modeleVision.trim();
       if (!deps.completer || vision === '') {
         return reply.code(503).send({ error: 'lecture d’image indisponible sur ce serveur (aucun modèle de vision configuré) ; les documents texte, PDF et Word passent quand même' });
       }

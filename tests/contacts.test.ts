@@ -6,6 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ContactsRouteDeps } from '../src/http/contacts';
 import type { ContactRow, BulkTarget, BulkEdits } from '../src/crm/contact-store.pg';
 import type { UserFieldDef } from '../src/crm/types';
+import { contactsInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -39,6 +40,7 @@ interface Cap {
 function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow | null } = {}) {
   const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [], bulk: [], deleted: [], emitted: [] };
   const deps: ContactsRouteDeps = {
+    ...contactsInertes,
     applyEdits: async (_t, _id, edits) => {
       const result = opts.contact === undefined ? CONTACT : opts.contact;
       if (result === null) return null; // contact inconnu -> transaction rollback, aucune écriture
@@ -525,14 +527,12 @@ describe('POST /tenants/:t/contacts (ajout a la main)', () => {
     await server.close();
   });
 
-  it('agent -> 403 ; tenant d’autrui -> 403 ; dep absente -> 503', async () => {
+  it('agent -> 403 ; tenant d’autrui -> 403', async () => {
+    // ⚠️ Le troisième cas, « dep absente -> 503 », est parti au lot 3 de l'audit ponytail : `createOneContact`
+    // est requise, et ce 503 n'était atteignable que par un test.
     const { server } = avecCreation();
     expect((await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(agentTok), payload: JSON.stringify({ phone: '+33612345678' }) })).statusCode).toBe(403);
     expect((await server.inject({ method: 'POST', url: '/tenants/t2/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '+33612345678' }) })).statusCode).toBe(403);
     await server.close();
-
-    const { server: sans } = app();
-    expect((await sans.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '+33612345678' }) })).statusCode).toBe(503);
-    await sans.close();
   });
 });

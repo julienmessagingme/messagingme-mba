@@ -5,7 +5,7 @@ import { LabelRequeteDejaPris, SourceIntrouvable, type RequeteConnecteur } from 
 import { construireCible, risqueSelonMethode } from '../agent/http-cible';
 import { assemblerAppel, cheminsDeLaReponse, estEnTeteReserve, variablesUtilisees, EN_TETES_RESERVES, type ValeurVariable } from '../agent/requete-http';
 import { CHAMPS_CONTACT_AUTORISES, CLES_SYSTEME } from '../agent/variables';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
 import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../lib/connexion-publique';
 import { lireCorpsBorne } from '../lib/corps-borne';
@@ -56,9 +56,10 @@ export interface AgentRequetesRouteDeps {
    * Le client cesserait alors de prévenir son propre système à chaque refus sans que rien ne le dise, ce qui
    * est exactement le manquement que le centre de sécurité existe pour empêcher.
    *
-   * ⚠️ Optionnelle : absente, on retombe sur le comportement d'avant (seul `outils` protège).
+   * ⚠️ REQUISE depuis le lot 3 de l'audit ponytail : absente, le refus ne partait pas, et c'est justement ce trou
+   * qu'elle ferme. Les fixtures qui ne parlent pas du consentement passent `jamaisBrancheeSurConsentement`.
    */
-  brancheeSurConsentement?(tenantId: string, requestId: string): Promise<boolean>;
+  brancheeSurConsentement(tenantId: string, requestId: string): Promise<boolean>;
   fetchImpl?: typeof fetch;
   /** Injectée pour tester la garde de résolution sans DNS. Défaut : la vraie résolution. */
   verifierResolution?: (url: string) => Promise<VerdictResolution>;
@@ -270,8 +271,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
   };
 
   app.get(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({
       requetes: await deps.lister(tenant),
       champs: await deps.clesDeChamps(tenant),
@@ -280,8 +280,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
   });
 
   app.post(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const parse = corpsRequete.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'source, nom, méthode, chemin et champs à lire requis' });
     const pb = verifier(parse.data, await deps.clesDeChamps(tenant));
@@ -296,8 +295,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
   });
 
   app.patch(`${base}/:id`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'requête introuvable' });
     const parse = patchSchema.safeParse(req.body ?? {});
@@ -332,8 +330,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
   });
 
   app.delete(`${base}/:id`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'requête introuvable' });
     const actuelle = await deps.parId(tenant, id);
@@ -345,7 +342,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     }
     // Le SECOND usage, qui ne compte pas dans `outils` : la poussée d'opt-out du centre de Sécurité. Sans ce
     // refus, la clé étrangère `on delete set null` de 0139 débrancherait la conformité sans un mot.
-    if (deps.brancheeSurConsentement && await deps.brancheeSurConsentement(tenant, id)) {
+    if (await deps.brancheeSurConsentement(tenant, id)) {
       return reply.code(409).send({ error: 'cette requête prévient votre système à chaque désabonnement (Sécurité > Consentement) : débranchez-la d’abord' });
     }
     return reply.code(200).send({ id, deleted: await deps.supprimer(tenant, id) });
@@ -491,8 +488,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
    * deux routes partagent `executerTest`, donc ce qui est verifie ici vaut pour les deux.
    */
   app.post(`${base}/:id/test`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'requête introuvable' });
     const parse = testSchema.safeParse(req.body ?? {});
@@ -517,8 +513,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
    * l'enregistrement refuse ferait mettre au point un appel impossible a sauver.
    */
   app.post(`${base}/test`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const parse = brouillonTest.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'source, méthode et chemin requis' });
     const pb = verifier(parse.data, await deps.clesDeChamps(tenant));

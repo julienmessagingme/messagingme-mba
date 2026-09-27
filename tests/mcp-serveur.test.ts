@@ -10,6 +10,7 @@ import { OUTILS } from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
+import { mcpInerte } from './routes-inertes';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -42,6 +43,7 @@ interface Traces {
 function app(over: Partial<DepsMcp> & { membres?: Array<{ id: string; name: string; email: string; role: string }> } = {}) {
   const traces: Traces = { contexte: [], envois: [], listes: [], journal: [] };
   const mcp: DepsMcp = {
+    ...mcpInerte,
     estDesabonne: jamaisDesabonne,
     listConversations: async (tenant) => {
       traces.listes.push(tenant);

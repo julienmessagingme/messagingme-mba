@@ -8,6 +8,7 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { V1SendsRouteDeps } from '../src/http/v1-sends';
 import type { DepsMcp } from '../src/mcp/outils';
 import { contactsV1Muets } from './aide/contacts-v1';
+import { opsInerte } from './routes-inertes';
 
 /**
  * L'OBSERVATION DE L'USAGE : ce que les routes publiques comptent, et ce qu'elles ne refusent PAS.
@@ -97,9 +98,11 @@ function totaux(usage: GardeUsageMemoire): Record<string, { appels: number; unit
 /**
  * ⚠️ `/ops` NE SE MONTE QUE SI ON LE CÂBLE, et c'est une propriété du produit, pas un détail de test : une
  * instance qui n'a pas explicitement fourni ces dépendances n'expose pas la surface d'exploitation. Ces
- * trois doubles vides suffisent à la monter ; `/ops/usage`, lui, ne lit que les compteurs.
+ * trois doubles vides, plus les valeurs inertes des dépendances requises (`opsInerte`), suffisent à la monter ;
+ * `/ops/usage`, lui, ne lit que les compteurs.
  */
 const opsMuet = {
+  ...opsInerte,
   getTenantOverview: async () => [],
   getGlobalDaily: async () => [],
   getQueueLoad: async () => [],

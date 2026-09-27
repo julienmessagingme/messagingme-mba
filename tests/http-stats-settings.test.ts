@@ -9,6 +9,7 @@ import type { StatsRouteDeps } from '../src/http/stats';
 import type { AnalyzedConversationsFilter } from '../src/stats/conversation-stats.pg';
 import type { SettingsRouteDeps } from '../src/http/settings';
 import { INTENTS } from '../src/analysis/schema';
+import { reglagesInertes, statsInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -26,6 +27,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 
 function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<SettingsRouteDeps> } = {}) {
   const stats: StatsRouteDeps = {
+    ...statsInertes,
     getDashboard: async () => ({
       contacts: [{ date: '2026-07-09', count: 3 }],
       // ⚠️ PLUS BAS QUE LES CUMULÉS, DÉLIBÉRÉMENT : une fixture où les deux courbes seraient égales ferait
@@ -101,6 +103,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
+    ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
@@ -226,15 +229,6 @@ describe('stats route', () => {
     await a.close();
   });
 
-  it('🔴 coût par campagne sans câblage -> 503, jamais un tableau vide', async () => {
-    // Un tableau vide se lirait « aucune campagne n'a envoyé sur la période ». La vérité serait « rien
-    // n'est branché ». Même choix que ses voisines.
-    const a = app({ stats: { getCoutParCampagne: undefined } });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30', ...h(adminTok) });
-    expect(res.statusCode).toBe(503);
-    await a.close();
-  });
-
   it('GET /stats/cost/campaigns : agent -> 403, tenant croisé -> 403, plage invalide -> 400', async () => {
     const a = app();
     expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30', ...h(agentTok) })).statusCode).toBe(403);
@@ -254,15 +248,6 @@ describe('stats route', () => {
     // l'écran exactement les conversations qui alarment.
     expect(b.points[0]).toEqual({ satisfaction: 0, urgence: 9, n: 2 });
     expect(b.sansMesure).toBe(11);
-    await a.close();
-  });
-
-  it('🔴 nuage sans câblage -> 503, jamais un nuage vide', async () => {
-    // Un nuage vide se lirait « aucune conversation mesurée sur la période », qui est une affirmation.
-    // La vérité serait « rien n'est branché ». Même choix que les contacts touchés.
-    const a = app({ stats: { getNuageQualitatif: undefined } });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/nuage?days=30', ...h(adminTok) });
-    expect(res.statusCode).toBe(503);
     await a.close();
   });
 
@@ -493,15 +478,6 @@ describe('stats route', () => {
     const b = res.json<{ contacts: unknown[]; tronque: boolean }>();
     expect(b.contacts).toHaveLength(200);
     expect(b.tronque).toBe(true);
-    await a.close();
-  });
-
-  it('🔴 sans cablage -> 503, jamais une liste vide', async () => {
-    // Une liste vide se lirait « personne n a ete touche », qui est une affirmation. La verite serait
-    // « rien n est branche ». Meme choix que les mesures de scenario.
-    const a = app({ stats: { getErrorContacts: undefined } });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors/131049/contacts?days=30', ...h(adminTok) });
-    expect(res.statusCode).toBe(503);
     await a.close();
   });
 
@@ -810,15 +786,6 @@ describe('GET /tenants/:t/stats/workflow/:workflowId — mesures par bloc', () =
     expect(res.statusCode).toBe(200);
     expect(res.json<{ counts: unknown[] }>().counts).toEqual(COUNTS);
     expect(recus[0]?.workflowId).toBe('wf-1');
-    await a.close();
-  });
-
-  it('🔴 instance sans mesures câblées -> 503, PAS une liste vide', async () => {
-    // Une liste vide se lirait « ce scénario n'a rien produit », ce qui est le contraire de « rien n'est
-    // branché ». C'est la même règle que pour le journal d'audit.
-    const a = app({ stats: { getWorkflowNodeCounts: undefined } });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/workflow/wf-1?days=30', ...h(adminTok) });
-    expect(res.statusCode).toBe(503);
     await a.close();
   });
 

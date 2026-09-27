@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
 import type { InboxRouteDeps } from '../src/http/inbox';
+import { campagnesInertes, inboxInerte } from './routes-inertes';
 
 // Frontière RBAC (Feature 2) : l'agent n'a accès QU'À l'inbox. Le même token agent doit être
 // admis sur l'inbox et refusé (403) sur un groupe admin-only. La barrière est le preHandler
@@ -22,6 +23,7 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const campaigns: CampaignRouteDeps = {
+  ...campagnesInertes,
   repo: {} as CampaignRouteDeps['repo'],
   queue: new FakeQueue(),
   phoneNumberBelongsToTenant: async () => true,
@@ -39,6 +41,7 @@ const campaigns: CampaignRouteDeps = {
   listPhoneNumbers: async () => [],
 };
 const inbox: InboxRouteDeps = {
+  ...inboxInerte,
   estDesabonne: jamaisDesabonne,
   listConversations: async () => [],
   getConversationContext: async () => null,

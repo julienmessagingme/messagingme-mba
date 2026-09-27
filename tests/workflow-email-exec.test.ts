@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect, vi } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -53,9 +54,10 @@ function makeDeps(
   recordNodeEvent?: WorkflowExecutorDeps['recordNodeEvent'],
 ): WorkflowExecutorDeps {
   return {
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
     ...(recordNodeEvent ? { recordNodeEvent } : {}),
-    runs: new FakeRuns(),
+    runs: avecGardesDEtatInertes(new FakeRuns()),
     getGraph: async () => graph,
     applyTag,
     setField: async () => {},

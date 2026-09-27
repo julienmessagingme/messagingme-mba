@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import { makeJournal, type AuditSink } from '../audit/journal';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import type { VueIntegrationBatch } from '../signaux/integration-batch.pg';
 
 /**
@@ -25,7 +25,7 @@ export interface IntegrationBatchRouteDeps {
    * la route rendrait 500 (une page Cloudflare sans explication) au lieu d'un refus que l'écran peut afficher.
    */
   chiffrementPret: boolean;
-  audit?: AuditSink;
+  audit: AuditSink;
 }
 
 /** Le corps du réglage, lu comme une entrée externe. `.strict()` : une clé inconnue est une faute, pas un ajout. */
@@ -49,14 +49,12 @@ export function registerIntegrationBatch(app: FastifyInstance, deps: Integration
   const journal = makeJournal(deps.audit);
 
   app.get('/tenants/:tenantId/integrations/batch', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send(vue(await deps.lire(tenant)));
   });
 
   app.put('/tenants/:tenantId/integrations/batch', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const corps = corpsReglage.safeParse(req.body ?? {});
     if (!corps.success) {
       const i = corps.error.issues[0];
@@ -82,8 +80,7 @@ export function registerIntegrationBatch(app: FastifyInstance, deps: Integration
   });
 
   app.delete('/tenants/:tenantId/integrations/batch', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (!(await deps.supprimer(tenant))) return reply.code(404).send({ error: 'Batch n’est pas branché sur cet espace.' });
     await journal(tenant, req, 'integration.debranchee', CIBLE);
     return reply.code(200).send({ branche: false });

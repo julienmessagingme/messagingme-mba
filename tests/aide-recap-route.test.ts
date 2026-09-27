@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { registerAide } from '../src/http/aide';
+import { monterAvecEtapeEspace } from '../src/http/scope';
 import type { RecapTexte } from '../src/aide/recap-rendu';
 
 /**
@@ -19,7 +20,6 @@ function app(o: {
   calculer?: (tenantId: string, jour: string, langue: 'fr' | 'en') => Promise<RecapTexte>;
   role?: string;
   tenantId?: string;
-  branche?: boolean;
 } = {}) {
   let jour = '2026-09-13';
   const calculer = vi.fn(o.calculer ?? (async () => recapFait));
@@ -27,11 +27,11 @@ function app(o: {
   const garde = async (req: { auth?: unknown }): Promise<void> => {
     (req as { auth?: unknown }).auth = { tenantId: o.tenantId ?? 't1', userId: 'u1', role: o.role ?? 'admin' };
   };
-  registerAide(
+  monterAvecEtapeEspace(server, () => registerAide(
     server,
-    o.branche === false ? {} : { recap: { calculer, aujourdhui: () => jour } },
+    { recap: { calculer, aujourdhui: () => jour } },
     garde as never,
-  );
+  ));
   return Object.assign(server, { calculer, avancerAuLendemain: () => { jour = '2026-09-14'; } });
 }
 
@@ -116,11 +116,6 @@ describe('route du récap de la veille', () => {
   it('🔴 un jeton d un AUTRE espace est refusé', async () => {
     const r = await app({ tenantId: 't2' }).inject(post);
     expect(r.statusCode).toBe(403);
-  });
-
-  it('sans récap câblé : 503, jamais un repli muet', async () => {
-    const r = await app({ branche: false }).inject(post);
-    expect(r.statusCode).toBe(503);
   });
 
   it('une PANNE rend 502, le corps ne fuit rien, et RIEN n est mis en cache', async () => {

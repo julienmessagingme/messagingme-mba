@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { MbaClient } from '../src/mba/client';
 import type { MbaRouteDeps } from '../src/http/mba';
+import { mbaInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -63,6 +64,7 @@ function fauxClient(over: Record<string, Methode> = {}) {
 function app(overClient: Record<string, Methode> = {}, overDeps: Partial<MbaRouteDeps> = {}) {
   const { client, appels } = fauxClient(overClient);
   const deps: MbaRouteDeps = {
+    ...mbaInerte,
     clientFor: async () => client,
     phoneNumberBelongsToTenant: async (pn, tenant) => pn === PN && tenant === 't1',
     ...overDeps,
@@ -354,13 +356,6 @@ describe('GET /tenants/:tenantId/mba/:phoneNumberId/messages', () => {
     await server.close();
   });
 
-  it('🔴 rend null, PAS zéro, quand la dépendance est absente', async () => {
-    const { server } = app();
-    const res = await server.inject({ method: 'GET', url: url('/messages'), ...h(adminTok) });
-    expect(res.json()).toEqual({ messages: null });
-    await server.close();
-  });
-
   it('🔴 refuse un numéro qui n’appartient pas à cet espace', async () => {
     // Le `:phoneNumberId` ne filtre PAS le comptage (`conversations` ne porte aucun numéro) : il ne sert
     // qu'à ce contrôle d'isolation, hérité de `contexte()`. Ce test est là pour qu'on ne le retire pas en
@@ -413,14 +408,6 @@ describe('routes MBA : une suppression laisse sa trace', () => {
       expect(res.statusCode).toBe(200);
       expect(appels.map((a) => a.m)).toContain(c.supprime);
       expect(lignes).toEqual([{ element: c.element, cible: c.cible, libelle: `${c.libelle.split(' : ')[0]} : ${c.cible}`, avant: { id: c.cible }, acteurId: 'u1' }]);
-      await server.close();
-    });
-
-    it(`${c.element} : sans journal, rien n'est lu, la suppression part seule`, async () => {
-      const { server, appels } = app();
-      const res = await server.inject({ method: 'DELETE', url: url(c.chemin), ...h(adminTok) });
-      expect(res.statusCode).toBe(200);
-      expect(appels.map((a) => a.m)).toEqual([c.supprime]);
       await server.close();
     });
 

@@ -8,6 +8,7 @@ import type { InboxRouteDeps } from '../src/http/inbox';
 import { MediaExpire } from '../src/inbox/media-entrant';
 import { MediaTropGros } from '../src/meta/media';
 import { capturerJournal } from './journal';
+import { inboxInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 const CONV = '11111111-1111-4111-8111-111111111111';
@@ -23,6 +24,7 @@ const authAgent = () => ({ headers: { 'content-type': 'application/json', author
 
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
+    ...inboxInerte,
     estDesabonne: jamaisDesabonne,
     listConversations: async () => [
       { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true, assignedTo: null, assignedToName: null },
@@ -531,13 +533,6 @@ describe('inbox : lancer un scénario sur une conversation', () => {
     expect(lances).toBe(0);
     await a.close();
   });
-
-  it('dep absente -> 503, jamais un 200 trompeur', async () => {
-    const a = app();
-    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: { workflowId: 'wf1' } });
-    expect(res.statusCode).toBe(503);
-    await a.close();
-  });
 });
 
 /**
@@ -834,13 +829,6 @@ describe('effacer le contenu d’une conversation', () => {
     expect(appele).toBe(false);
     await srv.close();
   });
-
-  it('sans la dépendance, la route le DIT (503) au lieu de répondre 200 sans rien faire', async () => {
-    const srv = app();
-    const res = await srv.inject({ method: 'DELETE', url: `/tenants/t1/conversations/${CONV}/messages`, ...auth() });
-    expect(res.statusCode).toBe(503);
-    await srv.close();
-  });
 });
 
 /**
@@ -883,11 +871,6 @@ describe('signaler à la main, et prendre le fil', () => {
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/signaler`, ...auth() })).statusCode).toBe(404);
   });
 
-  it('câblage absent -> 503, comme l’archivage', async () => {
-    const a = app();
-    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/signaler`, ...auth() })).statusCode).toBe(503);
-  });
-
   it('tenant croisé -> 403', async () => {
     const a = app({ signalerConversation: async () => true });
     expect((await a.inject({ method: 'POST', url: `/tenants/AUTRE/conversations/c1/signaler`, ...auth() })).statusCode).toBe(403);
@@ -916,10 +899,9 @@ describe('signaler à la main, et prendre le fil', () => {
     expect(res.statusCode).toBeGreaterThanOrEqual(500);
   });
 
-  it('« prendre » : conversation inconnue -> 404, câblage absent -> 503', async () => {
+  it('« prendre » : conversation inconnue -> 404', async () => {
     const a = app({ takeControl: async () => {} });
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/prendre`, ...auth() })).statusCode).toBe(404);
-    expect((await app().inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() })).statusCode).toBe(503);
   });
 
   it('🔴 META D’ABORD, notre état local ENSUITE', async () => {
@@ -988,12 +970,6 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() })).statusCode).toBe(404);
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/pas-un-uuid/traiter`, ...auth() })).statusCode).toBe(404);
     expect(appels).toBe(1);
-  });
-
-  it('câblage absent -> 503, tenant croisé -> 403', async () => {
-    expect((await app().inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() })).statusCode).toBe(503);
-    const a = app({ marquerTraitee: async () => true });
-    expect((await a.inject({ method: 'POST', url: `/tenants/AUTRE/conversations/${CONV}/traiter`, ...auth() })).statusCode).toBe(403);
   });
 
   it('🔴 le geste INVALIDE les compteurs : « À traiter » et « Traité » ne gardent pas l’ancien chiffre', async () => {
@@ -1181,12 +1157,6 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.manager) });
     expect(res.json().peutPrendre).toBe(true);
     expect(lectures).toBe(0);
-  });
-
-  it('sans câblage de la prise, la liste ne propose jamais le geste', async () => {
-    // Un bouton qui mènerait à un 503 serait « offert et inerte », ce que le produit s'interdit.
-    const a = app({ agentsPeuventPrendre: async () => true });
-    expect((await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.agent) })).json().peutPrendre).toBe(false);
   });
 
   it('🔴 la liste des membres affectables s’ouvre au MANAGER, pas à l’agent', async () => {

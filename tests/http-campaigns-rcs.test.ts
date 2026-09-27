@@ -7,6 +7,7 @@ import type { CampaignRepoLike } from '../src/campaign/create';
 import type { CreateCampaignInput } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 import type { WorkflowGraph } from '../src/workflow/graph';
+import { campagnesInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -44,6 +45,7 @@ function appWith(
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     campaigns: {
+      ...campagnesInertes,
       repo,
       queue: new FakeQueue(),
       phoneNumberBelongsToTenant: async () => true,

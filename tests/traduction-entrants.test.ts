@@ -8,6 +8,7 @@ import type { InboxRouteDeps } from '../src/http/inbox';
 import type { ConversationMessage } from '../src/inbox/store.pg';
 import { traduireFil, candidats, texteATraduire, type DepsFil, type MessageATraduire } from '../src/traduction/fil';
 import { TRADUCTIONS_MAX_PAR_REQUETE, type Traducteur, type Traduction } from '../src/traduction/traduire';
+import { inboxInerte } from './routes-inertes';
 
 /**
  * LES ENTRANTS, TRADUITS A L'OUVERTURE D'UNE CONVERSATION.
@@ -257,6 +258,7 @@ const auth = () => ({ headers: { 'content-type': 'application/json', authorizati
 
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
+    ...inboxInerte,
     estDesabonne: jamaisDesabonne,
     listConversations: async () => [],
     getConversationContext: async (id) => (id === 'c1'

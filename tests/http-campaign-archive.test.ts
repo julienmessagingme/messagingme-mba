@@ -4,6 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
+import { campagnesInertes } from './routes-inertes';
 
 /**
  * Archivage et suppression d'une campagne.
@@ -34,6 +35,7 @@ interface Calls {
 /** `known` appartient à t1 ; tout autre id est inconnu. `deleteOk` simule la garde métier du store. */
 function appWith(calls: Calls, deleteOk = true) {
   const campaigns: CampaignRouteDeps = {
+    ...campagnesInertes,
     repo: {} as CampaignRouteDeps['repo'],
     queue: new FakeQueue(),
     phoneNumberBelongsToTenant: async () => true,

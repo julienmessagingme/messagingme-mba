@@ -5,9 +5,9 @@ import { importContacts } from '../crm/import';
 import type { ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
 import type { ContactRow, ContactFilters, ContactFieldFilter } from '../crm/contact-store.pg';
-import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
+import { gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
@@ -22,9 +22,9 @@ export interface ImportRouteDeps extends ImportDeps {
   /**
    * Journal d'audit. Un import est la principale façon dont des personnes ENTRENT dans la base, souvent par
    * milliers d'un coup : sans trace, personne ne peut dire d'où vient un contact ni qui l'a chargé.
-   * Optionnel : absent -> aucune trace (câblages de test).
+   * Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`.
    */
-  audit?: AuditSink;
+  audit: AuditSink;
 }
 
 /** Parse les critères de « Liste de contacts » depuis les query params (tous optionnels, valeurs = strings).
@@ -97,8 +97,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
   const optsApercuCouteux = { ...couteux, bodyLimit: 2 * 1024 * 1024 };
 
   app.get('/tenants/:tenantId/contacts', opts, async (req, reply) => {
-    const effectiveTenant = scopeTenant(req);
-    if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const effectiveTenant = espaceVerifie(req);
     const q = req.query as Record<string, unknown>;
     const limit = typeof q.limit === 'string' ? Number(q.limit) : undefined;
     const offset = typeof q.offset === 'string' ? Number(q.offset) : undefined;
@@ -119,8 +118,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
 
   // Compteur seul (rapide) : « N contacts correspondent » avant de fixer le débit / lancer.
   app.get('/tenants/:tenantId/contacts/count', opts, async (req, reply) => {
-    const effectiveTenant = scopeTenant(req);
-    if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const effectiveTenant = espaceVerifie(req);
     const total = await deps.countContacts(effectiveTenant, parseFilters(req.query as Record<string, unknown>));
     return reply.code(200).send({ total });
   });
@@ -134,8 +132,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
   // La route reste montée parce qu'elle est une primitive de lecture légitime, bornée et testée ; la retirer
   // est une décision à prendre à part, elle est notée dans `todo.md`.
   app.get('/tenants/:tenantId/contacts/ids', opts, async (req, reply) => {
-    const effectiveTenant = scopeTenant(req);
-    if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const effectiveTenant = espaceVerifie(req);
     const ids = await deps.contactIdsForFilters(effectiveTenant, parseFilters(req.query as Record<string, unknown>));
     return reply.code(200).send({ ids });
   });
@@ -143,9 +140,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
   // Aperçu : parse le CSV + propose un mapping (même parseCsv que l'import réel -> en-têtes
   // identiques, pas de désync). Le front affiche l'écran de mapping pré-rempli.
   app.post('/tenants/:tenantId/contacts/import/preview', optsApercuCouteux, async (req, reply) => {
-    const effectiveTenant = scopeTenant(req);
-    if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const effectiveTenant = espaceVerifie(req);
     const body = (req.body ?? {}) as { csv?: unknown };
     if (typeof body.csv !== 'string' || body.csv.trim() === '') {
       return reply.code(400).send({ error: 'csv requis (texte brut)' });
@@ -161,9 +156,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
   });
 
   app.post('/tenants/:tenantId/contacts/import', optsImportCouteux, async (req, reply) => {
-    const effectiveTenant = scopeTenant(req);
-    if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const effectiveTenant = espaceVerifie(req);
     const body = (req.body ?? {}) as { csv?: unknown; optIn?: unknown; mapping?: ColumnMapping; tags?: unknown };
 
     if (typeof body.csv !== 'string' || body.csv.trim() === '') {

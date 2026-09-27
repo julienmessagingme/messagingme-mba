@@ -4,7 +4,7 @@ import type { RcsMessage } from '../rcs/message-store.pg';
 import type { RcsOutbound } from '../rcs/types';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 
 export interface RcsMessageRouteDeps {
   list(tenantId: string): Promise<RcsMessage[]>;
@@ -32,14 +32,12 @@ export function registerRcsMessages(app: FastifyInstance, deps: RcsMessageRouteD
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/rcs-messages', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ messages: await deps.list(tenant) });
   });
 
   app.post('/tenants/:tenantId/rcs-messages', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const nom = lireNom(req.body);
     if (nom === null) return reply.code(400).send({ error: 'name requis (texte non vide, 120 caractères max)' });
@@ -49,8 +47,7 @@ export function registerRcsMessages(app: FastifyInstance, deps: RcsMessageRouteD
   });
 
   app.patch('/tenants/:tenantId/rcs-messages/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     const nom = lireNom(req.body);
@@ -63,8 +60,7 @@ export function registerRcsMessages(app: FastifyInstance, deps: RcsMessageRouteD
   });
 
   app.delete('/tenants/:tenantId/rcs-messages/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     const ok = await deps.remove(tenant, id);

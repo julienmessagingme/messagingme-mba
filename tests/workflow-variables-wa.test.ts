@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect, vi } from 'vitest';
 import { WorkflowExecutor, type WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
@@ -31,13 +32,16 @@ const graphe = (type: 'quick_message' | 'question', data: Record<string, unknown
 class FakeRuns {
   async closeActiveByWaId(): Promise<string[]> { return []; }
   async start(): Promise<{ id: string }> { return { id: 'r1' }; }
+  // Requis par le contrat et absent jusqu'au lot 3 de l'audit ponytail : le transtypage qui suivait le cachait.
+  async findWaitingByWaId(): Promise<null> { return null; }
   async setState(): Promise<void> {}
 }
 
 function deps(over: Partial<WorkflowExecutorDeps>): WorkflowExecutorDeps {
   return {
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
-    runs: new FakeRuns() as unknown as WorkflowExecutorDeps['runs'],
+    runs: avecGardesDEtatInertes(new FakeRuns()),
     getGraph: async () => graphe('quick_message', {}),
     applyTag: async () => {},
     setField: async () => {},

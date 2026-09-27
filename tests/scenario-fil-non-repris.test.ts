@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -37,13 +38,14 @@ function monter(reclaim: boolean | void) {
   const envois: string[] = [];
   const demarrages: string[] = [];
   const deps: WorkflowExecutorDeps = {
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
-    runs: {
+    runs: avecGardesDEtatInertes({
       start: async () => { demarrages.push('r1'); return { id: 'r1' }; },
       findWaitingByWaId: async () => null,
       setState: async () => {},
       closeActiveByWaId: async () => [],
-    },
+    }),
     getGraph: async () => graphe,
     applyTag: async () => {},
     setField: async () => {},

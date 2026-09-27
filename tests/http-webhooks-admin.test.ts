@@ -8,6 +8,7 @@ import type { WebhooksAdminRouteDeps } from '../src/http/webhooks-admin';
 import { sha256Hex } from '../src/lib/signature';
 import { toRow } from '../src/webhook-entrant/store.pg';
 import type { WebhookRow, WebhookInput, RawAdmin } from '../src/webhook-entrant/store.pg';
+import { aucuneCampagneVivante, journalMuet } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -44,6 +45,8 @@ function app(over: Partial<WebhooksAdminRouteDeps> = {}) {
   // pas à la relecture » ne pourrait jamais échouer : la fixture n'en porte pas, quoi que fasse le vrai code.
   const courant = (): WebhookRow => ({ ...EXISTANT, hasSecret: cap.secretPose });
   const deps: WebhooksAdminRouteDeps = {
+    audit: journalMuet,
+    campagneVivante: aucuneCampagneVivante,
     list: async () => [courant()],
     get: async (_t, id) => (id === 'wh1' ? courant() : null),
     create: async (_t, input) => { cap.crees.push(input); return { id: 'wh2', code: 'zz12cd34ef56gh78jk90mn12pq' }; },

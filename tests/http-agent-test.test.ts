@@ -14,6 +14,7 @@ import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 import { LlmApiError } from '../src/llm/errors';
 import { capturerJournal } from './journal';
+import { essaiAgentInerte } from './routes-inertes';
 
 /**
  * Le bac à sable : parler à son agent depuis la console.
@@ -116,6 +117,7 @@ function app(opts: {
     },
   };
   const deps: AgentTestRouteDeps = {
+    ...essaiAgentInerte,
     disponible: opts.indisponible !== true,
     ...(opts.sansHistorique ? {} : { essais: hist.store }),
     ...(opts.sansCerveau ? {} : { cerveau }),
@@ -180,6 +182,7 @@ describe('bac à sable de l’agent', () => {
   const serveurQuiCasse = (cerveau: { completer?: () => Promise<never>; contexte?: () => Promise<never> }) => buildServer({
     queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
     agentTest: {
+      ...essaiAgentInerte,
       disponible: true,
       cerveau: {
         completer: cerveau.completer ?? (async () => { throw new Error('jamais appelé'); }),
@@ -294,6 +297,7 @@ describe('bac à sable de l’agent', () => {
         const casse = buildServer({
           queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
           agentTest: {
+            ...essaiAgentInerte,
             disponible: true,
             solde: async () => 5_000_000,
             debiter: async (_t: string, montant: number) => { cap.debits.push(montant); },

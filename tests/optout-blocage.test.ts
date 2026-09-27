@@ -9,6 +9,9 @@ import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import { repondreDansLaFenetre, type DepsRepondre } from '../src/inbox/repondre';
 import { ORIGINES } from '../src/inbox/origine';
+import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
+import { priseDeFilSansEffet } from './routes-inertes';
 
 /**
  * UN CONTACT DÉSABONNÉ NE REÇOIT RIEN D'AUTOMATIQUE.
@@ -39,7 +42,9 @@ function graphe(type: string, data: Record<string, unknown> = {}): WorkflowGraph
 /** Les dépendances minimales, plus ce que le test veut observer. */
 function deps(over: Partial<WorkflowExecutorDeps> = {}): WorkflowExecutorDeps {
   return {
-    runs: { start: async () => ({ id: 'r1' }), findWaitingByWaId: async () => null, setState: async () => {}, closeActiveByWaId: async () => [] },
+    ...depsInertes,
+    estDesabonne: jamaisDesabonne,
+    runs: avecGardesDEtatInertes({ start: async () => ({ id: 'r1' }), findWaitingByWaId: async () => null, setState: async () => {}, closeActiveByWaId: async () => [] }),
     removeTag: async () => {},
     // ⚠️ La fenêtre de 24 h est OUVERTE dans ces cas : un message rapide ou une question sont des messages
     // de SESSION, et sans elle ils ne partiraient pas du tout, ce qui viderait les témoins de ce fichier.
@@ -53,7 +58,7 @@ function deps(over: Partial<WorkflowExecutorDeps> = {}): WorkflowExecutorDeps {
     clearField: vi.fn(async () => {}),
     getGraph: async () => null,
     ...over,
-  } as unknown as WorkflowExecutorDeps;
+  };
 }
 
 /**
@@ -259,6 +264,7 @@ describe('les deux chemins tranchés : modèle de l’Inbox, et agent MCP', () =
         sendReply: async (_t, _pn, to) => { envois.push(to); return 'wamid.1'; },
         estDesabonne: async (_t, waId) => { lu.push(waId); return desabonne; },
         recordOutbound: async () => {},
+        takeControl: priseDeFilSansEffet,
       };
       return { d, envois, lu };
     };

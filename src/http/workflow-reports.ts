@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { forbidNonAdmin } from '../auth/middleware';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { NomDeTableauDejaPris } from '../workflow/reports.pg';
 import type { WorkflowReport, MesureRetenue } from '../workflow/reports.pg';
 
@@ -40,8 +39,7 @@ export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowRepo
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/workflow-reports', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ reports: await deps.listReports(tenant) });
   });
 
@@ -50,9 +48,7 @@ export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowRepo
    * écran c'est le MÊME bouton, et deux routes auraient fini par diverger sur la validation.
    */
   app.post('/tenants/:tenantId/workflow-reports', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { id?: unknown; workflowId?: unknown; name?: unknown; mesures?: unknown };
 
     const name = typeof b.name === 'string' ? b.name.trim().slice(0, 120) : '';
@@ -80,9 +76,7 @@ export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowRepo
   });
 
   app.delete('/tenants/:tenantId/workflow-reports/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     return (await deps.removeReport(tenant, id))
       ? reply.code(200).send({ ok: true })

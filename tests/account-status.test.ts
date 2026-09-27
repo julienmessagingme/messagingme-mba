@@ -9,6 +9,7 @@ import { signSession } from '../src/auth/token';
 import type { FetchLike } from '../src/meta/templates';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AccountRouteDeps, PhoneNumberRecord } from '../src/http/account';
+import { compteInerte } from './routes-inertes';
 
 /** Enregistrement numéro complet (tous les nouveaux champs à null par défaut ; hubspotConnected=true = backfill). */
 function rec(over: Partial<PhoneNumberRecord> = {}): PhoneNumberRecord {
@@ -171,6 +172,7 @@ function app(over: Partial<AccountRouteDeps> = {}) {
   const disconnectCalls: string[] = [];
   const disconnectTenantCalls: string[] = [];
   const deps: AccountRouteDeps = {
+    ...compteInerte,
     getPhoneNumber: async () => rec(),
     pullStatus: async () => ({ ok: true, status: 'CONNECTED', qualityRating: 'GREEN', messagingLimitTier: 'TIER_1K', displayPhoneNumber: '+33 5 25 68 02 50' }),
     saveStatus: async (id, patch) => { saved.push({ id, patch }); },

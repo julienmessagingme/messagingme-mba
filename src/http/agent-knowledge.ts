@@ -9,7 +9,7 @@ import {
   TAILLE_DOCUMENT_MAX, extraireTexte, reconnaitre, texteEnFiches,
 } from '../agent/setup/piece-jointe';
 import { octetsDepuisDataUrl } from '../rcs/image';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 
 /**
  * La base de connaissance d'un agent IA : la voir, la corriger, et la fabriquer depuis une page du site du
@@ -38,10 +38,10 @@ export interface AgentKnowledgeRouteDeps {
    * ligne en est le seul exemplaire, exactement comme pour le Meta Business Agent. C'est aussi le seul
    * endroit qui réponde à « qui a retiré ça de ce que le robot sait dire ? ».
    *
-   * ⚠️ OPTIONNEL : une instance sans historique continue de fonctionner. La route ne DOIT pas échouer parce
-   * qu'un journal manque.
+   * ⚠️ Requis depuis le lot 3 de l'audit ponytail ; la route ne DOIT pas échouer parce qu'une écriture de
+   * journal échoue.
    */
-  journaliserSuppression?(tenantId: string, agentId: string, ligne: {
+  journaliserSuppression(tenantId: string, agentId: string, ligne: {
     cible: string;
     libelle: string;
     avant: unknown;
@@ -127,10 +127,9 @@ export function registerAgentKnowledge(
     return { html: page.body };
   };
 
-  /** Tenant du jeton et identifiants bien formés, ou la réponse d'erreur déjà décidée. */
-  function contexte(req: { params: unknown; auth?: { tenantId: string } }): { tenant: string; agentId: string } | { code: 403 | 404; error: string } {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return { code: 403, error: 'tenant interdit' };
+  /** Tenant vérifié par l'étape d'espace et identifiants bien formés, ou la réponse d'erreur déjà décidée. */
+  function contexte(req: { params: unknown }): { tenant: string; agentId: string } | { code: 404; error: string } {
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     // Un identifiant mal formé part sinon tel quel dans un `where` sur une colonne `uuid` et fait LEVER
     // Postgres, donc un 500 dont Cloudflare remplace le corps. Une adresse tapée de travers rend 404.
@@ -178,13 +177,12 @@ export function registerAgentKnowledge(
    * l'identifiant seul. Refuser un geste ordinaire parce qu'une lecture de journal a raté serait pire.
    */
   const ficheAvant = async (ctx: { tenant: string; agentId: string }, ficheId: string): Promise<FicheConnaissance | undefined> => {
-    if (!deps.journaliserSuppression) return undefined;
     return (await deps.lister(ctx.tenant, ctx.agentId).catch(() => [])).find((f) => f.id === ficheId);
   };
   const journaliser = async (
     ctx: { tenant: string; agentId: string }, req: FastifyRequest, ficheId: string, avant: FicheConnaissance | undefined,
   ): Promise<void> => {
-    await deps.journaliserSuppression?.(ctx.tenant, ctx.agentId, {
+    await deps.journaliserSuppression(ctx.tenant, ctx.agentId, {
       cible: ficheId,
       libelle: `Fiche de connaissance : ${avant?.titre ?? ficheId}`,
       avant: avant ?? { id: ficheId },
@@ -232,9 +230,7 @@ export function registerAgentKnowledge(
      * ⚠️ UNE SEULE LECTURE pour toute la fournée, pas une par fiche : `ficheAvant` ferait N listes.
      */
     const avantParId = new Map(
-      deps.journaliserSuppression
-        ? (await deps.lister(ctx.tenant, ctx.agentId).catch(() => [])).map((f) => [f.id, f] as const)
-        : [],
+      (await deps.lister(ctx.tenant, ctx.agentId).catch(() => [])).map((f) => [f.id, f] as const),
     );
     let supprimees = 0;
     for (const id of ids) {

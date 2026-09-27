@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 
 export interface MediaRouteDeps {
   /** Upload une image et renvoie le handle média Meta (header_handle de carte carousel). */
@@ -21,8 +21,7 @@ export function registerMedia(app: FastifyInstance, deps: MediaRouteDeps, garde:
   const opts = { preHandler: garde, bodyLimit: 24 * 1024 * 1024 };
 
   app.post('/tenants/:tenantId/media', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
 
     const dataUrl = (req.body as { dataUrl?: unknown } | null)?.dataUrl;
     if (typeof dataUrl !== 'string') return reply.code(400).send({ error: 'dataUrl requis' });

@@ -5,6 +5,7 @@ import { MetaTemplateClient } from '../src/meta/templates';
 import type { FetchLike } from '../src/meta/templates';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
+import { modelesInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -33,6 +34,7 @@ function app(fetchImpl: FetchLike, wabaId: string | null = 'waba1', getPublished
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     templates: {
+      ...modelesInertes,
       templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fetchImpl),
       getWabaId: async () => wabaId,
       ...(getPublishedFlow ? { getPublishedFlow } : {}),
@@ -547,6 +549,7 @@ describe('routes templates — indices variable->champ (paramHints)', () => {
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
       templates: {
+        ...modelesInertes,
         templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fetchImpl),
         getWabaId: async () => 'waba1',
         saveParamHints: async (_t, name, language, hints) => { cap.saved.push({ name, language, hints }); },
@@ -709,7 +712,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
     const server = buildServer({
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
-      templates: { templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+      templates: { ...modelesInertes, templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
     });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
     expect(res.statusCode).toBe(201);
@@ -730,7 +733,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
     const server = buildServer({
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
-      templates: { templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+      templates: { ...modelesInertes, templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
     });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
     expect(res.statusCode).toBe(422);
@@ -746,6 +749,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
       templates: {
+        ...modelesInertes,
         templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn),
         getWabaId: async () => 'waba1',
         tracking: {
@@ -780,7 +784,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
     const server = buildServer({
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
-      templates: { templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+      templates: { ...modelesInertes, templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
     });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/templates', ...h(token) });
     const body = res.json<{ templates: Array<{ buttons?: Array<{ url?: string }> }> }>();

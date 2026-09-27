@@ -4,6 +4,7 @@ import { FakeQueue } from './fake-queue';
 import type { LinksRouteDeps } from '../src/http/links';
 import { capturerJournal } from './journal';
 import type { DestinationLien } from '../src/links/tracked-links.pg';
+import { liensInertes } from './routes-inertes';
 
 const CODE = 'ab12cd34ef56';
 
@@ -16,6 +17,7 @@ interface Capture {
 function app(over: Partial<LinksRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Capture } {
   const cap: Capture = { clics: [], lus: [], signaux: [] };
   const links: LinksRouteDeps = {
+    ...liensInertes,
     getByCode: async (code): Promise<DestinationLien | null> => {
       cap.lus.push(code);
       return code === CODE ? { tenantId: 't1', destination: 'https://client.fr/promo' } : null;

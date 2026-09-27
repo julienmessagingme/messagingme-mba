@@ -6,7 +6,7 @@ import { AgentIntrouvable, penserTrace } from '../agent/brain.gateway';
 import { TourInterrompu } from '../agent/brain';
 import { direPanneModele } from '../llm/errors';
 import { journaliser } from '../lib/journal';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { ESSAIS_AFFICHES, type TestRunStore } from '../agent/test-runs';
 import { messageDe } from '../lib/erreur';
 
@@ -29,26 +29,26 @@ import { messageDe } from '../lib/erreur';
 
 export interface AgentTestRouteDeps {
   /**
-   * L'historique des essais. OPTIONNEL : sans lui, l'essai marche exactement comme avant et l'ecran
-   * n'affiche simplement aucune trace. Une commodite ne doit pas devenir une condition de fonctionnement.
+   * L'historique des essais. Requis : le câblage de production le fournit toujours. Son ÉCHEC d'écriture ne
+   * fait jamais échouer un essai (best-effort, plus bas) : une commodité ne devient pas une condition.
    */
-  essais?: TestRunStore;
+  essais: TestRunStore;
   /** Les deps du cerveau, moins l'appel de modèle quand il n'est pas configuré. */
   cerveau?: GatewayBrainDeps;
   /** Le Gateway est-il configuré ? Le MODÈLE, lui, vient de la fiche de l'agent, pas d'une variable d'env. */
   disponible: boolean;
   /**
-   * Le solde prépayé du workspace, en micro-euros. Optionnelles ensemble ; absentes -> l'essai ne coûte rien
-   * au workspace (suites de tests à deps minimales).
+   * Le solde prépayé du workspace, en micro-euros. Requises ensemble : le câblage de production les fournit
+   * toujours, et les fixtures qui ne regardent pas l'argent passent `soldeIllimite` et `sansDebit`.
    *
    * 🔴 UN ESSAI CONSOMME POUR DE VRAI. Le bac à sable simule les outils à EFFET, jamais l'appel de modèle : le
    * fournisseur facture un essai exactement comme une conversation. Le laisser hors du solde donnerait une
    * porte gratuite et illimitée sur un compte prépayé, et ferait mentir le solde affiché juste à côté.
    */
-  solde?(tenantId: string): Promise<number>;
+  solde(tenantId: string): Promise<number>;
   /** Retire du solde ce que l'essai a coûté. La note dit d'où vient le mouvement : un essai n'ouvre aucune
    *  session, donc le journal n'a rien d'autre pour l'expliquer. */
-  debiter?(tenantId: string, montantMicroEur: number, note: string): Promise<void>;
+  debiter(tenantId: string, montantMicroEur: number, note: string): Promise<void>;
 }
 
 const messageSchema = z.object({
@@ -85,7 +85,7 @@ const TOUR_BAC_A_SABLE: Omit<ContexteTour, 'appelsDejaFaits' | 'coutDejaMicroEur
  * client de sa réponse pour une ligne de comptabilité. On perd le décompte, jamais l'essai.
  */
 async function debiterEssai(tenantId: string, coutMicroEur: number, deps: AgentTestRouteDeps): Promise<void> {
-  if (!deps.debiter || !(coutMicroEur > 0)) return;
+  if (!(coutMicroEur > 0)) return;
   try {
     await deps.debiter(tenantId, coutMicroEur, 'essai depuis la console');
   } catch (err) {
@@ -100,22 +100,18 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
   /**
    * Les derniers essais de cet agent, du plus recent au plus ancien.
    *
-   * ⚠️ 200 avec une liste VIDE quand l'historique n'est pas cable, jamais 404 ni 503 : l'ecran doit pouvoir
-   * poser la question sans savoir si le serveur tient une trace, et un agent qu'on n'a jamais essaye rend la
-   * meme chose qu'un serveur sans historique. C'est ce qui permet de deployer l'ecran avant la table.
+   * ⚠️ 200 avec une liste VIDE pour un agent qu'on n'a jamais essayé, jamais 404 : l'écran pose la question
+   * sans rien savoir de l'historique.
    */
   app.get('/tenants/:tenantId/agents/:agentId/tests', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
-    if (!deps.essais) return reply.code(200).send({ essais: [] });
     return reply.code(200).send({ essais: await deps.essais.lister(tenant, agentId, ESSAIS_AFFICHES) });
   });
 
   app.post('/tenants/:tenantId/agents/:agentId/test', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     if (!deps.cerveau || !deps.disponible) {
@@ -127,7 +123,7 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
     // Le SOLDE, avant l'appel au modèle et pour la même raison qu'en production : on ne paie pas un appel
     // qu'on ne pourra pas facturer. 409 et non 5xx : c'est un état du compte, pas un incident, et Cloudflare
     // remplacerait le corps d'une 5xx par sa page d'erreur, donc le client ne saurait même pas pourquoi.
-    if (deps.solde && (await deps.solde(tenant)) <= 0) {
+    if ((await deps.solde(tenant)) <= 0) {
       return reply.code(409).send({ error: 'solde épuisé : rechargez le compte pour essayer votre agent' });
     }
 
@@ -188,23 +184,21 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
      * ⚠️ L'attente est deliberee : l'ecran relit l'historique juste apres, et doit y voir l'essai qu'il
      * vient de faire.
      */
-    if (deps.essais) {
-      try {
-        await deps.essais.ecrire(tenant, agentId, {
-          messages: parse.data.messages,
-          reponse: decision.texte,
-          sortie: decision.sortie,
-          // On garde le NOM et le STATUT, jamais le CONTENU rendu par l'outil : il peut etre volumineux, il vient
-          // d'une base qu'un site tiers a remplie, et ce qu'on vient lire ici est « a-t-il seulement cherche ? ».
-          appels: decision.appels.map((a) => ({ nom: a.nom, status: a.status })),
-          tokensEntree: usage.tokensIn,
-          tokensSortie: usage.tokensOut,
-          coutMicroEur: usage.coutMicroEur,
-        });
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`agent: ESSAI NON ARCHIVÉ pour le tenant ${tenant}`, messageDe(err));
-      }
+    try {
+      await deps.essais.ecrire(tenant, agentId, {
+        messages: parse.data.messages,
+        reponse: decision.texte,
+        sortie: decision.sortie,
+        // On garde le NOM et le STATUT, jamais le CONTENU rendu par l'outil : il peut etre volumineux, il vient
+        // d'une base qu'un site tiers a remplie, et ce qu'on vient lire ici est « a-t-il seulement cherche ? ».
+        appels: decision.appels.map((a) => ({ nom: a.nom, status: a.status })),
+        tokensEntree: usage.tokensIn,
+        tokensSortie: usage.tokensOut,
+        coutMicroEur: usage.coutMicroEur,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`agent: ESSAI NON ARCHIVÉ pour le tenant ${tenant}`, messageDe(err));
     }
     return reply.code(200).send({
       texte: decision.texte,

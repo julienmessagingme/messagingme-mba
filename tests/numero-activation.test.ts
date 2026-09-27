@@ -4,6 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
+import { signupInerte } from './routes-inertes';
 
 /**
  * « Activer le numéro » : finir chez nous ce que la fenêtre Meta a laissé en plan.
@@ -40,6 +41,7 @@ interface Cap {
 function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
   const cap: Cap = { codes: [], verifies: [], registres: [], pins: [], delies: [], relies: [], audit: [] };
   const deps: EmbeddedSignupRouteDeps = {
+    ...signupInerte,
     audit: async (_t, _acteur, action) => { cap.audit.push(action); },
     configId: 'cfg-123',
     appId: 'app-1',

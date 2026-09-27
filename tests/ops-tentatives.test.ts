@@ -3,6 +3,7 @@ import { surveillerOps, ipIndicative, SEUIL_ALERTE, FENETRE_MS, REPOS_ALERTE_MS 
 import { buildServer } from '../src/server';
 import type { ServerDeps } from '../src/server';
 import { FakeQueue } from './fake-queue';
+import { opsInerte } from './routes-inertes';
 
 /**
  * LA SURVEILLANCE DE `/ops` (décision de Julien, 2026-09-03).
@@ -106,7 +107,7 @@ describe('/ops : le refus déclenche bien la surveillance', () => {
       verifyToken: 'v',
       appSecret: 's',
       opsToken: 'x'.repeat(32),
-      ops: { getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [] },
+      ops: { ...opsInerte, getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [] },
       surveillanceOps: { refus: (i) => vus.push(i) },
     };
     const app = buildServer(deps);

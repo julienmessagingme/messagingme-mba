@@ -12,7 +12,7 @@ import type { Connexion, ConnexionPublique, Organisation, MessageChannel, Messag
 import type { LienRow } from '../channels-me/link-store.pg';
 import type { ConversationsDunLien } from '../channels-me/conversions';
 import type { PostRow } from '../channels-me/post-store.pg';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { texteDe } from '../lib/erreur';
 
 /**
@@ -88,10 +88,9 @@ export interface ChannelsMeRouteDeps {
    * « Je veux mon code promo ! » sur rien. On le compte au lieu de le deviner. Mesure du 2026-09-07 sur les
    * deux liens existants : 4 correspondances, 4 vrais clics, ZERO faux positif.
    *
-   * OPTIONNELLE : absente -> aucun controle, comportement d'avant. Une mesure indisponible ne doit pas
-   * empecher un client de creer un lien.
+   * Requise depuis le lot 3 de l'audit ponytail : le câblage de production la fournit toujours.
    */
-  messagesContenantLaPhrase?(tenantId: string, phrase: string): Promise<number>;
+  messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number>;
   creerAutomationCompagnon(tenantId: string, input: {
     nom: string;
     /**
@@ -126,8 +125,8 @@ export interface ChannelsMeRouteDeps {
   /** Numero WhatsApp affiche du tenant. null = aucun numero connecte, donc aucun lien wa.me possible. */
   getDisplayPhoneNumber(tenantId: string): Promise<string | null>;
 
-  /** Demande d'activation (notification Telegram). Absente du cablage -> 503, comme partout ailleurs. */
-  demanderActivation?(input: { tenantId: string; userId: string | null; message: string }): Promise<void>;
+  /** Demande d'activation (notification Telegram). */
+  demanderActivation(input: { tenantId: string; userId: string | null; message: string }): Promise<void>;
 }
 
 const ID_EXTERNE = z.string().trim().min(1).max(200);
@@ -176,8 +175,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   const limiteurDemande = new RateLimiter(3, 60_000);
 
   app.get(`${base}/connection`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const connection = await deps.getConnection(tenant);
     if (!connection) {
       return reply.code(200).send({ connection: null, organisation: null, channels: [], distant: 'non_configuree' });
@@ -200,8 +198,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   });
 
   app.put(`${base}/connection`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const parse = connexionSchema.safeParse(req.body ?? {});
     if (!parse.success) {
@@ -227,16 +224,14 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
    * Rejouable : debrancher une chaine deja debranchee rend 200 avec `supprimee: false`, jamais une erreur.
    */
   app.delete(`${base}/connection`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const supprimee = await deps.supprimerConnection(tenant);
     return reply.code(200).send({ ok: true, supprimee });
   });
 
   app.post(`${base}/connection/test`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const cx = await deps.getSecrets(tenant);
     if (!cx) return reply.code(409).send({ error: 'aucune connexion enregistree : renseigne les identifiants avant de tester' });
@@ -256,8 +251,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   });
 
   app.get(`${base}/links`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const liens = await deps.listLinks(tenant);
     // UN seul appel pour toute la liste. Le front ne recompose JAMAIS une URL publique : il recoit le lien
     // wa.me pret a l'emploi, comme pour l'adresse d'un webhook entrant.
@@ -272,8 +266,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   });
 
   app.post(`${base}/links`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const parse = lienSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'workflowId (uuid) et phrase sont requis' });
@@ -305,14 +298,12 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
         error: "cette phrase entre en conflit avec celle d'un autre lien (l'une contient l'autre) : un seul message declencherait les deux scenarios",
       });
     }
-    if (deps.messagesContenantLaPhrase) {
-      const dejaVus = await deps.messagesContenantLaPhrase(tenant, phrase);
-      if (dejaVus > 0) {
-        // Le nombre est DIT : « trop banale » sans chiffre laisse le client deviner ce qu'on lui reproche.
-        return reply.code(409).send({
-          error: `cette phrase apparait deja dans ${dejaVus} message(s) recu(s) : elle declencherait le scenario sur des conversations ordinaires. Choisis une phrase plus specifique.`,
-        });
-      }
+    const dejaVus = await deps.messagesContenantLaPhrase(tenant, phrase);
+    if (dejaVus > 0) {
+      // Le nombre est DIT : « trop banale » sans chiffre laisse le client deviner ce qu'on lui reproche.
+      return reply.code(409).send({
+        error: `cette phrase apparait deja dans ${dejaVus} message(s) recu(s) : elle declencherait le scenario sur des conversations ordinaires. Choisis une phrase plus specifique.`,
+      });
     }
     // Le jeton est tire par le SERVEUR. Il n'est jamais journalise : il circule dans des messages publics.
     // ⚠️ Il ne DECLENCHE plus rien depuis le 2026-09-07 (c'est la phrase qui route) : il reste l'identifiant
@@ -371,15 +362,13 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
    * mesure relit des messages, le composeur n'en a pas besoin, et la payer a chaque frappe serait absurde.
    */
   app.get(`${base}/links/conversations`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const r = await deps.conversationsParLien(tenant);
     return reply.code(200).send(r);
   });
 
   app.post(`${base}/links/:id/disable`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'lien inconnu' });
@@ -402,8 +391,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   // existe pour fermer un chemin de reparation : un allumage automatique qui a echoue apres une publication
   // (POST /posts) laisse un bouton mort, et sans cette route rien ne permettait de le rallumer.
   app.post(`${base}/links/:id/enable`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'lien inconnu' });
@@ -419,8 +407,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   });
 
   app.get(`${base}/posts`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const posts = await deps.listPosts(tenant);
     const cx = await deps.getSecrets(tenant);
     const sansStatut = (distant: string) =>
@@ -443,8 +430,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   });
 
   app.post(`${base}/posts`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const parse = postSchema.safeParse(req.body ?? {});
     if (!parse.success) {
@@ -568,15 +554,13 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   });
 
   app.post(`${base}/activation-request`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const userId = req.auth?.userId ?? null;
     // Le 403 tenant reste prioritaire (il ne coute rien et ne doit pas consommer de quota).
     if (!limiteurDemande.take(userId ?? req.ip)) {
       return reply.code(429).send({ error: 'trop de demandes, reessaie plus tard' });
     }
-    if (!deps.demanderActivation) return reply.code(503).send({ error: 'demande d’activation indisponible sur cette instance' });
     const parse = demandeSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'message trop long (2000 caracteres maximum)' });
     await deps.demanderActivation({ tenantId: tenant, userId, message: parse.data.message ?? '' });

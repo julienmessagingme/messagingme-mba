@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect, vi } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -44,8 +45,9 @@ function make(graph: WorkflowGraph, over: Partial<WorkflowExecutorDeps> = {}) {
   // Le 4e argument : quelqu'un ATTEND-IL une réponse ? (arbitrage de Julien du 2026-09-23, migration 0164)
   const drapeaux: boolean[] = [];
   const ex = new WorkflowExecutor({
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
-    runs,
+    runs: avecGardesDEtatInertes(runs),
     getGraph: async () => graph,
     applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
     setField: async (_t, _w, k, v) => { calls.push(`field:${k}=${v}`); },
@@ -380,8 +382,9 @@ describe('WorkflowExecutor', () => {
     const runs = new FakeRuns();
     const captured: Array<string[] | undefined> = [];
     const ex = new WorkflowExecutor({
+      ...depsInertes,
       estDesabonne: jamaisDesabonne,
-      runs,
+      runs: avecGardesDEtatInertes(runs),
       getGraph: async () => graph,
       applyTag: async () => {},
       setField: async () => {},
@@ -484,8 +487,9 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
     const runs = new FakeRuns();
     const calls: string[] = [];
     const ex = new WorkflowExecutor({
+      ...depsInertes,
       estDesabonne: jamaisDesabonne,
-      runs,
+      runs: avecGardesDEtatInertes(runs),
       getGraph: async () => graph,
       applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
       setField: async (_t, _w, k, v) => { calls.push(`field:${k}=${v}`); },
@@ -642,8 +646,9 @@ describe('publication « tag ajouté » : gouvernée par le CHEMIN, pas par l’
   function exec(over: Partial<WorkflowExecutorDeps> = {}) {
     const emitted: string[] = [];
     const deps: WorkflowExecutorDeps = {
+      ...depsInertes,
       estDesabonne: jamaisDesabonne,
-      runs: { start: async () => ({ id: 'r1' }), findWaitingByWaId: async () => null, setState: async () => {}, closeActiveByWaId: async () => [] },
+      runs: avecGardesDEtatInertes({ start: async () => ({ id: 'r1' }), findWaitingByWaId: async () => null, setState: async () => {}, closeActiveByWaId: async () => [] }),
       getGraph: async () => graphe,
       applyTag: async () => true, // le tag est réellement nouveau
       setField: async () => {}, removeTag: async () => {}, clearField: async () => {},
@@ -700,8 +705,9 @@ describe('WorkflowExecutor.resume (réveil après un bloc Attente)', () => {
     const escalations: string[] = [];
     const emis: string[] = []; // événements d'automation publiés (tag ajouté)
     const ex = new WorkflowExecutor({
+      ...depsInertes,
       estDesabonne: jamaisDesabonne,
-      runs,
+      runs: avecGardesDEtatInertes(runs),
       getGraph: async () => graph,
       applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); return true; },
       setField: async () => {},

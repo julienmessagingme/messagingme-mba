@@ -5,6 +5,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
+import { inboxInerte } from './routes-inertes';
 
 /**
  * TRADUIRE UN SORTANT : la route, et la trace qu'elle laisse.
@@ -23,6 +24,7 @@ const auth = () => ({ headers: { 'content-type': 'application/json', authorizati
 
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
+    ...inboxInerte,
     estDesabonne: jamaisDesabonne,
     listConversations: async () => [],
     getConversationContext: async (id) => (id === 'c1'

@@ -116,13 +116,6 @@ describe('suppression d’un contact (la seule, et elle efface)', () => {
     expect(purges).toEqual([]);
     await server.close();
   });
-
-  it('instance sans purge câblée -> 503, pas un faux succès', async () => {
-    const { server } = app({ purgeMany: undefined, contactIdsForTarget: undefined } as never);
-    const res = await server.inject({ method: 'POST', url, ...h(adminTok), payload: { target: { ids: ['c1'] }, confirm: 'SUPPRIMER' } });
-    expect(res.statusCode).toBe(503);
-    await server.close();
-  });
 });
 
 describe('journal d’audit', () => {
@@ -254,15 +247,6 @@ describe('lecture du journal', () => {
     const res = await server.inject({ method: 'GET', url, ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ entries: unknown[] }>().entries).toHaveLength(1);
-    await server.close();
-  });
-
-  it('🔴 instance sans journal -> 503, PAS une liste vide', async () => {
-    // Une liste vide se lirait « il ne s'est rien passé », ce qui est le contraire de ce qu'un journal doit
-    // savoir dire quand il est absent.
-    const { server } = app({ listAudit: undefined } as never);
-    const res = await server.inject({ method: 'GET', url, ...h(adminTok) });
-    expect(res.statusCode).toBe(503);
     await server.close();
   });
 
@@ -421,18 +405,5 @@ describe('recherche dans les journaux', () => {
       expect((await server.inject({ method: 'GET', url, ...h(agentTok) })).statusCode, url).toBe(403);
     }
     await server.close();
-  });
-
-  it('sans la dépendance, les DEUX moitiés le DISENT (503) au lieu de rendre une liste vide', async () => {
-    // Une liste vide ferait croire qu'il n'y a aucune erreur, ce qui est exactement l'inverse de ce que cet
-    // écran doit permettre de constater. Les deux moitiés portent la même garde : ne couvrir que l'une
-    // laisserait l'autre libre de mentir par omission le jour où son câblage disparaîtrait.
-    const sansLivraison = app({ listErreursLivraison: undefined } as never);
-    expect((await sansLivraison.server.inject({ method: 'GET', url: '/tenants/t1/erreurs-livraison', ...h(adminTok) })).statusCode).toBe(503);
-    await sansLivraison.server.close();
-
-    const sansSysteme = app({ listErreursSysteme: undefined } as never);
-    expect((await sansSysteme.server.inject({ method: 'GET', url: '/tenants/t1/erreurs-systeme', ...h(adminTok) })).statusCode).toBe(503);
-    await sansSysteme.server.close();
   });
 });

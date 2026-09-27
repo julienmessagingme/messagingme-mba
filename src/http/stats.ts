@@ -11,7 +11,7 @@ import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
 import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConversationsFilter, NuageQualitatif, JourAnalyse } from '../stats/conversation-stats.pg';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
 import { INTENTS as INTENTS_ANALYSE } from '../analysis/schema';
@@ -67,37 +67,30 @@ export interface StatsRouteDeps {
    * comptait une population voisine mais différente, et les deux écrans (Analytics et Paramètres) portent
    * le même titre. Un client aurait comparé, et l'un des deux serait passé pour faux.
    *
-   * OPTIONNELLE : un câblage qui ne la fournit pas rend 503, pas une liste vide. Une liste vide se lirait
-   * « personne n'a été touché », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
-   * Même choix que `getWorkflowNodeCounts` juste en dessous.
+   * REQUISE depuis le lot 3 de l'audit ponytail : elle rendait 503 quand elle manquait, jamais une liste vide
+   * qui se lirait « personne n'a été touché ». C'est désormais le compilateur qui interdit le câblage muet.
    */
-  getErrorContacts?(tenantId: string, range: DateRange, code: number, filter: FiltreCampagneOuTemplate): Promise<ErreurLivraison[]>;
+  getErrorContacts(tenantId: string, range: DateRange, code: number, filter: FiltreCampagneOuTemplate): Promise<ErreurLivraison[]>;
   /** Série de coût estimé/jour, filtrable par campagne ou template. */
   getCostSeries(tenantId: string, range: DateRange, filter: FiltreCampagneOuTemplate): Promise<CostSeries>;
   /**
    * Le tableau « ce que coûte un engagement » de la page de synthèse (lot E) : une ligne par campagne
    * ayant envoyé sur la période, son coût ESTIMÉ et ses clics.
-   *
-   * OPTIONNELLE -> 503 quand elle manque, comme ses voisines : un tableau vide se lirait « aucune campagne
-   * n'a envoyé sur la période », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
    */
   /** `inclureArchivees` : la bascule de la carte (lot 4 de la liste du 2026-09-23). Absente = exclues. */
-  getCoutParCampagne?(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<CoutParCampagne>;
+  getCoutParCampagne(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<CoutParCampagne>;
   /**
    * Le COUT TOTAL DES MESSAGES de la période (ligne 2 de la carte « Coûts »).
-   *
-   * OPTIONNELLE -> 503 quand elle manque, comme ses voisines. Un total à zéro se lirait « vous n'avez rien
-   * envoyé », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
    */
-  getCoutMessages?(tenantId: string, range: DateRange): Promise<CoutMessages>;
+  getCoutMessages(tenantId: string, range: DateRange): Promise<CoutMessages>;
   /**
    * Ce que le client a dépensé en IA sur SON crédit (ligne 3 de la carte « Coûts »), et le détail des tours.
    *
-   * OPTIONNELLE, même raison. ⚠️ Un total à zéro est ici un état NORMAL et non une panne : aucun tour
+   * ⚠️ Un total à zéro est ici un état NORMAL et non une panne : aucun tour
    * d'agent n'a jamais tourné en production (mesuré le 2026-09-17). L'écran doit dire « aucune
    * consommation », pas afficher un tiret qui se lirait comme une mesure manquante.
    */
-  getCoutIa?(tenantId: string, range: DateRange): Promise<CoutIa>;
+  getCoutIa(tenantId: string, range: DateRange): Promise<CoutIa>;
   /**
    * La fiche d'UNE campagne : ce qu'elle a coûté et ce que les gens en ont fait (demande de Julien du
    * 2026-09-09, ouverte en cliquant une ligne du tableau ci-dessus).
@@ -109,7 +102,7 @@ export interface StatsRouteDeps {
    *
    * `null` quand la campagne n'existe pas ou n'appartient pas à cet espace -> 404, jamais une fiche vide.
    */
-  getDetailCoutCampagne?(tenantId: string, campaignId: string): Promise<DetailCoutCampagne | null>;
+  getDetailCoutCampagne(tenantId: string, campaignId: string): Promise<DetailCoutCampagne | null>;
   /** Agrégats d'analyse de conversation (Pièce 1) sur la plage. */
   getConversationSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
   /** Liste des dernières conversations analysées (quali), filtrable. */
@@ -117,24 +110,17 @@ export interface StatsRouteDeps {
   /**
    * Le damier « satisfaction x urgence » de la page de synthèse (lot F).
    *
-   * OPTIONNELLE, et 503 quand elle manque, comme `getWorkflowNodeCounts` juste en dessous : un nuage vide
-   * se lirait « aucune conversation mesurée sur la période », qui est une affirmation, alors que la vérité
-   * serait « rien n'est branché ». L'écran, lui, distingue déjà « vide » de « pas encore de mesures ».
+   * L'écran distingue « vide » de « pas encore de mesures ».
    */
-  getNuageQualitatif?(tenantId: string, range: DateRange): Promise<NuageQualitatif>;
+  getNuageQualitatif(tenantId: string, range: DateRange): Promise<NuageQualitatif>;
   /**
    * Une ligne par JOUR pour l ecran « Analyse des conversations » (2026-09-17).
-   *
-   * OPTIONNELLE -> 503 quand elle manque, comme ses voisines : une liste vide se lirait « aucune
-   * conversation analysee sur la periode », qui est une affirmation, alors que la verite serait
-   * « rien n est branche ».
    */
-  getJoursAnalyse?(tenantId: string, range: DateRange): Promise<JourAnalyse[]>;
+  getJoursAnalyse(tenantId: string, range: DateRange): Promise<JourAnalyse[]>;
   /**
-   * Mesures d'un SCÉNARIO, bloc par bloc (« Mes tableaux »). Optionnelle : absente -> 503 plutôt qu'une liste
-   * vide, qui se lirait « ce scénario n'a rien produit » alors que rien n'est branché.
+   * Mesures d'un SCÉNARIO, bloc par bloc (« Mes tableaux »).
    */
-  getWorkflowNodeCounts?(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
+  getWorkflowNodeCounts(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
   /**
    * Les messages envoyés et reçus par canal, pour les cartes « Numéro WhatsApp » et « Canal RCS » de l'Accueil.
    * Ce qui est compté et ce qui est écarté : `PgStatsStore.volumesParCanal`.
@@ -192,8 +178,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/stats', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getDashboard(tenant, r.range));
@@ -206,8 +191,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * l'écran ne l'invente pas.
    */
   app.get('/tenants/:tenantId/accueil/volumes', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const volumes = await deps.volumesParCanal(tenant, JOURS_VOLUMES);
     return reply.code(200).send({ jours: JOURS_VOLUMES, whatsapp: volumes.whatsapp, rcs: volumes.rcs });
   });
@@ -215,8 +199,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   // Breakdown par template + prix Meta (pricing_analytics). Séparé de /stats : peut appeler Meta
   // (plus lent) et n'est chargé que par la section « Templates envoyés » du dashboard.
   app.get('/tenants/:tenantId/stats/templates', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     const [breakdown, pricing, marge] = await Promise.all([
@@ -235,8 +218,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   // Funnel d'UNE campagne (envoyés/délivrés/lus/répondus). ?campaignId=... requis. Pas de plage
   // (le funnel porte sur toute la campagne). Le scope tenant est aussi appliqué en SQL (pas de fuite).
   app.get('/tenants/:tenantId/stats/campaign-funnel', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const campaignId = (req.query as Record<string, unknown>).campaignId;
     if (typeof campaignId !== 'string' || campaignId === '') return reply.code(400).send({ error: 'campaignId requis' });
     return reply.code(200).send(await deps.getCampaignFunnel(tenant, campaignId));
@@ -244,8 +226,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
 
   // Breakdown des codes d'erreur Meta sur la plage, filtrable ?templateName=.
   app.get('/tenants/:tenantId/stats/errors', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const q = req.query as Record<string, unknown>;
     const r = parseRange(q);
     if ('error' in r) return reply.code(400).send({ error: r.error });
@@ -266,9 +247,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * un plafond de 200.
    */
   app.get('/tenants/:tenantId/stats/errors/:code/contacts', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getErrorContacts) return reply.code(503).send({ error: 'contacts touches non configures' });
+    const tenant = espaceVerifie(req);
     const { code } = req.params as { code: string };
     // `Number.parseInt` s'arrete au premier caractere non chiffre : « 131049abc » passerait. On exige donc
     // que le segment soit ENTIEREMENT numerique, sinon deux adresses differentes designeraient la meme chose.
@@ -304,9 +283,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * une liste vide, et c'est le comportement juste, pas un bug.
    */
   app.get('/tenants/:tenantId/stats/workflow/:workflowId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getWorkflowNodeCounts) return reply.code(503).send({ error: 'mesures de scénario non configurées' });
+    const tenant = espaceVerifie(req);
     const { workflowId } = req.params as { workflowId: string };
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
@@ -315,8 +292,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
 
   // Graphe de coût estimé/jour, filtrable ?campaignId= / ?templateName= (peut appeler Meta pour le tarif).
   app.get('/tenants/:tenantId/stats/cost', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const q = req.query as Record<string, unknown>;
     const r = parseRange(q);
     if ('error' in r) return reply.code(400).send({ error: r.error });
@@ -340,9 +316,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * viennent du même endroit, et ils en viennent.
    */
   app.get('/tenants/:tenantId/stats/cost/campaigns', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getCoutParCampagne) return reply.code(503).send({ error: 'cout par campagne non configure' });
+    const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     const inclureArchivees = (req.query as Record<string, unknown>).archivees === '1';
@@ -358,9 +332,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * période a coûté, tous canaux ». Elles partagent le calcul (`chiffrer`, et la marge appliquee EN AMONT par `tarifsFactures`), pas la forme.
    */
   app.get('/tenants/:tenantId/stats/cost/messages', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getCoutMessages) return reply.code(503).send({ error: 'cout des messages non configure' });
+    const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getCoutMessages(tenant, r.range));
@@ -375,9 +347,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * de service : son coût est dans la route au-dessus, pas dans celle-ci.
    */
   app.get('/tenants/:tenantId/stats/cost/ia', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getCoutIa) return reply.code(503).send({ error: 'cout ia non configure' });
+    const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getCoutIa(tenant, r.range));
@@ -392,17 +362,14 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * par le trafic du client.
    */
   app.get('/tenants/:tenantId/stats/conversations/jours', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getJoursAnalyse) return reply.code(503).send({ error: 'jours d analyse non configure' });
+    const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send({ jours: await deps.getJoursAnalyse(tenant, r.range) });
   });
 
   app.get('/tenants/:tenantId/stats/conversations', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getConversationSummary(tenant, r.range));
@@ -416,9 +383,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * les dix sujets fréquents. Les fondre ferait payer à chaque écran ce dont l'autre a besoin.
    */
   app.get('/tenants/:tenantId/stats/conversations/nuage', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getNuageQualitatif) return reply.code(503).send({ error: 'nuage qualitatif non configure' });
+    const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getNuageQualitatif(tenant, r.range));
@@ -435,9 +400,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    * Cloudflare mangerait le corps) au lieu du 400 que mérite une adresse mal formée.
    */
   app.get('/tenants/:tenantId/stats/cost/campaigns/:campaignId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getDetailCoutCampagne) return reply.code(503).send({ error: 'detail de campagne non configure' });
+    const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId?: string };
     // `estUuid` du dépôt, pas une expression régulière de plus : elle est déjà importée ici, et une
     // seconde définition de « un identifiant valide » dériverait de la première au premier ajustement.
@@ -453,8 +416,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
 
   // Liste quali des conversations analysées, filtrable ?sentiment=&intent=&action=&topic=&limit=.
   app.get('/tenants/:tenantId/stats/conversations/list', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const q = req.query as Record<string, unknown>;
     const r = parseRange(q);
     if ('error' in r) return reply.code(400).send({ error: r.error });

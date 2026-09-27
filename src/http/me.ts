@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 
 /** Profil de l'utilisateur COURANT (dérivé de req.auth.userId). Sert au « Bonjour {prénom} » de l'Accueil. */
 export interface MeRouteDeps {
@@ -11,8 +11,7 @@ export function registerMe(app: FastifyInstance, deps: MeRouteDeps, garde: Guard
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/me', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const userId = req.auth?.userId;
     if (!userId) return reply.code(401).send({ error: 'authentification requise' });
     /**

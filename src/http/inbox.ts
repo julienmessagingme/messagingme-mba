@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Guard, PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, CompteursInbox } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
-import { scopeTenant, nonEmpty, estUuid } from './scope';
+import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter, peutPrendre } from '../inbox/assignment';
 import { gardeEtendue } from '../auth/middleware';
@@ -22,7 +22,6 @@ import { messageDe } from '../lib/erreur';
  * Ce que rend la route des compteurs quand la dépendance n'est pas câblée (suites de tests à deps minimales,
  * instance partielle). Des ZÉROS et non une erreur : un menu sans chiffres reste un menu.
  */
-const COMPTEURS_VIDES: CompteursInbox = { tout: 0, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
 
 /**
  * Durée de vie du micro-cache des compteurs de l'inbox (AUDIT-SCALE-2026-08-25.md, R7).
@@ -52,43 +51,40 @@ export interface OutboundTemplate {
 export interface InboxRouteDeps {
   /**
    * EFFACE LE CONTENU d'une conversation. Rend le nombre de messages effacés, `null` si elle n'est pas de cet
-   * espace. Optionnelle : absente, la route rend 503 plutôt que d'exister sans rien faire.
+   * espace.
    */
-  effacerMessages?(tenantId: string, conversationId: string): Promise<number | null>;
+  effacerMessages(tenantId: string, conversationId: string): Promise<number | null>;
   /**
-   * Journal d'audit. Optionnel : absent -> aucune trace (câblages de test). BEST-EFFORT à l'appel : un
-   * journal muet est un désagrément, une action bloquée par une écriture de log est un incident.
+   * Journal d'audit. Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`. BEST-EFFORT à
+   * l'appel : un journal muet est un désagrément, une action bloquée par une écriture de log est un incident.
    */
-  audit?: AuditSink;
+  audit: AuditSink;
   listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
   /**
    * TROUVE OU CRÉE la conversation d'un contact, et rend son identifiant (`null` = contact inconnu de cet
    * espace, supprimé, ou sans aucune identité joignable).
-   *
-   * ⚠️ OPTIONNELLE, et c'est la seule raison acceptable ici : une instance dont le magasin est plus ancien
-   * que cette route doit répondre « pas configuré » plutôt que tomber. La route le dit en 503.
    */
-  ouvrirConversationDuContact?(tenantId: string, contactId: string): Promise<string | null>;
-  /** Nombre de conversations non lues (pastille du menu). Optionnel : absent -> 0, la pastille ne s'affiche pas. */
-  countUnread?(tenantId: string, acteur: { userId: string | null; role: string | null }): Promise<number>;
-  /** Nombre de conversations « À traiter ». Optionnel : absent -> le compteur n'est pas rendu. */
-  countATraiter?(tenantId: string): Promise<number>;
+  ouvrirConversationDuContact(tenantId: string, contactId: string): Promise<string | null>;
+  /** Nombre de conversations non lues (pastille du menu). 0 -> la pastille ne s'affiche pas. */
+  countUnread(tenantId: string, acteur: { userId: string | null; role: string | null }): Promise<number>;
+  /** Nombre de conversations « À traiter ». */
+  countATraiter(tenantId: string): Promise<number>;
   /** Les compteurs du menu de dossiers, plus la charge par membre. */
-  compterConversations?(tenantId: string): Promise<CompteursInbox>;
+  compterConversations(tenantId: string): Promise<CompteursInbox>;
   /** Range une conversation dans Archivé, ou l'en sort. `false` = inconnue dans cet espace -> 404. */
-  archiverConversation?(tenantId: string, conversationId: string, archive: boolean): Promise<boolean>;
+  archiverConversation(tenantId: string, conversationId: string, archive: boolean): Promise<boolean>;
   /**
    * Signale une conversation À LA MAIN, ou retire ce signalement (migration 0123).
    *
    * ⚠️ N'écrit PAS le constat de l'analyse : ce sont deux sources distinctes que le dossier « Signalé »
-   * réunit. Absente -> la route rend 503, comme l'archivage.
+   * réunit.
    */
-  signalerConversation?(tenantId: string, conversationId: string, signale: boolean, parUserId: string | null): Promise<boolean>;
+  signalerConversation(tenantId: string, conversationId: string, signale: boolean, parUserId: string | null): Promise<boolean>;
   /**
    * Marque une conversation « Traité », ou retire ce statut (migration 0160). `false` = inconnue dans cet
-   * espace -> 404. Absente -> la route rend 503, comme l'archivage.
+   * espace -> 404.
    */
-  marquerTraitee?(tenantId: string, conversationId: string, traitee: boolean): Promise<boolean>;
+  marquerTraitee(tenantId: string, conversationId: string, traitee: boolean): Promise<boolean>;
   /**
    * Transcrit le vocal d'un message, à la demande (2026-09-09).
    *
@@ -114,35 +110,32 @@ export interface InboxRouteDeps {
   /**
    * Les octets d'un message média, pour les servir au navigateur (2026-09-09).
    *
-   * `null` = ce message ne porte aucun média. OPTIONNELLE : absente, la route rend 503, comme les autres
-   * capacités de cet écran.
+   * `null` = ce message ne porte aucun média.
    */
-  lireMediaMessage?(tenantId: string, messageId: string, conversationId?: string): Promise<{ bytes: Buffer; mime: string | null; nom?: string | null } | null>;
+  lireMediaMessage(tenantId: string, messageId: string, conversationId?: string): Promise<{ bytes: Buffer; mime: string | null; nom?: string | null } | null>;
   /**
    * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
-   * Optionnelle : absente, aucune conversation n'est considérée comme affectée et tout le monde écrit,
-   * c'est-à-dire exactement le comportement d'avant l'affectation.
    */
-  getAssignee?(tenantId: string, conversationId: string): Promise<string | null | undefined>;
+  getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
   /** Affecte (ou libère avec `null`). `false` = conversation inconnue, ou membre étranger au tenant. */
-  setAssignee?(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
+  setAssignee(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
   /**
    * PREND une conversation du pot commun pour `userId`, SEULEMENT si elle est à personne (migration 0160).
    * `false` = inconnue ou déjà prise : la route relit l'affectation pour dire lequel.
    */
-  prendreSiLibre?(tenantId: string, conversationId: string, userId: string): Promise<boolean>;
+  prendreSiLibre(tenantId: string, conversationId: string, userId: string): Promise<boolean>;
   /**
-   * L'espace autorise-t-il ses agents à PRENDRE une conversation du pot commun ? Absente -> `false`, c'est-à-
-   * dire le comportement d'avant le réglage.
+   * L'espace autorise-t-il ses agents à PRENDRE une conversation du pot commun ? `false` est le comportement
+   * d'avant le réglage.
    */
-  agentsPeuventPrendre?(tenantId: string): Promise<boolean>;
+  agentsPeuventPrendre(tenantId: string): Promise<boolean>;
   /**
-   * Les membres à qui l'encadrement peut confier une conversation (id + nom affichable). Absente -> la route
-   * rend une liste vide, et le sélecteur ne propose que « Non affectée », comme avant.
+   * Les membres à qui l'encadrement peut confier une conversation (id + nom affichable). Une liste vide : le
+   * sélecteur ne propose que « Non affectée ».
    */
-  membresPourAffectation?(tenantId: string): Promise<Array<{ id: string; nom: string }>>;
-  /** Marque un fil comme lu (un opérateur vient de l'ouvrir). Optionnel (deps de test minimales). */
-  markConversationRead?(tenantId: string, conversationId: string): Promise<void>;
+  membresPourAffectation(tenantId: string): Promise<Array<{ id: string; nom: string }>>;
+  /** Marque un fil comme lu (un opérateur vient de l'ouvrir). */
+  markConversationRead(tenantId: string, conversationId: string): Promise<void>;
   /**
    * wa_id + état de la fenêtre de service 24 h. `null` si conversation absente, ou d'un autre espace.
    *
@@ -187,9 +180,9 @@ export interface InboxRouteDeps {
    * Un opérateur vient d'écrire : il PREND le fil. Posé depuis la route et non depuis le store, parce que
    * seule la route sait qu'un humain authentifié est à l'origine de l'envoi. Sans condition `only` : un
    * humain prend toujours la main, y compris sur MBA (côté Meta, envoyer suffit à prendre le contrôle).
-   * Optionnel pour ne pas casser les suites de tests qui construisent des deps minimales.
+   * Requis depuis le lot 3 de l'audit ponytail : il était optionnel « pour les deps de test minimales ».
    */
-  takeControl?(tenantId: string, waId: string): Promise<void>;
+  takeControl(tenantId: string, waId: string): Promise<void>;
   /**
    * PREND le fil À L'AGENT DE META, sans écrire au client (`thread_control`, action `take`).
    *
@@ -199,10 +192,9 @@ export interface InboxRouteDeps {
    * signalé par Julien le 2026-09-11 : après « Reprendre la main », l'agent de Meta répondait au message
    * suivant du client comme si de rien n'était.
    *
-   * ⚠️ LÈVE si Meta refuse, et la route en fait un 4xx lisible. Optionnelle : absente, le bouton garde son
-   * ancien comportement local, ce qui est le bon repli pour une instance sans MBA.
+   * ⚠️ LÈVE si Meta refuse, et la route en fait un 4xx lisible.
    */
-  prendreLeFil?(tenantId: string, waId: string): Promise<void>;
+  prendreLeFil(tenantId: string, waId: string): Promise<void>;
   /**
    * L'opérateur REND la main : la conversation repart en automatique. Renvoie qui la détient désormais.
    *
@@ -215,9 +207,9 @@ export interface InboxRouteDeps {
    * 🔴 UN ÉCHEC REMONTE, il ne s'avale pas : la route en fait un 409 lisible, et notre état local ne bouge
    * pas. Un état local qui annonce ce que Meta n'a pas fait est pire qu'une erreur.
    */
-  releaseControl?(tenantId: string, waId: string): Promise<'app_workflow' | 'mba'>;
+  releaseControl(tenantId: string, waId: string): Promise<'app_workflow' | 'mba'>;
   /** Détenteur courant du fil, pour l'afficher dans le détail de la conversation. */
-  getControlOwner?(tenantId: string, waId: string): Promise<'app_workflow' | 'app_human' | 'mba'>;
+  getControlOwner(tenantId: string, waId: string): Promise<'app_workflow' | 'app_human' | 'mba'>;
   recordOutbound(
     conversationId: string,
     body: string,
@@ -242,10 +234,8 @@ export interface InboxRouteDeps {
   /**
    * Variables d'un template DÉJÀ résolues sur la fiche de ce contact, avec le libellé du champ qui les
    * alimente. C'est ce que l'écran d'envoi affiche : l'opérateur voit les vraies valeurs, pas `{{1}}`.
-   *
-   * OPTIONNELLE : absente, l'écran retombe sur des champs vides à remplir à la main (comportement d'avant).
    */
-  resolveTemplateParams?(
+  resolveTemplateParams(
     tenantId: string,
     waId: string,
     template: { name: string; language: string; count: number },
@@ -254,10 +244,9 @@ export interface InboxRouteDeps {
    * Envoie un message de la bibliothèque RCS à ce contact, variables résolues sur sa fiche.
    *
    * Rend `{ messageId, apercu }` quand c'est parti, ou `{ refus }` avec une raison DESTINÉE À L'OPÉRATEUR
-   * (canal éteint, message supprimé depuis, contact désabonné du RCS). Optionnelle : absente, la route
-   * répond 422 « canal RCS non disponible » au lieu de 500 sur des deps de test minimales.
+   * (canal éteint, message supprimé depuis, contact désabonné du RCS).
    */
-  sendRcsFromInbox?(
+  sendRcsFromInbox(
     tenantId: string,
     waId: string,
     contenu: { rcsMessageId: string } | { text: string },
@@ -284,7 +273,7 @@ export interface InboxRouteDeps {
    *
    * ⚠️ N'EST APPELÉE QUE SUR UN CONTACT DÉSABONNÉ, donc le cas ordinaire ne paie aucune lecture chez Meta.
    */
-  categorieDuModele?(tenantId: string, name: string, language: string): Promise<'marketing' | 'utility' | null>;
+  categorieDuModele(tenantId: string, name: string, language: string): Promise<'marketing' | 'utility' | null>;
   /**
    * Template CAROUSEL : relit ses cartes chez Meta et prépare leurs visuels pour l'envoi (re-téléversement).
    * `null` = ce template n'est pas un carousel (envoi inchangé). `{ refus }` = il en est un mais n'est pas
@@ -292,9 +281,9 @@ export interface InboxRouteDeps {
    *
    * Pourquoi la route en dépend au lieu de laisser l'envoi échouer : sans re-téléversement, Meta ACCEPTE
    * l'envoi (200 + id) puis ne le livre jamais (131053). Un « envoyé » à l'écran sans message sur le
-   * téléphone est exactement ce qu'on ne veut plus. Absente -> aucun carousel n'est envoyable depuis l'inbox.
+   * téléphone est exactement ce qu'on ne veut plus.
    */
-  prepareCarousel?(
+  prepareCarousel(
     tenantId: string,
     name: string,
     language: string,
@@ -307,9 +296,9 @@ export interface InboxRouteDeps {
    * template configuré peut partir, les autres seraient refusés par Meta (131047).
    *
    * Rendu : `true` = parti. Une CHAÎNE = pas parti, avec la raison exacte à montrer à l'opérateur.
-   * `null` = scénario inconnu pour ce workspace. Absente -> la fonctionnalité est indisponible (503).
+   * `null` = scénario inconnu pour ce workspace.
    */
-  startWorkflow?(tenantId: string, workflowId: string, waId: string, windowOpen: boolean): Promise<true | string | null>;
+  startWorkflow(tenantId: string, workflowId: string, waId: string, windowOpen: boolean): Promise<true | string | null>;
 }
 
 /**
@@ -380,7 +369,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     tenant: string,
     acteur: { userId: string | null; role: string | null },
   ): Promise<boolean | null> {
-    if (!deps.agentsPeuventPrendre || peutAffecter(acteur)) return false;
+    if (peutAffecter(acteur)) return false;
     try {
       return await deps.agentsPeuventPrendre(tenant);
     } catch (err) {
@@ -392,8 +381,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
   }
 
   app.get('/tenants/:tenantId/conversations', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     // Query string = entrée NON FIABLE. Chaque paramètre est lu dans sa forme attendue et ignoré sinon : un
     // filtre mal formé doit rendre la page normale, jamais une page vide qui se lirait « aucune conversation ».
     const q = (req.query ?? {}) as {
@@ -454,7 +442,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const reglage = await reglagePrise(tenant, acteur);
     return reply.code(200).send({
       conversations: conversations.map((c) => ({ ...c, assignedToMe: moi !== null && c.assignedTo === moi })),
-      peutPrendre: deps.prendreSiLibre !== undefined && peutPrendre(acteur, null, reglage === true),
+      peutPrendre: peutPrendre(acteur, null, reglage === true),
     });
   });
 
@@ -463,16 +451,12 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * les conversations chargées, donc il plafonnait à la taille de la page et affichait moins que la réalité.
    * Déclarée AVANT `/conversations/:conversationId` : `counts` n'est pas un identifiant.
    *
-   * ⚠️ Rend un objet à ZÉROS quand la dépendance n'est pas câblée, jamais une erreur : un menu sans chiffres
-   * reste un menu utilisable, alors qu'une 503 rendrait tout l'écran indisponible pour un ornement.
    */
   app.get('/tenants/:tenantId/conversations/counts', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.compterConversations) return reply.code(200).send(COMPTEURS_VIDES);
+    const tenant = espaceVerifie(req);
     // `deps.compterConversations(...)` DANS la fermeture, jamais une référence détachée : même raison que
     // pour `todo-count` juste en dessous.
-    const compte = await compteursMenu.lire(cleMenu(tenant), () => deps.compterConversations!(tenant));
+    const compte = await compteursMenu.lire(cleMenu(tenant), () => deps.compterConversations(tenant));
     return reply.code(200).send(compte);
   });
 
@@ -487,9 +471,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    */
   for (const [chemin, archive] of [['archive', true], ['unarchive', false]] as const) {
     app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
-      const tenant = scopeTenant(req);
-      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-      if (!deps.archiverConversation) return reply.code(503).send({ error: 'archivage indisponible sur cette instance' });
+      const tenant = espaceVerifie(req);
       const { conversationId } = req.params as { conversationId: string };
       // 404 et non 200 : une conversation inconnue (ou d'un autre espace) doit se voir, sinon l'écran
       // annoncerait un rangement qui n'a pas eu lieu.
@@ -513,9 +495,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    */
   for (const [chemin, signale] of [['signaler', true], ['ne-plus-signaler', false]] as const) {
     app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
-      const tenant = scopeTenant(req);
-      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-      if (!deps.signalerConversation) return reply.code(503).send({ error: 'signalement indisponible sur cette instance' });
+      const tenant = espaceVerifie(req);
       const { conversationId } = req.params as { conversationId: string };
       if (!(await deps.signalerConversation(tenant, conversationId, signale, req.auth?.userId ?? null))) {
         return reply.code(404).send({ error: 'conversation inconnue' });
@@ -540,9 +520,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    */
   for (const [chemin, traitee] of [['traiter', true], ['ne-plus-traiter', false]] as const) {
     app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
-      const tenant = scopeTenant(req);
-      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-      if (!deps.marquerTraitee) return reply.code(503).send({ error: 'statut « Traité » indisponible sur cette instance' });
+      const tenant = espaceVerifie(req);
       const { conversationId } = req.params as { conversationId: string };
       if (!estUuid(conversationId) || !(await deps.marquerTraitee(tenant, conversationId, traitee))) {
         return reply.code(404).send({ error: 'conversation inconnue' });
@@ -578,9 +556,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * alors aucun fil possible, et en inventer un le rendrait inatteignable.
    */
   app.post('/tenants/:tenantId/contacts/:contactId/conversation', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.ouvrirConversationDuContact) return reply.code(503).send({ error: 'ouverture de conversation non configuree' });
+    const tenant = espaceVerifie(req);
     const { contactId } = req.params as { contactId: string };
     // ⚠️ `estUuid` AVANT la base, même raison qu'ailleurs dans ce fichier : un identifiant mal formé ferait
     // lever Postgres, donc un 500 illisible, là où « ce contact n'existe pas » est la réponse juste.
@@ -591,12 +567,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
   });
 
   app.post('/tenants/:tenantId/conversations/:conversationId/prendre', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
-    if (!deps.takeControl) return reply.code(503).send({ error: 'prise du fil indisponible sur cette instance' });
     /**
      * 🔴 META D'ABORD, NOTRE ÉTAT ENSUITE, comme pour `release`. L'ordre inverse est ce qui a produit le
      * bug : un état local qui annonce ce que Meta n'a pas fait est pire qu'une erreur, parce qu'il rend le
@@ -607,14 +581,12 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * 5xx par sa page d'erreur, donc un message destiné à l'opérateur doit sortir en 4xx. Et il lui donne la
      * porte de secours, qui reste vraie quoi qu'il arrive : ÉCRIRE prend le fil à coup sûr.
      */
-    if (deps.prendreLeFil) {
-      try {
-        await deps.prendreLeFil(tenant, ctx.waId);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`prendre: Meta a refusé de céder le fil (${tenant}/${ctx.waId}):`, messageDe(err));
-        return reply.code(409).send({ error: 'Meta n’a pas cédé la conversation, son agent peut encore répondre. Envoyez un message : écrire prend le fil à coup sûr.' });
-      }
+    try {
+      await deps.prendreLeFil(tenant, ctx.waId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`prendre: Meta a refusé de céder le fil (${tenant}/${ctx.waId}):`, messageDe(err));
+      return reply.code(409).send({ error: 'Meta n’a pas cédé la conversation, son agent peut encore répondre. Envoyez un message : écrire prend le fil à coup sûr.' });
     }
     await deps.takeControl(tenant, ctx.waId);
     invaliderCompteurs(tenant); // le fil entre dans « À traiter ».
@@ -635,11 +607,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * gratuit pour protéger le payant.
    */
   app.get('/tenants/:tenantId/conversations/:conversationId/messages/:messageId/media', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId, messageId } = req.params as { conversationId: string; messageId: string };
     if (!estUuid(messageId)) return reply.code(404).send({ error: 'message inconnu' });
-    if (!deps.lireMediaMessage) return reply.code(503).send({ error: 'lecture des médias indisponible sur cette instance' });
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     try {
@@ -680,8 +650,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * réponse dit `deja` pour que l'écran puisse le montrer plutôt que de laisser croire à un nouvel appel.
    */
   app.post('/tenants/:tenantId/conversations/:conversationId/messages/:messageId/transcrire', couteux, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId, messageId } = req.params as { conversationId: string; messageId: string };
     if (!estUuid(messageId)) return reply.code(404).send({ error: 'message inconnu' });
     // La conversation est relue DANS l'espace : c'est elle qui porte l'isolation, un identifiant de message
@@ -737,8 +706,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * opérateurs qui traduisent chacun deux réponses le saturerait, sur un geste délibéré.
    */
   app.post('/tenants/:tenantId/conversations/:conversationId/traduire', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     const b = (req.body ?? {}) as { texte?: unknown; cible?: unknown };
     if (!nonEmpty(b.texte)) return reply.code(400).send({ error: 'texte requis' });
@@ -767,12 +735,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * Déclarée AVANT `/conversations/:conversationId` : `todo-count` n'est pas un identifiant.
    */
   app.get('/tenants/:tenantId/conversations/todo-count', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.countATraiter) return reply.code(200).send({ count: 0 });
+    const tenant = espaceVerifie(req);
     // ⚠️ `deps.countATraiter(...)` DANS la fermeture, jamais une référence détachée gardée de côté : un store
     // de production y perdrait son `this` (leçon du verrou de campagne, 2026-08-27).
-    const count = await compteurs.lire(cleATraiter(tenant), () => deps.countATraiter!(tenant));
+    const count = await compteurs.lire(cleATraiter(tenant), () => deps.countATraiter(tenant));
     return reply.code(200).send({ count });
   });
 
@@ -782,20 +748,16 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * Déclarée AVANT `/conversations/:conversationId/...` : `unread-count` n'est pas un identifiant.
    */
   app.get('/tenants/:tenantId/conversations/unread-count', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.countUnread) return reply.code(200).send({ count: 0 });
+    const tenant = espaceVerifie(req);
     const acteur = { userId: req.auth?.userId ?? null, role: req.auth?.role ?? null };
-    const count = await compteurs.lire(cleUnread(tenant, acteur.userId), () => deps.countUnread!(tenant, acteur));
+    const count = await compteurs.lire(cleUnread(tenant, acteur.userId), () => deps.countUnread(tenant, acteur));
     return reply.code(200).send({ count });
   });
 
   /** Un opérateur vient d'OUVRIR le fil : il est lu. C'est le seul événement qui éteint la pastille. */
   app.post('/tenants/:tenantId/conversations/:conversationId/read', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
-    if (!deps.markConversationRead) return reply.code(503).send({ error: 'suivi des non-lus indisponible sur cette instance' });
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
     await deps.markConversationRead(tenant, conversationId);
@@ -820,11 +782,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * annulerait l'effacement, dans une table conçue pour ne jamais être modifiée.
    */
   app.delete('/tenants/:tenantId/conversations/:conversationId/messages', optsAdmin, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     if (!estUuid(conversationId)) return reply.code(404).send({ error: 'conversation inconnue' });
-    if (!deps.effacerMessages) return reply.code(503).send({ error: 'effacement indisponible sur cette instance' });
     const effaces = await deps.effacerMessages(tenant, conversationId);
     if (effaces === null) return reply.code(404).send({ error: 'conversation inconnue' });
     await journal(tenant, req, 'conversation.effacee', { kind: 'conversation', id: conversationId }, { messages: effaces });
@@ -834,8 +794,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
   });
 
   app.get('/tenants/:tenantId/conversations/:conversationId/messages', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
@@ -916,9 +875,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
         ? { traductionCause: traduit === null ? 'instance' : 'credit' }
         : {}),
       // Qui détient le fil : sans cette information, l'opérateur voit le scénario se taire sans comprendre
-      // pourquoi et ne sait pas s'il doit rendre la main. Défaut `app_workflow` quand le dep est absent,
-      // qui est l'état d'une conversation dont personne n'a pris le contrôle.
-      controlOwner: deps.getControlOwner ? await deps.getControlOwner(tenant, ctx.waId) : 'app_workflow',
+      // pourquoi et ne sait pas s'il doit rendre la main.
+      controlOwner: await deps.getControlOwner(tenant, ctx.waId),
       // Surcharge de reprise de CE fil (C.4) : null = suit le défaut du tenant. L'inbox l'affiche pour que
       // l'opérateur sache si, à la reprise, ce fil précis restera à l'humain ou repartira au scénario.
       messages: traduit ? traduit.messages : messages,
@@ -930,11 +888,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * c'est permis.
    *
    * 🔴 Appelé par CHAQUE route qui écrit vers le client. C'est la seule barrière réelle : l'écran grise un
-   * bouton, mais rien n'empêche d'appeler l'API directement. Sans dépendance `getAssignee` câblée, tout est
-   * permis, c'est-à-dire le comportement d'avant l'affectation.
+   * bouton, mais rien n'empêche d'appeler l'API directement.
    */
   async function refusAffectation(req: FastifyRequest, tenant: string, conversationId: string): Promise<string | null> {
-    if (!deps.getAssignee) return null;
     const assignee = await deps.getAssignee(tenant, conversationId);
     // `undefined` (conversation inconnue) est laissé aux gardes existantes des routes, qui rendent un 404
     // plus précis. On ne se prononce que sur une conversation qui existe.
@@ -954,12 +910,11 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * paramètre `:conversationId`, comme `counts`.
    */
   app.get('/tenants/:tenantId/conversations/membres-affectables', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (!peutAffecter({ userId: req.auth?.userId ?? null, role: req.auth?.role ?? null })) {
       return reply.code(403).send({ error: 'réservé aux managers et aux admins' });
     }
-    return reply.code(200).send({ membres: deps.membresPourAffectation ? await deps.membresPourAffectation(tenant) : [] });
+    return reply.code(200).send({ membres: await deps.membresPourAffectation(tenant) });
   });
 
   /**
@@ -976,9 +931,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * avec un message qu'il peut lire (4xx, jamais 5xx : Cloudflare remplacerait le corps).
    */
   app.post('/tenants/:tenantId/conversations/:conversationId/assignee/moi', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.prendreSiLibre || !deps.getAssignee) return reply.code(503).send({ error: 'prise de conversation indisponible' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     if (!estUuid(conversationId)) return reply.code(404).send({ error: 'conversation inconnue' });
     const acteur = { userId: req.auth?.userId ?? null, role: req.auth?.role ?? null };
@@ -1008,9 +961,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * première prérogative réelle du rôle `manager`, qui n'accordait rien depuis sa création.
    */
   app.patch('/tenants/:tenantId/conversations/:conversationId/assignee', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.setAssignee) return reply.code(503).send({ error: 'affectation indisponible' });
+    const tenant = espaceVerifie(req);
     if (!peutAffecter({ userId: req.auth?.userId ?? null, role: req.auth?.role ?? null })) {
       return reply.code(403).send({ error: 'réservé aux managers et aux admins' });
     }
@@ -1026,8 +977,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
   });
 
   app.post('/tenants/:tenantId/conversations/:conversationId/reply', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     const corps = (req.body ?? {}) as { text?: unknown; redactionOrigine?: unknown };
     const text = corps.text;
@@ -1093,8 +1043,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * fiche du contact, exactement comme dans une campagne.
    */
   app.post('/tenants/:tenantId/conversations/:conversationId/send-rcs', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     // Deux formes, EXCLUSIVES : un message de la bibliothèque, ou une réponse écrite à la main. La seconde
     // existe parce qu'un contact joignable SEULEMENT en RCS n'était atteignable qu'à travers la bibliothèque :
@@ -1113,7 +1062,6 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
     const refusAff = await refusAffectation(req, tenant, conversationId);
     if (refusAff) return reply.code(403).send({ error: refusAff, code: 'assigned_to_other' });
-    if (!deps.sendRcsFromInbox) return reply.code(422).send({ error: 'canal RCS non disponible' });
 
     const issue = await deps.sendRcsFromInbox(tenant, ctx.waId, contenu);
     // 422 et non 5xx : c'est une situation à corriger par l'opérateur (canal éteint, contact désabonné), et
@@ -1122,7 +1070,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
 
     // L'opérateur prend le fil, comme sur une réponse texte. Best-effort et APRÈS l'envoi réussi : un échec
     // d'état ne doit pas faire croire à un message perdu.
-    await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
+    await deps.takeControl(tenant, ctx.waId).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
     await deps.recordOutbound(conversationId, issue.apercu, issue.messageId, 'humain', 'rcs', null, null, req.auth?.userId ?? null, 'rcs');
     return reply.code(200).send({ messageId: issue.messageId });
@@ -1138,8 +1086,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * champ à côté, et elles restent modifiables.
    */
   app.get('/tenants/:tenantId/conversations/:conversationId/template-params', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     const q = req.query as { name?: string; language?: string; count?: string };
     if (!nonEmpty(q.name) || !nonEmpty(q.language)) return reply.code(400).send({ error: 'name et language requis' });
@@ -1148,7 +1095,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
 
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
-    if (!deps.resolveTemplateParams || count === 0) return reply.code(200).send({ values: [], labels: [] });
+    if (count === 0) return reply.code(200).send({ values: [], labels: [] });
 
     const r = await deps.resolveTemplateParams(tenant, ctx.waId, { name: q.name as string, language: q.language as string, count });
     return reply.code(200).send(r);
@@ -1156,8 +1103,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
 
   // Envoi d'un template dans une conversation (le seul moyen de ré-engager hors fenêtre 24 h).
   app.post('/tenants/:tenantId/conversations/:conversationId/send-template', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     const b = (req.body ?? {}) as Partial<{
       templateName: string;
@@ -1205,9 +1151,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * contact est effectivement désabonné, ce qui est rare.
      */
     if (await deps.estDesabonne(tenant, ctx.waId)) {
-      const categorie = deps.categorieDuModele
-        ? await deps.categorieDuModele(tenant, b.templateName, b.language).catch(() => null)
-        : null;
+      const categorie = await deps.categorieDuModele(tenant, b.templateName, b.language).catch(() => null);
       if (categorie !== 'utility') {
         return reply.code(409).send({
           error: categorie === null
@@ -1222,11 +1166,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // être re-téléversés. Un refus (carte sans visuel exploitable, variable de carte) sort en 422 AVANT
     // l'envoi : mieux vaut le dire que laisser Meta accepter un message qu'il ne livrera pas.
     let carousel: { cards: OutboundCarouselCard[] } | undefined;
-    if (deps.prepareCarousel) {
-      const prep = await deps.prepareCarousel(tenant, b.templateName, b.language);
-      if (prep && 'refus' in prep) return reply.code(422).send({ error: prep.refus });
-      if (prep) carousel = prep;
-    }
+    const prep = await deps.prepareCarousel(tenant, b.templateName, b.language);
+    if (prep && 'refus' in prep) return reply.code(422).send({ error: prep.refus });
+    if (prep) carousel = prep;
 
     const messageId = await deps.sendTemplateMessage(tenant, phoneNumberId, ctx.waId, {
       name: b.templateName,
@@ -1237,7 +1179,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       ...(carousel ? { carousel } : {}),
     });
     // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
-    await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
+    await deps.takeControl(tenant, ctx.waId).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
     await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'humain', 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
@@ -1252,12 +1194,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * le clic. Le serveur reste le juge.
    */
   app.post('/tenants/:tenantId/conversations/:conversationId/workflow', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     const workflowId = (req.body as { workflowId?: unknown } | null)?.workflowId;
     if (!nonEmpty(workflowId)) return reply.code(400).send({ error: 'workflowId requis' });
-    if (!deps.startWorkflow) return reply.code(503).send({ error: 'lancement de scénario indisponible sur cette instance' });
 
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
@@ -1280,12 +1220,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * une question en deux minutes devrait attendre le délai configuré avant que l'automatisme reparte.
    */
   app.post('/tenants/:tenantId/conversations/:conversationId/release', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
-    if (!deps.releaseControl) return reply.code(503).send({ error: 'reprise indisponible sur cette instance' });
     /**
      * 🔴 UN ÉCHEC CHEZ META SORT EN 4xx, PAS EN 500. Depuis le 2026-09-10, rendre la main APPELLE Meta
      * (`thread_control`, action `release`) avant d'écrire notre état. L'appel peut échouer (jeton, réseau,

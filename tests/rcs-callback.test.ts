@@ -11,6 +11,7 @@ import Fastify from 'fastify';
 import { registerRcsCallback } from '../src/http/rcs-callback';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { config } from '../src/config';
+import { rappelsRcsInertes } from './routes-inertes';
 
 const CODE = 'rcs-0123456789abcdef0123456789abcdef';
 
@@ -264,6 +265,7 @@ function appWith(opts: { agentId?: string } = {}) {
   const app = buildServer({
     queue: new FakeQueue(),
     rcsCallback: {
+      ...rappelsRcsInertes,
       parCode: async (code) => (code === CODE ? { tenantId: 't1', agentId: opts.agentId ?? 'ch-1' } : null),
       onDlr: async (tenant, dlr) => { dlrs.push({ tenant, dlr }); },
       onMo: async (tenant, mo) => { mos.push({ tenant, mo }); },
@@ -356,6 +358,7 @@ describe('Route publique des rappels RCS', () => {
     const app = buildServer({
       queue: new FakeQueue(),
       rcsCallback: {
+        ...rappelsRcsInertes,
         parCode: async () => ({ tenantId: 't1', agentId: 'ch-1' }),
         onDlr: async () => { throw new Error('base injoignable'); },
         onMo: async () => {},
@@ -380,6 +383,7 @@ describe('Rappels RCS : le plafond par code', () => {
     const dlrs: RcsDlr[] = [];
     const app = Fastify();
     registerRcsCallback(app, {
+      ...rappelsRcsInertes,
       parCode: async (code) => {
         lectures += 1;
         if (code === CODE) return { tenantId: 't1', agentId: 'ch-1' };
@@ -502,6 +506,7 @@ describe('Rappels RCS : le frein des codes jamais vus', () => {
     let lectures = 0;
     const app = Fastify();
     registerRcsCallback(app, {
+      ...rappelsRcsInertes,
       parCode: async (code) => { lectures += 1; return existe(code) ? { tenantId: 't1', agentId: 'ch-1' } : null; },
       onDlr: async () => {}, onMo: async () => {},
     }, new RateLimiter(10_000, 60_000), new RateLimiter(budget, 60_000));

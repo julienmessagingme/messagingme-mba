@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { forbidNonAdmin, type Guard } from '../auth/middleware';
-import { scopeTenant, estUuid } from './scope';
+import type { Guard } from '../auth/middleware';
+import { espaceVerifie, estUuid } from './scope';
 import { MAX_LIGNES_HISTORIQUE, type HistoriqueStore } from '../reglages/historique';
 
 /**
@@ -38,9 +38,7 @@ export function registerHistorique(app: FastifyInstance, deps: HistoriqueRouteDe
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/historique', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
 
     const parse = requete.safeParse(req.query ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'surface invalide (mba|agent)' });

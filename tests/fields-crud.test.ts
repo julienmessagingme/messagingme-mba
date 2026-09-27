@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { FieldsRouteDeps } from '../src/http/fields';
 import type { UserFieldType } from '../src/crm/types';
+import { champsInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -20,6 +21,7 @@ interface Cap { created: Array<{ key: string; label: string; type: UserFieldType
 function app(over: Partial<FieldsRouteDeps> = {}) {
   const cap: Cap = { created: [], updated: [], deleted: [] };
   const deps: FieldsRouteDeps = {
+    ...champsInertes,
     listFields: async () => [{ key: 'ville', label: 'Ville', type: 'text' }],
     createField: async (_t, def) => { cap.created.push(def); return def.key === 'ville' ? 'exists' : 'created'; },
     updateField: async (_t, key, patch) => { cap.updated.push({ key, patch }); return key === 'ville'; },
@@ -208,14 +210,6 @@ describe('GET /user-fields/usage', () => {
     const { server } = app({ fieldUsage: async () => ({ total: 1, parChamp: {} }) });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(adminTok) });
     expect(res.json<{ total: number }>().total).toBe(1);
-    await server.close();
-  });
-
-  it('dep absente -> relévé vide, jamais une erreur (le sélecteur doit rester utilisable)', async () => {
-    const { server } = app({ fieldUsage: undefined });
-    const res = await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(adminTok) });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ total: 0, parChamp: {} });
     await server.close();
   });
 

@@ -5,7 +5,7 @@ import { AUTOMATION_TRIGGER_KINDS, isAutomationTriggerKind, keywordsOf } from '.
 import { coerceConfigAvantDate, UNITES_DELAI, DELAI_MAX_MINUTES } from '../automation/avant-date';
 import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 
 export interface AutomationRouteDeps {
   list(tenantId: string): Promise<AutomationRow[]>;
@@ -194,14 +194,12 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/automations', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ automations: await deps.list(tenant) });
   });
 
   app.post('/tenants/:tenantId/automations', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const parsed = parseBody(req.body, false);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
@@ -218,8 +216,7 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
   });
 
   app.patch('/tenants/:tenantId/automations/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     const parsed = parseBody(req.body, true);
@@ -246,8 +243,7 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
   });
 
   app.delete('/tenants/:tenantId/automations/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     const ok = await deps.remove(id, tenant);

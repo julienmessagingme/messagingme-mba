@@ -1,10 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { forbidNonAdmin } from '../auth/middleware';
 import { computeAccountStatus, normalizeQuality, type AccountSignals, type QualityRating } from '../account/service';
 import type { PullResult, PhoneStatusPatch } from '../account/pull';
 import type { PhoneNumberRecord, HubspotPortalLink } from '../account/types';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
 
 // Ré-exportés : le serveur et les tests les importaient déjà par cette route avant leur déplacement.
@@ -16,11 +15,11 @@ export interface AccountRouteDeps {
   /**
    * La photo de profil WhatsApp du numéro, relue à l'affichage (l'URL de Meta est signée et expire).
    *
-   * OPTIONNELLE, et son échec ne fait JAMAIS échouer la route : une pastille absente n'empêche personne de
+   * Son échec ne fait JAMAIS échouer la route : une pastille absente n'empêche personne de
    * travailler, alors qu'un Accueil en erreur parce que Meta traîne, si. C'est une décoration honnête, pas
    * une information de statut.
    */
-  photoNumero?(tenantId: string, phoneNumberId: string): Promise<string | null>;
+  photoNumero(tenantId: string, phoneNumberId: string): Promise<string | null>;
   /** Pull Graph live du statut (numéro + santé WABA du tenant). null = pas de tentative (pas de token). Ne throw jamais. */
   pullStatus(phoneNumberId: string, tenantId: string): Promise<PullResult | null>;
   /** Persiste le statut fraîchement pull (coalesce : n'écrase pas un connu par un undefined). */
@@ -131,17 +130,14 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
    * même code : `deconnecterPortail`.
    */
   app.post('/tenants/:tenantId/hubspot/deconnexion', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const r = await deconnecterPortail(tenant);
     if (!r.ok) return reply.code(r.code).send({ error: r.error });
     return reply.code(200).send({ hubspotConnected: false, disconnected: r.disconnected });
   });
 
   app.get('/tenants/:tenantId/account-status', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
 
     // Portail HubSpot du tenant (lecture cross-schema mmhs). Best-effort : un échec (mmhs indisponible, colonne
     // pas encore migrée) NE fait JAMAIS échouer la route -> on retombe sur « non connecté », comme le pull.
@@ -179,7 +175,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
     // `catch(() => null)` : voir la dépendance, une photo manquante ne vaut pas un Accueil en erreur.
     const [pull, photo] = await Promise.all([
       deps.pullStatus(pn.id, tenant),
-      deps.photoNumero ? deps.photoNumero(tenant, pn.id).catch(() => null) : Promise.resolve(null),
+      deps.photoNumero(tenant, pn.id).catch(() => null),
     ]);
     // Le pull frais est ENREGISTRÉ (en coalesce), sauf le numéro d'affichage, qui ne se réécrit pas d'ici.
     const frais = pull && pull.ok ? pull : undefined;
@@ -233,9 +229,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
   // Toggle HubSpot PAR numéro (admin-only) : coupe/active vraiment la synchro (le push d'analyse est gaté par
   // ce drapeau côté worker). Scopé tenant en SQL (un admin ne peut pas flipper le numéro d'un autre client).
   app.patch('/tenants/:tenantId/phone-numbers/:phoneNumberId/hubspot', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { phoneNumberId } = req.params as { phoneNumberId: string };
     const body = (req.body ?? {}) as { connected?: unknown; action?: unknown };
     if (typeof body.connected !== 'boolean') return reply.code(400).send({ error: 'connected requis (booléen)' });

@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import { sansPortailHubspot, avecPortailHubspot } from './hubspot';
 import type { SettingsRouteDeps } from '../src/http/settings';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
+import { reglagesInertes } from './routes-inertes';
 
 // Aucun compte : ces cas ne testent pas la connexion, ils lisent une route avec un jeton deja signe.
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
@@ -41,6 +42,7 @@ function app(portail: SettingsRouteDeps['hubspotPortalConnecte']) {
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     settings: {
+      ...reglagesInertes,
       getSettings: async () => REGLAGES,
       hubspotPortalConnecte: portail,
       setMbaEnabled: async () => {},

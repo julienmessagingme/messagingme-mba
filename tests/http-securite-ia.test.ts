@@ -10,6 +10,7 @@ import type { FrequenceMentionIa } from '../src/agent/agent-store';
 import { lireContexteAgent } from '../src/agent/contexte';
 import type { AgentComplet } from '../src/agent/agent-store';
 import { ficheVide } from '../src/agent/fiche';
+import { reglagesInertes } from './routes-inertes';
 
 /**
  * « L'IA SE DÉCLARE COMME TELLE », AU NIVEAU DE L'ESPACE (tâche 8, migration 0140).
@@ -35,6 +36,7 @@ function app(depart: FrequenceMentionIa | null = null) {
   const ecrits: FrequenceMentionIa[] = [];
   let courant = depart;
   const settings: SettingsRouteDeps = {
+    ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({

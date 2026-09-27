@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { walk } from '../src/workflow/engine';
 import { WorkflowExecutor } from '../src/workflow/executor';
+import type { WorkflowExecutorDeps } from '../src/workflow/executor';
+import type { WorkflowRunRow } from '../src/workflow/run-store.pg';
 import type { WorkflowGraph } from '../src/workflow/graph';
+import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, consentementNonEcrit, depsInertes } from './executeur-inerte';
 
 /**
  * Le bloc « Action » qui pose le CONSENTEMENT d'un contact.
@@ -37,15 +41,19 @@ describe('lecture du graphe : bloc Action, sous-actions de consentement', () => 
 describe('executeur : l’action optIn appelle la dépendance', () => {
   function executeur(graph: WorkflowGraph, avecDep = true) {
     const poses: Array<{ waId: string; value: string }> = [];
-    const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null };
-    const deps: Record<string, unknown> = {
-      runs: {
+    const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null } as unknown as WorkflowRunRow;
+    // 🔴 PLUS DE `Record<string, unknown>` NI DE `as never` : ce faux mentait au compilateur, et il lui manquait
+    // `estDesabonne` et `sendQuestion` sans que personne le voie.
+    const deps: WorkflowExecutorDeps = {
+      ...depsInertes,
+      estDesabonne: jamaisDesabonne,
+      runs: avecGardesDEtatInertes({
         findWaitingByWaId: async () => run,
         setState: async () => {},
         // Requis par le contrat : un demarrage remplace le parcours en cours. Ce faux n exerce que l avance.
         closeActiveByWaId: async () => [],
         start: async () => ({ id: 'r1' }),
-      },
+      }),
       getGraph: async () => graph,
       applyTag: async () => {},
       setField: async () => {},
@@ -54,12 +62,12 @@ describe('executeur : l’action optIn appelle la dépendance', () => {
       sendTemplate: async () => {},
       sendQuickMessage: async () => {},
       sendFlow: async () => {},
-      escalateToHuman: async () => {},
+      sendQuestion: async () => {},
+      setOptIn: avecDep
+        ? async (_t: string, waId: string, value: string): Promise<void> => { poses.push({ waId, value }); }
+        : consentementNonEcrit,
     };
-    if (avecDep) {
-      deps.setOptIn = async (_t: string, waId: string, value: string): Promise<void> => { poses.push({ waId, value }); };
-    }
-    return { ex: new WorkflowExecutor(deps as never), poses };
+    return { ex: new WorkflowExecutor(deps), poses };
   }
 
   const graphe = (kind: string): WorkflowGraph => ({
@@ -82,9 +90,9 @@ describe('executeur : l’action optIn appelle la dépendance', () => {
     expect(poses).toEqual([{ waId: '33600000001', value: 'opted_in' }]);
   });
 
-  it('🔴 câblage SANS la dépendance -> no-op silencieux, pas une erreur', async () => {
-    // La dep est optionnelle : les câblages de test ne la fournissent pas, et un scénario qui la traverse ne
-    // doit pas partir en DLQ pour autant.
+  it('🔴 câblage SANS effet de consentement -> no-op silencieux, pas une erreur', async () => {
+    // La dep est REQUISE depuis le lot 3 de l'audit ponytail ; ce cas garde la preuve que sa valeur inerte
+    // (`consentementNonEcrit`) reproduit l'ancienne absence : un scénario qui traverse le bloc ne part pas en DLQ.
     const { ex, poses } = executeur(graphe('set_optout'), false);
     await expect(ex.advance('t1', '33600000001', 'msg1', 'Oui')).resolves.not.toThrow();
     expect(poses).toEqual([]);

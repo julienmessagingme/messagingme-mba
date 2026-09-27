@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import Fastify from 'fastify';
 import { registerMbaAssistant, type MbaAssistantDeps } from '../src/http/mba-assistant';
+import { monterAvecEtapeEspace } from '../src/http/scope';
 import { calculerCompletion, type EntreeCompletion } from '../src/mba/completion';
 import { ENTRETIEN_MBA_VIERGE, type EntretienMba } from '../src/mba/assistant/entretien-store';
 import { LlmApiError } from '../src/llm/errors';
@@ -11,6 +12,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
+import { assistantMbaInerte } from './routes-inertes';
 
 /**
  * LA ROUTE DE L'ASSISTANT DU MBA.
@@ -26,6 +28,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
   let fil: EntretienMba | null = opts.fil ?? null;
 
   const deps: MbaAssistantDeps = {
+    ...assistantMbaInerte,
     inventaire: async () => ({
       completion: calculerCompletion({
         ...VIDE, settings: {} as never, businessInfo: { business_description: '' } as never,
@@ -73,7 +76,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
   app.addHook('preHandler', async (req) => {
     (req as { auth?: unknown }).auth = { userId: 'u1', tenantId: 't1', role: opts.role ?? 'admin' };
   });
-  registerMbaAssistant(app, deps, gardeOuverte);
+  monterAvecEtapeEspace(app, () => registerMbaAssistant(app, deps, gardeOuverte));
   return { app, deps, journal, lireFil: () => fil };
 }
 

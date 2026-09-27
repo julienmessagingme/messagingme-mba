@@ -4,6 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { GRILLE_DEFAUT, type GrillePrix } from '../src/stats/prix';
 import type { OpsRouteDeps } from '../src/http/ops';
 import { capturerJournal } from './journal';
+import { opsInerte } from './routes-inertes';
 
 /**
  * LA GRILLE DE PRIX SE REGLE DANS /ops, UNE FOIS, POUR TOUS LES ESPACES (lot 8, migration 0168).
@@ -29,6 +30,7 @@ const NOTE = 'passage a 120 pour la grille 2027, valide par Julien';
 
 function app(over: Partial<OpsRouteDeps> = {}) {
   const deps: OpsRouteDeps = {
+    ...opsInerte,
     getTenantOverview: async () => [],
     getGlobalDaily: async () => [],
     getQueueLoad: async () => [],
@@ -47,12 +49,6 @@ describe('GET /ops/prix', () => {
     const body = res.json<{ prix: GrillePrix; bornes: Record<string, unknown> }>();
     expect(body.prix).toEqual(BONNE);
     expect(body.bornes, 'les bornes voyagent avec la grille').toBeTruthy();
-    await a.close();
-  });
-
-  it('cablage absent -> 503, et l ecran masque la carte plutot que d offrir un formulaire inerte', async () => {
-    const a = app();
-    expect((await a.inject({ method: 'GET', url: '/ops/prix', ...withTok(OPS) })).statusCode).toBe(503);
     await a.close();
   });
 
@@ -137,12 +133,6 @@ describe('PATCH /ops/prix', () => {
     expect(ligne?.lvl).toBe('warn');
     expect(ligne?.note).toBe(NOTE);
     expect(ligne?.prix, 'la grille POSEE, pas seulement le fait qu on y a touche').toEqual(BONNE);
-  });
-
-  it('cablage absent -> 503, jamais un succes silencieux', async () => {
-    const a = app();
-    expect((await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { ...BONNE, note: NOTE }, ...withTok(OPS) })).statusCode).toBe(503);
-    await a.close();
   });
 
   it('🔴 sans le jeton d exploitation -> refus, et RIEN n est ecrit', async () => {

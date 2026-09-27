@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ApiKeysRouteDeps } from '../src/http/api-keys';
 import type { ApiKeyRow } from '../src/auth/api-key-store.pg';
+import { journalMuet } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -21,6 +22,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 function app(over: Partial<ApiKeysRouteDeps> = {}) {
   const cap = { created: [] as Array<{ name: string; scopes: string[] }>, revoked: [] as string[] };
   const deps: ApiKeysRouteDeps = {
+    audit: journalMuet,
     createKey: async (_t, name, scopes) => { cap.created.push({ name, scopes }); return { id: 'k1', key: 'mba_secret_shown_once' }; },
     listKeys: async (): Promise<ApiKeyRow[]> => [{ id: 'k1', name: 'CI', scopes: ['contacts:write'], createdAt: '2026-07-17T00:00:00.000Z', lastUsedAt: null, revokedAt: null }],
     revokeKey: async (_t, id) => { cap.revoked.push(id); return id === 'k1'; },

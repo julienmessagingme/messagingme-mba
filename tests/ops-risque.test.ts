@@ -3,6 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import type { OpsRouteDeps } from '../src/http/ops';
 import type { BilanRisque } from '../src/engagement/balayage';
+import { opsInerte } from './routes-inertes';
 
 /**
  * LE BALAYAGE DU RISQUE À LA DEMANDE (`POST /ops/risque/:tenantId`, lot 7 de l'API publique).
@@ -19,7 +20,7 @@ const BILAN: BilanRisque = {
 };
 
 function app(over: Partial<OpsRouteDeps> = {}) {
-  const deps: OpsRouteDeps = { getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [], ...over };
+  const deps: OpsRouteDeps = { ...opsInerte, getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [], ...over };
   return buildServer({ queue: new FakeQueue(), ops: deps, opsToken: OPS });
 }
 
@@ -56,12 +57,6 @@ describe('POST /ops/risque/:tenantId', () => {
     const a = app({ balayerRisque: async () => null });
     expect((await a.inject({ method: 'POST', url: `/ops/risque/${T}`, payload: { note: 'essai' }, ...avecJeton(OPS) })).statusCode).toBe(404);
     expect((await a.inject({ method: 'POST', url: '/ops/risque/pas-un-uuid', payload: { note: 'essai' }, ...avecJeton(OPS) })).statusCode).toBe(404);
-    await a.close();
-  });
-
-  it('câblage absent : 503, plutôt que de laisser croire au geste', async () => {
-    const a = app();
-    expect((await a.inject({ method: 'POST', url: `/ops/risque/${T}`, payload: { note: 'essai' }, ...avecJeton(OPS) })).statusCode).toBe(503);
     await a.close();
   });
 });

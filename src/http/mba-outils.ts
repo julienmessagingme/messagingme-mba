@@ -5,7 +5,7 @@ import type { OutilComplet, RisqueOutil } from '../agent/catalog';
 import { NomOutilDejaPris, OutilNonActivable } from '../agent/catalog';
 import type { RequeteConnecteur } from '../agent/requetes';
 import { risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { blocSeul, type BlocPropose, type CibleMaison } from '../mba/outils-maison';
 import { vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
 import { entryNode } from '../workflow/engine';
@@ -134,8 +134,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
   };
 
   app.get(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     const pn = await deps.numeroDuTenant(tenant);
     if (!pn) return reply.code(200).send({ outils: [], phoneNumberId: null });
     const outils = await deps.lister(tenant, pn);
@@ -145,16 +144,14 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
 
   // Déclarée avant toute route `/:outilId` en GET (il n'y en a aucune aujourd'hui : seuls PATCH et DELETE en portent).
   app.get(`${base}/blocs`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     const workflowId = (req.query as { workflowId?: unknown } | undefined)?.workflowId;
     if (typeof workflowId !== 'string' || !estUuid(workflowId)) return reply.code(400).send({ error: 'choisissez d’abord un scénario' });
     return reply.code(200).send({ blocs: await deps.blocs(tenant, workflowId) });
   });
 
   app.post(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     const lu = creationSchema.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: premiereErreur(lu.error) });
     const userId = utilisateur(req);
@@ -191,8 +188,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
   });
 
   app.patch<{ Params: { outilId: string } }>(`${base}/:outilId`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     if (!estUuid(req.params.outilId)) return reply.code(404).send({ error: 'outil introuvable' });
     const lu = patchSchema.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: premiereErreur(lu.error) });
@@ -222,8 +218,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
   });
 
   app.delete<{ Params: { outilId: string } }>(`${base}/:outilId`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     if (!estUuid(req.params.outilId)) return reply.code(404).send({ error: 'outil introuvable' });
     const pn = await deps.numeroDuTenant(tenant);
     if (!pn) return reply.code(409).send({ error: SANS_NUMERO });
@@ -232,8 +227,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
   });
 
   app.put<{ Params: { outilId: string } }>(`${base}/:outilId/actif`, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     if (!estUuid(req.params.outilId)) return reply.code(404).send({ error: 'outil introuvable' });
     // Seulement RALLUMER : éteindre sans retirer n'a pas d'usage à l'écran, et ferait un outil muet de plus.
     if (!reactivationSchema.safeParse(req.body).success) return reply.code(400).send({ error: 'seule la réactivation est possible' });

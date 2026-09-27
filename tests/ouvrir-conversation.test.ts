@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
 import type { ListConversationsOptions } from '../src/inbox/store.pg';
+import { inboxInerte } from './routes-inertes';
 
 /**
  * « OUVRIR LA CONVERSATION » DEPUIS LA FICHE D'UN CONTACT (demande de Julien du 2026-09-23).
@@ -27,6 +28,7 @@ const auth = () => ({ headers: { 'content-type': 'application/json', authorizati
 
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
+    ...inboxInerte,
     estDesabonne: jamaisDesabonne,
     listConversations: async () => [],
     getConversationContext: async () => null,
@@ -65,12 +67,6 @@ describe('POST /contacts/:id/conversation', () => {
     const a = app({ ouvrirConversationDuContact: async () => null });
     const r = await a.inject({ method: 'POST', url: `/tenants/t1/contacts/${CONTACT}/conversation`, ...auth() });
     expect(r.statusCode).toBe(404);
-  });
-
-  it('magasin plus ancien que la route -> 503, et l Inbox continue de fonctionner', async () => {
-    const a = app();
-    const r = await a.inject({ method: 'POST', url: `/tenants/t1/contacts/${CONTACT}/conversation`, ...auth() });
-    expect(r.statusCode).toBe(503);
   });
 
   it('🔴 un contact dont l identifiant n en est pas un rend 404, jamais 500', async () => {

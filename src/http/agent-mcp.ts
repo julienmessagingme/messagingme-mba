@@ -16,7 +16,7 @@ import { CHAMPS_CONTACT_AUTORISES, estChampContact } from '../agent/champs-conta
 // seconde copie d'une normalisation est exactement ce que le manuel interdit (« un fragment SQL, une classe
 // Tailwind ou une normalisation de texte s'y importe, ne se recopie pas »).
 import { adresseAcceptable, authCoherente, hoteDe } from './agent-sources';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
@@ -86,7 +86,7 @@ export interface EcritureImportMcp {
 
 export interface AgentMcpRouteDeps {
   /**
-   * Journal d'audit. Optionnel : absent -> aucune trace (câblages de test).
+   * Journal d'audit. Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`.
    *
    * 🔴 UN SERVEUR MCP EST UNE SORTIE DE L'ESPACE, AU MÊME TITRE QU'UN CONNECTEUR API. Le déclarer écrit une
    * adresse que notre serveur ira appeler et un secret ; le supprimer emporte par cascade ses outils
@@ -99,7 +99,7 @@ export interface AgentMcpRouteDeps {
    * et l'HÔTE. Même règle que son jumeau, et pour la même raison : l'hôte répond à « où partent les
    * données », le reste donnerait de quoi rejouer l'appel depuis une table qu'on ne purge jamais.
    */
-  audit?: AuditSink;
+  audit: AuditSink;
   listerServeurs(tenantId: string): Promise<ServeurMcpVue[]>;
   /** L'adresse et le secret DÉCHIFFRÉ. Un seul appelant, comme pour les connecteurs HTTP. */
   pourAppel(tenantId: string, id: string): Promise<SourceAppel | null>;
@@ -224,8 +224,7 @@ async function serveurMcp(
   req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<{ tenant: string; sourceId: string; source: SourceAppel } | null> {
-  const tenant = scopeTenant(req);
-  if (tenant === null) { await reply.code(403).send({ error: 'tenant interdit' }); return null; }
+  const tenant = espaceVerifie(req);
   const { sourceId } = req.params as { sourceId: string };
   if (!estUuid(sourceId)) { await reply.code(400).send({ error: 'identifiant invalide' }); return null; }
   const source = await deps.pourAppel(tenant, sourceId);
@@ -329,8 +328,7 @@ export function registerAgentMcp(
   const lourd = gardeEtendue(garde, limiteCouteuse);
 
   app.get('/tenants/:tenantId/mcp', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ serveurs: await deps.listerServeurs(tenant) });
   });
 
@@ -344,8 +342,7 @@ export function registerAgentMcp(
    * ⚠️ Le secret est chiffré par le store, jamais ici : la couche HTTP ne manipule pas de forme chiffrée.
    */
   app.post('/tenants/:tenantId/mcp', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const parse = creationSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'libellé, adresse et mode d’authentification requis' });
     const { label, baseUrl, authKind, authHeaderName, authSecret } = parse.data;
@@ -393,8 +390,7 @@ export function registerAgentMcp(
    * transaction que la suppression.
    */
   app.delete('/tenants/:tenantId/mcp/:sourceId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { sourceId } = req.params as { sourceId: string };
     if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
     const verdict = await deps.supprimerServeur(tenant, sourceId);
@@ -414,8 +410,7 @@ export function registerAgentMcp(
    * est exactement le motif « offert-et-inerte » que ce produit s'interdit.
    */
   app.get('/tenants/:tenantId/mcp/:sourceId/outils', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { sourceId } = req.params as { sourceId: string };
     if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
     /**
@@ -485,8 +480,7 @@ export function registerAgentMcp(
    * être cloué à une clé que personne n'a créée : il partirait vide à chaque appel, en silence.
    */
   app.patch('/tenants/:tenantId/mcp/outils/:outilId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { outilId } = req.params as { outilId: string };
     if (!estUuid(outilId)) return reply.code(400).send({ error: 'identifiant invalide' });
 

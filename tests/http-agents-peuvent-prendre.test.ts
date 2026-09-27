@@ -6,6 +6,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SettingsRouteDeps } from '../src/http/settings';
+import { reglagesInertes } from './routes-inertes';
 
 /**
  * LE RÉGLAGE « LES AGENTS PEUVENT PRENDRE UNE CONVERSATION DU POT COMMUN » (migration 0160, demande de Julien
@@ -31,6 +32,7 @@ function app(o: { cable?: boolean } = {}) {
   const ecrits: boolean[] = [];
   let courant = false;
   const settings: SettingsRouteDeps = {
+    ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({
@@ -88,12 +90,6 @@ describe('le réglage « les agents peuvent prendre »', () => {
       expect((await srv.inject({ method: 'PATCH', url: URL, ...h(tok.manager), payload: { actif } })).statusCode).toBe(400);
     }
     expect(ecrits).toEqual([]);
-    await srv.close();
-  });
-
-  it('écriture non câblée : 503, jamais un « enregistré » qui n’écrit rien', async () => {
-    const { srv } = app({ cable: false });
-    expect((await srv.inject({ method: 'PATCH', url: URL, ...h(tok.manager), payload: { actif: true } })).statusCode).toBe(503);
     await srv.close();
   });
 

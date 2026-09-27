@@ -5,7 +5,7 @@ import {
 } from '../mba/publication';
 import { ErreurPublication, CTX_OUTILS, CTX_ACTEUR } from '../mba/appliquer-publication';
 import { MetaApiError } from '../meta/errors';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
 
 /**
@@ -70,8 +70,7 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
   const enCours = new Set<string>();
 
   app.get(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     const pn = await deps.numeroDuTenant(tenant);
     if (!pn) return reply.code(200).send({ gestes: [], phoneNumberId: null });
     const plan = await planifier(tenant, pn);
@@ -87,8 +86,7 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
    * publication étant IDEMPOTENTE, rejouer ne refait pas ce qui a réussi.
    */
   app.post(base, opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
+    const tenant = espaceVerifie(req);
     const pn = await deps.numeroDuTenant(tenant);
     if (!pn) {
       return reply.code(409).send({ error: 'Aucun numéro WhatsApp connecté : il n’y a pas d’agent Meta où publier.' });

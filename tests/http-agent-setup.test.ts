@@ -11,6 +11,7 @@ import type { EntretienComplet, EntretienStore } from '../src/agent/setup/entret
 import { ficheVide } from '../src/agent/fiche';
 import { LlmApiError } from '../src/llm/errors';
 import { capturerJournal } from './journal';
+import { assistantAgentInerte } from './routes-inertes';
 
 /**
  * La route de la conversation de construction.
@@ -80,9 +81,7 @@ function app(opts: {
   suite?: Array<ReponseChat | Error>;
   sansModele?: boolean;
   sansClient?: boolean;
-  sansEntretiens?: boolean;
   entretien?: EntretienComplet | null;
-  sansFiches?: boolean;
   sansVision?: boolean;
   fiches?: Array<{ titre: string; corps: string }>;
   /** Une écriture de dépense qui LÈVE : notre panne, jamais celle du fournisseur de modèle. */
@@ -92,6 +91,7 @@ function app(opts: {
   let rang = 0;
   const entretiens = new FakeEntretiens(opts.entretien ?? null);
   const deps: AgentSetupRouteDeps = {
+    ...assistantAgentInerte,
     etatCourant: async (_t, agentId) => (agentId === AG
       ? {
         label: 'Conseiller séjours', mentionIaFrequence: 'session', inactiviteMinutes: 30,
@@ -100,16 +100,14 @@ function app(opts: {
         titresConnaissance: ['La piscine'],
       }
       : null),
-    ...(opts.sansEntretiens ? {} : { entretiens }),
-    ...(opts.sansFiches ? {} : {
-      // 🔴 Le faux ECRIT PAR SOURCE, comme le vrai : une piece jointe REMPLACE les fiches que le meme
-      // fichier avait produites, et elles portent sa provenance. Un faux qui creerait des fiches anonymes
-      // une par une n'exercerait plus le chemin reel.
-      ecrireFichesDocument: async (_t: string, _a: string, _nom: string, fiches: Array<{ titre: string; corps: string }>) => {
-        for (const f of fiches) opts.fiches?.push(f);
-        return { retirees: 0, ecrites: fiches.length };
-      },
-    }),
+    entretiens,
+    // 🔴 Le faux ECRIT PAR SOURCE, comme le vrai : une piece jointe REMPLACE les fiches que le meme
+    // fichier avait produites, et elles portent sa provenance. Un faux qui creerait des fiches anonymes
+    // une par une n'exercerait plus le chemin reel.
+    ecrireFichesDocument: async (_t: string, _a: string, _nom: string, fiches: Array<{ titre: string; corps: string }>) => {
+      for (const f of fiches) opts.fiches?.push(f);
+      return { retirees: 0, ecrites: fiches.length };
+    },
     ...(opts.sansClient ? {} : {
       completer: async (i) => {
         cap.appels.push({ modele: i.modele, messages: i.messages, toolChoice: i.toolChoice });
@@ -633,10 +631,10 @@ describe('conversation de construction', () => {
     expect(entretiens.ecrits).toEqual([]);
   });
 
-  it('🔴 sans clé, sans modèle ou sans mémoire d’entretien, la route rend 503 et n’appelle RIEN', async () => {
-    // Le troisième cas compte autant que les deux autres : un entretien sans mémoire redeviendrait non
-    // déterministe (la couverture ne serait plus calculable) sans que personne ne le voie.
-    for (const opts of [{ sansClient: true }, { sansModele: true }, { sansEntretiens: true }]) {
+  it('🔴 sans clé ou sans modèle, la route rend 503 et n’appelle RIEN', async () => {
+    // ⚠️ Le troisième cas, « sans mémoire d'entretien », est tenu par le TYPE depuis le lot 3 de l'audit
+    // ponytail : `entretiens` est requise, donc un entretien sans mémoire ne compile plus.
+    for (const opts of [{ sansClient: true }, { sansModele: true }]) {
       const { cap, srv } = app(opts);
       const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
       expect(res.statusCode, JSON.stringify(opts)).toBe(503);
@@ -818,13 +816,6 @@ describe('conversation de construction', () => {
       });
       await a.srv.inject({ method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Grille', dataUrl: png } });
       expect(a.cap.appels[0]!.modele).toBe('modele-de-vision');
-    });
-
-    it('sans écriture de fiche câblée, la route rend 503 plutôt qu’un import qui ne stocke rien', async () => {
-      const res = await app({ sansFiches: true }).srv.inject({
-        method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Guide', dataUrl: dataUrl(document) },
-      });
-      expect(res.statusCode).toBe(503);
     });
 
     it('scopée au tenant du jeton et aux administrateurs', async () => {

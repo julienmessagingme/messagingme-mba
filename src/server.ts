@@ -79,6 +79,7 @@ import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole, makeLimiteParTenant } from './auth/middleware';
 import type { Guard, PreHandler } from './auth/middleware';
+import { monterAvecEtapeEspace } from './http/scope';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
 import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore } from './auth/plafond-espace';
@@ -317,7 +318,10 @@ export interface ServerDeps {
  * connaissait que « tenant ou pas ».
  */
 export type ClasseDAcces =
-  /** JWT, ET l'espace de l'URL doit être celui du jeton. C'est `scopeTenant` qui le vérifie, dans chaque route. */
+  /**
+   * JWT, ET l'espace de l'URL doit être celui du jeton. C'est `scopeTenant` qui le vérifie, par l'étape
+   * `etapeEspace` que `entree` pose sur chaque route `:tenantId` du module (`src/http/scope.ts`).
+   */
   | 'tenant'
   /** Avant toute session : `/auth/*`. Ses propres plafonds de débit sont posés dans son module. */
   | 'anonyme'
@@ -404,6 +408,13 @@ export interface ModuleMonte {
  * silence. Ici il se monterait, et échouerait au montage, ce qui est le bon sens de l'échec (`null` n'est pas
  * « absent », c'est un câblage fautif). Vérifié : aucun appelant du dépôt ne passe une valeur fausse mais
  * définie, donc le changement est inerte aujourd'hui.
+ *
+ * 🔴 C'EST ICI QUE LE CONTRÔLE D'ESPACE SE POSE (lot 3 de l'audit ponytail, 2026-09-26). Un module déclaré
+ * `acces: 'tenant'` est monté par `monterAvecEtapeEspace`, qui ajoute `etapeEspace` à la fin de la chaîne de
+ * chacune de ses routes `:tenantId`. La DÉCLARATION décide donc du contrôle, comme elle décide déjà du garde-fou
+ * d'authentification de `buildServer` : un module ajouté demain le reçoit sans que personne y pense, et tout
+ * appelant de `monte` (le serveur, `tests/scope-tenant.test.ts`, l'auto-attaque) l'obtient par le même chemin.
+ * Les modules `jeton-ops` portent aussi des `:tenantId` et n'y passent pas : leur autorité n'est pas une session.
  */
 function entree<D>(
   nom: string,
@@ -416,7 +427,9 @@ function entree<D>(
     acces,
     fourni: deps !== undefined,
     monte: (app, gardes) => {
-      if (deps !== undefined) monter(app, deps, gardes);
+      if (deps === undefined) return;
+      if (acces === 'tenant') monterAvecEtapeEspace(app, () => monter(app, deps, gardes));
+      else monter(app, deps, gardes);
     },
   };
 }

@@ -8,7 +8,7 @@ import { normalizePhone } from '../crm/phone';
 import { isSendableButtonUrl } from '../meta/button-url';
 import { urlRecuperable } from '../lib/page-distante';
 import type { PageDistante } from '../lib/page-distante';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 import { calculerCompletion } from '../mba/completion';
 import { appliquerActivation, EtatMetaIllisible, MetaARefuse } from '../mba/activation';
 
@@ -27,14 +27,14 @@ import { appliquerActivation, EtatMetaIllisible, MetaARefuse } from '../mba/acti
 
 export interface MbaRouteDeps {
   /**
-   * L'HISTORIQUE DES RÉGLAGES (migration 0146). Optionnel : absent, rien n'est journalisé, ce qui est le
-   * comportement d'avant.
+   * L'HISTORIQUE DES RÉGLAGES (migration 0146). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne
+   * l'observent pas passent `historiqueMuet`.
    *
    * 🔴 IL EST BRANCHÉ SUR LES SUPPRESSIONS EN PRIORITÉ, et la raison n'est pas l'ordre alphabétique : chez
    * Meta, une suppression est DÉFINITIVE (ni corbeille, ni historique). La ligne écrite ici est le seul
    * exemplaire du contenu effacé. Une création ratée se refait ; une suppression non journalisée est perdue.
    */
-  journaliserSuppression?(tenantId: string, ligne: {
+  journaliserSuppression(tenantId: string, ligne: {
     element: 'faq' | 'competence' | 'site' | 'fichier';
     cible: string;
     libelle: string;
@@ -51,9 +51,9 @@ export interface MbaRouteDeps {
    * précisément le fait que le NAVIGATEUR devait connaître le numéro avant de pouvoir agir qui a produit
    * trois pannes le 2026-09-10, la dernière parce que `account` n'était pas encore chargé au clic.
    */
-  numeroDuTenant?(tenantId: string): Promise<string | null>;
+  numeroDuTenant(tenantId: string): Promise<string | null>;
   /** Écrit NOTRE drapeau `tenant_settings.mba_enabled`. */
-  ecrireDrapeauMba?(tenantId: string, enabled: boolean): Promise<void>;
+  ecrireDrapeauMba(tenantId: string, enabled: boolean): Promise<void>;
   /** Le numéro appartient-il à ce tenant ? Contrôle d'isolation, en base. */
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
@@ -66,10 +66,9 @@ export interface MbaRouteDeps {
    * ailleurs un second numéro par espace, les deux coïncident aujourd'hui. Le jour où un espace en
    * piloterait deux, ce chiffre deviendrait la somme des deux et il faudrait le dire.
    *
-   * ⚠️ OPTIONNELLE : `MbaRouteDeps` ne donne aujourd'hui AUCUN accès à la base, et les fixtures de test
-   * bouchonnent l'objet entier. L'écran sait ne rien afficher quand le chiffre manque.
+   * ⚠️ REQUISE depuis le lot 3 de l'audit ponytail : le câblage de production la fournit toujours.
    */
-  messagesEcrits?(tenantId: string): Promise<number>;
+  messagesEcrits(tenantId: string): Promise<number>;
 }
 
 /** Au-delà, ce n'est plus un import de FAQ : Meta prévient qu'« a few hundred » dégrade déjà les réponses. */
@@ -133,8 +132,7 @@ async function contexte(
   reply: FastifyReply,
   deps: MbaRouteDeps,
 ): Promise<{ tenant: string; pn: string; client: MbaClient } | null> {
-  const tenant = scopeTenant(req);
-  if (tenant === null) { await reply.code(403).send({ error: 'tenant interdit' }); return null; }
+  const tenant = espaceVerifie(req);
   const { phoneNumberId } = req.params as { phoneNumberId: string };
   if (!(await deps.phoneNumberBelongsToTenant(phoneNumberId, tenant))) {
     await reply.code(404).send({ error: 'numéro inconnu pour ce tenant' });
@@ -170,11 +168,9 @@ async function supprimerAvecTrace(
     supprimer: () => Promise<unknown>;
   },
 ): Promise<void> {
-  const avant = deps.journaliserSuppression
-    ? (await o.lister().catch(() => [])).find((x) => x.id === o.cible)
-    : undefined;
+  const avant = (await o.lister().catch(() => [])).find((x) => x.id === o.cible);
   await o.supprimer();
-  await deps.journaliserSuppression?.(tenant, {
+  await deps.journaliserSuppression(tenant, {
     element: o.element, cible: o.cible,
     libelle: `${o.libelle} : ${String((avant as Record<string, unknown> | undefined)?.[o.champ] ?? o.cible)}`,
     avant: avant ?? { id: o.cible }, acteurId,
@@ -284,7 +280,6 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   app.get(`${base}/messages`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
-    if (!deps.messagesEcrits) return reply.code(200).send({ messages: null });
     return reply.code(200).send({ messages: await deps.messagesEcrits(ctx.tenant) });
   });
 
@@ -758,11 +753,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
    * `phoneNumberId` au corps rouvrirait exactement la porte qu'on ferme.
    */
   app.put('/tenants/:tenantId/mba-activation', g, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
-    if (!deps.numeroDuTenant || !deps.ecrireDrapeauMba) {
-      return reply.code(503).send({ error: 'activation indisponible sur cette instance' });
-    }
+    const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { enabled?: unknown };
     if (typeof b.enabled !== 'boolean') return reply.code(400).send({ error: 'enabled booléen requis' });
     const numeroDuTenant = deps.numeroDuTenant;

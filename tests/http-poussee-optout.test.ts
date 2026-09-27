@@ -8,6 +8,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SettingsRouteDeps } from '../src/http/settings';
 import type { AgentRequetesRouteDeps } from '../src/http/agent-requetes';
 import type { RequeteConnecteur } from '../src/agent/requetes';
+import { reglagesInertes } from './routes-inertes';
 
 /**
  * LE BRANCHEMENT « prévenir mon système à chaque désabonnement » (tâche 7, migration 0139).
@@ -43,6 +44,7 @@ function app(branche: string | null = null) {
   const ecrits: Array<string | null> = [];
   let courant = branche;
   const settings: SettingsRouteDeps = {
+    ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({

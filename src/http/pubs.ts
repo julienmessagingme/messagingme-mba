@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { forbidNonAdmin, gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { sansPrefixeAct, type ActifsAccordes, type EtatComptePub } from '../meta/pubs';
 import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../meta/pubs-creation';
 import type { ConnexionPub } from '../pubs/connexion.pg';
@@ -310,8 +310,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   const journal = makeJournal(deps.audit);
 
   app.get('/tenants/:tenantId/pubs/connexion', opts, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     const connexion = await deps.lire(tenantId);
     // ⚠️ BEST-EFFORT, ET C'EST DÉLIBÉRÉ : cet état vient de Meta, et une panne chez eux ne doit pas
     // empêcher d'AFFICHER une connexion qu'on lit, elle, dans notre base. `null` dit « je n'ai pas pu
@@ -328,8 +327,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   app.post('/tenants/:tenantId/pubs/connexion/echange', couteux, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     if (deps.configId === '') return reply.code(503).send({ error: 'publicités non configurées (META_ADS_CONFIG_ID)' });
     const corps = corpsEchange.safeParse(req.body);
@@ -374,8 +372,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   app.post('/tenants/:tenantId/pubs/connexion/choix', couteux, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const corps = corpsChoix.safeParse(req.body);
     if (!corps.success) return reply.code(400).send({ error: 'choix invalide' });
@@ -422,8 +419,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   app.get('/tenants/:tenantId/pubs', opts, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     return reply.send({ publicites: await deps.listerPubs(tenantId) });
   });
 
@@ -441,14 +437,12 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   const optsBrouillon = { ...opts, bodyLimit: Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4) };
 
   app.get('/tenants/:tenantId/pubs/brouillons', opts, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     return reply.send({ brouillons: await deps.listerBrouillons(tenantId) });
   });
 
   app.get('/tenants/:tenantId/pubs/brouillons/:id', opts, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const b = await deps.lireBrouillon(tenantId, id);
     if (b === null) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
@@ -456,8 +450,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   app.post('/tenants/:tenantId/pubs/brouillons', optsBrouillon, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const lu = corpsBrouillon.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
@@ -470,8 +463,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   app.put('/tenants/:tenantId/pubs/brouillons/:id', optsBrouillon, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     const lu = corpsBrouillon.safeParse(req.body);
@@ -486,8 +478,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   app.delete('/tenants/:tenantId/pubs/brouillons/:id', opts, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     const trouve = await deps.supprimerBrouillon(tenantId, id);
@@ -506,8 +497,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
    */
   const optsCreation = { ...couteux, bodyLimit: Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4) };
   app.post('/tenants/:tenantId/pubs', optsCreation, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const corps = corpsCreation.safeParse(req.body);
     if (!corps.success) {
@@ -573,8 +563,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
    * cette route ferait deux endroits où le savoir, et le second finirait par mentir.
    */
   app.post('/tenants/:tenantId/pubs/:id/publier', couteux, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     try {
@@ -597,8 +586,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
    * lit que NOS tables (le suivi, lui, relit Meta toutes les quinze minutes, en fond).
    */
   app.get('/tenants/:tenantId/pubs/:id', opts, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const vue = await deps.lirePub(tenantId, id);
     if (vue === null) return reply.code(404).send({ error: 'cette publicité n’existe pas' });
@@ -618,8 +606,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     ['reprendre', true, 'pubs.reprise'],
   ] as const) {
     app.post(`/tenants/:tenantId/pubs/:id/${chemin}`, couteux, async (req, reply) => {
-      const tenantId = scopeTenant(req);
-      if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+      const tenantId = espaceVerifie(req);
       if (forbidNonAdmin(req, reply)) return;
       const { id } = req.params as { id: string };
       try {
@@ -638,8 +625,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   // une publicité crée des objets sur le compte du client, et la publier engage son budget. Ce qui lui
   // reste en propre, c'est d'être la seule à DÉTRUIRE quelque chose chez nous.
   app.delete('/tenants/:tenantId/pubs/connexion', couteux, async (req, reply) => {
-    const tenantId = scopeTenant(req);
-    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { revoqueChezMeta } = await deps.deconnecter(tenantId);
     await journal(tenantId, req, 'pubs.deconnectee', { kind: 'pub_connexion', id: tenantId }, { revoqueChezMeta });

@@ -4,22 +4,22 @@ import { DuplicateEmailError } from '../user/store.pg';
 import type { UserRow, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
 import { renderInvitationEmail } from '../support/email-templates';
-import { scopeTenant, estUuid } from './scope';
+import { espaceVerifie, estUuid } from './scope';
 import type { IssueReinitialisation } from '../auth/mfa-store.pg';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { nomEspace, MESSAGE_NOM_ESPACE_INVALIDE } from '../user/nom-espace';
 
 export interface UsersRouteDeps {
   /**
-   * Journal d'audit des ACCÈS (2026-09-15). Optionnel : absent -> aucune trace, ce qui est le comportement
-   * des câblages de test qui ne montent pas de base.
+   * Journal d'audit des ACCÈS (2026-09-15). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne
+   * l'observent pas passent `journalMuet`.
    *
    * 🔴 LE `detail` NE PORTE JAMAIS D'EMAIL NI DE NOM, seulement le RÔLE avant et après. Cette table n'est
    * jamais purgée par la rétention des contacts : y écrire une donnée personnelle la rendrait ineffaçable, et
    * annulerait l'effacement qu'une autre ligne du même journal certifie (migration 0061). `actor_email` est
    * la seule exception, dénormalisée exprès pour rester lisible après le départ du collaborateur.
    */
-  audit?: AuditSink;
+  audit: AuditSink;
   listUsers(tenantId: string): Promise<UserRow[]>;
   /** 'ok' | 'last_admin' (refusé : dernier admin actif) | 'not_found' (inconnu/hors tenant). */
   setUserRole(tenantId: string, userId: string, role: string): Promise<UserMutation>;
@@ -27,8 +27,8 @@ export interface UsersRouteDeps {
   setUserDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation>;
   /** Supprime définitivement un compte. Refusé si dernier admin actif. */
   deleteUser(tenantId: string, userId: string): Promise<UserMutation>;
-  /** Invitation : crée un compte EN ATTENTE (sans mdp). Absent -> invitations indisponibles (503). */
-  createPendingUser?(tenantId: string, email: string, role: string, name?: string): Promise<UserRow>;
+  /** Invitation : crée un compte EN ATTENTE (sans mdp). */
+  createPendingUser(tenantId: string, email: string, role: string, name?: string): Promise<UserRow>;
   /**
    * Pose le nom affiché d'un membre. `not_found` = id inconnu ou autre espace.
    *
@@ -36,27 +36,27 @@ export interface UsersRouteDeps {
    * peut pas arriver ici : renommer quelqu'un ne touche à aucun invariant. Le déclarer plus étroit obligerait
    * le câblage à traduire, et c'est précisément là que les contrats divergent.
    */
-  setUserName?(tenantId: string, userId: string, name: string): Promise<UserMutation>;
+  setUserName(tenantId: string, userId: string, name: string): Promise<UserMutation>;
   /** Génère un token d'invitation à usage unique pour ce compte, renvoie le token en clair. */
-  createInviteToken?(userId: string): Promise<string>;
+  createInviteToken(userId: string): Promise<string>;
   /** Envoi de l'email d'invitation (Resend). Absent -> l'invitation est créée mais aucun email n'est envoyé. */
   sendEmail?(input: { to: string; subject: string; text: string; html?: string }): Promise<void>;
-  /** Nom (ou email de repli) de l'invitant, pour personnaliser l'email. Absent/null -> phrase générique. */
-  getInviterName?(userId: string): Promise<string | null>;
+  /** Nom (ou email de repli) de l'invitant, pour personnaliser l'email. null -> phrase générique. */
+  getInviterName(userId: string): Promise<string | null>;
   /**
-   * Nom de l'espace de travail (tenant). Sert à personnaliser l'email d'invitation (absent/null -> phrase
-   * générique), et à la carte « Espace » de Compte & équipe (absent -> 503).
+   * Nom de l'espace de travail (tenant). Sert à personnaliser l'email d'invitation (null -> phrase
+   * générique), et à la carte « Espace » de Compte & équipe (null -> 404).
    */
-  getWorkspaceName?(tenantId: string): Promise<string | null>;
-  /** Renomme l'espace (`tenants.name`). `false` = espace inconnu. Absent -> renommage indisponible (503). */
-  renommerEspace?(tenantId: string, nom: string): Promise<boolean>;
+  getWorkspaceName(tenantId: string): Promise<string | null>;
+  /** Renomme l'espace (`tenants.name`). `false` = espace inconnu. */
+  renommerEspace(tenantId: string, nom: string): Promise<boolean>;
   /**
    * Réinitialise le second facteur d'un membre (téléphone perdu, codes de secours épuisés). `autres_espaces` = la
-   * personne a un compte dans un AUTRE espace : refusé ici, ce cas passe par l'exploitation. Absent -> 503.
+   * personne a un compte dans un AUTRE espace : refusé ici, ce cas passe par l'exploitation.
    */
-  reinitialiserMfa?(tenantId: string, userId: string): Promise<IssueReinitialisation>;
+  reinitialiserMfa(tenantId: string, userId: string): Promise<IssueReinitialisation>;
   /** Base URL du front pour le lien d'invitation. */
-  appUrl?: string;
+  appUrl: string;
 }
 
 /**
@@ -96,16 +96,13 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/users', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ users: await deps.listUsers(tenant) });
   });
 
   // Inviter un membre : crée un compte EN ATTENTE (sans mot de passe) + envoie un lien pour qu'il choisisse le sien.
   app.post('/tenants/:tenantId/invitations', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.createPendingUser || !deps.createInviteToken) return reply.code(503).send({ error: 'invitations indisponibles' });
+    const tenant = espaceVerifie(req);
 
     const b = (req.body ?? {}) as Partial<{ email: unknown; role: unknown; name: unknown }>;
     const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
@@ -126,8 +123,8 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
         const acceptUrl = `${deps.appUrl}/invite/${raw}`;
         // Personnalisation best-effort : le nom de l'invitant (req.auth.userId) et de l'espace (tenant).
         // Une panne de lookup ne bloque JAMAIS l'invitation -> repli sur une formulation générique.
-        const inviterName = req.auth?.userId && deps.getInviterName ? await deps.getInviterName(req.auth.userId).catch(() => null) : null;
-        const workspaceName = deps.getWorkspaceName ? await deps.getWorkspaceName(tenant).catch(() => null) : null;
+        const inviterName = req.auth?.userId ? await deps.getInviterName(req.auth.userId).catch(() => null) : null;
+        const workspaceName = await deps.getWorkspaceName(tenant).catch(() => null);
         const html = renderInvitationEmail({ inviterName, workspaceName, acceptUrl, role: b.role });
         // Repli TEXTE brut pour les clients qui ne rendent pas le HTML (personnalisé si dispo).
         const intro = inviterName && workspaceName
@@ -176,9 +173,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
    * et un admin qui ne pourrait pas corriger son propre nom serait une bizarrerie sans raison.
    */
   app.patch('/tenants/:tenantId/users/:userId/name', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.setUserName) return reply.code(503).send({ error: 'renommage indisponible' });
+    const tenant = espaceVerifie(req);
     const { userId } = req.params as { userId: string };
     const nom = (req.body as { name?: unknown } | null)?.name;
     if (typeof nom !== 'string' || nom.length > MAX_NOM) {
@@ -192,8 +187,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
   });
 
   app.patch('/tenants/:tenantId/users/:userId/role', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { userId } = req.params as { userId: string };
 
     const role = (req.body as { role?: unknown } | null)?.role;
@@ -219,8 +213,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
 
   // Révoquer (disabled=true) ou réactiver (false) un compte : login bloqué sans supprimer la ligne.
   app.patch('/tenants/:tenantId/users/:userId/disabled', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { userId } = req.params as { userId: string };
     const disabled = (req.body as { disabled?: unknown } | null)?.disabled;
     if (typeof disabled !== 'boolean') return reply.code(400).send({ error: 'disabled (booléen) requis' });
@@ -235,8 +228,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
 
   // Supprimer définitivement un compte (irréversible). Mêmes garde-fous que la révocation.
   app.delete('/tenants/:tenantId/users/:userId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { userId } = req.params as { userId: string };
     // Self-block : ne pas supprimer son propre compte.
     if (req.auth?.userId === userId) return reply.code(400).send({ error: 'tu ne peux pas supprimer ton propre compte' });
@@ -259,9 +251,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
    * de son porteur, et un admin qui a perdu son téléphone n'a de toute façon plus de session.
    */
   app.delete('/tenants/:tenantId/users/:userId/mfa', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.reinitialiserMfa) return reply.code(503).send({ error: 'Réinitialisation indisponible.' });
+    const tenant = espaceVerifie(req);
     const { userId } = req.params as { userId: string };
     if (req.auth?.userId === userId) {
       return reply.code(400).send({ error: 'Vous ne pouvez pas réinitialiser votre propre double authentification.' });
@@ -287,18 +277,14 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
    * toutes les écritures de Compte & équipe : un agent reçoit 403 avant d'entrer ici.
    */
   app.get('/tenants/:tenantId/nom', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getWorkspaceName) return reply.code(503).send({ error: 'nom de l\'espace indisponible' });
+    const tenant = espaceVerifie(req);
     const nom = await deps.getWorkspaceName(tenant);
     if (nom === null) return reply.code(404).send({ error: 'espace inconnu' });
     return reply.code(200).send({ nom });
   });
 
   app.patch('/tenants/:tenantId/nom', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getWorkspaceName || !deps.renommerEspace) return reply.code(503).send({ error: 'renommage de l\'espace indisponible' });
+    const tenant = espaceVerifie(req);
     const corps = nomEspaceSchema.safeParse(req.body ?? {});
     if (!corps.success) return reply.code(400).send({ error: MESSAGE_NOM_ESPACE_INVALIDE });
     const nom = corps.data.nom;

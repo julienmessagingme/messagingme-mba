@@ -6,8 +6,8 @@ import { FicheAgentPerimee, LabelAgentDejaPris } from '../agent/agent-store';
 import { fichePatchSchema } from '../agent/fiche';
 import { avertissements, manquesAvantActivation, type EtatPourLint } from '../agent/setup/lint';
 import { CreditInsuffisantPourCle, PLAFOND_GATEWAY_MIN_DOLLARS } from '../agent/provisionner-cle';
-import { MODELES_CHOISIS, IDS_MODELES_CHOISIS, type ModeleProposable } from '../agent/modeles';
-import { scopeTenant, nonEmpty, estUuid } from './scope';
+import { IDS_MODELES_CHOISIS, type ModeleProposable } from '../agent/modeles';
+import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { journaliser } from '../lib/journal';
 import type { ConsommationAgent } from '../agent/session-store';
 
@@ -32,39 +32,34 @@ export interface AgentsRouteDeps {
   /**
    * Le solde prépayé du workspace, en micro-euros. LECTURE SEULE ici, et c'est le point : un client voit ce
    * qu'il lui reste, il ne se recharge pas lui-même. Le rechargement vit sur `/ops`, sous une autorité
-   * séparée. Absente -> l'écran n'affiche pas de solde.
+   * séparée.
    */
-  soldeAgent?(tenantId: string): Promise<number>;
+  soldeAgent(tenantId: string): Promise<number>;
   /**
-   * Ce que cet agent a consomme sur une fenetre. OPTIONNELLE : une console sans store de sessions rend
-   * simplement `null`, et l'ecran n'affiche pas le bloc. Une mesure indisponible ne doit pas casser un
-   * ecran de reglage.
+   * Ce que cet agent a consomme sur une fenetre. Requise depuis le lot 3 de l'audit ponytail : le câblage de
+   * production la fournit toujours.
    */
-  consommationAgent?(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent>;
+  consommationAgent(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent>;
   /**
    * Les messages échangés dans les conversations que cet agent a tenues, sur une fenêtre de N jours.
    *
-   * ⚠️ OPTIONNELLE, comme `consommationAgent` juste au-dessus, et pour LA MÊME RAISON QUE LUI : une console
-   * sans store de sessions rend simplement `null`, et l'écran n'affiche alors aucun chiffre. Une mesure
-   * indisponible ne doit pas casser un écran de réglage.
-   *
-   * ⚠️ Cette justification a invoqué des fixtures de test jusqu'au 2026-09-23 : une commodité de test n'est
-   * pas une raison de rendre une dépendance optionnelle, et ce dépôt a payé ce motif plusieurs fois
-   * (`estDesabonne`, les gardes de routes). C'est le motif d'à côté qui se recopie, pas celui-là.
+   * ⚠️ REQUISE depuis le lot 3 de l'audit ponytail, comme `consommationAgent` : elle était optionnelle « pour
+   * une console sans store de sessions », qui n'existe pas (le câblage la fournit toujours). Une commodité de
+   * test n'est pas une raison de rendre une dépendance optionnelle, et ce dépôt a payé ce motif plusieurs
+   * fois (`estDesabonne`, les gardes de routes).
    */
-  messagesAgent?(tenantId: string, agentId: string, jours: number): Promise<number>;
+  messagesAgent(tenantId: string, agentId: string, jours: number): Promise<number>;
   /**
-   * L'état à opposer au lint d'ACTIVATION. Absent, l'activation n'est pas contrôlée : c'est le montage des
-   * tests de routes voisins, jamais la production.
+   * L'état à opposer au lint d'ACTIVATION. Requis : un montage sans lui laissait activer sans contrôle.
    */
-  etatPourLint?(tenantId: string, agentId: string): Promise<EtatPourLint | null>;
+  etatPourLint(tenantId: string, agentId: string): Promise<EtatPourLint | null>;
   /**
    * Les modèles proposables et leur tarif, pour la liste déroulante de l'onglet Modèle.
    *
-   * OPTIONNELLE : absente, la route rend nos modèles SANS tarif plutôt qu'un 503. Le menu reste utilisable,
-   * ce qui est le point : une tarification indisponible n'a pas à interdire un réglage.
+   * Requise : le câblage de production la fournit toujours, et c'est lui qui rend nos modèles SANS tarif
+   * quand la tarification est indisponible. Une tarification absente n'a pas à interdire un réglage.
    */
-  modelesProposes?(): Promise<ModeleProposable[]>;
+  modelesProposes(): Promise<ModeleProposable[]>;
   /**
    * S'assurer que l'espace a sa clé AI Gateway, en la créant chez Vercel s'il n'en a pas (2026-09-09).
    *
@@ -136,9 +131,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
    * pourrait s'en ajouter n'aurait plus de prépayé du tout.
    */
   app.get('/tenants/:tenantId/agents/solde', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.soldeAgent) return reply.code(200).send({ soldeMicroEur: null });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ soldeMicroEur: await deps.soldeAgent(tenant) });
   });
 
@@ -151,11 +144,9 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
    * l'ecran ou l'on vient voir ce que l'agent a coute.
    */
   app.get('/tenants/:tenantId/agents/:agentId/consommation', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
-    if (!deps.consommationAgent) return reply.code(200).send({ consommation: null });
     // La fenetre est fixee ICI et pas prise dans la requete : un parametre libre laisserait demander
     // « depuis toujours », qui relit toutes les sessions de l'espace pour un chiffre qui ne dit rien de
     // l'usage courant.
@@ -173,11 +164,9 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
    * personne, ce qui est une information FAUSSE présentée comme une mesure.
    */
   app.get('/tenants/:tenantId/agents/:agentId/messages', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
-    if (!deps.messagesAgent) return reply.code(200).send({ messages: null, jours: JOURS_CONSOMMATION });
     return reply.code(200).send({
       messages: await deps.messagesAgent(tenant, agentId, JOURS_CONSOMMATION),
       jours: JOURS_CONSOMMATION,
@@ -185,8 +174,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   });
 
   app.get('/tenants/:tenantId/agents', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     // `?statut=tous` : l'écran de réglage voit ses brouillons, le builder ne voit que les actifs. Le défaut
     // est le plus RESTRICTIF, pour qu'un appelant distrait ne propose pas un brouillon dans un scénario.
     const tous = (req.query as { statut?: string }).statut === 'tous';
@@ -195,8 +183,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   });
 
   app.get('/tenants/:tenantId/agents/:agentId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     // Un identifiant mal forme part sinon tel quel dans un `where` sur une colonne `uuid` et fait LEVER
     // Postgres, donc un 500 dont Cloudflare remplace le corps. Une adresse tapee de travers rend 404.
@@ -207,8 +194,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   });
 
   app.post('/tenants/:tenantId/agents', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const parse = creationSchema.safeParse(req.body ?? {});
     // Même règle qu'au PATCH : un label trop long est REFUSÉ, pas tronqué en silence. Deux comportements
     // différents pour le même champ selon la route feraient croire à un bug d'affichage.
@@ -262,11 +248,9 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
    * sur un écran et pas sur l'autre.
    */
   app.get('/tenants/:tenantId/agents/:agentId/manques', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
-    if (!deps.etatPourLint) return reply.code(503).send({ error: 'lint non configure' });
     const etat = await deps.etatPourLint(tenant, agentId);
     if (!etat) return reply.code(404).send({ error: 'agent introuvable' });
     // ⚠️ DEUX LISTES, UN SEUL BANDEAU. Les manques BLOQUENT l'activation, les avertissements non : les
@@ -286,19 +270,13 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
    * que des identifiants et des prix. Une liste construite côté navigateur aurait exigé la clé dans le bundle.
    */
   app.get('/tenants/:tenantId/agents/modeles', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    // Sans câblage, on rend quand même NOS modèles : le menu doit rester utilisable. Le tarif manquant est
-    // une information que le front affiche, pas une panne.
-    const modeles = deps.modelesProposes
-      ? await deps.modelesProposes()
-      : MODELES_CHOISIS.map((m) => ({ ...m, prixEntree: null, prixSortie: null }));
+    const tenant = espaceVerifie(req);
+    const modeles = await deps.modelesProposes();
     return reply.code(200).send({ modeles });
   });
 
   app.patch('/tenants/:tenantId/agents/:agentId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     /**
@@ -343,7 +321,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     // manque de quoi tenir sa promesse. Sur des CHAMPS VIDES, jamais sur une qualité sémantique, et sur
     // l'ACTIVATION seulement : un brouillon se remplit dans n'importe quel ordre, et la conversation de
     // construction procède justement par petites touches.
-    if (parse.data.status === 'active' && deps.etatPourLint) {
+    if (parse.data.status === 'active') {
       const etat = await deps.etatPourLint(tenant, agentId);
       if (!etat) return reply.code(404).send({ error: 'agent introuvable' });
       // 🔴 SUR L'ÉTAT EFFECTIF APRÈS ÉCRITURE, jamais sur celui qu'on vient de lire. Le corps peut porter
@@ -368,8 +346,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   });
 
   app.delete('/tenants/:tenantId/agents/:agentId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     // Sans cette route, un agent créé avec un nom malheureux ne pouvait être ni renommé vers un nom occupé,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { registerAgentMcp, type AgentMcpRouteDeps, type EcritureImportMcp } from '../src/http/agent-mcp';
+import { monterAvecEtapeEspace } from '../src/http/scope';
 import type { PreHandler } from '../src/auth/middleware';
 import type { OutilExistantMcp } from '../src/agent/mcp/import';
 import type { SourceAppel } from '../src/agent/sources';
@@ -97,7 +98,7 @@ function harnais(over: {
     verifierResolution: async () => over.resolution ?? { ok: true },
   };
   const app = Fastify();
-  registerAgentMcp(app, deps, gardeQuiPose);
+  monterAvecEtapeEspace(app, () => registerAgentMcp(app, deps, gardeQuiPose));
   return { app, ecrit, epreuves, regles, session, crees, traces };
 }
 

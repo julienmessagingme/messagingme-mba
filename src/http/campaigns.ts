@@ -7,13 +7,13 @@ import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow, RetryReset } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
-import { campaignJobExpireSeconds, resolveRatePerMinute, SANS_PLAFOND } from '../campaign/pacing';
-import { PLAFOND_DESTINATAIRES_DEFAUT, refusDePlafond } from '../campaign/plafond';
+import { campaignJobExpireSeconds, resolveRatePerMinute } from '../campaign/pacing';
+import { refusDePlafond } from '../campaign/plafond';
 import { scanOpening } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
-import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
+import { gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
-import { scopeTenant, nonEmpty, estUuid } from './scope';
+import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { normaliserChaine, problemeDeChaine, RANG_INITIAL, type DevenirEtage, type EtageEntrant } from '../campaign/etages';
 // Le MÊME analyseur de cible que le mini-CRM : les destinataires d'une campagne se désignent exactement
 // comme une action en masse, et deux analyseurs finiraient par ne plus viser la même chose.
@@ -25,16 +25,15 @@ export interface CampaignRouteDeps {
   queue: Queue;
   /**
    * Palier d'envoi du numéro de l'espace (`messaging_limit_tier`), pour AVERTIR avant un lancement trop gros.
-   * Optionnel : absent -> aucun avertissement, comportement d'avant. Une panne de lecture ne doit jamais
-   * empêcher de créer une campagne, d'où le repli silencieux côté appelant.
+   * Une panne de lecture ne doit jamais empêcher de créer une campagne, d'où le repli silencieux côté appelant.
    */
-  getMessagingLimitTier?(tenantId: string): Promise<string | null>;
+  getMessagingLimitTier(tenantId: string): Promise<string | null>;
   /**
    * Brouillons de COMPOSITION (une campagne qu'on est en train d'écrire). Rien à voir avec
-   * `campaigns.status = 'draft'`, qui est une campagne complète et non lancée. OPTIONNEL : absent, les routes
-   * de brouillon ne sont pas montées et l'écran retombe sur son comportement d'avant.
+   * `campaigns.status = 'draft'`, qui est une campagne complète et non lancée. Requis depuis le lot 3 de l'audit ponytail :
+   * les routes de brouillon étaient montées « si la dépendance est câblée », ce qu'elle est toujours.
    */
-  drafts?: {
+  drafts: {
     list(tenantId: string): Promise<Array<{ id: string; name: string; state: Record<string, unknown>; updatedAt: Date }>>;
     create(tenantId: string, name: string, state: Record<string, unknown>): Promise<{ id: string; name: string; state: Record<string, unknown>; updatedAt: Date }>;
     update(tenantId: string, id: string, name: string, state: Record<string, unknown>): Promise<boolean>;
@@ -49,10 +48,8 @@ export interface CampaignRouteDeps {
    * 100 000 contacts, rapatriait leurs identifiants dans le navigateur, et les renvoyait tous dans le corps
    * de la requête, plafonné à 1 Mo : le JSON des seuls identifiants pèse environ 975 Ko à 25 000 contacts.
    * La création échouait donc BIEN AVANT la limite que l'écran annonçait, et sans rien dire.
-   *
-   * Optionnelle : absente, seule la liste explicite d'identifiants reste acceptée (comportement d'avant).
    */
-  contactIdsForTarget?(tenantId: string, target: BulkTarget, limite?: number): Promise<string[]>;
+  contactIdsForTarget(tenantId: string, target: BulkTarget, limite?: number): Promise<string[]>;
   /**
    * Les identifiants de TOUS les contacts de l'espace, BORNÉS (constat B4 de l'audit externe du 2026-09-02).
    *
@@ -68,41 +65,37 @@ export interface CampaignRouteDeps {
    *
    * ⚠️ Cela borne aussi la MÉMOIRE : ce chemin chargeait l'intégralité du CRM dans le process à chaque
    * création de campagne, sans aucune limite.
-   *
-   * Absente du câblage -> ce chemin-là n'est pas plafonné, comme avant. Les deux autres le restent, leur
-   * nombre étant connu sans requête.
    */
-  identifiantsDeTousLesContacts?(tenantId: string, limite: number): Promise<string[]>;
-  /** Plafond de destinataires. Absent -> le défaut de `src/campaign/plafond.ts` (20 000). */
-  plafondDestinataires?: number;
+  identifiantsDeTousLesContacts(tenantId: string, limite: number): Promise<string[]>;
+  /** Plafond de destinataires (le câblage passe la configuration, défaut de `src/campaign/plafond.ts`). */
+  plafondDestinataires: number;
   /** L'agent RCS appartient-il au tenant ? Même garde que pour le numéro : sans elle, un tenant enverrait
-   *  sous la marque d'un autre. Absente du câblage -> aucune campagne RCS ne peut être créée. */
-  rcsAgentBelongsToTenant?(agentId: string, tenantId: string): Promise<boolean>;
-  /** Agents RCS du tenant (sélecteur de l'assistant). Absent -> liste vide. */
-  listRcsAgents?(tenantId: string): Promise<Array<{ agentId: string; brandName: string; status: string }>>;
+   *  sous la marque d'un autre. */
+  rcsAgentBelongsToTenant(agentId: string, tenantId: string): Promise<boolean>;
+  /** Agents RCS du tenant (sélecteur de l'assistant). */
+  listRcsAgents(tenantId: string): Promise<Array<{ agentId: string; brandName: string; status: string }>>;
   /**
    * Le modèle de mail appartient-il au tenant (et n'est-il pas supprimé) ? Garde d'un étage e-mail de la
    * chaîne, exactement comme `rcsAgentBelongsToTenant` l'est d'une campagne RCS.
    *
    * 🔴 SANS ELLE, L'IDENTIFIANT PART DIRECTEMENT DANS UNE CLÉ ÉTRANGÈRE : `campaign_etages.email_template_id`
    * référence `email_templates(id)`, donc un modèle inconnu rendrait une 23503, c'est-à-dire une 5xx dont
-   * Cloudflare remplace le corps. Absente du câblage -> aucun étage e-mail n'est créable, et le refus le dit.
+   * Cloudflare remplace le corps.
    */
-  emailTemplateBelongsToTenant?(templateId: string, tenantId: string): Promise<boolean>;
+  emailTemplateBelongsToTenant(templateId: string, tenantId: string): Promise<boolean>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
   /**
    * Le webhook entrant appartient-il au tenant, et est-il ACTIF ? Garde d'une campagne AU FIL DE L'EAU : sans
-   * elle on brancherait une campagne sur l'adresse d'un autre espace. Absente du câblage -> aucune campagne au
-   * fil de l'eau n'est créable, et le refus est explicite (jamais une campagne muette qui n'attrape rien).
+   * elle on brancherait une campagne sur l'adresse d'un autre espace.
    */
-  webhookUsableByTenant?(webhookId: string, tenantId: string): Promise<boolean>;
+  webhookUsableByTenant(webhookId: string, tenantId: string): Promise<boolean>;
   /** Arrête une campagne au fil de l'eau (scopée tenant) : elle cesse de prendre les arrivants. */
-  stopWebhookCampaign?(campaignId: string, tenantId: string): Promise<boolean>;
+  stopWebhookCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   /** Suspend une campagne EN COURS d'envoi (scopée tenant, `running` uniquement). false = elle n'envoyait pas. */
-  pauseCampaign?(campaignId: string, tenantId: string): Promise<boolean>;
+  pauseCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   /** Lève la pause avant d'enfiler le run de reprise (`paused` uniquement, no-op ailleurs). */
-  resumeCampaign?(campaignId: string, tenantId: string): Promise<boolean>;
+  resumeCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   /** Dimensionnement du job de run : débit choisi + nb de destinataires en attente. null si campagne absente.
    *  Sert à calculer l'expireInSeconds du job (éviter qu'un run throttlé long expire et soit rejoué en parallèle). */
   getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null>;
@@ -130,11 +123,11 @@ export interface CampaignRouteDeps {
   listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
   /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute. Doit être le MÊME que celui
    *  injecté au worker (config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE), pour que l'estimation d'expiration et le
-   *  throttle réel voient le même débit. Absent (tests) -> 0 = opt-out, comme avant ce défaut. */
-  defaultRatePerMinute?: number;
+   *  throttle réel voient le même débit. */
+  defaultRatePerMinute: number;
   /** Le plus BAS des plafonds de canal, pour ESTIMER une durée sans connaître le canal (`plafondLePlusBas`).
-   *  ⚠️ Absent (tests) -> aucun plafond. Le frein réel est posé par `run-job`, qui lit le canal. */
-  plafondLePlusBas?: number;
+   *  Le frein réel est posé par `run-job`, qui lit le canal. */
+  plafondLePlusBas: number;
 }
 
 const CATEGORIES = new Set<CampaignCategory>(['marketing', 'utility']);
@@ -154,80 +147,73 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   const expirationDuRun = async (campaignId: string): Promise<number | undefined> => {
     const sizing = await deps.getRunSizing(campaignId);
     return sizing
-      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND))
+      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute, deps.plafondLePlusBas))
       : undefined;
   };
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
   const couteux = gardeEtendue(garde, limiteCouteuse);
 
   /**
-   * Brouillons de COMPOSITION. Montés seulement si la dépendance est câblée.
+   * Brouillons de COMPOSITION.
    *
    * Ces routes n'ont AUCUN effet d'envoi : elles n'écrivent qu'un nom et l'état d'un écran. Elles restent
    * pourtant réservées aux admins, comme tout ce groupe (`registerCampaigns` est monté avec `gardeAdmin`) :
    * un brouillon de campagne est une campagne en devenir, il n'y a pas de raison d'ouvrir l'un sans l'autre.
    */
   const drafts = deps.drafts;
-  if (drafts) {
-    /** Nom d'un brouillon : non vide et borné. Le nom sert d'étiquette, il n'est jamais interprété. */
-    const lireNom = (body: unknown): string | null => {
-      const n = (body as { name?: unknown } | null)?.name;
-      if (!nonEmpty(n)) return null;
-      const nom = (n as string).trim();
-      return nom.length <= 200 ? nom : null;
-    };
-    /** État de l'écran : un objet, jamais un tableau ni un scalaire. Absent -> objet vide. */
-    const lireEtat = (body: unknown): Record<string, unknown> | null => {
-      const s = (body as { state?: unknown } | null)?.state;
-      if (s === undefined || s === null) return {};
-      if (typeof s !== 'object' || Array.isArray(s)) return null;
-      return s as Record<string, unknown>;
-    };
+  /** Nom d'un brouillon : non vide et borné. Le nom sert d'étiquette, il n'est jamais interprété. */
+  const lireNom = (body: unknown): string | null => {
+    const n = (body as { name?: unknown } | null)?.name;
+    if (!nonEmpty(n)) return null;
+    const nom = (n as string).trim();
+    return nom.length <= 200 ? nom : null;
+  };
+  /** État de l'écran : un objet, jamais un tableau ni un scalaire. Absent -> objet vide. */
+  const lireEtat = (body: unknown): Record<string, unknown> | null => {
+    const s = (body as { state?: unknown } | null)?.state;
+    if (s === undefined || s === null) return {};
+    if (typeof s !== 'object' || Array.isArray(s)) return null;
+    return s as Record<string, unknown>;
+  };
 
-    app.get('/tenants/:tenantId/campaign-drafts', opts, async (req, reply) => {
-      const tenant = scopeTenant(req);
-      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-      return reply.code(200).send({ drafts: await drafts.list(tenant) });
-    });
+  app.get('/tenants/:tenantId/campaign-drafts', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    return reply.code(200).send({ drafts: await drafts.list(tenant) });
+  });
 
-    app.post('/tenants/:tenantId/campaign-drafts', opts, async (req, reply) => {
-      const tenant = scopeTenant(req);
-      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-      const nom = lireNom(req.body);
-      if (nom === null) return reply.code(400).send({ error: 'name requis (texte non vide, 200 caractères max)' });
-      const etat = lireEtat(req.body);
-      if (etat === null) return reply.code(400).send({ error: 'state invalide (objet)' });
-      return reply.code(201).send({ draft: await drafts.create(tenant, nom, etat) });
-    });
+  app.post('/tenants/:tenantId/campaign-drafts', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const nom = lireNom(req.body);
+    if (nom === null) return reply.code(400).send({ error: 'name requis (texte non vide, 200 caractères max)' });
+    const etat = lireEtat(req.body);
+    if (etat === null) return reply.code(400).send({ error: 'state invalide (objet)' });
+    return reply.code(201).send({ draft: await drafts.create(tenant, nom, etat) });
+  });
 
-    app.put('/tenants/:tenantId/campaign-drafts/:draftId', opts, async (req, reply) => {
-      const tenant = scopeTenant(req);
-      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-      const nom = lireNom(req.body);
-      if (nom === null) return reply.code(400).send({ error: 'name requis (texte non vide, 200 caractères max)' });
-      const etat = lireEtat(req.body);
-      if (etat === null) return reply.code(400).send({ error: 'state invalide (objet)' });
-      const { draftId } = req.params as { draftId: string };
-      // 404 et non création : un identifiant inconnu vient soit d'un brouillon supprimé, soit d'un autre
-      // tenant. Créer à la volée sèmerait des brouillons chez autrui en devinant des identifiants.
-      const maj = await drafts.update(tenant, draftId, nom, etat);
-      if (!maj) return reply.code(404).send({ error: 'brouillon inconnu' });
-      return reply.code(200).send({ updated: true, draftId });
-    });
+  app.put('/tenants/:tenantId/campaign-drafts/:draftId', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const nom = lireNom(req.body);
+    if (nom === null) return reply.code(400).send({ error: 'name requis (texte non vide, 200 caractères max)' });
+    const etat = lireEtat(req.body);
+    if (etat === null) return reply.code(400).send({ error: 'state invalide (objet)' });
+    const { draftId } = req.params as { draftId: string };
+    // 404 et non création : un identifiant inconnu vient soit d'un brouillon supprimé, soit d'un autre
+    // tenant. Créer à la volée sèmerait des brouillons chez autrui en devinant des identifiants.
+    const maj = await drafts.update(tenant, draftId, nom, etat);
+    if (!maj) return reply.code(404).send({ error: 'brouillon inconnu' });
+    return reply.code(200).send({ updated: true, draftId });
+  });
 
-    app.delete('/tenants/:tenantId/campaign-drafts/:draftId', opts, async (req, reply) => {
-      const tenant = scopeTenant(req);
-      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-      const { draftId } = req.params as { draftId: string };
-      const supprime = await drafts.remove(tenant, draftId);
-      if (!supprime) return reply.code(404).send({ error: 'brouillon inconnu' });
-      return reply.code(200).send({ deleted: true, draftId });
-    });
-  }
+  app.delete('/tenants/:tenantId/campaign-drafts/:draftId', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const { draftId } = req.params as { draftId: string };
+    const supprime = await drafts.remove(tenant, draftId);
+    if (!supprime) return reply.code(404).send({ error: 'brouillon inconnu' });
+    return reply.code(200).send({ deleted: true, draftId });
+  });
 
   app.get('/tenants/:tenantId/campaigns', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     // `?archived=1` bascule sur la corbeille. Valeur venue de la query string, donc `unknown` : on n'accepte
     // QUE les deux formes explicites, tout le reste (y compris 'false', '0', 'oui') vaut « campagnes actives ».
     const q = (req.query ?? {}) as { archived?: unknown };
@@ -236,8 +222,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   app.get('/tenants/:tenantId/campaigns/:campaignId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId: string };
     const detail = await deps.getCampaignDetail(campaignId, tenant);
     if (!detail) return reply.code(404).send({ error: 'campagne inconnue' });
@@ -245,27 +230,21 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   app.get('/tenants/:tenantId/phone-numbers', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ phoneNumbers: await deps.listPhoneNumbers(tenant) });
   });
 
   // Agents RCS du tenant, pour le sélecteur de l'assistant de campagne. Monté ICI, à côté du listage des
   // numéros Meta : c'est le même besoin (« depuis quoi j'envoie ? »), vu du même écran, avec la même garde
-  // de scope tenant. Absent du câblage -> liste vide, pas d'erreur (le canal RCS est alors simplement
+  // de scope tenant. Un espace sans agent RCS rend une liste vide (le canal est alors simplement
   // inutilisable, ce que l'UI affiche).
   app.get('/tenants/:tenantId/rcs-agents', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send({ agents: deps.listRcsAgents ? await deps.listRcsAgents(tenant) : [] });
+    const tenant = espaceVerifie(req);
+    return reply.code(200).send({ agents: await deps.listRcsAgents(tenant) });
   });
 
   app.post('/tenants/:tenantId/campaigns', opts, async (req, reply) => {
-    const effectiveTenant = scopeTenant(req);
-    if (effectiveTenant === null) {
-      return reply.code(403).send({ error: 'tenant interdit' });
-    }
-    if (forbidNonAdmin(req, reply)) return;
+    const effectiveTenant = espaceVerifie(req);
 
     const b = (req.body ?? {}) as Partial<{
       phoneNumberId: string;
@@ -304,7 +283,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     let rcsMessage: unknown;
     if (isRcs) {
       if (!nonEmpty(b.rcsAgentId)) return reply.code(400).send({ error: 'rcsAgentId requis pour une campagne RCS' });
-      if (!deps.rcsAgentBelongsToTenant || !(await deps.rcsAgentBelongsToTenant(b.rcsAgentId as string, effectiveTenant))) {
+      if (!(await deps.rcsAgentBelongsToTenant(b.rcsAgentId as string, effectiveTenant))) {
         return reply.code(400).send({ error: 'rcsAgentId inconnu pour ce tenant' });
       }
       const parsed = rcsOutboundSchema.safeParse(b.rcsMessage);
@@ -379,9 +358,6 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // webhook entrant. Trois refus explicites plutôt qu'une campagne qui a l'air créée et n'attrape rien.
     let webhookId: string | undefined;
     if (nonEmpty(b.webhookId)) {
-      if (!deps.webhookUsableByTenant) {
-        return reply.code(400).send({ error: "Les campagnes alimentées par un webhook ne sont pas disponibles sur cette instance." });
-      }
       if (!(await deps.webhookUsableByTenant(b.webhookId as string, effectiveTenant))) {
         return reply.code(400).send({ error: 'webhookId inconnu (ou désactivé) pour ce tenant' });
       }
@@ -397,7 +373,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     let contactIds: string[] | undefined;
     // Le plafond est lu ICI, avant toute résolution de cible : il sert de BORNE aux requêtes de sélection,
     // pas seulement de verdict après coup. Une garde qui arrive après le chargement ne protège que la suite.
-    const plafond = deps.plafondDestinataires ?? PLAFOND_DESTINATAIRES_DEFAUT;
+    const plafond = deps.plafondDestinataires;
     if (b.contactIds !== undefined) {
       if (!Array.isArray(b.contactIds) || !b.contactIds.every((x) => nonEmpty(x))) {
         return reply.code(400).send({ error: 'contactIds invalide (tableau d\'ids)' });
@@ -430,9 +406,6 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       }
       if (webhookId) {
         return reply.code(400).send({ error: "Une campagne alimentée par un webhook ne prend pas de cible de contacts : ses destinataires arrivent au fil de l'eau." });
-      }
-      if (!deps.contactIdsForTarget) {
-        return reply.code(400).send({ error: 'La désignation par filtres n’est pas disponible sur cette instance.' });
       }
       const target = parseBulkTarget(b.contactTarget);
       // `null` = aucune cible exploitable. On REFUSE plutôt que de retomber sur « tous les contacts » : une
@@ -469,7 +442,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
        * assumée et voulue : un contact créé après la validation n'entre plus dans la campagne. L'opérateur a
        * confirmé un nombre, il obtient ce nombre.
        */
-      if (contactIds === undefined && deps.identifiantsDeTousLesContacts) {
+      if (contactIds === undefined) {
         contactIds = await deps.identifiantsDeTousLesContacts(effectiveTenant, plafond + 1);
       }
       const vises = contactIds ? contactIds.length : 0;
@@ -541,9 +514,6 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
             return reply.code(422).send({ error: `L'étage ${e.rang} part en e-mail : il faut dire quel champ de la fiche porte l'adresse.` });
           }
           e.emailChamp = e.emailChamp.trim();
-          if (!deps.emailTemplateBelongsToTenant) {
-            return reply.code(422).send({ error: "Les étages e-mail ne sont pas disponibles sur cette instance." });
-          }
           if (!(await deps.emailTemplateBelongsToTenant(e.emailTemplateId as string, effectiveTenant))) {
             return reply.code(422).send({ error: `L'étage ${e.rang} vise un modèle de mail inconnu de cet espace.` });
           }
@@ -570,7 +540,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
         if (!nonEmpty(b.rcsAgentId)) {
           return reply.code(422).send({ error: "Cette chaîne comporte un étage RCS : il lui faut un agent RCS." });
         }
-        if (!deps.rcsAgentBelongsToTenant || !(await deps.rcsAgentBelongsToTenant(b.rcsAgentId as string, effectiveTenant))) {
+        if (!(await deps.rcsAgentBelongsToTenant(b.rcsAgentId as string, effectiveTenant))) {
           return reply.code(422).send({ error: 'rcsAgentId inconnu pour ce tenant' });
         }
       }
@@ -642,16 +612,13 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // met la campagne en pause sur un code de plafond depuis le lot 1). Best-effort : une lecture en échec ne
     // doit pas empêcher de créer la campagne, elle n'ajoute qu'un message.
     let avertissement: string | undefined;
-    if (deps.getMessagingLimitTier) {
-      try {
-        avertissement = avertissementPalier(await deps.getMessagingLimitTier(effectiveTenant), result.recipientCount);
-      } catch { /* le palier est un confort, pas une condition */ }
-    }
+    try {
+      avertissement = avertissementPalier(await deps.getMessagingLimitTier(effectiveTenant), result.recipientCount);
+    } catch { /* le palier est un confort, pas une condition */ }
     return reply.code(201).send({ ...result, ...(avertissement ? { avertissement } : {}) });
   });
 
   app.post('/campaigns/:campaignId/run', couteux, async (req, reply) => {
-    if (forbidNonAdmin(req, reply)) return;
     const { campaignId } = req.params as { campaignId: string };
     const authTenant = req.auth?.tenantId ?? '';
     // Scope tenant : 404 si la campagne n'appartient pas à l'appelant (pas d'IDOR cross-tenant).
@@ -678,7 +645,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // REPRISE d'une campagne en pause : la pause est levée AVANT l'enfilement, parce que le job refuse de
     // démarrer une campagne en pause (garde de `campaignRunJob`, qui empêche un job enfilé avant la pause de la
     // ressusciter). No-op sur un brouillon, donc l'appel est inconditionnel.
-    await deps.resumeCampaign?.(campaignId, authTenant);
+    await deps.resumeCampaign(campaignId, authTenant);
     // ⚠️ Deux POST /run concurrents empilent DEUX jobs, et les deux tourneront : rien ne déduplique ici (cf.
     // `Queue.enqueue`, où le `singletonKey` qu'on croyait protecteur a été retiré). Le claim atomique par
     // destinataire reste le seul garde-fou, et il ne garantit que l'absence de double-envoi, pas le débit.
@@ -690,7 +657,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       // L'enfilement a échoué APRÈS la levée de pause : on la RÉTABLIT. Sans ça la campagne resterait affichée
       // « en cours » sans qu'aucun job ne tourne, et « Reprendre » ne s'affiche pas sur une campagne en cours :
       // l'opérateur serait coincé. `pauseCampaign` est bornée à `running`, elle ne touche donc pas un brouillon.
-      await deps.pauseCampaign?.(campaignId, authTenant);
+      await deps.pauseCampaign(campaignId, authTenant);
       throw err;
     }
     return reply.code(202).send({ enqueued: true, campaignId });
@@ -703,7 +670,6 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
    * variable est TOUJOURS manquante (on ne renvoie pas le même échec). Admin-only, tenant du JWT.
    */
   app.post('/campaigns/:campaignId/recipients/:recipientId/retry', opts, async (req, reply) => {
-    if (forbidNonAdmin(req, reply)) return;
     const authTenant = req.auth?.tenantId ?? '';
     const { campaignId, recipientId } = req.params as { campaignId: string; recipientId: string };
     const r = await deps.resetRecipientForRetry(authTenant, campaignId, recipientId);
@@ -730,11 +696,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
    * façon honnête de séparer « pas à toi » de « pas dans le bon état », comme pour l'archivage plus bas.
    */
   app.post('/tenants/:tenantId/campaigns/:campaignId/pause', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId: string };
-    if (!deps.pauseCampaign) return reply.code(404).send({ error: 'campagne non suspendable' });
     if (!(await deps.campaignBelongsTo(campaignId, tenant))) {
       return reply.code(404).send({ error: 'campagne inconnue' });
     }
@@ -747,7 +710,6 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
 
   // Annule une campagne programmée : elle repasse en brouillon (le job différé n'a jamais été enfilé, rien à tuer).
   app.post('/campaigns/:campaignId/cancel-schedule', opts, async (req, reply) => {
-    if (forbidNonAdmin(req, reply)) return;
     const { campaignId } = req.params as { campaignId: string };
     const authTenant = req.auth?.tenantId ?? '';
     const ok = await deps.cancelSchedule(campaignId, authTenant);
@@ -764,11 +726,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
    * direct ne doit pas répondre « arrêté » sur une campagne qui ne l'était pas.
    */
   app.post('/tenants/:tenantId/campaigns/:campaignId/stop', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId: string };
-    if (!deps.stopWebhookCampaign) return reply.code(404).send({ error: 'campagne non arrêtable' });
     const ok = await deps.stopWebhookCampaign(campaignId, tenant);
     if (!ok) return reply.code(404).send({ error: 'campagne non arrêtable' });
     return reply.code(200).send({ stopped: true, campaignId });
@@ -778,9 +737,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   // l'appartenance AVANT d'agir, ce qui est la seule façon de distinguer honnêtement « pas à toi » (404) de
   // « pas dans le bon état » (200 idempotent pour l'archive, 409 pour la suppression).
   app.post('/tenants/:tenantId/campaigns/:campaignId/archive', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId: string };
     if (!(await deps.campaignBelongsTo(campaignId, tenant))) {
       return reply.code(404).send({ error: 'campagne inconnue' });
@@ -792,9 +749,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   app.post('/tenants/:tenantId/campaigns/:campaignId/unarchive', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId: string };
     if (!(await deps.campaignBelongsTo(campaignId, tenant))) {
       return reply.code(404).send({ error: 'campagne inconnue' });
@@ -807,9 +762,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   // l'historique qui alimente les analytics : elle s'archive, elle ne s'efface pas. 409 (et non 404) quand la
   // garde refuse, pour que l'interface puisse proposer l'archivage à la place.
   app.delete('/tenants/:tenantId/campaigns/:campaignId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId: string };
     if (!(await deps.campaignBelongsTo(campaignId, tenant))) {
       return reply.code(404).send({ error: 'campagne inconnue' });

@@ -2,13 +2,13 @@ import { randomInt } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { TenantConflictError, SecondNumeroRefuseError } from '../account/es-store.pg';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { texteDe } from '../lib/erreur';
 
 export interface EmbeddedSignupRouteDeps {
   /**
-   * Journal d'audit (2026-09-16). Optionnel : absent -> aucune trace (câblages de test).
+   * Journal d'audit (2026-09-16). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`.
    *
    * 🔴 RATTACHER UN NUMÉRO, C'EST DONNER UNE VOIX. À partir de cet instant, le produit parle aux clients SOUS
    * CETTE IDENTITÉ, et un token business chiffré est conservé. C'est le geste le plus structurant de tout
@@ -18,7 +18,7 @@ export interface EmbeddedSignupRouteDeps {
    * donc une donnée personnelle dans une table jamais purgée. Il porte les IDENTIFIANTS META, qui désignent
    * le compte et le numéro sans être le numéro.
    */
-  audit?: AuditSink;
+  audit: AuditSink;
   /** config_id de la configuration ES (dashboard Meta, Facebook Login for Business). Vide -> feature OFF. */
   configId: string;
   /** App ID Meta (public : sert au FB.init du front). */
@@ -30,10 +30,10 @@ export interface EmbeddedSignupRouteDeps {
   /**
    * Comptes WhatsApp auxquels le business token donne accès. Sert quand la popup n'a PAS annoncé les
    * identifiants (client qui rouvre un parcours déjà abouti : Meta n'a plus rien à configurer, donc plus rien à
-   * annoncer). Optionnelles : sans elles, la route garde son ancien contrat (les deux identifiants exigés).
+   * annoncer).
    */
-  wabasForToken?(businessToken: string): Promise<string[]>;
-  listPhones?(wabaId: string, businessToken: string): Promise<Array<{ id: string }>>;
+  wabasForToken(businessToken: string): Promise<string[]>;
+  listPhones(wabaId: string, businessToken: string): Promise<Array<{ id: string }>>;
   getPhone(phoneNumberId: string, businessToken: string): Promise<{ displayPhoneNumber: string | null; verifiedName: string | null; status: string | null; codeVerificationStatus?: string | null }>;
   subscribeApp(wabaId: string, businessToken: string): Promise<void>;
   register(phoneNumberId: string, businessToken: string, pin: string): Promise<void>;
@@ -126,15 +126,13 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
   const dernierCode = new Map<string, number>();
 
   app.get('/tenants/:tenantId/embedded-signup/config', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const enabled = deps.configId !== '' && deps.appId !== '';
     return reply.code(200).send({ enabled, appId: deps.appId, configId: deps.configId, graphVersion: deps.graphVersion });
   });
 
   app.post('/tenants/:tenantId/embedded-signup/complete', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (deps.configId === '') return reply.code(503).send({ error: 'Embedded Signup non configuré (META_ES_CONFIG_ID)' });
     const b = (req.body ?? {}) as { code?: unknown; wabaId?: unknown; phoneNumberId?: unknown };
     // `wabaId` / `phoneNumberId` sont FACULTATIFS : la popup ne les annonce que lorsqu'elle exécute vraiment les
@@ -162,9 +160,6 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     let wabaId = nonEmpty(b.wabaId) ? b.wabaId.trim() : '';
     let phoneNumberId = nonEmpty(b.phoneNumberId) ? b.phoneNumberId.trim() : '';
     if (wabaId === '' || phoneNumberId === '') {
-      if (!deps.wabasForToken || !deps.listPhones) {
-        return reply.code(400).send({ error: 'code, wabaId et phoneNumberId requis' });
-      }
       try {
         if (wabaId === '') {
           const wabas = await deps.wabasForToken(businessToken);
@@ -303,8 +298,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
    * requêtes permises sur 72 heures. Apprendre l'état en le demandant à Meta coûterait donc un essai au client.
    */
   app.post('/tenants/:tenantId/numero/code', couteux, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const body = (req.body ?? {}) as { methode?: unknown };
     const methode = body.methode === undefined ? 'VOICE' : body.methode;
     // VOICE par défaut : Meta déconseille le SMS sur un numéro VoIP, et un numéro qui ne reçoit pas de SMS
@@ -362,8 +356,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
    * quota des dix requêtes sans que personne ne le voie.
    */
   app.post('/tenants/:tenantId/numero/activer', couteux, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const body = (req.body ?? {}) as { code?: unknown };
 
     const phoneNumberId = await deps.numeroDuTenant(tenant);
@@ -440,8 +433,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
    * ⚠️ ADMIN SEULEMENT : le module est monté derrière `g.admin` (`src/server.ts`), comme `/numero/activer`.
    */
   app.post('/tenants/:tenantId/numero/delier', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const r = await deps.delierNumero(tenant);
     if (r === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
     // L'identifiant de l'ESPACE en cible : délier porte sur tous ses numéros, et le numéro affiché est une donnée
@@ -456,8 +448,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
    * reprises dans la minute par le balayage des campagnes gelées, `scheduled` pour celles qui étaient programmées.
    */
   app.post('/tenants/:tenantId/numero/relier', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const r = await deps.relierNumero(tenant);
     if (r === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
     await journal(tenant, req, 'numero.relie', { kind: 'tenant', id: tenant }, { ...r });

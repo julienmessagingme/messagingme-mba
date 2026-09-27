@@ -45,7 +45,7 @@ export interface DepsRepondre {
      */
     redactionOrigine?: string | null,
   ): Promise<void>;
-  takeControl?(tenantId: string, waId: string): Promise<void>;
+  takeControl(tenantId: string, waId: string): Promise<void>;
   /**
    * Ce contact a-t-il demandé à ne plus être contacté ?
    *
@@ -141,7 +141,7 @@ export async function repondreDansLaFenetre(
   // vers ce scénario, et sans ça son clic ne lançait rien dès que le fil était tenu. Gardé par
   // `tests/automation-chaine-reprend-la-main.test.ts`. Une automation ordinaire par mot-clé, elle, reste bien
   // arrêtée par la prise de main.
-  await deps.takeControl?.(tenantId, ctx.waId).catch(() => {});
+  await deps.takeControl(tenantId, ctx.waId).catch(() => {});
   await deps.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
   return { messageId };
 }

@@ -1,4 +1,5 @@
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -96,10 +97,11 @@ class RunsConditionnels {
 function exec(runs: RunsConditionnels, over: Partial<WorkflowExecutorDeps> = {}) {
   const calls: string[] = [];
   const ex = new WorkflowExecutor({
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
     // Sans transtypage : c est le compilateur qui doit nommer ce faux quand le contrat bouge, pas
     // l execution. Un `as unknown as` ici avait deja laisse passer une methode manquante.
-    runs,
+    runs: avecGardesDEtatInertes(runs),
     getGraph: async () => graphe,
     applyTag: async () => {},
     setField: async () => {},
@@ -165,9 +167,10 @@ describe('avance concurrente : l’écriture d’état est conditionnée au bloc
     expect(runs.inconditionnels).toEqual([]);
   });
 
-  it('un store SANS garde (fixtures, câblages de test) garde le comportement d’avant', async () => {
+  it('un store à garde INERTE (fixtures, câblages de test) garde le comportement d’avant', async () => {
     const runs = new RunsConditionnels();
-    // On retire la méthode : l'exécuteur doit retomber sur `setState`, sans rien casser.
+    // On retire la méthode : `avecGardesDEtatInertes` la remplace par une délégation à `setState`, ce que
+    // faisait l'exécuteur quand elle était optionnelle (requise depuis le lot 3 de l'audit ponytail).
     (runs as unknown as { setStateSiEncoreSur?: unknown }).setStateSiEncoreSur = undefined;
     const { ex, calls } = exec(runs);
     await ex.advance('t1', '33600', 'msg1');

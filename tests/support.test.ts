@@ -6,6 +6,7 @@ import { ResendClient } from '../src/support/resend';
 import type { FetchLike } from '../src/support/resend';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SupportRouteDeps } from '../src/http/support';
+import { supportInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -17,6 +18,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 
 function app(over: Partial<SupportRouteDeps> = {}) {
   const deps: SupportRouteDeps = {
+    ...supportInerte,
     enabled: true,
     sendSupport: async () => {},
     ...over,

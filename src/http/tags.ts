@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { TagCount } from '../crm/tag-store.pg';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 
 export interface TagsRouteDeps {
   listTags(tenantId: string): Promise<TagCount[]>;
@@ -16,15 +16,13 @@ export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: G
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/tags', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ tags: await deps.listTags(tenant) });
   });
 
   // Créer (déclarer) un tag réutilisable, même sans contact.
   app.post('/tenants/:tenantId/tags', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { name?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     const name = b.name.trim().slice(0, 64);
@@ -33,8 +31,7 @@ export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: G
   });
 
   app.patch('/tenants/:tenantId/tags', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { from?: unknown; to?: unknown };
     if (!nonEmpty(b.from) || !nonEmpty(b.to)) return reply.code(400).send({ error: 'from et to requis' });
     const from = b.from.trim();
@@ -45,8 +42,7 @@ export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: G
   });
 
   app.delete('/tenants/:tenantId/tags', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const tag = (req.query as { tag?: string }).tag;
     if (!nonEmpty(tag)) return reply.code(400).send({ error: 'tag requis' });
     const removed = await deps.removeTag(tenant, tag.trim());

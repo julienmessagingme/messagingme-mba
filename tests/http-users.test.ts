@@ -7,6 +7,7 @@ import type { UserRow } from '../src/user/store.pg';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { UsersRouteDeps } from '../src/http/users';
 import { detailSansDonneesPersonnelles } from '../src/audit/store.pg';
+import { membresInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -33,6 +34,7 @@ interface Captured {
 function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Captured } {
   const cap: Captured = { roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [], emailObjs: [], nameSet: [] };
   const deps: UsersRouteDeps = {
+    ...membresInertes,
     listUsers: async () => [EXISTING],
     createPendingUser: async (tenant, email, role, name) => {
       if (email === 'taken@demo.test') throw new DuplicateEmailError();
@@ -524,11 +526,5 @@ describe('users route : le nom de l’espace', () => {
     expect((await server.inject(renommer(adminTok, 'Maison Dupont'))).statusCode).toBe(404);
     expect((await server.inject({ method: 'GET', url: '/tenants/t1/nom', ...h(adminTok) })).statusCode).toBe(404);
     expect(trace.ecrits).toEqual([]);
-  });
-
-  it('câblage sans l’écriture : 503, et la lecture reste possible', async () => {
-    const { server } = app({ getWorkspaceName: async () => 'Acme Corp' });
-    expect((await server.inject(renommer(adminTok, 'X'))).statusCode).toBe(503);
-    expect((await server.inject({ method: 'GET', url: '/tenants/t1/nom', ...h(adminTok) })).statusCode).toBe(200);
   });
 });

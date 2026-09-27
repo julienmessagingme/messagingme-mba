@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 import type { RcsChannelInfo, RcsChannelCheck } from '../rcs/channel-info';
 
 export interface RcsChannelRouteDeps {
@@ -29,15 +29,13 @@ export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDe
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const etat = await deps.etat(tenant);
     return reply.code(200).send({ active: etat !== null, ...(etat ? { channel: etat } : {}) });
   });
 
   app.post('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
 
     const apiKey = (req.body as { apiKey?: unknown } | null)?.apiKey;
@@ -55,8 +53,7 @@ export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDe
   });
 
   app.delete('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const fait = await deps.desactiver(tenant);
     if (!fait) return reply.code(404).send({ error: 'canal RCS non activé' });

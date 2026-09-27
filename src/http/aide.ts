@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { gardeEtendue, makeRequireRole, type Guard } from '../auth/middleware';
 import { RateLimiter } from '../auth/rate-limit';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { QUESTION_MAX_CARACTERES, type QuestionAide, type ReponseAide } from '../aide/repondre';
 import { creerCacheRecap } from '../aide/recap-cache';
 import type { RecapTexte } from '../aide/recap-rendu';
@@ -28,8 +28,8 @@ import { texteDe } from '../lib/erreur';
 export interface AideRouteDeps {
   /** Absent = l'aide n'est pas configurée (clé du Gateway ou modèle manquant) -> 503, jamais un repli muet. */
   repondre?(q: QuestionAide): Promise<ReponseAide>;
-  /** Absent = le récap n'est pas branché (pas de base) -> 503. Voir `RecapRouteDeps`. */
-  recap?: RecapRouteDeps;
+  /** Le récap du jour. Toujours câblé en production. Voir `RecapRouteDeps`. */
+  recap: RecapRouteDeps;
 }
 
 export interface RecapRouteDeps {
@@ -89,8 +89,7 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
   const cacheRecap = creerCacheRecap<RecapTexte>();
 
   app.post('/tenants/:tenantId/aide', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (!limiter.take(tenant)) {
       return reply.code(429).send({ error: 'trop de questions d’un coup, réessaie dans une minute' });
     }
@@ -168,13 +167,11 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
    * l'entrée commune vers notre clé, pas ce chemin-ci en particulier.
    */
   app.post('/tenants/:tenantId/aide/recap', gardeEtendue(garde, makeRequireRole(ROLES_RECAP)), async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (!limiter.take(tenant)) {
       return reply.code(429).send({ error: 'trop de demandes d’un coup, réessaie dans une minute' });
     }
     const recap = deps.recap;
-    if (!recap) return reply.code(503).send({ error: 'récap indisponible (non configuré)' });
 
     // LA VEILLE, calculée ici et jamais reçue du client. `todayParis` est le jour civil du fuseau des stats,
     // celui dans lequel le SQL du récap borne ses journées : les deux doivent parler du même jour.

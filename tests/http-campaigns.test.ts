@@ -9,6 +9,7 @@ import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 import { PLAFOND_DESTINATAIRES_DEFAUT } from '../src/campaign/plafond';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
+import { campagnesInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -111,6 +112,7 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     campaigns: {
+      ...campagnesInertes,
       repo,
       queue: d.queue ?? new FakeQueue(),
       // Dépendance OPTIONNELLE côté serveur : absente, les routes de brouillon ne sont pas montées du tout.
@@ -883,18 +885,6 @@ describe('POST /tenants/:tenantId/campaigns : au fil de l eau', () => {
     await app.close();
   });
 
-  it('instance SANS résolution de cible -> 400 explicite, jamais une campagne à tout le monde', async () => {
-    const repo = new FakeRepo(contacts);
-    const app = appWith(repo, { sansCible: true });
-    const res = await app.inject({
-      method: 'POST', url: '/tenants/t1/campaigns', ...auth(),
-      payload: { ...validBody, contactTarget: { filters: { tags: ['vip'] } } },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(repo.created).toEqual([]);
-    await app.close();
-  });
-
   it("dépendance non câblée -> 400 explicite, jamais une campagne muette", async () => {
     const repo = new FakeRepo(contacts);
     const app = appWith(repo, { sansWebhook: true });
@@ -1023,14 +1013,14 @@ describe('reprise après pause : POST /run lève la pause AVANT d’enfiler', ()
     await app.close();
   });
 
-  it('instance sans arrêt d’urgence câblé : le lancement marche exactement comme avant', async () => {
+  it('pause et reprise INERTES : le lancement marche exactement comme avant', async () => {
+    // Les deux sont requises depuis le lot 3 de l'audit ponytail ; ce cas garde la preuve que leurs valeurs
+    // inertes (rien n'était en pause) laissent le lancement intact.
     const q = new FakeQueue();
     const app = appWith(new FakeRepo(contacts), { queue: q, sansPause: true });
     const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
     expect(res.statusCode).toBe(202);
     expect(q.enqueued).toHaveLength(1);
-    // Et la route de pause n'est alors qu'un refus net, jamais un « suspendu » mensonger.
-    expect((await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/pause', ...auth() })).statusCode).toBe(404);
     await app.close();
   });
 });

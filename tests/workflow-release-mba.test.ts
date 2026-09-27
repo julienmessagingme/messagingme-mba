@@ -1,6 +1,8 @@
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
+import type { RunState, WorkflowRunRow } from '../src/workflow/run-store.pg';
 import { runControlSweep } from '../src/inbox/control-sweep';
 import type { ControlSweepDeps } from '../src/inbox/control-sweep';
 import type { WorkflowGraph } from '../src/workflow/graph';
@@ -25,14 +27,19 @@ function executeur(graph: WorkflowGraph, opts: { mbaActif?: boolean; run?: Recor
   const releases: string[] = [];
   // L'ORDRE des deux gestes vers l'agent de Meta : le fil d'abord, le message ensuite.
   const ordre: string[] = [];
-  const etats: Array<Record<string, unknown>> = [];
+  const etats: RunState[] = [];
   const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600000001', currentNode: 'n1', lastMessageId: null, ...opts.run };
+  // 🔴 PLUS DE `as never` sur ces dépendances : il cachait trois membres requis absents (`runs.start`,
+  // `runs.closeActiveByWaId`, `sendQuestion`), que le lot 3 de l'audit ponytail a complétés.
   const ex = new WorkflowExecutor({
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
-    runs: {
-      findWaitingByWaId: async (): Promise<typeof run> => run,
-      setState: async (_id: string, state: Record<string, unknown>): Promise<void> => { etats.push(state); },
-    },
+    runs: avecGardesDEtatInertes({
+      start: async () => ({ id: 'r1' }),
+      findWaitingByWaId: async () => run as unknown as WorkflowRunRow,
+      setState: async (_id: string, state: RunState): Promise<void> => { etats.push(state); },
+      closeActiveByWaId: async () => [],
+    }),
     getGraph: async () => graph,
     applyTag: async () => {},
     setField: async () => {},
@@ -41,11 +48,12 @@ function executeur(graph: WorkflowGraph, opts: { mbaActif?: boolean; run?: Recor
     sendTemplate: async () => {},
     sendQuickMessage: async () => {},
     sendFlow: async () => {},
+    sendQuestion: async () => {},
     escalateToHuman: async () => {},
     mbaActifPour: async (): Promise<boolean> => opts.mbaActif === true,
     releaseToMba: async (_t: string, waId: string): Promise<void> => { releases.push(waId); ordre.push(`release ${waId}`); },
     transmettreHorsParcours: async (_t: string, waId: string, messageId: string): Promise<void> => { ordre.push(`transmis ${waId} ${messageId}`); },
-  } as never);
+  });
   return { ex, releases, etats, run, ordre };
 }
 

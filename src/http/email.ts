@@ -1,11 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Transporter } from 'nodemailer';
-import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { sendSmtpEmail } from '../email/smtp';
 import { estRefusAdresseInterne } from '../lib/connexion-publique';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
 import type {
   EmailAccount,
@@ -20,10 +19,11 @@ import type {
 /**
  * Routes des boîtes SMTP et modèles d'email (node « Envoi de mail »), admin-only. Calqué sur
  * `src/http/workflows.ts` : `garde` (REQUISE depuis le lot 2 du plan 2026-09-14, posée au montage) porte
- * l'auth et le rôle ; `scopeTenant` puis `forbidNonAdmin` défendent EN PLUS chaque écriture dans la route
- * elle-même. ⚠️ Ce texte disait que le module « peut être monté sans garde » en test : ce n'est plus vrai,
- * les tests passent `gardeOuverte` (`tests/gardes.ts`). La défense en profondeur dans la route, elle, ne
- * change pas : elle ne dépendait déjà pas de la garde. Les lectures ne posent que `scopeTenant`.
+ * l'auth et le rôle, et l'étape d'espace (`src/http/scope.ts`) vérifie l'espace de chaque route.
+ * ⚠️ Chaque écriture reposait EN PLUS `forbidNonAdmin` dans son handler : retiré le 2026-09-26 (lot 3 de
+ * l'audit ponytail), parce que le module est monté sur `g.admin` et qu'un agent y est refusé AVANT le
+ * handler, mesuré route par route. La preuve est désormais `tests/role-admin.test.ts`, qui échoue si ce
+ * module est un jour monté sur une garde plus large.
  *
  * Le mot de passe SMTP n'est JAMAIS renvoyé : `EmailAccount` (email/types.ts) ne le porte déjà pas ; seul
  * `DecryptedEmailAccount` (jamais sérialisé ici) l'ajoute. `publicAccount` se contente d'annoncer `hasPassword`.
@@ -92,16 +92,13 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
 
   // ---- Boîtes SMTP ----
   app.get('/tenants/:tenantId/email/accounts', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const accounts = await deps.accounts.list(tenant);
     return reply.code(200).send({ accounts: accounts.map(publicAccount) });
   });
 
   app.post('/tenants/:tenantId/email/accounts', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const parsed = accountCreate.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'compte invalide' });
     const created = await deps.accounts.create(tenant, parsed.data);
@@ -109,9 +106,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
   });
 
   app.patch('/tenants/:tenantId/email/accounts/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const parsed = accountPatch.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'compte invalide' });
     const { id } = req.params as { id: string };
@@ -123,9 +118,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
   });
 
   app.delete('/tenants/:tenantId/email/accounts/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const ok = await deps.accounts.softDelete(tenant, id);
     deps.resolver.invalidate(id);
@@ -136,9 +129,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
   // Test d'envoi : 4xx (422) sur échec, JAMAIS 5xx (Cloudflare remplace le corps des 5xx par sa propre page
   // d'erreur, ce qui masquerait le message utile) ; journalisé côté serveur dans les deux cas.
   app.post('/tenants/:tenantId/email/accounts/:id/test', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const parsed = testSendBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'destinataire de test invalide' });
     const { id } = req.params as { id: string };
@@ -168,15 +159,12 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
 
   // ---- Modèles d'email ----
   app.get('/tenants/:tenantId/email/templates', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ templates: await deps.templates.list(tenant) });
   });
 
   app.post('/tenants/:tenantId/email/templates', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const parsed = templateCreate.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'modèle invalide' });
     const created = await deps.templates.create(tenant, parsed.data);
@@ -184,9 +172,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
   });
 
   app.patch('/tenants/:tenantId/email/templates/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const parsed = templatePatch.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'modèle invalide' });
     const { id } = req.params as { id: string };
@@ -196,9 +182,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
   });
 
   app.delete('/tenants/:tenantId/email/templates/:id', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
+    const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const ok = await deps.templates.softDelete(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'modèle introuvable' });

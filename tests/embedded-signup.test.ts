@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
 import { TenantConflictError, SecondNumeroRefuseError } from '../src/account/es-store.pg';
+import { signupInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -28,6 +29,7 @@ interface Cap {
 function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
   const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [] };
   const deps: EmbeddedSignupRouteDeps = {
+    ...signupInerte,
     configId: 'cfg-123',
     appId: 'app-1',
     graphVersion: 'v25.0',
@@ -190,7 +192,9 @@ describe('POST /embedded-signup/complete', () => {
 
   it('body incomplet -> 400 ; agent -> 403 ; feature OFF -> 503', async () => {
     const { server } = app();
-    const bad = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: { code: 'x' } });
+    // Sans `code` : le repêchage des identifiants est toujours câblé depuis le lot 3 de l'audit ponytail, donc
+    // un corps qui n'a QUE le code n'est plus « incomplet ». Le code, lui, reste indispensable.
+    const bad = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: {} });
     const agent = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(agentTok), payload: BODY });
     expect(bad.statusCode).toBe(400);
     expect(agent.statusCode).toBe(403);
@@ -257,13 +261,6 @@ describe('POST /embedded-signup/complete sans identifiants (parcours déjà abou
     expect(r2.statusCode).toBe(409);
     expect(deuxNums.cap.linked).toHaveLength(0);
     await deuxNums.server.close();
-  });
-
-  it('sans dep de repêchage câblée -> ancien contrat conservé (400)', async () => {
-    const { server } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'code-abc' }) });
-    expect(res.statusCode).toBe(400);
-    await server.close();
   });
 
   it('code absent -> 400 (le code, lui, reste indispensable)', async () => {

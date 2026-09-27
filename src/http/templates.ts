@@ -9,7 +9,7 @@ import { isValidTemplateLanguage } from '../meta/languages';
 import { isSendableButtonUrl } from '../meta/button-url';
 import { boutonsTracables, appliquerLiens, cleBouton, rehabillerBoutons } from '../links/rewrite';
 import type { CibleLien } from '../links/tracked-links.pg';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 import { messageDe } from '../lib/erreur';
 
 export interface TemplateRouteDeps {
@@ -17,29 +17,26 @@ export interface TemplateRouteDeps {
   templatesFor(tenantId: string): Promise<MetaTemplateClient>;
   /** WABA du tenant (les templates sont au niveau WABA). */
   getWabaId(tenantId: string): Promise<string | null>;
-  /** Optionnel : pré-check « ce flowId est-il PUBLISHED pour ce tenant ? » avant d'appeler Meta.
-   *  Absent -> pas de pré-check (Meta reste seul juge, 422 passthrough). */
-  getPublishedFlow?(tenantId: string, flowId: string): Promise<boolean>;
-  /** Garde-fou D1 : campagnes ACTIVES (draft/running/paused) référençant ce template (name, langue optionnelle).
-   *  Absent -> pas de garde-fou (édition/suppression non bloquées). */
-  listActiveCampaignsForTemplate?(
+  /** Pré-check « ce flowId est-il PUBLISHED pour ce tenant ? » avant d'appeler Meta. */
+  getPublishedFlow(tenantId: string, flowId: string): Promise<boolean>;
+  /** Garde-fou D1 : campagnes ACTIVES (draft/running/paused) référençant ce template (name, langue optionnelle). */
+  listActiveCampaignsForTemplate(
     tenantId: string,
     templateName: string,
     templateLanguage?: string,
   ): Promise<Array<{ id: string; name: string; status: CampaignStatus; templateLanguage: string }>>;
   /** Indices « variable -> champ » posés au design (sélecteur de champ) : persistés pour pré-remplir la
-   *  campagne. Optionnels : absents -> feature de propagation désactivée (le template se crée quand même). */
-  saveParamHints?(tenantId: string, name: string, language: string, hints: Array<{ position: number; source: ParamSource }>): Promise<void>;
-  getParamHints?(tenantId: string, name: string, language: string): Promise<Array<{ position: number; source: ParamSource }>>;
-  removeParamHints?(tenantId: string, name: string): Promise<void>;
+   *  campagne. Best-effort : un échec n'empêche pas le template de se créer. */
+  saveParamHints(tenantId: string, name: string, language: string, hints: Array<{ position: number; source: ParamSource }>): Promise<void>;
+  getParamHints(tenantId: string, name: string, language: string): Promise<Array<{ position: number; source: ParamSource }>>;
+  removeParamHints(tenantId: string, name: string): Promise<void>;
   /**
    * Traçage des liens : réserve un code par bouton URL, et rend l'adresse de redirection à soumettre à Meta.
    *
-   * OPTIONNEL, et son absence est un mode de fonctionnement à part entière : sans base de liens ou sans
-   * adresse publique configurée, le template part avec les liens SAISIS. On ne soumet jamais une adresse de
-   * redirection qu'on ne saurait pas servir.
+   * Toujours câblé en production (requis depuis le lot 3 de l'audit ponytail). Son ÉCHEC laisse partir le template
+   * avec les liens SAISIS : on ne soumet jamais une adresse de redirection qu'on ne saurait pas servir.
    */
-  tracking?: {
+  tracking: {
     /** Réserve le code du bouton et enregistre sa destination. Rend le code. `avecJeton` décide si l'URL
      *  soumise portera le suffixe variable, et donc si l'envoi devra fournir un composant de bouton. */
     allocate(tenantId: string, cible: CibleLien, destination: string, avecJeton: boolean): Promise<string>;
@@ -55,7 +52,6 @@ export interface TemplateRouteDeps {
 /** Persistance best-effort des indices variable->champ : un hoquet DB ne doit pas faire échouer un template
  *  DÉJÀ créé chez Meta (la propagation se dégrade juste : la campagne ne pré-remplira pas). */
 async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: string, language: string, raw: unknown): Promise<void> {
-  if (!deps.saveParamHints) return;
   // Clé ABSENTE (undefined) = « ne touche pas aux indices » (un PATCH qui ne concerne pas les variables ne
   // doit PAS effacer les indices existants). Seul un tableau EXPLICITE (même vide) remplace.
   if (raw === undefined) return;
@@ -100,7 +96,6 @@ async function preparerLiens(
   tenant: string,
   input: CreateTemplateInput,
 ): Promise<{ aSoumettre: CreateTemplateInput; codes: string[] }> {
-  if (!deps.tracking) return { aSoumettre: input, codes: [] };
   const cibles = boutonsTracables(input);
   if (cibles.length === 0) return { aSoumettre: input, codes: [] };
   try {
@@ -142,7 +137,7 @@ async function rehabillerTemplates(
   tenant: string,
   templates: TemplateSummary[],
 ): Promise<TemplateSummary[]> {
-  if (!deps.tracking || templates.length === 0) return templates;
+  if (templates.length === 0) return templates;
   let parLien: Map<string, string>;
   try {
     parLien = await deps.tracking.destinations(tenant, templates.map((t) => t.name));
@@ -298,7 +293,7 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
 /** Pré-check async : si un bouton FLOW est présent, le flow doit être PUBLISHED. true = OK / continuer. */
 async function flowButtonOk(deps: TemplateRouteDeps, tenant: string, buttons: TemplateButton[] | undefined): Promise<boolean> {
   const flowBtn = buttons?.find((x) => x.type === 'FLOW');
-  if (!flowBtn || !deps.getPublishedFlow) return true;
+  if (!flowBtn) return true;
   return deps.getPublishedFlow(tenant, flowBtn.flowId ?? '');
 }
 
@@ -307,8 +302,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/templates', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(200).send({ templates: [] });
     const templates = await (await deps.templatesFor(tenant)).list(wabaId);
@@ -316,8 +310,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
   });
 
   app.post('/tenants/:tenantId/templates', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
 
     const b = (req.body ?? {}) as Record<string, unknown>;
@@ -346,7 +339,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const res = await (await deps.templatesFor(tenant)).create(wabaId, aSoumettre);
     // Meta a accepté : les liens réservés sont bien ceux que porte le template. Best-effort, comme les
     // indices de variables : un hoquet ici dégrade la MESURE, il ne casse pas un template déjà créé.
-    if (codes.length > 0 && deps.tracking) {
+    if (codes.length > 0) {
       try {
         await deps.tracking.confirm(tenant, codes);
       } catch (err) {
@@ -360,19 +353,17 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
 
   // Indices variable -> champ d'un template (pour pré-remplir le mapping d'une campagne). Lecture seule.
   app.get('/tenants/:tenantId/templates/:templateName/param-hints', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { templateName } = req.params as { templateName: string };
     const q = req.query as { language?: string };
     if (!nonEmpty(q.language)) return reply.code(400).send({ error: 'language requis (query)' });
-    const hints = deps.getParamHints ? await deps.getParamHints(tenant, decodeURIComponent(templateName), q.language) : [];
+    const hints = await deps.getParamHints(tenant, decodeURIComponent(templateName), q.language);
     return reply.code(200).send({ hints });
   });
 
   // Édition d'un template SIMPLE (body/boutons/category). Carousel non supporté (header_handle non récupérable).
   app.patch('/tenants/:tenantId/templates/:templateName', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
 
     const { templateName } = req.params as { templateName: string };
@@ -403,10 +394,8 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     }
 
     // Garde-fou D1 : une campagne active utilise ce template -> l'éditer le renvoie en PENDING = 422 par envoi.
-    if (deps.listActiveCampaignsForTemplate) {
-      const active = await deps.listActiveCampaignsForTemplate(tenant, name, language);
-      if (active.length > 0) return reply.code(409).send({ error: 'template utilisé par une campagne active', campaigns: active });
-    }
+    const active = await deps.listActiveCampaignsForTemplate(tenant, name, language);
+    if (active.length > 0) return reply.code(409).send({ error: 'template utilisé par une campagne active', campaigns: active });
 
     if (!(await flowButtonOk(deps, tenant, parsed.fields.buttons))) {
       return reply.code(400).send({ error: 'le flow référencé n\'est pas publié' });
@@ -426,22 +415,19 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
 
   // Suppression par nom = TOUTES les langues chez Meta -> garde-fou toutes langues (langue omise).
   app.delete('/tenants/:tenantId/templates/:templateName', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
 
     const { templateName } = req.params as { templateName: string };
     const name = decodeURIComponent(templateName);
 
-    if (deps.listActiveCampaignsForTemplate) {
-      const active = await deps.listActiveCampaignsForTemplate(tenant, name);
-      if (active.length > 0) return reply.code(409).send({ error: 'template utilisé par une campagne active', campaigns: active });
-    }
+    const active = await deps.listActiveCampaignsForTemplate(tenant, name);
+    if (active.length > 0) return reply.code(409).send({ error: 'template utilisé par une campagne active', campaigns: active });
 
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
     const res = await (await deps.templatesFor(tenant)).remove(wabaId, name);
-    if (deps.removeParamHints) await deps.removeParamHints(tenant, name).catch(() => {});
+    await deps.removeParamHints(tenant, name).catch(() => {});
     return reply.code(200).send(res);
   });
 }

@@ -4,7 +4,7 @@ import { ReconsentRequiredError } from '../crm/hubspot-service';
 import type { HubspotList } from '../crm/hubspot-service';
 import { listsGateOpen } from '../crm/lists-gate';
 import type { ImportReport } from '../crm/types';
-import { scopeTenant, nonEmpty } from './scope';
+import { espaceVerifie, nonEmpty } from './scope';
 
 export interface HubspotImportRouteDeps {
   /**
@@ -28,8 +28,7 @@ export function registerHubspotImport(app: FastifyInstance, deps: HubspotImportR
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/hubspot/lists', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     // Indispo : on ne touche PAS le connecteur (zéro appel réseau, zéro scope sollicité). On distingue le toggle OFF
     // (available:false sec) de la PAUSE (available:false + reason:'paused') pour un message UI honnête (F3-b).
     const { enabled, paused } = await deps.listsAccess(tenant);
@@ -49,8 +48,7 @@ export function registerHubspotImport(app: FastifyInstance, deps: HubspotImportR
   });
 
   app.post('/tenants/:tenantId/hubspot/import', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { enabled, paused } = await deps.listsAccess(tenant);
     if (!listsGateOpen(enabled, paused)) {
       return enabled && paused

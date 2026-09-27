@@ -7,7 +7,7 @@ import type { ContactHistory, ContactSend, ResumeContact } from '../crm/contact-
 import type { CoutContact, NiveauEngagement } from '../stats/cost';
 import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
 import { classerDemandeArret } from '../crm/consentement';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import type { AuditEntry } from '../audit/store.pg';
@@ -26,20 +26,20 @@ export interface ContactsRouteDeps {
   ): Promise<{ contact: ContactRow; addedTags: string[] } | null>;
   /**
    * MODÉRATION : bloque ou débloque un contact. Bloqué = plus aucun envoi, et sa conversation disparaît de
-   * l'inbox. Optionnelles : absentes, la modération n'est pas montée (503).
+   * l'inbox.
    */
-  setBlocked?(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean>;
-  listBlocked?(tenantId: string): Promise<Array<{ id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }>>;
+  setBlocked(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean>;
+  listBlocked(tenantId: string): Promise<Array<{ id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }>>;
   /**
-   * Les contacts qui ont demandé à ne plus être contactés. Absente -> 503, jamais une liste vide : « aucun
-   * désabonné » et « la liste n'est pas branchée » sont deux situations opposées, et la seconde est un
-   * défaut de câblage qu'on ne doit pas afficher comme une bonne nouvelle.
+   * Les contacts qui ont demandé à ne plus être contactés. REQUISE depuis le lot 3 de l'audit ponytail : elle
+   * rendait 503 en son absence, jamais une liste vide (« aucun désabonné » et « la liste n'est pas branchée »
+   * sont deux situations opposées), et c'est désormais le compilateur qui interdit la seconde.
    */
-  listeDesabonnes?(tenantId: string): Promise<Array<{
+  listeDesabonnes(tenantId: string): Promise<Array<{
     id: string; profileName: string | null; phoneE164: string | null; desabonneLe: string | null; source: string | null;
   }>>;
   /** Les messages entrants récents à relire avec la règle ÉLARGIE. Cf. `PgContactStore.messagesARelire`. */
-  messagesARelire?(tenantId: string): Promise<{
+  messagesARelire(tenantId: string): Promise<{
     scannes: number;
     messages: Array<{ messageId: string; conversationId: string; contactId: string | null; waId: string; profileName: string | null; body: string; recuLe: string }>;
   }>;
@@ -47,50 +47,44 @@ export interface ContactsRouteDeps {
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
   /**
    * SUPPRESSION : efface le contenu (fil, messages, analyse qualitative) et anonymise ce qui porte les
-   * compteurs. Irréversible. Optionnelle : absente -> la route répond 503 au lieu de faire semblant.
+   * compteurs. Irréversible.
    */
-  purgeMany?(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }>;
+  purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }>;
   /** Résout une cible (ids OU filtres) en identifiants. Nécessaire à la purge, qui travaille par identifiants. */
-  contactIdsForTarget?(tenantId: string, target: BulkTarget): Promise<string[]>;
+  contactIdsForTarget(tenantId: string, target: BulkTarget): Promise<string[]>;
   /**
-   * Journal d'audit. Optionnel : absent -> aucune trace (câblages de test). BEST-EFFORT à l'appel : un journal
-   * en échec ne doit jamais faire échouer l'action métier qu'il observe.
+   * Journal d'audit. Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`. BEST-EFFORT à
+   * l'appel : un journal en échec ne doit jamais faire échouer l'action métier qu'il observe.
    */
-  audit?: AuditSink;
+  audit: AuditSink;
   /**
    * Lecture du journal. Séparée de l'écriture à dessein : le store est en AJOUT SEUL, et rien ici ne doit
-   * laisser croire qu'une entrée se modifie. Optionnelle -> la route répond 503 plutôt qu'une liste vide,
-   * qui se lirait comme « il ne s'est rien passé ».
+   * laisser croire qu'une entrée se modifie.
    */
-  listAudit?(tenantId: string, opts: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string }): Promise<AuditEntry[]>;
+  listAudit(tenantId: string, opts: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string }): Promise<AuditEntry[]>;
   /**
    * Le journal des ERREURS DE LIVRAISON. Séparé du journal d'actions, et pas par commodité : celui-ci porte
    * les numéros (sans eux il ne répond à rien), celui-là n'en porte jamais (y écrire un numéro annulerait la
-   * purge d'un contact). Optionnel : absent -> 503, plutôt qu'une liste vide qui ferait croire qu'il n'y a
-   * aucune erreur.
+   * purge d'un contact).
    */
   /**
    * La moitié SYSTÈME du journal des erreurs : les appels vers les systèmes du client qui n'ont pas abouti.
-   *
-   * ⚠️ Optionnelle, comme sa voisine : absente, la route rend 503 en le disant, plutôt que de rendre une
-   * liste vide qui se lirait « tout va bien ».
    */
-  listErreursSysteme?(tenantId: string, limit?: number): Promise<unknown[]>;
-  listErreursLivraison?(tenantId: string, filtre: { limit?: number; q?: string; telephone?: string; code?: number }): Promise<unknown[]>;
+  listErreursSysteme(tenantId: string, limit?: number): Promise<unknown[]>;
+  listErreursLivraison(tenantId: string, filtre: { limit?: number; q?: string; telephone?: string; code?: number }): Promise<unknown[]>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
   /**
-   * Matérialise un champ SOCLE (`prenom`/`email`) absent de la base. Idempotent. Optionnelle : sans elle, le
-   * comportement historique est conservé (refus « champ inconnu »), donc les câblages de test ne changent pas.
+   * Matérialise un champ SOCLE (`prenom`/`email`) absent de la base. Idempotent. Les fixtures qui ne la
+   * regardent pas passent `socleJamaisCree`, qui garde le refus « champ inconnu ».
    */
-  ensureSocleField?(tenantId: string, key: string, label: string, type: UserFieldDef['type']): Promise<void>;
+  ensureSocleField(tenantId: string, key: string, label: string, type: UserFieldDef['type']): Promise<void>;
   /**
    * Crée (ou met à jour) UN contact saisi à la main. Délègue au MÊME upsert que le webhook entrant, dont la
    * préparation des champs est aussi celle de l'API publique : un second chemin divergerait sur la
    * normalisation du numéro, l'opt-in ou les champs.
-   * Optionnelle : sans elle la route n'est pas montée (503), donc les câblages de test restent inchangés.
    */
-  createOneContact?(
+  createOneContact(
     tenantId: string,
     input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean; bsuid?: string },
   ): Promise<{ status: 'created' | 'updated' | 'error'; contactId?: string; reason?: string }>;
@@ -100,31 +94,28 @@ export interface ContactsRouteDeps {
    * Le résumé de la dernière conversation analysée : la ligne « champ de base » de la fiche. null si le
    * contact n'est pas dans le tenant.
    *
-   * OPTIONNELLE, et pour une raison qui n'est PAS celle du bilan : elle ne dépend d'aucun tiers, mais les
-   * câblages de test qui n'en ont pas besoin ne doivent pas être forcés de la déclarer. Absente, la route
-   * rend 503 et la fiche n'affiche simplement pas le bloc, exactement comme pour le bilan : mieux vaut une
-   * fiche sans cette ligne qu'une fiche qui refuse de s'ouvrir.
+   * REQUISE depuis le lot 3 de l'audit ponytail : elle était optionnelle pour ne pas forcer les câblages de
+   * test à la déclarer, ce qui n'est pas une raison (le motif `estDesabonne`).
    */
-  getResumeContact?(tenantId: string, contactId: string): Promise<ResumeContact | null>;
+  getResumeContact(tenantId: string, contactId: string): Promise<ResumeContact | null>;
   /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
   listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
   /**
    * CE QU'UN CONTACT A COÛTÉ, et jusqu'où il est allé (2026-09-11).
    *
-   * OPTIONNELLE : absente, la route rend 503 plutôt que d'exister sans rien dire. Elle appelle Meta pour les
-   * tarifs, donc une instance sans jeton ne peut pas la servir, et la fiche contact doit continuer de
-   * s'ouvrir sans elle.
+   * Elle appelle Meta pour les tarifs : son ÉCHEC ne doit pas empêcher la fiche contact de s'ouvrir, qui
+   * appelle cette route à part.
    */
-  getBilanContact?(tenantId: string, contactId: string): Promise<{ cout: CoutContact; entonnoir: NiveauEngagement[] } | null>;
+  getBilanContact(tenantId: string, contactId: string): Promise<{ cout: CoutContact; entonnoir: NiveauEngagement[] } | null>;
   /**
    * Signale qu'un tag vient d'être posé sur UN contact, pour les automations « tag ajouté » (E.2). Best-effort :
    * l'édition de la fiche a déjà réussi, un échec ici ne doit pas la faire échouer.
    *
    * Volontairement absent de l'action EN MASSE et de l'import : poser un tag sur des milliers de contacts
    * déclencherait autant de scénarios, donc autant de messages facturés. Pour toucher une liste, c'est la
-   * campagne. Absent -> aucune émission (rétro-compatible).
+   * campagne.
    */
-  emitTagAdded?(tenantId: string, contactId: string, tags: string[]): Promise<void>;
+  emitTagAdded(tenantId: string, contactId: string, tags: string[]): Promise<void>;
 }
 
 /** Borne les listes d'ids d'une action en masse (dédup, non vides). Au-delà du plafond, on tronque
@@ -193,7 +184,7 @@ async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: s
   const def = await lu();
   if (def) return def;
   const socle = socleField(key);
-  if (!socle || !deps.ensureSocleField) return undefined;
+  if (!socle) return undefined;
   await deps.ensureSocleField(tenantId, socle.key, socle.label, socle.type);
   return lu();
 }
@@ -235,9 +226,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * contournée, et le filtrage en code est donc le seul contrôle.
    */
   app.get('/tenants/:tenantId/contacts/desabonnes', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.listeDesabonnes) return reply.code(503).send({ error: 'liste des désabonnés indisponible' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ contacts: await deps.listeDesabonnes(tenant) });
   });
 
@@ -253,9 +242,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * lu ne veulent pas dire la même chose.
    */
   app.get('/tenants/:tenantId/contacts/refus-possibles', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.messagesARelire) return reply.code(503).send({ error: 'relecture des refus indisponible' });
+    const tenant = espaceVerifie(req);
     const { scannes, messages } = await deps.messagesARelire(tenant);
     // La règle vit dans `src/crm/consentement.ts`, avec ses tests. Elle n'est PAS recopiée ici.
     const refus = messages.filter((m) => classerDemandeArret(m.body) === 'peut_etre');
@@ -263,9 +250,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   app.get('/tenants/:tenantId/contacts/blocked', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.listBlocked) return reply.code(503).send({ error: 'modération indisponible' });
+    const tenant = espaceVerifie(req);
     return reply.code(200).send({ contacts: await deps.listBlocked(tenant) });
   });
 
@@ -274,10 +259,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * et qui doit rester traçable à une personne.
    */
   app.patch('/tenants/:tenantId/contacts/:contactId/blocked', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
-    if (!deps.setBlocked) return reply.code(503).send({ error: 'modération indisponible' });
     const bloque = (req.body as { blocked?: unknown } | null)?.blocked;
     if (typeof bloque !== 'boolean') return reply.code(400).send({ error: 'blocked (booléen) requis' });
     const { contactId } = req.params as { contactId: string };
@@ -287,8 +270,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   app.patch('/tenants/:tenantId/contacts/:contactId', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { contactId } = req.params as { contactId: string };
 
@@ -352,7 +334,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     // change rien en base, le déclencheur ne doit donc pas partir. APRÈS l'écriture réussie et en best-effort
     // (un incident de file ne transforme pas une édition de fiche réussie en erreur pour l'opérateur), mais
     // l'échec est JOURNALISÉ : sans trace, une automation muette serait indébogable.
-    if (updated.addedTags.length > 0 && deps.emitTagAdded) {
+    if (updated.addedTags.length > 0) {
       await deps.emitTagAdded(tenant, contactId, updated.addedTags).catch((err: unknown) => {
         // eslint-disable-next-line no-console
         console.error('emitTagAdded ignoré (best-effort):', messageDe(err));
@@ -372,8 +354,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * les mêmes conversations dans l'inbox, mais pas l'historique de campagnes, qui est une vue de pilotage.
    */
   app.get('/tenants/:tenantId/contacts/:contactId/history', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { contactId } = req.params as { contactId: string };
     const history = await deps.getContactHistory(tenant, contactId);
     if (!history) return reply.code(404).send({ error: 'contact inconnu' });
@@ -393,10 +374,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * moins de valeur que le fil lui-même, il en a la substance.
    */
   app.get('/tenants/:tenantId/contacts/:contactId/resume', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { contactId } = req.params as { contactId: string };
-    if (!deps.getResumeContact) return reply.code(503).send({ error: 'resume indisponible sur cette instance' });
     const resume = await deps.getResumeContact(tenant, contactId);
     if (!resume) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send(resume);
@@ -413,10 +392,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * lecture distante. Les deux partent en parallèle depuis l'écran.
    */
   app.get('/tenants/:tenantId/contacts/:contactId/bilan', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { contactId } = req.params as { contactId: string };
-    if (!deps.getBilanContact) return reply.code(503).send({ error: 'bilan indisponible sur cette instance' });
     const bilan = await deps.getBilanContact(tenant, contactId);
     if (!bilan) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send(bilan);
@@ -427,8 +404,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * télécharge le CSV : le wrapper `request()` fait toujours res.json(), donc pas de CSV brut côté serveur). Admin-only.
    */
   app.get('/tenants/:tenantId/contacts/:contactId/history/export', couteux, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     const { contactId } = req.params as { contactId: string };
     const sends = await deps.listSendsForExport(tenant, contactId);
     if (!sends) return reply.code(404).send({ error: 'contact inconnu' });
@@ -457,10 +433,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * s'est produit (`status`), pour que l'écran ne prétende pas avoir créé ce qui existait déjà.
    */
   app.post('/tenants/:tenantId/contacts', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
-    if (!deps.createOneContact) return reply.code(503).send({ error: 'création de contact non configurée' });
     const b = (req.body ?? {}) as { phone?: unknown; name?: unknown; fields?: unknown; tags?: unknown; optIn?: unknown; bsuid?: unknown };
     const phone = typeof b.phone === 'string' ? b.phone.trim() : '';
     if (phone === '') return reply.code(400).send({ error: 'téléphone requis' });
@@ -507,8 +481,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   app.post('/tenants/:tenantId/contacts/bulk', couteux, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
 
     const b = (req.body ?? {}) as { target?: unknown; action?: unknown };
@@ -556,9 +529,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * et ce fichier est déjà leur périmètre admin. `targetId` filtre sur un contact précis (fiche).
    */
   app.get('/tenants/:tenantId/audit', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.listAudit) return reply.code(503).send({ error: 'journal indisponible sur cette instance' });
+    const tenant = espaceVerifie(req);
     const q = (req.query ?? {}) as { limit?: unknown; targetId?: unknown; q?: unknown; acteur?: unknown; telephone?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
     const texte = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, 120) : undefined);
@@ -584,9 +555,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * `/erreurs-systeme`.
    */
   app.get('/tenants/:tenantId/erreurs-livraison', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.listErreursLivraison) return reply.code(503).send({ error: 'journal des erreurs indisponible sur cette instance' });
+    const tenant = espaceVerifie(req);
     const q = (req.query ?? {}) as { limit?: unknown; q?: unknown; telephone?: unknown; code?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
     const texte = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, 120) : undefined);
@@ -614,9 +583,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * répondu.
    */
   app.get('/tenants/:tenantId/erreurs-systeme', optsEncadrement, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.listErreursSysteme) return reply.code(503).send({ error: 'journal système indisponible sur cette instance' });
+    const tenant = espaceVerifie(req);
     const q = (req.query ?? {}) as { limit?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
     return reply.code(200).send({ erreurs: await deps.listErreursSysteme(tenant, limit) });
@@ -636,8 +603,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * purge, en réinscrivant la personne dans une table faite pour ne jamais être modifiée.
    */
   app.post('/tenants/:tenantId/contacts/purge', couteux, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const b = (req.body ?? {}) as { target?: unknown; confirm?: unknown };
     if (b.confirm !== 'SUPPRIMER') {
@@ -645,9 +611,6 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     }
     const target = parseBulkTarget(b.target);
     if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
-    if (!deps.purgeMany || !deps.contactIdsForTarget) {
-      return reply.code(503).send({ error: 'suppression indisponible sur cette instance' });
-    }
     const ids = await deps.contactIdsForTarget(tenant, target);
     if (ids.length === 0) return reply.code(200).send({ purges: 0, conversations: 0, messages: 0, analyses: 0 });
     const res = await deps.purgeMany(tenant, ids);

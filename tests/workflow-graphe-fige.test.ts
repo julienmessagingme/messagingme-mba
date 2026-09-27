@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jamaisDesabonne } from './consentement';
+import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { WorkflowExecutor, grapheDuRun } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
@@ -61,8 +62,9 @@ function monter(publie: WorkflowGraph, over: Partial<WorkflowExecutorDeps> = {})
   const calls: string[] = [];
   const luPublie: string[] = [];
   const ex = new WorkflowExecutor({
+    ...depsInertes,
     estDesabonne: jamaisDesabonne,
-    runs,
+    runs: avecGardesDEtatInertes(runs),
     getGraph: async (id) => { luPublie.push(id); return publie; },
     applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); return true; },
     setField: async () => {},

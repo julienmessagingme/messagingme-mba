@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { parse as secureJsonParse } from 'secure-json-parse';
 import { forbidNonAdmin, type Guard } from '../auth/middleware';
-import { scopeTenant } from './scope';
+import { espaceVerifie } from './scope';
 import {
   bornerPourModeleMba, ENTRETIEN_MBA_VIERGE,
   type EntretienMba, type EntretienMbaStore, type TourMba,
@@ -58,10 +58,9 @@ export interface MbaAssistantDeps {
   agentIdDuTenant(tenantId: string): Promise<string | null>;
   tauxEurParDollar: number;
   /**
-   * Le magasin des pièces jointes déposées dans le fil. Absent -> le dépôt répond 503 et le reste de la
-   * conversation continue : un assistant sans dépôt de document reste un assistant.
+   * Le magasin des pièces jointes déposées dans le fil. Toujours câblé quand ce module est monté.
    */
-  pieces?: MagasinPiecesJointes;
+  pieces: MagasinPiecesJointes;
 }
 
 /** Ce que l'écran reçoit d'un coup. Trois plafonds distincts, cf. `entretien-store.ts`. */
@@ -90,8 +89,7 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
 
   /** Contrôle d'accès commun : tenant du jeton, ADMIN, et un agent Meta rattaché. */
   const ouvrir = async (req: FastifyRequest, reply: FastifyReply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) { reply.code(403).send({ error: 'tenant interdit' }); return null; }
+    const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return null;
     const agentId = await deps.agentIdDuTenant(tenant);
     if (!agentId) { reply.code(404).send({ error: 'aucun agent Meta sur cet espace' }); return null; }
@@ -259,7 +257,6 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
   app.post('/tenants/:tenantId/mba/assistant/piece-jointe', optsPiece, async (req, reply) => {
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
-    if (!deps.pieces) return reply.code(503).send({ error: 'dépôt de document indisponible sur ce serveur' });
     const parse = corpsPiece.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'nom et dataUrl requis' });
 
@@ -305,7 +302,7 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
      * c'est-à-dire laisser un état à moitié posé pour une cause qui était connue d'avance.
      */
     const jetonMort = (valides.data.operations as Operation[]).find(
-      (o) => o.type === 'fichier.ajouter' && !(deps.pieces?.contient(ctx.tenant, o.jeton) ?? false),
+      (o) => o.type === 'fichier.ajouter' && !deps.pieces.contient(ctx.tenant, o.jeton),
     );
     if (jetonMort) {
       return reply.code(422).send({

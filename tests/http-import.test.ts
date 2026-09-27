@@ -6,6 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ContactStore, ContactUpsert, LotContacts } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef } from '../src/crm/types';
+import { journalMuet } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -73,6 +74,7 @@ function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryC
       ]; },
       countContacts: async (_t, filters) => { cap?.countFilters.push(filters); return 3; },
       contactIdsForFilters: async (_t, filters) => { cap?.idsFilters.push(filters); return ['c2', 'c3']; },
+      audit: journalMuet,
       ...(journal ? { audit: async (_t: string, actor: { userId: string | null }, action: string, target: { kind: string; id: string }, detail: Record<string, unknown> = {}) => { journal.push({ action, target, detail, actor }); } } : {}),
     },
   });
