@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { ContactsRouteDeps } from '../src/http/contacts';
+import type { ContactsDep, ContactsRouteDeps } from '../src/http/contacts';
 
 /**
  * La purge d'un contact et sa trace auditable.
@@ -25,7 +25,8 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 
 interface Trace { action: string; target: { kind: string; id: string }; detail: Record<string, unknown>; actor: { userId: string | null } }
 
-function app(over: Partial<ContactsRouteDeps> = {}) {
+function app(over: Partial<Omit<ContactsRouteDeps, 'contacts'>> & { contacts?: Partial<ContactsDep> } = {}) {
+  const { contacts: surContacts, ...reste } = over;
   const journal: Trace[] = [];
   const filtresAudit: Array<Record<string, unknown>> = [];
   const filtresErreurs: Array<Record<string, unknown>> = [];
@@ -33,36 +34,45 @@ function app(over: Partial<ContactsRouteDeps> = {}) {
   const purges: string[][] = [];
   const editsRecus: unknown[] = [];
   const deps = {
-    applyEdits: async () => null,
-    applyEditsMany: async (_t: string, _target: unknown, edits: unknown) => { editsRecus.push(edits); return 4; },
+    contacts: {
+      applyEdits: async () => null,
+      applyEditsMany: async (_t: string, _target: unknown, edits: unknown) => { editsRecus.push(edits); return 4; },
+      contactIdsForTarget: async (_t: string, target: unknown) => ('ids' in (target as { ids?: string[] }) ? (target as { ids: string[] }).ids : ['c-filtre']),
+      purgeMany: async (_t: string, ids: readonly string[]) => {
+        purges.push([...ids]);
+        return { purges: ids.length, conversations: ids.length, messages: 12, analyses: 1 };
+      },
+      ...surContacts,
+    },
     createOneContact: async () => ({ status: 'created' as const, contactId: 'c-neuf' }),
-    listAudit: async (_t: string, o: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string } = {}) => {
-      filtresAudit.push(o);
-      return [
-        { id: 'a1', at: '2026-08-18T10:00:00.000Z', actorEmail: 'julien@messagingme.fr', action: 'contact.purged' as const, targetKind: 'contact', targetId: 'c1', detail: { lot: 1 } },
-      ];
+    journal: {
+      list: async (_t: string, o: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string } = {}) => {
+        filtresAudit.push(o);
+        return [
+          { id: 'a1', at: '2026-08-18T10:00:00.000Z', actorEmail: 'julien@messagingme.fr', action: 'contact.purged' as const, targetKind: 'contact', targetId: 'c1', detail: { lot: 1 } },
+        ];
+      },
     },
-    listErreursLivraison: async (_t: string, f: { limit?: number; q?: string; telephone?: string; code?: number } = {}) => {
-      filtresErreurs.push(f);
-      return [{ recipientId: 'r1', campaignId: 'camp1', campaignName: 'Promo', telephone: '+33611', contactId: 'c1', contactNom: 'Julie', code: 131026, message: 'Receiver is unable to receive message', origine: 'livraison', at: '2026-09-01T10:00:00.000Z' }];
+    erreurs: {
+      lister: async (_t: string, f: { limit?: number; q?: string; telephone?: string; code?: number } = {}) => {
+        filtresErreurs.push(f);
+        return [{ recipientId: 'r1', campaignId: 'camp1', campaignName: 'Promo', telephone: '+33611', contactId: 'c1', contactNom: 'Julie', code: 131026, message: 'Receiver is unable to receive message', origine: 'livraison', at: '2026-09-01T10:00:00.000Z' }];
+      },
+      listerEchecsSysteme: async (_t: string, limit?: number) => {
+        limitesSysteme.push(limit);
+        return [{
+          id: 'ap1', nom: 'Desabonner dans le CRM', source: 'optout', statut: 'erreur_outil',
+          httpStatus: 500, erreur: 'http_500', dureeMs: 120, at: '2026-09-14T08:00:00.000Z',
+        }];
+      },
     },
-    listErreursSysteme: async (_t: string, limit?: number) => {
-      limitesSysteme.push(limit);
-      return [{
-        id: 'ap1', nom: 'Desabonner dans le CRM', source: 'optout', statut: 'erreur_outil',
-        httpStatus: 500, erreur: 'http_500', dureeMs: 120, at: '2026-09-14T08:00:00.000Z',
-      }];
-    },
-    listUserFields: async () => [],
-    contactIdsForTarget: async (_t: string, target: unknown) => ('ids' in (target as { ids?: string[] }) ? (target as { ids: string[] }).ids : ['c-filtre']),
-    purgeMany: async (_t: string, ids: readonly string[]) => {
-      purges.push([...ids]);
-      return { purges: ids.length, conversations: ids.length, messages: 12, analyses: 1 };
+    champs: {
+      list: async () => [],
     },
     audit: async (_t: string, actor: { userId: string | null }, action: string, target: { kind: string; id: string }, detail: Record<string, unknown> = {}) => {
       journal.push({ action, target, detail, actor });
     },
-    ...over,
+    ...reste,
   } as unknown as ContactsRouteDeps;
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs, limitesSysteme };
 }
@@ -101,7 +111,7 @@ describe('suppression d’un contact (la seule, et elle efface)', () => {
   it('un filtre qui ne matche personne -> rien à faire, et surtout aucun appel de purge', async () => {
     // Le cas réel : un filtre qui ne ramène rien. Une liste d'identifiants vide, elle, est refusée en amont
     // comme cible invalide, au même titre que pour la suppression douce.
-    const { server, purges } = app({ contactIdsForTarget: async () => [] } as never);
+    const { server, purges } = app({ contacts: { contactIdsForTarget: async () => [] } });
     const res = await server.inject({ method: 'POST', url, ...h(adminTok), payload: { target: { filters: { tags: ['inexistant'] } }, confirm: 'SUPPRIMER' } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ purges: 0 });
@@ -268,11 +278,13 @@ describe('consentement posé à la main sur la fiche', () => {
   function avecFiche(over: Record<string, unknown> = {}) {
     const edits: Array<Record<string, unknown>> = [];
     const monte = app({
-      applyEdits: async (_t: string, _id: string, e: Record<string, unknown>) => {
-        edits.push(e);
-        return { contact: CONTACT, addedTags: [] };
+      contacts: {
+        applyEdits: async (_t: string, _id: string, e: Record<string, unknown>) => {
+          edits.push(e);
+          return { contact: CONTACT, addedTags: [] };
+        },
+        ...over,
       },
-      ...over,
     } as never);
     return { ...monte, edits };
   }

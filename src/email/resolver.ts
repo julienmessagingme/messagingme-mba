@@ -2,7 +2,7 @@ import type { Transporter } from 'nodemailer';
 import type { DecryptedEmailAccount } from './types';
 
 export interface EmailAccountResolverDeps {
-  getDecrypted(tenantId: string, accountId: string): Promise<DecryptedEmailAccount | null>;
+  comptes: { getDecrypted(tenantId: string, accountId: string): Promise<DecryptedEmailAccount | null> };
   buildTransport(account: DecryptedEmailAccount): Transporter;
   /** TTL du cache transport en ms (défaut 5 min, comme MetaCredentialsResolver). */
   cacheTtlMs?: number;
@@ -16,7 +16,7 @@ export interface EmailAccountResolverDeps {
  * TTL court en plus de l'invalidation explicite : le worker a sa propre instance et ne reçoit jamais l'invalidation
  * posée par l'API, en mémoire. Sans TTL, un mot de passe SMTP changé ou un compte supprimé resterait servi.
  * 🔴 Clé composite `${tenantId}:${accountId}` : avec l'accountId seul, un hit rendrait le compte (mot de passe en
- * clair) d'un autre espace sans rappeler `getDecrypted`, seul point qui filtre sur l'espace.
+ * clair) d'un autre espace sans rappeler `comptes.getDecrypted`, seul point qui filtre sur l'espace.
  */
 export class EmailAccountResolver {
   private readonly cache = new Map<string, { transport: Transporter; account: DecryptedEmailAccount; at: number }>();
@@ -54,7 +54,7 @@ export class EmailAccountResolver {
       this.closeAndDelete(key, hit.transport); // expiré : traité comme un miss, reconstruction ci-dessous
     }
 
-    const account = await this.deps.getDecrypted(tenantId, accountId);
+    const account = await this.deps.comptes.getDecrypted(tenantId, accountId);
     if (!account) return null;
     const entry = { transport: this.deps.buildTransport(account), account, at: this.now() };
     this.cache.set(key, entry);

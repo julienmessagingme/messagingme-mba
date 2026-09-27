@@ -185,7 +185,7 @@ describe('les deux appelants qui ne journalisaient RIEN le font', () => {
     const travail = creerTravailPousseeOptOut({
       ...depsConnecteur(repond(500)),
       requeteConfiguree: async () => 'rq1',
-      projectionContact: async () => ({ nom: 'Julie', tags: [], champs: {} }),
+      contacts: { projectionPourTiers: async () => ({ nom: 'Julie', tags: [], champs: {} }) },
       journalAppels: journal,
       libelleRequete: async () => 'Desabonner dans le CRM',
     });

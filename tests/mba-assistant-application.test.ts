@@ -37,9 +37,15 @@ function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | 
     ...sur,
   } as ClientMbaEcriture;
   const deps: ApplicationDeps = {
-    numeroDuTenant: async () => (opts.numero === undefined ? '123' : opts.numero),
-    client: async () => client,
-    journaliser: async (_t, l) => { journal.push(l); },
+    numeros: {
+      getTenantPhoneNumberId: async () => (opts.numero === undefined ? '123' : opts.numero),
+    },
+    meta: {
+      mbaClientForTenant: async () => client,
+    },
+    historique: {
+      ecrire: async (_t, l) => { journal.push(l); },
+    },
     acteur: { id: 'u1', email: 'julien@messagingme.fr' },
   };
   return { deps, journal, faits };
@@ -181,9 +187,15 @@ describe('quand le journal est indisponible', () => {
   } as never);
 
   const deps = (): ApplicationDeps => ({
-    numeroDuTenant: async () => '123',
-    client: async () => clientMuet(),
-    journaliser: async () => { throw new Error('base indisponible'); },
+    numeros: {
+      getTenantPhoneNumberId: async () => '123',
+    },
+    meta: {
+      mbaClientForTenant: async () => clientMuet(),
+    },
+    historique: {
+      ecrire: async () => { throw new Error('base indisponible'); },
+    },
     acteur: { id: 'u1', email: null },
   });
 

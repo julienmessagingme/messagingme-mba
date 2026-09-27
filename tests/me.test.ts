@@ -20,7 +20,7 @@ const h = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
 
 function app(over: Partial<MeRouteDeps> = {}) {
   const deps: MeRouteDeps = {
-    getUser: async (userId) => (userId === 'u1' ? { email: 'julien@messagingme.fr', name: 'Julien Dumas', role: 'agent' } : null),
+    getById: async (userId) => (userId === 'u1' ? { email: 'julien@messagingme.fr', name: 'Julien Dumas', role: 'agent' } : null),
     ...over,
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, me: deps });
@@ -43,7 +43,7 @@ describe('route me', () => {
   });
 
   it('utilisateur inconnu -> 404', async () => {
-    const server = app({ getUser: async () => null });
+    const server = app({ getById: async () => null });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/me', ...h(agentTok) });
     expect(res.statusCode).toBe(404);
     await server.close();
@@ -52,7 +52,7 @@ describe('route me', () => {
   it('🔴 la session d’observation de /ops : une réponse propre, SANS lecture en base (son identité n’est pas un uuid)', async () => {
     const lus: string[] = [];
     // Lue en base, `ops-observation` fait lever Postgres (22P02) : le faux dépôt fait de même.
-    const server = app({ getUser: async (userId) => { lus.push(userId); throw new Error('invalid input syntax for type uuid: "ops-observation"'); } });
+    const server = app({ getById: async (userId) => { lus.push(userId); throw new Error('invalid input syntax for type uuid: "ops-observation"'); } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/me', ...h(observationTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ email: '', name: null, role: 'admin' });

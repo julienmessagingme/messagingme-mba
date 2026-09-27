@@ -38,7 +38,9 @@ function app(over: Partial<PubsRouteDeps> = {}, role = 'admin'): { srv: FastifyI
     appId: 'app-1',
     graphVersion: 'v23.0',
     ...aucunePubDeRoute,
-    lire: async () => etatVide,
+    connexions: {
+      lire: async () => etatVide,
+    },
     etatCompte: async () => ({ statut: 1, raisonDesactivation: 0, moyenPaiement: true }),
     connecter: async (_t, code) => { traces.connecte.push(code); return accordes; },
     actifsAccordes: async () => accordes,
@@ -82,7 +84,7 @@ describe('GET : l état de la connexion', () => {
   });
 
   it('rend l etat du compte, lu EN DIRECT : actif et moyen de paiement en place', async () => {
-    const { srv } = app({ lire: async () => etatChoisi });
+    const { srv } = app({ connexions: { lire: async () => etatChoisi } });
     const res = await srv.inject({ method: 'GET', url: url() });
     expect(res.json().compte).toEqual({ statut: 1, raisonDesactivation: 0, moyenPaiement: true });
   });
@@ -90,7 +92,7 @@ describe('GET : l état de la connexion', () => {
   it('🔴 une panne de Meta rend `compte: null`, et n empeche PAS d afficher la connexion', async () => {
     // `null` veut dire « je n ai pas pu demander », jamais « tout va bien » : un compte bloque ne doit
     // pas passer pour pret. Et l ecran doit rester lisible quand Meta ne repond pas.
-    const { srv } = app({ lire: async () => etatChoisi, etatCompte: async () => { throw new Error('Graph 500'); } });
+    const { srv } = app({ connexions: { lire: async () => etatChoisi }, etatCompte: async () => { throw new Error('Graph 500'); } });
     const res = await srv.inject({ method: 'GET', url: url() });
     expect(res.statusCode).toBe(200);
     expect(res.json().compte).toBeNull();
@@ -99,7 +101,7 @@ describe('GET : l état de la connexion', () => {
 
   it('⚠️ sans connexion, on ne demande RIEN a Meta : pas de jeton, pas de question', async () => {
     let demande = 0;
-    const { srv } = app({ lire: async () => null, etatCompte: async () => { demande += 1; return null; } });
+    const { srv } = app({ connexions: { lire: async () => null }, etatCompte: async () => { demande += 1; return null; } });
     expect((await srv.inject({ method: 'GET', url: url() })).json().compte).toBeNull();
     expect(demande).toBe(0);
   });

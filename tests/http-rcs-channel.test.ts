@@ -27,10 +27,12 @@ function appWith(opts: { check?: RcsChannelCheck; actif?: boolean } = {}) {
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     rcsChannel: {
-      etat: async () => (opts.actif ? { agentId: 'ch-1', brandName: 'MessagingMe', displayName: 'Messaging Me (TEST)', status: 'testing', checkedAt: null } : null),
+      agents: {
+        etatPour: async () => (opts.actif ? { agentId: 'ch-1', brandName: 'MessagingMe', displayName: 'Messaging Me (TEST)', status: 'testing', checkedAt: null } : null),
+        desactiver: async () => opts.actif === true,
+      },
       verifier: async () => opts.check ?? { ok: true, channel: CANAL },
       activer: async (tenant, _canal, apiKey) => { active.push({ tenant, apiKey }); },
-      desactiver: async () => opts.actif === true,
     },
   });
   return { app, active };

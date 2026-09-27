@@ -8,7 +8,7 @@ import { registerAgentSources } from '../src/http/agent-sources';
 import type { AuditSink } from '../src/audit/journal';
 import { detailSansDonneesPersonnelles, PgAuditStore } from '../src/audit/store.pg';
 import type { PreHandler } from '../src/auth/middleware';
-import { membresInertes } from './routes-inertes';
+import { membresDepInertes, membresInertes } from './routes-inertes';
 
 /**
  * LE JOURNAL D'AUDIT COUVRE LES ACCÈS (lot 1 du plan `2026-09-15-audit-des-actions-sensibles.md`).
@@ -49,11 +49,14 @@ async function appUsers(audit: AuditSink) {
   monterAvecEtapeEspace(app, () => registerUsers(app, {
     ...membresInertes,
     audit,
-    listUsers: async () => [],
-    setUserRole: async () => 'ok',
-    setUserDisabled: async () => 'ok',
-    deleteUser: async () => 'ok',
-    createPendingUser: async () => ({ id: 'u-neuf', email: 'x@y.z', role: 'agent', tenantId: 't1', disabled: false, name: null, createdAt: new Date().toISOString(), lastLoginAt: null }) as never,
+    users: {
+      ...membresDepInertes,
+      list: async () => [],
+      setRole: async () => 'ok',
+      setDisabled: async () => 'ok',
+      deleteUser: async () => 'ok',
+      createPending: async () => ({ id: 'u-neuf', email: 'x@y.z', role: 'agent', tenantId: 't1', disabled: false, name: null, createdAt: new Date().toISOString(), lastLoginAt: null }) as never,
+    },
     createInviteToken: async () => 'jeton',
   }, gardeQuiPose));
   await app.ready();
@@ -106,10 +109,13 @@ describe('les actions sur les COMPTES laissent une trace', () => {
     monterAvecEtapeEspace(app, () => registerUsers(app, {
       ...membresInertes,
       audit: h.audit,
-      listUsers: async () => [],
-      setUserRole: async () => 'last_admin',
-      setUserDisabled: async () => 'not_found',
-      deleteUser: async () => 'last_admin',
+      users: {
+        ...membresDepInertes,
+        list: async () => [],
+        setRole: async () => 'last_admin',
+        setDisabled: async () => 'not_found',
+        deleteUser: async () => 'last_admin',
+      },
     }, gardeQuiPose));
     await app.ready();
     expect((await app.inject({ method: 'PATCH', url: '/tenants/t1/users/u2/role', payload: { role: 'agent' } })).statusCode).toBe(409);
@@ -124,9 +130,11 @@ describe('les CLÉS D’API laissent une trace', () => {
     const app = Fastify();
     monterAvecEtapeEspace(app, () => registerApiKeys(app, {
       audit,
-      createKey: async () => ({ id: 'k1', key: 'mm_secret_en_clair' }),
-      listKeys: async () => [],
-      revokeKey: async () => revoqueOk,
+      cles: {
+        create: async () => ({ id: 'k1', key: 'mm_secret_en_clair' }),
+        listByTenant: async () => [],
+        revoke: async () => revoqueOk,
+      },
     }, gardeQuiPose));
     await app.ready();
     return app;
@@ -175,11 +183,13 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
     monterAvecEtapeEspace(app, () => registerWebhooksAdmin(app, {
       audit: h.audit,
       baseUrl: 'https://api.exemple.test',
-      list: async () => [], get: async () => null,
-      create: async () => ({ id: 'w1', code: 'code-tres-secret' }),
-      update: async () => true, remove: async () => true,
-      rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
-      forgetPayload: async () => true,
+      webhooks: {
+        list: async () => [], get: async () => null,
+        create: async () => ({ id: 'w1', code: 'code-tres-secret' }),
+        update: async () => true, remove: async () => true,
+        rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
+        forgetPayload: async () => true,
+      },
       workflowBelongsToTenant: async () => true,
     } as never, gardeQuiPose));
     await app.ready();
@@ -195,10 +205,13 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
     const app = Fastify();
     monterAvecEtapeEspace(app, () => registerWebhooksAdmin(app, {
       audit: h.audit, baseUrl: 'https://api.exemple.test',
-      list: async () => [], get: async () => null,
-      create: async () => ({ id: 'w1', code: 'c' }), update: async () => true, remove: async () => true,
-      rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
-      forgetPayload: async () => true, workflowBelongsToTenant: async () => true,
+      webhooks: {
+        list: async () => [], get: async () => null,
+        create: async () => ({ id: 'w1', code: 'c' }), update: async () => true, remove: async () => true,
+        rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
+        forgetPayload: async () => true,
+      },
+      workflowBelongsToTenant: async () => true,
     } as never, gardeQuiPose));
     await app.ready();
     await app.inject({ method: 'POST', url: '/tenants/t1/webhooks/w1/secret' });
@@ -219,11 +232,13 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
     const app = Fastify();
     monterAvecEtapeEspace(app, () => registerAgentSources(app, {
       audit: h.audit,
-      lister: async () => [],
-      parId: async () => ({ id: 's1', baseUrl: 'https://crm.client.fr/v1/secret-path', authKind: 'bearer', authHeaderName: null, aAuthentification: true, outilsActifs: 0 }) as never,
-      creer: async () => ({ id: 's1' }) as never,
-      patch: async () => ({ id: 's1' }) as never,
-      supprimer: async () => true,
+      sources: {
+        lister: async () => [],
+        parId: async () => ({ id: 's1', baseUrl: 'https://crm.client.fr/v1/secret-path', authKind: 'bearer', authHeaderName: null, aAuthentification: true, outilsActifs: 0 }) as never,
+        creer: async () => ({ id: 's1' }) as never,
+        patch: async () => ({ id: 's1' }) as never,
+        supprimer: async () => true,
+      },
     } as never, gardeQuiPose));
     await app.ready();
     const r = await app.inject({

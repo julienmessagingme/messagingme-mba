@@ -4,8 +4,8 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { InboxRouteDeps } from '../src/http/inbox';
-import { inboxInerte } from './routes-inertes';
+import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
+import { inboxDepInerte, inboxInerte } from './routes-inertes';
 
 /**
  * TRADUIRE UN SORTANT : la route, et la trace qu'elle laisse.
@@ -22,21 +22,30 @@ beforeAll(async () => { token = await signSession({ userId: 'u1', tenantId: 't1'
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
-function app(over: Partial<InboxRouteDeps> = {}) {
+function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<InboxDep> } = {}) {
+  const { inbox, ...reste } = over;
   const deps: InboxRouteDeps = {
     ...inboxInerte,
     estDesabonne: jamaisDesabonne,
-    listConversations: async () => [],
-    getConversationContext: async (id) => (id === 'c1'
-      ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-09-12T00:00:00.000Z', langueContact: 'es' }
-      : null),
-    getMessages: async () => [],
-    recordOutbound: async () => {},
-    getTenantPhoneNumberId: async () => 'pn1',
+    inbox: {
+      ...inboxDepInerte,
+      listConversations: async () => [],
+      getConversationContext: async (id) => (id === 'c1'
+        ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-09-12T00:00:00.000Z', langueContact: 'es' }
+        : null),
+      getMessages: async () => [],
+      recordOutbound: async () => {},
+      ...inbox,
+    },
+    repo: {
+      getTenantPhoneNumberId: async () => 'pn1',
+    },
     sendReply: async () => 'wamid.OUT',
     sendTemplateMessage: async () => 'wamid.TPL',
-    traduireSortant: async (_t, texte) => ({ texte: `[es] ${texte}`, langueSource: 'fr' }),
-    ...over,
+    traducteur: {
+      traduire: async (_t, texte) => ({ texte: `[es] ${texte}`, langueSource: 'fr' }),
+    },
+    ...reste,
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, inbox: deps });
 }
@@ -47,7 +56,7 @@ describe('POST /conversations/:id/traduire', () => {
     // en), un sortant vers celle du CONTACT, qui ecrit ce qu'il veut. Borner la sortie a nos deux
     // langues rendrait la fonctionnalite inutile des qu'un client ecrit en espagnol.
     let vu: { texte: string; cible: string } | null = null;
-    const a = app({ traduireSortant: async (_t, texte, cible) => { vu = { texte, cible }; return { texte: 'Hola', langueSource: 'fr' }; } });
+    const a = app({ traducteur: { traduire: async (_t, texte, cible) => { vu = { texte, cible }; return { texte: 'Hola', langueSource: 'fr' }; } } });
     const res = await a.inject({
       method: 'POST', url: '/tenants/t1/conversations/c1/traduire', ...auth(),
       payload: { texte: 'Bonjour', cible: 'es' },
@@ -80,8 +89,10 @@ describe('POST /conversations/:id/traduire', () => {
     // exactement quand il sert. Et ce n'est pas une panne, c'est un espace sans credit de modele.
     let appele = false;
     const a = app({
-      traductionDisponible: async () => false,
-      traduireSortant: async () => { appele = true; return null; },
+      traducteur: {
+        disponible: async () => false,
+        traduire: async () => { appele = true; return null; },
+      },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/traduire', ...auth(), payload: { texte: 'Bonjour', cible: 'es' } });
     expect(res.statusCode).toBe(422);
@@ -91,7 +102,7 @@ describe('POST /conversations/:id/traduire', () => {
   });
 
   it('une traduction qui echoue rend 422, pas une bulle vide', async () => {
-    const a = app({ traduireSortant: async () => null });
+    const a = app({ traducteur: { traduire: async () => null } });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/traduire', ...auth(), payload: { texte: 'Bonjour', cible: 'es' } });
     expect(res.statusCode).toBe(422);
     await a.close();
@@ -113,7 +124,9 @@ describe('POST /conversations/:id/reply : les DEUX textes', () => {
     let vu: unknown[] = [];
     let parti = '';
     const a = app({
-      recordOutbound: async (...args) => { vu = args; },
+      inbox: {
+        recordOutbound: async (...args) => { vu = args; },
+      },
       sendReply: async (_t, _pn, _to, texte) => { parti = texte; return 'wamid.OUT'; },
     });
     const res = await a.inject({
@@ -133,7 +146,7 @@ describe('POST /conversations/:id/reply : les DEUX textes', () => {
     // Le sens inverse, et c'est le cas de tous les envois du produit : `body` est alors a la fois ce
     // qui est parti et ce qui a ete ecrit, et une valeur inventee dans la colonne serait un mensonge.
     let vu: unknown[] = [];
-    const a = app({ recordOutbound: async (...args) => { vu = args; } });
+    const a = app({ inbox: { recordOutbound: async (...args) => { vu = args; } } });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Bonjour' } });
     expect(res.statusCode).toBe(200);
     expect(vu[9]).toBeNull();

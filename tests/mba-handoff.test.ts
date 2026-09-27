@@ -12,7 +12,7 @@ function cible(settings: AgentSettings | null, pn: string | null = 'PN1'): {
     getSettings: async () => settings,
     putSettings: async (_pn: string, corps: Record<string, unknown>) => { puts.push(corps); return {}; },
   } as unknown as MbaClient;
-  return { deps: { clientFor: async () => client, phoneNumberFor: async () => pn }, puts };
+  return { deps: { meta: { mbaClientForTenant: async () => client }, numeros: { getTenantPhoneNumberId: async () => pn } }, puts };
 }
 
 describe('lireHandoffEnabled : « jamais configuré » n’est PAS « configuré à false »', () => {

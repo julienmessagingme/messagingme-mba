@@ -18,9 +18,13 @@ export interface ApiKeysRouteDeps {
    * 🔴 Le `detail` ne porte jamais la clé ni son empreinte, seulement les droits accordés (ce journal n'est pas purgé).
    */
   audit: AuditSink;
-  createKey(tenantId: string, name: string, scopes: string[]): Promise<{ id: string; key: string }>;
-  listKeys(tenantId: string): Promise<ApiKeyRow[]>;
-  revokeKey(tenantId: string, id: string): Promise<boolean>;
+  cles: ClesApiDep;
+}
+
+export interface ClesApiDep {
+  create(tenantId: string, name: string, scopes: string[]): Promise<{ id: string; key: string }>;
+  listByTenant(tenantId: string): Promise<ApiKeyRow[]>;
+  revoke(tenantId: string, id: string): Promise<boolean>;
 }
 
 /**
@@ -39,7 +43,7 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
     if (scopes.length === 0) return reply.code(400).send({ error: 'au moins un scope requis' });
     const invalid = scopes.filter((s) => !(VALID_API_SCOPES as readonly string[]).includes(s));
     if (invalid.length > 0) return reply.code(400).send({ error: `scope(s) inconnu(s) : ${invalid.join(', ')}` });
-    const { id, key } = await deps.createKey(tenant, b.name.trim().slice(0, 100), scopes);
+    const { id, key } = await deps.cles.create(tenant, b.name.trim().slice(0, 100), scopes);
     // `key` en clair, montrée une seule fois. L'audit porte les droits accordés, jamais la clé.
     await journal(tenant, req, 'cle_api.creee', { kind: 'api_key', id }, { scopes });
     return reply.code(201).send({ id, key, name: b.name.trim().slice(0, 100), scopes });
@@ -47,13 +51,13 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
 
   app.get('/tenants/:tenantId/api-keys', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ keys: await deps.listKeys(tenant) });
+    return reply.code(200).send({ keys: await deps.cles.listByTenant(tenant) });
   });
 
   app.delete('/tenants/:tenantId/api-keys/:id', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    const ok = await deps.revokeKey(tenant, id);
+    const ok = await deps.cles.revoke(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'clé inconnue ou déjà révoquée' });
     // Après le succès : une révocation refusée n'a rien révoqué.
     await journal(tenant, req, 'cle_api.revoquee', { kind: 'api_key', id });

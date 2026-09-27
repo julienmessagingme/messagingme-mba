@@ -76,40 +76,44 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
     connecteurs: [] as Array<{ tenant: string; agentId: string; outil: Record<string, unknown> }>,
   };
   const deps: AgentToolsRouteDeps = {
-    // `binding.handler` compte : c'est par lui que la route retrouve le modèle de catalogue de l'outil,
-    // donc les paramètres sur lesquels une liste de valeurs a le droit d'exister.
-    listToutes: async () => liste,
-    ajouter: async (tenant, agentId, outil) => {
-      cap.ajouts.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
-      if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
-      return agentId === AG ? { ...OUTIL, ...outil, params: outil.params } : null;
+    outils: {
+      // `binding.handler` compte : c'est par lui que la route retrouve le modèle de catalogue de l'outil,
+      // donc les paramètres sur lesquels une liste de valeurs a le droit d'exister.
+      listToutes: async () => liste,
+      ajouter: async (tenant, agentId, outil) => {
+        cap.ajouts.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
+        if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
+        return agentId === AG ? { ...OUTIL, ...outil, params: outil.params } : null;
+      },
+      patch: async (tenant, agentId, id, patch) => {
+        cap.patches.push({ tenant, agentId, id, patch });
+        if (patch.name === 'deja_pris') throw new NomOutilDejaPris();
+        return id === OUT ? { ...OUTIL, ...patch } : null;
+      },
+      activer: async (tenant, _a, id, actif, par) => {
+        cap.activations.push({ tenant, id, actif, par });
+        return id === OUT ? { ...OUTIL, actif, activeLe: actif ? '2026-08-28T10:00:00.000Z' : null } : null;
+      },
+      autonomie: async (tenant, _a, id, autonome, par) => {
+        cap.autonomies.push({ tenant, id, autonome, par });
+        return id === OUT ? { ...OUTIL, autonome } : null;
+      },
+      // 🔴 DÉTACHE, ne supprime plus : depuis la migration 0127 la définition appartient à l'ESPACE, et la
+      // supprimer depuis l'écran d'un seul agent rendrait muets ceux qu'on ne regardait pas.
+      detacher: async (tenant, _a, id) => { cap.retraits.push({ tenant, id }); return id === OUT; },
+      rattacher: async (tenant, _a, id) => { cap.rattachements.push({ tenant, id }); return id === OUT; },
+      ajouterConnecteur: async (tenant, agentId, outil) => {
+        cap.connecteurs.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
+        if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
+        // ⚠️ `[...outil.outputPaths]` : le contrat expose une liste EN LECTURE SEULE (on ne veut pas qu un
+        // magasin modifie la liste de son appelant), et l outil rendu en porte une mutable. Le faux doit donc
+        // la RECOPIER, comme le vrai magasin le fait en base.
+        return agentId === AG ? { ...OUTIL, ...outil, outputPaths: [...outil.outputPaths], origin: 'http', sourceId: outil.sourceId } : null;
+      },
     },
-    patch: async (tenant, agentId, id, patch) => {
-      cap.patches.push({ tenant, agentId, id, patch });
-      if (patch.name === 'deja_pris') throw new NomOutilDejaPris();
-      return id === OUT ? { ...OUTIL, ...patch } : null;
+    requetes: {
+      parId: async (tenant, id) => (tenant === 't1' && id === RQ ? { ...REQUETE, ...requeteOver } : null),
     },
-    activer: async (tenant, _a, id, actif, par) => {
-      cap.activations.push({ tenant, id, actif, par });
-      return id === OUT ? { ...OUTIL, actif, activeLe: actif ? '2026-08-28T10:00:00.000Z' : null } : null;
-    },
-    autonomie: async (tenant, _a, id, autonome, par) => {
-      cap.autonomies.push({ tenant, id, autonome, par });
-      return id === OUT ? { ...OUTIL, autonome } : null;
-    },
-    // 🔴 DÉTACHE, ne supprime plus : depuis la migration 0127 la définition appartient à l'ESPACE, et la
-    // supprimer depuis l'écran d'un seul agent rendrait muets ceux qu'on ne regardait pas.
-    detacher: async (tenant, _a, id) => { cap.retraits.push({ tenant, id }); return id === OUT; },
-    rattacher: async (tenant, _a, id) => { cap.rattachements.push({ tenant, id }); return id === OUT; },
-    ajouterConnecteur: async (tenant, agentId, outil) => {
-      cap.connecteurs.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
-      if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
-      // ⚠️ `[...outil.outputPaths]` : le contrat expose une liste EN LECTURE SEULE (on ne veut pas qu un
-      // magasin modifie la liste de son appelant), et l outil rendu en porte une mutable. Le faux doit donc
-      // la RECOPIER, comme le vrai magasin le fait en base.
-      return agentId === AG ? { ...OUTIL, ...outil, outputPaths: [...outil.outputPaths], origin: 'http', sourceId: outil.sourceId } : null;
-    },
-    requetePourOutil: async (tenant, id) => (tenant === 't1' && id === RQ ? { ...REQUETE, ...requeteOver } : null),
     sortiesDeLAgent: async (_t, agentId) => (agentId === AG ? sorties : null),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentTools: deps }) };

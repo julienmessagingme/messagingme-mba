@@ -80,8 +80,10 @@ describe('le balayage de reprise', () => {
   it('reprend les campagnes dues et enfile un run pour chacune', async () => {
     const enfiles: string[] = [];
     const n = await runCampaignRepriseSweep({
-      reprendreDues: async () => [{ id: 'c1', tenantId: 't1' }, { id: 'c2', tenantId: 't2' }],
-      getRunSizing: async () => ({ ratePerMinute: 60, pendingCount: 100 }),
+      repo: {
+        reprendreCampagnesDues: async () => [{ id: 'c1', tenantId: 't1' }, { id: 'c2', tenantId: 't2' }],
+        getRunSizing: async () => ({ ratePerMinute: 60, pendingCount: 100 }),
+      },
       enqueueRun: async (id, tenantId) => { enfiles.push(`${id}@${tenantId}`); },
     });
     expect(n).toBe(2);
@@ -94,8 +96,10 @@ describe('le balayage de reprise', () => {
     const enfiles: string[] = [];
     const erreurs: string[] = [];
     const n = await runCampaignRepriseSweep({
-      reprendreDues: async () => [{ id: 'c1', tenantId: 't1' }],
-      getRunSizing: async () => null,
+      repo: {
+        reprendreCampagnesDues: async () => [{ id: 'c1', tenantId: 't1' }],
+        getRunSizing: async () => null,
+      },
       enqueueRun: async (id) => { enfiles.push(id); },
       onError: (m) => erreurs.push(m),
     });
@@ -110,8 +114,10 @@ describe('le balayage de reprise', () => {
     const enfiles: string[] = [];
     const erreurs: string[] = [];
     const n = await runCampaignRepriseSweep({
-      reprendreDues: async () => [{ id: 'ko', tenantId: 't1' }, { id: 'ok', tenantId: 't1' }],
-      getRunSizing: async () => ({ ratePerMinute: 60, pendingCount: 10 }),
+      repo: {
+        reprendreCampagnesDues: async () => [{ id: 'ko', tenantId: 't1' }, { id: 'ok', tenantId: 't1' }],
+        getRunSizing: async () => ({ ratePerMinute: 60, pendingCount: 10 }),
+      },
       enqueueRun: async (id) => { if (id === 'ko') throw new Error('file pleine'); enfiles.push(id); },
       onError: (m) => erreurs.push(m),
     });

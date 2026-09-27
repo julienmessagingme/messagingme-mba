@@ -7,15 +7,19 @@ import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
 import { espaceVerifie, nonEmpty } from './scope';
 
-export interface AutomationRouteDeps {
+export interface AutomationsDep {
   list(tenantId: string): Promise<AutomationRow[]>;
+  /** Une automation par id (scopée tenant). Lecture ciblée : `list` est capée, donc aveugle au-delà du plafond. */
+  getById(id: string, tenantId: string): Promise<AutomationRow | null>;
   create(tenantId: string, input: AutomationInput): Promise<{ id: string }>;
   update(id: string, tenantId: string, patch: Partial<AutomationInput>): Promise<boolean>;
   remove(id: string, tenantId: string): Promise<boolean>;
+}
+
+export interface AutomationRouteDeps {
+  automations: AutomationsDep;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Garde d'appartenance (comme la campagne workflow). */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
-  /** Une automation par id (scopée tenant). Lecture ciblée : `list` est capée, donc aveugle au-delà du plafond. */
-  getById(id: string, tenantId: string): Promise<AutomationRow | null>;
 }
 
 /**
@@ -185,7 +189,7 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
 
   app.get('/tenants/:tenantId/automations', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ automations: await deps.list(tenant) });
+    return reply.code(200).send({ automations: await deps.automations.list(tenant) });
   });
 
   app.post('/tenants/:tenantId/automations', opts, async (req, reply) => {
@@ -201,7 +205,7 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     }
     const boucle = refuseIfLoopy(input.triggerKind, input.cooldownSeconds);
     if (boucle) return reply.code(400).send({ error: boucle });
-    const { id } = await deps.create(tenant, input);
+    const { id } = await deps.automations.create(tenant, input);
     return reply.code(201).send({ id, ...input });
   });
 
@@ -219,14 +223,14 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     // suffit pas : modifier le type sans le délai, ou le délai sans le type, ouvre la boucle aussi sûrement.
     if (parsed.input.triggerKind !== undefined || parsed.input.cooldownSeconds !== undefined) {
       const besoinRelecture = parsed.input.triggerKind === undefined || parsed.input.cooldownSeconds === undefined;
-      const courant = besoinRelecture ? await deps.getById(id, tenant) : null;
+      const courant = besoinRelecture ? await deps.automations.getById(id, tenant) : null;
       if (besoinRelecture && !courant) return reply.code(404).send({ error: 'automation inconnue' });
       const kindEffectif = parsed.input.triggerKind ?? courant?.triggerKind;
       const cooldownEffectif = parsed.input.cooldownSeconds !== undefined ? parsed.input.cooldownSeconds : courant?.cooldownSeconds;
       const boucle = refuseIfLoopy(kindEffectif, cooldownEffectif);
       if (boucle) return reply.code(400).send({ error: boucle });
     }
-    const ok = await deps.update(id, tenant, parsed.input);
+    const ok = await deps.automations.update(id, tenant, parsed.input);
     if (!ok) return reply.code(404).send({ error: 'automation inconnue' });
     return reply.code(200).send({ id, ...parsed.input });
   });
@@ -235,7 +239,7 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const ok = await deps.remove(id, tenant);
+    const ok = await deps.automations.remove(id, tenant);
     if (!ok) return reply.code(404).send({ error: 'automation inconnue' });
     return reply.code(204).send();
   });

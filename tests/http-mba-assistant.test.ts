@@ -48,11 +48,17 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
     plafondEuros: 2,
     modele: 'test/modele',
     tauxEurParDollar: 0.92,
-    agentIdDuTenant: async () => 'ag-meta-1',
+    numeros: { getTenantPhoneNumberId: async () => 'ag-meta-1' },
     application: () => ({
-      numeroDuTenant: async () => '123',
-      client: async () => ({} as never),
-      journaliser: async () => {},
+      numeros: {
+        getTenantPhoneNumberId: async () => '123',
+      },
+      meta: {
+        mbaClientForTenant: async () => ({} as never),
+      },
+      historique: {
+        ecrire: async () => {},
+      },
       acteur: { id: 'u1', email: null },
     }),
     completer: async () => {
@@ -94,7 +100,7 @@ describe('le contrôle d’accès', () => {
   });
 
   it('⚠️ sans agent Meta rattaché, 404 plutôt qu’un écran vide', async () => {
-    const m = monter({ agentIdDuTenant: async () => null });
+    const m = monter({ numeros: { getTenantPhoneNumberId: async () => null } });
     const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
     expect(r.statusCode).toBe(404);
   });

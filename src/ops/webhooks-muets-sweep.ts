@@ -1,11 +1,13 @@
 export interface WebhooksMuetsDeps {
-  /**
-   * Combien de webhooks Meta ont été reçus sur la fenêtre (jobs enfilés par le receveur). Les reçus et pas les
-   * traités : le receveur enfile sans rien interpréter, ce compteur ne dépend d'aucune des couches surveillées.
-   */
-  recus(fenetreMinutes: number): Promise<number>;
-  /** Combien d'événements ont été enregistrés sur la même fenêtre (`webhook_events`). */
-  enregistres(fenetreMinutes: number): Promise<number>;
+  ops: {
+    /**
+     * Combien de webhooks Meta ont été reçus sur la fenêtre (jobs enfilés par le receveur). Les reçus et pas les
+     * traités : le receveur enfile sans rien interpréter, ce compteur ne dépend d'aucune des couches surveillées.
+     */
+    webhooksRecusDepuis(fenetreMinutes: number): Promise<number>;
+    /** Combien d'événements ont été enregistrés sur la même fenêtre (`webhook_events`). */
+    evenementsWebhookDepuis(fenetreMinutes: number): Promise<number>;
+  };
   alert: (msg: string) => void;
   /**
    * En dessous de ce nombre de reçus, on ne conclut rien : deux webhooks sans enregistrement peuvent être deux
@@ -47,12 +49,12 @@ export function creerWebhooksMuetsSweep(deps: WebhooksMuetsDeps): () => Promise<
   };
 
   async function passe(): Promise<boolean> {
-    const recus = await deps.recus(fenetre);
+    const recus = await deps.ops.webhooksRecusDepuis(fenetre);
     // Trafic trop faible pour conclure. On ne réarme pas : un creux de trafic au milieu d'une panne ne doit pas
     // faire réalerter dès que le trafic reprend.
     if (recus < seuil) return false;
 
-    const enregistres = await deps.enregistres(fenetre);
+    const enregistres = await deps.ops.evenementsWebhookDepuis(fenetre);
     if (enregistres > 0) {
       dejaAlerte = false; // l'écriture fonctionne : on réarme pour la prochaine fois.
       return false;

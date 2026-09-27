@@ -65,7 +65,7 @@ import { resolveScenario, resolveNode } from './ids/resolve';
 import { relanceurDeCampagnes } from './campaign/enqueue';
 import { creerAnnonceOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { PgIntegrationBatchStore } from './signaux/integration-batch.pg';
-import { PgSalesforceStore, type ReglagesSalesforce } from './salesforce/store.pg';
+import { PgSalesforceStore } from './salesforce/store.pg';
 import { creerClientSalesforce } from './salesforce/client';
 import { connecter as connecterSalesforce, deconnecter as deconnecterSalesforce } from './salesforce/connexion';
 import type { SalesforceRouteDeps } from './http/salesforce';
@@ -152,7 +152,7 @@ import { MetaPubsClient, sansPrefixeAct, retirerAncienAcces, type EtatComptePub 
 import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub, ConnexionPubIncomplete } from './http/pubs';
 import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { PgPublicitesStore } from './pubs/publicites.pg';
-import { PgBrouillonsPubStore, type ChampsBrouillon } from './pubs/brouillons.pg';
+import { PgBrouillonsPubStore } from './pubs/brouillons.pg';
 import { creerLaPublicite, publierLaPublicite, type DemandeCreation } from './pubs/creation';
 import { entonnoir, ISSUES_NON_PRISES_EN_CHARGE } from './pubs/entonnoir';
 import { estJetonRefuse } from './meta/graph';
@@ -167,7 +167,6 @@ import { lireInventaireMba } from './mba/assistant/inventaire';
 import { PgDepenseStore } from './assistant/budget';
 import { PgHistoriqueStore } from './reglages/historique.pg';
 import { magasinPiecesJointes } from './mba/assistant/pieces-jointes';
-import type { LigneHistorique } from './reglages/historique';
 import { PgTestRunStore } from './agent/test-runs.pg';
 import { enTetesAuthSource } from './agent/http-cible';
 import { creerEprouverSource } from './agent/eprouver-source';
@@ -229,7 +228,7 @@ async function main(): Promise<void> {
   const espacesBatch = cacheCourt<ReadonlySet<string>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
   const emetteur = creerEmetteur({
     destinations: [{ file: FILE_SIGNAUX_BATCH, espacesActifs: () => espacesBatch.lire('actifs', () => integrationBatch.espacesActifs()) }],
-    enfiler: (file, job, opts) => queue.enqueue(file, job, opts),
+    queue,
     // eslint-disable-next-line no-console
     log: (m) => console.warn(m),
   });
@@ -363,7 +362,7 @@ async function main(): Promise<void> {
   const provisionCle: DepsProvisionCle | null = config.VERCEL_API_TOKEN !== '' && config.VERCEL_TEAM_ID !== ''
     ? {
       cles: clesGateway,
-      solde: (tenant) => credits.solde(tenant),
+      credits,
       nomEspace: async (tenant) => {
         const r = await pool.query<{ name: string }>('select name from tenants where id = $1', [tenant]);
         return r.rows[0]?.name ?? null;
@@ -416,7 +415,7 @@ async function main(): Promise<void> {
   const traductionStore = new PgTraductionStore(pool);
   const traducteur = gateway && config.TRADUCTION_MODELE
     ? creerTraducteur({
-      completer: (input) => gateway.completer(input),
+      client: gateway,
       modele: config.TRADUCTION_MODELE,
       cleDisponible: async (tenantId) => (await clesGateway.lire(tenantId)) !== null,
     })
@@ -439,7 +438,7 @@ async function main(): Promise<void> {
   // smsmode (`traiterRapportRcs`). L'envoi a le sien dans `rcsStack`.
   const rcsJoignabilite = new PgReachabilityStore(pool);
   const emailResolver = new EmailAccountResolver({
-    getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
+    comptes: emailAccounts,
     buildTransport: buildEmailTransport,
   });
   const transport = new FetchTransport();
@@ -465,8 +464,7 @@ async function main(): Promise<void> {
   const esCredentialsStore = new PgEmbeddedSignupStore(pool);
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,
-    getCredentialsByWaba: (w) => esCredentialsStore.getCredentialsByWaba(w),
-    markTokenInvalid: (w) => esCredentialsStore.markTokenInvalid(w),
+    credentials: esCredentialsStore,
     decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
     fallbackToken: config.META_ACCESS_TOKEN,
   });
@@ -483,17 +481,14 @@ async function main(): Promise<void> {
       config.PHONE_RATE_PER_MINUTE_MAX,
       depsPorteDebitPg(pool),
     ),
-    numeroDelie: (pn) => gardeNumeroDelie.estDelie(pn),
+    numerosDelies: gardeNumeroDelie,
   });
 
   /**
    * Rendre le fil à l'agent de Meta. Même module que le balayage du worker (`src/inbox/controle-du-fil.ts`),
    * pour que le bouton « rendre la main » de l'Inbox le rende aussi chez Meta, pas seulement dans notre état.
    */
-  const controleDuFil = {
-    numeroDuTenant: (t: string) => repo.getTenantPhoneNumberId(t),
-    clientMba: (t: string) => metaFactory.mbaClientForTenant(t),
-  };
+  const controleDuFil = { numeros: repo, meta: metaFactory };
   const rendreLeFilAuMba = creerRendreLeFil(controleDuFil);
   /**
    * Prendre le fil à l'agent de Meta, sans écrire au client : sans ce geste, Meta continuerait de router les
@@ -641,15 +636,15 @@ async function main(): Promise<void> {
    * vivent dans `envoyerRcsLibre`, testée ; ce bloc ne fait que brancher.
    */
   const depsRcsLibre: DepsRcsLibre = {
-    agentIdForTenant: (t) => workflowRuntime.rcsStack.agents.agentIdForTenant(t),
+    agents: workflowRuntime.rcsStack.agents,
     estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
     estDesabonneRcs: (t, e164) => workflowRuntime.rcsStack.optout.isOptedOut(t, e164),
     aConsentiOuEcrit: (t, waId) => contactStore.aConsentiOuEcritParWaId(t, waId),
-    lireJoignabilite: (agentId, e164) => rcsJoignabilite.get(agentId, e164),
-    lireMessageRcs: (t, id) => rcsMessageStore.getById(t, id),
+    joignabilite: rcsJoignabilite,
+    messages: rcsMessageStore,
     variablesDeLaFiche: async (t, waId) => contactVars(await contactStore.getResolvableByPhone(t, waId) ?? {}),
     jetonDuContact: async (t, waId) => (await trackedLinkStore.jetonPourE164(t, waId, fabriquerJeton).catch(() => null)) ?? undefined,
-    envoyer: (t, agentId, waId, msg, id, jeton) => workflowRuntime.rcsStack.sender.sendTo(t, agentId, waId, msg, id, jeton),
+    sender: workflowRuntime.rcsStack.sender,
     nouvelId: () => randomUUID(),
     maintenant: () => Date.now(),
   };
@@ -661,8 +656,8 @@ async function main(): Promise<void> {
    * parce qu'il ne traverse pas les spreads qui suivent.
    */
   const depsRepondre = {
-    getConversationContext: (id: string, tenant: string) => inboxStore.getConversationContext(id, tenant),
-    getTenantPhoneNumberId: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
+    inbox: inboxStore,
+    repo,
     sendReply: async (tenant: string, phoneNumberId: string, to: string, text: string) => {
       const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token par tenant, repli global
       return (await client.sendText(to, text)).messageId;
@@ -672,10 +667,6 @@ async function main(): Promise<void> {
      * une origine machine), pas par l'absence de cette dépendance, que le type exige partout.
      */
     estDesabonne: (tenant: string, waId: string) => contactStore.estDesabonneParWaId(tenant, waId),
-    // `redaction` est transmise : l'oublier ne casserait rien de visible (une flèche à neuf paramètres reste
-    // assignable à un contrat qui en déclare dix) et la rédaction d'origine serait perdue.
-    recordOutbound: (...[id, body, msgId, origine, type, cat, name, sender, canal, redaction]: Parameters<DepsRepondre['recordOutbound']>) =>
-      inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
     /**
      * Qui écrit prend le fil : le scénario cesse d'avancer tout seul et l'agent de Meta cesse de répondre.
      * Écrire suffit côté Meta (« Sending a message to a conversation takes control implicitly », et mesuré) :
@@ -718,21 +709,16 @@ async function main(): Promise<void> {
       users: new PgUserAuthStore(pool),
       secret: config.AUTH_SECRET,
       // Re-vérif par requête : compte révoqué/supprimé -> 401 immédiat, rôle frais depuis la base.
+      // Un rappel et non une tranche : c'est `makeRequireAuth` (`src/server.ts`) qui le consomme.
       getUserState: (userId) => userStore.getAuthState(userId),
-      // Inscription libre, reset et changement de mot de passe.
-      createTenantWithAdmin: (name, admin) => userStore.createTenantWithAdmin(name, admin),
-      setPassword: (userId, hash) => userStore.setPassword(userId, hash),
-      touchLastLogin: (userId) => userStore.touchLastLogin(userId),
-      getPasswordHash: (userId) => userStore.getPasswordHash(userId),
-      motDePasseDeLAdresse: (email) => userStore.motDePasseDeLAdresse(email),
-      sessionUser: (userId) => userStore.getSessionUser(userId),
+      // Inscription libre, reset et changement de mot de passe, liaison Google par adresse.
+      comptes: userStore,
       tokens: authTokenStore,
       appUrl: config.APP_URL,
       resetTtlMs: config.RESET_TOKEN_TTL_MS,
       // Se connecter avec Google : client public (bouton front) + vérif serveur du jeton ID + liaison par email.
       googleClientId: config.GOOGLE_CLIENT_ID,
       verifyGoogle: (idToken) => verifyGoogleIdToken(idToken, config.GOOGLE_CLIENT_ID),
-      getUserByEmail: (email) => userStore.getByEmail(email),
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
       // Le second facteur : obligatoire pour les admins, à la connexion, à l'inscription et à l'invitation.
       mfa: mfaStore,
@@ -742,10 +728,6 @@ async function main(): Promise<void> {
       contacts: contactStore,
       userFields: fieldStore,
       defaultCountry: config.DEFAULT_COUNTRY as CountryCode,
-      listContacts: (tenantId, limit, offset, tag) => contactStore.list(tenantId, limit, offset, tag),
-      queryContacts: (tenantId, filters, limit, offset) => contactStore.query(tenantId, filters, limit, offset),
-      countContacts: (tenantId, filters) => contactStore.count(tenantId, filters),
-      contactIdsForFilters: (tenantId, filters) => contactStore.idsForFilters(tenantId, filters),
       audit: auditSink,
     },
     campaigns: {
@@ -755,12 +737,9 @@ async function main(): Promise<void> {
       // Palier d'envoi du numéro, pour avertir avant un lancement plus gros que ce que Meta laissera passer
       // en 24 h. Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
       getMessagingLimitTier: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.messagingLimitTier ?? null,
-      phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       // La même résolution de cible que les actions en masse du mini-CRM : par l'intention, pas par une liste
       // d'identifiants qui ne tiendrait pas dans le corps de la requête.
-      // `limite` doit être relayée : une flèche à deux paramètres est assignable à un contrat qui en déclare
-      // trois, le troisième serait avalé en silence et la route retomberait sur le plafond technique du store.
-      contactIdsForTarget: (tenant, target, limite) => contactStore.contactIdsForTarget(tenant, target, limite),
+      contacts: contactStore,
       // Le plafond de taille sur le chemin « tous les contacts », borné à `limite` : il fige son jeu
       // d'identifiants. `{ filters: {} }` sélectionne l'espace entier, et les contacts bloqués sont écartés au
       // chargement (`listContactsForBuildByIds`).
@@ -768,32 +747,14 @@ async function main(): Promise<void> {
       plafondDestinataires: config.CAMPAIGN_MAX_RECIPIENTS,
       // 🔴 Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
       // donc c'est ce contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
-      rcsAgentBelongsToTenant: (agentId, tenant) => workflowRuntime.rcsStack.agents.belongsToTenant(agentId, tenant),
-      listRcsAgents: (tenant) => workflowRuntime.rcsStack.agents.listForTenant(tenant),
+      rcs: workflowRuntime.rcsStack.agents,
       // Garde d'un étage e-mail de la chaîne : `getById` est scopée tenant ET écarte les modèles supprimés
       // (suppression douce), donc elle rend null dans les deux cas où la clé étrangère aurait rendu une 5xx.
       emailTemplateBelongsToTenant: async (id, tenant) => (await emailTemplates.getById(tenant, id)) !== null,
-      campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
       // Campagne au fil de l'eau : le webhook doit appartenir à l'espace et être actif. Même garde que pour le
       // numéro Meta et l'agent RCS, sur la troisième porte d'entrée des destinataires.
       webhookUsableByTenant: (id, tenant) => webhookStore.usableByTenant(tenant, id),
-      stopWebhookCampaign: (id, tenant) => repo.stopWebhookCampaign(id, tenant),
-      // Arrêt d'urgence d'un envoi en cours, et son pendant : la reprise lève la pause avant d'enfiler le run.
-      // Les deux vont ensemble, câbler l'un sans l'autre donne soit un bouton sans effet, soit une campagne
-      // qu'on ne peut plus relancer.
-      pauseCampaign: (id, tenant) => repo.pauseCampaign(id, tenant),
-      resumeCampaign: (id, tenant) => repo.resumeCampaign(id, tenant),
-      getRunSizing: (id) => repo.getRunSizing(id),
-      scheduleCampaign: (id, tenant, when) => repo.scheduleCampaign(id, tenant, when),
-      cancelSchedule: (id, tenant) => repo.cancelSchedule(id, tenant),
       getWorkflowGraph: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant))?.graph ?? null,
-      listCampaigns: (tenant, opts) => repo.listCampaignSummaries(tenant, opts),
-      archiveCampaign: (id, tenant) => repo.archiveCampaign(id, tenant),
-      unarchiveCampaign: (id, tenant) => repo.unarchiveCampaign(id, tenant),
-      deleteDraftCampaign: (id, tenant) => repo.deleteDraftCampaign(id, tenant),
-      getCampaignDetail: (id, tenant) => repo.getCampaignDetail(id, tenant),
-      resetRecipientForRetry: (tenant, id, rid) => repo.resetRecipientForRetry(tenant, id, rid),
-      listPhoneNumbers: (tenant) => repo.listPhoneNumbers(tenant),
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
       // Borne sûre pour l'estimation de durée : ces deux routes enfilent sans savoir le canal, et une
       // estimation trop optimiste fait expirer le job en plein envoi (pg-boss le rejoue, le débit double).
@@ -801,11 +762,7 @@ async function main(): Promise<void> {
     },
     // Redirection publique des liens tracés. Le tenant vient du code retrouvé en base, jamais de l'URL.
     links: {
-      getByCode: (code) => trackedLinkStore.getByCode(code),
-      recordClick: (code, tenant, contactId) => trackedLinkStore.recordClick(code, tenant, contactId),
-      // Qui a cliqué. L'espace vient du lien, jamais de l'URL : un jeton d'un autre client ne doit pas
-      // s'attribuer ce clic.
-      contactParJeton: (tenant, jeton) => trackedLinkStore.contactParJeton(tenant, jeton),
+      liens: trackedLinkStore,
       // Le clic attribué devient un signal. L'espace vient du lien, comme pour le clic.
       signalerClic: (tenant, contactId, code) => emetteur.emettreSignal(tenant, signalDuClic(contactId, code)),
     },
@@ -814,8 +771,7 @@ async function main(): Promise<void> {
     webhookEntrant: {
       limiter: new RateLimiter(config.WEBHOOK_IN_RATE_LIMIT_MAX, config.WEBHOOK_IN_RATE_LIMIT_WINDOW_MS),
       budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
-      getByCode: (code) => webhookStore.getByCode(code),
-      recordCall: (tenant, id, payload, cree) => webhookStore.recordCall(tenant, id, payload, cree),
+      webhooks: webhookStore,
       trouverWaId: async (tenant, waId) => ((await contactStore.findIdByWaId(tenant, waId)) ? waId : null),
       ecrireContact: async (tenant, entree) => {
         const [res] = await upsertContactsFromApi(
@@ -841,31 +797,21 @@ async function main(): Promise<void> {
     },
     webhooksAdmin: {
       audit: auditSink,
-      list: (tenant) => webhookStore.list(tenant),
-      get: (tenant, id) => webhookStore.get(tenant, id),
-      create: (tenant, input) => webhookStore.create(tenant, input),
-      update: (tenant, id, input) => webhookStore.update(tenant, id, input),
-      remove: (tenant, id) => webhookStore.remove(tenant, id),
-      rotateSecret: (tenant, id) => webhookStore.rotateSecret(tenant, id),
-      clearSecret: (tenant, id) => webhookStore.clearSecret(tenant, id),
-      forgetPayload: (tenant, id) => webhookStore.forgetPayload(tenant, id),
+      webhooks: webhookStore,
       workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
-      campagneVivante: (tenant, id) => repo.webhookFeedsLiveCampaign(tenant, id),
+      repo,
       baseUrl: adressesApi.avecPrefixe,
     },
     templates: {
-      templatesFor: (tenant) => metaFactory.templateClientForTenant(tenant), // token par tenant, repli global
-      getWabaId: (tenant) => repo.getTenantWabaId(tenant),
+      meta: metaFactory, // token par tenant, repli global
+      repo,
       getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
-      listActiveCampaignsForTemplate: (tenant, name, language) => repo.listActiveCampaignsForTemplate(tenant, name, language),
-      saveParamHints: (tenant, name, language, hints) => templateHintStore.save(tenant, name, language, hints),
-      getParamHints: (tenant, name, language) => templateHintStore.get(tenant, name, language),
-      removeParamHints: (tenant, name) => templateHintStore.removeByName(tenant, name),
+      indices: templateHintStore,
       // Traçage des liens : l'adresse publique est celle qui part dans les messages, donc elle suit l'API
       // (`adressesPubliques`), pas la console.
       tracking: {
         allocate: (tenant, cible, destination, avecJeton) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination, avecJeton),
-        confirm: (tenant, codes) => trackedLinkStore.confirm(tenant, codes),
+        liens: trackedLinkStore,
         // Le lien soumis porte un suffixe variable, qui fera voyager le jeton du destinataire (qui a cliqué).
         // Les templates déjà approuvés gardent l'ancienne forme, leur URL étant figée chez Meta.
         lienDe: (code, avecJeton) => (avecJeton ? lienTraceAvecJeton(adressesApi.racine, code) : lienDe(adressesApi.racine, code)),
@@ -882,40 +828,26 @@ async function main(): Promise<void> {
       },
     },
     inbox: {
-      // Les six dépendances de la réponse (fenêtre, désabonnement, envoi, trace, prise du fil) : `depsRepondre`.
+      // Les dépendances de la réponse (fenêtre, désabonnement, envoi, trace, prise du fil) : `depsRepondre`, dont
+      // `inbox`, le dépôt des conversations que les routes lisent aussi.
       ...depsRepondre,
-      listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
-      // « Ouvrir la conversation » depuis la fiche d'un contact du mini-CRM : trouve le fil, ou le crée.
-      ouvrirConversationDuContact: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
-      // 🔴 Effacer le contenu d'une conversation : réservé aux administrateurs par la garde de `server.ts`, et
-      // tracé au Journal des actions sans le numéro ni le texte (y écrire ce qu'on efface annulerait l'effacement).
-      effacerMessages: (tenant, id) => inboxStore.effacerMessages(tenant, id),
       audit: auditSink,
-      countATraiter: (tenant) => inboxStore.countATraiter(tenant),
-      // Les compteurs du menu de dossiers, plus la charge par membre, en une lecture.
-      compterConversations: (tenant) => inboxStore.compterConversations(tenant),
-      archiverConversation: (tenant, id, archive) => inboxStore.archiverConversation(tenant, id, archive),
-      signalerConversation: (tenant, id, signale, par) => inboxStore.signalerConversation(tenant, id, signale, par),
-      marquerTraitee: (tenant, id, traitee) => inboxStore.marquerTraitee(tenant, id, traitee),
       /**
        * 🔴 La clé maison paie la transcription (un service offert). Le résolveur par espace existe
        * (`clesGateway.lire`) : le jour où elle se refacture, c'est cette ligne, et elle seule.
        */
       ...(config.AI_GATEWAY_API_KEY && config.TRANSCRIPTION_MODELE ? {
         transcrireMessage: (tenant: string, messageId: string, conversationId?: string, cible?: LangueConsole | null) => transcrireMessage({
-          lireMessage: (t, m2, c2) => inboxStore.lireMessagePourTranscription(t, m2, c2),
-          // `langue` est transmise : l'oublier ne casserait rien de visible, mais on repaierait une traduction
-          // inutile sur chaque vocal déjà dans la langue du lecteur.
-          ecrireTranscription: (t, m2, texte, modele, langue) => inboxStore.ecrireTranscription(t, m2, texte, modele, langue),
+          messages: inboxStore,
           /**
            * 🔴 La traduction d'un vocal est sur le crédit du client, la transcription sur notre clé : deux
            * payeurs dans le même geste, parce que la traduction sert les conversations du client.
            */
           ...(traducteur ? {
-            traduire: (t, texte, cible2, source) => traducteur.traduire(t, texte, cible2, source),
+            traducteur,
             rangerTraduction: (t, m2, texte, langue) => traductionStore.ranger(t, null, [{ messageId: m2, texte, langue }]),
           } : {}),
-          telecharger: (mediaId, max) => mediaClient.telechargerEntrant(mediaId, max),
+          media: mediaClient,
           // Le transport du modèle (120 s), pas le transport général (30 s) : un fichier de 2 Mo part en base64
           // (2,7 Mo à téléverser), et le défaut couperait les transcriptions les plus longues.
           transport: new FetchTransport(HTTP_TIMEOUT_MODELE_MS),
@@ -933,33 +865,25 @@ async function main(): Promise<void> {
        * (`MEDIA_ENTRANT_TAILLE_MAX_KO`), pas les 2 Mo de la transcription.
        */
       lireMediaMessage: (tenant, messageId, conversationId) => lireMediaRecu({
-        lireMessage: (t, m2, c2) => inboxStore.lireMessagePourTranscription(t, m2, c2),
-        telecharger: (mediaId, max) => mediaClient.telechargerEntrant(mediaId, max),
+        messages: inboxStore,
+        media: mediaClient,
         tailleMaxOctets: config.MEDIA_ENTRANT_TAILLE_MAX_KO * 1024,
       }, tenant, messageId, conversationId),
-      getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
-      setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
-      // La prise d'une conversation du pot commun par un agent : l'écriture conditionnelle, le réglage de
-      // l'espace qui l'autorise, et la liste de l'encadrement pour le sélecteur.
-      prendreSiLibre: (tenant, id, userId) => inboxStore.prendreSiLibre(tenant, id, userId),
+      // La prise d'une conversation du pot commun par un agent : le réglage de l'espace qui l'autorise.
       agentsPeuventPrendre: async (tenant) => (await settingsStore.get(tenant)).agentsPeuventPrendre,
-      membresPourAffectation: (tenant) => inboxStore.membresPourAffectation(tenant),
-      getMessages: (id, apres) => inboxStore.getMessages(id, apres),
       /**
-       * La traduction des conversations. Les trois lignes sont montées ensemble ou pas du tout : sinon la
+       * La traduction des conversations. Les deux membres sont montés ensemble ou pas du tout : sinon la
        * console proposerait un bouton qui rendrait 503, ou croirait la traduction branchée.
        */
       ...(traducteur ? {
         traduireFil: (tenant: string, conversationId: string, messages: ConversationMessage[], cible: LangueConsole) => traduireFil({
           traducteur,
-          ranger: (t, c, trads) => traductionStore.ranger(t, c, trads),
-          apprendreLangueContact: (t, c, langue) => traductionStore.apprendreLangueContact(t, c, langue),
+          traductions: traductionStore,
           // Une écriture d'appoint qui échoue ne prive personne de sa lecture, mais fait repayer la même
           // traduction à chaque ouverture : sans ce journal, la fuite ne se verrait que sur la facture.
           onErreur: (err, quoi) => { journaliser('error', 'traduction_ecriture_impossible', { err, quoi, tenantId: tenant }); },
         }, { tenantId: tenant, conversationId, messages, cible }),
-        traduireSortant: (tenant: string, texte: string, cible: LangueConsole) => traducteur.traduire(tenant, texte, cible),
-        traductionDisponible: (tenant: string) => traducteur.disponible(tenant),
+        traducteur,
       } : {}),
       /**
        * Variables d'un template résolues sur la fiche du contact ouvert, avec le libellé du champ qui les
@@ -1005,7 +929,6 @@ async function main(): Promise<void> {
         if (!reglages.mbaEnabled) return;
         await prendreLeFilAuMba(tenant, waId);
       },
-      getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
       /**
        * L'opérateur rend la main : au scénario, ou à l'agent de Meta quand le client l'a allumé.
        * Meta d'abord, notre état ensuite, et seulement s'il a confirmé : un état local qui annonce ce que Meta
@@ -1044,9 +967,7 @@ async function main(): Promise<void> {
         return 'mba';
       },
       /** Lancement d'un scénario depuis l'Inbox, par le chemin partagé avec l'agent de Meta. */
-      startWorkflow: (tenant, workflowId, waId, windowOpen) => lancerScenarioPourContact(tenant, workflowId, waId, windowOpen),
-      countUnread: (tenant, acteur) => inboxStore.countUnread(tenant, acteur),
-      markConversationRead: (tenant, conversationId) => inboxStore.markConversationRead(tenant, conversationId),
+      startWorkflow: lancerScenarioPourContact,
       sendTemplateMessage: async (tenant, phoneNumberId, to, tpl) => {
         const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token par tenant, repli global
         const components = buildTemplateComponents({
@@ -1094,9 +1015,8 @@ async function main(): Promise<void> {
       },
     } : {}),
     stats: {
-      getDashboard: (tenant, range) => statsStore.getDashboard(tenant, range),
-      volumesParCanal: (tenant, jours) => statsStore.volumesParCanal(tenant, jours),
-      getTemplateBreakdown: (tenant, range) => statsStore.getTemplateBreakdown(tenant, range),
+      stats: statsStore,
+      conversationStats: conversationStatsStore,
       // La même grille que les prix affichés au-dessus : deux lectures donneraient deux marges. `tenant` n'est
       // plus lu (une seule grille pour tous les espaces), la flèche le garde pour le contrat de la route.
       margeTemplate: async () => grilleDepuisLigne(await statsStore.grillePrixGlobale()).margeTemplate,
@@ -1117,8 +1037,6 @@ async function main(): Promise<void> {
         if (!brut) return brut;
         return pricingFacture(brut, grilleDepuisLigne(ligne));
       },
-      getCampaignFunnel: (tenant, campaignId) => statsStore.getCampaignFunnel(tenant, campaignId),
-      getErrorBreakdown: (tenant, range, templateName) => statsStore.getErrorBreakdown(tenant, range, templateName),
       // Le même journal que l'écran d'exploitation (`/parametres`), avec le code et la plage en filtre : deux
       // requêtes sur des populations voisines feraient se contredire deux écrans de même titre.
       getErrorContacts: (tenant, range, code, filter) => erreursLivraison.lister(tenant, {
@@ -1326,31 +1244,12 @@ async function main(): Promise<void> {
           return evenements;
         }
       },
-      getConversationSummary: (tenant, range) => conversationStatsStore.getSummary(tenant, range),
-      listAnalyzedConversations: (tenant, range, filters) => conversationStatsStore.listAnalyzed(tenant, range, filters),
-      getNuageQualitatif: (tenant, range) => conversationStatsStore.getNuageQualitatif(tenant, range),
-      /**
-       * Les journées de l'écran « Analyse des conversations », agrégées en base (bornées par le nombre de
-       * jours de la période).
-       * 🔴 `joursAnalyse` et pas `parJour` : la lecture fusionnée, où les vraies données font foi tant qu'elles
-       * existent et les agrégats comblent au-delà de la rétention. `parJour` seul ferait disparaître
-       * l'historique de l'écran au passage de la purge.
-       */
-      getJoursAnalyse: (tenant, range) => conversationStatsStore.joursAnalyse(tenant, range),
     },
-    workflowReports: {
-      listReports: (tenant) => reportStore.list(tenant),
-      saveReport: (tenant, input) => reportStore.save(tenant, input),
-      removeReport: (tenant, id) => reportStore.remove(tenant, id),
-    },
+    workflowReports: reportStore,
     settings: {
-      getSettings: (tenant) => settingsStore.get(tenant),
+      reglages: settingsStore,
       // Canal RCS allumé dès qu'un agent est rattaché au tenant : l'interface suit l'état réel du dépôt.
-      rcsEnabledFor: (tenant) => workflowRuntime.rcsStack.agents.hasAgent(tenant),
-      setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
-      setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
-      // L'interrupteur HubSpot de l'espace. La route refuse de l'éteindre avec un portail relié.
-      setHubspotActif: (tenant, actif) => settingsStore.setHubspotActif(tenant, actif),
+      rcs: workflowRuntime.rcsStack.agents,
       /**
        * Un portail HubSpot est-il lié à cet espace ? Lecture locale : le mapping vit dans le schéma `mmhs` de
        * la même base (jointure indexée sur `tenant_id`), pas un aller-retour vers le connecteur.
@@ -1363,27 +1262,19 @@ async function main(): Promise<void> {
         if (typeof err === 'object' && err !== null && 'code' in err && err.code === '42P01') return false;
         throw err;
       }),
-      setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
-      setMbaHandoffMode: (tenant, mode) => settingsStore.setMbaHandoffMode(tenant, mode),
       // Applique le choix chez Meta immédiatement. Mêmes helpers que le balayage horaire, pour que « je viens
       // de choisir » et « l'heure a changé » écrivent exactement la même chose.
       applyMbaHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(
-        { clientFor: (t) => metaFactory.mbaClientForTenant(t), phoneNumberFor: (t) => repo.getTenantPhoneNumberId(t) },
+        { numeros: repo, meta: metaFactory },
         tenant,
         enabled,
       ),
-      setTimezone: (tenant, tz) => settingsStore.setTimezone(tenant, tz),
-      setBusinessHours: (tenant, hours) => settingsStore.setBusinessHours(tenant, hours),
       /**
        * Le connecteur prévenu à chaque désabonnement : on ne rend que l'identifiant et le libellé, l'écran du
        * Consentement a besoin de nommer un appel, pas de connaître son adresse, ses en-têtes ni ce qu'il envoie.
        */
       listerRequetesConnecteur: async (tenant) => (await agentRequetes.lister(tenant)).map((r) => ({ id: r.id, label: r.label })),
-      setOptoutRequestId: (tenant, requestId) => settingsStore.setOptoutRequestId(tenant, requestId),
-      setMentionIaFrequence: (tenant, frequence) => settingsStore.setMentionIaFrequence(tenant, frequence),
-      setAgentTransfertMode: (tenant, mode) => settingsStore.setAgentTransfertMode(tenant, mode),
-      setAgentsPeuventPrendre: (tenant, actif) => settingsStore.setAgentsPeuventPrendre(tenant, actif),
-      listerAgentsPourConformite: (tenant) => agentStore.listerPourConformite(tenant),
+      agents: agentStore,
     },
     // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.
     ...(config.HUBSPOT_SERVICE_URL
@@ -1414,21 +1305,14 @@ async function main(): Promise<void> {
     },
     admin: {
       audit: auditSink,
-      listUsers: (tenant) => userStore.list(tenant),
-      setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
-      setUserDisabled: (tenant, userId, disabled) => userStore.setDisabled(tenant, userId, disabled),
-      deleteUser: (tenant, userId) => userStore.deleteUser(tenant, userId),
-      createPendingUser: (tenant, email, role, name) => userStore.createPending(tenant, email, role, name),
-      setUserName: (tenant, userId, name) => userStore.setName(tenant, userId, name),
+      users: userStore,
       createInviteToken: (userId) => authTokenStore.create('invite', userId, config.INVITE_TOKEN_TTL_MS),
       // Personnalisation de l'email d'invitation : nom de l'invitant (repli email) + nom de l'espace.
       getInviterName: async (userId) => {
         const u = await userStore.getById(userId);
         return u ? (u.name ?? u.email) : null;
       },
-      getWorkspaceName: (tenantId) => userStore.getTenantName(tenantId),
-      renommerEspace: (tenantId, nom) => userStore.setTenantName(tenantId, nom),
-      reinitialiserMfa: (tenantId, userId) => mfaStore.reinitialiserDansEspace(tenantId, userId),
+      mfa: mfaStore,
       appUrl: config.APP_URL,
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },
@@ -1453,16 +1337,15 @@ async function main(): Promise<void> {
         plafondEuros: config.ASSISTANT_PLAFOND_EUROS_MOIS,
         modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
         tauxEurParDollar: config.EUR_PER_USD,
-        agentIdDuTenant: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
+        numeros: repo,
         pieces: piecesJointesMba,
         completer: (i: Parameters<GatewayChatClient['completer']>[0]) =>
           gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
-        application: (tenant: string, acteur: { id: string | null; email: string | null }) => ({
-          numeroDuTenant: (t: string) => repo.getTenantPhoneNumberId(t),
-          client: (t: string) => metaFactory.mbaClientForTenant(t),
-          journaliser: (t: string, ligne: LigneHistorique) => historiqueStore.ecrire(t, ligne),
-          // `t` et non `tenant` : c'est l'espace que `appliquer` transmet, le seul qui fasse foi ici.
-          pieceJointe: async (t: string, jeton: string) => piecesJointesMba.reprendre(t, jeton),
+        application: (_tenant: string, acteur: { id: string | null; email: string | null }) => ({
+          numeros: repo,
+          meta: metaFactory,
+          historique: historiqueStore,
+          pieces: piecesJointesMba,
           acteur,
         }),
       },
@@ -1482,32 +1365,25 @@ async function main(): Promise<void> {
         cible: l.cible, libelle: l.libelle, avant: l.avant, apres: null,
         origine: 'formulaire', acteurEmail: null, acteurId: l.acteurId,
       }),
-      clientFor: (tenant) => metaFactory.mbaClientForTenant(tenant),
-      phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
-      fetchUrl: fetchUrlBorne(),
+      meta: metaFactory,
       // Le numéro se résout ici, côté serveur : c'est ce qui rend la route d'activation possible (côté
       // navigateur, l'état du compte n'est pas toujours arrivé au moment du clic).
-      numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
-      ecrireDrapeauMba: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
-      messagesEcrits: (tenant) => statsStore.messagesEcritsParMba(tenant),
+      repo,
+      fetchUrl: fetchUrlBorne(),
+      reglages: settingsStore,
+      stats: statsStore,
     },
     // Agents IA, en lecture : la palette du builder a besoin de la liste pour proposer le bloc.
     agents: {
-      listActifs: (tenant) => agentStore.listActifs(tenant),
-      listToutes: (tenant) => agentStore.listToutes(tenant),
-      complet: (tenant, id) => agentStore.complet(tenant, id),
-      create: (tenant, label, mention, modele) => agentStore.create(tenant, label, mention, modele),
-      patch: (tenant, id, p) => agentStore.patch(tenant, id, p),
-      remove: (tenant, id) => agentStore.remove(tenant, id),
+      agents: agentStore,
       // Le modèle d'un agent neuf vient de la configuration serveur ; le client choisira ensuite dans l'écran
       // de réglage. `AGENT_MODEL` d'abord, `LLM_MODEL` en repli seulement (raison dans `src/config.ts`).
       modeleParDefaut: config.AGENT_MODEL || config.LLM_MODEL,
       // Lecture seule : le client voit ce qui lui reste, il ne se recharge pas lui-même (cf. /ops).
-      soldeAgent: (tenant) => credits.solde(tenant),
+      credits,
       // Absente quand le provisionnement est éteint : la création d'agent se passe alors de clé propre.
       ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
-      consommationAgent: (tenant, agentId, jours) => agentSessions.consommation!(tenant, agentId, jours),
-      messagesAgent: (tenant, agentId, jours) => agentSessions.messagesTenus!(tenant, agentId, jours),
+      sessions: agentSessions,
       // Le blocage dur avant activation (un agent activé finira par écrire à de vrais clients) : il lit la
       // fiche, la connaissance, et les outils actifs avec leurs handlers, parce que le compte seul ne dit pas
       // quel outil précis manque.
@@ -1668,11 +1544,11 @@ async function main(): Promise<void> {
       // 🔴 Un essai consomme pour de vrai : les outils à effet sont simulés, l'appel de modèle ne l'est pas.
       // Même solde et même garde qu'en production, sinon la console offrirait une porte gratuite sur un
       // compte prépayé. Le mouvement n'a pas de session : la note l'explique dans le journal.
-      solde: (tenant) => credits.solde(tenant),
+      credits,
       debiter: async (tenant, montant, note) => { await credits.debiter(tenant, montant, { note }); },
       ...(gateway ? {
         cerveau: {
-          completer: (i) => gateway.completer(i),
+          client: gateway,
           // Point de lecture partagé avec le tour de production : le bac à sable montre exactement ce que la
           // production ferait, modèle et politiques compris.
           contexte: (tenant, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, tenant, agentId),
@@ -1688,7 +1564,7 @@ async function main(): Promise<void> {
             resolveurs: resolveursSimulation({ connaissance: knowledgeStore, ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}) }),
             // Rien à compter : sans session, pas de compteur. Le plafond d'appels du tour est tenu en mémoire
             // par la boucle du cerveau.
-            compterAppel: async () => {},
+            sessions: { compterAppel: async () => {} },
             /**
              * 🔴 Le bac à sable n'exécute aucun geste, même doctrine que `connecteurSimule` : un essai ne doit
              * pas toucher les données réelles d'un client (vrai tag, vraie fiche).
@@ -1705,11 +1581,7 @@ async function main(): Promise<void> {
     // Base de connaissance d'un agent : la seule source que l'agent a le droit d'utiliser. `fetchUrl` porte
     // la garde SSRF (le serveur vit dans le réseau Docker du VPS) et le plafond de taille.
     agentKnowledge: {
-      lister: (tenant, agentId) => knowledgeStore.lister(tenant, agentId),
-      creer: (tenant, agentId, fiche) => knowledgeStore.creer(tenant, agentId, fiche),
-      modifier: (tenant, agentId, ficheId, patch) => knowledgeStore.modifier(tenant, agentId, ficheId, patch),
-      supprimer: (tenant, agentId, ficheId) => knowledgeStore.supprimer(tenant, agentId, ficheId),
-      remplacerSource: (tenant, agentId, source, fiches) => knowledgeStore.remplacerSource(tenant, agentId, source, fiches),
+      connaissance: knowledgeStore,
       /**
        * 🔴 Pas de corbeille : une fiche supprimée disparaît de `agent_knowledge`, et cette ligne est le seul
        * exemplaire de ce que le robot savait dire, et la seule réponse à « qui l'a retirée ? ». Les
@@ -1725,20 +1597,8 @@ async function main(): Promise<void> {
     // Outils d'un agent. L'activation et l'autonomie portent le nom de qui les a posées (exigé en base) :
     // c'est ce qui rend un incident instruisable.
     agentTools: {
-      listToutes: (tenant, agentId) => toolCatalog.listToutes(tenant, agentId),
-      ajouter: (tenant, agentId, outil) => toolCatalog.ajouter(tenant, agentId, outil),
-      // Un outil de connecteur, sur une source du tenant. La source est vérifiée ici (404) plutôt que par la
-      // clé étrangère, qui lèverait en 500.
-      ajouterConnecteur: (tenant, agentId, outil) => toolCatalog.ajouterConnecteur(tenant, agentId, outil),
-      // La requête est lue, pas crue sur parole : le risque plancher et le résumé de ce qui sera envoyé en
-      // dérivent, et ils doivent décrire l'appel réel.
-      requetePourOutil: (tenant, requeteId) => agentRequetes.parId(tenant, requeteId),
-      patch: (tenant, agentId, id, p) => toolCatalog.patch(tenant, agentId, id, p),
-      activer: (tenant, agentId, id, actif, par) => toolCatalog.activer(tenant, agentId, id, actif, par),
-      autonomie: (tenant, agentId, id, autonome, par) => toolCatalog.autonomie(tenant, agentId, id, autonome, par),
-      // Détache de cet agent, ne supprime pas la définition : elle appartient à l'espace.
-      detacher: (tenant, agentId, id) => toolCatalog.detacher(tenant, agentId, id),
-      rattacher: (tenant, agentId, id) => toolCatalog.rattacher(tenant, agentId, id),
+      outils: toolCatalog,
+      requetes: agentRequetes,
       // Les règles d'arrêt viennent de la fiche : c'est d'elles que dérive l'énumération de « terminer ».
       sortiesDeLAgent: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
@@ -1755,7 +1615,7 @@ async function main(): Promise<void> {
      * dérivent.
      */
     mbaOutils: {
-      numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
+      repo,
       lister: (tenant, pn) => toolCatalog.listToutesConsommateur(tenant, consommateurMba(pn)),
       contexte: async (tenant, outils) => {
         // Les scénarios ne se lisent que si une ligne en désigne un : la liste porte les graphes complets.
@@ -1783,9 +1643,9 @@ async function main(): Promise<void> {
         const w = await workflowStore.getById(id, tenant);
         return w ? blocsProposables([{ id: w.id, name: w.name, graph: w.graph }]) : [];
       },
-      requete: (tenant, id) => agentRequetes.parId(tenant, id),
+      requetes: agentRequetes,
       champs: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
-      creerMaison: (tenant, pn, outil, par) => toolCatalog.ajouterMaisonPourMba(tenant, pn, outil, par),
+      outils: toolCatalog,
       // Deux gestes, comme l'ancienne route : créer, puis activer pour l'agent de Meta au nom de l'administrateur.
       creerConnecteur: async (tenant, pn, outil, par) => {
         const cree = await toolCatalog.ajouterConnecteurPourMba(tenant, pn, outil);
@@ -1793,10 +1653,8 @@ async function main(): Promise<void> {
         await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), cree.id, true, par);
         return { id: cree.id };
       },
-      modifierMaison: (tenant, pn, id, patch) => toolCatalog.patchMaisonPourMba(tenant, pn, id, patch),
       // `consommateurMba(pn)` et pas un agent : c'est lui qui borne la correction à un outil de ce consommateur.
       modifierConnecteur: (tenant, pn, id, patch) => toolCatalog.patchConsommateur(tenant, consommateurMba(pn), id, patch),
-      retirer: (tenant, pn, id) => toolCatalog.retirerDeMba(tenant, pn, id),
       reactiver: async (tenant, pn, id, par) =>
         (await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), id, true, par)) !== null,
     },
@@ -1809,7 +1667,7 @@ async function main(): Promise<void> {
      * notre serveur ; les valeurs du mini-CRM sont remplies par le relais (`src/http/mba-relais.ts`).
      */
     mbaPublication: {
-      numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
+      repo,
       relais: async (tenant) => {
         const base = adresseDuRelais();
         if (base === null) return null;
@@ -1829,7 +1687,7 @@ async function main(): Promise<void> {
       },
       /** Sorti en module pour être testé contre des faux (`src/mba/appliquer-publication.ts`). */
       appliquer: creerAppliquerGeste({
-        client: (tenant) => metaFactory.mbaClientForTenant(tenant),
+        meta: metaFactory,
         adresseDuRelais,
         outils: outilsPourMeta,
         cle: depsCleRelaisPour,
@@ -1842,48 +1700,30 @@ async function main(): Promise<void> {
      */
     agentMcp: {
       audit: auditSink,
-      listerServeurs: (tenant) => mcpStore.listerServeurs(tenant),
+      // 🔴 La suppression d'un serveur passe par `PgMcpStore`, jamais par `agentSources.supprimer`, un `delete` nu
+      // qui emporterait les outils et les consentements par cascade en rendant `true`.
+      mcp: mcpStore,
+      sources: agentSources,
       // Le même store que les connecteurs API : même table, secret chiffré au même endroit.
       creerServeur: (tenant, input) => agentSources.creer(tenant, { kind: 'mcp', ...input }),
-      // 🔴 Pas `agentSources.supprimer`, un `delete` nu qui emporterait les outils et les consentements par
-      // cascade en rendant `true`.
-      supprimerServeur: (tenant, id) => mcpStore.supprimerServeur(tenant, id),
-      pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
-      marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
-      outilsPourEcran: (tenant, sourceId) => mcpStore.outilsPourEcran(tenant, sourceId),
-      outilsDuServeur: (tenant, sourceId) => mcpStore.outilsDuServeur(tenant, sourceId),
-      nomsPris: (tenant) => mcpStore.nomsPris(tenant),
-      appliquer: (tenant, sourceId, e) => mcpStore.appliquer(tenant, sourceId, e),
       // La même lecture que pour les variables de requête : deux définitions de « ce champ existe »
       // finiraient par diverger.
       clesDeChamps: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
-      reglerOutil: (tenant, outilId, patch) => mcpStore.reglerOutil(tenant, outilId, patch),
     },
     // Les sources externes d'outils : l'adresse de base du système du client, son mode d'authentification et
     // son secret. Le secret est chiffré par le store, et aucune route ne le rend.
     agentSources: {
       audit: auditSink,
-      lister: (tenant) => agentSources.lister(tenant),
-      parId: (tenant, id) => agentSources.parId(tenant, id),
-      creer: (tenant, input) => agentSources.creer(tenant, input),
-      patch: (tenant, id, p) => agentSources.patch(tenant, id, p),
-      supprimer: (tenant, id) => agentSources.supprimer(tenant, id),
+      sources: agentSources,
       // Éprouver une source : un appel réel, le résultat écrit sur la ligne. Ses gardes (nature de la source,
       // adresse vérifiée avant l'appel et à la connexion, redirection refusée) vivent dans
       // `src/agent/eprouver-source.ts`, testé à part.
-      eprouver: creerEprouverSource({
-        pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
-        marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
-      }),
+      eprouver: creerEprouverSource({ sources: agentSources }),
     },
     // Les requêtes de connecteur : un appel mis au point une fois dans la bibliothèque, que l'outil d'un
     // agent désigne au lieu de le redécrire.
     agentRequetes: {
-      lister: (tenant) => agentRequetes.lister(tenant),
-      parId: (tenant, id) => agentRequetes.parId(tenant, id),
-      creer: (tenant, input) => agentRequetes.creer(tenant, input),
-      patch: (tenant, id, p) => agentRequetes.patch(tenant, id, p),
-      supprimer: (tenant, id) => agentRequetes.supprimer(tenant, id),
+      requetes: agentRequetes,
       /**
        * Ce qu'il faut pour éprouver une requête : l'adresse de base et les en-têtes d'authentification, par
        * le même point de passage que l'appel réel (`enTetesAuthSource`), sinon le test dirait « ça répond »
@@ -1908,53 +1748,29 @@ async function main(): Promise<void> {
       brancheeSurConsentement: async (tenant, requestId) => (await settingsStore.get(tenant)).optoutRequestId === requestId,
     },
     flows: {
-      flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token par tenant, repli global
-      getWabaId: (tenant) => repo.getTenantWabaId(tenant),
+      meta: metaFactory, // token par tenant, repli global
+      repo,
+      flows: flowStore,
       insertFlow: (tenantId, id, name, screens, ref, mapping, cta) => flowStore.insert({ id, tenantId, name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
-      listFlows: (tenant) => flowStore.list(tenant),
-      belongsTo: (flowId, tenant) => flowStore.belongsTo(flowId, tenant),
-      markPublished: (flowId, tenant) => flowStore.markPublished(flowId, tenant),
       ensureUserField: async (tenant, label, type) => { await ensureField(fieldStore, tenant, label, type); },
-      listUserFields: (tenant) => fieldStore.list(tenant),
+      champs: fieldStore,
       ensureOptinField: async (tenant) => { await ensureFieldByKey(fieldStore, tenant, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL, 'boolean'); },
-      getFlow: (flowId, tenant) => flowStore.getById(flowId, tenant),
       updateFlowRow: (tenant, id, name, screens, ref, mapping, cta) => flowStore.update(id, tenant, { name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
-      removeFlowRow: (flowId, tenant) => flowStore.remove(flowId, tenant),
       insertExternalFlow: (tenant, f) => flowStore.insertExternal({ ...f, tenantId: tenant }),
-      alignFlowFromMeta: (flowId, tenant, patch) => flowStore.alignFromMeta(flowId, tenant, patch),
     },
-    media: { uploadImage: (bytes, mime) => mediaClient.uploadImage(bytes, mime) },
-    tags: {
-      listTags: (tenant) => tagStore.listDistinct(tenant),
-      createTag: (tenant, name) => tagStore.create(tenant, name),
-      renameTag: (tenant, from, to) => tagStore.rename(tenant, from, to),
-      removeTag: (tenant, tag) => tagStore.remove(tenant, tag),
-    },
+    media: mediaClient,
+    tags: tagStore,
     fields: {
-      listFields: (tenant) => fieldStore.list(tenant),
+      fields: fieldStore,
       tenantCode: (tenant) => resolveTenantCode(pool, tenant),
-      createField: (tenant, def) => fieldStore.create(tenant, def),
-      updateField: (tenant, key, patch) => fieldStore.updateField(tenant, key, patch),
-      deleteField: (tenant, key) => fieldStore.deleteField(tenant, key),
-      fieldUsage: (tenant) => contactStore.fieldUsage(tenant),
+      contacts: contactStore,
     },
     contacts: {
-      applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),
-      applyEditsMany: (tenant, target, edits) => contactStore.applyEditsMany(tenant, target, edits),
-      setBlocked: (tenant, id, bloque, par) => contactStore.setBlocked(tenant, id, bloque, par),
-      listBlocked: (tenant) => contactStore.listBlocked(tenant),
-      listeDesabonnes: (tenant) => contactStore.listeDesabonnes(tenant),
-      messagesARelire: (tenant) => contactStore.messagesARelire(tenant),
-      purgeMany: (tenant, ids) => contactStore.purgeMany(tenant, ids),
-      contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
+      contacts: contactStore,
       audit: auditSink,
-      listAudit: (tenant, o) => auditStore.list(tenant, o),
-      // 🔴 Le journal des erreurs de livraison, séparé du journal d'actions : celui-ci porte les numéros (sans
-      // eux il ne répond à rien), celui-là n'en porte jamais (y écrire un numéro annulerait une purge).
-      listErreursLivraison: (tenant, f) => erreursLivraison.lister(tenant, f),
-      // La moitié système : les appels vers les systèmes du client qui n'ont pas abouti.
-      listErreursSysteme: (tenant, limit) => erreursLivraison.listerEchecsSysteme(tenant, limit),
-      listUserFields: (tenant) => fieldStore.list(tenant),
+      journal: auditStore,
+      erreurs: erreursLivraison,
+      champs: fieldStore,
       // Champ socle absent -> créé au premier usage (idempotent) : sans ça, un espace neuf refuserait
       // « Prénom » alors que l'écran le propose.
       ensureSocleField: async (tenant, key, label, type) => { await ensureFieldByKey(fieldStore, tenant, key, label, type); },
@@ -1963,11 +1779,7 @@ async function main(): Promise<void> {
         const [r] = await upsertContactsFromApi(tenant, [input], { contacts: contactStore, fields: fieldStore, defaultCountry: config.DEFAULT_COUNTRY as CountryCode });
         return r ? { status: r.status, ...(r.contactId ? { contactId: r.contactId } : {}), ...(r.reason ? { reason: r.reason } : {}) } : { status: 'error', reason: 'aucun résultat' };
       },
-      getContactHistory: (tenant, id) => contactHistoryStore.getContactHistory(tenant, id),
-      listSendsForExport: (tenant, id) => contactHistoryStore.listSendsForExport(tenant, id),
-      // Le résumé dérivé de la dernière conversation analysée : rien n'est recopié dans la fiche, donc rien
-      // ne survit à la purge des conversations. Voir `ResumeContact`.
-      getResumeContact: (tenant, id) => contactHistoryStore.resumeContact(tenant, id),
+      contactHistory: contactHistoryStore,
       /**
        * Le bilan d'un contact : son coût estimé et son entonnoir d'engagement. Les mêmes tarifs que la fiche
        * de campagne, par le même `prixFactures` et la même fenêtre de 30 jours (même approximation assumée) :
@@ -2002,15 +1814,8 @@ async function main(): Promise<void> {
         configId: config.META_ES_CONFIG_ID,
         appId: config.META_APP_ID,
         graphVersion: config.META_GRAPH_VERSION,
-        exchangeCode: (code: string) => esClient.exchangeCode(code),
-        getPhone: (pn: string, tok: string) => esClient.getPhone(pn, tok),
-        subscribeApp: (waba: string, tok: string) => esClient.subscribeApp(waba, tok),
-        register: (pn: string, tok: string, pin: string) => esClient.register(pn, tok, pin),
-        verifyWaba: (waba: string, tok: string) => esClient.verifyWaba(waba, tok),
-        // Repêchage quand la popup n'annonce pas les identifiants (parcours déjà abouti chez Meta).
-        wabasForToken: (tok: string) => esClient.wabasForToken(tok),
-        listPhones: (waba: string, tok: string) => esClient.listPhones(waba, tok),
-        link: (input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }) => esCredentialsStore.linkTenant(input),
+        meta: esClient,
+        inscriptions: esCredentialsStore,
         // 🔴 Chiffrement au repos ici (la route ne voit jamais le stockage) : AES-GCM avec ENCRYPTION_KEY,
         // pour le token et le PIN 2FA du numéro (un secret Meta).
         saveCredentials: (waba: string, tenant: string, token: string, pin: string | null) =>
@@ -2105,7 +1910,7 @@ async function main(): Promise<void> {
         configId: config.META_ADS_CONFIG_ID,
         appId: config.META_APP_ID,
         graphVersion: config.META_GRAPH_VERSION,
-        lire: (t: string) => connexions.lire(t),
+        connexions,
         etatCompte: async (t: string) => {
           const etat = await connexions.lire(t);
           const comptePubId = etat?.comptePubId ?? null;
@@ -2194,18 +1999,8 @@ async function main(): Promise<void> {
           return { revoqueChezMeta };
         },
 
-        listerPubs: (t: string) => publicites.lister(t),
-
-        /**
-         * Les brouillons : cinq passe-plats, un brouillon est un formulaire mémorisé qui ne touche jamais
-         * Meta. `listerBrouillons` ne transporte pas les octets des visuels, `lireBrouillon` si (porté par
-         * le store).
-         */
-        listerBrouillons: (t: string) => brouillonsPub.lister(t),
-        lireBrouillon: (t: string, id: string) => brouillonsPub.lire(t, id),
-        creerBrouillon: (t: string, c: ChampsBrouillon) => brouillonsPub.creer(t, c),
-        majBrouillon: (t: string, id: string, c: ChampsBrouillon) => brouillonsPub.mettreAJour(t, id, c),
-        supprimerBrouillon: (t: string, id: string) => brouillonsPub.supprimer(t, id),
+        publicites,
+        brouillons: brouillonsPub,
 
         /**
          * Créer une publicité chez Meta, en pause. Ce câblage ne fait que lier (connexion, jeton de Page, deux
@@ -2295,7 +2090,7 @@ async function main(): Promise<void> {
       };
     })(),
     account: {
-      getPhoneNumber: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
+      numeros: phoneStatusStore,
       /**
        * La pastille du numéro, relue et jamais stockée : l'URL que Meta rend est signée et expire. Derrière
        * un micro-cache de dix minutes, très en deçà de sa durée de vie : l'Accueil est la page la plus
@@ -2320,43 +2115,29 @@ async function main(): Promise<void> {
           return pullFromError(err);
         }
       },
-      saveStatus: (id, patch) => phoneStatusStore.saveStatus(id, patch),
-      setHubspotConnected: (id, tenant, connected) => phoneStatusStore.setHubspotConnected(id, tenant, connected),
       // Rattrapage HubSpot : enfile un seul job hubspot-catchup (le worker liste les marques et re-pousse).
       // No-op si le pipeline analyse/push est inerte (mêmes conditions que le worker qui consomme la file).
       enqueueHubspotCatchup: async (tenant) => {
         if (!(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '')) return;
         await queue.enqueue('hubspot-catchup', { tenantId: tenant });
       },
-      getHubspotPortal: (tenant) => phoneStatusStore.getHubspotPortal(tenant),
       // Déconnexion complète : appel service signé vers mm-hubspot (unlink + révocation du token). Monté
       // seulement si le canal service est configuré (sinon la route répond 503).
       ...(config.HUBSPOT_SERVICE_URL
         ? { disconnectHubspot: (tenant: string) => disconnectHubspot({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant) }
         : {}),
-      // Reflet local (toujours dispo) : coupe hubspot_connected de tous les numéros du tenant après succès connecteur.
-      disconnectHubspotTenant: (tenant) => phoneStatusStore.disconnectHubspotTenant(tenant),
     },
-    me: { getUser: (userId) => userStore.getById(userId) },
+    me: userStore,
     workflows: {
-      createWorkflow: (tenant, name, graph) => workflowStore.insert(tenant, name, graph),
+      scenarios: workflowStore,
       tenantCode: (tenant) => resolveTenantCode(pool, tenant),
-      listWorkflows: (tenant) => workflowStore.list(tenant),
-      // Le navigateur reçoit le résumé : aucun graphe ne traverse le réseau pour afficher des noms.
-      listWorkflowsResume: (tenant) => workflowStore.listResume(tenant),
-      getWorkflow: (id, tenant) => workflowStore.getById(id, tenant),
-      updateWorkflow: (id, tenant, patch) => workflowStore.update(id, tenant, patch),
-      // Bouton « Publier » : le seul chemin qui touche le graphe exécuté.
-      publishWorkflow: (id, tenant) => workflowStore.publish(id, tenant),
       audit: auditSink,
-      deleteWorkflow: (id, tenant) => workflowStore.remove(id, tenant),
       // La garde du 409 : une publicité vivante retient son scénario. Requise par le type : un câblage qui
       // l'oublierait laisserait supprimer le scénario d'une pub qui diffuse, en silence.
-      publicitesQuiUtilisent: (tenant, workflowId) => publicites.publicitesQuiUtilisent(tenant, workflowId),
+      publicites,
       // Déclare les tags des blocs « ajout de tag » dans le référentiel (Contenus > Tags) à la sauvegarde.
       declareTags: async (tenant, tags) => { for (const t of tags) await tagStore.create(tenant, t); },
-      // Lien de test : jeton stable posé au 1er clic, + numéro affiché pour construire le lien wa.me.
-      ensureTestToken: (id, tenant, token) => workflowStore.ensureTestToken(id, tenant, token),
+      // Le numéro affiché, pour construire le lien wa.me du lien de test.
       getDisplayPhoneNumber: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
     },
     // Node « Envoi de mail » : boîtes SMTP + modèles (Contenu), et le résolveur qu'invalident les routes
@@ -2365,7 +2146,7 @@ async function main(): Promise<void> {
     // 🔴 Paramètres > Intégrations > Batch : les clés sont chiffrées ici, jamais stockées en clair. Le cache
     // de l'émetteur de l'API est invalidé à chaque changement : brancher ou débrancher prend effet aussitôt.
     integrationBatch: {
-      lire: (tenant) => integrationBatch.lire(tenant),
+      batch: integrationBatch,
       // Mesuré avec la vraie fonction de chiffrement, pas une copie de sa règle : c'est exactement ce
       // qu'`enregistrer` va appeler.
       chiffrementPret: (() => {
@@ -2403,12 +2184,10 @@ async function main(): Promise<void> {
       const depsConnexion = { client, store, genererSecret: () => randomBytes(32).toString('hex') };
       const version = config.SALESFORCE_PACKAGE_VERSION;
       return {
-        lire: (tenant: string) => store.lire(tenant),
-        actif: (tenant: string) => settingsStore.salesforceActif(tenant),
-        poserActif: (tenant: string, actif: boolean) => settingsStore.setSalesforceActif(tenant, actif),
+        orgs: store,
+        reglages: settingsStore,
         connecter: (tenant: string, adresse: string, auteur: string | null) => connecterSalesforce(depsConnexion, tenant, adresse, auteur),
         deconnecter: (tenant: string) => deconnecterSalesforce(depsConnexion, tenant),
-        enregistrerReglages: (tenant: string, r: ReglagesSalesforce) => store.enregistrerReglages(tenant, r),
         cleAppPosee: true,
         chiffrementPret: (() => {
           try {
@@ -2426,7 +2205,7 @@ async function main(): Promise<void> {
       } satisfies SalesforceRouteDeps;
     })() } : {}),
     rcsChannel: {
-      etat: (tenant) => workflowRuntime.rcsStack.agents.etatPour(tenant),
+      agents: workflowRuntime.rcsStack.agents,
       verifier: (apiKey) => verifierCleRcs(fetchGet, apiKey),
       activer: async (tenant, canal, apiKey) => {
         // La clé est chiffrée ici, jamais stockée en clair. `client_token_enc` reste réservé au jour où un
@@ -2441,7 +2220,6 @@ async function main(): Promise<void> {
           `rcs-${randomBytes(16).toString('hex')}`,
         );
       },
-      desactiver: (tenant) => workflowRuntime.rcsStack.agents.desactiver(tenant),
     },
     /**
      * Rappels smsmode : rapports de livraison et réponses des contacts.
@@ -2449,8 +2227,7 @@ async function main(): Promise<void> {
      * rappels.
      */
     rcsCallback: {
-      parCode: (code) => workflowRuntime.rcsStack.agents.parWebhookCode(code),
-      noterRappel: (tenant, corps) => workflowRuntime.rcsStack.agents.noterRappel(tenant, corps),
+      agents: workflowRuntime.rcsStack.agents,
       /**
        * Le rapport de livraison : destinataire de campagne, mesure par bloc, échec d'un message libre,
        * joignabilité RCS, sorties du bloc. La logique et ses raisons vivent dans `traiterRapportRcs`, testée ;
@@ -2459,11 +2236,10 @@ async function main(): Promise<void> {
       onDlr: async (tenant, dlr) => {
         await traiterRapportRcs({
         majLivraison: (id, statut, detail) => recipientStore.updateDeliveryByMessageId(id, statut, detail, null),
-        mesureBloc: (id, statut) => nodeEventStore.recordStatusForMessage(id, statut),
+        mesures: nodeEventStore,
         echecs: echecsMessages,
         joignabilite: rcsJoignabilite,
-        rcsInjoignable: (t, to, id) => workflowRuntime.executor.rcsUndeliverable(t, to, id),
-        rcsDelivre: (t, to, id) => workflowRuntime.executor.rcsDelivered(t, to, id),
+        parcours: workflowRuntime.executor,
         maintenant: () => Date.now(),
         }, tenant, dlr);
         // Les signaux, après le rapport (livraison, échec d'un message libre, joignabilité, sorties du bloc) :
@@ -2534,49 +2310,27 @@ async function main(): Promise<void> {
      * chercher l'image lui-même.
      */
     rcsMedia: {
-      list: (tenant) => rcsMediaStore.list(tenant),
+      medias: rcsMediaStore,
       create: async (tenant, input) => {
         const code = newMediaCode();
         const media = await rcsMediaStore.create(tenant, { ...input, code });
         return { media, url: urlImageRcs(adressesApi.racine, code, input.mime) };
       },
-      remove: (tenant, id) => rcsMediaStore.remove(tenant, id),
-      getByCode: (code) => rcsMediaStore.getByCode(code),
     },
     // Le dépôt lui-même : la route n'en appelle que `list`, `create`, `update` et `remove`, en méthodes.
     rcsMessages: rcsMessageStore,
     // Automations : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
     automations: {
-      list: (tenant) => automationStore.list(tenant),
-      getById: (id, tenant) => automationStore.getById(id, tenant),
-      create: (tenant, input) => automationStore.create(tenant, input),
-      update: (id, tenant, patch) => automationStore.update(id, tenant, patch),
-      remove: (id, tenant) => automationStore.remove(id, tenant),
+      automations: automationStore,
       // 🔴 Un tenant ne peut cibler que ses propres scénarios (même garde que la campagne workflow).
       workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
     },
     // Chaîne WhatsApp (Channels Me) : publier un post dont le bouton démarre un scénario.
     channelsMe: {
-      getConnection: (tenant) => channelsMeConnections.get(tenant),
-      getSecrets: (tenant) => channelsMeConnections.getSecrets(tenant),
-      upsertConnection: (tenant, c) => channelsMeConnections.upsert(tenant, c),
-      markVerified: (tenant) => channelsMeConnections.markVerified(tenant),
-      supprimerConnection: (tenant) => channelsMeConnections.supprimer(tenant),
-      getOrganisation: (cx) => channelsMeClient.getOrganisation(cx),
-      listChannels: (cx) => channelsMeClient.listChannels(cx),
-      getMessages: (cx) => channelsMeClient.getMessages(cx),
-      // `m` doit être relayé entier : une flèche à un paramètre est assignable à un contrat qui en déclare
-      // deux, le second serait avalé en silence et l'image du post disparaîtrait.
-      createMessage: (cx, m) => channelsMeClient.createMessage(cx, m),
-      listLinks: (tenant) => channelsMeLinks.list(tenant),
-      createLink: (tenant, l) => channelsMeLinks.create(tenant, l),
-      linkById: (tenant, id) => channelsMeLinks.byId(tenant, id),
-      // Rattrapage : défait l'automation compagnon quand `createLink` échoue juste après l'avoir créée
-      // (sinon elle reste possédée, orpheline, invisible depuis l'écran Automation).
-      supprimerAutomationCompagnon: (tenant, automationId) => channelsMeLinks.supprimerAutomationCompagnon(tenant, automationId),
-      conversationsParLien: (tenant) => channelsMeLinks.conversationsParLien(tenant),
-      listPosts: (tenant) => channelsMePosts.list(tenant),
-      createPost: (tenant, p) => channelsMePosts.create(tenant, p),
+      connexions: channelsMeConnections,
+      client: channelsMeClient,
+      liens: channelsMeLinks,
+      posts: channelsMePosts,
       // L'automation compagnon du lien. Trois choses se décident ici et nulle part ailleurs :
       //  - `enabled: false`, parce qu'un lien créé mais jamais publié ne doit rien déclencher ;
       //  - `possedePar`, qui met la ligne hors de portée de l'écran Automation (prédicat du store) ;
@@ -2595,7 +2349,6 @@ async function main(): Promise<void> {
           return n.includes(cible) || cible.includes(n);
         });
       },
-      messagesContenantLaPhrase: (tenant, phrase) => channelsMeLinks.messagesContenantLaPhrase(tenant, phrase),
       creerAutomationCompagnon: (tenant, input) => automationStore.create(tenant, {
         name: input.nom,
         triggerKind: 'keyword',
@@ -2610,11 +2363,6 @@ async function main(): Promise<void> {
         possedePar: 'channelsme_link',
         maxFiresPerHour: input.maxParHeure,
       }),
-      // Par le store des liens, jamais par `PgAutomationStore`, qui exclut de `update`/`remove` toute ligne
-      // `possede_par is not null` : ces deux méthodes ont leur propre requête, garde `possede_par =
-      // 'channelsme_link'` comprise.
-      allumerAutomationLien: (tenant, linkId) => channelsMeLinks.allumerAutomation(tenant, linkId),
-      eteindreAutomationLien: (tenant, linkId) => channelsMeLinks.eteindreAutomation(tenant, linkId),
       scenarioEtat: async (tenant, wfId) => {
         const wf = await workflowStore.getById(wfId, tenant);
         if (!wf) return 'inconnu';
@@ -2671,25 +2419,18 @@ async function main(): Promise<void> {
        * route (`ops_verrou_espace`) : c'est la seule trace durable du pourquoi.
        */
       verrouillerEspace: (tenantId, verrouille, _note) => opsStore.verrouillerEspace(tenantId, verrouille),
-      getTenantOverview: () => opsStore.getTenantOverview(),
+      exploitation: opsStore,
       /**
        * 🔴 La grille de prix, une pour tous les espaces, ici et pas dans les réglages du client : un client n'a
        * ni à fixer ni à voir ce qu'on lui facture, et le geste ne doit jamais être atteignable depuis la
        * console.
        */
       lireGrillePrix: async () => grilleDepuisLigne(await statsStore.grillePrixGlobale()),
-      ecrireGrillePrix: (grille, par) => settingsStore.setGrillePrixGlobale(grille, par),
-      getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
-      getQueueLoad: () => opsStore.getQueueLoad(),
-      // L'équité : quels groupes attendent le plus. Vide = tout le monde est servi.
-      getQueueLoadParGroupe: () => opsStore.getQueueLoadParGroupe(),
-      getQueueLatence: (h) => opsStore.getQueueLatence(h),
+      reglages: settingsStore,
       // Les jobs morts et leur rejeu : un geste d'exploitation cross-espace, qui suppose qu'on ait corrigé la
       // cause de l'échec.
-      listerJobsMorts: (limite) => opsStore.listerJobsMorts(limite),
-      reenfiler: (nomDeFile, data) => queue.enqueue(nomDeFile, data),
-      oublierJobsMorts: (ids) => opsStore.oublierJobsMorts(ids),
-      getWorkerHeartbeat: () => heartbeatStore.get(),
+      file: queue,
+      heartbeat: heartbeatStore,
       /**
        * L'attente du pool. L'état instantané ne peut être que celui de ce process (l'API voit son propre pool
        * en mémoire) ; la courbe vient de la base, seul canal par lequel le worker se montre. Le vrai signal
@@ -2703,7 +2444,7 @@ async function main(): Promise<void> {
         max: config.DB_POOL_MAX,
         maxMsDepuisDemarrage: Math.round(mesureAttentePool.maxDepuisDemarrage),
       }),
-      lireAttentesPool: (minutes) => poolAttentesStore.lireDernieresMinutes(minutes),
+      attentesPool: poolAttentesStore,
       // 🔴 Le solde prépayé d'un espace pour l'agent IA. La recharge est ici parce qu'un client ne doit
       // jamais pouvoir créditer son propre compte. L'espace est résolu d'abord : en lecture, un espace inconnu
       // rendrait un solde de zéro qu'on rechargerait ; en écriture, la clé étrangère lèverait un 500 masqué
@@ -2754,7 +2495,7 @@ async function main(): Promise<void> {
         pool,
         file: queue,
         emetteur,
-        automationsActives: (t, kinds) => automationStore.listEnabled(t, kinds),
+        automations: automationStore,
         // eslint-disable-next-line no-console
         journal: (m) => console.warn(m),
       }),
@@ -2801,9 +2542,7 @@ async function main(): Promise<void> {
     },
     apiKeys: {
       audit: auditSink,
-      createKey: (tenant, name, scopes) => apiKeyStore.create(tenant, name, scopes),
-      listKeys: (tenant) => apiKeyStore.listByTenant(tenant),
-      revokeKey: (tenant, id) => apiKeyStore.revoke(tenant, id),
+      cles: apiKeyStore,
     },
     v1: {
       apiKeys: apiKeyStore,
@@ -2819,25 +2558,25 @@ async function main(): Promise<void> {
           if (!waba) return [];
           return catalogueTemplatesCache.lire(`${tenant}:${waba}`, async () => (await metaFactory.templateClientForTenant(tenant)).list(waba));
         },
-        indicesDeVariables: (tenant) => templateHintStore.listerParEspace(tenant),
-        scenariosPublies: (tenant) => workflowStore.listPublies(tenant),
-        messagesRcs: (tenant) => rcsMessageStore.list(tenant),
+        indices: templateHintStore,
+        scenarios: workflowStore,
+        messagesRcs: rcsMessageStore,
       },
       /**
        * Le relais du Meta Business Agent : le même point de passage que l'agent IA (`creerAppelConnecteur`),
        * donc les mêmes gardes, journalisé sous l'appelant `mba`.
        */
       mbaRelais: {
-        numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
-        outilsActifs: (t, c) => toolCatalog.listActifsConsommateur(t, c),
-        requete: (t, id) => agentRequetes.parId(t, id),
+        numeros: repo,
+        catalogue: toolCatalog,
+        requetes: agentRequetes,
         // 🔴 Projection, jamais la ligne brute (même règle que `lireContact` du worker) : le numéro, le BSUID
         // et le statut d'opt-in n'ont rien à faire dans ce qui part vers le système du client.
-        contact: (t, waId) => contactStore.projectionPourTiers(t, waId),
+        contacts: contactStore,
         appeler: creerAppelConnecteur({
           sources: agentSources,
           requetes: agentRequetes,
-          derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
+          inbox: inboxStore,
           fuseau: async (t) => (await settingsStore.get(t)).timezone,
         }),
         journal: new PgJournalAppels(pool),
@@ -2851,8 +2590,8 @@ async function main(): Promise<void> {
         // Un envoi qui échoue après « C'est parti » est dit à l'agent de Meta par un événement (gardes dans le
         // module, testé).
         signalerEchecTardif: creerSignalerEchecTardif({
-          detenteur: (t, w) => inboxStore.getControlOwner(t, w),
-          numero: (t) => repo.getTenantPhoneNumberId(t),
+          inbox: inboxStore,
+          numeros: repo,
           envoyer: async (t, pn, to, event) => (await metaFactory.mbaClientForTenant(t)).agentEvent(pn, to, event, AbortSignal.timeout(10_000)),
           // eslint-disable-next-line no-console
           journal: (ligne) => console.log(ligne),
@@ -2864,30 +2603,29 @@ async function main(): Promise<void> {
           // La même liste que la ligne rouge de l'onglet Outils (`mbaOutils.champs`), sinon l'écran et le relais
           // ne seraient pas d'accord sur ce qui existe.
           champExiste: async (t, champ) => (await fieldStore.list(t)).some((f) => f.key === champ),
-          estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
+          contacts: contactStore,
           antiRejeu: new AntiRejeu(DUREE_ANTI_REJEU_MS),
-          dernierMessageDuClient: (t, waId) => inboxStore.dernierMessageDuClient(t, waId),
+          inbox: inboxStore,
           // Les deux gestes qui envoient : ils rendent le fil sur toute issue ratée, exception comprise
           // (`src/mba/gestes-envoi.ts`, testé).
           ...creerGestesEnvoi({
             graphePublie: async (t, id) => (await workflowStore.getById(id, t))?.graph ?? null,
             fenetreOuverte: async (t, waId) => (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true,
-            contactId: (t, waId) => contactStore.findIdByWaId(t, waId),
+            contacts: contactStore,
             envoyerDepuisBloc: (t, workflowId, graphe, contact, noeudId) => workflowRuntime.executor.startFromNode(
               t, workflowId, graphe, contact, noeudId, { ignoreHumanControl: true, emitEvents: false },
             ),
             lancerScenario: (t, workflowId, waId, ouverte) => lancerScenarioPourContact(t, workflowId, waId, ouverte),
-            rendreLaMain: (t, waId) => workflowRuntime.rendreLaMainApresParcours(t, waId),
+            runtime: workflowRuntime,
             // On ne prend le fil qu'une fois le tour de l'agent de Meta fini.
             attendreFinDuTour: creerAttendreFinDuTour({
-              dernierMessageDeLAgent: (t, waId) => inboxStore.dernierMessageDeLAgent(t, waId),
+              inbox: inboxStore,
               attendre: (ms) => dormir(ms),
               maintenant: () => Date.now(),
               // eslint-disable-next-line no-console
               journal: (ligne) => console.log(ligne),
             }),
-            empreinteDuFil: (t, waId) => inboxStore.empreinteDuFil(t, waId),
-            estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
+            inbox: inboxStore,
           }),
         },
       },
@@ -2934,29 +2672,21 @@ async function main(): Promise<void> {
             return { statut: 'illisible' };
           }
         },
-        getWindowOpenByWaIds: (tenant, waIds) => inboxStore.getWindowOpenByWaIds(tenant, waIds),
-        getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
-        phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
-        numeroEstDelie: (pn) => gardeNumeroDelie.estDelie(pn),
+        inbox: inboxStore,
+        // Bloqués compris à la lecture des fiches : l'API les écarte avec un motif au lieu de les perdre.
+        repo,
+        // La garde de ce process, celle dont « Délier » et « Relier » vident le cache.
+        numerosDelies: gardeNumeroDelie,
         // La résolution de fiche et l'écriture du consentement, sur les mêmes dépendances que `/v1/contacts`
         // (le dépôt des contacts et `depsConsentementDe`). Les quatre paramètres de chaque flèche sont gardés
         // par `tests/v1-cablage.test.ts`.
         resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
         appliquerConsentement: (tenant, contactId, consent, source) => appliquerConsentement(depsConsentement, tenant, contactId, consent, source),
-        // Bloqués compris : l'API les écarte avec un motif au lieu de les perdre.
-        listContactsPourEnvoi: (tenant, ids) => repo.listContactsPourEnvoiApi(tenant, ids),
-        createSend: (input, recipients) => repo.createWithRecipients(input, recipients),
         enqueue: (campaignId, tenantId, count, rate) =>
           relanceurDeCampagnes(queue, config)({ campaignId, tenantId, pendingCount: count, ratePerMinute: rate }),
-        idempotencyClaim: (tenant, key, empreinte) => idempotencyStore.claim(tenant, key, empreinte),
-        idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
-        idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),
-        lireEnvoi: (sendId, tenant) => repo.lireEnvoiApi(sendId, tenant),
+        idempotence: idempotencyStore,
         // La cible `rcsMessage` : la bibliothèque par son nom, et l'agent RCS de l'espace.
-        rcs: {
-          messageRcsParNom: (tenant, nom) => rcsMessageStore.getByName(tenant, nom),
-          agentIdForTenant: (tenant) => workflowRuntime.rcsStack.agents.agentIdForTenant(tenant),
-        },
+        rcs: { messages: rcsMessageStore, agents: workflowRuntime.rcsStack.agents },
       },
       /**
        * `POST /v1/messages/whatsapp` : un simple texte dans la fenêtre de 24 h. Ce bloc ne fait que brancher :
@@ -2973,7 +2703,7 @@ async function main(): Promise<void> {
         // Le fil cherché, jamais créé : un refus ne laisse pas de fil vide dans l'Inbox. Même fragment que le
         // bouton « Ouvrir la conversation » du mini-CRM, qui refuse un contact supprimé comme un contact
         // bloqué : c'est la garde de blocage de cette route.
-        filDuContact: (tenant, contactId) => inboxStore.filDuContact(tenant, contactId),
+        inbox: inboxStore,
       },
       /**
        * `POST /v1/messages/rcs`. Ce bloc ne fait que brancher : les gardes du RCS vivent dans
@@ -2983,14 +2713,12 @@ async function main(): Promise<void> {
         // La même résolution de fiche que `sends` et `messages`, sur le même dépôt que `/v1/contacts` : sinon
         // une personne serait trouvée par une route et pas par l'autre. Ses quatre paramètres passent.
         resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
-        etatPourEnvoi: (tenant, id) => contactStore.etatPourEnvoi(tenant, id),
+        contacts: contactStore,
         rcs: depsRcsLibre,
-        ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
+        inbox: inboxStore,
         // `app_human`, comme les autres machines : le scénario cesse d'avancer seul. Qui a parlé est porté par
         // l'origine du message (`api`).
         takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
-        recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) =>
-          inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
       },
       /**
        * Serveur MCP (`POST /mcp`) : les mêmes fonctions que la console, jamais des variantes. Un outil MCP
@@ -2999,14 +2727,7 @@ async function main(): Promise<void> {
        */
       mcp: {
         ...depsRepondre,
-        listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
-        getMessages: (id) => inboxStore.getMessages(id),
-        getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
-        getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
-        setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
-        chercherContacts: (tenant, filtres, limit, offset) => contactStore.query(tenant, filtres, limit, offset),
-        contactParTelephone: (tenant, phone) => contactStore.findByPhone(tenant, phone),
-        ajouterTags: (tenant, waId, tags) => contactStore.addTagsByPhoneReturningNew(tenant, waId, tags),
+        contacts: contactStore,
         listerMembres: async (tenant) => (await userStore.list(tenant)).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
       },
     },

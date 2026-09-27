@@ -56,7 +56,7 @@ class MagasinMemoire implements PlafondApiStore {
  * Le relais ne voit aucun outil : la route rend `200 { succes: false }` sans rien appeler. C'est la GARDE qui est
  * éprouvée ici, pas la route (elle l'est dans `http-mba-relais.test.ts`).
  */
-const relaisMuet = { numeroDuTenant: async () => null } as unknown as MbaRelaisDeps;
+const relaisMuet = { numeros: { getTenantPhoneNumberId: async () => null } } as unknown as MbaRelaisDeps;
 
 function monter(apiParMinute = 2) {
   const magasin = new MagasinMemoire();

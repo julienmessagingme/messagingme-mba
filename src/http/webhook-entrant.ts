@@ -29,10 +29,14 @@ const CODE_RE = /^[0-9a-hjkmnp-tv-z]{26}$/;
 export const TAILLE_MAX_CORPS = 128_000;
 
 /** Ce que la route sait faire écrire, sans savoir comment. */
-export interface WebhookEntrantRouteDeps {
+export interface WebhooksEntrantsDep {
   getByCode(code: string): Promise<WebhookPublic | null>;
   /** Enregistre le dernier payload + l'horodatage, et compte le contact créé. Best-effort. */
   recordCall(tenantId: string, id: string, payload: unknown, contactCreated: boolean): Promise<void>;
+}
+
+export interface WebhookEntrantRouteDeps {
+  webhooks: WebhooksEntrantsDep;
   /**
    * Ce contact existe-t-il déjà dans cet espace ? Appelée seulement quand la création est désactivée : sinon
    * `ecrireContact` rend déjà `created`/`updated`, sans requête de plus sur le chemin chaud.
@@ -118,7 +122,7 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
     const tropDAppels = (): unknown => reply.code(429).send({ error: 'trop d’appels, réessayez dans une minute' });
     if (connu && !limiter.take(normalise)) return tropDAppels();
 
-    const hook = await deps.getByCode(normalise);
+    const hook = await deps.webhooks.getByCode(normalise);
     // Code inconnu et webhook désactivé rendent la même chose : un tiers n'a pas à distinguer « ce webhook
     // n'existe pas » de « il est éteint ». Et un code qui ne se résout plus perd son laissez-passer.
     if (!hook || !hook.enabled) {
@@ -168,7 +172,7 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
       // Le payload est enregistré quoi qu'il arrive : il sert à construire le mapping dans l'écran et à déboguer
       // « pourquoi rien ne se passe ». Au mieux : son échec ne transforme pas un appel réussi en erreur pour le tiers.
       try {
-        await deps.recordCall(hook.tenantId, hook.id, payload, contactCreated);
+        await deps.webhooks.recordCall(hook.tenantId, hook.id, payload, contactCreated);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`webhook ${hook.id} : payload non enregistré :`, messageDe(err));

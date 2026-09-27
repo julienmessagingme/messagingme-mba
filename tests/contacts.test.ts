@@ -6,7 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ContactsRouteDeps } from '../src/http/contacts';
 import type { ContactRow, BulkTarget, BulkEdits } from '../src/crm/contact-store.pg';
 import type { UserFieldDef } from '../src/crm/types';
-import { contactsInertes } from './routes-inertes';
+import { contactsInertes, contactsDepInerte, historiqueContactInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -41,21 +41,29 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
   const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [], bulk: [], deleted: [], emitted: [] };
   const deps: ContactsRouteDeps = {
     ...contactsInertes,
-    applyEdits: async (_t, _id, edits) => {
-      const result = opts.contact === undefined ? CONTACT : opts.contact;
-      if (result === null) return null; // contact inconnu -> transaction rollback, aucune écriture
-      if (Object.keys(edits.fields).length) cap.merged.push(edits.fields);
-      if (edits.addTags.length) cap.added.push(edits.addTags);
-      if (edits.removeTags.length) cap.removed.push(edits.removeTags);
-      if (edits.removeFields && edits.removeFields.length) cap.removedFields.push(edits.removeFields);
-      if (edits.profileName !== undefined) cap.names.push(edits.profileName);
-      // Le store ne renvoie que les tags RÉELLEMENT nouveaux : ici, ceux qui ne sont pas déjà sur la fiche.
-      return { contact: result, addedTags: edits.addTags.filter((t) => !result.tags.includes(t)) };
+    contacts: {
+      ...contactsDepInerte,
+      applyEdits: async (_t, _id, edits) => {
+        const result = opts.contact === undefined ? CONTACT : opts.contact;
+        if (result === null) return null; // contact inconnu -> transaction rollback, aucune écriture
+        if (Object.keys(edits.fields).length) cap.merged.push(edits.fields);
+        if (edits.addTags.length) cap.added.push(edits.addTags);
+        if (edits.removeTags.length) cap.removed.push(edits.removeTags);
+        if (edits.removeFields && edits.removeFields.length) cap.removedFields.push(edits.removeFields);
+        if (edits.profileName !== undefined) cap.names.push(edits.profileName);
+        // Le store ne renvoie que les tags RÉELLEMENT nouveaux : ici, ceux qui ne sont pas déjà sur la fiche.
+        return { contact: result, addedTags: edits.addTags.filter((t) => !result.tags.includes(t)) };
+      },
+      applyEditsMany: async (_t, target, edits) => { cap.bulk.push({ target, edits }); return 3; },
     },
-    applyEditsMany: async (_t, target, edits) => { cap.bulk.push({ target, edits }); return 3; },
-    listUserFields: async () => FIELDS,
-    getContactHistory: async () => ({ sends: [], conversations: [] }),
-    listSendsForExport: async () => [],
+    champs: {
+      list: async () => FIELDS,
+    },
+    contactHistory: {
+      ...historiqueContactInerte,
+      getContactHistory: async () => ({ sends: [], conversations: [] }),
+      listSendsForExport: async () => [],
+    },
     emitTagAdded: async (_t, _id, tags) => { cap.emitted.push(tags); },
     ...over,
   };
@@ -375,7 +383,7 @@ describe('champ socle absent de la base : materialise a la premiere ecriture', (
     const crees: Array<{ key: string; label: string; type: string }> = [];
     let champs: UserFieldDef[] = [];
     const { server, cap } = app({
-      listUserFields: async () => champs,
+      champs: { list: async () => champs },
       ensureSocleField: async (_t, key, label, type) => {
         crees.push({ key, label, type });
         champs = [...champs, { key, label, type } as UserFieldDef];
@@ -412,7 +420,7 @@ describe('champ socle absent de la base : materialise a la premiere ecriture', (
   });
 
   it('sans la dep de materialisation -> comportement historique (refus)', async () => {
-    const { server } = app({ listUserFields: async () => [] });
+    const { server } = app({ champs: { list: async () => [] } });
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: JSON.stringify({ fields: { prenom: 'Julien' } }) });
     expect(res.statusCode).toBe(400);
     await server.close();

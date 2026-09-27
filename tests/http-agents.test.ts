@@ -68,22 +68,24 @@ function app(cleModele?: (tenant: string) => Promise<unknown>, extra?: Partial<A
   };
   const deps: AgentsRouteDeps = {
     ...agentsInertes,
-    listActifs: async (t) => { cap.listes.push(`actifs:${t}`); return ACTIFS; },
-    listToutes: async (t) => { cap.listes.push(`toutes:${t}`); return TOUTES; },
-    complet: async (_t, id) => (id === AG1 ? COMPLET : null),
-    create: async (tenant, label, mention, modele) => {
-      cap.ordre.push('create');
-      cap.crees.push({ tenant, label, mention, modele });
-      if (label === 'pris') throw new LabelAgentDejaPris();
-      return { ...COMPLET, label };
+    agents: {
+      listActifs: async (t) => { cap.listes.push(`actifs:${t}`); return ACTIFS; },
+      listToutes: async (t) => { cap.listes.push(`toutes:${t}`); return TOUTES; },
+      complet: async (_t, id) => (id === AG1 ? COMPLET : null),
+      create: async (tenant, label, mention, modele) => {
+        cap.ordre.push('create');
+        cap.crees.push({ tenant, label, mention, modele });
+        if (label === 'pris') throw new LabelAgentDejaPris();
+        return { ...COMPLET, label };
+      },
+      patch: async (tenant, id, patch) => {
+        cap.patches.push({ tenant, id, patch });
+        if (id === CONFLIT) throw new FicheAgentPerimee();
+        if (patch.label === 'pris') throw new LabelAgentDejaPris();
+        return id === AG1 ? { ...COMPLET, ...patch } as AgentComplet : null;
+      },
+      remove: async (tenant, id) => { cap.supprimes.push({ tenant, id }); return id === AG1; },
     },
-    patch: async (tenant, id, patch) => {
-      cap.patches.push({ tenant, id, patch });
-      if (id === CONFLIT) throw new FicheAgentPerimee();
-      if (patch.label === 'pris') throw new LabelAgentDejaPris();
-      return id === AG1 ? { ...COMPLET, ...patch } as AgentComplet : null;
-    },
-    remove: async (tenant, id) => { cap.supprimes.push({ tenant, id }); return id === AG1; },
     modeleParDefaut: 'modele-config',
     ...(cleModele ? { assurerCleModele: async (t: string) => { cap.ordre.push('cle'); return cleModele(t); } } : {}),
     ...extra,
@@ -353,8 +355,10 @@ describe('routes agents : le modèle par défaut', () => {
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
       agents: {
         ...agentsInertes,
-        listActifs: async () => [], listToutes: async () => [], complet: async () => null,
-        create: async () => COMPLET, patch: async () => null, remove: async () => false,
+        agents: {
+          listActifs: async () => [], listToutes: async () => [], complet: async () => null,
+          create: async () => COMPLET, patch: async () => null, remove: async () => false,
+        },
         modeleParDefaut: '',
       },
     });
@@ -365,7 +369,7 @@ describe('routes agents : le modèle par défaut', () => {
 
 describe('GET /tenants/:tenantId/agents/:agentId/messages', () => {
   it('rend le compte et la fenêtre', async () => {
-    const { srv } = app(undefined, { messagesAgent: async () => 412 });
+    const { srv } = app(undefined, { sessions: { ...agentsInertes.sessions, messagesTenus: async () => 412 } });
     const res = await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG1}/messages`, ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ messages: 412, jours: 30 });
@@ -375,7 +379,7 @@ describe('GET /tenants/:tenantId/agents/:agentId/messages', () => {
     // Un identifiant non-uuid dans un `where` sur une colonne uuid fait LEVER Postgres (500), il ne rend
     // pas zéro. L'ordre des gardes n'est pas décoratif.
     let appele = false;
-    const { srv } = app(undefined, { messagesAgent: async () => { appele = true; return 1; } });
+    const { srv } = app(undefined, { sessions: { ...agentsInertes.sessions, messagesTenus: async () => { appele = true; return 1; } } });
     const res = await srv.inject({ method: 'GET', url: '/tenants/t1/agents/pas-un-uuid/messages', ...h(adminTok) });
     expect(res.statusCode).toBe(404);
     expect(appele).toBe(false);

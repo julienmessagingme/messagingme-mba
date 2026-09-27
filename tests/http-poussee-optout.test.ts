@@ -8,7 +8,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SettingsRouteDeps } from '../src/http/settings';
 import type { AgentRequetesRouteDeps } from '../src/http/agent-requetes';
 import type { RequeteConnecteur } from '../src/agent/requetes';
-import { reglagesInertes } from './routes-inertes';
+import { reglagesDepInertes, reglagesInertes } from './routes-inertes';
 
 /**
  * LE BRANCHEMENT « prévenir mon système à chaque désabonnement » (tâche 7, migration 0139).
@@ -47,26 +47,31 @@ function app(branche: string | null = null) {
     ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
-    getSettings: async () => ({
-      mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: courant, mentionIaFrequence: null, prix: GRILLE_DEFAUT,
-      timezone: 'Europe/Paris', businessHours: {},
-    }),
-    setMbaEnabled: async () => {},
-    setHubspotListsEnabled: async () => {},
-    setMbaHandoffMode: async () => {},
-    setControlHandbackSeconds: async () => {},
-    setTimezone: async () => {},
-    setBusinessHours: async () => {},
+    reglages: {
+      ...reglagesDepInertes,
+      get: async () => ({
+        mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: courant, mentionIaFrequence: null, prix: GRILLE_DEFAUT,
+        timezone: 'Europe/Paris', businessHours: {},
+      }),
+      setMbaEnabled: async () => {},
+      setHubspotListsEnabled: async () => {},
+      setMbaHandoffMode: async () => {},
+      setControlHandbackSeconds: async () => {},
+      setTimezone: async () => {},
+      setBusinessHours: async () => {},
+      setOptoutRequestId: async (_t, id) => { ecrits.push(id); courant = id; },
+    },
     listerRequetesConnecteur: async () => [{ id: RQ, label: REQUETE.label }],
-    setOptoutRequestId: async (_t, id) => { ecrits.push(id); courant = id; },
   };
   const agentRequetes: AgentRequetesRouteDeps = {
-    lister: async () => [REQUETE],
-    parId: async (tenant, id) => (tenant === 't1' && id === RQ ? REQUETE : null),
-    creer: async () => REQUETE,
-    patch: async () => REQUETE,
-    supprimer: async () => true,
+    requetes: {
+      lister: async () => [REQUETE],
+      parId: async (tenant, id) => (tenant === 't1' && id === RQ ? REQUETE : null),
+      creer: async () => REQUETE,
+      patch: async () => REQUETE,
+      supprimer: async () => true,
+    },
     sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr', entetes: {}, status: 'active' }),
     clesDeChamps: async () => [],
     verifierResolution: async () => ({ ok: true }),

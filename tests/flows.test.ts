@@ -10,7 +10,7 @@ import { signSession } from '../src/auth/token';
 /** Raccourci mono-écran des cas historiques de ce fichier : la production ne construit que du multi-écran. */
 const deriveElements = (elements: FlowElementInput[]) => deriveScreens([{ elements }])[0]!.elements;
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { FlowRouteDeps } from '../src/http/flows';
+import type { FlowRouteDeps, FlowsDep } from '../src/http/flows';
 import type { FlowRow } from '../src/flow/store.pg';
 
 function makeFetch(responses: Array<{ ok: boolean; status: number; json: unknown }>) {
@@ -102,7 +102,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; metaBodies: unknown[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[]; ensuredOptin: number; externals: Array<{ id: string; name: string; status: string }>; aligned: Array<{ id: string; name: string; status: string }> }
 
 function app(
-  over: Partial<FlowRouteDeps> = {},
+  over: Partial<Omit<FlowRouteDeps, 'flows' | 'champs'>> & { flows?: Partial<FlowsDep>; champs?: FlowRouteDeps['champs'] } = {},
   opts: { wabaId?: string | null; belongs?: boolean; metaOk?: boolean; flow?: FlowRow | null; metaFlows?: Array<{ id?: string; name?: string; status?: string }> } = {},
 ) {
   const cap: Cap = { inserted: [], published: [], metaCalls: [], metaBodies: [], updated: [], removed: [], ensuredOptin: 0, externals: [], aligned: [] };
@@ -116,26 +116,30 @@ function app(
     }
     return { ok, status: ok ? 200 : 400, json: async () => (ok ? { id: 'flowNew', success: true, validation_errors: [] } : { error: { message: 'x', code: 100 } }) } as Response;
   };
+  const { flows, champs, ...reste } = over;
   const deps: FlowRouteDeps = {
-    flowsFor: async () => new MetaFlowClient('tok', 'v25.0', '7.2', fakeFetch),
-    getWabaId: async () => (opts.wabaId === undefined ? 'waba1' : opts.wabaId),
+    meta: { flowClientForTenant: async () => new MetaFlowClient('tok', 'v25.0', '7.2', fakeFetch) },
+    repo: { getTenantWabaId: async () => (opts.wabaId === undefined ? 'waba1' : opts.wabaId) },
     insertFlow: async (_t, id, name, _elements, ref, mapping) => { cap.inserted.push({ id, name, ref, mapping }); },
-    listFlows: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], screens: null, ref: null, mapping: null, cta: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
-    belongsTo: async () => opts.belongs !== false,
-    markPublished: async (id) => { cap.published.push(id); return true; },
+    flows: {
+      list: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], screens: null, ref: null, mapping: null, cta: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
+      belongsTo: async () => opts.belongs !== false,
+      markPublished: async (id) => { cap.published.push(id); return true; },
+      getById: async () => (opts.flow === undefined ? null : opts.flow),
+      remove: async (id) => { cap.removed.push(id); return true; },
+      alignFromMeta: async (id, _t, patch) => { cap.aligned.push({ id, ...patch }); return true; },
+      ...flows,
+    },
     // Mime la vraie ensureField : rejette un type qui n'est PAS un UserFieldType (text|number|date|boolean|url).
     // Sans normalisation, un champ Flow email/phone/textarea arriverait ici tel quel -> throw -> 500.
     ensureUserField: async (_t, _label, type) => {
       if (!['text', 'number', 'date', 'boolean', 'url'].includes(type)) throw new Error(`type de champ invalide: ${type}`);
     },
-    listUserFields: async () => [],
+    champs: champs ?? { list: async () => [] },
     ensureOptinField: async () => { cap.ensuredOptin += 1; },
-    getFlow: async () => (opts.flow === undefined ? null : opts.flow),
     updateFlowRow: async (_t, id, name, _elements, ref) => { cap.updated.push({ id, name, ref }); return true; },
-    removeFlowRow: async (id) => { cap.removed.push(id); return true; },
     insertExternalFlow: async (_t, f) => { cap.externals.push(f); return true; },
-    alignFlowFromMeta: async (id, _t, patch) => { cap.aligned.push({ id, ...patch }); return true; },
-    ...over,
+    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, flows: deps }), cap };
 }
@@ -277,7 +281,7 @@ describe('routes flows — création', () => {
   });
 
   it('POST optin AVEC cible booléenne existante -> mapping vers cette clé, whatsapp_optin PAS créé', async () => {
-    const { server, cap } = app({ listUserFields: async () => [{ key: 'consentement_marketing', label: 'Consentement marketing', type: 'boolean' }] });
+    const { server, cap } = app({ champs: { list: async () => [{ key: 'consentement_marketing', label: 'Consentement marketing', type: 'boolean' }] } });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
       payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true, saveTo: 'consentement_marketing' }] },
@@ -304,7 +308,7 @@ describe('routes flows — création', () => {
   });
 
   it('POST optin AVEC cible inexistante ou non booléenne -> 400 AVANT Meta', async () => {
-    const inexistant = app({ listUserFields: async () => [] });
+    const inexistant = app({ champs: { list: async () => [] } });
     const r1 = await inexistant.server.inject({
       method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
       payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true, saveTo: 'inconnu' }] },
@@ -313,7 +317,7 @@ describe('routes flows — création', () => {
     expect(inexistant.cap.metaCalls).toHaveLength(0);
     await inexistant.server.close();
 
-    const nonBool = app({ listUserFields: async () => [{ key: 'ville', label: 'Ville', type: 'text' }] });
+    const nonBool = app({ champs: { list: async () => [{ key: 'ville', label: 'Ville', type: 'text' }] } });
     const r2 = await nonBool.server.inject({
       method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
       payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true, saveTo: 'ville' }] },
@@ -542,7 +546,7 @@ describe('routes flows — duplication (D10)', () => {
 describe('POST /flows/refresh — réconciliation avec le compte WhatsApp Manager', () => {
   it('importe l\'inconnu, aligne le connu, laisse de côté un statut hors modèle, compte l\'absent SANS rien supprimer', async () => {
     const { server, cap } = app(
-      { listFlows: async () => [draftFlow({ id: 'f1', name: 'Contact', status: 'PUBLISHED' }), draftFlow({ id: 'fold', name: 'Retiré chez Meta' })] },
+      { flows: { list: async () => [draftFlow({ id: 'f1', name: 'Contact', status: 'PUBLISHED' }), draftFlow({ id: 'fold', name: 'Retiré chez Meta' })] } },
       {
         metaFlows: [
           { id: 'f1', name: 'Contact 2026', status: 'PUBLISHED' }, // renommé dans WhatsApp Manager
@@ -565,7 +569,7 @@ describe('POST /flows/refresh — réconciliation avec le compte WhatsApp Manage
 
   it('un flow déjà identique chez Meta ne compte pas comme mis à jour', async () => {
     const { server } = app(
-      { listFlows: async () => [draftFlow({ id: 'f1', name: 'Contact', status: 'PUBLISHED' })], alignFlowFromMeta: async () => false },
+      { flows: { list: async () => [draftFlow({ id: 'f1', name: 'Contact', status: 'PUBLISHED' })], alignFromMeta: async () => false } },
       { metaFlows: [{ id: 'f1', name: 'Contact', status: 'PUBLISHED' }] },
     );
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(adminTok) });
@@ -575,7 +579,7 @@ describe('POST /flows/refresh — réconciliation avec le compte WhatsApp Manage
 
   it('id déjà pris par un autre espace (WABA partagé) : compté en ignoré, jamais volé', async () => {
     const { server } = app(
-      { listFlows: async () => [], insertExternalFlow: async () => false },
+      { flows: { list: async () => [] }, insertExternalFlow: async () => false },
       { metaFlows: [{ id: 'fx', name: 'Partagé', status: 'PUBLISHED' }] },
     );
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(adminTok) });
@@ -584,7 +588,7 @@ describe('POST /flows/refresh — réconciliation avec le compte WhatsApp Manage
   });
 
   it('nom vide chez Meta -> repli sur l\'id (une carte sans nom serait inidentifiable)', async () => {
-    const { server, cap } = app({ listFlows: async () => [] }, { metaFlows: [{ id: 'fvide', name: '   ', status: 'DRAFT' }] });
+    const { server, cap } = app({ flows: { list: async () => [] } }, { metaFlows: [{ id: 'fvide', name: '   ', status: 'DRAFT' }] });
     await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(adminTok) });
     expect(cap.externals).toEqual([{ id: 'fvide', name: 'fvide', status: 'DRAFT' }]);
     await server.close();

@@ -1,13 +1,16 @@
 import { campaignJobExpireSeconds, resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 
 export interface ScheduleSweepDeps {
-  /** Campagnes programmées dues (scheduled_at <= maintenant) et leur dimensionnement de run. */
-  listDue(): Promise<Array<{ id: string; tenantId: string; ratePerMinute: number | null; pendingCount: number }>>;
+  /** Le dépôt des campagnes. */
+  repo: {
+    /** Campagnes programmées dues (scheduled_at <= maintenant) et leur dimensionnement de run. */
+    listDueScheduled(): Promise<Array<{ id: string; tenantId: string; ratePerMinute: number | null; pendingCount: number }>>;
+    /** Passe la campagne 'scheduled' -> 'running' (garde status, anti-re-liste). Idempotent. */
+    markScheduledRunning(campaignId: string): Promise<boolean>;
+  };
   /** Enfile le run avec le timeout dimensionné. Non idempotent : deux appels = deux jobs. `tenantId` porte le
    *  groupe de la file : sans lui, une campagne programmée échapperait au plafond de concurrence par espace. */
   enqueueRun(campaignId: string, tenantId: string, expireInSeconds: number): Promise<void>;
-  /** Passe la campagne 'scheduled' -> 'running' (garde status, anti-re-liste). Idempotent. */
-  markRunning(campaignId: string): Promise<boolean>;
   /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute : la même valeur qu'au worker,
    *  pour que l'expiration estimée voie le débit réel de run-job. Absent (tests) -> 0. */
   defaultRatePerMinute?: number;
@@ -32,7 +35,7 @@ export interface ScheduleSweepDeps {
  * l'enfilement, qui n'est pas idempotent. Un échec par campagne n'interrompt pas le balayage.
  */
 export async function runCampaignScheduleSweep(deps: ScheduleSweepDeps): Promise<number> {
-  const due = await deps.listDue();
+  const due = await deps.repo.listDueScheduled();
   let launched = 0;
   for (const c of due) {
     try {
@@ -41,7 +44,7 @@ export async function runCampaignScheduleSweep(deps: ScheduleSweepDeps): Promise
         c.tenantId,
         campaignJobExpireSeconds(c.pendingCount, resolveRatePerMinute(c.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND)),
       );
-      await deps.markRunning(c.id);
+      await deps.repo.markScheduledRunning(c.id);
       launched += 1;
     } catch (err) {
       deps.onError?.(`schedule-sweep: échec sur la campagne ${c.id}`, err);

@@ -35,21 +35,27 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string } = {
   const pieces = magasinPiecesJointes();
 
   const application = (): ApplicationDeps => ({
-    numeroDuTenant: async () => '123',
-    client: async () => ({
-      listFaqs: async () => [], createFaq: async () => ({}), updateFaq: async () => ({}), deleteFaq: async () => {},
-      listSkills: async () => [], createSkill: async () => ({}), updateSkill: async () => ({}), deleteSkill: async () => {},
-      listWebsites: async () => [], createWebsite: async () => ({}), deleteWebsite: async () => {},
-      listFiles: async () => [], deleteFile: async () => {},
-      uploadFile: async (_p: string, nom: string, contenu: Blob) => {
-        journal.montes.push({ nom, taille: contenu.size });
-        return {};
-      },
-      getBusinessInfo: async () => ({}), putBusinessInfo: async () => ({}),
-      getSettings: async () => ({}), putSettings: async () => ({}),
-    } as never),
-    journaliser: async () => {},
-    pieceJointe: async (t: string, jeton: string) => pieces.reprendre(t, jeton),
+    numeros: {
+      getTenantPhoneNumberId: async () => '123',
+    },
+    meta: {
+      mbaClientForTenant: async () => ({
+        listFaqs: async () => [], createFaq: async () => ({}), updateFaq: async () => ({}), deleteFaq: async () => {},
+        listSkills: async () => [], createSkill: async () => ({}), updateSkill: async () => ({}), deleteSkill: async () => {},
+        listWebsites: async () => [], createWebsite: async () => ({}), deleteWebsite: async () => {},
+        listFiles: async () => [], deleteFile: async () => {},
+        uploadFile: async (_p: string, nom: string, contenu: Blob) => {
+          journal.montes.push({ nom, taille: contenu.size });
+          return {};
+        },
+        getBusinessInfo: async () => ({}), putBusinessInfo: async () => ({}),
+        getSettings: async () => ({}), putSettings: async () => ({}),
+      } as never),
+    },
+    historique: {
+      ecrire: async () => {},
+    },
+    pieces,
     acteur: { id: 'u1', email: null },
   });
 
@@ -66,7 +72,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string } = {
     plafondEuros: 2,
     modele: 'test/modele',
     tauxEurParDollar: 0.92,
-    agentIdDuTenant: async () => 'ag-1',
+    numeros: { getTenantPhoneNumberId: async () => 'ag-1' },
     pieces,
     application,
     ...sur,
@@ -244,10 +250,18 @@ describe('le message quand ça casse', () => {
   it('⚠️ l’application transmet le TENANT au magasin, pas une chaîne vide', async () => {
     const vus: string[] = [];
     const deps: ApplicationDeps = {
-      numeroDuTenant: async () => '123',
-      client: async () => ({ uploadFile: async () => ({}) } as never),
-      journaliser: async () => {},
-      pieceJointe: async (t: string) => { vus.push(t); return { nom: 'a.pdf', contenu: new Blob(['x']) }; },
+      numeros: {
+        getTenantPhoneNumberId: async () => '123',
+      },
+      meta: {
+        mbaClientForTenant: async () => ({ uploadFile: async () => ({}) } as never),
+      },
+      historique: {
+        ecrire: async () => {},
+      },
+      pieces: {
+        reprendre: (t: string) => { vus.push(t); return { nom: 'a.pdf', contenu: new Blob(['x']) }; },
+      },
       acteur: { id: null, email: null },
     };
     await appliquer(deps, 'tenant-reel', 'ag-1', [{ type: 'fichier.ajouter', jeton: 'a'.repeat(32), nom: 'a.pdf' }]);
@@ -307,8 +321,8 @@ describe('le vrai câblage', () => {
 
   it('🔴 le magasin est construit UNE fois et partagé par le dépôt et l’application', () => {
     expect(index).toContain('const piecesJointesMba = magasinPiecesJointes()');
-    expect(index).toContain('pieces: piecesJointesMba');
-    expect(index).toContain('piecesJointesMba.reprendre(t, jeton)');
+    // Le dépôt (la route) et l'application reçoivent chacun ce même magasin.
+    expect(index.match(/pieces: piecesJointesMba,/g) ?? []).toHaveLength(2);
     // Deux constructions séparées rendraient tout jeton introuvable à l'application, sans erreur visible.
     expect(index.match(/magasinPiecesJointes\(\)/g) ?? []).toHaveLength(1);
   });

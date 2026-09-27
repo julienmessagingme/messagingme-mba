@@ -45,14 +45,16 @@ export interface EtatTraduction {
 
 export interface DepsFil {
   traducteur: Traducteur;
-  /** Range les traductions calculées. Un échec ici ne doit pas priver l'opérateur de sa lecture. */
-  ranger(
-    tenantId: string,
-    conversationId: string,
-    traductions: Array<{ messageId: string; texte: string; langue: LangueConsole }>,
-  ): Promise<void>;
-  /** La langue du contact, apprise du message le plus récent qu'on vient de traduire. */
-  apprendreLangueContact(tenantId: string, conversationId: string, langue: string): Promise<void>;
+  traductions: {
+    /** Range les traductions calculées. Un échec ici ne doit pas priver l'opérateur de sa lecture. */
+    ranger(
+      tenantId: string,
+      conversationId: string,
+      traductions: Array<{ messageId: string; texte: string; langue: LangueConsole }>,
+    ): Promise<void>;
+    /** La langue du contact, apprise du message le plus récent qu'on vient de traduire. */
+    apprendreLangueContact(tenantId: string, conversationId: string, langue: string): Promise<void>;
+  };
   /**
    * Une écriture d'appoint a échoué. La route la câble sur son journal : sans elle, un rangement qui échoue ferait
    * repayer la même traduction à chaque ouverture sans que personne ne l'apprenne.
@@ -154,7 +156,7 @@ export async function traduireFil<M extends MessageATraduire>(
 
   if (obtenues.size > 0) {
     try {
-      await deps.ranger(
+      await deps.traductions.ranger(
         o.tenantId,
         o.conversationId,
         [...obtenues].map(([messageId, t]) => ({ messageId, texte: t.texte, langue: o.cible })),
@@ -171,7 +173,7 @@ export async function traduireFil<M extends MessageATraduire>(
       const langue = obtenues.get(aTenter[i]!.id)?.langueSource?.trim();
       if (!langue) continue;
       try {
-        await deps.apprendreLangueContact(o.tenantId, o.conversationId, langue);
+        await deps.traductions.apprendreLangueContact(o.tenantId, o.conversationId, langue);
       } catch (err) {
         deps.onErreur?.(err, 'langue_contact');
       }

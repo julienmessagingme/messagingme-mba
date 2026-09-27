@@ -12,20 +12,25 @@ import type { DepensePub, EtatCampagneMeta } from '../meta/pubs-creation';
 
 /** Ce que le balayage sait faire. Chaque méthode est étroite, pour qu'un faux tienne en quelques lignes. */
 export interface SuiviPubsDeps {
-  /** Les espaces qui ont une connexion publicitaire et au moins une publicité à suivre. */
-  espacesASuivre(): Promise<string[]>;
-  /** Les campagnes de cet espace qu'il faut relire. Vide = rien à faire, aucun appel à Meta. */
-  campagnesASuivre(tenantId: string): Promise<string[]>;
+  publicites: {
+    /** Les espaces qui ont une connexion publicitaire et au moins une publicité à suivre. */
+    espacesASuivre(): Promise<string[]>;
+    /** Les campagnes de cet espace qu'il faut relire. Vide = rien à faire, aucun appel à Meta. */
+    campagnesASuivre(tenantId: string): Promise<string[]>;
+  };
   /** Le jeton en clair. `null` = plus de connexion (déconnectée entre-temps) : on passe. */
   jeton(tenantId: string): Promise<string | null>;
-  lireCampagnes(campagneIds: readonly string[], jeton: string): Promise<Map<string, EtatCampagneMeta>>;
-  lireDepenses(campagneIds: readonly string[], jeton: string): Promise<Map<string, DepensePub>>;
+  /** Les lectures chez Meta. */
+  meta: {
+    lireCampagnes(campagneIds: readonly string[], jeton: string): Promise<Map<string, EtatCampagneMeta>>;
+    lireDepenses(campagneIds: readonly string[], jeton: string): Promise<Map<string, DepensePub>>;
+  };
   /** Écrit ce que Meta a rendu, et l'heure de lecture. */
   noterSuivi(tenantId: string, campagneId: string, v: {
     etat: EtatCampagneMeta | null; depense: DepensePub | null;
   }): Promise<void>;
   /** Meta a refusé le jeton : la connexion est invalide, l'écran doit le dire. */
-  marquerJetonRejete(tenantId: string): Promise<void>;
+  connexions: { marquerJetonRejete(tenantId: string): Promise<void> };
   /** Ce jeton est-il refusé par Meta, par opposition à une panne passagère ? */
   estJetonRefuse(err: unknown): boolean;
   /** Prévient l'exploitation. Un jeton mort ne se répare pas tout seul, et personne ne lit les journaux. */
@@ -48,7 +53,7 @@ export async function balayerLesPubs(deps: SuiviPubsDeps): Promise<BilanSuivi> {
   const bilan: BilanSuivi = { espaces: 0, campagnes: 0, jetonsRejetes: 0 };
   let espaces: string[];
   try {
-    espaces = await deps.espacesASuivre();
+    espaces = await deps.publicites.espacesASuivre();
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('suivi des publicités : impossible de lister les espaces :', message(err));
@@ -57,7 +62,7 @@ export async function balayerLesPubs(deps: SuiviPubsDeps): Promise<BilanSuivi> {
 
   for (const tenantId of espaces) {
     try {
-      const campagnes = await deps.campagnesASuivre(tenantId);
+      const campagnes = await deps.publicites.campagnesASuivre(tenantId);
       // Aucun appel à Meta quand il n'y a rien à suivre.
       if (campagnes.length === 0) continue;
       const jeton = await deps.jeton(tenantId);
@@ -65,15 +70,15 @@ export async function balayerLesPubs(deps: SuiviPubsDeps): Promise<BilanSuivi> {
       bilan.espaces += 1;
 
       const [etats, depenses] = await Promise.all([
-        lireOuRien(() => deps.lireCampagnes(campagnes, jeton), 'statuts', tenantId, deps),
-        lireOuRien(() => deps.lireDepenses(campagnes, jeton), 'dépenses', tenantId, deps),
+        lireOuRien(() => deps.meta.lireCampagnes(campagnes, jeton), 'statuts', tenantId, deps),
+        lireOuRien(() => deps.meta.lireDepenses(campagnes, jeton), 'dépenses', tenantId, deps),
       ]);
 
       // Un jeton rejeté se retient une fois : les deux lectures échouent ensemble, et deux alertes identiques
       // toutes les quinze minutes feraient ignorer la seule qui compte.
       if (etats.jetonRefuse || depenses.jetonRefuse) {
         bilan.jetonsRejetes += 1;
-        await deps.marquerJetonRejete(tenantId);
+        await deps.connexions.marquerJetonRejete(tenantId);
         deps.alerter('pubs-jeton', `connexion publicitaire refusée par Meta pour l’espace ${tenantId} : le suivi s’arrête, le routage des leads continue`);
         continue;
       }

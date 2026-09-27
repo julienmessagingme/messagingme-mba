@@ -5,13 +5,16 @@ import { espaceVerifie, nonEmpty } from './scope';
 import type { RcsChannelInfo, RcsChannelCheck } from '../rcs/channel-info';
 
 export interface RcsChannelRouteDeps {
-  /** État courant du canal pour ce workspace. null = pas activé. */
-  etat(tenantId: string): Promise<{ agentId: string; brandName: string; displayName: string | null; status: string; checkedAt: string | null } | null>;
+  /** Les canaux RCS des espaces. */
+  agents: {
+    /** État courant du canal pour ce workspace. null = pas activé. */
+    etatPour(tenantId: string): Promise<{ agentId: string; brandName: string; displayName: string | null; status: string; checkedAt: string | null } | null>;
+    desactiver(tenantId: string): Promise<boolean>;
+  };
   /** Vérifie une clé chez le fournisseur sans rien enregistrer. */
   verifier(apiKey: string): Promise<RcsChannelCheck>;
   /** Enregistre une clé déjà vérifiée (chiffrement fait par l'appelant). */
   activer(tenantId: string, canal: RcsChannelInfo, apiKey: string): Promise<void>;
-  desactiver(tenantId: string): Promise<boolean>;
 }
 
 /**
@@ -24,7 +27,7 @@ export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDe
 
   app.get('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const etat = await deps.etat(tenant);
+    const etat = await deps.agents.etatPour(tenant);
     return reply.code(200).send({ active: etat !== null, ...(etat ? { channel: etat } : {}) });
   });
 
@@ -48,7 +51,7 @@ export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDe
   app.delete('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
-    const fait = await deps.desactiver(tenant);
+    const fait = await deps.agents.desactiver(tenant);
     if (!fait) return reply.code(404).send({ error: 'canal RCS non activé' });
     return reply.code(200).send({ active: false });
   });

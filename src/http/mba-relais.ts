@@ -26,15 +26,17 @@ import {
  */
 export interface MbaRelaisDeps {
   /** Le numéro Meta de l'espace, `null` = aucun, donc aucun outil exposé. */
-  numeroDuTenant(tenantId: string): Promise<string | null>;
-  /** Les outils actifs pour un consommateur, filtrés sur l'espace (`listActifsConsommateur`). */
-  outilsActifs(
-    tenantId: string,
-    consommateur: string,
-  ): Promise<Array<Pick<OutilDefini, 'id' | 'name' | 'origin' | 'requestId' | 'timeoutMs' | 'maxBytes' | 'binding'>>>;
-  requete(tenantId: string, id: string): Promise<Pick<RequeteConnecteur, 'variables'> | null>;
+  numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
+  /** Les outils actifs pour un consommateur, filtrés sur l'espace. */
+  catalogue: {
+    listActifsConsommateur(
+      tenantId: string,
+      consommateur: string,
+    ): Promise<Array<Pick<OutilDefini, 'id' | 'name' | 'origin' | 'requestId' | 'timeoutMs' | 'maxBytes' | 'binding'>>>;
+  };
+  requetes: { parId(tenantId: string, id: string): Promise<Pick<RequeteConnecteur, 'variables'> | null> };
   /** La projection du contact `{nom, tags, champs}`, ou `null` s'il est inconnu. Jamais la ligne brute. */
-  contact(tenantId: string, waId: string): Promise<Record<string, unknown> | null>;
+  contacts: { projectionPourTiers(tenantId: string, waId: string): Promise<Record<string, unknown> | null> };
   appeler(p: AppelConnecteur): Promise<SortieResolveur>;
   journal: JournalAppels;
   /** La forme de l'en-tête du numéro, tant que la macro n'est pas mesurée. Jamais sa valeur. */
@@ -72,10 +74,10 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     //    connecteur (`http`), ou un geste maison dont la cible se relit et se valide (`mba`). Un autre handler est
     //    refusé, jamais joué.
     const PAS_PROPOSE = 'cet outil n’est pas proposé à l’agent de Meta';
-    const pn = await deps.numeroDuTenant(tenant);
+    const pn = await deps.numeros.getTenantPhoneNumberId(tenant);
     const outil = pn === null
       ? undefined
-      : (await deps.outilsActifs(tenant, consommateurMba(pn))).find((o) => o.id === req.params.outilId);
+      : (await deps.catalogue.listActifsConsommateur(tenant, consommateurMba(pn))).find((o) => o.id === req.params.outilId);
     if (!outil) return refus(PAS_PROPOSE);
     const cible = outil.origin === 'mba' ? lireCibleMaison(outil.binding) : null;
     if (cible === null && (outil.origin !== 'http' || !outil.requestId)) return refus(PAS_PROPOSE);
@@ -87,7 +89,7 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     deps.journaliserForme(formeEntete(valeur));
     const waId = waIdDepuisEntete(valeur);
     if (waId === null) return refus('le client n’est pas identifié : son numéro WhatsApp manque');
-    const contact = await deps.contact(tenant, waId);
+    const contact = await deps.contacts.projectionPourTiers(tenant, waId);
     if (contact === null) return refus('ce client est introuvable dans le carnet de contacts');
 
     // 2 bis. Un geste maison : exécuté ici, journalisé comme un appel de connecteur (même table, même appelant).
@@ -145,7 +147,7 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     //    rend `{}` sur un corps illisible : on relit le corps brut (`rawBody`) pour ne pas le confondre avec un
     //    corps vide. Seulement si l'outil lit un corps : sinon ce que Meta envoie n'est pas mesuré, et le refuser
     //    casserait l'outil pour rien.
-    const requete = await deps.requete(tenant, outil.requestId);
+    const requete = await deps.requetes.parId(tenant, outil.requestId);
     if (requete === null) return refus('cet outil n’est pas configuré');
     const litUnCorps = requete.variables.some((v) => v.origine.type === 'modele');
     if (litUnCorps && corpsIllisible((req as { rawBody?: unknown }).rawBody)) {

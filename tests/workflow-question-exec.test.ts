@@ -206,9 +206,13 @@ describe('balayeur : les deux familles d echeance', () => {
   it('reprend les dormants ET les questions sans reponse, en portant leur statut', async () => {
     const vus: Array<{ id: string; status?: string }> = [];
     const n = await runWorkflowWakeSweep({
-      claimDue: async () => [dormant('a')],
-      claimDueQuestions: async () => [question('b')],
-      resume: async (r) => { vus.push({ id: r.id, ...(r.status ? { status: r.status } : {}) }); return true; },
+      runs: {
+        claimDueSleeping: async () => [dormant('a')],
+        claimDueQuestions: async () => [question('b')],
+      },
+      executor: {
+        resume: async (r) => { vus.push({ id: r.id, ...(r.status ? { status: r.status } : {}) }); return true; },
+      },
     });
     expect(n).toBe(2);
     expect(vus).toEqual([{ id: 'a' }, { id: 'b', status: 'waiting' }]);
@@ -217,8 +221,12 @@ describe('balayeur : les deux familles d echeance', () => {
   it('sans la reclamation des questions, le comportement d avant est inchange', async () => {
     const vus: string[] = [];
     const n = await runWorkflowWakeSweep({
-      claimDue: async () => [dormant('a')],
-      resume: async (r) => { vus.push(r.id); return true; },
+      runs: {
+        claimDueSleeping: async () => [dormant('a')],
+      },
+      executor: {
+        resume: async (r) => { vus.push(r.id); return true; },
+      },
     });
     expect(n).toBe(1);
     expect(vus).toEqual(['a']);
@@ -228,9 +236,13 @@ describe('balayeur : les deux familles d echeance', () => {
     // Le sommeil est le chemin historique : une nouveaute qui casse ne doit pas l emporter avec elle.
     const vus: string[] = [];
     const n = await runWorkflowWakeSweep({
-      claimDue: async () => [dormant('a')],
-      claimDueQuestions: async () => { throw new Error('base indisponible'); },
-      resume: async (r) => { vus.push(r.id); return true; },
+      runs: {
+        claimDueSleeping: async () => [dormant('a')],
+        claimDueQuestions: async () => { throw new Error('base indisponible'); },
+      },
+      executor: {
+        resume: async (r) => { vus.push(r.id); return true; },
+      },
     });
     expect(n).toBe(1);
     expect(vus).toEqual(['a']);

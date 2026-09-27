@@ -397,7 +397,7 @@ describe('le travail de poussée', () => {
       },
       requetes: { parId: async () => REQUETE as never },
       requeteConfiguree: async () => 'rq1',
-      projectionContact: async () => ({ nom: 'Julie', tags: [], champs: {} }),
+      contacts: { projectionPourTiers: async () => ({ nom: 'Julie', tags: [], champs: {} }) },
       fetchImpl: (async (url: string, init?: RequestInit) => {
         appels.push(String(url));
         corpsEnvoyes.push(typeof init?.body === 'string' ? init.body : '');

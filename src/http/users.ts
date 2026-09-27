@@ -17,40 +17,47 @@ export interface UsersRouteDeps {
    * exception, dénormalisée pour rester lisible après le départ du collaborateur.
    */
   audit: AuditSink;
-  listUsers(tenantId: string): Promise<UserRow[]>;
-  /** 'ok' | 'last_admin' (refusé : dernier admin actif) | 'not_found' (inconnu/hors tenant). */
-  setUserRole(tenantId: string, userId: string, role: string): Promise<UserMutation>;
-  /** Révoque (true) ou réactive (false) un compte. Mêmes garde-fous que le rôle. */
-  setUserDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation>;
-  /** Supprime définitivement un compte. Refusé si dernier admin actif. */
-  deleteUser(tenantId: string, userId: string): Promise<UserMutation>;
-  /** Invitation : crée un compte en attente (sans mdp). */
-  createPendingUser(tenantId: string, email: string, role: string, name?: string): Promise<UserRow>;
-  /**
-   * Pose le nom affiché d'un membre. `not_found` = id inconnu ou autre espace. Même type de retour que les autres
-   * mutations de membre (`last_admin` n'arrive pas ici) : un type plus étroit obligerait le câblage à traduire.
-   */
-  setUserName(tenantId: string, userId: string, name: string): Promise<UserMutation>;
+  users: MembresDep;
   /** Génère un token d'invitation à usage unique pour ce compte, renvoie le token en clair. */
   createInviteToken(userId: string): Promise<string>;
   /** Envoi de l'email d'invitation (Resend). Absent -> l'invitation est créée mais aucun email n'est envoyé. */
   sendEmail?(input: { to: string; subject: string; text: string; html?: string }): Promise<void>;
   /** Nom (ou email de repli) de l'invitant, pour personnaliser l'email. null -> phrase générique. */
   getInviterName(userId: string): Promise<string | null>;
+  mfa: {
+    /**
+     * Réinitialise le second facteur d'un membre (téléphone perdu, codes de secours épuisés). `autres_espaces` =
+     * la personne a un compte dans un autre espace : refusé ici, ce cas passe par l'exploitation.
+     */
+    reinitialiserDansEspace(tenantId: string, userId: string): Promise<IssueReinitialisation>;
+  };
+  /** Base URL du front pour le lien d'invitation. */
+  appUrl: string;
+}
+
+/** Ce que les routes lisent et écrivent des membres et de l'espace. */
+export interface MembresDep {
+  list(tenantId: string): Promise<UserRow[]>;
+  /** 'ok' | 'last_admin' (refusé : dernier admin actif) | 'not_found' (inconnu/hors tenant). */
+  setRole(tenantId: string, userId: string, role: string): Promise<UserMutation>;
+  /** Révoque (true) ou réactive (false) un compte. Mêmes garde-fous que le rôle. */
+  setDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation>;
+  /** Supprime définitivement un compte. Refusé si dernier admin actif. */
+  deleteUser(tenantId: string, userId: string): Promise<UserMutation>;
+  /** Invitation : crée un compte en attente (sans mdp). */
+  createPending(tenantId: string, email: string, role: string, name?: string): Promise<UserRow>;
+  /**
+   * Pose le nom affiché d'un membre. `not_found` = id inconnu ou autre espace. Même type de retour que les autres
+   * mutations de membre (`last_admin` n'arrive pas ici).
+   */
+  setName(tenantId: string, userId: string, name: string): Promise<UserMutation>;
   /**
    * Nom de l'espace de travail (tenant). Sert à personnaliser l'email d'invitation (null -> phrase
    * générique), et à la carte « Espace » de Compte & équipe (null -> 404).
    */
-  getWorkspaceName(tenantId: string): Promise<string | null>;
+  getTenantName(tenantId: string): Promise<string | null>;
   /** Renomme l'espace (`tenants.name`). `false` = espace inconnu. */
-  renommerEspace(tenantId: string, nom: string): Promise<boolean>;
-  /**
-   * Réinitialise le second facteur d'un membre (téléphone perdu, codes de secours épuisés). `autres_espaces` = la
-   * personne a un compte dans un autre espace : refusé ici, ce cas passe par l'exploitation.
-   */
-  reinitialiserMfa(tenantId: string, userId: string): Promise<IssueReinitialisation>;
-  /** Base URL du front pour le lien d'invitation. */
-  appUrl: string;
+  setTenantName(tenantId: string, nom: string): Promise<boolean>;
 }
 
 /**
@@ -85,7 +92,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
 
   app.get('/tenants/:tenantId/users', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ users: await deps.listUsers(tenant) });
+    return reply.code(200).send({ users: await deps.users.list(tenant) });
   });
 
   // Inviter un membre : crée un compte en attente (sans mot de passe) + envoie un lien pour qu'il choisisse le sien.
@@ -102,7 +109,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const nom = typeof b.name === 'string' ? b.name.trim() : '';
 
     try {
-      const user = await deps.createPendingUser(tenant, email, b.role, nom);
+      const user = await deps.users.createPending(tenant, email, b.role, nom);
       const raw = await deps.createInviteToken(user.id);
       let emailSent = false;
       if (deps.sendEmail && deps.appUrl) {
@@ -110,7 +117,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
         // Personnalisation au mieux : le nom de l'invitant (req.auth.userId) et de l'espace. Une panne de lookup ne
         // bloque jamais l'invitation -> repli sur une formulation générique.
         const inviterName = req.auth?.userId ? await deps.getInviterName(req.auth.userId).catch(() => null) : null;
-        const workspaceName = await deps.getWorkspaceName(tenant).catch(() => null);
+        const workspaceName = await deps.users.getTenantName(tenant).catch(() => null);
         const html = renderInvitationEmail({ inviterName, workspaceName, acceptUrl, role: b.role });
         // Repli texte brut pour les clients qui ne rendent pas le HTML (personnalisé si dispo).
         const intro = inviterName && workspaceName
@@ -155,7 +162,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     if (typeof nom !== 'string' || nom.length > MAX_NOM) {
       return reply.code(400).send({ error: `nom invalide (${MAX_NOM} caractères maximum)` });
     }
-    const result = await deps.setUserName(tenant, userId, nom);
+    const result = await deps.users.setName(tenant, userId, nom);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     // Le nom effectif est rendu : vide -> `null`, que l'écran affiche comme « pas de nom » et non comme une
     // chaîne vide qu'il aurait crue enregistrée.
@@ -177,7 +184,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     }
     // NB : le rôle vit dans le JWT (TTL du token) ; une rétrogradation prend pleinement effet au
     // plus tard à l'expiration/reconnexion. L'invariant base ci-dessus empêche néanmoins le zéro-admin.
-    const result = await deps.setUserRole(tenant, userId, role);
+    const result = await deps.users.setRole(tenant, userId, role);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur est requis' });
     // Après le succès, jamais avant : une intention refusée (404, 409) ferait du journal un registre de tentatives.
@@ -193,7 +200,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     if (typeof disabled !== 'boolean') return reply.code(400).send({ error: 'disabled (booléen) requis' });
     // Self-block : ne pas se révoquer soi-même (auto-lockout).
     if (req.auth?.userId === userId) return reply.code(400).send({ error: 'tu ne peux pas révoquer ton propre compte' });
-    const result = await deps.setUserDisabled(tenant, userId, disabled);
+    const result = await deps.users.setDisabled(tenant, userId, disabled);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur actif est requis' });
     await journal(tenant, req, 'utilisateur.desactive', { kind: 'user', id: userId }, { disabled });
@@ -206,7 +213,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const { userId } = req.params as { userId: string };
     // Self-block : ne pas supprimer son propre compte.
     if (req.auth?.userId === userId) return reply.code(400).send({ error: 'tu ne peux pas supprimer ton propre compte' });
-    const result = await deps.deleteUser(tenant, userId);
+    const result = await deps.users.deleteUser(tenant, userId);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur actif est requis' });
     await journal(tenant, req, 'utilisateur.retire', { kind: 'user', id: userId });
@@ -228,7 +235,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     }
     // Un identifiant mal formé partirait dans un `where id = $1` sur une colonne `uuid` : 22P02, donc un 500.
     if (!estUuid(userId)) return reply.code(404).send({ error: 'Utilisateur inconnu.' });
-    const issue = await deps.reinitialiserMfa(tenant, userId);
+    const issue = await deps.mfa.reinitialiserDansEspace(tenant, userId);
     if (issue === 'not_found') return reply.code(404).send({ error: 'Utilisateur inconnu.' });
     if (issue === 'autres_espaces') {
       return reply.code(409).send({
@@ -245,7 +252,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
    */
   app.get('/tenants/:tenantId/nom', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const nom = await deps.getWorkspaceName(tenant);
+    const nom = await deps.users.getTenantName(tenant);
     if (nom === null) return reply.code(404).send({ error: 'espace inconnu' });
     return reply.code(200).send({ nom });
   });
@@ -256,11 +263,11 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     if (!corps.success) return reply.code(400).send({ error: MESSAGE_NOM_ESPACE_INVALIDE });
     const nom = corps.data.nom;
     // L'ancien nom est lu avant l'écriture : il dit si l'espace existe, et si le nom change vraiment.
-    const ancien = await deps.getWorkspaceName(tenant);
+    const ancien = await deps.users.getTenantName(tenant);
     if (ancien === null) return reply.code(404).send({ error: 'espace inconnu' });
     // Rien n'a changé : ni écriture ni ligne de journal, qui est un registre de changements.
     if (ancien === nom) return reply.code(200).send({ nom });
-    if (!(await deps.renommerEspace(tenant, nom))) return reply.code(404).send({ error: 'espace inconnu' });
+    if (!(await deps.users.setTenantName(tenant, nom))) return reply.code(404).send({ error: 'espace inconnu' });
     /**
      * 🔴 Le journal dit qui a renommé et quand, jamais les deux noms : un nom d'espace peut porter le nom complet
      * d'une personne (inscription par Google) ou un numéro, et `audit_log`, gardé deux ans, le rendrait ineffaçable.

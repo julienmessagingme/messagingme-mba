@@ -13,10 +13,15 @@ const sansCommentaires = (chemin: string): string => readFileSync(new URL(chemin
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 const source = sansCommentaires('../src/index.ts');
+/** Le bloc des envois de `/v1/sends`, du template lu chez Meta jusqu'au bloc suivant. */
+const envois = source.slice(source.indexOf('lireModele: async (tenant, name, language)'), source.indexOf('      messages: {'));
 
 describe('câblage de /v1/sends', () => {
   it('🔴 l’empreinte du corps atteint le magasin d’idempotence', () => {
-    expect(source).toMatch(/idempotencyClaim: \(tenant, key, empreinte\) => idempotencyStore\.claim\(tenant, key, empreinte\)/);
+    // Le magasin passe tel quel : aucune flèche intermédiaire ne peut avaler l'empreinte, et la route l'appelle
+    // avec ses trois arguments.
+    expect(envois).toMatch(/\bidempotence: idempotencyStore,/);
+    expect(sansCommentaires('../src/http/v1-sends.ts')).toMatch(/deps\.idempotence\.claim\(tenantId, idem\.cle, empreinteCorps\(req\.body\)\)/);
   });
 
   it('🔴 la SOURCE du consentement atteint l’écriture', () => {
@@ -39,12 +44,13 @@ describe('câblage de /v1/sends', () => {
   it('🔴 le numéro délié est lu par la garde de CE process, celle dont « Délier » et « Relier » vident le cache', () => {
     // Une autre instance (ou une lecture sans cache recopiée ici) ne serait pas vidée par le geste : l'API
     // refuserait encore quelques secondes après « Relier », ou accepterait après « Délier ».
-    expect(source).toMatch(/numeroEstDelie: \(pn\) => gardeNumeroDelie\.estDelie\(pn\)/);
+    expect(envois).toMatch(/\bnumerosDelies: gardeNumeroDelie,/);
     expect(source).toMatch(/const gardeNumeroDelie = creerGardeNumeroDelie\(/);
   });
 
   it('les contacts de l’API sont lus par la lecture qui garde les bloqués', () => {
-    expect(source).toMatch(/listContactsPourEnvoi: \(tenant, ids\) => repo\.listContactsPourEnvoiApi\(tenant, ids\)/);
+    expect(envois).toMatch(/\brepo,/);
+    expect(sansCommentaires('../src/http/v1-sends.ts')).toMatch(/deps\.repo\.listContactsPourEnvoiApi\(/);
   });
 });
 

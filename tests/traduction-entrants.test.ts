@@ -4,11 +4,11 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { InboxRouteDeps } from '../src/http/inbox';
+import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
 import type { ConversationMessage } from '../src/inbox/store.pg';
 import { traduireFil, candidats, texteATraduire, type DepsFil, type MessageATraduire } from '../src/traduction/fil';
 import { TRADUCTIONS_MAX_PAR_REQUETE, type Traducteur, type Traduction } from '../src/traduction/traduire';
-import { inboxInerte } from './routes-inertes';
+import { inboxDepInerte, inboxInerte } from './routes-inertes';
 
 /**
  * LES ENTRANTS, TRADUITS A L'OUVERTURE D'UNE CONVERSATION.
@@ -45,8 +45,10 @@ function faux(opts: {
   const languesApprises: string[] = [];
   const deps: DepsFil = {
     traducteur,
-    ranger: async (_t, _c, trads) => { ranges.push(...trads); },
-    apprendreLangueContact: async (_t, _c, langue) => { languesApprises.push(langue); },
+    traductions: {
+      ranger: async (_t, _c, trads) => { ranges.push(...trads); },
+      apprendreLangueContact: async (_t, _c, langue) => { languesApprises.push(langue); },
+    },
   };
   return { deps, appels, ranges, languesApprises };
 }
@@ -173,7 +175,7 @@ describe('traduction du fil : qui est traduit, et combien de fois on paie', () =
     const vus: string[] = [];
     const deps: DepsFil = {
       ...f.deps,
-      ranger: async () => { throw new Error('base indisponible'); },
+      traductions: { ...f.deps.traductions, ranger: async () => { throw new Error('base indisponible'); } },
       onErreur: (_err, quoi) => { vus.push(quoi); },
     };
     const r = await traduireFil(deps, { ...OU, messages: [msg({ id: 'm1' })], cible: 'fr' });
@@ -256,22 +258,29 @@ beforeAll(async () => { token = await signSession({ userId: 'u1', tenantId: 't1'
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
-function app(over: Partial<InboxRouteDeps> = {}) {
+function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<InboxDep> } = {}) {
+  const { inbox, ...reste } = over;
   const deps: InboxRouteDeps = {
     ...inboxInerte,
     estDesabonne: jamaisDesabonne,
-    listConversations: async () => [],
-    getConversationContext: async (id) => (id === 'c1'
-      ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-09-12T00:00:00.000Z', langueContact: 'es' }
-      : null),
-    getMessages: async (): Promise<ConversationMessage[]> => [
-      { id: 'm1', direction: 'in', type: 'text', body: 'Hola', buttonPayload: null, createdAt: '2026-09-12T00:00:00.000Z' },
-    ],
-    recordOutbound: async () => {},
-    getTenantPhoneNumberId: async () => 'pn1',
+    inbox: {
+      ...inboxDepInerte,
+      listConversations: async () => [],
+      getConversationContext: async (id) => (id === 'c1'
+        ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-09-12T00:00:00.000Z', langueContact: 'es' }
+        : null),
+      getMessages: async (): Promise<ConversationMessage[]> => [
+        { id: 'm1', direction: 'in', type: 'text', body: 'Hola', buttonPayload: null, createdAt: '2026-09-12T00:00:00.000Z' },
+      ],
+      recordOutbound: async () => {},
+      ...inbox,
+    },
+    repo: {
+      getTenantPhoneNumberId: async () => 'pn1',
+    },
     sendReply: async () => 'wamid.OUT',
     sendTemplateMessage: async () => 'wamid.TPL',
-    ...over,
+    ...reste,
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, inbox: deps });
 }

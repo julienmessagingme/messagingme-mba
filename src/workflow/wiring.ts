@@ -279,8 +279,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // bouton de l'Inbox servi par l'API). Séparés parce que chaque appelant connaît l'état qu'il attendait avant
   // de basculer (`only: ['app_workflow']` ou `['app_human']`) : un `only` figé échouerait en silence chez l'autre.
   const rendreLeFilChezMeta = creerRendreLeFil({
-    numeroDuTenant: (t) => numeroDeLEspace(t),
-    clientMba: (t) => metaFactory.mbaClientForTenant(t),
+    numeros: { getTenantPhoneNumberId: numeroDeLEspace },
+    meta: metaFactory,
   });
 
   /**
@@ -362,8 +362,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
 
   const prendreLeFilAvecUnRejeu = creerPrendreLeFilAvecUnRejeu({
     prendre: creerPrendreLeFil({
-      numeroDuTenant: (t) => numeroDeLEspace(t),
-      clientMba: (t) => metaFactory.mbaClientForTenant(t),
+      numeros: { getTenantPhoneNumberId: numeroDeLEspace },
+      meta: metaFactory,
     }),
     attendre: (ms) => dormir(ms),
   });
@@ -559,7 +559,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       /** Le journal, où le client voit qu'un connecteur a refusé l'appel d'un bloc de scénario. */
       journalAppels: new PgJournalAppels(pool),
       libelleRequete: async (t, id) => (await new PgRequeteStore(pool).parId(t, id))?.label ?? null,
-      derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
+      inbox: inboxStore,
       fuseau: async (t) => (await settingsStore.get(t)).timezone,
       // Relue à chaque appel, pas portée par le contexte du parcours : le bloc peut suivre un bloc qui vient
       // d'écrire un champ.

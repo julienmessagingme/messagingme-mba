@@ -20,16 +20,13 @@ const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
 const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('câblage du plafond de campagne', () => {
-  it('🔴 la borne est RELAYÉE au store, elle n’est pas avalée par une flèche trop courte', () => {
-    // La ligne entière, ancrée : un `toMatch` sur le seul nom de la dépendance passerait aussi sur la version
-    // fautive à deux paramètres, qui est précisément celle qu'on veut interdire.
-    expect(sansCommentaires, 'la résolution de cible doit relayer sa limite au store')
-      .toMatch(/contactIdsForTarget: \(tenant, target, limite\) => contactStore\.contactIdsForTarget\(tenant, target, limite\)/);
-    // Et la forme fautive ne doit plus exister DANS LE CÂBLAGE DES CAMPAGNES. Le mini-CRM garde la sienne à
-    // deux paramètres, volontairement : ses actions en masse n'ont pas de plafond de campagne à respecter.
+  it('🔴 la borne atteint le store : aucune flèche intermédiaire ne peut l’avaler', () => {
+    // Le câblage des campagnes passe le store lui-même : la route appelle `contactIdsForTarget` avec ses trois
+    // arguments, sans relais dont l'arité pourrait être plus courte que le contrat.
     const bloc = sansCommentaires.slice(sansCommentaires.indexOf('plafondDestinataires') - 3000, sansCommentaires.indexOf('plafondDestinataires'));
-    expect(bloc, 'aucun câblage de campagne ne doit relayer la cible sans sa limite')
-      .not.toMatch(/contactIdsForTarget: \(tenant, target\) =>/);
+    expect(bloc, 'la résolution de cible doit recevoir le store tel quel').toMatch(/\bcontacts: contactStore,/);
+    expect(bloc, 'aucun câblage de campagne ne doit relayer la cible par une flèche')
+      .not.toMatch(/contactIdsForTarget: \(/);
   });
 
   it('🔴 « tous les contacts » RÉSOUT ses identifiants bornés, il ne les compte plus', () => {

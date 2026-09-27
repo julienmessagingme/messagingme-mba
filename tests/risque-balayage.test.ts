@@ -316,7 +316,7 @@ describe('le câblage partagé (worker et /ops)', () => {
 
   it('🔴 il ne publie QUE `risque_eleve`, par le seul chemin d’enfilement, avec l’espace comme groupe', async () => {
     const file = new FakeQueue();
-    const deps = depsBalayageRisque({ pool, file, emetteur: { emettreSignaux: async () => {} }, automationsActives: async () => [] });
+    const deps = depsBalayageRisque({ pool, file, emetteur: { emettreSignaux: async () => {} }, automations: { listEnabled: async () => [] } });
     // 🔴 Avec son DÉPART DIFFÉRÉ (`startAfter`) : sans lui, l'événement serait traité pendant le balayage de nuit.
     await deps.publierRisqueEleve(T, '33612345678', NEUF_HEURES);
     expect(file.enqueued).toEqual([
@@ -330,7 +330,7 @@ describe('le câblage partagé (worker et /ops)', () => {
     const demandes: Array<readonly string[]> = [];
     const deps = depsBalayageRisque({
       pool, file: new FakeQueue(), emetteur: { emettreSignaux: async () => {} },
-      automationsActives: async (_t, kinds) => { demandes.push(kinds); return []; },
+      automations: { listEnabled: async (_t, kinds) => { demandes.push(kinds); return []; } },
     });
     expect(await deps.automationRisqueActive(T)).toBe(false);
     expect(demandes).toEqual([['risque_eleve']]);
@@ -340,7 +340,7 @@ describe('le câblage partagé (worker et /ops)', () => {
     const enfiles: unknown[] = [];
     const emetteur = creerEmetteur({
       destinations: [{ file: 'signaux-test', espacesActifs: async () => new Set<string>() }],
-      enfiler: async (_f, job) => { enfiles.push(job); },
+      queue: { enqueue: async (_f, job) => { enfiles.push(job); } },
     });
     const { deps } = monter(fichesDe(3, DECROCHE, 'moyen'), { emettreSignaux: (t, s) => emetteur.emettreSignaux(t, s) });
     expect((await balayerRisqueEspace(T, deps)).transitions).toBe(3);
@@ -348,7 +348,7 @@ describe('le câblage partagé (worker et /ops)', () => {
     // Le témoin : branché, les mêmes transitions partent, en UN job.
     const branche = creerEmetteur({
       destinations: [{ file: 'signaux-test', espacesActifs: async () => new Set([T]) }],
-      enfiler: async (_f, job) => { enfiles.push(job); },
+      queue: { enqueue: async (_f, job) => { enfiles.push(job); } },
     });
     const { deps: deps2 } = monter(fichesDe(3, DECROCHE, 'moyen'), { emettreSignaux: (t, s) => branche.emettreSignaux(t, s) });
     await balayerRisqueEspace(T, deps2);

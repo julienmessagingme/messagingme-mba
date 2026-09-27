@@ -23,11 +23,13 @@ export interface AgentSourcesRouteDeps {
    * l'hôte (le chemin et le secret permettraient de rejouer l'appel depuis une table jamais purgée).
    */
   audit: AuditSink;
-  lister(tenantId: string): Promise<SourceVue[]>;
-  parId(tenantId: string, id: string): Promise<SourceVue | null>;
-  creer(tenantId: string, input: { kind: 'http'; label: string; baseUrl: string; authKind: 'none' | 'bearer' | 'header'; authHeaderName?: string; authSecret?: string }): Promise<SourceVue>;
-  patch(tenantId: string, id: string, patch: Record<string, unknown>): Promise<SourceVue | null>;
-  supprimer(tenantId: string, id: string): Promise<boolean>;
+  sources: {
+    lister(tenantId: string): Promise<SourceVue[]>;
+    parId(tenantId: string, id: string): Promise<SourceVue | null>;
+    creer(tenantId: string, input: { kind: 'http'; label: string; baseUrl: string; authKind: 'none' | 'bearer' | 'header'; authHeaderName?: string; authSecret?: string }): Promise<SourceVue>;
+    patch(tenantId: string, id: string, patch: Record<string, unknown>): Promise<SourceVue | null>;
+    supprimer(tenantId: string, id: string): Promise<boolean>;
+  };
   /**
    * Éprouve la source pour de vrai : un appel, et le résultat écrit sur la ligne. Seul moyen de voir un jeton
    * mort avant qu'un contact ne le découvre (l'agent dégrade en silence).
@@ -94,7 +96,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
      * GET, gestes sans objet pour un serveur MCP. Filtré ici et non dans `lister` : l'inventaire de l'assistant de
      * configuration compte les serveurs MCP (`src/agent/setup/couverture.ts`).
      */
-    const sources = await deps.lister(tenant);
+    const sources = await deps.sources.lister(tenant);
     return reply.code(200).send({ sources: sources.filter((s) => s.kind === 'http') });
   });
 
@@ -105,7 +107,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
    * `tests/sources-kind.test.ts` tient l'inventaire des lecteurs. 404 : pour cet écran, un serveur MCP n'existe pas.
    */
   async function connecteurHttp(tenant: string, id: string): Promise<SourceVue | null> {
-    const s = await deps.parId(tenant, id);
+    const s = await deps.sources.parId(tenant, id);
     return s && s.kind === 'http' ? s : null;
   }
 
@@ -120,7 +122,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     const pb = authCoherente(authKind, authSecret, authHeaderName);
     if (pb) return reply.code(400).send({ error: pb });
     try {
-      const source = await deps.creer(tenant, {
+      const source = await deps.sources.creer(tenant, {
         kind: 'http', label, baseUrl, authKind,
         ...(authHeaderName ? { authHeaderName } : {}),
         ...(authSecret ? { authSecret } : {}),
@@ -154,7 +156,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     const pb = authCoherente(authKind, aSecret, entete);
     if (pb) return reply.code(400).send({ error: pb });
     try {
-      const source = await deps.patch(tenant, id, p);
+      const source = await deps.sources.patch(tenant, id, p);
       if (!source) return reply.code(404).send({ error: 'source introuvable' });
       // `adresseChangee` est le fait qui compte : c'est le seul geste qui redirige tout ce qui part.
       await journal(tenant, req, 'connecteur.modifie', { kind: 'connecteur', id }, {
@@ -179,7 +181,7 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     if (actuelle.outilsActifs > 0) {
       return reply.code(409).send({ error: `${actuelle.outilsActifs} outil(s) actif(s) utilisent cette source : désactivez-les d’abord` });
     }
-    const supprime = await deps.supprimer(tenant, id);
+    const supprime = await deps.sources.supprimer(tenant, id);
     if (supprime) await journal(tenant, req, 'connecteur.supprime', { kind: 'connecteur', id });
     return reply.code(200).send({ id, deleted: supprime });
   });

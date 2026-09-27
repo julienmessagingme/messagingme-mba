@@ -4,7 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
-import { signupInerte } from './routes-inertes';
+import { metaInscriptionInerte, signupInerte } from './routes-inertes';
 
 /**
  * « Activer le numéro » : finir chez nous ce que la fenêtre Meta a laissé en plan.
@@ -46,12 +46,15 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     configId: 'cfg-123',
     appId: 'app-1',
     graphVersion: 'v25.0',
-    exchangeCode: async () => 'BIZ_TOKEN',
-    verifyWaba: async () => {},
-    getPhone: async () => ({ displayPhoneNumber: null, verifiedName: null, status: 'CONNECTED' }),
-    subscribeApp: async () => {},
-    register: async () => {},
-    link: async () => {},
+    meta: {
+      ...metaInscriptionInerte,
+      exchangeCode: async () => 'BIZ_TOKEN',
+      verifyWaba: async () => {},
+      getPhone: async () => ({ displayPhoneNumber: null, verifiedName: null, status: 'CONNECTED' }),
+      subscribeApp: async () => {},
+      register: async () => {},
+    },
+    inscriptions: { linkTenant: async () => {} },
     saveCredentials: async () => {},
     numeroDuTenant: async () => 'pn-1',
     etatNumero: async () => ({ status: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED' }),

@@ -51,20 +51,22 @@ function app(page?: PageDistante | Error) {
   };
   const deps: AgentKnowledgeRouteDeps = {
     ...connaissanceInerte,
-    lister: async (tenant, agentId) => { cap.listes.push({ tenant, agentId }); return [FICHE]; },
-    creer: async (tenant, agentId, fiche) => {
-      cap.crees.push({ tenant, agentId, fiche });
-      // L'agent « inconnu » joue le cas d'un identifiant valide mais d'un AUTRE tenant : le store rend null.
-      return agentId === AG ? { ...FICHE, ...fiche } : null;
-    },
-    modifier: async (tenant, agentId, ficheId, patch) => {
-      cap.modifs.push({ tenant, agentId, ficheId, patch });
-      return ficheId === FICHE_ID ? { ...FICHE, ...patch } : null;
-    },
-    supprimer: async (tenant, agentId, ficheId) => { cap.supprimes.push({ tenant, agentId, ficheId }); return ficheId === FICHE_ID; },
-    remplacerSource: async (tenant, agentId, source, fiches) => {
-      cap.remplacements.push({ tenant, agentId, url: source.type === 'page' ? source.url : '', fiches });
-      return agentId === AG ? { retirees: 2, ecrites: fiches.length } : null;
+    connaissance: {
+      lister: async (tenant, agentId) => { cap.listes.push({ tenant, agentId }); return [FICHE]; },
+      creer: async (tenant, agentId, fiche) => {
+        cap.crees.push({ tenant, agentId, fiche });
+        // L'agent « inconnu » joue le cas d'un identifiant valide mais d'un AUTRE tenant : le store rend null.
+        return agentId === AG ? { ...FICHE, ...fiche } : null;
+      },
+      modifier: async (tenant, agentId, ficheId, patch) => {
+        cap.modifs.push({ tenant, agentId, ficheId, patch });
+        return ficheId === FICHE_ID ? { ...FICHE, ...patch } : null;
+      },
+      supprimer: async (tenant, agentId, ficheId) => { cap.supprimes.push({ tenant, agentId, ficheId }); return ficheId === FICHE_ID; },
+      remplacerSource: async (tenant, agentId, source, fiches) => {
+        cap.remplacements.push({ tenant, agentId, url: source.type === 'page' ? source.url : '', fiches });
+        return agentId === AG ? { retirees: 2, ecrites: fiches.length } : null;
+      },
     },
     fetchUrl: async (u) => {
       cap.lues.push(u);
@@ -228,8 +230,10 @@ describe('base de connaissance : import d’une page', () => {
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
       agentKnowledge: {
         ...connaissanceInerte,
-        lister: async () => [], creer: async () => null, modifier: async () => null,
-        supprimer: async () => false, remplacerSource: async () => null,
+        connaissance: {
+          lister: async () => [], creer: async () => null, modifier: async () => null,
+          supprimer: async () => false, remplacerSource: async () => null,
+        },
       },
     });
     const res = await srv.inject({ method: 'POST', url: `${base('t1')}/import`, ...h(adminTok), payload: { url: 'https://exemple.fr/p' } });
@@ -253,13 +257,15 @@ describe('base de connaissance : parcourir un site (crawl)', () => {
     const remplacements: string[] = [];
     const deps: AgentKnowledgeRouteDeps = {
       ...connaissanceInerte,
-      lister: async () => [FICHE],
-      creer: async () => FICHE,
-      modifier: async () => FICHE,
-      supprimer: async () => true,
-      remplacerSource: async (_t, _a, source, fiches) => {
-        remplacements.push(source.type === 'page' ? source.url : `document:${source.type === 'document' ? source.nom : ''}`);
-        return { retirees: 0, ecrites: fiches.length };
+      connaissance: {
+        lister: async () => [FICHE],
+        creer: async () => FICHE,
+        modifier: async () => FICHE,
+        supprimer: async () => true,
+        remplacerSource: async (_t, _a, source, fiches) => {
+          remplacements.push(source.type === 'page' ? source.url : `document:${source.type === 'document' ? source.nom : ''}`);
+          return { retirees: 0, ecrites: fiches.length };
+        },
       },
       fetchUrl: async (u) => {
         lues.push(u);

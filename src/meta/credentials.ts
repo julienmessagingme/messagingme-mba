@@ -28,10 +28,13 @@ export interface WabaCredential {
 export interface CredentialsResolverDeps {
   /** WABA du tenant (null si aucun). */
   getWabaIdForTenant(tenantId: string): Promise<string | null>;
-  /** Credentials chiffrés + état d'un WABA (null si aucun -> fallback token global). */
-  getCredentialsByWaba(wabaId: string): Promise<WabaCredential | null>;
-  /** Marque le token d'un WABA invalide (sur erreur d'auth). Best-effort. */
-  markTokenInvalid(wabaId: string): Promise<void>;
+  /** Les credentials des WABA. */
+  credentials: {
+    /** Credentials chiffrés + état d'un WABA (null si aucun -> fallback token global). */
+    getCredentialsByWaba(wabaId: string): Promise<WabaCredential | null>;
+    /** Marque le token d'un WABA invalide (sur erreur d'auth). Best-effort. */
+    markTokenInvalid(wabaId: string): Promise<void>;
+  };
   /** Déchiffre le token business (decryptSecret + ENCRYPTION_KEY, injecté pour rester pur). */
   decrypt(enc: string): string;
   /** Token global de repli (config.META_ACCESS_TOKEN) : utilisé quand le WABA n'a pas de credentials propres. */
@@ -72,7 +75,7 @@ export class MetaCredentialsResolver {
     const cached = this.cache.get(wabaId);
     if (cached && this.now() - cached.at < this.ttl) return { token: cached.token, wabaId };
 
-    const cred = await this.deps.getCredentialsByWaba(wabaId);
+    const cred = await this.deps.credentials.getCredentialsByWaba(wabaId);
     if (!cred) return { token: this.deps.fallbackToken, wabaId: null }; // pas de credentials propres
     if (cred.tokenStatus === 'invalid') throw new TokenInvalidError(wabaId);
 
@@ -88,7 +91,7 @@ export class MetaCredentialsResolver {
   async invalidate(wabaId: string): Promise<void> {
     this.cache.delete(wabaId);
     try {
-      await this.deps.markTokenInvalid(wabaId);
+      await this.deps.credentials.markTokenInvalid(wabaId);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`markTokenInvalid ignoré pour ${wabaId}:`, messageDe(err));

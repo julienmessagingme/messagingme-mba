@@ -59,7 +59,7 @@ function harnais(outil: OutilDefini, reponse: { status: number; body: string } =
       marquerEpreuve: async (_t, _i, ok) => { epreuves.push({ ok }); },
     },
     requetes: { parId: async () => REQUETE },
-    derniereSaisie: async () => null,
+    inbox: { derniereSaisieDuContact: async () => null },
     fuseau: async () => 'Europe/Paris',
     now: () => new Date('2026-09-15T09:00:00.000Z'),
     fetchImpl,

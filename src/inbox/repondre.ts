@@ -12,29 +12,37 @@
  */
 import type { OrigineMessage } from './origine';
 
-export interface DepsRepondre {
+/** Ce que la réponse lit et écrit des conversations. */
+export interface ConversationsRepondre {
   getConversationContext(
     conversationId: string,
     tenantId: string,
   ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null>;
-  getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
-  sendReply(tenantId: string, phoneNumberId: string, to: string, text: string): Promise<string>;
   recordOutbound(
     conversationId: string,
     body: string,
     messageId: string | null,
+    /** D'où vient le message. Obligatoire : déduite, elle a menti dès qu'un appelant sans expéditeur humain est
+    *  apparu (le serveur MCP). */
     origine: OrigineMessage,
     type?: string,
     templateCategory?: string | null,
     templateName?: string | null,
     senderUserId?: string | null,
+    /** Canal de la bulle. Absent -> WhatsApp. */
     channel?: 'whatsapp' | 'rcs',
     /**
-     * Ce que l'opérateur avait écrit avant de faire traduire. En dernière position et optionnel : un câblage
-     * qui l'oublie compile quand même, l'intégration vérifie qu'il est transmis.
+     * Ce que l'opérateur avait écrit avant de faire traduire. `body`, lui, porte ce qui est parti. Absent -> les
+     * deux sont la même chose, ce qui est le cas de tout envoi non traduit.
      */
     redactionOrigine?: string | null,
   ): Promise<void>;
+}
+
+export interface DepsRepondre {
+  inbox: ConversationsRepondre;
+  repo: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
+  sendReply(tenantId: string, phoneNumberId: string, to: string, text: string): Promise<string>;
   takeControl(tenantId: string, waId: string): Promise<void>;
   /**
    * 🔴 Ce contact a-t-il demandé à ne plus être contacté ? Requise, lue seulement pour une origine machine :
@@ -73,7 +81,7 @@ export async function repondreDansLaFenetre(
    */
   redactionOrigine: string | null = null,
 ): Promise<ResultatReponse> {
-  const ctx = await deps.getConversationContext(conversationId, tenantId);
+  const ctx = await deps.inbox.getConversationContext(conversationId, tenantId);
   if (ctx === null) return { refus: { motif: 'conversation_inconnue' } };
   if (!ctx.windowOpen) return { refus: { motif: 'fenetre_fermee' } };
 
@@ -87,7 +95,7 @@ export async function repondreDansLaFenetre(
     return { refus: { motif: 'contact_desabonne' } };
   }
 
-  const phoneNumberId = await deps.getTenantPhoneNumberId(tenantId);
+  const phoneNumberId = await deps.repo.getTenantPhoneNumberId(tenantId);
   if (!phoneNumberId) return { refus: { motif: 'aucun_numero' } };
 
   const messageId = await deps.sendReply(tenantId, phoneNumberId, ctx.waId, texte);
@@ -96,6 +104,6 @@ export async function repondreDansLaFenetre(
   // déclenchée par un opérateur) et un clic sur un bouton de chaîne (geste explicite de l'abonné). Une
   // automation ordinaire par mot-clé reste arrêtée.
   await deps.takeControl(tenantId, ctx.waId).catch(() => {});
-  await deps.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
+  await deps.inbox.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
   return { messageId };
 }

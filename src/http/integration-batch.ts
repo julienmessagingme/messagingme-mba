@@ -11,7 +11,7 @@ import type { VueIntegrationBatch } from '../signaux/integration-batch.pg';
  * 🔴 Les clés ne reviennent jamais, ni dans une réponse ni dans l'audit ; le chiffrement se fait dans le câblage.
  */
 export interface IntegrationBatchRouteDeps {
-  lire(tenantId: string): Promise<VueIntegrationBatch | null>;
+  batch: { lire(tenantId: string): Promise<VueIntegrationBatch | null> };
   /** Chiffre les clés reçues et écrit. `false` = premier branchement sans les deux clés : rien n'est écrit. */
   enregistrer(tenantId: string, r: { cleRest?: string; cleProjet?: string; envoyerResume: boolean }): Promise<boolean>;
   supprimer(tenantId: string): Promise<boolean>;
@@ -43,7 +43,7 @@ export function registerIntegrationBatch(app: FastifyInstance, deps: Integration
 
   app.get('/tenants/:tenantId/integrations/batch', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send(vue(await deps.lire(tenant)));
+    return reply.code(200).send(vue(await deps.batch.lire(tenant)));
   });
 
   app.put('/tenants/:tenantId/integrations/batch', opts, async (req, reply) => {
@@ -58,7 +58,7 @@ export function registerIntegrationBatch(app: FastifyInstance, deps: Integration
       // Chiffrement absent : 503 et une phrase affichable. Changer la seule option ne chiffre rien et reste permis.
       return reply.code(503).send({ error: 'Le chiffrement des secrets n’est pas configuré sur cette instance : impossible d’enregistrer des clés.' });
     }
-    const avant = await deps.lire(tenant);
+    const avant = await deps.batch.lire(tenant);
     const fait = await deps.enregistrer(tenant, {
       ...(cleRest !== undefined ? { cleRest } : {}),
       ...(cleProjet !== undefined ? { cleProjet } : {}),
@@ -68,7 +68,7 @@ export function registerIntegrationBatch(app: FastifyInstance, deps: Integration
     await journal(tenant, req, avant === null ? 'integration.branchee' : 'integration.modifiee', CIBLE, {
       envoyerResume, clesChangees: cleRest !== undefined || cleProjet !== undefined,
     });
-    return reply.code(200).send(vue(await deps.lire(tenant)));
+    return reply.code(200).send(vue(await deps.batch.lire(tenant)));
   });
 
   app.delete('/tenants/:tenantId/integrations/batch', opts, async (req, reply) => {

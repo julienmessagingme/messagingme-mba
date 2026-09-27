@@ -87,7 +87,9 @@ function harnais(over: {
     catalogue,
     journal: j,
     resolveurs: over.origines ?? { mba: resolveur },
-    compterAppel: async (_t, s) => { compteur.push(s); },
+    sessions: {
+      compterAppel: async (_t, s) => { compteur.push(s); },
+    },
     executerGeste: over.executerGeste ?? (async (_t, _w, g) => { gestes.push(g); }),
     now: () => 1_000_000,
   };

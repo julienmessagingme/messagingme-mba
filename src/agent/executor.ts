@@ -89,10 +89,10 @@ export interface ToolExecutorDeps {
    * 🔴 Incrémente le compteur d'appels de la session. Obligatoire : c'est un plafond de dépense, et un
    * paramètre optionnel pourrait être oublié au câblage, en silence.
    */
-  compterAppel(tenantId: string, sessionId: string): Promise<void>;
+  sessions: { compterAppel(tenantId: string, sessionId: string): Promise<void> };
   /**
    * Exécute un geste du moment : poser un tag, écrire une valeur sur le contact. Obligatoire, pour la même
-   * raison que `compterAppel`. Ne doit pas lever : un effet de bord manqué ne vaut pas une conversation morte.
+   * raison que `sessions.compterAppel`. Ne doit pas lever : un effet de bord manqué ne vaut pas une conversation morte.
    */
   executerGeste(tenantId: string, waId: string, geste: Geste): Promise<void>;
   now?: () => number;
@@ -331,7 +331,7 @@ export async function executeTool(
    * ou qui rejette après un aller-retour réseau est justement le plus cher.
    */
   const compter = async (): Promise<void> => {
-    await tenter('compteur d appels d outils ignoré (best-effort):', () => deps.compterAppel(ctx.tenantId, ctx.sessionId));
+    await tenter('compteur d appels d outils ignoré (best-effort):', () => deps.sessions.compterAppel(ctx.tenantId, ctx.sessionId));
   };
   /**
    * Les gestes du moment, exécutés ici. Avant l'appel, donc indépendants de sa réussite : un geste marque que

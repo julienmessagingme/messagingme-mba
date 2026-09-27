@@ -35,7 +35,7 @@ export interface ClientConnecteurs {
 }
 
 export interface DepsAppliquer {
-  client(tenantId: string): Promise<ClientConnecteurs>;
+  meta: { mbaClientForTenant(tenantId: string): Promise<ClientConnecteurs> };
   /** La base du connecteur (`PUBLIC_API_URL` + `CHEMIN_RELAIS`), `null` quand l'adresse publique manque. */
   adresseDuRelais(): string | null;
   outils(tenantId: string, pn: string): Promise<OutilAPublier[]>;
@@ -45,7 +45,7 @@ export interface DepsAppliquer {
 
 export function creerAppliquerGeste(deps: DepsAppliquer) {
   return async (tenantId: string, pn: string, geste: Geste, ctx: Map<string, unknown>): Promise<void> => {
-    const client = await deps.client(tenantId);
+    const client = await deps.meta.mbaClientForTenant(tenantId);
     const base = deps.adresseDuRelais();
     const acteur = ctx.get(CTX_ACTEUR);
     const cleDe = deps.cle(typeof acteur === 'string' ? acteur : null);

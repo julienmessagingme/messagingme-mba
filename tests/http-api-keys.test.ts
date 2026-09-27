@@ -23,9 +23,11 @@ function app(over: Partial<ApiKeysRouteDeps> = {}) {
   const cap = { created: [] as Array<{ name: string; scopes: string[] }>, revoked: [] as string[] };
   const deps: ApiKeysRouteDeps = {
     audit: journalMuet,
-    createKey: async (_t, name, scopes) => { cap.created.push({ name, scopes }); return { id: 'k1', key: 'mba_secret_shown_once' }; },
-    listKeys: async (): Promise<ApiKeyRow[]> => [{ id: 'k1', name: 'CI', scopes: ['contacts:write'], createdAt: '2026-07-17T00:00:00.000Z', lastUsedAt: null, revokedAt: null }],
-    revokeKey: async (_t, id) => { cap.revoked.push(id); return id === 'k1'; },
+    cles: {
+      create: async (_t, name, scopes) => { cap.created.push({ name, scopes }); return { id: 'k1', key: 'mba_secret_shown_once' }; },
+      listByTenant: async (): Promise<ApiKeyRow[]> => [{ id: 'k1', name: 'CI', scopes: ['contacts:write'], createdAt: '2026-07-17T00:00:00.000Z', lastUsedAt: null, revokedAt: null }],
+      revoke: async (_t, id) => { cap.revoked.push(id); return id === 'k1'; },
+    },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, apiKeys: deps }), cap };

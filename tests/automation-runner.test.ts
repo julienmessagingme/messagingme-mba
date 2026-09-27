@@ -35,18 +35,25 @@ interface Trace {
   fired: string[]; cleared: string[]; ctxCalls: number;
 }
 
-function make(rows: AutomationRow[], over: Partial<AutomationRunnerDeps> = {}): { deps: AutomationRunnerDeps; trace: Trace } {
+/** Les automations se surchargent membre par membre. */
+type Surcharges = Partial<Omit<AutomationRunnerDeps, 'automations'>> & { automations?: Partial<AutomationRunnerDeps['automations']> };
+
+function make(rows: AutomationRow[], over: Surcharges = {}): { deps: AutomationRunnerDeps; trace: Trace } {
+  const { automations: surAutomations, ...reste } = over;
   const trace: Trace = { started: [], fired: [], cleared: [], ctxCalls: 0 };
   const deps: AutomationRunnerDeps = {
-    listEnabled: async () => rows,
-    lastFiredAt: async () => null,
-    markFired: async (id) => { trace.fired.push(id); return true; },
-    clearFired: async (id) => { trace.cleared.push(id); },
+    automations: {
+      listEnabled: async () => rows,
+      lastFiredAt: async () => null,
+      markFired: async (id) => { trace.fired.push(id); return true; },
+      clearFired: async (id) => { trace.cleared.push(id); },
+      ...surAutomations,
+    },
     evalContext: async () => { trace.ctxCalls += 1; return ctx(); },
     startWorkflow: async (_t, workflowId, _w, o) => { trace.started.push({ workflowId, ...o }); return true; },
     defaultCooldownSeconds: 3600,
     now: () => T,
-    ...over,
+    ...reste,
   };
   return { deps, trace };
 }
@@ -55,7 +62,9 @@ describe('runAutomations', () => {
   it('🔴 un passage en risque élevé ne charge QUE les automations « risque élevé », et démarre hors fenêtre', async () => {
     const demandes: Array<readonly string[]> = [];
     const { deps, trace } = make([auto({ triggerKind: 'risque_eleve', triggerConfig: {} })], {
-      listEnabled: async (_t, kinds) => { demandes.push(kinds); return [auto({ triggerKind: 'risque_eleve', triggerConfig: {} })]; },
+      automations: {
+        listEnabled: async (_t, kinds) => { demandes.push(kinds); return [auto({ triggerKind: 'risque_eleve', triggerConfig: {} })]; },
+      },
     });
     expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, deps)).toBe(1);
     expect(demandes).toEqual([['risque_eleve']]);
@@ -70,24 +79,26 @@ describe('runAutomations', () => {
   it('🔴 risque élevé sans réglage : 30 jours d’anti-rebond par contact, pas l’heure de l’instance', async () => {
     const risque = auto({ triggerKind: 'risque_eleve', triggerConfig: {} });
     const JOUR = 86_400_000;
-    const il10Jours = make([risque], { lastFiredAt: async () => new Date(T - 10 * JOUR) });
+    const il10Jours = make([risque], { automations: { lastFiredAt: async () => new Date(T - 10 * JOUR) } });
     expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, il10Jours.deps)).toBe(0);
     expect(il10Jours.trace.started).toEqual([]);
-    const il31Jours = make([risque], { lastFiredAt: async () => new Date(T - 31 * JOUR) });
+    const il31Jours = make([risque], { automations: { lastFiredAt: async () => new Date(T - 31 * JOUR) } });
     expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, il31Jours.deps)).toBe(1);
   });
 
   it('un anti-rebond RÉGLÉ sur l’automation l’emporte sur ces 30 jours ; les autres déclencheurs gardent le défaut de l’instance', async () => {
     const DEUX_HEURES = 2 * 3600_000;
-    const regle = make([auto({ triggerKind: 'risque_eleve', triggerConfig: {}, cooldownSeconds: 3600 })], { lastFiredAt: async () => new Date(T - DEUX_HEURES) });
+    const regle = make([auto({ triggerKind: 'risque_eleve', triggerConfig: {}, cooldownSeconds: 3600 })], { automations: { lastFiredAt: async () => new Date(T - DEUX_HEURES) } });
     expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, regle.deps)).toBe(1);
-    const motCle = make([auto()], { lastFiredAt: async () => new Date(T - DEUX_HEURES) });
+    const motCle = make([auto()], { automations: { lastFiredAt: async () => new Date(T - DEUX_HEURES) } });
     expect(await runAutomations('t1', MSG, motCle.deps)).toBe(1);
   });
 
   it('🔴 le plafond horaire de l’automation s’applique aussi au risque élevé', async () => {
     const { deps, trace } = make([auto({ triggerKind: 'risque_eleve', triggerConfig: {}, maxFiresPerHour: 3 })], {
-      firedSince: async () => 3,
+      automations: {
+        firedSince: async () => 3,
+      },
     });
     expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, deps)).toBe(0);
     expect(trace.started).toEqual([]);
@@ -103,7 +114,9 @@ describe('runAutomations', () => {
   it('déclencheur qui ne correspond pas -> rien, et AUCUNE requête d’anti-rebond', async () => {
     let lastFiredCalls = 0;
     const { deps, trace } = make([auto({ triggerConfig: { keywords: ['facture'] } })], {
-      lastFiredAt: async () => { lastFiredCalls += 1; return null; },
+      automations: {
+        lastFiredAt: async () => { lastFiredCalls += 1; return null; },
+      },
     });
     expect(await runAutomations('t1', MSG, deps)).toBe(0);
     expect(trace.started).toEqual([]);
@@ -118,7 +131,7 @@ describe('runAutomations', () => {
   });
 
   it('contact en anti-rebond -> ne démarre pas, et ne re-marque pas le tir', async () => {
-    const { deps, trace } = make([auto()], { lastFiredAt: async () => new Date(T - 60_000) });
+    const { deps, trace } = make([auto()], { automations: { lastFiredAt: async () => new Date(T - 60_000) } });
     expect(await runAutomations('t1', MSG, deps)).toBe(0);
     expect(trace.started).toEqual([]);
     expect(trace.fired).toEqual([]);
@@ -170,7 +183,9 @@ describe('runAutomations', () => {
   it('le tir est marqué AVANT le démarrage : un scénario qui échoue ne reboucle pas', async () => {
     const order: string[] = [];
     const { deps } = make([auto()], {
-      markFired: async () => { order.push('fired'); return true; },
+      automations: {
+        markFired: async () => { order.push('fired'); return true; },
+      },
       startWorkflow: async () => { order.push('started'); throw new Error('scénario cassé'); },
     });
     expect(await runAutomations('t1', MSG, deps)).toBe(0); // l'échec n'est pas compté comme un démarrage
@@ -185,7 +200,9 @@ describe('runAutomations', () => {
   it('une automation qui plante n’empêche pas les suivantes', async () => {
     const started: string[] = [];
     const { deps } = make([auto({ id: 'ko' }), auto({ id: 'ok', workflowId: 'wf2' })], {
-      lastFiredAt: async (id) => { if (id === 'ko') throw new Error('base indisponible'); return null; },
+      automations: {
+        lastFiredAt: async (id) => { if (id === 'ko') throw new Error('base indisponible'); return null; },
+      },
       startWorkflow: async (_t, wf) => { started.push(wf); return true; },
     });
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
@@ -235,7 +252,7 @@ describe('runAutomations', () => {
       // protege de rien : sans marqueur il est inconditionnel et rend toujours `true`. Le frein reel est
       // `lastFiredAt` + `isInCooldown`, et ce test le fige, parce que la garde du parcours actif qui
       // freinait ce cas par accident a ete retiree.
-      const { deps, trace } = make([auto()], { lastFiredAt: async () => new Date(T - 1_000) });
+      const { deps, trace } = make([auto()], { automations: { lastFiredAt: async () => new Date(T - 1_000) } });
       expect(await runAutomations('t1', MSG, deps)).toBe(0);
       expect(trace.started).toEqual([]);
     });
@@ -245,7 +262,7 @@ describe('runAutomations', () => {
       // automation reglee a 0 et sans plafond horaire, boucle. Ce test ne valide pas ce comportement, il
       // l ETABLIT : le jour ou quelqu un ajoute une protection, c est lui qui devra changer, pas la
       // production qui devra le decouvrir.
-      const { deps, trace } = make([auto({ cooldownSeconds: 0 })], { lastFiredAt: async () => new Date(T - 1) });
+      const { deps, trace } = make([auto({ cooldownSeconds: 0 })], { automations: { lastFiredAt: async () => new Date(T - 1) } });
       expect(await runAutomations('t1', MSG, deps)).toBe(1);
       expect(trace.started).toHaveLength(1);
     });
@@ -328,20 +345,20 @@ describe('plafond par automation (borne le fan-out de masse)', () => {
   // acte d'exploitation peut produire des milliers d'événements (une campagne directe rouvre l'analyse de tous
   // ses destinataires, qui repartent ensuite en « conversation analysée »). Ce plafond est le seul garde-fou.
   it('plafond atteint -> aucun démarrage, et le tir n’est pas consommé', async () => {
-    const { deps, trace } = make([auto()], { firedSince: async () => 200, maxFiresPerHour: 200 });
+    const { deps, trace } = make([auto()], { automations: { firedSince: async () => 200 }, maxFiresPerHour: 200 });
     expect(await runAutomations('t1', MSG, deps)).toBe(0);
     expect(trace.started).toEqual([]);
     expect(trace.fired).toEqual([]);
   });
 
   it('sous le plafond -> déclenchement normal', async () => {
-    const { deps, trace } = make([auto()], { firedSince: async () => 199, maxFiresPerHour: 200 });
+    const { deps, trace } = make([auto()], { automations: { firedSince: async () => 199 }, maxFiresPerHour: 200 });
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
     expect(trace.started).toHaveLength(1);
   });
 
   it('plafond à 0 ou dep absente -> aucun plafond (rétro-compatible)', async () => {
-    const zero = make([auto()], { firedSince: async () => 10_000, maxFiresPerHour: 0 });
+    const zero = make([auto()], { automations: { firedSince: async () => 10_000 }, maxFiresPerHour: 0 });
     expect(await runAutomations('t1', MSG, zero.deps)).toBe(1);
     const absent = make([auto()]); // pas de firedSince du tout
     expect(await runAutomations('t1', MSG, absent.deps)).toBe(1);
@@ -353,7 +370,7 @@ describe('plafond par automation (borne le fan-out de masse)', () => {
   // la facture de toutes les autres automations, alors que la conversation ouverte par un abonne, elle, ne
   // coute rien (c'est lui qui ecrit le premier).
   it('🔴 le plafond de l AUTOMATION l emporte quand il est plus STRICT que celui de l instance', async () => {
-    const { deps, trace } = make([auto({ maxFiresPerHour: 5 })], { firedSince: async () => 5, maxFiresPerHour: 200 });
+    const { deps, trace } = make([auto({ maxFiresPerHour: 5 })], { automations: { firedSince: async () => 5 }, maxFiresPerHour: 200 });
     expect(await runAutomations('t1', MSG, deps)).toBe(0);
     expect(trace.started).toEqual([]);
     // Le tir n'est pas consomme : le plafond est verifie AVANT `markFired`, sinon l'anti-rebond avalerait
@@ -362,22 +379,22 @@ describe('plafond par automation (borne le fan-out de masse)', () => {
   });
 
   it('🔴 le plafond de l AUTOMATION l emporte quand il est plus LARGE : le cas du lien de chaine', async () => {
-    const { deps, trace } = make([auto({ maxFiresPerHour: 5000 })], { firedSince: async () => 250, maxFiresPerHour: 200 });
+    const { deps, trace } = make([auto({ maxFiresPerHour: 5000 })], { automations: { firedSince: async () => 250 }, maxFiresPerHour: 200 });
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
     expect(trace.started).toHaveLength(1);
   });
 
   it('automation SANS plafond propre (null) -> celui de l instance s applique, dans les deux sens', async () => {
-    const bloque = make([auto({ maxFiresPerHour: null })], { firedSince: async () => 200, maxFiresPerHour: 200 });
+    const bloque = make([auto({ maxFiresPerHour: null })], { automations: { firedSince: async () => 200 }, maxFiresPerHour: 200 });
     expect(await runAutomations('t1', MSG, bloque.deps)).toBe(0);
-    const passe = make([auto({ maxFiresPerHour: null })], { firedSince: async () => 199, maxFiresPerHour: 200 });
+    const passe = make([auto({ maxFiresPerHour: null })], { automations: { firedSince: async () => 199 }, maxFiresPerHour: 200 });
     expect(await runAutomations('t1', MSG, passe.deps)).toBe(1);
   });
 
   it('plafond propre a 0 -> aucun plafond pour CETTE automation, meme si l instance en a un', async () => {
     // Meme convention que le plafond global (« 0 desactive explicitement le garde-fou »). Le `??` ne
     // retombe pas sur le global, parce que 0 n'est pas null. C'est un choix assume, pas un effet de bord.
-    const { deps } = make([auto({ maxFiresPerHour: 0 })], { firedSince: async () => 10_000, maxFiresPerHour: 200 });
+    const { deps } = make([auto({ maxFiresPerHour: 0 })], { automations: { firedSince: async () => 10_000 }, maxFiresPerHour: 200 });
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
   });
 
@@ -386,7 +403,7 @@ describe('plafond par automation (borne le fan-out de masse)', () => {
     // vit. Y annoncer 200 alors que 5 a tranche enverrait chercher le reglage au mauvais endroit.
     const lignes: string[] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { lignes.push(a.map(String).join(' ')); });
-    const { deps } = make([auto({ maxFiresPerHour: 5 })], { firedSince: async () => 5, maxFiresPerHour: 200 });
+    const { deps } = make([auto({ maxFiresPerHour: 5 })], { automations: { firedSince: async () => 5 }, maxFiresPerHour: 200 });
     await runAutomations('t1', MSG, deps);
     spy.mockRestore();
     expect(lignes.join('\n')).toContain('plafond de 5 déclenchements/heure');
@@ -402,7 +419,7 @@ describe('plafond par automation (borne le fan-out de masse)', () => {
  */
 describe('runAutomations : contact bloqué', () => {
   it('🔴 bloqué -> aucune automation ne démarre', async () => {
-    const { deps, trace } = make([auto()], { contactBloque: async () => true });
+    const { deps, trace } = make([auto()], { contacts: { isBlockedByWaId: async () => true } });
     expect(await runAutomations('t1', MSG, deps)).toBe(0);
     expect(trace.started).toEqual([]);
     // Et rien n'est marqué comme déclenché : sinon l'anti-rebond bloquerait le contact après son déblocage.
@@ -410,7 +427,7 @@ describe('runAutomations : contact bloqué', () => {
   });
 
   it('non bloqué -> l’automation démarre normalement', async () => {
-    const { deps, trace } = make([auto()], { contactBloque: async () => false });
+    const { deps, trace } = make([auto()], { contacts: { isBlockedByWaId: async () => false } });
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
     expect(trace.started).toHaveLength(1);
   });
@@ -437,7 +454,7 @@ describe('runAutomations : le claim d’occurrence (avant_date)', () => {
   const autoDate = () => auto({ triggerKind: 'avant_date', triggerConfig: { fieldKey: 'rdv', delai: '1j' } });
 
   it('🔴 claim REFUSÉ : le scénario ne démarre pas, et rien n’est envoyé une seconde fois', async () => {
-    const { deps, trace } = make([autoDate()], { markFired: async () => false });
+    const { deps, trace } = make([autoDate()], { automations: { markFired: async () => false } });
     expect(await runAutomations('t1', AVANT_DATE, deps)).toBe(0);
     expect(trace.started).toEqual([]);
     // Et on n'efface RIEN : le marqueur appartient au tour qui a gagné le claim, l'effacer le priverait de sa
@@ -464,7 +481,7 @@ describe('runAutomations : le claim d’occurrence (avant_date)', () => {
   it('🔴 le marqueur d’occurrence est bien la VALEUR de la date, pas juste « déjà tiré »', async () => {
     // Sans lui, un rendez-vous REPORTÉ ne redonnerait aucun rappel : c'est la même ligne en base.
     const vus: Array<string | undefined> = [];
-    const { deps } = make([autoDate()], { markFired: async (_id, _wa, m) => { vus.push(m); return true; } });
+    const { deps } = make([autoDate()], { automations: { markFired: async (_id, _wa, m) => { vus.push(m); return true; } } });
     await runAutomations('t1', AVANT_DATE, deps);
     expect(vus).toEqual(['2026-09-04']);
   });
@@ -482,7 +499,7 @@ describe('runAutomations : le claim d’occurrence (avant_date)', () => {
     // Le rendre conditionnel là aussi casserait l'anti-boucle : `fired_for` y vaut toujours null, et plus
     // aucun déclenchement répété ne passerait.
     const vus: Array<string | undefined> = [];
-    const { deps, trace } = make([auto()], { markFired: async (_id, _wa, m) => { vus.push(m); return true; } });
+    const { deps, trace } = make([auto()], { automations: { markFired: async (_id, _wa, m) => { vus.push(m); return true; } } });
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
     expect(vus).toEqual([undefined]);
     expect(trace.started).toHaveLength(1);

@@ -79,10 +79,12 @@ describe('déclencheur webhook : le démarrage', () => {
   function make(rows: AutomationRow[]): { deps: AutomationRunnerDeps; trace: Trace } {
     const trace: Trace = { kinds: [], started: [] };
     const deps: AutomationRunnerDeps = {
-      listEnabled: async (_t, kinds) => { (trace.kinds as string[][]).push([...kinds]); return rows; },
-      lastFiredAt: async () => null,
-      markFired: async () => true,
-      clearFired: async () => {},
+      automations: {
+        listEnabled: async (_t, kinds) => { (trace.kinds as string[][]).push([...kinds]); return rows; },
+        lastFiredAt: async () => null,
+        markFired: async () => true,
+        clearFired: async () => {},
+      },
       evalContext: async () => null,
       startWorkflow: async (_t, _wf, _w, o) => { trace.started.push({ windowOpen: o.windowOpen }); return true; },
       defaultCooldownSeconds: 3600,
@@ -108,14 +110,14 @@ describe('déclencheur webhook : le démarrage', () => {
 
   it('les garde-fous communs s’appliquent : un contact bloqué ne déclenche rien', async () => {
     const { deps, trace } = make([auto()]);
-    expect(await runAutomations('t1', EV, { ...deps, contactBloque: async () => true })).toBe(0);
+    expect(await runAutomations('t1', EV, { ...deps, contacts: { isBlockedByWaId: async () => true } })).toBe(0);
     expect(trace.started).toEqual([]);
   });
 
   it('les garde-fous communs s’appliquent : l’anti-rebond par contact', async () => {
     const { deps, trace } = make([auto({ cooldownSeconds: 3600 })]);
     // Tir enregistré il y a une minute : le second appel du tiers ne relance pas le scénario.
-    expect(await runAutomations('t1', EV, { ...deps, lastFiredAt: async () => new Date(T - 60_000) })).toBe(0);
+    expect(await runAutomations('t1', EV, { ...deps, automations: { ...deps.automations, lastFiredAt: async () => new Date(T - 60_000) } })).toBe(0);
     expect(trace.started).toEqual([]);
   });
 });

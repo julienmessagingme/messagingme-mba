@@ -70,6 +70,13 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
     pourquoi: 'Sender de canal RCS : il envoie ce que le moteur lui donne, à qui le moteur lui dit, et le moteur '
       + 'porte la garde (construction de la liste, puis réclamation au moment d’envoyer).',
   },
+  'src/rcs/envoyer-libre.ts': {
+    verdict: 'bloque',
+    pourquoi: 'L’envoi d’un RCS libre, pour le bouton RCS de l’Inbox et `POST /v1/messages/rcs` : une origine '
+      + 'machine est refusée si le contact a dit STOP (général ou RCS) ou n’a ni consenti ni écrit. L’opérateur '
+      + 'humain en est exempté, comme pour la réponse WhatsApp de l’Inbox ; le STOP RCS l’arrête quand même, au '
+      + 'point de passage de l’envoi (`RcsSender.sendTo`).',
+  },
   'src/workflow/executor.ts': {
     verdict: 'delegue',
     pourquoi: 'L’exécuteur n’appelle jamais Meta : il appelle ses dépendances, que `src/workflow/wiring.ts` '

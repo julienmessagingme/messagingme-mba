@@ -97,7 +97,13 @@ interface Monde {
   modele: LectureModele;
 }
 
-function app(over: Partial<Omit<V1SendsRouteDeps, 'usage'>> = {}, monde: Partial<Monde> = {}) {
+/** Le dépôt et le magasin d'idempotence se surchargent membre par membre. */
+type Surcharges = Partial<Omit<V1SendsRouteDeps, 'usage' | 'repo' | 'idempotence'>> & {
+  repo?: Partial<V1SendsRouteDeps['repo']>; idempotence?: Partial<V1SendsRouteDeps['idempotence']>;
+};
+
+function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
+  const { repo: surRepo, idempotence: surIdempotence, ...reste } = over;
   const m: Monde = {
     fiches: new Map([[C1, fiche(C1, 1)], [C2, fiche(C2, 2)]]),
     fenetre: new Map([['33612345001', true], ['33612345002', true]]),
@@ -147,10 +153,23 @@ function app(over: Partial<Omit<V1SendsRouteDeps, 'usage'>> = {}, monde: Partial
         : { ok: false, reason: 'not_found' };
     },
     lireModele: async () => m.modele,
-    getWindowOpenByWaIds: async (_t, waIds) => { cap.fenetresDemandees.push(waIds); return new Map(waIds.map((w) => [w, m.fenetre.get(w) === true])); },
-    getTenantPhoneNumberId: async () => 'pn-default',
-    phoneNumberBelongsToTenant: async (pn) => pn === 'pn-mine',
-    numeroEstDelie: async () => false,
+    inbox: {
+      getWindowOpenByWaIds: async (_t, waIds) => { cap.fenetresDemandees.push(waIds); return new Map(waIds.map((w) => [w, m.fenetre.get(w) === true])); },
+    },
+    repo: {
+      getTenantPhoneNumberId: async () => 'pn-default',
+      phoneNumberBelongsToTenant: async (pn) => pn === 'pn-mine',
+      listContactsPourEnvoiApi: async (_t, ids) => {
+        cap.lectures += 1;
+        return ids.flatMap((id) => { const f = m.fiches.get(id); return f ? [{ ...f }] : []; });
+      },
+      createWithRecipients: async (input, recipients) => { cap.sends.push({ input, recipients }); return { campaignId: 'camp1', recipientCount: recipients.length }; },
+      lireEnvoiApi: async () => null,
+      ...surRepo,
+    },
+    numerosDelies: {
+      estDelie: async () => false,
+    },
     /** Double de la résolution du lot 1 : par contactId, numéro ou BSUID ; crée sur un numéro si on le demande. */
     resoudreFiche: async (tenant, cles, o) => {
       cap.resolutions.push({ cles, creer: o.creer });
@@ -185,30 +204,31 @@ function app(over: Partial<Omit<V1SendsRouteDeps, 'usage'>> = {}, monde: Partial
       },
       tenant, contactId, consent, source,
     ),
-    listContactsPourEnvoi: async (_t, ids) => {
-      cap.lectures += 1;
-      return ids.flatMap((id) => { const f = m.fiches.get(id); return f ? [{ ...f }] : []; });
-    },
-    createSend: async (input, recipients) => { cap.sends.push({ input, recipients }); return { campaignId: 'camp1', recipientCount: recipients.length }; },
     enqueue: async (id, _t, _n, rate) => { cap.enqueued.push({ id, rate }); },
-    // Le MÊME verdict que le magasin : c'est sa fonction pure qui décide.
-    idempotencyClaim: async (_t, key, empreinte): Promise<IdempotencyClaim> => {
-      const ligne = idem.get(key);
-      if (!ligne) { idem.set(key, { hash: empreinte }); return { claimed: true }; }
-      return verdictLigne({ send_id: ligne.sendId ?? null, response: ligne.response ?? null, request_hash: ligne.hash }, empreinte);
+    idempotence: {
+      // Le MÊME verdict que le magasin : c'est sa fonction pure qui décide.
+      claim: async (_t, key, empreinte): Promise<IdempotencyClaim> => {
+        const ligne = idem.get(key);
+        if (!ligne) { idem.set(key, { hash: empreinte }); return { claimed: true }; }
+        return verdictLigne({ send_id: ligne.sendId ?? null, response: ligne.response ?? null, request_hash: ligne.hash }, empreinte);
+      },
+      complete: async (_t, key, sendId, response) => { const l = idem.get(key); if (l) { l.sendId = sendId; l.response = response; } },
+      release: async (_t, key) => { idem.delete(key); },
+      ...surIdempotence,
     },
-    idempotencyComplete: async (_t, key, sendId, response) => { const l = idem.get(key); if (l) { l.sendId = sendId; l.response = response; } },
-    idempotencyRelease: async (_t, key) => { idem.delete(key); },
-    lireEnvoi: async () => null,
     // La cible `rcsMessage` (lot 3) : un seul message dans la bibliothèque, un agent RCS actif.
     rcs: {
-      messageRcsParNom: async (_t, nom) => (nom === 'relance-panier'
-        ? { name: 'relance-panier', content: { kind: 'text', text: 'Votre commande {{commande}} est prête' } }
-        : null),
-      agentIdForTenant: async () => 'agent-1',
+      messages: {
+        getByName: async (_t, nom) => (nom === 'relance-panier'
+          ? { name: 'relance-panier', content: { kind: 'text', text: 'Votre commande {{commande}} est prête' } }
+          : null),
+      },
+      agents: {
+        agentIdForTenant: async () => 'agent-1',
+      },
     },
     sleep: async () => {}, // pas de temporisation réelle dans les tests de retry
-    ...over,
+    ...reste,
   };
   // Le module `/v1/contacts` n'est pas appelé ici : le double muet du lot 1 suffit à le monter.
   return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts: contactsV1Muets(), sends } }), cap, idem, m };
@@ -848,10 +868,14 @@ describe('POST /v1/sends : idempotence', () => {
     const order: string[] = [];
     let released = false;
     const { server } = app({
-      createSend: async (_i, recipients) => { order.push('createSend'); return { campaignId: 'campX', recipientCount: recipients.length }; },
-      idempotencyComplete: async () => { order.push('complete'); },
+      repo: {
+        createWithRecipients: async (_i, recipients) => { order.push('createSend'); return { campaignId: 'campX', recipientCount: recipients.length }; },
+      },
+      idempotence: {
+        complete: async () => { order.push('complete'); },
+        release: async () => { released = true; },
+      },
       enqueue: async () => { order.push('enqueue'); throw new Error('pg-boss down'); },
-      idempotencyRelease: async () => { released = true; },
     });
     const res = await envoyer(server, CORPS, 'k-seal');
     expect(res.statusCode).toBe(201);
@@ -865,7 +889,9 @@ describe('POST /v1/sends : idempotence', () => {
     let released = false;
     const { server } = app({
       enqueue: async () => { attempts += 1; if (attempts < 3) throw new Error('pg-boss saturé'); },
-      idempotencyRelease: async () => { released = true; },
+      idempotence: {
+        release: async () => { released = true; },
+      },
     });
     expect((await envoyer(server, CORPS, 'k-retry')).statusCode).toBe(201);
     expect(attempts).toBe(3);
@@ -878,7 +904,9 @@ describe('POST /v1/sends : idempotence', () => {
     let released = false;
     const { server } = app({
       enqueue: async () => { attempts += 1; throw new Error('pg-boss down'); },
-      idempotencyRelease: async () => { released = true; },
+      idempotence: {
+        release: async () => { released = true; },
+      },
     });
     expect((await envoyer(server, CORPS, 'k-retry-ko')).statusCode).toBe(201);
     expect(attempts).toBe(3);
@@ -889,8 +917,12 @@ describe('POST /v1/sends : idempotence', () => {
   it('échec AVANT scellement (createSend lève) -> release (retry propre)', async () => {
     let released = false;
     const { server } = app({
-      createSend: async () => { throw new Error('db down'); },
-      idempotencyRelease: async () => { released = true; },
+      repo: {
+        createWithRecipients: async () => { throw new Error('db down'); },
+      },
+      idempotence: {
+        release: async () => { released = true; },
+      },
     });
     await expect(envoyer(server, CORPS, 'k-fail')).resolves.toMatchObject({ statusCode: 500 });
     expect(released).toBe(true);
@@ -945,7 +977,7 @@ describe('POST /v1/sends : forme, numéro, débit, droits', () => {
     const { server } = app();
     expect((await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }], phoneNumberId: 'pn-autrui' }, 'i-pn')).json()).toMatchObject({ code: 'invalid_body' });
     await server.close();
-    const sans = app({ getTenantPhoneNumberId: async () => null });
+    const sans = app({ repo: { getTenantPhoneNumberId: async () => null } });
     const res = await envoyer(sans.server, { ...TPL, recipients: [{ contactId: C1 }] }, 'i-sans-pn');
     expect(res.statusCode).toBe(409);
     expect(res.json()).toMatchObject({ code: 'no_whatsapp_number' });
@@ -963,7 +995,7 @@ describe('POST /v1/sends : forme, numéro, débit, droits', () => {
     ['bloc qui fait partir un message de session', NODE('nod_qm')],
   ])('🔴 numéro délié, cible %s -> 409 number_unlinked, rien n’est créé, la clé est LIBÉRÉE', async (_nom, cible) => {
     const lus: string[] = [];
-    const { server, cap, idem } = app({ numeroEstDelie: async (pn) => { lus.push(pn); return true; } });
+    const { server, cap, idem } = app({ numerosDelies: { estDelie: async (pn) => { lus.push(pn); return true; } } });
     const res = await envoyer(server, { ...cible, recipients: [{ contactId: C1 }] }, 'i-delie');
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: MESSAGE_NUMERO_DELIE, code: 'number_unlinked' });
@@ -976,7 +1008,7 @@ describe('POST /v1/sends : forme, numéro, débit, droits', () => {
   });
 
   it('numéro délié, mais la cible OUVRE EN RCS : acceptée, comme les campagnes uniquement RCS que « Délier » laisse tourner', async () => {
-    const { server, cap } = app({ numeroEstDelie: async () => true });
+    const { server, cap } = app({ numerosDelies: { estDelie: async () => true } });
     const res = await envoyer(server, { ...SCN('scn_rcs'), recipients: [{ contactId: C1 }] }, 'i-delie-rcs');
     expect(res.statusCode).toBe(201);
     expect(cap.sends).toHaveLength(1);
@@ -1007,7 +1039,7 @@ describe('GET /v1/sends/{sendId}', () => {
   };
 
   it('trouvé : 200 et le CONTRAT de l’API, pas l’objet de la console', async () => {
-    const { server } = app({ lireEnvoi: async (id, t) => (id === ID && t === 't1' ? BRUT : null) });
+    const { server } = app({ repo: { lireEnvoiApi: async (id, t) => (id === ID && t === 't1' ? BRUT : null) } });
     const res = await server.inject({ method: 'GET', url: `/v1/sends/${ID}`, ...H(SEND_KEY) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual(formaterSuiviEnvoi(BRUT));
@@ -1016,7 +1048,7 @@ describe('GET /v1/sends/{sendId}', () => {
 
   it('inconnu -> 404 send_not_found ; identifiant qui n’est pas un uuid -> 404 aussi, sans lecture, jamais un 500', async () => {
     let lectures = 0;
-    const { server } = app({ lireEnvoi: async () => { lectures += 1; return null; } });
+    const { server } = app({ repo: { lireEnvoiApi: async () => { lectures += 1; return null; } } });
     const inconnu = await server.inject({ method: 'GET', url: '/v1/sends/22222222-2222-4222-8222-222222222222', ...H(SEND_KEY) });
     expect(inconnu.statusCode).toBe(404);
     expect(inconnu.json()).toMatchObject({ code: 'send_not_found' });
@@ -1032,7 +1064,7 @@ describe('POST /v1/sends : la cible rcsMessage et les variables par destinataire
   const RCS = (nom = 'relance-panier') => ({ target: { rcsMessage: nom }, category: 'utility' as const });
 
   it('🔴 201 : ouverture rcs, campagne RCS SANS numéro WhatsApp (l’espace n’en a même aucun), variables gardées', async () => {
-    const { server, cap } = app({ getTenantPhoneNumberId: async () => null });
+    const { server, cap } = app({ repo: { getTenantPhoneNumberId: async () => null } });
     const res = await envoyer(server, { ...RCS(), recipients: [{ contactId: C1, variables: { commande: '8412' } }] }, 'i-rcs-1');
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({ opening: 'rcs', recipientCount: 1, skipped: [] });
@@ -1056,8 +1088,12 @@ describe('POST /v1/sends : la cible rcsMessage et les variables par destinataire
   it('message inconnu : 404 ; contenu illisible : 422 ; canal éteint : 409 ; ni campagne, ni fiche résolue', async () => {
     const { server, cap } = app({
       rcs: {
-        messageRcsParNom: async (_t, nom) => (nom === 'illisible' ? { name: 'illisible', content: null } : null),
-        agentIdForTenant: async () => 'agent-1',
+        messages: {
+          getByName: async (_t, nom) => (nom === 'illisible' ? { name: 'illisible', content: null } : null),
+        },
+        agents: {
+          agentIdForTenant: async () => 'agent-1',
+        },
       },
     });
     const r1 = await envoyer(server, { ...RCS('inconnu'), recipients: [{ contactId: C1 }] }, 'i-rcs-404');
@@ -1067,7 +1103,7 @@ describe('POST /v1/sends : la cible rcsMessage et les variables par destinataire
     expect(cap.sends).toEqual([]);
     expect(cap.resolutions).toEqual([]);
     await server.close();
-    const eteint = app({ rcs: { messageRcsParNom: async () => ({ name: 'x', content: { kind: 'text', text: 'x' } }), agentIdForTenant: async () => null } });
+    const eteint = app({ rcs: { messages: { getByName: async () => ({ name: 'x', content: { kind: 'text', text: 'x' } }) }, agents: { agentIdForTenant: async () => null } } });
     const r3 = await envoyer(eteint.server, { ...RCS('x'), recipients: [{ contactId: C1 }] }, 'i-rcs-409');
     expect([r3.statusCode, r3.json<{ code: string }>().code]).toEqual([409, 'rcs_not_enabled']);
     expect(eteint.cap.sends).toEqual([]);
@@ -1094,7 +1130,7 @@ describe('POST /v1/sends : la cible rcsMessage et les variables par destinataire
 
   it('🔴 un nom de 120 caractères n’est PAS coupé : le suivi relit le message entier', async () => {
     const nom = 'x'.repeat(120);
-    const { server, cap } = app({ rcs: { messageRcsParNom: async (_t, n) => ({ name: n, content: { kind: 'text', text: 'Bonjour' } }), agentIdForTenant: async () => 'agent-1' } });
+    const { server, cap } = app({ rcs: { messages: { getByName: async (_t, n) => ({ name: n, content: { kind: 'text', text: 'Bonjour' } }) }, agents: { agentIdForTenant: async () => 'agent-1' } } });
     await envoyer(server, { ...RCS(nom), recipients: [{ contactId: C1 }] }, 'i-rcs-120');
     expect(cap.sends[0]!.input.name).toBe(`${PREFIXE_ENVOI_API}${nom}`);
     expect(nomDuMessageRcs(cap.sends[0]!.input.name)).toBe(nom);

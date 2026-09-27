@@ -163,11 +163,11 @@ export interface V1CataloguesRouteDeps {
   /** Les templates du WABA de l'espace, tels que Meta les rend. `[]` quand l'espace n'a pas de WABA. */
   templates(tenantId: string): Promise<TemplateSummary[]>;
   /** Tous les indices « variable vers champ » de l'espace, en une requête. */
-  indicesDeVariables(tenantId: string): Promise<IndiceDuTemplate[]>;
+  indices: { listerParEspace(tenantId: string): Promise<IndiceDuTemplate[]> };
   /** Les scénarios dont le graphe publié porte au moins un bloc. */
-  scenariosPublies(tenantId: string): Promise<ScenarioPublie[]>;
+  scenarios: { listPublies(tenantId: string): Promise<ScenarioPublie[]> };
   /** La bibliothèque RCS, suppressions douces exclues. */
-  messagesRcs(tenantId: string): Promise<ReadonlyArray<{ name: string; content: RcsOutbound | null }>>;
+  messagesRcs: { list(tenantId: string): Promise<ReadonlyArray<{ name: string; content: RcsOutbound | null }>> };
 }
 
 /**
@@ -182,7 +182,7 @@ export function registerV1Catalogues(app: FastifyInstance, deps: V1CataloguesRou
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
     const tenantId = req.auth.tenantId;
     if (!await compterOuRefuser(deps.usage, req, reply, 'catalogues.read')) return reply;
-    const [templates, indices] = await Promise.all([deps.templates(tenantId), deps.indicesDeVariables(tenantId)]);
+    const [templates, indices] = await Promise.all([deps.templates(tenantId), deps.indices.listerParEspace(tenantId)]);
     return reply.code(200).send({ templates: catalogueTemplates(templates, indices) });
   });
 
@@ -190,13 +190,13 @@ export function registerV1Catalogues(app: FastifyInstance, deps: V1CataloguesRou
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
     const tenantId = req.auth.tenantId;
     if (!await compterOuRefuser(deps.usage, req, reply, 'catalogues.read')) return reply;
-    return reply.code(200).send({ scenarios: catalogueScenarios(await deps.scenariosPublies(tenantId)) });
+    return reply.code(200).send({ scenarios: catalogueScenarios(await deps.scenarios.listPublies(tenantId)) });
   });
 
   app.get('/v1/rcs-messages', opts, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
     const tenantId = req.auth.tenantId;
     if (!await compterOuRefuser(deps.usage, req, reply, 'catalogues.read')) return reply;
-    return reply.code(200).send({ rcsMessages: catalogueMessagesRcs(await deps.messagesRcs(tenantId)) });
+    return reply.code(200).send({ rcsMessages: catalogueMessagesRcs(await deps.messagesRcs.list(tenantId)) });
   });
 }

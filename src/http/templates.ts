@@ -13,23 +13,29 @@ import { espaceVerifie, nonEmpty } from './scope';
 import { messageDe } from '../lib/erreur';
 
 export interface TemplateRouteDeps {
-  /** Client templates Meta résolu par espace (token de l'espace, repli global en sommeil). */
-  templatesFor(tenantId: string): Promise<MetaTemplateClient>;
-  /** WABA du tenant (les templates sont au niveau WABA). */
-  getWabaId(tenantId: string): Promise<string | null>;
+  meta: {
+    /** Client templates Meta résolu par espace (token de l'espace, repli global en sommeil). */
+    templateClientForTenant(tenantId: string): Promise<MetaTemplateClient>;
+  };
+  repo: {
+    /** WABA du tenant (les templates sont au niveau WABA). */
+    getTenantWabaId(tenantId: string): Promise<string | null>;
+    /** Garde-fou : campagnes actives (draft/running/paused) référençant ce template (name, langue optionnelle). */
+    listActiveCampaignsForTemplate(
+      tenantId: string,
+      templateName: string,
+      templateLanguage?: string,
+    ): Promise<Array<{ id: string; name: string; status: CampaignStatus; templateLanguage: string }>>;
+  };
   /** Pré-check « ce flowId est-il PUBLISHED pour ce tenant ? » avant d'appeler Meta. */
   getPublishedFlow(tenantId: string, flowId: string): Promise<boolean>;
-  /** Garde-fou : campagnes actives (draft/running/paused) référençant ce template (name, langue optionnelle). */
-  listActiveCampaignsForTemplate(
-    tenantId: string,
-    templateName: string,
-    templateLanguage?: string,
-  ): Promise<Array<{ id: string; name: string; status: CampaignStatus; templateLanguage: string }>>;
   /** Indices « variable -> champ » posés au design (sélecteur de champ) : persistés pour pré-remplir la
    *  campagne. Best-effort : un échec n'empêche pas le template de se créer. */
-  saveParamHints(tenantId: string, name: string, language: string, hints: Array<{ position: number; source: ParamSource }>): Promise<void>;
-  getParamHints(tenantId: string, name: string, language: string): Promise<Array<{ position: number; source: ParamSource }>>;
-  removeParamHints(tenantId: string, name: string): Promise<void>;
+  indices: {
+    save(tenantId: string, name: string, language: string, hints: Array<{ position: number; source: ParamSource }>): Promise<void>;
+    get(tenantId: string, name: string, language: string): Promise<Array<{ position: number; source: ParamSource }>>;
+    removeByName(tenantId: string, name: string): Promise<void>;
+  };
   /**
    * Traçage des liens : réserve un code par bouton URL et rend l'adresse de redirection à soumettre à Meta. Son échec
    * laisse partir le template avec les liens saisis : on ne soumet jamais une adresse qu'on ne saurait pas servir.
@@ -38,8 +44,10 @@ export interface TemplateRouteDeps {
     /** Réserve le code du bouton et enregistre sa destination. Rend le code. `avecJeton` décide si l'URL
      *  soumise portera le suffixe variable, et donc si l'envoi devra fournir un composant de bouton. */
     allocate(tenantId: string, cible: CibleLien, destination: string, avecJeton: boolean): Promise<string>;
-    /** Meta a accepté : ces liens sont bien ceux que porte le template. */
-    confirm(tenantId: string, codes: readonly string[]): Promise<void>;
+    liens: {
+      /** Meta a accepté : ces liens sont bien ceux que porte le template. */
+      confirm(tenantId: string, codes: readonly string[]): Promise<void>;
+    };
     /** Adresse publique d'un code, avec ou sans son suffixe variable. */
     lienDe(code: string, avecJeton: boolean): string;
     /** `adresse de redirection -> destination d'origine`, pour ces templates. Sert au ré-habillage. */
@@ -56,7 +64,7 @@ async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: stri
   const hints = parseParamHints(raw);
   if (hints === null) return; // déjà validé en 400 en amont ; garde défensive
   try {
-    await deps.saveParamHints(tenant, name, language, hints);
+    await deps.indices.save(tenant, name, language, hints);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('saveParamHints ignoré:', messageDe(err));
@@ -278,9 +286,9 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
 
   app.get('/tenants/:tenantId/templates', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const wabaId = await deps.getWabaId(tenant);
+    const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(200).send({ templates: [] });
-    const templates = await (await deps.templatesFor(tenant)).list(wabaId);
+    const templates = await (await deps.meta.templateClientForTenant(tenant)).list(wabaId);
     return reply.code(200).send({ templates: await rehabillerTemplates(deps, tenant, templates) });
   });
 
@@ -298,7 +306,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
     if (parseParamHints(b.paramHints) === null) return reply.code(400).send({ error: 'paramHints invalides' });
 
-    const wabaId = await deps.getWabaId(tenant);
+    const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
     if (!(await flowButtonOk(deps, tenant, parsed.fields.buttons))) {
       return reply.code(400).send({ error: 'le flow référencé n\'est pas publié' });
@@ -310,12 +318,12 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     // La destination est enregistrée avant l'appel à Meta : l'inverse laisserait, en cas de panne entre les deux,
     // un template approuvé pointant un code inexistant (un lien mort dans des messages livrés).
     const { aSoumettre, codes } = await preparerLiens(deps, tenant, input);
-    const res = await (await deps.templatesFor(tenant)).create(wabaId, aSoumettre);
+    const res = await (await deps.meta.templateClientForTenant(tenant)).create(wabaId, aSoumettre);
     // Meta a accepté : les liens réservés sont bien ceux que porte le template. Au mieux, comme les indices de
     // variables : un hoquet ici dégrade la mesure, il ne casse pas un template déjà créé.
     if (codes.length > 0) {
       try {
-        await deps.tracking.confirm(tenant, codes);
+        await deps.tracking.liens.confirm(tenant, codes);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('confirmation des liens tracés ignorée:', messageDe(err));
@@ -331,7 +339,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const { templateName } = req.params as { templateName: string };
     const q = req.query as { language?: string };
     if (!nonEmpty(q.language)) return reply.code(400).send({ error: 'language requis (query)' });
-    const hints = await deps.getParamHints(tenant, decodeURIComponent(templateName), q.language);
+    const hints = await deps.indices.get(tenant, decodeURIComponent(templateName), q.language);
     return reply.code(200).send({ hints });
   });
 
@@ -350,12 +358,12 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     if (parseParamHints(b.paramHints) === null) return reply.code(400).send({ error: 'paramHints invalides' });
     if (parsed.fields.carousel) return reply.code(422).send({ error: 'édition d\'un carousel non supportée' });
 
-    const wabaId = await deps.getWabaId(tenant);
+    const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
     // 🔴 L'id est résolu côté serveur depuis le WABA de l'espace : l'édition Meta se fait par id global, et un id
     // fourni par le client permettrait d'éditer le template d'un autre espace.
-    const existing = (await (await deps.templatesFor(tenant)).list(wabaId)).find((t) => t.name === name && t.language === language);
+    const existing = (await (await deps.meta.templateClientForTenant(tenant)).list(wabaId)).find((t) => t.name === name && t.language === language);
     if (!existing) return reply.code(404).send({ error: 'template introuvable' });
     if (!existing.id) return reply.code(422).send({ error: 'id du template indisponible' });
     // Anti perte de données : l'édition supprimerait en-tête, pied et carousel (Meta remplace tout, on ne régénère
@@ -368,14 +376,14 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     }
 
     // Une campagne active utilise ce template : l'éditer le renvoie en PENDING, donc 422 à chaque envoi.
-    const active = await deps.listActiveCampaignsForTemplate(tenant, name, language);
+    const active = await deps.repo.listActiveCampaignsForTemplate(tenant, name, language);
     if (active.length > 0) return reply.code(409).send({ error: 'template utilisé par une campagne active', campaigns: active });
 
     if (!(await flowButtonOk(deps, tenant, parsed.fields.buttons))) {
       return reply.code(400).send({ error: 'le flow référencé n\'est pas publié' });
     }
 
-    const res = await (await deps.templatesFor(tenant)).update(existing.id, {
+    const res = await (await deps.meta.templateClientForTenant(tenant)).update(existing.id, {
       category: parsed.fields.category,
       body: parsed.fields.body,
       ...(parsed.fields.header ? { header: parsed.fields.header } : {}),
@@ -395,13 +403,13 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const { templateName } = req.params as { templateName: string };
     const name = decodeURIComponent(templateName);
 
-    const active = await deps.listActiveCampaignsForTemplate(tenant, name);
+    const active = await deps.repo.listActiveCampaignsForTemplate(tenant, name);
     if (active.length > 0) return reply.code(409).send({ error: 'template utilisé par une campagne active', campaigns: active });
 
-    const wabaId = await deps.getWabaId(tenant);
+    const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
-    const res = await (await deps.templatesFor(tenant)).remove(wabaId, name);
-    await deps.removeParamHints(tenant, name).catch(() => {});
+    const res = await (await deps.meta.templateClientForTenant(tenant)).remove(wabaId, name);
+    await deps.indices.removeByName(tenant, name).catch(() => {});
     return reply.code(200).send(res);
   });
 }

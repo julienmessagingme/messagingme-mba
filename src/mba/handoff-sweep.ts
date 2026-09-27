@@ -6,7 +6,7 @@ import { messageDe } from '../lib/erreur';
 /** Ce dont le balayage a besoin. Interface étroite, satisfaite par le store et le client MBA. */
 export interface HandoffSweepDeps {
   /** Les tenants qui ont choisi « seulement pendant mes heures d'ouverture », avec leur fuseau et horaires. */
-  tenantsHandoffSurHoraires(): Promise<Array<{ tenantId: string; timezone: string; businessHours: BusinessHours }>>;
+  reglages: { tenantsHandoffSurHoraires(): Promise<Array<{ tenantId: string; timezone: string; businessHours: BusinessHours }>> };
   /** État actuel de `handoff.enabled` chez Meta. Voir `EtatHandoff` : `'absent'` et `null` ne sont pas pareils. */
   lireHandoffEnabled(tenantId: string): Promise<EtatHandoff>;
   /** Écrit `handoff.enabled` chez Meta. Les autres champs de `handoff` sont préservés par `modifierSettings`. */
@@ -21,7 +21,7 @@ export interface HandoffSweepDeps {
  */
 export async function runHandoffSweep(deps: HandoffSweepDeps): Promise<number> {
   const maintenant = new Date(deps.now ? deps.now() : Date.now());
-  const tenants = await deps.tenantsHandoffSurHoraires();
+  const tenants = await deps.reglages.tenantsHandoffSurHoraires();
   let bascules = 0;
   for (const t of tenants) {
     const voulu = withinBusinessHours(maintenant, t.timezone, t.businessHours);

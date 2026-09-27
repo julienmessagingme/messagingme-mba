@@ -66,18 +66,24 @@ function senderRcs(nonJoignables: string[] = []) {
   return { provider, rcs };
 }
 
-function deps(over: Partial<RunJobDeps> & { recipients: RecipientStore }): RunJobDeps {
+function deps(over: Partial<Omit<RunJobDeps, 'repo'>> & { recipients: RecipientStore; repo?: Partial<RunJobDeps['repo']> }): RunJobDeps {
+  const { repo: surRepo, ...reste } = over;
   return {
-    getCampaign: async () => campagneRcs,
+    repo: {
+      getCampaign: async () => campagneRcs,
+      ...surRepo,
+    },
     senderFor: async (): Promise<MessageSender> => {
       throw new Error('senderFor (Meta) ne doit JAMAIS etre resolu sur une campagne RCS');
     },
     campaigns: new FakeCampaigns(),
     quality: new FakeQuality(),
-    // DÉCLARÉE, et plus couverte par un `as RunJobDeps` : le cast cachait qu'elle était devenue requise, et un
-    // cas qui ferait lever `NumeroDelieError` tomberait en « is not a function » au lieu d'une erreur de type.
-    pauserSiNumeroDelie: async () => false,
-    ...over,
+    numerosDelies: {
+      // DÉCLARÉE, et plus couverte par un `as RunJobDeps` : le cast cachait qu'elle était devenue requise, et un
+      // cas qui ferait lever `NumeroDelieError` tomberait en « is not a function » au lieu d'une erreur de type.
+      pauserCampagne: async () => false,
+    },
+    ...reste,
   };
 }
 
@@ -95,7 +101,7 @@ describe('campaignRunJob sur le canal RCS', () => {
     const recipients = new FakeRecipients([rec('r1', '+33600000002')]);
     const report = await campaignRunJob(
       { campaignId: 'c1' },
-      deps({ recipients, rcsSenderFor: async () => channelSender }),
+      deps({ recipients, rcs: { senderForCampaign: async () => channelSender } }),
     );
     expect(report).toMatchObject({ sent: 1, failed: 0, paused: false });
     expect(provider.sent.map((s) => s.e164)).toEqual(['+33600000002']);
@@ -112,10 +118,14 @@ describe('campaignRunJob sur le canal RCS', () => {
       { campaignId: 'c1' },
       deps({
         recipients: new FakeRecipients([rec('r1', '+33600000002')]),
-        rcsSenderFor: async () => channelSender,
-        phoneNumberBelongsToTenant: async () => {
-          verifs++;
-          return false; // un phoneNumberId vide ne peut appartenir à personne
+        rcs: {
+          senderForCampaign: async () => channelSender,
+        },
+        repo: {
+          phoneNumberBelongsToTenant: async () => {
+            verifs++;
+            return false; // un phoneNumberId vide ne peut appartenir à personne
+          },
         },
       }),
     );
@@ -136,7 +146,7 @@ describe('campaignRunJob sur le canal RCS', () => {
   it('met la campagne en PAUSE quand l agent RCS est introuvable', async () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
-      deps({ recipients: new FakeRecipients([rec('r1', '+33600000002')]), rcsSenderFor: async () => null }),
+      deps({ recipients: new FakeRecipients([rec('r1', '+33600000002')]), rcs: { senderForCampaign: async () => null } }),
     );
     expect(report.paused).toBe(true);
     expect(report.reason).toContain('agent');

@@ -2,23 +2,31 @@ import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
-import type { OpsRouteDeps } from '../src/http/ops';
+import type { ExploitationOps, OpsRouteDeps } from '../src/http/ops';
 import { capturerJournal } from './journal';
-import { opsInerte } from './routes-inertes';
+import { exploitationInerte, opsInerte } from './routes-inertes';
 
 const OPS = 'ops-secret-token-of-at-least-32-bytes!!';
 
-const OVERVIEW: Awaited<ReturnType<OpsRouteDeps['getTenantOverview']>> = [
+const OVERVIEW: Awaited<ReturnType<ExploitationOps['getTenantOverview']>> = [
   { id: 't1', name: 'Acme', createdAt: '2026-07-01T00:00:00.000Z', mbaEnabled: true, users: 2, contacts: 10, messages: 50, templatesUsed: 3, lastSendAt: null, phone: '+33 5 25 68 02 50', phoneStatus: 'CONNECTED', quality: 'GREEN' },
 ];
 
-function app(opsToken = OPS, over: Partial<OpsRouteDeps> = {}) {
+/** La tranche d'exploitation se surcharge membre par membre. */
+type Surcharges = Partial<Omit<OpsRouteDeps, 'exploitation'>> & { exploitation?: Partial<ExploitationOps> };
+
+function app(opsToken = OPS, over: Surcharges = {}) {
+  const { exploitation: surExploitation, ...reste } = over;
   const deps: OpsRouteDeps = {
     ...opsInerte,
-    getTenantOverview: async () => OVERVIEW,
-    getGlobalDaily: async () => [{ date: '2026-07-11', count: 5 }],
-    getQueueLoad: async () => [{ queue: 'webhook', backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }],
-    ...over,
+    exploitation: {
+      ...exploitationInerte,
+      getTenantOverview: async () => OVERVIEW,
+      getGlobalDaily: async () => [{ date: '2026-07-11', count: 5 }],
+      getQueueLoad: async () => [{ queue: 'webhook', backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }],
+      ...surExploitation,
+    },
+    ...reste,
   };
   return buildServer({ queue: new FakeQueue(), ops: deps, opsToken });
 }
@@ -41,7 +49,7 @@ describe('route /ops/overview', () => {
 
   it('inclut le heartbeat worker quand le getter est fourni', async () => {
     const hb = { beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:1', ageSeconds: 12 };
-    const server = app(OPS, { getWorkerHeartbeat: async () => hb });
+    const server = app(OPS, { heartbeat: { get: async () => hb } });
     const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ worker: unknown }>().worker).toEqual(hb);
@@ -196,10 +204,12 @@ describe('charge des files : l’âge du plus vieux job', () => {
     // qui attendent depuis un quart d'heure vont mal. Un champ calculé en base mais perdu en route
     // n'afficherait que des zéros, et l'écran passerait pour rassurant.
     const a = app(OPS, {
-      getQueueLoad: async () => [
-        { queue: 'webhook', backlog: 3, active: 1, failed: 0, ageMaxSecondes: 42 },
-        { queue: 'campaign-run', backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 },
-      ],
+      exploitation: {
+        getQueueLoad: async () => [
+          { queue: 'webhook', backlog: 3, active: 1, failed: 0, ageMaxSecondes: 42 },
+          { queue: 'campaign-run', backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 },
+        ],
+      },
     });
     const res = await a.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
     expect(res.statusCode).toBe(200);
@@ -217,7 +227,9 @@ describe('équité : les groupes qui attendent le plus', () => {
     // angle mort : la profondeur et l'âge par file disent « la file avance », pas « tout le monde est
     // servi ». Un espace affamé derrière un espace bavard est invisible d'une moyenne.
     const a = app(OPS, {
-      getQueueLoadParGroupe: async () => [{ queue: 'campaign-run', groupe: 't-affame', backlog: 3, ageMaxSecondes: 420 }],
+      exploitation: {
+        getQueueLoadParGroupe: async () => [{ queue: 'campaign-run', groupe: 't-affame', backlog: 3, ageMaxSecondes: 420 }],
+      },
     });
     const res = await a.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
     expect(res.json<{ queuesParGroupe: unknown[] }>().queuesParGroupe)
@@ -226,7 +238,7 @@ describe('équité : les groupes qui attendent le plus', () => {
 
     // Une lecture de confort qui échoue ne doit pas emporter l'écran d'exploitation entier : c'est
     // précisément quand ça va mal qu'on en a besoin.
-    const b = app(OPS, { getQueueLoadParGroupe: async () => { throw new Error('pgboss injoignable'); } });
+    const b = app(OPS, { exploitation: { getQueueLoadParGroupe: async () => { throw new Error('pgboss injoignable'); } } });
     const res2 = await b.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
     expect(res2.statusCode).toBe(200);
     expect(res2.json<{ queuesParGroupe: unknown[] }>().queuesParGroupe).toEqual([]);
@@ -247,7 +259,7 @@ describe('jobs morts : les voir, puis les rejouer', () => {
   const mort = (id: string, queue: string) => ({ id, queue, data: { x: id }, creeLe: '2026-09-01T00:00:00.000Z', erreur: 'boom' });
 
   it('lit les jobs morts', async () => {
-    const a = app(OPS, { listerJobsMorts: async () => [mort('j1', 'webhook')] });
+    const a = app(OPS, { exploitation: { listerJobsMorts: async () => [mort('j1', 'webhook')] } });
     const res = await a.inject({ method: 'GET', url: '/ops/dlq', headers: { 'x-ops-token': OPS } });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ jobs: Array<{ id: string }> }>().jobs).toHaveLength(1);
@@ -259,9 +271,13 @@ describe('jobs morts : les voir, puis les rejouer', () => {
     // produirait une PERTE. Le doublon est rattrapé partout où ça compte, la perte nulle part.
     const journal: string[] = [];
     const a = app(OPS, {
-      listerJobsMorts: async () => [mort('j1', 'webhook'), mort('j2', 'webhook')],
-      reenfiler: async (q) => { journal.push(`enfile:${q}`); },
-      oublierJobsMorts: async (ids) => { journal.push(`oublie:${ids.join(',')}`); return ids.length; },
+      exploitation: {
+        listerJobsMorts: async () => [mort('j1', 'webhook'), mort('j2', 'webhook')],
+        oublierJobsMorts: async (ids) => { journal.push(`oublie:${ids.join(',')}`); return ids.length; },
+      },
+      file: {
+        enqueue: async (q) => { journal.push(`enfile:${q}`); },
+      },
     });
     const res = await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook', limit: 10 } });
     expect(res.json<{ rejoues: number; oublies: number }>()).toEqual({ rejoues: 2, oublies: 2 });
@@ -275,10 +291,14 @@ describe('jobs morts : les voir, puis les rejouer', () => {
     const oublies: string[][] = [];
     let enfiles = 0;
     const a = app(OPS, {
-      listerJobsMorts: async () => [mort('j1', 'webhook'), mort('j2', 'webhook'), mort('j3', 'webhook')],
-      // Le PREMIER passe, le SECOND échoue : on vérifie qu'on n'oublie que le premier.
-      reenfiler: async () => { enfiles += 1; if (enfiles === 2) throw new Error('file pleine'); },
-      oublierJobsMorts: async (ids) => { oublies.push(ids); return ids.length; },
+      exploitation: {
+        listerJobsMorts: async () => [mort('j1', 'webhook'), mort('j2', 'webhook'), mort('j3', 'webhook')],
+        oublierJobsMorts: async (ids) => { oublies.push(ids); return ids.length; },
+      },
+      file: {
+        // Le PREMIER passe, le SECOND échoue : on vérifie qu'on n'oublie que le premier.
+        enqueue: async () => { enfiles += 1; if (enfiles === 2) throw new Error('file pleine'); },
+      },
     });
     const res = await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook' } });
     expect(res.json<{ rejoues: number }>().rejoues).toBe(1);
@@ -289,7 +309,7 @@ describe('jobs morts : les voir, puis les rejouer', () => {
   it('🔴 la FILE est obligatoire : pas de rejeu « tout » d’un coup', async () => {
     // Un rejeu global relancerait campagnes et webhooks ensemble, sur des causes d'échec différentes qu'on
     // n'a pas toutes corrigées.
-    const a = app(OPS, { listerJobsMorts: async () => [], reenfiler: async () => {}, oublierJobsMorts: async () => 0 });
+    const a = app(OPS, { exploitation: { listerJobsMorts: async () => [], oublierJobsMorts: async () => 0 }, file: { enqueue: async () => {} } });
     expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: {} })).statusCode).toBe(400);
     expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook', limit: 5000 } })).statusCode).toBe(400);
     await a.close();
@@ -297,7 +317,7 @@ describe('jobs morts : les voir, puis les rejouer', () => {
 
   it('sans jeton d’exploitation, ni lecture ni rejeu', async () => {
     // C'est une ÉCRITURE métier : elle ne doit jamais être atteignable depuis un compte de la console.
-    const a = app(OPS, { listerJobsMorts: async () => [], reenfiler: async () => {}, oublierJobsMorts: async () => 0 });
+    const a = app(OPS, { exploitation: { listerJobsMorts: async () => [], oublierJobsMorts: async () => 0 }, file: { enqueue: async () => {} } });
     expect((await a.inject({ method: 'GET', url: '/ops/dlq' })).statusCode).toBe(401);
     expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', payload: { queue: 'webhook' } })).statusCode).toBe(401);
     await a.close();

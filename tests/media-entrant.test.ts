@@ -85,12 +85,12 @@ describe('le délai de Meta sur un média reçu', () => {
  * l'erreur de Meta, ou le refus anticipé d'un média expiré, sans que rien ne tombe.
  */
 describe('lire un fichier reçu', () => {
-  function deps(msg: MessageAvecMedia | null, telecharger?: DepsLireMediaRecu['telecharger']) {
+  function deps(msg: MessageAvecMedia | null, telecharger?: DepsLireMediaRecu['media']['telechargerEntrant']) {
     const appels: Array<{ mediaId: string; max: number }> = [];
     const lus: unknown[][] = [];
     const d: DepsLireMediaRecu = {
-      lireMessage: async (...args) => { lus.push(args); return msg; },
-      telecharger: telecharger ?? (async (mediaId, max) => { appels.push({ mediaId, max }); return { bytes: Buffer.from('x'), mime: 'image/png' }; }),
+      messages: { lireMessagePourTranscription: async (...args) => { lus.push(args); return msg; } },
+      media: { telechargerEntrant: telecharger ?? (async (mediaId, max) => { appels.push({ mediaId, max }); return { bytes: Buffer.from('x'), mime: 'image/png' }; }) },
       tailleMaxOctets: 25 * 1024 * 1024,
     };
     return { d, appels, lus };

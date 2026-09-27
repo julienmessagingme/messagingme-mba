@@ -54,7 +54,7 @@ export interface DestinationSignaux {
 
 export interface DepsEmetteur {
   destinations: readonly DestinationSignaux[];
-  enfiler(file: string, job: JobSignaux, opts: { groupId: string; priority: number }): Promise<void>;
+  queue: { enqueue(file: string, job: JobSignaux, opts: { groupId: string; priority: number }): Promise<unknown> };
   log?(message: string): void;
 }
 
@@ -88,7 +88,7 @@ export function creerEmetteur(deps: DepsEmetteur): Emetteur {
         }
         for (const [priority, liste] of parPriorite) {
           for (let i = 0; i < liste.length; i += SIGNAUX_PAR_JOB) {
-            await deps.enfiler(d.file, { tenantId, signaux: liste.slice(i, i + SIGNAUX_PAR_JOB) }, { groupId: tenantId, priority });
+            await deps.queue.enqueue(d.file, { tenantId, signaux: liste.slice(i, i + SIGNAUX_PAR_JOB) }, { groupId: tenantId, priority });
           }
         }
       } catch (err) {

@@ -12,13 +12,17 @@ const TAILLE_MAX_CORPS = 4 * 1024 * 1024;
 /** Code d'URL : 26 caractères base32 Crockford minuscules (`newMediaCode`). */
 const CODE_RE = /^[0-9a-hjkmnp-tv-z]{26}$/;
 
-export interface RcsMediaRouteDeps {
+export interface RcsMediasDep {
   list(tenantId: string): Promise<RcsMediaResume[]>;
-  /** Enregistre un visuel déjà validé et rend son résumé + son URL publique. */
-  create(tenantId: string, input: { mime: MimeImage; bytes: Buffer; nom: string | null }): Promise<{ media: RcsMediaResume; url: string }>;
   remove(tenantId: string, id: string): Promise<boolean>;
   /** Le fichier derrière un code. Pas de tenant : la route de lecture est publique. */
   getByCode(code: string): Promise<RcsMediaFichier | null>;
+}
+
+export interface RcsMediaRouteDeps {
+  medias: RcsMediasDep;
+  /** Enregistre un visuel déjà validé et rend son résumé + son URL publique. */
+  create(tenantId: string, input: { mime: MimeImage; bytes: Buffer; nom: string | null }): Promise<{ media: RcsMediaResume; url: string }>;
 }
 
 /**
@@ -32,7 +36,7 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
 
   app.get('/tenants/:tenantId/rcs/media', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ media: await deps.list(tenant) });
+    return reply.code(200).send({ media: await deps.medias.list(tenant) });
   });
 
   app.post('/tenants/:tenantId/rcs/media', { ...opts, bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
@@ -63,7 +67,7 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
     const { id } = req.params as { id: string };
     // Identifiant mal formé : 404 avant la requête (sur une colonne uuid, Postgres lèverait, donc 500).
     if (!estUuid(id)) return reply.code(404).send({ error: 'visuel inconnu' });
-    const fait = await deps.remove(tenant, id);
+    const fait = await deps.medias.remove(tenant, id);
     if (!fait) return reply.code(404).send({ error: 'visuel inconnu' });
     return reply.code(200).send({ ok: true });
   });
@@ -81,7 +85,7 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
     // Forme du code vérifiée avant la base : cette adresse est publique et reçoit des scans.
     if (!CODE_RE.test(code) || mimeDemande === null) return reply.code(404).send({ error: 'introuvable' });
 
-    const fichierStocke = await deps.getByCode(code);
+    const fichierStocke = await deps.medias.getByCode(code);
     if (!fichierStocke || fichierStocke.mime !== mimeDemande) return reply.code(404).send({ error: 'introuvable' });
 
     return reply

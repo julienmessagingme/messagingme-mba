@@ -265,8 +265,10 @@ function appWith(opts: { agentId?: string } = {}) {
   const app = buildServer({
     queue: new FakeQueue(),
     rcsCallback: {
-      ...rappelsRcsInertes,
-      parCode: async (code) => (code === CODE ? { tenantId: 't1', agentId: opts.agentId ?? 'ch-1' } : null),
+      agents: {
+        ...rappelsRcsInertes,
+        parWebhookCode: async (code) => (code === CODE ? { tenantId: 't1', agentId: opts.agentId ?? 'ch-1' } : null),
+      },
       onDlr: async (tenant, dlr) => { dlrs.push({ tenant, dlr }); },
       onMo: async (tenant, mo) => { mos.push({ tenant, mo }); },
     },
@@ -358,8 +360,10 @@ describe('Route publique des rappels RCS', () => {
     const app = buildServer({
       queue: new FakeQueue(),
       rcsCallback: {
-        ...rappelsRcsInertes,
-        parCode: async () => ({ tenantId: 't1', agentId: 'ch-1' }),
+        agents: {
+          ...rappelsRcsInertes,
+          parWebhookCode: async () => ({ tenantId: 't1', agentId: 'ch-1' }),
+        },
         onDlr: async () => { throw new Error('base injoignable'); },
         onMo: async () => {},
       },
@@ -383,13 +387,15 @@ describe('Rappels RCS : le plafond par code', () => {
     const dlrs: RcsDlr[] = [];
     const app = Fastify();
     registerRcsCallback(app, {
-      ...rappelsRcsInertes,
-      parCode: async (code) => {
-        lectures += 1;
-        if (code === CODE) return { tenantId: 't1', agentId: 'ch-1' };
-        // Un second code EXISTANT, d'un autre espace (même agent smsmode, pour que le corps partagé passe la
-        // garde du canal) : sans lui, le test « PAR CODE » ne pouvait rien distinguer.
-        return code === AUTRE_CODE ? { tenantId: 't2', agentId: 'ch-1' } : null;
+      agents: {
+        ...rappelsRcsInertes,
+        parWebhookCode: async (code) => {
+          lectures += 1;
+          if (code === CODE) return { tenantId: 't1', agentId: 'ch-1' };
+          // Un second code EXISTANT, d'un autre espace (même agent smsmode, pour que le corps partagé passe la
+          // garde du canal) : sans lui, le test « PAR CODE » ne pouvait rien distinguer.
+          return code === AUTRE_CODE ? { tenantId: 't2', agentId: 'ch-1' } : null;
+        },
       },
       onDlr: async (_t, dlr) => { dlrs.push(dlr); },
       onMo: async () => {},
@@ -506,8 +512,10 @@ describe('Rappels RCS : le frein des codes jamais vus', () => {
     let lectures = 0;
     const app = Fastify();
     registerRcsCallback(app, {
-      ...rappelsRcsInertes,
-      parCode: async (code) => { lectures += 1; return existe(code) ? { tenantId: 't1', agentId: 'ch-1' } : null; },
+      agents: {
+        ...rappelsRcsInertes,
+        parWebhookCode: async (code) => { lectures += 1; return existe(code) ? { tenantId: 't1', agentId: 'ch-1' } : null; },
+      },
       onDlr: async () => {}, onMo: async () => {},
     }, new RateLimiter(10_000, 60_000), new RateLimiter(budget, 60_000));
     return { app, lectures: () => lectures };

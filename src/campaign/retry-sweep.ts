@@ -24,12 +24,22 @@ export interface RetrySweepDeps {
   /** Sommes-nous dans la fenêtre « début de journée » (fuseau géré par l'appelant) pour relancer les 131049 ? */
   isMorningWindow(): boolean;
   list131049(): Promise<AutoRetryRecipient[]>;
-  list131026(): Promise<AutoRetryRecipient[]>;
-  list131026SecondFail(): Promise<AutoRetryRecipient[]>;
-  /** Remet le destinataire en pending (retry_count++), atomique. true si repris. */
-  resetForRetry(id: string): Promise<boolean>;
-  /** Clôt un destinataire injoignable (terminal). À appeler après le flag HubSpot et la note, tous deux réussis. */
-  markUnreachableDone(id: string): Promise<boolean>;
+  /** Le dépôt des campagnes et de leurs destinataires. */
+  repo: {
+    listRetry131026(): Promise<AutoRetryRecipient[]>;
+    listRetry131026SecondFail(): Promise<AutoRetryRecipient[]>;
+    /** Remet le destinataire en pending (retry_count++), atomique. true si repris. */
+    resetForRetry(id: string): Promise<boolean>;
+    /** Clôt un destinataire injoignable (terminal). À appeler après le flag HubSpot et la note, tous deux réussis. */
+    markUnreachableDone(id: string): Promise<boolean>;
+    /**
+     * Les destinataires en échec d'une campagne qui a un repli, avec de quoi appliquer `decider`. Elle rend aussi
+     * ceux du dernier étage : c'est `decider` qui tranche.
+     */
+    listCandidatsBascule(): Promise<CandidatBascule[]>;
+    /** Fait avancer le destinataire à l'étage `rang` et le remet en `pending`, atomique. true si repris. */
+    basculerEtage(id: string, rang: number): Promise<boolean>;
+  };
   /** Enfile un campaign-run. Non dédupliqué : un run par destinataire relancé. */
   enqueueRun(campaignId: string): Promise<void>;
   /** Marque le contact injoignable dans HubSpot (best-effort ; throw -> on ne note ni ne clôt, réessayé au tour suivant). */
@@ -39,13 +49,6 @@ export interface RetrySweepDeps {
    * place : un verdict rangé seulement chez HubSpot n'est relu par rien ici.
    */
   noterJoignabilite(tenantId: string, contactId: string, joignable: boolean): Promise<void>;
-  /**
-   * Les destinataires en échec d'une campagne qui a un repli, avec de quoi appliquer `decider`. Elle rend aussi
-   * ceux du dernier étage : c'est `decider` qui tranche.
-   */
-  listCandidatsBascule(): Promise<CandidatBascule[]>;
-  /** Fait avancer le destinataire à l'étage `rang` et le remet en `pending`, atomique. true si repris. */
-  basculerEtage(id: string, rang: number): Promise<boolean>;
   /**
    * L'espace est-il dans ses heures d'ouverture maintenant (fuseau géré par l'appelant) ? Interrogée seulement
    * pour les campagnes qui refusent le rattrapage hors horaires, une fois par espace et par tour.
@@ -85,14 +88,14 @@ export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: nu
   // La bascule d'étage d'abord (la frontière avec les passes suivantes est en SQL, `SANS_REPLI_SQL`). On n'agit
   // que sur `bascule` : les réessais sont faits par les passes ci-dessous, `terminal` se joue en ne faisant rien.
   // Un étage non servable échoue avec sa raison, au vrai rang et au vrai canal, sans renvoyer le même message.
-  for (const c of await deps.listCandidatsBascule()) {
+  for (const c of await deps.repo.listCandidatsBascule()) {
     try {
       const geste = decider(c);
       if (geste.type !== 'bascule') continue;
       // Le repli passe par la garde d'horaire, et avant d'écrire : basculer puis ne pas enfiler laisserait le
       // destinataire `pending` sur le nouvel étage, hors de toute liste d'échec.
       if (!(await peutPartirMaintenant(c))) continue;
-      if (await deps.basculerEtage(c.id, geste.rang)) { await deps.enqueueRun(c.campaignId); bascules += 1; }
+      if (await deps.repo.basculerEtage(c.id, geste.rang)) { await deps.enqueueRun(c.campaignId); bascules += 1; }
     } catch (err) { logErr('bascule', c.id, err); }
   }
 
@@ -103,26 +106,26 @@ export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: nu
     for (const r of await deps.list131049()) {
       try {
         if (!(await peutPartirMaintenant(r))) continue;
-        if (await deps.resetForRetry(r.id)) { await deps.enqueueRun(r.campaignId); retried += 1; }
+        if (await deps.repo.resetForRetry(r.id)) { await deps.enqueueRun(r.campaignId); retried += 1; }
       } catch (err) { logErr('131049', r.id, err); }
     }
   }
 
   // 131026 : retenter une fois, sans délai depuis l'échec, mais dans la fenêtre de rattrapage.
-  for (const r of await deps.list131026()) {
+  for (const r of await deps.repo.listRetry131026()) {
     try {
       if (!(await peutPartirMaintenant(r))) continue;
-      if (await deps.resetForRetry(r.id)) { await deps.enqueueRun(r.campaignId); retried += 1; }
+      if (await deps.repo.resetForRetry(r.id)) { await deps.enqueueRun(r.campaignId); retried += 1; }
     } catch (err) { logErr('131026', r.id, err); }
   }
 
   // 131026 second échec : flag, puis mémoire, puis clôture en dernier (tant qu'elle n'est pas passée, le
   // destinataire est relisté, donc un échec diffère sans rien perdre). Pas de garde d'horaire : rien n'est envoyé.
-  for (const r of await deps.list131026SecondFail()) {
+  for (const r of await deps.repo.listRetry131026SecondFail()) {
     try {
       await deps.flagUnreachable(r.tenantId, r.toE164);
       await deps.noterJoignabilite(r.tenantId, r.contactId, false);
-      await deps.markUnreachableDone(r.id);
+      await deps.repo.markUnreachableDone(r.id);
       flagged += 1;
     } catch (err) { logErr('131026-injoignable', r.id, err); }
   }

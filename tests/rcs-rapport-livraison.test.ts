@@ -21,7 +21,9 @@ function monde(touches = 0, messageInscrit = true) {
   const cache: Array<{ agentId: string; e164: string; reachable: boolean; at: number }> = [];
   const deps: DepsRapportRcs = {
     majLivraison: async (id, statut) => { journal.push(`maj:${id}:${statut}`); return touches; },
-    mesureBloc: async (id, statut) => { journal.push(`bloc:${id}:${statut}`); return 0; },
+    mesures: {
+      recordStatusForMessage: async (id, statut) => { journal.push(`bloc:${id}:${statut}`); return 0; },
+    },
     echecs: {
       noter: async (e) => {
         notes.push(e);
@@ -30,8 +32,10 @@ function monde(touches = 0, messageInscrit = true) {
       noterSansMessage: async (e) => { replis.push(e); return null; },
     },
     joignabilite: { put: async (agentId, e164, reachable, at) => { cache.push({ agentId, e164, reachable, at }); } },
-    rcsInjoignable: async (_t, to, id) => { journal.push(`injoignable:${to}:${id}`); return true; },
-    rcsDelivre: async (_t, to, id) => { journal.push(`delivre:${to}:${id}`); return true; },
+    parcours: {
+      rcsUndeliverable: async (_t, to, id) => { journal.push(`injoignable:${to}:${id}`); return true; },
+      rcsDelivered: async (_t, to, id) => { journal.push(`delivre:${to}:${id}`); return true; },
+    },
     maintenant: () => MAINTENANT,
   };
   return { deps, journal, notes, replis, cache };

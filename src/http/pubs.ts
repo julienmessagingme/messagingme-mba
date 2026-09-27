@@ -28,7 +28,7 @@ export interface PubsRouteDeps {
   appId: string;
   graphVersion: string;
   /** L'état de la connexion, sans le jeton. */
-  lire(tenantId: string): Promise<ConnexionPub | null>;
+  connexions: { lire(tenantId: string): Promise<ConnexionPub | null> };
   /**
    * Le compte publicitaire peut-il diffuser ? Lu en direct chez Meta. `null` n'est pas « tout va bien » : c'est
    * « je n'ai pas pu demander », et l'écran doit le dire, sinon un compte bloqué passerait pour prêt.
@@ -46,18 +46,21 @@ export interface PubsRouteDeps {
    */
   deconnecter(tenantId: string): Promise<{ revoqueChezMeta: boolean }>;
   /** Les publicités de l'espace, la plus récente d'abord. */
-  listerPubs(tenantId: string): Promise<Publicite[]>;
-  /**
-   * Les brouillons de l'espace, le plus récemment modifié d'abord, sans les octets des visuels : c'est un contrat
-   * (un brouillon peut porter 5 Mo d'image). Seule `lireBrouillon` les lit.
-   */
-  listerBrouillons(tenantId: string): Promise<BrouillonPub[]>;
-  /** Un brouillon avec son visuel, pour repeupler le formulaire. `null` = inconnu dans cet espace. */
-  lireBrouillon(tenantId: string, id: string): Promise<BrouillonPubComplet | null>;
-  creerBrouillon(tenantId: string, c: ChampsBrouillon): Promise<string>;
-  /** `false` = le brouillon n'existe pas dans cet espace, ce que la route rend en 404. */
-  majBrouillon(tenantId: string, id: string, c: ChampsBrouillon): Promise<boolean>;
-  supprimerBrouillon(tenantId: string, id: string): Promise<boolean>;
+  publicites: { lister(tenantId: string): Promise<Publicite[]> };
+  /** Les brouillons : un brouillon est un formulaire mémorisé qui ne touche jamais Meta. */
+  brouillons: {
+    /**
+     * Le plus récemment modifié d'abord, sans les octets des visuels : c'est un contrat (un brouillon peut porter
+     * 5 Mo d'image). Seule `lire` les lit.
+     */
+    lister(tenantId: string): Promise<BrouillonPub[]>;
+    /** Un brouillon avec son visuel, pour repeupler le formulaire. `null` = inconnu dans cet espace. */
+    lire(tenantId: string, id: string): Promise<BrouillonPubComplet | null>;
+    creer(tenantId: string, c: ChampsBrouillon): Promise<string>;
+    /** `false` = le brouillon n'existe pas dans cet espace, ce que la route rend en 404. */
+    mettreAJour(tenantId: string, id: string, c: ChampsBrouillon): Promise<boolean>;
+    supprimer(tenantId: string, id: string): Promise<boolean>;
+  };
   /**
    * Crée la publicité chez Meta, en pause, et range ce qui en revient. Ne lève pas sur un refus de Meta : tout
    * sort par `IssueCreation`, pour rendre le message de Meta et distinguer « rien de créé » de « quelque chose
@@ -235,7 +238,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
 
   app.get('/tenants/:tenantId/pubs/connexion', opts, async (req, reply) => {
     const tenantId = espaceVerifie(req);
-    const connexion = await deps.lire(tenantId);
+    const connexion = await deps.connexions.lire(tenantId);
     // Au mieux : une panne chez Meta ne doit pas empêcher d'afficher une connexion lue dans notre base. `null`
     // dit « je n'ai pas pu demander », jamais « tout va bien ».
     const compte = connexion === null ? null : await deps.etatCompte(tenantId).catch(() => null);
@@ -334,7 +337,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
 
   app.get('/tenants/:tenantId/pubs', opts, async (req, reply) => {
     const tenantId = espaceVerifie(req);
-    return reply.send({ publicites: await deps.listerPubs(tenantId) });
+    return reply.send({ publicites: await deps.publicites.lister(tenantId) });
   });
 
   /**
@@ -346,13 +349,13 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
 
   app.get('/tenants/:tenantId/pubs/brouillons', opts, async (req, reply) => {
     const tenantId = espaceVerifie(req);
-    return reply.send({ brouillons: await deps.listerBrouillons(tenantId) });
+    return reply.send({ brouillons: await deps.brouillons.lister(tenantId) });
   });
 
   app.get('/tenants/:tenantId/pubs/brouillons/:id', opts, async (req, reply) => {
     const tenantId = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    const b = await deps.lireBrouillon(tenantId, id);
+    const b = await deps.brouillons.lire(tenantId, id);
     if (b === null) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
     return reply.send({ brouillon: b });
   });
@@ -366,7 +369,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     // quoi en base.
     const refus = lu.data.image ? refusDuVisuel(lu.data.image.base64) : null;
     if (refus !== null) return reply.code(400).send({ error: refus });
-    const id = await deps.creerBrouillon(tenantId, versChamps(lu.data));
+    const id = await deps.brouillons.creer(tenantId, versChamps(lu.data));
     return reply.code(201).send({ id });
   });
 
@@ -380,7 +383,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     // été lus à leur écriture. Seul un visuel fourni se vérifie.
     const refus = lu.data.image ? refusDuVisuel(lu.data.image.base64) : null;
     if (refus !== null) return reply.code(400).send({ error: refus });
-    const trouve = await deps.majBrouillon(tenantId, id, versChamps(lu.data));
+    const trouve = await deps.brouillons.mettreAJour(tenantId, id, versChamps(lu.data));
     if (!trouve) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
     return reply.code(204).send();
   });
@@ -389,7 +392,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const trouve = await deps.supprimerBrouillon(tenantId, id);
+    const trouve = await deps.brouillons.supprimer(tenantId, id);
     if (!trouve) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
     return reply.code(204).send();
   });

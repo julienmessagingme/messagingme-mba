@@ -22,10 +22,12 @@ function app(over: Partial<FieldsRouteDeps> = {}) {
   const cap: Cap = { created: [], updated: [], deleted: [] };
   const deps: FieldsRouteDeps = {
     ...champsInertes,
-    listFields: async () => [{ key: 'ville', label: 'Ville', type: 'text' }],
-    createField: async (_t, def) => { cap.created.push(def); return def.key === 'ville' ? 'exists' : 'created'; },
-    updateField: async (_t, key, patch) => { cap.updated.push({ key, patch }); return key === 'ville'; },
-    deleteField: async (_t, key) => { cap.deleted.push(key); return key === 'ville'; },
+    fields: {
+      list: async () => [{ key: 'ville', label: 'Ville', type: 'text' }],
+      create: async (_t, def) => { cap.created.push(def); return def.key === 'ville' ? 'exists' : 'created'; },
+      updateField: async (_t, key, patch) => { cap.updated.push({ key, patch }); return key === 'ville'; },
+      deleteField: async (_t, key) => { cap.deleted.push(key); return key === 'ville'; },
+    },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, fields: deps }), cap };
@@ -197,7 +199,7 @@ describe('routes user-fields : doublons d’un champ de base', () => {
  */
 describe('GET /user-fields/usage', () => {
   it('rend le relévé par champ et le total', async () => {
-    const { server } = app({ fieldUsage: async () => ({ total: 40, parChamp: { email: 12, mail: 0 } }) });
+    const { server } = app({ contacts: { fieldUsage: async () => ({ total: 40, parChamp: { email: 12, mail: 0 } }) } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ total: 40, parChamp: { email: 12, mail: 0 } });
@@ -207,14 +209,14 @@ describe('GET /user-fields/usage', () => {
   it('« usage » n est PAS pris pour une clé de champ (ordre de déclaration des routes)', async () => {
     // La route vit à côté de PATCH/DELETE `/user-fields/:key` : déclarée après, un GET tomberait dans le
     // paramètre. Le contrôle tient dans la réponse : un relévé, pas une erreur de champ inconnu.
-    const { server } = app({ fieldUsage: async () => ({ total: 1, parChamp: {} }) });
+    const { server } = app({ contacts: { fieldUsage: async () => ({ total: 1, parChamp: {} }) } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(adminTok) });
     expect(res.json<{ total: number }>().total).toBe(1);
     await server.close();
   });
 
   it('agent -> 403, et un autre espace -> 403', async () => {
-    const { server } = app({ fieldUsage: async () => ({ total: 40, parChamp: {} }) });
+    const { server } = app({ contacts: { fieldUsage: async () => ({ total: 40, parChamp: {} }) } });
     expect((await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(agentTok) })).statusCode).toBe(403);
     expect((await server.inject({ method: 'GET', url: '/tenants/t2/user-fields/usage', ...h(adminTok) })).statusCode).toBe(403);
     await server.close();

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
-import type { LinksRouteDeps } from '../src/http/links';
+import type { LiensDep, LinksRouteDeps } from '../src/http/links';
 import { capturerJournal } from './journal';
 import type { DestinationLien } from '../src/links/tracked-links.pg';
 import { liensInertes } from './routes-inertes';
@@ -14,17 +14,20 @@ interface Capture {
   signaux: Array<{ tenantId: string; contactId: string; code: string }>;
 }
 
-function app(over: Partial<LinksRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Capture } {
+function app(over: Partial<LiensDep & Pick<LinksRouteDeps, 'signalerClic'>> = {}): { server: ReturnType<typeof buildServer>; cap: Capture } {
   const cap: Capture = { clics: [], lus: [], signaux: [] };
+  const { signalerClic, ...liens } = over;
   const links: LinksRouteDeps = {
-    ...liensInertes,
-    getByCode: async (code): Promise<DestinationLien | null> => {
-      cap.lus.push(code);
-      return code === CODE ? { tenantId: 't1', destination: 'https://client.fr/promo' } : null;
+    liens: {
+      ...liensInertes,
+      getByCode: async (code): Promise<DestinationLien | null> => {
+        cap.lus.push(code);
+        return code === CODE ? { tenantId: 't1', destination: 'https://client.fr/promo' } : null;
+      },
+      recordClick: async (code, tenantId) => { cap.clics.push({ code, tenantId }); },
+      ...liens,
     },
-    recordClick: async (code, tenantId) => { cap.clics.push({ code, tenantId }); },
-    signalerClic: async (tenantId, contactId, code) => { cap.signaux.push({ tenantId, contactId, code }); },
-    ...over,
+    signalerClic: signalerClic ?? (async (tenantId, contactId, code) => { cap.signaux.push({ tenantId, contactId, code }); }),
   };
   return { server: buildServer({ queue: new FakeQueue(), links }), cap };
 }

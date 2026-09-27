@@ -11,20 +11,44 @@ import {
 import { valideGrille, BORNES_GRILLE } from '../stats/prix';
 import { messageDe } from '../lib/erreur';
 
-export interface SettingsRouteDeps {
-  getSettings(tenantId: string): Promise<TenantSettings>;
-  /**
-   * Le canal RCS est-il exploitable pour ce tenant ? Vrai dès qu'un agent RCS lui est rattaché : dérivé de
-   * l'état réel plutôt que d'un réglage, pour que l'interface ne promette jamais un canal qui ne peut pas
-   * envoyer.
-   */
-  rcsEnabledFor(tenantId: string): Promise<boolean>;
+/** Ce que les routes lisent et écrivent des réglages de l'espace. */
+export interface ReglagesDep {
+  get(tenantId: string): Promise<TenantSettings>;
   setMbaEnabled(tenantId: string, enabled: boolean): Promise<void>;
   setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void>;
   /** Quand l'agent de Meta passe la main à un humain (écran « Activation »). */
   setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void>;
+  /** Fuseau IANA du tenant. */
+  setTimezone(tenantId: string, timezone: string): Promise<void>;
+  /** Heures d'ouverture par jour ('0'..'6'). */
+  setBusinessHours(tenantId: string, hours: BusinessHours): Promise<void>;
+  /** Branche (ou débranche, avec `null`) le connecteur prévenu à chaque désabonnement. */
+  setOptoutRequestId(tenantId: string, requestId: string | null): Promise<void>;
+  /** Règle quand les agents de cet espace annoncent qu'ils sont des IA. */
+  setMentionIaFrequence(tenantId: string, frequence: FrequenceMentionIa): Promise<void>;
+  /** Quand l'équipe est joignable pour les agents IA. */
+  setAgentTransfertMode(tenantId: string, mode: ModeTransfert): Promise<void>;
+  /** Autorise (ou non) les agents à prendre une conversation du pot commun. */
+  setAgentsPeuventPrendre(tenantId: string, actif: boolean): Promise<void>;
+  /**
+   * Allume ou éteint l'interrupteur HubSpot de l'espace. Toujours câblé, contrairement à
+   * `disconnectHubspot` (Compte), qui dépend de `HUBSPOT_SERVICE_URL`.
+   */
+  setHubspotActif(tenantId: string, actif: boolean): Promise<void>;
+}
+
+export interface SettingsRouteDeps {
+  reglages: ReglagesDep;
+  rcs: {
+    /**
+     * Le canal RCS est-il exploitable pour ce tenant ? Vrai dès qu'un agent RCS lui est rattaché : dérivé de
+     * l'état réel plutôt que d'un réglage, pour que l'interface ne promette jamais un canal qui ne peut pas
+     * envoyer.
+     */
+    hasAgent(tenantId: string): Promise<boolean>;
+  };
   /**
    * Applique `handoff.enabled` chez Meta. Best-effort : un échec ne fait pas échouer l'enregistrement (le
    * choix est en base, le balayage l'appliquera), sinon Meta injoignable empêcherait le client de régler son
@@ -42,31 +66,16 @@ export interface SettingsRouteDeps {
    * éteindrait HubSpot par-dessus un portail relié.
    */
   hubspotPortalConnecte(tenantId: string): Promise<boolean>;
-  /** Fuseau IANA du tenant. */
-  setTimezone(tenantId: string, timezone: string): Promise<void>;
-  /** Heures d'ouverture par jour ('0'..'6'). */
-  setBusinessHours(tenantId: string, hours: BusinessHours): Promise<void>;
   /** Les requêtes de connecteur de l'espace (Tools > Connecteurs API), réduites à ce que l'écran affiche. */
   listerRequetesConnecteur(tenantId: string): Promise<Array<{ id: string; label: string }>>;
-  /** Branche (ou débranche, avec `null`) le connecteur prévenu à chaque désabonnement. */
-  setOptoutRequestId(tenantId: string, requestId: string | null): Promise<void>;
-  /** Règle quand les agents de cet espace annoncent qu'ils sont des IA. */
-  setMentionIaFrequence(tenantId: string, frequence: FrequenceMentionIa): Promise<void>;
-  /** Quand l'équipe est joignable pour les agents IA. */
-  setAgentTransfertMode(tenantId: string, mode: ModeTransfert): Promise<void>;
-  /** Autorise (ou non) les agents à prendre une conversation du pot commun. */
-  setAgentsPeuventPrendre(tenantId: string, actif: boolean): Promise<void>;
-  /**
-   * Allume ou éteint l'interrupteur HubSpot de l'espace. Toujours câblé, contrairement à
-   * `disconnectHubspot` (Compte), qui dépend de `HUBSPOT_SERVICE_URL`.
-   */
-  setHubspotActif(tenantId: string, actif: boolean): Promise<void>;
-  /**
-   * Les agents de l'espace et la phrase que chacun dit. Le régime dit quand on annonce, pas ce qu'on
-   * annonce, qui reste propre à chaque agent : un écran de conformité qui cacherait le texte promettrait une
-   * vérification qu'il ne permet pas de faire.
-   */
-  listerAgentsPourConformite(tenantId: string): Promise<Array<{ id: string; label: string; status: string; mentionIa: string }>>;
+  agents: {
+    /**
+     * Les agents de l'espace et la phrase que chacun dit. Le régime dit quand on annonce, pas ce qu'on
+     * annonce, qui reste propre à chaque agent : un écran de conformité qui cacherait le texte promettrait
+     * une vérification qu'il ne permet pas de faire.
+     */
+    listerPourConformite(tenantId: string): Promise<Array<{ id: string; label: string; status: string; mentionIa: string }>>;
+  };
 }
 
 /** Fuseau IANA valide ? (Intl throw sur un identifiant inconnu.) */
@@ -117,8 +126,8 @@ export function registerSettings(
 
   app.get('/tenants/:tenantId/settings', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const settings = await deps.getSettings(tenant);
-    const rcsEnabled = await deps.rcsEnabledFor(tenant);
+    const settings = await deps.reglages.get(tenant);
+    const rcsEnabled = await deps.rcs.hasAgent(tenant);
     // Une panne de lecture vaut « pas relié » ici seulement : c'est un drapeau d'affichage, l'écran ne doit
     // pas tomber pour lui. L'extinction de l'interrupteur, elle, refuse (plus bas).
     const hubspotPortalConnecte = await deps.hubspotPortalConnecte(tenant).catch(() => false);
@@ -129,7 +138,7 @@ export function registerSettings(
     const tenant = espaceVerifie(req);
     const mbaEnabled = (req.body as { mbaEnabled?: unknown } | null)?.mbaEnabled;
     if (typeof mbaEnabled !== 'boolean') return reply.code(400).send({ error: 'mbaEnabled (booléen) requis' });
-    await deps.setMbaEnabled(tenant, mbaEnabled);
+    await deps.reglages.setMbaEnabled(tenant, mbaEnabled);
     return reply.code(200).send({ mbaEnabled });
   });
 
@@ -139,7 +148,7 @@ export function registerSettings(
     const tenant = espaceVerifie(req);
     const enabled = (req.body as { enabled?: unknown } | null)?.enabled;
     if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled (booléen) requis' });
-    await deps.setHubspotListsEnabled(tenant, enabled);
+    await deps.reglages.setHubspotListsEnabled(tenant, enabled);
     return reply.code(200).send({ hubspotListsEnabled: enabled });
   });
 
@@ -173,7 +182,7 @@ export function registerSettings(
         });
       }
     }
-    await deps.setHubspotActif(tenant, actif);
+    await deps.reglages.setHubspotActif(tenant, actif);
     return reply.code(200).send({ hubspotActif: actif });
   });
 
@@ -184,7 +193,7 @@ export function registerSettings(
    */
   app.get('/tenants/:tenantId/settings/poussee-optout', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const { optoutRequestId } = await deps.getSettings(tenant);
+    const { optoutRequestId } = await deps.reglages.get(tenant);
     return reply.code(200).send({ requestId: optoutRequestId, requetes: await deps.listerRequetesConnecteur(tenant) });
   });
 
@@ -198,7 +207,7 @@ export function registerSettings(
     const tenant = espaceVerifie(req);
     const brut = (req.body as { requestId?: unknown } | null)?.requestId;
     if (brut === null) {
-      await deps.setOptoutRequestId(tenant, null);
+      await deps.reglages.setOptoutRequestId(tenant, null);
       return reply.code(200).send({ requestId: null });
     }
     if (typeof brut !== 'string' || brut.trim() === '') {
@@ -210,7 +219,7 @@ export function registerSettings(
       // 400 et non 500 : Cloudflare remplace le corps des 5xx, et c'est un message destiné à l'utilisateur.
       return reply.code(400).send({ error: 'cette requête n’existe pas dans cet espace' });
     }
-    await deps.setOptoutRequestId(tenant, requestId);
+    await deps.reglages.setOptoutRequestId(tenant, requestId);
     return reply.code(200).send({ requestId });
   });
 
@@ -222,13 +231,13 @@ export function registerSettings(
    */
   app.get('/tenants/:tenantId/settings/mention-ia', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const { mentionIaFrequence } = await deps.getSettings(tenant);
+    const { mentionIaFrequence } = await deps.reglages.get(tenant);
     return reply.code(200).send({
       // `null` en base = rien n'a été réglé : l'écran montre le défaut effectif, celui que le runtime
       // appliquera, pas une case vide.
       frequence: mentionIaFrequence ?? 'session',
       reglee: mentionIaFrequence !== null,
-      agents: await deps.listerAgentsPourConformite(tenant),
+      agents: await deps.agents.listerPourConformite(tenant),
     });
   });
 
@@ -243,7 +252,7 @@ export function registerSettings(
     if (!estFrequenceMention(brut)) {
       return reply.code(400).send({ error: `frequence requise (${FREQUENCES_MENTION_IA.join(' | ')})` });
     }
-    await deps.setMentionIaFrequence(tenant, brut);
+    await deps.reglages.setMentionIaFrequence(tenant, brut);
     return reply.code(200).send({ frequence: brut });
   });
 
@@ -254,7 +263,7 @@ export function registerSettings(
    */
   app.get('/tenants/:tenantId/settings/transfert-agent', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const { agentTransfertMode } = await deps.getSettings(tenant);
+    const { agentTransfertMode } = await deps.reglages.get(tenant);
     return reply.code(200).send({
       // Le défaut effectif, celui que le runtime appliquera, jamais une case vide (même raison que sa voisine).
       mode: agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
@@ -269,7 +278,7 @@ export function registerSettings(
     if (!estModeTransfert(brut)) {
       return reply.code(400).send({ error: `mode requis (${MODES_TRANSFERT.join(' | ')})` });
     }
-    await deps.setAgentTransfertMode(tenant, brut);
+    await deps.reglages.setAgentTransfertMode(tenant, brut);
     return reply.code(200).send({ mode: brut });
   });
 
@@ -281,7 +290,7 @@ export function registerSettings(
    */
   app.get('/tenants/:tenantId/settings/agents-peuvent-prendre', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const { agentsPeuventPrendre } = await deps.getSettings(tenant);
+    const { agentsPeuventPrendre } = await deps.reglages.get(tenant);
     return reply.code(200).send({ actif: agentsPeuventPrendre });
   });
 
@@ -290,7 +299,7 @@ export function registerSettings(
     const actif = (req.body as { actif?: unknown } | null)?.actif;
     // Un booléen, rien d'autre : une valeur bancale ne doit pas se lire « activé » par accident.
     if (typeof actif !== 'boolean') return reply.code(400).send({ error: 'actif (booléen) requis' });
-    await deps.setAgentsPeuventPrendre(tenant, actif);
+    await deps.reglages.setAgentsPeuventPrendre(tenant, actif);
     return reply.code(200).send({ actif });
   });
 
@@ -308,14 +317,14 @@ export function registerSettings(
     const tenant = espaceVerifie(req);
     const raw = (req.body as { seconds?: unknown } | null)?.seconds;
     if (raw === null) {
-      await deps.setControlHandbackSeconds(tenant, null);
+      await deps.reglages.setControlHandbackSeconds(tenant, null);
       return reply.code(200).send({ controlHandbackSeconds: null });
     }
     const MAX = 7 * 24 * 3600;
     if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > MAX) {
       return reply.code(400).send({ error: `seconds invalide (entier 0..${MAX}, ou null pour le défaut)` });
     }
-    await deps.setControlHandbackSeconds(tenant, raw);
+    await deps.reglages.setControlHandbackSeconds(tenant, raw);
     return reply.code(200).send({ controlHandbackSeconds: raw });
   });
 
@@ -333,13 +342,13 @@ export function registerSettings(
     if (mode !== 'always' && mode !== 'business_hours' && mode !== 'never') {
       return reply.code(400).send({ error: "mode invalide ('always' | 'business_hours' | 'never')" });
     }
-    await deps.setMbaHandoffMode(tenant, mode);
+    await deps.reglages.setMbaHandoffMode(tenant, mode);
     let applique = false;
     // Pour `business_hours` seulement, l'état à cet instant : le client règle souvent son outil pendant ses
     // heures d'ouverture, et verrait sinon un passage de main éteint jusqu'au balayage suivant.
     let voulu = mode === 'always';
     if (mode === 'business_hours') {
-      const s = await deps.getSettings(tenant);
+      const s = await deps.reglages.get(tenant);
       voulu = withinBusinessHours(new Date(), s.timezone, s.businessHours);
     }
     try {
@@ -358,7 +367,7 @@ export function registerSettings(
     const tenant = espaceVerifie(req);
     const tz = (req.body as { timezone?: unknown } | null)?.timezone;
     if (!isValidTimeZone(tz)) return reply.code(400).send({ error: 'timezone IANA invalide (ex. Europe/Paris)' });
-    await deps.setTimezone(tenant, tz);
+    await deps.reglages.setTimezone(tenant, tz);
     return reply.code(200).send({ timezone: tz });
   });
 
@@ -367,7 +376,7 @@ export function registerSettings(
     const tenant = espaceVerifie(req);
     const hours = normalizeBusinessHours((req.body as { businessHours?: unknown } | null)?.businessHours);
     if (hours === null) return reply.code(400).send({ error: 'businessHours invalide (7 jours, HH:MM, close > open)' });
-    await deps.setBusinessHours(tenant, hours);
+    await deps.reglages.setBusinessHours(tenant, hours);
     return reply.code(200).send({ businessHours: hours });
   });
 }

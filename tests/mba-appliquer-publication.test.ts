@@ -45,7 +45,7 @@ function monter(over: { base?: string | null; connecteurs?: Array<{ id: string; 
     };
   };
   const appliquer = creerAppliquerGeste({
-    client: async () => client,
+    meta: { mbaClientForTenant: async () => client },
     adresseDuRelais: () => (over.base === undefined ? BASE : over.base),
     outils: async () => { lecturesOutils += 1; return over.outils ?? [ADD_TAG]; },
     cle,

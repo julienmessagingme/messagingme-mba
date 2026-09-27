@@ -14,13 +14,15 @@ function faux(o: { echos?: Array<string | null>; leve?: boolean; selonHeure?: (t
   const attentes: number[] = [];
   const journal: string[] = [];
   const deps: DepsFinDeTour = {
-    dernierMessageDeLAgent: async () => {
-      if (o.leve) throw new Error('base indisponible');
-      if (o.selonHeure) return o.selonHeure(t);
-      const suite = o.echos ?? ['e1'];
-      const r = suite[Math.min(lectures, suite.length - 1)] ?? null;
-      lectures += 1;
-      return r;
+    inbox: {
+      dernierMessageDeLAgent: async () => {
+        if (o.leve) throw new Error('base indisponible');
+        if (o.selonHeure) return o.selonHeure(t);
+        const suite = o.echos ?? ['e1'];
+        const r = suite[Math.min(lectures, suite.length - 1)] ?? null;
+        lectures += 1;
+        return r;
+      },
     },
     attendre: async (ms) => { attentes.push(ms); t += ms; },
     maintenant: () => t,

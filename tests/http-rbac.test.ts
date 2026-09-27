@@ -6,7 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
 import type { InboxRouteDeps } from '../src/http/inbox';
-import { campagnesInertes, inboxInerte } from './routes-inertes';
+import { campagnesInertes, campagnesRepoInerte, creationInerte, inboxDepInerte, inboxInerte } from './routes-inertes';
 
 // Frontière RBAC (Feature 2) : l'agent n'a accès QU'À l'inbox. Le même token agent doit être
 // admis sur l'inbox et refusé (403) sur un groupe admin-only. La barrière est le preHandler
@@ -24,30 +24,38 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 
 const campaigns: CampaignRouteDeps = {
   ...campagnesInertes,
-  repo: {} as CampaignRouteDeps['repo'],
   queue: new FakeQueue(),
-  phoneNumberBelongsToTenant: async () => true,
-  campaignBelongsTo: async () => true,
-  getRunSizing: async () => ({ ratePerMinute: null, pendingCount: 0 }),
-  scheduleCampaign: async () => true,
-  cancelSchedule: async () => true,
+  repo: {
+    ...creationInerte,
+    ...campagnesRepoInerte,
+    phoneNumberBelongsToTenant: async () => true,
+    campaignBelongsTo: async () => true,
+    getRunSizing: async () => ({ ratePerMinute: null, pendingCount: 0 }),
+    scheduleCampaign: async () => true,
+    cancelSchedule: async () => true,
+    listCampaignSummaries: async () => [],
+    archiveCampaign: async () => true,
+    unarchiveCampaign: async () => true,
+    deleteDraftCampaign: async () => true,
+    getCampaignDetail: async () => null,
+    resetRecipientForRetry: async () => ({ result: 'not_found' as const }),
+    listPhoneNumbers: async () => [],
+  },
   getWorkflowGraph: async () => null,
-  listCampaigns: async () => [],
-  archiveCampaign: async () => true,
-  unarchiveCampaign: async () => true,
-  deleteDraftCampaign: async () => true,
-  getCampaignDetail: async () => null,
-  resetRecipientForRetry: async () => ({ result: 'not_found' as const }),
-  listPhoneNumbers: async () => [],
 };
 const inbox: InboxRouteDeps = {
   ...inboxInerte,
   estDesabonne: jamaisDesabonne,
-  listConversations: async () => [],
-  getConversationContext: async () => null,
-  getMessages: async () => [],
-  recordOutbound: async () => {},
-  getTenantPhoneNumberId: async () => 'pn1',
+  inbox: {
+    ...inboxDepInerte,
+    listConversations: async () => [],
+    getConversationContext: async () => null,
+    getMessages: async () => [],
+    recordOutbound: async () => {},
+  },
+  repo: {
+    getTenantPhoneNumberId: async () => 'pn1',
+  },
   sendReply: async () => 'wamid.OUT',
   sendTemplateMessage: async () => 'wamid.TPL',
 };

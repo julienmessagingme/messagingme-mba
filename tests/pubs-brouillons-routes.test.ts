@@ -29,18 +29,25 @@ const etatChoisi: ConnexionPub = {
 };
 const accordes: ActifsAccordes = { comptesPub: [], pages: [] };
 
-function app(over: Partial<PubsRouteDeps> = {}, role = 'admin'): FastifyInstance {
+/** Les brouillons se surchargent membre par membre. */
+type Surcharges = Partial<Omit<PubsRouteDeps, 'brouillons'>> & { brouillons?: Partial<PubsRouteDeps['brouillons']> };
+
+function app(over: Surcharges = {}, role = 'admin'): FastifyInstance {
+  const { brouillons: surBrouillons, ...reste } = over;
   const deps: PubsRouteDeps = {
     ...aucunePubDeRoute,
     configId: 'cfg-pub', appId: 'app-1', graphVersion: 'v23.0',
-    lire: async () => etatChoisi,
+    connexions: {
+      lire: async () => etatChoisi,
+    },
     etatCompte: async () => ({ statut: 1, raisonDesactivation: 0, moyenPaiement: true }),
     connecter: async () => accordes,
     actifsAccordes: async () => accordes,
     choisir: async () => etatChoisi,
     deconnecter: async () => ({ revoqueChezMeta: true }),
     audit: async () => {},
-    ...over,
+    ...reste,
+    brouillons: { ...aucunePubDeRoute.brouillons, ...surBrouillons },
   };
   const srv = Fastify();
   const garde = async (req: { auth?: { tenantId: string; userId: string; role: string } }): Promise<void> => {
@@ -58,7 +65,7 @@ const PNG_1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
 describe('un brouillon s’enregistre INCOMPLET, c’est sa raison d’être', () => {
   it('un corps entièrement vide est accepté', async () => {
     let recu: ChampsBrouillon | null = null;
-    const srv = app({ creerBrouillon: async (_t, c) => { recu = c; return 'b-1'; } });
+    const srv = app({ brouillons: { creer: async (_t, c) => { recu = c; return 'b-1'; } } });
     const r = await srv.inject({ method: 'POST', url: url(), payload: {} });
     expect(r.statusCode).toBe(201);
     expect(r.json()).toEqual({ id: 'b-1' });
@@ -70,7 +77,7 @@ describe('un brouillon s’enregistre INCOMPLET, c’est sa raison d’être', (
     // 🔴 C'est le cœur du choix. `corpsCreation` exige `z.number().positive()` et une date ; l'exiger ici
     // refuserait « je reviendrai mettre le budget », qui est le brouillon le plus courant.
     let recu: ChampsBrouillon | null = null;
-    const srv = app({ creerBrouillon: async (_t, c) => { recu = c; return 'b-1'; } });
+    const srv = app({ brouillons: { creer: async (_t, c) => { recu = c; return 'b-1'; } } });
     const r = await srv.inject({ method: 'POST', url: url(), payload: { budgetTotal: '12,', debut: 'pas une date' } });
     expect(r.statusCode).toBe(201);
     expect(recu).toMatchObject({ budgetTotal: '12,', debut: 'pas une date' });
@@ -104,11 +111,11 @@ describe('ce qui reste borné, parce que ce sont des frontières et pas de l’h
 });
 
 describe('🔴 le visuel a TROIS états, et il en faut trois', () => {
-  const capture = (): { recu: () => ChampsBrouillon | null; deps: Partial<PubsRouteDeps> } => {
+  const capture = (): { recu: () => ChampsBrouillon | null; deps: Surcharges } => {
     let vu: ChampsBrouillon | null = null;
     return {
       recu: () => vu,
-      deps: { majBrouillon: async (_t, _id, c) => { vu = c; return true; } },
+      deps: { brouillons: { mettreAJour: async (_t, _id, c) => { vu = c; return true; } } },
     };
   };
 
@@ -165,14 +172,14 @@ describe('🔴 les octets du visuel se lisent, ils ne se croient pas sur parole'
   it('⚠️ la MISE À JOUR les lit aussi : la garde ne vaut que si elle est sur les DEUX écritures', async () => {
     // C'est exactement l'asymétrie qui vient d'être corrigée, déplacée d'un cran : une garde posée sur la
     // création et pas sur la modification laisserait le même trou, atteignable en deux appels.
-    const srv = app({ majBrouillon: async () => true });
+    const srv = app({ brouillons: { mettreAJour: async () => true } });
     const r = await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { image: { type: 'image/jpeg', base64: 'QUJD' } } });
     expect(r.statusCode).toBe(400);
   });
 
   it('un vrai PNG passe, sur les deux écritures', async () => {
     // L'ancre positive : sans elle, les trois cas ci-dessus resteraient verts si TOUT était refusé.
-    const srv = app({ creerBrouillon: async () => 'b-1', majBrouillon: async () => true });
+    const srv = app({ brouillons: { creer: async () => 'b-1', mettreAJour: async () => true } });
     const cree = await srv.inject({ method: 'POST', url: url(), payload: { image: { type: 'image/png', base64: PNG_1x1 } } });
     expect(cree.statusCode).toBe(201);
     const maj = await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { image: { type: 'image/png', base64: PNG_1x1 } } });
@@ -183,9 +190,11 @@ describe('🔴 les octets du visuel se lisent, ils ne se croient pas sur parole'
 describe('les brouillons d’un autre espace, et ceux qui n’existent pas', () => {
   it('lire, modifier ou supprimer un brouillon inconnu rend 404', async () => {
     const srv = app({
-      lireBrouillon: async () => null,
-      majBrouillon: async () => false,
-      supprimerBrouillon: async () => false,
+      brouillons: {
+        lire: async () => null,
+        mettreAJour: async () => false,
+        supprimer: async () => false,
+      },
     });
     expect((await srv.inject({ method: 'GET', url: url('/b-inconnu') })).statusCode).toBe(404);
     expect((await srv.inject({ method: 'PUT', url: url('/b-inconnu'), payload: {} })).statusCode).toBe(404);
@@ -196,7 +205,7 @@ describe('les brouillons d’un autre espace, et ceux qui n’existent pas', () 
     // La route ne compare aucun identifiant elle-même, et c'est voulu : `tenant_id = $1` est dans chaque
     // requête du store. Ce test fige l'endroit où le contrôle vit, pour qu'on ne le déplace pas ici.
     const vus: Array<[string, string]> = [];
-    const srv = app({ lireBrouillon: async (t, id) => { vus.push([t, id]); return null; } });
+    const srv = app({ brouillons: { lire: async (t, id) => { vus.push([t, id]); return null; } } });
     await srv.inject({ method: 'GET', url: url('/b-9') });
     expect(vus).toEqual([[TENANT, 'b-9']]);
   });
@@ -211,7 +220,7 @@ describe('les écritures sont réservées aux admins', () => {
   });
 
   it('mais il peut LIRE la liste : elle ne l’expose à rien', async () => {
-    const srv = app({ listerBrouillons: async () => [] }, 'agent');
+    const srv = app({ brouillons: { lister: async () => [] } }, 'agent');
     const r = await srv.inject({ method: 'GET', url: url() });
     expect(r.statusCode).toBe(200);
     expect(r.json()).toEqual({ brouillons: [] });
@@ -223,7 +232,9 @@ describe('🔴 la route des brouillons ne se confond pas avec celle d’UNE publ
     // Sans cette propriété, `GET /pubs/brouillons` tomberait sur la lecture d'une publicité dont
     // l'identifiant serait la chaîne « brouillons », et rendrait 404 sur une liste parfaitement valide.
     const srv = app({
-      listerBrouillons: async () => [],
+      brouillons: {
+        lister: async () => [],
+      },
       lirePub: async () => { throw new Error('lirePub ne doit PAS être appelée pour /pubs/brouillons'); },
     });
     const r = await srv.inject({ method: 'GET', url: url() });

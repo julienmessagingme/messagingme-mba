@@ -40,37 +40,52 @@ interface Traces {
   journal: Array<{ origine: string; auteur: string | null | undefined }>;
 }
 
-function app(over: Partial<DepsMcp> & { membres?: Array<{ id: string; name: string; email: string; role: string }> } = {}) {
+function app(
+  over: Partial<Omit<DepsMcp, 'inbox' | 'contacts'>> & {
+    inbox?: Partial<DepsMcp['inbox']>;
+    contacts?: Partial<DepsMcp['contacts']>;
+    membres?: Array<{ id: string; name: string; email: string; role: string }>;
+  } = {},
+) {
+  const { inbox, contacts, membres, ...reste } = over;
   const traces: Traces = { contexte: [], envois: [], listes: [], journal: [] };
   const mcp: DepsMcp = {
-    ...mcpInerte,
     estDesabonne: jamaisDesabonne,
-    listConversations: async (tenant) => {
-      traces.listes.push(tenant);
-      return tenant === 't1'
-        ? [{ id: 'cv1', waId: '33600000001', profileName: 'Léa', lastPreview: 'bonjour', lastMessageAt: '2026-09-01T10:00:00.000Z', controlOwner: 'app_workflow', unread: true, assignedTo: null, assignedToName: null }]
-        : [];
+    inbox: {
+      ...mcpInerte,
+      listConversations: async (tenant) => {
+        traces.listes.push(tenant);
+        return tenant === 't1'
+          ? [{ id: 'cv1', waId: '33600000001', profileName: 'Léa', lastPreview: 'bonjour', lastMessageAt: '2026-09-01T10:00:00.000Z', controlOwner: 'app_workflow', unread: true, assignedTo: null, assignedToName: null }]
+          : [];
+      },
+      // La garde tenant vit ICI, comme dans le store réel : une conversation d'un autre espace rend `null`,
+      // donc un identifiant deviné ne se distingue pas d'un identifiant inexistant.
+      getConversationContext: async (id, tenant) => {
+        traces.contexte.push({ id, tenant });
+        if (tenant !== 't1' || id !== 'cv1') return null;
+        return { waId: '33600000001', lastInboundAt: '2026-09-01T09:00:00.000Z', windowOpen: true };
+      },
+      getMessages: async () => [
+        { id: 'm1', direction: 'in', type: 'text', body: 'bonjour', createdAt: '2026-09-01T09:00:00.000Z' },
+        { id: 'm2', direction: 'out', type: 'text', body: 'bonjour à vous', createdAt: '2026-09-01T09:01:00.000Z' },
+      ] as never,
+      recordOutbound: async (_id, _body, _msg, origine, _type, _cat, _name, auteur) => { traces.journal.push({ origine, auteur }); },
+      ...inbox,
     },
-    // La garde tenant vit ICI, comme dans le store réel : une conversation d'un autre espace rend `null`,
-    // donc un identifiant deviné ne se distingue pas d'un identifiant inexistant.
-    getConversationContext: async (id, tenant) => {
-      traces.contexte.push({ id, tenant });
-      if (tenant !== 't1' || id !== 'cv1') return null;
-      return { waId: '33600000001', lastInboundAt: '2026-09-01T09:00:00.000Z', windowOpen: true };
+    repo: {
+      getTenantPhoneNumberId: async () => 'pn-1',
     },
-    getMessages: async () => [
-      { id: 'm1', direction: 'in', type: 'text', body: 'bonjour', createdAt: '2026-09-01T09:00:00.000Z' },
-      { id: 'm2', direction: 'out', type: 'text', body: 'bonjour à vous', createdAt: '2026-09-01T09:01:00.000Z' },
-    ] as never,
-    getTenantPhoneNumberId: async () => 'pn-1',
     sendReply: async (tenant, _pn, to, texte) => { traces.envois.push({ tenant, to, texte }); return 'wamid-1'; },
-    recordOutbound: async (_id, _body, _msg, origine, _type, _cat, _name, auteur) => { traces.journal.push({ origine, auteur }); },
     takeControl: async () => {},
-    chercherContacts: async () => [],
-    contactParTelephone: async () => null,
-    ajouterTags: async () => ({ touched: 1, added: ['chaud'] }),
-    listerMembres: async () => over.membres ?? [{ id: 'u1', name: 'Jean', email: 'jean@test.fr', role: 'admin' }],
-    ...over,
+    contacts: {
+      query: async () => [],
+      findByPhone: async () => null,
+      addTagsByPhoneReturningNew: async () => ({ touched: 1, added: ['chaud'] }),
+      ...contacts,
+    },
+    listerMembres: async () => membres ?? [{ id: 'u1', name: 'Jean', email: 'jean@test.fr', role: 'admin' }],
+    ...reste,
   };
   const keys = new FakeApiKeys()
     .add(CLE_TOUT, { id: 'k1', tenantId: 't1', scopes: ['mcp:read', 'mcp:write'] })
@@ -273,7 +288,9 @@ describe('serveur MCP : les outils', () => {
     // C'est la garde qui compte le plus de tout ce lot : elle est portée par `repondreDansLaFenetre`,
     // partagé avec la route de console. Un outil MCP qui aurait sa propre copie pourrait la perdre.
     const { server, traces } = app({
-      getConversationContext: async () => ({ waId: '33600000001', lastInboundAt: null, windowOpen: false }),
+      inbox: {
+        getConversationContext: async () => ({ waId: '33600000001', lastInboundAt: null, windowOpen: false }),
+      },
     });
     const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'coucou' }) });
     expect(res.statusCode).toBe(200);
@@ -341,7 +358,7 @@ describe('serveur MCP : les outils', () => {
   });
 
   it('tag_conversation rend ce qui a RÉELLEMENT changé', async () => {
-    const { server } = app({ ajouterTags: async () => ({ touched: 1, added: ['chaud'] }) });
+    const { server } = app({ contacts: { addTagsByPhoneReturningNew: async () => ({ touched: 1, added: ['chaud'] }) } });
     const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('tag_conversation', { conversation_id: 'cv1', tags: ['chaud', 'vip'] }) });
     // « vip » n'était pas nouveau : un agent qui repose un tag doit pouvoir s'en rendre compte, sinon il
     // boucle en croyant échouer.
@@ -351,7 +368,7 @@ describe('serveur MCP : les outils', () => {
 
   it('assign_conversation : null LIBÈRE, une valeur bancale est refusée', async () => {
     const vus: Array<string | null> = [];
-    const { server } = app({ setAssignee: async (_t, _id, a) => { vus.push(a); return true; } });
+    const { server } = app({ inbox: { setAssignee: async (_t, _id, a) => { vus.push(a); return true; } } });
     await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('assign_conversation', { conversation_id: 'cv1', member_id: 'u1' }) });
     await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('assign_conversation', { conversation_id: 'cv1', member_id: null }) });
     expect(vus).toEqual(['u1', null]);

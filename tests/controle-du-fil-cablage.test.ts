@@ -28,8 +28,10 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
   it('🔴 le balayage passe bien le délai des scénarios au magasin', async () => {
     const recus: Array<{ limit: unknown; age: unknown }> = [];
     await runControlSweep({
-      listHeldControl: async (limit, age) => { recus.push({ limit, age }); return []; },
-      setControlOwner: async () => true,
+      inbox: {
+        listHeldControl: async (limit, age) => { recus.push({ limit, age }); return []; },
+        setControlOwner: async () => true,
+      },
       timeouts: { app_human: 7_200_000, mba: 86_400_000, app_workflow: 86_400_000 },
     });
     // 🔴 C'est ce chiffre, et pas `undefined` ni 0, qui décide si la branche SQL se déclenche.
@@ -38,22 +40,24 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
 
   it('🔴 et le VRAI câblage du worker le transmet aussi', () => {
     /**
-     * La garde qui aurait attrapé le défaut. Elle lit le worker, parce que c'est le seul endroit où la
-     * flèche est écrite, et qu'un faux ne dit rien du vrai. Compter les paramètres est mécanique : c'est
-     * exactement ce que le compilateur refuse de faire ici.
+     * Le worker passe le dépôt lui-même : aucune flèche intermédiaire ne peut avaler l'âge. La garde lit le
+     * worker, parce qu'un faux ne dit rien du vrai.
      */
     const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
-    const ligne = worker.split('\n').find((l) => l.includes('listHeldControl:')) ?? '';
-    expect(ligne).toContain('(limit, ageScenarioMs)');
-    expect(ligne).toContain('inboxStore.listHeldControl(limit, ageScenarioMs)');
+    const debut = worker.indexOf('runControlSweep({');
+    const bloc = worker.slice(debut, worker.indexOf('releaseToMba:', debut));
+    expect(bloc).toContain('inbox: inboxStore,');
+    expect(worker).not.toMatch(/listHeldControl: \(/);
   });
 
   it('⚠️ un délai de scénario à 0 reste possible, et il DÉSACTIVE la reprise', async () => {
     // `0 désactive` est le levier d'urgence du dépôt, il ne doit pas disparaître en réparant l'oubli.
     const recus: Array<unknown> = [];
     await runControlSweep({
-      listHeldControl: async (_l, age) => { recus.push(age); return []; },
-      setControlOwner: async () => true,
+      inbox: {
+        listHeldControl: async (_l, age) => { recus.push(age); return []; },
+        setControlOwner: async () => true,
+      },
       timeouts: { app_human: 7_200_000, mba: 86_400_000, app_workflow: 0 },
     });
     expect(recus[0]).toBe(0);

@@ -5,7 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ContactsRouteDeps } from '../src/http/contacts';
 import type { ContactHistory, ContactSend, ResumeContact } from '../src/crm/contact-history.pg';
-import { contactsInertes } from './routes-inertes';
+import { contactsInertes, contactsDepInerte, historiqueContactInerte } from './routes-inertes';
 
 /**
  * Route d'historique d'un contact.
@@ -53,17 +53,18 @@ function app(
   history: (tenantId: string, contactId: string) => Promise<ContactHistory | null>,
   exportSends?: (tenantId: string, contactId: string) => Promise<ContactSend[] | null>,
   bilan?: ContactsRouteDeps['getBilanContact'],
-  resume?: ContactsRouteDeps['getResumeContact'],
+  resume?: ContactsRouteDeps['contactHistory']['resumeContact'],
 ) {
   const contacts: ContactsRouteDeps = {
     ...contactsInertes,
-    applyEdits: async () => null,
-    applyEditsMany: async () => 0,
-    listUserFields: async () => [],
-    getContactHistory: history,
-    listSendsForExport: exportSends ?? (async (_t, id) => (id === 'c1' ? FULL.sends : null)),
+    contacts: { ...contactsDepInerte, applyEdits: async () => null, applyEditsMany: async () => 0 },
+    champs: { list: async () => [] },
+    contactHistory: {
+      getContactHistory: history,
+      listSendsForExport: exportSends ?? (async (_t, id) => (id === 'c1' ? FULL.sends : null)),
+      resumeContact: resume ?? historiqueContactInerte.resumeContact,
+    },
     ...(bilan ? { getBilanContact: bilan } : {}),
-    ...(resume ? { getResumeContact: resume } : {}),
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts });
 }

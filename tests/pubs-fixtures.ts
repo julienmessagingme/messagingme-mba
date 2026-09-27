@@ -18,9 +18,8 @@ export const aucunePubliciteUtilise = async (): Promise<string[]> => [];
  * changé de sujet sans le savoir, et mieux vaut qu'il le dise bruyamment.
  */
 export const aucunePubDeRoute: Pick<PubsRouteDeps,
-  'listerPubs' | 'creerPub' | 'publierPub' | 'lirePub' | 'basculerPub'
-  | 'listerBrouillons' | 'lireBrouillon' | 'creerBrouillon' | 'majBrouillon' | 'supprimerBrouillon'> = {
-  listerPubs: async () => [],
+  'publicites' | 'creerPub' | 'publierPub' | 'lirePub' | 'basculerPub' | 'brouillons'> = {
+  publicites: { lister: async () => [] },
   lirePub: async () => null,
   creerPub: () => { throw new Error('aucunePubDeRoute : creerPub ne devrait pas être appelée'); },
   publierPub: () => { throw new Error('aucunePubDeRoute : publierPub ne devrait pas être appelée'); },
@@ -33,9 +32,11 @@ export const aucunePubDeRoute: Pick<PubsRouteDeps,
    * succès ferait passer pour vert un test qui appelle une route qu'il ne croyait pas appeler. Un test qui
    * veut écrire le dit en surchargeant, et c'est alors visible dans SON fichier.
    */
-  listerBrouillons: async () => [],
-  lireBrouillon: async () => null,
-  creerBrouillon: () => { throw new Error('aucunePubDeRoute : creerBrouillon ne devrait pas être appelée'); },
-  majBrouillon: () => { throw new Error('aucunePubDeRoute : majBrouillon ne devrait pas être appelée'); },
-  supprimerBrouillon: () => { throw new Error('aucunePubDeRoute : supprimerBrouillon ne devrait pas être appelée'); },
+  brouillons: {
+    lister: async () => [],
+    lire: async () => null,
+    creer: () => { throw new Error('aucunePubDeRoute : brouillons.creer ne devrait pas être appelée'); },
+    mettreAJour: () => { throw new Error('aucunePubDeRoute : brouillons.mettreAJour ne devrait pas être appelée'); },
+    supprimer: () => { throw new Error('aucunePubDeRoute : brouillons.supprimer ne devrait pas être appelée'); },
+  },
 };

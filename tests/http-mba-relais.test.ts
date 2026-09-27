@@ -43,25 +43,34 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     .ajouter(CLE_AUTRE_ESPACE, { id: 'k3', tenantId: 't2', scopes: ['mba:relais'] });
   const mbaRelais: MbaRelaisDeps = {
     ...relaisMbaInerte,
-    numeroDuTenant: async (t) => (t === 't1' ? 'pn1' : 'pn2'),
-    // Le faux REFUSE ce que le vrai refuse : il ne rend que les outils de l'espace ET du consommateur demandés.
-    outilsActifs: async (t, c) => (t === 't1' && c === 'mba:pn1' ? [OUTIL] : []),
-    requete: async (t, id) => (t === 't1' && id === 'rq1'
-      ? {
-          variables: [
-            { nom: 'user', type: 'string', origine: { type: 'modele' }, requis: true },
-            { nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true },
-          ],
-        }
-      : null),
-    contact: async (t, waId) => (t === 't1' && waId === '33612345678' ? { nom: 'Julien', tags: [], champs: { tag_ns: 'vip' } } : null),
+    numeros: {
+      getTenantPhoneNumberId: async (t) => (t === 't1' ? 'pn1' : 'pn2'),
+    },
+    catalogue: {
+      // Le faux REFUSE ce que le vrai refuse : il ne rend que les outils de l'espace ET du consommateur demandés.
+      listActifsConsommateur: async (t, c) => (t === 't1' && c === 'mba:pn1' ? [OUTIL] : []),
+    },
+    requetes: {
+      parId: async (t, id) => (t === 't1' && id === 'rq1'
+        ? {
+            variables: [
+              { nom: 'user', type: 'string', origine: { type: 'modele' }, requis: true },
+              { nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true },
+            ],
+          }
+        : null),
+    },
+    contacts: {
+      projectionPourTiers: async (t, waId) => (t === 't1' && waId === '33612345678' ? { nom: 'Julien', tags: [], champs: { tag_ns: 'vip' } } : null),
+    },
     appeler: async (p) => { appels.push(p); return { contenu: { reponse: { success: true } }, httpStatus: 200 }; },
     journal: { ouvrir: async () => 'l1', clore: async () => {} } as unknown as JournalAppels,
     maison: {
       poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
       ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
       champExiste: async () => true,
-      estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
+      contacts: { isBlockedByWaId: async () => false }, antiRejeu: new AntiRejeu(60_000),
+      inbox: { dernierMessageDuClient: async () => 'm1' },
       envoyerBloc: async (t, w, c) => { gestes.push(`bloc ${t} ${w} ${c.workflowId} ${c.code}`); return true; },
       lancerScenario: async (t, w, id) => { gestes.push(`scenario ${t} ${w} ${id}`); return true; },
     },
@@ -134,7 +143,7 @@ describe('le relais du Meta Business Agent', () => {
   });
 
   it('un espace sans numéro WhatsApp n’expose rien', async () => {
-    const { app, appels } = monter({ numeroDuTenant: async () => null });
+    const { app, appels } = monter({ numeros: { getTenantPhoneNumberId: async () => null } });
     expect((await poster(app, CLE_RELAIS, { user: 'u1' })).json().succes).toBe(false);
     expect(appels).toHaveLength(0);
   });
@@ -175,7 +184,9 @@ describe('le relais du Meta Business Agent', () => {
     // par défaut de Fastify refuse un corps vide en 400, avant la route : c'est celui du webhook Meta, monté
     // pour tout le serveur, qui le laisse passer. Ce test tombe le jour où l'on change de lecteur.
     const { app, appels } = monter({
-      requete: async () => ({ variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
+      requetes: {
+        parId: async () => ({ variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
+      },
     });
     for (const payload of [undefined, '']) {
       const res = await app.inject({
@@ -221,7 +232,9 @@ describe('le relais du Meta Business Agent', () => {
     // Toutes ses valeurs viennent du mini-CRM : le corps n'est pas lu, et ce que Meta envoie alors n'est pas
     // mesuré. Le refuser casserait l'outil pour un corps qu'on n'aurait de toute façon pas lu.
     const { app, appels } = monter({
-      requete: async () => ({ variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
+      requetes: {
+        parId: async () => ({ variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
+      },
     });
     const res = await app.inject({
       method: 'POST', url: '/mba/relais/outils/o1',
@@ -252,7 +265,9 @@ const ACTION_IA = {
 
 describe('les outils maison de l’agent de Meta', () => {
   const avec = (outils: unknown[], over: Partial<MbaRelaisDeps> = {}) => monter({
-    outilsActifs: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    catalogue: {
+      listActifsConsommateur: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    },
     ...over,
   });
 
@@ -314,7 +329,9 @@ describe('les outils maison de l’agent de Meta', () => {
     const { app } = avec([TAG], {
       maison: {
         poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {}, champExiste: async () => true,
-        estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1', envoyerBloc: async () => true, lancerScenario: async () => true,
+        contacts: { isBlockedByWaId: async () => false }, antiRejeu: new AntiRejeu(60_000),
+        inbox: { dernierMessageDuClient: async () => 'm1' },
+        envoyerBloc: async () => true, lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
     });
@@ -338,7 +355,9 @@ const SCENARIO = {
 
 describe('un bloc et un scénario, par le relais', () => {
   const avec = (outils: unknown[], over: Partial<MbaRelaisDeps> = {}) => monter({
-    outilsActifs: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    catalogue: {
+      listActifsConsommateur: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    },
     ...over,
   });
 
@@ -363,11 +382,14 @@ describe('un bloc et un scénario, par le relais', () => {
     const { app } = avec([SCENARIO], {
       maison: {
         poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
-        // Un contrôle du blocage qui PREND DU TEMPS, comme la base : c'est pendant cette attente que des appels
-        // simultanés se rattrapent. Avec une réponse immédiate, les requêtes arrivent décalées et le test ne
-        // prouve rien (mesuré : il passait sur le garde fautif).
-        estBloque: () => new Promise((r) => { setTimeout(() => r(false), 20); }),
-        antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
+        contacts: {
+          // Un contrôle du blocage qui PREND DU TEMPS, comme la base : c'est pendant cette attente que des appels
+          // simultanés se rattrapent. Avec une réponse immédiate, les requêtes arrivent décalées et le test ne
+          // prouve rien (mesuré : il passait sur le garde fautif).
+          isBlockedByWaId: () => new Promise((r) => { setTimeout(() => r(false), 20); }),
+        },
+        antiRejeu: new AntiRejeu(60_000),
+        inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => true,
         lancerScenario: async (t, w, id) => { lances.push(`scenario ${t} ${w} ${id}`); return true; },
       },
@@ -388,7 +410,9 @@ describe('un bloc et un scénario, par le relais', () => {
     const clos: Array<Record<string, unknown>> = [];
     const { app } = avec([BLOC], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
+        contacts: { isBlockedByWaId: async () => false }, antiRejeu: new AntiRejeu(60_000),
+        inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir', lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
@@ -403,7 +427,9 @@ describe('un bloc et un scénario, par le relais', () => {
     const clos: Array<Record<string, unknown>> = [];
     const { app } = avec([BLOC], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
+        contacts: { isBlockedByWaId: async () => false }, antiRejeu: new AntiRejeu(60_000),
+        inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => { throw new Error('Meta API error (HTTP 400)'); }, lancerScenario: async () => true,
       },
       journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
@@ -419,7 +445,9 @@ describe('un bloc et un scénario, par le relais', () => {
     const envois: string[] = [];
     const { app } = avec([BLOC, SCENARIO], {
       maison: {
-        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => true, antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1',
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
+        contacts: { isBlockedByWaId: async () => true }, antiRejeu: new AntiRejeu(60_000),
+        inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => { envois.push('bloc'); return true; }, lancerScenario: async () => { envois.push('scenario'); return true; },
       },
     });
@@ -435,13 +463,17 @@ describe('un bloc et un scénario, par le relais', () => {
  */
 describe('le délai de réponse d’un envoi', () => {
   const maison = (o: Partial<MbaRelaisDeps['maison']>): MbaRelaisDeps['maison'] => ({
-    poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false,
-    antiRejeu: new AntiRejeu(60_000), dernierMessageDuClient: async () => 'm1', envoyerBloc: async () => true, lancerScenario: async () => true, ...o,
+    poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
+    contacts: { isBlockedByWaId: async () => false },
+    antiRejeu: new AntiRejeu(60_000), inbox: { dernierMessageDuClient: async () => 'm1' },
+    envoyerBloc: async () => true, lancerScenario: async () => true, ...o,
   });
   const journal = (clos: Array<Record<string, unknown>>) =>
     ({ ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } }) as unknown as JournalAppels;
   const avec = (outils: unknown[], over: Partial<MbaRelaisDeps>) => monter({
-    outilsActifs: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    catalogue: {
+      listActifsConsommateur: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    },
     ...over,
   });
 

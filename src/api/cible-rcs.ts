@@ -26,8 +26,8 @@ export const schemaCibleRcs = z.strictObject({ rcsMessage: z.string().trim().min
 export const PREFIXE_ENVOI_API = '[API] ';
 
 export interface DepsCibleRcs {
-  messageRcsParNom(tenantId: string, nom: string): Promise<{ name: string; content: RcsOutbound | null } | null>;
-  agentIdForTenant(tenantId: string): Promise<string | null>;
+  messages: { getByName(tenantId: string, nom: string): Promise<{ name: string; content: RcsOutbound | null } | null> };
+  agents: { agentIdForTenant(tenantId: string): Promise<string | null> };
 }
 
 export type CibleRcs =
@@ -36,12 +36,12 @@ export type CibleRcs =
 
 /** Le message, puis l'agent : un message introuvable ne coûte pas la lecture de l'agent. */
 export async function resoudreCibleRcs(deps: DepsCibleRcs, tenantId: string, nom: string): Promise<CibleRcs> {
-  const m = await deps.messageRcsParNom(tenantId, nom);
+  const m = await deps.messages.getByName(tenantId, nom);
   if (!m) return { ok: false, statut: 404, code: 'rcs_message_not_found', message: `aucun message RCS nommé « ${nom} » dans Contenu > Messages RCS` };
   if (!m.content) {
     return { ok: false, statut: 422, code: 'unsendable_target', message: 'le contenu de ce message RCS n’est plus reconnu : ouvrez-le dans Contenu > Messages RCS et enregistrez-le de nouveau' };
   }
-  const agentId = await deps.agentIdForTenant(tenantId);
+  const agentId = await deps.agents.agentIdForTenant(tenantId);
   if (!agentId) return { ok: false, statut: 409, code: 'rcs_not_enabled', message: 'le canal RCS n’est pas activé sur cet espace' };
   return { ok: true, nom: m.name, agentId, contenu: m.content };
 }

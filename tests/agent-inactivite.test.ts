@@ -49,7 +49,7 @@ function make(fiche: FicheAgent = FICHE, decision?: DecisionAgent, session: Agen
     } as unknown as RunTurnDeps['sessions'],
     brain: new FakeAgentBrain(decision ?? { texte: 'Bonjour', sortie: null }),
     lireRun: async () => RUN_VIVANT,
-    lireFiche: async () => fiche,
+    agents: { byId: async () => fiche },
     envoyer: async () => {},
     majRun: async (_t, runId, nodeId, state) => { etats.push({ runId, nodeId, state }); },
     sortir: async () => {},

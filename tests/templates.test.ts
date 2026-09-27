@@ -5,7 +5,7 @@ import { MetaTemplateClient } from '../src/meta/templates';
 import type { FetchLike } from '../src/meta/templates';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import { modelesInertes } from './routes-inertes';
+import { aucuneCampagneActive, modelesInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -35,10 +35,9 @@ function app(fetchImpl: FetchLike, wabaId: string | null = 'waba1', getPublished
     auth: { users: noUsers, secret: SECRET },
     templates: {
       ...modelesInertes,
-      templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fetchImpl),
-      getWabaId: async () => wabaId,
+      meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fetchImpl) },
+      repo: { getTenantWabaId: async () => wabaId, listActiveCampaignsForTemplate: listActive ?? aucuneCampagneActive },
       ...(getPublishedFlow ? { getPublishedFlow } : {}),
-      ...(listActive ? { listActiveCampaignsForTemplate: listActive } : {}),
     },
   });
 }
@@ -550,12 +549,14 @@ describe('routes templates — indices variable->champ (paramHints)', () => {
       auth: { users: noUsers, secret: SECRET },
       templates: {
         ...modelesInertes,
-        templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fetchImpl),
-        getWabaId: async () => 'waba1',
-        saveParamHints: async (_t, name, language, hints) => { cap.saved.push({ name, language, hints }); },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        getParamHints: (getHints ?? (async () => [])) as any,
-        removeParamHints: async (_t, name) => { cap.removed.push(name); },
+        meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fetchImpl) },
+        repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive },
+        indices: {
+          save: async (_t, name, language, hints) => { cap.saved.push({ name, language, hints }); },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          get: (getHints ?? (async () => [])) as any,
+          removeByName: async (_t, name) => { cap.removed.push(name); },
+        },
       },
     });
   }
@@ -692,7 +693,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
           destinations.set(`https://mba.messagingme.app/r/${code}`, destination);
           return code;
         },
-        confirm: async (_t: string, codes: readonly string[]) => { journal.push(`confirm:${codes.join(',')}`); },
+        liens: { confirm: async (_t: string, codes: readonly string[]) => { journal.push(`confirm:${codes.join(',')}`); } },
         lienDe: (code: string) => `https://mba.messagingme.app/r/${code}`,
         destinations: async () => destinations,
       },
@@ -712,7 +713,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
     const server = buildServer({
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
-      templates: { ...modelesInertes, templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+      templates: { ...modelesInertes, meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fn) }, repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive }, tracking: t.dep },
     });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
     expect(res.statusCode).toBe(201);
@@ -733,7 +734,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
     const server = buildServer({
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
-      templates: { ...modelesInertes, templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+      templates: { ...modelesInertes, meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fn) }, repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive }, tracking: t.dep },
     });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
     expect(res.statusCode).toBe(422);
@@ -750,11 +751,11 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
       auth: { users: noUsers, secret: SECRET },
       templates: {
         ...modelesInertes,
-        templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn),
-        getWabaId: async () => 'waba1',
+        meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fn) },
+        repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive },
         tracking: {
           allocate: async () => { throw new Error('base indisponible'); },
-          confirm: async () => {},
+          liens: { confirm: async () => {} },
           lienDe: (c: string) => `https://mba.messagingme.app/r/${c}`,
           destinations: async () => new Map(),
         },
@@ -784,7 +785,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
     const server = buildServer({
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
-      templates: { ...modelesInertes, templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+      templates: { ...modelesInertes, meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fn) }, repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive }, tracking: t.dep },
     });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/templates', ...h(token) });
     const body = res.json<{ templates: Array<{ buttons?: Array<{ url?: string }> }> }>();

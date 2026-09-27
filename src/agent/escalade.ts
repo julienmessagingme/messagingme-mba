@@ -19,8 +19,8 @@ import { SORTIE_HUMAIN } from './sorties';
  */
 export function creerEscaladeVersHumain(deps: {
   sessions: Pick<AgentSessionStore, 'clore'>;
-  /** `WorkflowExecutor.sortirDuBlocAgent`. Rend `false` si aucun parcours n'attendait sur un bloc agent. */
-  sortirDuBlocAgent(tenantId: string, waId: string, sessionId: string, sortie: string): Promise<boolean>;
+  /** Les parcours. `sortirDuBlocAgent` rend `false` si aucun parcours n'attendait sur un bloc agent. */
+  parcours: { sortirDuBlocAgent(tenantId: string, waId: string, sessionId: string, sortie: string): Promise<boolean> };
   /**
    * La bascule du détenteur du fil (`escalateToHuman` du câblage, `only: ['app_workflow']`). Rend `true`
    * seulement si elle a vraiment basculé : le tour s'en sert pour savoir s'il peut écrire une dernière
@@ -33,7 +33,7 @@ export function creerEscaladeVersHumain(deps: {
   const sortie = deps.sortie ?? SORTIE_HUMAIN;
   return async ({ tenantId, waId, sessionId }) => {
     await deps.sessions.clore(tenantId, sessionId, 'sortie', sortie);
-    await deps.sortirDuBlocAgent(tenantId, waId, sessionId, sortie);
+    await deps.parcours.sortirDuBlocAgent(tenantId, waId, sessionId, sortie);
     return deps.escalateToHuman(tenantId, waId);
   };
 }

@@ -162,7 +162,7 @@ describe('EmailAccountResolver', () => {
   it('met en cache le transport par boîte : le 2e appel ne reconstruit pas et renvoie la même instance', async () => {
     const build = vi.fn(() => ({ sendMail: vi.fn() }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(account);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build });
 
     const first = await r.getTransport('t1', 'a1');
     const second = await r.getTransport('t1', 'a1');
@@ -176,7 +176,7 @@ describe('EmailAccountResolver', () => {
   it('invalidate() force une reconstruction (nouvel appel à buildTransport et getDecrypted)', async () => {
     const build = vi.fn(() => ({ sendMail: vi.fn() }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(account);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build });
 
     await r.getTransport('t1', 'a1');
     r.invalidate('a1');
@@ -190,7 +190,7 @@ describe('EmailAccountResolver', () => {
     const close = vi.fn();
     const build = vi.fn(() => ({ sendMail: vi.fn(), close }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(account);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build });
 
     await r.getTransport('t1', 'a1');
     r.invalidate('a1');
@@ -204,21 +204,21 @@ describe('EmailAccountResolver', () => {
     });
     const build = vi.fn(() => ({ sendMail: vi.fn(), close }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(account);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build });
 
     await r.getTransport('t1', 'a1');
     expect(() => r.invalidate('a1')).not.toThrow();
   });
 
   it("invalidate() sur une boîte jamais mise en cache ne lève pas", () => {
-    const r = new EmailAccountResolver({ getDecrypted: vi.fn(), buildTransport: vi.fn() });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted: vi.fn() }, buildTransport: vi.fn() });
     expect(() => r.invalidate('inconnu')).not.toThrow();
   });
 
   it('boîte introuvable (getDecrypted -> null) : renvoie null et ne met rien en cache', async () => {
     const build = vi.fn(() => ({ sendMail: vi.fn() }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(null);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build });
 
     const result = await r.getTransport('t1', 'inconnu');
 
@@ -237,7 +237,7 @@ describe('EmailAccountResolver : TTL du cache (borne la staleness inter-process)
     let now = 0;
     const build = vi.fn(() => ({ sendMail: vi.fn() }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(account);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build, cacheTtlMs: 1000, now: () => now });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build, cacheTtlMs: 1000, now: () => now });
 
     const first = await r.getTransport('t1', 'a1');
     now += 999; // juste avant expiration (now - at = 999 < ttl 1000)
@@ -253,7 +253,7 @@ describe('EmailAccountResolver : TTL du cache (borne la staleness inter-process)
     const close = vi.fn();
     const build = vi.fn(() => ({ sendMail: vi.fn(), close }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(account);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build, cacheTtlMs: 1000, now: () => now });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build, cacheTtlMs: 1000, now: () => now });
 
     const first = await r.getTransport('t1', 'a1');
     now += 1000; // TTL écoulé (now - at = 1000 >= ttl 1000 -> traité comme un miss)
@@ -276,7 +276,7 @@ describe('EmailAccountResolver — isolation multi-tenant (clé de cache composi
     const build = vi.fn(() => ({ sendMail: vi.fn() }) as never);
     // getDecrypted simule le scoping réel : seul le tenant propriétaire (t1) obtient un compte.
     const getDecrypted = vi.fn(async (tenantId: string) => (tenantId === 't1' ? account : null));
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build });
 
     const forTenantA = await r.getTransport('t1', 'a1'); // remplit le cache pour (t1, a1)
     expect(forTenantA?.account.tenantId).toBe('t1');
@@ -290,7 +290,7 @@ describe('EmailAccountResolver — isolation multi-tenant (clé de cache composi
   it('même couple (tenant, accountId) demandé deux fois : le hit légitime sert bien du cache (buildTransport une seule fois)', async () => {
     const build = vi.fn(() => ({ sendMail: vi.fn() }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(account);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build });
 
     const first = await r.getTransport('t1', 'a1');
     const second = await r.getTransport('t1', 'a1');
@@ -302,7 +302,7 @@ describe('EmailAccountResolver — isolation multi-tenant (clé de cache composi
   it("invalidate(accountId) supprime l'entrée composite : l'appel suivant reconstruit (buildTransport et getDecrypted rappelés)", async () => {
     const build = vi.fn(() => ({ sendMail: vi.fn() }) as never);
     const getDecrypted = vi.fn().mockResolvedValue(account);
-    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build });
+    const r = new EmailAccountResolver({ comptes: { getDecrypted }, buildTransport: build });
 
     await r.getTransport('t1', 'a1');
     r.invalidate('a1');

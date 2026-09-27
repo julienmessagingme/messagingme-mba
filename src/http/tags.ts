@@ -4,20 +4,20 @@ import type { TagCount } from '../crm/tag-store.pg';
 import { espaceVerifie, nonEmpty } from './scope';
 
 export interface TagsRouteDeps {
-  listTags(tenantId: string): Promise<TagCount[]>;
-  createTag(tenantId: string, name: string): Promise<boolean>;
-  renameTag(tenantId: string, from: string, to: string): Promise<number>;
-  removeTag(tenantId: string, tag: string): Promise<number>;
+  listDistinct(tenantId: string): Promise<TagCount[]>;
+  create(tenantId: string, name: string): Promise<boolean>;
+  rename(tenantId: string, from: string, to: string): Promise<number>;
+  remove(tenantId: string, tag: string): Promise<number>;
 }
 
 /** Gestion des tags (menu Contenu), admin-only. Modèle mixte : table `tags` (tags déclarés, créés à vide)
- *  + tags portés par les contacts (`contacts.tags`). listTags = union des deux (cf. PgTagStore). */
+ *  + tags portés par les contacts (`contacts.tags`). listDistinct = union des deux (cf. PgTagStore). */
 export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/tags', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ tags: await deps.listTags(tenant) });
+    return reply.code(200).send({ tags: await deps.listDistinct(tenant) });
   });
 
   // Créer (déclarer) un tag réutilisable, même sans contact.
@@ -26,7 +26,7 @@ export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: G
     const b = (req.body ?? {}) as { name?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     const name = b.name.trim().slice(0, 64);
-    const created = await deps.createTag(tenant, name);
+    const created = await deps.create(tenant, name);
     return reply.code(created ? 201 : 200).send({ name, created });
   });
 
@@ -37,7 +37,7 @@ export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: G
     const from = b.from.trim();
     const to = b.to.trim();
     if (from === to) return reply.code(400).send({ error: 'from et to identiques' });
-    const renamed = await deps.renameTag(tenant, from, to);
+    const renamed = await deps.rename(tenant, from, to);
     return reply.code(200).send({ renamed });
   });
 
@@ -45,7 +45,7 @@ export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: G
     const tenant = espaceVerifie(req);
     const tag = (req.query as { tag?: string }).tag;
     if (!nonEmpty(tag)) return reply.code(400).send({ error: 'tag requis' });
-    const removed = await deps.removeTag(tenant, tag.trim());
+    const removed = await deps.remove(tenant, tag.trim());
     return reply.code(200).send({ removed });
   });
 }

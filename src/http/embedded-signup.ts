@@ -6,6 +6,22 @@ import { espaceVerifie, nonEmpty } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { texteDe } from '../lib/erreur';
 
+/** Les appels Graph de l'inscription, faits avec le business token que le parcours vient d'obtenir. */
+export interface MetaInscriptionDep {
+  exchangeCode(code: string): Promise<string>;
+  /** Preuve d'appartenance du WABA (GET /{waba_id} avec le business token) : throw si le token ne le possède pas. */
+  verifyWaba(wabaId: string, businessToken: string): Promise<void>;
+  /**
+   * Comptes WhatsApp auxquels le business token donne accès. Sert quand la popup n'a pas annoncé les identifiants
+   * (client qui rouvre un parcours déjà abouti : Meta n'a plus rien à configurer, donc plus rien à annoncer).
+   */
+  wabasForToken(businessToken: string): Promise<string[]>;
+  listPhones(wabaId: string, businessToken: string): Promise<Array<{ id: string }>>;
+  getPhone(phoneNumberId: string, businessToken: string): Promise<{ displayPhoneNumber: string | null; verifiedName: string | null; status: string | null; codeVerificationStatus?: string | null }>;
+  subscribeApp(wabaId: string, businessToken: string): Promise<void>;
+  register(phoneNumberId: string, businessToken: string, pin: string): Promise<void>;
+}
+
 export interface EmbeddedSignupRouteDeps {
   /**
    * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Rattacher un numéro, c'est donner
@@ -19,19 +35,10 @@ export interface EmbeddedSignupRouteDeps {
   /** App ID Meta (public : sert au FB.init du front). */
   appId: string;
   graphVersion: string;
-  exchangeCode(code: string): Promise<string>;
-  /** Preuve d'appartenance du WABA (GET /{waba_id} avec le business token) : throw si le token ne le possède pas. */
-  verifyWaba(wabaId: string, businessToken: string): Promise<void>;
-  /**
-   * Comptes WhatsApp auxquels le business token donne accès. Sert quand la popup n'a pas annoncé les identifiants
-   * (client qui rouvre un parcours déjà abouti : Meta n'a plus rien à configurer, donc plus rien à annoncer).
-   */
-  wabasForToken(businessToken: string): Promise<string[]>;
-  listPhones(wabaId: string, businessToken: string): Promise<Array<{ id: string }>>;
-  getPhone(phoneNumberId: string, businessToken: string): Promise<{ displayPhoneNumber: string | null; verifiedName: string | null; status: string | null; codeVerificationStatus?: string | null }>;
-  subscribeApp(wabaId: string, businessToken: string): Promise<void>;
-  register(phoneNumberId: string, businessToken: string, pin: string): Promise<void>;
-  link(input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }): Promise<void>;
+  meta: MetaInscriptionDep;
+  inscriptions: {
+    linkTenant(input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }): Promise<void>;
+  };
   /** Persiste le token business (le câblage chiffre avant, la route ne voit jamais le stockage en clair). */
   saveCredentials(wabaId: string, tenantId: string, businessToken: string, pin: string | null): Promise<void>;
 
@@ -121,7 +128,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     // 1. Code -> business token. Échec = rien n'est rattaché (le code a un TTL de 30 s : re-cliquer suffit).
     let businessToken: string;
     try {
-      businessToken = await deps.exchangeCode(code);
+      businessToken = await deps.meta.exchangeCode(code);
     } catch (err) {
       const msg = texteDe(err);
       // eslint-disable-next-line no-console
@@ -139,7 +146,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     if (wabaId === '' || phoneNumberId === '') {
       try {
         if (wabaId === '') {
-          const wabas = await deps.wabasForToken(businessToken);
+          const wabas = await deps.meta.wabasForToken(businessToken);
           if (wabas.length === 0) {
             // eslint-disable-next-line no-console
             console.error(`embedded-signup: le token du tenant ${tenant} n'expose aucun compte WhatsApp (granular_scopes sans cible)`);
@@ -151,7 +158,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
           wabaId = wabas[0]!;
         }
         if (phoneNumberId === '') {
-          const phones = await deps.listPhones(wabaId, businessToken);
+          const phones = await deps.meta.listPhones(wabaId, businessToken);
           if (phones.length === 0) {
             return reply.code(422).send({ error: 'ce compte WhatsApp ne contient aucun numéro. Ajoute-le dans le parcours Meta.' });
           }
@@ -176,8 +183,8 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     //    `getPhone` rend aussi le vrai `status` (décide du register).
     let phone: { displayPhoneNumber: string | null; verifiedName: string | null; status: string | null; codeVerificationStatus?: string | null };
     try {
-      await deps.verifyWaba(wabaId, businessToken);
-      phone = await deps.getPhone(phoneNumberId, businessToken);
+      await deps.meta.verifyWaba(wabaId, businessToken);
+      phone = await deps.meta.getPhone(phoneNumberId, businessToken);
     } catch (err) {
       const msg = texteDe(err);
       // eslint-disable-next-line no-console
@@ -189,7 +196,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     // 3. 🔴 Rattachement à l'espace. Un WABA ou numéro déjà rattaché à un autre espace est refusé (409), pas
     //    réaffecté en silence, avant webhooks, register et token. La migration volontaire passe par le chemin admin.
     try {
-      await deps.link({ tenantId: tenant, wabaId, phoneNumberId, displayPhoneNumber: phone.displayPhoneNumber, verifiedName: phone.verifiedName });
+      await deps.inscriptions.linkTenant({ tenantId: tenant, wabaId, phoneNumberId, displayPhoneNumber: phone.displayPhoneNumber, verifiedName: phone.verifiedName });
     } catch (err) {
       if (err instanceof TenantConflictError) {
         return reply.code(409).send({ error: 'ce numéro ou ce WABA est déjà rattaché à un autre workspace' });
@@ -206,7 +213,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
 
     // 4. Webhooks du WABA -> notre app (idempotent). Échec = averti (sans webhooks : ni statuts ni réponses).
     try {
-      await deps.subscribeApp(wabaId, businessToken);
+      await deps.meta.subscribeApp(wabaId, businessToken);
     } catch (err) {
       warnings.push(`abonnement webhooks : ${texteDe(err)}`);
     }
@@ -224,7 +231,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     } else if (phone.status !== 'CONNECTED') {
       pin = String(randomInt(100000, 1000000)); // PIN 2FA du numéro : CSPRNG (cohérent avec le reste du repo)
       try {
-        await deps.register(phoneNumberId, businessToken, pin);
+        await deps.meta.register(phoneNumberId, businessToken, pin);
       } catch (err) {
         const msg = texteDe(err);
         // Journalisé, et pas seulement rendu : `warnings` est effacé par l'écran au rechargement du compte.

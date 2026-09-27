@@ -13,9 +13,11 @@ function harnais(over: { sortirRend?: boolean } = {}) {
     sessions: {
       clore: async (_t, sessionId, status, sortie) => { journal.push(`clore:${sessionId}:${status}:${sortie}`); },
     } as Pick<AgentSessionStore, 'clore'>,
-    sortirDuBlocAgent: async (_t, _w, sessionId, sortie) => {
-      journal.push(`sortir:${sessionId}:${sortie}`);
-      return over.sortirRend ?? true;
+    parcours: {
+      sortirDuBlocAgent: async (_t, _w, sessionId, sortie) => {
+        journal.push(`sortir:${sessionId}:${sortie}`);
+        return over.sortirRend ?? true;
+      },
     },
     escalateToHuman: async (_t, waId) => { journal.push(`bascule:${waId}`); return true; },
   });

@@ -9,19 +9,19 @@ import { traceReponse, destinataireAgentEvent, evenementEnvoiEchoue, type Evenem
  * partiel qui attend son accusé, laissent un autre détenteur, et l'agent parlerait par-dessus.
  */
 export interface DepsSignalerEchec {
-  detenteur(tenantId: string, waId: string): Promise<string>;
-  numero(tenantId: string): Promise<string | null>;
+  inbox: { getControlOwner(tenantId: string, waId: string): Promise<string> };
+  numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
   envoyer(tenantId: string, phoneNumberId: string, to: string, event: EvenementAgent): Promise<unknown>;
   journal?(ligne: string): void;
 }
 
 export function creerSignalerEchecTardif(deps: DepsSignalerEchec) {
   return async (tenantId: string, waId: string, raison: string): Promise<void> => {
-    if ((await deps.detenteur(tenantId, waId)) !== 'mba') {
+    if ((await deps.inbox.getControlOwner(tenantId, waId)) !== 'mba') {
       deps.journal?.(`agent_event d'échec non envoyé pour ${waId} : le fil n’est pas à l’agent de Meta`);
       return;
     }
-    const pn = await deps.numero(tenantId);
+    const pn = await deps.numeros.getTenantPhoneNumberId(tenantId);
     if (!pn) return;
     const reponse = await deps.envoyer(tenantId, pn, destinataireAgentEvent(waId), evenementEnvoiEchoue(raison));
     deps.journal?.(`agent_event d'échec envoyé pour ${waId} : ${traceReponse(reponse)}`);

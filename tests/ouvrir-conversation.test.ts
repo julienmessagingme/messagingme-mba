@@ -4,9 +4,9 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { InboxRouteDeps } from '../src/http/inbox';
+import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
 import type { ListConversationsOptions } from '../src/inbox/store.pg';
-import { inboxInerte } from './routes-inertes';
+import { inboxDepInerte, inboxInerte } from './routes-inertes';
 
 /**
  * « OUVRIR LA CONVERSATION » DEPUIS LA FICHE D'UN CONTACT (demande de Julien du 2026-09-23).
@@ -26,18 +26,25 @@ beforeAll(async () => { token = await signSession({ userId: 'u1', tenantId: 't1'
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
-function app(over: Partial<InboxRouteDeps> = {}) {
+function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<InboxDep> } = {}) {
+  const { inbox, ...reste } = over;
   const deps: InboxRouteDeps = {
     ...inboxInerte,
     estDesabonne: jamaisDesabonne,
-    listConversations: async () => [],
-    getConversationContext: async () => null,
-    getMessages: async () => [],
-    recordOutbound: async () => {},
-    getTenantPhoneNumberId: async () => 'pn1',
+    inbox: {
+      ...inboxDepInerte,
+      listConversations: async () => [],
+      getConversationContext: async () => null,
+      getMessages: async () => [],
+      recordOutbound: async () => {},
+      ...inbox,
+    },
+    repo: {
+      getTenantPhoneNumberId: async () => 'pn1',
+    },
     sendReply: async () => 'wamid.OUT',
     sendTemplateMessage: async () => 'wamid.TPL',
-    ...over,
+    ...reste,
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, inbox: deps });
 }
@@ -46,7 +53,9 @@ describe('POST /contacts/:id/conversation', () => {
   it('rend l identifiant du fil, et passe l ESPACE au magasin', async () => {
     const vus: { tenant: string; contact: string }[] = [];
     const a = app({
-      ouvrirConversationDuContact: async (tenant, contactId) => { vus.push({ tenant, contact: contactId }); return CONV; },
+      inbox: {
+        ouvrirConversationDuContact: async (tenant, contactId) => { vus.push({ tenant, contact: contactId }); return CONV; },
+      },
     });
     const r = await a.inject({ method: 'POST', url: `/tenants/t1/contacts/${CONTACT}/conversation`, ...auth() });
     expect(r.statusCode).toBe(200);
@@ -56,7 +65,7 @@ describe('POST /contacts/:id/conversation', () => {
   });
 
   it('🔴 un contact d un AUTRE espace ne s ouvre pas', async () => {
-    const a = app({ ouvrirConversationDuContact: async () => CONV });
+    const a = app({ inbox: { ouvrirConversationDuContact: async () => CONV } });
     const r = await a.inject({ method: 'POST', url: `/tenants/t2/contacts/${CONTACT}/conversation`, ...auth() });
     expect(r.statusCode).toBe(403);
   });
@@ -64,7 +73,7 @@ describe('POST /contacts/:id/conversation', () => {
   it('🔴 contact introuvable ou sans identite joignable -> 404, jamais un fil invente', async () => {
     // Sans numero ni bsuid, il n'y a aucun fil possible : en creer un le rendrait inatteignable, et l'ecran
     // enverrait l'operateur sur une conversation qui ne recevra jamais rien.
-    const a = app({ ouvrirConversationDuContact: async () => null });
+    const a = app({ inbox: { ouvrirConversationDuContact: async () => null } });
     const r = await a.inject({ method: 'POST', url: `/tenants/t1/contacts/${CONTACT}/conversation`, ...auth() });
     expect(r.statusCode).toBe(404);
   });
@@ -73,14 +82,14 @@ describe('POST /contacts/:id/conversation', () => {
     // Meme convention que le reste du fichier : `estUuid` AVANT la base. « Ce contact n'existe pas » est la
     // reponse juste ; un 500 est une panne de notre cote, et il ne dit rien a l'operateur.
     let appele = false;
-    const a = app({ ouvrirConversationDuContact: async () => { appele = true; return CONV; } });
+    const a = app({ inbox: { ouvrirConversationDuContact: async () => { appele = true; return CONV; } } });
     const r = await a.inject({ method: 'POST', url: '/tenants/t1/contacts/pas-un-uuid/conversation', ...auth() });
     expect(r.statusCode).toBe(404);
     expect(appele, 'la base n est meme pas interrogee').toBe(false);
   });
 
   it('sans session, rien ne s ouvre', async () => {
-    const a = app({ ouvrirConversationDuContact: async () => CONV });
+    const a = app({ inbox: { ouvrirConversationDuContact: async () => CONV } });
     const r = await a.inject({ method: 'POST', url: `/tenants/t1/contacts/${CONTACT}/conversation` });
     expect(r.statusCode).toBe(401);
   });
@@ -91,7 +100,7 @@ describe('GET /conversations?id=', () => {
     // Le motif « une capacite cablee sur deux consommateurs sur trois » : le magasin la supporte, l'ecran
     // l'envoie, et c'est la route, au milieu, qui l'a deja jetee une fois (le filtre par membre, 2026-09-15).
     const vus: ListConversationsOptions[] = [];
-    const a = app({ listConversations: async (_t, opts) => { vus.push(opts ?? {}); return []; } });
+    const a = app({ inbox: { listConversations: async (_t, opts) => { vus.push(opts ?? {}); return []; } } });
     const r = await a.inject({ method: 'GET', url: `/tenants/t1/conversations?id=${CONV}&limit=1`, ...auth() });
     expect(r.statusCode).toBe(200);
     expect(vus[0]?.id).toBe(CONV);
@@ -99,7 +108,7 @@ describe('GET /conversations?id=', () => {
 
   it('un identifiant vide n est pas un filtre', async () => {
     const vus: ListConversationsOptions[] = [];
-    const a = app({ listConversations: async (_t, opts) => { vus.push(opts ?? {}); return []; } });
+    const a = app({ inbox: { listConversations: async (_t, opts) => { vus.push(opts ?? {}); return []; } } });
     await a.inject({ method: 'GET', url: '/tenants/t1/conversations?id=', ...auth() });
     expect(vus[0]?.id).toBeUndefined();
   });
@@ -110,7 +119,7 @@ describe('GET /conversations?id=', () => {
     // en base, Postgres levait `22P02`, et Cloudflare remplacait le corps du 500 par sa propre page : le
     // client ne voyait meme pas ce qu'on lui reprochait.
     const vus: ListConversationsOptions[] = [];
-    const a = app({ listConversations: async (_t, opts) => { vus.push(opts ?? {}); return []; } });
+    const a = app({ inbox: { listConversations: async (_t, opts) => { vus.push(opts ?? {}); return []; } } });
     const r = await a.inject({ method: 'GET', url: '/tenants/t1/conversations?id=nawak', ...auth() });
     expect(r.statusCode).toBe(200);
     expect(vus[0]?.id, 'le filtre n est pas pose').toBeUndefined();

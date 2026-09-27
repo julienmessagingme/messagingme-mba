@@ -119,8 +119,10 @@ function sweepDeps(
     rendues,
     lu,
     deps: {
-      listHeldControl: async () => { lu.push(new Date(T0)); return stale.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })); },
-      setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
+      inbox: {
+        listHeldControl: async () => { lu.push(new Date(T0)); return stale.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })); },
+        setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
+      },
       timeouts,
       now: () => T0,
     },
@@ -184,8 +186,10 @@ describe('garde-fou d’inactivité', () => {
     // Un opérateur qui reprend la main entre la lecture et l'écriture : le store refuse, et le compteur
     // ne doit pas prétendre avoir rendu la conversation.
     const deps: ControlSweepDeps = {
-      listHeldControl: async () => [{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(5 * H), lastMessageAt: ago(1 * H), escaladee: false }],
-      setControlOwner: async () => false,
+      inbox: {
+        listHeldControl: async () => [{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(5 * H), lastMessageAt: ago(1 * H), escaladee: false }],
+        setControlOwner: async () => false,
+      },
       timeouts: { app_human: 2 * H },
       now: () => T0,
     };
@@ -206,11 +210,15 @@ describe('durée du gel réglable PAR CLIENT', () => {
       rendues,
       demandes,
       deps: {
-        // Un dernier message RECENT : ces tests ne portent pas sur la fenetre de Meta, et aucun de leurs
-        // clients n a l agent allume (pas de mbaActifParTenant), donc la garde de fenetre ne s y applique pas.
-        listHeldControl: async () => stale.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })),
-        setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
-        handbackMsByTenant: async (ids) => { demandes.push([...ids]); return new Map(Object.entries(reglages)); },
+        inbox: {
+          // Un dernier message RECENT : ces tests ne portent pas sur la fenetre de Meta, et aucun de leurs
+          // clients n a l agent allume (pas de mbaActifParTenant), donc la garde de fenetre ne s y applique pas.
+          listHeldControl: async () => stale.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })),
+          setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
+        },
+        reglages: {
+          handbackMsByTenant: async (ids) => { demandes.push([...ids]); return new Map(Object.entries(reglages)); },
+        },
         timeouts: defauts,
         now: () => T0,
       },
@@ -295,9 +303,13 @@ describe('reprise après un gel humain : une seule règle, sans exception', () =
   function sweep(held: Array<{ tenantId: string; waId: string; owner: 'app_workflow' | 'app_human' | 'mba'; changedAt: Date | null }>, reglages: Record<string, number> = {}) {
     const rendues: string[] = [];
     const deps: ControlSweepDeps = {
-      listHeldControl: async () => held.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })),
-      setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
-      handbackMsByTenant: async () => new Map(Object.entries(reglages)),
+      inbox: {
+        listHeldControl: async () => held.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })),
+        setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
+      },
+      reglages: {
+        handbackMsByTenant: async () => new Map(Object.entries(reglages)),
+      },
       timeouts: { app_human: 2 * H, mba: 24 * H },
       now: () => T0,
     };
@@ -344,7 +356,7 @@ describe('balayage : le drapeau d’escalade périmé part avec le fil qu’on d
     // armerait le balayage contre lui-même : il ne rendrait plus jamais cette conversation.
     const opts: Array<Record<string, unknown> | undefined> = [];
     const { deps } = sweepDeps([{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(100 * H), escaladee: false }], { app_human: 2 * H });
-    await runControlSweep({ ...deps, setControlOwner: async (_t, _w, _o, o) => { opts.push(o); return true; } });
+    await runControlSweep({ ...deps, inbox: { ...deps.inbox, setControlOwner: async (_t, _w, _o, o) => { opts.push(o); return true; } } });
     expect(opts).toEqual([{ only: ['app_human'], effacerEscalade: true }]);
   });
 });

@@ -10,8 +10,7 @@ import { messageDe } from '../lib/erreur';
 export type { PhoneNumberRecord, HubspotPortalLink } from '../account/types';
 
 export interface AccountRouteDeps {
-  /** Numéro principal du tenant (avec statut persisté). null si le tenant n'a aucun numéro. */
-  getPhoneNumber(tenantId: string): Promise<PhoneNumberRecord | null>;
+  numeros: NumerosDep;
   /**
    * La photo de profil WhatsApp du numéro, relue à l'affichage (l'URL de Meta est signée et expire). Son échec ne
    * fait jamais échouer la route : une pastille absente n'empêche personne de travailler.
@@ -19,18 +18,24 @@ export interface AccountRouteDeps {
   photoNumero(tenantId: string, phoneNumberId: string): Promise<string | null>;
   /** Pull Graph live du statut (numéro + santé WABA du tenant). null = pas de tentative (pas de token). Ne throw jamais. */
   pullStatus(phoneNumberId: string, tenantId: string): Promise<PullResult | null>;
+  /** Enfile le rattrapage HubSpot (best-effort) à la reprise après pause. No-op si le pipeline analyse/push est inerte. */
+  enqueueHubspotCatchup(tenantId: string): Promise<void>;
+  /** Déconnexion complète : délie le portail HubSpot côté connecteur (mm-hubspot révoque le token si dernier tenant).
+  *  Optionnel : absent si le canal service n'est pas configuré -> la route répond 503. À appeler avant le reset local. */
+  disconnectHubspot?(tenantId: string): Promise<{ disconnected: boolean; revoked: boolean }>;
+}
+
+/** Ce que les routes lisent et écrivent du statut des numéros. */
+export interface NumerosDep {
+  /** Numéro principal du tenant (avec statut persisté). null si le tenant n'a aucun numéro. */
+  getPhoneNumber(tenantId: string): Promise<PhoneNumberRecord | null>;
   /** Persiste le statut fraîchement pull (coalesce : n'écrase pas un connu par un undefined). */
   saveStatus(phoneNumberId: string, patch: PhoneStatusPatch): Promise<void>;
   /** Active/coupe/pause la synchro HubSpot d'un numéro (scopé tenant). `updated=false` si le numéro n'appartient pas
   *  au tenant ; `resumedFrom` non-null = on vient de reprendre depuis une pause -> déclencher le rattrapage. */
   setHubspotConnected(phoneNumberId: string, tenantId: string, connected: boolean): Promise<{ updated: boolean; resumedFrom: string | null }>;
-  /** Enfile le rattrapage HubSpot (best-effort) à la reprise après pause. No-op si le pipeline analyse/push est inerte. */
-  enqueueHubspotCatchup(tenantId: string): Promise<void>;
   /** Portail HubSpot lié à ce tenant (lecture cross-schema mmhs). `{ connected: false }` si aucun mapping. */
   getHubspotPortal(tenantId: string): Promise<HubspotPortalLink>;
-  /** Déconnexion complète : délie le portail HubSpot côté connecteur (mm-hubspot révoque le token si dernier tenant).
-  *  Optionnel : absent si le canal service n'est pas configuré -> la route répond 503. À appeler avant le reset local. */
-  disconnectHubspot?(tenantId: string): Promise<{ disconnected: boolean; revoked: boolean }>;
   /** Reflet local de la déconnexion : coupe hubspot_connected de tous les numéros du tenant (après succès connecteur). */
   disconnectHubspotTenant(tenantId: string): Promise<{ updated: boolean }>;
 }
@@ -106,7 +111,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       // ne lit pas ce corps (il annule sa bascule optimiste). Le jour où il affichera `error`, ce code passe en 422.
       return { ok: false, code: 502, error: 'échec de la déconnexion côté connecteur HubSpot' };
     }
-    await deps.disconnectHubspotTenant(tenant);
+    await deps.numeros.disconnectHubspotTenant(tenant);
     return { ok: true, disconnected: result.disconnected };
   }
 
@@ -127,9 +132,9 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
 
     // Portail HubSpot du tenant (lecture cross-schema mmhs). Au mieux : un échec (mmhs indisponible, colonne
     // pas encore migrée) ne fait jamais échouer la route -> on retombe sur « non connecté », comme le pull.
-    const hubspotPortal = await deps.getHubspotPortal(tenant).catch(() => ({ connected: false as const }));
+    const hubspotPortal = await deps.numeros.getHubspotPortal(tenant).catch(() => ({ connected: false as const }));
 
-    const pn = await deps.getPhoneNumber(tenant);
+    const pn = await deps.numeros.getPhoneNumber(tenant);
     if (!pn) {
       const body: AccountStatusResponse = {
         hasNumber: false,
@@ -167,7 +172,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
     const frais = pull && pull.ok ? pull : undefined;
     if (frais) {
       const { ok: _ok, displayPhoneNumber: _affiche, ...patch } = frais;
-      await deps.saveStatus(pn.id, patch);
+      await deps.numeros.saveStatus(pn.id, patch);
     }
     // Valeurs affichées : le pull frais prime, sinon on retombe sur le dernier connu (persisté).
     const quality = normalizeQuality(frais?.qualityRating ?? pn.qualityRating);
@@ -229,7 +234,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       if (!r.ok) return reply.code(r.code).send({ error: r.error });
       return reply.code(200).send({ phoneNumberId, hubspotConnected: false, disconnected: r.disconnected });
     }
-    const { updated, resumedFrom } = await deps.setHubspotConnected(phoneNumberId, tenant, body.connected);
+    const { updated, resumedFrom } = await deps.numeros.setHubspotConnected(phoneNumberId, tenant, body.connected);
     if (!updated) return reply.code(404).send({ error: 'numéro inconnu pour ce tenant' });
     // Reprise après pause (resumedFrom non-null) -> déclenche le rattrapage. Au mieux : un échec d'enqueue ne fait
     // jamais échouer le toggle (les marques pending_catchup restent, un futur resume les rejouera).

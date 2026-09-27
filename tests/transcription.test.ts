@@ -138,9 +138,11 @@ function deps(msg: MessageATranscrire | null, reponses: HttpResponse[] = [OK]) {
   // uniquement à travers l'enveloppe, et une assertion écrite dessus passait trivialement. Vu ici même.
   const faux = new FauxTransport(reponses);
   const d: DepsTranscrire = {
-    lireMessage: async (_t, m2, c2) => { lus.push({ messageId: m2, ...(c2 ? { conversationId: c2 } : {}) }); return msg; },
-    ecrireTranscription: async (_t, _m, texte, modele) => { ordre.push('ecrit'); ecrites.push({ texte, modele }); },
-    telecharger: async (mediaId) => { telechargements.push(mediaId); return { bytes: Buffer.from('audio'), mime: 'audio/ogg' }; },
+    messages: {
+      lireMessagePourTranscription: async (_t, m2, c2) => { lus.push({ messageId: m2, ...(c2 ? { conversationId: c2 } : {}) }); return msg; },
+      ecrireTranscription: async (_t, _m, texte, modele) => { ordre.push('ecrit'); ecrites.push({ texte, modele }); },
+    },
+    media: { telechargerEntrant: async (mediaId) => { telechargements.push(mediaId); return { bytes: Buffer.from('audio'), mime: 'audio/ogg' }; } },
     transport: { post: (u, b, h) => { ordre.push('modele'); return faux.post(u, b, h); } },
     cle: 'vck-maison',
     modele: 'openai/whisper-1',
@@ -230,7 +232,7 @@ describe('Transcrire le message d’une conversation', () => {
 
   it('🔴 Meta répond 100/33 : c’est un vocal EXPIRÉ, pas une panne', async () => {
     const { d } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
-    d.telecharger = async () => { throw new MetaApiError(400, { code: 100, error_subcode: 33 }); };
+    d.media.telechargerEntrant = async () => { throw new MetaApiError(400, { code: 100, error_subcode: 33 }); };
     await expect(transcrireMessage(d, 't1', 'm1')).rejects.toBeInstanceOf(MediaExpire);
   });
 

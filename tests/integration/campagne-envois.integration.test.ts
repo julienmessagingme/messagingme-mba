@@ -77,18 +77,24 @@ describe.skipIf(!url)('le journal des tentatives (0134)', () => {
   /**
    * Le câblage RÉEL du job de run, sur la base de test. C'est lui qui prouve quelque chose, pas un faux.
    *
-   * ⚠️ `rcsSenderFor` est INJECTÉ : le job le réclame pour toute campagne de canal RCS et met la campagne
+   * ⚠️ `rcs` est INJECTÉ : le job le réclame pour toute campagne de canal RCS et met la campagne
    * en pause s'il manque. On ne teste pas ici la mécanique d'envoi RCS (couverte ailleurs), seulement ce
    * que le journal retient du canal et du verdict rendu.
    */
   const deps = (sender: MessageSender, canalSender?: CampaignSender) => ({
-    getCampaign: (id: string) => repo.getCampaign(id),
+    repo: {
+      getCampaign: (id: string) => repo.getCampaign(id),
+    },
     senderFor: async () => sender,
-    rcsSenderFor: async () => canalSender ?? null,
+    rcs: {
+      senderForCampaign: async () => canalSender ?? null,
+    },
     recipients: new PgRecipientStore(pool),
     campaigns: new PgCampaignStore(pool),
     quality: new PgQualityProvider(pool),
-    pauserSiNumeroDelie: async () => false,
+    numerosDelies: {
+      pauserCampagne: async () => false,
+    },
     moteur: { noterEnvoi: creerNoteurEnvois(pool) },
   });
 

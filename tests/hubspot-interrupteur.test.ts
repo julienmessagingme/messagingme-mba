@@ -9,7 +9,7 @@ import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-d
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SettingsRouteDeps } from '../src/http/settings';
 import type { AccountRouteDeps } from '../src/http/account';
-import { compteInerte, reglagesInertes } from './routes-inertes';
+import { compteInerte, reglagesDepInertes, reglagesInertes } from './routes-inertes';
 
 /**
  * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, design validé par Julien le 2026-09-25).
@@ -40,18 +40,21 @@ function reglages(o: { portail?: SettingsRouteDeps['hubspotPortalConnecte']; ini
   const settings: SettingsRouteDeps = {
     ...reglagesInertes,
     hubspotPortalConnecte: o.portail ?? sansPortailHubspot,
-    getSettings: async () => ({
-      mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false,
-      hubspotActif: courant, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {},
-    }),
-    setMbaEnabled: async () => {},
-    setHubspotListsEnabled: async () => {},
-    setMbaHandoffMode: async () => {},
-    setControlHandbackSeconds: async () => {},
-    setTimezone: async () => {},
-    setBusinessHours: async () => {},
-    ...(o.cable === false ? {} : { setHubspotActif: async (tenant: string, actif: boolean) => { ecrits.push({ tenant, actif }); courant = actif; } }),
+    reglages: {
+      ...reglagesDepInertes,
+      get: async () => ({
+        mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false,
+        hubspotActif: courant, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {},
+      }),
+      setMbaEnabled: async () => {},
+      setHubspotListsEnabled: async () => {},
+      setMbaHandoffMode: async () => {},
+      setControlHandbackSeconds: async () => {},
+      setTimezone: async () => {},
+      setBusinessHours: async () => {},
+      ...(o.cable === false ? {} : { setHubspotActif: async (tenant: string, actif: boolean) => { ecrits.push({ tenant, actif }); courant = actif; } }),
+    },
   };
   return { ecrits, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, settings }) };
 }
@@ -152,14 +155,16 @@ function compte(over: Partial<AccountRouteDeps> = {}) {
   const appels: string[] = [];
   const deps: AccountRouteDeps = {
     ...compteInerte,
-    getPhoneNumber: async () => null,
+    numeros: {
+      getPhoneNumber: async () => null,
+      saveStatus: async () => {},
+      setHubspotConnected: async () => ({ updated: false, resumedFrom: null }),
+      getHubspotPortal: async () => ({ connected: true, hubId: '1', hubDomain: 'acme.hubspot.com' }),
+      disconnectHubspotTenant: async (tenant) => { appels.push(`base:${tenant}`); return { updated: false }; },
+    },
     pullStatus: async () => null,
-    saveStatus: async () => {},
-    setHubspotConnected: async () => ({ updated: false, resumedFrom: null }),
     enqueueHubspotCatchup: async () => {},
-    getHubspotPortal: async () => ({ connected: true, hubId: '1', hubDomain: 'acme.hubspot.com' }),
     disconnectHubspot: async (tenant) => { appels.push(`connecteur:${tenant}`); return { disconnected: true, revoked: true }; },
-    disconnectHubspotTenant: async (tenant) => { appels.push(`base:${tenant}`); return { updated: false }; },
     ...over,
   };
   return { appels, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, account: deps }) };

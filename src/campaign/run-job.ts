@@ -35,13 +35,30 @@ import { messageDe } from '../lib/erreur';
 export type CapacitesMoteur = Omit<
   EngineDeps,
   'sender' | 'renouvelerVerrou' | 'canaux'
-  | 'recipients' | 'campaigns' | 'quality' | 'pauserSiNumeroDelie'
+  | 'recipients' | 'campaigns' | 'quality' | 'numerosDelies'
 >;
 
 export interface RunJobDeps {
   /** Les capacités optionnelles du moteur, en bloc. Absent = aucune capacité (câblages de test). */
   moteur?: CapacitesMoteur;
-  getCampaign(id: string): Promise<Campaign | null>;
+  /** Le dépôt des campagnes. */
+  repo: {
+    getCampaign(id: string): Promise<Campaign | null>;
+    /**
+     * 🔴 Revalide que le numéro d'envoi appartient toujours au tenant, juste avant d'envoyer (défense contre une
+     * réaffectation entre la création et l'exécution). Optionnel pour les tests ; le worker l'injecte en prod.
+     */
+    phoneNumberBelongsToTenant?(phoneNumberId: string, tenantId: string): Promise<boolean>;
+    /**
+     * Le numéro Meta de cet espace, pour un étage WhatsApp de repli sur une campagne qui n'en a pas (une campagne
+     * RCS a `phone_number_id` vide). Le seul honnête est le premier numéro de l'espace, celui que l'écran de
+     * création aurait choisi (ordre `created_at`). Hors boucle, une fois par étage : pas de cache ici.
+     *
+     * Absente ou sans réponse : le canal WhatsApp n'est pas servable et son étage échoue avec sa raison. Jamais un
+     * envoi depuis un numéro vide, qui partirait chez Meta sur l'adresse `//messages`.
+     */
+    getTenantPhoneNumberId?(tenantId: string): Promise<string | null>;
+  };
   /**
    * Construit le sender Meta (token du tenant en prod, faux en test ; async car le token se lit et se
    * déchiffre). `phoneNumberId` est passé explicitement : une campagne RCS a la colonne vide, et son repli
@@ -65,25 +82,11 @@ export interface RunJobDeps {
    */
   plafondDeDebit?: (canal: 'whatsapp' | 'rcs' | undefined) => number;
   /**
-   * 🔴 Revalide que le numéro d'envoi appartient toujours au tenant, juste avant d'envoyer (défense contre une
-   * réaffectation entre la création et l'exécution). Optionnel pour les tests ; le worker l'injecte en prod.
-   */
-  phoneNumberBelongsToTenant?: (phoneNumberId: string, tenantId: string) => Promise<boolean>;
-  /**
    * Sender du canal RCS pour cette campagne. `null` = aucun agent RCS exploitable, campagne mise en pause avec
    * la raison. Absent = canal non câblé : une campagne RCS est mise en pause plutôt que de partir sur le chemin
    * WhatsApp avec un `phone_number_id` vide.
    */
-  rcsSenderFor?: (campaign: Campaign, message: unknown) => Promise<CampaignSender | null>;
-  /**
-   * Le numéro Meta de cet espace, pour un étage WhatsApp de repli sur une campagne qui n'en a pas (une campagne
-   * RCS a `phone_number_id` vide). Le seul honnête est le premier numéro de l'espace, celui que l'écran de
-   * création aurait choisi (ordre `created_at`). Hors boucle, une fois par étage : pas de cache ici.
-   *
-   * Absente ou sans réponse : le canal WhatsApp n'est pas servable et son étage échoue avec sa raison. Jamais un
-   * envoi depuis un numéro vide, qui partirait chez Meta sur l'adresse `//messages`.
-   */
-  numeroDuTenant?: (tenantId: string) => Promise<string | null>;
+  rcs?: { senderForCampaign(campaign: Campaign, message: unknown): Promise<CampaignSender | null> };
   /**
    * Écrit la pause `numero_delie`, en une instruction, seulement si le numéro est encore délié en base (sans le
    * cache de la garde d'envoi) et que la campagne tourne encore. `true` = écrite.
@@ -93,7 +96,7 @@ export interface RunJobDeps {
    * « Relier ». Écriture conditionnelle et non lecture puis écriture ; elle n'écrase pas une pause d'opérateur.
    * Transmise au moteur pour le même arrêt en cours de run, jamais par `CapacitesMoteur`.
    */
-  pauserSiNumeroDelie: (campaignId: string, tenantId: string, phoneNumberId: string) => Promise<boolean>;
+  numerosDelies: { pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string): Promise<boolean> };
   /**
    * Sérialisation des runs d'une même campagne (cf. `run-lock.ts`). Un seul objet : on ne câble pas le verrou
    * sans dimensionner son bail ni relancer le travail qu'il a écarté. Absent (tests) = aucune sérialisation ; en
@@ -124,7 +127,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   if (typeof campaignId !== 'string' || campaignId === '') {
     throw new Error('campaign-run : campaignId manquant dans le payload');
   }
-  const campaign = await deps.getCampaign(campaignId);
+  const campaign = await deps.repo.getCampaign(campaignId);
   if (!campaign) throw new Error(`campaign-run : campagne inconnue ${campaignId}`);
 
   // Campagne au fil de l'eau déjà arrêtée : un job a pu être enfilé juste avant l'arrêt. L'exécuter enverrait un
@@ -188,8 +191,8 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
       // renverrait le message du premier canal.
       const etage = chaine.find((e) => e.canal === 'rcs');
       const message = etage && etage.rang !== RANG_INITIAL ? etage.rcsMessage : campaign.rcsMessage;
-      if (!deps.rcsSenderFor) { refuser(canal, 'canal RCS non câblé sur ce serveur'); continue; }
-      const cs = await deps.rcsSenderFor(campaign, message);
+      if (!deps.rcs) { refuser(canal, 'canal RCS non câblé sur ce serveur'); continue; }
+      const cs = await deps.rcs.senderForCampaign(campaign, message);
       if (!cs) { refuser(canal, 'aucun agent RCS exploitable pour cette campagne'); continue; }
       // Un seul appel : `freinDuCanal` construit un limiteur, l'appeler deux fois en fabriquerait deux.
       const frein = freinDuCanal(canal);
@@ -201,12 +204,12 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
       // canal non servable, jamais un envoi depuis un numéro vide.
       const numero = campaign.phoneNumberId !== ''
         ? campaign.phoneNumberId
-        : (await deps.numeroDuTenant?.(campaign.tenantId)) ?? '';
+        : (await deps.repo.getTenantPhoneNumberId?.(campaign.tenantId)) ?? '';
       if (numero === '') { refuser(canal, 'aucun numéro WhatsApp sur cet espace'); continue; }
       // Garde d'appartenance pour un numéro porté par la campagne seulement : celui de l'espace vient d'être lu
       // sur le tenant.
-      if (numero === campaign.phoneNumberId && deps.phoneNumberBelongsToTenant
-        && !(await deps.phoneNumberBelongsToTenant(numero, campaign.tenantId))) {
+      if (numero === campaign.phoneNumberId && deps.repo.phoneNumberBelongsToTenant
+        && !(await deps.repo.phoneNumberBelongsToTenant(numero, campaign.tenantId))) {
         refuser(canal, 'numéro non rattaché à ce workspace (réaffecté ?)');
         continue;
       }
@@ -233,7 +236,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
          * balayage des campagnes gelées la relance dans la minute.
          */
         if (err instanceof NumeroDelieError) {
-          if (!(await deps.pauserSiNumeroDelie(campaign.id, campaign.tenantId, err.phoneNumberId))) {
+          if (!(await deps.numerosDelies.pauserCampagne(campaign.id, campaign.tenantId, err.phoneNumberId))) {
             return { sent: 0, skipped: 0, failed: 0, paused: false, reason: RAISON_NUMERO_RELIE_ENTRE_TEMPS };
           }
           return { sent: 0, skipped: 0, failed: 0, paused: true, reason: messageDePause('numero_delie', null, undefined) };
@@ -269,7 +272,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     recipients: deps.recipients,
     campaigns: deps.campaigns,
     quality: deps.quality,
-    pauserSiNumeroDelie: deps.pauserSiNumeroDelie,
+    numerosDelies: deps.numerosDelies,
   };
 
   const serialisation = deps.serialisation;

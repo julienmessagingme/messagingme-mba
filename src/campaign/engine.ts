@@ -195,16 +195,18 @@ export interface EngineDeps {
    * Journalise une tentative d'envoi, en ajout seul, quel qu'en soit le résultat : c'est la seule trace de ce
    * que chaque canal a tenté (`campaign_recipients` ne garde que le dernier état).
    *
-   * Best-effort comme `recordOutbound` : un échec d'écriture ne relabellise jamais un message livré ni
+   * Best-effort comme `inbox.recordOutboundByWaId` : un échec d'écriture ne relabellise jamais un message livré ni
    * n'interrompt un run. Absent -> aucune écriture.
    */
   noterEnvoi?: (t: TentativeEnvoi) => Promise<void>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de journal. */
-  recordOutbound?: (
-    tenantId: string,
-    waId: string,
-    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs'; origine: OrigineMessage },
-  ) => Promise<void>;
+  inbox?: {
+    recordOutboundByWaId(
+      tenantId: string,
+      waId: string,
+      msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs'; origine: OrigineMessage },
+    ): Promise<void>;
+  };
   now?: () => number;
   thresholds?: GuardrailThresholds;
   /**
@@ -239,7 +241,7 @@ export interface EngineDeps {
    * la campagne tourne encore. `true` = écrite. Cf. `arreterSurNumeroDelie`. Absente (faux de test) : la pause
    * est écrite par `setStatus`, sur la foi du refus.
    */
-  pauserSiNumeroDelie?: (campaignId: string, tenantId: string, phoneNumberId: string) => Promise<boolean>;
+  numerosDelies?: { pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string): Promise<boolean> };
 }
 
 /**
@@ -462,7 +464,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
    *
    * Comme le plafond de numéro de Meta, mais la pause n'a jamais d'échéance (seul « Relier » la lève, le
    * balayage de reprise ne la voit pas). Elle n'est écrite que si la base dit encore « délié », dans la même
-   * instruction (`pauserSiNumeroDelie`) : la garde en cache 5 s peut le dire juste après « Relier », et une
+   * instruction (`numerosDelies.pauserCampagne`) : la garde en cache 5 s peut le dire juste après « Relier », et une
    * pause écrite sur cette réponse serait éternelle. Sinon on sort, la campagne reste `running` et le balayage
    * des campagnes gelées la relance. L'instruction n'écrit que sur une campagne `running` ou `scheduled` : une
    * pause d'opérateur garde sa raison.
@@ -470,8 +472,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
    * L'appelant a déjà rendu à la file le destinataire en vol, rien ne lui étant parti par WhatsApp.
    */
   const arreterSurNumeroDelie = async (err: NumeroDelieError): Promise<RunReport> => {
-    if (deps.pauserSiNumeroDelie) {
-      if (!(await deps.pauserSiNumeroDelie(campaign.id, campaign.tenantId, err.phoneNumberId))) {
+    if (deps.numerosDelies) {
+      if (!(await deps.numerosDelies.pauserCampagne(campaign.id, campaign.tenantId, err.phoneNumberId))) {
         report.reason = RAISON_NUMERO_RELIE_ENTRE_TEMPS;
         return report;
       }
@@ -831,14 +833,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
 
     // Journalise dans le fil ce qui est parti d'ici (template direct, ou sender de canal). Un scénario WhatsApp
     // est journalisé par le worker à l'envoi réel ; un RCS part d'ici même quand un scénario suit. Best-effort.
-    if (deps.recordOutbound && (servi.sender !== undefined || !contenu.workflowId)) {
+    if (deps.inbox && (servi.sender !== undefined || !contenu.workflowId)) {
       const waId = waIdOfTarget(r.toE164);
       const rcs = servi.sender !== undefined;
       const body = rcs
         ? rcsCampaignBody(contenu.rcsMessage)
         : `Template « ${contenu.templateName} »${params.length > 0 ? ` (${params.join(', ')})` : ''}`;
       try {
-        await deps.recordOutbound(campaign.tenantId, waId, {
+        await deps.inbox.recordOutboundByWaId(campaign.tenantId, waId, {
           body,
           messageId: res.messageId,
           origine: 'campagne',

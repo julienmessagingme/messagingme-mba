@@ -46,7 +46,7 @@ function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; erreu
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     mbaPublication: {
-      numeroDuTenant: async () => (opts.numero === undefined ? '1234840649713976' : opts.numero),
+      repo: { getTenantPhoneNumberId: async () => (opts.numero === undefined ? '1234840649713976' : opts.numero) },
       relais: async () => (opts.relais === undefined ? RELAIS : opts.relais),
       outilsExposes: async () => [ADD_TAG],
       etatMeta: async () => META_VIDE,

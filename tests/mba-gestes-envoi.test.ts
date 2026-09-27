@@ -31,7 +31,10 @@ function faux(o: {
   const deps: DepsGestesEnvoi = {
     graphePublie: async () => (o.graphe === undefined ? GRAPHE : o.graphe),
     fenetreOuverte: async () => o.ouverte ?? true,
-    contactId: async () => 'c1',
+    contacts: {
+      findIdByWaId: async () => 'c1',
+      isBlockedByWaId: async () => o.bloqueApres === true,
+    },
     envoyerDepuisBloc: async (_t, _w, graphe, contact, noeudId) => {
       gestes.push(`envoi ${noeudId} ${graphe.nodes.length} ${contact.contactId}`);
       return o.envoi ? o.envoi() : true;
@@ -40,13 +43,16 @@ function faux(o: {
       gestes.push(`scenario ${id} ${waId} ${ouverte}`);
       return o.scenario ? o.scenario() : true;
     },
-    rendreLaMain: async (_t, waId) => {
-      gestes.push(`rendu ${waId}`);
-      if (o.rendreKo) throw new Error('base indisponible');
+    runtime: {
+      rendreLaMainApresParcours: async (_t, waId) => {
+        gestes.push(`rendu ${waId}`);
+        if (o.rendreKo) throw new Error('base indisponible');
+      },
     },
     attendreFinDuTour: async (_t, waId) => { gestes.push(`tour ${waId}`); attendu = true; },
-    empreinteDuFil: async () => (attendu ? (o.empreinteApres ?? o.empreinteAvant ?? base) : (o.empreinteAvant ?? base)),
-    estBloque: async () => o.bloqueApres === true,
+    inbox: {
+      empreinteDuFil: async () => (attendu ? (o.empreinteApres ?? o.empreinteAvant ?? base) : (o.empreinteAvant ?? base)),
+    },
   };
   return { g: creerGestesEnvoi(deps), gestes };
 }

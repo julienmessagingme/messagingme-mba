@@ -42,28 +42,39 @@ const complet = (over: Partial<OutilComplet>): OutilComplet => ({
   autonomeLe: null, ...over,
 });
 
-function monter(over: Partial<MbaOutilsDeps> = {}, numero: string | null = PN) {
+function monter(
+  over: Partial<Omit<MbaOutilsDeps, 'outils'>> & { outils?: Partial<MbaOutilsDeps['outils']> } = {},
+  numero: string | null = PN,
+) {
+  const { outils, ...reste } = over;
   const gestes: Array<{ geste: string; args: unknown[] }> = [];
   const deps: MbaOutilsDeps = {
-    numeroDuTenant: async () => numero,
+    repo: {
+      getTenantPhoneNumberId: async () => numero,
+    },
     lister: async () => [complet({})],
     contexte: async () => ({ requetes: new Map(), champs: new Set(['ville']), bibliotheque: new Map(), workflows: new Map() }),
-    requete: async (_t, id) => (id === REQ ? {
-      id: REQ, sourceId: 's1', methode: 'DELETE', variables: [
-        { nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true },
-        { nom: 'ville', type: 'string', origine: { type: 'champ', cle: 'ville' } },
-      ],
-    } : null),
+    requetes: {
+      parId: async (_t, id) => (id === REQ ? {
+        id: REQ, sourceId: 's1', methode: 'DELETE', variables: [
+          { nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true },
+          { nom: 'ville', type: 'string', origine: { type: 'champ', cle: 'ville' } },
+        ],
+      } : null),
+    },
     champs: async () => ['ville'],
-    creerMaison: async (...args) => { gestes.push({ geste: 'creerMaison', args }); return { id: 'nouveau' }; },
+    outils: {
+      ajouterMaisonPourMba: async (...args) => { gestes.push({ geste: 'creerMaison', args }); return { id: 'nouveau' }; },
+      patchMaisonPourMba: async (...args) => { gestes.push({ geste: 'modifierMaison', args }); return { id: OUTIL }; },
+      retirerDeMba: async (...args) => { gestes.push({ geste: 'retirer', args }); return 'supprime'; },
+      ...outils,
+    },
     creerConnecteur: async (...args) => { gestes.push({ geste: 'creerConnecteur', args }); return { id: 'nouveau' }; },
-    modifierMaison: async (...args) => { gestes.push({ geste: 'modifierMaison', args }); return { id: OUTIL }; },
     modifierConnecteur: async (...args) => { gestes.push({ geste: 'modifierConnecteur', args }); return { id: OUTIL }; },
-    retirer: async (...args) => { gestes.push({ geste: 'retirer', args }); return 'supprime'; },
     reactiver: async (...args) => { gestes.push({ geste: 'reactiver', args }); return true; },
     workflow: async () => null,
     blocs: async () => [],
-    ...over,
+    ...reste,
   };
   const app = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, mbaOutils: deps });
   return { app, gestes };
@@ -166,7 +177,7 @@ describe('créer un outil de l’agent de Meta', () => {
   });
 
   it('🔴 un nom déjà pris rend 409 avec un message lisible', async () => {
-    const { app } = monter({ creerMaison: async () => { throw new NomOutilDejaPris('espace'); } });
+    const { app } = monter({ outils: { ajouterMaisonPourMba: async () => { throw new NomOutilDejaPris('espace'); } } });
     const res = await app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'tag', tag: 'vip' } } });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toContain('porte déjà ce nom');
@@ -215,9 +226,9 @@ describe('modifier, retirer, réactiver', () => {
   it('🔴 (porté, et le sens change) retirer un connecteur partagé le DÉTACHE : 204, jamais un refus', async () => {
     // Avant, supprimer une définition encore rattachée rendait 409. Désormais l'onglet ne retire l'outil qu'à
     // l'agent de Meta : l'agent IA qui le partage le garde.
-    const { app } = monter({ retirer: async () => 'detache' });
+    const { app } = monter({ outils: { retirerDeMba: async () => 'detache' } });
     expect((await app.inject({ method: 'DELETE', url: `${url}/${OUTIL}`, ...h() })).statusCode).toBe(204);
-    const { app: autre } = monter({ retirer: async () => 'introuvable' });
+    const { app: autre } = monter({ outils: { retirerDeMba: async () => 'introuvable' } });
     expect((await autre.inject({ method: 'DELETE', url: `${url}/${OUTIL}`, ...h() })).statusCode).toBe(404);
   });
 

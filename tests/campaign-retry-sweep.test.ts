@@ -18,7 +18,9 @@ const C = (id: string, over: Partial<CandidatBascule> = {}): CandidatBascule => 
   emailDuContact: null, ...over,
 });
 
-function deps(over: Partial<RetrySweepDeps> = {}): {
+type Surcharges = Partial<Omit<RetrySweepDeps, 'repo'>> & { repo?: Partial<RetrySweepDeps['repo']> };
+
+function deps(over: Surcharges = {}): {
   d: RetrySweepDeps; enqueued: string[]; reset: string[]; flagged: Array<[string, string]>; marked: string[];
   notes: Array<[string, string, boolean]>; bascules: Array<[string, number]>;
 } {
@@ -28,20 +30,24 @@ function deps(over: Partial<RetrySweepDeps> = {}): {
   const marked: string[] = [];
   const notes: Array<[string, string, boolean]> = [];
   const bascules: Array<[string, number]> = [];
+  const { repo: surRepo, ...reste } = over;
   const d: RetrySweepDeps = {
     isMorningWindow: () => true,
     list131049: async () => [],
-    list131026: async () => [],
-    list131026SecondFail: async () => [],
-    resetForRetry: async (id) => { reset.push(id); return true; },
-    markUnreachableDone: async (id) => { marked.push(id); return true; },
+    repo: {
+      listRetry131026: async () => [],
+      listRetry131026SecondFail: async () => [],
+      resetForRetry: async (id) => { reset.push(id); return true; },
+      markUnreachableDone: async (id) => { marked.push(id); return true; },
+      listCandidatsBascule: async () => [],
+      basculerEtage: async (id, rang) => { bascules.push([id, rang]); return true; },
+      ...surRepo,
+    },
     enqueueRun: async (id) => { enqueued.push(id); },
     flagUnreachable: async (tenantId, e164) => { flagged.push([tenantId, e164]); },
     noterJoignabilite: async (tenantId, contactId, joignable) => { notes.push([tenantId, contactId, joignable]); },
     fenetreOuverte: async () => true,
-    listCandidatsBascule: async () => [],
-    basculerEtage: async (id, rang) => { bascules.push([id, rang]); return true; },
-    ...over,
+    ...reste,
   };
   return { d, enqueued, reset, flagged, marked, notes, bascules };
 }
@@ -60,7 +66,7 @@ describe('runRetrySweep (F6)', () => {
   });
 
   it('131026 : relancé une fois (reset + enqueue), quelle que soit l\'heure', async () => {
-    const d = deps({ isMorningWindow: () => false, list131026: async () => [R('a'), R('b')] });
+    const d = deps({ isMorningWindow: () => false, repo: { listRetry131026: async () => [R('a'), R('b')] } });
     expect((await runRetrySweep(d.d)).retried).toBe(2);
     expect(d.reset).toEqual(['a', 'b']);
     expect(d.enqueued).toEqual(['c-a', 'c-b']);
@@ -69,10 +75,12 @@ describe('runRetrySweep (F6)', () => {
   it('131026 2e échec : flag injoignable PUIS note PUIS markUnreachableDone (dans cet ordre)', async () => {
     const order: string[] = [];
     const d = deps({
-      list131026SecondFail: async () => [R('z')],
+      repo: {
+        listRetry131026SecondFail: async () => [R('z')],
+        markUnreachableDone: async (id) => { order.push(`mark:${id}`); return true; },
+      },
       flagUnreachable: async () => { order.push('flag'); },
       noterJoignabilite: async () => { order.push('note'); },
-      markUnreachableDone: async (id) => { order.push(`mark:${id}`); return true; },
     });
     expect((await runRetrySweep(d.d)).flagged).toBe(1);
     // 🔴 LA CLÔTURE EST LA DERNIÈRE : tant qu'elle n'est pas passée, le destinataire reste listé, donc un
@@ -82,7 +90,7 @@ describe('runRetrySweep (F6)', () => {
   });
 
   it('131026 2e échec : le verdict est écrit CHEZ NOUS, sur le contact, et il vaut false', async () => {
-    const d = deps({ list131026SecondFail: async () => [R('z')] });
+    const d = deps({ repo: { listRetry131026SecondFail: async () => [R('z')] } });
     expect((await runRetrySweep(d.d)).flagged).toBe(1);
     // Le contact, pas le destinataire : la mémoire vit sur `contacts`, et elle sert au-delà de cette campagne.
     expect(d.notes).toEqual([['t-z', 'ct-z', false]]);
@@ -90,7 +98,9 @@ describe('runRetrySweep (F6)', () => {
 
   it('noterJoignabilite qui throw -> PAS de markUnreachableDone (réessayé au tour suivant)', async () => {
     const d = deps({
-      list131026SecondFail: async () => [R('z')],
+      repo: {
+        listRetry131026SecondFail: async () => [R('z')],
+      },
       noterJoignabilite: async () => { throw new Error('base injoignable'); },
     });
     const res = await runRetrySweep(d.d);
@@ -100,7 +110,9 @@ describe('runRetrySweep (F6)', () => {
 
   it('flagUnreachable qui throw -> PAS de markUnreachableDone (réessayé au tour suivant)', async () => {
     const d = deps({
-      list131026SecondFail: async () => [R('z')],
+      repo: {
+        listRetry131026SecondFail: async () => [R('z')],
+      },
       flagUnreachable: async () => { throw new Error('connecteur down'); },
     });
     const res = await runRetrySweep(d.d);
@@ -110,15 +122,17 @@ describe('runRetrySweep (F6)', () => {
   });
 
   it('resetForRetry qui renvoie false (conflit) -> pas d\'enqueue', async () => {
-    const d = deps({ list131026: async () => [R('a')], resetForRetry: async () => false });
+    const d = deps({ repo: { listRetry131026: async () => [R('a')], resetForRetry: async () => false } });
     expect((await runRetrySweep(d.d)).retried).toBe(0);
     expect(d.enqueued).toEqual([]);
   });
 
   it('un échec par destinataire n\'interrompt pas le balayage', async () => {
     const d = deps({
-      list131026: async () => [R('a'), R('b')],
-      resetForRetry: async (id) => { if (id === 'a') throw new Error('boom'); return true; },
+      repo: {
+        listRetry131026: async () => [R('a'), R('b')],
+        resetForRetry: async (id) => { if (id === 'a') throw new Error('boom'); return true; },
+      },
     });
     // 'a' throw, mais 'b' est quand même traité.
     expect((await runRetrySweep(d.d)).retried).toBe(1);
@@ -136,7 +150,7 @@ describe('runRetrySweep (F6)', () => {
  */
 describe('runRetrySweep : la bascule d\'étage', () => {
   it('un candidat qui a un etage suivant bascule et son run est reenfile', async () => {
-    const d = deps({ listCandidatsBascule: async () => [C('a')] });
+    const d = deps({ repo: { listCandidatsBascule: async () => [C('a')] } });
     const res = await runRetrySweep(d.d);
     expect(res.bascules).toBe(1);
     expect(d.bascules).toEqual([['a', 2]]);
@@ -147,7 +161,7 @@ describe('runRetrySweep : la bascule d\'étage', () => {
   });
 
   it('au dernier etage, le balayage ne fait RIEN : ni bascule, ni reessai, ni cloture', async () => {
-    const d = deps({ listCandidatsBascule: async () => [C('z', { rangCourant: 2 })] });
+    const d = deps({ repo: { listCandidatsBascule: async () => [C('z', { rangCourant: 2 })] } });
     const res = await runRetrySweep(d.d);
     expect(res.bascules).toBe(0);
     // « Terminal » se joue en ne faisant rien : le destinataire reste `failed`, plus personne ne le reprend.
@@ -160,7 +174,7 @@ describe('runRetrySweep : la bascule d\'étage', () => {
   it('basculerEtage qui rend false (concurrence) -> pas d enqueue', async () => {
     // Un autre balayage a déjà fait avancer ce destinataire : le verrou `etage_courant < $2` refuse
     // l'écriture, et on ne doit surtout pas enfiler un second run pour le même échec.
-    const d = deps({ listCandidatsBascule: async () => [C('a')], basculerEtage: async () => false });
+    const d = deps({ repo: { listCandidatsBascule: async () => [C('a')], basculerEtage: async () => false } });
     const res = await runRetrySweep(d.d);
     expect(res.bascules).toBe(0);
     expect(d.enqueued).toEqual([]);
@@ -168,8 +182,10 @@ describe('runRetrySweep : la bascule d\'étage', () => {
 
   it('un echec par candidat n interrompt pas la passe', async () => {
     const d = deps({
-      listCandidatsBascule: async () => [C('a'), C('b')],
-      basculerEtage: async (id, rang) => { if (id === 'a') throw new Error('boom'); return (d.bascules.push([id, rang]), true); },
+      repo: {
+        listCandidatsBascule: async () => [C('a'), C('b')],
+        basculerEtage: async (id, rang) => { if (id === 'a') throw new Error('boom'); return (d.bascules.push([id, rang]), true); },
+      },
     });
     expect((await runRetrySweep(d.d)).bascules).toBe(1);
     expect(d.enqueued).toEqual(['c-b']);
@@ -177,7 +193,7 @@ describe('runRetrySweep : la bascule d\'étage', () => {
 
   it('la bascule ne desactive PAS les relances de F6 (les deux passes coexistent dans le meme tour)', async () => {
     // Deux campagnes différentes, l'une à repli, l'autre sans : le balayage sert les deux d'un tour.
-    const d = deps({ listCandidatsBascule: async () => [C('a')], list131026: async () => [R('s')] });
+    const d = deps({ repo: { listCandidatsBascule: async () => [C('a')], listRetry131026: async () => [R('s')] } });
     const res = await runRetrySweep(d.d);
     expect(res.bascules).toBe(1);
     expect(res.retried).toBe(1);
@@ -191,7 +207,7 @@ describe('runRetrySweep : la bascule d\'étage', () => {
     // ⚠️ `emailDuContact` FOURNI : le canal de remplissage de ce jeu est `email`, et depuis le
     // 2026-09-12 un étage e-mail sans adresse est SAUTÉ. Sans cette adresse, le cas n'exercerait plus
     // l'arithmétique des rangs, qui est sa seule raison d'être.
-    const d = deps({ listCandidatsBascule: async () => [C('a', { chaine: TROUEE, emailDuContact: 'a@b.fr' })] });
+    const d = deps({ repo: { listCandidatsBascule: async () => [C('a', { chaine: TROUEE, emailDuContact: 'a@b.fr' })] } });
     expect((await runRetrySweep(d.d)).bascules).toBe(1);
     expect(d.bascules).toEqual([['a', 3]]);
   });

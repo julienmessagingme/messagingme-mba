@@ -35,7 +35,7 @@ export class NumeroDelieError extends Error {
  * l'autre (le worker), l'ancienne réponse peut survivre jusqu'à cinq secondes :
  * - après « Délier », un envoi peut encore partir ; une campagne s'arrête quand son run relit son statut ;
  * - après « Relier », un envoi peut être refusé à tort ; une campagne n'écrit pas de pause pour autant
- *   (`pauserSiNumeroDelie` relit la base sans ce cache) et le destinataire est rendu à la file.
+ *   (`numerosDelies.pauserCampagne` relit la base sans ce cache) et le destinataire est rendu à la file.
  * Un parcours qui démarre est vérifié avant ses effets (`verifierNumeroWhatsApp`, qui lit ce même cache).
  */
 export const NUMERO_DELIE_TTL_MS = 5_000;

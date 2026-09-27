@@ -6,7 +6,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SettingsRouteDeps } from '../src/http/settings';
-import { reglagesInertes } from './routes-inertes';
+import { reglagesDepInertes, reglagesInertes } from './routes-inertes';
 
 /**
  * LE RÉGLAGE « LES AGENTS PEUVENT PRENDRE UNE CONVERSATION DU POT COMMUN » (migration 0160, demande de Julien
@@ -35,18 +35,21 @@ function app(o: { cable?: boolean } = {}) {
     ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
-    getSettings: async () => ({
-      mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: courant, hubspotActif: false,
-      optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,
-    }),
-    setMbaEnabled: async () => {},
-    setHubspotListsEnabled: async () => {},
-    setMbaHandoffMode: async () => {},
-    setControlHandbackSeconds: async () => {},
-    setTimezone: async () => {},
-    setBusinessHours: async () => {},
-    ...(o.cable === false ? {} : { setAgentsPeuventPrendre: async (_t: string, actif: boolean) => { ecrits.push(actif); courant = actif; } }),
+    reglages: {
+      ...reglagesDepInertes,
+      get: async () => ({
+        mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: courant, hubspotActif: false,
+        optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,
+      }),
+      setMbaEnabled: async () => {},
+      setHubspotListsEnabled: async () => {},
+      setMbaHandoffMode: async () => {},
+      setControlHandbackSeconds: async () => {},
+      setTimezone: async () => {},
+      setBusinessHours: async () => {},
+      ...(o.cable === false ? {} : { setAgentsPeuventPrendre: async (_t: string, actif: boolean) => { ecrits.push(actif); courant = actif; } }),
+    },
   };
   return { ecrits, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, settings }) };
 }

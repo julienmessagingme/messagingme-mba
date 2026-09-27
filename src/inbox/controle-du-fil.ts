@@ -16,16 +16,18 @@ import { messageDe } from '../lib/erreur';
  */
 
 /**
- * Ce dont les gestes ont besoin, satisfait par le worker comme par l'API. `clientMba` promet les deux actes : un
+ * Ce dont les gestes ont besoin, satisfait par le worker comme par l'API. Le client MBA promet les deux actes : un
  * client qui n'en porterait qu'un ne compile pas.
  */
 export interface ControleDuFilDeps {
   /** Numéro Meta du client. `null` = aucun numéro connecté, il n'y a aucun fil à contrôler. */
-  numeroDuTenant(tenantId: string): Promise<string | null>;
-  clientMba(tenantId: string): Promise<{
-    releaseThread(phoneNumberId: string, waId: string): Promise<unknown>;
-    takeThread(phoneNumberId: string, waId: string): Promise<unknown>;
-  }>;
+  numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
+  meta: {
+    mbaClientForTenant(tenantId: string): Promise<{
+      releaseThread(phoneNumberId: string, waId: string): Promise<unknown>;
+      takeThread(phoneNumberId: string, waId: string): Promise<unknown>;
+    }>;
+  };
 }
 
 export function creerRendreLeFil(deps: ControleDuFilDeps) {
@@ -48,9 +50,9 @@ export function creerPrendreLeFil(deps: ControleDuFilDeps) {
 /** Le geste commun aux deux jumeaux : le numéro de l'espace (aucun : `false`), puis l'acte chez Meta. */
 function gesteSurLeFil(deps: ControleDuFilDeps, acte: 'releaseThread' | 'takeThread') {
   return async (tenantId: string, waId: string): Promise<boolean> => {
-    const phoneNumberId = await deps.numeroDuTenant(tenantId);
+    const phoneNumberId = await deps.numeros.getTenantPhoneNumberId(tenantId);
     if (!phoneNumberId) return false;
-    const client = await deps.clientMba(tenantId);
+    const client = await deps.meta.mbaClientForTenant(tenantId);
     await client[acte](phoneNumberId, waId);
     return true;
   };

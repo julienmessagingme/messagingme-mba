@@ -19,10 +19,10 @@ interface Cap { created: string[]; renamed: Array<{ from: string; to: string }>;
 function app(over: Partial<TagsRouteDeps> = {}) {
   const cap: Cap = { created: [], renamed: [], removed: [] };
   const deps: TagsRouteDeps = {
-    listTags: async () => [{ tag: 'vip', count: 3 }, { tag: 'salon', count: 1 }],
-    createTag: async (_t, name) => { cap.created.push(name); return true; },
-    renameTag: async (_t, from, to) => { cap.renamed.push({ from, to }); return 2; },
-    removeTag: async (_t, tag) => { cap.removed.push(tag); return 5; },
+    listDistinct: async () => [{ tag: 'vip', count: 3 }, { tag: 'salon', count: 1 }],
+    create: async (_t, name) => { cap.created.push(name); return true; },
+    rename: async (_t, from, to) => { cap.renamed.push({ from, to }); return 2; },
+    remove: async (_t, tag) => { cap.removed.push(tag); return 5; },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, tags: deps }), cap };
@@ -44,7 +44,7 @@ describe('routes tags', () => {
     await server.close();
   });
 
-  it('POST create tag admin -> 201, createTag appelé', async () => {
+  it('POST create tag admin -> 201, create appelé', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/tags', ...h(adminTok), payload: { name: 'prospect' } });
     expect(res.statusCode).toBe(201);
@@ -80,7 +80,7 @@ describe('routes tags', () => {
     await server.close();
   });
 
-  it('DELETE admin -> 200 (removeTag appelé)', async () => {
+  it('DELETE admin -> 200 (remove appelé)', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/tags?tag=salon', ...h(adminTok) });
     expect(res.statusCode).toBe(200);

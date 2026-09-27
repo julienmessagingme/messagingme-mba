@@ -4,7 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { GRILLE_DEFAUT, type GrillePrix } from '../src/stats/prix';
 import type { OpsRouteDeps } from '../src/http/ops';
 import { capturerJournal } from './journal';
-import { opsInerte } from './routes-inertes';
+import { exploitationInerte, opsInerte } from './routes-inertes';
 
 /**
  * LA GRILLE DE PRIX SE REGLE DANS /ops, UNE FOIS, POUR TOUS LES ESPACES (lot 8, migration 0168).
@@ -31,9 +31,12 @@ const NOTE = 'passage a 120 pour la grille 2027, valide par Julien';
 function app(over: Partial<OpsRouteDeps> = {}) {
   const deps: OpsRouteDeps = {
     ...opsInerte,
-    getTenantOverview: async () => [],
-    getGlobalDaily: async () => [],
-    getQueueLoad: async () => [],
+    exploitation: {
+      ...exploitationInerte,
+      getTenantOverview: async () => [],
+      getGlobalDaily: async () => [],
+      getQueueLoad: async () => [],
+    },
     ...over,
   };
   return buildServer({ queue: new FakeQueue(), ops: deps, opsToken: OPS });
@@ -65,7 +68,7 @@ describe('GET /ops/prix', () => {
 describe('PATCH /ops/prix', () => {
   it('jeton correct -> 200, et le store recoit les SIX champs', async () => {
     let recu: GrillePrix | null = null;
-    const a = app({ ecrireGrillePrix: async (g) => { recu = g; } });
+    const a = app({ reglages: { setGrillePrixGlobale: async (g) => { recu = g; } } });
     const res = await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { ...BONNE, note: NOTE }, ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
     // La grille voyage ENTIERE, jamais champ par champ : un objet ne peut pas perdre un membre en chemin.
@@ -79,7 +82,7 @@ describe('PATCH /ops/prix', () => {
    */
   it('🔴 une valeur hors bornes -> 400 qui NOMME le champ, et rien n est ecrit', async () => {
     let appele = false;
-    const a = app({ ecrireGrillePrix: async () => { appele = true; } });
+    const a = app({ reglages: { setGrillePrixGlobale: async () => { appele = true; } } });
     const res = await a.inject({ method: 'PATCH', url: '/ops/prix',
       payload: { ...BONNE, serviceCentimes: 248, note: NOTE }, ...withTok(OPS) });
     expect(res.statusCode).toBe(400);
@@ -91,7 +94,7 @@ describe('PATCH /ops/prix', () => {
   it('🔴 une grille INCOMPLETE est refusee, elle n est pas completee par les defauts', async () => {
     // Un envoi partiel obligerait le serveur a fusionner avec l existant : c est la ou ce depot s est deja
     // fait avoir, une liste REMPLACEE au lieu d etre fusionnee.
-    const a = app({ ecrireGrillePrix: async () => {} });
+    const a = app({ reglages: { setGrillePrixGlobale: async () => {} } });
     const res = await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { margeTemplate: 120, note: NOTE }, ...withTok(OPS) });
     expect(res.statusCode).toBe(400);
     await a.close();
@@ -101,7 +104,7 @@ describe('PATCH /ops/prix', () => {
     // Le jeton d exploitation est PARTAGE, donc il n y a aucune identite d operateur a enregistrer. Meme
     // exigence que le rechargement d un solde, et pour la meme raison.
     let appele = false;
-    const a = app({ ecrireGrillePrix: async () => { appele = true; } });
+    const a = app({ reglages: { setGrillePrixGlobale: async () => { appele = true; } } });
     for (const payload of [{ ...BONNE }, { ...BONNE, note: '' }, { ...BONNE, note: '  ' }, { ...BONNE, note: 42 }]) {
       const res = await a.inject({ method: 'PATCH', url: '/ops/prix', payload, ...withTok(OPS) });
       expect(res.statusCode, JSON.stringify(payload)).toBe(400);
@@ -114,7 +117,7 @@ describe('PATCH /ops/prix', () => {
     // Une note obligatoire qu on jette est pire qu aucune note : l ecran promet une tracabilite que la base
     // n a pas. C est le motif « une garde qu on peut debrancher sans qu aucun test ne tombe ».
     let recue: string | null = null;
-    const a = app({ ecrireGrillePrix: async (_g, par) => { recue = par; } });
+    const a = app({ reglages: { setGrillePrixGlobale: async (_g, par) => { recue = par; } } });
     await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { ...BONNE, note: NOTE }, ...withTok(OPS) });
     expect(recue).toBe(NOTE);
     await a.close();
@@ -124,7 +127,7 @@ describe('PATCH /ops/prix', () => {
     // Un appel au journal qui ne part pas ne leve rien : seul un test qui LIT la sortie distingue une trace
     // d un appel muet.
     const { lignes } = await capturerJournal(async () => {
-      const a = app({ ecrireGrillePrix: async () => {} });
+      const a = app({ reglages: { setGrillePrixGlobale: async () => {} } });
       await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { ...BONNE, note: NOTE }, ...withTok(OPS) });
       await a.close();
     });
@@ -139,7 +142,7 @@ describe('PATCH /ops/prix', () => {
     // L equivalent des deux cas disparus (un agent refuse, un tenant etranger refuse) : cette route n a plus
     // de tenant, sa garde est l autorite separee de /ops.
     let appele = false;
-    const a = app({ ecrireGrillePrix: async () => { appele = true; } });
+    const a = app({ reglages: { setGrillePrixGlobale: async () => { appele = true; } } });
     const res = await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { ...BONNE, note: NOTE }, headers: { 'content-type': 'application/json' } });
     expect(res.statusCode).toBeGreaterThanOrEqual(400);
     expect(appele).toBe(false);
@@ -148,7 +151,7 @@ describe('PATCH /ops/prix', () => {
 
   it('🔴 un JETON FAUX ne passe pas non plus', async () => {
     let appele = false;
-    const a = app({ ecrireGrillePrix: async () => { appele = true; } });
+    const a = app({ reglages: { setGrillePrixGlobale: async () => { appele = true; } } });
     const res = await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { ...BONNE, note: NOTE }, ...withTok('mauvais-jeton-de-plus-de-32-octets!!!') });
     expect(res.statusCode).toBeGreaterThanOrEqual(400);
     expect(appele).toBe(false);

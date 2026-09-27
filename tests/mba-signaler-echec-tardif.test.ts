@@ -12,8 +12,12 @@ function faux(o: { detenteur?: string; numero?: string | null } = {}) {
   const envois: Array<{ pn: string; to: string; event: EvenementAgent }> = [];
   const journal: string[] = [];
   const deps: DepsSignalerEchec = {
-    detenteur: async () => o.detenteur ?? 'mba',
-    numero: async () => (o.numero === undefined ? 'PN1' : o.numero),
+    inbox: {
+      getControlOwner: async () => o.detenteur ?? 'mba',
+    },
+    numeros: {
+      getTenantPhoneNumberId: async () => (o.numero === undefined ? 'PN1' : o.numero),
+    },
     envoyer: async (_t, pn, to, event) => { envois.push({ pn, to, event }); },
     journal: (l) => { journal.push(l); },
   };

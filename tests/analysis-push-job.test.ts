@@ -15,20 +15,28 @@ const enr: Enrichment = {
 };
 
 /** Deps par défaut : numéro connecté, analyse + enrichissement présents. `over` surcharge. */
-function deps(over: Partial<PushJobDeps> = {}): { d: PushJobDeps; posted: EnrichedAnalyzedEvent[]; marked: string[]; cleared: string[]; logs: string[] } {
+type Surcharges = Partial<Omit<PushJobDeps, 'analyses'>> & { analyses?: Partial<PushJobDeps['analyses']> };
+
+function deps(over: Surcharges = {}): { d: PushJobDeps; posted: EnrichedAnalyzedEvent[]; marked: string[]; cleared: string[]; logs: string[] } {
   const posted: EnrichedAnalyzedEvent[] = [];
   const marked: string[] = [];
   const cleared: string[] = [];
   const logs: string[] = [];
+  const { analyses: surAnalyses, ...reste } = over;
   const d: PushJobDeps = {
-    getStoredAnalysis: async () => stored,
+    analyses: {
+      getStored: async () => stored,
+      markPendingCatchup: async (id) => { marked.push(id); },
+      clearPendingCatchup: async (id) => { cleared.push(id); },
+      ...surAnalyses,
+    },
     getEnrichment: async () => enr,
-    getHubspotGateStatus: async () => ({ connected: true, pausedAt: null }),
+    numeros: {
+      getHubspotGateStatus: async () => ({ connected: true, pausedAt: null }),
+    },
     post: async (e) => { posted.push(e); },
-    markPendingCatchup: async (id) => { marked.push(id); },
-    clearPendingCatchup: async (id) => { cleared.push(id); },
     log: (m) => logs.push(m),
-    ...over,
+    ...reste,
   };
   return { d, posted, marked, cleared, logs };
 }
@@ -44,7 +52,7 @@ describe('pushAnalysisJob (contrat ref-only + snapshot unique gate/pause)', () =
   });
 
   it('analyse disparue (getStoredAnalysis null) -> aucun post', async () => {
-    const { d, posted } = deps({ getStoredAnalysis: async () => null });
+    const { d, posted } = deps({ analyses: { getStored: async () => null } });
     await pushAnalysisJob(REF, d);
     expect(posted).toHaveLength(0);
   });
@@ -56,7 +64,7 @@ describe('pushAnalysisJob (contrat ref-only + snapshot unique gate/pause)', () =
   });
 
   it('EN PAUSE (snapshot connected=false, pausedAt renseigné) -> skip + MARQUE (décision sur le snapshot, pas de re-lecture)', async () => {
-    const { d, posted, marked, logs } = deps({ getHubspotGateStatus: async () => ({ connected: false, pausedAt: '2026-07-20T10:00:00Z' }) });
+    const { d, posted, marked, logs } = deps({ numeros: { getHubspotGateStatus: async () => ({ connected: false, pausedAt: '2026-07-20T10:00:00Z' }) } });
     await pushAnalysisJob(REF, d);
     expect(posted).toHaveLength(0);
     expect(marked).toEqual(['c1']); // marqué inconditionnellement sur la base du snapshot vu
@@ -64,19 +72,19 @@ describe('pushAnalysisJob (contrat ref-only + snapshot unique gate/pause)', () =
   });
 
   it('JAMAIS ACTIVÉ (connected=false, pausedAt null) -> skip mais PAS de marque (pas d\'historique surprise)', async () => {
-    const { d, posted, marked } = deps({ getHubspotGateStatus: async () => ({ connected: false, pausedAt: null }) });
+    const { d, posted, marked } = deps({ numeros: { getHubspotGateStatus: async () => ({ connected: false, pausedAt: null }) } });
     await pushAnalysisJob(REF, d);
     expect(posted).toHaveLength(0);
     expect(marked).toHaveLength(0);
   });
 
   it('skip en pause : une erreur de markPendingCatchup REMONTE (pg-boss rejoue, pas de perte silencieuse)', async () => {
-    const { d } = deps({ getHubspotGateStatus: async () => ({ connected: false, pausedAt: 'x' }), markPendingCatchup: async () => { throw new Error('db down'); } });
+    const { d } = deps({ numeros: { getHubspotGateStatus: async () => ({ connected: false, pausedAt: 'x' }) }, analyses: { markPendingCatchup: async () => { throw new Error('db down'); } } });
     await expect(pushAnalysisJob(REF, d)).rejects.toThrow('db down');
   });
 
   it('post réussi mais clearPendingCatchup échoue -> best-effort : la promesse résout, le post a bien eu lieu', async () => {
-    const { d, posted } = deps({ clearPendingCatchup: async () => { throw new Error('clear KO'); } });
+    const { d, posted } = deps({ analyses: { clearPendingCatchup: async () => { throw new Error('clear KO'); } } });
     await expect(pushAnalysisJob(REF, d)).resolves.toBeUndefined();
     expect(posted).toHaveLength(1);
   });

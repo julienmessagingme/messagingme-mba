@@ -28,7 +28,7 @@ export interface DepsResolveurHttp {
    * connecteur qui n'envoie qu'un numéro ne paie pas deux requêtes de plus sur un chemin chaud. Pas les champs
    * personnalisés : la projection du contact les porte déjà.
    */
-  derniereSaisie?: (tenantId: string, waId: string) => Promise<string | null>;
+  inbox?: { derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> };
   fuseau?: (tenantId: string) => Promise<string>;
   /** Injecté pour tester sans réseau, comme partout dans ce dépôt. */
   fetchImpl?: typeof fetch;
@@ -198,8 +198,8 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     const brutChamps = ctx.contact ? (ctx.contact as { champs?: unknown }).champs : null;
     const champs = brutChamps !== null && typeof brutChamps === 'object' && !Array.isArray(brutChamps)
       ? (brutChamps as Record<string, unknown>) : null;
-    const derniereSaisie = besoin('systeme', 'derniere_saisie') && deps.derniereSaisie
-      ? await deps.derniereSaisie(ctx.tenantId, ctx.waId) : null;
+    const derniereSaisie = besoin('systeme', 'derniere_saisie') && deps.inbox
+      ? await deps.inbox.derniereSaisieDuContact(ctx.tenantId, ctx.waId) : null;
     // Le fuseau ne sert qu'à « maintenant ». Sans dépendance, UTC, dit dans la valeur (`+00:00`).
     const fuseau = besoin('systeme', 'maintenant') && deps.fuseau ? await deps.fuseau(ctx.tenantId) : 'UTC';
 

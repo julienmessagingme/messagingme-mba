@@ -6,6 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ContactStore, ContactUpsert, LotContacts } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef } from '../src/crm/types';
+import type { ContactFilters } from '../src/crm/contact-store.pg';
 import { journalMuet } from './routes-inertes';
 
 const SECRET = 'test-secret';
@@ -64,16 +65,17 @@ function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryC
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     import: {
-      contacts,
+      contacts: Object.assign(contacts, {
+        list: async () => [
+          { id: 'c1', phoneE164: '+33611111111', bsuid: null, externalId: null, profileName: 'Julie', optInStatus: 'opted_in' as const, fields: { ville: 'Lyon' }, tags: ['salon-2026'], createdAt: '2026-07-05T00:00:00.000Z', blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null, risque: null },
+        ],
+        query: async (_t: string, filters: ContactFilters) => { cap?.queryFilters.push(filters); return [
+          { id: 'c2', phoneE164: '+33612345678', bsuid: null, externalId: null, profileName: 'Marc', optInStatus: 'opted_in' as const, fields: { ville: 'Paris' }, tags: ['vip'], createdAt: '2026-07-06T00:00:00.000Z', blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null, risque: null },
+        ]; },
+        count: async (_t: string, filters: ContactFilters) => { cap?.countFilters.push(filters); return 3; },
+        idsForFilters: async (_t: string, filters: ContactFilters) => { cap?.idsFilters.push(filters); return ['c2', 'c3']; },
+      }),
       userFields,
-      listContacts: async () => [
-        { id: 'c1', phoneE164: '+33611111111', bsuid: null, externalId: null, profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, tags: ['salon-2026'], createdAt: '2026-07-05T00:00:00.000Z', blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null, risque: null },
-      ],
-      queryContacts: async (_t, filters) => { cap?.queryFilters.push(filters); return [
-        { id: 'c2', phoneE164: '+33612345678', bsuid: null, externalId: null, profileName: 'Marc', optInStatus: 'opted_in', fields: { ville: 'Paris' }, tags: ['vip'], createdAt: '2026-07-06T00:00:00.000Z', blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null, risque: null },
-      ]; },
-      countContacts: async (_t, filters) => { cap?.countFilters.push(filters); return 3; },
-      contactIdsForFilters: async (_t, filters) => { cap?.idsFilters.push(filters); return ['c2', 'c3']; },
       audit: journalMuet,
       ...(journal ? { audit: async (_t: string, actor: { userId: string | null }, action: string, target: { kind: string; id: string }, detail: Record<string, unknown> = {}) => { journal.push({ action, target, detail, actor }); } } : {}),
     },

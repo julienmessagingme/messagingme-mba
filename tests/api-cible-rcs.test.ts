@@ -10,13 +10,17 @@ const RELANCE = { kind: 'text' as const, text: 'Votre commande {{commande}} est 
 function deps(over: Partial<DepsCibleRcs> = {}) {
   const lectures: string[] = [];
   const d: DepsCibleRcs = {
-    messageRcsParNom: async (_t, nom) => {
-      lectures.push(`message:${nom}`);
-      if (nom === 'relance-panier') return { name: 'relance-panier', content: RELANCE };
-      if (nom === 'illisible') return { name: 'illisible', content: null };
-      return null;
+    messages: {
+      getByName: async (_t, nom) => {
+        lectures.push(`message:${nom}`);
+        if (nom === 'relance-panier') return { name: 'relance-panier', content: RELANCE };
+        if (nom === 'illisible') return { name: 'illisible', content: null };
+        return null;
+      },
     },
-    agentIdForTenant: async () => { lectures.push('agent'); return 'agent-1'; },
+    agents: {
+      agentIdForTenant: async () => { lectures.push('agent'); return 'agent-1'; },
+    },
     ...over,
   };
   return { d, lectures };
@@ -35,7 +39,7 @@ describe('resoudreCibleRcs', () => {
 
   it('contenu illisible : 422 unsendable_target ; canal éteint : 409 rcs_not_enabled', async () => {
     expect(await resoudreCibleRcs(deps().d, 't1', 'illisible')).toMatchObject({ ok: false, statut: 422, code: 'unsendable_target' });
-    expect(await resoudreCibleRcs(deps({ agentIdForTenant: async () => null }).d, 't1', 'relance-panier'))
+    expect(await resoudreCibleRcs(deps({ agents: { agentIdForTenant: async () => null } }).d, 't1', 'relance-panier'))
       .toMatchObject({ ok: false, statut: 409, code: 'rcs_not_enabled' });
   });
 });

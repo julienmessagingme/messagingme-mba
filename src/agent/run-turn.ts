@@ -26,7 +26,7 @@ export interface RunTurnDeps {
   lireRun(tenantId: string, runId: string): Promise<EtatRun | null>;
   /** La fiche d'agent entière (plafonds et inactivité, une seule lecture). `null` = introuvable : on sort en
    *  erreur. */
-  lireFiche(tenantId: string, agentId: string): Promise<FicheAgent | null>;
+  agents: { byId(tenantId: string, agentId: string): Promise<FicheAgent | null> };
   /**
    * Écrit l'état du run après un tour qui attend, et pose l'échéance d'inactivité.
    *
@@ -43,7 +43,7 @@ export interface RunTurnDeps {
    */
   lireConversation?(tenantId: string, waId: string, depuis: string): Promise<unknown[]>;
   /** Le solde prépayé du workspace, en micro-euros. Absent : aucun plafond de workspace. */
-  soldeTenant?(tenantId: string): Promise<number>;
+  credits?: { solde(tenantId: string): Promise<number> };
   /** Retire du solde ce que ce tour a coûté. Absent -> rien n'est débité. */
   debiterTenant?(tenantId: string, montantMicroEur: number, sessionId: string): Promise<void>;
   /** Le fil est-il encore à nous ? Absent -> considéré comme oui (suites à deps minimales). */
@@ -59,7 +59,7 @@ export interface RunTurnDeps {
    *  journalisé dans le fil). */
   envoyer(tenantId: string, waId: string, texte: string): Promise<ResultatEnvoi>;
   /** Mesure du bloc (Analytics). Optionnelle. */
-  mesurer?(input: { tenantId: string; workflowId: string; nodeId: string; waId: string; kind: 'sent' | 'failed' }): Promise<void>;
+  mesures?: { record(input: { tenantId: string; workflowId: string; nodeId: string; waId: string; kind: 'sent' | 'failed' }): Promise<void> };
   /** Clôt la session et reprend le scénario par la branche `sortie`. Fournie par le câblage. */
   sortir?(input: { tenantId: string; waId: string; runId: string; sessionId: string; sortie: string }): Promise<void>;
   now?: () => number;
@@ -205,7 +205,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
 
   // 3. Les plafonds, avant d'appeler le cerveau : on ne paie pas un appel dont on jettera la réponse, et une
   // injection qui fait boucler l'agent brûlerait le compte prépayé.
-  const fiche = await deps.lireFiche(job.tenantId, session.agentId);
+  const fiche = await deps.agents.byId(job.tenantId, session.agentId);
   if (!fiche) {
     // Même traitement que les autres échecs : sortir par la branche d'échec plutôt que laisser le run en attente.
     // eslint-disable-next-line no-console
@@ -215,7 +215,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
   }
   // 🔴 Le solde prépayé, lu avec les autres plafonds, donc avant l'appel au modèle. Vide, tous les agents du
   // workspace s'arrêtent, par la même branche que les autres plafonds : le client la câble une seule fois.
-  const soldeEpuise = deps.soldeTenant ? (await deps.soldeTenant(job.tenantId)) <= 0 : false;
+  const soldeEpuise = deps.credits ? (await deps.credits.solde(job.tenantId)) <= 0 : false;
   if (soldeEpuise
     || session.tours > fiche.plafonds.maxTours
     || session.appelsOutils > fiche.plafonds.maxAppelsOutils
@@ -304,8 +304,8 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
   if (decision.texte !== null && decision.texte !== '') {
     const res = await deps.envoyer(job.tenantId, job.waId, decision.texte);
     const refuse = typeof res === 'string' && res !== '';
-    if (deps.mesurer) {
-      await deps.mesurer({
+    if (deps.mesures) {
+      await deps.mesures.record({
         tenantId: job.tenantId, workflowId: job.workflowId, nodeId: job.nodeId, waId: job.waId,
         kind: refuse ? 'failed' : 'sent',
       });

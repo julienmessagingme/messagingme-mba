@@ -4,7 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
-import { campagnesInertes } from './routes-inertes';
+import { campagnesInertes, campagnesRepoInerte, creationInerte } from './routes-inertes';
 
 /**
  * Archivage et suppression d'une campagne.
@@ -36,21 +36,24 @@ interface Calls {
 function appWith(calls: Calls, deleteOk = true) {
   const campaigns: CampaignRouteDeps = {
     ...campagnesInertes,
-    repo: {} as CampaignRouteDeps['repo'],
     queue: new FakeQueue(),
-    phoneNumberBelongsToTenant: async () => true,
-    campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === 't1',
-    getRunSizing: async () => ({ ratePerMinute: null, pendingCount: 0 }),
-    scheduleCampaign: async () => true,
-    cancelSchedule: async () => true,
+    repo: {
+      ...creationInerte,
+      ...campagnesRepoInerte,
+      phoneNumberBelongsToTenant: async () => true,
+      campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === 't1',
+      getRunSizing: async () => ({ ratePerMinute: null, pendingCount: 0 }),
+      scheduleCampaign: async () => true,
+      cancelSchedule: async () => true,
+      listCampaignSummaries: async (_tenant, opts) => { calls.list.push(opts); return []; },
+      archiveCampaign: async (id) => { calls.writes.push(`archive:${id}`); return true; },
+      unarchiveCampaign: async (id) => { calls.writes.push(`unarchive:${id}`); return true; },
+      deleteDraftCampaign: async (id) => { calls.writes.push(`delete:${id}`); return deleteOk; },
+      getCampaignDetail: async () => null,
+      resetRecipientForRetry: async () => ({ result: 'not_found' as const }),
+      listPhoneNumbers: async () => [],
+    },
     getWorkflowGraph: async () => null,
-    listCampaigns: async (_tenant, opts) => { calls.list.push(opts); return []; },
-    archiveCampaign: async (id) => { calls.writes.push(`archive:${id}`); return true; },
-    unarchiveCampaign: async (id) => { calls.writes.push(`unarchive:${id}`); return true; },
-    deleteDraftCampaign: async (id) => { calls.writes.push(`delete:${id}`); return deleteOk; },
-    getCampaignDetail: async () => null,
-    resetRecipientForRetry: async () => ({ result: 'not_found' as const }),
-    listPhoneNumbers: async () => [],
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, campaigns });
 }

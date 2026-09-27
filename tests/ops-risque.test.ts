@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import type { OpsRouteDeps } from '../src/http/ops';
 import type { BilanRisque } from '../src/engagement/balayage';
-import { opsInerte } from './routes-inertes';
+import { exploitationInerte, opsInerte } from './routes-inertes';
 
 /**
  * LE BALAYAGE DU RISQUE À LA DEMANDE (`POST /ops/risque/:tenantId`, lot 7 de l'API publique).
@@ -20,7 +20,7 @@ const BILAN: BilanRisque = {
 };
 
 function app(over: Partial<OpsRouteDeps> = {}) {
-  const deps: OpsRouteDeps = { ...opsInerte, getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [], ...over };
+  const deps: OpsRouteDeps = { ...opsInerte, exploitation: { ...exploitationInerte, getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [] }, ...over };
   return buildServer({ queue: new FakeQueue(), ops: deps, opsToken: OPS });
 }
 

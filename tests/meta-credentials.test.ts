@@ -13,8 +13,10 @@ function makeDeps(over: Partial<CredentialsResolverDeps> & {
   let decryptCalls = 0;
   const deps: CredentialsResolverDeps = {
     getWabaIdForTenant: async (t) => tenants[t] ?? null,
-    getCredentialsByWaba: async (w) => creds[w] ?? null,
-    markTokenInvalid: async (w) => { invalidated.push(w); if (creds[w]) creds[w]!.tokenStatus = 'invalid'; },
+    credentials: {
+      getCredentialsByWaba: async (w) => creds[w] ?? null,
+      markTokenInvalid: async (w) => { invalidated.push(w); if (creds[w]) creds[w]!.tokenStatus = 'invalid'; },
+    },
     decrypt: (enc) => { decryptCalls += 1; return enc.replace(/^enc:/, ''); }, // "enc:TOK" -> "TOK"
     fallbackToken: 'GLOBAL_TOKEN',
     now: over.now,
@@ -84,8 +86,10 @@ describe('MetaCredentialsResolver (B1 : token Meta par tenant)', () => {
   it('onError : un échec DB de markTokenInvalid est AVALÉ (best-effort), ne masque pas l\'erreur Meta', async () => {
     const deps: CredentialsResolverDeps = {
       getWabaIdForTenant: async () => 'wabaA',
-      getCredentialsByWaba: async () => ({ businessTokenEnc: 'enc:TOK', tokenStatus: 'active' }),
-      markTokenInvalid: async () => { throw new Error('DB down'); }, // l'écriture d'invalidation échoue
+      credentials: {
+        getCredentialsByWaba: async () => ({ businessTokenEnc: 'enc:TOK', tokenStatus: 'active' }),
+        markTokenInvalid: async () => { throw new Error('DB down'); },
+      }, // l'écriture d'invalidation échoue
       decrypt: (e) => e,
       fallbackToken: 'GLOBAL',
     };

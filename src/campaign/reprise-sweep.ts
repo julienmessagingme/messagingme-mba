@@ -11,10 +11,13 @@ import { campaignJobExpireSeconds, resolveRatePerMinute, SANS_PLAFOND } from './
  * pas la même campagne.
  */
 export interface RepriseSweepDeps {
-  /** Reprend en base les campagnes dues (atomique) et rend celles réellement reprises. */
-  reprendreDues(): Promise<Array<{ id: string; tenantId: string }>>;
-  /** Dimensionnement du run, pour l'expiration du job. `null` = campagne disparue depuis la reprise. */
-  getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null>;
+  /** Le dépôt des campagnes. */
+  repo: {
+    /** Reprend en base les campagnes dues (atomique) et rend celles réellement reprises. */
+    reprendreCampagnesDues(): Promise<Array<{ id: string; tenantId: string }>>;
+    /** Dimensionnement du run, pour l'expiration du job. `null` = campagne disparue depuis la reprise. */
+    getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null>;
+  };
   /** Enfile le run. `tenantId` porte le groupe de la file : sans lui, une reprise échapperait au plafond de
    *  concurrence par espace. */
   enqueueRun(campaignId: string, tenantId: string, expireInSeconds: number): Promise<void>;
@@ -36,11 +39,11 @@ export interface RepriseSweepDeps {
  * `running` sans run, que le balayage de reprise après gel rattrape à la minute suivante.
  */
 export async function runCampaignRepriseSweep(deps: RepriseSweepDeps): Promise<number> {
-  const reprises = await deps.reprendreDues();
+  const reprises = await deps.repo.reprendreCampagnesDues();
   let relancees = 0;
   for (const c of reprises) {
     try {
-      const sizing = await deps.getRunSizing(c.id);
+      const sizing = await deps.repo.getRunSizing(c.id);
       // Campagne disparue entre la reprise et ici : rien à enfiler, et rien d'anormal.
       if (sizing === null) continue;
       await deps.enqueueRun(

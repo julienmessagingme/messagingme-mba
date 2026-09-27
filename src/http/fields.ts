@@ -4,16 +4,23 @@ import { isUserFieldType, isSystemFieldKey, isReservedFieldLabel, slugify } from
 import type { UserFieldDef, UserFieldType } from '../crm/types';
 import { espaceVerifie, nonEmpty } from './scope';
 
+/** Ce que les routes lisent et écrivent du référentiel des champs. */
+export interface ChampsDep {
+  list(tenantId: string): Promise<UserFieldDef[]>;
+  create(tenantId: string, def: UserFieldDef): Promise<'created' | 'exists'>;
+  updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean>;
+  deleteField(tenantId: string, key: string): Promise<boolean>;
+}
+
 export interface FieldsRouteDeps {
-  listFields(tenantId: string): Promise<UserFieldDef[]>;
+  fields: ChampsDep;
   /** Code client racine : renvoyé au GET pour que le front calcule les codes des champs système
   *  (`fld_<client>_sys_<key>`, déterministes, pas de ligne DB). Vide -> réponse sans tenantCode. */
   tenantCode(tenantId: string): Promise<string>;
-  createField(tenantId: string, def: UserFieldDef): Promise<'created' | 'exists'>;
-  updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean>;
-  deleteField(tenantId: string, key: string): Promise<boolean>;
-  /** Combien de fiches ont chaque champ rempli. Un relevé vide : le sélecteur se contente de ne rien afficher. */
-  fieldUsage(tenantId: string): Promise<{ total: number; parChamp: Record<string, number> }>;
+  contacts: {
+    /** Combien de fiches ont chaque champ rempli. Un relevé vide : le sélecteur se contente de ne rien afficher. */
+    fieldUsage(tenantId: string): Promise<{ total: number; parChamp: Record<string, number> }>;
+  };
 }
 
 /**
@@ -29,12 +36,12 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
    */
   app.get('/tenants/:tenantId/user-fields/usage', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send(await deps.fieldUsage(tenant));
+    return reply.code(200).send(await deps.contacts.fieldUsage(tenant));
   });
 
   app.get('/tenants/:tenantId/user-fields', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const fields = await deps.listFields(tenant);
+    const fields = await deps.fields.list(tenant);
     const tenantCode = await deps.tenantCode(tenant);
     return reply.code(200).send({ fields, ...(tenantCode ? { tenantCode } : {}) });
   });
@@ -49,7 +56,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
     // Le libellé ne doit pas fantômiser un champ de base, ni par sa clé dérivée (« BSUID » -> 'bsuid') ni
     // par le libellé lui-même (« Nom », « Téléphone »), qui sont français là où les clés sont anglaises.
     if (isReservedFieldLabel(def.label)) return reply.code(409).send({ error: `« ${def.label} » correspond à un champ de base déjà présent` });
-    const res = await deps.createField(tenant, def);
+    const res = await deps.fields.create(tenant, def);
     if (res === 'exists') return reply.code(409).send({ error: `un champ existe déjà pour cette clé (${def.key})` });
     return reply.code(201).send(def);
   });
@@ -72,7 +79,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
       patch.type = b.type;
     }
     if (patch.label === undefined && patch.type === undefined) return reply.code(400).send({ error: 'rien à mettre à jour (label ou type)' });
-    const ok = await deps.updateField(tenant, key, patch);
+    const ok = await deps.fields.updateField(tenant, key, patch);
     if (!ok) return reply.code(404).send({ error: 'champ inconnu' });
     return reply.code(200).send({ key, ...patch });
   });
@@ -81,7 +88,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
     const tenant = espaceVerifie(req);
     const { key } = req.params as { key: string };
     if (isSystemFieldKey(key)) return reply.code(403).send({ error: 'champ système (non supprimable)' });
-    const ok = await deps.deleteField(tenant, key);
+    const ok = await deps.fields.deleteField(tenant, key);
     if (!ok) return reply.code(404).send({ error: 'champ inconnu' });
     return reply.code(200).send({ key, deleted: true });
   });

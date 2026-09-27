@@ -206,7 +206,7 @@ describe('câblage dans buildServer', () => {
   }) as unknown as ImportRouteDeps;
 
   const me: MeRouteDeps = {
-    getUser: async () => ({ email: 'julien@messagingme.fr', name: 'Julien Dumas', role: 'admin' }),
+    getById: async () => ({ email: 'julien@messagingme.fr', name: 'Julien Dumas', role: 'admin' }),
   };
 
   function serveur(plafonds: { utilisateurParMinute?: number; couteuxParMinute?: number }) {

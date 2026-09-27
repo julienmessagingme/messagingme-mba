@@ -69,25 +69,9 @@ export interface EcritureImportMcp {
   vus: string[];
 }
 
-export interface AgentMcpRouteDeps {
-  /**
-   * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Un serveur MCP est une sortie de
-   * l'espace, comme un connecteur API : le supprimer emporte par cascade ses outils et leurs consentements.
-   * 🔴 Le `detail` ne porte jamais le secret ni l'adresse complète : seulement le mode d'authentification et l'hôte.
-   */
-  audit: AuditSink;
+/** Ce que les routes lisent et écrivent des serveurs MCP et de leurs outils importés. */
+export interface McpDep {
   listerServeurs(tenantId: string): Promise<ServeurMcpVue[]>;
-  /** L'adresse et le secret déchiffré. Un seul appelant, comme pour les connecteurs HTTP. */
-  pourAppel(tenantId: string, id: string): Promise<SourceAppel | null>;
-  marquerEpreuve(tenantId: string, id: string, ok: boolean, erreur?: string): Promise<void>;
-  /**
-   * Déclare un serveur MCP : seul chemin qui écrit `kind = 'mcp'` (la route des connecteurs API écrit
-   * `kind: 'http'`).
-   */
-  creerServeur(tenantId: string, input: {
-    label: string; baseUrl: string;
-    authKind: 'none' | 'bearer' | 'header'; authHeaderName?: string; authSecret?: string;
-  }): Promise<ServeurMcpVue>;
   /**
    * Supprime un serveur MCP. Trois états, pas un booléen : « supprimé », « introuvable » et « outils actifs »
    * (409) doivent se distinguer, sinon un serveur utilisé se supprimerait avec ses outils et consentements.
@@ -101,14 +85,41 @@ export interface AgentMcpRouteDeps {
   nomsPris(tenantId: string): Promise<string[]>;
   /** La seule écriture de ce module. Tout ou rien. */
   appliquer(tenantId: string, sourceId: string, ecriture: EcritureImportMcp): Promise<void>;
-  /** Les clés des champs personnalisés déclarés par l'espace : un clouage doit en désigner une. */
-  clesDeChamps(tenantId: string): Promise<string[]>;
   /** Le réglage d'un outil importé. Rend `false` si l'outil n'est pas de cet espace. */
   reglerOutil(tenantId: string, outilId: string, patch: {
     params?: Array<{ name: string; source: SourceParam; cle?: string; contactPath?: string; value?: string | number | boolean }>;
     risk?: RisqueOutil;
     nePasUtiliser?: string;
   }): Promise<boolean>;
+}
+
+export interface AgentMcpRouteDeps {
+  /**
+   * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Un serveur MCP est une sortie de
+   * l'espace, comme un connecteur API : le supprimer emporte par cascade ses outils et leurs consentements.
+   * 🔴 Le `detail` ne porte jamais le secret ni l'adresse complète : seulement le mode d'authentification et l'hôte.
+   */
+  audit: AuditSink;
+  mcp: McpDep;
+  /**
+   * La source elle-même, servie par le dépôt des sources : c'est la même table que les connecteurs API, et un
+   * second chemin de lecture ferait deux façons de déchiffrer un secret.
+   */
+  sources: {
+    /** L'adresse et le secret déchiffré. Un seul appelant, comme pour les connecteurs HTTP. */
+    pourAppel(tenantId: string, id: string): Promise<SourceAppel | null>;
+    marquerEpreuve(tenantId: string, id: string, ok: boolean, erreur?: string): Promise<void>;
+  };
+  /**
+   * Déclare un serveur MCP : seul chemin qui écrit `kind = 'mcp'` (la route des connecteurs API écrit
+   * `kind: 'http'`).
+   */
+  creerServeur(tenantId: string, input: {
+    label: string; baseUrl: string;
+    authKind: 'none' | 'bearer' | 'header'; authHeaderName?: string; authSecret?: string;
+  }): Promise<ServeurMcpVue>;
+  /** Les clés des champs personnalisés déclarés par l'espace : un clouage doit en désigner une. */
+  clesDeChamps(tenantId: string): Promise<string[]>;
   /** Injectées pour tester sans réseau ni DNS. */
   ouvrirSession?: typeof ouvrirSessionMcp;
   verifierResolution?: (url: string) => Promise<VerdictResolution>;
@@ -181,7 +192,7 @@ async function serveurMcp(
   const tenant = espaceVerifie(req);
   const { sourceId } = req.params as { sourceId: string };
   if (!estUuid(sourceId)) { await reply.code(400).send({ error: 'identifiant invalide' }); return null; }
-  const source = await deps.pourAppel(tenant, sourceId);
+  const source = await deps.sources.pourAppel(tenant, sourceId);
   if (!source || source.kind !== 'mcp') {
     await reply.code(404).send({ error: 'serveur introuvable' });
     return null;
@@ -267,7 +278,7 @@ export function registerAgentMcp(
 
   app.get('/tenants/:tenantId/mcp', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ serveurs: await deps.listerServeurs(tenant) });
+    return reply.code(200).send({ serveurs: await deps.mcp.listerServeurs(tenant) });
   });
 
   /**
@@ -315,7 +326,7 @@ export function registerAgentMcp(
     const tenant = espaceVerifie(req);
     const { sourceId } = req.params as { sourceId: string };
     if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
-    const verdict = await deps.supprimerServeur(tenant, sourceId);
+    const verdict = await deps.mcp.supprimerServeur(tenant, sourceId);
     if (verdict === 'introuvable') return reply.code(404).send({ error: 'serveur introuvable' });
     if (verdict === 'outils_actifs') {
       return reply.code(409).send({ error: 'ce serveur porte encore des outils actifs : désactivez-les d’abord' });
@@ -334,7 +345,7 @@ export function registerAgentMcp(
      * navigateur ferait diverger la liste proposée de la liste acceptée.
      */
     const [outils, champs] = await Promise.all([
-      deps.outilsPourEcran(tenant, sourceId),
+      deps.mcp.outilsPourEcran(tenant, sourceId),
       deps.clesDeChamps(tenant),
     ]);
     return reply.code(200).send({ outils, champs, champsContact: [...CHAMPS_CONTACT_AUTORISES] });
@@ -352,11 +363,11 @@ export function registerAgentMcp(
     const ouverte = await connecter(deps, source);
     if ('echec' in ouverte) {
       const raison = typeof ouverte.echec === 'string' ? ouverte.echec : direEchec(ouverte.echec);
-      await deps.marquerEpreuve(tenant, sourceId, false, raison);
+      await deps.sources.marquerEpreuve(tenant, sourceId, false, raison);
       return reply.code(200).send({ ok: false, erreur: raison });
     }
     await ouverte.fermer();
-    await deps.marquerEpreuve(tenant, sourceId, true);
+    await deps.sources.marquerEpreuve(tenant, sourceId, true);
     return reply.code(200).send({ ok: true });
   });
 
@@ -374,7 +385,7 @@ export function registerAgentMcp(
   app.post('/tenants/:tenantId/mcp/:sourceId/importer', lourd, async (req, reply) => {
     const r = await calculer(deps, req, reply);
     if (r === null) return reply;
-    await deps.appliquer(r.tenant, r.sourceId, r.ecriture);
+    await deps.mcp.appliquer(r.tenant, r.sourceId, r.ecriture);
     return reply.code(200).send({ plan: r.plan, tronque: r.tronque });
   });
 
@@ -416,7 +427,7 @@ export function registerAgentMcp(
       }
     }
 
-    const ok = await deps.reglerOutil(tenant, outilId, d);
+    const ok = await deps.mcp.reglerOutil(tenant, outilId, d);
     return ok ? reply.code(200).send({ ok: true }) : reply.code(404).send({ error: 'outil introuvable' });
   });
 }
@@ -439,7 +450,7 @@ async function calculer(
   const ouverte = await connecter(deps, source);
   if ('echec' in ouverte) {
     const raison = typeof ouverte.echec === 'string' ? ouverte.echec : direEchec(ouverte.echec);
-    await deps.marquerEpreuve(tenant, sourceId, false, raison);
+    await deps.sources.marquerEpreuve(tenant, sourceId, false, raison);
     await reply.code(422).send({ error: raison });
     return null;
   }
@@ -448,16 +459,16 @@ async function calculer(
     const catalogue = await ouverte.lister();
     if ('echec' in catalogue) {
       const raison = direEchec(catalogue.echec);
-      await deps.marquerEpreuve(tenant, sourceId, false, raison);
+      await deps.sources.marquerEpreuve(tenant, sourceId, false, raison);
       await reply.code(422).send({ error: raison });
       return null;
     }
-    await deps.marquerEpreuve(tenant, sourceId, true);
+    await deps.sources.marquerEpreuve(tenant, sourceId, true);
     const [existants, nomsPris] = await Promise.all([
-      deps.outilsDuServeur(tenant, sourceId),
-      deps.nomsPris(tenant),
+      deps.mcp.outilsDuServeur(tenant, sourceId),
+      deps.mcp.nomsPris(tenant),
     ]);
-    const serveurs = await deps.listerServeurs(tenant);
+    const serveurs = await deps.mcp.listerServeurs(tenant);
     const libelle = serveurs.find((s) => s.id === sourceId)?.label ?? 'mcp';
     const { plan, ecriture } = planEtEcriture(catalogue.outils, existants, catalogue.tronque, libelle, nomsPris);
     return { tenant, sourceId, plan, ecriture, tronque: catalogue.tronque };

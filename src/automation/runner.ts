@@ -18,23 +18,28 @@ export interface AutomationRunnerDeps {
    * Ce contact est-il bloqué ? Un contact bloqué ne déclenche plus aucune automation : son message est
    * enregistré et lisible, mais rien ne part vers lui. Absente : aucun contact n'est bloqué.
    */
-  contactBloque?(tenantId: string, waId: string): Promise<boolean>;
-  /** Automations actives du tenant pour ces types de déclencheur (index partiel `enabled`). */
-  listEnabled(tenantId: string, kinds: readonly AutomationTriggerKind[]): Promise<AutomationRow[]>;
-  /** Dernier déclenchement de cette automation pour ce contact. null = jamais déclenché. */
-  lastFiredAt(automationId: string, waId: string): Promise<Date | null>;
-  /**
-   * Enregistre le déclenchement (upsert), avant le démarrage. `marqueur` retient pour quelle occurrence on a
-   * tiré (seul `avant_date`) : avec lui c'est un claim, `false` si un autre tour a déjà tiré pour cette
-   * occurrence. Sans marqueur, l'écriture est inconditionnelle et rend toujours `true`.
-   */
-  markFired(automationId: string, waId: string, marqueur?: string): Promise<boolean>;
-  /**
-   * Annule le déclenchement enregistré quand le scénario n'a pas démarré (`false` ou une raison) : les gardes de
-   * l'exécuteur agissent avant tout envoi, et consommer l'anti-rebond avalerait la prochaine vraie demande du
-   * client. Aussi sur un `NumeroDelieError`, sauf pour `avant_date` (voir le `catch` de `runAutomations`).
-   */
-  clearFired(automationId: string, waId: string): Promise<void>;
+  contacts?: { isBlockedByWaId(tenantId: string, waId: string): Promise<boolean> };
+  /** Les automations de l'espace et leurs déclenchements. */
+  automations: {
+    /** Automations actives du tenant pour ces types de déclencheur (index partiel `enabled`). */
+    listEnabled(tenantId: string, kinds: readonly AutomationTriggerKind[]): Promise<AutomationRow[]>;
+    /** Dernier déclenchement de cette automation pour ce contact. null = jamais déclenché. */
+    lastFiredAt(automationId: string, waId: string): Promise<Date | null>;
+    /**
+     * Enregistre le déclenchement (upsert), avant le démarrage. `marqueur` retient pour quelle occurrence on a
+     * tiré (seul `avant_date`) : avec lui c'est un claim, `false` si un autre tour a déjà tiré pour cette
+     * occurrence. Sans marqueur, l'écriture est inconditionnelle et rend toujours `true`.
+     */
+    markFired(automationId: string, waId: string, marqueur?: string): Promise<boolean>;
+    /**
+     * Annule le déclenchement enregistré quand le scénario n'a pas démarré (`false` ou une raison) : les gardes de
+     * l'exécuteur agissent avant tout envoi, et consommer l'anti-rebond avalerait la prochaine vraie demande du
+     * client. Aussi sur un `NumeroDelieError`, sauf pour `avant_date` (voir le `catch` de `runAutomations`).
+     */
+    clearFired(automationId: string, waId: string): Promise<void>;
+    /** Déclenchements de cette automation depuis `since`, pour le plafond horaire. Absent : aucun plafond. */
+    firedSince?(automationId: string, since: Date): Promise<number>;
+  };
   /**
    * État du contact pour évaluer un `conditionGroup`. null = contact introuvable : les automations à condition
    * sont ignorées (on ne déclenche pas sur un filtre non vérifié). Non appelé si aucune candidate n'a de
@@ -61,8 +66,6 @@ export interface AutomationRunnerDeps {
   }): Promise<boolean | string>;
   /** Anti-rebond appliqué aux automations qui n'ont rien réglé (`cooldownSeconds` null). */
   defaultCooldownSeconds: number;
-  /** Déclenchements de cette automation depuis `since`, pour le plafond horaire. Absent : aucun plafond. */
-  firedSince?(automationId: string, since: Date): Promise<number>;
   /**
    * Plafond de déclenchements par automation et par heure, par défaut pour l'instance. L'anti-rebond est par
    * contact et ne borne rien à l'échelle d'une population : ce plafond est la seule chose qui borne la facture
@@ -111,10 +114,10 @@ export async function runAutomations(
   const now = deps.now ?? (() => Date.now());
   // 🔴 Contact bloqué : son message reste enregistré, mais il ne déclenche plus rien. C'est le seul point
   // d'entrée des automations, donc la seule garde nécessaire côté scénarios.
-  if (deps.contactBloque && (await deps.contactBloque(tenantId, ev.waId))) return 0;
+  if (deps.contacts && (await deps.contacts.isBlockedByWaId(tenantId, ev.waId))) return 0;
   // La restriction s'applique avant la mise en correspondance : « seule celle-là » ne doit pas dépendre de la
   // configuration des automations écartées.
-  const candidates = (await deps.listEnabled(tenantId, kindsFor(ev)))
+  const candidates = (await deps.automations.listEnabled(tenantId, kindsFor(ev)))
     .filter((a) => opts.seuleAutomation === null || a.id === opts.seuleAutomation)
     .filter((a) => a.enabled && matchesTrigger(a, ev));
   if (candidates.length === 0) return 0;
@@ -134,7 +137,7 @@ export async function runAutomations(
       // Pas d'anti-rebond pour `avant_date` : l'unicité y est tenue par le marqueur d'occurrence, et l'anti-rebond
       // empêcherait un rendez-vous reporté à l'intérieur du délai de redonner son rappel.
       if (ev.kind !== 'avant_date') {
-        const last = await deps.lastFiredAt(a.id, ev.waId);
+        const last = await deps.automations.lastFiredAt(a.id, ev.waId);
         // Le défaut dépend du déclencheur : 30 jours pour « risque élevé » (`antiRebondParDefaut`).
         if (isInCooldown(last, a.cooldownSeconds, antiRebondParDefaut(a.triggerKind, deps.defaultCooldownSeconds), now())) continue;
       }
@@ -150,9 +153,9 @@ export async function runAutomations(
       // de chaîne doit accueillir des milliers d'abonnés sans desserrer la garde des autres) ; `null` = celui de
       // l'instance, `0` = aucun plafond, choix explicite.
       const plafond = a.maxFiresPerHour ?? deps.maxFiresPerHour;
-      if (deps.firedSince && plafond !== undefined && plafond > 0) {
+      if (deps.automations.firedSince && plafond !== undefined && plafond > 0) {
         const depuis = new Date(now() - 3600_000);
-        if ((await deps.firedSince(a.id, depuis)) >= plafond) {
+        if ((await deps.automations.firedSince(a.id, depuis)) >= plafond) {
           // Le message porte le plafond réellement appliqué, pour qu'on cherche le réglage au bon endroit.
           // eslint-disable-next-line no-console
           console.error(`automation ${a.id} (${a.name}) : plafond de ${plafond} déclenchements/heure atteint, déclenchement ignoré`);
@@ -170,7 +173,7 @@ export async function runAutomations(
       // 🔴 Pour `avant_date`, c'est un claim : si la file prend du retard, le balayage republie la même échéance,
       // et sans lui deux rappels facturés partiraient. Quand le scénario ne démarre pas, `clearFired` efface le
       // marqueur, et la tentative suivante regagne le claim.
-      if (!(await deps.markFired(a.id, ev.waId, ev.kind === 'avant_date' ? ev.valeur : undefined))) {
+      if (!(await deps.automations.markFired(a.id, ev.waId, ev.kind === 'avant_date' ? ev.valeur : undefined))) {
         // eslint-disable-next-line no-console
         console.log(`automation ${a.id} : rappel déjà tiré pour cette échéance chez ${ev.waId}, ignoré`);
         continue;
@@ -195,7 +198,7 @@ export async function runAutomations(
           // eslint-disable-next-line no-console
           console.log(`automation ${a.id} : scénario non démarré pour ${ev.waId} : ${issue}`);
         }
-        await deps.clearFired(a.id, ev.waId);
+        await deps.automations.clearFired(a.id, ev.waId);
       }
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -209,7 +212,7 @@ export async function runAutomations(
        * Sauf `avant_date`, qui garde son tir : son balayage republierait chaque minute un rappel dont le marqueur a
        * disparu. Tenu par `tests/automation-runner.test.ts` et `tests/numero-delie-parcours.test.ts`.
        */
-      if (err instanceof NumeroDelieError && ev.kind !== 'avant_date') await deps.clearFired(a.id, ev.waId).catch(() => {});
+      if (err instanceof NumeroDelieError && ev.kind !== 'avant_date') await deps.automations.clearFired(a.id, ev.waId).catch(() => {});
     }
   }
   return started;

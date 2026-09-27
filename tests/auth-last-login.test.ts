@@ -12,8 +12,9 @@ import { MfaEnMemoire, UtilisateursFaux, comptesDe, connecter, passerLeSecondFac
  *  1. l'écriture est en fire-and-forget : si elle échoue ou traîne, le login réussit quand même. Mettre une
  *     écriture Postgres sur le chemin critique de l'authentification transformerait un pool saturé en
  *     « identifiants refusés », ce qui est le pire message possible pour l'utilisateur.
- *  2. le dep est OPTIONNEL, et l'appel doit survivre à son absence. `deps.touchLastLogin?.(id).catch()` lève
- *     un TypeError quand le dep est absent : c'est le `?.` sur le RETOUR qui protège.
+ *  2. le dep est OPTIONNEL, et l'appel doit survivre à son absence.
+ *     `deps.comptes?.touchLastLogin?.(id).catch()` lève un TypeError quand le dep est absent : c'est le `?.` sur
+ *     le RETOUR qui protège.
  */
 const SECRET = 'test-secret-please-change';
 const ADMIN: AuthUser = { id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: hashPasswordSync('pw') };
@@ -36,7 +37,7 @@ describe('dernière connexion', () => {
     const touched: string[] = [];
     const app = buildServer({
       queue: new FakeQueue(),
-      auth: { ...faux(), secret: SECRET, touchLastLogin: async (id) => { touched.push(id); } },
+      auth: { ...faux(), secret: SECRET, comptes: { touchLastLogin: async (id) => { touched.push(id); } } },
     });
     expect((await login(app)).statusCode).toBe(200);
     expect(touched).toEqual(['u1']);
@@ -47,7 +48,7 @@ describe('dernière connexion', () => {
     const touched: string[] = [];
     const app = buildServer({
       queue: new FakeQueue(),
-      auth: { ...faux(), secret: SECRET, touchLastLogin: async (id) => { touched.push(id); } },
+      auth: { ...faux(), secret: SECRET, comptes: { touchLastLogin: async (id) => { touched.push(id); } } },
     });
     const etape = await app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password: 'pw' } });
     expect(Object.keys(etape.json())).toEqual(['enrolToken']);
@@ -61,7 +62,7 @@ describe('dernière connexion', () => {
     const touched: string[] = [];
     const app = buildServer({
       queue: new FakeQueue(),
-      auth: { ...faux(), secret: SECRET, touchLastLogin: async (id) => { touched.push(id); } },
+      auth: { ...faux(), secret: SECRET, comptes: { touchLastLogin: async (id) => { touched.push(id); } } },
     });
     expect((await login(app, 'mauvais')).statusCode).toBe(401);
     expect(touched).toEqual([]);
@@ -71,7 +72,7 @@ describe('dernière connexion', () => {
   it('l’écriture ÉCHOUE -> le login réussit quand même (fire-and-forget, pas sur le chemin critique)', async () => {
     const app = buildServer({
       queue: new FakeQueue(),
-      auth: { ...faux(), secret: SECRET, touchLastLogin: async () => { throw new Error('pool saturé'); } },
+      auth: { ...faux(), secret: SECRET, comptes: { touchLastLogin: async () => { throw new Error('pool saturé'); } } },
     });
     const res = await login(app);
     expect(res.statusCode).toBe(200);
@@ -98,7 +99,7 @@ describe('dernière connexion', () => {
         ...faux(),
         secret: SECRET,
         // Écriture qui ne se termine QUE lorsqu'on la débloque : si la route l'attendait, le login pendrait.
-        touchLastLogin: async () => { await started; finished = true; },
+        comptes: { touchLastLogin: async () => { await started; finished = true; } },
       },
     });
     const res = await login(app);

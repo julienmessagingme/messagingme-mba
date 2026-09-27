@@ -21,27 +21,40 @@ interface Traces {
   appelsMeta: string[];
 }
 
-function monter(over: Partial<SuiviPubsDeps> = {}): { deps: SuiviPubsDeps; t: Traces } {
+type Surcharges = Partial<Omit<SuiviPubsDeps, 'publicites' | 'meta'>> & {
+  publicites?: Partial<SuiviPubsDeps['publicites']>; meta?: Partial<SuiviPubsDeps['meta']>;
+};
+
+function monter(over: Surcharges = {}): { deps: SuiviPubsDeps; t: Traces } {
+  const { publicites: surPublicites, meta: surMeta, ...reste } = over;
   const t: Traces = { notes: [], rejetes: [], alertes: [], appelsMeta: [] };
   const deps: SuiviPubsDeps = {
-    espacesASuivre: async () => ['t1'],
-    campagnesASuivre: async () => ['c-1', 'c-2'],
-    jeton: async () => 'jeton-clair',
-    lireCampagnes: async (ids) => {
-      t.appelsMeta.push(`statuts:${ids.join(',')}`);
-      return new Map(ids.map((id) => [id, etat('ACTIVE')]));
+    publicites: {
+      espacesASuivre: async () => ['t1'],
+      campagnesASuivre: async () => ['c-1', 'c-2'],
+      ...surPublicites,
     },
-    lireDepenses: async (ids) => {
-      t.appelsMeta.push(`depenses:${ids.join(',')}`);
-      return new Map(ids.map((id) => [id, depense(12.5, 40)]));
+    jeton: async () => 'jeton-clair',
+    meta: {
+      lireCampagnes: async (ids) => {
+        t.appelsMeta.push(`statuts:${ids.join(',')}`);
+        return new Map(ids.map((id) => [id, etat('ACTIVE')]));
+      },
+      lireDepenses: async (ids) => {
+        t.appelsMeta.push(`depenses:${ids.join(',')}`);
+        return new Map(ids.map((id) => [id, depense(12.5, 40)]));
+      },
+      ...surMeta,
     },
     noterSuivi: async (tenant, campagne, v) => {
       t.notes.push({ tenant, campagne, statut: v.etat?.statut ?? null, depense: v.depense?.depense ?? null });
     },
-    marquerJetonRejete: async (tenant) => { t.rejetes.push(tenant); },
+    connexions: {
+      marquerJetonRejete: async (tenant) => { t.rejetes.push(tenant); },
+    },
     estJetonRefuse: (err) => err instanceof Error && err.message === 'jeton mort',
     alerter: (sujet) => { t.alertes.push(sujet); },
-    ...over,
+    ...reste,
   };
   return { deps, t };
 }
@@ -69,7 +82,7 @@ describe('le chemin nominal', () => {
 
 describe('les économies d’appels', () => {
   it('🔴 aucun espace à suivre : AUCUN appel à Meta', async () => {
-    const { deps, t } = monter({ espacesASuivre: async () => [] });
+    const { deps, t } = monter({ publicites: { espacesASuivre: async () => [] } });
     expect(await balayerLesPubs(deps)).toEqual({ espaces: 0, campagnes: 0, jetonsRejetes: 0 });
     expect(t.appelsMeta).toEqual([]);
   });
@@ -77,7 +90,7 @@ describe('les économies d’appels', () => {
   it('🔴 un espace connecté SANS publicité publiée ne coûte aucun appel', async () => {
     // Sans ce retour, un client connecté et sans campagne consommerait deux appels toutes les quinze
     // minutes pour confirmer qu'il n'y a rien à faire.
-    const { deps, t } = monter({ campagnesASuivre: async () => [] });
+    const { deps, t } = monter({ publicites: { campagnesASuivre: async () => [] } });
     await balayerLesPubs(deps);
     expect(t.appelsMeta).toEqual([]);
   });
@@ -92,9 +105,13 @@ describe('les économies d’appels', () => {
 describe('🔴 LE JETON REJETÉ', () => {
   it('est marqué UNE fois, alerte UNE fois, et le balayage passe à l’espace suivant', async () => {
     const { deps, t } = monter({
-      espacesASuivre: async () => ['t1', 't2'],
-      lireCampagnes: async () => { throw new Error('jeton mort'); },
-      lireDepenses: async () => { throw new Error('jeton mort'); },
+      publicites: {
+        espacesASuivre: async () => ['t1', 't2'],
+      },
+      meta: {
+        lireCampagnes: async () => { throw new Error('jeton mort'); },
+        lireDepenses: async () => { throw new Error('jeton mort'); },
+      },
     });
     const bilan = await balayerLesPubs(deps);
     // Les DEUX lectures échouent ensemble quand le jeton est mort. Marquer et alerter dans chacune
@@ -110,8 +127,10 @@ describe('🔴 LE JETON REJETÉ', () => {
   it('⚠️ L’ALERTE DIT QUE LE ROUTAGE CONTINUE : sans ça, on croirait les leads perdus', async () => {
     const messages: string[] = [];
     const { deps } = monter({
-      lireCampagnes: async () => { throw new Error('jeton mort'); },
-      lireDepenses: async () => { throw new Error('jeton mort'); },
+      meta: {
+        lireCampagnes: async () => { throw new Error('jeton mort'); },
+        lireDepenses: async () => { throw new Error('jeton mort'); },
+      },
       alerter: (_s, m) => { messages.push(m); },
     });
     await balayerLesPubs(deps);
@@ -124,7 +143,7 @@ describe('🔴 LES DEUX LECTURES SONT INDÉPENDANTES', () => {
     // C'est le cas NORMAL d'une campagne qui vient d'être publiée : Meta a un statut et pas encore de
     // statistiques. Les enchaîner dans un seul `try` ferait perdre le statut de toutes les campagnes.
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { deps, t } = monter({ lireDepenses: async () => { throw new Error('insights indisponibles'); } });
+    const { deps, t } = monter({ meta: { lireDepenses: async () => { throw new Error('insights indisponibles'); } } });
     await balayerLesPubs(deps);
     spy.mockRestore();
     expect(t.notes).toEqual([
@@ -136,7 +155,7 @@ describe('🔴 LES DEUX LECTURES SONT INDÉPENDANTES', () => {
 
   it('le statut échoue, la dépense passe quand même', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { deps, t } = monter({ lireCampagnes: async () => { throw new Error('graph 500'); } });
+    const { deps, t } = monter({ meta: { lireCampagnes: async () => { throw new Error('graph 500'); } } });
     await balayerLesPubs(deps);
     spy.mockRestore();
     expect(t.notes[0]).toEqual({ tenant: 't1', campagne: 'c-1', statut: null, depense: 12.5 });
@@ -145,8 +164,10 @@ describe('🔴 LES DEUX LECTURES SONT INDÉPENDANTES', () => {
   it('⚠️ une panne PASSAGÈRE ne marque PAS le jeton rejeté : « réessayez » n’est pas « reconnectez-vous »', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { deps, t } = monter({
-      lireCampagnes: async () => { throw new Error('graph 500'); },
-      lireDepenses: async () => { throw new Error('graph 500'); },
+      meta: {
+        lireCampagnes: async () => { throw new Error('graph 500'); },
+        lireDepenses: async () => { throw new Error('graph 500'); },
+      },
     });
     await balayerLesPubs(deps);
     spy.mockRestore();
@@ -161,8 +182,10 @@ describe('une campagne dont Meta ne dit rien', () => {
     // fraîche d'abord »), et l'écran dirait « jamais lu » au lieu de « relu il y a 3 minutes, Meta n'a
     // encore rien ».
     const { deps, t } = monter({
-      lireCampagnes: async () => new Map(),
-      lireDepenses: async () => new Map(),
+      meta: {
+        lireCampagnes: async () => new Map(),
+        lireDepenses: async () => new Map(),
+      },
     });
     await balayerLesPubs(deps);
     expect(t.notes).toEqual([
@@ -176,10 +199,12 @@ describe('🔴 ISOLATION PAR ESPACE : un client ne prive pas les autres', () => 
   it('un espace qui lève est sauté, les suivants sont relus', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { deps, t } = monter({
-      espacesASuivre: async () => ['ko', 'ok'],
-      campagnesASuivre: async (tenant) => {
-        if (tenant === 'ko') throw new Error('base indisponible');
-        return ['c-9'];
+      publicites: {
+        espacesASuivre: async () => ['ko', 'ok'],
+        campagnesASuivre: async (tenant) => {
+          if (tenant === 'ko') throw new Error('base indisponible');
+          return ['c-9'];
+        },
       },
     });
     const bilan = await balayerLesPubs(deps);
@@ -190,7 +215,7 @@ describe('🔴 ISOLATION PAR ESPACE : un client ne prive pas les autres', () => 
 
   it('⚠️ il ne lève JAMAIS : son appelant est un `setInterval`, et une exception tuerait le balayage', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { deps } = monter({ espacesASuivre: async () => { throw new Error('base morte'); } });
+    const { deps } = monter({ publicites: { espacesASuivre: async () => { throw new Error('base morte'); } } });
     await expect(balayerLesPubs(deps)).resolves.toEqual({ espaces: 0, campagnes: 0, jetonsRejetes: 0 });
     spy.mockRestore();
   });

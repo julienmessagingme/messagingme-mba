@@ -341,11 +341,13 @@ describe('POST /auth/mfa/enroler et /auth/mfa/activer (enrôlement obligatoire)'
 describe('inscription et invitation passent par la même porte', () => {
   function inscription(mfa: MfaEnMemoire, motDePasseExistant: Record<string, string> = {}) {
     return {
-      // Une adresse déjà connue ne s'inscrit qu'avec SON mot de passe (`motDePasseDeLAdresse`).
-      motDePasseDeLAdresse: async (email: string) => motDePasseExistant[email],
-      createTenantWithAdmin: async (_nom: string, admin: { email: string }) => {
-        mfa.ajouterCompte({ userId: 'u-neuf', tenantId: 't-neuf', role: 'admin', email: admin.email });
-        return { tenantId: 't-neuf', userId: 'u-neuf' };
+      comptes: {
+        // Une adresse déjà connue ne s'inscrit qu'avec SON mot de passe (`motDePasseDeLAdresse`).
+        motDePasseDeLAdresse: async (email: string) => motDePasseExistant[email],
+        createTenantWithAdmin: async (_nom: string, admin: { email: string }) => {
+          mfa.ajouterCompte({ userId: 'u-neuf', tenantId: 't-neuf', role: 'admin', email: admin.email });
+          return { tenantId: 't-neuf', userId: 'u-neuf' };
+        },
       },
     };
   }
@@ -364,8 +366,10 @@ describe('inscription et invitation passent par la même porte', () => {
     const mfa = new MfaEnMemoire([{ userId: 'u-inv', tenantId: 't1', role: 'admin', email: 'inv@x.fr' }]);
     const { app } = serveur([], {
       mfa,
-      setPassword: async () => true,
-      sessionUser: async () => ({ tenantId: 't1', role: 'admin', email: 'inv@x.fr' }),
+      comptes: {
+        setPassword: async () => true,
+        getSessionUser: async () => ({ tenantId: 't1', role: 'admin', email: 'inv@x.fr' }),
+      },
       tokens: { create: async () => 'x', consume: async () => 'u-inv' },
     });
     const res = await post(app, '/auth/invitations/accept', { token: 'BON', password: 'motdepasse-longue' });
@@ -383,8 +387,10 @@ describe('inscription et invitation passent par la même porte', () => {
     ]);
     const { app } = serveur([], {
       mfa,
-      setPassword: async () => true,
-      sessionUser: async () => ({ tenantId: 't1', role: 'agent', email: 'inv@x.fr' }),
+      comptes: {
+        setPassword: async () => true,
+        getSessionUser: async () => ({ tenantId: 't1', role: 'agent', email: 'inv@x.fr' }),
+      },
       tokens: { create: async () => 'x', consume: async () => 'u-inv' },
     });
     const res = await post(app, '/auth/invitations/accept', { token: 'BON', password: 'motdepasse-longue' });
@@ -401,8 +407,10 @@ describe('/auth/google ne change pas (décision de Julien)', () => {
       mfa,
       users: new UtilisateursFaux([ADMIN], mfa),
       verifyGoogle: async () => ({ email: 'admin@x.fr', emailVerified: true, name: 'Admin', sub: 'g-1' }),
-      getUserByEmail: async () => [{ id: 'u-admin', tenantId: 't1', tenantName: 'Espace 1', role: 'admin', disabled: false }],
-      createTenantWithAdmin: async () => ({ tenantId: 'x', userId: 'x' }),
+      comptes: {
+        getByEmail: async () => [{ id: 'u-admin', tenantId: 't1', tenantName: 'Espace 1', role: 'admin', disabled: false }],
+        createTenantWithAdmin: async () => ({ tenantId: 'x', userId: 'x' }),
+      },
     });
     const b = (await post(app, '/auth/google', { idToken: 'jeton-google' })).json<{ token: string }>();
     expect(await verifySession(b.token, SECRET)).toMatchObject({ userId: 'u-admin', role: 'admin' });

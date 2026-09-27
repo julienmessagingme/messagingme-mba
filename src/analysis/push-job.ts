@@ -4,19 +4,22 @@ import type { Enrichment } from './enrichment';
 import { messageDe } from '../lib/erreur';
 
 export interface PushJobDeps {
-  /** Relit l'analyse courante : le payload ne porte qu'une référence, jamais un instantané figé. */
-  getStoredAnalysis: (conversationId: string) => Promise<StoredConversationAnalysis | null>;
+  /** Les analyses de conversation. */
+  analyses: {
+    /** Relit l'analyse courante : le payload ne porte qu'une référence, jamais un instantané figé. */
+    getStored(conversationId: string): Promise<StoredConversationAnalysis | null>;
+    /** Marque l'analyse à rattraper (inconditionnel : l'appelant décide, sur l'instantané ci-dessous). */
+    markPendingCatchup(conversationId: string): Promise<void>;
+    /** Efface la marque de rattrapage après un post réussi (best-effort). */
+    clearPendingCatchup(conversationId: string): Promise<void>;
+  };
   getEnrichment: (conversationId: string) => Promise<Enrichment | null>;
   /**
    * État de synchro du numéro en un seul instantané : `connected` (le gate) et `pausedAt` (le rattrapage). Les lire
    * ensemble ferme la course où une reprise s'intercalerait entre deux lectures.
    */
-  getHubspotGateStatus: (tenantId: string, whatsappLine: string) => Promise<{ connected: boolean; pausedAt: string | null }>;
+  numeros: { getHubspotGateStatus(tenantId: string, whatsappLine: string): Promise<{ connected: boolean; pausedAt: string | null }> };
   post: (event: EnrichedAnalyzedEvent) => Promise<void>;
-  /** Marque l'analyse à rattraper (inconditionnel : l'appelant décide, sur l'instantané ci-dessus). */
-  markPendingCatchup: (conversationId: string) => Promise<void>;
-  /** Efface la marque de rattrapage après un post réussi (best-effort). */
-  clearPendingCatchup: (conversationId: string) => Promise<void>;
   /** Journalisation optionnelle (skip HubSpot). */
   log?: (msg: string) => void;
 }
@@ -36,14 +39,14 @@ export async function pushAnalysisJob(data: unknown, deps: PushJobDeps): Promise
   }
   const conversationId = d.conversationId;
   const tenantId = d.tenantId;
-  const [stored, enr] = await Promise.all([deps.getStoredAnalysis(conversationId), deps.getEnrichment(conversationId)]);
+  const [stored, enr] = await Promise.all([deps.analyses.getStored(conversationId), deps.getEnrichment(conversationId)]);
   if (!stored || !enr) return; // analyse ou conversation disparue -> rien à pousser
 
-  const gate = await deps.getHubspotGateStatus(tenantId, enr.whatsappLine);
+  const gate = await deps.numeros.getHubspotGateStatus(tenantId, enr.whatsappLine);
   if (!gate.connected) {
     // Jamais activé (pausedAt null) : pas de marque, on n'inonde pas HubSpot d'un historique jamais demandé.
     // L'erreur de marquage remonte : pg-boss rejoue plutôt que de perdre une analyse à rattraper.
-    if (gate.pausedAt !== null) await deps.markPendingCatchup(conversationId);
+    if (gate.pausedAt !== null) await deps.analyses.markPendingCatchup(conversationId);
     deps.log?.(`push-analysis: ligne ${enr.whatsappLine} non connectée à HubSpot -> skip (conversation ${conversationId})`);
     return;
   }
@@ -52,7 +55,7 @@ export async function pushAnalysisJob(data: unknown, deps: PushJobDeps): Promise
   // Best-effort : un échec laisse `pending_catchup`, qu'un rattrapage futur rejouera (POST dédoublonné) ; un POST
   // réussi n'échoue jamais pour de la comptabilité.
   try {
-    await deps.clearPendingCatchup(conversationId);
+    await deps.analyses.clearPendingCatchup(conversationId);
   } catch (err) {
     deps.log?.(`push-analysis: clearPendingCatchup échoué (best-effort) pour ${conversationId}: ${messageDe(err)}`);
   }

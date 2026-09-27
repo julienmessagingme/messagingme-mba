@@ -9,12 +9,14 @@ describe('runCampaignScheduleSweep', () => {
     const enqueued: Array<{ id: string; tenantId: string; expire: number }> = [];
     const ran: string[] = [];
     const deps: ScheduleSweepDeps = {
-      listDue: async () => [
-        { id: 'c1', tenantId: 't-c1', ratePerMinute: 1, pendingCount: 1000 }, // 1000@1/min
-        { id: 'c2', tenantId: 't-c2', ratePerMinute: null, pendingCount: 5 },
-      ],
+      repo: {
+        listDueScheduled: async () => [
+          { id: 'c1', tenantId: 't-c1', ratePerMinute: 1, pendingCount: 1000 }, // 1000@1/min
+          { id: 'c2', tenantId: 't-c2', ratePerMinute: null, pendingCount: 5 },
+        ],
+        markScheduledRunning: async (id) => { ran.push(id); return true; },
+      },
       enqueueRun: async (id, tenantId, expire) => { enqueued.push({ id, tenantId, expire }); },
-      markRunning: async (id) => { ran.push(id); return true; },
     };
     const n = await runCampaignScheduleSweep(deps);
     expect(n).toBe(2);
@@ -29,9 +31,11 @@ describe('runCampaignScheduleSweep', () => {
   it('aucune campagne due -> rien enfilé', async () => {
     let calls = 0;
     const n = await runCampaignScheduleSweep({
-      listDue: async () => [],
+      repo: {
+        listDueScheduled: async () => [],
+        markScheduledRunning: async () => true,
+      },
       enqueueRun: async () => { calls += 1; },
-      markRunning: async () => true,
     });
     expect(n).toBe(0);
     expect(calls).toBe(0);
@@ -40,12 +44,14 @@ describe('runCampaignScheduleSweep', () => {
   it('un échec d enqueue sur une campagne n interrompt pas les suivantes', async () => {
     const ran: string[] = [];
     const n = await runCampaignScheduleSweep({
-      listDue: async () => [
-        { id: 'boom', tenantId: 't-boom', ratePerMinute: null, pendingCount: 1 },
-        { id: 'ok', tenantId: 't-ok', ratePerMinute: null, pendingCount: 1 },
-      ],
+      repo: {
+        listDueScheduled: async () => [
+          { id: 'boom', tenantId: 't-boom', ratePerMinute: null, pendingCount: 1 },
+          { id: 'ok', tenantId: 't-ok', ratePerMinute: null, pendingCount: 1 },
+        ],
+        markScheduledRunning: async (id) => { ran.push(id); return true; },
+      },
       enqueueRun: async (id) => { if (id === 'boom') throw new Error('file KO'); },
-      markRunning: async (id) => { ran.push(id); return true; },
     });
     expect(n).toBe(1); // seule 'ok' comptée
     expect(ran).toEqual(['ok']); // 'boom' n'a pas été marquée running (enqueue a levé avant)
@@ -56,9 +62,11 @@ describe('runCampaignScheduleSweep', () => {
     // qui a laissé des campagnes bloquées en 'scheduled' pour toujours sans que personne ne le sache.
     const remontes: string[] = [];
     const n = await runCampaignScheduleSweep({
-      listDue: async () => [{ id: 'boom', tenantId: 't-boom', ratePerMinute: null, pendingCount: 1 }],
+      repo: {
+        listDueScheduled: async () => [{ id: 'boom', tenantId: 't-boom', ratePerMinute: null, pendingCount: 1 }],
+        markScheduledRunning: async () => true,
+      },
       enqueueRun: async () => { throw new Error('expiration cannot exceed 24 hours'); },
-      markRunning: async () => true,
       onError: (msg, err) => remontes.push(`${msg} | ${err instanceof Error ? err.message : String(err)}`),
     });
     expect(n).toBe(0);

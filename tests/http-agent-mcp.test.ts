@@ -83,17 +83,21 @@ function harnais(over: {
   const traces: Array<{ action: string; detail?: Record<string, unknown> }> = [];
   const deps: AgentMcpRouteDeps = {
     audit: async (_t, _a, action, _target, detail) => { traces.push({ action, detail }); },
-    listerServeurs: async () => [{ ...SERVEUR, ...(over.label ? { label: over.label } : {}) }],
+    mcp: {
+      listerServeurs: async () => [{ ...SERVEUR, ...(over.label ? { label: over.label } : {}) }],
+      supprimerServeur: async () => over.suppression ?? 'supprime',
+      outilsDuServeur: async () => over.outils ?? [],
+      outilsPourEcran: async () => over.vues ?? [],
+      nomsPris: async () => over.nomsPris ?? [],
+      appliquer: async (_t, _s, e) => { ecrit.push(e); },
+      reglerOutil: async (_t, id, patch) => { regles.push({ id, patch }); return over.reglerOk ?? true; },
+    },
     creerServeur: async (_t, input) => { crees.push(input); return { ...SERVEUR, ...input }; },
-    supprimerServeur: async () => over.suppression ?? 'supprime',
-    pourAppel: async () => ({ ...POUR_APPEL, kind: over.kind ?? 'mcp' }),
-    marquerEpreuve: async (_t, _i, ok) => { epreuves.push({ ok }); },
-    outilsDuServeur: async () => over.outils ?? [],
-    outilsPourEcran: async () => over.vues ?? [],
-    nomsPris: async () => over.nomsPris ?? [],
-    appliquer: async (_t, _s, e) => { ecrit.push(e); },
+    sources: {
+      pourAppel: async () => ({ ...POUR_APPEL, kind: over.kind ?? 'mcp' }),
+      marquerEpreuve: async (_t, _i, ok) => { epreuves.push({ ok }); },
+    },
     clesDeChamps: async () => over.cles ?? ['email', 'reference'],
-    reglerOutil: async (_t, id, patch) => { regles.push({ id, patch }); return over.reglerOk ?? true; },
     ouvrirSession: async () => over.ouverture ?? session,
     verifierResolution: async () => over.resolution ?? { ok: true },
   };

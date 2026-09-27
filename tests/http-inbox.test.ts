@@ -4,11 +4,11 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { InboxRouteDeps } from '../src/http/inbox';
+import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
 import { MediaExpire } from '../src/inbox/media-entrant';
 import { MediaTropGros } from '../src/meta/media';
 import { capturerJournal } from './journal';
-import { inboxInerte } from './routes-inertes';
+import { inboxDepInerte, inboxInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 const CONV = '11111111-1111-4111-8111-111111111111';
@@ -22,22 +22,27 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 const authAgent = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${tokenAgent}` } });
 
-function app(over: Partial<InboxRouteDeps> = {}) {
+function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<InboxDep> } = {}) {
+  const { inbox, ...reste } = over;
   const deps: InboxRouteDeps = {
     ...inboxInerte,
     estDesabonne: jamaisDesabonne,
-    listConversations: async () => [
-      { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true, assignedTo: null, assignedToName: null },
-    ],
-    getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z' } : null),
-    getMessages: async () => [
-      { id: 'm1', direction: 'in', type: 'text', body: 'coucou', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z' },
-    ],
-    recordOutbound: async () => {},
-    getTenantPhoneNumberId: async () => 'pn1',
+    inbox: {
+      ...inboxDepInerte,
+      listConversations: async () => [
+        { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true, assignedTo: null, assignedToName: null },
+      ],
+      getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z' } : null),
+      getMessages: async () => [
+        { id: 'm1', direction: 'in', type: 'text', body: 'coucou', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z' },
+      ],
+      recordOutbound: async () => {},
+      ...inbox,
+    },
+    repo: { getTenantPhoneNumberId: async () => 'pn1' },
     sendReply: async () => 'wamid.OUT',
     sendTemplateMessage: async () => 'wamid.TPL',
-    ...over,
+    ...reste,
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, inbox: deps });
 }
@@ -73,7 +78,9 @@ describe('inbox routes', () => {
     let recorded: [string, string, string | null, string | undefined] | null = null;
     let sent: [string, string, string, string] | null = null;
     const a = app({
-      recordOutbound: async (id, body, msgId, _origine, type) => { recorded = [id, body, msgId, type]; },
+      inbox: {
+        recordOutbound: async (id, body, msgId, _origine, type) => { recorded = [id, body, msgId, type]; },
+      },
       sendReply: async (tenant, pn, to, text) => { sent = [tenant, pn, to, text]; return 'wamid.OUT'; },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Merci !' } });
@@ -87,7 +94,9 @@ describe('inbox routes', () => {
     let sender: string | null | undefined = 'UNSET';
     const origines: string[] = [];
     const a = app({
-      recordOutbound: async (_id, _body, _msg, origine, _type, _cat, _name, s) => { sender = s; origines.push(origine); },
+      inbox: {
+        recordOutbound: async (_id, _body, _msg, origine, _type, _cat, _name, s) => { sender = s; origines.push(origine); },
+      },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Merci !' } });
     expect(res.statusCode).toBe(200);
@@ -101,9 +110,11 @@ describe('inbox routes', () => {
 
   it('GET messages -> expose senderName sur les bulles sortantes', async () => {
     const a = app({
-      getMessages: async () => [
-        { id: 'm2', direction: 'out', type: 'text', body: 'Bonjour', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z', senderName: 'Julien' },
-      ],
+      inbox: {
+        getMessages: async () => [
+          { id: 'm2', direction: 'out', type: 'text', body: 'Bonjour', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z', senderName: 'Julien' },
+        ],
+      },
     });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages', ...auth() });
     expect(res.statusCode).toBe(200);
@@ -113,7 +124,9 @@ describe('inbox routes', () => {
 
   it('POST reply HORS fenêtre 24 h -> 422 (texte libre interdit)', async () => {
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+      inbox: {
+        getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+      },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'coucou' } });
     expect(res.statusCode).toBe(422);
@@ -125,9 +138,11 @@ describe('inbox routes', () => {
     let sent: { tenant: string; pn: string; to: string; tpl: unknown } | null = null;
     let recordedType: string | undefined;
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+      inbox: {
+        getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+        recordOutbound: async (_id, _body, _msg, _origine, type) => { recordedType = type; },
+      },
       sendTemplateMessage: async (tenant, pn, to, tpl) => { sent = { tenant, pn, to, tpl }; return 'wamid.TPL'; },
-      recordOutbound: async (_id, _body, _msg, _origine, type) => { recordedType = type; },
     });
     const res = await a.inject({
       method: 'POST',
@@ -145,8 +160,10 @@ describe('inbox routes', () => {
   it('POST send-template -> persiste la catégorie normalisée en minuscule (le split dashboard)', async () => {
     let recorded: { type?: string; cat?: string | null; name?: string | null } = {};
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
-      recordOutbound: async (_id, _body, _msg, _origine, type, cat, name) => { recorded = { type, cat, name }; },
+      inbox: {
+        getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+        recordOutbound: async (_id, _body, _msg, _origine, type, cat, name) => { recorded = { type, cat, name }; },
+      },
     });
     const res = await a.inject({
       method: 'POST',
@@ -162,8 +179,10 @@ describe('inbox routes', () => {
   it('POST send-template -> catégorie absente ou invalide persiste null', async () => {
     const cats: Array<string | null> = [];
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
-      recordOutbound: async (_id, _body, _msg, _origine, _type, cat) => { cats.push(cat ?? null); },
+      inbox: {
+        getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+        recordOutbound: async (_id, _body, _msg, _origine, _type, cat) => { cats.push(cat ?? null); },
+      },
     });
     // catégorie inconnue (ex. AUTHENTICATION / typo) -> null
     const r1 = await a.inject({
@@ -289,7 +308,7 @@ describe('rendre la main depuis la conversation', () => {
   });
 
   it('le détail de conversation expose QUI détient le fil', async () => {
-    const a = app({ getControlOwner: async () => 'mba' });
+    const a = app({ inbox: { getControlOwner: async () => 'mba' } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages', ...auth() });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ controlOwner: string }>().controlOwner).toBe('mba');
@@ -316,7 +335,7 @@ describe('rendre la main depuis la conversation', () => {
  */
 describe('inbox : conversations non lues', () => {
   it('GET unread-count -> le nombre rendu par le store', async () => {
-    const a = app({ countUnread: async () => 7 });
+    const a = app({ inbox: { countUnread: async () => 7 } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ count: number }>().count).toBe(7);
@@ -327,7 +346,7 @@ describe('inbox : conversations non lues', () => {
     // La route est déclarée avant `/conversations/:conversationId/...` : sans ça, un jour où une route
     // `/conversations/:id` existerait, le compteur partirait chercher une conversation nommée « unread-count ».
     const vus: string[] = [];
-    const a = app({ countUnread: async () => 3, getConversationContext: async (id) => { vus.push(id); return null; } });
+    const a = app({ inbox: { countUnread: async () => 3, getConversationContext: async (id) => { vus.push(id); return null; } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() });
     expect(res.statusCode).toBe(200);
     expect(vus).toEqual([]);
@@ -348,7 +367,7 @@ describe('inbox : conversations non lues', () => {
    */
   it('plusieurs relectures rapprochées du compteur -> UN seul comptage en base', async () => {
     let comptages = 0;
-    const a = app({ countUnread: async () => { comptages += 1; return 7; } });
+    const a = app({ inbox: { countUnread: async () => { comptages += 1; return 7; } } });
     const lire = async (): Promise<number> =>
       (await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() })).json<{ count: number }>().count;
     expect([await lire(), await lire(), await lire()]).toEqual([7, 7, 7]);
@@ -360,8 +379,10 @@ describe('inbox : conversations non lues', () => {
     let restants = 7;
     let comptages = 0;
     const a = app({
-      countUnread: async () => { comptages += 1; return restants; },
-      markConversationRead: async () => { restants -= 1; },
+      inbox: {
+        countUnread: async () => { comptages += 1; return restants; },
+        markConversationRead: async () => { restants -= 1; },
+      },
     });
     const lire = async (): Promise<number> =>
       (await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() })).json<{ count: number }>().count;
@@ -376,7 +397,7 @@ describe('inbox : conversations non lues', () => {
 
   it('POST read -> marque le fil lu, scopé au tenant du jeton', async () => {
     const lus: Array<[string, string]> = [];
-    const a = app({ markConversationRead: async (t, c) => { lus.push([t, c]); } });
+    const a = app({ inbox: { markConversationRead: async (t, c) => { lus.push([t, c]); } } });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/read', ...auth() });
     expect(res.statusCode).toBe(200);
     expect(lus).toEqual([['t1', 'c1']]);
@@ -385,7 +406,7 @@ describe('inbox : conversations non lues', () => {
 
   it('POST read sur une conversation inconnue -> 404 sans rien marquer', async () => {
     const lus: string[] = [];
-    const a = app({ markConversationRead: async (_t, c) => { lus.push(c); } });
+    const a = app({ inbox: { markConversationRead: async (_t, c) => { lus.push(c); } } });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/nope/read', ...auth() });
     expect(res.statusCode).toBe(404);
     expect(lus).toEqual([]);
@@ -394,7 +415,7 @@ describe('inbox : conversations non lues', () => {
 
   it('POST read : tenant de l’URL != tenant du jeton -> 403', async () => {
     const lus: string[] = [];
-    const a = app({ markConversationRead: async (_t, c) => { lus.push(c); } });
+    const a = app({ inbox: { markConversationRead: async (_t, c) => { lus.push(c); } } });
     const res = await a.inject({ method: 'POST', url: '/tenants/AUTRE/conversations/c1/read', ...auth() });
     expect(res.statusCode).toBe(403);
     expect(lus).toEqual([]);
@@ -402,7 +423,7 @@ describe('inbox : conversations non lues', () => {
   });
 
   it('GET unread-count : tenant de l’URL != tenant du jeton -> 403', async () => {
-    const a = app({ countUnread: async () => 7 });
+    const a = app({ inbox: { countUnread: async () => 7 } });
     const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/conversations/unread-count', ...auth() });
     expect(res.statusCode).toBe(403);
     await a.close();
@@ -484,7 +505,9 @@ describe('inbox : lancer un scénario sur une conversation', () => {
   it("passe l'état RÉEL de la fenêtre, pas ce que l'écran croyait", async () => {
     let vu: boolean | null = null;
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+      inbox: {
+        getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+      },
       startWorkflow: async (_t, _w, _wa, open) => { vu = open; return true; },
     });
     await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: { workflowId: 'wf1' } });
@@ -546,7 +569,7 @@ describe('GET /conversations — pagination et filtre', () => {
   /** Capture les options reçues par le store. */
   function espion() {
     const recus: Array<unknown> = [];
-    const a = app({ listConversations: async (_t: string, opts?: unknown) => { recus.push(opts); return []; } });
+    const a = app({ inbox: { listConversations: async (_t: string, opts?: unknown) => { recus.push(opts); return []; } } });
     return { a, recus };
   }
 
@@ -587,7 +610,7 @@ describe('GET /conversations — pagination et filtre', () => {
   });
 
   it('le compteur « À traiter » a sa propre route, et vaut 0 si la dep n’est pas câblée', async () => {
-    const avec = app({ countATraiter: async () => 42 });
+    const avec = app({ inbox: { countATraiter: async () => 42 } });
     expect((await avec.inject({ method: 'GET', url: '/tenants/t1/conversations/todo-count', ...auth() })).json<{ count: number }>().count).toBe(42);
     await avec.close();
 
@@ -599,7 +622,7 @@ describe('GET /conversations — pagination et filtre', () => {
   it('🔴 `todo-count` n’est pas pris pour un identifiant de conversation', async () => {
     // La route est déclarée AVANT `/conversations/:conversationId` : dans l'ordre inverse, elle serait
     // interceptée et on chercherait une conversation nommée « todo-count ».
-    const a = app({ countATraiter: async () => 7 });
+    const a = app({ inbox: { countATraiter: async () => 7 } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/todo-count', ...auth() });
     expect(res.json<{ count?: number }>().count).toBe(7);
     await a.close();
@@ -626,8 +649,10 @@ describe('affectation des conversations', () => {
   function appAvecAffectation(assignee: string | null) {
     const poses: Array<{ id: string; assignee: string | null; par: string | null }> = [];
     const a = app({
-      getAssignee: async () => assignee,
-      setAssignee: async (_t: string, id: string, who: string | null, par: string | null) => { poses.push({ id, assignee: who, par }); return true; },
+      inbox: {
+        getAssignee: async () => assignee,
+        setAssignee: async (_t: string, id: string, who: string | null, par: string | null) => { poses.push({ id, assignee: who, par }); return true; },
+      },
       // Câblé comme en production : sans lui la route rend 503 « indisponible sur cette instance » AVANT
       // d'arriver à la règle d'affectation, et le test ne prouverait rien du refus.
       startWorkflow: async () => true,
@@ -732,7 +757,7 @@ describe('inbox : ne redemander que la suite du fil', () => {
   /** Rend l'app et ce que la route a transmis au store (undefined = « tout le fil »). */
   function appDelta() {
     const vus: Array<{ at: string; id: string } | undefined> = [];
-    const a = app({ getMessages: async (_id, apres) => { vus.push(apres); return []; } });
+    const a = app({ inbox: { getMessages: async (_id, apres) => { vus.push(apres); return []; } } });
     return { a, vus };
   }
 
@@ -779,7 +804,9 @@ describe('effacer le contenu d’une conversation', () => {
   function harnais(effaces: number | null = 3) {
     const traces: Array<{ action: string; target: { kind: string; id: string }; detail?: Record<string, unknown> }> = [];
     const srv = app({
-      effacerMessages: async () => effaces,
+      inbox: {
+        effacerMessages: async () => effaces,
+      },
       audit: async (_t, _a, action, target, detail) => { traces.push({ action, target, ...(detail ? { detail } : {}) }); },
     });
     return { srv, traces };
@@ -823,7 +850,7 @@ describe('effacer le contenu d’une conversation', () => {
 
   it('un identifiant qui n’est pas un uuid rend 404 sans toucher au magasin', async () => {
     let appele = false;
-    const srv = app({ effacerMessages: async () => { appele = true; return 1; } });
+    const srv = app({ inbox: { effacerMessages: async () => { appele = true; return 1; } } });
     const res = await srv.inject({ method: 'DELETE', url: '/tenants/t1/conversations/pas-un-uuid/messages', ...auth() });
     expect(res.statusCode).toBe(404);
     expect(appele).toBe(false);
@@ -843,7 +870,7 @@ describe('signaler à la main, et prendre le fil', () => {
     // Un identifiant fourni par l'appelant laisserait signaler au nom d'un collègue, sur la conversation
     // d'un client. C'est la seule chose que cette route ne doit pas déléguer.
     const vus: Array<{ id: string; signale: boolean; par: string | null }> = [];
-    const a = app({ signalerConversation: async (_t, id, signale, par) => { vus.push({ id, signale, par }); return true; } });
+    const a = app({ inbox: { signalerConversation: async (_t, id, signale, par) => { vus.push({ id, signale, par }); return true; } } });
     const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/signaler`, ...auth(), payload: { parUserId: 'u-quelqu-un-dautre' } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ signalee: true });
@@ -854,7 +881,7 @@ describe('signaler à la main, et prendre le fil', () => {
     // Même doctrine que archive/unarchive : l'intention se lit dans l'URL, et un corps mal formé ne peut pas
     // transformer un signalement en son contraire.
     const vus: boolean[] = [];
-    const a = app({ signalerConversation: async (_t, _id, signale) => { vus.push(signale); return true; } });
+    const a = app({ inbox: { signalerConversation: async (_t, _id, signale) => { vus.push(signale); return true; } } });
     const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/ne-plus-signaler`, ...auth() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ signalee: false });
@@ -862,17 +889,17 @@ describe('signaler à la main, et prendre le fil', () => {
   });
 
   it('🔴 ouvert aux OPÉRATEURS : ranger sa boîte n’est pas une décision d’administration', async () => {
-    const a = app({ signalerConversation: async () => true });
+    const a = app({ inbox: { signalerConversation: async () => true } });
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/signaler`, ...authAgent() })).statusCode).toBe(200);
   });
 
   it('conversation inconnue -> 404, jamais un 200 qui annoncerait un rangement qui n’a pas eu lieu', async () => {
-    const a = app({ signalerConversation: async () => false });
+    const a = app({ inbox: { signalerConversation: async () => false } });
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/signaler`, ...auth() })).statusCode).toBe(404);
   });
 
   it('tenant croisé -> 403', async () => {
-    const a = app({ signalerConversation: async () => true });
+    const a = app({ inbox: { signalerConversation: async () => true } });
     expect((await a.inject({ method: 'POST', url: `/tenants/AUTRE/conversations/c1/signaler`, ...auth() })).statusCode).toBe(403);
   });
 
@@ -948,7 +975,7 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
   it('« traiter » et « ne-plus-traiter » sont deux adresses, et chacune écrit son sens', async () => {
     // Même doctrine qu'archive/unarchive et signaler/ne-plus-signaler : l'intention se lit dans l'URL.
     const vus: Array<{ id: string; traitee: boolean }> = [];
-    const a = app({ marquerTraitee: async (_t, id, traitee) => { vus.push({ id, traitee }); return true; } });
+    const a = app({ inbox: { marquerTraitee: async (_t, id, traitee) => { vus.push({ id, traitee }); return true; } } });
     const pose = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() });
     expect(pose.statusCode).toBe(200);
     expect(pose.json()).toEqual({ traitee: true });
@@ -958,7 +985,7 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
   });
 
   it('🔴 ouvert aux OPÉRATEURS : dire « j’ai fini avec ce fil » est le geste de celui qui le traite', async () => {
-    const a = app({ marquerTraitee: async () => true });
+    const a = app({ inbox: { marquerTraitee: async () => true } });
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...authAgent() })).statusCode).toBe(200);
   });
 
@@ -966,7 +993,7 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
     // Un identifiant qui n'est pas un uuid ferait lever Postgres (22P02), donc un 500 illisible. La route
     // le refuse avant : le magasin ne doit même pas être appelé.
     let appels = 0;
-    const a = app({ marquerTraitee: async () => { appels += 1; return false; } });
+    const a = app({ inbox: { marquerTraitee: async () => { appels += 1; return false; } } });
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/traiter`, ...auth() })).statusCode).toBe(404);
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/pas-un-uuid/traiter`, ...auth() })).statusCode).toBe(404);
     expect(appels).toBe(1);
@@ -977,10 +1004,12 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
     // encore la conversation dans « À traiter » pendant la durée du cache, alors que la liste ne la montre plus.
     let lectures = 0;
     const a = app({
-      marquerTraitee: async () => true,
-      compterConversations: async () => {
-        lectures += 1;
-        return { tout: 1, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
+      inbox: {
+        marquerTraitee: async () => true,
+        compterConversations: async () => {
+          lectures += 1;
+          return { tout: 1, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
+        },
       },
     });
     await a.inject({ method: 'GET', url: '/tenants/t1/conversations/counts', ...auth() });
@@ -1065,9 +1094,11 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
   function monter(o: { reglage: boolean; assignee?: string | null; prendre?: boolean }) {
     const prises: Array<{ id: string; userId: string }> = [];
     const a = app({
-      getAssignee: async () => (o.assignee === undefined ? null : o.assignee),
+      inbox: {
+        getAssignee: async () => (o.assignee === undefined ? null : o.assignee),
+        prendreSiLibre: async (_t, id, userId) => { prises.push({ id, userId }); return o.prendre ?? true; },
+      },
       agentsPeuventPrendre: async () => o.reglage,
-      prendreSiLibre: async (_t, id, userId) => { prises.push({ id, userId }); return o.prendre ?? true; },
     });
     return { a, prises };
   }
@@ -1106,7 +1137,7 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
 
   it('conversation inconnue ou identifiant mal formé : 404', async () => {
     const { a } = monter({ reglage: true, assignee: undefined });
-    const inconnue = app({ getAssignee: async () => undefined, agentsPeuventPrendre: async () => true, prendreSiLibre: async () => true });
+    const inconnue = app({ inbox: { getAssignee: async () => undefined, prendreSiLibre: async () => true }, agentsPeuventPrendre: async () => true });
     expect((await inconnue.inject({ method: 'POST', url, ...comme(jetons.agent) })).statusCode).toBe(404);
     expect((await a.inject({ method: 'POST', url: '/tenants/t1/conversations/pas-un-uuid/assignee/moi', ...comme(jetons.agent) })).statusCode).toBe(404);
   });
@@ -1128,7 +1159,7 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
   it('🔴 un réglage ILLISIBLE ne fait pas tomber la liste : il vaut « non »', async () => {
     // Sans garde, un échec de cette lecture rendait 500 sur la liste entière, donc l'Inbox vide pour tout le
     // monde, pour un simple bouton.
-    const a = app({ agentsPeuventPrendre: async () => { throw new Error('base'); }, prendreSiLibre: async () => true });
+    const a = app({ agentsPeuventPrendre: async () => { throw new Error('base'); }, inbox: { prendreSiLibre: async () => true } });
     const { resultat: res, lignes } = await capturerJournal(() => a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.agent) }));
     expect(res.statusCode).toBe(200);
     expect(res.json().peutPrendre).toBe(false);
@@ -1141,9 +1172,11 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
     // « Votre espace ne le permet pas » serait peut-être faux : on n'en sait rien, la lecture a échoué.
     const prises: string[] = [];
     const a = app({
-      getAssignee: async () => null,
+      inbox: {
+        getAssignee: async () => null,
+        prendreSiLibre: async (_t, id) => { prises.push(id); return true; },
+      },
       agentsPeuventPrendre: async () => { throw new Error('base'); },
-      prendreSiLibre: async (_t, id) => { prises.push(id); return true; },
     });
     const res = await a.inject({ method: 'POST', url, ...comme(jetons.agent) });
     expect(res.statusCode).toBe(409);
@@ -1153,7 +1186,7 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
 
   it('l’encadrement ne fait pas lire le réglage : il n’en a pas besoin', async () => {
     let lectures = 0;
-    const a = app({ agentsPeuventPrendre: async () => { lectures += 1; return false; }, prendreSiLibre: async () => true });
+    const a = app({ agentsPeuventPrendre: async () => { lectures += 1; return false; }, inbox: { prendreSiLibre: async () => true } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...comme(jetons.manager) });
     expect(res.json().peutPrendre).toBe(true);
     expect(lectures).toBe(0);
@@ -1161,7 +1194,7 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
 
   it('🔴 la liste des membres affectables s’ouvre au MANAGER, pas à l’agent', async () => {
     // Elle était lue sur `GET /users`, réservé aux admins : chez un manager, le sélecteur revenait vide.
-    const a = app({ membresPourAffectation: async () => [{ id: 'u-jean', nom: 'Jean' }] });
+    const a = app({ inbox: { membresPourAffectation: async () => [{ id: 'u-jean', nom: 'Jean' }] } });
     const m = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/membres-affectables', ...comme(jetons.manager) });
     expect(m.statusCode).toBe(200);
     expect(m.json()).toEqual({ membres: [{ id: 'u-jean', nom: 'Jean' }] });
@@ -1180,7 +1213,9 @@ describe('un agent PREND une conversation du pot commun (migration 0160)', () =>
 describe('les filtres de la liste arrivent au magasin', () => {
   const vus: Array<Record<string, unknown>> = [];
   const espion = () => app({
-    listConversations: async (_t, opts) => { vus.push({ ...(opts ?? {}) }); return []; },
+    inbox: {
+      listConversations: async (_t, opts) => { vus.push({ ...(opts ?? {}) }); return []; },
+    },
   });
 
   it('🔴 le filtre par MEMBRE est transmis', async () => {

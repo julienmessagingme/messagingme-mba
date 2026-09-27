@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { parseCsv } from '../crm/csv';
 import { recognizeColumns } from '../crm/recognize';
 import { importContacts } from '../crm/import';
-import type { ImportDeps } from '../crm/import';
+import type { ContactStore, ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
 import type { ContactRow, ContactFilters, ContactFieldFilter } from '../crm/contact-store.pg';
 import { gardeEtendue } from '../auth/middleware';
@@ -11,14 +11,19 @@ import { espaceVerifie } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
-export interface ImportRouteDeps extends ImportDeps {
-  listContacts(tenantId: string, limit?: number, offset?: number, tag?: string): Promise<ContactRow[]>;
+/** Ce que les routes de liste lisent du dépôt des contacts, en plus de ce que l'import y écrit. */
+export interface ContactsListeDep extends ContactStore {
+  list(tenantId: string, limit?: number, offset?: number, tag?: string): Promise<ContactRow[]>;
   /** Requête filtrée + paginée (source « Liste de contacts » de campagne). */
-  queryContacts(tenantId: string, filters: ContactFilters, limit?: number, offset?: number): Promise<ContactRow[]>;
+  query(tenantId: string, filters: ContactFilters, limit?: number, offset?: number): Promise<ContactRow[]>;
   /** Nombre total correspondant aux filtres (compteur avant de fixer le débit). */
-  countContacts(tenantId: string, filters: ContactFilters): Promise<number>;
+  count(tenantId: string, filters: ContactFilters): Promise<number>;
   /** Ids correspondant aux filtres (résolution serveur de la source de campagne). */
-  contactIdsForFilters(tenantId: string, filters: ContactFilters): Promise<string[]>;
+  idsForFilters(tenantId: string, filters: ContactFilters): Promise<string[]>;
+}
+
+export interface ImportRouteDeps extends ImportDeps {
+  contacts: ContactsListeDep;
   /**
    * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Un import fait entrer des personnes
    * par milliers : sans trace, personne ne peut dire d'où vient un contact ni qui l'a chargé.
@@ -100,20 +105,20 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
     // chemin historique `listContacts` (avec le paramètre `tag` simple), rétro-compatible.
     if (hasFilters(filters)) {
       const [contacts, total] = await Promise.all([
-        deps.queryContacts(effectiveTenant, filters, limit, offset),
-        deps.countContacts(effectiveTenant, filters),
+        deps.contacts.query(effectiveTenant, filters, limit, offset),
+        deps.contacts.count(effectiveTenant, filters),
       ]);
       return reply.code(200).send({ contacts, total });
     }
     const tag = typeof q.tag === 'string' && q.tag.trim() !== '' ? q.tag.trim() : undefined;
-    const contacts = await deps.listContacts(effectiveTenant, limit, offset, tag);
+    const contacts = await deps.contacts.list(effectiveTenant, limit, offset, tag);
     return reply.code(200).send({ contacts });
   });
 
   // Compteur seul (rapide) : « N contacts correspondent » avant de fixer le débit / lancer.
   app.get('/tenants/:tenantId/contacts/count', opts, async (req, reply) => {
     const effectiveTenant = espaceVerifie(req);
-    const total = await deps.countContacts(effectiveTenant, parseFilters(req.query as Record<string, unknown>));
+    const total = await deps.contacts.count(effectiveTenant, parseFilters(req.query as Record<string, unknown>));
     return reply.code(200).send({ total });
   });
 
@@ -121,7 +126,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
   // (l'écran envoie l'intention `contactTarget`, résolue en base) ; la route reste, primitive de lecture bornée.
   app.get('/tenants/:tenantId/contacts/ids', opts, async (req, reply) => {
     const effectiveTenant = espaceVerifie(req);
-    const ids = await deps.contactIdsForFilters(effectiveTenant, parseFilters(req.query as Record<string, unknown>));
+    const ids = await deps.contacts.idsForFilters(effectiveTenant, parseFilters(req.query as Record<string, unknown>));
     return reply.code(200).send({ ids });
   });
 

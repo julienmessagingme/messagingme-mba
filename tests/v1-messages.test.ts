@@ -71,20 +71,22 @@ function app(over: Partial<Monde> = {}) {
   const usage = new GardeUsageMemoire();
 
   const repondre: DepsRepondre = {
-    getConversationContext: async (id, tenant) => {
-      contextesLus.push(id);
-      return tenant === 't1' && id === m.conversation ? { waId: '33612345678', lastInboundAt: null, windowOpen: m.fenetreOuverte } : null;
+    inbox: {
+      getConversationContext: async (id, tenant) => {
+        contextesLus.push(id);
+        return tenant === 't1' && id === m.conversation ? { waId: '33612345678', lastInboundAt: null, windowOpen: m.fenetreOuverte } : null;
+      },
+      recordOutbound: async (_id, body, _msgId, origine, type, _cat, _name, sender) => {
+        enregistres.push({ body, origine, auteur: sender ?? null, type });
+      },
     },
-    getTenantPhoneNumberId: async () => m.numeroDeLEspace,
+    repo: { getTenantPhoneNumberId: async () => m.numeroDeLEspace },
     sendReply: async (_t, pn, to, text) => {
       if (m.numeroDelie) throw new NumeroDelieError(pn);
       envois.push({ to, text });
       return 'wamid.envoye';
     },
     estDesabonne: async (_t, waId) => { desabonneLu.push(waId); return m.desabonne; },
-    recordOutbound: async (_id, body, _msgId, origine, type, _cat, _name, sender) => {
-      enregistres.push({ body, origine, auteur: sender ?? null, type });
-    },
     takeControl: async (_t, waId) => { prises.push(waId); },
   };
 
@@ -110,10 +112,12 @@ function app(over: Partial<Monde> = {}) {
           const designe = cles.contactId === C1 || tel === NUMERO || cles.externalId === 'crm-7781';
           return tenant === 't1' && designe && m.fiche ? { ok: true, contactId: m.fiche.id, cree: false } : { ok: false, code: 'unknown_contact' };
         },
-        filDuContact: async (tenant, contactId) => {
-          filsCherches.push(contactId);
-          if (tenant !== 't1' || contactId !== C1 || m.conversation === null) return { etat: 'injoignable' };
-          return m.sansFil ? { etat: 'sans_fil' } : { etat: 'fil', conversationId: m.conversation };
+        inbox: {
+          filDuContact: async (tenant, contactId) => {
+            filsCherches.push(contactId);
+            if (tenant !== 't1' || contactId !== C1 || m.conversation === null) return { etat: 'injoignable' };
+            return m.sansFil ? { etat: 'sans_fil' } : { etat: 'fil', conversationId: m.conversation };
+          },
         },
       },
     },
@@ -340,7 +344,7 @@ describe('câblage de /v1/messages/whatsapp, lu dans `src/index.ts`', () => {
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
     const debut = source.indexOf('      messages: {');
-    const fin = source.indexOf('filDuContact: (tenant, contactId) => inboxStore.filDuContact(tenant, contactId)', debut);
+    const fin = source.indexOf('      messagesRcs: {', debut);
     expect(debut, 'le bloc `messages:` du câblage').toBeGreaterThan(-1);
     expect(fin, 'la fin du bloc `messages:`').toBeGreaterThan(debut);
     expect(source.slice(debut, fin)).toMatch(/resoudreFiche: \(tenant, cles, o\) => resoudreFiche\(contactStore, tenant, cles, o\),/);
@@ -354,7 +358,12 @@ describe('câblage de /v1/messages/whatsapp, lu dans `src/index.ts`', () => {
     const fin = source.indexOf('      messagesRcs: {', debut);
     expect(fin, 'le bloc suivant, `messagesRcs:`').toBeGreaterThan(debut);
     const bloc = source.slice(debut, fin);
-    expect(bloc).toContain('filDuContact: (tenant, contactId) => inboxStore.filDuContact(tenant, contactId)');
+    expect(bloc).toContain('inbox: inboxStore,');
     expect(bloc).not.toMatch(/ouvrirConversation/);
+    // Le dépôt passe entier : c'est la tranche déclarée par la route qui borne ce qu'elle peut appeler.
+    const route = readFileSync(new URL('../src/http/v1-messages.ts', import.meta.url), 'utf8');
+    const tranche = route.slice(route.indexOf('  inbox: {'), route.indexOf('\n  };', route.indexOf('  inbox: {')));
+    expect(tranche).toContain('filDuContact(');
+    expect(tranche).not.toMatch(/ouvrir/i);
   });
 });

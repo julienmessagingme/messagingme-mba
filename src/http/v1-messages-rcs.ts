@@ -6,7 +6,7 @@ import { STATUT_PAR_CODE, refuser } from '../api/erreurs';
 import { messageDeForme } from '../api/forme';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { waIdOf } from '../crm/identity';
-import type { DepsRepondre } from '../inbox/repondre';
+import type { ConversationsRepondre } from '../inbox/repondre';
 import { envoyerRcsLibre, type DepsRcsLibre, type RefusRcsLibre } from '../rcs/envoyer-libre';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messages';
@@ -27,14 +27,17 @@ export interface V1MessagesRcsRouteDeps {
    * appelée en `creer: 'jamais'` : un message simple ne fonde pas une relation.
    */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
-  /** Le numéro et le blocage d'une fiche non supprimée de cet espace. `null` = introuvable. */
-  etatPourEnvoi(tenantId: string, contactId: string): Promise<{ phoneE164: string | null; bloque: boolean } | null>;
+  contacts: {
+    /** Le numéro et le blocage d'une fiche non supprimée de cet espace. `null` = introuvable. */
+    etatPourEnvoi(tenantId: string, contactId: string): Promise<{ phoneE164: string | null; bloque: boolean } | null>;
+  };
   /** Les dépendances d'`envoyerRcsLibre`, transmises d'un seul objet, jamais recopiées champ par champ. */
   rcs: DepsRcsLibre;
-  /** Le fil du contact, créé s'il n'existe pas (la fonction du bouton « Ouvrir la conversation »). */
-  ouvrirConversation(tenantId: string, contactId: string): Promise<string | null>;
+  inbox: Pick<ConversationsRepondre, 'recordOutbound'> & {
+    /** Le fil du contact, créé s'il n'existe pas (la fonction du bouton « Ouvrir la conversation »). */
+    ouvrirConversationDuContact(tenantId: string, contactId: string): Promise<string | null>;
+  };
   takeControl(tenantId: string, waId: string): Promise<void>;
-  recordOutbound: DepsRepondre['recordOutbound'];
   /** Le garde d'usage, injecté par `buildServer`. Requis, comme sur les autres routes /v1. */
   usage: ApiUsageGuard;
 }
@@ -88,7 +91,7 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
     }
 
     // L'ordre : la fiche existe, porte un numéro, n'est pas bloquée. Le reste est dans `envoyerRcsLibre`.
-    const etat = await deps.etatPourEnvoi(tenantId, fiche.contactId);
+    const etat = await deps.contacts.etatPourEnvoi(tenantId, fiche.contactId);
     if (!etat) return refuser(reply, 404, 'unknown_contact', INCONNUE_POUR_UN_MESSAGE);
     const waId = waIdOf(etat.phoneE164, null);
     if (!waId) return refuser(reply, 422, 'no_phone', MESSAGE_RCS.no_phone);
@@ -102,10 +105,10 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
      * auteur `null`). Au mieux : le message est parti, un 5xx ferait réessayer l'intégrateur, donc envoyer deux fois.
      * Un rapport d'échec smsmode arrivé avant l'inscription est écrit quand même par `traiterRapportRcs`.
      */
-    const conversationId = await deps.ouvrirConversation(tenantId, fiche.contactId).catch(() => null);
+    const conversationId = await deps.inbox.ouvrirConversationDuContact(tenantId, fiche.contactId).catch(() => null);
     if (conversationId) {
       await deps.takeControl(tenantId, waId).catch(() => {});
-      await deps.recordOutbound(conversationId, issue.apercu, issue.messageId, 'api', 'rcs', null, null, null, 'rcs').catch((err: unknown) => {
+      await deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'api', 'rcs', null, null, null, 'rcs').catch((err: unknown) => {
         // eslint-disable-next-line no-console
         console.error(`v1/messages/rcs: RCS parti mais non inscrit dans l'Inbox (${tenantId}):`, messageDe(err));
       });

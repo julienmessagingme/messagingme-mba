@@ -16,7 +16,7 @@ export interface DepsMaison {
    */
   champExiste(tenantId: string, champ: string): Promise<boolean>;
   /** Le contact est-il bloqué dans l'Inbox ? Un contact bloqué ne reçoit rien de nous, pas plus d'un outil. */
-  estBloque(tenantId: string, waId: string): Promise<boolean>;
+  contacts: { isBlockedByWaId(tenantId: string, waId: string): Promise<boolean> };
   /**
    * Envoie le bloc seul (`blocSeul`), par le chemin d'un envoi à un bloc de l'API publique (`startFromNode`) : il
    * reprend le fil à l'agent de Meta, envoie, et le lui rend à l'accusé. Rend `true`, ou la raison du refus lue
@@ -28,10 +28,10 @@ export interface DepsMaison {
   /** Un envoi ne se rejoue pas pour le même client et le même outil, le temps d'une demande (`src/mba/anti-rejeu.ts`). */
   antiRejeu: Pick<AntiRejeu, 'prendreTous' | 'oublier'>;
   /**
-   * L'identifiant du dernier message reçu du client (`PgInboxStore.dernierMessageDuClient`), ou `null`. Il entre
-   * dans la clé de l'anti-rejeu : un rappel dans le même tour partage ce message, une nouvelle demande non.
+   * L'identifiant du dernier message reçu du client, ou `null`. Il entre dans la clé de l'anti-rejeu : un rappel
+   * dans le même tour partage ce message, une nouvelle demande non.
    */
-  dernierMessageDuClient(tenantId: string, waId: string): Promise<string | null>;
+  inbox: { dernierMessageDuClient(tenantId: string, waId: string): Promise<string | null> };
 }
 
 export type IssueMaison = { ok: true; reponse: string } | { ok: false; erreur: string };
@@ -58,13 +58,13 @@ export async function executerOutilMaison(
     case 'bloc_fixe':
     case 'scenario_fixe': {
       // 🔴 Le blocage est lu avant tout envoi : une garde posée après l'effet ne garde rien.
-      if (await deps.estBloque(tenantId, waId)) return { ok: false, erreur: CONTACT_BLOQUE };
+      if (await deps.contacts.isBlockedByWaId(tenantId, waId)) return { ok: false, erreur: CONTACT_BLOQUE };
       // Un rappel du même outil pour le même message du client ne renvoie rien : il répond « déjà traitée », ce qui
       // clôt le tour. Deux clés prises d'un seul geste, après la dernière attente (des appels simultanés n'en
       // laissent partir qu'un) : le message du client (une nouvelle demande relance) et un plancher de 30 s (une
       // réaction ou une demande en deux messages ne relance pas). Gardées sur une exception (le message a pu
       // partir), oubliées sur un refus.
-      const dernier = await deps.dernierMessageDuClient(tenantId, waId);
+      const dernier = await deps.inbox.dernierMessageDuClient(tenantId, waId);
       const plancher = `${tenantId}:${waId}:${input.outilId}`;
       const cle = `${plancher}:${dernier ?? '-'}`;
       if (!deps.antiRejeu.prendreTous([[plancher, PLANCHER_ANTI_REJEU_MS], [cle, DUREE_ANTI_REJEU_MS]])) {

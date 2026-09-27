@@ -62,13 +62,15 @@ const campaign: Campaign = {
   templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null, ratePerMinute: null, startNodeId: null,
 };
 
-function deps(over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign'] }): RunJobDeps {
+function deps(over: Partial<RunJobDeps> & { repo: RunJobDeps['repo'] }): RunJobDeps {
   return {
     senderFor: async () => new FakeSender(),
     recipients: new FakeRecipients([]),
     campaigns: new FakeCampaigns(),
     quality: new FakeQuality(),
-    pauserSiNumeroDelie: async () => false,
+    numerosDelies: {
+      pauserCampagne: async () => false,
+    },
     ...over,
   };
 }
@@ -82,7 +84,7 @@ describe('campaignRunJob', () => {
     ]);
     const report = await campaignRunJob(
       { campaignId: 'c1' },
-      deps({ getCampaign: async () => campaign, senderFor: async () => sender, recipients }),
+      deps({ repo: { getCampaign: async () => campaign }, senderFor: async () => sender, recipients }),
     );
     expect(report).toMatchObject({ sent: 2, failed: 0, paused: false });
     expect(sender.calls).toEqual(['+33611', '+33622']);
@@ -96,7 +98,7 @@ describe('campaignRunJob', () => {
     ]);
     const report = await campaignRunJob(
       { campaignId: 'c1' },
-      deps({ getCampaign: async () => util, senderFor: async () => sender, recipients }),
+      deps({ repo: { getCampaign: async () => util }, senderFor: async () => sender, recipients }),
     );
     expect(report.sent).toBe(1);
     expect(sender.templateCalls).toEqual(['+33611']);
@@ -112,7 +114,7 @@ describe('campaignRunJob', () => {
     ]);
     const report = await campaignRunJob(
       { campaignId: 'c1' },
-      deps({ getCampaign: async () => campaign, senderFor: async () => sender, recipients }),
+      deps({ repo: { getCampaign: async () => campaign }, senderFor: async () => sender, recipients }),
     );
     expect(report).toMatchObject({ sent: 1, failed: 1 });
     expect(recipients.results.get('r1')).toMatchObject({ status: 'failed' });
@@ -128,7 +130,9 @@ describe('campaignRunJob', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => wf,
+        repo: {
+          getCampaign: async () => wf,
+        },
         recipients,
         // Les capacités du moteur voyagent en BLOC depuis le constat C1 : le job les transmet d'un seul
         // spread, il ne les recopie plus une par une.
@@ -150,7 +154,9 @@ describe('campaignRunJob', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => node,
+        repo: {
+          getCampaign: async () => node,
+        },
         recipients,
         moteur: {
           startWorkflow: async () => { throw new Error('ne doit pas être appelé sur une cible node'); },
@@ -173,7 +179,9 @@ describe('campaignRunJob', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => ({ ...campaign, ratePerMinute: 30 }),
+        repo: {
+          getCampaign: async () => ({ ...campaign, ratePerMinute: 30 }),
+        },
         recipients,
         rateLimiter: staticGate, // doit être IGNORÉ au profit du limiteur par campagne
         makeRateLimiter: (ms) => { intervals.push(ms); return { acquire: async () => { acquires += 1; } }; },
@@ -193,7 +201,9 @@ describe('campaignRunJob', () => {
     await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        repo: {
+          getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        },
         recipients,
         rateLimiter: { acquire: async () => { acquires += 1; } },
         makeRateLimiter: () => { made += 1; return { acquire: async () => {} }; },
@@ -213,7 +223,9 @@ describe('campaignRunJob', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        repo: {
+          getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        },
         recipients,
         defaultRatePerMinute: 30, // le worker l'injecte en prod ; ici on prouve qu'il freine une campagne sans rate
         makeRateLimiter: (ms) => { intervals.push(ms); return { acquire: async () => { acquires += 1; } }; },
@@ -232,7 +244,9 @@ describe('campaignRunJob', () => {
     await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => ({ ...campaign, ratePerMinute: 60 }),
+        repo: {
+          getCampaign: async () => ({ ...campaign, ratePerMinute: 60 }),
+        },
         recipients,
         defaultRatePerMinute: 30,
         makeRateLimiter: (ms) => { intervals.push(ms); return { acquire: async () => {} }; },
@@ -249,7 +263,9 @@ describe('campaignRunJob', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        repo: {
+          getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        },
         recipients,
         defaultRatePerMinute: 0, // opt-out explicite : le défaut serveur désactivé remet le plein régime
         makeRateLimiter: () => { made += 1; return { acquire: async () => {} }; },
@@ -267,10 +283,12 @@ describe('campaignRunJob', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+          phoneNumberBelongsToTenant: async () => false,
+        },
         senderFor: async () => sender,
-        recipients,
-        phoneNumberBelongsToTenant: async () => false, // le numéro n'appartient plus au tenant
+        recipients, // le numéro n'appartient plus au tenant
       }),
     );
     expect(report).toMatchObject({ sent: 0, paused: true });
@@ -287,7 +305,9 @@ describe('campaignRunJob', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+        },
         senderFor: async () => { throw new TokenInvalidError('waba-x'); },
         recipients,
       }),
@@ -300,7 +320,7 @@ describe('campaignRunJob', () => {
     await expect(
       campaignRunJob(
         { campaignId: 'c1' },
-        deps({ getCampaign: async () => campaign, senderFor: async () => { throw new Error('réseau'); } }),
+        deps({ repo: { getCampaign: async () => campaign }, senderFor: async () => { throw new Error('réseau'); } }),
       ),
     ).rejects.toThrow(/réseau/);
   });
@@ -313,10 +333,12 @@ describe('campaignRunJob', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+          phoneNumberBelongsToTenant: async () => true,
+        },
         senderFor: async () => sender,
         recipients,
-        phoneNumberBelongsToTenant: async () => true,
       }),
     );
     expect(report.sent).toBe(1);
@@ -329,19 +351,19 @@ describe('campaignRunJob', () => {
       { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
     ]);
     // deps() n'injecte PAS phoneNumberBelongsToTenant : la garde est sautée, comportement d'avant préservé.
-    const report = await campaignRunJob({ campaignId: 'c1' }, deps({ getCampaign: async () => campaign, senderFor: async () => sender, recipients }));
+    const report = await campaignRunJob({ campaignId: 'c1' }, deps({ repo: { getCampaign: async () => campaign }, senderFor: async () => sender, recipients }));
     expect(report.sent).toBe(1);
   });
 
   it('campagne inconnue -> throw', async () => {
     await expect(
-      campaignRunJob({ campaignId: 'nope' }, deps({ getCampaign: async () => null })),
+      campaignRunJob({ campaignId: 'nope' }, deps({ repo: { getCampaign: async () => null } })),
     ).rejects.toThrow(/inconnue/);
   });
 
   it('payload sans campaignId -> throw', async () => {
     await expect(
-      campaignRunJob({}, deps({ getCampaign: async () => campaign })),
+      campaignRunJob({}, deps({ repo: { getCampaign: async () => campaign } })),
     ).rejects.toThrow(/campaignId/);
   });
 });
@@ -360,7 +382,9 @@ describe('campaignRunJob : campagne au fil de l eau arrêtée', () => {
     const recipients = new FakeRecipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: [], status: 'pending' }]);
     let statuts = 0;
     const rapport = await campaignRunJob({ campaignId: 'c1' }, deps({
-      getCampaign: async () => arretee,
+      repo: {
+        getCampaign: async () => arretee,
+      },
       senderFor: async () => sender,
       recipients,
       campaigns: { setStatus: async () => { statuts += 1; } },
@@ -375,7 +399,9 @@ describe('campaignRunJob : campagne au fil de l eau arrêtée', () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: [], status: 'pending' }]);
     await campaignRunJob({ campaignId: 'c1' }, deps({
-      getCampaign: async () => ({ ...arretee, status: 'running' }),
+      repo: {
+        getCampaign: async () => ({ ...arretee, status: 'running' }),
+      },
       senderFor: async () => sender,
       recipients,
     }));
@@ -388,7 +414,9 @@ describe('campaignRunJob : campagne au fil de l eau arrêtée', () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: [], status: 'pending' }]);
     await campaignRunJob({ campaignId: 'c1' }, deps({
-      getCampaign: async () => ({ ...campaign, status: 'completed' }),
+      repo: {
+        getCampaign: async () => ({ ...campaign, status: 'completed' }),
+      },
       senderFor: async () => sender,
       recipients,
     }));
@@ -409,7 +437,9 @@ describe('campaignRunJob : campagne en pause', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => enPause,
+        repo: {
+          getCampaign: async () => enPause,
+        },
         senderFor: async () => sender,
         recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
         campaigns: { setStatus: async (_id, s) => { statuts.push(s); } },
@@ -426,7 +456,9 @@ describe('campaignRunJob : campagne en pause', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => enCours,
+        repo: {
+          getCampaign: async () => enCours,
+        },
         senderFor: async () => sender,
         recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
       }),
@@ -457,7 +489,7 @@ class VerrouFake {
   renouvelle = 0;
   async renouveler(): Promise<boolean> { this.renouvelle += 1; return true; }
 }
-function avecVerrou(verrou: VerrouFake, over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign'] }, relances: string[] = [], enAttente = 0): RunJobDeps {
+function avecVerrou(verrou: VerrouFake, over: Partial<RunJobDeps> & { repo: RunJobDeps['repo'] }, relances: string[] = [], enAttente = 0): RunJobDeps {
   return deps({
     ...over,
     serialisation: {
@@ -475,7 +507,9 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       avecVerrou(verrou, {
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+        },
         senderFor: async () => sender,
         recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
       }),
@@ -491,7 +525,9 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       avecVerrou(verrou, {
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+        },
         senderFor: async () => sender,
         recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
       }),
@@ -506,7 +542,7 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     // campagne interrompue (R4) : le verrou d'un process mort serait resté « vivant » des heures, et le
     // balayage de reprise aurait sagement attendu. Court + renouvelé, un process tué libère en deux minutes.
     const verrou = new VerrouFake('jeton-1');
-    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(verrou, { getCampaign: async () => campaign }, [], 1000));
+    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(verrou, { repo: { getCampaign: async () => campaign } }, [], 1000));
     expect(verrou.acquis[0]).toMatchObject({ campaignId: 'c1', tenantId: 't1' });
     expect(verrou.acquis[0]!.leaseSeconds).toBe(BAIL_SECONDES);
     // Et il ne dépend PAS du nombre de destinataires : mille en attente n'y changent rien.
@@ -515,13 +551,13 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
 
   it('🔴 relance demandée pendant le run -> UN relancement, pour le travail que ce run n’a pas vu', async () => {
     const relances: string[] = [];
-    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(new VerrouFake('jeton-1', true), { getCampaign: async () => campaign }, relances));
+    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(new VerrouFake('jeton-1', true), { repo: { getCampaign: async () => campaign } }, relances));
     expect(relances).toEqual(['c1']);
   });
 
   it('aucune relance demandée -> aucun relancement (sinon les runs s’enchaîneraient sans fin)', async () => {
     const relances: string[] = [];
-    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(new VerrouFake('jeton-1', false), { getCampaign: async () => campaign }, relances));
+    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(new VerrouFake('jeton-1', false), { repo: { getCampaign: async () => campaign } }, relances));
     expect(relances).toEqual([]);
   });
 
@@ -531,7 +567,9 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     await expect(campaignRunJob(
       { campaignId: 'c1' },
       avecVerrou(verrou, {
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+        },
         recipients: { listPending: async () => { throw new Error('base indisponible'); }, claim: async () => true, relacher: async () => {}, markResult: async () => {} },
       }, relances),
     )).rejects.toThrow('base indisponible');
@@ -549,7 +587,9 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+        },
         senderFor: async () => sender,
         recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
         serialisation: { verrou: verrouCasse, enAttente: async () => 0, relancer: async () => {} },
@@ -564,7 +604,9 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     const report = await campaignRunJob(
       { campaignId: 'c1' },
       deps({
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+        },
         senderFor: async () => sender,
         recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
       }),
@@ -585,7 +627,9 @@ describe('campaignRunJob : un lot qui rend la main se réenfile', () => {
     const rapport = await campaignRunJob(
       { campaignId: 'c1' },
       avecVerrou(verrou, {
-        getCampaign: async () => campaign,
+        repo: {
+          getCampaign: async () => campaign,
+        },
         // Deux destinataires, et le moteur s'arrête sur sa durée dès le PREMIER traité : il en reste un.
         recipients: new FakeRecipients([
           { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
@@ -609,7 +653,7 @@ describe('campaignRunJob : un lot qui rend la main se réenfile', () => {
     const relances: string[] = [];
     const rapport = await campaignRunJob(
       { campaignId: 'c1' },
-      avecVerrou(new VerrouFake('jeton-1', false), { getCampaign: async () => campaign }, relances),
+      avecVerrou(new VerrouFake('jeton-1', false), { repo: { getCampaign: async () => campaign } }, relances),
     );
     expect(rapport.reste).toBeUndefined();
     expect(relances).toEqual([]);

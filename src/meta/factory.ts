@@ -34,7 +34,7 @@ export interface MetaClientFactoryOpts {
    * `NumeroDelieError`. 🔴 Requise : une garde optionnelle oubliée par un câblage compilerait et enverrait depuis
    * un numéro que l'administrateur croit éteint. Les fixtures disent leur hypothèse (`jamaisDelie`).
    */
-  numeroDelie: (phoneNumberId: string) => Promise<boolean>;
+  numerosDelies: { estDelie(phoneNumberId: string): Promise<boolean> };
 }
 
 export class MetaClientFactory {
@@ -50,7 +50,7 @@ export class MetaClientFactory {
    * pour qu'un appelant la pose avant un effet qui précède l'envoi (`verifierNumeroWhatsApp`). Même lecture, même cache.
    */
   async verifierNumero(phoneNumberId: string): Promise<void> {
-    if (await this.o.numeroDelie(phoneNumberId)) throw new NumeroDelieError(phoneNumberId);
+    if (await this.o.numerosDelies.estDelie(phoneNumberId)) throw new NumeroDelieError(phoneNumberId);
   }
 
   /** MetaClient complet pour un tenant (envois workflow : template/interactif/flow), enveloppé de l'intercepteur. */

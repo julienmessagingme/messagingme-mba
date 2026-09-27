@@ -119,12 +119,14 @@ function app(etat: EtatPourLint | null, modeles?: AgentsRouteDeps['modelesPropos
   const deps: AgentsRouteDeps = {
     ...agentsInertes,
     ...(modeles ? { modelesProposes: modeles } : {}),
-    listActifs: async (): Promise<AgentResume[]> => [],
-    listToutes: async (): Promise<AgentResume[]> => [],
-    complet: async () => COMPLET,
-    create: async () => COMPLET,
-    patch: async (_t, _id, patch) => { cap.patches.push(patch); return { ...COMPLET, ...patch } as AgentComplet; },
-    remove: async () => true,
+    agents: {
+      listActifs: async (): Promise<AgentResume[]> => [],
+      listToutes: async (): Promise<AgentResume[]> => [],
+      complet: async () => COMPLET,
+      create: async () => COMPLET,
+      patch: async (_t, _id, patch) => { cap.patches.push(patch); return { ...COMPLET, ...patch } as AgentComplet; },
+      remove: async () => true,
+    },
     modeleParDefaut: 'modele-config',
     etatPourLint: async () => etat,
   };

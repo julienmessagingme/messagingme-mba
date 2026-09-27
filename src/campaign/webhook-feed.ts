@@ -22,15 +22,18 @@ export function motifEcart(reason: 'missing_variable' | 'not_opted_in' | 'no_pho
 }
 
 export interface WebhookFeedDeps {
-  /** Campagnes vivantes nourries par ce webhook (statut `running` uniquement). */
-  listRunning(tenantId: string, webhookId: string): Promise<Campaign[]>;
-  /** Le contact qui vient d'arriver, prêt pour `buildRecipients`. null = inconnu ou bloqué -> rien à faire. */
-  contact(tenantId: string, waId: string): Promise<BuildContact | null>;
-  /** Inscrit l'arrivant. false = il était déjà destinataire de cette campagne (il ne reçoit pas deux fois). */
-  insertRecipient(
-    campaignId: string,
-    r: { contactId: string; toE164: string; resolvedParams: string[]; statut: 'pending' | 'skipped'; motif?: string },
-  ): Promise<boolean>;
+  /** Le dépôt des campagnes. */
+  repo: {
+    /** Campagnes vivantes nourries par ce webhook (statut `running` uniquement). */
+    listRunningByWebhook(tenantId: string, webhookId: string): Promise<Campaign[]>;
+    /** Le contact qui vient d'arriver, prêt pour `buildRecipients`. null = inconnu ou bloqué -> rien à faire. */
+    contactForBuildByWaId(tenantId: string, waId: string): Promise<BuildContact | null>;
+    /** Inscrit l'arrivant. false = il était déjà destinataire de cette campagne (il ne reçoit pas deux fois). */
+    insertWebhookRecipient(
+      campaignId: string,
+      r: { contactId: string; toE164: string; resolvedParams: string[]; statut: 'pending' | 'skipped'; motif?: string },
+    ): Promise<boolean>;
+  };
   /** Enfile le run de la campagne. Non dédupliqué : un arrivant = un job, même si un run est en vol. */
   enqueueRun(campaign: Campaign): Promise<void>;
   now?: () => Date;
@@ -52,11 +55,11 @@ export async function alimenterCampagnesWebhook(
   deps: WebhookFeedDeps,
 ): Promise<FeedReport> {
   const report: FeedReport = { inscrits: 0, ecartes: 0, deja: 0 };
-  const campagnes = await deps.listRunning(tenantId, webhookId);
+  const campagnes = await deps.repo.listRunningByWebhook(tenantId, webhookId);
   if (campagnes.length === 0) return report;
 
   // Le contact n'est relu QU'UNE fois, même si plusieurs campagnes se nourrissent du même webhook.
-  const contact = await deps.contact(tenantId, waId);
+  const contact = await deps.repo.contactForBuildByWaId(tenantId, waId);
   if (!contact) return report;
 
   const maintenant = (deps.now ?? (() => new Date()))();
@@ -71,7 +74,7 @@ export async function alimenterCampagnesWebhook(
       );
       const envoyable = recipients[0];
       if (envoyable) {
-        const pose = await deps.insertRecipient(c.id, { ...envoyable, statut: 'pending' });
+        const pose = await deps.repo.insertWebhookRecipient(c.id, { ...envoyable, statut: 'pending' });
         if (!pose) { report.deja += 1; continue; } // déjà destinataire -> surtout pas un second run
         report.inscrits += 1;
         // Enfilé après l'inscription : dans l'ordre inverse, un run pourrait tourner avant que le
@@ -81,7 +84,7 @@ export async function alimenterCampagnesWebhook(
       }
       const ecarte = skipped[0];
       if (!ecarte) continue; // ni envoyable ni écarté : contact sans identité, il n'y a rien à inscrire
-      const pose = await deps.insertRecipient(c.id, {
+      const pose = await deps.repo.insertWebhookRecipient(c.id, {
         contactId: ecarte.contactId,
         toE164: ecarte.toE164,
         resolvedParams: [],

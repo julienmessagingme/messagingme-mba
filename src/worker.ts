@@ -66,7 +66,6 @@ import { runDateSweep } from './automation/date-sweep';
 import { balayerRisque, jourABalayer } from './engagement/balayage';
 import { depsBalayageRisque } from './engagement/cablage';
 import { AUTOMATION_EVENT_QUEUE, enfilerEvenementAutomation, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
-import type { AutomationTriggerKind } from './automation/match';
 import { buildWorkflowRuntime } from './workflow/wiring';
 import { AGENT_TURN_QUEUE, parseAgentTurnJob } from './agent/turn-job';
 
@@ -272,7 +271,7 @@ async function main(): Promise<void> {
   const espacesBatch = cacheCourt<ReadonlySet<string>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
   const emetteur = creerEmetteur({
     destinations: [{ file: FILE_SIGNAUX_BATCH, espacesActifs: () => espacesBatch.lire('actifs', () => integrationBatch.espacesActifs()) }],
-    enfiler: (file, job, opts) => queue.enqueue(file, job, opts),
+    queue,
     // eslint-disable-next-line no-console
     log: (m) => console.warn(m),
   });
@@ -332,8 +331,7 @@ async function main(): Promise<void> {
   const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,
-    getCredentialsByWaba: (w) => esStore.getCredentialsByWaba(w),
-    markTokenInvalid: (w) => esStore.markTokenInvalid(w),
+    credentials: esStore,
     decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
     fallbackToken: config.META_ACCESS_TOKEN,
   });
@@ -350,7 +348,7 @@ async function main(): Promise<void> {
       config.PHONE_RATE_PER_MINUTE_MAX,
       depsPorteDebitPg(pool),
     ),
-    numeroDelie: (pn) => gardeNumeroDelie.estDelie(pn),
+    numerosDelies: gardeNumeroDelie,
   });
 
   // Exécuteur de workflows : quand un contact répond, on avance son run.
@@ -363,7 +361,7 @@ async function main(): Promise<void> {
   const emailAccounts = new PgEmailAccountStore(pool);
   const emailTemplates = new PgEmailTemplateStore(pool);
   const emailResolver = new EmailAccountResolver({
-    getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
+    comptes: emailAccounts,
     buildTransport: buildEmailTransport,
   });
 
@@ -392,9 +390,7 @@ async function main(): Promise<void> {
    * le reste avec sa cadence et ses garde-fous.
    */
   const webhookFeedDeps: WebhookFeedDeps = {
-    listRunning: (tenant, webhookId) => repo.listRunningByWebhook(tenant, webhookId),
-    contact: (tenant, waId) => repo.contactForBuildByWaId(tenant, waId),
-    insertRecipient: (campaignId, r) => repo.insertWebhookRecipient(campaignId, r),
+    repo,
     // Un seul arrivant : `pendingCount` à 1 dimensionne l'expiration du job, et le débit est le même que celui
     // du run réel (sinon pg-boss rejouerait le job en parallèle).
     enqueueRun: (c) => relancerCampagne({ campaignId: c.id, tenantId: c.tenantId, pendingCount: 1, ratePerMinute: c.ratePerMinute }),
@@ -404,12 +400,8 @@ async function main(): Promise<void> {
   // hérite des gardes (fil détenu par un humain/MBA, ouverture hors fenêtre 24 h).
   const automationRunnerDeps = {
     // Contact bloqué : son message est enregistré et lisible, mais il ne déclenche plus aucun scénario.
-    contactBloque: (tenant: string, waId: string) => contactStore.isBlockedByWaId(tenant, waId),
-    listEnabled: (tenant: string, kinds: readonly AutomationTriggerKind[]) => automationStore.listEnabled(tenant, kinds),
-    lastFiredAt: (id: string, waId: string) => automationStore.lastFiredAt(id, waId),
-    markFired: (id: string, waId: string, marqueur?: string) => automationStore.markFired(id, waId, marqueur),
-    clearFired: (id: string, waId: string) => automationStore.clearFired(id, waId),
-    firedSince: (id: string, since: Date) => automationStore.firedSince(id, since),
+    contacts: contactStore,
+    automations: automationStore,
     maxFiresPerHour: config.AUTOMATION_MAX_FIRES_PER_HOUR,
     evalContext: buildEvalContext,
     startWorkflow: async (tenant: string, workflowId: string, waId: string, opts: {
@@ -699,7 +691,10 @@ async function main(): Promise<void> {
   // frein par numéro : sans lui, deux runs doubleraient le débit réel du numéro, que Meta observe et sanctionne.
   await queue.work('campaign-run', async (data) => {
     await campaignRunJob(data, {
-      getCampaign: (id) => repo.getCampaign(id),
+      // Le dépôt porte aussi deux gardes que les tests laissent absentes : 🔴 la revalidation de l'appartenance
+      // du numéro juste avant d'envoyer (défense contre une réaffectation), et le numéro de l'espace pour un étage
+      // WhatsApp de repli sur une campagne qui n'en porte pas (RCS), le premier par `created_at`.
+      repo,
       senderFor,
       recipients: recipientStore,
       campaigns: new PgCampaignStore(pool),
@@ -712,18 +707,12 @@ async function main(): Promise<void> {
       // Le plafond du canal : le seul câblage qui bride vraiment un envoi (les enfileurs n'estiment qu'une durée).
       // `plafondDuCanal` lit le canal de la campagne, donc une campagne RCS n'hérite pas du plafond WhatsApp.
       plafondDeDebit: (canal) => plafondDuCanal(canal, config),
-      // 🔴 Revalide l'appartenance du numéro juste avant d'envoyer (défense contre une réaffectation). Injecté ici
-      // seulement : absent en test/e2e, la garde est sautée (fixtures sans ligne phone_numbers).
-      phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       // Canal RCS : sender construit à partir de l'agent et du message figés sur la campagne. null -> campagne
       // mise en pause avec sa raison, jamais repartie sur le chemin WhatsApp.
-      rcsSenderFor: (campaign, message) => rcsStack.senderForCampaign(campaign, message),
-      // Le numéro de l'espace, pour un étage WhatsApp de repli sur une campagne qui n'en porte pas (RCS) : le même
-      // que l'écran de création aurait choisi, le premier par `created_at`.
-      numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
+      rcs: rcsStack,
       // Le store, pas la garde : la pause `numero_delie` relit la base, parce que la garde met sa réponse en cache
-      // 5 s et peut dire « délié » juste après « Relier » (cf. `RunJobDeps.pauserSiNumeroDelie`).
-      pauserSiNumeroDelie: (id, tenant, pn) => numeroDelieStore.pauserCampagne(id, tenant, pn),
+      // 5 s et peut dire « délié » juste après « Relier » (cf. `RunJobDeps.numerosDelies`).
+      numerosDelies: numeroDelieStore,
       // Sérialisation des runs : un seul run vivant par campagne. Injectée ici seulement, comme les gardes
       // voisines : absente en test/e2e.
       serialisation: {
@@ -810,8 +799,7 @@ async function main(): Promise<void> {
         noterJoignabilite: noterJoignabiliteContact,
       } satisfies Partial<CapacitesMoteur>)),
       // Journalise le template envoyé (campagne directe) dans le fil de conversation.
-      recordOutbound: (tenant: string, waId: string, msg: Parameters<typeof inboxStore.recordOutboundByWaId>[2]) =>
-        inboxStore.recordOutboundByWaId(tenant, waId, msg),
+      inbox: inboxStore,
       /**
        * Journalise chaque tentative d'envoi, hors du bloc `dryRun` (à l'inverse de `noterJoignabilite`) : ce
        * journal enregistre ce que le produit a fait, et en DRY_RUN les destinataires sont réellement résolus
@@ -838,10 +826,10 @@ async function main(): Promise<void> {
      */
     journalAppels: new PgJournalAppels(pool),
     libelleRequete: async (t, id) => (await new PgRequeteStore(pool).parId(t, id))?.label ?? null,
-    derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
+    inbox: inboxStore,
     fuseau: async (t) => (await settingsStore.get(t)).timezone,
     // Relue à chaque appel : la fiche a pu bouger entre le refus et la reprise du job.
-    projectionContact: (t, waId) => contactStore.projectionPourTiers(t, waId),
+    contacts: contactStore,
     // eslint-disable-next-line no-console
     log: (m) => console.warn(m),
   }));
@@ -870,7 +858,7 @@ async function main(): Promise<void> {
     },
     completer: (t, s) => completerSignal(signauxStore, t, s),
     pousser: (requete, cles) => pousserVersBatch(requete, cles, transport),
-    noterSansIdentifiant: (t, n) => integrationBatch.noterSansIdentifiant(t, n),
+    batch: integrationBatch,
     suspendre: async (t) => {
       await integrationBatch.suspendre(t);
       espacesBatch.invalider('actifs');
@@ -891,15 +879,13 @@ async function main(): Promise<void> {
     if (pushEnabled) {
       await queue.work('push-analysis', (data) =>
         pushAnalysisJob(data, {
-          // Relecture fraîche : le payload ne porte qu'une référence, on relit l'analyse courante ici.
-          getStoredAnalysis: (id) => analysisStore.getStored(id),
+          // Relecture fraîche : le payload ne porte qu'une référence, on relit l'analyse courante ici. Skip en pause
+          // -> marque à rattraper (décision prise par le job sur le snapshot) ; post réussi -> efface la marque.
+          analyses: analysisStore,
           getEnrichment: (id) => getEnrichment(pool, id),
           // Porte + décision de rattrapage en un seul snapshot : connected (pousse ou non) + pausedAt (marque ou non).
-          getHubspotGateStatus: (tenantId, line) => phoneStatusStore.getHubspotGateStatus(tenantId, line),
+          numeros: phoneStatusStore,
           post: (event) => postAnalysis(event, { url: config.CONNECTOR_PUSH_URL, secret: config.CONNECTOR_PUSH_SECRET, transport }),
-          // Skip en pause -> marque à rattraper (décision prise par le job sur le snapshot) ; post réussi -> efface la marque.
-          markPendingCatchup: (id) => analysisStore.markPendingCatchup(id),
-          clearPendingCatchup: (id) => analysisStore.clearPendingCatchup(id),
           // eslint-disable-next-line no-console
           log: (m) => console.log(m),
         }),
@@ -908,7 +894,7 @@ async function main(): Promise<void> {
       // inertie que push-analysis : push off, catch-up non consommé.
       await queue.work('hubspot-catchup', (data) =>
         hubspotCatchupJob(data, {
-          listPendingCatchup: (tenantId) => analysisStore.listConversationIdsPendingCatchup(tenantId),
+          analyses: analysisStore,
           enqueuePush: (ref) => queue.enqueue('push-analysis', ref),
           // eslint-disable-next-line no-console
           log: (m) => console.log(m),
@@ -1014,9 +1000,8 @@ async function main(): Promise<void> {
   // second run entre les deux. Sans objet tant que le compose fige une seule instance.
   const scheduleSweep = async (): Promise<void> => {
     const n = await runCampaignScheduleSweep({
-      listDue: () => repo.listDueScheduled(),
+      repo,
       enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
-      markRunning: (id) => repo.markScheduledRunning(id),
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
       plafondLePlusBas: plafondLePlusBas(config),
       onError: (m, err) => {
@@ -1041,8 +1026,7 @@ async function main(): Promise<void> {
    */
   const plafondSweep = async (): Promise<void> => {
     const n = await runCampaignRepriseSweep({
-      reprendreDues: () => repo.reprendreCampagnesDues(),
-      getRunSizing: (id) => repo.getRunSizing(id),
+      repo,
       enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
       plafondLePlusBas: plafondLePlusBas(config),
@@ -1088,12 +1072,10 @@ async function main(): Promise<void> {
   // le bail a expiré.
   const wakeSweep = async (): Promise<void> => {
     const n = await runWorkflowWakeSweep({
-      claimDue: (limit) => runStore.claimDueSleeping(limit),
-      // Bloc Question resté sans réponse : son échéance vit sur un run `waiting`, invisible du claim ci-dessus.
-      // Sans cette ligne, la sortie « pas de réponse » ne partirait jamais.
-      claimDueQuestions: (limit) => runStore.claimDueQuestions(limit),
-      resume: (run) => workflowExecutor.resume(run),
-      closeStale: () => runStore.closeStaleSleeping(),
+      // Le dépôt porte aussi les blocs Question restés sans réponse, dont l'échéance vit sur un run `waiting`,
+      // invisible du claim des dormants : sans eux, la sortie « pas de réponse » ne partirait jamais.
+      runs: runStore,
+      executor: workflowExecutor,
     });
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`wake-sweep: ${n} parcours repris après attente`);
@@ -1142,10 +1124,8 @@ async function main(): Promise<void> {
       const res = await runRetrySweep({
         isMorningWindow: () => isMorningParis(Date.now()),
         list131049: () => repo.listRetry131049(Date.now()),
-        list131026: () => repo.listRetry131026(),
-        list131026SecondFail: () => repo.listRetry131026SecondFail(),
-        resetForRetry: (id) => repo.resetForRetry(id),
-        markUnreachableDone: (id) => repo.markUnreachableDone(id),
+        // La bascule d'étage y passe aussi : seules les campagnes à repli sont candidates.
+        repo,
         // L'expiration est dimensionnée, comme pour les autres enfileurs de cette file : au défaut de 15 min, une
         // relance de plus de ~450 destinataires (à 30/min) expirerait en plein envoi, pg-boss la rejouerait, et le
         // run parallèle doublerait le débit réel.
@@ -1157,10 +1137,6 @@ async function main(): Promise<void> {
         },
         flagUnreachable,
         noterJoignabilite: noterJoignabiliteContact,
-        // La bascule d'étage : seules les campagnes à repli y passent, aucune tant qu'une chaîne à plus d'un étage
-        // n'est pas créable. Le câblage est posé d'avance.
-        listCandidatsBascule: () => repo.listCandidatsBascule(),
-        basculerEtage: (id, rang) => repo.basculerEtage(id, rang),
         // L'horaire du rattrapage, distinct de celui de l'envoi initial (`business_hours_only`, lu par le moteur) :
         // ici c'est l'espace qui parle ; la campagne dit seulement si elle s'en affranchit
         // (`rattrapage_hors_horaires`), réponse qui voyage avec le destinataire.
@@ -1180,22 +1156,12 @@ async function main(): Promise<void> {
   // conversation indéfiniment.
   const controlSweep = async (): Promise<void> => {
     const rendues = await runControlSweep({
-      /**
-       * Les deux arguments : le balayage appelle `listHeldControl(undefined, timeouts.app_workflow)`, et une
-       * flèche à un seul paramètre compilerait en avalant le second en silence. Le magasin retomberait sur
-       * `ageScenarioMs = 0`, et son SQL (`$2::bigint > 0`) ne ramasserait jamais les fils tenus par un scénario.
-       * Aucun test ne le voit : ils montent tous un faux `listHeldControl`.
-       */
-      listHeldControl: (limit, ageScenarioMs) => inboxStore.listHeldControl(limit, ageScenarioMs),
-      setControlOwner: (t, w, o, opts) => inboxStore.setControlOwner(t, w, o, opts),
+      inbox: inboxStore,
       // Défauts du serveur, appliqués aux clients qui n'ont rien réglé.
       timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS, app_workflow: config.CONTROL_WORKFLOW_TIMEOUT_MS },
-      // Réglage par client du gel humain : c'est lui qui décide combien de temps on laisse un
-      // opérateur travailler tranquille avant que la conversation reparte.
-      handbackMsByTenant: (ids) => settingsStore.handbackMsByTenant(ids),
-      // Destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres. Plus
-      // rien à arbitrer, la règle se déduit de l'état du compte.
-      mbaActifParTenant: (ids) => settingsStore.mbaActifParTenant(ids),
+      // Le réglage par client du gel humain (combien de temps on laisse un opérateur travailler tranquille), et
+      // la destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres.
+      reglages: settingsStore,
       /**
        * Le verdict de la remise est relayé, pas jeté : sinon des conversations annonceraient `mba` alors que
        * Meta pense le contraire. Refuser d'écrire ne gèle rien (la conversation reste visible dans « À
@@ -1212,13 +1178,10 @@ async function main(): Promise<void> {
   // Passage de main de l'agent selon les heures d'ouverture. Meta n'a aucune notion d'horaires : sans ce
   // balayage, un agent qui passe la main la passe aussi à 3 h du matin (« un conseiller arrive » quand
   // personne n'est là). Ne concerne que les tenants ayant choisi ce mode.
-  const cibleHandoff = {
-    clientFor: (tenant: string) => metaFactory.mbaClientForTenant(tenant),
-    phoneNumberFor: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
-  };
+  const cibleHandoff = { numeros: repo, meta: metaFactory };
   const handoffSweep = async (): Promise<void> => {
     const bascules = await runHandoffSweep({
-      tenantsHandoffSurHoraires: () => settingsStore.tenantsHandoffSurHoraires(),
+      reglages: settingsStore,
       lireHandoffEnabled: (tenant) => lireHandoffEnabled(cibleHandoff, tenant),
       ecrireHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(cibleHandoff, tenant, enabled),
     });
@@ -1378,10 +1341,9 @@ async function main(): Promise<void> {
   // file sans rien démarrer : le scénario part par le chemin commun, avec les mêmes garde-fous.
   const dateSweep = async (): Promise<void> => {
     const n = await runDateSweep({
-      tenants: () => automationStore.tenantsAvecDeclencheurDate(),
+      declencheurs: automationStore,
       automations: (tenant) => automationStore.listEnabled(tenant, ['avant_date']),
       timeZone: async (tenant) => (await settingsStore.get(tenant)).timezone,
-      candidats: (tenant, autoId, cle, basse, haute) => automationStore.contactsDusPourDate(tenant, autoId, cle, basse, haute),
       publish: async (tenantId, event) => { await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob); },
       toleranceMinutes: config.AUTOMATION_DATE_TOLERANCE_MINUTES,
       // eslint-disable-next-line no-console
@@ -1404,7 +1366,7 @@ async function main(): Promise<void> {
     pool,
     file: queue,
     emetteur,
-    automationsActives: (t, kinds) => automationStore.listEnabled(t, kinds),
+    automations: automationStore,
     // eslint-disable-next-line no-console
     journal: (m) => console.warn(m),
   });
@@ -1439,7 +1401,7 @@ async function main(): Promise<void> {
   // donc sans alerte la perte est silencieuse. Cadence 5 min, alignée sur le throttle ; alerte seulement sur
   // une hausse (cf. `dlq-sweep.ts`), sinon une condition permanente alerterait toutes les 5 minutes.
   const dlqSweep = creerDlqSweep({
-    queueLoad: () => opsStore.getQueueLoad(),
+    ops: opsStore,
     // Clé d'alerte par file : deux DLQ qui se remplissent ensemble produisent deux messages (le throttle en
     // masquerait une). La dédup sur la répétition est faite par le balayage.
     alert: (queue, m) => alert(`dlq:${queue}`, m),
@@ -1463,8 +1425,7 @@ async function main(): Promise<void> {
    * silence se constate sur la durée.
    */
   const webhooksMuets = creerWebhooksMuetsSweep({
-    recus: (min) => opsStore.webhooksRecusDepuis(min),
-    enregistres: (min) => opsStore.evenementsWebhookDepuis(min),
+    ops: opsStore,
     alert: (msg) => alert('webhooks-muets', msg),
   });
   taches.programmer('webhooks-muets', 5 * 60_000, async () => { await webhooksMuets(); }, {
@@ -1481,7 +1442,7 @@ async function main(): Promise<void> {
     const alertedPhones = new Map<string, PhoneProblem>();
     const statusSweep = async (): Promise<void> => {
       const n = await runPhoneStatusSweep({
-        listNumbers: () => opsStore.listNumbersForStatusSweep(),
+        ops: opsStore,
         // Pull par tenant + waba_id de la ligne (bon WABA en multi-WABA). Un échec devient un PullResult
         // (pullFromError -> authError), jamais un throw.
         pull: async (num) => {
@@ -1494,7 +1455,7 @@ async function main(): Promise<void> {
             return pullFromError(err);
           }
         },
-        save: (id, patch) => phoneStatusStore.saveStatus(id, patch),
+        statuts: phoneStatusStore,
         alert: (msg) => { void sendTelegram(`[mba-worker] ${msg}`); },
         alertedState: alertedPhones,
       });
@@ -1512,14 +1473,12 @@ async function main(): Promise<void> {
   if (config.META_ADS_CONFIG_ID) {
     const suivrePubs = async (): Promise<void> => {
       const bilan = await balayerLesPubs({
-        espacesASuivre: () => publicitesStore.espacesASuivre(),
-        campagnesASuivre: (t) => publicitesStore.campagnesASuivre(t),
+        publicites: publicitesStore,
         jeton: async (t) => {
           const chiffre = await connexionsPubStore.lireJetonChiffre(t);
           return chiffre === null ? null : decryptSecret(chiffre, config.ENCRYPTION_KEY);
         },
-        lireCampagnes: (ids, jeton) => clientPubsCreation.lireCampagnes(ids, jeton),
-        lireDepenses: (ids, jeton) => clientPubsCreation.lireDepenses(ids, jeton),
+        meta: clientPubsCreation,
         noterSuivi: (t, campagneId, v) => publicitesStore.noterSuivi(t, campagneId, {
           statutMeta: v.etat?.statut ?? null,
           motifRefus: v.etat?.motifRefus ?? null,
@@ -1529,7 +1488,7 @@ async function main(): Promise<void> {
           depense: v.depense?.depense ?? null,
           clics: v.depense?.clics ?? null,
         }),
-        marquerJetonRejete: (t) => connexionsPubStore.marquerJetonRejete(t),
+        connexions: connexionsPubStore,
         // Sur le code de Meta, jamais sur la phrase : une garde qui lit une phrase casse en silence le jour où
         // Meta la réécrit.
         estJetonRefuse,
@@ -1608,7 +1567,7 @@ async function main(): Promise<void> {
     // L'escalade vers un humain : trois effets dans un ordre contre-intuitif, que `escalade.ts` explique.
     const escaladerVersHumain = creerEscaladeVersHumain({
       sessions: agentSessions,
-      sortirDuBlocAgent: (t, waId, sessionId, sortie) => workflowExecutor.sortirDuBlocAgent(t, waId, sessionId, sortie),
+      parcours: workflowExecutor,
       // Escalade de l'agent IA (`src/agent/escalade.ts`) : aucun affectataire, personne n'a désigné de membre
       // (le bloc « passer à un humain » d'un scénario, lui, affecte via `src/workflow/wiring.ts`).
       // Le booléen de `setControlOwner` est rendu, pas avalé : `true` seulement si le fil a vraiment basculé de
@@ -1639,7 +1598,7 @@ async function main(): Promise<void> {
     // UN seul cerveau pour toutes les conversations de tous les clients : le contexte du tour est passé à
     // l'appel, jamais figé ici (`creerCerveauGateway`).
     const cerveau = creerCerveauGateway({
-      completer: (i) => gatewayAgent.completer(i),
+      client: gatewayAgent,
       // Point de lecture partagé avec le bac à sable de la console : un champ ajouté d'un seul côté ferait
       // diverger ce que le modèle voit selon qu'on teste ou qu'on est en production.
       contexte: (t, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, t, agentId),
@@ -1668,7 +1627,7 @@ async function main(): Promise<void> {
             sources: agentSources,
             requetes: agentRequetes,
             // Chargées paresseusement : appelées seulement si la requête déclare une variable qui les réclame.
-            derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
+            inbox: inboxStore,
             fuseau: async (t) => (await settingsStore.get(t)).timezone,
           }),
           /**
@@ -1678,11 +1637,11 @@ async function main(): Promise<void> {
            */
           mcp: creerResolveurMcp({ sources: agentSources }),
         },
-        compterAppel: (t, sessionId) => agentSessions.compterAppel(t, sessionId),
+        sessions: agentSessions,
       },
       // 🔴 Projection, jamais la ligne brute : `mba_lire_contact` la rend telle quelle au modèle, donc au
-      // fournisseur (`projectionPourTiers`).
-      lireContact: (t, waId) => contactStore.projectionPourTiers(t, waId),
+      // fournisseur (`projectionPourTiers`, seule méthode de la tranche).
+      contacts: contactStore,
       alerter: (m) => { alert('agent', m); },
     });
 
@@ -1691,13 +1650,13 @@ async function main(): Promise<void> {
       brain: cerveau,
       // 🔴 Le solde prépayé de l'espace : lu avec les autres plafonds (avant l'appel au modèle), et débité de ce
       // que le tour a réellement coûté.
-      soldeTenant: (t) => credits.solde(t),
+      credits,
       debiterTenant: async (t, montant, sessionId) => { await credits.debiter(t, montant, { sessionId }); },
       lireRun: async (t, runId) => {
         const run = await runStore.byId(t, runId);
         return run ? { status: run.status, currentNode: run.currentNode } : null;
       },
-      lireFiche: (t, agentId) => agentStore.byId(t, agentId),
+      agents: agentStore,
       // La mémoire de l'agent : la conversation depuis l'ouverture de sa session (sinon il redemande son nom au
       // contact à chaque message). Lue et non reçue : `advance` ne porte pas le texte du message.
       lireConversation: async (t, waId, depuis) => {
@@ -1716,8 +1675,7 @@ async function main(): Promise<void> {
        */
       estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
       envoyer: (t, waId, texte) => envoyerTexteAgent(t, waId, texte),
-      mesurer: ({ tenantId, workflowId, nodeId, waId, kind }) =>
-        nodeEventStore.record({ tenantId, workflowId, nodeId, waId, kind }),
+      mesures: nodeEventStore,
       sortir: async ({ tenantId, waId, sessionId, sortie }) => {
         await workflowExecutor.sortirDuBlocAgent(tenantId, waId, sessionId, sortie);
       },

@@ -17,7 +17,7 @@ export interface OptionsCablageRisque {
   file: FileDEvenements;
   emetteur: Pick<Emetteur, 'emettreSignaux'>;
   /** Les automations actives d'un espace pour ces types (le chemin chaud de `PgAutomationStore.listEnabled`). */
-  automationsActives(tenantId: string, kinds: readonly AutomationTriggerKind[]): Promise<AutomationRow[]>;
+  automations: { listEnabled(tenantId: string, kinds: readonly AutomationTriggerKind[]): Promise<AutomationRow[]> };
   /** Nommé `journal` et pas `log` : un `.log` sur un autre objet que `deps` se lit comme le journal muet de Fastify. */
   journal?: (message: string) => void;
 }
@@ -31,7 +31,7 @@ export function depsBalayageRisque(o: OptionsCablageRisque): DepsBalayageRisque 
     faits: (t, ids, depuis, maintenant) => store.faits(t, ids, depuis, maintenant),
     ecrire: (t, lignes, calculeLe) => store.ecrire(t, lignes, calculeLe),
     declenchablesDepuis: (t, depuis) => store.declenchablesDepuis(t, depuis),
-    automationRisqueActive: async (t) => (await o.automationsActives(t, ['risque_eleve'])).length > 0,
+    automationRisqueActive: async (t) => (await o.automations.listEnabled(t, ['risque_eleve'])).length > 0,
     horairesOuvres: async (t) => {
       const s = await reglages.get(t);
       return { timeZone: s.timezone, businessHours: s.businessHours };

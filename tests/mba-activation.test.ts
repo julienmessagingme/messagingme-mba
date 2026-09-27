@@ -78,8 +78,10 @@ describe('le balayage « des webhooks arrivent mais rien ne s’écrit »', () =
   function sonde(recus: number, enregistres: number) {
     const alertes: string[] = [];
     const sweep = creerWebhooksMuetsSweep({
-      recus: async () => recus,
-      enregistres: async () => enregistres,
+      ops: {
+        webhooksRecusDepuis: async () => recus,
+        evenementsWebhookDepuis: async () => enregistres,
+      },
       alert: (m) => alertes.push(m),
     });
     return { sweep, alertes };
@@ -112,8 +114,10 @@ describe('le balayage « des webhooks arrivent mais rien ne s’écrit »', () =
     const alertes: string[] = [];
     let enregistres = 0;
     const sweep = creerWebhooksMuetsSweep({
-      recus: async () => 58,
-      enregistres: async () => enregistres,
+      ops: {
+        webhooksRecusDepuis: async () => 58,
+        evenementsWebhookDepuis: async () => enregistres,
+      },
       alert: (m) => alertes.push(m),
     });
     await sweep();               // panne -> alerte
@@ -137,8 +141,10 @@ describe('le balayage « des webhooks arrivent mais rien ne s’écrit »', () =
     const alertes: string[] = [];
     let recus = 58;
     const sweep = creerWebhooksMuetsSweep({
-      recus: async () => recus,
-      enregistres: async () => 0,
+      ops: {
+        webhooksRecusDepuis: async () => recus,
+        evenementsWebhookDepuis: async () => 0,
+      },
       alert: (m) => alertes.push(m),
     });
     await sweep();     // panne -> alerte

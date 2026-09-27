@@ -17,7 +17,7 @@ function emetteurDeTest(actifs: string[] = [T]) {
   let lectures = 0;
   const emetteur = creerEmetteur({
     destinations: [{ file: 'signaux-test', espacesActifs: async () => { lectures += 1; return new Set(actifs); } }],
-    enfiler: async (file, job, opts) => { jobs.push({ file, job, opts }); },
+    queue: { enqueue: async (file, job, opts) => { jobs.push({ file, job, opts }); } },
     log: (m) => { logs.push(m); },
   });
   return { emetteur, jobs, logs, lectures: () => lectures };
@@ -71,13 +71,13 @@ describe('creerEmetteur', () => {
     const logs: string[] = [];
     const lectureCassee = creerEmetteur({
       destinations: [{ file: 'f', espacesActifs: async () => { throw new Error('base indisponible'); } }],
-      enfiler: async () => {},
+      queue: { enqueue: async () => {} },
       log: (m) => { logs.push(m); },
     });
     await expect(lectureCassee.emettreSignal(T, signalAnalyse(C))).resolves.toBeUndefined();
     const fileCassee = creerEmetteur({
       destinations: [{ file: 'f', espacesActifs: async () => new Set([T]) }],
-      enfiler: async () => { throw new Error('file pleine'); },
+      queue: { enqueue: async () => { throw new Error('file pleine'); } },
       log: (m) => { logs.push(m); },
     });
     await expect(fileCassee.emettreSignal(T, signalAnalyse(C))).resolves.toBeUndefined();

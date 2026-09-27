@@ -16,7 +16,7 @@ export interface DepsTravailBatch {
   reglage(tenantId: string): Promise<ReglageBatchClair | null>;
   completer(tenantId: string, signal: Signal): Promise<SignalComplet | null>;
   pousser(requete: ProfilBatch[], cles: ClesBatch): Promise<{ partiel: string | null }>;
-  noterSansIdentifiant(tenantId: string, n: number): Promise<void>;
+  batch: { noterSansIdentifiant(tenantId: string, n: number): Promise<void> };
   suspendre(tenantId: string): Promise<void>;
   journal: JournalAppels;
   /** L'horloge, en millisecondes : durée d'un appel, et fenêtre des événements acceptés par l'outil. */
@@ -136,7 +136,7 @@ export function creerTravailSignauxBatch(deps: DepsTravailBatch): (data: unknown
     // Après la dernière tranche : seul le passage qui va jusqu'ici compte, une fois.
     if (sansIdentifiant > 0) {
       try {
-        await deps.noterSansIdentifiant(tenantId, sansIdentifiant);
+        await deps.batch.noterSansIdentifiant(tenantId, sansIdentifiant);
       } catch (err) {
         deps.log?.(`signaux-batch: compte sans identifiant non ecrit pour ${tenantId}: ${texteDe(err)}`);
       }

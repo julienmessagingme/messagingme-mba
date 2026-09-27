@@ -6,7 +6,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { ChannelsMeRouteDeps } from '../src/http/channels-me';
+import type { ChannelsMeRouteDeps, ClientChannelsMe, ConnexionsChannelsMe, LiensChannelsMe, PostsChannelsMe } from '../src/http/channels-me';
 import type { Connexion, Organisation, MessageChannel, Message } from '../src/channels-me/types';
 import type { LienRow } from '../src/channels-me/link-store.pg';
 import type { PostRow } from '../src/channels-me/post-store.pg';
@@ -80,7 +80,13 @@ const ORGA = { id: 'org-1', name: 'Demo' } as unknown as Organisation;
 const CANAL = { id: 'chan-1', name: 'Ma chaine' } as unknown as MessageChannel;
 const MESSAGE = { id: 'cm-msg-1' } as unknown as Message;
 
-function app(over: Partial<ChannelsMeRouteDeps> = {}) {
+/** Les tranches se surchargent membre par membre. */
+type Surcharges = Partial<Omit<ChannelsMeRouteDeps, 'connexions' | 'client' | 'liens' | 'posts'>> & {
+  connexions?: Partial<ConnexionsChannelsMe>; client?: Partial<ClientChannelsMe>; liens?: Partial<LiensChannelsMe>; posts?: Partial<PostsChannelsMe>;
+};
+
+function app(over: Surcharges = {}) {
+  const { connexions: surConnexions, client: surClient, liens: surLiens, posts: surPosts, ...reste } = over;
   const cap = {
     upserts: [] as Connexion[],
     verifies: [] as string[],
@@ -96,33 +102,45 @@ function app(over: Partial<ChannelsMeRouteDeps> = {}) {
     debranches: [] as string[],
   };
   const deps: ChannelsMeRouteDeps = {
-    getConnection: async () => ({ orgId: 'org-1', channelId: 'chan-1', hasApiKey: true, hasSecret: true, verifiedAt: null }),
-    getSecrets: async () => CX,
-    upsertConnection: async (_t, c) => { cap.upserts.push(c); },
-    markVerified: async (t) => { cap.verifies.push(t); },
-    supprimerConnection: async (t) => { cap.debranches.push(t); return true; },
-    getOrganisation: async () => ORGA,
-    listChannels: async () => [CANAL],
-    getMessages: async () => [MESSAGE],
-    createMessage: async (_cx, m) => { cap.publies.push(m); cap.ordre.push('publie'); return MESSAGE; },
-    listLinks: async () => [LIEN],
-    createLink: async (_t, l) => { cap.liens.push(l); return { ...LIEN, ...l }; },
-    linkById: async (_t, id) => (id === LINK_ID ? LIEN : null),
-    supprimerAutomationCompagnon: async (_t, id) => { cap.automationsSupprimees.push(id); },
-    conversationsParLien: async () => ({ parLien: [{ linkId: LINK_ID, contacts: 3 }], partiel: false }),
-    listPosts: async () => [POST],
-    createPost: async (_t, p) => { cap.posts.push(p); cap.ordre.push('trace'); },
+    connexions: {
+      get: async () => ({ orgId: 'org-1', channelId: 'chan-1', hasApiKey: true, hasSecret: true, verifiedAt: null }),
+      getSecrets: async () => CX,
+      upsert: async (_t, c) => { cap.upserts.push(c); },
+      markVerified: async (t) => { cap.verifies.push(t); },
+      supprimer: async (t) => { cap.debranches.push(t); return true; },
+      ...surConnexions,
+    },
+    client: {
+      getOrganisation: async () => ORGA,
+      listChannels: async () => [CANAL],
+      getMessages: async () => [MESSAGE],
+      createMessage: async (_cx, m) => { cap.publies.push(m); cap.ordre.push('publie'); return MESSAGE; },
+      ...surClient,
+    },
+    liens: {
+      list: async () => [LIEN],
+      create: async (_t, l) => { cap.liens.push(l); return { ...LIEN, ...l }; },
+      byId: async (_t, id) => (id === LINK_ID ? LIEN : null),
+      supprimerAutomationCompagnon: async (_t, id) => { cap.automationsSupprimees.push(id); },
+      conversationsParLien: async () => ({ parLien: [{ linkId: LINK_ID, contacts: 3 }], partiel: false }),
+      allumerAutomation: async (_t, id) => { cap.allumees.push(id); cap.ordre.push('allume'); },
+      eteindreAutomation: async (_t, id) => { cap.eteintes.push(id); cap.ordre.push('eteint'); },
+      messagesContenantLaPhrase: async () => 0,
+      ...surLiens,
+    },
+    posts: {
+      list: async () => [POST],
+      create: async (_t, p) => { cap.posts.push(p); cap.ordre.push('trace'); },
+      ...surPosts,
+    },
     creerAutomationCompagnon: async (_t, input) => { cap.automations.push(input); return { id: AUTO_ID }; },
-    allumerAutomationLien: async (_t, id) => { cap.allumees.push(id); cap.ordre.push('allume'); },
-    eteindreAutomationLien: async (_t, id) => { cap.eteintes.push(id); cap.ordre.push('eteint'); },
     scenarioEtat: async (_t, wf) => (wf === WF_ID ? 'ok' : 'inconnu'),
     getDisplayPhoneNumber: async () => '+33 5 25 68 02 50',
     demanderActivation: async ({ message }) => { cap.demandes.push({ message }); },
     // Depuis que la PHRASE route, elle doit etre unique et distinctive. Par defaut le faux dit « libre » et
     // « jamais vue » : chaque test qui veut exercer un refus le surcharge, ce qui rend le refus VISIBLE.
     phraseEnConflit: async () => false,
-    messagesContenantLaPhrase: async () => 0,
-    ...over,
+    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, channelsMe: deps }), cap };
 }
@@ -142,7 +160,7 @@ describe('Channels Me : la connexion', () => {
   });
 
   it('tiers muet : la connexion enregistree reste visible, en 200, avec distant = injoignable', async () => {
-    const { server } = app({ getOrganisation: async () => { throw new Error('reseau'); } });
+    const { server } = app({ client: { getOrganisation: async () => { throw new Error('reseau'); } } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/channels-me/connection', ...h(adminTok) });
     // 200 et pas 5xx : dire « rien de configure » alors que le tiers a simplement echoue enverrait le client
     // ressaisir des identifiants qui sont bons.
@@ -205,7 +223,7 @@ describe('Channels Me : provisionner et verifier les identifiants', () => {
   });
 
   it('🔴 identifiants refuses par le tiers : 422 avec la marche a suivre, et AUCUNE verification posee', async () => {
-    const { server, cap } = app({ listChannels: async () => { throw new Error('401 unauthorized'); } });
+    const { server, cap } = app({ client: { listChannels: async () => { throw new Error('401 unauthorized'); } } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/channels-me/connection/test', ...h(adminTok) });
     // 422 et non 5xx : c'est une saisie a corriger, et Cloudflare remplacerait le corps d'un 5xx par sa page
     // d'erreur, donc le message n'atteindrait jamais l'operateur.
@@ -216,7 +234,7 @@ describe('Channels Me : provisionner et verifier les identifiants', () => {
   });
 
   it('tester sans rien avoir enregistre : 409, pas un 500', async () => {
-    const { server } = app({ getSecrets: async () => null });
+    const { server } = app({ connexions: { getSecrets: async () => null } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/channels-me/connection/test', ...h(adminTok) });
     expect(res.statusCode).toBe(409);
     await server.close();
@@ -238,7 +256,7 @@ describe('Channels Me : debrancher la chaine (Accueil, « Canaux et services »)
   });
 
   it('rejouable : une chaine deja debranchee rend 200 avec `supprimee: false`', async () => {
-    const { server } = app({ supprimerConnection: async () => false });
+    const { server } = app({ connexions: { supprimer: async () => false } });
     const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/channels-me/connection', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true, supprimee: false });
@@ -363,7 +381,7 @@ describe('Channels Me : les liens de chaine', () => {
     // Le controle qui remplace un seuil de longueur invente : le danger n est pas d etre courte, c est
     // d apparaitre dans la conversation ordinaire. Le nombre est DIT, sinon le client ne peut pas savoir ce
     // qu on lui reproche ni comment corriger.
-    const { server, cap } = app({ messagesContenantLaPhrase: async () => 7 });
+    const { server, cap } = app({ liens: { messagesContenantLaPhrase: async () => 7 } });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
       payload: { workflowId: WF_ID, phrase: 'bonjour' },
@@ -402,7 +420,9 @@ describe('Channels Me : les liens de chaine', () => {
   // toujours.
   it('🔴 createLink echoue : l automation compagnon qu on vient de creer est DEFAITE, pas laissee orpheline', async () => {
     const { server, cap } = app({
-      createLink: async () => { throw new Error('connexion base perdue'); },
+      liens: {
+        create: async () => { throw new Error('connexion base perdue'); },
+      },
     });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
@@ -451,7 +471,7 @@ describe('Channels Me : les liens de chaine', () => {
   });
 
   it('un lien deja sans automation compagnon : 409, et rien n est appele', async () => {
-    const { server, cap } = app({ linkById: async () => ({ ...LIEN, automationId: null }) });
+    const { server, cap } = app({ liens: { byId: async () => ({ ...LIEN, automationId: null }) } });
     const res = await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${LINK_ID}/disable`, ...h(adminTok) });
     expect(res.statusCode).toBe(409);
     expect(cap.eteintes).toEqual([]);
@@ -497,7 +517,7 @@ describe('Channels Me : les liens de chaine', () => {
   });
 
   it('rallumer un lien deja sans automation compagnon : 409', async () => {
-    const { server, cap } = app({ linkById: async () => ({ ...LIEN, automationId: null }) });
+    const { server, cap } = app({ liens: { byId: async () => ({ ...LIEN, automationId: null }) } });
     const res = await server.inject({ method: 'POST', url: `/tenants/t1/channels-me/links/${LINK_ID}/enable`, ...h(adminTok) });
     expect(res.statusCode).toBe(409);
     expect(cap.allumees).toEqual([]);
@@ -570,7 +590,7 @@ describe('Channels Me : publier', () => {
   });
 
   it('🔴 publication refusee par le tiers : 422, et le lien reste ETEINT', async () => {
-    const { server, cap } = app({ createMessage: async () => { throw new Error('422 text too long'); } });
+    const { server, cap } = app({ client: { createMessage: async () => { throw new Error('422 text too long'); } } });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
       payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
@@ -588,7 +608,7 @@ describe('Channels Me : publier', () => {
   // republie ferait recevoir le meme message deux fois a toute l'audience (`createMessage` n'a aucune cle
   // d'idempotence).
   it('🔴 vrai refus du fournisseur (ChannelsMeApiError avec un statut 4xx recu) : 422, invite a reessayer', async () => {
-    const { server, cap } = app({ createMessage: async () => { throw new ChannelsMeApiError(422, 'texte trop long'); } });
+    const { server, cap } = app({ client: { createMessage: async () => { throw new ChannelsMeApiError(422, 'texte trop long'); } } });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
       payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
@@ -601,7 +621,7 @@ describe('Channels Me : publier', () => {
   });
 
   it('🔴 delai depasse (statut 0) : 4xx qui ne dit JAMAIS de reessayer, rien ne s allume ni ne se trace', async () => {
-    const { server, cap } = app({ createMessage: async () => { throw new ChannelsMeApiError(0, 'delai depasse'); } });
+    const { server, cap } = app({ client: { createMessage: async () => { throw new ChannelsMeApiError(0, 'delai depasse'); } } });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
       payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
@@ -625,7 +645,7 @@ describe('Channels Me : publier', () => {
       headers: { 'content-type': 'application/json' },
     })) as unknown as typeof fetch;
     const clientReel = new ChannelsMeClient({ fetch: fauxFetch });
-    const { server, cap } = app({ createMessage: (cx, m) => clientReel.createMessage(cx, m) });
+    const { server, cap } = app({ client: { createMessage: (cx, m) => clientReel.createMessage(cx, m) } });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
       payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
@@ -649,7 +669,7 @@ describe('Channels Me : publier', () => {
   // appel n'etait protege par aucun try/catch : la route rejetait, et le gestionnaire d'erreur global
   // rendait un 500 opaque pour une publication qui avait pourtant reussi.
   it('🔴 l allumage de l automation echoue apres une publication reussie : 201 quand meme, avertissement, et la trace est ecrite', async () => {
-    const { server, cap } = app({ allumerAutomationLien: async () => { throw new Error('connexion base perdue'); } });
+    const { server, cap } = app({ liens: { allumerAutomation: async () => { throw new Error('connexion base perdue'); } } });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
       payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
@@ -663,7 +683,7 @@ describe('Channels Me : publier', () => {
   });
 
   it('🔴 le tracage du post echoue apres une publication reussie : 201 quand meme (le post est bel et bien parti)', async () => {
-    const { server, cap } = app({ createPost: async () => { throw new Error('connexion base perdue'); } });
+    const { server, cap } = app({ posts: { create: async () => { throw new Error('connexion base perdue'); } } });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/posts', ...h(adminTok),
       payload: { text: 'Notre newsletter arrive', linkId: LINK_ID },
@@ -706,7 +726,7 @@ describe('Channels Me : publier', () => {
     expect(res.json<{ posts: Array<{ message: unknown }> }>().posts[0]!.message).not.toBeNull();
     // Rien n'est miroite en base, donc rien a resynchroniser : un tiers muet rend un statut absent, pas une
     // erreur, et surtout pas une liste vide.
-    const { server: s2 } = app({ getMessages: async () => { throw new Error('reseau'); } });
+    const { server: s2 } = app({ client: { getMessages: async () => { throw new Error('reseau'); } } });
     const r2 = await s2.inject({ method: 'GET', url: '/tenants/t1/channels-me/posts', ...h(adminTok) });
     expect(r2.statusCode).toBe(200);
     expect(r2.json<{ distant: string }>().distant).toBe('injoignable');
@@ -771,9 +791,9 @@ describe('Channels Me : le cablage', () => {
     expect(bloc).toContain("triggerKind: 'keyword'");
     expect(bloc).toContain("mode: 'contains'");
     // 🔴 Le cablage bascule par le LIEN (le store qui porte la garde `possede_par`), jamais par
-    // `automationStore.update`/`remove`, qui excluent ces lignes.
-    expect(bloc).toContain('channelsMeLinks.allumerAutomation');
-    expect(bloc).toContain('channelsMeLinks.eteindreAutomation');
+    // `automationStore.update`/`remove`, qui excluent ces lignes. Les routes appellent `liens.allumerAutomation`
+    // et `liens.eteindreAutomation` : c'est le store des liens qui doit être branché sous ce nom.
+    expect(bloc).toMatch(/\bliens: channelsMeLinks,/);
     expect(bloc).not.toMatch(/automationStore\.update\(/);
   });
 });

@@ -12,16 +12,16 @@ import { messageDe, texteDe } from '../../lib/erreur';
 /** Ce dont l'application a besoin. Interface étroite : satisfaite par le vrai client MBA comme par un faux. */
 export interface ApplicationDeps {
   /** Le numéro Meta de l'espace. `null` = rien à faire, l'espace n'a pas de MBA. */
-  numeroDuTenant(tenantId: string): Promise<string | null>;
-  client(tenantId: string): Promise<ClientMbaEcriture>;
+  numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
+  meta: { mbaClientForTenant(tenantId: string): Promise<ClientMbaEcriture> };
   /** Écrit une ligne d'historique. Voir `src/reglages/historique.ts`. */
-  journaliser(tenantId: string, ligne: LigneHistorique): Promise<void>;
+  historique: { ecrire(tenantId: string, ligne: LigneHistorique): Promise<void> };
   /**
    * Le contenu d'une pièce jointe déposée dans le fil, par son jeton. `null` = jeton inconnu, expiré, ou
    * appartenant à un autre espace. 🔴 Le tenant est ce qui rend un jeton inutilisable ailleurs : ne jamais le
    * passer vide.
    */
-  pieceJointe?(tenantId: string, jeton: string): Promise<{ nom: string; contenu: Blob } | null>;
+  pieces?: { reprendre(tenantId: string, jeton: string): { nom: string; contenu: Blob } | null };
   /** Qui agit, pour l'historique. */
   acteur: { id: string | null; email: string | null };
 }
@@ -132,7 +132,7 @@ export async function appliquer(
   operations: readonly Operation[],
 ): Promise<ResultatApplication> {
   const passees: Operation[] = [];
-  const numero = await deps.numeroDuTenant(tenantId);
+  const numero = await deps.numeros.getTenantPhoneNumberId(tenantId);
   if (!numero) {
     return {
       passees: [],
@@ -142,7 +142,7 @@ export async function appliquer(
       nonTentees: operations.slice(1),
     };
   }
-  const client = await deps.client(tenantId);
+  const client = await deps.meta.mbaClientForTenant(tenantId);
 
   for (let i = 0; i < operations.length; i += 1) {
     const o = operations[i]!;
@@ -169,7 +169,7 @@ async function journaliserOuTaire(
   deps: ApplicationDeps, tenantId: string, o: Operation, avant: unknown,
 ): Promise<void> {
   try {
-    await deps.journaliser(tenantId, {
+    await deps.historique.ecrire(tenantId, {
       surface: 'mba',
       surfaceId: null,
       element: elementDe(o),
@@ -229,7 +229,7 @@ async function executer(
        * Le jeton, pas le contenu : le fichier n'a jamais traversé le prompt. Un jeton inconnu ou expiré est une
        * erreur lisible : le client doit savoir que son dépôt n'est pas parti.
        */
-      const piece = deps.pieceJointe ? await deps.pieceJointe(tenantId, o.jeton) : null;
+      const piece = deps.pieces ? deps.pieces.reprendre(tenantId, o.jeton) : null;
       if (!piece) throw new Error(ERREUR_PIECE_ABSENTE);
       await client.uploadFile(numero, piece.nom, piece.contenu);
       return;

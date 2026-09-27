@@ -15,50 +15,77 @@ import type { PostRow } from '../channels-me/post-store.pg';
 import { espaceVerifie, estUuid } from './scope';
 import { texteDe } from '../lib/erreur';
 
+/** Ce que les routes lisent et écrivent de la connexion à la chaîne. */
+export interface ConnexionsChannelsMe {
+  /** Projection publique de la connexion : jamais les colonnes chiffrées. null = rien de provisionné. */
+  get(tenantId: string): Promise<ConnexionPublique | null>;
+  /** Les identifiants en clair, déchiffrés par le store. Ils ne servent qu'au client, ils ne sortent jamais d'ici. */
+  getSecrets(tenantId: string): Promise<Connexion | null>;
+  upsert(tenantId: string, c: Connexion): Promise<void>;
+  markVerified(tenantId: string): Promise<void>;
+  /**
+   * Débranche la chaîne : oublie les identifiants, rien d'autre (`PgChannelsMeConnectionStore.supprimer`).
+   * `true` = une connexion existait.
+   */
+  supprimer(tenantId: string): Promise<boolean>;
+}
+
+/** Les appels à l'API Channels Me. */
+export interface ClientChannelsMe {
+  getOrganisation(cx: Connexion): Promise<Organisation>;
+  listChannels(cx: Connexion): Promise<MessageChannel[]>;
+  getMessages(cx: Connexion): Promise<Message[]>;
+  createMessage(cx: Connexion, m: { text: string; mediaUrl?: string }): Promise<Message>;
+}
+
+/** Ce que les routes lisent et écrivent des liens de chaîne. */
+export interface LiensChannelsMe {
+  list(tenantId: string): Promise<LienRow[]>;
+  create(tenantId: string, l: {
+    workflowId: string; startNodeId: string | null; token: string; phrase: string;
+    automationId: string | null; maxParHeure: number | null;
+  }): Promise<LienRow>;
+  byId(tenantId: string, id: string): Promise<LienRow | null>;
+  /**
+   * Rattrapage : défait l'automation compagnon qu'on vient de créer quand `create` échoue juste après
+   * (POST /links). Bornée par `tenantId` et par `possede_par = 'channelsme_link'` (garde miroir), sans effet
+   * si l'id ne correspond à rien : ce n'est jamais une raison d'échouer davantage.
+   */
+  supprimerAutomationCompagnon(tenantId: string, automationId: string): Promise<void>;
+  /** Les conversations démarrées par chaque bouton de chaîne. */
+  conversationsParLien(tenantId: string): Promise<{ parLien: ConversationsDunLien[]; partiel: boolean }>;
+  /**
+   * Combien de messages entrants de l'espace contiennent déjà cette phrase, sans jeton de lien : le danger d'une
+   * phrase n'est pas d'être courte mais d'apparaître dans la conversation ordinaire, donc on le compte.
+   */
+  messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number>;
+  /**
+   * Allume l'automation compagnon d'un lien : après une publication réussie, ou par réparation manuelle
+   * (POST /links/:id/enable). Prend un `linkId`, jamais un `automationId` : l'automation est possédée par le lien,
+   * hors de portée de `PgAutomationStore`, et `PgChannelsMeLinkStore.allumerAutomation` porte sa garde miroir. Un
+   * lien sans automation ou d'un autre espace ne touche aucune ligne, sans échec.
+   */
+  allumerAutomation(tenantId: string, linkId: string): Promise<void>;
+  /** Eteint l'automation compagnon d'un lien (chemin : POST /links/:id/disable). Meme garde, meme store. */
+  eteindreAutomation(tenantId: string, linkId: string): Promise<void>;
+}
+
+/** Les posts publiés sur la chaîne. */
+export interface PostsChannelsMe {
+  list(tenantId: string): Promise<PostRow[]>;
+  create(tenantId: string, p: { cmMessageId: string; linkId: string | null }): Promise<void>;
+}
+
 /**
  * Chaîne WhatsApp (Channels Me) : publier un post dont le bouton (lien wa.me pré-rempli) démarre un scénario.
  * Lecture ouverte à tout compte authentifié, écritures admin : publier sur une chaîne, c'est parler à toute une
  * audience sans relecture humaine.
  */
 export interface ChannelsMeRouteDeps {
-  /** Projection publique de la connexion : jamais les colonnes chiffrées. null = rien de provisionné. */
-  getConnection(tenantId: string): Promise<ConnexionPublique | null>;
-  /** Les identifiants en clair, déchiffrés par le store. Ils ne servent qu'au client, ils ne sortent jamais d'ici. */
-  getSecrets(tenantId: string): Promise<Connexion | null>;
-  upsertConnection(tenantId: string, c: Connexion): Promise<void>;
-  markVerified(tenantId: string): Promise<void>;
-  /**
-   * Débranche la chaîne : oublie les identifiants, rien d'autre (`PgChannelsMeConnectionStore.supprimer`).
-   * `true` = une connexion existait.
-   */
-  supprimerConnection(tenantId: string): Promise<boolean>;
-
-  getOrganisation(cx: Connexion): Promise<Organisation>;
-  listChannels(cx: Connexion): Promise<MessageChannel[]>;
-  getMessages(cx: Connexion): Promise<Message[]>;
-  createMessage(cx: Connexion, m: { text: string; mediaUrl?: string }): Promise<Message>;
-
-  listLinks(tenantId: string): Promise<LienRow[]>;
-  createLink(tenantId: string, l: {
-    workflowId: string; startNodeId: string | null; token: string; phrase: string;
-    automationId: string | null; maxParHeure: number | null;
-  }): Promise<LienRow>;
-  linkById(tenantId: string, id: string): Promise<LienRow | null>;
-  /**
-   * Rattrapage : défait l'automation compagnon qu'on vient de créer quand `createLink` échoue juste après
-   * (POST /links). Bornée par `tenantId` et par `possede_par = 'channelsme_link'` (garde miroir), sans effet
-   * si l'id ne correspond à rien : ce n'est jamais une raison d'échouer davantage.
-   */
-  supprimerAutomationCompagnon(tenantId: string, automationId: string): Promise<void>;
-
-  /**
-   * Les conversations démarrées par chaque bouton de chaîne. Requise : optionnelle, un câblage qui l'oublierait
-   * rendrait un écran sans compteur, en silence.
-   */
-  conversationsParLien(tenantId: string): Promise<{ parLien: ConversationsDunLien[]; partiel: boolean }>;
-
-  listPosts(tenantId: string): Promise<PostRow[]>;
-  createPost(tenantId: string, p: { cmMessageId: string; linkId: string | null }): Promise<void>;
+  connexions: ConnexionsChannelsMe;
+  client: ClientChannelsMe;
+  liens: LiensChannelsMe;
+  posts: PostsChannelsMe;
 
   /**
    * Cette phrase entre-t-elle en conflit avec celle d'un lien existant de l'espace ? Conflit veut dire inclusion,
@@ -67,11 +94,6 @@ export interface ChannelsMeRouteDeps {
    * rallumé, et son post circule encore.
    */
   phraseEnConflit(tenantId: string, phrase: string): Promise<boolean>;
-  /**
-   * Combien de messages entrants de l'espace contiennent déjà cette phrase, sans jeton de lien : le danger d'une
-   * phrase n'est pas d'être courte mais d'apparaître dans la conversation ordinaire, donc on le compte.
-   */
-  messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number>;
   creerAutomationCompagnon(tenantId: string, input: {
     nom: string;
     /** Le mot-clé qui déclenche le scénario, en mode `contains` : la phrase du lien. */
@@ -79,15 +101,6 @@ export interface ChannelsMeRouteDeps {
     workflowId: string; startNodeId: string | null;
     cooldownSeconds: number; maxParHeure: number | null;
   }): Promise<{ id: string }>;
-  /**
-   * Allume l'automation compagnon d'un lien : après une publication réussie, ou par réparation manuelle
-   * (POST /links/:id/enable). Prend un `linkId`, jamais un `automationId` : l'automation est possédée par le lien,
-   * hors de portée de `PgAutomationStore`, et `PgChannelsMeLinkStore.allumerAutomation` porte sa garde miroir. Un
-   * lien sans automation ou d'un autre espace ne touche aucune ligne, sans échec.
-   */
-  allumerAutomationLien(tenantId: string, linkId: string): Promise<void>;
-  /** Eteint l'automation compagnon d'un lien (chemin : POST /links/:id/disable). Meme garde, meme store. */
-  eteindreAutomationLien(tenantId: string, linkId: string): Promise<void>;
 
   /** 'inconnu' = pas au tenant. 'vide' = aucune version publiee. 'ok' = demarrable. */
   scenarioEtat(tenantId: string, workflowId: string): Promise<'inconnu' | 'vide' | 'ok'>;
@@ -143,18 +156,18 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
 
   app.get(`${base}/connection`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const connection = await deps.getConnection(tenant);
+    const connection = await deps.connexions.get(tenant);
     if (!connection) {
       return reply.code(200).send({ connection: null, organisation: null, channels: [], distant: 'non_configuree' });
     }
-    const cx = await deps.getSecrets(tenant);
+    const cx = await deps.connexions.getSecrets(tenant);
     if (!cx) {
       return reply.code(200).send({ connection, organisation: null, channels: [], distant: 'non_configuree' });
     }
     try {
       // Les deux objets sont ceux que le schéma Zod du client a laissés passer, pas le corps distant tel quel :
       // une page HTML d'erreur ou un champ inattendu n'arrive jamais jusqu'ici.
-      const [organisation, channels] = await Promise.all([deps.getOrganisation(cx), deps.listChannels(cx)]);
+      const [organisation, channels] = await Promise.all([deps.client.getOrganisation(cx), deps.client.listChannels(cx)]);
       return reply.code(200).send({ connection, organisation, channels, distant: 'ok' });
     } catch (err) {
       journaliserDistant(tenant, 'connection_read', err);
@@ -174,9 +187,9 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     const { orgId, channelId, apiKey, secret } = parse.data;
     // Remplacement complet, pas un patch : l'écran ne peut pas renvoyer les deux secrets, qui ne redescendent
     // jamais, donc « changer la clé » veut dire ressaisir les quatre champs. Le chiffrement est fait dans le store.
-    await deps.upsertConnection(tenant, { orgId, channelId, apiKey, secret });
+    await deps.connexions.upsert(tenant, { orgId, channelId, apiKey, secret });
     // On relit la projection publique : la réponse ne porte donc jamais les secrets qu'on vient d'écrire.
-    return reply.code(200).send({ connection: await deps.getConnection(tenant) });
+    return reply.code(200).send({ connection: await deps.connexions.get(tenant) });
   });
 
   /**
@@ -187,19 +200,19 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   app.delete(`${base}/connection`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
-    const supprimee = await deps.supprimerConnection(tenant);
+    const supprimee = await deps.connexions.supprimer(tenant);
     return reply.code(200).send({ ok: true, supprimee });
   });
 
   app.post(`${base}/connection/test`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
-    const cx = await deps.getSecrets(tenant);
+    const cx = await deps.connexions.getSecrets(tenant);
     if (!cx) return reply.code(409).send({ error: 'aucune connexion enregistree : renseigne les identifiants avant de tester' });
     try {
       // Deux lectures, jamais une ecriture : ce bouton ne publie rien.
-      const [organisation, channels] = await Promise.all([deps.getOrganisation(cx), deps.listChannels(cx)]);
-      await deps.markVerified(tenant);
+      const [organisation, channels] = await Promise.all([deps.client.getOrganisation(cx), deps.client.listChannels(cx)]);
+      await deps.connexions.markVerified(tenant);
       return reply.code(200).send({ ok: true, organisation, channels });
     } catch (err) {
       journaliserDistant(tenant, 'connection_test', err);
@@ -213,7 +226,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
 
   app.get(`${base}/links`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const liens = await deps.listLinks(tenant);
+    const liens = await deps.liens.list(tenant);
     // Un seul appel pour toute la liste. Le front ne recompose jamais une URL publique : il reçoit le lien
     // wa.me prêt à l'emploi, comme pour l'adresse d'un webhook entrant.
     const phone = await deps.getDisplayPhoneNumber(tenant);
@@ -255,7 +268,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
         error: "cette phrase entre en conflit avec celle d'un autre lien (l'une contient l'autre) : un seul message declencherait les deux scenarios",
       });
     }
-    const dejaVus = await deps.messagesContenantLaPhrase(tenant, phrase);
+    const dejaVus = await deps.liens.messagesContenantLaPhrase(tenant, phrase);
     if (dejaVus > 0) {
       // Le nombre est dit : « trop banale » sans chiffre laisse le client deviner ce qu'on lui reproche.
       return reply.code(409).send({
@@ -279,12 +292,12 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     });
     let lien: LienRow;
     try {
-      lien = await deps.createLink(tenant, { workflowId, startNodeId, token, phrase, automationId, maxParHeure });
+      lien = await deps.liens.create(tenant, { workflowId, startNodeId, token, phrase, automationId, maxParHeure });
     } catch (err) {
-      // Sans ce rattrapage, un `createLink` qui échoue laisserait une automation possédée qu'aucun lien ne
+      // Sans ce rattrapage, un `liens.create` qui échoue laisserait une automation possédée qu'aucun lien ne
       // référence : invisible de l'écran Automation, orpheline pour toujours. On la défait avant de laisser l'échec
       // remonter.
-      await deps.supprimerAutomationCompagnon(tenant, automationId).catch((err2) => {
+      await deps.liens.supprimerAutomationCompagnon(tenant, automationId).catch((err2) => {
         journaliserDistant(tenant, 'link_rattrapage_automation', err2);
       });
       journaliserDistant(tenant, 'link_create', err);
@@ -308,7 +321,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
    */
   app.get(`${base}/links/conversations`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const r = await deps.conversationsParLien(tenant);
+    const r = await deps.liens.conversationsParLien(tenant);
     return reply.code(200).send(r);
   });
 
@@ -317,7 +330,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'lien inconnu' });
-    const lien = await deps.linkById(tenant, id);
+    const lien = await deps.liens.byId(tenant, id);
     if (!lien) return reply.code(404).send({ error: 'lien inconnu' });
     // L'état d'un lien est le `enabled` de son automation, sans second drapeau (deux copies divergeraient). On
     // éteint plutôt qu'on ne supprime : un post publié circule pour toujours, l'extinction est réversible.
@@ -326,7 +339,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     }
     // L'id transmis est celui du lien, jamais celui de l'automation : c'est `PgChannelsMeLinkStore` qui
     // résout l'automation compagnon (et sa garde `possede_par`), pas cette route.
-    await deps.eteindreAutomationLien(tenant, lien.id);
+    await deps.liens.eteindreAutomation(tenant, lien.id);
     return reply.code(200).send({ ok: true });
   });
 
@@ -338,21 +351,21 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'lien inconnu' });
-    const lien = await deps.linkById(tenant, id);
+    const lien = await deps.liens.byId(tenant, id);
     if (!lien) return reply.code(404).send({ error: 'lien inconnu' });
     if (lien.automationId === null) {
       return reply.code(409).send({ error: 'ce lien n’a plus d’automation compagnon : il ne peut pas etre active' });
     }
     // Même id (celui du lien) que `disable`, pour la même raison : c'est `PgChannelsMeLinkStore` qui résout
     // et garde l'automation compagnon, cette route ne connaît que le lien.
-    await deps.allumerAutomationLien(tenant, lien.id);
+    await deps.liens.allumerAutomation(tenant, lien.id);
     return reply.code(200).send({ ok: true });
   });
 
   app.get(`${base}/posts`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const posts = await deps.listPosts(tenant);
-    const cx = await deps.getSecrets(tenant);
+    const posts = await deps.posts.list(tenant);
+    const cx = await deps.connexions.getSecrets(tenant);
     const sansStatut = (distant: string) =>
       reply.code(200).send({ posts: posts.map((p) => ({ ...p, message: null })), distant });
     if (!cx) return sansStatut('non_configuree');
@@ -360,7 +373,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     try {
       // Le statut se lit en direct : rien n'est miroité en base, donc rien à resynchroniser. Une seule lecture sert
       // toute la liste (le tiers ne pagine pas).
-      const messages = await deps.getMessages(cx);
+      const messages = await deps.client.getMessages(cx);
       const parId = new Map(messages.map((m) => [String(m.id), m]));
       return reply.code(200).send({
         posts: posts.map((p) => ({ ...p, message: parId.get(p.cmMessageId) ?? null })),
@@ -385,13 +398,13 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (mediaUrl !== undefined && (!urlRecuperable(mediaUrl) || new URL(mediaUrl).protocol !== 'https:')) {
       return reply.code(400).send({ error: 'mediaUrl doit etre une adresse https publique' });
     }
-    const cx = await deps.getSecrets(tenant);
+    const cx = await deps.connexions.getSecrets(tenant);
     if (!cx) return reply.code(409).send({ error: 'aucune connexion enregistree : renseigne les identifiants avant de publier' });
 
     let lien: LienRow | null = null;
     let texteDuPost = text;
     if (parse.data.linkId !== undefined) {
-      lien = await deps.linkById(tenant, parse.data.linkId);
+      lien = await deps.liens.byId(tenant, parse.data.linkId);
       if (!lien) return reply.code(400).send({ error: 'linkId inconnu pour ce tenant' });
       // 🔴 Un post publié circule pour toujours : un bouton vers un scénario sans version publiée ne se rattrape
       // pas, on refuse avant de publier.
@@ -416,7 +429,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     const avertissements: Array<'automation_non_allumee' | 'trace_manquante' | 'reponse_inattendue'> = [];
     let publie: Message | null = null;
     try {
-      publie = await deps.createMessage(cx, { text: texteDuPost, ...(mediaUrl !== undefined ? { mediaUrl } : {}) });
+      publie = await deps.client.createMessage(cx, { text: texteDuPost, ...(mediaUrl !== undefined ? { mediaUrl } : {}) });
     } catch (err) {
       journaliserDistant(tenant, 'post_create', err);
       if (err instanceof ChannelsMeApiError && err.status === 0) {
@@ -449,7 +462,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     // mort), on trace ensuite ; chaque appel a son propre try/catch, et son échec est journalisé, jamais relevé.
     if (lien) {
       try {
-        await deps.allumerAutomationLien(tenant, lien.id);
+        await deps.liens.allumerAutomation(tenant, lien.id);
       } catch (err) {
         journaliserDistant(tenant, 'post_allumage', err);
         // Le bouton reste mort, mais la reponse reste un succes : POST /links/:id/enable est la reparation.
@@ -461,7 +474,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     const cmMessageId = publie === null ? null : String(publie.id);
     if (cmMessageId !== null) {
       try {
-        await deps.createPost(tenant, { cmMessageId, linkId: lien?.id ?? null });
+        await deps.posts.create(tenant, { cmMessageId, linkId: lien?.id ?? null });
       } catch (err) {
         journaliserDistant(tenant, 'post_trace', err);
         // La publication n'apparaitra pas dans GET /posts tant que la trace n'est pas rejouee, mais le post

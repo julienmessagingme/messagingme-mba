@@ -112,8 +112,12 @@ describe('rendre le fil à Meta', () => {
   it('appelle `releaseThread` avec le numéro du client et rend `true`', async () => {
     const appels: Array<[string, string]> = [];
     const rendre = creerRendreLeFil({
-      numeroDuTenant: async () => '1234840649713976',
-      clientMba: async () => ({ releaseThread: async (pn: string, waId: string) => { appels.push([pn, waId]); }, takeThread: async () => {} }),
+      numeros: {
+        getTenantPhoneNumberId: async () => '1234840649713976',
+      },
+      meta: {
+        mbaClientForTenant: async () => ({ releaseThread: async (pn: string, waId: string) => { appels.push([pn, waId]); }, takeThread: async () => {} }),
+      },
     });
     expect(await rendre('tenant-1', '33633921577')).toBe(true);
     expect(appels).toEqual([['1234840649713976', '33633921577']]);
@@ -122,8 +126,12 @@ describe('rendre le fil à Meta', () => {
   it('sans numéro connecté, il n’y a rien à rendre : `false`, et AUCUN appel', async () => {
     let appele = false;
     const rendre = creerRendreLeFil({
-      numeroDuTenant: async () => null,
-      clientMba: async () => { appele = true; return { releaseThread: async () => {}, takeThread: async () => {} }; },
+      numeros: {
+        getTenantPhoneNumberId: async () => null,
+      },
+      meta: {
+        mbaClientForTenant: async () => { appele = true; return { releaseThread: async () => {}, takeThread: async () => {} }; },
+      },
     });
     expect(await rendre('tenant-1', '33633921577')).toBe(false);
     expect(appele).toBe(false);
@@ -133,8 +141,12 @@ describe('rendre le fil à Meta', () => {
     // C'est ce qui permet à l'appelant de REFUSER d'écrire son état local. Un `catch` silencieux ici
     // recréerait le défaut qu'on répare : un état local qui annonce ce que Meta n'a pas fait.
     const rendre = creerRendreLeFil({
-      numeroDuTenant: async () => '1234840649713976',
-      clientMba: async () => ({ releaseThread: async () => { throw new Error('jeton expiré'); }, takeThread: async () => {} }),
+      numeros: {
+        getTenantPhoneNumberId: async () => '1234840649713976',
+      },
+      meta: {
+        mbaClientForTenant: async () => ({ releaseThread: async () => { throw new Error('jeton expiré'); }, takeThread: async () => {} }),
+      },
     });
     await expect(rendre('tenant-1', '33633921577')).rejects.toThrow('jeton expiré');
   });
@@ -147,11 +159,15 @@ describe('prendre le fil à Meta', () => {
     // exactement celui qu'on répare.
     const appels: Array<[string, string, string]> = [];
     const prendre = creerPrendreLeFil({
-      numeroDuTenant: async () => '1234840649713976',
-      clientMba: async () => ({
-        releaseThread: async (pn: string, waId: string) => { appels.push(['release', pn, waId]); },
-        takeThread: async (pn: string, waId: string) => { appels.push(['take', pn, waId]); },
-      }),
+      numeros: {
+        getTenantPhoneNumberId: async () => '1234840649713976',
+      },
+      meta: {
+        mbaClientForTenant: async () => ({
+          releaseThread: async (pn: string, waId: string) => { appels.push(['release', pn, waId]); },
+          takeThread: async (pn: string, waId: string) => { appels.push(['take', pn, waId]); },
+        }),
+      },
     });
     expect(await prendre('tenant-1', '33633921577')).toBe(true);
     expect(appels).toEqual([['take', '1234840649713976', '33633921577']]);
@@ -160,8 +176,12 @@ describe('prendre le fil à Meta', () => {
   it('sans numéro connecté : `false`, et AUCUN appel', async () => {
     let appele = false;
     const prendre = creerPrendreLeFil({
-      numeroDuTenant: async () => null,
-      clientMba: async () => { appele = true; return { releaseThread: async () => {}, takeThread: async () => {} }; },
+      numeros: {
+        getTenantPhoneNumberId: async () => null,
+      },
+      meta: {
+        mbaClientForTenant: async () => { appele = true; return { releaseThread: async () => {}, takeThread: async () => {} }; },
+      },
     });
     expect(await prendre('tenant-1', '33633921577')).toBe(false);
     expect(appele).toBe(false);
@@ -172,11 +192,15 @@ describe('prendre le fil à Meta', () => {
     // laisserait un opérateur croire qu'il a éteint l'agent de Meta, donc cesser de surveiller la
     // conversation pendant que l'agent continue de répondre.
     const prendre = creerPrendreLeFil({
-      numeroDuTenant: async () => '1234840649713976',
-      clientMba: async () => ({
-        releaseThread: async () => {},
-        takeThread: async () => { throw new Error('not the configured escalation partner'); },
-      }),
+      numeros: {
+        getTenantPhoneNumberId: async () => '1234840649713976',
+      },
+      meta: {
+        mbaClientForTenant: async () => ({
+          releaseThread: async () => {},
+          takeThread: async () => { throw new Error('not the configured escalation partner'); },
+        }),
+      },
     });
     await expect(prendre('tenant-1', '33633921577')).rejects.toThrow('escalation partner');
   });

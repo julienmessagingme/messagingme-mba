@@ -289,10 +289,12 @@ describe('la restriction écarte réellement les autres automations', () => {
     return {
       partis,
       deps: {
-        listEnabled: async () => rows,
-        lastFiredAt: async () => null,
-        markFired: async () => true,
-        clearFired: async () => {},
+        automations: {
+          listEnabled: async () => rows,
+          lastFiredAt: async () => null,
+          markFired: async () => true,
+          clearFired: async () => {},
+        },
         evalContext: async () => null,
         startWorkflow: async (_t: string, _w: string, _waId: string, o: { reprendLaMain: boolean }) => {
           partis.push(`${_w}:${o.reprendLaMain ? 'reprise' : 'sans'}`);

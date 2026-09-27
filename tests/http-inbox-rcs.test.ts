@@ -4,8 +4,8 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { InboxRouteDeps } from '../src/http/inbox';
-import { inboxInerte } from './routes-inertes';
+import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
+import { inboxDepInerte, inboxInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -18,24 +18,31 @@ const auth = () => ({ headers: { 'content-type': 'application/json', authorizati
 type Journal = Array<{ body: string; type?: string; canal?: string; sender?: string | null; origine?: string }>;
 
 /** `windowOpen` FERMEE par defaut : c'est le cas qui compte pour le RCS. */
-function app(over: Partial<InboxRouteDeps> = {}, windowOpen = false) {
+function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<InboxDep> } = {}, windowOpen = false) {
+  const { inbox, ...reste } = over;
   const journal: Journal = [];
   const priseDeControle: string[] = [];
   const deps: InboxRouteDeps = {
     ...inboxInerte,
     estDesabonne: jamaisDesabonne,
-    listConversations: async () => [],
-    getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen, lastInboundAt: null } : null),
-    getMessages: async () => [],
-    recordOutbound: async (_id, body, _msg, origine, type, _cat, _name, sender, canal) => {
-      journal.push({ body, type, canal, sender: sender ?? null, origine });
+    inbox: {
+      ...inboxDepInerte,
+      listConversations: async () => [],
+      getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen, lastInboundAt: null } : null),
+      getMessages: async () => [],
+      recordOutbound: async (_id, body, _msg, origine, type, _cat, _name, sender, canal) => {
+        journal.push({ body, type, canal, sender: sender ?? null, origine });
+      },
+      ...inbox,
     },
     takeControl: async (_t, waId) => { priseDeControle.push(waId); },
-    getTenantPhoneNumberId: async () => 'pn1',
+    repo: {
+      getTenantPhoneNumberId: async () => 'pn1',
+    },
     sendReply: async () => 'wamid.OUT',
     sendTemplateMessage: async () => 'wamid.TPL',
     sendRcsFromInbox: async () => ({ messageId: 'rcs-1', apercu: 'Bonjour Julien' }),
-    ...over,
+    ...reste,
   };
   const a = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, inbox: deps });
   return { a, journal, priseDeControle };
@@ -136,7 +143,7 @@ describe('Envoyer un RCS depuis l inbox', () => {
    */
   it('REFUSE a un AGENT le fil confie a un autre', async () => {
     const jetonAgent = await signSession({ userId: 'u-autre', tenantId: 't1', role: 'agent' }, SECRET);
-    const { a, journal } = app({ getAssignee: async () => 'u-affecte', setAssignee: async () => true });
+    const { a, journal } = app({ inbox: { getAssignee: async () => 'u-affecte', setAssignee: async () => true } });
     const r = await a.inject({
       method: 'POST',
       url: '/tenants/t1/conversations/c1/send-rcs',

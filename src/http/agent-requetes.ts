@@ -24,11 +24,13 @@ import { lireCorpsBorne } from '../lib/corps-borne';
  */
 
 export interface AgentRequetesRouteDeps {
-  lister(tenantId: string): Promise<RequeteConnecteur[]>;
-  parId(tenantId: string, id: string): Promise<RequeteConnecteur | null>;
-  creer(tenantId: string, input: Omit<RequeteConnecteur, 'id' | 'tenantId' | 'outils' | 'updatedAt'>): Promise<RequeteConnecteur>;
-  patch(tenantId: string, id: string, patch: Record<string, unknown>): Promise<RequeteConnecteur | null>;
-  supprimer(tenantId: string, id: string): Promise<boolean>;
+  requetes: {
+    lister(tenantId: string): Promise<RequeteConnecteur[]>;
+    parId(tenantId: string, id: string): Promise<RequeteConnecteur | null>;
+    creer(tenantId: string, input: Omit<RequeteConnecteur, 'id' | 'tenantId' | 'outils' | 'updatedAt'>): Promise<RequeteConnecteur>;
+    patch(tenantId: string, id: string, patch: Record<string, unknown>): Promise<RequeteConnecteur | null>;
+    supprimer(tenantId: string, id: string): Promise<boolean>;
+  };
   /** L'adresse de base et les en-têtes d'authentification de la source, au moment du test. */
   sourcePourTest(tenantId: string, sourceId: string): Promise<{ baseUrl: string; entetes: Record<string, string>; status: string } | null>;
   /** Les clés des champs personnalisés déclarés par l'espace : une variable `champ` doit en désigner une. */
@@ -224,7 +226,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
   app.get(base, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     return reply.code(200).send({
-      requetes: await deps.lister(tenant),
+      requetes: await deps.requetes.lister(tenant),
       champs: await deps.clesDeChamps(tenant),
       catalogue: CATALOGUE,
     });
@@ -237,7 +239,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     const pb = verifier(parse.data, await deps.clesDeChamps(tenant));
     if (pb) return reply.code(400).send({ error: pb });
     try {
-      return reply.code(201).send({ requete: await deps.creer(tenant, parse.data) });
+      return reply.code(201).send({ requete: await deps.requetes.creer(tenant, parse.data) });
     } catch (err) {
       if (err instanceof LabelRequeteDejaPris) return reply.code(409).send({ error: err.message });
       if (err instanceof SourceIntrouvable) return reply.code(400).send({ error: err.message });
@@ -251,7 +253,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     if (!estUuid(id)) return reply.code(404).send({ error: 'requête introuvable' });
     const parse = patchSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'corps invalide' });
-    const actuelle = await deps.parId(tenant, id);
+    const actuelle = await deps.requetes.parId(tenant, id);
     if (!actuelle) return reply.code(404).send({ error: 'requête introuvable' });
     // L'état effectif après écriture (`patch ?? courant`), jamais le seul corps : sinon changer le corps sans
     // renvoyer les variables passerait la garde « variable non déclarée » alors qu'elle devrait mordre.
@@ -264,7 +266,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
      * de pré-remplissage, et la changer ne touche aucun agent en service.
      */
     try {
-      const requete = await deps.patch(tenant, id, parse.data);
+      const requete = await deps.requetes.patch(tenant, id, parse.data);
       if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
       return reply.code(200).send({ requete });
     } catch (err) {
@@ -278,7 +280,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'requête introuvable' });
-    const actuelle = await deps.parId(tenant, id);
+    const actuelle = await deps.requetes.parId(tenant, id);
     if (!actuelle) return reply.code(404).send({ error: 'requête introuvable' });
     // Même doctrine que les sources : la cascade emporterait les outils sans bruit, et l'agent deviendrait
     // muet sur ces gestes-là, en production, sans que personne ne l'ait décidé.
@@ -290,7 +292,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     if (await deps.brancheeSurConsentement(tenant, id)) {
       return reply.code(409).send({ error: 'cette requête prévient votre système à chaque désabonnement (Sécurité > Consentement) : débranchez-la d’abord' });
     }
-    return reply.code(200).send({ id, deleted: await deps.supprimer(tenant, id) });
+    return reply.code(200).send({ id, deleted: await deps.requetes.supprimer(tenant, id) });
   });
 
   /**
@@ -406,7 +408,7 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     if (!estUuid(id)) return reply.code(404).send({ error: 'requête introuvable' });
     const parse = testSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'corps invalide' });
-    const requete = await deps.parId(tenant, id);
+    const requete = await deps.requetes.parId(tenant, id);
     if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
     const r = await executerTest(tenant, requete, parse.data.valeurs);
     return reply.code(r.code).send(r.body);

@@ -19,9 +19,13 @@ function harness(
   const saves: Array<{ id: string; patch: PhoneStatusPatch }> = [];
   const alertedState = new Map<string, PhoneProblem>();
   const deps: PhoneStatusSweepDeps = {
-    listNumbers: async () => numbers,
+    ops: {
+      listNumbersForStatusSweep: async () => numbers,
+    },
     pull: async (n) => pullFn(n),
-    save: async (id, patch) => { if (opts.throwSaveFor === id) throw new Error('save boom'); saves.push({ id, patch }); },
+    statuts: {
+      saveStatus: async (id, patch) => { if (opts.throwSaveFor === id) throw new Error('save boom'); saves.push({ id, patch }); },
+    },
     alert: (m) => alerts.push(m),
     alertedState,
   };

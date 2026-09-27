@@ -9,30 +9,39 @@ import { WHATSAPP_OPTIN_FIELD_KEY } from '../crm/fields';
 import type { Guard } from '../auth/middleware';
 import { espaceVerifie, nonEmpty } from './scope';
 
-export interface FlowRouteDeps {
-  /** Client flows Meta résolu par espace (token de l'espace, repli global en sommeil). */
-  flowsFor(tenantId: string): Promise<MetaFlowClient>;
-  getWabaId(tenantId: string): Promise<string | null>;
-  insertFlow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<void>;
-  listFlows(tenantId: string): Promise<FlowRow[]>;
+/** Ce que les routes lisent et écrivent des flows enregistrés en local. */
+export interface FlowsDep {
+  list(tenantId: string): Promise<FlowRow[]>;
   belongsTo(flowId: string, tenantId: string): Promise<boolean>;
   markPublished(flowId: string, tenantId: string): Promise<boolean>;
+  /** Un flow par id, scopé tenant (édition/duplication : lire status + screens). null si absent. */
+  getById(flowId: string, tenantId: string): Promise<FlowRow | null>;
+  /** Retire le flow du store local (après suppression/dépréciation Meta). true si supprimé. */
+  remove(flowId: string, tenantId: string): Promise<boolean>;
+  /** Réconciliation : aligne nom + statut d'un flow local sur Meta. true si la ligne a vraiment changé. */
+  alignFromMeta(flowId: string, tenantId: string, patch: { name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean>;
+}
+
+export interface FlowRouteDeps {
+  meta: {
+    /** Client flows Meta résolu par espace (token de l'espace, repli global en sommeil). */
+    flowClientForTenant(tenantId: string): Promise<MetaFlowClient>;
+  };
+  repo: { getTenantWabaId(tenantId: string): Promise<string | null> };
+  flows: FlowsDep;
+  insertFlow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<void>;
   /** Crée le user field s'il n'existe pas (mapping par défaut : chaque champ -> son propre user field). */
   ensureUserField(tenantId: string, label: string, type: UserFieldType): Promise<void>;
-  /** Définitions des user fields du tenant : valider qu'une cible de consentement choisie est bien booléenne. */
-  listUserFields(tenantId: string): Promise<UserFieldDef[]>;
+  champs: {
+    /** Définitions des user fields du tenant : valider qu'une cible de consentement choisie est bien booléenne. */
+    list(tenantId: string): Promise<UserFieldDef[]>;
+  };
   /** Crée (idempotent, par clé) le champ booléen de consentement par défaut `whatsapp_optin`. */
   ensureOptinField(tenantId: string): Promise<void>;
-  /** Un flow par id, scopé tenant (édition/duplication : lire status + screens). null si absent. */
-  getFlow(flowId: string, tenantId: string): Promise<FlowRow | null>;
   /** Met à jour un flow DRAFT en base (fields re-dérivé côté store). true si une ligne DRAFT a bougé. */
   updateFlowRow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<boolean>;
-  /** Retire le flow du store local (après suppression/dépréciation Meta). true si supprimé. */
-  removeFlowRow(flowId: string, tenantId: string): Promise<boolean>;
   /** Réconciliation : enregistre un flow vu chez Meta et absent en local (structure inconnue). true si créé. */
   insertExternalFlow(tenantId: string, flow: { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean>;
-  /** Réconciliation : aligne nom + statut d'un flow local sur Meta. true si la ligne a vraiment changé. */
-  alignFlowFromMeta(flowId: string, tenantId: string, patch: { name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean>;
 }
 
 const IMG_MAX = 400 * 1024; // base64 borné (~300 Ko binaire) : l'image Flow s'embarque dans le flow_json
@@ -147,7 +156,7 @@ async function deriveAndMap(
     if (f.type === 'optin') {
       // Consentement : cible = champ booléen choisi (validé) ou, à défaut, whatsapp_optin (créé à la volée).
       if (saveTo) {
-        defs ??= await deps.listUserFields(tenant);
+        defs ??= await deps.champs.list(tenant);
         const target = defs.find((d) => d.key === saveTo);
         if (!target || target.type !== 'boolean') {
           return { error: `le consentement « ${f.label} » doit être enregistré dans un champ Oui/Non existant` };
@@ -195,7 +204,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     if (parsed === null) return reply.code(400).send({ error: INVALID_ELEMENTS });
     const cta = nonEmpty(b.cta) ? b.cta.trim() : undefined;
 
-    const wabaId = await deps.getWabaId(tenant);
+    const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
     const mapped = await deriveAndMap(deps, tenant, parsed); // 400 (collision/condition) avant tout appel Meta
@@ -203,7 +212,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
 
     const ref = randomUUID();
     const name = b.name.trim();
-    const { id, status } = await (await deps.flowsFor(tenant)).create(wabaId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) });
+    const { id, status } = await (await deps.meta.flowClientForTenant(tenant)).create(wabaId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) });
     await deps.insertFlow(tenant, id, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(201).send({ id, status, name, fields: mapped.fields });
   });
@@ -219,7 +228,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     if (parsed === null) return reply.code(400).send({ error: INVALID_ELEMENTS });
     const cta = nonEmpty(b.cta) ? b.cta.trim() : undefined;
 
-    const existing = await deps.getFlow(flowId, tenant);
+    const existing = await deps.flows.getById(flowId, tenant);
     if (!existing) return reply.code(404).send({ error: 'flow inconnu' });
     if (existing.status === 'PUBLISHED') return reply.code(409).send({ error: 'flow publié : immuable. Utilise « Dupliquer pour modifier ».' });
     // Legacy (screens null) : le builder repartirait d'un formulaire vide et écraserait le contenu d'origine.
@@ -228,7 +237,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
       return reply.code(422).send({ error: 'flow antérieur au modèle riche : à recréer plutôt qu\'à éditer' });
     }
 
-    const wabaId = await deps.getWabaId(tenant);
+    const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
     const mapped = await deriveAndMap(deps, tenant, parsed);
@@ -237,7 +246,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     // On garde le même ref (le flow Meta est le même id ; findByRef du webhook ne doit pas être orphelin).
     const ref = existing.ref ?? randomUUID();
     const name = b.name.trim();
-    await (await deps.flowsFor(tenant)).updateDraft(flowId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta avant store
+    await (await deps.meta.flowClientForTenant(tenant)).updateDraft(flowId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta avant store
     await deps.updateFlowRow(tenant, flowId, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(200).send({ id: flowId, status: 'DRAFT', name, fields: mapped.fields });
   });
@@ -247,30 +256,30 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };
 
-    const source = await deps.getFlow(flowId, tenant);
+    const source = await deps.flows.getById(flowId, tenant);
     if (!source) return reply.code(404).send({ error: 'flow inconnu' });
     if (!source.screens) {
       return reply.code(422).send({ error: 'flow sans elements : duplication indisponible (flow antérieur au modèle riche)' });
     }
 
-    const wabaId = await deps.getWabaId(tenant);
+    const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
     const ref = randomUUID(); // index unique sur ref -> jamais réutiliser celui de la source
     // Nom de flow unique par WABA (Meta l'exige) : « X (copie) », puis « X (copie 2) »... si déjà pris.
-    const taken = new Set((await deps.listFlows(tenant)).map((f) => f.name));
+    const taken = new Set((await deps.flows.list(tenant)).map((f) => f.name));
     let name = `${source.name} (copie)`;
     for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
     const mapping = source.mapping ?? {};
     const cta = source.cta ?? undefined;
-    const { id, status } = await (await deps.flowsFor(tenant)).create(wabaId, { name, screens: source.screens, ref, ...(cta ? { cta } : {}) });
+    const { id, status } = await (await deps.meta.flowClientForTenant(tenant)).create(wabaId, { name, screens: source.screens, ref, ...(cta ? { cta } : {}) });
     await deps.insertFlow(tenant, id, name, source.screens, ref, mapping, cta);
     return reply.code(201).send({ id, status, name, fields: fieldsOfScreens(source.screens) });
   });
 
   app.get('/tenants/:tenantId/flows', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ flows: await deps.listFlows(tenant) });
+    return reply.code(200).send({ flows: await deps.flows.list(tenant) });
   });
 
   /**
@@ -285,11 +294,11 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
   app.post('/tenants/:tenantId/flows/refresh', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
 
-    const wabaId = await deps.getWabaId(tenant);
+    const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
-    const distants = await (await deps.flowsFor(tenant)).list(wabaId);
-    const locaux = new Set((await deps.listFlows(tenant)).map((f) => f.id));
+    const distants = await (await deps.meta.flowClientForTenant(tenant)).list(wabaId);
+    const locaux = new Set((await deps.flows.list(tenant)).map((f) => f.id));
     const vus = new Set<string>();
     let importes = 0;
     let majs = 0;
@@ -305,7 +314,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
       }
       const nom = d.name.trim() || d.id; // un nom vide rendrait la carte inidentifiable
       if (locaux.has(d.id)) {
-        if (await deps.alignFlowFromMeta(d.id, tenant, { name: nom, status: statut })) majs += 1;
+        if (await deps.flows.alignFromMeta(d.id, tenant, { name: nom, status: statut })) majs += 1;
       } else if (await deps.insertExternalFlow(tenant, { id: d.id, name: nom, status: statut })) {
         importes += 1;
       } else {
@@ -320,9 +329,9 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
   app.post('/tenants/:tenantId/flows/:flowId/publish', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };
-    if (!(await deps.belongsTo(flowId, tenant))) return reply.code(404).send({ error: 'flow inconnu' });
-    await (await deps.flowsFor(tenant)).publish(flowId);
-    await deps.markPublished(flowId, tenant);
+    if (!(await deps.flows.belongsTo(flowId, tenant))) return reply.code(404).send({ error: 'flow inconnu' });
+    await (await deps.meta.flowClientForTenant(tenant)).publish(flowId);
+    await deps.flows.markPublished(flowId, tenant);
     return reply.code(200).send({ id: flowId, status: 'PUBLISHED' });
   });
 
@@ -331,11 +340,11 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
   app.delete('/tenants/:tenantId/flows/:flowId', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };
-    const flow = await deps.getFlow(flowId, tenant);
+    const flow = await deps.flows.getById(flowId, tenant);
     if (!flow) return reply.code(404).send({ error: 'flow inconnu' });
-    if (flow.status === 'PUBLISHED') await (await deps.flowsFor(tenant)).deprecate(flowId);
-    else await (await deps.flowsFor(tenant)).delete(flowId);
-    await deps.removeFlowRow(flowId, tenant);
+    if (flow.status === 'PUBLISHED') await (await deps.meta.flowClientForTenant(tenant)).deprecate(flowId);
+    else await (await deps.meta.flowClientForTenant(tenant)).delete(flowId);
+    await deps.flows.remove(flowId, tenant);
     return reply.code(200).send({ id: flowId, deleted: true });
   });
 }

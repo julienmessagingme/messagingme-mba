@@ -62,18 +62,13 @@ describe.skipIf(!url)('joignabilite WhatsApp memorisee', () => {
   const deps = (over: Partial<RetrySweepDeps> = {}): RetrySweepDeps => ({
     isMorningWindow: () => false,
     list131049: () => repo.listRetry131049(Date.now()),
-    list131026: () => repo.listRetry131026(),
-    list131026SecondFail: () => repo.listRetry131026SecondFail(),
-    resetForRetry: (id) => repo.resetForRetry(id),
-    markUnreachableDone: (id) => repo.markUnreachableDone(id),
+    // ⚠️ La passe de bascule est câblée sur le VRAI dépôt, pas sur un bouchon : la campagne de ce fichier n'a
+    // qu'un étage, donc elle ne bascule rien, mais la requête est bel et bien exécutée à chaque balayage. Un
+    // bouchon aurait fait passer ces tests avec un SQL qui ne compile pas.
+    repo,
     // Les heures d'ouverture ne sont pas le sujet de ce fichier : la fenêtre est ouverte, comme elle
     // l'est pour un espace aux horaires par défaut en pleine journée.
     fenetreOuverte: async () => true,
-    // ⚠️ La passe de bascule est câblée sur le VRAI dépôt, pas sur un bouchon : la campagne de ce
-    // fichier n'a qu'un étage, donc elle ne bascule rien, mais la requête est bel et bien exécutée à
-    // chaque balayage. Un bouchon aurait fait passer ces tests avec un SQL qui ne compile pas.
-    listCandidatsBascule: () => repo.listCandidatsBascule(),
-    basculerEtage: (id, rang) => repo.basculerEtage(id, rang),
     enqueueRun: async () => {},
     // Le no-op de l'espace SANS HubSpot, tel que `src/worker.ts` le construit : il ne fait rien et il RÉUSSIT.
     flagUnreachable: async () => {},

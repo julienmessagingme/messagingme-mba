@@ -33,7 +33,7 @@ export interface AgentTestRouteDeps {
    * et `sansDebit`). 🔴 Un essai consomme pour de vrai : le fournisseur le facture comme une conversation, et le
    * laisser hors du solde ouvrirait une porte gratuite et illimitée sur un compte prépayé.
    */
-  solde(tenantId: string): Promise<number>;
+  credits: { solde(tenantId: string): Promise<number> };
   /** Retire du solde ce que l'essai a coûté. La note dit d'où vient le mouvement : un essai n'ouvre aucune
    *  session, donc le journal n'a rien d'autre pour l'expliquer. */
   debiter(tenantId: string, montantMicroEur: number, note: string): Promise<void>;
@@ -99,7 +99,7 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
 
     // Le solde, avant l'appel au modèle : on ne paie pas un appel qu'on ne pourra pas facturer. 409 : un état du
     // compte, pas un incident (un 5xx serait remplacé par la page de Cloudflare).
-    if ((await deps.solde(tenant)) <= 0) {
+    if ((await deps.credits.solde(tenant)) <= 0) {
       return reply.code(409).send({ error: 'solde épuisé : rechargez le compte pour essayer votre agent' });
     }
 

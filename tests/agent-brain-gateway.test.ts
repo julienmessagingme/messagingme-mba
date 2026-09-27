@@ -62,18 +62,22 @@ function deps(reponses: ReponseChat[], resolveur?: ResolveurOutil, agent: Contex
   };
   const journal: JournalAppels = { ouvrir: async () => 'j1', clore: async () => {} };
   const d: GatewayBrainDeps = {
-    completer: async ({ messages }) => {
-      cap.messages.push(messages);
-      const r = reponses[Math.min(i, reponses.length - 1)]!;
-      i += 1;
-      return r;
+    client: {
+      completer: async ({ messages }) => {
+        cap.messages.push(messages);
+        const r = reponses[Math.min(i, reponses.length - 1)]!;
+        i += 1;
+        return r;
+      },
     },
     contexte: async () => agent,
     outils: {
       catalogue,
       journal,
       resolveurs: { mba: resolveur ?? (async () => ({ contenu: { pose: 'vip' } })) },
-      compterAppel: async () => { cap.comptes += 1; },
+      sessions: {
+        compterAppel: async () => { cap.comptes += 1; },
+      },
       executerGeste: GESTE_MUET,
     },
     alerter: (m) => cap.alertes.push(m),
@@ -331,7 +335,7 @@ describe('penserTrace', () => {
     // l'échec.
     const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')]);
     let appels = 0;
-    d.completer = async () => {
+    d.client.completer = async () => {
       appels += 1;
       if (appels > 1) throw new Error('502 du fournisseur');
       return appelOutil('mba_poser_tag', '{"tag":"vip"}');
@@ -347,7 +351,7 @@ describe('penserTrace', () => {
     // La distinction est le sujet : envelopper une panne qui n'a rien coûté ferait facturer au client des
     // tours gratuits, et masquerait le type de l'erreur d'origine à ceux qui le reconnaissent.
     const { d } = deps([texte('x')]);
-    d.completer = async () => { throw new AgentIntrouvable('a1'); };
+    d.client.completer = async () => { throw new AgentIntrouvable('a1'); };
     await expect(penserTrace(entree(), TOUR, d)).rejects.toBeInstanceOf(AgentIntrouvable);
   });
 

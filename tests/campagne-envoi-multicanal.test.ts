@@ -161,7 +161,9 @@ describe('le moteur sert le canal de l etage', () => {
       recipients,
       sender: meta,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn1' }, rcs: { sender: rcs } }),
-      recordOutbound: async (_t, _w, m) => { fil.push({ body: m.body, ...(m.channel ? { channel: m.channel } : {}) }); },
+      inbox: {
+        recordOutboundByWaId: async (_t, _w, m) => { fil.push({ body: m.body, ...(m.channel ? { channel: m.channel } : {}) }); },
+      },
     }));
     // Le message RCS de l'étage 2 est parti, et AUCUN modèle WhatsApp n'a été envoyé.
     expect(rcs.envois).toEqual(['+33611']);

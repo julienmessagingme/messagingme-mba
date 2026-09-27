@@ -106,12 +106,16 @@ describe('release : la minuterie de reprise après un humain', () => {
     const rendues: Array<{ waId: string; dest: string }> = [];
     const releases: string[] = [];
     const deps: ControlSweepDeps = {
-      listHeldControl: async () => [
-        { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
-        { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
-      ],
-      setControlOwner: async (_t, waId, owner) => { rendues.push({ waId, dest: owner }); return true; },
-      mbaActifParTenant: async () => new Set(avecMba),
+      inbox: {
+        listHeldControl: async () => [
+          { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
+          { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
+        ],
+        setControlOwner: async (_t, waId, owner) => { rendues.push({ waId, dest: owner }); return true; },
+      },
+      reglages: {
+        mbaActifParTenant: async () => new Set(avecMba),
+      },
       releaseToMba: async (_t, waId) => {
         releases.push(waId);
         if (releaseKo) throw new Error('529 chez Meta');

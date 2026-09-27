@@ -171,7 +171,7 @@ describe('campagne de scénario, numéro délié puis relié, avec le vrai exéc
       // Le câblage du worker : un démarrage de campagne reprend le fil (`ignoreHumanControl`).
       startWorkflow: (tenant, wf, waId, contactId, params) =>
         m.executor.start(tenant, wf, EMAIL_PUIS_MODELE, { waId, contactId }, params, { ignoreHumanControl: true }),
-      pauserSiNumeroDelie: async (id) => { pauses.push(id); return m.delie.vrai; },
+      numerosDelies: { pauserCampagne: async (id) => { pauses.push(id); return m.delie.vrai; } },
     };
     return { m, destinataires, campagnes, pauses, run: () => lancerCampagne(CAMPAGNE, deps) };
   }
@@ -223,10 +223,12 @@ function tirs() {
 
 function runner(rows: AutomationRow[], m: ReturnType<typeof monde>, registre: ReturnType<typeof tirs>): AutomationRunnerDeps {
   return {
-    listEnabled: async () => rows,
-    lastFiredAt: registre.lastFiredAt,
-    markFired: registre.markFired,
-    clearFired: registre.clearFired,
+    automations: {
+      listEnabled: async () => rows,
+      lastFiredAt: registre.lastFiredAt,
+      markFired: registre.markFired,
+      clearFired: registre.clearFired,
+    },
     evalContext: async () => null,
     // Le câblage du worker : un démarrage hors fenêtre passe par `start`.
     startWorkflow: (tenant, wf, waId) => m.executor.start(tenant, wf, EMAIL_PUIS_MODELE, { waId, contactId: null }, undefined, { emitEvents: true }),
@@ -261,10 +263,12 @@ describe('automation sur un numéro délié, avec le vrai exécuteur', () => {
     const deps = runner([rappel], m, registre);
     // Le balayage PUBLIE, l'événement repasse par `runAutomations` : la chaîne de production, sans la file.
     const balayer = () => runDateSweep({
-      tenants: async () => ['t1'],
+      declencheurs: {
+        tenantsAvecDeclencheurDate: async () => ['t1'],
+        contactsDusPourDate: async () => [{ waId: '33611', valeur: '2026-08-23T14:00', dejaTirePour: registre.t.get('a1|33611') ?? null }],
+      },
       automations: async () => [rappel],
       timeZone: async () => 'Europe/Paris',
-      candidats: async () => [{ waId: '33611', valeur: '2026-08-23T14:00', dejaTirePour: registre.t.get('a1|33611') ?? null }],
       publish: async (tenant, ev) => { await runAutomations(tenant, ev, deps); },
       toleranceMinutes: 60,
       now: () => T,

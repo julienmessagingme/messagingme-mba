@@ -4,7 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { SignJWT } from 'jose';
 import { signSession, verifySession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import { inboxInerte, opsInerte } from './routes-inertes';
+import { inboxDepInerte, inboxInerte, opsInerte } from './routes-inertes';
 
 /**
  * Session d'OBSERVATION : entrer dans l'espace d'un client depuis la surface d'exploitation, pour voir ce
@@ -42,11 +42,16 @@ function app(over: Record<string, unknown> = {}) {
     // Une route de LECTURE et une route d'ÉCRITURE, pour éprouver les deux côtés de la garde.
     inbox: {
       ...inboxInerte,
-      listConversations: async () => [],
-      getConversationContext: async () => ({ waId: '33611', windowOpen: true, lastInboundAt: null }),
-      getMessages: async () => [],
-      recordOutbound: async () => {},
-      getTenantPhoneNumberId: async () => 'pn1',
+      inbox: {
+        ...inboxDepInerte,
+        listConversations: async () => [],
+        getConversationContext: async () => ({ waId: '33611', windowOpen: true, lastInboundAt: null }),
+        getMessages: async () => [],
+        recordOutbound: async () => {},
+      },
+      repo: {
+        getTenantPhoneNumberId: async () => 'pn1',
+      },
       sendReply: async () => 'wamid.1',
       sendTemplateMessage: async () => 'wamid.2',
     },

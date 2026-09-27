@@ -36,7 +36,9 @@ function app(over: Partial<PubsRouteDeps> = {}, role = 'admin'): { srv: FastifyI
     configId: 'cfg-pub',
     appId: 'app-1',
     graphVersion: 'v23.0',
-    lire: async () => etatChoisi,
+    connexions: {
+      lire: async () => etatChoisi,
+    },
     etatCompte: async () => ({ statut: 1, raisonDesactivation: 0, moyenPaiement: true }),
     connecter: async () => accordes,
     actifsAccordes: async () => accordes,
@@ -299,14 +301,14 @@ describe('la pause et la reprise', () => {
 
 describe('GET /pubs : la liste', () => {
   it('rend les publicités de l’espace', async () => {
-    const { srv } = app({ listerPubs: async () => [] });
+    const { srv } = app({ publicites: { lister: async () => [] } });
     const res = await srv.inject({ method: 'GET', url: urlPubs() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ publicites: [] });
   });
 
   it('🔴 un espace ne lit pas les publicités d’un autre', async () => {
-    const { srv } = app({ listerPubs: async () => [] });
+    const { srv } = app({ publicites: { lister: async () => [] } });
     expect((await srv.inject({ method: 'GET', url: '/tenants/t-voisin/pubs' })).statusCode).toBe(403);
   });
 });

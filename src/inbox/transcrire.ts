@@ -36,24 +36,24 @@ export interface MessageATranscrire {
 }
 
 export interface DepsTranscrire {
+  messages: {
+    /**
+     * 🔴 Le message, relu dans l'espace appelant : c'est là que se joue l'isolation entre clients.
+     * `conversationId` n'ajoute aucune isolation, il empêche seulement l'URL de viser une autre conversation.
+     */
+    lireMessagePourTranscription(tenantId: string, messageId: string, conversationId?: string): Promise<MessageATranscrire | null>;
+    ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string, langue: string | null): Promise<void>;
+  };
   /**
-   * 🔴 Le message, relu dans l'espace appelant : c'est là que se joue l'isolation entre clients.
-   * `conversationId` n'ajoute aucune isolation, il empêche seulement l'URL de viser une autre conversation.
-   */
-  lireMessage(tenantId: string, messageId: string, conversationId?: string): Promise<MessageATranscrire | null>;
-  /**
-   * `langue` est le cinquième paramètre : une flèche à quatre paramètres reste assignable à ce contrat, et la
-   * langue partirait en silence si le câblage l'oubliait.
-   */
-  ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string, langue: string | null): Promise<void>;
-  /**
-   * Traduit la transcription vers la langue du lecteur. Absente -> aucune traduction, jamais d'erreur. La
+   * Traduit la transcription vers la langue du lecteur. Absent -> aucune traduction, jamais d'erreur. La
    * source est la transcription, jamais `body` (qui vaut `[audio]` ou la légende pour un vocal).
    */
-  traduire?(tenantId: string, texte: string, cible: string, source?: string | null): Promise<{ texte: string; langueSource: string | null } | null>;
+  traducteur?: {
+    traduire(tenantId: string, texte: string, cible: string, source?: string | null): Promise<{ texte: string; langueSource: string | null } | null>;
+  };
   /** Range la traduction à côté du message, comme pour un message texte. Absente -> on ne range rien. */
   rangerTraduction?(tenantId: string, messageId: string, texte: string, langue: LangueConsole): Promise<void>;
-  telecharger(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }>;
+  media: { telechargerEntrant(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }> };
   transport: HttpTransport;
   /** Ce que cet appel a coûté, en dollars : la clé maison paie, ce chiffre dira s'il faut refacturer. */
   noterCout?(tenantId: string, messageId: string, coutDollars: number | null, secondes: number | null): void;
@@ -95,7 +95,7 @@ export async function transcrireMessage(
   /** La langue du lecteur. `null` / absente = traduction éteinte, rien n'est appelé ni rangé. */
   cible?: LangueConsole | null,
 ): Promise<VocalLu> {
-  const msg = await deps.lireMessage(tenantId, messageId, conversationId);
+  const msg = await deps.messages.lireMessagePourTranscription(tenantId, messageId, conversationId);
   if (!msg) throw new RienATranscrire();
 
   // Déjà transcrit : on rend l'existant sans repayer, mais on traduit si ce n'est pas encore fait dans cette
@@ -108,7 +108,7 @@ export async function transcrireMessage(
   // Après le cas « déjà transcrit » : une transcription faite quand le vocal existait se relit pour toujours.
   if (msg.mediaExpire === true) throw new MediaExpire();
 
-  const fichier = await deps.telecharger(msg.mediaId, deps.tailleMaxOctets).catch((err: unknown) => {
+  const fichier = await deps.media.telechargerEntrant(msg.mediaId, deps.tailleMaxOctets).catch((err: unknown) => {
     throw estMediaExpireChezMeta(err) ? new MediaExpire() : err;
   });
   const mime = msg.mediaMime ?? fichier.mime;
@@ -124,7 +124,7 @@ export async function transcrireMessage(
   });
   // Écrit avant de rendre : un appel payé dont le résultat n'est pas enregistré serait repayé au clic suivant.
   // La langue part avec, sinon il faudrait un appel de détection pour savoir s'il y a à traduire.
-  await deps.ecrireTranscription(tenantId, messageId, r.texte, deps.modele, r.langue);
+  await deps.messages.ecrireTranscription(tenantId, messageId, r.texte, deps.modele, r.langue);
   deps.noterCout?.(tenantId, messageId, r.coutDollars, r.secondes);
   return { texte: r.texte, deja: false, langue: r.langue, traduction: await lire(deps, tenantId, msg, r.texte, r.langue, cible) };
 }
@@ -141,13 +141,13 @@ async function lire(
   langue: string | null,
   cible?: LangueConsole | null,
 ): Promise<string | null> {
-  if (!cible || !deps.traduire) return null;
+  if (!cible || !deps.traducteur) return null;
   const deja = msg.traduction?.trim();
   if (deja && msg.traductionLangue === cible) return msg.traduction!;
   // Déjà dans la langue du lecteur : il n'y a rien à traduire, et ce n'est pas un échec. Rendre la
   // transcription ici ferait afficher deux fois le même texte, l'un présenté comme une traduction.
   if (langue !== null && langue.trim().toLowerCase().slice(0, 2) === cible) return null;
-  const r = await deps.traduire(tenantId, transcription, cible, langue);
+  const r = await deps.traducteur.traduire(tenantId, transcription, cible, langue);
   if (r === null) return null;
   // Rangée pour que le prochain lecteur ne la repaie pas. Best-effort : la lecture est déjà acquise,
   // et un échec d'écriture ne doit pas priver l'opérateur de ce qui vient d'être payé.

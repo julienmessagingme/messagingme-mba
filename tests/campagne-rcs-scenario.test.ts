@@ -96,9 +96,11 @@ function monter(o: {
       o.paramsRecus?.push(params ?? null);
       return o.demarrage ? o.demarrage() : true;
     },
-    recordOutbound: async (_t, _w, m) => {
-      o.suivi.push('journal');
-      journalFil.push({ body: m.body, ...(m.type !== undefined ? { type: m.type } : {}) });
+    inbox: {
+      recordOutboundByWaId: async (_t, _w, m) => {
+        o.suivi.push('journal');
+        journalFil.push({ body: m.body, ...(m.type !== undefined ? { type: m.type } : {}) });
+      },
     },
   };
   const campagne: Campaign = { ...CAMPAGNE, ...(o.chaine ? { chaine: o.chaine } : {}) };

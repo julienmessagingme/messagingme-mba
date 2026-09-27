@@ -259,11 +259,13 @@ describe('les deux chemins tranchés : modèle de l’Inbox, et agent MCP', () =
       const envois: string[] = [];
       const lu: string[] = [];
       const d: DepsRepondre = {
-        getConversationContext: async () => ({ waId: '33600', lastInboundAt: null, windowOpen: true }),
-        getTenantPhoneNumberId: async () => 'pn1',
+        inbox: {
+          getConversationContext: async () => ({ waId: '33600', lastInboundAt: null, windowOpen: true }),
+          recordOutbound: async () => {},
+        },
+        repo: { getTenantPhoneNumberId: async () => 'pn1' },
         sendReply: async (_t, _pn, to) => { envois.push(to); return 'wamid.1'; },
         estDesabonne: async (_t, waId) => { lu.push(waId); return desabonne; },
-        recordOutbound: async () => {},
         takeControl: priseDeFilSansEffet,
       };
       return { d, envois, lu };
@@ -340,7 +342,7 @@ describe('l’agent IA se tait devant un contact désabonné', () => {
       },
       brain,
       lireRun: async () => ({ status: 'waiting', currentNode: 'a' }),
-      lireFiche: async () => FICHE,
+      agents: { byId: async () => FICHE },
       envoyer: async (_t: string, _w: string, texte: string) => { envois.push(texte); },
       ...over,
     } as unknown as RunTurnDeps;

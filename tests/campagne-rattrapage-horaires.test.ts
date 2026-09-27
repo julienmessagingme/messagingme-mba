@@ -28,29 +28,35 @@ const C = (id: string, horsHoraires = false): CandidatBascule => ({
   rangCourant: 1, reessayer: true, dejaReessaye: false, emailDuContact: null,
 });
 
-function deps(over: Partial<RetrySweepDeps> = {}): {
+type Surcharges = Partial<Omit<RetrySweepDeps, 'repo'>> & { repo?: Partial<RetrySweepDeps['repo']> };
+
+function deps(over: Surcharges = {}): {
   d: RetrySweepDeps; enqueued: string[]; reset: string[]; bascules: Array<[string, number]>; fenetres: string[];
 } {
   const enqueued: string[] = [];
   const reset: string[] = [];
   const bascules: Array<[string, number]> = [];
   const fenetres: string[] = [];
+  const { repo: surRepo, ...reste } = over;
   const d: RetrySweepDeps = {
     isMorningWindow: () => true,
     list131049: async () => [],
-    list131026: async () => [],
-    list131026SecondFail: async () => [],
-    resetForRetry: async (id) => { reset.push(id); return true; },
-    markUnreachableDone: async () => true,
+    repo: {
+      listRetry131026: async () => [],
+      listRetry131026SecondFail: async () => [],
+      resetForRetry: async (id) => { reset.push(id); return true; },
+      markUnreachableDone: async () => true,
+      listCandidatsBascule: async () => [],
+      basculerEtage: async (id, rang) => { bascules.push([id, rang]); return true; },
+      ...surRepo,
+    },
     enqueueRun: async (id) => { enqueued.push(id); },
     flagUnreachable: async () => {},
     noterJoignabilite: async () => {},
-    listCandidatsBascule: async () => [],
-    basculerEtage: async (id, rang) => { bascules.push([id, rang]); return true; },
     // Il est 22 h, l'espace est fermé : c'est l'état par défaut de ce fichier, celui qui met la garde
     // à l'épreuve. Les cas qui veulent la journée le disent explicitement.
     fenetreOuverte: async (t) => { fenetres.push(t); return false; },
-    ...over,
+    ...reste,
   };
   return { d, enqueued, reset, bascules, fenetres };
 }
@@ -58,7 +64,7 @@ function deps(over: Partial<RetrySweepDeps> = {}): {
 describe('le rattrapage hors horaires : le RÉESSAI', () => {
   it('rattrapage hors horaires interdit et il est 22h : le destinataire est TOUJOURS LA au tour suivant', async () => {
     const listes = [R('a')];
-    const d = deps({ list131026: async () => listes });
+    const d = deps({ repo: { listRetry131026: async () => listes } });
     const res = await runRetrySweep(d.d);
     expect(res.retried).toBe(0);
     // 🔴 NE PAS se contenter de vérifier qu'il n'est pas parti : un destinataire PERDU passerait aussi
@@ -66,11 +72,11 @@ describe('le rattrapage hors horaires : le RÉESSAI', () => {
     // ni remise en `pending` (`resetForRetry`), ni enfilement. Il reste donc `failed`, donc listé.
     expect(d.reset).toEqual([]);
     expect(d.enqueued).toEqual([]);
-    expect(await d.d.list131026()).toHaveLength(1);
+    expect(await d.d.repo.listRetry131026()).toHaveLength(1);
   });
 
   it('rattrapage hors horaires autorise et il est 22h : il part', async () => {
-    const d = deps({ list131026: async () => [R('a', true)] });
+    const d = deps({ repo: { listRetry131026: async () => [R('a', true)] } });
     const res = await runRetrySweep(d.d);
     expect(res.retried).toBe(1);
     expect(d.enqueued).toEqual(['c-a']);
@@ -83,7 +89,7 @@ describe('le rattrapage hors horaires : le RÉESSAI', () => {
     // « Sans heures » veut dire « aucun jour ouvert de la semaine » : il n'y a alors pas de prochaine
     // ouverture à attendre, donc attendre reviendrait à ne jamais rattraper. `fenetreOuverte` rend
     // `true` dans ce cas (cf. `fenetreDeRattrapageOuverte`, vérifié plus bas sur les vrais horaires).
-    const d = deps({ list131026: async () => [R('a')], fenetreOuverte: async () => true });
+    const d = deps({ repo: { listRetry131026: async () => [R('a')] }, fenetreOuverte: async () => true });
     expect((await runRetrySweep(d.d)).retried).toBe(1);
   });
 
@@ -101,7 +107,7 @@ describe('le rattrapage hors horaires : le RÉESSAI', () => {
     // Elle écrit un constat et clôt. La soumettre à la fenêtre repousserait au lendemain une écriture
     // que personne ne reçoit, et un espace fermé sept jours sur sept ne clôturerait jamais rien.
     let flagged = 0;
-    const d = deps({ list131026SecondFail: async () => [R('z')], flagUnreachable: async () => { flagged += 1; } });
+    const d = deps({ repo: { listRetry131026SecondFail: async () => [R('z')] }, flagUnreachable: async () => { flagged += 1; } });
     expect((await runRetrySweep(d.d)).flagged).toBe(1);
     expect(flagged).toBe(1);
   });
@@ -110,7 +116,7 @@ describe('le rattrapage hors horaires : le RÉESSAI', () => {
     // Trois destinataires du même espace, une seule lecture des réglages : la garde ne doit pas
     // transformer un balayage de 500 destinataires en 500 lectures de `tenant_settings`.
     const memeEspace = (id: string): AutoRetryRecipient => ({ ...R(id), tenantId: 't-commun' });
-    const d = deps({ list131026: async () => [memeEspace('a'), memeEspace('b'), memeEspace('c')] });
+    const d = deps({ repo: { listRetry131026: async () => [memeEspace('a'), memeEspace('b'), memeEspace('c')] } });
     await runRetrySweep(d.d);
     expect(d.fenetres).toEqual(['t-commun']);
   });
@@ -120,7 +126,9 @@ describe('le rattrapage hors horaires : le RÉESSAI', () => {
     // là-bas un opérateur vient de cliquer « envoyer », ici personne n'attend rien à la seconde. Le
     // destinataire reste en échec et le tour suivant arrive dans quelques minutes.
     const d = deps({
-      list131026: async () => [R('a')],
+      repo: {
+        listRetry131026: async () => [R('a')],
+      },
       fenetreOuverte: async () => { throw new Error('reglages illisibles'); },
     });
     expect((await runRetrySweep(d.d)).retried).toBe(0);
@@ -130,7 +138,7 @@ describe('le rattrapage hors horaires : le RÉESSAI', () => {
 
 describe('le rattrapage hors horaires : le REPLI', () => {
   it('la bascule d etage passe par la MEME garde que le reessai', async () => {
-    const d = deps({ listCandidatsBascule: async () => [C('a')] });
+    const d = deps({ repo: { listCandidatsBascule: async () => [C('a')] } });
     expect((await runRetrySweep(d.d)).bascules).toBe(0);
     // 🔴 Et RIEN n'est écrit : basculer puis ne pas enfiler laisserait le destinataire `pending` sur le
     // nouvel étage, donc invisible de toute liste d'échec, donc jamais envoyé et jamais rattrapé.
@@ -139,7 +147,7 @@ describe('le rattrapage hors horaires : le REPLI', () => {
   });
 
   it('une campagne qui autorise le rattrapage hors horaires bascule la nuit', async () => {
-    const d = deps({ listCandidatsBascule: async () => [C('a', true)] });
+    const d = deps({ repo: { listCandidatsBascule: async () => [C('a', true)] } });
     expect((await runRetrySweep(d.d)).bascules).toBe(1);
     expect(d.bascules).toEqual([['a', 2]]);
   });
@@ -148,7 +156,7 @@ describe('le rattrapage hors horaires : le REPLI', () => {
     // 🔴 LE RÉGLAGE VOYAGE AVEC LE DESTINATAIRE, PAS AVEC LE BALAYAGE. Un tour sert les destinataires de
     // plusieurs campagnes : un drapeau posé sur le balayage rendrait le réglage de l'une opposable à
     // toutes les autres.
-    const d = deps({ listCandidatsBascule: async () => [C('non'), C('oui', true)] });
+    const d = deps({ repo: { listCandidatsBascule: async () => [C('non'), C('oui', true)] } });
     expect((await runRetrySweep(d.d)).bascules).toBe(1);
     expect(d.bascules).toEqual([['oui', 2]]);
   });
@@ -166,7 +174,7 @@ describe('les deux reglages sont independants', () => {
     // `business_hours_only = false` : le moteur n'a posé AUCUNE garde sur l'envoi initial, et ça se voit
     // au fait que ce réglage n'apparaît nulle part dans les dépendances du balayage. Le rattrapage,
     // lui, est gardé.
-    const d = deps({ list131026: async () => [R('a')], listCandidatsBascule: async () => [C('b')] });
+    const d = deps({ repo: { listRetry131026: async () => [R('a')], listCandidatsBascule: async () => [C('b')] } });
     const res = await runRetrySweep(d.d);
     expect(res.retried).toBe(0);
     expect(res.bascules).toBe(0);
@@ -175,7 +183,7 @@ describe('les deux reglages sont independants', () => {
   it('et l inverse : une campagne en heures ouvrees peut rattraper la nuit', async () => {
     // Le symétrique, qui est le plus contre-intuitif des deux : l'envoi initial n'est parti que le jour,
     // et pourtant le rattrapage d'un échec part la nuit, parce que c'est ce que le client a demandé.
-    const d = deps({ list131026: async () => [R('a', true)], listCandidatsBascule: async () => [C('b', true)] });
+    const d = deps({ repo: { listRetry131026: async () => [R('a', true)], listCandidatsBascule: async () => [C('b', true)] } });
     const res = await runRetrySweep(d.d);
     expect(res.retried).toBe(1);
     expect(res.bascules).toBe(1);

@@ -81,10 +81,12 @@ function monter(rows: AutomationRow[]) {
   };
   const ex = new WorkflowExecutor(execDeps);
   const deps: AutomationRunnerDeps = {
-    listEnabled: async () => rows,
-    lastFiredAt: async () => null,
-    markFired: async () => true,
-    clearFired: async () => {},
+    automations: {
+      listEnabled: async () => rows,
+      lastFiredAt: async () => null,
+      markFired: async () => true,
+      clearFired: async () => {},
+    },
     evalContext: async () => null,
     // Le MÊME câblage que `src/worker.ts` : le drapeau vient du runner, il n'est jamais posé en dur.
     startWorkflow: async (tenant, workflowId, waId, opts) => ex.startInWindow(

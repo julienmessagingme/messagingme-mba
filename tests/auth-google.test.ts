@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { DuplicateEmailError } from '../src/user/store.pg';
-import type { AuthRouteDeps } from '../src/auth/routes';
+import type { AuthRouteDeps, ComptesAuthDep } from '../src/auth/routes';
 import type { GoogleIdentity } from '../src/auth/google';
 
 const SECRET = 'test-secret';
@@ -23,38 +23,42 @@ const fakeVerify = (idToken: string): Promise<GoogleIdentity | null> => {
   return Promise.resolve(null); // jeton invalide
 };
 
-function app(over: Partial<AuthRouteDeps> = {}) {
+function app(over: Partial<Omit<AuthRouteDeps, 'comptes'>> & { comptes?: Partial<ComptesAuthDep> } = {}) {
   const cap: Cap = { created: [] };
+  const { comptes, ...reste } = over;
   const deps: AuthRouteDeps = {
     users: { findIdentity: async () => null },
     secret: SECRET,
     getUserState: async () => ({ role: 'admin', disabled: false, tenantStatus: 'active' }),
-    createTenantWithAdmin: async (name, admin) => {
-      if (admin.email === 'taken@x.fr') throw new DuplicateEmailError();
-      cap.created.push({ name, email: admin.email, passwordHash: admin.passwordHash });
-      return { tenantId: 'tNew', userId: 'uNew' };
+    comptes: {
+      createTenantWithAdmin: async (name, admin) => {
+        if (admin.email === 'taken@x.fr') throw new DuplicateEmailError();
+        cap.created.push({ name, email: admin.email, passwordHash: admin.passwordHash });
+        return { tenantId: 'tNew', userId: 'uNew' };
+      },
+      getByEmail: async (email) => {
+        if (email === 'known@x.fr') return [{ id: 'u1', tenantId: 't1', tenantName: 'Un', role: 'agent', disabled: false }];
+        if (email === 'revoked@x.fr') return [{ id: 'u2', tenantId: 't1', tenantName: 'Un', role: 'admin', disabled: true }];
+        if (email === 'multi@x.fr') {
+          return [
+            { id: 'u3', tenantId: 'tA', tenantName: 'Espace A', role: 'admin', disabled: false },
+            { id: 'u4', tenantId: 'tB', tenantName: 'Espace B', role: 'agent', disabled: false },
+          ];
+        }
+        if (email === 'mixte@x.fr') {
+          // Le révoqué est PREMIER, exprès : l'ancien `limit 1` l'aurait pris et aurait rendu 403.
+          return [
+            { id: 'u5', tenantId: 'tA', tenantName: 'Espace A', role: 'admin', disabled: true },
+            { id: 'u6', tenantId: 'tB', tenantName: 'Espace B', role: 'agent', disabled: false },
+          ];
+        }
+        return [];
+      },
+      ...comptes,
     },
     googleClientId: 'client-abc',
     verifyGoogle: fakeVerify,
-    getUserByEmail: async (email) => {
-      if (email === 'known@x.fr') return [{ id: 'u1', tenantId: 't1', tenantName: 'Un', role: 'agent', disabled: false }];
-      if (email === 'revoked@x.fr') return [{ id: 'u2', tenantId: 't1', tenantName: 'Un', role: 'admin', disabled: true }];
-      if (email === 'multi@x.fr') {
-        return [
-          { id: 'u3', tenantId: 'tA', tenantName: 'Espace A', role: 'admin', disabled: false },
-          { id: 'u4', tenantId: 'tB', tenantName: 'Espace B', role: 'agent', disabled: false },
-        ];
-      }
-      if (email === 'mixte@x.fr') {
-        // Le révoqué est PREMIER, exprès : l'ancien `limit 1` l'aurait pris et aurait rendu 403.
-        return [
-          { id: 'u5', tenantId: 'tA', tenantName: 'Espace A', role: 'admin', disabled: true },
-          { id: 'u6', tenantId: 'tB', tenantName: 'Espace B', role: 'agent', disabled: false },
-        ];
-      }
-      return [];
-    },
-    ...over,
+    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: deps }), cap };
 }
@@ -176,7 +180,7 @@ describe('POST /auth/google', () => {
   });
 
   it('Google non configuré (dép absente) -> 503', async () => {
-    const { server } = app({ verifyGoogle: undefined, getUserByEmail: undefined });
+    const { server } = app({ verifyGoogle: undefined, comptes: { getByEmail: undefined } });
     const res = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'GOOD' } });
     expect(res.statusCode).toBe(503);
     await server.close();

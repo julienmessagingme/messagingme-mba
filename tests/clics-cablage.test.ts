@@ -64,13 +64,17 @@ function boutonsUrl(tpl: TemplateSpec | undefined): Array<{ index: string; texte
 
 function lancer(over: Partial<RunJobDeps>, sender: SenderQuiCapture): Promise<unknown> {
   return campaignRunJob({ campaignId: 'c1' }, {
-    getCampaign: async () => campagne,
+    repo: {
+      getCampaign: async () => campagne,
+    },
     senderFor: async () => sender,
     recipients: new FakeRecipients([destinataire]),
     campaigns: new FakeCampaigns(),
     quality: new FakeQuality(),
-    // DÉCLARÉE, et plus couverte par un `as RunJobDeps` : le cast cachait qu'elle était devenue requise.
-    pauserSiNumeroDelie: async () => false,
+    numerosDelies: {
+      // DÉCLARÉE, et plus couverte par un `as RunJobDeps` : le cast cachait qu'elle était devenue requise.
+      pauserCampagne: async () => false,
+    },
     ...over,
   });
 }

@@ -7,9 +7,9 @@ import type { MbaClient } from './client';
  * annoncé (voir `AgentSettings.handoff`).
  */
 export interface HandoffCibleDeps {
-  clientFor(tenantId: string): Promise<MbaClient>;
+  meta: { mbaClientForTenant(tenantId: string): Promise<MbaClient> };
   /** Numéro du tenant. `null` = aucun numéro, donc rien à régler chez Meta. */
-  phoneNumberFor(tenantId: string): Promise<string | null>;
+  numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
 }
 
 /**
@@ -22,9 +22,9 @@ export interface HandoffCibleDeps {
 export type EtatHandoff = boolean | 'absent' | null;
 
 export async function lireHandoffEnabled(deps: HandoffCibleDeps, tenantId: string): Promise<EtatHandoff> {
-  const pn = await deps.phoneNumberFor(tenantId);
+  const pn = await deps.numeros.getTenantPhoneNumberId(tenantId);
   if (pn === null) return null;
-  const client = await deps.clientFor(tenantId);
+  const client = await deps.meta.mbaClientForTenant(tenantId);
   const settings = await client.getSettings(pn);
   if (settings === null) return null;
   const h = settings.handoff;
@@ -37,8 +37,8 @@ export async function lireHandoffEnabled(deps: HandoffCibleDeps, tenantId: strin
  * qui le rédige) sont préservés par la fusion par sous-objet de `modifierSettings`.
  */
 export async function ecrireHandoffEnabled(deps: HandoffCibleDeps, tenantId: string, enabled: boolean): Promise<void> {
-  const pn = await deps.phoneNumberFor(tenantId);
+  const pn = await deps.numeros.getTenantPhoneNumberId(tenantId);
   if (pn === null) return;
-  const client = await deps.clientFor(tenantId);
+  const client = await deps.meta.mbaClientForTenant(tenantId);
   await modifierSettings(client, pn, { handoff: { enabled } });
 }

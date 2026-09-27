@@ -31,16 +31,22 @@ interface Pose {
   motif?: string;
 }
 
-function deps(over: Partial<WebhookFeedDeps> & { poses?: Pose[]; runs?: string[] } = {}): WebhookFeedDeps & { poses: Pose[]; runs: string[] } {
+function deps(
+  over: Partial<Omit<WebhookFeedDeps, 'repo'>> & { repo?: Partial<WebhookFeedDeps['repo']>; poses?: Pose[]; runs?: string[] } = {},
+): WebhookFeedDeps & { poses: Pose[]; runs: string[] } {
+  const { repo: surRepo, ...reste } = over;
   const poses = over.poses ?? [];
   const runs = over.runs ?? [];
   const base: WebhookFeedDeps = {
-    listRunning: async () => [campagne],
-    contact: async () => contact,
-    insertRecipient: async (campaignId, r) => { poses.push({ campaignId, ...r }); return true; },
+    repo: {
+      listRunningByWebhook: async () => [campagne],
+      contactForBuildByWaId: async () => contact,
+      insertWebhookRecipient: async (campaignId, r) => { poses.push({ campaignId, ...r }); return true; },
+      ...surRepo,
+    },
     enqueueRun: async (c) => { runs.push(c.id); },
     now: () => new Date('2026-08-26T10:00:00Z'),
-    ...over,
+    ...reste,
   };
   return Object.assign(base, { poses, runs });
 }
@@ -57,7 +63,7 @@ describe("alimenterCampagnesWebhook", () => {
   it("🔴 le contact DÉJÀ destinataire ne repart pas : ni inscription, ni run", async () => {
     // C'est le contrat d'unicité `(campaign_id, contact_id)` qui le dit, et il faut le CROIRE : enfiler un run
     // « au cas où » referait tourner la campagne pour rien à chaque repassage du même lead.
-    const d = deps({ insertRecipient: async () => false });
+    const d = deps({ repo: { insertWebhookRecipient: async () => false } });
     const r = await alimenterCampagnesWebhook('t1', 'wh1', '33611223344', d);
     expect(r).toEqual({ inscrits: 0, ecartes: 0, deja: 1 });
     expect(d.runs).toEqual([]);
@@ -67,8 +73,10 @@ describe("alimenterCampagnesWebhook", () => {
     // Le faire disparaître donnerait une campagne à zéro destinataire sans que personne ne sache que des gens
     // sont bien arrivés : exactement la panne muette que ce lot refuse.
     const d = deps({
-      listRunning: async () => [{ ...campagne, category: 'marketing' as const }],
-      contact: async () => ({ ...contact, optInStatus: 'unknown' as const }),
+      repo: {
+        listRunningByWebhook: async () => [{ ...campagne, category: 'marketing' as const }],
+        contactForBuildByWaId: async () => ({ ...contact, optInStatus: 'unknown' as const }),
+      },
     });
     const r = await alimenterCampagnesWebhook('t1', 'wh1', '33611223344', d);
     expect(r).toEqual({ inscrits: 0, ecartes: 1, deja: 0 });
@@ -78,7 +86,9 @@ describe("alimenterCampagnesWebhook", () => {
 
   it("🔴 variable de template sans valeur sur la fiche : écarté avec SON motif, pas celui du consentement", async () => {
     const d = deps({
-      listRunning: async () => [{ ...campagne, paramMapping: [{ position: 1, source: { type: 'field', key: 'ville' } }] }],
+      repo: {
+        listRunningByWebhook: async () => [{ ...campagne, paramMapping: [{ position: 1, source: { type: 'field', key: 'ville' } }] }],
+      },
     });
     const r = await alimenterCampagnesWebhook('t1', 'wh1', '33611223344', d);
     expect(r.ecartes).toBe(1);
@@ -87,7 +97,9 @@ describe("alimenterCampagnesWebhook", () => {
 
   it('résout les variables du template sur la fiche de CET arrivant', async () => {
     const d = deps({
-      listRunning: async () => [{ ...campagne, paramMapping: [{ position: 1, source: { type: 'field', key: 'prenom' } }] }],
+      repo: {
+        listRunningByWebhook: async () => [{ ...campagne, paramMapping: [{ position: 1, source: { type: 'field', key: 'prenom' } }] }],
+      },
     });
     await alimenterCampagnesWebhook('t1', 'wh1', '33611223344', d);
     expect(d.poses[0]).toMatchObject({ statut: 'pending', resolvedParams: ['Alice'] });
@@ -96,8 +108,10 @@ describe("alimenterCampagnesWebhook", () => {
   it('sert TOUTES les campagnes nourries par la même adresse, en ne relisant le contact qu’une fois', async () => {
     let lectures = 0;
     const d = deps({
-      listRunning: async () => [campagne, { ...campagne, id: 'c2' }],
-      contact: async () => { lectures += 1; return contact; },
+      repo: {
+        listRunningByWebhook: async () => [campagne, { ...campagne, id: 'c2' }],
+        contactForBuildByWaId: async () => { lectures += 1; return contact; },
+      },
     });
     const r = await alimenterCampagnesWebhook('t1', 'wh1', '33611223344', d);
     expect(r.inscrits).toBe(2);
@@ -107,11 +121,13 @@ describe("alimenterCampagnesWebhook", () => {
 
   it("une campagne en échec n'empêche pas les autres d'être servies (le lead n'arrive qu'une fois)", async () => {
     const d = deps({
-      listRunning: async () => [campagne, { ...campagne, id: 'c2' }],
-      insertRecipient: async (campaignId, r) => {
-        if (campaignId === 'c1') throw new Error('db down');
-        d.poses.push({ campaignId, ...r });
-        return true;
+      repo: {
+        listRunningByWebhook: async () => [campagne, { ...campagne, id: 'c2' }],
+        insertWebhookRecipient: async (campaignId, r) => {
+          if (campaignId === 'c1') throw new Error('db down');
+          d.poses.push({ campaignId, ...r });
+          return true;
+        },
       },
     });
     const r = await alimenterCampagnesWebhook('t1', 'wh1', '33611223344', d);
@@ -121,21 +137,21 @@ describe("alimenterCampagnesWebhook", () => {
 
   it('aucune campagne vivante sur cette adresse -> le contact n’est même pas relu', async () => {
     let lectures = 0;
-    const d = deps({ listRunning: async () => [], contact: async () => { lectures += 1; return contact; } });
+    const d = deps({ repo: { listRunningByWebhook: async () => [], contactForBuildByWaId: async () => { lectures += 1; return contact; } } });
     const r = await alimenterCampagnesWebhook('t1', 'wh1', '33611223344', d);
     expect(r).toEqual({ inscrits: 0, ecartes: 0, deja: 0 });
     expect(lectures).toBe(0);
   });
 
   it('contact inconnu ou bloqué -> rien, et surtout aucune inscription fantôme', async () => {
-    const d = deps({ contact: async () => null });
+    const d = deps({ repo: { contactForBuildByWaId: async () => null } });
     const r = await alimenterCampagnesWebhook('t1', 'wh1', '33699999999', d);
     expect(r).toEqual({ inscrits: 0, ecartes: 0, deja: 0 });
     expect(d.poses).toEqual([]);
   });
 
   it("le contact en OPT-OUT est écarté même sur une campagne utility (un refus vaut pour tout)", async () => {
-    const d = deps({ contact: async () => ({ ...contact, optInStatus: 'opted_out' as const }) });
+    const d = deps({ repo: { contactForBuildByWaId: async () => ({ ...contact, optInStatus: 'opted_out' as const }) } });
     const r = await alimenterCampagnesWebhook('t1', 'wh1', '33611223344', d);
     expect(r.ecartes).toBe(1);
     expect(d.runs).toEqual([]);

@@ -11,36 +11,42 @@ const FENETRE_META_MS = FENETRE_SERVICE_MS;
 
 /** Ce dont le balayage a besoin (interface étroite, satisfaite par PgInboxStore). */
 export interface ControlSweepDeps {
-  /**
-   * Les conversations dont le fil est détenu. `ageScenarioMs` ne ramène que les fils de scénario plus vieux que
-   * ce délai : `app_workflow` est l'état normal, les ramener tous saturerait le lot au détriment des fils humains.
-   */
-  listHeldControl(
-    limit?: number,
-    ageScenarioMs?: number,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null; escaladee: boolean }>>;
-  setControlOwner(
-    tenantId: string,
-    waId: string,
-    owner: ControlOwner,
-    /** `effacerEscalade` : le drapeau d'escalade, périmé dès qu'on déplace ce fil (cf. plus bas). */
-    opts?: { only?: readonly ControlOwner[]; effacerEscalade?: boolean },
-  ): Promise<boolean>;
+  /** Les conversations et leur détenteur. */
+  inbox: {
+    /**
+     * Les conversations dont le fil est détenu. `ageScenarioMs` ne ramène que les fils de scénario plus vieux que
+     * ce délai : `app_workflow` est l'état normal, les ramener tous saturerait le lot au détriment des fils humains.
+     */
+    listHeldControl(
+      limit?: number,
+      ageScenarioMs?: number,
+    ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null; escaladee: boolean }>>;
+    setControlOwner(
+      tenantId: string,
+      waId: string,
+      owner: ControlOwner,
+      /** `effacerEscalade` : le drapeau d'escalade, périmé dès qu'on déplace ce fil (cf. plus bas). */
+      opts?: { only?: readonly ControlOwner[]; effacerEscalade?: boolean },
+    ): Promise<boolean>;
+  };
   /**
    * Délai d'inactivité par détenteur, en ms : le défaut du serveur pour les clients qui n'ont rien réglé. 0 ou
    * absent = cet état n'est jamais repris automatiquement.
    */
   timeouts: Partial<Record<ControlOwner, number>>;
-  /**
-   * Réglage par client de la durée du gel humain, en ms (absent = défaut, 0 = aucune reprise). Ne concerne que
-   * `app_human`, seule durée qui relève d'un arbitrage métier ; le délai `mba` est un garde-fou technique.
-   */
-  handbackMsByTenant?(tenantIds: readonly string[]): Promise<Map<string, number>>;
-  /**
-   * L'agent de Meta est-il allumé chez ce client ? Décide de la destination d'un fil rendu : l'agent quand il
-   * est là, le scénario sinon. Absent -> aucun tenant n'a MBA.
-   */
-  mbaActifParTenant?(tenantIds: readonly string[]): Promise<Set<string>>;
+  /** Les réglages des clients. */
+  reglages?: {
+    /**
+     * Réglage par client de la durée du gel humain, en ms (absent = défaut, 0 = aucune reprise). Ne concerne que
+     * `app_human`, seule durée qui relève d'un arbitrage métier ; le délai `mba` est un garde-fou technique.
+     */
+    handbackMsByTenant?(tenantIds: readonly string[]): Promise<Map<string, number>>;
+    /**
+     * L'agent de Meta est-il allumé chez ce client ? Décide de la destination d'un fil rendu : l'agent quand il
+     * est là, le scénario sinon. Absent -> aucun tenant n'a MBA.
+     */
+    mbaActifParTenant?(tenantIds: readonly string[]): Promise<Set<string>>;
+  };
   /**
    * Rend le fil à Meta (`thread_control` action `release`), seulement vers `mba` et sur une fenêtre ouverte.
    * Son verdict gouverne l'écriture locale : `false` (aucun numéro) comme une exception (refus de Meta)
@@ -61,16 +67,16 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
   // Les fils tenus par un humain ou par l'agent de Meta reviennent sans filtre d'âge : leurs délais sont
   // réglables par client, un filtre SQL sur le défaut raterait les clients pressés. Les fils de scénario, au
   // délai fixe, sont filtrés en SQL, sinon ces fils sains satureraient le lot. 0 ou absent = aucun.
-  const held = await deps.listHeldControl(undefined, deps.timeouts.app_workflow ?? 0);
+  const held = await deps.inbox.listHeldControl(undefined, deps.timeouts.app_workflow ?? 0);
   if (held.length === 0) return 0;
 
   // Un seul aller-retour pour tous les clients du lot, au lieu d'une requête par conversation.
   const tenantIds = [...new Set(held.map((c) => c.tenantId))];
-  const parTenant = deps.handbackMsByTenant
-    ? await deps.handbackMsByTenant(tenantIds)
+  const parTenant = deps.reglages?.handbackMsByTenant
+    ? await deps.reglages.handbackMsByTenant(tenantIds)
     : new Map<string, number>();
   // Un seul aller-retour aussi pour savoir qui a l'agent de Meta allumé.
-  const avecMba = deps.mbaActifParTenant ? await deps.mbaActifParTenant(tenantIds) : new Set<string>();
+  const avecMba = deps.reglages?.mbaActifParTenant ? await deps.reglages.mbaActifParTenant(tenantIds) : new Set<string>();
 
   let rendues = 0;
   for (const c of held) {
@@ -114,7 +120,7 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
     // Une escalade en cours a déjà été sautée plus haut : un drapeau qui subsiste est périmé, et le laisser
     // l'armerait pour le jour où la conversation redeviendrait `app_human`.
-    if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner], effacerEscalade: true }))) continue;
+    if (!(await deps.inbox.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner], effacerEscalade: true }))) continue;
     rendues += 1;
   }
   return rendues;

@@ -65,8 +65,11 @@ function app(overClient: Record<string, Methode> = {}, overDeps: Partial<MbaRout
   const { client, appels } = fauxClient(overClient);
   const deps: MbaRouteDeps = {
     ...mbaInerte,
-    clientFor: async () => client,
-    phoneNumberBelongsToTenant: async (pn, tenant) => pn === PN && tenant === 't1',
+    meta: { mbaClientForTenant: async () => client },
+    repo: {
+      getTenantPhoneNumberId: async () => null,
+      phoneNumberBelongsToTenant: async (pn, tenant) => pn === PN && tenant === 't1',
+    },
     ...overDeps,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, mba: deps }), appels };
@@ -346,7 +349,7 @@ describe('routes MBA : sites, fichiers, allowlist, bac à sable', () => {
 describe('GET /tenants/:tenantId/mba/:phoneNumberId/messages', () => {
   it('rend le compte des messages écrits par l’agent, pour CET espace, sans fenêtre', async () => {
     const appels: unknown[][] = [];
-    const { server } = app({}, { messagesEcrits: async (...args: unknown[]) => { appels.push(args); return 87; } });
+    const { server } = app({}, { stats: { messagesEcritsParMba: async (...args: unknown[]) => { appels.push(args); return 87; } } });
     const res = await server.inject({ method: 'GET', url: url('/messages'), ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     // Plus de `jours` : le compte court depuis toujours, une fenêtre annoncée mentirait.
@@ -360,7 +363,10 @@ describe('GET /tenants/:tenantId/mba/:phoneNumberId/messages', () => {
     // Le `:phoneNumberId` ne filtre PAS le comptage (`conversations` ne porte aucun numéro) : il ne sert
     // qu'à ce contrôle d'isolation, hérité de `contexte()`. Ce test est là pour qu'on ne le retire pas en
     // croyant qu'il ne sert à rien.
-    const { server } = app({}, { messagesEcrits: async () => 87, phoneNumberBelongsToTenant: async () => false });
+    const { server } = app({}, {
+      stats: { messagesEcritsParMba: async () => 87 },
+      repo: { getTenantPhoneNumberId: async () => null, phoneNumberBelongsToTenant: async () => false },
+    });
     const res = await server.inject({ method: 'GET', url: url('/messages'), ...h(adminTok) });
     expect(res.statusCode).toBe(404);
     await server.close();

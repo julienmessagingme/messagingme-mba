@@ -6,7 +6,7 @@ import { sha256Hex } from '../src/lib/signature';
 import { cleApiDeTest } from './aide/cle-api';
 import { capturerJournal } from './journal';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import { opsInerte } from './routes-inertes';
+import { exploitationInerte, opsInerte } from './routes-inertes';
 
 /**
  * L'ARRÊT D'URGENCE D'UN ESPACE, sur la surface publique.
@@ -94,9 +94,12 @@ describe('un espace VERROUILLÉ n’a plus d’API', () => {
 
 describe('le geste qui pose et retire le verrou', () => {
   const opsMuet = {
-    getTenantOverview: async () => [],
-    getGlobalDaily: async () => [],
-    getQueueLoad: async () => [],
+    exploitation: {
+      ...exploitationInerte,
+      getTenantOverview: async () => [],
+      getGlobalDaily: async () => [],
+      getQueueLoad: async () => [],
+    },
   };
   const UUID = '4169c753-311a-43bb-a334-d8a2cb7caf6f';
 

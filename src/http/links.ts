@@ -14,7 +14,7 @@ import { escapeHtml as echappe } from '../crm/render';
  *  3. Jamais de 5xx pour un humain : Cloudflare remplacerait le corps par sa page d'erreur.
  */
 
-export interface LinksRouteDeps {
+export interface LiensDep {
   /** Destination d'un code, ou null si le code n'existe pas. */
   getByCode(code: string): Promise<DestinationLien | null>;
   /**
@@ -27,6 +27,10 @@ export interface LinksRouteDeps {
    * 🔴 `tenantId` vient du lien, pas de l'URL : le contact d'un autre espace ne s'attribue pas ce clic.
    */
   contactParJeton(tenantId: string, jeton: string): Promise<string | null>;
+}
+
+export interface LinksRouteDeps {
+  liens: LiensDep;
   /**
    * Remonte le clic comme signal, seulement quand on sait qui a cliqué (un clic anonyme n'a pas de fiche). Requise :
    * la redirection est le seul endroit où le clic se sait. Elle n'est pas attendue (contrairement à `recordClick`) :
@@ -65,7 +69,7 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       return reply.code(404).type('text/html; charset=utf-8').send(pageErreur('Lien introuvable', "Ce lien n'existe pas ou n'est plus actif."));
     }
 
-    const lien = await deps.getByCode(normalise);
+    const lien = await deps.liens.getByCode(normalise);
     if (!lien) {
       return reply.code(404).type('text/html; charset=utf-8').send(pageErreur('Lien introuvable', "Ce lien n'existe pas ou n'est plus actif."));
     }
@@ -87,10 +91,10 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       let contactId: string | null = null;
       if (estJeton(jeton)) {
         // L'espace vient du lien, jamais de l'URL. Un échec de résolution ne bloque rien : le clic compte sans auteur.
-        contactId = await deps.contactParJeton(lien.tenantId, jeton).catch(() => null);
+        contactId = await deps.liens.contactParJeton(lien.tenantId, jeton).catch(() => null);
       }
       try {
-        await deps.recordClick(normalise, lien.tenantId, contactId);
+        await deps.liens.recordClick(normalise, lien.tenantId, contactId);
       } catch (err) {
         journaliser('error', 'clic_non_enregistre', { err, code: normalise, tenantId: lien.tenantId });
       }

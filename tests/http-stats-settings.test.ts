@@ -5,11 +5,11 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { StatsRouteDeps } from '../src/http/stats';
+import type { AnalysesDep, StatsDep, StatsRouteDeps } from '../src/http/stats';
 import type { AnalyzedConversationsFilter } from '../src/stats/conversation-stats.pg';
-import type { SettingsRouteDeps } from '../src/http/settings';
+import type { ReglagesDep, SettingsRouteDeps } from '../src/http/settings';
 import { INTENTS } from '../src/analysis/schema';
-import { reglagesInertes, statsInertes } from './routes-inertes';
+import { analysesInertes, reglagesDepInertes, reglagesInertes, statsInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -25,53 +25,70 @@ const CAMP_A = '11111111-1111-4111-8111-111111111111';
 const CAMP_B = '22222222-2222-4222-8222-222222222222';
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<SettingsRouteDeps> } = {}) {
+function app(over: { stats?: Partial<Omit<StatsRouteDeps, 'stats' | 'conversationStats'>> & { stats?: Partial<StatsDep>; conversationStats?: Partial<AnalysesDep> }; settings?: Partial<Omit<SettingsRouteDeps, 'reglages'>> & { reglages?: Partial<ReglagesDep> } } = {}) {
+  const { stats: statsOver, conversationStats: analysesOver, ...statsReste } = over.stats ?? {};
   const stats: StatsRouteDeps = {
     ...statsInertes,
-    getDashboard: async () => ({
-      contacts: [{ date: '2026-07-09', count: 3 }],
-      // ⚠️ PLUS BAS QUE LES CUMULÉS, DÉLIBÉRÉMENT : une fixture où les deux courbes seraient égales ferait
-      // passer un écran qui affiche la mauvaise, sans que rien ne bronche.
-      contactsActifs: [{ date: '2026-07-09', count: 2 }],
-      templates: { utility: [{ date: '2026-07-09', count: 1 }], marketing: [{ date: '2026-07-09', count: 2 }] },
-      exchanged: [{ date: '2026-07-09', count: 5 }],
-      service: [{ date: '2026-07-09', count: 2 }],
-      // Le total retombe sur celui de `service` : c'est l'invariant de la ventilation (cf. store).
-      serviceParOrigine: { ia: 1, scenario: 1, humain: 0, indeterminee: 0 },
-      // ⚠️ ET LE DÉTAIL RETOMBE SUR LE THÈME : `agent + mba + mcp` vaut `ia`. Une fixture qui s'en écarterait
-      // décrirait un état que le store ne peut pas produire, donc ferait passer les tests sur une fiction.
-      serviceIaDetail: { agent: 1, mba: 0, mcp: 0 },
-    }),
+    stats: {
+      getDashboard: async () => ({
+        contacts: [{ date: '2026-07-09', count: 3 }],
+        // ⚠️ PLUS BAS QUE LES CUMULÉS, DÉLIBÉRÉMENT : une fixture où les deux courbes seraient égales ferait
+        // passer un écran qui affiche la mauvaise, sans que rien ne bronche.
+        contactsActifs: [{ date: '2026-07-09', count: 2 }],
+        templates: { utility: [{ date: '2026-07-09', count: 1 }], marketing: [{ date: '2026-07-09', count: 2 }] },
+        exchanged: [{ date: '2026-07-09', count: 5 }],
+        service: [{ date: '2026-07-09', count: 2 }],
+        // Le total retombe sur celui de `service` : c'est l'invariant de la ventilation (cf. store).
+        serviceParOrigine: { ia: 1, scenario: 1, humain: 0, indeterminee: 0 },
+        // ⚠️ ET LE DÉTAIL RETOMBE SUR LE THÈME : `agent + mba + mcp` vaut `ia`. Une fixture qui s'en écarterait
+        // décrirait un état que le store ne peut pas produire, donc ferait passer les tests sur une fiction.
+        serviceIaDetail: { agent: 1, mba: 0, mcp: 0 },
+      }),
+      // Les volumes par canal des cartes de l'Accueil, REQUIS : une fixture qui les oublierait ne compile pas.
+      volumesParCanal: async () => ({ whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } }),
+      getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
+      getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 2, urlClicks: 4, contactsVises: 10, parCanal: [] }),
+      getErrorBreakdown: async () => [
+        { code: 131049, count: 4, templateName: 'promo', campaignId: CAMP_A, campaignName: 'Promo ete' },
+        { code: 131047, count: 2, templateName: null, campaignId: CAMP_B, campaignName: 'Relance' },
+      ],
+      ...statsOver,
+    },
     // La marge de l espace, REQUISE : une fixture qui l oublierait ne compile pas, et c est le but.
     margeTemplate: async () => 100,
-    // Les volumes par canal des cartes de l'Accueil, REQUIS pour la même raison.
-    volumesParCanal: async () => ({ whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } }),
-    getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724, currency: 'EUR' }),
-    getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 2, urlClicks: 4, contactsVises: 10, parCanal: [] }),
-    getErrorBreakdown: async () => [
-      { code: 131049, count: 4, templateName: 'promo', campaignId: CAMP_A, campaignName: 'Promo ete' },
-      { code: 131047, count: 2, templateName: null, campaignId: CAMP_B, campaignName: 'Relance' },
-    ],
     getErrorContacts: async () => [
       { recipientId: 'r1', campaignId: CAMP_A, campaignName: 'Promo ete', telephone: '+33600000001', contactId: 'ct1', contactNom: 'Julie', code: 131049, message: 'Re-engagement message', origine: 'envoi' as const, at: '2026-09-05T10:00:00.000Z' },
     ],
     getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true, currency: 'EUR', nonChiffrables: 0, sansCategorie: 0, sansTarif: 0 }),
-    getConversationSummary: async () => ({
-      enabled: true, retentionDays: 365, total: 3,
-      sentiment: { positif: 1, neutre: 1, negatif: 1 },
-      intent: { demande_devis: 2, sav: 1, reclamation: 0, information: 0, prise_rdv: 0, achat: 0, suivi_commande: 0, retour: 0, autre: 0 },
-      resolution: { resolved: 2, unresolved: 1, rate: 2 / 3 },
-      handledBy: { humain: 1, automatise: 2, mba: 0 },
-      exchanges: { avg: 3.5, median: 3 },
-      actions: { creer_devis: 2, rappeler: 0, relancer: 0, escalader: 1, aucune: 0 },
-      topTopics: [{ topic: 'devis', count: 2 }],
-      // ⚠️ Les sujets RANGES SOUS LEUR INTENTION (2026-09-17). Le champ est REQUIS par le contrat, et c'est
-      // ce qui a fait tomber cette fixture au typecheck plutot qu'au runtime : un `?` l'aurait laissee
-      // passer, et l'ecran aurait boucle sur `undefined` en production.
-      topicsParIntention: { demande_devis: [{ topic: 'devis', count: 2 }] },
-      confidence: { lt50: 0, from50to70: 1, from70to90: 1, gte90: 1 },
-    }),
+    conversationStats: {
+      ...analysesInertes,
+      getSummary: async () => ({
+        enabled: true, retentionDays: 365, total: 3,
+        sentiment: { positif: 1, neutre: 1, negatif: 1 },
+        intent: { demande_devis: 2, sav: 1, reclamation: 0, information: 0, prise_rdv: 0, achat: 0, suivi_commande: 0, retour: 0, autre: 0 },
+        resolution: { resolved: 2, unresolved: 1, rate: 2 / 3 },
+        handledBy: { humain: 1, automatise: 2, mba: 0 },
+        exchanges: { avg: 3.5, median: 3 },
+        actions: { creer_devis: 2, rappeler: 0, relancer: 0, escalader: 1, aucune: 0 },
+        topTopics: [{ topic: 'devis', count: 2 }],
+        // ⚠️ Les sujets RANGES SOUS LEUR INTENTION (2026-09-17). Le champ est REQUIS par le contrat, et c'est
+        // ce qui a fait tomber cette fixture au typecheck plutot qu'au runtime : un `?` l'aurait laissee
+        // passer, et l'ecran aurait boucle sur `undefined` en production.
+        topicsParIntention: { demande_devis: [{ topic: 'devis', count: 2 }] },
+        confidence: { lt50: 0, from50to70: 1, from70to90: 1, gte90: 1 },
+      }),
+      getNuageQualitatif: async () => ({
+        points: [{ satisfaction: 0, urgence: 9, n: 2 }, { satisfaction: 8, urgence: 1, n: 1 }],
+        moyenne: { satisfaction: 8 / 3, urgence: 19 / 3 },
+        mesurees: 3,
+        sansMesure: 11,
+      }),
+      listAnalyzed: async (_t, _r, f) => [
+        { conversationId: 'cv1', waId: '33600', profileName: 'Julie', sentiment: f.sentiment ?? 'positif', intent: 'demande_devis', topic: 'devis', resolved: true, actionSuggestion: 'creer_devis', confidence: 0.9, justification: 'demande un devis', handledBy: 'humain', exchangesCount: 3, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: 'Le client demande un devis pour 50 unites.', entities: { quantite: 50 }, origines: ['humain'] },
+      ],
+      ...analysesOver,
+    },
     getCoutParCampagne: async () => ({
       lignes: [
         { campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', envoyes: 10, envois: 10, cout: 1.43, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: 4, coutParClic: 0.3575 },
@@ -91,29 +108,24 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       etapes: [],
       clicsAnonymes: 0,
     } : null),
-    getNuageQualitatif: async () => ({
-      points: [{ satisfaction: 0, urgence: 9, n: 2 }, { satisfaction: 8, urgence: 1, n: 1 }],
-      moyenne: { satisfaction: 8 / 3, urgence: 19 / 3 },
-      mesurees: 3,
-      sansMesure: 11,
-    }),
-    listAnalyzedConversations: async (_t, _r, f) => [
-      { conversationId: 'cv1', waId: '33600', profileName: 'Julie', sentiment: f.sentiment ?? 'positif', intent: 'demande_devis', topic: 'devis', resolved: true, actionSuggestion: 'creer_devis', confidence: 0.9, justification: 'demande un devis', handledBy: 'humain', exchangesCount: 3, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: 'Le client demande un devis pour 50 unites.', entities: { quantite: 50 }, origines: ['humain'] },
-    ],
-    ...over.stats,
+    ...statsReste,
   };
   const settings: SettingsRouteDeps = {
     ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
-    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
-    setMbaEnabled: async () => {},
-    setHubspotListsEnabled: async () => {},
-    setMbaHandoffMode: async () => {},
-    setControlHandbackSeconds: async () => {},
-    setTimezone: async () => {},
-    setBusinessHours: async () => {},
     ...over.settings,
+    reglages: {
+      ...reglagesDepInertes,
+      get: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
+      setMbaEnabled: async () => {},
+      setHubspotListsEnabled: async () => {},
+      setMbaHandoffMode: async () => {},
+      setControlHandbackSeconds: async () => {},
+      setTimezone: async () => {},
+      setBusinessHours: async () => {},
+      ...over.settings?.reglages,
+    },
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, stats, settings });
 }
@@ -153,7 +165,7 @@ describe('stats route', () => {
 
   it('GET /stats/conversations/list -> quali + filtres enum valides seulement, inboxHref', async () => {
     const captured: unknown[] = [];
-    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return [{ conversationId: 'cv1', waId: '33600', profileName: null, sentiment: 'negatif', intent: 'sav', topic: 't', resolved: false, actionSuggestion: 'escalader', confidence: 0.6, justification: 'j', handledBy: 'automatise', exchangesCount: 5, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: null, entities: {}, origines: ['humain', 'mba'] }]; } } });
+    const a = app({ stats: { conversationStats: { listAnalyzed: async (_t, _r, f) => { captured.push(f); return [{ conversationId: 'cv1', waId: '33600', profileName: null, sentiment: 'negatif', intent: 'sav', topic: 't', resolved: false, actionSuggestion: 'escalader', confidence: 0.6, justification: 'j', handledBy: 'automatise', exchangesCount: 5, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: null, entities: {}, origines: ['humain', 'mba'] }]; } } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/list?days=30&sentiment=negatif&intent=sav&action=escalader&limit=25&junk=xxx', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ conversations: Array<{ inboxHref: string }> }>().conversations[0]?.inboxHref).toBe('/inbox?c=cv1');
@@ -170,7 +182,7 @@ describe('stats route', () => {
     // route aurait rendu TOUTES les conversations sous un filtre « Achat » affiché à l'écran. Elle DÉRIVE
     // désormais de INTENTS.
     const captured: AnalyzedConversationsFilter[] = [];
-    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return []; } } });
+    const a = app({ stats: { conversationStats: { listAnalyzed: async (_t, _r, f) => { captured.push(f); return []; } } } });
     for (const i of INTENTS) {
       await a.inject({ method: 'GET', url: `/tenants/t1/stats/conversations/list?days=30&intent=${i}`, ...h(adminTok) });
     }
@@ -184,7 +196,7 @@ describe('stats route', () => {
     // sujet légitime doit ARRIVER au store, une chaîne vide ne doit PAS devenir un filtre qui ne ramène
     // jamais rien, et un sujet absurdement long ne doit pas descendre jusqu'à la base.
     const captured: AnalyzedConversationsFilter[] = [];
-    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return []; } } });
+    const a = app({ stats: { conversationStats: { listAnalyzed: async (_t, _r, f) => { captured.push(f); return []; } } } });
     const url = (q: string) => `/tenants/t1/stats/conversations/list?days=30&${q}`;
 
     expect((await a.inject({ method: 'GET', url: url('topic=retard%20de%20livraison'), ...h(adminTok) })).statusCode).toBe(200);
@@ -314,7 +326,7 @@ describe('stats route', () => {
 
   it('🔴 un template SANS lien tracé rend urlClicks = null, pas 0', async () => {
     // 0 se lirait « personne n'a cliqué » ; null dit « il n'y a rien à cliquer », et l'écran masque l'étape.
-    const a = app({ stats: { getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 0, urlClicks: null, contactsVises: 10, parCanal: [] }) } });
+    const a = app({ stats: { stats: { getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 0, urlClicks: null, contactsVises: 10, parCanal: [] }) } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/campaign-funnel?campaignId=c1', ...h(adminTok) });
     expect(res.json<{ urlClicks: number | null }>().urlClicks).toBeNull();
     await a.close();
@@ -349,7 +361,7 @@ describe('stats route', () => {
 
   it('GET /stats/errors?templateName -> filtre transmis au store + réponse porte templateName', async () => {
     let captured: string | undefined = 'UNSET';
-    const a = app({ stats: { getErrorBreakdown: async (_t, _r, tpl) => { captured = tpl; return [{ code: 131049, count: 4, templateName: 'promo', campaignId: CAMP_A, campaignName: 'Promo ete' }]; } } });
+    const a = app({ stats: { stats: { getErrorBreakdown: async (_t, _r, tpl) => { captured = tpl; return [{ code: 131049, count: 4, templateName: 'promo', campaignId: CAMP_A, campaignName: 'Promo ete' }]; } } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors?days=30&templateName=promo', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(captured).toBe('promo');
@@ -544,7 +556,7 @@ describe('stats route', () => {
 
 describe('settings route', () => {
   it('GET /settings admin -> mbaEnabled', async () => {
-    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }) } });
+    const a = app({ settings: { reglages: { get: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }) } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
@@ -553,7 +565,7 @@ describe('settings route', () => {
 
   it('PATCH /settings/timezone : IANA valide -> 200 + posé ; invalide -> 400 ; agent -> 403', async () => {
     let saved: [string, string] | null = null;
-    const ok = app({ settings: { setTimezone: async (t, tz) => { saved = [t, tz]; } } });
+    const ok = app({ settings: { reglages: { setTimezone: async (t, tz) => { saved = [t, tz]; } } } });
     const r1 = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/timezone', ...h(adminTok), payload: { timezone: 'America/New_York' } });
     expect(r1.statusCode).toBe(200);
     expect(saved).toEqual(['t1', 'America/New_York']);
@@ -569,7 +581,7 @@ describe('settings route', () => {
 
   it('PATCH /settings/business-hours : 7 jours valides -> 200 ; plage inversée -> 400 ; jour manquant -> 400', async () => {
     let saved: unknown = null;
-    const ok = app({ settings: { setBusinessHours: async (_t, h2) => { saved = h2; } } });
+    const ok = app({ settings: { reglages: { setBusinessHours: async (_t, h2) => { saved = h2; } } } });
     const week = (open: string, close: string) => Object.fromEntries(Array.from({ length: 7 }, (_, d) => [String(d), d === 0 || d === 6 ? { closed: true, open: '', close: '' } : { closed: false, open, close }]));
     const good = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/business-hours', ...h(adminTok), payload: { businessHours: week('09:00', '18:00') } });
     expect(good.statusCode).toBe(200);
@@ -593,7 +605,7 @@ describe('settings route', () => {
 
   it('PUT /settings admin -> 200 + persiste', async () => {
     let saved: [string, boolean] | null = null;
-    const a = app({ settings: { setMbaEnabled: async (t, e) => { saved = [t, e]; } } });
+    const a = app({ settings: { reglages: { setMbaEnabled: async (t, e) => { saved = [t, e]; } } } });
     const res = await a.inject({ method: 'PUT', url: '/tenants/t1/settings', ...h(adminTok), payload: { mbaEnabled: true } });
     expect(res.statusCode).toBe(200);
     expect(saved).toEqual(['t1', true]);
@@ -609,7 +621,7 @@ describe('settings route', () => {
 
   it('PATCH /settings/hubspot-lists admin -> 200 + persiste ; agent -> 403 ; body invalide -> 400', async () => {
     let saved: [string, boolean] | null = null;
-    const ok = app({ settings: { setHubspotListsEnabled: async (t, e) => { saved = [t, e]; } } });
+    const ok = app({ settings: { reglages: { setHubspotListsEnabled: async (t, e) => { saved = [t, e]; } } } });
     const r1 = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/hubspot-lists', ...h(adminTok), payload: { enabled: true } });
     expect(r1.statusCode).toBe(200);
     expect(saved).toEqual(['t1', true]);
@@ -650,7 +662,7 @@ describe('PATCH /settings/control-handback', () => {
 
   it('accepte une durée en secondes et la renvoie', async () => {
     const poses: Array<number | null> = [];
-    const a = app({ settings: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } });
+    const a = app({ settings: { reglages: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } } });
     const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { seconds: 1800 } });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ controlHandbackSeconds: number }>().controlHandbackSeconds).toBe(1800);
@@ -660,7 +672,7 @@ describe('PATCH /settings/control-handback', () => {
 
   it('accepte null (retour au défaut du serveur) et 0 (jamais de reprise auto)', async () => {
     const poses: Array<number | null> = [];
-    const a = app({ settings: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } });
+    const a = app({ settings: { reglages: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } } });
     expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { seconds: null } })).statusCode).toBe(200);
     expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { seconds: 0 } })).statusCode).toBe(200);
     expect(poses).toEqual([null, 0]);
@@ -669,7 +681,7 @@ describe('PATCH /settings/control-handback', () => {
 
   it('refuse ce qui laisserait un client sans réponse trop longtemps ou pour toujours', async () => {
     const poses: Array<number | null> = [];
-    const a = app({ settings: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } });
+    const a = app({ settings: { reglages: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } } });
     // Au-delà de 7 jours ce n'est plus un gel, c'est un abandon. Négatif, décimal et non-nombre sont
     // des erreurs de saisie qu'il vaut mieux refuser que coercer en silence.
     for (const seconds of [7 * 24 * 3600 + 1, -1, 1.5, '1800', true, undefined]) {
@@ -682,7 +694,7 @@ describe('PATCH /settings/control-handback', () => {
 
   it('un agent ne peut pas changer ce réglage (admin seulement)', async () => {
     const poses: Array<number | null> = [];
-    const a = app({ settings: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } });
+    const a = app({ settings: { reglages: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } } });
     const res = await a.inject({ method: 'PATCH', url, ...h(agentTok), payload: { seconds: 60 } });
     expect(res.statusCode).toBe(403);
     expect(poses).toEqual([]);
@@ -697,13 +709,13 @@ describe('PATCH /settings/control-handback', () => {
 describe('PATCH /settings/mba-handoff', () => {
   const url = '/tenants/t1/settings/mba-handoff';
   /** Stub commun : enregistre le mode posé en base et l'état appliqué chez Meta. */
-  const espion = (over: Record<string, unknown> = {}) => {
+  const espion = (over: Record<string, unknown> = {}, reglages: Record<string, unknown> = {}) => {
     const modes: string[] = [];
     const appliques: boolean[] = [];
     const a = app({ settings: {
-      setMbaHandoffMode: async (_t: string, m: string) => { modes.push(m); },
       applyMbaHandoffEnabled: async (_t: string, e: boolean) => { appliques.push(e); },
       ...over,
+      reglages: { setMbaHandoffMode: async (_t: string, m: string) => { modes.push(m); }, ...reglages },
     } });
     return { a, modes, appliques };
   };
@@ -731,8 +743,9 @@ describe('PATCH /settings/mba-handoff', () => {
     const tousFermes = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), { closed: true, open: '', close: '' }]));
     const { a, modes, appliques } = espion({
       // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
-    hubspotPortalConnecte: sansPortailHubspot,
-    getSettings: async () => ({
+      hubspotPortalConnecte: sansPortailHubspot,
+    }, {
+      get: async () => ({
         mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
         controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, timezone: 'Europe/Paris', businessHours: tousFermes,
       }),
@@ -870,7 +883,7 @@ describe('GET /tenants/:t/accueil/volumes', () => {
 
   it('200 : les chiffres par canal, et la fenêtre de 30 jours rendue par le serveur', async () => {
     const vus: Array<{ tenant: string; jours: number }> = [];
-    const a = app({ stats: { volumesParCanal: async (tenant, jours) => { vus.push({ tenant, jours }); return parEspace[tenant]!; } } });
+    const a = app({ stats: { stats: { volumesParCanal: async (tenant, jours) => { vus.push({ tenant, jours }); return parEspace[tenant]!; } } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/accueil/volumes', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ jours: 30, whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } });
@@ -880,7 +893,7 @@ describe('GET /tenants/:t/accueil/volumes', () => {
 
   it('🔴 isolation : chaque espace lit SES chiffres, et l espace d à côté est refusé sans lecture', async () => {
     const vus: string[] = [];
-    const a = app({ stats: { volumesParCanal: async (tenant) => { vus.push(tenant); return parEspace[tenant]!; } } });
+    const a = app({ stats: { stats: { volumesParCanal: async (tenant) => { vus.push(tenant); return parEspace[tenant]!; } } } });
     const t2 = await a.inject({ method: 'GET', url: '/tenants/t2/accueil/volumes', ...h(adminT2) });
     expect(t2.statusCode).toBe(200);
     expect(t2.json<{ whatsapp: unknown }>().whatsapp).toEqual({ envoyes: 9, recus: 8 });
@@ -893,7 +906,7 @@ describe('GET /tenants/:t/accueil/volumes', () => {
 
   it('garde : sans jeton 401, un agent 403 (les chiffres de l Accueil sont réservés aux admins)', async () => {
     const vus: string[] = [];
-    const a = app({ stats: { volumesParCanal: async (tenant) => { vus.push(tenant); return parEspace[tenant]!; } } });
+    const a = app({ stats: { stats: { volumesParCanal: async (tenant) => { vus.push(tenant); return parEspace[tenant]!; } } } });
     expect((await a.inject({ method: 'GET', url: '/tenants/t1/accueil/volumes' })).statusCode).toBe(401);
     expect((await a.inject({ method: 'GET', url: '/tenants/t1/accueil/volumes', ...h(agentTok) })).statusCode).toBe(403);
     expect(vus).toEqual([]);

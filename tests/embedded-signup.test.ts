@@ -3,9 +3,9 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
+import type { EmbeddedSignupRouteDeps, MetaInscriptionDep } from '../src/http/embedded-signup';
 import { TenantConflictError, SecondNumeroRefuseError } from '../src/account/es-store.pg';
-import { signupInerte } from './routes-inertes';
+import { metaInscriptionInerte, signupInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -26,19 +26,29 @@ interface Cap {
   saved: Array<{ wabaId: string; tenantId: string; token: string; pin: string | null }>;
 }
 
-function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
+function app(
+  over: Partial<MetaInscriptionDep> & { configId?: string } = {},
+  linkTenant?: EmbeddedSignupRouteDeps['inscriptions']['linkTenant'],
+) {
   const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [] };
+  const { configId = 'cfg-123', ...meta } = over;
   const deps: EmbeddedSignupRouteDeps = {
     ...signupInerte,
-    configId: 'cfg-123',
+    configId,
     appId: 'app-1',
     graphVersion: 'v25.0',
-    exchangeCode: async (code) => { cap.exchanged.push(code); return 'BIZ_TOKEN'; },
-    verifyWaba: async (wabaId) => { cap.verifiedWaba.push(wabaId); },
-    getPhone: async () => ({ displayPhoneNumber: '+33525680250', verifiedName: 'Messaging Me Tech', status: 'CONNECTED' }),
-    subscribeApp: async (wabaId) => { cap.subscribed.push(wabaId); },
-    register: async (phoneNumberId, _tok, pin) => { cap.registered.push({ phoneNumberId, pin }); },
-    link: async (input) => { cap.linked.push({ tenantId: input.tenantId, wabaId: input.wabaId, phoneNumberId: input.phoneNumberId, displayPhoneNumber: input.displayPhoneNumber }); },
+    meta: {
+      ...metaInscriptionInerte,
+      exchangeCode: async (code) => { cap.exchanged.push(code); return 'BIZ_TOKEN'; },
+      verifyWaba: async (wabaId) => { cap.verifiedWaba.push(wabaId); },
+      getPhone: async () => ({ displayPhoneNumber: '+33525680250', verifiedName: 'Messaging Me Tech', status: 'CONNECTED' }),
+      subscribeApp: async (wabaId) => { cap.subscribed.push(wabaId); },
+      register: async (phoneNumberId, _tok, pin) => { cap.registered.push({ phoneNumberId, pin }); },
+      ...meta,
+    },
+    inscriptions: {
+      linkTenant: linkTenant ?? (async (input) => { cap.linked.push({ tenantId: input.tenantId, wabaId: input.wabaId, phoneNumberId: input.phoneNumberId, displayPhoneNumber: input.displayPhoneNumber }); }),
+    },
     saveCredentials: async (wabaId, tenantId, token, pin) => { cap.saved.push({ wabaId, tenantId, token, pin }); },
     // L'activation du numéro a son propre fichier (`tests/numero-activation.test.ts`). Ici, ces dépendances
     // LÈVENT au lieu de ne rien faire : si un chemin d'inscription se mettait à les appeler, il faut le voir,
@@ -52,7 +62,6 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     // Délier et relier (migration 0180) ont leurs tests dans `tests/numero-activation.test.ts`.
     delierNumero: async () => { throw new Error('non attendu dans ce test'); },
     relierNumero: async () => { throw new Error('non attendu dans ce test'); },
-    ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, embeddedSignup: deps }), cap };
 }
@@ -117,9 +126,7 @@ describe('POST /embedded-signup/complete', () => {
   });
 
   it('numéro déjà rattaché à un AUTRE workspace (link throw TenantConflictError) -> 409, pas de subscribe/register/save', async () => {
-    const { server, cap } = app({
-      link: async () => { throw new TenantConflictError('phone_number', 'pn-1'); },
-    });
+    const { server, cap } = app({}, async () => { throw new TenantConflictError('phone_number', 'pn-1'); });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(409);
     // le conflit interrompt AVANT les étapes suivantes : rien n'est abonné, registré, ni sauvegardé.
@@ -134,9 +141,7 @@ describe('POST /embedded-signup/complete', () => {
    * lui, l'opérateur conclut à une panne de l'embarquement et recommence en boucle.
    */
   it('second numéro sur le MÊME workspace -> 409, un message qui NOMME le numéro déjà là et dit quoi faire', async () => {
-    const { server, cap } = app({
-      link: async () => { throw new SecondNumeroRefuseError('pn-deja', 'pn-nouveau'); },
-    });
+    const { server, cap } = app({}, async () => { throw new SecondNumeroRefuseError('pn-deja', 'pn-nouveau'); });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(409);
     const message = res.json<{ error: string }>().error;

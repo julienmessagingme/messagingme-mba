@@ -43,32 +43,8 @@ export interface ConnexionPubDeposee {
   ancienRevoque: SortAncienJetonPub;
 }
 
-export interface OpsRouteDeps {
-  /**
-   * Déposer un jeton publicitaire créé à la main. Le parcours de l'écran Publicités ne peut pas servir le
-   * portefeuille Meta qui possède notre application (Meta exige un portefeuille distinct) : sans cette porte, nous
-   * ne pourrions pas faire nos propres publicités. Le jeton est chiffré par le câblage et jamais renvoyé.
-   */
-  deposerJetonPub(tenantId: string, jeton: string, comptePubId: string, pageId: string): Promise<ConnexionPubDeposee>;
-
-  /**
-   * Les compteurs d'usage de l'API publique ; absent -> `/ops/usage` rend une liste vide. Optionnel ici (les tests
-   * montent `/ops` sans usage), obligatoire sur les routes `/v1`, où l'oublier perdrait une mesure en silence.
-   */
-  usage?: { compteurs(): unknown[] };
-  /** La grille de prix globale. */
-  lireGrillePrix(): Promise<GrillePrix>;
-  /** `par` = la note : le jeton d'exploitation est partagé, c'est la seule trace de qui a changé un prix. */
-  ecrireGrillePrix(grille: GrillePrix, par: string): Promise<void>;
-  /**
-   * Pose ou retire le verrou d'un espace (`tenants.status`). Rend `false` si l'espace est inconnu. La note n'est
-   * pas conservée en base : le pourquoi vit dans la ligne `ops_verrou_espace` que la route écrit.
-   */
-  verrouillerEspace(tenantId: string, verrouille: boolean, note: string): Promise<boolean>;
-  /**
-   * Ouvre une session d'observation dans l'espace d'un client : rend un jeton de session en lecture seule.
-   */
-  observerTenant(tenantId: string): Promise<{ token: string; tenantName: string } | null>;
+/** Les lectures et gestes d'exploitation cross-espace. */
+export interface ExploitationOps {
   getTenantOverview(): Promise<TenantOverviewRow[]>;
   getGlobalDaily(days: number): Promise<GlobalDailyPoint[]>;
   getQueueLoad(): Promise<QueueLoadRow[]>;
@@ -87,13 +63,44 @@ export interface OpsRouteDeps {
    * un message de client jamais traité, en silence.
    */
   listerJobsMorts(limite: number): Promise<JobMortRow[]>;
-  /** Ré-enfile un job dans sa file d'origine. Doit être la même file que celle des jobs vivants. */
-  reenfiler(queue: string, data: unknown): Promise<void>;
   /** Retire de la file d'échec les jobs ré-enfilés. Appelée après l'enfilement, jamais avant. */
   oublierJobsMorts(ids: string[]): Promise<number>;
+}
+
+export interface OpsRouteDeps {
+  /**
+   * Déposer un jeton publicitaire créé à la main. Le parcours de l'écran Publicités ne peut pas servir le
+   * portefeuille Meta qui possède notre application (Meta exige un portefeuille distinct) : sans cette porte, nous
+   * ne pourrions pas faire nos propres publicités. Le jeton est chiffré par le câblage et jamais renvoyé.
+   */
+  deposerJetonPub(tenantId: string, jeton: string, comptePubId: string, pageId: string): Promise<ConnexionPubDeposee>;
+
+  exploitation: ExploitationOps;
+  /**
+   * Les compteurs d'usage de l'API publique ; absent -> `/ops/usage` rend une liste vide. Optionnel ici (les tests
+   * montent `/ops` sans usage), obligatoire sur les routes `/v1`, où l'oublier perdrait une mesure en silence.
+   */
+  usage?: { compteurs(): unknown[] };
+  /** La grille de prix globale. */
+  lireGrillePrix(): Promise<GrillePrix>;
+  reglages: {
+    /** `par` = la note : le jeton d'exploitation est partagé, c'est la seule trace de qui a changé un prix. */
+    setGrillePrixGlobale(grille: GrillePrix, par: string): Promise<void>;
+  };
+  /**
+   * Pose ou retire le verrou d'un espace (`tenants.status`). Rend `false` si l'espace est inconnu. La note n'est
+   * pas conservée en base : le pourquoi vit dans la ligne `ops_verrou_espace` que la route écrit.
+   */
+  verrouillerEspace(tenantId: string, verrouille: boolean, note: string): Promise<boolean>;
+  /**
+   * Ouvre une session d'observation dans l'espace d'un client : rend un jeton de session en lecture seule.
+   */
+  observerTenant(tenantId: string): Promise<{ token: string; tenantName: string } | null>;
+  /** Ré-enfile un job dans sa file d'origine. Doit être la même file que celle des jobs vivants. */
+  file: { enqueue(queue: string, data: unknown): Promise<unknown> };
   /** Signal de vie du worker. `null` -> `worker: null` dans le payload. Distinct des files (queues) : prouve que
   *  le process worker vit, pas que les files se vident. */
-  getWorkerHeartbeat(): Promise<WorkerHeartbeatRow | null>;
+  heartbeat: { get(): Promise<WorkerHeartbeatRow | null> };
   /**
    * Le solde prépayé d'un espace, en micro-euros, avec son journal. `null` = espace inconnu, distinct de zéro :
    * un opérateur qui lirait 0 sur un identifiant mal tapé rechargerait un espace qui n'existe pas.
@@ -113,7 +120,7 @@ export interface OpsRouteDeps {
    * carte vide.
    */
   etatPoolInstantane(): { process: string; total: number; libres: number; enAttente: number; max: number; maxMsDepuisDemarrage: number };
-  lireAttentesPool(minutes: number): Promise<unknown[]>;
+  attentesPool: { lireDernieresMinutes(minutes: number): Promise<unknown[]> };
   /**
    * Lance le balayage du risque de désengagement d'un espace, tout de suite. Rend son bilan, ou `null` si
    * l'espace est inconnu.
@@ -186,19 +193,19 @@ export function registerOps(
 
   app.get('/ops/overview', opts, async (_req, reply) => {
     const [tenants, daily, queues, worker, queuesParGroupe, attentesPool, latences] = await Promise.all([
-      deps.getTenantOverview(),
-      deps.getGlobalDaily(14),
-      deps.getQueueLoad(),
-      deps.getWorkerHeartbeat(),
+      deps.exploitation.getTenantOverview(),
+      deps.exploitation.getGlobalDaily(14),
+      deps.exploitation.getQueueLoad(),
+      deps.heartbeat.get(),
       // Au mieux : une lecture d'équité en échec ne doit pas priver l'exploitation du reste de l'écran. Elle sert à
       // voir, elle ne garantit rien.
-      deps.getQueueLoadParGroupe().catch(() => []),
+      deps.exploitation.getQueueLoadParGroupe().catch(() => []),
       // Même doctrine : la table peut ne pas exister encore, et l'écran d'exploitation ne doit pas tomber un jour de
       // déploiement.
-      deps.lireAttentesPool(180).catch(() => []),
+      deps.attentesPool.lireDernieresMinutes(180).catch(() => []),
       // Fenêtre de 24 h : assez longue pour que le p95 ait un sens, assez courte pour qu'il décrive aujourd'hui.
       // Sur sept jours, un incident d'il y a six jours tiendrait encore le chiffre.
-      deps.getQueueLatence(24).catch(() => []),
+      deps.exploitation.getQueueLatence(24).catch(() => []),
     ]);
     const poolInstantane = deps.etatPoolInstantane();
     return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe, poolInstantane, attentesPool, latences });
@@ -216,7 +223,7 @@ export function registerOps(
   app.get('/ops/dlq', opts, async (req, reply) => {
     const brut = (req.query as { limit?: unknown }).limit;
     const limite = typeof brut === 'string' && /^\d+$/.test(brut) ? Number(brut) : 50;
-    return reply.code(200).send({ jobs: await deps.listerJobsMorts(limite) });
+    return reply.code(200).send({ jobs: await deps.exploitation.listerJobsMorts(limite) });
   });
 
   app.post('/ops/dlq/replay', opts, async (req, reply) => {
@@ -231,7 +238,7 @@ export function registerOps(
     if (limite < 1 || limite > MAX_REJEU) {
       return reply.code(400).send({ error: `limit entre 1 et ${MAX_REJEU}` });
     }
-    const morts = (await deps.listerJobsMorts(200)).filter((j) => j.queue === queue).slice(0, limite);
+    const morts = (await deps.exploitation.listerJobsMorts(200)).filter((j) => j.queue === queue).slice(0, limite);
     if (morts.length === 0) return reply.code(200).send({ rejoues: 0, oublies: 0 });
 
     // 🔴 Enfiler puis oublier : un crash entre les deux produit un doublon, l'ordre inverse une perte. Le doublon
@@ -240,7 +247,7 @@ export function registerOps(
     const rejoues: string[] = [];
     for (const j of morts) {
       try {
-        await deps.reenfiler(j.queue, j.data);
+        await deps.file.enqueue(j.queue, j.data);
         rejoues.push(j.id);
       } catch (err) {
         // On s'arrête au premier échec d'enfilement plutôt que d'insister : si la file refuse, elle
@@ -250,7 +257,7 @@ export function registerOps(
         break;
       }
     }
-    const oublies = await deps.oublierJobsMorts(rejoues);
+    const oublies = await deps.exploitation.oublierJobsMorts(rejoues);
     return reply.code(200).send({ rejoues: rejoues.length, oublies });
   });
 
@@ -390,7 +397,7 @@ export function registerOps(
     if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui change le prix, et pourquoi' });
     const v = valideGrille(req.body);
     if (!v.ok) return reply.code(400).send({ error: `champ invalide : ${v.champ}`, champ: v.champ, bornes: BORNES_GRILLE });
-    await deps.ecrireGrillePrix(v.grille, note);
+    await deps.reglages.setGrillePrixGlobale(v.grille, note);
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_grille_prix', prix: v.grille, note, at: new Date().toISOString() }));
     return reply.code(200).send({ prix: v.grille });

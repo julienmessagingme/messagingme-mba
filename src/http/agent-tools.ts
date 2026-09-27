@@ -21,7 +21,8 @@ import { gestesSchema } from '../agent/gestes';
  *  3. Le risque n'est pas modifiable : il vient du catalogue, le client règle l'autonomie, pas la dangerosité.
  */
 
-export interface AgentToolsRouteDeps {
+/** Ce que les routes lisent et écrivent des outils d'un agent. */
+export interface OutilsAgentDep {
   listToutes(tenantId: string, agentId: string): Promise<OutilComplet[]>;
   ajouter(tenantId: string, agentId: string, outil: {
     handler: string; name: string; title: string; description: string; nePasUtiliser: string;
@@ -30,6 +31,7 @@ export interface AgentToolsRouteDeps {
   /**
    * Déclare un outil de connecteur sur une source de l'espace. Séparée de `ajouter`, dont la garde est de prendre
    * son `handler` dans le catalogue et de refuser le reste : fusionnées, on finirait par accepter un handler inventé.
+   * `null` = agent, source ou requête inconnus de cet espace (404), plutôt qu'une clé étrangère violée (500).
    */
   ajouterConnecteur(tenantId: string, agentId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
@@ -37,12 +39,6 @@ export interface AgentToolsRouteDeps {
     /** Ce que cet agent fait de la réponse, et les champs qu'il lit quand il l'intègre. */
     nature: OutilComplet['nature']; outputPaths: readonly string[];
   }): Promise<OutilComplet | null>;
-  /**
-   * La requête que l'outil va désigner, ou `null` si elle n'est pas de cet espace. Elle porte méthode, chemin,
-   * corps et variables ; on la lit ici plutôt que de croire le corps, parce que le risque plancher et le résumé
-   * de ce qui sera envoyé en dérivent.
-   */
-  requetePourOutil(tenantId: string, requeteId: string): Promise<RequeteConnecteur | null>;
   patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null>;
   activer(tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
   autonomie(tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
@@ -54,6 +50,18 @@ export interface AgentToolsRouteDeps {
   detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
   /** Rend un outil de la bibliothèque de l'espace disponible pour cet agent, inactif. */
   rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
+}
+
+export interface AgentToolsRouteDeps {
+  outils: OutilsAgentDep;
+  requetes: {
+    /**
+     * La requête que l'outil va désigner, ou `null` si elle n'est pas de cet espace. Elle porte méthode, chemin,
+     * corps et variables ; on la lit ici plutôt que de croire le corps, parce que le risque plancher et le
+     * résumé de ce qui sera envoyé en dérivent.
+     */
+    parId(tenantId: string, requeteId: string): Promise<RequeteConnecteur | null>;
+  };
   /** Les règles d'arrêt de la fiche : c'est d'elles que dérive l'énumération de l'outil « terminer ». */
   sortiesDeLAgent(tenantId: string, agentId: string): Promise<SortieAgent[] | null>;
 }
@@ -136,7 +144,7 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const sorties = await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId);
     if (sorties === null) return reply.code(404).send({ error: 'agent introuvable' });
-    const outils = await deps.listToutes(ctx.tenant, ctx.agentId);
+    const outils = await deps.outils.listToutes(ctx.tenant, ctx.agentId);
     return reply.code(200).send({ outils: outils.map((o) => vue(o, sorties)), catalogue: CATALOGUE });
   });
 
@@ -149,7 +157,7 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     const modele = outilMaison(parse.data.handler);
     if (!modele) return reply.code(400).send({ error: 'outil inconnu' });
     try {
-      const outil = await deps.ajouter(ctx.tenant, ctx.agentId, {
+      const outil = await deps.outils.ajouter(ctx.tenant, ctx.agentId, {
         handler: modele.handler,
         name: parse.data.name ?? modele.nomDefaut,
         title: modele.titre.fr,
@@ -184,7 +192,7 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     const d = parse.data;
     // La requête est lue, pas crue sur parole : le risque plancher et le résumé de ce qui sera envoyé en
     // dérivent, et ils doivent décrire l'appel réel.
-    const requete = await deps.requetePourOutil(ctx.tenant, d.requeteId);
+    const requete = await deps.requetes.parId(ctx.tenant, d.requeteId);
     if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
 
     /**
@@ -217,7 +225,7 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
         ...(v.enum && v.enum.length > 0 ? { enum: v.enum } : {}),
       }));
     try {
-      const outil = await deps.ajouterConnecteur(ctx.tenant, ctx.agentId, {
+      const outil = await deps.outils.ajouterConnecteur(ctx.tenant, ctx.agentId, {
         sourceId: requete.sourceId,
         requestId: requete.id,
         name: d.name,
@@ -254,7 +262,7 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     // Une énumération ne se pose que sur un paramètre que le catalogue ouvre : sinon un appel direct pourrait
     // restreindre `requete` ou `valeur` et rendre l'outil inappelable, sans écran pour le défaire.
     if (parse.data.enums) {
-      const outils = await deps.listToutes(ctx.tenant, ctx.agentId);
+      const outils = await deps.outils.listToutes(ctx.tenant, ctx.agentId);
       const cible = outils.find((o) => o.id === outilId);
       if (!cible) return reply.code(404).send({ error: 'outil introuvable' });
       const modele = outilMaison(String(cible.binding.handler ?? ''));
@@ -265,7 +273,7 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
       }
     }
     try {
-      const outil = await deps.patch(ctx.tenant, ctx.agentId, outilId, parse.data);
+      const outil = await deps.outils.patch(ctx.tenant, ctx.agentId, outilId, parse.data);
       if (!outil) return reply.code(404).send({ error: 'outil introuvable' });
       const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];
       return reply.code(200).send({ outil: vue(outil, sorties) });
@@ -312,12 +320,12 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
 
   app.put(`${base}/:outilId/activation`, opts, async (req, reply) => {
     const { outilId } = req.params as { outilId: string };
-    return poserDrapeau(req, reply, outilId, req.body, (t, a, i, v, par) => deps.activer(t, a, i, v, par));
+    return poserDrapeau(req, reply, outilId, req.body, (t, a, i, v, par) => deps.outils.activer(t, a, i, v, par));
   });
 
   app.put(`${base}/:outilId/autonomie`, opts, async (req, reply) => {
     const { outilId } = req.params as { outilId: string };
-    return poserDrapeau(req, reply, outilId, req.body, (t, a, i, v, par) => deps.autonomie(t, a, i, v, par));
+    return poserDrapeau(req, reply, outilId, req.body, (t, a, i, v, par) => deps.outils.autonomie(t, a, i, v, par));
   });
 
   app.delete(`${base}/:outilId`, opts, async (req, reply) => {
@@ -327,7 +335,7 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if (!estUuid(outilId)) return reply.code(404).send({ error: 'outil introuvable' });
     // Détache l'outil de cet agent ; le store tranche (`PgToolCatalog.detacher`). Une action ou un connecteur HTTP
     // que plus personne n'utilise part avec (sinon un orphelin invisible garderait son nom) ; un outil MCP reste.
-    const detache = await deps.detacher(ctx.tenant, ctx.agentId, outilId);
+    const detache = await deps.outils.detacher(ctx.tenant, ctx.agentId, outilId);
     if (!detache) return reply.code(404).send({ error: 'outil introuvable' });
     return reply.code(204).send();
   });
@@ -344,8 +352,8 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     const parse = drapeauSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'valeur booléenne requise' });
     const fait = parse.data.valeur
-      ? await deps.rattacher(ctx.tenant, ctx.agentId, outilId)
-      : await deps.detacher(ctx.tenant, ctx.agentId, outilId);
+      ? await deps.outils.rattacher(ctx.tenant, ctx.agentId, outilId)
+      : await deps.outils.detacher(ctx.tenant, ctx.agentId, outilId);
     // « agent OU outil » : un rattachement rend aussi `false` quand l'agent vient d'être supprimé.
     if (!fait) return reply.code(404).send({ error: 'agent ou outil introuvable' });
     return reply.code(200).send({ rattache: parse.data.valeur });

@@ -23,21 +23,24 @@ export interface DueRun {
 }
 
 export interface WakeSweepDeps {
-  /** Réserve les runs dormants dus (claim atomique côté store) et les rend. Jamais deux fois la même ligne. */
-  claimDue(limit: number): Promise<DueRun[]>;
-  /**
-   * Réserve les parcours dont le délai « pas de réponse » d'un bloc Question a expiré. Absente -> pas de
-   * balayage. Séparée de `claimDue` parce que la mécanique diffère, et c'est elle qui décide de la sûreté :
-   * l'une pose un bail sur un run dormant, invisible de `advance` ; l'autre consomme l'échéance d'un run qui
-   * doit rester joignable par une réponse du contact.
-   */
-  claimDueQuestions?(limit: number): Promise<DueRun[]>;
-  /** Reprend un parcours au bloc suivant (executor.resume). Rend false si la reprise a été refusée. */
-  resume(run: DueRun): Promise<boolean>;
+  /** Les parcours et leurs échéances. */
+  runs: {
+    /** Réserve les runs dormants dus (claim atomique côté store) et les rend. Jamais deux fois la même ligne. */
+    claimDueSleeping(limit: number): Promise<DueRun[]>;
+    /**
+     * Réserve les parcours dont le délai « pas de réponse » d'un bloc Question a expiré. Absente -> pas de
+     * balayage. Séparée de `claimDueSleeping` parce que la mécanique diffère, et c'est elle qui décide de la
+     * sûreté : l'une pose un bail sur un run dormant, invisible de `advance` ; l'autre consomme l'échéance d'un
+     * run qui doit rester joignable par une réponse du contact.
+     */
+    claimDueQuestions?(limit: number): Promise<DueRun[]>;
+    /** Clôt les parcours dormants trop vieux (chaîne d'attentes sans fin). Absente -> pas de nettoyage. */
+    closeStaleSleeping?(): Promise<number>;
+  };
+  /** Reprend un parcours au bloc suivant. Rend false si la reprise a été refusée. */
+  executor: { resume(run: DueRun): Promise<boolean> };
   /** Nombre max de parcours réveillés par passage. Absent -> 50. */
   batchSize?: number;
-  /** Clôt les parcours dormants trop vieux (chaîne d'attentes sans fin). Absente -> pas de nettoyage. */
-  closeStale?: () => Promise<number>;
 }
 
 /**
@@ -54,9 +57,9 @@ export interface WakeSweepDeps {
 export async function runWorkflowWakeSweep(deps: WakeSweepDeps): Promise<number> {
   // Nettoyage avant le claim : deux blocs Attente qui se pointent l'un l'autre se rendorment pour toujours.
   // Best-effort : un échec de nettoyage ne doit pas empêcher les réveils légitimes.
-  if (deps.closeStale) {
+  if (deps.runs.closeStaleSleeping) {
     try {
-      const clos = await deps.closeStale();
+      const clos = await deps.runs.closeStaleSleeping();
       // eslint-disable-next-line no-console
       if (clos > 0) console.log(`wake-sweep: ${clos} parcours dormant(s) trop vieux clos`);
     } catch (err) {
@@ -67,10 +70,10 @@ export async function runWorkflowWakeSweep(deps: WakeSweepDeps): Promise<number>
   const taille = deps.batchSize ?? 50;
   // Les deux familles d'échéance sont réclamées séparément puis reprises par la même boucle (`status` dit par
   // où repartir). Un échec de la réclamation des questions n'empêche pas les réveils du sommeil.
-  const due = await deps.claimDue(taille);
-  if (deps.claimDueQuestions) {
+  const due = await deps.runs.claimDueSleeping(taille);
+  if (deps.runs.claimDueQuestions) {
     try {
-      due.push(...(await deps.claimDueQuestions(taille)));
+      due.push(...(await deps.runs.claimDueQuestions(taille)));
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('wake-sweep: réclamation des questions sans réponse en échec', err);
@@ -79,7 +82,7 @@ export async function runWorkflowWakeSweep(deps: WakeSweepDeps): Promise<number>
   let repris = 0;
   for (const run of due) {
     try {
-      if (await deps.resume(run)) repris += 1;
+      if (await deps.executor.resume(run)) repris += 1;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`wake-sweep: échec de la reprise du parcours ${run.id}`, err);

@@ -17,24 +17,33 @@ import type { ConsommationAgent } from '../agent/session-store';
  */
 export const JOURS_CONSOMMATION = 30;
 
-export interface AgentsRouteDeps {
+/** Ce que les routes lisent et écrivent des fiches d'agent. */
+export interface AgentsDep {
   listActifs(tenantId: string): Promise<AgentResume[]>;
   listToutes(tenantId: string): Promise<AgentResume[]>;
   complet(tenantId: string, id: string): Promise<AgentComplet | null>;
   create(tenantId: string, label: string, mentionIa: string, modele: string): Promise<AgentComplet>;
   patch(tenantId: string, id: string, patch: PatchAgent): Promise<AgentComplet | null>;
   remove(tenantId: string, id: string): Promise<boolean>;
+}
+
+export interface AgentsRouteDeps {
+  agents: AgentsDep;
   /** Modèle par défaut d'un agent neuf. Vient de la configuration serveur, pas du client. */
   modeleParDefaut: string;
-  /**
-   * Le solde prépayé de l'espace, en micro-euros. 🔴 Lecture seule : un client voit ce qu'il lui reste, il ne se
-   * recharge pas lui-même (le rechargement vit sur `/ops`, sous une autorité séparée).
-   */
-  soldeAgent(tenantId: string): Promise<number>;
-  /** Ce que cet agent a consommé sur une fenêtre. */
-  consommationAgent(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent>;
-  /** Les messages échangés dans les conversations que cet agent a tenues, sur une fenêtre de N jours. */
-  messagesAgent(tenantId: string, agentId: string, jours: number): Promise<number>;
+  credits: {
+    /**
+     * Le solde prépayé de l'espace, en micro-euros. 🔴 Lecture seule : un client voit ce qu'il lui reste, il ne
+     * se recharge pas lui-même (le rechargement vit sur `/ops`, sous une autorité séparée).
+     */
+    solde(tenantId: string): Promise<number>;
+  };
+  sessions: {
+    /** Ce que cet agent a consommé sur une fenêtre. */
+    consommation(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent>;
+    /** Les messages échangés dans les conversations que cet agent a tenues, sur une fenêtre de N jours. */
+    messagesTenus(tenantId: string, agentId: string, jours: number): Promise<number>;
+  };
   /**
    * L'état à opposer au lint d'activation. Requis : un montage sans lui laisserait activer sans contrôle.
    */
@@ -97,7 +106,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
    */
   app.get('/tenants/:tenantId/agents/solde', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ soldeMicroEur: await deps.soldeAgent(tenant) });
+    return reply.code(200).send({ soldeMicroEur: await deps.credits.solde(tenant) });
   });
 
   /**
@@ -110,7 +119,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     // La fenêtre est fixée ici et pas prise dans la requête : un paramètre libre laisserait demander « depuis
     // toujours », qui relit toutes les sessions de l'espace pour un chiffre qui ne dit rien de l'usage courant.
-    return reply.code(200).send({ consommation: await deps.consommationAgent(tenant, agentId, JOURS_CONSOMMATION) });
+    return reply.code(200).send({ consommation: await deps.sessions.consommation(tenant, agentId, JOURS_CONSOMMATION) });
   });
 
   /**
@@ -123,7 +132,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     const { agentId } = req.params as { agentId: string };
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     return reply.code(200).send({
-      messages: await deps.messagesAgent(tenant, agentId, JOURS_CONSOMMATION),
+      messages: await deps.sessions.messagesTenus(tenant, agentId, JOURS_CONSOMMATION),
       jours: JOURS_CONSOMMATION,
     });
   });
@@ -133,7 +142,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     // `?statut=tous` : l'écran de réglage voit ses brouillons, le builder ne voit que les actifs. Le défaut
     // est le plus restrictif, pour qu'un appelant distrait ne propose pas un brouillon dans un scénario.
     const tous = (req.query as { statut?: string }).statut === 'tous';
-    const agents = tous ? await deps.listToutes(tenant) : await deps.listActifs(tenant);
+    const agents = tous ? await deps.agents.listToutes(tenant) : await deps.agents.listActifs(tenant);
     return reply.code(200).send({ agents });
   });
 
@@ -142,7 +151,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     const { agentId } = req.params as { agentId: string };
     // Identifiant mal formé : 404, sinon Postgres lèverait sur la colonne `uuid` (donc un 500).
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
-    const agent = await deps.complet(tenant, agentId);
+    const agent = await deps.agents.complet(tenant, agentId);
     if (!agent) return reply.code(404).send({ error: 'agent introuvable' });
     return reply.code(200).send({ agent });
   });
@@ -177,7 +186,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     }
     try {
       // Créé en brouillon par le store, jamais actif : le corps ne peut pas en décider.
-      const agent = await deps.create(tenant, parse.data.label, MENTION_IA_DEFAUT, deps.modeleParDefaut);
+      const agent = await deps.agents.create(tenant, parse.data.label, MENTION_IA_DEFAUT, deps.modeleParDefaut);
       return reply.code(201).send({ agent });
     } catch (err) {
       if (err instanceof LabelAgentDejaPris) return reply.code(409).send({ error: err.message });
@@ -257,7 +266,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
       if (manques.length > 0) return reply.code(422).send({ error: 'agent incomplet', manques });
     }
     try {
-      const agent = await deps.patch(tenant, agentId, parse.data);
+      const agent = await deps.agents.patch(tenant, agentId, parse.data);
       if (!agent) return reply.code(404).send({ error: 'agent introuvable' });
       return reply.code(200).send({ agent });
     } catch (err) {
@@ -273,7 +282,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     // Sans cette route, un agent créé avec un nom malheureux ne pouvait être ni renommé vers un nom occupé,
     // ni retiré : le workspace gardait une ligne morte pour toujours.
-    const supprime = await deps.remove(tenant, agentId);
+    const supprime = await deps.agents.remove(tenant, agentId);
     if (!supprime) return reply.code(404).send({ error: 'agent introuvable' });
     return reply.code(204).send();
   });

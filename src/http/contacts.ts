@@ -13,7 +13,8 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 import type { AuditEntry } from '../audit/store.pg';
 import { messageDe } from '../lib/erreur';
 
-export interface ContactsRouteDeps {
+/** Ce que les routes lisent et écrivent des fiches de contact. */
+export interface ContactsDep {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
    *  contact n'existe pas (tenant). */
   applyEdits(
@@ -51,21 +52,35 @@ export interface ContactsRouteDeps {
   purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }>;
   /** Résout une cible (ids ou filtres) en identifiants. Nécessaire à la purge, qui travaille par identifiants. */
   contactIdsForTarget(tenantId: string, target: BulkTarget): Promise<string[]>;
+}
+
+export interface ContactsRouteDeps {
+  contacts: ContactsDep;
   /**
    * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Au mieux à l'appel : un journal
    * en échec ne fait jamais échouer l'action métier qu'il observe.
    */
   audit: AuditSink;
+  journal: {
+    /**
+     * Lecture du journal. Séparée de l'écriture : le store est en ajout seul, et rien ici ne doit laisser croire
+     * qu'une entrée se modifie.
+     */
+    list(tenantId: string, opts: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string }): Promise<AuditEntry[]>;
+  };
   /**
-   * Lecture du journal. Séparée de l'écriture : le store est en ajout seul, et rien ici ne doit laisser croire
-   * qu'une entrée se modifie.
+   * 🔴 Le journal des erreurs de livraison, séparé du journal d'actions : celui-ci porte les numéros (sans eux il
+   * ne répond à rien), celui-là n'en porte jamais (y écrire un numéro annulerait une purge).
    */
-  listAudit(tenantId: string, opts: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string }): Promise<AuditEntry[]>;
-  /** La moitié système du journal des erreurs : les appels vers les systèmes du client qui n'ont pas abouti. */
-  listErreursSysteme(tenantId: string, limit?: number): Promise<unknown[]>;
-  listErreursLivraison(tenantId: string, filtre: { limit?: number; q?: string; telephone?: string; code?: number }): Promise<unknown[]>;
-  /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
-  listUserFields(tenantId: string): Promise<UserFieldDef[]>;
+  erreurs: {
+    lister(tenantId: string, filtre: { limit?: number; q?: string; telephone?: string; code?: number }): Promise<unknown[]>;
+    /** La moitié système : les appels vers les systèmes du client qui n'ont pas abouti. */
+    listerEchecsSysteme(tenantId: string, limit?: number): Promise<unknown[]>;
+  };
+  champs: {
+    /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
+    list(tenantId: string): Promise<UserFieldDef[]>;
+  };
   /**
    * Matérialise un champ socle (`prenom`/`email`) absent de la base. Idempotent. Les fixtures qui ne la
    * regardent pas passent `socleJamaisCree`, qui garde le refus « champ inconnu ».
@@ -80,15 +95,18 @@ export interface ContactsRouteDeps {
     tenantId: string,
     input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean; bsuid?: string },
   ): Promise<{ status: 'created' | 'updated' | 'error'; contactId?: string; reason?: string }>;
-  /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
-  getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
-  /**
-   * Le résumé de la dernière conversation analysée : la ligne « champ de base » de la fiche. null si le
-   * contact n'est pas dans l'espace.
-   */
-  getResumeContact(tenantId: string, contactId: string): Promise<ResumeContact | null>;
-  /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
-  listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
+  contactHistory: {
+    /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
+    getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
+    /**
+     * Le résumé de la dernière conversation analysée : la ligne « champ de base » de la fiche. Rien n'est
+     * recopié dans la fiche, donc rien ne survit à la purge des conversations. null si le contact n'est pas
+     * dans l'espace.
+     */
+    resumeContact(tenantId: string, contactId: string): Promise<ResumeContact | null>;
+    /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
+    listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
+  };
   /**
    * Ce qu'un contact a coûté, et jusqu'où il est allé. Elle appelle Meta pour les tarifs : son échec ne doit pas
    * empêcher la fiche contact de s'ouvrir, qui appelle cette route à part.
@@ -156,7 +174,7 @@ const asStringArray = (v: unknown): string[] =>
  * qu'une faute de frappe ne crée pas un champ fantôme.
  */
 async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: string): Promise<UserFieldDef | undefined> {
-  const lu = async (): Promise<UserFieldDef | undefined> => (await deps.listUserFields(tenantId)).find((d) => d.key === key);
+  const lu = async (): Promise<UserFieldDef | undefined> => (await deps.champs.list(tenantId)).find((d) => d.key === key);
   const def = await lu();
   if (def) return def;
   const socle = socleField(key);
@@ -187,7 +205,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    */
   app.get('/tenants/:tenantId/contacts/desabonnes', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ contacts: await deps.listeDesabonnes(tenant) });
+    return reply.code(200).send({ contacts: await deps.contacts.listeDesabonnes(tenant) });
   });
 
   /**
@@ -197,7 +215,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    */
   app.get('/tenants/:tenantId/contacts/refus-possibles', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const { scannes, messages } = await deps.messagesARelire(tenant);
+    const { scannes, messages } = await deps.contacts.messagesARelire(tenant);
     // La règle vit dans `src/crm/consentement.ts`, avec ses tests. Elle n'est pas recopiée ici.
     const refus = messages.filter((m) => classerDemandeArret(m.body) === 'peut_etre');
     return reply.code(200).send({ scannes, refus });
@@ -205,7 +223,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
 
   app.get('/tenants/:tenantId/contacts/blocked', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ contacts: await deps.listBlocked(tenant) });
+    return reply.code(200).send({ contacts: await deps.contacts.listBlocked(tenant) });
   });
 
   /**
@@ -218,7 +236,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const bloque = (req.body as { blocked?: unknown } | null)?.blocked;
     if (typeof bloque !== 'boolean') return reply.code(400).send({ error: 'blocked (booléen) requis' });
     const { contactId } = req.params as { contactId: string };
-    const ok = await deps.setBlocked(tenant, contactId, bloque, req.auth?.userId ?? null);
+    const ok = await deps.contacts.setBlocked(tenant, contactId, bloque, req.auth?.userId ?? null);
     if (!ok) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send({ contactId, blocked: bloque });
   });
@@ -273,7 +291,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     }
 
     // Une transaction : MERGE/suppression fields + Nom + tags, ou 404 si le contact n'est pas dans le tenant.
-    const updated = await deps.applyEdits(tenant, contactId, {
+    const updated = await deps.contacts.applyEdits(tenant, contactId, {
       fields: values, removeFields, addTags, removeTags,
       ...(profileName !== undefined ? { profileName } : {}),
       ...(optInStatus !== undefined ? { optInStatus } : {}),
@@ -303,7 +321,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   app.get('/tenants/:tenantId/contacts/:contactId/history', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { contactId } = req.params as { contactId: string };
-    const history = await deps.getContactHistory(tenant, contactId);
+    const history = await deps.contactHistory.getContactHistory(tenant, contactId);
     if (!history) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send(history);
   });
@@ -316,7 +334,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   app.get('/tenants/:tenantId/contacts/:contactId/resume', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { contactId } = req.params as { contactId: string };
-    const resume = await deps.getResumeContact(tenant, contactId);
+    const resume = await deps.contactHistory.resumeContact(tenant, contactId);
     if (!resume) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send(resume);
   });
@@ -340,7 +358,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   app.get('/tenants/:tenantId/contacts/:contactId/history/export', couteux, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { contactId } = req.params as { contactId: string };
-    const sends = await deps.listSendsForExport(tenant, contactId);
+    const sends = await deps.contactHistory.listSendsForExport(tenant, contactId);
     if (!sends) return reply.code(404).send({ error: 'contact inconnu' });
     /**
      * 🔴 Une extraction de données personnelles laisse une trace : c'est le geste qu'un DPO veut retracer. Le
@@ -409,7 +427,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       const tags = asStringArray(action.tags);
       if (tags.length === 0) return reply.code(400).send({ error: 'tag(s) requis' });
       const edits: BulkEdits = action.type === 'add_tag' ? { addTags: tags } : { removeTags: tags };
-      const affected = await deps.applyEditsMany(tenant, target, edits);
+      const affected = await deps.contacts.applyEditsMany(tenant, target, edits);
       return reply.code(200).send({ affected });
     }
 
@@ -420,7 +438,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       if (!def) return reply.code(400).send({ error: `champ inconnu : ${key}` });
       const val = String(action.value ?? '');
       if (!validateFieldValue(def.type, val)) return reply.code(400).send({ error: `valeur invalide pour « ${def.label} » (${def.type})` });
-      const affected = await deps.applyEditsMany(tenant, target, { setField: { key, value: canonicalizeFieldValue(def.type, val) } });
+      const affected = await deps.contacts.applyEditsMany(tenant, target, { setField: { key, value: canonicalizeFieldValue(def.type, val) } });
       return reply.code(200).send({ affected });
     }
 
@@ -430,7 +448,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       // `tests/optout-poussee.test.ts`.
       const value = action.value === 'opted_in' || action.value === 'opted_out' ? action.value : null;
       if (value === null) return reply.code(400).send({ error: 'valeur requise (opted_in | opted_out)' });
-      const affected = await deps.applyEditsMany(tenant, target, { setOptIn: value });
+      const affected = await deps.contacts.applyEditsMany(tenant, target, { setOptIn: value });
       await journal(tenant, req, value === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: 'lot' }, { affected });
       return reply.code(200).send({ affected });
     }
@@ -448,7 +466,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
     const texte = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, 120) : undefined);
     const targetId = texte(q.targetId);
-    const entries = await deps.listAudit(tenant, {
+    const entries = await deps.journal.list(tenant, {
       ...(limit !== undefined ? { limit } : {}),
       ...(targetId ? { targetId } : {}),
       ...(texte(q.q) ? { q: texte(q.q)! } : {}),
@@ -472,7 +490,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     // Un code non numérique est ignoré plutôt que refusé : il vient d'un champ de recherche, où l'on tape ce
     // qu'on a sous la main. `q` couvre déjà la recherche libre.
     const code = Number.isInteger(Number(q.code)) && String(q.code).trim() !== '' ? Number(q.code) : undefined;
-    const erreurs = await deps.listErreursLivraison(tenant, {
+    const erreurs = await deps.erreurs.lister(tenant, {
       ...(limit !== undefined ? { limit } : {}),
       ...(texte(q.q) ? { q: texte(q.q)! } : {}),
       ...(texte(q.telephone) ? { telephone: texte(q.telephone)! } : {}),
@@ -490,7 +508,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const tenant = espaceVerifie(req);
     const q = (req.query ?? {}) as { limit?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
-    return reply.code(200).send({ erreurs: await deps.listErreursSysteme(tenant, limit) });
+    return reply.code(200).send({ erreurs: await deps.erreurs.listerEchecsSysteme(tenant, limit) });
   });
 
   /**
@@ -507,9 +525,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     }
     const target = parseBulkTarget(b.target);
     if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
-    const ids = await deps.contactIdsForTarget(tenant, target);
+    const ids = await deps.contacts.contactIdsForTarget(tenant, target);
     if (ids.length === 0) return reply.code(200).send({ purges: 0, conversations: 0, messages: 0, analyses: 0 });
-    const res = await deps.purgeMany(tenant, ids);
+    const res = await deps.contacts.purgeMany(tenant, ids);
     for (const id of ids) await journal(tenant, req, 'contact.purged', { kind: 'contact', id }, { lot: ids.length });
     return reply.code(200).send(res);
   });

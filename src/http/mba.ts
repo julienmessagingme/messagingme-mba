@@ -32,24 +32,32 @@ export interface MbaRouteDeps {
     avant: unknown;
     acteurId: string | null;
   }): Promise<void>;
-  /** Client MBA du tenant (token résolu par tenant, repli global en sommeil). */
-  clientFor(tenantId: string): Promise<MbaClient>;
-  /**
-   * Numéro Meta de l'espace, résolu côté serveur. `null` = aucun numéro connecté. C'est ce qui permet la route
-   * d'activation, la seule de ce module qui ne reçoit pas le numéro du navigateur.
-   */
-  numeroDuTenant(tenantId: string): Promise<string | null>;
-  /** Écrit notre drapeau `tenant_settings.mba_enabled`. */
-  ecrireDrapeauMba(tenantId: string, enabled: boolean): Promise<void>;
-  /** Le numéro appartient-il à ce tenant ? Contrôle d'isolation, en base. */
-  phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+  meta: {
+    /** Client MBA du tenant (token résolu par tenant, repli global en sommeil). */
+    mbaClientForTenant(tenantId: string): Promise<MbaClient>;
+  };
+  repo: {
+    /**
+     * Numéro Meta de l'espace, résolu côté serveur. `null` = aucun numéro connecté. C'est ce qui permet la route
+     * d'activation, la seule de ce module qui ne reçoit pas le numéro du navigateur.
+     */
+    getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
+    /** 🔴 Le numéro appartient-il à ce tenant ? Contrôle d'isolation, en base. */
+    phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+  };
+  reglages: {
+    /** Écrit notre drapeau `tenant_settings.mba_enabled`. */
+    setMbaEnabled(tenantId: string, enabled: boolean): Promise<void>;
+  };
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
   fetchUrl?(url: string): Promise<PageDistante>;
-  /**
-   * Les messages écrits par l'agent de Meta, depuis toujours (`PgStatsStore.messagesEcritsParMba`). Par espace et
-   * non par numéro : `conversations` n'a pas de `phone_number_id`. Un espace à deux numéros verrait la somme.
-   */
-  messagesEcrits(tenantId: string): Promise<number>;
+  stats: {
+    /**
+     * Les messages écrits par l'agent de Meta, depuis toujours. Par espace et non par numéro : `conversations`
+     * n'a pas de `phone_number_id`. Un espace à deux numéros verrait la somme.
+     */
+    messagesEcritsParMba(tenantId: string): Promise<number>;
+  };
 }
 
 /** Au-delà, ce n'est plus un import de FAQ : Meta prévient qu'« a few hundred » dégrade déjà les réponses. */
@@ -110,11 +118,11 @@ async function contexte(
 ): Promise<{ tenant: string; pn: string; client: MbaClient } | null> {
   const tenant = espaceVerifie(req);
   const { phoneNumberId } = req.params as { phoneNumberId: string };
-  if (!(await deps.phoneNumberBelongsToTenant(phoneNumberId, tenant))) {
+  if (!(await deps.repo.phoneNumberBelongsToTenant(phoneNumberId, tenant))) {
     await reply.code(404).send({ error: 'numéro inconnu pour ce tenant' });
     return null;
   }
-  return { tenant, pn: phoneNumberId, client: await deps.clientFor(tenant) };
+  return { tenant, pn: phoneNumberId, client: await deps.meta.mbaClientForTenant(tenant) };
 }
 
 /**
@@ -238,7 +246,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   app.get(`${base}/messages`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
-    return reply.code(200).send({ messages: await deps.messagesEcrits(ctx.tenant) });
+    return reply.code(200).send({ messages: await deps.stats.messagesEcritsParMba(ctx.tenant) });
   });
 
   /**
@@ -702,18 +710,17 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { enabled?: unknown };
     if (typeof b.enabled !== 'boolean') return reply.code(400).send({ error: 'enabled booléen requis' });
-    const numeroDuTenant = deps.numeroDuTenant;
-    const ecrireDrapeauMba = deps.ecrireDrapeauMba;
     try {
       const r = await appliquerActivation({
-        numeroDuTenant: (t) => numeroDuTenant(t),
-        eligible: async (t, pn) => (await deps.clientFor(t)).isEligible(pn),
+        // Par l'objet, jamais la méthode détachée : une méthode de classe y perdrait son `this`.
+        numeroDuTenant: (t) => deps.repo.getTenantPhoneNumberId(t),
+        eligible: async (t, pn) => (await deps.meta.mbaClientForTenant(t)).isEligible(pn),
         // `modifierSettings` relit puis n'écrit que `rollout` : un modèle typé fermé effacerait `never_say_phrases`,
         // `followup` et tout champ que Meta ajouterait.
         ecrireChezMeta: async (t, pn, enabled) => {
-          await modifierSettings(await deps.clientFor(t), pn, { rollout: { enabled } });
+          await modifierSettings(await deps.meta.mbaClientForTenant(t), pn, { rollout: { enabled } });
         },
-        ecrireDrapeau: (t, enabled) => ecrireDrapeauMba(t, enabled),
+        ecrireDrapeau: (t, enabled) => deps.reglages.setMbaEnabled(t, enabled),
       }, tenant, b.enabled);
       return reply.code(200).send(r);
     } catch (err) {

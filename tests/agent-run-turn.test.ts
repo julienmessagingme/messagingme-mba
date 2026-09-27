@@ -61,9 +61,9 @@ function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
     } as unknown as RunTurnDeps['sessions'],
     brain,
     lireRun: async () => RUN_VIVANT,
-    lireFiche: async () => FICHE,
+    agents: { byId: async () => FICHE },
     envoyer: async (_t, _w, texte) => { envois.push(texte); },
-    mesurer: async (i) => { mesures.push(i.kind); },
+    mesures: { record: async (i) => { mesures.push(i.kind); } },
     sortir: async (i) => { sorties.push(i.sortie); },
     ...over,
   };
@@ -148,7 +148,7 @@ describe('runTurn : les gardes du tour (tâche 13a)', () => {
   it('fiche d agent introuvable : sortie par la branche d échec, sans appeler le cerveau', async () => {
     // Ne pas sortir laisserait le run en attente sur le bloc avec une session close : conversation muette.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { deps, brain, envois, sorties, clotures } = make({ lireFiche: async () => null });
+    const { deps, brain, envois, sorties, clotures } = make({ agents: { byId: async () => null } });
     expect(await runTurn(JOB, deps)).toEqual({ fait: 'erreur', sortie: 'echec' });
     expect(brain.appels).toEqual([]);
     expect(envois).toEqual([]);
@@ -296,7 +296,9 @@ describe('le tour, branché sur le VRAI cerveau', () => {
   function cerveauReel(reponses: ReponseChat[]) {
     const cap = { tours: [] as unknown[], appels: [] as string[] };
     const brain = creerCerveauGateway({
-      completer: async () => reponses.shift() ?? reponses[0]!,
+      client: {
+        completer: async () => reponses.shift() ?? reponses[0]!,
+      },
       contexte: async () => ({
         modele: 'm', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session' as const, sorties: [{ code: 'fini', label: 'Fini' }],
         contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [OUTIL],
@@ -306,7 +308,9 @@ describe('le tour, branché sur le VRAI cerveau', () => {
         catalogue: { byName: async (_t: string, _a: string, n: string) => (n === OUTIL.name ? OUTIL : null), listActifs: async () => [OUTIL] } satisfies ToolCatalog,
         journal: { ouvrir: async () => 'j1', clore: async () => {} },
         resolveurs: { mba: async ({ ctx }: EntreeResolveur) => { cap.tours.push({ sessionId: ctx.sessionId, runId: ctx.runId, waId: ctx.waId }); return { contenu: { ok: true } }; } },
-        compterAppel: async () => { cap.appels.push('x'); },
+        sessions: {
+          compterAppel: async () => { cap.appels.push('x'); },
+        },
         executerGeste: GESTE_MUET,
       },
     });
@@ -357,7 +361,9 @@ describe('le budget, relié à la consommation', () => {
     const debits: Array<{ montant: number; sessionId: string }> = [];
     const { deps } = make({
       sessions: { ...sessionsOk(), ajouterCout: async (_t, _s, m) => { couts.push(m); } },
-      soldeTenant: async () => 30_000,
+      credits: {
+        solde: async () => 30_000,
+      },
       debiterTenant: async (_t, montant, sessionId) => { debits.push({ montant, sessionId }); },
     }, { texte: 'ok', sortie: null, usage: USAGE });
     await runTurn(JOB, deps);
@@ -369,7 +375,9 @@ describe('le budget, relié à la consommation', () => {
     // Lire le solde après coup reviendrait à payer un appel qu'on savait ne pas pouvoir facturer.
     let pense = 0;
     const { deps, envois } = make({
-      soldeTenant: async () => 0,
+      credits: {
+        solde: async () => 0,
+      },
       brain: { penser: async () => { pense += 1; return { texte: 'jamais', sortie: null }; } },
     });
     const res = await runTurn(JOB, deps);
@@ -379,12 +387,12 @@ describe('le budget, relié à la consommation', () => {
   });
 
   it('et un solde NÉGATIF aussi : on ne laisse pas la dette creuser', async () => {
-    const { deps } = make({ soldeTenant: async () => -1200 });
+    const { deps } = make({ credits: { solde: async () => -1200 } });
     expect((await runTurn(JOB, deps)).fait).toBe('plafond');
   });
 
   it('un solde suffisant laisse passer', async () => {
-    const { deps, envois } = make({ soldeTenant: async () => 1 });
+    const { deps, envois } = make({ credits: { solde: async () => 1 } });
     expect((await runTurn(JOB, deps)).fait).toBe('repondu');
     expect(envois).toHaveLength(1);
   });
@@ -394,7 +402,9 @@ describe('le budget, relié à la consommation', () => {
     // une seconde fois. On perd une ligne de comptabilité, jamais une conversation.
     const { deps, envois } = make({
       sessions: { ...sessionsOk(), ajouterCout: async () => { throw new Error('pooler injoignable'); } },
-      soldeTenant: async () => 30_000,
+      credits: {
+        solde: async () => 30_000,
+      },
     }, { texte: 'ok', sortie: null, usage: USAGE });
     const res = await runTurn(JOB, deps);
     expect(res.fait).toBe('repondu');
@@ -410,7 +420,9 @@ describe('le budget, relié à la consommation', () => {
     const debits: number[] = [];
     const { deps } = make({
       sessions: { ...sessionsOk(), ajouterCout: async (_t: string, _s: string, m: number) => { couts.push(m); } } as unknown as RunTurnDeps['sessions'],
-      soldeTenant: async () => 30_000,
+      credits: {
+        solde: async () => 30_000,
+      },
       debiterTenant: async (_t, m) => { debits.push(m); },
       brain: { penser: async () => { throw new TourInterrompu(new Error('502 du fournisseur'), USAGE); } },
     });
@@ -424,7 +436,9 @@ describe('le budget, relié à la consommation', () => {
     // introuvable) ne doit rien prélever, sinon on facture au client des tours qui n'ont rien coûté.
     const debits: number[] = [];
     const { deps } = make({
-      soldeTenant: async () => 30_000,
+      credits: {
+        solde: async () => 30_000,
+      },
       debiterTenant: async (_t, m) => { debits.push(m); },
       brain: { penser: async () => { throw new Error('clé refusée'); } },
     });
@@ -438,7 +452,9 @@ describe('le budget, relié à la consommation', () => {
     const couts: number[] = [];
     const { deps, envois } = make({
       sessions: { ...sessionsOk(), ajouterCout: async (_t: string, _s: string, m: number) => { couts.push(m); } } as unknown as RunTurnDeps['sessions'],
-      soldeTenant: async () => 30_000,
+      credits: {
+        solde: async () => 30_000,
+      },
       debiterTenant: async () => { throw new Error('contention sur la ligne de solde'); },
     }, { texte: 'ok', sortie: null, usage: USAGE });
     expect((await runTurn(JOB, deps)).fait).toBe('repondu');
@@ -448,7 +464,7 @@ describe('le budget, relié à la consommation', () => {
 
   it('un tour sans usage ne débite rien', async () => {
     const debits: number[] = [];
-    const { deps } = make({ soldeTenant: async () => 30_000, debiterTenant: async (_t, m) => { debits.push(m); } });
+    const { deps } = make({ credits: { solde: async () => 30_000 }, debiterTenant: async (_t, m) => { debits.push(m); } });
     await runTurn(JOB, deps);
     expect(debits).toEqual([]);
   });

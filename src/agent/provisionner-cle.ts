@@ -25,7 +25,7 @@ export class CreditInsuffisantPourCle extends Error {
 export interface DepsProvisionCle {
   cles: Pick<PgCleGatewayStore, 'lire' | 'enregistrer' | 'noterPlafond' | 'oublier'>;
   /** Le solde prépayé de l'espace, en micro-euros. C'est lui qui devient le plafond. */
-  solde(tenantId: string): Promise<number>;
+  credits: { solde(tenantId: string): Promise<number> };
   /** Comment nommer la cle dans le tableau de bord Vercel. */
   nomEspace(tenantId: string): Promise<string | null>;
   transport: HttpTransportPatch & HttpTransportSuppression;
@@ -47,7 +47,7 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
   const existante = await deps.cles.lire(tenantId);
   if (existante) return existante;
 
-  const solde = await deps.solde(tenantId);
+  const solde = await deps.credits.solde(tenantId);
   const plafond = dollarsDepuisMicroEuros(solde, deps.tauxEurParDollar);
   if (plafond === null) throw new CreditInsuffisantPourCle(solde);
 

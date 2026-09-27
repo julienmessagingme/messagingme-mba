@@ -41,8 +41,8 @@ export interface MbaAssistantDeps {
   modele: string;
   /** Tout ce qu'il faut pour écrire chez Meta. */
   application(tenantId: string, acteur: { id: string | null; email: string | null }): ApplicationDeps;
-  /** L'identifiant de l'agent Meta de cet espace (`agentId` des routes MBA). */
-  agentIdDuTenant(tenantId: string): Promise<string | null>;
+  /** L'identifiant de l'agent Meta de cet espace (`agentId` des routes MBA) : son numéro Meta. */
+  numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
   tauxEurParDollar: number;
   /**
    * Le magasin des pièces jointes déposées dans le fil. Toujours câblé quand ce module est monté.
@@ -74,7 +74,7 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
   const ouvrir = async (req: FastifyRequest, reply: FastifyReply) => {
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return null;
-    const agentId = await deps.agentIdDuTenant(tenant);
+    const agentId = await deps.numeros.getTenantPhoneNumberId(tenant);
     if (!agentId) { reply.code(404).send({ error: 'aucun agent Meta sur cet espace' }); return null; }
     return { tenant, agentId, acteur: { id: req.auth?.userId ?? null, email: null } };
   };

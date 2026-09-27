@@ -396,17 +396,23 @@ function monter(debitParEspace = 60) {
       appels.push(`templates:${t}`);
       return t === 't1' ? [modele(), modele({ name: 'en_attente', status: 'PENDING' })] : [modele({ name: `modele_${t}` })];
     },
-    indicesDeVariables: async (t) => {
-      appels.push(`indices:${t}`);
-      return t === 't1' ? [{ name: 'confirmation_commande', language: 'fr', position: 1, source: { type: 'field', key: 'prenom' } }] : [];
+    indices: {
+      listerParEspace: async (t) => {
+        appels.push(`indices:${t}`);
+        return t === 't1' ? [{ name: 'confirmation_commande', language: 'fr', position: 1, source: { type: 'field', key: 'prenom' } }] : [];
+      },
     },
-    scenariosPublies: async (t) => {
-      appels.push(`scenarios:${t}`);
-      return [ligne(CAS_OUVERTURE[0]!.graph, t === 't1' ? 'Bienvenue' : `Scénario ${t}`)];
+    scenarios: {
+      listPublies: async (t) => {
+        appels.push(`scenarios:${t}`);
+        return [ligne(CAS_OUVERTURE[0]!.graph, t === 't1' ? 'Bienvenue' : `Scénario ${t}`)];
+      },
     },
-    messagesRcs: async (t) => {
-      appels.push(`rcs:${t}`);
-      return [{ name: t === 't1' ? 'rappel-rdv' : `message-${t}`, content: { kind: 'text', text: 'Bonjour {{prenom}}' } }];
+    messagesRcs: {
+      list: async (t) => {
+        appels.push(`rcs:${t}`);
+        return [{ name: t === 't1' ? 'rappel-rdv' : `message-${t}`, content: { kind: 'text', text: 'Bonjour {{prenom}}' } }];
+      },
     },
   };
   const app = Fastify({ logger: false });
@@ -544,9 +550,15 @@ describe('monté dans l’entrée /v1 du registre', () => {
         contacts: contactsV1Muets(),
         catalogues: {
           templates,
-          indicesDeVariables: async () => [],
-          scenariosPublies: async () => [],
-          messagesRcs: async () => [],
+          indices: {
+            listerParEspace: async () => [],
+          },
+          scenarios: {
+            listPublies: async () => [],
+          },
+          messagesRcs: {
+            list: async () => [],
+          },
         },
       },
     });

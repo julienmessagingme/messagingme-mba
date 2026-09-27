@@ -7,7 +7,7 @@ import type { UsersRouteDeps } from '../src/http/users';
 import type { OpsRouteDeps } from '../src/http/ops';
 import type { AuditSink } from '../src/audit/journal';
 import { MfaEnMemoire } from './mfa';
-import { membresInertes } from './routes-inertes';
+import { membresDepInertes, membresInertes } from './routes-inertes';
 
 /**
  * RÉINITIALISER LE SECOND FACTEUR D'UN MEMBRE (plan du 2026-09-25, tâche 6), par un admin de l'espace, et par
@@ -35,11 +35,14 @@ function app() {
   const deps: UsersRouteDeps = {
     ...membresInertes,
     audit,
-    listUsers: async () => [],
-    setUserRole: async () => 'ok',
-    setUserDisabled: async () => 'ok',
-    deleteUser: async () => 'ok',
-    reinitialiserMfa: (tenant, userId) => mfa.reinitialiserDansEspace(tenant, userId),
+    users: {
+      ...membresDepInertes,
+      list: async () => [],
+      setRole: async () => 'ok',
+      setDisabled: async () => 'ok',
+      deleteUser: async () => 'ok',
+    },
+    mfa,
   };
   const reinitialisesOps: string[] = [];
   const ops: Partial<OpsRouteDeps> = {

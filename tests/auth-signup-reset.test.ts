@@ -4,7 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import { hashPasswordSync } from '../src/auth/password';
 import { DuplicateEmailError } from '../src/user/store.pg';
-import type { AuthRouteDeps } from '../src/auth/routes';
+import type { AuthRouteDeps, ComptesAuthDep } from '../src/auth/routes';
 import type { AuthUser, EmailIdentity } from '../src/auth/store';
 import { MfaEnMemoire, identiteDe, passerLeSecondFacteur } from './mfa';
 
@@ -17,11 +17,12 @@ const j = { headers: { 'content-type': 'application/json' } };
 
 interface Cap { created: Array<{ name: string; email: string }>; setPass: string[]; emails: Array<{ to: string; text: string }>; tokens: Array<{ p: string; uid: string }>; mfa: MfaEnMemoire }
 
-function app(over: Partial<AuthRouteDeps> = {}) {
-  // Le second facteur : l'invité `u1` est un agent (cf. `sessionUser`), les admins créés par l'inscription s'y
+function app(over: Partial<Omit<AuthRouteDeps, 'comptes'>> & { comptes?: Partial<ComptesAuthDep> } = {}) {
+  // Le second facteur : l'invité `u1` est un agent (cf. `getSessionUser`), les admins créés par l'inscription s'y
   // ajoutent à leur création, comme `createTenantWithAdmin` crée leur identité en production.
   const mfa = new MfaEnMemoire([{ userId: 'u1', tenantId: 't1', role: 'agent', email: 'invited@x.fr' }]);
   const cap: Cap = { created: [], setPass: [], emails: [], tokens: [], mfa };
+  const { comptes, ...reste } = over;
   const deps: AuthRouteDeps = {
     users: {
       findIdentity: async (email: string): Promise<EmailIdentity | null> => (email === 'known@x.fr'
@@ -31,21 +32,24 @@ function app(over: Partial<AuthRouteDeps> = {}) {
     secret: SECRET,
     mfa,
     getUserState: async () => ({ role: 'admin', disabled: false, tenantStatus: 'active' }),
-    createTenantWithAdmin: async (name, admin) => {
-      if (admin.email === 'taken@x.fr') throw new DuplicateEmailError();
-      cap.created.push({ name, email: admin.email });
-      mfa.ajouterCompte({ userId: 'uNew', tenantId: 'tNew', role: 'admin', email: admin.email });
-      return { tenantId: 'tNew', userId: 'uNew' };
+    comptes: {
+      createTenantWithAdmin: async (name, admin) => {
+        if (admin.email === 'taken@x.fr') throw new DuplicateEmailError();
+        cap.created.push({ name, email: admin.email });
+        mfa.ajouterCompte({ userId: 'uNew', tenantId: 'tNew', role: 'admin', email: admin.email });
+        return { tenantId: 'tNew', userId: 'uNew' };
+      },
+      setPassword: async (userId) => { cap.setPass.push(userId); return true; },
+      getPasswordHash: async () => KNOWN_HASH,
+      motDePasseDeLAdresse: async (email) => (email === 'deja@x.fr' ? KNOWN_HASH : email === 'sansmdp@x.fr' ? null : undefined),
+      getSessionUser: async (uid) => (uid === 'u1' ? { tenantId: 't1', role: 'agent', email: 'invited@x.fr' } : null),
+      ...comptes,
     },
-    setPassword: async (userId) => { cap.setPass.push(userId); return true; },
-    getPasswordHash: async () => KNOWN_HASH,
-    motDePasseDeLAdresse: async (email) => (email === 'deja@x.fr' ? KNOWN_HASH : email === 'sansmdp@x.fr' ? null : undefined),
-    sessionUser: async (uid) => (uid === 'u1' ? { tenantId: 't1', role: 'agent', email: 'invited@x.fr' } : null),
     tokens: { create: async (p, uid) => { cap.tokens.push({ p, uid }); return 'RAWTOKEN'; }, consume: async (_p, raw) => (raw === 'GOOD' ? 'u1' : null) },
     sendEmail: async (e) => { cap.emails.push({ to: e.to, text: e.text }); },
     appUrl: 'https://mba.messagingme.app',
     resetTtlMs: 3600000,
-    ...over,
+    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: deps }), cap };
 }
@@ -243,7 +247,7 @@ describe('🔴 POST /auth/signup avec une adresse DÉJÀ connue', () => {
     await server.close();
   });
   it('échoue FERMÉ sans la lecture du mot de passe existant (503, rien de créé)', async () => {
-    const { server, cap } = app({ motDePasseDeLAdresse: undefined });
+    const { server, cap } = app({ comptes: { motDePasseDeLAdresse: undefined } });
     const res = await server.inject(inscrire('nouvelle@x.fr', 'motdepasse-longue'));
     expect(res.statusCode).toBe(503);
     expect(cap.created).toEqual([]);

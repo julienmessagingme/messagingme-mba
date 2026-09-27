@@ -13,17 +13,20 @@ const TAILLE_MAX_CORPS = 64 * 1024;
 const CODE_RE = /^rcs-[0-9a-f]{12,64}$/;
 
 export interface RcsCallbackRouteDeps {
-  /** Workspace et agent portés par le code d'URL. null = code inconnu. */
-  parCode(code: string): Promise<{ tenantId: string; agentId: string } | null>;
+  /** Les canaux RCS des espaces. */
+  agents: {
+    /** Workspace et agent portés par le code d'URL. null = code inconnu. */
+    parWebhookCode(code: string): Promise<{ tenantId: string; agentId: string } | null>;
+    /**
+     * Garde le dernier corps reçu, avant toute tentative de lecture. Au mieux : une trace ratée ne doit pas faire
+     * perdre le rappel lui-même.
+     */
+    noterRappel(tenantId: string, corps: unknown): Promise<void>;
+  };
   /** Rapport de livraison d'un message sortant. */
   onDlr(tenantId: string, dlr: RcsDlr): Promise<void>;
   /** Message entrant (texte, bouton tapé, position, fichier). */
   onMo(tenantId: string, mo: RcsMo): Promise<void>;
-  /**
-   * Garde le dernier corps reçu, avant toute tentative de lecture. Au mieux : une trace ratée ne doit pas faire
-   * perdre le rappel lui-même.
-   */
-  noterRappel(tenantId: string, corps: unknown): Promise<void>;
 }
 
 /**
@@ -78,7 +81,7 @@ export function registerRcsCallback(
     const plafond = (): Promise<boolean> => consommerAvecEntetes(limiteur, normalise, reply, 'trop de rappels, réessayez plus tard');
     if (connu && !(await plafond())) return;
 
-    const canal = await deps.parCode(normalise);
+    const canal = await deps.agents.parWebhookCode(normalise);
     if (!canal) {
       connus.oublier(normalise);
       return reply.code(404).send({ error: 'canal introuvable' });
@@ -90,7 +93,7 @@ export function registerRcsCallback(
     const payload = req.body;
     // Tracé avant d'essayer de le comprendre : c'est ce corps qu'on voudra lire le jour où notre lecture se
     // trompe. Au mieux, jamais bloquant.
-    await deps.noterRappel(canal.tenantId, payload).catch((err: unknown) => {
+    await deps.agents.noterRappel(canal.tenantId, payload).catch((err: unknown) => {
       // eslint-disable-next-line no-console
       console.error('trace du rappel RCS ignorée:', messageDe(err));
     });

@@ -153,8 +153,10 @@ describe('runCampaign sur le canal RCS', () => {
       deps({
         recipients: new FakeRecipients([rec('r1', '+33600000002')]),
         channelSender,
-        recordOutbound: async (_t, waId, msg) => {
-          logs.push({ waId, body: msg.body, ...(msg.type ? { type: msg.type } : {}), ...(msg.channel ? { channel: msg.channel } : {}) });
+        inbox: {
+          recordOutboundByWaId: async (_t, waId, msg) => {
+            logs.push({ waId, body: msg.body, ...(msg.type ? { type: msg.type } : {}), ...(msg.channel ? { channel: msg.channel } : {}) });
+          },
         },
       }),
     );

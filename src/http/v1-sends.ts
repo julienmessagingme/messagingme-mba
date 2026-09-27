@@ -56,15 +56,23 @@ export interface V1SendsRouteDeps {
   /** Le template lu chez Meta : sa catégorie, ou pourquoi il ne peut pas partir (`verdictModele`). */
   lireModele(tenantId: string, name: string, language: string): Promise<LectureModele>;
   /** Fenêtre de service 24 h par wa_id. Absent de la map = fermée. Lue pour une ouverture de session seulement. */
-  getWindowOpenByWaIds(tenantId: string, waIds: string[]): Promise<Map<string, boolean>>;
-  getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
-  phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+  inbox: { getWindowOpenByWaIds(tenantId: string, waIds: string[]): Promise<Map<string, boolean>> };
+  /** Le dépôt des campagnes : un envoi de l'API en est une. */
+  repo: {
+    getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
+    phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+    /** Les fiches désignées, bloquées comprises. */
+    listContactsPourEnvoiApi(tenantId: string, ids: string[]): Promise<ContactEnvoi[]>;
+    createWithRecipients(input: V1SendCreateInput, recipients: BuiltRecipient[]): Promise<{ campaignId: string; recipientCount: number }>;
+    /** L'envoi tel que `GET /v1/sends/{sendId}` le décrit, avant mise en forme. */
+    lireEnvoiApi(sendId: string, tenantId: string): Promise<EnvoiApiBrut | null>;
+  };
   /**
    * Le numéro est-il délié de son espace ? La garde du point de passage des envois, dont « Délier » et « Relier »
    * vident le cache. Requise : sans elle, un envoi sur un numéro délié serait accepté en 201 et partirait au
    * premier « Relier », parfois des jours plus tard.
    */
-  numeroEstDelie(phoneNumberId: string): Promise<boolean>;
+  numerosDelies: { estDelie(phoneNumberId: string): Promise<boolean> };
   /** La résolution de fiche partagée (`resoudreFiche`), liée à ses dépendances par le câblage. */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
   /**
@@ -73,17 +81,15 @@ export interface V1SendsRouteDeps {
    * l'écarte ; une fiche purgée entre-temps est dite `unknown_contact`.
    */
   appliquerConsentement(tenantId: string, contactId: string, consent: 'opted_in' | 'opted_out', source: string): Promise<IssueConsentement>;
-  /** Les fiches désignées, bloquées comprises (`listContactsPourEnvoiApi`). */
-  listContactsPourEnvoi(tenantId: string, ids: string[]): Promise<ContactEnvoi[]>;
-  createSend(input: V1SendCreateInput, recipients: BuiltRecipient[]): Promise<{ campaignId: string; recipientCount: number }>;
   /** `tenantId` porte le groupe de la file : la concurrence des runs est plafonnée par espace. */
   enqueue(campaignId: string, tenantId: string, pendingCount: number, ratePerMinute: number | null): Promise<void>;
-  /** `empreinte` = `empreinteCorps(corps)` : la même clé avec un autre corps rend `reused`. */
-  idempotencyClaim(tenantId: string, key: string, empreinte: string): Promise<IdempotencyClaim>;
-  idempotencyComplete(tenantId: string, key: string, sendId: string, response: unknown): Promise<void>;
-  idempotencyRelease(tenantId: string, key: string): Promise<void>;
-  /** L'envoi tel que `GET /v1/sends/{sendId}` le décrit, avant mise en forme (`lireEnvoiApi`). */
-  lireEnvoi(sendId: string, tenantId: string): Promise<EnvoiApiBrut | null>;
+  /** Le magasin d'idempotence. */
+  idempotence: {
+    /** `empreinte` = `empreinteCorps(corps)` : la même clé avec un autre corps rend `reused`. */
+    claim(tenantId: string, key: string, empreinte: string): Promise<IdempotencyClaim>;
+    complete(tenantId: string, key: string, sendId: string, response: unknown): Promise<void>;
+    release(tenantId: string, key: string): Promise<void>;
+  };
   /** La cible `rcsMessage` : un message de la bibliothèque par son nom, et l'agent RCS de l'espace. */
   rcs: DepsCibleRcs;
   /** Attente entre deux tentatives d'enqueue. Injectable pour tester le retry sans temporisation réelle. */
@@ -245,11 +251,11 @@ function categoriePlusStricte(lue: CampaignCategory, declaree: CampaignCategory)
 
 async function numeroDEnvoi(deps: V1SendsRouteDeps, tenantId: string, demande: string | undefined): Promise<{ phoneNumberId: string } | Refus> {
   if (demande !== undefined) {
-    return await deps.phoneNumberBelongsToTenant(demande, tenantId)
+    return await deps.repo.phoneNumberBelongsToTenant(demande, tenantId)
       ? { phoneNumberId: demande }
       : { refus: { statut: 400, code: 'invalid_body', message: 'phoneNumberId : numéro inconnu de cet espace' } };
   }
-  const defaut = await deps.getTenantPhoneNumberId(tenantId);
+  const defaut = await deps.repo.getTenantPhoneNumberId(tenantId);
   return defaut
     ? { phoneNumberId: defaut }
     : { refus: { statut: 409, code: 'no_whatsapp_number', message: 'aucun numéro WhatsApp connecté sur cet espace' } };
@@ -356,7 +362,7 @@ async function fenetresParContact(deps: V1SendsRouteDeps, tenantId: string, cont
     const w = waIdOf(c.phone_e164, c.bsuid);
     if (w) waIdParContact.set(c.id, w);
   }
-  const parWaId = await deps.getWindowOpenByWaIds(tenantId, [...new Set(waIdParContact.values())]);
+  const parWaId = await deps.inbox.getWindowOpenByWaIds(tenantId, [...new Set(waIdParContact.values())]);
   return new Map([...waIdParContact].map(([id, w]) => [id, parWaId.get(w) === true]));
 }
 
@@ -408,7 +414,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
     // Idempotence : claim atomique avec l'empreinte du corps, avant toute lecture qui peut changer d'un appel à
     // l'autre (numéro, cible, template chez Meta). Autre corps -> 422 ; concurrent -> 409 ; déjà scellé ->
     // rejeu du rapport, tel quel.
-    const claim = await deps.idempotencyClaim(tenantId, idem.cle, empreinteCorps(req.body));
+    const claim = await deps.idempotence.claim(tenantId, idem.cle, empreinteCorps(req.body));
     if (!claim.claimed && 'reused' in claim) {
       return refuser(reply, 422, 'idempotency_key_reused', `cette clé d’idempotence a déjà servi pour un autre corps : une clé désigne un seul envoi, et elle vit ${DUREE_CLE_IDEMPOTENCE_MS / 3_600_000} h`);
     }
@@ -419,7 +425,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
 
     /** Un refus après le claim n'a rien créé : la clé est libérée, le même appel repartira une fois corrigé. */
     const libererEtRefuser = async (r: Refus['refus']) => {
-      await deps.idempotencyRelease(tenantId, idem.cle);
+      await deps.idempotence.release(tenantId, idem.cle);
       return refuser(reply, r.statut, r.code, r.message);
     };
 
@@ -438,7 +444,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
        * WhatsApp : une cible qui ouvre en RCS ne demande rien au numéro, et son repli WhatsApp bute plus tard sur la
        * garde.
        */
-      if (cible.ouverture !== 'rcs' && await deps.numeroEstDelie(numero.phoneNumberId)) {
+      if (cible.ouverture !== 'rcs' && await deps.numerosDelies.estDelie(numero.phoneNumberId)) {
         return await libererEtRefuser({ statut: 409, code: 'number_unlinked', message: MESSAGE_NUMERO_DELIE });
       }
       const { resolus, created, matched } = await resoudreDestinataires(
@@ -460,7 +466,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
         }
       }
       for (const [contactId, c] of consentements) await deps.appliquerConsentement(tenantId, contactId, c.consent, c.source);
-      const contacts = await deps.listContactsPourEnvoi(tenantId, uniques.flatMap((r) => ('contactId' in r ? [r.contactId] : [])));
+      const contacts = await deps.repo.listContactsPourEnvoiApi(tenantId, uniques.flatMap((r) => ('contactId' in r ? [r.contactId] : [])));
       const fenetre = cible.ouverture === 'whatsapp_session' ? await fenetresParContact(deps, tenantId, contacts) : undefined;
       const tri = trierDestinataires({
         category: cible.category, ouverture: cible.ouverture, resolus: uniques, contacts,
@@ -476,7 +482,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
         skipped: ecarts.slice(0, MAX_SKIPPED_REPORT),
         skippedTotal: ecarts.length,
       };
-      const send = await deps.createSend(
+      const send = await deps.repo.createWithRecipients(
         {
           // Le préfixe est `PREFIXE_ENVOI_API`, que le suivi relit (`nomDuMessageRcs`). Le nom d'un envoi RCS n'est pas
           // coupé : le suivi y relit le nom du message (jusqu'à 120 caractères). Les autres cibles gardent leur coupe.
@@ -493,9 +499,9 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
       // 🔴 Scelle l'idempotence avant l'enqueue : sinon un échec de `complete` après un enqueue réussi libérerait la
       // clé, et un retry recréerait une campagne, donc renverrait les messages en double. Échec avant scellement ->
       // release + throw (retry propre).
-      await deps.idempotencyComplete(tenantId, idem.cle, send.campaignId, report);
+      await deps.idempotence.complete(tenantId, idem.cle, send.campaignId, report);
     } catch (err) {
-      await deps.idempotencyRelease(tenantId, idem.cle);
+      await deps.idempotence.release(tenantId, idem.cle);
       throw err;
     }
 
@@ -533,7 +539,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
     // Un identifiant qui n'est pas un uuid ferait lever Postgres (22P02), donc un 500 : il est inconnu, 404.
     const p = schemaIdEnvoi.safeParse(req.params);
     if (!p.success) return refuser(reply, 404, 'send_not_found', 'envoi inconnu');
-    const brut = await deps.lireEnvoi(p.data.sendId, req.auth.tenantId);
+    const brut = await deps.repo.lireEnvoiApi(p.data.sendId, req.auth.tenantId);
     if (!brut) return refuser(reply, 404, 'send_not_found', 'envoi inconnu');
     return reply.code(200).send(formaterSuiviEnvoi(brut));
   });

@@ -70,8 +70,12 @@ describe('runWorkflowWakeSweep', () => {
   it('reprend chaque parcours réservé et compte les reprises effectives', async () => {
     const repris: string[] = [];
     const n = await runWorkflowWakeSweep({
-      claimDue: async () => [run('a'), run('b')],
-      resume: async (r) => { repris.push(r.id); return true; },
+      runs: {
+        claimDueSleeping: async () => [run('a'), run('b')],
+      },
+      executor: {
+        resume: async (r) => { repris.push(r.id); return true; },
+      },
     });
     expect(n).toBe(2);
     expect(repris).toEqual(['a', 'b']);
@@ -79,8 +83,12 @@ describe('runWorkflowWakeSweep', () => {
 
   it('une reprise REFUSÉE n’est pas comptée (fil repris par un humain, fenêtre fermée…)', async () => {
     const n = await runWorkflowWakeSweep({
-      claimDue: async () => [run('a'), run('b')],
-      resume: async (r) => r.id === 'a',
+      runs: {
+        claimDueSleeping: async () => [run('a'), run('b')],
+      },
+      executor: {
+        resume: async (r) => r.id === 'a',
+      },
     });
     expect(n).toBe(1);
   });
@@ -88,8 +96,12 @@ describe('runWorkflowWakeSweep', () => {
   it('un parcours qui THROW n’interrompt pas le balayage des suivants', async () => {
     const vus: string[] = [];
     const n = await runWorkflowWakeSweep({
-      claimDue: async () => [run('a'), run('b'), run('c')],
-      resume: async (r) => { vus.push(r.id); if (r.id === 'b') throw new Error('réseau'); return true; },
+      runs: {
+        claimDueSleeping: async () => [run('a'), run('b'), run('c')],
+      },
+      executor: {
+        resume: async (r) => { vus.push(r.id); if (r.id === 'b') throw new Error('réseau'); return true; },
+      },
     });
     expect(vus).toEqual(['a', 'b', 'c']);
     expect(n).toBe(2);
@@ -100,15 +112,19 @@ describe('runWorkflowWakeSweep', () => {
     // même parcours. Si un jour on inversait l'ordre, deux workers enverraient le même message.
     const ordre: string[] = [];
     await runWorkflowWakeSweep({
-      claimDue: async () => { ordre.push('claim'); return [run('a')]; },
-      resume: async () => { ordre.push('resume'); return true; },
+      runs: {
+        claimDueSleeping: async () => { ordre.push('claim'); return [run('a')]; },
+      },
+      executor: {
+        resume: async () => { ordre.push('resume'); return true; },
+      },
     });
     expect(ordre).toEqual(['claim', 'resume']);
   });
 
   it('aucun parcours dû -> aucun appel de reprise', async () => {
     let appels = 0;
-    const n = await runWorkflowWakeSweep({ claimDue: async () => [], resume: async () => { appels += 1; return true; } });
+    const n = await runWorkflowWakeSweep({ runs: { claimDueSleeping: async () => [] }, executor: { resume: async () => { appels += 1; return true; } } });
     expect(n).toBe(0);
     expect(appels).toBe(0);
   });
@@ -202,18 +218,26 @@ describe('runWorkflowWakeSweep : nettoyage des parcours dormants trop vieux', ()
   it('clôt les vieux AVANT de réveiller les dus', async () => {
     const ordre: string[] = [];
     await runWorkflowWakeSweep({
-      closeStale: async () => { ordre.push('close'); return 2; },
-      claimDue: async () => { ordre.push('claim'); return [run('a')]; },
-      resume: async () => { ordre.push('resume'); return true; },
+      runs: {
+        closeStaleSleeping: async () => { ordre.push('close'); return 2; },
+        claimDueSleeping: async () => { ordre.push('claim'); return [run('a')]; },
+      },
+      executor: {
+        resume: async () => { ordre.push('resume'); return true; },
+      },
     });
     expect(ordre).toEqual(['close', 'claim', 'resume']);
   });
 
   it('un nettoyage en échec n’empêche PAS les réveils légitimes', async () => {
     const n = await runWorkflowWakeSweep({
-      closeStale: async () => { throw new Error('base indisponible'); },
-      claimDue: async () => [run('a')],
-      resume: async () => true,
+      runs: {
+        closeStaleSleeping: async () => { throw new Error('base indisponible'); },
+        claimDueSleeping: async () => [run('a')],
+      },
+      executor: {
+        resume: async () => true,
+      },
     });
     expect(n).toBe(1);
   });

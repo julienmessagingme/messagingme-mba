@@ -32,20 +32,24 @@ function monde(over: Partial<Monde> = {}) {
   const envois: Array<{ agentId: string; waId: string; msg: RcsOutbound; id: string; jeton?: string }> = [];
   const lectures: string[] = [];
   const deps: DepsRcsLibre = {
-    agentIdForTenant: async () => m.agent,
+    agents: { agentIdForTenant: async () => m.agent },
     estDesabonne: async (_t, waId) => { lectures.push(`desabonne:${waId}`); return m.desabonne; },
     estDesabonneRcs: async (_t, e164) => { lectures.push(`desabonneRcs:${e164}`); return m.desabonneRcs; },
     aConsentiOuEcrit: async (_t, waId) => { lectures.push(`consentement:${waId}`); return m.consentiOuEcrit; },
-    lireJoignabilite: async (agentId, e164) => {
-      lectures.push(`joignabilite:${agentId}:${e164}`);
-      return m.joignabiliteParCle ? (m.joignabiliteParCle[e164] ?? null) : m.joignabilite;
+    joignabilite: {
+      get: async (agentId, e164) => {
+        lectures.push(`joignabilite:${agentId}:${e164}`);
+        return m.joignabiliteParCle ? (m.joignabiliteParCle[e164] ?? null) : m.joignabilite;
+      },
     },
-    lireMessageRcs: async () => m.message,
+    messages: { getById: async () => m.message },
     variablesDeLaFiche: async () => ({ prenom: 'Camille' }),
     jetonDuContact: async () => 'jeton-1',
-    envoyer: async (_t, agentId, waId, msg, id, jeton) => {
-      envois.push({ agentId, waId, msg, id, ...(jeton ? { jeton } : {}) });
-      return m.issue;
+    sender: {
+      sendTo: async (_t, agentId, waId, msg, id, jeton) => {
+        envois.push({ agentId, waId, msg, id, ...(jeton ? { jeton } : {}) });
+        return m.issue;
+      },
     },
     nouvelId: () => 'id-1',
     maintenant: () => MAINTENANT,
@@ -146,13 +150,15 @@ describe('envoyerRcsLibre : les conditions communes', () => {
   });
 
   it('🔴 une lecture du cache écrite en MÉTHODE garde son `this`', async () => {
-    // `{ get: deps.lireJoignabilite }` détachait la méthode de son objet : une méthode qui lit `this` levait une
-    // TypeError, et la route de l'API répondait 500 au lieu d'un refus lisible.
+    // `{ get: deps.joignabilite.get }` détacherait la méthode de son objet : une méthode qui lit `this` lèverait une
+    // TypeError, et la route de l'API répondrait 500 au lieu d'un refus lisible.
     const { deps, envois } = monde();
     const avecThis = {
       ...deps,
-      cache: { '+33612345678': { reachable: false, checkedAt: MAINTENANT - 1000 } } as Record<string, { reachable: boolean; checkedAt: number }>,
-      async lireJoignabilite(_agentId: string, e164: string) { return this.cache[e164] ?? null; },
+      joignabilite: {
+        cache: { '+33612345678': { reachable: false, checkedAt: MAINTENANT - 1000 } } as Record<string, { reachable: boolean; checkedAt: number }>,
+        async get(_agentId: string, e164: string) { return this.cache[e164] ?? null; },
+      },
     };
     expect(await envoyerRcsLibre(avecThis, 't1', NUMERO, { text: 'Bonjour' }, 'api')).toEqual({ refus: 'rcs_unreachable' });
     expect(envois).toEqual([]);

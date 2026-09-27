@@ -10,7 +10,7 @@ import type { FrequenceMentionIa } from '../src/agent/agent-store';
 import { lireContexteAgent } from '../src/agent/contexte';
 import type { AgentComplet } from '../src/agent/agent-store';
 import { ficheVide } from '../src/agent/fiche';
-import { reglagesInertes } from './routes-inertes';
+import { reglagesDepInertes, reglagesInertes } from './routes-inertes';
 
 /**
  * « L'IA SE DÉCLARE COMME TELLE », AU NIVEAU DE L'ESPACE (tâche 8, migration 0140).
@@ -39,21 +39,26 @@ function app(depart: FrequenceMentionIa | null = null) {
     ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
-    getSettings: async () => ({
-      mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: courant,
-      timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,
-    }),
-    setMbaEnabled: async () => {},
-    setHubspotListsEnabled: async () => {},
-    setMbaHandoffMode: async () => {},
-    setControlHandbackSeconds: async () => {},
-    setTimezone: async () => {},
-    setBusinessHours: async () => {},
-    setMentionIaFrequence: async (_t, f) => { ecrits.push(f); courant = f; },
-    listerAgentsPourConformite: async () => [
-      { id: AG, label: 'Conseiller séjours', status: 'active', mentionIa: 'Vous échangez avec un assistant automatique.' },
-    ],
+    reglages: {
+      ...reglagesDepInertes,
+      get: async () => ({
+        mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: courant,
+        timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,
+      }),
+      setMbaEnabled: async () => {},
+      setHubspotListsEnabled: async () => {},
+      setMbaHandoffMode: async () => {},
+      setControlHandbackSeconds: async () => {},
+      setTimezone: async () => {},
+      setBusinessHours: async () => {},
+      setMentionIaFrequence: async (_t, f) => { ecrits.push(f); courant = f; },
+    },
+    agents: {
+      listerPourConformite: async () => [
+        { id: AG, label: 'Conseiller séjours', status: 'active', mentionIa: 'Vous échangez avec un assistant automatique.' },
+      ],
+    },
   };
   return { ecrits, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, settings }) };
 }

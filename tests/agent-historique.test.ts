@@ -41,13 +41,15 @@ function monterConnaissance(opts: { sansJournal?: boolean } = {}) {
   const deps: AgentKnowledgeRouteDeps = {
     // `sansJournal` : la valeur inerte, un journal muet (la dépendance est requise depuis le lot 3 de l'audit ponytail).
     ...connaissanceInerte,
-    lister: async () => base,
-    creer: async () => null,
-    modifier: async () => null,
-    supprimer: async (_t: string, _a: string, id: string) => {
-      const avant = base.length;
-      base = base.filter((f) => f.id !== id);
-      return base.length < avant;
+    connaissance: {
+      lister: async () => base,
+      creer: async () => null,
+      modifier: async () => null,
+      supprimer: async (_t: string, _a: string, id: string) => {
+        const avant = base.length;
+        base = base.filter((f) => f.id !== id);
+        return base.length < avant;
+      },
     },
     ...(opts.sansJournal ? {} : {
       journaliserSuppression: async (

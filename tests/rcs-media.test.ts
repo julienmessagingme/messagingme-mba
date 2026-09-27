@@ -76,7 +76,11 @@ function appWith(stocke: { bytes: Buffer; mime: MimeImage } | null) {
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     rcsMedia: {
-      list: async (): Promise<RcsMediaResume[]> => [],
+      medias: {
+        list: async (): Promise<RcsMediaResume[]> => [],
+        remove: async () => true,
+        getByCode: async (code): Promise<RcsMediaFichier | null> => (code === CODE && stocke ? stocke : null),
+      },
       create: async (_t, input) => {
         crees.push({ mime: input.mime, taille: input.bytes.length, nom: input.nom });
         return {
@@ -84,8 +88,6 @@ function appWith(stocke: { bytes: Buffer; mime: MimeImage } | null) {
           url: urlImageRcs('https://mba.messagingme.app', CODE, input.mime),
         };
       },
-      remove: async () => true,
-      getByCode: async (code): Promise<RcsMediaFichier | null> => (code === CODE && stocke ? stocke : null),
     },
   });
   return { app, crees };

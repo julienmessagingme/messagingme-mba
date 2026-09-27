@@ -100,19 +100,23 @@ function app(opts: {
     clore: async () => {},
   };
   const cerveau: GatewayBrainDeps = {
-    completer: async ({ messages }) => {
-      cap.messages.push(messages);
-      const liste = opts.reponses ?? [texte('Bonjour, comment puis-je aider ?')];
-      const r = liste[Math.min(i, liste.length - 1)]!;
-      i += 1;
-      return r;
+    client: {
+      completer: async ({ messages }) => {
+        cap.messages.push(messages);
+        const liste = opts.reponses ?? [texte('Bonjour, comment puis-je aider ?')];
+        const r = liste[Math.min(i, liste.length - 1)]!;
+        i += 1;
+        return r;
+      },
     },
     contexte: async () => (opts.agentConnu === false ? null : AGENT),
     outils: {
       catalogue,
       journal,
       resolveurs: { mba: creerResolveurSimulation({ connaissance: { chercher: async () => [] } }) },
-      compterAppel: async () => {},
+      sessions: {
+        compterAppel: async () => {},
+      },
       executerGeste: GESTE_MUET,
     },
   };
@@ -122,7 +126,7 @@ function app(opts: {
     ...(opts.sansHistorique ? {} : { essais: hist.store }),
     ...(opts.sansCerveau ? {} : { cerveau }),
     ...(opts.solde === undefined ? {} : {
-      solde: async () => opts.solde!,
+      credits: { solde: async () => opts.solde! },
       debiter: async (_t: string, montant: number, note: string) => { cap.debits.push({ montant, note }); },
     }),
   };
@@ -185,9 +189,11 @@ describe('bac à sable de l’agent', () => {
       ...essaiAgentInerte,
       disponible: true,
       cerveau: {
-        completer: cerveau.completer ?? (async () => { throw new Error('jamais appelé'); }),
+        client: {
+          completer: cerveau.completer ?? (async () => { throw new Error('jamais appelé'); }),
+        },
         contexte: cerveau.contexte ?? (async () => AGENT),
-        outils: { catalogue: { byName: async () => null, listActifs: async () => [] }, journal: { ouvrir: async () => '', clore: async () => {} }, resolveurs: {}, compterAppel: async () => {}, executerGeste: GESTE_MUET },
+        outils: { catalogue: { byName: async () => null, listActifs: async () => [] }, journal: { ouvrir: async () => '', clore: async () => {} }, resolveurs: {}, sessions: { compterAppel: async () => {} }, executerGeste: GESTE_MUET },
       },
     },
   });
@@ -299,20 +305,24 @@ describe('bac à sable de l’agent', () => {
           agentTest: {
             ...essaiAgentInerte,
             disponible: true,
-            solde: async () => 5_000_000,
+            credits: { solde: async () => 5_000_000 },
             debiter: async (_t: string, montant: number) => { cap.debits.push(montant); },
             cerveau: {
-              completer: async () => {
-                appels += 1;
-                if (appels > 1) throw erreur;
-                return appelOutil('mba_poser_tag', '{"tag":"vip"}');
+              client: {
+                completer: async () => {
+                  appels += 1;
+                  if (appels > 1) throw erreur;
+                  return appelOutil('mba_poser_tag', '{"tag":"vip"}');
+                },
               },
               contexte: async () => AGENT,
               outils: {
                 catalogue: { byName: async () => OUTIL, listActifs: async () => AGENT.outilsActifs },
                 journal: { ouvrir: async () => '', clore: async () => {} },
                 resolveurs: { mba: creerResolveurSimulation({ connaissance: { chercher: async () => [] } }) },
-                compterAppel: async () => {},
+                sessions: {
+                  compterAppel: async () => {},
+                },
                 executerGeste: GESTE_MUET,
               },
             },

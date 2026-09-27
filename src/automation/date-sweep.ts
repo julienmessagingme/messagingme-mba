@@ -16,20 +16,23 @@ import { texteDe } from '../lib/erreur';
  */
 
 export interface DateSweepDeps {
-  /** Espaces ayant au moins une automation `avant_date` active. */
-  tenants(): Promise<string[]>;
+  /** Les déclencheurs « avant la date » des automations. */
+  declencheurs: {
+    /** Espaces ayant au moins une automation `avant_date` active. */
+    tenantsAvecDeclencheurDate(): Promise<string[]>;
+    /** Contacts dont la date tombe dans la fenêtre grossière, avec la valeur déjà tirée. */
+    contactsDusPourDate(
+      tenantId: string,
+      automationId: string,
+      fieldKey: string,
+      borneBasse: string,
+      borneHaute: string,
+    ): Promise<Array<{ waId: string; valeur: string; dejaTirePour: string | null }>>;
+  };
   /** Automations actives de ce type pour cet espace. */
   automations(tenantId: string): Promise<AutomationRow[]>;
   /** Fuseau de l'espace : une date sans fuseau est une heure murale, elle n'est un instant que là-dedans. */
   timeZone(tenantId: string): Promise<string>;
-  /** Contacts dont la date tombe dans la fenêtre grossière, avec la valeur déjà tirée. */
-  candidats(
-    tenantId: string,
-    automationId: string,
-    fieldKey: string,
-    borneBasse: string,
-    borneHaute: string,
-  ): Promise<Array<{ waId: string; valeur: string; dejaTirePour: string | null }>>;
   /** Publie l'événement d'automation. C'est le worker qui décide ensuite quoi déclencher. */
   publish(tenantId: string, ev: { kind: 'avant_date'; waId: string; automationId: string; valeur: string }): Promise<void>;
   /**
@@ -53,7 +56,7 @@ export async function runDateSweep(deps: DateSweepDeps): Promise<number> {
   const journal = deps.log ?? (() => {});
   let publies = 0;
 
-  for (const tenantId of await deps.tenants()) {
+  for (const tenantId of await deps.declencheurs.tenantsAvecDeclencheurDate()) {
     let timeZone = 'Europe/Paris';
     try {
       timeZone = await deps.timeZone(tenantId);
@@ -79,7 +82,7 @@ export async function runDateSweep(deps: DateSweepDeps): Promise<number> {
         const borneBasse = new Date(centre - MARGE_MS).toISOString();
         const borneHaute = new Date(centre + MARGE_MS).toISOString();
 
-        const candidats = await deps.candidats(tenantId, a.id, cfg.fieldKey, borneBasse, borneHaute);
+        const candidats = await deps.declencheurs.contactsDusPourDate(tenantId, a.id, cfg.fieldKey, borneBasse, borneHaute);
         for (const c of candidats) {
           const r = estDu({
             valeur: c.valeur,

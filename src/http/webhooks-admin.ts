@@ -16,13 +16,7 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 /** Même borne que l'anti-rebond d'une automation : au-delà de 7 jours, ce n'est plus un anti-rebond. */
 const MAX_COOLDOWN = 7 * 24 * 3600;
 
-export interface WebhooksAdminRouteDeps {
-  /**
-   * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Un webhook est une porte d'entrée :
-   * ce qu'un tiers y envoie devient des contacts, et savoir qui l'a ouverte répond aux contacts inattendus.
-   * 🔴 Le `detail` ne porte ni le code de l'adresse (ce qui la rend devinable) ni le secret (ce qui l'authentifie).
-   */
-  audit: AuditSink;
+export interface WebhooksDep {
   list(tenantId: string): Promise<WebhookRow[]>;
   get(tenantId: string, id: string): Promise<WebhookRow | null>;
   create(tenantId: string, input: WebhookInput): Promise<{ id: string; code: string }>;
@@ -32,13 +26,25 @@ export interface WebhooksAdminRouteDeps {
   rotateSecret(tenantId: string, id: string): Promise<string | null>;
   clearSecret(tenantId: string, id: string): Promise<boolean>;
   forgetPayload(tenantId: string, id: string): Promise<boolean>;
+}
+
+export interface WebhooksAdminRouteDeps {
+  /**
+   * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Un webhook est une porte d'entrée :
+   * ce qu'un tiers y envoie devient des contacts, et savoir qui l'a ouverte répond aux contacts inattendus.
+   * 🔴 Le `detail` ne porte ni le code de l'adresse (ce qui la rend devinable) ni le secret (ce qui l'authentifie).
+   */
+  audit: AuditSink;
+  webhooks: WebhooksDep;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Même garde que la campagne et l'automation. */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
-  /**
-   * Nom d'une campagne au fil de l'eau encore vivante nourrie par ce webhook, s'il y en a une. Interrogé à la
-   * suppression : couper l'adresse laisserait la campagne « en cours » sans plus rien recevoir.
-   */
-  campagneVivante(tenantId: string, webhookId: string): Promise<string | null>;
+  repo: {
+    /**
+     * Nom d'une campagne au fil de l'eau encore vivante nourrie par ce webhook, s'il y en a une. Interrogé à la
+     * suppression : couper l'adresse laisserait la campagne « en cours » sans plus rien recevoir.
+     */
+    webhookFeedsLiveCampaign(tenantId: string, webhookId: string): Promise<string | null>;
+  };
   /** Base publique des URLs (`config.APP_URL`) : l'écran affiche l'URL complète à coller chez le tiers. */
   baseUrl: string;
 }
@@ -156,13 +162,13 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
 
   app.get('/tenants/:tenantId/webhooks', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ webhooks: (await deps.list(tenant)).map(avecUrl) });
+    return reply.code(200).send({ webhooks: (await deps.webhooks.list(tenant)).map(avecUrl) });
   });
 
   app.get('/tenants/:tenantId/webhooks/:id', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    const w = await deps.get(tenant, id);
+    const w = await deps.webhooks.get(tenant, id);
     if (!w) return reply.code(404).send({ error: 'webhook inconnu' });
     return reply.code(200).send({ webhook: avecUrl(w) });
   });
@@ -174,7 +180,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
     if (parsed.input.workflowId !== null && !(await deps.workflowBelongsToTenant(parsed.input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
-    const { id, code } = await deps.create(tenant, parsed.input);
+    const { id, code } = await deps.webhooks.create(tenant, parsed.input);
     // Ni `code` ni l'URL : le code est le secret de cette adresse. L'identifiant interne suffit à la retrouver.
     await journal(tenant, req, 'webhook.cree', { kind: 'webhook', id }, { workflowId: parsed.input.workflowId });
     return reply.code(201).send({ id, code, url: urlPublique(deps.baseUrl, code), ...parsed.input });
@@ -185,7 +191,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
     const { id } = req.params as { id: string };
     // Relecture systématique : le mapping se valide contre le dernier payload reçu, et le corps est partiel
     // alors que le store écrit un état complet.
-    const actuel = await deps.get(tenant, id);
+    const actuel = await deps.webhooks.get(tenant, id);
     if (!actuel) return reply.code(404).send({ error: 'webhook inconnu' });
     const parsed = parseBody(req.body, actuel, actuel.lastPayload);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
@@ -193,7 +199,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
         && !(await deps.workflowBelongsToTenant(parsed.input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
-    const ok = await deps.update(tenant, id, parsed.input);
+    const ok = await deps.webhooks.update(tenant, id, parsed.input);
     if (!ok) return reply.code(404).send({ error: 'webhook inconnu' });
     await journal(tenant, req, 'webhook.modifie', { kind: 'webhook', id }, { workflowId: parsed.input.workflowId });
     return reply.code(200).send({ id, ...parsed.input });
@@ -204,11 +210,11 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
     const { id } = req.params as { id: string };
     // Une campagne au fil de l'eau vit de cette adresse : la supprimer en ferait une coquille « en cours » qui ne
     // reçoit plus rien. On refuse en la nommant, en 409 pour que le message atteigne l'écran.
-    const campagne = await deps.campagneVivante(tenant, id);
+    const campagne = await deps.repo.webhookFeedsLiveCampaign(tenant, id);
     if (campagne !== null) {
       return reply.code(409).send({ error: `La campagne « ${campagne} » se nourrit de ce webhook. Arrête-la avant de supprimer l'adresse.` });
     }
-    const ok = await deps.remove(tenant, id);
+    const ok = await deps.webhooks.remove(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'webhook inconnu' });
     await journal(tenant, req, 'webhook.supprime', { kind: 'webhook', id });
     return reply.code(204).send();
@@ -218,7 +224,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   app.post('/tenants/:tenantId/webhooks/:id/secret', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    const secret = await deps.rotateSecret(tenant, id);
+    const secret = await deps.webhooks.rotateSecret(tenant, id);
     if (secret === null) return reply.code(404).send({ error: 'webhook inconnu' });
     // `pose` distingue la pose du retrait sans inventer deux actions.
     await journal(tenant, req, 'webhook.secret_change', { kind: 'webhook', id }, { pose: true });
@@ -228,7 +234,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   app.delete('/tenants/:tenantId/webhooks/:id/secret', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    const ok = await deps.clearSecret(tenant, id);
+    const ok = await deps.webhooks.clearSecret(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'webhook inconnu' });
     await journal(tenant, req, 'webhook.secret_change', { kind: 'webhook', id }, { pose: false });
     return reply.code(204).send();
@@ -238,7 +244,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   app.delete('/tenants/:tenantId/webhooks/:id/payload', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    const ok = await deps.forgetPayload(tenant, id);
+    const ok = await deps.webhooks.forgetPayload(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'webhook inconnu' });
     return reply.code(204).send();
   });

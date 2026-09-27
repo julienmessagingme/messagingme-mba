@@ -9,7 +9,7 @@ import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 import { PLAFOND_DESTINATAIRES_DEFAUT } from '../src/campaign/plafond';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
-import { campagnesInertes } from './routes-inertes';
+import { campagnesInertes, campagnesRepoInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -113,18 +113,50 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
     auth: { users: noUsers, secret: SECRET },
     campaigns: {
       ...campagnesInertes,
-      repo,
+      // Le faux dépôt de création, complété de ce que les routes lisent et écrivent des campagnes.
+      repo: Object.assign(repo, {
+        ...campagnesRepoInerte,
+        phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
+        ...(d.sansWebhook ? {} : {
+          stopWebhookCampaign: async (id: string, tenant: string) => { d.stopCalls?.push({ id, tenant }); return d.stopOk ?? true; },
+        }),
+        ...(d.sansPause ? {} : {
+          pauseCampaign: async (id: string, tenant: string) => { d.pauseCalls?.push(`pause:${id}:${tenant}`); return d.pauseOk ?? true; },
+          resumeCampaign: async (id: string, tenant: string) => { d.pauseCalls?.push(`resume:${id}:${tenant}`); return true; },
+        }),
+        campaignBelongsTo: async (id: string, tenant: string) => id === 'known' && tenant === (d.campaignTenant ?? 't1'),
+        getRunSizing: async () => (d.runSizing !== undefined ? d.runSizing : { ratePerMinute: null, pendingCount: 0 }),
+        scheduleCampaign: async (id: string, _tenant: string, when: Date) => { d.scheduled?.push({ id, when: when.toISOString() }); return d.scheduleOk ?? true; },
+        cancelSchedule: async () => d.cancelOk ?? true,
+        listCampaignSummaries: async (tenant: string, opts?: { archived?: boolean }) => {
+          d.listOpts?.push(opts);
+          if (d.campaignsOverride) return d.campaignsOverride as never;
+          return [
+            { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', archivedAt: null, counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
+          ];
+        },
+        archiveCampaign: async (id: string, tenant: string) => { d.archiveCalls?.push({ id, tenant, kind: 'archive' }); return true; },
+        unarchiveCampaign: async (id: string, tenant: string) => { d.archiveCalls?.push({ id, tenant, kind: 'unarchive' }); return true; },
+        deleteDraftCampaign: async (id: string, tenant: string) => { d.archiveCalls?.push({ id, tenant, kind: 'delete' }); return d.deleteOk ?? true; },
+        getCampaignDetail: async (id: string, tenant: string) =>
+          id === 'known' && tenant === 't1'
+            ? ({ id: 'known', name: 'Promo', category: 'marketing', status: 'completed', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 1, pending: 0, sending: 0, sent: 1, failed: 0, skipped: 0 }, recipients: [{ id: 'r1', toE164: '+33611', status: 'sent', messageId: 'm-1', error: null, sentAt: '2026-07-05T00:00:00.000Z' }] } as never)
+            : null,
+        resetRecipientForRetry: async () => d.retry ?? { result: 'not_found' as const },
+        listPhoneNumbers: async () => [{ id: 'pn1', displayPhoneNumber: '+33600000000', verifiedName: 'Demo' }],
+      }),
       queue: d.queue ?? new FakeQueue(),
       // Dépendance OPTIONNELLE côté serveur : absente, les routes de brouillon ne sont pas montées du tout.
       ...(d.drafts ? { drafts: d.drafts } : {}),
-      phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
       ...(d.sansCible ? {} : {
-        contactIdsForTarget: async (tenant: string, target: unknown, limite?: number) => {
-          d.ciblesVues?.push({ tenant, target, ...(limite === undefined ? {} : { limite }) });
-          const resolues = d.ciblesResolues ?? ['c1'];
-          // Le vrai store BORNE la sélection par filtres : le faux doit le faire aussi, sinon il rendrait
-          // possible un test qui passe alors que la production tronque.
-          return limite === undefined ? resolues : resolues.slice(0, limite);
+        contacts: {
+          contactIdsForTarget: async (tenant: string, target: unknown, limite?: number) => {
+            d.ciblesVues?.push({ tenant, target, ...(limite === undefined ? {} : { limite }) });
+            const resolues = d.ciblesResolues ?? ['c1'];
+            // Le vrai store BORNE la sélection par filtres : le faux doit le faire aussi, sinon il rendrait
+            // possible un test qui passe alors que la production tronque.
+            return limite === undefined ? resolues : resolues.slice(0, limite);
+          },
         },
       }),
       // Le plafond de taille. ⚠️ Ce n'est plus un COMPTE : le chemin « tous les contacts » résout ses
@@ -148,34 +180,9 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       ...(d.plafond !== undefined ? { plafondDestinataires: d.plafond } : {}),
       ...(d.sansWebhook ? {} : {
         webhookUsableByTenant: async () => d.webhookOk ?? true,
-        stopWebhookCampaign: async (id: string, tenant: string) => { d.stopCalls?.push({ id, tenant }); return d.stopOk ?? true; },
-      }),
-      ...(d.sansPause ? {} : {
-        pauseCampaign: async (id: string, tenant: string) => { d.pauseCalls?.push(`pause:${id}:${tenant}`); return d.pauseOk ?? true; },
-        resumeCampaign: async (id: string, tenant: string) => { d.pauseCalls?.push(`resume:${id}:${tenant}`); return true; },
       }),
       // Workflow non détenu -> null (comme un getById cross-tenant) ; sinon le graphe (override ou défaut).
       getWorkflowGraph: async () => (d.ownsWorkflow === false ? null : (d.workflowGraph ?? TEMPLATE_ENTRY_GRAPH)),
-      campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === (d.campaignTenant ?? 't1'),
-      getRunSizing: async () => (d.runSizing !== undefined ? d.runSizing : { ratePerMinute: null, pendingCount: 0 }),
-      scheduleCampaign: async (id, _tenant, when) => { d.scheduled?.push({ id, when: when.toISOString() }); return d.scheduleOk ?? true; },
-      cancelSchedule: async () => d.cancelOk ?? true,
-      listCampaigns: async (tenant, opts) => {
-        d.listOpts?.push(opts);
-        if (d.campaignsOverride) return d.campaignsOverride as never;
-        return [
-          { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', archivedAt: null, counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
-        ];
-      },
-      archiveCampaign: async (id, tenant) => { d.archiveCalls?.push({ id, tenant, kind: 'archive' }); return true; },
-      unarchiveCampaign: async (id, tenant) => { d.archiveCalls?.push({ id, tenant, kind: 'unarchive' }); return true; },
-      deleteDraftCampaign: async (id, tenant) => { d.archiveCalls?.push({ id, tenant, kind: 'delete' }); return d.deleteOk ?? true; },
-      getCampaignDetail: async (id, tenant) =>
-        id === 'known' && tenant === 't1'
-          ? ({ id: 'known', name: 'Promo', category: 'marketing', status: 'completed', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 1, pending: 0, sending: 0, sent: 1, failed: 0, skipped: 0 }, recipients: [{ id: 'r1', toE164: '+33611', status: 'sent', messageId: 'm-1', error: null, sentAt: '2026-07-05T00:00:00.000Z' }] } as never)
-          : null,
-      resetRecipientForRetry: async () => d.retry ?? { result: 'not_found' as const },
-      listPhoneNumbers: async () => [{ id: 'pn1', displayPhoneNumber: '+33600000000', verifiedName: 'Demo' }],
     },
   });
 }

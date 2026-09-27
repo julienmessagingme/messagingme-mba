@@ -8,7 +8,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { FetchLike } from '../src/meta/templates';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { AccountRouteDeps, PhoneNumberRecord } from '../src/http/account';
+import type { AccountRouteDeps, NumerosDep, PhoneNumberRecord } from '../src/http/account';
 import { compteInerte } from './routes-inertes';
 
 /** Enregistrement numéro complet (tous les nouveaux champs à null par défaut ; hubspotConnected=true = backfill). */
@@ -165,23 +165,27 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
 
-function app(over: Partial<AccountRouteDeps> = {}) {
+function app(over: Partial<Omit<AccountRouteDeps, 'numeros'>> & { numeros?: Partial<NumerosDep> } = {}) {
   const saved: Array<{ id: string; patch: unknown }> = [];
   const hubspotCalls: Array<{ id: string; tenant: string; connected: boolean }> = [];
   const catchupCalls: string[] = [];
   const disconnectCalls: string[] = [];
   const disconnectTenantCalls: string[] = [];
+  const { numeros, ...reste } = over;
   const deps: AccountRouteDeps = {
     ...compteInerte,
-    getPhoneNumber: async () => rec(),
+    numeros: {
+      getPhoneNumber: async () => rec(),
+      saveStatus: async (id, patch) => { saved.push({ id, patch }); },
+      setHubspotConnected: async (id, tenant, connected) => { hubspotCalls.push({ id, tenant, connected }); return { updated: true, resumedFrom: null }; },
+      getHubspotPortal: async () => ({ connected: false }),
+      disconnectHubspotTenant: async (tenant) => { disconnectTenantCalls.push(tenant); return { updated: true }; },
+      ...numeros,
+    },
     pullStatus: async () => ({ ok: true, status: 'CONNECTED', qualityRating: 'GREEN', messagingLimitTier: 'TIER_1K', displayPhoneNumber: '+33 5 25 68 02 50' }),
-    saveStatus: async (id, patch) => { saved.push({ id, patch }); },
-    setHubspotConnected: async (id, tenant, connected) => { hubspotCalls.push({ id, tenant, connected }); return { updated: true, resumedFrom: null }; },
     enqueueHubspotCatchup: async (tenant) => { catchupCalls.push(tenant); },
-    getHubspotPortal: async () => ({ connected: false }),
     disconnectHubspot: async (tenant) => { disconnectCalls.push(tenant); return { disconnected: true, revoked: true }; },
-    disconnectHubspotTenant: async (tenant) => { disconnectTenantCalls.push(tenant); return { updated: true }; },
-    ...over,
+    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, account: deps }), saved, hubspotCalls, catchupCalls, disconnectCalls, disconnectTenantCalls };
 }
@@ -201,7 +205,7 @@ describe('route account-status', () => {
 
   it('GREEN persisté + pull frais UNKNOWN -> dot=grey (jamais faux vert) + écrase en base', async () => {
     const { server, saved } = app({
-      getPhoneNumber: async () => rec({ displayPhoneNumber: '+33123', status: 'CONNECTED', qualityRating: 'GREEN', messagingLimitTier: 'TIER_1K' }),
+      numeros: { getPhoneNumber: async () => rec({ displayPhoneNumber: '+33123', status: 'CONNECTED', qualityRating: 'GREEN', messagingLimitTier: 'TIER_1K' }) },
       pullStatus: async () => ({ ok: true, status: 'CONNECTED', qualityRating: 'UNKNOWN' }),
     });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
@@ -219,7 +223,7 @@ describe('route account-status', () => {
   });
 
   it('🔴 numéro DÉLIÉ (migration 0180) : il reste affiché, avec sa date, et la pastille le dit malgré un pull vert', async () => {
-    const { server } = app({ getPhoneNumber: async () => rec({ delieLe: '2026-09-25T10:00:00.000Z' }) });
+    const { server } = app({ numeros: { getPhoneNumber: async () => rec({ delieLe: '2026-09-25T10:00:00.000Z' }) } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     const body = res.json<{ hasNumber: boolean; delieLe: string | null; status: { dot: string; label: string } }>();
     // Toujours là : c'est ce qui permet de le relier d'un clic.
@@ -245,7 +249,7 @@ describe('route account-status', () => {
   });
 
   it('aucun numéro -> hasNumber=false, dot=grey', async () => {
-    const { server } = app({ getPhoneNumber: async () => null });
+    const { server } = app({ numeros: { getPhoneNumber: async () => null } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     const body = res.json<{ hasNumber: boolean; status: { dot: string } }>();
     expect(body.hasNumber).toBe(false);
@@ -269,7 +273,7 @@ describe('route account-status', () => {
 
   it('expose hubspotConnected, phoneNumberId + les champs Meta enrichis (frais prime le persisté)', async () => {
     const { server } = app({
-      getPhoneNumber: async () => rec({ hubspotConnected: false, nameStatus: 'PENDING_REVIEW' }),
+      numeros: { getPhoneNumber: async () => rec({ hubspotConnected: false, nameStatus: 'PENDING_REVIEW' }) },
       pullStatus: async () => ({
         ok: true, status: 'CONNECTED', qualityRating: 'GREEN', nameStatus: 'APPROVED',
         codeVerificationStatus: 'VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Acme', wabaHealthStatus: 'AVAILABLE',
@@ -286,7 +290,7 @@ describe('route account-status', () => {
   });
 
   it('aucun numéro : MM Lite + business proprio à null (pas undefined)', async () => {
-    const { server } = app({ getPhoneNumber: async () => null });
+    const { server } = app({ numeros: { getPhoneNumber: async () => null } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     const body = res.json<AccountStatusBody>();
     expect(body.marketingMessagesLiteApiStatus).toBeNull();
@@ -295,7 +299,7 @@ describe('route account-status', () => {
   });
 
   it('expose hubspotPortal : portail lié -> connected + hubDomain', async () => {
-    const { server } = app({ getHubspotPortal: async () => ({ connected: true, hubId: '139615673', hubDomain: 'acme.hubspot.com' }) });
+    const { server } = app({ numeros: { getHubspotPortal: async () => ({ connected: true, hubId: '139615673', hubDomain: 'acme.hubspot.com' }) } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     const body = res.json<{ hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null } }>();
     expect(body.hubspotPortal).toEqual({ connected: true, hubId: '139615673', hubDomain: 'acme.hubspot.com' });
@@ -303,7 +307,7 @@ describe('route account-status', () => {
   });
 
   it('hubspotPortal par défaut non connecté ; un échec de lecture NE casse pas la route (best-effort)', async () => {
-    const { server } = app({ getHubspotPortal: async () => { throw new Error('mmhs down'); } });
+    const { server } = app({ numeros: { getHubspotPortal: async () => { throw new Error('mmhs down'); } } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ hubspotPortal: { connected: boolean } }>().hubspotPortal).toEqual({ connected: false });
@@ -352,14 +356,14 @@ describe('toggle HubSpot par numéro (PATCH .../hubspot)', () => {
   });
 
   it('numéro inconnu pour le tenant -> 404', async () => {
-    const { server } = app({ setHubspotConnected: async () => ({ updated: false, resumedFrom: null }) });
+    const { server } = app({ numeros: { setHubspotConnected: async () => ({ updated: false, resumedFrom: null }) } });
     const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true } });
     expect(res.statusCode).toBe(404);
     await server.close();
   });
 
   it('reprise APRÈS pause (resumedFrom non-null) -> déclenche le rattrapage, catchupTriggered:true', async () => {
-    const { server, catchupCalls } = app({ setHubspotConnected: async () => ({ updated: true, resumedFrom: '2026-07-20T10:00:00Z' }) });
+    const { server, catchupCalls } = app({ numeros: { setHubspotConnected: async () => ({ updated: true, resumedFrom: '2026-07-20T10:00:00Z' }) } });
     const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true } });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ catchupTriggered: boolean }>().catchupTriggered).toBe(true);
@@ -368,7 +372,7 @@ describe('toggle HubSpot par numéro (PATCH .../hubspot)', () => {
   });
 
   it('1re activation (resumedFrom null) -> PAS de rattrapage, catchupTriggered:false', async () => {
-    const { server, catchupCalls } = app({ setHubspotConnected: async () => ({ updated: true, resumedFrom: null }) });
+    const { server, catchupCalls } = app({ numeros: { setHubspotConnected: async () => ({ updated: true, resumedFrom: null }) } });
     const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true } });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ catchupTriggered: boolean }>().catchupTriggered).toBe(false);
@@ -378,7 +382,7 @@ describe('toggle HubSpot par numéro (PATCH .../hubspot)', () => {
 
   it('enqueueHubspotCatchup qui throw -> le toggle reste 200 (best-effort), catchupTriggered:false', async () => {
     const { server } = app({
-      setHubspotConnected: async () => ({ updated: true, resumedFrom: '2026-07-20T10:00:00Z' }),
+      numeros: { setHubspotConnected: async () => ({ updated: true, resumedFrom: '2026-07-20T10:00:00Z' }) },
       enqueueHubspotCatchup: async () => { throw new Error('pg-boss down'); },
     });
     const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true } });
@@ -465,7 +469,7 @@ describe('route account-status : le pull frais prime, le dernier connu comble', 
   });
 
   it('pull COMPLET : tout vient du pull, et tout est enregistré SAUF le numéro d’affichage', async () => {
-    const { server, saved } = app({ getPhoneNumber: async () => connu, pullStatus: async () => complet });
+    const { server, saved } = app({ numeros: { getPhoneNumber: async () => connu }, pullStatus: async () => complet });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     const { ok: _ok, displayPhoneNumber: _affiche, ...enregistre } = complet;
     expect(saved).toEqual([{ id: 'PN1', patch: enregistre }]);
@@ -479,7 +483,7 @@ describe('route account-status : le pull frais prime, le dernier connu comble', 
   });
 
   it('pull VIDE : chaque champ retombe sur le dernier connu', async () => {
-    const { server, saved } = app({ getPhoneNumber: async () => connu, pullStatus: async () => ({ ok: true }) });
+    const { server, saved } = app({ numeros: { getPhoneNumber: async () => connu }, pullStatus: async () => ({ ok: true }) });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     expect(saved).toEqual([{ id: 'PN1', patch: {} }]);
     expect(champs(res.json())).toEqual({
@@ -493,7 +497,7 @@ describe('route account-status : le pull frais prime, le dernier connu comble', 
 
   it('pull en ÉCHEC ou absent : rien n’est enregistré, le dernier connu s’affiche, et `null` reste `null`', async () => {
     for (const pull of [{ ok: false as const, authError: false }, null]) {
-      const { server, saved } = app({ getPhoneNumber: async () => rec({ status: 'CONNECTED' }), pullStatus: async () => pull });
+      const { server, saved } = app({ numeros: { getPhoneNumber: async () => rec({ status: 'CONNECTED' }) }, pullStatus: async () => pull });
       const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
       expect(saved).toEqual([]);
       expect(champs(res.json())).toMatchObject({ number: '+33 5 25 68 02 50', numberStatus: 'CONNECTED', tier: null, verifiedName: null, ownerBusinessName: null });

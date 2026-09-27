@@ -40,7 +40,7 @@ function monter(over: Partial<DepsTravailBatch> = {}) {
     reglage: async () => ({ cles: CLES, envoyerResume: false, suspendu: false }),
     completer: async (_t, s) => { trace.completes += 1; return complet(s); },
     pousser: async (r) => { trace.pousses.push(r); return { partiel: null }; },
-    noterSansIdentifiant: async (_t, n) => { trace.sansId.push(n); },
+    batch: { noterSansIdentifiant: async (_t, n) => { trace.sansId.push(n); } },
     suspendre: async (t) => { trace.suspendus.push(t); },
     journal,
     maintenant: () => 1000,

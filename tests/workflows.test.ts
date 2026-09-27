@@ -3,11 +3,11 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { WorkflowRouteDeps } from '../src/http/workflows';
+import type { ScenariosDep, WorkflowRouteDeps } from '../src/http/workflows';
 import type { WorkflowResumeRow, WorkflowRow } from '../src/workflow/store.pg';
 import { WorkflowUtiliseParLienChaine } from '../src/workflow/store.pg';
 import { aucunePubliciteUtilise } from './pubs-fixtures';
-import { scenariosInertes } from './routes-inertes';
+import { scenariosDepInerte, scenariosInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 // Un identifiant qui a la FORME d'un uuid : les routes refusent desormais en 404 ce qui n'en est pas un,
@@ -38,26 +38,31 @@ const resumeW1: WorkflowResumeRow = {
   nodeCount: 1, hasDraft: false, campaignEligible: true, canalOuverture: 'whatsapp',
 };
 
-function app(over: Partial<WorkflowRouteDeps> = {}) {
+function app(over: Partial<Omit<WorkflowRouteDeps, 'scenarios'>> & { scenarios?: Partial<ScenariosDep> } = {}) {
   const cap = {
     created: [] as Array<{ name: string; graph: unknown }>, updated: [] as Array<{ id: string; patch: unknown }>,
     deleted: [] as string[], declared: [] as string[][], publies: [] as string[],
     journal: [] as Array<{ action: string; userId: string | null; target: string }>,
   };
+  const { scenarios, ...reste } = over;
   const deps: WorkflowRouteDeps = {
     ...scenariosInertes,
-    createWorkflow: async (_t, name, graph) => { cap.created.push({ name, graph }); return { id: 'wNew' }; },
+    scenarios: {
+      ...scenariosDepInerte,
+      insert: async (_t, name, graph) => { cap.created.push({ name, graph }); return { id: 'wNew' }; },
+      list: async () => [sampleRow()],
+      listResume: async () => [resumeW1],
+      getById: async (id) => (id === W1 ? sampleRow() : null),
+      update: async (id, _t, patch) => { cap.updated.push({ id, patch }); return { trouve: id === W1, brouillon: true }; },
+      publish: async (id) => { cap.publies.push(id); return id === W1 ? sampleRow({ publishedAt: '2026-09-01T10:00:00.000Z' }) : null; },
+      remove: async (id) => { cap.deleted.push(id); return id === W1; },
+      ...scenarios,
+    },
     tenantCode: async () => 'k7m2p3',
-    publicitesQuiUtilisent: aucunePubliciteUtilise,
-    listWorkflows: async () => [sampleRow()],
-    listWorkflowsResume: async () => [resumeW1],
-    getWorkflow: async (id) => (id === W1 ? sampleRow() : null),
-    updateWorkflow: async (id, _t, patch) => { cap.updated.push({ id, patch }); return { trouve: id === W1, brouillon: true }; },
-    publishWorkflow: async (id) => { cap.publies.push(id); return id === W1 ? sampleRow({ publishedAt: '2026-09-01T10:00:00.000Z' }) : null; },
-    deleteWorkflow: async (id) => { cap.deleted.push(id); return id === W1; },
+    publicites: { publicitesQuiUtilisent: aucunePubliciteUtilise },
     declareTags: async (_t, tags) => { cap.declared.push(tags); },
     audit: async (_t, actor, action, target) => { cap.journal.push({ action, userId: actor.userId, target: target.id }); },
-    ...over,
+    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, workflows: deps }), cap };
 }
@@ -216,7 +221,7 @@ describe('routes workflows', () => {
     // `channelsme_links.workflow_id` est en `on delete restrict` (migration 0114) : le store lève
     // `WorkflowUtiliseParLienChaine` (traduite depuis Postgres 23503), et sans cette route la violation
     // remonterait au gestionnaire d'erreur global, donc en 500, dont Cloudflare remplace le corps.
-    const { server } = app({ deleteWorkflow: async () => { throw new WorkflowUtiliseParLienChaine(); } });
+    const { server } = app({ scenarios: { remove: async () => { throw new WorkflowUtiliseParLienChaine(); } } });
     const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
     expect(res.statusCode).toBe(409);
     expect(res.json<{ error: string }>().error).toContain('lien de chaîne WhatsApp');
@@ -230,8 +235,8 @@ describe('routes workflows', () => {
     // clic, n’arriveraient alors nulle part, sans la moindre erreur.
     let supprime = false;
     const { server } = app({
-      publicitesQuiUtilisent: async () => ['Rentrée 2026', 'Black Friday'],
-      deleteWorkflow: async () => { supprime = true; return true; },
+      publicites: { publicitesQuiUtilisent: async () => ['Rentrée 2026', 'Black Friday'] },
+      scenarios: { remove: async () => { supprime = true; return true; } },
     });
     const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
     expect(res.statusCode).toBe(409);
@@ -247,7 +252,7 @@ describe('routes workflows', () => {
 
   it('aucune publicité ne l’utilise : la suppression passe, comme avant ce lot', async () => {
     let supprime = false;
-    const { server } = app({ deleteWorkflow: async () => { supprime = true; return true; } });
+    const { server } = app({ scenarios: { remove: async () => { supprime = true; return true; } } });
     const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(supprime).toBe(true);
@@ -273,7 +278,7 @@ describe('routes workflows', () => {
         { id: 'n3', type: 'tag', position: { x: 400, y: 0 }, data: { tag: 'vip' } },
       ], edges: [] },
     });
-    const { server } = app({ listWorkflows: async () => [nodesRow] });
+    const { server } = app({ scenarios: { list: async () => [nodesRow] } });
     const all = await server.inject({ method: 'GET', url: '/tenants/t1/nodes', ...h(adminTok) });
     expect(all.statusCode).toBe(200);
     const nodes = all.json<{ nodes: Array<{ type: string; summary: string; code: string | null; workflowId: string }> }>().nodes;
@@ -304,7 +309,7 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
   });
 
   it('201, nom « (copie) », graphe cloné, codes de node RE-MINTÉS (différents de la source)', async () => {
-    const { server, cap } = app({ getWorkflow: async (id) => (id === W1 ? source() : null), listWorkflows: async () => [source()] });
+    const { server, cap } = app({ scenarios: { getById: async (id) => (id === W1 ? source() : null), list: async () => [source()] } });
     const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(201);
     expect(res.json<{ name: string }>().name).toBe('Promo (copie)');
@@ -318,7 +323,7 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
   });
 
   it('incrémente « (copie 2) » si le nom est déjà pris', async () => {
-    const { server, cap } = app({ getWorkflow: async (id) => (id === W1 ? source() : null), listWorkflows: async () => [source(), sampleRow({ name: 'Promo (copie)' })] });
+    const { server, cap } = app({ scenarios: { getById: async (id) => (id === W1 ? source() : null), list: async () => [source(), sampleRow({ name: 'Promo (copie)' })] } });
     const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(201);
     expect(cap.created[0]!.name).toBe('Promo (copie 2)');
@@ -326,7 +331,7 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
   });
 
   it('id inconnu -> 404, aucune création', async () => {
-    const { server, cap } = app({ getWorkflow: async () => null });
+    const { server, cap } = app({ scenarios: { getById: async () => null } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/ghost/duplicate', ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(404);
     expect(cap.created).toHaveLength(0);
@@ -339,7 +344,7 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
       graph: { nodes: [{ id: 'nEnLigne', type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'en-ligne' } }], edges: [] },
       draftGraph: { nodes: [{ id: 'nBrouillon', type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'brouillon' } }], edges: [] },
     });
-    const { server, cap } = app({ getWorkflow: async (id) => (id === W1 ? avecBrouillon() : null), listWorkflows: async () => [avecBrouillon()] });
+    const { server, cap } = app({ scenarios: { getById: async (id) => (id === W1 ? avecBrouillon() : null), list: async () => [avecBrouillon()] } });
     const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(201);
     const g = cap.created[0]!.graph as { nodes: Array<{ id: string }> };
@@ -348,7 +353,7 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
   });
 
   it('sans brouillon, copie la version en ligne (l’autre sens de la même règle)', async () => {
-    const { server, cap } = app({ getWorkflow: async (id) => (id === W1 ? source() : null), listWorkflows: async () => [source()] });
+    const { server, cap } = app({ scenarios: { getById: async (id) => (id === W1 ? source() : null), list: async () => [source()] } });
     const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(201);
     const g = cap.created[0]!.graph as { nodes: Array<{ id: string }> };
@@ -357,7 +362,7 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
   });
 
   it('agent -> 403 (admin-only) ; tenant != token -> 403', async () => {
-    const { server } = app({ getWorkflow: async () => source() });
+    const { server } = app({ scenarios: { getById: async () => source() } });
     const agent = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(agentTok), payload: {} });
     const cross = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(otherTok), payload: {} });
     expect(agent.statusCode).toBe(403);
@@ -406,7 +411,7 @@ describe('POST /tenants/:t/workflows/:id/publish', () => {
     const { server } = app();
     const avec = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: validGraph } });
     expect(avec.json<{ brouillon: boolean }>().brouillon).toBe(true);
-    const { server: s2 } = app({ updateWorkflow: async () => ({ trouve: true, brouillon: false }) });
+    const { server: s2 } = app({ scenarios: { update: async () => ({ trouve: true, brouillon: false }) } });
     const sans = await s2.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: validGraph } });
     expect(sans.json<{ brouillon: boolean }>().brouillon).toBe(false);
     await server.close();
@@ -422,11 +427,13 @@ describe('GET /workflows : le RÉSUMÉ, jamais les graphes', () => {
     // chaque écran paie le transfert et l'analyse de tous les JSON. Ce que les écrans en tiraient devient
     // trois champs, et le graphe complet reste sur `GET /workflows/:id`.
     const { server } = app({
-      listWorkflowsResume: async () => [{
-        id: W1, tenantId: 't1', name: 'Onboarding', code: 'scn_k7m2p3_x',
-        createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', publishedAt: null,
-        nodeCount: 4, hasDraft: true, campaignEligible: true, canalOuverture: 'whatsapp' as const,
-      }],
+      scenarios: {
+        listResume: async () => [{
+          id: W1, tenantId: 't1', name: 'Onboarding', code: 'scn_k7m2p3_x',
+          createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', publishedAt: null,
+          nodeCount: 4, hasDraft: true, campaignEligible: true, canalOuverture: 'whatsapp' as const,
+        }],
+      },
     });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/workflows', ...h(adminTok) });
     expect(res.statusCode).toBe(200);

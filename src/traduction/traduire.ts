@@ -50,17 +50,19 @@ export interface TexteATraduire {
 
 export interface DepsTraduction {
   /**
-   * L'appel au modèle (`GatewayChatClient.completer`). `tenantId` est obligatoire : il décide qui paie, via le
+   * Le client du modèle (`GatewayChatClient`). `tenantId` est obligatoire : il décide qui paie, via le
    * résolveur de clé par espace ; l'oublier ferait retomber la dépense sur la clé maison, en silence.
    */
-  completer(input: {
-    tenantId: string;
-    modele: string;
-    messages: ChatMessage[];
-    outils: OutilExpose[];
-    toolChoice: string;
-    signal: AbortSignal;
-  }): Promise<ReponseChat>;
+  client: {
+    completer(input: {
+      tenantId: string;
+      modele: string;
+      messages: ChatMessage[];
+      outils: OutilExpose[];
+      toolChoice: string;
+      signal: AbortSignal;
+    }): Promise<ReponseChat>;
+  };
   modele: string;
   /**
    * Cet espace a-t-il une clé de modèle à lui ? Absente = disponible (tests, instance sans clés par espace). En
@@ -208,7 +210,7 @@ export function creerTraducteur(deps: DepsTraduction): Traducteur {
     const minuteur = setTimeout(() => abandon.abort(), deps.delaiMs ?? DELAI_DEFAUT_MS);
     let brut: ReponseChat;
     try {
-      brut = await deps.completer({
+      brut = await deps.client.completer({
         tenantId,
         modele: deps.modele,
         messages: [

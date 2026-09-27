@@ -26,22 +26,11 @@ export interface AuthRouteDeps extends MfaRouteDeps {
   /** Relecture par requête de l'état du compte (révoqué, supprimé, rôle frais). Absent en test (JWT seul).
    *  Voir makeRequireAuth. */
   getUserState?: UserStateLoader;
-  /** Inscription libre : crée un espace et son admin. `passwordHash` null = compte Google seul. Absent : 503. */
-  createTenantWithAdmin?(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }>;
-  /** Pose (écrase) le hash de mot de passe d'un compte (reset / changement). */
-  setPassword?(userId: string, hash: string): Promise<boolean>;
-  /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mdp. */
-  getPasswordHash?(userId: string): Promise<string | null>;
-  /** Le mot de passe de l'identité d'une adresse : `undefined` = adresse inconnue, `null` = identité sans mot de passe. */
-  motDePasseDeLAdresse?(email: string): Promise<string | null | undefined>;
-  /** {tenantId, role, email} d'un compte par id : émettre une session après acceptation d'invitation. */
-  sessionUser?(userId: string): Promise<{ tenantId: string; role: string; email: string } | null>;
+  comptes?: ComptesAuthDep;
   /** Client OAuth Google (public) : exposé via GET /auth/config, sert au front pour le bouton. */
   googleClientId?: string;
   /** Vérifie un jeton ID Google -> identité (email vérifié), ou null si invalide. */
   verifyGoogle?(idToken: string): Promise<GoogleIdentity | null>;
-  /** Tous les comptes d'une adresse, tout statut (login Google lié par adresse). Vide = adresse inconnue. */
-  getUserByEmail?(email: string): Promise<Array<{ id: string; tenantId: string; tenantName: string; role: string; disabled: boolean }>>;
   /** Tokens à usage unique (reset / invite). */
   tokens?: {
     create(purpose: 'reset' | 'invite', userId: string, ttlMs: number): Promise<string>;
@@ -53,6 +42,22 @@ export interface AuthRouteDeps extends MfaRouteDeps {
   appUrl?: string;
   /** Durée de validité d'un lien de reset (ms). */
   resetTtlMs?: number;
+}
+
+/** Ce que les routes lisent et écrivent des comptes. Chaque méthode absente rend sa route 503. */
+export interface ComptesAuthDep {
+  /** Inscription libre : crée un espace et son admin. `passwordHash` null = compte Google seul. */
+  createTenantWithAdmin?(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }>;
+  /** Pose (écrase) le hash de mot de passe d'un compte (reset / changement). */
+  setPassword?(userId: string, hash: string): Promise<boolean>;
+  /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mdp. */
+  getPasswordHash?(userId: string): Promise<string | null>;
+  /** Le mot de passe de l'identité d'une adresse : `undefined` = adresse inconnue, `null` = identité sans mot de passe. */
+  motDePasseDeLAdresse?(email: string): Promise<string | null | undefined>;
+  /** {tenantId, role, email} d'un compte par id : émettre une session après acceptation d'invitation. */
+  getSessionUser?(userId: string): Promise<{ tenantId: string; role: string; email: string } | null>;
+  /** Tous les comptes d'une adresse, tout statut (login Google lié par adresse). Vide = adresse inconnue. */
+  getByEmail?(email: string): Promise<Array<{ id: string; tenantId: string; tenantName: string; role: string; disabled: boolean }>>;
   /**
    * Horodate la dernière connexion réussie (page Équipe). Optionnel : les tests construisent `auth` avec
    * `{ users, secret }` seuls.
@@ -66,7 +71,7 @@ export interface AuthRouteDeps extends MfaRouteDeps {
  * retour : dépendance absente, `undefined`, et `.catch` dessus lèverait.
  */
 function markLogin(deps: AuthRouteDeps, userId: string): void {
-  void deps.touchLastLogin?.(userId)?.catch(() => {});
+  void deps.comptes?.touchLastLogin?.(userId)?.catch(() => {});
 }
 
 /**
@@ -242,14 +247,14 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
 
   // Se connecter avec Google : vérifie le jeton ID, connecte un compte existant ou crée un espace (inconnu).
   app.post('/auth/google', async (req, reply) => {
-    if (!deps.verifyGoogle || !deps.getUserByEmail || !deps.createTenantWithAdmin) return reply.code(503).send({ error: 'connexion Google indisponible' });
+    if (!deps.verifyGoogle || !deps.comptes?.getByEmail || !deps.comptes.createTenantWithAdmin) return reply.code(503).send({ error: 'connexion Google indisponible' });
     const idToken = str((req.body as { idToken?: unknown } | undefined)?.idToken);
     if (idToken === '') return reply.code(400).send({ error: 'idToken requis' });
     // Clé sur l'idToken Google : borne les tentatives par jeton, plus de blocage transverse.
     if (!googleLimiter.take(rateKey(req, idToken))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const identity = await deps.verifyGoogle(idToken);
     if (!identity || !identity.emailVerified) return reply.code(401).send({ error: 'jeton Google invalide' });
-    const comptes = await deps.getUserByEmail(identity.email);
+    const comptes = await deps.comptes.getByEmail(identity.email);
     if (comptes.length > 0) {
       // Compte existant (actif ou invitation en attente) : Google fait foi (liaison par adresse vérifiée). Un
       // compte révoqué n'ouvre rien et n'apparaît pas dans le choix.
@@ -279,7 +284,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const gname = (identity.name ?? '').slice(0, 60).trim();
     const construit = nomEspace.safeParse(gname !== '' ? `Espace de ${gname}` : '');
     const workspaceName = construit.success ? construit.data : 'Mon espace';
-    const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email: identity.email, name: identity.name, passwordHash: null });
+    const { tenantId, userId } = await deps.comptes.createTenantWithAdmin(workspaceName, { email: identity.email, name: identity.name, passwordHash: null });
     const jwt = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
     // Une inscription est une connexion : sinon le compte neuf s'afficherait « jamais connecté » sur la page
     // Équipe.
@@ -292,7 +297,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
   app.post('/auth/signup', async (req, reply) => {
     // Sans magasin du second facteur, l'inscription ne pourrait pas enrôler l'admin qu'elle crée : refus avant
     // de créer quoi que ce soit.
-    if (!deps.createTenantWithAdmin || !deps.mfa || !deps.motDePasseDeLAdresse) return reply.code(503).send({ error: 'inscription indisponible' });
+    if (!deps.comptes?.createTenantWithAdmin || !deps.mfa || !deps.comptes.motDePasseDeLAdresse) return reply.code(503).send({ error: 'inscription indisponible' });
     const b = (req.body ?? {}) as { workspaceName?: unknown; email?: unknown; password?: unknown; name?: unknown };
     const email = str(b.email).trim().toLowerCase();
     const password = str(b.password);
@@ -310,12 +315,12 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     // sans cette vérification n'importe qui se rattacherait à l'identité d'un autre, puis changerait le mot de
     // passe de tous ses espaces. Une identité sans mot de passe (invitation en attente, Google) ne s'étend pas
     // par ici.
-    const existant = await deps.motDePasseDeLAdresse(email);
+    const existant = await deps.comptes.motDePasseDeLAdresse(email);
     if (existant !== undefined && (existant === null || !(await verifyPassword(password, existant)))) {
       return reply.code(409).send({ error: 'un compte existe déjà avec cet email' });
     }
     try {
-      const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) });
+      const { tenantId, userId } = await deps.comptes.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) });
       // L'inscription crée un admin : elle rend un jeton d'enrôlement, jamais une session ; une identité qui a
       // déjà un facteur actif donne son code.
       const facteur = await deps.mfa.lireParCompte(userId);
@@ -359,7 +364,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
 
   // Réinitialisation : consomme le token (usage unique) et pose le nouveau mot de passe.
   app.post('/auth/reset-password', async (req, reply) => {
-    if (!deps.tokens || !deps.setPassword) return reply.code(503).send({ error: 'réinitialisation indisponible' });
+    if (!deps.tokens || !deps.comptes?.setPassword) return reply.code(503).send({ error: 'réinitialisation indisponible' });
     const b = (req.body ?? {}) as { token?: unknown; password?: unknown };
     const token = str(b.token);
     const password = str(b.password);
@@ -369,14 +374,14 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     const userId = await deps.tokens.consume('reset', token);
     if (!userId) return reply.code(400).send({ error: 'lien invalide ou expiré' });
-    await deps.setPassword(userId, await hashPassword(password));
+    await deps.comptes.setPassword(userId, await hashPassword(password));
     return reply.code(200).send({ ok: true });
   });
 
   // Acceptation d'invitation : consomme le token (usage unique), pose le mot de passe, puis la même porte que la
   // connexion (second facteur si dû, session sinon).
   app.post('/auth/invitations/accept', async (req, reply) => {
-    if (!deps.tokens || !deps.setPassword || !deps.sessionUser || !deps.mfa) return reply.code(503).send({ error: 'invitations indisponibles' });
+    if (!deps.tokens || !deps.comptes?.setPassword || !deps.comptes.getSessionUser || !deps.mfa) return reply.code(503).send({ error: 'invitations indisponibles' });
     const b = (req.body ?? {}) as { token?: unknown; password?: unknown };
     const token = str(b.token);
     const password = str(b.password);
@@ -386,11 +391,11 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     const userId = await deps.tokens.consume('invite', token);
     if (!userId) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
-    const su = await deps.sessionUser(userId);
+    const su = await deps.comptes.getSessionUser(userId);
     if (!su) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
     const facteur = await deps.mfa.lireParCompte(userId);
     if (!facteur) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
-    await deps.setPassword(userId, await hashPassword(password));
+    await deps.comptes.setPassword(userId, await hashPassword(password));
     // Accepter une invitation, c'est se connecter pour la première fois : même porte que la connexion. Une
     // invitation d'admin (ou une identité déjà admin ailleurs) enrôle d'abord ; une identité qui a déjà un
     // facteur donne son code.
@@ -407,17 +412,17 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
 
   // Changement de mot de passe (compte connecté) : vérifie le mdp courant.
   app.post('/auth/change-password', { preHandler: garde }, async (req, reply) => {
-    if (!deps.getPasswordHash || !deps.setPassword) return reply.code(503).send({ error: 'indisponible' });
+    if (!deps.comptes?.getPasswordHash || !deps.comptes.setPassword) return reply.code(503).send({ error: 'indisponible' });
     const userId = req.auth?.userId;
     if (!userId) return reply.code(401).send({ error: 'authentification requise' });
     const b = (req.body ?? {}) as { currentPassword?: unknown; newPassword?: unknown };
     const current = str(b.currentPassword);
     const next = str(b.newPassword);
     if (next.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
-    const hash = await deps.getPasswordHash(userId);
+    const hash = await deps.comptes.getPasswordHash(userId);
     const ok = await verifyPassword(current, hash ?? DUMMY_HASH);
     if (!hash || !ok) return reply.code(401).send({ error: 'mot de passe actuel incorrect' });
-    await deps.setPassword(userId, await hashPassword(next));
+    await deps.comptes.setPassword(userId, await hashPassword(next));
     return reply.code(200).send({ ok: true });
   });
 

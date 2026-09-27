@@ -1,6 +1,6 @@
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
 import type { ContactRow, ContactFilters } from '../crm/contact-store.pg';
-import { repondreDansLaFenetre, type DepsRepondre } from '../inbox/repondre';
+import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 
 /**
@@ -19,15 +19,19 @@ import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 export type ScopeMcp = 'mcp:read' | 'mcp:write';
 
 export interface DepsMcp extends DepsRepondre {
-  listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
-  getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
-  getControlOwner(tenantId: string, waId: string): Promise<ControlOwner>;
-  getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
-  setAssignee(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
-  /** Recherche de contacts (le même moteur de filtres que le mini-CRM). */
-  chercherContacts(tenantId: string, filtres: ContactFilters, limit: number, offset: number): Promise<ContactRow[]>;
-  contactParTelephone(tenantId: string, phoneE164: string): Promise<ContactRow | null>;
-  ajouterTags(tenantId: string, waId: string, tags: string[]): Promise<{ touched: number; added: string[] }>;
+  inbox: ConversationsRepondre & {
+    listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
+    getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
+    getControlOwner(tenantId: string, waId: string): Promise<ControlOwner>;
+    getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
+    setAssignee(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
+  };
+  contacts: {
+    /** Recherche de contacts (le même moteur de filtres que le mini-CRM). */
+    query(tenantId: string, filtres: ContactFilters, limit: number, offset: number): Promise<ContactRow[]>;
+    findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null>;
+    addTagsByPhoneReturningNew(tenantId: string, waId: string, tags: string[]): Promise<{ touched: number; added: string[] }>;
+  };
   /** Membres de l'espace, pour qu'un agent puisse confier une conversation à quelqu'un de nommé. */
   listerMembres(tenantId: string): Promise<Array<{ id: string; name: string | null; email: string; role: string }>>;
 }
@@ -79,7 +83,7 @@ function entierBorne(args: Record<string, unknown>, cle: string, defaut: number,
 /** 🔴 La conversation, ou un refus : garde d'espace partagée. `getConversationContext` rend `null` pour une
  *  conversation d'un autre espace, donc un identifiant deviné ne dit rien de plus qu'un inexistant. */
 async function contexteOuRefus(deps: DepsMcp, tenantId: string, conversationId: string) {
-  const ctx = await deps.getConversationContext(conversationId, tenantId);
+  const ctx = await deps.inbox.getConversationContext(conversationId, tenantId);
   if (ctx === null) throw new RefusOutil('conversation inconnue dans cet espace');
   return ctx;
 }
@@ -119,7 +123,7 @@ export const OUTILS: OutilMcp[] = [
       },
     },
     async executer(deps, tenantId, args) {
-      const conversations = await deps.listConversations(tenantId, {
+      const conversations = await deps.inbox.listConversations(tenantId, {
         limit: entierBorne(args, 'limit', 50, 1, 200),
         ...(args.a_traiter === true ? { aTraiter: true } : {}),
       });
@@ -153,8 +157,8 @@ export const OUTILS: OutilMcp[] = [
       const id = texteObligatoire(args, 'conversation_id', 100);
       const ctx = await contexteOuRefus(deps, tenantId, id);
       const [owner, assignee] = await Promise.all([
-        deps.getControlOwner(tenantId, ctx.waId),
-        deps.getAssignee(tenantId, id),
+        deps.inbox.getControlOwner(tenantId, ctx.waId),
+        deps.inbox.getAssignee(tenantId, id),
       ]);
       return {
         conversation_id: id,
@@ -182,7 +186,7 @@ export const OUTILS: OutilMcp[] = [
       const id = texteObligatoire(args, 'conversation_id', 100);
       await contexteOuRefus(deps, tenantId, id); // garde d'espace avant de lire les messages
       const limit = entierBorne(args, 'limit', 50, 1, 200);
-      const tous = await deps.getMessages(id);
+      const tous = await deps.inbox.getMessages(id);
       // La coupe garde les plus récents (la fin de l'échange), dans l'ordre chronologique.
       return {
         conversation_id: id,
@@ -217,7 +221,7 @@ export const OUTILS: OutilMcp[] = [
       const filtres: ContactFilters = chiffres.length >= 4 && /^[0-9\s+.()-]+$/.test(q)
         ? { phoneContains: chiffres }
         : { nameSearch: q };
-      const contacts = await deps.chercherContacts(tenantId, filtres, entierBorne(args, 'limit', 20, 1, 100), 0);
+      const contacts = await deps.contacts.query(tenantId, filtres, entierBorne(args, 'limit', 20, 1, 100), 0);
       return { contacts: contacts.map(contactPublic) };
     },
   },
@@ -232,7 +236,7 @@ export const OUTILS: OutilMcp[] = [
     },
     async executer(deps, tenantId, args) {
       const phone = texteObligatoire(args, 'phone', 32);
-      const c = await deps.contactParTelephone(tenantId, phone);
+      const c = await deps.contacts.findByPhone(tenantId, phone);
       if (!c) throw new RefusOutil('aucun contact avec ce numéro dans cet espace');
       return contactPublic(c);
     },
@@ -328,7 +332,7 @@ export const OUTILS: OutilMcp[] = [
       const tags = [...new Set(bruts.filter((x): x is string => typeof x === 'string').map((s) => s.trim()).filter((s) => s !== ''))].slice(0, 10);
       if (tags.length === 0) throw new RefusOutil('paramètre « tags » requis (au moins un tag non vide)');
       const ctx = await contexteOuRefus(deps, tenantId, id);
-      const { added } = await deps.ajouterTags(tenantId, ctx.waId, tags);
+      const { added } = await deps.contacts.addTagsByPhoneReturningNew(tenantId, ctx.waId, tags);
       // On rend ce qui a réellement changé : un agent qui repose un tag déjà là doit le voir, sinon il boucle.
       return { conversation_id: id, tags_ajoutes: added, deja_presents: tags.filter((t) => !added.includes(t)) };
     },
@@ -357,7 +361,7 @@ export const OUTILS: OutilMcp[] = [
       }
       const membre = typeof brut === 'string' ? brut.trim() : null;
       // `parUserId = null` : ce n'est pas un humain de la console qui affecte, le journal d'audit le verra.
-      const ok = await deps.setAssignee(tenantId, id, membre, null);
+      const ok = await deps.inbox.setAssignee(tenantId, id, membre, null);
       if (!ok) throw new RefusOutil('conversation inconnue, ou membre étranger à cet espace');
       return { conversation_id: id, assigned_to: membre };
     },

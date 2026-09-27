@@ -42,12 +42,16 @@ function monter(o: { org?: VueOrgSalesforce | null; actif?: boolean; issue?: Iss
   let org = o.org === undefined ? null : o.org;
   let actif = o.actif ?? true;
   const deps: SalesforceRouteDeps = {
-    lire: async () => org,
-    actif: async () => actif,
-    poserActif: async (_t, a) => { trace.actif.push(a); actif = a; },
+    orgs: {
+      lire: async () => org,
+      enregistrerReglages: async (_t, r) => { trace.reglages.push(r); return org !== null; },
+    },
+    reglages: {
+      salesforceActif: async () => actif,
+      setSalesforceActif: async (_t, a) => { trace.actif.push(a); actif = a; },
+    },
     connecter: async (tenant, adresse, auteur) => { trace.connexions.push({ tenant, adresse, auteur }); return o.issue ?? { ok: true, orgId: ORG.orgId, sandbox: false }; },
     deconnecter: async (tenant) => { trace.deconnexions.push(tenant); if (!org) return { ok: false, raison: 'aucune_org' }; org = null; return { ok: true, effaceDansOrg: true }; },
-    enregistrerReglages: async (_t, r) => { trace.reglages.push(r); return org !== null; },
     cleAppPosee: o.cleAppPosee ?? true,
     chiffrementPret: o.chiffrementPret ?? true,
     liensInstallation: null,

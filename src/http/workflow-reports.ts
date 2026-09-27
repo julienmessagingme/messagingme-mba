@@ -9,12 +9,12 @@ import type { WorkflowReport, MesureRetenue } from '../workflow/reports.pg';
  * mesures retenues), jamais des chiffres : les compteurs se recalculent à la lecture.
  */
 export interface WorkflowReportsRouteDeps {
-  listReports(tenantId: string): Promise<WorkflowReport[]>;
-  saveReport(
+  list(tenantId: string): Promise<WorkflowReport[]>;
+  save(
     tenantId: string,
     input: { id?: string; workflowId: string; name: string; mesures: MesureRetenue[] },
   ): Promise<WorkflowReport | null>;
-  removeReport(tenantId: string, id: string): Promise<boolean>;
+  remove(tenantId: string, id: string): Promise<boolean>;
 }
 
 /** Mesures reçues d'un client : bornées et nettoyées avant d'entrer en base (donnée non fiable). */
@@ -38,7 +38,7 @@ export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowRepo
 
   app.get('/tenants/:tenantId/workflow-reports', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    return reply.code(200).send({ reports: await deps.listReports(tenant) });
+    return reply.code(200).send({ reports: await deps.list(tenant) });
   });
 
   /** Enregistre un tableau : `id` fourni -> mise à jour, sinon création (un seul bouton, une seule validation). */
@@ -54,7 +54,7 @@ export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowRepo
     if (mesures.length === 0) return reply.code(400).send({ error: 'aucune mesure retenue' });
 
     try {
-      const saved = await deps.saveReport(tenant, {
+      const saved = await deps.save(tenant, {
         ...(typeof b.id === 'string' && b.id !== '' ? { id: b.id } : {}),
         workflowId, name, mesures,
       });
@@ -71,7 +71,7 @@ export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowRepo
   app.delete('/tenants/:tenantId/workflow-reports/:id', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    return (await deps.removeReport(tenant, id))
+    return (await deps.remove(tenant, id))
       ? reply.code(200).send({ ok: true })
       : reply.code(404).send({ error: 'tableau inconnu' });
   });

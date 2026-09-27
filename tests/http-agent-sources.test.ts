@@ -44,15 +44,17 @@ function app(over: Partial<SourceVue> = {}, epreuve?: AgentSourcesRouteDeps['epr
   const source = { ...SOURCE, ...over };
   const deps: AgentSourcesRouteDeps = {
     audit: journalMuet,
-    lister: async () => [source],
-    parId: async (tenant, id) => (tenant === 't1' && id === SRC ? source : null),
-    creer: async (_t, input) => {
-      cap.creations.push(input as unknown as Record<string, unknown>);
-      if (input.label === 'deja') throw new LabelSourceDejaPris(input.label);
-      return { ...source, label: input.label, baseUrl: input.baseUrl };
+    sources: {
+      lister: async () => [source],
+      parId: async (tenant, id) => (tenant === 't1' && id === SRC ? source : null),
+      creer: async (_t, input) => {
+        cap.creations.push(input as unknown as Record<string, unknown>);
+        if (input.label === 'deja') throw new LabelSourceDejaPris(input.label);
+        return { ...source, label: input.label, baseUrl: input.baseUrl };
+      },
+      patch: async (_t, id, p) => { cap.patches.push(p); return id === SRC ? { ...source, ...p } : null; },
+      supprimer: async (_t, id) => { cap.suppressions.push(id); return id === SRC; },
     },
-    patch: async (_t, id, p) => { cap.patches.push(p); return id === SRC ? { ...source, ...p } : null; },
-    supprimer: async (_t, id) => { cap.suppressions.push(id); return id === SRC; },
     eprouver: epreuve ?? (async (_t, id, chemin) => { cap.epreuves.push({ id, chemin }); return { ok: true, httpStatus: 200 }; }),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentSources: deps }) };

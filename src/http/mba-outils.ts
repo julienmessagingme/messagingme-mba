@@ -20,22 +20,25 @@ import type { WorkflowGraph } from '../workflow/graph';
 interface TextesOutil { name: string; title: string; description: string; nePasUtiliser: string }
 
 export interface MbaOutilsDeps {
-  numeroDuTenant(tenantId: string): Promise<string | null>;
+  repo: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
   /** Les outils du consommateur `mba:<numéro>`, actifs ou non. */
   lister(tenantId: string, phoneNumberId: string): Promise<OutilComplet[]>;
   /** Ce qu'il faut pour dire d'une ligne ce qu'elle vise, et si c'est encore là. */
   contexte(tenantId: string, outils: readonly OutilComplet[]): Promise<ContexteVue>;
-  requete(tenantId: string, id: string): Promise<Pick<RequeteConnecteur, 'id' | 'sourceId' | 'methode' | 'variables'> | null>;
+  requetes: { parId(tenantId: string, id: string): Promise<Pick<RequeteConnecteur, 'id' | 'sourceId' | 'methode' | 'variables'> | null> };
   /** Les clés des champs déclarés du mini-CRM. */
   champs(tenantId: string): Promise<string[]>;
-  creerMaison(tenantId: string, phoneNumberId: string, outil: TextesOutil & { cible: CibleMaison }, parUtilisateur: string): Promise<{ id: string } | null>;
+  /** Les outils maison de l'agent de Meta, et le retrait d'un outil de son catalogue. */
+  outils: {
+    ajouterMaisonPourMba(tenantId: string, phoneNumberId: string, outil: TextesOutil & { cible: CibleMaison }, parUtilisateur: string): Promise<{ id: string } | null>;
+    patchMaisonPourMba(tenantId: string, phoneNumberId: string, outilId: string, patch: Partial<TextesOutil> & { cible?: CibleMaison }): Promise<{ id: string } | null>;
+    retirerDeMba(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'>;
+  };
   /** Créer l'outil de connecteur et l'activer pour l'agent de Meta, au nom de `parUtilisateur`. */
   creerConnecteur(tenantId: string, phoneNumberId: string, outil: TextesOutil & {
     sourceId: string; requestId: string; params: unknown; risk: RisqueOutil;
   }, parUtilisateur: string): Promise<{ id: string } | null>;
-  modifierMaison(tenantId: string, phoneNumberId: string, outilId: string, patch: Partial<TextesOutil> & { cible?: CibleMaison }): Promise<{ id: string } | null>;
   modifierConnecteur(tenantId: string, phoneNumberId: string, outilId: string, patch: Partial<TextesOutil>): Promise<{ id: string } | null>;
-  retirer(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'>;
   /** Rallumer un outil éteint par le départ de son auteur. */
   reactiver(tenantId: string, phoneNumberId: string, outilId: string, parUtilisateur: string): Promise<boolean>;
   /** Un scénario de l'espace, avec son graphe publié (celui que le relais joue), ou `null`. */
@@ -131,7 +134,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
 
   app.get(base, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const pn = await deps.numeroDuTenant(tenant);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
     if (!pn) return reply.code(200).send({ outils: [], phoneNumberId: null });
     const outils = await deps.lister(tenant, pn);
     const ctx = await deps.contexte(tenant, outils);
@@ -152,12 +155,12 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     if (!lu.success) return reply.code(400).send({ error: premiereErreur(lu.error) });
     const userId = utilisateur(req);
     if (userId === '') return reply.code(403).send({ error: 'création impossible sans utilisateur identifié' });
-    const pn = await deps.numeroDuTenant(tenant);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
     if (!pn) return reply.code(409).send({ error: SANS_NUMERO });
     const { cible, ...mots } = lu.data;
     try {
       if (cible.type === 'connecteur') {
-        const requete = await deps.requete(tenant, cible.requeteId);
+        const requete = await deps.requetes.parId(tenant, cible.requeteId);
         if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
         // Le modèle ne voit que ce qu'il doit remplir ; le risque se dérive de la méthode, jamais du navigateur.
         const params = requete.variables.filter((v) => v.origine.type === 'modele').map((v) => ({
@@ -175,7 +178,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
       }
       const raison = await cibleInvalide(tenant, cible);
       if (raison !== null) return reply.code(422).send({ error: raison });
-      const cree = await deps.creerMaison(tenant, pn, { ...mots, cible: versCibleMaison(cible) }, userId);
+      const cree = await deps.outils.ajouterMaisonPourMba(tenant, pn, { ...mots, cible: versCibleMaison(cible) }, userId);
       if (!cree) return reply.code(422).send({ error: 'création refusée' });
       return reply.code(201).send({ id: cree.id });
     } catch (err) {
@@ -189,7 +192,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     const lu = patchSchema.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: premiereErreur(lu.error) });
     if (Object.keys(lu.data).length === 0) return reply.code(400).send({ error: 'rien à corriger' });
-    const pn = await deps.numeroDuTenant(tenant);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
     if (!pn) return reply.code(409).send({ error: SANS_NUMERO });
     const outil = (await deps.lister(tenant, pn)).find((o) => o.id === req.params.outilId);
     if (!outil) return reply.code(404).send({ error: 'outil introuvable' });
@@ -206,7 +209,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
         const raison = await cibleInvalide(tenant, cible);
         if (raison !== null) return reply.code(422).send({ error: raison });
       }
-      const fait = await deps.modifierMaison(tenant, pn, outil.id, { ...mots, ...(cible ? { cible: versCibleMaison(cible) } : {}) });
+      const fait = await deps.outils.patchMaisonPourMba(tenant, pn, outil.id, { ...mots, ...(cible ? { cible: versCibleMaison(cible) } : {}) });
       return fait ? reply.code(200).send({ id: fait.id }) : reply.code(404).send({ error: 'outil introuvable' });
     } catch (err) {
       return siNomPris(err, reply);
@@ -216,9 +219,9 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
   app.delete<{ Params: { outilId: string } }>(`${base}/:outilId`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (!estUuid(req.params.outilId)) return reply.code(404).send({ error: 'outil introuvable' });
-    const pn = await deps.numeroDuTenant(tenant);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
     if (!pn) return reply.code(409).send({ error: SANS_NUMERO });
-    const issue = await deps.retirer(tenant, pn, req.params.outilId);
+    const issue = await deps.outils.retirerDeMba(tenant, pn, req.params.outilId);
     return issue === 'introuvable' ? reply.code(404).send({ error: 'outil introuvable' }) : reply.code(204).send();
   });
 
@@ -229,7 +232,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     if (!reactivationSchema.safeParse(req.body).success) return reply.code(400).send({ error: 'seule la réactivation est possible' });
     const userId = utilisateur(req);
     if (userId === '') return reply.code(403).send({ error: 'réactivation impossible sans utilisateur identifié' });
-    const pn = await deps.numeroDuTenant(tenant);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
     if (!pn) return reply.code(409).send({ error: SANS_NUMERO });
     // `activerConsommateur` lève sur un outil non activable (un MCP marqué non activable) : 409 plutôt qu'un 500.
     let fait: boolean;

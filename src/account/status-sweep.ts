@@ -36,11 +36,11 @@ function describe(n: PhoneForSweepRow, problem: PhoneProblem, pull: PullResult):
 
 export interface PhoneStatusSweepDeps {
   /** Numéros à rafraîchir (tous espaces, borné). */
-  listNumbers(): Promise<PhoneForSweepRow[]>;
+  ops: { listNumbersForStatusSweep(): Promise<PhoneForSweepRow[]> };
   /** Pull Graph du statut, en lecture seule. `null` = pas de token : on saute le numéro. */
   pull(n: PhoneForSweepRow): Promise<PullResult | null>;
-  /** Persiste le patch d'un pull réussi (coalesce, saveStatus). */
-  save(phoneNumberId: string, patch: PhoneStatusPatch): Promise<void>;
+  /** Persiste le patch d'un pull réussi (coalesce). */
+  statuts: { saveStatus(phoneNumberId: string, patch: PhoneStatusPatch): Promise<void> };
   /** Envoi d'alerte best-effort, qui ne lève jamais ; la déduplication est faite ici. */
   alert(message: string): void;
   /**
@@ -55,7 +55,7 @@ export interface PhoneStatusSweepDeps {
  * en échec n'arrête pas le balayage. Rend le nombre d'alertes émises.
  */
 export async function runPhoneStatusSweep(deps: PhoneStatusSweepDeps): Promise<number> {
-  const numbers = await deps.listNumbers();
+  const numbers = await deps.ops.listNumbersForStatusSweep();
   let alerts = 0;
   for (const n of numbers) {
     try {
@@ -63,7 +63,7 @@ export async function runPhoneStatusSweep(deps: PhoneStatusSweepDeps): Promise<n
       if (pull === null) continue; // pas de token : statut sur le dernier connu
       if (pull.ok) {
         const { ok: _ok, ...patch } = pull;
-        await deps.save(n.id, patch);
+        await deps.statuts.saveStatus(n.id, patch);
       }
       const problem = phoneProblem(pull);
       const prev = deps.alertedState.get(n.id);

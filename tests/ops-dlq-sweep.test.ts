@@ -12,7 +12,9 @@ describe('dlq-sweep', () => {
   it('alerte quand une DLQ se remplit, en nommant la file et le nombre', async () => {
     const alertes: Array<{ queue: string; msg: string }> = [];
     const sweep = creerDlqSweep({
-      queueLoad: async () => [ligne('webhook', 12), ligne('webhook-dlq', 1)],
+      ops: {
+        getQueueLoad: async () => [ligne('webhook', 12), ligne('webhook-dlq', 1)],
+      },
       alert: (queue, msg) => alertes.push({ queue, msg }),
     });
     expect(await sweep()).toBe(1);
@@ -27,7 +29,9 @@ describe('dlq-sweep', () => {
   it('silence quand toutes les DLQ sont vides', async () => {
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
-      queueLoad: async () => [ligne('webhook-dlq', 0), ligne('campaign-run-dlq', 0)],
+      ops: {
+        getQueueLoad: async () => [ligne('webhook-dlq', 0), ligne('campaign-run-dlq', 0)],
+      },
       alert: (_q, m) => alertes.push(m),
     });
     expect(await sweep()).toBe(0);
@@ -39,7 +43,9 @@ describe('dlq-sweep', () => {
     // déclencherait une alerte d'échec définitif. C'est la garde que ce test protège.
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
-      queueLoad: async () => [ligne('webhook', 500), ligne('campaign-run', 30, 1), ligne('webhook-dlq', 0)],
+      ops: {
+        getQueueLoad: async () => [ligne('webhook', 500), ligne('campaign-run', 30, 1), ligne('webhook-dlq', 0)],
+      },
       alert: (_q, m) => alertes.push(m),
     });
     expect(await sweep()).toBe(0);
@@ -51,7 +57,9 @@ describe('dlq-sweep', () => {
     // enverrait un Telegram à chaque tour de balayage, indéfiniment.
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
-      queueLoad: async () => [ligne('webhook-dlq', 1)],
+      ops: {
+        getQueueLoad: async () => [ligne('webhook-dlq', 1)],
+      },
       alert: (_q, m) => alertes.push(m),
     });
     expect(await sweep()).toBe(1);
@@ -64,7 +72,9 @@ describe('dlq-sweep', () => {
     const alertes: string[] = [];
     let profondeur = 1;
     const sweep = creerDlqSweep({
-      queueLoad: async () => [ligne('webhook-dlq', profondeur)],
+      ops: {
+        getQueueLoad: async () => [ligne('webhook-dlq', profondeur)],
+      },
       alert: (_q, m) => alertes.push(m),
     });
     await sweep();
@@ -78,7 +88,9 @@ describe('dlq-sweep', () => {
     const alertes: string[] = [];
     let profondeur = 2;
     const sweep = creerDlqSweep({
-      queueLoad: async () => [ligne('webhook-dlq', profondeur)],
+      ops: {
+        getQueueLoad: async () => [ligne('webhook-dlq', profondeur)],
+      },
       alert: (_q, m) => alertes.push(m),
     });
     await sweep();
@@ -97,10 +109,12 @@ describe('dlq-sweep', () => {
     const premiereLecture = new Promise<void>((r) => { debloquer = r; });
     let appels = 0;
     const sweep = creerDlqSweep({
-      queueLoad: async () => {
-        appels += 1;
-        if (appels === 1) await premiereLecture; // la 1re passe reste en vol
-        return [ligne('webhook-dlq', 1)];
+      ops: {
+        getQueueLoad: async () => {
+          appels += 1;
+          if (appels === 1) await premiereLecture; // la 1re passe reste en vol
+          return [ligne('webhook-dlq', 1)];
+        },
       },
       alert: (_q, m) => alertes.push(m),
     });
@@ -118,7 +132,9 @@ describe('dlq-sweep', () => {
   it('compte les jobs actifs et échoués, pas seulement le backlog', async () => {
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
-      queueLoad: async () => [ligne('campaign-run-dlq', 0, 1, 2)],
+      ops: {
+        getQueueLoad: async () => [ligne('campaign-run-dlq', 0, 1, 2)],
+      },
       alert: (_q, m) => alertes.push(m),
     });
     expect(await sweep()).toBe(1);

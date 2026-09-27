@@ -56,15 +56,17 @@ function app(
   const requete = { ...REQUETE, ...over };
   const deps: AgentRequetesRouteDeps = {
     ...requetesInertes,
-    lister: async () => [requete],
-    parId: async (tenant, id) => (tenant === 't1' && id === RQ ? requete : null),
-    creer: async (_t, input) => {
-      cap.creations.push(input as unknown as Record<string, unknown>);
-      if (input.label === 'deja') throw new LabelRequeteDejaPris(input.label);
-      return { ...requete, ...input };
+    requetes: {
+      lister: async () => [requete],
+      parId: async (tenant, id) => (tenant === 't1' && id === RQ ? requete : null),
+      creer: async (_t, input) => {
+        cap.creations.push(input as unknown as Record<string, unknown>);
+        if (input.label === 'deja') throw new LabelRequeteDejaPris(input.label);
+        return { ...requete, ...input };
+      },
+      patch: async (_t, id, p) => { cap.patches.push(p); return id === RQ ? { ...requete, ...p } : null; },
+      supprimer: async (_t, id) => { cap.suppressions.push(id); return id === RQ; },
     },
-    patch: async (_t, id, p) => { cap.patches.push(p); return id === RQ ? { ...requete, ...p } : null; },
-    supprimer: async (_t, id) => { cap.suppressions.push(id); return id === RQ; },
     // ⚠️ Les clés d'une source sont en MINUSCULES (`enTetesAuthSource`), comme celles d'un appel assemblé.
     sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: { accept: 'application/json', authorization: 'Bearer SECRET-42', 'x-api-key': 'SECRET-42' }, status: 'active' }),
     clesDeChamps: async () => champs,
@@ -575,8 +577,10 @@ describe('requêtes : le bouton Test', () => {
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
       agentRequetes: {
         ...requetesInertes,
-        lister: async () => [REQUETE], parId: async () => REQUETE,
-        creer: async () => REQUETE, patch: async () => REQUETE, supprimer: async () => true,
+        requetes: {
+          lister: async () => [REQUETE], parId: async () => REQUETE,
+          creer: async () => REQUETE, patch: async () => REQUETE, supprimer: async () => true,
+        },
         clesDeChamps: async () => [],
         sourcePourTest: async () => null,
       },
@@ -594,8 +598,10 @@ describe('requêtes : le bouton Test', () => {
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
       agentRequetes: {
         ...requetesInertes,
-        lister: async () => [REQUETE], parId: async () => REQUETE,
-        creer: async () => REQUETE, patch: async () => REQUETE, supprimer: async () => true,
+        requetes: {
+          lister: async () => [REQUETE], parId: async () => REQUETE,
+          creer: async () => REQUETE, patch: async () => REQUETE, supprimer: async () => true,
+        },
         clesDeChamps: async () => [], ...deps,
       },
     });

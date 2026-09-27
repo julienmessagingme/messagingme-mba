@@ -30,11 +30,13 @@ export interface V1MessagesRouteDeps {
   repondre: DepsRepondre;
   /** La résolution de fiche partagée, liée à ses dépendances par le câblage. */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
-  /**
-   * Le fil de cette fiche, cherché sans être créé (`PgInboxStore.filDuContact`). `injoignable` = fiche
-   * supprimée, bloquée, ou sans identité joignable ; `sans_fil` = elle n'a jamais écrit.
-   */
-  filDuContact(tenantId: string, contactId: string): Promise<FilDuContact>;
+  inbox: {
+    /**
+     * Le fil de cette fiche, cherché sans être créé. `injoignable` = fiche supprimée, bloquée, ou sans identité
+     * joignable ; `sans_fil` = elle n'a jamais écrit.
+     */
+    filDuContact(tenantId: string, contactId: string): Promise<FilDuContact>;
+  };
   /** Le garde d'usage, injecté au bootstrap. Requis, comme sur les autres modules /v1. */
   usage: ApiUsageGuard;
 }
@@ -98,7 +100,7 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
       return refuser(reply, STATUT_PAR_CODE[fiche.code], fiche.code, message);
     }
 
-    const fil = await deps.filDuContact(tenantId, fiche.contactId);
+    const fil = await deps.inbox.filDuContact(tenantId, fiche.contactId);
     if (fil.etat === 'injoignable') return refuser(reply, 409, 'blocked_contact', 'cette fiche est bloquée, supprimée, ou sans adresse WhatsApp');
     if (fil.etat === 'sans_fil') return refuser(reply, 422, 'window_closed', FENETRE_FERMEE);
     const { conversationId } = fil;

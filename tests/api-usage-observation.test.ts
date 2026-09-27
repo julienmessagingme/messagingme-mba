@@ -8,7 +8,7 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { V1SendsRouteDeps } from '../src/http/v1-sends';
 import type { DepsMcp } from '../src/mcp/outils';
 import { contactsV1Muets } from './aide/contacts-v1';
-import { opsInerte } from './routes-inertes';
+import { exploitationInerte, opsInerte } from './routes-inertes';
 
 /**
  * L'OBSERVATION DE L'USAGE : ce que les routes publiques comptent, et ce qu'elles ne refusent PAS.
@@ -42,20 +42,28 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
   resolveScenario: async () => ({ ok: false, reason: 'not_found' }),
   resolveNode: async () => ({ ok: false, reason: 'not_found' }),
   lireModele: async () => ({ statut: 'absent' }),
-  getWindowOpenByWaIds: async () => new Map(),
-  getTenantPhoneNumberId: async () => 'pn-1',
-  phoneNumberBelongsToTenant: async () => true,
-  numeroEstDelie: async () => false,
+  inbox: {
+    getWindowOpenByWaIds: async () => new Map(),
+  },
+  repo: {
+    getTenantPhoneNumberId: async () => 'pn-1',
+    phoneNumberBelongsToTenant: async () => true,
+    listContactsPourEnvoiApi: async () => [],
+    createWithRecipients: async () => ({ campaignId: 'camp1', recipientCount: 0 }),
+    lireEnvoiApi: async () => null,
+  },
+  numerosDelies: {
+    estDelie: async () => false,
+  },
   resoudreFiche: async () => ({ ok: false, code: 'unknown_contact' }),
   appliquerConsentement: async () => 'inchange',
-  listContactsPourEnvoi: async () => [],
-  createSend: async () => ({ campaignId: 'camp1', recipientCount: 0 }),
   enqueue: async () => { /* rien */ },
-  idempotencyClaim: async () => ({ claimed: true as const }),
-  idempotencyComplete: async () => { /* rien */ },
-  idempotencyRelease: async () => { /* rien */ },
-  lireEnvoi: async () => null,
-  rcs: { messageRcsParNom: async () => null, agentIdForTenant: async () => null },
+  idempotence: {
+    claim: async () => ({ claimed: true as const }),
+    complete: async () => { /* rien */ },
+    release: async () => { /* rien */ },
+  },
+  rcs: { messages: { getByName: async () => null }, agents: { agentIdForTenant: async () => null } },
 };
 
 function monter() {
@@ -103,9 +111,12 @@ function totaux(usage: GardeUsageMemoire): Record<string, { appels: number; unit
  */
 const opsMuet = {
   ...opsInerte,
-  getTenantOverview: async () => [],
-  getGlobalDaily: async () => [],
-  getQueueLoad: async () => [],
+  exploitation: {
+    ...exploitationInerte,
+    getTenantOverview: async () => [],
+    getGlobalDaily: async () => [],
+    getQueueLoad: async () => [],
+  },
 };
 
 describe('l’usage de l’API publique est COMPTÉ', () => {

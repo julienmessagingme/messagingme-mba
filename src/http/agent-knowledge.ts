@@ -19,11 +19,17 @@ import { espaceVerifie, estUuid } from './scope';
  * SSRF de `src/lib/page-distante.ts` s'applique à l'adresse saisie et à chaque redirection.
  */
 
-export interface AgentKnowledgeRouteDeps {
+/** Ce que les routes lisent et écrivent de la connaissance d'un agent. */
+export interface ConnaissanceDep {
   lister(tenantId: string, agentId: string): Promise<FicheConnaissance[]>;
   creer(tenantId: string, agentId: string, fiche: FicheAEcrire): Promise<FicheConnaissance | null>;
   modifier(tenantId: string, agentId: string, ficheId: string, patch: { titre?: string; corps?: string }): Promise<FicheConnaissance | null>;
   supprimer(tenantId: string, agentId: string, ficheId: string): Promise<boolean>;
+  remplacerSource(tenantId: string, agentId: string, source: SourceFiche, fiches: FicheAEcrire[]): Promise<{ retirees: number; ecrites: number } | null>;
+}
+
+export interface AgentKnowledgeRouteDeps {
+  connaissance: ConnaissanceDep;
   /**
    * Journalise une fiche effacée dans l'historique de l'agent. 🔴 Pas de corbeille : cette ligne est le seul
    * exemplaire d'une fiche supprimée. La route ne doit pas échouer parce qu'une écriture de journal échoue.
@@ -34,7 +40,6 @@ export interface AgentKnowledgeRouteDeps {
     avant: unknown;
     acteurId: string | null;
   }): Promise<void>;
-  remplacerSource(tenantId: string, agentId: string, source: SourceFiche, fiches: FicheAEcrire[]): Promise<{ retirees: number; ecrites: number } | null>;
   /** Lecture d'une page distante. Injectée pour rester testable sans réseau ; absente, l'import et
   *  l'aperçu répondent 503. */
   fetchUrl?(url: string): Promise<PageDistante>;
@@ -112,7 +117,7 @@ export function registerAgentKnowledge(
   app.get(base, opts, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
-    return reply.code(200).send({ fiches: await deps.lister(ctx.tenant, ctx.agentId) });
+    return reply.code(200).send({ fiches: await deps.connaissance.lister(ctx.tenant, ctx.agentId) });
   });
 
   app.post(base, opts, async (req, reply) => {
@@ -120,7 +125,7 @@ export function registerAgentKnowledge(
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const parse = creationSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: `titre et corps requis (corps : ${MAX_CORPS} caractères au plus)` });
-    const fiche = await deps.creer(ctx.tenant, ctx.agentId, parse.data);
+    const fiche = await deps.connaissance.creer(ctx.tenant, ctx.agentId, parse.data);
     // 🔴 `null` : l'agent n'existe pas ou appartient à un autre espace. Même réponse, sinon la route dirait quels
     // identifiants existent ailleurs.
     if (!fiche) return reply.code(404).send({ error: 'agent introuvable' });
@@ -137,7 +142,7 @@ export function registerAgentKnowledge(
     if (parse.data.titre === undefined && parse.data.corps === undefined) {
       return reply.code(400).send({ error: 'aucun champ à modifier' });
     }
-    const fiche = await deps.modifier(ctx.tenant, ctx.agentId, ficheId, parse.data);
+    const fiche = await deps.connaissance.modifier(ctx.tenant, ctx.agentId, ficheId, parse.data);
     if (!fiche) return reply.code(404).send({ error: 'fiche introuvable' });
     return reply.code(200).send({ fiche });
   });
@@ -147,7 +152,7 @@ export function registerAgentKnowledge(
    * la lecture échoue, on supprime quand même et on journalise l'identifiant seul.
    */
   const ficheAvant = async (ctx: { tenant: string; agentId: string }, ficheId: string): Promise<FicheConnaissance | undefined> => {
-    return (await deps.lister(ctx.tenant, ctx.agentId).catch(() => [])).find((f) => f.id === ficheId);
+    return (await deps.connaissance.lister(ctx.tenant, ctx.agentId).catch(() => [])).find((f) => f.id === ficheId);
   };
   const journaliser = async (
     ctx: { tenant: string; agentId: string }, req: FastifyRequest, ficheId: string, avant: FicheConnaissance | undefined,
@@ -166,7 +171,7 @@ export function registerAgentKnowledge(
     const { ficheId } = req.params as { ficheId: string };
     if (!estUuid(ficheId)) return reply.code(404).send({ error: 'fiche introuvable' });
     const avant = await ficheAvant(ctx, ficheId);
-    const supprime = await deps.supprimer(ctx.tenant, ctx.agentId, ficheId);
+    const supprime = await deps.connaissance.supprimer(ctx.tenant, ctx.agentId, ficheId);
     if (!supprime) return reply.code(404).send({ error: 'fiche introuvable' });
     // Après la suppression : journaliser un geste qui n'a pas eu lieu ferait chercher une cause inexistante.
     await journaliser(ctx, req, ficheId, avant);
@@ -191,11 +196,11 @@ export function registerAgentKnowledge(
      * lecture pour toute la fournée.
      */
     const avantParId = new Map(
-      (await deps.lister(ctx.tenant, ctx.agentId).catch(() => [])).map((f) => [f.id, f] as const),
+      (await deps.connaissance.lister(ctx.tenant, ctx.agentId).catch(() => [])).map((f) => [f.id, f] as const),
     );
     let supprimees = 0;
     for (const id of ids) {
-      if (!(await deps.supprimer(ctx.tenant, ctx.agentId, id))) continue;
+      if (!(await deps.connaissance.supprimer(ctx.tenant, ctx.agentId, id))) continue;
       supprimees += 1;
       await journaliser(ctx, req, id, avantParId.get(id));
     }
@@ -241,7 +246,7 @@ export function registerAgentKnowledge(
 
     // Remplace, comme une page relue : redéposer le même fichier retire ses fiches d'avant (sinon deux dépôts
     // doubleraient la base, et la recherche remonterait deux fois la même réponse).
-    const bilan = await deps.remplacerSource(ctx.tenant, ctx.agentId, { type: 'document', nom: parse.data.nom }, fiches);
+    const bilan = await deps.connaissance.remplacerSource(ctx.tenant, ctx.agentId, { type: 'document', nom: parse.data.nom }, fiches);
     if (!bilan) return reply.code(404).send({ error: 'agent introuvable' });
     return reply.code(200).send({ nom: parse.data.nom, nature: reconnu.nature, ...bilan, plafond: MAX_FICHES_PAR_PAGE });
   });
@@ -323,7 +328,7 @@ export function registerAgentKnowledge(
       if ('erreur' in lu) { ecartees.push({ url: cible, raison: lu.erreur }); continue; }
       const fiches = pageEnFiches(lu.html, cible);
       if (fiches.length === 0) { ecartees.push({ url: cible, raison: 'aucun contenu exploitable' }); continue; }
-      const bilan = await deps.remplacerSource(ctx.tenant, ctx.agentId, { type: 'page', url: cible }, fiches);
+      const bilan = await deps.connaissance.remplacerSource(ctx.tenant, ctx.agentId, { type: 'page', url: cible }, fiches);
       // `null` = l'agent n'existe pas : inutile de continuer les 49 pages suivantes.
       if (!bilan) return reply.code(404).send({ error: 'agent introuvable' });
       ecrites += bilan.ecrites;

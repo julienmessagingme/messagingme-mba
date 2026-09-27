@@ -16,8 +16,10 @@ import { messageDe } from '../lib/erreur';
  */
 
 export interface MbaPublicationDeps {
-  /** Numéro Meta du client, résolu côté serveur. `null` = aucun numéro, donc rien à publier. */
-  numeroDuTenant(tenantId: string): Promise<string | null>;
+  repo: {
+    /** Numéro Meta du client, résolu côté serveur. `null` = aucun numéro, donc rien à publier. */
+    getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
+  };
   /** Le relais tel qu'il se présente à Meta. `null` = `PUBLIC_API_URL` vide : Meta ne saurait pas où appeler. */
   relais(tenantId: string): Promise<RelaisAPublier | null>;
   /** Les outils exposés au MBA, avec ce que Meta doit fournir (`src/mba/outils-a-publier.ts`). */
@@ -56,7 +58,7 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
 
   app.get(base, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const pn = await deps.numeroDuTenant(tenant);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
     if (!pn) return reply.code(200).send({ gestes: [], phoneNumberId: null });
     const plan = await planifier(tenant, pn);
     if (plan === null) return reply.code(409).send({ error: SANS_ADRESSE });
@@ -69,7 +71,7 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
    */
   app.post(base, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const pn = await deps.numeroDuTenant(tenant);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
     if (!pn) {
       return reply.code(409).send({ error: 'Aucun numéro WhatsApp connecté : il n’y a pas d’agent Meta où publier.' });
     }

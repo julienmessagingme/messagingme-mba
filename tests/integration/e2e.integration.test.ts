@@ -68,12 +68,16 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
 
     // 3) Run avec sender fake.
     const runDeps = {
-      getCampaign: (id: string) => repo.getCampaign(id),
+      repo: {
+        getCampaign: (id: string) => repo.getCampaign(id),
+      },
       senderFor: async () => new FakeSender(),
       recipients: new PgRecipientStore(pool),
       campaigns: new PgCampaignStore(pool),
       quality: new PgQualityProvider(pool),
-      pauserSiNumeroDelie: async () => false,
+      numerosDelies: {
+        pauserCampagne: async () => false,
+      },
     };
     const run1 = await campaignRunJob({ campaignId }, runDeps);
     expect(run1).toMatchObject({ sent: 2, failed: 0, skipped: 0, paused: false });

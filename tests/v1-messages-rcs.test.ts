@@ -57,15 +57,15 @@ async function app(over: Partial<Monde> = {}, garde: PreHandler = cle) {
   /** Les wa_id dont le fil EXISTE. Aucun au départ : le cas courant de l'API est une fiche qui n'a jamais écrit. */
   const ouverts = new Set<string>();
   const rcs: DepsRcsLibre = {
-    agentIdForTenant: async () => m.agent,
+    agents: { agentIdForTenant: async () => m.agent },
     estDesabonne: async () => m.desabonne,
     estDesabonneRcs: async () => false,
     aConsentiOuEcrit: async () => m.consentiOuEcrit,
-    lireJoignabilite: async () => (m.injoignable ? { reachable: false, checkedAt: Date.now() } : null),
-    lireMessageRcs: async () => null,
+    joignabilite: { get: async () => (m.injoignable ? { reachable: false, checkedAt: Date.now() } : null) },
+    messages: { getById: async () => null },
     variablesDeLaFiche: async () => ({}),
     jetonDuContact: async () => undefined,
-    envoyer: async (_t, _a, waId, msg) => { envois.push({ waId, text: msg.kind === 'text' ? msg.text : '' }); return { messageId: 'rcs-1' }; },
+    sender: { sendTo: async (_t, _a, waId, msg) => { envois.push({ waId, text: msg.kind === 'text' ? msg.text : '' }); return { messageId: 'rcs-1' }; } },
     nouvelId: () => 'id-1',
     maintenant: () => Date.now(),
   };
@@ -78,13 +78,19 @@ async function app(over: Partial<Monde> = {}, garde: PreHandler = cle) {
       if (cles.contactId && m.fiches[cles.contactId]) return { ok: true, contactId: cles.contactId, cree: false };
       return { ok: false, code: 'unknown_contact' };
     },
-    etatPourEnvoi: async (_t, id) => { const f = m.fiches[id]; return f ? { phoneE164: f.phone, bloque: f.bloque } : null; },
+    contacts: { etatPourEnvoi: async (_t, id) => { const f = m.fiches[id]; return f ? { phoneE164: f.phone, bloque: f.bloque } : null; } },
     rcs,
-    ouvrirConversation: async (_t, contactId) => {
-      const tel = m.fiches[contactId]?.phone;
-      if (tel) ouverts.add(tel.replace(/\D/g, ''));
-      journal.push(`ouvrir:${contactId}`);
-      return 'conv-1';
+    inbox: {
+      ouvrirConversationDuContact: async (_t, contactId) => {
+        const tel = m.fiches[contactId]?.phone;
+        if (tel) ouverts.add(tel.replace(/\D/g, ''));
+        journal.push(`ouvrir:${contactId}`);
+        return 'conv-1';
+      },
+      recordOutbound: async (conversationId, body, _id, origine, type, _cat, _nom, auteur, canal) => {
+        enregistres.push({ conversationId, body, origine, type, auteur: auteur ?? null, canal });
+        journal.push(`inscrit:${conversationId}`);
+      },
     },
     // COMME LE VRAI `setControlOwner` : un `update` sur (espace, wa_id), qui ne touche RIEN tant que le fil
     // n'existe pas. Un faux qui enregistrerait la prise quoi qu'il arrive ne verrait pas l'ordre fautif.
@@ -92,10 +98,6 @@ async function app(over: Partial<Monde> = {}, garde: PreHandler = cle) {
       if (!ouverts.has(waId)) return;
       prises.push(waId);
       journal.push(`prise:${waId}`);
-    },
-    recordOutbound: async (conversationId, body, _id, origine, type, _cat, _nom, auteur, canal) => {
-      enregistres.push({ conversationId, body, origine, type, auteur: auteur ?? null, canal });
-      journal.push(`inscrit:${conversationId}`);
     },
     usage,
   };

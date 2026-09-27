@@ -5,9 +5,9 @@ import { signSession } from '../src/auth/token';
 import { DuplicateEmailError } from '../src/user/store.pg';
 import type { UserRow } from '../src/user/store.pg';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { UsersRouteDeps } from '../src/http/users';
+import type { MembresDep, UsersRouteDeps } from '../src/http/users';
 import { detailSansDonneesPersonnelles } from '../src/audit/store.pg';
-import { membresInertes } from './routes-inertes';
+import { membresDepInertes, membresInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -31,39 +31,44 @@ interface Captured {
   emailObjs: Array<{ to: string; subject: string; text: string; html?: string }>;
 }
 
-function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Captured } {
+function app(over: Partial<Omit<UsersRouteDeps, 'users'>> & { users?: Partial<MembresDep> } = {}): { server: ReturnType<typeof buildServer>; cap: Captured } {
   const cap: Captured = { roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [], emailObjs: [], nameSet: [] };
+  const { users, ...reste } = over;
   const deps: UsersRouteDeps = {
     ...membresInertes,
-    listUsers: async () => [EXISTING],
-    createPendingUser: async (tenant, email, role, name) => {
-      if (email === 'taken@demo.test') throw new DuplicateEmailError();
-      cap.invited.push({ tenant, email, role, ...(name ? { name } : {}) });
-      // Une invitation en attente n'a par construction jamais servi à se connecter.
-      return { id: 'pending1', email, name: null, role, disabled: false, pending: true, createdAt: '2026-07-10T00:00:00.000Z', lastLoginAt: null };
+    users: {
+      ...membresDepInertes,
+      list: async () => [EXISTING],
+      createPending: async (tenant, email, role, name) => {
+        if (email === 'taken@demo.test') throw new DuplicateEmailError();
+        cap.invited.push({ tenant, email, role, ...(name ? { name } : {}) });
+        // Une invitation en attente n'a par construction jamais servi à se connecter.
+        return { id: 'pending1', email, name: null, role, disabled: false, pending: true, createdAt: '2026-07-10T00:00:00.000Z', lastLoginAt: null };
+      },
+      getTenantName: async () => 'Acme Corp',
+      setName: async (tenant, userId, name) => {
+        cap.nameSet.push({ tenant, userId, name });
+        return userId === 'known' ? 'ok' : 'not_found';
+      },
+      setRole: async (tenant, userId, role) => {
+        cap.roleSet.push({ tenant, userId, role });
+        return userId === 'known' ? 'ok' : 'not_found'; // 'known' existe, tout le reste -> 404
+      },
+      setDisabled: async (tenant, userId, disabled) => {
+        cap.disabledSet.push({ tenant, userId, disabled });
+        return userId === 'known' ? 'ok' : 'not_found';
+      },
+      deleteUser: async (tenant, userId) => {
+        cap.deleted.push({ tenant, userId });
+        return userId === 'known' ? 'ok' : 'not_found';
+      },
+      ...users,
     },
     createInviteToken: async () => 'INVITE_RAW',
     sendEmail: async (e) => { cap.emails.push(e.text); cap.emailObjs.push(e); },
     getInviterName: async () => 'Julien',
-    getWorkspaceName: async () => 'Acme Corp',
     appUrl: 'https://mba.messagingme.app',
-    setUserName: async (tenant, userId, name) => {
-      cap.nameSet.push({ tenant, userId, name });
-      return userId === 'known' ? 'ok' : 'not_found';
-    },
-    setUserRole: async (tenant, userId, role) => {
-      cap.roleSet.push({ tenant, userId, role });
-      return userId === 'known' ? 'ok' : 'not_found'; // 'known' existe, tout le reste -> 404
-    },
-    setUserDisabled: async (tenant, userId, disabled) => {
-      cap.disabledSet.push({ tenant, userId, disabled });
-      return userId === 'known' ? 'ok' : 'not_found';
-    },
-    deleteUser: async (tenant, userId) => {
-      cap.deleted.push({ tenant, userId });
-      return userId === 'known' ? 'ok' : 'not_found';
-    },
-    ...over,
+    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, admin: deps }), cap };
 }
@@ -162,7 +167,7 @@ describe('users route — changement de rôle', () => {
   });
 
   it('PATCH rétrograder le dernier admin -> 409 (invariant >=1 admin)', async () => {
-    const { server } = app({ setUserRole: async () => 'last_admin' });
+    const { server } = app({ users: { setRole: async () => 'last_admin' } });
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/role', ...h(adminTok), payload: { role: 'agent' } });
     expect(res.statusCode).toBe(409);
     await server.close();
@@ -210,7 +215,7 @@ describe('users route — révocation', () => {
   });
 
   it('PATCH disabled dernier admin actif -> 409', async () => {
-    const { server } = app({ setUserDisabled: async () => 'last_admin' });
+    const { server } = app({ users: { setDisabled: async () => 'last_admin' } });
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/disabled', ...h(adminTok), payload: { disabled: true } });
     expect(res.statusCode).toBe(409);
     await server.close();
@@ -250,7 +255,7 @@ describe('users route — suppression', () => {
   });
 
   it('DELETE dernier admin actif -> 409', async () => {
-    const { server } = app({ deleteUser: async () => 'last_admin' });
+    const { server } = app({ users: { deleteUser: async () => 'last_admin' } });
     const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/users/known', ...h(adminTok) });
     expect(res.statusCode).toBe(409);
     await server.close();
@@ -410,8 +415,10 @@ describe('users route : le nom de l’espace', () => {
   function appEspace(nomActuel: string | null = 'Demo +33 5 25 68 02 50') {
     const trace: Trace = { ecrits: [], audit: [] };
     const { server } = app({
-      getWorkspaceName: async () => nomActuel,
-      renommerEspace: async (tenant, nom) => { trace.ecrits.push({ tenant, nom }); return true; },
+      users: {
+        getTenantName: async () => nomActuel,
+        setTenantName: async (tenant, nom) => { trace.ecrits.push({ tenant, nom }); return true; },
+      },
       audit: async (_t, _acteur, action, target, detail) => { trace.audit.push({ action, target, detail: detail ?? {} }); },
     });
     return { server, trace };

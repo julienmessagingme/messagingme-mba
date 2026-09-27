@@ -20,7 +20,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
 import { jamaisDesabonne } from './consentement';
-import { inboxInerte } from './routes-inertes';
+import { inboxDepInerte, inboxInerte } from './routes-inertes';
 
 /**
  * LE NUMÉRO DÉLIÉ (migration 0180, bloc « Canaux et services » de l'Accueil) : les trois effets qui se tiennent
@@ -44,14 +44,16 @@ class Transport implements HttpTransport {
 function fabrique(delies: ReadonlySet<string>, transport: Transport, resolutions: string[]) {
   const resolver = new MetaCredentialsResolver({
     getWabaIdForTenant: async (t) => { resolutions.push(t); return null; },
-    getCredentialsByWaba: async () => null,
-    markTokenInvalid: async () => {},
+    credentials: {
+      getCredentialsByWaba: async () => null,
+      markTokenInvalid: async () => {},
+    },
     decrypt: (e) => e,
     fallbackToken: 'GLOBAL',
   });
   return new MetaClientFactory({
     resolver, transport, version: 'v25.0', marketingViaLite: false,
-    numeroDelie: async (pn) => delies.has(pn),
+    numerosDelies: { estDelie: async (pn) => delies.has(pn) },
   });
 }
 
@@ -132,19 +134,23 @@ const whatsapp: Campaign = {
  * La pause conditionnelle (`PgNumeroDelieStore.pauserCampagne`) : ce que le run lui a demandé, et ce que la base
  * aurait répondu (`ecrite` = le numéro est encore délié en base ET la campagne tournait encore).
  */
-function base(ecrite: boolean): { appels: Array<[string, string, string]>; pauser: RunJobDeps['pauserSiNumeroDelie'] } {
+function base(ecrite: boolean): { appels: Array<[string, string, string]>; pauser: RunJobDeps['numerosDelies']['pauserCampagne'] } {
   const appels: Array<[string, string, string]> = [];
   return { appels, pauser: async (id, tenant, pn) => { appels.push([id, tenant, pn]); return ecrite; } };
 }
 
 function depsRun(campagne: Campaign, campagnes: Campagnes, over: Partial<RunJobDeps> = {}): RunJobDeps {
   return {
-    getCampaign: async () => campagne,
+    repo: {
+      getCampaign: async () => campagne,
+    },
     senderFor: async (_c, pn) => { throw new NumeroDelieError(pn); },
     recipients: new Destinataires(UN),
     campaigns: campagnes,
     quality: qualite,
-    pauserSiNumeroDelie: async () => true,
+    numerosDelies: {
+      pauserCampagne: async () => true,
+    },
     ...over,
   };
 }
@@ -153,7 +159,7 @@ describe('campagne et numéro délié', () => {
   it('🔴 le point de passage refuse : la pause `numero_delie` est ÉCRITE, par l’écriture conditionnelle, sans échéance', async () => {
     const campagnes = new Campagnes();
     const enBase = base(true);
-    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { pauserSiNumeroDelie: enBase.pauser }));
+    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { numerosDelies: { pauserCampagne: enBase.pauser } }));
     expect(report).toMatchObject({ sent: 0, failed: 0, paused: true });
     expect(report.reason).toBe(messageDePause('numero_delie', null, undefined));
     // 🔴 UNE instruction, sur la campagne, son espace et le numéro que le refus nomme : jamais une relecture
@@ -168,7 +174,7 @@ describe('campagne et numéro délié', () => {
    */
   it('🔴 refus d’une garde périmée, numéro RELIÉ en base : AUCUNE pause écrite, la campagne reste en cours', async () => {
     const campagnes = new Campagnes();
-    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { pauserSiNumeroDelie: base(false).pauser }));
+    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { numerosDelies: { pauserCampagne: base(false).pauser } }));
     expect(campagnes.statuts).toEqual([]);
     expect(report).toEqual({ sent: 0, skipped: 0, failed: 0, paused: false, reason: RAISON_NUMERO_RELIE_ENTRE_TEMPS });
   });
@@ -184,9 +190,16 @@ describe('campagne et numéro délié', () => {
     };
     const enBase = base(true);
     const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(rcsAvecRepli, campagnes, {
-      numeroDuTenant: async () => 'pn1',
-      rcsSenderFor: async () => ({ send: async () => ({ messageId: 'rcs-1' }) }) as never,
-      pauserSiNumeroDelie: enBase.pauser,
+      repo: {
+        getCampaign: async () => rcsAvecRepli,
+        getTenantPhoneNumberId: async () => 'pn1',
+      },
+      rcs: {
+        senderForCampaign: async () => ({ send: async () => ({ messageId: 'rcs-1' }) }) as never,
+      },
+      numerosDelies: {
+        pauserCampagne: enBase.pauser,
+      },
     }));
     expect(report).toMatchObject({ paused: true, sent: 0, failed: 0 });
     expect(enBase.appels).toEqual([['c1', 't1', 'pn1']]);
@@ -236,7 +249,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
       sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       startWorkflow: refus,
       startWorkflowFromNode: refus,
-      pauserSiNumeroDelie: enBase.pauser,
+      numerosDelies: { pauserCampagne: enBase.pauser },
     };
     return { run: () => lancerCampagne(campagne, deps), destinataires, campagnes, demarrages, enBase };
   }
@@ -291,7 +304,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
       sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       canaux: { rcs: { sender: { sendTo: async (r) => { envoisRcs.push(r.toE164); return { messageId: `rcs-${r.id}` }; } } } },
       startWorkflow: async () => { throw new NumeroDelieError('pn1'); },
-      pauserSiNumeroDelie: enBase.pauser,
+      numerosDelies: { pauserCampagne: enBase.pauser },
     });
     expect(envoisRcs).toEqual(['+33611']);
     expect(destinataires.gestes).toEqual(['claim r1', `sent r1 (Scénario non démarré : ${MESSAGE_NUMERO_DELIE})`]);
@@ -320,7 +333,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
       sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       canaux: { rcs: { sender: { sendTo: async (r) => ({ messageId: `rcs-${r.id}` }) } } },
       startWorkflow: async () => { throw new NumeroDelieError('pn1'); },
-      pauserSiNumeroDelie: enBase.pauser,
+      numerosDelies: { pauserCampagne: enBase.pauser },
     });
     expect(destinataires.gestes).toEqual(['claim r1', `sent r1 (Scénario non démarré : ${MESSAGE_NUMERO_DELIE})`]);
     expect(report).toMatchObject({ sent: 1, failed: 0, paused: false });
@@ -446,11 +459,16 @@ describe('une réponse d’Inbox depuis un numéro délié', () => {
     const deps: InboxRouteDeps = {
       ...inboxInerte,
       estDesabonne: jamaisDesabonne,
-      listConversations: async () => [],
-      getConversationContext: async () => ({ waId: '33611', windowOpen: true, lastInboundAt: '2026-09-25T00:00:00.000Z' }),
-      getMessages: async () => [],
-      recordOutbound: async () => { traces.push('trace'); },
-      getTenantPhoneNumberId: async () => 'pn1',
+      inbox: {
+        ...inboxDepInerte,
+        listConversations: async () => [],
+        getConversationContext: async () => ({ waId: '33611', windowOpen: true, lastInboundAt: '2026-09-25T00:00:00.000Z' }),
+        getMessages: async () => [],
+        recordOutbound: async () => { traces.push('trace'); },
+      },
+      repo: {
+        getTenantPhoneNumberId: async () => 'pn1',
+      },
       sendReply: async (_t, pn) => { throw new NumeroDelieError(pn); },
       sendTemplateMessage: async () => 'wamid.TPL',
     };

@@ -48,16 +48,17 @@ describe('le câblage de la lecture des pièces jointes', () => {
   it('🔴 le câblage transmet la CONVERSATION de la route jusqu’à la relecture du message', () => {
     // Une flèche à deux paramètres reste assignable à un contrat qui en déclare trois : un câblage qui
     // avalerait `conversationId` compilerait, et la route ne ferait plus ce que dit son URL. On compte donc
-    // les paramètres dans l'arbre, aux deux étages.
+    // les paramètres dans l'arbre. La relecture reçoit le dépôt lui-même : aucune flèche entre les deux ne peut
+    // en avaler un.
     const cablage = proprietes()[0]!.initializer;
     expect(ts.isArrowFunction(cablage) && cablage.parameters.length).toBe(3);
+    expect(ts.isArrowFunction(cablage) && ts.isCallExpression(cablage.body) && cablage.body.arguments.length).toBe(4);
     const trouver = (n: ts.Node, nom: string): ts.PropertyAssignment | undefined => {
       if (ts.isPropertyAssignment(n) && n.name.getText(fichier) === nom) return n;
       return ts.forEachChild(n, (c) => trouver(c, nom));
     };
-    const lire = trouver(cablage, 'lireMessage')?.initializer;
-    expect(lire && ts.isArrowFunction(lire) && lire.parameters.length).toBe(3);
-    expect(lire && ts.isArrowFunction(lire) && ts.isCallExpression(lire.body) && lire.body.arguments.length).toBe(3);
+    const messages = trouver(cablage, 'messages')?.initializer;
+    expect(messages && ts.isIdentifier(messages)).toBe(true);
   });
 
   it('la garde voit bien le bloc de la transcription : `transcrireMessage` y est', () => {

@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { sha256Hex } from '../src/lib/signature';
-import type { WebhookEntrantRouteDeps } from '../src/http/webhook-entrant';
+import type { WebhookEntrantRouteDeps, WebhooksEntrantsDep } from '../src/http/webhook-entrant';
 import type { WebhookPublic } from '../src/webhook-entrant/store.pg';
 
 const CODE = 'ab12cd34ef56gh78jk90mn12pq';
@@ -37,19 +37,22 @@ interface Capture {
   publies: Array<{ tenantId: string; ev: { kind: 'webhook'; waId: string; webhookId: string } }>;
 }
 
-function app(hook: WebhookPublic | null = HOOK, over: Partial<WebhookEntrantRouteDeps> = {}): {
+function app(hook: WebhookPublic | null = HOOK, over: Partial<WebhooksEntrantsDep & Omit<WebhookEntrantRouteDeps, 'webhooks'>> = {}): {
   server: ReturnType<typeof buildServer>; cap: Capture;
 } {
   const cap: Capture = { lus: [], appels: [], ecrits: [], publies: [] };
+  const { getByCode, recordCall, ...reste } = over;
   const webhookEntrant: WebhookEntrantRouteDeps = {
-    getByCode: async (code) => { cap.lus.push(code); return code === CODE ? hook : null; },
-    recordCall: async (tenantId, id, payload, cree) => { cap.appels.push({ tenantId, id, payload, cree }); },
+    webhooks: {
+      getByCode: getByCode ?? (async (code) => { cap.lus.push(code); return code === CODE ? hook : null; }),
+      recordCall: recordCall ?? (async (tenantId, id, payload, cree) => { cap.appels.push({ tenantId, id, payload, cree }); }),
+    },
     trouverWaId: async () => null,
     ecrireContact: async (tenantId, e) => { cap.ecrits.push({ tenantId, ...e }); return { statut: 'created' }; },
     publish: async (tenantId, ev) => { cap.publies.push({ tenantId, ev }); },
     // Large par défaut : ces tests éprouvent autre chose que le frein des codes jamais vus (décrit plus bas).
     budgetInconnus: new RateLimiter(1000, 60_000),
-    ...over,
+    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), webhookEntrant }), cap };
 }

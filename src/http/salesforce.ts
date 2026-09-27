@@ -25,12 +25,18 @@ import type { ReglagesSalesforce, VueOrgSalesforce } from '../salesforce/store.p
  * la connexion (`src/salesforce/connexion.ts`) ; cette route n'en voit pas la couleur.
  */
 export interface SalesforceRouteDeps {
-  lire(tenantId: string): Promise<VueOrgSalesforce | null>;
-  actif(tenantId: string): Promise<boolean>;
-  poserActif(tenantId: string, actif: boolean): Promise<void>;
+  /** L'org reliée de l'espace. */
+  orgs: {
+    lire(tenantId: string): Promise<VueOrgSalesforce | null>;
+    enregistrerReglages(tenantId: string, r: ReglagesSalesforce): Promise<boolean>;
+  };
+  /** L'interrupteur Salesforce de l'espace. */
+  reglages: {
+    salesforceActif(tenantId: string): Promise<boolean>;
+    setSalesforceActif(tenantId: string, actif: boolean): Promise<void>;
+  };
   connecter(tenantId: string, adresse: string, auteurId: string | null): Promise<IssueConnexion>;
   deconnecter(tenantId: string): Promise<IssueDeconnexion>;
-  enregistrerReglages(tenantId: string, r: ReglagesSalesforce): Promise<boolean>;
   /** La clé d'app (`SALESFORCE_CLIENT_ID` et `_SECRET`) est posée sur l'instance. Calculé une fois au câblage. */
   cleAppPosee: boolean;
   /** `ENCRYPTION_KEY` sait chiffrer. Sans elle, aucun secret d'org ne peut être gardé. Sondé au câblage. */
@@ -69,11 +75,11 @@ export function registerSalesforce(app: FastifyInstance, deps: SalesforceRouteDe
   const journal = makeJournal(deps.audit);
 
   const vue = async (tenant: string) => ({
-    actif: await deps.actif(tenant),
+    actif: await deps.reglages.salesforceActif(tenant),
     cleAppPosee: deps.cleAppPosee,
     chiffrementPret: deps.chiffrementPret,
     liensInstallation: deps.liensInstallation,
-    org: await deps.lire(tenant),
+    org: await deps.orgs.lire(tenant),
   });
 
   app.get('/tenants/:tenantId/integrations/salesforce', opts, async (req, reply) => {
@@ -86,10 +92,10 @@ export function registerSalesforce(app: FastifyInstance, deps: SalesforceRouteDe
     const corps = corpsActif.safeParse(req.body ?? {});
     if (!corps.success) return reply.code(400).send({ error: raisonCorps(corps.error) });
     // 🔴 Éteindre par-dessus une org reliée mentirait : elle continuerait de recevoir. Le refus se dit AVANT.
-    if (!corps.data.actif && (await deps.lire(tenant)) !== null) {
+    if (!corps.data.actif && (await deps.orgs.lire(tenant)) !== null) {
       return reply.code(409).send({ error: 'Une org Salesforce est reliée : déconnectez-la d’abord pour éteindre Salesforce.' });
     }
-    await deps.poserActif(tenant, corps.data.actif);
+    await deps.reglages.setSalesforceActif(tenant, corps.data.actif);
     await journal(tenant, req, corps.data.actif ? 'salesforce.allumee' : 'salesforce.eteinte', CIBLE);
     return reply.code(200).send({ salesforceActif: corps.data.actif });
   });
@@ -100,7 +106,7 @@ export function registerSalesforce(app: FastifyInstance, deps: SalesforceRouteDe
     if (!corps.success) return reply.code(400).send({ error: raisonCorps(corps.error) });
     if (!deps.cleAppPosee) return reply.code(503).send({ error: 'L’app Salesforce n’est pas configurée sur cette instance.' });
     if (!deps.chiffrementPret) return reply.code(503).send({ error: 'Le chiffrement des secrets n’est pas configuré sur cette instance : impossible de relier une org.' });
-    if (!(await deps.actif(tenant))) return reply.code(409).send({ error: 'Allumez d’abord Salesforce pour cet espace.' });
+    if (!(await deps.reglages.salesforceActif(tenant))) return reply.code(409).send({ error: 'Allumez d’abord Salesforce pour cet espace.' });
     const issue = await deps.connecter(tenant, corps.data.adresse, req.auth?.userId ?? null);
     if (issue.ok) {
       await journal(tenant, req, 'salesforce.connectee', CIBLE, { orgId: issue.orgId, sandbox: issue.sandbox });
@@ -114,7 +120,7 @@ export function registerSalesforce(app: FastifyInstance, deps: SalesforceRouteDe
     const tenant = espaceVerifie(req);
     const corps = corpsReglages.safeParse(req.body ?? {});
     if (!corps.success) return reply.code(400).send({ error: raisonCorps(corps.error) });
-    if (!(await deps.enregistrerReglages(tenant, corps.data))) {
+    if (!(await deps.orgs.enregistrerReglages(tenant, corps.data))) {
       return reply.code(404).send({ error: 'Aucune org Salesforce n’est reliée à cet espace.' });
     }
     await journal(tenant, req, 'salesforce.modifiee', CIBLE, {

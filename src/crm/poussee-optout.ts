@@ -98,7 +98,7 @@ export interface DepsTravailPousseeOptOut extends DepsResolveurHttp {
    */
   requeteConfiguree(tenantId: string): Promise<string | null>;
   /** Projection du contact (`{nom, tags, champs}`), source des variables `champ` et `contact`. */
-  projectionContact(tenantId: string, waId: string): Promise<Record<string, unknown> | null>;
+  contacts: { projectionPourTiers(tenantId: string, waId: string): Promise<Record<string, unknown> | null> };
   /**
    * Le journal des appels de connecteur : sans lui, un refus non poussé est invisible du client, qui croit son
    * CRM prévenu. Les réessais et la DLQ sont notre filet, pas le sien. Absent : journal serveur seul.
@@ -143,7 +143,7 @@ export function creerTravailPousseeOptOut(deps: DepsTravailPousseeOptOut) {
     const echecs: string[] = [];
     for (const waId of job.waIds) {
       try {
-        const contact = await deps.projectionContact(job.tenantId, waId);
+        const contact = await deps.contacts.projectionPourTiers(job.tenantId, waId);
         const r = await appel({
           tenantId: job.tenantId,
           waId,

@@ -18,8 +18,8 @@ export const FIN_DE_TOUR_DEBUT_MS = 1500;
 export type FinDeTour = 'reponse' | 'delai' | 'illisible';
 
 export interface DepsFinDeTour {
-  /** `PgInboxStore.dernierMessageDeLAgent` : l'identifiant de son dernier écho, ou `null`. */
-  dernierMessageDeLAgent(tenantId: string, waId: string): Promise<string | null>;
+  /** L'identifiant du dernier écho de l'agent, ou `null`. */
+  inbox: { dernierMessageDeLAgent(tenantId: string, waId: string): Promise<string | null> };
   attendre(ms: number): Promise<void>;
   maintenant(): number;
   journal?(ligne: string): void;
@@ -31,10 +31,10 @@ export function creerAttendreFinDuTour(deps: DepsFinDeTour) {
     const fin = await (async (): Promise<FinDeTour> => {
       try {
         await deps.attendre(FIN_DE_TOUR_DEBUT_MS);
-        const avant = await deps.dernierMessageDeLAgent(tenantId, waId);
+        const avant = await deps.inbox.dernierMessageDeLAgent(tenantId, waId);
         while (deps.maintenant() - debut < FIN_DE_TOUR_MAX_MS) {
           await deps.attendre(FIN_DE_TOUR_PAS_MS);
-          if ((await deps.dernierMessageDeLAgent(tenantId, waId)) !== avant) return 'reponse';
+          if ((await deps.inbox.dernierMessageDeLAgent(tenantId, waId)) !== avant) return 'reponse';
         }
         return 'delai';
       } catch {

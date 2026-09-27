@@ -7,7 +7,7 @@ import type { CampaignRepoLike } from '../src/campaign/create';
 import type { CreateCampaignInput } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 import type { WorkflowGraph } from '../src/workflow/graph';
-import { campagnesInertes } from './routes-inertes';
+import { campagnesInertes, campagnesRepoInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -46,24 +46,28 @@ function appWith(
     auth: { users: noUsers, secret: SECRET },
     campaigns: {
       ...campagnesInertes,
-      repo,
+      repo: Object.assign(repo, {
+        ...campagnesRepoInerte,
+        phoneNumberBelongsToTenant: async () => true,
+        campaignBelongsTo: async () => true,
+        getRunSizing: async () => ({ ratePerMinute: null, pendingCount: 0 }),
+        scheduleCampaign: async () => true,
+        cancelSchedule: async () => true,
+        listCampaignSummaries: async () => [],
+        archiveCampaign: async () => true,
+        unarchiveCampaign: async () => true,
+        deleteDraftCampaign: async () => true,
+        getCampaignDetail: async () => null,
+        resetRecipientForRetry: async () => ({ result: 'not_found' as const }),
+        listPhoneNumbers: async () => [],
+      }),
       queue: new FakeQueue(),
-      phoneNumberBelongsToTenant: async () => true,
-      rcsAgentBelongsToTenant: async () => opts.ownsAgent ?? true,
-      // `sansListe` simule un câblage sans canal RCS : la route doit rendre une liste vide, pas une erreur.
-      ...(opts.sansListe ? {} : { listRcsAgents: async () => opts.agents ?? [] }),
+      rcs: {
+        belongsToTenant: async () => opts.ownsAgent ?? true,
+        // `sansListe` simule un câblage sans canal RCS : la route doit rendre une liste vide, pas une erreur.
+        listForTenant: async () => (opts.sansListe ? [] : opts.agents ?? []),
+      },
       getWorkflowGraph: async () => TEMPLATE_ENTRY_GRAPH,
-      campaignBelongsTo: async () => true,
-      getRunSizing: async () => ({ ratePerMinute: null, pendingCount: 0 }),
-      scheduleCampaign: async () => true,
-      cancelSchedule: async () => true,
-      listCampaigns: async () => [],
-      archiveCampaign: async () => true,
-      unarchiveCampaign: async () => true,
-      deleteDraftCampaign: async () => true,
-      getCampaignDetail: async () => null,
-      resetRecipientForRetry: async () => ({ result: 'not_found' as const }),
-      listPhoneNumbers: async () => [],
     },
   });
 }

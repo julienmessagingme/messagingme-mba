@@ -43,16 +43,18 @@ function app(portail: SettingsRouteDeps['hubspotPortalConnecte']) {
     auth: { users: noUsers, secret: SECRET },
     settings: {
       ...reglagesInertes,
-      getSettings: async () => REGLAGES,
       hubspotPortalConnecte: portail,
-      setMbaEnabled: async () => {},
-      setHubspotListsEnabled: async () => {},
-      setCampaignsPaused: async () => {},
-      setAutoRetryEnabled: async () => {},
-      setControlHandbackSeconds: async () => {},
-      setMbaHandoffMode: async () => {},
-      setTimezone: async () => {},
-      setBusinessHours: async () => {},
+      reglages: {
+        get: async () => REGLAGES,
+        setMbaEnabled: async () => {},
+        setHubspotListsEnabled: async () => {},
+        setCampaignsPaused: async () => {},
+        setAutoRetryEnabled: async () => {},
+        setControlHandbackSeconds: async () => {},
+        setMbaHandoffMode: async () => {},
+        setTimezone: async () => {},
+        setBusinessHours: async () => {},
+      },
     } as unknown as SettingsRouteDeps,
   });
 }

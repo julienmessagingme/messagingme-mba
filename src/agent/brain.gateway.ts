@@ -37,8 +37,10 @@ export class AgentIntrouvable extends Error {
 export const MAX_ALLERS_RETOURS = 6;
 
 export interface GatewayBrainDeps {
-  /** L'appel de modèle, injecté. `tenantId` décide quelle clé paie l'appel : celle de l'espace, sinon la maison. */
-  completer(input: { tenantId: string; modele: string; messages: ChatMessage[]; outils?: OutilExpose[]; signal?: AbortSignal }): Promise<ReponseChat>;
+  /** Le client du modèle, injecté. `tenantId` décide quelle clé paie l'appel : celle de l'espace, sinon la maison. */
+  client: {
+    completer(input: { tenantId: string; modele: string; messages: ChatMessage[]; outils?: OutilExpose[]; signal?: AbortSignal }): Promise<ReponseChat>;
+  };
   /** Tout ce que l'agent est : sa fiche, ses outils actifs, ses règles d'arrêt. `null` = agent introuvable. */
   contexte(tenantId: string, agentId: string): Promise<ContexteAgentComplet | null>;
   /** L'exécution d'outil, avec ses deps. La boucle ne les connaît pas, elle les passe. */
@@ -47,7 +49,7 @@ export interface GatewayBrainDeps {
    * La fiche du contact, bornée par l'appelant. Absente : contact inconnu. Une projection, pas la ligne de
    * base : `mba_lire_contact` la rend au modèle, donc au fournisseur.
    */
-  lireContact?(tenantId: string, waId: string): Promise<Record<string, unknown> | null>;
+  contacts?: { projectionPourTiers(tenantId: string, waId: string): Promise<Record<string, unknown> | null> };
   /**
    * Taux dollars vers euros (le Gateway facture en dollars, nos compteurs sont en micro-euros). Absent :
    * facteur 1, jamais zéro, qui désarmerait les plafonds.
@@ -75,7 +77,7 @@ export interface ContexteAgentComplet {
 }
 
 /**
- * Ce que l'appelant fournit pour situer le tour. Ni le contact (il se lit par `lireContact`) ni la politique
+ * Ce que l'appelant fournit pour situer le tour. Ni le contact (il se lit par `contacts.projectionPourTiers`) ni la politique
  * de contact inconnu (elle vit sur la fiche) : chaque appelant les résoudrait à sa façon, et le bac à sable
  * divergerait de la production.
  */
@@ -153,7 +155,7 @@ async function boucler(
   const agent = await deps.contexte(input.tenantId, input.agentId);
   if (!agent) throw new AgentIntrouvable(input.agentId);
   // Le contact est lu une fois par tour : il sert au prompt et à l'autorisation de chaque outil.
-  const contact = deps.lireContact ? await deps.lireContact(input.tenantId, tour.waId) : null;
+  const contact = deps.contacts ? await deps.contacts.projectionPourTiers(input.tenantId, tour.waId) : null;
 
   const messages: ChatMessage[] = [
     {
@@ -189,7 +191,7 @@ async function boucler(
     if (allerRetour > 0 && tour.coutDejaMicroEur + usage.coutMicroEur >= agent.plafonds.budgetMicroEur) {
       return { texte: null, sortie: SORTIE_PLAFOND, usage, appels, motif: 'plafond_allers_retours' };
     }
-    const reponse = await deps.completer({
+    const reponse = await deps.client.completer({
       tenantId: input.tenantId,
       modele: agent.modele,
       messages,

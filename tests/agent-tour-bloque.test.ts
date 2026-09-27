@@ -168,7 +168,7 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
       } as unknown as RunTurnDeps['sessions'],
       brain: new FakeAgentBrain(decision ?? { texte: 'Bonjour', sortie: null }),
       lireRun: async () => RUN_VIVANT,
-      lireFiche: async () => FICHE,
+      agents: { byId: async () => FICHE },
       envoyer: async () => {},
       sortir: async () => { journal.push('sortir'); },
       ...over,

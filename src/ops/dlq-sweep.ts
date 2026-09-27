@@ -2,8 +2,8 @@ import { BASE_QUEUES, dlqName } from '../queue/names';
 import type { QueueLoadRow } from './store.pg';
 
 export interface DlqSweepDeps {
-  /** Charge de toutes les files (`getQueueLoad`) : les DLQ y sont, et un job mis en DLQ y compte dans `backlog`. */
-  queueLoad: () => Promise<QueueLoadRow[]>;
+  /** Charge de toutes les files : les DLQ y sont, et un job mis en DLQ y compte dans `backlog`. */
+  ops: { getQueueLoad(): Promise<QueueLoadRow[]> };
   /** Émet l'alerte. `queue` est passé à part pour servir de clé de throttle : le redécouper depuis `msg`
    *  casserait à la première reformulation du message. */
   alert: (queue: string, msg: string) => void;
@@ -37,7 +37,7 @@ export function creerDlqSweep(deps: DlqSweepDeps): () => Promise<number> {
   };
 
   async function passe(): Promise<number> {
-    const charge = await deps.queueLoad();
+    const charge = await deps.ops.getQueueLoad();
     let enHausse = 0;
     for (const ligne of charge) {
       // Filtre en code et non en SQL : c'est ce qui rend testable « ne pas alerter sur une file saine ».

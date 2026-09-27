@@ -38,19 +38,23 @@ function monter(o: Montage = {}) {
   const ecritures: Array<{ texte: string; modele: string; langue: string | null }> = [];
   const rangees: Array<{ messageId: string; texte: string; langue: string }> = [];
   const deps: DepsTranscrire = {
-    lireMessage: async () => ({
-      id: 'm-vocal', mediaId: 'media-1', mediaMime: 'audio/ogg; codecs=opus', transcription: null,
-      ...o.message,
-    }),
-    ecrireTranscription: async (_t, _m, texte, modele, langue) => { ecritures.push({ texte, modele, langue }); },
+    messages: {
+      lireMessagePourTranscription: async () => ({
+        id: 'm-vocal', mediaId: 'media-1', mediaMime: 'audio/ogg; codecs=opus', transcription: null,
+        ...o.message,
+      }),
+      ecrireTranscription: async (_t, _m, texte, modele, langue) => { ecritures.push({ texte, modele, langue }); },
+    },
     ...(o.sansTraducteur ? {} : {
-      traduire: async (_t, texte) => {
-        traduits.push(texte);
-        return o.traduction === undefined ? { texte: 'Bonjour, j ai un probleme', langueSource: 'es' } : o.traduction;
+      traducteur: {
+        traduire: async (_t: string, texte: string) => {
+          traduits.push(texte);
+          return o.traduction === undefined ? { texte: 'Bonjour, j ai un probleme', langueSource: 'es' } : o.traduction;
+        },
       },
       rangerTraduction: async (_t, messageId, texte, langue) => { rangees.push({ messageId, texte, langue }); },
     }),
-    telecharger: async () => ({ bytes: Buffer.from('OggS'), mime: 'audio/ogg' }),
+    media: { telechargerEntrant: async () => ({ bytes: Buffer.from('OggS'), mime: 'audio/ogg' }) },
     transport: transport(o.reponse ?? VOCAL_ESPAGNOL),
     cle: 'cle-maison',
     modele: 'openai/whisper-1',
@@ -183,7 +187,8 @@ describe('les refus n ont pas change', () => {
   });
 
   it('un message d un autre espace est introuvable', async () => {
-    const deps: DepsTranscrire = { ...monter().deps, lireMessage: async () => null };
+    const base = monter().deps;
+    const deps: DepsTranscrire = { ...base, messages: { ...base.messages, lireMessagePourTranscription: async () => null } };
     await expect(transcrireMessage(deps, 't1', 'm-vocal', 'c1', 'fr')).rejects.toBeInstanceOf(RienATranscrire);
   });
 });

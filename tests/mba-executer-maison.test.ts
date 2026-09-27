@@ -17,7 +17,9 @@ function faux(champs: string[] = ['ville'], o: { bloque?: boolean; issue?: true 
     poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
     ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
     champExiste: async (_t, champ) => champs.includes(champ),
-    estBloque: async () => o.bloque === true,
+    contacts: {
+      isBlockedByWaId: async () => o.bloque === true,
+    },
     envoyerBloc: async (t, w, c) => { gestes.push(`bloc ${t} ${w} ${c.workflowId} ${c.code}`); return o.issue ?? true; },
     lancerScenario: async (t, w, id) => {
       gestes.push(`scenario ${t} ${w} ${id}`);
@@ -25,7 +27,9 @@ function faux(champs: string[] = ['ville'], o: { bloque?: boolean; issue?: true 
       return o.issue ?? true;
     },
     antiRejeu: new AntiRejeu(60_000, () => horloge.t),
-    dernierMessageDuClient: async () => client.dernier,
+    inbox: {
+      dernierMessageDuClient: async () => client.dernier,
+    },
   };
   return { deps, gestes, client, horloge };
 }

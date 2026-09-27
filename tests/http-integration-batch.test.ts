@@ -31,7 +31,7 @@ function monter(initial: VueIntegrationBatch | null = null, chiffrementPret = tr
   let ligne = initial;
   const deps: IntegrationBatchRouteDeps = {
     chiffrementPret,
-    lire: async () => ligne,
+    batch: { lire: async () => ligne },
     enregistrer: async (tenant, r) => {
       trace.enregistre.push({ tenant, r });
       if (ligne === null && (r.cleRest === undefined || r.cleProjet === undefined)) return false;

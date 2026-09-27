@@ -87,7 +87,7 @@ function harnais(over: {
       marquerEpreuve: async (_t, _i, ok, erreur) => { epreuves.push({ ok, ...(erreur ? { erreur } : {}) }); },
     },
     requetes: { parId: async () => (over.requete === undefined ? REQUETE : over.requete) },
-    derniereSaisie: async () => over.derniereSaisie ?? null,
+    inbox: { derniereSaisieDuContact: async () => over.derniereSaisie ?? null },
     fuseau: async () => 'Europe/Paris',
     // Horloge figee : la valeur systeme « maintenant » doit etre reproductible.
     now: () => new Date('2026-09-02T09:45:00.000Z'),

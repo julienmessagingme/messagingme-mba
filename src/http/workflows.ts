@@ -19,34 +19,44 @@ import { executerFonctionJs } from '../workflow/fonction-js';
  * template) et la garde d'exécution (`workflow/executor.ts`, `allowSessionOpen`).
  */
 
-export interface WorkflowRouteDeps {
-  createWorkflow(tenantId: string, name: string, graph: WorkflowGraph): Promise<{ id: string }>;
-  /** Code client racine (tenants.public_code, self-heal) : sert à minter les codes publics des nodes au save. */
-  tenantCode(tenantId: string): Promise<string>;
-  listWorkflows(tenantId: string): Promise<WorkflowRow[]>;
+/** Ce que les routes lisent et écrivent des scénarios. */
+export interface ScenariosDep {
+  insert(tenantId: string, name: string, graph: WorkflowGraph): Promise<{ id: string }>;
+  list(tenantId: string): Promise<WorkflowRow[]>;
   /**
    * La liste résumée servie au navigateur : jamais les graphes, mais le nombre de blocs, l'existence d'un
    * brouillon et l'éligibilité en campagne, qui sont les trois seules choses que les écrans en tiraient.
    */
-  listWorkflowsResume(tenantId: string): Promise<WorkflowResumeRow[]>;
-  getWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
-  updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<MajScenario>;
-  /** Met le brouillon en ligne. Rend la ligne à jour, null si le scénario n'est pas au tenant. */
-  publishWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
-  deleteWorkflow(id: string, tenantId: string): Promise<boolean>;
+  listResume(tenantId: string): Promise<WorkflowResumeRow[]>;
+  getById(id: string, tenantId: string): Promise<WorkflowRow | null>;
+  update(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<MajScenario>;
   /**
-   * Les publicités vivantes qui utilisent ce scénario, par leur nom ; vide = la suppression passe. Requise :
-   * `publicites.workflow_id` est en `on delete set null`, donc un `delete` réussirait en silence et laisserait une
-   * publicité dont les prospects, qui ont coûté un clic, n'arrivent nulle part. Les tests qui n'en parlent pas
-   * déclarent `aucunePubliciteUtilise` (`tests/pubs-fixtures.ts`).
+   * Met le brouillon en ligne, seul chemin qui touche le graphe exécuté. Rend la ligne à jour, null si le
+   * scénario n'est pas au tenant.
    */
-  publicitesQuiUtilisent(tenantId: string, workflowId: string): Promise<string[]>;
+  publish(id: string, tenantId: string): Promise<WorkflowRow | null>;
+  remove(id: string, tenantId: string): Promise<boolean>;
+  /** Pose (une fois) le jeton de test du scénario et le renvoie. null si le scénario n'est pas au tenant. */
+  ensureTestToken(id: string, tenantId: string, token: string): Promise<string | null>;
+}
+
+export interface WorkflowRouteDeps {
+  scenarios: ScenariosDep;
+  /** Code client racine (tenants.public_code, self-heal) : sert à minter les codes publics des nodes au save. */
+  tenantCode(tenantId: string): Promise<string>;
+  publicites: {
+    /**
+     * Les publicités vivantes qui utilisent ce scénario, par leur nom ; vide = la suppression passe. Requise :
+     * `publicites.workflow_id` est en `on delete set null`, donc un `delete` réussirait en silence et laisserait
+     * une publicité dont les prospects, qui ont coûté un clic, n'arrivent nulle part. Les tests qui n'en parlent
+     * pas déclarent `aucunePubliciteUtilise` (`tests/pubs-fixtures.ts`).
+     */
+    publicitesQuiUtilisent(tenantId: string, workflowId: string): Promise<string[]>;
+  };
   /** Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). */
   audit: AuditSink;
   /** Déclare dans le référentiel Tags les tags saisis dans les blocs « ajout de tag » du graphe (best-effort). */
   declareTags(tenantId: string, tags: string[]): Promise<void>;
-  /** Pose (une fois) le jeton de test du scénario et le renvoie. null si le scénario n'est pas au tenant. */
-  ensureTestToken(id: string, tenantId: string, token: string): Promise<string | null>;
   /** Numéro WhatsApp affiché du tenant, pour construire le lien wa.me. null si aucun numéro connecté. */
   getDisplayPhoneNumber(tenantId: string): Promise<string | null>;
 }
@@ -103,7 +113,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (parsed === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
     // Mint serveur des codes publics de node (nod_<client>_<ulid>) : rempli/re-minté ici, jamais imposé par le client.
     const graph = mintNodeCodes(parsed, await deps.tenantCode(tenant));
-    const { id } = await deps.createWorkflow(tenant, b.name.trim(), graph);
+    const { id } = await deps.scenarios.insert(tenant, b.name.trim(), graph);
     // Rend les tags des blocs « ajout de tag » visibles tout de suite dans Contenus > Tags (best-effort : ne
     // fait jamais échouer la sauvegarde du workflow).
     try { await deps.declareTags(tenant, tagsInGraph(graph)); } catch { /* best-effort */ }
@@ -112,15 +122,15 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
 
   // Dupliquer un scénario : un nouveau scénario « X (copie) » (puis « (copie 2) »…). Codes de node re-mintés :
   // `mintNodeCodes` conserverait sinon les codes valides, et la copie partagerait les identifiants publics de
-  // l'original (contrat API cassé). Le `code` du scénario est minté frais par createWorkflow.
+  // l'original (contrat API cassé). Le `code` du scénario est minté frais à l'insertion.
   app.post('/tenants/:tenantId/workflows/:id/duplicate', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
-    const source = await deps.getWorkflow(id, tenant);
+    const source = await deps.scenarios.getById(id, tenant);
     if (!source) return reply.code(404).send({ error: 'workflow inconnu' });
 
-    const taken = new Set((await deps.listWorkflows(tenant)).map((w) => w.name));
+    const taken = new Set((await deps.scenarios.list(tenant)).map((w) => w.name));
     let name = `${source.name} (copie)`;
     for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
 
@@ -132,7 +142,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
       edges: modele.edges,
     };
     const graph = mintNodeCodes(stripped, await deps.tenantCode(tenant));
-    const { id: newId } = await deps.createWorkflow(tenant, name, graph);
+    const { id: newId } = await deps.scenarios.insert(tenant, name, graph);
     try { await deps.declareTags(tenant, tagsInGraph(graph)); } catch { /* best-effort */ }
     return reply.code(201).send({ id: newId, name, graph });
   });
@@ -141,7 +151,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const tenant = espaceVerifie(req);
     // Le résumé, pas les graphes : les écrans de liste n'affichent qu'un nom, et le graphe complet reste sur
     // `GET /workflows/:id`.
-    return reply.code(200).send({ workflows: await deps.listWorkflowsResume(tenant) });
+    return reply.code(200).send({ workflows: await deps.scenarios.listResume(tenant) });
   });
 
   // Contenu > Blocs : liste à plat de tous les nodes des scénarios de l'espace, requêtable par ?type=. Chaque
@@ -150,7 +160,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const tenant = espaceVerifie(req);
     const q = (req.query ?? {}) as { type?: unknown };
     const type = isWorkflowNodeType(q.type) ? q.type : undefined;
-    const workflows = await deps.listWorkflows(tenant);
+    const workflows = await deps.scenarios.list(tenant);
     return reply.code(200).send({ nodes: collectNodes(workflows, type) });
   });
 
@@ -158,7 +168,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
-    const wf = await deps.getWorkflow(id, tenant);
+    const wf = await deps.scenarios.getById(id, tenant);
     if (!wf) return reply.code(404).send({ error: 'workflow inconnu' });
     return reply.code(200).send({ workflow: wf });
   });
@@ -182,7 +192,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     }
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'rien à modifier (name/graph)' });
 
-    const maj = await deps.updateWorkflow(id, tenant, patch);
+    const maj = await deps.scenarios.update(id, tenant, patch);
     if (!maj.trouve) return reply.code(404).send({ error: 'workflow inconnu' });
     if (patch.graph) { try { await deps.declareTags(tenant, tagsInGraph(patch.graph)); } catch { /* best-effort */ } }
     // `brouillon` : reste-t-il quelque chose à publier après cette écriture ? C'est la base qui répond, et
@@ -201,7 +211,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
-    const row = await deps.publishWorkflow(id, tenant);
+    const row = await deps.scenarios.publish(id, tenant);
     if (!row) return reply.code(404).send({ error: 'workflow inconnu' });
     // Le journal porte qui a publié : la table `workflows`, elle, ne garde que la date. Détail non identifiant
     // (un nombre de blocs), comme partout dans ce journal.
@@ -217,7 +227,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
      * 🔴 Le refus se pose avant la suppression : la clé étrangère des publicités est en `on delete set null`, et
      * placé après, ce contrôle regarderait une publicité qui a déjà perdu son scénario.
      */
-    const pubs = await deps.publicitesQuiUtilisent(tenant, id);
+    const pubs = await deps.publicites.publicitesQuiUtilisent(tenant, id);
     if (pubs.length > 0) {
       return reply.code(409).send({
         error: `ce scénario répond aux prospects de ${pubs.length > 1 ? 'ces publicités' : 'cette publicité'} : ${pubs.slice(0, 3).join(', ')}${pubs.length > 3 ? '…' : ''}. Changez leur destination, ou supprimez-les, puis réessayez.`,
@@ -225,7 +235,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
       });
     }
     try {
-      const ok = await deps.deleteWorkflow(id, tenant);
+      const ok = await deps.scenarios.remove(id, tenant);
       if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });
       return reply.code(200).send({ ok: true });
     } catch (err) {
@@ -247,7 +257,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
-    const token = await deps.ensureTestToken(id, tenant, newTestToken());
+    const token = await deps.scenarios.ensureTestToken(id, tenant, newTestToken());
     if (token === null) return reply.code(404).send({ error: 'workflow inconnu' });
     const phone = await deps.getDisplayPhoneNumber(tenant);
     return reply.code(200).send({ token, phone, link: waMeTestLink(phone, token) });

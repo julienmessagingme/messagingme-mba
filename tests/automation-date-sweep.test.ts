@@ -26,19 +26,23 @@ interface Trace {
 function make(
   rows: AutomationRow[],
   candidats: Array<{ waId: string; valeur: string; dejaTirePour: string | null }>,
-  over: Partial<DateSweepDeps> = {},
+  over: Partial<Omit<DateSweepDeps, 'declencheurs'>> & { declencheurs?: Partial<DateSweepDeps['declencheurs']> } = {},
 ): { deps: DateSweepDeps; trace: Trace } {
+  const { declencheurs: surDeclencheurs, ...reste } = over;
   const trace: Trace = { publies: [], fenetres: [], journal: [] };
   const deps: DateSweepDeps = {
-    tenants: async () => ['t1'],
+    declencheurs: {
+      tenantsAvecDeclencheurDate: async () => ['t1'],
+      contactsDusPourDate: async (_t, _a, _k, basse, haute) => { trace.fenetres.push({ basse, haute }); return candidats; },
+      ...surDeclencheurs,
+    },
     automations: async () => rows,
     timeZone: async () => 'Europe/Paris',
-    candidats: async (_t, _a, _k, basse, haute) => { trace.fenetres.push({ basse, haute }); return candidats; },
     publish: async (_t, ev) => { trace.publies.push({ waId: ev.waId, automationId: ev.automationId, valeur: ev.valeur }); },
     toleranceMinutes: 60,
     now: () => MAINTENANT,
     log: (m) => trace.journal.push(m),
-    ...over,
+    ...reste,
   };
   return { deps, trace };
 }
@@ -128,10 +132,12 @@ describe('balayage des échéances', () => {
   it('🔴 une automation qui échoue n’empêche pas les autres de partir', async () => {
     let appel = 0;
     const { deps, trace } = make([auto({ id: 'a1' }), auto({ id: 'a2' })], [], {
-      candidats: async () => {
-        appel += 1;
-        if (appel === 1) throw new Error('base indisponible');
-        return [{ waId: '33611', valeur: '2026-08-23T14:00', dejaTirePour: null }];
+      declencheurs: {
+        contactsDusPourDate: async () => {
+          appel += 1;
+          if (appel === 1) throw new Error('base indisponible');
+          return [{ waId: '33611', valeur: '2026-08-23T14:00', dejaTirePour: null }];
+        },
       },
     });
     expect(await runDateSweep(deps)).toBe(1);

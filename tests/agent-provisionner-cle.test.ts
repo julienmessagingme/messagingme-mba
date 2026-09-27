@@ -54,7 +54,7 @@ function fauxCles(initial?: CleGatewayEspace) {
 function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: HttpTransportPatch & HttpTransportSuppression }): DepsProvisionCle {
   return {
     cles: o.cles,
-    solde: async () => o.solde,
+    credits: { solde: async () => o.solde },
     nomEspace: async () => 'Demo',
     transport: o.transport,
     jetonCompte: 'jeton',

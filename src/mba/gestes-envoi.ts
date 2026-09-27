@@ -15,24 +15,26 @@ export interface DepsGestesEnvoi {
   /** Le graphe publié du scénario, celui que les contacts parcourent, ou `null`. Jamais le brouillon. */
   graphePublie(tenantId: string, workflowId: string): Promise<WorkflowGraph | null>;
   fenetreOuverte(tenantId: string, waId: string): Promise<boolean>;
-  contactId(tenantId: string, waId: string): Promise<string | null>;
+  contacts: {
+    findIdByWaId(tenantId: string, waId: string): Promise<string | null>;
+    /** Le contact est-il bloqué dans l'Inbox ? Relu après l'attente : il a pu l'être pendant. */
+    isBlockedByWaId(tenantId: string, waId: string): Promise<boolean>;
+  };
   /** `startFromNode` : reprend le fil, envoie, et le rend à l'accusé. */
   envoyerDepuisBloc(
     tenantId: string, workflowId: string, graphe: WorkflowGraph, contact: { waId: string; contactId: string | null }, noeudId: string,
   ): Promise<StartOutcome>;
   /** `lancerScenarioPourContact`, le chemin du bouton de l'Inbox. `null` = scénario inconnu. */
   lancerScenario(tenantId: string, workflowId: string, waId: string, fenetreOuverte: boolean): Promise<StartOutcome | null>;
-  /** `rendreLaMainApresParcours` (`wiring.ts`). */
-  rendreLaMain(tenantId: string, waId: string): Promise<void>;
+  /** Le runtime des scénarios (`wiring.ts`). */
+  runtime: { rendreLaMainApresParcours(tenantId: string, waId: string): Promise<void> };
   /**
    * Attend que l'agent de Meta ait fini son tour, juste avant de lui prendre le fil (`src/mba/fin-de-tour.ts`).
    * Placé après les refus qui ne demandent rien à Meta (bloc disparu, fenêtre fermée), qui partent tout de suite.
    */
   attendreFinDuTour(tenantId: string, waId: string): Promise<unknown>;
-  /** L'empreinte du fil (`PgInboxStore.empreinteDuFil`), relue avant et après l'attente. */
-  empreinteDuFil(tenantId: string, waId: string): Promise<EmpreinteDuFil | null>;
-  /** Le contact est-il bloqué dans l'Inbox ? Relu après l'attente : il a pu l'être pendant. */
-  estBloque(tenantId: string, waId: string): Promise<boolean>;
+  /** L'empreinte du fil, relue avant et après l'attente. */
+  inbox: { empreinteDuFil(tenantId: string, waId: string): Promise<EmpreinteDuFil | null> };
 }
 
 /**
@@ -67,11 +69,11 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
     try {
       issue = await geste();
     } catch (err) {
-      await deps.rendreLaMain(tenantId, waId).catch(() => {});
+      await deps.runtime.rendreLaMainApresParcours(tenantId, waId).catch(() => {});
       throw err;
     }
     if (issue === true) return true;
-    await deps.rendreLaMain(tenantId, waId);
+    await deps.runtime.rendreLaMainApresParcours(tenantId, waId);
     return issue ?? siInconnu;
   };
 
@@ -81,10 +83,10 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
    * entre-temps serait relâché).
    */
   const attendreEtRevérifier = async (tenantId: string, waId: string): Promise<string | null> => {
-    const avant = await deps.empreinteDuFil(tenantId, waId);
+    const avant = await deps.inbox.empreinteDuFil(tenantId, waId);
     await deps.attendreFinDuTour(tenantId, waId);
-    if (aChangeDeMain(avant, await deps.empreinteDuFil(tenantId, waId))) return FIL_CHANGE_PENDANT_ATTENTE;
-    if (await deps.estBloque(tenantId, waId)) return CONTACT_BLOQUE;
+    if (aChangeDeMain(avant, await deps.inbox.empreinteDuFil(tenantId, waId))) return FIL_CHANGE_PENDANT_ATTENTE;
+    if (await deps.contacts.isBlockedByWaId(tenantId, waId)) return CONTACT_BLOQUE;
     return null;
   };
 
@@ -98,7 +100,7 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
       if (!seul.modele && !(await deps.fenetreOuverte(tenantId, waId))) {
         return 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir';
       }
-      const contactId = await deps.contactId(tenantId, waId);
+      const contactId = await deps.contacts.findIdByWaId(tenantId, waId);
       const refus = await attendreEtRevérifier(tenantId, waId);
       if (refus !== null) return refus;
       // Le graphe réduit au bloc : ce qui le suit dans le scénario ne peut pas partir.

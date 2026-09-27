@@ -24,11 +24,15 @@ export interface EchecsRcsSink {
 
 export interface DepsRapportRcs {
   majLivraison(messageId: string, status: DeliveryStatus, detail: string | null): Promise<number>;
-  mesureBloc(messageId: string, status: 'delivered' | 'read' | 'failed'): Promise<unknown>;
+  /** La mesure par bloc des scénarios. */
+  mesures: { recordStatusForMessage(messageId: string, status: 'delivered' | 'read' | 'failed'): Promise<unknown> };
   echecs: EchecsRcsSink;
   joignabilite: { put(agentId: string, e164: string, reachable: boolean, atMs: number): Promise<void> };
-  rcsInjoignable(tenantId: string, to: string, messageId: string): Promise<unknown>;
-  rcsDelivre(tenantId: string, to: string, messageId: string): Promise<unknown>;
+  /** Les deux sorties du bloc RCS d'un parcours. */
+  parcours: {
+    rcsUndeliverable(tenantId: string, to: string, messageId: string): Promise<unknown>;
+    rcsDelivered(tenantId: string, to: string, messageId: string): Promise<unknown>;
+  };
   maintenant(): number;
 }
 
@@ -40,7 +44,7 @@ export async function traiterRapportRcs(deps: DepsRapportRcs, tenantId: string, 
     // 1 bis. La mesure par bloc, best-effort : une mesure ne doit pas faire échouer le traitement du rapport.
     if (dlr.status !== 'sent') {
       try {
-        await deps.mesureBloc(dlr.messageId, dlr.status);
+        await deps.mesures.recordStatusForMessage(dlr.messageId, dlr.status);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('mesure de bloc RCS (statut) ignorée:', messageDe(err));
@@ -79,7 +83,7 @@ export async function traiterRapportRcs(deps: DepsRapportRcs, tenantId: string, 
   //    se constate après, sur un rapport. Échec définitif : repli WhatsApp. Remis : la suite du parcours (sauf
   //    si le bloc attend encore un clic).
   if (dlr.to !== '') {
-    if (dlr.echecDefinitif) await deps.rcsInjoignable(tenantId, dlr.to, dlr.messageId);
-    else if (dlr.status === 'delivered') await deps.rcsDelivre(tenantId, dlr.to, dlr.messageId);
+    if (dlr.echecDefinitif) await deps.parcours.rcsUndeliverable(tenantId, dlr.to, dlr.messageId);
+    else if (dlr.status === 'delivered') await deps.parcours.rcsDelivered(tenantId, dlr.to, dlr.messageId);
   }
 }

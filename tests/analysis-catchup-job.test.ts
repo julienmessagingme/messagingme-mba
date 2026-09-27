@@ -5,7 +5,7 @@ function deps(ids: string[]): { d: CatchupJobDeps; enqueued: Array<{ conversatio
   const enqueued: Array<{ conversationId: string; tenantId: string }> = [];
   const logs: string[] = [];
   const d: CatchupJobDeps = {
-    listPendingCatchup: async () => ids,
+    analyses: { listConversationIdsPendingCatchup: async () => ids },
     enqueuePush: async (ref) => { enqueued.push(ref); },
     log: (m) => logs.push(m),
   };

@@ -27,9 +27,9 @@ const url = '/tenants/t1/workflow-reports';
 function app(over: Partial<WorkflowReportsRouteDeps> = {}) {
   const recus: Array<Record<string, unknown>> = [];
   const deps = {
-    listReports: async () => [REPORT],
-    saveReport: async (_t: string, input: Record<string, unknown>) => { recus.push(input); return REPORT; },
-    removeReport: async () => true,
+    list: async () => [REPORT],
+    save: async (_t: string, input: Record<string, unknown>) => { recus.push(input); return REPORT; },
+    remove: async () => true,
     ...over,
   } as unknown as WorkflowReportsRouteDeps;
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, workflowReports: deps }), recus };
@@ -81,7 +81,7 @@ describe('enregistrer un tableau', () => {
   it('🔴 un nom DÉJÀ pris sort en 409, pas en 500', async () => {
     // Un 5xx verrait son corps remplacé par la page d'erreur de Cloudflare : l'opérateur ne saurait même pas
     // qu'il s'agit d'un nom déjà utilisé.
-    const { server } = app({ saveReport: async () => { throw new NomDeTableauDejaPris(); } });
+    const { server } = app({ save: async () => { throw new NomDeTableauDejaPris(); } });
     const res = await server.inject({ method: 'POST', url, ...h(adminTok), payload: { workflowId: 'wf1', name: 'Entonnoir', mesures: REPORT.mesures } });
     expect(res.statusCode).toBe(409);
     expect(res.json<{ error: string }>().error).toContain('nom');
@@ -90,7 +90,7 @@ describe('enregistrer un tableau', () => {
 
   it('🔴 un identifiant inconnu -> 404, jamais une création sous cet identifiant', async () => {
     // Créer sous un id imposé par l'appelant laisserait deviner l'existence d'un tableau d'un autre espace.
-    const { server } = app({ saveReport: async () => null });
+    const { server } = app({ save: async () => null });
     const res = await server.inject({ method: 'POST', url, ...h(adminTok), payload: { id: 'rp-autre', workflowId: 'wf1', name: 'x', mesures: REPORT.mesures } });
     expect(res.statusCode).toBe(404);
     await server.close();
@@ -114,7 +114,7 @@ describe('lister et supprimer', () => {
   });
 
   it('supprimer un tableau inconnu -> 404', async () => {
-    const { server } = app({ removeReport: async () => false });
+    const { server } = app({ remove: async () => false });
     expect((await server.inject({ method: 'DELETE', url: `${url}/rp-inconnu`, ...h(adminTok) })).statusCode).toBe(404);
     await server.close();
   });

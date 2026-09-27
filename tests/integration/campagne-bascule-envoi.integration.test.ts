@@ -94,18 +94,24 @@ describe.skipIf(!url)('la bascule mene a un envoi sur le canal de l etage', () =
 
   /** Le câblage RÉEL du job de run, plus deux espions : le modèle WhatsApp, et le message RCS reçu. */
   const deps = (meta: SenderMeta, vu: { message?: unknown; envoye: string[] }) => ({
-    getCampaign: (id: string) => repo.getCampaign(id),
+    repo: {
+      getCampaign: (id: string) => repo.getCampaign(id),
+    },
     senderFor: async (): Promise<MessageSender> => meta,
-    // 🔴 C'EST ICI QUE SE JOUE LE LOT : le message passé au sender de canal doit être celui de l'ÉTAGE,
-    // pas `campaign.rcsMessage`, qui vaut `null` sur une campagne WhatsApp.
-    rcsSenderFor: async (_c: unknown, message: unknown) => {
-      vu.message = message;
-      return { sendTo: async (r: { toE164: string }) => { vu.envoye.push(r.toE164); return { messageId: `rcs-${r.toE164}` }; } };
+    rcs: {
+      // 🔴 C'EST ICI QUE SE JOUE LE LOT : le message passé au sender de canal doit être celui de l'ÉTAGE,
+      // pas `campaign.rcsMessage`, qui vaut `null` sur une campagne WhatsApp.
+      senderForCampaign: async (_c: unknown, message: unknown) => {
+        vu.message = message;
+        return { sendTo: async (r: { toE164: string }) => { vu.envoye.push(r.toE164); return { messageId: `rcs-${r.toE164}` }; } };
+      },
     },
     recipients: new PgRecipientStore(pool),
     campaigns: new PgCampaignStore(pool),
     quality: new PgQualityProvider(pool),
-    pauserSiNumeroDelie: async () => false,
+    numerosDelies: {
+      pauserCampagne: async () => false,
+    },
     moteur: { noterEnvoi: creerNoteurEnvois(pool) },
   });
 

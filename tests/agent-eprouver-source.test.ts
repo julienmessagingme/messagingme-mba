@@ -26,8 +26,10 @@ function monter(opts: {
   const epreuves: Array<{ ok: boolean; erreur?: string }> = [];
   const appels: Array<{ url: string; auth: string | null }> = [];
   const eprouver = creerEprouverSource({
-    pourAppel: async () => (opts.source === undefined ? SOURCE : opts.source),
-    marquerEpreuve: async (_t, _i, ok, erreur) => { epreuves.push({ ok, ...(erreur ? { erreur } : {}) }); },
+    sources: {
+      pourAppel: async () => (opts.source === undefined ? SOURCE : opts.source),
+      marquerEpreuve: async (_t, _i, ok, erreur) => { epreuves.push({ ok, ...(erreur ? { erreur } : {}) }); },
+    },
     verifierResolution: async () => opts.resolution ?? { ok: true },
     fetchImpl: (async (url: string, init?: RequestInit) => {
       appels.push({ url, auth: new Headers(init?.headers).get('authorization') });

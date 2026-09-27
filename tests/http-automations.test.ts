@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { AutomationRouteDeps } from '../src/http/automations';
+import type { AutomationRouteDeps, AutomationsDep } from '../src/http/automations';
 import type { AutomationInput } from '../src/automation/store.pg';
 import { AUTOMATION_TRIGGER_KINDS } from '../src/automation/match';
 
@@ -30,22 +30,24 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 
 const VALID = { name: 'Demande RDV', triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, workflowId: 'wf1' };
 
-function app(over: Partial<AutomationRouteDeps> = {}) {
+function app(over: Partial<AutomationsDep> = {}) {
   const cap = {
     created: [] as Array<{ tenant: string; input: AutomationInput }>,
     updated: [] as Array<{ id: string; tenant: string; patch: Partial<AutomationInput> }>,
     removed: [] as Array<{ id: string; tenant: string }>,
   };
   const deps: AutomationRouteDeps = {
-    list: async () => [],
-    // État courant d'UNE automation : c'est lui que la garde anti-boucle relit sur un PATCH partiel.
-    getById: async (id) => (id === 'a1' ? { id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'conversation_analyzed', triggerConfig: {}, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 3600, maxFiresPerHour: null, possedePar: null } : null),
-    create: async (tenant, input) => { cap.created.push({ tenant, input }); return { id: 'a1' }; },
-    update: async (id, tenant, patch) => { cap.updated.push({ id, tenant, patch }); return id === 'a1'; },
-    remove: async (id, tenant) => { cap.removed.push({ id, tenant }); return id === 'a1'; },
+    automations: {
+      list: async () => [],
+      // État courant d'UNE automation : c'est lui que la garde anti-boucle relit sur un PATCH partiel.
+      getById: async (id) => (id === 'a1' ? { id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'conversation_analyzed', triggerConfig: {}, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 3600, maxFiresPerHour: null, possedePar: null } : null),
+      create: async (tenant, input) => { cap.created.push({ tenant, input }); return { id: 'a1' }; },
+      update: async (id, tenant, patch) => { cap.updated.push({ id, tenant, patch }); return id === 'a1'; },
+      remove: async (id, tenant) => { cap.removed.push({ id, tenant }); return id === 'a1'; },
+      ...over,
+    },
     // wf1 appartient à t1 ; tout le reste est refusé (scénario d'un autre client ou inexistant).
     workflowBelongsToTenant: async (wfId, tenant) => wfId === 'wf1' && tenant === 't1',
-    ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, automations: deps }), cap };
 }

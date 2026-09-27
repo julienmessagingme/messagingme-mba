@@ -24,8 +24,9 @@ function rendTraductions(traductions: Array<{ id: string; texte: string; langueS
   return appelOutil(JSON.stringify({ traductions }));
 }
 
-function traducteur(over: Partial<DepsTraduction> & Pick<DepsTraduction, 'completer'>) {
-  return creerTraducteur({ modele: 'modele-test', ...over });
+function traducteur(over: Partial<Omit<DepsTraduction, 'client'>> & Pick<DepsTraduction['client'], 'completer'>) {
+  const { completer, ...reste } = over;
+  return creerTraducteur({ modele: 'modele-test', ...reste, client: { completer } });
 }
 
 describe('traducteur : la sortie du modele est une entree non fiable', () => {

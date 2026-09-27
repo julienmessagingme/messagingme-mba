@@ -34,9 +34,8 @@ const topicValide = (v: unknown): string | undefined =>
   (typeof v === 'string' && v.trim() !== '' && v.trim().length <= 120 ? v.trim() : undefined);
 
 export interface StatsRouteDeps {
-  getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats>;
-  /** Volume par template envoyé (dropdown dashboard). */
-  getTemplateBreakdown(tenantId: string, range: DateRange): Promise<TemplateBreakdownRow[]>;
+  stats: StatsDep;
+  conversationStats: AnalysesDep;
   /** Prix Meta (pricing_analytics) par catégorie ; null si indisponible (le front affiche le volume seul). */
   getPricing(tenantId: string, range: DateRange): Promise<PricingSummary | null>;
   /**
@@ -45,10 +44,6 @@ export interface StatsRouteDeps {
    * 50 %.
    */
   margeTemplate(tenantId: string): Promise<number>;
-  /** Funnel d'une campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
-  getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel>;
-  /** Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), filtrable par template. */
-  getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]>;
   /**
    * Les contacts touchés par un code d'erreur, filtrables par campagnes ou templates. C'est le journal des erreurs
    * de livraison qui répond (`PgErreursLivraisonStore.lister`), pas une requête propre à Analytics : deux requêtes
@@ -76,25 +71,45 @@ export interface StatsRouteDeps {
    * période ; la fiche le dit. `null` = inconnue ou d'un autre espace -> 404, jamais une fiche vide.
    */
   getDetailCoutCampagne(tenantId: string, campaignId: string): Promise<DetailCoutCampagne | null>;
+  /** Mesures d'un scénario, bloc par bloc (« Mes tableaux »). */
+  getWorkflowNodeCounts(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
+}
+
+/** Ce que les routes lisent du dépôt des statistiques d'envoi. */
+export interface StatsDep {
+  getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats>;
+  /** Volume par template envoyé (dropdown dashboard). */
+  getTemplateBreakdown(tenantId: string, range: DateRange): Promise<TemplateBreakdownRow[]>;
+  /** Funnel d'une campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
+  getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel>;
+  /** Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), filtrable par template. */
+  getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]>;
+  /**
+   * Les messages envoyés et reçus par canal, pour les cartes « Numéro WhatsApp » et « Canal RCS » de l'Accueil.
+   * Ce qui est compté et écarté : `PgStatsStore.volumesParCanal`. L'écran tolère l'absence de la route pendant
+   * la fenêtre où la console est publiée avant l'API.
+   */
+  volumesParCanal(tenantId: string, jours: number): Promise<VolumesParCanal>;
+}
+
+/** Ce que les routes lisent des analyses de conversation. */
+export interface AnalysesDep {
   /** Agrégats d'analyse de conversation sur la plage. */
-  getConversationSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
+  getSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
   /** Liste des dernières conversations analysées (quali), filtrable. */
-  listAnalyzedConversations(tenantId: string, range: DateRange, filters: AnalyzedConversationsFilter): Promise<AnalyzedConversationRow[]>;
+  listAnalyzed(tenantId: string, range: DateRange, filters: AnalyzedConversationsFilter): Promise<AnalyzedConversationRow[]>;
   /**
    * Le damier « satisfaction x urgence » de la page de synthèse. L'écran distingue « vide » de « pas encore de
    * mesures ».
    */
   getNuageQualitatif(tenantId: string, range: DateRange): Promise<NuageQualitatif>;
-  /** Une ligne par jour pour l'écran « Analyse des conversations ». */
-  getJoursAnalyse(tenantId: string, range: DateRange): Promise<JourAnalyse[]>;
-  /** Mesures d'un scénario, bloc par bloc (« Mes tableaux »). */
-  getWorkflowNodeCounts(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
   /**
-   * Les messages envoyés et reçus par canal, pour les cartes « Numéro WhatsApp » et « Canal RCS » de l'Accueil.
-   * Ce qui est compté et écarté : `PgStatsStore.volumesParCanal`. Requise ; l'écran tolère l'absence de la route
-   * pendant la fenêtre où la console est publiée avant l'API.
+   * Une ligne par jour pour l'écran « Analyse des conversations ».
+   * 🔴 `joursAnalyse` et pas `parJour` : la lecture fusionnée, où les vraies données font foi tant qu'elles
+   * existent et les agrégats comblent au-delà de la rétention. `parJour` seul ferait disparaître l'historique de
+   * l'écran au passage de la purge.
    */
-  volumesParCanal(tenantId: string, jours: number): Promise<VolumesParCanal>;
+  joursAnalyse(tenantId: string, range: DateRange): Promise<JourAnalyse[]>;
 }
 
 /**
@@ -132,7 +147,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
-    return reply.code(200).send(await deps.getDashboard(tenant, r.range));
+    return reply.code(200).send(await deps.stats.getDashboard(tenant, r.range));
   });
 
   /**
@@ -141,7 +156,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
    */
   app.get('/tenants/:tenantId/accueil/volumes', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const volumes = await deps.volumesParCanal(tenant, JOURS_VOLUMES);
+    const volumes = await deps.stats.volumesParCanal(tenant, JOURS_VOLUMES);
     return reply.code(200).send({ jours: JOURS_VOLUMES, whatsapp: volumes.whatsapp, rcs: volumes.rcs });
   });
 
@@ -152,7 +167,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     const [breakdown, pricing, marge] = await Promise.all([
-      deps.getTemplateBreakdown(tenant, r.range),
+      deps.stats.getTemplateBreakdown(tenant, r.range),
       deps.getPricing(tenant, r.range),
       // La marge voyage avec ce qu'elle explique : la page pose côte à côte un coût estimé (marge comprise) et le
       // total facturé par Meta, et sans ce chiffre l'écran ne saurait pas nommer la cause dominante de l'écart.
@@ -167,7 +182,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const tenant = espaceVerifie(req);
     const campaignId = (req.query as Record<string, unknown>).campaignId;
     if (typeof campaignId !== 'string' || campaignId === '') return reply.code(400).send({ error: 'campaignId requis' });
-    return reply.code(200).send(await deps.getCampaignFunnel(tenant, campaignId));
+    return reply.code(200).send(await deps.stats.getCampaignFunnel(tenant, campaignId));
   });
 
   // Breakdown des codes d'erreur Meta sur la plage, filtrable ?templateName=.
@@ -177,7 +192,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const r = parseRange(q);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     const templateName = typeof q.templateName === 'string' && q.templateName !== '' ? q.templateName : undefined;
-    return reply.code(200).send({ errors: await deps.getErrorBreakdown(tenant, r.range, templateName) });
+    return reply.code(200).send({ errors: await deps.stats.getErrorBreakdown(tenant, r.range, templateName) });
   });
 
   /**
@@ -285,14 +300,14 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
-    return reply.code(200).send({ jours: await deps.getJoursAnalyse(tenant, r.range) });
+    return reply.code(200).send({ jours: await deps.conversationStats.joursAnalyse(tenant, r.range) });
   });
 
   app.get('/tenants/:tenantId/stats/conversations', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
-    return reply.code(200).send(await deps.getConversationSummary(tenant, r.range));
+    return reply.code(200).send(await deps.conversationStats.getSummary(tenant, r.range));
   });
 
   /**
@@ -303,7 +318,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const tenant = espaceVerifie(req);
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
-    return reply.code(200).send(await deps.getNuageQualitatif(tenant, r.range));
+    return reply.code(200).send(await deps.conversationStats.getNuageQualitatif(tenant, r.range));
   });
 
   /**
@@ -342,6 +357,6 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
       ...(topicValide(q.topic) ? { topic: topicValide(q.topic) } : {}),
       ...(limit !== undefined ? { limit } : {}),
     };
-    return reply.code(200).send({ conversations: await deps.listAnalyzedConversations(tenant, r.range, filters) });
+    return reply.code(200).send({ conversations: await deps.conversationStats.listAnalyzed(tenant, r.range, filters) });
   });
 }
