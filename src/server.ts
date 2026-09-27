@@ -558,7 +558,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('fields', 'tenant', deps.fields, (app, d, g) => registerFields(app, d, g.admin)),
     entree('support', 'tenant', deps.support, (app, d, g) => registerSupport(app, d, g.auth)),
     entree('aide', 'tenant', deps.aide, (app, d, g) => registerAide(app, d, g.auth)),
-    entree('contacts', 'tenant', deps.contacts, (app, d, g) => registerContacts(app, d, g.admin, g.limiteCouteuse)),
+    entree('contacts', 'tenant', deps.contacts, (app, d, g) => registerContacts(app, d, g.admin, g.encadrement, g.limiteCouteuse)),
     entree('workflows', 'tenant', deps.workflows, (app, d, g) => registerWorkflows(app, d, g.admin)),
     entree('workflowReports', 'tenant', deps.workflowReports, (app, d, g) => registerWorkflowReports(app, d, g.admin)),
     entree('automations', 'tenant', deps.automations, (app, d, g) => registerAutomations(app, d, g.auth)),

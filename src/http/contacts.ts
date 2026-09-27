@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { forbidNonAdmin, gardeEtendue, makeRequireRole } from '../auth/middleware';
+import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
 import type { ContactRow, ContactFilters, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
@@ -189,7 +189,7 @@ async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: s
   return lu();
 }
 
-export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
+export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, garde: Guard, gardeEncadrement: Guard, limiteCouteuse?: PreHandler): void {
   const opts = { preHandler: garde };
   /**
    * L'ENCADREMENT, ET PAS TOUT LE MONDE : `admin` et `manager`. La liste des désabonnés nomme des personnes
@@ -204,7 +204,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * journal des actions et les deux moitiés du journal des erreurs. Consulter n'est pas décider : brancher
    * un connecteur sur le consentement, purger un contact ou bloquer quelqu'un restent `forbidNonAdmin`.
    */
-  const optsEncadrement = gardeEtendue(garde, makeRequireRole(['admin', 'manager']));
+  // 🔴 LA GARDE D'ENCADREMENT SEULE, pas empilée sur `garde` : `garde` est `g.admin`, dont le contrôle de rôle
+  // refusait le manager AVANT que l'encadrement soit lu (défaut vécu jusqu'au 2026-09-27).
+  const optsEncadrement = { preHandler: gardeEncadrement };
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
   const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);

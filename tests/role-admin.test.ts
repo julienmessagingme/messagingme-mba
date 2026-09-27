@@ -173,4 +173,30 @@ describe('🔴 le rôle admin, sur le serveur construit', () => {
     }
     expect(fautes, `écritures ouvertes à un agent : ${fautes.join(' ; ')}`).toEqual([]);
   }, 60_000);
+
+  it('🔴 un manager atteint les cinq lectures de conformité ; un agent y est refusé avant le handler', async () => {
+    // Décision de Julien du 2026-09-14 : l'encadrement LIT la conformité. Le module contacts est monté sur
+    // `g.admin`, et ces cinq routes empilaient la garde d'encadrement DERRIÈRE lui : le manager recevait 403.
+    const LECTURES = [
+      'GET /tenants/:tenantId/contacts/desabonnes', 'GET /tenants/:tenantId/contacts/refus-possibles',
+      'GET /tenants/:tenantId/audit', 'GET /tenants/:tenantId/erreurs-livraison', 'GET /tenants/:tenantId/erreurs-systeme',
+    ];
+    const journal = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fautes: string[] = [];
+    try {
+      for (const cle of LECTURES) {
+        const r = route(cle);
+        if (!r) { fautes.push(`${cle} absente`); continue; }
+        s.remettreAZero();
+        await appeler(r, await s.jeton(A, 'manager'));
+        if (!s.atteint(r)) fautes.push(`manager refusé : ${cle}`);
+        s.remettreAZero();
+        const agent = await appeler(r, await s.jeton(A, 'agent'));
+        if (agent.statusCode !== 403 || s.atteint(r)) fautes.push(`agent admis : ${cle} -> ${agent.statusCode}`);
+      }
+    } finally {
+      journal.mockRestore();
+    }
+    expect(fautes).toEqual([]);
+  }, 60_000);
 });
