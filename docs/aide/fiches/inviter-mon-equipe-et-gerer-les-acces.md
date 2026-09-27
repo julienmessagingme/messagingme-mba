@@ -1,6 +1,6 @@
 ---
 source_section: Comptes & authentification
-source_empreinte: fd4c06
+source_empreinte: 0b8201
 ---
 # Inviter mon équipe, et gérer les accès
 
@@ -35,8 +35,10 @@ reconnu.
 (Google Authenticator, Microsoft Authenticator…), vous saisissez le premier code, puis vous recevez **dix codes
 de secours** à conserver. Ils ne seront plus affichés, et chacun ne sert qu'une fois. Ensuite, chaque connexion
 par mot de passe demande le code de l'application, ou un code de secours dans le même champ ; une connexion
-Google n'en demande pas. Les agents et managers peuvent l'activer depuis « Mon compte », où chacun régénère
-aussi ses codes de secours. **Téléphone perdu** : un autre administrateur la réinitialise depuis Compte &
+Google n'en demande pas. Les agents et managers peuvent l'activer depuis « Mon compte » (menu du compte, en
+haut à droite), après avoir redonné leur mot de passe ; chacun y régénère aussi ses codes de secours. Après cinq
+codes faux de suite, le code de l'application est bloqué un moment (quinze minutes, puis davantage) ; un code de
+secours reste accepté pendant ce temps. **Téléphone perdu** : un autre administrateur la réinitialise depuis Compte &
 équipe ; si la personne a aussi accès à un autre espace, c'est le support qui s'en charge.
 
 **Mot de passe oublié** : un lien de réinitialisation part par e-mail. La réponse affichée est toujours la

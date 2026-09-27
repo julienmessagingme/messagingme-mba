@@ -1167,8 +1167,12 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
 
 ### Sécurité (deltas projet)
 
-🔴 **`scopeTenant` ÉCHOUE FERMÉ** (2026-09-03). C'est LE contrôle d'isolation entre clients, pour 235 routes,
-et la RLS est contournée (pooler superuser). Elle rendait auparavant le tenant PRIS DANS L'URL quand
+🔴 **`scopeTenant` ÉCHOUE FERMÉ** (2026-09-03). C'est LE contrôle d'isolation entre clients, et la RLS est
+contournée (pooler superuser). Depuis le lot 3 de l'audit ponytail (2026-09-26), il n'est plus recopié dans les
+handlers : `etapeEspace` (`src/http/scope.ts`) le pose AU MONTAGE, après la garde d'authentification, sur chaque
+route `:tenantId` d'un module `tenant` (jamais `jeton-ops`), et le handler lit l'espace par `espaceVerifie(req)`,
+qui échoue fermé si l'étape manque. La preuve est dynamique : `tests/scope-tenant.test.ts` appelle chaque route
+d'espace avec une session d'un autre espace. Elle rendait auparavant le tenant PRIS DANS L'URL quand
 `req.auth` était absent : elle n'était donc un contrôle que tant que la garde d'authentification avait été
 posée au montage, dans un autre fichier, chaque module la recevant en paramètre OPTIONNEL et la dégradant en
 silence. Ce n'était pas un trou vivant, mais la panne aurait été MUETTE.
@@ -1226,7 +1230,7 @@ toutes pièces. Vide = aucun en-tête CORS n'est posé du tout, ce qui est le bo
 36 modules gardés) et `RATE_LIMIT_COUTEUX_PAR_MINUTE` (défaut 10, clé = ESPACE) sur import, aperçu, action en
 masse, purge, export d'historique, lancement de campagne, et les QUATRE routes lourdes de la connaissance d'un
 agent (suppression en masse, import d'un document, aperçu et import d'un site, ajoutées le 2026-09-15). **Mettre l'une à 0 la désactive**, et c'est le
-levier d'urgence : ces plafonds touchent les 235 routes d'un produit en production, un mauvais calibrage
+levier d'urgence : ces plafonds touchent toutes les routes authentifiées d'un produit en production, un mauvais calibrage
 couperait la console de tous les clients, et un `--force-recreate` va plus vite qu'un déploiement de code.
 ⚠️ Ils sont LOCAUX AU PROCESS : le plafond annoncé est celui d'UNE instance, à lever avant le multi-replica.
 

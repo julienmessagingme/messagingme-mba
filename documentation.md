@@ -1120,7 +1120,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | Filtre d'origine Cloudflare | NPM, hôtes `api.` et `mba.` (`DEPLOY.md`) | un appel direct sur l'IP du VPS qui contournerait Cloudflare |
 | Signature du webhook | avant de lire le corps | un tiers qui se ferait passer pour Meta |
 | `etapeEspace` (règle `scopeTenant`), posée au montage | toute route `:tenantId` d'un module `tenant` (§ 5) | l'accès aux données d'un autre client (IDOR) |
-| `requireAdmin` (`g.admin`, au montage) ; `forbidNonAdmin` dans le handler des seuls modules sur `g.auth` | écritures | un opérateur d'inbox qui modifierait la configuration |
+| `requireAdmin` (`g.admin`, au montage) ; `forbidNonAdmin` dans le handler des modules sur `g.auth`, plus deux écarts délibérés sur `g.admin` (`contacts`, dont les lectures de conformité passent par `g.encadrement`, et `mbaAssistant`) | écritures | un opérateur d'inbox qui modifierait la configuration |
 | Plafonds de débit | routes authentifiées | l'épuisement par un client, volontaire ou non |
 | `OPS_TOKEN` | `/ops` | l'exploitation cross-tenant |
 | Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée | une session d'admin ouverte avec le seul mot de passe |
@@ -1381,9 +1381,8 @@ pas** : un lecteur qui croit « toutes traçables » ne cherchera pas la trace q
 gênant est `cle-modele`, qui révoque une clé facturée chez Vercel sans dire qui ni pourquoi.
 
 ⚠️ **Ce qui vaut, lui, pour les huit** : elles sont délibérément **cross-espace**, parce que `/ops`
-s'authentifie par un JETON d'exploitation (`x-ops-token`) et jamais par une session. ⚠️ Le comportement
-quand une dépendance manque n'est PAS uniforme : la plupart rendent **503**, mais `dlq/replay` n'est pas
-montée du tout et rend donc **404**.
+s'authentifie par un JETON d'exploitation (`x-ops-token`) et jamais par une session. Leurs dépendances sont
+requises par le type : toutes les routes, `dlq/replay` comprise, sont montées dès que le module l'est.
 
 🔴 **ET UNE SESSION, D'OBSERVATION OU NON, N'ATTEINT JAMAIS `/ops` : elle est refusée en 401 par
 `makeRequireOps`, faute de `x-ops-token`.** Ce n'est PAS la garde de méthode qui l'arrête : celle-là vit
@@ -1766,7 +1765,7 @@ Ajouté par le lot 4 de l'API publique :
    jamais un zéro inventé. Le chiffre de l'agent de Meta : `GET /tenants/:tenantId/mba/:phoneNumberId/messages` rend
    `{ messages }`, le nombre de messages `direction = 'out'` dont l'origine effective (`ORIGINE_EFFECTIVE_SQL`) vaut
    `mba`, sur les fils non test de l'espace (`c.tenant_id = $1`), sans borne de date
-   (`PgStatsStore.messagesEcritsParMba`) ; `messages: null` quand la dépendance n'est pas câblée, jamais 0 ;
+   (`PgStatsStore.messagesEcritsParMba`, dépendance requise de la route) ;
    `direction = 'out'` tient le prédicat de l'index partiel `conversation_messages_origin_idx` (0099). Il s'affiche
    par `ChiffreMessagesTenus` (`web/components/EnteteAgent.tsx`) en mode MBA (`mba: true`, libellé seul), dans le
    cadre de l'agent de Meta de l'Accueil et dans MBA > Paramètres ; l'agent IA garde `{ messages, jours }` et sa

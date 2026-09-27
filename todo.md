@@ -1,5 +1,29 @@
 # todo.md : backlog
 
+## 🟠 Suites de la session du 2026-09-25 au 27 (MFA, audit ponytail, commentaires)
+
+1. **`/ops` nominatif avec double authentification** (lot 4 du bilan, `docs/prive/BILAN-AUDITS-2026-09-22.md`).
+   Aujourd'hui un jeton partagé unique, sans identité. À cadrer avec Julien : nombre de comptes, accès de secours,
+   durée de session. La moitié « admins d'espace » est faite et éprouvée (2026-09-27).
+2. **Jaunes laissés par les relectures** :
+   - `tests/http-inbox.test.ts` a perdu le cas « `POST /tenants/AUTRE/conversations/:id/traiter` -> 403 » en
+     retirant son voisin 503 : le remettre ;
+   - `tests/role-admin.test.ts` ne vérifie que l'AGENT sur les écritures des modules montés sur `g.auth`, où
+     `forbidNonAdmin` est la seule barrière : ajouter le manager ;
+   - quelques valeurs de `tests/routes-inertes.ts` ne reproduisent pas exactement l'ancienne absence
+     (`agentsInertes.etatPourLint`) ; des fixtures contournent encore le typage par `as unknown as` ;
+   - l'écran Équipe montre « Réinitialiser la double authentification » même pour un membre qui n'en a pas (la
+     liste des membres ne dit pas qui a un facteur) ;
+   - une alerte Telegram au déclenchement du blocage des codes (seul le journal le trace aujourd'hui) ;
+   - un agent promu admin garde sa session sans facteur jusqu'à 12 h.
+3. **L'heure de planification d'une campagne** s'affiche à l'heure de Paris (`web/app/campaigns/page.tsx`) alors
+   qu'elle se saisit à l'heure du poste (`datetime-local` de `EtapeRecap.tsx`) : un poste qui n'est pas à Paris lit
+   une autre heure que celle qu'il a tapée.
+4. **Commentaires de `src/salesforce`** : pas traités par le chantier du 2026-09-27, sa session y travaillait.
+5. **`LLM_PROVIDER`** à retirer de `.env.prod` sur le VPS (la fabrique de LLM a disparu au lot 1 de l'audit).
+6. **Julien** : révoquer les deux clés d'API de l'essai réel du 2026-09-25 (puis vérifier le 401), supprimer les
+   contacts fictifs +33639980001 à 04 et le champ `essai_api_x`.
+
 ## 🔴 App Salesforce core : L0 mesuré, BLOQUÉ par la liaison du namespace (2026-09-27)
 
 Le pendant de HubSpot pour le Salesforce « core » (Leads, Contacts, Opportunités, Campaigns), en offre de

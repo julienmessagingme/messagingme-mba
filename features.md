@@ -7,8 +7,9 @@ personne. Invisible tant que tous les comptes étaient admin ; réparé le même
 
 Statut : 🔲 pas commencé · 🚧 en cours · ✅ live
 
-✅ **Console, refonte visuelle** (2026-09-25, passes 1 et 2). Police Geist, un seul accent de couleur, une teinte
-par état, des boutons d'un seul modèle. Les suppressions et gestes lourds se confirment dans la page (sur la
+✅ **Console, refonte visuelle** (2026-09-25 et 26, passes 1 à 3). Police Geist, un seul accent de couleur, une teinte
+par état, des boutons d'un seul modèle. La console vouvoie partout, les phrases sous les titres sont courtes, les
+statuts des modèles sont traduits (approuvé, en revue, refusé) et les dates s'écrivent à la française. Les suppressions et gestes lourds se confirment dans la page (sur la
 ligne, ou dans une fenêtre qui dit les conséquences), plus par la boîte grise du navigateur. Les écrans en
 attente montrent la forme de ce qui arrive. Une valeur inconnue s'affiche « n/d ». Une icône par geste, la même
 partout. Plus aucun écran principal ne déborde sur un téléphone.
@@ -113,9 +114,15 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
     saisir à la main, le premier code, puis **dix codes de secours** montrés une seule fois (Copier, Télécharger en
     `.txt`, et une case « J'ai conservé ces codes » avant de continuer). Chaque code de secours ne sert qu'une
     fois ; quand l'un a servi, l'écran dit combien il en reste.
-  - **Mon compte** montre l'état (date d'activation, codes de secours restants) et permet d'activer, de régénérer
-    les codes et de désactiver, ces deux derniers gestes contre un code. La désactivation n'est pas proposée à un
-    administrateur.
+  - **Mon compte** (menu du compte en haut à droite, pour tous les rôles) montre l'état (date d'activation, codes
+    de secours restants) et permet d'activer, de régénérer les codes et de désactiver, ces deux derniers gestes
+    contre un code. Activer demande d'abord le **mot de passe**, pour qu'une session volée ne puisse pas poser son
+    propre facteur. La désactivation n'est pas proposée à un administrateur.
+  - **Après 5 codes faux de suite**, le code de l'application est bloqué 15 minutes, puis 30, et ainsi de suite
+    jusqu'à 24 heures ; un code de secours reste accepté pendant le blocage, et un bon code remet le compteur à
+    zéro. Le blocage tient même après un redémarrage du serveur.
+  - Essai réel fait par Julien le 2026-09-27 : enrôlement à la connexion, connexion par code, connexion par code
+    de secours puis ce même code refusé.
   - **Compte & équipe** : un administrateur réinitialise le second facteur d'un autre membre (téléphone perdu),
     après confirmation. Refusé si la personne a aussi un compte dans un autre espace : ce cas passe par le support.
   - **Journal des actions** : activation, désactivation, réinitialisation, codes régénérés, code de secours utilisé
@@ -150,10 +157,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Session expirée : on le dit, et on propose de revenir** (2026-08-17) : quand le jeton tombe pendant
   qu'on travaille, une bannière apparaît en haut de l'écran avec un bouton **« Se reconnecter »** qui ramène à
   la connexion. Avant, l'interface restait active et les enregistrements échouaient en silence.
-- ✅ **Trois statuts de membre** (2026-08-20) : **Admin** (tout), **Manager**, **Agent** (inbox seule).
-  ⚠️ Manager et agent ont **les mêmes accès aujourd'hui** : le statut existe et s'attribue, mais aucun droit
-  propre ne lui a encore été ouvert. L'écran d'invitation le dit noir sur blanc, pour qu'on n'invite pas un
-  manager en s'attendant à ce qu'il voie tout.
+- ✅ **Trois statuts de membre** (2026-08-20) : **Admin** (tout), **Manager**, **Agent** (inbox seule). Un
+  manager a les accès d'un agent, plus l'affectation des conversations et la lecture des écrans de conformité
+  (voir « Sécurité & compliance »).
 - ✅ **Crochet paiement (inerte)** : chaque espace a un statut (`trial|active|locked`) ; un espace `locked`
   serait bloqué (403). Pas de Stripe pour l'instant, le contrôle est en place mais neutre.
 
@@ -2178,7 +2184,8 @@ Un menu au bas de la barre, à côté de Paramètres et Support, qui rassemble *
 comptes** : ce qui a été fait, ce qui a échoué, et ce que les gens ont accepté. Sa page d'accueil porte une
 boîte par sous-menu.
 
-- ✅ **Un MANAGER y accède, en plus de l'Inbox** (2026-09-14). C'est le premier endroit où ce rôle sert à
+- ✅ **Un MANAGER y accède, en plus de l'Inbox** (2026-09-14 ; côté serveur, les cinq lectures de Contacts qui
+  le refusaient encore l'acceptent depuis le 2026-09-27). C'est le premier endroit où ce rôle sert à
   quelque chose : il voit les désabonnés, la politique d'annonce d'IA, le journal des actions et celui des
   erreurs. Sa barre latérale ne porte que ça : on ne lui montre pas des dossiers qui le renverraient à
   l'Inbox.

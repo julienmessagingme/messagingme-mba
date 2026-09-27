@@ -5,6 +5,35 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-25 au 27 : console sans « slop », audit ponytail, double authentification, commentaires allégés
+
+- **Console, passes 2 et 3 anti-slop** (6a58de04, 61dbc509, a01e1961) : formes, icônes Phosphor, une modale, des
+  confirmations dans la page, puis le texte (vouvoiement, phrases courtes, statuts traduits, dates). Une relecture
+  unique par passe, zéro rouge. « Mon compte » ajouté au menu du compte (4b9ae3d0).
+- **Audit ponytail, lots 2 et 3** (e7b4aeb4, 91c3216f) : factorisations (`enTransaction`, gabarit de balayage), puis
+  le contrôle d'espace posé au montage (259 copies remplacées, preuve dynamique sur chaque route), 49
+  `forbidNonAdmin` redondants retirés, dépendances rendues requises. Essai réel du lot 3 en conteneur : une session
+  d'un espace A reçoit 403 sur une route de B, 200 sur la sienne. Bilan honnête, donné à Julien : le code a peu
+  maigri (−1,4 % de `src/`), le gain est structurel (isolation et câblage par construction).
+- **Faille de prise de compte par l'inscription fermée** (47616cee), trouvée par l'implémenteur du MFA en câblant
+  l'inscription : `/auth/signup` rattachait l'adresse d'un autre à son identité, puis `change-password` vérifiait
+  l'ancien mot de passe sur la copie du compte et écrivait sur l'identité. Mesuré en base : la seule identité
+  multi-espaces était celle de Julien (« Messaging me Bis », créé par lui), aucun changement de mot de passe tracé.
+- **Double authentification des administrateurs** (08c502dc, migration 0182) puis ses correctifs (8186711c, 0184 :
+  blocage persistant des codes, mot de passe pour l'enrôlement volontaire, jetons d'étape sans noms d'espaces).
+  Ordre de déploiement : la console d'abord (elle accepte l'ancienne API), l'API ensuite, jamais l'inverse (une
+  API neuve devant l'ancienne console bloquait tous les admins). **Essai réel fait par Julien le 2026-09-27.**
+- **Défaut managers** (8347c537) : les cinq lectures de conformité de Contacts empilaient la garde
+  d'encadrement derrière `g.admin`, donc refusaient le manager malgré la décision du 2026-09-14.
+- **Commentaires de `src/`** (a203eced, d2a0a1b2) : d'environ 45 700 à 28 700 lignes (−37 %), récits datés et
+  redites retirés. Preuve mécanique fichier par fichier : le code réimprimé sans commentaires (printer TypeScript,
+  types compris) est identique, directives conservées.
+- **Coût** : le lot 3 en workflow multi-agents (cartographes, implémenteurs, relecteurs par angle, vérificateurs) a
+  consommé plus de 3,6 M de tokens et aucune relecture n'y a trouvé de rouge ; Julien a arrêté la pratique. Une
+  coupure du poste en pleine implémentation a été reprise sans perte (cartographie en cache, implémenteur relancé
+  sur l'état de l'arbre). Les déploiements en ERREUR du projet Vercel de la vitrine venaient de son Ignored Build
+  Step (commit de référence sorti du clone de profondeur 10), corrigé par sa session.
+
 ## 2026-09-26 : `/v1/contacts` borne ses appels, et ne crée plus ni champ ni étiquette
 
 Demande de Julien : « protéger mieux notre API ». Le lot de `POST /v1/contacts/batch` acceptait 500 fiches,
