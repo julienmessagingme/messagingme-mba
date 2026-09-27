@@ -197,16 +197,13 @@ import { messageDe } from './lib/erreur';
 
 async function main(): Promise<void> {
   /**
-   * Les deux bases d'adresses publiques, résolues UNE fois. `PUBLIC_API_URL` vide (le cas d'aujourd'hui) rend
-   * exactement ce que `APP_URL` rendait avant : ce câblage est donc sans effet tant qu'on ne pose pas la
-   * variable. Détail de la règle et de son cas particulier dans `src/lib/adresses-publiques.ts`.
+   * Les deux bases d'adresses publiques, résolues une fois. `PUBLIC_API_URL` vide rend exactement ce que
+   * `APP_URL` rendait : la règle et son cas particulier vivent dans `src/lib/adresses-publiques.ts`.
    */
   const adressesApi = adressesPubliques(config.APP_URL, config.PUBLIC_API_URL);
 
-  // `supervise: false` : l'API ne fait qu'EMPILER des jobs, elle n'en dépile aucun. Superviser (récupération des
-  // jobs expirés, monitoring, flow) est le travail du worker. Laisser l'API superviser doublait la maintenance
-  // sur la base pour zéro bénéfice : mesuré le 2026-08-17, c'était la moitié des ~55 000 requêtes/jour de
-  // maintenance du projet, sur un quota d'egress Supabase déjà dépassé.
+  // `supervise: false` : l'API ne fait qu'empiler des jobs, elle n'en dépile aucun. Superviser (jobs expirés,
+  // monitoring, flow) est le travail du worker ; le faire ici doublerait la maintenance sur la base pour rien.
   const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, {
     max: config.PGBOSS_MAX,
     connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
@@ -219,16 +216,14 @@ async function main(): Promise<void> {
   await queue.start();
 
   const repo = new PgCampaignRepo(pool);
-  // Statuts de livraison des destinataires. Le worker en a le sien pour les accusés Meta ; l'API en a besoin
-  // parce que les rappels du fournisseur RCS arrivent SUR L'API (le worker n'expose aucune route publique).
+  // Statuts de livraison des destinataires : l'API en a besoin parce que les rappels du fournisseur RCS
+  // arrivent sur l'API (le worker n'expose aucune route publique).
   const recipientStore = new PgRecipientStore(pool);
   const campaignDraftStore = new PgCampaignDraftStore(pool);
   /**
-   * LES SIGNAUX (spec 2026-09-24, § 8). L'API en émet aussi : les rappels RCS, les clics sur un lien suivi et
-   * les désabonnements écrits depuis la console ou l'API publique arrivent ICI, pas dans le worker.
-   *
-   * 🔴 CONSTRUIT AVANT LE DÉPÔT DES CONTACTS, qui l'appelle à chaque désabonnement. Le cache des espaces actifs
-   * est invalidé par l'écran du réglage : un outil branché reçoit les signaux de l'API sans attendre.
+   * Les signaux : l'API en émet aussi (rappels RCS, clics sur un lien suivi, désabonnements écrits depuis la
+   * console ou l'API publique). Construit avant le dépôt des contacts, qui l'appelle à chaque désabonnement.
+   * Le cache des espaces actifs est invalidé par l'écran du réglage.
    */
   const integrationBatch = new PgIntegrationBatchStore(pool);
   const espacesBatch = cacheCourt<ReadonlySet<string>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
@@ -239,11 +234,9 @@ async function main(): Promise<void> {
     log: (m) => console.warn(m),
   });
   /**
-   * 🔴 L'ANNONCE D'UN OPT-OUT, POSÉE SUR LE DÉPÔT LUI-MÊME. Elle couvre par CONSTRUCTION toutes les méthodes
-   * du dépôt capables d'écrire `opted_out` (la liste qui fait foi est dérivée par `tests/optout-poussee.test.ts`)
-   * au lieu d'être recopiée sur chaque appelant, où elle aurait été oubliée au prochain bouton. Elle n'appelle
-   * RIEN : elle enfile.
-   * L'appel au connecteur, lui, vit dans le worker, avec ses réessais.
+   * 🔴 L'annonce d'un opt-out, posée sur le dépôt lui-même : elle couvre par construction toutes ses méthodes
+   * capables d'écrire `opted_out` (liste dérivée par `tests/optout-poussee.test.ts`), au lieu d'être recopiée
+   * sur chaque appelant. Elle n'appelle rien, elle enfile ; l'appel au connecteur vit dans le worker.
    */
   const contactStore = new PgContactStore(
     pool,
@@ -262,10 +255,9 @@ async function main(): Promise<void> {
   const tagStore = new PgTagStore(pool);
   const inboxStore = new PgInboxStore(pool);
   const statsStore = new PgStatsStore(pool);
-  // Lecture des agrégats d'analyse de conversation (Pièce 1). `enabled` = état de la feature côté serveur
-  // (empty-state différencié). La lecture ne coûte rien ; l'écriture (analyse LLM) est gatée ailleurs.
-  // La rétention vient du MÊME endroit que la purge du worker (`CONVERSATION_RETENTION_DAYS`) : l'écran
-  // annonce ainsi le nombre réellement appliqué, pas une valeur recopiée qui dériverait le jour où on la change.
+  // Agrégats d'analyse de conversation. `enabled` = état de la feature côté serveur (empty-state différencié).
+  // La rétention vient de la même variable que la purge du worker (`CONVERSATION_RETENTION_DAYS`) : l'écran
+  // annonce le nombre réellement appliqué.
   const conversationStatsStore = new PgConversationStatsStore(pool, config.CONVERSATION_ANALYSIS_ENABLED === 'true', config.CONVERSATION_RETENTION_DAYS);
   const settingsStore = new PgTenantSettingsStore(pool);
   const userStore = new PgUserStore(pool);
@@ -275,8 +267,7 @@ async function main(): Promise<void> {
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const auditStore = new PgAuditStore(pool);
   const erreursLivraison = new PgErreursLivraisonStore(pool);
-  // Les échecs des messages LIBRES (migration 0175), que le rapport de smsmode alimente depuis le lot 3 de
-  // l'API publique. Le cache de joignabilité RCS qu'il alimente aussi est `rcsJoignabilite`, plus bas.
+  // Les échecs des messages libres, alimentés par le rapport de smsmode (qui alimente aussi `rcsJoignabilite`).
   const echecsMessages = new PgEchecsMessagesStore(pool);
   const poolAttentesStore = new PgPoolAttentesStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
@@ -290,14 +281,14 @@ async function main(): Promise<void> {
     await auditStore.record(tenant, { userId: actor.userId, email }, action, target, detail);
   };
   /**
-   * Le second facteur des administrateurs (migration 0182). Ses secrets sont chiffrés avec `ENCRYPTION_KEY`, comme
-   * les jetons Meta que cette même API chiffre déjà : la clé est donc présente partout où cette ligne s'exécute.
+   * Le second facteur des administrateurs. Ses secrets sont chiffrés avec `ENCRYPTION_KEY`, comme les jetons
+   * Meta que cette API chiffre déjà.
    */
   const mfaStore = new PgMfaStore(pool, config.ENCRYPTION_KEY);
   /**
-   * 🔴 UNE LIGNE PAR ESPACE DE L'IDENTITÉ : le facteur est celui de la PERSONNE, et chacun de ses espaces doit
-   * pouvoir lire qu'il a été posé, utilisé ou retiré. L'acteur est son compte DANS cet espace ; `null` quand c'est
-   * l'exploitation qui agit (le jeton y est partagé, il n'y a personne à nommer).
+   * Une ligne d'audit par espace de l'identité : le facteur est celui de la personne, et chacun de ses espaces
+   * doit pouvoir lire qu'il a été posé, utilisé ou retiré. L'acteur est son compte dans cet espace ; `null`
+   * quand c'est l'exploitation qui agit (jeton partagé, personne à nommer).
    */
   const auditParIdentite = async (
     identityId: string,
@@ -316,8 +307,8 @@ async function main(): Promise<void> {
     }
   };
   const phoneStatusStore = new PgPhoneStatusStore(pool);
-  // Le numéro délié (migration 0180) : UNE garde par process, partagée par la fabrique Meta (le refus des
-  // envois) et par les routes Délier/Relier (qui la vident, pour que ce process-ci n'ait aucune fenêtre).
+  // Le numéro délié : une garde par process, partagée par la fabrique Meta (refus des envois) et par les
+  // routes Délier/Relier, qui la vident pour que ce process n'ait aucune fenêtre.
   const numeroDelieStore = new PgNumeroDelieStore(pool);
   const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
@@ -330,23 +321,21 @@ async function main(): Promise<void> {
   const rechercheSemantique = creerRechercheSemantique();
   const toolCatalog = new PgToolCatalog(pool);
   const credits = new PgCreditStore(pool);
-  // Lecture SEULE, pour le suivi de consommation d'un agent. Le store d'ECRITURE des sessions vit dans le
-  // cablage du worker (`src/workflow/wiring.ts`) : c'est lui qui les fait avancer, l'API ne fait qu'agreger.
+  // Lecture seule, pour le suivi de consommation d'un agent. Le store d'écriture des sessions vit dans le
+  // câblage du worker (`src/workflow/wiring.ts`) : l'API ne fait qu'agréger.
   const agentSessions = new PgAgentSessionStore(pool);
   const agentSources = new PgSourceStore(pool);
   const mcpStore = new PgMcpStore(pool);
   const agentRequetes = new PgRequeteStore(pool);
 
   /**
-   * LE RELAIS DU META BUSINESS AGENT (migration 0161) : trois aides partagées par la publication.
-   *
-   * `adresseDuRelais` : `null` quand `PUBLIC_API_URL` est vide, et la publication refuse alors en le disant
-   * plutôt que de poser chez Meta un connecteur qui n'appelle rien.
+   * Le relais du Meta Business Agent. `adresseDuRelais` est `null` quand `PUBLIC_API_URL` est vide : la
+   * publication refuse alors en le disant plutôt que de poser chez Meta un connecteur qui n'appelle rien.
    */
   const adresseDuRelais = (): string | null => baseDuRelais(config.PUBLIC_API_URL);
   /**
-   * Les outils exposés à l'agent de Meta, tels qu'ils partent chez Meta : appels de connecteur et gestes maison
-   * (spec 2026-09-21-outils-maison-mba). Le tri de ce qui part vit dans `src/mba/outils-a-publier.ts`, testé.
+   * Les outils exposés à l'agent de Meta, tels qu'ils partent chez Meta : appels de connecteur et gestes
+   * maison. Le tri vit dans `src/mba/outils-a-publier.ts`, testé.
    */
   const outilsPourMeta = async (tenant: string, pn: string): Promise<OutilAPublier[]> =>
     outilsAPublier(
@@ -356,23 +345,20 @@ async function main(): Promise<void> {
   /** La clé « Agent de Meta », par acteur : la fabrique et son audit vivent dans `src/mba/cle-relais.ts`. */
   const depsCleRelaisPour = depsCleRelaisDepuis({ cles: apiKeyStore, reglages: settingsStore, audit: auditSink });
   /**
-   * LA CLE DE MODELE PROPRE A CHAQUE ESPACE (2026-09-09).
-   *
-   * 🔴 LE CHIFFREMENT EST INJECTE, il n'est pas relu dans le store : meme contrat que
-   * `PgChannelsMeConnectionStore`. Un store qui irait chercher la cle de chiffrement tout seul serait un
-   * second endroit ou la lire, donc un second endroit ou l'oublier.
+   * La clé de modèle propre à chaque espace. Le chiffrement est injecté, pas relu dans le store : un second
+   * endroit où lire la clé de chiffrement serait un second endroit où l'oublier.
    */
   const clesGateway = new PgCleGatewayStore(
     pool,
     (clair) => encryptSecret(clair, config.ENCRYPTION_KEY),
     (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
-    // ⚠️ Le repli sur la cle maison est SILENCIEUX par nature : les agents repondent, tout a l'air normal, et
-    // la depense de cet espace cesse d'etre attribuee. Sans cette ligne, personne ne l'apprend jamais.
+    // Le repli sur la clé maison est silencieux par nature (les agents répondent, mais la dépense de cet
+    // espace cesse d'être attribuée) : sans cette ligne, personne ne l'apprend.
     (tenantId, err) => { journaliser('error', 'cle_gateway_indechiffrable', { err, tenantId }); },
   );
   /**
-   * ⚠️ `null` quand le jeton Vercel n'est pas configure : le provisionnement est alors ETEINT et la creation
-   * d'agent se comporte comme avant. C'est ce qui permet de deployer ce lot avant d'avoir pose le jeton.
+   * `null` quand le jeton Vercel n'est pas configuré : le provisionnement est éteint et la création d'agent
+   * se passe de clé propre.
    */
   const provisionCle: DepsProvisionCle | null = config.VERCEL_API_TOKEN !== '' && config.VERCEL_TEAM_ID !== ''
     ? {
@@ -390,58 +376,42 @@ async function main(): Promise<void> {
     }
     : null;
 
-  // Vide -> la conversation de construction repond 503, aucun crash au boot.
-  // ⚠️ Le 3e argument est le resolveur de cle PAR ESPACE : sans lui, tous les appels partiraient sur la cle
-  // maison et aucune depense ne serait attribuee, ce qui est exactement ce que ce lot vient corriger.
-  // ⚠️ UNE SEULE EXCEPTION, juste en dessous et DELIBEREE : `gatewayAide` est construit sans resolveur,
-  // parce que l aide de la console est a NOTRE charge. Ne pas << corriger >> cet ecart.
+  // Vide -> la conversation de construction répond 503, aucun crash au boot.
+  // 🔴 Le 3e argument est le résolveur de clé par espace : sans lui, tous les appels partiraient sur la clé
+  // maison et aucune dépense ne serait attribuée au client. Seul `gatewayAide`, juste en dessous, s'en passe.
   const gateway = config.AI_GATEWAY_API_KEY
     ? new GatewayChatClient(config.AI_GATEWAY_API_KEY, undefined, async (tenant) => (await clesGateway.lire(tenant))?.cle ?? null)
     : null;
   /**
-   * LE CLIENT DU BOT D AIDE, construit SANS resolveur de cle par espace.
-   *
-   * 🔴 C EST CE QUI FAIT QUE NOUS PAYONS, et ce n est pas un oubli : `cleDe` rend la cle maison des que le
-   * resolveur est absent (`src/agent/llm/chat-client.ts`). Lui passer le resolveur ferait facturer l aide
-   * au credit prepaye du client, c est-a-dire l inverse exact de ce que Julien a tranche le 2026-09-11.
-   * Facturer quelqu un pour apprendre a se servir du produit se retourne contre nous : celui qui hesite a
-   * poser une question est celui qui abandonne.
-   *
-   * ⚠️ La depense est bornee par le plafond d EQUIPE pose chez Vercel, et par le plafond de debit PAR ESPACE
-   * de la route (`src/http/aide.ts`), qui empeche un seul client de la consommer pour tout le monde.
+   * Le client du bot d'aide, construit sans résolveur de clé par espace.
+   * 🔴 C'est ce qui fait que nous payons : `cleDe` rend la clé maison quand le résolveur est absent
+   * (`src/agent/llm/chat-client.ts`). Lui passer le résolveur facturerait l'aide au crédit prépayé du client.
+   * La dépense est bornée par le plafond d'équipe posé chez Vercel et par le plafond de débit par espace de
+   * la route (`src/http/aide.ts`).
    */
   const gatewayAide = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
 
   /**
-   * L'HISTORIQUE DES RÉGLAGES (migration 0146). Partagé par les DEUX assistants et par les formulaires :
-   * un historique qui ignorerait les gestes d'écran mentirait par omission, et on y chercherait une cause
-   * qui ne s'y trouve pas.
+   * L'historique des réglages, partagé par les deux assistants et par les formulaires : un historique qui
+   * ignorerait les gestes d'écran mentirait par omission.
    */
   const historiqueStore = new PgHistoriqueStore(pool);
   /**
-   * LES PIECES JOINTES DEPOSEES DANS LA CONVERSATION DU MBA.
-   *
-   * 🔴 UNE SEULE INSTANCE, PARTAGEE ENTRE LE DEPOT ET L APPLICATION. En construire deux (une par lambda de
-   * cablage) rendrait tout jeton introuvable au moment de l appliquer, sans aucune erreur visible : le
-   * depot reussirait, le diff porterait le jeton, et l application dirait « document plus disponible ».
+   * Les pièces jointes déposées dans la conversation du MBA : une seule instance, partagée entre le dépôt et
+   * l'application. Deux instances rendraient tout jeton introuvable au moment de l'appliquer, sans erreur
+   * visible (le dépôt réussit, le diff porte le jeton, l'application dit « document plus disponible »).
    */
   const piecesJointesMba = magasinPiecesJointes();
-  /** Il n y a aucun espace pour le compte de qui l aide est appelee : la depense est la NOTRE. */
+  /** Il n'y a aucun espace pour le compte de qui l'aide est appelée : la dépense est la nôtre. */
   const AUCUN_ESPACE_PAYEUR = '';
   /**
-   * LE TRADUCTEUR DES CONVERSATIONS (2026-09-12).
-   *
-   * 🔴 IL PREND `gateway`, JAMAIS `gatewayAide`, et c est la seule chose a ne pas se tromper ici : la
-   * traduction sert les conversations du CLIENT, donc elle tombe sur son credit prepaye (migration 0124),
-   * quand l aide de la console est a NOTRE charge. Les deux clients se ressemblent a une lettre pres et
-   * n ont pas le meme payeur.
-   *
-   * ⚠️ `cleDisponible` est ce qui fait qu un espace SANS credit ne traduit pas du tout, au lieu de retomber
-   * en silence sur la cle maison comme le fait `cleDe`. Sans elle, le repli de `GatewayChatClient` nous
-   * ferait payer les traductions de tous les espaces sans cle.
-   *
-   * Vide (`TRADUCTION_MODELE` non configure) -> la traduction est eteinte : le fil sort en VO avec son
-   * drapeau, le bouton sortant refuse en 422, et rien d autre ne change.
+   * Le traducteur des conversations.
+   * 🔴 Il prend `gateway`, jamais `gatewayAide` : la traduction sert les conversations du client, donc elle
+   * tombe sur son crédit prépayé, quand l'aide de la console est à notre charge. Les deux clients se
+   * ressemblent à une lettre près et n'ont pas le même payeur.
+   * `cleDisponible` fait qu'un espace sans crédit ne traduit pas du tout, au lieu de retomber en silence sur
+   * la clé maison comme `cleDe` (nous paierions alors les traductions de tous les espaces sans clé).
+   * `TRADUCTION_MODELE` vide -> traduction éteinte : le fil sort en VO, le bouton sortant refuse en 422.
    */
   const traductionStore = new PgTraductionStore(pool);
   const traducteur = gateway && config.TRADUCTION_MODELE
@@ -452,13 +422,12 @@ async function main(): Promise<void> {
     })
     : null;
   const automationStore = new PgAutomationStore(pool);
-  // Chaine WhatsApp (Channels Me). La cle de chiffrement est INJECTEE au store (contrat du sous-systeme),
-  // elle n'est pas relue depuis la config a l'interieur : les deux secrets sont chiffres la, jamais plus haut.
+  // Chaîne WhatsApp (Channels Me). La clé de chiffrement est injectée au store (contrat du sous-système), pas
+  // relue depuis la config à l'intérieur : les deux secrets sont chiffrés là, jamais plus haut.
   const channelsMeConnections = new PgChannelsMeConnectionStore(pool, config.ENCRYPTION_KEY);
   const channelsMeLinks = new PgChannelsMeLinkStore(pool);
   const channelsMePosts = new PgChannelsMePostStore(pool);
-  // Hote FIXE et de confiance : aucune verification d'adresse privee, meme traitement que les clients Meta
-  // et Zadarma.
+  // Hôte fixe et de confiance : aucune vérification d'adresse privée, même traitement que Meta et Zadarma.
   const channelsMeClient = new ChannelsMeClient();
   // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
   // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
@@ -466,32 +435,30 @@ async function main(): Promise<void> {
   const emailTemplates = new PgEmailTemplateStore(pool);
   const rcsMessageStore = new PgRcsMessageStore(pool);
   const rcsMediaStore = new PgRcsMediaStore(pool);
-  // Le cache de joignabilité RCS : LU par la fiche de l'API publique, ÉCRIT par le rapport de livraison smsmode
-  // (`traiterRapportRcs`, lot 3). L'envoi a le sien dans `rcsStack`.
+  // Le cache de joignabilité RCS : lu par la fiche de l'API publique, écrit par le rapport de livraison
+  // smsmode (`traiterRapportRcs`). L'envoi a le sien dans `rcsStack`.
   const rcsJoignabilite = new PgReachabilityStore(pool);
   const emailResolver = new EmailAccountResolver({
     getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
     buildTransport: buildEmailTransport,
   });
   const transport = new FetchTransport();
-  // Clients Meta phone/pricing/templates/flows : résolus PAR TENANT via metaFactory (B1, plus de singleton global).
-  // media reste global : endpoint /{appId}/uploads app-scoped (décision assumée, cf. .loop/bloc4.md).
+  // Clients Meta phone/pricing/templates/flows : résolus par tenant via metaFactory. `media` reste global :
+  // endpoint /{appId}/uploads app-scoped.
   const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
 
-  // Résolution du token Meta PAR TENANT (B1). SOMMEIL : repli sur le token global tant qu'aucun WABA n'a de
-  // credentials propres -> le numéro Zadarma reste sur config.META_ACCESS_TOKEN, comportement identique.
-  // Le WABA de l'espace, une lecture par process : le cache de jeton etant indexe par WABA, cette requete
-  // etait payee AVANT lui a chaque construction de client Meta. Reponses positives seulement.
+  // Résolution du token Meta par tenant, avec repli sur le token global tant qu'un WABA n'a pas de
+  // credentials propres (le numéro Zadarma reste sur config.META_ACCESS_TOKEN).
+  // Le WABA de l'espace, une lecture par process : le cache de jeton est indexé par WABA, donc cette requête
+  // était payée avant lui à chaque construction de client Meta. Réponses positives seulement.
   const wabaDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantWabaId(t));
-  // ⚠️ HISSÉS HORS DU CÂBLAGE DE L'ÉCRAN parce qu'ils ont DEUX consommateurs depuis le 2026-09-23 : les
-  // routes de l'écran Publicités, et la route `/ops` qui dépose un jeton créé à la main (le portefeuille
-  // qui possède l'app ne peut pas passer par la fenêtre Meta). Les construire deux fois donnerait deux
-  // chemins de chiffrement à tenir alignés.
+  // Hors du câblage de l'écran parce qu'ils ont deux consommateurs : les routes de l'écran Publicités, et la
+  // route `/ops` qui dépose un jeton créé à la main. Les construire deux fois donnerait deux chemins de
+  // chiffrement à tenir alignés.
   const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
   const connexionsPub = new PgPubConnexionStore(pool);
-  // Lot 3 : ce qui CRÉE une publicité sur le compte du client, donc ce qui dépense son argent. Client
-  // SÉPARÉ de celui de la connexion, qui ne fait que lire : une route de lecture ne doit pas avoir de
-  // quoi créer une campagne sous la main.
+  // 🔴 Ce qui crée une publicité sur le compte du client, donc dépense son argent : un client séparé de celui
+  // de la connexion, qui ne fait que lire. Une route de lecture ne doit pas avoir de quoi créer une campagne.
   const clientCreationPubs = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
   const publicites = new PgPublicitesStore(pool);
   const brouillonsPub = new PgBrouillonsPubStore(pool);
@@ -508,12 +475,9 @@ async function main(): Promise<void> {
     transport,
     version: config.META_GRAPH_VERSION,
     marketingViaLite: config.META_MM_LITE === 'true',
-    // Frein PAR NUMÉRO, partagé par tout ce qui envoie depuis lui (lot 4). Instancié ICI, donc un par
-    // process : le budget n'est pas partagé entre l'API et le worker, et `arbitre-debit.ts` dit pourquoi
-    // c'est acceptable aujourd'hui et pourquoi ça ne le sera plus au second worker.
-    // Le budget du numéro est PARTAGÉ entre l'API et le worker (migration 0102). L'arbitre local reste
-    // dessous : il est le repli si la base de débit ne répond pas, donc le pire cas de ce montage est
-    // exactement le comportement d'avant, jamais une absence de frein.
+    // Frein par numéro, partagé par tout ce qui envoie depuis lui. Le budget est partagé en base entre l'API
+    // et le worker ; l'arbitre local reste dessous comme repli si la base de débit ne répond pas, donc le
+    // pire cas est un frein local, jamais une absence de frein.
     arbitreDebit: arbitreDeDebitPartage(
       arbitreDeDebit(config.PHONE_RATE_PER_MINUTE_MAX),
       config.PHONE_RATE_PER_MINUTE_MAX,
@@ -523,9 +487,8 @@ async function main(): Promise<void> {
   });
 
   /**
-   * Rendre le fil à l'agent de Meta. MÊME module que le balayage du worker (`src/inbox/controle-du-fil.ts`) :
-   * le geste vivait dans une fermeture du worker, donc l'API ne pouvait pas l'appeler, et le bouton « rendre
-   * la main » de l'Inbox n'écrivait que notre état local.
+   * Rendre le fil à l'agent de Meta. Même module que le balayage du worker (`src/inbox/controle-du-fil.ts`),
+   * pour que le bouton « rendre la main » de l'Inbox le rende aussi chez Meta, pas seulement dans notre état.
    */
   const controleDuFil = {
     numeroDuTenant: (t: string) => repo.getTenantPhoneNumberId(t),
@@ -533,50 +496,41 @@ async function main(): Promise<void> {
   };
   const rendreLeFilAuMba = creerRendreLeFil(controleDuFil);
   /**
-   * PRENDRE le fil à l'agent de Meta, sans écrire au client. C'est ce qui manquait au bouton « Reprendre la
-   * main » : il n'écrivait que notre état local, donc Meta continuait de router les entrants vers son agent,
-   * qui répondait au message suivant. Signalé par Julien le 2026-09-11.
+   * Prendre le fil à l'agent de Meta, sans écrire au client : sans ce geste, Meta continuerait de router les
+   * entrants vers son agent, qui répondrait au message suivant.
    */
   const prendreLeFilAuMba = creerPrendreLeFil(controleDuFil);
 
   /**
-   * DRY_RUN : aucun appel Meta. ⚠️ L'API ne lisait PAS ce drapeau jusqu'ici, alors que le worker le respecte
-   * dans chacune de ses dep d'envoi. Le câbler est indispensable avant de donner à l'API le droit d'exécuter
-   * un scénario : sans ça, un déploiement déclaré DRY_RUN enverrait pour de vrai depuis l'Inbox.
+   * DRY_RUN : aucun appel Meta. Indispensable avant de donner à l'API le droit d'exécuter un scénario : sans
+   * lui, un déploiement déclaré DRY_RUN enverrait pour de vrai depuis l'Inbox.
    */
   const dryRun = config.DRY_RUN === 'true';
 
   /**
-   * Exécuteur de scénarios, câblage PARTAGÉ avec le worker (`workflow/wiring.ts`). Il apporte aussi la
-   * préparation des visuels de carousel et la lecture mémoïsée du corps d'un template : l'API en avait sa
-   * propre version, plus courte et sans cache, ce qui en faisait un troisième doublon de cette famille.
+   * Exécuteur de scénarios, câblage partagé avec le worker (`workflow/wiring.ts`), avec la préparation des
+   * visuels de carousel et la lecture mémoïsée du corps d'un template.
    */
   const workflowRuntime = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
-    // Node « Envoi de mail » (Task 8) : mêmes instances que celles passées aux routes email (registerRoutes,
-    // ci-dessous), pour que l'invalidation du résolveur à une écriture de compte vaille aussi pour l'exécuteur.
+    // Node « Envoi de mail » : mêmes instances que celles passées aux routes email, pour que l'invalidation
+    // du résolveur à une écriture de compte vaille aussi pour l'exécuteur.
     emailTemplates, emailResolver,
   });
 
   /**
-   * LANCER UN SCÉNARIO POUR UN CONTACT, exactement comme le bouton de l'Inbox. Deux appelants : l'Inbox et l'outil
-   * « Lancer un scénario » de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 3.4). Un seul chemin, pas un
-   * cinquième : la fermeture du parcours en cours, la reprise du fil et la garde de fenêtre vivent dans `runFrom`.
+   * Lancer un scénario pour un contact, comme le bouton de l'Inbox. Deux appelants : l'Inbox et l'outil
+   * « Lancer un scénario » de l'agent de Meta. La fermeture du parcours en cours, la reprise du fil et la
+   * garde de fenêtre vivent dans `runFrom`.
    *
    * La fenêtre décide de la porte d'entrée :
    *  - ouverte -> `startInWindow` : le scénario peut ouvrir par un message rapide ou un formulaire ;
-   *  - fermée  -> `start` : la garde de fenêtre s'applique et REND la raison si le scénario ouvre par un
+   *  - fermée  -> `start` : la garde de fenêtre s'applique et rend la raison si le scénario ouvre par un
    *    message de session, ce que Meta refuserait (131047).
    *
-   * `ignoreHumanControl` : c'est un geste délibéré (l'opérateur, ou l'agent de Meta à la demande du client), et
-   * celui qui déclenche détient presque toujours le fil. Le refuser à ce titre serait absurde. Même règle qu'au
-   * lancement d'une campagne. `emitEvents` : un lancement unitaire (un contact, ici et maintenant), donc ses tags
-   * publient, comme après une réponse du contact.
-   *
-   * ⚠️ LA FERMETURE DU PARCOURS EN COURS N'EST PLUS ICI, elle est dans `runFrom` (l'exécuteur), et c'est le point
-   * du lot du 2026-09-07 : elle vivait chez l'appelant de l'Inbox, donc sur un chemin sur quatre, et les trois
-   * autres divergeaient. Le comportement pour l'opérateur est inchangé : son scénario remplace celui en cours.
+   * `ignoreHumanControl` : geste délibéré, et celui qui déclenche détient presque toujours le fil (même règle
+   * qu'au lancement d'une campagne). `emitEvents` : un lancement unitaire, donc ses tags publient.
    */
   const lancerScenarioPourContact = async (
     tenant: string, workflowId: string, waId: string, windowOpen: boolean,
@@ -598,53 +552,18 @@ async function main(): Promise<void> {
       }
     : undefined;
   /**
-   * LE PRIX FACTURE D UN TEMPLATE, ET C EST LE SEUL ENDROIT OU LA MARGE DE L ESPACE S APPLIQUE.
-   *
-   * 🔴 UN SEUL POINT DE PASSAGE, ET C EST TOUT L INTERET. La marge a d abord ete posee dans les DEUX
-   * fonctions qui calculaient un total, et deux autres consommateurs des memes tarifs l ont donc ignoree :
-   * le graphe de cout du Quantitatif et le bilan d un contact affichaient le tarif Meta BRUT. Des qu un
-   * client posait une marge de 150, la Synthese annoncait 1,50 € la ou le graphe du meme produit annoncait
-   * 1,00 € pour exactement les memes envois. Releve en revue finale le 2026-09-18 : le correctif precedent
-   * avait DEPLACE la frontiere de la divergence, pas supprimee. En margeant ici, les CINQ consommateurs
-   * sont justes, et le sixieme qu on ajoutera demain le sera aussi sans y penser.
-   *
-   * ⚠️ ELLE S APPELAIT `tarifsMeta`, ET CE NOM A CAUSE LA PANNE QU ON VIENT DE REPARER. Ce qui sort n est
-   * plus un tarif de Meta, c est un PRIX DE VENTE. L inventaire des consommateurs avait ete fait sur
-   * « qui appelle `tarifsMeta` » plutot que sur « qui affiche un prix a un client », et un sixieme chemin
-   * y a echappe deux revues de suite. Un nom qui decrit ce qu on lit plutot que ce qu on rend fait ca.
-   *
-   * ⚠️ UN TARIF ABSENT (`null`) LE RESTE : marger
-   * une absence en ferait un prix, et `chiffrer` ne pourrait plus la compter comme « sans tarif ».
-   *
-   * ⚠️ La grille est lue PAR ESPACE a chaque appel. Elle vit dans `tenant_settings`, une ligne par espace,
-   * lue par cle primaire : ce n est pas la lecture qui coute sur ce chemin, c est l aller-retour chez Meta
-   * juste au-dessus.
-   */
-  /**
-   * Le tarif de Meta, par espace ET par fenetre. Soixante secondes : voir `prixFactures` juste en dessous.
-   *
-   * ⚠️ DECLARE ICI, DANS LE CABLAGE, et pas dans un module : il n'y a qu'un seul processus d'API, et un
-   * cache par process est exactement ce que `cacheCourt` promet. Le sortir dans un module partage le ferait
-   * partager par le worker, qui n'affiche aucun tarif.
+   * Le tarif de Meta, par espace et par fenêtre, soixante secondes. Déclaré dans le câblage : un cache par
+   * process est ce que `cacheCourt` promet, et un module partagé le ferait partager par le worker, qui
+   * n'affiche aucun tarif.
    */
   const cacheTarifsMeta = cacheCourt<PricingSummary | null>(60_000);
 
   /**
-   * LE POINT DE PASSAGE UNIQUE vers le tarif de Meta. Les deux appelants passent par ici.
-   *
-   * 🔴 UN ECHEC N'EST PAS MEMORISE, ET C'EST LA PROMESSE DU MODULE QU'ON HONORE ICI (jaune de la relecture
-   * du 2026-09-23). `cacheCourt` ne garde jamais un REJET, il le dit en toutes lettres ; mais
-   * `getPricingAnalytics` AVALE ses pannes et rend `null`, c'est-a-dire une valeur RESOLUE. Un 429, un jeton
-   * expire ou une coupure d'une seconde eteignaient donc la colonne « cout » de TOUS les ecrans pendant une
-   * minute, sans qu'un rechargement n'y puisse rien. On oublie la cle aussitot : le prochain affichage
-   * retentera.
-   *
-   * ⚠️ ET ON NE MARTELE PAS META POUR AUTANT : la mutualisation des appels EN VOL reste acquise (vingt-cinq
-   * onglets qui arrivent ensemble font UN aller-retour, panne comprise). Ce qu'on retire, c'est seulement de
-   * resservir un echec a ceux qui arrivent APRES lui.
-   *
-   * ⚠️ UN SEUL POINT DE PASSAGE, parce qu'il y en avait deux et qu'un des deux avait ete oublie du cache
-   * pendant un cycle entier. Un sixieme appelant passera par ici ou nulle part.
+   * Le point de passage unique vers le tarif de Meta.
+   * Un échec n'est pas mémorisé : `getPricingAnalytics` avale ses pannes et rend `null`, une valeur résolue
+   * que `cacheCourt` garderait, et un 429 éteindrait la colonne « coût » de tous les écrans pendant une
+   * minute. On oublie la clé aussitôt. Les appels en vol restent mutualisés (vingt-cinq onglets, un seul
+   * aller-retour, panne comprise).
    */
   const tarifMeta = async (
     tenant: string,
@@ -658,31 +577,26 @@ async function main(): Promise<void> {
     return v;
   };
 
+  /**
+   * Le prix facturé d'un template : le seul endroit où la marge s'applique.
+   * 🔴 Un seul point de passage, pour que tous les écrans qui affichent un prix (graphe de coût, synthèse,
+   * bilan d'un contact) donnent le même chiffre ; ce qui sort est un prix de vente, pas un tarif Meta.
+   * Un tarif absent (`null`) le reste : marger une absence en ferait un prix, et `chiffrer` ne pourrait plus
+   * la compter comme « sans tarif ». La transformation vit dans `tarifsFactures`, pure et testée.
+   */
   const prixFactures = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
     const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrixGlobale()]);
     const { startTs, endTs } = rangeToUnix(range);
     const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
     /**
-     * 🔴 L'ALLER-RETOUR CHEZ META PASSE SOUS MICRO-CACHE (revue finale du 2026-09-23, son seul rouge).
-     *
-     * Cet appel n'en avait AUCUN, et quatre écrans le déclenchent : le graphe de coût, la synthèse de
-     * Performance Lab, le total des messages envoyés, et depuis ce jour l'onglet Campagnes, qu'on ouvre en
-     * permanence. Chaque montage, chaque changement de période et chaque bascule partait donc chez Meta,
-     * pour un TARIF qui ne bouge pas dans la minute. C'est une API tierce à quota : la faire appeler par un
-     * écran de travail était le vrai défaut, pas la taille de la fenêtre demandée.
-     *
-     * ⚠️ LA CLÉ PORTE L'ESPACE ET LA FENÊTRE : deux périodes différentes sont deux tarifs différents, et les
-     * confondre ferait lire à un écran le prix moyen d'une autre plage. L'espace y est pour la raison
-     * habituelle (le filtrage en code est le seul contrôle d'isolation).
-     *
-     * ⚠️ SOIXANTE SECONDES, comme les compteurs de l'Inbox : ce cache convient à ce qui tolère d'être en
-     * retard de quelques secondes, jamais à une décision. Un tarif affiché est exactement de ce genre.
+     * L'aller-retour chez Meta passe sous micro-cache : quatre écrans le déclenchent (dont l'onglet
+     * Campagnes, ouvert en permanence), pour un tarif qui ne bouge pas dans la minute, sur une API tierce à
+     * quota. La clé porte l'espace (isolation) et la fenêtre (deux périodes, deux tarifs). Soixante
+     * secondes : acceptable pour un affichage, jamais pour une décision.
      */
     const pricing = pricingClientT && wabaId
       ? await tarifMeta(tenant, startTs, endTs, () => pricingClientT.getPricingAnalytics(wabaId, startTs, endTs))
       : null;
-    // La transformation elle-meme vit dans `tarifsFactures`, PURE et testee : ce cablage ne fait que lire
-    // la grille et la lui passer, pour que le cas « une marge de 150 majore le prix » reste eprouvable.
     return tarifsFactures({
       marketing: pricing?.byCategory['marketing']?.ratePerMessage,
       utility: pricing?.byCategory['utility']?.ratePerMessage,
@@ -694,50 +608,37 @@ async function main(): Promise<void> {
   const photoNumeroCache = cacheCourt<string | null>(10 * 60_000);
 
   /**
-   * Micro-cache du CATALOGUE de modèles du Gateway : une heure.
-   *
-   * Un catalogue de 373 modèles et leurs tarifs ne bouge pas d'une minute à l'autre, et cette lecture sert un
-   * menu déroulant qu'on ouvre en réglant un agent. Sans cache, chaque ouverture de l'onglet Modèle, de
-   * chaque onglet de navigateur ouvert, referait un aller-retour de plusieurs centaines de millisecondes vers
-   * Vercel pour une réponse identique.
+   * Micro-cache du catalogue de modèles du Gateway : une heure. Il ne bouge pas d'une minute à l'autre et
+   * sert un menu déroulant ; sans cache, chaque ouverture de l'onglet Modèle referait un aller-retour de
+   * plusieurs centaines de millisecondes vers Vercel.
    */
   const catalogueModelesCache = cacheCourt<ModeleGateway[]>(60 * 60_000);
 
   /**
-   * Micro-cache de l'ÉTAT DU COMPTE PUBLICITAIRE : deux minutes.
-   *
-   * 🔴 C'EST CE QUI REND TENABLE UNE LECTURE META SUR UN CHEMIN D'AFFICHAGE. La route qui sert
-   * l'écran Publicités est volontairement hors du plafond « coûteux » (dix par minute et par espace
-   * couperaient la page dès que deux personnes la consultent) : sans cache, chaque ouverture et chaque
-   * rafraîchissement ferait un aller-retour Graph, et l'écran dépendrait du temps de réponse de Meta.
-   *
-   * ⚠️ DEUX MINUTES ET PAS DIX : un statut de compte et un moyen de paiement bougent rarement, mais
-   * quand ils bougent, c'est parce que le client vient JUSTEMENT de les corriger chez Meta et revient
-   * voir. Dix minutes lui feraient croire que son geste n'a rien fait.
+   * Micro-cache de l'état du compte publicitaire : deux minutes. La route de l'écran Publicités est hors du
+   * plafond « coûteux » (il couperait la page dès que deux personnes la consultent) : sans cache, chaque
+   * ouverture ferait un aller-retour Graph. Deux minutes et pas dix : quand un statut ou un moyen de
+   * paiement bouge, c'est que le client vient de le corriger chez Meta et revient voir.
    */
   const etatComptePubCache = cacheCourt<EtatComptePub | null>(2 * 60_000);
 
   /**
-   * Micro-cache du CATALOGUE DES TEMPLATES de `GET /v1/templates` : une minute, par espace et par WABA.
-   *
-   * 🔴 C'EST UNE ROUTE D'API PUBLIQUE, DONC APPELABLE EN BOUCLE. Sans cache, chaque appel relisait la liste
-   * COMPLÈTE du WABA chez Meta (jusqu'à vingt pages) : un intégrateur qui boucle épuiserait le quota de l'API
-   * de gestion du WABA, et `isMetaAuthError` prendrait ce refus pour une panne d'authentification, donc
-   * invaliderait le jeton du WABA et bloquerait les envois de l'espace.
-   *
-   * ⚠️ UN ÉCHEC DE META N'EST PAS GARDÉ : `cacheCourt` ne met jamais un rejet en cache, et `list` lève sur une
-   * réponse en erreur au lieu de rendre une liste vide. Un espace SANS WABA n'y entre pas non plus (la clé
-   * porte le WABA) : il en recevra un tout de suite après l'avoir branché.
+   * Micro-cache du catalogue des templates de `GET /v1/templates` : une minute, par espace et par WABA.
+   * Route publique, donc appelable en boucle : sans cache, chaque appel relirait la liste complète du WABA
+   * chez Meta (jusqu'à vingt pages), épuiserait le quota de gestion du WABA, et `isMetaAuthError` prendrait
+   * ce refus pour une panne d'authentification, invalidant le jeton et bloquant les envois de l'espace.
+   * Un échec de Meta n'est pas gardé (`list` lève, `cacheCourt` ne garde pas un rejet). Un espace sans WABA
+   * n'y entre pas (la clé porte le WABA).
    */
   const catalogueTemplatesCache = cacheCourt<TemplateSummary[]>(60_000);
 
-  // Les dépendances du consentement posé par l'API : la MÊME construction que `/v1/contacts`
+  // Les dépendances du consentement posé par l'API : la même construction que `/v1/contacts`
   // (`depsConsentementDe`, que `creerServiceContactsV1` appelle aussi), jamais une seconde écrite à la main.
   const depsConsentement = depsConsentementDe(contactStore, auditSink);
 
   /**
-   * L'ENVOI RCS LIBRE, partagé par le bouton RCS de l'Inbox et par `POST /v1/messages/rcs` (lot 3 de l'API
-   * publique). Les gardes vivent dans `envoyerRcsLibre`, testée ; ce bloc ne fait que brancher.
+   * L'envoi RCS libre, partagé par le bouton RCS de l'Inbox et par `POST /v1/messages/rcs`. Les gardes
+   * vivent dans `envoyerRcsLibre`, testée ; ce bloc ne fait que brancher.
    */
   const depsRcsLibre: DepsRcsLibre = {
     agentIdForTenant: (t) => workflowRuntime.rcsStack.agents.agentIdForTenant(t),
@@ -754,83 +655,61 @@ async function main(): Promise<void> {
   };
 
   /**
-   * LES DÉPENDANCES DE `repondreDansLaFenetre`, branchées UNE fois pour ses trois appelants : la réponse de
-   * l'Inbox, `POST /v1/messages/whatsapp` et le serveur MCP (audit ponytail du 2026-09-25 : trois copies).
-   * Une garde qui change (la fenêtre de 24 h, le désabonnement, la prise du fil) change pour les trois d'un coup.
-   * `satisfies` porte le contrôle des clés en trop ICI, parce qu'il ne traverse pas les spreads qui suivent.
+   * Les dépendances de `repondreDansLaFenetre`, branchées une fois pour ses trois appelants (réponse de
+   * l'Inbox, `POST /v1/messages/whatsapp`, serveur MCP) : une garde qui change (fenêtre de 24 h,
+   * désabonnement, prise du fil) change pour les trois. `satisfies` porte ici le contrôle des clés en trop,
+   * parce qu'il ne traverse pas les spreads qui suivent.
    */
   const depsRepondre = {
     getConversationContext: (id: string, tenant: string) => inboxStore.getConversationContext(id, tenant),
     getTenantPhoneNumberId: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
     sendReply: async (tenant: string, phoneNumberId: string, to: string, text: string) => {
-      const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1), repli global en sommeil
+      const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token par tenant, repli global
       return (await client.sendText(to, text)).messageId;
     },
     /**
-     * 🔴 CE COMMENTAIRE A AFFIRME « BRANCHEE ICI ET NULLE PART AILLEURS » ET C ETAIT FAUX, avant meme le
-     * lot 7 (corrige le 2026-09-23). Il disait que l exemption de l operateur tenait a l ABSENCE de
-     * cette dependance sur le cablage de la console, « rendue structurelle ». Or elle y est branchee
-     * depuis que l envoi de MODELE depuis l Inbox en a eu besoin, et le type l exige partout depuis le
-     * 2026-09-15.
-     *
-     * Ce qui exempte l operateur est la CONDITION, dans `repondreDansLaFenetre` : la garde ne se pose
-     * que sur une origine machine. Une justification fausse est pire qu aucune parce qu elle se
-     * recopie, et celle-ci l avait deja ete dans `todo.md`.
+     * 🔴 L'opérateur est exempté par la condition dans `repondreDansLaFenetre` (la garde ne se pose que sur
+     * une origine machine), pas par l'absence de cette dépendance, que le type exige partout.
      */
     estDesabonne: (tenant: string, waId: string) => contactStore.estDesabonneParWaId(tenant, waId),
-    // ⚠️ `redaction` EST TRANSMISE, et l'oublier ne casserait RIEN de visible : une fleche a neuf
-    // parametres reste assignable a un contrat qui en declare dix, et la redaction d'origine
-    // partirait simplement a la poubelle. C'est exactement le defaut que ce cablage portait deja sur
-    // le curseur du delta de l'Inbox.
+    // `redaction` est transmise : l'oublier ne casserait rien de visible (une flèche à neuf paramètres reste
+    // assignable à un contrat qui en déclare dix) et la rédaction d'origine serait perdue.
     recordOutbound: (...[id, body, msgId, origine, type, cat, name, sender, canal, redaction]: Parameters<DepsRepondre['recordOutbound']>) =>
       inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
     /**
-     * Qui écrit prend le fil : le scénario cesse d'avancer TOUT SEUL sur ce contact et MBA cesse de répondre.
-     *
-     * 🔴 ÉCRIRE SUFFIT, ET C'EST MESURÉ (2026-09-10) : après une réponse depuis l'Inbox pendant que l'agent
-     * de Meta tenait le fil, l'entrant suivant est arrivé en `field: "messages"` et non plus en `standby`.
-     * Meta le dit aussi en toutes lettres, « Sending a message to a conversation takes control implicitly ».
-     * ⚠️ CE COMMENTAIRE A AJOUTÉ « Meta n'a AUCUNE action `take` », ET C'ÉTAIT FAUX (corrigé le 2026-09-11).
-     * L'action existe depuis le 2026-08-13 ; c'est le corpus OpenAPI TÉLÉCHARGÉ qui ne la connaît pas. Elle
-     * est câblée sur le bouton « Reprendre la main » (`prendreLeFil`, dans l'Inbox). Ici, rien à changer : sur
-     * un chemin d'ENVOI, l'appel serait une redondance payante.
-     * ⚠️ Une CAMPAGNE, elle, part quand même : elle est déclenchée par un opérateur, donc c'est un humain qui a
-     * la main, et elle REPREND la conduite du fil (`ignoreHumanControl`). Le contraire a été écrit ici pendant
-     * des semaines, cf. `tests/campagne-controle-humain.test.ts`.
-     *
-     * ⚠️ `app_human` AUSSI pour une machine (l'API publique, un agent tiers par MCP), et c'est un choix :
-     * `ControlOwner` n'a que trois valeurs, et ce qui compte est que le scénario cesse d'avancer tout seul et
-     * que l'agent de Meta cesse de répondre, ce que cette valeur produit exactement. QUI a parlé est porté par
-     * l'ORIGINE du message (`api`, 0166 ; `mcp`, 0101), là où ça ne coûte aucune migration du chemin chaud.
+     * Qui écrit prend le fil : le scénario cesse d'avancer tout seul et l'agent de Meta cesse de répondre.
+     * Écrire suffit côté Meta (« Sending a message to a conversation takes control implicitly », et mesuré) :
+     * appeler `take` sur un chemin d'envoi serait une redondance payante ; il est câblé sur « Reprendre la
+     * main » (`prendreLeFil`). Une campagne part quand même : un opérateur l'a déclenchée, et elle reprend la
+     * conduite du fil (`ignoreHumanControl`, cf. `tests/campagne-controle-humain.test.ts`).
+     * `app_human` aussi pour une machine (API publique, agent tiers par MCP) : `ControlOwner` n'a que trois
+     * valeurs et celle-ci produit l'effet voulu. Qui a parlé est porté par l'origine du message (`api`, `mcp`).
      */
     takeControl: async (tenant: string, waId: string) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
   } satisfies DepsRepondre;
 
   const app = buildServer({
     /**
-     * 🔴 SURVEILLANCE DE `/ops` (décision de Julien, 2026-09-03). `/ops` ouvre la lecture de toutes les
-     * conversations de tous les clients, et Fastify tourne sans journal d'accès : jusqu'ici, quelqu'un qui
-     * cherchait le jeton ne laissait AUCUNE trace. On n'a pas durci l'accès (une liste blanche d'IP couperait
-     * Julien dès que son IP change), on l'a rendu VISIBLE.
-     *
-     * `sendTelegram` est un no-op silencieux si Telegram n'est pas configuré : cette surveillance journalise
-     * alors, sans alerter, ce qui reste mieux que rien.
+     * 🔴 Surveillance de `/ops`, qui ouvre la lecture de toutes les conversations de tous les clients alors
+     * que Fastify tourne sans journal d'accès. L'accès n'est pas durci (une liste blanche d'IP couperait dès
+     * un changement d'IP), il est rendu visible. `sendTelegram` est un no-op sans Telegram : la surveillance
+     * journalise alors, sans alerter.
      */
     surveillanceOps: surveillerOps({
       alerter: (m) => { void sendTelegram(`[mba-api] ${m}`); },
       // eslint-disable-next-line no-console
       journaliser: (m) => { console.warn(m); },
     }),
-    // Origines autorisées à appeler l'API depuis un navigateur. Vide (le cas d'aujourd'hui) -> aucun en-tête
-    // CORS n'est posé du tout. Voir `src/server.ts` pour les deux règles qui la rendent sûre.
+    // Origines autorisées à appeler l'API depuis un navigateur. Vide -> aucun en-tête CORS. Les deux règles
+    // qui la rendent sûre : `src/server.ts`.
     corsOrigins: config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter((o) => o !== ''),
     queue,
     // Readiness : `select 1` (timeout court 2 s) -> /health 503 si la DB est injoignable. /live reste trivial.
     checkReadiness: makeDbReadinessCheck(pool, 2000),
     auth: {
       /**
-       * ⚠️ L'ACTEUR EST LE COMPTE VISÉ, pas l'auteur : personne n'est authentifié sur une connexion échouée.
-       * L'email est donc résolu depuis CE compte, comme le fait `auditSink` pour un acteur ordinaire.
+       * L'acteur est le compte visé, pas l'auteur : personne n'est authentifié sur une connexion échouée.
+       * L'email est donc résolu depuis ce compte, comme le fait `auditSink` pour un acteur ordinaire.
        */
       auditConnexion: async (tenant, userId, cause) => {
         const email = (await userStore.getSessionUser(userId))?.email ?? null;
@@ -840,7 +719,7 @@ async function main(): Promise<void> {
       secret: config.AUTH_SECRET,
       // Re-vérif par requête : compte révoqué/supprimé -> 401 immédiat, rôle frais depuis la base.
       getUserState: (userId) => userStore.getAuthState(userId),
-      // Refonte auth : inscription libre, reset/changement de mot de passe.
+      // Inscription libre, reset et changement de mot de passe.
       createTenantWithAdmin: (name, admin) => userStore.createTenantWithAdmin(name, admin),
       setPassword: (userId, hash) => userStore.setPassword(userId, hash),
       touchLastLogin: (userId) => userStore.touchLastLogin(userId),
@@ -873,36 +752,30 @@ async function main(): Promise<void> {
       repo,
       queue,
       drafts: campaignDraftStore,
-      // Palier d'envoi du numéro, pour AVERTIR avant un lancement plus gros que ce que Meta laissera passer
-      // en 24 h (lot 7). Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
+      // Palier d'envoi du numéro, pour avertir avant un lancement plus gros que ce que Meta laissera passer
+      // en 24 h. Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
       getMessagingLimitTier: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.messagingLimitTier ?? null,
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
-      // La MÊME résolution de cible que les actions en masse du mini-CRM : une campagne désigne ses
-      // destinataires comme le mini-CRM désigne les siens, donc par l'intention et non par une liste
+      // La même résolution de cible que les actions en masse du mini-CRM : par l'intention, pas par une liste
       // d'identifiants qui ne tiendrait pas dans le corps de la requête.
-      // 🔴 `limite` DOIT ÊTRE RELAYÉE. Une flèche à DEUX paramètres est parfaitement assignable à un contrat
-      // qui en déclare TROIS : le troisième est avalé EN SILENCE, le typecheck ne dit rien, et la route qui
-      // passe soigneusement `plafond + 1` retombe sur le plafond technique de 100 000 du store. C'est le
-      // défaut même que ce lot ferme, reproduit dans son propre câblage. Trouvé par la contre-vérification
-      // du 2026-09-03, pas par le compilateur, qui ne peut pas le voir.
+      // `limite` doit être relayée : une flèche à deux paramètres est assignable à un contrat qui en déclare
+      // trois, le troisième serait avalé en silence et la route retomberait sur le plafond technique du store.
       contactIdsForTarget: (tenant, target, limite) => contactStore.contactIdsForTarget(tenant, target, limite),
-      // Le plafond de taille, sur le chemin « tous les contacts », celui qui n'était borné par rien.
-      // Bornée à `limite` : le chemin « tous les contacts » ne compte plus, il FIGE son jeu d'identifiants
-      // (constat B4). `{ filters: {} }` sélectionne l'espace entier, exactement comme le comptage d'avant,
-      // et les contacts bloqués qu'il ramène sont écartés au chargement (`listContactsForBuildByIds`), donc
-      // la liste finale de destinataires est identique.
+      // Le plafond de taille sur le chemin « tous les contacts », borné à `limite` : il fige son jeu
+      // d'identifiants. `{ filters: {} }` sélectionne l'espace entier, et les contacts bloqués sont écartés au
+      // chargement (`listContactsForBuildByIds`).
       identifiantsDeTousLesContacts: (tenant: string, limite: number) => contactStore.contactIdsForTarget(tenant, { filters: {} }, limite),
       plafondDestinataires: config.CAMPAIGN_MAX_RECIPIENTS,
-      // Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
-      // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
+      // 🔴 Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
+      // donc c'est ce contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
       rcsAgentBelongsToTenant: (agentId, tenant) => workflowRuntime.rcsStack.agents.belongsToTenant(agentId, tenant),
       listRcsAgents: (tenant) => workflowRuntime.rcsStack.agents.listForTenant(tenant),
       // Garde d'un étage e-mail de la chaîne : `getById` est scopée tenant ET écarte les modèles supprimés
       // (suppression douce), donc elle rend null dans les deux cas où la clé étrangère aurait rendu une 5xx.
       emailTemplateBelongsToTenant: async (id, tenant) => (await emailTemplates.getById(tenant, id)) !== null,
       campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
-      // Campagne AU FIL DE L'EAU : le webhook doit appartenir à l'espace ET être actif. Même nature de garde
-      // que pour le numéro Meta et l'agent RCS, sur la troisième porte d'entrée possible des destinataires.
+      // Campagne au fil de l'eau : le webhook doit appartenir à l'espace et être actif. Même garde que pour le
+      // numéro Meta et l'agent RCS, sur la troisième porte d'entrée des destinataires.
       webhookUsableByTenant: (id, tenant) => webhookStore.usableByTenant(tenant, id),
       stopWebhookCampaign: (id, tenant) => repo.stopWebhookCampaign(id, tenant),
       // Arrêt d'urgence d'un envoi en cours, et son pendant : la reprise lève la pause avant d'enfiler le run.
@@ -922,23 +795,22 @@ async function main(): Promise<void> {
       resetRecipientForRetry: (tenant, id, rid) => repo.resetRecipientForRetry(tenant, id, rid),
       listPhoneNumbers: (tenant) => repo.listPhoneNumbers(tenant),
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
-      // Borne SÛRE pour l'estimation de durée : ces deux routes enfilent sans savoir le canal, et une
-      // estimation trop OPTIMISTE fait expirer le job en plein envoi (pg-boss le rejoue, le débit double).
+      // Borne sûre pour l'estimation de durée : ces deux routes enfilent sans savoir le canal, et une
+      // estimation trop optimiste fait expirer le job en plein envoi (pg-boss le rejoue, le débit double).
       plafondLePlusBas: plafondLePlusBas(config),
     },
     // Redirection publique des liens tracés. Le tenant vient du code retrouvé en base, jamais de l'URL.
     links: {
       getByCode: (code) => trackedLinkStore.getByCode(code),
       recordClick: (code, tenant, contactId) => trackedLinkStore.recordClick(code, tenant, contactId),
-      // QUI a clique (migration 0106). L espace vient du LIEN, jamais de l URL : un jeton d un autre client
-      // ne doit pas s attribuer ce clic-ci.
+      // Qui a cliqué. L'espace vient du lien, jamais de l'URL : un jeton d'un autre client ne doit pas
+      // s'attribuer ce clic.
       contactParJeton: (tenant, jeton) => trackedLinkStore.contactParJeton(tenant, jeton),
-      // Le clic ATTRIBUÉ devient un signal (spec 2026-09-24, § 8). L'espace vient du LIEN, comme pour le clic.
+      // Le clic attribué devient un signal. L'espace vient du lien, comme pour le clic.
       signalerClic: (tenant, contactId, code) => emetteur.emettreSignal(tenant, signalDuClic(contactId, code)),
     },
-    // Réception PUBLIQUE des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
-    // l'écriture du contact passe par `upsertContactsFromApi`, le chemin partagé avec la création à la main de
-    // la console.
+    // Réception publique des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
+    // l'écriture du contact passe par `upsertContactsFromApi`, le chemin partagé avec la console.
     webhookEntrant: {
       limiter: new RateLimiter(config.WEBHOOK_IN_RATE_LIMIT_MAX, config.WEBHOOK_IN_RATE_LIMIT_WINDOW_MS),
       budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
@@ -982,29 +854,25 @@ async function main(): Promise<void> {
       baseUrl: adressesApi.avecPrefixe,
     },
     templates: {
-      templatesFor: (tenant) => metaFactory.templateClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil
+      templatesFor: (tenant) => metaFactory.templateClientForTenant(tenant), // token par tenant, repli global
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
       getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
       listActiveCampaignsForTemplate: (tenant, name, language) => repo.listActiveCampaignsForTemplate(tenant, name, language),
       saveParamHints: (tenant, name, language, hints) => templateHintStore.save(tenant, name, language, hints),
       getParamHints: (tenant, name, language) => templateHintStore.get(tenant, name, language),
       removeParamHints: (tenant, name) => templateHintStore.removeByName(tenant, name),
-      // Traçage des liens : l'adresse publique est celle qui part DANS LES MESSAGES. Elle vient de
-      // `adressesPubliques` et non plus d'`APP_URL` en direct, parce que le front et l'API se séparent :
-      // cette adresse-là doit suivre l'API, pas la console.
+      // Traçage des liens : l'adresse publique est celle qui part dans les messages, donc elle suit l'API
+      // (`adressesPubliques`), pas la console.
       tracking: {
         allocate: (tenant, cible, destination, avecJeton) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination, avecJeton),
         confirm: (tenant, codes) => trackedLinkStore.confirm(tenant, codes),
-        // 🔴 Le lien SOUMIS porte desormais son suffixe variable : c est lui qui fera voyager le jeton du
-        // destinataire, donc qui permettra de savoir QUI a clique. Les templates deja approuves gardent
-        // l ancienne forme, leur URL etant figee chez Meta.
+        // Le lien soumis porte un suffixe variable, qui fera voyager le jeton du destinataire (qui a cliqué).
+        // Les templates déjà approuvés gardent l'ancienne forme, leur URL étant figée chez Meta.
         lienDe: (code, avecJeton) => (avecJeton ? lienTraceAvecJeton(adressesApi.racine, code) : lienDe(adressesApi.racine, code)),
-        // `adresse de redirection -> destination d'origine` : c'est ce qui permet de remontrer à
-        // l'utilisateur le lien qu'il a saisi, partout où la console liste des templates.
-        // ⚠️ Les DEUX formes sont dans la map, et il le faut : les templates approuves AVANT le 2026-09-02
-        // portent l adresse nue, ceux d apres portent le suffixe variable. N en mettre qu une ferait
-        // reapparaitre notre URL de redirection a la place du lien saisi, sur toute une famille de
-        // templates, dans les quatre ecrans qui les listent.
+        // `adresse de redirection -> destination d'origine`, pour remontrer le lien saisi partout où la
+        // console liste des templates. Les deux formes sont dans la map : les anciens templates portent
+        // l'adresse nue, les récents le suffixe variable ; n'en mettre qu'une ferait réapparaître notre URL
+        // de redirection à la place du lien saisi.
         destinations: async (tenant, noms) => new Map(
           (await trackedLinkStore.listByTemplates(tenant, noms)).flatMap((l) => [
             [lienDe(adressesApi.racine, l.code), l.destination] as [string, string],
@@ -1014,14 +882,13 @@ async function main(): Promise<void> {
       },
     },
     inbox: {
-      // Les six dépendances de la RÉPONSE (fenêtre, désabonnement, envoi, trace, prise du fil) : `depsRepondre`.
+      // Les six dépendances de la réponse (fenêtre, désabonnement, envoi, trace, prise du fil) : `depsRepondre`.
       ...depsRepondre,
       listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
-      // « Ouvrir la conversation » depuis la fiche d un contact du mini-CRM : trouve le fil, ou le cree.
+      // « Ouvrir la conversation » depuis la fiche d'un contact du mini-CRM : trouve le fil, ou le crée.
       ouvrirConversationDuContact: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
-      // Effacer le CONTENU d une conversation. Reserve aux administrateurs par la garde de `server.ts`, et
-      // trace au Journal des actions (sans le numero ni le texte : y ecrire ce qu on vient d effacer
-      // annulerait l effacement).
+      // 🔴 Effacer le contenu d'une conversation : réservé aux administrateurs par la garde de `server.ts`, et
+      // tracé au Journal des actions sans le numéro ni le texte (y écrire ce qu'on efface annulerait l'effacement).
       effacerMessages: (tenant, id) => inboxStore.effacerMessages(tenant, id),
       audit: auditSink,
       countATraiter: (tenant) => inboxStore.countATraiter(tenant),
@@ -1031,31 +898,26 @@ async function main(): Promise<void> {
       signalerConversation: (tenant, id, signale, par) => inboxStore.signalerConversation(tenant, id, signale, par),
       marquerTraitee: (tenant, id, traitee) => inboxStore.marquerTraitee(tenant, id, traitee),
       /**
-       * ⚠️ LA CLE MAISON PAIE LA TRANSCRIPTION, decision de Julien du 2026-09-09 : « on va le payer
-       * nous-memes sur la cle API generale, et on verra apres si je la refacture au client ». Le resolveur
-       * par espace existe deja (`clesGateway.lire`) : le jour ou ca change, c'est cette ligne, et elle seule.
+       * 🔴 La clé maison paie la transcription (un service offert). Le résolveur par espace existe
+       * (`clesGateway.lire`) : le jour où elle se refacture, c'est cette ligne, et elle seule.
        */
       ...(config.AI_GATEWAY_API_KEY && config.TRANSCRIPTION_MODELE ? {
         transcrireMessage: (tenant: string, messageId: string, conversationId?: string, cible?: LangueConsole | null) => transcrireMessage({
           lireMessage: (t, m2, c2) => inboxStore.lireMessagePourTranscription(t, m2, c2),
-          // ⚠️ `langue` EST TRANSMISE, et l'oublier ne casserait rien de visible : la transcription
-          // marcherait, la langue partirait a la poubelle, et on repaierait une traduction inutile sur
-          // chaque vocal deja dans la langue du lecteur.
+          // `langue` est transmise : l'oublier ne casserait rien de visible, mais on repaierait une traduction
+          // inutile sur chaque vocal déjà dans la langue du lecteur.
           ecrireTranscription: (t, m2, texte, modele, langue) => inboxStore.ecrireTranscription(t, m2, texte, modele, langue),
           /**
-           * ⚠️ LA TRADUCTION D'UN VOCAL EST SUR LE CREDIT DU CLIENT, la transcription sur NOTRE cle, et
-           * les deux cohabitent dans le meme geste. Ce n'est pas une incoherence : la transcription a ete
-           * tranchee comme un service offert le 2026-09-09, la traduction sert les conversations du
-           * client. Deux decisions, deux payeurs, le meme bouton.
+           * 🔴 La traduction d'un vocal est sur le crédit du client, la transcription sur notre clé : deux
+           * payeurs dans le même geste, parce que la traduction sert les conversations du client.
            */
           ...(traducteur ? {
             traduire: (t, texte, cible2, source) => traducteur.traduire(t, texte, cible2, source),
             rangerTraduction: (t, m2, texte, langue) => traductionStore.ranger(t, null, [{ messageId: m2, texte, langue }]),
           } : {}),
           telecharger: (mediaId, max) => mediaClient.telechargerEntrant(mediaId, max),
-          // ⚠️ Le transport du MODÈLE (120 s), pas le transport général (30 s) : un fichier de 2 Mo part en
-          // base64, donc 2,7 Mo à téléverser, et un modèle a le droit d'être lent là où Meta n'en a pas le
-          // droit. Le défaut aurait coupé les transcriptions les plus longues, celles qui servent le plus.
+          // Le transport du modèle (120 s), pas le transport général (30 s) : un fichier de 2 Mo part en base64
+          // (2,7 Mo à téléverser), et le défaut couperait les transcriptions les plus longues.
           transport: new FetchTransport(HTTP_TIMEOUT_MODELE_MS),
           cle: config.AI_GATEWAY_API_KEY,
           modele: config.TRANSCRIPTION_MODELE,
@@ -1066,12 +928,9 @@ async function main(): Promise<void> {
         }, tenant, messageId, conversationId, cible),
       } : {}),
       /**
-       * LIRE UNE PIÈCE JOINTE REÇUE (`lireMediaRecu`, `src/inbox/media-entrant.ts`).
-       *
-       * 🔴 HORS DU BLOC DE LA TRANSCRIPTION, et c'est le correctif : elle était câblée seulement si un modèle de
-       * transcription l'était, donc une instance sans lui répondait 503 sur chaque photo. Lire un fichier n'a
-       * besoin que du jeton Meta. Son plafond est le SIEN (`MEDIA_ENTRANT_TAILLE_MAX_KO`), pas les 2 Mo de la
-       * transcription.
+       * Lire une pièce jointe reçue (`lireMediaRecu`, `src/inbox/media-entrant.ts`). Hors du bloc de la
+       * transcription : lire un fichier n'a besoin que du jeton Meta. Son plafond est le sien
+       * (`MEDIA_ENTRANT_TAILLE_MAX_KO`), pas les 2 Mo de la transcription.
        */
       lireMediaMessage: (tenant, messageId, conversationId) => lireMediaRecu({
         lireMessage: (t, m2, c2) => inboxStore.lireMessagePourTranscription(t, m2, c2),
@@ -1080,26 +939,23 @@ async function main(): Promise<void> {
       }, tenant, messageId, conversationId),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
-      // La PRISE d'une conversation du pot commun par un agent (migration 0160) : l'écriture conditionnelle,
-      // le réglage de l'espace qui l'autorise, et la liste de l'encadrement que le sélecteur lisait mal.
+      // La prise d'une conversation du pot commun par un agent : l'écriture conditionnelle, le réglage de
+      // l'espace qui l'autorise, et la liste de l'encadrement pour le sélecteur.
       prendreSiLibre: (tenant, id, userId) => inboxStore.prendreSiLibre(tenant, id, userId),
       agentsPeuventPrendre: async (tenant) => (await settingsStore.get(tenant)).agentsPeuventPrendre,
       membresPourAffectation: (tenant) => inboxStore.membresPourAffectation(tenant),
       getMessages: (id, apres) => inboxStore.getMessages(id, apres),
       /**
-       * LA TRADUCTION DES CONVERSATIONS (migration 0137).
-       *
-       * ⚠️ LES TROIS LIGNES SONT MONTEES ENSEMBLE OU PAS DU TOUT : une console qui pourrait traduire les
-       * entrants sans pouvoir traduire un sortant proposerait un bouton qui rendrait 503, et l inverse
-       * laisserait l ecran croire que la traduction est branchee.
+       * La traduction des conversations. Les trois lignes sont montées ensemble ou pas du tout : sinon la
+       * console proposerait un bouton qui rendrait 503, ou croirait la traduction branchée.
        */
       ...(traducteur ? {
         traduireFil: (tenant: string, conversationId: string, messages: ConversationMessage[], cible: LangueConsole) => traduireFil({
           traducteur,
           ranger: (t, c, trads) => traductionStore.ranger(t, c, trads),
           apprendreLangueContact: (t, c, langue) => traductionStore.apprendreLangueContact(t, c, langue),
-          // Une ecriture d appoint qui echoue ne prive personne de sa lecture, mais elle fait REPAYER la
-          // meme traduction a chaque ouverture : sans ce journal, la fuite ne se verrait que sur la facture.
+          // Une écriture d'appoint qui échoue ne prive personne de sa lecture, mais fait repayer la même
+          // traduction à chaque ouverture : sans ce journal, la fuite ne se verrait que sur la facture.
           onErreur: (err, quoi) => { journaliser('error', 'traduction_ecriture_impossible', { err, quoi, tenantId: tenant }); },
         }, { tenantId: tenant, conversationId, messages, cible }),
         traduireSortant: (tenant: string, texte: string, cible: LangueConsole) => traducteur.traduire(tenant, texte, cible),
@@ -1107,14 +963,14 @@ async function main(): Promise<void> {
       } : {}),
       /**
        * Variables d'un template résolues sur la fiche du contact ouvert, avec le libellé du champ qui les
-       * alimente. MÊME résolution que l'envoi réel (`resolveHintParams` + les indices posés à la création du
-       * template) : l'écran montre donc exactement ce qui partira, pas une approximation.
+       * alimente. Même résolution que l'envoi réel (`resolveHintParams` + les indices posés à la création du
+       * template) : l'écran montre exactement ce qui partira.
        */
       resolveTemplateParams: async (tenant, waId, tpl) => {
         const hints = await templateHintStore.get(tenant, tpl.name, tpl.language);
         const contact = await contactStore.getResolvableByPhone(tenant, waId);
         const { values } = resolveHintParams(hints, tpl.count, contact ?? {}, { now: new Date() });
-        // Le libellé dit D'OÙ vient la valeur. Sans lui, une variable pré-remplie « Julien » ne se distingue
+        // Le libellé dit d'où vient la valeur : sans lui, une variable pré-remplie « Julien » ne se distingue
         // pas d'une valeur tapée à la main, et l'opérateur ne sait pas ce qui changera pour le contact suivant.
         const parPosition = new Map(hints.map((h) => [h.position, h.source]));
         const labels = Array.from({ length: tpl.count }, (_, i) => {
@@ -1127,32 +983,21 @@ async function main(): Promise<void> {
         return { values, labels };
       },
       /**
-       * Envoi d'un message RCS depuis l'inbox, par le MÊME chemin que `POST /v1/messages/rcs`
-       * (`envoyerRcsLibre`). Origine `humain` : ni la garde de consentement, ni celle du désabonnement général,
-       * ni le cache de joignabilité ne s'appliquent à un opérateur (le bouton reste identique, spec § 17) ; le
-       * STOP RCS, si, par le point de passage unique de l'envoi.
-       * Chaque refus porte sa RAISON, destinée à l'opérateur (`phraseOperateur`).
+       * Envoi d'un message RCS depuis l'inbox, par le même chemin que `POST /v1/messages/rcs`
+       * (`envoyerRcsLibre`), origine `humain`. Chaque refus porte sa raison, destinée à l'opérateur.
+       * 🔴 Le STOP RCS s'applique, par le point de passage unique de l'envoi ; la garde de consentement,
+       * celle du désabonnement général et le cache de joignabilité ne s'appliquent pas à un opérateur.
        */
       sendRcsFromInbox: async (tenant, waId, contenu) => {
         const issue = await envoyerRcsLibre(depsRcsLibre, tenant, waId, contenu, 'humain');
         return 'refus' in issue ? { refus: phraseOperateur(issue.refus) } : issue;
       },
       /**
-       * Le bouton « Reprendre la main » : il PREND le fil chez Meta avant de toucher notre état local.
-       *
-       * 🔴 C'EST LE CORRECTIF DU 2026-09-11. Le bouton n'écrivait que notre état local ; Meta, lui,
-       * continuait de router les entrants du client vers son agent, qui répondait au message suivant.
-       * Autrement dit le geste ne faisait rien de ce que son libellé promet, et la seule façon d'éteindre
-       * réellement l'agent de Meta était d'ÉCRIRE au client, c'est-à-dire d'envoyer un message qu'on n'a
-       * pas à envoyer pour un geste de reprise.
-       *
-       * ⚠️ ON N'APPELLE META QUE SI META TIENT LE FIL. La doc pose la précondition symétrique sur `release`
-       * (« you must currently hold thread control ») et ne dit rien du cas inverse : demander `take` sur un
-       * fil qu'on détient déjà est au mieux inutile, au pire une erreur que l'opérateur lirait comme une
-       * panne. Reprendre un fil qui n'est tenu par personne chez Meta n'est qu'une écriture locale.
-       *
-       * ⚠️ LÈVE quand Meta refuse, et la route en fait un 409 lisible. `take` est réservé au « configured
-       * escalation partner » : le refus est un cas normal, pas un incident.
+       * Le bouton « Reprendre la main » : il prend le fil chez Meta avant de toucher notre état local, sinon
+       * Meta continuerait de router les entrants vers son agent, qui répondrait au message suivant.
+       * On n'appelle Meta que si Meta tient le fil : `take` sur un fil déjà détenu serait au mieux inutile,
+       * au pire une erreur lue comme une panne. Lève quand Meta refuse (réservé au « configured escalation
+       * partner », un cas normal) : la route en fait un 409 lisible.
        */
       prendreLeFil: async (tenant, waId) => {
         if ((await inboxStore.getControlOwner(tenant, waId)) !== 'mba') return;
@@ -1163,42 +1008,21 @@ async function main(): Promise<void> {
       getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
       /**
        * L'opérateur rend la main : au scénario, ou à l'agent de Meta quand le client l'a allumé.
-       *
-       * 🔴 CE PRÉ-CÂBLAGE EST RESTÉ À MOITIÉ FAIT UN JOUR DE TROP. Il écrivait notre état local et
-       * n'appelait JAMAIS Meta ; son propre commentaire annonçait l'appel « le jour venu ». Le jour venu
-       * était le 2026-09-10, et le symptôme a été exactement celui qu'on pouvait prédire : Julien rend la
-       * main, écrit sur WhatsApp, et l'agent de Meta reste muet parce que Meta croit toujours que NOUS
-       * tenons le fil (son entrant suivant est arrivé en `field: "messages"`, pas en `standby`).
-       *
-       * ⚠️ META D'ABORD, NOTRE ÉTAT ENSUITE, ET SEULEMENT S'IL A CONFIRMÉ. L'ordre inverse est précisément
-       * ce qui vient de coûter la soirée : un état local qui annonce ce que Meta n'a pas fait est pire
-       * qu'une erreur, parce qu'il rend le problème invisible. Un échec REMONTE à l'appelant, qui le
-       * traduit en 4xx lisible plutôt qu'en 500 dont Cloudflare mange le corps.
-       *
-       * ⚠️ `mbaEnabled` est notre drapeau, il peut avoir dérivé de l'état réel chez Meta. C'est acceptable
-       * ICI parce que la dérive est réparée automatiquement à chaque message entrant, à partir du `field`
-       * du webhook (`processInbound`) : au pire on rend au scénario un fil que Meta donnerait au MBA, et
-       * le premier message suivant remet les deux d'accord.
+       * Meta d'abord, notre état ensuite, et seulement s'il a confirmé : un état local qui annonce ce que Meta
+       * n'a pas fait rend le problème invisible. Un échec remonte à l'appelant, qui le traduit en 4xx lisible
+       * (Cloudflare mange le corps des 5xx).
+       * `mbaEnabled` peut avoir dérivé de l'état réel chez Meta : acceptable ici, la dérive est réparée à
+       * chaque message entrant à partir du `field` du webhook (`processInbound`).
        */
       releaseControl: async (tenant, waId) => {
         /**
-         * 🔴 UN SEUL BOUTON, DEUX GESTES OPPOSÉS, ET C'EST CE QUI A CASSÉ. L'écran affiche « Rendre la main »
-         * quand un opérateur détient le fil, et « Reprendre la main » quand c'est l'agent de Meta : deux
-         * libellés contraires pour le MÊME appel. Ça marchait tant que cette fonction ne faisait qu'écrire
-         * `app_workflow` en local. Depuis qu'elle appelle Meta (2026-09-10), partir de `mba` revenait à
-         * RENDRE le fil à celui qui l'a déjà : un bouton sans effet, sous un libellé qui promet l'inverse.
-         *
-         * ⚠️ CE BRANCHEMENT N'EST PLUS LE CHEMIN DU BOUTON « Reprendre la main », qui va désormais sur
-         * `/prendre` et appelle réellement `thread_control` avec l'action `take` (2026-09-11). Il reste ici
-         * pour le cas où `/release` est appelée alors que Meta tient le fil : releaser sans le détenir est
-         * hors contrat (« you must currently hold thread control »), donc on ne fait que rouvrir NOTRE côté,
-         * ce qui est le geste sûr.
-         * ⚠️ Ce commentaire a dit « il n'existe aucune action `take` chez Meta ». C'était faux, et c'est ce
-         * qui a laissé l'agent de Meta répondre juste après un clic sur « Reprendre la main ».
+         * Si Meta tient déjà le fil, on ne fait que rouvrir notre côté : releaser sans détenir le fil est
+         * hors contrat (« you must currently hold thread control »). Le bouton « Reprendre la main » passe,
+         * lui, par `/prendre` (action `take`).
          */
-        // ⚠️ LES QUATRE BRANCHES CLÔTURENT L'ESCALADE : c'est le même geste délibéré, quelle que soit la valeur
-        // écrite. Trois d'entre elles posent `app_workflow`, que « À traiter » exclut : la conversation
-        // disparaissait avec son drapeau intact, et plus rien ne l'effaçait (revue finale du 2026-09-23).
+        // Les quatre branches clôturent l'escalade : c'est le même geste délibéré quelle que soit la valeur
+        // écrite. Sans ça, `app_workflow` (que « À traiter » exclut) ferait disparaître la conversation avec
+        // son drapeau intact.
         if ((await inboxStore.getControlOwner(tenant, waId)) === 'mba') {
           await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
           return 'app_workflow';
@@ -1215,16 +1039,16 @@ async function main(): Promise<void> {
           await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
           return 'app_workflow';
         }
-        // Geste DÉLIBÉRÉ d'un opérateur (« Rendre la main ») : il clôt l'escalade, elle n'attend plus personne.
+        // Geste délibéré d'un opérateur (« Rendre la main ») : il clôt l'escalade, elle n'attend plus personne.
         await inboxStore.setControlOwner(tenant, waId, 'mba', { effacerEscalade: true });
         return 'mba';
       },
-      /** Lancement d'un SCÉNARIO depuis l'Inbox : le chemin partagé avec l'agent de Meta (`lancerScenarioPourContact`). */
+      /** Lancement d'un scénario depuis l'Inbox, par le chemin partagé avec l'agent de Meta. */
       startWorkflow: (tenant, workflowId, waId, windowOpen) => lancerScenarioPourContact(tenant, workflowId, waId, windowOpen),
       countUnread: (tenant, acteur) => inboxStore.countUnread(tenant, acteur),
       markConversationRead: (tenant, conversationId) => inboxStore.markConversationRead(tenant, conversationId),
       sendTemplateMessage: async (tenant, phoneNumberId, to, tpl) => {
-        const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1), repli global en sommeil
+        const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token par tenant, repli global
         const components = buildTemplateComponents({
           bodyParams: tpl.bodyParams,
           ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),
@@ -1235,27 +1059,22 @@ async function main(): Promise<void> {
         return (await client.sendTemplate(to, spec)).messageId;
       },
       /**
-       * Cartes d'un template CAROUSEL, relues chez Meta et visuels re-téléversés pour l'envoi. `null` si le
-       * template n'est pas un carousel : l'envoi classique reste strictement inchangé.
-       */
-      /**
-       * 🔴 LA GARDE D OPT-OUT DE L ENVOI DE MODELE DEPUIS L INBOX, et elle est en DEUX morceaux : le statut
-       * du contact, et la categorie REELLE du modele. Le corps de la requete porte bien un
-       * `templateCategory`, mais il vient du navigateur et ne sert qu aux statistiques : s en servir comme
-       * garde laisserait n importe qui se declarer « utility ».
-       *
-       * ⚠️ `templateVarInfo` est la MEME lecture que le worker, avec son cache court : le cas ou la
-       * question se pose (un contact desabonne) ne paie donc quasiment jamais un appel a Meta.
-       *
-       * Le statut du contact, c'est `estDesabonne`, branché par `depsRepondre` (spread en tête de ce bloc).
+       * 🔴 La garde d'opt-out de l'envoi de modèle depuis l'Inbox, en deux morceaux : le statut du contact
+       * (`estDesabonne`, branché par `depsRepondre`) et la catégorie réelle du modèle. Le `templateCategory` du
+       * corps vient du navigateur et ne sert qu'aux statistiques : s'en servir laisserait n'importe qui se
+       * déclarer « utility ». `templateVarInfo` est la lecture du worker, avec son cache court.
        */
       categorieDuModele: async (tenant, name, language) => {
         const cat = (await workflowRuntime.templateVarInfo(tenant, name, language))?.category;
         return cat === 'utility' ? 'utility' : cat === 'marketing' ? 'marketing' : null;
       },
+      /**
+       * Cartes d'un template carousel, relues chez Meta et visuels re-téléversés pour l'envoi. `null` si le
+       * template n'est pas un carousel : l'envoi classique reste inchangé.
+       */
       prepareCarousel: async (tenant, name, language) => {
-        // MÊME lecture que le worker (résolution nom+langue, repli sur le nom seul, cache court) : c'est
-        // `templateVarInfo` de la fabrique partagée. L'API en avait sa propre copie, sans cache.
+        // Même lecture que le worker (`templateVarInfo` de la fabrique partagée : nom+langue, repli sur le nom
+        // seul, cache court).
         const lu = (await workflowRuntime.templateVarInfo(tenant, name, language))?.carousel;
         if (!lu) return null;
         const cards = await workflowRuntime.prepareCarouselMedia(tenant, lu.cards);
@@ -1263,8 +1082,8 @@ async function main(): Promise<void> {
         return refus === null ? { cards } : { refus: `Carousel non envoyable : ${refus}` };
       },
     },
-    // Canal ENTRANT depuis le connecteur HubSpot. Même secret partagé que le canal sortant (le connecteur
-    // l'appelle SERVICE_SECRET), et même format de signature : on ne crée pas un troisième schéma.
+    // Canal entrant depuis le connecteur HubSpot. Même secret partagé que le canal sortant (SERVICE_SECRET
+    // côté connecteur) et même format de signature : pas de troisième schéma.
     ...(config.HUBSPOT_SERVICE_SECRET ? {
       hubspotEvents: {
         secret: config.HUBSPOT_SERVICE_SECRET,
@@ -1278,48 +1097,37 @@ async function main(): Promise<void> {
       getDashboard: (tenant, range) => statsStore.getDashboard(tenant, range),
       volumesParCanal: (tenant, jours) => statsStore.volumesParCanal(tenant, jours),
       getTemplateBreakdown: (tenant, range) => statsStore.getTemplateBreakdown(tenant, range),
-      // La MEME grille que les prix affiches au-dessus : deux lectures donneraient deux marges.
-      // ⚠️ `tenant` N'EST PLUS LU, et la fleche le garde parce que le CONTRAT de la route le passe : une
-      // seule grille sert tous les espaces depuis la migration 0168.
+      // La même grille que les prix affichés au-dessus : deux lectures donneraient deux marges. `tenant` n'est
+      // plus lu (une seule grille pour tous les espaces), la flèche le garde pour le contrat de la route.
       margeTemplate: async () => grilleDepuisLigne(await statsStore.grillePrixGlobale()).margeTemplate,
       /**
-       * 🔴 CE CHEMIN AUSSI PORTE LA MARGE, ET IL A ETE OUBLIE DEUX FOIS. Son resultat alimente la carte
-       * « Detail par template » du Quantitatif ET le cout affiche sur l ecran Campagnes (total, ligne, et
-       * tiroir de detail). L inventaire des consommateurs avait ete fait sur `prixFactures`, alors que la
-       * bonne question etait « qui affiche un prix de template a un client ». Sans marge ici, la MEME
-       * campagne valait 1,00 € sur l ecran Campagnes et 1,50 € sur sa fiche Performance Lab, et deux cartes
-       * de la MEME page annoncaient deux totaux. Releve a la troisieme revue du 2026-09-18.
-       *
-       * ⚠️ `cost` ET `totalCost` NE SONT PAS MARGES, et c est delibere : ce sont les charges REELLES que
-       * Meta a facturees sur la periode, pas une projection de vente. Seul `ratePerMessage` devient un prix,
-       * parce que c est le seul que les ecrans multiplient par un volume pour annoncer un montant au client.
-       * Les melanger ferait un total qui n est ni l un ni l autre.
+       * 🔴 Ce chemin porte aussi la marge : il alimente « Détail par template » du Quantitatif et le coût de
+       * l'écran Campagnes. Sans elle, la même campagne aurait deux prix sur deux écrans.
+       * `cost` et `totalCost` ne sont pas margés : ce sont les charges réelles facturées par Meta. Seul
+       * `ratePerMessage` devient un prix, parce que c'est lui que les écrans multiplient par un volume.
        */
       getPricing: async (tenant, range) => {
         const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrixGlobale()]);
         if (!wabaId) return null;
         const { startTs, endTs } = rangeToUnix(range);
-        const pricing = await metaFactory.pricingClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
-        // 🔴 LE MEME CACHE QUE `prixFactures`, ET C'EST LE CINQUIEME APPELANT QU'UNE RELECTURE A TROUVE
-        // (2026-09-23). Cette route sert « Detail par template », que l'onglet Campagnes appelle LUI AUSSI a
-        // chaque montage : le cache pose sur l'autre chemin etait donc contourne par la porte d'a cote, et
-        // l'ecran le plus ouvert du produit repartait chez Meta a chaque affichage. Meme cle, meme fenetre.
+        const pricing = await metaFactory.pricingClientForTenant(tenant); // token par tenant, repli global
+        // Le même cache que `prixFactures` (même clé, même fenêtre) : l'onglet Campagnes appelle aussi cette
+        // route à chaque montage, et contournerait sinon le cache par la porte d'à côté.
         const brut = await tarifMeta(tenant, startTs, endTs, () => pricing.getPricingAnalytics(wabaId, startTs, endTs));
         if (!brut) return brut;
         return pricingFacture(brut, grilleDepuisLigne(ligne));
       },
       getCampaignFunnel: (tenant, campaignId) => statsStore.getCampaignFunnel(tenant, campaignId),
       getErrorBreakdown: (tenant, range, templateName) => statsStore.getErrorBreakdown(tenant, range, templateName),
-      // Le MÊME journal que l'écran d'exploitation (`/parametres`), avec le code et la plage en filtre. Une
-      // seconde requête propre à Analytics existait : elle comptait une population voisine, donc les deux
-      // écrans, qui portent le même titre, se seraient contredits chez un client.
+      // Le même journal que l'écran d'exploitation (`/parametres`), avec le code et la plage en filtre : deux
+      // requêtes sur des populations voisines feraient se contredire deux écrans de même titre.
       getErrorContacts: (tenant, range, code, filter) => erreursLivraison.lister(tenant, {
         code,
         from: range.from,
         to: range.to,
         ...filter,
         // Les seules campagnes : le compteur cliqué (`getErrorBreakdown`) ne compte qu'elles. Sans ce filtre,
-        // un « 12 » ouvrirait aussi les messages libres du même code (lot 3 de l'API publique).
+        // un « 12 » ouvrirait aussi les messages libres du même code.
         campagnesSeulement: true,
         // Une ligne de plus que le plafond : c'est ainsi que la route sait qu'elle tronque, et le dit.
         limit: PLAFOND_CONTACTS_ERREUR + 1,
@@ -1332,47 +1140,38 @@ async function main(): Promise<void> {
         return estimateCostSeries(range.from, range.to, rows, rates);
       },
       /**
-       * Le tableau « ce que coûte un engagement » de la page de synthèse (lot E).
-       *
-       * ⚠️ Les tarifs Meta viennent du MÊME appel que le graphe de coût (`prixFactures`) : deux façons de les
-       * lire donneraient deux coûts sur deux écrans du même onglet, et le client comparerait. Le calcul,
-       * lui, est pur (`estimateCoutParCampagne`) et vit à côté de celui de la série, avec ses règles.
+       * Le tableau « ce que coûte un engagement » de la page de synthèse. Les tarifs Meta viennent du même
+       * appel que le graphe de coût (`prixFactures`), pour ne pas afficher deux coûts dans le même onglet. Le
+       * calcul est pur (`estimateCoutParCampagne`).
        */
       getCoutParCampagne: async (tenant, range, opts) => {
         const [volumes, rates, serviceMois, ligne, rcs] = await Promise.all([
-          // ⚠️ LA RETENTION VOYAGE JUSQU'ICI, et c'est ce qui permet a une campagne dont les envois ont ete
-          // purges de garder une case VIDE plutot qu'un 0,00 € qui se lirait « gratuit ».
+          // La rétention voyage jusqu'ici : une campagne dont les envois ont été purgés garde une case vide
+          // plutôt qu'un 0,00 € qui se lirait « gratuit ».
           statsStore.getVolumeParCampagne(tenant, range, { ...opts, retentionJours: config.CONVERSATION_RETENTION_DAYS }),
           prixFactures(tenant, range),
-          // 🔴 LE MEME CALCUL DE FRANCHISE QUE LA LIGNE « MESSAGES », par les mêmes deux lectures. Deux
-          // façons de déduire la franchise donneraient deux coûts de service sur la MÊME carte, à deux
-          // lignes d'écart, et le client comparerait. Voir `estimateCoutParCampagne` pour le prorata.
+          // Le même calcul de franchise que la ligne « Messages », par les mêmes deux lectures : sinon deux
+          // coûts de service sur la même carte. Voir `estimateCoutParCampagne` pour le prorata.
           statsStore.serviceParMois(tenant, range),
           statsStore.grillePrixGlobale(),
-          // 🔴 ET LE MEME LOT DE RCS QUE CETTE LIGNE-LA, par la même lecture et la même règle de bascule.
-          // Une campagne RCS affichait « — » alors que son prix est saisi depuis la migration 0154.
-          // ⚠️ `attribuer` : SEUL cet appelant lit `campaignId`, et l'attribution coute une sous-requete
-          // correlee par message RCS, non servie par un index. L'autre route s'en passe desormais.
+          // Et le même lot de RCS que cette ligne-là, par la même lecture et la même règle de bascule.
+          // `attribuer` : seul cet appelant lit `campaignId`, et l'attribution coûte une sous-requête corrélée
+          // par message RCS, non servie par un index.
           statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS, { attribuer: true }),
         ]);
         const ids = [...new Set(volumes.map((v) => v.campaignId))];
-        // ⚠️ LES TROIS ENSEMBLE, pas l'une après l'autre : ce sont des lectures indépendantes sur la même
-        // liste d'identifiants, et cette route sert la page d'accueil de Performance lab.
+        // Les trois en parallèle : lectures indépendantes sur la même liste, et cette route sert la page
+        // d'accueil de Performance lab.
         const [clics, engagements, services] = await Promise.all([
           statsStore.clicsParCampagne(tenant, ids),
           statsStore.engagementsParCampagne(tenant, ids),
           statsStore.servicesParCampagne(tenant, ids, range),
         ]);
         /**
-         * LE PRIX EFFECTIF D'UN MESSAGE DE SERVICE SUR LA PERIODE, franchise déjà déduite.
-         *
-         * ⚠️ IL SE CALCULE, IL NE SE LIT PAS DANS LA GRILLE. Le prix du tarif (2,48 cts) est celui d'un
-         * message FACTURÉ ; la franchise mensuelle en rend une partie gratuite, et une période qui tombe
-         * entièrement sous le millième a un prix effectif de ZÉRO. Prendre le tarif nu surfacturerait
-         * chaque campagne du début de mois.
-         *
-         * ⚠️ `envoyes === 0` -> pas de division, et pas d'imputation : aucun message de service n'existe
-         * sur la période, donc il n'y a rien à répartir.
+         * Le prix effectif d'un message de service sur la période, franchise déduite. Il se calcule : le tarif
+         * est celui d'un message facturé, la franchise mensuelle en rend une partie gratuite (une période sous
+         * le millième vaut zéro). Prendre le tarif nu surfacturerait chaque campagne du début de mois.
+         * `envoyes === 0` -> ni division ni imputation.
          */
         const cm = coutMessages(
           { templates: [], rates, service: serviceMois, rcsSimple: 0, rcsConversationnel: 0 },
@@ -1380,14 +1179,11 @@ async function main(): Promise<void> {
         );
         const prixUnitaire = cm.service.envoyes > 0 ? cm.service.cout / cm.service.envoyes : 0;
         /**
-         * LES RCS DE CHAQUE CAMPAGNE, SIMPLES D'UN COTE, CONVERSATIONNELS DE L'AUTRE.
-         *
-         * 🔴 LA BASCULE SE CALCULE SUR TOUS LES ENVOIS DE L'ESPACE, PAS SUR CEUX D'UNE CAMPAGNE, et c'est la
-         * règle elle-même qui l'impose : elle fait passer l'ECHANGE entier à 8 cts dès qu'une réaction suit
-         * l'un de ses envois dans les sept jours. Un RCS envoyé hors campagne peut donc faire basculer les
-         * RCS de campagne du même échange. `basculesRcs` reçoit ainsi la totalité, puis on impute.
-         *
-         * ⚠️ LES LIGNES SANS CAMPAGNE SONT IGNOREES A L'IMPUTATION, mais pas à la bascule (voir ci-dessus).
+         * Les RCS de chaque campagne, simples d'un côté, conversationnels de l'autre.
+         * 🔴 La bascule se calcule sur tous les envois de l'espace, pas sur ceux d'une campagne : la règle fait
+         * passer l'échange entier à 8 cts dès qu'une réaction suit l'un de ses envois dans les sept jours, donc
+         * un RCS hors campagne peut faire basculer les RCS de campagne du même échange. Les lignes sans
+         * campagne sont ignorées à l'imputation, pas à la bascule.
          */
         const envoisRcs = rcs.conversations.flatMap((c) =>
           c.instants.map((at) => ({ id: '', conversationId: c.conversationId, waId: c.waId, at })));
@@ -1399,29 +1195,18 @@ async function main(): Promise<void> {
           if (bascules.has(c.conversationId)) acc.conversationnel += c.envois; else acc.simple += c.envois;
           rcsParCampagne.set(c.campaignId, acc);
         }
-        // La marge est DEJA dans `rates` (cf. `prixFactures`) : la reappliquer ici la compterait deux fois.
-        // ⚠️ La marge ne touche PAS le RCS : elle porte sur le tarif Meta, quand le prix RCS est saisi par
-        // l'espace, donc déjà un prix de vente (migration 0154).
+        // La marge est déjà dans `rates` (cf. `prixFactures`) : la réappliquer la compterait deux fois. Elle
+        // ne touche pas le RCS, dont le prix saisi est déjà un prix de vente.
         return estimateCoutParCampagne(volumes, rates, clics, engagements,
           { parCampagne: services, prixUnitaire },
           { parCampagne: rcsParCampagne, grille: grilleDepuisLigne(ligne) });
       },
       /**
-       * LE COUT TOTAL DES MESSAGES DE LA PERIODE : templates margés, service franchise déduite, RCS.
-       *
-       * 🔴 LES MEMES TARIFS META QUE LE GRAPHE ET QUE LE TABLEAU, par le même `prixFactures`. Trois écrans du
-       * même onglet lisent ce chiffre ; deux lectures de tarif différentes produiraient deux totaux que le
-       * client mettrait côte à côte.
-       *
-       * 🔴 LA BASCULE RCS EST CALCULEE ICI, PAR LA FONCTION PURE, ET PAS EN SQL. La règle (« une réaction
-       * dans les sept jours fait passer l'échange ENTIER à 8 cts ») vit dans `basculesRcs`, qui est testée
-       * et mutée dans les deux sens. La recopier en SQL en ferait deux implémentations, et le jour où l'une
-       * changerait l'autre resterait juste assez plausible pour ne pas se voir. Le store, lui, réduit le
-       * transport à une ligne par conversation en gardant TOUS les instants : rien n'est approximé.
-       *
-       * ⚠️ LA FENETRE EST PASSEE AU SQL depuis `FENETRE_BASCULE_MS`, au lieu d'un `interval '7 days'` écrit
-       * à côté : c'est l'invariant « deux constantes de fichiers différents qui doivent rester ordonnées »,
-       * et ce dépôt l'a déjà payé.
+       * Le coût total des messages de la période : templates margés, service franchise déduite, RCS. Les
+       * mêmes tarifs Meta que le graphe et le tableau, par le même `prixFactures`.
+       * La bascule RCS se calcule ici par la fonction pure `basculesRcs` (testée), pas en SQL : deux
+       * implémentations de la règle divergeraient sans se voir. Le store garde tous les instants, rien n'est
+       * approximé. La fenêtre passe au SQL depuis `FENETRE_BASCULE_MS`, jamais un `interval` recopié à côté.
        */
       getCoutMessages: async (tenant, range) => {
         const [volumes, rates, service, rcs, ligne] = await Promise.all([
@@ -1436,8 +1221,8 @@ async function main(): Promise<void> {
         const envoisRcs = rcs.conversations.flatMap((c) =>
           c.instants.map((at) => ({ id: '', conversationId: c.conversationId, waId: c.waId, at })));
         const bascules = basculesRcs(envoisRcs, rcs.reactions);
-        // ⚠️ Le compte se fait sur les ENVOIS de chaque conversation, pas sur le nombre de conversations :
-        // un échange basculé facture TOUS ses RCS au tarif haut, ce qui est précisément la règle.
+        // Le compte se fait sur les envois de chaque conversation, pas sur le nombre de conversations : un
+        // échange basculé facture tous ses RCS au tarif haut.
         let rcsSimple = 0;
         let rcsConversationnel = 0;
         for (const c of rcs.conversations) {
@@ -1455,49 +1240,32 @@ async function main(): Promise<void> {
         );
       },
       /**
-       * CE QUE LE CLIENT A DEPENSE EN IA sur SON crédit, et le détail de ses tours.
-       *
-       * ⚠️ RIEN DE CE QUI EST SUR NOTRE CLE N'Y ENTRE (transcription, bot d'aide, assistants de
-       * configuration), et le Meta Business Agent non plus : il tourne chez Meta et se facture au message
-       * de service, donc son coût est dans `getCoutMessages`, pas ici.
+       * Ce que le client a dépensé en IA sur son crédit, et le détail de ses tours. Rien de ce qui est sur
+       * notre clé n'y entre (transcription, bot d'aide, assistants), ni le Meta Business Agent, facturé au
+       * message de service (`getCoutMessages`).
        */
       getCoutIa: async (tenant, range) => statsStore.consommationIa(tenant, range, PLAFOND_TOURS_IA),
       /**
-       * La fiche d'UNE campagne, ouverte en cliquant sa ligne dans le tableau ci-dessus.
-       *
-       * 🔴 LES MÊMES TARIFS QUE LE TABLEAU, par le même `prixFactures`, et c'est ce qui empêche les deux
-       * écrans de se contredire au moment précis où on les met côte à côte : le clic sur une ligne ouvre
-       * cette fiche, et deux lectures de tarif différentes y afficheraient deux coûts pour la même campagne.
-       *
-       * ⚠️ LES TARIFS SONT CEUX DES 30 DERNIERS JOURS, alors que la fiche couvre toute la VIE de la
-       * campagne. C'est une approximation ASSUMÉE et non un oubli : Meta rend un tarif PAR PÉRIODE, et
-       * demander la période exacte de chaque campagne multiplierait les appels sans rien changer au chiffre
-       * (les tarifs bougent de quelques centimes par an). La carte annonce déjà un coût ESTIMÉ qui n'est
-       * pas une facture ; c'est la même réserve, pas une nouvelle.
-       *
-       * `null` -> 404 : la campagne n'est pas dans cet espace. La lecture de la fiche vient AVANT le reste,
-       * pour ne pas payer trois requêtes sur un identifiant qui n'existe pas.
+       * La fiche d'une campagne, ouverte depuis sa ligne du tableau. Les mêmes tarifs que le tableau, par le
+       * même `prixFactures`, pour ne pas afficher deux coûts côte à côte. Ce sont ceux des 30 derniers jours
+       * alors que la fiche couvre toute la vie de la campagne : approximation assumée (Meta rend un tarif par
+       * période, qui bouge de quelques centimes par an), sous un coût annoncé comme estimé.
+       * `null` -> 404 : la campagne n'est pas dans cet espace, lue avant le reste pour ne rien payer de plus.
        */
       getDetailCoutCampagne: async (tenant, campaignId) => {
         const campagne = await statsStore.ficheCampagne(tenant, campaignId);
         if (campagne === null) return null;
         const [envois, rates, funnel, evenements] = await Promise.all([
           statsStore.envoisDeLaCampagne(tenant, campaignId),
-          // Les 30 derniers jours, la fenêtre par défaut du tableau : c'est LUI qui sert de référence,
-          // parce que c'est de lui qu'on ouvre cette fiche.
+          // Les 30 derniers jours, la fenêtre par défaut du tableau, d'où l'on ouvre cette fiche.
           prixFactures(tenant, { from: addDays(todayParis(), -29), to: todayParis() }),
           statsStore.getCampaignFunnel(tenant, campaignId),
           campagne.workflowId ? statsStore.mesuresScenarioParCampagne(tenant, campaignId) : Promise.resolve([]),
         ]);
         /**
-         * Les clics de liens tracés, ATTRIBUÉS à cette campagne, fusionnés aux événements de blocs.
-         *
-         * ⚠️ MÊME MONTAGE que `getWorkflowNodeCounts` juste en dessous (graphe -> blocs template -> liens ->
-         * `compteursDeClics`), et c'est délibéré : le node d'un clic ne se déduit que du GRAPHE, et deux
-         * façons de faire ce chemin donneraient deux répartitions par bloc sur deux écrans.
-         *
-         * Best-effort, pour la même raison qu'à côté : une panne de cette lecture retire la colonne des
-         * liens, elle ne doit pas emporter le coût ni les réponses, qui sont déjà là.
+         * Les clics de liens tracés attribués à cette campagne, fusionnés aux événements de blocs, par le même
+         * montage que `getWorkflowNodeCounts` (le node d'un clic ne se déduit que du graphe). Best-effort : une
+         * panne retire la colonne des liens, pas le coût ni les réponses.
          */
         let clics: CompteurClic[] = [];
         let clicsAnonymes = 0;
@@ -1523,21 +1291,18 @@ async function main(): Promise<void> {
         });
       },
       /**
-       * Mesures d'un scénario : les événements de blocs, PLUS les clics sur les liens tracés des templates
-       * qu'il envoie. Les seconds ne peuvent pas vivre dans `workflow_node_events` (elle exige un `wa_id`,
-       * or un clic sur un lien statique n'identifie personne) : ils sont donc fusionnés à la LECTURE.
-       *
-       * Best-effort sur la partie liens : une panne ici retire la mesure de clic, elle ne doit pas emporter
-       * les compteurs d'envoi et de lecture qui, eux, sont disponibles.
+       * Mesures d'un scénario : les événements de blocs, plus les clics sur les liens tracés des templates
+       * qu'il envoie. Les clics ne peuvent pas vivre dans `workflow_node_events` (elle exige un `wa_id`, un
+       * clic sur un lien statique n'identifie personne) : ils sont fusionnés à la lecture. Best-effort sur les
+       * liens : une panne retire la mesure de clic, pas les compteurs d'envoi et de lecture.
        */
       getWorkflowNodeCounts: async (tenant, workflowId, range) => {
         const evenements = await nodeEventStore.countByNode(tenant, workflowId, range);
         try {
           const wf = await workflowStore.getById(workflowId, tenant);
           const noeuds = noeudsTemplate(wf?.graph);
-          // Les blocs RCS ont leurs propres liens, sur une AUTRE clé (l'adresse, migration 0107) et un autre
-          // espace de noms de handle (`lien:i`). Les deux familles se lisent séparément puis se concatènent :
-          // les mélanger dans une seule requête reviendrait à joindre deux tables sur rien.
+          // Les blocs RCS ont leurs propres liens, sur une autre clé (l'adresse) et un autre espace de noms de
+          // handle (`lien:i`) : les deux familles se lisent séparément puis se concatènent.
           const liensRcs = liensRcsDesNoeuds(wf?.graph);
           if (noeuds.length === 0 && liensRcs.length === 0) return evenements;
 
@@ -1565,17 +1330,11 @@ async function main(): Promise<void> {
       listAnalyzedConversations: (tenant, range, filters) => conversationStatsStore.listAnalyzed(tenant, range, filters),
       getNuageQualitatif: (tenant, range) => conversationStatsStore.getNuageQualitatif(tenant, range),
       /**
-       * LES JOURNEES de l ecran « Analyse des conversations » (2026-09-17).
-       *
-       * ⚠️ AUCUN CALCUL ICI, et c est voulu : l agregation se fait EN BASE, bornee par le nombre de jours
-       * de la periode. Descendre une ligne par conversation pour les grouper ensuite ferait transiter tout
-       * ce que cet ecran existe justement pour ne plus transiter.
-       */
-      /**
-       * 🔴 `joursAnalyse` ET PAS `parJour` : la lecture FUSIONNÉE. Les vraies données font foi tant
-       * qu'elles existent (choix de Julien du 2026-09-17), les agrégats comblent au-delà de la rétention.
-       * Brancher `parJour` seul ferait disparaître l'historique de l'écran le jour où la purge passe,
-       * c'est-à-dire exactement ce que la table d'agrégats existe pour empêcher.
+       * Les journées de l'écran « Analyse des conversations », agrégées en base (bornées par le nombre de
+       * jours de la période).
+       * 🔴 `joursAnalyse` et pas `parJour` : la lecture fusionnée, où les vraies données font foi tant qu'elles
+       * existent et les agrégats comblent au-delà de la rétention. `parJour` seul ferait disparaître
+       * l'historique de l'écran au passage de la purge.
        */
       getJoursAnalyse: (tenant, range) => conversationStatsStore.joursAnalyse(tenant, range),
     },
@@ -1590,20 +1349,15 @@ async function main(): Promise<void> {
       rcsEnabledFor: (tenant) => workflowRuntime.rcsStack.agents.hasAgent(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
-      // L'interrupteur HubSpot de l'espace (migration 0179). La route refuse de l'eteindre avec un portail relie.
+      // L'interrupteur HubSpot de l'espace. La route refuse de l'éteindre avec un portail relié.
       setHubspotActif: (tenant, actif) => settingsStore.setHubspotActif(tenant, actif),
       /**
-       * UN PORTAIL HUBSPOT EST-IL LIE A CET ESPACE ? (lot 9, 2026-09-23)
-       *
-       * ⚠️ LECTURE LOCALE : le mapping vit dans le schema `mmhs` de la MEME base, donc une jointure indexee
-       * sur `tenant_id`, pas un aller-retour vers le connecteur. C'est ce qui rend acceptable de la poser
-       * sur une route que plusieurs ecrans appellent a l'ouverture.
-       *
-       * 🔴 `42P01 -> false`, ET SEULEMENT LUI. Le cas attendu n'est pas un hoquet reseau, c'est une base ou le
-       * schema `mmhs` N'EXISTE PAS (instance sans connecteur HubSpot, base de CI) : aucun portail ne peut y
-       * etre relie. Toute AUTRE erreur remonte (relecture du lot 7, 2026-09-25) : l'affichage la rattrape en
-       * « pas relie » (`GET /settings`), l'extinction de l'interrupteur la refuse en 503. Un `catch -> false`
-       * global laissait eteindre HubSpot par-dessus un portail relie des que la lecture echouait.
+       * Un portail HubSpot est-il lié à cet espace ? Lecture locale : le mapping vit dans le schéma `mmhs` de
+       * la même base (jointure indexée sur `tenant_id`), pas un aller-retour vers le connecteur.
+       * 🔴 `42P01 -> false`, et seulement lui : c'est une base sans schéma `mmhs` (instance sans connecteur,
+       * base de CI), où aucun portail ne peut être relié. Toute autre erreur remonte : l'affichage la lit « pas
+       * relié », l'extinction de l'interrupteur la refuse en 503, pour ne pas éteindre HubSpot par-dessus un
+       * portail relié.
        */
       hubspotPortalConnecte: (tenant) => phoneStatusStore.getHubspotPortal(tenant).then((p) => p.connected).catch((err: unknown) => {
         if (typeof err === 'object' && err !== null && 'code' in err && err.code === '42P01') return false;
@@ -1621,20 +1375,11 @@ async function main(): Promise<void> {
       setTimezone: (tenant, tz) => settingsStore.setTimezone(tenant, tz),
       setBusinessHours: (tenant, hours) => settingsStore.setBusinessHours(tenant, hours),
       /**
-       * LE CONNECTEUR PREVENU A CHAQUE DESABONNEMENT (migration 0139).
-       *
-       * ⚠️ On ne rend que l IDENTIFIANT et le LIBELLE, pas la requete entiere : l ecran du Consentement a
-       * besoin de nommer un appel, pas de connaitre son adresse, ses en-tetes ni ce qu il envoie.
+       * Le connecteur prévenu à chaque désabonnement : on ne rend que l'identifiant et le libellé, l'écran du
+       * Consentement a besoin de nommer un appel, pas de connaître son adresse, ses en-têtes ni ce qu'il envoie.
        */
       listerRequetesConnecteur: async (tenant) => (await agentRequetes.lister(tenant)).map((r) => ({ id: r.id, label: r.label })),
       setOptoutRequestId: (tenant, requestId) => settingsStore.setOptoutRequestId(tenant, requestId),
-      /**
-       * « L IA se declare comme telle », au niveau de l ESPACE (migration 0140).
-       *
-       * ⚠️ La LISTE porte la PHRASE de chaque agent, pas seulement son nom : le reglage dit QUAND on
-       * annonce, il ne dit pas CE QU ON annonce, et un ecran de conformite qui cacherait le texte
-       * promettrait une verification qu il ne permet pas de faire.
-       */
       setMentionIaFrequence: (tenant, frequence) => settingsStore.setMentionIaFrequence(tenant, frequence),
       setAgentTransfertMode: (tenant, mode) => settingsStore.setAgentTransfertMode(tenant, mode),
       setAgentsPeuventPrendre: (tenant, actif) => settingsStore.setAgentsPeuventPrendre(tenant, actif),
@@ -1644,8 +1389,8 @@ async function main(): Promise<void> {
     ...(config.HUBSPOT_SERVICE_URL
       ? {
           hubspotImport: {
-            // Accès listes = réglage utilisateur + flag pause (F3-b). La pause du toggle Synchronisation pose
-            // campaigns_paused (même transaction que hubspot_paused_at), sans écraser hubspot_lists_enabled. La route compose.
+            // Accès listes = réglage utilisateur + pause. La pause du toggle Synchronisation pose
+            // campaigns_paused sans écraser hubspot_lists_enabled ; la route compose les deux.
             listsAccess: async (tenant: string) => {
               const s = await settingsStore.get(tenant);
               return { enabled: s.hubspotListsEnabled, paused: s.campaignsPaused };
@@ -1654,7 +1399,7 @@ async function main(): Promise<void> {
             importList: (tenant: string, listId: string, listName: string) =>
               importHubspotList({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, { contacts: contactStore, userFields: fieldStore }, tenant, listId, listName),
           },
-          // Étapes de deal : même canal service, mais AUCUN rapport avec le réglage « listes » (cf. la route).
+          // Étapes de deal : même canal service, mais aucun rapport avec le réglage « listes » (cf. la route).
           hubspotPipelines: {
             fetchDealStages: (tenant: string) =>
               fetchHubspotDealStages({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant),
@@ -1687,31 +1432,20 @@ async function main(): Promise<void> {
       appUrl: config.APP_URL,
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },
-    // Configuration de l'agent MBA depuis la console (admin-only). `phoneNumberBelongsToTenant` est le contrôle
-    // d'isolation de la PLUPART de ces routes : la surface MBA est indexée par NUMÉRO chez Meta, pas par tenant.
-    // ⚠️ `PUT /tenants/:id/mba-activation` fait EXCEPTION, et c'est sa raison d'être : elle résout le numéro
-    // elle-même et s'isole par `scopeTenant`. Exiger le numéro de l'appelant est précisément ce qui a fait
-    // sauter l'appel à Meta trois fois le 2026-09-10, la dernière parce que le navigateur ne l'avait pas encore.
     /**
-     * L'ASSISTANT DU META BUSINESS AGENT (lot B du plan des assistants conversationnels).
-     *
-     * 🔴 IL PASSE PAR `gatewayAide`, DONC PAR NOTRE CLÉ, comme l'assistant d'agent IA depuis le 2026-09-14 :
-     * facturer quelqu'un pour apprendre à se servir du produit se retourne contre nous. Et c'est pourquoi
-     * `ASSISTANT_PLAFOND_EUROS_MOIS` l'accompagne : sur le crédit du client, un bavardage se payait tout
-     * seul ; sur le nôtre, rien ne le borne.
-     *
-     * ⚠️ ABSENT SANS CLÉ DE MODÈLE : la route n'est alors pas montée du tout, plutôt que montée et
-     * inopérante. Un écran qui appelle une route absente reçoit un 404 lisible ; une route qui répond 503 à
-     * chaque tour ressemble à une panne intermittente.
+     * L'assistant du Meta Business Agent.
+     * 🔴 Il passe par `gatewayAide`, donc par notre clé (facturer l'apprentissage du produit se retourne
+     * contre nous), d'où le plafond `ASSISTANT_PLAFOND_EUROS_MOIS` : sur notre clé, rien d'autre ne borne un
+     * bavardage. Absent sans clé de modèle : la route n'est pas montée (un 404 lisible plutôt qu'un 503 à
+     * chaque tour).
      */
     ...(gatewayAide ? {
       mbaAssistant: {
         inventaire: async (tenant: string) => {
           const phoneNumberId = await repo.getTenantPhoneNumberId(tenant);
           if (!phoneNumberId) return null;
-          // ⚠️ L'« agentId » des routes MBA EST le `phone_number_id` : c'est ce que fait déjà `src/http/mba.ts`
-          // (`listSkills(phoneNumberId, agentId)` y reçoit le même identifiant). Inventer un second champ
-          // créerait une seconde vérité pour la même chose.
+          // L'« agentId » des routes MBA est le `phone_number_id`, comme dans `src/http/mba.ts` : un second
+          // champ créerait une seconde vérité pour la même chose.
           return lireInventaireMba(await metaFactory.mbaClientForTenant(tenant), phoneNumberId, phoneNumberId);
         },
         entretiens: new PgEntretienMbaStore(pool),
@@ -1727,18 +1461,21 @@ async function main(): Promise<void> {
           numeroDuTenant: (t: string) => repo.getTenantPhoneNumberId(t),
           client: (t: string) => metaFactory.mbaClientForTenant(t),
           journaliser: (t: string, ligne: LigneHistorique) => historiqueStore.ecrire(t, ligne),
-          // ⚠️ `t` et non `tenant` : c'est l'espace que `appliquer` transmet, le seul qui fasse foi ici.
+          // `t` et non `tenant` : c'est l'espace que `appliquer` transmet, le seul qui fasse foi ici.
           pieceJointe: async (t: string, jeton: string) => piecesJointesMba.reprendre(t, jeton),
           acteur,
         }),
       },
     } : {}),
     historique: { historique: historiqueStore },
+    // 🔴 Configuration de l'agent MBA (admin-only) : `phoneNumberBelongsToTenant` est le contrôle d'isolation
+    // de la plupart de ces routes, la surface MBA étant indexée par numéro chez Meta, pas par tenant.
+    // `PUT /tenants/:id/mba-activation` fait exception : elle résout le numéro elle-même et s'isole par
+    // `scopeTenant`.
     mba: {
       /**
-       * ⚠️ SEULES LES SUPPRESSIONS SONT JOURNALISÉES DEPUIS LES ONGLETS, pas encore les créations ni les
-       * modifications. Ce n'est pas un oubli mais un ordre de priorité : chez Meta une suppression est
-       * DÉFINITIVE, et cette ligne en est le seul exemplaire ; une création ratée se refait.
+       * Seules les suppressions sont journalisées depuis les onglets : chez Meta une suppression est
+       * définitive et cette ligne en est le seul exemplaire, alors qu'une création ratée se refait.
        */
       journaliserSuppression: (tenant, l) => historiqueStore.ecrire(tenant, {
         surface: 'mba', surfaceId: null, element: l.element, operation: 'suppression',
@@ -1748,9 +1485,8 @@ async function main(): Promise<void> {
       clientFor: (tenant) => metaFactory.mbaClientForTenant(tenant),
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       fetchUrl: fetchUrlBorne(),
-      // 🔴 CE QUI REND LA ROUTE D'ACTIVATION POSSIBLE : le numéro se résout ICI, côté serveur. Le faire
-      // côté navigateur est ce qui a produit trois pannes le 2026-09-10, la dernière parce que l'état du
-      // compte n'était pas encore arrivé au moment du clic.
+      // Le numéro se résout ici, côté serveur : c'est ce qui rend la route d'activation possible (côté
+      // navigateur, l'état du compte n'est pas toujours arrivé au moment du clic).
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
       ecrireDrapeauMba: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       messagesEcrits: (tenant) => statsStore.messagesEcritsParMba(tenant),
@@ -1763,31 +1499,23 @@ async function main(): Promise<void> {
       create: (tenant, label, mention, modele) => agentStore.create(tenant, label, mention, modele),
       patch: (tenant, id, p) => agentStore.patch(tenant, id, p),
       remove: (tenant, id) => agentStore.remove(tenant, id),
-      // Le modèle d'un agent NEUF vient de la configuration serveur, pas du client : il choisira ensuite
-      // dans l'écran de réglage. Vide en l'absence de configuration, la colonne l'accepte.
-      //
-      // 🔴 `AGENT_MODEL` D'ABORD, et `LLM_MODEL` seulement en repli. Le second est le modèle de l'ANALYSE de
-      // conversation, servi en DIRECT par Anthropic ; l'agent, lui, passe par le Gateway, dont les
-      // identifiants sont préfixés par leur fournisseur. Créer un agent avec l'identifiant de l'analyse lui
-      // donne un modèle que le Gateway ne connaît pas, et chaque tour échoue sans que la création n'ait rien
-      // signalé.
+      // Le modèle d'un agent neuf vient de la configuration serveur ; le client choisira ensuite dans l'écran
+      // de réglage. `AGENT_MODEL` d'abord, `LLM_MODEL` en repli seulement (raison dans `src/config.ts`).
       modeleParDefaut: config.AGENT_MODEL || config.LLM_MODEL,
-      // LECTURE seule : le client voit ce qui lui reste, il ne se recharge pas lui-meme (cf. /ops).
+      // Lecture seule : le client voit ce qui lui reste, il ne se recharge pas lui-même (cf. /ops).
       soldeAgent: (tenant) => credits.solde(tenant),
-      // Absente quand le provisionnement est eteint : la creation d'agent se comporte alors comme avant.
+      // Absente quand le provisionnement est éteint : la création d'agent se passe alors de clé propre.
       ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
       consommationAgent: (tenant, agentId, jours) => agentSessions.consommation!(tenant, agentId, jours),
       messagesAgent: (tenant, agentId, jours) => agentSessions.messagesTenus!(tenant, agentId, jours),
-      // Le blocage dur avant activation : il lit la fiche, la connaissance, et les outils actifs AVEC leurs
-      // handlers (le COMPTE seul ne peut pas dire QUEL outil manque, et c'est l'absence d'un outil PRECIS,
-      // celui qui lit la base, qui a rendu un agent muet en production le 2026-09-08),
-      // parce qu un agent active est proposable dans un scenario, donc il finira par ecrire a de vrais clients.
+      // Le blocage dur avant activation (un agent activé finira par écrire à de vrais clients) : il lit la
+      // fiche, la connaissance, et les outils actifs avec leurs handlers, parce que le compte seul ne dit pas
+      // quel outil précis manque.
       etatPourLint: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         if (!fiche) return null;
-        // ⚠️ LE TROISIEME EST UN AVERTISSEMENT, PAS UN MANQUE : un serveur tiers qui change son schema
-        // eteint le consentement d un outil (c est la bonne decision, cf. 0127), mais il ne doit pas
-        // pouvoir EMPECHER le client d activer son agent. Sans cette lecture, la perte etait muette.
+        // Le troisième est un avertissement, pas un manque : un serveur tiers qui change son schéma éteint le
+        // consentement d'un outil, mais ne doit pas empêcher le client d'activer son agent.
         const [fiches, outils, debranches] = await Promise.all([
           knowledgeStore.lister(tenant, agentId),
           toolCatalog.listActifs(tenant, agentId),
@@ -1802,38 +1530,29 @@ async function main(): Promise<void> {
         };
       },
       /**
-       * LES MODÈLES PROPOSABLES ET LEUR TARIF (2026-09-09).
-       *
-       * Deux sources, et une seule sort d'ici : la LISTE est la nôtre (`MODELES_CHOISIS`, choisie pour la
-       * gestion des outils et pour le français), les PRIX viennent du Gateway en direct. Figer les prix dans
-       * le code aurait garanti qu'ils soient faux au premier changement de tarif chez un fournisseur.
-       *
-       * ⚠️ La clé du Gateway ne quitte JAMAIS le serveur : la console reçoit des identifiants et des euros.
+       * Les modèles proposables et leur tarif. La liste est la nôtre (`MODELES_CHOISIS`), les prix viennent du
+       * Gateway en direct : figés dans le code, ils seraient faux au premier changement de tarif.
+       * 🔴 La clé du Gateway ne quitte jamais le serveur : la console reçoit des identifiants et des euros.
        */
       modelesProposes: () => catalogueModelesCache.lire('catalogue', () => lireCatalogueGateway(fetchGet, config.AI_GATEWAY_API_KEY))
         .then((catalogue) => modelesProposables(catalogue, config.EUR_PER_USD, config.COMMISSION_MODELE_PCT)),
     },
-    // L assistant de construction. Il ne peut ecrire NI la mention legale d IA, NI les plafonds, NI le
-    // modele, NI le risque ou l activation d un outil : il rend une proposition, le client l applique.
     /**
-     * LE BOT D AIDE DE LA CONSOLE. Il explique et il emmene, il n ecrit jamais rien.
-     *
-     * ⚠️ `gatewayAide` ET NON `gateway` : le premier est construit sans resolveur de cle par espace, donc il
-     * paie sur la NOTRE. Les intervertir ferait facturer l aide au credit du client, en silence, et c est
-     * `tests/aide-cablage.test.ts` qui garde ce point.
+     * Le bot d'aide de la console. Il explique et il emmène, il n'écrit jamais rien.
+     * 🔴 `gatewayAide` et non `gateway` : construit sans résolveur de clé par espace, il paie sur la nôtre. Les
+     * intervertir facturerait l'aide au crédit du client, en silence (gardé par `tests/aide-cablage.test.ts`).
      */
     aide: {
       /**
-       * LE RECAP DE LA VEILLE. Il est branche MEME SANS MODELE, et ce n est pas une tolerance : tout ce qui
-       * est chiffre sort du SQL, et le gabarit le dit deja en trois phrases. Le modele n ajoute que le
-       * REMARQUABLE, les jours ou il y en a un.
+       * Le récap de la veille, branché même sans modèle : tout ce qui est chiffré sort du SQL, et le gabarit
+       * le dit en trois phrases. Le modèle n'ajoute que le remarquable, les jours où il y en a un.
        */
       recap: {
         calculer: creerRecapRedige({
           recap: creerRecap(pool),
           rediger: gatewayAide && config.AGENT_AIDE_MODEL
             ? creerRedacteurRecap({
-              // Meme clef que la question, et pour la meme raison : c est NOUS qui payons.
+              // Même clé que la question, et pour la même raison : c'est nous qui payons.
               completer: (i) => gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
               modele: config.AGENT_AIDE_MODEL,
             })
@@ -1844,14 +1563,15 @@ async function main(): Promise<void> {
         repondre: creerRepondeur({
           depot: new PgDepotAide(pool),
           recherche: creerRechercheSemantique(),
-          // AUCUN espace ne paie cet appel : c est nous. `gatewayAide` n a pas de resolveur de cle par
-          // espace, donc cette valeur n est jamais lue pour en choisir une ; la nommer evite qu on la
-          // prenne pour un oubli et qu on y mette le tenant, ce qui facturerait le client.
+          // Aucun espace ne paie cet appel : `gatewayAide` n'a pas de résolveur de clé par espace, donc cette
+          // valeur n'est jamais lue. La nommer évite qu'on y mette le tenant, ce qui facturerait le client.
           completer: (i) => gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
           modele: config.AGENT_AIDE_MODEL,
         }),
       } : {}),
     },
+    // L'assistant de construction. Il ne peut écrire ni la mention légale d'IA, ni les plafonds, ni le
+    // modèle, ni le risque ou l'activation d'un outil : il rend une proposition, le client l'applique.
     agentSetup: {
       etatCourant: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
@@ -1859,31 +1579,28 @@ async function main(): Promise<void> {
         const [outils, fiches, sources, catalogue] = await Promise.all([
           toolCatalog.listToutes(tenant, agentId),
           knowledgeStore.lister(tenant, agentId),
-          // La BIBLIOTHEQUE de l espace : ce qui est declare, branche sur cet agent ou non. Sert a repondre
-          // honnetement << vous avez declare votre ERP, il reste a y brancher l appel >> au lieu de
-          // << rien n existe >> a un client qui vient justement de le declarer.
+          // Les sources déclarées de l'espace, branchées sur cet agent ou non, pour répondre « vous avez
+          // déclaré votre ERP, il reste à y brancher l'appel » plutôt que « rien n'existe ».
           agentSources.lister(tenant),
-          // 🔴 LA BIBLIOTHEQUE de l ESPACE, pas les outils de cet agent : c est elle qui borne ce que l
-          // assistant peut BRANCHER. La definition appartient a l espace depuis 0127, le consentement au
-          // couple (outil, consommateur) ; l assistant n agit que sur le second, et ne cree jamais rien.
+          // La bibliothèque de l'espace, pas les outils de cet agent : elle borne ce que l'assistant peut
+          // brancher. La définition appartient à l'espace, le consentement au couple (outil, consommateur) ;
+          // l'assistant n'agit que sur le second et ne crée jamais rien.
           toolCatalog.listCatalogue(tenant),
         ]);
         return {
           label: fiche.label,
-          // Le régime d'annonce d'IA : l'entretien pose la question, le diff doit donc pouvoir dire ce qui
-          // change. ⚠️ IL VIENT DE L'ESPACE depuis 0140, plus de la fiche : la question posée à la
-          // construction règle la politique de la marque, pas celle de ce robot-là.
+          // Le régime d'annonce d'IA, que l'entretien pose : il vient de l'espace, pas de la fiche (la
+          // question règle la politique de la marque, pas celle de ce robot-là).
           mentionIaFrequence: (await settingsStore.get(tenant)).mentionIaFrequence ?? 'session',
           // Idem pour le délai d'inactivité, depuis que l'entretien demande quand l'agent lâche un contact muet.
           inactiviteMinutes: fiche.inactiviteMinutes,
           fiche: fiche.contenu,
-          // Les outils MAISON, par leur handler : c est par lui que l assistant les designe.
+          // Les outils maison, par leur handler : c'est par lui que l'assistant les désigne.
           outils: outils.filter((o) => o.origin === 'mba')
             .map((o) => ({ handler: String(o.binding.handler ?? ''), description: o.description, nePasUtiliser: o.nePasUtiliser })),
-          // Les CONNECTEURS deja declares, par leur nom expose. L assistant peut en reecrire les MOTS, jamais
-          // en creer : declarer une source, c est ecrire une adresse reseau et un secret.
-          // ⚠️ L ORIGINE PART AVEC, sinon les deux familles se confondent dans l inventaire de
-          // l assistant : un outil MCP y etait annonce comme un connecteur API.
+          // Les connecteurs déjà déclarés, par leur nom exposé. L'assistant peut en réécrire les mots, jamais
+          // en créer (déclarer une source, c'est écrire une adresse réseau et un secret). L'origine part avec,
+          // sinon un outil MCP serait annoncé comme un connecteur API.
           connecteurs: outils.filter((o) => o.origin !== 'mba')
             .map((o) => ({
               nom: o.name, titre: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser,
@@ -1891,12 +1608,11 @@ async function main(): Promise<void> {
               sourceId: o.sourceId,
             })),
           titresConnaissance: fiches.map((f) => f.titre),
-          // ⚠️ `id` PART AVEC : c'est lui qui apparie un outil a son serveur, pas le prefixe de son nom,
-          // que le client peut reecrire.
+          // `id` part avec : c'est lui qui apparie un outil à son serveur, pas le préfixe de son nom, que le
+          // client peut réécrire.
           sources: sources.map((s) => ({ id: s.id, label: s.label, kind: s.kind, status: s.status })),
-          // ⚠️ `branche` se lit sur les CONSOMMATEURS de la definition, pas sur `outils` ci-dessus : les deux
-          // repondent a la meme question, mais seul le catalogue connait les outils NON branches, qui sont
-          // justement ceux que l assistant peut proposer de brancher.
+          // `branche` se lit sur les consommateurs de la définition : seul le catalogue connaît les outils
+          // non branchés, justement ceux que l'assistant peut proposer de brancher.
           catalogue: catalogue.map((c) => ({
             nom: c.name,
             titre: c.title,
@@ -1905,34 +1621,22 @@ async function main(): Promise<void> {
         };
       },
       /**
-       * Les adresses des membres, par identifiant, pour afficher QUI a ecrit chaque tour du fil.
-       *
-       * ⚠️ UNE SEULE REQUETE, et seulement si le fil porte au moins un auteur : `list` rend les membres de
-       * l espace, ce qui suffit puisqu un tour ne peut avoir ete ecrit que par l un d eux.
+       * Les adresses des membres, par identifiant, pour afficher qui a écrit chaque tour du fil : `list` rend
+       * les membres de l'espace, et un tour ne peut avoir été écrit que par l'un d'eux.
        */
       emailsDesMembres: async (tenant: string) =>
         Object.fromEntries((await userStore.list(tenant)).map((u) => [u.id, u.email])),
-      // Les PIECES JOINTES ecrivent des fiches de connaissance, par le MEME store que l onglet Connaissance :
-      // ce que le client joint est ensuite relisible et modifiable la-bas, comme une page importee.
+      // Les pièces jointes écrivent des fiches de connaissance par le même store que l'onglet Connaissance :
+      // ce que le client joint y reste relisible et modifiable.
       ecrireFichesDocument: (tenant, agentId, nom, fiches) =>
         knowledgeStore.remplacerSource(tenant, agentId, { type: 'document', nom }, fiches),
-      // L entretien est TENU PAR LE SERVEUR : c est lui qui rend la conversation persistante entre deux
-      // visites de l onglet, et surtout qui rend la sequence des questions deterministe (la couverture
-      // cesse d etre une declaration du modele pour devenir un fait).
+      // L'entretien est tenu par le serveur : conversation persistante entre deux visites, et séquence des
+      // questions déterministe (la couverture devient un fait, plus une déclaration du modèle).
       entretiens: new PgEntretienStore(pool),
       /**
-       * 🔴 `gatewayAide`, ET PLUS `gateway` (tranché par Julien le 2026-09-14). Cet assistant tournait sur le
-       * CRÉDIT PRÉPAYÉ DU CLIENT : configurer son propre robot lui était facturé. Il passe sur notre clé
-       * maison, comme le bot d'aide de la console, et pour la raison déjà écrite dans ce dépôt : facturer
-       * quelqu'un pour apprendre à se servir du produit se retourne contre nous.
-       *
-       * ⚠️ `AUCUN_ESPACE_PAYEUR` n'est pas décoratif : `gatewayAide` est construit SANS résolveur de clé par
-       * espace, donc cette valeur n'est jamais lue pour en choisir une. La nommer évite qu'on la prenne pour
-       * un oubli et qu'on y remette le tenant, ce qui refacturerait le client sans que rien ne le signale.
-       *
-       * 🔴 ET C'EST CE QUI REND LE PLAFOND OBLIGATOIRE : sur le crédit du client, un bavardage se payait tout
-       * seul ; sur le nôtre, rien ne le borne. Les deux moitiés de cette décision vont ensemble
-       * (`ASSISTANT_PLAFOND_EUROS_MOIS`), l'une sans l'autre est dangereuse.
+       * 🔴 `gatewayAide` et pas `gateway` : configurer son robot ne se facture pas au client, l'assistant
+       * passe sur notre clé maison. `AUCUN_ESPACE_PAYEUR` n'est jamais lu pour choisir une clé ; le nommer
+       * évite qu'on y remette le tenant, ce qui refacturerait le client sans rien signaler.
        */
       ...(gatewayAide ? {
         completer: (i: Parameters<GatewayChatClient['completer']>[0]) =>
@@ -1940,72 +1644,56 @@ async function main(): Promise<void> {
       } : {}),
       modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
       /**
-       * 🔴 LE MEME COMPTEUR QUE L ASSISTANT DU MBA, ET LE MEME PLAFOND. Le commentaire ci-dessus annonce que
-       * « les deux moities de cette decision vont ensemble, l une sans l autre est dangereuse » : la moitie
-       * qui manquait etait celle-ci. Le compteur est PAR ESPACE (migration 0146), donc les deux assistants
-       * d un meme client se partagent la meme enveloppe mensuelle, ce qui est le sens de la decision.
+       * 🔴 Le même compteur et le même plafond que l'assistant du MBA : sur notre clé, rien d'autre ne borne
+       * un bavardage. Le compteur est par espace, donc les deux assistants d'un client partagent la même
+       * enveloppe mensuelle.
        */
       depenses: new PgDepenseStore(pool),
       plafondEuros: config.ASSISTANT_PLAFOND_EUROS_MOIS,
       tauxEurParDollar: config.EUR_PER_USD,
-      // Le modele de VISION est distinct : mesure du 2026-08-31, `zai/glm-4.7` (le modele d entretien de la
-      // production) refuse une part image en 400. Vide -> les images sont refusees explicitement, les
-      // documents continuent de passer.
+      // Le modèle de vision est distinct : `zai/glm-4.7`, le modèle d'entretien, refuse une part image en 400.
+      // Vide -> les images sont refusées explicitement, les documents passent.
       modeleVision: config.AGENT_VISION_MODEL,
     },
-    // Le BAC A SABLE : parler a son agent depuis la console avant de l activer. Il fait tourner le VRAI
-    // cerveau (vrai prompt, vrais outils exposes, VRAIE recherche de connaissance), mais les outils a EFFET
-    // sont simules : il n y a ni contact, ni conversation, ni parcours, et poser un tag ecrirait sur une
-    // vraie fiche du mini-CRM.
+    // Le bac à sable : parler à son agent depuis la console avant de l'activer. Il fait tourner le vrai
+    // cerveau (prompt, outils exposés, recherche de connaissance), mais les outils à effet sont simulés : il
+    // n'y a ni contact, ni conversation, ni parcours, et poser un tag écrirait sur une vraie fiche.
     agentTest: {
-      // L HISTORIQUE des essais (14 j). Il ne conditionne rien : sans lui l essai marche comme avant et
-      // l ecran n affiche aucune trace.
+      // L'historique des essais (14 j). Il ne conditionne rien : sans lui, l'essai marche et l'écran
+      // n'affiche aucune trace.
       essais: new PgTestRunStore(pool),
-      // Le modele du bac a sable est celui de la FICHE de l agent, pas une variable d env : le seul
-      // prerequis est donc la cle du Gateway. Le lier a LLM_MODEL rendrait /test indisponible le jour ou
-      // l analyse de conversation serait desactivee, sans aucun rapport.
+      // Le modèle du bac à sable est celui de la fiche de l'agent : le seul prérequis est la clé du Gateway,
+      // sans lien avec LLM_MODEL (désactiver l'analyse de conversation ne doit pas couper /test).
       disponible: gateway !== null,
-      // 🔴 UN ESSAI CONSOMME POUR DE VRAI : les outils a effet sont simules, l appel de modele ne l est pas.
-      // Meme solde, meme garde qu en production, sinon la console offrirait une porte gratuite et illimitee
-      // sur un compte prepaye. Le mouvement n a pas de session (un essai n en ouvre aucune) : c est la note
-      // qui l explique dans le journal.
+      // 🔴 Un essai consomme pour de vrai : les outils à effet sont simulés, l'appel de modèle ne l'est pas.
+      // Même solde et même garde qu'en production, sinon la console offrirait une porte gratuite sur un
+      // compte prépayé. Le mouvement n'a pas de session : la note l'explique dans le journal.
       solde: (tenant) => credits.solde(tenant),
       debiter: async (tenant, montant, note) => { await credits.debiter(tenant, montant, { note }); },
       ...(gateway ? {
         cerveau: {
           completer: (i) => gateway.completer(i),
-          // Point de lecture PARTAGE avec le tour de production : c est ce qui garantit que le bac a sable
-          // montre exactement ce que la production ferait, modele et politiques compris.
+          // Point de lecture partagé avec le tour de production : le bac à sable montre exactement ce que la
+          // production ferait, modèle et politiques compris.
           contexte: (tenant, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, tenant, agentId),
-          // Meme taux qu en production : un essai doit annoncer ce que la conversation couterait vraiment.
+          // Même taux qu'en production : un essai annonce ce que la conversation coûterait vraiment.
           tauxEurParDollar: config.EUR_PER_USD,
           outils: {
             catalogue: toolCatalog,
-            // Muet : `agent_tool_calls.session_id` reference une session, et le bac a sable n en ouvre aucune.
+            // Muet : les essais n'ont pas à apparaître comme des pannes dans le journal que le client consulte.
             journal: JOURNAL_MUET,
-            // Le bac a sable recoit la MEME recherche que la production : il n'a de valeur que s'il rend
-            // exactement ce qu'elle rendrait.
-            // 🔴 LES TROIS ORIGINES, PAS SEULEMENT `mba` (défaut trouvé par la revue du 2026-09-16). Un
-            // outil de connecteur produisait ici `erreur_protocole` avec `fatal: true`, donc un essai qui
-            // s'arrête net, alors que la simulation savait parfaitement le rendre : la branche
-            // `origin !== 'mba'` était inatteignable par le câblage. Le type impose désormais la liste
-            // complète, et une quatrième origine ne compilerait plus sans être traitée.
+            // Le bac à sable reçoit la même recherche que la production : il n'a de valeur que s'il rend
+            // exactement ce qu'elle rendrait. Les trois origines sont simulées (le type impose la liste
+            // complète) : une origine non traitée arrêterait net un essai.
             resolveurs: resolveursSimulation({ connaissance: knowledgeStore, ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}) }),
-            // Rien a compter : sans session, il n y a pas de compteur a incrementer. Le plafond d appels du
-            // tour est tenu en memoire par la boucle du cerveau.
+            // Rien à compter : sans session, pas de compteur. Le plafond d'appels du tour est tenu en mémoire
+            // par la boucle du cerveau.
             compterAppel: async () => {},
             /**
-             * 🔴 LE BAC À SABLE N'EXÉCUTE AUCUN GESTE, ET C'EST LA MÊME DOCTRINE QUE `connecteurSimule`.
-             * Un essai depuis la console ne doit pas taper sur les données réelles d'un client : poser un
-             * vrai tag sur un vrai contact, ou écrire dans sa fiche, ferait un dégât réel pendant qu'on
-             * croit essayer.
-             *
-             * ⚠️ ET CE SILENCE EST UNE DETTE ASSUMÉE, PAS UN OUBLI, MAIS ELLE N'EST TOUJOURS PAS PAYÉE.
-             * Le bac à sable promet « exactement ce que l'agent fera », et il ne montre pas les gestes
-             * qu'un moment déclencherait : c'est le mensonge par omission que la migration 0150 a corrigé
-             * ailleurs. ⚠️ Ce commentaire a annoncé que la passe 3 s'en chargerait ; la passe 3 est livrée
-             * et elle ne l'a pas fait. Une échéance qu'on laisse passer dans un commentaire finit par
-             * dire que c'est fait : le reste à faire est suivi dans
+             * 🔴 Le bac à sable n'exécute aucun geste, même doctrine que `connecteurSimule` : un essai ne doit
+             * pas toucher les données réelles d'un client (vrai tag, vraie fiche).
+             * Dette assumée : il ne montre pas non plus les gestes qu'un moment déclencherait, alors qu'il
+             * promet « exactement ce que l'agent fera ». Suivi dans
              * `docs/superpowers/plans/2026-09-18-moments-agent-ia.md`, section « État d'exécution ».
              */
             executerGeste: async () => {},
@@ -2015,7 +1703,7 @@ async function main(): Promise<void> {
       } : {}),
     },
     // Base de connaissance d'un agent : la seule source que l'agent a le droit d'utiliser. `fetchUrl` porte
-    // la garde SSRF (le serveur vit dans le reseau Docker du VPS) et le plafond de taille.
+    // la garde SSRF (le serveur vit dans le réseau Docker du VPS) et le plafond de taille.
     agentKnowledge: {
       lister: (tenant, agentId) => knowledgeStore.lister(tenant, agentId),
       creer: (tenant, agentId, fiche) => knowledgeStore.creer(tenant, agentId, fiche),
@@ -2023,9 +1711,9 @@ async function main(): Promise<void> {
       supprimer: (tenant, agentId, ficheId) => knowledgeStore.supprimer(tenant, agentId, ficheId),
       remplacerSource: (tenant, agentId, source, fiches) => knowledgeStore.remplacerSource(tenant, agentId, source, fiches),
       /**
-       * 🔴 IL N Y A PAS DE CORBEILLE ICI NON PLUS. Une fiche supprimee disparait de `agent_knowledge` : cette
-       * ligne est le seul exemplaire de ce que le robot savait dire, et le seul endroit qui reponde a « qui
-       * l a retire ? ». Meme choix que pour le MBA : les SUPPRESSIONS d abord, une creation ratee se refait.
+       * 🔴 Pas de corbeille : une fiche supprimée disparaît de `agent_knowledge`, et cette ligne est le seul
+       * exemplaire de ce que le robot savait dire, et la seule réponse à « qui l'a retirée ? ». Les
+       * suppressions d'abord, comme pour le MBA : une création ratée se refait.
        */
       journaliserSuppression: (tenant, agentId, l) => historiqueStore.ecrire(tenant, {
         surface: 'agent', surfaceId: agentId, element: 'connaissance', operation: 'suppression',
@@ -2034,41 +1722,37 @@ async function main(): Promise<void> {
       }),
       fetchUrl: fetchUrlBorne(),
     },
-    // Outils d'un agent. L'activation et l'autonomie portent le nom de qui les a posees : la migration 0086
-    // l'exige en base, et c'est ce qui rend un incident instruisable.
+    // Outils d'un agent. L'activation et l'autonomie portent le nom de qui les a posées (exigé en base) :
+    // c'est ce qui rend un incident instruisable.
     agentTools: {
       listToutes: (tenant, agentId) => toolCatalog.listToutes(tenant, agentId),
       ajouter: (tenant, agentId, outil) => toolCatalog.ajouter(tenant, agentId, outil),
-      // Lot L2 : un outil de connecteur, sur une source du tenant. La source est verifiee ICI (404) plutot
-      // que par la cle etrangere, qui leverait en 500.
+      // Un outil de connecteur, sur une source du tenant. La source est vérifiée ici (404) plutôt que par la
+      // clé étrangère, qui lèverait en 500.
       ajouterConnecteur: (tenant, agentId, outil) => toolCatalog.ajouterConnecteur(tenant, agentId, outil),
-      // La REQUETE est LUE, pas crue sur parole : le risque plancher et le resume de ce qui sera envoye en
-      // derivent, et ils doivent decrire l appel REEL.
+      // La requête est lue, pas crue sur parole : le risque plancher et le résumé de ce qui sera envoyé en
+      // dérivent, et ils doivent décrire l'appel réel.
       requetePourOutil: (tenant, requeteId) => agentRequetes.parId(tenant, requeteId),
       patch: (tenant, agentId, id, p) => toolCatalog.patch(tenant, agentId, id, p),
       activer: (tenant, agentId, id, actif, par) => toolCatalog.activer(tenant, agentId, id, actif, par),
       autonomie: (tenant, agentId, id, autonome, par) => toolCatalog.autonomie(tenant, agentId, id, autonome, par),
-      // DÉTACHE de cet agent, ne supprime plus la définition : elle appartient à l'espace (migration 0127).
+      // Détache de cet agent, ne supprime pas la définition : elle appartient à l'espace.
       detacher: (tenant, agentId, id) => toolCatalog.detacher(tenant, agentId, id),
       rattacher: (tenant, agentId, id) => toolCatalog.rattacher(tenant, agentId, id),
-      // Les regles d'arret viennent de la FICHE : c'est d'elles que derive l'enumeration de « terminer ».
+      // Les règles d'arrêt viennent de la fiche : c'est d'elles que dérive l'énumération de « terminer ».
       sortiesDeLAgent: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         return fiche ? fiche.contenu.sorties : null;
       },
     },
-    // La BIBLIOTHEQUE d outils de l ESPACE (migration 0127) : les definitions, et qui s en sert. Separee des
-    // routes d agent parce qu elle ne parle pas du meme objet, et isolee par `scopeTenant` et non par un
-    // agent dans l URL : une definition appartient a l espace.
-    // La bibliothèque ne porte plus que la lecture : les routes de l'agent de Meta sont dans `mbaOutils`.
-    // Le catalogue lui-même : la route n'en appelle que `listCatalogue`, en méthode.
+    // La bibliothèque d'outils de l'espace : les définitions, et qui s'en sert. Isolée par `scopeTenant` et
+    // non par un agent dans l'URL, parce qu'une définition appartient à l'espace. Elle ne porte que la
+    // lecture (la route n'appelle que `listCatalogue`) ; les routes de l'agent de Meta sont dans `mbaOutils`.
     agentCatalogue: toolCatalog,
     /**
-     * L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9).
-     *
-     * ⚠️ Le numéro est résolu ICI, côté serveur : le faire porter au navigateur est ce qui a cassé le toggle MBA
-     * trois fois le 2026-09-10. Et la REQUÊTE d'un connecteur est LUE, pas crue sur parole : le risque et la
-     * source en dérivent.
+     * L'onglet « Outils » de l'agent de Meta. Le numéro est résolu ici, côté serveur, jamais porté par le
+     * navigateur ; la requête d'un connecteur est lue, pas crue sur parole : le risque et la source en
+     * dérivent.
      */
     mbaOutils: {
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
@@ -2090,7 +1774,7 @@ async function main(): Promise<void> {
           workflows: new Map(workflows.map((w) => [w.id, { name: w.name, graph: w.graph }])),
         };
       },
-      // Le graphe PUBLIÉ, celui que le relais joue : jamais le brouillon.
+      // Le graphe publié, celui que le relais joue : jamais le brouillon.
       workflow: async (tenant, id) => {
         const w = await workflowStore.getById(id, tenant);
         return w ? { name: w.name, graph: w.graph } : null;
@@ -2110,21 +1794,19 @@ async function main(): Promise<void> {
         return { id: cree.id };
       },
       modifierMaison: (tenant, pn, id, patch) => toolCatalog.patchMaisonPourMba(tenant, pn, id, patch),
-      // ⚠️ `consommateurMba(pn)` ET PAS UN AGENT : c'est elle qui borne la correction à un outil de CE consommateur.
+      // `consommateurMba(pn)` et pas un agent : c'est lui qui borne la correction à un outil de ce consommateur.
       modifierConnecteur: (tenant, pn, id, patch) => toolCatalog.patchConsommateur(tenant, consommateurMba(pn), id, patch),
       retirer: (tenant, pn, id) => toolCatalog.retirerDeMba(tenant, pn, id),
       reactiver: async (tenant, pn, id, par) =>
         (await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), id, true, par)) !== null,
     },
     /**
-     * Publication du catalogue chez Meta (lot 4), traduite en RELAIS le 2026-09-21 (migration 0161).
-     *
-     * 🔴 LE PLAN EST RECALCULE AU MOMENT D APPLIQUER, jamais transmis par le navigateur : le lui faire
-     * porter ouvrirait une fenetre ou Meta a change entre l apercu et le clic.
-     *
-     * 🔴 CE QUI PART CHEZ META EST LE RELAIS : un connecteur `EngageMe` par espace, son adresse est notre API
-     * et sa cle une cle d API de l espace (`src/mba/cle-relais.ts`). Le secret du client ne quitte plus notre
-     * serveur, et les valeurs du mini-CRM sont remplies par le relais (`src/http/mba-relais.ts`).
+     * Publication du catalogue chez Meta, sous forme de relais.
+     * Le plan est recalculé au moment d'appliquer, jamais transmis par le navigateur : Meta a pu changer
+     * entre l'aperçu et le clic.
+     * 🔴 Ce qui part chez Meta est le relais : un connecteur `EngageMe` par espace, dont l'adresse est notre
+     * API et la clé une clé d'API de l'espace (`src/mba/cle-relais.ts`). Le secret du client ne quitte pas
+     * notre serveur ; les valeurs du mini-CRM sont remplies par le relais (`src/http/mba-relais.ts`).
      */
     mbaPublication: {
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
@@ -2138,8 +1820,8 @@ async function main(): Promise<void> {
         const client = await metaFactory.mbaClientForTenant(tenant);
         const connecteurs = await client.listConnectors(pn);
         /**
-         * 🔴 LE TYPE VIENT DU CLIENT, il n est pas RECOPIE ici : le plan COMPARE `request_definition`, et une
-         * annotation ecrite a la main l a deja omise une fois.
+         * Le type vient du client, il n'est pas recopié : le plan compare `request_definition`, qu'une
+         * annotation écrite à la main pourrait omettre.
          */
         const outilsParConnecteur: Record<string, Awaited<ReturnType<typeof client.listConnectorTools>>> = {};
         for (const c of connecteurs) outilsParConnecteur[c.id] = await client.listConnectorTools(pn, c.id);
@@ -2153,21 +1835,18 @@ async function main(): Promise<void> {
         cle: depsCleRelaisPour,
       }),
     },
-    // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
-    // authentification et son secret. Le secret est chiffre par le store, et aucune route ne le rend.
     /**
-     * Les CONNECTEURS MCP. Tout passe par `PgMcpStore` sauf la source elle-meme, qui reste servie par
-     * `agentSources` : c'est la MEME table (`agent_tool_sources`, `kind = 'mcp'`), et en ouvrir un second
-     * chemin de lecture ferait deux facons de dechiffrer un secret.
+     * Les connecteurs MCP. Tout passe par `PgMcpStore` sauf la source elle-même, servie par `agentSources` :
+     * c'est la même table (`agent_tool_sources`, `kind = 'mcp'`), et un second chemin de lecture ferait deux
+     * façons de déchiffrer un secret.
      */
     agentMcp: {
       audit: auditSink,
       listerServeurs: (tenant) => mcpStore.listerServeurs(tenant),
-      // Le MEME store que les connecteurs API : c est la meme table, et le secret s y chiffre au meme
-      // endroit. En ouvrir un second chemin ferait deux facons de chiffrer.
+      // Le même store que les connecteurs API : même table, secret chiffré au même endroit.
       creerServeur: (tenant, input) => agentSources.creer(tenant, { kind: 'mcp', ...input }),
-      // 🔴 PAS `agentSources.supprimer`, qui est un `delete` nu : il rendait `true` en emportant les outils
-      // et les consentements par cascade, et `false` seulement sur un identifiant inexistant.
+      // 🔴 Pas `agentSources.supprimer`, un `delete` nu qui emporterait les outils et les consentements par
+      // cascade en rendant `true`.
       supprimerServeur: (tenant, id) => mcpStore.supprimerServeur(tenant, id),
       pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
       marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
@@ -2175,11 +1854,13 @@ async function main(): Promise<void> {
       outilsDuServeur: (tenant, sourceId) => mcpStore.outilsDuServeur(tenant, sourceId),
       nomsPris: (tenant) => mcpStore.nomsPris(tenant),
       appliquer: (tenant, sourceId, e) => mcpStore.appliquer(tenant, sourceId, e),
-      // La MEME lecture que pour les variables de requete : deux definitions de « ce champ existe »
-      // finiraient par accepter ici ce que l'autre refuse.
+      // La même lecture que pour les variables de requête : deux définitions de « ce champ existe »
+      // finiraient par diverger.
       clesDeChamps: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
       reglerOutil: (tenant, outilId, patch) => mcpStore.reglerOutil(tenant, outilId, patch),
     },
+    // Les sources externes d'outils : l'adresse de base du système du client, son mode d'authentification et
+    // son secret. Le secret est chiffré par le store, et aucune route ne le rend.
     agentSources: {
       audit: auditSink,
       lister: (tenant) => agentSources.lister(tenant),
@@ -2187,16 +1868,16 @@ async function main(): Promise<void> {
       creer: (tenant, input) => agentSources.creer(tenant, input),
       patch: (tenant, id, p) => agentSources.patch(tenant, id, p),
       supprimer: (tenant, id) => agentSources.supprimer(tenant, id),
-      // EPROUVER une source : un appel reel, le resultat ecrit sur la ligne. Toutes ses gardes (nature de la
-      // source, adresse verifiee avant l appel ET a la connexion, redirection refusee) vivent dans le module,
-      // teste a part : `src/agent/eprouver-source.ts`.
+      // Éprouver une source : un appel réel, le résultat écrit sur la ligne. Ses gardes (nature de la source,
+      // adresse vérifiée avant l'appel et à la connexion, redirection refusée) vivent dans
+      // `src/agent/eprouver-source.ts`, testé à part.
       eprouver: creerEprouverSource({
         pourAppel: (tenant, id) => agentSources.pourAppel(tenant, id),
         marquerEpreuve: (tenant, id, ok, erreur) => agentSources.marquerEpreuve(tenant, id, ok, erreur),
       }),
     },
-    // Les REQUETES de connecteur (migration 0105) : un appel mis au point une fois dans la bibliotheque, que
-    // l outil d un agent DESIGNE au lieu de le redecrire.
+    // Les requêtes de connecteur : un appel mis au point une fois dans la bibliothèque, que l'outil d'un
+    // agent désigne au lieu de le redécrire.
     agentRequetes: {
       lister: (tenant) => agentRequetes.lister(tenant),
       parId: (tenant, id) => agentRequetes.parId(tenant, id),
@@ -2204,38 +1885,30 @@ async function main(): Promise<void> {
       patch: (tenant, id, p) => agentRequetes.patch(tenant, id, p),
       supprimer: (tenant, id) => agentRequetes.supprimer(tenant, id),
       /**
-       * Ce qu il faut pour EPROUVER une requete : l adresse de base et les en-tetes d authentification.
-       *
-       * ⚠️ `enTetesAuthSource` est le MEME point de passage que l appel reel. Un test qui authentifierait
-       * autrement dirait « ca repond » d une source que les appels ne savent pas authentifier, ce qui est
-       * exactement la divergence que l audit du 2026-08-18 a payee une centaine de fois.
+       * Ce qu'il faut pour éprouver une requête : l'adresse de base et les en-têtes d'authentification, par
+       * le même point de passage que l'appel réel (`enTetesAuthSource`), sinon le test dirait « ça répond »
+       * d'une source que les appels ne savent pas authentifier.
        */
       sourcePourTest: async (tenant, sourceId) => {
         const src = await agentSources.pourAppel(tenant, sourceId);
         /**
-         * 🔴 `kind === 'http'`, ET C EST LE CINQUIEME CHEMIN DU MEME TROU. La route de test
-         * (`POST /tenants/:t/agent-requetes/test`) prend `sourceId` DIRECTEMENT dans le corps : sans ce
-         * filtre, un administrateur y passait l identifiant d un SERVEUR MCP (que `GET /tenants/:t/mcp`
-         * lui donne) et faisait partir une requete HTTP de sa composition, methode et chemin compris, sur
-         * le point MCP du client, AVEC SON SECRET DECHIFFRE dans l en-tete, puis recevait 20 ko de
-         * reponse. C est mot pour mot ce que la garde posee sur les routes MCP et sur celles des
-         * connecteurs API pretendait fermer.
-         *
-         * ⚠️ LE REPLI SUR `null` REND DEJA UN 400 LISIBLE (« la source de cet appel n existe plus »), donc
-         * il n y a pas de branche a ajouter chez l appelant.
+         * 🔴 `kind === 'http'` : la route de test prend `sourceId` dans le corps, et sans ce filtre un
+         * administrateur pourrait y passer l'identifiant d'un serveur MCP et faire partir une requête de sa
+         * composition sur le point MCP du client, avec son secret déchiffré dans l'en-tête. Le repli sur
+         * `null` rend déjà un 400 lisible.
          */
         return src && src.kind === 'http'
           ? { baseUrl: src.baseUrl, entetes: enTetesAuthSource(src), status: src.status }
           : null;
       },
-      // Les cles des champs DECLARES : une variable `champ` doit en designer une, sinon la faute de frappe ne
-      // se verrait qu a l appel, en pleine conversation.
+      // Les clés des champs déclarés : une variable `champ` doit en désigner une, sinon la faute de frappe ne
+      // se verrait qu'à l'appel, en pleine conversation.
       clesDeChamps: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
-      // Le SECOND usage d une requete, celui que le compteur `outils` ne voit pas : la poussee d opt-out.
+      // Le second usage d'une requête, que le compteur `outils` ne voit pas : la poussée d'opt-out.
       brancheeSurConsentement: async (tenant, requestId) => (await settingsStore.get(tenant)).optoutRequestId === requestId,
     },
     flows: {
-      flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil
+      flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token par tenant, repli global
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
       insertFlow: (tenantId, id, name, screens, ref, mapping, cta) => flowStore.insert({ id, tenantId, name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
       listFlows: (tenant) => flowStore.list(tenant),
@@ -2276,52 +1949,44 @@ async function main(): Promise<void> {
       contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
       audit: auditSink,
       listAudit: (tenant, o) => auditStore.list(tenant, o),
-      // Le journal des ERREURS de livraison. Separe du journal d actions : celui-ci porte les numeros (sans
-      // eux il ne repond a rien), celui-la n en porte jamais (y ecrire un numero annulerait une purge).
+      // 🔴 Le journal des erreurs de livraison, séparé du journal d'actions : celui-ci porte les numéros (sans
+      // eux il ne répond à rien), celui-là n'en porte jamais (y écrire un numéro annulerait une purge).
       listErreursLivraison: (tenant, f) => erreursLivraison.lister(tenant, f),
-      // La moitie SYSTEME : les appels vers les systemes du CLIENT qui n ont pas abouti. Ecrite depuis 0086,
-      // lue par personne jusqu a la migration 0142.
+      // La moitié système : les appels vers les systèmes du client qui n'ont pas abouti.
       listErreursSysteme: (tenant, limit) => erreursLivraison.listerEchecsSysteme(tenant, limit),
       listUserFields: (tenant) => fieldStore.list(tenant),
-      // Champ socle absent -> on le crée au premier usage (idempotent). Aucun chemin d'inscription ne les
-      // créait, donc un espace neuf refusait « Prénom » alors que l'écran le propose.
+      // Champ socle absent -> créé au premier usage (idempotent) : sans ça, un espace neuf refuserait
+      // « Prénom » alors que l'écran le propose.
       ensureSocleField: async (tenant, key, label, type) => { await ensureFieldByKey(fieldStore, tenant, key, label, type); },
-      // Création à la main : MÊME upsert que le webhook entrant, avec le pays par défaut du tenant.
+      // Création à la main : même upsert que le webhook entrant, avec le pays par défaut du tenant.
       createOneContact: async (tenant, input) => {
         const [r] = await upsertContactsFromApi(tenant, [input], { contacts: contactStore, fields: fieldStore, defaultCountry: config.DEFAULT_COUNTRY as CountryCode });
         return r ? { status: r.status, ...(r.contactId ? { contactId: r.contactId } : {}), ...(r.reason ? { reason: r.reason } : {}) } : { status: 'error', reason: 'aucun résultat' };
       },
       getContactHistory: (tenant, id) => contactHistoryStore.getContactHistory(tenant, id),
       listSendsForExport: (tenant, id) => contactHistoryStore.listSendsForExport(tenant, id),
-      // Le résumé DÉRIVÉ de la dernière conversation analysée : aucune donnée n'est recopiée dans la fiche,
-      // donc rien ne survit à la purge des conversations. Voir `ResumeContact` pour le pourquoi complet.
+      // Le résumé dérivé de la dernière conversation analysée : rien n'est recopié dans la fiche, donc rien
+      // ne survit à la purge des conversations. Voir `ResumeContact`.
       getResumeContact: (tenant, id) => contactHistoryStore.resumeContact(tenant, id),
       /**
-       * Le bilan d'un contact : son coût estimé et son entonnoir d'engagement.
-       *
-       * 🔴 LES MÊMES TARIFS QUE LES DEUX AUTRES ÉCRANS, par le MÊME `prixFactures`, et c'est ce qui les
-       * empêche de se contredire au moment précis où on les met côte à côte : un client qui compare le coût
-       * d'un contact au coût de la campagne qui le lui a envoyé doit retrouver la même arithmétique.
-       *
-       * ⚠️ LES TARIFS SONT CEUX DES 30 DERNIERS JOURS, alors que la fiche couvre toute la vie du contact.
-       * Même approximation ASSUMÉE que la fiche de campagne, et pour la même raison : Meta rend un tarif PAR
-       * PÉRIODE, et demander la période exacte de chaque envoi multiplierait les appels sans rien changer au
-       * chiffre. L'écran annonce un coût ESTIMÉ, pas une facture.
+       * Le bilan d'un contact : son coût estimé et son entonnoir d'engagement. Les mêmes tarifs que la fiche
+       * de campagne, par le même `prixFactures` et la même fenêtre de 30 jours (même approximation assumée) :
+       * un client qui compare le coût d'un contact à celui de sa campagne doit retrouver la même arithmétique.
        */
       getBilanContact: async (tenant, id) => {
         const matiere = await contactHistoryStore.bilanContact(tenant, id);
         if (!matiere) return null;
-        // ⚠️ MÊME fenêtre que la fiche de campagne, écrite de la même façon : trois écrans qui disent un
-        // coût doivent lire le même tarif, sinon ils se contredisent sur la même donnée.
+        // Même fenêtre que la fiche de campagne, écrite de la même façon : trois écrans qui disent un coût
+        // doivent lire le même tarif.
         const rates = await prixFactures(tenant, { from: addDays(todayParis(), -29), to: todayParis() });
         return {
           cout: estimerCoutContact(matiere.envois, rates),
           entonnoir: entonnoirEngagement(matiere.profondeurs),
         };
       },
-      // Automations « tag ajouté » (E.2) : l'API ne sait pas démarrer un scénario (c'est le worker qui tient
-      // l'exécuteur), elle publie donc un événement par tag posé. Un contact sans identité joignable (ni
-      // numéro ni BSUID) n'a rien à déclencher.
+      // Automations « tag ajouté » : l'API ne démarre pas de scénario (le worker tient l'exécuteur), elle
+      // publie un événement par tag posé. Un contact sans identité joignable (ni numéro ni BSUID) n'a rien à
+      // déclencher.
       emitTagAdded: async (tenant, contactId, tags) => {
         const waId = await contactStore.waIdOfContact(tenant, contactId);
         if (!waId) return;
@@ -2346,16 +2011,16 @@ async function main(): Promise<void> {
         wabasForToken: (tok: string) => esClient.wabasForToken(tok),
         listPhones: (waba: string, tok: string) => esClient.listPhones(waba, tok),
         link: (input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }) => esCredentialsStore.linkTenant(input),
-        // Chiffrement au repos ICI (la route ne voit jamais le stockage) : AES-GCM avec ENCRYPTION_KEY. Token ET pin
-        // (PIN 2FA du numéro = secret Meta) chiffrés.
+        // 🔴 Chiffrement au repos ici (la route ne voit jamais le stockage) : AES-GCM avec ENCRYPTION_KEY,
+        // pour le token et le PIN 2FA du numéro (un secret Meta).
         saveCredentials: (waba: string, tenant: string, token: string, pin: string | null) =>
           esCredentialsStore.saveCredentials(waba, tenant, encryptSecret(token, config.ENCRYPTION_KEY), pin === null ? null : encryptSecret(pin, config.ENCRYPTION_KEY)),
 
-        // ----- « Activer le numéro » (2026-09-22) -----
-        // Le JETON NE SORT PAS D'ICI : ces fonctions ne prennent qu'un `tenantId`, la route ne voit jamais un
-        // secret. Même règle que le chiffrement de `saveCredentials`, posé ici et pas dans la route.
+        // ----- « Activer le numéro » -----
+        // 🔴 Le jeton ne sort pas d'ici : ces fonctions ne prennent qu'un `tenantId`, la route ne voit jamais
+        // un secret.
         numeroDuTenant: async (tenant: string) => (await phoneStatusStore.getPhoneNumber(tenant))?.id ?? null,
-        // Relu CHEZ META à chaque geste, jamais dans notre base : notre copie date du dernier pull, et c'est
+        // Relu chez Meta à chaque geste, jamais dans notre base : notre copie date du dernier pull, et c'est
         // Meta qui décide si un code est encore nécessaire.
         etatNumero: async (tenant: string, phoneNumberId: string) => {
           const client = await metaFactory.phoneClientForTenant(tenant);
@@ -2370,11 +2035,10 @@ async function main(): Promise<void> {
           const client = await metaFactory.phoneRegisterClientForTenant(tenant);
           await client.verifyCode(phoneNumberId, code);
         },
-        // ⚠️ LE REGISTER RESTE CELUI DE L'INSCRIPTION, délibérément : `MetaPhoneRegisterClient` dit dans son
-        // en-tête pourquoi il ne le porte pas (deux copies du même appel Graph divergeraient au premier
-        // changement). D'où le jeton résolu à la main ici, le client d'inscription ne le portant pas.
-        // Pas d'interception d'erreur d'auth autour : ce client-là lève des `Error` ordinaires, que
-        // `isMetaAuthError` ne reconnaît pas. Poser un `onError` ici ne ferait que rassurer à tort.
+        // Le register reste celui de l'inscription : `MetaPhoneRegisterClient` dit pourquoi il ne le porte pas
+        // (deux copies du même appel Graph divergeraient), d'où le jeton résolu à la main ici. Pas
+        // d'interception d'erreur d'auth : ce client lève des `Error` ordinaires, que `isMetaAuthError` ne
+        // reconnaît pas.
         enregistrerNumero: async (tenant: string, phoneNumberId: string, pin: string) => {
           const { token } = await metaCredentials.resolveForTenant(tenant);
           await esClient.register(phoneNumberId, token, pin);
@@ -2391,9 +2055,9 @@ async function main(): Promise<void> {
           await esCredentialsStore.enregistrerPin(waba, tenant, encryptSecret(pin, config.ENCRYPTION_KEY));
         },
 
-        // ----- « Délier » et « Relier » (migration 0180) : aucun appel à Meta -----
-        // La garde de CE process est vidée après chaque geste : l'API n'a donc aucune fenêtre, seul le worker
-        // garde au plus `NUMERO_DELIE_TTL_MS` de retard.
+        // ----- « Délier » et « Relier » : aucun appel à Meta -----
+        // La garde de ce process est vidée après chaque geste : l'API n'a aucune fenêtre, seul le worker garde
+        // au plus `NUMERO_DELIE_TTL_MS` de retard.
         delierNumero: async (tenant: string) => {
           const r = await numeroDelieStore.delier(tenant);
           gardeNumeroDelie.invaliderTout();
@@ -2407,30 +2071,26 @@ async function main(): Promise<void> {
       };
     })(),
     /**
-     * LES PUBLICITÉS CLICK-TO-WHATSAPP (lot 2 « Connecter », migration 0167).
-     *
-     * 🔴 LE JETON EST CHIFFRÉ ET DÉCHIFFRÉ ICI, NULLE PART AILLEURS. La route ne le voit jamais : elle ne
-     * reçoit qu'un `tenantId`, exactement comme pour l'inscription WhatsApp. Un jeton qui n'entre pas dans une
-     * route ne peut ni fuiter dans un journal, ni partir dans un corps de réponse, ni se lire dans une trace
-     * de pile.
-     *
-     * ⚠️ `META_ADS_CONFIG_ID` VIDE = les routes sont montées mais l'échange répond 503, et l'écran l'annonce
-     * avant de proposer quoi que ce soit. La configuration refuse déjà de démarrer si cette variable est
-     * posée sans `ENCRYPTION_KEY` : on ne peut donc pas arriver ici avec un jeton à chiffrer et pas de clé.
+     * Les publicités Click-to-WhatsApp.
+     * 🔴 Le jeton est chiffré et déchiffré ici, nulle part ailleurs : la route ne reçoit qu'un `tenantId`,
+     * comme pour l'inscription WhatsApp, donc le jeton ne peut fuiter ni dans un journal, ni dans une
+     * réponse, ni dans une trace de pile.
+     * `META_ADS_CONFIG_ID` vide : routes montées, l'échange répond 503 et l'écran l'annonce. La configuration
+     * refuse de démarrer si cette variable est posée sans `ENCRYPTION_KEY`.
      */
     pubs: (() => {
       const connexions = connexionsPub;
       const jetonClair = async (tenantId: string): Promise<string> => {
         const chiffre = await connexions.lireJetonChiffre(tenantId);
-        // Une erreur NOMMÉE : la route en fait un 409 « pas connecté », là où un `Error` nu ressortait en
-        // 502 « Meta ne répond pas » et envoyait le client chercher une panne qui n'existait pas.
+        // Une erreur nommée : la route en fait un 409 « pas connecté », et non un 502 « Meta ne répond pas »
+        // qui enverrait chercher une panne inexistante.
         if (chiffre === null) throw new PasDeConnexionPub();
         return decryptSecret(chiffre, config.ENCRYPTION_KEY);
       };
       /**
-       * 🔴 UN JETON REFUSÉ SE RETIENT, UNE PANNE NON. C'est la différence entre « reconnectez-vous » et
-       * « réessayez » à l'écran, et elle se lit sur le CODE de Meta (`estJetonRefuse`), jamais sur la phrase :
-       * un message se reformule et la garde casserait en silence. L'erreur remonte dans les deux cas.
+       * Un jeton refusé se retient, une panne non (« reconnectez-vous » contre « réessayez ») : cela se lit
+       * sur le code de Meta (`estJetonRefuse`), jamais sur la phrase, qui se reformule. L'erreur remonte dans
+       * les deux cas.
        */
       const noterSiRefus = async <T>(tenantId: string, appel: Promise<T>): Promise<T> => {
         try {
@@ -2457,16 +2117,14 @@ async function main(): Promise<void> {
           });
         },
         connecter: async (t: string, code: string, userId: string | null) => {
-          // 🔴 BRETELLES : on refuse AVANT L'ÉCHANGE quand une connexion existe déjà. Meta n'émet alors
-          // AUCUN jeton, donc rien ne peut être orphelin sur le chemin ordinaire (un appel hors séquence).
-          // ⚠️ Ce n'est PAS un contrôle suffisant à lui seul, et il ne remplace pas la base : entre cette
-          // lecture et l'insertion, deux connexions simultanées passeraient toutes les deux. La ceinture
-          // reste l'insertion seule de `poserJeton` ; ceci ne fait qu'éviter d'émettre un jeton pour rien.
+          // Refus avant l'échange quand une connexion existe déjà : Meta n'émet alors aucun jeton pour rien.
+          // Pas suffisant seul (deux connexions simultanées passeraient) : la ceinture reste l'insertion seule
+          // de `poserJeton`.
           if (await connexions.lireJetonChiffre(t) !== null) throw new DejaConnectePub(false);
           const jeton = await clientPubs.exchangeCode(code);
-          // 🔴 À PARTIR D'ICI, META A ÉMIS UN JETON SANS EXPIRATION. Il est rangé AVANT qu'on lise les
-          // actifs, et son échec porte un nom à LUI : ce n'est pas un refus de Meta, c'est NOTRE panne, et
-          // elle laisse derrière elle un accès vivant dont nous n'avons plus la trace.
+          // 🔴 À partir d'ici, Meta a émis un jeton sans expiration. Il est rangé avant de lire les actifs, et
+          // son échec a son propre nom : c'est notre panne, et elle laisse un accès vivant dont nous n'avons
+          // plus la trace.
           let pose = false;
           try {
             pose = await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
@@ -2475,16 +2133,11 @@ async function main(): Promise<void> {
             console.error(`jeton publicitaire NON enregistré pour l'espace ${t}, il reste vivant chez Meta:`, messageDe(err));
             throw new JetonNonEnregistre(err);
           }
-          // 🔴 LA BASE A REFUSÉ D'ÉCRASER UNE CONNEXION EXISTANTE : c'est la course, et elle est rare
-          // (la vérification ci-dessus attrape tout le reste). Le jeton qu'on vient d'échanger est PERDU
-          // pour nous, et le client l'apprend dans la réponse.
-          //
-          // 🔴 NE PAS LE RÉVOQUER ICI, ET C'EST UN PIÈGE QUI PARAÎT ÉVIDENT. `DELETE /me/permissions/...`
-          // porte sur le couple (application, entité), pas sur LE jeton : « me » se résout depuis le
-          // porteur, et l'ancien comme le neuf désignent la même entité sous la même application. Révoquer
-          // avec le neuf retirerait donc les permissions de l'ANCIEN, c'est-à-dire de la connexion qu'on
-          // vient de protéger. ⚠️ Hypothèse forte, PAS mesurée : c'est précisément pour ça qu'on ne tranche
-          // pas dessus, et qu'on laisse un orphèlin rare plutôt qu'un risque de casser ce qui marche.
+          // La base a refusé d'écraser une connexion existante (course rare) : le jeton échangé est perdu pour
+          // nous, et le client l'apprend dans la réponse.
+          // 🔴 Ne pas le révoquer ici : `DELETE /me/permissions/...` porte sur le couple (application, entité),
+          // pas sur le jeton, et révoquer avec le neuf retirerait probablement les permissions de l'ancien,
+          // donc de la connexion en place (hypothèse non mesurée). Un orphelin rare plutôt que ce risque.
           if (!pose) {
             // eslint-disable-next-line no-console
             console.error(`connexion publicitaire concurrente sur l'espace ${t} : un jeton a été émis par Meta et n'a pas été gardé`);
@@ -2495,20 +2148,19 @@ async function main(): Promise<void> {
         actifsAccordes: async (t: string) => noterSiRefus(t, clientPubs.actifsAccordes(await jetonClair(t))),
         choisir: async (t: string, choix: { comptePubId: string; pageId: string }) => {
           const jeton = await jetonClair(t);
-          // ⚠️ LA DEVISE ET LE FUSEAU VIENNENT DE LA LISTE DES ACTIFS, qui les porte déjà : les relire compte
-          // par compte était un appel pour rien, et surtout une SECONDE vérité qui pouvait diverger de
-          // celle que la route vient d'utiliser pour valider le choix.
+          // La devise et le fuseau viennent de la liste des actifs, qui les porte déjà : les relire compte par
+          // compte serait un appel pour rien et une seconde vérité, qui pourrait diverger de celle qui a
+          // validé le choix.
           const actifs = await noterSiRefus(t, clientPubs.actifsAccordes(jeton));
           const compte = actifs.comptesPub.find((c) => c.id === choix.comptePubId);
           const page = actifs.pages.find((p) => p.id === choix.pageId);
-          // ⚠️ `inconnu` SANS APPELER META, et c'est une mesure, pas un renoncement : aucune API n'expose
-          // la liaison Page / numéro (dix champs essayés le 2026-09-23, détail dans `src/meta/pubs.ts`).
-          // L'écran dit où la voir chez Meta plutôt que de prétendre la connaître.
+          // `inconnu` sans appeler Meta : aucune API n'expose la liaison Page / numéro (détail dans
+          // `src/meta/pubs.ts`). L'écran dit où la voir chez Meta plutôt que de prétendre la connaître.
           const pageLiee = 'inconnu' as const;
           await connexions.choisirActifs(t, {
             ...choix,
-            // Les NOMS sont gardés ici et nulle part ailleurs (0169) : l'écran les relirait sinon chez Meta
-            // à chaque ouverture, pour afficher ce qu'on sait déjà.
+            // Les noms sont gardés ici et nulle part ailleurs : l'écran les relirait sinon chez Meta à chaque
+            // ouverture.
             compteNom: compte?.nom ?? null,
             pageNom: page?.nom ?? null,
             devise: compte?.devise ?? null,
@@ -2520,9 +2172,8 @@ async function main(): Promise<void> {
           return etat;
         },
         deconnecter: async (t: string) => {
-          // 🔴 RÉVOQUER D'ABORD, EFFACER ENSUITE. Notre ligne est le seul endroit où ce jeton existe
-          // chez nous, et il n'expire JAMAIS : l'effacer sans avoir tenté le retrait laisserait un accès
-          // vivant que plus personne, de notre côté, ne pourrait fermer (le piège de la clé Vercel, 0124).
+          // 🔴 Révoquer d'abord, effacer ensuite : notre ligne est la seule copie de ce jeton sans expiration,
+          // l'effacer sans tenter le retrait laisserait un accès vivant que nous ne pourrions plus fermer.
           const chiffre = await connexions.lireJetonChiffre(t);
           let revoqueChezMeta = false;
           if (chiffre !== null) {
@@ -2530,16 +2181,11 @@ async function main(): Promise<void> {
               await clientPubs.revoquerAcces(decryptSecret(chiffre, config.ENCRYPTION_KEY));
               revoqueChezMeta = true;
             } catch (err) {
-              // ⚠️ UN ÉCHEC N'EMPÊCHE PAS DE SE DÉCONNECTER, et c'est un arbitrage : bloquer la déconnexion
-              // sur une panne de Meta retiendrait un client qui veut partir.
-              //
-              // 🔴 ET LE BOOLÉEN NE VA PAS À L'ÉCRAN. Cette phrase disait le contraire, et pire : elle
-              // prescrivait « retirer l'application », c'est-à-dire le geste qui couperait le numéro
-              // WhatsApp du client, puisque c'est la MÊME application. Décision de Julien du 2026-09-23 :
-              // le client n'est pas averti, parce que le jeton résiduel n'est détenu par PERSONNE (nous
-              // venons de supprimer notre seule copie) et qu'aucun des gestes qu'on pourrait lui
-              // prescrire n'est sans danger. Le booléen sert à MESURER si le retrait fonctionne sur un
-              // jeton d'utilisateur système, et il va au journal.
+              // Un échec n'empêche pas de se déconnecter : bloquer sur une panne de Meta retiendrait un client
+              // qui veut partir.
+              // 🔴 Le booléen ne va pas à l'écran : on ne prescrit jamais « retirer l'application », qui
+              // couperait aussi le numéro WhatsApp (c'est la même application), et le jeton résiduel n'est
+              // détenu par personne. Il sert à mesurer si le retrait fonctionne, et va au journal.
               // eslint-disable-next-line no-console
               console.warn('retrait d’accès publicitaire non confirmé par Meta:', messageDe(err));
             }
@@ -2551,12 +2197,9 @@ async function main(): Promise<void> {
         listerPubs: (t: string) => publicites.lister(t),
 
         /**
-         * LES BROUILLONS (migration 0171). Cinq passe-plats, et c'est voulu : un brouillon est un
-         * formulaire mémorisé, il ne touche JAMAIS Meta, donc il n'y a rien à orchestrer ici.
-         *
-         * ⚠️ `listerBrouillons` ne transporte PAS les octets des visuels, `lireBrouillon` si. L'écart est
-         * porté par le store (deux requêtes distinctes) et pas par ce câblage : le dire ici en plus ferait
-         * une seconde vérité, et c'est celle du store qui décide.
+         * Les brouillons : cinq passe-plats, un brouillon est un formulaire mémorisé qui ne touche jamais
+         * Meta. `listerBrouillons` ne transporte pas les octets des visuels, `lireBrouillon` si (porté par
+         * le store).
          */
         listerBrouillons: (t: string) => brouillonsPub.lister(t),
         lireBrouillon: (t: string, id: string) => brouillonsPub.lire(t, id),
@@ -2565,13 +2208,9 @@ async function main(): Promise<void> {
         supprimerBrouillon: (t: string, id: string) => brouillonsPub.supprimer(t, id),
 
         /**
-         * CRÉER UNE PUBLICITÉ CHEZ META, EN PAUSE (lot 3, commit 2).
-         *
-         * 🔴 LA SÉQUENCE N'EST PAS ICI, ET C'EST DÉLIBÉRÉ. Ce câblage ne fait que LIER : il résout la
-         * connexion, dérive le jeton de Page, et donne à `creerLaPublicite` deux objets minuscules. La
-         * séquence elle-même, avec son rattrapage, vit dans `src/pubs/creation.ts`, où elle s'exécute
-         * contre de faux objets, chemins d'échec compris. Un chemin d'échec écrit dans un câblage est un
-         * chemin d'échec que personne n'exécute jamais avant le jour où il compte.
+         * Créer une publicité chez Meta, en pause. Ce câblage ne fait que lier (connexion, jeton de Page, deux
+         * objets) : la séquence et son rattrapage vivent dans `src/pubs/creation.ts`, exécutés contre de faux
+         * objets, chemins d'échec compris.
          */
         creerPub: async (t: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>) => {
           const etat = await connexions.lire(t);
@@ -2580,15 +2219,13 @@ async function main(): Promise<void> {
           const jeton = await jetonClair(t);
           const comptePubId = etat.comptePubId;
           const pageId = etat.pageId;
-          // ⚠️ LE JETON DE PAGE NE SERT QU'À LA CRÉA, et il n'est jamais stocké. Meta documente qu'il faut un
-          // jeton de Page pour ce guide ; ce qui n'est PAS mesuré, c'est s'il est exigé partout ou seulement
-          // là où l'on agit sur la Page. Repli sur le jeton du client, et le refus de Meta sera lisible.
+          // Le jeton de Page ne sert qu'à la créa et n'est jamais stocké. Meta l'exige pour ce guide sans dire
+          // s'il le faut partout : repli sur le jeton du client, et le refus de Meta sera lisible.
           const jetonCrea = (await clientCreationPubs.jetonDePage(pageId, jeton)) ?? jeton;
           /**
-           * ⚠️ LE NUMÉRO EST FACULTATIF CHEZ META, et on le pose quand on le connaît. Sans lui, Meta
-           * choisit le numéro associé à la Page, qui peut ne pas être celui de cet espace : les prospects
-           * écriraient alors à un autre numéro que le nôtre, et aucun webhook ne nous parviendrait. Meta
-           * l'attend en chiffres, sans le `+` de la forme E.164.
+           * Le numéro est facultatif chez Meta, on le pose quand on le connaît : sans lui, Meta choisit le
+           * numéro de la Page, qui peut ne pas être celui de cet espace, et les prospects écriraient à un
+           * numéro dont aucun webhook ne nous parviendrait. Meta l'attend en chiffres, sans le `+` de l'E.164.
            */
           const affiche = (await phoneStatusStore.getPhoneNumber(t))?.displayPhoneNumber ?? null;
           const numeroWhatsApp = affiche === null ? null : affiche.replace(/[^0-9]/g, '');
@@ -2613,9 +2250,7 @@ async function main(): Promise<void> {
           );
         },
 
-        /**
-         * PUBLIER : l'automation d'abord, Meta ensuite. L'ORDRE est dans `publierLaPublicite`, pas ici.
-         */
+        /** Publier : l'automation d'abord, Meta ensuite. L'ordre vit dans `publierLaPublicite`. */
         publierPub: async (t: string, publiciteId: string) => {
           const pub = await publicites.lire(t, publiciteId);
           if (pub === null) throw new Error('cette publicité n’existe pas');
@@ -2632,11 +2267,8 @@ async function main(): Promise<void> {
         },
 
         /**
-         * LA PAGE D'UNE PUBLICITÉ : ce qu'on sait d'elle, et son entonnoir.
-         *
-         * ⚠️ AUCUN APPEL À META ICI. Les chiffres viennent du balayage, qui relit toutes les quinze
-         * minutes. Les relire à l'ouverture de l'écran ferait dépendre l'affichage du temps de réponse de
-         * Meta, et multiplierait les appels par le nombre de personnes qui consultent.
+         * La page d'une publicité : ce qu'on sait d'elle, et son entonnoir. Aucun appel à Meta : les chiffres
+         * viennent du balayage (toutes les quinze minutes), pour que l'affichage ne dépende pas de Meta.
          */
         lirePub: async (t: string, publiciteId: string) => {
           const publicite = await publicites.lire(t, publiciteId);
@@ -2646,14 +2278,11 @@ async function main(): Promise<void> {
         },
 
         /**
-         * PAUSE ET REPRISE, SUR LA CAMPAGNE, chez Meta.
-         *
-         * 🔴 SUR LA CAMPAGNE ET RIEN D'AUTRE, parce qu'elle est l'interrupteur : Meta met en pause tout ce
-         * qu'elle contient. Toucher aussi l'ensemble et la publicité ferait trois appels dont deux sans
-         * effet, et surtout trois façons d'échouer à mi-chemin sur le bouton d'ARRÊT d'une dépense.
-         *
-         * ⚠️ L'AUTOMATION N'EST PAS TOUCHÉE (spec § 3.5) : un prospect qui a cliqué juste avant la pause
-         * peut écrire plusieurs minutes plus tard, et son lead a été payé.
+         * Pause et reprise, sur la campagne seulement, chez Meta.
+         * 🔴 La campagne est l'interrupteur (Meta met en pause tout ce qu'elle contient) : toucher aussi
+         * l'ensemble et la publicité ferait trois façons d'échouer à mi-chemin sur le bouton d'arrêt d'une
+         * dépense. L'automation n'est pas touchée : un prospect qui a cliqué juste avant la pause peut écrire
+         * plus tard, et son lead a été payé.
          */
         basculerPub: async (t: string, publiciteId: string, actif: boolean) => {
           const pub = await publicites.lire(t, publiciteId);
@@ -2668,14 +2297,9 @@ async function main(): Promise<void> {
     account: {
       getPhoneNumber: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
       /**
-       * La pastille du numéro (demande de Julien, 2026-09-08).
-       *
-       * 🔴 RELUE, JAMAIS STOCKÉE : l'URL que Meta rend est signée et expire. En base, elle donnerait une
-       * image qui marche quelques heures puis casse, sans que personne ne sache pourquoi.
-       *
-       * ⚠️ DERRIÈRE UN MICRO-CACHE (`cacheCourt`, la brique du dépôt) : l'Accueil est la page la plus
-       * ouverte de la console, et un appel Graph par affichage la ferait dépendre du temps de réponse de
-       * Meta pour une décoration. Dix minutes sont très en deçà de la durée de vie de l'URL.
+       * La pastille du numéro, relue et jamais stockée : l'URL que Meta rend est signée et expire. Derrière
+       * un micro-cache de dix minutes, très en deçà de sa durée de vie : l'Accueil est la page la plus
+       * ouverte de la console.
        */
       photoNumero: (tenant, phoneNumberId) => photoNumeroCache.lire(`${tenant}:${phoneNumberId}`, async () => {
         if (!config.META_ACCESS_TOKEN) return null;
@@ -2685,7 +2309,7 @@ async function main(): Promise<void> {
       pullStatus: async (phoneNumberId, tenant) => {
         if (!config.META_ACCESS_TOKEN) return null; // pas de token global -> pas de pull live (statut sur le dernier connu)
         try {
-          const phoneClientT = await metaFactory.phoneClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
+          const phoneClientT = await metaFactory.phoneClientForTenant(tenant); // token par tenant, repli global
           const info = await phoneClientT.get(phoneNumberId);
           // Santé WABA : 2e appel Graph, best-effort. Un échec (droits/état) ne casse pas le pull du numéro :
           // on retombe sur le statut du numéro seul (les champs WABA restent sur leur dernier connu via coalesce).
@@ -2698,15 +2322,15 @@ async function main(): Promise<void> {
       },
       saveStatus: (id, patch) => phoneStatusStore.saveStatus(id, patch),
       setHubspotConnected: (id, tenant, connected) => phoneStatusStore.setHubspotConnected(id, tenant, connected),
-      // Rattrapage HubSpot (F3-a) : enfile un seul job hubspot-catchup (le worker liste les marques et re-pousse).
-      // NO-OP si le pipeline analyse/push est inerte (mêmes conditions que le worker qui consomme la file).
+      // Rattrapage HubSpot : enfile un seul job hubspot-catchup (le worker liste les marques et re-pousse).
+      // No-op si le pipeline analyse/push est inerte (mêmes conditions que le worker qui consomme la file).
       enqueueHubspotCatchup: async (tenant) => {
         if (!(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '')) return;
         await queue.enqueue('hubspot-catchup', { tenantId: tenant });
       },
       getHubspotPortal: (tenant) => phoneStatusStore.getHubspotPortal(tenant),
-      // Déconnexion complète (candidat 2) : appel service signé vers mm-hubspot (unlink + révocation token). Monté
-      // seulement si le canal service est configuré (sinon la route répond 503, le front garde son bouton).
+      // Déconnexion complète : appel service signé vers mm-hubspot (unlink + révocation du token). Monté
+      // seulement si le canal service est configuré (sinon la route répond 503).
       ...(config.HUBSPOT_SERVICE_URL
         ? { disconnectHubspot: (tenant: string) => disconnectHubspot({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant) }
         : {}),
@@ -2718,32 +2342,32 @@ async function main(): Promise<void> {
       createWorkflow: (tenant, name, graph) => workflowStore.insert(tenant, name, graph),
       tenantCode: (tenant) => resolveTenantCode(pool, tenant),
       listWorkflows: (tenant) => workflowStore.list(tenant),
-      // Le navigateur reçoit le RÉSUMÉ : plus aucun graphe ne traverse le réseau pour afficher des noms.
+      // Le navigateur reçoit le résumé : aucun graphe ne traverse le réseau pour afficher des noms.
       listWorkflowsResume: (tenant) => workflowStore.listResume(tenant),
       getWorkflow: (id, tenant) => workflowStore.getById(id, tenant),
       updateWorkflow: (id, tenant, patch) => workflowStore.update(id, tenant, patch),
-      // Bouton « Publier » (lot 7) : le SEUL chemin qui touche le graphe exécuté.
+      // Bouton « Publier » : le seul chemin qui touche le graphe exécuté.
       publishWorkflow: (id, tenant) => workflowStore.publish(id, tenant),
       audit: auditSink,
       deleteWorkflow: (id, tenant) => workflowStore.remove(id, tenant),
-      // La garde du 409 : une publicite vivante retient son scenario. Requise par le type, parce qu un
-      // cablage qui l oublierait laisserait supprimer le scenario d une pub qui diffuse, en silence.
+      // La garde du 409 : une publicité vivante retient son scénario. Requise par le type : un câblage qui
+      // l'oublierait laisserait supprimer le scénario d'une pub qui diffuse, en silence.
       publicitesQuiUtilisent: (tenant, workflowId) => publicites.publicitesQuiUtilisent(tenant, workflowId),
       // Déclare les tags des blocs « ajout de tag » dans le référentiel (Contenus > Tags) à la sauvegarde.
       declareTags: async (tenant, tags) => { for (const t of tags) await tagStore.create(tenant, t); },
-      // Lien de test (Lot F) : jeton stable posé au 1er clic, + numéro affiché pour construire le lien wa.me.
+      // Lien de test : jeton stable posé au 1er clic, + numéro affiché pour construire le lien wa.me.
       ensureTestToken: (id, tenant, token) => workflowStore.ensureTestToken(id, tenant, token),
       getDisplayPhoneNumber: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
     },
     // Node « Envoi de mail » : boîtes SMTP + modèles (Contenu), et le résolveur qu'invalident les routes
     // d'écriture pour ne jamais garder un transport périmé (hôte/mot de passe changés).
     email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver },
-    // Paramètres > Intégrations > Batch. Les clés sont chiffrées ICI, jamais stockées en clair, et le cache de
-    // l'émetteur de l'API est invalidé à chaque changement : brancher ou débrancher prend effet tout de suite.
+    // 🔴 Paramètres > Intégrations > Batch : les clés sont chiffrées ici, jamais stockées en clair. Le cache
+    // de l'émetteur de l'API est invalidé à chaque changement : brancher ou débrancher prend effet aussitôt.
     integrationBatch: {
       lire: (tenant) => integrationBatch.lire(tenant),
-      // Mesuré avec la VRAIE fonction de chiffrement, pas une copie de sa règle (la regex de la clé est déjà
-      // écrite trois fois dans `src/config.ts`) : c'est exactement ce qu'`enregistrer` va appeler.
+      // Mesuré avec la vraie fonction de chiffrement, pas une copie de sa règle : c'est exactement ce
+      // qu'`enregistrer` va appeler.
       chiffrementPret: (() => {
         try {
           encryptSecret('sonde', config.ENCRYPTION_KEY);
@@ -2768,10 +2392,11 @@ async function main(): Promise<void> {
       },
       audit: auditSink,
     },
-    // Paramètres > Intégrations > Salesforce (plan 2026-09-26, lot L1). Monté SEULEMENT quand la clé d'app est
-    // posée : sans elle, la route rend 404 et la carte de la console ne s'affiche pas. Le secret de chaque org est
-    // tiré par la connexion, chiffré DANS le store, et posé dans l'org : aucune route n'en voit la couleur.
-    // 🔴 `satisfies` sur l'objet INTÉRIEUR : le contrôle des propriétés ne traverse pas un spread (CLAUDE.md).
+    // Paramètres > Intégrations > Salesforce, monté seulement quand la clé d'app est posée (sinon 404, et la
+    // carte de la console ne s'affiche pas).
+    // 🔴 Le secret de chaque org est tiré par la connexion, chiffré dans le store et posé dans l'org : aucune
+    // route n'en voit la couleur. `satisfies` sur l'objet intérieur : le contrôle des propriétés ne traverse
+    // pas un spread.
     ...(config.SALESFORCE_CLIENT_ID !== '' ? { salesforce: (() => {
       const store = new PgSalesforceStore(pool, config.ENCRYPTION_KEY);
       const client = creerClientSalesforce({ clientId: config.SALESFORCE_CLIENT_ID, clientSecret: config.SALESFORCE_CLIENT_SECRET });
@@ -2804,12 +2429,10 @@ async function main(): Promise<void> {
       etat: (tenant) => workflowRuntime.rcsStack.agents.etatPour(tenant),
       verifier: (apiKey) => verifierCleRcs(fetchGet, apiKey),
       activer: async (tenant, canal, apiKey) => {
-        // La clé est chiffrée ICI, jamais stockée en clair. `client_token_enc` reste réservé au jour où un
-        // fournisseur signera ses rappels (Google le fait) ; smsmode, lui, ne signe pas.
-        //
-        // 🔴 Le `webhook_code` EST le secret de l'adresse de rappel : c'est lui, et lui seul, qui dit à quel
-        // workspace appartient un appel non signé. Donc 128 bits, comme le code des webhooks entrants, et
-        // jamais une valeur courte « puisque ce n'est qu'un identifiant ».
+        // La clé est chiffrée ici, jamais stockée en clair. `client_token_enc` reste réservé au jour où un
+        // fournisseur signera ses rappels (Google le fait) ; smsmode ne signe pas.
+        // 🔴 Le `webhook_code` est le secret de l'adresse de rappel : lui seul dit à quel workspace appartient
+        // un appel non signé. Donc 128 bits, comme le code des webhooks entrants, jamais une valeur courte.
         await workflowRuntime.rcsStack.agents.activer(
           tenant,
           canal,
@@ -2821,10 +2444,9 @@ async function main(): Promise<void> {
       desactiver: (tenant) => workflowRuntime.rcsStack.agents.desactiver(tenant),
     },
     /**
-     * Rappels smsmode : rapports de livraison et réponses des contacts. C'est ce qui referme la boucle du
-     * canal RCS, qui jusqu'ici ne savait qu'émettre.
-     *
-     * Le tenant vient du CODE de l'URL (`parWebhookCode`), jamais du corps : smsmode ne signe pas ses rappels.
+     * Rappels smsmode : rapports de livraison et réponses des contacts.
+     * 🔴 Le tenant vient du code de l'URL (`parWebhookCode`), jamais du corps : smsmode ne signe pas ses
+     * rappels.
      */
     rcsCallback: {
       parCode: (code) => workflowRuntime.rcsStack.agents.parWebhookCode(code),
@@ -2844,19 +2466,19 @@ async function main(): Promise<void> {
         rcsDelivre: (t, to, id) => workflowRuntime.executor.rcsDelivered(t, to, id),
         maintenant: () => Date.now(),
         }, tenant, dlr);
-        // 3. Les SIGNAUX (spec 2026-09-24, § 8). APRÈS le rapport du lot 3 (livraison, échec d'un message libre,
-        //    joignabilité, sorties du bloc) : l'état que l'outil relira est alors écrit. L'émetteur ne lève
-        //    jamais : un rapport de livraison ne doit pas échouer pour lui.
+        // Les signaux, après le rapport (livraison, échec d'un message libre, joignabilité, sorties du bloc) :
+        // l'état que l'outil relira est alors écrit. L'émetteur ne lève jamais : un rapport de livraison ne
+        // doit pas échouer pour lui.
         if (dlr.status !== null && dlr.to !== '') {
           const signal = signalDeLAccuse({ messageId: dlr.messageId, status: dlr.status, waId: dlr.to, motif: dlr.detail, codeMeta: null, le: null }, 'rcs');
           if (signal !== null) await emetteur.emettreSignal(tenant, signal);
         }
       },
       onMo: async (tenant, mo) => {
-        // Une position ou un fichier n'ont pas de texte : `apercuMo` en fabrique un LISIBLE plutôt que de
+        // Une position ou un fichier n'ont pas de texte : `apercuMo` en fabrique un lisible plutôt que de
         // laisser une bulle vide et de jeter les coordonnées.
         const apercu = apercuMo(mo);
-        // 1. STOP AVANT tout le reste. Continuer d'écrire après un refus fait suspendre l'agent par
+        // 🔴 1. Le STOP avant tout le reste : continuer d'écrire après un refus fait suspendre l'agent par
         //    l'opérateur, et l'enregistrement de l'opt-out ne doit dépendre d'aucune étape qui pourrait
         //    échouer après lui.
         if (mo.kind === 'text' && estDemandeArret(mo.text)) {
@@ -2866,9 +2488,8 @@ async function main(): Promise<void> {
             console.error(`STOP RCS reçu de ${mo.from} (${tenant}) sans fiche contact : rien à désabonner`);
           }
           // Le STOP RCS n'écrit pas par le dépôt des contacts (il pose `rcs_optout_at`) : l'annonce composée
-          // plus haut ne le voit pas, il émet donc lui-même son signal.
-          // L'identifiant du message STOP est la clé naturelle du refus : un STOP que le fournisseur redélivre
-          // garde le même `em_event_id`.
+          // plus haut ne le voit pas, il émet donc lui-même son signal, avec l'identifiant du message STOP pour
+          // clé naturelle (un STOP redélivré garde le même `em_event_id`).
           if (marque) await emetteur.emettreSignal(tenant, signalDesabonnement(mo.from, 'rcs', mo.messageId));
         }
         // 2. Le fil d'inbox : un échange RCS se lit au même endroit qu'un échange WhatsApp, dans le fil unique
@@ -2883,19 +2504,14 @@ async function main(): Promise<void> {
           profileName: null,
           field: 'messages',
         }, 'rcs');
-        // 2 ter. La RÉPONSE comme signal (spec 2026-09-24, § 8) : le bouton tapé seulement, jamais le texte.
+        // 2 ter. La réponse comme signal : le bouton tapé seulement, jamais le texte.
         await emetteur.emettreSignal(tenant, signalDeLaReponse({
           messageId: mo.messageId, waId: mo.from, bouton: mo.kind === 'suggestion' ? mo.text : null,
         }, 'rcs'));
-        // 2 bis. La FICHE CONTACT et les AUTOMATIONS, que le chemin Meta branche depuis toujours et pas
-        //    celui-ci. Un client qui écrivait DEVIS en RCS ne déclenchait rien, sans le moindre journal :
-        //    l'opérateur croyait son automation cassée. C'est aussi ce qui produisait le « STOP RCS sans
-        //    fiche contact » ci-dessus, faute de fiche créée à la première prise de contact.
-        //
-        //    ⚠️ Le canal part DANS l'événement. Sans lui, le runner conclurait que la fenêtre de service
-        //    WhatsApp est ouverte (un entrant vaut preuve, côté Meta) et le scénario déclenché ouvrirait par un
-        //    message rapide chez un contact hors fenêtre : refus Meta 131047.
-        //
+        // 2 bis. La fiche contact et les automations, comme sur le chemin Meta : sans elles, un client qui
+        //    écrit DEVIS en RCS ne déclencherait rien, et le STOP ci-dessus ne trouverait pas de fiche.
+        //    Le canal part dans l'événement : sans lui, le runner croirait la fenêtre de service WhatsApp
+        //    ouverte, et le scénario ouvrirait par un message rapide hors fenêtre (refus Meta 131047).
         //    Isolé : ni la fiche ni l'automation ne doivent faire échouer la réception d'un message.
         try {
           const issue = await contactStore.upsertFromInbound(tenant, mo.from, null);
@@ -2914,8 +2530,8 @@ async function main(): Promise<void> {
       },
     },
     /**
-     * Visuels des messages RCS. Le téléversement rend directement l'URL PUBLIQUE : c'est tout l'intérêt,
-     * l'opérateur télécom va chercher l'image lui-même et personne n'a à trouver où l'héberger.
+     * Visuels des messages RCS. Le téléversement rend directement l'URL publique : l'opérateur télécom va
+     * chercher l'image lui-même.
      */
     rcsMedia: {
       list: (tenant) => rcsMediaStore.list(tenant),
@@ -2929,17 +2545,17 @@ async function main(): Promise<void> {
     },
     // Le dépôt lui-même : la route n'en appelle que `list`, `create`, `update` et `remove`, en méthodes.
     rcsMessages: rcsMessageStore,
-    // Automations (Lot E) : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
+    // Automations : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
     automations: {
       list: (tenant) => automationStore.list(tenant),
       getById: (id, tenant) => automationStore.getById(id, tenant),
       create: (tenant, input) => automationStore.create(tenant, input),
       update: (id, tenant, patch) => automationStore.update(id, tenant, patch),
       remove: (id, tenant) => automationStore.remove(id, tenant),
-      // Un tenant ne peut cibler QUE ses propres scénarios (même garde que la campagne workflow).
+      // 🔴 Un tenant ne peut cibler que ses propres scénarios (même garde que la campagne workflow).
       workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
     },
-    // Chaine WhatsApp (Channels Me) : publier un post dont le bouton demarre un scenario.
+    // Chaîne WhatsApp (Channels Me) : publier un post dont le bouton démarre un scénario.
     channelsMe: {
       getConnection: (tenant) => channelsMeConnections.get(tenant),
       getSecrets: (tenant) => channelsMeConnections.getSecrets(tenant),
@@ -2949,36 +2565,31 @@ async function main(): Promise<void> {
       getOrganisation: (cx) => channelsMeClient.getOrganisation(cx),
       listChannels: (cx) => channelsMeClient.listChannels(cx),
       getMessages: (cx) => channelsMeClient.getMessages(cx),
-      // 🔴 `m` DOIT ETRE RELAYE ENTIER. Une fleche a un parametre est parfaitement assignable a un contrat
-      // qui en declare deux : le second serait avale EN SILENCE, l'image du post disparaitrait sans que le
-      // typecheck ne dise rien. Defaut deja paye en production le 2026-09-03.
+      // `m` doit être relayé entier : une flèche à un paramètre est assignable à un contrat qui en déclare
+      // deux, le second serait avalé en silence et l'image du post disparaîtrait.
       createMessage: (cx, m) => channelsMeClient.createMessage(cx, m),
       listLinks: (tenant) => channelsMeLinks.list(tenant),
       createLink: (tenant, l) => channelsMeLinks.create(tenant, l),
       linkById: (tenant, id) => channelsMeLinks.byId(tenant, id),
-      // Rattrapage : defait l'automation compagnon quand `createLink` echoue juste apres l'avoir creee
-      // (sinon elle reste POSSEDEE, orpheline, invisible et inaccessible depuis l'ecran Automation).
+      // Rattrapage : défait l'automation compagnon quand `createLink` échoue juste après l'avoir créée
+      // (sinon elle reste possédée, orpheline, invisible depuis l'écran Automation).
       supprimerAutomationCompagnon: (tenant, automationId) => channelsMeLinks.supprimerAutomationCompagnon(tenant, automationId),
       conversationsParLien: (tenant) => channelsMeLinks.conversationsParLien(tenant),
       listPosts: (tenant) => channelsMePosts.list(tenant),
       createPost: (tenant, p) => channelsMePosts.create(tenant, p),
-      // L'automation compagnon du lien. Trois choses se decident ICI et nulle part ailleurs :
-      //  - `enabled: false`, parce qu'un lien cree mais jamais publie ne doit rien declencher ;
-      //  - `possedePar`, qui met la ligne hors de portee de l'ecran Automation (predicat du store) ;
-      //  - `mode: 'contains'`, qui laisse passer un abonne ayant ajoute un mot devant ou derriere la phrase.
-      // 🔴 LA MEME NORMALISATION QUE LA CORRESPONDANCE. `normalizeText` est celle qu'applique
-      // `matchesTrigger` au corps du message et `keywordsOf` au mot-cle stocke : deux liens que cette
-      // fonction rend egaux matcheraient le meme message, donc c'est exactement elle qui doit trancher
-      // l'unicite. Une comparaison SQL approchee laisserait passer « Ça m'intéresse » et « ca m interesse ».
+      // L'automation compagnon du lien. Trois choses se décident ici et nulle part ailleurs :
+      //  - `enabled: false`, parce qu'un lien créé mais jamais publié ne doit rien déclencher ;
+      //  - `possedePar`, qui met la ligne hors de portée de l'écran Automation (prédicat du store) ;
+      //  - `mode: 'contains'`, qui laisse passer un abonné ayant ajouté un mot devant ou derrière la phrase.
+      // L'unicité se tranche avec la même normalisation que la correspondance (`normalizeText`, celle de
+      // `matchesTrigger` et `keywordsOf`) : une comparaison SQL approchée laisserait passer « Ça m'intéresse »
+      // et « ca m interesse ».
       phraseEnConflit: async (tenant, phrase) => {
         const cible = normalizeText(phrase);
         const existantes = await channelsMeLinks.phrasesDesLiens(tenant);
-        // 🔴 L'INCLUSION, DANS LES DEUX SENS, PAS L'EGALITE. La comparaison est en mode `contains` : « Je
-        // veux le guide » et « Je veux le guide 2026 » sont deux phrases DIFFERENTES, et pourtant un abonne
-        // qui appuie sur le second bouton envoie un texte qui contient AUSSI la premiere. Les deux
-        // automations matchent, les deux scenarios demarrent, et le second clot le premier : l'abonne voit
-        // un parcours commencer puis disparaitre. Sur un post deja publie, c'est sans recours.
-        // Ce cas n'existait pas avec le jeton : deux jetons tires ne s'incluent jamais.
+        // L'inclusion dans les deux sens, pas l'égalité : en mode `contains`, un abonné qui appuie sur « Je
+        // veux le guide 2026 » envoie aussi « Je veux le guide ». Les deux automations matcheraient, et le
+        // second scénario clôturerait le premier ; sur un post déjà publié, c'est sans recours.
         return existantes.some((p) => {
           const n = normalizeText(p);
           return n.includes(cible) || cible.includes(n);
@@ -2988,10 +2599,8 @@ async function main(): Promise<void> {
       creerAutomationCompagnon: (tenant, input) => automationStore.create(tenant, {
         name: input.nom,
         triggerKind: 'keyword',
-        // 🔴 `contains` EST CE QUI SAUVE LES POSTS DEJA PUBLIES. Le mot-cle est la PHRASE depuis le
-        // 2026-09-07 ; un post distribue avant cette date envoie `phrase (cm-xxxx)`, qui la CONTIENT, donc
-        // son bouton continue de declencher. En mode `equals`, tous les posts en circulation seraient morts,
-        // sans aucun recours possible.
+        // 🔴 `contains` sauve les posts déjà publiés : un ancien post envoie `phrase (cm-xxxx)`, qui contient
+        // le mot-clé (la phrase). En mode `equals`, tous les posts en circulation seraient morts, sans recours.
         triggerConfig: { keywords: [input.motCle], mode: 'contains' },
         conditionGroup: null,
         workflowId: input.workflowId,
@@ -3001,47 +2610,32 @@ async function main(): Promise<void> {
         possedePar: 'channelsme_link',
         maxFiresPerHour: input.maxParHeure,
       }),
-      // 🔴 PAR LE STORE DES LIENS, JAMAIS PAR `PgAutomationStore`. Ce dernier exclut de `update`/`remove`
-      // toute ligne `possede_par is not null` : ces deux methodes ecrivent leur PROPRE requete sur
-      // `automations`, garde miroir `possede_par = 'channelsme_link'` comprise.
+      // Par le store des liens, jamais par `PgAutomationStore`, qui exclut de `update`/`remove` toute ligne
+      // `possede_par is not null` : ces deux méthodes ont leur propre requête, garde `possede_par =
+      // 'channelsme_link'` comprise.
       allumerAutomationLien: (tenant, linkId) => channelsMeLinks.allumerAutomation(tenant, linkId),
       eteindreAutomationLien: (tenant, linkId) => channelsMeLinks.eteindreAutomation(tenant, linkId),
       scenarioEtat: async (tenant, wfId) => {
         const wf = await workflowStore.getById(wfId, tenant);
         if (!wf) return 'inconnu';
-        // « Aucune version publiee » se lit sur le graphe PUBLIE, le seul que l'executeur lise : un scenario
-        // dont il est vide ne demarrerait rien, meme si un brouillon existe a cote.
+        // « Aucune version publiée » se lit sur le graphe publié, le seul que l'exécuteur lise : vide, il ne
+        // démarrerait rien, même avec un brouillon à côté.
         return wf.graph.nodes.length > 0 ? 'ok' : 'vide';
       },
       getDisplayPhoneNumber: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
-      // Notification best-effort : `sendTelegram` ne leve jamais et est un no-op si Telegram n'est pas
-      // configure. Le jeton d'un lien n'apparait nulle part dans ce message.
+      // Notification best-effort : `sendTelegram` ne lève jamais et est un no-op sans Telegram. Le jeton d'un
+      // lien n'apparaît nulle part dans ce message.
       demanderActivation: async ({ tenantId, userId, message }) => {
         await sendTelegram(`[engage-me] demande d’activation Channels Me\nespace ${tenantId}\nutilisateur ${userId ?? 'inconnu'}\n${message.slice(0, 500)}`);
       },
     },
     ops: {
       /**
-       * 🔴 L'ARRÊT D'URGENCE D'UN ESPACE. Il ferme la console ET l'API publique (`/v1`, `/mcp`) ; il
-       * n'arrête PAS les campagnes déjà enfilées, cf. le runbook de `DEPLOY.md`.
-       *
-       * ⚠️ LA NOTE EST JOURNALISÉE PAR LA ROUTE (`src/http/ops.ts`, `ops_verrou_espace`), et UNE fois : c'est
-       * la seule trace durable du POURQUOI. Ce câblage l'écrivait aussi, par un journal de Fastify qui était
-       * muet ; le rendre audible avait doublé chaque ligne.
-       */
-      /**
-       * 🔴 DÉPOSER UN JETON PUBLICITAIRE CRÉÉ À LA MAIN, parce que la fenêtre Meta ne peut pas servir
-       * notre PROPRE portefeuille : Meta exige que celui du client soit distinct de celui qui possède
-       * l'application, et le grise dans la liste (mesuré le 2026-09-23). Sans cette porte, MessagingMe ne
-       * pourrait jamais faire ses propres publicités avec son propre produit.
-       *
-       * 🔴 LE JETON EST VÉRIFIÉ CHEZ META AVANT D'ÊTRE GARDÉ, par les MÊMES appels que la connexion par
-       * l'écran : on refuse un compte ou une Page que ce jeton n'accorde pas, plutôt que de ranger un
-       * secret qui ne servirait à rien et qu'on croirait bon. Et il est chiffré ICI, comme partout.
-       *
-       * ⚠️ IL REMPLACE une connexion existante, là où l'écran la REFUSE. La raison tient à qui fait le
-       * geste : l'écran est utilisé par un client qui pourrait écraser son propre jeton sans le savoir,
-       * quand `/ops` est notre surface d'exploitation, où remplacer est précisément ce qu'on vient faire.
+       * Déposer un jeton publicitaire créé à la main : la fenêtre Meta ne peut pas servir notre propre
+       * portefeuille (Meta exige que celui du client soit distinct de celui qui possède l'application).
+       * 🔴 Le jeton est vérifié chez Meta avant d'être gardé, par les mêmes appels que la connexion par
+       * l'écran, et chiffré ici. Il remplace une connexion existante, là où l'écran la refuse : `/ops` est
+       * notre surface d'exploitation, où remplacer est précisément ce qu'on vient faire.
        */
       deposerJetonPub: async (tenantId, jeton, comptePubId, pageId) => {
         const actifs = await clientPubs.actifsAccordes(jeton);
@@ -3050,15 +2644,12 @@ async function main(): Promise<void> {
         if (compte === undefined) throw new Error(`ce jeton n'accorde pas le compte publicitaire ${comptePubId}`);
         if (page === undefined) throw new Error(`ce jeton n'accorde pas la Page ${pageId}`);
         const pageLiee = 'inconnu' as const; // Meta n'expose pas la liaison (cf. `src/meta/pubs.ts`).
-        // 🔴 CHIFFRER AVANT DE TOUCHER À QUOI QUE CE SOIT. `encryptSecret` lève sur une
-        // `ENCRYPTION_KEY` absente ou mal formée, et cette route n'a PAS le garde-fou `configId === ''`
-        // de l'échange : une levée plus bas détruirait la connexion existante sans rien ranger.
+        // 🔴 Chiffrer avant de toucher à quoi que ce soit : `encryptSecret` lève sur une `ENCRYPTION_KEY`
+        // absente ou mal formée, et une levée plus bas détruirait la connexion existante sans rien ranger.
         const chiffreNeuf = encryptSecret(jeton, config.ENCRYPTION_KEY);
-        // 🔴 RÉVOQUER L'ANCIEN, MAIS SEULEMENT SI C'EST UNE AUTRE ENTITÉ : SINON ON TUE LE NEUF.
-        // Tout le raisonnement, les CINQ issues et les mutations qui les gardent vivent dans
-        // `retirerAncienAcces` (`src/meta/pubs.ts`), qui s'exécute contre un faux client dans les tests.
-        // Ce câblage ne fait que DÉLÉGUER : il n'a plus de décision à relire, donc plus de décision à
-        // rater. Trois écritures successives de cette condition ont été prises en défaut ici même.
+        // 🔴 Révoquer l'ancien seulement si c'est une autre entité, sinon on tue le neuf. Le raisonnement et
+        // ses cinq issues vivent dans `retirerAncienAcces` (`src/meta/pubs.ts`), testé contre un faux client :
+        // ce câblage ne fait que déléguer.
         const ancien = await connexionsPub.lireJetonChiffre(tenantId);
         const ancienRevoque = await retirerAncienAcces(
           clientPubs,
@@ -3074,37 +2665,35 @@ async function main(): Promise<void> {
           devise: compte.devise, fuseau: compte.fuseau, pageLiee, ancienRevoque,
         };
       },
+      /**
+       * 🔴 L'arrêt d'urgence d'un espace : il ferme la console et l'API publique (`/v1`, `/mcp`), il n'arrête
+       * pas les campagnes déjà enfilées (runbook de `DEPLOY.md`). La note est journalisée une fois, par la
+       * route (`ops_verrou_espace`) : c'est la seule trace durable du pourquoi.
+       */
       verrouillerEspace: (tenantId, verrouille, _note) => opsStore.verrouillerEspace(tenantId, verrouille),
       getTenantOverview: () => opsStore.getTenantOverview(),
       /**
-       * LA GRILLE DE PRIX, UNE POUR TOUS LES ESPACES (lot 8, migration 0168).
-       *
-       * 🔴 ELLE EST ICI ET PLUS DANS LES REGLAGES DU CLIENT, et c'est le sujet du lot : un client n'a pas a
-       * fixer, ni meme a voir, ce qu'on lui facture. C'est la SECONDE ecriture metier de cette surface,
-       * apres le rechargement d'un solde, et elle s'y trouve pour la meme raison exactement : le geste ne
-       * doit jamais etre atteignable depuis un compte de la console.
+       * 🔴 La grille de prix, une pour tous les espaces, ici et pas dans les réglages du client : un client n'a
+       * ni à fixer ni à voir ce qu'on lui facture, et le geste ne doit jamais être atteignable depuis la
+       * console.
        */
       lireGrillePrix: async () => grilleDepuisLigne(await statsStore.grillePrixGlobale()),
       ecrireGrillePrix: (grille, par) => settingsStore.setGrillePrixGlobale(grille, par),
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
       getQueueLoad: () => opsStore.getQueueLoad(),
-      // L'équité : quels GROUPES attendent le plus. Vide = tout le monde est servi.
+      // L'équité : quels groupes attendent le plus. Vide = tout le monde est servi.
       getQueueLoadParGroupe: () => opsStore.getQueueLoadParGroupe(),
       getQueueLatence: (h) => opsStore.getQueueLatence(h),
-      // Les jobs MORTS et leur rejeu. Deuxième écriture métier de la surface d'exploitation, assumée pour la
-      // même raison que le rechargement de solde : rejouer un traitement mort est un geste d'exploitation,
-      // cross-espace, qui suppose qu'on ait corrigé la cause de l'échec.
+      // Les jobs morts et leur rejeu : un geste d'exploitation cross-espace, qui suppose qu'on ait corrigé la
+      // cause de l'échec.
       listerJobsMorts: (limite) => opsStore.listerJobsMorts(limite),
       reenfiler: (nomDeFile, data) => queue.enqueue(nomDeFile, data),
       oublierJobsMorts: (ids) => opsStore.oublierJobsMorts(ids),
       getWorkerHeartbeat: () => heartbeatStore.get(),
       /**
-       * L'attente du pool (lot 7). Deux lectures qui ne se remplacent pas : l'état INSTANTANÉ ne peut être
-       * que celui de CE process (l'API voit son propre pool en mémoire), et la COURBE vient de la base, seul
-       * canal par lequel le worker peut se montrer.
-       *
-       * ⚠️ `waitingCount` non nul est le vrai signal : ce n'est pas « à combien du plafond on est » qui
-       * compte, c'est « quelqu'un attend-il ».
+       * L'attente du pool. L'état instantané ne peut être que celui de ce process (l'API voit son propre pool
+       * en mémoire) ; la courbe vient de la base, seul canal par lequel le worker se montre. Le vrai signal
+       * est un `waitingCount` non nul : quelqu'un attend.
        */
       etatPoolInstantane: () => ({
         process: 'api',
@@ -3115,13 +2704,10 @@ async function main(): Promise<void> {
         maxMsDepuisDemarrage: Math.round(mesureAttentePool.maxDepuisDemarrage),
       }),
       lireAttentesPool: (minutes) => poolAttentesStore.lireDernieresMinutes(minutes),
-      // Le solde prepaye d un workspace pour l agent IA. La RECHARGE est la seule ecriture metier de cette
-      // surface, et elle est ici parce qu un client ne doit jamais pouvoir crediter son propre compte.
-      //
-      // ⚠️ L espace est RESOLU d abord, dans les deux sens. En lecture, un espace inconnu rendrait un solde de
-      // zero, que l operateur lirait comme « client a sec » et rechargerait. En ecriture, la cle etrangere
-      // leverait, donc un 500 remplace par la page d erreur de Cloudflare, sur la seule route qui ecrit de l
-      // argent. `getTenantName` est le meme point de resolution que `/ops/observe`.
+      // 🔴 Le solde prépayé d'un espace pour l'agent IA. La recharge est ici parce qu'un client ne doit
+      // jamais pouvoir créditer son propre compte. L'espace est résolu d'abord : en lecture, un espace inconnu
+      // rendrait un solde de zéro qu'on rechargerait ; en écriture, la clé étrangère lèverait un 500 masqué
+      // par Cloudflare. `getTenantName` est le même point de résolution que `/ops/observe`.
       soldeAgent: async (tenantId) => {
         if ((await opsStore.getTenantName(tenantId)) === null) return null;
         return {
@@ -3129,17 +2715,15 @@ async function main(): Promise<void> {
           mouvements: await credits.mouvements(tenantId, 50),
         };
       },
-      // ⚠️ Le jour où un espace se supprimera, CECI passe AVANT : sinon le `on delete cascade` emporte notre
+      // 🔴 Le jour où un espace se supprimera, ceci passe avant : sinon le `on delete cascade` emporte notre
       // ligne et la clé survit chez Vercel, identifiant perdu, donc facturable et irrévocable.
       ...(provisionCle ? { revoquerCleModele: (tenantId: string) => revoquerCleGateway(provisionCle, tenantId) } : {}),
       rechargerAgent: async (tenantId, montant, note) => {
         if ((await opsStore.getTenantName(tenantId)) === null) return null;
         const solde = await credits.crediter(tenantId, montant, note);
-        // 🔴 LE PLAFOND DE LA CLE SUIT LE RECHARGEMENT, sinon le client paie et reste bloque : son credit
-        // monte chez nous, et le Gateway continue de le couper au plafond d avant. C est le seul endroit ou
-        // du credit est AJOUTE, donc le seul endroit ou ce rattrapage a lieu d etre.
-        // ⚠️ Ne leve pas et n annule rien : le rechargement est deja ecrit, et un tiers indisponible ne doit
-        // pas faire echouer un paiement. Le plafond rattrapera au mouvement suivant.
+        // 🔴 Le plafond de la clé suit le rechargement, sinon le client paie et reste bloqué au plafond
+        // d'avant. C'est le seul endroit où du crédit est ajouté. Ne lève pas et n'annule rien : le
+        // rechargement est écrit, et le plafond rattrapera au mouvement suivant.
         if (provisionCle) {
           await remonterPlafondApresRecharge(provisionCle, tenantId, montant, (msg, err) => {
             journaliser('error', msg, { err, tenantId });
@@ -3148,11 +2732,9 @@ async function main(): Promise<void> {
         return solde;
       },
       /**
-       * Session d'OBSERVATION d'un espace client : un jeton de session en LECTURE SEULE.
-       *
-       * `userId` porte une valeur PARLANTE et non un identifiant d'utilisateur : le porteur n'a pas de
-       * compte dans cet espace, et si cette valeur se retrouvait un jour dans une trace, elle doit se lire
-       * pour ce qu'elle est. Durée courte (1 h) : une session d'observation n'a pas à survivre à la journée.
+       * Session d'observation d'un espace client : un jeton de session en lecture seule. `userId` porte une
+       * valeur parlante, pas un identifiant (le porteur n'a pas de compte ici) : dans une trace, elle se lit
+       * pour ce qu'elle est. Durée courte (1 h).
        */
       observerTenant: async (tenantId) => {
         const nom = await opsStore.getTenantName(tenantId);
@@ -3165,7 +2747,7 @@ async function main(): Promise<void> {
         return { token, tenantName: nom };
       },
       /**
-       * LE BALAYAGE DU RISQUE D'UN ESPACE, À LA DEMANDE (lot 7). Le câblage est CELUI du worker
+       * Le balayage du risque d'un espace, à la demande, par le câblage du worker
        * (`src/engagement/cablage.ts`) : même plafond, même émetteur, même file d'automations.
        */
       balayerRisque: lanceurBalayageRisque({
@@ -3178,19 +2760,19 @@ async function main(): Promise<void> {
       }),
       /**
        * Le second facteur d'une personne, depuis l'exploitation (le cas multi-espace, que l'admin d'un espace ne
-       * peut pas trancher). Journalisé dans CHACUN de ses espaces, sans acteur.
+       * peut pas trancher). Journalisé dans chacun de ses espaces, sans acteur.
        */
       reinitialiserMfa: async (email) => {
         const identityId = await mfaStore.reinitialiserParEmail(email);
         if (identityId === null) return null;
         const espaces = new Set((await mfaStore.comptes(identityId)).map((c) => c.tenantId)).size;
-        // Le facteur est DÉJÀ retiré : un journal en échec ne doit pas faire croire à l'opérateur que rien n'a eu lieu.
+        // Le facteur est déjà retiré : un journal en échec ne doit pas faire croire que rien n'a eu lieu.
         await tenter('audit ignoré:', () => auditParIdentite(identityId, 'mfa.reinitialise', { par: 'exploitation' }, false));
         return { identityId, espaces };
       },
     },
     opsToken: config.OPS_TOKEN,
-    // Le réglage du plafond de l'API par espace (migration 0181) : lu par le limiteur de `/v1` et `/mcp`, écrit par `/ops`.
+    // Le réglage du plafond de l'API par espace : lu par le limiteur de `/v1` et `/mcp`, écrit par `/ops`.
     plafondApi: new PgPlafondEspaceStore(pool),
     support: {
       enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
@@ -3226,13 +2808,10 @@ async function main(): Promise<void> {
     v1: {
       apiKeys: apiKeyStore,
       /**
-       * Les catalogues de l'API publique (lot 4 du 2026-09-24). CE BLOC NE FAIT QUE BRANCHER : le tri (ce qui
-       * peut partir) vit dans `src/http/v1-catalogues.ts`, testé.
-       *
-       * ⚠️ `templates` lit la liste COMPLÈTE du WABA chez Meta, à travers `catalogueTemplatesCache` (une
-       * minute, par espace et par WABA) : sans lui, un intégrateur qui boucle épuiserait le quota Meta du WABA.
-       * Un template tout juste approuvé y paraît au plus une minute plus tard, ce qui reste en deçà de ce que
-       * l'envoi tolère déjà (`templateVarInfo` garde cinq minutes par template).
+       * Les catalogues de l'API publique. Ce bloc ne fait que brancher : le tri vit dans
+       * `src/http/v1-catalogues.ts`, testé. `templates` passe par `catalogueTemplatesCache` (une minute) : un
+       * template tout juste approuvé y paraît au plus une minute plus tard, en deçà de ce que l'envoi tolère
+       * déjà (`templateVarInfo` garde cinq minutes).
        */
       catalogues: {
         templates: async (tenant) => {
@@ -3245,15 +2824,14 @@ async function main(): Promise<void> {
         messagesRcs: (tenant) => rcsMessageStore.list(tenant),
       },
       /**
-       * Le relais du Meta Business Agent (migration 0161). Le MÊME point de passage que l'agent IA
-       * (`creerAppelConnecteur`), avec les mêmes lectures paresseuses : un appel de l'agent de Meta passe par
-       * les mêmes gardes, et se journalise sous l'appelant `mba`.
+       * Le relais du Meta Business Agent : le même point de passage que l'agent IA (`creerAppelConnecteur`),
+       * donc les mêmes gardes, journalisé sous l'appelant `mba`.
        */
       mbaRelais: {
         numeroDuTenant: (t) => repo.getTenantPhoneNumberId(t),
         outilsActifs: (t, c) => toolCatalog.listActifsConsommateur(t, c),
         requete: (t, id) => agentRequetes.parId(t, id),
-        // 🔴 PROJECTION, jamais la ligne brute : même règle que `lireContact` du worker. Le numéro, le BSUID
+        // 🔴 Projection, jamais la ligne brute (même règle que `lireContact` du worker) : le numéro, le BSUID
         // et le statut d'opt-in n'ont rien à faire dans ce qui part vers le système du client.
         contact: (t, waId) => contactStore.projectionPourTiers(t, waId),
         appeler: creerAppelConnecteur({
@@ -3263,15 +2841,15 @@ async function main(): Promise<void> {
           fuseau: async (t) => (await settingsStore.get(t)).timezone,
         }),
         journal: new PgJournalAppels(pool),
-        // La FORME de l'en-tête du numéro, jamais sa valeur. GARDÉ après l'essai réel du relais (décision du
-        // 2026-09-21, `wip.md`) : sans lui, une macro que Meta cesserait de remplir serait invisible.
+        // La forme de l'en-tête du numéro, jamais sa valeur : sans ce journal, une macro que Meta cesserait de
+        // remplir serait invisible.
         // eslint-disable-next-line no-console
         journaliserForme: (f) => console.info(`mba-relais: en-tete du numero ${f}`),
-        // Borne l'attente d'un ENVOI avant de répondre à Meta, qui coupe un outil vers trois secondes
+        // Borne l'attente d'un envoi avant de répondre à Meta, qui coupe un outil vers trois secondes
         // (`DELAI_REPONSE_ENVOI_MS`, `src/http/mba-relais.ts`).
         attendre: (ms) => dormir(ms),
-        // Un envoi qui échoue APRÈS « C'est parti » est dit à l'agent de Meta par un événement (les gardes vivent
-        // dans le module, testé), comme la réponse « à côté » du lot 4.
+        // Un envoi qui échoue après « C'est parti » est dit à l'agent de Meta par un événement (gardes dans le
+        // module, testé).
         signalerEchecTardif: creerSignalerEchecTardif({
           detenteur: (t, w) => inboxStore.getControlOwner(t, w),
           numero: (t) => repo.getTenantPhoneNumberId(t),
@@ -3279,7 +2857,7 @@ async function main(): Promise<void> {
           // eslint-disable-next-line no-console
           journal: (ligne) => console.log(ligne),
         }),
-        // Les gestes maison : les MÊMES fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
+        // Les gestes maison : les mêmes fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
         maison: {
           poserTag: workflowRuntime.poserTagDepuisAgent,
           ecrireChamp: async (t, waId, champ, valeur) => { await contactStore.mergeFieldsByPhone(t, waId, { [champ]: valeur }); },
@@ -3289,8 +2867,8 @@ async function main(): Promise<void> {
           estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
           antiRejeu: new AntiRejeu(DUREE_ANTI_REJEU_MS),
           dernierMessageDuClient: (t, waId) => inboxStore.dernierMessageDuClient(t, waId),
-          // Les deux gestes qui ENVOIENT : ils rendent le fil sur toute issue ratée, exception comprise
-          // (`src/mba/gestes-envoi.ts`, testé ; revue finale du 2026-09-22).
+          // Les deux gestes qui envoient : ils rendent le fil sur toute issue ratée, exception comprise
+          // (`src/mba/gestes-envoi.ts`, testé).
           ...creerGestesEnvoi({
             graphePublie: async (t, id) => (await workflowStore.getById(id, t))?.graph ?? null,
             fenetreOuverte: async (t, waId) => (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true,
@@ -3300,7 +2878,7 @@ async function main(): Promise<void> {
             ),
             lancerScenario: (t, workflowId, waId, ouverte) => lancerScenarioPourContact(t, workflowId, waId, ouverte),
             rendreLaMain: (t, waId) => workflowRuntime.rendreLaMainApresParcours(t, waId),
-            // Expérience du 2026-09-22 : on ne prend le fil qu'une fois le tour de l'agent de Meta fini.
+            // On ne prend le fil qu'une fois le tour de l'agent de Meta fini.
             attendreFinDuTour: creerAttendreFinDuTour({
               dernierMessageDeLAgent: (t, waId) => inboxStore.dernierMessageDeLAgent(t, waId),
               attendre: (ms) => dormir(ms),
@@ -3313,7 +2891,7 @@ async function main(): Promise<void> {
           }),
         },
       },
-      // Les fiches de l'API publique : identité multi-clés, consentement journalisé, lecture (spec § 2).
+      // Les fiches de l'API publique : identité multi-clés, consentement journalisé, lecture.
       contacts: creerServiceContactsV1({
         contacts: contactStore,
         fields: fieldStore,
@@ -3321,15 +2899,15 @@ async function main(): Promise<void> {
         joignabiliteRcs: async (tenant, e164) => {
           const agentId = await workflowRuntime.rcsStack.agents.agentIdForTenant(tenant);
           if (!agentId) return null;
-          // Les DEUX formes de clé du cache (`+33…` des campagnes, chiffres seuls des scénarios et de l'Inbox).
+          // Les deux formes de clé du cache (`+33…` des campagnes, chiffres seuls des scénarios et de l'Inbox).
           return joignabiliteRcsToutesFormes(rcsJoignabilite, agentId, e164, Date.now());
         },
       }),
       sends: {
         resolveScenario: (tenant, ref) => resolveScenario(tenant, ref, workflowStore),
         /**
-         * Cible node : le code `nod_` vit dans le graphe PUBLIÉ, d'où le scan des scénarios de l'espace. Le
-         * graphe est rendu AVEC le bloc : c'est depuis lui que `ouvertureApi` juge ce qui part en premier.
+         * Cible node : le code `nod_` vit dans le graphe publié, d'où le scan des scénarios de l'espace. Le
+         * graphe est rendu avec le bloc : c'est depuis lui que `ouvertureApi` juge ce qui part en premier.
          * Le libellé du bloc (ou son code à défaut) nomme la campagne dans la console.
          */
         resolveNode: async (tenant, code) => {
@@ -3341,17 +2919,17 @@ async function main(): Promise<void> {
           return { ok: true, value: { workflowId: r.value.workflowId, nodeId: r.value.nodeId, label, graph: r.value.graph } };
         },
         /**
-         * 🔴 LA CATÉGORIE D'UN TEMPLATE EST LUE CHEZ META, comme dans l'Inbox (`categorieDuModele`) : déclarée
-         * par l'appelant, un template marketing annoncé « utility » partait aux contacts sans consentement.
-         * MÊME lecture et MÊME cache court que le worker. Une panne de lecture est « illisible », jamais
+         * 🔴 La catégorie d'un template est lue chez Meta, comme dans l'Inbox (`categorieDuModele`) : déclarée
+         * par l'appelant, un template marketing annoncé « utility » partirait aux contacts sans consentement.
+         * Même lecture et même cache court que le worker. Une panne de lecture est « illisible », jamais
          * « utility » par défaut.
          */
         lireModele: async (tenant, name, language) => {
           try {
             return verdictModele(await workflowRuntime.templateVarInfo(tenant, name, language), language);
           } catch (err) {
-            // Journalisée : une panne DURABLE (jeton révoqué, compte déconnecté) rendrait sinon 422 pour toujours
-            // sans aucune trace chez nous. Le verdict reste « illisible », jamais « utility » par défaut.
+            // Journalisée : une panne durable (jeton révoqué, compte déconnecté) rendrait sinon 422 pour
+            // toujours sans aucune trace chez nous.
             console.error('v1/sends: lecture du template chez Meta échouée:', messageDe(err));
             return { statut: 'illisible' };
           }
@@ -3360,12 +2938,12 @@ async function main(): Promise<void> {
         getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
         phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
         numeroEstDelie: (pn) => gardeNumeroDelie.estDelie(pn),
-        // La résolution de fiche et l'écriture du consentement du lot 1, sur les MÊMES dépendances que
-        // `/v1/contacts` : le dépôt des contacts lui-même, et `depsConsentementDe`. Les quatre paramètres de
-        // chaque flèche sont gardés par `tests/v1-cablage.test.ts`.
+        // La résolution de fiche et l'écriture du consentement, sur les mêmes dépendances que `/v1/contacts`
+        // (le dépôt des contacts et `depsConsentementDe`). Les quatre paramètres de chaque flèche sont gardés
+        // par `tests/v1-cablage.test.ts`.
         resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
         appliquerConsentement: (tenant, contactId, consent, source) => appliquerConsentement(depsConsentement, tenant, contactId, consent, source),
-        // Bloqués COMPRIS : l'API les écarte avec un motif au lieu de les perdre (défaut 1).
+        // Bloqués compris : l'API les écarte avec un motif au lieu de les perdre.
         listContactsPourEnvoi: (tenant, ids) => repo.listContactsPourEnvoiApi(tenant, ids),
         createSend: (input, recipients) => repo.createWithRecipients(input, recipients),
         enqueue: (campaignId, tenantId, count, rate) =>
@@ -3374,58 +2952,50 @@ async function main(): Promise<void> {
         idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
         idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),
         lireEnvoi: (sendId, tenant) => repo.lireEnvoiApi(sendId, tenant),
-        // La cible `rcsMessage` (lot 3) : la bibliothèque par son nom, et l'agent RCS de l'espace.
+        // La cible `rcsMessage` : la bibliothèque par son nom, et l'agent RCS de l'espace.
         rcs: {
           messageRcsParNom: (tenant, nom) => rcsMessageStore.getByName(tenant, nom),
           agentIdForTenant: (tenant) => workflowRuntime.rcsStack.agents.agentIdForTenant(tenant),
         },
       },
       /**
-       * `POST /v1/messages/whatsapp` : un simple texte dans la fenêtre de 24 h (lot 7 du 2026-09-23, adresse
-       * renommée par le lot 2 de l'API cohérente du 2026-09-24).
-       *
-       * 🔴 CE BLOC NE FAIT QUE BRANCHER, il ne décide de rien. Les quatre gestes (fenêtre, désabonnement,
-       * envoi, trace) vivent dans `repondreDansLaFenetre`, partagé avec la console et le serveur MCP.
-       *
-       * 🔴 ET `estDesabonne` EST BRANCHÉE ICI, ce qui n'était vrai que du seul MCP jusqu'à ce lot. La règle
-       * est « une MACHINE ne parle pas à quelqu'un qui a dit STOP » : elle se lisait `origine === 'mcp'`,
-       * donc en liste d'appelants, et l'API publique serait passée à travers sans qu'aucun test ne tombe.
-       * Elle demande désormais l'inverse (tout ce qui n'est pas un opérateur humain), et la dépendance est
-       * REQUISE par le type depuis le lot 3 du plan du 2026-09-14 : l'oublier ne compile pas.
+       * `POST /v1/messages/whatsapp` : un simple texte dans la fenêtre de 24 h. Ce bloc ne fait que brancher :
+       * les quatre gestes (fenêtre, désabonnement, envoi, trace) vivent dans `repondreDansLaFenetre`, partagé
+       * avec la console et le serveur MCP.
+       * 🔴 `estDesabonne` y est branchée, requise par le type : une machine ne parle pas à quelqu'un qui a dit
+       * STOP, et la règle vise tout ce qui n'est pas un opérateur humain, pas une liste d'appelants.
        */
       messages: {
         repondre: depsRepondre,
-        // La MÊME résolution de fiche, sur le MÊME dépôt, que `/v1/contacts` et `/v1/sends` (lot 1). La route
-        // demande `jamais` : un message simple ne crée pas de fiche, le câblage n'en décide pas.
+        // La même résolution de fiche, sur le même dépôt, que `/v1/contacts` et `/v1/sends`. La route demande
+        // `jamais` : un message simple ne crée pas de fiche.
         resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
-        // Le fil CHERCHÉ, jamais créé : un refus ne laisse pas de fil vide dans l'Inbox. Le MÊME fragment que le
-        // bouton « Ouvrir la conversation » du mini-CRM : il refuse un contact supprimé comme un contact bloqué,
-        // ce qui EST la garde de blocage de cette route.
+        // Le fil cherché, jamais créé : un refus ne laisse pas de fil vide dans l'Inbox. Même fragment que le
+        // bouton « Ouvrir la conversation » du mini-CRM, qui refuse un contact supprimé comme un contact
+        // bloqué : c'est la garde de blocage de cette route.
         filDuContact: (tenant, contactId) => inboxStore.filDuContact(tenant, contactId),
       },
       /**
-       * `POST /v1/messages/rcs` (lot 3). Ce bloc ne fait que brancher : les gardes du RCS vivent dans
-       * `envoyerRcsLibre`, la MÊME fonction que le bouton RCS de l'Inbox (`depsRcsLibre`).
+       * `POST /v1/messages/rcs`. Ce bloc ne fait que brancher : les gardes du RCS vivent dans
+       * `envoyerRcsLibre`, la même fonction que le bouton RCS de l'Inbox (`depsRcsLibre`).
        */
       messagesRcs: {
-        // La MÊME fermeture que les blocs `sends` et `messages` : le MÊME dépôt que `/v1/contacts`, sinon une
-        // personne serait trouvée par une route et pas par l'autre. Ses quatre paramètres passent.
+        // La même résolution de fiche que `sends` et `messages`, sur le même dépôt que `/v1/contacts` : sinon
+        // une personne serait trouvée par une route et pas par l'autre. Ses quatre paramètres passent.
         resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
         etatPourEnvoi: (tenant, id) => contactStore.etatPourEnvoi(tenant, id),
         rcs: depsRcsLibre,
         ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
-        // `app_human`, comme les autres machines : le scénario cesse d'avancer seul. QUI a parlé est porté par
+        // `app_human`, comme les autres machines : le scénario cesse d'avancer seul. Qui a parlé est porté par
         // l'origine du message (`api`).
         takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
         recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) =>
           inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
       },
       /**
-       * Serveur MCP (`POST /mcp`) : les MÊMES fonctions que la console, jamais des variantes.
-       *
-       * Chaque ligne ci-dessous est déjà branchée plus haut pour les routes de l'inbox et du mini-CRM. C'est
-       * exactement l'intention : un outil MCP n'est qu'un second appelant. Le jour où une garde change (la
-       * fenêtre de 24 h, la prise de fil, le scope tenant), elle change pour les deux d'un coup.
+       * Serveur MCP (`POST /mcp`) : les mêmes fonctions que la console, jamais des variantes. Un outil MCP
+       * n'est qu'un second appelant : une garde qui change (fenêtre de 24 h, prise de fil, scope tenant) change
+       * pour les deux d'un coup.
        */
       mcp: {
         ...depsRepondre,
@@ -3443,12 +3013,9 @@ async function main(): Promise<void> {
   });
 
   /**
-   * L'attente du pool, versée en base une fois par minute (lot 7 du plan post-audit, migration 0109).
-   *
-   * L'API a SON pool, distinct de celui du worker : deux lignes par minute, jamais agrégées, sinon on perdrait
-   * justement l'information qui dit lequel des deux souffre. Un `registreDeTaches` serait démesuré pour une
-   * seule minuterie ici ; elle est donc posée à la main, `unref` (elle ne doit pas retenir le process) et
-   * arrêtée dans l'arrêt propre.
+   * L'attente du pool, versée en base une fois par minute. L'API a son propre pool, distinct de celui du
+   * worker : deux lignes par minute, jamais agrégées, pour savoir lequel des deux souffre. Une seule
+   * minuterie, posée à la main, `unref` (elle ne retient pas le process) et arrêtée dans l'arrêt propre.
    */
   const minuteriePoolAttentes = setInterval(() => {
     void viderVersLaBase(poolAttentesStore, mesureAttentePool, 'api', new Date(), (err) => {

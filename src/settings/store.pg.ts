@@ -26,91 +26,59 @@ export interface TenantSettings {
   /** Toggle « Campagnes via données HubSpot » : OFF = aucun appel au connecteur. */
   hubspotListsEnabled: boolean;
   /**
-   * Pause des campagnes via listes HubSpot (F3-b). Piloté ENSEMBLE avec la pause du push (F3-a) par l'action Pause du
-   * toggle Synchronisation. true = campagnes listes suspendues (le gate effectif est `hubspotListsEnabled && !campaignsPaused`).
-   * N'écrase jamais `hubspotListsEnabled` : la reprise (campaignsPaused -> false) restaure le réglage d'origine.
+   * Pause des campagnes via listes HubSpot, pilotée avec la pause du push par l'action Pause du toggle
+   * Synchronisation (gate effectif : `hubspotListsEnabled && !campaignsPaused`). N'écrase jamais
+   * `hubspotListsEnabled` : la reprise restaure le réglage d'origine.
    */
   campaignsPaused: boolean;
-  /** Auto-relance des échecs de livraison (F6). true = le sweeper relance 131049/131026 selon la politique de recouvrement. */
+  /** Auto-relance des échecs de livraison : le sweeper relance 131049/131026 selon la politique de recouvrement. */
   autoRetryEnabled: boolean;
   /**
-   * Durée du GEL après qu'un opérateur a pris la main, en secondes. Pendant ce temps, ni le scénario ni
-   * l'agent de Meta n'écrivent au client.
-   *
-   * null = le client n'a rien réglé, le défaut du serveur s'applique. 0 = pas de reprise automatique,
-   * la conversation reste à l'humain jusqu'à ce qu'il la rende explicitement.
+   * Durée du gel après qu'un opérateur a pris la main, en secondes : ni le scénario ni l'agent de Meta
+   * n'écrivent au client. null = défaut du serveur. 0 = pas de reprise automatique, la conversation reste à
+   * l'humain jusqu'à ce qu'il la rende.
    */
   controlHandbackSeconds: number | null;
   /**
    * Quand l'agent de Meta passe-t-il la main à un humain (écran « Activation ») ? Pilote `handoff.enabled`
-   * chez Meta. `null` = jamais réglé : on n'écrit alors RIEN chez Meta, et l'écran montre le défaut usine.
+   * chez Meta. `null` = jamais réglé : on n'écrit rien chez Meta, et l'écran montre le défaut usine.
    */
   mbaHandoffMode: MbaHandoffMode | null;
   /**
-   * Quand un AGENT IA passe la main, l'équipe est-elle joignable ? Mêmes trois valeurs que le MBA, et c'est
-   * délibéré : l'écran montre les deux agents côte à côte, et deux vocabulaires voisins pour la même
-   * question seraient impossibles à rapprocher.
-   *
-   * 🔴 IL NE DÉCIDE PAS SI ON TRANSFÈRE : la conversation arrive dans « À traiter » dans tous les cas. Il
-   * décide de ce que l'agent a le droit de PROMETTRE. Détail : `src/agent/disponibilite-equipe.ts`.
-   *
-   * ⚠️ UNE COLONNE À PART DE `mbaHandoffMode`, qui pilote `handoff.enabled` CHEZ META : les confondre ferait
-   * reconfigurer l'agent de Meta quand le client règle son agent IA, et l'inverse.
+   * Quand un agent IA passe la main, l'équipe est-elle joignable ? Mêmes trois valeurs que le MBA, pour que
+   * l'écran compare les deux agents côte à côte. Il ne décide pas si on transfère (la conversation arrive
+   * dans « À traiter » dans tous les cas), mais ce que l'agent a le droit de promettre
+   * (`src/agent/disponibilite-equipe.ts`). Colonne distincte de `mbaHandoffMode`, qui pilote
+   * `handoff.enabled` chez Meta : les confondre reconfigurerait l'agent de Meta quand le client règle son
+   * agent IA.
    */
   agentTransfertMode: ModeTransfert | null;
   /**
    * La requête de connecteur (Tools > Connecteurs API) jouée quand quelqu'un se désabonne, ou `null`.
-   *
-   * 🔴 C'EST CE QUI REND UN REFUS OPPOSABLE AILLEURS QUE CHEZ NOUS : un opt-out qui ne vit que dans notre
-   * base laisse le client continuer à écrire à cette personne depuis son CRM, et c'est lui qui en répond.
-   *
-   * ⚠️ `null` PAR DÉFAUT, POUR TOUT LE MONDE. Un défaut qui enverrait quoi que ce soit à un système tiers
-   * sans qu'on l'ait choisi serait l'inverse de ce que le centre de sécurité garantit. Détail dans
-   * `src/crm/poussee-optout.ts` et la migration 0139.
+   * 🔴 C'est ce qui rend un refus opposable hors de chez nous : un opt-out qui ne vit que dans notre base
+   * laisse le client écrire à cette personne depuis son CRM. `null` par défaut : rien ne part vers un
+   * système tiers sans qu'on l'ait choisi. Détail dans `src/crm/poussee-optout.ts`.
    */
   optoutRequestId: string | null;
   /**
-   * CE QUE CET ESPACE FACTURE (migration 0154), en objet IMBRIQUE et jamais en six champs a plat.
-   *
-   * 🔴 IMBRIQUE, ET C'EST LA REGLE DU `Pick` RECOPIE DU `CLAUDE.md`. Six champs a plat forment une liste
-   * qu'il faut tenir alignee a la main dans chaque contrat qu'ils traversent, et elle derive : le depot l'a
-   * deja paye en production (deux capacites cablees dans le worker, absentes du contrat, jamais vues par le
-   * moteur). Un objet passe d'un seul tenant.
-   *
-   * ⚠️ JAMAIS `null` : un espace qui n'a rien regle recoit `GRILLE_DEFAUT`, dont la marge a 100 reproduit
-   * exactement le tarif Meta. Le defaut est donc invisible, ce qui est tout son interet.
-   */
-  /**
-   * QUAND les agents IA de cet espace annoncent qu'ils sont des IA (migration 0140). `null` = rien n'a
-   * jamais été réglé ici, le code retombe alors sur `session`, exactement le défaut de 0126.
-   *
-   * 🔴 AU NIVEAU DE L'ESPACE, ET PAS PAR AGENT, parce que l'AI Act (article 50) fait peser l'obligation sur
-   * la marque DÉPLOYANTE. Un client qui a trois agents n'a pas à répondre trois fois à la même question de
-   * conformité, et trois réponses différentes seraient trois politiques, ce qui n'existe pas juridiquement.
-   *
-   * ⚠️ LE META BUSINESS AGENT N'EST PAS GOUVERNÉ PAR CE RÉGLAGE : Meta écrit déjà « IA » sous les messages
-   * de son agent, et notre propre déclaration en ferait deux. L'écran le dit.
+   * Quand les agents IA de cet espace annoncent qu'ils sont des IA. `null` = rien n'a été réglé, le code
+   * retombe sur `session`. Au niveau de l'espace et pas par agent : l'AI Act (article 50) fait peser
+   * l'obligation sur la marque déployante, qui n'a qu'une politique. Le Meta Business Agent n'est pas
+   * gouverné par ce réglage : Meta écrit déjà « IA » sous ses messages.
    */
   mentionIaFrequence: FrequenceMentionIa | null;
   /**
-   * Un AGENT peut-il PRENDRE une conversation du pot commun, c'est-à-dire se l'affecter (migration 0160) ?
-   *
-   * 🔴 PRENDRE, JAMAIS RÉAFFECTER (arbitrage de Julien du 2026-09-19) : la distribution reste le geste de
-   * l'encadrement. `false` par défaut, donc le comportement d'avant le réglage pour tout espace qui n'a rien
-   * choisi. La règle qui l'applique : `peutPrendre` (`src/inbox/assignment.ts`).
+   * Un agent peut-il prendre une conversation du pot commun, c'est-à-dire se l'affecter ? Prendre, jamais
+   * réaffecter : la distribution reste le geste de l'encadrement. `false` par défaut. Règle : `peutPrendre`
+   * (`src/inbox/assignment.ts`).
    */
   agentsPeuventPrendre: boolean;
   /**
-   * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, Paramètres > Intégrations).
-   *
-   * Allumé, le bloc HubSpot s'affiche sur l'Accueil, numéro WhatsApp ou pas. `false` par défaut ; la
-   * migration l'a allumé pour les espaces déjà reliés à un portail.
-   *
-   * 🔴 IL NE S'ÉTEINT PAS TANT QU'UN PORTAIL EST RELIÉ (la route rend 409) : les analyses partiraient encore
-   * vers HubSpot depuis un espace où il paraîtrait éteint. On délie d'abord (« Déconnexion complète »).
-   *
-   * ⚠️ IL NE GOUVERNE PAS le masquage des fonctions HubSpot des campagnes et des automations : celui-là suit
-   * le PORTAIL relié (`hubspotPortalConnecte`, lot 9).
+   * L'interrupteur HubSpot de l'espace (Paramètres > Intégrations) : allumé, le bloc HubSpot s'affiche sur
+   * l'Accueil, numéro WhatsApp ou pas. `false` par défaut.
+   * Il ne s'éteint pas tant qu'un portail est relié (la route rend 409) : les analyses partiraient encore
+   * vers HubSpot depuis un espace où il paraîtrait éteint. Il ne gouverne pas le masquage des fonctions
+   * HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`).
    */
   hubspotActif: boolean;
 }
@@ -123,19 +91,20 @@ export interface TenantSettings {
 export type MbaHandoffMode = 'always' | 'business_hours' | 'never';
 
 /**
- * Les colonnes de `tenant_settings` qu'un setter écrit SEULES. Union FERMÉE, et c'est ce qui rend sûr le nom
- * de colonne interpolé dans `poser` : aucune valeur venue d'une requête ne peut y entrer.
+ * Les colonnes de `tenant_settings` qu'un setter écrit seules.
+ * 🔴 Union fermée : c'est ce qui rend sûr le nom de colonne interpolé dans `poser`, aucune valeur venue
+ * d'une requête ne peut y entrer.
  */
 type ColonneReglage =
   | 'hubspot_actif' | 'salesforce_actif' | 'mba_relais_cle_id' | 'agents_peuvent_prendre' | 'mention_ia_frequence'
   | 'optout_request_id' | 'mba_handoff_mode' | 'agent_transfert_mode' | 'timezone' | 'business_hours'
   | 'mba_enabled' | 'control_handback_seconds' | 'hubspot_lists_enabled';
 
-/** Réglages par tenant (upsert). Toggle MBA on/off + toggle import de listes HubSpot. */
+/** Réglages par espace, un upsert ciblé par réglage. */
 export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
-  /** Upsert CIBLÉ d'un seul réglage : crée la ligne de l'espace au besoin, n'écrase aucun autre réglage. */
+  /** Upsert ciblé d'un seul réglage : crée la ligne de l'espace au besoin, n'écrase aucun autre réglage. */
   private async poser(tenantId: string, colonne: ColonneReglage, valeur: unknown): Promise<void> {
     await this.pool.query(
       `insert into tenant_settings (tenant_id, ${colonne}, updated_at) values ($1, $2${colonne === 'business_hours' ? '::jsonb' : ''}, now())
@@ -147,23 +116,10 @@ export class PgTenantSettingsStore {
   async get(tenantId: string): Promise<TenantSettings> {
     const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null; mention_ia_frequence: string | null } & Record<string, unknown>>(
       /**
-       * 🔴 `select *`, ET C'EST UN RENVERSEMENT ASSUME. La premiere version NOMMAIT les six colonnes de la
-       * migration 0154, au motif qu'une etoile fait entrer toute colonne future sans qu'on l'ait decide. Ce
-       * motif est reel, mais il pesait infiniment moins que ce qu'il achetait : cette methode est sur le
-       * chemin de CHAQUE MESSAGE ENTRANT (`mbaActifPour`), du fuseau de chaque campagne, et de chaque tour
-       * d'agent. La nommer en clair rendait la migration 0154 bloquante pour l'INGESTION : un deploiement
-       * avant `migrate` ne cassait plus une page, il reproduisait le 2026-08-17, une heure et demie sans
-       * enregistrer un seul message.
-       *
-       * ⚠️ ET LE MEME LOT AVAIT DEJA TRANCHE DANS L'AUTRE SENS, dans un AUTRE fichier (`PgStatsStore.grillePrix`,
-       * `src/stats/store.pg.ts`) : elle
-       * lit ces memes six colonnes en `select *` dans un `try/catch`, avec pour justification ecrite que la
-       * migration n'est pas encore passee entre le deploiement de Vercel et celui du VPS. Deux lecteurs des
-       * memes colonnes, deux decisions opposees, dans le meme commit. Releve en revue finale le 2026-09-18.
-       *
-       * ⚠️ AUCUN SECRET DANS CETTE TABLE : verifie colonne par colonne avant d'ouvrir l'etoile. Ce sont des
-       * reglages d'espace, et `grilleDepuisLigne` ne lit que ce qu'elle connait, en retombant sur les
-       * defauts pour le reste.
+       * `select *` : cette méthode est sur le chemin de chaque message entrant (`mbaActifPour`), du fuseau de
+       * chaque campagne et de chaque tour d'agent. Nommer les colonnes rendrait chaque migration de
+       * `tenant_settings` bloquante pour l'ingestion (un déploiement avant `migrate` casserait la réception).
+       * Aucun secret dans cette table, et la conversion ci-dessous ne lit que ce qu'elle connaît.
        */
       `select * from tenant_settings where tenant_id = $1`,
       [tenantId],
@@ -178,39 +134,32 @@ export class PgTenantSettingsStore {
       timezone: r?.timezone ?? DEFAULT_TIMEZONE,
       businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
       mbaHandoffMode: r?.mba_handoff_mode ?? null,
-      // ⚠️ Une valeur inconnue vaut `null`, donc le défaut `always`, donc le comportement d'aujourd'hui : une
-      // base en retard sur la migration 0156 se comporte exactement comme avant.
+      // Une valeur inconnue vaut `null`, donc le défaut `always` : une base en retard sur la migration se
+      // comporte comme avant.
       agentTransfertMode: estModeTransfert(r?.agent_transfert_mode) ? r.agent_transfert_mode : null,
       optoutRequestId: r?.optout_request_id ?? null,
-      // ⚠️ Une valeur inconnue vaut `null`, donc « rien n'a été réglé », donc le défaut `session`. Une base
-      // en retard (migration 0140 pas encore passée) se comporte comme avant, sans rien casser.
+      // Une valeur inconnue vaut `null`, donc « rien n'a été réglé », donc le défaut `session`.
       mentionIaFrequence: estFrequenceMention(r?.mention_ia_frequence) ? r.mention_ia_frequence : null,
-      // 🔴 LA MEME CONVERSION QUE LA LECTURE DES STATISTIQUES, par la MEME fonction pure. En ecrire une
-      // seconde ici ferait deux facons de lire la meme ligne, et le jour ou l'une gere un `numeric` rendu
-      // en chaine et pas l'autre, l'ecran de reglages et la carte des couts afficheraient deux prix.
-      // ⚠️ `=== true` et pas `?? false` : une base en retard sur 0160 ne rend pas la colonne (`select *`),
-      // et c'est alors le comportement d'avant, que personne ne peut prendre.
+      // `=== true` : une base en retard ne rend pas la colonne (`select *`), et personne ne peut alors prendre.
       agentsPeuventPrendre: r?.agents_peuvent_prendre === true,
-      // ⚠️ `=== true`, même raison : une base en retard sur 0179 ne rend pas la colonne, et l'interrupteur
-      // se lit alors éteint. L'Accueil montre quand même le bloc d'un espace relié à un portail.
+      // `=== true`, même raison : une base en retard ne rend pas la colonne, l'interrupteur se lit éteint.
+      // L'Accueil montre quand même le bloc d'un espace relié à un portail.
       hubspotActif: r?.hubspot_actif === true,
     };
   }
 
   /**
-   * Allume ou éteint l'interrupteur HubSpot de l'espace. Upsert ciblé : n'écrase aucun autre réglage.
-   *
-   * ⚠️ LA RÈGLE « PAS D'EXTINCTION AVEC UN PORTAIL RELIÉ » EST DANS LA ROUTE, pas ici : ce store ne parle qu'à
-   * la base, et le lien du portail vit dans le schéma du connecteur.
+   * Allume ou éteint l'interrupteur HubSpot de l'espace. La règle « pas d'extinction avec un portail relié »
+   * est dans la route : ce store ne parle qu'à la base.
    */
   async setHubspotActif(tenantId: string, actif: boolean): Promise<void> {
     await this.poser(tenantId, 'hubspot_actif', actif);
   }
 
   /**
-   * L'interrupteur Salesforce de l'espace (migration 0183). Lu À PART, et non ajouté au type des réglages : seule
-   * la route de l'intégration le lit (`src/http/salesforce.ts`), et un champ de plus dans ce type imposerait de le
-   * déclarer dans chaque fixture qui le construit, pour rien. Un espace sans ligne de réglages est éteint.
+   * L'interrupteur Salesforce de l'espace, lu à part : seule la route de l'intégration le lit
+   * (`src/http/salesforce.ts`), et un champ de plus dans `TenantSettings` s'imposerait à chaque fixture. Un
+   * espace sans ligne de réglages est éteint.
    */
   async salesforceActif(tenantId: string): Promise<boolean> {
     const r = await this.pool.query<{ salesforce_actif: boolean }>(
@@ -225,10 +174,8 @@ export class PgTenantSettingsStore {
   }
 
   /**
-   * La clé d'API posée chez Meta pour le relais du MBA (migration 0161), ou `null`.
-   *
-   * ⚠️ HORS DE `get()`, délibérément : seule la publication la lit, et l'ajouter au type des réglages aurait
-   * obligé toutes les fixtures qui en construisent un à la déclarer.
+   * La clé d'API posée chez Meta pour le relais du MBA, ou `null`. Hors de `get()` : seule la publication la
+   * lit.
    */
   async mbaRelaisCleId(tenantId: string): Promise<string | null> {
     const r = await this.pool.query<{ id: string | null }>(
@@ -238,66 +185,56 @@ export class PgTenantSettingsStore {
     return r.rows[0]?.id ?? null;
   }
 
-  /** Retient la clé posée chez Meta (`null` = aucune). Upsert ciblé : n'écrase aucun autre réglage. */
+  /** Retient la clé posée chez Meta (`null` = aucune). */
   async setMbaRelaisCleId(tenantId: string, id: string | null): Promise<void> {
     await this.poser(tenantId, 'mba_relais_cle_id', id);
   }
 
-  /**
-   * Autorise (ou non) les agents à PRENDRE une conversation du pot commun. Upsert ciblé : n'écrase aucun
-   * autre réglage.
-   */
+  /** Autorise (ou non) les agents à prendre une conversation du pot commun. */
   async setAgentsPeuventPrendre(tenantId: string, actif: boolean): Promise<void> {
     await this.poser(tenantId, 'agents_peuvent_prendre', actif);
   }
 
   /**
-   * Règle QUAND les agents de cet espace annoncent qu'ils sont des IA. Upsert ciblé : n'écrase aucun autre
-   * réglage.
-   *
-   * ⚠️ IL N'Y A PAS DE « remettre à null » : le client choisit entre trois régimes, dont `jamais`. Rendre le
-   * réglage à « non renseigné » n'aurait aucun sens pour lui, et ferait retomber l'espace sur un défaut
-   * qu'il n'a pas choisi.
+   * Règle quand les agents de cet espace annoncent qu'ils sont des IA. Pas de retour à `null` : le client
+   * choisit entre trois régimes, dont `jamais`, et « non renseigné » le ferait retomber sur un défaut qu'il
+   * n'a pas choisi.
    */
   async setMentionIaFrequence(tenantId: string, frequence: FrequenceMentionIa): Promise<void> {
     await this.poser(tenantId, 'mention_ia_frequence', frequence);
   }
 
   /**
-   * Branche (ou débranche, avec `null`) le connecteur prévenu à chaque désabonnement. Upsert ciblé : n'écrase
-   * aucun autre réglage.
-   *
-   * ⚠️ L'EXISTENCE DE LA REQUÊTE EST VÉRIFIÉE PAR LA ROUTE, pas ici : ce store ne parle qu'à la base. La
-   * contrainte de la migration 0139 reste la ceinture (une requête d'un AUTRE espace, ou inexistante, est
-   * refusée par la clé étrangère plutôt qu'écrite).
+   * Branche (ou débranche, avec `null`) le connecteur prévenu à chaque désabonnement.
+   * 🔴 La route vérifie que la requête appartient à cet espace ; la clé étrangère n'est que la ceinture (elle
+   * refuse une requête inexistante, pas celle d'un autre espace).
    */
   async setOptoutRequestId(tenantId: string, requestId: string | null): Promise<void> {
     await this.poser(tenantId, 'optout_request_id', requestId);
   }
 
   /**
-   * Enregistre le choix de l'écran « Activation ». Upsert ciblé : n'écrase aucun autre réglage. L'écriture
-   * chez Meta (`handoff.enabled`) est faite par l'appelant, pas ici : ce store ne parle qu'à la base.
+   * Enregistre le choix de l'écran « Activation ». L'écriture chez Meta (`handoff.enabled`) est faite par
+   * l'appelant : ce store ne parle qu'à la base.
    */
   async setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void> {
     await this.poser(tenantId, 'mba_handoff_mode', mode);
   }
 
   /**
-   * Enregistre quand l'équipe est joignable pour les agents IA. Upsert ciblé : n'écrase aucun autre réglage.
-   *
-   * ⚠️ Rien n'est écrit chez Meta ici, contrairement à son voisin : ce réglage ne concerne QUE nos agents.
+   * Enregistre quand l'équipe est joignable pour les agents IA. Rien n'est écrit chez Meta : ce réglage ne
+   * concerne que nos agents.
    */
   async setAgentTransfertMode(tenantId: string, mode: ModeTransfert): Promise<void> {
     await this.poser(tenantId, 'agent_transfert_mode', mode);
   }
 
-  /** Règle le fuseau IANA du tenant (validé en amont par la route). Upsert ciblé : n'écrase aucun autre réglage. */
+  /** Règle le fuseau IANA du tenant (validé en amont par la route). */
   async setTimezone(tenantId: string, timezone: string): Promise<void> {
     await this.poser(tenantId, 'timezone', timezone);
   }
 
-  /** Règle les heures d'ouverture (déjà normalisées par la route). Upsert ciblé. */
+  /** Règle les heures d'ouverture (déjà normalisées par la route). */
   async setBusinessHours(tenantId: string, hours: BusinessHours): Promise<void> {
     await this.poser(tenantId, 'business_hours', JSON.stringify(hours));
   }
@@ -308,34 +245,19 @@ export class PgTenantSettingsStore {
 
   /**
    * Règle la durée du gel après prise de main par un opérateur. `null` remet le défaut du serveur, `0`
-   * supprime la reprise automatique. Upsert ciblé : n'écrase aucun autre réglage.
+   * supprime la reprise automatique.
    */
   async setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void> {
     await this.poser(tenantId, 'control_handback_seconds', seconds);
   }
 
   /**
-   * (remplacee par `setGrillePrixGlobale` le 2026-09-23 : la grille n'appartient plus a un espace)
-   *
-   * 🔴 LES SIX D'UN COUP, JAMAIS UN SEUL. Il n'existe pas de grille partielle : un `patch` a un champ
-   * obligerait a fusionner avec l'existant a l'ecriture, et c'est precisement la ou le depot s'est deja
-   * fait avoir (une liste REMPLACEE au lieu d'etre fusionnee, qui a detruit du travail client). L'appelant
-   * a valide les six par `valideGrille`, qui refuse tout ce qui n'est pas complet.
-   *
-   * ⚠️ AUCUNE BORNE ICI : elles vivent dans `valideGrille` (pour le message) et dans les CHECK de la
-   * migration 0154 (pour la garantie). Une troisieme copie ici serait la premiere a deriver.
-   */
-  /**
-   * ENREGISTRE LA GRILLE GLOBALE (migration 0168). Elle ne prend plus d'espace : il n'y en a qu'une.
-   *
-   * 🔴 `on conflict (id)` SUR LE SINGLETON, ET PAS UN `update` NU. Un `update` sans ligne ne fait rien et ne
-   * rend aucune erreur : sur une instance où la migration a créé la table sans reprise, le prix saisi dans
-   * `/ops` serait parti dans le vide, et l'écran aurait affiché « enregistré ». L'upsert écrit dans les deux
-   * cas, et la clé primaire garantit qu'il n'y aura jamais une seconde grille.
-   *
-   * ⚠️ `modifie_par` EST LA SEULE TRACE DE QUI A CHANGE UN PRIX : le jeton de `/ops` est PARTAGÉ, il n'y a
-   * donc aucune identité d'opérateur à enregistrer. C'est la même raison qui rend la note obligatoire sur le
-   * rechargement d'un solde.
+   * Enregistre la grille de prix globale : il n'y en a qu'une, pour tous les espaces. Les six champs
+   * s'écrivent d'un coup, validés complets par `valideGrille` ; les bornes vivent là et dans les CHECK.
+   * 🔴 `on conflict (id)` sur le singleton, pas un `update` nu : un `update` sans ligne ne fait rien et ne
+   * rend aucune erreur, le prix saisi dans `/ops` partirait dans le vide. La clé primaire garantit qu'il n'y
+   * aura jamais une seconde grille. `modifie_par` est la seule trace de qui a changé un prix : le jeton de
+   * `/ops` est partagé, il n'y a aucune identité d'opérateur à enregistrer.
    */
   async setGrillePrixGlobale(g: GrillePrix, par: string): Promise<void> {
     await this.pool.query(
@@ -358,13 +280,8 @@ export class PgTenantSettingsStore {
   }
 
   /**
-   * Délais de reprise par tenant, pour les tenants donnés, en MILLISECONDES. Utilisé par le balayage :
-   * il lit un lot de conversations de plusieurs clients d'un coup et doit appliquer à chacune le réglage
-   * de SON client. Les tenants sans réglage sont absents de la Map, l'appelant retombe sur son défaut.
-   */
-  /**
-   * Quels tenants de ce lot ont l'agent de Meta allumé ? Un seul aller-retour, comme `handbackMsByTenant` :
-   * le balayage traite un lot de conversations, une requête par tenant le rendrait quadratique.
+   * Quels tenants de ce lot ont l'agent de Meta allumé ? Un seul aller-retour : le balayage traite un lot de
+   * conversations, une requête par tenant le rendrait quadratique.
    */
   async mbaActifParTenant(tenantIds: readonly string[]): Promise<Set<string>> {
     if (tenantIds.length === 0) return new Set();
@@ -375,6 +292,11 @@ export class PgTenantSettingsStore {
     return new Set(res.rows.map((r) => r.tenant_id));
   }
 
+  /**
+   * Délais de reprise des tenants donnés, en millisecondes, pour le balayage qui applique à chaque
+   * conversation d'un lot le réglage de son client. Un tenant sans réglage est absent de la Map : l'appelant
+   * retombe sur son défaut.
+   */
   async handbackMsByTenant(tenantIds: readonly string[]): Promise<Map<string, number>> {
     if (tenantIds.length === 0) return new Map();
     const res = await this.pool.query<{ tenant_id: string; control_handback_seconds: number }>(
@@ -386,12 +308,10 @@ export class PgTenantSettingsStore {
   }
 
   /**
-   * Les tenants qui ont choisi « seulement pendant mes heures d'ouverture ». C'est le SEUL mode qui varie
-   * dans la journée, donc le seul que le balayage a à connaître : `always` et `never` sont écrits une fois
-   * chez Meta au moment du choix et n'ont plus rien à faire ensuite.
-   *
-   * Les défauts de fuseau et d'horaires sont appliqués ICI : un tenant qui n'a jamais réglé ses horaires
-   * doit basculer sur le défaut usine (lun-ven 9h-18h), pas rester dans un état sans horaires du tout.
+   * Les tenants en mode « seulement pendant mes heures d'ouverture », le seul mode qui varie dans la
+   * journée, donc le seul que le balayage bascule (`always` et `never` sont écrits une fois chez Meta).
+   * Les défauts de fuseau et d'horaires s'appliquent ici : un tenant qui n'a rien réglé bascule sur le
+   * défaut usine (lun-ven 9h-18h), pas dans un état sans horaires.
    */
   async tenantsHandoffSurHoraires(): Promise<Array<{ tenantId: string; timezone: string; businessHours: BusinessHours }>> {
     const res = await this.pool.query<{ tenant_id: string; timezone: string | null; business_hours: BusinessHours | null }>(
@@ -404,7 +324,7 @@ export class PgTenantSettingsStore {
     }));
   }
 
-  /** Active/désactive l'import de listes HubSpot. N'ÉCRASE PAS mba_enabled (upsert ciblé sur la colonne). */
+  /** Active ou désactive l'import de listes HubSpot. */
   async setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void> {
     await this.poser(tenantId, 'hubspot_lists_enabled', enabled);
   }

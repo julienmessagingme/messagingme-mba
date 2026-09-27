@@ -135,38 +135,37 @@ import { journaliser } from './lib/journal';
 
 export interface ServerDeps {
   /**
-   * Origines autorisées à appeler cette API depuis un navigateur. Vide ou absent -> AUCUN en-tête CORS n'est
-   * posé, ce qui est le comportement d'avant la bascule et le bon défaut : le front servi par le même hôte
-   * n'en a aucun besoin.
+   * Origines autorisées à appeler cette API depuis un navigateur. Vide ou absent -> aucun en-tête CORS, le
+   * bon défaut : le front servi par le même hôte n'en a aucun besoin.
    */
   corsOrigins?: readonly string[];
   /**
-   * Surveillance des refus sur `/ops`. Absente -> un 401 part sans laisser de trace, ce qui est le
-   * comportement d'avant. Câblée par `src/index.ts` quand Telegram est configuré.
+   * Surveillance des refus sur `/ops`. Absente -> un 401 part sans laisser de trace. Câblée par
+   * `src/index.ts` quand Telegram est configuré.
    */
   surveillanceOps?: SurveillanceOps;
   queue: Queue;
-  /** Sonde de readiness (DB joignable ?). OPTIONNEL pour préserver le design DB-free de buildServer : absent
-   *  (tests) -> /health répond 200 inconditionnel. Fourni (prod) -> /health = readiness (503 si rejette). */
+  /** Sonde de readiness (DB joignable ?). Optionnelle pour garder buildServer sans DB : absente (tests) ->
+   *  /health répond 200 inconditionnel ; fournie (prod) -> /health = readiness (503 si elle rejette). */
   checkReadiness?: () => Promise<void>;
   /** Défaut : config.META_VERIFY_TOKEN. Injectable en test. */
   verifyToken?: string;
   /** Défaut : config.META_APP_SECRET. Injectable en test. */
   appSecret?: string;
-  /** Auth (login + secret JWT). OBLIGATOIRE si `import` ou `campaigns` sont exposés. */
+  /** Auth (login + secret JWT). Obligatoire dès qu'un module à routes `:tenantId` est exposé. */
   auth?: AuthRouteDeps;
   /**
    * Plafonds de débit des routes authentifiées, en appels par minute. Absents -> les valeurs de `config`
    * (`RATE_LIMIT_USER_PAR_MINUTE`, `RATE_LIMIT_COUTEUX_PAR_MINUTE`). 0 désactive le plafond concerné.
-   * Injectables pour que les tests puissent viser un plafond bas sans dépendre de l'environnement.
-   * `apiParMinute` et `apiParHeure` : les défauts du plafond de l'API PAR ESPACE (`API_PLAFOND_*`).
+   * Injectables pour que les tests visent un plafond bas sans dépendre de l'environnement.
+   * `apiParMinute` et `apiParHeure` : les défauts du plafond de l'API par espace (`API_PLAFOND_*`).
    */
   plafonds?: { utilisateurParMinute?: number; couteuxParMinute?: number; apiParMinute?: number; apiParHeure?: number };
   /**
-   * Le réglage du plafond de l'API par espace (migration 0181). Il sert DEUX consommateurs, et c'est pour ça qu'il
-   * est ici plutôt que dans `v1` ou `ops` : le limiteur de `/v1` et `/mcp` le lit (à travers un cache court), la
-   * route `/ops/plafond-api/:tenantId` l'écrit et vide ce même cache. Absent -> tous les espaces au défaut de la
-   * configuration, et la route n'est pas montée : rien d'offert qui ne ferait rien.
+   * Le réglage du plafond de l'API par espace. Ici plutôt que dans `v1` ou `ops` parce qu'il sert deux
+   * consommateurs : le limiteur de `/v1` et `/mcp` le lit (à travers un cache court), la route
+   * `/ops/plafond-api/:tenantId` l'écrit et vide ce même cache. Absent -> tous les espaces au défaut de la
+   * configuration, et la route n'est pas montée.
    */
   plafondApi?: PlafondApiStore;
   /** Routes CRM/import (enregistrées seulement si fournies -> tests DB-free du receiver). */
@@ -177,45 +176,45 @@ export interface ServerDeps {
   rcsMessages?: RcsMessageRouteDeps;
   /** Activation du canal RCS d'un workspace (page d'accueil). Écritures admin-only. */
   rcsChannel?: RcsChannelRouteDeps;
-  /** Paramètres > Intégrations > Batch : l'outil qui reçoit les signaux (lot 6 de l'API publique). Admin, lecture comprise. */
+  /** Paramètres > Intégrations > Batch : l'outil qui reçoit les signaux. Admin, lecture comprise. */
   integrationBatch?: IntegrationBatchRouteDeps;
   /**
-   * Paramètres > Intégrations > Salesforce : l'interrupteur, la connexion de l'org, ses réglages (plan 2026-09-26,
-   * lot L1). Admin, lecture comprise. Monté seulement quand la clé d'app Salesforce est posée sur l'instance.
+   * Paramètres > Intégrations > Salesforce : l'interrupteur, la connexion de l'org, ses réglages. Admin,
+   * lecture comprise. Monté seulement quand la clé d'app Salesforce est posée sur l'instance.
    */
   salesforce?: SalesforceRouteDeps;
-  /** Rappels smsmode du canal RCS (livraison + réponses). PUBLIQUE : le code d'URL porte le workspace. */
+  /** Rappels smsmode du canal RCS (livraison + réponses). Publique : le code d'URL porte le workspace. */
   rcsCallback?: RcsCallbackRouteDeps;
-  /** Visuels des messages RCS : téléversement admin, et service PUBLIC du fichier (`/m/<code>.jpg`). */
+  /** Visuels des messages RCS : téléversement admin, et service public du fichier (`/m/<code>.jpg`). */
   rcsMedia?: RcsMediaRouteDeps;
   /** Routes templates (liste + création via l'API Meta). */
   templates?: TemplateRouteDeps;
   /** Routes inbox (conversations + réponse). */
   inbox?: InboxRouteDeps;
-  /** Canal ENTRANT depuis le connecteur HubSpot (changement d'étape d'un deal). Fourni si le secret partagé
-   *  est configuré. Signé, PAS authentifié par jeton utilisateur : l'appelant est un service, pas un humain. */
+  /** Canal entrant depuis le connecteur HubSpot (changement d'étape d'un deal). Fourni si le secret partagé
+   *  est configuré. Signé, pas authentifié par jeton utilisateur : l'appelant est un service, pas un humain. */
   hubspotEvents?: HubspotEventRouteDeps;
   /** Stats du dashboard (séries 1 pt/jour). */
   stats?: StatsRouteDeps;
   /** Réglages tenant (toggle MBA). */
   settings?: SettingsRouteDeps;
-  /** Gestion des comptes (onglet Admin) — réservé aux admins. */
+  /** Gestion des comptes (onglet Admin), réservé aux admins. */
   admin?: UsersRouteDeps;
-  /** Tableaux enregistrés d'Analytics > Mes tableaux — réservé aux admins. */
+  /** Tableaux enregistrés d'Analytics > Mes tableaux, réservé aux admins. */
   workflowReports?: WorkflowReportsRouteDeps;
-  /** Agents IA du workspace, EN LECTURE : la palette du builder en a besoin pour proposer le bloc. */
+  /** Agents IA du workspace, en lecture : la palette du builder en a besoin pour proposer le bloc. */
   agents?: AgentsRouteDeps;
   agentKnowledge?: AgentKnowledgeRouteDeps;
   agentTools?: AgentToolsRouteDeps;
-  /** La BIBLIOTHÈQUE d'outils de l'espace (migration 0127) : les définitions, et qui s'en sert. */
+  /** La bibliothèque d'outils de l'espace : les définitions, et qui s'en sert. */
   agentCatalogue?: AgentCatalogueRouteDeps;
   /** Publication du catalogue d'outils chez Meta : l'aperçu, puis l'exécution. */
   mbaPublication?: MbaPublicationDeps;
-  /** L'onglet « Outils » de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 9). */
+  /** L'onglet « Outils » de l'agent de Meta. */
   mbaOutils?: MbaOutilsDeps;
   /**
-   * La connexion publicitaire d'un espace (lot 2 des pubs Click-to-WhatsApp). Absente -> les routes ne
-   * sont PAS montées, et l'écran lit alors le 404 comme « pas encore configuré », ce qu'il est.
+   * La connexion publicitaire d'un espace. Absente -> routes non montées, et l'écran lit le 404 comme « pas
+   * encore configuré », ce qu'il est.
    */
   pubs?: PubsRouteDeps;
   /** L'assistant conversationnel du Meta Business Agent. Absent -> la route n'existe pas. */
@@ -227,102 +226,92 @@ export interface ServerDeps {
   agentRequetes?: AgentRequetesRouteDeps;
   agentSetup?: AgentSetupRouteDeps;
   agentTest?: AgentTestRouteDeps;
-  /** WhatsApp Flows (constructeur de formulaire) — réservé aux admins. */
+  /** WhatsApp Flows (constructeur de formulaire), réservé aux admins. */
   flows?: FlowRouteDeps;
-  /** Upload d'image (headers de cartes carousel) — réservé aux admins. */
+  /** Upload d'image (headers de cartes carousel), réservé aux admins. */
   media?: MediaRouteDeps;
-  /** Gestion des tags (menu Contenu) — réservé aux admins. */
+  /** Gestion des tags (menu Contenu), réservé aux admins. */
   tags?: TagsRouteDeps;
-  /** Gestion des user fields (menu Contenu) — réservé aux admins. */
+  /** Gestion des user fields (menu Contenu), réservé aux admins. */
   fields?: FieldsRouteDeps;
-  /** Formulaire de support (envoi email via Resend) — tout compte authentifié. */
+  /** Formulaire de support (envoi email via Resend), tout compte authentifié. */
   support?: SupportRouteDeps;
   /** Le bot d'aide de la console : il explique et il emmène, il n'écrit jamais rien. */
   aide?: AideRouteDeps;
-  /** Édition d'un contact (fields/tags depuis la fiche) — réservé aux admins. */
+  /** Édition d'un contact (fields/tags depuis la fiche), réservé aux admins. */
   contacts?: ContactsRouteDeps;
-  /** Statut du compte WhatsApp (page Accueil : numéro + pastille) — réservé aux admins. */
+  /** Statut du compte WhatsApp (page Accueil : numéro + pastille), réservé aux admins. */
   account?: AccountRouteDeps;
-  /** Profil de l'utilisateur courant (Accueil : « Bonjour {prénom} ») — tout compte authentifié. */
+  /** Profil de l'utilisateur courant (Accueil : « Bonjour {prénom} »), tout compte authentifié. */
   me?: MeRouteDeps;
-  /** Surface d'exploitation cross-tenant `/ops` (lecture seule) — protégée par OPS_TOKEN, pas le JWT. */
+  /** Surface d'exploitation cross-tenant `/ops` (lecture seule), protégée par OPS_TOKEN, pas le JWT. */
   ops?: OpsRouteDeps;
   /** Secret de `/ops`. Défaut : config.OPS_TOKEN. Vide -> /ops répond 401. Injectable en test. */
   opsToken?: string;
-  /** Bot builder (workflows) — réservé aux admins. */
+  /** Bot builder (workflows), réservé aux admins. */
   workflows?: WorkflowRouteDeps;
-  /** Automations (Lot E) : lecture ouverte aux comptes authentifiés, ÉCRITURES admin-only (garde dans la route). */
+  /** Automations : lecture ouverte aux comptes authentifiés, écritures admin-only (garde dans la route). */
   automations?: AutomationRouteDeps;
-  /** Embedded Signup Meta (connexion du numéro, Tech Provider) — réservé aux admins. */
+  /** Embedded Signup Meta (connexion du numéro, Tech Provider), réservé aux admins. */
   embeddedSignup?: EmbeddedSignupRouteDeps;
-  /** CRUD des clés d'API (console admin, JWT) — réservé aux admins. */
+  /** CRUD des clés d'API (console admin, JWT), réservé aux admins. */
   apiKeys?: ApiKeysRouteDeps;
-  /** API publique /v1 (authentifiée par clé d'API, autorité SÉPARÉE du JWT, comme /ops). */
   /**
-   * L'API publique. ⚠️ `usage` EST RETIRÉ DES DÉPENDANCES DE CHAQUE MODULE DE ROUTES, et c'est ce qui rend le garde
-   * d'usage OBLIGATOIRE sans le faire écrire par chaque appelant : le contrat des routes l'exige, et
-   * c'est `buildServer` qui l'injecte, une seule fois, comme il injecte déjà les limiteurs de débit.
-   * L'appelant (le câblage, les tests) ne peut donc ni l'oublier ni en fournir un second.
+   * L'API publique /v1 (clé d'API, autorité séparée du JWT, comme /ops). `usage` est retiré des dépendances
+   * de chaque module : c'est `buildServer` qui injecte le garde d'usage, une seule fois, comme les limiteurs
+   * de débit. L'appelant ne peut donc ni l'oublier ni en fournir un second.
    */
   v1?: {
     apiKeys: ApiKeyLookup;
     contacts: Omit<V1ContactsRouteDeps, 'usage'>;
     sends?: Omit<V1SendsRouteDeps, 'usage'>;
-    /** Les trois catalogues (`GET /v1/templates`, `/v1/scenarios`, `/v1/rcs-messages`), lot 4 du 2026-09-24. */
+    /** Les trois catalogues (`GET /v1/templates`, `/v1/scenarios`, `/v1/rcs-messages`). */
     catalogues?: Omit<V1CataloguesRouteDeps, 'usage'>;
-    /** Un simple texte dans la fenetre de 24 h (`POST /v1/messages/whatsapp`, lot 7, adresse renommee le 2026-09-24). */
+    /** Un simple texte dans la fenêtre de 24 h (`POST /v1/messages/whatsapp`). */
     messages?: Omit<V1MessagesRouteDeps, 'usage'>;
-    /** Un simple texte en RCS à une fiche (`POST /v1/messages/rcs`, lot 3 de l'API publique). */
+    /** Un simple texte en RCS à une fiche (`POST /v1/messages/rcs`). */
     messagesRcs?: Omit<V1MessagesRcsRouteDeps, 'usage'>;
     mcp?: DepsMcp;
-    /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1 (migration 0161). */
+    /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1. */
     mbaRelais?: MbaRelaisDeps;
   };
   /**
-   * Le garde d'usage de l'API publique. ABSENT -> une instance MÉMOIRE en OBSERVATION est construite ici.
-   *
-   * ⚠️ INJECTABLE POUR ÊTRE OBSERVÉ, pas pour être remplacé à la légère : c'est ainsi qu'un test vérifie
-   * que les six routes comptent vraiment. Le jour du multi-replica, c'est par ici que passera
-   * l'implémentation partagée, sans qu'aucune route ne bouge.
+   * Le garde d'usage de l'API publique. Absent -> une instance mémoire en observation est construite ici.
+   * Injectable pour être observé (un test vérifie que les routes comptent vraiment) ; le jour du
+   * multi-replica, l'implémentation partagée passera par ici sans qu'aucune route ne bouge.
    */
   usage?: ApiUsageGuard;
-  /** Import de listes HubSpot (3e source de campagne) — réservé aux admins. */
+  /** Import de listes HubSpot (3e source de campagne), réservé aux admins. */
   hubspotImport?: HubspotImportRouteDeps;
-  /** Émission du lien d'install/re-consentement HubSpot signé — réservé aux admins. */
+  /** Émission du lien d'install/re-consentement HubSpot signé, réservé aux admins. */
   hubspotInstall?: HubspotInstallRouteDeps;
-  /** Étapes de deal du portail HubSpot (menu de l'écran Automation) — réservé aux admins. */
+  /** Étapes de deal du portail HubSpot (menu de l'écran Automation), réservé aux admins. */
   hubspotPipelines?: HubspotPipelinesRouteDeps;
-  /** Configuration de l'agent MBA (connaissance, personnalité, réglages) — réservé aux admins. */
+  /** Configuration de l'agent MBA (connaissance, personnalité, réglages), réservé aux admins. */
   mba?: MbaRouteDeps;
-  /** Node « Envoi de mail » (boîtes SMTP + modèles) — réservé aux admins, comme workflows. */
+  /** Node « Envoi de mail » (boîtes SMTP + modèles), réservé aux admins, comme workflows. */
   email?: EmailRoutesDeps;
   /**
-   * Redirection PUBLIQUE des liens tracés (`GET /r/:code`). Aucune authentification : c'est un destinataire
+   * Redirection publique des liens tracés (`GET /r/:code`). Aucune authentification : c'est un destinataire
    * WhatsApp qui l'ouvre. Le tenant vient du code retrouvé en base, jamais de l'URL.
    */
   links?: LinksRouteDeps;
   /**
-   * Réception PUBLIQUE des webhooks entrants (`POST /w/:code`). Aucune authentification : c'est un outil
+   * Réception publique des webhooks entrants (`POST /w/:code`). Aucune authentification : c'est un outil
    * tiers qui poste. Le tenant vient du code retrouvé en base, jamais du corps.
    */
   webhookEntrant?: WebhookEntrantRouteDeps;
-  /** Gestion des webhooks entrants (écran Tools > Webhooks) — réservé aux admins. */
+  /** Gestion des webhooks entrants (écran Tools > Webhooks), réservé aux admins. */
   webhooksAdmin?: WebhooksAdminRouteDeps;
-  /** Chaine WhatsApp (Channels Me) : lecture ouverte aux comptes authentifies, ECRITURES admin-only (garde dans la route). */
+  /** Chaîne WhatsApp (Channels Me) : lecture ouverte aux comptes authentifiés, écritures admin-only (garde
+   *  dans la route). */
   channelsMe?: ChannelsMeRouteDeps;
 }
 
 /**
- * CE QUI AUTORISE UN APPEL sur les routes d'un module. Chaque entrée du registre le DÉCLARE.
- *
- * 🔴 UNE UNION, ET SURTOUT PAS UN BOOLÉEN, et c'est le cœur de ce registre. Un `porteDeTenant: false`
- * serait un désengagement SILENCIEUX : on peut l'écrire sans y penser, et rien ne demande de quoi le module
- * se protège À LA PLACE. L'union force l'auteur du 41e module à choisir un mot, donc à répondre à la
- * question. C'est la même propriété que ce registre apporte au reste : rendre l'oubli impossible plutôt que
- * détectable.
- *
- * ⚠️ Il y a SIX classes, pas deux, et le découvrir est déjà un résultat : l'inventaire écrit à la main ne
- * connaissait que « tenant ou pas ».
+ * Ce qui autorise un appel sur les routes d'un module ; chaque entrée du registre le déclare.
+ * Une union et pas un booléen : un `porteDeTenant: false` serait un désengagement silencieux, alors que
+ * l'union force l'auteur d'un module à nommer ce qui le protège à la place.
  */
 export type ClasseDAcces =
   /**
@@ -334,25 +323,19 @@ export type ClasseDAcces =
   | 'anonyme'
   /**
    * Un code opaque dans l'adresse autorise l'appel : lien tracé (`/r/:code`), rappel du fournisseur RCS
-   * (`/rcs/callback/:code`), webhook entrant (`/w/:code`).
-   *
-   * ⚠️ Le webhook entrant accepte EN PLUS un secret d'en-tête quand le client en a posé un
-   * (`x-webhook-secret`, facultatif) : le code reste ce qui autorise, le secret durcit.
+   * (`/rcs/callback/:code`), webhook entrant (`/w/:code`). Le webhook entrant accepte en plus un secret
+   * d'en-tête facultatif (`x-webhook-secret`) : le code autorise, le secret durcit.
    */
   | 'code-url'
   /** La signature de Meta sur le corps de la requête, avec le secret de l'application Meta. */
   | 'signature-meta'
   /**
-   * Une signature HMAC entre NOS services, avec un secret partagé (`x-mm-service-signature`) : c'est ainsi
-   * que le connecteur HubSpot pousse ses événements.
-   *
-   * 🔴 DISTINCTE DE `signature-meta`, ET LA REVUE A TROUVÉ QUE JE L'AVAIS CLASSÉE `code-url`. Ce n'est pas
-   * un détail de nommage : son adresse ne porte AUCUN code, donc la classe annoncée était vérifiablement
-   * fausse, et une justification fausse inscrite ici aurait été recopiée par le prochain lecteur, qui en
-   * aurait déduit qu'une adresse devinable suffit à autoriser un appel.
+   * Une signature HMAC entre nos services, avec un secret partagé (`x-mm-service-signature`) : c'est ainsi
+   * que le connecteur HubSpot pousse ses événements. Pas `code-url` : son adresse ne porte aucun code, et une
+   * adresse devinable ne suffit pas à autoriser un appel.
    */
   | 'signature-service'
-  /** Le secret d'exploitation, autorité SÉPARÉE du JWT. */
+  /** Le secret d'exploitation, autorité séparée du JWT. */
   | 'jeton-ops'
   /** Une clé d'API de client, autorité séparée elle aussi. */
   | 'cle-api';
@@ -360,17 +343,13 @@ export type ClasseDAcces =
 /** Les gardes que `buildServer` construit une fois et distribue aux modules. */
 export interface Gardes {
   /**
-   * Tout compte authentifié. `PreHandler` et non `Guard` : c'est UN prehandler, pas une liste, et
-   * `registerInbox` en dépend (il la compose lui-même avec sa garde d'effacement). Le déclarer `Guard`
-   * ici compilait pour 28 modules sur 29 et échouait sur celui-là, ce qui est exactement le genre d'écart
-   * qu'un contrat trop large cache.
-   *
-   * 🔴 LES TROIS GARDES SONT REQUISES DEPUIS LE LOT 2 (plan 2026-09-14). Elles étaient optionnelles, et un
-   * module qui en recevait une absente montait ses routes SANS CONTRÔLE, en silence. Quand
-   * l'authentification n'est pas câblée, elles valent un refus, jamais `undefined`.
+   * Tout compte authentifié. `PreHandler` et non `Guard` : c'est un seul prehandler, pas une liste, et
+   * `registerInbox` le compose lui-même avec sa garde d'effacement.
+   * 🔴 Les trois gardes sont requises : un module qui recevrait une garde absente monterait ses routes sans
+   * contrôle. Sans authentification câblée, elles valent un refus, jamais `undefined`.
    */
   readonly auth: PreHandler;
-  /** Compte `admin` seulement. Une LISTE (`[auth, role]`), d'où `Guard`. */
+  /** Compte `admin` seulement. Une liste (`[auth, role]`), d'où `Guard`. */
   readonly admin: Guard;
   /** `admin` ou `manager` : consulter n'est pas décider (écrans de conformité). */
   readonly encadrement: Guard;
@@ -379,13 +358,9 @@ export interface Gardes {
 }
 
 /**
- * « AUCUN PLAFOND », NOMMÉ (2026-09-23).
- *
- * 🔴 `limiteCouteuse` vaut `undefined` quand `RATE_LIMIT_COUTEUX_PAR_MINUTE` est à 0, c'est-à-dire quand
- * on a DÉLIBÉRÉMENT coupé le plafond (le levier d'urgence du CLAUDE.md). Un module qui exige son plafond
- * par le type reçoit donc ceci : une garde qui laisse passer et qui le DIT, là où un paramètre optionnel
- * laisserait le lecteur se demander si le plafond a été oublié ou retiré. C'est la même raison qui fait que
- * `deps.auth` absent produit un REFUS et jamais `undefined`, quelques lignes plus bas.
+ * « Aucun plafond », nommé. `limiteCouteuse` vaut `undefined` quand `RATE_LIMIT_COUTEUX_PAR_MINUTE` est à 0
+ * (plafond coupé délibérément). Un module qui exige son plafond par le type reçoit alors cette garde, qui
+ * laisse passer et le dit, là où un paramètre optionnel laisserait croire à un oubli.
  */
 const SANS_PLAFOND: PreHandler = async () => {};
 
@@ -399,29 +374,18 @@ export interface ModuleMonte {
 }
 
 /**
- * Déclare un module montable. `D` est inféré depuis `deps`, donc `monter` le reçoit NON NUL.
+ * Déclare un module montable. `D` est inféré depuis `deps`, donc `monter` le reçoit non nul : le test de
+ * présence vit ici, une seule fois, et un module ne peut pas être monté avec des dépendances absentes.
+ * L'entrée rendue a un type uniforme, pour ranger tous les modules dans une seule liste.
+ * Le test est `!== undefined`, pas la véracité : un module dont les dépendances valent `null` se monte et
+ * échoue au montage (un câblage fautif), au lieu de disparaître en silence.
  *
- * 🔴 C'EST CE QUI SUPPRIME LES `deps.x!` ET LES 49 `if (deps.x)` D'UN COUP. Le test de présence vit ICI, en
- * un seul endroit, et la closure capture `D` : un module ne peut plus être monté avec des dépendances
- * absentes, et personne n'a plus à l'écrire. L'entrée rendue a un type UNIFORME, ce qui permet de les
- * ranger dans une seule liste malgré 48 types de dépendances différents.
- *
- * ⚠️ La variance d'arité reste DANS la closure (de 2 à 5 paramètres selon le module, `registerInbox` en
- * prend 5) : elle est ainsi visible au point de montage, au lieu d'être aplatie dans un contrat commun qui
- * aurait forcé 45 signatures à changer.
- *
- * ⚠️ LE TEST EST `!== undefined`, PAS LA VÉRACITÉ, et la nuance est délibérée. Les 49 `if (deps.x)` d'avant
- * montaient sur la véracité : un module dont les dépendances auraient valu `null` ne se montait pas, en
- * silence. Ici il se monterait, et échouerait au montage, ce qui est le bon sens de l'échec (`null` n'est pas
- * « absent », c'est un câblage fautif). Vérifié : aucun appelant du dépôt ne passe une valeur fausse mais
- * définie, donc le changement est inerte aujourd'hui.
- *
- * 🔴 C'EST ICI QUE LE CONTRÔLE D'ESPACE SE POSE (lot 3 de l'audit ponytail, 2026-09-26). Un module déclaré
- * `acces: 'tenant'` est monté par `monterAvecEtapeEspace`, qui ajoute `etapeEspace` à la fin de la chaîne de
- * chacune de ses routes `:tenantId`. La DÉCLARATION décide donc du contrôle, comme elle décide déjà du garde-fou
- * d'authentification de `buildServer` : un module ajouté demain le reçoit sans que personne y pense, et tout
- * appelant de `monte` (le serveur, `tests/scope-tenant.test.ts`, l'auto-attaque) l'obtient par le même chemin.
- * Les modules `jeton-ops` portent aussi des `:tenantId` et n'y passent pas : leur autorité n'est pas une session.
+ * 🔴 C'est ici que le contrôle d'espace se pose : un module déclaré `acces: 'tenant'` est monté par
+ * `monterAvecEtapeEspace`, qui ajoute `etapeEspace` à la fin de la chaîne de chacune de ses routes
+ * `:tenantId`. La déclaration décide du contrôle, donc un module ajouté demain le reçoit sans y penser, et
+ * tout appelant de `monte` (serveur, `tests/scope-tenant.test.ts`, auto-attaque) l'obtient par le même
+ * chemin. Les modules `jeton-ops` portent aussi des `:tenantId` et n'y passent pas : leur autorité n'est
+ * pas une session.
  */
 function entree<D>(
   nom: string,
@@ -442,37 +406,22 @@ function entree<D>(
 }
 
 /**
- * LE REGISTRE DES MODULES DE ROUTES. Il remplace 49 `if (deps.x) registerX(...)` et une liste de 40 noms
- * recopiée à la main.
+ * Le registre des modules de routes, exporté pour être exercé.
  *
- * 🔴 CE QUI CHANGE VRAIMENT : la couverture du garde-fou d'authentification se DÉRIVE de ce registre. Avant,
- * elle était une seconde liste, écrite à côté des montages, et il fallait penser à l'allonger : elle a déjà
- * couvert 18 modules sur 36 (audit de surface publique du 2026-09-03), les 18 autres se montant sans garde en
- * silence, `scopeTenant` distribuant alors à chacun l'espace qu'il demandait dans l'URL. Mesuré le
- * 2026-09-14 : les 40 noms d'alors étaient exacts, donc il n'y avait pas de trou VIVANT. Le défaut était dans
- * la forme, et il attendait le 41e module.
+ * 🔴 La couverture du garde-fou d'authentification se dérive de ce registre (`acces: 'tenant'`), et non
+ * d'une seconde liste à tenir à la main. `tests/scope-tenant.test.ts` monte chaque module tenant un par un
+ * et vérifie que le serveur refuse de démarrer sans garde. Ce garde-fou et la fermeture de `scopeTenant`
+ * (`src/http/scope.ts`) sont les deux moitiés du même contrôle.
  *
- * 🔴 ELLE EST EXPORTÉE POUR ÊTRE EXERCÉE, et c'est la moitié qui manquait. Le garde-fou était vérifié par un
- * test qui relisait le TEXTE de ce fichier, avec sa propre copie de la liste : il prouvait une orthographe,
- * pas un comportement, et sa liste pouvait dériver comme l'autre. `tests/scope-tenant.test.ts` monte
- * désormais CHAQUE module tenant, un par un, et vérifie que le serveur refuse de démarrer sans garde.
- *
- * ⚠️ Ce garde-fou et la fermeture de `scopeTenant` (`src/http/scope.ts`) restent les DEUX moitiés du même
- * correctif.
- *
- * ⚠️ L'ORDRE DE CETTE LISTE EST L'ORDRE DE MONTAGE, et il reproduit exactement celui d'avant le registre :
- * les cinq surfaces sans session d'abord (webhook, exploitation, liens tracés, webhooks entrants, rappels
- * RCS), puis les modules gardés. La table de routes produite est identique au caractère, vérifié.
+ * L'ordre de cette liste est l'ordre de montage : les surfaces sans session d'abord, puis les modules gardés.
  */
 export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): readonly ModuleMonte[] {
   /**
-   * 🔴 LE RÉGLAGE DU PLAFOND DE L'API, UN SEUL CACHE POUR SES DEUX CONSOMMATEURS : le limiteur de `/v1` le lit, la
-   * route d'exploitation y pose ce qu'elle vient d'écrire. Deux instances, et un plafond relevé n'aurait pris effet
-   * qu'à l'expiration du cache, sans que rien ne le dise.
-   *
-   * ⚠️ `deps.plafondApi` EST LU ICI, et c'est la clé même de son entrée : le script d'auto-attaque déduit les
-   * modules des clés que ce registre lit en construisant sa liste. Les défauts (`deps.plafonds`), eux, se lisent
-   * dans les closures, au montage.
+   * Un seul cache de réglages du plafond de l'API pour ses deux consommateurs : le limiteur de `/v1` le lit,
+   * la route d'exploitation y pose ce qu'elle vient d'écrire. Avec deux instances, un plafond relevé ne
+   * prendrait effet qu'à l'expiration du cache, sans que rien ne le dise.
+   * `deps.plafondApi` est lu ici parce que le script d'auto-attaque déduit les modules des clés que ce
+   * registre lit en construisant sa liste. Les défauts (`deps.plafonds`) se lisent dans les closures.
    */
   const sourcePlafond = deps.plafondApi;
   const reglagesPlafond = new ReglagesPlafondEnCache(sourcePlafond ? (t) => sourcePlafond.lire(t) : async () => SANS_REGLAGE);
@@ -486,46 +435,40 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
       verifyToken: deps.verifyToken ?? config.META_VERIFY_TOKEN,
       appSecret: deps.appSecret ?? config.META_APP_SECRET,
     })),
-    // Surface /ops : autorité SÉPARÉE du JWT (secret d'env, comme le webhook). Montée dès que les deps
-    // sont fournies ; le guard renvoie 401 si OPS_TOKEN est vide (désactivé) ou incorrect.
-    // ⚠️ LE GARDE D'USAGE EST INJECTÉ DANS `/ops` COMME DANS LES ROUTES `/v1` : c'est la même instance, donc
-    // l'écran d'exploitation montre exactement ce que les routes ont compté, sans second exemplaire.
+    // Surface /ops : autorité séparée du JWT (secret d'env, comme le webhook). Le guard renvoie 401 si
+    // OPS_TOKEN est vide ou incorrect. Le garde d'usage injecté est la même instance que celle de `/v1` :
+    // l'écran d'exploitation montre exactement ce que les routes ont compté.
     entree('ops', 'jeton-ops', deps.ops, (app, d) => registerOps(app, { ...d, usage: usageApi }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps)),
-    // Le réglage du plafond de l'API d'un espace : même autorité que `/ops`, un module à part (migration 0181).
+    // Le réglage du plafond de l'API d'un espace : même autorité que `/ops`, dans un module à part.
     entree('plafondApi', 'jeton-ops', deps.plafondApi, (app, d) => registerOpsPlafondApi(
       app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond() }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps,
     )),
-    // Redirection des liens tracés : PUBLIQUE, montée ici avec le webhook et /ops, avant les gardes d'auth.
-    // Aucune session n'est possible sur cette route (un destinataire clique depuis WhatsApp).
+    // Redirection des liens tracés : publique (un destinataire clique depuis WhatsApp, sans session), montée
+    // avant les gardes d'auth.
     entree('links', 'code-url', deps.links, (app, d) => registerLinks(app, d)),
-    // Réception des webhooks entrants : PUBLIQUE elle aussi, montée ici avant les gardes d'auth. Aucune session
-    // n'est possible (l'appelant est un outil tiers, pas un humain).
+    // Réception des webhooks entrants : publique aussi (l'appelant est un outil tiers), montée avant les gardes.
     entree('webhookEntrant', 'code-url', deps.webhookEntrant, (app, d) => registerWebhookEntrant(app, d)),
-    // Rappels du fournisseur RCS : PUBLIQUE aussi, et pour la même raison (l'appelant est smsmode, pas un
-    // humain). Ce qui l'autorise est le code opaque de l'URL, pas une session ; voir `registerRcsCallback`.
-    // Son plafond par code ne compte que des codes EXISTANTS (pris après la lecture en base), donc aucun
-    // plafond de clés : la table est bornée par le nombre d'agents, et un plafond de clés y rouvrirait
-    // l'éviction d'un vrai code par des codes inventés (cf. `registerRcsCallback`).
+    // Rappels du fournisseur RCS : publique aussi (l'appelant est smsmode), autorisée par le code opaque de
+    // l'URL. Son plafond par code ne compte que des codes existants (pris après la lecture en base), donc
+    // aucun plafond de clés : il rouvrirait l'éviction d'un vrai code par des codes inventés.
     entree('rcsCallback', 'code-url', deps.rcsCallback, (app, d) =>
       registerRcsCallback(app, d, new RateLimiter(config.RCS_CALLBACK_PAR_MINUTE, 60_000),
         new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000))),
     entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth)),
     entree('import', 'tenant', deps.import, (app, d, g) => registerImport(app, d, g.admin, g.limiteCouteuse)),
     entree('campaigns', 'tenant', deps.campaigns, (app, d, g) => registerCampaigns(app, d, g.admin, g.limiteCouteuse)),
-    // Bibliothèque RCS : montée avec `auth` et non `admin`, car la LISTE doit être lisible par un
-    // agent (le bloc de scénario et l'assistant de campagne la proposent). Les écritures sont gardées dans les
-    // handlers par `forbidNonAdmin`, comme pour les templates.
+    // Bibliothèque RCS : montée avec `auth` et non `admin`, car la liste doit être lisible par un agent (bloc
+    // de scénario, assistant de campagne). Les écritures sont gardées dans les handlers par `forbidNonAdmin`.
     entree('rcsMessages', 'tenant', deps.rcsMessages, (app, d, g) => registerRcsMessages(app, d, g.auth)),
     entree('rcsChannel', 'tenant', deps.rcsChannel, (app, d, g) => registerRcsChannel(app, d, g.auth)),
     entree('integrationBatch', 'tenant', deps.integrationBatch, (app, d, g) => registerIntegrationBatch(app, d, g.admin)),
     entree('salesforce', 'tenant', deps.salesforce, (app, d, g) => registerSalesforce(app, d, g.admin, g.limiteCouteuse)),
-    // Visuels RCS. Monté avec `auth` alors qu'il porte AUSSI une route publique `/m/<code>.<ext>` : les
-    // gardes de ce projet sont posées par route (`preHandler`), pas par groupe, donc la route de lecture
-    // reste ouverte comme elle doit l'être. C'est l'opérateur télécom qui télécharge l'image, sans session.
+    // Visuels RCS : monté avec `auth` alors qu'il porte aussi une route publique `/m/<code>.<ext>`. Les gardes
+    // sont posées par route (`preHandler`), donc la lecture reste ouverte : l'opérateur télécom télécharge
+    // l'image sans session.
     entree('rcsMedia', 'tenant', deps.rcsMedia, (app, d, g) => registerRcsMedia(app, d, g.auth)),
-    // Templates : la LISTE (GET) doit rester lisible par l'agent — l'inbox en a besoin pour envoyer
-    // un template hors fenêtre 24h (seul moyen de re-contacter). La CRÉATION (POST) reste admin-only
-    // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.
+    // Templates : la liste (GET) reste lisible par l'agent, l'inbox en a besoin pour envoyer un template hors
+    // fenêtre 24 h. La création (POST) reste admin-only via `forbidNonAdmin` dans le handler.
     entree('templates', 'tenant', deps.templates, (app, d, g) => registerTemplates(app, d, g.auth)),
     // Deux gardes : l'inbox est ouverte a tout compte authentifie, mais l'effacement du contenu d'une
     // conversation est reserve aux administrateurs. Un operateur repond aux clients, il n'efface pas des traces.
@@ -541,23 +484,18 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('agentCatalogue', 'tenant', deps.agentCatalogue, (app, d, g) => registerAgentCatalogue(app, d, g.admin)),
     entree('mbaPublication', 'tenant', deps.mbaPublication, (app, d, g) => registerMbaPublication(app, d, g.admin)),
     entree('mbaOutils', 'tenant', deps.mbaOutils, (app, d, g) => registerMbaOutils(app, d, g.admin)),
-    // Publicités : monté sous `g.auth` et non `g.admin`, car la LECTURE de l'état est ouverte à tout membre
-    // (elle ne montre aucun secret) ; les trois écritures sont gardées dans les handlers par
-    // `forbidNonAdmin`, comme pour la bibliothèque RCS et les modèles.
+    // Publicités : sous `g.auth` et non `g.admin`, car la lecture de l'état est ouverte à tout membre (aucun
+    // secret) ; les trois écritures sont gardées dans les handlers par `forbidNonAdmin`.
     entree('pubs', 'tenant', deps.pubs, (app, d, g) => registerPubs(app, d, g.auth, g.limiteCouteuse ?? SANS_PLAFOND)),
-    // ⚠️ `g.admin` COMME LES ÉCRITURES MBA : la conversation ne doit pas être un chemin plus permissif que
-    // le formulaire, sinon elle devient un contournement du contrôle d'accès. La route repose la garde
-    // elle-même (`forbidNonAdmin`), les deux étant voulues : celle-ci monte, celle-là explique.
+    // `g.admin` comme les écritures MBA : la conversation ne doit pas être un chemin plus permissif que le
+    // formulaire. La route repose aussi `forbidNonAdmin` : celle-ci monte, celle-là explique.
     entree('mbaAssistant', 'tenant', deps.mbaAssistant, (app, d, g) => registerMbaAssistant(app, d, g.admin)),
-    // ⚠️ ADMIN comme ce qu'il journalise : ce journal porte le CONTENU des éléments supprimés, un accès plus
-    // large que les écritures qu'il décrit serait une fuite.
+    // Admin comme ce qu'il journalise : ce journal porte le contenu des éléments supprimés.
     entree('historique', 'tenant', deps.historique, (app, d, g) => registerHistorique(app, d, g.admin)),
     entree('agentSources', 'tenant', deps.agentSources, (app, d, g) => registerAgentSources(app, d, g.admin)),
-    // Les CONNECTEURS MCP. `acces: 'tenant'` n'est pas décoratif : c'est de cette déclaration que le
-    // garde-fou d'authentification DÉRIVE sa couverture, plutôt que d'une seconde liste écrite à côté.
     entree('agentMcp', 'tenant', deps.agentMcp, (app, d, g) => registerAgentMcp(app, d, g.admin, g.limiteCouteuse)),
-    // Reservees aux ADMINS comme les sources : decrire une requete, c est decider ce qu on envoie au systeme
-    // d un client, et le bouton Test rend la reponse ENTIERE pour que le client y choisisse ses champs.
+    // Réservées aux admins comme les sources : décrire une requête, c'est décider ce qu'on envoie au système
+    // d'un client, et le bouton Test rend la réponse entière.
     entree('agentRequetes', 'tenant', deps.agentRequetes, (app, d, g) => registerAgentRequetes(app, d, g.admin)),
     entree('agentSetup', 'tenant', deps.agentSetup, (app, d, g) => registerAgentSetup(app, d, g.admin)),
     entree('agentTest', 'tenant', deps.agentTest, (app, d, g) => registerAgentTest(app, d, g.admin)),
@@ -570,7 +508,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('workflows', 'tenant', deps.workflows, (app, d, g) => registerWorkflows(app, d, g.admin)),
     entree('workflowReports', 'tenant', deps.workflowReports, (app, d, g) => registerWorkflowReports(app, d, g.admin)),
     entree('automations', 'tenant', deps.automations, (app, d, g) => registerAutomations(app, d, g.auth)),
-    // `auth` et non `admin` : les ecrans de la chaine se LISENT avec un compte agent, et les six
+    // `auth` et non `admin` : les écrans de la chaîne se lisent avec un compte agent, et les six
     // ecritures sont fermees dans la route par `forbidNonAdmin`.
     entree('channelsMe', 'tenant', deps.channelsMe, (app, d, g) => registerChannelsMeRoutes(app, d, g.auth)),
     entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.admin, g.limiteCouteuse)),
@@ -582,60 +520,49 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('apiKeys', 'tenant', deps.apiKeys, (app, d, g) => registerApiKeys(app, d, g.admin)),
     entree('webhooksAdmin', 'tenant', deps.webhooksAdmin, (app, d, g) => registerWebhooksAdmin(app, d, g.admin)),
     /**
-     * API publique /v1 et serveur MCP : UNE SEULE entrée pour tous leurs montages, et c'est délibéré.
-     *
-     * 🔴 LES TROIS PARTAGENT UNE AUTORITÉ ET UN LIMITEUR, et c'est un invariant, pas une commodité : une
-     * seconde instance de limiteur aurait doublé le quota d'un espace selon la porte empruntée, ce qui
-     * n'aurait été visible de personne. Les séparer en trois entrées aurait permis de les monter
-     * indépendamment, donc de casser ça sans le voir.
+     * API publique /v1 et serveur MCP : une seule entrée pour tous leurs montages, parce qu'ils partagent
+     * une autorité et un limiteur. Une seconde instance doublerait le quota d'un espace selon la porte
+     * empruntée, sans que personne le voie.
      */
     entree('v1', 'cle-api', deps.v1, (app, v1) => {
       /**
-       * 🔴 LE PLAFOND DE L'ESPACE (2026-09-25) : commun à toutes les clés d'un espace, `/v1` et `/mcp` confondus,
-       * minute ET heure. Indexé sur l'ESPACE d'une clé RÉSOLUE (`api-key.ts`), donc sans plafond de clés.
-       * Le compteur PAR CLÉ ne sert plus qu'au relais du Meta Business Agent, qui n'entre pas dans celui de
-       * l'espace : un intégrateur qui charge l'API ne doit pas couper les outils de l'agent de Meta. Indexé sur
-       * l'EMPREINTE, consulté seulement sur une clé résolue, sans plafond de clés non plus.
+       * Le plafond de l'espace, commun à toutes ses clés, `/v1` et `/mcp` confondus, minute et heure, indexé
+       * sur l'espace d'une clé résolue (`api-key.ts`). Le compteur par clé ne sert qu'au relais du Meta
+       * Business Agent, hors du plafond de l'espace : un intégrateur qui charge l'API ne doit pas couper les
+       * outils de l'agent de Meta. Aucun des deux n'a besoin d'un plafond de clés (clés résolues seulement).
        */
       const plafondEspace = new PlafondEspace(defautsPlafond(), reglagesPlafond);
       const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       /**
-       * 🔴 LE PRÉ-FILTRE : le budget GLOBAL des lookups spéculatifs. Sa clé est une CONSTANTE
-       * (`CLE_BUDGET_SPECULATIF`), pas l'empreinte du bearer, donc sa table ne porte qu'une entrée quel que
-       * soit le flot : un plafond de clés y serait sans objet. Ce commentaire a dit le contraire, et le
-       * limiteur portait un plafond de 10 000 clés qui ne pouvait jamais servir.
+       * Le pré-filtre : budget global des lookups spéculatifs. Sa clé est une constante
+       * (`CLE_BUDGET_SPECULATIF`), donc sa table ne porte qu'une entrée : pas de plafond de clés.
        */
       const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       const requireApiKey = makeRequireApiKey(v1.apiKeys, { espace: plafondEspace, relais: apiLimiter }, apiPrefiltre);
-      // DEUX droits, et une clé ne porte que ceux qu'on lui a donnés : lire une fiche (numéro, consentement,
+      // Deux droits, et une clé ne porte que ceux qu'on lui a donnés : lire une fiche (numéro, consentement,
       // joignabilité) n'est pas le droit d'en écrire une, ni l'inverse.
       registerV1Contacts(app, { ...v1.contacts, usage: usageApi }, {
         ecrire: [requireApiKey, requireScope('contacts:write')],
         lire: [requireApiKey, requireScope('contacts:read')],
       });
       if (v1.sends) registerV1Sends(app, { ...v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
-      // Les catalogues : MÊME droit que les envois, qu'ils servent à construire, et MÊME `requireApiKey`, donc
-      // le même plafond d'espace. Un droit neuf aurait obligé chaque intégrateur à refabriquer sa clé pour
-      // LIRE ce qu'il a déjà le droit d'envoyer.
+      // Les catalogues : même droit que les envois, qu'ils servent à construire, et même `requireApiKey`, donc
+      // même plafond d'espace. Un droit neuf obligerait chaque intégrateur à refabriquer sa clé pour lire ce
+      // qu'il a déjà le droit d'envoyer.
       if (v1.catalogues) registerV1Catalogues(app, { ...v1.catalogues, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
-      // MEME droit que les envois, et c'est un elargissement assume : les droits d'une cle se fixent a sa
-      // creation et ne s'editent pas, donc un droit neuf aurait oblige chaque integrateur a refabriquer sa
-      // cle pour un geste que « Declencher des envois » decrit deja. Le detail est dans `v1-messages.ts`.
+      // Même droit que les envois, élargissement assumé : les droits d'une clé ne s'éditent pas après sa
+      // création. Le détail est dans `v1-messages.ts`.
       if (v1.messages) registerV1Messages(app, { ...v1.messages, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
-      // MÊME droit, même limiteur et même garde que le message WhatsApp : c'est le même geste sur un autre canal.
+      // Même droit, même limiteur et même garde que le message WhatsApp : le même geste sur un autre canal.
       if (v1.messagesRcs) registerV1MessagesRcs(app, { ...v1.messagesRcs, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
-      // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
-      // `requireApiKey` déjà construit : ses appels comptent dans le plafond de l'espace, comme ceux de `/v1`.
-      //
-      // Pas de `requireScope` ici : le serveur MCP a DEUX scopes (lecture, écriture) et c'est l'outil appelé
-      // qui décide duquel il a besoin. Un `requireScope` à la porte aurait forcé à en choisir un des deux, et
-      // donc soit fermé l'écriture, soit ouvert la lecture aux seules clés qui écrivent.
+      // Serveur MCP : même `requireApiKey` que /v1, donc ses appels comptent dans le plafond de l'espace. Pas
+      // de `requireScope` à la porte : il a deux droits (lecture, écriture) et c'est l'outil appelé qui décide
+      // duquel il a besoin.
       if (v1.mcp) registerMcp(app, v1.mcp, [requireApiKey], usageApi);
-      // Le relais du Meta Business Agent : le MÊME `requireApiKey`, qui reconnaît sa clé à son droit et la
-      // compte PAR CLÉ, hors du plafond de l'espace (`api-key.ts`). Ce droit, seule la publication l'attribue
-      // (`DROIT_RELAIS`, absent de `VALID_API_SCOPES`). La MÊME constante
-      // que celle qui crée la clé : un littéral recopié ici enverrait tous les appels en 403 le jour où l'un
-      // des deux change. Monté ici et pas à part, pour ne pas ouvrir une seconde autorité.
+      // Le relais du Meta Business Agent : le même `requireApiKey`, qui reconnaît sa clé à son droit et la
+      // compte par clé, hors du plafond de l'espace. Ce droit, seule la publication l'attribue (`DROIT_RELAIS`,
+      // absent de `VALID_API_SCOPES`) : la même constante que celle qui crée la clé, un littéral recopié ici
+      // enverrait tous les appels en 403 le jour où l'un des deux change.
       if (v1.mbaRelais) registerMbaRelais(app, v1.mbaRelais, [requireApiKey, requireScope(DROIT_RELAIS)]);
     }),
     // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
@@ -646,41 +573,32 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
 }
 
 /**
- * Le corps d'une réponse 5xx : volontairement OPAQUE, rien de l'erreur interne n'en sort. Exporté pour
+ * Le corps d'une réponse 5xx : opaque, rien de l'erreur interne n'en sort. Exporté pour
  * `tests/corps-opaque-parite.test.ts`, qui le tient égal à ce que la console reconnaît (`web/lib/http.ts`).
  */
 export const CORPS_OPAQUE_5XX = 'Internal Server Error';
 
 /**
- * Construit l'instance Fastify (le bouclier). La file et les stores sont injectés pour
- * rester testable sans DB. Les routes tenant (import/campaigns) EXIGENT l'auth : le tenant
- * est dérivé du JWT, jamais de l'URL.
+ * Construit l'instance Fastify. La file et les stores sont injectés pour rester testable sans DB. Les routes
+ * tenant exigent l'auth : le tenant est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
   /**
-   * 🔴 LE GARDE D'USAGE DE L'API PUBLIQUE, UNE SEULE INSTANCE POUR TOUTE LA SURFACE. Il compte le TRAVAIL,
-   * là où les limiteurs comptent les requêtes : avec 60 requêtes par minute, une clé fait accepter 30 000
-   * contacts ou 3 000 destinataires, donc le débit ne borne pas la charge. Deux instances auraient donné
-   * deux moitiés de compteurs selon la porte empruntée, ce qui n'aurait été visible de personne.
-   *
-   * ⚠️ EN OBSERVATION : construit sans plafond. Les seuils viendront d'une mesure et d'un arbitrage de
-   * Julien, jamais d'un plan. Un seuil deviné qui mord est une panne qu'on s'inflige.
-   *
-   * ⚠️ IL EST CRÉÉ AVANT LE REGISTRE, parce que l'entrée `/ops` et l'entrée `/v1` le capturent toutes les
-   * deux : l'écran d'exploitation et les routes publiques doivent regarder LE MÊME compteur.
+   * Une seule instance du garde d'usage pour toute la surface publique. Il compte le travail, là où les
+   * limiteurs comptent les requêtes (à 60 requêtes par minute, une clé fait accepter 30 000 contacts). Deux
+   * instances donneraient deux moitiés de compteurs selon la porte. Créé avant le registre, parce que `/ops`
+   * et `/v1` le capturent : l'écran d'exploitation et les routes doivent regarder le même compteur.
+   * En observation : construit sans plafond, les seuils viendront d'une mesure.
    */
   const usageApi = deps.usage ?? new GardeUsageMemoire(120, 0, () => Date.now(), config.API_MAX_LOURDES_SIMULTANEES);
 
-  // Le registre vit au niveau du module (`modulesDeRoutes`) pour qu'un test puisse l'exercer sans monter
-  // le serveur entier. C'est ce qui remplace le test qui relisait le texte de ce fichier.
+  // Le registre vit au niveau du module (`modulesDeRoutes`) pour qu'un test puisse l'exercer sans monter le
+  // serveur entier.
   const registre = modulesDeRoutes(deps, usageApi);
 
   /**
-   * 🔴 AUCUNE ROUTE PORTANT `:tenantId` NE SE MONTE SANS AUTHENTIFICATION.
-   *
-   * La couverture est DÉRIVÉE du registre : tout module déclaré `acces: 'tenant'` y entre, sans que personne
-   * ait à l'inscrire ailleurs. C'est la seule différence avec la version d'avant, et c'est toute la valeur du
-   * lot : l'oubli n'est plus détectable, il est impossible.
+   * 🔴 Aucune route portant `:tenantId` ne se monte sans authentification. La couverture est dérivée du
+   * registre : tout module déclaré `acces: 'tenant'` y entre sans être inscrit ailleurs.
    */
   if (registre.some((m) => m.acces === 'tenant' && m.fourni) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant refuse tout et le service est mort
@@ -691,50 +609,31 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
 
   /**
-   * 🔴 LE CORS, ET SES DEUX RÈGLES NON NÉGOCIABLES (préparation de la bascule Vercel, 2026-09-03).
-   *
-   * Il n'existe QUE parce que le front part sur son propre nom : tant que le navigateur appelait la même
-   * origine, le CORS n'avait aucun rôle. Il n'est donc posé QUE si une origine est explicitement inscrite,
-   * et il est absent sinon. Une porte qu'on n'ouvre pas est une porte qu'on n'a pas à surveiller.
-   *
-   * 1. LISTE BLANCHE, jamais `*`. Le refus de l'étoile est dans `src/config.ts`, au chargement, parce qu'un
-   *    réglage qui ouvre tout doit échouer au démarrage et pas se découvrir en lisant les logs.
-   * 2. AUCUN `credentials`. La session de cette console voyage dans un en-tête `Authorization`, jamais dans
-   *    un cookie : il n'y a donc AUCUN CSRF possible aujourd'hui. Activer les credentials en créerait un de
-   *    toutes pièces, pour un besoin qui n'existe pas. C'est le piège classique de cette migration.
-   *
-   * `x-ops-token` est dans les en-têtes autorisés parce que l'écran d'exploitation le pose lui-même : sans
-   * lui, la requête préalable du navigateur échouerait et `/ops` serait muet depuis le nouveau front.
-   */
-  /**
-   * Les en-têtes de sécurité, sur CHAQUE réponse.
-   *
-   * `onSend` est le DERNIER point du cycle avant que la réponse parte : il couvre donc toute réponse quelle
-   * que soit ce qui l'a produite, y compris celles qu'un hook antérieur rend directement sans jamais
-   * atteindre la route (un refus de plafond de débit, un préalable CORS).
-   *
-   * ⚠️ MESURÉ, ET PLUS MODESTE QUE PRÉVU : j'avais écrit ici que `onRequest` manquerait les réponses
-   * d'erreur. C'est FAUX pour la 404, vérifié par mutation le 2026-09-10 (le test passe avec les deux).
-   * Fastify exécute bien ses hooks de requête sur le chemin « route introuvable ». `onSend` reste le choix
-   * juste parce qu'il est en aval de tout, mais ce n'est pas lui qui répare la 404 : elle n'était pas
-   * cassée. Le test, lui, garde ce qui compte vraiment, à savoir que les en-têtes sont là sur une erreur.
+   * Les en-têtes de sécurité, sur chaque réponse. `onSend` est le dernier point du cycle avant l'envoi : il
+   * couvre toute réponse, y compris celles qu'un hook antérieur rend directement (refus de plafond de débit,
+   * préalable CORS).
    */
   app.addHook('onSend', async (_req, reply, payload) => {
     for (const [nom, valeur] of Object.entries(ENTETES_SECURITE_API)) reply.header(nom, valeur);
     return payload;
   });
 
+  /**
+   * 🔴 Le CORS n'est posé que si une origine est inscrite. Liste blanche, jamais `*` (refusé au chargement
+   * dans `src/config.ts`), et aucun `credentials` : la session voyage dans un en-tête `Authorization`, jamais
+   * dans un cookie, donc aucun CSRF possible ; les credentials en créeraient un.
+   * `x-ops-token` est autorisé parce que l'écran d'exploitation le pose : sans lui, la requête préalable du
+   * navigateur échouerait et `/ops` serait muet depuis le front.
+   */
   const origines = deps.corsOrigins?.map((o) => o.trim()).filter((o) => o !== '') ?? [];
   if (origines.length > 0) {
     void app.register(cors, {
       origin: origines,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['authorization', 'content-type', 'x-ops-token'],
-      // 🔴 Les en-têtes de plafond de débit, sans quoi la console NE PEUT PAS LES LIRE. Cross-origin, un
-      // navigateur ne laisse JavaScript voir qu'une courte liste d'en-têtes sûrs ; `retry-after` et les
-      // `x-ratelimit-*` n'en font pas partie. Ils partiraient bien sur le réseau, seraient visibles dans
-      // l'onglet Réseau, et resteraient invisibles au code : « on sait qu'on est bloqué, jamais pour
-      // combien de temps ». C'est un défaut qu'on impute au front alors qu'il vient d'ici.
+      // Les en-têtes de plafond de débit : cross-origin, un navigateur ne laisse JavaScript voir qu'une courte
+      // liste d'en-têtes sûrs, dont `retry-after` et `x-ratelimit-*` ne font pas partie. Sans cette liste, la
+      // console saurait qu'elle est bloquée, jamais pour combien de temps.
       exposedHeaders: ['retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset'],
       credentials: false,
       maxAge: 600,
@@ -747,7 +646,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // 422 (4xx) et non 502 : Cloudflare/NPM remplacent les 5xx de l'origine par leur propre page
     // « error code: 502 », ce qui masque le message Meta utile. Un 4xx passe tel quel avec le body.
     if (err instanceof MetaApiError) {
-      // Préférer le message UTILISATEUR de Meta (`error_user_msg`) au générique « Invalid parameter » :
+      // Préférer le message utilisateur de Meta (`error_user_msg`) au générique « Invalid parameter » :
       // ex. suppression d'un exemple de template -> « Les exemples de modèles ne peuvent pas être supprimés ».
       const friendly = err.userMessage ?? err.message;
       const detail = friendly.replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -757,34 +656,30 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     if (err instanceof FlowJsonInvalidError) {
       return reply.code(422).send({ error: err.message.slice(0, 200) });
     }
-    // Corps trop gros : Fastify répond « Request body is too large », en anglais et sans dire quoi faire.
-    // C'est le mur que rencontre un opérateur qui importe un gros CSV (AUDIT-SCALE-2026-08-25.md, R9) : le
-    // message doit être en français, et surtout dire l'issue (couper le fichier), pas seulement le refus.
+    // Corps trop gros : Fastify répond en anglais sans dire quoi faire. Un opérateur qui importe un gros CSV
+    // doit lire l'issue (couper le fichier), pas seulement le refus.
     if (err.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
       return reply.code(413).send({ error: 'Fichier trop volumineux pour un seul envoi. Découpe-le en plusieurs fichiers plus petits et recommence.' });
     }
     const code = err.statusCode ?? 500;
-    // JOURNALISER AVANT DE MASQUER. Le corps renvoyé au client reste volontairement opaque sur les 5xx (pas
-    // de fuite d'interne), mais l'exception doit laisser une trace exploitable côté serveur : sans ça, une
-    // saturation du pool, une erreur SQL ou un bug de sérialisation produisaient un « Internal Server Error »
-    // dont il ne restait RIEN nulle part, et on ne pouvait que constater le symptôme depuis le navigateur.
-    // `journaliser` et non `req.log` : Fastify est construit en `logger: false`, donc `req.log` est un no-op.
-    // Et il porte la CAUSE : c'est cette ligne qui voit le 500 d'un `fetch failed`, muet sans son `ENOTFOUND`.
+    // Journaliser avant de masquer : le corps des 5xx reste opaque (pas de fuite d'interne), mais l'exception
+    // doit laisser une trace côté serveur. `journaliser` et non `req.log` : Fastify est construit en
+    // `logger: false`, donc `req.log` est un no-op. Il porte la cause (le `ENOTFOUND` d'un `fetch failed`).
     if (code >= 500) {
       journaliser('error', 'unhandled_route_error', { method: req.method, url: req.url, tenantId: req.auth?.tenantId ?? null, err });
     }
-    // ⚠️ Ce texte a un LECTEUR : la console le reconnaît et le remplace par une phrase traduite
+    // Ce texte a un lecteur : la console le reconnaît et le remplace par une phrase traduite
     // (`OPAQUE_DU_SERVEUR`, `web/lib/http.ts`). Les deux se tiennent par `tests/corps-opaque-parite.test.ts`.
     reply.code(code).send({ error: code < 500 ? err.message : CORPS_OPAQUE_5XX });
   });
 
-  // LIVENESS : le process répond (event loop non bloqué). Zéro DB, zéro dep -> cible d'un healthcheck/restart.
-  // Ne JAMAIS y toucher la DB, sinon il devient une 2e readiness et perd son sens (« process vivant » ≠ « DB joignable »).
+  // Liveness : le process répond (event loop non bloquée). Zéro DB, zéro dépendance : cible d'un healthcheck.
+  // Ne jamais y toucher la DB, sinon il devient une seconde readiness et perd son sens.
   app.get('/live', async () => ({ ok: true }));
 
-  // READINESS : la DB est-elle joignable ? 503 si non (pool saturé / pooler injoignable), pour un monitoring externe.
-  // On CATCHE et on `reply.code(503)` DANS le handler : un throw serait converti en 500 par setErrorHandler ci-dessus.
-  // Sans checkReadiness (tests DB-free), on conserve le 200 inconditionnel d'avant (contrat de test préservé).
+  // Readiness : la DB est-elle joignable ? 503 si non, pour un monitoring externe. On catche et on répond 503
+  // dans le handler : un throw serait converti en 500 par setErrorHandler. Sans checkReadiness (tests sans
+  // DB), 200 inconditionnel.
   app.get('/health', async (_req, reply) => {
     if (!deps.checkReadiness) return { ok: true, service: 'messagingme-mba', ts: Date.now() };
     try {
@@ -796,25 +691,15 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   });
 
   /**
-   * LES DEUX PLAFONDS DE DÉBIT DES ROUTES AUTHENTIFIÉES.
-   *
-   * Le général est passé à `makeRequireAuth`, donc les 36 modules gardés en héritent d'un coup et un module
-   * ajouté demain l'aura sans que personne y pense : c'est la même propriété que le garde-fou `scopeTenant`
-   * ci-dessus. Le second est composé route par route sur les seules routes coûteuses.
-   *
-   * ⚠️ Les deux limiteurs sont LOCAUX AU PROCESS, comme tous ceux de ce dépôt. Le plafond annoncé est celui
-   * d'UNE instance : `AUDIT-ARCHITECTURE-AUTOSCALING-2026-09-03.md` les nomme parmi les trois adhérences à
-   * lever avant de passer à plusieurs replicas. Les porter en base coûterait une écriture Postgres par
-   * requête, ce qui irait contre le but même de la garde.
-   *
-   * Un maximum à 0 rend le limiteur `undefined`, donc absent : c'est la trappe de secours si le calibrage se
-   * révèle mauvais en production (cf. `config.ts`).
+   * Les deux plafonds de débit des routes authentifiées. Le général est passé à `makeRequireAuth`, donc tout
+   * module gardé en hérite ; le second est composé route par route sur les seules routes coûteuses.
+   * Locaux au process : le plafond annoncé est celui d'une instance, à lever avant le multi-replica (les
+   * porter en base coûterait une écriture Postgres par requête). Un maximum à 0 rend le limiteur absent :
+   * c'est la trappe de secours si le calibrage se révèle mauvais (cf. `config.ts`).
    */
-  // ⚠️ AUCUN plafond de clés (4e argument laissé à son défaut), contrairement aux limiteurs de `/auth/*` et
-  // de `/w/:code`. La règle de `rate-limit.ts` est « poser un plafond dès que la clé est choisie par
-  // l'APPELANT » : ici elle vient d'un JWT VÉRIFIÉ, donc elle n'est pas libre, et un plafond ferait refuser
-  // un utilisateur NEUF quand la table est pleine, c'est-à-dire punir un client légitime pour la charge des
-  // autres. La fenêtre d'une minute suffit à borner la table : les entrées expirent et `prune` les retire.
+  // Aucun plafond de clés (4e argument à son défaut) : la clé vient d'un JWT vérifié, pas de l'appelant, et
+  // un plafond ferait refuser un utilisateur neuf quand la table est pleine. Les entrées expirent en une
+  // minute et `prune` les retire.
   const parMinute = (max: number): RateLimiter | undefined =>
     max > 0 ? new RateLimiter(max, 60_000) : undefined;
   const plafondUtilisateur = parMinute(deps.plafonds?.utilisateurParMinute ?? config.RATE_LIMIT_USER_PAR_MINUTE);
@@ -824,51 +709,27 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     : undefined;
 
   /**
-   * 🔴 SANS `deps.auth`, LA GARDE VAUT UN REFUS, JAMAIS `undefined` (lot 2 du plan 2026-09-14).
-   *
-   * C'est la différence entre « personne ne s'en sert » et « quelqu'un s'en sert et elle ne fait rien ».
-   * Avant, ces trois gardes étaient `undefined` quand l'authentification n'était pas câblée, et chaque module
-   * de routes les recevait en paramètre OPTIONNEL puis les dégradait en silence (`garde ? { preHandler } :
-   * {}`, le motif était dans 45 endroits) : une route montée sans garde était servie SANS AUCUN CONTRÔLE.
-   *
-   * ⚠️ AUCUN CHEMIN N'Y MÈNE AUJOURD'HUI, et ce n'est pas une raison de s'en passer. Le garde-fou plus haut
-   * refuse déjà de démarrer si un module `acces: 'tenant'` est monté sans `deps.auth`, et le seul module non
-   * tenant qui prend une garde est `auth` lui-même, qui n'est pas monté dans ce cas. Ce refus est donc
-   * inatteignable : il existe pour que l'inatteignabilité cesse de dépendre d'un raisonnement, et pour que
-   * le type puisse exiger une garde partout.
+   * 🔴 Sans `deps.auth`, la garde vaut un refus, jamais `undefined` : une route montée sans garde serait
+   * servie sans aucun contrôle. Aucun chemin n'y mène aujourd'hui (le garde-fou plus haut refuse de
+   * démarrer) ; ce refus existe pour que le type puisse exiger une garde partout.
    */
   const refuseTout: PreHandler = async (_req, reply) => {
     await reply.code(401).send({ error: 'authentification non configurée' });
   };
   const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState, plafondUtilisateur) : refuseTout;
-  // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière
-  // est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer/rediriger en confort.
+  // RBAC : la barrière est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer ou
+  // rediriger, par confort.
   const requireAdmin: Guard = [requireAuth, makeRequireRole(['admin'])];
   /**
-   * L'ENCADREMENT : `admin` ET `manager`.
-   *
-   * 🔴 OUVERT AUX ÉCRANS DE CONFORMITÉ LE 2026-09-14, sur décision de Julien. Le rôle `manager` existait
-   * depuis la migration 0065 et donnait exactement les accès d'un agent ; le centre de Sécurité a livré la
-   * première route qui le nomme, et la revue du chantier a montré qu'elle était INERTE (la console renvoyait
-   * tout compte non-admin à l'inbox). Les deux moitiés bougent donc ensemble, ici et dans `web/lib/nav.ts`.
-   *
-   * ⚠️ CONSULTER N'EST PAS DÉCIDER. Un manager LIT la liste des désabonnés, la politique d'annonce d'IA et
-   * les deux journaux ; il ne branche aucun connecteur et ne change aucune politique. Ces écritures-là
-   * restent sur `requireAdmin`, et l'écran masque ce qu'il ne peut pas faire.
+   * L'encadrement : `admin` et `manager`, pour les écrans de conformité. Consulter n'est pas décider : un
+   * manager lit la liste des désabonnés, la politique d'annonce d'IA et les journaux, mais les écritures
+   * restent sur `requireAdmin`. Cette ouverture bouge avec `web/lib/nav.ts`.
    */
   const requireEncadrement: Guard = [requireAuth, makeRequireRole(['admin', 'manager'])];
 
   /**
-   * LE MONTAGE, en une seule boucle sur le registre.
-   *
-   * 🔴 IL N'Y A PLUS DE LISTE D'APPELS À TENIR ICI. Avant, chaque module apparaissait sous la forme
-   * `if (deps.x) registerX(app, deps.x, <la bonne garde>)`, et TROIS choses pouvaient s'y perdre sans que
-   * rien ne le signale : le module lui-même (simplement oublié, la route n'existe alors pas), sa garde
-   * (passée `undefined`, donc dégradée en silence par le module), et son inscription dans la liste de
-   * couverture tenant. Les trois vivent désormais dans son entrée de registre, et le type les exige.
-   *
-   * ⚠️ L'ordre de montage est celui du registre, et il reproduit l'ancien exactement : c'est ce que vérifie
-   * l'essai de ce lot (la table de routes, avant contre après).
+   * Le montage, en une seule boucle sur le registre : le module, sa garde et sa couverture tenant vivent dans
+   * son entrée, et le type les exige. L'ordre de montage est celui du registre.
    */
   const gardes: Gardes = {
     auth: requireAuth,

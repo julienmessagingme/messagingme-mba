@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { PLAFOND_DESTINATAIRES_DEFAUT } from './campaign/plafond';
 import { PLAFOND_API_DEFAUT } from './auth/plafond-espace';
 
-/** Exporté pour les tests : `config` est parsé À L'IMPORT, donc inutilisable pour vérifier les fail-fast
- *  (il faudrait réimporter le module avec un autre environnement). Le schéma, lui, se parse à la demande. */
+/** Exporté pour les tests : `config` est parsé à l'import, donc inutilisable pour vérifier les fail-fast ;
+ *  le schéma, lui, se parse à la demande. */
 export const schema = z.object({
   PORT: z.coerce.number().default(8095),
   META_APP_SECRET: z.string().default(''),
@@ -12,32 +12,28 @@ export const schema = z.object({
   META_ACCESS_TOKEN: z.string().default(''),
   /** Version Graph API pour les appels d'envoi. */
   META_GRAPH_VERSION: z.string().default('v25.0'),
-  /** App ID Meta (public) — endpoint du resumable upload `/{appId}/uploads` (headers média carousel). */
+  /** App ID Meta (public) : endpoint du resumable upload `/{appId}/uploads` (en-têtes média du carrousel). */
   META_APP_ID: z.string().default('988129420727963'),
   /**
-   * Router le marketing par MM Lite (`/marketing_messages`). Défaut 'false' -> endpoint standard
-   * `/messages`. MM Lite exige un onboarding Business Manager ; sans lui -> erreur 131042. Passer
-   * à 'true' seulement une fois le BM onboardé MM Lite.
+   * Router le marketing par MM Lite (`/marketing_messages`). Défaut 'false' : endpoint standard `/messages`.
+   * MM Lite exige un onboarding Business Manager, sans lui Meta rend 131042.
    */
   META_MM_LITE: z.string().default('false'),
   /** Configuration Embedded Signup (Facebook Login for Business) : l'id de configuration du dashboard Meta.
    *  Vide -> bouton « Connecter » inactif au front et route de complétion en 503 (feature OFF). */
   META_ES_CONFIG_ID: z.string().default(''),
   /**
-   * Configuration « publicités » (Facebook Login for Business) : l'id de la SECONDE configuration, celle
-   * qui demande le compte publicitaire et la Page. Vide -> écran « Publicités » inactif, avec sa raison.
-   *
-   * 🔴 UNE CONFIGURATION SÉPARÉE DE L'INSCRIPTION WHATSAPP, ET C'EST UN CHOIX. Ajouter les permissions
-   * publicitaires à la configuration d'inscription ferait demander l'accès aux comptes publicitaires d'un
-   * client au moment où il branche son NUMÉRO, c'est-à-dire pour quelque chose qu'il n'a pas demandé.
+   * Id de la seconde configuration Facebook Login for Business, celle des publicités (compte publicitaire et
+   * Page). Vide -> écran « Publicités » inactif, avec sa raison.
+   * Séparée de l'inscription WhatsApp : sinon on demanderait l'accès aux comptes publicitaires d'un client au
+   * moment où il branche son numéro.
    */
   META_ADS_CONFIG_ID: z.string().default(''),
   /** Clé AES-256-GCM (64 hex = 32 octets) du chiffrement au repos des tokens business ES. Requise si ES activé. */
   ENCRYPTION_KEY: z.string().default(''),
   /**
-   * Fournisseur des numéros du pool (Zadarma) : c'est lui qui reçoit l'appel de vérification de Meta et dont
-   * on transcrit l'enregistrement pour capter l'OTP. Vides -> la capture est inerte et l'embarquement retombe
-   * sur la saisie manuelle du code, qui reste le comportement d'aujourd'hui.
+   * Fournisseur des numéros du pool (Zadarma) : il reçoit l'appel de vérification de Meta, dont on transcrit
+   * l'enregistrement pour capter l'OTP. Vides -> capture inerte, l'embarquement retombe sur la saisie manuelle.
    */
   ZADARMA_API_KEY: z.string().default(''),
   ZADARMA_API_SECRET: z.string().default(''),
@@ -48,48 +44,33 @@ export const schema = z.object({
   /** Mode démo : le worker n'appelle PAS Meta, il marque les envois `sent` (message-id synthétique). */
   DRY_RUN: z.string().default('false'),
   /**
-   * Débit par défaut (messages/minute) d'une campagne SANS ratePerMinute explicite. Avant ce défaut, une telle
-   * campagne partait à plein régime (aucun frein). 30/min lisse le burst et protège la réputation du numéro, très
-   * loin du plafond API Meta (~80 msg/s). Mettre à 0 (ou vide) = opt-out : retour au comportement « aucun frein ».
-   * ⚠️ Doit rester >= le plancher de pacing.ts (30) sous peine de sous-dimensionner expireInSeconds ; en dessous,
-   * pacing résout le MÊME défaut via resolveRatePerMinute, donc l'estimation reste alignée sur le débit réel.
+   * Débit par défaut (messages/minute) d'une campagne sans `ratePerMinute` explicite : lisse le burst et
+   * protège la réputation du numéro. 0 (ou vide) = aucun frein.
+   * Doit rester >= au plancher de pacing.ts (30), sinon `expireInSeconds` est sous-dimensionné ; en dessous,
+   * pacing résout le même défaut via `resolveRatePerMinute`, donc l'estimation reste alignée sur le débit réel.
    */
   CAMPAIGN_DEFAULT_RATE_PER_MINUTE: z.coerce.number().int().min(0).max(80).default(30),
   /**
-   * Plafond de débit des routes AUTHENTIFIÉES, par utilisateur et par minute. Clé = `userId`, posée dans
-   * `makeRequireAuth` (cf. le commentaire qui y explique pourquoi ce n'est pas `req.ip`).
-   *
-   * 300 est très large pour un humain : la console tire une dizaine d'appels en rafale à l'ouverture d'un
-   * écran, quelques dizaines par minute en cliquant vite. Le but n'est pas de rationner l'usage normal, c'est
-   * de borner le coût qu'un compte authentifié peut infliger à Postgres.
-   *
-   * 🔴 **0 DÉSACTIVE**, et c'est délibéré : ce plafond s'applique aux 235 routes authentifiées d'un produit en
-   * production. Un mauvais calibrage couperait la console de tous les clients, et remettre la variable à 0
-   * (puis `compose up -d --force-recreate`) va nettement plus vite qu'un déploiement de code.
+   * Plafond de débit des routes authentifiées, par utilisateur et par minute (clé `userId`, posée dans
+   * `makeRequireAuth`). 300 est très large pour un humain : on borne le coût qu'un compte peut infliger à
+   * Postgres, on ne rationne pas l'usage normal.
+   * 0 désactive : c'est le levier d'urgence si un mauvais calibrage coupe la console de tous les clients
+   * (remettre à 0 puis `compose up -d --force-recreate` va plus vite qu'un déploiement).
    */
   RATE_LIMIT_USER_PAR_MINUTE: z.coerce.number().int().min(0).default(300),
   /**
-   * Plafond des routes COÛTEUSES (import CSV, action en masse, purge, export d'historique, lancement de
-   * campagne), par ESPACE et par minute. Clé = `tenantId` et non `userId` : ce qu'on borne ici est la charge
-   * qu'un espace envoie à Postgres, et un espace à dix comptes disposerait sinon de dix fois le plafond.
-   *
-   * S'ajoute au plafond général sans le remplacer. 0 désactive, même raison que ci-dessus.
+   * Plafond des routes coûteuses (import CSV, action en masse, purge, export d'historique, lancement de
+   * campagne), par espace et par minute, en plus du plafond général. Clé `tenantId` et non `userId` : on borne
+   * la charge d'un espace sur Postgres, et un espace à dix comptes aurait sinon dix fois le plafond.
+   * 0 désactive.
    */
   RATE_LIMIT_COUTEUX_PAR_MINUTE: z.coerce.number().int().min(0).default(10),
   /**
-   * LES DEUX BORNES RÉGLABLES DES CHAMPS PERSONNALISÉS.
-   *
-   * 🔴 LEURS VALEURS VIENNENT D'UNE MESURE, PAS D'UNE INTUITION (base de production, 2026-09-14) :
-   * 10 définitions de champs sur l'ensemble des espaces, l'espace le plus fourni en porte 9, la clé la
-   * plus longue fait 11 caractères. Chaque défaut ci-dessous est donc largement au-dessus de l'usage réel.
-   *
-   * ⚠️ `API_MAX_CHAMPS_PAR_ESPACE` NE BORNE PLUS QUE LE WEBHOOK ENTRANT ET LA CRÉATION À LA MAIN : l'API publique
-   * ne crée plus aucun champ (2026-09-26). À 0, il est DÉSACTIVÉ, exactement comme les plafonds de débit.
-   * `API_MAX_CLE_CHAMP` borne la FORME d'un corps de requête : pas de sens à 0 (`min(1)`).
-   *
-   * ⚠️ LE NOMBRE DE CHAMPS PAR FICHE N'EST PLUS ICI (`API_MAX_CHAMPS_PAR_CONTACT`, parti le 2026-09-26) : il vaut
-   * 20 à l'unité et 10 dans un lot, deux chiffres que la doc publique affiche, donc des constantes du code
-   * (`MAX_PAR_FICHE*`, `src/api/contacts-upsert.ts`). Une variable les ferait mentir en silence.
+   * Les deux bornes réglables des champs personnalisés, très au-dessus de l'usage réel mesuré.
+   * `API_MAX_CHAMPS_PAR_ESPACE` ne borne que le webhook entrant et la création à la main (l'API publique ne
+   * crée aucun champ) ; 0 le désactive. `API_MAX_CLE_CHAMP` borne la forme d'un corps : pas de sens à 0.
+   * Le nombre de champs par fiche est une constante du code (`MAX_PAR_FICHE*`, `src/api/contacts-upsert.ts`) :
+   * la doc publique l'affiche, une variable le ferait mentir en silence.
    */
   API_MAX_CLE_CHAMP: z.coerce.number().int().min(1).default(64),
   API_MAX_CHAMPS_PAR_ESPACE: z.coerce.number().int().min(0).default(200),
@@ -99,7 +80,7 @@ export const schema = z.object({
    * valeur inconnue est refusée au boot.
    */
   RCS_PROVIDER: z.enum(['fake', 'smsmode']).default('fake'),
-  /** Clé du CANAL RCS smsmode (pas celle du compte : une clé est rattachée à un canal, et une clé de canal
+  /** Clé du canal RCS smsmode (pas celle du compte : une clé est rattachée à un canal, et une clé de canal
    *  SMS répond 403 « Channel type mismatch » sur l'API RCS). Secret serveur. */
   SMSMODE_RCS_API_KEY: z.string().default(''),
   /** URL publique qui reçoit les rapports de livraison smsmode. Vide -> aucun rapport, donc la sortie
@@ -107,362 +88,239 @@ export const schema = z.object({
   SMSMODE_CALLBACK_STATUS_URL: z.string().default(''),
   /** URL publique qui reçoit les réponses entrantes (MO) smsmode. */
   SMSMODE_CALLBACK_MO_URL: z.string().default(''),
-  /** URL du pooler Supabase mode SESSION (port 5432). Sert à pg-boss (API + worker) ET, par défaut, au pool
-   *  applicatif si APP_DATABASE_URL est vide. Les scripts CLI (db/migrate.ts, db/seed.ts)
-   *  lisent CETTE var en direct (jamais APP_DATABASE_URL) -> DDL/seed toujours en session mode, c'est voulu. */
+  /** URL du pooler Supabase mode session (port 5432). Sert à pg-boss (API + worker) et, par défaut, au pool
+   *  applicatif si APP_DATABASE_URL est vide. Les scripts CLI (db/migrate.ts, db/seed.ts) lisent cette variable
+   *  en direct, jamais APP_DATABASE_URL : DDL et seed passent toujours en mode session. */
   DATABASE_URL: z.string().default(''),
   /**
-   * URL du pooler Supabase mode TRANSACTION (port 6543) pour le POOL APPLICATIF (toutes les requêtes des stores,
-   * API + worker). Vide -> repli sur DATABASE_URL (session mode) = comportement d'avant (dégradation SÛRE si oubli).
-   * pg-boss reste IMPÉRATIVEMENT sur DATABASE_URL (session) : il maintient des connexions longues + une maintenance
-   * qui ne survivent pas au transaction pooling (le pooler réassigne le backend entre transactions).
-   * Bénéfice : sort les ~6 clients applicatifs (3 API + 3 worker) du budget SESSION (~15 partagé avec mm-hubspot),
-   * faisant tomber le pire cas de ~18 à ~8, enfin sous le plafond. ⚠️ Sûr car mba est search_path-agnostique
-   * (tables en public par défaut, mmhs TOUJOURS qualifié) et toutes ses transactions passent par un client dédié.
+   * URL du pooler Supabase mode transaction (port 6543) pour le pool applicatif (tous les stores, API +
+   * worker), qu'elle sort du budget de ~15 sessions partagé avec mm-hubspot. Vide -> repli sur DATABASE_URL.
+   * pg-boss reste obligatoirement sur DATABASE_URL : ses connexions longues et sa maintenance ne survivent pas
+   * au transaction pooling (le pooler réassigne le backend entre transactions). Sûr pour mba, indépendant du
+   * search_path (tables en public, mmhs toujours qualifié) et dont les transactions passent par un client dédié.
    */
   APP_DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
   /**
-   * Budget de connexions du pool APPLICATIF (tous les stores, API + worker), qui passe par le pooler en mode
-   * TRANSACTION (`APP_DATABASE_URL`, port 6543). ⚠️ Ce n'est PLUS le budget des ~15 sessions partagé avec
-   * mm-hubspot : ce budget-là ne concerne que pg-boss, resté en mode SESSION (`PGBOSS_MAX` ci-dessous). La
-   * valeur de 3 datait d'avant la bascule en mode transaction et n'était qu'un pansement, que son propre
-   * commentaire annonçait comme provisoire. Elle a survécu au correctif qu'elle attendait.
-   *
-   * Pourquoi 8 et pas plus, mesuré en production le 2026-08-25 : le pool est instancié PAR PROCESS (l'API et
-   * le worker importent le même module), donc 2 x 8 = 16 clients simultanés vers le pooler, ce qui est
-   * exactement la capacité observée (au-delà de 16 la latence double sans qu'aucune erreur ne remonte). Passer
-   * au-dessus déplacerait la file d'attente de NOTRE pool vers celle de Supavisor, où elle est MUETTE :
-   * `DB_CONN_TIMEOUT_MS` ne protégerait alors plus de rien, ce qui est l'inverse du but.
-   *
-   * Pourquoi le relever tout court : à 3, l'API ne pouvait tenir que 3 requêtes en vol, soit environ 250
-   * requêtes/s à 11 ms d'aller-retour mesuré. C'était le plafond direct du polling de l'inbox. ⚠️ Le relever
-   * ne CORRIGE pas ce polling, ça déplace seulement le goulot (cf. AUDIT-SCALE-2026-08-25.md, R7).
+   * Taille du pool applicatif (mode transaction, `APP_DATABASE_URL`), instancié par process : API et worker
+   * font 2 x 8 = 16 clients vers le pooler, sa capacité observée (au-delà, la latence double sans erreur).
+   * Plus haut, l'attente passerait de notre pool, borné par `DB_CONN_TIMEOUT_MS`, à celle de Supavisor, qui
+   * est muette. Le budget des ~15 sessions partagé avec mm-hubspot ne concerne que pg-boss (`PGBOSS_MAX`).
    */
   DB_POOL_MAX: z.coerce.number().default(8),
-  /** Max de connexions du pool pg-boss, qui reste en mode SESSION : c'est LUI qui vit dans le budget de ~15
+  /** Max de connexions du pool pg-boss, resté en mode session : c'est lui qui vit dans le budget de ~15
    *  sessions partagé avec mm-hubspot (2 process x 2 ici, + 2 x 2 chez lui). Ne pas le relever sans refaire
-   *  l'arithmétique de ce budget-là. */
+   *  l'arithmétique de ce budget. */
   PGBOSS_MAX: z.coerce.number().default(2),
   /**
-   * Timeout d'ACQUISITION d'une connexion du pool (ms). Le défaut `pg` est une attente ILLIMITÉE : pool saturé
-   * -> la requête HTTP ne répond jamais, sans erreur, sans trace. On préfère un échec net au bout du délai,
-   * que le setErrorHandler journalise. 0 = attente illimitée (comportement pg d'origine, à éviter).
+   * Timeout d'acquisition d'une connexion du pool (ms). Le défaut `pg` est une attente illimitée : pool saturé,
+   * la requête HTTP ne répond jamais, sans trace. On préfère un échec net que le setErrorHandler journalise.
+   * 0 = attente illimitée (à éviter).
    */
   DB_CONN_TIMEOUT_MS: z.coerce.number().default(8000),
   /** Secret de la surface d'exploitation cross-tenant `/ops` (lecture seule). Vide -> /ops désactivé (401). */
   OPS_TOKEN: z.string().default(''),
-  /** Alerte Telegram du worker (erreurs pg-boss, échecs de balayage). ENV-FIRST : le conteneur worker n'a PAS
-   *  accès au config.json de l'hôte utilisé par les crons ops. Vide -> aucune alerte (no-op silencieux). */
+  /** Alerte Telegram du worker (erreurs pg-boss, échecs de balayage). Lue dans l'environnement : le conteneur
+   *  worker n'a pas accès au config.json de l'hôte utilisé par les crons ops. Vide -> aucune alerte. */
   TELEGRAM_BOT_TOKEN: z.string().default(''),
   TELEGRAM_CHAT_ID: z.string().default(''),
   /** Cadence du heartbeat worker (ms). Défaut 20 s : écriture négligeable pour le pooler, assez fine pour
    *  qu'un worker mort dépasse vite le seuil d'âge côté /ops. */
   HEARTBEAT_INTERVAL_MS: z.coerce.number().default(20_000),
   /**
-   * LE COMPTEUR PAR CLÉ, qui ne sert plus qu'au RELAIS DU META BUSINESS AGENT (2026-09-25) : requêtes par clé et
-   * par fenêtre (en mémoire, par process). Les autres clés sont comptées PAR ESPACE (`API_PLAFOND_*` ci-dessous).
-   * ⚠️ La fenêtre sert aussi au budget spéculatif (`API_KEY_PREFILTRE_MAX`).
+   * Compteur par clé, qui ne sert plus qu'au relais du Meta Business Agent : requêtes par clé et par fenêtre
+   * (en mémoire, par process). Les autres clés sont comptées par espace (`API_PLAFOND_*`). La fenêtre sert
+   * aussi au budget spéculatif (`API_KEY_PREFILTRE_MAX`).
    */
   API_KEY_RATE_LIMIT_MAX: z.coerce.number().default(60),
   API_KEY_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
   /**
-   * LE PLAFOND DE L'API PUBLIQUE PAR ESPACE, commun à toutes ses clés, `/v1` et `/mcp` confondus (décision de
-   * Julien du 2026-09-25) : appels par minute ET par heure, les deux s'appliquent. Un espace peut porter son
-   * propre réglage (`tenant_settings.api_plafond_*`, migration 0181, route `/ops/plafond-api/:tenantId`) ; ces
-   * deux valeurs sont celles des espaces qui n'en ont pas.
-   *
-   * ⚠️ 0 DÉSACTIVE la fenêtre concernée pour les espaces SANS réglage, comme les autres plafonds : c'est le levier
-   * d'urgence. Un réglage d'espace, lui, reste appliqué (il est toujours > 0, CHECK de 0181).
-   * ⚠️ Local au process (`src/auth/plafond-espace.ts`) : le plafond annoncé est celui d'UNE instance.
-   * ⚠️ Il compte des APPELS : le travail (fiches d'un lot, destinataires) est mesuré à part (`usage-guard.ts`).
+   * Plafond de l'API publique par espace, commun à toutes ses clés, `/v1` et `/mcp` confondus : appels par
+   * minute et par heure, les deux s'appliquent. Valeurs des espaces sans réglage propre
+   * (`tenant_settings.api_plafond_*`, route `/ops/plafond-api/:tenantId`).
+   * 0 désactive la fenêtre pour les espaces sans réglage (levier d'urgence) ; un réglage d'espace, toujours
+   * > 0, reste appliqué. Local au process : le plafond annoncé est celui d'une instance. Il compte des appels,
+   * le travail (fiches d'un lot, destinataires) est mesuré à part (`usage-guard.ts`).
    */
   API_PLAFOND_MINUTE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.minute),
   API_PLAFOND_HEURE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.heure),
   /**
-   * LE PRÉ-FILTRE DES CLÉS D'API : ce qu'un porteur NON RÉSOLU peut coûter, par minute.
-   *
-   * 🔴 IL EXISTE PARCE QUE LE PLAFOND CI-DESSUS NE COMPTE QUE DES CLÉS RÉSOLUES (`api-key.ts`), DONC
-   * AUCUNE FAUSSE CLÉ : une rafale de fausses clés n'était comptée par AUCUN plafond, et chacune coûtait un
-   * SHA-256 et une requête Postgres. Le budget de ce process est de 8 connexions, partagé avec la console
-   * et le worker : c'est là que l'amplification fait mal, pas dans le CPU.
-   *
-   * 🔴 IL EST GLOBAL, PAS PAR CLÉ, ET C'EST UN TEST QUI L'A IMPOSÉ. Un compteur indexé sur l'empreinte
-   * du bearer ne freine RIEN : trente fausses clés toutes différentes produisent trente compteurs à 1, et
-   * les trente requêtes Postgres partent quand même. Ce qu'on borne est donc le nombre de LOOKUPS
-   * SPÉCULATIFS par minute, toutes empreintes confondues.
-   *
-   * ⚠️ 30 EST TRÈS LARGE POUR L'USAGE LÉGITIME : une empreinte déjà résolue n'y est PLUS soumise, donc ce
-   * budget ne sert qu'aux PREMIERS appels (mesuré le 2026-09-14 : 2 clés existent en tout, 1 active). 0 le
-   * désactive, comme les autres plafonds.
+   * Pré-filtre des clés d'API : ce qu'un porteur non résolu peut coûter, par minute.
+   * Le plafond ci-dessus ne compte que des clés résolues : sans ce budget, chaque fausse clé coûte un SHA-256
+   * et une requête Postgres sur un pool de 8 connexions partagé avec la console et le worker.
+   * Global et non par clé : un compteur par empreinte ne freine rien (trente fausses clés, trente compteurs
+   * à 1). Une empreinte déjà résolue n'y est plus soumise, donc 30 est très large. 0 le désactive.
    */
   API_KEY_PREFILTRE_MAX: z.coerce.number().int().min(0).default(30),
   /**
-   * COMBIEN D'OPÉRATIONS LOURDES DE L'API PUBLIQUE PEUVENT ÊTRE EN VOL EN MÊME TEMPS (lot de contacts,
-   * création d'envoi). `0` désactive le plafond.
-   *
-   * 🔴 UN, ET LE CHIFFRE SE CALCULE : le pool de l'API porte `DB_POOL_MAX` = 8 connexions pour TOUT le
-   * process, et un lot de contacts en demande jusqu'à 4 à la fois (`ECRITURES_EN_VOL`). Un lot en vol en
-   * prend donc la moitié ; le suivant obtient un 429 avec `Retry-After`.
-   *
-   * 🔴 LA VALEUR A ÉTÉ DEUX JUSQU'AU 2026-09-21, avec pour justification que « deux lots saturent exactement
-   * le pool ». C'était précisément le défaut (contre-audit du 2026-09-14) : saturer le pool de l'API, c'est
-   * faire attendre tout ce qui le partage, la console des clients ET la réception des webhooks de Meta, donc
-   * les messages entrants. Le travail d'un intégrateur ne doit jamais prendre tout le pool.
-   *
-   * ⚠️ LA PLACE EST GLOBALE AU PROCESS, TOUS CLIENTS CONFONDUS. Pendant qu'un lot d'un espace est en vol,
-   * l'opération lourde d'un AUTRE espace reçoit le 429 (`Retry-After: 2`). Le pool est partagé par tous, donc
-   * un plafond par espace ne le protégerait pas. **Gardé tel quel par décision de Julien (2026-09-21)** : la
-   * réception des messages passe avant l'équité entre intégrateurs, qui attend dans `todo.md` le jour où
-   * plusieurs d'entre eux se croiseront.
-   *
-   * ⚠️ LE LIMITEUR DE DÉBIT NE PROTÈGE PAS DE ÇA : sa fenêtre est FIXE, donc les 60 requêtes d'une minute
-   * peuvent tomber dans la même milliseconde. Relever ce nombre demande de refaire l'arithmétique du pool,
-   * pas seulement de changer la variable ; un banc isolé qui mesure l'attente du pool en est la condition.
+   * Nombre d'opérations lourdes de l'API publique (lot de contacts, création d'envoi) en vol en même temps.
+   * 0 désactive.
+   * Un, et le chiffre se calcule : le pool de l'API porte `DB_POOL_MAX` = 8 connexions pour tout le process,
+   * et un lot en prend jusqu'à 4 (`ECRITURES_EN_VOL`). Saturer le pool ferait attendre la console et la
+   * réception des webhooks de Meta : le travail d'un intégrateur ne doit jamais prendre tout le pool.
+   * La place est globale au process, tous clients confondus (un autre espace reçoit 429, `Retry-After: 2`) :
+   * un plafond par espace ne protégerait pas un pool partagé.
+   * Le limiteur de débit n'en protège pas (fenêtre fixe, 60 requêtes peuvent tomber dans la même
+   * milliseconde). Relever ce nombre demande de refaire l'arithmétique du pool.
    */
   API_MAX_LOURDES_SIMULTANEES: z.coerce.number().int().min(0).default(1),
   /**
-   * Jours de conservation des ÉVÉNEMENTS Meta bruts (`webhook_events`), qui portent le texte des messages
-   * entrants et le numéro de qui écrit. 30 jours : bien au-delà de la fenêtre d'idempotence (quelques
-   * minutes) et de tout débogage d'incident réaliste, bien en deçà d'une conservation « pour toujours », qui
-   * était l'état jusqu'au 2026-08-31. `0` désactive la purge, et c'est un choix qu'il faut assumer : la table
-   * se remet alors à croître sans fin. Cf. migration 0093 et PLAN.md 5.2.
+   * Jours de conservation des événements Meta bruts (`webhook_events`), qui portent le texte des messages
+   * entrants et le numéro de qui écrit. 30 jours : bien au-delà de la fenêtre d'idempotence et du débogage
+   * d'un incident. 0 désactive la purge, et la table croît alors sans fin.
    */
   WEBHOOK_EVENTS_RETENTION_DAYS: z.coerce.number().default(30),
   /**
-   * Jours de conservation des CONVERSATIONS (et, par cascade, de leurs messages et de leur analyse
-   * qualitative). **90 depuis le 2026-09-17**, contre 365 auparavant.
-   *
-   * 🔴 LE CHIFFRE EST UNE DÉCISION, PAS UNE RÈGLE RGPD, et il faut le savoir pour la défendre. Le RGPD ne
-   * fixe AUCUNE durée : l'article 5.1.e dit « pas plus longtemps que nécessaire », et la CNIL donne des
-   * repères par finalité, aucun pour un historique de conversation. Le responsable de traitement est LE
-   * CLIENT, pas nous. 90 jours est le plancher que Julien avait donné dès le 2026-08-31 et qu'on applique
-   * enfin ; l'ancien commentaire prenait quatre fois ce plancher « parce que la suppression est
-   * irréversible », ce qui reste vrai mais conservait un an de contenu dont personne n'avait l'usage.
-   *
-   * 🔴 ET LE STOCKAGE N'ENTRE PAS DANS CETTE DÉCISION. Mesuré en production le 2026-09-17 : toute la base
-   * fait 31 Mo. Quiconque rouvrira ce choix doit le rouvrir sur le RGPD, jamais sur le disque.
-   *
-   * 🔴 LA CONTREPARTIE DE CE PASSAGE A 90 JOURS EST LA TABLE `analyse_jour` (migration 0155), et elle n'est
-   * pas optionnelle. Supprimer une conversation supprime son analyse EN CASCADE : sans agrégats, la
-   * Synthèse se viderait à la même vitesse que l'Inbox. Le worker écrit ces agrégats AVANT de purger, et
-   * la purge est SUSPENDUE tant qu'ils ne sont pas à jour. Changer ce nombre sans lire ce paragraphe, c'est
-   * risquer d'effacer un historique qu'on n'a pas gardé.
-   *
-   * ⚠️ RÉGLABLE PAR ESPACE (`tenant_settings.conversation_retention_days`) : le responsable de traitement
-   * est le client, donc il doit pouvoir demander plus court ou plus long. Cette valeur-ci est le DÉFAUT de
-   * l'instance, appliqué à tout espace qui n'a rien réglé.
-   *
-   * `0` désactive la purge. C'est un choix qu'il faut assumer : les conversations et leurs analyses (qui
-   * portent un `topic` et une `justification` en texte libre produits à partir de ce que la personne a
-   * raconté) sont alors gardées pour toujours.
+   * Jours de conservation des conversations (et, par cascade, de leurs messages et de leur analyse).
+   * Une décision, pas une règle RGPD : le RGPD ne fixe aucune durée (article 5.1.e, « pas plus longtemps que
+   * nécessaire ») et le responsable de traitement est le client. Le stockage n'entre pas dans ce choix.
+   * 🔴 La purge efface l'analyse en cascade : le worker écrit les agrégats `analyse_jour` avant de purger, et
+   * la purge est suspendue tant qu'ils ne sont pas à jour. Sans eux, la Synthèse se viderait avec l'Inbox.
+   * Réglable par espace (`tenant_settings.conversation_retention_days`) : ceci est le défaut de l'instance.
+   * 0 désactive la purge : conversations et analyses (texte libre tiré de ce que la personne a raconté) sont
+   * alors gardées pour toujours.
    */
   CONVERSATION_RETENTION_DAYS: z.coerce.number().default(90),
   /**
-   * Rétentions du lot 4 du programme II. Quatre tables qui grossissaient sans fin, et dont deux portent une
-   * donnée personnelle. 0 = balayage désactivé pour cette table (comme les rétentions ci-dessus).
-   *
-   * 🔴 Les deux natures ne se règlent pas pareil, et c'est le point à comprendre avant de toucher ces valeurs :
-   * les tables qui portent un `wa_id` (événements de blocs, parcours) ont une rétention COURTE parce que la
-   * donnée personnelle n'a plus de raison d'être ; celles qui n'en portent aucune (clics, journal d'audit) ont
-   * une rétention LONGUE parce qu'elles ne posent qu'une question de volume et qu'elles servent de mesure ou
-   * de preuve.
+   * Rétentions de quatre tables qui grossissaient sans fin. 0 = balayage désactivé pour la table.
+   * Celles qui portent un `wa_id` (événements de blocs, parcours) ont une rétention courte : la donnée
+   * personnelle n'a plus de raison d'être. Les autres (clics, journal d'audit) ont une rétention longue :
+   * elles ne posent qu'une question de volume et servent de mesure ou de preuve.
    */
-  /** ANONYMISATION (pas suppression) du `wa_id` des événements de blocs : les compteurs restent justes. */
+  /** Anonymisation (pas suppression) du `wa_id` des événements de blocs : les compteurs restent justes. */
   NODE_EVENTS_ANONYMISATION_DAYS: z.coerce.number().default(365),
-  /** Suppression des parcours TERMINÉS (`done`, `inbox`). Les parcours vivants ne sont jamais touchés. */
+  /** Suppression des parcours terminés (`done`, `inbox`). Les parcours vivants ne sont jamais touchés. */
   WORKFLOW_RUNS_RETENTION_DAYS: z.coerce.number().default(90),
-  /** Suppression des CLICS tracés (jamais des liens : `/r/<code>` est une porte à sens unique). */
+  /** Suppression des clics tracés (jamais des liens : `/r/<code>` est une porte à sens unique). */
   TRACKED_CLICKS_RETENTION_DAYS: z.coerce.number().default(730),
-  /** Suppression des entrées du journal d'audit. LONGUE : c'est la preuve qu'une purge a eu lieu. */
+  /** Suppression des entrées du journal d'audit. Longue : c'est la preuve qu'une purge a eu lieu. */
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().default(730),
   /**
-   * Suppression des échecs d'avance de scénario (migration 0108). COURTE, à l'opposé du journal d'audit :
+   * Suppression des échecs d'avance de scénario. Courte, à l'opposé du journal d'audit :
    * c'est de l'exploitation, on s'en sert dans les jours qui suivent la panne ou jamais.
    */
   AVANCE_ECHECS_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
   /**
-   * Suppression des agregats d'attente du pool (migration 0109). Courte : une ligne par minute et par process,
+   * Suppression des agrégats d'attente du pool. Courte : une ligne par minute et par process,
    * et on regarde une courbe de quelques heures, jamais de quelques mois.
    */
   POOL_ATTENTES_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   /**
-   * Plafond d'envois par minute et PAR NUMÉRO, tous chemins confondus (campagne, scénario, automation,
-   * réponse d'inbox). Lot 4 du programme, cf. `src/meta/arbitre-debit.ts`.
-   *
-   * 80 par défaut, et le chiffre n'est pas arbitraire : c'est le débit maximum qu'une campagne peut CHOISIR
-   * dans l'écran (1 à 80/min).
-   *
-   * 🔴 IL NE VAUT QUE POUR WHATSAPP. Le RCS a le sien (`RCS_RATE_PER_MINUTE_MAX`), et le choix se fait par
-   * `plafondDuCanal` : lire cette variable-ci directement pour brider autre chose qu'un numéro Meta
-   * réintroduirait exactement le défaut corrigé le 2026-09-12. Le plafond du numéro ne bride donc jamais une campagne seule, il empêche
-   * seulement DEUX campagnes du même numéro d'en faire 160, et fait payer les envois d'inbox et de scénario
-   * sur le même budget. Le relever au-delà de ce que Meta tolère pour le palier du numéro ne rend rien plus
-   * rapide : Meta répond alors 130429, et depuis le lot 1 la campagne se met en pause.
-   *
-   * `0` retire le frein. À n'utiliser que pour reproduire un incident.
+   * Plafond d'envois par minute et par numéro, tous chemins confondus (campagne, scénario, automation,
+   * réponse d'inbox), cf. `src/meta/arbitre-debit.ts`. 80 = le débit maximum qu'une campagne peut choisir à
+   * l'écran : il ne bride jamais une campagne seule, il empêche deux campagnes du même numéro d'en faire 160
+   * et fait payer les envois d'inbox et de scénario sur le même budget.
+   * WhatsApp seulement : le RCS a le sien (`RCS_RATE_PER_MINUTE_MAX`), choisi par `plafondDuCanal` ; lire
+   * celui-ci pour brider autre chose qu'un numéro Meta serait faux. Au-delà de ce que Meta tolère pour le
+   * palier du numéro, Meta répond 130429 et la campagne se met en pause.
+   * 0 retire le frein, à n'utiliser que pour reproduire un incident.
    */
   PHONE_RATE_PER_MINUTE_MAX: z.coerce.number().default(80),
   /**
-   * Plafond de débit du canal RCS, en messages par minute.
-   *
-   * ⚠️ 60 EST UN POINT DE DÉPART, PAS UNE MESURE (2026-09-12). smsmode ne publie aucun chiffre : leur
-   * documentation répond que l'infrastructure « s'ajuste automatiquement au volume ». La valeur vit
-   * donc en configuration pour se corriger sans déploiement, et ne doit JAMAIS être recopiée en dur.
-   * 🔴 Elle n'a rien à voir avec PHONE_RATE_PER_MINUTE_MAX, qui vient de Meta : les confondre est
-   * exactement le défaut que ce lot corrige.
+   * Plafond de débit du canal RCS, en messages par minute. 60 est un point de départ, pas une mesure :
+   * smsmode ne publie aucun chiffre. En configuration pour se corriger sans déploiement, jamais recopié en
+   * dur. Sans rapport avec PHONE_RATE_PER_MINUTE_MAX, qui vient de Meta.
    */
   RCS_RATE_PER_MINUTE_MAX: z.coerce.number().int().min(0).max(600).default(60),
   /**
-   * Plafond de RAPPELS smsmode par minute et PAR CODE d'URL (`/rcs/callback/:code`). `0` le désactive.
-   *
-   * 🔴 IL SE CALCULE SUR LE DÉBIT D'ENVOI, ET L'ÉCART EST TENU PAR UN TEST. Un message RCS produit jusqu'à
-   * trois accusés, plus les réponses du contact : au débit maximal que la configuration accepte
-   * (`RCS_RATE_PER_MINUTE_MAX` borné à 600), c'est 1 800 rappels par minute. 3 000 laisse la marge d'une
-   * rafale, par exemple smsmode qui rejoue d'un coup ce qu'il n'avait pas pu livrer. ⚠️ Ce débit est celui d'UN
-   * run de campagne, et le calcul tient parce qu'UN SEUL run tourne à la fois par espace (`campaign-run` en
-   * `groupConcurrency: 1` par `tenantId`, `src/worker.ts`) : le code d'un agent ne reçoit donc pas les accusés
-   * de deux campagnes simultanées (des tests tiennent le débit, la concurrence par groupe, et le `groupId` de
-   * chaque enfilement). Les envois RCS d'un SCÉNARIO, un message par contact qui avance, ne passent pas par ce
-   * débit : la marge de 3 000 sur 1 800 les absorbe, elle n'est pas calculée pour eux. En dessous du débit réel,
-   * smsmode rejouerait tout le trafic d'une campagne ; un refus est un 429, que smsmode REJOUE, donc un accusé
-   * retardé, pas perdu.
+   * Plafond de rappels smsmode par minute et par code d'URL (`/rcs/callback/:code`). 0 le désactive.
+   * Calculé sur le débit d'envoi (écart tenu par un test) : jusqu'à trois accusés par message plus les
+   * réponses, soit 1 800 rappels par minute au débit maximal (`RCS_RATE_PER_MINUTE_MAX` borné à 600) ;
+   * 3 000 laisse la marge d'une rafale. Le calcul tient parce qu'un seul run de campagne tourne à la fois par
+   * espace (`campaign-run` en `groupConcurrency: 1` par `tenantId`). Les envois RCS d'un scénario sont hors de
+   * ce débit, absorbés par la marge. Un refus est un 429 que smsmode rejoue : un accusé retardé, pas perdu.
    */
   RCS_CALLBACK_PAR_MINUTE: z.coerce.number().int().min(0).default(3000),
   /**
-   * Codes d'URL JAMAIS VUS que `/w/:code` et `/rcs/callback/:code` acceptent d'aller lire en base, par minute et
-   * par porte, TOUS APPELANTS CONFONDUS. `0` le désactive.
-   *
-   * 🔴 C'EST LA BORNE DES CODES INVENTÉS (décision de Julien du 2026-09-21). Un robot qui tire des codes bien
-   * formés coûtait une lecture en base par essai, sur le pool que partagent la console et la réception des
-   * messages. Un code déjà RÉSOLU par ce process n'y est plus soumis (`ClesResolues`) : une attaque qui épuise
-   * ce budget ne coupe donc pas les intégrations en service.
-   *
-   * ⚠️ LE PRIX ASSUMÉ, ET IL N'EXISTE PAS QUE SOUS ATTAQUE. Un vrai code qui n'a pas servi depuis le dernier
-   * démarrage consomme ce budget à son premier appel : il attend la minute suivante (429 avec `Retry-After`, que
-   * smsmode rejoue ; un outil d'intégration peut ne pas le faire) quand une attaque l'a épuisé, mais aussi quand
-   * plus de 120 codes réels DIFFÉRENTS se présentent dans la même minute juste après un redémarrage, ou quand des
-   * appels simultanés sur un même code pas encore résolu en consomment chacun une part. Un budget épuisé se
-   * journalise au plus une fois par minute : le relever si ce message apparaît hors attaque.
-   *
-   * ⚠️ `/r/:code` et `/m/:code` N'ONT PAS CE FREIN, délibérément : leurs codes réels sont très nombreux (un par
-   * lien, un par visuel) et cliqués en rafale par des contacts pendant une campagne. Après un redémarrage, un tel
-   * budget refuserait des clics réels.
+   * Codes d'URL jamais vus que `/w/:code` et `/rcs/callback/:code` acceptent d'aller lire en base, par minute
+   * et par porte, tous appelants confondus. 0 le désactive.
+   * Borne les codes inventés : chacun coûtait une lecture sur le pool partagé avec la console et la réception
+   * des messages. Un code déjà résolu par ce process n'y est plus soumis (`ClesResolues`).
+   * Prix assumé : un vrai code pas encore servi depuis le démarrage consomme ce budget, et attend la minute
+   * suivante (429 avec `Retry-After`) quand il est épuisé, y compris hors attaque (plus de 120 codes réels
+   * différents juste après un redémarrage). Un budget épuisé se journalise au plus une fois par minute : le
+   * relever si ce message apparaît hors attaque.
+   * `/r/:code` et `/m/:code` n'ont pas ce frein : leurs codes réels sont très nombreux et cliqués en rafale
+   * pendant une campagne, un tel budget y refuserait des clics réels.
    */
   CODES_INCONNUS_PAR_MINUTE: z.coerce.number().int().min(0).default(120),
   /**
-   * Plafond de destinataires d'une campagne (lot 3 du plan post-audit, 2026-09-02). Chiffre de Julien.
-   *
-   * Un garde-fou, pas un objectif : il empêche le serveur d'ACCEPTER PAR ACCIDENT ce qu'on a décidé de ne pas
-   * faire. En configuration pour qu'il se relève sans redéploiement le jour d'un vrai gros client. La règle et
-   * le message de refus vivent dans `src/campaign/plafond.ts`.
+   * Plafond de destinataires d'une campagne : un garde-fou contre l'envoi accidentel, pas un objectif. En
+   * configuration pour se relever sans redéploiement. Règle et message : `src/campaign/plafond.ts`.
    */
   CAMPAIGN_MAX_RECIPIENTS: z.coerce.number().int().min(1).default(PLAFOND_DESTINATAIRES_DEFAUT),
   /**
-   * TOURS D'AGENT EN VOL, et plafond par ESPACE (lot 6 du plan post-audit, 2026-09-02).
-   *
-   * 🔴 Le défaut de pg-boss est `localConcurrency: 1` (vérifié dans sa source). Cette file traitait donc UN
-   * tour à la fois POUR LA FLOTTE ENTIÈRE, avec un plafond de 120 s par appel au modèle : à 25 clients, cela
-   * faisait 30 tours par heure pour tout le monde, toutes conversations mêlées.
-   *
-   * Pourquoi 12 est sûr, et ce n'est pas une mesure mais une arithmétique : un tour passe l'essentiel de son
-   * temps à ATTENDRE le modèle, et il ne tient AUCUNE connexion pendant cette attente (les stores font
-   * `pool.query`, qui prend et rend la connexion par instruction). Douze tours en vol ne réservent donc pas
-   * douze connexions du pool de 8 (`DB_POOL_MAX`). ⚠️ Cette phrase cesserait d'être vraie le jour où un tour
-   * ouvrirait une transaction autour de l'appel au modèle : ce serait alors ce nombre-là qu'il faudrait revoir.
-   *
-   * Quatre par espace : trois clients actifs se partagent équitablement, et un client bavard ne prend pas les
-   * douze places. ⚠️ Les deux vont ENSEMBLE : `groupConcurrency` est un no-op tant que `concurrency` vaut 1.
-   *
-   * Point de départ PRUDENT, pas une mesure. En configuration pour être ajusté après le lot 7 (la mesure de
-   * l'attente du pool) sans redéployer de code.
+   * Tours d'agent en vol, et plafond par espace. Le défaut de pg-boss (`localConcurrency: 1`) traiterait un
+   * tour à la fois pour toute la flotte.
+   * 12 est sûr par arithmétique : un tour passe l'essentiel de son temps à attendre le modèle sans tenir de
+   * connexion (`pool.query` prend et rend la connexion par instruction), donc douze tours ne réservent pas
+   * douze connexions du pool de 8. Ce serait faux le jour où un tour ouvrirait une transaction autour de
+   * l'appel au modèle.
+   * Quatre par espace, pour qu'un client bavard ne prenne pas les douze places. Les deux vont ensemble :
+   * `groupConcurrency` est un no-op tant que `concurrency` vaut 1. Point de départ prudent, en configuration.
    */
   AGENT_TURN_CONCURRENCY: z.coerce.number().int().min(1).default(12),
   AGENT_TURN_GROUP_CONCURRENCY: z.coerce.number().int().min(1).default(4),
-  /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
+  /** Clé API Resend pour le formulaire de support. Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :
-   *  n'envoie QU'à l'adresse du compte Resend). Domaine vérifié -> `support@messagingme.app`. */
+   *  n'envoie qu'à l'adresse du compte Resend). Domaine vérifié -> `support@messagingme.app`. */
   SUPPORT_FROM: z.string().default('onboarding@resend.dev'),
   /** Destinataire des messages du formulaire de support. Vide -> support indisponible (503). */
   SUPPORT_TO: z.string().default(''),
   /** Client OAuth Google (public) pour « se connecter avec Google ». Vide -> bouton Google masqué (pas de crash). */
   GOOGLE_CLIENT_ID: z.string().default(''),
   /**
-   * URL publique du FRONT. Base des liens envoyés par e-mail (invitation `/invite/<jeton>`, réinitialisation
+   * URL publique du front. Base des liens envoyés par e-mail (invitation `/invite/<jeton>`, réinitialisation
    * `/reset/<jeton>`), qui sont des pages de la console, pas des routes d'API.
    */
   APP_URL: z.string().default('https://mba.messagingme.app'),
   /**
-   * URL publique de l'API, quand elle est servie sous SON PROPRE nom (bascule Vercel, cf.
-   * `docs/PLAN-BASCULE-VERCEL-2026-09-03.md`).
-   *
-   * 🔴 POURQUOI CETTE VARIABLE EXISTE. `APP_URL` faisait DEUX métiers à la fois : la base des liens d'e-mail
-   * (des pages du FRONT) et la base des adresses que le produit DISTRIBUE et qui sont servies par l'API, à
-   * savoir les liens tracés `/r/<code>`, les visuels RCS `/m/<fichier>` et l'URL d'un webhook entrant
-   * `/w/<code>`. Tant que le front et l'API vivaient sur le même hôte, une seule variable suffisait. Dès
-   * qu'ils se séparent, en garder une seule casse forcément un des deux côtés : soit les e-mails envoient
-   * les gens vers l'API, soit les liens tracés font un détour par le front.
-   *
-   * ⚠️ VIDE PAR DÉFAUT, ET C'EST LE POINT : tant qu'elle n'est pas posée, tout retombe sur `APP_URL` et le
-   * comportement est celui d'avant, au caractère près. Une variable dont l'oubli casse la production serait
-   * une mauvaise variable, surtout sur des adresses qui partent dans des messages qu'on ne peut plus corriger.
+   * URL publique de l'API quand elle est servie sous son propre nom. Base des adresses que le produit
+   * distribue et que l'API sert : liens tracés `/r/<code>`, visuels RCS `/m/<fichier>`, webhook entrant
+   * `/w/<code>`. `APP_URL` reste la base des liens d'e-mail (pages du front) : une seule variable pour les
+   * deux enverrait soit les e-mails vers l'API, soit les liens tracés par le front.
+   * Vide par défaut : tout retombe alors sur `APP_URL`, au caractère près, pour que son oubli ne casse pas
+   * des adresses déjà parties dans des messages.
    */
   PUBLIC_API_URL: z.string().default(''),
   /**
-   * Origines autorisées à appeler cette API depuis un NAVIGATEUR, séparées par des virgules.
+   * Origines autorisées à appeler cette API depuis un navigateur, séparées par des virgules.
    * Ex. `https://engageme.messagingme.app,https://mba.messagingme.app`.
-   *
-   * 🔴 VIDE = AUCUN CORS DU TOUT, et c'est le défaut voulu. Tant que le front est servi par le même hôte que
-   * l'API (le proxy Next), le navigateur ne fait aucune requête d'origine croisée : poser des en-têtes CORS
-   * n'apporterait rien et ouvrirait une porte pour rien. Ils n'apparaissent qu'à partir du moment où une
-   * origine est explicitement inscrite ici.
-   *
-   * ⚠️ JAMAIS `*`, et la valeur est refusée si on l'essaie. Une liste blanche est le seul CORS qui protège :
-   * l'étoile autorise n'importe quel site à faire faire des requêtes au navigateur d'un client connecté.
-   *
-   * ⚠️ ET JAMAIS `credentials: true` (cf. `src/server.ts`). La session de cette console voyage dans un en-tête
-   * `Authorization`, jamais dans un cookie : il n'y a donc AUCUN CSRF possible aujourd'hui. Activer les
-   * credentials en créerait un de toutes pièces, pour un besoin qui n'existe pas.
+   * Vide = aucun en-tête CORS, le défaut voulu : ils n'apparaissent que pour une origine inscrite ici.
+   * 🔴 Jamais `*` (refusé ici, au chargement) : l'étoile laisserait n'importe quel site faire faire des
+   * requêtes au navigateur d'un client connecté. Pourquoi jamais `credentials` : `src/server.ts`.
    */
   CORS_ORIGINS: z.string().default('').refine(
     (v) => !v.split(',').map((o) => o.trim()).includes('*'),
     { message: 'CORS_ORIGINS: `*` est refusé, il faut une liste blanche d’origines' },
   ),
-  /** Analyse de conversation (Pièce 1) : INERTE par défaut. 'true' -> le worker analyse les conversations closes. */
+  /** Analyse de conversation : inerte par défaut. 'true' -> le worker analyse les conversations closes. */
   CONVERSATION_ANALYSIS_ENABLED: z.string().default('false'),
   /** Cadence du garde-fou qui rend la main au scénario quand plus personne ne s'occupe d'une conversation. */
   CONTROL_SWEEP_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
-  /** Cadence du balayage de statut/qualité des numéros Meta (item 4.10). Défaut 20 min : 2 GET Graph par numéro
-   *  et par passage, large assez pour ne pas peser sur le rate-limit tant que le parc reste petit. */
+  /** Cadence du balayage de statut/qualité des numéros Meta. Défaut 20 min : 2 GET Graph par numéro et par
+   *  passage, assez large pour ne pas peser sur le rate-limit tant que le parc reste petit. */
   PHONE_STATUS_SWEEP_INTERVAL_MS: z.coerce.number().default(20 * 60 * 1000),
-  /** Inactivité au bout de laquelle un fil tenu par un OPÉRATEUR lui est repris. 2 h : assez long pour
-   *  qu'une pause déjeuner ne coupe pas un échange en cours, assez court pour qu'un onglet fermé ne gèle pas
-   *  le contact jusqu'au lendemain. Il n'existe AUCUN release automatique côté Meta : ce délai est notre
-   *  seule soupape. 0 désactive la reprise (le contrôle reste alors humain indéfiniment, à vos risques).
-   *  ⚠️ IL REVIENT À L'AGENT DE META quand le client l'a allumé, au scénario sinon. Ce commentaire disait
-   *  « revient au scénario » tout court, ce qui est faux depuis que le balayage choisit sa destination.
-   *  ⚠️ Réglable PAR CLIENT (`tenant_settings`), contrairement à `CONTROL_MBA_TIMEOUT_MS` et
-   *  `CONTROL_WORKFLOW_TIMEOUT_MS` (constantes, en fin de fichier).
-   *  🔴 ET IL EST DEVENU LE FILET DE LA REMISE À L'AGENT DE META (migration 0149). Depuis que la fin d'un
-   *  parcours attend l'accusé de son dernier envoi pour rendre le fil, elle laisse la conversation en
-   *  `app_human` pendant cette attente (quelques minutes en temps normal). Si l'accusé n'arrive jamais, c'est
-   *  CE délai qui reprend le fil et le rend pour de vrai à l'agent de Meta. Le mettre à 0 chez un client qui
-   *  a l'agent allumé ne « garde pas la main », ça supprime aussi ce rattrapage. */
+  /** Inactivité au bout de laquelle un fil tenu par un opérateur lui est repris (vers l'agent de Meta s'il
+   *  est allumé, sinon vers le scénario). 2 h : une pause déjeuner ne coupe pas un échange, un onglet fermé ne
+   *  gèle pas le contact jusqu'au lendemain. Meta n'a aucun release automatique : ce délai est notre seule
+   *  soupape. 0 désactive la reprise. Réglable par client (`tenant_settings`), contrairement à
+   *  `CONTROL_MBA_TIMEOUT_MS` et `CONTROL_WORKFLOW_TIMEOUT_MS` (constantes, en fin de fichier).
+   *  C'est aussi le filet de la remise à l'agent de Meta : la fin d'un parcours laisse le fil en `app_human`
+   *  en attendant l'accusé de son dernier envoi, et si l'accusé n'arrive jamais, ce délai rend le fil. À 0
+   *  chez un client qui a l'agent allumé, ce rattrapage disparaît aussi. */
   CONTROL_HUMAN_TIMEOUT_MS: z.coerce.number().default(2 * 60 * 60 * 1000),
-  /** Plafond PAR DÉFAUT de déclenchements par heure, pour une automation qui n'a pas son propre
-   *  `maxFiresPerHour` : depuis ce lot, le runner lit d'abord le plafond PROPRE de l'automation
-   *  (`AutomationRow.maxFiresPerHour`, `src/automation/runner.ts`) et ne retombe sur cette valeur globale que
-   *  s'il est absent. Ce n'est donc plus LE plafond effectif de chaque automation, seulement le défaut de
-   *  l'instance. L'anti-rebond est par (automation, CONTACT) et ne borne rien à l'échelle d'une population :
-   *  un seul acte d'exploitation (une campagne directe qui rouvre l'analyse de tous ses destinataires) peut
-   *  produire des milliers d'événements. 200/h laisse passer tout usage normal et transforme une erreur de
-   *  configuration en incident borné plutôt qu'en facture. 0 = pas de plafond. */
+  /** Plafond par défaut de déclenchements par heure, pour une automation sans `maxFiresPerHour` propre
+   *  (`src/automation/runner.ts` lit d'abord celui de l'automation). L'anti-rebond est par (automation,
+   *  contact) et ne borne rien à l'échelle d'une population : une campagne qui rouvre l'analyse de tous ses
+   *  destinataires peut produire des milliers d'événements. 200/h borne une erreur de configuration en
+   *  incident plutôt qu'en facture. 0 = pas de plafond. */
   AUTOMATION_MAX_FIRES_PER_HOUR: z.coerce.number().default(200),
   /** Clé API du provider LLM. Vide -> analyse non activable (fail-fast prod si ENABLED). */
   LLM_API_KEY: z.string().default(''),
-  /** Id de modèle LLM (ex. claude-haiku-4-5 pour ce classifieur haut-volume, ou claude-opus-4-8 pour la qualité).
-   *  À fixer au déploiement — JAMAIS d'id daté figé en dur. Vide -> analyse non activable. */
+  /** Id de modèle LLM (ex. claude-haiku-4-5 pour ce classifieur haut-volume). À fixer au déploiement, jamais
+   *  d'id daté figé en dur. Vide -> analyse non activable. */
   LLM_MODEL: z.string().default(''),
   /**
    * Cle du Vercel AI Gateway, pour l agent IA et son assistant de construction. Vide -> la conversation de
@@ -470,183 +328,120 @@ export const schema = z.object({
    */
   AI_GATEWAY_API_KEY: z.string().default(''),
   /**
-   * Jeton d API Vercel autorise a CREER des cles AI Gateway, et l equipe sur laquelle les creer.
-   *
-   * 🔴 CE JETON EST BIEN PLUS DANGEREUX QUE `AI_GATEWAY_API_KEY`. Cette derniere ne sait que depenser sur un
-   * plafond ; celui-ci sait FABRIQUER des cles facturees a l equipe. Qui le vole peut en emettre autant
-   * qu il veut. La parade ne vit pas dans ce fichier : c est le plafond d EQUIPE pose chez Vercel, qui borne
-   * les degats quel que soit le nombre de cles. A poser avant de renseigner cette variable.
-   *
-   * Les deux vides -> le provisionnement est ETEINT, et la creation d agent se comporte comme avant (tout le
-   * monde sur la cle maison). Une fois allumee, la creation d un agent EXIGE une cle : c est le choix de
-   * Julien du 2026-09-09, parce que le bac a sable appelle vraiment le modele, donc un client sans cle
-   * mettrait son agent au point sur notre argent.
-   */
-  /**
-   * TRANSCRIPTION des vocaux entrants (2026-09-09).
-   *
-   * `whisper-1` par defaut : 0,0001 $ la seconde, soit un quart de centime pour un vocal de 30 s, et il
-   * detecte la langue tout seul (mesure). Vide -> la route de transcription rend 503, rien ne casse.
-   *
-   * 🔴 LE PLAFOND EST EN TAILLE, PAS EN DUREE, ET CE N EST PAS UN CAPRICE. Julien voulait refuser au-dela de
-   * trois minutes ; or la duree n est connue QU APRES avoir telecharge et paye la transcription. Meta, lui,
-   * annonce la TAILLE avant le telechargement, ce qui est le seul signal disponible avant de depenser.
-   * 2 Mo couvrent tres largement trois minutes de vocal WhatsApp (opus, environ 16 kbit/s, soit ~360 Ko) et
-   * bornent en meme temps la memoire : le fichier entre entier en RAM, puis repart en base64, qui pese un
-   * tiers de plus.
+   * Modèle de transcription des vocaux entrants. `whisper-1` : un quart de centime pour un vocal de 30 s, et
+   * il détecte la langue seul. Vide -> la route de transcription rend 503.
+   * Plafond en taille, pas en durée : la durée n'est connue qu'après avoir téléchargé et payé la
+   * transcription, alors que Meta annonce la taille avant. 2 Mo couvrent largement trois minutes de vocal
+   * (opus ~16 kbit/s) et bornent la mémoire (fichier entier en RAM, puis en base64).
    */
   TRANSCRIPTION_MODELE: z.string().default('openai/whisper-1'),
   /**
-   * PLAFOND D'UNE PIÈCE JOINTE REÇUE qu'on accepte de servir à la console (2026-09-19).
-   *
-   * 🔴 IL N'EST PLUS CELUI DE LA TRANSCRIPTION. La route de lecture des médias empruntait les 2 Mo pensés
-   * pour un vocal : une photo prise en haute définition ou un PDF de quelques pages aurait été refusé, alors
-   * que Meta accepte 5 Mo pour une image, 16 Mo pour une vidéo et 100 Mo pour un document. 25 Mo couvrent
-   * l'usage courant tout en bornant la mémoire : le fichier entre ENTIER en RAM avant de repartir vers le
-   * navigateur. Au-delà, l'écran le dit avec la taille, plutôt que de faire grossir le processus.
+   * Plafond d'une pièce jointe reçue qu'on accepte de servir à la console, distinct de celui de la
+   * transcription (Meta accepte 5 Mo par image, 16 Mo par vidéo, 100 Mo par document). 25 Mo couvrent
+   * l'usage courant et bornent la mémoire : le fichier entre entier en RAM. Au-delà, l'écran le dit.
    */
   MEDIA_ENTRANT_TAILLE_MAX_KO: z.coerce.number().int().positive().default(25_600),
+  /**
+   * Jeton d'API Vercel autorisé à créer des clés AI Gateway, et l'équipe où les créer.
+   * 🔴 Bien plus dangereux que `AI_GATEWAY_API_KEY`, qui ne sait que dépenser sous un plafond : celui-ci
+   * fabrique des clés facturées à l'équipe. La parade est le plafond d'équipe posé chez Vercel, à poser
+   * avant de renseigner cette variable.
+   * Les deux vides -> provisionnement éteint, tout le monde sur la clé maison. Allumé, créer un agent exige
+   * une clé : le bac à sable appelle vraiment le modèle, un client le mettrait sinon au point sur notre argent.
+   */
   VERCEL_API_TOKEN: z.string().default(''),
   VERCEL_TEAM_ID: z.string().default(''),
   /**
-   * Modele de l IA de CONSTRUCTION, a ne pas confondre avec celui d un agent. Celle-ci tourne rarement
+   * Modèle de l'IA de construction, à ne pas confondre avec celui d'un agent. Celle-ci tourne rarement
    * (reglage et optimisation) et joue le role le plus dur : elle merite un modele plus fort que le runtime.
    * Vide -> repli sur LLM_MODEL.
    */
   AGENT_SETUP_MODEL: z.string().default(''),
   /**
-   * Modele du BOT D AIDE de la console (celui qui explique le produit au client).
-   *
-   * 🔴 SEPARE des deux autres, et pour une raison de nature differente : celui-ci repond a quelqu un qui
-   * ATTEND DEVANT SON ECRAN, il n appelle aucun outil, et il lit trois fiches courtes. Un modele rapide et
-   * bon marche y suffit, la ou l agent de production et l IA de construction meritent plus fort. Les
-   * confondre ferait payer un modele de raisonnement pour repondre << ouvrez Campagnes >>.
-   *
-   * ⚠️ CES APPELS SONT SUR NOTRE CLE, PAS SUR LE CREDIT DU CLIENT (decision de Julien du 2026-09-11) :
-   * facturer quelqu un pour apprendre a se servir du produit se retourne contre nous. Vide -> la route d
-   * aide repond 503, jamais un repli muet.
+   * Modèle du bot d'aide de la console. Séparé des deux autres : il répond à quelqu'un qui attend devant son
+   * écran, sans outil, sur trois fiches courtes, donc un modèle rapide et bon marché suffit.
+   * 🔴 Sur notre clé, pas sur le crédit du client : facturer quelqu'un pour apprendre le produit se retourne
+   * contre nous. Vide -> la route d'aide répond 503, jamais un repli muet.
    */
   AGENT_AIDE_MODEL: z.string().default(''),
   /**
-   * Modele de TRADUCTION des conversations (2026-09-12).
-   *
-   * 🔴 SUR LE CREDIT PREPAYE DU CLIENT, contrairement au bot d aide juste au-dessus, et c est la seule
-   * difference qui compte entre les deux : la traduction sert les conversations du client, pas son
-   * apprentissage du produit. Le client de modele utilise ici est donc celui qui porte le resolveur de cle
-   * PAR ESPACE (`gateway`), jamais celui du bot d aide (`gatewayAide`).
-   *
-   * Un modele rapide et bon marche suffit largement : traduire est la tache la plus simple qu on demande a
-   * un modele, et il y en a jusqu a quarante par ouverture de fil.
-   *
-   * VIDE -> la traduction est ETEINTE : le fil sort en VO avec son drapeau, le bouton sortant refuse en
-   * 422, et rien d autre ne change. C est ce qui permet de deployer ce lot avant d avoir choisi le modele.
+   * Modèle de traduction des conversations.
+   * 🔴 Sur le crédit prépayé du client, contrairement au bot d'aide : la traduction sert ses conversations.
+   * Le client de modèle est donc celui qui porte le résolveur de clé par espace (`gateway`), jamais
+   * `gatewayAide`. Un modèle rapide suffit (jusqu'à quarante traductions par ouverture de fil).
+   * Vide -> traduction éteinte : le fil sort en VO avec son drapeau et le bouton sortant refuse en 422.
    */
   TRADUCTION_MODELE: z.string().default(''),
   /**
-   * Modèle qui LIT LES IMAGES jointes à la conversation de construction.
-   *
-   * 🔴 SÉPARÉ de `AGENT_SETUP_MODEL`, et mesuré le 2026-08-31 : `zai/glm-4.7`, le modèle d'entretien de la
-   * production, REFUSE une part `image_url` avec un 400 au corps vide. Réutiliser le modèle d'entretien aurait
-   * donc livré une pièce jointe image morte, en rendant une erreur que personne n'aurait su lire. Ce sont deux
-   * métiers différents : l'un mène un entretien en français sur des dizaines de tours, l'autre relève du texte
-   * sur une image, une fois. Rien n'oblige le même modèle à être bon aux deux, ni à être choisi pour les deux.
-   *
-   * VIDE = les images sont refusées explicitement (les documents, eux, continuent de passer : ils n'ont besoin
-   * d'aucun modèle). C'est un refus clair, pas une panne. Vérifié bon : `google/gemini-2.5-flash`.
+   * Modèle qui lit les images jointes à la conversation de construction, séparé de `AGENT_SETUP_MODEL` :
+   * `zai/glm-4.7`, le modèle d'entretien, refuse une part `image_url` avec un 400 au corps vide. Vide -> les
+   * images sont refusées explicitement (les documents passent, ils n'ont besoin d'aucun modèle).
+   * Vérifié bon : `google/gemini-2.5-flash`.
    */
   AGENT_VISION_MODEL: z.string().default(''),
   /**
-   * Modele donne a un agent NEUF, c est-a-dire celui qui tournera a chaque message d un contact.
-   *
-   * 🔴 IL NE DOIT PAS RETOMBER SUR `LLM_MODEL`, et c est pour ca que cette variable existe. `LLM_MODEL` est
-   * le modele de l ANALYSE de conversation, servi en direct par Anthropic (`claude-haiku-4-5` en production).
-   * L agent, lui, passe par le Vercel AI Gateway, dont les identifiants sont prefixes par leur fournisseur
-   * (`zai/glm-4.7-flash`). Un agent cree avec l identifiant de l analyse porte donc un modele que le Gateway
-   * ne connait pas, et CHAQUE tour echouerait, sans que rien ne l ait signale a la creation.
-   *
-   * Vide -> repli sur `LLM_MODEL`, qui est le comportement d avant et reste faux : a poser au deploiement.
+   * Modèle donné à un agent neuf, celui qui tourne à chaque message d'un contact.
+   * Il ne doit pas retomber sur `LLM_MODEL` : celui de l'analyse est servi en direct par Anthropic, alors que
+   * l'agent passe par le Vercel AI Gateway, dont les identifiants sont préfixés par le fournisseur
+   * (`zai/glm-4.7-flash`). Avec l'identifiant de l'analyse, chaque tour échouerait sans rien signaler à la
+   * création. Vide -> repli sur `LLM_MODEL`, qui reste faux : à poser au déploiement.
    */
   AGENT_MODEL: z.string().default(''),
   /**
-   * Le modele qui VECTORISE les fiches de connaissance et les questions (migration 0110).
-   *
-   * 🔴 Choisi PAR LA MESURE, en français : sur six questions posees avec les mots d un client contre six
-   * fiches ecrites avec les mots d une entreprise, sans aucun mot commun, il place la bonne fiche en premier
-   * 6 fois sur 6, la ou deux concurrents la placent deuxieme a 0,009 pres. Un premier rang a 0,009 pres est un
-   * hasard, pas un choix.
-   *
-   * ⚠️ SA DIMENSION (1536) EST CELLE DE LA COLONNE. En changer oblige a recalculer les vecteurs de tous les
-   * clients : c est un balayage, pas un drame, mais ce n est pas un reglage qu on bouge a la legere. Vide ->
-   * aucune vectorisation, la recherche retombe sur le plein texte seul, comportement d avant.
+   * Modèle qui vectorise les fiches de connaissance et les questions, choisi par la mesure en français
+   * (bonne fiche en premier 6 fois sur 6, sans mot commun entre la question et la fiche).
+   * Sa dimension (1536) est celle de la colonne : en changer oblige à recalculer les vecteurs de tous les
+   * clients. Vide -> aucune vectorisation, la recherche retombe sur le plein texte seul.
    */
   AGENT_EMBED_MODEL: z.string().default('cohere/embed-v4.0'),
   /**
-   * Le seuil de pertinence du reranker. En dessous, la fiche n est PAS montree au modele.
-   *
-   * ⚠️ MESURE, pas devine, mais sur UN corpus de six fiches et dix questions : les vraies questions vont de
-   * 0,0817 a 0,3662 et le hors-sujet plafonne a 0,0409. 0,06 est le milieu de cet intervalle. C est un point
-   * de depart mesure, pas une loi, et il est en configuration pour etre re-mesure sur de vraies bases.
+   * Seuil de pertinence du reranker : en dessous, la fiche n'est pas montrée au modèle. 0,06 est le milieu de
+   * l'écart mesuré sur un petit corpus (vraies questions de 0,0817 à 0,3662, hors-sujet plafonné à 0,0409) :
+   * un point de départ, en configuration pour être re-mesuré sur de vraies bases.
    */
   AGENT_RERANK_SEUIL: z.coerce.number().min(0).max(1).default(0.06),
   /**
-   * Taux euros par dollar, pour convertir ce que le Gateway facture (en DOLLARS) vers nos compteurs, qui
-   * sont tous en micro-euros. C est un parametre COMMERCIAL, pas un cours en temps reel : le client charge
-   * et consomme des euros, et la marge absorbe tres largement la variation. Un taux a 0 retomberait sur 1
-   * plutot que de rendre toute consommation gratuite (`src/agent/devise.ts`).
+   * Taux euros par dollar, pour convertir ce que le Gateway facture (en dollars) vers nos compteurs en
+   * micro-euros. Paramètre commercial, pas un cours en temps réel : la marge absorbe la variation. Un taux
+   * à 0 retombe sur 1 plutôt que de rendre toute consommation gratuite (`src/agent/devise.ts`).
    */
   EUR_PER_USD: z.coerce.number().positive().default(0.92),
   /**
-   * Ce que NOUS acceptons de dépenser par ESPACE et par mois calendaire pour les assistants de
-   * configuration (MBA et agents IA), en euros.
-   *
-   * 🔴 C'EST NOTRE ARGENT (tranché par Julien le 2026-09-14) : les deux assistants passent par la clé
-   * maison, comme le bot d'aide, parce que facturer quelqu'un pour apprendre à se servir du produit se
-   * retourne contre nous. C'est précisément ce qui rend ce plafond nécessaire : sur le crédit du client, un
-   * bavardage se payait tout seul ; sur le nôtre, rien ne le borne.
-   *
-   * 🔴 LE PLAFOND D'ÉQUIPE VERCEL N'EST PAS CE GARDE-FOU, et s'y fier serait une panne : il coupe TOUS les
-   * projets du Gateway d'un coup, bots clients en production compris. Celui-ci ne coupe qu'une conversation
-   * d'assistant, sur un seul espace.
-   *
-   * ⚠️ PAR ESPACE, PAS PAR ASSISTANT : un plafond par assistant multiplierait notre exposition par le nombre
-   * d'agents, c'est-à-dire par un chiffre que le client contrôle lui-même.
-   *
-   * Calibrage : le modèle d'entretien en production revient à environ un centime le tour, et un setup
-   * complet en demande une trentaine. 2 € valent donc environ 200 tours par mois. 0 désactive le plafond,
-   * comme les limiteurs de débit, et c'est le levier d'urgence.
+   * Ce que nous acceptons de dépenser par espace et par mois calendaire pour les assistants de configuration
+   * (MBA et agents IA), en euros.
+   * 🔴 C'est notre argent : les deux assistants passent par la clé maison, rien d'autre ne borne leur dépense.
+   * Le plafond d'équipe Vercel n'est pas ce garde-fou : il coupe tous les projets du Gateway, bots clients en
+   * production compris. Par espace et pas par assistant, sinon notre exposition suivrait le nombre d'agents,
+   * que le client contrôle. Environ un centime le tour, une trentaine par setup : 2 € valent environ 200
+   * tours par mois. 0 désactive le plafond (levier d'urgence).
    */
   ASSISTANT_PLAFOND_EUROS_MOIS: z.coerce.number().min(0).default(2),
   /**
-   * Notre commission sur le tarif des modèles, en POURCENT, telle qu'elle est ANNONCÉE au client dans la
-   * liste déroulante de l'onglet Modèle (2026-09-09).
-   *
-   * 🔴 AFFICHAGE SEULEMENT, décision de Julien : la consommation réellement décomptée reste le coût BRUT du
-   * Gateway. L'onglet Consommation montre donc environ 10 % de moins que le tarif annoncé, le temps que la
-   * facturation Stripe existe. Le jour où elle arrivera, c'est le chemin d'écriture (`run-turn`) qu'il
-   * faudra majorer, pas l'affichage, sinon les deux écrans se remettront à diverger dans l'autre sens.
-   *
-   * Paramètre COMMERCIAL, comme `EUR_PER_USD` juste au-dessus : il ne bouge que quand Julien le décide. 0 est
-   * une valeur valide (aucune commission annoncée), d'où `nonnegative` et non `positive`.
+   * Notre commission sur le tarif des modèles, en pourcent, telle qu'elle est annoncée au client dans
+   * l'onglet Modèle. Affichage seulement : la consommation décomptée reste le coût brut du Gateway. Le jour
+   * où la facturation existera, c'est le chemin d'écriture (`run-turn`) qu'il faudra majorer, pas l'affichage.
+   * Paramètre commercial ; 0 est valide (aucune commission), d'où `nonnegative`.
    */
   COMMISSION_MODELE_PCT: z.coerce.number().nonnegative().default(10),
-  /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est INERTE (aucun job enfilé). */
+  /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est inerte (aucun job enfilé). */
   CONNECTOR_PUSH_URL: z.string().default(''),
   /** Secret HMAC partagé avec le connecteur (== INGEST_SECRET). Signe le push. */
   CONNECTOR_PUSH_SECRET: z.string().default(''),
-  /** URL du canal SERVICE du connecteur (mba interroge les listes HubSpot, ex. http://mm-hubspot-api:8096). Vide -> import HubSpot INERTE (routes non montées). */
+  /** URL du canal service du connecteur (mba interroge les listes HubSpot, ex. http://mm-hubspot-api:8096).
+   *  Vide -> import HubSpot inerte (routes non montées). */
   HUBSPOT_SERVICE_URL: z.string().default(''),
-  /** Secret HMAC du canal service (== SERVICE_SECRET de mm-hubspot). Signe les appels /service/*. Sert aussi à signer
-   *  le jeton d'install `/oauth/install?t=` (le tenant n'est plus passé en clair dans l'URL du lien HubSpot). */
+  /** Secret HMAC du canal service (== SERVICE_SECRET de mm-hubspot). Signe les appels /service/* et le jeton
+   *  d'install `/oauth/install?t=` (le tenant ne passe pas en clair dans l'URL du lien HubSpot). */
   HUBSPOT_SERVICE_SECRET: z.string().default(''),
-  /** Origine PUBLIQUE du connecteur (ex. https://mm-hubspot.messagingme.app), celle que le NAVIGATEUR ouvre pour
-   *  l'install/re-consentement HubSpot. DISTINCTE de HUBSPOT_SERVICE_URL (URL interne Docker, injoignable du navigateur).
-   *  Vide -> la route de lien d'install répond 503 (le front garde son bouton mais l'action indique l'indisponibilité). */
+  /** Origine publique du connecteur (ex. https://mm-hubspot.messagingme.app), celle que le navigateur ouvre
+   *  pour l'install ou le re-consentement HubSpot, distincte de HUBSPOT_SERVICE_URL (URL interne Docker).
+   *  Vide -> la route de lien d'install répond 503. */
   HUBSPOT_CONNECTOR_PUBLIC_URL: z.string().default(''),
   /**
-   * L'APP SALESFORCE (plan 2026-09-26) : l'identifiant et le secret de NOTRE External Client App (Consumer Key et
-   * Consumer Secret, lus dans le Dev Hub). Avec eux, Engage Me demande un jeton à l'org d'un client, au nom de
-   * l'utilisateur d'intégration que son admin a désigné. Vides : l'intégration n'est pas montée, aucune carte ne
-   * s'affiche. Les deux se posent ensemble, et exigent `ENCRYPTION_KEY` (le secret de chaque org est chiffré).
+   * L'app Salesforce : identifiant et secret de notre External Client App (Consumer Key et Consumer Secret,
+   * lus dans le Dev Hub). Avec eux, Engage Me demande un jeton à l'org d'un client, au nom de l'utilisateur
+   * d'intégration désigné par son admin. Vides : intégration non montée. Les deux se posent ensemble, et
+   * exigent `ENCRYPTION_KEY` (le secret de chaque org est chiffré).
    * 🔴 Jamais en `NEXT_PUBLIC_`, jamais dans le dépôt (public) ni dans le package.
    */
   SALESFORCE_CLIENT_ID: z.string().default(''),
@@ -658,15 +453,9 @@ export const schema = z.object({
   SALESFORCE_PACKAGE_VERSION: z.string().regex(/^(04t[0-9A-Za-z]{12}([0-9A-Za-z]{3})?)?$/, 'identifiant de version de package (04t...) attendu').default(''),
 }).superRefine((c, ctx) => {
   /**
-   * 🔴 UN PLAFOND PAR GROUPE PLUS GRAND QUE LE TOTAL NE PLAFONNE RIEN, et se relit comme une garantie.
-   *
-   * `groupConcurrency` borne le nombre de jobs en vol POUR UN MEME espace ; `concurrency` borne le total. Un
-   * groupe >= total laisse donc un seul client prendre toutes les places, ce qui est exactement l'inverse de
-   * ce que ces deux reglages existent pour empecher. Le piege est silencieux : pg-boss ne se plaint pas, la
-   * ligne de configuration a l'air pensee, et l'equite a disparu.
-   *
-   * ⚠️ La contrainte est STRICTE (`>=` refuse) et pas seulement `>` : a egalite, un client peut deja occuper
-   * toutes les places, donc le groupe ne sert a rien.
+   * 🔴 Un plafond par groupe >= au total ne plafonne rien : `groupConcurrency` borne les jobs en vol pour un
+   * même espace, `concurrency` le total, donc à égalité un seul client peut déjà prendre toutes les places.
+   * pg-boss ne s'en plaint pas.
    */
   if (c.AGENT_TURN_GROUP_CONCURRENCY >= c.AGENT_TURN_CONCURRENCY) {
     ctx.addIssue({
@@ -677,21 +466,11 @@ export const schema = z.object({
   }
 
   /**
-   * 🔴 LES DEUX CHAÎNES DE CONNEXION DOIVENT DÉSIGNER LA MÊME BASE.
-   *
-   * `DATABASE_URL` (session, DDL, pg-boss) et `APP_DATABASE_URL` (transaction, pool applicatif) sont deux
-   * MODES d'accès à une seule base : en production, le même hôte Supabase sur deux ports. Si leurs hôtes
-   * diffèrent, l'une des deux est fausse, et le processus tourne alors à cheval sur DEUX bases sans le dire.
-   *
-   * Ce n'est pas une hypothèse : c'est arrivé le 2026-09-02, en montant un banc de charge. Le worker a été
-   * lancé avec `DATABASE_URL` sur une base jetable, mais `APP_DATABASE_URL` est resté sur la PRODUCTION par
-   * héritage du fichier d'environnement. Ses files tapaient donc la base jetable pendant que ses balayages
-   * lisaient et écrivaient en production. Aucun dégât ce jour-là, par chance : il n'y avait aucune campagne
-   * vivante à reprendre. Avec une campagne en cours, le balayage de reprise l'aurait relancée en `DRY_RUN`
-   * et aurait marqué de VRAIS destinataires comme envoyés, sans qu'aucun message ne parte.
-   *
-   * La garde est volontairement sur l'HÔTE seul : le port et le mode diffèrent légitimement (5432 session,
-   * 6543 transaction), l'hôte jamais.
+   * 🔴 Les deux chaînes de connexion doivent désigner la même base. `DATABASE_URL` (session, DDL, pg-boss) et
+   * `APP_DATABASE_URL` (transaction, pool applicatif) sont deux modes d'accès à une seule base : des hôtes
+   * différents veulent dire qu'une des deux est fausse et que le process tourne à cheval sur deux bases
+   * (ses files d'un côté, ses balayages de l'autre, qui pourraient marquer de vrais destinataires envoyés
+   * en `DRY_RUN`). La garde porte sur l'hôte seul : port et mode diffèrent légitimement (5432, 6543).
    */
   if (c.DATABASE_URL !== '' && c.APP_DATABASE_URL !== '') {
     const hote = (url: string): string | null => {
@@ -708,17 +487,16 @@ export const schema = z.object({
     }
   }
 
-  // Fail-fast en PRODUCTION si le secret JWT est faible/par défaut : sinon un déploiement
-  // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables
-  // cross-tenant. En dev/test on tolère le défaut pour l'ergonomie.
+  // Fail-fast en production si le secret JWT est faible ou par défaut : sinon un déploiement qui oublie
+  // AUTH_SECRET démarre sur une constante publique, et des JWT admin deviennent forgeables pour tout espace.
   if (process.env.NODE_ENV === 'production') {
-    // Sans base, le service crashe plus loin sur un ECONNREFUSED localhost:5432 avec une stack `pg` opaque qui
-    // ne nomme jamais la variable manquante. Fail-fast ici = le message dit quoi corriger.
+    // Sans base, le service crashe plus loin sur un ECONNREFUSED localhost:5432 qui ne nomme jamais la
+    // variable manquante. Fail-fast ici : le message dit quoi corriger.
     if (c.DATABASE_URL === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['DATABASE_URL'], message: 'DATABASE_URL requis en production' });
     }
-    // Sans secret d'app, `verifySignature` renvoie false d'entrée : le service DÉMARRE, /health répond ok, et
-    // 100 % des webhooks Meta partent en 403 indéfiniment, sans une trace. Panne totale et silencieuse.
+    // Sans secret d'app, `verifySignature` renvoie false d'entrée : le service démarre, /health répond ok, et
+    // 100 % des webhooks Meta partent en 403, sans une trace.
     if (c.META_APP_SECRET === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['META_APP_SECRET'], message: 'META_APP_SECRET requis en production (sans lui, 100 % des webhooks Meta sont rejetés en 403)' });
     }
@@ -729,8 +507,8 @@ export const schema = z.object({
         message: 'AUTH_SECRET requis en production (>= 32 octets aléatoires, pas le placeholder)',
       });
     }
-    // OPS_TOKEN reste OPTIONNEL (vide -> /ops désactivé). Mais s'il EST défini en prod, il doit être fort :
-    // un token faible sur une surface cross-tenant = fuite de données inter-clients.
+    // OPS_TOKEN reste optionnel (vide -> /ops désactivé), mais s'il est défini en prod il doit être fort :
+    // un token faible sur une surface cross-tenant = fuite de données entre clients.
     if (c.OPS_TOKEN !== '' && Buffer.byteLength(c.OPS_TOKEN) < 32) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -748,14 +526,9 @@ export const schema = z.object({
       }
     }
     /**
-     * 🔴 LA CLÉ DU GATEWAY SANS MODÈLE D'AGENT EST UN PIÈGE SILENCIEUX, et c'est pour ça que le boot refuse.
-     *
-     * Sans ces deux variables, le code retombe sur `LLM_MODEL`, qui est l'identifiant de l'ANALYSE de
-     * conversation servie EN DIRECT par Anthropic (`claude-haiku-4-5` en production). Le Gateway, lui,
-     * attend des identifiants préfixés par leur fournisseur (`zai/glm-4.7-flash`) : il refuserait chaque
-     * appel. Rien ne le signalerait à la création d'un agent ; ça se verrait au premier vrai contact, sur une
-     * conversation WhatsApp en cours. Poser la clé et oublier les modèles est l'erreur exacte qu'on ferait au
-     * déploiement, donc elle est refusée ici plutôt que découverte là-bas.
+     * 🔴 La clé du Gateway sans modèle d'agent est un piège silencieux : le code retomberait sur `LLM_MODEL`,
+     * l'identifiant de l'analyse servie en direct par Anthropic, que le Gateway (identifiants préfixés par
+     * le fournisseur) refuserait à chaque appel, découvert au premier vrai contact. Refusé au boot.
      */
     if (c.AI_GATEWAY_API_KEY !== '') {
       if (c.AGENT_MODEL === '') {
@@ -766,14 +539,10 @@ export const schema = z.object({
       }
     }
     /**
-     * 🔴 LE JETON ET L EQUIPE VONT PAR DEUX, et la moitie serait pire que rien. `POST /v1/api-keys` exige le
-     * `teamId` en parametre : avec le jeton seul, chaque provisionnement echouerait, et comme la creation
-     * d agent REFUSE quand elle echoue, plus aucun client ne pourrait creer d agent. Une panne totale du
-     * produit pour une variable oubliee. Refusee au chargement plutot que decouverte la-bas.
-     *
-     * ⚠️ La cle de CHIFFREMENT est exigee elle aussi : sans elle, la cle Gateway du client serait stockee en
-     * clair dans la base, ou bien le chiffrement echouerait a l ecriture. Les deux sont inacceptables, et
-     * c est le meme raisonnement que la garde d Embedded Signup juste plus bas.
+     * Le jeton et l'équipe Vercel vont par deux : `POST /v1/api-keys` exige le `teamId`, et avec le jeton seul
+     * chaque provisionnement échouerait, donc plus aucune création d'agent (elle refuse quand il échoue).
+     * La clé de chiffrement est exigée aussi : sans elle, la clé Gateway du client serait stockée en clair ou
+     * le chiffrement échouerait à l'écriture.
      */
     const provisionnement = c.VERCEL_API_TOKEN !== '' || c.VERCEL_TEAM_ID !== '';
     if (provisionnement) {
@@ -795,7 +564,7 @@ export const schema = z.object({
     if (c.HUBSPOT_SERVICE_URL !== '' && c.HUBSPOT_SERVICE_SECRET === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['HUBSPOT_SERVICE_SECRET'], message: 'HUBSPOT_SERVICE_SECRET requis quand HUBSPOT_SERVICE_URL est défini' });
     }
-    // Zadarma : les deux moitiés vont ENSEMBLE. Une seule posée signerait avec une clé vide et Zadarma
+    // Zadarma : les deux moitiés vont ensemble. Une seule posée signerait avec une clé vide et Zadarma
     // répondrait « 401 Not authorized », qu'on mettrait sur le dos de clés pourtant valides.
     if ((c.ZADARMA_API_KEY === '') !== (c.ZADARMA_API_SECRET === '')) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ZADARMA_API_SECRET'], message: 'ZADARMA_API_KEY et ZADARMA_API_SECRET se posent ensemble (ou aucun des deux)' });
@@ -805,20 +574,18 @@ export const schema = z.object({
     if (c.RCS_PROVIDER === 'smsmode' && c.SMSMODE_RCS_API_KEY === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['SMSMODE_RCS_API_KEY'], message: 'SMSMODE_RCS_API_KEY requis quand RCS_PROVIDER=smsmode' });
     }
-    // Embedded Signup activé sans clé de chiffrement = tokens business stockables en clair OU crash au premier
+    // Embedded Signup activé sans clé de chiffrement = tokens business stockés en clair ou crash au premier
     // onboarding. Fail-fast au boot : 64 hex exigés.
     if (c.META_ES_CONFIG_ID !== '' && !/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise quand META_ES_CONFIG_ID est défini' });
     }
-    // MÊME RAISON POUR LES PUBLICITÉS : le jeton d'utilisateur système qu'elles rapportent permet de
-    // dépenser l'argent du client chez Meta. Sans clé, il serait stocké en clair ou la connexion
-    // planterait au premier client. Fail-fast au boot, comme pour l'inscription.
+    // Même raison pour les publicités : le jeton d'utilisateur système qu'elles rapportent permet de dépenser
+    // l'argent du client chez Meta. Sans clé, il serait stocké en clair ou la connexion planterait.
     if (c.META_ADS_CONFIG_ID !== '' && !/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise quand META_ADS_CONFIG_ID est défini' });
     }
-    // SALESFORCE : la clé d'app se pose entière (une moitié demanderait des jetons refusés, mis sur le dos des
-    // orgs des clients), et elle exige la clé de chiffrement : le secret qui signe les appels de chaque org est
-    // gardé chiffré, et sans clé la connexion planterait au premier client.
+    // Salesforce : la clé d'app se pose entière (une moitié demanderait des jetons refusés, mis sur le dos des
+    // orgs des clients), et exige la clé de chiffrement (le secret de chaque org est gardé chiffré).
     if ((c.SALESFORCE_CLIENT_ID === '') !== (c.SALESFORCE_CLIENT_SECRET === '')) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['SALESFORCE_CLIENT_SECRET'], message: 'SALESFORCE_CLIENT_ID et SALESFORCE_CLIENT_SECRET se posent ensemble (ou aucun des deux)' });
     }
@@ -830,10 +597,9 @@ export const schema = z.object({
 
 
 /**
- * RÉGLAGES FIGÉS EN CONSTANTES (2026-09-25). Ils étaient lus dans l'environnement, mais aucun déploiement ne
- * les posait : ni le `.env.prod` du VPS, ni un gabarit (`.env.example`, `.env.prod.example`,
- * `docker-compose.yml`, `DEPLOY.md`). Leur valeur est celle qu'avait leur défaut ; la changer demande désormais
- * un déploiement de code. Ils restent sous `config` pour que leurs lecteurs n'aient pas bougé.
+ * Réglages figés en constantes : aucun déploiement ne les posait dans l'environnement. Leur valeur est celle
+ * de leur ancien défaut ; la changer demande un déploiement de code. Ils restent sous `config` pour que leurs
+ * lecteurs n'aient pas bougé.
  */
 const constantes = {
   /** Un destinataire `sending` plus vieux que ça est ramené à `pending` par le sweeper (ms). */
@@ -842,62 +608,46 @@ const constantes = {
   RECLAIM_INTERVAL_MS: 5 * 60 * 1000,
   /** Réveil des parcours endormis (bloc « Attente »). 60 s : c'est aussi la précision réelle d'un délai. */
   WORKFLOW_WAKE_SWEEP_INTERVAL_MS: 60 * 1000,
-  /** Plafond de débit d'UN webhook entrant (menu Tools). Par webhook, pas par IP : c'est le budget d'une
+  /** Plafond de débit d'un webhook entrant (menu Tools). Par webhook, pas par IP : c'est le budget d'une
    *  intégration, et l'IP d'un Zapier n'a aucune stabilité. */
   WEBHOOK_IN_RATE_LIMIT_MAX: 120,
   WEBHOOK_IN_RATE_LIMIT_WINDOW_MS: 60_000,
   /** Jours de conservation du dernier payload d'un webhook entrant. Voir la note RGPD de la migration 0074. */
   WEBHOOK_PAYLOAD_RETENTION_DAYS: 7,
   /**
-   * Durée maximale d'un run de campagne avant qu'il rende la main et se réenfile (lot 5). 2 minutes.
-   *
-   * Le but n'est pas d'aller plus vite, c'est de rendre la file ÉQUITABLE : sans découpage, un job traitait
-   * sa campagne jusqu'à épuisement, soit 2 h 47 pour 5 000 destinataires à 30/min, pendant lesquelles les
-   * campagnes des autres clients attendaient. Une DURÉE et non un nombre de destinataires : à 1/min un lot de
-   * 100 durerait plus d'une heure, à 80/min une minute.
-   *
-   * Le prix : un aller-retour de file entre deux lots (la cadence de `campaign-run` est de 5 s), soit
-   * quelques minutes ajoutées sur une campagne de plusieurs heures. `0` retire le découpage.
+   * Durée maximale d'un run de campagne avant qu'il rende la main et se réenfile, pour que la file reste
+   * équitable : sans découpage, une campagne de 5 000 destinataires à 30/min occuperait la file près de 3 h.
+   * Une durée et non un nombre de destinataires, parce que le débit varie de 1 à 80/min. Le prix : un
+   * aller-retour de file entre deux lots (cadence de `campaign-run` : 5 s). 0 retire le découpage.
    */
   CAMPAIGN_RUN_MAX_MS: 2 * 60 * 1000,
   /**
-   * Nombre de runs de campagne traités EN PARALLÈLE par le worker, et plafond par ESPACE (lot 5).
-   *
-   * 🔴 La concurrence n'est sûre QUE parce que le lot 4 est en place : sans un frein partagé par numéro, deux
-   * campagnes en parallèle doubleraient le débit réel du numéro. Ne pas relever l'un sans l'autre.
-   *
-   * Le plafond par espace reste à 1 : un client n'a qu'un numéro (décision produit du 2026-08-31), donc deux
-   * de ses campagnes en parallèle ne gagneraient rien et se disputeraient le même budget. La concurrence sert
-   * à ce qu'un client n'attende pas la campagne d'un AUTRE.
+   * Runs de campagne traités en parallèle par le worker, et plafond par espace.
+   * La concurrence n'est sûre que grâce au frein de débit partagé par numéro (`src/meta/arbitre-debit.ts`) :
+   * sans lui, deux campagnes en parallèle doubleraient le débit réel du numéro. Ne pas relever l'un sans
+   * l'autre. Le plafond par espace reste à 1 : un client n'a qu'un numéro, deux de ses campagnes se
+   * disputeraient le même budget. La concurrence sert à ce qu'un client n'attende pas la campagne d'un autre.
    */
   CAMPAIGN_RUN_CONCURRENCY: 4,
   /**
-   * Concurrence de la file des messages ENTRANTS (lot 3 du programme II). Elle valait 1, donc un seul message
-   * entrant était traité à la fois, TOUS clients confondus : un envoi Meta lent, un appel HubSpot qui traîne,
-   * et la réponse d'un autre client attendait derrière. C'est le « noisy neighbour » de l'audit.
-   *
-   * 🔴 Ce plafond n'est sûr QUE parce que l'enfilement pose une clé de groupe par contact et que `work`
-   * plafonne à un job en vol par groupe : deux messages d'un même contact restent sérialisés. Relever l'un
-   * sans l'autre remettrait le désordre que le groupe supprime.
-   *
-   * Pourquoi 3, et pas plus : le worker tient déjà 4 runs de campagne en parallèle, plus les accusés, les
-   * automations et les tours d'agent. Le pool applicatif est de 8 connexions PAR PROCESS, valeur mesurée
-   * comme la capacité réelle du pooler (cf. `DB_POOL_MAX`). Monter au-delà déplacerait l'attente de notre
-   * pool vers celle de Supavisor, où elle est muette. Relever ce nombre demande donc de refaire cette
-   * arithmétique-là, pas seulement de changer la constante.
+   * Concurrence de la file des messages entrants, pour qu'un envoi Meta lent chez un client ne fasse pas
+   * attendre la réponse d'un autre.
+   * Sûr seulement parce que l'enfilement pose une clé de groupe par contact et que `work` plafonne à un job
+   * en vol par groupe : deux messages d'un même contact restent sérialisés. Ne pas relever l'un sans l'autre.
+   * 3 et pas plus : le worker tient déjà 4 runs de campagne, les accusés, les automations et les tours
+   * d'agent, sur un pool de 8 connexions par process (cf. `DB_POOL_MAX`). Relever ce nombre demande de refaire
+   * cette arithmétique.
    */
   WEBHOOK_CONCURRENCY: 3,
   /**
-   * Analyses de conversation en vol. Le plafond par espace est de 1, posé dans le worker.
-   *
-   * 🔴 Sur cette file, le GROUPE compte bien plus que le nombre. Passer de 1 à 3 ne change presque rien au
-   * débit ; ce qui change tout, c'est qu'un client qui importe dix mille contacts déclenche dix mille analyses
-   * et ne puisse plus les faire passer AVANT la première analyse de tous les autres.
+   * Analyses de conversation en vol. Le plafond par espace est de 1, posé dans le worker : c'est le groupe
+   * qui compte, pour qu'un client qui importe dix mille contacts ne passe pas avant la première analyse de
+   * tous les autres.
    */
   ANALYZE_CONVERSATION_CONCURRENCY: 3,
   /**
-   * Événements d'automation en vol. Même raison et même plafond par espace de 1 : une rafale d'un client
-   * gelait tous les autres, cette file traitant un job à la fois pour la flotte entière.
+   * Événements d'automation en vol, plafond par espace de 1 (même raison) : sans groupe, la rafale d'un
+   * client gèlerait tous les autres.
    */
   AUTOMATION_EVENT_CONCURRENCY: 3,
   /** Durée de validité d'un lien d'invitation (ms). Défaut 7 jours. */
@@ -912,66 +662,46 @@ const constantes = {
   CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS: 5 * 60 * 1000,
   /** Nombre max de conversations réclamées par passage de balayage. */
   CONVERSATION_ANALYSIS_BATCH: 20,
-  /** Cadence du filet de sécurité du rattrapage HubSpot (F3-a) : relance le rattrapage des marques restées sur un
-   *  numéro reconnecté. Défaut 10 min : action rare, lecture légère (distinct tenant_id), pas un chemin chaud. */
+  /** Cadence du filet de sécurité du rattrapage HubSpot : relance le rattrapage des marques restées sur un
+   *  numéro reconnecté. Défaut 10 min : action rare, lecture légère, pas un chemin chaud. */
   HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS: 10 * 60 * 1000,
-  /** Cadence du sweep d'auto-relance des échecs (F6). 15 min : assez fin pour la fenêtre matinale des 131049. */
+  /** Cadence du sweep d'auto-relance des échecs. 15 min : assez fin pour la fenêtre matinale des 131049. */
   AUTO_RETRY_SWEEP_INTERVAL_MS: 15 * 60 * 1000,
   /** Inactivité au bout de laquelle un fil tenu par MBA est repris (le pendant de `CONTROL_HUMAN_TIMEOUT_MS`).
    *  Beaucoup plus long : l'agent est censé répondre seul, on ne le préempte qu'en cas de silence anormal. */
   CONTROL_MBA_TIMEOUT_MS: 24 * 60 * 60 * 1000,
   /**
-   * Inactivité au bout de laquelle un fil tenu par un SCÉNARIO revient à l'agent de Meta. 24 h.
-   *
-   * 🔴 C'EST LA SOUPAPE DU GESTE `take`, AJOUTÉE LE 2026-09-14 AVEC LUI. Tant qu'un scénario n'écrivait que
-   * notre colonne, Meta gardait le fil et son agent reprenait la main tout seul ; c'était d'ailleurs le
-   * bug que `take` répare. Depuis qu'on prend le fil pour de vrai, un parcours abandonné (le contact ne
-   * répond jamais, le run reste `waiting`) le garderait à jamais, et l'agent de Meta ne répondrait plus
-   * jamais sur cette conversation. La fin NORMALE d'un parcours le rend déjà (`releaseToMba`) : ce délai ne
-   * couvre que les parcours qui ne finissent pas.
-   *
-   * ⚠️ « LE REND DÉJÀ » SE FAIT EN DEUX TEMPS DEPUIS LA MIGRATION 0149 : la fin de parcours marque le fil et
-   * le passe en `app_human`, et la remise part quand Meta acquitte notre dernier envoi. Un fil sorti de
-   * `app_workflow` n'est donc plus du ressort de CE délai mais du délai humain (`CONTROL_HUMAN_TIMEOUT_MS`).
-   *
-   * ⚠️ FIXE, JAMAIS RÉGLABLE PAR CLIENT (tranché par Julien le 2026-09-14), contrairement au délai humain.
-   * C'est un garde-fou technique et non un arbitrage métier : personne ne sait répondre à « combien de
-   * temps mon scénario doit-il garder le fil ». Et c'est ce qui permet de le filtrer EN SQL, donc de ne pas
-   * saturer le lot du balayage avec des conversations saines.
-   *
-   * ⚠️ 24 h ET PAS 2 h comme l'humain : un scénario attend légitimement longtemps (une relance le
-   * lendemain). Le couper à deux heures rendrait le fil à l'agent de Meta, qui répondrait à la place du
-   * bloc suivant. 0 désactive la reprise.
+   * Inactivité au bout de laquelle un fil tenu par un scénario revient à l'agent de Meta : la soupape du
+   * geste `take`. Un parcours abandonné (le contact ne répond jamais, le run reste `waiting`) garderait sinon
+   * le fil à jamais. La fin normale d'un parcours le rend déjà (`releaseToMba`), en deux temps : le fil passe
+   * en `app_human` jusqu'à l'accusé du dernier envoi, et relève alors de `CONTROL_HUMAN_TIMEOUT_MS`.
+   * Fixe, jamais réglable par client : c'est un garde-fou technique, et c'est ce qui permet de le filtrer en
+   * SQL sans saturer le lot du balayage. 24 h et pas 2 h : un scénario attend légitimement longtemps (une
+   * relance le lendemain), le couper rendrait le fil à l'agent de Meta à la place du bloc suivant.
+   * 0 désactive la reprise.
    */
   CONTROL_WORKFLOW_TIMEOUT_MS: 24 * 60 * 60 * 1000,
-  /** Anti-rebond par défaut d'une automation (Lot E) : délai minimum entre deux déclenchements de la MÊME
-   *  automation pour le MÊME contact, quand le client n'a rien réglé. 1 h : assez long pour absorber un client
-   *  qui répète son mot-clé ou un scénario qui repose le tag déclencheur, assez court pour ne pas bloquer une
-   *  vraie 2e demande dans la journée. Réglable par automation (0 = aucun garde-fou, à ses risques). */
+  /** Anti-rebond par défaut d'une automation : délai minimum entre deux déclenchements de la même automation
+   *  pour le même contact, quand le client n'a rien réglé. 1 h : absorbe un mot-clé répété ou un tag reposé,
+   *  sans bloquer une vraie 2e demande dans la journée. Réglable par automation (0 = aucun garde-fou). */
   AUTOMATION_COOLDOWN_SECONDS: 3600,
   /** Cadence du balayage des échéances (déclencheur « X avant la date d'un champ »). */
   AUTOMATION_DATE_SWEEP_INTERVAL_MS: 60_000,
-  /** Fenêtre de rattrapage APRÈS le moment prévu. Elle absorbe un redémarrage du worker, PAS un vrai retard :
+  /** Fenêtre de rattrapage après le moment prévu. Elle absorbe un redémarrage du worker, pas un vrai retard :
    *  au-delà, on n'envoie rien (un rappel « 48 h avant » qui part 12 h avant dit quelque chose de faux). */
   AUTOMATION_DATE_TOLERANCE_MINUTES: 60,
-  /** Plafond d'un vocal à transcrire, en Ko. Pourquoi une TAILLE et pas une durée : voir `TRANSCRIPTION_MODELE`. */
+  /** Plafond d'un vocal à transcrire, en Ko. Pourquoi une taille et pas une durée : voir `TRANSCRIPTION_MODELE`. */
   TRANSCRIPTION_TAILLE_MAX_KO: 2048,
   /**
-   * Le modele qui JUGE la pertinence des fiches candidates.
-   *
-   * 🔴 IL N EST PAS OPTIONNEL AU SENS DU PRODUIT : c est LUI qui porte la garde anti-hallucination une fois le
-   * vectoriel branche. Mesure : aucun seuil n est posable sur un cosinus d embedding (une question hors sujet
-   * remonte a 0,361 quand une vraie question descend a 0,299), alors que ce reranker place les vraies
-   * questions au-dessus de 0,0817 et le hors-sujet en dessous de 0,0409.
-   *
-   * ⚠️ Ce n est PAS le modele le plus recent, et c est delibere : `cohere/rerank-v4-fast` laisse le hors-sujet
-   * monter AU-DESSUS des vraies questions sur le meme corpus. Prendre la derniere version par reflexe aurait
-   * reproduit le defaut qu on corrige.
+   * Modèle qui juge la pertinence des fiches candidates. Il porte la garde anti-hallucination : aucun seuil
+   * n'est posable sur un cosinus d'embedding (un hors-sujet remonte à 0,361, une vraie question descend à
+   * 0,299), alors que ce reranker sépare les deux (au-dessus de 0,0817, en dessous de 0,0409).
+   * Pas le plus récent : `cohere/rerank-v4-fast` laisse le hors-sujet monter au-dessus des vraies questions.
    */
   AGENT_RERANK_MODEL: 'cohere/rerank-v3.5',
   /**
-   * Combien de fiches le RAPPEL remonte avant le verdict. Plus large que les 3 rendues au modele, et c est
-   * tout l interet : on donne au reranker de quoi choisir. Trop large le ferait payer pour rien.
+   * Combien de fiches le rappel remonte avant le verdict : plus que les 3 rendues au modèle, pour donner au
+   * reranker de quoi choisir ; trop large le ferait payer pour rien.
    */
   AGENT_RAPPEL_CANDIDATS: 12,
   /** max_tokens de la réponse d'analyse (petit JSON). */
