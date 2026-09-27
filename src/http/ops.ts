@@ -71,7 +71,7 @@ export interface OpsRouteDeps {
   /**
    * Déposer un jeton publicitaire créé à la main. Le parcours de l'écran Publicités ne peut pas servir le
    * portefeuille Meta qui possède notre application (Meta exige un portefeuille distinct) : sans cette porte, nous
-   * ne pourrions pas faire nos propres publicités. Le jeton est chiffré par le câblage et jamais renvoyé.
+   * ne pourrions pas faire nos propres publicités. Le jeton est chiffré par `src/pubs/connexion.ts` et jamais renvoyé.
    */
   deposerJetonPub(tenantId: string, jeton: string, comptePubId: string, pageId: string): Promise<ConnexionPubDeposee>;
 

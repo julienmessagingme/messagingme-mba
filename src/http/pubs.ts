@@ -15,8 +15,8 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 /**
  * Les publicités d'un espace : sa connexion (lire l'état, échanger le code de la fenêtre Meta, choisir le compte
  * et la Page, se déconnecter), puis ses campagnes (lister, créer, publier, lire, mettre en pause, reprendre).
- * 🔴 Le jeton n'entre jamais dans ce fichier : le câblage l'échange, le chiffre et le range, et ne laisse passer
- * que le `tenantId`. Aucune dépendance optionnelle, garde et plafond compris.
+ * 🔴 Le jeton n'entre jamais dans ce fichier : `src/pubs/connexion.ts` l'échange, le chiffre et le range, et ne
+ * laisse passer que le `tenantId`. Aucune dépendance optionnelle, garde et plafond compris.
  */
 export interface PubsRouteDeps {
   /**
@@ -231,8 +231,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   const opts = { preHandler: garde };
   // Les trois écritures appellent Meta (l'échange, le choix, la déconnexion qui révoque) : elles portent le
   // plafond des routes coûteuses, par espace. La lecture appelle Meta aussi mais reste hors de ce plafond (dix
-  // par minute et par espace couperaient l'écran) : elle est bornée par un micro-cache au câblage
-  // (`etatComptePubCache`), le plafond par utilisateur, et le délai de `ClientGraph`.
+  // par minute et par espace couperaient l'écran) : elle est bornée par un micro-cache de deux minutes
+  // (`etatComptePubCache`, `src/pubs/connexion.ts`), le plafond par utilisateur, et le délai de `ClientGraph`.
   const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
 

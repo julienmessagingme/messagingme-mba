@@ -1716,7 +1716,7 @@ Ajouté par le lot 4 de l'API publique :
    ⚠️ Elle est mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`) : un envoi peut encore partir du worker 5 s
    après « Délier » ; le process de l'API vide son cache au geste. Dans l'autre sens, le worker peut refuser à tort
    pendant 5 s après « Relier » : aucune pause `numero_delie` ne s'écrit sans relecture en base hors cache
-   (`pauserSiNumeroDelie`, `PgNumeroDelieStore.pauserCampagne` : une seule instruction, `status in
+   (`numerosDelies.pauserCampagne`, `PgNumeroDelieStore.pauserCampagne` : une seule instruction, `status in
    ('running','scheduled')` et `exists` sur `phone_numbers.delie_le` avec `for share`, sérialisée avec `relier` ; elle
    n'écrase jamais une pause d'opérateur ; requise dans `RunJobDeps`, transmise au moteur), et une automation refusée efface son tir,
    SAUF un rappel « avant la date » : son balayage republie tout rappel sans marqueur, donc l'effacer le relancerait
@@ -1922,6 +1922,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/lib/erreur.ts` -> `messageDe`, `texteDe` | le message d'une valeur levée : `messageDe` rend la valeur elle-même si ce n'est pas une `Error`, `texteDe` la convertit en texte. Un repli différent (« erreur inconnue ») reste sur place |
 | `src/meta/graph.ts` -> `appelGraph` | l'appel Graph authentifié des clients WhatsApp (modèles, flows, lecture du numéro, ajout et vérification d'un numéro, média entrant) : `Bearer`, `fetch` injectable, `MetaApiError` si non-2xx. ⚠️ Ni `ClientGraph.call` (plafond de durée, `ErreurGraph`), ni `MbaClient`, ni le transport des envois |
 | `src/campaign/enqueue.ts` -> `relanceurDeCampagnes` | l'enfilement d'un run au débit RÉSOLU sur la configuration du process : les relances du worker (hors planification et reprise après plafond, qui résolvent le débit dans leur balayage) et l'envoi de l'API publique |
+| `src/stats/chiffrage.ts` -> `creerChiffrage` | 🔴 toutes les lectures de COÛT de la console (statistiques, fiche de campagne, bilan contact) : le tarif Meta et son cache (60 s, un par process, `null` jamais mémorisé), la marge, la classification RCS simple ou conversationnel (`repartirRcs`) et l'attribution des clics (`liensDesTemplates`), écrites une fois. La racine le construit et passe ses membres aux routes ; `tests/chiffrage.test.ts` l'exécute contre de faux dépôts |
+| `src/pubs/connexion.ts` -> `creerConnexionPub` | la connexion publicitaire d'un espace : jeton chiffré au repos et déchiffré à la demande, connexion concurrente, révocation (Meta d'abord, puis la base), état du compte en cache 2 min, dépôt de jeton par `/ops` |
 | `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; `round2`, l'arrondi au centime des coûts |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |

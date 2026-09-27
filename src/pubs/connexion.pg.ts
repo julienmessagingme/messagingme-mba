@@ -7,7 +7,7 @@ import type { LiaisonPage } from '../meta/pubs';
  *
  * 🔴 `tenant_id = $1` sur chaque requête : le pooler est superuser, la RLS est contournée, ce filtrage est le
  * contrôle d'isolation. 🔴 Le jeton n'est jamais lu en clair ici : il entre et sort chiffré, le déchiffrement
- * appartient au câblage, pour qu'il ne finisse pas un jour dans un journal.
+ * appartient à `src/pubs/connexion.ts` (et au balayage du worker), pour qu'il ne finisse pas un jour dans un journal.
  */
 export interface ConnexionPub {
   comptePubId: string | null;
@@ -54,7 +54,7 @@ export class PgPubConnexionStore {
     };
   }
 
-  /** Le jeton chiffré, pour le câblage seul. Rend null quand l'espace n'est pas connecté. */
+  /** Le jeton chiffré, pour qui sait le déchiffrer (`src/pubs/connexion.ts`). Null quand l'espace n'est pas connecté. */
   async lireJetonChiffre(tenantId: string): Promise<string | null> {
     const { rows } = await this.pool.query<{ jeton_chiffre: string }>(
       'select jeton_chiffre from pub_connexion where tenant_id = $1',

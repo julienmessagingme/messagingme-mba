@@ -40,14 +40,19 @@ rechargement NPM, fumée. Commits construits en plomberie depuis `origin/main` (
   texte d'`index.ts` ou de `worker.ts` pour épingler l'arité d'un relais devient sans objet quand le relais
   disparaît : il est retiré ou réécrit, en le disant. Un test d'inventaire (qui recense des chemins) reste.
 - Critère : plus aucun relais pur hors réception dans les deux racines (mesuré par la même expression régulière
-  avant et après), typecheck, lint et `npm test` verts, CI d'intégration verte.
+  avant et après), typecheck, lint et `npm test` verts, CI d'intégration verte. Restent délibérément des flèches :
+  les gardes de consentement (`estDesabonne`, `estDesabonneRcs`, `aConsentiOuEcrit`, contrat nommé des quatre
+  interfaces d'envoi), `getUserState` (rappel de `makeRequireAuth`), `console.*` et `Date.now` (relus à chaque
+  appel, pas figés au câblage). Livré le 2026-09-27 : 317 relais à 11 dans `src/index.ts`, 92 à 34 dans
+  `src/worker.ts` (dont 23 de la réception).
 
 ## Lot 2 : le chiffrage sort de la racine
 
 - Un module dans `src/stats/` construit à partir du dépôt de statistiques, de la grille et du tarif Meta, et
   rend les lectures de coût lues par les statistiques, `/ops` et la fiche contact. La classification RCS
   (simple ou conversationnel) et l'attribution des clics s'y écrivent une fois.
-- La connexion publicitaire (jeton, connexion concurrente, révocation) rejoint `src/meta/pubs.ts`.
+- La connexion publicitaire (jeton, connexion concurrente, révocation) rejoint `src/pubs/connexion.ts`, à côté
+  de son dépôt (`connexion.pg.ts`) et de la création (`creation.ts`) ; `src/meta/pubs.ts` reste le client Graph.
 - Tests : `cout-campagne-rcs-cablage` et `prix-cablage`, qui lisent la source, sont remplacés par des tests qui
   EXÉCUTENT le module contre un faux dépôt et vérifient le chiffre et l'argument `attribuer`, vérifiés dans les
   deux sens.

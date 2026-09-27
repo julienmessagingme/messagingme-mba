@@ -16,14 +16,7 @@ import { PgCampaignDraftStore } from './campaign/draft-store.pg';
 import { PgInboxStore, type ConversationMessage } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
-import { estimateCostSeries, estimateCoutParCampagne, estimerCoutContact, entonnoirEngagement, type CategoryRates } from './stats/cost';
-import { assemblerDetailCampagne } from './stats/cout-campagne';
-import { coutMessages } from './stats/cout-messages';
-import { grilleDepuisLigne, tarifsFactures, pricingFacture } from './stats/prix';
-import { basculesRcs, FENETRE_BASCULE_MS } from './stats/rcs-conversationnel';
-import { PLAFOND_TOURS_IA } from './stats/cout-ia';
-import { rangeToUnix, addDays, todayParis } from './stats/range';
-import type { CompteurClic } from './links/mesures';
+import { creerChiffrage } from './stats/chiffrage';
 
 import { cacheCourt } from './lib/cache-court';
 import { journaliser } from './lib/journal';
@@ -57,7 +50,6 @@ import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { lienDe, lienTraceAvecJeton } from './links/rewrite';
-import { noeudsTemplate, compteursDeClics, liensRcsDesNoeuds, compteursDeClicsRcs } from './links/mesures';
 import { fabriquerJeton } from './links/jeton-contact';
 import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
@@ -148,14 +140,14 @@ import { lireMediaRecu } from './inbox/media-entrant';
 import type { DepsRepondre } from './inbox/repondre';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
-import { MetaPubsClient, sansPrefixeAct, retirerAncienAcces, type EtatComptePub } from './meta/pubs';
-import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub, ConnexionPubIncomplete } from './http/pubs';
+import { MetaPubsClient } from './meta/pubs';
+import { PasDeConnexionPub, ConnexionPubIncomplete } from './http/pubs';
+import { creerConnexionPub } from './pubs/connexion';
 import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { PgPublicitesStore } from './pubs/publicites.pg';
 import { PgBrouillonsPubStore } from './pubs/brouillons.pg';
 import { creerLaPublicite, publierLaPublicite, type DemandeCreation } from './pubs/creation';
 import { entonnoir, ISSUES_NON_PRISES_EN_CHARGE } from './pubs/entonnoir';
-import { estJetonRefuse } from './meta/graph';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
 import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgSourceStore } from './agent/sources.pg';
@@ -189,7 +181,6 @@ import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
-import type { PricingSummary } from './meta/pricing';
 import type { TemplateSummary } from './meta/templates';
 import { tenter } from './lib/tenter';
 import { messageDe } from './lib/erreur';
@@ -453,9 +444,13 @@ async function main(): Promise<void> {
   const wabaDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantWabaId(t));
   // Hors du câblage de l'écran parce qu'ils ont deux consommateurs : les routes de l'écran Publicités, et la
   // route `/ops` qui dépose un jeton créé à la main. Les construire deux fois donnerait deux chemins de
-  // chiffrement à tenir alignés.
-  const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+  // chiffrement à tenir alignés. Le jeton se chiffre et se déchiffre dans `src/pubs/connexion.ts`, seul.
   const connexionsPub = new PgPubConnexionStore(pool);
+  const connexionPub = creerConnexionPub({
+    client: new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION),
+    connexions: connexionsPub,
+    cleChiffrement: config.ENCRYPTION_KEY,
+  });
   // 🔴 Ce qui crée une publicité sur le compte du client, donc dépense son argent : un client séparé de celui
   // de la connexion, qui ne fait que lire. Une route de lecture ne doit pas avoir de quoi créer une campagne.
   const clientCreationPubs = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
@@ -547,57 +542,20 @@ async function main(): Promise<void> {
       }
     : undefined;
   /**
-   * Le tarif de Meta, par espace et par fenêtre, soixante secondes. Déclaré dans le câblage : un cache par
-   * process est ce que `cacheCourt` promet, et un module partagé le ferait partager par le worker, qui
-   * n'affiche aucun tarif.
+   * Le chiffrage : toutes les lectures de coût (statistiques, fiche contact, `/ops`), leur tarif Meta sous
+   * micro-cache et la marge. Construit une fois, donc un cache de tarifs par process ; le worker, qui
+   * n'affiche aucun tarif, ne le construit pas. Tout vit dans `src/stats/chiffrage.ts`, exécuté par ses tests.
    */
-  const cacheTarifsMeta = cacheCourt<PricingSummary | null>(60_000);
-
-  /**
-   * Le point de passage unique vers le tarif de Meta.
-   * Un échec n'est pas mémorisé : `getPricingAnalytics` avale ses pannes et rend `null`, une valeur résolue
-   * que `cacheCourt` garderait, et un 429 éteindrait la colonne « coût » de tous les écrans pendant une
-   * minute. On oublie la clé aussitôt. Les appels en vol restent mutualisés (vingt-cinq onglets, un seul
-   * aller-retour, panne comprise).
-   */
-  const tarifMeta = async (
-    tenant: string,
-    startTs: number,
-    endTs: number,
-    appel: () => Promise<PricingSummary | null>,
-  ): Promise<PricingSummary | null> => {
-    const cle = `${tenant}:${startTs}:${endTs}`;
-    const v = await cacheTarifsMeta.lire(cle, appel);
-    if (v === null) cacheTarifsMeta.invalider(cle);
-    return v;
-  };
-
-  /**
-   * Le prix facturé d'un template : le seul endroit où la marge s'applique.
-   * 🔴 Un seul point de passage, pour que tous les écrans qui affichent un prix (graphe de coût, synthèse,
-   * bilan d'un contact) donnent le même chiffre ; ce qui sort est un prix de vente, pas un tarif Meta.
-   * Un tarif absent (`null`) le reste : marger une absence en ferait un prix, et `chiffrer` ne pourrait plus
-   * la compter comme « sans tarif ». La transformation vit dans `tarifsFactures`, pure et testée.
-   */
-  const prixFactures = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
-    const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrixGlobale()]);
-    const { startTs, endTs } = rangeToUnix(range);
-    const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
-    /**
-     * L'aller-retour chez Meta passe sous micro-cache : quatre écrans le déclenchent (dont l'onglet
-     * Campagnes, ouvert en permanence), pour un tarif qui ne bouge pas dans la minute, sur une API tierce à
-     * quota. La clé porte l'espace (isolation) et la fenêtre (deux périodes, deux tarifs). Soixante
-     * secondes : acceptable pour un affichage, jamais pour une décision.
-     */
-    const pricing = pricingClientT && wabaId
-      ? await tarifMeta(tenant, startTs, endTs, () => pricingClientT.getPricingAnalytics(wabaId, startTs, endTs))
-      : null;
-    return tarifsFactures({
-      marketing: pricing?.byCategory['marketing']?.ratePerMessage,
-      utility: pricing?.byCategory['utility']?.ratePerMessage,
-      currency: pricing?.currency,
-    }, grilleDepuisLigne(ligne));
-  };
+  const chiffrage = creerChiffrage({
+    stats: statsStore,
+    waba: repo,
+    meta: metaFactory,
+    historique: contactHistoryStore,
+    scenarios: workflowStore,
+    liens: trackedLinkStore,
+    evenements: nodeEventStore,
+    retentionJours: config.CONVERSATION_RETENTION_DAYS,
+  });
 
   /** Micro-cache de la pastille du numéro : dix minutes, très en deçà de la durée de vie de l'URL signée. */
   const photoNumeroCache = cacheCourt<string | null>(10 * 60_000);
@@ -608,14 +566,6 @@ async function main(): Promise<void> {
    * plusieurs centaines de millisecondes vers Vercel.
    */
   const catalogueModelesCache = cacheCourt<ModeleGateway[]>(60 * 60_000);
-
-  /**
-   * Micro-cache de l'état du compte publicitaire : deux minutes. La route de l'écran Publicités est hors du
-   * plafond « coûteux » (il couperait la page dès que deux personnes la consultent) : sans cache, chaque
-   * ouverture ferait un aller-retour Graph. Deux minutes et pas dix : quand un statut ou un moyen de
-   * paiement bouge, c'est que le client vient de le corriger chez Meta et revient voir.
-   */
-  const etatComptePubCache = cacheCourt<EtatComptePub | null>(2 * 60_000);
 
   /**
    * Micro-cache du catalogue des templates de `GET /v1/templates` : une minute, par espace et par WABA.
@@ -1017,26 +967,16 @@ async function main(): Promise<void> {
     stats: {
       stats: statsStore,
       conversationStats: conversationStatsStore,
-      // La même grille que les prix affichés au-dessus : deux lectures donneraient deux marges. `tenant` n'est
-      // plus lu (une seule grille pour tous les espaces), la flèche le garde pour le contrat de la route.
-      margeTemplate: async () => grilleDepuisLigne(await statsStore.grillePrixGlobale()).margeTemplate,
-      /**
-       * 🔴 Ce chemin porte aussi la marge : il alimente « Détail par template » du Quantitatif et le coût de
-       * l'écran Campagnes. Sans elle, la même campagne aurait deux prix sur deux écrans.
-       * `cost` et `totalCost` ne sont pas margés : ce sont les charges réelles facturées par Meta. Seul
-       * `ratePerMessage` devient un prix, parce que c'est lui que les écrans multiplient par un volume.
-       */
-      getPricing: async (tenant, range) => {
-        const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrixGlobale()]);
-        if (!wabaId) return null;
-        const { startTs, endTs } = rangeToUnix(range);
-        const pricing = await metaFactory.pricingClientForTenant(tenant); // token par tenant, repli global
-        // Le même cache que `prixFactures` (même clé, même fenêtre) : l'onglet Campagnes appelle aussi cette
-        // route à chaque montage, et contournerait sinon le cache par la porte d'à côté.
-        const brut = await tarifMeta(tenant, startTs, endTs, () => pricing.getPricingAnalytics(wabaId, startTs, endTs));
-        if (!brut) return brut;
-        return pricingFacture(brut, grilleDepuisLigne(ligne));
-      },
+      // Les lectures de coût : `src/stats/chiffrage.ts`. `margeTemplate` ne lit pas l'espace (une seule grille
+      // pour tous), le contrat de la route le garde.
+      margeTemplate: chiffrage.margeTemplate,
+      getPricing: chiffrage.getPricing,
+      getCostSeries: chiffrage.getCostSeries,
+      getCoutParCampagne: chiffrage.getCoutParCampagne,
+      getCoutMessages: chiffrage.getCoutMessages,
+      getCoutIa: chiffrage.getCoutIa,
+      getDetailCoutCampagne: chiffrage.getDetailCoutCampagne,
+      getWorkflowNodeCounts: chiffrage.getWorkflowNodeCounts,
       // Le même journal que l'écran d'exploitation (`/parametres`), avec le code et la plage en filtre : deux
       // requêtes sur des populations voisines feraient se contredire deux écrans de même titre.
       getErrorContacts: (tenant, range, code, filter) => erreursLivraison.lister(tenant, {
@@ -1050,200 +990,6 @@ async function main(): Promise<void> {
         // Une ligne de plus que le plafond : c'est ainsi que la route sait qu'elle tronque, et le dit.
         limit: PLAFOND_CONTACTS_ERREUR + 1,
       }),
-      getCostSeries: async (tenant, range, filter) => {
-        const [rows, rates] = await Promise.all([
-          statsStore.getCostVolume(tenant, range, filter),
-          prixFactures(tenant, range),
-        ]);
-        return estimateCostSeries(range.from, range.to, rows, rates);
-      },
-      /**
-       * Le tableau « ce que coûte un engagement » de la page de synthèse. Les tarifs Meta viennent du même
-       * appel que le graphe de coût (`prixFactures`), pour ne pas afficher deux coûts dans le même onglet. Le
-       * calcul est pur (`estimateCoutParCampagne`).
-       */
-      getCoutParCampagne: async (tenant, range, opts) => {
-        const [volumes, rates, serviceMois, ligne, rcs] = await Promise.all([
-          // La rétention voyage jusqu'ici : une campagne dont les envois ont été purgés garde une case vide
-          // plutôt qu'un 0,00 € qui se lirait « gratuit ».
-          statsStore.getVolumeParCampagne(tenant, range, { ...opts, retentionJours: config.CONVERSATION_RETENTION_DAYS }),
-          prixFactures(tenant, range),
-          // Le même calcul de franchise que la ligne « Messages », par les mêmes deux lectures : sinon deux
-          // coûts de service sur la même carte. Voir `estimateCoutParCampagne` pour le prorata.
-          statsStore.serviceParMois(tenant, range),
-          statsStore.grillePrixGlobale(),
-          // Et le même lot de RCS que cette ligne-là, par la même lecture et la même règle de bascule.
-          // `attribuer` : seul cet appelant lit `campaignId`, et l'attribution coûte une sous-requête corrélée
-          // par message RCS, non servie par un index.
-          statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS, { attribuer: true }),
-        ]);
-        const ids = [...new Set(volumes.map((v) => v.campaignId))];
-        // Les trois en parallèle : lectures indépendantes sur la même liste, et cette route sert la page
-        // d'accueil de Performance lab.
-        const [clics, engagements, services] = await Promise.all([
-          statsStore.clicsParCampagne(tenant, ids),
-          statsStore.engagementsParCampagne(tenant, ids),
-          statsStore.servicesParCampagne(tenant, ids, range),
-        ]);
-        /**
-         * Le prix effectif d'un message de service sur la période, franchise déduite. Il se calcule : le tarif
-         * est celui d'un message facturé, la franchise mensuelle en rend une partie gratuite (une période sous
-         * le millième vaut zéro). Prendre le tarif nu surfacturerait chaque campagne du début de mois.
-         * `envoyes === 0` -> ni division ni imputation.
-         */
-        const cm = coutMessages(
-          { templates: [], rates, service: serviceMois, rcsSimple: 0, rcsConversationnel: 0 },
-          grilleDepuisLigne(ligne),
-        );
-        const prixUnitaire = cm.service.envoyes > 0 ? cm.service.cout / cm.service.envoyes : 0;
-        /**
-         * Les RCS de chaque campagne, simples d'un côté, conversationnels de l'autre.
-         * 🔴 La bascule se calcule sur tous les envois de l'espace, pas sur ceux d'une campagne : la règle fait
-         * passer l'échange entier à 8 cts dès qu'une réaction suit l'un de ses envois dans les sept jours, donc
-         * un RCS hors campagne peut faire basculer les RCS de campagne du même échange. Les lignes sans
-         * campagne sont ignorées à l'imputation, pas à la bascule.
-         */
-        const envoisRcs = rcs.conversations.flatMap((c) =>
-          c.instants.map((at) => ({ id: '', conversationId: c.conversationId, waId: c.waId, at })));
-        const bascules = basculesRcs(envoisRcs, rcs.reactions);
-        const rcsParCampagne = new Map<string, { simple: number; conversationnel: number }>();
-        for (const c of rcs.conversations) {
-          if (c.campaignId === null) continue;
-          const acc = rcsParCampagne.get(c.campaignId) ?? { simple: 0, conversationnel: 0 };
-          if (bascules.has(c.conversationId)) acc.conversationnel += c.envois; else acc.simple += c.envois;
-          rcsParCampagne.set(c.campaignId, acc);
-        }
-        // La marge est déjà dans `rates` (cf. `prixFactures`) : la réappliquer la compterait deux fois. Elle
-        // ne touche pas le RCS, dont le prix saisi est déjà un prix de vente.
-        return estimateCoutParCampagne(volumes, rates, clics, engagements,
-          { parCampagne: services, prixUnitaire },
-          { parCampagne: rcsParCampagne, grille: grilleDepuisLigne(ligne) });
-      },
-      /**
-       * Le coût total des messages de la période : templates margés, service franchise déduite, RCS. Les
-       * mêmes tarifs Meta que le graphe et le tableau, par le même `prixFactures`.
-       * La bascule RCS se calcule ici par la fonction pure `basculesRcs` (testée), pas en SQL : deux
-       * implémentations de la règle divergeraient sans se voir. Le store garde tous les instants, rien n'est
-       * approximé. La fenêtre passe au SQL depuis `FENETRE_BASCULE_MS`, jamais un `interval` recopié à côté.
-       */
-      getCoutMessages: async (tenant, range) => {
-        const [volumes, rates, service, rcs, ligne] = await Promise.all([
-          statsStore.getCostVolume(tenant, range, {}),
-          prixFactures(tenant, range),
-          statsStore.serviceParMois(tenant, range),
-          statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS),
-          statsStore.grillePrixGlobale(),
-        ]);
-        // Les instants d'envoi redéployés en un envoi par instant : c'est la forme que la fonction pure
-        // attend, et la reconstruire ici coûte des objets éphémères plutôt que des lignes de base.
-        const envoisRcs = rcs.conversations.flatMap((c) =>
-          c.instants.map((at) => ({ id: '', conversationId: c.conversationId, waId: c.waId, at })));
-        const bascules = basculesRcs(envoisRcs, rcs.reactions);
-        // Le compte se fait sur les envois de chaque conversation, pas sur le nombre de conversations : un
-        // échange basculé facture tous ses RCS au tarif haut.
-        let rcsSimple = 0;
-        let rcsConversationnel = 0;
-        for (const c of rcs.conversations) {
-          if (bascules.has(c.conversationId)) rcsConversationnel += c.envois; else rcsSimple += c.envois;
-        }
-        return coutMessages(
-          {
-            templates: volumes.map((v) => ({ category: v.category, count: v.count })),
-            rates,
-            service,
-            rcsSimple,
-            rcsConversationnel,
-          },
-          grilleDepuisLigne(ligne),
-        );
-      },
-      /**
-       * Ce que le client a dépensé en IA sur son crédit, et le détail de ses tours. Rien de ce qui est sur
-       * notre clé n'y entre (transcription, bot d'aide, assistants), ni le Meta Business Agent, facturé au
-       * message de service (`getCoutMessages`).
-       */
-      getCoutIa: async (tenant, range) => statsStore.consommationIa(tenant, range, PLAFOND_TOURS_IA),
-      /**
-       * La fiche d'une campagne, ouverte depuis sa ligne du tableau. Les mêmes tarifs que le tableau, par le
-       * même `prixFactures`, pour ne pas afficher deux coûts côte à côte. Ce sont ceux des 30 derniers jours
-       * alors que la fiche couvre toute la vie de la campagne : approximation assumée (Meta rend un tarif par
-       * période, qui bouge de quelques centimes par an), sous un coût annoncé comme estimé.
-       * `null` -> 404 : la campagne n'est pas dans cet espace, lue avant le reste pour ne rien payer de plus.
-       */
-      getDetailCoutCampagne: async (tenant, campaignId) => {
-        const campagne = await statsStore.ficheCampagne(tenant, campaignId);
-        if (campagne === null) return null;
-        const [envois, rates, funnel, evenements] = await Promise.all([
-          statsStore.envoisDeLaCampagne(tenant, campaignId),
-          // Les 30 derniers jours, la fenêtre par défaut du tableau, d'où l'on ouvre cette fiche.
-          prixFactures(tenant, { from: addDays(todayParis(), -29), to: todayParis() }),
-          statsStore.getCampaignFunnel(tenant, campaignId),
-          campagne.workflowId ? statsStore.mesuresScenarioParCampagne(tenant, campaignId) : Promise.resolve([]),
-        ]);
-        /**
-         * Les clics de liens tracés attribués à cette campagne, fusionnés aux événements de blocs, par le même
-         * montage que `getWorkflowNodeCounts` (le node d'un clic ne se déduit que du graphe). Best-effort : une
-         * panne retire la colonne des liens, pas le coût ni les réponses.
-         */
-        let clics: CompteurClic[] = [];
-        let clicsAnonymes = 0;
-        if (campagne.workflowId) {
-          try {
-            const wf = await workflowStore.getById(campagne.workflowId, tenant);
-            const noeuds = noeudsTemplate(wf?.graph);
-            if (noeuds.length > 0) {
-              const liens = await trackedLinkStore.listByTemplates(tenant, noeuds.map((n) => n.templateName));
-              if (liens.length > 0) {
-                const compte = await trackedLinkStore.clicsAttribuesCampagne(tenant, campaignId, liens.map((l) => l.code));
-                clics = compteursDeClics(noeuds, liens, compte.attribues);
-                clicsAnonymes = compte.anonymes;
-              }
-            }
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.error('clics attribues a la campagne ignores:', messageDe(err));
-          }
-        }
-        return assemblerDetailCampagne({
-          campagne, envois, rates, funnel, mesures: [...evenements, ...clics], clicsAnonymes,
-        });
-      },
-      /**
-       * Mesures d'un scénario : les événements de blocs, plus les clics sur les liens tracés des templates
-       * qu'il envoie. Les clics ne peuvent pas vivre dans `workflow_node_events` (elle exige un `wa_id`, un
-       * clic sur un lien statique n'identifie personne) : ils sont fusionnés à la lecture. Best-effort sur les
-       * liens : une panne retire la mesure de clic, pas les compteurs d'envoi et de lecture.
-       */
-      getWorkflowNodeCounts: async (tenant, workflowId, range) => {
-        const evenements = await nodeEventStore.countByNode(tenant, workflowId, range);
-        try {
-          const wf = await workflowStore.getById(workflowId, tenant);
-          const noeuds = noeudsTemplate(wf?.graph);
-          // Les blocs RCS ont leurs propres liens, sur une autre clé (l'adresse) et un autre espace de noms de
-          // handle (`lien:i`) : les deux familles se lisent séparément puis se concatènent.
-          const liensRcs = liensRcsDesNoeuds(wf?.graph);
-          if (noeuds.length === 0 && liensRcs.length === 0) return evenements;
-
-          const codesRcs = liensRcs.length > 0
-            ? await trackedLinkStore.codesRcsParDestination(tenant, liensRcs.map((l) => l.destination))
-            : new Map<string, string>();
-          const liens = noeuds.length > 0
-            ? await trackedLinkStore.listByTemplates(tenant, noeuds.map((n) => n.templateName))
-            : [];
-          const tousLesCodes = [...liens.map((l) => l.code), ...codesRcs.values()];
-          if (tousLesCodes.length === 0 && liensRcs.length === 0) return evenements;
-          const clics = await trackedLinkStore.countClicks(tenant, tousLesCodes, range);
-          return [
-            ...evenements,
-            ...compteursDeClics(noeuds, liens, clics),
-            ...compteursDeClicsRcs(liensRcs, codesRcs, clics),
-          ];
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error('mesures de clics ignorées:', messageDe(err));
-          return evenements;
-        }
-      },
     },
     workflowReports: reportStore,
     settings: {
@@ -1780,22 +1526,8 @@ async function main(): Promise<void> {
         return r ? { status: r.status, ...(r.contactId ? { contactId: r.contactId } : {}), ...(r.reason ? { reason: r.reason } : {}) } : { status: 'error', reason: 'aucun résultat' };
       },
       contactHistory: contactHistoryStore,
-      /**
-       * Le bilan d'un contact : son coût estimé et son entonnoir d'engagement. Les mêmes tarifs que la fiche
-       * de campagne, par le même `prixFactures` et la même fenêtre de 30 jours (même approximation assumée) :
-       * un client qui compare le coût d'un contact à celui de sa campagne doit retrouver la même arithmétique.
-       */
-      getBilanContact: async (tenant, id) => {
-        const matiere = await contactHistoryStore.bilanContact(tenant, id);
-        if (!matiere) return null;
-        // Même fenêtre que la fiche de campagne, écrite de la même façon : trois écrans qui disent un coût
-        // doivent lire le même tarif.
-        const rates = await prixFactures(tenant, { from: addDays(todayParis(), -29), to: todayParis() });
-        return {
-          cout: estimerCoutContact(matiere.envois, rates),
-          entonnoir: entonnoirEngagement(matiere.profondeurs),
-        };
-      },
+      // Le coût d'un contact, aux mêmes tarifs que la fiche de campagne : `src/stats/chiffrage.ts`.
+      getBilanContact: chiffrage.getBilanContact,
       // Automations « tag ajouté » : l'API ne démarre pas de scénario (le worker tient l'exécuteur), elle
       // publie un événement par tag posé. Un contact sans identité joignable (ni numéro ni BSUID) n'a rien à
       // déclencher.
@@ -1877,218 +1609,114 @@ async function main(): Promise<void> {
     })(),
     /**
      * Les publicités Click-to-WhatsApp.
-     * 🔴 Le jeton est chiffré et déchiffré ici, nulle part ailleurs : la route ne reçoit qu'un `tenantId`,
-     * comme pour l'inscription WhatsApp, donc le jeton ne peut fuiter ni dans un journal, ni dans une
-     * réponse, ni dans une trace de pile.
+     * 🔴 Le jeton est chiffré et déchiffré dans `src/pubs/connexion.ts`, nulle part ailleurs : la route ne
+     * reçoit qu'un `tenantId`, comme pour l'inscription WhatsApp, donc le jeton ne peut fuiter ni dans un
+     * journal, ni dans une réponse, ni dans une trace de pile.
      * `META_ADS_CONFIG_ID` vide : routes montées, l'échange répond 503 et l'écran l'annonce. La configuration
      * refuse de démarrer si cette variable est posée sans `ENCRYPTION_KEY`.
      */
-    pubs: (() => {
-      const connexions = connexionsPub;
-      const jetonClair = async (tenantId: string): Promise<string> => {
-        const chiffre = await connexions.lireJetonChiffre(tenantId);
-        // Une erreur nommée : la route en fait un 409 « pas connecté », et non un 502 « Meta ne répond pas »
-        // qui enverrait chercher une panne inexistante.
-        if (chiffre === null) throw new PasDeConnexionPub();
-        return decryptSecret(chiffre, config.ENCRYPTION_KEY);
-      };
+    pubs: {
+      audit: auditSink,
+      configId: config.META_ADS_CONFIG_ID,
+      appId: config.META_APP_ID,
+      graphVersion: config.META_GRAPH_VERSION,
+      connexions: connexionsPub,
+      // La connexion, du code échangé à la révocation : `src/pubs/connexion.ts`.
+      etatCompte: connexionPub.etatCompte,
+      connecter: connexionPub.connecter,
+      actifsAccordes: connexionPub.actifsAccordes,
+      choisir: connexionPub.choisir,
+      deconnecter: connexionPub.deconnecter,
+
+      publicites,
+      brouillons: brouillonsPub,
+
       /**
-       * Un jeton refusé se retient, une panne non (« reconnectez-vous » contre « réessayez ») : cela se lit
-       * sur le code de Meta (`estJetonRefuse`), jamais sur la phrase, qui se reformule. L'erreur remonte dans
-       * les deux cas.
+       * Créer une publicité chez Meta, en pause. Ce câblage ne fait que lier (connexion, jeton de Page, deux
+       * objets) : la séquence et son rattrapage vivent dans `src/pubs/creation.ts`, exécutés contre de faux
+       * objets, chemins d'échec compris.
        */
-      const noterSiRefus = async <T>(tenantId: string, appel: Promise<T>): Promise<T> => {
-        try {
-          return await appel;
-        } catch (err) {
-          if (estJetonRefuse(err)) await connexions.marquerJetonRejete(tenantId);
-          throw err;
-        }
-      };
-      return {
-        audit: auditSink,
-        configId: config.META_ADS_CONFIG_ID,
-        appId: config.META_APP_ID,
-        graphVersion: config.META_GRAPH_VERSION,
-        connexions,
-        etatCompte: async (t: string) => {
-          const etat = await connexions.lire(t);
-          const comptePubId = etat?.comptePubId ?? null;
-          if (comptePubId === null) return null;
-          return etatComptePubCache.lire(`${t}:${comptePubId}`, async () => {
-            // Pas de `noterSiRefus` : un refus ici ne doit pas marquer la connexion morte pour un
-            // indicateur d'affichage. La route traite déjà l'échec comme « je ne sais pas ».
-            return clientPubs.etatCompte(comptePubId, await jetonClair(t));
-          });
-        },
-        connecter: async (t: string, code: string, userId: string | null) => {
-          // Refus avant l'échange quand une connexion existe déjà : Meta n'émet alors aucun jeton pour rien.
-          // Pas suffisant seul (deux connexions simultanées passeraient) : la ceinture reste l'insertion seule
-          // de `poserJeton`.
-          if (await connexions.lireJetonChiffre(t) !== null) throw new DejaConnectePub(false);
-          const jeton = await clientPubs.exchangeCode(code);
-          // 🔴 À partir d'ici, Meta a émis un jeton sans expiration. Il est rangé avant de lire les actifs, et
-          // son échec a son propre nom : c'est notre panne, et elle laisse un accès vivant dont nous n'avons
-          // plus la trace.
-          let pose = false;
-          try {
-            pose = await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.error(`jeton publicitaire NON enregistré pour l'espace ${t}, il reste vivant chez Meta:`, messageDe(err));
-            throw new JetonNonEnregistre(err);
-          }
-          // La base a refusé d'écraser une connexion existante (course rare) : le jeton échangé est perdu pour
-          // nous, et le client l'apprend dans la réponse.
-          // 🔴 Ne pas le révoquer ici : `DELETE /me/permissions/...` porte sur le couple (application, entité),
-          // pas sur le jeton, et révoquer avec le neuf retirerait probablement les permissions de l'ancien,
-          // donc de la connexion en place (hypothèse non mesurée). Un orphelin rare plutôt que ce risque.
-          if (!pose) {
-            // eslint-disable-next-line no-console
-            console.error(`connexion publicitaire concurrente sur l'espace ${t} : un jeton a été émis par Meta et n'a pas été gardé`);
-            throw new DejaConnectePub(true);
-          }
-          return clientPubs.actifsAccordes(jeton);
-        },
-        actifsAccordes: async (t: string) => noterSiRefus(t, clientPubs.actifsAccordes(await jetonClair(t))),
-        choisir: async (t: string, choix: { comptePubId: string; pageId: string }) => {
-          const jeton = await jetonClair(t);
-          // La devise et le fuseau viennent de la liste des actifs, qui les porte déjà : les relire compte par
-          // compte serait un appel pour rien et une seconde vérité, qui pourrait diverger de celle qui a
-          // validé le choix.
-          const actifs = await noterSiRefus(t, clientPubs.actifsAccordes(jeton));
-          const compte = actifs.comptesPub.find((c) => c.id === choix.comptePubId);
-          const page = actifs.pages.find((p) => p.id === choix.pageId);
-          // `inconnu` sans appeler Meta : aucune API n'expose la liaison Page / numéro (détail dans
-          // `src/meta/pubs.ts`). L'écran dit où la voir chez Meta plutôt que de prétendre la connaître.
-          const pageLiee = 'inconnu' as const;
-          await connexions.choisirActifs(t, {
-            ...choix,
-            // Les noms sont gardés ici et nulle part ailleurs : l'écran les relirait sinon chez Meta à chaque
-            // ouverture.
-            compteNom: compte?.nom ?? null,
-            pageNom: page?.nom ?? null,
-            devise: compte?.devise ?? null,
-            fuseau: compte?.fuseau ?? null,
-            pageLiee,
-          });
-          const etat = await connexions.lire(t);
-          if (etat === null) throw new Error('connexion publicitaire introuvable après enregistrement');
-          return etat;
-        },
-        deconnecter: async (t: string) => {
-          // 🔴 Révoquer d'abord, effacer ensuite : notre ligne est la seule copie de ce jeton sans expiration,
-          // l'effacer sans tenter le retrait laisserait un accès vivant que nous ne pourrions plus fermer.
-          const chiffre = await connexions.lireJetonChiffre(t);
-          let revoqueChezMeta = false;
-          if (chiffre !== null) {
-            try {
-              await clientPubs.revoquerAcces(decryptSecret(chiffre, config.ENCRYPTION_KEY));
-              revoqueChezMeta = true;
-            } catch (err) {
-              // Un échec n'empêche pas de se déconnecter : bloquer sur une panne de Meta retiendrait un client
-              // qui veut partir.
-              // 🔴 Le booléen ne va pas à l'écran : on ne prescrit jamais « retirer l'application », qui
-              // couperait aussi le numéro WhatsApp (c'est la même application), et le jeton résiduel n'est
-              // détenu par personne. Il sert à mesurer si le retrait fonctionne, et va au journal.
-              // eslint-disable-next-line no-console
-              console.warn('retrait d’accès publicitaire non confirmé par Meta:', messageDe(err));
-            }
-          }
-          await connexions.supprimer(t);
-          return { revoqueChezMeta };
-        },
-
-        publicites,
-        brouillons: brouillonsPub,
-
+      creerPub: async (t: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>) => {
+        const etat = await connexionsPub.lire(t);
+        if (etat === null) throw new PasDeConnexionPub();
+        if (etat.comptePubId === null || etat.pageId === null) throw new ConnexionPubIncomplete();
+        const jeton = await connexionPub.jetonClair(t);
+        const comptePubId = etat.comptePubId;
+        const pageId = etat.pageId;
+        // Le jeton de Page ne sert qu'à la créa et n'est jamais stocké. Meta l'exige pour ce guide sans dire
+        // s'il le faut partout : repli sur le jeton du client, et le refus de Meta sera lisible.
+        const jetonCrea = (await clientCreationPubs.jetonDePage(pageId, jeton)) ?? jeton;
         /**
-         * Créer une publicité chez Meta, en pause. Ce câblage ne fait que lier (connexion, jeton de Page, deux
-         * objets) : la séquence et son rattrapage vivent dans `src/pubs/creation.ts`, exécutés contre de faux
-         * objets, chemins d'échec compris.
+         * Le numéro est facultatif chez Meta, on le pose quand on le connaît : sans lui, Meta choisit le
+         * numéro de la Page, qui peut ne pas être celui de cet espace, et les prospects écriraient à un
+         * numéro dont aucun webhook ne nous parviendrait. Meta l'attend en chiffres, sans le `+` de l'E.164.
          */
-        creerPub: async (t: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>) => {
-          const etat = await connexions.lire(t);
-          if (etat === null) throw new PasDeConnexionPub();
-          if (etat.comptePubId === null || etat.pageId === null) throw new ConnexionPubIncomplete();
-          const jeton = await jetonClair(t);
-          const comptePubId = etat.comptePubId;
-          const pageId = etat.pageId;
-          // Le jeton de Page ne sert qu'à la créa et n'est jamais stocké. Meta l'exige pour ce guide sans dire
-          // s'il le faut partout : repli sur le jeton du client, et le refus de Meta sera lisible.
-          const jetonCrea = (await clientCreationPubs.jetonDePage(pageId, jeton)) ?? jeton;
-          /**
-           * Le numéro est facultatif chez Meta, on le pose quand on le connaît : sans lui, Meta choisit le
-           * numéro de la Page, qui peut ne pas être celui de cet espace, et les prospects écriraient à un
-           * numéro dont aucun webhook ne nous parviendrait. Meta l'attend en chiffres, sans le `+` de l'E.164.
-           */
-          const affiche = (await phoneStatusStore.getPhoneNumber(t))?.displayPhoneNumber ?? null;
-          const numeroWhatsApp = affiche === null ? null : affiche.replace(/[^0-9]/g, '');
-          return creerLaPublicite(
-            { ...d, comptePubId, pageId, numeroWhatsApp },
-            {
-              televerserImage: (b64) => clientCreationPubs.televerserImage(comptePubId, jeton, b64),
-              creerCampagne: (p) => clientCreationPubs.creerCampagne(comptePubId, jeton, p),
-              creerEnsemble: (p) => clientCreationPubs.creerEnsemble(comptePubId, jeton, p),
-              creerCrea: (p) => clientCreationPubs.creerCrea(comptePubId, jetonCrea, p),
-              creerPub: (p) => clientCreationPubs.creerPub(comptePubId, jeton, p),
-              supprimerCampagne: (id) => clientCreationPubs.supprimerCampagne(id, jeton),
-            },
-            {
-              ouvrir: (v) => publicites.ouvrir(t, v),
-              noterIds: (id, v) => publicites.noterIds(t, id, v),
-              marquerEtat: (id, etatPub) => publicites.marquerEtat(t, id, etatPub),
-              memoriserPub: (adId, campagneId) => publicites.memoriserPub(t, adId, campagneId),
-              creerAutomation: (id, v) => publicites.creerAutomation(t, id, v),
-              supprimerAutomation: (id) => publicites.supprimerAutomation(t, id),
-            },
-          );
-        },
+        const affiche = (await phoneStatusStore.getPhoneNumber(t))?.displayPhoneNumber ?? null;
+        const numeroWhatsApp = affiche === null ? null : affiche.replace(/[^0-9]/g, '');
+        return creerLaPublicite(
+          { ...d, comptePubId, pageId, numeroWhatsApp },
+          {
+            televerserImage: (b64) => clientCreationPubs.televerserImage(comptePubId, jeton, b64),
+            creerCampagne: (p) => clientCreationPubs.creerCampagne(comptePubId, jeton, p),
+            creerEnsemble: (p) => clientCreationPubs.creerEnsemble(comptePubId, jeton, p),
+            creerCrea: (p) => clientCreationPubs.creerCrea(comptePubId, jetonCrea, p),
+            creerPub: (p) => clientCreationPubs.creerPub(comptePubId, jeton, p),
+            supprimerCampagne: (id) => clientCreationPubs.supprimerCampagne(id, jeton),
+          },
+          {
+            ouvrir: (v) => publicites.ouvrir(t, v),
+            noterIds: (id, v) => publicites.noterIds(t, id, v),
+            marquerEtat: (id, etatPub) => publicites.marquerEtat(t, id, etatPub),
+            memoriserPub: (adId, campagneId) => publicites.memoriserPub(t, adId, campagneId),
+            creerAutomation: (id, v) => publicites.creerAutomation(t, id, v),
+            supprimerAutomation: (id) => publicites.supprimerAutomation(t, id),
+          },
+        );
+      },
 
-        /** Publier : l'automation d'abord, Meta ensuite. L'ordre vit dans `publierLaPublicite`. */
-        publierPub: async (t: string, publiciteId: string) => {
-          const pub = await publicites.lire(t, publiciteId);
-          if (pub === null) throw new Error('cette publicité n’existe pas');
-          const jeton = await jetonClair(t);
-          await publierLaPublicite(
-            publiciteId,
-            { campagneId: pub.campagneId, ensembleId: pub.ensembleId, pubId: pub.pubId, etat: pub.etat, destination: pub.destination },
-            { allumer: (objetId) => clientCreationPubs.changerStatut(objetId, jeton, 'ACTIVE') },
-            {
-              allumerAutomation: (id) => publicites.allumerAutomation(t, id),
-              marquerPubliee: (id) => publicites.marquerEtat(t, id, 'publiee'),
-            },
-          );
-        },
+      /** Publier : l'automation d'abord, Meta ensuite. L'ordre vit dans `publierLaPublicite`. */
+      publierPub: async (t: string, publiciteId: string) => {
+        const pub = await publicites.lire(t, publiciteId);
+        if (pub === null) throw new Error('cette publicité n’existe pas');
+        const jeton = await connexionPub.jetonClair(t);
+        await publierLaPublicite(
+          publiciteId,
+          { campagneId: pub.campagneId, ensembleId: pub.ensembleId, pubId: pub.pubId, etat: pub.etat, destination: pub.destination },
+          { allumer: (objetId) => clientCreationPubs.changerStatut(objetId, jeton, 'ACTIVE') },
+          {
+            allumerAutomation: (id) => publicites.allumerAutomation(t, id),
+            marquerPubliee: (id) => publicites.marquerEtat(t, id, 'publiee'),
+          },
+        );
+      },
 
-        /**
-         * La page d'une publicité : ce qu'on sait d'elle, et son entonnoir. Aucun appel à Meta : les chiffres
-         * viennent du balayage (toutes les quinze minutes), pour que l'affichage ne dépende pas de Meta.
-         */
-        lirePub: async (t: string, publiciteId: string) => {
-          const publicite = await publicites.lire(t, publiciteId);
-          if (publicite === null) return null;
-          const comptes = await publicites.comptesDeLaCampagne(t, publicite.campagneId, ISSUES_NON_PRISES_EN_CHARGE);
-          return { publicite, entonnoir: entonnoir({ depense: publicite.depense, clics: publicite.clics, ...comptes }) };
-        },
+      /**
+       * La page d'une publicité : ce qu'on sait d'elle, et son entonnoir. Aucun appel à Meta : les chiffres
+       * viennent du balayage (toutes les quinze minutes), pour que l'affichage ne dépende pas de Meta.
+       */
+      lirePub: async (t: string, publiciteId: string) => {
+        const publicite = await publicites.lire(t, publiciteId);
+        if (publicite === null) return null;
+        const comptes = await publicites.comptesDeLaCampagne(t, publicite.campagneId, ISSUES_NON_PRISES_EN_CHARGE);
+        return { publicite, entonnoir: entonnoir({ depense: publicite.depense, clics: publicite.clics, ...comptes }) };
+      },
 
-        /**
-         * Pause et reprise, sur la campagne seulement, chez Meta.
-         * 🔴 La campagne est l'interrupteur (Meta met en pause tout ce qu'elle contient) : toucher aussi
-         * l'ensemble et la publicité ferait trois façons d'échouer à mi-chemin sur le bouton d'arrêt d'une
-         * dépense. L'automation n'est pas touchée : un prospect qui a cliqué juste avant la pause peut écrire
-         * plus tard, et son lead a été payé.
-         */
-        basculerPub: async (t: string, publiciteId: string, actif: boolean) => {
-          const pub = await publicites.lire(t, publiciteId);
-          if (pub === null) throw new Error('cette publicité n’existe pas');
-          await clientCreationPubs.changerStatut(pub.campagneId, await jetonClair(t), actif ? 'ACTIVE' : 'PAUSED');
-          // Meta vient d'accepter : on l'écrit tout de suite, sinon l'écran afficherait « Diffuse » sur une
-          // campagne qu'on vient d'arrêter, jusqu'au balayage suivant, et le client recliquerait.
-          await publicites.noterStatutMeta(t, publiciteId, actif ? 'ACTIVE' : 'PAUSED');
-        },
-      };
-    })(),
+      /**
+       * Pause et reprise, sur la campagne seulement, chez Meta.
+       * 🔴 La campagne est l'interrupteur (Meta met en pause tout ce qu'elle contient) : toucher aussi
+       * l'ensemble et la publicité ferait trois façons d'échouer à mi-chemin sur le bouton d'arrêt d'une
+       * dépense. L'automation n'est pas touchée : un prospect qui a cliqué juste avant la pause peut écrire
+       * plus tard, et son lead a été payé.
+       */
+      basculerPub: async (t: string, publiciteId: string, actif: boolean) => {
+        const pub = await publicites.lire(t, publiciteId);
+        if (pub === null) throw new Error('cette publicité n’existe pas');
+        await clientCreationPubs.changerStatut(pub.campagneId, await connexionPub.jetonClair(t), actif ? 'ACTIVE' : 'PAUSED');
+        // Meta vient d'accepter : on l'écrit tout de suite, sinon l'écran afficherait « Diffuse » sur une
+        // campagne qu'on vient d'arrêter, jusqu'au balayage suivant, et le client recliquerait.
+        await publicites.noterStatutMeta(t, publiciteId, actif ? 'ACTIVE' : 'PAUSED');
+      },
+    },
     account: {
       numeros: phoneStatusStore,
       /**
@@ -2379,40 +2007,11 @@ async function main(): Promise<void> {
     },
     ops: {
       /**
-       * Déposer un jeton publicitaire créé à la main : la fenêtre Meta ne peut pas servir notre propre
-       * portefeuille (Meta exige que celui du client soit distinct de celui qui possède l'application).
-       * 🔴 Le jeton est vérifié chez Meta avant d'être gardé, par les mêmes appels que la connexion par
-       * l'écran, et chiffré ici. Il remplace une connexion existante, là où l'écran la refuse : `/ops` est
-       * notre surface d'exploitation, où remplacer est précisément ce qu'on vient faire.
+       * Déposer un jeton publicitaire créé à la main (notre propre portefeuille, que la fenêtre Meta ne peut pas
+       * servir). Il remplace une connexion existante, là où l'écran la refuse. Vérification chez Meta,
+       * chiffrement et sort de l'ancien jeton : `src/pubs/connexion.ts`.
        */
-      deposerJetonPub: async (tenantId, jeton, comptePubId, pageId) => {
-        const actifs = await clientPubs.actifsAccordes(jeton);
-        const compte = actifs.comptesPub.find((c) => c.id === sansPrefixeAct(comptePubId));
-        const page = actifs.pages.find((p) => p.id === pageId);
-        if (compte === undefined) throw new Error(`ce jeton n'accorde pas le compte publicitaire ${comptePubId}`);
-        if (page === undefined) throw new Error(`ce jeton n'accorde pas la Page ${pageId}`);
-        const pageLiee = 'inconnu' as const; // Meta n'expose pas la liaison (cf. `src/meta/pubs.ts`).
-        // 🔴 Chiffrer avant de toucher à quoi que ce soit : `encryptSecret` lève sur une `ENCRYPTION_KEY`
-        // absente ou mal formée, et une levée plus bas détruirait la connexion existante sans rien ranger.
-        const chiffreNeuf = encryptSecret(jeton, config.ENCRYPTION_KEY);
-        // 🔴 Révoquer l'ancien seulement si c'est une autre entité, sinon on tue le neuf. Le raisonnement et
-        // ses cinq issues vivent dans `retirerAncienAcces` (`src/meta/pubs.ts`), testé contre un faux client :
-        // ce câblage ne fait que déléguer.
-        const ancien = await connexionsPub.lireJetonChiffre(tenantId);
-        const ancienRevoque = await retirerAncienAcces(
-          clientPubs,
-          ancien === null ? null : decryptSecret(ancien, config.ENCRYPTION_KEY),
-          jeton,
-        );
-        await connexionsPub.remplacer(tenantId, chiffreNeuf, {
-          comptePubId: compte.id, compteNom: compte.nom, pageId: page.id, pageNom: page.nom,
-          devise: compte.devise, fuseau: compte.fuseau, pageLiee,
-        });
-        return {
-          comptePubId: compte.id, compteNom: compte.nom, pageId: page.id, pageNom: page.nom,
-          devise: compte.devise, fuseau: compte.fuseau, pageLiee, ancienRevoque,
-        };
-      },
+      deposerJetonPub: connexionPub.deposerJeton,
       /**
        * 🔴 L'arrêt d'urgence d'un espace : il ferme la console et l'API publique (`/v1`, `/mcp`), il n'arrête
        * pas les campagnes déjà enfilées (runbook de `DEPLOY.md`). La note est journalisée une fois, par la
@@ -2423,9 +2022,9 @@ async function main(): Promise<void> {
       /**
        * 🔴 La grille de prix, une pour tous les espaces, ici et pas dans les réglages du client : un client n'a
        * ni à fixer ni à voir ce qu'on lui facture, et le geste ne doit jamais être atteignable depuis la
-       * console.
+       * console. La même lecture que celle qui marge les prix affichés (`src/stats/chiffrage.ts`).
        */
-      lireGrillePrix: async () => grilleDepuisLigne(await statsStore.grillePrixGlobale()),
+      lireGrillePrix: chiffrage.grille,
       reglages: settingsStore,
       // Les jobs morts et leur rejeu : un geste d'exploitation cross-espace, qui suppose qu'on ait corrigé la
       // cause de l'échec.
