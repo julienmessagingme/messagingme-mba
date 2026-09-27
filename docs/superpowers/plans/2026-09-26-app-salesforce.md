@@ -85,8 +85,8 @@ Salesforce du poste à A et à B par sa connexion navigateur.
 
 ## L1 : le socle et la connexion
 
-> **État au 2026-09-27** : partie serveur et console LIVRÉES, pas déployées (`0771cde7`, `60bff7bc` ; relecture
-> indépendante sans rouge). Le package (tâche 2) attend la liaison du namespace. Deux écarts au texte ci-dessous,
+> **État au 2026-09-27** : partie serveur et console DÉPLOYÉES (`0771cde7`, `60bff7bc` ; relecture indépendante
+> sans rouge ; 0183 appliquée avant le `up` et relue en base), invisibles tant que `SALESFORCE_CLIENT_ID` n'est pas posé. Le package (tâche 2) attend la liaison du namespace. Deux écarts au texte ci-dessous,
 > délibérés : **l'interrupteur vit sous la route de l'intégration** (`PATCH /tenants/:t/integrations/salesforce/actif`),
 > pas sous `/settings`, et `GET /settings` ne porte AUCUN drapeau Salesforce (la carte lit tout par sa propre route) ;
 > **la carte de l'Accueil (« Canaux et services ») passe en L2**, où l'état `coupee` prend son sens, avec les drapeaux

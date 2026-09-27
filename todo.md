@@ -14,8 +14,9 @@ rend tout idempotent, l'appel Apex signé traverse Cloudflare. Namespace réserv
 Registry » exige PKCE (verrouillé, « contactez le Support »), et sa fenêtre de liaison ne l'envoie pas
 (`missing required code challenge`). Sans cette liaison, aucun package géré 2GP, donc ni installation chez un
 client ni les mesures 1, 5, 8 et 10. **Prochain pas : faire lever le blocage par Salesforce** (communauté
-Trailblazer ou un contact Salesforce ; une Developer Edition n'a pas de ticket de support). En attendant, la
-partie serveur de L1 (migration, client REST, store, connexion, écrans) peut avancer sans le package.
+Trailblazer ou un contact Salesforce ; une Developer Edition n'a pas de ticket de support). La partie serveur de
+L1 (migration 0183, client REST, store, connexion, routes, écrans) est DÉPLOYÉE depuis le 2026-09-27, invisible tant
+que `SALESFORCE_CLIENT_ID` n'est pas posé (la route rend 404, la carte se cache).
 
 ## 🟠 `features.md` se contredit à TROIS endroits, trouvé en écrivant les fiches d'aide (2026-09-23)
 
