@@ -11,6 +11,7 @@ import { asArray, asRecord } from './json';
 import { valeurEffective } from './change';
 import { tenter } from '../lib/tenter';
 import { messageDe } from '../lib/erreur';
+import type { EntrantRattache } from './rattachement';
 
 export interface InboundMessage {
   phoneNumberId: string;
@@ -84,9 +85,11 @@ export interface FlowCompletion {
   values: Record<string, unknown>;
 }
 
+/**
+ * Ce que `processInbound` écrit. Le numéro vers l'espace n'en fait pas partie : `handleWebhookJob` le lit une fois
+ * par numéro (`NumeroVersEspace`, `./rattachement.ts`) et passe des messages déjà rattachés.
+ */
 export interface InboxStore {
-  /** Tenant propriétaire du numéro (mappe le message entrant à un tenant). null si inconnu. */
-  phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /** Upsert la conversation (par tenant+wa_id) et insère le message (idempotent par wamid). */
   recordInbound(tenantId: string, m: InboundMessage): Promise<void>;
   /**
@@ -246,7 +249,9 @@ export function extractFlowCompletions(payload: unknown): FlowCompletion[] {
 export type InboundContactUpsert = (tenantId: string, m: InboundMessage) => Promise<void | 'created' | 'updated' | 'skipped'>;
 
 /**
- * Enregistre le refus d'un contact qui a écrit STOP ; rend l'identifiant touché, `null` si aucune fiche.
+ * Enregistre le refus d'un contact qui a écrit STOP ; rend l'identifiant touché, `null` si aucune fiche. Requise
+ * partout où l'on enregistre des entrants (`DepsEntrants.optOut`, `WebhookJobDeps`) : une dépendance de
+ * consentement n'est jamais optionnelle.
  * `messageId`, le wamid du message STOP, est la clé naturelle du refus : il rend le signal `em_opted_out` stable
  * si Meta redélivre ou si le job est rejoué. Un câblage qui l'ignore compile quand même :
  * `tests/signaux-cablage.test.ts` lit le câblage du worker.
@@ -263,12 +268,17 @@ export type SignalReponse = (tenantId: string, m: InboundMessage) => Promise<voi
 
 /**
  * Les dépendances secondaires de `processInbound`, nommées plutôt qu'en queue de paramètres optionnels (un rang
- * inversé passerait le compilateur). Toutes optionnelles ici ; `WebhookJobDeps` exige le puits des signaux avec
- * `inbox`.
+ * inversé passerait le compilateur). Toutes optionnelles sauf l'opt-out ; `WebhookJobDeps` exige aussi le puits
+ * des signaux avec `inbox`.
  */
 export interface DepsEntrants {
   upsertContact?: InboundContactUpsert;
-  optOut?: InboundOptOut;
+  /**
+   * 🔴 L'écriture du STOP. Requise : optionnelle, un câblage qui l'oublierait compilerait, se déploierait et
+   * laisserait `opted_in` un contact qui a répondu STOP. Les fixtures qui ne parlent pas de consentement disent leur
+   * hypothèse avec `aucunStop` (`tests/consentement.ts`).
+   */
+  optOut: InboundOptOut;
   /**
    * Répartition d'une réponse de campagne. Absente : aucune affectation automatique, la conversation tombe dans
    * « À traiter ». Appelée après `recordInbound`, qui crée la conversation : avant, elle ne trouverait rien à
@@ -280,9 +290,9 @@ export interface DepsEntrants {
 }
 
 /**
- * Mappe chaque message entrant à son tenant et l'enregistre. `upsertContact`, s'il est fourni, crée ou rafraîchit
- * la fiche avant `recordInbound` (pour lier la conversation au contact), isolé : son échec ne casse pas
- * l'enregistrement.
+ * Enregistre chaque message entrant, déjà rattaché à son espace (numéro inconnu : ignoré). `upsertContact`, s'il
+ * est fourni, crée ou rafraîchit la fiche avant `recordInbound` (pour lier la conversation au contact), isolé : son
+ * échec ne casse pas l'enregistrement.
  *
  * 🔴 L'opt-out par mot-clé (STOP), messages texte seulement : le respect d'un refus ne peut pas dépendre de ce
  * que chaque client aura configuré. Deux points d'ordre :
@@ -292,18 +302,17 @@ export interface DepsEntrants {
  * Un bouton porte son libellé dans `body` : « Stopper la simulation » ne doit désabonner personne.
  */
 export async function processInbound(
-  payload: unknown,
+  entrants: readonly EntrantRattache[],
   store: InboxStore,
-  deps: DepsEntrants = {},
+  deps: DepsEntrants,
 ): Promise<void> {
   const { upsertContact, optOut, assignation, signalReponse } = deps;
-  for (const m of extractInbound(payload)) {
-    const tenantId = await store.phoneNumberTenant(m.phoneNumberId);
+  for (const { message: m, tenantId } of entrants) {
     if (!tenantId) continue;
     if (upsertContact) {
       await tenter('processInbound: auto-création contact ignorée:', () => upsertContact(tenantId, m));
     }
-    if (optOut && m.type === 'text' && estDemandeArret(m.body)) {
+    if (m.type === 'text' && estDemandeArret(m.body)) {
       try {
         const touche = await optOut(tenantId, m.waId, m.messageId);
         if (!touche) {

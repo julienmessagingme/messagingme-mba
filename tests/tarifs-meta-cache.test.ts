@@ -60,7 +60,8 @@ describe('le tarif de Meta est mis en cache court', () => {
     expect(constructions).toEqual(['src/stats/chiffrage.ts']);
   });
 
-  it('🔴 le chiffrage et la connexion publicitaire sont construits UNE fois par process, jamais par requête', () => {
+  it('🔴 le chiffrage et la connexion publicitaire n ont qu UN site de construction, dans la racine', () => {
+    // Ce test compte des SITES : un appel placé dans un gestionnaire de route de la racine compterait encore pour un.
     // Le cache vit dans la fabrique : un second appel (dans une route, par exemple) ouvrirait un second cache,
     // et le compte des constructions de cache ci-dessus resterait à un.
     const appels = (nom: string) => sources().flatMap(({ fichier, texte }) =>

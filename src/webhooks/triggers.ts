@@ -1,5 +1,5 @@
-import { extractInbound } from './inbound';
 import type { AutomationEvent } from '../automation/match';
+import type { EntrantRattache } from './rattachement';
 import type { RoutageDuMessage } from '../pubs/routage';
 import { messageDe } from '../lib/erreur';
 
@@ -12,8 +12,6 @@ import { messageDe } from '../lib/erreur';
  * une reprise confirmée.
  */
 export interface TriggerDeps {
-  /** Tenant propriétaire du numéro business. null si inconnu. */
-  phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /**
    * Ce message est-il le premier d'un contact inconnu ? Signal calculé à l'upsert d'inbound (`created`), relu
    * ici ; false si indisponible.
@@ -34,7 +32,7 @@ export interface TriggerDeps {
  * qui ont vraiment démarré quelque chose sont consommés.
  */
 export async function processTriggers(
-  payload: unknown,
+  entrants: readonly EntrantRattache[],
   deps: TriggerDeps,
   consumed?: ReadonlySet<string>,
   /**
@@ -44,7 +42,7 @@ export async function processTriggers(
   routage?: ReadonlyMap<string, RoutageDuMessage>,
 ): Promise<ReadonlySet<string>> {
   const demarres = new Set<string>();
-  for (const m of extractInbound(payload)) {
+  for (const { message: m, tenantId } of entrants) {
     const route = routage?.get(m.messageId);
     const restriction = route?.restriction ?? { sorte: 'tous' as const };
     // L'unique exception à « un message `standby` ne déclenche rien » : le routage d'un lead publicitaire a déjà
@@ -58,7 +56,6 @@ export async function processTriggers(
     if (restriction.sorte === 'aucun') continue;
     // Isolation par message : une erreur sur un contact ne prive pas les autres de leur déclenchement.
     try {
-      const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
       if (!tenantId) continue;
       const isNewContact = await deps.isNewContact(tenantId, m.waId);
       const partis = await deps.run(

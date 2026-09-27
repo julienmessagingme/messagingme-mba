@@ -19,7 +19,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
-import { jamaisDesabonne } from './consentement';
+import { aucunStop, jamaisDesabonne } from './consentement';
 import { inboxDepInerte, inboxInerte } from './routes-inertes';
 
 /**
@@ -411,6 +411,7 @@ describe('l’écart des entrants dans le job webhook', () => {
       payloadDe(change('pn-delie', { messages: [message('w-delie')] }), change('pn-relie', { messages: [message('w-relie', '33622')] })),
       {
         store, inbox: i.store, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse,
+        inboundOptOut: aucunStop,
         numerosDelies: async (ids) => { lectures.push(ids); return new Set(['pn-delie']); },
       },
     );
@@ -424,6 +425,7 @@ describe('l’écart des entrants dans le job webhook', () => {
     const i = inbox();
     await expect(handleWebhookJob(payloadDe(change('pn-x', { messages: [message('w-x')] })), {
       store, inbox: i.store, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse,
+      inboundOptOut: aucunStop,
       numerosDelies: async () => { throw new Error('base indisponible'); },
     })).resolves.toBeUndefined();
     expect(i.enregistres).toEqual(['w-x']);

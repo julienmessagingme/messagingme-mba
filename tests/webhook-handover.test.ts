@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { processHandovers, ownerFromHandover } from '../src/webhooks/handover';
+import { lireLesBascules, processHandovers, ownerFromHandover } from '../src/webhooks/handover';
 import type { HandoverDeps } from '../src/webhooks/handover';
 
 /**
@@ -33,7 +33,6 @@ function deps(over: Partial<HandoverDeps> = {}): {
     poses,
     messages,
     deps: {
-      phoneNumberTenant: async (pn) => (pn === 'pn1' ? 't1' : null),
       setControlOwner: async (t, w, o) => { poses.push([t, w, o]); return true; },
       // Une escalade est un détenteur `app_human` posé par une autre méthode : même trace, pour ces tests.
       marquerEscalade: async (t, w) => { poses.push([t, w, 'app_human']); },
@@ -42,6 +41,9 @@ function deps(over: Partial<HandoverDeps> = {}): {
     },
   };
 }
+
+/** Le seul numéro connu de ces tests : `pn1`, rattaché à `t1`. */
+const espaceDuNumero = async (pn: string): Promise<string | null> => (pn === 'pn1' ? 't1' : null);
 
 const enveloppe = (field: string, value: Record<string, unknown>) => ({
   entry: [{ changes: [{ field, value: { metadata: { phone_number_id: 'pn1' }, ...value } }] }],
@@ -63,7 +65,7 @@ describe('traitement des bascules de contrôle', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const d = deps();
     const payload = { entry: [{ changes: [{ field: 'messaging_handovers', value: { metadata: { phone_number_id: 'AUTRE' }, recipient: '33611' } }] }] };
-    await processHandovers(payload, d.deps);
+    await processHandovers(await lireLesBascules(payload, espaceDuNumero), d.deps);
     expect(d.poses).toEqual([]);
     expect(log.mock.calls.some((c) => String(c[0]).includes('handover_numero_inconnu'))).toBe(true);
   });
@@ -73,7 +75,7 @@ describe('traitement des bascules de contrôle', () => {
     // qui dira à quoi ressemble vraiment un handover.
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const d = deps();
-    await processHandovers(enveloppe('messaging_handovers', { recipient: '33611', forme: 'jamais vue' }), d.deps);
+    await processHandovers(await lireLesBascules(enveloppe('messaging_handovers', { recipient: '33611', forme: 'jamais vue' }), espaceDuNumero), d.deps);
     expect(d.poses).toEqual([]);
     const trace = log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('handover_recu'));
     expect(trace).toBeTruthy();
@@ -84,10 +86,10 @@ describe('traitement des bascules de contrôle', () => {
     // Même cas qu'avant, rejoué sur la VRAIE forme : un `control_passed` reconnaissable, mais sans le
     // `sender` qui porte le numéro du client. On ne pose rien plutôt que d'écrire sur un fil au hasard.
     const d = deps();
-    await processHandovers(enveloppe('messaging_handovers', {
+    await processHandovers(await lireLesBascules(enveloppe('messaging_handovers', {
       type: 'control_passed',
       control_passed: { previous_owner_app_role: 'meta_business_agent' },
-    }), d.deps);
+    }), espaceDuNumero), d.deps);
     expect(d.poses).toEqual([]);
   });
 });
@@ -96,7 +98,7 @@ describe('messages envoyés par l’agent de Meta (standby)', () => {
   it('les journalise dans le fil, pour que l’opérateur voie la conversation entière', async () => {
     const d = deps();
     await processHandovers(
-      enveloppe('standby', { message_echoes: [{ id: 'wamid.1', to: '33611', text: { body: 'Bonjour, je peux vous aider ?' } }] }),
+      await lireLesBascules(enveloppe('standby', { message_echoes: [{ id: 'wamid.1', to: '33611', text: { body: 'Bonjour, je peux vous aider ?' } }] }), espaceDuNumero),
       d.deps,
     );
     expect(d.messages).toEqual([['t1', '33611', 'Bonjour, je peux vous aider ?']]);
@@ -105,7 +107,7 @@ describe('messages envoyés par l’agent de Meta (standby)', () => {
   it('un écho sans corps exploitable est tracé mais pas journalisé comme message', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const d = deps();
-    await processHandovers(enveloppe('standby', { message_echoes: [{ id: 'wamid.2', to: '33611', image: {} }] }), d.deps);
+    await processHandovers(await lireLesBascules(enveloppe('standby', { message_echoes: [{ id: 'wamid.2', to: '33611', image: {} }] }), espaceDuNumero), d.deps);
     expect(d.messages).toEqual([]);
     expect(log.mock.calls.some((c) => String(c[0]).includes('standby_echo'))).toBe(true);
   });
@@ -114,7 +116,7 @@ describe('messages envoyés par l’agent de Meta (standby)', () => {
     // `standby` dit ce que l'agent a envoyé, pas qui détient le fil. Confondre les deux ferait basculer
     // l'état sur un simple écho, alors que seul `messaging_handovers` fait autorité.
     const d = deps();
-    await processHandovers(enveloppe('standby', { message_echoes: [{ id: 'w', to: '33611', text: { body: 'x' } }] }), d.deps);
+    await processHandovers(await lireLesBascules(enveloppe('standby', { message_echoes: [{ id: 'w', to: '33611', text: { body: 'x' } }] }), espaceDuNumero), d.deps);
     expect(d.poses).toEqual([]);
   });
 });
@@ -123,14 +125,14 @@ describe('robustesse : le webhook est partagé, rien ne doit planter', () => {
   it('avale les formes aberrantes sans lever', async () => {
     const d = deps();
     for (const payload of [null, undefined, {}, { entry: 'pas un tableau' }, { entry: [{ changes: null }] }, { entry: [{ changes: [{}] }] }]) {
-      await expect(processHandovers(payload, d.deps)).resolves.toBeUndefined();
+      await expect(processHandovers(await lireLesBascules(payload, espaceDuNumero), d.deps)).resolves.toBeUndefined();
     }
     expect(d.poses).toEqual([]);
   });
 
   it('ignore les champs qui ne le concernent pas', async () => {
     const d = deps();
-    await processHandovers(enveloppe('messages', { messages: [{ id: 'm1' }] }), d.deps);
+    await processHandovers(await lireLesBascules(enveloppe('messages', { messages: [{ id: 'm1' }] }), espaceDuNumero), d.deps);
     expect(d.poses).toEqual([]);
     expect(d.messages).toEqual([]);
   });

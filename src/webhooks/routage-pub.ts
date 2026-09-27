@@ -1,5 +1,5 @@
-import { extractInbound } from './inbound';
 import { arriveeDepuisMessage } from './arrivees-pub';
+import type { EntrantRattache } from './rattachement';
 import { routerLeLead, restrictionDuRoutage } from '../pubs/routage';
 import type { IssueRoutage, PubDuLead, RoutageDuMessage } from '../pubs/routage';
 import { messageDe } from '../lib/erreur';
@@ -13,8 +13,6 @@ import { messageDe } from '../lib/erreur';
  * par message : un routage en échec n'entre dans aucune restriction et suit le chemin ordinaire.
  */
 export interface RoutagePubDeps {
-  /** Tenant propriétaire du numéro business. `null` si le numéro nous est inconnu. */
-  phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /**
    * La campagne de cette publicité, d'après nos tables (`pubs_connues`) ; `null` = jamais vue. Le routage ne lit
    * que nos tables, sauf pour une copie inconnue (`resoudreChezMeta`) : sur le chemin chaud d'un message entrant,
@@ -68,7 +66,7 @@ const SOURCE_PUBLICATION = 'post';
  * ou routage en échec).
  */
 export async function processRoutagePub(
-  payload: unknown,
+  entrants: readonly EntrantRattache[],
   deps: RoutagePubDeps,
   /**
    * Les messages que Meta nous redélivre (`insertEvent` a dit « déjà vu »). On ne reprend pas le fil une seconde
@@ -79,13 +77,11 @@ export async function processRoutagePub(
   dejaVus?: ReadonlySet<string>,
 ): Promise<ReadonlyMap<string, RoutageDuMessage>> {
   const routes = new Map<string, RoutageDuMessage>();
-  for (const m of extractInbound(payload)) {
+  for (const { message: m, tenantId } of entrants) {
     const a = arriveeDepuisMessage(m);
-    if (!a) continue;
+    // Numéro inconnu : aucune campagne à chercher, le message suit le chemin ordinaire.
+    if (!a || !tenantId) continue;
     try {
-      const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
-      if (!tenantId) continue;
-
       const campagneId = await campagneDuLead(tenantId, a.adId, a.sourceType, deps);
       const pub = campagneId === null ? null : await deps.publiciteDeLaCampagne(tenantId, campagneId);
 

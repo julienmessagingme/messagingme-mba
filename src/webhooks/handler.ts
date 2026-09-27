@@ -1,11 +1,11 @@
 import { parseWebhook } from './parse';
 import { processStatuses } from './delivery';
 import type { EchecsLibresSink, NodeStatusSink, RemiseMbaSurAccuse } from './delivery';
-import { processInbound } from './inbound';
+import { extractInbound, processInbound } from './inbound';
 import { processFlowCompletions } from './flow-mapping';
 import { processWorkflowAdvance } from './workflow-advance';
 import { processRemiseMbaEntrant, type RemiseMbaEntrantDeps } from './remise-mba-entrant';
-import { processHandovers } from './handover';
+import { lireLesBascules, processHandovers } from './handover';
 import { processTriggers } from './triggers';
 import { processTestTokens } from './test-token';
 import { processArriveesPub, type ArriveesPubDeps } from './arrivees-pub';
@@ -24,6 +24,7 @@ import type { EventStore } from './store';
 import type { AuditSink } from '../audit/journal';
 import type { SignalAccuse } from './delivery';
 import type { SignalReponse } from './inbound';
+import { rattacherLesEntrants, uneLectureParNumero, type EntrantRattache, type NumeroVersEspace } from './rattachement';
 import { tenter } from '../lib/tenter';
 import { messageDe } from '../lib/erreur';
 
@@ -38,32 +39,16 @@ export interface FlowMappingDeps {
 /**
  * Les dépendances du traitement d'un webhook, nommées plutôt que positionnelles : une file de paramètres
  * optionnels de types voisins se câble de travers sans que le compilateur le voie. Tout est optionnel sauf
- * `store` : une dépendance absente désactive son étape, ce dont la file des accusés se sert pour n'exécuter que
- * la livraison.
+ * `store` et les couples ci-dessous : une dépendance absente désactive son étape, ce dont la file des accusés se
+ * sert pour n'exécuter que la livraison.
  */
 interface WebhookJobDepsCommunes {
   /** Le seul obligatoire : l'insertion idempotente des événements bruts. */
   store: EventStore;
   flowMapping?: FlowMappingDeps;
-  workflowAdvance?: WorkflowAdvanceDeps;
-  /**
-   * Rend le fil à l'agent de Meta quand un client revient et que personne ne suit. Câblé sur la file `webhook`
-   * seulement : `webhook-status` ne porte que des accusés.
-   */
-  remiseMbaEntrant?: RemiseMbaEntrantDeps;
   inboundContactUpsert?: InboundContactUpsert;
-  handover?: HandoverDeps;
-  /** Automations. `isNewContact` est fourni ici : il vient de l'upsert d'inbound, pas d'une requête. */
-  triggers?: Omit<TriggerDeps, 'isNewContact'>;
-  /** Jetons de test d'un scénario, prioritaires sur l'avance et sur les automations. */
-  testTokens?: TestTokenDeps;
   /** Mesure par bloc (« Mes tableaux ») : rattache les accusés Meta au bloc qui a envoyé le message. */
   nodeEvents?: NodeStatusSink;
-  /**
-   * Opt-out par mot-clé sur un message WhatsApp entrant (STOP, désabonner...). Absent : aucun désabonnement
-   * automatique. Voir `processInbound` pour les deux points d'ordre qui comptent.
-   */
-  inboundOptOut?: InboundOptOut;
   /**
    * Répartition d'une réponse de campagne dans l'Inbox (`campaigns.assignation`). Absente : aucune affectation
    * automatique, la conversation tombe dans « À traiter ».
@@ -77,16 +62,36 @@ interface WebhookJobDepsCommunes {
 }
 
 /**
+ * Les étapes qui ont besoin de l'espace d'un entrant ou d'une bascule. Elles le reçoivent déjà rattaché, lu une
+ * fois par numéro par `handleWebhookJob` dans `inbox` : elles n'existent donc qu'avec l'Inbox, et le type le dit.
+ */
+interface EtapesRattachees {
+  workflowAdvance?: WorkflowAdvanceDeps;
+  /**
+   * Rend le fil à l'agent de Meta quand un client revient et que personne ne suit. Câblé sur la file `webhook`
+   * seulement : `webhook-status` ne porte que des accusés.
+   */
+  remiseMbaEntrant?: RemiseMbaEntrantDeps;
+  handover?: HandoverDeps;
+  /** Automations. `isNewContact` est fourni ici : il vient de l'upsert d'inbound, pas d'une requête. */
+  triggers?: Omit<TriggerDeps, 'isNewContact'>;
+  /** Jetons de test d'un scénario, prioritaires sur l'avance et sur les automations. */
+  testTokens?: TestTokenDeps;
+}
+
+/**
  * 🔴 Des dépendances obligatoires par couple, refusées par le compilateur si l'une manque, parce qu'un oubli ne
  * se verrait nulle part :
  *  - une file qui traite des accusés (`delivery`) garde leur tarif (`tarifsMeta`, seule source de « Meta ne
  *    facture pas ce message »), l'échec des messages libres et les signaux : les accusés arrivent par deux files ;
  *  - une file qui traite des entrants (`inbox`) garde les arrivées publicitaires (Meta n'envoie `ctwa_clid`
  *    qu'une fois), route les leads (`routagePub`, sans quoi un clic payé irait aux automations ordinaires), émet
- *    les signaux de réponse et écarte les entrants d'un numéro délié.
+ *    les signaux de réponse, écarte les entrants d'un numéro délié et enregistre le STOP (`inboundOptOut`) : une
+ *    dépendance de consentement n'est jamais optionnelle, un câblage qui l'oublierait laisserait `opted_in` un
+ *    contact qui a répondu STOP. Le numéro vers l'espace se lit dans `inbox` (`NumeroVersEspace`).
  * Les tests qui n'en parlent pas passent les fixtures de `tests/webhook-fixtures.ts` (`aucunTarif`,
- * `aucuneArriveePub`, `aucunRoutagePub`, `aucunSignalAccuse`, `aucunSignalReponse`, `aucunNumeroDelie`), qui
- * disent leur hypothèse.
+ * `aucuneArriveePub`, `aucunRoutagePub`, `aucunSignalAccuse`, `aucunSignalReponse`, `aucunNumeroDelie`,
+ * `aucunStop`), qui disent leur hypothèse.
  */
 export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
@@ -96,8 +101,14 @@ export type WebhookJobDeps = WebhookJobDepsCommunes
     | { delivery?: undefined; tarifsMeta?: undefined; echecsLibres?: undefined; signauxAccuse?: undefined }
   )
   & (
-    { inbox: InboxStore; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps; signalReponse: SignalReponse; numerosDelies: NumerosDelies }
-    | { inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined; signalReponse?: undefined; numerosDelies?: undefined }
+    ({
+      inbox: InboxStore & NumeroVersEspace; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps; signalReponse: SignalReponse;
+      numerosDelies: NumerosDelies; inboundOptOut: InboundOptOut;
+    } & EtapesRattachees)
+    | ({
+      inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined; signalReponse?: undefined;
+      numerosDelies?: undefined; inboundOptOut?: undefined;
+    } & { [K in keyof EtapesRattachees]?: undefined })
   );
 
 /**
@@ -107,13 +118,13 @@ export type WebhookJobDeps = WebhookJobDepsCommunes
  */
 export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
-    store, delivery, inbox, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
-    handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation, remiseMba,
+    store, delivery, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
+    handover, triggers, testTokens, nodeEvents, inboundAssignation, remiseMba,
     tarifsMeta, echecsLibres, arriveesPub, routagePub, signauxAccuse, signalReponse, numerosDelies,
   } = deps;
   /**
-   * 🔴 En tout premier : l'écart des entrants d'un numéro délié, avant le journal brut et chaque étape, qui
-   * relisent chacune le payload : écarter plus bas laisserait passer ce qu'une étape antérieure aurait enregistré.
+   * 🔴 En tout premier : l'écart des entrants d'un numéro délié, avant le journal brut, l'extraction des entrants et
+   * les étapes qui lisent le payload : écarter plus bas laisserait passer ce qu'une étape antérieure aurait enregistré.
    * Garde les accusés, ne lève jamais (`./numeros-delies.ts`).
    */
   const raw = numerosDelies ? await ecarterLesEntrantsDelies(recu, numerosDelies) : recu;
@@ -139,14 +150,23 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
         return r;
       }
     : undefined;
-  if (inbox) {
-    await processInbound(raw, inbox, {
-      upsertContact: upsert, optOut: inboundOptOut, assignation: inboundAssignation, signalReponse,
+  /**
+   * Les entrants, extraits une fois et rattachés à leur espace : une lecture par numéro distinct pour tout le job, et
+   * aucune étape ne relit le numéro, sinon un message coûterait une lecture par étape. Une lecture en échec lève ici,
+   * avant tout enregistrement, et fait rejouer le job : l'enregistrement, cœur du webhook, ne se fait pas sans
+   * l'espace. Sans Inbox (la file des accusés), aucune étape n'a besoin d'un espace et rien n'est lu.
+   */
+  const espaceDe = deps.inbox ? uneLectureParNumero(deps.inbox) : null;
+  let entrants: readonly EntrantRattache[] = [];
+  if (deps.inbox && espaceDe) {
+    entrants = await rattacherLesEntrants(extractInbound(raw), espaceDe);
+    await processInbound(entrants, deps.inbox, {
+      upsertContact: upsert, optOut: deps.inboundOptOut, assignation: inboundAssignation, signalReponse,
     });
   }
   // L'arrivée publicitaire, après l'upsert du contact qu'elle retrouve par son wa_id. Isolée par message : elle
   // ne fait jamais échouer le job.
-  if (arriveesPub) await processArriveesPub(raw, arriveesPub);
+  if (arriveesPub) await processArriveesPub(entrants, arriveesPub);
   /**
    * Le routage d'un lead publicitaire, entre l'arrivée (dont il annote la ligne) et les déclencheurs (qu'il
    * restreint) : placé après, il regarderait partir les automations qu'il devait écarter. Il reprend le fil chez
@@ -158,7 +178,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
     try {
       // `alreadySeen` : ce que Meta redélivre ; le routage ne reprend pas le fil une seconde fois, ce qui arracherait
       // la conversation à l'opérateur qui l'aurait reprise.
-      routage = await processRoutagePub(raw, routagePub, alreadySeen);
+      routage = await processRoutagePub(entrants, routagePub, alreadySeen);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: routage publicitaire ignoré:', messageDe(err));
@@ -173,7 +193,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   let consumed: ReadonlySet<string> = new Set();
   if (testTokens) {
     try {
-      consumed = await processTestTokens(raw, testTokens, alreadySeen);
+      consumed = await processTestTokens(entrants, testTokens, alreadySeen);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: jeton de test ignoré:', messageDe(err));
@@ -187,7 +207,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
    */
   if (triggers) {
     try {
-      const parAutomation = await processTriggers(raw, {
+      const parAutomation = await processTriggers(entrants, {
         ...triggers,
         // Consommé une seule fois : si Meta regroupe deux messages d'un même nouveau contact, seul le premier est un
         // « 1er message ».
@@ -209,7 +229,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   }
   // Avance des workflows sur les réponses, isolée elle aussi.
   if (workflowAdvance) {
-    await tenter('handleWebhookJob: avance workflow ignorée:', () => processWorkflowAdvance(raw, workflowAdvance, consumed));
+    await tenter('handleWebhookJob: avance workflow ignorée:', () => processWorkflowAdvance(entrants, workflowAdvance, consumed));
   }
   /**
    * Un client revient et personne ne suit : le fil repart chez l'agent de Meta. Après l'avance, et l'ordre est le
@@ -217,11 +237,15 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
    * avant, ce bloc donnerait à l'agent un fil qu'un scénario s'apprête à utiliser. Isolé : le balayage reste le filet.
    */
   if (remiseMbaEntrant) {
-    await tenter('handleWebhookJob: remise à l’agent de Meta ignorée:', () => processRemiseMbaEntrant(raw, remiseMbaEntrant, consumed));
+    await tenter('handleWebhookJob: remise à l’agent de Meta ignorée:', () => processRemiseMbaEntrant(entrants, remiseMbaEntrant, consumed));
   }
-  // Bascules de contrôle et messages de l'agent de Meta. Isolé : ces événements sont les moins bien documentés, et
-  // ne doivent pas emporter les statuts de livraison dans la DLQ.
-  if (handover) {
-    await tenter('handleWebhookJob: handover ignoré:', () => processHandovers(raw, handover));
+  /**
+   * Bascules de contrôle et messages de l'agent de Meta. Isolé : ces événements sont les moins bien documentés, et
+   * ne doivent pas emporter les statuts de livraison dans la DLQ. Leur rattachement aussi, qui ne relit pas un numéro
+   * déjà lu pour les entrants : un numéro que seule une bascule nomme, illisible, ignore l'étape sans faire rejouer
+   * le job.
+   */
+  if (handover && espaceDe) {
+    await tenter('handleWebhookJob: handover ignoré:', async () => processHandovers(await lireLesBascules(raw, espaceDe), handover));
   }
 }

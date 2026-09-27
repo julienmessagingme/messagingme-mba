@@ -4,6 +4,9 @@ import { construireSocle, type ConfigSocle } from '../src/socle';
 import { FILE_POUSSEE_OPTOUT } from '../src/crm/poussee-optout';
 import { FILE_SIGNAUX_BATCH } from '../src/signaux/batch';
 import { SOURCE_STOP_WHATSAPP } from '../src/crm/consentement';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * LE SOCLE COMMUN DE L'API ET DU WORKER, EXÉCUTÉ (`src/socle.ts`).
@@ -69,5 +72,34 @@ describe('le socle commun aux deux processus', () => {
     const { requetes, enfiles } = banc();
     expect(requetes).toEqual([]);
     expect(enfiles).toEqual([]);
+  });
+});
+
+/** Les fichiers de `src/`, sans leurs commentaires : une explication qui cite le code ne compte pas. */
+function sources(): Array<{ fichier: string; texte: string }> {
+  const racine = fileURLToPath(new URL('../src', import.meta.url));
+  const out: Array<{ fichier: string; texte: string }> = [];
+  const visiter = (dossier: string): void => {
+    for (const nom of readdirSync(dossier)) {
+      const complet = join(dossier, nom);
+      if (statSync(complet).isDirectory()) { visiter(complet); continue; }
+      if (!nom.endsWith('.ts')) continue;
+      const texte = readFileSync(complet, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      out.push({ fichier: `src/${relative(racine, complet).split('\\').join('/')}`, texte });
+    }
+  };
+  visiter(racine);
+  return out;
+}
+
+describe('le socle est le seul à construire ce qu il garantit', () => {
+  it('🔴 aucun dépôt de contacts n est construit hors du socle : il échapperait à l annonce d opt-out', () => {
+    const sites = sources().flatMap(({ fichier, texte }) => [...texte.matchAll(/new PgContactStore\(/g)].map(() => fichier));
+    expect(sites).toEqual(['src/socle.ts']);
+  });
+
+  it('🔴 chaque racine appelle le socle une fois : deux appels doubleraient ses caches et leurs invalidations', () => {
+    const sites = sources().flatMap(({ fichier, texte }) => [...texte.matchAll(/(?<!function )\bconstruireSocle\(/g)].map(() => fichier));
+    expect(sites.sort()).toEqual(['src/index.ts', 'src/worker.ts']);
   });
 });

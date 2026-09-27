@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processWorkflowAdvance } from '../src/webhooks/workflow-advance';
+import { entrantsDe } from './webhook-fixtures';
 
 const payload = {
   entry: [{ changes: [{ field: 'messages', value: {
@@ -13,10 +14,9 @@ const payload = {
 };
 
 describe('processWorkflowAdvance', () => {
-  it('avance chaque message entrant (tenant résolu via phoneNumberTenant)', async () => {
+  it('avance chaque message entrant (espace déjà rattaché)', async () => {
     const calls: string[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(payload), {
       advance: async (t, w, m) => { calls.push(`${t}:${w}:${m}`); },
     });
     expect(calls).toEqual(['t1:33600:m1', 't1:33601:m2']);
@@ -25,8 +25,7 @@ describe('processWorkflowAdvance', () => {
   it('ISOLÉ par message : une erreur sur un contact n\'empêche pas l\'avance des autres', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const done: string[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(payload), {
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('boom'); done.push(m); },
     });
     expect(done).toEqual(['m2']); // m1 a throw mais m2 est quand même traité
@@ -35,8 +34,7 @@ describe('processWorkflowAdvance', () => {
 
   it('numéro non rattaché à un tenant -> pas d\'avance', async () => {
     const calls: string[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => null,
+    await processWorkflowAdvance(await entrantsDe(payload, null), {
       advance: async (_t, _w, m) => { calls.push(m); },
     });
     expect(calls).toEqual([]);
@@ -52,8 +50,7 @@ describe('processWorkflowAdvance', () => {
         { id: 'm2', from: '33602', type: 'button', button: { text: 'Non', payload: 'btn:1' } },
       ],
     } }] }] };
-    await processWorkflowAdvance(p, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(p), {
       advance: async (_t, w, _m, bp) => { seen.push({ w, bp }); },
     });
     expect(seen).toEqual([{ w: '33600', bp: null }, { w: '33602', bp: 'btn:1' }]);
@@ -65,8 +62,7 @@ describe('processWorkflowAdvance', () => {
       metadata: { phone_number_id: 'PN1' }, contacts: [{ wa_id: '33600' }],
       messages: [{ id: 'ms', from: '33600', type: 'text', text: { body: 'coucou' } }],
     } }] }] };
-    await processWorkflowAdvance(p, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(p), {
       advance: async (_t, _w, m) => { calls.push(m); },
     });
     expect(calls).toEqual([]); // le message est vu par l'inbox (processInbound), mais le scénario n'avance pas
@@ -92,8 +88,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
   it('🔴 une avance en échec est CONSIGNÉE, avec de quoi retrouver le fil', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: LigneJournal[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(payload), {
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('Meta indisponible'); },
       journaliserEchec: async (e) => { journal.push(e); },
     });
@@ -110,8 +105,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
     // désormais à l'erreur qu'il ré-émet.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: LigneJournal[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(payload), {
       advance: async (_t, _w, m) => {
         if (m !== 'm1') return;
         throw Object.assign(new Error('Meta indisponible'), {
@@ -132,8 +126,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
     // par construction. Un journal d'échec ne doit jamais échouer à cause de la FORME de l'échec qu'il observe.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: LigneJournal[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(payload), {
       advance: async (_t, _w, m) => {
         if (m === 'm1') throw Object.assign(new Error('boum'), { contexteAvance: 'pas un objet' });
       },
@@ -148,8 +141,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
     // Un journal d'échec qui ferait échouer le traitement qu'il observe serait une très mauvaise idée.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const done: string[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(payload), {
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('boom'); done.push(m); },
       journaliserEchec: async () => { throw new Error('table absente'); },
     });
@@ -160,9 +152,8 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
   it('sans numéro rattaché à un espace, on ne journalise PAS : la ligne n’aurait nulle part où aller', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: unknown[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => { throw new Error('base injoignable'); },
-      advance: async () => {},
+    await processWorkflowAdvance(await entrantsDe(payload, null), {
+      advance: async () => { throw new Error('boum'); },
       journaliserEchec: async (e) => { journal.push(e); },
     });
     spy.mockRestore();
@@ -172,8 +163,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
   it('une instance SANS journal câblé garde le comportement d’avant', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const done: string[] = [];
-    await processWorkflowAdvance(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processWorkflowAdvance(await entrantsDe(payload), {
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('boom'); done.push(m); },
     });
     spy.mockRestore();

@@ -5,6 +5,7 @@ import { runAutomations } from '../src/automation/runner';
 import { POSSESSEUR_PUBLICITE } from '../src/automation/match';
 import type { AutomationEvent, AutomationRow } from '../src/automation/match';
 import type { IssueRoutage, PubDuLead } from '../src/pubs/routage';
+import { entrantsDe } from './webhook-fixtures';
 
 /**
  * LE ROUTAGE D'UN LEAD PUBLICITAIRE, CÂBLÉ, ET CE QUI EN SORT.
@@ -39,7 +40,6 @@ function monter(over: Partial<RoutagePubDeps> & { pub?: PubDuLead | null } = {})
   const memorisees: Array<{ adId: string }> = [];
   const pub = over.pub === undefined ? PUB_SCENARIO : over.pub;
   const deps: RoutagePubDeps = {
-    phoneNumberTenant: async () => 't1',
     campagneConnue: async () => (pub === null ? null : pub.campagneId),
     resoudreChezMeta: async (_t, adId) => { memorisees.push({ adId }); return null; },
     publiciteDeLaCampagne: async () => pub,
@@ -58,7 +58,7 @@ function monter(over: Partial<RoutagePubDeps> & { pub?: PubDuLead | null } = {})
 describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivée', () => {
   it('message NORMAL sur une pub « scénario » : aucune reprise, issue `scenario`, restriction sur SON automation', async () => {
     const { deps, reprises, notes } = monter();
-    const routes = await processRoutagePub(payload([message('wamid.1', referral())]), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.1', referral())])), deps);
     expect(reprises).toEqual([]);
     expect(notes).toEqual([{ messageId: 'wamid.1', campagneId: 'camp-1', issue: 'scenario', avecHeure: false }]);
     expect(routes.get('wamid.1')).toEqual({ restriction: { sorte: 'seule', automationId: 'auto-pub' }, campagneId: 'camp-1', repris: null });
@@ -66,7 +66,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
 
   it('🔴 message STANDBY sur une pub « scénario » : LE FIL EST REPRIS, et l’heure est inscrite', async () => {
     const { deps, reprises, notes } = monter();
-    const routes = await processRoutagePub(payload([message('wamid.2', referral())], 'standby'), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.2', referral())], 'standby')), deps);
     // C'est l'appel à Meta qui compte : sans lui, le scénario partirait sur un fil que l'agent de Meta tient.
     expect(reprises).toEqual(['33611223344']);
     expect(notes).toEqual([{ messageId: 'wamid.2', campagneId: 'camp-1', issue: 'reprise_reussie', avecHeure: true }]);
@@ -76,7 +76,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
   it('🔴 reprise REFUSÉE par Meta : issue `reprise_refusee`, AUCUNE heure, et plus aucun déclencheur', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { deps, notes } = monter({ reprendreLeFil: async () => false });
-    const routes = await processRoutagePub(payload([message('wamid.3', referral())], 'standby'), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.3', referral())], 'standby')), deps);
     spy.mockRestore();
     expect(notes).toEqual([{ messageId: 'wamid.3', campagneId: 'camp-1', issue: 'reprise_refusee', avecHeure: false }]);
     // L'agent de Meta garde le lead : répondre par-dessus ferait recevoir DEUX messages au contact.
@@ -89,7 +89,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
       pub: PUB_AGENT,
       contactBloque: async (_t, waId) => { bloqueAppele.push(waId); return false; },
     });
-    const routes = await processRoutagePub(payload([message('wamid.4', referral())]), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.4', referral())])), deps);
     expect(reprises).toEqual([]);
     expect(notes[0]?.issue).toBe('agent_meta');
     expect(routes.get('wamid.4')?.restriction).toEqual({ sorte: 'aucun' });
@@ -105,7 +105,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
       contactBloque: async () => { lectures.push('bloque'); return false; },
       estDesabonne: async () => { lectures.push('desabonne'); return false; },
     });
-    const routes = await processRoutagePub(payload([message('wamid.5', referral())]), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.5', referral())])), deps);
     expect(notes).toEqual([{ messageId: 'wamid.5', campagneId: null, issue: 'inchange', avecHeure: false }]);
     expect(routes.get('wamid.5')).toEqual({ restriction: { sorte: 'tous' }, campagneId: null, repris: null });
     expect(lectures).toEqual([]);
@@ -113,7 +113,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
 
   it('contact BLOQUÉ sur une pub « scénario » : rien ne part, et l’arrivée le dit', async () => {
     const { deps, reprises, notes } = monter({ contactBloque: async () => true });
-    const routes = await processRoutagePub(payload([message('wamid.6', referral())], 'standby'), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.6', referral())], 'standby')), deps);
     expect(reprises).toEqual([]);
     expect(notes[0]?.issue).toBe('bloque');
     expect(routes.get('wamid.6')?.restriction).toEqual({ sorte: 'aucun' });
@@ -121,7 +121,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
 
   it('🔴 contact DÉSABONNÉ : rien ne part, et surtout aucun fil n’est pris chez Meta', async () => {
     const { deps, reprises, notes } = monter({ estDesabonne: async () => true });
-    await processRoutagePub(payload([message('wamid.7', referral())], 'standby'), deps);
+    await processRoutagePub(await entrantsDe(payload([message('wamid.7', referral())], 'standby')), deps);
     // Prendre le fil pour quelqu'un à qui l'on n'a pas le droit d'écrire serait un geste chez Meta pour
     // rien, et un fil retiré à l'agent qui, lui, pouvait encore répondre.
     expect(reprises).toEqual([]);
@@ -132,7 +132,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
 describe('la résolution d’une publicité jamais vue', () => {
   it('une pub inconnue est demandée à Meta', async () => {
     const { deps, memorisees } = monter({ pub: null, campagneConnue: async () => null });
-    await processRoutagePub(payload([message('wamid.8', referral('ad-neuve'))]), deps);
+    await processRoutagePub(await entrantsDe(payload([message('wamid.8', referral('ad-neuve'))])), deps);
     expect(memorisees).toEqual([{ adId: 'ad-neuve' }]);
   });
 
@@ -140,14 +140,14 @@ describe('la résolution d’une publicité jamais vue', () => {
     // Un identifiant de publication n'est pas un identifiant de pub : l'appel rendrait un 400 à chaque lead
     // d'une page qui marche, sur le chemin chaud d'un message entrant.
     const { deps, memorisees, notes } = monter({ pub: null, campagneConnue: async () => null });
-    await processRoutagePub(payload([message('wamid.9', referral('post-1', 'post'))]), deps);
+    await processRoutagePub(await entrantsDe(payload([message('wamid.9', referral('post-1', 'post'))])), deps);
     expect(memorisees).toEqual([]);
     expect(notes[0]?.issue).toBe('inchange');
   });
 
   it('⚠️ un `source_type` ABSENT est quand même tenté : son absence ne prouve rien', async () => {
     const { deps, memorisees } = monter({ pub: null, campagneConnue: async () => null });
-    await processRoutagePub(payload([message('wamid.10', referral('ad-sans-type', null))]), deps);
+    await processRoutagePub(await entrantsDe(payload([message('wamid.10', referral('ad-sans-type', null))])), deps);
     expect(memorisees).toEqual([{ adId: 'ad-sans-type' }]);
   });
 
@@ -158,7 +158,7 @@ describe('la résolution d’une publicité jamais vue', () => {
       campagneConnue: async () => null,
       resoudreChezMeta: async () => { throw new Error('Meta ne répond pas'); },
     });
-    const routes = await processRoutagePub(payload([message('wamid.11', referral())]), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.11', referral())])), deps);
     spy.mockRestore();
     expect(notes[0]?.issue).toBe('inchange');
     expect(routes.get('wamid.11')?.restriction).toEqual({ sorte: 'tous' });
@@ -176,7 +176,7 @@ describe('isolation : un lead qui échoue ne prive pas les autres', () => {
       },
     });
     const routes = await processRoutagePub(
-      payload([message('wamid.a', referral()), message('wamid.b', referral())]), deps,
+      await entrantsDe(payload([message('wamid.a', referral()), message('wamid.b', referral())])), deps,
     );
     spy.mockRestore();
     expect(notes.map((n) => n.messageId)).toEqual(['wamid.b']);
@@ -200,7 +200,6 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
     return {
       appels,
       deps: {
-        phoneNumberTenant: async () => 't1',
         isNewContact: async () => false,
         run: async (_t: string, ev: AutomationEvent, opts: { seuleAutomation: string | null }) => {
           appels.push({ ev, seule: opts.seuleAutomation });
@@ -212,14 +211,14 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
 
   it('🔴 un standby ORDINAIRE (aucun routage) ne déclenche toujours rien', async () => {
     const { deps, appels } = capte();
-    await processTriggers(payload([message('wamid.s1')], 'standby'), deps);
+    await processTriggers(await entrantsDe(payload([message('wamid.s1')], 'standby')), deps);
     expect(appels).toEqual([]);
   });
 
   it('🔴 un standby dont le routage a REPRIS le fil déclenche, et SEULEMENT l’automation de la pub', async () => {
     const { deps, appels } = capte();
     await processTriggers(
-      payload([message('wamid.s2', referral())], 'standby'), deps, undefined,
+      await entrantsDe(payload([message('wamid.s2', referral())], 'standby')), deps, undefined,
       new Map([['wamid.s2', { restriction: { sorte: 'seule' as const, automationId: 'auto-pub' }, campagneId: 'camp-1', repris: null }]]),
     );
     expect(appels).toHaveLength(1);
@@ -229,7 +228,7 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
   it('🔴 un standby dont la reprise a ÉCHOUÉ ne déclenche rien : la restriction `aucun` ne perce pas la règle', async () => {
     const { deps, appels } = capte();
     await processTriggers(
-      payload([message('wamid.s3', referral())], 'standby'), deps, undefined,
+      await entrantsDe(payload([message('wamid.s3', referral())], 'standby')), deps, undefined,
       new Map([['wamid.s3', { restriction: { sorte: 'aucun' as const }, campagneId: 'camp-1', repris: null }]]),
     );
     expect(appels).toEqual([]);
@@ -238,7 +237,7 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
   it('un message NORMAL écarté par le routage ne déclenche rien non plus', async () => {
     const { deps, appels } = capte();
     await processTriggers(
-      payload([message('wamid.n1', referral())]), deps, undefined,
+      await entrantsDe(payload([message('wamid.n1', referral())])), deps, undefined,
       new Map([['wamid.n1', { restriction: { sorte: 'aucun' as const }, campagneId: 'camp-2', repris: null }]]),
     );
     expect(appels).toEqual([]);
@@ -247,7 +246,7 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
   it('la CAMPAGNE voyage jusqu’à l’événement, sans quoi l’automation de la pub se refuserait elle-même', async () => {
     const { deps, appels } = capte();
     await processTriggers(
-      payload([message('wamid.n2', referral())]), deps, undefined,
+      await entrantsDe(payload([message('wamid.n2', referral())])), deps, undefined,
       new Map([['wamid.n2', { restriction: { sorte: 'seule' as const, automationId: 'auto-pub' }, campagneId: 'camp-1', repris: null }]]),
     );
     const ev = appels[0]?.ev;
@@ -257,7 +256,7 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
 
   it('sans routage du tout, rien ne change : aucune restriction, aucune campagne', async () => {
     const { deps, appels } = capte();
-    await processTriggers(payload([message('wamid.n3', referral())]), deps);
+    await processTriggers(await entrantsDe(payload([message('wamid.n3', referral())])), deps);
     expect(appels).toHaveLength(1);
     expect(appels[0]?.seule).toBeNull();
     const ev = appels[0]?.ev;
@@ -396,21 +395,21 @@ describe('rendreLesFilsSansReponse', () => {
 describe('ce que `processRoutagePub` retient de la reprise', () => {
   it('une reprise RÉUSSIE retient à qui rendre le fil', async () => {
     const { deps } = monter();
-    const routes = await processRoutagePub(payload([message('wamid.r1', referral())], 'standby'), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.r1', referral())], 'standby')), deps);
     expect(routes.get('wamid.r1')?.repris).toEqual({ tenantId: 't1', waId: '33611223344' });
   });
 
   it('🔴 une reprise REFUSÉE ne retient RIEN : il n’y a rien à rendre', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { deps } = monter({ reprendreLeFil: async () => false });
-    const routes = await processRoutagePub(payload([message('wamid.r2', referral())], 'standby'), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.r2', referral())], 'standby')), deps);
     spy.mockRestore();
     expect(routes.get('wamid.r2')?.repris).toBeNull();
   });
 
   it('un message NORMAL ne prend aucun fil, donc n’en retient aucun', async () => {
     const { deps } = monter();
-    const routes = await processRoutagePub(payload([message('wamid.r3', referral())]), deps);
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.r3', referral())])), deps);
     expect(routes.get('wamid.r3')?.repris).toBeNull();
   });
 });
@@ -428,7 +427,7 @@ describe('un webhook REDÉLIVRÉ', () => {
   it('🔴 ne reprend PAS le fil une seconde fois', async () => {
     const { deps, reprises } = monter();
     await processRoutagePub(
-      payload([message('wamid.dv1', referral())], 'standby'), deps, new Set(['wamid.dv1']),
+      await entrantsDe(payload([message('wamid.dv1', referral())], 'standby')), deps, new Set(['wamid.dv1']),
     );
     // Un second `take` reposerait `app_workflow` sur un fil qu'un opérateur aurait pu reprendre entre-temps.
     expect(reprises).toEqual([]);
@@ -439,7 +438,7 @@ describe('un webhook REDÉLIVRÉ', () => {
     // sur lequel notre scénario pouvait être en train de parler.
     const { deps } = monter();
     const routes = await processRoutagePub(
-      payload([message('wamid.dv2', referral())], 'standby'), deps, new Set(['wamid.dv2']),
+      await entrantsDe(payload([message('wamid.dv2', referral())], 'standby')), deps, new Set(['wamid.dv2']),
     );
     expect(routes.get('wamid.dv2')?.repris).toBeNull();
   });
@@ -449,7 +448,7 @@ describe('un webhook REDÉLIVRÉ', () => {
     // valait `seule`, donc le scénario partait sur un fil que l'agent de Meta détenait.
     const { deps } = monter();
     const routes = await processRoutagePub(
-      payload([message('wamid.dv3', referral())], 'standby'), deps, new Set(['wamid.dv3']),
+      await entrantsDe(payload([message('wamid.dv3', referral())], 'standby')), deps, new Set(['wamid.dv3']),
     );
     expect(routes.get('wamid.dv3')?.restriction).toEqual({ sorte: 'aucun' });
   });
@@ -457,7 +456,7 @@ describe('un webhook REDÉLIVRÉ', () => {
   it('⚠️ un message NON redélivré, lui, reprend bien le fil : la garde ne mange pas le cas nominal', async () => {
     const { deps, reprises } = monter();
     await processRoutagePub(
-      payload([message('wamid.dv4', referral())], 'standby'), deps, new Set(['un-autre-message']),
+      await entrantsDe(payload([message('wamid.dv4', referral())], 'standby')), deps, new Set(['un-autre-message']),
     );
     expect(reprises).toEqual(['33611223344']);
   });

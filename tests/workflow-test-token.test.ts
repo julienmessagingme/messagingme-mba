@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { newTestToken, lireJetonDeTest, waMeTestLink } from '../src/workflow/test-token';
 import { processTestTokens } from '../src/webhooks/test-token';
+import { entrantsDe } from './webhook-fixtures';
 
 /**
  * Jeton de test d'un scénario (Lot F).
@@ -64,7 +65,6 @@ describe('processTestTokens', () => {
     return {
       trace,
       deps: {
-        phoneNumberTenant: async () => 't1',
         findByTestToken: async (tok: string) => (tok === MOT_TEST ? { workflowId: 'wf1', tenantId: 't1' } : null),
         mayStart: async () => true,
         markConversationTest: async (_t: string, waId: string) => { trace.marked.push(waId); },
@@ -76,7 +76,7 @@ describe('processTestTokens', () => {
 
   it('jeton reconnu -> fil marqué test, parcours en cours clos, scénario démarré, message CONSOMMÉ', async () => {
     const { deps: d, trace } = deps();
-    const consumed = await processTestTokens(payload(MOT_TEST), d);
+    const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d);
     // 🔴 CAS CONSERVE, ATTENTE AJUSTEE. Ce test verifiait que cette etape fermait elle-meme le parcours en
     // cours (`ended`). Elle ne le fait plus : la fermeture est descendue dans `runFrom`, ou elle couvre AUSSI
     // les parcours endormis et ne tire qu APRES les gardes. Ce qui est exerce ici reste le meme : le jeton
@@ -88,7 +88,7 @@ describe('processTestTokens', () => {
   it('message ordinaire -> rien, et AUCUNE requête de résolution (filtre du chemin chaud)', async () => {
     let lookups = 0;
     const { deps: d, trace } = deps({ findByTestToken: async () => { lookups += 1; return null; } });
-    const consumed = await processTestTokens(payload('bonjour, je voudrais un devis'), d);
+    const consumed = await processTestTokens(await entrantsDe(payload('bonjour, je voudrais un devis')), d);
     expect(lookups).toBe(0);
     expect(trace.started).toEqual([]);
     expect(consumed.size).toBe(0);
@@ -96,14 +96,14 @@ describe('processTestTokens', () => {
 
   it('jeton d’un AUTRE client -> aucun déclenchement (le numéro fait autorité sur le tenant)', async () => {
     const { deps: d, trace } = deps({ findByTestToken: async () => ({ workflowId: 'wf-autre', tenantId: 'AUTRE-TENANT' }) });
-    const consumed = await processTestTokens(payload(MOT_TEST), d);
+    const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d);
     expect(trace.started).toEqual([]);
     expect(consumed.size).toBe(0);
   });
 
   it('jeton inconnu (scénario supprimé) -> rien, pas de throw', async () => {
     const { deps: d, trace } = deps({ findByTestToken: async () => null });
-    await expect(processTestTokens(payload(MOT_TEST), d)).resolves.toBeInstanceOf(Set);
+    await expect(processTestTokens(await entrantsDe(payload(MOT_TEST)), d)).resolves.toBeInstanceOf(Set);
     expect(trace.started).toEqual([]);
   });
 
@@ -121,26 +121,26 @@ describe('processTestTokens', () => {
      * délibéré de quelqu'un qui tient le téléphone.
      */
     const { deps: d, trace } = deps();
-    const consumed = await processTestTokens(payload(MOT_TEST, 'standby'), d);
+    const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST, 'standby')), d);
     expect(trace.started).toEqual(['wf1']);
     expect(consumed.size).toBe(1); // consommé : il ne doit pas repartir vers l'avance ou les automations
   });
 
   it('numéro inconnu (aucun tenant) -> aucun déclenchement', async () => {
-    const { deps: d, trace } = deps({ phoneNumberTenant: async () => null });
-    await processTestTokens(payload(MOT_TEST), d);
+    const { deps: d, trace } = deps();
+    await processTestTokens(await entrantsDe(payload(MOT_TEST), null), d);
     expect(trace.started).toEqual([]);
   });
 
   it('le message reste CONSOMMÉ même si le démarrage échoue (ce n’est pas une réponse du contact)', async () => {
     const { deps: d } = deps({ startTestRun: async () => false });
-    const consumed = await processTestTokens(payload(MOT_TEST), d);
+    const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d);
     expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
   });
 
   it('une erreur sur un jeton n’empêche pas les autres messages du webhook', async () => {
     const { deps: d, trace } = deps({ markConversationTest: async () => { throw new Error('base indisponible'); } });
-    await expect(processTestTokens(payload(MOT_TEST), d)).resolves.toBeInstanceOf(Set);
+    await expect(processTestTokens(await entrantsDe(payload(MOT_TEST)), d)).resolves.toBeInstanceOf(Set);
     expect(trace.started).toEqual([]);
   });
 
@@ -148,7 +148,7 @@ describe('processTestTokens', () => {
 
   it('le message est CONSOMMÉ même si une écriture LÈVE (sinon il retomberait dans l’avance et les automations)', async () => {
     const { deps: d } = deps({ markConversationTest: async () => { throw new Error('base indisponible'); } });
-    const consumed = await processTestTokens(payload(MOT_TEST), d);
+    const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d);
     expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
   });
 
@@ -169,7 +169,7 @@ describe('processTestTokens', () => {
      */
     it('🔴 le jeton démarre QUOI QU IL ARRIVE : le détenteur du fil ne le bloque plus', async () => {
       const { deps: d, trace } = deps();
-      const consumed = await processTestTokens(payload(MOT_TEST), d);
+      const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d);
       expect(trace.started).toEqual(['wf1']);
       expect(trace.marked).toEqual(['33611']);
       expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true); // le message reste un jeton, pas une réponse
@@ -180,14 +180,14 @@ describe('processTestTokens', () => {
     it('message DÉJÀ traité -> aucune relance (pas de double envoi facturé), mais toujours consommé', async () => {
       const { deps: d, trace } = deps();
       const seen = new Set([`wamid.${MOT_TEST}`]);
-      const consumed = await processTestTokens(payload(MOT_TEST), d, seen);
+      const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d, seen);
       expect(trace).toEqual({ marked: [], started: [] });
       expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
     });
 
     it('message NEUF -> traité normalement', async () => {
       const { deps: d, trace } = deps();
-      await processTestTokens(payload(MOT_TEST), d, new Set(['wamid.autre']));
+      await processTestTokens(await entrantsDe(payload(MOT_TEST)), d, new Set(['wamid.autre']));
       expect(trace.started).toEqual(['wf1']);
     });
   });

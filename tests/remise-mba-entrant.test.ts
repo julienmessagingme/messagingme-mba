@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { processRemiseMbaEntrant } from '../src/webhooks/remise-mba-entrant';
+import { entrantsDe } from './webhook-fixtures';
 
 /**
  * L'AGENT DE META REPREND LA MAIN QUAND UN CLIENT REVIENT ET QUE PERSONNE NE SUIT (2026-09-15).
@@ -36,8 +37,8 @@ function harnais(tenant: string | null = 't1') {
   const remises: Array<{ tenantId: string; waId: string }> = [];
   return {
     remises,
+    tenant,
     deps: {
-      phoneNumberTenant: async () => tenant,
       remettre: async (tenantId: string, waId: string) => { remises.push({ tenantId, waId }); },
     },
   };
@@ -47,7 +48,7 @@ describe('remise du fil à l’agent de Meta sur un message entrant', () => {
   it('🔴 un client qui revient déclenche la remise', async () => {
     // L'incident 1, rejoué : 33685973811 écrit après huit jours de silence et personne ne répondait.
     const h = harnais();
-    await processRemiseMbaEntrant(PAYLOAD(), h.deps);
+    await processRemiseMbaEntrant(await entrantsDe(PAYLOAD(), h.tenant), h.deps);
     expect(h.remises).toEqual([{ tenantId: 't1', waId: '33685973811' }]);
   });
 
@@ -58,7 +59,7 @@ describe('remise du fil à l’agent de Meta sur un message entrant', () => {
      * reprise déguisée : c'est exactement ce que le produit cherche à éviter depuis le lot du 2026-09-14.
      */
     const h = harnais();
-    await processRemiseMbaEntrant(PAYLOAD({ field: 'message_echoes' }), h.deps);
+    await processRemiseMbaEntrant(await entrantsDe(PAYLOAD({ field: 'message_echoes' }), h.tenant), h.deps);
     expect(h.remises).toEqual([]);
   });
 
@@ -66,13 +67,13 @@ describe('remise du fil à l’agent de Meta sur un message entrant', () => {
     // Un message qui vient de démarrer un parcours, ou qu'un jeton de test a avalé, n'est pas un client qui
     // revient sans que rien ne soit prévu : c'est le contraire exact.
     const h = harnais();
-    await processRemiseMbaEntrant(PAYLOAD({ id: 'wamid.BBB' }), h.deps, new Set(['wamid.BBB']));
+    await processRemiseMbaEntrant(await entrantsDe(PAYLOAD({ id: 'wamid.BBB' }), h.tenant), h.deps, new Set(['wamid.BBB']));
     expect(h.remises).toEqual([]);
   });
 
   it('⚠️ un numéro inconnu ne déclenche rien, et n’échoue pas', async () => {
     const h = harnais(null);
-    await processRemiseMbaEntrant(PAYLOAD(), h.deps);
+    await processRemiseMbaEntrant(await entrantsDe(PAYLOAD(), h.tenant), h.deps);
     expect(h.remises).toEqual([]);
   });
 
@@ -84,10 +85,9 @@ describe('remise du fil à l’agent de Meta sur un message entrant', () => {
      */
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const deps = {
-      phoneNumberTenant: async () => 't1',
       remettre: async () => { throw new Error('Meta a refusé'); },
     };
-    await expect(processRemiseMbaEntrant(PAYLOAD(), deps)).resolves.toBeUndefined();
+    await expect(processRemiseMbaEntrant(await entrantsDe(PAYLOAD()), deps)).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -113,8 +113,7 @@ describe('remise du fil à l’agent de Meta sur un message entrant', () => {
         }],
       }],
     };
-    await processRemiseMbaEntrant(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processRemiseMbaEntrant(await entrantsDe(payload), {
       remettre: async (_t: string, waId: string) => {
         vus.push(waId);
         if (waId === '33600000001') throw new Error('boum');
@@ -139,8 +138,8 @@ describe('le câblage, qui porte les gardes que ce module ne peut pas porter', (
      * utiliser. L'ordre n'est donc pas une préférence de lecture, c'est la correction elle-même.
      */
     const h = sansCommentaires(lire('../src/webhooks/handler.ts'));
-    const avance = h.indexOf('processWorkflowAdvance(raw');
-    const remise = h.indexOf('processRemiseMbaEntrant(raw');
+    const avance = h.indexOf('processWorkflowAdvance(entrants');
+    const remise = h.indexOf('processRemiseMbaEntrant(entrants');
     expect(avance, 'l’avance doit être appelée').toBeGreaterThan(-1);
     expect(remise, 'la remise doit être appelée').toBeGreaterThan(-1);
     expect(remise, 'la remise doit venir APRÈS l’avance').toBeGreaterThan(avance);

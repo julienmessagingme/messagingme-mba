@@ -1,5 +1,5 @@
-import { extractInbound } from './inbound';
 import { messageDe } from '../lib/erreur';
+import type { EntrantRattache } from './rattachement';
 
 /**
  * L'agent de Meta reprend la main quand un client revient et que personne ne suit. L'agent ne peut prendre un
@@ -9,8 +9,6 @@ import { messageDe } from '../lib/erreur';
  * défaut, `control_changed_at` null), que le balayage ignore et que « À traiter » exclut.
  */
 export interface RemiseMbaEntrantDeps {
-  /** Tenant propriétaire du numéro business. `null` si le numéro nous est inconnu. */
-  phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /**
    * Rend le fil à l'agent de Meta si personne d'autre ne s'en occupe. Les gardes (agent allumé, aucun parcours en
    * attente, aucun humain dessus) vivent dans le câblage ; ce module ne sait que lire un payload Meta.
@@ -26,16 +24,15 @@ export interface RemiseMbaEntrantDeps {
  * échec n'est jamais fatal, le balayage reste le filet.
  */
 export async function processRemiseMbaEntrant(
-  payload: unknown,
+  entrants: readonly EntrantRattache[],
   deps: RemiseMbaEntrantDeps,
   consumed?: ReadonlySet<string>,
 ): Promise<void> {
-  for (const m of extractInbound(payload)) {
+  for (const { message: m, tenantId } of entrants) {
     if (consumed?.has(m.messageId)) continue;
     // `field` absent = anciennes fixtures, traitées comme des messages normaux (rétro-compat, comme l'avance).
     if (m.field && m.field !== 'messages') continue;
     try {
-      const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
       if (tenantId) await deps.remettre(tenantId, m.waId);
     } catch (err) {
       // eslint-disable-next-line no-console

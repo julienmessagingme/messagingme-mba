@@ -1,5 +1,5 @@
-import { extractInbound } from './inbound';
 import { createHash } from 'node:crypto';
+import type { EntrantRattache } from './rattachement';
 import { lireJetonDeTest } from '../workflow/test-token';
 import { messageDe } from '../lib/erreur';
 
@@ -18,8 +18,6 @@ function empreinteJeton(jeton: string): string {
  * parcours ni un mot-clé. Les messages consommés ici sont signalés pour que les étapes suivantes les ignorent.
  */
 export interface TestTokenDeps {
-  /** Tenant propriétaire du numéro business. null si inconnu. */
-  phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /** Scénario portant ce jeton, avec son tenant (le jeton est unique globalement). null si inconnu. */
   findByTestToken(token: string): Promise<{ workflowId: string; tenantId: string } | null>;
   /**
@@ -48,7 +46,7 @@ function extraitDeBloc(nodeId: string): string {
 
 /** Traite les jetons de test d'un payload et rend les `messageId` consommés, à ignorer par les étapes suivantes. */
 export async function processTestTokens(
-  payload: unknown,
+  entrants: readonly EntrantRattache[],
   deps: TestTokenDeps,
   /**
    * 🔴 `messageId` déjà traités par une exécution précédente de ce webhook (redélivrance Meta, rejeu pg-boss) : sans
@@ -58,7 +56,7 @@ export async function processTestTokens(
   alreadySeen?: ReadonlySet<string>,
 ): Promise<Set<string>> {
   const consumed = new Set<string>();
-  for (const m of extractInbound(payload)) {
+  for (const { message: m, tenantId } of entrants) {
     // Filtre du chemin chaud : seuls les messages qui ressemblent à un jeton interrogent la base. Une seule lecture
     // (`lireJetonDeTest`) sert de filtre et d'extraction, pour qu'ils ne divergent pas. Une fois le jeton reconnu,
     // chaque refus est rare et se journalise ; avant, se taire est la seule option (ce filtre voit chaque message).
@@ -73,7 +71,6 @@ export async function processTestTokens(
       console.log(`test-token: jeton reçu en « standby » (l'agent de Meta tient le fil pour ${m.waId}), le test va le lui reprendre`);
     }
     try {
-      const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
       if (!tenantId) {
         // eslint-disable-next-line no-console
         console.warn(`test-token: jeton reçu sur le numéro ${m.phoneNumberId}, qui n'appartient à aucun espace connu (message ${m.messageId})`);

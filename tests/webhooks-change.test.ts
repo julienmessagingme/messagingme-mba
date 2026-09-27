@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { valeurEffective } from '../src/webhooks/change';
 import { extractInbound } from '../src/webhooks/inbound';
 import { parseWebhook, nAQueDesAccuses, cleDeContact } from '../src/webhooks/parse';
-import { processHandovers } from '../src/webhooks/handover';
+import { lireLesBascules, processHandovers } from '../src/webhooks/handover';
 
 /**
  * La lecture d'un `change` de webhook Meta, quand le Meta Business Agent tient le fil.
@@ -193,8 +193,7 @@ describe('les extracteurs voient enfin le standby', () => {
     // rendait `undefined`, donc la garde `if (waId && body)` ne passait jamais et l'agent de Meta restait
     // invisible dans l'Inbox, même une fois le standby remonté.
     const vus: Array<{ waId: string; body: string }> = [];
-    await processHandovers(STANDBY_ECHO, {
-      phoneNumberTenant: async () => 'tenant-1',
+    await processHandovers(await lireLesBascules(STANDBY_ECHO, async () => 'tenant-1'), {
       setControlOwner: async () => true,
       marquerEscalade: async () => {},
       recordAgentMessage: async (_t, waId, body) => { vus.push({ waId, body }); },

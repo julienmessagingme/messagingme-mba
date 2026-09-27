@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { blocDesigne, lireJetonDeTest } from '../src/workflow/test-token';
 import { processTestTokens } from '../src/webhooks/test-token';
+import { entrantsDe } from './webhook-fixtures';
 
 /**
  * UN JETON DE TEST QUI DÉSIGNE UN BLOC (2026-09-16).
@@ -130,7 +131,6 @@ describe('processTestTokens transmet le bloc', () => {
     return {
       trace,
       deps: {
-        phoneNumberTenant: async () => 't1',
         findByTestToken: async (token: string) => { trace.cherche.push(token); return { workflowId: 'wf1', tenantId: 't1' }; },
         markConversationTest: async () => {},
         startTestRun: async (_t: string, wf: string, _w: string, nodeId: string | null) => {
@@ -146,14 +146,14 @@ describe('processTestTokens transmet le bloc', () => {
     // Le suffixe n'est PAS stocké en base : chercher `test-abc12345.<bloc>` ne trouverait jamais rien, et le
     // test ne démarrerait pas du tout.
     const { deps: d, trace } = deps();
-    await processTestTokens(payload(`test-abc12345.${NODE}`), d);
+    await processTestTokens(await entrantsDe(payload(`test-abc12345.${NODE}`)), d);
     expect(trace.cherche).toEqual(['test-abc12345']);
     expect(trace.demarres).toEqual([{ wf: 'wf1', nodeId: NODE }]);
   });
 
   it('⚠️ un lien SANS suffixe démarre à l’entrée, comme avant', async () => {
     const { deps: d, trace } = deps();
-    await processTestTokens(payload('test-abc12345'), d);
+    await processTestTokens(await entrantsDe(payload('test-abc12345')), d);
     expect(trace.cherche).toEqual(['test-abc12345']);
     expect(trace.demarres).toEqual([{ wf: 'wf1', nodeId: null }]);
   });
@@ -165,7 +165,7 @@ describe('processTestTokens transmet le bloc', () => {
     const { deps: d, trace } = deps();
     const p = payload(`test-abc12345.${NODE}`) as { entry: Array<{ changes: Array<{ field: string }> }> };
     p.entry[0]!.changes[0]!.field = 'standby';
-    const consumed = await processTestTokens(p, d);
+    const consumed = await processTestTokens(await entrantsDe(p), d);
     expect(trace.demarres).toEqual([{ wf: 'wf1', nodeId: NODE }]);
     expect(consumed.has('wamid.1'), 'le message reste consommé : il ne doit pas repartir ailleurs').toBe(true);
   });
@@ -176,7 +176,7 @@ describe('processTestTokens transmet le bloc', () => {
     // (ce filtre voit chaque message de chaque client) ; après, chaque refus est rare et mérite d'être dit.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { deps: d } = deps({ findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 'AUTRE-ESPACE' }) });
-    await processTestTokens(payload(`test-abc12345.${NODE}`), d);
+    await processTestTokens(await entrantsDe(payload(`test-abc12345.${NODE}`)), d);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain('appartient à un AUTRE espace');
     warn.mockRestore();
@@ -200,7 +200,7 @@ describe('processTestTokens transmet le bloc', () => {
     ]) {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { deps: d } = deps({ findByTestToken: cas.findByTestToken });
-      await processTestTokens(payload(`test-abc12345.${NODE}`), d);
+      await processTestTokens(await entrantsDe(payload(`test-abc12345.${NODE}`)), d);
       const ligne = String(warn.mock.calls[0]?.[0]);
       expect(ligne, cas.nom + ' : le jeton ne doit pas être lisible').not.toContain('abc12345');
       expect(ligne, cas.nom + ' : il reste de quoi rapprocher deux lignes').toMatch(/jeton #[0-9a-f]{8}/);
@@ -214,7 +214,7 @@ describe('processTestTokens transmet le bloc', () => {
     // seulement un silence, exactement le défaut relevé sur le gel d'avance le 2026-09-14.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { deps: d } = deps({ startTestRun: async () => 'le bloc de départ n’existe plus dans le scénario' });
-    const consumed = await processTestTokens(payload(`test-abc12345.${NODE}`), d);
+    const consumed = await processTestTokens(await entrantsDe(payload(`test-abc12345.${NODE}`)), d);
     expect(consumed.has('wamid.1'), 'le message reste CONSOMMÉ : c’est un jeton, il ne doit pas partir au MBA').toBe(true);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain('n’existe plus dans le scénario');

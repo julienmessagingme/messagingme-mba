@@ -1444,7 +1444,7 @@ async function main(): Promise<void> {
     })(),
     /**
      * Les publicités Click-to-WhatsApp.
-     * 🔴 Le jeton est chiffré dans `src/pubs/connexion.ts`, et déchiffré là ou par le balayage du worker : la route ne
+     * 🔴 Le jeton est chiffré dans `src/pubs/connexion.ts`, et déchiffré là ou par le worker (routage d'un lead, suivi des publicités) : la route ne
      * reçoit qu'un `tenantId`, comme pour l'inscription WhatsApp, donc le jeton ne peut fuiter ni dans un
      * journal, ni dans une réponse, ni dans une trace de pile.
      * `META_ADS_CONFIG_ID` vide : routes montées, l'échange répond 503 et l'écran l'annonce. La configuration

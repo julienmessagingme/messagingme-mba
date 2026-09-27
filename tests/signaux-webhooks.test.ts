@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { destinataireDuStatut, instantDuStatut, type AccuseDuStatut } from '../src/webhooks/delivery';
 import { processInbound, type InboundMessage } from '../src/webhooks/inbound';
-import { aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie } from './webhook-fixtures';
+import { aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie, entrantsDe } from './webhook-fixtures';
+import { aucunStop } from './consentement';
 
 /**
  * LES POINTS D'ACCROCHE DES SIGNAUX sur les webhooks Meta (spec 2026-09-24, § 8). Ce test ne dit rien du coût
@@ -66,14 +67,14 @@ describe('les accusés Meta passent au puits des signaux', () => {
 });
 
 describe('les entrants Meta passent au puits des signaux', () => {
-  const inbox = { phoneNumberTenant: async () => T, recordInbound: async () => {} };
+  const inbox = { recordInbound: async () => {} };
 
   it('🔴 la réponse passe au puits APRÈS son enregistrement, avec son espace', async () => {
     const ordre: string[] = [];
     await processInbound(
-      entrant('text', { text: { body: 'bonjour' } }),
-      { phoneNumberTenant: async () => T, recordInbound: async () => { ordre.push('enregistre'); } },
-      { signalReponse: async (t, m: InboundMessage) => { ordre.push(`signal:${t}:${m.messageId}`); } },
+      await entrantsDe(entrant('text', { text: { body: 'bonjour' } }), T),
+      { recordInbound: async () => { ordre.push('enregistre'); } },
+      { optOut: aucunStop, signalReponse: async (t, m: InboundMessage) => { ordre.push(`signal:${t}:${m.messageId}`); } },
     );
     expect(ordre).toEqual(['enregistre', `signal:${T}:wamid.in1`]);
   });
@@ -81,9 +82,9 @@ describe('les entrants Meta passent au puits des signaux', () => {
   it('🔴 un puits en panne ne fait pas échouer la réception', async () => {
     let enregistres = 0;
     await expect(processInbound(
-      entrant('text', { text: { body: 'bonjour' } }),
-      { phoneNumberTenant: async () => T, recordInbound: async () => { enregistres += 1; } },
-      { signalReponse: async () => { throw new Error('file indisponible'); } },
+      await entrantsDe(entrant('text', { text: { body: 'bonjour' } }), T),
+      { recordInbound: async () => { enregistres += 1; } },
+      { optOut: aucunStop, signalReponse: async () => { throw new Error('file indisponible'); } },
     )).resolves.toBeUndefined();
     expect(enregistres).toBe(1);
   });
@@ -92,23 +93,23 @@ describe('les entrants Meta passent au puits des signaux', () => {
     // Forme RÉELLE, reprise de `tests/webhooks-change.test.ts` (STANDBY_ECHO) : l'écho vit sous
     // `standby.message_echoes`, que seul `processHandovers` lit. `extractInbound` ne lit que `messages`.
     const vus: string[] = [];
-    await processInbound({ entry: [{ changes: [{ field: 'standby', value: {
+    await processInbound(await entrantsDe({ entry: [{ changes: [{ field: 'standby', value: {
       metadata: { phone_number_id: 'PN1' },
       standby: { message_echoes: [{ id: 'wamid.echo', message: { to: '33612345678', type: 'text', text: { body: 'Réponse de l’agent' } }, timestamp: '1790000000' }] },
-    } }] }] }, inbox, { signalReponse: async (_t, m) => { vus.push(m.messageId); } });
+    } }] }] }, T), inbox, { optOut: aucunStop, signalReponse: async (_t, m) => { vus.push(m.messageId); } });
     expect(vus).toEqual([]);
   });
 
   it('un message du CLIENT en `standby` (l’agent de Meta tient le fil) arrive au puits : il a bien répondu', async () => {
     // Forme RÉELLE (STANDBY_ENTRANT, essais de Julien du 2026-09-16) : le texte du client, avec son `from`.
     const vus: string[] = [];
-    await processInbound({ entry: [{ changes: [{ field: 'standby', value: {
+    await processInbound(await entrantsDe({ entry: [{ changes: [{ field: 'standby', value: {
       metadata: { phone_number_id: 'PN1' },
       standby: {
         contacts: [{ wa_id: '33612345678' }],
         messages: [{ id: 'wamid.sb', from: '33612345678', type: 'text', text: { body: 'je veux un conseiller' }, timestamp: '1790000000' }],
       },
-    } }] }] }, inbox, { signalReponse: async (_t, m) => { vus.push(`${m.field}:${m.messageId}`); } });
+    } }] }] }, T), inbox, { optOut: aucunStop, signalReponse: async (_t, m) => { vus.push(`${m.field}:${m.messageId}`); } });
     expect(vus).toEqual(['standby:wamid.sb']);
   });
 
@@ -121,6 +122,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
       routagePub: aucunRoutagePub,
       signalReponse: async (_t, m) => { vus.push(`${m.type}:${m.body}`); },
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
     });
     expect(vus).toEqual(['button:Oui']);
   });

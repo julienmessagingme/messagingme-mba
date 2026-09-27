@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { arriveeDepuisMessage, processArriveesPub, type ArriveePub, type IssueArrivee } from '../src/webhooks/arrivees-pub';
 import { handleWebhookJob } from '../src/webhooks/handler';
-import { aucunSignalReponse, aucunNumeroDelie } from './webhook-fixtures';
+import { aucunSignalReponse, aucunNumeroDelie, entrantsDe } from './webhook-fixtures';
+import { aucunStop } from './consentement';
 
 const referral = {
   source_url: 'https://fb.me/x', source_id: '120212345678901234', source_type: 'ad',
@@ -41,7 +42,6 @@ describe('processArriveesPub', () => {
     return {
       ecrites,
       deps: {
-        phoneNumberTenant: async () => 't1',
         enregistrer: async (tenant: string, waId: string, a: ArriveePub): Promise<IssueArrivee> => {
           ecrites.push({ tenant, waId, a });
           return 'ecrite';
@@ -52,7 +52,7 @@ describe('processArriveesPub', () => {
 
   it('écrit une arrivée par message qui porte un referral, et ignore les autres', async () => {
     const { ecrites, deps } = capte();
-    await processArriveesPub(payload([message('wamid.a', '33611', referral), message('wamid.b', '33612')]), deps);
+    await processArriveesPub(await entrantsDe(payload([message('wamid.a', '33611', referral), message('wamid.b', '33612')])), deps);
     expect(ecrites).toHaveLength(1);
     expect(ecrites[0]).toMatchObject({
       tenant: 't1', waId: '33611',
@@ -62,28 +62,27 @@ describe('processArriveesPub', () => {
 
   it('🔴 le STANDBY n’est PAS exclu : c’est la mesure que le lot 3 attend', async () => {
     const { ecrites, deps } = capte();
-    await processArriveesPub(payload([message('wamid.s', '33611', referral)], 'standby'), deps);
+    await processArriveesPub(await entrantsDe(payload([message('wamid.s', '33611', referral)], 'standby')), deps);
     expect(ecrites).toHaveLength(1);
     expect(ecrites[0]?.a.enStandby).toBe(true);
   });
 
   it('`ctwa_clid` vide chez Meta : gardé à null, et l’arrivée est quand même écrite', async () => {
     const { ecrites, deps } = capte();
-    await processArriveesPub(payload([message('wamid.v', '33611', { ...referral, ctwa_clid: '' })]), deps);
+    await processArriveesPub(await entrantsDe(payload([message('wamid.v', '33611', { ...referral, ctwa_clid: '' })])), deps);
     expect(ecrites).toHaveLength(1);
     expect(ecrites[0]?.a.ctwaClid).toBeNull();
   });
 
   it('numéro inconnu : rien n’est écrit', async () => {
     const { ecrites, deps } = capte();
-    await processArriveesPub(payload([message('wamid.x', '33611', referral)]), { ...deps, phoneNumberTenant: async () => null });
+    await processArriveesPub(await entrantsDe(payload([message('wamid.x', '33611', referral)]), null), deps);
     expect(ecrites).toHaveLength(0);
   });
 
   it('🔴 une erreur sur un message n’empêche pas les autres, et ne lève jamais', async () => {
     const ok: string[] = [];
-    await expect(processArriveesPub(payload([message('wamid.ko', 'KO', referral), message('wamid.ok', 'OK', referral)]), {
-      phoneNumberTenant: async () => 't1',
+    await expect(processArriveesPub(await entrantsDe(payload([message('wamid.ko', 'KO', referral), message('wamid.ok', 'OK', referral)])), {
       enregistrer: async (_t, waId) => {
         if (waId === 'KO') throw new Error('base indisponible');
         ok.push(waId);
@@ -111,14 +110,13 @@ describe('handleWebhookJob : l’arrivée publicitaire', () => {
       inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => {} },
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
       inboundContactUpsert: async () => { ordre.push('upsert'); return 'created'; },
       arriveesPub: {
-        phoneNumberTenant: async () => 't1',
         enregistrer: async () => { ordre.push('arrivee'); return 'ecrite'; },
       },
       routagePub: {
-        phoneNumberTenant: async () => { ordre.push('routage'); return null; },
-        campagneConnue: async () => null,
+        campagneConnue: async () => { ordre.push('routage'); return null; },
         resoudreChezMeta: async () => null,
         publiciteDeLaCampagne: async () => null,
         contactBloque: async () => false,

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { processInbound, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
 import { creerRendreLeFil, creerPrendreLeFil } from '../src/inbox/controle-du-fil';
+import { entrantsDe } from './webhook-fixtures';
+import { aucunStop } from './consentement';
 
 /**
  * Qui détient le fil d'une conversation, et comment on l'apprend.
@@ -34,7 +36,6 @@ const PAYLOAD = (field: 'messages' | 'standby' | null) => ({
 function fauxStore() {
   const ecrits: Array<{ owner: string; only?: readonly string[]; saufEscalade?: boolean; messageEnvoyeLe?: Date }> = [];
   const store: InboxStore = {
-    phoneNumberTenant: async () => 'tenant-1',
     recordInbound: async (_t: string, _m: InboundMessage) => {},
     setControlOwner: async (_t, _w, owner, opts) => {
       ecrits.push({
@@ -54,7 +55,7 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     // ⚠️ Sauf une ESCALADE (2026-09-23) : une fois le fil passé à l'équipe, Meta envoie les messages sur
     // `messages` ; un `standby` traité après est un retardataire, et il rendait la conversation à l'agent.
     const { store, ecrits } = fauxStore();
-    return processInbound(PAYLOAD('standby'), store).then(() => {
+    return entrantsDe(PAYLOAD('standby'), 'tenant-1').then((entrants) => processInbound(entrants, store, { optOut: aucunStop })).then(() => {
       // 🔴 AVEC LA DATE DU MESSAGE (revue finale du 2026-09-23) : c'est elle qui distingue un retardataire d'un
       // standby postérieur à l'escalade, donc d'un fil que l'agent de Meta a réellement repris. Sans elle, la
       // garde écartait tout standby pour toujours.
@@ -73,14 +74,14 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
      * elle qui rendait une conversation invisible du dossier « À traiter » après un scénario.
      */
     const { store, ecrits } = fauxStore();
-    await processInbound(PAYLOAD('messages'), store);
+    await processInbound(await entrantsDe(PAYLOAD('messages'), 'tenant-1'), store, { optOut: aucunStop });
     expect(ecrits).toEqual([]);
   });
 
   it('🔴 un `field` absent ne corrige RIEN', async () => {
     // Forme de payload qu'on ne sait pas interpréter : deviner vaudrait moins que se taire.
     const { store, ecrits } = fauxStore();
-    await processInbound(PAYLOAD(null), store);
+    await processInbound(await entrantsDe(PAYLOAD(null), 'tenant-1'), store, { optOut: aucunStop });
     expect(ecrits).toEqual([]);
   });
 
@@ -88,10 +89,9 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     // Les suites de tests construisent des deps minimales : la méthode est optionnelle, et son absence ne
     // doit pas casser l'enregistrement du message, qui est la donnée métier.
     const recus: string[] = [];
-    await processInbound(PAYLOAD('standby'), {
-      phoneNumberTenant: async () => 'tenant-1',
+    await processInbound(await entrantsDe(PAYLOAD('standby'), 'tenant-1'), {
       recordInbound: async (_t, m) => { recus.push(m.body ?? ''); },
-    });
+    }, { optOut: aucunStop });
     expect(recus).toEqual(['coucou']);
   });
 
@@ -99,11 +99,10 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     // La correction est best-effort : le message du client est la donnée métier, la propriété du fil est un
     // confort d'aiguillage. Les inverser perdrait un message pour une raison sans rapport.
     const recus: string[] = [];
-    await processInbound(PAYLOAD('standby'), {
-      phoneNumberTenant: async () => 'tenant-1',
+    await processInbound(await entrantsDe(PAYLOAD('standby'), 'tenant-1'), {
       recordInbound: async (_t, m) => { recus.push(m.body ?? ''); },
       setControlOwner: async () => { throw new Error('base indisponible'); },
-    });
+    }, { optOut: aucunStop });
     expect(recus).toEqual(['coucou']);
   });
 });
@@ -225,7 +224,7 @@ describe('la valeur posée doit rester VISIBLE du dossier « À traiter »', () 
      * le dossier. C'est l'écriture parasite de `app_workflow` qui l'en sortait.
      */
     const { store, ecrits } = fauxStore();
-    await processInbound(PAYLOAD('messages'), store);
+    await processInbound(await entrantsDe(PAYLOAD('messages'), 'tenant-1'), store, { optOut: aucunStop });
     expect(ecrits).toEqual([]);
     expect(dansATraiter('mba', 'in')).toBe(true);
   });

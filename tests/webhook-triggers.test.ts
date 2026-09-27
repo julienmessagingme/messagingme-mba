@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { processTriggers } from '../src/webhooks/triggers';
-import { aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucunNumeroDelie } from './webhook-fixtures';
+import { aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucunNumeroDelie, entrantsDe } from './webhook-fixtures';
+import { aucunStop } from './consentement';
 import type { AutomationEvent } from '../src/automation/match';
 
 /**
@@ -24,8 +25,7 @@ const eventStore = { insertEvent: async () => true };
 describe('processTriggers', () => {
   it('message normal -> événement transmis avec le corps et le signal nouveau contact', async () => {
     const seen: AutomationEvent[] = [];
-    await processTriggers(inboundPayload('33611', 'je veux un rdv'), {
-      phoneNumberTenant: async () => 't1',
+    await processTriggers(await entrantsDe(inboundPayload('33611', 'je veux un rdv')), {
       isNewContact: async () => true,
       run: async (_t, ev) => { seen.push(ev); return 1; },
     });
@@ -34,8 +34,7 @@ describe('processTriggers', () => {
 
   it('numéro inconnu (aucun tenant) -> aucun déclenchement', async () => {
     let ran = 0;
-    await processTriggers(inboundPayload('33611', 'rdv'), {
-      phoneNumberTenant: async () => null,
+    await processTriggers(await entrantsDe(inboundPayload('33611', 'rdv'), null), {
       isNewContact: async () => false,
       run: async () => { ran += 1; return 0; },
     });
@@ -44,8 +43,7 @@ describe('processTriggers', () => {
 
   it('message STANDBY (le MBA tient le fil) -> aucun déclenchement', async () => {
     let ran = 0;
-    await processTriggers(inboundPayload('33611', 'rdv', 'standby'), {
-      phoneNumberTenant: async () => 't1',
+    await processTriggers(await entrantsDe(inboundPayload('33611', 'rdv', 'standby')), {
       isNewContact: async () => false,
       run: async () => { ran += 1; return 0; },
     });
@@ -60,8 +58,7 @@ describe('processTriggers', () => {
       ] } }] }],
     };
     const ok: string[] = [];
-    await processTriggers(payload, {
-      phoneNumberTenant: async () => 't1',
+    await processTriggers(await entrantsDe(payload), {
       isNewContact: async () => false,
       run: async (_t, ev) => { if (ev.waId === 'KO') throw new Error('base indisponible'); ok.push(ev.waId); return 1; },
     });
@@ -84,8 +81,9 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
       inboundContactUpsert: async () => 'created',
-      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
+      triggers: { run: async (_t, ev) => { seen.push(ev); return 1; } },
     });
     expect(seen[0]).toMatchObject({ waId: '33611', isNewContact: true });
   });
@@ -99,8 +97,9 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
       inboundContactUpsert: async () => 'updated',
-      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
+      triggers: { run: async (_t, ev) => { seen.push(ev); return 1; } },
     });
     expect(seen[0]).toMatchObject({ isNewContact: false });
   });
@@ -121,8 +120,9 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
       inboundContactUpsert: async () => 'created',
-      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { flags.push(ev.kind === 'message' && ev.isNewContact); return 1; } },
+      triggers: { run: async (_t, ev) => { flags.push(ev.kind === 'message' && ev.isNewContact); return 1; } },
     });
     expect(flags).toEqual([true, false]);
   });
@@ -136,8 +136,9 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
       inboundContactUpsert: async () => 'updated',
-      triggers: { phoneNumberTenant: async () => { throw new Error('base indisponible'); }, run: async () => 0 },
+      triggers: { run: async () => { throw new Error('base indisponible'); } },
     })).resolves.toBeUndefined();
     expect(inboundRecorded).toBe(1); // l'inbox a bien été enregistrée malgré l'automation en échec
   });
@@ -150,6 +151,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
       inboundContactUpsert: async () => 'updated',
     })).resolves.toBeUndefined();
   });
@@ -171,11 +173,11 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
-      workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
+      inboundOptOut: aucunStop,
+      workflowAdvance: { advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
-      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
+      triggers: { run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
       testTokens: {
-        phoneNumberTenant: async () => 't1',
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
         markConversationTest: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
@@ -197,11 +199,11 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
-      workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
+      inboundOptOut: aucunStop,
+      workflowAdvance: { advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
-      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return demarres; } },
+      triggers: { run: async (_t, ev) => { triggered.push(ev.waId); return demarres; } },
       testTokens: {
-        phoneNumberTenant: async () => 't1',
         findByTestToken: async () => null,
         markConversationTest: async () => {},
         startTestRun: async () => true,
@@ -240,9 +242,9 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
       inboundContactUpsert: async () => 'updated',
       testTokens: {
-        phoneNumberTenant: async () => 't1',
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
         markConversationTest: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
@@ -259,10 +261,10 @@ describe('handleWebhookJob : intégration des automations', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      inboundOptOut: aucunStop,
       inboundContactUpsert: async () => 'updated',
       testTokens: {
-        phoneNumberTenant: async () => { throw new Error('base indisponible'); },
-        findByTestToken: async () => null,
+        findByTestToken: async () => { throw new Error('base indisponible'); },
         markConversationTest: async () => {},
         startTestRun: async () => true,
       },

@@ -2,6 +2,7 @@ import type { ControlOwner } from '../inbox/store.pg';
 import { asArray, asRecord, texteNonVide } from './json';
 import { valeurEffective } from './change';
 import { journaliser } from '../lib/journal';
+import type { EspaceDuNumero } from './rattachement';
 
 /**
  * Changements de contrôle du fil annoncés par Meta (`messaging_handovers`), et messages que l'agent de Meta a
@@ -18,8 +19,6 @@ import { journaliser } from '../lib/journal';
  */
 
 export interface HandoverDeps {
-  /** Tenant propriétaire du numéro business. null si inconnu. */
-  phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /** Pose le détenteur du fil (sans condition : Meta fait autorité sur qui détient quoi). */
   setControlOwner(tenantId: string, waId: string, owner: ControlOwner): Promise<boolean>;
   /**
@@ -73,64 +72,89 @@ export function waIdFromHandover(value: Record<string, unknown>): string | undef
 }
 
 /**
- * Traite les événements `messaging_handovers` et `standby` d'un payload webhook. Isolé par l'appelant : une
- * erreur ici ne doit jamais faire échouer le job webhook partagé.
+ * Un `messaging_handovers` ou un `standby` du payload, avec le numéro business qu'il nomme et l'espace de ce
+ * numéro. Cette étape garde sa propre lecture du payload : ce qu'elle traite (passage de main, échos de l'agent de
+ * Meta) n'est pas un message entrant.
  */
-export async function processHandovers(payload: unknown, deps: HandoverDeps): Promise<void> {
+export interface Bascule {
+  field: 'messaging_handovers' | 'standby';
+  /** La valeur du change, par `valeurEffective`. */
+  value: Record<string, unknown>;
+  /** Absent : aucun numéro lisible, rien d'attribuable. */
+  phoneNumberId: string | undefined;
+  /** `null` : numéro absent ou inconnu. */
+  tenantId: string | null;
+}
+
+/**
+ * Les bascules d'un payload, dans l'ordre, rattachées à leur espace par `espaceDe` (la lecture unique du job, qui
+ * ne relit pas un numéro déjà lu pour les entrants). Une lecture en échec lève, et l'appelant isole l'étape.
+ */
+export async function lireLesBascules(payload: unknown, espaceDe: EspaceDuNumero): Promise<Bascule[]> {
+  const bascules: Bascule[] = [];
   for (const entryRaw of asArray(asRecord(payload)['entry'])) {
     for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
       const change = asRecord(changeRaw);
       const field = texteNonVide(change['field']);
       if (field !== 'messaging_handovers' && field !== 'standby') continue;
-
       // `valeurEffective`, jamais `asRecord` directement : voir `./change.ts`.
       const value = valeurEffective(change['value']);
       const phoneNumberId = numeroBusinessDuChange(value);
-      if (!phoneNumberId) {
-        journaliser('info', 'handover_sans_numero', { field, value });
-        continue;
-      }
-      const tenantId = await deps.phoneNumberTenant(phoneNumberId);
-      if (!tenantId) {
-        journaliser('info', 'handover_numero_inconnu', { field, phoneNumberId });
-        continue;
-      }
+      bascules.push({ field, value, phoneNumberId, tenantId: phoneNumberId ? await espaceDe(phoneNumberId) : null });
+    }
+  }
+  return bascules;
+}
 
-      if (field === 'messaging_handovers') {
-        const waId = waIdFromHandover(value);
-        const owner = ownerFromHandover(value);
-        // Journalisé toujours, reconnu ou non : c'est cette trace qui livrera le sens inverse (une app qui rend le fil
-        // à l'agent), que Meta n'a jamais envoyé et qu'on refuse donc d'interpréter.
-        journaliser('info', 'handover_recu', { tenantId, phoneNumberId, waId: waId ?? null, owner, value });
-        // `app_human` = l'agent de Meta nous passe la main (seul sens reconnu) : une escalade vers l'équipe.
-        if (waId && owner === 'app_human') await deps.marquerEscalade(tenantId, waId);
-        // L'autre sens n'existe pas encore (`ownerFromHandover` ne rend que `app_human` ou `null`) : branche
-        // inatteignable. Une escalade se lève aujourd'hui par un `standby` postérieur (`messageEnvoyeLe`,
-        // `accorderLeDetenteur`).
-        else if (waId && owner) await deps.setControlOwner(tenantId, waId, owner);
-        continue;
-      }
+/**
+ * Traite les bascules d'un payload, déjà rattachées (`lireLesBascules`). Isolé par l'appelant : une erreur ici ne
+ * doit jamais faire échouer le job webhook partagé.
+ */
+export async function processHandovers(bascules: readonly Bascule[], deps: HandoverDeps): Promise<void> {
+  for (const { field, value, phoneNumberId, tenantId } of bascules) {
+    if (!phoneNumberId) {
+      journaliser('info', 'handover_sans_numero', { field, value });
+      continue;
+    }
+    if (!tenantId) {
+      journaliser('info', 'handover_numero_inconnu', { field, phoneNumberId });
+      continue;
+    }
 
-      // Les `message_echoes` : les messages que l'agent de Meta a envoyés en notre nom, affichés dans l'inbox pour que
-      // l'opérateur voie la conversation entière avant de reprendre la main. `standby` ne veut pas dire « écho » : il
-      // porte aussi des entrants et des `statuses`, traités par `extractInbound` et `parseWebhook` via
-      // `valeurEffective`. Ce module ne prend que les échos.
-      for (const echoRaw of asArray(value['message_echoes'])) {
-        const echo = asRecord(echoRaw);
-        /**
-         * Le corps est sous `message` ; l'écho ne porte à plat que `id` et `timestamp` :
-         * `{id, timestamp, message: {to, type, text: {body}, recipient, biz_opaque_callback_data}}`.
-         * `message.recipient` est le BSUID, pas le numéro : c'est `message.to` qui porte le `wa_id`. Les formes à plat
-         * restent lues en second.
-         */
-        const contenu = asRecord(echo['message']);
-        const waId = texteNonVide(contenu['to']) ?? texteNonVide(echo['to']) ?? texteNonVide(echo['recipient']) ?? texteNonVide(value['recipient']);
-        const body = texteNonVide(asRecord(contenu['text'])['body']) ?? texteNonVide(asRecord(echo['text'])['body']) ?? texteNonVide(echo['body']);
-        const messageId = texteNonVide(echo['id']) ?? texteNonVide(contenu['id']) ?? null;
-        journaliser('info', 'standby_echo', { tenantId, waId: waId ?? null, messageId, aUnCorps: body !== undefined });
-        if (waId && body && deps.recordAgentMessage) {
-          await deps.recordAgentMessage(tenantId, waId, body, messageId);
-        }
+    if (field === 'messaging_handovers') {
+      const waId = waIdFromHandover(value);
+      const owner = ownerFromHandover(value);
+      // Journalisé toujours, reconnu ou non : c'est cette trace qui livrera le sens inverse (une app qui rend le fil
+      // à l'agent), que Meta n'a jamais envoyé et qu'on refuse donc d'interpréter.
+      journaliser('info', 'handover_recu', { tenantId, phoneNumberId, waId: waId ?? null, owner, value });
+      // `app_human` = l'agent de Meta nous passe la main (seul sens reconnu) : une escalade vers l'équipe.
+      if (waId && owner === 'app_human') await deps.marquerEscalade(tenantId, waId);
+      // L'autre sens n'existe pas encore (`ownerFromHandover` ne rend que `app_human` ou `null`) : branche
+      // inatteignable. Une escalade se lève aujourd'hui par un `standby` postérieur (`messageEnvoyeLe`,
+      // `accorderLeDetenteur`).
+      else if (waId && owner) await deps.setControlOwner(tenantId, waId, owner);
+      continue;
+    }
+
+    // Les `message_echoes` : les messages que l'agent de Meta a envoyés en notre nom, affichés dans l'inbox pour que
+    // l'opérateur voie la conversation entière avant de reprendre la main. `standby` ne veut pas dire « écho » : il
+    // porte aussi des entrants et des `statuses`, traités par `extractInbound` et `parseWebhook` via
+    // `valeurEffective`. Ce module ne prend que les échos.
+    for (const echoRaw of asArray(value['message_echoes'])) {
+      const echo = asRecord(echoRaw);
+      /**
+       * Le corps est sous `message` ; l'écho ne porte à plat que `id` et `timestamp` :
+       * `{id, timestamp, message: {to, type, text: {body}, recipient, biz_opaque_callback_data}}`.
+       * `message.recipient` est le BSUID, pas le numéro : c'est `message.to` qui porte le `wa_id`. Les formes à plat
+       * restent lues en second.
+       */
+      const contenu = asRecord(echo['message']);
+      const waId = texteNonVide(contenu['to']) ?? texteNonVide(echo['to']) ?? texteNonVide(echo['recipient']) ?? texteNonVide(value['recipient']);
+      const body = texteNonVide(asRecord(contenu['text'])['body']) ?? texteNonVide(asRecord(echo['text'])['body']) ?? texteNonVide(echo['body']);
+      const messageId = texteNonVide(echo['id']) ?? texteNonVide(contenu['id']) ?? null;
+      journaliser('info', 'standby_echo', { tenantId, waId: waId ?? null, messageId, aUnCorps: body !== undefined });
+      if (waId && body && deps.recordAgentMessage) {
+        await deps.recordAgentMessage(tenantId, waId, body, messageId);
       }
     }
   }

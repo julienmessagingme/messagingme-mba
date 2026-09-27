@@ -56,7 +56,10 @@ import { MetaPubsClient } from './meta/pubs';
 import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { buildWorkflowRuntime } from './workflow/wiring';
 
-/** Ce que le socle lit de la configuration. Les autres réglages restent aux racines qui les consomment. */
+/**
+ * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
+ * `buildWorkflowRuntime` et la recherche sémantique lisent en plus la configuration globale du processus.
+ */
 export type ConfigSocle = Pick<Config,
   | 'DRY_RUN' | 'PGBOSS_SCHEMA' | 'ENCRYPTION_KEY' | 'META_ACCESS_TOKEN' | 'META_APP_ID' | 'META_APP_SECRET'
   | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER'
@@ -90,7 +93,7 @@ export interface DepsSocle {
  *
  * Ce qui n'existe que dans un processus reste dans sa racine, et ce qui s'y construit différemment aussi : la file
  * elle-même, le dépôt des statistiques de conversation (l'affichage de l'API lit l'état de la fonction, le worker
- * n'écrit que des agrégats) et la clé de modèle par espace. Rien ici ne fait d'entrée-sortie à la construction :
+ * n'écrit que des agrégats) et le client de modèle (`GatewayChatClient`), qui lit la clé par espace du socle. Rien ici ne fait d'entrée-sortie à la construction :
  * l'ordre d'appel dans une racine ne change donc que l'ordre des déclarations.
  */
 export function construireSocle({ pool, queue, config }: DepsSocle) {

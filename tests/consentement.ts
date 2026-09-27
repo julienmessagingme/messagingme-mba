@@ -18,3 +18,10 @@ export const jamaisDesabonne = async (): Promise<boolean> => false;
  * `jamaisDesabonne` vérifie qu'on n'a pas cassé le cas nominal, jamais que la garde REFUSE vraiment.
  */
 export const toujoursDesabonne = async (): Promise<boolean> => true;
+
+/**
+ * L'écriture du STOP qui ne touche aucune fiche (`InboundOptOut` rend `null`), pour les fixtures qui ne parlent pas
+ * de consentement. Elle est requise dans `processInbound` et `WebhookJobDeps` : un STOP reçu avec ce faux est
+ * journalisé « sans fiche contact », jamais écrit. Un test qui VÉRIFIE le refus câble sa propre écriture.
+ */
+export const aucunStop = async (): Promise<string | null> => null;

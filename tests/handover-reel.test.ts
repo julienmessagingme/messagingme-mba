@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ownerFromHandover, waIdFromHandover, processHandovers } from '../src/webhooks/handover';
+import { ownerFromHandover, waIdFromHandover, lireLesBascules, processHandovers } from '../src/webhooks/handover';
 
 /**
  * La bascule de contrôle du fil, sur le payload RÉEL de Meta.
@@ -78,8 +78,7 @@ describe('processHandovers sur la bascule réelle', () => {
     // la conversation dans « À traiter » tout de suite : `marquerEscalade`, jamais un simple `setControlOwner`.
     const poses: Array<[string, string, string]> = [];
     const escalades: Array<[string, string]> = [];
-    await processHandovers(HANDOVER_REEL, {
-      phoneNumberTenant: async (pn) => (pn === '1234840649713976' ? 'tenant-1' : null),
+    await processHandovers(await lireLesBascules(HANDOVER_REEL, async (pn) => (pn === '1234840649713976' ? 'tenant-1' : null)), {
       setControlOwner: async (t, w, o) => { poses.push([t, w, o]); return true; },
       marquerEscalade: async (t, w) => { escalades.push([t, w]); },
     });
@@ -91,8 +90,7 @@ describe('processHandovers sur la bascule réelle', () => {
     // Le troisième défaut, et le plus sournois : la fonction sortait en `handover_sans_numero` AVANT même de
     // regarder le reste. Les deux autres correctifs n'auraient donc rien changé sans celui-ci.
     let vu: string | null = null;
-    await processHandovers(HANDOVER_REEL, {
-      phoneNumberTenant: async (pn) => { vu = pn; return null; },
+    await processHandovers(await lireLesBascules(HANDOVER_REEL, async (pn) => { vu = pn; return null; }), {
       setControlOwner: async () => true,
       marquerEscalade: async () => {},
     });
@@ -101,8 +99,7 @@ describe('processHandovers sur la bascule réelle', () => {
 
   it('un numéro inconnu de nous n’écrit rien', async () => {
     const poses: string[] = [];
-    await processHandovers(HANDOVER_REEL, {
-      phoneNumberTenant: async () => null,
+    await processHandovers(await lireLesBascules(HANDOVER_REEL, async () => null), {
       setControlOwner: async (_t, w) => { poses.push(w); return true; },
       marquerEscalade: async (_t, w) => { poses.push(w); },
     });

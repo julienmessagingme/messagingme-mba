@@ -355,7 +355,6 @@ async function main(): Promise<void> {
        * route que les lots d'accusés purs.
        */
       remiseMbaEntrant: {
-        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         remettre: (t, waId) => remiseMbaSiPersonneNeSuit(t, waId),
       },
       inbox: inboxStore,
@@ -365,7 +364,6 @@ async function main(): Promise<void> {
       numerosDelies: (ids) => numeroDelieStore.numerosDelies(ids),
       // L'arrivée publicitaire (`ctwa_clid` compris) : un message entrant n'arrive que par cette file.
       arriveesPub: {
-        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         enregistrer: (t, w, a) => arriveesPubStore.enregistrer(t, w, a),
       },
       /**
@@ -374,7 +372,6 @@ async function main(): Promise<void> {
        * les automations ordinaires, y compris ceux d'une pub qui les confie à l'agent de Meta.
        */
       routagePub: {
-        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         campagneConnue: (t, adId) => publicites.campagneConnue(t, adId),
         resoudreChezMeta: async (t, adId) => {
           // Sans connexion publicitaire, rien à demander (pas de jeton, un appel anonyme serait refusé) : la
@@ -402,7 +399,6 @@ async function main(): Promise<void> {
       // le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
       flowMapping: { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
       workflowAdvance: {
-        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp),
         // Une avance qui échoue atterrit dans le journal des erreurs que l'écran montre : sinon le job finirait en
         // succès, sans rejeu ni trace, et le contact resterait bloqué sur son bloc.
@@ -432,7 +428,6 @@ async function main(): Promise<void> {
       },
       // Bascules de contrôle et messages de l'agent de Meta.
       handover: {
-        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         // Sans `only` : Meta fait autorité sur qui détient le fil, notre état ne fait que refléter le sien.
         setControlOwner: (t, w, o) => inboxStore.setControlOwner(t, w, o),
         marquerEscalade: (t, w) => inboxStore.marquerEscalade(t, w),
@@ -444,7 +439,6 @@ async function main(): Promise<void> {
       // Automations : un message entrant peut démarrer un scénario (mot-clé, 1er message d'un nouveau contact).
       // `isNewContact` est injecté par le handler. La garde de contrôle du fil est celle de l'executor.
       triggers: {
-        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         // `opts` vient de l'appelant, jamais d'un littéral posé ici : c'est le routage publicitaire qui décide
         // « seule celle-là ». En dur, un lead de publicité redeviendrait ramassable par n'importe quel mot-clé, sans
         // qu'aucun type ne bouge.
@@ -453,7 +447,6 @@ async function main(): Promise<void> {
       // Jetons de test d'un scénario : le testeur envoie le mot de son lien wa.me / QR depuis son téléphone, et
       // ouvre ainsi lui-même la fenêtre 24 h.
       testTokens: {
-        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         findByTestToken: async (token) => {
           const wf = await workflowStore.findByTestToken(token);
           return wf ? { workflowId: wf.id, tenantId: wf.tenantId } : null;

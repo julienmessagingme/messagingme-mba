@@ -1,4 +1,5 @@
-import { extractInbound, type InboundMessage } from './inbound';
+import type { InboundMessage } from './inbound';
+import type { EntrantRattache } from './rattachement';
 import { messageDe } from '../lib/erreur';
 
 /**
@@ -35,8 +36,6 @@ export function arriveeDepuisMessage(m: Pick<InboundMessage, 'messageId' | 'fiel
 }
 
 export interface ArriveesPubDeps {
-  /** Tenant propriétaire du numéro business. `null` si le numéro nous est inconnu. */
-  phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
   /** Écrit l'arrivée, rattachée à la fiche que `waId` désigne (règle partagée `MATCH_BY_WAID_SQL`). */
   enregistrer(tenantId: string, waId: string, a: ArriveePub): Promise<IssueArrivee>;
 }
@@ -46,13 +45,12 @@ export interface ArriveesPubDeps {
  * (`handleWebhookJob`) puisqu'elle retrouve la fiche par son `wa_id` : si l'auto-création a échoué, l'arrivée
  * est perdue et le journal le dit, sans le numéro. Isolée par message, ne lève jamais.
  */
-export async function processArriveesPub(payload: unknown, deps: ArriveesPubDeps): Promise<void> {
-  for (const m of extractInbound(payload)) {
+export async function processArriveesPub(entrants: readonly EntrantRattache[], deps: ArriveesPubDeps): Promise<void> {
+  for (const { message: m, tenantId } of entrants) {
     const a = arriveeDepuisMessage(m);
-    if (!a) continue;
+    // Numéro inconnu : aucun espace où écrire l'arrivée.
+    if (!a || !tenantId) continue;
     try {
-      const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
-      if (!tenantId) continue;
       const issue = await deps.enregistrer(tenantId, m.waId, a);
       if (issue === 'sans_contact') {
         // eslint-disable-next-line no-console
