@@ -1,15 +1,21 @@
 # todo.md : backlog
 
-## 🟠 App Salesforce core : cadrage validé le 2026-09-26, pas commencée
+## 🔴 App Salesforce core : L0 mesuré, BLOQUÉ par la liaison du namespace (2026-09-27)
 
 Le pendant de HubSpot pour le Salesforce « core » (Leads, Contacts, Opportunités, Campaigns), en offre de
 prospection. **Tout est dans la spec** : `docs/superpowers/specs/2026-09-26-app-salesforce-design.md`
 (décisions de Julien, architecture, données, flux, lots L0 à L5, méthode de livraison, essai réel qui clôt).
 
-**Prochain pas : L0, des mesures sans code de production.** Il attend deux orgs Salesforce Developer Edition
-gratuites, **à créer par Julien** (une pour le Dev Hub et le namespace `engageme`, une qui joue le client).
-Le point le plus risqué à mesurer : retrouver une fiche par téléphone sur des formats libres, là où naîtraient
-les doublons. Le plan (writing-plans) s'écrit après la relecture de la spec par Julien.
+Plan : `docs/superpowers/plans/2026-09-26-app-salesforce.md`. **L0 est fait** (résultats :
+`docs/salesforce-mesures-2026-09.md`) : la recherche par téléphone a son algorithme, l'upsert par External ID
+rend tout idempotent, l'appel Apex signé traverse Cloudflare. Namespace réservé : `engagemeapp` (`engageme` pris).
+
+🔴 **LE BLOCAGE** : Salesforce refuse de relier `engagemeapp` au Dev Hub. Son application « SalesforceDX Namespace
+Registry » exige PKCE (verrouillé, « contactez le Support »), et sa fenêtre de liaison ne l'envoie pas
+(`missing required code challenge`). Sans cette liaison, aucun package géré 2GP, donc ni installation chez un
+client ni les mesures 1, 5, 8 et 10. **Prochain pas : faire lever le blocage par Salesforce** (communauté
+Trailblazer ou un contact Salesforce ; une Developer Edition n'a pas de ticket de support). En attendant, la
+partie serveur de L1 (migration, client REST, store, connexion, écrans) peut avancer sans le package.
 
 ## 🟠 `features.md` se contredit à TROIS endroits, trouvé en écrivant les fiches d'aide (2026-09-23)
 

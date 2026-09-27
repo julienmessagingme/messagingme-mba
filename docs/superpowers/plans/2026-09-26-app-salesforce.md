@@ -58,6 +58,13 @@ membres bouger. Chaque lot a en plus son propre essai réel, écrit à sa fin.
 
 ## L0 : les mesures (en direct, aucun code de production)
 
+> **État au 2026-09-27** : faites, sauf les mesures 1, 5, 8 et 10. Résultats et blocage :
+> `docs/salesforce-mesures-2026-09.md`. 🔴 **Salesforce refuse de relier le namespace `engagemeapp` au Dev Hub**
+> (sa propre application de liaison exige PKCE, et sa fenêtre ne l'envoie pas) : tant que ce n'est pas levé, AUCUN
+> package géré n'est possible. Les tâches de L1 qui n'ont pas besoin du package (migration, client REST, store,
+> connexion côté serveur, écrans) peuvent avancer ; celles du package attendent. Le client de test est une scratch
+> org créée depuis le Dev Hub (choix de Julien), pas une troisième org.
+
 **Prérequis, à faire par Julien** (je ne crée pas de compte et ne saisis aucun mot de passe) : créer deux orgs
 Developer Edition gratuites, A (Dev Hub, namespace `engageme`) et B (joue le client), puis connecter l'outil
 Salesforce du poste à A et à B par sa connexion navigateur.
@@ -92,7 +99,10 @@ Salesforce du poste à A et à B par sa connexion navigateur.
    de conversation, la date du dernier entrant WhatsApp et la joignabilité WhatsApp ; objet de configuration
    (liste autorisée, transitions surveillées, identifiant de l'utilisateur d'intégration) ; paramètre protégé du
    secret et sa ressource Apex REST (`PUT` et `DELETE`, appelables par l'utilisateur d'intégration seulement) ;
-   Named Credential vers `https://api.messagingme.app` sans préfixe. Classes de test Apex.
+   Named Credential vers `https://api.messagingme.app` sans préfixe, adossée à une External Credential en
+   protocole « Custom » (« NoAuthentication » est refusé, mesuré), dont le jeu de permissions ouvre le principal ;
+   le jeu de permissions accorde aussi EXPLICITEMENT les champs téléphone standards (`Lead.MobilePhone` n'est
+   lisible par aucun profil dans une org neuve, mesuré). Namespace `engagemeapp`. Classes de test Apex.
 3. **`src/salesforce/my-domain.ts`** : `lireMyDomain(brut)` : `https://` seul, sans chemin, requête, port ni
    identifiants, hôte à suffixe accepté (liste de L0), en minuscules ; sert aussi à valider l'adresse rendue par
    le jeton.
@@ -162,8 +172,8 @@ déconnecter.
 **Tâches**
 
 1. **Migration** : `salesforce.fiches` (uniques `(tenant_id, contact_id)` et `(tenant_id, sf_id)`, identifiants
-   en 18 caractères) et `salesforce.echecs` (index `(tenant_id, at desc)`) ; plus la table d'idempotence si L0 a
-   montré qu'aucun External ID d'activité n'est possible.
+   en 18 caractères) et `salesforce.echecs` (index `(tenant_id, at desc)`). Aucune table d'idempotence : L0 a
+   mesuré qu'un upsert par External ID est idempotent sur Lead, Contact ET tâche.
 2. **Code partagé des signaux** : `completerSignal` reçoit le critère d'identité de l'adaptateur en paramètre
    (Batch passe `identifiantPoussable`, Salesforce « toujours »), comme son en-tête le prévoit ;
    `ContactDuSignal` gagne le téléphone et le nom WhatsApp ; le contenu de `em_conversation_analyzed` gagne
@@ -174,10 +184,13 @@ déconnecter.
    état courant relu, `null` n'est pas 0, résumé seulement si `envoyer_resume`, tâche ouverte sur action
    suggérée, STOP WhatsApp vers le champ du client (valeur « non »), jamais un STOP RCS, jamais l'écho d'un
    consentement venu de Salesforce.
-4. **`src/salesforce/fiche.ts`** : lien connu, sinon recherche par téléphone (algorithme de L0), Contact avant
-   Lead, sinon création d'un Lead (`Sforce-Auto-Assign` si une règle d'attribution est active, sinon le
-   propriétaire de repli ; société vide si l'org a les comptes personnels ; origine du Lead seulement si la
-   valeur existe) ; Lead converti suivi jusqu'au Contact ; upsert par External ID si L0 le permet.
+4. **`src/salesforce/fiche.ts`** : lien connu, sinon recherche par téléphone par la requête combinée mesurée en
+   L0 (`FIND {"33XXXXXXXXX" OR "0XXXXXXXXX"} IN PHONE FIELDS`, formes construites depuis l'E.164, jamais de `+`
+   nu), Contact avant Lead, sinon création d'un Lead par UPSERT sur `em_contact_id__c` (idempotent, et seule
+   défense contre l'indexation lente) : aucun propriétaire écrit si une règle d'attribution est active (l'API
+   l'applique par défaut, mesuré), sinon le propriétaire de repli ; société vide si l'org a les comptes
+   personnels ; origine du Lead seulement si la valeur existe ; Lead converti suivi jusqu'au Contact. Les
+   activités s'écrivent par upsert sur l'External ID d'activité (l'identifiant du signal).
 5. **`src/salesforce/travail.ts`** : `creerTravailSignauxSalesforce(deps)` sur le modèle de
    `creerTravailSignauxBatch` : job relu par `safeParse` ; org relue (pas `connectee` : rien) ; TRI sur les
    signaux bruts avant complétion (clics écartés ; accusés gardés seulement pour un envoi depuis la fiche, en
@@ -230,12 +243,14 @@ le champ du client.
    requête ; rapport exécuté, refusé en 422 au-delà de 2 000 lignes ou sans colonne téléphone), téléphones
    normalisés (`normalizePhone`), consentement par personne, liens `fiches` écrits, tag `Salesforce: <nom>`
    borné. Rend les identifiants EXACTS des contacts.
-3. **Écriture des contacts** : une variante de `upsertManyByPhone` qui rend les identifiants et ne relève JAMAIS
-   un `opted_out` ; deux lots (consentement « oui », puis le reste).
+3. **Écriture des contacts** : `upsertManyByPhone` ne relève plus un `opted_out` depuis `738a7c3d` (drapeau
+   `peutLeverStop` de `LotContacts`, réservé à l'import CSV case cochée : l'import Salesforce ne le pose JAMAIS) ;
+   il reste à lui faire rendre les identifiants ; deux lots (consentement « oui », puis le reste).
 4. **Création de campagne** : `POST /campaigns` accepte `sourceSalesforce` (type, identifiant, libellé) AVEC les
    `contactIds` de l'import ; il écrit `salesforce.campagnes` et `salesforce.membres` par le store. Pour une
    Campaign : les statuts « Engage Me : envoyé » et « Engage Me : a répondu » (compté comme réponse) créés sur
-   la Campaign, de façon idempotente.
+   la Campaign, de façon idempotente EN LISANT LES STATUTS AVANT d'insérer (un libellé déjà présent est refusé
+   en `FIELD_INTEGRITY_EXCEPTION`, mesuré).
 5. **Envoyé** : `TentativeEnvoi` gagne `tenantId` (contrat du moteur, `satisfies` de
    `tests/campagne-cablage.test.ts`) ; `noterEnvoi` composé dans le bloc `dryRun` du worker marque
    `membres.envoye_le`. **A répondu** : sur `em_replied`, le travail de L2 attribue au dernier envoi de moins de

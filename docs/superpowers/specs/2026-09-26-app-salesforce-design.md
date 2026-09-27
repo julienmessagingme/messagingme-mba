@@ -54,7 +54,7 @@ Sources : [création des Connected Apps en Spring '26](https://help.salesforce.c
 | Qui tire le chantier | Une offre de prospection, sans client signé : générique dès le V1. |
 | Périmètre V1 | Les quatre capacités : remonter le quali, segment vers campagne, étape vers scénario, carte sur la fiche. |
 | Contact inconnu | **Toujours un Lead**, sans réglage. |
-| Installation | **Un package Engage Me** (2GP, namespace `engageme`), installé par lien. |
+| Installation | **Un package Engage Me** (2GP, namespace `engagemeapp`), installé par lien. |
 | Historique dans Salesforce | Une activité (tâche terminée) par conversation analysée. L'état courant vit dans des champs. |
 | Actions de la carte | Voir la conversation, créer une opportunité, planifier un rappel, envoyer un WhatsApp. |
 | Sources de segment | Campaign, vue de liste, rapport (plafonné à 2 000 lignes). |
@@ -70,7 +70,7 @@ Sources : [création des Connected Apps en Spring '26](https://help.salesforce.c
 | Statuts de membres de Campaign | Oui : « WhatsApp envoyé » et « A répondu » (ce dernier compté comme réponse). |
 | Sens Salesforce vers Engage Me | **Salesforce appelle notre API** (voir ci-dessous). |
 | Emplacement | **Dans Engage Me**, données dans un schéma à part, extractible. |
-| Namespace | `engageme` (repli `engagemeapp` s'il est pris). |
+| Namespace | **`engagemeapp`**, réservé le 2026-09-26 : `engageme` était pris (mesuré en L0), et c'est le repli convenu. |
 
 ### Les amendements du 2026-09-26
 
@@ -153,7 +153,10 @@ aujourd'hui :
   politique client credentials, dont l'admin désigne l'utilisateur « Run As ».
 - **Un jeu de permissions** pour l'utilisateur d'intégration : lecture et écriture des champs Engage Me,
   création de Lead et de tâche, mise à jour des membres de Campaign, lecture des Opportunités, rôles de
-  contact, Campaigns, vues de liste et rapports. Rien de plus.
+  contact, Campaigns, vues de liste et rapports, et l'accès au principal de l'External Credential. Rien de plus.
+  ⚠️ **Mesuré en L0 : dans une org neuve, `Lead.MobilePhone` n'est lisible par aucun profil**, administrateur
+  compris. Le jeu de permissions accorde donc EXPLICITEMENT les champs téléphone standards, et le code ne suppose
+  jamais qu'un champ standard est visible.
 - **Les champs Engage Me sur Lead et Contact** : l'état courant, un champ par attribut du dictionnaire
   (`NOMS_ATTRIBUTS`, `src/signaux/types.ts`), plus l'identifiant de la conversation et la date du dernier
   message entrant WhatsApp (pour que la carte sache si la fenêtre de 24 h est ouverte).
@@ -231,11 +234,17 @@ Chaque requête porte `tenant_id = $1` : la connexion est superuser, le filtrage
 
 **Retrouver la fiche**, dans cet ordre : le lien connu (`fiches`) ; sinon une recherche par téléphone (Contact
 prioritaire sur Lead, le plus récemment modifié en cas de doublon, doublon journalisé) ; sinon la création d'un
-Lead. Le lien est enregistré dès la première correspondance, ce qui neutralise le délai d'indexation de la
-recherche de Salesforce sur les fiches qu'on vient de créer.
+Lead. **Mesuré en L0** : aucune forme seule ne retrouve tous les formats saisis ; la requête combinée
+`FIND {"33XXXXXXXXX" OR "0XXXXXXXXX"} IN PHONE FIELDS` les retrouve tous, et `+` y est un caractère spécial à ne
+jamais envoyer nu. L'indexation prend de quelques secondes à plus de dix minutes : la recherche ne suffit donc
+jamais à décider « inconnu ». Le lien est enregistré dès la première correspondance, et la création passe par un
+**upsert sur un champ External ID** (`em_contact_id__c`, identifiant du contact Engage Me), idempotent sous
+rejeu (mesuré) : un job rejoué ne crée jamais de second Lead. Les activités passent de même par un External ID
+d'activité (l'identifiant du signal), idempotent lui aussi : aucune table d'idempotence chez nous.
 
-**Créer un Lead** : nom WhatsApp (à défaut, « WhatsApp » suivi du numéro), mobile en E.164, en-tête
-`Sforce-Auto-Assign` quand l'org a une règle d'attribution active, sinon le propriétaire de repli. La société
+**Créer un Lead** : nom WhatsApp (à défaut, « WhatsApp » suivi du numéro), mobile en E.164 ; si l'org a une
+règle d'attribution active, aucun propriétaire n'est écrit (**mesuré en L0 : l'API REST applique la règle active
+par défaut**, sans en-tête) ; sinon le propriétaire de repli. La société
 est laissée vide si l'org a les comptes personnels (le Lead se convertira en particulier), sinon elle reçoit le
 nom de la personne. L'origine du Lead n'est écrite que si la valeur existe dans la liste de l'org.
 
@@ -326,11 +335,16 @@ membres d'une Campaign relue. Le plafond de 20 000 destinataires s'applique tel 
 - **Le package est écrit pour la security review** : aucun secret hors du paramètre protégé ; les actions de la
   carte en mode utilisateur (droits du commercial, champs inaccessibles retirés) ; l'utilisateur d'intégration
   ne reçoit que ce que le jeu de permissions liste ; appel sortant uniquement vers `api.messagingme.app`, par
-  une Named Credential du package.
+  une Named Credential du package, adossée à une External Credential en protocole « Custom » (mesuré en L0 : le
+  protocole « NoAuthentication » est refusé ; la signature étant calculée en Apex, la credential ne porte aucun
+  en-tête).
 
 ## Ce que le lot L0 doit mesurer avant d'écrire le code
 
-Chaque point est une hypothèse de cette spec, à confirmer sur de vraies orgs :
+Chaque point est une hypothèse de cette spec, à confirmer sur de vraies orgs. **Résultats des 26 et 27
+septembre : `docs/salesforce-mesures-2026-09.md`.** Ce qu'ils changent est reporté dans les sections concernées
+(repérées « mesuré en L0 ») ; les mesures 1, 5, 8 et 10 sont BLOQUÉES par la liaison du namespace au Dev Hub,
+que Salesforce refuse (PKCE exigé sur sa propre application de liaison).
 
 1. Une org abonnée obtient un jeton client credentials avec notre clé répliquée, sans rien copier.
 2. **La recherche par téléphone** sur des formats réels (« 06 12 34 56 78 », « +33 6… », « 0033… », avec et sans
@@ -342,7 +356,8 @@ Chaque point est une hypothèse de cette spec, à confirmer sur de vraies orgs :
    d'intégration.
 6. L'appel sortant Apex vers `api.messagingme.app` par une Named Credential packagée.
 7. L'ajout de statuts de membres à une Campaign par l'API.
-8. La disponibilité du namespace `engageme`, et ce qu'exige la promotion d'une version 2GP (couverture Apex).
+8. La disponibilité du namespace `engageme` (résultat : pris, `engagemeapp` réservé), et ce qu'exige la promotion
+   d'une version 2GP (couverture Apex).
 9. L'idempotence sous rejeu : un champ Engage Me marqué External ID sur Lead et Contact permet-il un upsert (pas
    de Lead en double si un job est rejoué), et un champ personnalisé d'activité peut-il l'être (pas de tâche en
    double) ?
