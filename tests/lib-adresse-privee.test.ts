@@ -248,6 +248,7 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     ['src/lib/page-distante.ts', 'la lecture d’une page distante, à chaque saut de redirection'],
     // Câblé dans `src/index.ts` jusqu'au 2026-09-21, sorti depuis dans son module pour être testé.
     ['src/agent/eprouver-source.ts', 'le bouton éprouver une SOURCE, oublié jusqu’au 2026-09-03'],
+    ['src/salesforce/connexion.ts', 'la connexion d’une org Salesforce (adresse saisie par l’admin du client)'],
   ] as const;
 
   for (const [fichier, quoi] of CHEMINS) {
@@ -267,10 +268,10 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     });
   }
 
-  it('et le compte est de QUATRE, pas de trois', () => {
-    // Si un cinquième apparaît sans être ajouté ici, ce test ne le verra pas : c'est sa limite, et elle est
-    // dite. Ce qu'il empêche, c'est qu'un des quatre PERDE sa garde sans que personne ne s'en aperçoive.
-    expect(CHEMINS).toHaveLength(4);
+  it('et le compte est de CINQ (la connexion Salesforce est la cinquième, 2026-09-27)', () => {
+    // Si un sixième apparaît sans être ajouté ici, ce test ne le verra pas : c'est sa limite, et elle est
+    // dite. Ce qu'il empêche, c'est qu'un des cinq PERDE sa garde sans que personne ne s'en aperçoive.
+    expect(CHEMINS).toHaveLength(5);
   });
 });
 
@@ -300,6 +301,7 @@ describe('inventaire : chaque appel vers une URL client passe par le fetch véri
     ['src/lib/page-distante.ts', 'la lecture d’une page distante', true],
     ['src/mcp/client.ts', 'le client MCP (agent IA et écran des connecteurs MCP)', true],
     ['src/agent/eprouver-source.ts', 'le bouton éprouver une SOURCE', true],
+    ['src/salesforce/client.ts', 'le client REST Salesforce (adresse My Domain saisie par l’admin du client)', true],
   ] as const;
 
   for (const [fichier, quoi, sansFetchNu] of CHEMINS) {
