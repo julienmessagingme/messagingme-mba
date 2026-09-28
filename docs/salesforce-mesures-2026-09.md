@@ -33,6 +33,33 @@ orgs neuves. Nous ne pouvons pas la contourner. Une Developer Edition n'a pas de
 passer par la communauté Trailblazer ou par un contact Salesforce. **Sans cette liaison, aucun package géré
 2GP n'est possible**, donc les mesures 1, 5 (protection du secret), 8 (promotion) et 10 restent ouvertes.
 
+**Cause identifiée le 2026-09-28, et mesurée.** Salesforce applique depuis l'été 2026 quatre sécurités
+obligatoires à TOUTES les applications de connexion (PKCE, rotation des jetons de rafraîchissement, durée de vie
+absolue, liaison à l'adresse IP), qui « ne peuvent plus être désactivées une fois appliquées » : application
+forcée à partir du 25 juin, repoussée au 10 juillet (article d'aide Salesforce 005388177, publié le 30 juin 2026).
+Or l'application « SalesforceDX Namespace Registry » n'est pas une application globale : elle est créée DANS
+chaque Dev Hub à son activation (lu dans `ConnectedApplication` : créée le 2026-09-26 à 9 h 58 UTC par
+« Automated Process »). Créée après l'application forcée, elle naît avec PKCE obligatoire, et le bouton « Lier un
+espace de noms » de Salesforce n'envoie pas PKCE. C'est donc le durcissement de Salesforce qui casse son propre
+bouton, pour tout Dev Hub activé depuis. Écarté par la mesure : un défaut de la version d'aperçu (le Dev Hub et la
+scratch org sont en Summer '26, API 67.0, la version courante).
+
+**Ce qui ne marche pas, et pourquoi.** Ajouter nous-mêmes le paramètre à la fenêtre échouerait à l'étape
+suivante : c'est le serveur de Salesforce qui échange le code, sans la preuve qui va avec. Un package sans
+préfixe ne transporte pas l'application de connexion : la documentation ne distribue une External Client App que
+par un package géré de seconde génération.
+
+**Les voies de sortie.** (1) La communauté Trailblazer (message ci-dessous). (2) Le programme partenaire de
+Salesforce, gratuit : il donne le support par ticket des partenaires, une org partenaire (PBO) que Salesforce
+recommande justement comme Dev Hub pour un éditeur, et l'adresse `partnercommunitysupport@salesforce.com` pour un
+partenaire sans responsable attitré. (3) En dernier recours, un plan B qui se passe de la liaison : l'admin du
+client crée lui-même l'application de connexion dans son org (une application locale y reste permise) et nous
+en donne la clé ; le reste du package part sans ce lien. Il coûte une installation plus longue chez le client, à
+chiffrer et à vérifier avant d'y aller.
+
+⚠️ **Notre propre conception n'est pas touchée par ces quatre sécurités** : l'utilisateur d'intégration passe
+par le flux client credentials, sans connexion par navigateur (PKCE) ni jeton de rafraîchissement.
+
 ## Le message pour Salesforce
 
 Prêt à poster sur la communauté Trailblazer, ou à envoyer à un contact chez Salesforce :
@@ -44,6 +71,9 @@ Prêt à poster sur la communauté Trailblazer, ou à envoyer à un contact chez
 > code challenge`, before any login prompt. The "SalesforceDX Namespace Registry" connected app auto-created in
 > the Dev Hub has "Require PKCE" checked and locked ("contact Support to change this required setting"). The
 > org-level PKCE setting is off. How can we link our namespace org, or can PKCE be relaxed on this app?
+> Likely cause: this app was auto-created in our Dev Hub on 2026-09-26 by "Automated Process", after the mandatory
+> PKCE enforcement on Connected Apps (article 005388177), while the Link Namespace popup does not send PKCE. Any
+> Dev Hub enabled since July 2026 should hit the same wall.
 
 ## Les résultats
 
