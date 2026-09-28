@@ -61,8 +61,8 @@ const poseurs = new WeakMap<FastifyInstance, { actif: boolean }>();
  * Monte des routes en posant `etapeEspace` à la fin de la chaîne de chaque route dont l'adresse porte
  * `:tenantId`. Seul point de passage, en production (`entree` dans `src/server.ts`, modules `acces: 'tenant'`)
  * comme dans les tests.
- * 🔴 Le critère est la classe du module, puis le chemin, jamais le chemin seul : les routes `jeton-ops` portent
- * aussi `:tenantId` (`/ops/credits/:tenantId`), sans session, et l'étape les refuserait.
+ * 🔴 Le critère est la classe du module, puis le chemin, jamais le chemin seul : les routes `session-ops` portent
+ * aussi `:tenantId` (`/ops/credits/:tenantId`), sans session d'espace, et l'étape les refuserait.
  * Toujours un nouveau tableau, jamais un `push` : la chaîne reçue est souvent partagée (`requireAdmin`), et un
  * `push` y empilerait l'étape pour toutes les routes de tous les modules.
  * `onRoute` est synchrone, d'où le drapeau allumé autour de `monter` : une route enregistrée plus tard (dans un

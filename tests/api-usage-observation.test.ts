@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
@@ -9,6 +9,7 @@ import type { V1SendsRouteDeps } from '../src/http/v1-sends';
 import type { DepsMcp } from '../src/mcp/outils';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { exploitationInerte, opsInerte } from './routes-inertes';
+import { accesOps } from './acces-ops';
 
 /**
  * L'OBSERVATION DE L'USAGE : ce que les routes publiques comptent, et ce qu'elles ne refusent PAS.
@@ -267,27 +268,36 @@ describe('le stockage se remplace sans toucher aux routes', () => {
 });
 
 describe('ce que /ops montre de l’usage', () => {
-  it('🔴 les compteurs sont lisibles depuis /ops, avec le jeton', async () => {
+  /** L'exploitant, et sa session gagnée une fois par le vrai parcours (`tests/acces-ops.ts`). */
+  const acces = accesOps();
+  const ops: Record<string, string> = {};
+  beforeAll(async () => {
+    const s = buildServer({ queue: new FakeQueue(), auth: acces.auth });
+    ops.authorization = `Bearer ${await acces.jeton(s)}`;
+    await s.close();
+  });
+
+  it('🔴 les compteurs sont lisibles depuis /ops, avec la session d’exploitation', async () => {
     const usage = new GardeUsageMemoire();
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] });
     const server = buildServer({
       queue: new FakeQueue(),
       usage,
-      opsToken: 'jeton-ops',
+      auth: acces.auth,
       ops: opsMuet,
       v1: { apiKeys: cles, contacts: contactsV1Muets() },
     });
     await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
 
-    const res = await server.inject({ method: 'GET', url: '/ops/usage', headers: { 'x-ops-token': 'jeton-ops' } });
+    const res = await server.inject({ method: 'GET', url: '/ops/usage', headers: ops });
     expect(res.statusCode).toBe(200);
     const corps = res.json<{ compteurs: Array<{ tenantId: string; cleId: string; operation: string; unites: number }> }>();
     expect(corps.compteurs[0]).toMatchObject({ tenantId: 't1', cleId: 'k1', operation: 'contacts.upsert', unites: 1 });
     await server.close();
   });
 
-  it('🔴 sans le jeton, /ops/usage ne dit rien', async () => {
-    const server = buildServer({ queue: new FakeQueue(), opsToken: 'jeton-ops', ops: opsMuet });
+  it('🔴 sans la session d’exploitation, /ops/usage ne dit rien', async () => {
+    const server = buildServer({ queue: new FakeQueue(), auth: acces.auth, ops: opsMuet });
     expect((await server.inject({ method: 'GET', url: '/ops/usage' })).statusCode).toBe(401);
     await server.close();
   });
@@ -298,11 +308,11 @@ describe('ce que /ops montre de l’usage', () => {
     const usage = new GardeUsageMemoire();
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] });
     const server = buildServer({
-      queue: new FakeQueue(), usage, opsToken: 'jeton-ops', ops: opsMuet,
+      queue: new FakeQueue(), usage, auth: acces.auth, ops: opsMuet,
       v1: { apiKeys: cles, contacts: contactsV1Muets() },
     });
     await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
-    const res = await server.inject({ method: 'GET', url: '/ops/usage', headers: { 'x-ops-token': 'jeton-ops' } });
+    const res = await server.inject({ method: 'GET', url: '/ops/usage', headers: ops });
     expect(res.body).not.toMatch(/mba_/);
     expect(res.body).not.toMatch(/[0-9a-f]{64}/);
     await server.close();

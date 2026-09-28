@@ -4,14 +4,14 @@ import { buildServer } from '../src/server';
 import type { ServerDeps } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { exploitationInerte, opsInerte } from './routes-inertes';
+import { accesOps } from './acces-ops';
 
 /**
  * LA SURVEILLANCE DE `/ops` (décision de Julien, 2026-09-03).
  *
  * 🔴 Ce qu'elle ferme n'est pas la garde, c'est l'AVEUGLEMENT. `/ops` ouvre la lecture de toutes les
- * conversations de tous les clients ; Fastify tourne en `logger: false` ; donc quelqu'un qui cherchait le
- * jeton toute la nuit ne laissait aucune trace. Le jour où l'adresse passe de `/api/backend/ops/overview`,
- * noyée, à `api.messagingme.app/ops/overview`, devinable, cet aveuglement coûte beaucoup plus cher.
+ * conversations de tous les clients ; Fastify tourne en `logger: false` ; donc quelqu'un qui cherchait une
+ * entrée toute la nuit ne laissait aucune trace. Elle reste sur la session d'exploitation nominative.
  */
 describe('surveillance de /ops : compter, puis alerter', () => {
   const harnais = (debut = 1_000_000) => {
@@ -99,27 +99,34 @@ describe('ipIndicative : savoir d’où ça vient, sans s’y fier', () => {
 });
 
 describe('/ops : le refus déclenche bien la surveillance', () => {
-  it('🔴 un mauvais jeton est SIGNALÉ, un bon jeton ne l’est pas', async () => {
+  it('🔴 une session fausse est SIGNALÉE, une vraie ne l’est pas, et une adresse retirée l’est', async () => {
     // Le câblage : sans lui, le module ci-dessus serait parfait et ne verrait jamais rien passer.
     const vus: Array<{ chemin: string; ip: string }> = [];
+    const acces = accesOps();
     const deps: ServerDeps = {
       queue: new FakeQueue(),
       verifyToken: 'v',
       appSecret: 's',
-      opsToken: 'x'.repeat(32),
+      auth: acces.auth,
       ops: { ...opsInerte, exploitation: { ...exploitationInerte, getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [] } },
       surveillanceOps: { refus: (i) => vus.push(i) },
     };
     const app = buildServer(deps);
 
-    const mauvais = await app.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': 'faux' } });
+    const mauvais = await app.inject({ method: 'GET', url: '/ops/overview', headers: { authorization: 'Bearer faux' } });
     expect(mauvais.statusCode).toBe(401);
     expect(vus).toHaveLength(1);
     expect(vus[0]?.chemin).toBe('/ops/overview');
 
-    const bon = await app.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': 'x'.repeat(32) } });
+    const bon = await app.inject({ method: 'GET', url: '/ops/overview', headers: await acces.entetes(app) });
     expect(bon.statusCode).toBe(200);
     expect(vus, 'un accès légitime ne doit rien signaler').toHaveLength(1);
+
+    // Une session valide dont l'adresse a quitté la liste est un refus comme un autre : elle se compte.
+    acces.liste.length = 0;
+    const retire = await app.inject({ method: 'GET', url: '/ops/overview', headers: await acces.entetes(app) });
+    expect(retire.statusCode).toBe(401);
+    expect(vus).toHaveLength(2);
     await app.close();
   });
 });

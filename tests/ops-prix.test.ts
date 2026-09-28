@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { GRILLE_DEFAUT, type GrillePrix } from '../src/stats/prix';
 import type { OpsRouteDeps } from '../src/http/ops';
 import { capturerJournal } from './journal';
 import { exploitationInerte, opsInerte } from './routes-inertes';
+import { accesOps, ADRESSE_OPS } from './acces-ops';
 
 /**
  * LA GRILLE DE PRIX SE REGLE DANS /ops, UNE FOIS, POUR TOUS LES ESPACES (lot 8, migration 0168).
@@ -15,12 +16,18 @@ import { exploitationInerte, opsInerte } from './routes-inertes';
  * deux qui portaient sur le TENANT disparaissent avec leur sujet, parce que la route n a plus de tenant, et
  * leur equivalent est l autorite separee de /ops, gardee par `tests/ops.test.ts`.
  *
- * 🔴 ET LA TRACE EST UN CAS A PART ENTIERE. Le jeton d exploitation est PARTAGE : il n y a aucune identite
- * d operateur a enregistrer, donc la note est la seule reponse a « qui a change ce prix, et pourquoi ». Un
- * prix qui change sans trace est ce qu un audit reproche en premier.
+ * 🔴 ET LA TRACE EST UN CAS A PART ENTIERE. La session d exploitation est nominative : l adresse de son auteur
+ * signe la note (le pourquoi) dans `grille_prix.modifie_par`, et la ligne de journal. Un prix qui change sans
+ * trace est ce qu un audit reproche en premier.
  */
-const OPS = 'ops-secret-token-of-at-least-32-bytes!!';
-const withTok = (t: string) => ({ headers: { 'content-type': 'application/json', 'x-ops-token': t } });
+const acces = accesOps();
+let OPS = '';
+beforeAll(async () => {
+  const s = buildServer({ queue: new FakeQueue(), auth: acces.auth });
+  OPS = await acces.jeton(s);
+  await s.close();
+});
+const withTok = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const BONNE: GrillePrix = {
   margeTemplate: 120, serviceCentimes: 2.48, serviceFranchise: 1000,
@@ -39,7 +46,7 @@ function app(over: Partial<OpsRouteDeps> = {}) {
     },
     ...over,
   };
-  return buildServer({ queue: new FakeQueue(), ops: deps, opsToken: OPS });
+  return buildServer({ queue: new FakeQueue(), ops: deps, auth: acces.auth });
 }
 
 describe('GET /ops/prix', () => {
@@ -55,7 +62,7 @@ describe('GET /ops/prix', () => {
     await a.close();
   });
 
-  it('🔴 sans le jeton d exploitation -> refus, et la grille ne fuit pas', async () => {
+  it('🔴 sans la session d exploitation -> refus, et la grille ne fuit pas', async () => {
     let lu = false;
     const a = app({ lireGrillePrix: async () => { lu = true; return GRILLE_DEFAUT; } });
     const res = await a.inject({ method: 'GET', url: '/ops/prix' });
@@ -66,7 +73,7 @@ describe('GET /ops/prix', () => {
 });
 
 describe('PATCH /ops/prix', () => {
-  it('jeton correct -> 200, et le store recoit les SIX champs', async () => {
+  it('session d exploitation -> 200, et le store recoit les SIX champs', async () => {
     let recu: GrillePrix | null = null;
     const a = app({ reglages: { setGrillePrixGlobale: async (g) => { recu = g; } } });
     const res = await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { ...BONNE, note: NOTE }, ...withTok(OPS) });
@@ -100,9 +107,9 @@ describe('PATCH /ops/prix', () => {
     await a.close();
   });
 
-  it('🔴 SANS NOTE -> 400, et rien n est ecrit : c est la seule trace de qui a change le prix', async () => {
-    // Le jeton d exploitation est PARTAGE, donc il n y a aucune identite d operateur a enregistrer. Meme
-    // exigence que le rechargement d un solde, et pour la meme raison.
+  it('🔴 SANS NOTE -> 400, et rien n est ecrit : c est la seule trace de pourquoi le prix a change', async () => {
+    // L auteur se lit dans la session ; la raison, seulement ici. Meme exigence que le rechargement d un
+    // solde, et pour la meme raison.
     let appele = false;
     const a = app({ reglages: { setGrillePrixGlobale: async () => { appele = true; } } });
     for (const payload of [{ ...BONNE }, { ...BONNE, note: '' }, { ...BONNE, note: '  ' }, { ...BONNE, note: 42 }]) {
@@ -113,17 +120,18 @@ describe('PATCH /ops/prix', () => {
     await a.close();
   });
 
-  it('🔴 LA NOTE EST TRANSMISE AU STORE, pas seulement exigee a la porte', async () => {
+  it('🔴 LA NOTE EST TRANSMISE AU STORE, SIGNEE DE SON AUTEUR, pas seulement exigee a la porte', async () => {
     // Une note obligatoire qu on jette est pire qu aucune note : l ecran promet une tracabilite que la base
-    // n a pas. C est le motif « une garde qu on peut debrancher sans qu aucun test ne tombe ».
+    // n a pas. C est le motif « une garde qu on peut debrancher sans qu aucun test ne tombe ». L adresse vient
+    // de la session, relue en base par la garde, jamais du corps de la requete.
     let recue: string | null = null;
     const a = app({ reglages: { setGrillePrixGlobale: async (_g, par) => { recue = par; } } });
     await a.inject({ method: 'PATCH', url: '/ops/prix', payload: { ...BONNE, note: NOTE }, ...withTok(OPS) });
-    expect(recue).toBe(NOTE);
+    expect(recue).toBe(`${ADRESSE_OPS} : ${NOTE}`);
     await a.close();
   });
 
-  it('🔴 le changement est JOURNALISE en warn, avec la grille et la note', async () => {
+  it('🔴 le changement est JOURNALISE en warn, avec la grille, la note et l ADRESSE de son auteur', async () => {
     // Un appel au journal qui ne part pas ne leve rien : seul un test qui LIT la sortie distingue une trace
     // d un appel muet.
     const { lignes } = await capturerJournal(async () => {
@@ -135,10 +143,11 @@ describe('PATCH /ops/prix', () => {
     expect(ligne, 'un prix qui change sans trace est ce qu un audit reproche en premier').toBeTruthy();
     expect(ligne?.lvl).toBe('warn');
     expect(ligne?.note).toBe(NOTE);
+    expect(ligne?.par, 'qui a change le prix').toBe(ADRESSE_OPS);
     expect(ligne?.prix, 'la grille POSEE, pas seulement le fait qu on y a touche').toEqual(BONNE);
   });
 
-  it('🔴 sans le jeton d exploitation -> refus, et RIEN n est ecrit', async () => {
+  it('🔴 sans la session d exploitation -> refus, et RIEN n est ecrit', async () => {
     // L equivalent des deux cas disparus (un agent refuse, un tenant etranger refuse) : cette route n a plus
     // de tenant, sa garde est l autorite separee de /ops.
     let appele = false;

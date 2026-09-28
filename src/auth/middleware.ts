@@ -1,13 +1,22 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { verifySession } from './token';
+import { verifySession, verifySessionOps } from './token';
 import type { Session } from './token';
-import { timingSafeEqualStr } from '../lib/signature';
+import type { MfaStore } from './mfa-store.pg';
 import { ipIndicative, type SurveillanceOps } from '../ops/tentatives';
 import { consommerAvecEntetes, type RateLimiter } from './rate-limit';
+
+/** L'exploitant d'une requête `/ops`, tel que la garde l'a revérifié en base. */
+export interface ExploitantVerifie {
+  identityId: string;
+  /** L'adresse relue en base, en minuscules : c'est elle qui signe chaque écriture d'exploitation. */
+  email: string;
+}
 
 declare module 'fastify' {
   interface FastifyRequest {
     auth?: Session;
+    /** Posé par la seule garde de `/ops` (`makeRequireOps`). Absent partout ailleurs. */
+    ops?: ExploitantVerifie;
   }
 }
 
@@ -51,22 +60,61 @@ export function makeRequireRole(roles: readonly string[]): PreHandler {
 }
 
 /**
- * preHandler de `/ops` : exige le header `x-ops-token` égal (en temps constant) à `OPS_TOKEN`. 401 si le
- * jeton attendu est vide (surface désactivée par défaut), absent ou faux. 🔴 Autorité distincte du JWT
- * tenant : un admin d'espace n'atteint pas `/ops`, et réciproquement.
+ * L'adresse fait-elle partie de l'exploitation ? Comparée en minuscules des deux côtés : la liste vient d'une
+ * variable d'environnement tapée à la main, l'adresse d'un formulaire ou de Google. Liste absente ou vide =
+ * personne.
  */
-export function makeRequireOps(opsToken: string, surveillance?: SurveillanceOps): PreHandler {
+export function estAdresseOps(adresses: readonly string[] | undefined, email: string): boolean {
+  const cherchee = email.trim().toLowerCase();
+  return cherchee !== '' && (adresses ?? []).some((a) => a.trim().toLowerCase() === cherchee);
+}
+
+/** Ce que la garde de `/ops` lit : le secret des sessions, le second facteur, la liste. */
+export interface AutoriteOps {
+  secret: string;
+  /** Absent : `/ops` refuse tout. L'absence ferme, jamais n'ouvre. */
+  mfa?: Pick<MfaStore, 'lire'>;
+  opsEmails?: readonly string[];
+}
+
+/**
+ * preHandler de `/ops` : une session d'exploitation (`signSessionOps`), en `Authorization: Bearer`. 401 sinon.
+ * 🔴 Trois contrôles, dans cet ordre, et les deux derniers à CHAQUE requête :
+ *  1. la signature et la portée (`verifySessionOps`), sans toucher la base : un appel sans session valide ne
+ *     coûte aucune lecture ;
+ *  2. l'adresse de l'identité, relue en base, toujours dans la liste : retirer quelqu'un de `OPS_EMAILS` coupe son
+ *     accès à la requête suivante, sans attendre la fin de ses 12 heures ;
+ *  3. son second facteur toujours actif : une identité dont le facteur a été retiré ou réinitialisé perd l'accès.
+ * Autorité distincte de la session d'espace, dans les deux sens : un admin d'espace n'atteint pas `/ops`, une
+ * session d'exploitation n'ouvre aucune route d'espace. Liste vide ou autorité absente = refus pour tous.
+ */
+export function makeRequireOps(autorite: AutoriteOps | undefined, surveillance?: SurveillanceOps): PreHandler {
   return async function requireOps(req: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const raw = req.headers['x-ops-token'];
-    const provided = Array.isArray(raw) ? raw[0] : raw;
-    if (!opsToken || !provided || !timingSafeEqualStr(provided, opsToken)) {
+    const header = req.headers.authorization;
+    const jeton = header?.startsWith('Bearer ') ? header.slice(7) : null;
+    const session = autorite && jeton ? await verifySessionOps(jeton, autorite.secret) : null;
+    const etat = session && autorite?.mfa && estAdresseOps(autorite.opsEmails, session.email)
+      ? await autorite.mfa.lire(session.identityId)
+      : null;
+    // L'adresse relue en base, pas celle du jeton : c'est elle que la liste doit contenir, et elle qui signe.
+    if (!etat || etat.secret === null || !estAdresseOps(autorite?.opsEmails, etat.email)) {
       // Signalé avant de répondre, sans rien attendre : `/ops` ouvre la lecture de tous les clients. Le jeton
       // présenté n'est jamais transmis (voir `ops/tentatives.ts`).
       surveillance?.refus({ chemin: req.url, ip: ipIndicative(req) });
       await reply.code(401).send({ error: 'ops: non autorisé' });
       return;
     }
+    req.ops = { identityId: etat.identityId, email: etat.email.trim().toLowerCase() };
   };
+}
+
+/**
+ * L'exploitant de la requête, pour signer une écriture ou une observation. 🔴 Échoue fermé : sans la garde de
+ * `/ops` devant, il lève (500 opaque) plutôt que de laisser une écriture partir sans auteur.
+ */
+export function auteurOps(req: FastifyRequest): string {
+  if (!req.ops) throw new Error('auteurOps : aucune garde d’exploitation n’a vérifié cette requête');
+  return req.ops.email;
 }
 
 /**

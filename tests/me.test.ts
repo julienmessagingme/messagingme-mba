@@ -60,6 +60,23 @@ describe('route me', () => {
     await server.close();
   });
 
+  it('le lien d’exploitation : `exploitation: true` pour une adresse de la liste, rien sinon', async () => {
+    // Un confort du menu du compte, jamais une autorisation : `/ops` a sa propre garde. Le champ n'est posé que
+    // vrai, pour qu'une réponse ordinaire garde exactement sa forme d'avant.
+    const vus: string[] = [];
+    const oui = app({ estExploitant: (email) => { vus.push(email); return true; } });
+    expect((await oui.inject({ method: 'GET', url: '/tenants/t1/me', ...h(agentTok) })).json()).toMatchObject({ exploitation: true });
+    expect(vus).toEqual(['julien@messagingme.fr']);
+    await oui.close();
+    const non = app({ estExploitant: () => false });
+    expect((await non.inject({ method: 'GET', url: '/tenants/t1/me', ...h(agentTok) })).json()).not.toHaveProperty('exploitation');
+    await non.close();
+    // Une session d'observation n'a pas d'identité à elle : jamais de lien.
+    const observation = app({ estExploitant: () => true });
+    expect((await observation.inject({ method: 'GET', url: '/tenants/t1/me', ...h(observationTok) })).json()).not.toHaveProperty('exploitation');
+    await observation.close();
+  });
+
   it('sans token -> 401', async () => {
     const server = app();
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/me' });

@@ -7,9 +7,11 @@ export interface Session {
   /**
    * 🔴 Session d'emprunt, émise depuis `/ops` pour entrer dans l'espace d'un client : aucune écriture permise
    * (garde globale), état du porteur non relu en base (il n'a pas de compte ici), rien marqué comme lu.
-   * Absent = session normale ; le champ n'existe que sur un jeton émis par `/ops`, protégé par son propre jeton.
+   * Absent = session normale ; le champ n'existe que sur un jeton émis par `/ops`, sous une session d'exploitation.
    */
   impersonated?: true;
+  /** L'adresse de l'exploitant qui observe. N'existe que sur une session d'emprunt : c'est elle qui dit qui regardait. */
+  observateur?: string;
 }
 
 function key(secret: string): Uint8Array {
@@ -18,7 +20,8 @@ function key(secret: string): Uint8Array {
 
 /** Signe un JWT de session HS256 (sub = userId, claims tenantId + role). */
 export async function signSession(s: Session, secret: string, expiresIn = '12h'): Promise<string> {
-  return new SignJWT({ tenantId: s.tenantId, role: s.role, ...(s.impersonated ? { impersonated: true } : {}) })
+  const emprunt = s.impersonated ? { impersonated: true, ...(s.observateur ? { observateur: s.observateur } : {}) } : {};
+  return new SignJWT({ tenantId: s.tenantId, role: s.role, ...emprunt })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(s.userId)
     .setIssuedAt()
@@ -33,16 +36,14 @@ export async function verifySession(token: string, secret: string): Promise<Sess
     if (typeof payload.sub !== 'string' || typeof payload.tenantId !== 'string' || typeof payload.role !== 'string') {
       return null;
     }
-    // 🔴 Un jeton qui porte un `kind` n'est jamais une session (choix d'espace, second facteur, enrôlement) :
+    // 🔴 Un jeton qui porte un `kind` n'est jamais une session (choix d'espace, second facteur, enrôlement, exploitation) :
     // ils n'ont ni `tenantId` ni `role` à la racine, et ce test tient le jour où quelqu'un les y ajouterait.
     if (payload.kind !== undefined) return null;
-    return {
-      userId: payload.sub,
-      tenantId: payload.tenantId,
-      role: payload.role,
-      // `=== true` strict : un emprunt ne se déduit jamais d'une valeur approximative.
-      ...(payload.impersonated === true ? { impersonated: true as const } : {}),
-    };
+    // `=== true` strict : un emprunt ne se déduit jamais d'une valeur approximative.
+    const emprunt = payload.impersonated === true
+      ? { impersonated: true as const, ...(typeof payload.observateur === 'string' ? { observateur: payload.observateur } : {}) }
+      : {};
+    return { userId: payload.sub, tenantId: payload.tenantId, role: payload.role, ...emprunt };
   } catch {
     return null;
   }
@@ -102,12 +103,17 @@ export interface EtapeConnexion {
    * passe ne doit pas révéler chez qui il ouvre avant le second facteur. Les noms se relisent après le code.
    */
   comptes: Array<{ userId: string; tenantId: string; role: string }>;
+  /**
+   * Une connexion à l'exploitation : au bout du second facteur, une session d'exploitation et jamais une session
+   * d'espace. Signé avec le reste : un jeton d'étape ordinaire ne devient pas une entrée dans `/ops`, ni l'inverse.
+   */
+  ops?: true;
 }
 
 type KindEtape = 'mfa' | 'enrolement';
 
 async function signEtape(kind: KindEtape, e: EtapeConnexion, secret: string, expiresIn: string): Promise<string> {
-  return new SignJWT({ kind, identityId: e.identityId, email: e.email, comptes: e.comptes })
+  return new SignJWT({ kind, identityId: e.identityId, email: e.email, comptes: e.comptes, ...(e.ops ? { ops: true } : {}) })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(expiresIn)
@@ -128,7 +134,7 @@ async function verifyEtape(kind: KindEtape, token: string, secret: string): Prom
         && typeof (c as { role?: unknown }).role === 'string',
     ).map((c) => ({ userId: c.userId, tenantId: c.tenantId, role: c.role }));
     if (comptes.length === 0) return null;
-    return { identityId: payload.identityId, email: payload.email, comptes };
+    return { identityId: payload.identityId, email: payload.email, comptes, ...(payload.ops === true ? { ops: true as const } : {}) };
   } catch {
     return null;
   }
@@ -148,4 +154,43 @@ export function signEnrolement(e: EtapeConnexion, secret: string): Promise<strin
 }
 export function verifyEnrolement(token: string, secret: string): Promise<EtapeConnexion | null> {
   return verifyEtape('enrolement', token, secret);
+}
+
+/** Le moyen qui a prouvé le second facteur : le code de l'application, ou un code de secours. */
+export type MoyenFacteur = 'totp' | 'secours';
+
+/**
+ * La session d'exploitation : l'autorité de `/ops`, nominative. Elle porte l'identité (et son adresse), et le
+ * moyen qui a prouvé le second facteur.
+ * 🔴 Portée distincte des sessions d'espace, dans les deux sens : son `kind` fait que `verifySession` la refuse
+ * (aucune route d'espace ne s'ouvre avec), et `verifySessionOps` refuse tout jeton qui n'a pas ce `kind` (une
+ * session d'espace, même d'admin, n'ouvre pas `/ops`). Elle ne se signe qu'au bout d'un second facteur vérifié
+ * (`suiteDeConnexion`, `src/auth/routes.ts`), et la garde de `/ops` relit la liste et le facteur à chaque requête.
+ */
+export interface SessionOps {
+  identityId: string;
+  email: string;
+  facteur: MoyenFacteur;
+}
+
+/** 12 heures, comme une session d'admin (décision du plan `2026-09-28-ops-nominatif.md`). */
+export async function signSessionOps(s: SessionOps, secret: string): Promise<string> {
+  return new SignJWT({ kind: 'ops', email: s.email, facteur: s.facteur })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(s.identityId)
+    .setIssuedAt()
+    .setExpirationTime('12h')
+    .sign(key(secret));
+}
+
+export async function verifySessionOps(token: string, secret: string): Promise<SessionOps | null> {
+  try {
+    const { payload } = await jwtVerify(token, key(secret), { algorithms: ['HS256'] });
+    if (payload.kind !== 'ops' || typeof payload.sub !== 'string' || typeof payload.email !== 'string') return null;
+    // Sans la preuve du facteur, ce n'est pas une session d'exploitation.
+    if (payload.facteur !== 'totp' && payload.facteur !== 'secours') return null;
+    return { identityId: payload.sub, email: payload.email, facteur: payload.facteur };
+  } catch {
+    return null;
+  }
 }

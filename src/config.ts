@@ -118,8 +118,19 @@ export const schema = z.object({
    * 0 = attente illimitée (à éviter).
    */
   DB_CONN_TIMEOUT_MS: z.coerce.number().default(8000),
-  /** Secret de la surface d'exploitation cross-tenant `/ops` (lecture seule). Vide -> /ops désactivé (401). */
-  OPS_TOKEN: z.string().default(''),
+  /**
+   * Les adresses qui ouvrent la surface d'exploitation `/ops`, séparées par des virgules. Chacune se connecte
+   * avec son compte habituel ET son second facteur, et reçoit une session d'exploitation nominative
+   * (`src/auth/routes.ts`). Vide = `/ops` fermé pour tous, le bon défaut. La liste est lue au DÉMARRAGE et
+   * comparée à chaque requête de `/ops` : retirer une adresse demande un `--force-recreate`, puis coupe son accès
+   * sans attendre la fin de sa session.
+   * 🔴 Une entrée qui n'a pas la forme d'une adresse est refusée au chargement : une faute de frappe (un `;` à
+   * la place d'une virgule) fermerait l'accès sans rien dire.
+   */
+  OPS_EMAILS: z.string().default('').refine(
+    (v) => v.split(',').map((a) => a.trim()).filter((a) => a !== '').every((a) => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(a)),
+    { message: 'OPS_EMAILS : des adresses séparées par des virgules' },
+  ),
   /** Alerte Telegram du worker (erreurs pg-boss, échecs de balayage). Lue dans l'environnement : le conteneur
    *  worker n'a pas accès au config.json de l'hôte utilisé par les crons ops. Vide -> aucune alerte. */
   TELEGRAM_BOT_TOKEN: z.string().default(''),
@@ -505,15 +516,6 @@ export const schema = z.object({
         code: z.ZodIssueCode.custom,
         path: ['AUTH_SECRET'],
         message: 'AUTH_SECRET requis en production (>= 32 octets aléatoires, pas le placeholder)',
-      });
-    }
-    // OPS_TOKEN reste optionnel (vide -> /ops désactivé), mais s'il est défini en prod il doit être fort :
-    // un token faible sur une surface cross-tenant = fuite de données entre clients.
-    if (c.OPS_TOKEN !== '' && Buffer.byteLength(c.OPS_TOKEN) < 32) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['OPS_TOKEN'],
-        message: 'OPS_TOKEN, si défini en production, doit faire >= 32 octets aléatoires',
       });
     }
     // L'analyse activée sans clé/modèle LLM appellerait le provider à vide -> échecs en boucle. Fail-fast au boot.

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
+import { accesOps, ADRESSE_OPS } from './acces-ops';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import { config } from '../src/config';
@@ -58,11 +59,20 @@ class MagasinMemoire implements PlafondApiStore {
  */
 const relaisMuet = { numeros: { getTenantPhoneNumberId: async () => null } } as unknown as MbaRelaisDeps;
 
+/** L'exploitant, et sa session gagnée une fois par le vrai parcours (`tests/acces-ops.ts`). */
+const acces = accesOps();
+const ops: Record<string, string> = { 'content-type': 'application/json' };
+beforeAll(async () => {
+  const s = buildServer({ queue: new FakeQueue(), auth: acces.auth });
+  ops.authorization = `Bearer ${await acces.jeton(s)}`;
+  await s.close();
+});
+
 function monter(apiParMinute = 2) {
   const magasin = new MagasinMemoire();
   const server = buildServer({
     queue: new FakeQueue(),
-    opsToken: 'jeton-ops',
+    auth: acces.auth,
     plafonds: { apiParMinute, apiParHeure: 1000 },
     plafondApi: magasin,
     v1: { apiKeys: new Cles(), contacts: contactsV1Muets(), mcp: {} as never, mbaRelais: relaisMuet },
@@ -71,7 +81,6 @@ function monter(apiParMinute = 2) {
 }
 
 type Serveur = ReturnType<typeof monter>['server'];
-const ops = { 'content-type': 'application/json', 'x-ops-token': 'jeton-ops' };
 const cle = (c: string) => ({ authorization: `Bearer ${c}` });
 /** `GET /mcp` rend 405 APRÈS la garde : c'est l'appel le plus simple qui traverse le plafond. */
 const mcp = (s: Serveur, c: string) => s.inject({ method: 'GET', url: '/mcp', headers: cle(c) });
@@ -127,7 +136,7 @@ describe('le plafond de l’espace, par le vrai câblage', () => {
 });
 
 describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
-  it('🔴 sans le jeton d’exploitation, ou avec un faux : 401, rien n’est lu ni écrit', async () => {
+  it('🔴 sans la session d’exploitation, ou avec un faux : 401, rien n’est lu ni écrit', async () => {
     const { server, magasin } = monter();
     for (const entetes of [{}, { 'x-ops-token': 'pas-le-bon' }, { authorization: `Bearer ${CLE_A}` }]) {
       expect((await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: entetes })).statusCode).toBe(401);
@@ -191,7 +200,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
     const traces = lignes.filter((l) => l.msg === 'ops_plafond_api');
     expect(traces).toHaveLength(1);
     expect(traces[0]).toMatchObject({
-      lvl: 'warn', tenantId: T1, note: 'intégrateur à fort volume',
+      lvl: 'warn', tenantId: T1, note: 'intégrateur à fort volume', par: ADRESSE_OPS,
       avant: { minute: null, heure: null }, apres: { minute: 4, heure: null },
     });
 
@@ -219,7 +228,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
 
   it('⚠️ sans magasin câblé, la route n’existe pas, et le limiteur applique le défaut', async () => {
     const server = buildServer({
-      queue: new FakeQueue(), opsToken: 'jeton-ops', plafonds: { apiParMinute: 1 },
+      queue: new FakeQueue(), auth: acces.auth, plafonds: { apiParMinute: 1 },
       v1: { apiKeys: new Cles(), contacts: contactsV1Muets(), mcp: {} as never },
     });
     expect((await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: ops })).statusCode).toBe(404);

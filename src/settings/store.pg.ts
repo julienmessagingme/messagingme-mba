@@ -256,8 +256,8 @@ export class PgTenantSettingsStore {
    * s'écrivent d'un coup, validés complets par `valideGrille` ; les bornes vivent là et dans les CHECK.
    * 🔴 `on conflict (id)` sur le singleton, pas un `update` nu : un `update` sans ligne ne fait rien et ne
    * rend aucune erreur, le prix saisi dans `/ops` partirait dans le vide. La clé primaire garantit qu'il n'y
-   * aura jamais une seconde grille. `modifie_par` est la seule trace de qui a changé un prix : le jeton de
-   * `/ops` est partagé, il n'y a aucune identité d'opérateur à enregistrer.
+   * aura jamais une seconde grille. `modifie_par` reçoit la note signée de l'exploitant (`noteSignee`,
+   * `src/http/ops.ts`) : qui a changé le prix, et pourquoi.
    */
   async setGrillePrixGlobale(g: GrillePrix, par: string): Promise<void> {
     await this.pool.query(

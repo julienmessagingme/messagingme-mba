@@ -90,8 +90,8 @@ describe('le garde-fou de buildServer : aucune route tenant sans authentificatio
    * Cette parité compare la DÉCLARATION aux adresses réellement montées par Fastify, et elle échoue dans les
    * deux sens.
    *
-   * ⚠️ `jeton-ops` porte AUSSI des `:tenantId` (`/ops/credits/:tenantId`), et c'est correct : l'exploitation
-   * est délibérément CROSS-espace, autorisée par un secret d'environnement, et elle ne passe donc pas par
+   * ⚠️ `session-ops` porte AUSSI des `:tenantId` (`/ops/credits/:tenantId`), et c'est correct : l'exploitation
+   * est délibérément CROSS-espace, autorisée par la session d'exploitation, et elle ne passe donc pas par
    * `scopeTenant`. C'est exactement la nuance qu'un booléen `porteDeTenant` aurait écrasée.
    */
   /**
@@ -121,7 +121,7 @@ describe('le garde-fou de buildServer : aucune route tenant sans authentificatio
 
     const nues: string[] = [];
     for (const m of modulesDeRoutes(toutBouchonne, usage)) {
-      // `/ops` porte des `:tenantId` mais son autorité est un secret d'environnement, posé dans le module.
+      // `/ops` porte des `:tenantId` mais son autorité est la session d'exploitation, posée par sa propre garde.
       if (m.acces !== 'tenant') continue;
       const app = Fastify({ logger: false });
       app.addHook('onRoute', (r) => {
@@ -152,7 +152,7 @@ describe('le garde-fou de buildServer : aucune route tenant sans authentificatio
         expect(porteUnEspace, `${m.nom} se déclare « tenant » mais aucune de ses adresses ne porte :tenantId`).toBe(true);
       }
       if (porteUnEspace) {
-        expect(['tenant', 'jeton-ops'], `${m.nom} porte :tenantId dans une adresse mais se déclare « ${m.acces} », donc hors du garde-fou`).toContain(m.acces);
+        expect(['tenant', 'session-ops'], `${m.nom} porte :tenantId dans une adresse mais se déclare « ${m.acces} », donc hors du garde-fou`).toContain(m.acces);
       }
       await app.close();
     }
@@ -263,7 +263,7 @@ describe('🔴 l’étape d’espace, l’accesseur et le poseur', () => {
  *
  * ⚠️ Vérifié dans les deux sens le jour du lot : branchement retiré de `entree`, la chaîne finale échoue
  * (étape absente) ET la preuve dynamique aussi (500 de l'accesseur au lieu du 403) ; filtre `acces ===
- * 'tenant'` retiré, les routes `jeton-ops` portent l'étape et la chaîne finale échoue.
+ * 'tenant'` retiré, les routes `session-ops` portent l'étape et la chaîne finale échoue.
  */
 describe('🔴 sur le serveur construit : chaque route :tenantId refuse une session d’un autre espace', () => {
   const A = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -306,7 +306,7 @@ describe('🔴 sur le serveur construit : chaque route :tenantId refuse une sess
     expect(fautes, `chaînes fautives : ${fautes.join(' ; ')}`).toEqual([]);
     // Les deux populations que l'étape doit ÉVITER existent bien, sans quoi leur cas serait vide : l'exploitation
     // porte des `:tenantId` sans session, et un module tenant a des routes sans espace (`/m/:fichier`).
-    expect(s.routes.some((r) => r.acces === 'jeton-ops' && porteUnEspace(r))).toBe(true);
+    expect(s.routes.some((r) => r.acces === 'session-ops' && porteUnEspace(r))).toBe(true);
     expect(s.routes.some((r) => r.acces === 'tenant' && !porteUnEspace(r))).toBe(true);
   });
 

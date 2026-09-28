@@ -78,7 +78,7 @@ import type { LinksRouteDeps } from './http/links';
 import { registerMba } from './http/mba';
 import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
-import { makeRequireAuth, makeRequireRole, makeLimiteParTenant } from './auth/middleware';
+import { makeRequireAuth, makeRequireRole, makeLimiteParTenant, makeRequireOps } from './auth/middleware';
 import type { Guard, PreHandler } from './auth/middleware';
 import { monterAvecEtapeEspace } from './http/scope';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
@@ -244,10 +244,12 @@ export interface ServerDeps {
   account?: AccountRouteDeps;
   /** Profil de l'utilisateur courant (Accueil : « Bonjour {prénom} »), tout compte authentifié. */
   me?: MeRouteDeps;
-  /** Surface d'exploitation cross-tenant `/ops` (lecture seule), protégée par OPS_TOKEN, pas le JWT. */
+  /**
+   * Surface d'exploitation cross-tenant `/ops`, protégée par la session d'exploitation nominative
+   * (`makeRequireOps`), jamais par une session d'espace. Son autorité (secret, second facteur, `opsEmails`) est
+   * celle de `auth` : sans `auth`, `/ops` refuse tout.
+   */
   ops?: OpsRouteDeps;
-  /** Secret de `/ops`. Défaut : config.OPS_TOKEN. Vide -> /ops répond 401. Injectable en test. */
-  opsToken?: string;
   /** Bot builder (workflows), réservé aux admins. */
   workflows?: WorkflowRouteDeps;
   /** Automations : lecture ouverte aux comptes authentifiés, écritures admin-only (garde dans la route). */
@@ -335,8 +337,11 @@ export type ClasseDAcces =
    * adresse devinable ne suffit pas à autoriser un appel.
    */
   | 'signature-service'
-  /** Le secret d'exploitation, autorité séparée du JWT. */
-  | 'jeton-ops'
+  /**
+   * La session d'exploitation nominative (`makeRequireOps`) : une adresse de `OPS_EMAILS`, son second facteur
+   * vérifié, relus à chaque requête. Autorité séparée de la session d'espace, et délibérément cross-espace.
+   */
+  | 'session-ops'
   /** Une clé d'API de client, autorité séparée elle aussi. */
   | 'cle-api';
 
@@ -353,6 +358,8 @@ export interface Gardes {
   readonly admin: Guard;
   /** `admin` ou `manager` : consulter n'est pas décider (écrans de conformité). */
   readonly encadrement: Guard;
+  /** La session d'exploitation, pour les modules `session-ops`. Sans `auth`, elle refuse tout. */
+  readonly ops: PreHandler;
   /** Le second plafond de débit, composé route par route sur les seules routes coûteuses. */
   readonly limiteCouteuse?: PreHandler;
 }
@@ -384,8 +391,8 @@ export interface ModuleMonte {
  * `monterAvecEtapeEspace`, qui ajoute `etapeEspace` à la fin de la chaîne de chacune de ses routes
  * `:tenantId`. La déclaration décide du contrôle, donc un module ajouté demain le reçoit sans y penser, et
  * tout appelant de `monte` (serveur, `tests/scope-tenant.test.ts`, auto-attaque) l'obtient par le même
- * chemin. Les modules `jeton-ops` portent aussi des `:tenantId` et n'y passent pas : leur autorité n'est
- * pas une session.
+ * chemin. Les modules `session-ops` portent aussi des `:tenantId` et n'y passent pas : leur autorité n'est
+ * pas une session d'espace.
  */
 function entree<D>(
   nom: string,
@@ -435,13 +442,13 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
       verifyToken: deps.verifyToken ?? config.META_VERIFY_TOKEN,
       appSecret: deps.appSecret ?? config.META_APP_SECRET,
     })),
-    // Surface /ops : autorité séparée du JWT (secret d'env, comme le webhook). Le guard renvoie 401 si
-    // OPS_TOKEN est vide ou incorrect. Le garde d'usage injecté est la même instance que celle de `/v1` :
-    // l'écran d'exploitation montre exactement ce que les routes ont compté.
-    entree('ops', 'jeton-ops', deps.ops, (app, d) => registerOps(app, { ...d, usage: usageApi }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps)),
+    // Surface /ops : autorité séparée de la session d'espace (`g.ops`, la session d'exploitation nominative). Le
+    // garde d'usage injecté est la même instance que celle de `/v1` : l'écran d'exploitation montre exactement
+    // ce que les routes ont compté.
+    entree('ops', 'session-ops', deps.ops, (app, d, g) => registerOps(app, { ...d, usage: usageApi }, g.ops)),
     // Le réglage du plafond de l'API d'un espace : même autorité que `/ops`, dans un module à part.
-    entree('plafondApi', 'jeton-ops', deps.plafondApi, (app, d) => registerOpsPlafondApi(
-      app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond() }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps,
+    entree('plafondApi', 'session-ops', deps.plafondApi, (app, d, g) => registerOpsPlafondApi(
+      app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond() }, g.ops,
     )),
     // Redirection des liens tracés : publique (un destinataire clique depuis WhatsApp, sans session), montée
     // avant les gardes d'auth.
@@ -621,16 +628,15 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   /**
    * 🔴 Le CORS n'est posé que si une origine est inscrite. Liste blanche, jamais `*` (refusé au chargement
    * dans `src/config.ts`), et aucun `credentials` : la session voyage dans un en-tête `Authorization`, jamais
-   * dans un cookie, donc aucun CSRF possible ; les credentials en créeraient un.
-   * `x-ops-token` est autorisé parce que l'écran d'exploitation le pose : sans lui, la requête préalable du
-   * navigateur échouerait et `/ops` serait muet depuis le front.
+   * dans un cookie, donc aucun CSRF possible ; les credentials en créeraient un. La session d'exploitation
+   * voyage dans le même en-tête `Authorization` : aucun en-tête propre à `/ops` n'est autorisé.
    */
   const origines = deps.corsOrigins?.map((o) => o.trim()).filter((o) => o !== '') ?? [];
   if (origines.length > 0) {
     void app.register(cors, {
       origin: origines,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['authorization', 'content-type', 'x-ops-token'],
+      allowedHeaders: ['authorization', 'content-type'],
       // Les en-têtes de plafond de débit : cross-origin, un navigateur ne laisse JavaScript voir qu'une courte
       // liste d'en-têtes sûrs, dont `retry-after` et `x-ratelimit-*` ne font pas partie. Sans cette liste, la
       // console saurait qu'elle est bloquée, jamais pour combien de temps.
@@ -735,6 +741,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     auth: requireAuth,
     admin: requireAdmin,
     encadrement: requireEncadrement,
+    // Une seule instance pour `/ops` et le réglage du plafond de l'API. Sans `deps.auth`, elle refuse tout.
+    ops: makeRequireOps(deps.auth, deps.surveillanceOps),
     limiteCouteuse,
   };
   for (const m of registre) m.monte(app, gardes);

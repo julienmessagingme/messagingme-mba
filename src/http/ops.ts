@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { makeRequireOps } from '../auth/middleware';
-import type { SurveillanceOps } from '../ops/tentatives';
+import { auteurOps, type PreHandler } from '../auth/middleware';
 import { estUuid } from './scope';
 import { valideGrille, BORNES_GRILLE, type GrillePrix } from '../stats/prix';
 import { journaliser } from '../lib/journal';
@@ -13,9 +12,11 @@ import { messageDe } from '../lib/erreur';
 /**
  * Surface d'exploitation entre espaces, en lecture sauf quelques écritures d'exploitation par nature.
  * 🔴 Aucune de ces écritures (solde, grille de prix, verrou, rejeu, dépôt de jeton, balayage du risque) ne doit
- * être accessible depuis un compte de la console : l'autorité est le jeton d'exploitation, jamais le JWT client
- * (sinon un client se rechargerait ou fixerait ses prix). Chacune exige une note, seule trace de qui et pourquoi,
- * le jeton étant partagé. La session d'observation n'émet qu'un jeton incapable d'écrire.
+ * être accessible depuis un compte de la console : l'autorité est la session d'exploitation nominative
+ * (`makeRequireOps`), jamais une session d'espace (sinon un client se rechargerait ou fixerait ses prix).
+ * Chaque écriture signe sa ligne de journal de l'adresse de son auteur (`par`, lue par `auteurOps`) ; celles qui
+ * l'avaient gardent leur note obligatoire, qui dit POURQUOI. La session d'observation n'émet qu'un jeton incapable
+ * d'écrire, qui porte l'adresse de l'observateur.
  */
 /**
  * Ce qui est arrivé à l'ancien jeton quand un dépôt le remplace (un jeton d'utilisateur système n'expire jamais).
@@ -84,7 +85,7 @@ export interface OpsRouteDeps {
   /** La grille de prix globale. */
   lireGrillePrix(): Promise<GrillePrix>;
   reglages: {
-    /** `par` = la note : le jeton d'exploitation est partagé, c'est la seule trace de qui a changé un prix. */
+    /** `par` = la note signée (`noteSignee`) : qui a changé le prix, et pourquoi, gardés avec la grille. */
     setGrillePrixGlobale(grille: GrillePrix, par: string): Promise<void>;
   };
   /**
@@ -93,9 +94,10 @@ export interface OpsRouteDeps {
    */
   verrouillerEspace(tenantId: string, verrouille: boolean, note: string): Promise<boolean>;
   /**
-   * Ouvre une session d'observation dans l'espace d'un client : rend un jeton de session en lecture seule.
+   * Ouvre une session d'observation dans l'espace d'un client : rend un jeton de session en lecture seule, qui
+   * porte l'adresse de l'observateur.
    */
-  observerTenant(tenantId: string): Promise<{ token: string; tenantName: string } | null>;
+  observerTenant(tenantId: string, observateur: string): Promise<{ token: string; tenantName: string } | null>;
   /** Ré-enfile un job dans sa file d'origine. Doit être la même file que celle des jobs vivants. */
   file: { enqueue(queue: string, data: unknown): Promise<unknown> };
   /** Signal de vie du worker. `null` -> `worker: null` dans le payload. Distinct des files (queues) : prouve que
@@ -106,7 +108,10 @@ export interface OpsRouteDeps {
    * un opérateur qui lirait 0 sur un identifiant mal tapé rechargerait un espace qui n'existe pas.
    */
   soldeAgent(tenantId: string): Promise<{ soldeMicroEur: number; mouvements: unknown[] } | null>;
-  /** Recharge le solde. Rend le nouveau solde, ou `null` si l'espace est inconnu. */
+  /**
+   * Recharge le solde. Rend le nouveau solde, ou `null` si l'espace est inconnu. `note` est signée
+   * (`noteSignee`) : le journal des mouvements garde qui a rechargé.
+   */
   rechargerAgent(tenantId: string, montantMicroEur: number, note: string): Promise<number | null>;
   /**
    * Révoque la clé de modèle d'un espace, chez Vercel puis chez nous. 🔴 À faire avant de supprimer un espace :
@@ -130,15 +135,19 @@ export interface OpsRouteDeps {
    * Réinitialise le second facteur d'une personne, par son adresse : son identité et le nombre d'espaces où elle a
    * un compte, ou `null` si l'adresse est inconnue. 🔴 Seul chemin pour une personne présente dans plusieurs
    * espaces (un admin d'espace n'affaiblit pas un compte chez un autre client). Le câblage écrit
-   * `mfa.reinitialise` dans chacun de ses espaces, sans acteur.
+   * `mfa.reinitialise` dans chacun de ses espaces, avec l'adresse de l'exploitant (`par`) pour acteur.
    */
-  reinitialiserMfa(email: string): Promise<{ identityId: string; espaces: number } | null>;
+  reinitialiserMfa(email: string, par: string): Promise<{ identityId: string; espaces: number } | null>;
 }
 
 /**
- * Routes `/ops`, protégées par `x-ops-token` == `opsToken` (comparaison en temps constant) ; `opsToken` vide =
- * tout répond 401. 🔴 Autorité séparée du JWT d'espace : `req.auth` n'est jamais lu.
+ * La note d'une écriture, signée de son auteur : ce qui se garde en base (grille de prix, mouvement de crédit)
+ * dit ensemble qui et pourquoi, dans les colonnes qui portaient déjà la note.
  */
+export function noteSignee(auteur: string, note: string): string {
+  return `${auteur} : ${note}`;
+}
+
 /** Plafond d'une recharge : 1000 euros. Une virgule mal placée ne doit pas passer en silence, et il
 *  n'existe aucune route de débit pour la rattraper. */
 const MAX_RECHARGE_MICRO_EUR = 1_000_000_000;
@@ -151,17 +160,13 @@ export const MIN_NOTE = 3;
  *  refaire mille fois la même erreur : on borne pour forcer à regarder entre deux lots. */
 const MAX_REJEU = 100;
 
-export function registerOps(
-  app: FastifyInstance,
-  deps: OpsRouteDeps,
-  opsToken: string,
-  /**
-   * Surveillance des refus ; absente, le 401 part sans trace. Optionnelle (les tests montent `/ops` sans canal
-   * d'alerte) : une surveillance manquante ne doit jamais empêcher la garde de fonctionner.
-   */
-  surveillance?: SurveillanceOps,
-): void {
-  const opts = { preHandler: makeRequireOps(opsToken, surveillance) };
+/**
+ * Routes `/ops`, derrière `garde` : la garde d'exploitation (`makeRequireOps`, construite une fois par
+ * `buildServer`). 🔴 Autorité séparée de la session d'espace : `req.auth` n'est jamais lu, l'auteur d'une
+ * écriture se lit par `auteurOps`.
+ */
+export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: PreHandler): void {
+  const opts = { preHandler: garde };
 
   /**
    * L'usage de l'API publique, agrégé par minute : qui consomme quoi, pour arbitrer un jour un seuil sur des
@@ -183,11 +188,11 @@ export function registerOps(
     const corps = (req.body ?? {}) as { verrouille?: unknown; note?: unknown };
     if (typeof corps.verrouille !== 'boolean') return reply.code(400).send({ error: 'verrouille (booléen) requis' });
     const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
-    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui verrouille, et pourquoi' });
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi ce verrou' });
 
     const fait = await deps.verrouillerEspace(tenantId, corps.verrouille, note);
     if (!fait) return reply.code(404).send({ error: 'espace inconnu' });
-    journaliser('warn', 'ops_verrou_espace', { tenantId, verrouille: corps.verrouille, note, at: new Date().toISOString() });
+    journaliser('warn', 'ops_verrou_espace', { tenantId, verrouille: corps.verrouille, par: auteurOps(req), note, at: new Date().toISOString() });
     return reply.code(200).send({ tenantId, verrouille: corps.verrouille });
   });
 
@@ -211,10 +216,6 @@ export function registerOps(
     return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe, poolInstantane, attentesPool, latences });
   });
 
-  /**
-   * Entrer dans l'espace d'un client pour voir ce qu'il voit (`/ops/observe`), par le jeton d'exploitation : jeton
-   * rendu en lecture seule, qui ne marque rien comme lu. 🔴 Invisible côté client, journalisé côté exploitation.
-   */
   /**
    * Les jobs morts : les voir, puis décider de les rejouer. Un job qui épuise ses rejeux part en file d'échec, que
    * rien ne consomme ; rejouer est un geste d'exploitation, qui suppose la cause corrigée. La lecture d'abord :
@@ -258,9 +259,14 @@ export function registerOps(
       }
     }
     const oublies = await deps.exploitation.oublierJobsMorts(rejoues);
+    journaliser('warn', 'ops_dlq_rejeu', { queue, rejoues: rejoues.length, oublies, par: auteurOps(req), at: new Date().toISOString() });
     return reply.code(200).send({ rejoues: rejoues.length, oublies });
   });
 
+  /**
+   * Entrer dans l'espace d'un client pour voir ce qu'il voit : jeton rendu en lecture seule, qui ne marque rien
+   * comme lu et porte l'adresse de l'observateur. 🔴 Invisible côté client, journalisé côté exploitation.
+   */
   app.post('/ops/observe', opts, async (req, reply) => {
     const tenantId = (req.body as { tenantId?: unknown } | null)?.tenantId;
     if (typeof tenantId !== 'string' || tenantId.trim() === '') {
@@ -269,10 +275,11 @@ export function registerOps(
     // Même raison que sur `/ops/credits` : un identifiant mal formé fait lever Postgres (`22P02`) au lieu de
     // rendre zéro ligne, donc un 500.
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
-    const r = await deps.observerTenant(tenantId);
+    const par = auteurOps(req);
+    const r = await deps.observerTenant(tenantId, par);
     if (!r) return reply.code(404).send({ error: 'espace inconnu' });
     // eslint-disable-next-line no-console
-    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_observation', tenantId, tenantName: r.tenantName, at: new Date().toISOString() }));
+    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_observation', tenantId, tenantName: r.tenantName, par, at: new Date().toISOString() }));
     return reply.code(200).send({ token: r.token, tenantId, tenantName: r.tenantName });
   });
 
@@ -287,8 +294,8 @@ export function registerOps(
   });
 
   /**
-   * Révoquer la clé de modèle d'un espace. `DELETE` : c'est une suppression. Journalisé en `warn` : le jeton est
-   * partagé, cette ligne est la seule trace d'un geste irréversible.
+   * Révoquer la clé de modèle d'un espace. `DELETE` : c'est une suppression. Journalisé en `warn`, avec son
+   * auteur : cette ligne est la seule trace d'un geste irréversible.
    */
   app.delete('/ops/cle-modele/:tenantId', opts, async (req, reply) => {
     if (!deps.revoquerCleModele) return reply.code(503).send({ error: 'revocation non disponible sur cette instance' });
@@ -297,7 +304,7 @@ export function registerOps(
     try {
       const revoquee = await deps.revoquerCleModele(tenantId);
       // eslint-disable-next-line no-console
-      console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_revoque_cle_modele', tenantId, revoquee, at: new Date().toISOString() }));
+      console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_revoque_cle_modele', tenantId, revoquee, par: auteurOps(req), at: new Date().toISOString() }));
       return reply.code(200).send({ tenantId, revoquee });
     } catch (err) {
       // 4xx et jamais 5xx : Cloudflare remplacerait le corps, et l'opérateur doit savoir que la clé est toujours là
@@ -316,13 +323,14 @@ export function registerOps(
       return reply.code(400).send({ error: `montantMicroEur requis, entre 1 et ${MAX_RECHARGE_MICRO_EUR} (soit 1000 euros)` });
     }
     const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
-    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui recharge, et pourquoi' });
-    const solde = await deps.rechargerAgent(tenantId, montant, note);
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi cette recharge' });
+    const par = auteurOps(req);
+    const solde = await deps.rechargerAgent(tenantId, montant, noteSignee(par, note));
     // Espace inconnu : sans cette garde, la clé étrangère lèverait et l'identifiant mal tapé rendrait un 500
     // remplacé par la page d'erreur de Cloudflare, sur la seule route qui écrit de l'argent.
     if (solde === null) return reply.code(404).send({ error: 'espace inconnu' });
     // eslint-disable-next-line no-console
-    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_recharge_agent', tenantId, montantMicroEur: montant, soldeMicroEur: solde, at: new Date().toISOString() }));
+    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_recharge_agent', tenantId, montantMicroEur: montant, soldeMicroEur: solde, par, note, at: new Date().toISOString() }));
     return reply.code(200).send({ tenantId, soldeMicroEur: solde });
   });
 
@@ -343,7 +351,7 @@ export function registerOps(
     // Note obligatoire, comme les autres écritures de `/ops` : ce dépôt remplace la connexion publicitaire d'un
     // client.
     const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
-    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui dépose ce jeton, et pourquoi' });
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi ce dépôt' });
     let depose: ConnexionPubDeposee;
     try {
       depose = await deps.deposerJetonPub(tenantId, jeton, comptePubId, pageId);
@@ -353,7 +361,7 @@ export function registerOps(
     // `journaliser`, pas un `console.log` recopié : le helper envoie un `warn` sur stderr.
     journaliser('warn', 'ops_jeton_pub_depose', {
       tenantId, comptePubId: depose.comptePubId, pageId: depose.pageId,
-      ancienRevoque: depose.ancienRevoque, note, at: new Date().toISOString(),
+      ancienRevoque: depose.ancienRevoque, par: auteurOps(req), note, at: new Date().toISOString(),
     });
     return reply.code(200).send({ tenantId, connexion: depose });
   });
@@ -370,10 +378,10 @@ export function registerOps(
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
     const corps = (req.body ?? {}) as { note?: unknown };
     const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
-    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui lance le balayage, et pourquoi' });
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi ce balayage' });
     const bilan = await deps.balayerRisque(tenantId);
     if (bilan === null) return reply.code(404).send({ error: 'espace inconnu' });
-    journaliser('warn', 'ops_balayage_risque', { ...bilan, note, at: new Date().toISOString() });
+    journaliser('warn', 'ops_balayage_risque', { ...bilan, par: auteurOps(req), note, at: new Date().toISOString() });
     return reply.code(200).send({ bilan });
   });
 
@@ -388,35 +396,37 @@ export function registerOps(
   /**
    * Changer la grille. Les six champs d'un coup, et la validation refuse au lieu de corriger (ramener une valeur
    * dans les bornes enregistrerait un prix que personne n'a choisi) ; la réponse nomme le champ fautif. Les bornes
-   * sont celles des CHECK en base (`valideGrille`, `BORNES_GRILLE`). 🔴 Note obligatoire : seule trace de qui a
-   * changé un prix, le jeton étant partagé.
+   * sont celles des CHECK en base (`valideGrille`, `BORNES_GRILLE`). 🔴 Note obligatoire : elle dit pourquoi, et
+   * part signée de son auteur dans `grille_prix.modifie_par`.
    */
   app.patch('/ops/prix', opts, async (req, reply) => {
     const corps = (req.body ?? {}) as { note?: unknown };
     const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
-    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui change le prix, et pourquoi' });
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi ce changement de prix' });
     const v = valideGrille(req.body);
     if (!v.ok) return reply.code(400).send({ error: `champ invalide : ${v.champ}`, champ: v.champ, bornes: BORNES_GRILLE });
-    await deps.reglages.setGrillePrixGlobale(v.grille, note);
+    const par = auteurOps(req);
+    await deps.reglages.setGrillePrixGlobale(v.grille, noteSignee(par, note));
     // eslint-disable-next-line no-console
-    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_grille_prix', prix: v.grille, note, at: new Date().toISOString() }));
+    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_grille_prix', prix: v.grille, par, note, at: new Date().toISOString() }));
     return reply.code(200).send({ prix: v.grille });
   });
 
   /**
    * Réinitialiser le second facteur d'une personne qui a perdu son téléphone et ses codes. L'adresse voyage dans
    * le corps, jamais dans l'adresse de la route (journaux d'accès). Note obligatoire ; la ligne de journal porte
-   * l'identité, pas l'adresse.
+   * l'identité de la personne, pas son adresse, et l'adresse de l'exploitant qui a agi (`par`).
    */
   app.post('/ops/mfa/reinitialiser', opts, async (req, reply) => {
     const corps = (req.body ?? {}) as { email?: unknown; note?: unknown };
     const email = typeof corps.email === 'string' ? corps.email.trim().toLowerCase() : '';
     if (!/^[^\s@]+@[^\s@]+$/.test(email)) return reply.code(400).send({ error: 'email requis' });
     const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
-    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui réinitialise, et pourquoi' });
-    const fait = await deps.reinitialiserMfa(email);
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi cette réinitialisation' });
+    const par = auteurOps(req);
+    const fait = await deps.reinitialiserMfa(email, par);
     if (!fait) return reply.code(404).send({ error: 'adresse inconnue' });
-    journaliser('warn', 'ops_mfa_reinitialise', { identityId: fait.identityId, espaces: fait.espaces, note, at: new Date().toISOString() });
+    journaliser('warn', 'ops_mfa_reinitialise', { identityId: fait.identityId, espaces: fait.espaces, par, note, at: new Date().toISOString() });
     return reply.code(200).send({ reinitialise: true, espaces: fait.espaces });
   });
 }

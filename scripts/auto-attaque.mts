@@ -53,7 +53,7 @@ import { buildServer, modulesDeRoutes } from '../src/server';
 import type { ClasseDAcces, Gardes, ServerDeps } from '../src/server';
 import { FakeQueue } from '../tests/fake-queue';
 import { RateLimiter } from '../src/auth/rate-limit';
-import { signSession } from '../src/auth/token';
+import { signSession, signSessionOps } from '../src/auth/token';
 import { API_KEY_PREFIX } from '../src/auth/api-key-store.pg';
 import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
@@ -160,12 +160,33 @@ const inconnuSaufLimiteurs = (nom: string, limiteurs: readonly string[]): any =>
  * et la sonde 6 la trouve désormais.
  */
 const SECRET = randomBytes(32).toString('hex');
+/** Ce que présentait l'ancien en-tête `x-ops-token` : il ne doit plus rien ouvrir (sonde 5). */
 const JETON_OPS = randomBytes(32).toString('hex');
+/** La seule adresse de la liste d'exploitation du serveur en mémoire. Le magasin du second facteur ne la connaît pas. */
+const ADRESSE_SONDE_OPS = 'sonde-ops@exemple.test';
 const SECRET_META = randomBytes(32).toString('hex');
 const JETON_VERIFICATION_META = randomBytes(16).toString('hex');
 const SECRET_SERVICE = randomBytes(32).toString('hex');
 
 const aucunCompte: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
+
+/**
+ * Le magasin du second facteur du serveur en mémoire : l'identité lue EXISTE, son adresse est dans la liste
+ * d'exploitation, et elle n'a AUCUN facteur actif. Une session d'exploitation bien signée ne peut donc tomber que
+ * sur la relecture du facteur à chaque requête : c'est ce que la sonde 5 éprouve. Tout le reste répond « inconnu ».
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const magasinFacteurSonde: any = new Proxy(inconnu('auth.mfa'), {
+  get: (cible, p) => (p === 'lire'
+    ? async (identityId: string) => {
+      interrogations.set('auth.mfa', (interrogations.get('auth.mfa') ?? 0) + 1);
+      return {
+        identityId, email: ADRESSE_SONDE_OPS, secret: null, activeLe: null, dernierPas: null, secretEnAttente: null,
+        codesSecoursRestants: 0, obligatoire: false, bloqueJusqua: null,
+      };
+    }
+    : Reflect.get(cible, p)),
+});
 
 /**
  * 🔴 LES MODULES DONT L'AUTORITÉ VIT DANS LEURS DÉPENDANCES, un par un, avec leur fausse autorité.
@@ -182,16 +203,19 @@ const aucunCompte: UserAuthStore = { findIdentity: async (): Promise<EmailIdenti
 const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   // Signature Meta : l'autorité est `appSecret` (posé dans `dependancesDuRegistre`), la file n'est jamais atteinte.
   receiver: new FakeQueue(),
-  // Jeton d'exploitation : l'autorité est `opsToken`, vérifiée avant toute dépendance.
+  // Session d'exploitation : l'autorité vit dans `auth` (secret, liste, second facteur), vérifiée avant toute
+  // dépendance du module.
   ops: inconnu('ops'),
-  // Le réglage du plafond de l'API d'un espace : même jeton, module à part (migration 0181). Aucun espace n'existe.
+  // Le réglage du plafond de l'API d'un espace : même session, module à part (migration 0181). Aucun espace n'existe.
   plafondApi: inconnu('plafondApi'),
   // Code dans l'adresse : aucun code ne se résout.
   links: inconnu('links'),
   webhookEntrant: inconnuSaufLimiteurs('webhookEntrant', ['limiter', 'budgetInconnus']),
   rcsCallback: inconnu('rcsCallback'),
   // Avant toute session : aucun compte n'existe, et le secret de session est celui des jetons fabriqués ici.
-  auth: { users: aucunCompte, secret: SECRET },
+  // La liste d'exploitation nomme une adresse dont l'identité n'a aucun facteur actif : une session
+  // d'exploitation bien signée doit quand même tomber, sur la relecture du facteur à chaque requête.
+  auth: { users: aucunCompte, secret: SECRET, opsEmails: [ADRESSE_SONDE_OPS], mfa: magasinFacteurSonde },
   // Signature entre nos services : un VRAI secret, sans quoi la comparaison n'est jamais exercée.
   hubspotEvents: {
     secret: SECRET_SERVICE,
@@ -232,7 +256,6 @@ function clesDuRegistre(): string[] {
 function dependancesDuRegistre(): Record<string, unknown> {
   const deps: Record<string, unknown> = {
     corsOrigins: ['https://engageme.messagingme.app'],
-    opsToken: JETON_OPS,
     appSecret: SECRET_META,
     verifyToken: JETON_VERIFICATION_META,
     // Plafonds larges : les sondes d'autorisation ne doivent pas être refusées pour cause de débit. La sonde
@@ -291,7 +314,7 @@ function dependancesDuRegistre(): Record<string, unknown> {
  */
 async function classesDesRoutes(deps: Record<string, unknown>): Promise<Map<string, { classe: ClasseDAcces; module: string }>> {
   const passe: PreHandler = async () => undefined;
-  const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe] };
+  const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe], ops: passe };
   const classes = new Map<string, { classe: ClasseDAcces; module: string }>();
   for (const m of modulesDeRoutes(deps as unknown as ServerDeps, bidon())) {
     const seul = Fastify({ logger: false });
@@ -342,7 +365,7 @@ function inventaire(app: FastifyInstance): Route[] {
  *
  * ⚠️ N'Y FIGURENT QUE LES EXCEPTIONS À LA CLASSE DE LEUR MODULE. Une route dont la CLASSE place l'autorité
  * dans l'appel lui-même (`code-url`, `signature-meta`, `signature-service`) n'est pas ici : elle est écartée
- * de la sonde 1 par sa classe, et attaquée par la sonde de sa classe. Une route `jeton-ops` ou `cle-api`
+ * de la sonde 1 par sa classe, et attaquée par la sonde de sa classe. Une route `session-ops` ou `cle-api`
  * n'est pas ici non plus : sans jeton ni clé, elle doit répondre 401 comme les autres, et c'est ce qui lui
  * manquait quand elle était rangée parmi les « ouvertes ». Restent les routes sans module (`/live`,
  * `/health`) et les routes publiques d'un module qui ne l'est pas (`/m/` dans les visuels RCS, les points
@@ -498,7 +521,7 @@ async function main(): Promise<void> {
 
   // --- Sonde 1 : aucune authentification ---------------------------------------------------------------
   // La plus bête et la plus payante : une route montée sans garde répond 200 à qui passe. Elle vaut pour
-  // toutes les classes qui attendent une autorisation PRÉSENTÉE (session, jeton d'exploitation, clé d'API).
+  // toutes les classes qui attendent une autorisation PRÉSENTÉE (session, session d'exploitation, clé d'API).
   for (const r of gardees.filter(jouables)) {
     for (const methode of r.methodes) {
       const res = await envoyer({ methode, chemin: concretiser(r.chemin, tenantA) });
@@ -557,19 +580,50 @@ async function main(): Promise<void> {
     }
   }
 
-  // --- Sonde 5 : /ops avec une session de client --------------------------------------------------------
-  // Sans jeton du tout, c'est la sonde 1. Ici, la preuve que l'autorité est SÉPARÉE : un admin d'espace
-  // n'entre pas. Choisies par leur classe, pas par leur préfixe.
-  for (const r of deClasse('jeton-ops').filter(jouables)) {
-    for (const methode of r.methodes) {
-      const res = await envoyer({ methode, chemin: concretiser(r.chemin, tenantA), entetes: bearer(jetonAdmin) });
-      verifier(
-        '5. /ops avec un jeton de CLIENT',
-        `${methode} ${r.chemin}`,
-        res.statut === 401,
-        '401 (autorité séparée : un admin de tenant n’entre pas)',
-        String(res.statut),
-      );
+  // --- Sonde 5 : /ops avec autre chose qu'une session d'exploitation valide -----------------------------
+  // Sans rien, c'est la sonde 1. Ici, la preuve que l'autorité est SÉPARÉE et NOMINATIVE : un admin d'espace
+  // n'entre pas, l'ancien en-tête `x-ops-token` n'ouvre plus rien, une session d'exploitation signée ailleurs
+  // non plus, et une session bien signée tombe quand même si le second facteur de son identité n'est pas
+  // actif en base : c'est la relecture à chaque requête. Choisies par leur classe, pas par leur préfixe.
+  {
+    const sessionOps = (secret: string) => signSessionOps({ identityId: 'i-sonde', email: ADRESSE_SONDE_OPS, facteur: 'totp' }, secret);
+    const opsForgee = LOCAL ? await sessionOps(randomBytes(32).toString('hex')) : '';
+    const opsSansFacteur = LOCAL ? await sessionOps(SECRET) : '';
+    const avant = interrogations.get('auth.mfa') ?? 0;
+    for (const r of deClasse('session-ops').filter(jouables)) {
+      for (const methode of r.methodes) {
+        const chemin = concretiser(r.chemin, tenantA);
+        const gestes: Array<[string, Record<string, string>]> = [
+          ['un jeton de CLIENT', bearer(jetonAdmin)],
+          ['l’ancien en-tête x-ops-token', { 'x-ops-token': JETON_OPS }],
+          ...(LOCAL ? [
+            ['une session d’exploitation signée AILLEURS', bearer(opsForgee)],
+            ['une session d’exploitation dont le facteur n’est pas actif', bearer(opsSansFacteur)],
+          ] as Array<[string, Record<string, string>]> : []),
+        ];
+        for (const [geste, entetes] of gestes) {
+          const res = await envoyer({ methode, chemin, entetes });
+          verifier(`5. /ops avec ${geste}`, `${methode} ${r.chemin}`, res.statut === 401, '401', String(res.statut));
+        }
+      }
+    }
+    // La dernière sonde n'a de sens que si elle a atteint la relecture du facteur : un refus rendu plus tôt
+    // (signature, liste) ne prouverait rien de la relecture à chaque requête.
+    if (LOCAL) {
+      const n = (interrogations.get('auth.mfa') ?? 0) - avant;
+      verifier('5. /ops : la session bien signée atteint la relecture du facteur', 'auth.mfa', n > 0, 'au moins une relecture', String(n));
+    }
+  }
+
+  // --- Sonde 5 bis : une session d'exploitation sur une route d'espace ---------------------------------
+  // L'autre sens de la séparation : la session la plus puissante du produit n'ouvre AUCUNE route d'espace.
+  if (LOCAL) {
+    const opsBienSignee = await signSessionOps({ identityId: 'i-sonde', email: ADRESSE_SONDE_OPS, facteur: 'totp' }, SECRET);
+    for (const r of routesTenant) {
+      for (const methode of r.methodes) {
+        const res = await envoyer({ methode, chemin: concretiser(r.chemin, tenantA), entetes: bearer(opsBienSignee) });
+        verifier('5 bis. route d’espace avec une session d’EXPLOITATION', `${methode} ${r.chemin}`, res.statut === 401, '401', String(res.statut));
+      }
     }
   }
 

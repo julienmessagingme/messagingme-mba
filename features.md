@@ -27,6 +27,10 @@ webhook Meta, MCP). Rien de ce qui a été envoyé à un client ne cesse de fonc
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton
 présenté n'est jamais écrit nulle part.
 
+✅ **`/ops` est nominatif, avec double authentification** (2026-09-28). Plus de jeton partagé : seules les
+adresses inscrites côté serveur entrent, avec leur compte habituel et leur code d'authentification, et chaque
+geste d'exploitation porte l'adresse de son auteur (détail dans « Exploitation `/ops` »).
+
 `mba.messagingme.app` est **en prod LIVE** (`DRY_RUN=false`, numéro Zadarma réel). Console de gestion
 WhatsApp/Meta, 3 rôles : **admin** (tout), **manager** et **agent** (inbox seule).
 ⚠️ **Manager est un STATUT, pas encore des droits** (2026-08-20) : il s'attribue, mais il donne exactement les
@@ -256,9 +260,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   facture et ne changent rien chez Meta. Une valeur hors bornes est **refusée en nommant le champ**, jamais
   ramenée en silence dans les bornes : un prix corrigé à l'insu de celui qui le saisit serait pire qu'un
   refus, puisqu'on en tire un budget.
-  🔴 **Chaque changement exige une phrase** (« pourquoi ce changement ? ») : le jeton d'exploitation est
-  partagé, donc il n'y a aucune identité d'opérateur à enregistrer, et cette phrase est la seule trace de qui
-  a changé un prix. Elle est conservée avec la grille et journalisée.
+  🔴 **Chaque changement exige une phrase** (« pourquoi ce changement ? ») : elle est conservée avec la
+  grille, signée de l'adresse de l'exploitant qui l'a posée, et journalisée avec elle.
   ⚠️ **Ce que ce changement retire, et il faut le dire** : un prix négocié POUR UN CLIENT n'est plus
   possible. La raison inverse existait et était écrite (« un grand compte ne se facture pas comme un
   petit ») ; elle a été pesée contre celle-ci et elle a perdu. Le jour où un grand compte demandera son
@@ -2298,10 +2301,23 @@ boîte par sous-menu.
 
 ## Exploitation `/ops` (interne, hors console client)
 
-- ✅ **Console d'exploitation cross-tenant** `/ops` : vue **lecture seule** de TOUS les clients (protégée par
-  un jeton d'exploitation saisi une fois, distinct des comptes clients). Par client : MBA on/off, numéro +
+- ✅ **Console d'exploitation cross-tenant** `/ops` : vue de TOUS les clients. Par client : MBA on/off, numéro +
   qualité, nb d'utilisateurs / contacts / messages / templates, dernier envoi. **Signal de charge pg-boss**
   (files en attente / actifs / échoués) pour décider d'une bascule d'infra. Messages échangés/jour (global).
+- ✅ **Un accès nominatif, avec double authentification** (2026-09-28). N'entrent que les adresses inscrites
+  côté serveur (`OPS_EMAILS`), avec leur compte habituel (mot de passe ou Google) PUIS leur code
+  d'authentification ; une adresse inscrite sans code en pose un à sa première connexion, comme un
+  administrateur. La session dure 12 heures et ne vaut QUE pour `/ops` (elle n'ouvre aucun espace client, et
+  une session d'espace n'ouvre pas `/ops`). Retirer une adresse de la liste (puis redémarrer l'API), ou retirer
+  son code, coupe l'accès sans attendre la fin de la session. Une adresse de la liste ne peut pas être créée par
+  l'inscription libre : son compte naît d'une invitation ou de Google. Il n'y a plus de jeton partagé, et plus
+  d'accès de secours : si la connexion casse, on répare côté serveur.
+- ✅ **Chaque geste d'exploitation porte l'adresse de son auteur** : verrou, recharge, grille de prix, plafond
+  de l'API, balayage du risque, dépôt d'un jeton publicitaire, révocation d'une clé de modèle, rejeu des jobs
+  morts, réinitialisation d'un second facteur (l'espace concerné lit l'adresse de l'exploitant dans son
+  journal), et l'observation d'un espace (la session d'observation elle-même porte l'adresse de
+  l'observateur). La note reste demandée là où elle l'était : elle dit POURQUOI, l'adresse dit QUI.
+- ✅ **Un lien « Exploitation » dans le menu du compte**, visible seulement pour une adresse de la liste.
 - ✅ **Signal de vie du worker** (le process qui envoie réellement les messages) : « Actif », « Silencieux » ou
   « Aucun signal », affiché à côté du signal de charge des files. Distingue « les files ne se vident pas » de « le
   process est mort », ce que la seule charge des files ne dit pas.

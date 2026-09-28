@@ -3,39 +3,45 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { SignJWT } from 'jose';
 import { signSession, verifySession } from '../src/auth/token';
-import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import { inboxDepInerte, inboxInerte, opsInerte } from './routes-inertes';
+import { accesOps, ADRESSE_OPS } from './acces-ops';
+import { capturerJournal } from './journal';
 
 /**
  * Session d'OBSERVATION : entrer dans l'espace d'un client depuis la surface d'exploitation, pour voir ce
  * qu'il voit, sans rien pouvoir modifier.
  *
  * Ces tests portent sur la SÉCURITÉ, et c'est tout leur objet :
- *   - la porte ne s'ouvre qu'avec le jeton d'exploitation, jamais depuis un compte de la console ;
+ *   - la porte ne s'ouvre qu'avec la session d'exploitation, jamais depuis un compte de la console ;
  *   - le jeton émis ne peut RIEN écrire, y compris sur une route ajoutée demain ;
- *   - il n'est pas révoqué par l'absence de compte dans l'espace visité.
+ *   - il n'est pas révoqué par l'absence de compte dans l'espace visité ;
+ *   - il porte l'adresse de l'exploitant qui observe, et la trace aussi.
  */
 const SECRET = 'test-secret';
-const OPS = 'ops-token-test';
+const acces = accesOps({ auth: { secret: SECRET } });
+let OPS = '';
+beforeAll(async () => {
+  const s = buildServer({ queue: new FakeQueue(), auth: acces.auth });
+  OPS = await acces.jeton(s);
+  await s.close();
+});
 /** Un identifiant qui a la FORME d un uuid : il part tel quel dans un `where id = $1` sur une colonne
  *  `uuid`, et une valeur mal formee y fait LEVER Postgres au lieu de rendre zero ligne. */
 const CONNU = '11111111-1111-4111-8111-111111111111';
 const INCONNU = '22222222-2222-4222-8222-222222222222';
-const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
 function app(over: Record<string, unknown> = {}) {
   return buildServer({
     queue: new FakeQueue(),
-    auth: { users: noUsers, secret: SECRET },
-    opsToken: OPS,
+    auth: acces.auth,
     ops: {
       ...opsInerte,
       getTenantOverview: async () => [],
       getGlobalDaily: async () => [],
       getQueueLoad: async () => [],
-      observerTenant: async (tenantId: string) =>
+      observerTenant: async (tenantId: string, observateur: string) =>
         tenantId === CONNU
-          ? { token: await signSession({ userId: 'ops-observation', tenantId, role: 'admin', impersonated: true }, SECRET, '1h'), tenantName: 'Client Démo' }
+          ? { token: await signSession({ userId: 'ops-observation', tenantId, role: 'admin', impersonated: true, observateur }, SECRET, '1h'), tenantName: 'Client Démo' }
           : null,
       ...over,
     },
@@ -58,22 +64,25 @@ function app(over: Record<string, unknown> = {}) {
   } as never);
 }
 
-const avecOps = (token: string) => ({ headers: { 'content-type': 'application/json', 'x-ops-token': token } });
+const avecOps = (token: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
 describe('POST /ops/observe : ouvrir la porte', () => {
-  it('rend un jeton pour un espace connu', async () => {
+  it('rend un jeton pour un espace connu, qui porte l’adresse de l’observateur, et la trace aussi', async () => {
     const a = app();
-    const res = await a.inject({ method: 'POST', url: '/ops/observe', ...avecOps(OPS), payload: { tenantId: CONNU } });
+    const { resultat: res, lignes } = await capturerJournal(() =>
+      a.inject({ method: 'POST', url: '/ops/observe', ...avecOps(OPS), payload: { tenantId: CONNU } }));
     expect(res.statusCode).toBe(200);
     const body = res.json<{ token: string; tenantName: string }>();
     expect(body.tenantName).toBe('Client Démo');
-    // Le jeton porte bien la marque d'emprunt : c'est elle qui déclenche la lecture seule.
+    // Le jeton porte bien la marque d'emprunt : c'est elle qui déclenche la lecture seule. Et l'adresse de
+    // l'exploitant, lue dans SA session, jamais dans le corps de la requête.
     const session = await verifySession(body.token, SECRET);
-    expect(session).toMatchObject({ tenantId: CONNU, impersonated: true });
+    expect(session).toMatchObject({ tenantId: CONNU, impersonated: true, observateur: ADRESSE_OPS });
+    expect(lignes.find((l) => l.msg === 'ops_observation')).toMatchObject({ tenantId: CONNU, par: ADRESSE_OPS });
     await a.close();
   });
 
-  it('🔴 SANS le jeton d’exploitation, la porte reste fermée', async () => {
+  it('🔴 SANS la session d’exploitation, la porte reste fermée', async () => {
     // La seule autorité qui ouvre cette porte est celle de l'exploitation, distincte du JWT client. Un admin
     // de la console, si complet soit-il, ne doit pas pouvoir entrer chez un autre client.
     const a = app();

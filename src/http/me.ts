@@ -5,6 +5,11 @@ import { espaceVerifie } from './scope';
 /** Profil de l'utilisateur courant (dérivé de req.auth.userId). Sert au « Bonjour {prénom} » de l'Accueil. */
 export interface MeRouteDeps {
   getById(userId: string): Promise<{ email: string; name: string | null; role: string } | null>;
+  /**
+   * L'adresse est-elle dans `OPS_EMAILS` ? Sert au seul lien « Exploitation » du menu du compte : un confort
+   * d'affichage, jamais une autorisation (`/ops` a sa propre garde). Absent : aucun lien.
+   */
+  estExploitant?(email: string): boolean;
 }
 
 export function registerMe(app: FastifyInstance, deps: MeRouteDeps, garde: Guard): void {
@@ -21,6 +26,7 @@ export function registerMe(app: FastifyInstance, deps: MeRouteDeps, garde: Guard
     if (req.auth?.impersonated === true) return reply.code(200).send({ email: '', name: null, role: req.auth.role });
     const u = await deps.getById(userId);
     if (!u) return reply.code(404).send({ error: 'utilisateur inconnu' });
-    return reply.code(200).send({ email: u.email, name: u.name, role: u.role });
+    // `exploitation` n'est posé que vrai : la personne elle-même apprend qu'elle a l'accès, personne d'autre.
+    return reply.code(200).send({ email: u.email, name: u.name, role: u.role, ...(deps.estExploitant?.(u.email) ? { exploitation: true } : {}) });
   });
 }

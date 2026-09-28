@@ -63,21 +63,22 @@ describe('CORS : la liste blanche', () => {
     await app.close();
   });
 
-  it('la requête préalable autorise les en-têtes que le front pose vraiment', async () => {
-    // `authorization` porte la session, `x-ops-token` l'autorité d'exploitation. En oublier un rendrait tout
-    // un écran muet depuis le nouveau front, avec une erreur de navigateur difficile à relier à sa cause.
+  it('la requête préalable autorise les en-têtes que le front pose vraiment, et eux seuls', async () => {
+    // `authorization` porte la session, celle d'un espace comme celle de l'exploitation. L'oublier rendrait
+    // tout un écran muet depuis le nouveau front, avec une erreur de navigateur difficile à relier à sa cause.
+    // L'ancien `x-ops-token` n'a plus de lecteur : l'autoriser encore laisserait croire qu'il ouvre quelque chose.
     const app = buildServer({ ...base, corsOrigins: ['https://engageme.messagingme.app'] });
     const res = await app.inject({
       method: 'OPTIONS', url: '/live',
       headers: {
         origin: 'https://engageme.messagingme.app',
         'access-control-request-method': 'POST',
-        'access-control-request-headers': 'authorization,x-ops-token',
+        'access-control-request-headers': 'authorization,content-type',
       },
     });
     const autorises = String(res.headers['access-control-allow-headers'] ?? '').toLowerCase();
     expect(autorises).toContain('authorization');
-    expect(autorises).toContain('x-ops-token');
+    expect(autorises).not.toContain('x-ops-token');
     expect(String(res.headers['access-control-allow-methods'] ?? '')).toContain('PATCH');
     await app.close();
   });

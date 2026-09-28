@@ -21,6 +21,7 @@ import { journaliser } from './lib/journal';
 import { ResendClient } from './support/resend';
 import { PgUserAuthStore } from './auth/store';
 import { PgMfaStore } from './auth/mfa-store.pg';
+import { estAdresseOps } from './auth/middleware';
 import type { ActionMfa } from './auth/mfa-routes';
 import { PgUserStore } from './user/store.pg';
 import { PgAuthTokenStore } from './auth/token-store.pg';
@@ -199,20 +200,25 @@ async function main(): Promise<void> {
    */
   const mfaStore = new PgMfaStore(pool, config.ENCRYPTION_KEY);
   /**
+   * Les adresses de l'exploitation : elles seules ouvrent `/ops`, avec leur second facteur. Vide = fermé. Une
+   * seule liste pour la connexion, la garde de `/ops` (toutes deux par `auth`) et le lien du menu (`me`).
+   */
+  const opsEmails = config.OPS_EMAILS.split(',').map((a) => a.trim()).filter((a) => a !== '');
+  /**
    * Une ligne d'audit par espace de l'identité : le facteur est celui de la personne, et chacun de ses espaces
-   * doit pouvoir lire qu'il a été posé, utilisé ou retiré. L'acteur est son compte dans cet espace ; `null`
-   * quand c'est l'exploitation qui agit (jeton partagé, personne à nommer).
+   * doit pouvoir lire qu'il a été posé, utilisé ou retiré. L'acteur est son compte dans cet espace, ou, quand
+   * c'est l'exploitation qui agit, l'adresse de l'exploitant (`exploitant`), qui n'a pas de compte ici.
    */
   const auditParIdentite = async (
     identityId: string,
     action: ActionMfa | 'mfa.reinitialise',
     detail: Record<string, unknown> = {},
-    parLaPersonne = true,
+    exploitant?: string,
   ): Promise<void> => {
     for (const c of await mfaStore.comptes(identityId)) {
       await auditStore.record(
         c.tenantId,
-        parLaPersonne ? { userId: c.userId, email: c.email } : { userId: null, email: null },
+        exploitant === undefined ? { userId: c.userId, email: c.email } : { userId: null, email: exploitant },
         action,
         { kind: 'user', id: c.userId },
         detail,
@@ -454,9 +460,9 @@ async function main(): Promise<void> {
   const app = buildServer({
     /**
      * 🔴 Surveillance de `/ops`, qui ouvre la lecture de toutes les conversations de tous les clients alors
-     * que Fastify tourne sans journal d'accès. L'accès n'est pas durci (une liste blanche d'IP couperait dès
-     * un changement d'IP), il est rendu visible. `sendTelegram` est un no-op sans Telegram : la surveillance
-     * journalise alors, sans alerter.
+     * que Fastify tourne sans journal d'accès. L'accès est nominatif et exige le second facteur ; ses refus
+     * restent rendus visibles. `sendTelegram` est un no-op sans Telegram : la surveillance journalise alors,
+     * sans alerter.
      */
     surveillanceOps: surveillerOps({
       alerter: (m) => { void sendTelegram(`[mba-api] ${m}`); },
@@ -494,6 +500,7 @@ async function main(): Promise<void> {
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
       // Le second facteur : obligatoire pour les admins, à la connexion, à l'inscription et à l'invitation.
       mfa: mfaStore,
+      opsEmails,
       auditMfa: async (identityId, action, detail) => { await auditParIdentite(identityId, action, detail); },
     },
     import: {
@@ -1534,7 +1541,7 @@ async function main(): Promise<void> {
         ? { disconnectHubspot: (tenant: string) => disconnectHubspot({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant) }
         : {}),
     },
-    me: userStore,
+    me: { getById: (userId) => userStore.getById(userId), estExploitant: (email) => estAdresseOps(opsEmails, email) },
     workflows: {
       scenarios: workflowStore,
       tenantCode: (tenant) => resolveTenantCode(pool, tenant),
@@ -1853,13 +1860,13 @@ async function main(): Promise<void> {
       /**
        * Session d'observation d'un espace client : un jeton de session en lecture seule. `userId` porte une
        * valeur parlante, pas un identifiant (le porteur n'a pas de compte ici) : dans une trace, elle se lit
-       * pour ce qu'elle est. Durée courte (1 h).
+       * pour ce qu'elle est. Le jeton porte l'adresse de l'exploitant qui observe. Durée courte (1 h).
        */
-      observerTenant: async (tenantId) => {
+      observerTenant: async (tenantId, observateur) => {
         const nom = await opsStore.getTenantName(tenantId);
         if (nom === null) return null;
         const token = await signSession(
-          { userId: 'ops-observation', tenantId, role: 'admin', impersonated: true },
+          { userId: 'ops-observation', tenantId, role: 'admin', impersonated: true, observateur },
           config.AUTH_SECRET,
           '1h',
         );
@@ -1879,18 +1886,17 @@ async function main(): Promise<void> {
       }),
       /**
        * Le second facteur d'une personne, depuis l'exploitation (le cas multi-espace, que l'admin d'un espace ne
-       * peut pas trancher). Journalisé dans chacun de ses espaces, sans acteur.
+       * peut pas trancher). Journalisé dans chacun de ses espaces, avec l'adresse de l'exploitant pour acteur.
        */
-      reinitialiserMfa: async (email) => {
+      reinitialiserMfa: async (email, par) => {
         const identityId = await mfaStore.reinitialiserParEmail(email);
         if (identityId === null) return null;
         const espaces = new Set((await mfaStore.comptes(identityId)).map((c) => c.tenantId)).size;
         // Le facteur est déjà retiré : un journal en échec ne doit pas faire croire que rien n'a eu lieu.
-        await tenter('audit ignoré:', () => auditParIdentite(identityId, 'mfa.reinitialise', { par: 'exploitation' }, false));
+        await tenter('audit ignoré:', () => auditParIdentite(identityId, 'mfa.reinitialise', { par: 'exploitation' }, par));
         return { identityId, espaces };
       },
     },
-    opsToken: config.OPS_TOKEN,
     // Le réglage du plafond de l'API par espace : lu par le limiteur de `/v1` et `/mcp`, écrit par `/ops`.
     plafondApi: new PgPlafondEspaceStore(pool),
     support: {

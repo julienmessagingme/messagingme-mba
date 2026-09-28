@@ -1170,7 +1170,7 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
 🔴 **`scopeTenant` ÉCHOUE FERMÉ** (2026-09-03). C'est LE contrôle d'isolation entre clients, et la RLS est
 contournée (pooler superuser). Depuis le lot 3 de l'audit ponytail (2026-09-26), il n'est plus recopié dans les
 handlers : `etapeEspace` (`src/http/scope.ts`) le pose AU MONTAGE, après la garde d'authentification, sur chaque
-route `:tenantId` d'un module `tenant` (jamais `jeton-ops`), et le handler lit l'espace par `espaceVerifie(req)`,
+route `:tenantId` d'un module `tenant` (jamais `session-ops`), et le handler lit l'espace par `espaceVerifie(req)`,
 qui échoue fermé si l'étape manque. La preuve est dynamique : `tests/scope-tenant.test.ts` appelle chaque route
 d'espace avec une session d'un autre espace. Elle rendait auparavant le tenant PRIS DANS L'URL quand
 `req.auth` était absent : elle n'était donc un contrôle que tant que la garde d'authentification avait été
@@ -1217,7 +1217,7 @@ exacts, donc il n'y avait pas de trou vivant, le défaut était dans la FORME et
 ⚠️ **Ne recopiez pas de compte ici** : `tests/scope-tenant.test.ts` monte désormais chaque module tenant un
 par un, et une parité compare la classe DÉCLARÉE aux adresses réellement montées par Fastify (les deux
 mutations ont été vérifiées). La `ClasseDAcces` en compte **six**, pas deux : `tenant`, `anonyme`, `code-url`,
-`signature-meta`, `signature-service`, `jeton-ops`. ⚠️ `jeton-ops` porte AUSSI des `:tenantId`
+`signature-meta`, `signature-service`, `session-ops`. ⚠️ `session-ops` porte AUSSI des `:tenantId`
 (`/ops/credits/:tenantId`) et c'est correct, l'exploitation est délibérément cross-espace.
 
 🔴 **LE CORS EST EN LISTE BLANCHE ET SANS `credentials`, et les deux comptent.** `CORS_ORIGINS` refuse `*` AU
@@ -1234,11 +1234,15 @@ levier d'urgence : ces plafonds touchent toutes les routes authentifiées d'un p
 couperait la console de tous les clients, et un `--force-recreate` va plus vite qu'un déploiement de code.
 ⚠️ Ils sont LOCAUX AU PROCESS : le plafond annoncé est celui d'UNE instance, à lever avant le multi-replica.
 
-⚠️ **`/ops` n'est pas durci, il est SURVEILLÉ** (choix de Julien, 2026-09-03). Une liste blanche d'IP aurait
-coupé l'accès dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre de 5 minutes, une
-alerte Telegram part, throttlée à une par demi-heure. 🔴 **Le jeton présenté n'est JAMAIS journalisé** : une
-tentative est presque toujours un secret voisin du vrai. Chaque refus est journalisé même quand l'alerte est
-étouffée.
+🔴 **`/ops` EST NOMINATIF, AVEC SECOND FACTEUR** (2026-09-28, plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
+`OPS_TOKEN` n'existe plus, sans accès de secours : n'entrent que les adresses de `OPS_EMAILS` (vide = fermé pour
+tous), par la connexion habituelle avec `ops: true`, PUIS leur second facteur (enrôlement obligatoire sans
+facteur). Au bout, une session de portée `ops` de 12 h, qu'aucune route d'espace n'accepte (et une session
+d'espace n'ouvre pas `/ops`). La garde (`makeRequireOps`) relit À CHAQUE REQUÊTE l'adresse de l'identité EN BASE
+dans la liste et son facteur actif : retirer une adresse (puis `--force-recreate`) coupe l'accès tout de suite.
+Chaque écriture signe sa trace de l'adresse de son auteur (`par`, `auteurOps`). La surveillance reste : au 5e
+refus en 5 minutes, alerte Telegram throttlée à une par demi-heure, chaque refus journalisé, 🔴 **le jeton présenté
+JAMAIS**. Le détail et ses trois remparts : `documentation.md` § 7.
 
 ⚠️ **L'API était DÉJÀ joignable depuis Internet avant `api.messagingme.app`** : le rewrite Next
 `/api/backend/:path*` est un ATTRAPE-TOUT, `/ops` compris. Le nouveau nom n'ouvre rien, il rend les adresses
@@ -1303,7 +1307,7 @@ variable, surtout sur des adresses déjà parties dans des messages.
 Conventions génériques (secrets serveur, `.env` non committé, Zod `safeParse` sur webhooks + JSON LLM, signature de webhook entrant, entrée LLM délimitée) : section « Conventions de code » du CLAUDE.md global. Spécifique à MBA :
 
 - **Isolation tenant = cas « accès médié par un serveur » du global** : `tenant_id=$1` sur CHAQUE requête. La connexion pooler est un rôle superuser, donc la RLS serait bypassée, le filtrage en code est le seul contrôle. IDOR = leçon convanalyzer.
-- **Secrets serveur concrets** : `META_ACCESS_TOKEN`, `META_APP_SECRET` (signature webhook), `OPS_TOKEN`, `ENCRYPTION_KEY`, `AUTH_SECRET`, `service_role`, tous dans `src/`/worker/`.env.prod`, jamais dans le bundle `web/` ni en `NEXT_PUBLIC_*`.
+- **Secrets serveur concrets** : `META_ACCESS_TOKEN`, `META_APP_SECRET` (signature webhook), `ENCRYPTION_KEY`, `AUTH_SECRET` (qui signe aussi les sessions d'exploitation), `service_role`, tous dans `src/`/worker/`.env.prod`, jamais dans le bundle `web/` ni en `NEXT_PUBLIC_*`.
 
 ### Gotchas et décisions
 

@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { makeRequireOps } from '../auth/middleware';
-import type { SurveillanceOps } from '../ops/tentatives';
+import { auteurOps, type PreHandler } from '../auth/middleware';
 import { estUuid } from './scope';
 import { journaliser } from '../lib/journal';
 import type { PlafondApiStore, PlafondsParDefaut, ReglagePlafondApi } from '../auth/plafond-espace';
@@ -11,8 +10,8 @@ import { MIN_NOTE } from './ops';
 /**
  * Le réglage du plafond de l'API d'un espace.
  * 🔴 Dans `/ops` et nulle part ailleurs : un plafond que le client écrirait lui-même n'en serait pas un. Même
- * autorité que le rechargement de crédit (jeton d'exploitation), même note obligatoire : le jeton est partagé,
- * la note dit qui a relevé le plafond et pourquoi. Module à part : sans ses dépendances (magasin, cache du
+ * autorité que le rechargement de crédit (la session d'exploitation), même note obligatoire (le pourquoi), et
+ * la ligne de journal signée de l'adresse de son auteur. Module à part : sans ses dépendances (magasin, cache du
  * limiteur), ces routes ne sont pas montées et le limiteur applique les défauts.
  */
 export interface OpsPlafondApiDeps {
@@ -47,13 +46,9 @@ function etat(tenantId: string, r: ReglagePlafondApi, defauts: PlafondsParDefaut
   return { tenantId, minute: fenetre(r.minute, defauts.minute), heure: fenetre(r.heure, defauts.heure) };
 }
 
-export function registerOpsPlafondApi(
-  app: FastifyInstance,
-  deps: OpsPlafondApiDeps,
-  opsToken: string,
-  surveillance?: SurveillanceOps,
-): void {
-  const opts = { preHandler: makeRequireOps(opsToken, surveillance) };
+/** `garde` : la garde d'exploitation, la même instance que celle de `/ops` (`buildServer`). */
+export function registerOpsPlafondApi(app: FastifyInstance, deps: OpsPlafondApiDeps, garde: PreHandler): void {
+  const opts = { preHandler: garde };
 
   app.get('/ops/plafond-api/:tenantId', opts, async (req, reply) => {
     const { tenantId } = req.params as { tenantId: string };
@@ -74,7 +69,7 @@ export function registerOpsPlafondApi(
       });
     }
     const note = lu.data.note.trim().slice(0, 500);
-    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui règle ce plafond, et pourquoi' });
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi ce plafond' });
 
     const avant = await deps.store.lire(tenantId);
     if (avant === null) return reply.code(404).send({ error: 'espace inconnu' });
@@ -82,7 +77,7 @@ export function registerOpsPlafondApi(
     if (!(await deps.store.ecrire(tenantId, apres))) return reply.code(404).send({ error: 'espace inconnu' });
     // Après l'écriture : posé avant, un échec d'écriture laisserait le limiteur appliquer un réglage inexistant.
     deps.reglages.poser(tenantId, apres);
-    journaliser('warn', 'ops_plafond_api', { tenantId, avant, apres, note, at: new Date().toISOString() });
+    journaliser('warn', 'ops_plafond_api', { tenantId, avant, apres, par: auteurOps(req), note, at: new Date().toISOString() });
     return reply.code(200).send(etat(tenantId, apres, deps.defauts));
   });
 }

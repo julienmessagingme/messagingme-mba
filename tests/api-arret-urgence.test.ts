@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from './fake-queue';
@@ -7,6 +7,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { capturerJournal } from './journal';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { exploitationInerte, opsInerte } from './routes-inertes';
+import { accesOps, ADRESSE_OPS } from './acces-ops';
 
 /**
  * L'ARRÊT D'URGENCE D'UN ESPACE, sur la surface publique.
@@ -103,11 +104,20 @@ describe('le geste qui pose et retire le verrou', () => {
   };
   const UUID = '4169c753-311a-43bb-a334-d8a2cb7caf6f';
 
+  /** L'exploitant, et sa session gagnée une fois par le vrai parcours (`tests/acces-ops.ts`). */
+  const acces = accesOps();
+  const ops: Record<string, string> = { 'content-type': 'application/json' };
+  beforeAll(async () => {
+    const s = buildServer({ queue: new FakeQueue(), auth: acces.auth });
+    ops.authorization = `Bearer ${await acces.jeton(s)}`;
+    await s.close();
+  });
+
   function monterOps(over: Partial<{ verrouillerEspace: (t: string, v: boolean, note: string) => Promise<boolean> }> = {}) {
     const appels: Array<{ tenantId: string; verrouille: boolean; note: string }> = [];
     const server = buildServer({
       queue: new FakeQueue(),
-      opsToken: 'jeton-ops',
+      auth: acces.auth,
       ops: {
         ...opsInerte,
         ...opsMuet,
@@ -119,11 +129,10 @@ describe('le geste qui pose et retire le verrou', () => {
     });
     return { server, appels };
   }
-  const ops = { 'content-type': 'application/json', 'x-ops-token': 'jeton-ops' };
 
   it('🔴 il pose le verrou, et il exige une NOTE', async () => {
     // La note est la même exigence que sur le rechargement de crédit : une écriture d'exploitation sans
-    // trace de qui l'a faite et pourquoi ne se relit pas six mois plus tard.
+    // trace de pourquoi ne se relit pas six mois plus tard. Le QUI vient de la session (`par`).
     const { server, appels } = monterOps();
     const sansNote = await server.inject({ method: 'POST', url: `/ops/verrou/${UUID}`, headers: ops, payload: { verrouille: true } });
     expect(sansNote.statusCode).toBe(400);
@@ -135,7 +144,7 @@ describe('le geste qui pose et retire le verrou', () => {
     // par geste, écrite par la ROUTE (le câblage de `src/index.ts` ne l'écrit plus ; ce faux ne le prouve pas).
     const verrous = lignes.filter((l) => l.msg === 'ops_verrou_espace');
     expect(verrous).toHaveLength(1);
-    expect(verrous[0]).toMatchObject({ lvl: 'warn', tenantId: UUID, verrouille: true, note: 'impayé de septembre' });
+    expect(verrous[0]).toMatchObject({ lvl: 'warn', tenantId: UUID, verrouille: true, note: 'impayé de septembre', par: ADRESSE_OPS });
     await server.close();
   });
 
@@ -146,7 +155,7 @@ describe('le geste qui pose et retire le verrou', () => {
     await server.close();
   });
 
-  it('🔴 sans le jeton d’exploitation, rien ne bouge', async () => {
+  it('🔴 sans la session d’exploitation, rien ne bouge', async () => {
     const { server, appels } = monterOps();
     const res = await server.inject({ method: 'POST', url: `/ops/verrou/${UUID}`, headers: { 'content-type': 'application/json' }, payload: { verrouille: true, note: 'tentative' } });
     expect(res.statusCode).toBe(401);

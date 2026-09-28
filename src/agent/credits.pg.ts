@@ -29,8 +29,8 @@ export class PgCreditStore {
   }
 
   /**
-   * `note` est obligatoire : c'est la seule trace de qui recharge et pourquoi, le jeton d'exploitation étant
-   * partagé.
+   * `note` est obligatoire : elle dit qui recharge et pourquoi (la route d'exploitation la signe de l'adresse
+   * de son auteur, `noteSignee`).
    */
   async crediter(tenantId: string, montantMicroEur: number, note: string): Promise<number> {
     const montant = Math.max(0, Math.round(montantMicroEur));

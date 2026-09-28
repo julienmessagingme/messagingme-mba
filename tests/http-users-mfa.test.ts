@@ -1,13 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
-import type { UserAuthStore } from '../src/auth/store';
 import type { UsersRouteDeps } from '../src/http/users';
 import type { OpsRouteDeps } from '../src/http/ops';
 import type { AuditSink } from '../src/audit/journal';
 import { MfaEnMemoire } from './mfa';
 import { membresDepInertes, membresInertes } from './routes-inertes';
+import { accesOps, ADRESSE_OPS } from './acces-ops';
 
 /**
  * RÉINITIALISER LE SECOND FACTEUR D'UN MEMBRE (plan du 2026-09-25, tâche 6), par un admin de l'espace, et par
@@ -18,8 +18,15 @@ const ADMIN = '11111111-1111-4111-8111-111111111111';
 const MEMBRE = '22222222-2222-4222-8222-222222222222';
 const MULTI = '33333333-3333-4333-8333-333333333333';
 const INCONNU = '44444444-4444-4444-8444-444444444444';
-const noUsers: UserAuthStore = { findIdentity: async () => null };
 const h = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
+/** L'exploitant, et sa session gagnée une fois par le vrai parcours (`tests/acces-ops.ts`), au même secret. */
+const acces = accesOps({ auth: { secret: SECRET } });
+const ops: Record<string, string> = {};
+beforeAll(async () => {
+  const s = buildServer({ queue: new FakeQueue(), auth: acces.auth });
+  ops.authorization = `Bearer ${await acces.jeton(s)}`;
+  await s.close();
+});
 
 function app() {
   const mfa = new MfaEnMemoire([
@@ -45,21 +52,22 @@ function app() {
     mfa,
   };
   const reinitialisesOps: string[] = [];
-  const ops: Partial<OpsRouteDeps> = {
-    reinitialiserMfa: async (email) => {
+  const auteurs: string[] = [];
+  const depsOps: Partial<OpsRouteDeps> = {
+    reinitialiserMfa: async (email, par) => {
       const identityId = await mfa.reinitialiserParEmail(email);
+      auteurs.push(par);
       if (identityId) reinitialisesOps.push(identityId);
       return identityId ? { identityId, espaces: 2 } : null;
     },
   };
   const server = buildServer({
     queue: new FakeQueue(),
-    auth: { users: noUsers, secret: SECRET },
+    auth: acces.auth,
     admin: deps,
-    ops: ops as OpsRouteDeps,
-    opsToken: 'jeton-ops-de-test-assez-long-pour-passer',
+    ops: depsOps as OpsRouteDeps,
   });
-  return { server, mfa, journal, reinitialisesOps };
+  return { server, mfa, journal, reinitialisesOps, auteurs };
 }
 
 const jeton = (userId: string, role: string, tenantId = 't1') => signSession({ userId, tenantId, role }, SECRET);
@@ -107,18 +115,18 @@ describe('DELETE /tenants/:tenantId/users/:userId/mfa', () => {
 });
 
 describe('POST /ops/mfa/reinitialiser', () => {
-  const ops = { 'x-ops-token': 'jeton-ops-de-test-assez-long-pour-passer' };
-
-  it('le cas multi-espace passe par l’exploitation, avec une note', async () => {
-    const { server, mfa } = app();
+  it('le cas multi-espace passe par l’exploitation, avec une note, et nomme l’exploitant', async () => {
+    const { server, mfa, auteurs } = app();
     const res = await server.inject({ method: 'POST', url: '/ops/mfa/reinitialiser', headers: ops, payload: { email: 'Multi@x.fr', note: 'téléphone perdu, ticket 42' } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ reinitialise: true, espaces: 2 });
     expect(mfa.estActif('multi@x.fr')).toBe(false);
+    // L'acteur des lignes d'audit écrites dans chaque espace : l'adresse de la session, jamais une valeur du corps.
+    expect(auteurs).toEqual([ADRESSE_OPS]);
     await server.close();
   });
 
-  it('🔴 sans jeton d’exploitation, ou avec une session d’admin : 401', async () => {
+  it('🔴 sans session d’exploitation, ou avec une session d’admin : 401', async () => {
     const { server, reinitialisesOps } = app();
     const corps = { email: 'multi@x.fr', note: 'test' };
     expect((await server.inject({ method: 'POST', url: '/ops/mfa/reinitialiser', payload: corps })).statusCode).toBe(401);

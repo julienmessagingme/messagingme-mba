@@ -1,18 +1,18 @@
 /**
  * Surveillance des tentatives sur `/ops`.
  *
- * `/ops` est gardé par un jeton comparé en temps constant, mais Fastify tourne en `logger: false` : sans ce
- * module, un essai de jetons toute la nuit ne laisserait aucune trace. On ne durcit pas l'accès (une liste
- * blanche d'IP couperait l'exploitant dès que son IP change), on le rend visible.
+ * `/ops` est gardé par une session d'exploitation nominative (`makeRequireOps`), mais Fastify tourne en
+ * `logger: false` : sans ce module, des essais toute la nuit ne laisseraient aucune trace. Un refus compte aussi
+ * la session d'une adresse retirée de la liste, ou dont le second facteur a été retiré.
  *
  * Trois règles :
- *  1. 🔴 le jeton présenté n'est jamais journalisé, ni en clair ni tronqué : une tentative est presque
- *     toujours un secret voisin du vrai ;
- *  2. pas d'alerte au premier échec : un jeton mal recopié est le cas courant ;
+ *  1. 🔴 le jeton présenté n'est jamais journalisé, ni en clair ni tronqué : une session, même refusée, reste un
+ *     secret ;
+ *  2. pas d'alerte au premier échec : une session expirée est le cas courant ;
  *  3. rien ici ne peut faire échouer une requête ni ralentir le refus.
  */
 
-/** Échecs à atteindre dans la fenêtre avant d'alerter. Un jeton mal recopié en produit un ou deux, pas cinq. */
+/** Échecs à atteindre dans la fenêtre avant d'alerter. Une session expirée en produit un ou deux, pas cinq. */
 export const SEUIL_ALERTE = 5;
 /** Fenêtre de comptage. Assez large pour attraper un balayage lent, assez courte pour ne pas cumuler des mois. */
 export const FENETRE_MS = 5 * 60_000;
@@ -58,7 +58,7 @@ export function surveillerOps(deps: {
       derniereAlerte = t;
       deps.alerter(
         `ops : ${echecs.length} tentatives refusées en moins de ${Math.round(FENETRE_MS / 60_000)} min `
-        + `(dernière sur ${info.chemin}, ip ${info.ip}). Si ce n'est pas toi, le jeton d'exploitation est cherché.`,
+        + `(dernière sur ${info.chemin}, ip ${info.ip}). Si ce n'est pas toi, quelqu'un cherche à entrer dans l'exploitation.`,
       );
     },
   };

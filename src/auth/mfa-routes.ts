@@ -3,7 +3,7 @@ import type { Guard } from './middleware';
 import type { EtatMfa, MfaStore } from './mfa-store.pg';
 import { RateLimiter } from './rate-limit';
 import { verifyPassword } from './password';
-import { verifyMfa, verifyEnrolement, type EtapeConnexion } from './token';
+import { verifyMfa, verifyEnrolement, type EtapeConnexion, type MoyenFacteur } from './token';
 import {
   verifierCode, genererSecret, uriOtpauth, EMETTEUR_TOTP, genererCodesSecours, empreinteCodeSecours,
 } from './totp';
@@ -27,10 +27,17 @@ export interface MfaRouteDeps {
 }
 
 /**
- * Ce que la connexion fait une fois le second facteur passé : session (un espace) ou jeton de choix (plusieurs).
  * `ttlChoix` allonge le jeton de choix quand l'écran des codes de secours s'intercale avant le choix.
+ * `facteur` : le moyen qui vient de prouver le second facteur. Seules les routes du code et de l'activation le
+ * passent, après vérification : c'est la preuve qu'exige une session d'exploitation.
  */
-export type SuiteDeConnexion = (etape: EtapeConnexion, ttlChoix?: string) => Promise<Record<string, unknown>>;
+export interface OptionsSuite { ttlChoix?: string; facteur?: MoyenFacteur }
+
+/**
+ * Ce que la connexion fait une fois le second facteur passé : session (un espace), jeton de choix (plusieurs),
+ * ou session d'exploitation (une étape `ops`).
+ */
+export type SuiteDeConnexion = (etape: EtapeConnexion, options?: OptionsSuite) => Promise<Record<string, unknown>>;
 
 /** 🔴 Un seul message pour un code faux, rejoué ou hors fenêtre : les distinguer dirait lequel a été juste. */
 export const MESSAGE_CODE_INVALIDE = 'Code invalide ou expiré.';
@@ -156,9 +163,9 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     if (moyen === 'secours') {
       journal(ok.etape.identityId, 'mfa.code_secours_utilise');
       // Lu avant la consommation, d'où le -1 : la console prévient quand il n'en reste plus beaucoup.
-      return reply.code(200).send({ ...(await suite(ok.etape)), codesSecoursRestants: Math.max(0, etat.codesSecoursRestants - 1) });
+      return reply.code(200).send({ ...(await suite(ok.etape, { facteur: moyen })), codesSecoursRestants: Math.max(0, etat.codesSecoursRestants - 1) });
     }
-    return reply.code(200).send(await suite(ok.etape));
+    return reply.code(200).send(await suite(ok.etape, { facteur: moyen }));
   });
 
   /** Premier temps de l'enrôlement obligatoire : un secret neuf, à scanner ou à saisir à la main. */
@@ -185,8 +192,9 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     const codes = await activer(ok.mfa, etat, str(b.code), 'connexion');
     if (codes === 'invalide') return reply.code(401).send({ error: MESSAGE_CODE_INVALIDE });
     if (codes === 'deja_active') return reply.code(409).send({ error: `${MESSAGE_DEJA_ACTIVE} Reconnectez-vous.` });
-    // 15 minutes : l'écran des dix codes s'intercale avant le choix de l'espace.
-    return reply.code(200).send({ codesSecours: codes, ...(await suite(ok.etape, '15m')) });
+    // 15 minutes : l'écran des dix codes s'intercale avant le choix de l'espace. Le premier code de
+    // l'application vient d'être vérifié par `activer`.
+    return reply.code(200).send({ codesSecours: codes, ...(await suite(ok.etape, { ttlChoix: '15m', facteur: 'totp' })) });
   });
 
   /**

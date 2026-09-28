@@ -1,12 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { ExploitationOps, OpsRouteDeps } from '../src/http/ops';
 import { capturerJournal } from './journal';
 import { exploitationInerte, opsInerte } from './routes-inertes';
+import { accesOps, SECRET_OPS } from './acces-ops';
 
-const OPS = 'ops-secret-token-of-at-least-32-bytes!!';
+/** L'exploitant de ce fichier, et sa session d'exploitation, gagnée une fois par le vrai parcours. */
+const acces = accesOps();
+let OPS = '';
+beforeAll(async () => {
+  const s = buildServer({ queue: new FakeQueue(), auth: acces.auth });
+  OPS = await acces.jeton(s);
+  await s.close();
+});
 
 const OVERVIEW: Awaited<ReturnType<ExploitationOps['getTenantOverview']>> = [
   { id: 't1', name: 'Acme', createdAt: '2026-07-01T00:00:00.000Z', mbaEnabled: true, users: 2, contacts: 10, messages: 50, templatesUsed: 3, lastSendAt: null, phone: '+33 5 25 68 02 50', phoneStatus: 'CONNECTED', quality: 'GREEN' },
@@ -15,7 +23,7 @@ const OVERVIEW: Awaited<ReturnType<ExploitationOps['getTenantOverview']>> = [
 /** La tranche d'exploitation se surcharge membre par membre. */
 type Surcharges = Partial<Omit<OpsRouteDeps, 'exploitation'>> & { exploitation?: Partial<ExploitationOps> };
 
-function app(opsToken = OPS, over: Surcharges = {}) {
+function app(over: Surcharges = {}) {
   const { exploitation: surExploitation, ...reste } = over;
   const deps: OpsRouteDeps = {
     ...opsInerte,
@@ -28,12 +36,12 @@ function app(opsToken = OPS, over: Surcharges = {}) {
     },
     ...reste,
   };
-  return buildServer({ queue: new FakeQueue(), ops: deps, opsToken });
+  return buildServer({ queue: new FakeQueue(), ops: deps, auth: acces.auth });
 }
-const withTok = (t: string) => ({ headers: { 'x-ops-token': t } });
+const withTok = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
 
 describe('route /ops/overview', () => {
-  it('token correct -> 200 { tenants, daily, queues, worker }', async () => {
+  it('session d’exploitation -> 200 { tenants, daily, queues, worker }', async () => {
     const server = app();
     const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
@@ -49,7 +57,7 @@ describe('route /ops/overview', () => {
 
   it('inclut le heartbeat worker quand le getter est fourni', async () => {
     const hb = { beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:1', ageSeconds: 12 };
-    const server = app(OPS, { heartbeat: { get: async () => hb } });
+    const server = app({ heartbeat: { get: async () => hb } });
     const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ worker: unknown }>().worker).toEqual(hb);
@@ -63,25 +71,19 @@ describe('route /ops/overview', () => {
     await server.close();
   });
 
-  it('mauvais token -> 401', async () => {
+  it('mauvais jeton -> 401', async () => {
     const server = app();
     const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok('mauvais') });
     expect(res.statusCode).toBe(401);
     await server.close();
   });
 
-  it('OPS_TOKEN vide -> 401 même avec un header (surface désactivée)', async () => {
-    const server = app('');
-    const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok('') });
-    expect(res.statusCode).toBe(401);
-    await server.close();
-  });
-
   it('un JWT admin ne donne PAS accès (autorité séparée du tenant)', async () => {
     const server = app();
-    const jwt = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, 'secret');
+    // Signé avec le MÊME secret : c'est la portée qui refuse, pas la signature.
+    const jwt = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET_OPS);
     const res = await server.inject({ method: 'GET', url: '/ops/overview', headers: { authorization: `Bearer ${jwt}` } });
-    expect(res.statusCode).toBe(401); // pas de x-ops-token
+    expect(res.statusCode).toBe(401);
     await server.close();
   });
 
@@ -113,7 +115,7 @@ describe('solde prépayé sur /ops', () => {
   const recharge = (montantMicroEur: unknown, note: unknown = 'virement du 27/08') => ({ montantMicroEur, note });
 
   it('lit le solde et son journal', async () => {
-    const server = app(OPS, deps);
+    const server = app(deps);
     const res = await server.inject({ method: 'GET', url: `/ops/credits/${T1}`, ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ soldeMicroEur: 9_995_800 });
@@ -121,7 +123,7 @@ describe('solde prépayé sur /ops', () => {
   });
 
   it('recharge, et rend le nouveau solde', async () => {
-    const server = app(OPS, deps);
+    const server = app(deps);
     const res = await server.inject({
       method: 'POST', url: `/ops/credits/${T1}`, ...withTok(OPS),
       payload: { montantMicroEur: 5_000_000, note: 'mise en service' },
@@ -131,9 +133,9 @@ describe('solde prépayé sur /ops', () => {
     await server.close();
   });
 
-  it('🔴 SANS le jeton d exploitation, rien : ni lecture, ni recharge', async () => {
+  it('🔴 SANS la session d exploitation, rien : ni lecture, ni recharge', async () => {
     // C'est toute la protection. Un client qui atteindrait cette route se créditerait lui-même.
-    const server = app(OPS, deps);
+    const server = app(deps);
     expect((await server.inject({ method: 'GET', url: `/ops/credits/${T1}` })).statusCode).toBe(401);
     expect((await server.inject({ method: 'GET', url: `/ops/credits/${T1}`, ...withTok('mauvais') })).statusCode).toBe(401);
     expect((await server.inject({ method: 'POST', url: `/ops/credits/${T1}`, ...withTok('mauvais'), payload: recharge(1) })).statusCode).toBe(401);
@@ -144,7 +146,7 @@ describe('solde prépayé sur /ops', () => {
     // Il n'existe aucune route de débit : une virgule mal placée ne se rattrape pas, elle doit donc être
     // arrêtée à l'entrée.
     const recharges: number[] = [];
-    const server = app(OPS, { ...deps, rechargerAgent: async (_t, m) => { recharges.push(m); return m; } });
+    const server = app({ ...deps, rechargerAgent: async (_t, m) => { recharges.push(m); return m; } });
     for (const montantMicroEur of [0, -5_000, 2_000_000_000, 'beaucoup', null, Number.NaN]) {
       const res = await server.inject({ method: 'POST', url: `/ops/credits/${T1}`, ...withTok(OPS), payload: recharge(montantMicroEur) });
       expect(res.statusCode, String(montantMicroEur)).toBe(400);
@@ -155,11 +157,10 @@ describe('solde prépayé sur /ops', () => {
   });
 
   it('🔴 une recharge SANS NOTE est refusée, et rien n est écrit', async () => {
-    // Le jeton d'exploitation est partagé : il n'y a aucune identité d'opérateur à enregistrer, donc cette
-    // phrase est la SEULE trace de qui a rechargé et pourquoi. Un mouvement d'argent sans explication ne se
-    // justifie pas six mois plus tard.
+    // La session d'exploitation dit QUI (elle signe la note) ; cette phrase dit POURQUOI. Un mouvement
+    // d'argent sans explication ne se justifie pas six mois plus tard.
     const recharges: number[] = [];
-    const server = app(OPS, { ...deps, rechargerAgent: async (_t, m) => { recharges.push(m); return m; } });
+    const server = app({ ...deps, rechargerAgent: async (_t, m) => { recharges.push(m); return m; } });
     for (const note of ['', '   ', 'ok', 42, null]) {
       const res = await server.inject({ method: 'POST', url: `/ops/credits/${T1}`, ...withTok(OPS), payload: { montantMicroEur: 5_000_000, note } });
       expect(res.statusCode, String(note)).toBe(400);
@@ -174,7 +175,7 @@ describe('solde prépayé sur /ops', () => {
     // Deux pièges d'un coup. En lecture, un « 0 » sur un identifiant mal tapé se lit « client à sec » et
     // appelle une recharge sur un espace qui n'existe pas. En écriture, la clé étrangère lèverait, donc un
     // 500 dont Cloudflare remplace le corps par sa page d'erreur, sur la seule route qui écrit de l'argent.
-    const server = app(OPS, deps);
+    const server = app(deps);
     expect((await server.inject({ method: 'GET', url: `/ops/credits/${INCONNU}`, ...withTok(OPS) })).statusCode).toBe(404);
     const res = await server.inject({ method: 'POST', url: `/ops/credits/${INCONNU}`, ...withTok(OPS), payload: recharge(5_000_000) });
     expect(res.statusCode).toBe(404);
@@ -185,7 +186,7 @@ describe('solde prépayé sur /ops', () => {
     // Il partirait tel quel dans un `where id = $1` sur une colonne `uuid` : Postgres LÈVE (`22P02`), donc
     // 500. Une adresse tapée de travers doit rendre 404, pas une page d'incident.
     const vus: string[] = [];
-    const server = app(OPS, {
+    const server = app({
       soldeAgent: async (t) => { vus.push(t); return { soldeMicroEur: 0, mouvements: [] }; },
       rechargerAgent: async (t) => { vus.push(t); return 1; },
     });
@@ -203,7 +204,7 @@ describe('charge des files : l’âge du plus vieux job', () => {
     // profondeur seule ne dit pas si on tient la cadence. Mille jobs avalés en trois secondes vont bien, dix
     // qui attendent depuis un quart d'heure vont mal. Un champ calculé en base mais perdu en route
     // n'afficherait que des zéros, et l'écran passerait pour rassurant.
-    const a = app(OPS, {
+    const a = app({
       exploitation: {
         getQueueLoad: async () => [
           { queue: 'webhook', backlog: 3, active: 1, failed: 0, ageMaxSecondes: 42 },
@@ -211,7 +212,7 @@ describe('charge des files : l’âge du plus vieux job', () => {
         ],
       },
     });
-    const res = await a.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
+    const res = await a.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
     const files = res.json<{ queues: Array<{ queue: string; ageMaxSecondes: number }> }>().queues;
     expect(files.find((q) => q.queue === 'webhook')?.ageMaxSecondes).toBe(42);
@@ -226,20 +227,20 @@ describe('équité : les groupes qui attendent le plus', () => {
     // 🔴 C'est le SLO 3 (`docs/SLO-2026-09-01.md`), et le trou que ce document signalait comme son propre
     // angle mort : la profondeur et l'âge par file disent « la file avance », pas « tout le monde est
     // servi ». Un espace affamé derrière un espace bavard est invisible d'une moyenne.
-    const a = app(OPS, {
+    const a = app({
       exploitation: {
         getQueueLoadParGroupe: async () => [{ queue: 'campaign-run', groupe: 't-affame', backlog: 3, ageMaxSecondes: 420 }],
       },
     });
-    const res = await a.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
+    const res = await a.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.json<{ queuesParGroupe: unknown[] }>().queuesParGroupe)
       .toEqual([{ queue: 'campaign-run', groupe: 't-affame', backlog: 3, ageMaxSecondes: 420 }]);
     await a.close();
 
     // Une lecture de confort qui échoue ne doit pas emporter l'écran d'exploitation entier : c'est
     // précisément quand ça va mal qu'on en a besoin.
-    const b = app(OPS, { exploitation: { getQueueLoadParGroupe: async () => { throw new Error('pgboss injoignable'); } } });
-    const res2 = await b.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
+    const b = app({ exploitation: { getQueueLoadParGroupe: async () => { throw new Error('pgboss injoignable'); } } });
+    const res2 = await b.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res2.statusCode).toBe(200);
     expect(res2.json<{ queuesParGroupe: unknown[] }>().queuesParGroupe).toEqual([]);
     expect(res2.json<{ queues: unknown[] }>().queues.length).toBeGreaterThan(0);
@@ -247,8 +248,8 @@ describe('équité : les groupes qui attendent le plus', () => {
   });
 
   it('une instance sans cette lecture rend une liste vide, pas une erreur', async () => {
-    const a = app(OPS, {});
-    const res = await a.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
+    const a = app({});
+    const res = await a.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.json<{ queuesParGroupe: unknown[] }>().queuesParGroupe).toEqual([]);
     await a.close();
   });
@@ -259,8 +260,8 @@ describe('jobs morts : les voir, puis les rejouer', () => {
   const mort = (id: string, queue: string) => ({ id, queue, data: { x: id }, creeLe: '2026-09-01T00:00:00.000Z', erreur: 'boom' });
 
   it('lit les jobs morts', async () => {
-    const a = app(OPS, { exploitation: { listerJobsMorts: async () => [mort('j1', 'webhook')] } });
-    const res = await a.inject({ method: 'GET', url: '/ops/dlq', headers: { 'x-ops-token': OPS } });
+    const a = app({ exploitation: { listerJobsMorts: async () => [mort('j1', 'webhook')] } });
+    const res = await a.inject({ method: 'GET', url: '/ops/dlq', ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ jobs: Array<{ id: string }> }>().jobs).toHaveLength(1);
     await a.close();
@@ -270,7 +271,7 @@ describe('jobs morts : les voir, puis les rejouer', () => {
     // 🔴 L'ordre décide du mode de panne. Un crash entre les deux produit un DOUBLON ; l'ordre inverse
     // produirait une PERTE. Le doublon est rattrapé partout où ça compte, la perte nulle part.
     const journal: string[] = [];
-    const a = app(OPS, {
+    const a = app({
       exploitation: {
         listerJobsMorts: async () => [mort('j1', 'webhook'), mort('j2', 'webhook')],
         oublierJobsMorts: async (ids) => { journal.push(`oublie:${ids.join(',')}`); return ids.length; },
@@ -279,7 +280,7 @@ describe('jobs morts : les voir, puis les rejouer', () => {
         enqueue: async (q) => { journal.push(`enfile:${q}`); },
       },
     });
-    const res = await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook', limit: 10 } });
+    const res = await a.inject({ method: 'POST', url: '/ops/dlq/replay', ...withTok(OPS), payload: { queue: 'webhook', limit: 10 } });
     expect(res.json<{ rejoues: number; oublies: number }>()).toEqual({ rejoues: 2, oublies: 2 });
     expect(journal).toEqual(['enfile:webhook', 'enfile:webhook', 'oublie:j1,j2']);
     await a.close();
@@ -290,7 +291,7 @@ describe('jobs morts : les voir, puis les rejouer', () => {
     // silencieuse, et sur un `webhook` c'est un message de client perdu pour de bon.
     const oublies: string[][] = [];
     let enfiles = 0;
-    const a = app(OPS, {
+    const a = app({
       exploitation: {
         listerJobsMorts: async () => [mort('j1', 'webhook'), mort('j2', 'webhook'), mort('j3', 'webhook')],
         oublierJobsMorts: async (ids) => { oublies.push(ids); return ids.length; },
@@ -300,7 +301,7 @@ describe('jobs morts : les voir, puis les rejouer', () => {
         enqueue: async () => { enfiles += 1; if (enfiles === 2) throw new Error('file pleine'); },
       },
     });
-    const res = await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook' } });
+    const res = await a.inject({ method: 'POST', url: '/ops/dlq/replay', ...withTok(OPS), payload: { queue: 'webhook' } });
     expect(res.json<{ rejoues: number }>().rejoues).toBe(1);
     expect(oublies).toEqual([['j1']]);
     await a.close();
@@ -309,15 +310,15 @@ describe('jobs morts : les voir, puis les rejouer', () => {
   it('🔴 la FILE est obligatoire : pas de rejeu « tout » d’un coup', async () => {
     // Un rejeu global relancerait campagnes et webhooks ensemble, sur des causes d'échec différentes qu'on
     // n'a pas toutes corrigées.
-    const a = app(OPS, { exploitation: { listerJobsMorts: async () => [], oublierJobsMorts: async () => 0 }, file: { enqueue: async () => {} } });
-    expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: {} })).statusCode).toBe(400);
-    expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook', limit: 5000 } })).statusCode).toBe(400);
+    const a = app({ exploitation: { listerJobsMorts: async () => [], oublierJobsMorts: async () => 0 }, file: { enqueue: async () => {} } });
+    expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', ...withTok(OPS), payload: {} })).statusCode).toBe(400);
+    expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', ...withTok(OPS), payload: { queue: 'webhook', limit: 5000 } })).statusCode).toBe(400);
     await a.close();
   });
 
-  it('sans jeton d’exploitation, ni lecture ni rejeu', async () => {
+  it('sans session d’exploitation, ni lecture ni rejeu', async () => {
     // C'est une ÉCRITURE métier : elle ne doit jamais être atteignable depuis un compte de la console.
-    const a = app(OPS, { exploitation: { listerJobsMorts: async () => [], oublierJobsMorts: async () => 0 }, file: { enqueue: async () => {} } });
+    const a = app({ exploitation: { listerJobsMorts: async () => [], oublierJobsMorts: async () => 0 }, file: { enqueue: async () => {} } });
     expect((await a.inject({ method: 'GET', url: '/ops/dlq' })).statusCode).toBe(401);
     expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', payload: { queue: 'webhook' } })).statusCode).toBe(401);
     await a.close();
@@ -336,7 +337,7 @@ describe('/ops : révoquer la clé de modèle', () => {
   const T = '11111111-1111-4111-8111-111111111111';
 
   it('révoque, et le dit', async () => {
-    const srv = app(OPS, { revoquerCleModele: async () => true });
+    const srv = app({ revoquerCleModele: async () => true });
     const r = await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) });
     expect(r.statusCode).toBe(200);
     expect(r.json()).toMatchObject({ revoquee: true });
@@ -345,7 +346,7 @@ describe('/ops : révoquer la clé de modèle', () => {
   it('un espace SANS clé n’est pas une erreur', async () => {
     // C'est le cas le plus fréquent : la plupart des espaces n'ont pas d'agent, donc pas de clé. Le traiter
     // en erreur ferait chercher une panne là où il n'y a rien à faire.
-    const srv = app(OPS, { revoquerCleModele: async () => false });
+    const srv = app({ revoquerCleModele: async () => false });
     const r = await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) });
     expect(r.statusCode).toBe(200);
     expect(r.json()).toMatchObject({ revoquee: false });
@@ -354,7 +355,7 @@ describe('/ops : révoquer la clé de modèle', () => {
   it('🔴 Vercel refuse -> 422 qui DIT que la clé est toujours active', async () => {
     // Et pas un 5xx : Cloudflare remplacerait le corps, et l'opérateur croirait à une panne quelconque au
     // lieu de savoir que la clé vit encore et qu'il faut réessayer.
-    const srv = app(OPS, { revoquerCleModele: async () => { throw new Error('vercel refuse'); } });
+    const srv = app({ revoquerCleModele: async () => { throw new Error('vercel refuse'); } });
     const { resultat: r, lignes } = await capturerJournal(() => srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) }));
     expect(r.statusCode).toBe(422);
     expect(r.json().error).toMatch(/toujours active/);
@@ -362,12 +363,12 @@ describe('/ops : révoquer la clé de modèle', () => {
   });
 
   it('sans la dépendance, la route se déclare indisponible', async () => {
-    const srv = app(OPS);
+    const srv = app();
     expect((await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}`, ...withTok(OPS) })).statusCode).toBe(503);
   });
 
-  it('🔴 et elle reste derrière le jeton, comme tout /ops', async () => {
-    const srv = app(OPS, { revoquerCleModele: async () => true });
+  it('🔴 et elle reste derrière la session d exploitation, comme tout /ops', async () => {
+    const srv = app({ revoquerCleModele: async () => true });
     expect((await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}` })).statusCode).toBe(401);
   });
 });
@@ -395,7 +396,7 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
 
   it('dépose, et rend les actifs que Meta a confirmés', async () => {
     const vus: Array<[string, string, string, string]> = [];
-    const srv = app(OPS, { deposerJetonPub: async (t, j, c, pg) => { vus.push([t, j, c, pg]); return DEPOSEE; } });
+    const srv = app({ deposerJetonPub: async (t, j, c, pg) => { vus.push([t, j, c, pg]); return DEPOSEE; } });
     const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ connexion: unknown }>().connexion).toEqual(DEPOSEE);
@@ -405,7 +406,7 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
   });
 
   it('🔴 le jeton ne ressort NI dans la réponse NI dans le journal', async () => {
-    const srv = app(OPS, { deposerJetonPub: async () => DEPOSEE });
+    const srv = app({ deposerJetonPub: async () => DEPOSEE });
     const { resultat: res, lignes } = await capturerJournal(() =>
       srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) }));
     expect(res.statusCode).toBe(200);
@@ -419,7 +420,7 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
   });
 
   it('🔴 un jeton que Meta refuse n est PAS gardé : 422, et la raison est lisible', async () => {
-    const srv = app(OPS, { deposerJetonPub: async () => { throw new Error("ce jeton n'accorde pas la Page 42"); } });
+    const srv = app({ deposerJetonPub: async () => { throw new Error("ce jeton n'accorde pas la Page 42"); } });
     const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) });
     expect(res.statusCode).toBe(422);
     expect(res.json<{ error: string }>().error).toContain('Page 42');
@@ -429,7 +430,7 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
 
   it('un corps incomplet est refusé AVANT tout appel à Meta', async () => {
     let appele = false;
-    const srv = app(OPS, { deposerJetonPub: async () => { appele = true; return DEPOSEE; } });
+    const srv = app({ deposerJetonPub: async () => { appele = true; return DEPOSEE; } });
     const court = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: { ...corps, jeton: 'trop-court' }, ...withTok(OPS) });
     expect(court.statusCode).toBe(400);
     const sansPage = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: { jeton: JETON, comptePubId: '1' }, ...withTok(OPS) });
@@ -442,7 +443,7 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
     // Les trois autres écritures de `/ops` l exigent. Celle-ci REMPLACE la connexion publicitaire d un
     // client : sans la note, on ne sait plus six mois plus tard qui a fait le geste ni pourquoi.
     let appele = false;
-    const srv = app(OPS, { deposerJetonPub: async () => { appele = true; return DEPOSEE; } });
+    const srv = app({ deposerJetonPub: async () => { appele = true; return DEPOSEE; } });
     const { note: _sans, ...sansNote } = corps;
     void _sans;
     const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: sansNote, ...withTok(OPS) });
@@ -455,7 +456,7 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
     // `aucun` = rien à révoquer ; `echec` = Meta a refusé, donc un accès reste VIVANT et il faudra le
     // retirer à la main ; `meme_entite` = on n'a délibérément PAS révoqué, parce que le retrait aurait
     // aussi désarmé le jeton neuf. Trois gestes différents : les afficher pareil les confondrait.
-    const srv = app(OPS, { deposerJetonPub: async () => ({ ...DEPOSEE, ancienRevoque: 'echec' as const }) });
+    const srv = app({ deposerJetonPub: async () => ({ ...DEPOSEE, ancienRevoque: 'echec' as const }) });
     const { resultat: res, lignes } = await capturerJournal(() =>
       srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) }));
     expect(res.json<{ connexion: { ancienRevoque: unknown } }>().connexion.ancienRevoque).toBe('echec');
@@ -465,8 +466,8 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
     await srv.close();
   });
 
-  it('sans jeton d exploitation -> 401, même avec un corps parfait', async () => {
-    const srv = app(OPS, { deposerJetonPub: async () => DEPOSEE });
+  it('sans session d exploitation -> 401, même avec un corps parfait', async () => {
+    const srv = app({ deposerJetonPub: async () => DEPOSEE });
     const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps });
     expect(res.statusCode).toBe(401);
     await srv.close();

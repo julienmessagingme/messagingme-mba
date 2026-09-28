@@ -16,9 +16,10 @@ import type { Gardes } from '../src/server';
  */
 export const gardeOuverte: PreHandler = async () => {};
 
-/** Les trois gardes d'un `buildServer`, toutes ouvertes. Pour les tests qui montent un module à la main. */
+/** Les quatre gardes d'un `buildServer`, toutes ouvertes. Pour les tests qui montent un module à la main. */
 export const gardesOuvertes: Gardes = {
   auth: gardeOuverte,
   admin: gardeOuverte,
   encadrement: gardeOuverte,
+  ops: gardeOuverte,
 };

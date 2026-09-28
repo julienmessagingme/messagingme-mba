@@ -1,19 +1,26 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import type { OpsRouteDeps } from '../src/http/ops';
 import type { BilanRisque } from '../src/engagement/balayage';
 import { exploitationInerte, opsInerte } from './routes-inertes';
+import { accesOps } from './acces-ops';
 
 /**
  * LE BALAYAGE DU RISQUE À LA DEMANDE (`POST /ops/risque/:tenantId`, lot 7 de l'API publique).
  *
  * C'est une ÉCRITURE d'exploitation (il écrit le risque et peut déclencher des automations) : même autorité
- * séparée que les autres (le jeton d'exploitation, jamais un JWT client), même note obligatoire.
+ * séparée que les autres (la session d'exploitation, jamais un JWT client), même note obligatoire.
  */
-const OPS = 'ops-secret-token-of-at-least-32-bytes!!';
+const acces = accesOps();
+let OPS = '';
+beforeAll(async () => {
+  const s = buildServer({ queue: new FakeQueue(), auth: acces.auth });
+  OPS = await acces.jeton(s);
+  await s.close();
+});
 const T = '0b8f5c1e-3d2a-4c6b-9e7f-1a2b3c4d5e6f';
-const avecJeton = (t: string) => ({ headers: { 'content-type': 'application/json', 'x-ops-token': t } });
+const avecJeton = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 const BILAN: BilanRisque = {
   tenantId: T, evalues: 12, transitions: 3, declenches: 1, dejaDeclenches: 0, departLe: '2026-09-25T07:00:00.000Z',
   auDelaDuPlafond: 0, sansDeclencheur: 2, echecsPublication: 0,
@@ -21,7 +28,7 @@ const BILAN: BilanRisque = {
 
 function app(over: Partial<OpsRouteDeps> = {}) {
   const deps: OpsRouteDeps = { ...opsInerte, exploitation: { ...exploitationInerte, getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [] }, ...over };
-  return buildServer({ queue: new FakeQueue(), ops: deps, opsToken: OPS });
+  return buildServer({ queue: new FakeQueue(), ops: deps, auth: acces.auth });
 }
 
 describe('POST /ops/risque/:tenantId', () => {
@@ -35,7 +42,7 @@ describe('POST /ops/risque/:tenantId', () => {
     await a.close();
   });
 
-  it('🔴 sans le jeton d’exploitation : refus, et rien n’est lancé', async () => {
+  it('🔴 sans la session d’exploitation : refus, et rien n’est lancé', async () => {
     let lance = false;
     const a = app({ balayerRisque: async () => { lance = true; return BILAN; } });
     const res = await a.inject({ method: 'POST', url: `/ops/risque/${T}`, payload: { note: 'essai réel du lot 7' }, ...avecJeton('mauvais') });

@@ -616,9 +616,9 @@ d'authentification (qui pose `req.auth`), après la garde de rôle et le plafond
 se trouvait la première instruction du handler. Elle refuse en 403 `{ error: 'tenant interdit' }`. Le handler
 lit l'espace par `espaceVerifie(req)`, qui **LÈVE** si l'étape n'a pas tourné : une route oubliée rend un 500
 opaque, jamais un espace non vérifié. Trois choses à savoir :
-- **le critère est la CLASSE du module, puis le chemin.** Les modules `jeton-ops` (`/ops/credits/:tenantId`)
-  portent aussi des `:tenantId`, sans session : ils ne passent pas par le poseur, leur autorité est le jeton
-  d'exploitation ;
+- **le critère est la CLASSE du module, puis le chemin.** Les modules `session-ops` (`/ops/credits/:tenantId`)
+  portent aussi des `:tenantId`, sans session d'espace : ils ne passent pas par le poseur, leur autorité est la
+  session d'exploitation ;
 - **les routes d'un module `tenant` SANS `:tenantId` ne reçoivent pas l'étape** : les trois routes de campagne
   adressées par `:campaignId` s'isolent par `req.auth.tenantId` et le filtre du store, et `/m/:fichier` est
   publique ;
@@ -1162,8 +1162,8 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | `etapeEspace` (règle `scopeTenant`), posée au montage | toute route `:tenantId` d'un module `tenant` (§ 5) | l'accès aux données d'un autre client (IDOR) |
 | `requireAdmin` (`g.admin`, au montage) ; `forbidNonAdmin` dans le handler des modules sur `g.auth`, plus deux écarts délibérés sur `g.admin` (`contacts`, dont les lectures de conformité passent par `g.encadrement`, et `mbaAssistant`) | écritures | un opérateur d'inbox qui modifierait la configuration |
 | Plafonds de débit | routes authentifiées | l'épuisement par un client, volontaire ou non |
-| `OPS_TOKEN` | `/ops` | l'exploitation cross-tenant |
-| Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée | une session d'admin ouverte avec le seul mot de passe |
+| Session d'exploitation (`makeRequireOps`, `src/auth/middleware.ts`) | `/ops` | l'exploitation cross-tenant par qui n'est pas une adresse de `OPS_EMAILS` avec son second facteur |
+| Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée, et toute connexion d'exploitation (Google compris) | une session d'admin, ou d'exploitation, ouverte avec le seul mot de passe |
 | `urlRecuperable` + `resolutionPublique` | toute URL saisie par un client | le SSRF vers le réseau interne |
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
 | En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
@@ -1211,7 +1211,8 @@ extérieure, seulement d'une propriété que nous choisissons.
 (`src/auth/routes.ts`) décide avant tout accès : une identité qui a un facteur actif reçoit `{ mfaToken }`, quel
 que soit son rôle ; une identité qui a au moins un compte `admin` actif et aucun facteur reçoit `{ enrolToken }` ;
 les autres reçoivent la suite d'avant (session si un espace, jeton de choix sinon). La connexion, l'inscription
-(elle crée un admin) et l'invitation acceptée passent toutes par là ; `/auth/google` non, par décision de Julien.
+(elle crée un admin) et l'invitation acceptée passent toutes par là ; `/auth/google` non, par décision de Julien,
+SAUF pour une connexion d'exploitation (`ops: true`), où Google prouve l'adresse et jamais le second facteur.
 Les deux jetons d'étape suivent le modèle du jeton de choix : un `kind` à eux, la liste SIGNÉE des comptes, ni
 `tenantId` ni `role` à la racine, et `verifySession` refuse tout jeton qui porte un `kind`. ⚠️ **AUCUN
 INTERRUPTEUR** : ni drapeau ni variable ne saute l'étape, et un magasin du second facteur absent FERME (503 sur
@@ -1275,7 +1276,7 @@ vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond 
   travail reste mesuré par le garde d'usage. Un espace peut porter son réglage (`tenant_settings.api_plafond_minute`
   et `_heure`, migration 0181, `null` = défaut, CHECK > 0), lu à travers un cache de 30 s (une lecture partagée par
   rafale ; en cas d'échec, le dernier réglage connu, sinon le défaut) et réglé par `GET`/`PUT
-  /ops/plafond-api/:tenantId` (jeton d'exploitation, note obligatoire, ligne `ops_plafond_api` avec l'état d'avant,
+  /ops/plafond-api/:tenantId` (session d'exploitation, note obligatoire, ligne `ops_plafond_api` avec l'état d'avant et `par`,
   la route pose dans le cache le réglage écrit (`poser`), qui reste le dernier réglage connu si une relecture
   échoue). Refus : 429 `rate_limited`, `Retry-After` = la fenêtre pleine qui se libère le
   plus tard, message qui la nomme avec son plafond ; les `x-ratelimit-*` décrivent la fenêtre la plus proche de
@@ -1376,7 +1377,7 @@ coupable en une mesure.
 ### Les secrets
 
 Tous côté serveur, jamais dans le bundle `web/` ni en `NEXT_PUBLIC_*` : `META_ACCESS_TOKEN`,
-`META_APP_SECRET`, `OPS_TOKEN`, `ENCRYPTION_KEY`, `AUTH_SECRET`, `AI_GATEWAY_API_KEY`, `VERCEL_API_TOKEN`,
+`META_APP_SECRET`, `ENCRYPTION_KEY`, `AUTH_SECRET` (il signe aussi les sessions d'exploitation), `AI_GATEWAY_API_KEY`, `VERCEL_API_TOKEN`,
 la clé Supabase.
 
 🔴 **`VERCEL_API_TOKEN` n'est pas un secret comme les autres, et le confondre avec `AI_GATEWAY_API_KEY`
@@ -1395,10 +1396,46 @@ outil qui reçoit les signaux (la table de son adaptateur, dans `src/signaux/`),
 de réinitialisation (`auth_tokens`), les secrets de webhook entrant, les codes de secours du second facteur
 (`mfa_codes_secours`, sha256).
 
-⚠️ **`/ops` n'est pas durci, il est SURVEILLÉ** (choix produit). Une liste blanche d'IP aurait coupé l'accès
-dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre de 5 minutes, une alerte
-Telegram part, throttlée. 🔴 **Le jeton présenté n'est JAMAIS journalisé** : une tentative est presque toujours
-un secret voisin du vrai.
+🔴 **`/ops` EST NOMINATIF, AVEC SECOND FACTEUR** (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
+Plus de jeton partagé : `OPS_TOKEN` n'existe plus, et il n'y a aucun accès de secours. `OPS_EMAILS` (des
+adresses séparées par des virgules, refusée au chargement si une entrée n'en a pas la forme, vide = `/ops`
+fermé pour tous) désigne qui entre. La connexion est celle de la console, avec un paramètre : `/auth/login` ou
+`/auth/google` avec `ops: true`. Après l'identité prouvée, `entreeOps` (`src/auth/routes.ts`) refuse en 403 une
+adresse hors de la liste, puis passe par la porte du second facteur (code si un facteur est actif, enrôlement
+sinon, comme un admin) avec une étape marquée `ops`, signée avec le reste. Au bout du code, `suiteDeConnexion`
+rend `{ sessionOps, email }` : une session de portée `ops` (`signSessionOps`, 12 h, `sub` = l'identité), qui
+porte l'adresse et le moyen qui a prouvé le facteur.
+- **Trois remparts contre une session d'exploitation sur le seul mot de passe**, chacun vérifié seul en le
+  retirant : `entreeOps` passe `obligatoire: true` ; `apresLeMotDePasse` force l'enrôlement d'une étape `ops` ;
+  `suiteDeConnexion` LÈVE sur une étape `ops` sans moyen vérifié, que seules `/auth/mfa/verifier` et
+  `/auth/mfa/activer` lui passent.
+- **Deux portées qui se refusent l'une l'autre.** `verifySession` refuse tout jeton qui porte un `kind` (une
+  session d'exploitation n'ouvre AUCUNE route d'espace) ; `verifySessionOps` exige `kind: 'ops'` et le moyen
+  (une session d'espace, même d'admin, même au même secret, n'ouvre pas `/ops`).
+- **Relu à CHAQUE requête** (`makeRequireOps`) : la signature d'abord (un appel sans session valide ne coûte
+  aucune lecture), puis l'identité relue en base : son adresse (celle de la BASE, pas celle du jeton) doit être
+  dans la liste, et son facteur toujours actif. Retirer quelqu'un de `OPS_EMAILS` (puis `--force-recreate`) ou
+  réinitialiser son facteur coupe son accès à la requête suivante, sans attendre 12 heures. L'ancien en-tête
+  `x-ops-token` n'est plus lu nulle part, ni autorisé par le CORS.
+- 🔴 **L'inscription libre refuse une adresse de la liste** (`/auth/signup`, même 409 qu'une adresse prise) :
+  elle ne prouve pas qu'on possède l'adresse, et un tiers créerait sinon le compte d'un futur exploitant, poserait
+  son propre facteur et ouvrirait `/ops`. N'inscrire dans `OPS_EMAILS` qu'une adresse dont le compte existe déjà.
+- **Sans l'écran** (verrou d'un espace, recharge, rejeu de DLQ, réinitialisation d'un facteur) : la session
+  d'exploitation est un `Bearer`. L'obtenir par `POST /auth/login` (`{ email, password, ops: true }`) puis
+  `POST /auth/mfa/verifier` (`{ mfaToken, code }`), qui rend `sessionOps` ; ou la reprendre dans la console
+  connectée à `/ops` (`localStorage`, clé `mba.sessionOps`). Puis `curl -H "authorization: Bearer <sessionOps>"`.
+- **Chaque écriture signe sa trace** : `par` (l'adresse, lue par `auteurOps`) dans la ligne de journal de
+  chacune des neuf écritures, la note signée (`noteSignee`) dans `grille_prix.modifie_par` et dans la note du
+  mouvement de crédit, l'adresse pour acteur des lignes `mfa.reinitialise` écrites dans les espaces de la
+  personne, et `observateur` dans le jeton d'observation. La connexion elle-même laisse `ops_connexion`.
+  Aucune migration : les colonnes qui portaient la note portent désormais aussi l'auteur.
+- ⚠️ **La surveillance reste** : au 5e refus dans une fenêtre de 5 minutes, une alerte Telegram part, throttlée,
+  et une session dont l'adresse a quitté la liste compte comme un refus. 🔴 **Le jeton présenté n'est JAMAIS
+  journalisé.**
+- La console garde la session d'exploitation sous sa propre clé (`mba.sessionOps`, `web/lib/session.ts`), à
+  part de la session d'espace : observer un espace remplace la seconde sans fermer la première. L'ancienne clé
+  `mba.ops` est effacée à la première lecture. Le menu du compte montre un lien « Exploitation » quand `/me`
+  rend `exploitation: true` (un confort, jamais une autorisation).
 
 ⚠️ **`/ops` n'est plus en lecture seule, et il porte NEUF écritures.** `POST /ops/observe` (ouvrir une
 observation), `POST /ops/credits/:tenantId` (recharger le solde prépayé, **la seule écriture d'argent du
@@ -1417,20 +1454,22 @@ puis `plafond-api`, ajoutées le 2026-09-25, aussi) ; `observe`,
 corrigeant une liste qui ne citait que deux écritures sur six : la correction a énoncé un invariant
 général à partir des quatre routes qu'elle venait de lire, et elle a en plus oublié la septième
 (`dlq/replay`, qui renfile des campagnes et des webhooks). **Un compte en prose se mesure ou ne s'écrit
-pas** : un lecteur qui croit « toutes traçables » ne cherchera pas la trace qui manque. Le trou le plus
-gênant est `cle-modele`, qui révoque une clé facturée chez Vercel sans dire qui ni pourquoi.
+pas** : un lecteur qui croit « toutes traçables » ne cherchera pas la trace qui manque. Depuis le
+2026-09-28, les neuf disent QUI (`par`) ; `cle-modele` et `dlq/replay` ne disent toujours pas POURQUOI.
 
 ⚠️ **Ce qui vaut, lui, pour les huit** : elles sont délibérément **cross-espace**, parce que `/ops`
-s'authentifie par un JETON d'exploitation (`x-ops-token`) et jamais par une session. Leurs dépendances sont
-requises par le type : toutes les routes, `dlq/replay` comprise, sont montées dès que le module l'est.
+s'authentifie par la session d'exploitation (`makeRequireOps`) et jamais par une session d'espace. Leurs
+dépendances sont requises par le type : toutes les routes, `dlq/replay` comprise, sont montées dès que le
+module l'est.
 
-🔴 **ET UNE SESSION, D'OBSERVATION OU NON, N'ATTEINT JAMAIS `/ops` : elle est refusée en 401 par
-`makeRequireOps`, faute de `x-ops-token`.** Ce n'est PAS la garde de méthode qui l'arrête : celle-là vit
+🔴 **ET UNE SESSION D'ESPACE, D'OBSERVATION OU NON, N'ATTEINT JAMAIS `/ops` : elle est refusée en 401 par
+`makeRequireOps`, faute de portée `ops`.** Ce n'est PAS la garde de méthode qui l'arrête : celle-là vit
 dans `makeRequireAuth` et ne s'exécute pas sur cette surface, qui n'a qu'un `preHandler`,
-`makeRequireOps`, et ne lit jamais `req.auth`. La protection réelle est donc plus forte que celle qui
-était écrite : une autorité séparée, pas un filtre de verbe. `scripts/auto-attaque.mts` le tient, en
-attendant **401** sur la classe `jeton-ops` (« un admin de tenant n'entre pas ») et en ne balayant la
-garde d'observation que sur les routes de tenant.
+`makeRequireOps`, et ne lit jamais `req.auth`. `scripts/auto-attaque.mts` le tient sur la classe
+`session-ops` (sonde 5 : un admin d'espace, l'ancien `x-ops-token`, une session d'exploitation signée
+ailleurs, et une session bien signée dont l'identité n'a pas de facteur actif, qui doit atteindre la
+relecture du facteur) et dans l'autre sens (sonde 5 bis : une session d'exploitation sur chaque route
+d'espace).
 
 ⚠️ **CETTE LIGNE A ÉTÉ FAUSSE TROIS FOIS DE SUITE, LE MÊME JOUR, ET C'EST ÇA QUI EST INSTRUCTIF.** Elle
 a d'abord nommé « la garde de MÉTHODE », puis « la garde d'observation » : deux mécanismes réels, aucun
@@ -1483,14 +1522,14 @@ constantes du bloc `constantes` en fin de `src/config.ts` depuis le 2026-09-25 :
 | Famille | Exemples | Ce qu'un mauvais réglage coûte |
 |---|---|---|
 | **Secrets obligatoires** | `AUTH_SECRET`, `META_APP_SECRET`, `DATABASE_URL`, `ENCRYPTION_KEY` | le boot échoue, ou une faille |
-| **Interrupteurs de fonctionnalité** | `META_ES_CONFIG_ID`, `AI_GATEWAY_API_KEY`, `DRY_RUN`, `CONVERSATION_ANALYSIS_ENABLED` | vide = la fonctionnalité est OFF, proprement (503 explicite, file non consommée) |
+| **Interrupteurs de fonctionnalité** | `META_ES_CONFIG_ID`, `AI_GATEWAY_API_KEY`, `DRY_RUN`, `CONVERSATION_ANALYSIS_ENABLED`, `OPS_EMAILS` | vide = la fonctionnalité est OFF, proprement (503 explicite, file non consommée, `/ops` fermé pour tous) |
 | **Capacité** | `DB_POOL_MAX`, `PGBOSS_MAX`, `RATE_LIMIT_*` | latence, saturation muette, ou coupure de service |
 | **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS` | une réponse RGPD fausse |
 | **Paramètres commerciaux** | `EUR_PER_USD`, `COMMISSION_MODELE_PCT` | ce qu'on facture, ou ce qu'on annonce |
 | **Provisionnement des clés client** | `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` | les deux vides = éteint ; une seule moitié = refus au boot (chaque création d'agent échouerait, donc plus aucun client ne pourrait en créer) |
 
 🔴 **Le boot ÉCHOUE VITE plutôt que de dégrader en silence**, et c'est délibéré : `AUTH_SECRET` trop court en
-production, `CORS_ORIGINS` à `*`, `AI_GATEWAY_API_KEY` sans ses deux modèles, une seule moitié des clés
+production, `CORS_ORIGINS` à `*`, une entrée de `OPS_EMAILS` qui n'a pas la forme d'une adresse, `AI_GATEWAY_API_KEY` sans ses deux modèles, une seule moitié des clés
 Zadarma, `VERCEL_API_TOKEN` sans `VERCEL_TEAM_ID` ou sans `ENCRYPTION_KEY`. Chacun de ces cas produirait sinon une panne en pleine conversation, des semaines plus tard.
 
 ⚠️ **`EUR_PER_USD` est un paramètre commercial, pas un cours.** Le Gateway facture en dollars, tous nos
@@ -1629,12 +1668,12 @@ gelé.
 
 ### Surveillance
 
-`/ops/verrou/:tenantId` (jeton d'exploitation, POST, note obligatoire) : pose ou retire le verrou d'un
+`/ops/verrou/:tenantId` (session d'exploitation, POST, note obligatoire) : pose ou retire le verrou d'un
 espace (`tenants.status`). Il ferme la console ET l'API publique (`/v1`, `/mcp` rendent 403
 `tenant_locked`). 🔴 Il n'arrête PAS les campagnes déjà enfilées : la séquence complète (verrouiller,
 lister les campagnes en cours, les mettre en pause) est dans le runbook de `DEPLOY.md`.
 
-`/ops/risque/:tenantId` (jeton d'exploitation, POST, note obligatoire) : lance TOUT DE SUITE le balayage du
+`/ops/risque/:tenantId` (session d'exploitation, POST, note obligatoire) : lance TOUT DE SUITE le balayage du
 risque de désengagement d'un espace, pour l'essai réel et le dépannage, et rend son bilan (fiches évaluées,
 changements de niveau, automations déclenchées, passages au-delà du plafond, échecs). Il tourne DANS la
 requête. Rejoué, il ne redéclenche rien : un passage en élevé déjà écrit n'en est plus un. Un espace
@@ -1643,12 +1682,12 @@ que la nuit a déjà déclenché compte (`dejaDeclenches` dans le bilan). Les au
 l'ouverture de l'espace (`departLe` dans le bilan) : tout de suite pendant les heures d'ouverture, sinon à la
 suivante.
 
-`/ops/usage` (jeton d'exploitation) : l'usage de l'API publique agrégé PAR MINUTE, par espace, par clé et
+`/ops/usage` (session d'exploitation) : l'usage de l'API publique agrégé PAR MINUTE, par espace, par clé et
 par opération, avec le TRAVAIL demandé (un lot de 50 contacts y compte 50, pas 1). En mémoire du process
 qui sert la requête, jamais en base : une ligne SQL par appel ferait amplifier par la journalisation la
 charge qu'elle observe. Aucun seuil n'est posé à ce jour, ces compteurs OBSERVENT.
 
-`/ops/overview` (jeton d'exploitation) : rollup par tenant, charge des files, heartbeat du worker. Les DLQ non
+`/ops/overview` (session d'exploitation) : rollup par tenant, charge des files, heartbeat du worker. Les DLQ non
 vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md](docs/SLO-2026-09-01.md).
 
 ---
@@ -1930,7 +1969,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crypto/secretbox.ts` | AES-256-GCM, le seul chiffrement au repos du dépôt |
 | `src/auth/totp.ts` | 🔴 le second facteur sur `node:crypto` seul : base32 RFC 4648 (PAS l'alphabet Crockford de `src/ids/code.ts`, qu'une application d'authentification décoderait autrement), `codeAuPas`, `verifierCode` (fenêtre de plus ou moins un pas, anti-rejeu par le dernier pas, comparaison en temps constant), `uriOtpauth`, et les codes de secours (`genererCodesSecours`, `empreinteCodeSecours`) |
 | `src/auth/mfa-store.pg.ts` -> `PgMfaStore` | l'état du second facteur d'une IDENTITÉ : chiffrement du secret, activation qui ne remplace jamais un facteur actif, pas et code de secours consommés par un `update` conditionnel, réinitialisation (refusée à un admin d'espace pour une identité multi-espace). `tests/mfa.ts` en porte le double en mémoire, aux mêmes conditions |
-| `src/auth/routes.ts` -> `apresLeMotDePasse`, `suiteDeConnexion` | 🔴 la porte du second facteur, et la suite d'une connexion (session si un espace, jeton de choix sinon). UNE fonction pour la connexion, `/auth/mfa/verifier` et `/auth/mfa/activer` : trois copies divergeraient sur « ouvrir ou demander » |
+| `src/auth/routes.ts` -> `apresLeMotDePasse`, `suiteDeConnexion` | 🔴 la porte du second facteur, et la suite d'une connexion (session si un espace, jeton de choix sinon). UNE fonction pour la connexion, `/auth/mfa/verifier` et `/auth/mfa/activer` : trois copies divergeraient sur « ouvrir ou demander ». Une étape d'exploitation (`etape.ops`, via `entreeOps`) y passe aussi : toujours le code ou l'enrôlement, puis une session d'exploitation, signée seulement avec le moyen vérifié que seules les deux routes du code passent |
+| `src/auth/middleware.ts` -> `makeRequireOps`, `auteurOps`, `estAdresseOps` | 🔴 la garde de `/ops` (session d'exploitation, puis l'adresse relue en base dans `OPS_EMAILS` et le facteur toujours actif, à CHAQUE requête), l'auteur d'une écriture d'exploitation (échoue fermé sans la garde), et la comparaison d'une adresse à la liste (sans la casse, liste vide = personne). Une seule garde, construite par `buildServer` (`Gardes.ops`) pour les deux modules `session-ops` |
 | `src/lib/adresse-privee.ts` | `resolutionPublique` : ce qu'un texte d'URL ne peut pas voir |
 | `src/lib/page-distante.ts` | `urlRecuperable` (garde SSRF) et `fetchUrlBorne` (redirections revalidées saut par saut) |
 | `src/lib/corps-borne.ts` | lire un corps distant EN FLUX, avec ses trois verdicts |
