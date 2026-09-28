@@ -59,8 +59,13 @@ rend tout idempotent, l'appel Apex signé traverse Cloudflare. Namespace réserv
 🔴 **LE BLOCAGE** : Salesforce refuse de relier `engagemeapp` au Dev Hub. Son application « SalesforceDX Namespace
 Registry » exige PKCE (verrouillé, « contactez le Support »), et sa fenêtre de liaison ne l'envoie pas
 (`missing required code challenge`). Sans cette liaison, aucun package géré 2GP, donc ni installation chez un
-client ni les mesures 1, 5, 8 et 10. **Prochain pas : faire lever le blocage par Salesforce** (communauté
-Trailblazer ou un contact Salesforce ; une Developer Edition n'a pas de ticket de support). La partie serveur de
+client ni les mesures 1, 5, 8 et 10. **Cause mesurée le 2026-09-28** : le durcissement de sécurité imposé par
+Salesforce depuis juillet 2026 (PKCE obligatoire et verrouillé), que son propre bouton n'envoie pas ; revérifié le même
+jour, même refus (détail : `docs/salesforce-mesures-2026-09.md`). **Prochain pas : faire lever le blocage par
+Salesforce.** Fait le 2026-09-28 : inscription au programme partenaire (ISV, solution composite), accès EN
+ATTENTE de validation par e-mail ; une fois admis, ouvrir un ticket partenaire avec le message du document des
+mesures (ou l'envoyer à `partnercommunitysupport@salesforce.com`). En parallèle, le message sur la communauté
+Trailblazer. La partie serveur de
 L1 (migration 0183, client REST, store, connexion, routes, écrans) est DÉPLOYÉE depuis le 2026-09-27, invisible tant
 que `SALESFORCE_CLIENT_ID` n'est pas posé (la route rend 404, la carte se cache).
 
