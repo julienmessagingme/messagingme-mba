@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgUserStore } from '../../src/user/store.pg';
+import { SANS_CREDIT_OFFERT } from '../credit-offert';
 
 /**
  * 🔴 LE MOT DE PASSE SE LIT SUR L'IDENTITÉ, là où il s'écrit. `getPasswordHash` lisait la copie du compte
@@ -19,7 +20,7 @@ describe.skipIf(!url)('le mot de passe d’une adresse, en base', () => {
   afterAll(async () => { await pool.end(); });
 
   it('getPasswordHash lit l’identité, pas la copie du compte', async () => {
-    const users = new PgUserStore(pool);
+    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
     const email = `mdp.itest.${Date.now()}@exemple.fr`;
     const premier = await users.createTenantWithAdmin('Espace un', { email, name: null, passwordHash: 'scrypt$un$1' });
     // Deuxième compte sur la même identité, dont la COPIE porte un autre hash : l'état que laissait une
@@ -35,7 +36,7 @@ describe.skipIf(!url)('le mot de passe d’une adresse, en base', () => {
   });
 
   it('motDePasseDeLAdresse distingue une adresse inconnue d’une identité sans mot de passe', async () => {
-    const users = new PgUserStore(pool);
+    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
     const email = `sansmdp.itest.${Date.now()}@exemple.fr`;
     expect(await users.motDePasseDeLAdresse(email)).toBeUndefined();
     const compte = await users.createTenantWithAdmin('Espace Google', { email, name: null, passwordHash: null });

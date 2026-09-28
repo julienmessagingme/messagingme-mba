@@ -1225,9 +1225,11 @@ export class PgStatsStore {
   }
 
   /**
-   * Ce que le client a dépensé en IA sur la période, et le détail de ses tours : son crédit, et rien d'autre
-   * (`agent_sessions` porte exactement ce qui en est débité). Ce que coûte notre propre clé n'a rien à faire
-   * ici, et le Meta Business Agent est facturé par Meta au message de service. La liste est plafonnée et le dit.
+   * Ce que les TOURS D'AGENT ont coûté au client sur la période, et leur détail : `agent_sessions` porte ce que
+   * chaque tour a débité de son crédit, au prix client depuis le 2026-09-28. ⚠️ Ce n'est pas tout le crédit
+   * consommé : les essais du bac à sable et les traductions débitent sans session, et n'apparaissent qu'au journal
+   * des mouvements (`agent_credit_mouvements`). Ce que coûte notre propre clé n'a rien à faire ici, et le Meta
+   * Business Agent est facturé par Meta au message de service. La liste est plafonnée et le dit.
    */
   async consommationIa(tenantId: string, range: DateRange, plafond: number): Promise<{
     coutMicroEur: number; tokensEntree: number; tokensSortie: number; sessions: number;

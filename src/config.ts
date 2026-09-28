@@ -435,12 +435,24 @@ export const schema = z.object({
    */
   ASSISTANT_PLAFOND_EUROS_MOIS: z.coerce.number().min(0).default(2),
   /**
-   * Notre commission sur le tarif des modèles, en pourcent, telle qu'elle est annoncée au client dans
-   * l'onglet Modèle. Affichage seulement : la consommation décomptée reste le coût brut du Gateway. Le jour
-   * où la facturation existera, c'est le chemin d'écriture (`run-turn`) qu'il faudra majorer, pas l'affichage.
+   * Notre commission sur le tarif des modèles, en pourcent. La même valeur sert au tarif annoncé dans l'onglet
+   * Modèle ET au montant débité du crédit à chaque appel (`prixClientMicroEur`, `src/agent/devise.ts`) : le prix
+   * affiché est le prix payé. Le plafond de la clé Vercel, lui, reste le cumul acheté au coût brut : notre solde
+   * s'épuise avant lui.
    * Paramètre commercial ; 0 est valide (aucune commission), d'où `nonnegative`.
    */
   COMMISSION_MODELE_PCT: z.coerce.number().nonnegative().default(10),
+  /**
+   * Le crédit offert à la création d'un espace, en micro-euros (5 000 000 = 5 €). Écrit dans la transaction qui
+   * crée l'espace, avec un mouvement `offert` ; aucune clé Vercel n'est ouverte à ce moment (elle s'ouvre au
+   * premier usage qui en a besoin). Pas rétroactif. 0 l'éteint.
+   *
+   * 🔴 0 PAR DÉFAUT, ET C'EST UNE GARDE (relecture du lot 1, 2026-09-28). Offert à CHAQUE espace, sans preuve
+   * d'identité, il se récolte par script : 5 € ouvrent une clé facturée à NOTRE équipe Vercel, et une vingtaine
+   * d'espaces atteignent le plafond d'équipe, qui coupe les bots de tous les clients. Il ne s'allume qu'avec une
+   * borne décidée par Julien.
+   */
+  CREDIT_OFFERT_MICRO_EUR: z.coerce.number().int().min(0).default(0),
   /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est inerte (aucun job enfilé). */
   CONNECTOR_PUSH_URL: z.string().default(''),
   /** Secret HMAC partagé avec le connecteur (== INGEST_SECRET). Signe le push. */

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ReponseChat } from '../src/agent/llm/chat-client';
 import {
   creerTraducteur,
@@ -24,9 +24,27 @@ function rendTraductions(traductions: Array<{ id: string; texte: string; langueS
   return appelOutil(JSON.stringify({ traductions }));
 }
 
+/**
+ * Un traducteur de test. Par défaut, l'espace a du crédit et sa clé, et la commission est nulle : les tests qui ne
+ * parlent pas d'argent n'ont pas à le régler, et ceux qui en parlent le posent eux-mêmes.
+ */
 function traducteur(over: Partial<Omit<DepsTraduction, 'client'>> & Pick<DepsTraduction['client'], 'completer'>) {
   const { completer, ...reste } = over;
-  return creerTraducteur({ modele: 'modele-test', ...reste, client: { completer } });
+  return creerTraducteur({
+    modele: 'modele-test',
+    credit: { solde: async () => 5_000_000, debiterTraduction: async () => 0 },
+    assurerCle: async () => 'prete',
+    tauxEurParDollar: 1,
+    commissionPct: 0,
+    ...reste,
+    client: { completer },
+  });
+}
+
+/** Une réponse qui appelle l'outil ET dit ce que l'appel a coûté, comme le Gateway. */
+function rendTraductionsAuCout(coutDollars: number, traductions: Array<{ id: string; texte: string }>): ReponseChat {
+  const r = rendTraductions(traductions);
+  return { ...r, usage: { ...r.usage, coutDollars } };
 }
 
 describe('traducteur : la sortie du modele est une entree non fiable', () => {
@@ -120,22 +138,135 @@ describe('traducteur : ce qui ne doit RIEN couter', () => {
     expect(appels).toBe(0);
   });
 
-  it('🔴 un espace SANS cle de modele ne traduit pas, et n appelle rien', async () => {
-    // La traduction est payee par le credit PREPAYE du client (0124). Sans credit, pas d'appel : la
-    // route rend le fil en VO avec son drapeau, ce n'est pas une panne.
+});
+
+/**
+ * L'ARGENT (2026-09-28). La traduction usait la clé du client sans rien inscrire au solde : le solde affiché était
+ * trop haut, et Vercel coupait la clé avant que la console n'affiche zéro. Elle est désormais gardée par le solde
+ * (comme un tour d'agent à son entrée) et débitée au prix client.
+ */
+describe('traducteur : le crédit du client', () => {
+  it('🔴 un solde NUL ne traduit pas, n appelle rien, et n ouvre aucune clé', async () => {
+    // Sans crédit, pas d'appel : la route rend le fil en VO avec sa cause, ce n'est pas une panne. Et ouvrir une
+    // clé chez Vercel pour un espace qui ne pourra rien payer fabriquerait une clé facturable pour rien.
+    let appels = 0;
+    let clesDemandees = 0;
+    const t = traducteur({
+      completer: async () => { appels += 1; return rendTraductions([{ id: 'seul', texte: 'Bonjour' }]); },
+      credit: { solde: async () => 0, debiterTraduction: async () => 0 },
+      assurerCle: async () => { clesDemandees += 1; return 'prete'; },
+    });
+    expect(await t.empechement('t1')).toBe('credit');
+    expect(await t.traduire('t1', 'Hola', 'fr')).toBeNull();
+    expect(appels).toBe(0);
+    expect(clesDemandees).toBe(0);
+  });
+
+  it('un solde NÉGATIF est épuisé, comme un solde nul', async () => {
+    // Le solde peut finir sous zéro (un appel déjà joué se débite toujours) : ce n'est pas du crédit.
+    const t = traducteur({
+      completer: async () => rendTraductions([{ id: 'seul', texte: 'Bonjour' }]),
+      credit: { solde: async () => -300, debiterTraduction: async () => 0 },
+    });
+    expect(await t.empechement('t1')).toBe('credit');
+  });
+
+  it('🔴 un appel DÉBITE le prix client, commission comprise, sur l espace qui a traduit', async () => {
+    const debits: Array<{ tenantId: string; montant: number }> = [];
+    const t = traducteur({
+      completer: async () => rendTraductionsAuCout(0.001, [{ id: 'seul', texte: 'Bonjour' }]),
+      credit: { solde: async () => 5_000_000, debiterTraduction: async (tenantId, montant) => { debits.push({ tenantId, montant }); } },
+      tauxEurParDollar: 0.92,
+      commissionPct: 10,
+    });
+    expect((await t.traduire('espace-42', 'Hola', 'fr'))?.texte).toBe('Bonjour');
+    // 0,001 $ à 0,92 = 920 micro-euros, + 10 % = 1012.
+    expect(debits).toEqual([{ tenantId: 'espace-42', montant: 1012 }]);
+  });
+
+  it('🔴 un appel dont la réponse est ILLISIBLE est débité quand même : il a été facturé', async () => {
+    const debits: number[] = [];
+    const t = traducteur({
+      completer: async () => ({ ...appelOutil('pas du json'), usage: { tokensIn: 0, tokensOut: 0, tokensCaches: 0, coutDollars: 0.001 } }),
+      credit: { solde: async () => 5_000_000, debiterTraduction: async (_t, montant) => { debits.push(montant); } },
+    });
+    expect(await t.traduire('t1', 'Hola', 'fr')).toBeNull();
+    expect(debits).toEqual([1000]);
+  });
+
+  it('un coût nul ou illisible n écrit aucun débit', async () => {
+    let debits = 0;
+    const t = traducteur({
+      completer: async () => rendTraductionsAuCout(0, [{ id: 'seul', texte: 'Bonjour' }]),
+      credit: { solde: async () => 5_000_000, debiterTraduction: async () => { debits += 1; } },
+    });
+    await t.traduire('t1', 'Hola', 'fr');
+    expect(debits).toBe(0);
+  });
+
+  it('🔴 un débit qui ÉCHOUE ne prive pas l opérateur de sa traduction', async () => {
+    // Le modèle a répondu et a été payé : on perd le décompte (journalisé), jamais la lecture.
+    const t = traducteur({
+      completer: async () => rendTraductionsAuCout(0.001, [{ id: 'seul', texte: 'Bonjour' }]),
+      credit: { solde: async () => 5_000_000, debiterTraduction: async () => { throw new Error('base indisponible'); } },
+    });
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect((await t.traduire('t1', 'Hola', 'fr'))?.texte).toBe('Bonjour');
+      expect(erreurs.mock.calls.flat().join(' ')).toContain('traduction_debit_impossible');
+    } finally {
+      erreurs.mockRestore();
+    }
+  });
+
+  it('🔴 un appel qui ÉCHOUE n est pas débité : son coût est inconnu', async () => {
+    let debits = 0;
+    const t = traducteur({
+      completer: async () => { throw new Error('502 gateway'); },
+      credit: { solde: async () => 5_000_000, debiterTraduction: async () => { debits += 1; } },
+    });
+    expect(await t.traduire('t1', 'Hola', 'fr')).toBeNull();
+    expect(debits).toBe(0);
+  });
+});
+
+/**
+ * LA CLÉ. Elle ne s'ouvrait qu'à la création du premier agent : un espace sans agent ne pouvait pas traduire, quel
+ * que soit son crédit. Elle s'ouvre désormais à la première traduction, s'il y a du crédit.
+ */
+describe('traducteur : la clé de l espace', () => {
+  it('un espace qui a du crédit et obtient sa clé traduit', async () => {
+    let clesDemandees = 0;
+    const t = traducteur({
+      completer: async () => rendTraductions([{ id: 'seul', texte: 'Bonjour' }]),
+      assurerCle: async () => { clesDemandees += 1; return 'prete'; },
+    });
+    expect(await t.empechement('t1')).toBeNull();
+    expect((await t.traduire('t1', 'Hola', 'fr'))?.texte).toBe('Bonjour');
+    expect(clesDemandees).toBeGreaterThan(0);
+  });
+
+  it('🔴 un crédit trop bas pour ouvrir une clé est un crédit épuisé, pas une panne', async () => {
     let appels = 0;
     const t = traducteur({
       completer: async () => { appels += 1; return rendTraductions([{ id: 'seul', texte: 'Bonjour' }]); },
-      cleDisponible: async () => false,
+      assurerCle: async () => 'credit_insuffisant',
     });
-    expect(await t.disponible('t1')).toBe(false);
+    expect(await t.empechement('t1')).toBe('credit');
     expect(await t.traduire('t1', 'Hola', 'fr')).toBeNull();
     expect(appels).toBe(0);
   });
 
-  it('sans resolveur de cle, la traduction reste disponible (cablages de test, instance sans cles par espace)', async () => {
-    const t = traducteur({ completer: async () => rendTraductions([{ id: 'seul', texte: 'Bonjour' }]) });
-    expect(await t.disponible('t1')).toBe(true);
+  it('🔴 une clé qui n a pas pu s ouvrir a SA cause, et ce n est pas le crédit', async () => {
+    // L'espace a du crédit : lui dire qu'il est épuisé l'enverrait recharger pour rien.
+    let appels = 0;
+    const t = traducteur({
+      completer: async () => { appels += 1; return rendTraductions([{ id: 'seul', texte: 'Bonjour' }]); },
+      assurerCle: async () => 'indisponible',
+    });
+    expect(await t.empechement('t1')).toBe('cle');
+    expect(await t.traduire('t1', 'Hola', 'fr')).toBeNull();
+    expect(appels).toBe(0);
   });
 });
 

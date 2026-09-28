@@ -6,6 +6,7 @@
  * plusieurs centaines de lignes n'est pas un choix. La liste est intersectée avec le catalogue réel
  * (`modelesProposables`) : un modèle retiré disparaît du menu au lieu de casser l'agent.
  */
+import { facteurCommission } from './devise';
 
 /** Un modèle du catalogue Gateway, tel que la liste `/v1/models` le décrit (les champs qu'on lit). */
 export interface ModeleGateway {
@@ -56,17 +57,15 @@ const JETONS_PAR_MILLION = 1_000_000;
  * Le prix client d'un modèle, en euros par million de jetons : prix du Gateway en dollars par jeton, taux
  * commercial `EUR_PER_USD` (celui de `devise.ts`), puis notre commission.
  *
- * 🔴 Un affichage, pas une facturation : le crédit est décompté au coût brut du Gateway
- * (`microEurosDepuisDollars`), donc environ 10 % sous le tarif annoncé ici. Le jour où la facturation doit
- * inclure la marge, c'est `run-turn` qu'il faut majorer, pas cette fonction. Une valeur absente, illisible ou
- * négative rend `null`, jamais zéro (« gratuit » serait faux).
+ * 🔴 Le tarif annoncé est celui que le crédit paie : chaque appel est débité par `prixClientMicroEur`, avec la
+ * même commission et le même facteur (`facteurCommission`). Une valeur absente, illisible ou négative rend
+ * `null`, jamais zéro (« gratuit » serait faux).
  */
 export function prixParMillion(brutDollarsParJeton: string | number | undefined, tauxEurParDollar: number, commissionPct: number): number | null {
   const n = typeof brutDollarsParJeton === 'string' ? Number(brutDollarsParJeton) : brutDollarsParJeton;
   if (n === undefined || !Number.isFinite(n) || n <= 0) return null;
   const taux = Number.isFinite(tauxEurParDollar) && tauxEurParDollar > 0 ? tauxEurParDollar : 1;
-  const marge = Number.isFinite(commissionPct) && commissionPct >= 0 ? commissionPct : 0;
-  return n * JETONS_PAR_MILLION * taux * (1 + marge / 100);
+  return n * JETONS_PAR_MILLION * taux * facteurCommission(commissionPct);
 }
 
 /**

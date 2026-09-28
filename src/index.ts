@@ -99,7 +99,7 @@ import { lireContexteAvecReglages } from './agent/contexte';
 import { transcrireMessage } from './inbox/transcrire';
 import { lireMediaRecu } from './inbox/media-entrant';
 import type { DepsRepondre } from './inbox/repondre';
-import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
+import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret } from './crypto/secretbox';
 import { PasDeConnexionPub, ConnexionPubIncomplete } from './http/pubs';
 import { creerConnexionPub } from './pubs/connexion';
@@ -183,7 +183,8 @@ async function main(): Promise<void> {
   // annonce le nombre réellement appliqué. Hors du socle : le worker construit le sien pour écrire les agrégats,
   // avec `enabled` à `true`, que seul l'affichage lit.
   const conversationStatsStore = new PgConversationStatsStore(pool, config.CONVERSATION_ANALYSIS_ENABLED === 'true', config.CONVERSATION_RETENTION_DAYS);
-  const userStore = new PgUserStore(pool);
+  // Le crédit offert à chaque espace créé (0 par défaut : sans borne, il se récolte, cf. `src/config.ts`), écrit dans la transaction de création.
+  const userStore = new PgUserStore(pool, { creditOffertMicroEur: config.CREDIT_OFFERT_MICRO_EUR });
   const authTokenStore = new PgAuthTokenStore(pool);
   const apiKeyStore = new PgApiKeyStore(pool);
   const reportStore = new PgWorkflowReportStore(pool);
@@ -292,8 +293,10 @@ async function main(): Promise<void> {
    * 🔴 Il prend `gateway`, jamais `gatewayAide` : la traduction sert les conversations du client, donc elle
    * tombe sur son crédit prépayé, quand l'aide de la console est à notre charge. Les deux clients se
    * ressemblent à une lettre près et n'ont pas le même payeur.
-   * `cleDisponible` fait qu'un espace sans crédit ne traduit pas du tout, au lieu de retomber en silence sur
-   * la clé maison comme `cleDe` (nous paierions alors les traductions de tous les espaces sans clé).
+   * Chaque traduction est DÉBITÉE du solde au prix client, comme un tour d'agent (même taux, même commission). Un
+   * solde vide ne traduit pas. `assurerCle` ouvre la clé de l'espace à sa première traduction s'il a du crédit : un
+   * espace sans clé ne retombe jamais en silence sur la clé maison comme `cleDe` (nous paierions alors les
+   * traductions de tous les espaces sans clé).
    * `TRADUCTION_MODELE` vide -> traduction éteinte : le fil sort en VO, le bouton sortant refuse en 422.
    */
   const traductionStore = new PgTraductionStore(pool);
@@ -301,7 +304,14 @@ async function main(): Promise<void> {
     ? creerTraducteur({
       client: gateway,
       modele: config.TRADUCTION_MODELE,
-      cleDisponible: async (tenantId) => (await clesGateway.lire(tenantId)) !== null,
+      credit: credits,
+      assurerCle: creerAssureurDeCle({
+        cles: clesGateway,
+        provision: provisionCle,
+        journal: (msg, err, tenantId) => { journaliser('error', msg, { err, tenantId, pour: 'traduction' }); },
+      }),
+      tauxEurParDollar: config.EUR_PER_USD,
+      commissionPct: config.COMMISSION_MODELE_PCT,
     })
     : null;
   // Chaîne WhatsApp (Channels Me). La clé de chiffrement est injectée au store (contrat du sous-système), pas
@@ -1104,8 +1114,10 @@ async function main(): Promise<void> {
           // Point de lecture partagé avec le tour de production : le bac à sable montre exactement ce que la
           // production ferait, modèle et politiques compris.
           contexte: (tenant, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, tenant, agentId),
-          // Même taux qu'en production : un essai annonce ce que la conversation coûterait vraiment.
+          // Même taux et même commission qu'en production : un essai annonce, et débite, ce que la conversation
+          // coûterait vraiment.
           tauxEurParDollar: config.EUR_PER_USD,
+          commissionPct: config.COMMISSION_MODELE_PCT,
           outils: {
             catalogue: toolCatalog,
             // Muet : les essais n'ont pas à apparaître comme des pannes dans le journal que le client consulte.

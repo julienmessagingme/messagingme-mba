@@ -889,15 +889,14 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
               'Counted over this agent’s conversations. An ongoing conversation already appears, with what it has used so far.',
             )}
           </p>
-          {/* 🔴 LES DEUX NOMBRES DE CET ÉCRAN N'ONT PAS LA MÊME BASE, et ils sont côte à côte : le tarif de
-              la liste porte notre commission, ce coût-ci est le montant brut réellement décompté. Le taire
-              laisserait un client multiplier ses jetons par le tarif affiché et trouver un autre chiffre,
-              sans savoir lequel croire. Décision de Julien du 2026-09-09 : afficher l'écart, pas le corriger,
-              tant que la facturation Stripe n'existe pas. */}
+          {/* 🔴 LES DEUX NOMBRES DE CET ÉCRAN ONT LA MÊME BASE DEPUIS LE 2026-09-28 : le crédit est débité au
+              tarif de la liste, commission comprise (`prixClientMicroEur`). Cette phrase disait l'inverse, et
+              c'était vrai tant que le débit était le coût brut. ⚠️ Une conversation d'avant cette date garde
+              le coût brut qui lui a été débité : elle sort de la fenêtre de 30 jours d'elle-même. */}
           <p className="mt-1 text-xs text-ink-500" data-testid="agent-conso-base">
             {t(
-              'Ce montant est le coût réellement décompté. Les tarifs de la liste ci-dessus incluent notre commission, ils sont donc un peu plus élevés.',
-              'This amount is the cost actually deducted. The rates in the list above include our commission, so they are slightly higher.',
+              'Ce montant est celui qui est décompté de votre crédit, au tarif de la liste ci-dessus (commission comprise).',
+              'This amount is what is deducted from your credit, at the rates in the list above (commission included).',
             )}
           </p>
         </div>

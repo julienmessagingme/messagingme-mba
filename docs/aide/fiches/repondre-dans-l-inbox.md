@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 675f60
+source_empreinte: 798d5e
 ---
 # Répondre à un client dans l'Inbox
 
@@ -72,4 +72,6 @@ par WhatsApp est le texte, le traduire le ferait refuser.
 été dit et sa traduction, même si le vocal était en espagnol.
 
 ⚠️ La traduction est payée par le crédit de votre espace, contrairement à la transcription et à cette aide.
-Sans crédit, le fil reste dans sa langue d'origine et l'écran vous le dit.
+Chaque traduction en est décomptée, au même tarif que les agents IA, et le journal du crédit les regroupe en
+une ligne par jour. Sans crédit, le fil reste dans sa langue d'origine et l'écran vous le dit ; s'il dit que
+la traduction est momentanément indisponible, votre crédit n'est pas en cause, réessayez un peu plus tard.

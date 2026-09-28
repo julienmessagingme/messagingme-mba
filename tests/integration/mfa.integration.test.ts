@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgUserStore } from '../../src/user/store.pg';
+import { SANS_CREDIT_OFFERT } from '../credit-offert';
 import { PgUserAuthStore } from '../../src/auth/store';
 import { PgMfaStore } from '../../src/auth/mfa-store.pg';
 import { genererCodesSecours, genererSecret, empreinteCodeSecours } from '../../src/auth/totp';
@@ -50,7 +51,7 @@ describe.skipIf(!url)('le second facteur, en base', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
-    users = new PgUserStore(pool);
+    users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
     auth = new PgUserAuthStore(pool);
     mfa = new PgMfaStore(pool, cle);
   });

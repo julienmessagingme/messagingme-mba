@@ -7,7 +7,8 @@ import type { HttpTransportPatch } from '../meta/http';
  * S'assurer qu'un espace a sa clé AI Gateway, et la créer chez Vercel s'il n'en a pas.
  *
  * Déclenché à la création de l'agent, pas à son activation : le bac à sable appelle vraiment le modèle, et
- * sa mise au point doit être attribuée à l'espace.
+ * sa mise au point doit être attribuée à l'espace. Et depuis le 2026-09-28 à la première traduction
+ * (`creerAssureurDeCle`) : un espace sans agent traduit aussi sur sa clé.
  *
  * 🔴 Le plafond est le crédit acheté, jamais un nombre saisi : un plafond choisi ne protège personne, un
  * plafond égal à ce qui a été payé est une garantie. Pas de crédit, pas de clé, donc pas d'agent : sinon un
@@ -77,6 +78,54 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
     await supprimerCleGateway(deps.transport, { jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: creee.id });
   }
   return enregistree;
+}
+
+/**
+ * Ce que rend une demande de clé pour un usage qui n'est pas la création d'un agent (la traduction) :
+ *   - `prete` : l'espace a sa clé, ou vient de l'obtenir ;
+ *   - `credit_insuffisant` : pas de clé, et trop peu de crédit pour en ouvrir une (recharger règle) ;
+ *   - `indisponible` : pas de clé, et pas moyen d'en ouvrir une (provisionnement éteint, panne chez Vercel).
+ */
+export type VerdictCle = 'prete' | 'credit_insuffisant' | 'indisponible';
+
+/** Après un échec d'ouverture, Vercel n'est pas rappelé pour cet espace avant ce délai. */
+export const REPIT_APRES_ECHEC_MS = 60_000;
+
+/**
+ * S'assurer d'une clé au premier usage qui en a besoin, et plus seulement à la création du premier agent :
+ * l'existante, sinon ouverte sur le crédit de l'espace par `assurerCleGateway`, donc avec la même garde de course.
+ *
+ * 🔴 Un échec d'ouverture ne lève pas (la traduction retombe en VO, le fil s'affiche) et ouvre un RÉPIT : ce chemin
+ * est appelé à chaque rafraîchissement du fil (4 s) par chaque opérateur qui le lit, et une panne chez Vercel se
+ * changerait sinon en appels de création en rafale. Le répit vit dans la mémoire du process : N copies de l'API
+ * font au plus N appels par répit.
+ */
+export function creerAssureurDeCle(deps: {
+  cles: Pick<PgCleGatewayStore, 'lire'>;
+  /** `null` = provisionnement éteint sur cette instance : seule une clé existante sert. */
+  provision: DepsProvisionCle | null;
+  journal: (msg: string, err: unknown, tenantId: string) => void;
+  now?: () => number;
+}): (tenantId: string) => Promise<VerdictCle> {
+  const echecs = new Map<string, number>();
+  return async (tenantId) => {
+    if ((await deps.cles.lire(tenantId)) !== null) return 'prete';
+    if (!deps.provision) return 'indisponible';
+    const maintenant = deps.now ? deps.now() : Date.now();
+    const dernier = echecs.get(tenantId);
+    if (dernier !== undefined && maintenant - dernier < REPIT_APRES_ECHEC_MS) return 'indisponible';
+    try {
+      await assurerCleGateway(deps.provision, tenantId);
+      echecs.delete(tenantId);
+      return 'prete';
+    } catch (err) {
+      // Pas de répit ici : Vercel n'a pas été appelé, et une recharge doit ouvrir la clé tout de suite.
+      if (err instanceof CreditInsuffisantPourCle) return 'credit_insuffisant';
+      echecs.set(tenantId, maintenant);
+      deps.journal('cle de modele non ouverte', err, tenantId);
+      return 'indisponible';
+    }
+  };
 }
 
 /**

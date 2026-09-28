@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { makeCode, deriveTenantCode } from '../ids/code';
 import { resolveTenantCode } from '../ids/tenant-code';
+import { offrirALOuverture } from '../agent/credits.pg';
 
 export interface UserRow {
   id: string;
@@ -36,7 +37,11 @@ export class DuplicateEmailError extends Error {
  * modifie que les comptes de son espace. On ne renvoie jamais le password_hash.
  */
 export class PgUserStore {
-  constructor(private readonly pool: Pool) {}
+  /**
+   * `creditOffertMicroEur` : le crédit offert à chaque espace créé (`CREDIT_OFFERT_MICRO_EUR`, 0 l'éteint). Requis :
+   * un câblage qui l'oublierait créerait des espaces sans leur crédit, sans rien signaler.
+   */
+  constructor(private readonly pool: Pool, private readonly ouverture: { creditOffertMicroEur: number }) {}
 
   /**
    * État d'auth courant d'un compte, relu à chaque requête par requireAuth : rôle frais et révocation. null = compte
@@ -224,6 +229,8 @@ export class PgUserStore {
   /**
    * Inscription libre : crée un espace et son admin en une transaction (jamais d'espace sans admin).
    * `passwordHash` null = compte Google seul. 409 si l'email est déjà pris (rollback, aucun espace créé).
+   * Le crédit offert s'écrit dans la MÊME transaction, avec son mouvement `offert` : un espace qui échoue à naître
+   * n'emporte pas de crédit, et un espace né ne peut pas manquer le sien. Pas rétroactif (seul ce chemin l'écrit).
    */
   async createTenantWithAdmin(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }> {
     try {
@@ -239,6 +246,7 @@ export class PgUserStore {
           `insert into users (tenant_id, email, name, role, password_hash, code, identity_id) values ($1, $2, $3, 'admin', $4, $5, $6) returning id`,
           [tenantId, admin.email, admin.name, admin.passwordHash, makeCode('usr', tcode), identityId],
         );
+        await offrirALOuverture(client, tenantId, this.ouverture.creditOffertMicroEur);
         return { tenantId, userId: u.rows[0]!.id };
       });
     } catch (err) {

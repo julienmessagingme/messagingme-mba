@@ -304,6 +304,7 @@ describe('le tour, branché sur le VRAI cerveau', () => {
         contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [OUTIL],
         plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
       }),
+      commissionPct: 0,
       outils: {
         catalogue: { byName: async (_t: string, _a: string, n: string) => (n === OUTIL.name ? OUTIL : null), listActifs: async () => [OUTIL] } satisfies ToolCatalog,
         journal: { ouvrir: async () => 'j1', clore: async () => {} },

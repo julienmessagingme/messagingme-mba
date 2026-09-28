@@ -10,6 +10,7 @@ import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgEventStore } from '../../src/webhooks/store';
 import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
 import { PgUserStore } from '../../src/user/store.pg';
+import { SANS_CREDIT_OFFERT } from '../credit-offert';
 import { PgTrackedLinkStore } from '../../src/links/tracked-links.pg';
 import { fabriquerJeton, estJeton } from '../../src/links/jeton-contact';
 import { newTrackingCode } from '../../src/ids/code';
@@ -344,7 +345,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   });
 
   it('auth : createTenantWithAdmin (transaction) + createPending + setPassword + getAuthState(tenantStatus)', async () => {
-    const users = new PgUserStore(pool);
+    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
     const email = `admin.itest.${Date.now()}@exemple.fr`;
     const { tenantId: newTenant, userId } = await users.createTenantWithAdmin('Espace itest', { email, name: 'Admin', passwordHash: 'scrypt$aa$bb' });
     try {
@@ -405,7 +406,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // Deux invariants tenus ensemble, parce qu'ils se contredisent facilement : un rôle qui n'est pas admin
     // doit pouvoir changer librement (le prédicat écrit en dur sur 'agent' bloquait le manager dès qu'il ne
     // restait qu'un admin), et le DERNIER admin doit rester intouchable.
-    const users = new PgUserStore(pool);
+    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
     const { tenantId: espace, userId: admin } = await users.createTenantWithAdmin('Espace roles', {
       email: `roles.itest.${Date.now()}@exemple.fr`, name: 'Admin', passwordHash: null,
     });
@@ -427,7 +428,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   });
 
   it('PgAuthTokenStore : create renvoie le token en clair, consume valide/atomique/usage-unique/expiration', async () => {
-    const users = new PgUserStore(pool);
+    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
     const tokens = new PgAuthTokenStore(pool);
     const { tenantId: newTenant, userId } = await users.createTenantWithAdmin('Espace tok', { email: `tok.itest.${Date.now()}@exemple.fr`, name: null, passwordHash: null });
     try {

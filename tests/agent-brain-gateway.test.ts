@@ -71,6 +71,8 @@ function deps(reponses: ReponseChat[], resolveur?: ResolveurOutil, agent: Contex
       },
     },
     contexte: async () => agent,
+    // 0 : ces tests lisent le coût brut ; la commission a son propre test, plus bas.
+    commissionPct: 0,
     outils: {
       catalogue,
       journal,
@@ -326,6 +328,15 @@ describe('penserTrace', () => {
     const r = await penserTrace(entree(), TOUR, d);
     expect(r.usage!.tokensIn).toBe(20);
     expect(r.usage!.tokensOut).toBe(10);
+  });
+
+  it('🔴 le coût du tour est le PRIX CLIENT, commission comprise, sur chaque aller-retour', async () => {
+    // Tout l'aval lit ce nombre : le débit du solde, le coût de la session, le budget de la conversation. Au coût
+    // brut, le client payait moins que le tarif que la liste des modèles lui annonce.
+    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')]);
+    const r = await penserTrace(entree(), TOUR, { ...d, commissionPct: 10 });
+    // Deux allers-retours à 0,00001 $ au taux par défaut de 1 : 10 micro-euros bruts chacun, 11 avec 10 %.
+    expect(r.usage!.coutMicroEur).toBe(22);
   });
 
   it('🔴 un appel de modèle qui ÉCHOUE APRÈS un autre rend quand même ce qui a été DÉPENSÉ', async () => {

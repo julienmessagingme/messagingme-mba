@@ -7,7 +7,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
 import type { ConversationMessage } from '../src/inbox/store.pg';
 import { traduireFil, candidats, texteATraduire, type DepsFil, type MessageATraduire } from '../src/traduction/fil';
-import { TRADUCTIONS_MAX_PAR_REQUETE, type Traducteur, type Traduction } from '../src/traduction/traduire';
+import { TRADUCTIONS_MAX_PAR_REQUETE, type CauseSansTraduction, type Traducteur, type Traduction } from '../src/traduction/traduire';
 import { inboxDepInerte, inboxInerte } from './routes-inertes';
 
 /**
@@ -27,11 +27,12 @@ function msg(over: Partial<MessageATraduire> & { id: string }): MessageATraduire
 /** Un traducteur de test : il compte ses appels et rend ce qu'on lui dit. */
 function faux(opts: {
   reponses?: (textes: Array<{ id: string; texte: string }>) => Array<[string, Traduction]>;
-  disponible?: boolean;
+  /** Pourquoi l'espace ne traduit pas ; absent = il traduit. */
+  empechement?: CauseSansTraduction;
 } = {}) {
   const appels: Array<{ tenantId: string; textes: Array<{ id: string; texte: string }>; cible: string }> = [];
   const traducteur: Traducteur = {
-    disponible: async () => opts.disponible ?? true,
+    empechement: async () => opts.empechement ?? null,
     traduireLot: async (tenantId, textes, cible) => {
       appels.push({ tenantId, textes: textes.map((t) => ({ ...t })), cible });
       const paires = opts.reponses
@@ -127,7 +128,7 @@ describe('traduction du fil : qui est traduit, et combien de fois on paie', () =
     const r = await traduireFil(f.deps, { ...OU, messages: [msg({ id: 'm1', body: 'Hola' })], cible: 'fr' });
     expect(r.messages[0]!.affiche).toBe('Hola');
     expect(r.messages[0]!.traductionEchouee).toBe(true);
-    expect(r.indisponible).toBe(false);
+    expect(r.indisponible).toBeNull();
   });
 
   it('🔴 « jamais tente » n est PAS « a echoue »', async () => {
@@ -148,10 +149,10 @@ describe('traduction du fil : qui est traduit, et combien de fois on paie', () =
     expect(f.appels[0]!.textes).toHaveLength(TRADUCTIONS_MAX_PAR_REQUETE);
   });
 
-  it('un espace sans cle de modele rend le fil en VO, avec son drapeau, sans rien appeler', async () => {
-    const f = faux({ disponible: false });
+  it('un espace sans credit rend le fil en VO, avec sa CAUSE, sans rien appeler', async () => {
+    const f = faux({ empechement: 'credit' });
     const r = await traduireFil(f.deps, { ...OU, messages: [msg({ id: 'm1', body: 'Hola' })], cible: 'fr' });
-    expect(r.indisponible).toBe(true);
+    expect(r.indisponible).toBe('credit');
     expect(f.appels).toHaveLength(0);
     expect(r.messages[0]!.affiche).toBe('Hola');
     expect(r.messages[0]!.traductionEchouee).toBe(false);
@@ -160,7 +161,7 @@ describe('traduction du fil : qui est traduit, et combien de fois on paie', () =
   it('un espace sans cle affiche quand meme les traductions DEJA rangees', async () => {
     // Elles sont payees depuis longtemps : les cacher parce que le credit est epuise aujourd'hui
     // ferait disparaitre de l'ecran une lecture qui existe en base.
-    const f = faux({ disponible: false });
+    const f = faux({ empechement: 'credit' });
     const r = await traduireFil(f.deps, {
       ...OU,
       messages: [msg({ id: 'm1', body: 'Hola', traduction: 'Bonjour', traductionLangue: 'fr' })],
@@ -303,7 +304,7 @@ describe('GET /messages?traduire= : ce que la route rend', () => {
   it('avec `traduire=fr`, les trois etats sortent jusqu au navigateur', async () => {
     const a = app({
       traduireFil: async (_t, _c, messages) => ({
-        indisponible: false,
+        indisponible: null,
         messages: messages.map((m) => ({ ...m, affiche: 'Bonjour', traduit: true, traductionEchouee: false })),
       }),
     });
@@ -334,22 +335,44 @@ describe('GET /messages?traduire= : ce que la route rend', () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages?traduire=fr', ...auth() });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ traductionIndisponible: boolean; messages: Array<{ body: string }> }>();
+    const body = res.json<{ traductionIndisponible: boolean; traductionCause: string; messages: Array<{ body: string }> }>();
     expect(body.traductionIndisponible).toBe(true);
+    expect(body.traductionCause).toBe('instance');
     expect(body.messages[0]!.body).toBe('Hola');
     await a.close();
   });
 
-  it('un espace sans credit : 200, le fil en VO, et le drapeau leve', async () => {
+  /**
+   * 🔴 LA CAUSE VOYAGE TELLE QUELLE JUSQU'À L'ÉCRAN, et les trois ne se confondent pas : seul un crédit épuisé
+   * envoie un administrateur recharger. Dire « crédit épuisé » à un espace qui a du crédit mais dont la clé n'a
+   * pas pu s'ouvrir le ferait payer pour rien.
+   */
+  for (const cause of ['credit', 'cle'] as const) {
+    it(`un espace qui ne traduit pas (${cause}) : 200, le fil en VO, le drapeau leve et SA cause`, async () => {
+      const a = app({
+        traduireFil: async (_t, _c, messages) => ({
+          indisponible: cause,
+          messages: messages.map((m) => ({ ...m, affiche: m.body ?? '', traduit: false, traductionEchouee: false })),
+        }),
+      });
+      const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages?traduire=fr', ...auth() });
+      expect(res.statusCode).toBe(200);
+      const body = res.json<{ traductionIndisponible: boolean; traductionCause: string }>();
+      expect(body.traductionIndisponible).toBe(true);
+      expect(body.traductionCause).toBe(cause);
+      await a.close();
+    });
+  }
+
+  it('une traduction qui a pu se faire ne porte AUCUNE cause', async () => {
     const a = app({
       traduireFil: async (_t, _c, messages) => ({
-        indisponible: true,
-        messages: messages.map((m) => ({ ...m, affiche: m.body ?? '', traduit: false, traductionEchouee: false })),
+        indisponible: null,
+        messages: messages.map((m) => ({ ...m, affiche: 'Bonjour', traduit: true, traductionEchouee: false })),
       }),
     });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages?traduire=fr', ...auth() });
-    expect(res.statusCode).toBe(200);
-    expect(res.json<{ traductionIndisponible: boolean }>().traductionIndisponible).toBe(true);
+    expect(res.json<{ traductionCause?: string }>().traductionCause).toBeUndefined();
     await a.close();
   });
 });

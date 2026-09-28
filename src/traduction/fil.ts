@@ -1,6 +1,7 @@
 import {
   LOT_CARACTERES_MAX,
   TRADUCTIONS_MAX_PAR_REQUETE,
+  type CauseSansTraduction,
   type LangueConsole,
   type Traducteur,
 } from './traduire';
@@ -63,8 +64,12 @@ export interface DepsFil {
 }
 
 export interface FilTraduit<M> {
-  /** `true` = cet espace ne peut pas traduire (pas de clé de modèle) : pas une panne, et c'est 200. */
-  indisponible: boolean;
+  /**
+   * `null` = la traduction a pu se faire ; sinon, pourquoi cet espace ne traduit pas (crédit épuisé, clé qui n'a pas
+   * pu s'ouvrir). Pas une panne, et c'est 200. Une seule valeur et pas un drapeau plus sa cause : les deux ne
+   * peuvent pas se contredire.
+   */
+  indisponible: CauseSansTraduction | null;
   messages: Array<M & EtatTraduction>;
 }
 
@@ -128,7 +133,7 @@ export async function traduireFil<M extends MessageATraduire>(
   deps: DepsFil,
   o: { tenantId: string; conversationId: string; messages: M[]; cible: LangueConsole },
 ): Promise<FilTraduit<M>> {
-  const enVo = (indisponible: boolean): FilTraduit<M> => ({
+  const enVo = (indisponible: CauseSansTraduction | null): FilTraduit<M> => ({
     indisponible,
     messages: o.messages.map((m) => {
       const deja = m.direction === 'in' ? dejaTraduit(m, o.cible) : null;
@@ -141,11 +146,12 @@ export async function traduireFil<M extends MessageATraduire>(
     }),
   });
 
-  // Pas de crédit : pas d'appel et pas d'erreur. Le fil se lit en VO avec un drapeau, que l'écran peut expliquer.
-  if (!(await deps.traducteur.disponible(o.tenantId))) return enVo(true);
+  // Pas de crédit : pas d'appel et pas d'erreur. Le fil se lit en VO avec sa cause, que l'écran explique.
+  const empechement = await deps.traducteur.empechement(o.tenantId);
+  if (empechement !== null) return enVo(empechement);
 
   const aTenter = candidats(o.messages, o.cible);
-  if (aTenter.length === 0) return enVo(false);
+  if (aTenter.length === 0) return enVo(null);
 
   const tentes = new Set(aTenter.map((m) => m.id));
   const obtenues = await deps.traducteur.traduireLot(
@@ -182,7 +188,7 @@ export async function traduireFil<M extends MessageATraduire>(
   }
 
   return {
-    indisponible: false,
+    indisponible: null,
     messages: o.messages.map((m) => {
       const fraiche = obtenues.get(m.id)?.texte;
       const traduction = fraiche ?? (m.direction === 'in' ? dejaTraduit(m, o.cible) : null);

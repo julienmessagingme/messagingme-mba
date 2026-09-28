@@ -2,7 +2,9 @@ import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
-import { PgCreditStore } from '../../src/agent/credits.pg';
+import { PgCreditStore, NOTE_CREDIT_OFFERT } from '../../src/agent/credits.pg';
+import { PgUserStore } from '../../src/user/store.pg';
+import { SANS_CREDIT_OFFERT } from '../credit-offert';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -113,5 +115,126 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
     await pool.query('delete from tenants where id = $1', [jetable]);
     const reste = await pool.query('select 1 from agent_credits where tenant_id = $1', [jetable]);
     expect(reste.rowCount).toBe(0);
+  });
+
+  /**
+   * LES TRADUCTIONS D'UN JOUR, EN UNE LIGNE (migration 0190, 2026-09-28). Le solde bouge à chaque traduction, le
+   * journal garde une ligne par espace et par jour de Paris. 🔴 Tout ce qui compte est du SQL : l'upsert sur l'index
+   * unique PARTIEL (un prédicat qui ne correspond plus rend 42P10 à chaque débit), et la sérialisation de deux débits
+   * simultanés sur la même ligne.
+   */
+  describe('le débit des traductions', () => {
+    let trad: string;
+    beforeAll(async () => {
+      trad = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-credits-trad') returning id`)).rows[0]!.id;
+      await credits.crediter(trad, 1_000_000, 'mise en service');
+    });
+    afterAll(async () => { if (trad) await pool.query('delete from tenants where id = $1', [trad]); });
+
+    it('🔴 deux traductions du même jour font UNE ligne, et le solde descend des deux', async () => {
+      expect(await credits.debiterTraduction(trad, 1_200)).toBe(998_800);
+      expect(await credits.debiterTraduction(trad, 300)).toBe(998_500);
+      const lignes = (await credits.mouvements(trad, 50)).filter((m) => m.raison === 'traduction');
+      expect(lignes).toHaveLength(1);
+      expect(lignes[0]!.deltaMicroEur).toBe(-1_500);
+      expect(lignes[0]!.sessionId).toBeUndefined();
+      expect(lignes[0]!.note).toMatch(/^traductions du \d{2}\/\d{2}$/);
+    });
+
+    it('🔴 dix traductions SIMULTANÉES sont toutes débitées, sur la même ligne', async () => {
+      const avant = await credits.solde(trad);
+      const ligneAvant = (await credits.mouvements(trad, 50)).find((m) => m.raison === 'traduction')!.deltaMicroEur;
+      await Promise.all(Array.from({ length: 10 }, () => credits.debiterTraduction(trad, 100)));
+      expect(await credits.solde(trad)).toBe(avant - 1_000);
+      const lignes = (await credits.mouvements(trad, 50)).filter((m) => m.raison === 'traduction');
+      expect(lignes).toHaveLength(1);
+      expect(lignes[0]!.deltaMicroEur).toBe(ligneAvant - 1_000);
+    });
+
+    it('la ligne porte le jour de PARIS, pas celui du serveur', async () => {
+      const r = await pool.query<{ ok: boolean }>(
+        `select jour = (now() at time zone 'Europe/Paris')::date as ok
+           from agent_credit_mouvements where tenant_id = $1 and raison = 'traduction'`,
+        [trad],
+      );
+      expect(r.rows.map((x) => x.ok)).toEqual([true]);
+    });
+
+    it('🔴 la ligne du jour est PAR ESPACE : un autre espace a la sienne', async () => {
+      await credits.debiterTraduction(autreTenantId, 50);
+      const miennes = (await credits.mouvements(trad, 50)).filter((m) => m.raison === 'traduction');
+      const siennes = (await credits.mouvements(autreTenantId, 50)).filter((m) => m.raison === 'traduction');
+      expect(miennes).toHaveLength(1);
+      expect(siennes).toHaveLength(1);
+      expect(siennes[0]!.deltaMicroEur).toBe(-50);
+    });
+
+    it('un montant nul n écrit rien', async () => {
+      const avant = await credits.solde(trad);
+      const ligne = (await credits.mouvements(trad, 50)).find((m) => m.raison === 'traduction')!.deltaMicroEur;
+      expect(await credits.debiterTraduction(trad, 0)).toBe(avant);
+      expect((await credits.mouvements(trad, 50)).find((m) => m.raison === 'traduction')!.deltaMicroEur).toBe(ligne);
+    });
+
+    it('les autres mouvements gardent UNE ligne chacun, sans jour', async () => {
+      // L'agrégat ne vaut que pour la traduction : une consommation d'agent agrégée perdrait sa session.
+      await credits.debiter(trad, 10);
+      await credits.debiter(trad, 10);
+      const r = await pool.query<{ n: string; jours: string }>(
+        `select count(*)::text as n, count(jour)::text as jours
+           from agent_credit_mouvements where tenant_id = $1 and raison = 'conso'`,
+        [trad],
+      );
+      expect(r.rows[0]).toEqual({ n: '2', jours: '0' });
+    });
+
+    it('🔴 mouvements() rend la raison TELLE QU ÉCRITE, y compris une raison inconnue', async () => {
+      // Elle ramenait tout ce qui n'était pas `recharge` à `conso` : un crédit offert se lisait comme une
+      // consommation. Une valeur écrite par une version plus récente passe telle quelle.
+      await pool.query(
+        `insert into agent_credit_mouvements (tenant_id, delta_micro_eur, raison, note) values ($1, 1, 'achat', 'itest')`,
+        [trad],
+      );
+      const raisons = new Set((await credits.mouvements(trad, 50)).map((m) => m.raison));
+      expect([...raisons].sort()).toEqual(['achat', 'conso', 'recharge', 'traduction']);
+    });
+  });
+
+  /** LES 5 € OFFERTS À L'OUVERTURE (2026-09-28) : écrits par la transaction qui crée l'espace. */
+  describe('le crédit offert à la création d un espace', () => {
+    async function creer(ouverture: { creditOffertMicroEur: number }): Promise<{ tenantId: string; email: string }> {
+      const email = `credit.offert.${Date.now()}.${Math.random().toString(36).slice(2, 8)}@exemple.fr`;
+      const { tenantId } = await new PgUserStore(pool, ouverture).createTenantWithAdmin('Espace itest crédit', { email, name: null, passwordHash: null });
+      return { tenantId, email };
+    }
+    async function oublier(c: { tenantId: string; email: string }): Promise<void> {
+      await pool.query('delete from tenants where id = $1', [c.tenantId]);
+      await pool.query('delete from identities where lower(email) = lower($1)', [c.email]);
+    }
+
+    it('🔴 un espace créé porte 5 € et UNE ligne `offert` avec sa note', async () => {
+      const c = await creer({ creditOffertMicroEur: 5_000_000 });
+      try {
+        expect(await credits.solde(c.tenantId)).toBe(5_000_000);
+        const m = await credits.mouvements(c.tenantId, 10);
+        expect(m).toHaveLength(1);
+        expect(m[0]).toMatchObject({ deltaMicroEur: 5_000_000, raison: 'offert', note: NOTE_CREDIT_OFFERT });
+        // Aucune clé Vercel à l'inscription : elle s'ouvre au premier usage qui en a besoin.
+        const cles = await pool.query('select 1 from agent_gateway_keys where tenant_id = $1', [c.tenantId]);
+        expect(cles.rowCount).toBe(0);
+      } finally {
+        await oublier(c);
+      }
+    });
+
+    it('à 0, l espace naît sans crédit ni mouvement', async () => {
+      const c = await creer(SANS_CREDIT_OFFERT);
+      try {
+        expect(await credits.solde(c.tenantId)).toBe(0);
+        expect(await credits.mouvements(c.tenantId, 10)).toHaveLength(0);
+      } finally {
+        await oublier(c);
+      }
+    });
   });
 });

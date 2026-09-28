@@ -1674,7 +1674,7 @@ constantes du bloc `constantes` en fin de `src/config.ts` depuis le 2026-09-25 :
 | **Interrupteurs de fonctionnalité** | `META_ES_CONFIG_ID`, `AI_GATEWAY_API_KEY`, `DRY_RUN`, `CONVERSATION_ANALYSIS_ENABLED`, `OPS_EMAILS` | vide = la fonctionnalité est OFF, proprement (503 explicite, file non consommée, `/ops` fermé pour tous) |
 | **Capacité** | `DB_POOL_MAX`, `PGBOSS_MAX`, `RATE_LIMIT_*` | latence, saturation muette, ou coupure de service |
 | **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS` | une réponse RGPD fausse |
-| **Paramètres commerciaux** | `EUR_PER_USD`, `COMMISSION_MODELE_PCT` | ce qu'on facture, ou ce qu'on annonce |
+| **Paramètres commerciaux** | `EUR_PER_USD`, `COMMISSION_MODELE_PCT`, `CREDIT_OFFERT_MICRO_EUR` | ce qu'on facture, et ce qu'on offre |
 | **Provisionnement des clés client** | `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` | les deux vides = éteint ; une seule moitié = refus au boot (chaque création d'agent échouerait, donc plus aucun client ne pourrait en créer) |
 
 🔴 **Le boot ÉCHOUE VITE plutôt que de dégrader en silence**, et c'est délibéré : `AUTH_SECRET` trop court en
@@ -1687,9 +1687,26 @@ conversation d'un jour à l'autre, pour un gain nul, et ajouterait une dépendan
 tour. Un taux absent ou aberrant retombe sur 1, JAMAIS sur 0 : un zéro rendrait toute consommation gratuite,
 donc désarmerait le plafond en silence.
 
-⚠️ **`COMMISSION_MODELE_PCT` est un AFFICHAGE**, pas une facturation : le tarif annoncé dans la liste des
-modèles la porte, la consommation réellement décomptée reste le coût brut du Gateway. L'écart est dit à
-l'écran plutôt que subi.
+🔴 **QUI PAIE QUOI, ET À QUEL PRIX.** Sur le **crédit prépayé du client**, au **prix client** : le coût du
+Gateway au taux `EUR_PER_USD`, majoré de `COMMISSION_MODELE_PCT`, calculé par `prixClientMicroEur`
+(`src/agent/devise.ts`), seul point de calcul du montant débité. Ses appelants : le cerveau de l'agent (donc
+le tour de production et l'essai du bac à sable) et la traduction des conversations. La commission est la même
+variable que celle du tarif annoncé dans la liste des modèles : le prix affiché est le prix payé. Sur **notre
+clé** : les deux assistants de configuration, mesurés au coût brut (`microEurosDepuisDollars`, que
+`tests/agent-devise.test.ts` refuse ailleurs) et plafonnés par espace ; la transcription, le bot d'aide et la
+connaissance (vectorisation, reclassement), qui ne se décomptent d'aucun crédit.
+⚠️ **La traduction se débite à chaque appel mais s'inscrit au journal en UNE ligne par espace et par jour de
+Paris** (raison `traduction`, colonne `jour`, index unique partiel de 0190, upsert de
+`PgCreditStore.debiterTraduction`). Solde nul : pas de traduction. Sa clé de modèle s'ouvre à la première
+traduction s'il y a du crédit (`creerAssureurDeCle`, `src/agent/provisionner-cle.ts`), avec un répit d'une
+minute après un échec chez Vercel : ce chemin est appelé à chaque rafraîchissement du fil.
+⚠️ **Le plafond de la clé Vercel reste le cumul acheté au COÛT BRUT** : notre solde, décompté au prix client,
+s'épuise avant lui. Il n'est qu'un filet pour un bug de comptage.
+⚠️ **`CREDIT_OFFERT_MICRO_EUR`** (0 par défaut, donc éteint : sans borne par identité il se récolte par script, et chaque espace ouvre une clé
+facturée à notre équipe Vercel) s'écrit dans la transaction qui crée l'espace
+(`PgUserStore.createTenantWithAdmin`), avec un mouvement `offert` ; aucune clé Vercel n'est ouverte à
+l'inscription. Pas rétroactif. Les raisons de mouvement sont listées par `RaisonMouvement`
+(`src/agent/credits.ts`), et la lecture les rend telles qu'écrites.
 
 ⚠️ **Un changement de `.env.prod` exige `docker compose up -d --force-recreate`** : `env_file` n'est rechargé
 qu'à la recréation, pas à un `restart`.

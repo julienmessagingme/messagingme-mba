@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 5422d4
+source_empreinte: 30c0be
 ---
 # Construire un agent IA
 
@@ -67,8 +67,9 @@ quatorze jours, et « Reprendre » repose exactement la même question à l'agen
 maintenant : c'est ainsi qu'on voit si une consigne a servi à quelque chose.
 
 **Le crédit.** Chaque espace a un solde prépayé, affiché en haut de la liste des agents et libellé en euros.
-Il descend à chaque tour. Un avertissement apparaît quand il devient bas, et un bandeau rouge à zéro. Le
-rechargement se fait par nous, jamais depuis la console. **Sans crédit, on ne peut pas créer d'agent et le
+Le solde descend à chaque tour, au tarif affiché dans la liste des
+modèles (notre commission comprise), et aussi à chaque traduction de l'Inbox. Un avertissement apparaît quand
+il devient bas, et un bandeau rouge à zéro. Le rechargement se fait par nous, jamais depuis la console. **Sans crédit, on ne peut pas créer d'agent et le
 bac à sable refuse** : un essai appelle vraiment le modèle, il se paie comme une conversation.
 
 **Trois plafonds** protègent chaque conversation en plus du solde : le nombre de tours, le nombre d'appels

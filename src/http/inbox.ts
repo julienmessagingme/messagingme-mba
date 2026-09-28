@@ -13,7 +13,7 @@ import { MediaTropGros } from '../meta/media';
 import { MediaExpire, enTetesMedia } from '../inbox/media-entrant';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
-import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type LangueConsole, type Traduction } from '../traduction/traduire';
+import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTraduction, type LangueConsole, type Traduction } from '../traduction/traduire';
 import type { FilTraduit } from '../traduction/fil';
 import { messageDe } from '../lib/erreur';
 
@@ -148,8 +148,11 @@ export interface InboxRouteDeps extends DepsRepondre {
      * avant l'envoi, car une traduction ratée en sortie serait partie chez un client sans rappel possible.
      */
     traduire(tenantId: string, texte: string, cible: string): Promise<Traduction | null>;
-    /** Cet espace peut-il traduire ? `false` = pas de cle de modele, donc pas de credit. */
-    disponible?(tenantId: string): Promise<boolean>;
+    /**
+     * Cet espace peut-il traduire ? `null` = oui ; sinon la cause, que la route dit en clair. Requise : sans elle,
+     * un crédit épuisé se lirait « la traduction a échoué, réessayez », et l'opérateur réessaierait pour rien.
+     */
+    empechement(tenantId: string): Promise<CauseSansTraduction | null>;
   };
   /**
    * Un opérateur vient d'écrire : il prend le fil. Posé depuis la route, seule à savoir qu'un humain authentifié
@@ -530,10 +533,17 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const ctx = await deps.inbox.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     if (!deps.traducteur) return reply.code(503).send({ error: 'traduction indisponible sur cette instance' });
-    if (deps.traducteur.disponible && !(await deps.traducteur.disponible(tenant))) {
-      // 422 et non 503 : ce n'est pas une panne de l'instance, c'est un espace sans crédit de modèle. Le code est
-      // lu par l'écran, qui en fait une phrase actionnable.
-      return reply.code(422).send({ error: 'Cet espace n’a pas de crédit de modèle : la traduction est indisponible.', code: 'traduction_indisponible' });
+    const empechement = await deps.traducteur.empechement(tenant);
+    if (empechement !== null) {
+      // 422 et non 503 : ce n'est pas une panne de l'instance, c'est l'état de cet espace. L'écran affiche le
+      // message tel quel : il dit la cause, et seul le crédit épuisé envoie recharger.
+      return reply.code(422).send({
+        error: empechement === 'credit'
+          ? 'Le crédit de cet espace est épuisé : la traduction est indisponible. Un administrateur peut le recharger.'
+          : 'La traduction est momentanément indisponible pour cet espace. Réessayez dans un instant.',
+        code: 'traduction_indisponible',
+        cause: empechement,
+      });
     }
     const r = await deps.traducteur.traduire(tenant, b.texte.trim(), b.cible.trim().toLowerCase());
     if (r === null) return reply.code(422).send({ error: 'la traduction a échoué, réessayez dans un instant' });
@@ -635,14 +645,15 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
        * Rendu seulement quand une traduction a été demandée : sans `?traduire`, la réponse est inchangée. `true` =
        * cet espace ne peut pas traduire ; ce n'est pas une panne, et c'est un 200.
        */
-      ...(cible !== null ? { traductionIndisponible: traduit === null || traduit.indisponible } : {}),
+      ...(cible !== null ? { traductionIndisponible: traduit === null || traduit.indisponible !== null } : {}),
       /**
-       * Pourquoi la traduction est indisponible : l'instance n'a pas de modèle configuré (`TRADUCTION_MODELE` vide)
-       * ou l'espace n'a pas de clé Gateway (pas de crédit). Les deux n'appellent pas le même geste, et l'écran ne doit
-       * pas envoyer recharger un crédit sans rapport.
+       * Pourquoi la traduction est indisponible, en trois causes qui n'appellent pas le même geste : `instance`,
+       * aucun modèle configuré (`TRADUCTION_MODELE` vide) ; `credit`, le crédit de l'espace est épuisé (le recharger
+       * règle) ; `cle`, l'espace a du crédit mais sa clé n'a pas pu s'ouvrir. L'écran ne doit envoyer recharger que
+       * dans le deuxième cas.
        */
-      ...(cible !== null && (traduit === null || traduit.indisponible)
-        ? { traductionCause: traduit === null ? 'instance' : 'credit' }
+      ...(cible !== null && (traduit === null || traduit.indisponible !== null)
+        ? { traductionCause: traduit === null ? 'instance' : traduit.indisponible }
         : {}),
       // Qui détient le fil : sans cette information, l'opérateur voit le scénario se taire sans comprendre
       // pourquoi et ne sait pas s'il doit rendre la main.

@@ -44,6 +44,7 @@ function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<In
     sendTemplateMessage: async () => 'wamid.TPL',
     traducteur: {
       traduire: async (_t, texte) => ({ texte: `[es] ${texte}`, langueSource: 'fr' }),
+      empechement: async () => null,
     },
     ...reste,
   };
@@ -56,7 +57,7 @@ describe('POST /conversations/:id/traduire', () => {
     // en), un sortant vers celle du CONTACT, qui ecrit ce qu'il veut. Borner la sortie a nos deux
     // langues rendrait la fonctionnalite inutile des qu'un client ecrit en espagnol.
     let vu: { texte: string; cible: string } | null = null;
-    const a = app({ traducteur: { traduire: async (_t, texte, cible) => { vu = { texte, cible }; return { texte: 'Hola', langueSource: 'fr' }; } } });
+    const a = app({ traducteur: { empechement: async () => null, traduire: async (_t, texte, cible) => { vu = { texte, cible }; return { texte: 'Hola', langueSource: 'fr' }; } } });
     const res = await a.inject({
       method: 'POST', url: '/tenants/t1/conversations/c1/traduire', ...auth(),
       payload: { texte: 'Bonjour', cible: 'es' },
@@ -90,19 +91,31 @@ describe('POST /conversations/:id/traduire', () => {
     let appele = false;
     const a = app({
       traducteur: {
-        disponible: async () => false,
+        empechement: async () => 'credit',
         traduire: async () => { appele = true; return null; },
       },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/traduire', ...auth(), payload: { texte: 'Bonjour', cible: 'es' } });
     expect(res.statusCode).toBe(422);
-    expect(res.json<{ code: string }>().code).toBe('traduction_indisponible');
+    expect(res.json<{ code: string; cause: string; error: string }>()).toMatchObject({ code: 'traduction_indisponible', cause: 'credit' });
+    // L'écran affiche ce message tel quel : c'est lui qui dit à l'opérateur quoi faire.
+    expect(res.json<{ error: string }>().error).toMatch(/crédit/);
     expect(appele).toBe(false);
     await a.close();
   });
 
+  it('🔴 une clé qui n a pas pu s ouvrir NE PARLE PAS de crédit', async () => {
+    // L'espace a du crédit : l'envoyer recharger le ferait payer pour rien, et ne réglerait rien.
+    const a = app({ traducteur: { empechement: async () => 'cle', traduire: async () => null } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/traduire', ...auth(), payload: { texte: 'Bonjour', cible: 'es' } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ cause: string }>().cause).toBe('cle');
+    expect(res.json<{ error: string }>().error).not.toMatch(/crédit/);
+    await a.close();
+  });
+
   it('une traduction qui echoue rend 422, pas une bulle vide', async () => {
-    const a = app({ traducteur: { traduire: async () => null } });
+    const a = app({ traducteur: { empechement: async () => null, traduire: async () => null } });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/traduire', ...auth(), payload: { texte: 'Bonjour', cible: 'es' } });
     expect(res.statusCode).toBe(422);
     await a.close();

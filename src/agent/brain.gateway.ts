@@ -10,7 +10,7 @@ import { outilsExposes } from './outils-maison';
 import { blocResultatOutil, ressembleAUnBlocOutil, promptSysteme, type ContexteAgent } from './prompt';
 import type { EquipePourPrompt } from './disponibilite-equipe';
 import { SORTIE_PLAFOND } from './sorties';
-import { microEurosDepuisDollars } from './devise';
+import { prixClientMicroEur } from './devise';
 
 /**
  * Le cerveau réel : la boucle qui transforme un historique en une décision, partagée par le bac à sable et
@@ -55,6 +55,12 @@ export interface GatewayBrainDeps {
    * facteur 1, jamais zéro, qui désarmerait les plafonds.
    */
   tauxEurParDollar?: number;
+  /**
+   * Notre commission, en pourcent (`COMMISSION_MODELE_PCT`) : le coût du tour est le PRIX CLIENT, celui que le
+   * solde paie et que la liste des modèles annonce. Requise : un câblage qui l'oublierait débiterait le coût brut
+   * sans que rien ne le signale.
+   */
+  commissionPct: number;
   /** Signale une erreur de protocole (bug de notre client). Best-effort : jamais bloquant. */
   alerter?(message: string): void;
   now?: () => number;
@@ -209,9 +215,9 @@ async function boucler(
      */
     // eslint-disable-next-line no-console
     console.log(`agent-cache: agent=${input.agentId} ar=${allerRetour} in=${reponse.usage.tokensIn} caches=${reponse.usage.tokensCaches} part=${reponse.usage.tokensIn > 0 ? Math.round((reponse.usage.tokensCaches / reponse.usage.tokensIn) * 100) : 0}%`);
-    // La conversion dollars vers micro-euros se fait ici, une seule fois : tous nos compteurs et plafonds
-    // sont en micro-euros.
-    usage.coutMicroEur += microEurosDepuisDollars(reponse.usage.coutDollars, deps.tauxEurParDollar ?? 1);
+    // La conversion se fait ici, une seule fois, et rend le prix client (commission comprise) : tout l'aval le lit
+    // (débit du solde, coût de la session, budget de la conversation, coût affiché de l'essai).
+    usage.coutMicroEur += prixClientMicroEur(reponse.usage.coutDollars, deps.tauxEurParDollar ?? 1, deps.commissionPct);
 
     if (reponse.appelsOutils.length === 0) {
       const texte = reponse.texte ?? '';

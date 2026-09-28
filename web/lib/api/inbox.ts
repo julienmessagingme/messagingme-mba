@@ -430,14 +430,15 @@ export interface ConversationThread {
    * POURQUOI, et les deux causes n'appellent pas le meme geste (revue du 2026-09-13).
    *
    * `instance` = aucun modele de traduction n'est configure sur le serveur (`TRADUCTION_MODELE` vide) ;
-   * personne, cote client, ne peut rien y faire. `credit` = cet espace n'a pas de cle de modele, et la
-   * recharger le regle.
+   * personne, cote client, ne peut rien y faire. `credit` = le credit de cet espace est epuise (ou trop
+   * bas pour ouvrir sa cle de modele), et le recharger le regle. `cle` (2026-09-28) = l'espace a du
+   * credit mais sa cle de modele n'a pas pu s'ouvrir : c'est chez nous, recharger ne changerait rien.
    *
-   * ⚠️ L'ecran a d'abord affirme « le credit est epuise » dans LES DEUX cas. C'etait faux dans le
-   * premier, qui etait justement l'etat de la production : on envoyait un administrateur recharger un
+   * ⚠️ L'ecran a d'abord affirme « le credit est epuise » dans LES DEUX premiers cas. C'etait faux dans
+   * le premier, qui etait justement l'etat de la production : on envoyait un administrateur recharger un
    * credit sans rapport. Absente = on ne sait pas, et l'ecran reste prudent.
    */
-  traductionCause?: 'instance' | 'credit';
+  traductionCause?: 'instance' | 'credit' | 'cle';
   /** Surcharge de reprise de CE fil (C.4). null = suit le défaut du tenant. */
   messages: InboxMessage[];
 }

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { parse as secureJsonParse } from 'secure-json-parse';
 import type { ChatMessage, OutilExpose, ReponseChat } from '../agent/llm/chat-client';
+import type { VerdictCle } from '../agent/provisionner-cle';
+import { prixClientMicroEur } from '../agent/devise';
+import { journaliser } from '../lib/journal';
 
 /**
  * Traduire des messages de conversation.
@@ -10,9 +13,19 @@ import type { ChatMessage, OutilExpose, ReponseChat } from '../agent/llm/chat-cl
  * La correspondance se fait par identifiant, jamais par position : un élément oublié décalerait tout le reste et
  * donnerait à chaque message la traduction de son voisin, en silence. Un id inventé est ignoré, un id oublié reste
  * non traduit (les deux sens sont testés).
- * 🔴 La dépense tombe sur le crédit prépayé du client (clé Gateway de l'espace), pas sur notre clé : un espace sans
- * clé ne traduit pas, et `disponible` permet à l'écran de le dire.
+ * 🔴 La dépense tombe sur le crédit prépayé du client, comme un tour d'agent : l'appel passe par la clé Gateway de
+ * l'espace, et son prix client (commission comprise) est DÉBITÉ du solde. Avant le 2026-09-28, la traduction usait
+ * la clé du client sans rien inscrire au solde, qui s'affichait donc trop haut. Sans crédit, pas d'appel, et
+ * `empechement` permet à l'écran de dire pourquoi.
  */
+
+/**
+ * Pourquoi un espace ne traduit pas, quand l'instance, elle, le sait (`TRADUCTION_MODELE` posé) :
+ *   - `credit` : le crédit est épuisé, ou trop bas pour ouvrir la clé de l'espace ; le recharger règle ;
+ *   - `cle` : l'espace a du crédit mais pas de clé, et elle n'a pas pu s'ouvrir ; rien à faire côté client.
+ * La troisième cause, la traduction éteinte sur l'instance, n'est pas ici : il n'y a alors aucun traducteur.
+ */
+export type CauseSansTraduction = 'credit' | 'cle';
 
 /** Les deux langues de la console. Ce ne sont pas celles des clients, qui écrivent ce qu'ils veulent. */
 export type LangueConsole = 'fr' | 'en';
@@ -65,10 +78,23 @@ export interface DepsTraduction {
   };
   modele: string;
   /**
-   * Cet espace a-t-il une clé de modèle à lui ? Absente = disponible (tests, instance sans clés par espace). En
-   * production, branchée sur `PgCleGatewayStore.lire` : un espace sans crédit ne traduit pas sur notre dos.
+   * Le crédit prépayé de l'espace : lu avant l'appel (solde > 0, comme un tour d'agent à son entrée), débité après.
+   * Requis : un traducteur qui ne débiterait pas userait la clé du client sans rien inscrire au solde, exactement
+   * le défaut que ce câblage corrige.
    */
-  cleDisponible?(tenantId: string): Promise<boolean>;
+  credit: {
+    solde(tenantId: string): Promise<number>;
+    debiterTraduction(tenantId: string, montantMicroEur: number): Promise<unknown>;
+  };
+  /**
+   * S'assurer que l'espace a sa clé de modèle : l'existante, sinon ouverte sur son crédit (`creerAssureurDeCle`).
+   * 🔴 Requise : sans clé propre, `cleDe` retomberait en silence sur la clé maison, et nous paierions les
+   * traductions de tous les espaces sans clé.
+   */
+  assurerCle(tenantId: string): Promise<VerdictCle>;
+  /** Taux et commission du prix client (`prixClientMicroEur`), les mêmes que pour un tour d'agent. */
+  tauxEurParDollar: number;
+  commissionPct: number;
   /** Plafond de temps d'un appel. Au-delà, on ne rend rien : le fil s'affiche en VO. */
   delaiMs?: number;
 }
@@ -78,8 +104,11 @@ export interface DepsTraduction {
  * modèle pour traduire des messages de clients.
  */
 export interface Traducteur {
-  /** `false` = cet espace ne peut pas traduire (aucune clé de modèle). Ce n'est pas une panne. */
-  disponible(tenantId: string): Promise<boolean>;
+  /**
+   * `null` = cet espace peut traduire ; sinon, pourquoi il ne le peut pas. Ce n'est pas une panne. Peut ouvrir la
+   * clé de l'espace au passage (première traduction d'un espace qui a du crédit).
+   */
+  empechement(tenantId: string): Promise<CauseSansTraduction | null>;
   /**
    * Traduit un lot. Les ids absents de la map rendue ne sont pas traduits, sans que ce soit une erreur : l'appelant
    * seul sait ce qu'il a demandé.
@@ -204,7 +233,7 @@ export function creerTraducteur(deps: DepsTraduction): Traducteur {
       if (!demandes.has(t.id)) demandes.set(t.id, texte);
     }
     if (demandes.size === 0) return rien;
-    if (!(await disponible(tenantId))) return rien;
+    if ((await empechement(tenantId)) !== null) return rien;
 
     const abandon = new AbortController();
     const minuteur = setTimeout(() => abandon.abort(), deps.delaiMs ?? DELAI_DEFAUT_MS);
@@ -232,6 +261,20 @@ export function creerTraducteur(deps: DepsTraduction): Traducteur {
       clearTimeout(minuteur);
     }
 
+    /**
+     * Le débit, AVANT de lire la réponse : l'appel est facturé même si sa sortie est illisible. Le coût vient du
+     * Gateway (`coutDollars`), au prix client. Un débit qui échoue se journalise et ne prive personne de sa
+     * lecture : le modèle a répondu, on perd le décompte, jamais la traduction (même règle qu'un tour d'agent).
+     */
+    const montant = prixClientMicroEur(brut.usage.coutDollars, deps.tauxEurParDollar, deps.commissionPct);
+    if (montant > 0) {
+      try {
+        await deps.credit.debiterTraduction(tenantId, montant);
+      } catch (err) {
+        journaliser('error', 'traduction_debit_impossible', { err, tenantId, montantMicroEur: montant });
+      }
+    }
+
     const appel = brut.appelsOutils.find((a) => a.nom === OUTIL_TRADUIRE);
     if (!appel) return rien;
     let lu: unknown;
@@ -257,12 +300,19 @@ export function creerTraducteur(deps: DepsTraduction): Traducteur {
     return out;
   }
 
-  async function disponible(tenantId: string): Promise<boolean> {
-    return deps.cleDisponible ? deps.cleDisponible(tenantId) : true;
+  /**
+   * Le solde d'abord : il ne coûte qu'une lecture, alors qu'ouvrir une clé appelle Vercel. Un solde vide n'ouvre donc
+   * jamais de clé.
+   */
+  async function empechement(tenantId: string): Promise<CauseSansTraduction | null> {
+    if ((await deps.credit.solde(tenantId)) <= 0) return 'credit';
+    const cle = await deps.assurerCle(tenantId);
+    if (cle === 'prete') return null;
+    return cle === 'credit_insuffisant' ? 'credit' : 'cle';
   }
 
   return {
-    disponible,
+    empechement,
     traduireLot,
     async traduire(tenantId, texte, cible, source) {
       // Traduire vers la langue qu'on a déjà est un appel payé pour rien (vocal déjà en français, contact qui écrit

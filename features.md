@@ -1112,10 +1112,16 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   `[audio]`.
 
   🔴 **QUI PAIE, ET C'EST DIFFÉRENT DE LA TRANSCRIPTION.** La traduction est facturée sur le **crédit
-  prépayé de l'espace**, là où la transcription et le bot d'aide sont à notre charge. Un espace sans
-  crédit ne traduit pas, et l'écran le dit au lieu de rester muet. Il distingue les deux causes
-  possibles : pas de crédit sur l'espace (un administrateur peut le recharger) ou traduction pas encore
-  activée sur le serveur (rien à faire côté client).
+  prépayé de l'espace**, là où la transcription et le bot d'aide sont à notre charge. **Depuis le
+  2026-09-28, chaque traduction est décomptée du solde**, au même tarif qu'un agent (commission comprise) :
+  avant, elle usait le crédit sans apparaître au solde, qui s'affichait donc trop haut. Le journal du
+  crédit n'en garde qu'**une ligne par jour** (« traductions du 28/09 »), qui grossit : une ouverture de
+  fil peut lancer quarante traductions. Un espace **sans agent** traduit aussi : sa clé de modèle s'ouvre à
+  sa première traduction s'il a du crédit.
+  Un espace sans crédit ne traduit pas, et l'écran le dit au lieu de rester muet. Il distingue **trois
+  causes** : crédit épuisé (un administrateur peut le recharger), traduction momentanément indisponible
+  (l'espace a du crédit, recharger n'y changerait rien) ou traduction pas encore activée sur le serveur
+  (rien à faire côté client).
 
 - ✅ **LE STATUT « TRAITÉ »** (2026-09-19, déployé le jour même, essai réel à faire). Pour les conversations
   où le client a écrit en dernier mais où il n'y a plus rien à lui répondre (« merci, bonne journée »). Marquée
@@ -2335,8 +2341,9 @@ il ne le remplace pas : les deux peuvent vivre sur le même numéro, et le clien
 
 ✅ **Livré et déployé** (2026-08-28) : la fiche, la base de connaissance, les outils, la construction en
 parlant, le bac à sable, le tour de production et le solde prépayé.
-⚠️ **Mais aucun espace n'a de crédit à ce jour**, et sans crédit un agent ne répond pas (voir « Le crédit »
-plus bas). ⚠️ **Rien n'a encore tourné sur du vrai trafic** : un contact qui atteint un bloc agent, une
+⚠️ **Sans crédit, un agent ne répond pas** (voir « Le crédit » plus bas). Le crédit offert à la création
+d'un espace existe mais reste **éteint** tant que sa borne n'est pas décidée : offert à chaque espace sans preuve
+d'identité, il se récolterait par script. ⚠️ **Rien n'a encore tourné sur du vrai trafic** : un contact qui atteint un bloc agent, une
 réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario, tout cela reste à voir en vol.
 
 ### Où l'agent parle : le bloc « Agent IA » d'un scénario
@@ -2443,8 +2450,10 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   APPELER DES OUTILS (un modèle qui ne le sait pas ne cherche pas dans votre base de connaissance, il
   INVENTE), et ils parlent correctement français. Un modèle retiré du catalogue disparaît tout seul de la
   liste. Les prix, eux, sont lus en direct chez le fournisseur : ils ne peuvent pas être périmés.
-  ⚠️ **Le tarif affiché inclut notre commission**, la consommation de l'encadré du dessous est le montant
-  brut réellement décompté : l'écart d'environ 10 % est écrit à l'écran plutôt que laissé à deviner.
+  ✅ **Le tarif affiché est le tarif payé** (2026-09-28) : il inclut notre commission, et le crédit est
+  décompté au même tarif, commission comprise. La consommation de l'encadré du dessous est donc au prix de
+  la liste. ⚠️ Avant cette date, le crédit était décompté au coût brut (environ 10 % sous le tarif
+  affiché), et l'écran le disait ; une conversation d'avant garde le montant qui lui a été décompté.
   ⚠️ Si le catalogue du fournisseur est injoignable, la liste reste utilisable, simplement sans tarif.
 - ✅ **Budget d'une conversation**. Budget épuisé, l'agent sort par « Plafond atteint ».
 
@@ -2696,20 +2705,26 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 ### Le crédit et les plafonds
 
 - ✅ **Un solde prépayé par espace de travail**, affiché en haut de la liste des agents et libellé en euros.
-  Il descend à chaque tour, avec ce que le tour a réellement coûté.
+  Il descend à chaque tour et à chaque traduction de l'Inbox, **au tarif affiché dans la liste des modèles,
+  commission comprise** (2026-09-28 ; avant, au coût brut).
 - ✅ **Trois états, et ils préviennent avant la panne** : le solde en clair, un avertissement sous **0,50 €**
   (« c'est bas, au bout vos agents cesseront de répondre »), et un bandeau rouge à zéro (« vos agents ne
   répondent plus et sortent par Plafond atteint »).
 - ✅ **Le rechargement se fait par nous, jamais par le client** : un client ne doit pas pouvoir créditer son
   propre compte. À la main pour l'instant, sans paiement en ligne (voir la section `/ops`).
-- 🔴 **Aucun espace n'a de crédit aujourd'hui** (2026-08-28), et c'est le bon défaut : un crédit implicite
-  ferait payer une consommation que personne n'a autorisée. Conséquence concrète : **tant que personne n'a
-  rechargé, les agents ne démarrent pas et le bac à sable refuse**.
+- ✅ **5 € OFFERTS À LA CRÉATION D'UN ESPACE** (2026-09-28, décision de Julien), avec une ligne « crédit
+  offert à l'ouverture » dans le journal du crédit. **Pas rétroactif** : les espaces créés avant n'ont que ce
+  qu'on leur a rechargé. Aucune clé de modèle n'est ouverte à l'inscription, elle s'ouvre au premier usage.
+  Le montant est un réglage du serveur (0 l'éteint).
+- 🔴 **Sans crédit, rien ne démarre**, et c'est le bon défaut : un crédit implicite ferait payer une
+  consommation que personne n'a autorisée. Conséquence concrète : **un espace à zéro n'a ni agent qui
+  démarre, ni bac à sable, ni traduction**.
 - ✅ **Trois plafonds de conversation** en plus du solde, réglés sur la fiche (tours, appels d'outils, budget).
   Le premier atteint fait sortir le parcours par 🛑 « Plafond atteint », qui est une sortie à brancher : c'est
   un garde-fou, pas un réglage de confort.
 - ✅ **CHAQUE ESPACE A SA PROPRE CLÉ DE MODÈLE** (2026-09-09), créée automatiquement au moment où le client
-  crée son PREMIER agent, et plafonnée au crédit qu'il a acheté. Ce qui change côté client : **sans crédit,
+  crée son PREMIER agent, ou depuis le 2026-09-28 à sa PREMIÈRE TRADUCTION s'il a du crédit, et plafonnée au
+  crédit qu'il a acheté. Ce qui change côté client : **sans crédit,
   on ne peut plus créer d'agent du tout**, avec un message qui dit de recharger. Ce n'est pas une sévérité
   gratuite : le bac à sable appelle vraiment le modèle, donc un espace sans crédit mettrait son agent au
   point à nos frais.
@@ -2717,7 +2732,8 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   plafond saisi librement ne protégerait personne. Il monte à chaque rechargement, et ne redescend jamais
   tout seul.
   ⚠️ **Un espace créé AVANT ce lot n'a pas de clé propre** et continue de fonctionner sur la clé maison : sa
-  dépense n'est simplement pas séparée des autres. Il en aura une au prochain agent qu'il créera.
+  dépense n'est simplement pas séparée des autres. Il en aura une au prochain agent qu'il créera, ou à sa
+  prochaine traduction.
 
 ### La mention d'IA (obligation légale)
 

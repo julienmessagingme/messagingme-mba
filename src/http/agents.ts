@@ -211,9 +211,9 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   });
 
   /**
-   * Les modèles proposables, avec leur tarif. 🔴 Le prix affiché porte la commission (`COMMISSION_MODELE_PCT`) ;
-   * la consommation de l'onglet voisin est enregistrée au coût brut du Gateway, et l'écran le dit. La clé du
-   * Gateway ne sort jamais d'ici : la console ne reçoit que des identifiants et des prix.
+   * Les modèles proposables, avec leur tarif. 🔴 Le prix affiché porte la commission (`COMMISSION_MODELE_PCT`),
+   * et c'est aussi celui que le crédit paie (`prixClientMicroEur`) : la consommation de l'onglet voisin est au même
+   * tarif. La clé du Gateway ne sort jamais d'ici : la console ne reçoit que des identifiants et des prix.
    */
   app.get('/tenants/:tenantId/agents/modeles', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { eurosDepuisMicro, microEurosDepuisDollars, dollarsDepuisMicroEuros, PLAFOND_GATEWAY_MIN_DOLLARS } from '../src/agent/devise';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { eurosDepuisMicro, microEurosDepuisDollars, dollarsDepuisMicroEuros, prixClientMicroEur, PLAFOND_GATEWAY_MIN_DOLLARS } from '../src/agent/devise';
+import { prixParMillion } from '../src/agent/modeles';
 import { eurosDepuisMicro as eurosFront } from '../web/lib/agent-solde';
 
 /**
@@ -40,6 +44,87 @@ describe('microEurosDepuisDollars', () => {
     // Un appel de modèle bon marché coûte de l'ordre du dix-millième de dollar : il DOIT compter, sinon un
     // agent bavard consomme sans que le solde bouge.
     expect(microEurosDepuisDollars(0.0001, 0.92)).toBe(92);
+  });
+});
+
+/**
+ * LE PRIX CLIENT (2026-09-28) : ce que le crédit d'un espace paie pour un appel, commission comprise.
+ *
+ * 🔴 Le débit était le coût BRUT, alors que la liste des modèles annonçait le prix majoré de la commission : le
+ * client lisait un tarif et en payait un autre. Une seule fonction calcule désormais le montant débité, et la
+ * commission y est la même variable que celle de l'affichage.
+ */
+describe('prixClientMicroEur', () => {
+  it('à 0 %, c’est exactement le coût brut', () => {
+    expect(prixClientMicroEur(0.01, 0.92, 0)).toBe(microEurosDepuisDollars(0.01, 0.92));
+    expect(prixClientMicroEur(0.01, 0.92, 0)).toBe(9200);
+  });
+
+  it('🔴 à 10 %, le coût brut majoré de la commission', () => {
+    // 0,01 $ à 0,92 = 9200 micro-euros, + 10 % = 10 120.
+    expect(prixClientMicroEur(0.01, 0.92, 10)).toBe(10_120);
+    expect(prixClientMicroEur(1, 0.92, 10)).toBe(1_012_000);
+  });
+
+  it('🔴 arrondit UNE seule fois, après la commission', () => {
+    // 1,4 micro-euro brut : arrondi d'abord, il vaudrait 1, puis 1,1, donc 1 ; la commission serait perdue sur
+    // tous les petits appels, qui sont justement la majorité (un tour coûte quelques dizaines de micro-euros).
+    expect(prixClientMicroEur(0.0000014, 1, 10)).toBe(2);
+    expect(Number.isInteger(prixClientMicroEur(0.0000123, 0.92, 10))).toBe(true);
+  });
+
+  it('🔴 un taux aberrant retombe sur 1, jamais sur zéro', () => {
+    for (const taux of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(prixClientMicroEur(1, taux, 10), String(taux)).toBe(1_100_000);
+    }
+  });
+
+  it('🔴 une commission illisible ou négative vaut 0, jamais une remise', () => {
+    for (const pct of [-50, Number.NaN, Number.NEGATIVE_INFINITY]) {
+      expect(prixClientMicroEur(1, 1, pct), String(pct)).toBe(1_000_000);
+    }
+  });
+
+  it('un coût nul, négatif ou illisible rend zéro', () => {
+    for (const cout of [0, -0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(prixClientMicroEur(cout, 0.92, 10), String(cout)).toBe(0);
+    }
+  });
+
+  it('🔴 le prix AFFICHÉ est le prix PAYÉ : un million de jetons coûte au crédit ce que la liste annonce', () => {
+    // La liste des modèles (`prixParMillion`) et le débit lisent la même commission et le même taux. Un écart
+    // entre les deux ferait lire un tarif et payer un autre, ce que ce lot corrige.
+    const dollarsParJeton = 0.00000007;
+    const annonceEuros = prixParMillion(dollarsParJeton, 0.92, 10)!;
+    const payeEuros = prixClientMicroEur(dollarsParJeton * 1_000_000, 0.92, 10) / 1_000_000;
+    expect(payeEuros).toBeCloseTo(annonceEuros, 6);
+  });
+});
+
+/**
+ * 🔴 L'INVENTAIRE, parce qu'un nouveau chemin qui débite un client l'oubliera. `microEurosDepuisDollars` rend le
+ * coût BRUT : c'est notre dépense, et seuls les deux assistants de configuration (sur notre clé) la mesurent
+ * ainsi. Tout le reste débite le crédit d'un espace, donc au prix client.
+ */
+describe('inventaire du coût brut', () => {
+  const RACINE = fileURLToPath(new URL('../src/', import.meta.url));
+  const AUTORISES = ['agent/devise.ts', 'http/agent-setup.ts', 'http/mba-assistant.ts'];
+
+  function fichiers(dossier: string): string[] {
+    return readdirSync(dossier, { withFileTypes: true }).flatMap((e) => {
+      const chemin = join(dossier, e.name);
+      if (e.isDirectory()) return fichiers(chemin);
+      return e.name.endsWith('.ts') ? [chemin] : [];
+    });
+  }
+
+  it('🔴 `microEurosDepuisDollars` n’est nommée que par devise.ts et les deux assistants', () => {
+    const usagers = fichiers(RACINE)
+      .filter((f) => readFileSync(f, 'utf8').includes('microEurosDepuisDollars'))
+      .map((f) => f.slice(RACINE.length).split('\\').join('/'));
+    // Un inventaire vide ne prouverait rien : la définition, au moins, doit être trouvée.
+    expect(usagers).toContain('agent/devise.ts');
+    expect(usagers.filter((u) => !AUTORISES.includes(u))).toEqual([]);
   });
 });
 

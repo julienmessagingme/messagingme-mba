@@ -1446,8 +1446,9 @@ async function main(): Promise<void> {
       // diverger ce que le modèle voit selon qu'on teste ou qu'on est en production.
       contexte: (t, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, t, agentId),
       // Le Gateway facture en dollars, nos compteurs sont en micro-euros : conversion à l'entrée, une seule fois,
-      // au taux commercial de la configuration.
+      // au taux commercial de la configuration, majorée de la commission que la liste des modèles annonce.
       tauxEurParDollar: config.EUR_PER_USD,
+      commissionPct: config.COMMISSION_MODELE_PCT,
       outils: {
         catalogue: toolCatalog,
         /**

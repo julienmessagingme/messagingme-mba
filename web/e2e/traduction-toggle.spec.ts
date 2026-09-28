@@ -55,8 +55,11 @@ interface Options {
    * choisit laquelle des deux indisponibilités on simule, et `credit` n'est que le défaut historique.
    */
   sansCredit?: boolean;
-  /** `instance` = aucun modele configure cote serveur ; `credit` = espace sans cle. Defaut `credit`. */
-  cause?: 'instance' | 'credit';
+  /**
+   * `instance` = aucun modele configure cote serveur ; `credit` = credit epuise ; `cle` = l'espace a du
+   * credit mais sa cle n'a pas pu s'ouvrir. Defaut `credit`.
+   */
+  cause?: 'instance' | 'credit' | 'cle';
   /** Le réglage est DÉJÀ rangé dans ce navigateur (cas du retour sur l'écran). */
   dejaActif?: boolean;
 }
@@ -238,6 +241,22 @@ test.describe('Inbox : traduire les messages reçus', () => {
     await expect(bandeau).not.toHaveText(/crédit/i);
     await expect(bandeau).toHaveText(/pas encore activée/i);
     // Le fil reste lisible, en VO : ce n'est pas une panne.
+    await expect(page.getByTestId('fil-messages')).toContainText('Hola, tengo un problema');
+  });
+
+  /**
+   * 🔴 LA TROISIEME CAUSE (2026-09-28) : l'espace A du credit, c'est sa cle de modele qui n'a pas pu
+   * s'ouvrir. Lui dire « credit epuise » l'enverrait recharger pour rien, exactement le defaut que la
+   * cause `instance` a deja corrige une fois.
+   */
+  test('🔴 une clé qui n’a pas pu s’ouvrir : le bandeau ne parle PAS de crédit', async ({ page }) => {
+    const { interrupteur } = await monter(page, { sansCredit: true, cause: 'cle', dejaActif: true });
+    await expect(interrupteur).toBeChecked();
+    const bandeau = page.getByTestId('traduction-indisponible');
+    await expect(bandeau).toBeVisible();
+    await expect(bandeau).toHaveAttribute('data-cause', 'cle');
+    await expect(bandeau).not.toHaveText(/crédit/i);
+    await expect(bandeau).toHaveText(/momentanément/i);
     await expect(page.getByTestId('fil-messages')).toContainText('Hola, tengo un problema');
   });
 

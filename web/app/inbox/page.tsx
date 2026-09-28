@@ -1255,7 +1255,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
    * configuré. On envoyait donc un administrateur recharger un crédit sans rapport, en lui cachant la
    * seule cause réelle. Une phrase fausse coûte plus cher qu'aucune phrase, parce qu'on la suit.
    */
-  const [traductionCause, setTraductionCause] = useState<'instance' | 'credit' | null>(null);
+  const [traductionCause, setTraductionCause] = useState<'instance' | 'credit' | 'cle' | null>(null);
   /** La langue demandée au serveur, ou `undefined` : c'est celle de la console, jamais une question de plus. */
   const cibleLecture = cibleDeLecture(traduireRecus, locale);
   const [showTemplate, setShowTemplate] = useState(false);
@@ -1411,7 +1411,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
       setTraductionIndisponible(res.traductionIndisponible === true);
       // ⚠️ `null` quand le serveur ne dit rien (version plus ancienne, ou traduction qui a marché) : le
       // bandeau retombe alors sur sa formulation prudente plutôt que d'inventer une cause.
-      setTraductionCause(res.traductionCause === 'instance' || res.traductionCause === 'credit' ? res.traductionCause : null);
+      setTraductionCause(res.traductionCause === 'instance' || res.traductionCause === 'credit' || res.traductionCause === 'cle' ? res.traductionCause : null);
     } catch (err) {
       // Une requête ANNULÉE n'est pas une panne : changer de conversation annule la précédente, et afficher
       // un bandeau rouge à chaque clic serait absurde.
@@ -1756,6 +1756,12 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
           {traductionCause === 'instance' && t(
             'Traduction indisponible sur ce serveur : elle n’y est pas encore activée. Les messages restent dans leur langue d’origine.',
             'Translation is not enabled on this server yet. Messages stay in their original language.',
+          )}
+          {/* ⚠️ PAS DE CRÉDIT NON PLUS ICI (2026-09-28) : l'espace EN A, c'est sa clé de modèle qui n'a pas pu
+              s'ouvrir (panne chez notre fournisseur). L'envoyer recharger le ferait payer pour rien. */}
+          {traductionCause === 'cle' && t(
+            'Traduction momentanément indisponible : les messages restent dans leur langue d’origine. Réessayez dans un instant.',
+            'Translation is temporarily unavailable: messages stay in their original language. Try again in a moment.',
           )}
           {traductionCause === null && t(
             'Traduction indisponible : les messages restent dans leur langue d’origine.',
