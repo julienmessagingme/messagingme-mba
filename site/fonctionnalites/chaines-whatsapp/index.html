@@ -1,0 +1,234 @@
+<!doctype html>
+<!-- Page fonctionnalité de la vitrine Engage Me. L'en-tête, le pied et les icônes sont RECOPIÉS de l'accueil
+     (site/index.html) : une modification de l'un d'eux se reporte dans les trois pages. Le style et le script
+     sont communs (/site.css, /site.js). Les écrans sont rendus depuis les sources des films du reel. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chaînes WhatsApp · Engage Me</title>
+<meta name="description" content="Publiez gratuitement sur votre chaîne WhatsApp depuis Engage Me. Un bouton sous chaque publication ouvre une conversation, et votre scénario répond à chaque abonné en tête-à-tête.">
+<link rel="canonical" href="https://engageme.messagingme.fr/fonctionnalites/chaines-whatsapp/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:url" content="https://engageme.messagingme.fr/fonctionnalites/chaines-whatsapp/">
+<meta property="og:title" content="Chaînes WhatsApp · Engage Me">
+<meta property="og:description" content="Publiez à tous, parlez à chacun : un bouton sous chaque publication ouvre une conversation WhatsApp.">
+<meta property="og:image" content="https://engageme.messagingme.fr/films/chaines-whatsapp.webp">
+<meta name="theme-color" content="#010630">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<script>document.documentElement.classList.add('js')</script>
+<script src="/site.js" defer></script>
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<!-- Icônes Phosphor (MIT, @phosphor-icons/core 2.1.1, style regular), recopiées telles quelles. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-caret-left" viewBox="0 0 256 256"><path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"/></symbol>
+  <symbol id="i-signal" viewBox="0 0 256 256"><path d="M168,72V200a8,8,0,0,1-16,0V72a8,8,0,0,1,16,0Zm32-48a8,8,0,0,0-8,8V200a8,8,0,0,0,16,0V32A8,8,0,0,0,200,24Zm-80,80a8,8,0,0,0-8,8v88a8,8,0,0,0,16,0V112A8,8,0,0,0,120,104ZM80,144a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V152A8,8,0,0,0,80,144ZM40,184a8,8,0,0,0-8,8v8a8,8,0,0,0,16,0v-8A8,8,0,0,0,40,184Z"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 256 256"><path d="M140,204a12,12,0,1,1-12-12A12,12,0,0,1,140,204ZM237.08,87A172,172,0,0,0,18.92,87,8,8,0,0,0,29.08,99.37a156,156,0,0,1,197.84,0A8,8,0,0,0,237.08,87ZM205,122.77a124,124,0,0,0-153.94,0A8,8,0,0,0,61,135.31a108,108,0,0,1,134.060,0,8,8,0,0,0,11.24-1.3A8,8,0,0,0,205,122.77Zm-32.26,35.76a76.05,76.05,0,0,0-89.42,0,8,8,0,0,0,9.42,12.94,60,60,0,0,1,70.58,0,8,8,0,1,0,9.42-12.94Z"/></symbol>
+  <symbol id="i-pile" viewBox="0 0 256 256"><path d="M200,56H32A24,24,0,0,0,8,80v96a24,24,0,0,0,24,24H200a24,24,0,0,0,24-24V80A24,24,0,0,0,200,56Zm8,120a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H200a8,8,0,0,1,8,8ZM184,96v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0Zm-40,0v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0Zm-40,0v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0ZM64,96v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0Zm192,0v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 256 256"><path d="M208,56H180.28L166.65,35.56A8,8,0,0,0,160,32H96a8,8,0,0,0-6.650,3.56L75.71,56H48A24,24,0,0,0,24,80V192a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V80A24,24,0,0,0,208,56Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H80a8,8,0,0,0,6.66-3.56L100.28,48h55.43l13.63,20.44A8,8,0,0,0,176,72h32a8,8,0,0,1,8,8ZM128,88a44,44,0,1,0,44,44A44.05,44.05,0,0,0,128,88Zm0,72a28,28,0,1,1,28-28A28,28,0,0,1,128,160Z"/></symbol>
+  <symbol id="i-micro" viewBox="0 0 256 256"><path d="M128,176a48.05,48.05,0,0,0,48-48V64a48,48,0,0,0-96,0v64A48.05,48.05,0,0,0,128,176ZM96,64a32,32,0,0,1,64,0v64a32,32,0,0,1-64,0Zm40,143.6V240a8,8,0,0,1-16,0V207.6A80.11,80.11,0,0,1,48,128a8,8,0,0,1,16,0,64,64,0,0,0,128,0,8,8,0,0,1,16,0A80.11,80.11,0,0,1,136,207.6Z"/></symbol>
+  <symbol id="i-coches" viewBox="0 0 256 256"><path d="M149.61,85.71l-89.6,88a8,8,0,0,1-11.22,0L10.39,136a8,8,0,1,1,11.22-11.41L54.4,156.79l84-82.5a8,8,0,1,1,11.22,11.42Zm96.1-11.32a8,8,0,0,0-11.32-.1l-84,82.5-18.83-18.5a8,8,0,0,0-11.21,11.42l24.43,24a8,8,0,0,0,11.22,0l89.6-88A8,8,0,0,0,245.71,74.39Z"/></symbol>
+  <symbol id="i-lien" viewBox="0 0 256 256"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></symbol>
+  <symbol id="i-fleche" viewBox="0 0 256 256"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></symbol>
+  <symbol id="i-instagram" viewBox="0 0 256 256"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160ZM176,24H80A56.06,56.06,0,0,0,24,80v96a56.06,56.06,0,0,0,56,56h96a56.06,56.06,0,0,0,56-56V80A56.06,56.06,0,0,0,176,24Zm40,152a40,40,0,0,1-40,40H80a40,40,0,0,1-40-40V80A40,40,0,0,1,80,40h96a40,40,0,0,1,40,40ZM192,76a12,12,0,1,1-12-12A12,12,0,0,1,192,76Z"/></symbol>
+  <symbol id="i-facebook" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,191.63V152h24a8,8,0,0,0,0-16H136V112a16,16,0,0,1,16-16h16a8,8,0,0,0,0-16H152a32,32,0,0,0-32,32v24H96a8,8,0,0,0,0,16h24v63.63a88,88,0,1,1,16,0Z"/></symbol>
+  <symbol id="i-youtube" viewBox="0 0 256 256"><path d="M164.44,121.34l-48-32A8,8,0,0,0,104,96v64a8,8,0,0,0,12.44,6.66l48-32a8,8,0,0,0,0-13.32ZM120,145.05V111l25.58,17ZM234.33,69.52a24,24,0,0,0-14.49-16.4C185.56,39.88,131,40,128,40s-57.56-.12-91.84,13.12a24,24,0,0,0-14.49,16.4C19.08,79.5,16,97.74,16,128s3.08,48.5,5.67,58.48a24,24,0,0,0,14.49,16.41C69,215.56,120.4,216,127.34,216h1.32c6.94,0,58.37-.44,91.18-13.11a24,24,0,0,0,14.49-16.410c2.59-10,5.67-28.22,5.67-58.48S236.92,79.5,234.33,69.52Zm-15.49,113a8,8,0,0,1-4.77,5.49c-31.65,12.22-85.48,12-86,12H128c-.54,0-54.33.2-86-12a8,8,0,0,1-4.77-5.49C34.8,173.39,32,156.57,32,128s2.8-45.39,5.16-54.47A8,8,0,0,1,41.93,68c30.52-11.79,81.66-12,85.85-12h.27c.54,0,54.38-.18,86,12a8,8,0,0,1,4.77,5.49C221.2,82.61,224,99.43,224,128S221.2,173.39,218.84,182.47Z"/></symbol>
+  <symbol id="i-linkedin" viewBox="0 0 256 256"><path d="M216,24H40A16,16,0,0,0,24,40V216a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V40A16,16,0,0,0,216,24Zm0,192H40V40H216V216ZM96,112v64a8,8,0,0,1-16,0V112a8,8,0,0,1,16,0Zm88,28v36a8,8,0,0,1-16,0V140a20,20,0,0,0-40,0v36a8,8,0,0,1-16,0V112a8,8,0,0,1,15.79-1.78A36,36,0,0,1,184,140ZM100,84A12,12,0,1,1,88,72,12,12,0,0,1,100,84Z"/></symbol>
+  <symbol id="i-whatsapp" viewBox="0 0 256 256"><path d="M187.58,144.84l-32-16a8,8,0,0,0-8,.5l-14.69,9.8a40.55,40.55,0,0,1-16-16l9.8-14.69a8,8,0,0,0,.5-8l-16-32A8,8,0,0,0,104,64a40,40,0,0,0-40,40,88.1,88.1,0,0,0,88,88,40,40,0,0,0,40-40A8,8,0,0,0,187.58,144.84ZM152,176a72.08,72.08,0,0,1-72-72A24,24,0,0,1,99.29,80.46l11.48,23L101,118a8,8,0,0,0-.73,7.51,56.47,56.47,0,0,0,30.15,30.150A8,8,0,0,0,138,155l14.61-9.74,23,11.48A24,24,0,0,1,152,176ZM128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Z"/></symbol>
+  <symbol id="i-telegram" viewBox="0 0 256 256"><path d="M228.88,26.19a9,9,0,0,0-9.16-1.57L17.06,103.93a14.22,14.22,0,0,0,2.43,27.21L72,141.45V200a15.92,15.92,0,0,0,10,14.83,15.91,15.91,0,0,0,17.51-3.73l25.32-26.26L165,220a15.88,15.88,0,0,0,10.51,4,16.3,16.3,0,0,0,5-.79,15.85,15.85,0,0,0,10.67-11.63L231.77,35A9,9,0,0,0,228.88,26.19Zm-61.14,36L78.15,126.35l-49.6-9.73ZM88,200V152.52l24.79,21.74Zm87.53,8L92.85,135.5l119-85.29Z"/></symbol>
+  <symbol id="i-logo" viewBox="0 0 160 160"><g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="15"><path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" style="stroke:var(--logo-navy)"/><path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" transform="rotate(120 80 80)" stroke="#009AFE"/><path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" transform="rotate(240 80 80)" stroke="#17C74E"/></g></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"/></symbol>
+  <symbol id="i-verifie" viewBox="0 0 256 256"><path d="M225.86,102.82c-3.77-3.94-7.670-8-9.14-11.57-1.36-3.27-1.44-8.69-1.52-13.94-.15-9.76-.31-20.82-8-28.51s-18.75-7.85-28.51-8c-5.25-.08-10.67-.16-13.94-1.52-3.56-1.47-7.63-5.37-11.57-9.14C146.28,23.51,138.44,16,128,16s-18.27,7.51-25.18,14.14c-3.94,3.77-8,7.67-11.57,9.14C88,40.64,82.56,40.72,77.31,40.8c-9.76.15-20.82.31-28.51,8S41,67.55,40.8,77.31c-.08,5.25-.16,10.67-1.52,13.94-1.47,3.56-5.37,7.63-9.14,11.570C23.51,109.72,16,117.56,16,128s7.51,18.27,14.14,25.18c3.77,3.94,7.67,8,9.14,11.57,1.36,3.27,1.44,8.69,1.52,13.94.15,9.76.31,20.82,8,28.51s18.75,7.85,28.51,8c5.25.08,10.67.16,13.94,1.52,3.56,1.47,7.63,5.37,11.57,9.14C109.72,232.49,117.56,240,128,240s18.27-7.51,25.18-14.14c3.94-3.77,8-7.67,11.57-9.14,3.27-1.36,8.69-1.44,13.94-1.52,9.76-.15,20.82-.31,28.51-8s7.85-18.75,8-28.51c.08-5.25.16-10.67,1.52-13.94,1.47-3.56,5.37-7.63,9.14-11.57C232.49,146.28,240,138.44,240,128S232.49,109.73,225.86,102.82Zm-52.2,6.84-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 256 256"><path d="M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM128,72a12,12,0,1,0-12-12A12,12,0,0,0,128,72Zm0,112a12,12,0,1,0,12,12A12,12,0,0,0,128,184Z"/></symbol>
+  <symbol id="i-smiley" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM80,108a12,12,0,1,1,12,12A12,12,0,0,1,80,108Zm96,0a12,12,0,1,1-12-12A12,12,0,0,1,176,108Zm-1.07,48c-10.29,17.790-27.4,28-46.93,28s-36.63-10.2-46.92-28a8,8,0,1,1,13.84-8c7.47,12.91,19.21,20,33.08,20s25.61-7.1,33.07-20a8,8,0,0,1,13.86,8Z"/></symbol>
+  <symbol id="i-megaphone" viewBox="0 0 256 256"><path d="M248,120a48.05,48.05,0,0,0-48-48H160.2c-2.91-.17-53.62-3.74-101.91-44.24A16,16,0,0,0,32,40V200a16,16,0,0,0,26.29,12.25c37.77-31.68,77-40.76,93.71-43.3v31.72A16,16,0,0,0,159.12,214l11,7.33A16,16,0,0,0,194.5,212l11.77-44.36A48.07,48.07,0,0,0,248,120ZM48,199.93V40h0c42.81,35.91,86.63,45,104,47.24v65.48C134.65,155,90.84,164.07,48,199.93Zm131,8,0,.11-11-7.33V168h21.6ZM200,152H168V88h32a32,32,0,1,1,0,64Z"/></symbol>
+  <symbol id="i-broadcast" viewBox="0 0 256 256"><path d="M128,88a40,40,0,1,0,40,40A40,40,0,0,0,128,88Zm0,64a24,24,0,1,1,24-24A24,24,0,0,1,128,152Zm73.71,7.14a80,80,0,0,1-14.08,22.2,8,8,0,0,1-11.92-10.67,63.95,63.95,0,0,0,0-85.33,8,8,0,1,1,11.92-10.67,80.08,80.08,0,0,1,14.08,84.47ZM69,103.09a64,64,0,0,0,11.26,67.58,8,8,0,0,1-11.92,10.67,79.93,79.93,0,0,1,0-106.67A8,8,0,1,1,80.29,85.34,63.77,63.77,0,0,0,69,103.09ZM248,128a119.58,119.58,0,0,1-34.29,84,8,8,0,1,1-11.42-11.2,103.9,103.9,0,0,0,0-145.56A8,8,0,1,1,213.71,44,119.58,119.58,0,0,1,248,128ZM53.71,200.78A8,8,0,1,1,42.29,212a119.87,119.87,0,0,1,0-168,8,8,0,1,1,11.42,11.2,103.9,103.9,0,0,0,0,145.56Z"/></symbol>
+  <symbol id="i-caret-down" viewBox="0 0 256 256"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 256 256"><path d="M216,64H56a8,8,0,0,1,0-16H192a8,8,0,0,0,0-16H56A24,24,0,0,0,32,56V184a24,24,0,0,0,24,24H216a16,16,0,0,0,16-16V80A16,16,0,0,0,216,64Zm0,128H56a8,8,0,0,1-8-8V78.63A23.84,23.84,0,0,0,56,80H216Zm-48-60a12,12,0,1,1,12,12A12,12,0,0,1,168,132Z"/></symbol>
+  <symbol id="i-pause-circle" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM112,96v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0Z"/></symbol>
+  <symbol id="i-funnel" viewBox="0 0 256 256"><path d="M230.6,49.53A15.81,15.81,0,0,0,216,40H40A16,16,0,0,0,28.19,66.76l.08.09L96,139.17V216a16,16,0,0,0,24.87,13.32l32-21.34A16,16,0,0,0,160,194.66V139.17l67.74-72.32.08-.09A15.8,15.8,0,0,0,230.6,49.53ZM40,56h0Zm106.18,74.58A8,8,0,0,0,144,136v58.66L112,216V136a8,8,0,0,0-2.16-5.47L40,56H216Z"/></symbol>
+  <symbol id="i-chat-circle-dots" viewBox="0 0 256 256"><path d="M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM84,116a12,12,0,1,0,12,12A12,12,0,0,0,84,116Zm88,0a12,12,0,1,0,12,12A12,12,0,0,0,172,116Zm60,12A104,104,0,0,1,79.12,219.82L45.07,231.17a16,16,0,0,1-20.24-20.24l11.35-34.05A104,104,0,1,1,232,128Zm-16,0A88,88,0,1,0,51.81,172.06a8,8,0,0,1,.66,6.54L40,216,77.4,203.53a7.85,7.85,0,0,1,2.53-.42,8,8,0,0,1,4,1.08A88,88,0,0,0,216,128Z"/></symbol>
+  <symbol id="i-hand-tap" viewBox="0 0 256 256"><path d="M56,76a60,60,0,0,1,120,0,8,8,0,0,1-16,0,44,44,0,0,0-88,0,8,8,0,1,1-16,0Zm140,44a27.9,27.9,0,0,0-13.36,3.39A28,28,0,0,0,144,106.7V76a28,28,0,0,0-56,0v80l-3.82-6.13a28,28,0,0,0-48.41,28.17l29.32,50A8,8,0,1,0,78.89,220L49.6,170a12,12,0,1,1,20.78-12l.14.23,18.68,30A8,8,0,0,0,104,184V76a12,12,0,0,1,24,0v68a8,8,0,1,0,16,0V132a12,12,0,0,1,24,0v20a8,8,0,0,0,16,0v-4a12,12,0,0,1,24,0v36c0,21.61-7.1,36.3-7.16,36.42a8,8,0,0,0,3.58,10.73A7.9,7.9,0,0,0,208,232a8,8,0,0,0,7.16-4.42c.37-.73,8.85-18,8.85-43.58V148A28,28,0,0,0,196,120Z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 256 256"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></symbol>
+  <symbol id="i-envelope" viewBox="0 0 256 256"><path d="M224,48H32a8,8,0,0,0-8,8V192a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A8,8,0,0,0,224,48Zm-96,85.15L52.57,64H203.43ZM98.71,128,40,181.81V74.19Zm11.84,10.85,12,11.05a8,8,0,0,0,10.82,0l12-11.05,58,53.15H52.57ZM157.29,128,216,74.18V181.82Z"/></symbol>
+  <symbol id="i-chart-line-up" viewBox="0 0 256 256"><path d="M232,208a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V48a8,8,0,0,1,16,0V156.69l50.34-50.35a8,8,0,0,1,11.32,0L128,132.69,180.69,80H160a8,8,0,0,1,0-16h40a8,8,0,0,1,8,8v40a8,8,0,0,1-16,0V91.31l-58.34,58.35a8,8,0,0,1-11.32,0L96,123.31l-56,56V200H224A8,8,0,0,1,232,208Z"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 256 256"><path d="M128,40a96,96,0,1,0,96,96A96.11,96.11,0,0,0,128,40Zm0,176a80,80,0,1,1,80-80A80.09,80.09,0,0,1,128,216ZM173.66,90.34a8,8,0,0,1,0,11.32l-40,40a8,8,0,0,1-11.32-11.32l40-40A8,8,0,0,1,173.66,90.34ZM96,16a8,8,0,0,1,8-8h48a8,8,0,0,1,0,16H104A8,8,0,0,1,96,16Z"/></symbol>
+  <symbol id="i-code" viewBox="0 0 256 256"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></symbol>
+</svg>
+
+<span class="sentinelle" aria-hidden="true"></span>
+<div class="barre">
+<header class="cadre entete">
+  <a class="marque" href="/" aria-label="Engage Me, accueil"><svg aria-hidden="true"><use href="#i-logo"/></svg>Engage Me</a>
+  <nav class="nav" aria-label="Principale">
+    <details class="menu">
+      <summary class="lien"><span class="menu-bureau">Fonctionnalités</span><span class="menu-mobile">Menu</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+      <div class="menu-panneau">
+        <a href="/fonctionnalites/publicites-click-to-whatsapp/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><span><strong>Publicités Click-to-WhatsApp</strong><small>Vos pubs Meta ouvrent une conversation</small></span></a>
+        <a href="/fonctionnalites/chaines-whatsapp/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg></span><span><strong>Chaînes WhatsApp</strong><small>Publiez à tous, parlez à chacun</small></span></a>
+        <a class="menu-seul-mobile" href="/#developpeurs"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg></span><span><strong>Développeurs</strong><small>L’API et le serveur MCP</small></span></a>
+      </div>
+    </details>
+    <a class="lien nav-dev" href="/#developpeurs">Développeurs</a>
+    <a class="bouton bouton-trait" href="https://engageme.messagingme.app/login">Se connecter</a>
+  </nav>
+</header>
+</div>
+
+<main>
+  <section class="cadre f-une">
+    <div>
+      <p class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg>Chaînes WhatsApp</p>
+      <h1>Publiez à tous. Parlez à chacun.</h1>
+      <p class="chapeau">Diffusez gratuitement sur votre chaîne WhatsApp. Un bouton sous chaque publication ouvre une conversation, et votre scénario prend le relais.</p>
+      <div class="appels">
+        <a class="bouton bouton-plein" href="mailto:contact@messagingme.fr?subject=D%C3%A9mo%20Engage%20Me%20%3A%20cha%C3%AEnes%20WhatsApp">Demander une démo</a>
+        <a class="bouton bouton-texte" href="#film">Voir le film <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+      </div>
+    </div>
+    <figure class="f-duo">
+      <img class="entre" style="--d:.1s" src="/img/chaine-fil.webp" width="560" height="1177" alt="Une chaîne WhatsApp : la publication de la marque et son bouton Commencer à discuter" fetchpriority="high">
+      <img class="entre" style="--d:.35s" src="/img/chaine-conversation.webp" width="560" height="1177" alt="La conversation ouverte depuis la chaîne : l’abonné reçoit son code">
+    </figure>
+  </section>
+
+  <section class="f-bloc f-chiffre f-revele">
+    <div class="cadre">
+      <p class="f-nombre" aria-label="10 millions"><span class="compte" style="--fin:10" aria-hidden="true"></span><small aria-hidden="true">millions</small></p>
+      <div>
+        <p class="f-texte">d’utilisateurs quotidiens des chaînes WhatsApp en France.<span class="f-source">Source : Meta, 2026</span></p>
+        <p class="f-gratuit"><strong>Et publier ne coûte rien.</strong> Une publication touche tous vos abonnés, sans frais d’envoi.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="f-bloc f-film" id="film">
+    <div class="cadre">
+      <h2 class="f-titre">Tout le parcours en 26 secondes.</h2>
+      <p class="f-texte">De la publication sur votre chaîne à la conversation en tête-à-tête avec chaque abonné.</p>
+      <video class="f-video" src="/films/chaines-whatsapp.mp4" poster="/films/chaines-whatsapp.webp" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : les chaînes WhatsApp avec Engage Me"></video>
+    </div>
+  </section>
+
+  <section class="f-etapes">
+    <div class="cadre">
+      <h2 class="f-titre">De la publication à la conversation.</h2>
+      <div class="f-pas">
+        <ol class="f-liste">
+          <li class="f-etape actif">
+            <span class="f-num">1</span>
+            <div><h3>Publiez depuis Engage Me</h3><p>Texte mis en forme, photo et aperçu fidèle : la publication part sur votre chaîne WhatsApp, pour tous vos abonnés.</p></div>
+            <img src="/img/chaine-console.webp" width="1300" height="963" alt="La page Chaîne d’Engage Me : une nouvelle publication et son aperçu" loading="lazy">
+          </li>
+          <li class="f-etape">
+            <span class="f-num">2</span>
+            <div><h3>Vos abonnés appuient sur « Commencer à discuter »</h3><p>Le bouton sous la publication ouvre WhatsApp avec un message déjà écrit : il ne reste qu’à l’envoyer.</p></div>
+            <img class="f-tel f-arrondi" src="/img/chaine-bouton.webp" width="560" height="1177" alt="Un abonné appuie sur Commencer à discuter sous la publication" loading="lazy">
+          </li>
+          <li class="f-etape">
+            <span class="f-num">3</span>
+            <div><h3>Votre scénario répond en <span style="white-space:nowrap">tête-à-tête</span></h3><p>Le message déclenche le scénario rattaché au bouton : un code, une question, puis votre équipe ou un agent IA prend la suite.</p></div>
+            <img class="f-tel" src="/img/chaine-conversation.webp" width="560" height="1177" alt="La conversation ouverte depuis la chaîne : l’abonné reçoit son code" loading="lazy">
+          </li>
+        </ol>
+        <figure class="f-ecran" aria-hidden="true">
+          <img class="actif" src="/img/chaine-console.webp" width="1300" height="963" alt="" loading="lazy">
+          <img class="f-tel f-arrondi" src="/img/chaine-bouton.webp" width="560" height="1177" alt="" loading="lazy">
+          <img class="f-tel" src="/img/chaine-conversation.webp" width="560" height="1177" alt="" loading="lazy">
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="f-bloc f-mesure">
+    <div class="cadre f-miroir">
+      <div>
+        <h2 class="f-titre">Sachez ce que chaque publication déclenche.</h2>
+        <p class="f-texte">Pour chaque bouton, Engage Me compte les personnes qui ont envoyé son message. Un abonné qui appuie trois fois compte pour une personne.</p>
+      </div>
+      <div>
+        <ul class="f-posts">
+          <li><div><strong>Nouvelle collection d’automne</strong><small>Publiée mardi</small></div><b>126<small>personnes</small></b></li>
+          <li><div><strong>Soirée privée jeudi : -30 % en boutique</strong><small>Publiée lundi</small></div><b>87<small>personnes</small></b></li>
+          <li><div><strong>Retrait en boutique en deux heures</strong><small>Publiée vendredi</small></div><b>41<small>personnes</small></b></li>
+        </ul>
+        <p class="f-note">Exemple de publications, chiffres indicatifs.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="f-appel">
+    <div class="cadre">
+      <h2 class="f-titre">Lancez votre chaîne WhatsApp.</h2>
+      <p class="f-texte">Une démo sur votre cas : votre chaîne, vos publications, vos premières conversations.</p>
+      <div class="appels">
+        <a class="bouton bouton-plein" href="mailto:contact@messagingme.fr?subject=D%C3%A9mo%20Engage%20Me%20%3A%20cha%C3%AEnes%20WhatsApp">Demander une démo</a>
+        <a class="bouton bouton-texte" href="https://engageme.messagingme.app/login">Se connecter <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="pied">
+  <div class="cadre pied-haut">
+    <div>
+      <p class="pied-marque"><svg aria-hidden="true"><use href="#i-logo"/></svg>Engage Me <span class="par">by <img src="/messagingme-logo.png" alt="Messaging Me" width="165" height="21"></span></p>
+      <p class="pied-accroche">La plateforme conversationnelle qui comprend chaque conversation.</p>
+    </div>
+    <nav aria-label="Engage Me">
+      <h3>Engage Me</h3>
+      <ul>
+        <li><a href="/fonctionnalites/publicites-click-to-whatsapp/">Publicités <span style="white-space:nowrap">Click-to-WhatsApp</span></a></li>
+        <li><a href="/fonctionnalites/chaines-whatsapp/">Chaînes WhatsApp</a></li>
+        <li><a href="https://engageme.messagingme.app/login">Se connecter</a></li>
+        <li><a href="https://engageme.messagingme.app/developers/api">Documentation de l’API</a></li>
+        <li><a href="https://engageme.messagingme.app/developers/mcp">Serveur MCP</a></li>
+      </ul>
+    </nav>
+    <nav aria-label="Messaging Me">
+      <h3>Site</h3>
+      <ul>
+        <li><a href="https://www.messagingme.fr/accueil/">Accueil</a></li>
+        <li><a href="https://www.messagingme.fr/a-propos/">A propos</a></li>
+        <li><a href="https://www.messagingme.fr/services/">Services</a></li>
+        <li><a href="https://www.messagingme.fr/articles/">Blog</a></li>
+        <li><a href="https://www.messagingme.fr/contact/">Contact</a></li>
+      </ul>
+    </nav>
+    <nav aria-label="Support">
+      <h3>Support</h3>
+      <ul>
+        <li><a href="https://www.messagingme.fr/politique-de-confidentialite/">Politique de confidentialité</a></li>
+        <li><a href="https://www.messagingme.fr/politique-de-cookies-ue/">Politique de cookies UE</a></li>
+        <li><a href="https://www.messagingme.fr/mentions-legales/">Mentions légales</a></li>
+        <li><a href="https://www.messagingme.fr/faq/">FAQ</a></li>
+      </ul>
+    </nav>
+    <div>
+      <h3>Contact</h3>
+      <address>
+        <strong>6, rue d’Armaillé 75017 Paris</strong>
+        <span>On s’écrit&nbsp;?<br><a href="mailto:contact@messagingme.fr"><strong>contact@<wbr>messagingme.fr</strong></a></span>
+      </address>
+    </div>
+  </div>
+  <div class="cadre pied-bas">
+    <span>© 2026 Messaging Me</span>
+    <p class="heberge"><span class="drapeau" aria-hidden="true"><i></i><i></i><i></i></span>Vos données hébergées en France <span class="chez">chez <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.605 11.11v5.72a1.77 1.77 0 01-1.54 1.69h-4a1.43 1.43 0 01-1.31-1.22 1.09 1.09 0 010-.18 1.37 1.37 0 011.37-1.36h1.74a1 1 0 001-1v-3.62a1.4 1.4 0 011.18-1.39h.17a1.37 1.37 0 011.39 1.36zm-6.46 1.74V9.26a1 1 0 011-1h1.85a1.37 1.37 0 001.37-1.37 1 1 0 000-.17 1.45 1.45 0 00-1.41-1.2h-3.96a1.81 1.81 0 00-1.58 1.66v5.7a1.37 1.37 0 001.37 1.37h.21a1.4 1.4 0 001.15-1.4zm12-4.29V20a4.53 4.53 0 01-4.15 4h-7.58a8.57 8.57 0 01-8.56-8.57V4.54A4.54 4.54 0 016.395 0h7.18a8.56 8.56 0 018.56 8.56zm-2.74 0a5.83 5.83 0 00-5.82-5.82h-7.19a1.79 1.79 0 00-1.8 1.8v10.89a5.83 5.83 0 005.82 5.8h7.44a1.79 1.79 0 001.54-1.48z"/></svg>Scaleway</span></p>
+    <ul class="reseaux">
+      <li><a href="https://www.instagram.com/messaging_me/" aria-label="Instagram"><svg class="ic" aria-hidden="true"><use href="#i-instagram"/></svg></a></li>
+      <li><a href="https://www.facebook.com/messagingmefr" aria-label="Facebook"><svg class="ic" aria-hidden="true"><use href="#i-facebook"/></svg></a></li>
+      <li><a href="https://www.youtube.com/@MessagingMe" aria-label="YouTube"><svg class="ic" aria-hidden="true"><use href="#i-youtube"/></svg></a></li>
+      <li><a href="https://www.linkedin.com/company/messagingme/" aria-label="LinkedIn"><svg class="ic" aria-hidden="true"><use href="#i-linkedin"/></svg></a></li>
+      <li><a href="https://www.whatsapp.com/channel/0029Va8axlL7NoZvgFgns21j" aria-label="Chaîne WhatsApp"><svg class="ic" aria-hidden="true"><use href="#i-whatsapp"/></svg></a></li>
+      <li><a href="https://t.me/+JbRaGmhQBbEwMjk0" aria-label="Telegram"><svg class="ic" aria-hidden="true"><use href="#i-telegram"/></svg></a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

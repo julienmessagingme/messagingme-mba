@@ -1,0 +1,523 @@
+/* Vitrine Engage Me : la feuille commune aux pages. Elle était dans la balise <style> de l'accueil ; elle en
+   est sortie TELLE QUELLE, dans le même ordre, pour que l'accueil rende à l'identique. */
+@font-face{font-family:"Plus Jakarta Sans";src:url("fonts/plus-jakarta-sans-latin.woff2") format("woff2");font-weight:200 800;font-style:normal;font-display:swap}
+/* Les polices des TÉLÉPHONES, qui imitent un système (Google Fonts, licence OFL, servies ici : aucun appel à Google
+   chez le visiteur). Sans elles, un PC Windows affichait les deux écrans en Segoe UI, la police de Windows.
+   Google Sans est celle de Google Messages. Inter remplace San Francisco, qui ne se diffuse pas sur le web : un
+   visiteur Apple garde le vrai (`-apple-system` passe en tête de `--ios`). */
+@font-face{font-family:"Google Sans";src:url("fonts/google-sans-latin.woff2") format("woff2");font-weight:400 700;font-style:normal;font-display:swap}
+@font-face{font-family:"Inter";src:url("fonts/inter-latin.woff2") format("woff2");font-weight:400 700;font-style:normal;font-display:swap}
+
+/* Rayons : boutons 10 px, panneaux 16 px, pastilles pleines. Les téléphones gardent les leurs : ce sont des objets.
+   UN SEUL THÈME, celui de messagingme.fr : fond #010630, halo #101E8A, texte blanc, paragraphes à 66 %,
+   et UNE coupure claire (le relais), comme sur le site mère. */
+:root{
+  --nuit:#010630;--halo:#101E8A;
+  --paper:#010630;--surface:#0B1452;--ink:#FFFFFF;--muted:rgb(255 255 255 / .66);--line:rgb(255 255 255 / .12);
+  --action:#0080D6;--action-hover:#1A95EA;--action-ink:#6FC2FE;--on-action:#FFFFFF;--action-wash:rgb(51 171 254 / .16);
+  --logo-navy:#FFFFFF;--code-bg:#000322;--code-ink:#E7E9F3;--code-muted:#8E94BC;--ombre:rgb(0 2 20 / .55);
+  --sans:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
+  --ios:-apple-system,"SF Pro Text","Inter",sans-serif;
+  --android:"Google Sans",Roboto,sans-serif;
+  /* WhatsApp sur iOS, en clair : c'est l'écran d'un vrai téléphone, et il ressort sur le bleu nuit. */
+  --wa-tete:#F6F6F6;--wa-fond:#EFEAE2;--wa-motif:rgb(17 27 33 / .045);--wa-recu:#FFFFFF;--wa-envoye:#D9FDD3;
+  --wa-texte:#111B21;--wa-meta:#667781;--wa-coche:#53BDEB;--wa-lien:#027EB5;--wa-teinte:#007AFF;--wa-champ:#FFFFFF;--wa-date:#FFFFFF;
+  /* Google Messages (RCS), thème clair de Material 3. */
+  --rcs-fond:#FFFFFF;--rcs-texte:#1F1F1F;--rcs-meta:#5F6368;--rcs-recu:#F0F4F9;--rcs-envoye:#D3E3FD;--rcs-envoye-texte:#041E49;
+  --rcs-bleu:#0B57D0;--rcs-bord:#DCE1E8;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--nuit) radial-gradient(120% 1100px at 50% 0%,var(--halo) 0%,var(--nuit) 65%) no-repeat;color:var(--ink);font-family:var(--sans);font-size:1rem;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius:10px}
+.cadre{--g:24px;max-width:1280px;margin:0 auto;padding:0 var(--g)}
+@media (max-width:640px){.cadre{--g:16px}}
+.ic{width:1em;height:1em;flex:none;fill:currentColor;vertical-align:-.125em}
+.masque{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* En-tête collant : transparent en haut de page, bleu nuit translucide dès qu'on défile. Le passage est
+   décidé par une sentinelle observée (IntersectionObserver), jamais par un écouteur de défilement. Sans
+   JavaScript, la barre garde un fond, pour que le texte qui passe dessous reste lisible. */
+.sentinelle{position:absolute;top:0;left:0;width:1px;height:8px;pointer-events:none}
+.barre{position:sticky;top:0;z-index:10;background:rgb(1 6 48 / .88);transition:background-color .25s,box-shadow .25s}
+.js .barre{background:transparent}
+.js .barre.defile{background:rgb(1 6 48 / .93);-webkit-backdrop-filter:blur(14px) saturate(140%);backdrop-filter:blur(14px) saturate(140%);box-shadow:0 1px 0 rgb(255 255 255 / .1)}
+@media (prefers-reduced-transparency:reduce){.js .barre.defile{background:var(--nuit);-webkit-backdrop-filter:none;backdrop-filter:none}}
+[id]{scroll-margin-top:88px}
+.entete{display:flex;align-items:center;justify-content:space-between;gap:12px;height:72px}
+.marque{display:flex;align-items:center;gap:10px;white-space:nowrap;text-decoration:none;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
+.marque svg{width:30px;height:30px;flex:none}
+.nav{display:flex;align-items:center;gap:22px}
+.lien{white-space:nowrap;font-size:.92rem;font-weight:600;text-decoration:none;color:var(--muted);transition:color .15s}
+.lien:hover{color:var(--ink)}
+@media (max-width:480px){.marque{gap:8px;font-size:.95rem}.marque svg{width:26px;height:26px}.nav{gap:12px}.nav .lien{font-size:.85rem}.nav .bouton-trait{padding:.45em .8em;font-size:.85rem}}
+
+/* Boutons */
+.bouton{display:inline-flex;align-items:center;gap:.45em;white-space:nowrap;border-radius:10px;font-weight:600;text-decoration:none;transition:background-color .15s,border-color .15s,color .15s,transform .15s}
+.bouton:active{transform:translateY(1px)}
+.bouton-plein{background:var(--action);color:var(--on-action);padding:.85em 1.45em;font-size:1rem}
+.bouton-plein:hover{background:var(--action-hover)}
+.bouton-trait{background:transparent;border:1px solid rgb(255 255 255 / .28);padding:.5em 1em;font-size:.9rem}
+.bouton-trait:hover{border-color:var(--action);color:var(--action-ink)}
+.bouton-texte{padding:.85em .4em;font-size:1rem;color:var(--ink)}
+.bouton-texte:hover{color:var(--action-ink)}
+.bouton-texte .ic{transition:transform .15s}
+.bouton-texte:hover .ic{transform:translateX(3px)}
+
+/* 1. La une : le titre sur toute la largeur, puis le message à gauche et les deux téléphones à droite */
+.une{display:grid;grid-template-columns:minmax(0,1fr) 500px;grid-template-rows:auto auto 1fr;gap:34px clamp(40px,12vw - 80px,96px);padding-top:40px;padding-bottom:120px}
+h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3rem,4.3vw,3.4rem);line-height:1.05;letter-spacing:-.035em;font-weight:800;margin:0;text-wrap:balance}
+.une-gauche{grid-column:1;grid-row:2;padding-top:8px}
+.chapeau{font-size:1.15rem;color:var(--muted);max-width:30em;margin:0 0 34px;text-wrap:pretty}
+.appels{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px}
+.scene-cadre{grid-column:2;grid-row:1 / span 3;position:relative}
+@media (max-width:960px){
+  .une{grid-template-columns:minmax(0,1fr);grid-template-rows:none;gap:28px;padding-top:24px;padding-bottom:72px}
+  h1,.une-gauche,.scene-cadre{grid-column:1;grid-row:auto}
+  h1 br{display:none}
+}
+
+/* Les deux téléphones, posés l'un devant l'autre. Sous 560 px, la scène entière est mise à l'échelle. */
+.scene{position:relative;margin:0;width:500px;height:676px;transform:scale(var(--k,1));transform-origin:top left}
+
+.iphone{position:absolute;z-index:2;left:0;top:142px;width:264px;padding:9px;border-radius:48px;background:linear-gradient(145deg,#2A2B31,#141518);box-shadow:inset 0 0 0 1.5px #45464D,inset 0 0 0 5px #0E0F11,0 2px 4px rgb(0 0 0 / .3),0 40px 70px -28px var(--ombre)}
+.iphone::before,.iphone::after{content:"";position:absolute;width:3px;border-radius:2px;background:#2A2B31}
+.iphone::before{left:-3px;top:104px;height:50px;box-shadow:0 64px 0 #2A2B31}
+.iphone::after{right:-3px;top:140px;height:72px}
+.ecran{position:relative;height:516px;border-radius:39px;overflow:hidden;display:flex;flex-direction:column;background:var(--wa-fond);font-family:var(--ios);color:var(--wa-texte);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.ios{position:relative;font-variant-numeric:tabular-nums;flex:none;display:flex;align-items:center;justify-content:space-between;height:44px;padding:6px 22px 0 30px;background:var(--wa-tete);font-size:.78rem;font-weight:600;letter-spacing:-.01em}
+.ilot{position:absolute;top:10px;left:50%;width:80px;height:23px;margin-left:-40px;border-radius:14px;background:#0A0A0B}
+.etat{display:flex;align-items:center;gap:4px;font-size:.92rem}
+.etat .pile{font-size:1.2rem}
+
+.wa-tete{flex:none;display:flex;align-items:center;gap:8px;padding:6px 12px 9px 6px;background:var(--wa-tete);border-bottom:.5px solid rgb(0 0 0 / .08)}
+.wa-tete > .ic{font-size:1.3rem;color:var(--wa-teinte)}
+.avatar{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#10132E;color:#fff;font-size:.68rem;font-weight:700;letter-spacing:.02em}
+.qui{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.qui strong{display:flex;align-items:center;gap:4px;font-size:.84rem;font-weight:600}
+.verifie-wa{font-size:.95rem;color:#25D366}
+.qui small{font-size:.66rem;color:var(--wa-meta)}
+
+.wa-fil > li,.a-fil > li{flex-shrink:0}
+.wa-fil{flex:1;list-style:none;margin:0;padding:10px 9px 8px;display:flex;flex-direction:column;gap:6px;overflow:hidden;background-color:var(--wa-fond);background-image:radial-gradient(var(--wa-motif) 1.2px,transparent 1.3px);background-size:13px 13px}
+.jour{align-self:center;margin:2px 0 4px;padding:3px 9px;border-radius:7px;background:var(--wa-date);font-size:.64rem;color:var(--wa-meta);box-shadow:0 1px .5px rgb(11 20 26 / .12)}
+.bulle{position:relative;max-width:85%;padding:6px 8px 5px 9px;border-radius:8px;font-size:.78rem;line-height:1.36;box-shadow:0 1px .5px rgb(11 20 26 / .13)}
+.bulle p{margin:0}
+.recu{align-self:flex-start;background:var(--wa-recu);border-top-left-radius:0}
+.envoye{align-self:flex-end;background:var(--wa-envoye);border-top-right-radius:0}
+.recu::before,.envoye::before{content:"";position:absolute;top:0;width:0;height:0;border-bottom:9px solid transparent}
+.recu::before{left:-7px;border-right:8px solid var(--wa-recu)}
+.envoye::before{right:-7px;border-left:8px solid var(--wa-envoye)}
+.heure{float:right;font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;gap:3px;margin:5px 0 -3px 10px;font-size:.58rem;color:var(--wa-meta)}
+.heure .ic{font-size:.92rem;color:var(--wa-coche)}
+.bouton-modele{display:flex;align-items:center;justify-content:center;gap:5px;margin:7px -8px -5px -9px;padding:7px 0 8px;border-top:.5px solid rgb(11 20 26 / .12);font-size:.78rem;font-weight:500;color:var(--wa-lien)}
+.saisie{flex:none;display:flex;align-items:center;gap:10px;padding:7px 12px 22px;background:var(--wa-tete);color:var(--wa-teinte);font-size:1.25rem}
+.champ{flex:1;height:30px;border-radius:16px;background:var(--wa-champ);border:.5px solid rgb(0 0 0 / .1)}
+.barre-accueil{position:absolute;bottom:7px;left:50%;width:100px;height:4px;margin-left:-50px;border-radius:3px;background:var(--wa-texte);opacity:.85}
+
+/* L'Android et Google Messages (RCS) */
+.android{position:absolute;z-index:1;right:0;top:0;width:250px;padding:8px;border-radius:38px;background:linear-gradient(145deg,#3A3D42,#1C1E21);box-shadow:inset 0 0 0 1.5px #56595F,0 40px 70px -28px var(--ombre)}
+.android::after{content:"";position:absolute;right:-3px;top:120px;width:3px;height:60px;border-radius:2px;background:#3A3D42;box-shadow:0 78px 0 #3A3D42}
+.ecran-a{position:relative;height:562px;border-radius:31px;overflow:hidden;display:flex;flex-direction:column;background:var(--rcs-fond);font-family:var(--android);color:var(--rcs-texte);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.a-etat{flex:none;font-variant-numeric:tabular-nums;position:relative;display:flex;align-items:center;justify-content:space-between;height:30px;padding:4px 18px 0 20px;font-size:.72rem;font-weight:500}
+.a-etat .poincon{position:absolute;top:9px;left:50%;width:11px;height:11px;margin-left:-5.5px;border-radius:50%;background:#0A0A0B}
+.a-etat .etat{font-size:.85rem;gap:3px}
+.a-tete{flex:none;display:flex;align-items:center;gap:10px;padding:6px 10px 10px 12px;font-size:1.2rem}
+.a-tete .avatar{width:32px;height:32px}
+.a-qui{flex:1;display:flex;align-items:center;gap:4px;min-width:0;font-size:.88rem;font-weight:500}
+.a-qui .ic{font-size:1rem;color:var(--rcs-bleu)}
+.a-fil{flex:1;list-style:none;margin:0;padding:4px 10px 8px;display:flex;flex-direction:column;gap:7px;overflow:hidden}
+.a-jour{align-self:center;margin:0 0 4px;font-size:.64rem;color:var(--rcs-meta)}
+.carte-riche{align-self:flex-start;width:86%;border:1px solid var(--rcs-bord);border-radius:18px;overflow:hidden;background:var(--rcs-fond)}
+.visuel{display:block;width:100%;height:96px;object-fit:cover;object-position:50% 28%}
+.carte-corps{padding:9px 12px 10px}
+.carte-corps strong{display:block;font-size:.8rem;font-weight:600}
+.carte-corps span{display:block;margin-top:2px;font-size:.7rem;line-height:1.35;color:var(--rcs-meta)}
+.action-riche{display:block;padding:8px 0;border-top:1px solid var(--rcs-bord);text-align:center;font-size:.74rem;font-weight:500;color:var(--rcs-bleu)}
+.a-bulle{max-width:82%;padding:7px 12px;border-radius:18px;font-size:.76rem;line-height:1.36}
+.a-recu{align-self:flex-start;background:var(--rcs-recu);border-bottom-left-radius:4px}
+.a-envoye{align-self:flex-end;background:var(--rcs-envoye);color:var(--rcs-envoye-texte);border-bottom-right-radius:4px}
+.a-lu{align-self:flex-end;margin:-3px 4px 0 0;font-size:.6rem;color:var(--rcs-meta)}
+.suggestions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;list-style:none;margin:0;padding:0}
+.suggestions li{padding:5px 11px;border:1px solid #C4C7C5;border-radius:999px;font-size:.7rem;font-weight:500;color:var(--rcs-bleu)}
+.a-saisie{flex:none;display:flex;align-items:center;gap:8px;padding:6px 10px 20px;font-size:1.2rem;color:#444746}
+.a-champ{flex:1;display:flex;align-items:center;justify-content:space-between;height:34px;padding:0 12px;border-radius:18px;background:var(--rcs-recu);font-size:.74rem;color:var(--rcs-meta)}
+.a-champ .ic{font-size:1.05rem}
+.a-geste{position:absolute;bottom:7px;left:50%;width:84px;height:4px;margin-left:-42px;border-radius:3px;background:var(--rcs-texte);opacity:.8}
+
+/* Ce qu'Engage Me a retenu de la conversation WhatsApp, et où il le pousse. La carte JOUE une analyse quand
+   elle est à l'écran (voyant, valeurs qui arrivent, notes qui comptent), puis le flux part vers les outils.
+   Sans JavaScript, ou pour qui a demandé moins de mouvement, elle affiche directement son état final. */
+.flux-crm{grid-column:1;grid-row:3;justify-self:end;align-self:start;display:grid;grid-template-columns:minmax(0,360px);margin-top:-8px}
+/* La carte est plus claire que la page pour s'en détacher ; `--fond-lu` sert aussi à l'anneau des pastilles. */
+.lu{--fond-lu:#16237E;padding:15px 18px;border-radius:16px;background:var(--fond-lu);border:1px solid rgb(255 255 255 / .16);box-shadow:inset 0 1px 0 rgb(255 255 255 / .07),0 1px 2px rgb(0 0 0 / .2),0 24px 44px -20px var(--ombre)}
+.lu-tete{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}
+.lu-titre{display:flex;align-items:center;gap:8px;margin:0;font-size:.86rem;font-weight:700}
+/* Le cerveau (Phosphor, duotone) : son remplissage pulse pendant l'analyse, comme s'il s'allumait. */
+.cerveau{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:rgb(111 194 254 / .16);color:#6FC2FE}
+.cerveau svg{width:18px;height:18px;fill:currentColor}
+.cerveau .c-fond{opacity:.2}
+.statut{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 7px;border-radius:999px;background:rgb(23 199 78 / .14);color:#5BE38A;font-size:.7rem;font-weight:700}
+.orbe{width:9px;height:9px;border-radius:50%;background:#17C74E}
+.statut .libelles{display:grid}
+.statut .libelles > span{grid-area:1 / 1}
+.statut .s-cours{opacity:0}
+.lu dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px 14px;margin:0}
+.lu .large{grid-column:1 / -1;padding-bottom:11px;border-bottom:1px solid var(--line)}
+.lu dt{font-size:.72rem;color:var(--muted)}
+.lu dd{position:relative;margin:1px 0 0;font-size:.98rem;font-weight:700;letter-spacing:-.01em}
+.lu dd small{font-size:.72rem;font-weight:600;color:var(--muted)}
+/* Qui répond : trois répondants superposés dans la même case (le Meta Business Agent, un agent IA, l'équipe),
+   qui se relaient pendant le cycle de la carte. Sans animation, seul le premier se montre. Logos et avatars
+   repris du film Engage Me. */
+.qui-repond{display:grid;clip-path:inset(-3px -3px)}
+.rep{grid-area:1 / 1;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.rep ~ .rep{opacity:0}
+.rep > img{width:22px;height:22px;border-radius:6px}
+.pile{display:flex}
+.pile > *{display:grid;place-items:center;width:22px;height:22px;box-shadow:0 0 0 2px var(--fond-lu)}
+.pile > * + *{margin-left:-3px}
+.pile .ia{border-radius:6px;background:#FFFFFF}
+.pile .ia img{width:14px;height:14px}
+.pile .gens{border-radius:50%;color:#FFFFFF;font-size:.52rem;font-weight:700;letter-spacing:.02em}
+@property --n{syntax:"<integer>";inherits:false;initial-value:0}
+.compte{--n:var(--fin);counter-reset:n var(--n)}
+.compte::before{content:counter(n)}
+
+.flux{display:block;width:100%;height:46px;overflow:visible}
+.flux path{fill:none;stroke:rgb(111 194 254 / .55);stroke-width:1.5;stroke-dasharray:4 5}
+.flux circle{fill:#6FC2FE}
+.flux marker path{fill:rgb(111 194 254 / .8);stroke:none}
+.crm{list-style:none;margin:0;transform:translateX(-64px);padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.flux .geo-centre{display:none}
+.crm li{position:relative;display:grid;place-items:center;height:44px;border-radius:10px;background:#FFFFFF;box-shadow:0 10px 24px -14px rgb(0 0 0 / .6)}
+.crm svg{width:22px;height:22px}
+.crm .batch{width:46px;height:auto}
+.crm li::after{content:"";position:absolute;top:-5px;right:-5px;width:14px;height:14px;border-radius:50%;background:#17C74E url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.3l2.6 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/10px no-repeat;box-shadow:0 0 0 2px var(--nuit)}
+
+@media (prefers-reduced-motion:no-preference){
+  /* Le cycle est rejoué par le script (classe joue) tant que la carte est à l'écran. */
+  /* Les deux libellés sont superposés : on bascule l'opacité, parce qu'une animation ne démarre jamais sur un display:none. */
+  .js .flux-crm .statut .s-fait{opacity:0}
+  .js .flux-crm .statut .s-cours{opacity:1}
+  .js .flux-crm.joue .statut .s-cours{animation:efface 0s 2.7s forwards}
+  .js .flux-crm.joue .statut .s-fait{animation:apparait-flux .25s 2.7s forwards}
+  .js .flux-crm .orbe{background:conic-gradient(from 0deg,#6FC2FE,#17C74E,#6FC2FE)}
+  .js .flux-crm.joue .orbe{animation:tourne .9s linear 3,fixe 0s 2.7s forwards}
+  .js .flux-crm .lu dd{color:transparent}
+  .js .flux-crm .lu dd *{visibility:hidden}
+  .js .flux-crm .lu dd::after{content:"";position:absolute;left:0;top:50%;width:72%;height:10px;margin-top:-5px;border-radius:5px;background:linear-gradient(90deg,rgb(255 255 255 / .08),rgb(255 255 255 / .22),rgb(255 255 255 / .08));background-size:200% 100%}
+  .js .flux-crm.joue .lu dd::after{animation:scintille 1s linear infinite,cache 0s var(--d) forwards}
+  .js .flux-crm.joue .lu dd{animation:revele .35s var(--d) forwards}
+  .js .flux-crm.joue .lu dd *{animation:visible 0s var(--d) forwards}
+  .js .flux-crm.joue .compte{animation:compte .9s cubic-bezier(.2,.7,.2,1) var(--d) both}
+  /* Le cerveau réfléchit pendant les 2,7 s de l'analyse : son remplissage s'allume, une onde en part. */
+  .js .flux-crm.joue .cerveau{animation:onde .9s ease-out 3}
+  .js .flux-crm.joue .cerveau .c-fond{animation:neurones .45s ease-in-out 6 alternate}
+  @keyframes onde{from{box-shadow:0 0 0 0 rgb(111 194 254 / .5)}to{box-shadow:0 0 0 7px rgb(111 194 254 / 0)}}
+  @keyframes neurones{to{opacity:.8}}
+  /* Les répondants se relaient une fois l'analyse posée ; le cycle suivant repart du premier. Chaque règle
+     reprend `visible`, qu'elle remplace sur ces éléments (la règle générique `dd *` la pose sur tous). */
+  .js .flux-crm.joue .lu .rep.r1{animation:visible 0s var(--d) forwards,rep-sort .45s 3.8s forwards}
+  .js .flux-crm.joue .lu .rep.r2{animation:visible 0s var(--d) forwards,rep-entre .45s 3.8s forwards,rep-sort .45s 6.3s forwards}
+  .js .flux-crm.joue .lu .rep.r3{animation:visible 0s var(--d) forwards,rep-entre .45s 6.3s forwards}
+  .js .flux-crm.joue .lu .r2 .pile > *{animation:visible 0s var(--d) forwards,pastille .35s cubic-bezier(.34,1.56,.64,1) calc(3.9s + var(--i) * 80ms) both}
+  .js .flux-crm.joue .lu .r3 .pile > *{animation:visible 0s var(--d) forwards,pastille .35s cubic-bezier(.34,1.56,.64,1) calc(6.4s + var(--i) * 80ms) both}
+  @keyframes rep-entre{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes rep-sort{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-10px)}}
+  @keyframes pastille{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none}}
+  .js .flux-crm .flux path,.js .flux-crm .flux circle{opacity:0}
+  .js .flux-crm.joue .flux path{animation:apparait-flux .4s 2.9s forwards,coule .8s linear infinite}
+  .js .flux-crm.joue .flux circle{animation:apparait-flux .4s 3.1s forwards}
+  .js .flux-crm .crm li::after{transform:scale(0)}
+  .js .flux-crm.joue .crm li::after{animation:coche .35s cubic-bezier(.34,1.56,.64,1) var(--s) forwards}
+  @keyframes cache{to{display:none;opacity:0}}
+  @keyframes efface{to{opacity:0}}
+  @keyframes tourne{to{transform:rotate(360deg)}}
+  @keyframes fixe{to{background:#17C74E;transform:none}}
+  @keyframes scintille{from{background-position:100% 0}to{background-position:-100% 0}}
+  @keyframes revele{to{color:inherit}}
+  @keyframes visible{to{visibility:visible}}
+  @keyframes compte{from{--n:0}}
+  @keyframes apparait-flux{to{opacity:1}}
+  @keyframes coule{to{stroke-dashoffset:-18}}
+  @keyframes coche{to{transform:scale(1)}}
+}
+@media (prefers-reduced-motion:reduce){.flux circle{display:none}}
+@media (max-width:960px){
+  .scene-cadre{--k:.9;width:calc(500px * var(--k));margin:0 auto;overflow:hidden}
+  .scene{margin-bottom:calc(676px * var(--k) - 676px)}
+}
+@media (max-width:960px){.flux-crm{grid-row:auto;justify-self:center;margin-top:8px}.crm{transform:none}.flux .geo-decale{display:none}.flux .geo-centre{display:inline}}
+@media (max-width:560px){.scene-cadre{--k:.7}.flux-crm{grid-template-columns:minmax(0,1fr);justify-self:stretch}}
+@media (max-width:400px){.scene-cadre{--k:.64}}
+
+/* 2. Le relais : sur fond clair, entre deux biais, comme sur messagingme.fr. Un interrupteur montre ce que
+   chaque canal ouvre : WhatsApp a quatre entrées et trois répondants, le RCS deux et deux.
+   Les jetons sont redéfinis POUR la section, et `color` y est redéclaré : sans lui, le texte hériterait du blanc
+   déjà calculé sur `body`. Le logo passe par `--logo-navy`, la seule couleur qui traverse un `<use>`. */
+.relais{--biais:clamp(36px,6vw,88px);--ink:#010630;--muted:#535866;--line:#D5D8E6;--surface:#FFFFFF;--action-ink:#0066AA;--action-wash:#E6F3FC;--logo-navy:#181C40;--ombre:rgb(1 6 48 / .18);
+  color:var(--ink);background:linear-gradient(180deg,#F3F4FB 0%,#FFFFFF 100%);
+  clip-path:polygon(0 var(--biais),100% 0,100% calc(100% - var(--biais)),0 100%);
+  padding:calc(88px + var(--biais)) 0 calc(96px + var(--biais))}
+.relais h2,.dev h2{font-size:clamp(1.7rem,3.2vw,2.4rem);line-height:1.12;letter-spacing:-.03em;font-weight:800;margin:0 0 14px;text-wrap:balance}
+.relais > .cadre > p{margin:0 0 32px;max-width:34em;color:var(--muted);font-size:1.05rem}
+.bascule{display:inline-flex;gap:4px;margin:0 0 40px;padding:4px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.bascule legend{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.bascule input{position:absolute;opacity:0;pointer-events:none}
+.bascule label{display:inline-flex;align-items:center;gap:7px;padding:8px 20px;border-radius:999px;font-weight:700;font-size:.95rem;color:var(--muted);cursor:pointer;transition:background-color .2s,color .2s}
+.bascule label:hover{color:var(--ink)}
+.bascule input:checked + label{background:var(--ink);color:#fff}
+.bascule input:focus-visible + label{outline:2px solid var(--action);outline-offset:2px}
+.canaux:has(#canal-rcs:checked) .schema-wa,.canaux:has(#canal-wa:checked) .schema-rcs{display:none}
+.schema{display:grid;grid-template-columns:minmax(0,1fr) 110px 76px 110px minmax(0,1fr);align-items:stretch;min-height:400px}
+.pole{list-style:none;margin:0;padding:0;display:grid;grid-auto-rows:minmax(0,1fr)}
+.pole.entrees{text-align:right}
+.pole li{align-self:center;padding:4px 0}
+.pole strong{display:flex;align-items:center;gap:8px;font-size:1rem;font-weight:700;letter-spacing:-.01em}
+.pole.entrees strong{justify-content:flex-end}
+.pole span{display:block;font-size:.86rem;color:var(--muted)}
+.pole img{width:24px;height:24px;border-radius:6px}
+.pole .natif{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--action-wash);color:var(--action-ink);font-size:.7rem;font-weight:700}
+.fils svg{display:block;width:100%;height:100%;overflow:visible}
+.fils path{fill:none;stroke:var(--action);stroke-width:1.75;vector-effect:non-scaling-stroke}
+.fils path.fin{stroke:var(--line)}
+.noeud{align-self:center;display:grid;place-items:center;width:76px;height:76px;border-radius:50%;background:var(--surface);border:1px solid var(--line);box-shadow:0 18px 36px -18px var(--ombre)}
+.noeud svg{width:40px;height:40px}
+/* Sur mobile, le schéma garde l'esprit du bureau : les entrées en cadres compacts sur une rangée, le logo
+   centré, les répondants en cadres, reliés par des flèches que le script calcule sur la position RÉELLE des
+   cadres (elles restent justes quel que soit le nombre de lignes d'un titre). Toucher un cadre affiche son
+   détail dans l'encart du bas. */
+.detail-mobile{display:none}
+@media (max-width:860px){
+  .schema{position:relative;display:grid;grid-template-columns:minmax(0,1fr);justify-items:stretch;min-height:0}
+  .fils{display:none}
+  .pole,.pole.entrees{grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);grid-auto-rows:auto;gap:8px;text-align:center}
+  .pole li{align-self:stretch;display:flex;align-items:center;justify-content:center;min-height:56px;padding:9px 6px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .pole li > span{display:none}
+  .pole strong,.pole.entrees strong{flex-direction:column;justify-content:center;gap:4px;font-size:.74rem;line-height:1.25;letter-spacing:0}
+  .pole img{width:18px;height:18px}
+  .pole .natif{font-size:.62rem;padding:0 6px}
+  .pole li.actif{border-color:var(--action);box-shadow:0 0 0 3px rgb(0 128 214 / .16)}
+  .pole li:focus-visible{outline:2px solid var(--action);outline-offset:2px}
+  .noeud{justify-self:center;margin:64px 0}
+  .detail-mobile{display:block;min-height:3.4em;margin:18px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:.86rem;line-height:1.45;color:var(--muted)}
+  .detail-mobile strong{color:var(--ink)}
+  .fleches-mobile{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+  .fleches-mobile path{fill:none;stroke:var(--action);stroke-width:1.75}
+  .fleches-mobile path.fin{stroke:#B9C0D6}
+  .fleches-mobile marker path{fill:var(--action);stroke:none}
+}
+@media (max-width:360px){.pole strong,.pole.entrees strong{font-size:.68rem}}
+@media (max-width:860px) and (prefers-reduced-motion:no-preference){
+  .js .fleches-mobile{opacity:0;animation:apparait-flux .6s .15s forwards}
+}
+
+/* 3. La qualification, dite en une phrase */
+.enonce-bloc{padding:96px 0}
+.enonce{margin:0;max-width:24em;font-size:clamp(1.6rem,3.4vw,2.6rem);line-height:1.2;letter-spacing:-.025em;font-weight:600;color:var(--muted);text-wrap:balance}
+.enonce strong{color:var(--ink);font-weight:800}
+
+/* 4. Développeurs : le texte à gauche, les deux branchements à droite */
+.dev{padding:88px 0 104px;border-top:1px solid var(--line)}
+.dev .cadre{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:56px;align-items:center}
+.dev p{margin:0 0 30px;color:var(--muted);font-size:1.05rem;max-width:30em}
+.code{margin:0;padding:22px 24px;border-radius:16px;background:var(--code-bg);color:var(--code-ink);font-family:var(--mono);font-size:.78rem;line-height:1.75;overflow-x:auto;border:1px solid var(--line)}
+.code .c{color:var(--code-muted)}
+@media (max-width:900px){.dev .cadre{grid-template-columns:minmax(0,1fr);gap:36px}}
+
+/* Pied de page : celui de messagingme.fr, signé Engage Me by Messaging Me */
+.pied{color:var(--muted);border-top:1px solid var(--line);background:radial-gradient(at 50% 100%,var(--halo) 0%,var(--nuit) 60%)}
+.pied a{text-decoration:none;transition:color .15s}
+.pied a:hover{color:#fff}
+.pied-haut{display:grid;grid-template-columns:minmax(0,1.7fr) repeat(3,minmax(0,1fr)) minmax(0,1.2fr);gap:40px;padding-top:72px;padding-bottom:56px}
+.pied-marque{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;white-space:nowrap;color:#fff;font-weight:700;font-size:1.05rem}
+.pied-marque svg{width:28px;height:28px}
+.pied-marque .par{display:inline-flex;align-items:center;gap:8px;font-weight:500;font-size:.85rem;color:var(--muted)}
+.pied-marque .par img{width:auto;height:21px}
+/* Hébergement : le drapeau en trois bandes (pas d'émoji : Windows l'affiche en lettres « FR »), le logo Scaleway en blanc. */
+.heberge{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 9px;margin:0;padding:8px 14px;border:1px solid rgb(255 255 255 / .18);border-radius:999px;background:rgb(255 255 255 / .06);color:#fff;font-size:.82rem;font-weight:600;line-height:1.3}
+.drapeau{display:inline-flex;flex:none;width:21px;height:14px;border-radius:2px;overflow:hidden;box-shadow:0 0 0 1px rgb(255 255 255 / .25)}
+.drapeau i{flex:1}.drapeau i:nth-child(1){background:#002654}.drapeau i:nth-child(2){background:#FFFFFF}.drapeau i:nth-child(3){background:#CE1126}
+.heberge .chez{display:inline-flex;align-items:center;gap:6px;color:#C9CEEA;font-weight:500}
+.heberge svg{width:16px;height:16px;fill:#fff}
+.pied-accroche{margin:14px 0 0;max-width:19em;color:#fff;font-size:.95rem;line-height:1.5}
+.pied h3{margin:0 0 18px;color:#fff;font-size:1rem;font-weight:700}
+.pied ul{list-style:none;margin:0;padding:0;display:grid;gap:12px;font-size:.93rem}
+.pied address{font-style:normal;font-size:.93rem;display:grid;gap:12px}
+.pied address strong{color:#fff;font-weight:600}
+.pied-bas{position:relative;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-top:24px;padding-bottom:32px;font-size:.88rem;color:#fff}
+.pied-bas::before{content:"";position:absolute;top:0;left:var(--g);right:var(--g);height:1px;background:rgb(255 255 255 / .16)}
+.pied .reseaux{display:flex;gap:10px}
+.reseaux a{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;border:1px solid rgb(255 255 255 / .22);background:rgb(255 255 255 / .06);color:#fff;font-size:1.05rem}
+.reseaux a:hover{background:rgb(255 255 255 / .16)}
+@media (max-width:960px){.pied-haut{grid-template-columns:repeat(2,minmax(0,1fr))}.pied-haut > :first-child{grid-column:1 / -1}}
+@media (max-width:480px){.pied-haut{grid-template-columns:minmax(0,1fr)}}
+
+/* Mouvement : les conversations se déroulent, puis la lecture arrive ; le relais se trace quand il entre à l'écran,
+   et se retrace quand on change de canal (un schéma qui réapparaît rejoue son animation).
+   Rien n'est caché sans JavaScript, et rien ne bouge pour qui a demandé moins de mouvement. */
+@media (prefers-reduced-motion:no-preference){
+  .js .entre{opacity:0;animation:entre .6s cubic-bezier(.16,1,.3,1) forwards;animation-delay:var(--d,0s)}
+  @keyframes entre{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .js .relais .fils svg{clip-path:inset(0 100% 0 0)}
+  .js .relais.vu .fils svg{animation:trace .9s cubic-bezier(.16,1,.3,1) .15s forwards}
+  .js .relais.vu .fils + .noeud + .fils svg{animation-delay:.6s}
+  .js .relais .noeud{opacity:0}
+  .js .relais.vu .noeud{animation:pose .5s cubic-bezier(.16,1,.3,1) .4s forwards}
+  @keyframes trace{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+  @keyframes pose{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}
+}
+
+/* Menu « Fonctionnalités » : un <details> natif, qui s'ouvre sans script et au clavier ; `site.js` le referme au
+   clic ailleurs et à Échap. Sur mobile, il s'appelle « Menu » et reprend le lien Développeurs, qui n'a plus la place
+   dans la barre. */
+.menu{position:relative}
+.menu summary{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;user-select:none}
+.menu summary::-webkit-details-marker{display:none}
+.menu summary .ic{font-size:.8rem;transition:transform .2s}
+.menu[open] summary{color:var(--ink)}
+.menu[open] summary .ic{transform:rotate(180deg)}
+.menu summary:focus-visible{outline:2px solid var(--action);outline-offset:4px;border-radius:6px}
+.menu-mobile{display:none}
+.menu-panneau{position:absolute;top:calc(100% + 16px);left:50%;translate:-50% 0;z-index:20;width:344px;display:grid;gap:2px;padding:8px;border-radius:16px;background:#16237E;border:1px solid rgb(255 255 255 / .16);box-shadow:inset 0 1px 0 rgb(255 255 255 / .07),0 28px 56px -18px var(--ombre)}
+.menu-panneau a{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border-radius:10px;text-decoration:none;transition:background-color .15s}
+.menu-panneau a:hover,.menu-panneau a[aria-current="page"]{background:rgb(255 255 255 / .08)}
+.menu-panneau .menu-seul-mobile{display:none}
+.menu-ic{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:rgb(111 194 254 / .14);color:var(--action-ink);font-size:1.25rem}
+.menu-panneau strong{display:block;color:#FFFFFF;font-size:.92rem;font-weight:700;line-height:1.3}
+.menu-panneau small{display:block;color:var(--muted);font-size:.8rem;line-height:1.35}
+@media (max-width:640px){
+  .menu-bureau,.nav-dev{display:none}
+  .menu-mobile{display:inline}
+  .menu-panneau{position:fixed;top:72px;left:16px;right:16px;width:auto;translate:none}
+  .menu-panneau .menu-seul-mobile{display:grid}
+}
+@media (prefers-reduced-motion:no-preference){
+  .js .menu[open] .menu-panneau{animation:menu-ouvre .18s cubic-bezier(.16,1,.3,1)}
+  @keyframes menu-ouvre{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+}
+
+/* ============================================================================================================
+   PAGES FONCTIONNALITÉS (/fonctionnalites/...). Classes préfixées f- : rien ici ne touche l'accueil.
+   Elles racontent ce que racontent les films du reel, avec leurs écrans rendus depuis les mêmes sources.
+   ============================================================================================================ */
+.f-titre{margin:0 0 14px;font-size:clamp(1.7rem,3.2vw,2.4rem);line-height:1.12;letter-spacing:-.03em;font-weight:800;text-wrap:balance}
+.f-texte{margin:0;max-width:34em;color:var(--muted);font-size:1.05rem;text-wrap:pretty}
+.f-bloc{padding:104px 0}
+
+/* 1. La une : le message à gauche, deux téléphones à droite */
+.f-une{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);align-items:center;gap:clamp(40px,12vw - 80px,96px);padding-top:40px;padding-bottom:104px}
+.f-surtitre{display:inline-flex;align-items:center;gap:8px;margin:0 0 18px;color:var(--action-ink);font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.f-surtitre .ic{font-size:1.1rem}
+.f-une h1{margin:0 0 22px;font-size:clamp(2.3rem,4.4vw,3.5rem)}
+.f-duo{position:relative;display:flex;justify-content:center;align-items:flex-start;margin:0}
+.f-duo img{display:block;width:min(262px,48%);height:auto;filter:drop-shadow(0 40px 44px rgb(0 2 20 / .55))}
+.f-duo img + img{margin:16% 0 0 -2%}
+@media (max-width:960px){
+  .f-une{grid-template-columns:minmax(0,1fr);gap:48px;padding-top:24px;padding-bottom:80px}
+  .f-duo img{width:min(230px,47%)}
+}
+
+/* 2. Avant : la pub qui mène à un formulaire (Click-to-WhatsApp) */
+.f-avant .cadre{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);align-items:center;gap:64px}
+.f-avant-visuel{display:flex;align-items:center;justify-content:center;gap:14px;margin:0}
+.f-avant-visuel img{width:min(210px,40%);height:auto;filter:saturate(.55) brightness(.9) drop-shadow(0 28px 32px rgb(0 2 20 / .5))}
+.f-avant-visuel > .ic{flex:none;font-size:1.6rem;color:var(--muted)}
+@media (max-width:900px){.f-avant .cadre{grid-template-columns:minmax(0,1fr);gap:40px}}
+/* En miroir au bureau : le visuel à gauche, le texte à droite. Le texte reste PREMIER dans le code, pour qu'il
+   passe en tête sur mobile et pour un lecteur d'écran. */
+@media (min-width:901px){.f-miroir > :first-child{grid-column:2;grid-row:1}.f-miroir > :last-child{grid-column:1;grid-row:1}}
+
+/* 3. Le film */
+.f-film .f-texte{margin-bottom:32px}
+.f-video{display:block;width:100%;height:auto;aspect-ratio:16 / 9;border-radius:16px;border:1px solid var(--line);background:#000322;box-shadow:0 40px 80px -40px rgb(0 0 0 / .8)}
+
+/* 4. Les trois étapes, sur la seule bande claire de la page. Au bureau, l'écran reste collé à droite et suit
+   l'étape lue ; sans JavaScript et sur mobile, chaque étape porte son image. */
+.f-etapes{--biais:clamp(36px,6vw,88px);--ink:#010630;--muted:#535866;--line:#D5D8E6;--surface:#FFFFFF;--action-ink:#0066AA;--ombre:rgb(1 6 48 / .18);
+  color:var(--ink);background:linear-gradient(180deg,#F3F4FB 0%,#FFFFFF 100%);
+  clip-path:polygon(0 var(--biais),100% 0,100% calc(100% - var(--biais)),0 100%);
+  padding:calc(88px + var(--biais)) 0 calc(88px + var(--biais))}
+.f-pas{display:grid;grid-template-columns:minmax(0,1fr);gap:0;margin-top:40px}
+.f-liste{list-style:none;margin:0;padding:0}
+.f-etape{display:grid;grid-template-columns:34px minmax(0,1fr);gap:18px;padding:0 0 48px}
+.f-num{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#17C74E;color:#FFFFFF;font-size:.9rem;font-weight:800}
+.f-etape h3{margin:3px 0 8px;font-size:1.3rem;line-height:1.25;letter-spacing:-.02em;font-weight:800}
+.f-etape p{margin:0;max-width:30em;color:var(--muted)}
+.f-etape img{grid-column:2;display:block;width:100%;height:auto;margin-top:22px;filter:drop-shadow(0 24px 36px var(--ombre))}
+.f-etape img.f-tel{width:min(250px,72%)}
+/* L'image de l'appui porte le voile rectangulaire du film : on rogne ses coins sur ceux du téléphone. */
+.f-arrondi{clip-path:inset(0 round 15.2% / 7.2%)}
+.f-ecran{display:none}
+@media (min-width:961px){
+  .js .f-pas{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:64px}
+  .js .f-etape{min-height:62vh;align-content:center;padding:0;opacity:.4;transition:opacity .35s}
+  .js .f-etape.actif{opacity:1}
+  .js .f-etape:not(.actif) .f-num{background:transparent;color:var(--muted);box-shadow:inset 0 0 0 1.5px var(--line)}
+  .js .f-etape img{display:none}
+  .js .f-ecran{position:sticky;top:calc(50vh - 240px);display:grid;align-self:start;margin:0}
+  .js .f-ecran img{grid-area:1 / 1;width:100%;height:auto;opacity:0;transition:opacity .45s;filter:drop-shadow(0 24px 36px var(--ombre))}
+  .js .f-ecran img.actif{opacity:1}
+  .js .f-ecran img.f-tel{width:min(290px,52%);justify-self:center}
+}
+
+/* 5. Le prix, dit en grand (Click-to-WhatsApp), puis deux faits */
+.f-grand{margin:0 0 18px;font-size:clamp(2.4rem,6vw,4.6rem);line-height:1.02;letter-spacing:-.04em;font-weight:800;text-wrap:balance}
+.f-grand span{color:var(--muted)}
+.f-faits{list-style:none;margin:48px 0 0;padding:40px 0 0;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px 56px}
+.f-faits li{display:grid;grid-template-columns:44px minmax(0,1fr);gap:16px;align-items:start}
+.f-faits .ic{width:44px;height:44px;padding:10px;border-radius:12px;background:rgb(111 194 254 / .14);color:var(--action-ink)}
+.f-faits strong{display:block;margin-bottom:4px;font-size:1.05rem;font-weight:700}
+.f-faits span{color:var(--muted)}
+@media (max-width:760px){.f-faits{grid-template-columns:minmax(0,1fr)}}
+
+/* 6. L'entonnoir : quatre marches, du budget aux conversations qualifiées */
+.f-marches{list-style:none;margin:40px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:end;gap:14px}
+.f-marche{display:flex;flex-direction:column;justify-content:flex-end;min-height:calc(var(--h) * 2.4px);padding:20px;border-radius:16px;background:linear-gradient(180deg,rgb(0 128 214 / .34),rgb(0 128 214 / .1));border:1px solid rgb(111 194 254 / .28);transform-origin:50% 100%}
+.f-marche small{display:block;color:var(--muted);font-size:.85rem;font-weight:600}
+.f-marche b{display:block;margin:2px 0 6px;font-size:clamp(1.6rem,3vw,2.3rem);line-height:1.1;letter-spacing:-.03em;font-weight:800;font-variant-numeric:tabular-nums}
+.f-marche span{font-size:.85rem;color:var(--action-ink);font-weight:600}
+.f-note{margin:14px 0 0;color:var(--muted);font-size:.82rem}
+@media (max-width:760px){.f-marches{grid-template-columns:repeat(2,minmax(0,1fr))}.f-marche{min-height:0}}
+
+/* Le chiffre (Chaînes) : le nombre en géant, sa source dessous */
+.f-chiffre .cadre{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:24px 56px}
+.f-nombre{margin:0;font-size:clamp(5rem,14vw,10rem);line-height:.9;letter-spacing:-.05em;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.f-nombre small{display:block;font-size:.3em;letter-spacing:-.02em}
+.f-chiffre .f-texte{font-size:1.25rem;color:var(--ink);max-width:22em}
+.f-source{display:block;margin-top:10px;color:var(--muted);font-size:.85rem}
+.f-chiffre .f-gratuit{margin:22px 0 0;color:var(--muted);font-size:1.05rem}
+.f-gratuit strong{color:#5BE38A}
+@media (max-width:760px){.f-chiffre .cadre{grid-template-columns:minmax(0,1fr)}}
+
+/* La mesure (Chaînes) : ce que chaque bouton a déclenché */
+.f-mesure .cadre{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:64px}
+.f-posts{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.f-posts li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;padding:16px 18px;border-radius:14px;background:#16237E;border:1px solid rgb(255 255 255 / .14)}
+.f-posts strong{display:block;font-size:.95rem;font-weight:700;line-height:1.3}
+.f-posts small{color:var(--muted);font-size:.8rem}
+.f-posts b{text-align:right;font-size:1.5rem;line-height:1;font-weight:800;font-variant-numeric:tabular-nums}
+.f-posts b small{display:block;margin-top:4px;font-size:.72rem;font-weight:600}
+@media (max-width:900px){.f-mesure .cadre{grid-template-columns:minmax(0,1fr);gap:40px}}
+
+/* 7. L'appel de fin */
+.f-appel{padding:96px 0 112px;border-top:1px solid var(--line);text-align:center}
+.f-appel .f-titre{margin:0 auto 14px;max-width:18em}
+.f-appel .f-texte{margin:0 auto 34px}
+.f-appel .appels{justify-content:center}
+
+/* Mouvement : les marches montent et le nombre compte quand ils arrivent à l'écran. Rien ne bouge pour qui a
+   demandé moins de mouvement, et rien n'est caché sans JavaScript. */
+@media (prefers-reduced-motion:no-preference){
+  .js .f-marches .f-marche{transform:scaleY(.2);opacity:0}
+  .js .f-marches.vu .f-marche{animation:marche .7s cubic-bezier(.16,1,.3,1) forwards;animation-delay:var(--d,0s)}
+  @keyframes marche{to{transform:none;opacity:1}}
+  .js .f-chiffre.vu .compte{animation:compte-f 1.6s cubic-bezier(.2,.7,.2,1) both}
+  @keyframes compte-f{from{--n:0}}
+}
