@@ -37,11 +37,15 @@ passer par la communauté Trailblazer ou par un contact Salesforce. **Sans cette
 obligatoires à TOUTES les applications de connexion (PKCE, rotation des jetons de rafraîchissement, durée de vie
 absolue, liaison à l'adresse IP), qui « ne peuvent plus être désactivées une fois appliquées » : application
 forcée à partir du 25 juin, repoussée au 10 juillet (article d'aide Salesforce 005388177, publié le 30 juin 2026).
-Or l'application « SalesforceDX Namespace Registry » n'est pas une application globale : elle est créée DANS
-chaque Dev Hub à son activation (lu dans `ConnectedApplication` : créée le 2026-09-26 à 9 h 58 UTC par
-« Automated Process »). Créée après l'application forcée, elle naît avec PKCE obligatoire, et le bouton « Lier un
-espace de noms » de Salesforce n'envoie pas PKCE. C'est donc le durcissement de Salesforce qui casse son propre
-bouton, pour tout Dev Hub activé depuis. Écarté par la mesure : un défaut de la version d'aperçu (le Dev Hub et la
+L'application « SalesforceDX Namespace Registry » porte PKCE obligatoire et verrouillé, et le bouton « Lier un
+espace de noms » de Salesforce n'envoie pas PKCE : c'est le durcissement de Salesforce qui casse son propre
+bouton. ⚠️ Ce qui n'est PAS établi : que l'application soit propre à chaque Dev Hub. Sa ligne
+`ConnectedApplication` dans notre Dev Hub date du 2026-09-26 à 9 h 58 UTC (« Automated Process »), ce qui colle
+à l'activation du Dev Hub OU au premier clic sur le bouton : la date ne tranche pas entre une application locale et
+l'installation locale d'une application commune à tout Salesforce. **Revérifié le 2026-09-28** : même refus, et
+l'adresse de la fenêtre ne porte toujours aucun `code_challenge` (`login.salesforce.com/services/oauth2/authorize`
+avec `prompt=login consent`, retour sur `/environmenthub/soma-callback.apexp` du Dev Hub, soit le mécanisme de
+l'Environment Hub). Écarté par la mesure : un défaut de la version d'aperçu (le Dev Hub et la
 scratch org sont en Summer '26, API 67.0, la version courante).
 
 **Ce qui ne marche pas, et pourquoi.** Ajouter nous-mêmes le paramètre à la fenêtre échouerait à l'étape
