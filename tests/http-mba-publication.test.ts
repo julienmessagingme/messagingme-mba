@@ -162,9 +162,10 @@ describe('une publication à la fois, et la vraie cause d’un échec', () => {
     // l'autre : Meta présentait une clé révoquée, et les deux POST rendaient 200.
     let liberer: () => void = () => {};
     const retenir = new Promise<void>((r) => { liberer = r; });
-    const { app, appliques } = monter({ retenir });
+    const { app, appliques, entames } = monter({ retenir });
     const premiere = app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
-    await new Promise((r) => setTimeout(r, 20));
+    // La première tient son verrou quand son premier geste a commencé ; un délai fixe ne le garantit pas sous charge.
+    await vi.waitFor(() => { expect(entames.length).toBeGreaterThan(0); });
     const seconde = await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
     expect(seconde.statusCode).toBe(409);
     expect(seconde.json().error).toMatch(/déjà en cours/);
@@ -179,14 +180,15 @@ describe('une publication à la fois, et la vraie cause d’un échec', () => {
     // Un verrou global bloquerait tous les clients derrière la publication d'un seul.
     let liberer: () => void = () => {};
     const retenir = new Promise<void>((r) => { liberer = r; });
-    const { app } = monter({ retenir });
+    const { app, entames } = monter({ retenir });
     const premiere = app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.waitFor(() => { expect(entames.length).toBeGreaterThan(0); });
     const autre = app.inject({
       method: 'POST', url: '/tenants/t2/mba-publication',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${adminTok2}` },
     });
-    await new Promise((r) => setTimeout(r, 20));
+    // Le second espace passe son verrou et commence son geste pendant que le premier est retenu.
+    await vi.waitFor(() => { expect(entames.length).toBe(2); });
     liberer();
     expect((await premiere).statusCode).toBe(200);
     expect((await autre).statusCode).toBe(200);
