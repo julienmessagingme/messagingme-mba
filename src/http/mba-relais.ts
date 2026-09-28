@@ -8,6 +8,8 @@ import { consommateurMba } from '../agent/consommateur';
 import { REPONSE_EN_COURS, lireCibleMaison } from '../mba/outils-maison';
 import { erreurDePanne, executerOutilMaison, type DepsMaison, type IssueMaison } from '../mba/executer-maison';
 import { messageDe } from '../lib/erreur';
+import type { TravauxEnVol } from '../lib/en-vol';
+import { FIN_DE_TOUR_MAX_MS } from '../mba/fin-de-tour';
 import {
   ENTETE_CONTACT_META, CHEMIN_RELAIS, waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur,
   corpsIllisible,
@@ -53,7 +55,20 @@ export interface MbaRelaisDeps {
    * Requise : sans elle, un refus tardif laisserait l'agent muet et le client sans réponse.
    */
   signalerEchecTardif(tenantId: string, waId: string, raison: string): Promise<void>;
+  /**
+   * Les gestes qui continuent après la réponse, suivis pour que l'arrêt de la copie les attende avant de fermer le
+   * pool (`src/lib/en-vol.ts`, `arreterApi`). Requis : oublié, l'arrêt couperait un envoi déjà annoncé.
+   */
+  enVol: Pick<TravauxEnVol, 'suivre'>;
 }
+
+/**
+ * Combien de temps l'arrêt d'une copie attend les gestes laissés en route : la fin de tour la plus longue
+ * (`FIN_DE_TOUR_MAX_MS`) plus cinq secondes pour l'envoi qui la suit. Comptée depuis le signal d'arrêt, et le geste a
+ * commencé avant : elle couvre un geste ordinaire. Elle doit laisser à la file et au pool de quoi se fermer sous le
+ * filet de l'arrêt (`FILET_ARRET_MS`), un test tient les deux bornes.
+ */
+export const ATTENTE_GESTES_A_L_ARRET_MS = FIN_DE_TOUR_MAX_MS + 5_000;
 
 /**
  * Combien de temps le relais attend un envoi (bloc, scénario) avant de répondre « c'est parti » à Meta.
@@ -130,13 +145,14 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
         const premier = await Promise.race([geste, deps.attendre(DELAI_REPONSE_ENVOI_MS).then(() => null)]);
         if (premier !== null) return rendre(premier);
         // L'agent de Meta a déjà sa réponse : un échec qui arrive maintenant lui est dit par un événement. `geste` ne
-        // rejette jamais ; le signalement peut échouer, et rien ne l'attend : il est rattrapé ici.
-        void geste
+        // rejette jamais ; le signalement peut échouer, et aucune requête ne l'attend : il est rattrapé ici, et suivi
+        // jusqu'au bout pour que l'arrêt de la copie ne le coupe pas.
+        void deps.enVol.suivre(geste
           .then((issue) => (issue.ok ? undefined : deps.signalerEchecTardif(tenant, waId, issue.erreur)))
           .catch((err: unknown) => {
             // eslint-disable-next-line no-console
             console.error(`mba-relais: l'échec tardif de ${outil.name} n'a pas pu être dit à l'agent de Meta :`, messageDe(err));
-          });
+          }));
         return reply.code(200).send({ succes: true, reponse: REPONSE_EN_COURS[cible.handler] });
       }
       return rendre(await geste);

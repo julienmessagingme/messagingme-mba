@@ -7,7 +7,7 @@ import { MetaPhoneRegisterClient } from './phone-register';
 import { MbaClient } from '../mba/client';
 import type { HttpTransport } from './http';
 import type { MessageSender } from '../campaign/engine';
-import type { MetaCredentialsResolver } from './credentials';
+import type { MetaCredentialsResolver, ResolvedToken } from './credentials';
 import type { ArbitreDeDebit } from './arbitre-debit';
 import { NumeroDelieError } from './numero-delie';
 
@@ -57,7 +57,8 @@ export class MetaClientFactory {
   async clientForTenant(tenantId: string, phoneNumberId: string): Promise<MetaClient> {
     // Avant le jeton : un numéro délié ne coûte ni la résolution du jeton ni un appel à Meta.
     await this.verifierNumero(phoneNumberId);
-    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
+    const resolu = await this.o.resolver.resolveForTenant(tenantId);
+    const { token } = resolu;
     const client = new MetaClient({
       transport: this.o.transport,
       token,
@@ -68,7 +69,7 @@ export class MetaClientFactory {
       // appel `messages`, et seulement celui-là : lire un template ou téléverser un média ne consomme pas le budget.
       ...(this.o.arbitreDebit ? { rateLimiter: this.o.arbitreDebit.pour(phoneNumberId) } : {}),
     });
-    return this.guard(client, wabaId);
+    return this.guard(client, resolu);
   }
 
   templateClientForTenant(tenantId: string): Promise<MetaTemplateClient> {
@@ -102,15 +103,16 @@ export class MetaClientFactory {
 
   /** Un client construit avec le jeton de l'espace, et enveloppé de l'intercepteur (`guard`). */
   private async pour<T extends object>(tenantId: string, fabrique: (token: string) => T): Promise<T> {
-    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
-    return this.guard(fabrique(token), wabaId);
+    const resolu = await this.o.resolver.resolveForTenant(tenantId);
+    return this.guard(fabrique(resolu.token), resolu);
   }
 
   /**
-   * Enveloppe un client Meta : chaque méthode async qui rejette est interceptée. Sur une erreur d'auth, le WABA du
-   * tenant est invalidé (`resolver.onError`) ; l'erreur est toujours relancée. Le reste passe inchangé.
+   * Enveloppe un client Meta : chaque méthode async qui rejette est interceptée. Sur une erreur d'auth, le jeton qui a
+   * construit CE client est invalidé (`resolver.onError`, avec sa résolution : un jeton plus récent du même WABA n'est
+   * pas touché) ; l'erreur est toujours relancée. Le reste passe inchangé.
    */
-  private guard<T extends object>(target: T, wabaId: string | null): T {
+  private guard<T extends object>(target: T, resolu: ResolvedToken): T {
     const resolver = this.o.resolver;
     return new Proxy(target, {
       get(obj, prop, receiver) {
@@ -121,7 +123,7 @@ export class MetaClientFactory {
           if (out && typeof (out as { then?: unknown }).then === 'function') {
             return (out as Promise<unknown>).then(
               (v) => v,
-              async (err: unknown) => { await resolver.onError(err, wabaId); throw err; },
+              async (err: unknown) => { await resolver.onError(err, resolu); throw err; },
             );
           }
           return out;

@@ -1897,16 +1897,48 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       // Lecture par WABA : token chiffré + état 'active' par défaut (migration 0043).
       expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:TOK_LIVE', tokenStatus: 'active' });
       // markTokenInvalid : bascule 'invalid' + pose token_invalid_at, idempotent (garde la 1re date).
-      await es.markTokenInvalid(wabaId);
+      await es.markTokenInvalid(wabaId, 'enc:TOK_LIVE');
       const after = await es.getCredentialsByWaba(wabaId);
       expect(after?.tokenStatus).toBe('invalid');
       const firstAt = (await pool.query<{ token_invalid_at: Date }>(`select token_invalid_at from waba_credentials where waba_id = $1`, [wabaId])).rows[0]!.token_invalid_at;
       expect(firstAt).not.toBeNull();
-      await es.markTokenInvalid(wabaId); // 2e appel : no-op, date inchangée
+      await es.markTokenInvalid(wabaId, 'enc:TOK_LIVE'); // 2e appel : no-op, date inchangée
       const secondAt = (await pool.query<{ token_invalid_at: Date }>(`select token_invalid_at from waba_credentials where waba_id = $1`, [wabaId])).rows[0]!.token_invalid_at;
       expect(secondAt).toEqual(firstAt);
       // WABA inconnu -> null (déclenche le fallback token global côté résolveur).
       expect(await es.getCredentialsByWaba('waba-inexistant')).toBeNull();
+    } finally {
+      await pool.query('delete from waba_credentials where waba_id = $1', [wabaId]);
+      await pool.query('delete from waba where id = $1', [wabaId]);
+    }
+  });
+
+  /**
+   * 🔴 L'API EN PLUSIEURS COPIES : une copie qui garde l'ancien jeton en cache après une reconnexion prend un 190 et
+   * demande l'invalidation. Elle ne doit toucher QUE le jeton qui a échoué, et une reconnexion doit rendre un WABA
+   * condamné de nouveau utilisable.
+   */
+  it('PgEmbeddedSignupStore : l’ancien jeton qui échoue ne condamne pas le nouveau, et une reconnexion réactive', async () => {
+    const es = new PgEmbeddedSignupStore(pool);
+    const wabaId = 'waba-jeton-perime';
+    try {
+      await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w') on conflict (id) do nothing`, [wabaId, tenantId]);
+      await es.saveCredentials(wabaId, tenantId, 'enc:ANCIEN', null);
+      await es.saveCredentials(wabaId, tenantId, 'enc:NEUF', null); // la reconnexion
+      await es.markTokenInvalid(wabaId, 'enc:ANCIEN'); // le 190 d'une copie restée sur l'ancien jeton
+      expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:NEUF', tokenStatus: 'active' });
+      await es.markTokenInvalid(wabaId, 'enc:NEUF'); // le jeton courant, lui, se condamne
+      expect((await es.getCredentialsByWaba(wabaId))?.tokenStatus).toBe('invalid');
+      // Une nouvelle reconnexion : le jeton neuf repart actif, sans date d'invalidation.
+      await es.saveCredentials(wabaId, tenantId, 'enc:RECONNECTE', null);
+      const apres = (await pool.query<{ token_status: string; token_invalid_at: Date | null }>(
+        `select token_status, token_invalid_at from waba_credentials where waba_id = $1`, [wabaId],
+      )).rows[0]!;
+      expect(apres).toEqual({ token_status: 'active', token_invalid_at: null });
+      // Le MÊME chiffré réécrit garde son état : seul un jeton neuf réactive.
+      await es.markTokenInvalid(wabaId, 'enc:RECONNECTE');
+      await es.saveCredentials(wabaId, tenantId, 'enc:RECONNECTE', null);
+      expect((await es.getCredentialsByWaba(wabaId))?.tokenStatus).toBe('invalid');
     } finally {
       await pool.query('delete from waba_credentials where waba_id = $1', [wabaId]);
       await pool.query('delete from waba where id = $1', [wabaId]);

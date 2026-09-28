@@ -31,8 +31,9 @@ export class NumeroDelieError extends Error {
  * Durée de vie de la réponse « délié ou non ». Décision mise en cache, fenêtre assumée : sans cache, la garde
  * coûterait une requête par envoi (le runtime de scénario construit un client par message).
  *
- * Les deux réponses sont gardées. Le process qui porte la route vide son cache au geste (`invaliderTout`) ; dans
- * l'autre (le worker), l'ancienne réponse peut survivre jusqu'à cinq secondes :
+ * Les deux réponses sont gardées. La copie de l'API qui sert la route vide son cache au geste (`invaliderTout`) ;
+ * dans les autres copies de l'API et dans le worker, l'ancienne réponse peut survivre jusqu'à cinq secondes (aucune
+ * invalidation ne traverse les processus, et c'est accepté : la fenêtre est bornée par cette durée) :
  * - après « Délier », un envoi peut encore partir ; une campagne s'arrête quand son run relit son statut ;
  * - après « Relier », un envoi peut être refusé à tort ; une campagne n'écrit pas de pause pour autant
  *   (`numerosDelies.pauserCampagne` relit la base sans ce cache) et le destinataire est rendu à la file.

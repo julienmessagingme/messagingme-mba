@@ -12,7 +12,6 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
-import { assistantMbaInerte } from './routes-inertes';
 
 /**
  * LA ROUTE DE L'ASSISTANT DU MBA.
@@ -28,7 +27,6 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
   let fil: EntretienMba | null = opts.fil ?? null;
 
   const deps: MbaAssistantDeps = {
-    ...assistantMbaInerte,
     inventaire: async () => ({
       completion: calculerCompletion({
         ...VIDE, settings: {} as never, businessInfo: { business_description: '' } as never,

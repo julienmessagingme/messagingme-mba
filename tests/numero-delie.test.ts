@@ -100,7 +100,7 @@ describe('la garde mise en cache (NUMERO_DELIE_TTL_MS)', () => {
     expect(await g.estDelie('pn1')).toBe(true); // relu à l'expiration
     delie = false;
     g.invaliderTout();
-    expect(await g.estDelie('pn1')).toBe(false); // le geste vide le cache de SON process : aucune fenêtre
+    expect(await g.estDelie('pn1')).toBe(false); // le geste vide le cache de SA copie : aucune fenêtre dans celle-là
     expect(lectures).toEqual(['pn1', 'pn1', 'pn1']);
   });
 });

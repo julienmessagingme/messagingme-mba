@@ -2855,12 +2855,8 @@ qu'il va faire, une ligne par modification**, et rien ne part chez Meta tant qu'
   restent donc utilisables pendant la conversation.
 - ✅ **Le fil ne se perd pas.** On peut fermer la page et reprendre la conversation plus tard, au même endroit.
   Le bouton **« Repartir de zéro »** efface la conversation ; **il n'annule rien de ce qui a déjà été appliqué**.
-- ✅ **Joindre un document** : le bouton **« Joindre »** dépose un PDF, un Word (.docx), une image (PNG/JPEG) ou
-  un CSV, jusqu'à 20 Mo. Le document **entre dans la liste des modifications comme le reste** et ne part chez
-  Meta qu'à l'acceptation. Il y part **tel quel**, sans découpage : c'est Meta qui l'indexe.
-  ⚠️ **La liste des formats est plus courte que celle de l'onglet Fichiers** (ni `.doc`, ni `.xlsx`) : ici le
-  type est reconnu **dans le contenu du fichier**, pas dans son nom, et ces deux formats-là ne s'y reconnaissent
-  pas. Le message de refus le dit et renvoie vers l'onglet Fichiers.
+- ⚠️ **Il n'ajoute pas de document** : un document se dépose par l'onglet **Fichiers**. La conversation peut en
+  proposer la suppression, pas l'ajout.
 - ⚠️ **Une seule suppression par proposition.** Meta n'a ni corbeille ni annulation : une demande en lot
   (« nettoie mes FAQ ») obtient une liste et une question, jamais une purge qu'une acceptation rapide rendrait
   définitive. Une suppression est signalée à part dans la liste, en rouge.

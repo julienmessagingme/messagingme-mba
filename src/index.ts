@@ -113,7 +113,6 @@ import { PgEntretienMbaStore } from './mba/assistant/entretien-store';
 import { lireInventaireMba } from './mba/assistant/inventaire';
 import { PgDepenseStore } from './assistant/budget';
 import { PgHistoriqueStore } from './reglages/historique.pg';
-import { magasinPiecesJointes } from './mba/assistant/pieces-jointes';
 import { enTetesAuthSource } from './agent/http-cible';
 import { creerEprouverSource } from './agent/eprouver-source';
 import { GatewayChatClient } from './agent/llm/chat-client';
@@ -122,7 +121,6 @@ import { type OutilAPublier } from './mba/publication';
 import { outilsAPublier } from './mba/outils-a-publier';
 import { blocsProposables } from './mba/outils-maison';
 import { creerGestesEnvoi } from './mba/gestes-envoi';
-import { AntiRejeu, DUREE_ANTI_REJEU_MS } from './mba/anti-rejeu';
 import { creerSignalerEchecTardif } from './mba/signaler-echec-tardif';
 import { creerAttendreFinDuTour } from './mba/fin-de-tour';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
@@ -130,7 +128,9 @@ import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
 import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
-import { installGracefulShutdown } from './shutdown';
+import { installGracefulShutdown, arreterApi } from './shutdown';
+import { creerTravauxEnVol } from './lib/en-vol';
+import { ATTENTE_GESTES_A_L_ARRET_MS } from './http/mba-relais';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
 import type { TemplateSummary } from './meta/templates';
@@ -167,7 +167,7 @@ async function main(): Promise<void> {
   const {
     transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
-    nodeEventStore, trackedLinkStore, webhookStore, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
+    nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
@@ -286,12 +286,6 @@ async function main(): Promise<void> {
    * ignorerait les gestes d'écran mentirait par omission.
    */
   const historiqueStore = new PgHistoriqueStore(pool);
-  /**
-   * Les pièces jointes déposées dans la conversation du MBA : une seule instance, partagée entre le dépôt et
-   * l'application. Deux instances rendraient tout jeton introuvable au moment de l'appliquer, sans erreur
-   * visible (le dépôt réussit, le diff porte le jeton, l'application dit « document plus disponible »).
-   */
-  const piecesJointesMba = magasinPiecesJointes();
   /** Il n'y a aucun espace pour le compte de qui l'aide est appelée : la dépense est la nôtre. */
   const AUCUN_ESPACE_PAYEUR = '';
   /**
@@ -456,6 +450,12 @@ async function main(): Promise<void> {
      */
     takeControl: fil.prisEnEcrivant,
   } satisfies DepsRepondre;
+
+  /**
+   * Les gestes que le relais de l'agent de Meta laisse en route après sa réponse (un envoi attend la fin du tour de
+   * l'agent, une quinzaine de secondes). L'arrêt de cette copie les attend avant de fermer la file et le pool.
+   */
+  const gestesEnVol = creerTravauxEnVol();
 
   const app = buildServer({
     /**
@@ -870,14 +870,12 @@ async function main(): Promise<void> {
         modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
         tauxEurParDollar: config.EUR_PER_USD,
         numeros: repo,
-        pieces: piecesJointesMba,
         completer: (i: Parameters<GatewayChatClient['completer']>[0]) =>
           gatewayAide.completer({ ...i, tenantId: AUCUN_ESPACE_PAYEUR }),
         application: (_tenant: string, acteur: { id: string | null; email: string | null }) => ({
           numeros: repo,
           meta: metaFactory,
           historique: historiqueStore,
-          pieces: piecesJointesMba,
           acteur,
         }),
       },
@@ -1224,6 +1222,8 @@ async function main(): Promise<void> {
         outils: outilsPourMeta,
         cle: depsCleRelaisPour,
       }),
+      // En base, pour que deux copies de l'API ne publient pas en même temps pour un espace.
+      verrous: verrousCourts,
     },
     /**
      * Les connecteurs MCP. Tout passe par `PgMcpStore` sauf la source elle-même, servie par `agentSources` :
@@ -1379,8 +1379,8 @@ async function main(): Promise<void> {
         },
 
         // ----- « Délier » et « Relier » : aucun appel à Meta -----
-        // La garde de ce process est vidée après chaque geste : l'API n'a aucune fenêtre, seul le worker garde
-        // au plus `NUMERO_DELIE_TTL_MS` de retard.
+        // La garde de CETTE copie est vidée après chaque geste. Les autres copies de l'API et le worker gardent au
+        // plus `NUMERO_DELIE_TTL_MS` de retard (fenêtre acceptée, `src/meta/numero-delie.ts`).
         delierNumero: async (tenant: string) => {
           const r = await numeroDelieStore.delier(tenant);
           gardeNumeroDelie.invaliderTout();
@@ -1980,6 +1980,7 @@ async function main(): Promise<void> {
           // eslint-disable-next-line no-console
           journal: (ligne) => console.log(ligne),
         }),
+        enVol: gestesEnVol,
         // Les gestes maison : les mêmes fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
         maison: {
           poserTag: workflowRuntime.poserTagDepuisAgent,
@@ -1988,7 +1989,8 @@ async function main(): Promise<void> {
           // ne seraient pas d'accord sur ce qui existe.
           champExiste: async (t, champ) => (await fieldStore.list(t)).some((f) => f.key === champ),
           contacts: contactStore,
-          antiRejeu: new AntiRejeu(DUREE_ANTI_REJEU_MS),
+          // En base, partagé par les copies de l'API : un rappel servi par une autre copie ne renvoie rien.
+          antiRejeu: verrousCourts,
           inbox: inboxStore,
           // Les deux gestes qui envoient : ils rendent le fil sur toute issue ratée, exception comprise
           // (`src/mba/gestes-envoi.ts`, testé).
@@ -2132,9 +2134,15 @@ async function main(): Promise<void> {
 
   installGracefulShutdown(async () => {
     clearInterval(minuteriePoolAttentes);
-    await app.close();
-    await queue.stop();
-    await pool.end();
+    await arreterApi({
+      fermerServeur: () => app.close(),
+      travaux: gestesEnVol,
+      borneMs: ATTENTE_GESTES_A_L_ARRET_MS,
+      fermerFile: () => queue.stop(),
+      fermerPool: () => pool.end(),
+      // eslint-disable-next-line no-console
+      journal: (ligne) => console.warn(ligne),
+    });
   });
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
   // eslint-disable-next-line no-console

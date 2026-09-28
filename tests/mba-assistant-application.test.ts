@@ -146,13 +146,6 @@ describe('les pièges de l’API Meta', () => {
     expect(envoye).toContain('"locale":"fr"');
     expect(envoye).toContain('"enabled":true');
   });
-
-  it('⚠️ un document dont le jeton a expiré échoue LISIBLEMENT', async () => {
-    const m = monter();
-    const r = await appliquer(m.deps, 't1', 'ag1', [{ type: 'fichier.ajouter', jeton: 'a'.repeat(32), nom: 'tarifs.pdf' }]);
-    expect(r.echec).not.toBeNull();
-    expect(r.passees).toEqual([]);
-  });
 });
 
 describe('les libellés et les raisons', () => {
@@ -235,7 +228,7 @@ describe('l’élément et l’opération d’une ligne', () => {
     [{ type: 'faq.supprimer', cible: 'f1', libelle: 'A' }, 'faq', 'suppression'],
     [{ type: 'competence.ajouter', nom: 'n', instruction: 'i' }, 'competence', 'ajout'],
     [{ type: 'site.supprimer', cible: 's1', libelle: 'S' }, 'site', 'suppression'],
-    [{ type: 'fichier.ajouter', jeton: 'a'.repeat(32), nom: 'd.pdf' }, 'fichier', 'ajout'],
+    [{ type: 'fichier.supprimer', cible: 'd1', libelle: 'd.pdf' }, 'fichier', 'suppression'],
     // ⚠️ La famille s'appelle `business`, l'élément `business_info` : la table de correspondance n'est pas
     // l'identité, et c'est exactement le genre de mapping qu'on recopie de travers.
     [{ type: 'business.modifier', champ: 'horaires', valeur: '9h-18h' }, 'business_info', 'modification'],

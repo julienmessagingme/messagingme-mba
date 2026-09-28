@@ -66,12 +66,6 @@ const siteSupprimer = z.object({
   libelle: z.string().trim().min(1).max(MAX_TITRE),
 });
 
-const fichierAjouter = z.object({
-  type: z.literal('fichier.ajouter'),
-  /** Le jeton rendu par le dépôt de pièce jointe : le contenu ne transite jamais par le modèle. */
-  jeton: z.string().trim().regex(/^[a-f0-9]{32}$/),
-  nom: z.string().trim().min(1).max(300),
-});
 const fichierSupprimer = z.object({
   type: z.literal('fichier.supprimer'),
   cible,
@@ -96,7 +90,7 @@ const operationSchema = z.discriminatedUnion('type', [
   faqAjouter, faqModifier, faqSupprimer,
   competenceAjouter, competenceModifier, competenceSupprimer,
   siteAjouter, siteSupprimer,
-  fichierAjouter, fichierSupprimer,
+  fichierSupprimer,
   businessModifier, activationMettreEnService,
 ]);
 

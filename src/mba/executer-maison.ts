@@ -1,5 +1,6 @@
 import { REPONSE_MAISON, lireValeurChamp, type CibleMaison } from './outils-maison';
-import { DUREE_ANTI_REJEU_MS, PLANCHER_ANTI_REJEU_MS, type AntiRejeu } from './anti-rejeu';
+import { clesAntiRejeu } from './anti-rejeu';
+import type { VerrousCourts } from '../db/verrous-courts';
 
 /**
  * Exécuter un geste de l'agent de Meta pour un contact. Aucun geste n'est réécrit ici : chaque dépendance est la
@@ -25,8 +26,11 @@ export interface DepsMaison {
   envoyerBloc(tenantId: string, waId: string, cible: { workflowId: string; code: string }): Promise<true | string>;
   /** Lance le scénario depuis son début, exactement comme le bouton de l'Inbox. Même contrat de retour. */
   lancerScenario(tenantId: string, waId: string, workflowId: string): Promise<true | string>;
-  /** Un envoi ne se rejoue pas pour le même client et le même outil, le temps d'une demande (`src/mba/anti-rejeu.ts`). */
-  antiRejeu: Pick<AntiRejeu, 'prendreTous' | 'oublier'>;
+  /**
+   * Un envoi ne se rejoue pas pour le même client et le même outil, le temps d'une demande (`src/mba/anti-rejeu.ts`).
+   * Les verrous courts partagés par les copies de l'API : un rappel servi par une autre copie est refusé aussi.
+   */
+  antiRejeu: VerrousCourts;
   /**
    * L'identifiant du dernier message reçu du client, ou `null`. Il entre dans la clé de l'anti-rejeu : un rappel
    * dans le même tour partage ce message, une nouvelle demande non.
@@ -60,21 +64,20 @@ export async function executerOutilMaison(
       // 🔴 Le blocage est lu avant tout envoi : une garde posée après l'effet ne garde rien.
       if (await deps.contacts.isBlockedByWaId(tenantId, waId)) return { ok: false, erreur: CONTACT_BLOQUE };
       // Un rappel du même outil pour le même message du client ne renvoie rien : il répond « déjà traitée », ce qui
-      // clôt le tour. Deux clés prises d'un seul geste, après la dernière attente (des appels simultanés n'en
-      // laissent partir qu'un) : le message du client (une nouvelle demande relance) et un plancher de 30 s (une
-      // réaction ou une demande en deux messages ne relance pas). Gardées sur une exception (le message a pu
-      // partir), oubliées sur un refus.
+      // clôt le tour. Deux clés prises d'un seul geste atomique (des appels simultanés, sur une copie ou sur
+      // plusieurs, n'en laissent partir qu'un) : le message du client (une nouvelle demande relance) et un plancher
+      // de 30 s (une réaction ou une demande en deux messages ne relance pas). Gardées sur une exception (le message
+      // a pu partir), relâchées sur un refus. Une prise qui échoue (base injoignable) lève : rien ne part.
       const dernier = await deps.inbox.dernierMessageDuClient(tenantId, waId);
-      const plancher = `${tenantId}:${waId}:${input.outilId}`;
-      const cle = `${plancher}:${dernier ?? '-'}`;
-      if (!deps.antiRejeu.prendreTous([[plancher, PLANCHER_ANTI_REJEU_MS], [cle, DUREE_ANTI_REJEU_MS]])) {
-        return { ok: true, reponse: REPONSE_DEJA_TRAITE };
-      }
+      const prise = await deps.antiRejeu.prendre(clesAntiRejeu(tenantId, waId, input.outilId, dernier));
+      if (prise === null) return { ok: true, reponse: REPONSE_DEJA_TRAITE };
       const issue = cible.handler === 'bloc_fixe'
         ? await deps.envoyerBloc(tenantId, waId, { workflowId: cible.workflowId, code: cible.code })
         : await deps.lancerScenario(tenantId, waId, cible.workflowId);
       if (issue === true) return { ok: true, reponse: REPONSE_MAISON[cible.handler] };
-      deps.antiRejeu.oublier(plancher, cle);
+      // Un relâchement raté retarde seulement une redemande jusqu'à l'échéance ; il ne doit pas cacher la raison du
+      // refus à l'agent de Meta.
+      await deps.antiRejeu.relacher(prise).catch(() => {});
       return { ok: false, erreur: issue };
     }
   }

@@ -272,9 +272,8 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
         Fichiers depose un document chez Meta par sa propre route, sans passer par le magasin en memoire de
         l'assistant. Ce qu'il coutait, c'etait la place : il occupait le coin gauche de la zone de saisie, la
         ou l'oeil cherche le champ, et il faisait ressembler la conversation a un formulaire d'envoi.
-        ⚠️ CONSEQUENCE A ASSUMER, PAS A DECOUVRIR : la route `POST .../mba/assistant/piece-jointe` n'a plus
-        aucun appelant cote ecran. Elle n'est pas OFFERTE et inerte, elle est simplement inutilisee ; la
-        retirer est une decision a part, notee dans `todo.md`.
+        La route de depot de l'assistant et son magasin en memoire sont retires avec lui : un document s'ajoute
+        par l'onglet Fichiers, jamais par la conversation.
       */}
       <div className="mt-4 flex items-end gap-2">
         {/*

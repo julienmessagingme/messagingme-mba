@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
@@ -6,6 +6,9 @@ import type { Geste, OutilAPublier, EtatMeta, RelaisAPublier } from '../src/mba/
 import { FakeQueue } from './fake-queue';
 import { ErreurPublication } from '../src/mba/appliquer-publication';
 import { MetaApiError } from '../src/meta/errors';
+import { BAIL_PUBLICATION_MS, clePublication } from '../src/http/mba-publication';
+import type { VerrousCourts } from '../src/db/verrous-courts';
+import { verrousEnMemoire } from './verrous';
 
 /**
  * Publier le catalogue d'outils chez Meta.
@@ -39,9 +42,14 @@ const ADD_TAG: OutilAPublier = {
 };
 const META_VIDE: EtatMeta = { connecteurs: [], outilsParConnecteur: {} };
 
-function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; erreur?: Error; relais?: RelaisAPublier | null; retenir?: Promise<void> } = {}) {
+function monter(opts: {
+  numero?: string | null; echoueSur?: Geste['type']; erreur?: Error; relais?: RelaisAPublier | null; retenir?: Promise<void>;
+  verrous?: VerrousCourts;
+} = {}) {
   const appliques: Geste[] = [];
   const contextes: Array<Map<string, unknown>> = [];
+  /** Les gestes COMMENCÉS : ce qu'un test attend pour savoir qu'une publication tient son verrou. */
+  const entames: Geste[] = [];
   const app = buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
@@ -51,14 +59,16 @@ function monter(opts: { numero?: string | null; echoueSur?: Geste['type']; erreu
       outilsExposes: async () => [ADD_TAG],
       etatMeta: async () => META_VIDE,
       appliquer: async (_t, _pn, g, ctx) => {
+        entames.push(g);
         if (opts.retenir) await opts.retenir;
         if (g.type === opts.echoueSur) throw opts.erreur ?? new Error('panne');
         appliques.push(g);
         contextes.push(ctx);
       },
+      verrous: opts.verrous ?? verrousEnMemoire(),
     },
   });
-  return { app, appliques, contextes };
+  return { app, appliques, contextes, entames };
 }
 
 describe('l’aperçu de publication', () => {
@@ -194,5 +204,76 @@ describe('une publication à la fois, et la vraie cause d’un échec', () => {
     await app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
     expect(contextes[0]!.get('outils')).toEqual([ADD_TAG]);
     expect(contextes[0]!.get('acteur')).toBe('u1');
+  });
+});
+
+/**
+ * 🔴 L'API EN PLUSIEURS COPIES. Le verrou vivait dans un `Set` du processus : deux publications servies par deux
+ * copies passaient toutes les deux, posaient chacune une clé chez Meta et révoquaient celle de l'autre. Deux
+ * « copies » ici, ce sont deux serveurs distincts qui ne partagent que les verrous courts, comme deux copies de l'API
+ * ne partagent que la base.
+ */
+describe('une publication à la fois, sur toutes les copies de l’API', () => {
+  const post = (app: ReturnType<typeof monter>['app']) =>
+    app.inject({ method: 'POST', url: `/tenants/${TENANT}/mba-publication`, ...h() });
+
+  it('🔴 la seconde publication, servie par l’AUTRE copie, est refusée tant que la première tient', async () => {
+    const verrous = verrousEnMemoire();
+    let liberer: () => void = () => {};
+    const retenir = new Promise<void>((r) => { liberer = r; });
+    const copieA = monter({ retenir, verrous });
+    const copieB = monter({ verrous });
+    const premiere = post(copieA.app);
+    // Attendre que la première publie (donc tienne son verrou), pas un délai fixe : sous charge, 20 ms ne
+    // suffisent pas.
+    await vi.waitFor(() => { expect(copieA.entames.length).toBeGreaterThan(0); });
+    const seconde = await post(copieB.app);
+    expect(seconde.statusCode).toBe(409);
+    expect(seconde.json().error).toMatch(/déjà en cours/);
+    expect(copieB.appliques).toEqual([]);
+    liberer();
+    expect((await premiere).statusCode).toBe(200);
+    // Relâché par la première (le relâchement suit la réponse, d'où l'attente) : l'autre copie publie ensuite.
+    await vi.waitFor(() => { expect(verrous.tenues()).toEqual([]); });
+    expect((await post(copieB.app)).statusCode).toBe(200);
+  });
+
+  it('🔴 un échec relâche aussi le verrou : la relance passe, sur n’importe quelle copie', async () => {
+    const verrous = verrousEnMemoire();
+    const enEchec = monter({ echoueSur: 'outil_creer', verrous });
+    expect((await post(enEchec.app)).statusCode).toBe(409);
+    await vi.waitFor(() => { expect(verrous.tenues()).toEqual([]); });
+    expect((await post(monter({ verrous }).app)).statusCode).toBe(200);
+  });
+
+  it('🔴 une publication dont le bail a échu ne relâche PAS le verrou de celle qui l’a repris', async () => {
+    // Le jeton de garde : sans lui, la première effacerait en finissant le verrou de la seconde, et une troisième
+    // publication pourrait partir pendant que la seconde tourne encore.
+    const horloge = { t: 0 };
+    const partages = verrousEnMemoire(() => horloge.t);
+    // Les relâchements sont comptés : l'assertion porte sur l'état APRÈS celui de la première publication.
+    const relaches: string[] = [];
+    const verrous: VerrousCourts & { tenues(): string[] } = {
+      prendre: (c) => partages.prendre(c),
+      relacher: async (p) => { await partages.relacher(p); relaches.push(p.jeton); },
+      tenues: () => partages.tenues(),
+    };
+    let liberer: () => void = () => {};
+    const retenir = new Promise<void>((r) => { liberer = r; });
+    const lente = monter({ retenir, verrous });
+    const premiere = post(lente.app);
+    await vi.waitFor(() => { expect(lente.entames.length).toBeGreaterThan(0); });
+    horloge.t = BAIL_PUBLICATION_MS;
+    const reprise = await verrous.prendre([[clePublication(TENANT), BAIL_PUBLICATION_MS]]);
+    expect(reprise, 'le bail échu se reprend').not.toBeNull();
+    liberer();
+    expect((await premiere).statusCode).toBe(200);
+    await vi.waitFor(() => { expect(relaches).toHaveLength(1); });
+    expect(verrous.tenues()).toEqual([clePublication(TENANT)]);
+    expect((await post(monter({ verrous }).app)).statusCode).toBe(409);
+  });
+
+  it('le bail couvre largement une publication ordinaire (moins d’une minute)', () => {
+    expect(BAIL_PUBLICATION_MS).toBeGreaterThanOrEqual(5 * 60_000);
   });
 });

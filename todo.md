@@ -199,12 +199,8 @@ version de ce fichier n'a jamais nommé `db292cf6` ici (elle disait « parti ave
 `db292cf6` touche bien `EtapeContenu.tsx`. Une confession inventée est une fausseté de plus, pas une
 réparation : un aveu se vérifie dans `git log -S` comme n'importe quelle autre affirmation.
 
-### 3. Trois constats laissés porter
+### 3. Deux constats laissés porter
 
-- ⚠️ **La route `POST .../mba/assistant/piece-jointe` n'a plus aucun appelant côté écran** depuis le retrait
-  du bouton « Joindre » (demande de Julien). Elle n'est pas offerte et inerte, elle est inutilisée : l'onglet
-  Fichiers dépose un document par sa propre route. La retirer (route, magasin en mémoire, ses deux tests) est
-  une décision à part.
 - Le diff de l'assistant du MBA reste en **tout ou rien**, là où celui d'un agent IA s'accepte ligne par ligne
   et s'édite. C'est une décision écrite dans le code (« UN SEUL BOUTON, ET PAS DE SECONDE CONFIRMATION »,
   2026-09-14) et Meta n'a ni corbeille ni annulation : la changer est un arbitrage produit, pas un alignement.
@@ -447,14 +443,12 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
 
 ## 🟡 Relais du MBA : ce qu'il laisse derrière lui (2026-09-21)
 
-- **Le verrou de publication chez Meta est LOCAL AU PROCESS** (`src/http/mba-publication.ts`, un `Set` par
-  espace) : il sérialise les publications d'un espace tant que l'API tourne en UNE instance. Le passer en base
-  (bail, sur le modèle de `src/campaign/run-lock.ts`) avant tout multi-réplica de l'API, sinon deux
-  publications simultanées sur deux instances se révoqueraient mutuellement la clé du relais.
 - **Les appels de publication à Meta n'ont pas de délai propre** (`MbaClient.appel`, `src/mba/client.ts`) :
   une Meta muette tient le verrou de publication d'un espace jusqu'au délai par défaut de Node (300 s par
-  appel), et l'écran répond « une publication est déjà en cours » pendant ce temps. Poser un
-  `AbortSignal.timeout` sur les appels de publication, sans toucher à `agent_test` (lent par nature).
+  appel), et l'écran répond « une publication est déjà en cours » pendant ce temps. Et le bail du verrou (en base
+  depuis le 2026-09-28, `BAIL_PUBLICATION_MS`) est de dix minutes : au-delà de deux appels muets, il échoit et une
+  seconde publication peut partir. Poser un `AbortSignal.timeout` sur les appels de publication, sans toucher à
+  `agent_test` (lent par nature), permettrait de raccourcir ce bail.
 - **Le plafond du relais est celui d'une clé d'API : 60 appels par minute** (`API_KEY_RATE_LIMIT_MAX`), pour
   TOUS les appels d'outils de l'agent de Meta d'un espace. Au-delà, Meta reçoit un 429, pas un
   `succes: false`. Suffisant aujourd'hui ; à dimensionner avec le premier client à fort trafic.

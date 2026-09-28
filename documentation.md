@@ -448,8 +448,10 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
   `mba:relais` de l'espace ; après un échec, plus aucune n'est retenue, donc la publication suivante en
   repose une). Chaque création et révocation est auditée (`cle_api.creee`, `cle_api.revoquee`).
 - 🔴 **Une seule publication à la fois par espace** (`POST /mba-publication` rend 409 à la seconde) : deux
-  poses de clé entrelacées se révoqueraient l'une l'autre. Verrou LOCAL AU PROCESS, suffisant tant que l'API
-  tourne en une instance (`todo.md`).
+  poses de clé entrelacées se révoqueraient l'une l'autre. Le verrou est un verrou COURT en base
+  (`mba-publication:<espace>`, `src/db/verrous-courts.ts`), donc commun à toutes les copies de l'API ; son jeton
+  de garde fait qu'une publication ne relâche que le sien. Bail de dix minutes (`BAIL_PUBLICATION_MS`) : une
+  publication ordinaire dure moins d'une minute, et un bail échu en cours de route rouvrirait la course.
 - ⚠️ `agent_tool_sources.secret_publie_le` (0129) et `marquerSecretPublie` ne sont plus lus : le secret d'un
   client ne part plus chez Meta. Colonne morte, à retirer (`todo.md`).
 
@@ -517,6 +519,16 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
   elle-même a échoué, ce geste ne touche à rien (`only: ['app_workflow']`). Une PANNE d'envoi ne s'invite pas à
   réessayer (`erreurDePanne`) : le message a pu partir avant l'exception.
   Un contact bloqué ne reçoit ni bloc ni scénario (`DepsMaison.estBloque`, lu AVANT tout envoi).
+- 🔴 **UN ENVOI NE SE REJOUE PAS POUR LE MÊME CLIENT, QUELLE QUE SOIT LA COPIE QUI SERT LE RAPPEL**
+  (`src/mba/anti-rejeu.ts`) : deux clés prises d'un seul geste dans les verrous courts, le plancher (client et
+  outil, 30 s) et la demande (client, outil et dernier message reçu, 2 min). Un rappel rend « déjà traitée » ; un
+  refus relâche les deux ; une exception les garde (le message a pu partir). Une prise impossible (base
+  injoignable) lève : rien ne part.
+- 🔴 **L'ARRÊT D'UNE COPIE ATTEND LES ENVOIS LAISSÉS EN ROUTE** : un envoi qui dépasse `DELAI_REPONSE_ENVOI_MS`
+  continue après la réponse (fin de tour de l'agent, jusqu'à 15 s). Le relais le confie à `TravauxEnVol`
+  (`src/lib/en-vol.ts`), et `arreterApi` (`src/shutdown.ts`) l'attend après le serveur et AVANT la file et le
+  pool, au plus `ATTENTE_GESTES_A_L_ARRET_MS` (20 s depuis le signal, sous le filet de 25 s). Au-delà, l'arrêt
+  continue et le journalise.
 - 🔴 **LA RÉPONSE « À CÔTÉ » PART CHEZ L'AGENT DE META** : dans la branche « il a écrit » d'`advance`, le fil est
   rendu PUIS CE message du client (lu par son identifiant, `corpsDuMessage`) lui est transmis par `agent_event`
   (`src/mba/transmettre-hors-parcours.ts`, testé ; l'événement dans `src/mba/evenement.ts`, `payload` en chaîne
@@ -1061,6 +1073,26 @@ Modèle de référence : `src/campaign/run-lock.ts`. Trois pièces en font un ve
 refus de Meta ou redéploiement, laissant un fil tenu par un parcours mort que rien ne répare. Passer à
 `waiting` serait pire encore : le run redeviendrait visible d'`advance`, et un message du contact pendant la
 reprise rejouerait le même bloc.
+
+### Plusieurs copies de l'API : ce qui ne doit arriver qu'une fois se garde en base
+
+L'API peut tourner en plusieurs copies derrière un répartiteur (le worker reste un exemplaire par rôle). Une garde
+tenue dans la mémoire d'une copie ne voit pas les autres : ce qui ne doit arriver qu'UNE fois pour tout le service
+passe par les **verrous courts** (`src/db/verrous-courts.ts`, table `verrous_courts`, migration 0185), sur le
+modèle de `run-lock.ts` : une prise prend toutes ses clés ou aucune, en une transaction et dans l'ordre des clés ;
+une clé échue se reprend (l'échéance est le bail, lue à l'heure de la base) ; on ne relâche que ce qui porte
+encore son jeton. Deux usages : l'anti-rejeu des envois de l'agent de Meta (`mba-envoi:…`) et la publication du
+relais (`mba-publication:…`). Les clés échues sont effacées par la rétention générale du worker. Le double des
+tests (`tests/verrous.ts`) tient les mêmes règles ; la course entre deux copies se prouve contre Postgres
+(`tests/integration/verrous-courts.integration.test.ts`).
+
+Ce qui reste par copie, et pourquoi c'est juste :
+- **le jeton Meta en cache** (5 min, `MetaCredentialsResolver`) : une copie peut garder l'ancien jeton après une
+  reconnexion. Sur une erreur d'auth, elle vide SON cache et ne marque invalide que le chiffré qui a échoué
+  (`markTokenInvalid(waba, chiffré)`), jamais le jeton neuf ; une reconnexion (un chiffré neuf) repart `active` ;
+- **la garde du numéro délié** (5 s) : seule la copie qui sert « Délier » vide son cache, les autres gardent
+  leur réponse jusqu'à 5 s (§ 12, invariant 38) ;
+- **les envois qui continuent après la réponse** : chaque copie attend les siens à l'arrêt (`arreterApi`).
 
 ### Les balayeurs du worker
 
@@ -1792,9 +1824,10 @@ Ajouté par le lot 4 de l'API publique :
    est posé sur tous les numéros de l'espace, le jeton chiffré reste, et « Relier » le remet à nul. Le refus
    (`NumeroDelieError`, `statusCode = 409`) sort en 409 lisible de toute route d'envoi par le gestionnaire
    d'erreurs, sans qu'aucune ne le connaisse. La garde est REQUISE dans `MetaClientFactoryOpts` (`numeroDelie`).
-   ⚠️ Elle est mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`) : un envoi peut encore partir du worker 5 s
-   après « Délier » ; le process de l'API vide son cache au geste. Dans l'autre sens, le worker peut refuser à tort
-   pendant 5 s après « Relier » : aucune pause `numero_delie` ne s'écrit sans relecture en base hors cache
+   ⚠️ Elle est mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`) : un envoi peut encore partir 5 s après
+   « Délier », du worker comme de toute copie de l'API autre que celle qui a servi le geste (elle seule vide son
+   cache ; aucune invalidation ne traverse les processus, et cette fenêtre de 5 s est acceptée). Dans l'autre
+   sens, le worker ou une autre copie peut refuser à tort pendant 5 s après « Relier » : aucune pause `numero_delie` ne s'écrit sans relecture en base hors cache
    (`numerosDelies.pauserCampagne`, `PgNumeroDelieStore.pauserCampagne` : une seule instruction, `status in
    ('running','scheduled')` et `exists` sur `phone_numbers.delie_le` avec `for share`, sérialisée avec `relier` ; elle
    n'écrase jamais une pause d'opérateur ; requise dans `RunJobDeps`, transmise au moteur), et une automation refusée efface son tir,
@@ -1996,6 +2029,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/signaux/completer.ts` | relit, au moment de pousser, ce qu'un signal ne transporte pas (fiche et consentement courants, contexte d'un message, lien, analyse). 🔴 CONTRAT : il porte la règle d'identité de l'adaptateur actuel (`identifiantPoussable`, une fiche ne se pousse que sous son `externalId`, sinon ni contexte ni lien ne sont relus). Un adaptateur qui désignerait un profil autrement devra lui passer SON critère, sinon il recevrait des signaux amputés sans erreur |
 | `src/salesforce/client.ts` | 🔴 le SEUL client de l'API d'une org Salesforce : jeton client credentials par org (cache par process, un seul renouvellement sur `INVALID_SESSION_ID`), `fetchPublic` et lecture bornée (l'adresse est saisie par un client), classement des erreurs sur le CODE de Salesforce et non sur le statut, refus d'adresse et redirection définitifs AVANT tout rejeu, quota du client relevé à chaque réponse. L'adresse passe d'abord par `lireMyDomain` (`src/salesforce/my-domain.ts`), et la connexion d'une org par `src/salesforce/connexion.ts` (contrat avec le package figé là) |
 | `src/ids/code.ts` | les identifiants publics et les codes de lien |
+| `src/db/verrous-courts.ts` -> `VerrousCourts` (`PgVerrousCourts`) | 🔴 ce qui ne doit arriver qu'UNE fois pour toutes les copies de l'API : `prendre(clés)` rend une prise ou `null` (toutes les clés ou aucune, une clé échue se reprend), `relacher(prise)` ne libère que ce qui porte encore son jeton. Un `Set` ou une `Map` en mémoire pour ce rôle ne voit qu'une copie. Chaque usage préfixe ses clés (`mba-envoi:`, `mba-publication:`). Le double des tests vit dans `tests/verrous.ts`, jamais dans `src/` |
+| `src/lib/en-vol.ts` -> `creerTravauxEnVol` | 🔴 tout travail qu'une réponse HTTP laisse derrière elle (`void` après `reply.send`) se confie ici : `arreterApi` (`src/shutdown.ts`) l'attend, borné, avant de fermer la file et le pool. Un `void` qui n'y passe pas est coupé à l'arrêt de la copie |
 | `src/db/transaction.ts` -> `enTransaction` | LA transaction du dépôt : `begin`, `commit` si le travail rend, `rollback` s'il lève, connexion relâchée dans tous les cas (y compris un `rollback` qui échoue), et c'est l'erreur D'ORIGINE qui remonte. ⚠️ Rendre sans lever VALIDE : un travail qui a écrit et ne doit rien laisser doit lever (`PgUserStore.deleteUser` garde donc sa transaction à la main) |
 | `src/worker/taches.ts` -> `programmer(nom, cadence, passe, { immediat, enEchec })` | les tâches périodiques du worker. `immediat` lance la passe de démarrage SOUS la même garde de ré-entrance que les autres ; `enEchec` porte le journal et l'alerte (`echecDeBalayage`, `src/worker.ts`). Une passe lancée à côté (`void passe()`) échappe à la garde |
 | `src/lib/tenter.ts` -> `tenter` | une étape ISOLÉE : son échec est journalisé (`console.error(echec, message)`) puis avalé |

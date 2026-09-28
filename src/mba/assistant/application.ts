@@ -16,12 +16,6 @@ export interface ApplicationDeps {
   meta: { mbaClientForTenant(tenantId: string): Promise<ClientMbaEcriture> };
   /** Écrit une ligne d'historique. Voir `src/reglages/historique.ts`. */
   historique: { ecrire(tenantId: string, ligne: LigneHistorique): Promise<void> };
-  /**
-   * Le contenu d'une pièce jointe déposée dans le fil, par son jeton. `null` = jeton inconnu, expiré, ou
-   * appartenant à un autre espace. 🔴 Le tenant est ce qui rend un jeton inutilisable ailleurs : ne jamais le
-   * passer vide.
-   */
-  pieces?: { reprendre(tenantId: string, jeton: string): { nom: string; contenu: Blob } | null };
   /** Qui agit, pour l'historique. */
   acteur: { id: string | null; email: string | null };
 }
@@ -40,7 +34,6 @@ export interface ClientMbaEcriture {
   createWebsite(p: string, url: string): Promise<unknown>;
   deleteWebsite(p: string, id: string): Promise<void>;
   listFiles(p: string): Promise<Array<{ id?: string; name?: string }>>;
-  uploadFile(p: string, nom: string, contenu: Blob): Promise<unknown>;
   deleteFile(p: string, id: string): Promise<void>;
   /**
    * `unknown` et non `Record<string, unknown>` : le vrai `MbaClient` rend un type nommé (`BusinessInfo`), sans
@@ -51,9 +44,6 @@ export interface ClientMbaEcriture {
   getSettings(p: string): Promise<unknown>;
   putSettings(p: string, s: unknown, agentId?: string): Promise<unknown>;
 }
-
-/** Le message d'erreur interne d'un jeton de pièce jointe qui ne résout plus. Jamais montré tel quel. */
-export const ERREUR_PIECE_ABSENTE = 'piece jointe introuvable ou expiree';
 
 export interface EchecOperation {
   operation: Operation;
@@ -79,7 +69,6 @@ export function libelleDe(o: Operation): string {
     case 'competence.supprimer': return `Compétence : ${o.libelle}`;
     case 'site.ajouter': return `Site : ${o.url}`;
     case 'site.supprimer': return `Site : ${o.libelle}`;
-    case 'fichier.ajouter': return `Document : ${o.nom}`;
     case 'fichier.supprimer': return `Document : ${o.libelle}`;
     case 'business.modifier': return `Fiche d’activité : ${o.champ}`;
     case 'activation.mettreEnService': return 'Mise en service de l’agent';
@@ -108,13 +97,6 @@ export function operationDe(o: Operation): LigneHistorique['operation'] {
  */
 export function raisonLisible(err: unknown): string {
   const brut = texteDe(err);
-  /**
-   * Le seul échec qui ne vient pas de Meta (le document déposé a expiré chez nous), testé en premier pour ne pas
-   * faire chercher la panne du mauvais côté.
-   */
-  if (brut === ERREUR_PIECE_ABSENTE) {
-    return 'Le document déposé n’est plus disponible : redéposez-le, puis réessayez.';
-  }
   if (/blocked/i.test(brut)) return 'Meta a refusé ce contenu. Reformulez-le, puis réessayez.';
   if (/rate|429|limit/i.test(brut)) return 'Meta nous a demandé de ralentir. Réessayez dans un instant.';
   if (/not found|404/i.test(brut)) return 'Cet élément n’existe plus chez Meta : quelqu’un l’a peut-être supprimé entre-temps.';
@@ -224,16 +206,6 @@ async function executer(
     case 'site.ajouter': await client.createWebsite(numero, o.url); return;
     case 'site.supprimer': await client.deleteWebsite(numero, o.cible); return;
     case 'fichier.supprimer': await client.deleteFile(numero, o.cible); return;
-    case 'fichier.ajouter': {
-      /**
-       * Le jeton, pas le contenu : le fichier n'a jamais traversé le prompt. Un jeton inconnu ou expiré est une
-       * erreur lisible : le client doit savoir que son dépôt n'est pas parti.
-       */
-      const piece = deps.pieces ? deps.pieces.reprendre(tenantId, o.jeton) : null;
-      if (!piece) throw new Error(ERREUR_PIECE_ABSENTE);
-      await client.uploadFile(numero, piece.nom, piece.contenu);
-      return;
-    }
     case 'business.modifier': {
       // Lecture puis fusion : `putBusinessInfo` remplace, et envoyer le seul champ modifié effacerait les autres
       // (la description de l'activité). Même règle que `fusionnerBusinessInfo` (`src/mba/client.ts`).

@@ -1,11 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { contactsV1Muets } from './aide/contacts-v1';
-import { AntiRejeu } from '../src/mba/anti-rejeu';
+import { verrousEnMemoire } from './verrous';
+import { creerTravauxEnVol } from '../src/lib/en-vol';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import { DELAI_REPONSE_ENVOI_MS, type MbaRelaisDeps } from '../src/http/mba-relais';
+import { ATTENTE_GESTES_A_L_ARRET_MS, DELAI_REPONSE_ENVOI_MS, type MbaRelaisDeps } from '../src/http/mba-relais';
+import { FIN_DE_TOUR_MAX_MS } from '../src/mba/fin-de-tour';
+import { FILET_ARRET_MS } from '../src/shutdown';
 import { REPONSE_EN_COURS, REPONSE_MAISON } from '../src/mba/outils-maison';
 import type { AppelConnecteur } from '../src/agent/resolvers/http';
 import type { JournalAppels } from '../src/agent/catalog';
@@ -69,7 +72,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
       poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
       ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
       champExiste: async () => true,
-      contacts: { isBlockedByWaId: async () => false }, antiRejeu: new AntiRejeu(60_000),
+      contacts: { isBlockedByWaId: async () => false }, antiRejeu: verrousEnMemoire(),
       inbox: { dernierMessageDuClient: async () => 'm1' },
       envoyerBloc: async (t, w, c) => { gestes.push(`bloc ${t} ${w} ${c.workflowId} ${c.code}`); return true; },
       lancerScenario: async (t, w, id) => { gestes.push(`scenario ${t} ${w} ${id}`); return true; },
@@ -77,6 +80,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     // Par défaut le délai ne s'écoule JAMAIS : chaque test lit l'issue réelle du geste, comme avant le délai.
     attendre: () => new Promise<void>(() => {}),
     signalerEchecTardif: async () => {},
+    enVol: creerTravauxEnVol(),
     ...over,
   };
   const app = buildServer({
@@ -329,7 +333,7 @@ describe('les outils maison de l’agent de Meta', () => {
     const { app } = avec([TAG], {
       maison: {
         poserTag: async () => { throw new Error('base indisponible'); }, ecrireChamp: async () => {}, champExiste: async () => true,
-        contacts: { isBlockedByWaId: async () => false }, antiRejeu: new AntiRejeu(60_000),
+        contacts: { isBlockedByWaId: async () => false }, antiRejeu: verrousEnMemoire(),
         inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => true, lancerScenario: async () => true,
       },
@@ -388,7 +392,7 @@ describe('un bloc et un scénario, par le relais', () => {
           // prouve rien (mesuré : il passait sur le garde fautif).
           isBlockedByWaId: () => new Promise((r) => { setTimeout(() => r(false), 20); }),
         },
-        antiRejeu: new AntiRejeu(60_000),
+        antiRejeu: verrousEnMemoire(),
         inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => true,
         lancerScenario: async (t, w, id) => { lances.push(`scenario ${t} ${w} ${id}`); return true; },
@@ -411,7 +415,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const { app } = avec([BLOC], {
       maison: {
         poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
-        contacts: { isBlockedByWaId: async () => false }, antiRejeu: new AntiRejeu(60_000),
+        contacts: { isBlockedByWaId: async () => false }, antiRejeu: verrousEnMemoire(),
         inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir', lancerScenario: async () => true,
       },
@@ -428,7 +432,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const { app } = avec([BLOC], {
       maison: {
         poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
-        contacts: { isBlockedByWaId: async () => false }, antiRejeu: new AntiRejeu(60_000),
+        contacts: { isBlockedByWaId: async () => false }, antiRejeu: verrousEnMemoire(),
         inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => { throw new Error('Meta API error (HTTP 400)'); }, lancerScenario: async () => true,
       },
@@ -446,7 +450,7 @@ describe('un bloc et un scénario, par le relais', () => {
     const { app } = avec([BLOC, SCENARIO], {
       maison: {
         poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
-        contacts: { isBlockedByWaId: async () => true }, antiRejeu: new AntiRejeu(60_000),
+        contacts: { isBlockedByWaId: async () => true }, antiRejeu: verrousEnMemoire(),
         inbox: { dernierMessageDuClient: async () => 'm1' },
         envoyerBloc: async () => { envois.push('bloc'); return true; }, lancerScenario: async () => { envois.push('scenario'); return true; },
       },
@@ -465,7 +469,7 @@ describe('le délai de réponse d’un envoi', () => {
   const maison = (o: Partial<MbaRelaisDeps['maison']>): MbaRelaisDeps['maison'] => ({
     poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
     contacts: { isBlockedByWaId: async () => false },
-    antiRejeu: new AntiRejeu(60_000), inbox: { dernierMessageDuClient: async () => 'm1' },
+    antiRejeu: verrousEnMemoire(), inbox: { dernierMessageDuClient: async () => 'm1' },
     envoyerBloc: async () => true, lancerScenario: async () => true, ...o,
   });
   const journal = (clos: Array<Record<string, unknown>>) =>
@@ -611,5 +615,55 @@ describe('le délai de réponse d’un envoi', () => {
       expect(r).toContain('en une phrase courte');
     }
     expect(REPONSE_EN_COURS.scenario_fixe).toContain('n’écris plus rien');
+  });
+});
+
+/**
+ * 🔴 L'API EN PLUSIEURS COPIES : un rappel de l'outil peut arriver sur une autre copie que le premier appel, et une
+ * copie peut être arrêtée (réduction de l'autoscaler) pendant qu'un envoi continue après sa réponse.
+ */
+describe('le relais quand l’API tourne en plusieurs copies', () => {
+  const avec = (outils: unknown[], over: Partial<MbaRelaisDeps>) => monter({
+    catalogue: {
+      listActifsConsommateur: async (t, c) => (t === 't1' && c === 'mba:pn1' ? outils as never : []),
+    },
+    ...over,
+  });
+  const maison = (o: Partial<MbaRelaisDeps['maison']>): MbaRelaisDeps['maison'] => ({
+    poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true,
+    contacts: { isBlockedByWaId: async () => false },
+    antiRejeu: verrousEnMemoire(), inbox: { dernierMessageDuClient: async () => 'm1' },
+    envoyerBloc: async () => true, lancerScenario: async () => true, ...o,
+  });
+
+  it('🔴 le rappel servi par une AUTRE copie ne relance pas le scénario', async () => {
+    const verrous = verrousEnMemoire();
+    const lances: string[] = [];
+    const lancer = async (t: string, w: string, id: string): Promise<true> => { lances.push(`${t} ${w} ${id}`); return true; };
+    const copieA = avec([SCENARIO], { maison: maison({ antiRejeu: verrous, lancerScenario: lancer }) });
+    const copieB = avec([SCENARIO], { maison: maison({ antiRejeu: verrous, lancerScenario: lancer }) });
+    expect((await poster(copieA.app, CLE_RELAIS, {}, '+33612345678', 'o6')).json().succes).toBe(true);
+    const rappel = (await poster(copieB.app, CLE_RELAIS, {}, '+33612345678', 'o6')).json();
+    expect(rappel.reponse).toContain('déjà d’être traitée');
+    expect(lances).toEqual([`t1 33612345678 ${WF}`]);
+  });
+
+  it('🔴 l’arrêt de la copie ATTEND un envoi qui continue après la réponse', async () => {
+    let finir: () => void = () => {};
+    const lent = new Promise<true>((r) => { finir = () => r(true); });
+    const enVol = creerTravauxEnVol();
+    const { app } = avec([SCENARIO], { maison: maison({ lancerScenario: () => lent }), attendre: async () => {}, enVol });
+    expect((await poster(app, CLE_RELAIS, {}, '+33612345678', 'o6')).json()).toEqual({ succes: true, reponse: REPONSE_EN_COURS.scenario_fixe });
+    let fini = false;
+    const attente = enVol.attendre(5_000).then((n) => { fini = true; return n; });
+    await new Promise((r) => { setTimeout(r, 50); });
+    expect(fini, 'l’arrêt n’attend pas l’envoi : il fermerait le pool sous lui').toBe(false);
+    finir();
+    expect(await attente).toBe(0);
+  });
+
+  it('🔴 l’attente de l’arrêt couvre la fin de tour la plus longue, et laisse à la file et au pool de quoi se fermer', () => {
+    expect(ATTENTE_GESTES_A_L_ARRET_MS).toBeGreaterThan(FIN_DE_TOUR_MAX_MS);
+    expect(ATTENTE_GESTES_A_L_ARRET_MS).toBeLessThanOrEqual(FILET_ARRET_MS - 5_000);
   });
 });

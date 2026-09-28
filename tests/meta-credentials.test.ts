@@ -10,12 +10,18 @@ function makeDeps(over: Partial<CredentialsResolverDeps> & {
   const tenants = over.tenants ?? {};
   const creds = over.creds ?? {};
   const invalidated: string[] = [];
+  const chiffresMarques: string[] = [];
   let decryptCalls = 0;
   const deps: CredentialsResolverDeps = {
     getWabaIdForTenant: async (t) => tenants[t] ?? null,
     credentials: {
       getCredentialsByWaba: async (w) => creds[w] ?? null,
-      markTokenInvalid: async (w) => { invalidated.push(w); if (creds[w]) creds[w]!.tokenStatus = 'invalid'; },
+      // Le faux marque ce que le vrai marque : seulement si le chiffré stocké est ENCORE celui qui a échoué.
+      markTokenInvalid: async (w, enc) => {
+        invalidated.push(w);
+        chiffresMarques.push(enc);
+        if (creds[w]?.businessTokenEnc === enc) creds[w]!.tokenStatus = 'invalid';
+      },
     },
     decrypt: (enc) => { decryptCalls += 1; return enc.replace(/^enc:/, ''); }, // "enc:TOK" -> "TOK"
     fallbackToken: 'GLOBAL_TOKEN',
@@ -23,7 +29,7 @@ function makeDeps(over: Partial<CredentialsResolverDeps> & {
     cacheTtlMs: over.cacheTtlMs,
     ...over,
   };
-  return { deps, invalidated, get decryptCalls() { return decryptCalls; } };
+  return { deps, invalidated, chiffresMarques, creds, get decryptCalls() { return decryptCalls; } };
 }
 
 describe('MetaCredentialsResolver (B1 : token Meta par tenant)', () => {
@@ -40,13 +46,13 @@ describe('MetaCredentialsResolver (B1 : token Meta par tenant)', () => {
   it('SOMMEIL : un tenant sans WABA -> token global de repli (wabaId null)', async () => {
     const { deps } = makeDeps({ tenants: {} });
     const r = new MetaCredentialsResolver(deps);
-    expect(await r.resolveForTenant('tX')).toEqual({ token: 'GLOBAL_TOKEN', wabaId: null });
+    expect(await r.resolveForTenant('tX')).toEqual({ token: 'GLOBAL_TOKEN', wabaId: null, chiffre: null });
   });
 
   it('SOMMEIL : un WABA sans credentials (numéro branché à la main) -> token global de repli', async () => {
     const { deps } = makeDeps({ tenants: { tA: 'wabaA' }, creds: {} });
     const r = new MetaCredentialsResolver(deps);
-    expect(await r.resolveForTenant('tA')).toEqual({ token: 'GLOBAL_TOKEN', wabaId: null });
+    expect(await r.resolveForTenant('tA')).toEqual({ token: 'GLOBAL_TOKEN', wabaId: null, chiffre: null });
   });
 
   it('token invalide (révoqué) -> TokenInvalidError, aucun envoi', async () => {
@@ -67,7 +73,7 @@ describe('MetaCredentialsResolver (B1 : token Meta par tenant)', () => {
     const h = makeDeps({ tenants: { tA: 'wabaA' }, creds: { wabaA: { businessTokenEnc: 'enc:TOK_A', tokenStatus: 'active' } } });
     const r = new MetaCredentialsResolver(h.deps);
     await r.resolveForWaba('wabaA'); // met en cache
-    await r.invalidate('wabaA');
+    await r.invalidate('wabaA', 'enc:TOK_A');
     expect(h.invalidated).toEqual(['wabaA']);
     // Après invalidation, la prochaine résolution relit l'état (désormais 'invalid') -> throw, pas de cache périmé servi.
     await expect(r.resolveForWaba('wabaA')).rejects.toBeInstanceOf(TokenInvalidError);
@@ -76,10 +82,10 @@ describe('MetaCredentialsResolver (B1 : token Meta par tenant)', () => {
   it('onError : erreur d\'auth (190) -> invalide le WABA ; erreur générique (100) -> n\'invalide pas', async () => {
     const h = makeDeps({ tenants: { tA: 'wabaA' }, creds: { wabaA: { businessTokenEnc: 'enc:TOK_A', tokenStatus: 'active' } } });
     const r = new MetaCredentialsResolver(h.deps);
-    await r.onError(new MetaApiError(401, { code: 190, message: 'OAuthException', type: 'OAuthException' }), 'wabaA');
+    await r.onError(new MetaApiError(401, { code: 190, message: 'OAuthException', type: 'OAuthException' }), { wabaId: 'wabaA', chiffre: 'enc:TOK_A' });
     expect(h.invalidated).toEqual(['wabaA']);
     // code 100 = paramètre invalide, générique, PAS une auth (aligné pull.ts).
-    await r.onError(new MetaApiError(400, { code: 100, message: 'Invalid parameter' }), 'wabaB');
+    await r.onError(new MetaApiError(400, { code: 100, message: 'Invalid parameter' }), { wabaId: 'wabaB', chiffre: 'enc:TOK_B' });
     expect(h.invalidated).toEqual(['wabaA']); // inchangé
   });
 
@@ -95,14 +101,44 @@ describe('MetaCredentialsResolver (B1 : token Meta par tenant)', () => {
     };
     const r = new MetaCredentialsResolver(deps);
     // onError ne doit PAS throw : le guard de la fabrique compte dessus pour ensuite rethrow l'erreur Meta d'origine.
-    await expect(r.onError(new MetaApiError(401, { code: 190, message: 'x', type: 'OAuthException' }), 'wabaA')).resolves.toBeUndefined();
+    await expect(r.onError(new MetaApiError(401, { code: 190, message: 'x', type: 'OAuthException' }), { wabaId: 'wabaA', chiffre: 'enc:TOK' })).resolves.toBeUndefined();
   });
 
   it('onError : wabaId null (token global de repli) -> jamais d\'invalidation', async () => {
     const h = makeDeps();
     const r = new MetaCredentialsResolver(h.deps);
-    await r.onError(new MetaApiError(401, { code: 190, message: 'x', type: 'OAuthException' }), null);
+    await r.onError(new MetaApiError(401, { code: 190, message: 'x', type: 'OAuthException' }), { wabaId: null, chiffre: null });
     expect(h.invalidated).toEqual([]);
+  });
+
+  /**
+   * 🔴 L'API EN PLUSIEURS COPIES. Le jeton est gardé cinq minutes par copie : après une reconnexion WhatsApp, une
+   * copie qui n'a pas servi la reconnexion appelle encore Meta avec l'ANCIEN jeton, prend un 190, et marquait alors
+   * « le jeton du WABA » invalide, c'est-à-dire le NEUF. Plus aucun envoi ne partait pour un client qui venait de
+   * tout réparer.
+   */
+  it('🔴 l’ANCIEN jeton qui échoue ne condamne pas le NOUVEAU, et la copie relit le nouveau', async () => {
+    const h = makeDeps({ tenants: { tA: 'wabaA' }, creds: { wabaA: { businessTokenEnc: 'enc:ANCIEN', tokenStatus: 'active' } } });
+    const copie = new MetaCredentialsResolver(h.deps);
+    const resolu = await copie.resolveForTenant('tA'); // l'ancien jeton entre dans le cache de cette copie
+    expect(resolu).toEqual({ token: 'ANCIEN', wabaId: 'wabaA', chiffre: 'enc:ANCIEN' });
+    // Reconnexion servie par une AUTRE copie : la base porte le jeton neuf, actif.
+    h.creds.wabaA = { businessTokenEnc: 'enc:NEUF', tokenStatus: 'active' };
+    // Cette copie appelle Meta avec l'ancien jeton : 190.
+    await copie.onError(new MetaApiError(401, { code: 190, message: 'x', type: 'OAuthException' }), resolu);
+    expect(h.chiffresMarques, 'le marquage doit désigner le jeton qui a échoué').toEqual(['enc:ANCIEN']);
+    expect(h.creds.wabaA!.tokenStatus, 'le jeton NEUF a été condamné').toBe('active');
+    // Et le cache de cette copie est vidé : l'appel suivant part avec le jeton neuf.
+    expect(await copie.resolveForTenant('tA')).toEqual({ token: 'NEUF', wabaId: 'wabaA', chiffre: 'enc:NEUF' });
+  });
+
+  it('🔴 le jeton courant qui échoue est bien condamné, et la copie cesse de le servir', async () => {
+    const h = makeDeps({ tenants: { tA: 'wabaA' }, creds: { wabaA: { businessTokenEnc: 'enc:TOK_A', tokenStatus: 'active' } } });
+    const copie = new MetaCredentialsResolver(h.deps);
+    const resolu = await copie.resolveForTenant('tA');
+    await copie.onError(new MetaApiError(401, { code: 190, message: 'x', type: 'OAuthException' }), resolu);
+    expect(h.creds.wabaA!.tokenStatus).toBe('invalid');
+    await expect(copie.resolveForTenant('tA')).rejects.toBeInstanceOf(TokenInvalidError);
   });
 
   it('isMetaAuthError : 190 / 401 / OAuthException = true ; 100 = false ; non-Meta = false', () => {

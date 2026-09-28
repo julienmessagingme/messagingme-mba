@@ -58,6 +58,7 @@ import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
 import { creerControleDuFil } from './inbox/fil';
+import { PgVerrousCourts } from './db/verrous-courts.pg';
 
 /**
  * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
@@ -164,6 +165,12 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const trackedLinkStore = new PgTrackedLinkStore(pool);
   const webhookStore = new PgWebhookStore(pool);
+  /**
+   * Les verrous courts (`src/db/verrous-courts.ts`) : ce qui ne doit arriver qu'une fois pour toutes les copies de
+   * l'API (anti-rejeu des envois de l'agent de Meta, publication du relais). L'API les prend, le worker purge les
+   * clés échues : aucun cache, donc rien qui diffère d'un processus à l'autre.
+   */
+  const verrousCourts = new PgVerrousCourts(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
@@ -212,8 +219,9 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const wabaDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantWabaId(t));
   /**
    * Le numéro délié : une garde par processus, en cache court (`NUMERO_DELIE_TTL_MS`), qui fait refuser les envois
-   * par la fabrique. Les routes Délier et Relier de l'API vident CETTE instance, pour que l'API n'ait aucune
-   * fenêtre ; le worker lit les entrants et la pause de campagne sur le dépôt, sans cache.
+   * par la fabrique. Les routes Délier et Relier de l'API vident CETTE instance, celle de la copie qui sert la
+   * requête : les autres copies de l'API, comme le worker, gardent leur réponse jusqu'à 5 s. Le worker lit les
+   * entrants et la pause de campagne sur le dépôt, sans cache.
    */
   const numeroDelieStore = new PgNumeroDelieStore(pool);
   const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
@@ -300,7 +308,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   return {
     clesGateway, dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, phoneStatusStore, opsStore, heartbeatStore,
+    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory,

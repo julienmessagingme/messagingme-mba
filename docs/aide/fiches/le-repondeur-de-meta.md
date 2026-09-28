@@ -1,7 +1,7 @@
 ---
 ecran: mba-guide
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA > Guide / Paramètres)
-source_empreinte: d65ab5
+source_empreinte: 6de586
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -70,7 +70,8 @@ samedi »). Il lit d'abord ce qui existe déjà, propose une ligne par modificat
 Meta tant que vous n'avez pas cliqué sur Appliquer**. Une suppression est signalée à part, en rouge, et il
 n'en propose qu'une à la fois : Meta n'a ni corbeille ni annulation, donc une demande en lot obtient une
 liste et une question, jamais une purge. Il ne retirera jamais l'agent du service et ne créera jamais de
-connecteur, et tout ce qu'il fait reste faisable à la main dans les autres onglets.
+connecteur, et tout ce qu'il fait reste faisable à la main dans les autres onglets. Il n'ajoute pas de
+document : un document se dépose par l'onglet Fichiers.
 
 **L'onglet Historique** existe pour la même raison : Meta n'a pas de corbeille. Une FAQ, une compétence ou
 un document supprimé est perdu chez lui, et cette page en garde le seul exemplaire. « Voir le contenu

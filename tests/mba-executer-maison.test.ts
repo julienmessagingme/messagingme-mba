@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { CHAMP_DISPARU, CONTACT_BLOQUE, REPONSE_DEJA_TRAITE, erreurDePanne, executerOutilMaison, type DepsMaison } from '../src/mba/executer-maison';
-import { AntiRejeu, PLANCHER_ANTI_REJEU_MS, DUREE_ANTI_REJEU_MS } from '../src/mba/anti-rejeu';
+import { PLANCHER_ANTI_REJEU_MS, DUREE_ANTI_REJEU_MS } from '../src/mba/anti-rejeu';
+import type { VerrousCourts } from '../src/db/verrous-courts';
+import { verrousEnMemoire } from './verrous';
 import { FIN_DE_TOUR_MAX_MS, FIN_DE_TOUR_DEBUT_MS } from '../src/mba/fin-de-tour';
 
 /**
@@ -9,10 +11,13 @@ import { FIN_DE_TOUR_MAX_MS, FIN_DE_TOUR_DEBUT_MS } from '../src/mba/fin-de-tour
  * 🔴 CE QUE CE FICHIER PROTÈGE : la cible FIXÉE par l'administrateur. Le corps envoyé par Meta ne choisit ni
  * l'étiquette ni le champ, quoi qu'il contienne ; il ne fournit que la valeur d'un champ.
  */
-function faux(champs: string[] = ['ville'], o: { bloque?: boolean; issue?: true | string; leve?: boolean } = {}) {
+function faux(
+  champs: string[] = ['ville'],
+  o: { bloque?: boolean; issue?: true | string; leve?: boolean; verrous?: VerrousCourts; horloge?: { t: number } } = {},
+) {
   const gestes: string[] = [];
   const client = { dernier: 'm1' as string | null };
-  const horloge = { t: 0 };
+  const horloge = o.horloge ?? { t: 0 };
   const deps: DepsMaison = {
     poserTag: async (t, w, tag) => { gestes.push(`tag ${t} ${w} ${tag}`); },
     ecrireChamp: async (t, w, champ, valeur) => { gestes.push(`champ ${t} ${w} ${champ}=${valeur}`); },
@@ -26,7 +31,7 @@ function faux(champs: string[] = ['ville'], o: { bloque?: boolean; issue?: true 
       if (o.leve) throw new Error('panne de base au journal');
       return o.issue ?? true;
     },
-    antiRejeu: new AntiRejeu(60_000, () => horloge.t),
+    antiRejeu: o.verrous ?? verrousEnMemoire(() => horloge.t),
     inbox: {
       dernierMessageDuClient: async () => client.dernier,
     },
@@ -202,14 +207,53 @@ describe('un envoi ne se rejoue pas pour le même client', () => {
     expect(f.gestes).toHaveLength(2);
   });
 
-  it('au-delà de la durée, le même geste repart', () => {
-    let t = 0;
-    const a = new AntiRejeu(1000, () => t);
-    expect(a.prendre('k')).toBe(true);
-    expect(a.prendre('k')).toBe(false);
-    t = 999;
-    expect(a.prendre('k')).toBe(false);
-    t = 1000;
-    expect(a.prendre('k')).toBe(true);
+  it('au-delà de deux minutes, le même geste pour le même message repart', async () => {
+    const f = faux();
+    await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    f.horloge.t = DUREE_ANTI_REJEU_MS - 1;
+    expect(await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} }))
+      .toEqual({ ok: true, reponse: REPONSE_DEJA_TRAITE });
+    f.horloge.t = DUREE_ANTI_REJEU_MS;
+    await executerOutilMaison(f.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    expect(f.gestes).toHaveLength(2);
+  });
+});
+
+/**
+ * 🔴 L'API EN PLUSIEURS COPIES. L'anti-rejeu vivait dans la mémoire du processus : un rappel de l'outil servi par une
+ * AUTRE copie que le premier appel ne le voyait pas, et renvoyait le template ou relançait le scénario, facturé.
+ * Deux « copies » ici, ce sont deux jeux de dépendances distincts qui partagent seulement les verrous courts, comme
+ * deux copies de l'API partagent la base.
+ */
+describe('deux copies de l’API, un seul envoi', () => {
+  const SCEN = { handler: 'scenario_fixe' as const, workflowId: '11111111-1111-4111-8111-111111111111' };
+
+  it('🔴 le rappel servi par l’AUTRE copie est refusé : un seul lancement', async () => {
+    const horloge = { t: 0 };
+    const verrous = verrousEnMemoire(() => horloge.t);
+    const copieA = faux(['ville'], { verrous, horloge });
+    const copieB = faux(['ville'], { verrous, horloge });
+    await executerOutilMaison(copieA.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    const rappel = await executerOutilMaison(copieB.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    expect(rappel).toEqual({ ok: true, reponse: REPONSE_DEJA_TRAITE });
+    expect([...copieA.gestes, ...copieB.gestes]).toEqual([`scenario t1 w ${SCEN.workflowId}`]);
+  });
+
+  it('🔴 deux appels SIMULTANÉS sur deux copies : un seul lancement', async () => {
+    const verrous = verrousEnMemoire();
+    const copies = [faux(['ville'], { verrous }), faux(['ville'], { verrous })];
+    await Promise.all(copies.flatMap((c) => [0, 1, 2].map(() =>
+      executerOutilMaison(c.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} }))));
+    expect(copies.flatMap((c) => c.gestes)).toHaveLength(1);
+  });
+
+  it('🔴 un REFUS sur une copie relâche pour les deux : la redemande passe sur l’autre', async () => {
+    const verrous = verrousEnMemoire();
+    const refusee = faux(['ville'], { verrous, issue: 'la fenêtre de 24 h est fermée' });
+    const autre = faux(['ville'], { verrous });
+    await executerOutilMaison(refusee.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    expect(verrous.tenues()).toEqual([]);
+    await executerOutilMaison(autre.deps, { tenantId: 't1', outilId: 'o1', waId: 'w', cible: SCEN, corps: {} });
+    expect(autre.gestes).toHaveLength(1);
   });
 });

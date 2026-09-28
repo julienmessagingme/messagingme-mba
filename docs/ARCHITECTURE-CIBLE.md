@@ -72,7 +72,7 @@ ferme de ce document.
                                           Public Gateway (sortie seule, §7.4)
                                           vers Meta, fournisseurs IA, HubSpot
 
-   Object Storage privé (HTTPS + IAM, §6) : médias RCS, pièces jointes de l'assistant MBA
+   Object Storage privé (HTTPS + IAM, §6) : médias RCS
    Connecteur HubSpot ----> SA PROPRE base (§8)
 ```
 
@@ -239,6 +239,11 @@ l'application sur l'autre : « document déposé plus disponible ».
 **La solution** : l'Object Storage (§6), avec une expiration automatique de deux heures. Le magasin est déjà
 derrière une interface (`MagasinPiecesJointes`) : c'est un remplacement d'implémentation, pas une réécriture.
 
+✅ **Résolu autrement le 2026-09-28 : retiré.** La route de dépôt n'avait plus d'appelant depuis le retrait du
+bouton « Joindre » (2026-09-24) ; elle est partie avec son magasin et l'opération `fichier.ajouter`. Un document se
+dépose par l'onglet Fichiers, qui l'envoie à Meta sans rien garder (lot A de
+`docs/superpowers/plans/2026-09-28-api-multi-instances.md`).
+
 ---
 
 ## 4. Ce qui est DÉJÀ juste, et qu'il ne faut surtout pas casser
@@ -330,8 +335,7 @@ stockage objet est fait pour des fichiers, se facture au volume et expire seul.
 
 - **Médias RCS** : les originaux et les variantes nécessaires à l'envoi, bucket privé, conservés selon une
   durée métier **à décider** (§13).
-- **Pièces jointes de l'assistant MBA** : bucket ou préfixe privé, **expiration automatique à deux heures**
-  par une règle du bucket (c'est ce qui remplace le magasin en mémoire, §3.4).
+- ~~Pièces jointes de l'assistant MBA~~ : plus rien à stocker, le dépôt est retiré (§3.4).
 - **Postgres ne garde que les métadonnées** : `tenant_id`, clé d'objet, type constaté, taille, expiration,
   statut.
 - **Jamais un bucket public**, même pour simplifier une URL. L'accès tiers passe par une URL signée courte ou

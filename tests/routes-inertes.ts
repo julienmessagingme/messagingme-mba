@@ -13,7 +13,6 @@ import type { EmbeddedSignupRouteDeps, MetaInscriptionDep } from '../src/http/em
 import type { FieldsRouteDeps } from '../src/http/fields';
 import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
 import type { LiensDep } from '../src/http/links';
-import type { MbaAssistantDeps } from '../src/http/mba-assistant';
 import type { MbaRelaisDeps } from '../src/http/mba-relais';
 import type { MbaRouteDeps } from '../src/http/mba';
 import type { ExploitationOps, OpsRouteDeps } from '../src/http/ops';
@@ -260,15 +259,6 @@ export const aucuneCampagneVivante = async (): Promise<string | null> => null;
 export const liensInertes: Pick<LiensDep, 'contactParJeton'> = {
   // Absente : les clics restaient anonymes.
   contactParJeton: async () => null,
-};
-
-export const assistantMbaInerte: Pick<MbaAssistantDeps, 'pieces'> = {
-  // Absent : tout jeton de pièce jointe était mort, et le dépôt refusé.
-  pieces: {
-    deposer: neDevraitPasEtreAppelee('pieces.deposer'),
-    reprendre: () => null,
-    contient: () => false,
-  },
 };
 
 export const relaisMbaInerte: Pick<MbaRelaisDeps, 'journaliserForme'> = {

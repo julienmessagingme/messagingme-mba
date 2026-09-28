@@ -83,7 +83,11 @@ export class PgEmbeddedSignupStore {
     });
   }
 
-  /** Upsert des credentials du WABA. `businessTokenEnc` et `pinEnc` sont déjà chiffrés (AES-GCM) par l'appelant. */
+  /**
+   * Upsert des credentials du WABA. `businessTokenEnc` et `pinEnc` sont déjà chiffrés (AES-GCM) par l'appelant.
+   * 🔴 L'état suit le JETON, pas le WABA : un jeton neuf (une reconnexion) repart `active`, sinon un WABA marqué
+   * invalide le resterait après avoir été reconnecté. Le même chiffré réécrit garde son état.
+   */
   async saveCredentials(wabaId: string, tenantId: string, businessTokenEnc: string, pinEnc: string | null): Promise<void> {
     // Même garde entre espaces que linkTenant : le token d'un WABA d'un autre espace ne se réattribue pas.
     const res = await this.pool.query(
@@ -93,6 +97,10 @@ export class PgEmbeddedSignupStore {
          tenant_id = excluded.tenant_id,
          business_token_enc = excluded.business_token_enc,
          pin_enc = coalesce(excluded.pin_enc, waba_credentials.pin_enc),
+         token_status = case when waba_credentials.business_token_enc = excluded.business_token_enc
+                             then waba_credentials.token_status else 'active' end,
+         token_invalid_at = case when waba_credentials.business_token_enc = excluded.business_token_enc
+                                 then waba_credentials.token_invalid_at else null end,
          updated_at = now()
        where waba_credentials.tenant_id = excluded.tenant_id`,
       [wabaId, tenantId, businessTokenEnc, pinEnc],
@@ -129,13 +137,15 @@ export class PgEmbeddedSignupStore {
   /**
    * Marque le token d'un WABA invalide (révoqué, expiré), détecté sur une erreur d'auth Meta. Idempotent, garde la
    * première date.
+   * 🔴 Seulement si le jeton stocké est ENCORE celui qui a échoué (`businessTokenEnc`, le chiffré lu avant l'appel) :
+   * une copie de l'API qui garde l'ancien jeton en cache après une reconnexion ne doit pas condamner le jeton neuf.
    */
-  async markTokenInvalid(wabaId: string): Promise<void> {
+  async markTokenInvalid(wabaId: string, businessTokenEnc: string): Promise<void> {
     await this.pool.query(
       `update waba_credentials
        set token_status = 'invalid', token_invalid_at = coalesce(token_invalid_at, now()), updated_at = now()
-       where waba_id = $1 and token_status <> 'invalid'`,
-      [wabaId],
+       where waba_id = $1 and business_token_enc = $2 and token_status <> 'invalid'`,
+      [wabaId, businessTokenEnc],
     );
   }
 }

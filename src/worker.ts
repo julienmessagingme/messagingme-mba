@@ -149,7 +149,7 @@ async function main(): Promise<void> {
   const {
     dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, phoneStatusStore, numeroDelieStore, opsStore,
+    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil,
@@ -1178,6 +1178,9 @@ async function main(): Promise<void> {
     // clients (ni contact ni `wa_id`, seulement ce que l'administrateur a tapé).
     await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,
       () => essaisStore.purger(RETENTION_ESSAIS_JOURS));
+    // Les verrous courts échus : ils ne tiennent plus rien, la prise suivante les reprendrait. Sans cette étape, la
+    // table garderait une ligne par message de client ayant déclenché un envoi de l'agent de Meta.
+    await etape('verrous', 'verrou(s) court(s) échu(s) effacé(s)', () => verrousCourts.purgerEchues());
   };
   taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep, { immediat: true });
 

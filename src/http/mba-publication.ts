@@ -7,6 +7,7 @@ import { ErreurPublication, CTX_OUTILS, CTX_ACTEUR } from '../mba/appliquer-publ
 import { MetaApiError } from '../meta/errors';
 import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
+import type { VerrousCourts } from '../db/verrous-courts';
 
 /**
  * Publier le catalogue d'outils de l'espace chez Meta (le relais : un connecteur `EngageMe` par espace, dont les
@@ -32,6 +33,28 @@ export interface MbaPublicationDeps {
    * (`CTX_OUTILS`) et l'administrateur qui publie (`CTX_ACTEUR`).
    */
   appliquer(tenantId: string, phoneNumberId: string, geste: Geste, ctx: Map<string, unknown>): Promise<void>;
+  /**
+   * Les verrous courts partagés par les copies de l'API (`src/db/verrous-courts.ts`) : une seule publication à la
+   * fois par espace, quelle que soit la copie qui la sert.
+   */
+  verrous: VerrousCourts;
+}
+
+/**
+ * Le bail d'une publication : dix minutes. Une publication fait un appel à Meta pour lire les connecteurs, un par
+ * connecteur pour lire ses outils, puis un par geste (plus une relecture des connecteurs après en avoir créé ou
+ * supprimé un), en série : quelques dizaines d'appels d'environ une seconde, donc moins d'une minute pour un
+ * catalogue ordinaire. Aucun de ces appels n'a de délai propre (seuls ceux d'undici, 300 s pour les en-têtes) :
+ * dix minutes couvrent une publication ordinaire dix fois et un appel qui pend. Au-delà, le bail échoit et une
+ * seconde publication peut partir : c'est la course que ce verrou existe pour empêcher, d'où un bail large plutôt
+ * que juste. Le prix d'un bail large ne se paie que si un arrêt coupe une publication en cours (l'arrêt propre
+ * laisse finir les requêtes, dans son délai) : l'espace attend alors la fin du bail pour republier.
+ */
+export const BAIL_PUBLICATION_MS = 10 * 60_000;
+
+/** La clé du verrou de publication d'un espace, préfixée pour ne croiser aucun autre usage des verrous courts. */
+export function clePublication(tenantId: string): string {
+  return `mba-publication:${tenantId}`;
 }
 
 /** Sans adresse publique, publier poserait chez Meta un connecteur qui n'appelle rien. */
@@ -48,13 +71,6 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     const [outils, meta] = await Promise.all([deps.outilsExposes(tenantId, pn), deps.etatMeta(tenantId, pn)]);
     return { gestes: planifierPublication(relais, outils, meta), outils };
   }
-
-  /**
-   * Une seule publication à la fois par espace : deux publications simultanées posaient chacune une clé chez Meta
-   * puis révoquaient l'autre, et chaque appel d'outil sortait en 401. Verrou local au process : suffisant tant que
-   * l'API tourne en une instance, à passer en base (bail, cf. `src/campaign/run-lock.ts`) avant tout multi-réplica.
-   */
-  const enCours = new Set<string>();
 
   app.get(base, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -75,14 +91,24 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     if (!pn) {
       return reply.code(409).send({ error: 'Aucun numéro WhatsApp connecté : il n’y a pas d’agent Meta où publier.' });
     }
-    if (enCours.has(tenant)) {
+    /**
+     * Une seule publication à la fois par espace : deux publications simultanées posaient chacune une clé chez Meta
+     * puis révoquaient l'autre, et chaque appel d'outil sortait en 401. Le verrou est en base, donc commun à toutes
+     * les copies de l'API ; son jeton de garde fait qu'une publication ne relâche que SON verrou, jamais celui d'une
+     * publication qui l'aurait repris après l'échéance du bail.
+     */
+    const prise = await deps.verrous.prendre([[clePublication(tenant), BAIL_PUBLICATION_MS]]);
+    if (prise === null) {
       return reply.code(409).send({ error: 'Une publication est déjà en cours pour cet espace : attendez qu’elle se termine.' });
     }
-    enCours.add(tenant);
     try {
       return await publier(tenant, pn, req.auth?.userId ?? null, reply);
     } finally {
-      enCours.delete(tenant);
+      // Un relâchement raté laisse le verrou jusqu'à la fin du bail : l'espace attend pour republier, rien de plus.
+      await deps.verrous.relacher(prise).catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error(`mba-publication: verrou non relâché (${tenant}):`, messageDe(err));
+      });
     }
   });
 

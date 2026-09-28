@@ -17,9 +17,8 @@ describe('ce que l’assistant PEUT proposer', () => {
     expect(ok([{ type: 'faq.supprimer', cible: 'f1', libelle: 'Horaires du dimanche' }]).success).toBe(true);
   });
 
-  it('ajouter un site, un document, et mettre en service', () => {
+  it('ajouter un site, et mettre en service', () => {
     expect(ok([{ type: 'site.ajouter', url: 'https://exemple.fr' }]).success).toBe(true);
-    expect(ok([{ type: 'fichier.ajouter', jeton: 'a'.repeat(32), nom: 'tarifs.pdf' }]).success).toBe(true);
     expect(ok([{ type: 'activation.mettreEnService' }]).success).toBe(true);
   });
 
@@ -74,8 +73,11 @@ describe('ce qu’il ne peut PAS, et c’est la moitié qui compte', () => {
     expect(ok([{ type: 'faq.supprimer', cible: 'f1', libelle: '   ' }]).success).toBe(false);
   });
 
-  it('⚠️ un document dont le CONTENU passerait par le modèle', () => {
-    // Le modèle ne manipule qu'un jeton : le contenu du fichier ne traverse jamais le prompt.
+  it('⚠️ ajouter un document : la conversation n’en dépose plus, l’onglet Fichiers le fait', () => {
+    // Le dépôt de pièce jointe de l'assistant (et son magasin en mémoire) est retiré : aucun jeton ne peut plus
+    // exister, donc une opération d'ajout serait offerte et inerte. Et le contenu d'un fichier ne passe jamais
+    // par le modèle.
+    expect(ok([{ type: 'fichier.ajouter', jeton: 'a'.repeat(32), nom: 'tarifs.pdf' }]).success).toBe(false);
     expect(ok([{ type: 'fichier.ajouter', nom: 'tarifs.pdf', contenu: 'JVBERi0...' }]).success).toBe(false);
   });
 });
