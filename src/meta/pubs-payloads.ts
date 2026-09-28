@@ -142,6 +142,10 @@ export function payloadCampagne(nom: string): Record<string, unknown> {
     // Obligatoire et vide : logement, emploi, crédit ou politique imposent un ciblage restreint et des obligations
     // légales que cet écran ne porte pas. L'écran l'exige par une case à cocher ; la liste vide le dit à Meta.
     special_ad_categories: [],
+    // Exigé par Meta dès que la campagne ne porte pas le budget (refus #100, sous-code 4834011, mesuré le 2026-09-28) :
+    // le budget est sur l'ensemble, et il n'y en a qu'un, donc rien à partager. `false` garde le budget exactement
+    // celui que le client a fixé.
+    is_adset_budget_sharing_enabled: false,
     status: STATUT_PAUSE,
   };
 }

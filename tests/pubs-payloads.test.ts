@@ -64,8 +64,14 @@ describe('la campagne', () => {
       name: 'Rentrée 2026',
       objective: 'OUTCOME_ENGAGEMENT',
       special_ad_categories: [],
+      is_adset_budget_sharing_enabled: false,
       status: 'PAUSED',
     });
+  });
+
+  it('🔴 dit explicitement à Meta que les ensembles ne partagent pas leur budget', () => {
+    // Sans ce champ, Meta refuse la création de TOUTE campagne dont le budget est sur l'ensemble (#100/4834011).
+    expect(payloadCampagne('x')).toHaveProperty('is_adset_budget_sharing_enabled', false);
   });
 
   it('🔴 JAMAIS ACTIVE À LA CRÉATION : c’est ce qui rend un échec inoffensif', () => {
