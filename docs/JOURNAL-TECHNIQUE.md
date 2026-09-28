@@ -5,6 +5,36 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-27 soir au 28 : la racine de composition approfondie, cinq lots d'une nuit
+
+- **Revue d'architecture** (`/improve-codebase-architecture`) : `src/index.ts` faisait 3 043 lignes, touché par 137
+  commits en 17 jours. Six candidats, les cinq premiers validés par Julien. Plan :
+  `docs/superpowers/plans/2026-09-27-approfondir-la-racine.md`.
+- **Lot 1** (4d262717) : 317 relais purs `x: (a) => store.x(a)` dans `index.ts` et 92 dans `worker.ts` remplacés par
+  des tranches de store déclarées par chaque module consommateur. La classe de défaut du 2026-09-15 (un relais qui
+  avale un argument) disparaît par construction.
+- **Lot 2** (99440337) : le chiffrage sort dans `src/stats/chiffrage.ts` (classification RCS et liens tracés écrits
+  une fois, testés en exécution au lieu d'expressions régulières sur la source), la connexion publicitaire dans
+  `src/pubs/connexion.ts`. Exécuté sur les données de production après déploiement, sans erreur.
+- **Lot 3** (c472b98e) : `src/socle.ts` construit ce que l'API et le worker construisaient chacun (dépôts, dépôt de
+  contacts décoré, pile Meta, runtime). Écart réel trouvé et corrigé : le worker lisait la clé de modèle par espace
+  sans signaler un déchiffrement raté, donc la dépense retombait sur notre clé sans trace.
+- **Lot 5** (3ddbbe13) : la réception lit l'espace d'un numéro une fois par webhook (jusqu'à 8 lectures avant),
+  l'écriture du STOP devient requise.
+- **Lot 4** (0bfdca25) : « qui tient le fil » vit dans `src/inbox/fil.ts`, seul appelant de `setControlOwner` et des
+  gestes Meta. Cinq décisions de Julien : l'escalade s'efface quand un robot reprend ; une réponse de campagne
+  « Inbox » arrive dans « À traiter » (elle était rendue à l'agent de Meta dans le même traitement, défaut réel en
+  production, aucune campagne « Inbox » n'existait encore) ; « Reprendre la main » rejoue une fois ; sans numéro
+  connecté la colonne ne bouge pas ; un lead publicitaire ne reprend pas une conversation d'opérateur.
+  La relecture a trouvé le seul rouge de la nuit : sans borne de temps, chaque message suivant d'un contact
+  reprenait le fil pour l'équipe et figeait tout scénario lancé plus tard. Corrigé avant déploiement : seule la
+  première réponse à la campagne la plus récente prend le fil.
+- **Mesures** : `index.ts` 3 043 -> 2 142 lignes, `worker.ts` 1 770 -> 1 555, `workflow/wiring.ts` 819 -> 688.
+  Aucune migration. CI verte et fumée à chaque lot.
+- **Méthode** : un implémenteur par lot, chacun parti d'une copie du candidat précédent pendant que la relecture de
+  celui-ci tournait ; une relecture par lot ; déploiement séquentiel (1, 2, 3, 5, puis 4, qui s'appuie sur 5) ;
+  les jaunes d'un lot partent avec le suivant. Julien dormait pendant les lots 3 à 5.
+
 ## 2026-09-25 au 27 : console sans « slop », audit ponytail, double authentification, commentaires allégés
 
 - **Console, passes 2 et 3 anti-slop** (6a58de04, 61dbc509, a01e1961) : formes, icônes Phosphor, une modale, des

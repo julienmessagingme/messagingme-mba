@@ -1,5 +1,27 @@
 # todo.md : backlog
 
+## 🟠 Suites de « approfondir la racine » (2026-09-27 et 28, plan `docs/superpowers/plans/2026-09-27-approfondir-la-racine.md`)
+
+1. **Essais réels à faire par Julien** (ils demandent sa session) : répondre depuis l'Inbox ; s'envoyer un message
+   WhatsApp (premier entrant depuis le lot 5 : vérifier qu'il arrive, puis relire `webhook_events` et les jobs
+   `webhook`) ; ouvrir Statistiques > coûts (mêmes montants qu'avant le lot 2) ; prendre puis rendre une
+   conversation tenue par l'agent de Meta.
+2. **Jaunes laissés par les relectures** :
+   - `tests/pubs-cablage.test.ts` : l'inventaire des écritures du jeton exige `.poserJeton(` / `.remplacer(` avec un
+     point (un appel déstructuré lui échappe) et `.remplacer(` est trop générique ;
+   - `reprendrePourLApp({ saufOperateur })` (`src/inbox/fil.ts`) prend l'état d'attente `app_human` d'une fin de
+     parcours pour un opérateur : un clic de publicité à ce moment ne lance pas son scénario (le message arrive
+     dans l'Inbox, rien n'est perdu) ;
+   - agent de Meta allumé sans numéro connecté : une fin de parcours laisse la conversation en `app_human`, que le
+     balayage ne rend plus ; « Rendre la main » répond 409. À dire dans l'écran si ça se présente ;
+   - décision 1 appliquée à une campagne à scénario de masse : elle efface l'escalade de chaque destinataire. À
+     confirmer avec Julien sur ce cas ;
+   - `/tenants/:id/conversations/:id/prendre` : une panne de base avant l'appel à Meta sort en 500 (Cloudflare
+     mange le corps) au lieu de 409 ;
+   - `FlowMappingDeps.audit` (trace du consentement capté par un Flow) reste optionnel.
+3. **Candidat 6 de la revue d'architecture** (un point d'entrée « lancer un scénario » qui porte la politique de
+   chaque type de lancement) : non fait, à reprendre seulement s'il gêne.
+
 ## 🟠 Suites de la session du 2026-09-25 au 27 (MFA, audit ponytail, commentaires)
 
 1. **`/ops` nominatif avec double authentification** (lot 4 du bilan, `docs/prive/BILAN-AUDITS-2026-09-22.md`).

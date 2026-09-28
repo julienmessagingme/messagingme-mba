@@ -7,12 +7,12 @@
 > ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.** Vidé pour la sixième fois le 2026-09-16 :
 > il annonçait encore `93a10c4` et répétait une mesure démentie depuis (voir plus bas).
 
-## L'ÉTAT EXACT, AU 2026-09-27
+## L'ÉTAT EXACT, AU 2026-09-28
 
 | | |
 |---|---|
 | `origin/main` | voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **À JOUR AU 2026-09-27** : lot 3 de l'audit ponytail (contrôle d'espace au montage), correctif managers, double authentification des admins et ses correctifs (migrations 0182 et 0184, appliquées AVANT le `up` et relues en base), essai réel du MFA fait par Julien. Les commits de commentaires de `src/` (aucun code touché) partiront avec le prochain `up`. Le SHA n'est pas recopié ici (`git log` fait foi). |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **À JOUR AU 2026-09-28** : les cinq lots « approfondir la racine » (relais supprimés, chiffrage, socle commun, réception rattachée une fois, contrôle du fil avec les cinq décisions de Julien), aucune migration, CI verte et fumée à chaque lot. ⚠️ Essai réel de la RÉCEPTION pas encore fait : aucun message entrant depuis le déploiement du lot 5 ; les trois gestes de Julien sont dans `todo.md`. Le SHA n'est pas recopié ici (`git log` fait foi). |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
