@@ -162,6 +162,25 @@ describe.skipIf(!url)('brouillons de publicité (Postgres réel)', () => {
     expect(efface?.audiencesExclues).toEqual([]);
   });
 
+  it('🔴 le bouton (0188) : défaut WhatsApp, aller-retour, conservé sans clé, remplacé avec', async () => {
+    const id = await store.creer(tenantId, champs());
+    expect((await store.lire(tenantId, id))?.bouton).toBe('WHATSAPP_MESSAGE');
+    await store.mettreAJour(tenantId, id, champs({ bouton: 'GET_QUOTE' }));
+    expect((await store.lire(tenantId, id))?.bouton).toBe('GET_QUOTE');
+    // Clé absente (un écran qui ne l'a pas changé) : on ne touche pas au bouton gardé.
+    await store.mettreAJour(tenantId, id, champs({ nom: 'Corrigé' }));
+    expect((await store.lire(tenantId, id))?.bouton).toBe('GET_QUOTE');
+    const cree = await store.creer(tenantId, champs({ bouton: 'BOOK_NOW' }));
+    expect((await store.lister(tenantId)).find((b) => b.id === cree)?.bouton).toBe('BOOK_NOW');
+  });
+
+  it('⚠️ un bouton que la liste ne connaît plus se relit comme le défaut, sans faire tomber la lecture', async () => {
+    // Pas de CHECK en base (délibéré, voir 0188) : la liste peut perdre un type après l'essai réel.
+    const id = await store.creer(tenantId, champs());
+    await pool.query('update pubs_brouillons set bouton = $2 where id = $1', [id, 'CALL_NOW']);
+    expect((await store.lire(tenantId, id))?.bouton).toBe('WHATSAPP_MESSAGE');
+  });
+
   it('⚠️ le CHECK de 0187 refuse une écriture directe qui poserait les deux visuels', async () => {
     const id = await store.creer(tenantId, champs({ visuel: { type: 'image/png', base64: PNG } }));
     await expect(pool.query('update pubs_brouillons set video_id = $2 where id = $1', [id, '42']))

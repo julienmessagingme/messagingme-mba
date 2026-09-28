@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 839312
+source_empreinte: 3d62a6
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -28,9 +28,18 @@ et Meta ne nous permet pas de la vérifier : l'écran vous emmène là où elle 
 
 ## Créer
 
-Le formulaire est court, et c'est voulu : un visuel, un texte, un titre, le message que la personne enverra,
-un budget total, des dates, un pays, un âge minimum et, si vous le souhaitez, des audiences. Le reste se règle
-dans le Gestionnaire de Meta.
+Le formulaire est court, et c'est voulu : un visuel, un texte, un titre, le bouton, le message que la personne
+enverra, un budget total, des dates, un pays, un âge minimum et, si vous le souhaitez, des audiences. Le reste se
+règle dans le Gestionnaire de Meta.
+
+**Le bouton** se choisit dans une liste : « Envoyer un message WhatsApp » (proposé par défaut), « En savoir plus »,
+« Obtenir un devis », « Réserver », « Nous contacter », « Acheter », « Commander », « S'inscrire », « S'abonner » ou
+« Postuler ». Quel que soit le libellé, un appui ouvre la conversation WhatsApp avec vous, et l'aperçu vous montre
+le libellé choisi. ⚠️ Meta ne garantit que le premier pour ce type de publicité : s'il refuse un autre bouton, son
+message s'affiche au moment de créer, et il suffit de revenir au bouton WhatsApp.
+
+Si Meta refuse la création, **son message s'affiche tel quel** sous le formulaire : c'est lui qui dit ce qu'il faut
+changer.
 
 **Tout est créé en PAUSE.** Cliquer sur « Créer » ne dépense rien : la campagne existe chez Meta, à l'arrêt.
 C'est le bouton **Publier** qui la met en diffusion, et il vous rappelle d'abord combien elle peut dépenser
@@ -56,8 +65,13 @@ Pour le cadrage, le vertical 9:16 convient aux stories, aux Reels et au statut W
 d'actualité. Les autres formats sont acceptés : Meta choisit lui-même les emplacements, et recadre si besoin.
 La vignette de la vidéo est choisie par Meta parmi ses images.
 
-Si votre navigateur ne sait pas lire la durée de la vidéo, elle est refusée : exportez-la en MP4 (H.264), le
-format que tous les navigateurs lisent.
+La durée est lue dans le fichier lui-même : une vidéo d'iPhone (MOV) passe, même si votre navigateur ne sait pas
+la lire. Dans le cas rare où la durée ne s'y trouve pas, la vidéo est refusée : exportez-la en MP4 (H.264).
+
+**Pour changer de visuel**, image ou vidéo, utilisez « Changer » (vous choisissez un autre fichier) ou « Retirer »
+(le formulaire revient sans visuel, et le brouillon aussi quand vous l'enregistrez). Un envoi de vidéo en cours
+s'annule de la même façon. Une vidéo retirée reste dans la bibliothèque de votre compte publicitaire chez Meta, où
+elle ne coûte rien.
 
 ## Choisir qui voit la publicité
 

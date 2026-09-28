@@ -220,6 +220,51 @@ export interface FormulaireCreationPub {
    */
   audiencesIncluses?: string[];
   audiencesExclues?: string[];
+  /**
+   * Le bouton de la publicité. ⚠️ Envoyé seulement quand il n'est PAS le bouton WhatsApp, pour la même raison que
+   * les audiences : une API d'avant ce lot refuse la clé, et une publicité au bouton par défaut doit continuer de
+   * se créer pendant la fenêtre entre la publication de la console et le déploiement de l'API.
+   */
+  bouton?: BoutonPub;
+}
+
+/**
+ * LES BOUTONS D'UNE PUBLICITÉ, AVEC LEUR LIBELLÉ : la seule table des libellés, pour le choix et pour l'aperçu.
+ *
+ * 🔴 LA LISTE DES TYPES DOIT ÉGALER CELLE DU SERVEUR (`BOUTONS_PUB`, `src/meta/pubs-payloads.ts`), dans le même
+ * ordre, et c'est `tests/web-pubs-parity.test.ts` qui le tient. C'est côté serveur qu'elle est écrite comme une
+ * HYPOTHÈSE : seul le bouton WhatsApp est documenté par Meta pour cette destination, les autres viennent du
+ * Gestionnaire, et l'essai réel tranche. Les libellés sont ceux que Meta affiche.
+ */
+export const BOUTONS_PUB = [
+  { type: 'WHATSAPP_MESSAGE', fr: 'Envoyer un message WhatsApp', en: 'Send WhatsApp message' },
+  { type: 'LEARN_MORE', fr: 'En savoir plus', en: 'Learn more' },
+  { type: 'GET_QUOTE', fr: 'Obtenir un devis', en: 'Get quote' },
+  { type: 'BOOK_NOW', fr: 'Réserver', en: 'Book now' },
+  { type: 'CONTACT_US', fr: 'Nous contacter', en: 'Contact us' },
+  { type: 'SHOP_NOW', fr: 'Acheter', en: 'Shop now' },
+  { type: 'ORDER_NOW', fr: 'Commander', en: 'Order now' },
+  { type: 'SIGN_UP', fr: 'S’inscrire', en: 'Sign up' },
+  { type: 'SUBSCRIBE', fr: 'S’abonner', en: 'Subscribe' },
+  { type: 'APPLY_NOW', fr: 'Postuler', en: 'Apply now' },
+] as const;
+export type BoutonPub = (typeof BOUTONS_PUB)[number]['type'];
+
+/** Le bouton quand rien n'est choisi : le bouton WhatsApp, le seul que Meta documente pour cette destination. */
+export const BOUTON_PUB_DEFAUT: BoutonPub = 'WHATSAPP_MESSAGE';
+
+/**
+ * Un bouton lu ailleurs (un brouillon, une API d'avant ce lot qui ne le rend pas) : le sien s'il est dans la liste,
+ * sinon le défaut. Un brouillon ne dépense rien, et l'écran montre, dans le choix comme dans l'aperçu, ce qui partira.
+ */
+export function boutonConnu(v: unknown): BoutonPub {
+  return BOUTONS_PUB.find((b) => b.type === v)?.type ?? BOUTON_PUB_DEFAUT;
+}
+
+/** Le libellé d'un bouton, dans les deux langues : c'est ce que le prospect lit sur la publicité. */
+export function libelleBouton(type: BoutonPub): { fr: string; en: string } {
+  const b = BOUTONS_PUB.find((x) => x.type === type) ?? BOUTONS_PUB[0];
+  return { fr: b.fr, en: b.en };
 }
 
 /**
@@ -411,6 +456,8 @@ export interface BrouillonPub {
   videoId?: string | null;
   audiencesIncluses?: string[];
   audiencesExclues?: string[];
+  /** Le bouton choisi (migration 0188). Absent d'une API d'avant ce lot : se lit avec `boutonConnu`. */
+  bouton?: string;
   creeLe: string;
   modifieLe: string;
 }
@@ -448,6 +495,8 @@ export interface FormulaireBrouillonPub {
   /** Absentes = ne pas toucher. Envoyées seulement quand le serveur connaît les audiences. */
   audiencesIncluses?: string[];
   audiencesExclues?: string[];
+  /** Absent = ne pas toucher. Envoyé seulement quand il diffère de ce que le serveur détient. */
+  bouton?: BoutonPub;
 }
 
 const baseBrouillons = (tenantId: string): string => `${basePubs(tenantId)}/brouillons`;

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { creerLaPublicite, publierLaPublicite, PublicationRefusee, type ClientCreationPub, type DemandeCreation, type DepotCreationPub } from '../src/pubs/creation';
 import type { FormulairePub } from '../src/meta/pubs-payloads';
-import type { AudiencePub, EtatVideo } from '../src/meta/pubs-creation';
+import { MetaPubsCreationClient, type AudiencePub, type EtatVideo } from '../src/meta/pubs-creation';
+import { ErreurGraph } from '../src/meta/graph';
 
 /**
  * LA SÉQUENCE DE CRÉATION, ET SURTOUT SES CHEMINS D'ÉCHEC.
@@ -19,12 +20,12 @@ import type { AudiencePub, EtatVideo } from '../src/meta/pubs-creation';
 const formulaire: FormulairePub = {
   nom: 'Rentrée', texte: 'txt', titre: 'ttl', messagePreRempli: 'pré', accueil: 'acc',
   budgetTotal: 100, debut: '2026-10-01 00:00:00+02:00', fin: '2026-10-31 23:59:59+01:00',
-  pays: ['FR'], villes: [], ageMin: 18, audiencesIncluses: [], audiencesExclues: [],
+  pays: ['FR'], villes: [], ageMin: 18, audiencesIncluses: [], audiencesExclues: [], bouton: 'WHATSAPP_MESSAGE',
 };
 
 const demande = (over: Partial<DemandeCreation> = {}): DemandeCreation => ({
   formulaire, visuel: { sorte: 'image', base64: 'AAAA' }, destination: 'scenario', workflowId: 'wf-1',
-  tagQualification: 'devis', comptePubId: 'act-1', pageId: 'p-1', numeroWhatsApp: '33600000000',
+  tagQualification: 'devis', comptePubId: 'act_111', pageId: 'p-1', numeroWhatsApp: '33600000000',
   creePar: 'u-1', ...over,
 });
 
@@ -154,7 +155,7 @@ describe('les échecs AVANT que quoi que ce soit n’existe chez Meta', () => {
     const { client, appels } = faux('image');
     const { depot, ecrits } = fauxDepot();
     const issue = await creerLaPublicite(demande(), client, depot);
-    expect(issue).toEqual({ sorte: 'annulee', raison: 'image refusée' });
+    expect(issue).toEqual({ sorte: 'annulee', raison: 'image refusée', refusMeta: false });
     expect(appels).toEqual(['image']);
     expect(ecrits).toEqual([]);
   });
@@ -163,7 +164,7 @@ describe('les échecs AVANT que quoi que ce soit n’existe chez Meta', () => {
     const { client, appels } = faux('campagne');
     const { depot, ecrits } = fauxDepot();
     const issue = await creerLaPublicite(demande(), client, depot);
-    expect(issue).toEqual({ sorte: 'annulee', raison: 'campagne refusée' });
+    expect(issue).toEqual({ sorte: 'annulee', raison: 'campagne refusée', refusMeta: false });
     expect(appels).toEqual(['image', 'campagne']);
     expect(ecrits).toEqual([]);
   });
@@ -218,7 +219,7 @@ describe('🔴 LE RATTRAPAGE : dès que la campagne existe, tout échec la suppr
     const { client, appels } = faux();
     const { depot } = fauxDepot({ ouvrir: async () => { throw new Error('base indisponible'); } });
     const issue = await creerLaPublicite(demande(), client, depot);
-    expect(issue).toEqual({ sorte: 'annulee', raison: 'base indisponible' });
+    expect(issue).toEqual({ sorte: 'annulee', raison: 'base indisponible', refusMeta: false });
     expect(appels).toContain('supprime:c-1');
   });
 });
@@ -285,7 +286,7 @@ describe('une publicité VIDÉO', () => {
     const { client, appels } = faux('vignette');
     const { depot, ecrits } = fauxDepot();
     const issue = await creerLaPublicite(video, client, depot);
-    expect(issue).toEqual({ sorte: 'annulee', raison: 'vignette introuvable' });
+    expect(issue).toEqual({ sorte: 'annulee', raison: 'vignette introuvable', refusMeta: false });
     expect(appels).not.toContain('campagne');
     expect(ecrits).toEqual([]);
   });
@@ -354,6 +355,110 @@ describe('les audiences', () => {
     const { client, appels } = faux();
     await creerLaPublicite(demande(), client, fauxDepot().depot);
     expect(appels.some((a) => a.startsWith('audiences'))).toBe(false);
+  });
+
+});
+
+/**
+ * LES AUDIENCES QUE LE COMPTE PEUT CIBLER, LUES PAR LE VRAI CLIENT, BRANCHÉ COMME LE CÂBLAGE LE FAIT.
+ *
+ * 🔴 CE QUE CES CAS DÉFENDENT : une audience PARTAGÉE avec le compte de l'espace (celles qu'une agence ou un groupe
+ * prépare) porte l'`account_id` de son PROPRIÉTAIRE. Une garde qui l'exigeait égal au compte de l'espace la refusait,
+ * alors que Meta la liste bien sur l'arête du compte (possédées ET partagées) et l'accepte. C'est cette LISTE qui
+ * tranche, page après page ; seul `fetch` est simulé, le client et la séquence sont les vrais.
+ */
+describe('les audiences ciblables par le compte, lues par le vrai client', () => {
+  const vrai = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = vrai; });
+
+  const ligne = (id: string, compte: string) => ({
+    id, account_id: compte, name: `Audience ${id}`, subtype: 'CUSTOM',
+    approximate_count_lower_bound: 1000, approximate_count_upper_bound: 1200, delivery_status: { code: 200 },
+  });
+
+  /** Un faux Meta qui rend les pages de l'arête dans l'ordre, et retient les adresses demandées. */
+  const pages = (reponses: unknown[]): string[] => {
+    const urls: string[] = [];
+    let i = 0;
+    globalThis.fetch = (async (url: string) => {
+      urls.push(String(url));
+      const body = reponses[Math.min(i++, reponses.length - 1)];
+      return { ok: true, status: 200, json: async () => body };
+    }) as unknown as typeof fetch;
+    return urls;
+  };
+
+  /** Le client de la séquence, dont `etatAudiences` est le VRAI, lié au compte de l'espace comme dans `src/index.ts`. */
+  const branche = (d: DemandeCreation): ClientCreationPub => {
+    const meta = new MetaPubsCreationClient('app', 'secret', 'v25.0');
+    return { ...faux().client, etatAudiences: (ids) => meta.etatAudiences(d.comptePubId, ids, 'JETON') };
+  };
+
+  const avec = (incluses: string[], exclues: string[]): DemandeCreation =>
+    demande({ formulaire: { ...formulaire, audiencesIncluses: incluses, audiencesExclues: exclues } });
+
+  it('🔴 une audience PARTAGÉE (propriétaire : un autre compte) est acceptée, et lue sur l’arête du compte', async () => {
+    const urls = pages([{ data: [ligne('111', '111'), ligne('222', '999')] }]);
+    const d = avec(['111'], ['222']);
+    const issue = await creerLaPublicite(d, branche(d), fauxDepot().depot);
+    expect(issue.sorte).toBe('creee');
+    expect(urls[0]).toMatch(/^https:\/\/graph\.facebook\.com\/v25\.0\/act_111\/customaudiences\?/);
+  });
+
+  it('🔴 une audience ABSENTE de la liste du compte est refusée AVANT la campagne, et nommée', async () => {
+    pages([{ data: [ligne('111', '111')] }]);
+    const d = avec(['111', '333'], []);
+    const { depot, ecrits } = fauxDepot();
+    const issue = await creerLaPublicite(d, branche(d), depot);
+    expect(issue.sorte === 'refusee' && issue.code).toBe('audience_inutilisable');
+    expect(issue.sorte === 'refusee' && issue.raison).toContain('333 (introuvable pour ce compte publicitaire)');
+    expect(ecrits).toEqual([]);
+  });
+
+  it('🔴 une audience de la PAGE 2 n’est pas refusée : la page suivante se demande par son curseur', async () => {
+    const urls = pages([
+      { data: [ligne('111', '111')], paging: { cursors: { after: 'CURSEUR' }, next: 'https://ailleurs.example/suite?access_token=X' } },
+      { data: [ligne('444', '999')] },
+    ]);
+    const d = avec(['444'], []);
+    const issue = await creerLaPublicite(d, branche(d), fauxDepot().depot);
+    expect(issue.sorte).toBe('creee');
+    expect(urls).toHaveLength(2);
+    // La suite se demande sur NOTRE adresse, avec le curseur : l'adresse `next` rendue par Meta n'est pas suivie.
+    expect(urls[1]).toMatch(/^https:\/\/graph\.facebook\.com\/v25\.0\/act_111\/customaudiences\?.*after=CURSEUR/);
+  });
+});
+
+/**
+ * UN REFUS DE META SE DISTINGUE D'UNE PANNE, et la route en fait un 422 lisible (`src/http/pubs.ts`).
+ *
+ * 🔴 Seul un 4xx de Meta porte un message écrit pour le client ; une panne (réseau, 5xx, notre base) porte un message
+ * interne, qui ne doit pas sortir. La distinction naît ici, sur l'erreur elle-même, pas sur le texte de son message.
+ */
+describe('refus de Meta ou panne', () => {
+  const refus = new ErreurGraph(400, 100, 'Graph 400 (#100) : Invalid call_to_action type');
+
+  it('🔴 Meta refuse la campagne : annulée, et marquée REFUS DE META', async () => {
+    const { client } = faux();
+    client.creerCampagne = async () => { throw refus; };
+    const issue = await creerLaPublicite(demande(), client, fauxDepot().depot);
+    expect(issue).toEqual({ sorte: 'annulee', raison: refus.message, refusMeta: true });
+  });
+
+  it('🔴 Meta refuse la créa : création incomplète, marquée REFUS DE META, campagne supprimée', async () => {
+    const { client, appels } = faux();
+    client.creerCrea = async () => { throw refus; };
+    const issue = await creerLaPublicite(demande(), client, fauxDepot().depot);
+    expect(issue).toMatchObject({ sorte: 'echec_creation', raison: refus.message, refusMeta: true });
+    expect(appels).toContain('supprime:c-1');
+  });
+
+  it('un 5xx de Meta, ou notre base, n’est PAS un refus', async () => {
+    const { client } = faux();
+    client.creerCampagne = async () => { throw new ErreurGraph(500, 1, 'Graph 500 (#1) : An unknown error occurred'); };
+    expect(await creerLaPublicite(demande(), client, fauxDepot().depot)).toMatchObject({ refusMeta: false });
+    const { depot } = fauxDepot({ ouvrir: async () => { throw new Error('connexion à la base perdue'); } });
+    expect(await creerLaPublicite(demande(), faux().client, depot)).toMatchObject({ refusMeta: false });
   });
 });
 

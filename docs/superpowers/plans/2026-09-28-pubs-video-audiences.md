@@ -48,3 +48,36 @@ bouton WhatsApp, que l'ensemble porte l'inclusion, l'exclusion et Advantage+ ; s
 
 **Ordre de déploiement** : la migration du brouillon (identifiant de vidéo, audiences) AVANT le `up` ; l'API avant
 la console, qui appelle des routes neuves (dépôt de la vidéo, liste des audiences).
+
+## Retouches du 2026-09-28
+
+Demandées par Julien après son premier essai, plus les jaunes de la relecture du lot.
+
+1. **Retirer ou changer le visuel.** Une vidéo déposée ne se retirait plus. Image et vidéo portent désormais le même
+   geste : « Changer » (rouvre le choix de fichier) et « Retirer » (retour à « aucun visuel », et le brouillon
+   enregistre `video: null` ou `image: null`). Un dépôt en cours s'annule (le morceau en vol est coupé). La vidéo déjà
+   déposée reste dans la bibliothèque du compte chez Meta, où elle ne coûte rien. Un fichier refusé au « Changer » ne
+   défait plus la vidéo en place.
+2. **Choisir le bouton.** Une liste FERMÉE de dix types (`BOUTONS_PUB`, `src/meta/pubs-payloads.ts`), défaut
+   `WHATSAPP_MESSAGE`. Seul `call_to_action.type` change. ⚠️ Seul le bouton WhatsApp est documenté côté API pour
+   Click-to-WhatsApp : les neuf autres viennent du Gestionnaire, c'est une hypothèse écrite à cet endroit, que l'essai
+   réel tranche. Le brouillon garde le choix : **migration 0188** (`pubs_brouillons.bouton`, défaut
+   `WHATSAPP_MESSAGE`, sans CHECK). La console n'envoie la clé que si elle diffère du défaut (création) ou de ce que le
+   serveur détient (brouillon), pour qu'une API d'avant ce lot reste utilisable au bouton par défaut.
+3. **Les jaunes.** L'hôte du dépôt vidéo isolé dans `HOTE_DEPOT_VIDEO` : la documentation de la Video API dit
+   `graph-video.facebook.com` DÉPRÉCIÉ, le SDK officiel l'emploie encore ; on suit la documentation
+   (`graph.facebook.com`), l'essai réel tranche. Les audiences se vérifient à la création sur l'arête du compte
+   (`/act_{id}/customaudiences`, possédées ET partagées, page par page jusqu'à 500) : ce qui n'y figure pas est
+   refusé. ⚠️ Pas sur `account_id`, qui désigne le PROPRIÉTAIRE et refusait donc les audiences partagées (rouge de la
+   relecture, corrigé). Le compte d'une vidéo n'est pas vérifié (le nœud `Video` n'expose aucun compte publicitaire).
+   Un refus de Meta porte `error_user_title` et `error_user_msg` dans son message, et son sous-code au journal. La CSP gagne
+   `media-src 'self' blob:`. La durée se lit dans `mvhd`, au début OU à la fin du fichier, le décodeur n'étant plus
+   qu'un repli (un MOV HEVC d'iPhone était refusé sous Chrome Windows). La vignette se rapatrie sous 30 s, et l'erreur
+   d'abandon d'un appel Graph dit le vrai délai. Les routes journalisent par `journaliser`, et un 502 ne porte plus de
+   message interne. **Un refus de Meta à la création sort en 422 avec son message** (Cloudflare remplace le corps d'un
+   5xx) : c'est ce qui rend l'essai réel lisible. Une panne reste en 502, opaque, cause au journal.
+
+**Méthode** : implémenteur puis une relecture, comme le lot. **Essai réel qui clôt ces retouches** : le même que le
+lot, avec un bouton autre que WhatsApp (par exemple « Obtenir un devis ») sur une créa vidéo ; et, depuis l'écran,
+retirer puis changer une vidéo déposée. **Ordre de déploiement** : 0188 AVANT le `up` de l'API ; la console après
+l'API (sinon, pendant la fenêtre, un bouton autre que WhatsApp rend 400 ; le défaut passe).

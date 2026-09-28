@@ -1464,7 +1464,7 @@ async function main(): Promise<void> {
             televerserImage: (b64) => clientCreationPubs.televerserImage(comptePubId, jeton, b64),
             etatVideo: (videoId) => clientCreationPubs.etatVideo(videoId, jeton),
             vignetteVideo: (videoId) => clientCreationPubs.vignetteVideo(comptePubId, jeton, videoId),
-            etatAudiences: (ids) => clientCreationPubs.etatAudiences(ids, jeton),
+            etatAudiences: (ids) => clientCreationPubs.etatAudiences(comptePubId, ids, jeton),
             creerCampagne: (p) => clientCreationPubs.creerCampagne(comptePubId, jeton, p),
             creerEnsemble: (p) => clientCreationPubs.creerEnsemble(comptePubId, jeton, p),
             creerCrea: (p) => clientCreationPubs.creerCrea(comptePubId, jetonCrea, p),

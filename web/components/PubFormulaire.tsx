@@ -8,12 +8,12 @@ import { premiereReponse } from '@/lib/apercu-reponse';
 import {
   creerPub, creerBrouillon, majBrouillon, supprimerBrouillon,
   demarrerDepotVideo, envoyerMorceauVideo, terminerDepotVideo, lireEtatVideo, listerAudiences,
-  TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MIN_BAS, AGE_MIN_HAUT, AGE_MAX,
-  type AudiencePub, type BrouillonPubComplet, type DestinationPub, type FormulaireBrouillonPub,
+  TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MIN_BAS, AGE_MIN_HAUT, AGE_MAX, BOUTONS_PUB, BOUTON_PUB_DEFAUT, boutonConnu,
+  type AudiencePub, type BoutonPub, type BrouillonPubComplet, type DestinationPub, type FormulaireBrouillonPub,
   type FormulaireCreationPub, type ListeAudiencesPub,
 } from '@/lib/api-pubs';
 import {
-  cadrageDe, morceauSuivant, refusVideo, TAILLE_VIDEO_MAX, DUREE_VIDEO_MAX_S, type RefusVideo,
+  cadrageDe, dureeDuFichier, dureeRetenue, morceauSuivant, refusVideo, TAILLE_VIDEO_MAX, DUREE_VIDEO_MAX_S, type RefusVideo,
 } from '@/lib/pub-video';
 import { PubApercu, type EtatReponse } from '@/components/PubApercu';
 import { Bouton } from '@/components/Bouton';
@@ -41,8 +41,25 @@ type EtatDepot =
 const ATTENTE_PAS_MS = 5_000;
 const ATTENTE_MAX_TOURS = 120;
 
-/** Ce que le navigateur lit d'une vidéo sans l'envoyer : sa durée et ses dimensions, ou `null` s'il n'y arrive pas. */
+/**
+ * Ce que le navigateur lit d'une vidéo sans l'envoyer : sa durée et ses dimensions, ou `null` s'il n'y arrive pas.
+ *
+ * 🔴 LA DURÉE SE LIT D'ABORD DANS LE FICHIER (`dureeDuFichier`, la boîte `mvhd`), et le décodeur n'est que son
+ * repli : Chrome sous Windows ne décode pas le HEVC d'un iPhone, donc un `<video>` seul refusait un MOV conforme pour
+ * « durée illisible ». Les dimensions, elles, ne viennent que du décodeur : sans lui, pas de conseil de cadrage, ce
+ * qui n'est jamais un refus.
+ */
 async function lireMetadonnees(f: File): Promise<{ url: string; duree: number | null; largeur: number; hauteur: number }> {
+  const lire = async (debut: number, fin: number): Promise<Uint8Array> => new Uint8Array(await f.slice(debut, fin).arrayBuffer());
+  const [dureeConteneur, parLeDecodeur] = await Promise.all([
+    dureeDuFichier(lire, f.size).catch(() => null),
+    lireParLeDecodeur(f),
+  ]);
+  return { ...parLeDecodeur, duree: dureeRetenue(dureeConteneur, parLeDecodeur.duree) };
+}
+
+/** Ce que le décodeur du navigateur dit d'une vidéo : sa durée, ses dimensions, et l'adresse locale de l'aperçu. */
+async function lireParLeDecodeur(f: File): Promise<{ url: string; duree: number | null; largeur: number; hauteur: number }> {
   const url = URL.createObjectURL(f);
   const video = document.createElement('video');
   video.preload = 'metadata';
@@ -169,6 +186,15 @@ export function PubFormulaire({
   const [image, setImage] = useState<{ type: 'image/jpeg' | 'image/png'; base64: string; nom: string } | null>(
     brouillon?.visuel ? { ...brouillon.visuel, nom: '' } : null,
   );
+  /** Les deux champs fichier : « Changer » ouvre le leur, « Retirer » les vide pour qu'un même fichier se rechoisisse. */
+  const refImage = useRef<HTMLInputElement>(null);
+  const refVideo = useRef<HTMLInputElement>(null);
+  /**
+   * Le bouton de la publicité, et ce que le serveur en détient (même logique que `visuelServeur`, plus bas) : on ne
+   * l'envoie que s'il diffère, pour qu'une API d'avant ce lot, qui refuse la clé, reste utilisable au bouton par défaut.
+   */
+  const [bouton, setBouton] = useState<BoutonPub>(boutonConnu(brouillon?.bouton));
+  const [boutonServeur, setBoutonServeur] = useState<BoutonPub>(boutonConnu(brouillon?.bouton));
   /**
    * L'identifiant du brouillon en cours d'édition. `null` = on n'en a pas encore enregistré.
    *
@@ -222,6 +248,8 @@ export function PubFormulaire({
   const [progression, setProgression] = useState<number | null>(null);
   /** Le numéro du dépôt en cours : un nouveau choix de fichier rend caduc l'envoi précédent, qui s'arrête. */
   const depotCourant = useRef(0);
+  /** Coupe le morceau EN VOL quand on retire la vidéo pendant l'envoi, au lieu d'attendre qu'il finisse. */
+  const envoiEnVol = useRef<AbortController | null>(null);
   /** Ce que le serveur détient comme vidéo pour ce brouillon, même logique que `visuelServeur`. */
   const [videoServeur, setVideoServeur] = useState<string | null>(brouillon?.videoId ?? null);
 
@@ -346,9 +374,14 @@ export function PubFormulaire({
     return brouillonId === null ? null : visuelServeur;
   }
 
+  /**
+   * 🔴 UN RETRAIT PART QUEL QUE SOIT LE FORMAT. En mode vidéo, une image encore dans le formulaire n'a été que quittée
+   * des yeux : on n'en dit rien (poser une vidéo l'efface côté serveur). Mais une image RETIRÉE (plus rien dans le
+   * formulaire) doit partir en `null` même si l'on est passé en vidéo sans en choisir une : sinon le brouillon
+   * rouvrait sur l'image qu'on venait de retirer.
+   */
   function visuelAEnvoyer(): VisuelEnvoye {
-    // En mode vidéo, l'image n'est pas le visuel : on n'en dit rien. Poser une vidéo l'efface côté serveur.
-    if (format === 'video') return undefined;
+    if (format === 'video' && image !== null) return undefined;
     const actuel: VisuelEnvoye = image === null ? null : { type: image.type, base64: image.base64 };
     return memeVisuel(actuel, visuelDetenu()) ? undefined : actuel;
   }
@@ -360,15 +393,25 @@ export function PubFormulaire({
 
   /**
    * Ce qu'il faut dire de la vidéo au prochain enregistrement : `undefined` quand rien n'a changé (ou quand le
-   * serveur ne connaît pas encore la vidéo, qui refuserait la clé), sinon l'identifiant ou `null`. En mode image, on
-   * ne dit rien : une image posée efface la vidéo côté serveur, et un mode image SANS image ne doit pas effacer une
-   * vidéo qu'on a peut-être seulement quitté des yeux.
+   * serveur ne connaît pas encore la vidéo, qui refuserait la clé), sinon l'identifiant ou `null`. En mode image, une
+   * vidéo encore dans le formulaire n'a été que quittée des yeux : on n'en dit rien (une image posée l'efface côté
+   * serveur). 🔴 Mais une vidéo RETIRÉE part en `null` quel que soit le format : retirer, passer en image sans en
+   * choisir, enregistrer, et le brouillon rouvrait sur la vidéo retirée.
    */
   function videoAEnvoyer(): { id: string } | null | undefined {
-    if (!serveurAJour || format !== 'video') return undefined;
+    if (!serveurAJour || (format !== 'video' && video !== null)) return undefined;
     const actuelle = video?.id ?? null;
     if (actuelle === videoDetenue()) return undefined;
     return actuelle === null ? null : { id: actuelle };
+  }
+
+  /**
+   * Ce qu'il faut dire du bouton : `undefined` quand le serveur a déjà celui-là. Sans brouillon, le serveur n'a rien,
+   * et un brouillon neuf prend le défaut en base (migration 0188) : le défaut n'a donc jamais besoin de partir.
+   */
+  function boutonAEnvoyer(): BoutonPub | undefined {
+    const detenu = brouillonId === null ? BOUTON_PUB_DEFAUT : boutonServeur;
+    return bouton === detenu ? undefined : bouton;
   }
 
   /** Le refus d'une vidéo, en mots, dans les deux langues. */
@@ -392,35 +435,42 @@ export function PubFormulaire({
    *
    * ⚠️ UN NOUVEAU CHOIX REND L'ENVOI EN COURS CADUC : chaque dépôt porte un numéro, et un morceau qui revient pour
    * un numéro dépassé n'est pas suivi du suivant.
+   *
+   * ⚠️ UN FICHIER REFUSÉ NE DÉFAIT PAS LA VIDÉO QU'ON AVAIT : « Changer » peut ouvrir sur un fichier trop long, et
+   * perdre l'état « prête » de la vidéo en place pour ça obligerait à la redéposer. L'état d'avant est donc rendu.
    */
-  async function choisirVideo(f: File | null): Promise<void> {
+  async function choisirVideo(f: File): Promise<void> {
     setErreur(null);
     const numero = ++depotCourant.current;
-    setProgression(null);
-    if (f === null) { setVideo(null); setDepot({ etape: 'aucune' }); return; }
+    const avantLecture = { depot, progression };
     const avant = refusVideo(f, 1);
     if (avant === 'type' || avant === 'taille') { setErreur(messageRefusVideo(avant)); return; }
+    setProgression(null);
     setDepot({ etape: 'lecture' });
     const meta = await lireMetadonnees(f);
     if (numero !== depotCourant.current) { URL.revokeObjectURL(meta.url); return; }
     const refus = refusVideo(f, meta.duree);
     if (refus !== null) {
       URL.revokeObjectURL(meta.url);
-      setDepot({ etape: 'aucune' });
+      setDepot(avantLecture.depot);
+      setProgression(avantLecture.progression);
       setErreur(messageRefusVideo(refus));
       return;
     }
     setVideo({ id: null, nom: f.name, apercu: meta.url, cadrage: cadrageDe(meta.largeur, meta.hauteur) });
     setDepot({ etape: 'envoi', envoye: 0, total: f.size });
+    const controleur = new AbortController();
+    envoiEnVol.current = controleur;
     try {
       const d = await demarrerDepotVideo(tenantId, f.size);
+      if (numero !== depotCourant.current) return;
       let precedent: { debut: number; fin: number } | null = null;
       let m = morceauSuivant(null, { debut: d.debut, fin: d.fin }, f.size);
       while (m !== 'fini') {
         if (m === null) {
           throw new Error(t('Meta a demandé un morceau incohérent de la vidéo. Réessayez.', 'Meta asked for an inconsistent part of the video. Try again.'));
         }
-        const s = await envoyerMorceauVideo(tenantId, d.sessionId, m.debut, m.fin, f.slice(m.debut, m.fin));
+        const s = await envoyerMorceauVideo(tenantId, d.sessionId, m.debut, m.fin, f.slice(m.debut, m.fin), controleur.signal);
         if (numero !== depotCourant.current) return;
         precedent = m;
         setDepot({ etape: 'envoi', envoye: m.fin, total: f.size });
@@ -433,7 +483,35 @@ export function PubFormulaire({
     } catch (err) {
       if (numero !== depotCourant.current) return;
       setDepot({ etape: 'erreur', message: err instanceof Error ? err.message : t('Dépôt impossible', 'Upload failed') });
+    } finally {
+      if (envoiEnVol.current === controleur) envoiEnVol.current = null;
     }
+  }
+
+  /**
+   * RETIRER LA VIDÉO, ou annuler son dépôt en cours : le formulaire revient à « aucun visuel », et le prochain
+   * enregistrement dira `video: null` au brouillon (`videoAEnvoyer`). La vidéo déjà déposée reste dans la
+   * bibliothèque du compte chez Meta, où elle ne coûte rien : on ne la supprime pas.
+   *
+   * 🔴 L'ENVOI EN COURS S'ARRÊTE VRAIMENT : le numéro rend caduc tout ce qui revient ensuite, et le morceau en vol est
+   * coupé. Sans cette coupure, il continuait de monter jusqu'à sa fin, sur le plafond de requêtes de la personne.
+   */
+  function retirerVideo(): void {
+    depotCourant.current += 1;
+    envoiEnVol.current?.abort();
+    envoiEnVol.current = null;
+    setVideo(null);
+    setDepot({ etape: 'aucune' });
+    setProgression(null);
+    setErreur(null);
+    if (refVideo.current !== null) refVideo.current.value = '';
+  }
+
+  /** RETIRER L'IMAGE : même geste, même effet. Le prochain enregistrement dira `image: null` (`visuelAEnvoyer`). */
+  function retirerImage(): void {
+    setImage(null);
+    setErreur(null);
+    if (refImage.current !== null) refImage.current.value = '';
   }
 
   /** Inclure, exclure ou ignorer une audience : les deux listes restent disjointes par construction. */
@@ -442,9 +520,8 @@ export function PubFormulaire({
     setExclues((l) => (choix === 'exclure' ? [...l.filter((x) => x !== id), id] : l.filter((x) => x !== id)));
   }
 
-  async function choisirImage(f: File | null): Promise<void> {
+  async function choisirImage(f: File): Promise<void> {
     setErreur(null);
-    if (f === null) { setImage(null); return; }
     if (!(TYPES_VISUEL as readonly string[]).includes(f.type)) {
       setErreur(t('Le visuel doit être un JPEG ou un PNG.', 'The image must be a JPEG or a PNG.'));
       return;
@@ -466,13 +543,16 @@ export function PubFormulaire({
    * serveur conserve le sien ; c'est ce qui permet de corriger un texte sans renvoyer, ni perdre, plusieurs
    * mégaoctets. `aEnvoyer` vaut `undefined` quand il n'y a rien à dire du visuel.
    */
-  function champsBrouillon(aEnvoyer: VisuelEnvoye, videoEnvoyee: { id: string } | null | undefined): FormulaireBrouillonPub {
+  function champsBrouillon(
+    aEnvoyer: VisuelEnvoye, videoEnvoyee: { id: string } | null | undefined, boutonEnvoye: BoutonPub | undefined,
+  ): FormulaireBrouillonPub {
     return {
       nom, titre, texte, accueil, messagePreRempli,
       budgetTotal, debut, fin, pays, ageMin, ageMax: String(AGE_MAX), tagQualification, destination,
       workflowId: workflowId === '' ? null : workflowId,
       ...(aEnvoyer === undefined ? {} : { image: aEnvoyer }),
       ...(videoEnvoyee === undefined ? {} : { video: videoEnvoyee }),
+      ...(boutonEnvoye === undefined ? {} : { bouton: boutonEnvoye }),
       // ⚠️ Les audiences ne partent que vers un serveur qui les connaît : l'ancien refuse toute clé inconnue.
       ...(serveurAJour ? { audiencesIncluses: incluses, audiencesExclues: exclues } : {}),
     };
@@ -492,18 +572,21 @@ export function PubFormulaire({
      */
     const aEnvoyer = visuelAEnvoyer();
     const videoEnvoyee = videoAEnvoyer();
+    const boutonEnvoye = boutonAEnvoyer();
     try {
       if (brouillonId === null) {
-        const { id } = await creerBrouillon(tenantId, champsBrouillon(aEnvoyer, videoEnvoyee));
+        const { id } = await creerBrouillon(tenantId, champsBrouillon(aEnvoyer, videoEnvoyee, boutonEnvoye));
         // ⚠️ On RETIENT l'identifiant : sans ça, trois clics sur « Enregistrer » créeraient trois brouillons.
         setBrouillonId(id);
       } else {
-        await majBrouillon(tenantId, brouillonId, champsBrouillon(aEnvoyer, videoEnvoyee));
+        await majBrouillon(tenantId, brouillonId, champsBrouillon(aEnvoyer, videoEnvoyee, boutonEnvoye));
       }
       // Le serveur détient désormais ce qui vient de PARTIR, et rien d'autre. Une clé omise ne change
       // rien à ce qu'il détenait déjà, donc on ne touche à cet état que si quelque chose est parti.
       if (aEnvoyer !== undefined) setVisuelServeur(aEnvoyer);
       if (videoEnvoyee !== undefined) setVideoServeur(videoEnvoyee === null ? null : videoEnvoyee.id);
+      // Un brouillon CRÉÉ sans la clé a pris le défaut en base : c'est donc lui qu'il détient.
+      setBoutonServeur(boutonEnvoye ?? (brouillonId === null ? BOUTON_PUB_DEFAUT : boutonServeur));
       // 🔴 L'EXCLUSIVITÉ, VUE D'ICI : le serveur a effacé l'autre visuel quand l'un a été POSÉ (non nul).
       if (videoEnvoyee) setVisuelServeur(null);
       if (aEnvoyer) setVideoServeur(null);
@@ -587,6 +670,8 @@ export function PubFormulaire({
       // ⚠️ Seulement si on en a choisi : une publicité SANS audience doit rester créable sur l'API d'avant 0187.
       ...(incluses.length > 0 ? { audiencesIncluses: incluses } : {}),
       ...(exclues.length > 0 ? { audiencesExclues: exclues } : {}),
+      // ⚠️ Même règle : le bouton WhatsApp est le défaut du serveur, il n'a pas besoin de partir.
+      ...(bouton !== BOUTON_PUB_DEFAUT ? { bouton } : {}),
     };
     setBusy(true);
     try {
@@ -656,6 +741,19 @@ export function PubFormulaire({
            'This is what WhatsApp types in their input box: they just press send.')}
       </p>
 
+      {/* Un TYPE dans une liste fermée, jamais un texte libre : Meta pose lui-même le libellé du type choisi. */}
+      <label className={label} htmlFor="pub-bouton">{t('Bouton de la publicité', 'Ad button')}</label>
+      <select
+        id="pub-bouton" className={champ} value={bouton} onChange={(e) => setBouton(boutonConnu(e.target.value))}
+        data-testid="pub-bouton"
+      >
+        {BOUTONS_PUB.map((b) => <option key={b.type} value={b.type}>{t(b.fr, b.en)}</option>)}
+      </select>
+      <p className="mt-1 text-xs text-ink-500">
+        {t('Quel que soit le libellé, un appui sur le bouton ouvre la conversation WhatsApp avec vous.',
+           'Whatever the label, tapping the button opens the WhatsApp conversation with you.')}
+      </p>
+
       {/* 🔴 IMAGE OU VIDÉO, UN SEUL VISUEL. La vidéo n'est proposée qu'à une API qui sait la recevoir (voir
           `serveurAJour`) : sur l'ancienne, le bouton appellerait une route absente. */}
       <fieldset className="mt-3" data-testid="pub-format">
@@ -681,14 +779,29 @@ export function PubFormulaire({
         )}
       </fieldset>
 
+      {/* 🔴 UNE FOIS LE VISUEL CHOISI, LE CHAMP FICHIER S'EFFACE AU PROFIT DE « CHANGER » ET « RETIRER », le même
+          geste pour l'image et pour la vidéo. Le champ reste dans la page (le bouton « Changer » l'ouvre), et un
+          choix annulé dans la fenêtre du système ne retire plus rien : seul « Retirer » retire. */}
       {format === 'image' && (
         <>
           <label className={label} htmlFor="pub-image">{t('Image (JPEG ou PNG, 5 Mo maximum)', 'Image (JPEG or PNG, 5 MB max)')}</label>
           <input
-            id="pub-image" type="file" accept="image/jpeg,image/png" className={champ}
-            onChange={(e) => void choisirImage(e.target.files?.[0] ?? null)}
+            id="pub-image" ref={refImage} type="file" accept="image/jpeg,image/png" className={image === null ? champ : 'sr-only'}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f !== undefined) void choisirImage(f); }}
           />
-          {image !== null && <p className="mt-1 text-xs text-ink-500">{image.nom}</p>}
+          {image !== null && (
+            <div className="mt-1 flex flex-wrap items-center gap-2" data-testid="pub-image-choisie">
+              <span className="min-w-0 truncate text-xs text-ink-900">
+                {image.nom !== '' ? image.nom : t('Image enregistrée avec le brouillon', 'Image saved with the draft')}
+              </span>
+              <Bouton variante="discret" taille="petite" type="button" onClick={() => refImage.current?.click()} data-testid="pub-image-changer">
+                {t('Changer', 'Change')}
+              </Bouton>
+              <Bouton variante="discret" taille="petite" type="button" onClick={retirerImage} data-testid="pub-image-retirer">
+                {t('Retirer', 'Remove')}
+              </Bouton>
+            </div>
+          )}
         </>
       )}
 
@@ -699,9 +812,10 @@ export function PubFormulaire({
                `Video (MP4 or MOV, ${Math.round(TAILLE_VIDEO_MAX / (1024 * 1024))} MB and ${DUREE_VIDEO_MAX_S} seconds max)`)}
           </label>
           <input
-            id="pub-video-fichier" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" className={champ}
+            id="pub-video-fichier" ref={refVideo} type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v"
+            className={video === null && depot.etape === 'aucune' ? champ : 'sr-only'}
             disabled={depot.etape === 'lecture' || depot.etape === 'envoi'}
-            onChange={(e) => void choisirVideo(e.target.files?.[0] ?? null)}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f !== undefined) void choisirVideo(f); }}
           />
           <p className="mt-1 text-xs text-ink-500">
             {/* Un conseil, jamais un refus : Meta place la publicité lui-même. */}
@@ -716,6 +830,26 @@ export function PubFormulaire({
           )}
           <EtatDuDepot depot={depot} progression={progression} nom={video?.nom ?? ''}
             reverifier={() => setDepot({ etape: 'traitement' })} />
+          {/* Pendant l'envoi, on peut l'annuler ; pendant la courte lecture du fichier, rien (elle est bornée) ;
+              ensuite, changer ou retirer. */}
+          {video !== null && depot.etape !== 'lecture' && (
+            <div className="mt-1 flex flex-wrap items-center gap-2" data-testid="pub-video-choisie">
+              {depot.etape === 'envoi' ? (
+                <Bouton variante="discret" taille="petite" type="button" onClick={retirerVideo} data-testid="pub-video-annuler">
+                  {t('Annuler l’envoi', 'Cancel upload')}
+                </Bouton>
+              ) : (
+                <>
+                  <Bouton variante="discret" taille="petite" type="button" onClick={() => refVideo.current?.click()} data-testid="pub-video-changer">
+                    {t('Changer', 'Change')}
+                  </Bouton>
+                  <Bouton variante="discret" taille="petite" type="button" onClick={retirerVideo} data-testid="pub-video-retirer">
+                    {t('Retirer', 'Remove')}
+                  </Bouton>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -889,7 +1023,7 @@ export function PubFormulaire({
             titre={titre} texte={texte} accueil={accueil} messagePreRempli={messagePreRempli}
             visuel={format === 'image' && image !== null ? { type: image.type, base64: image.base64 } : null}
             video={format === 'video' ? { url: video?.apercu ?? null, deposee: video?.id != null } : null}
-            nomPage={nomPage} reponse={reponse}
+            bouton={bouton} nomPage={nomPage} reponse={reponse}
             className="lg:sticky lg:top-4"
           />
         </div>

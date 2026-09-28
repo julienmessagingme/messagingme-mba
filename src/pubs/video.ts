@@ -66,6 +66,8 @@ function nomDe(o: Uint8Array, i: number): string {
  * boîte de `moov`. 🔴 Elle n'est lisible que quand `moov` est AU DÉBUT (« fast start », le cas des exports web et
  * de la plupart des téléphones) : quand il est à la fin, derrière `mdat`, la tête ne le contient pas et on rend
  * `null`, jamais une durée devinée. Le contrôle du navigateur, qui lit la durée avant l'envoi, reste alors le seul.
+ * ⚠️ Ce parseur a une COPIE EXACTE dans la console (`web/lib/pub-video.ts`), qui l'applique à `moov` où qu'il soit
+ * dans le fichier : `tests/web-pubs-parity.test.ts` les fait tourner côte à côte, toute correction va des deux côtés.
  */
 export function dureeDeLaTete(tete: Uint8Array): number | null {
   let i = 0;

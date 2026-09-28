@@ -3081,7 +3081,7 @@ pourra plus la mettre en pause, ce que l'écran annonce.
 de la vérifier : l'écran emmène le client là où Meta l'affiche plutôt que d'annoncer un verdict qu'il ne
 peut pas établir.
 
-**Créer** : un formulaire court (visuel, texte, titre, message pré-rempli, budget total, dates, pays, âge,
+**Créer** : un formulaire court (visuel, texte, titre, bouton, message pré-rempli, budget total, dates, pays, âge,
 audiences) et une case obligatoire « cette publicité ne relève d'aucune catégorie spéciale ». **Tout est créé
 EN PAUSE chez Meta : rien ne dépense tant que vous n'avez pas publié.** Le budget total et la date de fin sont
 obligatoires, ce sont eux qui bornent la dépense. Publier demande confirmation en annonçant la dépense
@@ -3093,6 +3093,19 @@ est facturable), avec une barre de progression, puis Meta la prépare : l'écran
 « Créer » n'aboutit que sur une vidéo prête. Le cadrage est libre ; l'écran conseille le vertical 9:16 (stories,
 Reels, statut WhatsApp) ou le 4:5 (fil), et Meta choisit les emplacements. La vignette est choisie par Meta
 parmi les images de la vidéo. Un brouillon garde la vidéo (déposée chez Meta), jamais ses octets.
+La durée se lit dans le fichier lui-même, sans le décoder : un MOV d'iPhone que le navigateur ne sait pas lire passe
+quand même le contrôle des 60 secondes. **Image et vidéo se changent ou se retirent** (« Changer », « Retirer »), et
+un envoi en cours s'annule ; une vidéo retirée reste dans la bibliothèque du compte publicitaire chez Meta, où elle ne
+coûte rien.
+
+**Le bouton** se choisit dans une liste : « Envoyer un message WhatsApp » (par défaut), « En savoir plus », « Obtenir
+un devis », « Réserver », « Nous contacter », « Acheter », « Commander », « S'inscrire », « S'abonner », « Postuler ».
+Quel que soit le libellé, un appui ouvre la conversation WhatsApp ; l'aperçu montre le libellé choisi. ⚠️ Seul le
+premier est documenté par Meta pour une publicité Click-to-WhatsApp créée par API : si Meta refuse un autre bouton,
+son message s'affiche à la création, et c'est à nous de retirer ce bouton de la liste, par une retouche du code
+(`BOUTONS_PUB`) ; rien ne le retire tout seul.
+**Quand Meta refuse une création, son message s'affiche tel quel** : c'est son compte, et lui seul dit ce qu'il faut
+changer.
 
 **Audiences** : celles qui existent déjà dans le compte publicitaire, **à inclure ou à exclure**, avec leur taille
 approximative. Seules les audiences prêtes chez Meta se choisissent ; les autres sont montrées avec la raison de

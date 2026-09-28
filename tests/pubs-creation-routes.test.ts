@@ -6,6 +6,7 @@ import { PublicationRefusee } from '../src/pubs/creation';
 import type { ConnexionPub } from '../src/pubs/connexion.pg';
 import type { ActifsAccordes } from '../src/meta/pubs';
 import { aucunePubDeRoute } from './pubs-fixtures';
+import { BOUTONS_PUB } from '../src/meta/pubs-payloads';
 
 /**
  * LES ROUTES DE CRÉATION ET DE PUBLICATION D'UNE PUBLICITÉ (lot 3, commit 2).
@@ -177,22 +178,45 @@ describe('POST /pubs : créer une publicité', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('🔴 « rien n’a été créé » rend 502 avec le message de META, tel quel', async () => {
-    const { srv } = app({ creerPub: async () => ({ sorte: 'annulee', raison: 'Ad account is disabled' }) });
+  it('🔴 Meta REFUSE et rien n’a été créé : 422 avec le message de META, tel quel', async () => {
+    // 422 et pas 502 : Cloudflare remplace le corps de tout 5xx par sa propre page, et le message de Meta, celui
+    // qui tranche l'essai réel (créa vidéo, bouton), n'arrivait jamais à l'écran.
+    const { srv } = app({ creerPub: async () => ({ sorte: 'annulee', raison: 'Ad account is disabled', refusMeta: true }) });
     const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide() });
-    expect(res.statusCode).toBe(502);
+    expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ error: 'Ad account is disabled', code: 'creation_refusee' });
   });
 
-  it('🔴 « création incomplète » rend 502 MAIS donne l’identifiant de la ligne : elle est visible à l’écran', async () => {
+  it('🔴 Meta REFUSE en cours de route : 422, son message, ET l’identifiant de la ligne, visible à l’écran', async () => {
     // C'est le seul cas où un objet peut subsister chez Meta. Le taire ferait découvrir la campagne au
     // client dans le Gestionnaire, sans qu'il sache d'où elle vient.
     const { srv } = app({
-      creerPub: async () => ({ sorte: 'echec_creation', publiciteId: 'pub-1', campagneId: 'c-1', raison: 'creative refused' }),
+      creerPub: async () => ({ sorte: 'echec_creation', publiciteId: 'pub-1', campagneId: 'c-1', raison: 'creative refused', refusMeta: true }),
     });
     const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide() });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: 'creative refused', code: 'creation_incomplete', publiciteId: 'pub-1' });
+  });
+
+  it('🔴 une PANNE (pas un refus de Meta) reste en 502, et son message interne ne sort pas', async () => {
+    const interne = 'délai dépassé (30000 ms) sur https://graph.facebook.com/v25.0/act_111/campaigns';
+    for (const issue of [
+      { sorte: 'annulee' as const, raison: interne, refusMeta: false },
+      { sorte: 'echec_creation' as const, publiciteId: 'pub-1', campagneId: 'c-1', raison: interne, refusMeta: false },
+    ]) {
+      const { srv } = app({ creerPub: async () => issue });
+      const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide() });
+      expect(res.statusCode, issue.sorte).toBe(502);
+      expect(res.body, issue.sorte).not.toContain('act_111');
+      expect(res.body, issue.sorte).not.toContain('délai dépassé');
+    }
+  });
+
+  it('🔴 une panne AVANT la séquence (notre base) : 502, message opaque', async () => {
+    const { srv } = app({ creerPub: async () => { throw new Error('relation "publicites" does not exist'); } });
+    const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide() });
     expect(res.statusCode).toBe(502);
-    expect(res.json()).toMatchObject({ code: 'creation_incomplete', publiciteId: 'pub-1' });
+    expect(res.body).not.toContain('publicites');
   });
 
   it('une connexion incomplète rend 409, pas 502 : c’est un état du parcours, pas une panne de Meta', async () => {
@@ -213,14 +237,14 @@ describe('POST /pubs : créer une publicité', () => {
     expect(traces.audit).toEqual(['pubs.creee']);
 
     const incomplete = app({
-      creerPub: async () => ({ sorte: 'echec_creation', publiciteId: 'pub-1', campagneId: 'c-1', raison: 'x' }),
+      creerPub: async () => ({ sorte: 'echec_creation', publiciteId: 'pub-1', campagneId: 'c-1', raison: 'x', refusMeta: true }),
     });
     await incomplete.srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide() });
     expect(incomplete.traces.audit).toEqual(['pubs.creee']);
   });
 
   it('⚠️ une création ANNULÉE n’est PAS journalisée : rien n’a existé', async () => {
-    const { srv, traces } = app({ creerPub: async () => ({ sorte: 'annulee', raison: 'refus' }) });
+    const { srv, traces } = app({ creerPub: async () => ({ sorte: 'annulee', raison: 'refus', refusMeta: true }) });
     await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide() });
     expect(traces.audit).toEqual([]);
   });
@@ -452,5 +476,45 @@ describe('publier : un REFUS n’est pas une panne de Meta', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().code).toBe('publication_refusee');
     expect(traces.audit).toEqual([]);
+  });
+});
+
+/**
+ * LE BOUTON DE LA PUBLICITÉ : une liste FERMÉE (`BOUTONS_PUB`), et le bouton WhatsApp quand rien n'est dit.
+ *
+ * 🔴 L'absence doit rester valide : l'écran d'avant ce lot n'envoie pas la clé, et la console ne l'envoie que
+ * quand elle diffère du défaut, pour qu'une API d'avant ce lot, qui refuse toute clé inconnue, reste utilisable.
+ */
+describe('POST /pubs : le bouton', () => {
+  const recu = () => {
+    const vus: string[] = [];
+    return { vus, creerPub: async (_t: string, d: { formulaire: { bouton: string } }) => { vus.push(d.formulaire.bouton); return creee; } };
+  };
+
+  it('absent : le bouton WhatsApp, le seul que Meta documente pour cette destination', async () => {
+    const r = recu();
+    const { srv } = app({ creerPub: r.creerPub });
+    expect((await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide() })).statusCode).toBe(200);
+    expect(r.vus).toEqual(['WHATSAPP_MESSAGE']);
+  });
+
+  it('chaque bouton de la liste passe jusqu’à la demande', async () => {
+    const r = recu();
+    const { srv } = app({ creerPub: r.creerPub });
+    for (const bouton of BOUTONS_PUB) {
+      const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide({ bouton }) });
+      expect(res.statusCode, bouton).toBe(200);
+    }
+    expect(r.vus).toEqual([...BOUTONS_PUB]);
+  });
+
+  it('🔴 un type hors de la liste est refusé AVANT Meta', async () => {
+    let appele = false;
+    const { srv } = app({ creerPub: async () => { appele = true; return creee; } });
+    for (const bouton of ['CALL_NOW', 'whatsapp_message', '', 42]) {
+      const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide({ bouton }) });
+      expect(res.statusCode, String(bouton)).toBe(400);
+    }
+    expect(appele).toBe(false);
   });
 });

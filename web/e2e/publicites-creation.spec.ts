@@ -98,6 +98,10 @@ interface Options {
    * temps. Le confondre avec « la route n'existe pas » perd le travail en silence.
    */
   brouillonDisparu?: boolean;
+  /** Fait TRAÎNER l'envoi d'un morceau de vidéo, pour pouvoir l'annuler pendant qu'il est en vol. */
+  videoLente?: boolean;
+  /** Ce que rend la création (`POST /pubs`) : un succès par défaut. */
+  creation?: { status: number; body: unknown };
 }
 
 /**
@@ -118,6 +122,10 @@ let lecturesReglages = 0;
 let corpsCreationBrouillon: Record<string, unknown> | null = null;
 /** Le corps du dernier `PUT /pubs/brouillons/:id`, meme raison : on lit CE QUI PART. */
 let corpsMajBrouillon: Record<string, unknown> | null = null;
+/** Le corps de la dernière création (`POST /pubs`) : le bouton choisi se lit là, pas à l'écran. */
+let corpsCreationPub: Record<string, unknown> | null = null;
+/** Les appels du dépôt vidéo, dans l'ordre (`POST`, `POST /777/morceaux`, `POST /777/fin`, `GET /888`). */
+let appelsVideo: string[] = [];
 
 /**
  * Attend que la lecture des réglages ait CESSÉ de bouger.
@@ -154,6 +162,8 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
   lecturesReglages = 0;
   corpsCreationBrouillon = null;
   corpsMajBrouillon = null;
+  corpsCreationPub = null;
+  appelsVideo = [];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -192,6 +202,29 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
       }
       const b = Array.isArray(o.brouillons) ? o.brouillons[0] : undefined;
       return json({ brouillon: { ...(b ?? {}), ...(o.detailBrouillon ?? {}) } });
+    }
+    // Le dépôt vidéo AVANT la page d'une publicité : `/pubs/videos` satisfait `/pubs/<id>` juste en dessous.
+    const chemin = url.split('?')[0] ?? '';
+    if (/\/pubs\/videos(\/|$)/.test(chemin)) {
+      const methode = route.request().method();
+      appelsVideo.push(`${methode} ${chemin.replace(/^.*\/pubs\/videos/, '')}`);
+      if (methode === 'POST' && /\/pubs\/videos$/.test(chemin)) {
+        const { taille } = route.request().postDataJSON() as { taille: number };
+        return json({ videoId: '888', sessionId: '777', debut: 0, fin: taille });
+      }
+      if (methode === 'POST' && /\/morceaux$/.test(chemin)) {
+        if (o.videoLente === true) await new Promise((r) => setTimeout(r, 4000));
+        const fin = Number(new URL(url).searchParams.get('fin'));
+        // Un morceau annulé par l'écran n'attend plus de réponse : la répondre quand même ne doit pas faire tomber le cas.
+        return json({ debut: fin, fin }).catch(() => undefined);
+      }
+      if (methode === 'POST' && /\/fin$/.test(chemin)) return json({ ok: true });
+      return json({ etat: 'prete', progression: 100 });
+    }
+    if (/\/pubs$/.test(chemin) && route.request().method() === 'POST') {
+      corpsCreationPub = route.request().postDataJSON() as Record<string, unknown>;
+      const c = o.creation ?? { status: 200, body: { publiciteId: 'pub-n', campagneId: 'c-n' } };
+      return route.fulfill({ status: c.status, contentType: 'application/json', body: JSON.stringify(c.body) });
     }
     // La page d'une publicité, AVANT la liste : `/pubs/pub-1` contient `/pubs`, donc l'ordre compte.
     if (/\/pubs\/[^/]+$/.test(url.split('?')[0] ?? '')) {
@@ -921,5 +954,239 @@ test.describe('Publicités : une image choisie pendant l’enregistrement', () =
     await page.getByTestId('pub-enregistrer-brouillon').click();
     await expect.poll(() => (corpsMajBrouillon?.image as { base64?: string } | null | undefined)?.base64,
       { timeout: 10000 }).toBe(PNG_AUTRE);
+  });
+});
+
+/**
+ * RETIRER OU CHANGER LE VISUEL (retouches du 2026-09-28, demandées par Julien après son premier essai).
+ *
+ * 🔴 LE DÉFAUT D'ORIGINE : une vidéo déposée ne se retirait plus. Ces cas lisent l'ÉCRAN (le visuel disparaît de
+ * l'aperçu, le champ fichier revient) ET CE QUI PART (le brouillon enregistre `video: null` ou `image: null`) : un
+ * retrait qui ne vaudrait qu'à l'écran laisserait le brouillon rouvrir sur la vidéo qu'on venait de retirer.
+ */
+test.describe('Publicités : retirer ou changer le visuel', () => {
+  const BASE_BR = {
+    id: 'br-1', nom: 'Avec visuel', titre: '', texte: '', accueil: '', messagePreRempli: '',
+    budgetTotal: '', debut: '', fin: '', pays: 'FR', ageMin: '18', ageMax: '65',
+    tagQualification: '', destination: 'scenario', workflowId: null,
+    creeLe: '2026-09-28T08:00:00.000Z', modifieLe: '2026-09-28T08:00:00.000Z',
+  };
+  const PNG_AUTRE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  test('🔴 retirer l’IMAGE : l’aperçu la perd, le champ revient, et le brouillon enregistre `image: null`', async ({ page }) => {
+    await brancher(page, {
+      brouillons: [{ ...BASE_BR, aUnVisuel: true }],
+      detailBrouillon: { visuel: { type: 'image/png', base64: PNG_1x1 } },
+    });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-apercu-visuel')).toBeVisible();
+    await page.getByTestId('pub-image-retirer').click();
+    await expect(page.getByTestId('pub-apercu-visuel-absent')).toBeVisible();
+    await expect(page.getByTestId('pub-image-choisie')).toHaveCount(0);
+    await expect(page.locator('#pub-image')).toBeVisible();
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => corpsMajBrouillon !== null && 'image' in corpsMajBrouillon, { timeout: 10000 }).toBe(true);
+    expect(corpsMajBrouillon?.image).toBeNull();
+  });
+
+  test('« Changer » l’image rouvre le choix de fichier, et c’est la nouvelle qui part', async ({ page }) => {
+    await brancher(page, {
+      brouillons: [{ ...BASE_BR, aUnVisuel: true }],
+      detailBrouillon: { visuel: { type: 'image/png', base64: PNG_1x1 } },
+    });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    const choix = page.waitForEvent('filechooser');
+    await page.getByTestId('pub-image-changer').click();
+    await (await choix).setFiles({ name: 'autre.png', mimeType: 'image/png', buffer: Buffer.from(PNG_AUTRE, 'base64') });
+    await expect(page.getByTestId('pub-image-choisie')).toContainText('autre.png');
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => (corpsMajBrouillon?.image as { base64?: string } | undefined)?.base64, { timeout: 10000 }).toBe(PNG_AUTRE);
+  });
+
+  test('🔴 retirer la VIDÉO déposée : le formulaire revient sans visuel, et le brouillon enregistre `video: null`', async ({ page }) => {
+    await brancher(page, { brouillons: [{ ...BASE_BR, aUnVisuel: false, videoId: '888' }] });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-video-prete')).toBeVisible();
+    await page.getByTestId('pub-video-retirer').click();
+    await expect(page.getByTestId('pub-video-choisie')).toHaveCount(0);
+    await expect(page.getByTestId('pub-video-etat')).toHaveCount(0);
+    await expect(page.locator('#pub-video-fichier')).toBeVisible();
+    await expect(page.getByTestId('pub-apercu-video-absente')).toContainText(/Choisissez une vidéo|Choose a video/);
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => corpsMajBrouillon !== null && 'video' in corpsMajBrouillon, { timeout: 10000 }).toBe(true);
+    expect(corpsMajBrouillon?.video).toBeNull();
+  });
+
+  test('🔴 retirer la vidéo PUIS passer en image sans en choisir : le retrait part quand même', async ({ page }) => {
+    // Le défaut : hors du mode vidéo, rien n'était dit de la vidéo, donc le brouillon rouvrait sur celle qu'on
+    // venait de retirer.
+    await brancher(page, { brouillons: [{ ...BASE_BR, aUnVisuel: false, videoId: '888' }] });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-video-prete')).toBeVisible();
+    await page.getByTestId('pub-video-retirer').click();
+    await page.getByTestId('pub-format-image').check();
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => corpsMajBrouillon !== null && 'video' in corpsMajBrouillon, { timeout: 10000 }).toBe(true);
+    expect(corpsMajBrouillon?.video).toBeNull();
+  });
+
+  test('🔴 et le cas symétrique : retirer l’image PUIS passer en vidéo sans en choisir', async ({ page }) => {
+    await brancher(page, {
+      brouillons: [{ ...BASE_BR, aUnVisuel: true }],
+      detailBrouillon: { visuel: { type: 'image/png', base64: PNG_1x1 } },
+    });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await page.getByTestId('pub-image-retirer').click();
+    await page.getByTestId('pub-format-video').check();
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => corpsMajBrouillon !== null && 'image' in corpsMajBrouillon, { timeout: 10000 }).toBe(true);
+    expect(corpsMajBrouillon?.image).toBeNull();
+  });
+
+  test('⚠️ passer en image SANS retirer la vidéo ne l’efface pas : elle n’a été que quittée des yeux', async ({ page }) => {
+    // L'ancre de l'autre sens : sans elle, effacer la vidéo à chaque passage en image rendrait les deux cas
+    // précédents verts tout en perdant la vidéo d'un client qui a seulement regardé l'autre onglet.
+    await brancher(page, { brouillons: [{ ...BASE_BR, aUnVisuel: false, videoId: '888' }] });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-video-prete')).toBeVisible();
+    await page.getByTestId('pub-format-image').check();
+    await page.locator('#pub-nom').fill('Corrigé');
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => corpsMajBrouillon !== null, { timeout: 10000 }).toBe(true);
+    expect(corpsMajBrouillon).not.toHaveProperty('video');
+  });
+});
+
+/**
+ * UNE VIDÉO QUE LE NAVIGATEUR NE SAIT PAS DÉCODER, MAIS DONT LE CONTENEUR PORTE LA DURÉE.
+ *
+ * 🔴 C'est le MOV HEVC d'iPhone sous Chrome Windows : conforme, et refusé pour « durée illisible » parce que seule la
+ * lecture par le décodeur existait. Le fichier ci-dessous n'a aucune image décodable, et sa boîte `moov` est à la FIN,
+ * derrière `mdat` : seul le parseur de `mvhd` peut en dire la durée.
+ */
+test.describe('Publicités : la durée d’une vidéo lue dans le fichier', () => {
+  /** Une boîte ISO BMFF. */
+  const boite = (nom: string, contenu: Buffer): Buffer => {
+    const entete = Buffer.alloc(8);
+    entete.writeUInt32BE(8 + contenu.length, 0);
+    entete.write(nom, 4, 'latin1');
+    return Buffer.concat([entete, contenu]);
+  };
+  /** `mvhd` de version 0 : échelle et durée à leur place. */
+  const mvhd = (echelle: number, duree: number): Buffer => {
+    const corps = Buffer.alloc(96);
+    corps.writeUInt32BE(echelle, 12);
+    corps.writeUInt32BE(duree, 16);
+    return boite('mvhd', corps);
+  };
+  const mov = (secondes: number): Buffer => Buffer.concat([
+    boite('ftyp', Buffer.from('qt  \0\0\0\0qt  ', 'latin1')),
+    boite('mdat', Buffer.alloc(4096, 7)),
+    boite('moov', mvhd(600, 600 * secondes)),
+  ]);
+
+  const ouvrirEnVideo = async (page: import('@playwright/test').Page, o: Options = {}) => {
+    await brancher(page, o);
+    await page.getByTestId('pubs-creer').click();
+    await page.getByTestId('pub-format-video').check();
+  };
+
+  test('🔴 30 secondes, `moov` à la fin, aucun décodeur : acceptée, déposée, et prête', async ({ page }) => {
+    await ouvrirEnVideo(page);
+    await page.locator('#pub-video-fichier').setInputFiles({ name: 'IMG_0042.MOV', mimeType: 'video/quicktime', buffer: mov(30) });
+    await expect(page.getByTestId('pub-video-prete')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('pub-form-erreur')).toHaveCount(0);
+    expect(appelsVideo).toEqual(['POST ', 'POST /777/morceaux', 'POST /777/fin', 'GET /888']);
+  });
+
+  test('et 75 secondes lues de la même façon : refusée AVANT le premier octet, avec la vraie raison', async ({ page }) => {
+    await ouvrirEnVideo(page);
+    await page.locator('#pub-video-fichier').setInputFiles({ name: 'IMG_0043.MOV', mimeType: 'video/quicktime', buffer: mov(75) });
+    await expect(page.getByTestId('pub-form-erreur')).toContainText(/plus de 60 secondes|longer than 60 seconds/);
+    expect(appelsVideo).toEqual([]);
+  });
+
+  test('🔴 un envoi EN COURS s’annule : plus rien ne part, et le formulaire revient sans visuel', async ({ page }) => {
+    await ouvrirEnVideo(page, { videoLente: true });
+    await page.locator('#pub-video-fichier').setInputFiles({ name: 'IMG_0044.MOV', mimeType: 'video/quicktime', buffer: mov(20) });
+    await expect(page.getByTestId('pub-video-annuler')).toBeVisible({ timeout: 15000 });
+    await page.getByTestId('pub-video-annuler').click();
+    await expect(page.getByTestId('pub-video-etat')).toHaveCount(0);
+    await expect(page.locator('#pub-video-fichier')).toBeVisible();
+    // Le morceau lent aurait répondu au bout de quatre secondes : on attend au-delà, et la clôture n'est jamais partie.
+    await page.waitForTimeout(5000);
+    expect(appelsVideo).toEqual(['POST ', 'POST /777/morceaux']);
+    await expect(page.getByTestId('pub-video-prete')).toHaveCount(0);
+  });
+});
+
+/**
+ * LE BOUTON DE LA PUBLICITÉ : l'aperçu montre le libellé choisi, et CE QUI PART porte le type.
+ *
+ * ⚠️ Le bouton WhatsApp, défaut du serveur, ne part PAS : une API d'avant ce lot refuse la clé, et une publicité au
+ * bouton par défaut doit rester créable pendant la fenêtre de déploiement.
+ */
+test.describe('Publicités : le bouton', () => {
+  const remplir = async (page: import('@playwright/test').Page) => {
+    await page.getByTestId('pubs-creer').click();
+    await page.locator('#pub-image').setInputFiles({ name: 'v.png', mimeType: 'image/png', buffer: Buffer.from(PNG_1x1, 'base64') });
+    await page.locator('#pub-budget').fill('100');
+    await page.getByTestId('pub-destination').selectOption('agent_meta');
+    await page.getByTestId('pub-hors-categorie').check();
+  };
+
+  test('🔴 l’aperçu montre le libellé du bouton choisi, et la création porte son type', async ({ page }) => {
+    await brancher(page, { reglages: true });
+    await remplir(page);
+    await expect(page.getByTestId('pub-apercu-bouton')).toContainText(/Envoyer un message WhatsApp|Send WhatsApp message/);
+    await page.getByTestId('pub-bouton').selectOption('GET_QUOTE');
+    await expect(page.getByTestId('pub-apercu-bouton')).toContainText(/Obtenir un devis|Get quote/);
+    await page.getByTestId('pub-creer').click();
+    await expect.poll(() => corpsCreationPub?.bouton, { timeout: 10000 }).toBe('GET_QUOTE');
+  });
+
+  test('⚠️ au bouton par défaut, la clé ne part pas', async ({ page }) => {
+    await brancher(page, { reglages: true });
+    await remplir(page);
+    await page.getByTestId('pub-creer').click();
+    await expect.poll(() => corpsCreationPub !== null, { timeout: 10000 }).toBe(true);
+    expect(corpsCreationPub).not.toHaveProperty('bouton');
+  });
+
+  test('le brouillon garde le bouton choisi, et ne l’envoie pas quand c’est le défaut', async ({ page }) => {
+    await brancher(page);
+    await page.getByTestId('pubs-creer').click();
+    // Au défaut : la clé ne part pas (une API d'avant ce lot la refuserait).
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => corpsCreationBrouillon !== null, { timeout: 10000 }).toBe(true);
+    expect(corpsCreationBrouillon).not.toHaveProperty('bouton');
+    // Un bouton choisi ensuite part, sur la mise à jour du brouillon qui vient d'être créé.
+    await page.getByTestId('pub-bouton').selectOption('BOOK_NOW');
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => corpsMajBrouillon?.bouton, { timeout: 10000 }).toBe('BOOK_NOW');
+  });
+
+  test('un brouillon rouvert retrouve son bouton, dans le choix comme dans l’aperçu', async ({ page }) => {
+    await brancher(page, {
+      brouillons: [{
+        id: 'br-1', nom: 'Devis', titre: '', texte: '', accueil: '', messagePreRempli: '', budgetTotal: '', debut: '',
+        fin: '', pays: 'FR', ageMin: '18', ageMax: '65', tagQualification: '', destination: 'scenario', workflowId: null,
+        aUnVisuel: false, bouton: 'GET_QUOTE', creeLe: '2026-09-28T08:00:00.000Z', modifieLe: '2026-09-28T08:00:00.000Z',
+      }],
+    });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-bouton')).toHaveValue('GET_QUOTE');
+    await expect(page.getByTestId('pub-apercu-bouton')).toContainText(/Obtenir un devis|Get quote/);
+  });
+
+  test('🔴 un REFUS de Meta à la création (422) s’affiche avec SON message', async ({ page }) => {
+    await brancher(page, {
+      reglages: true,
+      creation: { status: 422, body: { error: 'Graph 400 (#100) : Invalid call_to_action type', code: 'creation_refusee' } },
+    });
+    await remplir(page);
+    await page.getByTestId('pub-bouton').selectOption('APPLY_NOW');
+    await page.getByTestId('pub-creer').click();
+    await expect(page.getByTestId('pub-form-erreur')).toContainText('Invalid call_to_action type');
   });
 });

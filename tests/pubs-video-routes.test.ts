@@ -278,7 +278,9 @@ describe('clore, lire l’état', () => {
 
 describe('les audiences du compte', () => {
   const LISTE = {
-    audiences: [{ id: '1', nom: 'Clients', sousType: 'CUSTOM', tailleMin: 1000, tailleMax: 1200, utilisable: true, raison: null }],
+    audiences: [{
+      id: '1', nom: 'Clients', sousType: 'CUSTOM', tailleMin: 1000, tailleMax: 1200, utilisable: true, raison: null,
+    }],
     tronquee: false,
   };
 
@@ -312,5 +314,43 @@ describe('les audiences du compte', () => {
     } finally {
       console.error = original;
     }
+  });
+
+  it('🔴 un refus de Meta va au journal avec son SOUS-CODE, et l’écran reçoit sa phrase en 422', async () => {
+    const message = 'Graph 400 (#100/1487390) : Audience non partagée (Invalid parameter)';
+    const srv = app({ audiences: async () => { throw new ErreurGraph(400, 100, message, 1487390); } });
+    const lignes: string[] = [];
+    const original = console.warn;
+    console.warn = (l: unknown) => { lignes.push(String(l)); };
+    let res;
+    try {
+      res = await srv.inject({ method: 'GET', url: `/tenants/${TENANT}/pubs/audiences` });
+    } finally {
+      console.warn = original;
+    }
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toBe(message);
+    expect(JSON.parse(lignes[0] ?? '{}')).toMatchObject({ lvl: 'warn', tenantId: TENANT, code: 100, subcode: 1487390 });
+  });
+
+  it('🔴 le 502 d’une panne ne porte PAS son message interne : il va au journal, en JSON, avec l’espace', async () => {
+    // Le message d'une panne cite une adresse de Meta avec l'identifiant du compte, ou une erreur de notre base.
+    const interne = 'délai dépassé (300000 ms) sur https://graph.facebook.com/v25.0/act_111/advideos';
+    const srv = app({ audiences: async () => { throw new Error(interne); } });
+    const lignes: string[] = [];
+    const original = console.error;
+    console.error = (l: unknown) => { lignes.push(String(l)); };
+    let res;
+    try {
+      res = await srv.inject({ method: 'GET', url: `/tenants/${TENANT}/pubs/audiences` });
+    } finally {
+      console.error = original;
+    }
+    expect(res.statusCode).toBe(502);
+    expect(res.body).not.toContain('act_111');
+    expect(res.body).not.toContain('délai dépassé');
+    // `journaliser`, pas un `console.error` libre : une ligne JSON, cherchable par espace.
+    const ligne = JSON.parse(lignes[0] ?? '{}') as Record<string, unknown>;
+    expect(ligne).toMatchObject({ lvl: 'error', tenantId: TENANT, err: interne });
   });
 });

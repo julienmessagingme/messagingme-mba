@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   budgetEnUnitesMineures, ciblage, messageBienvenue, payloadCampagne, payloadCrea, payloadCreaVideo, payloadEnsemble,
   payloadPub, LIEN_WHATSAPP, OBJECTIF_CAMPAGNE, OPTIMISATION_ENSEMBLE, STATUT_PAUSE, VALEUR_BOUTON_VIDEO,
-  type FormulairePub,
+  BOUTONS_PUB, BOUTON_PUB_DEFAUT, estBoutonPub, type BoutonPub, type FormulairePub,
 } from '../src/meta/pubs-payloads';
 
 /**
@@ -33,6 +33,7 @@ const form = (over: Partial<FormulairePub> = {}): FormulairePub => ({
   ageMin: 25,
   audiencesIncluses: [],
   audiencesExclues: [],
+  bouton: 'WHATSAPP_MESSAGE',
   ...over,
 });
 
@@ -273,6 +274,46 @@ describe('la créa VIDÉO', () => {
     };
     expect(p.object_story_spec.video_data).not.toHaveProperty('image_url');
     expect(p.object_story_spec.video_data.image_hash).toBe('h');
+  });
+});
+
+/**
+ * LE BOUTON CHOISI : SEUL `call_to_action.type` CHANGE.
+ *
+ * 🔴 Le clic ouvre toujours la conversation WhatsApp : la valeur du bouton (`app_destination`, et le lien de la créa
+ * vidéo), le lien de `link_data` et le message d'accueil restent ceux du bouton WhatsApp, quel que soit le libellé.
+ * Un bouton qui emporterait une autre valeur enverrait le prospect ailleurs que dans la conversation qu'on paie.
+ */
+describe('le bouton de la créa', () => {
+  type Lien = { object_story_spec: { link_data: Record<string, unknown> } };
+  type Video = { object_story_spec: { video_data: Record<string, unknown> } };
+  const image = (bouton: BoutonPub) => (payloadCrea(form({ bouton }), { pageId: 'p', imageHash: 'h' }) as Lien)
+    .object_story_spec.link_data;
+  const video = (bouton: BoutonPub) => (payloadCreaVideo(form({ bouton }), { pageId: 'p', videoId: 'v', imageHash: 'h' }) as Video)
+    .object_story_spec.video_data;
+
+  it('la liste est celle retenue le 2026-09-28, WhatsApp en tête, et c’est le défaut', () => {
+    expect([...BOUTONS_PUB]).toEqual([
+      'WHATSAPP_MESSAGE', 'LEARN_MORE', 'GET_QUOTE', 'BOOK_NOW', 'CONTACT_US',
+      'SHOP_NOW', 'ORDER_NOW', 'SIGN_UP', 'SUBSCRIBE', 'APPLY_NOW',
+    ]);
+    expect(BOUTON_PUB_DEFAUT).toBe('WHATSAPP_MESSAGE');
+  });
+
+  for (const bouton of BOUTONS_PUB) {
+    it(`${bouton} : en image comme en vidéo, le type change et rien d’autre`, () => {
+      expect(image(bouton).call_to_action).toEqual({ type: bouton, value: { app_destination: 'WHATSAPP' } });
+      expect(video(bouton).call_to_action).toEqual({ type: bouton, value: VALEUR_BOUTON_VIDEO });
+      // Tout le reste est identique au bouton WhatsApp.
+      const sansBouton = (o: Record<string, unknown>) => ({ ...o, call_to_action: null });
+      expect(sansBouton(image(bouton))).toEqual(sansBouton(image('WHATSAPP_MESSAGE')));
+      expect(sansBouton(video(bouton))).toEqual(sansBouton(video('WHATSAPP_MESSAGE')));
+    });
+  }
+
+  it('⚠️ une valeur lue ailleurs (base, ancien brouillon) n’est un bouton que si la liste la connaît', () => {
+    expect(estBoutonPub('GET_QUOTE')).toBe(true);
+    for (const v of ['get_quote', 'CALL_NOW', '', null, undefined, 3]) expect(estBoutonPub(v), String(v)).toBe(false);
   });
 });
 

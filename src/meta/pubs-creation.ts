@@ -151,11 +151,18 @@ const audienceSchema = z.object({
   delivery_status: z.object({ code: z.number().optional(), description: z.string().optional() }).optional(),
   operation_status: z.object({ code: z.number().optional(), description: z.string().optional() }).optional(),
 });
+/**
+ * Une page de l'arête `customaudiences`. `paging.next` ne sert qu'à savoir s'il y a une suite : on ne SUIT jamais
+ * cette adresse, rendue par un tiers, avec le jeton du client en en-tête ; la page suivante se redemande avec le
+ * curseur `after`, sur notre propre adresse.
+ */
 const listeAudiencesSchema = z.object({
   data: z.array(z.unknown()).optional(),
-  paging: z.object({ next: z.string().optional() }).optional(),
+  paging: z.object({
+    next: z.string().optional(),
+    cursors: z.object({ after: z.string().optional() }).optional(),
+  }).optional(),
 });
-const lotAudiencesSchema = z.record(z.string(), z.unknown());
 
 /** Les champs lus d'une audience, écrits une fois pour la liste et pour la vérification à la création. */
 const CHAMPS_AUDIENCE = 'id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status';
@@ -167,11 +174,39 @@ const CHAMPS_AUDIENCE = 'id,name,subtype,approximate_count_lower_bound,approxima
 const AUDIENCES_PAR_PAGE = 200;
 
 /**
+ * Combien d'audiences un compte publicitaire peut porter chez Meta (possédées et partagées) : 500. La vérification
+ * à la création lit donc au plus ce nombre, page par page, pour ne pas refuser une audience de la page 2.
+ */
+const AUDIENCES_MAX_COMPTE = 500;
+const PAGES_AUDIENCES_MAX = Math.ceil(AUDIENCES_MAX_COMPTE / AUDIENCES_PAR_PAGE);
+
+/**
  * Plafond de durée d'un morceau de vidéo relayé à Meta, bien au-dessus du plafond Graph ordinaire (30 s) : le
  * morceau arrive du navigateur EN FLUX, donc à la vitesse d'envoi du client, et Meta ne répond qu'une fois tout
  * reçu. Un plafond de 30 s couperait un morceau de quelques dizaines de mégaoctets sur une connexion ordinaire.
+ * ⚠️ Il ne vaut QUE pour ce relais : partout ailleurs, cinq minutes dépasseraient les 100 s au bout desquelles
+ * Cloudflare coupe la requête du navigateur.
  */
-const DELAI_MORCEAU_VIDEO_MS = 5 * 60_000;
+export const DELAI_MORCEAU_VIDEO_MS = 5 * 60_000;
+
+/**
+ * Plafond du rapatriement de la vignette d'une vidéo : le plafond Graph ordinaire, pas celui d'un morceau. Cet
+ * appel est sur le chemin de la CRÉATION, que Cloudflare coupe à 100 s : un CDN qui traîne doit échouer lisiblement
+ * pendant que le navigateur attend encore, pas après.
+ */
+export const DELAI_VIGNETTE_MS = 30_000;
+
+/**
+ * 🔴 L'HÔTE DU DÉPÔT D'UNE VIDÉO (`/act_{id}/advideos`, ses trois phases), ÉCRIT ICI ET NULLE PART AILLEURS.
+ * Point que l'essai réel tranche, parce que les deux sources de Meta se contredisent :
+ *  - la documentation de la Video API (page « Overview », relue le 2026-09-28) dit que l'hôte
+ *    `graph-video.facebook.com` est DÉPRÉCIÉ pour le dépôt de vidéos, et qu'il faut passer par `graph.facebook.com` ;
+ *  - le SDK officiel (`facebook-python-business-sdk`, `video_uploader.py`, branche `main`) force encore
+ *    `https://graph-video.facebook.com` sur les trois phases d'`advideos`.
+ * On suit la documentation. Si le premier dépôt réel échoue sur cet hôte (refus, ou morceau qui n'aboutit pas),
+ * c'est cette constante, seule, qui passe à `https://graph-video.facebook.com`.
+ */
+export const HOTE_DEPOT_VIDEO = 'https://graph.facebook.com';
 
 /** Ce qu'on sait de l'état d'une vidéo chez Meta. `traitement` couvre tout ce qui n'est ni prêt ni en erreur. */
 export interface EtatVideo {
@@ -304,8 +339,13 @@ export class MetaPubsCreationClient extends ClientGraph {
   }
 
   /** L'adresse d'un objet du compte publicitaire, avec son préfixe `act_` remis. */
-  private urlCompte(comptePubId: string, chemin: string): string {
-    return `${this.baseUrl}/${this.version}/act_${encodeURIComponent(sansPrefixeAct(comptePubId))}/${chemin}`;
+  private urlCompte(comptePubId: string, chemin: string, hote: string = this.baseUrl): string {
+    return `${hote}/${this.version}/act_${encodeURIComponent(sansPrefixeAct(comptePubId))}/${chemin}`;
+  }
+
+  /** L'adresse du dépôt vidéo, pour ses trois phases : le seul appel qui passe par {@link HOTE_DEPOT_VIDEO}. */
+  private urlDepotVideo(comptePubId: string): string {
+    return this.urlCompte(comptePubId, 'advideos', HOTE_DEPOT_VIDEO);
   }
 
   /** `POST` en JSON, jeton en en-tête : jamais dans l'URL, qui est journalisée. */
@@ -357,7 +397,7 @@ export class MetaPubsCreationClient extends ClientGraph {
    * supposer de valeur.
    */
   async demarrerDepotVideo(comptePubId: string, jeton: string, taille: number): Promise<DepotVideo> {
-    const brut = await this.posterFormulaire(this.urlCompte(comptePubId, 'advideos'), jeton, {
+    const brut = await this.posterFormulaire(this.urlDepotVideo(comptePubId), jeton, {
       upload_phase: 'start', file_size: String(taille),
     });
     const lu = debutDepotSchema.safeParse(brut);
@@ -384,21 +424,20 @@ export class MetaPubsCreationClient extends ClientGraph {
       m.taille,
     );
     // `duplex: 'half'` : exigé par `fetch` pour un corps en flux. Absent du type `RequestInit` du DOM.
-    const init: RequestInit & { duplex: 'half' } = {
+    const init: Omit<RequestInit, 'signal'> & { duplex: 'half' } = {
       method: 'POST',
       headers: { Authorization: `Bearer ${jeton}`, 'Content-Type': type, 'Content-Length': String(longueur) },
       body: corps,
       duplex: 'half',
-      signal: AbortSignal.timeout(DELAI_MORCEAU_VIDEO_MS),
     };
-    const lu = morceauSuivantSchema.safeParse(await this.call(this.urlCompte(comptePubId, 'advideos'), init));
+    const lu = morceauSuivantSchema.safeParse(await this.call(this.urlDepotVideo(comptePubId), init, DELAI_MORCEAU_VIDEO_MS));
     if (!lu.success) throw new Error('Meta n’a pas dit quel morceau de la vidéo envoyer ensuite');
     return { debut: lu.data.start_offset, fin: lu.data.end_offset };
   }
 
   /** Clôt le dépôt (`upload_phase=finish`) : Meta commence alors son traitement, asynchrone. */
   async terminerDepotVideo(comptePubId: string, jeton: string, sessionId: string): Promise<void> {
-    const brut = await this.posterFormulaire(this.urlCompte(comptePubId, 'advideos'), jeton, {
+    const brut = await this.posterFormulaire(this.urlDepotVideo(comptePubId), jeton, {
       upload_phase: 'finish', upload_session_id: sessionId,
     });
     if (!finDepotSchema.safeParse(brut).success) throw new Error('Meta n’a pas confirmé la fin du dépôt de la vidéo');
@@ -408,6 +447,12 @@ export class MetaPubsCreationClient extends ClientGraph {
    * L'état d'une vidéo : `ready` seul vaut « prête ». Un état absent ou inconnu se lit `traitement`, jamais
    * `prete` : la créa ne se lance que sur une vidéo que Meta dit prête. La durée du traitement n'est pas
    * documentée : c'est l'écran qui attend, borné, et la création qui refuse une vidéo pas prête.
+   *
+   * ⚠️ LE COMPTE DE LA VIDÉO N'EST PAS VÉRIFIÉ, faute de le savoir lire : le nœud `Video` de Graph ne documente
+   * aucun champ de compte publicitaire (`from` désigne le profil qui l'a déposée ; référence relue le 2026-09-28),
+   * contrairement aux audiences, relues sur l'arête du compte (`etatAudiences`). Ce qui borne : la lecture se fait avec le
+   * jeton de CET espace, donc sur une vidéo que ce client peut voir, et une vidéo d'un autre de ses comptes fait
+   * refuser la créa par Meta, dont le message s'affiche. Même limite pour {@link vignetteVideo}.
    */
   async etatVideo(videoId: string, jeton: string): Promise<EtatVideo> {
     const brut = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(videoId)}?fields=status`, {
@@ -454,7 +499,7 @@ export class MetaPubsCreationClient extends ClientGraph {
       throw new Error('Meta a rendu une adresse de vignette illisible');
     }
     if (url.protocol !== 'https:') throw new Error('Meta a rendu une adresse de vignette qui n’est pas en HTTPS');
-    const res = await this.telecharger(url.toString(), { signal: AbortSignal.timeout(DELAI_MORCEAU_VIDEO_MS) });
+    const res = await this.telecharger(url.toString(), { signal: AbortSignal.timeout(DELAI_VIGNETTE_MS) });
     if (!res.ok) throw new Error(`la vignette de la vidéo n’a pas pu être rapatriée (HTTP ${res.status})`);
     const lu = await lireOctetsBornes(res, TAILLE_VISUEL_PUB_MAX);
     if (lu.octets === null) {
@@ -484,23 +529,39 @@ export class MetaPubsCreationClient extends ClientGraph {
   }
 
   /**
-   * L'état des SEULES audiences qu'une publicité veut cibler, en un appel (`GET /?ids=`), relu à la création.
-   * Une audience que Meta ne rend pas est absente de la table : l'appelant la traite comme inutilisable. Lire ces
-   * identifiants-là plutôt que la liste de l'écran évite qu'une audience au-delà de la première page passe pour
-   * inconnue.
+   * L'état des SEULES audiences qu'une publicité veut cibler, relu à la création sur l'ARÊTE DU COMPTE
+   * (`/act_{id}/customaudiences`) : ce que ce compte peut cibler, audiences possédées ET partagées avec lui.
+   * Une audience absente de la table n'est pas ciblable par ce compte : l'appelant la refuse.
+   *
+   * 🔴 L'APPARTENANCE SE LIT DANS CETTE LISTE, JAMAIS DANS `account_id`. Une audience PARTAGÉE avec le compte porte
+   * l'`account_id` de son PROPRIÉTAIRE (ou aucun) : l'exiger égal au compte de l'espace refusait toutes les audiences
+   * partagées, qui sont justement celles qu'une agence ou un groupe prépare pour ses comptes. Et une lecture par
+   * identifiant (`GET /?ids=`) rendait l'audience de n'importe quel compte que le jeton voit.
+   *
+   * ⚠️ PAGE PAR PAGE, jusqu'à {@link AUDIENCES_MAX_COMPTE} : une audience de la page 2 ne doit pas passer pour
+   * inconnue. On s'arrête dès que toutes les audiences demandées sont trouvées. La page suivante se demande par le
+   * curseur `after`, sur notre adresse : l'adresse `next` rendue par Meta n'est jamais suivie avec le jeton.
    */
-  async etatAudiences(ids: readonly string[], jeton: string): Promise<Map<string, AudiencePub>> {
+  async etatAudiences(comptePubId: string, ids: readonly string[], jeton: string): Promise<Map<string, AudiencePub>> {
     const out = new Map<string, AudiencePub>();
-    if (ids.length === 0) return out;
-    const qs = new URLSearchParams({ ids: ids.join(','), fields: CHAMPS_AUDIENCE });
-    const brut = await this.call(`${this.baseUrl}/${this.version}/?${qs.toString()}`, {
-      headers: { Authorization: `Bearer ${jeton}` },
-    });
-    const lu = lotAudiencesSchema.safeParse(brut);
-    if (!lu.success) return out;
-    for (const ligne of Object.values(lu.data)) {
-      const a = versAudience(ligne);
-      if (a !== null) out.set(a.id, a);
+    const voulues = new Set(ids);
+    let apres: string | null = null;
+    for (let page = 0; page < PAGES_AUDIENCES_MAX && out.size < voulues.size; page += 1) {
+      const qs = new URLSearchParams({
+        fields: CHAMPS_AUDIENCE, limit: String(AUDIENCES_PAR_PAGE), ...(apres !== null ? { after: apres } : {}),
+      });
+      const brut = await this.call(`${this.urlCompte(comptePubId, 'customaudiences')}?${qs.toString()}`, {
+        headers: { Authorization: `Bearer ${jeton}` },
+      });
+      const lu = listeAudiencesSchema.safeParse(brut);
+      if (!lu.success) break;
+      for (const ligne of lu.data.data ?? []) {
+        const a = versAudience(ligne);
+        if (a !== null && voulues.has(a.id)) out.set(a.id, a);
+      }
+      // Pas de page suivante annoncée, ou pas de curseur pour la demander : la liste du compte est lue.
+      apres = (lu.data.paging?.next ?? '') !== '' ? lu.data.paging?.cursors?.after ?? null : null;
+      if (apres === null || apres === '') break;
     }
     return out;
   }

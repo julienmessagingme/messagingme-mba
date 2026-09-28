@@ -182,12 +182,15 @@ describe('la vidéo et les audiences d’un brouillon', () => {
       id: 'b-1', nom: '', titre: '', texte: '', accueil: '', messagePreRempli: '', budgetTotal: '', debut: '', fin: '',
       pays: '', ageMin: '', ageMax: '', tagQualification: '', destination: 'scenario' as const, workflowId: null,
       aUnVisuel: false, videoId: '1234567890', audiencesIncluses: ['111'], audiencesExclues: ['333'],
+      bouton: 'GET_QUOTE' as const,
       creeLe: '2026-09-28T08:00:00.000Z', modifieLe: '2026-09-28T08:00:00.000Z', visuel: null,
     };
     const srv = app({ brouillons: { lire: async () => lu } });
     const r = await srv.inject({ method: 'GET', url: url('/b-1') });
     expect(r.statusCode).toBe(200);
-    expect(r.json().brouillon).toMatchObject({ videoId: '1234567890', audiencesIncluses: ['111'], audiencesExclues: ['333'] });
+    expect(r.json().brouillon).toMatchObject({
+      videoId: '1234567890', audiencesIncluses: ['111'], audiencesExclues: ['333'], bouton: 'GET_QUOTE',
+    });
   });
 
   it('🔴 un écran d’avant 0187 (ni vidéo ni audiences dans le corps) ne touche à rien', async () => {
@@ -221,6 +224,47 @@ describe('la vidéo et les audiences d’un brouillon', () => {
       { video: { id: '../me' } },
     ]) {
       expect((await srv.inject({ method: 'POST', url: url(), payload })).statusCode, JSON.stringify(payload)).toBe(400);
+    }
+  });
+});
+
+/**
+ * LE BOUTON D'UN BROUILLON (migration 0188) : la même liste fermée qu'à la création, et deux sens seulement.
+ * Absent = ne pas toucher (l'écran ne l'envoie que s'il a changé) ; une valeur = la remplacer. Pas d'effacement :
+ * un bouton se remplace, il ne se retire pas.
+ */
+describe('le bouton d’un brouillon', () => {
+  const capture = (): { recu: () => ChampsBrouillon | null; deps: Surcharges } => {
+    let vu: ChampsBrouillon | null = null;
+    return {
+      recu: () => vu,
+      deps: { brouillons: {
+        mettreAJour: async (_t, _id, c) => { vu = c; return true; },
+        creer: async (_t, c) => { vu = c; return 'b-1'; },
+      } },
+    };
+  };
+
+  it('un bouton de la liste arrive au store, sur les deux écritures', async () => {
+    for (const [method, adresse, attendu] of [['POST', url(), 201], ['PUT', url('/b-1'), 204]] as const) {
+      const c = capture();
+      const r = await app(c.deps).inject({ method, url: adresse, payload: { bouton: 'BOOK_NOW' } });
+      expect(r.statusCode, method).toBe(attendu);
+      expect(c.recu(), method).toMatchObject({ bouton: 'BOOK_NOW' });
+    }
+  });
+
+  it('🔴 absent : le store n’en reçoit rien, donc ne touche pas à celui qu’il garde', async () => {
+    const c = capture();
+    await app(c.deps).inject({ method: 'PUT', url: url('/b-1'), payload: { nom: 'Rentrée' } });
+    expect(c.recu()).not.toHaveProperty('bouton');
+  });
+
+  it('🔴 un type hors de la liste, ou `null`, est refusé sur les deux écritures', async () => {
+    const srv = app({ brouillons: { creer: async () => 'b-1', mettreAJour: async () => true } });
+    for (const bouton of ['CALL_NOW', null, 'book_now']) {
+      expect((await srv.inject({ method: 'POST', url: url(), payload: { bouton } })).statusCode, String(bouton)).toBe(400);
+      expect((await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { bouton } })).statusCode, String(bouton)).toBe(400);
     }
   });
 });

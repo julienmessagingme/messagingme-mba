@@ -39,6 +39,10 @@ const nextConfig = {
       "script-src 'self' 'unsafe-inline' https://connect.facebook.net https://accounts.google.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
+      // L'apercu d'une video de publicite lit le fichier choisi par une adresse locale `blob:`. Sans cette ligne,
+      // `media-src` retombe sur `default-src 'self'`, qui ne couvre pas `blob:` : la future CSP bloquante
+      // couperait l'apercu, et la politique actuelle le signalerait a chaque video choisie.
+      "media-src 'self' blob:",
       // `connect-src` : l API passe par le rewrite same-origin, donc `'self'` suffit pour elle. Les deux
       // origines externes sont celles de l embarquement Meta et de la connexion Google.
       "connect-src 'self' https://graph.facebook.com https://accounts.google.com",

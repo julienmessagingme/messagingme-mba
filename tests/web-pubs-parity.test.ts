@@ -4,13 +4,21 @@ import { join } from 'node:path';
 import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../src/meta/pubs-creation';
 import {
   TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MAX, AGE_MIN_BAS, AGE_MIN_HAUT, enPauseChezMeta, lienGestionnaireMeta,
+  BOUTONS_PUB as BOUTONS_ECRAN, BOUTON_PUB_DEFAUT as BOUTON_DEFAUT_ECRAN, boutonConnu, libelleBouton,
 } from '../web/lib/api-pubs';
 import { ISSUES_NON_PRISES_EN_CHARGE } from '../src/pubs/entonnoir';
 import {
   DUREE_VIDEO_PUB_MAX_S, TAILLE_VIDEO_PUB_MAX, TYPES_VIDEO_PUB, dureeTropLongue as dureeTropLongueServeur,
+  dureeDeLaTete as dureeDeLaTeteServeur,
 } from '../src/pubs/video';
-import { DUREE_VIDEO_MAX_S, TAILLE_VIDEO_MAX, TYPES_VIDEO, dureeTropLongue as dureeTropLongueEcran } from '../web/lib/pub-video';
-import { AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT } from '../src/meta/pubs-payloads';
+import {
+  DUREE_VIDEO_MAX_S, TAILLE_VIDEO_MAX, TYPES_VIDEO, dureeTropLongue as dureeTropLongueEcran,
+  dureeDeLaTete as dureeDeLaTeteEcran,
+} from '../web/lib/pub-video';
+import {
+  AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT,
+  BOUTONS_PUB as BOUTONS_SERVEUR, BOUTON_PUB_DEFAUT as BOUTON_DEFAUT_SERVEUR,
+} from '../src/meta/pubs-payloads';
 
 /**
  * LES BORNES DU VISUEL D'UNE PUBLICITÉ, DES DEUX CÔTÉS.
@@ -65,6 +73,114 @@ describe('parité des bornes de la vidéo et de l’âge', () => {
 
   it('les mêmes bornes d’âge qu’Advantage+ impose', () => {
     expect([AGE_MIN_BAS, AGE_MIN_HAUT, AGE_MAX]).toEqual([AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT, AGE_MAX_ADVANTAGE]);
+  });
+});
+
+/**
+ * LES BOUTONS D'UNE PUBLICITÉ, DES DEUX CÔTÉS.
+ *
+ * 🔴 La liste FERMÉE vit au serveur (`BOUTONS_PUB`, écrite comme une hypothèse que l'essai réel tranche) ; l'écran en
+ * porte une copie avec les libellés. Un type que l'écran propose et que le serveur refuse ferait un 400 sur un choix
+ * offert ; un type que le serveur accepte et que l'écran ne propose pas serait un choix mort.
+ */
+describe('parité des boutons de la publicité', () => {
+  it('🔴 les MÊMES types, dans le MÊME ordre, et le même défaut', () => {
+    expect(BOUTONS_ECRAN.map((b) => b.type)).toEqual([...BOUTONS_SERVEUR]);
+    expect(BOUTON_DEFAUT_ECRAN).toBe(BOUTON_DEFAUT_SERVEUR);
+  });
+
+  it('chaque type a un libellé dans les deux langues, et les libellés retenus le 2026-09-28', () => {
+    for (const b of BOUTONS_ECRAN) {
+      expect(b.fr.trim(), b.type).not.toBe('');
+      expect(b.en.trim(), b.type).not.toBe('');
+    }
+    expect(libelleBouton('WHATSAPP_MESSAGE').fr).toBe('Envoyer un message WhatsApp');
+    expect(libelleBouton('GET_QUOTE').fr).toBe('Obtenir un devis');
+    expect(libelleBouton('APPLY_NOW').fr).toBe('Postuler');
+  });
+
+  it('⚠️ un bouton inconnu (brouillon ancien, API d’avant ce lot) se lit comme le défaut', () => {
+    for (const v of [undefined, null, '', 'CALL_NOW', 'get_quote']) expect(boutonConnu(v), String(v)).toBe('WHATSAPP_MESSAGE');
+    expect(boutonConnu('BOOK_NOW')).toBe('BOOK_NOW');
+  });
+
+  it('🔴 le formulaire retient la durée du conteneur par `dureeRetenue` (un `mvhd` à 0 laisse répondre le décodeur)', () => {
+    // La règle est testée sur la fonction (`web/lib/pub-video.test.ts`) ; ici, qu'elle est BIEN celle du formulaire :
+    // un `dureeConteneur ?? ...` en ligne ferait refuser un MP4 fragmenté sans qu'aucun test de la fonction ne tombe.
+    const form = readFileSync(join(process.cwd(), 'web/components/PubFormulaire.tsx'), 'utf8');
+    expect(form).toContain('duree: dureeRetenue(dureeConteneur, parLeDecodeur.duree)');
+    expect(form).not.toMatch(/dureeConteneur \?\?/);
+  });
+
+  it('🔴 l’APERÇU montre le libellé du bouton choisi, pas un texte en dur', () => {
+    const apercu = readFileSync(join(process.cwd(), 'web/components/PubApercu.tsx'), 'utf8');
+    expect(apercu).toContain('libelleBouton(bouton)');
+    expect(apercu).not.toContain("t('Envoyer un message', 'Send message')");
+    const form = readFileSync(join(process.cwd(), 'web/components/PubFormulaire.tsx'), 'utf8');
+    expect(form).toContain('bouton={bouton}');
+  });
+});
+
+/**
+ * LA DURÉE LUE DANS LE FICHIER, DES DEUX CÔTÉS.
+ *
+ * 🔴 L'écran porte une COPIE EXACTE du parseur `mvhd` du serveur (la console ne peut pas importer `src/`). Les deux
+ * tournent ici sur les mêmes têtes de fichier : une correction faite d'un seul côté les ferait diverger, et l'écran
+ * laisserait partir une vidéo que le serveur refuserait (ou l'inverse).
+ */
+describe('parité du parseur de durée (`mvhd`)', () => {
+  const boite = (nom: string, contenu: Uint8Array = new Uint8Array(0), etendue = false): Uint8Array => {
+    const entete = etendue ? 16 : 8;
+    const out = new Uint8Array(entete + contenu.byteLength);
+    const v = new DataView(out.buffer);
+    if (etendue) { v.setUint32(0, 1); v.setUint32(12, out.byteLength); } else v.setUint32(0, out.byteLength);
+    for (let i = 0; i < 4; i += 1) out[4 + i] = nom.charCodeAt(i);
+    out.set(contenu, entete);
+    return out;
+  };
+  const concat = (...parts: Uint8Array[]): Uint8Array => {
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
+    let i = 0;
+    for (const p of parts) { out.set(p, i); i += p.byteLength; }
+    return out;
+  };
+  const mvhd = (version: 0 | 1, echelle: number, haut: number, bas: number): Uint8Array => {
+    const corps = new Uint8Array(version === 1 ? 108 : 96);
+    const v = new DataView(corps.buffer);
+    v.setUint8(0, version);
+    if (version === 1) { v.setUint32(20, echelle); v.setUint32(24, haut); v.setUint32(28, bas); } else { v.setUint32(12, echelle); v.setUint32(16, bas); }
+    return boite('mvhd', corps);
+  };
+  const FTYP = boite('ftyp', new Uint8Array([0x69, 0x73, 0x6f, 0x6d, 0, 0, 2, 0]));
+  const complet = concat(FTYP, boite('moov', mvhd(0, 1000, 0, 45_000)));
+
+  const CAS: Record<string, Uint8Array> = {
+    'v0 au début': complet,
+    'v1 au début': concat(FTYP, boite('moov', mvhd(1, 600, 0, 600 * 75))),
+    'v1 sur plus de 32 bits': concat(FTYP, boite('moov', mvhd(1, 1_000_000, 1, 5))),
+    'moov à taille étendue': concat(FTYP, boite('moov', mvhd(0, 1000, 0, 30_000), true)),
+    'free avant moov': concat(FTYP, boite('free', new Uint8Array(16)), boite('moov', mvhd(0, 90_000, 0, 90_000 * 30))),
+    'moov derrière mdat (tête sans durée)': concat(FTYP, boite('mdat', new Uint8Array(64)), boite('moov', mvhd(0, 1000, 0, 5000))),
+    'durée inconnue v0': concat(FTYP, boite('moov', mvhd(0, 1000, 0, 0xffffffff))),
+    'durée inconnue v1': concat(FTYP, boite('moov', mvhd(1, 1000, 0xffffffff, 0xffffffff))),
+    'échelle nulle': concat(FTYP, boite('moov', mvhd(0, 0, 0, 1000))),
+    'tronquée dans mvhd': complet.slice(0, complet.length - 80),
+    'boîte incohérente': concat(FTYP, new Uint8Array([0, 0, 0, 4, 0x66, 0x72, 0x65, 0x65])),
+    'taille zéro hors moov': concat(FTYP, new Uint8Array([0, 0, 0, 0, 0x6d, 0x64, 0x61, 0x74])),
+    'moov sans mvhd en tête': concat(FTYP, boite('moov', boite('trak', new Uint8Array(40)))),
+    vide: new Uint8Array(0),
+  };
+
+  for (const [nom, tete] of Object.entries(CAS)) {
+    it(`même verdict : ${nom}`, () => {
+      expect(dureeDeLaTeteEcran(tete)).toBe(dureeDeLaTeteServeur(tete));
+    });
+  }
+
+  it('garde de la garde : les cas départagent vraiment (des durées ET des `null`)', () => {
+    const verdicts = Object.values(CAS).map((t) => dureeDeLaTeteServeur(t));
+    expect(verdicts.filter((d) => d === null).length).toBeGreaterThan(3);
+    expect(new Set(verdicts.filter((d) => d !== null)).size).toBeGreaterThan(3);
   });
 });
 

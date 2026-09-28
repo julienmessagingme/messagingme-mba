@@ -27,6 +27,34 @@ export const LIEN_WHATSAPP = 'https://api.whatsapp.com/send';
 export const STATUT_PAUSE = 'PAUSED';
 export const STATUT_ACTIF = 'ACTIVE';
 
+/**
+ * 🔴 HYPOTHÈSE QUE L'ESSAI RÉEL TRANCHE, ÉCRITE ICI ET NULLE PART AILLEURS : les boutons qu'une créa
+ * Click-to-WhatsApp accepte (`call_to_action.type`).
+ *
+ * Seul `WHATSAPP_MESSAGE` est documenté par Meta côté API pour cette destination. Les neuf autres viennent de ce
+ * que le Gestionnaire de publicités propose pour une destination WhatsApp (relevé le 2026-09-28) : rien ne dit
+ * que l'API les accepte sur `link_data` et `video_data`. La liste est FERMÉE (la route la tient en énumération
+ * Zod, création et brouillon) ; si Meta refuse un type à la première création réelle, son message s'affiche
+ * (422, `src/http/pubs.ts`) et c'est cette liste, seule, qui perd le type refusé. La console en tient une copie
+ * avec les libellés (`web/lib/api-pubs.ts`), en parité par `tests/web-pubs-parity.test.ts`.
+ *
+ * Seul `type` change d'un bouton à l'autre : `value`, le lien et `page_welcome_message` restent ceux du bouton
+ * WhatsApp, puisque le clic ouvre toujours la conversation.
+ */
+export const BOUTONS_PUB = [
+  'WHATSAPP_MESSAGE', 'LEARN_MORE', 'GET_QUOTE', 'BOOK_NOW', 'CONTACT_US',
+  'SHOP_NOW', 'ORDER_NOW', 'SIGN_UP', 'SUBSCRIBE', 'APPLY_NOW',
+] as const;
+export type BoutonPub = (typeof BOUTONS_PUB)[number];
+
+/** Le bouton d'une publicité qui ne dit rien de plus : le seul que Meta documente pour Click-to-WhatsApp. */
+export const BOUTON_PUB_DEFAUT: BoutonPub = 'WHATSAPP_MESSAGE';
+
+/** Une valeur lue ailleurs (base, ancien brouillon) est-elle un bouton de la liste ? */
+export function estBoutonPub(v: unknown): v is BoutonPub {
+  return typeof v === 'string' && (BOUTONS_PUB as readonly string[]).includes(v);
+}
+
 /** Ce que l'écran a saisi, déjà validé, tel que la création le consomme. */
 export interface FormulairePub {
   nom: string;
@@ -61,6 +89,8 @@ export interface FormulairePub {
   audiencesIncluses: string[];
   /** Les audiences à exclure : un contrôle FERME, que Meta respecte même avec Advantage+. */
   audiencesExclues: string[];
+  /** Le bouton de la créa (`call_to_action.type`), dans la liste {@link BOUTONS_PUB}. */
+  bouton: BoutonPub;
 }
 
 /**
@@ -199,7 +229,7 @@ export function payloadCrea(
         image_hash: v.imageHash,
         link: LIEN_WHATSAPP,
         page_welcome_message: messageBienvenue(f.accueil, f.messagePreRempli),
-        call_to_action: { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } },
+        call_to_action: { type: f.bouton, value: { app_destination: 'WHATSAPP' } },
       },
     },
   };
@@ -235,7 +265,7 @@ export function payloadCreaVideo(
         title: f.titre,
         message: f.texte,
         page_welcome_message: messageBienvenue(f.accueil, f.messagePreRempli),
-        call_to_action: { type: 'WHATSAPP_MESSAGE', value: { ...VALEUR_BOUTON_VIDEO } },
+        call_to_action: { type: f.bouton, value: { ...VALEUR_BOUTON_VIDEO } },
       },
     },
   };

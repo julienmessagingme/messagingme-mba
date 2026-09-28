@@ -1,5 +1,6 @@
 import { payloadCampagne, payloadEnsemble, payloadCrea, payloadCreaVideo, payloadPub, type FormulairePub } from '../meta/pubs-payloads';
 import type { AudiencePub, EtatVideo } from '../meta/pubs-creation';
+import { estRefusDeMeta } from '../meta/graph';
 import type { DestinationPub } from './routage';
 
 /**
@@ -19,7 +20,10 @@ export interface ClientCreationPub {
   etatVideo(videoId: string): Promise<EtatVideo>;
   /** L'empreinte de la vignette d'une vidéo, redéposée comme image (jamais l'adresse du CDN de Meta). */
   vignetteVideo(videoId: string): Promise<string>;
-  /** L'état des audiences demandées, relu chez Meta ; une audience absente de la table est inutilisable. */
+  /**
+   * L'état des audiences demandées, relu sur l'arête du compte de l'espace (possédées et partagées) ; une audience
+   * absente de la table n'est pas ciblable par ce compte.
+   */
   etatAudiences(ids: readonly string[]): Promise<Map<string, AudiencePub>>;
   creerCampagne(p: Record<string, unknown>): Promise<string>;
   creerEnsemble(p: Record<string, unknown>): Promise<string>;
@@ -66,13 +70,18 @@ export interface DepotCreationPub {
  */
 export type IssueCreation =
   | { sorte: 'creee'; publiciteId: string; campagneId: string }
-  | { sorte: 'annulee'; raison: string }
+  /**
+   * `refusMeta` : l'échec est un REFUS de Meta (un 4xx chez lui), dont le message est écrit pour le client et
+   * peut aller à l'écran. Sinon c'est une panne (réseau, délai, notre base), dont le message est interne : la
+   * route le garde au journal et rend une phrase opaque.
+   */
+  | { sorte: 'annulee'; raison: string; refusMeta: boolean }
   /**
    * Refusée AVANT tout appel qui crée quelque chose, sur une précondition que le client peut réparer (une vidéo
    * encore en traitement, une audience inutilisable) : ni une panne ni un refus de Meta, un état du parcours.
    */
   | { sorte: 'refusee'; code: 'video_pas_prete' | 'audience_inutilisable'; raison: string }
-  | { sorte: 'echec_creation'; publiciteId: string; campagneId: string; raison: string };
+  | { sorte: 'echec_creation'; publiciteId: string; campagneId: string; raison: string; refusMeta: boolean };
 
 /**
  * Le visuel d'une publicité : une image dont on a les octets, OU une vidéo déjà déposée chez Meta, dont on n'a
@@ -123,14 +132,14 @@ export async function creerLaPublicite(
       : await client.vignetteVideo(d.visuel.videoId);
   } catch (err) {
     // Rien n'existe encore chez Meta : il n'y a rien à défaire, et rien à garder.
-    return { sorte: 'annulee', raison: raisonDe(err) };
+    return { sorte: 'annulee', raison: raisonDe(err), refusMeta: estRefusDeMeta(err) };
   }
 
   let campagneId: string;
   try {
     campagneId = await client.creerCampagne(payloadCampagne(d.formulaire.nom));
   } catch (err) {
-    return { sorte: 'annulee', raison: raisonDe(err) };
+    return { sorte: 'annulee', raison: raisonDe(err), refusMeta: estRefusDeMeta(err) };
   }
 
   // À partir d'ici, un objet existe chez Meta : tout ce qui suit est sous rattrapage, et la ligne est ouverte
@@ -151,7 +160,7 @@ export async function creerLaPublicite(
   } catch (err) {
     // On ne sait pas ranger cette campagne : on la supprime, et on le dit.
     await client.supprimerCampagne(campagneId).catch(() => undefined);
-    return { sorte: 'annulee', raison: raisonDe(err) };
+    return { sorte: 'annulee', raison: raisonDe(err), refusMeta: estRefusDeMeta(err) };
   }
 
   // Retenu pour le rattrapage : une automation possédée laissée derrière serait invisible de l'écran
@@ -195,7 +204,7 @@ export async function creerLaPublicite(
     // Même état que la suppression ait réussi ou non : il dit « la création a échoué ». Ce qui reste chez Meta
     // vit dans le journal, seul endroit où c'est certain.
     await depot.marquerEtat(publiciteId, 'echec_creation').catch(() => undefined);
-    return { sorte: 'echec_creation', publiciteId, campagneId, raison };
+    return { sorte: 'echec_creation', publiciteId, campagneId, raison, refusMeta: estRefusDeMeta(err) };
   }
 }
 
@@ -213,6 +222,10 @@ function raisonDe(err: unknown): string {
  *
  * 🔴 Chaque audience demandée doit être utilisable (`delivery_status` 200) : une audience trop petite ou en
  * cours de calcul ferait diffuser une publicité qui ne touche personne, ou dont l'exclusion ne vaut rien.
+ *
+ * 🔴 ET ELLE DOIT ÊTRE CIBLABLE PAR LE COMPTE DE L'ESPACE : `etatAudiences` lit l'arête du compte (possédées ET
+ * partagées), donc une audience absente de sa table n'est pas à ce compte, et elle est refusée ici, avant la campagne.
+ * L'appartenance ne se juge PAS sur `account_id` : une audience partagée porte celui de son propriétaire.
  */
 async function preconditions(d: DemandeCreation, client: ClientCreationPub): Promise<IssueCreation | null> {
   const ids = [...d.formulaire.audiencesIncluses, ...d.formulaire.audiencesExclues];

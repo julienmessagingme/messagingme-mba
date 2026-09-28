@@ -1,6 +1,9 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { MetaPubsCreationClient } from '../src/meta/pubs-creation';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import {
+  DELAI_MORCEAU_VIDEO_MS, DELAI_VIGNETTE_MS, HOTE_DEPOT_VIDEO, MetaPubsCreationClient,
+} from '../src/meta/pubs-creation';
 import { ErreurGraph } from '../src/meta/graph';
+import { HTTP_TIMEOUT_DEFAUT_MS, HttpTimeoutError } from '../src/meta/http';
 
 /**
  * LE CLIENT META DE LA VIDÉO ET DES AUDIENCES (`src/meta/pubs-creation.ts`), contre un faux `fetch`.
@@ -309,18 +312,158 @@ describe('les audiences du compte publicitaire', () => {
     expect(r.tronquee).toBe(true);
   });
 
-  it('l’état des SEULES audiences demandées, en un appel groupé', async () => {
-    const { appels } = graph([{ body: { 1: LISTE.data[0], 2: LISTE.data[1] } }]);
-    const etats = await client().etatAudiences(['1', '2'], 'J');
-    expect(decodeURIComponent(appels[0]?.url ?? '')).toContain('/v25.0/?ids=1,2&fields=');
+  it('l’état des SEULES audiences demandées, lu sur l’arête DU COMPTE (possédées et partagées)', async () => {
+    const { appels } = graph([{ body: { data: LISTE.data } }]);
+    const etats = await client().etatAudiences('act_111', ['1', '2', '9'], 'J');
+    expect(appels[0]?.url).toMatch(/^https:\/\/graph\.facebook\.com\/v25\.0\/act_111\/customaudiences\?/);
+    expect(appels[0]?.url).not.toContain('J');
     expect(etats.get('1')?.utilisable).toBe(true);
     expect(etats.get('2')?.utilisable).toBe(false);
+    // Une audience que la liste du compte ne porte pas n'est pas à ce compte : absente de la table.
     expect(etats.has('9')).toBe(false);
+    // Et une audience listée mais non demandée n'y entre pas.
+    expect(etats.has('3')).toBe(false);
   });
 
   it('aucune audience demandée : aucun appel', async () => {
     const { appels } = graph([{ body: {} }]);
-    expect((await client().etatAudiences([], 'J')).size).toBe(0);
+    expect((await client().etatAudiences('111', [], 'J')).size).toBe(0);
     expect(appels).toEqual([]);
+  });
+
+  it('🔴 une audience PARTAGÉE (`account_id` du propriétaire) est rendue comme les autres', async () => {
+    graph([{ body: { data: [{ ...LISTE.data[0], id: '7', account_id: '999' }] } }]);
+    expect((await client().etatAudiences('111', ['7'], 'J')).get('7')?.utilisable).toBe(true);
+  });
+
+  it('🔴 PAGE PAR PAGE par le curseur, jusqu’à trouver toutes les demandées, et jamais au-delà de 500 audiences', async () => {
+    const page = (id: string, apres: string | null) => ({
+      data: [{ ...LISTE.data[0], id }],
+      ...(apres === null ? {} : { paging: { cursors: { after: apres }, next: 'https://ailleurs.example/?access_token=X' } }),
+    });
+    // Trouvée en page 2 : deux appels, pas trois.
+    const deux = graph([{ body: page('1', 'A') }, { body: page('5', 'B') }, { body: page('6', null) }]);
+    expect((await client().etatAudiences('111', ['5'], 'J')).has('5')).toBe(true);
+    expect(deux.appels).toHaveLength(2);
+    expect(deux.appels[1]?.url).toMatch(/^https:\/\/graph\.facebook\.com\/v25\.0\/act_111\/customaudiences\?.*after=A/);
+    // Introuvable : on s'arrête à 500 audiences (trois pages de 200), même si Meta annonce une suite.
+    const borne = graph([{ body: page('1', 'A') }]);
+    expect((await client().etatAudiences('111', ['404'], 'J')).size).toBe(0);
+    expect(borne.appels).toHaveLength(3);
+    // Sans page suivante annoncée : un seul appel.
+    const seule = graph([{ body: page('1', null) }]);
+    await client().etatAudiences('111', ['404'], 'J');
+    expect(seule.appels).toHaveLength(1);
+  });
+});
+
+/**
+ * LE MESSAGE D'UN REFUS DE META : LA PHRASE ÉCRITE POUR LE CLIENT, PAS SEULEMENT « Invalid parameter ».
+ *
+ * 🔴 Meta range la phrase utile dans `error_user_title` et `error_user_msg` ; `message` n'est souvent qu'un générique.
+ * C'est ce message qui part à l'écran en 422 : sans ces deux champs, l'essai réel d'un bouton refusé ne dirait pas
+ * pourquoi. Le sous-code, qui nomme le refus précis, est porté par l'erreur pour le journal.
+ */
+describe('le message d’un refus de Meta', () => {
+  it('🔴 porte `error_user_title` et `error_user_msg` en tête, `message` entre parenthèses, et le sous-code', async () => {
+    graph([{ ok: false, status: 400, body: { error: {
+      message: 'Invalid parameter', code: 100, error_subcode: 1487390,
+      error_user_title: 'Bouton non pris en charge', error_user_msg: 'Ce type de bouton ne convient pas à cette destination.',
+    } } }]);
+    const err = await client().creerCrea('111', 'J', {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ErreurGraph);
+    const e = err as ErreurGraph;
+    expect(e.message).toBe(
+      'Graph 400 (#100/1487390) : Bouton non pris en charge : Ce type de bouton ne convient pas à cette destination. (Invalid parameter)',
+    );
+    expect([e.code, e.subcode]).toEqual([100, 1487390]);
+  });
+
+  it('sans phrase pour le client, le message de Meta seul ; un champ de forme inattendue n’emporte pas les autres', async () => {
+    graph([{ ok: false, status: 400, body: { error: { message: 'Invalid parameter', code: 'cent', error_user_msg: 42 } } }]);
+    const e = await client().creerCrea('111', 'J', {}).catch((x: unknown) => x) as ErreurGraph;
+    expect(e.message).toBe('Graph 400 : Invalid parameter');
+    expect([e.code, e.subcode]).toEqual([null, null]);
+  });
+});
+
+/**
+ * L'HÔTE DU DÉPÔT VIDÉO, À UN SEUL ENDROIT (`HOTE_DEPOT_VIDEO`).
+ *
+ * 🔴 La documentation de Meta et son SDK se contredisent (`graph.facebook.com` ou `graph-video.facebook.com`) et
+ * l'essai réel tranche : le jour où il faut changer, ce doit être UNE constante, et les TROIS phases doivent la
+ * suivre ensemble. Un client construit sur un autre hôte le montre : les trois phases vont à `HOTE_DEPOT_VIDEO`, le
+ * reste des appels garde le sien.
+ */
+describe('l’hôte du dépôt vidéo', () => {
+  const autre = () => new MetaPubsCreationClient('app-1', 'secret-1', 'v25.0', 'https://graph.autre.test');
+  const attendu = `${HOTE_DEPOT_VIDEO}/v25.0/act_111/advideos`;
+
+  it('🔴 ouvrir, relayer et clore passent TOUS par la constante', async () => {
+    const { appels } = graph([
+      { body: { upload_session_id: '7', video_id: '8', start_offset: '0', end_offset: '1' } },
+    ]);
+    await autre().demarrerDepotVideo('111', 'J', 1);
+    const fin = graph([{ body: { success: true } }]);
+    await autre().terminerDepotVideo('111', 'J', '7');
+    let urlMorceau = '';
+    globalThis.fetch = (async (u: string, i?: RequestInit) => {
+      urlMorceau = String(u);
+      await lireCorps(i?.body, () => 0);
+      return { ok: true, status: 200, json: async () => ({ start_offset: 1, end_offset: 1 }) };
+    }) as unknown as typeof fetch;
+    await autre().transfererMorceauVideo('111', 'J', {
+      sessionId: '7', debut: 0, taille: 1, octets: (async function* () { yield new Uint8Array(1); })(),
+    });
+    expect([appels[0]?.url, urlMorceau, fin.appels[0]?.url]).toEqual([attendu, attendu, attendu]);
+  });
+
+  it('les autres appels gardent l’hôte du client : seule la constante du dépôt est particulière', async () => {
+    const { appels } = graph([{ body: { status: { video_status: 'ready' } } }]);
+    await autre().etatVideo('888', 'J');
+    expect(appels[0]?.url).toBe('https://graph.autre.test/v25.0/888?fields=status');
+  });
+
+  it('⚠️ la valeur retenue est celle de la documentation de la Video API, tant que l’essai réel ne dit pas l’inverse', () => {
+    expect(HOTE_DEPOT_VIDEO).toBe('https://graph.facebook.com');
+  });
+});
+
+/**
+ * LES DÉLAIS : celui qui coupe, et celui qu'on écrit.
+ *
+ * 🔴 Deux défauts d'une même famille. Le rapatriement de la vignette reprenait le délai d'un MORCEAU (cinq minutes)
+ * sur le chemin de la création, que Cloudflare coupe à 100 s. Et l'erreur d'abandon d'un appel Graph annonçait le
+ * plafond ordinaire (30 s) quel que soit le délai réellement posé : un morceau coupé à cinq minutes se disait coupé à
+ * trente secondes.
+ */
+describe('les délais', () => {
+  it('🔴 la vignette est rapatriée sous 30 s, comme tout appel de la création', async () => {
+    const spy = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      graph([{ body: { data: [{ uri: 'https://cdn.exemple/a.png', is_preferred: true }] } }, { body: { images: { f: { hash: 'h' } } } }]);
+      await client(cdn(PNG).telecharger).vignetteVideo('111', 'J', '888');
+      const delais = spy.mock.calls.map((c) => c[0]);
+      expect(delais.length).toBeGreaterThanOrEqual(3);
+      for (const d of delais) expect(d).toBeLessThanOrEqual(DELAI_VIGNETTE_MS);
+      expect(DELAI_VIGNETTE_MS).toBeLessThanOrEqual(30_000);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('🔴 un morceau coupé par son plafond dit SON délai (cinq minutes), pas celui d’un appel ordinaire', async () => {
+    globalThis.fetch = (async () => { throw new DOMException('délai', 'TimeoutError'); }) as unknown as typeof fetch;
+    const err = await client().transfererMorceauVideo('111', 'J', {
+      sessionId: '7', debut: 0, taille: 1, octets: (async function* () { yield new Uint8Array(1); })(),
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpTimeoutError);
+    expect((err as Error).message).toContain(`(${DELAI_MORCEAU_VIDEO_MS} ms)`);
+  });
+
+  it('et un appel ordinaire dit le sien', async () => {
+    globalThis.fetch = (async () => { throw new DOMException('délai', 'TimeoutError'); }) as unknown as typeof fetch;
+    const err = await client().etatVideo('888', 'J').catch((e: unknown) => e);
+    expect((err as Error).message).toContain(`(${HTTP_TIMEOUT_DEFAUT_MS} ms)`);
   });
 });

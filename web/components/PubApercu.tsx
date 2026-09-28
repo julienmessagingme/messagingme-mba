@@ -3,6 +3,7 @@
 import { useT } from '@/lib/i18n';
 import { PhoneFrame } from '@/components/PhoneFrame';
 import type { ReponsePrevue } from '@/lib/apercu-reponse';
+import { libelleBouton, BOUTON_PUB_DEFAUT, type BoutonPub } from '@/lib/api-pubs';
 
 /**
  * L'état du TROISIÈME écran : ce que le prospect recevra en réponse.
@@ -47,7 +48,9 @@ export interface VisuelPub {
   base64: string;
 }
 
-export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, video = null, nomPage, reponse, className }: {
+export function PubApercu({
+  titre, texte, accueil, messagePreRempli, visuel, video = null, bouton = BOUTON_PUB_DEFAUT, nomPage, reponse, className,
+}: {
   /** Le titre affiché sous le visuel, dans la barre du bouton (`link_data.name`). */
   titre: string;
   /** Le texte principal, au-dessus du visuel (`link_data.message`). */
@@ -63,6 +66,8 @@ export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, vid
    * rien : il ne doit pas pouvoir dépenser.
    */
   video?: { url: string | null; deposee: boolean } | null;
+  /** Le bouton choisi : son libellé est dessiné dans la barre, tel que Meta l'affiche. */
+  bouton?: BoutonPub;
   /**
    * Le nom de la Page qui porte la publicité (migration 0169).
    *
@@ -78,7 +83,7 @@ export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, vid
 
   return (
     <div className={className} data-testid="pub-apercu">
-      <ApercuFil titre={titre} texte={texte} visuel={visuel} video={video} nomPage={nomPage} />
+      <ApercuFil titre={titre} texte={texte} visuel={visuel} video={video} bouton={bouton} nomPage={nomPage} />
       <div className="mt-5">
         <ApercuConversation accueil={accueil} messagePreRempli={messagePreRempli} />
       </div>
@@ -94,11 +99,13 @@ export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, vid
 }
 
 /** L'annonce telle qu'elle apparaît dans le fil : en-tête de Page, texte, visuel, puis la barre du bouton. */
-function ApercuFil({ titre, texte, visuel, video, nomPage }: {
-  titre: string; texte: string; visuel: VisuelPub | null; video: { url: string | null; deposee: boolean } | null; nomPage: string | null;
+function ApercuFil({ titre, texte, visuel, video, bouton, nomPage }: {
+  titre: string; texte: string; visuel: VisuelPub | null; video: { url: string | null; deposee: boolean } | null;
+  bouton: BoutonPub; nomPage: string | null;
 }) {
   const t = useT();
   const nom = nomPage ?? t('Votre Page', 'Your Page');
+  const libelle = libelleBouton(bouton);
 
   return (
     <div>
@@ -164,10 +171,10 @@ function ApercuFil({ titre, texte, visuel, video, nomPage }: {
                 : <span className="font-normal text-ink-500">{t('Votre titre apparaîtra ici…', 'Your headline will appear here…')}</span>}
             </div>
           </div>
-          {/* Le libellé du bouton est posé par Meta (`call_to_action: WHATSAPP_MESSAGE`), pas par nous :
-              il n'est donc pas saisissable dans le formulaire, et il ne doit pas en avoir l'air. */}
-          <span className="shrink-0 rounded-controle bg-ink-200 px-2.5 py-1.5 text-[12px] font-medium text-ink-900">
-            {t('Envoyer un message', 'Send message')}
+          {/* Le libellé est celui que Meta pose pour le TYPE choisi (`call_to_action.type`) : on choisit un type
+              dans une liste, jamais un texte libre, et l'aperçu montre le libellé de ce type. */}
+          <span className="shrink-0 rounded-controle bg-ink-200 px-2.5 py-1.5 text-[12px] font-medium text-ink-900" data-testid="pub-apercu-bouton">
+            {t(libelle.fr, libelle.en)}
           </span>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { DestinationPub } from './routage';
+import { BOUTON_PUB_DEFAUT, estBoutonPub, type BoutonPub } from '../meta/pubs-payloads';
 
 /**
  * Les brouillons de publicité : un formulaire mémorisé, sans identifiant Meta, dépense ni automation, dans sa
@@ -38,6 +39,11 @@ export interface BrouillonPub {
   /** Les audiences du compte publicitaire retenues, par identifiant Meta, relues chez Meta à la création. */
   audiencesIncluses: string[];
   audiencesExclues: string[];
+  /**
+   * Le bouton choisi (migration 0188). Une valeur que la liste ne connaît plus (retirée après l'essai réel) se
+   * relit comme le bouton par défaut : un brouillon ne dépense rien, et l'écran montre ce qui partira.
+   */
+  bouton: BoutonPub;
   creeLe: string;
   modifieLe: string;
 }
@@ -78,13 +84,19 @@ export interface ChampsBrouillon {
   /** `undefined` = ne pas toucher : un écran qui ne connaît pas encore les audiences ne les efface pas. */
   audiencesIncluses?: string[];
   audiencesExclues?: string[];
+  /**
+   * `undefined` = ne pas toucher, même règle : l'écran ne l'envoie que s'il diffère de ce que le serveur détient,
+   * pour qu'une API d'avant 0188 (qui refuse toute clé inconnue) reste utilisable tant qu'on garde le défaut. Un
+   * bouton ne s'efface pas, il se remplace : pas de troisième sens.
+   */
+  bouton?: BoutonPub;
 }
 
 /** `visuel_octets` est absente de cette liste : c'est la garde (voir `BrouillonPub.aUnVisuel`). */
 const COLS = `id, nom, titre, texte, accueil, message_prerempli, budget_total, debut, fin, pays,
               age_min, age_max, tag_qualification, destination, workflow_id,
               (visuel_octets is not null) as a_un_visuel, visuel_type,
-              video_id, audiences_incluses, audiences_exclues, cree_le, modifie_le`;
+              video_id, audiences_incluses, audiences_exclues, bouton, cree_le, modifie_le`;
 
 interface Brut {
   id: string;
@@ -94,6 +106,7 @@ interface Brut {
   destination: string; workflow_id: string | null;
   a_un_visuel: boolean; visuel_type: string | null;
   video_id: string | null; audiences_incluses: string[]; audiences_exclues: string[];
+  bouton: string;
   cree_le: Date; modifie_le: Date;
 }
 
@@ -110,6 +123,7 @@ function versBrouillon(r: Brut): BrouillonPub {
     videoId: r.video_id,
     audiencesIncluses: r.audiences_incluses,
     audiencesExclues: r.audiences_exclues,
+    bouton: estBoutonPub(r.bouton) ? r.bouton : BOUTON_PUB_DEFAUT,
     creeLe: r.cree_le.toISOString(),
     modifieLe: r.modifie_le.toISOString(),
   };
@@ -152,9 +166,9 @@ export class PgBrouillonsPubStore {
                                     budget_total, debut, fin, pays, age_min, age_max,
                                     tag_qualification, destination, workflow_id,
                                     visuel_octets, visuel_type, video_id,
-                                    audiences_incluses, audiences_exclues)
+                                    audiences_incluses, audiences_exclues, bouton)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-               $19::text[], $20::text[])
+               $19::text[], $20::text[], $21)
        returning id`,
       [
         tenantId, c.nom, c.titre, c.texte, c.accueil, c.messagePreRempli,
@@ -166,6 +180,7 @@ export class PgBrouillonsPubStore {
         c.visuel && !c.video ? c.visuel.type : null,
         c.video ? c.video.id : null,
         c.audiencesIncluses ?? [], c.audiencesExclues ?? [],
+        c.bouton ?? BOUTON_PUB_DEFAUT,
       ],
     );
     const r = rows[0];
@@ -194,6 +209,7 @@ export class PgBrouillonsPubStore {
               video_id      = case when $20::boolean then $22::text  when $23::boolean then null else video_id      end,
               audiences_incluses = case when $24::boolean then $25::text[] else audiences_incluses end,
               audiences_exclues  = case when $26::boolean then $27::text[] else audiences_exclues  end,
+              bouton             = coalesce($28::text, bouton),
               modifie_le = now()
         where tenant_id = $1 and id = $2`,
       [
@@ -208,6 +224,8 @@ export class PgBrouillonsPubStore {
         c.visuel !== undefined && c.visuel !== null,
         c.audiencesIncluses !== undefined, c.audiencesIncluses ?? [],
         c.audiencesExclues !== undefined, c.audiencesExclues ?? [],
+        // $28 : `null` = ne pas toucher (clé absente du corps).
+        c.bouton ?? null,
       ],
     );
     return (rowCount ?? 0) > 0;

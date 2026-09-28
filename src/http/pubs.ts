@@ -7,8 +7,10 @@ import {
   TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB,
   type DepotVideo, type EtatVideo, type ListeAudiencesPub,
 } from '../meta/pubs-creation';
-import { AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT } from '../meta/pubs-payloads';
-import { ErreurGraph } from '../meta/graph';
+import {
+  AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT, BOUTON_PUB_DEFAUT, BOUTONS_PUB,
+} from '../meta/pubs-payloads';
+import { estRefusDeMeta } from '../meta/graph';
 import type { ConnexionPub } from '../pubs/connexion.pg';
 import type { Publicite } from '../pubs/publicites.pg';
 import type { BrouillonPub, BrouillonPubComplet, ChampsBrouillon } from '../pubs/brouillons.pg';
@@ -20,7 +22,7 @@ import {
 } from '../pubs/video';
 import type { Entonnoir } from '../pubs/entonnoir';
 import { makeJournal, type AuditSink } from '../audit/journal';
-import { messageDe } from '../lib/erreur';
+import { journaliser } from '../lib/journal';
 
 /**
  * Les publicités d'un espace : sa connexion (lire l'état, échanger le code de la fenêtre Meta, choisir le compte
@@ -197,6 +199,9 @@ const corpsCreation = z.object({
   ageMax: z.number().int().min(18).max(65).optional(),
   audiencesIncluses: z.array(idMeta).max(AUDIENCES_MAX).default([]),
   audiencesExclues: z.array(idMeta).max(AUDIENCES_MAX).default([]),
+  // La liste FERMÉE des boutons (`BOUTONS_PUB`) ; absent, c'est le bouton WhatsApp, le seul que l'écran d'avant
+  // connaissait et le seul que Meta documente pour cette destination.
+  bouton: z.enum(BOUTONS_PUB).default(BOUTON_PUB_DEFAUT),
   destination: z.enum(['scenario', 'agent_meta']),
   workflowId: z.string().uuid().nullable().default(null),
   tagQualification: z.string().trim().min(1).max(64).nullable().default(null),
@@ -241,6 +246,9 @@ const corpsBrouillon = z.object({
   video: z.object({ id: idMeta }).strict().nullable().optional(),
   audiencesIncluses: z.array(idMeta).max(AUDIENCES_MAX).optional(),
   audiencesExclues: z.array(idMeta).max(AUDIENCES_MAX).optional(),
+  // Même liste fermée qu'à la création : un brouillon garde un travail incomplet, pas une valeur inventée.
+  // Absent = ne pas toucher (migration 0188).
+  bouton: z.enum(BOUTONS_PUB).optional(),
 }).strict();
 
 /**
@@ -282,6 +290,7 @@ function versChamps(c: z.infer<typeof corpsBrouillon>): ChampsBrouillon {
     ...(c.video === undefined ? {} : { video: c.video }),
     ...(c.audiencesIncluses === undefined ? {} : { audiencesIncluses: c.audiencesIncluses }),
     ...(c.audiencesExclues === undefined ? {} : { audiencesExclues: c.audiencesExclues }),
+    ...(c.bouton === undefined ? {} : { bouton: c.bouton }),
   };
 }
 
@@ -315,22 +324,28 @@ function causeDe<T>(err: unknown, type: new (...a: never[]) => T): T | null {
   return null;
 }
 
+/** Ce qu'une panne dit au navigateur : rien de ses détails, qui sont au journal. */
+const PANNE_OPAQUE = 'la demande n’a pas abouti : réessayez dans un instant.';
+
 /**
  * La réponse d'un échec du dépôt vidéo ou de la lecture des audiences.
  *
  * 🔴 Un refus de META (4xx chez lui) sort en 422, avec son message : Cloudflare remplace le corps de toute réponse
  * 5xx par sa propre page, donc un message destiné au client ne peut pas voyager dans un 502. Seule NOTRE panne
  * (réseau, délai, 5xx de Meta) sort en 502, journalisée ici puisque l'écran n'en verra pas le détail.
+ * 🔴 ET LE 502 NE PORTE QU'UNE PHRASE OPAQUE : le message d'une panne est interne (une adresse de Meta avec
+ * l'identifiant du compte, une erreur de notre base), il va au journal avec sa cause, jamais dans la réponse.
  */
-function repondreEchec(reply: FastifyReply, err: unknown, quoi: string): FastifyReply {
+function repondreEchec(reply: FastifyReply, err: unknown, quoi: string, tenantId: string): FastifyReply {
   if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
   if (err instanceof ConnexionPubIncomplete) return reply.code(409).send({ error: err.message, code: 'connexion_incomplete' });
-  if (err instanceof ErreurGraph && err.status >= 400 && err.status < 500) {
+  if (estRefusDeMeta(err)) {
+    // Le sous-code nomme le refus précis chez Meta : il va au journal, où l'on cherche pourquoi un essai a échoué.
+    journaliser('warn', `publicités : ${quoi} refusé par Meta`, { tenantId, code: err.code, subcode: err.subcode, err });
     return reply.code(422).send({ error: err.message, code: 'refus_meta' });
   }
-  // eslint-disable-next-line no-console
-  console.error(`publicités, ${quoi} :`, messageDe(err));
-  return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
+  journaliser('error', `publicités : ${quoi} en échec`, { tenantId, err });
+  return reply.code(502).send({ error: PANNE_OPAQUE, code: 'panne' });
 }
 
 export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
@@ -536,7 +551,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       return reply.send(await deps.videos.demarrer(tenantId, lu.data.taille));
     } catch (err) {
-      return repondreEchec(reply, err, 'ouverture du dépôt vidéo');
+      return repondreEchec(reply, err, 'ouverture du dépôt vidéo', tenantId);
     }
   });
 
@@ -595,7 +610,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     } catch (err) {
       const incoherent = causeDe(err, MorceauDeTailleInattendue);
       if (incoherent !== null) return reply.code(400).send({ error: incoherent.message, code: 'morceau_incoherent' });
-      return repondreEchec(reply, err, 'envoi d’un morceau de vidéo');
+      return repondreEchec(reply, err, 'envoi d’un morceau de vidéo', tenantId);
     }
   });
 
@@ -608,7 +623,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
       await deps.videos.terminer(tenantId, sessionId);
       return reply.send({ ok: true });
     } catch (err) {
-      return repondreEchec(reply, err, 'fin du dépôt vidéo');
+      return repondreEchec(reply, err, 'fin du dépôt vidéo', tenantId);
     }
   });
 
@@ -623,7 +638,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       return reply.send(await deps.videos.etat(tenantId, videoId));
     } catch (err) {
-      return repondreEchec(reply, err, 'état d’une vidéo');
+      return repondreEchec(reply, err, 'état d’une vidéo', tenantId);
     }
   });
 
@@ -636,7 +651,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       return reply.send(await deps.audiences(tenantId));
     } catch (err) {
-      return repondreEchec(reply, err, 'lecture des audiences');
+      return repondreEchec(reply, err, 'lecture des audiences', tenantId);
     }
   });
 
@@ -692,6 +707,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
           budgetTotal: f.budgetTotal, debut: f.debut, fin: f.fin,
           pays: f.pays, villes: f.villes, ageMin: f.ageMin,
           audiencesIncluses: f.audiencesIncluses, audiencesExclues: f.audiencesExclues,
+          bouton: f.bouton,
         },
         visuel: f.video !== undefined
           ? { sorte: 'video', videoId: f.video.id }
@@ -704,7 +720,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     } catch (err) {
       if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
       if (err instanceof ConnexionPubIncomplete) return reply.code(409).send({ error: err.message, code: 'connexion_incomplete' });
-      return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
+      // Une panne AVANT la séquence (la connexion illisible, notre base) : son message est interne.
+      journaliser('error', 'création de publicité : panne avant tout appel à Meta', { tenantId, err });
+      return reply.code(502).send({ error: PANNE_OPAQUE, code: 'panne' });
     }
 
     if (issue.sorte === 'refusee') {
@@ -713,16 +731,25 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
       // derrière Cloudflare.
       return reply.code(409).send({ error: issue.raison, code: issue.code });
     }
+    /**
+     * 🔴 UN REFUS DE META SORT EN 422, AVEC SON MESSAGE, et c'est ce qui rend lisible l'essai réel. En 502, Cloudflare
+     * remplaçait le corps par sa propre page : le refus de Meta sur ce que sa documentation ne dit pas (la créa
+     * vidéo, un bouton autre que WhatsApp) n'arrivait jamais à l'écran. Même règle que `repondreEchec` : seul un
+     * refus de Meta porte un message écrit pour le client ; une panne (réseau, délai, notre base) garde le 502, une
+     * phrase opaque, et sa cause au journal.
+     */
     if (issue.sorte === 'annulee' || issue.sorte === 'echec_creation') {
-      // ⚠️ Journalisé ICI, en plus de la réponse : un 502 traverse Cloudflare, qui en remplace le corps par sa propre
-      // page, donc le message de Meta peut ne jamais atteindre l'écran. C'est pourtant lui qui tranche ce que sa
-      // documentation ne dit pas (la créa vidéo) : sans cette ligne, un refus ne laisserait aucune trace lisible.
-      // eslint-disable-next-line no-console
-      console.warn(`création de publicité (${issue.sorte}) sur l'espace ${tenantId} :`, issue.raison);
+      // Journalisé dans les deux cas : c'est la seule trace d'un refus que l'écran a pu fermer trop vite, et la seule
+      // cause lisible d'une panne.
+      journaliser('warn', 'création de publicité non aboutie', {
+        tenantId, issue: issue.sorte, refusMeta: issue.refusMeta, raison: issue.raison,
+      });
     }
     if (issue.sorte === 'annulee') {
-      // Rien n'existe chez Meta, et ce statut le dit. On rend le message de Meta tel quel : c'est son compte.
-      return reply.code(502).send({ error: issue.raison, code: 'creation_refusee' });
+      // Rien n'existe chez Meta, et ce code le dit.
+      return issue.refusMeta
+        ? reply.code(422).send({ error: issue.raison, code: 'creation_refusee' })
+        : reply.code(502).send({ error: PANNE_OPAQUE, code: 'creation_refusee' });
     }
     await journal(tenantId, req, 'pubs.creee', { kind: 'publicite', id: issue.publiciteId },
       {
@@ -731,8 +758,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
         audiencesIncluses: f.audiencesIncluses.length, audiencesExclues: f.audiencesExclues.length,
       });
     if (issue.sorte === 'echec_creation') {
-      return reply.code(502).send({
-        error: issue.raison,
+      // L'identifiant de la ligne part dans les deux cas : un objet peut subsister chez Meta, et la liste le montre.
+      return reply.code(issue.refusMeta ? 422 : 502).send({
+        error: issue.refusMeta ? issue.raison : PANNE_OPAQUE,
         code: 'creation_incomplete',
         publiciteId: issue.publiciteId,
       });
