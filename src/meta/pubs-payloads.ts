@@ -186,9 +186,10 @@ export function ciblage(
 
 /**
  * L'ensemble de publicités : budget, dates, ciblage, et le numéro WhatsApp qui recevra les leads.
- * `lifetime_budget` exige `end_time` (contrainte Meta, et garde-fou du produit). Ni `bid_amount` ni
- * `bid_strategy` : le défaut `LOWEST_COST_WITHOUT_CAP` dépense le budget au mieux, et un plafond d'enchère
- * deviné choisirait pour le client combien vaut un prospect.
+ * `lifetime_budget` exige `end_time` (contrainte Meta, et garde-fou du produit). `bid_strategy` est
+ * `LOWEST_COST_WITHOUT_CAP`, POSÉ explicitement : Meta ne l'applique plus par défaut et réclame sinon un montant
+ * d'enchère (#100, sous-code 2490487, mesuré le 2026-09-28). Jamais de `bid_amount` : un plafond d'enchère deviné
+ * choisirait pour le client combien vaut un prospect.
  */
 export function payloadEnsemble(
   f: FormulairePub,
@@ -200,6 +201,7 @@ export function payloadEnsemble(
     status: STATUT_PAUSE,
     billing_event: 'IMPRESSIONS',
     optimization_goal: OPTIMISATION_ENSEMBLE,
+    bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     destination_type: 'WHATSAPP',
     lifetime_budget: budgetEnUnitesMineures(f.budgetTotal),
     start_time: f.debut,

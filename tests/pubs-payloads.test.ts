@@ -96,6 +96,7 @@ describe('l’ensemble de publicités', () => {
       status: 'PAUSED',
       billing_event: 'IMPRESSIONS',
       optimization_goal: OPTIMISATION_ENSEMBLE,
+      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       destination_type: 'WHATSAPP',
       lifetime_budget: 15000,
       start_time: '2026-10-01 00:00:00+02:00',
@@ -105,10 +106,12 @@ describe('l’ensemble de publicités', () => {
     });
   });
 
-  it('🔴 NI `bid_amount` NI `bid_strategy` : on ne choisit pas à la place du client ce que vaut un prospect', () => {
+  it('🔴 enchère au coût le plus bas SANS plafond, posée explicitement, et JAMAIS de `bid_amount`', () => {
+    // Meta n'applique plus ce défaut tout seul : sans `bid_strategy`, il réclame un montant d'enchère (#100/2490487).
+    // Et un montant deviné choisirait à la place du client ce que vaut un prospect.
     const p = payloadEnsemble(form(), { campagneId: 'c-1', pageId: 'p-1', numeroWhatsApp: null });
+    expect(p).toHaveProperty('bid_strategy', 'LOWEST_COST_WITHOUT_CAP');
     expect(p).not.toHaveProperty('bid_amount');
-    expect(p).not.toHaveProperty('bid_strategy');
   });
 
   it('sans numéro connu, `promoted_object` ne porte que la Page (le numéro est facultatif chez Meta)', () => {
