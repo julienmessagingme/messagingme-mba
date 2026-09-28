@@ -61,7 +61,7 @@ ferme de ce document.
                                   jeton d'origine injecté par Cloudflare (§7.3)
                                                        |
                                   Scaleway Serverless Container, API
-                                  PRIVÉ, min 1 copie, max 2 copies
+                                  PRIVÉ, min 1 copie, max fixé par le budget de connexions
                                                        |
                                      Private Network (VPC), région PAR
              +---------------------------+-------------+---------------+
@@ -82,10 +82,11 @@ prévoyait `min-scale 0`. C'était une erreur : l'application démarre via `tsx`
 messages entrants. Une copie permanente coûte un petit conteneur allumé ; un démarrage à froid sur ce
 chemin coûte des rejeux de Meta et une réponse en retard au client.
 
-⚠️ **Le plafond de DEUX copies est délibéré, pas une limite technique.** Il borne le budget de connexions
-tant qu'il n'a pas été mesuré à plus grande échelle, et c'est lui qui rend acceptables, pour l'instant,
-l'absence de pooler (§1.1) et les plafonds de débit encore comptés en mémoire (§3.3). Le relever demande de
-refaire ces deux arithmétiques, pas seulement de bouger un curseur.
+🔴 **L'API s'autoscale sans plafond de copies imposé par le code : décidé par Julien le 2026-09-28.** Plus rien
+de ce qu'une copie garde en mémoire ne doit devenir faux avec N copies (verrous, anti-rejeu, plafonds de débit,
+connexions de pg-boss) : c'est le chantier `docs/superpowers/plans/2026-09-28-api-multi-instances.md`, qui
+remplace l'ancienne borne de DEUX copies. Le maximum de l'autoscaler reste un NOMBRE, mais il se déduit du seul
+budget de connexions de la base (§7.5), plus du code. Le worker, lui, reste UN exemplaire par rôle (§5).
 
 🔴 **La base part AVEC le calcul, jamais après.** Calcul à Paris et base à Londres, chaque requête traverse
 internet. L'aller-retour est aujourd'hui de 11 ms mesurés ; entre deux fournisseurs il serait bien pire, et il
@@ -652,9 +653,8 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 6. **L'utilité réelle des règles de rate limiting Cloudflare Pro.** Candidats : un fusible large sur l'API
    externe (`/v1` et `/mcp`) et les chemins anonymes d'authentification qui écrivent. Ne les activer qu'avec
    des seuils mesurés tolérant les IP d'entreprise partagées ; ne jamais limiter `/auth/config`.
-7. **L'accès à `/ops`.** La décision écrite est celle du 2026-09-03 : `/ops` est SURVEILLÉ, pas durci. Le plan
-   de réduction RSSI du 2026-09-09 recommande des comptes nominatifs avec double authentification ; le mémo
-   du 2026-09-19 le présentait comme « la cible décidée », ce qui n'est pas le cas.
+7. **L'accès à `/ops`** : tranché le 2026-09-28, comptes nominatifs (liste d'adresses) avec second facteur, jeton
+   partagé supprimé (`docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
 8. **Le périmètre exact d'une option IA France.** Tours conversationnels seulement, ou également construction,
    embeddings, reranking, transcription, traduction et analyses. Le prix et la disponibilité régionale des
    modèles décident ; la documentation commerciale doit nommer le périmètre réellement testé.
