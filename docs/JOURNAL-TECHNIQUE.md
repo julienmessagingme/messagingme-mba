@@ -35,6 +35,30 @@
   celui-ci tournait ; une relecture par lot ; déploiement séquentiel (1, 2, 3, 5, puis 4, qui s'appuie sur 5) ;
   les jaunes d'un lot partent avec le suivant. Julien dormait pendant les lots 3 à 5.
 
+## 2026-09-26 au 27 : l'app Salesforce, du cadrage au socle serveur déployé
+
+- **Cadrage** (a2594010, 8c3a3be3, puis les amendements du 26) : le pendant de HubSpot pour le Salesforce « core »,
+  en offre de prospection. Spec `docs/superpowers/specs/2026-09-26-app-salesforce-design.md`, plan L0 à L5
+  `docs/superpowers/plans/2026-09-26-app-salesforce.md`. Décisions structurantes de Julien : package géré 2GP
+  (namespace `engagemeapp`, `engageme` était pris), utilisateur d'intégration en client credentials, schéma
+  `salesforce` extractible, et c'est Salesforce qui appelle notre API pour l'envoi depuis la fiche.
+- **L0, mesures sur de vraies orgs** (18c5de23) : Dev Hub en Developer Edition, org cliente en scratch org
+  Enterprise (valable jusqu'au 2026-10-26). Résultats dans `docs/salesforce-mesures-2026-09.md` : la recherche
+  par téléphone est résolue par une requête combinée, l'upsert par External ID est idempotent (aucune table
+  d'idempotence), la signature calculée en Apex égale notre vecteur d'or, l'API applique la règle d'attribution
+  par défaut, et `Lead.MobilePhone` n'est visible par aucun profil dans une org neuve.
+- **Le blocage** : Salesforce refuse de relier le namespace au Dev Hub (son application de liaison exige PKCE,
+  réglage verrouillé, et sa fenêtre ne l'envoie pas). Sans liaison, aucun package géré : quatre mesures et toute
+  la partie package des lots attendent. Le message pour Salesforce est dans le document des mesures.
+- **L1, partie serveur** (0771cde7, 60bff7bc) : migration 0183 (schéma `salesforce`, `salesforce.orgs`,
+  `tenant_settings.salesforce_actif`), client REST, store, connexion, routes admin, carte de réglage, page de
+  connexion et guide public. Relecture indépendante sans rouge, quatre jaunes : la carte de l'Accueil reportée en
+  L2, l'interrupteur sous la route de l'intégration plutôt que `/settings`, la traduction des adresses d'org
+  (mesurée depuis sur les deux orgs), le contrat Apex figé avant que le package existe. CI verte job par job.
+- **Déploiement** le 27 : 0183 appliquée à 10 h 35 UTC avant le `up`, relue en base point par point (dont
+  `anon` et `authenticated` sans aucun droit sur le schéma), fumée publique verte. Invisible tant que
+  `SALESFORCE_CLIENT_ID` n'est pas posé : la route rend 404, la carte se cache.
+
 ## 2026-09-25 au 27 : console sans « slop », audit ponytail, double authentification, commentaires allégés
 
 - **Console, passes 2 et 3 anti-slop** (6a58de04, 61dbc509, a01e1961) : formes, icônes Phosphor, une modale, des

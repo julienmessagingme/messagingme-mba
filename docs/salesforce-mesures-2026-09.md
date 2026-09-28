@@ -33,6 +33,18 @@ orgs neuves. Nous ne pouvons pas la contourner. Une Developer Edition n'a pas de
 passer par la communauté Trailblazer ou par un contact Salesforce. **Sans cette liaison, aucun package géré
 2GP n'est possible**, donc les mesures 1, 5 (protection du secret), 8 (promotion) et 10 restent ouvertes.
 
+## Le message pour Salesforce
+
+Prêt à poster sur la communauté Trailblazer, ou à envoyer à un contact chez Salesforce :
+
+> **Link Namespace fails on a new Dev Hub: "missing required code challenge"**
+> On a Developer Edition org created in September 2026, with Dev Hub and 2GP enabled, clicking "Link Namespace"
+> in Namespace Registries opens a popup to `login.salesforce.com/services/oauth2/authorize` with no
+> `code_challenge` parameter. It fails immediately with `error=invalid_request&error_description=missing required
+> code challenge`, before any login prompt. The "SalesforceDX Namespace Registry" connected app auto-created in
+> the Dev Hub has "Require PKCE" checked and locked ("contact Support to change this required setting"). The
+> org-level PKCE setting is off. How can we link our namespace org, or can PKCE be relaxed on this app?
+
 ## Les résultats
 
 ### Recherche d'une fiche par téléphone (mesure 2) : la plus risquée, et résolue
