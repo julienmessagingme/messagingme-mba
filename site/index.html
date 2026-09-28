@@ -173,9 +173,14 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
    elle est à l'écran (voyant, valeurs qui arrivent, notes qui comptent), puis le flux part vers les outils.
    Sans JavaScript, ou pour qui a demandé moins de mouvement, elle affiche directement son état final. */
 .flux-crm{grid-column:1;grid-row:3;justify-self:end;align-self:start;display:grid;grid-template-columns:minmax(0,360px);margin-top:-8px}
-.lu{padding:15px 18px;border-radius:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 1px 2px rgb(0 0 0 / .2),0 24px 44px -20px var(--ombre)}
+/* La carte est plus claire que la page pour s'en détacher ; `--fond-lu` sert aussi à l'anneau des pastilles. */
+.lu{--fond-lu:#16237E;padding:15px 18px;border-radius:16px;background:var(--fond-lu);border:1px solid rgb(255 255 255 / .16);box-shadow:inset 0 1px 0 rgb(255 255 255 / .07),0 1px 2px rgb(0 0 0 / .2),0 24px 44px -20px var(--ombre)}
 .lu-tete{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}
-.lu-titre{margin:0;font-size:.86rem;font-weight:700}
+.lu-titre{display:flex;align-items:center;gap:8px;margin:0;font-size:.86rem;font-weight:700}
+/* Le cerveau (Phosphor, duotone) : son remplissage pulse pendant l'analyse, comme s'il s'allumait. */
+.cerveau{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:rgb(111 194 254 / .16);color:#6FC2FE}
+.cerveau svg{width:18px;height:18px;fill:currentColor}
+.cerveau .c-fond{opacity:.2}
 .statut{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 7px;border-radius:999px;background:rgb(23 199 78 / .14);color:#5BE38A;font-size:.7rem;font-weight:700}
 .orbe{width:9px;height:9px;border-radius:50%;background:#17C74E}
 .statut .libelles{display:grid}
@@ -194,7 +199,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .rep ~ .rep{opacity:0}
 .rep > img{width:22px;height:22px;border-radius:6px}
 .pile{display:flex}
-.pile > *{display:grid;place-items:center;width:22px;height:22px;box-shadow:0 0 0 2px var(--surface)}
+.pile > *{display:grid;place-items:center;width:22px;height:22px;box-shadow:0 0 0 2px var(--fond-lu)}
 .pile > * + *{margin-left:-3px}
 .pile .ia{border-radius:6px;background:#FFFFFF}
 .pile .ia img{width:14px;height:14px}
@@ -230,6 +235,11 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
   .js .flux-crm.joue .lu dd{animation:revele .35s var(--d) forwards}
   .js .flux-crm.joue .lu dd *{animation:visible 0s var(--d) forwards}
   .js .flux-crm.joue .compte{animation:compte .9s cubic-bezier(.2,.7,.2,1) var(--d) both}
+  /* Le cerveau réfléchit pendant les 2,7 s de l'analyse : son remplissage s'allume, une onde en part. */
+  .js .flux-crm.joue .cerveau{animation:onde .9s ease-out 3}
+  .js .flux-crm.joue .cerveau .c-fond{animation:neurones .45s ease-in-out 6 alternate}
+  @keyframes onde{from{box-shadow:0 0 0 0 rgb(111 194 254 / .5)}to{box-shadow:0 0 0 7px rgb(111 194 254 / 0)}}
+  @keyframes neurones{to{opacity:.8}}
   /* Les répondants se relaient une fois l'analyse posée ; le cycle suivant repart du premier. Chaque règle
      reprend `visible`, qu'elle remplace sur ces éléments (la règle générique `dd *` la pose sur tous). */
   .js .flux-crm.joue .lu .rep.r1{animation:visible 0s var(--d) forwards,rep-sort .45s 3.8s forwards}
@@ -500,8 +510,8 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
     <div class="flux-crm">
       <div class="lu">
         <div class="lu-tete">
-          <p class="lu-titre">Lu par Engage Me</p>
-          <span class="statut" role="status"><span class="orbe" aria-hidden="true"></span><span class="libelles"><span class="s-cours" aria-hidden="true">Analyse…</span><span class="s-fait">Analysée</span></span></span>
+          <p class="lu-titre"><span class="cerveau" aria-hidden="true"><svg viewBox="0 0 256 256"><path class="c-fond" d="M240,124a48,48,0,0,1-32,45.27h0V176a40,40,0,0,1-80,0,40,40,0,0,1-80,0v-6.73h0a48,48,0,0,1,0-90.54V72a40,40,0,0,1,80,0,40,40,0,0,1,80,0v6.73A48,48,0,0,1,240,124Z"/><path d="M248,124a56.11,56.11,0,0,0-32-50.61V72a48,48,0,0,0-88-26.49A48,48,0,0,0,40,72v1.39a56,56,0,0,0,0,101.2V176a48,48,0,0,0,88,26.49A48,48,0,0,0,216,176v-1.41A56.09,56.09,0,0,0,248,124ZM88,208a32,32,0,0,1-31.81-28.56A55.87,55.87,0,0,0,64,180h8a8,8,0,0,0,0-16H64A40,40,0,0,1,50.67,86.27,8,8,0,0,0,56,78.73V72a32,32,0,0,1,64,0v68.26A47.8,47.8,0,0,0,88,128a8,8,0,0,0,0,16,32,32,0,0,1,0,64Zm104-44h-8a8,8,0,0,0,0,16h8a55.87,55.87,0,0,0,7.81-.56A32,32,0,1,1,168,144a8,8,0,0,0,0-16,47.8,47.8,0,0,0-32,12.26V72a32,32,0,0,1,64,0v6.73a8,8,0,0,0,5.33,7.54A40,40,0,0,1,192,164Zm16-52a8,8,0,0,1-8,8h-4a36,36,0,0,1-36-36V80a8,8,0,0,1,16,0v4a20,20,0,0,0,20,20h4A8,8,0,0,1,208,112ZM60,120H56a8,8,0,0,1,0-16h4A20,20,0,0,0,80,84V80a8,8,0,0,1,16,0v4A36,36,0,0,1,60,120Z"/></svg></span>Analysé par Engage Me</p>
+          <span class="statut" role="status"><span class="orbe" aria-hidden="true"></span><span class="libelles"><span class="s-cours" aria-hidden="true">Analyse…</span><span class="s-fait">Qualifiée</span></span></span>
         </div>
         <dl>
           <div class="large"><dt>Pris en charge par</dt><dd class="qui-repond" style="--d:.5s" aria-label="Meta Business Agent, votre agent IA ou votre équipe">
