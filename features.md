@@ -3127,6 +3127,11 @@ conversation, le message arrive dans son Inbox et le scénario de la publicité 
 **Suivre** : statut chez Meta et motif de refus, relus toutes les quinze minutes, avec l'heure de la
 dernière lecture. Et un **entonnoir** : dépense, clics, prospects, qualifiés, avec le coût de chaque étape
 et le taux de passage vers la suivante.
+**Dates et programmation** (2026-09-28) : chaque publicité affiche « Du … au … », à l'heure de Paris, et la liste
+les range en **En cours**, **Programmées** et **Achevées**. 🔴 **Une publicité publiée dont le début est à venir
+s'affiche « Programmée »**, pas « Diffuse » : Meta la dit active dès la publication, et ce statut seul faisait
+croire qu'elle dépensait déjà. Son bouton dit « Empêcher le démarrage » (c'est une pause chez Meta). Une
+publicité prête, jamais publiée, n'est programmée nulle part, même si son début est à venir.
 🔴 **Un chiffre inconnu s'écrit « non disponible », jamais « 0 »** : zéro prospect ne donne pas un coût par
 prospect de zéro, il n'en donne aucun, et afficher 0 € ressemblerait au meilleur résultat imaginable sur
 l'écran qui sert à décider d'arrêter ou de remettre du budget.

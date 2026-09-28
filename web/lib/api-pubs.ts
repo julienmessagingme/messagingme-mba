@@ -366,6 +366,21 @@ export function estArchivee(p: Pick<Publicite, 'archiveeLe'>): boolean {
   return (p.archiveeLe ?? null) !== null;
 }
 
+/**
+ * Où en est une publicité DANS LE TEMPS, lu sur ses dates. Meta rend `ACTIVE` pour une campagne publiée dont le
+ * début est demain : lu seul, ce statut fait croire qu'elle diffuse (Julien, 2026-09-28).
+ *
+ * ⚠️ « Programmée » exige d'être PUBLIÉE : une publicité prête dont le début est futur n'est programmée nulle part,
+ * rien ne partira tant qu'on ne l'a pas publiée. Une date absente ne classe jamais : `null` veut dire qu'on ne sait pas.
+ */
+export type PhasePub = 'programmee' | 'en_cours' | 'achevee';
+
+export function phasePub(p: Pick<Publicite, 'etat' | 'debut' | 'fin'>, maintenant: number): PhasePub {
+  if (p.fin !== null && Date.parse(p.fin) < maintenant) return 'achevee';
+  if (p.etat === 'publiee' && p.debut !== null && Date.parse(p.debut) > maintenant) return 'programmee';
+  return 'en_cours';
+}
+
 /** Ce que le serveur accepte d'archiver : tout ce qui ne peut pas diffuser. */
 export function archivable(p: Pick<Publicite, 'etat' | 'statutMeta'>): boolean {
   return p.etat !== 'publiee' || enPauseChezMeta(p.statutMeta);

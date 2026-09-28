@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 0a64ae
+source_empreinte: c6f68c
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -112,7 +112,9 @@ ce qui garantit qu'un clic payé reçoit la réponse que vous aviez prévue, et 
 ## Suivre ce que ça donne
 
 Chaque publicité affiche son statut chez Meta (en revue, diffuse, refusée, avec le motif), relu toutes les
-quinze minutes. L'écran vous dit l'heure de la dernière lecture : si un chiffre vous surprend, regardez-la
+quinze minutes, et ses dates de début et de fin. Une publicité publiée dont le début est à venir est rangée dans
+**Programmées** et affichée « Programmée » : elle ne dépense rien avant sa date de début. Son bouton
+« Empêcher le démarrage » la met en pause chez Meta ; « Relancer » la reprogramme. L'écran vous dit l'heure de la dernière lecture : si un chiffre vous surprend, regardez-la
 avant de chercher un problème.
 
 L'entonnoir montre, étape par étape : la dépense, les clics, les personnes qui ont écrit, et celles que vous

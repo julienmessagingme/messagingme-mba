@@ -5,7 +5,7 @@ import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../src/meta/pubs-creati
 import {
   TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MAX, AGE_MIN_BAS, AGE_MIN_HAUT, enPauseChezMeta, lienGestionnaireMeta,
   BOUTONS_PUB as BOUTONS_ECRAN, BOUTON_PUB_DEFAUT as BOUTON_DEFAUT_ECRAN, boutonConnu, libelleBouton,
-  archivable, estArchivee,
+  archivable, estArchivee, phasePub,
 } from '../web/lib/api-pubs';
 import { ISSUES_NON_PRISES_EN_CHARGE } from '../src/pubs/entonnoir';
 import {
@@ -414,6 +414,28 @@ describe('le bandeau de l’agent de Meta éteint', () => {
      * plus haut. C'est exactement le déplacement qui a produit ce lot, dans l'autre sens.
      */
     expect(page).toContain("typeof r.mbaEnabled === 'boolean' ? r.mbaEnabled : null");
+  });
+});
+
+describe('la phase d’une publicité, lue sur ses dates', () => {
+  const maintenant = Date.parse('2026-09-28T18:00:00Z');
+  const pub = (etat: 'publiee' | 'prete', debut: string | null, fin: string | null) => ({ etat, debut, fin });
+
+  it('🔴 publiée, début à venir : programmée (Meta dit pourtant ACTIVE)', () => {
+    expect(phasePub(pub('publiee', '2026-09-29T00:00:00Z', '2026-10-05T00:00:00Z'), maintenant)).toBe('programmee');
+  });
+
+  it('⚠️ PRÊTE avec un début à venir n’est programmée nulle part : rien ne partira sans publier', () => {
+    expect(phasePub(pub('prete', '2026-09-29T00:00:00Z', '2026-10-05T00:00:00Z'), maintenant)).toBe('en_cours');
+  });
+
+  it('début passé : en cours ; fin passée : achevée, quel que soit le début', () => {
+    expect(phasePub(pub('publiee', '2026-09-27T00:00:00Z', '2026-10-05T00:00:00Z'), maintenant)).toBe('en_cours');
+    expect(phasePub(pub('publiee', '2026-09-01T00:00:00Z', '2026-09-20T00:00:00Z'), maintenant)).toBe('achevee');
+  });
+
+  it('une date absente ne classe jamais', () => {
+    expect(phasePub(pub('publiee', null, null), maintenant)).toBe('en_cours');
   });
 });
 

@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { dateHeure } from '@/lib/day';
+import type { Locale } from '@/lib/locale';
 import {
-  archivable, archiverPub, basculerPub, estArchivee, enPauseChezMeta, lienGestionnaireMeta, lirePub, publierPub,
-  type BrouillonPub, type Entonnoir, type EtapeEntonnoir, type Publicite,
+  archivable, archiverPub, basculerPub, estArchivee, enPauseChezMeta, lienGestionnaireMeta, lirePub, phasePub,
+  publierPub, type BrouillonPub, type Entonnoir, type EtapeEntonnoir, type PhasePub, type Publicite,
 } from '@/lib/api-pubs';
 import { Bouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
@@ -51,6 +52,30 @@ function ouRien(v: number | null, t: T, suffixe = ''): string {
   return v === null ? t('non disponible', 'not available') : `${arrondi(v)}${suffixe}`;
 }
 
+/**
+ * Le statut d'une ligne. Pour une publicité publiée, celui de Meta, SAUF quand ses dates le démentent : Meta rend
+ * `ACTIVE` avant le début comme pendant la diffusion, et « Diffuse » sur une campagne qui démarre demain fait croire
+ * qu'elle dépense déjà. Un autre statut (revue, refus, pause) passe tel quel : c'est lui qu'il faut lire.
+ */
+function libelleLigne(p: Publicite, phase: PhasePub, t: T): string {
+  if (p.etat === 'prete') return t('Prête, pas encore publiée', 'Ready, not published yet');
+  if (p.etat === 'creation') return t('Création en cours', 'Being created');
+  if (p.etat === 'echec_creation') return t('Création échouée', 'Creation failed');
+  if (phase === 'programmee' && p.statutMeta === 'ACTIVE') return t('Programmée', 'Scheduled');
+  if (phase === 'achevee' && (p.statutMeta === 'ACTIVE' || p.statutMeta === 'COMPLETED')) return t('Terminée', 'Finished');
+  return libelleStatut(p.statutMeta, t);
+}
+
+/** « Du … au … », à l'heure de Paris. Une borne absente n'est pas inventée. */
+function periode(p: Publicite, locale: Locale, t: T): string | null {
+  if (p.debut !== null && p.fin !== null) {
+    return `${t('Du', 'From')} ${dateHeure(p.debut, locale)} ${t('au', 'to')} ${dateHeure(p.fin, locale)}`;
+  }
+  if (p.debut !== null) return `${t('À partir du', 'From')} ${dateHeure(p.debut, locale)}`;
+  if (p.fin !== null) return `${t('Jusqu’au', 'Until')} ${dateHeure(p.fin, locale)}`;
+  return null;
+}
+
 function arrondi(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(2);
 }
@@ -88,6 +113,7 @@ export function PubsListe({
   jeterBrouillon: (id: string) => Promise<void>;
 }) {
   const t = useT();
+  const { locale } = useLocale();
   const [ouverte, setOuverte] = useState<string | null>(null);
   const [voirArchivees, setVoirArchivees] = useState(false);
 
@@ -105,12 +131,14 @@ export function PubsListe({
    * seule qui ne se rattrape pas d'un clic.
    */
   const maintenant = Date.now();
-  const achevee = (p: Publicite): boolean => p.fin !== null && Date.parse(p.fin) < maintenant;
+  const phase = (p: Publicite): PhasePub => phasePub(p, maintenant);
   // Les archivées sortent des deux groupes : c'est tout l'objet de l'archivage (une création échouée surtout).
   const visibles = publicites.filter((p) => !estArchivee(p));
   const archivees = publicites.filter(estArchivee);
-  const enCours = visibles.filter((p) => !achevee(p));
-  const finies = visibles.filter(achevee);
+  // « Programmées » : publiées, début à venir. Elles ne dépensent pas encore, et c'est ce que le groupe dit d'abord.
+  const programmees = visibles.filter((p) => phase(p) === 'programmee');
+  const enCours = visibles.filter((p) => phase(p) === 'en_cours');
+  const finies = visibles.filter((p) => phase(p) === 'achevee');
 
   if (publicites.length === 0 && brouillons.length === 0) {
     return (
@@ -167,6 +195,12 @@ export function PubsListe({
           <Lignes publicites={enCours} />
         </section>
       )}
+      {programmees.length > 0 && (
+        <section data-testid="pubs-groupe-programmees">
+          <Titre>{t('Programmées', 'Scheduled')}</Titre>
+          <Lignes publicites={programmees} />
+        </section>
+      )}
       {finies.length > 0 && (
         <section data-testid="pubs-groupe-achevees">
           <Titre>{t('Achevées', 'Finished')}</Titre>
@@ -197,15 +231,15 @@ export function PubsListe({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-ink-900">{p.nom}</p>
-              <p className="mt-0.5 text-xs text-ink-500">
-                {p.etat === 'publiee' ? libelleStatut(p.statutMeta, t)
-                  : p.etat === 'prete' ? t('Prête, pas encore publiée', 'Ready, not published yet')
-                  : p.etat === 'creation' ? t('Création en cours', 'Being created')
-                  : t('Création échouée', 'Creation failed')}
+              <p className="mt-0.5 text-xs text-ink-500" data-testid={`pub-statut-${p.id}`}>
+                {libelleLigne(p, phase(p), t)}
                 {' · '}
                 {p.destination === 'scenario' ? t('Scénario', 'Scenario') : t('Agent de Meta', 'Meta agent')}
                 {p.budgetTotal !== null ? ` · ${t('budget')} ${arrondi(p.budgetTotal)}` : ''}
               </p>
+              {periode(p, locale, t) !== null && (
+                <p className="mt-0.5 text-xs text-ink-500" data-testid={`pub-dates-${p.id}`}>{periode(p, locale, t)}</p>
+              )}
               {p.motifRefus !== null && (
                 <p className="mt-1 text-xs text-danger-700" data-testid="pub-motif">{p.motifRefus}</p>
               )}
@@ -289,6 +323,7 @@ function Actions({ tenantId, pub, recharger, t }: {
   }
 
   const enPause = enPauseChezMeta(pub.statutMeta);
+  const programmee = phasePub(pub, Date.now()) === 'programmee';
 
   if (estArchivee(pub)) {
     return (
@@ -333,7 +368,10 @@ function Actions({ tenantId, pub, recharger, t }: {
           onClick={() => void agir(() => basculerPub(tenantId, pub.id, enPause))}
           data-testid={`pub-bascule-${pub.id}`}
         >
-          {enPause ? t('Relancer', 'Resume') : t('Mettre en pause', 'Pause')}
+          {/* Programmée, elle ne diffuse pas encore : « Mettre en pause » faisait croire le contraire. Le geste chez
+              Meta est le même, il l'empêche de démarrer. */}
+          {enPause ? t('Relancer', 'Resume')
+            : programmee ? t('Empêcher le démarrage', 'Stop it from starting') : t('Mettre en pause', 'Pause')}
         </Bouton>
       )}
       {/* Jamais sur une publicité qui peut diffuser : on la met d'abord en pause (le serveur refuse aussi). */}

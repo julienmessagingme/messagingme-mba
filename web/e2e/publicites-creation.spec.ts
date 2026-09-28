@@ -41,7 +41,9 @@ const CONNEXION = {
 const PUB_PUBLIEE = {
   id: 'pub-1', campagneId: 'c-1', ensembleId: 'e-1', creaId: 'cr-1', pubId: 'ad-1',
   nom: 'Rentrée 2026', etat: 'publiee', statutMeta: 'ACTIVE', motifRefus: null,
-  budgetTotal: 150, debut: '2026-10-01T00:00:00.000Z', fin: '2026-10-31T23:00:00.000Z',
+  // ⚠️ DÉBUT PASSÉ, FIN LOINTAINE : la liste range une publicité selon ses dates. Des dates d'octobre 2026 l'auraient
+  // basculée en « programmée » puis en « achevée » au fil du calendrier, et ces tests avec elle.
+  budgetTotal: 150, debut: '2026-09-01T00:00:00.000Z', fin: '2099-10-31T23:00:00.000Z',
   destination: 'scenario', workflowId: 'wf-1', tagQualification: 'devis', automationId: 'a-1',
   depense: 12.5, clics: 40, luLe: '2026-09-23T20:00:00.000Z', creeLe: '2026-09-23T10:00:00.000Z',
   archiveeLe: null as string | null,
@@ -750,6 +752,23 @@ test.describe('Publicités : brouillons et groupes', () => {
     await expect(page.getByTestId('pubs-groupe-en-cours')).not.toContainText('Soldes d’hiver');
     await expect(page.getByTestId('pubs-groupe-achevees')).toContainText('Soldes d’hiver');
     await expect(page.getByTestId('pubs-groupe-achevees')).not.toContainText('Rentrée 2026');
+  });
+
+  test('🔴 publiée, début à venir : « Programmée », avec ses dates, et le bouton ne parle pas de pause', async ({ page }) => {
+    // Meta rend `ACTIVE` avant le début comme pendant la diffusion : lu seul, il affichait « Diffuse » et
+    // « Mettre en pause » sur une campagne qui démarrait le lendemain (Julien, 2026-09-28).
+    const demain = { ...PUB_PUBLIEE, id: 'pub-3', nom: 'Demain', debut: '2099-01-01T08:00:00.000Z' };
+    await brancher(page, { publicites: [demain, PUB_EN_COURS] });
+    const groupe = page.getByTestId('pubs-groupe-programmees');
+    await expect(groupe).toContainText('Demain');
+    await expect(groupe).not.toContainText('Rentrée 2026');
+    await expect(page.getByTestId('pub-statut-pub-3')).toContainText(/Programmée|Scheduled/);
+    await expect(page.getByTestId('pub-statut-pub-3')).not.toContainText(/Diffuse|Delivering/);
+    await expect(page.getByTestId('pub-dates-pub-3')).toContainText('01/01/2099');
+    await expect(page.getByTestId('pub-bascule-pub-3')).toContainText(/Empêcher le démarrage|Stop it from starting/);
+    // La publicité qui diffuse vraiment garde son statut et sa pause.
+    await expect(page.getByTestId('pubs-groupe-en-cours')).toContainText(/Diffuse|Delivering/);
+    await expect(page.getByTestId(`pub-bascule-${PUB_PUBLIEE.id}`)).toContainText(/Mettre en pause|Pause/);
   });
 
   test('une publicité SANS date de fin reste « en cours », jamais « achevée »', async ({ page }) => {
