@@ -186,8 +186,19 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .lu dt{font-size:.72rem;color:var(--muted)}
 .lu dd{position:relative;margin:1px 0 0;font-size:.98rem;font-weight:700;letter-spacing:-.01em}
 .lu dd small{font-size:.72rem;font-weight:600;color:var(--muted)}
-.mba{display:flex;align-items:center;gap:8px;white-space:nowrap}
-.mba img{width:22px;height:22px;border-radius:6px}
+/* Qui répond : trois répondants superposés dans la même case (le Meta Business Agent, un agent IA, l'équipe),
+   qui se relaient pendant le cycle de la carte. Sans animation, seul le premier se montre. Logos et avatars
+   repris du film Engage Me. */
+.qui-repond{display:grid;clip-path:inset(-3px -3px)}
+.rep{grid-area:1 / 1;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.rep ~ .rep{opacity:0}
+.rep > img{width:22px;height:22px;border-radius:6px}
+.pile{display:flex}
+.pile > *{display:grid;place-items:center;width:22px;height:22px;box-shadow:0 0 0 2px var(--surface)}
+.pile > * + *{margin-left:-3px}
+.pile .ia{border-radius:6px;background:#FFFFFF}
+.pile .ia img{width:14px;height:14px}
+.pile .gens{border-radius:50%;color:#FFFFFF;font-size:.52rem;font-weight:700;letter-spacing:.02em}
 @property --n{syntax:"<integer>";inherits:false;initial-value:0}
 .compte{--n:var(--fin);counter-reset:n var(--n)}
 .compte::before{content:counter(n)}
@@ -219,6 +230,16 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
   .js .flux-crm.joue .lu dd{animation:revele .35s var(--d) forwards}
   .js .flux-crm.joue .lu dd *{animation:visible 0s var(--d) forwards}
   .js .flux-crm.joue .compte{animation:compte .9s cubic-bezier(.2,.7,.2,1) var(--d) both}
+  /* Les répondants se relaient une fois l'analyse posée ; le cycle suivant repart du premier. Chaque règle
+     reprend `visible`, qu'elle remplace sur ces éléments (la règle générique `dd *` la pose sur tous). */
+  .js .flux-crm.joue .lu .rep.r1{animation:visible 0s var(--d) forwards,rep-sort .45s 3.8s forwards}
+  .js .flux-crm.joue .lu .rep.r2{animation:visible 0s var(--d) forwards,rep-entre .45s 3.8s forwards,rep-sort .45s 6.3s forwards}
+  .js .flux-crm.joue .lu .rep.r3{animation:visible 0s var(--d) forwards,rep-entre .45s 6.3s forwards}
+  .js .flux-crm.joue .lu .r2 .pile > *{animation:visible 0s var(--d) forwards,pastille .35s cubic-bezier(.34,1.56,.64,1) calc(3.9s + var(--i) * 80ms) both}
+  .js .flux-crm.joue .lu .r3 .pile > *{animation:visible 0s var(--d) forwards,pastille .35s cubic-bezier(.34,1.56,.64,1) calc(6.4s + var(--i) * 80ms) both}
+  @keyframes rep-entre{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes rep-sort{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-10px)}}
+  @keyframes pastille{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none}}
   .js .flux-crm .flux path,.js .flux-crm .flux circle{opacity:0}
   .js .flux-crm.joue .flux path{animation:apparait-flux .4s 2.9s forwards,coule .8s linear infinite}
   .js .flux-crm.joue .flux circle{animation:apparait-flux .4s 3.1s forwards}
@@ -483,7 +504,11 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
           <span class="statut" role="status"><span class="orbe" aria-hidden="true"></span><span class="libelles"><span class="s-cours" aria-hidden="true">Analyse…</span><span class="s-fait">Analysée</span></span></span>
         </div>
         <dl>
-          <div class="large"><dt>Pris en charge par</dt><dd class="mba" style="--d:.5s"><img src="meta-business-agent.png" alt="" width="22" height="22">Meta Business Agent</dd></div>
+          <div class="large"><dt>Pris en charge par</dt><dd class="qui-repond" style="--d:.5s" aria-label="Meta Business Agent, votre agent IA ou votre équipe">
+            <span class="rep r1" aria-hidden="true"><img src="meta-business-agent.png" alt="" width="22" height="22">Meta Business Agent</span>
+            <span class="rep r2" aria-hidden="true"><span class="pile"><span class="ia" style="--i:0"><img src="ia-openai.png" alt="" width="14" height="14"></span><span class="ia" style="--i:1"><img src="ia-gemini.png" alt="" width="14" height="14"></span><span class="ia" style="--i:2"><img src="ia-claude.png" alt="" width="14" height="14"></span><span class="ia" style="--i:3"><img src="ia-mistral.png" alt="" width="14" height="14"></span></span>Votre agent IA</span>
+            <span class="rep r3" aria-hidden="true"><span class="pile"><span class="gens" style="--i:0;background:#0066AA">CD</span><span class="gens" style="--i:1;background:#17C74E">LM</span><span class="gens" style="--i:2;background:#6E5AE0">HB</span></span>Votre équipe</span>
+          </dd></div>
           <div><dt>Intention</dt><dd style="--d:.9s">Achat</dd></div>
           <div><dt>Urgence</dt><dd style="--d:1.3s" aria-label="7 sur 10"><span class="compte" style="--fin:7"></span> <small>/ 10</small></dd></div>
           <div><dt>Satisfaction</dt><dd style="--d:1.7s" aria-label="9 sur 10"><span class="compte" style="--fin:9"></span> <small>/ 10</small></dd></div>
