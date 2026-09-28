@@ -4,7 +4,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import { estLourde, unitesDe } from '../src/api/usage-guard';
-import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
+import { GardeUsageMemoire } from './aide/usage';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { DepsRepondre } from '../src/inbox/repondre';
 import type { OrigineMessage } from '../src/inbox/origine';
@@ -318,10 +318,10 @@ describe('POST /v1/messages/whatsapp', () => {
     const { server, usage, resolutions } = app();
     expect((await post(server, { text: 'x' })).json()).toMatchObject({ code: 'invalid_recipient' });
     expect((await post(server, { phone: '00', text: 'x' })).json()).toMatchObject({ code: 'invalid_phone' });
-    expect(usage.compteurs().find((c) => c.operation === 'messages.send')).toBeUndefined();
+    expect((await usage.compteurs()).find((c) => c.operation === 'messages.send')).toBeUndefined();
     expect(resolutions).toEqual([]);
     await post(server, { contactId: C1, text: 'x' });
-    expect(usage.compteurs().find((c) => c.operation === 'messages.send')).toMatchObject({ appels: 1 });
+    expect((await usage.compteurs()).find((c) => c.operation === 'messages.send')).toMatchObject({ appels: 1 });
     await server.close();
   });
 

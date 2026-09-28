@@ -1115,9 +1115,27 @@ passe par les **verrous courts** (`src/db/verrous-courts.ts`, table `verrous_cou
 modèle de `run-lock.ts` : une prise prend toutes ses clés ou aucune, en une transaction et dans l'ordre des clés ;
 une clé échue se reprend (l'échéance est le bail, lue à l'heure de la base) ; on ne relâche que ce qui porte
 encore son jeton. Deux usages : l'anti-rejeu des envois de l'agent de Meta (`mba-envoi:…`) et la publication du
-relais (`mba-publication:…`). Les clés échues sont effacées par la rétention générale du worker. Le double des
-tests (`tests/verrous.ts`) tient les mêmes règles ; la course entre deux copies se prouve contre Postgres
+relais (`mba-publication:…`), plus, depuis le lot B, la minute entre deux demandes de code d'un numéro
+(`es-code:…`) et le repos entre deux alertes de `/ops` (`ops.alerte`). Une prise se PROLONGE avec son jeton
+(`prolonger`, `false` dès qu'une clé ne le porte plus) : la publication repousse son bail avant chaque geste et
+s'arrête si elle l'a perdu. Toute instruction qui touche plusieurs clés les verrouille dans l'ordre de la clé
+(`order by cle for update`), comme la prise : dans l'ordre physique, un relâchement ou une purge pouvait tenir la
+clé qu'une prise attendait pendant qu'il attendait la sienne, et Postgres en tuait un (40P01). Les clés échues sont
+effacées par la rétention générale du worker. Le double des tests (`tests/verrous.ts`) tient les mêmes règles ; la
+course entre deux copies et l'ordre des verrous se prouvent contre Postgres
 (`tests/integration/verrous-courts.integration.test.ts`).
+
+🔴 **CE QUI DOIT ÊTRE TENU AU TOTAL SE COMPTE EN BASE** (lot B, 2026-09-28) : les plafonds de débit partagés
+comptent dans `compteurs_debit` (migration 0186, `src/db/debit.ts`), une ligne par clé et par fenêtre FIXE alignée
+sur l'heure de la base, toutes les fenêtres d'un appel ou aucune, un appel compté seulement s'il tient sous le
+plafond (`insert ... on conflict do update ... where n + pas <= plafond returning n`). Ce qui y compte et ce qui
+reste par copie : § 7, les plafonds. Chaque copie pose devant la base la mémoire de SES fenêtres pleines
+(`memoireDesPleines`, posée par `buildServer`) : une fenêtre vue pleine le reste jusqu'à sa fin, donc un refus ne
+coûte plus d'écriture (sans elle, une boucle d'intégrateur qui réessaie contre un plafond atteint ferait une
+écriture par essai sur le pool de la copie). Les fenêtres échues sont effacées toutes les cinq minutes
+(`compteurs-debit`, ci-dessous). La course se prouve contre Postgres
+(`tests/integration/compteurs-debit.integration.test.ts`), deux copies du vrai `buildServer` sur un même compteur
+par `tests/plafonds-partages.test.ts`.
 
 Ce qui reste par copie, et pourquoi c'est juste :
 - **le jeton Meta en cache** (5 min, `MetaCredentialsResolver`) : une copie peut garder l'ancien jeton après une
@@ -1125,7 +1143,9 @@ Ce qui reste par copie, et pourquoi c'est juste :
   (`markTokenInvalid(waba, chiffré)`), jamais le jeton neuf ; une reconnexion (un chiffré neuf) repart `active` ;
 - **la garde du numéro délié** (5 s) : seule la copie qui sert « Délier » vide son cache, les autres gardent
   leur réponse jusqu'à 5 s (§ 12, invariant 38) ;
-- **les envois qui continuent après la réponse** : chaque copie attend les siens à l'arrêt (`arreterApi`).
+- **les envois qui continuent après la réponse** : chaque copie attend les siens à l'arrêt (`arreterApi`), comme
+  le signal d'un clic sur un lien suivi, qui part après le 302 ;
+- **les plafonds qui restent en mémoire** et les places d'opérations lourdes : § 7, les plafonds.
 
 ### Les balayeurs du worker
 
@@ -1149,6 +1169,7 @@ Tous en `unref()`, chacun avec sa variable de cadence (les valeurs sont dans `sr
 | purge des payloads webhook | rétention du dernier payload d'un webhook entrant |
 | purge des événements Meta | `WEBHOOK_EVENTS_RETENTION_DAYS` |
 | `ops/dlq-sweep` | alerte Telegram sur les DLQ non vides |
+| `compteurs-debit` | toutes les 5 min, efface les fenêtres échues des plafonds partagés (`compteurs_debit`) : une tentative de connexion sur une adresse inventée écrit une ligne, six heures de rafale en garderaient des millions |
 | heartbeat | écrit `worker_heartbeat`, lu par `/ops` pour voir un worker mort |
 
 🔴 **LE BALAYAGE DU RISQUE EST LE SEUL CHEMIN DE MASSE QUI ÉMET UN ÉVÉNEMENT D'AUTOMATION** (exception décidée,
@@ -1328,17 +1349,65 @@ toutes pièces. Vide = aucun en-tête CORS n'est posé, ce qui est le bon défau
 sur import, aperçu, action en masse, purge, export, lancement de campagne, et les routes lourdes de la
 connaissance d'un agent (suppression en masse, import d'un document, aperçu et import d'un site). Mettre l'une à 0 est le levier
 d'urgence : un mauvais calibrage couperait la console de tous les clients, et un `--force-recreate` va plus
-vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond annoncé est celui d'UNE instance,
-à lever avant le multi-replica.
+vite qu'un déploiement de code. ⚠️ Le premier reste LOCAL À LA COPIE, délibérément (ci-dessous) ; le second compte
+dans le compteur partagé : un espace a ses opérations coûteuses au TOTAL des copies.
+
+🔴 **CE QUI COMPTE AU TOTAL DES COPIES DE L'API, ET CE QUI RESTE PAR COPIE** (lot B, 2026-09-28). N copies
+servaient N fois chaque plafond tenu en mémoire. Ce qui borne un espace, une identité ou un quota de Meta passe
+dans le compteur PARTAGÉ (`compteurs_debit`, migration 0186, § 6) ou dans les verrous courts ; chaque plafond y a
+une politique ÉCRITE pour le cas où la base ne répond pas (`PlafondPartage.siLaBaseEchoue`, requise à la
+construction) :
+
+| Plafond | Où il compte | Base muette |
+|---|---|---|
+| API publique par espace (`/v1` et `/mcp`, minute et heure), et ses `x-ratelimit-*` | compteur partagé | l'appel PASSE, sans en-têtes (refuser tous les intégrateurs sur une panne passagère déclencherait leurs rejeux au retour de la base, et la route a de toute façon besoin de la base) |
+| opérations coûteuses d'un espace (`RATE_LIMIT_COUTEUX_PAR_MINUTE`) | compteur partagé | l'opération PASSE (même raison) |
+| usage de l'API publique (`/ops/usage`, et le quota par espace le jour où il existera) | compteur partagé | l'appel PASSE (le garde observe, il ne devient pas la panne) |
+| connexion : `login` (et le choix d'espace), `signup`, `forgot-password`, `reset-password`, `invitations/accept`, `google`, clé = l’EMPREINTE de `ip::discriminant` (jamais l’adresse ni le jeton en clair : la clé vit en base, donc dans ses sauvegardes) | compteur partagé | la tentative est REFUSÉE (429, « vérification momentanément impossible ») : une panne n'ouvre jamais un essai de plus |
+| la minute entre deux demandes de code d'un numéro (`/numero/code`, le quota de Meta : dix requêtes sur 72 h) | verrou court `es-code:<numéro>`, jamais relâché | REFUSÉE (429), Meta n'est pas appelé |
+| refus de `/ops` et repos de leur alerte Telegram | compteur partagé (`ops.refus`), verrou court `ops.alerte` | le refus est journalisé (`dansLaFenetre: null`), aucune alerte |
+
+Restent EN MÉMOIRE, par copie, délibérément :
+- **le plafond par utilisateur** (`RATE_LIMIT_USER_PAR_MINUTE`, 300/min) : le plus fréquent (chaque requête de la
+  console), le porter en base coûterait une écriture par requête ; N copies en font N fois 300, ce qui borne encore un
+  compte qui martèle ;
+- **les petits plafonds** : l'aide et le support (par compte), la chaîne (demandes de lien), le relais du Meta
+  Business Agent (par clé), le budget des empreintes et des codes jamais résolus (`API_KEY_PREFILTRE_MAX`,
+  `CODES_INCONNUS_PAR_MINUTE`, qui protègent la base AVANT toute lecture, donc ne peuvent pas la payer), les codes de
+  `/w/:code` et `/rcs/callback/:code`, et les cinq essais par minute du second facteur (le total est tenu en base par
+  le blocage progressif de 0184) ;
+- **les places d'opérations lourdes simultanées** (`API_MAX_LOURDES_SIMULTANEES`) : elles protègent le pool DE LA
+  COPIE, que chaque copie a pour elle seule ; les compter au total diviserait la capacité sans rien protéger de plus ;
+- **les caches sans invalidation** : N copies font N fois les lectures, aucune ne rend un résultat faux.
+
+🔴 **LE COÛT : UNE ÉCRITURE PAR APPEL COMPTÉ, ET AUCUNE PAR REFUS RÉPÉTÉ.** Concernés : les routes de `/v1` et
+`/mcp` (le plafond, une instruction à deux lignes, plus l'usage, une instruction à deux lignes : deux allers-retours
+de plus par appel accepté, bornés par le plafond de l'espace, 60 par minute et 1 000 par heure par défaut), les
+routes coûteuses (gestes manuels, rares), les routes anonymes de la connexion (une par tentative), la demande
+de code d'un numéro, et chaque refus de `/ops`. Le plafond par utilisateur, qui voit passer toute la console, n'y
+passe PAS. Un refus coûte une écriture la première fois qu'une copie voit la fenêtre pleine, puis plus rien jusqu'à
+sa fin (`memoireDesPleines`) ; un refus d'une fenêtre sur deux en coûte une seconde, qui rend ce que l'autre avait
+compté. ⚠️ Plus de plafond de clés vivantes sur la connexion : il bornait la MÉMOIRE d'une copie contre un robot qui
+invente des adresses ; en base, ces lignes vivent une minute et la tâche `compteurs-debit` les efface toutes les
+cinq minutes. Le vrai fusible contre une telle rafale est la règle Cloudflare des POST d'authentification
+(`docs/ARCHITECTURE-CIBLE.md` §7.7).
+
+⚠️ **LA CLÉ PAR IP N'EST PAS L'ADRESSE DU CLIENT, et ce lot ne l'a pas changé** (c'est un sujet d'infra) : Fastify
+tourne sans `trustProxy`, donc `req.ip` est l'adresse du proxy (NPM aujourd'hui), et la clé `ip::adresse` vaut en
+pratique un plafond par identité tentée pour toute la plateforme. Derrière un répartiteur qui présenterait
+plusieurs adresses sources, la même identité se répartirait sur plusieurs clés, donc un plafond multiplié
+d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne répond qu'à Cloudflare (§7.3).
 
 🔴 **Les portes publiques ont leurs propres plafonds, et un plafond ne compte que des clés qui EXISTENT.**
 - `/v1` et `/mcp` : un budget GLOBAL (`API_KEY_PREFILTRE_MAX`, clé constante) freine les empreintes jamais
   résolues par ce process AVANT la requête en base ; une empreinte résolue en est exemptée, sinon une attaque qui
   l'épuise couperait tous les clients. Puis le plafond de l'ESPACE (`src/auth/plafond-espace.ts`, 2026-09-25),
   commun à toutes ses clés : deux fenêtres fixes qui s'appliquent ensemble (`API_PLAFOND_MINUTE`, défaut 60,
-  `API_PLAFOND_HEURE`, défaut 1 000), vérifiées avant qu'aucune ne consomme, comptées sur l'ESPACE d'une clé
-  résolue (avant la base dès que la clé est connue, l'espace étant retenu avec l'empreinte dans `ClesResolues` ;
-  après la lecture la première fois). Une fausse clé n'entre donc jamais dans sa table. Il compte des APPELS : le
+  `API_PLAFOND_HEURE`, défaut 1 000), comptées toutes ou aucune, sur l'ESPACE d'une clé résolue (avant la lecture
+  de la clé dès qu'elle est connue, l'espace étant retenu avec l'empreinte dans `ClesResolues` ; après la lecture
+  la première fois). Une fausse clé n'entre donc jamais dans le compteur. Depuis le lot B, les fenêtres vivent dans
+  le compteur PARTAGÉ (calées sur la minute et l'heure pleines, heure de la base) : le plafond est tenu au total des
+  copies, et `x-ratelimit-*` disent le compte commun. Il compte des APPELS : le
   travail reste mesuré par le garde d'usage. Un espace peut porter son réglage (`tenant_settings.api_plafond_minute`
   et `_heure`, migration 0181, `null` = défaut, CHECK > 0), lu à travers un cache de 30 s (une lecture partagée par
   rafale ; en cas d'échec, le dernier réglage connu, sinon le défaut) et réglé par `GET`/`PUT
@@ -1347,7 +1416,8 @@ vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond 
   échoue). Refus : 429 `rate_limited`, `Retry-After` = la fenêtre pleine qui se libère le
   plus tard, message qui la nomme avec son plafond ; les `x-ratelimit-*` décrivent la fenêtre la plus proche de
   son plafond. `0` en configuration éteint la fenêtre pour les espaces sans réglage (levier d'urgence) ; un
-  réglage d'espace reste appliqué. Local au process : le plafond est celui d'UNE instance.
+  réglage d'espace reste appliqué. ⚠️ Le cache du réglage, lui, reste par copie : un plafond relevé par `/ops`
+  s'applique tout de suite sur la copie qui a servi l'écriture, dans les 30 s sur les autres.
 - La clé du relais du Meta Business Agent (droit `mba:relais`, attribué par la seule publication) n'entre PAS
   dans ce plafond : elle garde un compteur PAR CLÉ (`API_KEY_RATE_LIMIT_MAX`, sur l'empreinte), pour qu'un
   intégrateur qui charge l'API ne coupe pas les outils de l'agent de Meta en pleine conversation.
@@ -1372,7 +1442,8 @@ vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond 
   est le budget de tous. Tout limiteur à 0 est désactivé, et ne pose aucun en-tête.
 - UNE opération lourde de l'API publique à la fois (`API_MAX_LOURDES_SIMULTANEES`), pour tout le process : un
   lot de contacts prend la moitié du pool. Un autre espace attend donc son tour en 429 ; c'est un choix (la
-  réception des messages passe avant l'équité entre intégrateurs).
+  réception des messages passe avant l'équité entre intégrateurs). Par COPIE, délibérément : c'est le pool de la
+  copie qu'elle protège.
 
 🔴 **Une URL saisie par un client se vérifie DEUX FOIS : sur son TEXTE, et sur ce vers quoi elle RÉSOUT.**
 `urlRecuperable` lit le texte de l'hôte (elle refuse `localhost`, les littéraux privés et leurs formes
@@ -1765,8 +1836,9 @@ endroits en existe zéro : l'un des deux sera fait sans que l'autre le sache.
 
 Les deux qui ont le plus de conséquences aujourd'hui :
 
-- **Plafonds de débit locaux au process** : à lever avant tout multi-replica, sinon le plafond annoncé est
-  multiplié par le nombre d'instances.
+- **Les plafonds qui restent par copie** (le plafond par utilisateur, les petits plafonds, § 7) : N copies les
+  servent N fois, délibérément ; les plafonds qui bornent un espace, une identité ou un quota de Meta comptent au
+  total depuis le lot B (2026-09-28).
 - **`web/lib/api.ts`** reste un hub de plus de 200 exports, dette connue et en croissance.
 
 ---
@@ -2063,8 +2135,10 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/signaux/completer.ts` | relit, au moment de pousser, ce qu'un signal ne transporte pas (fiche et consentement courants, contexte d'un message, lien, analyse). 🔴 CONTRAT : il porte la règle d'identité de l'adaptateur actuel (`identifiantPoussable`, une fiche ne se pousse que sous son `externalId`, sinon ni contexte ni lien ne sont relus). Un adaptateur qui désignerait un profil autrement devra lui passer SON critère, sinon il recevrait des signaux amputés sans erreur |
 | `src/salesforce/client.ts` | 🔴 le SEUL client de l'API d'une org Salesforce : jeton client credentials par org (cache par process, un seul renouvellement sur `INVALID_SESSION_ID`), `fetchPublic` et lecture bornée (l'adresse est saisie par un client), classement des erreurs sur le CODE de Salesforce et non sur le statut, refus d'adresse et redirection définitifs AVANT tout rejeu, quota du client relevé à chaque réponse. L'adresse passe d'abord par `lireMyDomain` (`src/salesforce/my-domain.ts`), et la connexion d'une org par `src/salesforce/connexion.ts` (contrat avec le package figé là) |
 | `src/ids/code.ts` | les identifiants publics et les codes de lien |
-| `src/db/verrous-courts.ts` -> `VerrousCourts` (`PgVerrousCourts`) | 🔴 ce qui ne doit arriver qu'UNE fois pour toutes les copies de l'API : `prendre(clés)` rend une prise ou `null` (toutes les clés ou aucune, une clé échue se reprend), `relacher(prise)` ne libère que ce qui porte encore son jeton. Un `Set` ou une `Map` en mémoire pour ce rôle ne voit qu'une copie. Chaque usage préfixe ses clés (`mba-envoi:`, `mba-publication:`). Le double des tests vit dans `tests/verrous.ts`, jamais dans `src/` |
-| `src/lib/en-vol.ts` -> `creerTravauxEnVol` | 🔴 tout travail qu'une réponse HTTP laisse derrière elle (`void` après `reply.send`) se confie ici : `arreterApi` (`src/shutdown.ts`) l'attend, borné, avant de fermer la file et le pool. Un `void` qui n'y passe pas est coupé à l'arrêt de la copie |
+| `src/db/verrous-courts.ts` -> `VerrousCourts` (`PgVerrousCourts`) | 🔴 ce qui ne doit arriver qu'UNE fois pour toutes les copies de l'API : `prendre(clés)` rend une prise ou `null` (toutes les clés ou aucune, une clé échue se reprend), `relacher(prise)` ne libère que ce qui porte encore son jeton, `prolonger(prise, durée)` repousse l'échéance tant que le jeton tient (`false` sinon : le travail gardé doit s'arrêter). Un `Set` ou une `Map` en mémoire pour ce rôle ne voit qu'une copie. Chaque usage préfixe ses clés (`mba-envoi:`, `mba-publication:`, `es-code:`, `ops.alerte`). Un délai « pas deux fois en N secondes » est une prise jamais relâchée. Le double des tests vit dans `tests/verrous.ts`, jamais dans `src/` |
+| `src/db/debit.ts` -> `CompteurDebit` (`PgCompteurDebit`, `memoireDesPleines`) | 🔴 ce qui doit être tenu au TOTAL des copies de l'API : `compter(fenêtres)` compte un appel dans toutes ses fenêtres ou aucune, seulement s'il tient sous chaque plafond, et rend l'état de chacune sur l'horloge de la base ; `lister(préfixe)` sert `/ops/usage`. Une `Map` de compteurs en mémoire pour ce rôle sert N fois le plafond. Chaque usage préfixe ses clés (`api.minute|`, `couteux|`, `connexion.login|`, `usage|`, `ops.refus`). Le compteur en mémoire (`debit.memoire.ts`) est le défaut d'un serveur sans base et le double des tests, jamais un câblage de production (`tests/debit-cablage.test.ts`) |
+| `src/auth/plafond-partage.ts` -> `PlafondPartage`, `consommerPartageAvecEntetes` | un plafond à une fenêtre dans le compteur partagé, avec sa politique OBLIGATOIRE si la base ne répond pas (`siLaBaseEchoue` : `laisser-passer` pour ce qui protège la charge, `refuser` pour ce qui protège d'une attaque). Le plafond de l'API publique a ses deux fenêtres dans `plafond-espace.ts` |
+| `src/lib/en-vol.ts` -> `creerTravauxEnVol` | 🔴 un travail qu'une réponse HTTP laisse derrière elle et dont la perte a une conséquence pour quelqu'un (un envoi du relais annoncé « c'est parti », le signal d'un clic que l'outil du client attend) se confie ici : `arreterApi` (`src/shutdown.ts`) l'attend, borné, avant de fermer la file et le pool. ⚠️ Restent des `void` hors suivi, qu'un arrêt de copie peut couper, et c'est accepté : les écritures d'observation (horodatage de connexion et d'usage d'une clé, lignes d'audit d'un échec de connexion ou du second facteur, compte d'un refus de `/ops`) et l'e-mail du mot de passe oublié (la réponse ne promet rien, l'utilisateur redemande) |
 | `src/db/transaction.ts` -> `enTransaction` | LA transaction du dépôt : `begin`, `commit` si le travail rend, `rollback` s'il lève, connexion relâchée dans tous les cas (y compris un `rollback` qui échoue), et c'est l'erreur D'ORIGINE qui remonte. ⚠️ Rendre sans lever VALIDE : un travail qui a écrit et ne doit rien laisser doit lever (`PgUserStore.deleteUser` garde donc sa transaction à la main) |
 | `src/worker/taches.ts` -> `programmer(nom, cadence, passe, { immediat, enEchec })` | les tâches périodiques du worker. `immediat` lance la passe de démarrage SOUS la même garde de ré-entrance que les autres ; `enEchec` porte le journal et l'alerte (`echecDeBalayage`, `src/worker.ts`). Une passe lancée à côté (`void passe()`) échappe à la garde |
 | `src/lib/tenter.ts` -> `tenter` | une étape ISOLÉE : son échec est journalisé (`console.error(echec, message)`) puis avalé |

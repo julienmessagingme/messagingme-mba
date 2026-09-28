@@ -62,6 +62,8 @@ function app(
     // Délier et relier (migration 0180) ont leurs tests dans `tests/numero-activation.test.ts`.
     delierNumero: async () => { throw new Error('non attendu dans ce test'); },
     relierNumero: async () => { throw new Error('non attendu dans ce test'); },
+    // La minute entre deux demandes de code : `tests/numero-activation.test.ts` l'éprouve. Ici, aucun chemin ne la prend.
+    verrous: { prendre: async () => { throw new Error('non attendu dans ce test'); } },
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, embeddedSignup: deps }), cap };
 }

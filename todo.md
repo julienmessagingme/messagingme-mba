@@ -507,15 +507,23 @@ n'y ont pas leur place (ils ne dépendent pas de la bascule) et n'étaient consi
 vient d'une décision de Julien.
 
 - **Le quota par espace est OBSERVÉ, jamais appliqué** (`plafondUnitesParEspace = 0`,
-  `src/api/usage-guard.memoire.ts`). Le plafond par clé ne le remplace pas : plusieurs clés multiplient la
+  `src/api/usage-guard.compteur.ts`, compté au total des copies depuis le lot B du 2026-09-28 : le jour où il
+  sera posé, il tiendra quel que soit le nombre de copies). Le plafond par clé ne le remplace pas : plusieurs clés multiplient la
   capacité, et une requête peut porter 50 contacts ou 50 destinataires. ⚠️ **Les valeurs sont une décision
   de Julien** (`ARCHITECTURE-CIBLE.md` § 13.1) : observer l'usage réel, fixer des budgets par nature
   (destinataires, contacts écrits), puis activer un plafond généreux, refusé en `429` lisible, AVANT de
   distribuer largement des clés.
-- **L'usage de `/v1` ne vit que deux heures, en mémoire** (`/ops/usage`), et rien n'alerte sur une série de
-  `429`, l'épuisement du préfiltre ou la saturation des opérations lourdes. À faire : des agrégats par
-  minute gardés plusieurs jours, et une alerte throttlée. ⚠️ **Jamais une ligne SQL par requête hostile**, et
-  jamais la clé ni son empreinte dans un journal.
+- **L'usage de `/v1` ne vit que deux heures** (`/ops/usage`, en base depuis le lot B du 2026-09-28 :
+  `compteurs_debit`, une écriture par appel ACCEPTÉ, bornée par le plafond de l'espace), et rien n'alerte sur une
+  série de `429`, l'épuisement du préfiltre ou la saturation des opérations lourdes. À faire : des agrégats par
+  minute gardés plusieurs jours (allonger `minutesGardees` suffit désormais, au prix de la taille de la table), et
+  une alerte throttlée. ⚠️ **Jamais une ligne SQL par requête hostile** (le préfiltre et les budgets de codes
+  inconnus restent en mémoire pour ça), et jamais la clé ni son empreinte dans un journal.
+- **Un geste de publication plus long que le bail** (relecture du lot A, jaune 2, traité en partie le
+  2026-09-28) : le bail de dix minutes est désormais PROLONGÉ avant chaque geste, et une publication qui l'a perdu
+  s'arrête. Reste ouvert : un SEUL geste qui durerait plus de dix minutes (plusieurs appels à Meta de 300 s dans le
+  même geste) laisserait échoir le bail pendant qu'il tourne. Si cela arrive un jour, un bail entretenu par une
+  minuterie pendant la publication fermerait le cas ; aujourd'hui aucun geste n'en approche.
 - **Aucun moyen de lire QUEL commit tourne** en production. Un identifiant de build dans `/ops/overview`
   (pas dans une réponse publique). C'est aussi un test d'acceptation de la bascule (`ARCHITECTURE-CIBLE.md`
   § 11).

@@ -1,8 +1,10 @@
 import { randomBytes, createHash } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { verifyPassword, hashPassword, hashPasswordSync } from './password';
 import { signSession, signChoice, verifyChoice, signMfa, signEnrolement, signSessionOps, type EtapeConnexion } from './token';
-import { RateLimiter } from './rate-limit';
+import { refuserTropDeRequetes } from './rate-limit';
+import { PlafondPartage, MESSAGE_PLAFOND_INDISPONIBLE } from './plafond-partage';
+import type { CompteurDebit } from '../db/debit';
 import { registerMfa, type MfaRouteDeps, type OptionsSuite } from './mfa-routes';
 import type { UserAuthStore } from './store';
 import { estAdresseOps, type UserStateLoader, type Guard } from './middleware';
@@ -27,7 +29,7 @@ export interface AuthRouteDeps extends MfaRouteDeps {
   auditConnexion?: (tenantId: string, userId: string, cause: 'mot_de_passe' | 'compte_desactive') => Promise<void>;
   users: UserAuthStore;
   secret: string;
-  /** Rate-limit du login (clé `ip::adresse`). Défaut : 10 tentatives par minute. */
+  /** Rate-limit du login (clé : l’empreinte de `ip::adresse`). Défaut : 10 tentatives par minute. */
   loginRateLimit?: { max: number; windowMs: number };
   /** Relecture par requête de l'état du compte (révoqué, supprimé, rôle frais). Absent en test (JWT seul).
    *  Voir makeRequireAuth. */
@@ -172,40 +174,56 @@ const MIN_PASSWORD = 12;
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
- * Clé de rate-limit : `req.ip::discriminant`. `req.ip` seul désigne le proxy (Fastify sans `trustProxy`
+ * Clé de rate-limit : l’empreinte de `req.ip::discriminant`. `req.ip` seul désigne le proxy (Fastify sans `trustProxy`
  * derrière Cloudflare puis NPM) : un limiteur sur lui serait transverse. Le discriminant (adresse
  * normalisée, jeton) garde un plafond par identité tentée.
  *
- * Le discriminant est borné : au-delà de 100 caractères, son empreinte le remplace (64 caractères,
- * discrimine tout aussi bien), sinon un jeton Google entier ferait un kilo-octet par clé dans une table qu'un
- * robot peut remplir. Posé ici, seul point par où passent toutes les clés.
+ * ⚠️ `req.ip` n'est donc PAS l'adresse du client (lot B, 2026-09-28, et c'est un sujet d'infra, pas de ce code) : la
+ * clé vaut en pratique `<adresse du proxy>::discriminant`, un plafond par identité tentée pour toute la plateforme.
+ * Derrière un répartiteur qui présenterait plusieurs adresses sources, la même identité se répartirait sur plusieurs
+ * clés (un plafond multiplié d'autant) ; le jour où l'origine ne répond qu'à Cloudflare, `CF-Connecting-IP` devient
+ * lisible (`docs/ARCHITECTURE-CIBLE.md` §7.3 et §7.7).
+ *
+ * 🔴 LA CLÉ EST TOUJOURS UNE EMPREINTE, jamais le texte (lot B, 2026-09-28). Elle vit désormais en base
+ * (`compteurs_debit`), donc aussi dans le journal de la base et ses sauvegardes : en clair, elle y écrirait
+ * l'adresse de chaque tentative, y compris celles d'inconnus, et, pour la réinitialisation et l'invitation, le JETON
+ * lui-même, qui ouvre un compte pendant une heure. L'empreinte discrimine aussi bien, et occupe 64 caractères quoi
+ * qu'on lui donne (un jeton Google entier ferait un kilo-octet par ligne). Posé ici, seul point par où passent
+ * toutes les clés.
  */
-const MAX_DISCRIMINANT = 100;
 function rateKey(req: { ip: string }, discriminant: string): string {
-  const d = discriminant.length <= MAX_DISCRIMINANT
-    ? discriminant
-    : createHash('sha256').update(discriminant).digest('hex');
-  return `${req.ip}::${d}`;
+  return createHash('sha256').update(`${req.ip}::${discriminant}`).digest('hex');
 }
 
 /**
- * Plafond de clés vivantes par limiteur : leurs clés viennent toutes de l'appelant (adresse, jeton), et sous
- * flot `prune()` ne retire rien dans la fenêtre. Dix mille est très large pour l'usage légitime ; au-delà,
- * une clé neuve est refusée et les clés connues restent servies.
+ * Freine une tentative : `true` = refusée, le 429 est déjà parti. Le compte vit dans le compteur PARTAGÉ par les
+ * copies de l'API : dix essais par minute pour une identité, au total, et pas dix par copie.
+ * 🔴 FERMÉ SUR PANNE : si la base ne peut pas compter, la tentative est refusée (`siLaBaseEchoue: 'refuser'`), avec
+ * un message qui dit que la vérification est impossible et non « trop de tentatives ». Une panne ne doit jamais
+ * ouvrir un essai de plus contre un mot de passe ; la connexion elle-même a de toute façon besoin de la base.
  */
-const MAX_CLES = 10_000;
+async function freine(plafond: PlafondPartage, cle: string, reply: FastifyReply): Promise<boolean> {
+  const c = await plafond.consommer(cle);
+  if (c.accepte) return false;
+  await refuserTropDeRequetes(reply, c.attenteMs, c.indisponible ? MESSAGE_PLAFOND_INDISPONIBLE : 'trop de tentatives, réessaie plus tard');
+  return true;
+}
 
-export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: Guard): void {
-  // Le 3e argument est l'horloge, le 4e le plafond de clés. Les six limiteurs le portent : leurs six clés
-  // sont choisies par l'appelant.
-  const horloge = (): number => Date.now();
+export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: Guard, compteur: CompteurDebit): void {
+  /**
+   * Les six plafonds, dans le compteur partagé, tous fermés sur panne. Plus de plafond de clés vivantes : il bornait
+   * la MÉMOIRE d'un processus contre un robot qui invente des adresses ; en base, ces lignes vivent le temps de leur
+   * fenêtre et la tâche `compteurs-debit` du worker les efface toutes les cinq minutes.
+   */
+  const plafond = (nom: string, max: number, dureeMs = 60_000): PlafondPartage =>
+    new PlafondPartage(compteur, { nom: `connexion.${nom}`, max, dureeMs, siLaBaseEchoue: 'refuser' });
   const cfg = deps.loginRateLimit ?? { max: 10, windowMs: 60_000 };
-  const limiter = new RateLimiter(cfg.max, cfg.windowMs, horloge, MAX_CLES);
-  const signupLimiter = new RateLimiter(10, 60_000, horloge, MAX_CLES);
-  const forgotLimiter = new RateLimiter(5, 60_000, horloge, MAX_CLES);
-  const resetLimiter = new RateLimiter(10, 60_000, horloge, MAX_CLES);
-  const acceptLimiter = new RateLimiter(10, 60_000, horloge, MAX_CLES);
-  const googleLimiter = new RateLimiter(20, 60_000, horloge, MAX_CLES);
+  const limiter = plafond('login', cfg.max, cfg.windowMs);
+  const signupLimiter = plafond('signup', 10);
+  const forgotLimiter = plafond('forgot', 5);
+  const resetLimiter = plafond('reset', 10);
+  const acceptLimiter = plafond('accept', 10);
+  const googleLimiter = plafond('google', 20);
 
   app.post('/auth/login', async (req, reply) => {
     const b = (req.body ?? {}) as { email?: unknown; password?: unknown; ops?: unknown };
@@ -214,9 +232,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     }
     const email = b.email.trim().toLowerCase();
     // Rate-limit après le parse (la clé porte l'adresse) et avant le scrypt (protège le coût CPU du brute-force).
-    if (!limiter.take(rateKey(req, email))) {
-      return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
-    }
+    if (await freine(limiter, rateKey(req, email), reply)) return reply;
 
     const identite = await deps.users.findIdentity(email);
     // Toujours vérifier un hash (leurre si l'adresse est inconnue) : même temps CPU, pas de fuite d'existence.
@@ -263,9 +279,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (typeof b.choiceToken !== 'string' || typeof b.tenantId !== 'string' || b.choiceToken === '' || b.tenantId === '') {
       return reply.code(400).send({ error: 'choiceToken et tenantId requis' });
     }
-    if (!limiter.take(rateKey(req, b.choiceToken))) {
-      return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
-    }
+    if (await freine(limiter, rateKey(req, b.choiceToken), reply)) return reply;
     const choix = await verifyChoice(b.choiceToken, deps.secret);
     if (!choix) return reply.code(401).send({ error: 'choix expiré, reconnecte-toi' });
     const compte = choix.comptes.find((c) => c.tenantId === b.tenantId);
@@ -288,7 +302,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const idToken = str(corps.idToken);
     if (idToken === '') return reply.code(400).send({ error: 'idToken requis' });
     // Clé sur l'idToken Google : borne les tentatives par jeton, plus de blocage transverse.
-    if (!googleLimiter.take(rateKey(req, idToken))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    if (await freine(googleLimiter, rateKey(req, idToken), reply)) return reply;
     const identity = await deps.verifyGoogle(idToken);
     if (!identity || !identity.emailVerified) return reply.code(401).send({ error: 'jeton Google invalide' });
     const comptes = await deps.comptes.getByEmail(identity.email);
@@ -363,7 +377,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (!nomLu.success) return reply.code(400).send({ error: MESSAGE_NOM_ESPACE_INVALIDE });
     const workspaceName = nomLu.data;
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
-    if (!signupLimiter.take(rateKey(req, email))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    if (await freine(signupLimiter, rateKey(req, email), reply)) return reply;
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     // 🔴 Une adresse déjà connue ne s'inscrit qu'avec son mot de passe : l'inscription réutilise son identité, et
     // sans cette vérification n'importe qui se rattacherait à l'identité d'un autre, puis changerait le mot de
@@ -398,7 +412,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
   app.post('/auth/forgot-password', async (req, reply) => {
     const email = str((req.body as { email?: unknown } | undefined)?.email).trim().toLowerCase();
     // Clé sur l'adresse. Le `take()` précède toute lecture : le seuil du 429 ne révèle pas l'existence du compte.
-    if (!forgotLimiter.take(rateKey(req, email))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    if (await freine(forgotLimiter, rateKey(req, email), reply)) return reply;
     const generic = { ok: true, message: 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.' };
     if (EMAIL_RE.test(email) && deps.tokens && deps.sendEmail && deps.appUrl) {
       try {
@@ -431,7 +445,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const password = str(b.password);
     if (token === '') return reply.code(400).send({ error: 'token requis' });
     // Clé sur le jeton (pas d'adresse ici) : borne le brute-force d'un lien sans bloquer les autres.
-    if (!resetLimiter.take(rateKey(req, token))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    if (await freine(resetLimiter, rateKey(req, token), reply)) return reply;
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     const userId = await deps.tokens.consume('reset', token);
     if (!userId) return reply.code(400).send({ error: 'lien invalide ou expiré' });
@@ -448,7 +462,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const password = str(b.password);
     if (token === '') return reply.code(400).send({ error: 'token requis' });
     // Clé sur le jeton d'invitation : borne le brute-force d'un lien sans bloquer les autres.
-    if (!acceptLimiter.take(rateKey(req, token))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    if (await freine(acceptLimiter, rateKey(req, token), reply)) return reply;
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     const userId = await deps.tokens.consume('invite', token);
     if (!userId) return reply.code(400).send({ error: 'invitation invalide ou expirée' });

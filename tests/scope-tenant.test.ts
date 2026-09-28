@@ -4,7 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { gardesOuvertes } from './gardes';
 import { espaceVerifie, etapeEspace, monterAvecEtapeEspace, scopeTenant } from '../src/http/scope';
 import { buildServer, modulesDeRoutes } from '../src/server';
-import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
+import { GardeUsageMemoire } from './aide/usage';
 import { adresse, serveurSonde, type RouteSondee, type ServeurSonde } from './serveur-sonde';
 
 /**

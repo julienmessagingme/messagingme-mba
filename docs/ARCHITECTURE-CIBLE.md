@@ -228,6 +228,25 @@ ne l'est plus au-delà de deux.
 
 **La solution : Postgres d'abord, Redis quand la mesure le demande.** Voir §9.
 
+**Livré le 2026-09-28** (lot B de `docs/superpowers/plans/2026-09-28-api-multi-instances.md`, migration 0186) ; l'essai réel à deux copies, qui clôt le chantier, reste à faire.
+Un compteur Postgres par fenêtre fixe (`compteurs_debit`, derrière l'interface `CompteurDebit` de
+`src/db/debit.ts` : le jour de Redis, c'est un adaptateur de plus), une écriture par appel compté, précédé dans
+chaque copie de la mémoire de ses fenêtres pleines (un refus répété ne coûte plus rien). Comptent au TOTAL : le
+plafond par espace de l'API publique et ses `x-ratelimit-*`, les opérations coûteuses, les plafonds de connexion,
+l'usage de `/ops/usage`, les refus de `/ops` et le repos de leur alerte ; la minute entre deux demandes de code d'un
+numéro est un verrou court. Chaque plafond a sa politique écrite quand la base ne répond pas (connexion et code :
+refus ; API publique, coûteux, usage : l'appel passe). Restent par copie, délibérément et écrit dans
+`documentation.md` § 7 : le plafond par utilisateur (le plus fréquent), les petits plafonds (aide, support,
+chaîne, relais du Meta Business Agent, budgets des clés et codes jamais vus, codes de `/w` et `/rcs/callback`,
+second facteur), les places d'opérations lourdes simultanées (elles protègent le pool DE LA COPIE) et les caches
+sans invalidation. La borne « deux copies au plus » tombe donc pour les plafonds ; le maximum de l'autoscaler se
+déduit du budget de connexions (§7.5).
+
+⚠️ **La clé « par IP » de la connexion n'est pas l'adresse du client** (`req.ip` = le proxy, Fastify sans
+`trustProxy`) : aujourd'hui un plafond par identité tentée pour toute la plateforme, ce qui est juste. Derrière un
+répartiteur qui présenterait plusieurs adresses sources, une même identité se répartirait sur plusieurs clés. À
+régler côté infra (§7.3, §7.7), pas dans le code des plafonds.
+
 ### 3.4 Les pièces jointes de l'assistant MBA doivent quitter la mémoire
 
 **Le problème, que la version du 2026-09-15 avait oublié** et que le mémo du 2026-09-19 a relevé.
@@ -521,12 +540,14 @@ avec deux copies au plus, le pire cas est un plafond doublé, connu et borné (�
 service payant et un mode de panne de plus pour le fermer.
 
 **Le déclencheur qui ferait passer à Redis** : quand l'écriture du compteur devient elle-même une charge
-visible, c'est-à-dire quand on mesure des écritures de plafond au même ordre de grandeur que le trafic métier,
-ou le jour où l'on relève le plafond de copies au-delà de deux. Scaleway a un Redis managé, qui se rattache
-au même réseau privé ; la bascule sera un changement d'implémentation derrière la même interface.
+visible, c'est-à-dire quand on mesure des écritures de plafond au même ordre de grandeur que le trafic métier.
+Le nombre de copies n'en est plus un depuis le 2026-09-28 : le compteur en base tient le plafond au total, quel
+que soit ce nombre. Scaleway a un Redis managé, qui se rattache au même réseau privé ; la bascule sera un
+changement d'implémentation derrière la même interface.
 
 🔴 **Écrire le compteur derrière une interface DÈS le chantier 3.3**, précisément pour que ce jour-là ce soit
-un remplacement et pas une réécriture.
+un remplacement et pas une réécriture. ✅ Fait : `CompteurDebit` (`src/db/debit.ts`), un adaptateur Postgres et un
+compteur en mémoire pour les tests ; Redis en serait un troisième.
 
 ---
 

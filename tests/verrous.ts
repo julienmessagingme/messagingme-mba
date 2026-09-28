@@ -26,6 +26,18 @@ export function verrousEnMemoire(maintenant: () => number = Date.now): VerrousCo
     async relacher(prise) {
       for (const c of prise.cles) if (lignes.get(c)?.jeton === prise.jeton) lignes.delete(c);
     },
+    // Comme l'adaptateur : le jeton seul décide, qu'une clé soit échue ou non ; `false` dès qu'une clé ne le porte plus.
+    async prolonger(prise, dureeMs) {
+      const t = maintenant();
+      let tenues = 0;
+      for (const c of prise.cles) {
+        const ligne = lignes.get(c);
+        if (ligne?.jeton !== prise.jeton) continue;
+        ligne.fin = t + dureeMs;
+        tenues += 1;
+      }
+      return tenues === prise.cles.length;
+    },
     /** Les clés dont l'échéance court encore : ce qu'un test lit pour dire « rien n'est resté pris ». */
     tenues() {
       const t = maintenant();

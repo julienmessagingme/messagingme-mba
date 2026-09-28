@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
-import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
+import { GardeUsageMemoire } from './aide/usage';
 import { cleApiDeTest } from './aide/cle-api';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { V1SendsRouteDeps } from '../src/http/v1-sends';
@@ -93,9 +93,9 @@ const entetes = { 'content-type': 'application/json', authorization: `Bearer ${C
  * de 500). Ce n'est pas
  * affaiblir l'assertion, c'est vérifier ce qu'elle a toujours voulu dire : le TOTAL compté.
  */
-function totaux(usage: GardeUsageMemoire): Record<string, { appels: number; unites: number; refusees: number }> {
+async function totaux(usage: GardeUsageMemoire): Promise<Record<string, { appels: number; unites: number; refusees: number }>> {
   const t: Record<string, { appels: number; unites: number; refusees: number }> = {};
-  for (const c of usage.compteurs()) {
+  for (const c of (await usage.compteurs())) {
     const o = (t[c.operation] ??= { appels: 0, unites: 0, refusees: 0 });
     o.appels += c.appels;
     o.unites += c.unites;
@@ -141,7 +141,7 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     await server.inject({ method: 'POST', url: '/mcp', headers: entetes, payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     await server.inject({ method: 'GET', url: '/mcp', headers: entetes });
 
-    const parOperation = totaux(usage);
+    const parOperation = await totaux(usage);
     expect(Object.keys(parOperation).sort()).toEqual(
       ['contacts.batch', 'contacts.read', 'contacts.upsert', 'mcp.call', 'mcp.refus', 'sends.create', 'sends.read'],
     );
@@ -167,7 +167,7 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     }
     // 1 500 contacts acceptés en trente appels : c'est précisément ce que le plafond de débit ne voit pas.
     expect(codes.every((c) => c === 200)).toBe(true);
-    expect(totaux(usage)['contacts.batch']).toMatchObject({ unites: 1_500, refusees: 0 });
+    expect((await totaux(usage))['contacts.batch']).toMatchObject({ unites: 1_500, refusees: 0 });
     await server.close();
   });
 
@@ -177,7 +177,7 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     const { server, usage } = monter();
     const res = await server.inject({ method: 'GET', url: '/mcp', headers: entetes });
     expect(res.statusCode).toBe(405);
-    expect(usage.compteurs().find((c) => c.operation === 'mcp.refus')).toMatchObject({ appels: 1 });
+    expect((await usage.compteurs()).find((c) => c.operation === 'mcp.refus')).toMatchObject({ appels: 1 });
     await server.close();
   });
 
@@ -186,7 +186,7 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     // seuil sera posé, il mordrait sur le mauvais.
     const { server, usage } = monter();
     await server.inject({ method: 'POST', url: '/v1/contacts', headers: { 'content-type': 'application/json' }, payload: { phone: '+33612345678' } });
-    expect(usage.compteurs()).toHaveLength(0);
+    expect((await usage.compteurs())).toHaveLength(0);
     await server.close();
   });
 
@@ -205,7 +205,7 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ errors: number }>().errors).toBe(50);
-    expect(usage.compteurs().find((c) => c.operation === 'contacts.batch')).toMatchObject({ appels: 1, unites: 50 });
+    expect((await usage.compteurs()).find((c) => c.operation === 'contacts.batch')).toMatchObject({ appels: 1, unites: 50 });
     await server.close();
   });
 
@@ -215,7 +215,7 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     const { server, usage } = monter();
     const res = await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678', fields: 'cassé' } });
     expect(res.statusCode).toBe(400);
-    expect(usage.compteurs()).toHaveLength(0);
+    expect((await usage.compteurs())).toHaveLength(0);
     await server.close();
   });
 });
@@ -231,7 +231,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
    */
   it('🔴 un double maison suffit à toutes les routes : aucune ne connaît l’implémentation', async () => {
     const vues: string[] = [];
-    const double = { demander: (d: { operation: string }) => { vues.push(d.operation); return { accepte: true }; }, compteurs: () => [], entrerLourde: () => () => {}, noterRefus: () => {} };
+    const double = { demander: async (d: { operation: string }) => { vues.push(d.operation); return { accepte: true }; }, compteurs: async () => [], entrerLourde: () => () => {}, noterRefus: async () => {} };
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write', 'sends:create'] });
     const server = buildServer({
       queue: new FakeQueue(),
@@ -253,7 +253,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
   it('🔴 un garde qui REFUSE fait rendre 429 aux routes, pas 500', async () => {
     // Le jour où un seuil existera, c'est ce chemin qui servira. Un 5xx serait remplacé par la page
     // Cloudflare et l'intégrateur ne saurait même pas ce qu'on lui reproche.
-    const refusant = { demander: () => ({ accepte: false, raison: 'quota d’essai atteint' }), compteurs: () => [], entrerLourde: () => () => {}, noterRefus: () => {} };
+    const refusant = { demander: async () => ({ accepte: false, raison: 'quota d’essai atteint' }), compteurs: async () => [], entrerLourde: () => () => {}, noterRefus: async () => {} };
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] });
     const server = buildServer({
       queue: new FakeQueue(),
@@ -416,7 +416,7 @@ describe('le plafond des opérations LOURDES en vol', () => {
     const refuse = await server.inject({ method: 'POST', url: '/v1/contacts/batch', headers: entetes, payload: gros });
     expect(refuse.statusCode).toBe(429);
 
-    const ligne = usage.compteurs().find((c) => c.operation === 'contacts.batch')!;
+    const ligne = (await usage.compteurs()).find((c) => c.operation === 'contacts.batch')!;
     expect(ligne.refusees, 'le refus de place doit se voir').toBe(1);
     // 🔴 ET SON TRAVAIL N'EST PAS COMPTÉ : un appel refusé n'a rien fait. Sans cette assertion, la
     // correction pourrait se contenter d'incrémenter `refusees` en laissant les unités gonflées.

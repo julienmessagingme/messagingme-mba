@@ -81,7 +81,7 @@ export interface OpsRouteDeps {
    * Les compteurs d'usage de l'API publique ; absent -> `/ops/usage` rend une liste vide. Optionnel ici (les tests
    * montent `/ops` sans usage), obligatoire sur les routes `/v1`, où l'oublier perdrait une mesure en silence.
    */
-  usage?: { compteurs(): unknown[] };
+  usage?: { compteurs(): Promise<unknown[]> };
   /** La grille de prix globale. */
   lireGrillePrix(): Promise<GrillePrix>;
   reglages: {
@@ -170,11 +170,12 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
 
   /**
    * L'usage de l'API publique, agrégé par minute : qui consomme quoi, pour arbitrer un jour un seuil sur des
-   * chiffres. En observation : ces compteurs ne refusent rien. Lus en mémoire et non en base (une ligne SQL par
-   * requête amplifierait la charge observée) : ils décrivent ce process, deux instances en verraient deux moitiés.
+   * chiffres. En observation : ces compteurs ne refusent rien. Lus dans le compteur partagé (lot B, 2026-09-28) :
+   * c'est le TOTAL de toutes les copies de l'API, et non plus la moitié que voyait la copie interrogée. Leur coût,
+   * une écriture par appel accepté, est borné par le plafond de l'espace.
    */
   app.get('/ops/usage', opts, async (_req, reply) => {
-    return reply.code(200).send({ compteurs: deps.usage ? deps.usage.compteurs() : [] });
+    return reply.code(200).send({ compteurs: deps.usage ? await deps.usage.compteurs() : [] });
   });
 
   /**

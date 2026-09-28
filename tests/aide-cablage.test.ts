@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { modulesDeRoutes } from '../src/server';
-import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
+import { GardeUsageMemoire } from './aide/usage';
 
 /**
  * LE CÂBLAGE DU BOT D'AIDE, lu dans la source.

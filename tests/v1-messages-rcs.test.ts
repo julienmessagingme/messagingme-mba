@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { registerV1MessagesRcs, type V1MessagesRcsRouteDeps } from '../src/http/v1-messages-rcs';
 import type { DepsRcsLibre } from '../src/rcs/envoyer-libre';
 import type { ClesFiche, ModeCreation, ResolutionFiche } from '../src/api/fiche';
-import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
+import { GardeUsageMemoire } from './aide/usage';
 import type { PreHandler } from '../src/auth/middleware';
 import type { OrigineMessage } from '../src/inbox/origine';
 import { RCS_TEXTE_MAX } from '../src/rcs/schema';
@@ -119,7 +119,7 @@ describe('POST /v1/messages/rcs', () => {
     expect(res.json()).toEqual({ messageId: 'rcs-1', conversationId: 'conv-1', channel: 'rcs' });
     expect(a.envois).toEqual([{ waId: '33612345678', text: 'Bonjour' }]);
     expect(a.enregistres).toEqual([{ conversationId: 'conv-1', body: 'Bonjour', origine: 'api', type: 'rcs', auteur: null, canal: 'rcs' }]);
-    expect(a.usage.compteurs().map((c) => c.operation)).toEqual(['messages.send']);
+    expect((await a.usage.compteurs()).map((c) => c.operation)).toEqual(['messages.send']);
     // Un message simple ne fonde pas une relation : la fiche n'est jamais créée ici.
     expect(a.creations).toEqual(['jamais']);
     await a.server.close();
@@ -147,7 +147,7 @@ describe('POST /v1/messages/rcs', () => {
       expect(res.json<{ code: string }>().code).toBe('invalid_body');
     }
     expect(a.envois).toEqual([]);
-    expect(a.usage.compteurs()).toEqual([]);
+    expect((await a.usage.compteurs())).toEqual([]);
     await a.server.close();
   });
 
@@ -157,7 +157,7 @@ describe('POST /v1/messages/rcs', () => {
     expect([sansCle.statusCode, sansCle.json<{ code: string }>().code]).toEqual([400, 'invalid_recipient']);
     const illisible = await post(a, { phone: 'pas un numéro', text: 'x' });
     expect([illisible.statusCode, illisible.json<{ code: string }>().code]).toEqual([400, 'invalid_phone']);
-    expect(a.usage.compteurs()).toEqual([]);
+    expect((await a.usage.compteurs())).toEqual([]);
     expect(a.creations).toEqual([]);
     await a.server.close();
   });

@@ -1,5 +1,6 @@
 import type { FastifyReply } from 'fastify';
-import { RateLimiter, refuserTropDeRequetes } from './rate-limit';
+import { refuserTropDeRequetes } from './rate-limit';
+import { restantDe, type CompteurDebit, type EtatFenetre, type VerdictDebit } from '../db/debit';
 import { journaliser } from '../lib/journal';
 
 /**
@@ -10,7 +11,16 @@ import { journaliser } from '../lib/journal';
  *
  * La clé du relais du Meta Business Agent garde son propre compteur et n'entre jamais ici
  * (`makeRequireApiKey`) : un intégrateur qui charge l'API ne doit pas priver l'agent de Meta de ses outils.
- * Local au process : avec deux instances d'API, un espace aurait le double sans que rien le signale.
+ *
+ * 🔴 PARTAGÉ PAR TOUTES LES COPIES DE L'API (lot B, 2026-09-28) : les deux fenêtres se comptent dans le compteur en
+ * base (`src/db/debit.ts`), donc un espace a son plafond au TOTAL, quel que soit le nombre de copies. Fenêtres fixes
+ * alignées sur l'heure de la base (la minute commence à la minute pleine, l'heure à l'heure pleine) : `retry-after`
+ * et `x-ratelimit-reset` disent la fin de CETTE fenêtre-là.
+ *
+ * 🔴 SI LA BASE NE RÉPOND PAS, L'APPEL PASSE, sans en-têtes, et l'échec se journalise une fois par minute. Choisi :
+ * refuser tous les intégrateurs sur une panne de quelques secondes déclencherait leurs rejeux au moment où la base
+ * revient, et la route elle-même a besoin de la base (elle échouera si la panne est réelle). Le pire cas est un
+ * plafond non tenu le temps de la panne, jamais un client coupé par elle.
  */
 
 /** Les plafonds par défaut ; la configuration les reprend (`config.ts`). */
@@ -103,22 +113,17 @@ export class ReglagesPlafondEnCache implements LecteurReglagePlafond {
 
 /**
  * Les deux fenêtres d'un espace : un appel passe s'il reste de la place dans chacune, et refusé il ne
- * consomme rien. Les deux se vérifient avant qu'aucune ne consomme (rien n'est attendu entre les deux, la
- * paire est atomique dans ce process).
+ * consomme rien, ni la minute ni l'heure (le compteur les compte toutes ou aucune).
  */
 export class PlafondEspace {
-  private readonly minute: RateLimiter;
-  private readonly heure: RateLimiter;
+  private dernierAvertissement = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly defauts: PlafondsParDefaut,
     private readonly reglages: LecteurReglagePlafond,
-    now: () => number = () => Date.now(),
-  ) {
-    // Aucun plafond de clés : la clé est l'espace d'une clé résolue, jamais une valeur choisie par l'appelant.
-    this.minute = new RateLimiter(defauts.minute, FENETRE_MINUTE_MS, now);
-    this.heure = new RateLimiter(defauts.heure, FENETRE_HEURE_MS, now);
-  }
+    /** Le compteur partagé par les copies de l'API. Aucun plafond de clés : la clé est l'espace d'une clé résolue. */
+    private readonly compteur: CompteurDebit,
+  ) {}
 
   /**
    * Compte un appel de l'espace et pose les en-têtes `x-ratelimit-*` ; `false` = refusé, le 429 est déjà
@@ -129,29 +134,41 @@ export class PlafondEspace {
   async consommer(tenantId: string, reply: FastifyReply): Promise<boolean> {
     const reglage = await this.reglages.reglage(tenantId);
     const fenetres = [
-      { nom: 'minute', limiteur: this.minute, max: reglage.minute ?? this.defauts.minute },
-      { nom: 'heure', limiteur: this.heure, max: reglage.heure ?? this.defauts.heure },
-    ]
-      .filter((f) => f.max > 0)
-      .map((f) => ({ ...f, etat: f.limiteur.remaining(tenantId, f.max) }));
+      { nom: 'minute', dureeMs: FENETRE_MINUTE_MS, max: reglage.minute ?? this.defauts.minute },
+      { nom: 'heure', dureeMs: FENETRE_HEURE_MS, max: reglage.heure ?? this.defauts.heure },
+    ].filter((f) => f.max > 0);
     // Aucune fenêtre active : aucun en-tête. Annoncer une limite de 0 sur un appel accepté serait faux.
     if (fenetres.length === 0) return true;
 
-    const pleines = fenetres.filter((f) => f.etat.remaining <= 0);
-    if (pleines.length > 0) {
-      const bloquante = pleines.reduce((a, b) => (b.etat.attenteMs > a.etat.attenteMs ? b : a));
-      annoncer(reply, bloquante.max, 0, bloquante.etat.resetAt);
+    let verdict: VerdictDebit;
+    try {
+      verdict = await this.compteur.compter(fenetres.map((f) => ({ cle: `api.${f.nom}|${tenantId}`, dureeMs: f.dureeMs, max: f.max })));
+    } catch (err) {
+      // La politique écrite en tête de fichier : l'appel passe, sans en-têtes, et la panne se dit une fois par minute.
+      const t = Date.now();
+      if (t - this.dernierAvertissement >= 60_000) {
+        this.dernierAvertissement = t;
+        journaliser('error', 'plafond_api_compteur_indisponible', { tenantId, err });
+      }
+      return true;
+    }
+    const etats: Array<{ nom: string; max: number; etat: EtatFenetre }> = fenetres.map((f, i) => ({ nom: f.nom, max: f.max, etat: verdict.fenetres[i]! }));
+
+    if (!verdict.accepte) {
+      // Une fenêtre au moins est pleine (c'est la seule raison d'un refus) ; le repli sur toutes n'est qu'une ceinture.
+      const pleines = etats.filter((f) => f.etat.pleine);
+      const bloquante = (pleines.length > 0 ? pleines : etats).reduce((a, b) => (b.etat.finMs > a.etat.finMs ? b : a));
+      annoncer(reply, bloquante.max, 0, bloquante.etat.finMs);
       await refuserTropDeRequetes(
         reply,
-        bloquante.etat.attenteMs,
+        bloquante.etat.finMs - verdict.maintenantMs,
         `trop de requêtes : plafond de l’espace atteint, ${bloquante.max} appels par ${bloquante.nom}`,
         'rate_limited',
       );
       return false;
     }
-    for (const f of fenetres) f.limiteur.take(tenantId, f.max);
-    const annoncee = fenetres.reduce((a, b) => (b.etat.remaining < a.etat.remaining ? b : a));
-    annoncer(reply, annoncee.max, annoncee.etat.remaining - 1, annoncee.etat.resetAt);
+    const annoncee = etats.reduce((a, b) => (restantDe(b.etat) < restantDe(a.etat) ? b : a));
+    annoncer(reply, annoncee.max, restantDe(annoncee.etat), annoncee.etat.finMs);
     return true;
   }
 }

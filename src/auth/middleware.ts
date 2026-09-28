@@ -4,6 +4,7 @@ import type { Session } from './token';
 import type { MfaStore } from './mfa-store.pg';
 import { ipIndicative, type SurveillanceOps } from '../ops/tentatives';
 import { consommerAvecEntetes, type RateLimiter } from './rate-limit';
+import { consommerPartageAvecEntetes, type PlafondPartage } from './plafond-partage';
 
 /** L'exploitant d'une requête `/ops`, tel que la garde l'a revérifié en base. */
 export interface ExploitantVerifie {
@@ -81,7 +82,8 @@ export interface AutoriteOps {
  * preHandler de `/ops` : une session d'exploitation (`signSessionOps`), en `Authorization: Bearer`. 401 sinon.
  * 🔴 Trois contrôles, dans cet ordre, et les deux derniers à CHAQUE requête :
  *  1. la signature et la portée (`verifySessionOps`), sans toucher la base : un appel sans session valide ne
- *     coûte aucune lecture ;
+ *     coûte aucune lecture pour être refusé, et son compte (`surveillerOps`) est regroupé, un seul comptage en vol
+ *     par copie ;
  *  2. l'adresse de l'identité, relue en base, toujours dans la liste : retirer quelqu'un de `OPS_EMAILS` coupe son
  *     accès à la requête suivante, sans attendre la fin de ses 12 heures ;
  *  3. son second facteur toujours actif : une identité dont le facteur a été retiré ou réinitialisé perd l'accès.
@@ -98,9 +100,9 @@ export function makeRequireOps(autorite: AutoriteOps | undefined, surveillance?:
       : null;
     // L'adresse relue en base, pas celle du jeton : c'est elle que la liste doit contenir, et elle qui signe.
     if (!etat || etat.secret === null || !estAdresseOps(autorite?.opsEmails, etat.email)) {
-      // Signalé avant de répondre, sans rien attendre : `/ops` ouvre la lecture de tous les clients. Le jeton
-      // présenté n'est jamais transmis (voir `ops/tentatives.ts`).
-      surveillance?.refus({ chemin: req.url, ip: ipIndicative(req) });
+      // Signalé avant de répondre, sans rien attendre (la promesse ne rejette jamais) : `/ops` ouvre la lecture de
+      // tous les clients. Le jeton présenté n'est jamais transmis (voir `ops/tentatives.ts`).
+      void surveillance?.refus({ chemin: req.url, ip: ipIndicative(req) });
       await reply.code(401).send({ error: 'ops: non autorisé' });
       return;
     }
@@ -179,16 +181,17 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
  * preHandler des routes coûteuses (import CSV, action en masse, purge, export d'historique, lancement de
  * campagne), à composer après `makeRequireAuth`. La clé est le tenant, pas l'utilisateur : on borne la
  * charge qu'un espace envoie à Postgres, et un espace à dix comptes aurait sinon dix fois le plafond.
- * S'ajoute au plafond général sans le remplacer.
+ * S'ajoute au plafond général sans le remplacer. Le plafond est PARTAGÉ par les copies de l'API (`PlafondPartage`) :
+ * un espace a ses dix opérations lourdes par minute au total, pas dix par copie.
  */
-export function makeLimiteParTenant(limiteur: RateLimiter, message?: string): PreHandler {
+export function makeLimiteParTenant(plafond: PlafondPartage, message?: string): PreHandler {
   return async function limiteParTenant(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     // 401 défensif : sans `req.auth`, la clé serait vide et tous les espaces partageraient le même compteur.
     if (!req.auth) {
       await reply.code(401).send({ error: 'authentification requise' });
       return;
     }
-    await consommerAvecEntetes(limiteur, req.auth.tenantId, reply, message);
+    await consommerPartageAvecEntetes(plafond, req.auth.tenantId, reply, message);
   };
 }
 

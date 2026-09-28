@@ -5,6 +5,7 @@ import type { LiensDep, LinksRouteDeps } from '../src/http/links';
 import { capturerJournal } from './journal';
 import type { DestinationLien } from '../src/links/tracked-links.pg';
 import { liensInertes } from './routes-inertes';
+import { creerTravauxEnVol } from '../src/lib/en-vol';
 
 const CODE = 'ab12cd34ef56';
 
@@ -14,9 +15,9 @@ interface Capture {
   signaux: Array<{ tenantId: string; contactId: string; code: string }>;
 }
 
-function app(over: Partial<LiensDep & Pick<LinksRouteDeps, 'signalerClic'>> = {}): { server: ReturnType<typeof buildServer>; cap: Capture } {
+function app(over: Partial<LiensDep & Pick<LinksRouteDeps, 'signalerClic' | 'enVol'>> = {}): { server: ReturnType<typeof buildServer>; cap: Capture } {
   const cap: Capture = { clics: [], lus: [], signaux: [] };
-  const { signalerClic, ...liens } = over;
+  const { signalerClic, enVol, ...liens } = over;
   const links: LinksRouteDeps = {
     liens: {
       ...liensInertes,
@@ -28,6 +29,7 @@ function app(over: Partial<LiensDep & Pick<LinksRouteDeps, 'signalerClic'>> = {}
       ...liens,
     },
     signalerClic: signalerClic ?? (async (tenantId, contactId, code) => { cap.signaux.push({ tenantId, contactId, code }); }),
+    enVol: enVol ?? creerTravauxEnVol(),
   };
   return { server: buildServer({ queue: new FakeQueue(), links }), cap };
 }
@@ -212,6 +214,20 @@ describe('redirection publique /r/:code', () => {
     const { server } = app({ contactParJeton: async () => 'contact-1', signalerClic: () => new Promise<void>(() => {}) });
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs` });
     expect(res.statusCode).toBe(302);
+    await server.close();
+  });
+
+  it('🔴 mais l’ARRÊT de la copie l’attend : le signal parti après le 302 est suivi (relecture du lot A)', async () => {
+    // Le signal s'enfile APRÈS la réponse. Sans suivi, l'arrêt d'une copie (réduction de l'autoscaler) fermait la file
+    // sous lui, et le clic attribué que l'outil du client attend disparaissait sans trace.
+    let finir: () => void = () => {};
+    const signal = new Promise<void>((r) => { finir = r; });
+    const enVol = creerTravauxEnVol();
+    const { server } = app({ contactParJeton: async () => 'contact-1', signalerClic: () => signal, enVol });
+    expect((await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs` })).statusCode).toBe(302);
+    expect(await enVol.attendre(0), 'le signal est encore en vol, et l’arrêt le sait').toBe(1);
+    finir();
+    expect(await enVol.attendre(1000)).toBe(0);
     await server.close();
   });
 });

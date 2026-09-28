@@ -7,10 +7,11 @@ import type { CodeApi } from './erreurs';
  * Une requête n'est pas une unité de coût : avec 60 requêtes par minute, une clé fait accepter 3 000
  * contacts (60 lots de 50). Le plafond de débit borne la politesse ; ici se compte le travail demandé.
  *
- * Pas de Redis : l'implémentation est injectée au bootstrap, et en multi-replica on remplace le stockage,
- * pas les routes (aucun `if (redis)` dans une route). 🔴 L'identifiant de la clé, jamais la clé ni son
- * empreinte : ces compteurs sont faits pour être regardés (`/ops`, journal, dump), un secret même haché y
- * serait publié.
+ * Pas de Redis : l'implémentation est injectée au bootstrap (`GardeUsage`, `usage-guard.compteur.ts`), et elle
+ * compte dans le compteur de débit PARTAGÉ par les copies de l'API (`src/db/debit.ts`) : `/ops/usage` montre le
+ * total de toutes les copies. Aucune route ne connaît le stockage (aucun `if (redis)` dans une route).
+ * 🔴 L'identifiant de la clé, jamais la clé ni son empreinte : ces compteurs sont faits pour être regardés (`/ops`,
+ * journal, dump), un secret même haché y serait publié.
  */
 
 /** Les opérations de l'API publique qui coûtent du travail. Fermée : un ajout se voit à la compilation. */
@@ -76,23 +77,26 @@ export type LiberationLourde = () => void;
 export interface ApiUsageGuard {
   /**
    * Compte une demande et dit si elle passe. Elle compte même quand elle refuse (`refusees` d'un côté,
-   * `appels`/`unites` de l'autre) : un refus est ce qu'on veut voir.
+   * `appels`/`unites` de l'autre) : un refus est ce qu'on veut voir. Ne lève pas : un compteur muet laisse passer.
    */
-  demander(demande: DemandeUsage): VerdictUsage;
-  /** Les compteurs agrégés encore en mémoire, du plus récent au plus ancien. */
-  compteurs(): CompteurUsage[];
+  demander(demande: DemandeUsage): Promise<VerdictUsage>;
+  /** Les compteurs agrégés encore gardés, de toutes les copies de l'API, du plus récent au plus ancien. */
+  compteurs(): Promise<CompteurUsage[]>;
   /**
    * Réserve une place pour une opération lourde ; `null` quand il n'y en a plus. Le pool sert 8 connexions
    * pour tout le process API, et `/v1/contacts/batch` en demande jusqu'à `ECRITURES_EN_VOL` par requête : dix
    * lots simultanés satureraient le pool, Inbox et worker compris. Le limiteur de débit n'y suffit pas :
    * fenêtre fixe, ses 60 requêtes peuvent tomber dans la même milliseconde.
+   * 🔴 PAR COPIE, délibérément et seul de ce garde à l'être : ce qu'il protège est le pool DE LA COPIE, que chaque
+   * copie a pour elle seule. Le compter au total ne protégerait rien de plus et diviserait la capacité par le
+   * nombre de copies.
    */
   entrerLourde(): LiberationLourde | null;
   /**
    * Note un refus que le garde n'a pas prononcé lui-même (la place d'opération lourde). N'ajoute ni appel ni
-   * unité : un appel refusé n'a pas travaillé.
+   * unité : un appel refusé n'a pas travaillé. Ne lève pas.
    */
-  noterRefus(demande: DemandeUsage): void;
+  noterRefus(demande: DemandeUsage): Promise<void>;
 }
 
 /**
@@ -115,7 +119,7 @@ async function demanderOuRefuser(
   reply: FastifyReply,
   demande: DemandeUsage,
 ): Promise<boolean> {
-  const verdict = usage.demander(demande);
+  const verdict = await usage.demander(demande);
   if (verdict.accepte) return true;
   await reply.code(429).send({ error: verdict.raison ?? 'quota d’usage atteint', code: 'rate_limited' satisfies CodeApi });
   return false;
@@ -147,7 +151,7 @@ async function reserverPlaceLourde(
   const liberer = usage.entrerLourde();
   if (!liberer) {
     // Le refus est noté avant d'être rendu : sinon une saturation ne laisse de trace que chez l'appelant.
-    usage.noterRefus(demande);
+    await usage.noterRefus(demande);
     reply.header('retry-after', '2');
     await reply.code(429).send({ error: 'trop d’opérations lourdes en cours sur cette instance, réessayez dans un instant', code: 'rate_limited' satisfies CodeApi });
     return false;

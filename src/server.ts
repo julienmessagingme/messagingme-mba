@@ -130,7 +130,10 @@ import type { ApiKeyLookup } from './auth/api-key-store.pg';
 import type { Queue } from './queue/queue';
 import { ENTETES_SECURITE_API } from './http/entetes-securite';
 import type { ApiUsageGuard } from './api/usage-guard';
-import { GardeUsageMemoire } from './api/usage-guard.memoire';
+import { GardeUsage } from './api/usage-guard.compteur';
+import { memoireDesPleines, type CompteurDebit } from './db/debit';
+import { CompteurDebitMemoire } from './db/debit.memoire';
+import { PlafondPartage } from './auth/plafond-partage';
 import { journaliser } from './lib/journal';
 
 export interface ServerDeps {
@@ -168,6 +171,15 @@ export interface ServerDeps {
    * configuration, et la route n'est pas montée.
    */
   plafondApi?: PlafondApiStore;
+  /**
+   * Le compteur des plafonds de débit PARTAGÉ par toutes les copies de l'API (`PgCompteurDebit`, migration 0186) :
+   * l'API publique par espace, les opérations coûteuses, les tentatives de connexion et l'usage de `/ops/usage` y
+   * comptent, donc un plafond est tenu au total et pas une fois par copie. `buildServer` le fait précéder de la
+   * mémoire des fenêtres pleines de CETTE copie (`memoireDesPleines`).
+   * 🔴 Absent -> un compteur en mémoire, celui d'une copie seule : c'est ce que veulent les tests, jamais la
+   * production (`src/index.ts` le passe, tenu par `tests/debit-cablage.test.ts`).
+   */
+  debit?: CompteurDebit;
   /** Routes CRM/import (enregistrées seulement si fournies -> tests DB-free du receiver). */
   import?: ImportRouteDeps;
   /** Routes campagnes (enregistrées seulement si fournies). */
@@ -422,7 +434,16 @@ function entree<D>(
  *
  * L'ordre de cette liste est l'ordre de montage : les surfaces sans session d'abord, puis les modules gardés.
  */
-export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): readonly ModuleMonte[] {
+export function modulesDeRoutes(
+  deps: ServerDeps,
+  usageApi: ApiUsageGuard,
+  /**
+   * Le compteur de débit partagé, construit une fois par `buildServer` : le plafond de l'API par espace et ceux de
+   * la connexion y comptent. Reçu en paramètre et non lu dans `deps` : le script d'auto-attaque déduit les modules
+   * des clés que ce registre lit, et `debit` n'en monte aucun. Le défaut sert qui exerce le registre sans serveur.
+   */
+  debit: CompteurDebit = new CompteurDebitMemoire(),
+): readonly ModuleMonte[] {
   /**
    * Un seul cache de réglages du plafond de l'API pour ses deux consommateurs : le limiteur de `/v1` le lit,
    * la route d'exploitation y pose ce qu'elle vient d'écrire. Avec deux instances, un plafond relevé ne
@@ -461,7 +482,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('rcsCallback', 'code-url', deps.rcsCallback, (app, d) =>
       registerRcsCallback(app, d, new RateLimiter(config.RCS_CALLBACK_PAR_MINUTE, 60_000),
         new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000))),
-    entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth)),
+    entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth, debit)),
     entree('import', 'tenant', deps.import, (app, d, g) => registerImport(app, d, g.admin, g.limiteCouteuse)),
     entree('campaigns', 'tenant', deps.campaigns, (app, d, g) => registerCampaigns(app, d, g.admin, g.limiteCouteuse)),
     // Bibliothèque RCS : montée avec `auth` et non `admin`, car la liste doit être lisible par un agent (bloc
@@ -534,11 +555,13 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('v1', 'cle-api', deps.v1, (app, v1) => {
       /**
        * Le plafond de l'espace, commun à toutes ses clés, `/v1` et `/mcp` confondus, minute et heure, indexé
-       * sur l'espace d'une clé résolue (`api-key.ts`). Le compteur par clé ne sert qu'au relais du Meta
-       * Business Agent, hors du plafond de l'espace : un intégrateur qui charge l'API ne doit pas couper les
-       * outils de l'agent de Meta. Aucun des deux n'a besoin d'un plafond de clés (clés résolues seulement).
+       * sur l'espace d'une clé résolue (`api-key.ts`), compté dans le compteur PARTAGÉ par les copies de l'API.
+       * Le compteur par clé ne sert qu'au relais du Meta Business Agent, hors du plafond de l'espace : un
+       * intégrateur qui charge l'API ne doit pas couper les outils de l'agent de Meta. Il reste en mémoire, par
+       * copie, délibérément (`documentation.md`, les plafonds). Aucun des deux n'a besoin d'un plafond de clés
+       * (clés résolues seulement).
        */
-      const plafondEspace = new PlafondEspace(defautsPlafond(), reglagesPlafond);
+      const plafondEspace = new PlafondEspace(defautsPlafond(), reglagesPlafond, debit);
       const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       /**
        * Le pré-filtre : budget global des lookups spéculatifs. Sa clé est une constante
@@ -595,13 +618,19 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * limiteurs comptent les requêtes (à 60 requêtes par minute, une clé fait accepter 30 000 contacts). Deux
    * instances donneraient deux moitiés de compteurs selon la porte. Créé avant le registre, parce que `/ops`
    * et `/v1` le capturent : l'écran d'exploitation et les routes doivent regarder le même compteur.
-   * En observation : construit sans plafond, les seuils viendront d'une mesure.
+   * En observation : construit sans plafond, les seuils viendront d'une mesure. Il compte dans le compteur partagé,
+   * sauf ses places d'opérations lourdes, qui protègent le pool de CETTE copie.
+   *
+   * 🔴 Le compteur de débit : UNE instance pour tout le serveur, précédée de la mémoire des fenêtres pleines de
+   * cette copie (sans elle, chaque refus coûterait une écriture en base, et une boucle d'appels refusés ferait
+   * tomber le pool avec elle).
    */
-  const usageApi = deps.usage ?? new GardeUsageMemoire(120, 0, () => Date.now(), config.API_MAX_LOURDES_SIMULTANEES);
+  const debit = memoireDesPleines(deps.debit ?? new CompteurDebitMemoire());
+  const usageApi = deps.usage ?? new GardeUsage(debit, { maxLourdesSimultanees: config.API_MAX_LOURDES_SIMULTANEES });
 
   // Le registre vit au niveau du module (`modulesDeRoutes`) pour qu'un test puisse l'exercer sans monter le
   // serveur entier.
-  const registre = modulesDeRoutes(deps, usageApi);
+  const registre = modulesDeRoutes(deps, usageApi, debit);
 
   /**
    * 🔴 Aucune route portant `:tenantId` ne se monte sans authentification. La couverture est dérivée du
@@ -698,20 +727,26 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   /**
    * Les deux plafonds de débit des routes authentifiées. Le général est passé à `makeRequireAuth`, donc tout
-   * module gardé en hérite ; le second est composé route par route sur les seules routes coûteuses.
-   * Locaux au process : le plafond annoncé est celui d'une instance, à lever avant le multi-replica (les
-   * porter en base coûterait une écriture Postgres par requête). Un maximum à 0 rend le limiteur absent :
-   * c'est la trappe de secours si le calibrage se révèle mauvais (cf. `config.ts`).
+   * module gardé en hérite ; le second est composé route par route sur les seules routes coûteuses. Un maximum
+   * à 0 rend le limiteur absent : c'est la trappe de secours si le calibrage se révèle mauvais (cf. `config.ts`).
+   *
+   * 🔴 Le général reste LOCAL À LA COPIE, délibérément : c'est le plafond le plus fréquent (chaque requête de la
+   * console), le porter en base coûterait une écriture Postgres par requête, et ce qu'il borne (un compte qui
+   * martèle) reste borné à N fois 300 par minute avec N copies. Le coûteux, lui, compte dans le compteur PARTAGÉ :
+   * c'est la charge d'un espace sur la base qu'il borne, et N copies la multipliaient. Base muette : il laisse
+   * passer (`PlafondPartage`, la route elle-même a besoin de la base).
    */
   // Aucun plafond de clés (4e argument à son défaut) : la clé vient d'un JWT vérifié, pas de l'appelant, et
   // un plafond ferait refuser un utilisateur neuf quand la table est pleine. Les entrées expirent en une
   // minute et `prune` les retire.
-  const parMinute = (max: number): RateLimiter | undefined =>
-    max > 0 ? new RateLimiter(max, 60_000) : undefined;
-  const plafondUtilisateur = parMinute(deps.plafonds?.utilisateurParMinute ?? config.RATE_LIMIT_USER_PAR_MINUTE);
-  const limiteurCouteux = parMinute(deps.plafonds?.couteuxParMinute ?? config.RATE_LIMIT_COUTEUX_PAR_MINUTE);
-  const limiteCouteuse = limiteurCouteux
-    ? makeLimiteParTenant(limiteurCouteux, 'trop d’opérations lourdes sur cet espace, patientez une minute')
+  const utilisateurParMinute = deps.plafonds?.utilisateurParMinute ?? config.RATE_LIMIT_USER_PAR_MINUTE;
+  const plafondUtilisateur = utilisateurParMinute > 0 ? new RateLimiter(utilisateurParMinute, 60_000) : undefined;
+  const couteuxParMinute = deps.plafonds?.couteuxParMinute ?? config.RATE_LIMIT_COUTEUX_PAR_MINUTE;
+  const limiteCouteuse = couteuxParMinute > 0
+    ? makeLimiteParTenant(
+      new PlafondPartage(debit, { nom: 'couteux', max: couteuxParMinute, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer' }),
+      'trop d’opérations lourdes sur cet espace, patientez une minute',
+    )
     : undefined;
 
   /**

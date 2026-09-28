@@ -5,6 +5,7 @@ import { estJeton } from '../links/jeton-contact';
 import type { DestinationLien } from '../links/tracked-links.pg';
 import { journaliser } from '../lib/journal';
 import { escapeHtml as echappe } from '../crm/render';
+import type { TravauxEnVol } from '../lib/en-vol';
 
 /**
  * Redirection publique des liens tracés : `GET /r/:code` -> 302 vers la destination, après avoir compté le clic.
@@ -37,6 +38,12 @@ export interface LinksRouteDeps {
    * lecture en base et enfilement s'ajouteraient au chemin de chaque lien ; sa panne se journalise.
    */
   signalerClic(tenantId: string, contactId: string, code: string): Promise<void>;
+  /**
+   * Les travaux que la réponse laisse derrière elle (`src/lib/en-vol.ts`) : le signal du clic part APRÈS le 302, et
+   * l'arrêt de la copie doit l'attendre avant de fermer la file où il s'enfile. Requis : oublié, un arrêt (réduction
+   * de l'autoscaler) perdrait le clic attribué que l'outil du client attend, sans aucune trace.
+   */
+  enVol: Pick<TravauxEnVol, 'suivre'>;
 }
 
 /** Un code est 12 caractères base32 minuscules. Tout le reste est refusé sans toucher la base. */
@@ -100,15 +107,15 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       }
       if (contactId !== null) {
         const attribue = contactId;
-        // Lancé, jamais attendu (voir `signalerClic`). La fonction `async` enveloppe aussi une levée synchrone du
-        // câblage : aucune promesse rejetée ne reste sans gestionnaire.
-        void (async () => {
+        // Lancé, jamais attendu (voir `signalerClic`), mais suivi : l'arrêt de la copie l'attend. La fonction `async`
+        // enveloppe aussi une levée synchrone du câblage : aucune promesse rejetée ne reste sans gestionnaire.
+        void deps.enVol.suivre((async () => {
           try {
             await deps.signalerClic(lien.tenantId, attribue, normalise);
           } catch (err) {
             journaliser('error', 'signal_clic_non_emis', { err, code: normalise, tenantId: lien.tenantId });
           }
-        })();
+        })());
       }
     }
 

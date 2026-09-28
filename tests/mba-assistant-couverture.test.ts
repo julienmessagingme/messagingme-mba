@@ -60,6 +60,15 @@ describe('l’ordre du jour du MBA dérive de la complétude', () => {
     const c = calculerCompletion({ ...vide, settings: {} as never, businessInfo: { business_description: '' } as never, faqs: [], skills: [], websites: [], files: [] });
     expect(ordreDuJourMba(c).find((p) => p.cle === 'sites')?.pistes).toEqual([]);
   });
+
+  it('🔴 la question des documents envoie vers l’onglet Fichiers, et n’invite plus à déposer « ici »', () => {
+    // Le dépôt dans la conversation a été retiré (2026-09-28) : une question qui l'offre encore ferait chercher au
+    // client un bouton qui n'existe plus (relecture du lot A).
+    const c = calculerCompletion({ ...vide, settings: {} as never, businessInfo: { business_description: '' } as never, faqs: [], skills: [], websites: [], files: [] });
+    const question = ordreDuJourMba(c).find((p) => p.cle === 'fichiers')?.question ?? '';
+    expect(question).toMatch(/onglet Fichiers/);
+    expect(question).not.toMatch(/\bici\b/i);
+  });
 });
 
 describe('le point du tour', () => {

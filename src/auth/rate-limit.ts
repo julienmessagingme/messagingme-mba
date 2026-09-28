@@ -7,14 +7,15 @@ import type { CodeApi } from '../api/erreurs';
  * plafond d'opérations lourdes simultanées (`ApiUsageGuard`). Que des `import type` : chargeable hors du
  * serveur HTTP.
  *
- * La clé change avec l'appelant, et décide de qui partage un quota avec qui : `ip::discriminant` pour
- * l'authentification (`req.ip` seul désignerait le proxy), le code pour `/w/:code` et `/rcs/callback/:code`,
- * l'espace d'une clé résolue pour `/v1` et `/mcp`, l'empreinte de la clé du relais, l'`userId` pour le
- * plafond général, le `tenantId` pour les routes coûteuses. Une clé ou un code inventé n'entre dans aucune
- * table : les budgets communs à clé constante (`consommerEnSilence`) le freinent avant la base.
+ * La clé change avec l'appelant, et décide de qui partage un quota avec qui : le code pour `/w/:code` et
+ * `/rcs/callback/:code`, l'empreinte de la clé du relais, l'`userId` pour le plafond général, l'identité pour le
+ * second facteur. Une clé ou un code inventé n'entre dans aucune table : les budgets communs à clé constante
+ * (`consommerEnSilence`) le freinent avant la base.
  *
- * Local au process : avec deux instances, un attaquant aurait le double. Le jour d'une seconde instance, le
- * compteur part en base ou dans un cache partagé, pas un plafond divisé.
+ * 🔴 LOCAL À LA COPIE : avec N copies de l'API, un appelant a N fois le plafond. Ce qui doit tenir au TOTAL (l'API
+ * publique par espace, les opérations coûteuses, la connexion) compte dans le compteur partagé
+ * (`src/db/debit.ts`, `plafond-partage.ts`). Restent ici, délibérément : le plafond par utilisateur, les petits
+ * plafonds et les budgets qui protègent la base AVANT toute lecture (`documentation.md` § 7, les plafonds).
  */
 export class RateLimiter {
   private readonly hits = new Map<string, { count: number; resetAt: number }>();
@@ -28,8 +29,7 @@ export class RateLimiter {
     private readonly now: () => number = () => Date.now(),
     /**
      * Nombre maximal de clés vivantes ; au-delà, une clé neuve est refusée. `0` = pas de plafond. À poser quand
-     * la clé est choisie par l'appelant (l'`ip::discriminant` de l'authentification) : sinon un robot ferait
-     * grossir la table toute la fenêtre. Mais ce refus frappe aussi les vraies clés revenues après expiration :
+     * la clé est choisie par l'appelant : sinon un robot ferait grossir la table toute la fenêtre. Mais ce refus frappe aussi les vraies clés revenues après expiration :
      * quand la clé se vérifie en base (code de webhook, de rappel RCS, empreinte de clé d'API), on ne consulte
      * plutôt le limiteur que sur des clés qui existent, dont le nombre borne la table.
      */

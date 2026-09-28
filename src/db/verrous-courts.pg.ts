@@ -44,21 +44,42 @@ export class PgVerrousCourts implements VerrousCourts {
     }
   }
 
+  /**
+   * 🔴 Toute instruction qui touche plusieurs clés les verrouille dans l'ordre de la clé, comme la prise : un
+   * `delete` ou un `update` nu les prend dans l'ordre physique de la table, et pourrait tenir la clé qu'une prise
+   * attend pendant qu'il attend celle qu'elle tient (Postgres en tue alors un, en erreur et non en refus). D'où le
+   * sous-select `order by cle for update` devant chacune.
+   */
   async relacher(prise: Prise): Promise<void> {
     // Le jeton dans la clause : une clé échue puis reprise par une autre copie porte SON jeton, pas le nôtre.
     await this.pool.query(
-      `delete from verrous_courts where cle = any($1::text[]) and jeton = $2`,
+      `delete from verrous_courts
+       where cle in (select cle from verrous_courts where cle = any($1::text[]) and jeton = $2 order by cle for update)`,
       [prise.cles, prise.jeton],
     );
+  }
+
+  async prolonger(prise: Prise, dureeMs: number): Promise<boolean> {
+    if (!Number.isFinite(dureeMs) || dureeMs <= 0) throw new Error('verrous courts : durée de prolongation invalide');
+    const res = await this.pool.query(
+      `update verrous_courts set expire_le = now() + make_interval(secs => $3)
+       where cle in (select cle from verrous_courts where cle = any($1::text[]) and jeton = $2 order by cle for update)`,
+      [prise.cles, prise.jeton, dureeMs / 1000],
+    );
+    return (res.rowCount ?? 0) === new Set(prise.cles).size;
   }
 
   /**
    * Efface les clés échues (rétention générale du worker). Une clé échue ne garde plus rien, la prise suivante la
    * reprendrait de toute façon : l'effacer ne change aucune décision, cela borne seulement la table, où l'anti-rejeu
-   * écrit une clé par message de client.
+   * écrit une clé par message de client. Une clé reprise pendant la purge est relue par le `for update` (nouvelle
+   * échéance) et n'est pas effacée.
    */
   async purgerEchues(): Promise<number> {
-    const res = await this.pool.query(`delete from verrous_courts where expire_le <= now()`);
+    const res = await this.pool.query(
+      `delete from verrous_courts
+       where cle in (select cle from verrous_courts where expire_le <= now() order by cle for update)`,
+    );
     return res.rowCount ?? 0;
   }
 }

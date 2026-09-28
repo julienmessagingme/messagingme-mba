@@ -149,7 +149,7 @@ async function main(): Promise<void> {
   const {
     dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, phoneStatusStore, numeroDelieStore, opsStore,
+    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil,
@@ -1183,6 +1183,19 @@ async function main(): Promise<void> {
     await etape('verrous', 'verrou(s) court(s) échu(s) effacé(s)', () => verrousCourts.purgerEchues());
   };
   taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep, { immediat: true });
+
+  /**
+   * Les fenêtres échues des plafonds de débit partagés (`compteurs_debit`, migration 0186), toutes les cinq minutes
+   * et non avec la rétention générale : un robot qui invente une adresse par tentative de connexion écrit une ligne
+   * par tentative, et six heures d'une telle rafale rempliraient la table de millions de lignes que plus rien ne lit.
+   * Une ligne échue ne décide plus rien : l'effacer est sans effet sur aucun plafond. Idempotente, donc sans danger le
+   * jour où ce rôle aura deux exemplaires.
+   */
+  taches.programmer('compteurs-debit', 5 * 60_000, async () => {
+    const n = await compteurDebit.purgerEchues();
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`compteurs-debit: ${n} fenêtre(s) échue(s) effacée(s)`);
+  }, { immediat: true, enEchec: echecDeBalayage('compteurs-debit', 'sweeper:compteurs-debit') });
 
   // Déclencheur « X avant la date d'un champ », le seul qui répond à l'écoulement du temps. Il publie dans la
   // file sans rien démarrer : le scénario part par le chemin commun, avec les mêmes garde-fous.

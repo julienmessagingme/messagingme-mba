@@ -5,7 +5,7 @@ import { sha256Hex } from '../src/lib/signature';
 import { makeRequireApiKey, requireScope } from '../src/auth/api-key';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { plafondsDeTest } from './aide/plafonds';
-import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
+import { GardeUsageMemoire } from './aide/usage';
 import { unitesDe, estLourde } from '../src/api/usage-guard';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { TemplateSummary } from '../src/meta/templates';
@@ -527,7 +527,7 @@ describe('les trois routes des catalogues', () => {
     for (const url of ['/v1/templates', '/v1/scenarios', '/v1/rcs-messages']) {
       await app.inject({ method: 'GET', url, headers: avec(CLE_ENVOIS) });
     }
-    expect(usage.compteurs().find((c) => c.operation === 'catalogues.read')).toMatchObject({ appels: 3, unites: 3 });
+    expect((await usage.compteurs()).find((c) => c.operation === 'catalogues.read')).toMatchObject({ appels: 3, unites: 3 });
     // Une lecture ne réserve pas de place lourde : la soumettre au plafond ferait refuser une consultation
     // pendant qu'un lot écrit.
     expect(unitesDe('catalogues.read')).toBe(1);

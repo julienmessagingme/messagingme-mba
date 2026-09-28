@@ -6,6 +6,7 @@ import { pgSsl } from '../../src/db/ssl';
 import { PgVerrousCourts } from '../../src/db/verrous-courts.pg';
 import { clesAntiRejeu } from '../../src/mba/anti-rejeu';
 import { BAIL_PUBLICATION_MS, clePublication } from '../../src/http/mba-publication';
+import { attendreQueLaPurgeAttende, verrouillerPuisPurger } from './aide-verrous-ordonnes';
 
 /**
  * LES VERROUS COURTS (migration 0185), CONTRE UNE VRAIE BASE.
@@ -140,6 +141,45 @@ describe.skipIf(!url)('les verrous courts, en base', () => {
     expect(await copieB.prendre([[clePublication(t), BAIL_PUBLICATION_MS]])).toBeNull();
     await copieA.relacher(prise!);
     expect(await copieB.prendre([[clePublication(t), BAIL_PUBLICATION_MS]])).not.toBeNull();
+  });
+
+  it('🔴 prolonger : repousse l’échéance de SA prise, et échoue sur une clé reprise par l’autre copie', async () => {
+    const k = cle('prolonger');
+    const prise = await copieA.prendre([[k, 60_000]]);
+    expect(await copieA.prolonger(prise!, 3_600_000)).toBe(true);
+    const ecart = await poolA.query<{ secondes: number }>(
+      `select extract(epoch from expire_le - now())::float8 as secondes from verrous_courts where cle = $1`, [k],
+    );
+    expect(ecart.rows[0]!.secondes).toBeGreaterThan(3_500);
+    await faireEchoir(k);
+    const reprise = await copieB.prendre([[k, 60_000]]);
+    expect(reprise).not.toBeNull();
+    expect(await copieA.prolonger(prise!, 3_600_000), 'le jeton de A ne tient plus la clé').toBe(false);
+    // Et la prise de B est intacte : son échéance est la sienne, pas celle que A demandait.
+    const apres = await poolA.query<{ jeton: string; secondes: number }>(
+      `select jeton, extract(epoch from expire_le - now())::float8 as secondes from verrous_courts where cle = $1`, [k],
+    );
+    expect(apres.rows[0]).toMatchObject({ jeton: reprise!.jeton });
+    expect(apres.rows[0]!.secondes).toBeLessThanOrEqual(60);
+  });
+
+  it('🔴 la purge verrouille dans l’ordre de la clé : elle ne s’interbloque pas avec qui tient une clé échue', async () => {
+    // `b` prise AVANT `a` (donc rangée avant elle dans la table), les deux déjà échues. Une autre session tient `a`,
+    // puis demande `b` : dans l'ordre physique, la purge aurait pris `b` puis attendu `a`, et Postgres aurait tué
+    // l'une des deux (40P01). Relecture du lot A.
+    const [a, b] = [cle('ordre-a'), cle('ordre-b')];
+    // Une milliseconde de bail : échues dès leur écriture, sans `update` qui déplacerait les lignes dans la table.
+    await copieA.prendre([[b, 1]]);
+    await copieA.prendre([[a, 1]]);
+    const effacees = await verrouillerPuisPurger({
+      pool: poolB,
+      table: 'verrous_courts',
+      premiere: a,
+      seconde: b,
+      purger: () => copieA.purgerEchues(),
+      attendre: () => attendreQueLaPurgeAttende(poolA, 'verrous_courts'),
+    });
+    expect(effacees).toBeGreaterThanOrEqual(2);
   });
 
   it('la purge efface les clés échues, et seulement elles', async () => {

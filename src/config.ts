@@ -61,7 +61,8 @@ export const schema = z.object({
   /**
    * Plafond des routes coûteuses (import CSV, action en masse, purge, export d'historique, lancement de
    * campagne), par espace et par minute, en plus du plafond général. Clé `tenantId` et non `userId` : on borne
-   * la charge d'un espace sur Postgres, et un espace à dix comptes aurait sinon dix fois le plafond.
+   * la charge d'un espace sur Postgres, et un espace à dix comptes aurait sinon dix fois le plafond. Compté au
+   * TOTAL des copies de l'API (compteur partagé, migration 0186), contrairement au plafond par utilisateur.
    * 0 désactive.
    */
   RATE_LIMIT_COUTEUX_PAR_MINUTE: z.coerce.number().int().min(0).default(10),
@@ -150,7 +151,7 @@ export const schema = z.object({
    * minute et par heure, les deux s'appliquent. Valeurs des espaces sans réglage propre
    * (`tenant_settings.api_plafond_*`, route `/ops/plafond-api/:tenantId`).
    * 0 désactive la fenêtre pour les espaces sans réglage (levier d'urgence) ; un réglage d'espace, toujours
-   * > 0, reste appliqué. Local au process : le plafond annoncé est celui d'une instance. Il compte des appels,
+   * > 0, reste appliqué. Compté au TOTAL des copies de l'API (compteur partagé, migration 0186). Il compte des appels,
    * le travail (fiches d'un lot, destinataires) est mesuré à part (`usage-guard.ts`).
    */
   API_PLAFOND_MINUTE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.minute),

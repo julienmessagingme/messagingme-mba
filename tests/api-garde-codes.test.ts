@@ -102,10 +102,10 @@ describe('la console garde ses refus sans code', () => {
 describe('le garde d’usage', () => {
   it('🔴 401 `unauthorized` sans authentification, 429 `rate_limited` sur un quota ou une place lourde', async () => {
     const refusant: ApiUsageGuard = {
-      demander: () => ({ accepte: false, raison: 'quota d’essai atteint' }),
-      compteurs: () => [],
+      demander: async () => ({ accepte: false, raison: 'quota d’essai atteint' }),
+      compteurs: async () => [],
       entrerLourde: () => null,
-      noterRefus: () => {},
+      noterRefus: async () => {},
     };
     const sansAuth = fauxReply();
     expect(await compterOuRefuser(refusant, requete(), sansAuth.reply, 'contacts.upsert')).toBe(false);

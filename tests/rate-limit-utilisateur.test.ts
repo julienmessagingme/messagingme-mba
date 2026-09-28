@@ -9,8 +9,21 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ImportRouteDeps } from '../src/http/import';
 import type { MeRouteDeps } from '../src/http/me';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { PlafondPartage } from '../src/auth/plafond-partage';
+import { CompteurDebitMemoire } from '../src/db/debit.memoire';
+import type { CompteurDebit } from '../src/db/debit';
+import { capturerJournal } from './journal';
 
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
+
+/**
+ * Le plafond des routes coûteuses, tel que `buildServer` le construit : dans le compteur PARTAGÉ (un compteur en
+ * mémoire ici, celui d'une base), laissant passer si la base ne répond pas. Deux plafonds sur le même compteur sont
+ * deux copies de l'API.
+ */
+function couteux(max: number, compteur: CompteurDebit = new CompteurDebitMemoire()): PlafondPartage {
+  return new PlafondPartage(compteur, { nom: 'couteux', max, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer' });
+}
 const entete = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 // Plafond général des routes AUTHENTIFIÉES. Il est posé DANS `makeRequireAuth` et non en hook Fastify global :
@@ -140,7 +153,7 @@ describe('plafond général par utilisateur, dans makeRequireAuth', () => {
 
 describe('plafond serré des routes coûteuses, par espace', () => {
   it('compte par TENANT : deux comptes du même espace partagent le quota', async () => {
-    const limite = makeLimiteParTenant(new RateLimiter(1, 60_000));
+    const limite = makeLimiteParTenant(couteux(1));
     const req1 = { auth: { userId: 'u1', tenantId: 't1', role: 'admin' } } as unknown as FastifyRequest;
     const req2 = { auth: { userId: 'u2', tenantId: 't1', role: 'admin' } } as unknown as FastifyRequest;
 
@@ -155,7 +168,7 @@ describe('plafond serré des routes coûteuses, par espace', () => {
   });
 
   it('deux espaces ne partagent pas leur quota', async () => {
-    const limite = makeLimiteParTenant(new RateLimiter(1, 60_000));
+    const limite = makeLimiteParTenant(couteux(1));
     const t1 = { auth: { userId: 'u1', tenantId: 't1', role: 'admin' } } as unknown as FastifyRequest;
     const t2 = { auth: { userId: 'u9', tenantId: 't2', role: 'admin' } } as unknown as FastifyRequest;
 
@@ -169,19 +182,60 @@ describe('plafond serré des routes coûteuses, par espace', () => {
   });
 
   it('sans req.auth, refuse en 401 plutôt que de compter sur une clé vide', async () => {
-    const limite = makeLimiteParTenant(new RateLimiter(1, 60_000));
+    const limite = makeLimiteParTenant(couteux(1));
     const { reply, state } = fakeReply();
     await limite({} as unknown as FastifyRequest, reply);
     expect(state.statusCode).toBe(401);
+  });
+
+  it('🔴 PARTAGÉ par les copies de l’API : le quota de l’espace tient au TOTAL, pas une fois par copie', async () => {
+    // Lot B (2026-09-28) : en mémoire, trois copies donnaient trois fois dix opérations lourdes par minute.
+    const base = new CompteurDebitMemoire();
+    const copieA = makeLimiteParTenant(couteux(3, base));
+    const copieB = makeLimiteParTenant(couteux(3, base));
+    const req = { auth: { userId: 'u1', tenantId: 't1', role: 'admin' } } as unknown as FastifyRequest;
+    const codes: Array<number | null> = [];
+    for (const limite of [copieA, copieB, copieA, copieB, copieA]) {
+      const r = fakeReply();
+      await limite(req, r.reply);
+      codes.push(r.state.statusCode);
+    }
+    expect(codes).toEqual([null, null, null, 429, 429]);
+  });
+
+  it('🔴 les en-têtes disent le compte PARTAGÉ : la seconde copie annonce ce que la première a pris', async () => {
+    const base = new CompteurDebitMemoire();
+    const req = { auth: { userId: 'u1', tenantId: 't1', role: 'admin' } } as unknown as FastifyRequest;
+    await makeLimiteParTenant(couteux(5, base))(req, fakeReply().reply);
+    const r = fakeReply();
+    await makeLimiteParTenant(couteux(5, base))(req, r.reply);
+    expect([r.state.headers['x-ratelimit-limit'], r.state.headers['x-ratelimit-remaining']]).toEqual(['5', '3']);
+  });
+
+  it('🔴 base muette : l’opération passe (sans en-têtes), et la panne se dit UNE fois par minute', async () => {
+    // Choisi : la route coûteuse a elle-même besoin de la base, et refuser tous les espaces sur une panne passagère
+    // serait pire qu'un quota non tenu le temps de la panne.
+    const muette: CompteurDebit = { compter: async () => { throw new Error('connexion perdue'); }, lister: async () => [] };
+    const limite = makeLimiteParTenant(couteux(1, muette));
+    const req = { auth: { userId: 'u1', tenantId: 't1', role: 'admin' } } as unknown as FastifyRequest;
+    const { lignes } = await capturerJournal(async () => {
+      for (let i = 0; i < 3; i += 1) {
+        const r = fakeReply();
+        await limite(req, r.reply);
+        expect(r.state.statusCode).toBeNull();
+        expect(Object.keys(r.state.headers).filter((k) => k.startsWith('x-ratelimit'))).toEqual([]);
+      }
+    });
+    expect(lignes.filter((l) => l.msg === 'plafond_partage_indisponible')).toHaveLength(1);
   });
 });
 
 describe('les deux plafonds sont indépendants', () => {
   it('un espace bloqué sur les routes coûteuses garde son quota général', async () => {
     const general = new RateLimiter(10, 60_000);
-    const couteux = new RateLimiter(1, 60_000);
+    const plafondCouteux = couteux(1);
     const garde = makeRequireAuth(SECRET, undefined, general);
-    const limite = makeLimiteParTenant(couteux);
+    const limite = makeLimiteParTenant(plafondCouteux);
 
     const req = fakeReq(jetonU1);
     await garde(req, fakeReply().reply);

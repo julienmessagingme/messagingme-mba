@@ -29,6 +29,13 @@ export interface VerrousCourts {
   prendre(cles: ReadonlyArray<CleDemandee>): Promise<Prise | null>;
   /** Relâche les clés de cette prise qui portent encore son jeton ; sans effet sur une clé reprise après échéance. */
   relacher(prise: Prise): Promise<void>;
+  /**
+   * Repousse l'échéance des clés de cette prise à `dureeMs` d'ici, tant qu'elles portent encore son jeton. Rend
+   * `false` dès qu'une clé ne le porte plus (reprise par une autre copie après échéance, ou effacée par la purge) :
+   * le travail que la prise gardait n'est alors plus seul, et il doit s'arrêter. Une clé échue que personne n'a
+   * reprise se prolonge : son jeton prouve que personne d'autre ne l'a tenue entre-temps.
+   */
+  prolonger(prise: Prise, dureeMs: number): Promise<boolean>;
 }
 
 /**

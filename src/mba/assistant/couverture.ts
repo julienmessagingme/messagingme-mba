@@ -44,7 +44,9 @@ const QUESTIONS: Partial<Record<TacheMba['cle'], { question: string; pistes: str
     pistes: [],
   },
   fichiers: {
-    question: 'Avez-vous des documents à lui donner (tarifs, procédures, conditions) ? Vous pouvez les déposer ici, ou dans l’onglet Fichiers.',
+    // L'onglet Fichiers, et lui seul : le dépôt dans la conversation a été retiré (2026-09-28), une question qui
+    // invite à déposer « ici » offrirait un geste qui n'existe plus.
+    question: 'Avez-vous des documents à lui donner (tarifs, procédures, conditions) ? Vous pouvez les déposer dans l’onglet Fichiers.',
     pistes: [],
   },
   activation: {

@@ -5,6 +5,8 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
 import { metaInscriptionInerte, signupInerte } from './routes-inertes';
+import { verrousEnMemoire } from './verrous';
+import { cleDemandeCode, DELAI_ENTRE_CODES_MS } from '../src/http/embedded-signup';
 
 /**
  * « Activer le numéro » : finir chez nous ce que la fenêtre Meta a laissé en plan.
@@ -65,6 +67,8 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     delierNumero: async (t) => { cap.delies.push(t); return { delieLe: '2026-09-25T10:00:00.000Z', campagnesEnPause: 2 }; },
     relierNumero: async (t) => { cap.relies.push(t); return { campagnesReprises: 1, campagnesReprogrammees: 1 }; },
     ...over,
+    // Les verrous courts d'UNE base : deux serveurs qui reçoivent les mêmes sont deux copies de l'API.
+    verrous: over.verrous ?? verrousEnMemoire(),
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, embeddedSignup: deps }), cap };
 }
@@ -128,6 +132,35 @@ describe('POST /tenants/:tenantId/numero/code', () => {
     const deuxieme = await server.inject({ method: 'POST', url: CODE_URL, ...h(adminTok), payload: {} });
     expect(deuxieme.statusCode).toBe(429);
     expect(cap.codes).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 la minute tient sur TOUTES les copies de l’API : la seconde demande, servie par l’autre, est refusée', async () => {
+    // Lot B (2026-09-28) : la marque vivait dans une `Map` de la copie. Avec deux copies derrière le répartiteur, deux
+    // clics d'affilée partaient chacun chez Meta, et chacun brûlait un des dix essais du numéro sur 72 heures.
+    const horloge = { t: 0 };
+    const base = verrousEnMemoire(() => horloge.t);
+    const copieA = app({ verrous: base });
+    const copieB = app({ verrous: base });
+    expect((await copieA.server.inject({ method: 'POST', url: CODE_URL, ...h(adminTok), payload: {} })).statusCode).toBe(200);
+    const seconde = await copieB.server.inject({ method: 'POST', url: CODE_URL, ...h(adminTok), payload: {} });
+    expect(seconde.statusCode).toBe(429);
+    expect(seconde.json<{ error: string }>().error).toMatch(/une minute/);
+    expect(copieA.cap.codes.length + copieB.cap.codes.length, 'Meta appelé une seule fois').toBe(1);
+    // La minute passée, l'une ou l'autre copie redemande.
+    horloge.t = DELAI_ENTRE_CODES_MS;
+    expect((await copieB.server.inject({ method: 'POST', url: CODE_URL, ...h(adminTok), payload: {} })).statusCode).toBe(200);
+    expect(base.tenues()).toEqual([cleDemandeCode('pn-1')]);
+    await copieA.server.close();
+    await copieB.server.close();
+  });
+
+  it('🔴 si la base ne dit rien de la minute, Meta n’est PAS appelé (un essai brûlé ne se rend pas)', async () => {
+    const { server, cap } = app({ verrous: { prendre: async () => { throw new Error('connexion perdue'); } } });
+    const res = await server.inject({ method: 'POST', url: CODE_URL, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(429);
+    expect(res.json<{ error: string }>().error).toMatch(/impossible de vérifier/);
+    expect(cap.codes).toHaveLength(0);
     await server.close();
   });
 

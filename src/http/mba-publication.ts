@@ -7,7 +7,7 @@ import { ErreurPublication, CTX_OUTILS, CTX_ACTEUR } from '../mba/appliquer-publ
 import { MetaApiError } from '../meta/errors';
 import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
-import type { VerrousCourts } from '../db/verrous-courts';
+import type { Prise, VerrousCourts } from '../db/verrous-courts';
 
 /**
  * Publier le catalogue d'outils de l'espace chez Meta (le relais : un connecteur `EngageMe` par espace, dont les
@@ -45,10 +45,13 @@ export interface MbaPublicationDeps {
  * connecteur pour lire ses outils, puis un par geste (plus une relecture des connecteurs après en avoir créé ou
  * supprimé un), en série : quelques dizaines d'appels d'environ une seconde, donc moins d'une minute pour un
  * catalogue ordinaire. Aucun de ces appels n'a de délai propre (seuls ceux d'undici, 300 s pour les en-têtes) :
- * dix minutes couvrent une publication ordinaire dix fois et un appel qui pend. Au-delà, le bail échoit et une
- * seconde publication peut partir : c'est la course que ce verrou existe pour empêcher, d'où un bail large plutôt
- * que juste. Le prix d'un bail large ne se paie que si un arrêt coupe une publication en cours (l'arrêt propre
- * laisse finir les requêtes, dans son délai) : l'espace attend alors la fin du bail pour republier.
+ * dix minutes couvrent une publication ordinaire dix fois et un appel qui pend. Le bail est PROLONGÉ avant chaque
+ * geste (`VerrousCourts.prolonger`, avec le jeton de la prise) : deux appels muets dans deux gestes différents ne le
+ * font donc plus échoir, et une publication qui a perdu son verrou (échu PUIS repris par une autre copie) s'arrête
+ * avant son geste suivant au lieu de publier en même temps qu'elle. Reste ouvert : un SEUL geste plus long que le bail
+ * (plusieurs appels de 300 s dans le même geste). Le prix d'un bail large ne se paie que si un arrêt coupe une
+ * publication en cours (l'arrêt propre laisse finir les requêtes, dans son délai) : l'espace attend alors la fin du
+ * bail pour republier.
  */
 export const BAIL_PUBLICATION_MS = 10 * 60_000;
 
@@ -102,7 +105,7 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
       return reply.code(409).send({ error: 'Une publication est déjà en cours pour cet espace : attendez qu’elle se termine.' });
     }
     try {
-      return await publier(tenant, pn, req.auth?.userId ?? null, reply);
+      return await publier(tenant, pn, req.auth?.userId ?? null, reply, prise);
     } finally {
       // Un relâchement raté laisse le verrou jusqu'à la fin du bail : l'espace attend pour republier, rien de plus.
       await deps.verrous.relacher(prise).catch((err: unknown) => {
@@ -112,7 +115,7 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     }
   });
 
-  async function publier(tenant: string, pn: string, acteur: string | null, reply: FastifyReply) {
+  async function publier(tenant: string, pn: string, acteur: string | null, reply: FastifyReply, prise: Prise) {
     const plan = await planifier(tenant, pn);
     if (plan === null) return reply.code(409).send({ error: SANS_ADRESSE });
     const faits: Geste[] = [];
@@ -120,6 +123,22 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     // du plan et l'administrateur qui publie (l'audit des clés le nomme).
     const ctx = new Map<string, unknown>([[CTX_OUTILS, plan.outils], [CTX_ACTEUR, acteur]]);
     for (const g of plan.gestes) {
+      /**
+       * Le bail repart pour dix minutes avant chaque geste, et c'est aussi la preuve qu'on le tient encore : une
+       * prolongation refusée (verrou repris par une autre copie) ou illisible arrête la publication, puisqu'on ne
+       * peut plus garantir qu'aucune autre ne pose ses clés en même temps.
+       */
+      const tenu = await deps.verrous.prolonger(prise, BAIL_PUBLICATION_MS).catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error(`mba-publication: verrou illisible avant « ${g.nom} » (${tenant}):`, messageDe(err));
+        return false;
+      });
+      if (!tenu) {
+        return reply.code(409).send({
+          error: `La publication a perdu son verrou avant « ${g.nom} » (une autre publication a pu démarrer). ${faits.length} geste(s) déjà appliqué(s), le reste n’a pas été tenté. Relancez : ce qui a réussi ne sera pas refait.`,
+          faits,
+        });
+      }
       try {
         await deps.appliquer(tenant, pn, g, ctx);
         faits.push(g);

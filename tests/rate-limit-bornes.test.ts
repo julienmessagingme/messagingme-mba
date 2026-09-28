@@ -95,22 +95,26 @@ describe('limiteurs d’authentification : le câblage', () => {
   const source = readFileSync(new URL('../src/auth/routes.ts', import.meta.url), 'utf8');
   const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-  it('🔴 les SIX limiteurs portent le plafond de clés, sans exception', () => {
-    // Ancré sur la construction entière : un `toMatch` sur le seul nom de la constante passerait aussi si
-    // elle n'était posée que sur un limiteur sur six.
-    const constructions = sansCommentaires.match(/new RateLimiter\([^)]*\)/g) ?? [];
-    expect(constructions.length, 'six limiteurs sont attendus dans ce fichier').toBe(6);
-    const sansPlafond = constructions.filter((c) => !c.includes('MAX_CLES'));
-    expect(sansPlafond, `ces limiteurs n’ont pas de plafond de clés : ${sansPlafond.join(' | ')}`).toEqual([]);
+  it('🔴 les SIX plafonds comptent dans le compteur PARTAGÉ, tous fermés sur panne, et aucun ne reste en mémoire', () => {
+    // Lot B (2026-09-28). Ce cas tenait jusque-là le plafond de clés vivantes des six limiteurs EN MÉMOIRE (une
+    // table qu'un robot remplissait d'adresses inventées) ; les six comptent désormais en base, où ces lignes vivent
+    // une minute et la tâche `compteurs-debit` les efface (`tests/debit-cablage.test.ts`). Ce qui compte
+    // maintenant : qu'aucun ne soit resté en mémoire (il serait servi une fois par copie), et que la fabrique
+    // unique les construise FERMÉS sur panne (une panne ne doit jamais ouvrir un essai de plus).
+    expect(sansCommentaires.match(/new RateLimiter\(/g) ?? [], 'plus aucun limiteur en mémoire dans ce fichier').toEqual([]);
+    expect(sansCommentaires.match(/new PlafondPartage\(/g) ?? [], 'une seule fabrique construit les six').toHaveLength(1);
+    expect(sansCommentaires).toMatch(/new PlafondPartage\(compteur, \{ nom: `connexion\.\$\{nom\}`, max, dureeMs, siLaBaseEchoue: 'refuser' \}\)/);
+    const plafonds = [...sansCommentaires.matchAll(/= plafond\('([a-z]+)'/g)].map((m) => m[1]!);
+    expect(plafonds.sort()).toEqual(['accept', 'forgot', 'google', 'login', 'reset', 'signup']);
   });
 
-  it('🔴 un discriminant trop long est remplacé par son empreinte', () => {
-    // Le cas de `/auth/google`, qui passait le jeton entier. L'empreinte discrimine aussi bien et occupe
-    // 64 caractères quoi qu'on lui donne.
-    expect(sansCommentaires, 'rateKey doit borner la taille du discriminant')
-      .toMatch(/createHash\('sha256'\)\.update\(discriminant\)\.digest\('hex'\)/);
-    expect(sansCommentaires, 'la borne doit être une constante nommée, pas un nombre perdu dans le code')
-      .toMatch(/discriminant\.length <= MAX_DISCRIMINANT/);
+  it('🔴 la clé est TOUJOURS une empreinte : ni adresse ni jeton en clair dans le compteur partagé', () => {
+    // Le cas de `/auth/google`, qui passait le jeton entier, avait fait borner la taille. Depuis que la clé vit en
+    // base (lot B, 2026-09-28), c'est aussi une question de secret : en clair, elle écrirait l'adresse de chaque
+    // tentative et le jeton de réinitialisation dans le journal de la base. Le comportement est tenu par
+    // `tests/plafonds-partages.test.ts` ; ceci tient la forme, seul point de passage des six plafonds.
+    expect(sansCommentaires, 'rateKey doit rendre l’empreinte de la clé entière')
+      .toMatch(/return createHash\('sha256'\)\.update\(`\$\{req\.ip\}::\$\{discriminant\}`\)\.digest\('hex'\);/);
   });
 });
 

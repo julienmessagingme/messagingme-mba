@@ -167,7 +167,7 @@ async function main(): Promise<void> {
   const {
     transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
-    nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
+    nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
@@ -464,22 +464,31 @@ async function main(): Promise<void> {
   } satisfies DepsRepondre;
 
   /**
-   * Les gestes que le relais de l'agent de Meta laisse en route après sa réponse (un envoi attend la fin du tour de
-   * l'agent, une quinzaine de secondes). L'arrêt de cette copie les attend avant de fermer la file et le pool.
+   * Les travaux qu'une réponse laisse en route : les gestes du relais de l'agent de Meta (un envoi attend la fin du
+   * tour de l'agent, une quinzaine de secondes) et le signal d'un clic sur un lien suivi. L'arrêt de cette copie les
+   * attend avant de fermer la file et le pool.
    */
-  const gestesEnVol = creerTravauxEnVol();
+  const travauxEnVol = creerTravauxEnVol();
 
   const app = buildServer({
+    /**
+     * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
+     * `buildServer` retomberait sur un compteur en mémoire : chaque copie servirait alors chaque plafond pour elle
+     * seule, sans erreur. `tests/debit-cablage.test.ts` tient cette ligne.
+     */
+    debit: compteurDebit,
     /**
      * 🔴 Surveillance de `/ops`, qui ouvre la lecture de toutes les conversations de tous les clients alors
      * que Fastify tourne sans journal d'accès. L'accès est nominatif et exige le second facteur ; ses refus
      * restent rendus visibles. `sendTelegram` est un no-op sans Telegram : la surveillance journalise alors,
-     * sans alerter.
+     * sans alerter. Compte et repos partagés par les copies : une alerte pour toutes, au seuil de toutes.
      */
     surveillanceOps: surveillerOps({
       alerter: (m) => { void sendTelegram(`[mba-api] ${m}`); },
       // eslint-disable-next-line no-console
       journaliser: (m) => { console.warn(m); },
+      compteur: compteurDebit,
+      verrous: verrousCourts,
     }),
     // Origines autorisées à appeler l'API depuis un navigateur. Vide -> aucun en-tête CORS. Les deux règles
     // qui la rendent sûre : `src/server.ts`.
@@ -556,6 +565,8 @@ async function main(): Promise<void> {
       liens: trackedLinkStore,
       // Le clic attribué devient un signal. L'espace vient du lien, comme pour le clic.
       signalerClic: (tenant, contactId, code) => emetteur.emettreSignal(tenant, signalDuClic(contactId, code)),
+      // Le signal part après le 302 : l'arrêt de cette copie l'attend avant de fermer la file.
+      enVol: travauxEnVol,
     },
     // Réception publique des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
     // l'écriture du contact passe par `upsertContactsFromApi`, le chemin partagé avec la console.
@@ -1403,6 +1414,8 @@ async function main(): Promise<void> {
           gardeNumeroDelie.invaliderTout();
           return r;
         },
+        // La minute entre deux demandes de code d'un numéro, commune à toutes les copies (le quota de Meta).
+        verrous: verrousCourts,
       };
     })(),
     /**
@@ -2014,7 +2027,7 @@ async function main(): Promise<void> {
           // eslint-disable-next-line no-console
           journal: (ligne) => console.log(ligne),
         }),
-        enVol: gestesEnVol,
+        enVol: travauxEnVol,
         // Les gestes maison : les mêmes fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
         maison: {
           poserTag: workflowRuntime.poserTagDepuisAgent,
@@ -2170,7 +2183,7 @@ async function main(): Promise<void> {
     clearInterval(minuteriePoolAttentes);
     await arreterApi({
       fermerServeur: () => app.close(),
-      travaux: gestesEnVol,
+      travaux: travauxEnVol,
       borneMs: ATTENTE_GESTES_A_L_ARRET_MS,
       fermerFile: () => queue.stop(),
       fermerPool: () => pool.end(),

@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import { ENDPOINTS, GROUPES_ENDPOINTS, cleEndpoint } from '../web/lib/api-doc-endpoints';
 import { ANCRES_DEPLACEES, PAGES_DOC } from '../web/lib/doc-api-pages';
 import { modulesDeRoutes } from '../src/server';
-import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
+import { GardeUsageMemoire } from './aide/usage';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { gardesOuvertes } from './gardes';

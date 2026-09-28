@@ -59,6 +59,7 @@ import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
 import { creerControleDuFil } from './inbox/fil';
 import { PgVerrousCourts } from './db/verrous-courts.pg';
+import { PgCompteurDebit } from './db/debit.pg';
 
 /**
  * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
@@ -171,6 +172,13 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * clés échues : aucun cache, donc rien qui diffère d'un processus à l'autre.
    */
   const verrousCourts = new PgVerrousCourts(pool);
+  /**
+   * Le compteur des plafonds de débit (`src/db/debit.ts`, migration 0186) : ce qui doit être tenu au TOTAL de toutes
+   * les copies de l'API (l'API publique par espace, les opérations coûteuses, la connexion, l'usage de `/ops`). L'API
+   * compte, le worker efface les fenêtres échues. Aucun cache ici : la mémoire des fenêtres pleines, propre à une
+   * copie, est posée par `buildServer`.
+   */
+  const compteurDebit = new PgCompteurDebit(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
@@ -308,7 +316,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   return {
     clesGateway, dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, phoneStatusStore, opsStore, heartbeatStore,
+    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory,

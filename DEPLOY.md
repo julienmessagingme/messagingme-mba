@@ -122,6 +122,8 @@ sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) applique l
 sudo docker compose up -d --build                                # 3) bascule les services
 ```
 
+⚠️ **Avec une seule copie de l'API, le trou du `up` peut s'allonger jusqu'à ~20 s** si un envoi du relais de l'agent de Meta (ou le signal d'un clic) est en vol : l'arrêt de l'ancien conteneur l'attend (`ATTENTE_GESTES_A_L_ARRET_MS`) avant de rendre la place. Rien n'est perdu : les webhooks de Meta non acquittés sont rejoués par Meta.
+
 ⚠️ **`mba-api` et `mba-worker` sont DEUX images distinctes** (même Dockerfile, `image:` implicite `mba-mba-api` / `mba-mba-worker`). `docker compose build mba-api` ne rebuild PAS le worker : un `up --force-recreate` ensuite relance le worker sur son ANCIENNE image (constaté 4.11 : nouvel env `DB_SSL_CA_FILE` + ancienne image sans la CA -> ENOENT crash-loop worker pendant que l'api tournait). Pour un changement de code/fichier baké : `docker compose up -d --build` (rebuild les DEUX), ou builder explicitement `mba-api` ET `mba-worker`.
 
 🔴 **Le `build` de l'étape 1 n'est pas optionnel, et son oubli est SILENCIEUX.** `docker compose run mba-api`

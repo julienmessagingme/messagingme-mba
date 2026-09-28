@@ -45,6 +45,8 @@ const META_VIDE: EtatMeta = { connecteurs: [], outilsParConnecteur: {} };
 function monter(opts: {
   numero?: string | null; echoueSur?: Geste['type']; erreur?: Error; relais?: RelaisAPublier | null; retenir?: Promise<void>;
   verrous?: VerrousCourts;
+  /** Joué au milieu de chaque geste : ce qu'un test fait « pendant » qu'un appel à Meta dure. */
+  pendantGeste?: () => Promise<void>;
 } = {}) {
   const appliques: Geste[] = [];
   const contextes: Array<Map<string, unknown>> = [];
@@ -61,6 +63,7 @@ function monter(opts: {
       appliquer: async (_t, _pn, g, ctx) => {
         entames.push(g);
         if (opts.retenir) await opts.retenir;
+        if (opts.pendantGeste) await opts.pendantGeste();
         if (g.type === opts.echoueSur) throw opts.erreur ?? new Error('panne');
         appliques.push(g);
         contextes.push(ctx);
@@ -246,9 +249,10 @@ describe('une publication à la fois, sur toutes les copies de l’API', () => {
     expect((await post(monter({ verrous }).app)).statusCode).toBe(200);
   });
 
-  it('🔴 une publication dont le bail a échu ne relâche PAS le verrou de celle qui l’a repris', async () => {
+  it('🔴 une publication dont le bail a échu ne relâche PAS le verrou de celle qui l’a repris, et s’ARRÊTE', async () => {
     // Le jeton de garde : sans lui, la première effacerait en finissant le verrou de la seconde, et une troisième
-    // publication pourrait partir pendant que la seconde tourne encore.
+    // publication pourrait partir pendant que la seconde tourne encore. Et depuis la prolongation avant chaque geste
+    // (relecture du lot A), la première ne pose plus son geste suivant : elle ne tient plus rien.
     const horloge = { t: 0 };
     const partages = verrousEnMemoire(() => horloge.t);
     // Les relâchements sont comptés : l'assertion porte sur l'état APRÈS celui de la première publication.
@@ -256,6 +260,7 @@ describe('une publication à la fois, sur toutes les copies de l’API', () => {
     const verrous: VerrousCourts & { tenues(): string[] } = {
       prendre: (c) => partages.prendre(c),
       relacher: async (p) => { await partages.relacher(p); relaches.push(p.jeton); },
+      prolonger: (p, d) => partages.prolonger(p, d),
       tenues: () => partages.tenues(),
     };
     let liberer: () => void = () => {};
@@ -267,10 +272,58 @@ describe('une publication à la fois, sur toutes les copies de l’API', () => {
     const reprise = await verrous.prendre([[clePublication(TENANT), BAIL_PUBLICATION_MS]]);
     expect(reprise, 'le bail échu se reprend').not.toBeNull();
     liberer();
-    expect((await premiere).statusCode).toBe(200);
+    const reponse = await premiere;
+    expect(reponse.statusCode).toBe(409);
+    expect(reponse.json().error).toMatch(/perdu son verrou/);
+    // Le geste en cours a fini ; le suivant (`outil_creer`) n'a pas été tenté.
+    expect(lente.entames.map((g) => g.type)).toEqual(['connecteur_creer']);
+    expect(reponse.json().faits.map((g: Geste) => g.type)).toEqual(['connecteur_creer']);
     await vi.waitFor(() => { expect(relaches).toHaveLength(1); });
     expect(verrous.tenues()).toEqual([clePublication(TENANT)]);
     expect((await post(monter({ verrous }).app)).statusCode).toBe(409);
+  });
+
+  it('🔴 le bail est PROLONGÉ avant chaque geste : une publication lente garde son verrou d’un geste à l’autre', async () => {
+    // Relecture du lot A : un bail posé une fois échoyait en pleine publication dès que deux appels à Meta pendaient
+    // (300 s chacun), et une seconde publication pouvait alors partir. Ici chaque geste dure 90 % d'un bail : sans
+    // prolongation, le bail d'origine est échu pendant le second geste, et une autre copie le prendrait.
+    const horloge = { t: 0 };
+    const verrous = verrousEnMemoire(() => horloge.t);
+    const prolongations: string[] = [];
+    const espion: VerrousCourts = {
+      prendre: (c) => verrous.prendre(c),
+      relacher: (p) => verrous.relacher(p),
+      prolonger: async (p, d) => { prolongations.push(p.jeton); return verrous.prolonger(p, d); },
+    };
+    /** Ce qu'obtient une autre copie qui tente de publier pendant chaque geste. */
+    const tentativesAutreCopie: boolean[] = [];
+    const lente = monter({
+      verrous: espion,
+      pendantGeste: async () => {
+        horloge.t += BAIL_PUBLICATION_MS * 0.9;
+        tentativesAutreCopie.push((await verrous.prendre([[clePublication(TENANT), BAIL_PUBLICATION_MS]])) !== null);
+      },
+    });
+    const res = await post(lente.app);
+    expect(res.statusCode).toBe(200);
+    expect(tentativesAutreCopie, 'aucune autre copie ne prend le verrou pendant la publication').toEqual([false, false]);
+    expect(prolongations.length, 'une prolongation par geste').toBe(2);
+    expect(new Set(prolongations).size, 'toujours avec le jeton de SA prise').toBe(1);
+  });
+
+  it('🔴 un verrou illisible avant un geste arrête la publication (on ne peut plus prouver qu’on est seul)', async () => {
+    const verrous = verrousEnMemoire();
+    const panne: VerrousCourts = {
+      prendre: (c) => verrous.prendre(c),
+      relacher: (p) => verrous.relacher(p),
+      prolonger: async () => { throw new Error('connexion perdue'); },
+    };
+    const { app, entames } = monter({ verrous: panne });
+    const res = await post(app);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/perdu son verrou/);
+    expect(entames).toEqual([]);
+    await vi.waitFor(() => { expect(verrous.tenues()).toEqual([]); });
   });
 
   it('le bail couvre largement une publication ordinaire (moins d’une minute)', () => {

@@ -5,6 +5,7 @@ import { TenantConflictError, SecondNumeroRefuseError } from '../account/es-stor
 import { espaceVerifie, nonEmpty } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { texteDe } from '../lib/erreur';
+import type { Prise, VerrousCourts } from '../db/verrous-courts';
 
 /** Les appels Graph de l'inscription, faits avec le business token que le parcours vient d'obtenir. */
 export interface MetaInscriptionDep {
@@ -80,14 +81,27 @@ export interface EmbeddedSignupRouteDeps {
    * Relie le numéro et lève les pauses `numero_delie` (`PgNumeroDelieStore.relier`). `null` = aucun numéro.
    */
   relierNumero(tenantId: string): Promise<{ campagnesReprises: number; campagnesReprogrammees: number } | null>;
+
+  /**
+   * Les verrous courts partagés par les copies de l'API (`src/db/verrous-courts.ts`) : ils tiennent la minute entre
+   * deux demandes de code d'un numéro, quelle que soit la copie qui sert chacune. Requis : en mémoire, deux copies
+   * laissaient partir deux demandes dans la même minute, et chacune coûte un des dix essais de Meta.
+   */
+  verrous: Pick<VerrousCourts, 'prendre'>;
 }
 
 /**
  * Délai minimal entre deux demandes de code pour un même numéro. Ce n'est pas un plafond de débit, c'est le
  * quota de Meta : dix requêtes par numéro sur 72 heures, toutes étapes confondues, au-delà le numéro est bloqué
- * 72 heures (133016). En mémoire du process : un redémarrage le remet à zéro, sans conséquence pour une minute.
+ * 72 heures (133016). Tenu par un verrou court, jamais relâché : son échéance EST le délai, et elle est commune à
+ * toutes les copies de l'API (lot B, 2026-09-28).
  */
-const DELAI_ENTRE_CODES_MS = 60_000;
+export const DELAI_ENTRE_CODES_MS = 60_000;
+
+/** La clé du délai d'un numéro dans les verrous courts, préfixée pour ne croiser aucun autre usage. */
+export function cleDemandeCode(phoneNumberId: string): string {
+  return `es-code:${phoneNumberId}`;
+}
 
 /**
  * Embedded Signup (Tech Provider), admin. Quatre routes :
@@ -106,9 +120,6 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
   // Les deux routes d'activation appellent Meta sur un quota étroit : elles portent la limite coûteuse, comme
   // l'import ou l'aperçu de site.
   const couteux = gardeEtendue(garde, limiteCouteuse);
-  /** Dernier envoi de code par numéro. Porté par l'instance de serveur (et non par le module) : deux serveurs
-  *  montés dans le même process, ce qui n'arrive qu'en test, ne se gênent pas l'un l'autre. */
-  const dernierCode = new Map<string, number>();
 
   app.get('/tenants/:tenantId/embedded-signup/config', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -291,17 +302,23 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       return reply.code(409).send({ error: 'ce numéro est déjà vérifié : il ne reste qu’à l’activer, sans nouveau code.' });
     }
 
-    const precedent = dernierCode.get(phoneNumberId);
-    const maintenant = Date.now();
-    if (precedent !== undefined && maintenant - precedent < DELAI_ENTRE_CODES_MS) {
-      const reste = Math.ceil((DELAI_ENTRE_CODES_MS - (maintenant - precedent)) / 1000);
-      return reply.code(429).send({ error: `un code vient d’être envoyé. Attends ${reste} s avant d’en redemander un : Meta n’en permet que dix par numéro sur 72 heures.` });
+    /**
+     * La marque est posée avant l'appel : Meta compte des requêtes, pas des succès, et un refus consomme aussi un
+     * essai. Marquer au seul succès laisserait sans protection le client qui reclique après un échec : une minute
+     * d'attente contre 72 heures de numéro bloqué. 🔴 FERMÉ SUR PANNE : si la base ne dit pas qu'aucune demande n'est
+     * partie dans la minute, Meta n'est pas appelé (un essai brûlé ne se rend pas).
+     */
+    let delai: Prise | null;
+    try {
+      delai = await deps.verrous.prendre([[cleDemandeCode(phoneNumberId), DELAI_ENTRE_CODES_MS]]);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`numero/code: délai entre deux codes illisible (tenant ${tenant}, numéro ${phoneNumberId}) : ${texteDe(err)}`);
+      return reply.code(429).send({ error: 'impossible de vérifier le dernier envoi de code pour l’instant : réessaie dans un instant. Meta n’en permet que dix par numéro sur 72 heures.' });
     }
-
-    // La marque est posée avant l'appel : Meta compte des requêtes, pas des succès, et un refus consomme aussi un
-    // essai. Marquer au seul succès laisserait sans protection le client qui reclique après un échec : une minute
-    // d'attente contre 72 heures de numéro bloqué.
-    dernierCode.set(phoneNumberId, maintenant);
+    if (delai === null) {
+      return reply.code(429).send({ error: 'un code vient d’être envoyé. Attends une minute avant d’en redemander un : Meta n’en permet que dix par numéro sur 72 heures.' });
+    }
     try {
       await deps.demanderCode(tenant, phoneNumberId, methode);
     } catch (err) {
