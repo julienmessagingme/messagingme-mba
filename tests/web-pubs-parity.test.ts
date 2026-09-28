@@ -5,6 +5,7 @@ import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../src/meta/pubs-creati
 import {
   TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MAX, AGE_MIN_BAS, AGE_MIN_HAUT, enPauseChezMeta, lienGestionnaireMeta,
   BOUTONS_PUB as BOUTONS_ECRAN, BOUTON_PUB_DEFAUT as BOUTON_DEFAUT_ECRAN, boutonConnu, libelleBouton,
+  archivable, estArchivee,
 } from '../web/lib/api-pubs';
 import { ISSUES_NON_PRISES_EN_CHARGE } from '../src/pubs/entonnoir';
 import {
@@ -413,5 +414,22 @@ describe('le bandeau de l’agent de Meta éteint', () => {
      * plus haut. C'est exactement le déplacement qui a produit ce lot, dans l'autre sens.
      */
     expect(page).toContain("typeof r.mbaEnabled === 'boolean' ? r.mbaEnabled : null");
+  });
+});
+
+describe('l’archivage vu de l’écran', () => {
+  it('🔴 le bouton suit la garde du serveur : jamais sur ce qui peut diffuser', () => {
+    expect(archivable({ etat: 'publiee', statutMeta: 'ACTIVE' })).toBe(false);
+    // `null` = pas encore relue chez Meta : le serveur refuse aussi, elle peut diffuser.
+    expect(archivable({ etat: 'publiee', statutMeta: null })).toBe(false);
+    expect(archivable({ etat: 'publiee', statutMeta: 'PAUSED' })).toBe(true);
+    expect(archivable({ etat: 'echec_creation', statutMeta: null })).toBe(true);
+    expect(archivable({ etat: 'prete', statutMeta: null })).toBe(true);
+  });
+
+  it('🔴 un champ ABSENT (API pas encore déployée) ne range rien', () => {
+    expect(estArchivee({} as { archiveeLe: string | null })).toBe(false);
+    expect(estArchivee({ archiveeLe: null })).toBe(false);
+    expect(estArchivee({ archiveeLe: '2026-09-28T18:00:00.000Z' })).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { dateHeure } from '@/lib/day';
 import {
-  basculerPub, enPauseChezMeta, lienGestionnaireMeta, lirePub, publierPub,
+  archivable, archiverPub, basculerPub, estArchivee, enPauseChezMeta, lienGestionnaireMeta, lirePub, publierPub,
   type BrouillonPub, type Entonnoir, type EtapeEntonnoir, type Publicite,
 } from '@/lib/api-pubs';
 import { Bouton } from '@/components/Bouton';
@@ -89,6 +89,7 @@ export function PubsListe({
 }) {
   const t = useT();
   const [ouverte, setOuverte] = useState<string | null>(null);
+  const [voirArchivees, setVoirArchivees] = useState(false);
 
   /**
    * TROIS GROUPES, DEMANDÉS PAR JULIEN LE 2026-09-24 : brouillons, en cours, achevées.
@@ -105,8 +106,11 @@ export function PubsListe({
    */
   const maintenant = Date.now();
   const achevee = (p: Publicite): boolean => p.fin !== null && Date.parse(p.fin) < maintenant;
-  const enCours = publicites.filter((p) => !achevee(p));
-  const finies = publicites.filter(achevee);
+  // Les archivées sortent des deux groupes : c'est tout l'objet de l'archivage (une création échouée surtout).
+  const visibles = publicites.filter((p) => !estArchivee(p));
+  const archivees = publicites.filter(estArchivee);
+  const enCours = visibles.filter((p) => !achevee(p));
+  const finies = visibles.filter(achevee);
 
   if (publicites.length === 0 && brouillons.length === 0) {
     return (
@@ -167,6 +171,15 @@ export function PubsListe({
         <section data-testid="pubs-groupe-achevees">
           <Titre>{t('Achevées', 'Finished')}</Titre>
           <Lignes publicites={finies} />
+        </section>
+      )}
+      {archivees.length > 0 && (
+        <section data-testid="pubs-groupe-archivees">
+          <button type="button" onClick={() => setVoirArchivees(!voirArchivees)}
+            className="mt-4 text-xs font-medium text-ink-500 underline" data-testid="pubs-voir-archivees">
+            {voirArchivees ? t('Masquer les archivées', 'Hide archived') : `${t('Archivées', 'Archived')} (${archivees.length})`}
+          </button>
+          {voirArchivees && <Lignes publicites={archivees} />}
         </section>
       )}
     </div>
@@ -277,6 +290,20 @@ function Actions({ tenantId, pub, recharger, t }: {
 
   const enPause = enPauseChezMeta(pub.statutMeta);
 
+  if (estArchivee(pub)) {
+    return (
+      <div className="text-right">
+        <Bouton variante="secondaire" taille="petite" type="button" disabled={busy}
+          onClick={() => void agir(() => archiverPub(tenantId, pub.id, false))}
+          data-testid={`pub-desarchiver-${pub.id}`}
+        >
+          {t('Désarchiver', 'Unarchive')}
+        </Bouton>
+        {erreur !== null && <p role="alert" className="mt-1 text-xs text-danger-700">{erreur}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="text-right">
       {pub.etat === 'prete' && (
@@ -307,6 +334,15 @@ function Actions({ tenantId, pub, recharger, t }: {
           data-testid={`pub-bascule-${pub.id}`}
         >
           {enPause ? t('Relancer', 'Resume') : t('Mettre en pause', 'Pause')}
+        </Bouton>
+      )}
+      {/* Jamais sur une publicité qui peut diffuser : on la met d'abord en pause (le serveur refuse aussi). */}
+      {archivable(pub) && (
+        <Bouton variante="secondaire" taille="petite" type="button" disabled={busy}
+          onClick={() => void agir(() => archiverPub(tenantId, pub.id, true))}
+          data-testid={`pub-archiver-${pub.id}`}
+        >
+          {t('Archiver', 'Archive')}
         </Bouton>
       )}
       {erreur !== null && <p role="alert" className="mt-1 text-xs text-danger-700">{erreur}</p>}

@@ -44,6 +44,7 @@ const PUB_PUBLIEE = {
   budgetTotal: 150, debut: '2026-10-01T00:00:00.000Z', fin: '2026-10-31T23:00:00.000Z',
   destination: 'scenario', workflowId: 'wf-1', tagQualification: 'devis', automationId: 'a-1',
   depense: 12.5, clics: 40, luLe: '2026-09-23T20:00:00.000Z', creeLe: '2026-09-23T10:00:00.000Z',
+  archiveeLe: null as string | null,
 };
 
 const PUB_PRETE = { ...PUB_PUBLIEE, id: 'pub-2', nom: 'Black Friday', etat: 'prete', statutMeta: null, depense: null, clics: null, luLe: null };

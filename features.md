@@ -3160,6 +3160,11 @@ un agent IA) : une pose de tag en masse ou un import ne qualifient personne.
 **Pause et reprise** depuis l'écran. L'automation reste allumée dans les deux cas : un prospect qui a cliqué
 juste avant la pause peut écrire plusieurs minutes plus tard, et son clic a été payé.
 
+**Archiver** (2026-09-28) : une publicité qui ne diffuse pas (création échouée, prête et jamais publiée, ou en
+pause chez Meta) se range hors de la liste, dans un groupe « Archivées » replié, d'où « Désarchiver » la ramène.
+🔴 **Une publicité qui diffuse ne s'archive pas** : on la met d'abord en pause, sinon on rangerait hors de sa vue
+une campagne qui dépense. Rien ne change chez Meta, rien n'est effacé.
+
 **Ce qui reste dans le Gestionnaire de Meta** : la création des audiences, les questions rapides, le ciblage
 détaillé (centres d'intérêt, langues), les emplacements, les catégories spéciales, et toute modification d'une
 publicité déjà créée.

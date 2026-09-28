@@ -155,6 +155,8 @@ export interface Publicite {
   clics: number | null;
   luLe: string | null;
   creeLe: string;
+  /** Rangée par le client hors de la liste (un rangement d'écran, rien ne change chez Meta). */
+  archiveeLe: string | null;
 }
 
 /**
@@ -349,6 +351,24 @@ export function publierPub(tenantId: string, id: string): Promise<{ ok: true }> 
 
 export function basculerPub(tenantId: string, id: string, actif: boolean): Promise<{ ok: true }> {
   return request<{ ok: true }>(`${basePubs(tenantId)}/${id}/${actif ? 'reprendre' : 'pause'}`, { method: 'POST' });
+}
+
+/** Le serveur refuse (409) d'archiver une publicité qui peut encore diffuser. */
+export function archiverPub(tenantId: string, id: string, archiver: boolean): Promise<{ ok: true }> {
+  return request<{ ok: true }>(`${basePubs(tenantId)}/${id}/${archiver ? 'archiver' : 'desarchiver'}`, { method: 'POST' });
+}
+
+/**
+ * Archivée ? ⚠️ ABSENT VAUT « NON » : Vercel publie la console avant que l'API ne porte le champ, et un `undefined`
+ * pris pour une date rangerait toutes les publicités de l'espace hors de la vue.
+ */
+export function estArchivee(p: Pick<Publicite, 'archiveeLe'>): boolean {
+  return (p.archiveeLe ?? null) !== null;
+}
+
+/** Ce que le serveur accepte d'archiver : tout ce qui ne peut pas diffuser. */
+export function archivable(p: Pick<Publicite, 'etat' | 'statutMeta'>): boolean {
+  return p.etat !== 'publiee' || enPauseChezMeta(p.statutMeta);
 }
 
 /* ── La vidéo et les audiences (migration 0187) ─────────────────────────────────────────────────── */

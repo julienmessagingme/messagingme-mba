@@ -26,18 +26,20 @@ export interface Publicite {
   clics: number | null;
   luLe: Date | null;
   creeLe: Date;
+  /** Rangée hors de la liste par le client (0189). Un rangement d'écran : rien d'autre ne la lit. */
+  archiveeLe: Date | null;
 }
 
 const COLS = `id, campagne_id, ensemble_id, crea_id, pub_id, nom, etat, statut_meta, motif_refus,
               budget_total, debut, fin, destination, workflow_id, tag_qualification, automation_id,
-              depense, clics, lu_le, cree_le`;
+              depense, clics, lu_le, cree_le, archivee_le`;
 
 interface Brut {
   id: string; campagne_id: string; ensemble_id: string | null; crea_id: string | null; pub_id: string | null;
   nom: string; etat: string; statut_meta: string | null; motif_refus: string | null;
   budget_total: string | null; debut: Date | null; fin: Date | null; destination: string;
   workflow_id: string | null; tag_qualification: string | null; automation_id: string | null;
-  depense: string | null; clics: number | null; lu_le: Date | null; cree_le: Date;
+  depense: string | null; clics: number | null; lu_le: Date | null; cree_le: Date; archivee_le: Date | null;
 }
 
 /**
@@ -73,6 +75,7 @@ function versPublicite(r: Brut): Publicite {
     clics: r.clics,
     luLe: r.lu_le,
     creeLe: r.cree_le,
+    archiveeLe: r.archivee_le,
   };
 }
 
@@ -151,6 +154,23 @@ export class PgPublicitesStore {
       [tenantId],
     );
     return rows.map(versPublicite);
+  }
+
+  /**
+   * Archive (ou désarchive) une publicité de CET espace. 🔴 Jamais une publicité qui peut diffuser : publiée et
+   * `ACTIVE` chez Meta, ou publiée sans statut encore lu (`null` n'est pas « en pause »). Sinon le client rangerait
+   * une campagne qui dépense. Le refus se lit dans le même `update`, sans lecture préalable qui pourrait vieillir.
+   */
+  async archiver(tenantId: string, id: string, archiver: boolean): Promise<'ok' | 'introuvable' | 'diffuse'> {
+    const res = await this.pool.query(
+      `update publicites set archivee_le = case when $3::boolean then now() else null end
+        where tenant_id = $1 and id = $2
+          and (not $3::boolean or not (etat = 'publiee' and (statut_meta is null or statut_meta = 'ACTIVE')))`,
+      [tenantId, id, archiver],
+    );
+    if ((res.rowCount ?? 0) > 0) return 'ok';
+    const existe = await this.pool.query(`select 1 from publicites where tenant_id = $1 and id = $2`, [tenantId, id]);
+    return existe.rowCount ? 'diffuse' : 'introuvable';
   }
 
   async lire(tenantId: string, id: string): Promise<Publicite | null> {

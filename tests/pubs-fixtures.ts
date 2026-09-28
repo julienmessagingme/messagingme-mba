@@ -19,7 +19,7 @@ export const aucunePubliciteUtilise = async (): Promise<string[]> => [];
  */
 export const aucunePubDeRoute: Pick<PubsRouteDeps,
   'publicites' | 'creerPub' | 'publierPub' | 'lirePub' | 'basculerPub' | 'brouillons' | 'videos' | 'audiences'> = {
-  publicites: { lister: async () => [] },
+  publicites: { lister: async () => [], archiver: async () => 'introuvable' },
   lirePub: async () => null,
   creerPub: () => { throw new Error('aucunePubDeRoute : creerPub ne devrait pas être appelée'); },
   publierPub: () => { throw new Error('aucunePubDeRoute : publierPub ne devrait pas être appelée'); },

@@ -58,7 +58,10 @@ export interface PubsRouteDeps {
    */
   deconnecter(tenantId: string): Promise<{ revoqueChezMeta: boolean }>;
   /** Les publicités de l'espace, la plus récente d'abord. */
-  publicites: { lister(tenantId: string): Promise<Publicite[]> };
+  publicites: {
+    lister(tenantId: string): Promise<Publicite[]>;
+    archiver(tenantId: string, id: string, archiver: boolean): Promise<'ok' | 'introuvable' | 'diffuse'>;
+  };
   /** Les brouillons : un brouillon est un formulaire mémorisé qui ne touche jamais Meta. */
   brouillons: {
     /**
@@ -819,6 +822,28 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
       } catch (err) {
         if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
         return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
+      }
+      await journal(tenantId, req, action, { kind: 'publicite', id }, {});
+      return reply.send({ ok: true });
+    });
+  }
+
+  /**
+   * Archiver ou désarchiver : un rangement d'écran, rien ne part chez Meta. Refusé (409) sur une publicité qui
+   * peut diffuser, sinon le client rangerait hors de sa vue une campagne qui dépense.
+   */
+  for (const [chemin, archiver, action] of [
+    ['archiver', true, 'pubs.archivee'],
+    ['desarchiver', false, 'pubs.desarchivee'],
+  ] as const) {
+    app.post(`/tenants/:tenantId/pubs/:id/${chemin}`, opts, async (req, reply) => {
+      const tenantId = espaceVerifie(req);
+      if (forbidNonAdmin(req, reply)) return;
+      const { id } = req.params as { id: string };
+      const issue = await deps.publicites.archiver(tenantId, id, archiver);
+      if (issue === 'introuvable') return reply.code(404).send({ error: 'cette publicité n’existe pas' });
+      if (issue === 'diffuse') {
+        return reply.code(409).send({ error: 'mettez d’abord cette publicité en pause : elle diffuse encore', code: 'diffuse' });
       }
       await journal(tenantId, req, action, { kind: 'publicite', id }, {});
       return reply.send({ ok: true });

@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 3d62a6
+source_empreinte: 0a64ae
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -154,6 +154,13 @@ tag sur une sélection de contacts, ou l'importer, ne qualifie personne.
 
 Les deux boutons agissent chez Meta, sur la campagne. Le scénario, lui, **reste branché** : quelqu'un qui a
 cliqué juste avant la pause peut écrire quelques minutes plus tard, et son clic a été payé.
+
+## Archiver
+
+Une publicité qui ne diffuse pas (création échouée, prête et jamais publiée, ou en pause) se range avec
+**Archiver** : elle quitte la liste et rejoint le groupe « Archivées », replié en bas, d'où **Désarchiver** la
+ramène. Rien ne change chez Meta et rien n'est effacé. Une publicité qui diffuse ne s'archive pas : mettez-la
+d'abord en pause.
 
 Vous pouvez vous déconnecter à tout moment. Si une publicité diffuse encore, elle continuera de dépenser
 chez Meta, et nous ne pourrons plus la mettre en pause pour vous : l'écran vous le dit avant.

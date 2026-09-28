@@ -79,6 +79,8 @@ export type AuditAction =
   /** La pause se trace aussi : c'est souvent le geste qu'on cherche à dater (« pourquoi ma campagne s'est arrêtée »). */
   | 'pubs.pausee'
   | 'pubs.reprise'
+  | 'pubs.archivee'
+  | 'pubs.desarchivee'
   /**
    * Le branchement d'un outil qui reçoit les signaux : par lui, des données de contacts quittent l'espace. Le détail
    * ne porte jamais les clés, et ni lui ni la cible ne nomment l'outil (ce journal est un écran de la marque).

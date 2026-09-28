@@ -350,14 +350,14 @@ describe('la pause et la reprise', () => {
 
 describe('GET /pubs : la liste', () => {
   it('rend les publicités de l’espace', async () => {
-    const { srv } = app({ publicites: { lister: async () => [] } });
+    const { srv } = app({ publicites: { ...aucunePubDeRoute.publicites, lister: async () => [] } });
     const res = await srv.inject({ method: 'GET', url: urlPubs() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ publicites: [] });
   });
 
   it('🔴 un espace ne lit pas les publicités d’un autre', async () => {
-    const { srv } = app({ publicites: { lister: async () => [] } });
+    const { srv } = app({ publicites: { ...aucunePubDeRoute.publicites, lister: async () => [] } });
     expect((await srv.inject({ method: 'GET', url: '/tenants/t-voisin/pubs' })).statusCode).toBe(403);
   });
 });
@@ -516,5 +516,39 @@ describe('POST /pubs : le bouton', () => {
       expect(res.statusCode, String(bouton)).toBe(400);
     }
     expect(appele).toBe(false);
+  });
+});
+
+describe('l’archivage', () => {
+  it('archive puis désarchive, et chaque geste est journalisé', async () => {
+    const appels: Array<[string, string, boolean]> = [];
+    const { srv, traces } = app({
+      publicites: { lister: async () => [], archiver: async (t, id, oui) => { appels.push([t, id, oui]); return 'ok'; } },
+    });
+    expect((await srv.inject({ method: 'POST', url: urlPubs('/pub-1/archiver') })).statusCode).toBe(200);
+    expect((await srv.inject({ method: 'POST', url: urlPubs('/pub-1/desarchiver') })).statusCode).toBe(200);
+    expect(appels).toEqual([[TENANT, 'pub-1', true], [TENANT, 'pub-1', false]]);
+    expect(traces.audit).toEqual(['pubs.archivee', 'pubs.desarchivee']);
+  });
+
+  it('🔴 une publicité qui diffuse : 409, et rien au journal', async () => {
+    const { srv, traces } = app({ publicites: { lister: async () => [], archiver: async () => 'diffuse' } });
+    const res = await srv.inject({ method: 'POST', url: urlPubs('/pub-1/archiver') });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('diffuse');
+    expect(traces.audit).toEqual([]);
+  });
+
+  it('une publicité inconnue : 404', async () => {
+    const { srv } = app({ publicites: { lister: async () => [], archiver: async () => 'introuvable' } });
+    expect((await srv.inject({ method: 'POST', url: urlPubs('/inconnue/archiver') })).statusCode).toBe(404);
+  });
+
+  it('🔴 réservé aux ADMINS, et jamais sur un autre espace', async () => {
+    const archiver = async (): Promise<'ok'> => 'ok';
+    const membre = app({ publicites: { lister: async () => [], archiver } }, 'member');
+    expect((await membre.srv.inject({ method: 'POST', url: urlPubs('/pub-1/archiver') })).statusCode).toBe(403);
+    const { srv } = app({ publicites: { lister: async () => [], archiver } });
+    expect((await srv.inject({ method: 'POST', url: '/tenants/t-voisin/pubs/pub-1/archiver' })).statusCode).toBe(403);
   });
 });
