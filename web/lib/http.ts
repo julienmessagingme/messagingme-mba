@@ -169,7 +169,9 @@ export async function requestBlob(path: string): Promise<Blob> {
 async function attempt<T>(path: string, init: RequestInit, refus401: Refus401): Promise<T> {
   const session = getSession();
   const headers = new Headers(init.headers);
-  headers.set('content-type', 'application/json');
+  // JSON par défaut ; un appelant qui envoie autre chose le dit (un morceau de vidéo part en octets bruts). Aucun
+  // autre appelant ne pose ce type : le défaut ne change donc rien pour eux.
+  if (!headers.has('content-type')) headers.set('content-type', 'application/json');
   if (session) headers.set('authorization', `Bearer ${session.token}`);
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers });

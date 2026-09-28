@@ -47,7 +47,7 @@ export interface VisuelPub {
   base64: string;
 }
 
-export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, nomPage, reponse, className }: {
+export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, video = null, nomPage, reponse, className }: {
   /** Le titre affiché sous le visuel, dans la barre du bouton (`link_data.name`). */
   titre: string;
   /** Le texte principal, au-dessus du visuel (`link_data.message`). */
@@ -57,6 +57,12 @@ export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, nom
   /** Ce que WhatsApp écrit dans la zone de saisie du prospect (`autofill_message.content`). */
   messagePreRempli: string;
   visuel: VisuelPub | null;
+  /**
+   * La publicité est une VIDÉO : `url` est l'adresse LOCALE du fichier choisi (`blob:`), jamais une adresse de Meta,
+   * et `null` quand on rouvre un brouillon (seul l'identifiant a été gardé). L'aperçu ne relit rien et n'appelle
+   * rien : il ne doit pas pouvoir dépenser.
+   */
+  video?: { url: string | null; deposee: boolean } | null;
   /**
    * Le nom de la Page qui porte la publicité (migration 0169).
    *
@@ -72,7 +78,7 @@ export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, nom
 
   return (
     <div className={className} data-testid="pub-apercu">
-      <ApercuFil titre={titre} texte={texte} visuel={visuel} nomPage={nomPage} />
+      <ApercuFil titre={titre} texte={texte} visuel={visuel} video={video} nomPage={nomPage} />
       <div className="mt-5">
         <ApercuConversation accueil={accueil} messagePreRempli={messagePreRempli} />
       </div>
@@ -88,8 +94,8 @@ export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, nom
 }
 
 /** L'annonce telle qu'elle apparaît dans le fil : en-tête de Page, texte, visuel, puis la barre du bouton. */
-function ApercuFil({ titre, texte, visuel, nomPage }: {
-  titre: string; texte: string; visuel: VisuelPub | null; nomPage: string | null;
+function ApercuFil({ titre, texte, visuel, video, nomPage }: {
+  titre: string; texte: string; visuel: VisuelPub | null; video: { url: string | null; deposee: boolean } | null; nomPage: string | null;
 }) {
   const t = useT();
   const nom = nomPage ?? t('Votre Page', 'Your Page');
@@ -114,7 +120,26 @@ function ApercuFil({ titre, texte, visuel, nomPage }: {
             : <span className="text-ink-500">{t('Votre texte principal apparaîtra ici…', 'Your primary text will appear here…')}</span>}
         </p>
 
-        {visuel !== null ? (
+        {video !== null ? (
+          video.url !== null ? (
+            /* Le cadrage d'une vidéo varie (9:16, 4:5...) : on la montre ENTIÈRE, sans la recadrer, dans un
+               cadre 4:5, celui du fil. */
+            <video
+              src={video.url} muted playsInline controls
+              className="aspect-[4/5] w-full bg-ink-900 object-contain"
+              data-testid="pub-apercu-video"
+            />
+          ) : (
+            <div
+              className="flex aspect-[4/5] w-full items-center justify-center bg-ink-100 px-4 text-center text-[11px] text-ink-500"
+              data-testid="pub-apercu-video-absente"
+            >
+              {video.deposee
+                ? t('Vidéo déposée chez Meta. Choisissez de nouveau le fichier pour la revoir ici.', 'Video uploaded to Meta. Choose the file again to see it here.')
+                : t('Choisissez une vidéo pour la voir ici', 'Choose a video to see it here')}
+            </div>
+          )
+        ) : visuel !== null ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`data:${visuel.type};base64,${visuel.base64}`} alt=""

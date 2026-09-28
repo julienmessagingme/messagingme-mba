@@ -132,7 +132,9 @@ export function PubsListe({
                     {/* ⚠️ RIEN N'EST PARTI CHEZ META, et c'est ce qu'un brouillon doit dire en premier :
                         il ne dépense pas, il n'existe pas chez Meta, il n'a pas de chiffres. */}
                     {t('Rien n’a été envoyé chez Meta', 'Nothing sent to Meta')}
-                    {b.aUnVisuel ? ` · ${t('visuel enregistré', 'image saved')}` : ` · ${t('sans visuel', 'no image')}`}
+                    {b.videoId
+                      ? ` · ${t('vidéo déposée chez Meta', 'video uploaded to Meta')}`
+                      : b.aUnVisuel ? ` · ${t('visuel enregistré', 'image saved')}` : ` · ${t('sans visuel', 'no image')}`}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

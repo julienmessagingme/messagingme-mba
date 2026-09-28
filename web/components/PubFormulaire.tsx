@@ -1,17 +1,66 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/http';
 import { useT } from '@/lib/i18n';
 import { getWorkflow, estEnLigne } from '@/lib/api';
 import { premiereReponse } from '@/lib/apercu-reponse';
 import {
   creerPub, creerBrouillon, majBrouillon, supprimerBrouillon,
-  TAILLE_VISUEL_MAX, TYPES_VISUEL,
-  type BrouillonPubComplet, type DestinationPub, type FormulaireBrouillonPub, type FormulaireCreationPub,
+  demarrerDepotVideo, envoyerMorceauVideo, terminerDepotVideo, lireEtatVideo, listerAudiences,
+  TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MIN_BAS, AGE_MIN_HAUT, AGE_MAX,
+  type AudiencePub, type BrouillonPubComplet, type DestinationPub, type FormulaireBrouillonPub,
+  type FormulaireCreationPub, type ListeAudiencesPub,
 } from '@/lib/api-pubs';
+import {
+  cadrageDe, morceauSuivant, refusVideo, TAILLE_VIDEO_MAX, DUREE_VIDEO_MAX_S, type RefusVideo,
+} from '@/lib/pub-video';
 import { PubApercu, type EtatReponse } from '@/components/PubApercu';
 import { Bouton } from '@/components/Bouton';
+
+/**
+ * Où en est la vidéo : choisie, lue, envoyée morceau par morceau, puis traitée par Meta. Seule `prete` permet de
+ * créer la publicité (le serveur le revérifie).
+ */
+type EtatDepot =
+  | { etape: 'aucune' }
+  /** Le navigateur lit la durée et le cadrage, avant tout envoi. */
+  | { etape: 'lecture' }
+  | { etape: 'envoi'; envoye: number; total: number }
+  /** Déposée ; Meta la traite (durée non documentée), et l'écran interroge son état. */
+  | { etape: 'traitement' }
+  | { etape: 'prete' }
+  /** L'attente a dépassé sa borne, ou l'état n'a pas pu être lu : un bouton relance la vérification. */
+  | { etape: 'a_verifier'; raison: 'delai' | 'lecture' }
+  | { etape: 'erreur'; message: string };
+
+/**
+ * L'attente du traitement de Meta, BORNÉE : une interrogation toutes les cinq secondes, dix minutes au plus. Au-delà,
+ * l'écran le dit et propose de revérifier, plutôt que d'interroger Meta indéfiniment depuis un onglet oublié.
+ */
+const ATTENTE_PAS_MS = 5_000;
+const ATTENTE_MAX_TOURS = 120;
+
+/** Ce que le navigateur lit d'une vidéo sans l'envoyer : sa durée et ses dimensions, ou `null` s'il n'y arrive pas. */
+async function lireMetadonnees(f: File): Promise<{ url: string; duree: number | null; largeur: number; hauteur: number }> {
+  const url = URL.createObjectURL(f);
+  const video = document.createElement('video');
+  video.preload = 'metadata';
+  video.muted = true;
+  const lu = await new Promise<{ duree: number | null; largeur: number; hauteur: number }>((resolve) => {
+    // Un navigateur qui ne sait pas lire le conteneur ne déclenche parfois ni l'un ni l'autre : la borne rend
+    // alors « illisible », ce qui refuse la vidéo (voir `refusVideo`).
+    const borne = window.setTimeout(() => resolve({ duree: null, largeur: 0, hauteur: 0 }), 10_000);
+    video.onloadedmetadata = () => {
+      window.clearTimeout(borne);
+      resolve({ duree: Number.isFinite(video.duration) ? video.duration : null, largeur: video.videoWidth, hauteur: video.videoHeight });
+    };
+    video.onerror = () => { window.clearTimeout(borne); resolve({ duree: null, largeur: 0, hauteur: 0 }); };
+    video.src = url;
+  });
+  video.removeAttribute('src');
+  return { url, ...lu };
+}
 
 /**
  * LE FORMULAIRE DE CRÉATION D'UNE PUBLICITÉ (lot 3, spec § 3.2). Minimal, délibérément : tout ce qui n'est
@@ -103,8 +152,16 @@ export function PubFormulaire({
   const [debut, setDebut] = useState(brouillon?.debut ?? '');
   const [fin, setFin] = useState(brouillon?.fin ?? '');
   const [pays, setPays] = useState(brouillon === null ? 'FR' : brouillon.pays);
-  const [ageMin, setAgeMin] = useState(brouillon === null ? '18' : brouillon.ageMin);
-  const [ageMax, setAgeMax] = useState(brouillon === null ? '65' : brouillon.ageMax);
+  /**
+   * L'âge minimum, entre 18 et 25 : Advantage+ est laissé à Meta, qui n'accepte rien d'autre et FIXE le maximum à
+   * 65 (il n'y a donc plus de champ pour lui). Un brouillon d'avant cette règle peut porter « 30 » : on le rouvre
+   * VIDE plutôt que de le corriger en silence, et la création demande de choisir.
+   */
+  const [ageMin, setAgeMin] = useState(() => {
+    if (brouillon === null) return String(AGE_MIN_BAS);
+    const n = Number(brouillon.ageMin);
+    return Number.isInteger(n) && n >= AGE_MIN_BAS && n <= AGE_MIN_HAUT ? String(n) : '';
+  });
   const [destination, setDestination] = useState<DestinationPub>(brouillon?.destination ?? 'scenario');
   const [workflowId, setWorkflowId] = useState(brouillon?.workflowId ?? '');
   const [tagQualification, setTagQualification] = useState(brouillon?.tagQualification ?? '');
@@ -147,6 +204,101 @@ export function PubFormulaire({
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reponse, setReponse] = useState<EtatReponse>({ etat: 'sans_scenario' });
+
+  /**
+   * LE VISUEL EST UNE IMAGE OU UNE VIDÉO, jamais les deux (le serveur refuse les deux). Un brouillon qui porte une
+   * vidéo se rouvre sur la vidéo.
+   */
+  const [format, setFormat] = useState<'image' | 'video'>(brouillon?.videoId ? 'video' : 'image');
+  /**
+   * La vidéo choisie. `id` est son identifiant CHEZ META, connu une fois le dépôt clos ; `apercu` est une adresse
+   * locale (`blob:`) pour la montrer sans rien relire, absente quand on rouvre un brouillon (seul l'identifiant a été
+   * gardé, jamais les octets).
+   */
+  const [video, setVideo] = useState<{ id: string | null; nom: string; apercu: string | null; cadrage: ReturnType<typeof cadrageDe> } | null>(
+    brouillon?.videoId ? { id: brouillon.videoId, nom: '', apercu: null, cadrage: null } : null,
+  );
+  const [depot, setDepot] = useState<EtatDepot>(brouillon?.videoId ? { etape: 'traitement' } : { etape: 'aucune' });
+  const [progression, setProgression] = useState<number | null>(null);
+  /** Le numéro du dépôt en cours : un nouveau choix de fichier rend caduc l'envoi précédent, qui s'arrête. */
+  const depotCourant = useRef(0);
+  /** Ce que le serveur détient comme vidéo pour ce brouillon, même logique que `visuelServeur`. */
+  const [videoServeur, setVideoServeur] = useState<string | null>(brouillon?.videoId ?? null);
+
+  /**
+   * LES AUDIENCES DU COMPTE, lues chez Meta à l'ouverture. `absente` = l'API déployée ne connaît pas encore la
+   * route (fenêtre entre la publication de la console et le déploiement de l'API) : l'écran cesse alors de proposer
+   * les audiences ET la vidéo, qui arrivent avec la même mise à jour, plutôt que d'offrir un geste qui échouerait.
+   */
+  const [audiences, setAudiences] = useState<
+    { etat: 'chargement' } | { etat: 'ok'; liste: ListeAudiencesPub } | { etat: 'erreur'; message: string } | { etat: 'absente' }
+  >({ etat: 'chargement' });
+  const [incluses, setIncluses] = useState<string[]>(brouillon?.audiencesIncluses ?? []);
+  const [exclues, setExclues] = useState<string[]>(brouillon?.audiencesExclues ?? []);
+  /** Le serveur connaît-il la vidéo et les audiences (migration 0187) ? Déduit de la lecture des audiences. */
+  const serveurAJour = audiences.etat === 'ok' || audiences.etat === 'erreur';
+
+  useEffect(() => {
+    let vivant = true;
+    listerAudiences(tenantId)
+      // ⚠️ La forme est RELUE, pas crue : une réponse sans tableau (un intermédiaire, un serveur en retard)
+      // ferait planter le rendu du formulaire entier sur un `.filter` d'`undefined`.
+      .then((r) => {
+        if (!vivant) return;
+        const brut = r as Partial<ListeAudiencesPub> | null;
+        setAudiences({
+          etat: 'ok',
+          liste: { audiences: Array.isArray(brut?.audiences) ? brut.audiences : [], tronquee: brut?.tronquee === true },
+        });
+      })
+      .catch((err: unknown) => {
+        if (!vivant) return;
+        if (err instanceof ApiError && err.status === 404) setAudiences({ etat: 'absente' });
+        else setAudiences({ etat: 'erreur', message: err instanceof Error ? err.message : '' });
+      });
+    return () => { vivant = false; };
+  }, [tenantId]);
+
+  /**
+   * L'ATTENTE DU TRAITEMENT, BORNÉE ET VISIBLE. Elle ne tourne que pendant `traitement`, et s'arrête au démontage,
+   * à un nouveau fichier, ou à la borne. ⚠️ La progression vit dans son propre état : la ranger dans `depot`
+   * relancerait cet effet à chaque réponse.
+   */
+  useEffect(() => {
+    const id = video?.id ?? null;
+    if (depot.etape !== 'traitement' || id === null) return;
+    let vivant = true;
+    let tours = 0;
+    let minuteur: number | undefined;
+    const tour = async (): Promise<void> => {
+      tours += 1;
+      try {
+        const e = await lireEtatVideo(tenantId, id);
+        if (!vivant) return;
+        setProgression(typeof e.progression === 'number' && Number.isFinite(e.progression) ? e.progression : null);
+        if (e.etat === 'prete') { setDepot({ etape: 'prete' }); return; }
+        if (e.etat === 'erreur') {
+          setDepot({ etape: 'erreur', message: t('Meta n’a pas pu traiter cette vidéo. Choisissez-en une autre.', 'Meta could not process this video. Choose another one.') });
+          return;
+        }
+      } catch {
+        if (vivant) setDepot({ etape: 'a_verifier', raison: 'lecture' });
+        return;
+      }
+      if (tours >= ATTENTE_MAX_TOURS) { setDepot({ etape: 'a_verifier', raison: 'delai' }); return; }
+      minuteur = window.setTimeout(() => { void tour(); }, ATTENTE_PAS_MS);
+    };
+    void tour();
+    return () => { vivant = false; if (minuteur !== undefined) window.clearTimeout(minuteur); };
+    // `t` est stable pour une langue donnée ; le relancer à chaque rendu recommencerait l'attente.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, depot.etape, video?.id]);
+
+  /** L'adresse locale de l'aperçu se libère quand elle est remplacée, ou au démontage. */
+  useEffect(() => {
+    const url = video?.apercu ?? null;
+    return () => { if (url !== null) URL.revokeObjectURL(url); };
+  }, [video?.apercu]);
 
   /**
    * LE TROISIÈME ÉCRAN DE L'APERÇU : ce que le prospect recevra.
@@ -195,8 +347,99 @@ export function PubFormulaire({
   }
 
   function visuelAEnvoyer(): VisuelEnvoye {
+    // En mode vidéo, l'image n'est pas le visuel : on n'en dit rien. Poser une vidéo l'efface côté serveur.
+    if (format === 'video') return undefined;
     const actuel: VisuelEnvoye = image === null ? null : { type: image.type, base64: image.base64 };
     return memeVisuel(actuel, visuelDetenu()) ? undefined : actuel;
+  }
+
+  /** Même dérivation pour la vidéo : ce que le serveur détient, déduit, jamais apparié à la main. */
+  function videoDetenue(): string | null {
+    return brouillonId === null ? null : videoServeur;
+  }
+
+  /**
+   * Ce qu'il faut dire de la vidéo au prochain enregistrement : `undefined` quand rien n'a changé (ou quand le
+   * serveur ne connaît pas encore la vidéo, qui refuserait la clé), sinon l'identifiant ou `null`. En mode image, on
+   * ne dit rien : une image posée efface la vidéo côté serveur, et un mode image SANS image ne doit pas effacer une
+   * vidéo qu'on a peut-être seulement quitté des yeux.
+   */
+  function videoAEnvoyer(): { id: string } | null | undefined {
+    if (!serveurAJour || format !== 'video') return undefined;
+    const actuelle = video?.id ?? null;
+    if (actuelle === videoDetenue()) return undefined;
+    return actuelle === null ? null : { id: actuelle };
+  }
+
+  /** Le refus d'une vidéo, en mots, dans les deux langues. */
+  function messageRefusVideo(r: Exclude<RefusVideo, null>): string {
+    if (r === 'type') return t('La vidéo doit être un MP4 ou un MOV.', 'The video must be an MP4 or a MOV.');
+    if (r === 'taille') {
+      return t(`La vidéo dépasse ${Math.round(TAILLE_VIDEO_MAX / (1024 * 1024))} Mo.`, `The video is over ${Math.round(TAILLE_VIDEO_MAX / (1024 * 1024))} MB.`);
+    }
+    if (r === 'duree') return t(`La vidéo dure plus de ${DUREE_VIDEO_MAX_S} secondes.`, `The video is longer than ${DUREE_VIDEO_MAX_S} seconds.`);
+    return t('Votre navigateur n’a pas pu lire cette vidéo pour en vérifier la durée. Exportez-la en MP4 (H.264) et réessayez.',
+             'Your browser could not read this video to check its length. Export it as MP4 (H.264) and try again.');
+  }
+
+  /**
+   * CHOISIR UNE VIDÉO : la contrôler, puis la DÉPOSER CHEZ META tout de suite, morceau par morceau (rien n'y est
+   * facturable). Le brouillon ne garde ensuite que son identifiant.
+   *
+   * 🔴 LES CONTRÔLES PASSENT AVANT LE PREMIER OCTET : type, poids, durée lue par le navigateur. Le serveur refait
+   * ce qu'il peut (signature, poids, durée quand le fichier la porte au début), mais la règle des 60 secondes n'a
+   * qu'ici un contrôle sûr.
+   *
+   * ⚠️ UN NOUVEAU CHOIX REND L'ENVOI EN COURS CADUC : chaque dépôt porte un numéro, et un morceau qui revient pour
+   * un numéro dépassé n'est pas suivi du suivant.
+   */
+  async function choisirVideo(f: File | null): Promise<void> {
+    setErreur(null);
+    const numero = ++depotCourant.current;
+    setProgression(null);
+    if (f === null) { setVideo(null); setDepot({ etape: 'aucune' }); return; }
+    const avant = refusVideo(f, 1);
+    if (avant === 'type' || avant === 'taille') { setErreur(messageRefusVideo(avant)); return; }
+    setDepot({ etape: 'lecture' });
+    const meta = await lireMetadonnees(f);
+    if (numero !== depotCourant.current) { URL.revokeObjectURL(meta.url); return; }
+    const refus = refusVideo(f, meta.duree);
+    if (refus !== null) {
+      URL.revokeObjectURL(meta.url);
+      setDepot({ etape: 'aucune' });
+      setErreur(messageRefusVideo(refus));
+      return;
+    }
+    setVideo({ id: null, nom: f.name, apercu: meta.url, cadrage: cadrageDe(meta.largeur, meta.hauteur) });
+    setDepot({ etape: 'envoi', envoye: 0, total: f.size });
+    try {
+      const d = await demarrerDepotVideo(tenantId, f.size);
+      let precedent: { debut: number; fin: number } | null = null;
+      let m = morceauSuivant(null, { debut: d.debut, fin: d.fin }, f.size);
+      while (m !== 'fini') {
+        if (m === null) {
+          throw new Error(t('Meta a demandé un morceau incohérent de la vidéo. Réessayez.', 'Meta asked for an inconsistent part of the video. Try again.'));
+        }
+        const s = await envoyerMorceauVideo(tenantId, d.sessionId, m.debut, m.fin, f.slice(m.debut, m.fin));
+        if (numero !== depotCourant.current) return;
+        precedent = m;
+        setDepot({ etape: 'envoi', envoye: m.fin, total: f.size });
+        m = morceauSuivant(precedent, s, f.size);
+      }
+      await terminerDepotVideo(tenantId, d.sessionId);
+      if (numero !== depotCourant.current) return;
+      setVideo((v) => (v === null ? v : { ...v, id: d.videoId }));
+      setDepot({ etape: 'traitement' });
+    } catch (err) {
+      if (numero !== depotCourant.current) return;
+      setDepot({ etape: 'erreur', message: err instanceof Error ? err.message : t('Dépôt impossible', 'Upload failed') });
+    }
+  }
+
+  /** Inclure, exclure ou ignorer une audience : les deux listes restent disjointes par construction. */
+  function choisirAudience(id: string, choix: 'inclure' | 'exclure' | 'ignorer'): void {
+    setIncluses((l) => (choix === 'inclure' ? [...l.filter((x) => x !== id), id] : l.filter((x) => x !== id)));
+    setExclues((l) => (choix === 'exclure' ? [...l.filter((x) => x !== id), id] : l.filter((x) => x !== id)));
   }
 
   async function choisirImage(f: File | null): Promise<void> {
@@ -223,12 +466,15 @@ export function PubFormulaire({
    * serveur conserve le sien ; c'est ce qui permet de corriger un texte sans renvoyer, ni perdre, plusieurs
    * mégaoctets. `aEnvoyer` vaut `undefined` quand il n'y a rien à dire du visuel.
    */
-  function champsBrouillon(aEnvoyer: VisuelEnvoye): FormulaireBrouillonPub {
+  function champsBrouillon(aEnvoyer: VisuelEnvoye, videoEnvoyee: { id: string } | null | undefined): FormulaireBrouillonPub {
     return {
       nom, titre, texte, accueil, messagePreRempli,
-      budgetTotal, debut, fin, pays, ageMin, ageMax, tagQualification, destination,
+      budgetTotal, debut, fin, pays, ageMin, ageMax: String(AGE_MAX), tagQualification, destination,
       workflowId: workflowId === '' ? null : workflowId,
       ...(aEnvoyer === undefined ? {} : { image: aEnvoyer }),
+      ...(videoEnvoyee === undefined ? {} : { video: videoEnvoyee }),
+      // ⚠️ Les audiences ne partent que vers un serveur qui les connaît : l'ancien refuse toute clé inconnue.
+      ...(serveurAJour ? { audiencesIncluses: incluses, audiencesExclues: exclues } : {}),
     };
   }
 
@@ -245,17 +491,22 @@ export function PubFormulaire({
      * muette. En capturant ici, on n'enregistre jamais comme « détenu » autre chose que ce qui est parti.
      */
     const aEnvoyer = visuelAEnvoyer();
+    const videoEnvoyee = videoAEnvoyer();
     try {
       if (brouillonId === null) {
-        const { id } = await creerBrouillon(tenantId, champsBrouillon(aEnvoyer));
+        const { id } = await creerBrouillon(tenantId, champsBrouillon(aEnvoyer, videoEnvoyee));
         // ⚠️ On RETIENT l'identifiant : sans ça, trois clics sur « Enregistrer » créeraient trois brouillons.
         setBrouillonId(id);
       } else {
-        await majBrouillon(tenantId, brouillonId, champsBrouillon(aEnvoyer));
+        await majBrouillon(tenantId, brouillonId, champsBrouillon(aEnvoyer, videoEnvoyee));
       }
       // Le serveur détient désormais ce qui vient de PARTIR, et rien d'autre. Une clé omise ne change
       // rien à ce qu'il détenait déjà, donc on ne touche à cet état que si quelque chose est parti.
       if (aEnvoyer !== undefined) setVisuelServeur(aEnvoyer);
+      if (videoEnvoyee !== undefined) setVideoServeur(videoEnvoyee === null ? null : videoEnvoyee.id);
+      // 🔴 L'EXCLUSIVITÉ, VUE D'ICI : le serveur a effacé l'autre visuel quand l'un a été POSÉ (non nul).
+      if (videoEnvoyee) setVisuelServeur(null);
+      if (aEnvoyer) setVideoServeur(null);
       await brouillonsChanges();
     } catch (err) {
       /**
@@ -296,7 +547,17 @@ export function PubFormulaire({
 
   async function envoyer(): Promise<void> {
     setErreur(null);
-    if (image === null) { setErreur(t('Choisissez un visuel.', 'Choose an image.')); return; }
+    if (format === 'image' && image === null) { setErreur(t('Choisissez un visuel.', 'Choose an image.')); return; }
+    if (format === 'video' && (video?.id == null || depot.etape !== 'prete')) {
+      setErreur(t('La vidéo n’est pas encore prête chez Meta : attendez la fin de son traitement.',
+                  'The video is not ready at Meta yet: wait for its processing to finish.'));
+      return;
+    }
+    const age = Number(ageMin);
+    if (!Number.isInteger(age) || age < AGE_MIN_BAS || age > AGE_MIN_HAUT) {
+      setErreur(t(`Choisissez un âge minimum entre ${AGE_MIN_BAS} et ${AGE_MIN_HAUT} ans.`, `Choose a minimum age between ${AGE_MIN_BAS} and ${AGE_MIN_HAUT}.`));
+      return;
+    }
     const budget = Number(budgetTotal);
     if (!Number.isFinite(budget) || budget <= 0) {
       setErreur(t('Indiquez un budget total supérieur à zéro.', 'Enter a total budget above zero.'));
@@ -313,12 +574,19 @@ export function PubFormulaire({
       debut, fin,
       pays: pays.split(',').map((p) => p.trim().toUpperCase()).filter((p) => p.length === 2),
       villes: [],
-      ageMin: Number(ageMin), ageMax: Number(ageMax),
+      // `ageMax` est fixé par Meta avec Advantage+ ; il part quand même, parce que l'API d'avant cette règle
+      // l'exige encore pendant la fenêtre de déploiement.
+      ageMin: age, ageMax: AGE_MAX,
       destination,
       workflowId: destination === 'scenario' ? workflowId : null,
       tagQualification: tagQualification.trim() === '' ? null : tagQualification.trim(),
       horsCategorieSpeciale: true,
-      image: { type: image.type, base64: image.base64 },
+      ...(format === 'video' && video?.id
+        ? { video: { id: video.id } }
+        : image !== null ? { image: { type: image.type, base64: image.base64 } } : {}),
+      // ⚠️ Seulement si on en a choisi : une publicité SANS audience doit rester créable sur l'API d'avant 0187.
+      ...(incluses.length > 0 ? { audiencesIncluses: incluses } : {}),
+      ...(exclues.length > 0 ? { audiencesExclues: exclues } : {}),
     };
     setBusy(true);
     try {
@@ -388,12 +656,68 @@ export function PubFormulaire({
            'This is what WhatsApp types in their input box: they just press send.')}
       </p>
 
-      <label className={label} htmlFor="pub-image">{t('Visuel (JPEG ou PNG, 5 Mo maximum)', 'Image (JPEG or PNG, 5 MB max)')}</label>
-      <input
-        id="pub-image" type="file" accept="image/jpeg,image/png" className={champ}
-        onChange={(e) => void choisirImage(e.target.files?.[0] ?? null)}
-      />
-      {image !== null && <p className="mt-1 text-xs text-ink-500">{image.nom}</p>}
+      {/* 🔴 IMAGE OU VIDÉO, UN SEUL VISUEL. La vidéo n'est proposée qu'à une API qui sait la recevoir (voir
+          `serveurAJour`) : sur l'ancienne, le bouton appellerait une route absente. */}
+      <fieldset className="mt-3" data-testid="pub-format">
+        <legend className="block text-xs font-medium text-ink-500">{t('Visuel', 'Visual')}</legend>
+        <div className="mt-1 flex gap-4 text-sm text-ink-900">
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="pub-format" checked={format === 'image'} onChange={() => setFormat('image')} data-testid="pub-format-image" />
+            {t('Image', 'Image')}
+          </label>
+          <label className={`flex items-center gap-1.5 ${serveurAJour ? '' : 'text-ink-500'}`}>
+            <input
+              type="radio" name="pub-format" checked={format === 'video'} disabled={!serveurAJour && format !== 'video'}
+              onChange={() => setFormat('video')} data-testid="pub-format-video"
+            />
+            {t('Vidéo', 'Video')}
+          </label>
+        </div>
+        {audiences.etat === 'absente' && (
+          <p className="mt-1 text-xs text-ink-500" data-testid="pub-video-indispo">
+            {t('La vidéo et les audiences attendent la mise à jour du serveur. Vous pouvez créer une publicité avec une image.',
+               'Video and audiences are waiting for the server update. You can still create an ad with an image.')}
+          </p>
+        )}
+      </fieldset>
+
+      {format === 'image' && (
+        <>
+          <label className={label} htmlFor="pub-image">{t('Image (JPEG ou PNG, 5 Mo maximum)', 'Image (JPEG or PNG, 5 MB max)')}</label>
+          <input
+            id="pub-image" type="file" accept="image/jpeg,image/png" className={champ}
+            onChange={(e) => void choisirImage(e.target.files?.[0] ?? null)}
+          />
+          {image !== null && <p className="mt-1 text-xs text-ink-500">{image.nom}</p>}
+        </>
+      )}
+
+      {format === 'video' && (
+        <div data-testid="pub-video">
+          <label className={label} htmlFor="pub-video-fichier">
+            {t(`Vidéo (MP4 ou MOV, ${Math.round(TAILLE_VIDEO_MAX / (1024 * 1024))} Mo et ${DUREE_VIDEO_MAX_S} secondes au plus)`,
+               `Video (MP4 or MOV, ${Math.round(TAILLE_VIDEO_MAX / (1024 * 1024))} MB and ${DUREE_VIDEO_MAX_S} seconds max)`)}
+          </label>
+          <input
+            id="pub-video-fichier" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" className={champ}
+            disabled={depot.etape === 'lecture' || depot.etape === 'envoi'}
+            onChange={(e) => void choisirVideo(e.target.files?.[0] ?? null)}
+          />
+          <p className="mt-1 text-xs text-ink-500">
+            {/* Un conseil, jamais un refus : Meta place la publicité lui-même. */}
+            {t('Conseil : un cadrage vertical 9:16 pour les stories, les Reels et le statut WhatsApp, ou 4:5 pour le fil. Meta choisit les emplacements.',
+               'Tip: vertical 9:16 framing for stories, Reels and WhatsApp status, or 4:5 for the feed. Meta picks the placements.')}
+          </p>
+          {video?.cadrage === 'autre' && (
+            <p className="mt-1 text-xs text-alerte-700" data-testid="pub-video-cadrage">
+              {t('Cette vidéo n’est ni en 9:16 ni en 4:5 : Meta la recadrera sur certains emplacements.',
+                 'This video is neither 9:16 nor 4:5: Meta will crop it on some placements.')}
+            </p>
+          )}
+          <EtatDuDepot depot={depot} progression={progression} nom={video?.nom ?? ''}
+            reverifier={() => setDepot({ etape: 'traitement' })} />
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <div>
@@ -422,13 +746,28 @@ export function PubFormulaire({
         </div>
         <div>
           <label className={label} htmlFor="pub-age-min">{t('Âge minimum', 'Minimum age')}</label>
-          <input id="pub-age-min" className={champ} inputMode="numeric" value={ageMin} onChange={(e) => setAgeMin(e.target.value)} />
+          <select id="pub-age-min" className={champ} value={ageMin} onChange={(e) => setAgeMin(e.target.value)}>
+            {ageMin === '' && <option value="">{t('Choisir…', 'Choose…')}</option>}
+            {Array.from({ length: AGE_MIN_HAUT - AGE_MIN_BAS + 1 }, (_, i) => AGE_MIN_BAS + i).map((a) => (
+              <option key={a} value={String(a)}>{a}</option>
+            ))}
+          </select>
         </div>
         <div>
-          <label className={label} htmlFor="pub-age-max">{t('Âge maximum', 'Maximum age')}</label>
-          <input id="pub-age-max" className={champ} inputMode="numeric" value={ageMax} onChange={(e) => setAgeMax(e.target.value)} />
+          <p className={label}>{t('Âge maximum', 'Maximum age')}</p>
+          <p className="mt-1 px-1 py-2 text-sm text-ink-900" data-testid="pub-age-max">{t(`${AGE_MAX} ans`, `${AGE_MAX}`)}</p>
         </div>
       </div>
+      <p className="mt-1 text-xs text-ink-500" data-testid="pub-advantage-age">
+        {/* 🔴 La règle est de Meta, pas de nous : on la dit là où elle contraint, pour qu'un « pourquoi pas 30 ans ? »
+            ait sa réponse sous les yeux. */}
+        {t(`Advantage+ est laissé à Meta, qui n’accepte qu’un âge minimum entre ${AGE_MIN_BAS} et ${AGE_MIN_HAUT} ans et fixe le maximum à ${AGE_MAX}.`,
+           `Advantage+ is left to Meta, which only accepts a minimum age between ${AGE_MIN_BAS} and ${AGE_MIN_HAUT} and sets the maximum to ${AGE_MAX}.`)}
+      </p>
+
+      <SectionAudiences
+        audiences={audiences} incluses={incluses} exclues={exclues} choisir={choisirAudience}
+      />
 
       <label className={label} htmlFor="pub-destination">{t('Qui répond aux prospects', 'Who answers leads')}</label>
       <select
@@ -548,12 +887,179 @@ export function PubFormulaire({
         <div className="mt-6 lg:mt-0">
           <PubApercu
             titre={titre} texte={texte} accueil={accueil} messagePreRempli={messagePreRempli}
-            visuel={image === null ? null : { type: image.type, base64: image.base64 }}
+            visuel={format === 'image' && image !== null ? { type: image.type, base64: image.base64 } : null}
+            video={format === 'video' ? { url: video?.apercu ?? null, deposee: video?.id != null } : null}
             nomPage={nomPage} reponse={reponse}
             className="lg:sticky lg:top-4"
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * OÙ EN EST LA VIDÉO, DIT À LA PERSONNE : lecture, envoi (avec sa progression), traitement chez Meta (avec la
+ * sienne quand Meta la donne), prête, ou ce qui a échoué. L'attente est visible, jamais un bouton qui tourne sans
+ * rien dire.
+ */
+function EtatDuDepot({ depot, progression, nom, reverifier }: {
+  depot: EtatDepot; progression: number | null; nom: string; reverifier: () => void;
+}) {
+  const t = useT();
+  if (depot.etape === 'aucune') return null;
+  const barre = (pct: number) => (
+    <div className="mt-1 h-1.5 w-full rounded-full bg-ink-100" aria-hidden>
+      <div className="h-1.5 rounded-full bg-brand-600" style={{ width: `${Math.max(2, Math.min(100, pct))}%` }} />
+    </div>
+  );
+  return (
+    <div className="mt-2 text-xs text-ink-500" data-testid="pub-video-etat" aria-live="polite">
+      {nom !== '' && <p className="truncate text-ink-900">{nom}</p>}
+      {depot.etape === 'lecture' && <p>{t('Lecture de la vidéo…', 'Reading the video…')}</p>}
+      {depot.etape === 'envoi' && (
+        <>
+          <p>{t(`Envoi chez Meta : ${Math.floor((depot.envoye / depot.total) * 100)} %`, `Uploading to Meta: ${Math.floor((depot.envoye / depot.total) * 100)}%`)}</p>
+          {barre((depot.envoye / depot.total) * 100)}
+        </>
+      )}
+      {depot.etape === 'traitement' && (
+        <>
+          <p>
+            {t('Meta prépare la vidéo. Cela prend en général quelques minutes ; vous pouvez continuer à remplir le formulaire.',
+               'Meta is processing the video. It usually takes a few minutes; you can keep filling in the form.')}
+            {progression !== null ? ` (${Math.round(progression)} %)` : ''}
+          </p>
+          {progression !== null && barre(progression)}
+        </>
+      )}
+      {depot.etape === 'prete' && (
+        <p className="text-ink-900" data-testid="pub-video-prete">{t('La vidéo est prête chez Meta.', 'The video is ready at Meta.')}</p>
+      )}
+      {depot.etape === 'a_verifier' && (
+        <p>
+          {depot.raison === 'delai'
+            ? t('Meta traite encore la vidéo. ', 'Meta is still processing the video. ')
+            : t('Nous n’avons pas pu lire l’état de la vidéo chez Meta. ', 'We could not read the video state at Meta. ')}
+          <button type="button" className="font-medium text-brand-600 underline" onClick={reverifier} data-testid="pub-video-reverifier">
+            {t('Vérifier à nouveau', 'Check again')}
+          </button>
+        </p>
+      )}
+      {depot.etape === 'erreur' && (
+        <p role="alert" className="text-danger-700" data-testid="pub-video-erreur">{depot.message}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * LES AUDIENCES DU COMPTE PUBLICITAIRE : à inclure, à exclure, ou à ignorer. Seules les audiences UTILISABLES se
+ * choisissent ; les autres sont montrées avec la raison de Meta, pour qu'une audience attendue ne semble pas
+ * simplement disparue.
+ *
+ * 🔴 LA PHRASE SUR ADVANTAGE+ N'EST PAS DÉCORATIVE : avec lui, les audiences incluses deviennent des SUGGESTIONS,
+ * Meta peut diffuser au-delà. Seules les exclusions sont fermes. Un client qui croit « je ne vise que mes clients »
+ * paierait des impressions ailleurs sans le savoir.
+ */
+function SectionAudiences({ audiences, incluses, exclues, choisir }: {
+  audiences: { etat: 'chargement' } | { etat: 'ok'; liste: ListeAudiencesPub } | { etat: 'erreur'; message: string } | { etat: 'absente' };
+  incluses: string[];
+  exclues: string[];
+  choisir: (id: string, choix: 'inclure' | 'exclure' | 'ignorer') => void;
+}) {
+  const t = useT();
+  if (audiences.etat === 'absente') return null;
+  const choixDe = (id: string): 'inclure' | 'exclure' | 'ignorer' =>
+    incluses.includes(id) ? 'inclure' : exclues.includes(id) ? 'exclure' : 'ignorer';
+  const taille = (a: AudiencePub): string => {
+    if (a.tailleMin === null && a.tailleMax === null) return t('taille non communiquée par Meta', 'size not given by Meta');
+    const f = (n: number | null) => (n === null ? '?' : n.toLocaleString('fr-FR'));
+    return t(`environ ${f(a.tailleMin)} à ${f(a.tailleMax)} personnes`, `about ${f(a.tailleMin)} to ${f(a.tailleMax)} people`);
+  };
+  const liste = audiences.etat === 'ok' ? audiences.liste.audiences : [];
+  const utilisables = liste.filter((a) => a.utilisable);
+  const inutilisables = liste.filter((a) => !a.utilisable);
+  // Une audience retenue (par un brouillon) que la liste ne rend plus : on la montre, pour pouvoir la retirer.
+  const connues = new Set(liste.map((a) => a.id));
+  const orphelines = audiences.etat === 'ok' ? [...incluses, ...exclues].filter((id) => !connues.has(id)) : [];
+
+  const selecteur = (id: string, nom: string) => (
+    <select
+      className="rounded-controle border border-ink-200 px-2 py-1 text-xs" value={choixDe(id)}
+      onChange={(e) => choisir(id, e.target.value === 'inclure' ? 'inclure' : e.target.value === 'exclure' ? 'exclure' : 'ignorer')}
+      aria-label={t(`Que faire de l’audience ${nom}`, `What to do with audience ${nom}`)}
+      data-testid={`pub-audience-${id}`}
+    >
+      <option value="ignorer">{t('Ignorer', 'Ignore')}</option>
+      <option value="inclure">{t('Inclure', 'Include')}</option>
+      <option value="exclure">{t('Exclure', 'Exclude')}</option>
+    </select>
+  );
+
+  return (
+    <div className="mt-4" data-testid="pub-audiences">
+      <p className="block text-xs font-medium text-ink-500">{t('Audiences du compte publicitaire (facultatif)', 'Ad account audiences (optional)')}</p>
+      <p className="mt-1 text-xs text-ink-500" data-testid="pub-advantage-audiences">
+        {t('Avec Advantage+, les audiences incluses servent de suggestion à Meta, qui peut diffuser au-delà. Les exclusions, le lieu et l’âge minimum restent respectés.',
+           'With Advantage+, included audiences are suggestions to Meta, which may deliver beyond them. Exclusions, location and minimum age are always respected.')}
+      </p>
+      {audiences.etat === 'chargement' && <p className="mt-2 text-xs text-ink-500">{t('Lecture des audiences…', 'Reading audiences…')}</p>}
+      {audiences.etat === 'erreur' && (
+        <p className="mt-2 text-xs text-ink-500" data-testid="pub-audiences-erreur">
+          {t('Nous n’avons pas pu lire les audiences de votre compte. ', 'We could not read your account audiences. ')}
+          {audiences.message}
+        </p>
+      )}
+      {audiences.etat === 'ok' && liste.length === 0 && (
+        <p className="mt-2 text-xs text-ink-500">
+          {t('Aucune audience dans ce compte publicitaire. Elles se créent dans le Gestionnaire de Meta.',
+             'No audience in this ad account. They are created in Meta Ads Manager.')}
+        </p>
+      )}
+      {utilisables.length > 0 && (
+        <ul className="mt-2 divide-y divide-ink-100 rounded-carte border border-ink-200">
+          {utilisables.map((a) => (
+            <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm text-ink-900">{a.nom ?? a.id}</p>
+                <p className="text-xs text-ink-500">{taille(a)}</p>
+              </div>
+              {selecteur(a.id, a.nom ?? a.id)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {orphelines.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {orphelines.map((id) => (
+            <li key={id} className="flex items-center justify-between gap-3 text-xs text-alerte-700" data-testid="pub-audience-orpheline">
+              <span>{t(`L’audience ${id} n’est plus dans ce compte : elle serait refusée à la création.`, `Audience ${id} is no longer in this account: creation would refuse it.`)}</span>
+              {selecteur(id, id)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {inutilisables.length > 0 && (
+        <ul className="mt-2 space-y-1" data-testid="pub-audiences-inutilisables">
+          {inutilisables.map((a) => (
+            <li key={a.id} className="text-xs text-ink-500">
+              {a.nom ?? a.id}{' : '}{a.raison ?? t('pas encore utilisable chez Meta', 'not usable at Meta yet')}
+            </li>
+          ))}
+        </ul>
+      )}
+      {audiences.etat === 'ok' && audiences.liste.tronquee && (
+        <p className="mt-2 text-xs text-ink-500">
+          {t('Seules les 200 premières audiences sont montrées. Les autres se choisissent dans le Gestionnaire de Meta.',
+             'Only the first 200 audiences are shown. Others can be chosen in Meta Ads Manager.')}
+        </p>
+      )}
+      {audiences.etat === 'ok' && (
+        <p className="mt-2 text-xs text-ink-500">
+          {t('Seules les audiences partagées avec ce compte publicitaire apparaissent ici.', 'Only audiences shared with this ad account appear here.')}
+        </p>
+      )}
     </div>
   );
 }

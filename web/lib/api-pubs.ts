@@ -207,8 +207,28 @@ export interface FormulaireCreationPub {
   tagQualification: string | null;
   /** Doit valoir `true` : le serveur refuse tout le reste. Une catégorie spéciale passe par le Gestionnaire. */
   horsCategorieSpeciale: true;
-  image: { type: 'image/jpeg' | 'image/png'; base64: string };
+  /**
+   * UN visuel, et un seul : une image (ses octets) OU une vidéo déjà déposée chez Meta (son identifiant). Le
+   * serveur refuse les deux, et aucun.
+   */
+  image?: { type: 'image/jpeg' | 'image/png'; base64: string };
+  video?: { id: string };
+  /**
+   * Les audiences du compte, par identifiant Meta. ⚠️ Envoyées seulement quand il y en a : un serveur d'avant la
+   * migration 0187 refuse toute clé qu'il ne connaît pas, et une publicité SANS audience doit continuer de se
+   * créer pendant la fenêtre entre la publication de la console et le déploiement de l'API.
+   */
+  audiencesIncluses?: string[];
+  audiencesExclues?: string[];
 }
+
+/**
+ * ADVANTAGE+ AUDIENCE, LAISSÉ À META (décision de Julien, 2026-09-28) : il n'accepte qu'un âge minimum entre 18 et
+ * 25 ans et fixe le maximum à 65. Parité tenue avec `src/meta/pubs-payloads.ts` par `tests/web-pubs-parity.test.ts`.
+ */
+export const AGE_MIN_BAS = 18;
+export const AGE_MIN_HAUT = 25;
+export const AGE_MAX = 65;
 
 /**
  * LES BORNES DU VISUEL, ANNONCÉES PAR L'ÉCRAN.
@@ -286,6 +306,73 @@ export function basculerPub(tenantId: string, id: string, actif: boolean): Promi
   return request<{ ok: true }>(`${basePubs(tenantId)}/${id}/${actif ? 'reprendre' : 'pause'}`, { method: 'POST' });
 }
 
+/* ── La vidéo et les audiences (migration 0187) ─────────────────────────────────────────────────── */
+
+/** Une session de dépôt, et le morceau que Meta attend (de `debut` inclus à `fin` exclu). */
+export interface DepotVideo {
+  videoId: string;
+  sessionId: string;
+  debut: number;
+  fin: number;
+}
+
+/** L'état d'une vidéo chez Meta. Seul `prete` permet de créer la publicité. */
+export interface EtatVideo {
+  etat: 'prete' | 'traitement' | 'erreur';
+  progression: number | null;
+}
+
+export interface AudiencePub {
+  id: string;
+  nom: string | null;
+  sousType: string | null;
+  /** Taille approximative ; `null` quand Meta ne la donne pas. */
+  tailleMin: number | null;
+  tailleMax: number | null;
+  /** Seules celles-là se proposent : Meta ne diffuse pas sur une audience qui n'est pas prête. */
+  utilisable: boolean;
+  /** Pourquoi elle ne l'est pas, dans les mots de Meta. */
+  raison: string | null;
+}
+
+export interface ListeAudiencesPub {
+  audiences: AudiencePub[];
+  /** Meta avait une page de plus : l'écran le dit. */
+  tronquee: boolean;
+}
+
+const baseVideos = (tenantId: string): string => `${basePubs(tenantId)}/videos`;
+
+/** Ouvre le dépôt : Meta rend la session et le premier morceau attendu. Rien de facturable. */
+export function demarrerDepotVideo(tenantId: string, taille: number): Promise<DepotVideo> {
+  return request<DepotVideo>(baseVideos(tenantId), { method: 'POST', body: JSON.stringify({ taille }) });
+}
+
+/**
+ * Envoie UN morceau, en octets bruts (jamais en base64 dans du JSON) : l'API le relaie à Meta en flux. Rend le
+ * morceau suivant attendu ; des décalages égaux veulent dire « tout est reçu ».
+ */
+export function envoyerMorceauVideo(
+  tenantId: string, sessionId: string, debut: number, fin: number, octets: Blob, signal?: AbortSignal,
+): Promise<{ debut: number; fin: number }> {
+  return request<{ debut: number; fin: number }>(
+    `${baseVideos(tenantId)}/${encodeURIComponent(sessionId)}/morceaux?debut=${debut}&fin=${fin}`,
+    { method: 'POST', body: octets, headers: { 'content-type': 'application/octet-stream' }, ...(signal ? { signal } : {}) },
+  );
+}
+
+export function terminerDepotVideo(tenantId: string, sessionId: string): Promise<{ ok: true }> {
+  return request<{ ok: true }>(`${baseVideos(tenantId)}/${encodeURIComponent(sessionId)}/fin`, { method: 'POST' });
+}
+
+export function lireEtatVideo(tenantId: string, videoId: string): Promise<EtatVideo> {
+  return request<EtatVideo>(`${baseVideos(tenantId)}/${encodeURIComponent(videoId)}`);
+}
+
+export function listerAudiences(tenantId: string): Promise<ListeAudiencesPub> {
+  return request<ListeAudiencesPub>(`${basePubs(tenantId)}/audiences`);
+}
+
 /**
  * LES BROUILLONS DE PUBLICITÉ (migration 0171).
  *
@@ -317,6 +404,13 @@ export interface BrouillonPub {
    * `lireBrouillon` les demande, au moment où on rouvre CE brouillon-là.
    */
   aUnVisuel: boolean;
+  /**
+   * L'identifiant chez Meta de la vidéo déposée (migration 0187). ⚠️ OPTIONNELS, comme les audiences : une API
+   * d'avant 0187 ne les rend pas, et l'écran doit lire leur absence comme « aucune ».
+   */
+  videoId?: string | null;
+  audiencesIncluses?: string[];
+  audiencesExclues?: string[];
   creeLe: string;
   modifieLe: string;
 }
@@ -349,6 +443,11 @@ export interface FormulaireBrouillonPub {
   destination: DestinationPub;
   workflowId: string | null;
   image?: { type: 'image/jpeg' | 'image/png'; base64: string } | null;
+  /** Mêmes trois sens que `image`. Poser une vidéo efface l'image côté serveur, et inversement. */
+  video?: { id: string } | null;
+  /** Absentes = ne pas toucher. Envoyées seulement quand le serveur connaît les audiences. */
+  audiencesIncluses?: string[];
+  audiencesExclues?: string[];
 }
 
 const baseBrouillons = (tenantId: string): string => `${basePubs(tenantId)}/brouillons`;
