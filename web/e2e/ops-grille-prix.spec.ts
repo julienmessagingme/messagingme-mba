@@ -8,11 +8,11 @@ import { test, expect } from '@playwright/test';
  * `up`, donc cette fenetre existe a CHAQUE livraison. Un formulaire de zeros y ferait croire que tout est
  * gratuit, et une erreur rouge ferait croire a une panne alors qu'il ne manque qu'un deploiement.
  *
- * ⚠️ ET QUE LA NOTE PART AVEC LES PRIX. Le jeton d'exploitation est PARTAGE : la note est la seule reponse a
- * « qui a change ce prix, et pourquoi ». Le serveur la refuse si elle manque, mais un ecran qui l'oublierait
- * rendrait ce refus incomprehensible.
+ * ⚠️ ET QUE LA NOTE PART AVEC LES PRIX. Elle est la seule reponse a « pourquoi ce prix a change » (le QUI, le
+ * serveur le lit dans la session d'exploitation). Le serveur la refuse si elle manque, mais un ecran qui
+ * l'oublierait rendrait ce refus incomprehensible.
  */
-const OPS_TOKEN = 'ops-token-e2e';
+const SESSION_OPS = { token: 'session-ops-e2e', email: 'exploitant@e2e.test' };
 
 const GRILLE = {
   margeTemplate: 120, serviceCentimes: 2.48, serviceFranchise: 1000,
@@ -31,7 +31,7 @@ const OVERVIEW = {
 /** `prix: null` = la route n'existe pas encore sur cette API (fenetre Vercel / VPS). */
 async function monter(page: import('@playwright/test').Page, prix: typeof GRILLE | null) {
   const patches: unknown[] = [];
-  await page.addInitScript((tok) => window.localStorage.setItem('mba.ops', tok), OPS_TOKEN);
+  await page.addInitScript((s) => window.localStorage.setItem('mba.sessionOps', JSON.stringify(s)), SESSION_OPS);
   await page.route('**/api/backend/**', async (route) => {
     const chemin = route.request().url().split('?')[0]!;
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
@@ -39,7 +39,9 @@ async function monter(page: import('@playwright/test').Page, prix: typeof GRILLE
       if (prix === null) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"indisponible"}' });
       if (route.request().method() === 'PATCH') {
         const corps = route.request().postDataJSON() as Record<string, unknown>;
-        patches.push(corps);
+        // La session d'exploitation voyage en `Authorization`, et plus aucun jeton partagé ne part.
+        const entetes = route.request().headers();
+        patches.push({ ...corps, __autorisation: entetes.authorization, __ancienJeton: entetes['x-ops-token'] });
         // Le serveur NOMME le champ fautif plutot que de corriger la valeur.
         if (typeof corps.serviceCentimes === 'number' && corps.serviceCentimes > 100) {
           return route.fulfill({ status: 400, contentType: 'application/json', body: '{"error":"champ invalide : serviceCentimes","champ":"serviceCentimes"}' });
@@ -79,8 +81,11 @@ test.describe('Ops : la grille de prix', () => {
     await page.getByTestId('ops-prix-enregistrer').click();
     await expect(page.getByTestId('ops-prix-ok')).toBeVisible();
     expect(patches).toHaveLength(1);
-    // La note voyage AVEC les prix : c'est la seule trace de qui a changé quoi.
-    expect(patches[0]).toEqual({ ...GRILLE, margeTemplate: 135, note: 'grille 2027' });
+    // La note voyage AVEC les prix : c'est la seule trace de pourquoi. La session dit qui.
+    expect(patches[0]).toEqual({
+      ...GRILLE, margeTemplate: 135, note: 'grille 2027',
+      __autorisation: 'Bearer session-ops-e2e', __ancienJeton: undefined,
+    });
   });
 
   test('🔴 un refus du serveur NOMME le champ, et rien n’affiche « enregistré »', async ({ page }) => {

@@ -2,56 +2,80 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
-import { getOpsOverview, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, type OpsOverview, type TenantOverviewRow, type QueueLoadRow,
-  type QueueGroupLoadRow, type QueueLatenceRow, type WorkerHeartbeat, type PoolInstantane, type PoolAttentePoint, type GrillePrix } from '@/lib/api';
+import { getOpsOverview, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
+  type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type WorkerHeartbeat, type PoolInstantane,
+  type PoolAttentePoint, type GrillePrix, type EtapeSecondFacteur, type SessionOpsOuverte } from '@/lib/api';
+import { ApiError } from '@/lib/http';
 import { GrillePrixChamps } from '@/components/GrillePrixChamps';
 import { enChamps, depuisChamps } from '@/lib/grille-saisie';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { useLocale, useT } from '@/lib/i18n';
-import { saveSession } from '@/lib/session';
+import { inputCls } from '@/lib/ui';
+import { saveSession, getSessionOps, saveSessionOps, clearSessionOps, type SessionOps } from '@/lib/session';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { EtapesSecondFacteur } from '@/components/SecondFacteur';
+import { GoogleButton } from '@/components/GoogleButton';
 import { alerte, brand, danger, ink, succes } from '@/lib/couleurs';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 
-const KEY = 'mba.ops';
-
+/**
+ * LA CONSOLE D'EXPLOITATION, NOMINATIVE (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
+ *
+ * Plus de jeton partagé : on se connecte avec son compte habituel (mot de passe ou Google), puis son second
+ * facteur, et le serveur rend une session d'exploitation de 12 heures, gardée à part de la session d'espace
+ * (`lib/session.ts`). C'est le SERVEUR qui décide qui entre (la liste `OPS_EMAILS`, relue à chaque requête) :
+ * l'écran ne fait que présenter la session, et la quitte au premier 401.
+ */
 export default function OpsPage() {
   const t = useT();
   const confirmer = useConfirmation();
   const { locale } = useLocale();
-  const [token, setToken] = useState<string | null>(null);
-  const [input, setInput] = useState('');
+  const [session, setSession] = useState<SessionOps | null>(null);
+  /** `false` tant que la session gardée n'est pas relue : sans lui, le formulaire clignoterait avant la vue. */
+  const [pret, setPret] = useState(false);
   const [data, setData] = useState<OpsOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const tok = localStorage.getItem(KEY);
-    if (tok) setToken(tok);
+    // Relue ici et pas au rendu : le stockage du navigateur n'existe pas côté serveur. `getSessionOps` efface au
+    // passage l'ancien jeton partagé, qui n'ouvre plus rien.
+    setSession(getSessionOps());
+    setPret(true);
   }, []);
 
-  const load = useCallback(async (tok: string) => {
+  /** La session d'exploitation est tombée (expirée, adresse retirée de la liste, facteur retiré) : on la quitte. */
+  const perdue = useCallback(() => {
+    clearSessionOps();
+    setSession(null);
+    setData(null);
+    setError(t('Session d’exploitation expirée ou retirée : reconnectez-vous.', 'Operations session expired or revoked: sign in again.'));
+  }, [t]);
+
+  const load = useCallback(async (jeton: string) => {
     setLoading(true);
     setError(null);
     try {
-      setData(await getOpsOverview(tok));
+      setData(await getOpsOverview(jeton));
     } catch (e) {
       setData(null);
-      const msg = e instanceof Error ? e.message : t('Erreur', 'Error');
-      setError(msg);
-      if (/401|autoris/i.test(msg)) { localStorage.removeItem(KEY); setToken(null); }
+      if (e instanceof ApiError && e.status === 401) {
+        perdue();
+        return;
+      }
+      setError(e instanceof Error ? e.message : t('Erreur', 'Error'));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, perdue]);
 
   useEffect(() => {
-    if (token) void load(token);
-  }, [token, load]);
+    if (session) void load(session.token);
+  }, [session, load]);
 
   /**
    * Ouvre une session d'OBSERVATION dans l'espace d'un client, puis y bascule.
@@ -60,57 +84,46 @@ export default function OpsPage() {
    * bandeau permanent. Sans lui, on oublierait qu'on regarde chez quelqu'un d'autre, et on prendrait ses
    * chiffres pour les siens.
    *
-   * ⚠️ La session en cours est ÉCRASÉE. C'est assumé : on entre chez un client, on n'ouvre pas deux mondes
-   * côte à côte. Se reconnecter normalement restaure la sienne.
+   * ⚠️ La session d'ESPACE en cours est ÉCRASÉE. C'est assumé : on entre chez un client, on n'ouvre pas deux
+   * mondes côte à côte. La session d'exploitation, elle, vit à part et reste ouverte.
    */
   async function observer(tenantId: string, nom: string): Promise<void> {
-    if (!token) return;
+    if (!session) return;
     if (!(await confirmer({ titre: t('Observer l’espace', 'Observe the workspace'), message: t(
       `Observer l’espace « ${nom} » ? Vous verrez ce que ce client voit, sans pouvoir rien modifier. Votre session actuelle sera remplacée.`,
       `Observe the "${nom}" workspace? You will see what this customer sees, without being able to change anything. Your current session will be replaced.`,
     ), confirmer: t('Observer', 'Observe') }))) return;
     try {
-      const r = await observerTenant(token, tenantId);
+      const r = await observerTenant(session.token, tenantId);
       saveSession({ token: r.token, email: `observation:${nom}`, role: 'admin', tenantId: r.tenantId, observation: nom });
       window.location.href = '/inbox';
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        perdue();
+        return;
+      }
       setError(e instanceof Error ? e.message : t('Observation impossible', 'Observation failed'));
     }
   }
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const tok = input.trim();
-    if (!tok) return;
-    localStorage.setItem(KEY, tok);
-    setToken(tok);
-  }
-  function logout() {
-    localStorage.removeItem(KEY);
-    setToken(null);
+  function quitter() {
+    clearSessionOps();
+    setSession(null);
     setData(null);
-    setInput('');
+    setError(null);
   }
 
-  if (!token) {
+  if (!pret) return null;
+  if (!session) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-surface-subtle p-4">
-        <form onSubmit={submit} className="w-full max-w-sm rounded-carte border border-ink-200 bg-white p-6">
-          <TitrePage>{t("Console d’exploitation", 'Operations console')}</TitrePage>
-          <p className="mt-1 text-sm text-ink-500">{t('Accès cross-tenant en lecture seule. Saisissez le jeton d’exploitation.', 'Read-only cross-tenant access. Enter the operations token.')}</p>
-          <input
-            type="password"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="OPS token"
-            className="mt-4 w-full rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          />
-          {error && <p className="mt-2 text-sm text-danger-600">{error}</p>}
-          <Bouton type="submit" className="mt-4 w-full">
-            {t('Accéder', 'Access')}
-          </Bouton>
-        </form>
-      </main>
+      <ConnexionOps
+        message={error}
+        onSession={(s) => {
+          saveSessionOps(s);
+          setError(null);
+          setSession(s);
+        }}
+      />
     );
   }
 
@@ -125,9 +138,11 @@ export default function OpsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <TitrePage>{t("Console d’exploitation", 'Operations console')}</TitrePage>
-            <p className="text-sm text-ink-500">{t('Vue cross-tenant, lecture seule.', 'Cross-tenant view, read-only.')}</p>
+            <p className="text-sm text-ink-500">
+              {t('Vue cross-tenant, au nom de', 'Cross-tenant view, as')} <span className="font-medium text-ink-900" data-testid="ops-exploitant">{session.email}</span>
+            </p>
           </div>
-          <Bouton variante="secondaire" onClick={logout}>{t('Quitter', 'Exit')}</Bouton>
+          <Bouton variante="secondaire" onClick={quitter}>{t('Quitter', 'Exit')}</Bouton>
         </div>
 
         {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
@@ -160,7 +175,7 @@ export default function OpsPage() {
               </div>
             )}
 
-            <GrillePrixCard token={token} />
+            <GrillePrixCard token={session.token} />
 
             <TenantTable onObserver={(id, nom) => { void observer(id, nom); }} tenants={data.tenants} />
           </>
@@ -170,6 +185,101 @@ export default function OpsPage() {
   );
 }
 
+
+/**
+ * LA CONNEXION D'EXPLOITATION : le compte habituel, puis TOUJOURS le second facteur (le code, ou l'enrôlement
+ * pour une adresse de la liste qui n'en a pas encore). Les mêmes étapes que la connexion de la console
+ * (`EtapesSecondFacteur`), mais la suite est une session d'exploitation, jamais une session d'espace.
+ */
+function ConnexionOps({ message, onSession }: { message: string | null; onSession: (s: SessionOps) => void }) {
+  const t = useT();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [etape, setEtape] = useState<EtapeSecondFacteur | null>(null);
+  const [error, setError] = useState<string | null>(message);
+  const [loading, setLoading] = useState(false);
+
+  /**
+   * ⚠️ La console part chez Vercel au `git push`, l'API à son `up` : entre les deux, une API d'avant ignore
+   * `ops: true` et rend une connexion d'ESPACE. On le dit au lieu d'afficher une étape qui ne mène nulle part.
+   */
+  const apiPasAJour = t('Cette API ne connaît pas encore la connexion d’exploitation : réessayez après son déploiement.', 'This API does not support the operations sign-in yet: try again after it is deployed.');
+  const suiteEtape = (res: EtapeSecondFacteur): void => {
+    if (estEtapeSecondFacteur(res)) setEtape(res);
+    else setError(apiPasAJour);
+  };
+
+  async function entrer(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      suiteEtape(await loginOps(email.trim(), password));
+      setPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Connexion impossible', 'Unable to sign in'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function parGoogle(idToken: string): void {
+    setError(null);
+    loginOpsGoogle(idToken)
+      .then(suiteEtape)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : t('Connexion Google impossible', 'Google sign-in failed')));
+  }
+
+  function fin(s: SessionOpsOuverte): void {
+    if (typeof s.sessionOps !== 'string' || s.sessionOps === '') {
+      setEtape(null);
+      setError(apiPasAJour);
+      return;
+    }
+    onSession({ token: s.sessionOps, email: s.email });
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-surface-subtle p-4">
+      <div className="w-full max-w-sm space-y-4">
+        <div>
+          <TitrePage>{t("Console d’exploitation", 'Operations console')}</TitrePage>
+          <p className="mt-1 text-sm text-ink-500">
+            {t(
+              'Réservée aux adresses de l’exploitation : votre compte habituel, puis votre code d’authentification.',
+              'Reserved for operations addresses: your usual account, then your authentication code.',
+            )}
+          </p>
+        </div>
+        {etape ? (
+          <EtapesSecondFacteur<SessionOpsOuverte>
+            etape={etape}
+            onSuite={fin}
+            introEnrolement={t('Obligatoire pour l’exploitation : scannez ce code avec votre application d’authentification.', 'Required for operations: scan this code with your authenticator app.')}
+            onRetour={(m) => { setEtape(null); setError(m); }}
+            abandon={{ libelle: t('Revenir à la connexion', 'Back to sign in'), action: () => { setEtape(null); setError(null); } }}
+          />
+        ) : (
+          <form onSubmit={entrer} className="space-y-4 rounded-carte border border-ink-200 bg-white p-6" data-testid="ops-connexion">
+            <div>
+              <label htmlFor="ops-email" className="mb-1 block text-sm font-medium text-ink-900">Email</label>
+              <input id="ops-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label htmlFor="ops-password" className="mb-1 block text-sm font-medium text-ink-900">{t('Mot de passe', 'Password')}</label>
+              <input id="ops-password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
+            </div>
+            {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="ops-connexion-erreur">{error}</p>}
+            <Bouton enCours={loading} type="submit" disabled={loading} className="w-full">
+              {loading ? t('Connexion…', 'Signing in…') : t('Se connecter', 'Sign in')}
+            </Bouton>
+            <GoogleButton onError={setError} surJeton={parGoogle} />
+          </form>
+        )}
+      </div>
+    </main>
+  );
+}
 
 /**
  * LA GRILLE DE PRIX, UNE POUR TOUS LES ESPACES (lot 8 du 2026-09-23, migration 0168).
@@ -250,8 +360,8 @@ function GrillePrixCard({ token }: { token: string }) {
 
       <GrillePrixChamps valeurs={champs} onChange={onChamp} champFautif={champFautif} />
 
-      {/* La NOTE est obligatoire cote serveur : le jeton d'exploitation est PARTAGE, donc c'est la seule
-          trace de qui a change un prix et pourquoi. Le dire ici evite un 400 incomprehensible. */}
+      {/* La NOTE est obligatoire cote serveur : elle dit POURQUOI ; QUI, le serveur le lit dans la session
+          d'exploitation. Le dire ici evite un 400 incomprehensible. */}
       <div className="mt-4">
         <label htmlFor="prix-note" className="block text-xs font-medium text-ink-900">
           {t('Pourquoi ce changement ?', 'Why this change?')}
@@ -262,7 +372,7 @@ function GrillePrixCard({ token }: { token: string }) {
           className="mt-1 w-full rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
         <p className="mt-1 text-xs text-ink-500">
-          {t('Obligatoire : le jeton d’exploitation est partagé, c’est la seule trace.', 'Required: the ops token is shared, this is the only trace.')}
+          {t('Obligatoire : elle dit pourquoi, et votre adresse est enregistrée avec.', 'Required: it says why, and your address is recorded with it.')}
         </p>
       </div>
 

@@ -20,6 +20,8 @@ export interface MeResponse {
   email: string;
   name: string | null;
   role: string;
+  /** L'adresse ouvre l'exploitation (`/ops`) : seulement le lien du menu, la garde est côté serveur. Absent = non. */
+  exploitation?: true;
 }
 export function getMe(tenantId: string): Promise<MeResponse> {
   return request<MeResponse>(`/tenants/${tenantId}/me`);
@@ -140,7 +142,7 @@ export function importHubspotList(tenantId: string, listId: string, listName: st
   return request(`/tenants/${tenantId}/hubspot/import`, { method: 'POST', body: JSON.stringify({ listId, listName }) });
 }
 
-// --- Surface d'exploitation cross-tenant (/ops) : token SÉPARÉ (x-ops-token), PAS la session JWT ---
+// --- Surface d'exploitation cross-tenant (/ops) : la session d'EXPLOITATION, jamais la session d'espace ---
 
 export interface TenantOverviewRow {
   id: string;
@@ -265,71 +267,58 @@ export interface PoolAttentePoint {
 }
 
 /**
- * Appel dédié à /ops : n'utilise NI getSession NI clearSession (un 401 ops ne doit pas déconnecter la
- * console admin), pose seulement `x-ops-token`. Le token est saisi par l'ops et gardé en localStorage.
- */
-/**
- * Ouvre une session d'OBSERVATION dans l'espace d'un client (surface d'exploitation).
+ * Appel dédié à /ops, avec la session d'EXPLOITATION (`lib/session.ts`, `getSessionOps`).
  *
- * Rend un jeton de session en LECTURE SEULE, valable une heure. Il ne peut rien écrire et ne marque rien
- * comme lu : c'est le SERVEUR qui l'impose, pas l'écran.
+ * `fetch` direct et non `request` : `request` y attacherait la session d'ESPACE, que le serveur refuse sur
+ * `/ops`, et un 401 y viderait la session de la console. Un 401 ici ne concerne que l'exploitation : l'écran
+ * efface sa propre session et propose de se reconnecter.
  */
-export async function observerTenant(opsToken: string, tenantId: string): Promise<{ token: string; tenantId: string; tenantName: string }> {
-  // `fetch` direct et non `request` : la surface d'exploitation a sa PROPRE autorité (`x-ops-token`), et
-  // `request` y attacherait le jeton de session du client. Même patron que `getOpsOverview` juste en dessous.
-  const res = await fetch(`${BASE}/ops/observe`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-ops-token': opsToken },
-    body: JSON.stringify({ tenantId }),
+async function appelOps<T>(sessionOps: string, chemin: string, init: { method?: string; corps?: unknown } = {}): Promise<T> {
+  const res = await fetch(`${BASE}${chemin}`, {
+    method: init.method ?? 'GET',
+    headers: {
+      authorization: `Bearer ${sessionOps}`,
+      ...(init.corps === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    ...(init.corps === undefined ? {} : { body: JSON.stringify(init.corps) }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
   }
-  return res.json() as Promise<{ token: string; tenantId: string; tenantName: string }>;
+  return res.json() as Promise<T>;
 }
+
+/**
+ * Ouvre une session d'OBSERVATION dans l'espace d'un client (surface d'exploitation).
+ *
+ * Rend un jeton de session en LECTURE SEULE, valable une heure, qui porte l'adresse de l'exploitant. Il ne peut
+ * rien écrire et ne marque rien comme lu : c'est le SERVEUR qui l'impose, pas l'écran.
+ */
+export function observerTenant(sessionOps: string, tenantId: string): Promise<{ token: string; tenantId: string; tenantName: string }> {
+  return appelOps(sessionOps, '/ops/observe', { method: 'POST', corps: { tenantId } });
+}
+
 /**
  * LA GRILLE DE PRIX, UNE POUR TOUS LES ESPACES (lot 8, migration 0168).
- *
- * ⚠️ `fetch` DIRECT ET NON `request`, comme ses voisines : la surface d'exploitation a sa PROPRE autorité
- * (`x-ops-token`), et `request` y attacherait le jeton de session du client.
  *
  * ⚠️ LES BORNES VIENNENT DU SERVEUR, l'écran ne les redéclare pas : deux jeux de bornes pour une même
  * valeur, c'est un 500 au lieu d'un message.
  */
-export async function lireGrillePrixOps(opsToken: string): Promise<{ prix: GrillePrix; bornes: Record<string, { min: number; max: number }> }> {
-  const res = await fetch(`${BASE}/ops/prix`, { headers: { 'x-ops-token': opsToken } });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
-  }
-  return res.json() as Promise<{ prix: GrillePrix; bornes: Record<string, { min: number; max: number }> }>;
+export function lireGrillePrixOps(sessionOps: string): Promise<{ prix: GrillePrix; bornes: Record<string, { min: number; max: number }> }> {
+  return appelOps(sessionOps, '/ops/prix');
 }
 
 /**
- * CHANGER LA GRILLE. `note` est OBLIGATOIRE côté serveur : le jeton d'exploitation est PARTAGÉ, donc il n'y
- * a aucune identité d'opérateur à enregistrer, et cette phrase est la seule trace de qui a changé un prix.
+ * CHANGER LA GRILLE. `note` est OBLIGATOIRE côté serveur : elle dit pourquoi. Qui, le serveur le lit dans la
+ * session et le garde avec la grille.
  */
-export async function ecrireGrillePrixOps(opsToken: string, prix: GrillePrix, note: string): Promise<{ prix: GrillePrix }> {
-  const res = await fetch(`${BASE}/ops/prix`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-ops-token': opsToken },
-    body: JSON.stringify({ ...prix, note }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
-  }
-  return res.json() as Promise<{ prix: GrillePrix }>;
+export function ecrireGrillePrixOps(sessionOps: string, prix: GrillePrix, note: string): Promise<{ prix: GrillePrix }> {
+  return appelOps(sessionOps, '/ops/prix', { method: 'PATCH', corps: { ...prix, note } });
 }
 
-export async function getOpsOverview(opsToken: string): Promise<OpsOverview> {
-  const res = await fetch(`${BASE}/ops/overview`, { headers: { 'x-ops-token': opsToken } });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
-  }
-  return res.json() as Promise<OpsOverview>;
+export function getOpsOverview(sessionOps: string): Promise<OpsOverview> {
+  return appelOps(sessionOps, '/ops/overview');
 }
 
 // --- Support (formulaire de contact -> email Resend) ---

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@/lib/session';
+import { getMe } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { Icone } from '@/components/Icone';
 
@@ -25,6 +26,18 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
   const isAdmin = session.role === 'admin';
   const t = useT();
   const { locale, setLocale } = useLocale();
+  /**
+   * L'adresse ouvre-t-elle l'exploitation ? Demandé au serveur (`/me`) à la première ouverture du menu, jamais
+   * deviné ici. Un confort d'accès : `/ops` a sa propre garde, et ce lien n'ouvre rien à lui seul.
+   */
+  const [exploitation, setExploitation] = useState(false);
+  const demande = useRef(false);
+
+  useEffect(() => {
+    if (!open || demande.current || session.observation) return;
+    demande.current = true;
+    getMe(session.tenantId).then((m) => setExploitation(m.exploitation === true)).catch(() => {});
+  }, [open, session.tenantId, session.observation]);
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +102,9 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
               observation : cette session n'a pas d'identité à elle. */}
           {!session.observation && (
             <Link href="/compte" onClick={() => setOpen(false)} data-testid="menu-mon-compte" className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Mon compte', 'My account')}</Link>
+          )}
+          {exploitation && (
+            <Link href="/ops" onClick={() => setOpen(false)} data-testid="menu-exploitation" className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Exploitation', 'Operations')}</Link>
           )}
           {isAdmin && (
             <>

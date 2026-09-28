@@ -51,8 +51,15 @@ function loadGis(): Promise<void> {
  * Une adresse qui ouvre PLUSIEURS espaces reçoit un choix, pas une session : `onChoix` le confie à la page, qui
  * affiche la même liste que pour le mot de passe. Sans `onChoix` (inscription, invitation), un message dit de
  * passer par la page de connexion : mieux vaut un clic de plus qu'entrer au hasard dans l'un des espaces.
+ *
+ * `surJeton` (console d'exploitation) : le jeton ID Google est confié à l'appelant, qui le présente lui-même ;
+ * aucune session d'espace n'est ouverte ici.
  */
-export function GoogleButton({ onError, onChoix }: { onError?: (msg: string) => void; onChoix?: (c: LoginChoice) => void }) {
+export function GoogleButton({ onError, onChoix, surJeton }: {
+  onError?: (msg: string) => void;
+  onChoix?: (c: LoginChoice) => void;
+  surJeton?: (idToken: string) => void;
+}) {
   const router = useRouter();
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
@@ -61,6 +68,8 @@ export function GoogleButton({ onError, onChoix }: { onError?: (msg: string) => 
   onErrorRef.current = onError;
   const onChoixRef = useRef(onChoix);
   onChoixRef.current = onChoix;
+  const surJetonRef = useRef(surJeton);
+  surJetonRef.current = surJeton;
   // null = pas encore su ; '' = Google désactivé -> pas de bouton ; sinon le client_id.
   const [clientId, setClientId] = useState<string | null>(null);
 
@@ -92,6 +101,10 @@ export function GoogleButton({ onError, onChoix }: { onError?: (msg: string) => 
             const idToken = resp.credential;
             if (!idToken) {
               onErrorRef.current?.(t('Réponse Google vide, réessayez.', 'Empty Google response, please try again.'));
+              return;
+            }
+            if (surJetonRef.current) {
+              surJetonRef.current(idToken);
               return;
             }
             loginWithGoogle(idToken)

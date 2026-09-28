@@ -13,7 +13,7 @@ import { LOCALE_STORAGE_KEY, type Locale } from './locale';
 import { estCorpsCodeRefuse } from './second-facteur';
 
 /**
- * OÙ VIT L'API, VUE DU NAVIGATEUR. Exporté pour `/ops`, qui appelle sans session (autorité séparée).
+ * OÙ VIT L'API, VUE DU NAVIGATEUR. Exporté pour `/ops`, qui appelle avec sa propre session (autorité séparée).
  *
  * 🔴 DEUX MONDES, ET UN SEUL ENDROIT QUI LE SAIT (bascule Vercel, `docs/PLAN-BASCULE-VERCEL-2026-09-03.md`).
  *

@@ -40,6 +40,46 @@ export function clearSession(): void {
   // derrière elle le mettrait à la disposition du suivant sur le même poste, et un onglet resté ouvert
   // survit très bien à un changement de compte.
   effacerFils();
+  // Et la session d'exploitation aussi : la plus puissante ne survit pas à une déconnexion sur un poste partagé.
+  clearSessionOps();
+}
+
+/**
+ * LA SESSION D'EXPLOITATION (`/ops`), À PART DE LA SESSION D'ESPACE.
+ *
+ * Nominative : une adresse de la liste d'exploitation, son second facteur, 12 heures. Elle vit sous sa propre clé
+ * pour deux raisons : le serveur la refuse sur toute route d'espace (la poser comme session de la console
+ * déconnecterait), et observer un espace REMPLACE la session d'espace sans devoir fermer l'exploitation.
+ */
+export interface SessionOps {
+  token: string;
+  email: string;
+}
+
+const CLE_OPS = 'mba.sessionOps';
+/** L'ancien jeton partagé que l'écran d'exploitation gardait ici : il n'ouvre plus rien, il ne doit plus traîner. */
+const ANCIEN_JETON_OPS = 'mba.ops';
+
+export function saveSessionOps(s: SessionOps): void {
+  localStorage.setItem(CLE_OPS, JSON.stringify(s));
+}
+
+/** La session d'exploitation, ou `null`. Efface au passage l'ancien jeton partagé. */
+export function getSessionOps(): SessionOps | null {
+  if (typeof window === 'undefined') return null;
+  localStorage.removeItem(ANCIEN_JETON_OPS);
+  const raw = localStorage.getItem(CLE_OPS);
+  if (!raw) return null;
+  try {
+    const s = JSON.parse(raw) as Partial<SessionOps>;
+    return typeof s.token === 'string' && s.token !== '' && typeof s.email === 'string' ? { token: s.token, email: s.email } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearSessionOps(): void {
+  localStorage.removeItem(CLE_OPS);
 }
 
 /**

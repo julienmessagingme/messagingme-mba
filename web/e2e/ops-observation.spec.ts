@@ -8,18 +8,18 @@ import { repondre } from './aide/confirmation';
  * lecture seule, elle, est imposée par le serveur (`tests/ops-observation.test.ts`) ; le bandeau ne protège
  * rien, il évite de prendre les chiffres d'un client pour les siens.
  */
-const OPS_TOKEN = 'ops-token-e2e';
+const SESSION_OPS = { token: 'session-ops-e2e', email: 'exploitant@e2e.test' };
 
 test.describe('Ops : observer un espace', () => {
   test('le bouton ouvre une session d’observation et bascule dans l’espace', async ({ page }) => {
-    const appels: Array<{ url: string; body: unknown }> = [];
-    await page.addInitScript((tok) => window.localStorage.setItem('mba.ops', tok), OPS_TOKEN);
+    const appels: Array<{ url: string; body: unknown; autorisation?: string }> = [];
+    await page.addInitScript((s) => window.localStorage.setItem('mba.sessionOps', JSON.stringify(s)), SESSION_OPS);
     await page.route('**/api/backend/**', async (route) => {
       const url = route.request().url();
       const chemin = url.split('?')[0]!;
       const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
       if (chemin.endsWith('/ops/observe')) {
-        appels.push({ url, body: route.request().postDataJSON() });
+        appels.push({ url, body: route.request().postDataJSON(), autorisation: route.request().headers().authorization });
         return json({ token: 'jeton-observation', tenantId: 't-client', tenantName: 'Client Démo' });
       }
       if (chemin.endsWith('/ops/overview')) {
@@ -43,6 +43,8 @@ test.describe('Ops : observer un espace', () => {
     await repondre(page, true);
     await expect.poll(() => appels.length, { timeout: 15_000 }).toBeGreaterThan(0);
     expect(appels[0]?.body).toEqual({ tenantId: 't-client' });
+    // L'observation part au nom de la session d'exploitation, jamais d'une session d'espace.
+    expect(appels[0]?.autorisation).toBe('Bearer session-ops-e2e');
 
     // On arrive dans l'espace du client, et le bandeau le RAPPELLE en permanence.
     await page.waitForURL('**/inbox', { timeout: 15_000 });

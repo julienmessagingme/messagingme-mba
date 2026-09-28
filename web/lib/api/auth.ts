@@ -63,16 +63,37 @@ export function signup(input: { workspaceName: string; email: string; password: 
 /** Le secret d'un enrôlement : `uri` pour le QR code, `secret` (base32) pour la saisie à la main. */
 export interface CleTotp { secret: string; uri: string }
 
-/** Le code (application ou secours) d'une connexion. `codesSecoursRestants` n'est rendu que si un code de secours a servi. */
-export function verifierCodeConnexion(mfaToken: string, code: string): Promise<SuiteConnexion & { codesSecoursRestants?: number }> {
+/**
+ * Le code (application ou secours) d'une connexion. `codesSecoursRestants` n'est rendu que si un code de secours a
+ * servi. `S` : ce que la connexion ouvre au bout, une session d'espace (défaut) ou d'exploitation (`SessionOpsOuverte`),
+ * fixé par l'étape que le serveur a signée, pas par cet appel.
+ */
+export function verifierCodeConnexion<S = SuiteConnexion>(mfaToken: string, code: string): Promise<S & { codesSecoursRestants?: number }> {
   return request('/auth/mfa/verifier', { method: 'POST', body: JSON.stringify({ mfaToken, code }) }, 'etape');
 }
 export function enrolerConnexion(enrolToken: string): Promise<CleTotp> {
   return request('/auth/mfa/enroler', { method: 'POST', body: JSON.stringify({ enrolToken }) }, 'etape');
 }
 /** Le premier code prouve que l'application lit le bon secret. Rend les dix codes de secours, et la suite. */
-export function activerConnexion(enrolToken: string, code: string): Promise<SuiteConnexion & { codesSecours: string[] }> {
+export function activerConnexion<S = SuiteConnexion>(enrolToken: string, code: string): Promise<S & { codesSecours: string[] }> {
   return request('/auth/mfa/activer', { method: 'POST', body: JSON.stringify({ enrolToken, code }) }, 'etape');
+}
+
+// --- La connexion d'exploitation (`/ops`) ---------------------------------------------------------------------
+
+/** Au bout d'une connexion d'exploitation : une session d'exploitation, jamais une session d'espace. */
+export interface SessionOpsOuverte { sessionOps: string; email: string }
+
+/**
+ * Se connecter à l'exploitation : le compte habituel, puis TOUJOURS le second facteur (code, ou enrôlement pour
+ * une adresse de la liste qui n'en a pas). Le serveur refuse en 403 une adresse hors de la liste.
+ */
+export function loginOps(email: string, password: string): Promise<EtapeSecondFacteur> {
+  return request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, ops: true }) }, 'etape');
+}
+/** Idem par Google : Google prouve l'adresse, jamais le second facteur, qui reste exigé. */
+export function loginOpsGoogle(idToken: string): Promise<EtapeSecondFacteur> {
+  return request('/auth/google', { method: 'POST', body: JSON.stringify({ idToken, ops: true }) }, 'etape');
 }
 
 // --- Second facteur : la page Compte (avec session) --------------------------------------------------------------

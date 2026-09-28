@@ -54,25 +54,28 @@ interface Abandon { libelle: string; action: () => void }
 
 /**
  * Les étapes d'une connexion, AVANT toute session. `onSuite` reçoit ce que le login aurait rendu sans second
- * facteur (session ou choix d'espace) ; `onRetour` reçoit le message d'une étape qui ne peut plus aboutir.
+ * facteur (session ou choix d'espace), ou, pour une connexion d'exploitation, la session d'exploitation (`S`) ;
+ * `onRetour` reçoit le message d'une étape qui ne peut plus aboutir. `introEnrolement` remplace la phrase qui
+ * dit pourquoi le facteur est obligatoire.
  */
-export function EtapesSecondFacteur({ etape, onSuite, onRetour, abandon }: {
+export function EtapesSecondFacteur<S = SuiteConnexion>({ etape, onSuite, onRetour, abandon, introEnrolement }: {
   etape: EtapeSecondFacteur;
-  onSuite: (suite: SuiteConnexion) => void;
+  onSuite: (suite: S) => void;
   onRetour: (message: string) => void;
   abandon?: Abandon;
+  introEnrolement?: string;
 }) {
   const t = useT();
   return (
     <div className="space-y-4 rounded-carte border border-ink-200 bg-white p-6" data-testid="second-facteur">
       <h2 className="text-sm font-semibold text-ink-900">{t('Double authentification', 'Two-factor authentication')}</h2>
       {'mfaToken' in etape ? (
-        <EtapeCode mfaToken={etape.mfaToken} onSuite={onSuite} onRetour={onRetour} abandon={abandon} />
+        <EtapeCode<S> mfaToken={etape.mfaToken} onSuite={onSuite} onRetour={onRetour} abandon={abandon} />
       ) : (
         <Enrolement
-          intro={t('Obligatoire pour les administrateurs : scannez ce code avec votre application d’authentification.', 'Required for administrators: scan this code with your authenticator app.')}
+          intro={introEnrolement ?? t('Obligatoire pour les administrateurs : scannez ce code avec votre application d’authentification.', 'Required for administrators: scan this code with your authenticator app.')}
           demarrer={() => enrolerConnexion(etape.enrolToken)}
-          activer={(code: string) => activerConnexion(etape.enrolToken, code)}
+          activer={(code: string) => activerConnexion<S>(etape.enrolToken, code)}
           onActive={onSuite}
           onRetour={onRetour}
           abandon={abandon}
@@ -119,9 +122,9 @@ function ChampCode({ id, valeur, onChange, secours = false }: { id: string; vale
 }
 
 /** L'étape « code » : le TOTP de l'application, ou un code de secours dans le même champ. */
-function EtapeCode({ mfaToken, onSuite, onRetour, abandon }: {
+function EtapeCode<S>({ mfaToken, onSuite, onRetour, abandon }: {
   mfaToken: string;
-  onSuite: (suite: SuiteConnexion) => void;
+  onSuite: (suite: S) => void;
   onRetour: (message: string) => void;
   abandon?: Abandon;
 }) {
@@ -132,14 +135,14 @@ function EtapeCode({ mfaToken, onSuite, onRetour, abandon }: {
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
   /** Un code de secours a servi : on dit combien il en reste avant d'entrer. */
-  const [restants, setRestants] = useState<{ suite: SuiteConnexion; n: number } | null>(null);
+  const [restants, setRestants] = useState<{ suite: S; n: number } | null>(null);
 
   async function valider(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setErreur(null);
     setEnvoi(true);
     try {
-      const res = await verifierCodeConnexion(mfaToken, code.trim());
+      const res = await verifierCodeConnexion<S>(mfaToken, code.trim());
       if (res.codesSecoursRestants !== undefined) {
         setRestants({ suite: res, n: res.codesSecoursRestants });
         return;

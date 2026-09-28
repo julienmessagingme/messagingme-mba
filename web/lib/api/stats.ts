@@ -696,7 +696,7 @@ export interface GrillePrix {
 /*
  * `setGrillePrix` A ETE RETIREE LE 2026-09-23 (lot 8, migration 0168) : la grille ne se regle plus depuis
  * l espace d un client. Ses remplacantes vivent dans le module des appels d EXPLOITATION, parce qu elles
- * portent une autre autorite (`x-ops-token`, jamais le jeton de session du client) : `lireGrillePrixOps` et
+ * portent une autre autorite (la session d exploitation, jamais le jeton de session du client) : `lireGrillePrixOps` et
  * `ecrireGrillePrixOps`.
  */
 export function getSettings(tenantId: string): Promise<TenantSettings> {
