@@ -89,16 +89,19 @@ export const schema = z.object({
   SMSMODE_CALLBACK_STATUS_URL: z.string().default(''),
   /** URL publique qui reçoit les réponses entrantes (MO) smsmode. */
   SMSMODE_CALLBACK_MO_URL: z.string().default(''),
-  /** URL du pooler Supabase mode session (port 5432). Sert à pg-boss (API + worker) et, par défaut, au pool
-   *  applicatif si APP_DATABASE_URL est vide. Les scripts CLI (db/migrate.ts, db/seed.ts) lisent cette variable
-   *  en direct, jamais APP_DATABASE_URL : DDL et seed passent toujours en mode session. */
+  /** URL du pooler Supabase mode session (port 5432). Sert au pg-boss du WORKER (l'API empile par son pool
+   *  applicatif, cf. `PgBossQueue`) et, par défaut, au pool applicatif si APP_DATABASE_URL est vide. Les scripts
+   *  CLI (db/migrate.ts, db/seed.ts) lisent cette variable en direct, jamais APP_DATABASE_URL : DDL et seed
+   *  passent toujours en mode session. */
   DATABASE_URL: z.string().default(''),
   /**
    * URL du pooler Supabase mode transaction (port 6543) pour le pool applicatif (tous les stores, API +
    * worker), qu'elle sort du budget de ~15 sessions partagé avec mm-hubspot. Vide -> repli sur DATABASE_URL.
-   * pg-boss reste obligatoirement sur DATABASE_URL : ses connexions longues et sa maintenance ne survivent pas
-   * au transaction pooling (le pooler réassigne le backend entre transactions). Sûr pour mba, indépendant du
-   * search_path (tables en public, mmhs toujours qualifié) et dont les transactions passent par un client dédié.
+   * Le pg-boss du WORKER reste obligatoirement sur DATABASE_URL : son écoute, sa supervision et sa migration ne
+   * survivent pas au transaction pooling (le pooler réassigne le backend entre transactions). Celui de l'API,
+   * qui ne fait qu'empiler, passe par ce pool : ses instructions sont autonomes (un `insert`, ou un bloc
+   * `BEGIN; ...; COMMIT;` envoyé d'un seul message). Sûr pour mba, indépendant du search_path (tables en public,
+   * mmhs toujours qualifié) et dont les transactions passent par un client dédié.
    */
   APP_DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
@@ -107,11 +110,14 @@ export const schema = z.object({
    * font 2 x 8 = 16 clients vers le pooler, sa capacité observée (au-delà, la latence double sans erreur).
    * Plus haut, l'attente passerait de notre pool, borné par `DB_CONN_TIMEOUT_MS`, à celle de Supavisor, qui
    * est muette. Le budget des ~15 sessions partagé avec mm-hubspot ne concerne que pg-boss (`PGBOSS_MAX`).
+   * Côté API, ce pool porte AUSSI les enfilements (pg-boss l'emprunte), dont l'accusé des webhooks de Meta :
+   * une attente ici est une attente de la réception, et `mesureAttentePool` la voit.
    */
   DB_POOL_MAX: z.coerce.number().default(8),
-  /** Max de connexions du pool pg-boss, resté en mode session : c'est lui qui vit dans le budget de ~15
-   *  sessions partagé avec mm-hubspot (2 process x 2 ici, + 2 x 2 chez lui). Ne pas le relever sans refaire
-   *  l'arithmétique de ce budget. */
+  /** Max de connexions du pool pg-boss du WORKER, resté en mode session : c'est lui qui vit dans le budget de
+   *  ~15 sessions partagé avec mm-hubspot (2 ici, plus l'écoute des notifications, + 2 x 2 chez lui). L'API ne
+   *  le lit plus : elle n'ouvre aucun pool pg-boss, donc le nombre de ses copies ne compte pas dans ce budget.
+   *  Ne pas le relever sans refaire l'arithmétique de ce budget. */
   PGBOSS_MAX: z.coerce.number().default(2),
   /**
    * Timeout d'acquisition d'une connexion du pool (ms). Le défaut `pg` est une attente illimitée : pool saturé,

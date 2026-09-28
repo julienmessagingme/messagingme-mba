@@ -12,12 +12,22 @@ export interface PgBossPoolOpts {
 }
 
 /**
+ * Le pool qu'on PRÊTE à pg-boss au lieu de le laisser ouvrir le sien (`pg.Pool` le satisfait) : la seule méthode
+ * dont pg-boss a besoin, celle de son interface `Db` (`executeSql`). Un `db` fourni n'ouvre AUCUN pool : pg-boss
+ * n'ouvre le sien que pour son adaptateur interne (`_pgbdb`, `start()` de `pg-boss/dist/index.js`).
+ */
+export interface PoolPrete {
+  query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
+}
+
+/**
  * Options de maintenance de l'instance pg-boss : rien de fonctionnel, seulement le bruit produit sur la base.
- * Deux instances tournent par service (l'API empile, le worker dépile) et chacune supervise par défaut.
+ * Deux instances tournent par service (l'API empile, le worker dépile). Celle qui a son pool supervise par défaut ;
+ * celle qui emprunte un pool (l'API) ne supervise jamais, le prêt l'éteint (`PgBossQueue`).
  */
 export interface PgBossMaintenanceOpts {
   /**
-   * `false` = aucune maintenance (jobs expirés, monitoring, flow), à poser sur une instance qui ne fait
+   * `false` = aucune maintenance (jobs expirés, monitoring, flow), pour une instance qui a son pool mais ne fait
    * qu'empiler : le worker s'en charge. Défaut pg-boss : `true`.
    */
   supervise?: boolean;
@@ -112,6 +122,11 @@ export function sendOptions(opts: { expireInSeconds?: number; groupId?: string; 
   };
 }
 
+/** Les messages de `Contractor.check()` de pg-boss : un schéma absent, ou à une autre version que celle du code. */
+const SCHEMA_PAS_PRET = /pg-boss is not installed|pg-boss database requires migrations/;
+
+type OptsPoolPropre = PgBossPoolOpts & PgBossMaintenanceOpts & PgBossNotifyOpts & { retryLimit?: number };
+
 /** Implémentation durable via pg-boss. Chaque file a une dead-letter queue `<name>-dlq` et un retryLimit. */
 export class PgBossQueue implements Queue {
   private readonly boss: PgBoss;
@@ -120,21 +135,47 @@ export class PgBossQueue implements Queue {
   /** Files consommées par ce process, dans l'ordre : le message de démarrage en dérive (jamais recopié). */
   private readonly travaillees: string[] = [];
   private readonly retryLimit: number;
+  /** `false` = instance sur un pool PRÊTÉ, qui ne migre jamais le schéma : son échec au démarrage le dit. */
+  private readonly migre: boolean;
 
-  constructor(
-    connectionString: string,
-    schema = 'pgboss',
-    opts: PgBossPoolOpts & PgBossMaintenanceOpts & PgBossNotifyOpts & { retryLimit?: number } = {},
-  ) {
+  /**
+   * Sur une chaîne de connexion, pg-boss ouvre SON pool (le worker : il dépile, supervise, écoute, et migre).
+   *
+   * Sur un pool PRÊTÉ (l'API), l'instance ne fait qu'EMPILER, et tout le reste est éteint ICI plutôt qu'au site
+   * d'appel, parce que c'est ce que le prêt implique : aucun pool à elle (sinon chaque copie de l'API réserve des
+   * connexions de SESSION et N copies saturent le pooler), `migrate: false` (le worker migre ; sinon chaque copie
+   * retente la migration à son démarrage et fait tourner le sondeur de migrations asynchrones de pg-boss, une
+   * requête par minute et par copie), ni supervision ni écoute de notifications (le pool prêté
+   * est en mode TRANSACTION en production, où un `LISTEN` et la maintenance ne tiennent pas, et le worker les
+   * fait déjà). Ce qui reste passe par le pool prêté : la vérification de version au démarrage, le cache des
+   * files (un `select` par minute) et les `send`, chacun une instruction autonome. Aucune option de pool, de
+   * maintenance ou d'écoute n'est acceptée avec un prêt : le type le refuse, rien n'est ignoré en silence.
+   */
+  constructor(connexion: string, schema?: string, opts?: OptsPoolPropre);
+  constructor(connexion: PoolPrete, schema?: string, opts?: { retryLimit?: number });
+  constructor(connexion: string | PoolPrete, schema = 'pgboss', opts: OptsPoolPropre = {}) {
     this.retryLimit = opts.retryLimit ?? 5;
-    this.boss = new PgBoss({
-      connectionString,
-      schema,
-      ssl: pgSsl(),
-      ...poolOptions(opts),
-      ...maintenanceOptions(opts),
-      ...notifyOptions(opts),
-    });
+    this.migre = typeof connexion === 'string';
+    this.boss = new PgBoss(
+      typeof connexion === 'string'
+        ? {
+            connectionString: connexion,
+            schema,
+            ssl: pgSsl(),
+            ...poolOptions(opts),
+            ...maintenanceOptions(opts),
+            ...notifyOptions(opts),
+          }
+        : {
+            // Le résultat tel que `pg` le rend, comme l'adaptateur interne de pg-boss (`db.js`, `executeSql`) : pour
+            // une requête à plusieurs instructions (création de file), `pg` rend un TABLEAU que pg-boss ignore.
+            db: { executeSql: (text, values) => connexion.query(text, values) },
+            schema,
+            migrate: false,
+            useListenNotify: false,
+            ...maintenanceOptions({ supervise: false }),
+          },
+    );
   }
 
   /**
@@ -154,9 +195,26 @@ export class PgBossQueue implements Queue {
     this.boss.on('warning', cb);
   }
 
+  /**
+   * Sans migration, pg-boss VÉRIFIE que le schéma est à la version exacte de son code et lève sinon (dans les deux
+   * sens : pas encore migré, ou migré par un worker plus récent). Son message dit « requires migrations », ce qui
+   * pousse à rallumer la migration sur l'API ; on dit plutôt qui migre. L'échec reste un échec : le processus
+   * s'arrête et son hôte le relance, ce qui revient à attendre le worker.
+   */
   async start(): Promise<void> {
     if (this.started) return;
-    await this.boss.start();
+    try {
+      await this.boss.start();
+    } catch (err) {
+      if (!this.migre && err instanceof Error && SCHEMA_PAS_PRET.test(err.message)) {
+        throw new Error(
+          `pg-boss : ${err.message}. Cette instance ne migre jamais le schéma, c'est le WORKER qui le fait : ` +
+            `le démarrer (ou attendre la fin de sa migration) avant l'API, sur la même version de pg-boss.`,
+          { cause: err },
+        );
+      }
+      throw err;
+    }
     this.started = true;
   }
 

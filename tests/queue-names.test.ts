@@ -151,7 +151,10 @@ describe('cadence de polling par file', () => {
     const api = sansCommentaires(readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8'));
     const worker = sansCommentaires(readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8'));
     const wrapper = sansCommentaires(readFileSync(new URL('../src/queue/pgboss.ts', import.meta.url), 'utf8'));
-    expect(api, 'l’API doit démarrer pg-boss sans supervision (elle empile, elle ne dépile pas)').toMatch(/supervise:\s*false/);
+    // L'API ne supervise pas parce qu'elle PRÊTE son pool : le prêt éteint la supervision dans `PgBossQueue`, et
+    // `tests/queue-pool-prete.test.ts` le vérifie sur les options réellement passées à pg-boss.
+    expect(api, 'l’API doit démarrer pg-boss sur son pool prêté, donc sans supervision (elle empile, elle ne dépile pas)')
+      .toMatch(/new PgBossQueue\(pool, config\.PGBOSS_SCHEMA\)/);
     expect(worker, 'le worker doit rester le SEUL à superviser : pas de supervise: false ici').not.toMatch(/supervise:\s*false/);
     expect(worker, 'le worker doit espacer la maintenance flow').toMatch(/flowIntervalSeconds:\s*60/);
     // Ancrée sur la ligne entière, comme le seuil de rafale plus bas : un `toMatch` sur le seul nom de

@@ -46,7 +46,8 @@ pas touchés.
 - `/home/ubuntu/mba/.env.prod` **créé et rempli** : `AUTH_SECRET` généré (openssl), `DATABASE_URL`
   = pooler Supabase **session mode** `aws-1-eu-west-2` (IPv4, joignable des conteneurs ;
   le host direct `db.<ref>.supabase.co` est IPv6-only et injoignable), `DRY_RUN=true`.
-- Migrations déjà appliquées (base partagée). pg-boss créera son schéma au 1er démarrage.
+- Migrations déjà appliquées (base partagée). Le pg-boss du WORKER créera son schéma au 1er démarrage ; l'API
+  ne le crée jamais (elle refuse de démarrer tant qu'il n'existe pas, cf. « Montée de version de pg-boss »).
 
 ## 1. La SEULE entrée humaine restante : DNS
 
@@ -168,6 +169,25 @@ sudo docker compose up -d --build                                # 1) deploy le 
 sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop la colonne
 ```
 
+## 🔴 Montée de version de pg-boss : le WORKER d'abord, l'API ensuite
+
+Depuis le 2026-09-28 (lot C de `docs/superpowers/plans/2026-09-28-api-multi-instances.md`), l'API empile par son
+pool applicatif prêté à pg-boss, avec `migrate: false` : elle ne crée ni ne migre JAMAIS le schéma `pgboss`, c'est
+le worker. Et pg-boss VÉRIFIE au démarrage de l'API que le schéma est à la version EXACTE de son code (égalité
+stricte, donc dans les deux sens). Les déploiements ordinaires ne sont pas concernés. Une version de pg-boss qui
+change son schéma impose en revanche deux règles :
+
+- **le worker d'abord** : `sudo docker compose up -d --build mba-worker`, attendre dans ses journaux sa ligne
+  « démarré » (sa migration est faite), PUIS `sudo docker compose up -d --build mba-api`. Un `up -d --build` des deux
+  à la fois marche aussi, en plus bruyant : l'API refuse de démarrer (« c'est le WORKER qui le fait ») et Docker la
+  relance (`restart: unless-stopped`) jusqu'à la fin de la migration, pendant quoi Meta reçoit des erreurs et rejoue.
+- **un retour arrière de l'image APRÈS cette migration ne redémarre plus l'API** (schéma plus récent que son code) :
+  revenir sur une version de pg-boss, c'est revenir aussi sur son schéma.
+
+Le savoir avant de déployer : la version du code
+(`sudo docker compose run --rm --no-deps mba-api node -p "require('./node_modules/pg-boss/package.json').pgboss.schema"`)
+contre celle de la base (`select version from pgboss.version`). Égales : rien à faire.
+
 ## ⚠️ Le rechargement nginx doit venir APRÈS que les conteneurs soient sains, pas juste après `up -d`
 
 Vécu le 2026-09-08 : `up -d --build && nginx -s reload` enchaînés dans la même commande ont laissé les quatre
@@ -250,6 +270,11 @@ encore les sessions des conteneurs qu'on vient de tuer, le total dépasse 15 -> 
 un event `error` non capté (Timekeeper.onCron) qui tue le process -> Docker le relance -> crash-loop bref.
 (Depuis 4.3, le pool applicatif est en mode transaction sur `APP_DATABASE_URL:6543`, hors du budget session ->
 la contention au cold-start est réduite mais pas nulle, pg-boss restant en session.)
+⚠️ **Depuis le 2026-09-28, seul le WORKER tient encore des sessions** : l'API empile par son pool applicatif prêté
+à pg-boss et n'ouvre plus aucune session (tant que `APP_DATABASE_URL` est posée ; vide, c'est le pool applicatif
+entier qui retombe en session). Une API en `Restarting` au redéploiement n'est donc plus un `EMAXCONNSESSION` à
+elle : lire ses journaux, la cause la plus probable est un schéma `pgboss` que le worker n'a pas encore migré
+(ci-dessus, « Montée de version de pg-boss »).
 **Ça se résout seul** dès que le pooler libère les sessions des conteneurs tués (quelques dizaines de
 secondes). Attendre puis revérifier : `sudo docker ps --filter name=mba-api` doit finir sur `Up` stable
 et `/health` sur 200 (readiness OK). Ne PAS restart en boucle manuellement (ça relance le cold-start et
@@ -287,7 +312,8 @@ l'état vit dans le projet Supabase `npdqnrirxhqsyyvtvtjz`. La reprise = restaur
 Restore vers un nouveau projet -> l'host du pooler change. Dans `.env.prod` (mba **ET** mm-hubspot) : mettre à jour
 `DATABASE_URL` (5432), `APP_DATABASE_URL` (6543), et vérifier `DB_SSL_CA_FILE` (même CA Supabase, même chaîne
 `*.pooler.supabase.com` -> bundle inchangé). Puis `docker compose up -d --force-recreate` (env_file rechargé à la
-recréation seulement). pg-boss recrée son schéma au boot ; NPM route déjà ; l'app est redéployable en minutes depuis
+recréation seulement). Le schéma `pgboss` revient avec la base ; s'il manquait, le WORKER le recréerait au boot
+(l'API l'attend, elle ne le crée pas) ; NPM route déjà ; l'app est redéployable en minutes depuis
 git. ⚠️ **Migrations FORWARD-ONLY** (`db/migrate.ts`, aucun `*.down.sql`) : une migration destructrice (ex. un DROP)
 ne se défait PAS par le code -> seule issue = restore de données OU migration compensatoire écrite à la main.
 
@@ -297,7 +323,9 @@ ne se défait PAS par le code -> seule issue = restore de données OU migration 
 3. Comparer l'horodatage de la donnée la plus récente restaurée à l'instant du sinistre simulé = **RPO réel**.
 4. Sur la cible : `schema_migrations` contient la dernière migration (**0044**) ; comptes tenants/contacts/campaigns
    cohérents ; `mmhs.portals` présent ; booter un `mba-api` de TEST pointé dessus (`DATABASE_URL` isolé, **jamais la
-   prod** : sinon EMAXCONNSESSION sur les vrais conteneurs) -> pg-boss recrée `pgboss`.
+   prod**) -> il démarre si le schéma `pgboss` restauré est à la version de son pg-boss. ⚠️ Il ne le crée ni ne le
+   migre plus (2026-09-28) : s'il refuse de démarrer, c'est le schéma qui manque ou diffère, et seul un worker le
+   répare, à ne démarrer sur une copie qu'en `DRY_RUN=true` (sinon il reprend les campagnes et ENVOIE).
 5. Drill de la clé : redéchiffrer une ligne `waba_credentials` avec l'`ENCRYPTION_KEY` sauvegardée à part (sans elle,
    échec attendu -> prouve le gotcha).
 6. Consigner ici les chiffres RÉELS (RPO/RTO mesurés) + `dernière vérif DR : <date>` (re-tester périodiquement).

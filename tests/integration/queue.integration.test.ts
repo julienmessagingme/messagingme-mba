@@ -51,6 +51,41 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
     expect(data.ping).toBe('pong');
   });
 
+  /**
+   * Lot C du plan `2026-09-28-api-multi-instances.md` : l'API empile par son pool APPLICATIF prêté à pg-boss, le
+   * worker dépile avec le sien, sur le même schéma, comme en production. La création de la file passe aussi par
+   * le prêt : c'est le bloc `BEGIN; ...; COMMIT;` à plusieurs instructions, que `pg` n'accepte que sans valeurs.
+   */
+  it('pg-boss : une instance sur un pool PRÊTÉ empile, l’instance qui a son pool dépile', async () => {
+    const productrice = new PgBossQueue(pool, 'pgboss_test');
+    await productrice.start();
+    try {
+      const recu = new Promise<unknown>((resolve) => {
+        void queue.work('itest-pool-prete', async (data) => resolve(data));
+      });
+      await productrice.enqueue('itest-pool-prete', { de: 'api' });
+      const data = (await Promise.race([
+        recu,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000)),
+      ])) as { de?: string };
+      expect(data.de).toBe('api');
+    } finally {
+      await productrice.stop();
+    }
+    // L'arrêt de la file ne ferme pas le pool prêté : c'est l'API qui le ferme, APRÈS elle (`arreterApi`).
+    const r = await pool.query<{ n: number }>('select 1 as n');
+    expect(r.rows[0]?.n).toBe(1);
+  });
+
+  it('pg-boss : une instance sur un pool PRÊTÉ ne crée ni ne migre JAMAIS le schéma', async () => {
+    // Un schéma à part, remis à zéro : c'est le worker qui l'installe, et ce test n'en démarre aucun dessus.
+    await pool.query('drop schema if exists pgboss_test_prete cascade');
+    const productrice = new PgBossQueue(pool, 'pgboss_test_prete');
+    await expect(productrice.start()).rejects.toThrow(/not installed.*WORKER/);
+    const r = await pool.query<{ t: string | null }>("select to_regclass('pgboss_test_prete.version')::text as t");
+    expect(r.rows[0]?.t).toBeNull();
+  });
+
   it('pg-boss : un job qui throw finit en DLQ après épuisement des retries', async () => {
     // retryLimit:0 -> une seule tentative, puis dead-letter immédiat vers itest-dlq-src-dlq.
     const dlqQueue = new PgBossQueue(url, 'pgboss_test', { retryLimit: 0, max: 3 });

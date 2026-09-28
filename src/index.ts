@@ -144,13 +144,12 @@ async function main(): Promise<void> {
    */
   const adressesApi = adressesPubliques(config.APP_URL, config.PUBLIC_API_URL);
 
-  // `supervise: false` : l'API ne fait qu'empiler des jobs, elle n'en dépile aucun. Superviser (jobs expirés,
-  // monitoring, flow) est le travail du worker ; le faire ici doublerait la maintenance sur la base pour rien.
-  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, {
-    max: config.PGBOSS_MAX,
-    connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
-    supervise: false,
-  });
+  // L'API ne fait qu'EMPILER : elle PRÊTE son pool applicatif à pg-boss, qui n'en ouvre aucun à lui. Une copie de
+  // l'API ne retient donc plus aucune connexion de session, et N copies ne multiplient plus `PGBOSS_MAX` (lu par le
+  // seul worker). Prêter éteint aussi la migration, la supervision et l'écoute : c'est le worker qui les fait
+  // (`PgBossQueue`). Contrepartie : un enfilement, donc l'accusé d'un webhook de Meta, attend sur le MÊME pool
+  // que les requêtes de la console, ce que mesure `mesureAttentePool`.
+  const queue = new PgBossQueue(pool, config.PGBOSS_SCHEMA);
   // Un event `error` de pg-boss non capté est une exception non gérée qui tue l'API. On le journalise
   // et on laisse tourner : une saturation ponctuelle du pooler ne doit pas coûter un redémarrage.
   // eslint-disable-next-line no-console

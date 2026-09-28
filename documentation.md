@@ -233,7 +233,7 @@ l'agent à un contact qui n'existe pas.
 ```
 Meta -> POST /webhooks/meta (mba-api)
    signature X-Hub-Signature-256 vérifiée AVANT de lire le corps
-   -> payload brut enfilé dans `webhook`
+   -> payload brut enfilé dans `webhook` (par le pool applicatif de l'API, prêté à pg-boss, § 6)
    -> 200 immédiat (cible < 50 ms), zéro logique métier
                       |
       worker, job `webhook` :
@@ -1217,18 +1217,30 @@ premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé.
 
 ### Deux pools Postgres
 
-- **`DATABASE_URL`** = pooler en mode **SESSION** (port 5432). Sert **pg-boss** et **tous les scripts CLI**
-  (`db/migrate.ts`, `db/seed.ts`), qui lisent cette variable en direct.
-  🔴 pg-boss ne peut PAS aller en mode transaction : il maintient des connexions longues et une maintenance
-  qui ne survivent pas à la réassignation du backend entre transactions.
+- **`DATABASE_URL`** = pooler en mode **SESSION** (port 5432). Sert le **pg-boss du worker** et **tous les
+  scripts CLI** (`db/migrate.ts`, `db/seed.ts`), qui lisent cette variable en direct.
+  🔴 Le pg-boss du worker ne peut PAS aller en mode transaction : son écoute (`LISTEN`), sa supervision et sa
+  migration ne survivent pas à la réassignation du backend entre transactions.
 - **`APP_DATABASE_URL`** = pooler en mode **TRANSACTION** (port 6543), pour le pool applicatif. Vide -> repli
   sur `DATABASE_URL`, dégradation SÛRE.
+- 🔴 **L'API n'ouvre AUCUN pool pg-boss : elle PRÊTE son pool applicatif** (`new PgBossQueue(pool)`, le `db` de
+  pg-boss). Elle ne fait qu'empiler, et chaque instruction de l'empilement est autonome (un `insert`, ou un bloc
+  `BEGIN; ...; COMMIT;` envoyé d'un seul message), donc le mode transaction lui convient. Le prêt éteint tout le
+  reste dans `PgBossQueue`, pas au site d'appel : ni migration (c'est le worker ; pg-boss VÉRIFIE seulement la
+  version du schéma au démarrage, et l'API refuse de démarrer si elle diffère, DEPLOY.md « Montée de version de
+  pg-boss »), ni supervision, ni écoute, ni cron. Il reste, sur le pool prêté : quatre `select` au démarrage, le
+  cache des files (un `select` par minute) et les `send`. Conséquences : **une copie de l'API ne coûte plus aucune
+  session**, quel que soit leur nombre ; et **l'accusé d'un webhook de Meta attend sur le même pool que la
+  console**, donc `pool_attentes` (ligne `api`) mesure aussi la réception. ⚠️ Un `send` part sur une connexion
+  prise au pool, jamais sur celle d'une transaction ouverte : enfiler DANS une transaction (`enTransaction`) n'y
+  inscrirait pas la tâche (comme avant) et prendrait une SECONDE connexion au même pool. Aucun code ne le fait
+  (l'opt-out annonce après le `commit`).
 - **`DB_POOL_MAX`** est instancié **PAR PROCESS** : l'API et le worker importent le même module, donc le
   double du réglage vers le pooler. Au-delà d'environ 16 clients simultanés, la latence double sans qu'aucune
   erreur ne remonte. Monter plus haut déplacerait la file d'attente de NOTRE pool vers celle de Supavisor, où
   elle est MUETTE, et `DB_CONN_TIMEOUT_MS` ne protégerait plus de rien.
-- **`PGBOSS_MAX`** vit dans un budget d'environ 15 sessions **partagé avec mm-hubspot**. Ne pas le relever
-  sans refaire cette arithmétique.
+- **`PGBOSS_MAX`** (worker seul) vit dans un budget d'environ 15 sessions **partagé avec mm-hubspot**, plus la
+  connexion d'écoute du worker. Ne pas le relever sans refaire cette arithmétique.
 - **`DB_CONN_TIMEOUT_MS`** : le défaut `pg` est une attente ILLIMITÉE, donc un pool saturé rend une requête
   HTTP qui ne répond jamais, sans erreur ni trace.
 

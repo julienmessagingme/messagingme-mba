@@ -198,6 +198,20 @@ des files (des `select`). Le superviseur, l'écouteur de notifications et le pla
 ⚠️ **Poser aussi `migrate: false` sur l'API.** Sinon chaque copie vérifie et migre le schéma pg-boss au
 démarrage. C'est le worker qui migre.
 
+**Livré le 2026-09-28** (lot C de `docs/superpowers/plans/2026-09-28-api-multi-instances.md`, aucune migration) ;
+l'essai réel à deux copies, qui clôt le chantier, reste à faire. Revérifié dans la source de pg-boss **12.25.1**
+(schéma 36) : `getDb()` rend `config.db` quand il est fourni (`dist/index.js`, l. 351), `start()` n'ouvre un pool
+que sur `_pgbdb` (l. 91), `migrate: false` remplace la migration par `Contractor.check()` (l. 95-100,
+`dist/contractor.js` l. 47-56). L'API construit `new PgBossQueue(pool)` : le prêt pose `db`, `migrate: false`,
+`supervise: false`, `schedule: false` et `useListenNotify: false` DANS `PgBossQueue`, et le type y refuse toute
+option de pool ou d'écoute. Deux choses que ce paragraphe ne disait pas :
+- **la vérification est une ÉGALITÉ STRICTE** (`schemaVersion !== version`) : une API refuse de démarrer sur un
+  schéma plus ANCIEN (worker pas encore migré) comme plus RÉCENT (retour arrière d'image). Une montée de version
+  de pg-boss se déploie donc worker d'abord (DEPLOY.md, « Montée de version de pg-boss »), et une copie ancienne
+  lancée par l'autoscaler après la migration ne démarre pas, ce qui est le bon échec : elle n'empile rien de faux.
+- **l'accusé d'un webhook de Meta attend désormais sur le pool applicatif**, partagé avec la console : son
+  attente se lit dans `pool_attentes` (ligne `api`), à regarder pendant l'essai réel.
+
 ### 3.2 Les balayages doivent être sérialisés (avant deux exemplaires d'un MÊME rôle)
 
 **Le problème.** Les tâches minutées vivent dans le processus (`src/worker/taches.ts`). Deux exemplaires du
@@ -431,12 +445,18 @@ workers.
 ### 7.5 Le budget de connexions se recalcule, il ne se recopie pas
 
 ```
-  2 x API        (pool applicatif + producteur pg-boss, tant que §3.1 n'est pas fait)
-+ worker principal (pool applicatif + consommateur pg-boss + écoute de notifications)
+  N x API        (pool applicatif SEUL : DB_POOL_MAX chacune ; pg-boss l'emprunte, §3.1)
++ worker principal (pool applicatif + consommateur pg-boss PGBOSS_MAX + écoute de notifications)
 + worker analyse   (pool applicatif + consommateur pg-boss, écoute seulement si elle sert)
 + marge pour les migrations et l'administration
   <= nombre de connexions de l'offre choisie, relu À LA CRÉATION de la base
 ```
+
+🔴 **Le coût d'une copie d'API ne dépend plus de `PGBOSS_MAX`** (§3.1, livré le 2026-09-28) : elle ne tient plus
+aucune session, seulement ses `DB_POOL_MAX` clients du pool applicatif, qui portent aussi ses enfilements. Le
+maximum de l'autoscaler se lit donc dans ce calcul : ce qui reste après les workers et la marge, divisé par
+`DB_POOL_MAX`. Derrière un pooler en mode transaction, ce reste se compte en CLIENTS du pooler (sa limite de
+clients), pas en connexions de la base, qui restent celles du pool du pooler.
 
 ⚠️ **Ne pas recopier `DB_POOL_MAX=8` sur chaque processus sans ce calcul.** Un pooler ne crée aucune capacité
 Postgres : il fait partager des connexions qui, sinon, resteraient occupées pour rien.
@@ -618,6 +638,7 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 **L'API publique**
 - `/v1` applique ses plafonds et rend un `429`, **sans que les webhooks en soient affectés**.
 - Une clé révoquée est refusée par les DEUX copies d'API.
+- Une copie d'API de plus n'ajoute aucune connexion de session à la base (compte avant et après, §3.1).
 
 **Les deux workers**
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.
