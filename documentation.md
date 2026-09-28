@@ -179,6 +179,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Liens tracés** | compter les clics sur les boutons URL d'un template | `src/links/` | | `tracked_links`, `tracked_link_clicks` | |
 | **Webhooks entrants** | un tiers poste du JSON, on en fait un contact et un événement | `src/webhook-entrant/` | `/webhooks` | `webhooks` | |
 | **Connecteur HubSpot** | import de listes, étapes de deal | `src/hubspot/` | `/tuto-hubspot` | | `hubspot-catchup` |
+| **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **API publique v1** | ce qu'un intégrateur du client appelle | `src/api/`, `src/http/v1-*.ts` | `/developers` | `api_keys`, `api_idempotency` | |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log` | `dlq-sweep` |
 | **Auth et comptes** | connexion, invitations, rôles, multi-espace | `src/auth/`, `src/user/` | `/login`, `/admin` | `users`, `identities`, `auth_tokens` | |
@@ -954,6 +955,38 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | `timezone` et `business_hours` | le fuseau (une heure murale sans fuseau est interprétée là) et les horaires |
 | `mba_handoff_mode` | `always` \| `business_hours` \| `never` |
 
+**Publicités**
+
+- `pubs_brouillons` : un FORMULAIRE mémorisé, jamais une publicité (aucun identifiant Meta, aucune dépense).
+  Le visuel est une image (`visuel_octets`, `bytea`, que seule la lecture d'UN brouillon sélectionne) OU une
+  vidéo, dont seul l'identifiant chez Meta est gardé (`video_id`, migration 0187), jamais les octets.
+  🔴 **Un seul visuel à la fois** : `PgBrouillonsPubStore.mettreAJour` efface l'un quand l'autre est POSÉ (non
+  nul), et le CHECK `pubs_brouillons_un_visuel_chk` en est la ceinture. `audiences_incluses` et
+  `audiences_exclues` sont des `text[]` d'identifiants Meta, vides par défaut, relus chez Meta à la création.
+  Une clé absente du corps veut dire « ne pas toucher », pour l'image, la vidéo et les audiences : un écran qui
+  ne les connaît pas ne les efface pas en enregistrant.
+- 🔴 **Une vidéo ne s'arrête jamais chez nous.** Elle est déposée chez Meta dès qu'elle est choisie, en trois
+  gestes (`POST /pubs/videos` ouvre et rend le premier morceau que Meta attend, `POST
+  /pubs/videos/:session/morceaux?debut=&fin=` relaie chaque morceau, `POST /pubs/videos/:session/fin` clôt).
+  Le NAVIGATEUR découpe le fichier comme Meta le demande : un seul envoi de 100 Mo buterait sur les plafonds de
+  Cloudflare (taille d'une requête, délai de réponse). Chaque morceau traverse l'API EN FLUX : le parseur
+  `application/octet-stream` ne lit rien (il tourne avant les gardes), le gestionnaire lit la tête du morceau
+  (signature `ftyp`, durée si `moov` est au début, `src/pubs/video.ts`), puis `transfererMorceauVideo`
+  (`src/meta/pubs-creation.ts`) relaie le reste dans un corps multipart construit en flux, à longueur exacte.
+  La taille des morceaux est décidée par Meta et non documentée : on relaie ce qu'il demande.
+- 🔴 **La créa ne part que sur une vidéo `ready`.** `creerLaPublicite` (`src/pubs/creation.ts`) relit, AVANT la
+  campagne, l'état de la vidéo et celui de chaque audience demandée (`delivery_status` 200) : un refus y est
+  `refusee` (409), rien n'a été créé. La vignette de la créa est l'image PRÉFÉRÉE de Meta, rapatriée (sans le
+  jeton, HTTPS seulement, bornée, signature vérifiée) puis redéposée par `adimages` : on ne cite jamais une
+  adresse de son CDN. Le rattrapage est celui de l'image : tout créé en pause, campagne supprimée sur échec.
+- 🔴 **Advantage+ audience est explicite** (`ciblage`, `src/meta/pubs-payloads.ts`) : `targeting_automation.
+  advantage_audience = 1` sur tout ensemble, sinon Meta l'active en silence depuis v23. Il impose un âge minimum
+  entre 18 et 25 ans et un maximum à 65, que la route refuse avec des mots et que `ciblage` refuse encore en
+  levant. Les audiences incluses deviennent des suggestions ; les exclusions restent fermes.
+- ⚠️ **Non documenté chez Meta, isolé à un endroit** : le lien WhatsApp d'une créa vidéo, posé dans
+  `call_to_action.value.link` (`VALEUR_BOUTON_VIDEO`), faute de champ `link` dans `video_data`. La première
+  création réelle tranche.
+
 **Journal**
 
 - `webhook_events` : le corps brut de chaque webhook Meta, `meta_message_id` unique (c'est l'idempotence).
@@ -1198,6 +1231,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée, et toute connexion d'exploitation (Google compris) | une session d'admin, ou d'exploitation, ouverte avec le seul mot de passe |
 | `urlRecuperable` + `resolutionPublique` | toute URL saisie par un client | le SSRF vers le réseau interne |
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
+| Signature `ftyp`, bornes du morceau (`src/pubs/video.ts`), parseur d'octets muet | dépôt d'une vidéo publicitaire | autre chose qu'une vidéo envoyé chez Meta sous l'identité du client, et un corps tamponné avant l'authentification |
 | En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
 
 🔴 **LE RÔLE ADMIN SE POSE AU MONTAGE, ET `forbidNonAdmin` NE VIT QUE LÀ OÙ UN AGENT PASSE LA GARDE** (lot 3 de
@@ -2006,7 +2040,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/auth/middleware.ts` -> `makeRequireOps`, `auteurOps`, `estAdresseOps` | 🔴 la garde de `/ops` (session d'exploitation, puis l'adresse relue en base dans `OPS_EMAILS` et le facteur toujours actif, à CHAQUE requête), l'auteur d'une écriture d'exploitation (échoue fermé sans la garde), et la comparaison d'une adresse à la liste (sans la casse, liste vide = personne). Une seule garde, construite par `buildServer` (`Gardes.ops`) pour les deux modules `session-ops` |
 | `src/lib/adresse-privee.ts` | `resolutionPublique` : ce qu'un texte d'URL ne peut pas voir |
 | `src/lib/page-distante.ts` | `urlRecuperable` (garde SSRF) et `fetchUrlBorne` (redirections revalidées saut par saut) |
-| `src/lib/corps-borne.ts` | lire un corps distant EN FLUX, avec ses trois verdicts |
+| `src/lib/corps-borne.ts` | lire un corps distant EN FLUX, avec ses trois verdicts : `lireCorpsBorne` pour du texte, `lireOctetsBornes` pour du binaire (une image), qui ne décode pas en UTF-8 |
 | `src/lib/cache-court.ts` | le micro-cache du dépôt : durée de vie ET mutualisation des appels en vol |
 | `src/lib/journal.ts` -> `journaliser` | la ligne de journal JSON du dépôt (`{ lvl, msg, ... }`). 🔴 `req.log` et `app.log` sont MUETS (`logger: false`). Une `Error` y garde son message, sa CAUSE sur un niveau (un `fetch failed` sans son `ENOTFOUND` ne dit rien) et sa pile au niveau `error` ; un champ illisible est remplacé SEUL, sans emporter ses voisins ; elle ne lève jamais. L'espace s'y écrit `tenantId`, tenu par un test |
 | `src/meta/numero-espace.ts` | le numéro Meta d'un espace, mis en cache. 🔴 Il ne garde QUE les réponses POSITIVES : une réponse nulle devient fausse à l'instant où un client branche son premier numéro, et le cache étant par process, aucune invalidation ne traverse l'API et le worker. C'est ce qui rend acceptable de mettre en cache une décision |

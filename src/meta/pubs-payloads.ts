@@ -51,9 +51,28 @@ export interface FormulairePub {
   pays: string[];
   /** Ciblage par ville et rayon, quand le client l'a choisi plutôt qu'un pays. */
   villes: Array<{ cle: string; rayon: number; unite: 'kilometer' | 'mile' }>;
+  /**
+   * L'âge minimum, entre {@link AGE_MIN_ADVANTAGE_BAS} et {@link AGE_MIN_ADVANTAGE_HAUT}. Il n'y a PAS d'âge
+   * maximum dans ce formulaire : avec Advantage+, Meta le fixe à {@link AGE_MAX_ADVANTAGE}, et un champ qu'on ne
+   * peut pas honorer n'a rien à faire dans le type.
+   */
   ageMin: number;
-  ageMax: number;
+  /** Les audiences du compte publicitaire à inclure : des SUGGESTIONS pour Meta, qui peut diffuser au-delà. */
+  audiencesIncluses: string[];
+  /** Les audiences à exclure : un contrôle FERME, que Meta respecte même avec Advantage+. */
+  audiencesExclues: string[];
 }
+
+/**
+ * Advantage+ audience est laissé à Meta (décision de Julien, 2026-09-28), et depuis Graph v23 ce réglage doit
+ * être EXPLICITE dans `targeting_automation.advantage_audience`. L'omettre était un défaut : Meta l'active alors
+ * en silence, ou refuse la création quand l'âge n'est pas au défaut. Avec `1`, Meta n'accepte `age_min` qu'entre
+ * 18 et 25 ans et fixe `age_max` à 65.
+ */
+export const ADVANTAGE_AUDIENCE = 1;
+export const AGE_MIN_ADVANTAGE_BAS = 18;
+export const AGE_MIN_ADVANTAGE_HAUT = 25;
+export const AGE_MAX_ADVANTAGE = 65;
 
 /**
  * 🔴 Le budget en unités mineures de la devise du compte : Meta compte en centimes pour tous les montants de
@@ -98,17 +117,37 @@ export function payloadCampagne(nom: string): Record<string, unknown> {
 }
 
 /**
- * Le ciblage : `geo_locations` est obligatoire, et c'est le seul champ exposé. `device_platforms` n'est pas
- * posé : un clic depuis un ordinateur ouvre WhatsApp Web, sans la fenêtre gratuite de 72 h, mais c'est un
- * prospect réel.
+ * Le ciblage : `geo_locations` est obligatoire. `device_platforms` n'est pas posé : un clic depuis un ordinateur
+ * ouvre WhatsApp Web, sans la fenêtre gratuite de 72 h, mais c'est un prospect réel.
+ *
+ * 🔴 `targeting_automation` est TOUJOURS posé, à {@link ADVANTAGE_AUDIENCE} : c'est ce qui rend le réglage
+ * explicite (voir la constante). Les audiences incluses deviennent alors des suggestions ; les exclusions, le lieu
+ * et l'âge minimum restent des contrôles fermes. Les deux listes ne partent que non vides : une clé vide n'aurait
+ * pas de sens chez Meta, et son absence est le comportement d'avant pour une publicité sans audience.
+ *
+ * 🔴 Un âge minimum hors de 18-25 LÈVE ici, dernière barrière avant l'argent du client : la route le refuse déjà
+ * avec un message lisible, mais un appelant qui l'oublierait créerait sinon un ensemble que Meta refuse, ou pire,
+ * qu'il corrige en silence.
  */
-export function ciblage(f: Pick<FormulairePub, 'pays' | 'villes' | 'ageMin' | 'ageMax'>): Record<string, unknown> {
+export function ciblage(
+  f: Pick<FormulairePub, 'pays' | 'villes' | 'ageMin' | 'audiencesIncluses' | 'audiencesExclues'>,
+): Record<string, unknown> {
+  if (!Number.isInteger(f.ageMin) || f.ageMin < AGE_MIN_ADVANTAGE_BAS || f.ageMin > AGE_MIN_ADVANTAGE_HAUT) {
+    throw new RangeError(`âge minimum ${f.ageMin} hors de ${AGE_MIN_ADVANTAGE_BAS}-${AGE_MIN_ADVANTAGE_HAUT} (Advantage+)`);
+  }
   const geo: Record<string, unknown> = {};
   if (f.pays.length > 0) geo.countries = f.pays;
   if (f.villes.length > 0) {
     geo.custom_locations = f.villes.map((v) => ({ key: v.cle, radius: v.rayon, distance_unit: v.unite }));
   }
-  return { geo_locations: geo, age_min: f.ageMin, age_max: f.ageMax };
+  return {
+    geo_locations: geo,
+    age_min: f.ageMin,
+    age_max: AGE_MAX_ADVANTAGE,
+    ...(f.audiencesIncluses.length > 0 ? { custom_audiences: f.audiencesIncluses.map((id) => ({ id })) } : {}),
+    ...(f.audiencesExclues.length > 0 ? { excluded_custom_audiences: f.audiencesExclues.map((id) => ({ id })) } : {}),
+    targeting_automation: { advantage_audience: ADVANTAGE_AUDIENCE },
+  };
 }
 
 /**
@@ -161,6 +200,42 @@ export function payloadCrea(
         link: LIEN_WHATSAPP,
         page_welcome_message: messageBienvenue(f.accueil, f.messagePreRempli),
         call_to_action: { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } },
+      },
+    },
+  };
+}
+
+/**
+ * 🔴 HYPOTHÈSE NON DOCUMENTÉE, ISOLÉE ICI ET NULLE PART AILLEURS : la valeur du bouton d'une créa VIDÉO.
+ *
+ * `video_data` n'a pas de champ `link`, contrairement à `link_data` : Meta y documente `call_to_action.value.link`
+ * pour les autres destinations, jamais pour Click-to-WhatsApp. On y pose donc le même lien que la créa image
+ * ({@link LIEN_WHATSAPP}), à côté de `app_destination`. La première création réelle tranche : si Meta refuse, son
+ * message s'affiche tel quel et c'est cette constante, seule, qui change.
+ */
+export const VALEUR_BOUTON_VIDEO: Readonly<Record<string, string>> = { app_destination: 'WHATSAPP', link: LIEN_WHATSAPP };
+
+/**
+ * La créa VIDÉO : `video_data` au lieu de `link_data`. La vignette (`image_hash`) est obligatoire chez Meta ;
+ * c'est une des images qu'il extrait de la vidéo, REDÉPOSÉE comme image pour obtenir son empreinte : on ne cite
+ * jamais une adresse de son CDN, signée et périssable. `title` et `message` portent les mêmes champs du
+ * formulaire que `name` et `message` de la créa image.
+ */
+export function payloadCreaVideo(
+  f: FormulairePub,
+  v: { pageId: string; videoId: string; imageHash: string },
+): Record<string, unknown> {
+  return {
+    name: f.nom,
+    object_story_spec: {
+      page_id: v.pageId,
+      video_data: {
+        video_id: v.videoId,
+        image_hash: v.imageHash,
+        title: f.titre,
+        message: f.texte,
+        page_welcome_message: messageBienvenue(f.accueil, f.messagePreRempli),
+        call_to_action: { type: 'WHATSAPP_MESSAGE', value: { ...VALEUR_BOUTON_VIDEO } },
       },
     },
   };

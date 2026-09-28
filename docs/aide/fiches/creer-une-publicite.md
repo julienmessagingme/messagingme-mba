@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 53eacf
+source_empreinte: 839312
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -29,7 +29,8 @@ et Meta ne nous permet pas de la vérifier : l'écran vous emmène là où elle 
 ## Créer
 
 Le formulaire est court, et c'est voulu : un visuel, un texte, un titre, le message que la personne enverra,
-un budget total, des dates, un pays et une tranche d'âge. Le reste se règle dans le Gestionnaire de Meta.
+un budget total, des dates, un pays, un âge minimum et, si vous le souhaitez, des audiences. Le reste se règle
+dans le Gestionnaire de Meta.
 
 **Tout est créé en PAUSE.** Cliquer sur « Créer » ne dépense rien : la campagne existe chez Meta, à l'arrêt.
 C'est le bouton **Publier** qui la met en diffusion, et il vous rappelle d'abord combien elle peut dépenser
@@ -40,6 +41,40 @@ Le budget total et la date de fin sont obligatoires : ce sont eux qui bornent la
 Une case vous demande de confirmer que la publicité ne relève d'aucune **catégorie spéciale** (logement,
 emploi, crédit, politique). Ces catégories imposent des obligations que cet écran ne sait pas porter :
 passez par le Gestionnaire de Meta.
+
+## Une image ou une vidéo
+
+Le visuel est l'un OU l'autre :
+
+- **une image** : JPEG ou PNG, 5 Mo au plus ;
+- **une vidéo** : MP4 ou MOV, **100 Mo et 60 secondes au plus**. Elle est vérifiée avant l'envoi, puis déposée
+  chez Meta tout de suite (cela ne coûte rien), avec une barre de progression. Meta la prépare ensuite, en
+  général en quelques minutes : l'écran vous montre cette attente, et vous pouvez continuer à remplir le
+  formulaire. La publicité ne se crée qu'une fois la vidéo prête.
+
+Pour le cadrage, le vertical 9:16 convient aux stories, aux Reels et au statut WhatsApp, et le 4:5 au fil
+d'actualité. Les autres formats sont acceptés : Meta choisit lui-même les emplacements, et recadre si besoin.
+La vignette de la vidéo est choisie par Meta parmi ses images.
+
+Si votre navigateur ne sait pas lire la durée de la vidéo, elle est refusée : exportez-la en MP4 (H.264), le
+format que tous les navigateurs lisent.
+
+## Choisir qui voit la publicité
+
+En plus du pays et de l'âge, vous pouvez choisir des **audiences** déjà créées dans votre compte publicitaire,
+**à inclure ou à exclure**. L'écran affiche leur taille approximative. Seules les audiences prêtes chez Meta se
+choisissent ; les autres apparaissent avec la raison donnée par Meta (trop petite, en cours de préparation).
+
+⚠️ **Meta applique Advantage+ audience**, et cela change le sens d'une inclusion : les audiences incluses
+lui servent de **suggestion**, il peut montrer la publicité au-delà s'il pense y trouver des prospects. Les
+**exclusions**, le pays et l'âge minimum, eux, sont toujours respectés. Si vous voulez qu'une clientèle ne voie
+pas la publicité, excluez-la.
+
+Avec Advantage+, Meta n'accepte qu'un **âge minimum entre 18 et 25 ans** et fixe l'âge maximum à 65 ans :
+c'est pourquoi le formulaire ne propose rien d'autre.
+
+Les audiences se créent dans le Gestionnaire de Meta ; seules celles partagées avec votre compte publicitaire
+apparaissent ici.
 
 ## Qui répond aux personnes qui écrivent
 
@@ -85,7 +120,8 @@ sont des refus qui ne dépendent pas de vous.
 Dès que votre compte publicitaire est choisi, chaque publicité porte un lien **Ouvrir dans le
 Gestionnaire de Meta**, sur sa campagne. Nous n'affichons
 qu'une seule raison quand Meta en donne plusieurs : c'est par ce lien que vous voyez la liste complète, et
-tout ce que cet écran ne montre pas (audience, placements, historique de diffusion).
+tout ce que cet écran ne montre pas (qui Meta a réellement visé avec Advantage+, placements, historique de
+diffusion).
 
 ⚠️ **Si vous aviez choisi « l'agent de Meta répond » et que vous l'éteignez ensuite**, la publicité vous le
 dit. Ces prospects-là ne sont pas comptés parmi les non pris en charge, parce que l'entonnoir suppose qu'un

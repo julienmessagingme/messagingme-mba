@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  budgetEnUnitesMineures, ciblage, messageBienvenue, payloadCampagne, payloadCrea, payloadEnsemble, payloadPub,
-  LIEN_WHATSAPP, OBJECTIF_CAMPAGNE, OPTIMISATION_ENSEMBLE, STATUT_PAUSE, type FormulairePub,
+  budgetEnUnitesMineures, ciblage, messageBienvenue, payloadCampagne, payloadCrea, payloadCreaVideo, payloadEnsemble,
+  payloadPub, LIEN_WHATSAPP, OBJECTIF_CAMPAGNE, OPTIMISATION_ENSEMBLE, STATUT_PAUSE, VALEUR_BOUTON_VIDEO,
+  type FormulairePub,
 } from '../src/meta/pubs-payloads';
 
 /**
@@ -30,9 +31,13 @@ const form = (over: Partial<FormulairePub> = {}): FormulairePub => ({
   pays: ['FR'],
   villes: [],
   ageMin: 25,
-  ageMax: 55,
+  audiencesIncluses: [],
+  audiencesExclues: [],
   ...over,
 });
+
+/** Ce que tout ciblage porte depuis la migration vers Advantage+ explicite : Meta fixe l'âge maximum à 65. */
+const ADVANTAGE = { age_max: 65, targeting_automation: { advantage_audience: 1 } };
 
 describe('le budget, en unités mineures', () => {
   it('🔴 des euros deviennent des centimes : se tromper ici coûte cent fois le budget', () => {
@@ -88,7 +93,7 @@ describe('l’ensemble de publicités', () => {
       lifetime_budget: 15000,
       start_time: '2026-10-01 00:00:00+02:00',
       end_time: '2026-10-31 23:59:59+01:00',
-      targeting: { geo_locations: { countries: ['FR'] }, age_min: 25, age_max: 55 },
+      targeting: { geo_locations: { countries: ['FR'] }, age_min: 25, ...ADVANTAGE },
       promoted_object: { page_id: 'p-1', whatsapp_phone_number: '33612345678' },
     });
   });
@@ -112,23 +117,63 @@ describe('l’ensemble de publicités', () => {
 });
 
 describe('le ciblage', () => {
+  const sansAudience = { audiencesIncluses: [], audiencesExclues: [] };
+
   it('par pays', () => {
-    expect(ciblage({ pays: ['FR', 'BE'], villes: [], ageMin: 18, ageMax: 65 }))
-      .toEqual({ geo_locations: { countries: ['FR', 'BE'] }, age_min: 18, age_max: 65 });
+    expect(ciblage({ pays: ['FR', 'BE'], villes: [], ageMin: 18, ...sansAudience }))
+      .toEqual({ geo_locations: { countries: ['FR', 'BE'] }, age_min: 18, ...ADVANTAGE });
   });
 
   it('par ville et rayon', () => {
-    expect(ciblage({ pays: [], villes: [{ cle: 'Paris:FR', rayon: 25, unite: 'kilometer' }], ageMin: 20, ageMax: 40 }))
+    expect(ciblage({ pays: [], villes: [{ cle: 'Paris:FR', rayon: 25, unite: 'kilometer' }], ageMin: 20, ...sansAudience }))
       .toEqual({
         geo_locations: { custom_locations: [{ key: 'Paris:FR', radius: 25, distance_unit: 'kilometer' }] },
-        age_min: 20, age_max: 40,
+        age_min: 20, ...ADVANTAGE,
       });
   });
 
   it('🔴 `device_platforms` N’EST PAS POSÉ, et l’absence est le choix', () => {
     // Restreindre à `mobile` paraît naturel pour une pub qui ouvre WhatsApp, et retirerait des prospects
     // RÉELS : un clic depuis un ordinateur marche, il n'ouvre simplement pas les 72 h gratuites.
-    expect(ciblage({ pays: ['FR'], villes: [], ageMin: 18, ageMax: 65 })).not.toHaveProperty('device_platforms');
+    expect(ciblage({ pays: ['FR'], villes: [], ageMin: 18, ...sansAudience })).not.toHaveProperty('device_platforms');
+  });
+
+  it('🔴 les audiences : incluses et exclues, chacune sous SA clé, en objets `{ id }`', () => {
+    // Les inverser ferait diffuser précisément auprès de ceux qu'on voulait écarter, sans aucune erreur de Meta.
+    expect(ciblage({ pays: ['FR'], villes: [], ageMin: 18, audiencesIncluses: ['111', '222'], audiencesExclues: ['333'] }))
+      .toEqual({
+        geo_locations: { countries: ['FR'] }, age_min: 18, ...ADVANTAGE,
+        custom_audiences: [{ id: '111' }, { id: '222' }],
+        excluded_custom_audiences: [{ id: '333' }],
+      });
+  });
+
+  it('une liste d’audiences vide ne part pas : c’est le ciblage d’avant, pour une pub sans audience', () => {
+    const t = ciblage({ pays: ['FR'], villes: [], ageMin: 18, ...sansAudience });
+    expect(t).not.toHaveProperty('custom_audiences');
+    expect(t).not.toHaveProperty('excluded_custom_audiences');
+  });
+
+  it('🔴 `targeting_automation.advantage_audience` est TOUJOURS explicite, à 1, avec ou sans audience', () => {
+    // Le défaut corrigé : depuis v23, un ciblage qui ne le dit pas voit Advantage+ activé en silence, ou refusé
+    // quand l'âge n'est pas au défaut. Aucune combinaison ne doit pouvoir l'omettre.
+    for (const a of [sansAudience, { audiencesIncluses: ['1'], audiencesExclues: [] }, { audiencesIncluses: [], audiencesExclues: ['2'] }]) {
+      for (const lieu of [{ pays: ['FR'], villes: [] }, { pays: [], villes: [{ cle: 'k', rayon: 10, unite: 'kilometer' as const }] }]) {
+        expect(ciblage({ ...lieu, ageMin: 21, ...a }).targeting_automation).toEqual({ advantage_audience: 1 });
+      }
+    }
+  });
+
+  it('🔴 l’âge : minimum entre 18 et 25, maximum TOUJOURS 65 (Advantage+)', () => {
+    for (const ageMin of [18, 21, 25]) {
+      const t = ciblage({ pays: ['FR'], villes: [], ageMin, ...sansAudience });
+      expect(t.age_min).toBe(ageMin);
+      expect(t.age_max).toBe(65);
+    }
+    // Hors bornes, la fonction REFUSE : dernière barrière avant l'argent du client, derrière la route.
+    for (const ageMin of [17, 26, 40, 20.5]) {
+      expect(() => ciblage({ pays: ['FR'], villes: [], ageMin, ...sansAudience }), `âge ${ageMin}`).toThrow(RangeError);
+    }
   });
 });
 
@@ -182,6 +227,52 @@ describe('la créa', () => {
 
   it('🔴 le lien n’est pas une adresse qu’on choisit : c’est la valeur que Meta attend', () => {
     expect(LIEN_WHATSAPP).toBe('https://api.whatsapp.com/send');
+  });
+});
+
+describe('la créa VIDÉO', () => {
+  it('porte `video_data` complet : vidéo, vignette, textes, bouton WhatsApp et message d’accueil', () => {
+    expect(payloadCreaVideo(form(), { pageId: 'p-1', videoId: 'v-9', imageHash: 'h-vignette' })).toEqual({
+      name: 'Rentrée 2026',
+      object_story_spec: {
+        page_id: 'p-1',
+        video_data: {
+          video_id: 'v-9',
+          image_hash: 'h-vignette',
+          title: 'Parlez-nous sur WhatsApp',
+          message: 'Une question sur nos tarifs ? Écrivez-nous.',
+          page_welcome_message: messageBienvenue(
+            'Bonjour ! Comment pouvons-nous vous aider ?', 'Bonjour, je voudrais des informations',
+          ),
+          call_to_action: { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP', link: 'https://api.whatsapp.com/send' } },
+        },
+      },
+    });
+  });
+
+  it('🔴 aucune `link_data`, et aucun `link` à la racine de `video_data` : Meta ne le connaît pas là', () => {
+    const p = payloadCreaVideo(form(), { pageId: 'p-1', videoId: 'v-9', imageHash: 'h' }) as {
+      object_story_spec: Record<string, Record<string, unknown>>;
+    };
+    expect(p.object_story_spec).not.toHaveProperty('link_data');
+    expect(p.object_story_spec.video_data).not.toHaveProperty('link');
+  });
+
+  it('🔴 l’hypothèse non documentée (le lien sous `call_to_action.value`) vit à UN endroit', () => {
+    // La première création réelle tranche : si Meta refuse, c'est cette constante seule qui change, et la créa
+    // doit la recopier plutôt que de réécrire la valeur à côté.
+    const p = payloadCreaVideo(form(), { pageId: 'p-1', videoId: 'v', imageHash: 'h' }) as {
+      object_story_spec: { video_data: { call_to_action: { value: unknown } } };
+    };
+    expect(p.object_story_spec.video_data.call_to_action.value).toEqual(VALEUR_BOUTON_VIDEO);
+  });
+
+  it('🔴 la vignette est une EMPREINTE, jamais une adresse : aucun `image_url`', () => {
+    const p = payloadCreaVideo(form(), { pageId: 'p', videoId: 'v', imageHash: 'h' }) as {
+      object_story_spec: { video_data: Record<string, unknown> };
+    };
+    expect(p.object_story_spec.video_data).not.toHaveProperty('image_url');
+    expect(p.object_story_spec.video_data.image_hash).toBe('h');
   });
 });
 

@@ -332,6 +332,18 @@ async function main(): Promise<void> {
   const brouillonsPub = new PgBrouillonsPubStore(pool);
 
   /**
+   * Ce qu'il faut pour agir sur le compte publicitaire d'un espace : le compte, la Page, et le jeton en clair. Un
+   * seul endroit pour les deux refus (pas connecté, connexion incomplète), que les routes traduisent en 409 : la
+   * création et le dépôt vidéo ne doivent pas diverger sur ce qu'« être connecté » veut dire.
+   */
+  const accesPub = async (t: string): Promise<{ comptePubId: string; pageId: string; jeton: string }> => {
+    const etat = await connexionsPub.lire(t);
+    if (etat === null) throw new PasDeConnexionPub();
+    if (etat.comptePubId === null || etat.pageId === null) throw new ConnexionPubIncomplete();
+    return { comptePubId: etat.comptePubId, pageId: etat.pageId, jeton: await connexionPub.jetonClair(t) };
+  };
+
+  /**
    * Lancer un scénario pour un contact, comme le bouton de l'Inbox. Deux appelants : l'Inbox et l'outil
    * « Lancer un scénario » de l'agent de Meta. La fermeture du parcours en cours, la reprise du fil et la
    * garde de fenêtre vivent dans `runFrom`.
@@ -1423,12 +1435,7 @@ async function main(): Promise<void> {
        * objets, chemins d'échec compris.
        */
       creerPub: async (t: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>) => {
-        const etat = await connexionsPub.lire(t);
-        if (etat === null) throw new PasDeConnexionPub();
-        if (etat.comptePubId === null || etat.pageId === null) throw new ConnexionPubIncomplete();
-        const jeton = await connexionPub.jetonClair(t);
-        const comptePubId = etat.comptePubId;
-        const pageId = etat.pageId;
+        const { comptePubId, pageId, jeton } = await accesPub(t);
         // Le jeton de Page ne sert qu'à la créa et n'est jamais stocké. Meta l'exige pour ce guide sans dire
         // s'il le faut partout : repli sur le jeton du client, et le refus de Meta sera lisible.
         const jetonCrea = (await clientCreationPubs.jetonDePage(pageId, jeton)) ?? jeton;
@@ -1443,6 +1450,9 @@ async function main(): Promise<void> {
           { ...d, comptePubId, pageId, numeroWhatsApp },
           {
             televerserImage: (b64) => clientCreationPubs.televerserImage(comptePubId, jeton, b64),
+            etatVideo: (videoId) => clientCreationPubs.etatVideo(videoId, jeton),
+            vignetteVideo: (videoId) => clientCreationPubs.vignetteVideo(comptePubId, jeton, videoId),
+            etatAudiences: (ids) => clientCreationPubs.etatAudiences(ids, jeton),
             creerCampagne: (p) => clientCreationPubs.creerCampagne(comptePubId, jeton, p),
             creerEnsemble: (p) => clientCreationPubs.creerEnsemble(comptePubId, jeton, p),
             creerCrea: (p) => clientCreationPubs.creerCrea(comptePubId, jetonCrea, p),
@@ -1458,6 +1468,30 @@ async function main(): Promise<void> {
             supprimerAutomation: (id) => publicites.supprimerAutomation(t, id),
           },
         );
+      },
+
+      /**
+       * Le dépôt d'une vidéo, sur le compte publicitaire de l'espace, avec le jeton du client (la vidéo appartient
+       * au compte, pas à la Page). Les octets ne font que traverser : `transfererMorceauVideo` les relaie en flux.
+       */
+      videos: {
+        demarrer: async (t: string, taille: number) => {
+          const { comptePubId, jeton } = await accesPub(t);
+          return clientCreationPubs.demarrerDepotVideo(comptePubId, jeton, taille);
+        },
+        transferer: async (t: string, m: { sessionId: string; debut: number; taille: number; octets: AsyncIterable<Uint8Array> }) => {
+          const { comptePubId, jeton } = await accesPub(t);
+          return clientCreationPubs.transfererMorceauVideo(comptePubId, jeton, m);
+        },
+        terminer: async (t: string, sessionId: string) => {
+          const { comptePubId, jeton } = await accesPub(t);
+          await clientCreationPubs.terminerDepotVideo(comptePubId, jeton, sessionId);
+        },
+        etat: async (t: string, videoId: string) => clientCreationPubs.etatVideo(videoId, (await accesPub(t)).jeton),
+      },
+      audiences: async (t: string) => {
+        const { comptePubId, jeton } = await accesPub(t);
+        return clientCreationPubs.audiences(comptePubId, jeton);
       },
 
       /** Publier : l'automation d'abord, Meta ensuite. L'ordre vit dans `publierLaPublicite`. */

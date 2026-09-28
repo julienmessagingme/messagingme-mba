@@ -1,16 +1,26 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { forbidNonAdmin, gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { sansPrefixeAct, type ActifsAccordes, type EtatComptePub } from '../meta/pubs';
-import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../meta/pubs-creation';
+import {
+  TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB,
+  type DepotVideo, type EtatVideo, type ListeAudiencesPub,
+} from '../meta/pubs-creation';
+import { AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT } from '../meta/pubs-payloads';
+import { ErreurGraph } from '../meta/graph';
 import type { ConnexionPub } from '../pubs/connexion.pg';
 import type { Publicite } from '../pubs/publicites.pg';
 import type { BrouillonPub, BrouillonPubComplet, ChampsBrouillon } from '../pubs/brouillons.pg';
 import { PublicationRefusee } from '../pubs/creation';
 import type { DemandeCreation, IssueCreation } from '../pubs/creation';
+import {
+  DUREE_VIDEO_PUB_MAX_S, MorceauDeTailleInattendue, TAILLE_VIDEO_PUB_MAX, TETE_VIDEO_OCTETS,
+  dureeDeLaTete, dureeTropLongue, estVideoMp4OuMov, lireTete, suiteBornee,
+} from '../pubs/video';
 import type { Entonnoir } from '../pubs/entonnoir';
 import { makeJournal, type AuditSink } from '../audit/journal';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Les publicités d'un espace : sa connexion (lire l'état, échanger le code de la fenêtre Meta, choisir le compte
@@ -76,6 +86,23 @@ export interface PubsRouteDeps {
    * prospect qui a cliqué juste avant la pause peut écrire plus tard, et ce lead a été payé.
    */
   basculerPub(tenantId: string, publiciteId: string, actif: boolean): Promise<void>;
+  /**
+   * Le dépôt d'une vidéo chez Meta, morceau par morceau, et son état. Le jeton et le compte publicitaire sont
+   * résolus par le câblage, comme pour `creerPub` : la route ne voit que l'espace. Chaque membre lève
+   * `PasDeConnexionPub` ou `ConnexionPubIncomplete` quand la connexion ne permet pas de déposer.
+   */
+  videos: {
+    demarrer(tenantId: string, taille: number): Promise<DepotVideo>;
+    /** Relaie un morceau EN FLUX : `octets` n'est lu qu'au fil de l'envoi à Meta, jamais tamponné entier. */
+    transferer(
+      tenantId: string,
+      m: { sessionId: string; debut: number; taille: number; octets: AsyncIterable<Uint8Array> },
+    ): Promise<{ debut: number; fin: number }>;
+    terminer(tenantId: string, sessionId: string): Promise<void>;
+    etat(tenantId: string, videoId: string): Promise<EtatVideo>;
+  };
+  /** Les audiences personnalisées du compte publicitaire connecté, lues chez Meta à chaque demande. */
+  audiences(tenantId: string): Promise<ListeAudiencesPub>;
   audit: AuditSink;
 }
 
@@ -134,10 +161,22 @@ const corpsChoix = z.object({
 }).strict();
 
 /**
+ * Un identifiant d'objet Meta (vidéo, session de dépôt, audience) : des chiffres, rien d'autre. Il part dans une
+ * adresse ou un champ de formulaire chez Meta : une forme libre y porterait un chemin ou un paramètre de plus.
+ */
+const idMeta = z.string().regex(/^\d{1,40}$/);
+
+/** Combien d'audiences à inclure, et à exclure, au plus : une frontière d'hygiène, pas une limite de Meta. */
+const AUDIENCES_MAX = 20;
+
+/**
  * Le formulaire de création, minimal. 🔴 `budgetTotal` et `fin` sont obligatoires : sans eux, une publicité
  * dépense sans limite ni terme sur le compte du client (Meta l'exige aussi : `lifetime_budget` impose
  * `end_time`). `horsCategorieSpeciale` doit valoir `true` : logement, emploi, crédit ou politique imposent des
  * obligations que cet écran ne porte pas ; on renvoie le client vers le Gestionnaire.
+ * Le visuel est une `image` (octets) OU une `video` (déjà déposée chez Meta, par son identifiant) : la route
+ * refuse les deux, et aucun. `ageMax` n'est plus qu'une confirmation : avec Advantage+, Meta le fixe à 65, et
+ * l'écran d'avant cette règle l'envoie encore.
  */
 const corpsCreation = z.object({
   nom: z.string().trim().min(1).max(120),
@@ -155,7 +194,9 @@ const corpsCreation = z.object({
     unite: z.enum(['kilometer', 'mile']),
   })).max(10).default([]),
   ageMin: z.number().int().min(18).max(65),
-  ageMax: z.number().int().min(18).max(65),
+  ageMax: z.number().int().min(18).max(65).optional(),
+  audiencesIncluses: z.array(idMeta).max(AUDIENCES_MAX).default([]),
+  audiencesExclues: z.array(idMeta).max(AUDIENCES_MAX).default([]),
   destination: z.enum(['scenario', 'agent_meta']),
   workflowId: z.string().uuid().nullable().default(null),
   tagQualification: z.string().trim().min(1).max(64).nullable().default(null),
@@ -165,7 +206,8 @@ const corpsCreation = z.object({
     // La taille est vérifiée sur les octets décodés, pas sur la longueur du base64 : cette borne-ci n'est
     // qu'un premier filet, large de la surcharge de l'encodage.
     base64: z.string().min(1).max(Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4)),
-  }),
+  }).optional(),
+  video: z.object({ id: idMeta }).strict().optional(),
 }).strict();
 
 /**
@@ -174,6 +216,8 @@ const corpsCreation = z.object({
  * bornés, parce que ce sont des frontières : les longueurs, l'énumération de la destination, la forme de
  * l'identifiant de scénario, le type du visuel, et `.strict()`.
  * `image` a trois sens : absente = ne touche pas au visuel enregistré, `null` = l'efface, un objet = le remplace.
+ * `video` a les mêmes trois sens, et les audiences deux (absentes = ne pas toucher) : un écran d'avant la migration
+ * 0187 ne les envoie pas, et ne doit pas les effacer en enregistrant.
  */
 const corpsBrouillon = z.object({
   nom: z.string().max(120).default(''),
@@ -194,7 +238,18 @@ const corpsBrouillon = z.object({
     type: z.enum(TYPES_VISUEL_PUB),
     base64: z.string().min(1).max(Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4)),
   }).nullable().optional(),
+  video: z.object({ id: idMeta }).strict().nullable().optional(),
+  audiencesIncluses: z.array(idMeta).max(AUDIENCES_MAX).optional(),
+  audiencesExclues: z.array(idMeta).max(AUDIENCES_MAX).optional(),
 }).strict();
+
+/**
+ * Les deux listes d'audiences partagent-elles un identifiant ? Inclure et exclure la même audience n'a aucun sens,
+ * et Meta trancherait à notre place sans le dire.
+ */
+function audienceEnDouble(incluses: readonly string[], exclues: readonly string[]): string | null {
+  return incluses.find((id) => exclues.includes(id)) ?? null;
+}
 
 /**
  * Ce que valent vraiment des octets d'image : rend le message de refus, ou `null` si le visuel passe. Une seule
@@ -224,7 +279,58 @@ function versChamps(c: z.infer<typeof corpsBrouillon>): ChampsBrouillon {
     debut: c.debut, fin: c.fin, pays: c.pays, ageMin: c.ageMin, ageMax: c.ageMax,
     tagQualification: c.tagQualification, destination: c.destination, workflowId: c.workflowId,
     ...(c.image === undefined ? {} : { visuel: c.image }),
+    ...(c.video === undefined ? {} : { video: c.video }),
+    ...(c.audiencesIncluses === undefined ? {} : { audiencesIncluses: c.audiencesIncluses }),
+    ...(c.audiencesExclues === undefined ? {} : { audiencesExclues: c.audiencesExclues }),
   };
+}
+
+/**
+ * Les refus d'un brouillon qui ne portent pas sur les octets : deux visuels à la fois, ou une audience incluse et
+ * exclue. `null` si le corps passe.
+ */
+function refusDuBrouillon(c: z.infer<typeof corpsBrouillon>): string | null {
+  if (c.image && c.video) return 'un brouillon porte une image OU une vidéo, pas les deux';
+  const double = audienceEnDouble(c.audiencesIncluses ?? [], c.audiencesExclues ?? []);
+  if (double !== null) return `l’audience ${double} ne peut pas être à la fois incluse et exclue`;
+  return null;
+}
+
+/** Le chemin du morceau de vidéo : la seule route qui reçoit des octets bruts, et le parseur le vérifie. */
+const CHEMIN_MORCEAU_VIDEO = '/tenants/:tenantId/pubs/videos/:sessionId/morceaux';
+
+/** Où commence et où finit le morceau envoyé, tel que Meta l'a demandé au pas précédent. */
+const requeteMorceau = z.object({
+  debut: z.coerce.number().int().nonnegative(),
+  fin: z.coerce.number().int().positive(),
+});
+
+/** Une erreur, ou l'une de ses causes, est-elle de ce type ? `fetch` enveloppe l'erreur d'un corps en flux. */
+function causeDe<T>(err: unknown, type: new (...a: never[]) => T): T | null {
+  let e: unknown = err;
+  for (let i = 0; i < 5 && e; i += 1) {
+    if (e instanceof type) return e;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/**
+ * La réponse d'un échec du dépôt vidéo ou de la lecture des audiences.
+ *
+ * 🔴 Un refus de META (4xx chez lui) sort en 422, avec son message : Cloudflare remplace le corps de toute réponse
+ * 5xx par sa propre page, donc un message destiné au client ne peut pas voyager dans un 502. Seule NOTRE panne
+ * (réseau, délai, 5xx de Meta) sort en 502, journalisée ici puisque l'écran n'en verra pas le détail.
+ */
+function repondreEchec(reply: FastifyReply, err: unknown, quoi: string): FastifyReply {
+  if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
+  if (err instanceof ConnexionPubIncomplete) return reply.code(409).send({ error: err.message, code: 'connexion_incomplete' });
+  if (err instanceof ErreurGraph && err.status >= 400 && err.status < 500) {
+    return reply.code(422).send({ error: err.message, code: 'refus_meta' });
+  }
+  // eslint-disable-next-line no-console
+  console.error(`publicités, ${quoi} :`, messageDe(err));
+  return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
 }
 
 export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
@@ -235,6 +341,21 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   // (`etatComptePubCache`, `src/pubs/connexion.ts`), le plafond par utilisateur, et le délai de `ClientGraph`.
   const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
+
+  /**
+   * 🔴 LE CORPS BRUT D'UN MORCEAU DE VIDÉO N'EST JAMAIS LU PAR FASTIFY. Le parseur tourne AVANT les gardes (la
+   * phase d'analyse précède les `preHandler`) : s'il lisait le corps, un appelant sans session ferait tamponner
+   * des mégaoctets avant d'être refusé. Il ne fait donc que laisser passer, sur la seule route du morceau ; c'est
+   * le gestionnaire, une fois l'authentification et l'espace vérifiés, qui lit le flux, borné par les décalages
+   * du morceau. Toute autre route qui recevrait des octets bruts les refuse en 415, comme avant ce parseur.
+   */
+  app.addContentTypeParser('application/octet-stream', (req, _payload, done) => {
+    if (req.routeOptions.url !== CHEMIN_MORCEAU_VIDEO) {
+      done(Object.assign(new Error('type de contenu non accepté sur cette route'), { statusCode: 415 }), undefined);
+      return;
+    }
+    done(null, undefined);
+  });
 
   app.get('/tenants/:tenantId/pubs/connexion', opts, async (req, reply) => {
     const tenantId = espaceVerifie(req);
@@ -367,7 +488,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
     // Même lecture des octets qu'à la création : un brouillon n'est pas une porte dérobée pour écrire n'importe
     // quoi en base.
-    const refus = lu.data.image ? refusDuVisuel(lu.data.image.base64) : null;
+    const refus = refusDuBrouillon(lu.data) ?? (lu.data.image ? refusDuVisuel(lu.data.image.base64) : null);
     if (refus !== null) return reply.code(400).send({ error: refus });
     const id = await deps.brouillons.creer(tenantId, versChamps(lu.data));
     return reply.code(201).send({ id });
@@ -381,7 +502,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
     // `image` absente ne passe pas ici : il n'y a pas d'octets neufs à juger, et ceux qui sont déjà en base ont
     // été lus à leur écriture. Seul un visuel fourni se vérifie.
-    const refus = lu.data.image ? refusDuVisuel(lu.data.image.base64) : null;
+    const refus = refusDuBrouillon(lu.data) ?? (lu.data.image ? refusDuVisuel(lu.data.image.base64) : null);
     if (refus !== null) return reply.code(400).send({ error: refus });
     const trouve = await deps.brouillons.mettreAJour(tenantId, id, versChamps(lu.data));
     if (!trouve) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
@@ -398,6 +519,128 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   /**
+   * LE DÉPÔT D'UNE VIDÉO, EN TROIS GESTES : ouvrir (Meta dit quel morceau envoyer), envoyer chaque morceau (Meta dit
+   * le suivant), clore. Le navigateur découpe le fichier comme Meta le demande, et chaque morceau traverse l'API en
+   * flux jusqu'à Meta : la vidéo n'est gardée ni en base ni en entier en mémoire. Rien n'est facturable, mais tout
+   * est réservé aux admins : c'est un objet créé chez un tiers, sur le compte du client. Ouvrir porte le plafond
+   * coûteux (un par vidéo) ; les morceaux, nombreux, portent le plafond par utilisateur de la garde.
+   */
+  app.post('/tenants/:tenantId/pubs/videos', couteux, async (req, reply) => {
+    const tenantId = espaceVerifie(req);
+    if (forbidNonAdmin(req, reply)) return;
+    const lu = z.object({ taille: z.number().int().positive() }).strict().safeParse(req.body);
+    if (!lu.success) return reply.code(400).send({ error: 'taille de vidéo manquante ou invalide' });
+    if (lu.data.taille > TAILLE_VIDEO_PUB_MAX) {
+      return reply.code(400).send({ error: `cette vidéo dépasse ${Math.round(TAILLE_VIDEO_PUB_MAX / (1024 * 1024))} Mo`, code: 'video_trop_lourde' });
+    }
+    try {
+      return reply.send(await deps.videos.demarrer(tenantId, lu.data.taille));
+    } catch (err) {
+      return repondreEchec(reply, err, 'ouverture du dépôt vidéo');
+    }
+  });
+
+  app.post(CHEMIN_MORCEAU_VIDEO, opts, async (req, reply) => {
+    const tenantId = espaceVerifie(req);
+    if (forbidNonAdmin(req, reply)) return;
+    const { sessionId } = req.params as { sessionId: string };
+    if (!idMeta.safeParse(sessionId).success) return reply.code(400).send({ error: 'session de dépôt invalide' });
+    const q = requeteMorceau.safeParse(req.query);
+    if (!q.success || q.data.fin <= q.data.debut) return reply.code(400).send({ error: 'morceau de vidéo invalide' });
+    // La fin du morceau borne la vidéo entière : un morceau qui finirait au-delà de 100 Mo appartient à un fichier
+    // que l'ouverture aurait refusé.
+    if (q.data.fin > TAILLE_VIDEO_PUB_MAX) {
+      return reply.code(413).send({ error: `cette vidéo dépasse ${Math.round(TAILLE_VIDEO_PUB_MAX / (1024 * 1024))} Mo`, code: 'video_trop_lourde' });
+    }
+    const { debut } = q.data;
+    const taille = q.data.fin - debut;
+    const type = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
+    if (type !== 'application/octet-stream') return reply.code(415).send({ error: 'un morceau de vidéo s’envoie en octets bruts' });
+    const annonce = req.headers['content-length'];
+    if (annonce !== undefined && Number(annonce) !== taille) {
+      return reply.code(400).send({ error: 'le morceau ne fait pas la taille annoncée', code: 'morceau_incoherent' });
+    }
+
+    // La tête du morceau est lue AVANT d'appeler Meta, pour refuser sans avoir rien envoyé ; le reste suit en flux.
+    const source = (req.raw as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]();
+    let lu: { tete: Uint8Array; fini: boolean };
+    try {
+      lu = await lireTete(source, Math.min(taille, TETE_VIDEO_OCTETS));
+    } catch {
+      // Le navigateur a coupé l'envoi : rien n'est parti chez Meta, et personne n'attend plus cette réponse.
+      return reply.code(400).send({ error: 'le morceau est arrivé incomplet', code: 'morceau_incoherent' });
+    }
+    const { tete, fini } = lu;
+    if (tete.byteLength > taille || (fini && tete.byteLength !== taille)) {
+      return reply.code(400).send({ error: 'le morceau ne fait pas la taille annoncée', code: 'morceau_incoherent' });
+    }
+    if (debut === 0) {
+      if (!estVideoMp4OuMov(tete)) {
+        return reply.code(400).send({ error: 'ce fichier n’est pas une vidéo MP4 ou MOV', code: 'video_format' });
+      }
+      // La durée n'est lisible ici que si le fichier la porte au début (voir `dureeDeLaTete`) : sinon, c'est le
+      // contrôle du navigateur, fait avant l'envoi, qui tient la règle.
+      const duree = dureeDeLaTete(tete);
+      if (duree !== null && dureeTropLongue(duree)) {
+        return reply.code(400).send({
+          error: `cette vidéo dure ${Math.round(duree)} secondes : ${DUREE_VIDEO_PUB_MAX_S} au plus`, code: 'video_trop_longue',
+        });
+      }
+    }
+    try {
+      const suivant = await deps.videos.transferer(tenantId, {
+        sessionId, debut, taille, octets: suiteBornee(tete, source, fini, taille),
+      });
+      return reply.send(suivant);
+    } catch (err) {
+      const incoherent = causeDe(err, MorceauDeTailleInattendue);
+      if (incoherent !== null) return reply.code(400).send({ error: incoherent.message, code: 'morceau_incoherent' });
+      return repondreEchec(reply, err, 'envoi d’un morceau de vidéo');
+    }
+  });
+
+  app.post('/tenants/:tenantId/pubs/videos/:sessionId/fin', opts, async (req, reply) => {
+    const tenantId = espaceVerifie(req);
+    if (forbidNonAdmin(req, reply)) return;
+    const { sessionId } = req.params as { sessionId: string };
+    if (!idMeta.safeParse(sessionId).success) return reply.code(400).send({ error: 'session de dépôt invalide' });
+    try {
+      await deps.videos.terminer(tenantId, sessionId);
+      return reply.send({ ok: true });
+    } catch (err) {
+      return repondreEchec(reply, err, 'fin du dépôt vidéo');
+    }
+  });
+
+  /**
+   * L'état d'une vidéo chez Meta, que l'écran interroge pendant le traitement (durée non documentée). Hors du
+   * plafond coûteux : il est appelé à intervalle régulier, et le plafond par utilisateur de la garde le borne.
+   */
+  app.get('/tenants/:tenantId/pubs/videos/:videoId', opts, async (req, reply) => {
+    const tenantId = espaceVerifie(req);
+    const { videoId } = req.params as { videoId: string };
+    if (!idMeta.safeParse(videoId).success) return reply.code(400).send({ error: 'identifiant de vidéo invalide' });
+    try {
+      return reply.send(await deps.videos.etat(tenantId, videoId));
+    } catch (err) {
+      return repondreEchec(reply, err, 'état d’une vidéo');
+    }
+  });
+
+  /**
+   * Les audiences du compte publicitaire : lues chez Meta à chaque ouverture du formulaire, sans cache (une
+   * audience créée à l'instant dans le Gestionnaire doit apparaître), donc sous le plafond coûteux.
+   */
+  app.get('/tenants/:tenantId/pubs/audiences', couteux, async (req, reply) => {
+    const tenantId = espaceVerifie(req);
+    try {
+      return reply.send(await deps.audiences(tenantId));
+    } catch (err) {
+      return repondreEchec(reply, err, 'lecture des audiences');
+    }
+  });
+
+  /**
    * Créer une publicité : tout est créé en pause chez Meta, cette route ne fait dépenser personne. `bodyLimit`
    * dédié (le visuel transite en base64). Plafond coûteux et admin : elle engage l'argent du client chez un tiers.
    */
@@ -411,16 +654,34 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     }
     const f = corps.data;
 
-    // Les trois contrôles que Zod ne sait pas exprimer, et qui feraient chacun une publicité absurde.
-    if (f.ageMin > f.ageMax) return reply.code(400).send({ error: 'l’âge minimum dépasse l’âge maximum' });
+    // Les contrôles que Zod ne sait pas exprimer, et qui feraient chacun une publicité absurde ou refusée.
+    // Advantage+ est laissé à Meta (`ciblage`, `src/meta/pubs-payloads.ts`) : il borne l'âge, et on le dit ici
+    // avec des mots plutôt que de laisser Meta refuser après avoir créé la campagne.
+    if (f.ageMin < AGE_MIN_ADVANTAGE_BAS || f.ageMin > AGE_MIN_ADVANTAGE_HAUT) {
+      return reply.code(400).send({
+        error: `avec Advantage+, Meta n’accepte qu’un âge minimum entre ${AGE_MIN_ADVANTAGE_BAS} et ${AGE_MIN_ADVANTAGE_HAUT} ans`,
+      });
+    }
+    if (f.ageMax !== undefined && f.ageMax !== AGE_MAX_ADVANTAGE) {
+      return reply.code(400).send({ error: `avec Advantage+, Meta fixe l’âge maximum à ${AGE_MAX_ADVANTAGE} ans` });
+    }
     if (f.pays.length === 0 && f.villes.length === 0) {
       return reply.code(400).send({ error: 'choisissez au moins un pays ou une ville' });
     }
     if (f.destination === 'scenario' && f.workflowId === null) {
       return reply.code(400).send({ error: 'choisissez le scénario qui répondra aux prospects de cette publicité' });
     }
-    // Les contrôles des octets vivent dans `refusDuVisuel`, partagé avec les brouillons.
-    const refus = refusDuVisuel(f.image.base64);
+    const double = audienceEnDouble(f.audiencesIncluses, f.audiencesExclues);
+    if (double !== null) {
+      return reply.code(400).send({ error: `l’audience ${double} ne peut pas être à la fois incluse et exclue` });
+    }
+    // Un visuel, et un seul : une image (ses octets) OU une vidéo (déjà chez Meta).
+    if ((f.image === undefined) === (f.video === undefined)) {
+      return reply.code(400).send({ error: 'choisissez un visuel : une image ou une vidéo, pas les deux' });
+    }
+    // Les contrôles des octets vivent dans `refusDuVisuel`, partagé avec les brouillons. Une vidéo, elle, a été
+    // lue morceau par morceau au dépôt ; son état chez Meta est relu par la création, avant la créa.
+    const refus = f.image !== undefined ? refusDuVisuel(f.image.base64) : null;
     if (refus !== null) return reply.code(400).send({ error: refus });
 
     let issue: IssueCreation;
@@ -429,9 +690,12 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
         formulaire: {
           nom: f.nom, texte: f.texte, titre: f.titre, messagePreRempli: f.messagePreRempli, accueil: f.accueil,
           budgetTotal: f.budgetTotal, debut: f.debut, fin: f.fin,
-          pays: f.pays, villes: f.villes, ageMin: f.ageMin, ageMax: f.ageMax,
+          pays: f.pays, villes: f.villes, ageMin: f.ageMin,
+          audiencesIncluses: f.audiencesIncluses, audiencesExclues: f.audiencesExclues,
         },
-        imageBase64: f.image.base64,
+        visuel: f.video !== undefined
+          ? { sorte: 'video', videoId: f.video.id }
+          : { sorte: 'image', base64: f.image?.base64 ?? '' },
         destination: f.destination,
         workflowId: f.destination === 'scenario' ? f.workflowId : null,
         tagQualification: f.tagQualification,
@@ -443,12 +707,29 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
     }
 
+    if (issue.sorte === 'refusee') {
+      // Une précondition que le client peut réparer (vidéo encore en traitement, audience inutilisable) : un état
+      // du parcours, pas une panne. En 409 : ce message doit arriver à l'écran, ce qu'un 5xx ne permet pas
+      // derrière Cloudflare.
+      return reply.code(409).send({ error: issue.raison, code: issue.code });
+    }
+    if (issue.sorte === 'annulee' || issue.sorte === 'echec_creation') {
+      // ⚠️ Journalisé ICI, en plus de la réponse : un 502 traverse Cloudflare, qui en remplace le corps par sa propre
+      // page, donc le message de Meta peut ne jamais atteindre l'écran. C'est pourtant lui qui tranche ce que sa
+      // documentation ne dit pas (la créa vidéo) : sans cette ligne, un refus ne laisserait aucune trace lisible.
+      // eslint-disable-next-line no-console
+      console.warn(`création de publicité (${issue.sorte}) sur l'espace ${tenantId} :`, issue.raison);
+    }
     if (issue.sorte === 'annulee') {
       // Rien n'existe chez Meta, et ce statut le dit. On rend le message de Meta tel quel : c'est son compte.
       return reply.code(502).send({ error: issue.raison, code: 'creation_refusee' });
     }
     await journal(tenantId, req, 'pubs.creee', { kind: 'publicite', id: issue.publiciteId },
-      { campagneId: issue.campagneId, destination: f.destination, budgetTotal: f.budgetTotal, issue: issue.sorte });
+      {
+        campagneId: issue.campagneId, destination: f.destination, budgetTotal: f.budgetTotal, issue: issue.sorte,
+        visuel: f.video !== undefined ? 'video' : 'image',
+        audiencesIncluses: f.audiencesIncluses.length, audiencesExclues: f.audiencesExclues.length,
+      });
     if (issue.sorte === 'echec_creation') {
       return reply.code(502).send({
         error: issue.raison,

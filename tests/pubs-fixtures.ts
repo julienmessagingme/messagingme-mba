@@ -18,7 +18,7 @@ export const aucunePubliciteUtilise = async (): Promise<string[]> => [];
  * changé de sujet sans le savoir, et mieux vaut qu'il le dise bruyamment.
  */
 export const aucunePubDeRoute: Pick<PubsRouteDeps,
-  'publicites' | 'creerPub' | 'publierPub' | 'lirePub' | 'basculerPub' | 'brouillons'> = {
+  'publicites' | 'creerPub' | 'publierPub' | 'lirePub' | 'basculerPub' | 'brouillons' | 'videos' | 'audiences'> = {
   publicites: { lister: async () => [] },
   lirePub: async () => null,
   creerPub: () => { throw new Error('aucunePubDeRoute : creerPub ne devrait pas être appelée'); },
@@ -39,4 +39,15 @@ export const aucunePubDeRoute: Pick<PubsRouteDeps,
     mettreAJour: () => { throw new Error('aucunePubDeRoute : brouillons.mettreAJour ne devrait pas être appelée'); },
     supprimer: () => { throw new Error('aucunePubDeRoute : brouillons.supprimer ne devrait pas être appelée'); },
   },
+  /**
+   * Le dépôt vidéo et les audiences (migration 0187) : tous appellent Meta, donc tous LÈVENT. Un test qui les
+   * atteint le déclare en surchargeant.
+   */
+  videos: {
+    demarrer: () => { throw new Error('aucunePubDeRoute : videos.demarrer ne devrait pas être appelée'); },
+    transferer: () => { throw new Error('aucunePubDeRoute : videos.transferer ne devrait pas être appelée'); },
+    terminer: () => { throw new Error('aucunePubDeRoute : videos.terminer ne devrait pas être appelée'); },
+    etat: () => { throw new Error('aucunePubDeRoute : videos.etat ne devrait pas être appelée'); },
+  },
+  audiences: () => { throw new Error('aucunePubDeRoute : audiences ne devrait pas être appelée'); },
 };

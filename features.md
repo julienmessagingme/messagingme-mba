@@ -3081,11 +3081,25 @@ pourra plus la mettre en pause, ce que l'écran annonce.
 de la vérifier : l'écran emmène le client là où Meta l'affiche plutôt que d'annoncer un verdict qu'il ne
 peut pas établir.
 
-**Créer** : un formulaire court (visuel, texte, titre, message pré-rempli, budget total, dates, pays, âge)
-et une case obligatoire « cette publicité ne relève d'aucune catégorie spéciale ». **Tout est créé EN PAUSE
-chez Meta : rien ne dépense tant que vous n'avez pas publié.** Le budget total et la date de fin sont
+**Créer** : un formulaire court (visuel, texte, titre, message pré-rempli, budget total, dates, pays, âge,
+audiences) et une case obligatoire « cette publicité ne relève d'aucune catégorie spéciale ». **Tout est créé
+EN PAUSE chez Meta : rien ne dépense tant que vous n'avez pas publié.** Le budget total et la date de fin sont
 obligatoires, ce sont eux qui bornent la dépense. Publier demande confirmation en annonçant la dépense
 maximale et les dates.
+
+**Le visuel est une image OU une vidéo.** L'image : JPEG ou PNG, 5 Mo au plus. La vidéo : MP4 ou MOV, **100 Mo
+et 60 secondes au plus**, contrôlés avant l'envoi. Elle est déposée chez Meta dès qu'elle est choisie (rien n'y
+est facturable), avec une barre de progression, puis Meta la prépare : l'écran montre cette attente, et
+« Créer » n'aboutit que sur une vidéo prête. Le cadrage est libre ; l'écran conseille le vertical 9:16 (stories,
+Reels, statut WhatsApp) ou le 4:5 (fil), et Meta choisit les emplacements. La vignette est choisie par Meta
+parmi les images de la vidéo. Un brouillon garde la vidéo (déposée chez Meta), jamais ses octets.
+
+**Audiences** : celles qui existent déjà dans le compte publicitaire, **à inclure ou à exclure**, avec leur taille
+approximative. Seules les audiences prêtes chez Meta se choisissent ; les autres sont montrées avec la raison de
+Meta. 🔴 **Advantage+ audience est laissé à Meta**, et l'écran le dit : les audiences incluses lui servent de
+SUGGESTION (il peut diffuser au-delà), tandis que les exclusions, le lieu et l'âge minimum restent respectés.
+Avec Advantage+, Meta n'accepte qu'un âge minimum entre 18 et 25 ans et fixe le maximum à 65 : le formulaire
+propose donc 18 à 25, et affiche 65. Créer une audience depuis les contacts d'Engage Me n'existe pas encore.
 🔴 **Le bouton Créer n'apparaît que quand créer a un sens**, et sinon l'écran dit ce qui manque : compte ou
 Page pas choisis, accès refusé par Meta, ou compte sans moyen de paiement. Ce dernier cas est le plus
 trompeur : la publicité se créerait, se publierait, et ne partirait jamais.
@@ -3110,7 +3124,7 @@ des clics payés qui n'ont produit aucune conversation, et les noyer dans le tot
 **Chaque publicité porte un lien vers le Gestionnaire de Meta**, sur sa campagne, dès que le compte
 publicitaire est choisi. Il compte : nous n'affichons
 qu'UNE raison quand Meta en rend plusieurs, et c'est le seul chemin vers la liste complète, comme vers ce que
-cet écran ne montre pas (audience, placements, historique de diffusion).
+cet écran ne montre pas (ciblage retenu par Advantage+, placements, historique de diffusion).
 
 🔴 **Une publicité confiée à l'agent de Meta le dit si l'agent a été éteint depuis.** Le choix n'est proposé à la
 création que si l'agent répond, mais il peut s'éteindre ensuite : plus personne ne répond aux prospects, aucun
@@ -3133,8 +3147,9 @@ un agent IA) : une pose de tag en masse ou un import ne qualifient personne.
 **Pause et reprise** depuis l'écran. L'automation reste allumée dans les deux cas : un prospect qui a cliqué
 juste avant la pause peut écrire plusieurs minutes plus tard, et son clic a été payé.
 
-**Ce qui reste dans le Gestionnaire de Meta** : la vidéo, les questions rapides, le ciblage avancé, les
-emplacements, les catégories spéciales, et toute modification d'une publicité déjà créée.
+**Ce qui reste dans le Gestionnaire de Meta** : la création des audiences, les questions rapides, le ciblage
+détaillé (centres d'intérêt, langues), les emplacements, les catégories spéciales, et toute modification d'une
+publicité déjà créée.
 
 ## Serveur MCP : brancher un assistant sur la console (LIVE, 2026-09-01)
 

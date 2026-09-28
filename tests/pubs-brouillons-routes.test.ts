@@ -146,6 +146,86 @@ describe('🔴 le visuel a TROIS états, et il en faut trois', () => {
 });
 
 /**
+ * LA VIDÉO ET LES AUDIENCES D'UN BROUILLON (migration 0187).
+ *
+ * 🔴 La vidéo n'entre JAMAIS en base : seul son identifiant chez Meta voyage. Et un écran d'avant 0187, qui
+ * n'envoie ni vidéo ni audiences, ne doit rien effacer en enregistrant : les clés absentes veulent dire « ne pas
+ * toucher », comme pour l'image.
+ */
+describe('la vidéo et les audiences d’un brouillon', () => {
+  const capture = (): { recu: () => ChampsBrouillon | null; deps: Surcharges } => {
+    let vu: ChampsBrouillon | null = null;
+    return {
+      recu: () => vu,
+      deps: { brouillons: {
+        mettreAJour: async (_t, _id, c) => { vu = c; return true; },
+        creer: async (_t, c) => { vu = c; return 'b-1'; },
+      } },
+    };
+  };
+
+  it('aller : l’identifiant de la vidéo et les deux listes arrivent au store, tels quels', async () => {
+    const c = capture();
+    const srv = app(c.deps);
+    const r = await srv.inject({
+      method: 'POST', url: url(),
+      payload: { video: { id: '1234567890' }, audiencesIncluses: ['111', '222'], audiencesExclues: ['333'] },
+    });
+    expect(r.statusCode).toBe(201);
+    expect(c.recu()).toMatchObject({
+      video: { id: '1234567890' }, audiencesIncluses: ['111', '222'], audiencesExclues: ['333'],
+    });
+  });
+
+  it('retour : la lecture rend ce que le store a gardé', async () => {
+    const lu = {
+      id: 'b-1', nom: '', titre: '', texte: '', accueil: '', messagePreRempli: '', budgetTotal: '', debut: '', fin: '',
+      pays: '', ageMin: '', ageMax: '', tagQualification: '', destination: 'scenario' as const, workflowId: null,
+      aUnVisuel: false, videoId: '1234567890', audiencesIncluses: ['111'], audiencesExclues: ['333'],
+      creeLe: '2026-09-28T08:00:00.000Z', modifieLe: '2026-09-28T08:00:00.000Z', visuel: null,
+    };
+    const srv = app({ brouillons: { lire: async () => lu } });
+    const r = await srv.inject({ method: 'GET', url: url('/b-1') });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().brouillon).toMatchObject({ videoId: '1234567890', audiencesIncluses: ['111'], audiencesExclues: ['333'] });
+  });
+
+  it('🔴 un écran d’avant 0187 (ni vidéo ni audiences dans le corps) ne touche à rien', async () => {
+    const c = capture();
+    const srv = app(c.deps);
+    await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { nom: 'Rentrée' } });
+    expect(c.recu()).not.toHaveProperty('video');
+    expect(c.recu()).not.toHaveProperty('audiencesIncluses');
+    expect(c.recu()).not.toHaveProperty('audiencesExclues');
+  });
+
+  it('`video: null` efface la vidéo', async () => {
+    const c = capture();
+    const srv = app(c.deps);
+    expect((await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { video: null } })).statusCode).toBe(204);
+    expect(c.recu()).toMatchObject({ video: null });
+  });
+
+  it('🔴 une image ET une vidéo dans le même corps : refusé, un brouillon porte un seul visuel', async () => {
+    const srv = app({ brouillons: { creer: async () => 'b-1', mettreAJour: async () => true } });
+    const payload = { image: { type: 'image/png', base64: PNG_1x1 }, video: { id: '123' } };
+    expect((await srv.inject({ method: 'POST', url: url(), payload })).statusCode).toBe(400);
+    expect((await srv.inject({ method: 'PUT', url: url('/b-1'), payload })).statusCode).toBe(400);
+  });
+
+  it('🔴 une audience incluse et exclue, ou un identifiant qui n’en est pas un : refusé', async () => {
+    const srv = app({ brouillons: { creer: async () => 'b-1' } });
+    for (const payload of [
+      { audiencesIncluses: ['111'], audiencesExclues: ['111'] },
+      { audiencesIncluses: ['abc'] },
+      { video: { id: '../me' } },
+    ]) {
+      expect((await srv.inject({ method: 'POST', url: url(), payload })).statusCode, JSON.stringify(payload)).toBe(400);
+    }
+  });
+});
+
+/**
  * 🔴 LE VISUEL D'UN BROUILLON SE LIT DANS SES OCTETS, comme à la création.
  *
  * Ces cas existent parce que la première version ne les tenait pas : elle bornait la LONGUEUR de la

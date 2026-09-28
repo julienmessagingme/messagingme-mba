@@ -1,4 +1,5 @@
-import { payloadCampagne, payloadEnsemble, payloadCrea, payloadPub, type FormulairePub } from '../meta/pubs-payloads';
+import { payloadCampagne, payloadEnsemble, payloadCrea, payloadCreaVideo, payloadPub, type FormulairePub } from '../meta/pubs-payloads';
+import type { AudiencePub, EtatVideo } from '../meta/pubs-creation';
 import type { DestinationPub } from './routage';
 
 /**
@@ -14,6 +15,12 @@ import type { DestinationPub } from './routage';
 export interface ClientCreationPub {
   /** Rend l'empreinte du visuel (`image_hash`). */
   televerserImage(base64: string): Promise<string>;
+  /** L'état d'une vidéo déjà déposée chez Meta. Seul `prete` autorise la créa. */
+  etatVideo(videoId: string): Promise<EtatVideo>;
+  /** L'empreinte de la vignette d'une vidéo, redéposée comme image (jamais l'adresse du CDN de Meta). */
+  vignetteVideo(videoId: string): Promise<string>;
+  /** L'état des audiences demandées, relu chez Meta ; une audience absente de la table est inutilisable. */
+  etatAudiences(ids: readonly string[]): Promise<Map<string, AudiencePub>>;
   creerCampagne(p: Record<string, unknown>): Promise<string>;
   creerEnsemble(p: Record<string, unknown>): Promise<string>;
   creerCrea(p: Record<string, unknown>): Promise<string>;
@@ -60,11 +67,24 @@ export interface DepotCreationPub {
 export type IssueCreation =
   | { sorte: 'creee'; publiciteId: string; campagneId: string }
   | { sorte: 'annulee'; raison: string }
+  /**
+   * Refusée AVANT tout appel qui crée quelque chose, sur une précondition que le client peut réparer (une vidéo
+   * encore en traitement, une audience inutilisable) : ni une panne ni un refus de Meta, un état du parcours.
+   */
+  | { sorte: 'refusee'; code: 'video_pas_prete' | 'audience_inutilisable'; raison: string }
   | { sorte: 'echec_creation'; publiciteId: string; campagneId: string; raison: string };
+
+/**
+ * Le visuel d'une publicité : une image dont on a les octets, OU une vidéo déjà déposée chez Meta, dont on n'a
+ * que l'identifiant. Une union et pas deux champs facultatifs : « les deux » et « aucun » ne se construisent pas.
+ */
+export type VisuelDemande =
+  | { sorte: 'image'; base64: string }
+  | { sorte: 'video'; videoId: string };
 
 export interface DemandeCreation {
   formulaire: FormulairePub;
-  imageBase64: string;
+  visuel: VisuelDemande;
   destination: DestinationPub;
   workflowId: string | null;
   tagQualification: string | null;
@@ -75,10 +95,13 @@ export interface DemandeCreation {
 }
 
 /**
- * Crée la publicité chez Meta, en pause, et range ce qui en revient. Ordre des cinq appels :
- *  1. le visuel, qui ne crée rien de facturable : s'il échoue, la demande est `annulee` ;
+ * Crée la publicité chez Meta, en pause, et range ce qui en revient. Ordre des appels :
+ *  0. les PRÉCONDITIONS, en lecture seule : les audiences demandées sont utilisables, la vidéo est prête. Un refus
+ *     ici est `refusee` : rien n'a été créé, et le client sait quoi réparer ;
+ *  1. le visuel (l'image, ou la vignette de la vidéo), qui ne crée rien de facturable : s'il échoue, la demande
+ *     est `annulee` ;
  *  2. la campagne, racine de tout le reste, donc seule chose à supprimer en cas d'échec ;
- *  3. l'ensemble (budget, dates) ;
+ *  3. l'ensemble (budget, dates, ciblage) ;
  *  4. la créa, puis la publicité.
  *
  * Dès que la campagne existe, tout échec tente de la supprimer ; la ligne dit `echec_creation` dans les deux
@@ -90,9 +113,14 @@ export async function creerLaPublicite(
   client: ClientCreationPub,
   depot: DepotCreationPub,
 ): Promise<IssueCreation> {
+  const refus = await preconditions(d, client);
+  if (refus !== null) return refus;
+
   let imageHash: string;
   try {
-    imageHash = await client.televerserImage(d.imageBase64);
+    imageHash = d.visuel.sorte === 'image'
+      ? await client.televerserImage(d.visuel.base64)
+      : await client.vignetteVideo(d.visuel.videoId);
   } catch (err) {
     // Rien n'existe encore chez Meta : il n'y a rien à défaire, et rien à garder.
     return { sorte: 'annulee', raison: raisonDe(err) };
@@ -135,7 +163,9 @@ export async function creerLaPublicite(
     }));
     await depot.noterIds(publiciteId, { ensembleId });
 
-    const creaId = await client.creerCrea(payloadCrea(d.formulaire, { pageId: d.pageId, imageHash }));
+    const creaId = await client.creerCrea(d.visuel.sorte === 'image'
+      ? payloadCrea(d.formulaire, { pageId: d.pageId, imageHash })
+      : payloadCreaVideo(d.formulaire, { pageId: d.pageId, videoId: d.visuel.videoId, imageHash }));
     await depot.noterIds(publiciteId, { creaId });
 
     const pubId = await client.creerPub(payloadPub(d.formulaire.nom, { ensembleId, creaId }));
@@ -172,6 +202,56 @@ export async function creerLaPublicite(
 /** Le message de Meta, tel quel : c'est son compte, et lui seul peut agir sur ce qu'il refuse. */
 function raisonDe(err: unknown): string {
   return err instanceof Error ? err.message : 'erreur inconnue';
+}
+
+/**
+ * Les préconditions d'une création, lues chez Meta AVANT tout appel qui crée : `null` si tout va, sinon le refus.
+ *
+ * 🔴 La vidéo doit être `prete` : lancer une créa sur une vidéo en traitement, c'est au mieux un refus de Meta
+ * APRÈS avoir créé la campagne (donc un rattrapage), au pire une publicité sans vidéo. On lit, on ne patiente
+ * pas : l'attente vit à l'écran, qui la montre, et une route qui dormirait tiendrait une requête ouverte.
+ *
+ * 🔴 Chaque audience demandée doit être utilisable (`delivery_status` 200) : une audience trop petite ou en
+ * cours de calcul ferait diffuser une publicité qui ne touche personne, ou dont l'exclusion ne vaut rien.
+ */
+async function preconditions(d: DemandeCreation, client: ClientCreationPub): Promise<IssueCreation | null> {
+  const ids = [...d.formulaire.audiencesIncluses, ...d.formulaire.audiencesExclues];
+  if (ids.length > 0) {
+    let etats: Map<string, AudiencePub>;
+    try {
+      etats = await client.etatAudiences(ids);
+    } catch (err) {
+      return { sorte: 'refusee', code: 'audience_inutilisable', raison: raisonDe(err) };
+    }
+    const inutilisables = ids.filter((id) => etats.get(id)?.utilisable !== true);
+    if (inutilisables.length > 0) {
+      const detail = inutilisables.map((id) => {
+        const a = etats.get(id);
+        if (a === undefined) return `${id} (introuvable pour ce compte publicitaire)`;
+        return `${a.nom ?? id}${a.raison !== null ? ` (${a.raison})` : ''}`;
+      }).join(', ');
+      return { sorte: 'refusee', code: 'audience_inutilisable', raison: `audience(s) inutilisable(s) : ${detail}` };
+    }
+  }
+
+  if (d.visuel.sorte === 'video') {
+    let etat: EtatVideo;
+    try {
+      etat = await client.etatVideo(d.visuel.videoId);
+    } catch (err) {
+      return { sorte: 'refusee', code: 'video_pas_prete', raison: raisonDe(err) };
+    }
+    if (etat.etat === 'erreur') {
+      return { sorte: 'refusee', code: 'video_pas_prete', raison: 'Meta n’a pas pu traiter cette vidéo : déposez-en une autre' };
+    }
+    if (etat.etat !== 'prete') {
+      return {
+        sorte: 'refusee', code: 'video_pas_prete',
+        raison: 'la vidéo est encore en traitement chez Meta : réessayez quand elle est prête',
+      };
+    }
+  }
+  return null;
 }
 
 /**

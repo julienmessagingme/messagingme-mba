@@ -111,6 +111,63 @@ describe.skipIf(!url)('brouillons de publicité (Postgres réel)', () => {
     await expect(store.lire(voisinId, id)).resolves.not.toBeNull();
   });
 
+  /**
+   * LA VIDÉO ET LES AUDIENCES (migration 0187). Le SQL de `mettreAJour` porte trois `case when` de plus et deux
+   * tableaux `text[]` : rien d'autre qu'une vraie base ne peut dire qu'ils s'écrivent et se relisent.
+   */
+  it('🔴 l’identifiant de la vidéo et les deux listes d’audiences font l’aller-retour', async () => {
+    const id = await store.creer(tenantId, champs({
+      video: { id: '1234567890' }, audiencesIncluses: ['111', '222'], audiencesExclues: ['333'],
+    }));
+    const lu = await store.lire(tenantId, id);
+    expect(lu?.videoId).toBe('1234567890');
+    expect(lu?.audiencesIncluses).toEqual(['111', '222']);
+    expect(lu?.audiencesExclues).toEqual(['333']);
+    expect(lu?.visuel).toBeNull();
+    // Et la LISTE les porte aussi : ce sont des identifiants, pas des mégaoctets.
+    const ligne = (await store.lister(tenantId)).find((b) => b.id === id);
+    expect(ligne?.videoId).toBe('1234567890');
+  });
+
+  it('🔴 un brouillon d’avant 0187 (ni vidéo ni audiences écrites) se relit avec des valeurs neutres', async () => {
+    const id = await store.creer(tenantId, champs());
+    const lu = await store.lire(tenantId, id);
+    expect(lu?.videoId).toBeNull();
+    expect(lu?.audiencesIncluses).toEqual([]);
+    expect(lu?.audiencesExclues).toEqual([]);
+  });
+
+  it('🔴 poser une vidéo EFFACE l’image, poser une image efface la vidéo : jamais les deux (le CHECK tiendrait)', async () => {
+    const id = await store.creer(tenantId, champs({ visuel: { type: 'image/png', base64: PNG } }));
+    // Clé `visuel` absente (ne pas toucher) mais vidéo posée : l'image doit partir, sinon le CHECK refuserait.
+    await expect(store.mettreAJour(tenantId, id, champs({ video: { id: '42' } }))).resolves.toBe(true);
+    let lu = await store.lire(tenantId, id);
+    expect(lu?.videoId).toBe('42');
+    expect(lu?.visuel).toBeNull();
+    await store.mettreAJour(tenantId, id, champs({ visuel: { type: 'image/png', base64: PNG } }));
+    lu = await store.lire(tenantId, id);
+    expect(lu?.videoId).toBeNull();
+    expect(lu?.visuel?.base64).toBe(PNG);
+  });
+
+  it('une mise à jour SANS vidéo ni audiences les CONSERVE', async () => {
+    const id = await store.creer(tenantId, champs({ video: { id: '42' }, audiencesExclues: ['9'] }));
+    await store.mettreAJour(tenantId, id, champs({ nom: 'Corrigé' }));
+    const lu = await store.lire(tenantId, id);
+    expect(lu?.videoId).toBe('42');
+    expect(lu?.audiencesExclues).toEqual(['9']);
+    await store.mettreAJour(tenantId, id, champs({ video: null, audiencesExclues: [] }));
+    const efface = await store.lire(tenantId, id);
+    expect(efface?.videoId).toBeNull();
+    expect(efface?.audiencesExclues).toEqual([]);
+  });
+
+  it('⚠️ le CHECK de 0187 refuse une écriture directe qui poserait les deux visuels', async () => {
+    const id = await store.creer(tenantId, champs({ visuel: { type: 'image/png', base64: PNG } }));
+    await expect(pool.query('update pubs_brouillons set video_id = $2 where id = $1', [id, '42']))
+      .rejects.toThrow(/pubs_brouillons_un_visuel_chk/);
+  });
+
   it('supprimer rend `true` une fois, puis `false` : la route en fait un 404', async () => {
     const id = await store.creer(tenantId, champs());
     await expect(store.supprimer(tenantId, id)).resolves.toBe(true);

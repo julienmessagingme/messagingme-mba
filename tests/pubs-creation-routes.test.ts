@@ -61,7 +61,8 @@ const corpsValide = (over: Record<string, unknown> = {}): Record<string, unknown
   nom: 'Rentrée', texte: 'Une question ?', titre: 'Écrivez-nous', messagePreRempli: 'Bonjour',
   accueil: 'Bonjour !', budgetTotal: 150,
   debut: '2026-10-01 00:00:00+02:00', fin: '2026-10-31 23:59:59+01:00',
-  pays: ['FR'], villes: [], ageMin: 25, ageMax: 55,
+  // ⚠️ `ageMax: 65` : la forme qu'envoie l'écran d'avant Advantage+ explicite, que la route doit encore accepter.
+  pays: ['FR'], villes: [], ageMin: 25, ageMax: 65,
   destination: 'scenario', workflowId: '11111111-1111-4111-8111-111111111111',
   tagQualification: 'devis', horsCategorieSpeciale: true,
   // ⚠️ UN VRAI EN-TÊTE JPEG : la route lit la SIGNATURE des octets, pas le champ `type`. Un corps de
@@ -122,6 +123,30 @@ describe('POST /pubs : créer une publicité', () => {
     const { srv } = app({ creerPub: async () => creee });
     const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide({ ageMin: 60, ageMax: 30 }) });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('🔴 Advantage+ : un âge minimum hors de 18-25 est refusé AVANT Meta, avec la raison', async () => {
+    // Meta refuserait l'ensemble APRÈS avoir créé la campagne : un rattrapage pour une règle qu'on connaît.
+    let appele = false;
+    const { srv } = app({ creerPub: async () => { appele = true; return creee; } });
+    for (const ageMin of [26, 40]) {
+      const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide({ ageMin }) });
+      expect(res.statusCode, `âge ${ageMin}`).toBe(400);
+      expect(String(res.json().error)).toContain('entre 18 et 25');
+    }
+    expect(appele).toBe(false);
+  });
+
+  it('🔴 Advantage+ : un âge maximum autre que 65 est refusé, et son absence acceptée', async () => {
+    const recus: number[] = [];
+    const { srv } = app({ creerPub: async (_t, d) => { recus.push(d.formulaire.ageMin); return creee; } });
+    const refuse = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide({ ageMax: 55 }) });
+    expect(refuse.statusCode).toBe(400);
+    expect(String(refuse.json().error)).toContain('65');
+    const sansMax = corpsValide();
+    delete sansMax.ageMax;
+    expect((await srv.inject({ method: 'POST', url: urlPubs(), payload: sansMax })).statusCode).toBe(200);
+    expect(recus).toEqual([25]);
   });
 
   it('une zone vide (ni pays ni ville) est refusée', async () => {
@@ -337,6 +362,84 @@ describe('🔴 LE TYPE DU VISUEL SE LIT DANS LES OCTETS', () => {
       payload: corpsValide({ image: { type: 'image/png', base64: png } }),
     });
     expect(res.statusCode).toBe(200);
+  });
+});
+
+/**
+ * LA VIDÉO ET LES AUDIENCES DANS LE CORPS DE LA CRÉATION (migration 0187).
+ *
+ * 🔴 Un visuel, et un seul : une image (ses octets) OU une vidéo (déjà déposée chez Meta). « Les deux » laisserait
+ * la route choisir à la place du client ; « aucun » ferait une créa sans visuel.
+ */
+describe('POST /pubs : la vidéo et les audiences', () => {
+  const sansImage = (over: Record<string, unknown> = {}): Record<string, unknown> => {
+    const c = corpsValide(over);
+    delete c.image;
+    return c;
+  };
+
+  it('une vidéo passe, et la demande porte son identifiant, pas d’octets', async () => {
+    let visuel: unknown = null;
+    const { srv } = app({ creerPub: async (_t, d) => { visuel = d.visuel; return creee; } });
+    const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: sansImage({ video: { id: '1234567890' } }) });
+    expect(res.statusCode).toBe(200);
+    expect(visuel).toEqual({ sorte: 'video', videoId: '1234567890' });
+  });
+
+  it('🔴 une image ET une vidéo : refusé', async () => {
+    const { srv } = app({ creerPub: async () => creee });
+    const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide({ video: { id: '123' } }) });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('🔴 ni image ni vidéo : refusé', async () => {
+    const { srv } = app({ creerPub: async () => creee });
+    expect((await srv.inject({ method: 'POST', url: urlPubs(), payload: sansImage() })).statusCode).toBe(400);
+  });
+
+  it('🔴 un identifiant de vidéo qui n’est pas un identifiant Meta est refusé', async () => {
+    // Il part dans une adresse chez Meta : une forme libre y porterait un chemin de plus.
+    const { srv } = app({ creerPub: async () => creee });
+    for (const id of ['../me', '12a', '']) {
+      const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: sansImage({ video: { id } }) });
+      expect(res.statusCode, `id ${id}`).toBe(400);
+    }
+  });
+
+  it('les audiences passent jusqu’à la demande, incluses et exclues', async () => {
+    let f: { audiencesIncluses: string[]; audiencesExclues: string[] } | null = null;
+    const { srv } = app({ creerPub: async (_t, d) => { f = d.formulaire; return creee; } });
+    const res = await srv.inject({
+      method: 'POST', url: urlPubs(), payload: corpsValide({ audiencesIncluses: ['111'], audiencesExclues: ['222'] }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(f).toMatchObject({ audiencesIncluses: ['111'], audiencesExclues: ['222'] });
+  });
+
+  it('⚠️ sans audience (l’écran d’avant ne les envoie pas), deux listes vides', async () => {
+    let f: { audiencesIncluses: string[]; audiencesExclues: string[] } | null = null;
+    const { srv } = app({ creerPub: async (_t, d) => { f = d.formulaire; return creee; } });
+    await srv.inject({ method: 'POST', url: urlPubs(), payload: corpsValide() });
+    expect(f).toMatchObject({ audiencesIncluses: [], audiencesExclues: [] });
+  });
+
+  it('🔴 une audience à la fois incluse et exclue est refusée', async () => {
+    const { srv } = app({ creerPub: async () => creee });
+    const res = await srv.inject({
+      method: 'POST', url: urlPubs(), payload: corpsValide({ audiencesIncluses: ['111'], audiencesExclues: ['111'] }),
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('🔴 une précondition refusée (vidéo pas prête) sort en 409 avec son code : Cloudflare avalerait un 5xx', async () => {
+    const { srv, traces } = app({
+      creerPub: async () => ({ sorte: 'refusee', code: 'video_pas_prete', raison: 'la vidéo est encore en traitement chez Meta' }),
+    });
+    const res = await srv.inject({ method: 'POST', url: urlPubs(), payload: sansImage({ video: { id: '123' } }) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'video_pas_prete' });
+    // Rien n'a existé chez Meta : rien au journal, comme une création annulée.
+    expect(traces.audit).toEqual([]);
   });
 });
 

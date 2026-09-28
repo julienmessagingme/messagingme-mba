@@ -37,6 +37,49 @@ export async function lireCorpsBorne(res: Response, maxOctets: number): Promise<
     return { texte, octets, trop_gros: octets > plafond, casse: false };
   }
 
+  const lu = await lireFluxBorne(flux, plafond);
+  return {
+    texte: lu.morceaux === null ? '' : Buffer.concat(lu.morceaux).toString('utf8'),
+    octets: lu.octets, trop_gros: lu.trop_gros, casse: lu.casse,
+  };
+}
+
+/** Ce que rend la lecture BINAIRE bornée : les octets, ou `null` quand le plafond ou le flux a lâché. */
+export interface OctetsBornes {
+  octets: Buffer | null;
+  taille: number;
+  trop_gros: boolean;
+  casse: boolean;
+}
+
+/**
+ * La même lecture, pour un corps BINAIRE (une image) : `lireCorpsBorne` décode en UTF-8, ce qui abîme des octets
+ * qui ne sont pas du texte. Mêmes règles : on compte en octets, on s'arrête à celui qui dépasse, on ne tronque pas.
+ * Repli sur `arrayBuffer()` quand la réponse n'expose pas de flux.
+ */
+export async function lireOctetsBornes(res: Response, maxOctets: number): Promise<OctetsBornes> {
+  const plafond = Math.max(0, Math.floor(maxOctets));
+  const flux = res.body as ReadableStream<Uint8Array> | null | undefined;
+
+  if (!flux || typeof flux.getReader !== 'function') {
+    const tampon = await res.arrayBuffer().then((b) => Buffer.from(b)).catch(() => null);
+    if (tampon === null) return { octets: null, taille: 0, trop_gros: false, casse: true };
+    const trop = tampon.length > plafond;
+    return { octets: trop ? null : tampon, taille: tampon.length, trop_gros: trop, casse: false };
+  }
+
+  const lu = await lireFluxBorne(flux, plafond);
+  return {
+    octets: lu.morceaux === null ? null : Buffer.concat(lu.morceaux),
+    taille: lu.octets, trop_gros: lu.trop_gros, casse: lu.casse,
+  };
+}
+
+/** La boucle commune aux deux lectures : `morceaux` vaut `null` dès que la lecture n'est pas utilisable. */
+async function lireFluxBorne(
+  flux: ReadableStream<Uint8Array>,
+  plafond: number,
+): Promise<{ morceaux: Uint8Array[] | null; octets: number; trop_gros: boolean; casse: boolean }> {
   const lecteur = flux.getReader();
   const morceaux: Uint8Array[] = [];
   let octets = 0;
@@ -49,15 +92,14 @@ export async function lireCorpsBorne(res: Response, maxOctets: number): Promise<
       if (octets > plafond) {
         // Sans ce `cancel`, le serveur continuerait d'émettre une réponse qu'on vient de refuser.
         await lecteur.cancel().catch(() => {});
-        return { texte: '', octets, trop_gros: true, casse: false };
+        return { morceaux: null, octets, trop_gros: true, casse: false };
       }
       morceaux.push(value);
     }
   } catch {
-    return { texte: '', octets, trop_gros: false, casse: true };
+    return { morceaux: null, octets, trop_gros: false, casse: true };
   } finally {
     lecteur.releaseLock?.();
   }
-
-  return { texte: Buffer.concat(morceaux).toString('utf8'), octets, trop_gros: false, casse: false };
+  return { morceaux, octets, trop_gros: false, casse: false };
 }

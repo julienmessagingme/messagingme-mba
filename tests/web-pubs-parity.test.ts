@@ -2,8 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../src/meta/pubs-creation';
-import { TAILLE_VISUEL_MAX, TYPES_VISUEL, enPauseChezMeta, lienGestionnaireMeta } from '../web/lib/api-pubs';
+import {
+  TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MAX, AGE_MIN_BAS, AGE_MIN_HAUT, enPauseChezMeta, lienGestionnaireMeta,
+} from '../web/lib/api-pubs';
 import { ISSUES_NON_PRISES_EN_CHARGE } from '../src/pubs/entonnoir';
+import {
+  DUREE_VIDEO_PUB_MAX_S, TAILLE_VIDEO_PUB_MAX, TYPES_VIDEO_PUB, dureeTropLongue as dureeTropLongueServeur,
+} from '../src/pubs/video';
+import { DUREE_VIDEO_MAX_S, TAILLE_VIDEO_MAX, TYPES_VIDEO, dureeTropLongue as dureeTropLongueEcran } from '../web/lib/pub-video';
+import { AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT } from '../src/meta/pubs-payloads';
 
 /**
  * LES BORNES DU VISUEL D'UNE PUBLICITÉ, DES DEUX CÔTÉS.
@@ -34,6 +41,30 @@ describe('parité des bornes du visuel publicitaire', () => {
       expect(liste).not.toContain('image/svg+xml');
       expect(liste).not.toContain('image/gif');
     }
+  });
+});
+
+/**
+ * LES BORNES DE LA VIDÉO ET DE L'ÂGE, DES DEUX CÔTÉS (migration 0187).
+ *
+ * 🔴 Même invariant que le visuel : l'écran refuse AVANT d'envoyer cent mégaoctets, le serveur refuse en dernier
+ * ressort. Un écran qui promettrait 120 Mo ferait envoyer une vidéo que le serveur jette à la fin.
+ */
+describe('parité des bornes de la vidéo et de l’âge', () => {
+  it('le même poids, la même durée, les mêmes types', () => {
+    expect(TAILLE_VIDEO_MAX).toBe(TAILLE_VIDEO_PUB_MAX);
+    expect(DUREE_VIDEO_MAX_S).toBe(DUREE_VIDEO_PUB_MAX_S);
+    expect([...TYPES_VIDEO]).toEqual([...TYPES_VIDEO_PUB]);
+  });
+
+  it('🔴 la même règle d’arrondi de la durée, sur les cas qui la départagent', () => {
+    for (const d of [59.9, 60, 60.03, 60.49, 60.5, 60.51, 61, 90]) {
+      expect(dureeTropLongueEcran(d), `${d} s`).toBe(dureeTropLongueServeur(d));
+    }
+  });
+
+  it('les mêmes bornes d’âge qu’Advantage+ impose', () => {
+    expect([AGE_MIN_BAS, AGE_MIN_HAUT, AGE_MAX]).toEqual([AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT, AGE_MAX_ADVANTAGE]);
   });
 });
 

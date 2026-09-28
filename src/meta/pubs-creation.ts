@@ -1,8 +1,12 @@
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { ClientGraph } from './graph';
 import { sansPrefixeAct } from './pubs';
 import { STATUT_ACTIF, STATUT_PAUSE } from './pubs-payloads';
 import { messageDe } from '../lib/erreur';
+import { fetchPublic } from '../lib/connexion-publique';
+import { lireOctetsBornes } from '../lib/corps-borne';
+import { typeImage } from '../rcs/image';
 
 /**
  * Pilotage d'une publicité par l'API Marketing de Meta : la créer, la publier, la mettre en pause, et suivre ce
@@ -104,6 +108,165 @@ function nombreFini(brut: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Un décalage d'octets du dépôt vidéo. Meta les rend en CHAÎNE dans ses exemples (`"start_offset": "0"`) ; on
+ * accepte aussi un nombre, et rien d'autre : un décalage deviné enverrait le mauvais morceau du fichier.
+ */
+const decalageSchema = z.union([z.string().regex(/^\d{1,15}$/), z.number().int().nonnegative()]).transform(Number);
+
+/** `upload_phase=start` : la session de dépôt, la vidéo qu'elle remplira, et le premier morceau attendu. */
+const debutDepotSchema = z.object({
+  upload_session_id: z.string().min(1),
+  video_id: z.string().min(1),
+  start_offset: decalageSchema,
+  end_offset: decalageSchema,
+});
+
+/** `upload_phase=transfer` : le morceau SUIVANT attendu. Quand les deux décalages sont égaux, tout est reçu. */
+const morceauSuivantSchema = z.object({ start_offset: decalageSchema, end_offset: decalageSchema });
+
+/** `upload_phase=finish` : un succès explicite, ou rien. Un `false` n'est pas une fin de dépôt. */
+const finDepotSchema = z.object({ success: z.literal(true) });
+
+/** `GET /{video-id}?fields=status`. Tout est optionnel : un état absent se lit « pas prête », jamais « prête ». */
+const etatVideoSchema = z.object({
+  status: z.object({
+    video_status: z.string().optional(),
+    processing_progress: z.number().optional(),
+  }).optional(),
+});
+
+/** `GET /{video-id}/thumbnails` : les images que Meta extrait de la vidéo, dont une « préférée ». */
+const vignettesSchema = z.object({
+  data: z.array(z.object({ uri: z.string().optional(), is_preferred: z.boolean().optional() })).optional(),
+});
+
+/** Une audience personnalisée telle que Meta la décrit. Lue UNE PAR UNE : une ligne étrange ne vide pas la liste. */
+const audienceSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().optional(),
+  subtype: z.string().optional(),
+  approximate_count_lower_bound: z.number().optional(),
+  approximate_count_upper_bound: z.number().optional(),
+  delivery_status: z.object({ code: z.number().optional(), description: z.string().optional() }).optional(),
+  operation_status: z.object({ code: z.number().optional(), description: z.string().optional() }).optional(),
+});
+const listeAudiencesSchema = z.object({
+  data: z.array(z.unknown()).optional(),
+  paging: z.object({ next: z.string().optional() }).optional(),
+});
+const lotAudiencesSchema = z.record(z.string(), z.unknown());
+
+/** Les champs lus d'une audience, écrits une fois pour la liste et pour la vérification à la création. */
+const CHAMPS_AUDIENCE = 'id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status';
+
+/**
+ * Combien d'audiences on lit pour l'écran, en une page. Au-delà, l'écran dit que la liste est tronquée plutôt que
+ * d'enchaîner des appels sur un compte dont l'accès à l'API Marketing est « Limited ».
+ */
+const AUDIENCES_PAR_PAGE = 200;
+
+/**
+ * Plafond de durée d'un morceau de vidéo relayé à Meta, bien au-dessus du plafond Graph ordinaire (30 s) : le
+ * morceau arrive du navigateur EN FLUX, donc à la vitesse d'envoi du client, et Meta ne répond qu'une fois tout
+ * reçu. Un plafond de 30 s couperait un morceau de quelques dizaines de mégaoctets sur une connexion ordinaire.
+ */
+const DELAI_MORCEAU_VIDEO_MS = 5 * 60_000;
+
+/** Ce qu'on sait de l'état d'une vidéo chez Meta. `traitement` couvre tout ce qui n'est ni prêt ni en erreur. */
+export interface EtatVideo {
+  etat: 'prete' | 'traitement' | 'erreur';
+  /** `processing_progress`, de 0 à 100, quand Meta le rend. */
+  progression: number | null;
+}
+
+/** Une session de dépôt ouverte, et le morceau que Meta attend (de `debut` inclus à `fin` exclu). */
+export interface DepotVideo {
+  videoId: string;
+  sessionId: string;
+  debut: number;
+  fin: number;
+}
+
+/** Une audience personnalisée du compte publicitaire, telle que l'écran la présente. */
+export interface AudiencePub {
+  id: string;
+  nom: string | null;
+  sousType: string | null;
+  /** Taille approximative : `null` quand Meta ne la donne pas (audience trop petite, ou encore en calcul). */
+  tailleMin: number | null;
+  tailleMax: number | null;
+  /** `delivery_status.code === 200` : la seule audience qu'on laisse cibler. */
+  utilisable: boolean;
+  /** Pourquoi elle ne l'est pas, dans les mots de Meta, quand il les donne. */
+  raison: string | null;
+}
+
+export interface ListeAudiencesPub {
+  audiences: AudiencePub[];
+  /** Meta avait une page de plus : l'écran le dit au lieu de laisser croire que la liste est complète. */
+  tronquee: boolean;
+}
+
+/** D'une ligne brute de Meta à une audience, ou `null` si la ligne n'a pas la forme attendue. */
+function versAudience(brut: unknown): AudiencePub | null {
+  const lu = audienceSchema.safeParse(brut);
+  if (!lu.success) return null;
+  const a = lu.data;
+  const utilisable = a.delivery_status?.code === 200;
+  // Meta rend -1 quand il ne donne pas de taille : ce n'est pas une taille.
+  const taille = (n: number | undefined): number | null => (n !== undefined && Number.isFinite(n) && n >= 0 ? n : null);
+  return {
+    id: a.id,
+    nom: a.name ?? null,
+    sousType: a.subtype ?? null,
+    tailleMin: taille(a.approximate_count_lower_bound),
+    tailleMax: taille(a.approximate_count_upper_bound),
+    utilisable,
+    raison: utilisable ? null : a.delivery_status?.description ?? a.operation_status?.description ?? null,
+  };
+}
+
+/**
+ * Le corps `multipart/form-data` d'un morceau de vidéo, construit EN FLUX : les champs, puis les octets du morceau
+ * tels qu'ils arrivent, puis la fin. 🔴 Rien n'est tamponné : `FormData` exige un `Blob`, donc le morceau entier en
+ * mémoire, ce que cette route existe pour éviter. La longueur totale est connue d'avance (le morceau est borné par
+ * ses décalages), et elle part en `Content-Length` : `fetch` refuse alors d'envoyer un corps qui n'y correspond pas.
+ */
+function corpsMorceau(
+  champs: Readonly<Record<string, string>>,
+  octets: AsyncIterable<Uint8Array>,
+  taille: number,
+): { corps: ReadableStream<Uint8Array>; longueur: number; type: string } {
+  const frontiere = `----engageme${randomBytes(12).toString('hex')}`;
+  const enc = new TextEncoder();
+  const avant = enc.encode(
+    Object.entries(champs)
+      .map(([k, v]) => `--${frontiere}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`)
+      .join('')
+    + `--${frontiere}\r\nContent-Disposition: form-data; name="video_file_chunk"; filename="morceau"\r\n`
+    + 'Content-Type: application/octet-stream\r\n\r\n',
+  );
+  const apres = enc.encode(`\r\n--${frontiere}--\r\n`);
+  const source = octets[Symbol.asyncIterator]();
+  let phase: 'avant' | 'octets' | 'fini' = 'avant';
+  const corps = new ReadableStream<Uint8Array>({
+    async pull(c) {
+      if (phase === 'avant') { c.enqueue(avant); phase = 'octets'; return; }
+      if (phase === 'octets') {
+        const r = await source.next();
+        if (!r.done) { c.enqueue(r.value); return; }
+        c.enqueue(apres);
+        phase = 'fini';
+        return;
+      }
+      c.close();
+    },
+    async cancel(raison) { await source.return?.(raison); },
+  });
+  return { corps, longueur: avant.byteLength + taille + apres.byteLength, type: `multipart/form-data; boundary=${frontiere}` };
+}
+
 /** Découpe une liste en paquets. Fonction pure, nommée pour qu'on n'oublie pas le dernier paquet. */
 function parPaquets<T>(liste: readonly T[], taille: number): T[][] {
   const out: T[][] = [];
@@ -125,6 +288,21 @@ export const TYPES_VISUEL_PUB = ['image/jpeg', 'image/png'] as const;
 export const TAILLE_VISUEL_PUB_MAX = 5 * 1024 * 1024;
 
 export class MetaPubsCreationClient extends ClientGraph {
+  /**
+   * `telecharger` sert à UNE chose : rapatrier la vignette d'une vidéo depuis l'adresse que Meta rend. Cette adresse
+   * n'est pas un hôte fixe, d'où `fetchPublic` (qui refuse une adresse interne à la connexion) plutôt que `fetch` ;
+   * injectable pour qu'un test n'ouvre aucune connexion.
+   */
+  constructor(
+    appId: string,
+    appSecret: string,
+    version: string,
+    baseUrl?: string,
+    private readonly telecharger: typeof fetch = fetchPublic,
+  ) {
+    super(appId, appSecret, version, baseUrl);
+  }
+
   /** L'adresse d'un objet du compte publicitaire, avec son préfixe `act_` remis. */
   private urlCompte(comptePubId: string, chemin: string): string {
     return `${this.baseUrl}/${this.version}/act_${encodeURIComponent(sansPrefixeAct(comptePubId))}/${chemin}`;
@@ -161,6 +339,170 @@ export class MetaPubsCreationClient extends ClientGraph {
     const premiere = Object.values(lu.success ? lu.data.images ?? {} : {})[0];
     if (premiere === undefined) throw new Error('Meta n’a pas rendu d’empreinte pour ce visuel');
     return premiere.hash;
+  }
+
+  /** `POST` d'un formulaire encodé (`upload_phase`) : les deux phases du dépôt vidéo qui ne portent pas d'octets. */
+  private async posterFormulaire(url: string, jeton: string, champs: Record<string, string>): Promise<Record<string, unknown>> {
+    return this.call(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${jeton}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(champs).toString(),
+    });
+  }
+
+  /**
+   * Ouvre le dépôt d'une vidéo (`upload_phase=start`) : Meta rend la session, l'identifiant de la vidéo, et le
+   * premier morceau qu'il attend. Rien de facturable : une vidéo sans publicité ne coûte rien.
+   * ⚠️ La taille des morceaux est décidée par Meta et n'est pas documentée : on relaie ce qu'il demande, sans
+   * supposer de valeur.
+   */
+  async demarrerDepotVideo(comptePubId: string, jeton: string, taille: number): Promise<DepotVideo> {
+    const brut = await this.posterFormulaire(this.urlCompte(comptePubId, 'advideos'), jeton, {
+      upload_phase: 'start', file_size: String(taille),
+    });
+    const lu = debutDepotSchema.safeParse(brut);
+    if (!lu.success) throw new Error('Meta n’a pas ouvert de session de dépôt pour cette vidéo');
+    return {
+      videoId: lu.data.video_id, sessionId: lu.data.upload_session_id,
+      debut: lu.data.start_offset, fin: lu.data.end_offset,
+    };
+  }
+
+  /**
+   * Relaie UN morceau (`upload_phase=transfer`) : les octets arrivent en flux et repartent en flux, sans être
+   * tamponnés (voir `corpsMorceau`). Rend le morceau suivant attendu ; des décalages égaux veulent dire « tout est
+   * reçu ». `taille` est la longueur exacte du morceau : un flux qui en porte plus ou moins fait échouer l'envoi.
+   */
+  async transfererMorceauVideo(
+    comptePubId: string,
+    jeton: string,
+    m: { sessionId: string; debut: number; taille: number; octets: AsyncIterable<Uint8Array> },
+  ): Promise<{ debut: number; fin: number }> {
+    const { corps, longueur, type } = corpsMorceau(
+      { upload_phase: 'transfer', upload_session_id: m.sessionId, start_offset: String(m.debut) },
+      m.octets,
+      m.taille,
+    );
+    // `duplex: 'half'` : exigé par `fetch` pour un corps en flux. Absent du type `RequestInit` du DOM.
+    const init: RequestInit & { duplex: 'half' } = {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${jeton}`, 'Content-Type': type, 'Content-Length': String(longueur) },
+      body: corps,
+      duplex: 'half',
+      signal: AbortSignal.timeout(DELAI_MORCEAU_VIDEO_MS),
+    };
+    const lu = morceauSuivantSchema.safeParse(await this.call(this.urlCompte(comptePubId, 'advideos'), init));
+    if (!lu.success) throw new Error('Meta n’a pas dit quel morceau de la vidéo envoyer ensuite');
+    return { debut: lu.data.start_offset, fin: lu.data.end_offset };
+  }
+
+  /** Clôt le dépôt (`upload_phase=finish`) : Meta commence alors son traitement, asynchrone. */
+  async terminerDepotVideo(comptePubId: string, jeton: string, sessionId: string): Promise<void> {
+    const brut = await this.posterFormulaire(this.urlCompte(comptePubId, 'advideos'), jeton, {
+      upload_phase: 'finish', upload_session_id: sessionId,
+    });
+    if (!finDepotSchema.safeParse(brut).success) throw new Error('Meta n’a pas confirmé la fin du dépôt de la vidéo');
+  }
+
+  /**
+   * L'état d'une vidéo : `ready` seul vaut « prête ». Un état absent ou inconnu se lit `traitement`, jamais
+   * `prete` : la créa ne se lance que sur une vidéo que Meta dit prête. La durée du traitement n'est pas
+   * documentée : c'est l'écran qui attend, borné, et la création qui refuse une vidéo pas prête.
+   */
+  async etatVideo(videoId: string, jeton: string): Promise<EtatVideo> {
+    const brut = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(videoId)}?fields=status`, {
+      headers: { Authorization: `Bearer ${jeton}` },
+    });
+    const lu = etatVideoSchema.safeParse(brut);
+    const s = lu.success ? lu.data.status : undefined;
+    const statut = s?.video_status;
+    const progression = s?.processing_progress;
+    return {
+      etat: statut === 'ready' ? 'prete' : statut === 'error' || statut === 'expired' ? 'erreur' : 'traitement',
+      progression: progression !== undefined && Number.isFinite(progression) ? progression : null,
+    };
+  }
+
+  /**
+   * La vignette d'une vidéo, comme empreinte d'image utilisable par la créa : la vignette PRÉFÉRÉE de Meta (la
+   * première à défaut), rapatriée puis redéposée par `adimages`.
+   * 🔴 On ne cite jamais l'adresse du CDN de Meta dans la créa : elle est signée et périssable, et une créa qui
+   * pointe vers une image expirée perd sa vignette sans que personne ne le voie.
+   */
+  async vignetteVideo(comptePubId: string, jeton: string, videoId: string): Promise<string> {
+    const brut = await this.call(
+      `${this.baseUrl}/${this.version}/${encodeURIComponent(videoId)}/thumbnails?fields=uri,is_preferred`,
+      { headers: { Authorization: `Bearer ${jeton}` } },
+    );
+    const lu = vignettesSchema.safeParse(brut);
+    const liste = (lu.success ? lu.data.data ?? [] : []).filter((v) => typeof v.uri === 'string' && v.uri !== '');
+    const choisie = liste.find((v) => v.is_preferred === true) ?? liste[0];
+    if (choisie?.uri === undefined) throw new Error('Meta n’a rendu aucune vignette pour cette vidéo');
+    return this.televerserImage(comptePubId, jeton, await this.rapatrierVignette(choisie.uri));
+  }
+
+  /**
+   * Rapatrie une vignette depuis l'adresse que Meta a rendue : HTTPS seulement, SANS le jeton du client (l'adresse
+   * est signée, et un jeton n'a rien à faire chez un CDN), bornée au plafond d'un visuel, et vérifiée sur sa
+   * signature : c'est une image qu'on redépose sous l'identité du client.
+   */
+  private async rapatrierVignette(uri: string): Promise<string> {
+    let url: URL;
+    try {
+      url = new URL(uri);
+    } catch {
+      throw new Error('Meta a rendu une adresse de vignette illisible');
+    }
+    if (url.protocol !== 'https:') throw new Error('Meta a rendu une adresse de vignette qui n’est pas en HTTPS');
+    const res = await this.telecharger(url.toString(), { signal: AbortSignal.timeout(DELAI_MORCEAU_VIDEO_MS) });
+    if (!res.ok) throw new Error(`la vignette de la vidéo n’a pas pu être rapatriée (HTTP ${res.status})`);
+    const lu = await lireOctetsBornes(res, TAILLE_VISUEL_PUB_MAX);
+    if (lu.octets === null) {
+      throw new Error(lu.trop_gros ? 'la vignette de la vidéo est trop lourde' : 'la vignette de la vidéo est arrivée incomplète');
+    }
+    const type = typeImage(lu.octets);
+    if (type !== 'image/jpeg' && type !== 'image/png') throw new Error('la vignette de la vidéo n’est pas une image JPEG ou PNG');
+    return lu.octets.toString('base64');
+  }
+
+  /**
+   * Les audiences personnalisées du compte publicitaire, une page de {@link AUDIENCES_PAR_PAGE}. Toutes sont
+   * rendues, utilisables ou non : l'écran ne propose que les premières et dit pourquoi les autres ne le sont pas.
+   * Une audience absente de la liste (pas partagée avec ce compte) ne peut pas être expliquée : l'écran le dit.
+   */
+  async audiences(comptePubId: string, jeton: string): Promise<ListeAudiencesPub> {
+    const qs = new URLSearchParams({ fields: CHAMPS_AUDIENCE, limit: String(AUDIENCES_PAR_PAGE) });
+    const brut = await this.call(`${this.urlCompte(comptePubId, 'customaudiences')}?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${jeton}` },
+    });
+    const lu = listeAudiencesSchema.safeParse(brut);
+    if (!lu.success) return { audiences: [], tronquee: false };
+    return {
+      audiences: (lu.data.data ?? []).map(versAudience).filter((a): a is AudiencePub => a !== null),
+      tronquee: (lu.data.paging?.next ?? '') !== '',
+    };
+  }
+
+  /**
+   * L'état des SEULES audiences qu'une publicité veut cibler, en un appel (`GET /?ids=`), relu à la création.
+   * Une audience que Meta ne rend pas est absente de la table : l'appelant la traite comme inutilisable. Lire ces
+   * identifiants-là plutôt que la liste de l'écran évite qu'une audience au-delà de la première page passe pour
+   * inconnue.
+   */
+  async etatAudiences(ids: readonly string[], jeton: string): Promise<Map<string, AudiencePub>> {
+    const out = new Map<string, AudiencePub>();
+    if (ids.length === 0) return out;
+    const qs = new URLSearchParams({ ids: ids.join(','), fields: CHAMPS_AUDIENCE });
+    const brut = await this.call(`${this.baseUrl}/${this.version}/?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${jeton}` },
+    });
+    const lu = lotAudiencesSchema.safeParse(brut);
+    if (!lu.success) return out;
+    for (const ligne of Object.values(lu.data)) {
+      const a = versAudience(ligne);
+      if (a !== null) out.set(a.id, a);
+    }
+    return out;
   }
 
   async creerCampagne(comptePubId: string, jeton: string, p: Record<string, unknown>): Promise<string> {

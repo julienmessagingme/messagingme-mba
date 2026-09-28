@@ -30,6 +30,14 @@ export interface BrouillonPub {
   /** Y a-t-il un visuel, sans le transporter : la liste ne sélectionne pas les octets, plusieurs mégaoctets
    *  par brouillon à chaque ouverture de l'écran. */
   aUnVisuel: boolean;
+  /**
+   * L'identifiant chez Meta de la vidéo déposée (migration 0187), jamais ses octets. Exclusif du visuel image :
+   * poser l'un efface l'autre.
+   */
+  videoId: string | null;
+  /** Les audiences du compte publicitaire retenues, par identifiant Meta, relues chez Meta à la création. */
+  audiencesIncluses: string[];
+  audiencesExclues: string[];
   creeLe: string;
   modifieLe: string;
 }
@@ -61,12 +69,22 @@ export interface ChampsBrouillon {
    * ré-enregistrement effacerait l'image.
    */
   visuel?: { type: 'image/jpeg' | 'image/png'; base64: string } | null;
+  /**
+   * Même règle à trois sens pour la vidéo : `undefined` = ne pas y toucher, `null` = l'effacer, un objet = la
+   * remplacer. 🔴 Poser une vidéo EFFACE l'image, et poser une image efface la vidéo : un brouillon porte un seul
+   * visuel (le CHECK de 0187 en est la ceinture). La route refuse un corps qui poserait les deux.
+   */
+  video?: { id: string } | null;
+  /** `undefined` = ne pas toucher : un écran qui ne connaît pas encore les audiences ne les efface pas. */
+  audiencesIncluses?: string[];
+  audiencesExclues?: string[];
 }
 
 /** `visuel_octets` est absente de cette liste : c'est la garde (voir `BrouillonPub.aUnVisuel`). */
 const COLS = `id, nom, titre, texte, accueil, message_prerempli, budget_total, debut, fin, pays,
               age_min, age_max, tag_qualification, destination, workflow_id,
-              (visuel_octets is not null) as a_un_visuel, visuel_type, cree_le, modifie_le`;
+              (visuel_octets is not null) as a_un_visuel, visuel_type,
+              video_id, audiences_incluses, audiences_exclues, cree_le, modifie_le`;
 
 interface Brut {
   id: string;
@@ -75,6 +93,7 @@ interface Brut {
   pays: string; age_min: string; age_max: string; tag_qualification: string;
   destination: string; workflow_id: string | null;
   a_un_visuel: boolean; visuel_type: string | null;
+  video_id: string | null; audiences_incluses: string[]; audiences_exclues: string[];
   cree_le: Date; modifie_le: Date;
 }
 
@@ -88,6 +107,9 @@ function versBrouillon(r: Brut): BrouillonPub {
     destination: r.destination === 'agent_meta' ? 'agent_meta' : 'scenario',
     workflowId: r.workflow_id,
     aUnVisuel: r.a_un_visuel,
+    videoId: r.video_id,
+    audiencesIncluses: r.audiences_incluses,
+    audiencesExclues: r.audiences_exclues,
     creeLe: r.cree_le.toISOString(),
     modifieLe: r.modifie_le.toISOString(),
   };
@@ -129,16 +151,21 @@ export class PgBrouillonsPubStore {
       `insert into pubs_brouillons (tenant_id, nom, titre, texte, accueil, message_prerempli,
                                     budget_total, debut, fin, pays, age_min, age_max,
                                     tag_qualification, destination, workflow_id,
-                                    visuel_octets, visuel_type)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                                    visuel_octets, visuel_type, video_id,
+                                    audiences_incluses, audiences_exclues)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+               $19::text[], $20::text[])
        returning id`,
       [
         tenantId, c.nom, c.titre, c.texte, c.accueil, c.messagePreRempli,
         c.budgetTotal, c.debut, c.fin, c.pays, c.ageMin, c.ageMax,
         c.tagQualification, c.destination, c.workflowId,
-        // À la création, `undefined` et `null` disent la même chose : il n'y a rien à conserver.
-        c.visuel ? Buffer.from(c.visuel.base64, 'base64') : null,
-        c.visuel ? c.visuel.type : null,
+        // À la création, `undefined` et `null` disent la même chose : il n'y a rien à conserver. Une vidéo
+        // l'emporte sur une image, comme à la mise à jour (la route refuse de recevoir les deux).
+        c.visuel && !c.video ? Buffer.from(c.visuel.base64, 'base64') : null,
+        c.visuel && !c.video ? c.visuel.type : null,
+        c.video ? c.video.id : null,
+        c.audiencesIncluses ?? [], c.audiencesExclues ?? [],
       ],
     );
     const r = rows[0];
@@ -148,7 +175,12 @@ export class PgBrouillonsPubStore {
 
   /**
    * Met à jour un brouillon ; `false` si l'identifiant n'existe pas dans cet espace. Le visuel ne se met à jour
-   * que s'il est fourni (`c.visuel !== undefined`) : sinon modifier le texte effacerait l'image.
+   * que s'il est fourni (`c.visuel !== undefined`) : sinon modifier le texte effacerait l'image. Même règle pour
+   * la vidéo et les audiences.
+   *
+   * 🔴 L'EXCLUSIVITÉ SE TIENT ICI, EN ÉCRIVANT : une image POSÉE (non nulle) efface la vidéo, une vidéo POSÉE
+   * efface l'image. Sans ça, choisir une vidéo sur un brouillon qui portait une image (clé `image` absente, donc
+   * « ne pas toucher ») violerait le CHECK de 0187 et rendrait une erreur au lieu d'un enregistrement.
    */
   async mettreAJour(tenantId: string, id: string, c: ChampsBrouillon): Promise<boolean> {
     const octets = c.visuel === undefined ? null : c.visuel === null ? null : Buffer.from(c.visuel.base64, 'base64');
@@ -157,8 +189,11 @@ export class PgBrouillonsPubStore {
           set nom = $3, titre = $4, texte = $5, accueil = $6, message_prerempli = $7,
               budget_total = $8, debut = $9, fin = $10, pays = $11, age_min = $12, age_max = $13,
               tag_qualification = $14, destination = $15, workflow_id = $16,
-              visuel_octets = case when $17::boolean then $18::bytea else visuel_octets end,
-              visuel_type   = case when $17::boolean then $19::text  else visuel_type   end,
+              visuel_octets = case when $17::boolean then $18::bytea when $21::boolean then null else visuel_octets end,
+              visuel_type   = case when $17::boolean then $19::text  when $21::boolean then null else visuel_type   end,
+              video_id      = case when $20::boolean then $22::text  when $23::boolean then null else video_id      end,
+              audiences_incluses = case when $24::boolean then $25::text[] else audiences_incluses end,
+              audiences_exclues  = case when $26::boolean then $27::text[] else audiences_exclues  end,
               modifie_le = now()
         where tenant_id = $1 and id = $2`,
       [
@@ -166,6 +201,13 @@ export class PgBrouillonsPubStore {
         c.budgetTotal, c.debut, c.fin, c.pays, c.ageMin, c.ageMax,
         c.tagQualification, c.destination, c.workflowId,
         c.visuel !== undefined, octets, c.visuel ? c.visuel.type : null,
+        // $20 : la vidéo est-elle fournie ; $21 : une vidéo est-elle POSÉE, auquel cas elle efface l'image.
+        c.video !== undefined, c.video !== undefined && c.video !== null,
+        c.video ? c.video.id : null,
+        // $23 : une image est-elle POSÉE, auquel cas elle efface la vidéo.
+        c.visuel !== undefined && c.visuel !== null,
+        c.audiencesIncluses !== undefined, c.audiencesIncluses ?? [],
+        c.audiencesExclues !== undefined, c.audiencesExclues ?? [],
       ],
     );
     return (rowCount ?? 0) > 0;

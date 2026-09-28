@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { creerLaPublicite, publierLaPublicite, PublicationRefusee, type ClientCreationPub, type DemandeCreation, type DepotCreationPub } from '../src/pubs/creation';
 import type { FormulairePub } from '../src/meta/pubs-payloads';
+import type { AudiencePub, EtatVideo } from '../src/meta/pubs-creation';
 
 /**
  * LA SÉQUENCE DE CRÉATION, ET SURTOUT SES CHEMINS D'ÉCHEC.
@@ -18,30 +19,72 @@ import type { FormulairePub } from '../src/meta/pubs-payloads';
 const formulaire: FormulairePub = {
   nom: 'Rentrée', texte: 'txt', titre: 'ttl', messagePreRempli: 'pré', accueil: 'acc',
   budgetTotal: 100, debut: '2026-10-01 00:00:00+02:00', fin: '2026-10-31 23:59:59+01:00',
-  pays: ['FR'], villes: [], ageMin: 18, ageMax: 65,
+  pays: ['FR'], villes: [], ageMin: 18, audiencesIncluses: [], audiencesExclues: [],
 };
 
 const demande = (over: Partial<DemandeCreation> = {}): DemandeCreation => ({
-  formulaire, imageBase64: 'AAAA', destination: 'scenario', workflowId: 'wf-1',
+  formulaire, visuel: { sorte: 'image', base64: 'AAAA' }, destination: 'scenario', workflowId: 'wf-1',
   tagQualification: 'devis', comptePubId: 'act-1', pageId: 'p-1', numeroWhatsApp: '33600000000',
   creePar: 'u-1', ...over,
 });
 
-/** Un faux Meta qui RETIENT ses appels, et qu'on peut faire échouer à l'étape de son choix. */
-function faux(echoueA?: 'image' | 'campagne' | 'ensemble' | 'crea' | 'pub', echecSuppression = false) {
+/** Une audience telle que Meta la décrit, utilisable par défaut. */
+const audience = (id: string, over: Partial<AudiencePub> = {}): AudiencePub => ({
+  id, nom: `Audience ${id}`, sousType: 'CUSTOM', tailleMin: 1000, tailleMax: 1200, utilisable: true, raison: null, ...over,
+});
+
+interface OptionsFaux {
+  /** Ce que Meta dit de la vidéo, ou l'erreur qu'il rend. Prête par défaut. */
+  etatVideo?: EtatVideo | Error;
+  /** Ce que Meta rend des audiences demandées, ou l'erreur. Toutes utilisables par défaut. */
+  audiences?: Map<string, AudiencePub> | Error;
+}
+
+/** Un faux Meta qui RETIENT ses appels (et les charges utiles qui comptent), et qu'on fait échouer où l'on veut. */
+function faux(
+  echoueA?: 'image' | 'vignette' | 'campagne' | 'ensemble' | 'crea' | 'pub',
+  echecSuppression = false,
+  o: OptionsFaux = {},
+) {
   const appels: string[] = [];
+  const charges: { ensemble?: Record<string, unknown>; crea?: Record<string, unknown> } = {};
   const client: ClientCreationPub = {
     televerserImage: async () => { appels.push('image'); if (echoueA === 'image') throw new Error('image refusée'); return 'h-1'; },
+    etatVideo: async (id) => {
+      appels.push(`etat-video:${id}`);
+      const e = o.etatVideo ?? { etat: 'prete', progression: 100 };
+      if (e instanceof Error) throw e;
+      return e;
+    },
+    vignetteVideo: async (id) => {
+      appels.push(`vignette:${id}`);
+      if (echoueA === 'vignette') throw new Error('vignette introuvable');
+      return 'h-vignette';
+    },
+    etatAudiences: async (ids) => {
+      appels.push(`audiences:${ids.join(',')}`);
+      const a = o.audiences ?? new Map(ids.map((id) => [id, audience(id)]));
+      if (a instanceof Error) throw a;
+      return a;
+    },
     creerCampagne: async () => { appels.push('campagne'); if (echoueA === 'campagne') throw new Error('campagne refusée'); return 'c-1'; },
-    creerEnsemble: async () => { appels.push('ensemble'); if (echoueA === 'ensemble') throw new Error('ensemble refusé'); return 'e-1'; },
-    creerCrea: async () => { appels.push('crea'); if (echoueA === 'crea') throw new Error('visuel refusé'); return 'cr-1'; },
+    creerEnsemble: async (p) => {
+      appels.push('ensemble'); charges.ensemble = p;
+      if (echoueA === 'ensemble') throw new Error('ensemble refusé');
+      return 'e-1';
+    },
+    creerCrea: async (p) => {
+      appels.push('crea'); charges.crea = p;
+      if (echoueA === 'crea') throw new Error('visuel refusé');
+      return 'cr-1';
+    },
     creerPub: async () => { appels.push('pub'); if (echoueA === 'pub') throw new Error('publicité refusée'); return 'ad-1'; },
     supprimerCampagne: async (id) => {
       appels.push(`supprime:${id}`);
       if (echecSuppression) throw new Error('suppression refusée');
     },
   };
-  return { client, appels };
+  return { client, appels, charges };
 }
 
 /** Un faux dépôt qui RETIENT ce qui a été écrit, dans l'ordre. */
@@ -189,6 +232,128 @@ describe('elle ne lève JAMAIS', () => {
       await expect(creerLaPublicite(demande(), client, depot)).resolves.toBeTruthy();
       spy.mockRestore();
     }
+  });
+});
+
+/**
+ * UNE PUBLICITÉ VIDÉO : LA VIDÉO EST DÉJÀ CHEZ META, ET ELLE DOIT Y ÊTRE PRÊTE.
+ *
+ * 🔴 CE QUE CES TESTS DÉFENDENT : aucune créa ne se lance sur une vidéo en traitement. Le refus se pose AVANT la
+ * campagne, donc sans rien à défaire ; posé après, il laisserait une campagne à supprimer, et un échec de cette
+ * suppression laisserait un objet chez Meta pour une raison que le client aurait pu attendre dix secondes.
+ */
+describe('une publicité VIDÉO', () => {
+  const video = demande({ visuel: { sorte: 'video', videoId: 'v-9' } });
+
+  it('vérifie que la vidéo est prête, redépose sa vignette, et crée une créa `video_data`', async () => {
+    const { client, appels, charges } = faux();
+    const { depot, ecrits } = fauxDepot();
+    const issue = await creerLaPublicite(video, client, depot);
+    expect(issue).toEqual({ sorte: 'creee', publiciteId: 'pub-local-1', campagneId: 'c-1' });
+    expect(appels).toEqual(['etat-video:v-9', 'vignette:v-9', 'campagne', 'ensemble', 'crea', 'pub']);
+    const spec = (charges.crea as { object_story_spec: Record<string, { video_id?: string; image_hash?: string }> }).object_story_spec;
+    expect(spec.video_data?.video_id).toBe('v-9');
+    expect(spec.video_data?.image_hash).toBe('h-vignette');
+    expect(spec).not.toHaveProperty('link_data');
+    expect(ecrits.at(-1)).toBe('etat:prete');
+  });
+
+  for (const [cas, etat] of [
+    ['en traitement', { etat: 'traitement', progression: 40 }],
+    ['en erreur chez Meta', { etat: 'erreur', progression: null }],
+  ] as const) {
+    it(`🔴 vidéo ${cas} : refusée AVANT la campagne, rien n’est créé ni rangé`, async () => {
+      const { client, appels } = faux(undefined, false, { etatVideo: etat });
+      const { depot, ecrits } = fauxDepot();
+      const issue = await creerLaPublicite(video, client, depot);
+      expect(issue.sorte).toBe('refusee');
+      expect(issue.sorte === 'refusee' && issue.code).toBe('video_pas_prete');
+      // CE QUI PART compte : ni vignette, ni campagne, ni ligne chez nous.
+      expect(appels).toEqual(['etat-video:v-9']);
+      expect(ecrits).toEqual([]);
+    });
+  }
+
+  it('⚠️ l’état illisible (Meta ne répond pas) ne vaut pas « prête » : refusée aussi', async () => {
+    const { client, appels } = faux(undefined, false, { etatVideo: new Error('Graph 500 : erreur') });
+    const issue = await creerLaPublicite(video, client, fauxDepot().depot);
+    expect(issue.sorte).toBe('refusee');
+    expect(appels).toEqual(['etat-video:v-9']);
+  });
+
+  it('la vignette introuvable : annulée, rien n’existe chez Meta', async () => {
+    const { client, appels } = faux('vignette');
+    const { depot, ecrits } = fauxDepot();
+    const issue = await creerLaPublicite(video, client, depot);
+    expect(issue).toEqual({ sorte: 'annulee', raison: 'vignette introuvable' });
+    expect(appels).not.toContain('campagne');
+    expect(ecrits).toEqual([]);
+  });
+
+  for (const etape of ['ensemble', 'crea', 'pub'] as const) {
+    it(`🔴 le rattrapage est IDENTIQUE en vidéo : échec sur « ${etape} », campagne supprimée`, async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { client, appels } = faux(etape);
+      const { depot, ecrits } = fauxDepot();
+      const issue = await creerLaPublicite(video, client, depot);
+      spy.mockRestore();
+      expect(issue.sorte).toBe('echec_creation');
+      expect(appels).toContain('supprime:c-1');
+      expect(ecrits).toContain('etat:echec_creation');
+    });
+  }
+
+  it('⚠️ une publicité IMAGE ne demande jamais l’état d’une vidéo', async () => {
+    const { client, appels } = faux();
+    await creerLaPublicite(demande(), client, fauxDepot().depot);
+    expect(appels.some((a) => a.startsWith('etat-video') || a.startsWith('vignette'))).toBe(false);
+  });
+});
+
+/**
+ * LES AUDIENCES : RELUES CHEZ META AVANT DE CRÉER QUOI QUE CE SOIT.
+ *
+ * 🔴 Une audience inutilisable (trop petite, en calcul, supprimée) ferait diffuser une publicité qui ne touche
+ * personne, ou dont l'EXCLUSION ne vaut rien : le client paierait pour toucher ceux qu'il voulait écarter.
+ */
+describe('les audiences', () => {
+  const avec = (incluses: string[], exclues: string[]) =>
+    demande({ formulaire: { ...formulaire, audiencesIncluses: incluses, audiencesExclues: exclues } });
+
+  it('toutes utilisables : la création part, et l’ensemble les porte chacune sous SA clé', async () => {
+    const { client, appels, charges } = faux();
+    const issue = await creerLaPublicite(avec(['111'], ['222']), client, fauxDepot().depot);
+    expect(issue.sorte).toBe('creee');
+    expect(appels[0]).toBe('audiences:111,222');
+    const t = (charges.ensemble as { targeting: Record<string, unknown> }).targeting;
+    expect(t.custom_audiences).toEqual([{ id: '111' }]);
+    expect(t.excluded_custom_audiences).toEqual([{ id: '222' }]);
+    expect(t.targeting_automation).toEqual({ advantage_audience: 1 });
+  });
+
+  it('🔴 une audience inutilisable : refusée AVANT la campagne, avec le mot de Meta', async () => {
+    const { client, appels } = faux(undefined, false, {
+      audiences: new Map([['111', audience('111')], ['222', audience('222', { utilisable: false, raison: 'Audience trop petite' })]]),
+    });
+    const { depot, ecrits } = fauxDepot();
+    const issue = await creerLaPublicite(avec(['111'], ['222']), client, depot);
+    expect(issue.sorte).toBe('refusee');
+    expect(issue.sorte === 'refusee' && issue.code).toBe('audience_inutilisable');
+    expect(issue.sorte === 'refusee' && issue.raison).toContain('Audience trop petite');
+    expect(appels).toEqual(['audiences:111,222']);
+    expect(ecrits).toEqual([]);
+  });
+
+  it('🔴 une audience que Meta ne rend pas : refusée aussi, et nommée', async () => {
+    const { client } = faux(undefined, false, { audiences: new Map([['111', audience('111')]]) });
+    const issue = await creerLaPublicite(avec(['111', '999'], []), client, fauxDepot().depot);
+    expect(issue.sorte === 'refusee' && issue.raison).toContain('999');
+  });
+
+  it('⚠️ sans audience, Meta n’est pas interrogé pour rien', async () => {
+    const { client, appels } = faux();
+    await creerLaPublicite(demande(), client, fauxDepot().depot);
+    expect(appels.some((a) => a.startsWith('audiences'))).toBe(false);
   });
 });
 
