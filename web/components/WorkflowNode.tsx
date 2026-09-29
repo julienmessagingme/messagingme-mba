@@ -160,6 +160,13 @@ function WFNode({ id, data, selected }: NodeProps) {
         ? (data.quickReplies as unknown[]).map((q): NodeButton => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
         : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
+  // Aperçu d'un template CLASSIQUE (le carousel a le sien) : en-tête puis début du texte, lus sur le template
+  // vivant pour la même raison que les cartes (l'URL d'en-tête expire). Rien quand le template n'a ni l'un ni
+  // l'autre : un cadre vide ne dirait rien de plus que le nom déjà affiché.
+  const apercuEntete = !showCarousel && live?.headerFormat && live.headerFormat !== 'TEXT' ? live.headerFormat : null;
+  const apercuTitre = !showCarousel && live?.headerFormat === 'TEXT' ? String(live.headerText ?? '').trim() : '';
+  const apercuTexte = !showCarousel && live ? String(live.body ?? '').trim() : '';
+  const apercuModele = apercuEntete !== null || apercuTitre !== '' || apercuTexte !== '';
   // Le visuel du bloc, montré dans la miniature. MÊME champ pour le message rapide et le message RCS (un seul
   // téléversement, un seul champ d'écran), donc une seule lecture ici.
   const visuel = String(data.imageUrl ?? '').trim();
@@ -315,6 +322,36 @@ function WFNode({ id, data, selected }: NodeProps) {
               // efface l'image et le cadre gris reste, ce qui dit « il y a un visuel, il ne se charge pas ».
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
             />
+          </div>
+        </div>
+      )}
+      {/* Aperçu d'un template classique, format compact (choisi par Julien le 2026-09-29) : la bande de
+          l'en-tête et trois lignes de texte. Les boutons ne sont pas répétés : ils sont juste en dessous, sur
+          les lignes d'où partent les flèches. */}
+      {apercuModele && (
+        <div data-testid="node-apercu-template" className="border-t border-ink-200 p-1.5" style={{ backgroundColor: '#efeae2' }}>
+          <div className="overflow-hidden rounded-controle rounded-tl-none bg-white shadow-mm-sm">
+            {apercuEntete && (
+              <div className="flex h-14 w-full items-center justify-center bg-ink-100 text-[9px] text-ink-500">
+                {apercuEntete === 'IMAGE' && live?.headerMediaUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={live.headerMediaUrl}
+                    alt={t('En-tête du template', 'Template header')}
+                    referrerPolicy="no-referrer"
+                    data-testid="node-apercu-entete"
+                    className="h-full w-full object-cover"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : apercuEntete === 'VIDEO' ? t('vidéo', 'video') : apercuEntete === 'DOCUMENT' ? t('document', 'document') : t('image', 'image')}
+              </div>
+            )}
+            {(apercuTitre !== '' || apercuTexte !== '') && (
+              <div className="px-1.5 py-1 text-[9px] leading-snug text-ink-900">
+                {apercuTitre !== '' && <div className="truncate font-semibold">{apercuTitre}</div>}
+                {apercuTexte !== '' && <span className="line-clamp-3 whitespace-pre-line">{apercuTexte}</span>}
+              </div>
+            )}
           </div>
         </div>
       )}
