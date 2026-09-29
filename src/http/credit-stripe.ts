@@ -183,11 +183,15 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
     const meta = metadonneesSchema.safeParse(session.metadata ?? {});
     // Pas une de nos recharges : 200 sans effet, sinon Stripe rejouerait un événement qui ne nous concerne pas.
     if (session.mode !== 'payment' || !meta.success) return reply.code(200).send({ recu: true });
-    // Paiement différé pas encore arrivé : `async_payment_succeeded` viendra.
-    if (session.payment_status !== 'paid') return reply.code(200).send({ recu: true });
+    // Paiement différé pas encore arrivé : `async_payment_succeeded` viendra. `no_payment_required` est une session
+    // réglée à zéro par un code promo à 100 % : elle crédite, comme un paiement (décision de Julien du 2026-09-29).
+    if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+      return reply.code(200).send({ recu: true });
+    }
 
-    // 4. 🔴 Le recoupement : l'offre des métadonnées doit correspondre à ce que Stripe a ENCAISSÉ hors taxe, en euros,
-    //    pour cet espace. Sinon aucun crédit, et une trace en erreur : rejouer n'y changerait rien, donc 200.
+    // 4. 🔴 Le recoupement : l'offre des métadonnées doit correspondre au prix HT de la ligne, en euros, pour cet
+    //    espace. `amount_subtotal` est le prix AVANT remise : un code promo ne change pas le crédit, qui reste plein
+    //    (décision de Julien du 2026-09-29), et un prix Stripe qui ne vaut pas l'offre est toujours refusé. Sinon aucun crédit, et une trace en erreur : rejouer n'y changerait rien, donc 200.
     const { tenant_id: tenantId, offre } = meta.data;
     const attendu = definitionOffre(offre).htCentimes;
     const reference = session.client_reference_id ?? null;

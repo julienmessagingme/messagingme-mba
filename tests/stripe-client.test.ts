@@ -55,6 +55,7 @@ describe('créer une session Checkout', () => {
       'customer_update[address]': 'auto',
       billing_address_collection: 'required',
       'invoice_creation[enabled]': 'true',
+      allow_promotion_codes: 'true',
       'metadata[tenant_id]': TENANT,
       'metadata[offre]': 'refill_50',
       client_reference_id: TENANT,

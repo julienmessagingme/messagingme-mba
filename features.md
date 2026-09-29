@@ -1145,8 +1145,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   sa première traduction s'il a du crédit.
   Un espace sans crédit ne traduit pas, et l'écran le dit au lieu de rester muet. Il distingue **trois
   causes** : crédit épuisé (un administrateur peut le recharger, et le bandeau porte le lien « Recharger le
-  crédit » vers Paramètres, Crédit IA, montré à tous : la page dit à un non-admin de demander à un
-  administrateur), traduction momentanément indisponible
+  crédit » vers Paramètres, Crédit IA, montré aux admins seulement : la page Crédit IA renvoie un non-admin vers
+  l'Inbox, et la phrase du bandeau lui dit déjà qu'un administrateur recharge), traduction momentanément indisponible
   (l'espace a du crédit, recharger n'y changerait rien) ou traduction pas encore activée sur le serveur
   (rien à faire côté client).
 
@@ -2817,6 +2817,9 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   facturation et, s'il le veut, son numéro de TVA. La TVA s'ajoute au paiement ; 50 € HT payés donnent 50 € de
   crédit. **Stripe émet la facture** et l'envoie par e-mail. Le crédit n'expire pas et n'est pas remboursé.
   - Le client choisit une **offre**, jamais un montant : le prix vit chez Stripe, le crédit accordé chez nous.
+  - **Code promo** (2026-09-29) : la page de Stripe porte un champ « code promo », ouvert à tous. Un code se crée
+    dans le tableau de bord Stripe (donc par nous seuls) et donne le **crédit plein** : Refill 50 € avec -20 %,
+    40 € HT payés, 50 € de crédit. Un code à 100 % crédite sans paiement.
   - **Au retour**, l'écran dit « paiement reçu : le crédit arrive dans quelques secondes » et relit le solde
     jusqu'à le voir monter. 🔴 **Le retour ne crédite rien** : seul l'avis signé que Stripe nous envoie crédite,
     une fois par paiement, même si Stripe le renvoie plusieurs fois. Un paiement abandonné le dit, sans rien

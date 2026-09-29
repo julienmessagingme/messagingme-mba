@@ -142,6 +142,9 @@ export interface DemandeSession {
  * et l'adresse de facturation sont demandés au client et recopiés sur son client Stripe, et Stripe émet la facture.
  * Les métadonnées (`tenant_id`, `offre`) et `client_reference_id` sont ce que le webhook relira : sans elles, une
  * session n'est pas une recharge.
+ *
+ * Le champ « code promo » est ouvert à tous (décision de Julien du 2026-09-29) : un code se crée dans le tableau de
+ * bord Stripe, donc par nous seuls, et il donne le crédit PLEIN de l'offre (voir le recoupement du webhook).
  */
 export async function creerSessionCheckout(transport: TransportStripe, d: DemandeSession): Promise<{ id: string; url: string }> {
   return appeler(transport, 'session', '/checkout/sessions', {
@@ -155,6 +158,7 @@ export async function creerSessionCheckout(transport: TransportStripe, d: Demand
     'customer_update[address]': 'auto',
     billing_address_collection: 'required',
     'invoice_creation[enabled]': 'true',
+    allow_promotion_codes: 'true',
     'metadata[tenant_id]': d.tenantId,
     'metadata[offre]': d.offre,
     client_reference_id: d.tenantId,

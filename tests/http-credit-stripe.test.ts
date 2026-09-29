@@ -274,6 +274,17 @@ describe('POST /webhooks/stripe', () => {
     await w.srv.close();
   });
 
+  it('🔴 un code promo à 100 % (aucun paiement requis) crédite le PLEIN de l’offre, une seule fois', async () => {
+    // Décision de Julien du 2026-09-29 : le code est un geste commercial, il ne réduit pas le crédit. Stripe garde le
+    // prix avant remise dans `amount_subtotal`, c'est lui que le recoupement compare.
+    const w = webhook();
+    const gratuite = session({ id: 'cs_promo', payment_status: 'no_payment_required', amount_total: 0 });
+    expect((await envoyer(w.srv, evenement(gratuite))).statusCode).toBe(200);
+    expect((await envoyer(w.srv, evenement(gratuite))).statusCode).toBe(200);
+    expect(w.paiements.credits).toHaveLength(1);
+    await w.srv.close();
+  });
+
   it('🔴 signature FAUSSE ou ABSENTE : 401, et le corps n’est jamais lu', async () => {
     const w = webhook();
     const espion = vi.spyOn(w.paiements, 'crediterPaiement');

@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 359c6e
+source_empreinte: 431ce7
 ---
 # Répondre à un client dans l'Inbox
 
@@ -83,7 +83,7 @@ par WhatsApp est le texte, le traduire le ferait refuser.
 
 ⚠️ La traduction est payée par le crédit de votre espace, contrairement à la transcription et à cette aide.
 Chaque traduction en est décomptée, au même tarif que les agents IA, et le journal du crédit les regroupe en
-une ligne par jour. Sans crédit, le fil reste dans sa langue d'origine et l'écran vous le dit, avec un lien
-« Recharger le crédit » : on recharge depuis Paramètres, Crédit IA (si vous n'êtes pas administrateur, la page
-vous dira de le demander à l'un d'eux). S'il dit que la traduction est momentanément indisponible, votre
+une ligne par jour. Sans crédit, le fil reste dans sa langue d'origine et l'écran vous le dit. Un administrateur y trouve le
+lien « Recharger le crédit », vers Paramètres, Crédit IA ; si vous n'êtes pas administrateur, demandez à l'un
+d'eux de le recharger. S'il dit que la traduction est momentanément indisponible, votre
 crédit n'est pas en cause, réessayez un peu plus tard.

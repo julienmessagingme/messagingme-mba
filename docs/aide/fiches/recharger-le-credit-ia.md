@@ -1,7 +1,7 @@
 ---
 ecran: parametres-credit
 source_section: Crédit IA (menu « Paramètres » > Crédit IA)
-source_empreinte: 9240c7
+source_empreinte: 2216d5
 ---
 # Recharger le crédit IA
 
@@ -14,6 +14,9 @@ Crédit IA** ; l'écran est réservé aux administrateurs.
 de Stripe, où vous saisissez votre carte, votre raison sociale, votre adresse de facturation et, si vous le
 souhaitez, votre numéro de TVA. La TVA s'ajoute au paiement : 50 € hors taxe payés donnent 50 € de crédit.
 Stripe vous envoie la facture par e-mail. Le crédit n'expire pas et n'est pas remboursé.
+
+Si nous vous avons remis un **code promo**, saisissez-le sur la page de Stripe : il réduit le prix, pas le
+crédit. Avec 20 % de remise sur la recharge de 50 €, vous payez 40 € hors taxe et recevez 50 € de crédit.
 
 **Au retour**, l'écran vous dit que le paiement est reçu et que le crédit arrive dans quelques secondes, puis
 il relit le solde jusqu'à le voir monter. Si vous abandonnez le paiement, rien n'est débité. Si l'écran dit que
