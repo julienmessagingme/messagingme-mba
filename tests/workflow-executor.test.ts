@@ -1773,3 +1773,48 @@ describe('resume : échéance d inactivité sur un bloc agent (tâche 17)', () =
     expect(clotures).toEqual([]);
   });
 });
+
+describe('WorkflowExecutor : le fil repris juste après un modèle (2026-09-29)', () => {
+  /**
+   * Mesuré le 2026-09-29 : le fil pris au lancement ne survit pas à l'envoi d'un modèle chez Meta, et la réponse du
+   * contact part chez son agent. On le reprend donc juste après chaque modèle PARTI, et seulement après un modèle.
+   */
+  const graphe = (premier: 'template' | 'quick'): WorkflowGraph => ({
+    nodes: premier === 'template'
+      ? [n('tpl', 'template', { templateName: 'promo', language: 'fr', templateButtons: [{ type: 'QUICK_REPLY', text: 'Oui' }] }), n('ib', 'inbox')]
+      : [n('qm', 'quick_message', { body: 'Bonjour', quickReplies: ['Oui'] }), n('ib', 'inbox')],
+    edges: [eh('e1', premier === 'template' ? 'tpl' : 'qm', 'ib', 'btn:0')],
+  });
+
+  it('🔴 un modèle parti : le fil est repris une fois, pour ce contact', async () => {
+    const retenues: string[] = [];
+    const { ex } = make(graphe('template'), { retenirApresModele: async (t, w) => { retenues.push(`${t}:${w}`); } });
+    await ex.start('t1', 'wf1', graphe('template'), { waId: '33600', contactId: 'c1' });
+    expect(retenues).toEqual(['t1:33600']);
+  });
+
+  it('un modèle REFUSÉ n’est pas parti : rien à reprendre', async () => {
+    const retenues: string[] = [];
+    const { ex } = make(graphe('template'), {
+      sendTemplate: async () => 'template introuvable',
+      retenirApresModele: async (t, w) => { retenues.push(`${t}:${w}`); },
+    });
+    await ex.start('t1', 'wf1', graphe('template'), { waId: '33600', contactId: 'c1' }).catch(() => {});
+    expect(retenues).toEqual([]);
+  });
+
+  it('un message libre garde le fil de lui-même : aucune reprise', async () => {
+    const retenues: string[] = [];
+    const { ex } = make(graphe('quick'), { retenirApresModele: async (t, w) => { retenues.push(`${t}:${w}`); } });
+    await ex.start('t1', 'wf1', graphe('quick'), { waId: '33600', contactId: 'c1' });
+    expect(retenues).toEqual([]);
+  });
+
+  it('une reprise qui échoue ne fait pas échouer le parcours', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { ex, runs } = make(graphe('template'), { retenirApresModele: async () => { throw new Error('Meta injoignable'); } });
+    await ex.start('t1', 'wf1', graphe('template'), { waId: '33600', contactId: 'c1' });
+    expect(runs.run?.status).toBe('waiting');
+    vi.restoreAllMocks();
+  });
+});

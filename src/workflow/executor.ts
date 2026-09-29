@@ -242,6 +242,11 @@ export interface WorkflowExecutorDeps {
    */
   reclaimControl: (tenantId: string, waId: string, opts?: { saufOperateur?: boolean }) => Promise<boolean | void | 'operateur'>;
   /**
+   * Après l'envoi d'un MODÈLE : reprendre le fil chez Meta avant la réponse du contact
+   * (`ControleDuFil.retenirApresNotreModele`, qui dit la mesure). Requis ; fixture : `aucuneRetenue`.
+   */
+  retenirApresModele: (tenantId: string, waId: string) => Promise<void>;
+  /**
    * Le scénario a-t-il le droit d'écrire dans ce fil ? false dès qu'un opérateur (`app_human`) ou l'agent de
    * Meta (`mba`) le détient. Requis ; fixtures : `filToujoursANous`.
    */
@@ -646,6 +651,16 @@ export class WorkflowExecutor {
         // qu'on bascule de canal). Pour la question, l'oublier gèlerait le parcours : la réponse arriverait par
         // WhatsApp sur un run marqué `rcs`, et la garde d'étanchéité l'ignorerait.
         if (!rate && (a.kind === 'sendTemplate' || a.kind === 'sendFlow' || a.kind === 'sendQuestion')) canal = 'whatsapp';
+        // 🔴 Un modèle parti rend le fil à l'agent de Meta (mesuré le 2026-09-29) : on le reprend AVANT la réponse du
+        // contact, sinon elle part chez lui. Best-effort : le modèle est parti, un refus ne fait pas échouer le parcours.
+        if (!rate && a.kind === 'sendTemplate') {
+          try {
+            await this.deps.retenirApresModele(tenantId, waId);
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error(`workflow ${workflowId}: fil non repris après le modèle pour ${waId}:`, messageDe(err));
+          }
+        }
         if (rate) {
           if (refus === null) refus = dit;
         } else {

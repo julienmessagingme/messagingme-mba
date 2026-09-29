@@ -27,6 +27,8 @@ import { FakeRcsProvider } from '../src/rcs/fake';
 export const filToujoursANous = async (): Promise<boolean> => true;
 /** `reclaimControl` absent : aucune reprise tentée, donc aucune reprise refusée (`void` = succès). */
 export const repriseSansObjection = async (): Promise<void> => {};
+/** Aucune reprise du fil après un modèle (le comportement d'avant le 2026-09-29) : le test ne parle pas du fil. */
+export const aucuneRetenue = async (): Promise<void> => {};
 /** `isWindowOpen` absent : la fenêtre était considérée FERMÉE (fail-closed). Surtout pas `true`. */
 export const fenetreToujoursFermee = async (): Promise<boolean> => false;
 /** `evalContext` absent : aucun contexte, donc conditions sur « faux » et valeur dynamique vide. */
@@ -113,6 +115,7 @@ export function avecGardesDEtatInertes<R extends Pick<Runs, 'setState'> & Partia
 export const depsInertes = {
   mayAct: filToujoursANous,
   reclaimControl: repriseSansObjection,
+  retenirApresModele: aucuneRetenue,
   isWindowOpen: fenetreToujoursFermee,
   evalContext: contexteIntrouvable,
   mbaActifPour: agentDeMetaEteint,

@@ -169,6 +169,15 @@ export interface ControleDuFil {
    */
   reprendreSurNotreBouton(tenantId: string, waId: string): Promise<boolean>;
   /**
+   * Un scénario vient d'envoyer un MODÈLE : reprendre le fil chez Meta tout de suite, avant la réponse du contact.
+   * Mesuré le 2026-09-29, trois fois de suite : le fil pris au lancement ne survit pas à l'envoi d'un modèle, la
+   * réponse arrive chez l'agent de Meta (`standby`), et le reprendre à ce moment-là lui fait envoyer son message de
+   * passation au client. Un message libre, lui, garde le fil (les boutons d'un scénario sans modèle marchaient).
+   * Seulement sur un fil que tient le scénario (`app_workflow`) et si l'agent est allumé ; rien n'est écrit chez
+   * nous, la colonne dit déjà `app_workflow`. Un refus de Meta est journalisé, jamais levé.
+   */
+  retenirApresNotreModele(tenantId: string, waId: string): Promise<void>;
+  /**
    * La réponse à une campagne dont le devenir est « Inbox » : prendre le fil pour l'équipe (`app_human`), pour
    * qu'aucun robot ne réponde et que la conversation entre dans « À traiter ». Un fil déjà tenu par un opérateur
    * reste tel quel. `false` = Meta a refusé de céder le fil, son agent répond. `cause` : la campagne, telle que la
@@ -348,6 +357,12 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
       await depot.setControlOwner(tenantId, waId, 'app_workflow', { par: CAUSES.boutonDuScenario, effacerEscalade: true });
       return true;
+    },
+
+    async retenirApresNotreModele(tenantId, waId) {
+      if (!(await mbaAllume(tenantId))) return;
+      if ((await depot.getControlOwner(tenantId, waId)) !== 'app_workflow') return;
+      await prendreAvecUnRejeu(tenantId, waId);
     },
 
     async prendrePourLEquipe(tenantId, waId, cause) {
