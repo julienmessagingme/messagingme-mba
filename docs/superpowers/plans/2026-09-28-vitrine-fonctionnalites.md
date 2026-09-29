@@ -8,6 +8,8 @@ menu « Fonctionnalités » dans l'en-tête collant.
 
 **En direct, sans agent.** Ce sont des pages statiques de la vitrine : isolées de la console et de l'API, sans
 aucun chemin que la production emprunte (ni envoi, ni donnée), réversibles par un retour arrière du commit.
+L’essai réel qui clôt la feature est celui de la section « Essai réel qui clôt », plus bas : Julien parcourt
+les deux pages en production, sur ordinateur et sur téléphone.
 
 ## Décisions de Julien (cadrage du 2026-09-28)
 
