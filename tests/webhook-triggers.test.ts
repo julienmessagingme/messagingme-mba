@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { processTriggers } from '../src/webhooks/triggers';
-import { aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
+import { aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucunNumeroDelie, aucuneCorrectionDuDetenteur, aucuneRepriseSurBouton, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 import type { AutomationEvent } from '../src/automation/match';
 
@@ -174,7 +174,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
       inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
-      workflowAdvance: { advance: async (_t, waId) => { advanced.push(waId); } },
+      workflowAdvance: { reprendreSurNotreBouton: aucuneRepriseSurBouton, advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
       triggers: { run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
       testTokens: {
@@ -200,7 +200,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
       inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
-      workflowAdvance: { advance: async (_t, waId) => { advanced.push(waId); } },
+      workflowAdvance: { reprendreSurNotreBouton: aucuneRepriseSurBouton, advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
       triggers: { run: async (_t, ev) => { triggered.push(ev.waId); return demarres; } },
       testTokens: {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processWorkflowAdvance } from '../src/webhooks/workflow-advance';
-import { entrantsDe } from './webhook-fixtures';
+import { aucuneRepriseSurBouton, entrantsDe } from './webhook-fixtures';
 
 const payload = {
   entry: [{ changes: [{ field: 'messages', value: {
@@ -16,7 +16,7 @@ const payload = {
 describe('processWorkflowAdvance', () => {
   it('avance chaque message entrant (espace déjà rattaché)', async () => {
     const calls: string[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload), {
+    await processWorkflowAdvance(await entrantsDe(payload), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (t, w, m) => { calls.push(`${t}:${w}:${m}`); },
     });
     expect(calls).toEqual(['t1:33600:m1', 't1:33601:m2']);
@@ -25,7 +25,7 @@ describe('processWorkflowAdvance', () => {
   it('ISOLÉ par message : une erreur sur un contact n\'empêche pas l\'avance des autres', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const done: string[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload), {
+    await processWorkflowAdvance(await entrantsDe(payload), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('boom'); done.push(m); },
     });
     expect(done).toEqual(['m2']); // m1 a throw mais m2 est quand même traité
@@ -34,7 +34,7 @@ describe('processWorkflowAdvance', () => {
 
   it('numéro non rattaché à un tenant -> pas d\'avance', async () => {
     const calls: string[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload, null), {
+    await processWorkflowAdvance(await entrantsDe(payload, null), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, _w, m) => { calls.push(m); },
     });
     expect(calls).toEqual([]);
@@ -50,7 +50,7 @@ describe('processWorkflowAdvance', () => {
         { id: 'm2', from: '33602', type: 'button', button: { text: 'Non', payload: 'btn:1' } },
       ],
     } }] }] };
-    await processWorkflowAdvance(await entrantsDe(p), {
+    await processWorkflowAdvance(await entrantsDe(p), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, w, _m, bp) => { seen.push({ w, bp }); },
     });
     expect(seen).toEqual([{ w: '33600', bp: null }, { w: '33602', bp: 'btn:1' }]);
@@ -62,7 +62,7 @@ describe('processWorkflowAdvance', () => {
       metadata: { phone_number_id: 'PN1' }, contacts: [{ wa_id: '33600' }],
       messages: [{ id: 'ms', from: '33600', type: 'text', text: { body: 'coucou' } }],
     } }] }] };
-    await processWorkflowAdvance(await entrantsDe(p), {
+    await processWorkflowAdvance(await entrantsDe(p), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, _w, m) => { calls.push(m); },
     });
     expect(calls).toEqual([]); // le message est vu par l'inbox (processInbound), mais le scénario n'avance pas
@@ -88,7 +88,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
   it('🔴 une avance en échec est CONSIGNÉE, avec de quoi retrouver le fil', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: LigneJournal[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload), {
+    await processWorkflowAdvance(await entrantsDe(payload), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('Meta indisponible'); },
       journaliserEchec: async (e) => { journal.push(e); },
     });
@@ -105,7 +105,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
     // désormais à l'erreur qu'il ré-émet.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: LigneJournal[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload), {
+    await processWorkflowAdvance(await entrantsDe(payload), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, _w, m) => {
         if (m !== 'm1') return;
         throw Object.assign(new Error('Meta indisponible'), {
@@ -126,7 +126,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
     // par construction. Un journal d'échec ne doit jamais échouer à cause de la FORME de l'échec qu'il observe.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: LigneJournal[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload), {
+    await processWorkflowAdvance(await entrantsDe(payload), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, _w, m) => {
         if (m === 'm1') throw Object.assign(new Error('boum'), { contexteAvance: 'pas un objet' });
       },
@@ -141,7 +141,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
     // Un journal d'échec qui ferait échouer le traitement qu'il observe serait une très mauvaise idée.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const done: string[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload), {
+    await processWorkflowAdvance(await entrantsDe(payload), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('boom'); done.push(m); },
       journaliserEchec: async () => { throw new Error('table absente'); },
     });
@@ -152,7 +152,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
   it('numéro inconnu : ni avance ni journal, la ligne n’aurait nulle part où aller', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: unknown[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload, null), {
+    await processWorkflowAdvance(await entrantsDe(payload, null), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async () => { throw new Error('boum'); },
       journaliserEchec: async (e) => { journal.push(e); },
     });
@@ -163,10 +163,73 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
   it('une instance SANS journal câblé garde le comportement d’avant', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const done: string[] = [];
-    await processWorkflowAdvance(await entrantsDe(payload), {
+    await processWorkflowAdvance(await entrantsDe(payload), { reprendreSurNotreBouton: aucuneRepriseSurBouton,
       advance: async (_t, _w, m) => { if (m === 'm1') throw new Error('boom'); done.push(m); },
     });
     spy.mockRestore();
     expect(done).toEqual(['m2']);
+  });
+});
+
+describe('processWorkflowAdvance : un tap sur NOS boutons arrivé en standby (2026-09-29)', () => {
+  /**
+   * Vécu le 2026-09-29 : un scénario lancé depuis l'Inbox envoie un modèle, le contact tape « En savoir plus »,
+   * Meta livre ce tap en `standby` et le parcours, qui l'attendait, ne bouge plus : ni assignation, ni escalade.
+   */
+  const enStandby = (message: Record<string, unknown>) => ({ entry: [{ changes: [{ field: 'standby', value: {
+    metadata: { phone_number_id: 'PN1' }, contacts: [{ wa_id: '33600' }], messages: [message],
+  } }] }] });
+  const bouton = (payload: string) => enStandby({ id: 'mb', from: '33600', type: 'button', button: { text: 'En savoir plus', payload } });
+
+  it('🔴 un parcours attend : on reprend le fil et le scénario avance, sur la bonne branche', async () => {
+    const reprises: string[] = [];
+    const avances: Array<{ w: string; bp: string | null }> = [];
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await processWorkflowAdvance(await entrantsDe(bouton('btn:0')), {
+      reprendreSurNotreBouton: async (t, w) => { reprises.push(`${t}:${w}`); return true; },
+      advance: async (_t, w, _m, bp) => { avances.push({ w, bp }); },
+    });
+    expect(reprises).toEqual(['t1:33600']);
+    expect(avances).toEqual([{ w: '33600', bp: 'btn:0' }]);
+  });
+
+  it('un bouton de carrousel est aussi à nous', async () => {
+    const avances: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await processWorkflowAdvance(await entrantsDe(bouton('card:2:btn:1')), {
+      reprendreSurNotreBouton: async () => true,
+      advance: async (_t, _w, _m, bp) => { avances.push(String(bp)); },
+    });
+    expect(avances).toEqual(['card:2:btn:1']);
+  });
+
+  it('aucun parcours n’attend, ou Meta refuse : la réponse reste à l’agent de Meta', async () => {
+    const avances: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await processWorkflowAdvance(await entrantsDe(bouton('btn:0')), {
+      reprendreSurNotreBouton: async () => false,
+      advance: async (_t, _w, m) => { avances.push(m); },
+    });
+    expect(avances).toEqual([]);
+  });
+
+  it('🔴 un TEXTE libre en standby ne reprend rien : rien ne dit qu’il s’adresse au scénario', async () => {
+    const reprises: string[] = [];
+    const avances: string[] = [];
+    await processWorkflowAdvance(await entrantsDe(enStandby({ id: 'mt', from: '33600', type: 'text', text: { body: 'bonjour' } })), {
+      reprendreSurNotreBouton: async (t) => { reprises.push(t); return true; },
+      advance: async (_t, _w, m) => { avances.push(m); },
+    });
+    expect(reprises).toEqual([]);
+    expect(avances).toEqual([]);
+  });
+
+  it('un bouton qui n’a pas notre forme (celui d’un autre outil) ne reprend rien', async () => {
+    const reprises: string[] = [];
+    await processWorkflowAdvance(await entrantsDe(bouton('MBA_QUICK_REPLY_1')), {
+      reprendreSurNotreBouton: async (t) => { reprises.push(t); return true; },
+      advance: async () => {},
+    });
+    expect(reprises).toEqual([]);
   });
 });

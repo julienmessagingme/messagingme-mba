@@ -105,6 +105,12 @@ const TABLE: Cas[] = [
   { nom: '7. reprise déclenchée par le client, l’agent tient le fil : reprise', depart: { owner: 'mba' }, geste: (f) => f.reprendrePourLApp('t1', 'w', { saufOperateur: true }), rend: true, meta: ['take:w'], arrivee: { owner: 'app_workflow' } },
   { nom: '7. reprise, agent éteint : aucun appel', depart: { owner: 'mba' }, banc: { mbaEnabled: false }, geste: (f) => f.reprendrePourLApp('t1', 'w'), rend: true, meta: [], arrivee: { owner: 'app_workflow' } },
 
+  // 7c. Un tap sur un de nos boutons, livré en standby (décision de Julien du 2026-09-29).
+  { nom: '7c. bouton, un parcours attend, Meta accepte : take puis app_workflow', depart: { owner: 'mba' }, banc: { enAttente: true }, geste: (f) => f.reprendreSurNotreBouton('t1', 'w'), rend: true, meta: ['take:w'], arrivee: { owner: 'app_workflow' } },
+  { nom: '7c. bouton, aucun parcours n’attend : false, aucun appel', depart: { owner: 'mba' }, geste: (f) => f.reprendreSurNotreBouton('t1', 'w'), rend: false, meta: [], arrivee: { owner: 'mba' } },
+  { nom: '7c. bouton, Meta refuse : false, rien d’écrit', depart: { owner: 'mba' }, banc: { enAttente: true, take: ['refuse'] }, geste: (f) => f.reprendreSurNotreBouton('t1', 'w'), rend: false, meta: ['take:w'], arrivee: { owner: 'mba' } },
+  { nom: '7c. bouton, agent éteint : app_workflow sans appel', depart: { owner: 'mba' }, banc: { enAttente: true, mbaEnabled: false }, geste: (f) => f.reprendreSurNotreBouton('t1', 'w'), rend: true, meta: [], arrivee: { owner: 'app_workflow' } },
+
   // 7b. Réponse de campagne « Inbox ».
   { nom: '7b. équipe, app_workflow, Meta accepte : take puis app_human', depart: { owner: 'app_workflow' }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: ['take:w'], arrivee: { owner: 'app_human' } },
   { nom: '7b. équipe, Meta refuse : false, rien d’écrit', depart: { owner: 'mba' }, banc: { take: ['refuse'] }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: false, meta: ['take:w'], arrivee: { owner: 'mba' } },

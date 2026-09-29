@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { handleWebhookJob, type WebhookJobDeps } from '../src/webhooks/handler';
 import type { InboundMessage } from '../src/webhooks/inbound';
-import { aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
+import { aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur, aucuneRepriseSurBouton } from './webhook-fixtures';
 import { aucunStop, jamaisDesabonne } from './consentement';
 
 /**
@@ -83,7 +83,7 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
       startTestRun: async (t) => { vus.push(`test:${t}`); return true; },
     },
     triggers: { run: async (t) => { vus.push(`automation:${t}`); return 0; } },
-    workflowAdvance: { advance: async (t) => { vus.push(`avance:${t}`); } },
+    workflowAdvance: { reprendreSurNotreBouton: aucuneRepriseSurBouton, advance: async (t) => { vus.push(`avance:${t}`); } },
     remiseMbaEntrant: { remettre: async (t) => { vus.push(`remise:${t}`); } },
     handover: {
       marquerEscalade: async (t) => { vus.push(`escalade:${t}`); },

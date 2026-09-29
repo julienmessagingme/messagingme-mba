@@ -161,6 +161,14 @@ export interface ControleDuFil {
    */
   reprendrePourLApp(tenantId: string, waId: string, opts?: { saufOperateur?: boolean }): Promise<IssueReprise>;
   /**
+   * Le contact tape un de NOS boutons, mais Meta le livre en `standby` (il croit que son agent tient le fil) alors
+   * qu'un parcours attend ce contact : la réponse est pour le scénario (décision de Julien du 2026-09-29, vécu le
+   * même jour : le bouton « En savoir plus » d'un scénario lancé depuis l'Inbox n'a jamais atteint le bloc suivant).
+   * On reprend le fil comme au démarrage, et l'appelant fait avancer le parcours. `false` : aucun parcours
+   * n'attend (la réponse reste à l'agent de Meta), ou Meta refuse de céder le fil.
+   */
+  reprendreSurNotreBouton(tenantId: string, waId: string): Promise<boolean>;
+  /**
    * La réponse à une campagne dont le devenir est « Inbox » : prendre le fil pour l'équipe (`app_human`), pour
    * qu'aucun robot ne réponde et que la conversation entre dans « À traiter ». Un fil déjà tenu par un opérateur
    * reste tel quel. `false` = Meta a refusé de céder le fil, son agent répond. `cause` : la campagne, telle que la
@@ -199,6 +207,7 @@ const CAUSES = {
   finDeParcours: parCause('fin du scénario'),
   personneNeSuit: parCause('le contact écrit et personne ne suit la conversation'),
   scenario: parCause('un scénario reprend la conversation'),
+  boutonDuScenario: parCause('le contact répond au bouton d’un scénario'),
   versLEquipe: parCause('escalade vers l’équipe'),
   standby: parCause('Meta rend la conversation à son agent'),
   inactivite: parCause('délai de reprise écoulé'),
@@ -331,6 +340,13 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       // que dise notre base. Dans l'ordre inverse, le scénario répondrait par-dessus lui.
       if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
       await depot.setControlOwner(tenantId, waId, 'app_workflow', { par: CAUSES.scenario, effacerEscalade: true });
+      return true;
+    },
+
+    async reprendreSurNotreBouton(tenantId, waId) {
+      if (!(await deps.parcours.findWaitingByWaId(tenantId, waId))) return false;
+      if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
+      await depot.setControlOwner(tenantId, waId, 'app_workflow', { par: CAUSES.boutonDuScenario, effacerEscalade: true });
       return true;
     },
 

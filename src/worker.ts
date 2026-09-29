@@ -402,6 +402,7 @@ async function main(): Promise<void> {
       flowMapping: { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
       workflowAdvance: {
         advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp),
+        reprendreSurNotreBouton: (t, w) => fil.reprendreSurNotreBouton(t, w),
         // Une avance qui échoue atterrit dans le journal des erreurs que l'écran montre : sinon le job finirait en
         // succès, sans rejeu ni trace, et le contact resterait bloqué sur son bloc.
         journaliserEchec: (e) => erreursLivraison.enregistrerEchecAvance(e),

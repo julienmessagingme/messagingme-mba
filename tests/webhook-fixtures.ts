@@ -22,6 +22,11 @@ export const aucunEchecLibre: EchecsLibresSink = { noter: async () => null };
 export const aucunSignalAccuse: SignalAccuse = async () => {};
 export const aucunSignalReponse: SignalReponse = async () => {};
 export const aucuneArriveePub: ArriveesPubDeps = { enregistrer: async () => 'ecrite' };
+/**
+ * Aucun parcours n'attend le contact : un tap sur nos boutons arrivé en `standby` reste à l'agent de Meta (le
+ * comportement d'avant le 2026-09-29). Les tests qui ne parlent pas de cette reprise le disent en la passant.
+ */
+export const aucuneRepriseSurBouton = async (): Promise<boolean> => false;
 
 /** Aucun numéro délié (migration 0180) : le test ne porte pas sur le geste de l'Accueil, et le DIT. */
 export const aucunNumeroDelie: NumerosDelies = async () => new Set();
