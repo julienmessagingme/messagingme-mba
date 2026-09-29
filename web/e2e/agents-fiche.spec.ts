@@ -52,13 +52,11 @@ test.describe('Agents IA : la fiche', () => {
     await mockAgents(page, patches, []);
     await page.goto('/accueil');
 
-    // ⚠️ « Other AI agent » EST DEVENU UN GROUPE le 2026-09-08 (il porte Agents et Crédit) : ce n'est plus
-    // un lien, c'est un bouton qui déplie. Le cas gardé est le MÊME, « la nav mène à l'écran » ; seul le
-    // chemin gagne un cran. C'est la CI qui l'a signalé, et c'est exactement son rôle : le regroupement a
-    // été fait dans un autre fichier, rien dans le type ne reliait les deux.
+    // ⚠️ « Other AI agent » est REDEVENU UN LIEN le 2026-09-29 : le crédit, qui en faisait un groupe (Agents et
+    // Crédit), est parti dans Paramètres. Le cas gardé est le MÊME, « la nav mène à l'écran » ; seul le chemin
+    // perd un cran.
     await page.getByRole('button', { name: 'AI Agent' }).click();
-    await page.getByRole('button', { name: 'Other AI agent' }).click();
-    await page.getByRole('link', { name: 'Agents', exact: true }).click();
+    await page.getByRole('link', { name: 'Other AI agent', exact: true }).click();
     await expect(page).toHaveURL(/\/agents/);
 
     await expect(page.getByText('Vos agents')).toBeVisible();

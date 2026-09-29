@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, CreditInsuffisantPourCle, REPIT_APRES_ECHEC_MS, type DepsProvisionCle } from '../src/agent/provisionner-cle';
-import type { CleGatewayEspace } from '../src/agent/cles-gateway.pg';
+import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, CreditInsuffisantPourCle, CleIllisible, REPIT_APRES_ECHEC_MS, type DepsProvisionCle } from '../src/agent/provisionner-cle';
+import type { CleGatewayEspace, LectureCleGateway } from '../src/agent/cles-gateway.pg';
 import type { HttpResponse, HttpTransportPatch } from '../src/meta/http';
 import type { HttpTransportSuppression } from '../src/agent/llm/cles-gateway';
 
@@ -30,9 +30,13 @@ class FauxTransport implements HttpTransportPatch, HttpTransportSuppression {
   }
 }
 
-/** Faux dépôt de clés, en mémoire, qui note ce qu'on lui écrit. */
-function fauxCles(initial?: CleGatewayEspace) {
-  let etat = initial ?? null;
+/**
+ * Faux dépôt de clés, en mémoire, qui note ce qu'on lui écrit. `'illisible'` : une ligne existe et ne se déchiffre
+ * pas (`lire` rend alors `null`, comme le vrai dépôt, et seul `lireEtat` le distingue d'une absence).
+ */
+function fauxCles(initial?: CleGatewayEspace | 'illisible') {
+  let illisible = initial === 'illisible';
+  let etat = initial === 'illisible' ? null : initial ?? null;
   const ecritures: Array<{ cleId: string; plafondMicroEur: number }> = [];
   const plafondsNotes: number[] = [];
   const oublis: boolean[] = [];
@@ -41,6 +45,11 @@ function fauxCles(initial?: CleGatewayEspace) {
     plafondsNotes,
     oublis,
     lire: async () => etat,
+    lireEtat: async (): Promise<LectureCleGateway> => {
+      if (illisible) return { etat: 'illisible' };
+      return etat ? { etat: 'lue', cle: etat } : { etat: 'absente' };
+    },
+    reparer: () => { illisible = false; },
     enregistrer: async (_t: string, o: { cleId: string; cle: string; plafondMicroEur: number }) => {
       ecritures.push({ cleId: o.cleId, plafondMicroEur: o.plafondMicroEur });
       etat = { cleId: o.cleId, cle: o.cle, plafondMicroEur: o.plafondMicroEur };
@@ -76,6 +85,16 @@ describe('assurerCleGateway', () => {
     const r = await assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1');
 
     expect(r.cleId).toBe('key_deja');
+    expect(t.appels).toHaveLength(0);
+    expect(cles.ecritures).toHaveLength(0);
+  });
+
+  it('🔴 une clé ILLISIBLE en base n’en fait PAS ouvrir une autre : refus, et Vercel n’est pas appelé', async () => {
+    // Sans cette garde, l'absence et l'illisible se confondaient : on créait une clé chez Vercel, l'enregistrement
+    // tombait sur la ligne existante (qu'on ne sait pas lire), on supprimait la neuve, et on recommençait.
+    const cles = fauxCles('illisible');
+    const t = new FauxTransport([OK]);
+    await expect(assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1')).rejects.toBeInstanceOf(CleIllisible);
     expect(t.appels).toHaveLength(0);
     expect(cles.ecritures).toHaveLength(0);
   });
@@ -265,8 +284,9 @@ describe('revoquerCleGateway', () => {
  * LA CLÉ AU PREMIER USAGE (2026-09-28) : la traduction l'ouvre aussi, plus seulement la création d'un agent. Un
  * espace sans agent ne pouvait pas traduire, quel que soit son crédit.
  *
- * 🔴 Ce chemin est appelé à chaque rafraîchissement du fil (4 s) par chaque opérateur qui le lit : un échec chez
- * Vercel ne doit pas se changer en appels de création en rafale.
+ * 🔴 Ce chemin est appelé à chaque rafraîchissement du fil (4 s) par chaque opérateur qui le lit : l'ouverture ne se
+ * fait pas attendre (elle part en arrière-plan, une par espace), et un échec chez Vercel ne doit pas se changer en
+ * appels de création en rafale.
  */
 describe('creerAssureurDeCle', () => {
   function assureur(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: FauxTransport; provision?: false; now?: () => number }) {
@@ -290,10 +310,35 @@ describe('creerAssureurDeCle', () => {
   it('🔴 un espace SANS clé mais AVEC du crédit en obtient une, plafonnée à son crédit', async () => {
     const cles = fauxCles();
     const t = new FauxTransport([OK]);
-    expect(await assureur({ cles, solde: 5 * MICRO, transport: t }).assurer('t1')).toBe('prete');
+    const { assurer } = assureur({ cles, solde: 5 * MICRO, transport: t });
+    // L'ouverture part en arrière-plan : la demande ne l'attend pas.
+    expect(await assurer('t1')).toBe('en_preparation');
+    await assurer.enVol('t1');
+    expect(await assurer('t1')).toBe('prete');
     expect(cles.ecritures).toEqual([{ cleId: 'key_neuf', plafondMicroEur: 5 * MICRO }]);
     // 5 € offerts au taux de 0,92 valent 5,43 $ : plafond de 6.
     expect(t.appels[0]!.body).toMatchObject({ aiGatewayQuota: { limitAmount: 6 } });
+  });
+
+  it('🔴 la demande N’ATTEND PAS Vercel, et une seule ouverture part par espace', async () => {
+    // Le défaut relevé par la relecture du lot 1 : l'ouverture était sur le chemin du GET du fil, qui attendait
+    // jusqu'à 30 s qu'un Vercel lent réponde. Ici Vercel ne répond JAMAIS pendant le test.
+    const cles = fauxCles();
+    const t = new FauxTransport([]);
+    let relacher: (r: { status: number; json: unknown }) => void = () => {};
+    t.post = (url, body) => {
+      t.appels.push({ methode: 'POST', url, body });
+      return new Promise((r) => { relacher = r; });
+    };
+    const { assurer } = assureur({ cles, solde: 5 * MICRO, transport: t });
+    expect(await assurer('t1')).toBe('en_preparation');
+    // Les rafraîchissements suivants, et les autres opérateurs, voient l'ouverture en cours sans en lancer d'autre.
+    expect(await Promise.all([assurer('t1'), assurer('t1')])).toEqual(['en_preparation', 'en_preparation']);
+    expect(t.appels.filter((a) => a.methode === 'POST')).toHaveLength(1);
+    relacher(OK);
+    await assurer.enVol('t1');
+    expect(await assurer('t1')).toBe('prete');
+    expect(assurer.enVol('t1')).toBeUndefined();
   });
 
   it('provisionnement éteint : seule une clé existante sert, et Vercel n’est jamais appelé', async () => {
@@ -302,8 +347,9 @@ describe('creerAssureurDeCle', () => {
     expect(t.appels).toHaveLength(0);
   });
 
-  it('🔴 un crédit trop bas pour une clé rend `credit_insuffisant`, et ne bloque pas l’essai suivant', async () => {
-    // Pas de répit ici : Vercel n'a pas été appelé, et un espace qui vient de recharger doit traduire tout de suite.
+  it('🔴 un crédit trop bas pour une clé rend `credit_insuffisant` TOUT DE SUITE, et ne bloque pas l’essai suivant', async () => {
+    // Lu avant de partir en arrière-plan : l'écran doit pouvoir dire « recharger » dès ce rafraîchissement. Pas de
+    // répit ici : Vercel n'a pas été appelé, et un espace qui vient de recharger doit traduire tout de suite.
     const cles = fauxCles();
     let solde = 500_000;
     const t = new FauxTransport([OK]);
@@ -315,6 +361,8 @@ describe('creerAssureurDeCle', () => {
     expect(await a('t1')).toBe('credit_insuffisant');
     expect(t.appels).toHaveLength(0);
     solde = 10 * MICRO;
+    expect(await a('t1')).toBe('en_preparation');
+    await a.enVol('t1');
     expect(await a('t1')).toBe('prete');
   });
 
@@ -324,7 +372,8 @@ describe('creerAssureurDeCle', () => {
     const t = new FauxTransport([{ status: 500, json: {} }, OK]);
     const { assurer, journal } = assureur({ cles, solde: 10 * MICRO, transport: t, now: () => maintenant });
 
-    expect(await assurer('t1')).toBe('indisponible');
+    expect(await assurer('t1')).toBe('en_preparation');
+    await assurer.enVol('t1');
     expect(journal).toHaveLength(1);
     // Juste après : Vercel n'est pas rappelé, le fil qui se rafraîchit n'y change rien.
     maintenant += REPIT_APRES_ECHEC_MS - 1;
@@ -332,6 +381,8 @@ describe('creerAssureurDeCle', () => {
     expect(t.appels).toHaveLength(1);
     // Le répit passé, on réessaie, et cette fois ça marche.
     maintenant += 1;
+    expect(await assurer('t1')).toBe('en_preparation');
+    await assurer.enVol('t1');
     expect(await assurer('t1')).toBe('prete');
     expect(t.appels).toHaveLength(2);
   });
@@ -341,7 +392,28 @@ describe('creerAssureurDeCle', () => {
     const cles = fauxCles();
     const t = new FauxTransport([{ status: 500, json: {} }, OK]);
     const { assurer } = assureur({ cles, solde: 10 * MICRO, transport: t, now: () => maintenant });
+    expect(await assurer('t1')).toBe('en_preparation');
+    await assurer.enVol('t1');
     expect(await assurer('t1')).toBe('indisponible');
+    expect(await assurer('t2')).toBe('en_preparation');
+    await assurer.enVol('t2');
     expect(await assurer('t2')).toBe('prete');
+  });
+
+  it('🔴 une clé ILLISIBLE n’ouvre rien, et se journalise UNE fois par répit', async () => {
+    // Le défaut relevé par la relecture du lot 1 : lue comme une absence, elle faisait créer puis supprimer une clé
+    // chez Vercel une fois par minute, pour chaque espace touché.
+    let maintenant = 1_000_000;
+    const cles = fauxCles('illisible');
+    const t = new FauxTransport([OK, OK]);
+    const { assurer, journal } = assureur({ cles, solde: 10 * MICRO, transport: t, now: () => maintenant });
+    expect(await assurer('t1')).toBe('indisponible');
+    expect(await assurer('t1')).toBe('indisponible');
+    expect(t.appels).toHaveLength(0);
+    expect(journal).toHaveLength(1);
+    maintenant += REPIT_APRES_ECHEC_MS;
+    expect(await assurer('t1')).toBe('indisponible');
+    expect(journal).toHaveLength(2);
+    expect(t.appels).toHaveLength(0);
   });
 });

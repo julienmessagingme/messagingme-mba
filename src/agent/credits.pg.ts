@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
-import type { MouvementLu, RaisonMouvement } from './credits';
+import type { LigneHistorique, MouvementLu, RaisonMouvement } from './credits';
 
 /**
  * Le solde prépayé en base.
@@ -103,20 +103,85 @@ export class PgCreditStore {
       at: r.at.toISOString(),
     }));
   }
+
+  /**
+   * L'historique montré au client : les mouvements tels qu'écrits, SAUF les tours d'agent, agrégés par jour de Paris
+   * sur les `JOURS_HISTORIQUE_AGENTS` derniers jours. Un agent actif écrit une ligne par tour : sans agrégat, les
+   * cinquante lignes de l'écran ne montreraient plus que des centimes, et jamais l'achat qu'on vient de payer.
+   * Les traductions ont déjà une ligne par jour en base (migration 0190). Aucune note ne sort (`LigneHistorique`).
+   * La fenêtre ne borne que l'agrégat : elle garde la lecture sur l'index `(tenant_id, at desc)`, quel que soit le
+   * nombre de tours.
+   */
+  async historique(tenantId: string, limite: number): Promise<LigneHistorique[]> {
+    const res = await this.pool.query<{ id: string; delta_micro_eur: string; raison: string; jour: string | null; at: Date }>(
+      `with agents as (
+         select (at at time zone 'Europe/Paris')::date as jour, sum(delta_micro_eur) as delta_micro_eur, max(at) as at
+           from agent_credit_mouvements
+          where tenant_id = $1 and raison = 'conso' and at >= now() - make_interval(days => $3::int)
+          group by 1
+       )
+       select id::text as id, delta_micro_eur, raison, to_char(jour, 'YYYY-MM-DD') as jour, at
+         from agent_credit_mouvements
+        where tenant_id = $1 and raison <> 'conso'
+       union all
+       select 'agents-' || to_char(jour, 'YYYY-MM-DD'), delta_micro_eur, 'conso', to_char(jour, 'YYYY-MM-DD'), at
+         from agents
+        order by at desc
+        limit $2::int`,
+      [tenantId, Math.max(1, Math.floor(limite)), JOURS_HISTORIQUE_AGENTS],
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      deltaMicroEur: Number(r.delta_micro_eur),
+      raison: r.raison,
+      jour: r.jour,
+      at: r.at.toISOString(),
+    }));
+  }
 }
 
-/** La note du crédit offert, telle que le journal la montre. */
-export const NOTE_CREDIT_OFFERT = 'crédit offert à l’ouverture';
+/** Combien de jours de tours d'agent l'historique du client agrège. Au-delà, le solde les compte, l'écran non. */
+export const JOURS_HISTORIQUE_AGENTS = 30;
+
+/** La note du crédit offert, pour le journal d'exploitation (le client lit la raison, pas la note). */
+export const NOTE_CREDIT_OFFERT = 'crédit offert à la connexion du premier numéro WhatsApp';
 
 /**
- * Le crédit offert à un espace qui naît, écrit DANS la transaction qui le crée (`PgUserStore.createTenantWithAdmin`) :
- * un espace sans son crédit, ou un crédit sans son espace, ne peut pas exister. Aucune clé Vercel ici, elle s'ouvre
- * au premier usage qui en a besoin : une inscription ne fabrique pas de clé facturable.
+ * Le crédit offert à la connexion du premier numéro WhatsApp d'un espace, écrit DANS la transaction qui relie le
+ * numéro (`PgEmbeddedSignupStore.linkTenant`). Rend le montant offert, 0 si rien ne l'a été.
+ *
+ * 🔴 L'OFFRE D'ABORD, LE CRÉDIT ENSUITE, ET SEULEMENT SI L'OFFRE A PRIS. `credits_offerts` (migration 0191) tient les
+ * deux bornes par ses contraintes : une offre par espace (clé primaire), jamais deux pour le même numéro (unique),
+ * même s'il change d'espace. `on conflict do nothing` sans cible couvre les deux ; une insertion qui n'a pas eu lieu
+ * n'écrit ni solde ni mouvement. Deux liaisons simultanées se sérialisent sur ces contraintes.
+ *
+ * Aucune clé Vercel ici : elle s'ouvre au premier usage qui en a besoin. Un espace qui en a déjà une voit son plafond
+ * remonté par le câblage, après la transaction (`remonterPlafondApresRecharge`).
  */
-export async function offrirALOuverture(client: PoolClient, tenantId: string, montantMicroEur: number): Promise<void> {
+export async function offrirALaConnexion(
+  client: PoolClient, tenantId: string, phoneNumberId: string, montantMicroEur: number,
+): Promise<number> {
   const montant = Math.max(0, Math.round(montantMicroEur));
-  if (montant === 0) return;
+  // Éteint (0) : rien n'est marqué, l'offre reste due le jour où on la rallume.
+  if (montant === 0) return 0;
+  const pris = await client.query(
+    `insert into credits_offerts (tenant_id, phone_number_id, montant_micro_eur)
+     values ($1, $2, $3)
+     on conflict do nothing`,
+    [tenantId, phoneNumberId, montant],
+  );
+  if ((pris.rowCount ?? 0) === 0) return 0;
   await bouger(client, tenantId, montant, 'offert', { note: NOTE_CREDIT_OFFERT });
+  return montant;
+}
+
+/**
+ * Le crédit d'un achat Stripe, écrit DANS la transaction du webhook, juste après la ligne de paiement qui le rend
+ * idempotent (`PgStripeStore.crediterPaiement`). Rend le solde après opération.
+ */
+export async function crediterAchat(client: PoolClient, tenantId: string, montantMicroEur: number, note: string): Promise<number> {
+  const montant = Math.max(0, Math.round(montantMicroEur));
+  return bouger(client, tenantId, montant, 'achat', { note });
 }
 
 /** Le solde et le journal, en une instruction. Rend le solde après opération. */

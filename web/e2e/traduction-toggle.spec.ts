@@ -59,16 +59,18 @@ interface Options {
    * `instance` = aucun modele configure cote serveur ; `credit` = credit epuise ; `cle` = l'espace a du
    * credit mais sa cle n'a pas pu s'ouvrir. Defaut `credit`.
    */
-  cause?: 'instance' | 'credit' | 'cle';
+  cause?: 'instance' | 'credit' | 'credit_insuffisant' | 'cle_en_preparation' | 'cle';
   /** Le réglage est DÉJÀ rangé dans ce navigateur (cas du retour sur l'écran). */
   dejaActif?: boolean;
+  /** Le rôle de la session. Défaut : admin. */
+  role?: 'admin' | 'agent';
 }
 
 async function monter(page: Page, opts: Options = {}) {
   /** Toutes les URL de fil demandées, dans l'ordre. C'est la seule preuve de ce que l'écran envoie. */
   const filsDemandes: string[] = [];
   const transcriptions: unknown[] = [];
-  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), { ...SESSION, role: opts.role ?? SESSION.role });
   if (opts.dejaActif) {
     await page.addInitScript((k) => window.localStorage.setItem(k, '1'), TRADUCTION_STORAGE_KEY);
   }
@@ -217,6 +219,9 @@ test.describe('Inbox : traduire les messages reçus', () => {
     await expect(page.getByTestId('traduction-indisponible')).toBeVisible();
     await expect(page.getByTestId('traduction-indisponible')).toHaveText(/crédit/i);
     await expect(page.getByTestId('traduction-indisponible')).toHaveAttribute('data-cause', 'credit');
+    // 🔴 ET IL MÈNE QUELQUE PART (décision de Julien du 2026-09-29) : la page Crédit, sous Paramètres.
+    await expect(page.getByTestId('traduction-recharger')).toBeVisible();
+    await expect(page.getByTestId('traduction-recharger')).toHaveAttribute('href', '/parametres/credit');
     // L'INTERRUPTEUR RESTE VISIBLE : le cacher laisserait croire à une panne de l'écran lui-même.
     await expect(interrupteur).toBeVisible();
     await expect(page.getByTestId('fil-messages')).toContainText('Hola, tengo un problema');
@@ -240,6 +245,8 @@ test.describe('Inbox : traduire les messages reçus', () => {
     await expect(bandeau).toHaveAttribute('data-cause', 'instance');
     await expect(bandeau).not.toHaveText(/crédit/i);
     await expect(bandeau).toHaveText(/pas encore activée/i);
+    // Aucun lien de recharge : recharger ne réglerait rien, la cause est chez nous.
+    await expect(page.getByTestId('traduction-recharger')).toHaveCount(0);
     // Le fil reste lisible, en VO : ce n'est pas une panne.
     await expect(page.getByTestId('fil-messages')).toContainText('Hola, tengo un problema');
   });
@@ -257,7 +264,33 @@ test.describe('Inbox : traduire les messages reçus', () => {
     await expect(bandeau).toHaveAttribute('data-cause', 'cle');
     await expect(bandeau).not.toHaveText(/crédit/i);
     await expect(bandeau).toHaveText(/momentanément/i);
+    await expect(page.getByTestId('traduction-recharger')).toHaveCount(0);
     await expect(page.getByTestId('fil-messages')).toContainText('Hola, tengo un problema');
+  });
+
+  test('🔴 un agent ne voit PAS le lien de recharge : la page Crédit IA le renverrait vers l’Inbox', async ({ page }) => {
+    // Le lien le ferait tourner en rond. La phrase du bandeau lui dit déjà qu'un administrateur recharge.
+    await monter(page, { sansCredit: true, dejaActif: true, role: 'agent' });
+    await expect(page.getByTestId('traduction-indisponible')).toHaveAttribute('data-cause', 'credit');
+    await expect(page.getByTestId('traduction-indisponible')).toHaveText(/administrateur/i);
+    await expect(page.getByTestId('traduction-recharger')).toHaveCount(0);
+  });
+
+  test('🔴 un crédit trop bas pour ouvrir la clé se recharge aussi, et le bandeau le dit', async ({ page }) => {
+    await monter(page, { sansCredit: true, cause: 'credit_insuffisant', dejaActif: true });
+    const bandeau = page.getByTestId('traduction-indisponible');
+    await expect(bandeau).toHaveAttribute('data-cause', 'credit_insuffisant');
+    await expect(bandeau).toHaveText(/trop bas/i);
+    await expect(page.getByTestId('traduction-recharger')).toHaveAttribute('href', '/parametres/credit');
+  });
+
+  test('une clé en préparation ne parle PAS de crédit', async ({ page }) => {
+    await monter(page, { sansCredit: true, cause: 'cle_en_preparation', dejaActif: true });
+    const bandeau = page.getByTestId('traduction-indisponible');
+    await expect(bandeau).toHaveAttribute('data-cause', 'cle_en_preparation');
+    await expect(bandeau).not.toHaveText(/crédit/i);
+    await expect(bandeau).toHaveText(/préparation/i);
+    await expect(page.getByTestId('traduction-recharger')).toHaveCount(0);
   });
 
   test('le bandeau de crédit disparaît dès qu’on éteint le réglage', async ({ page }) => {

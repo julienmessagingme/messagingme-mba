@@ -1,3 +1,5 @@
+import { automatique } from './evenements';
+
 /**
  * Qui reçoit la conversation quand un destinataire de campagne répond.
  *
@@ -34,6 +36,11 @@ export type Devenir = 'mba' | 'inbox';
  */
 export interface CampagneAssignante {
   campaignId: string;
+  /**
+   * Le nom de la campagne, pour la cause que la frise du panneau Détail affiche (« automatique : campagne
+   * Rentrée ») : l'affectation et la prise du fil qu'elle décide n'ont pas d'auteur humain.
+   */
+  nom: string;
   /**
    * Le devenir de l'étage où se trouvait ce destinataire. `null` = campagne d'avant ce réglage :
    * `devenirEffectif` reproduit ce qu'elle faisait.
@@ -87,15 +94,18 @@ export interface AssignationDeps {
   membres(tenantId: string): Promise<string[]>;
   /** Prend le prochain rang de cette campagne et l'avance, en une écriture. */
   prendreUnRang(tenantId: string, campaignId: string): Promise<number>;
-  /** Écrit l'affectation. `false` = elle n'a pas été posée (déjà assignée, membre hors espace). */
-  assigner(tenantId: string, waId: string, userId: string): Promise<boolean>;
+  /**
+   * Écrit l'affectation. `false` = elle n'a pas été posée (déjà assignée, membre hors espace). `cause` : ce que la
+   * frise du panneau Détail dit à la place d'un auteur.
+   */
+  assigner(tenantId: string, waId: string, userId: string, cause: string): Promise<boolean>;
   /**
    * Prend le fil pour l'équipe (`ControleDuFil.prendrePourLEquipe`, `src/inbox/fil.ts`) : à l'agent de Meta chez
    * Meta, puis `app_human` chez nous, pour qu'aucun robot ne réponde et que la conversation entre dans « À
    * traiter ». Un opérateur qui la tient déjà la garde. `false` = Meta a refusé. Optionnelle : absente, aucun fil
    * n'est pris (câblages de test de l'assignation seule).
    */
-  prendreLeFil?(tenantId: string, waId: string): Promise<boolean>;
+  prendreLeFil?(tenantId: string, waId: string, cause: string): Promise<boolean>;
 }
 
 /**
@@ -116,6 +126,8 @@ export async function assignerReponse(
   if (!campagne) return null;
 
   const decision = devenirEffectif(campagne);
+  // Une cause pour les deux écritures : c'est la même campagne qui prend le fil et qui répartit.
+  const cause = automatique(`campagne ${campagne.nom}`);
 
   /**
    * Le fil se prend avant tout le reste, et son échec arrête tout : si Meta refuse, son agent répondra quoi
@@ -126,7 +138,7 @@ export async function assignerReponse(
    * message suivant du client.
    */
   if (decision.prendreLeFil && campagne.premiereReponse && deps.prendreLeFil
-    && !(await deps.prendreLeFil(tenantId, waId))) {
+    && !(await deps.prendreLeFil(tenantId, waId, cause))) {
     // eslint-disable-next-line no-console
     console.warn(`devenir de campagne ${campagne.campaignId} non appliqué pour ${waId} : Meta n’a pas cédé le fil, son agent répond`);
     return null;
@@ -152,5 +164,5 @@ export async function assignerReponse(
   if (!userId) return null;
 
   // On rend ce qui a été écrit : `assigner` refuse une conversation déjà affectée ou un membre parti.
-  return (await deps.assigner(tenantId, waId, userId)) ? userId : null;
+  return (await deps.assigner(tenantId, waId, userId, cause)) ? userId : null;
 }

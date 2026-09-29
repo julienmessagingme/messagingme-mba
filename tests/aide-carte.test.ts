@@ -43,10 +43,11 @@ describe('la carte émise', () => {
   });
 
   it('le CHEMIN d’un écran imbriqué nomme ses groupes, dans l’ordre', () => {
-    // C'est ce qui permet au bot de dire « AI Agent > MBA > Guide » plutôt que « Guide » tout court, qui ne
-    // se trouve pas dans un menu de quinze entrées.
-    const guide = CARTE_CONSOLE.find((e) => e.cle === 'mba-guide');
-    expect(guide?.chemin).toEqual(['AI Agent', 'MBA']);
+    // C'est ce qui permet au bot de dire « Contenu > WhatsApp > Templates » plutôt que « Templates » tout court,
+    // qui ne se trouve pas dans un menu de quinze entrées. (L'exemple était le Guide du MBA, retiré le 2026-09-29.)
+    expect(CARTE_CONSOLE.find((e) => e.cle === 'templates')?.chemin).toEqual(['Contenu', 'WhatsApp']);
+    // Et le Crédit IA, sous son groupe du bloc bas.
+    expect(CARTE_CONSOLE.find((e) => e.cle === 'parametres-credit')?.chemin).toEqual(['Paramètres']);
     // Et une entrée de premier niveau n'a aucun groupe, plutôt qu'un tableau avec une chaîne vide.
     expect(CARTE_CONSOLE.find((e) => e.cle === 'accueil')?.chemin).toEqual([]);
   });

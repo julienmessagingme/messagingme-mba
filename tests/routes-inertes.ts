@@ -109,7 +109,7 @@ export const essaiAgentInerte: Pick<AgentTestRouteDeps, 'essais' | 'credits' | '
 };
 
 export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes'> = {
-  credits: { solde: async () => 0 },
+  credits: { solde: async () => 0, historique: async () => [] },
   sessions: {
     consommation: neDevraitPasEtreAppelee('consommation'),
     messagesTenus: async () => 0,
@@ -232,7 +232,7 @@ export const inboxInerte: Pick<InboxRouteDeps,
 export const inboxDepInerte: Pick<InboxDep,
   'effacerMessages' | 'ouvrirConversationDuContact' | 'countUnread' | 'countATraiter' | 'compterConversations'
   | 'archiverConversation' | 'signalerConversation' | 'marquerTraitee' | 'getAssignee' | 'setAssignee'
-  | 'prendreSiLibre' | 'membresPourAffectation' | 'markConversationRead' | 'getControlOwner'> = {
+  | 'prendreSiLibre' | 'membresPourAffectation' | 'markConversationRead' | 'getControlOwner' | 'detailConversation'> = {
   effacerMessages: neDevraitPasEtreAppelee('effacerMessages'),
   ouvrirConversationDuContact: async () => null,
   // Absents : 0, la pastille ne s'affichait pas.
@@ -251,6 +251,8 @@ export const inboxDepInerte: Pick<InboxDep,
   markConversationRead: async () => {},
   // Absente : `app_workflow`, l'état d'une conversation dont personne n'a pris le contrôle.
   getControlOwner: async () => 'app_workflow',
+  // Absente : la route n'existait pas, l'écran repliait le panneau. `null` rend le même 404.
+  detailConversation: async () => null,
 };
 
 /** `campagneVivante` absente : aucune garde, donc aucune campagne au fil de l'eau n'était vue. */

@@ -70,7 +70,7 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
   });
 
   it('🔴 marquer « Traité » sort d’« À traiter », laisse dans « Tout », et remplit « Traité »', async () => {
-    expect(await store.marquerTraitee(tenantId, convId, true)).toBe(true);
+    expect(await store.marquerTraitee(tenantId, convId, true, { collaborateur: null })).toBe(true);
     expect(await ids({ aTraiter: true })).toEqual([]);
     // L'arbitrage qui distingue « Traité » d'« Archivé » : la conversation reste dans « Tout ».
     expect(await ids()).toEqual([convId]);
@@ -84,7 +84,7 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
   it('🔴 un MESSAGE DU CONTACT retire le statut et la remet dans « À traiter »', async () => {
     // La demande de Julien, mot pour mot. C'est l'écriture qui enregistre le message qui le fait, dans le
     // même `update` : deux écritures laisseraient un message neuf dormir dans un dossier « traité ».
-    await store.marquerTraitee(tenantId, convId, true);
+    await store.marquerTraitee(tenantId, convId, true, { collaborateur: null });
     await store.recordInbound(tenantId, entrant('wamid.itest-traite-retour', 'en fait, une question'));
     expect(await ids({ aTraiter: true })).toEqual([convId]);
     expect(await ids({ traitees: true })).toEqual([]);
@@ -94,7 +94,7 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
   it('🔴 PREUVE INVERSE : un envoi SORTANT automatisé ne retire PAS le statut', async () => {
     // Même upsert que l'entrant. Sans la décision du CHEMIN appelant, une campagne effacerait le statut de
     // toutes les conversations qu'elle touche, et le dossier « Traité » se viderait au premier envoi.
-    await store.marquerTraitee(tenantId, convId, true);
+    await store.marquerTraitee(tenantId, convId, true, { collaborateur: null });
     await store.recordOutboundByWaId(tenantId, WA_ID, {
       body: 'notre promo du mois', messageId: 'wamid.itest-traite-promo', origine: 'campagne',
     });
@@ -104,7 +104,7 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
   it('🔴 une RÉACTION du contact (👍) ne retire PAS le statut', async () => {
     // L'arbitrage de Julien du 2026-09-19 : « merci 👍 » en réponse à notre « bonne journée » est précisément
     // le cas que « Traité » règle. La conversation reste traitée, donc hors d'« À traiter ».
-    await store.marquerTraitee(tenantId, convId, true);
+    await store.marquerTraitee(tenantId, convId, true, { collaborateur: null });
     await store.recordInbound(tenantId, {
       phoneNumberId: 'pn-itest', waId: WA_ID, messageId: 'wamid.itest-traite-pouce', type: 'reaction', body: '👍',
       buttonPayload: 'wamid.notre-message', profileName: null, field: 'messages',
@@ -114,7 +114,7 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
   });
 
   it('une réaction sort quand même d’Archivé : l’arbitrage ne porte que sur « Traité »', async () => {
-    await store.archiverConversation(tenantId, convId, true);
+    await store.archiverConversation(tenantId, convId, true, { collaborateur: null });
     // Le témoin de départ : sans lui, « elle en sort » ne prouverait rien.
     expect(await ids({ archivees: true })).toEqual([convId]);
     await store.recordInbound(tenantId, {
@@ -126,8 +126,8 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
 
   it('🔴 archivée ET traitée, puis 👍 : elle sort d’Archivé et atterrit dans « Traité », pas dans « À traiter »', async () => {
     // Le cas croisé que l'arbitrage crée : les deux rangements ne réagissent plus pareil à une réaction.
-    await store.marquerTraitee(tenantId, convId, true);
-    await store.archiverConversation(tenantId, convId, true);
+    await store.marquerTraitee(tenantId, convId, true, { collaborateur: null });
+    await store.archiverConversation(tenantId, convId, true, { collaborateur: null });
     await store.recordInbound(tenantId, {
       phoneNumberId: 'pn-itest', waId: WA_ID, messageId: 'wamid.itest-traite-pouce-croise', type: 'reaction', body: '👍',
       buttonPayload: 'wamid.notre-message', profileName: null, field: 'messages',
@@ -153,8 +153,8 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
   });
 
   it('ne plus marquer traité la rend au dossier que son dernier message désigne', async () => {
-    await store.marquerTraitee(tenantId, convId, true);
-    expect(await store.marquerTraitee(tenantId, convId, false)).toBe(true);
+    await store.marquerTraitee(tenantId, convId, true, { collaborateur: null });
+    expect(await store.marquerTraitee(tenantId, convId, false, { collaborateur: null })).toBe(true);
     // Le contact a écrit en dernier : elle revient dans « À traiter ».
     expect(await ids({ aTraiter: true })).toEqual([convId]);
     expect(await ids({ traitees: true })).toEqual([]);
@@ -163,8 +163,8 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
   it('une conversation archivée ET traitée n’est comptée que dans Archivé', async () => {
     // « Traité » exclut les archivées, comme tous les dossiers ordinaires : sinon une même conversation
     // serait comptée à deux endroits, et le menu additionnerait des choses qui ne s'additionnent pas.
-    await store.marquerTraitee(tenantId, convId, true);
-    await store.archiverConversation(tenantId, convId, true);
+    await store.marquerTraitee(tenantId, convId, true, { collaborateur: null });
+    await store.archiverConversation(tenantId, convId, true, { collaborateur: null });
     expect(await ids({ traitees: true })).toEqual([]);
     const c = await store.compterConversations(tenantId);
     expect({ traitees: c.traitees, archivees: c.archivees }).toEqual({ traitees: 0, archivees: 1 });
@@ -175,11 +175,11 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
 
   it('🔴 une conversation d’un AUTRE espace ne se marque pas', async () => {
     // Le pooler est superuser, la RLS est contournée : le `tenant_id` du `where` est LE contrôle.
-    expect(await store.marquerTraitee(autreTenantId, convId, true)).toBe(false);
+    expect(await store.marquerTraitee(autreTenantId, convId, true, { collaborateur: null })).toBe(false);
     expect(await ids({ traitees: true })).toEqual([]);
   });
 
   it('une conversation inconnue rend false, pour que la route en fasse un 404', async () => {
-    expect(await store.marquerTraitee(tenantId, '00000000-0000-4000-8000-000000000000', true)).toBe(false);
+    expect(await store.marquerTraitee(tenantId, '00000000-0000-4000-8000-000000000000', true, { collaborateur: null })).toBe(false);
   });
 });

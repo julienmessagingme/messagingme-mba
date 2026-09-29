@@ -282,7 +282,7 @@ describe('un jeton de test désenclenche l’agent de Meta', () => {
     for (const b of [fin, accuse, retour, balayage]) expect(b.etat('w')?.owner, 'la colonne annonce l’agent sur un fil de test').not.toBe('mba');
 
     const bouton = bancDuFil({ conversations: { w: { owner: 'app_human', ...test } } });
-    expect(await bouton.fil.rendreLaMain('t1', 'w')).toBe('mba');
+    expect(await bouton.fil.rendreLaMain('t1', 'w', { collaborateur: null })).toBe('mba');
     expect(bouton.appels).toEqual(['release:w']);
   });
 });

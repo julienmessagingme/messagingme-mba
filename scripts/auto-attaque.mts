@@ -58,6 +58,7 @@ import { API_KEY_PREFIX } from '../src/auth/api-key-store.pg';
 import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
+import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { FastifyInstance } from 'fastify';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -167,6 +168,7 @@ const ADRESSE_SONDE_OPS = 'sonde-ops@exemple.test';
 const SECRET_META = randomBytes(32).toString('hex');
 const JETON_VERIFICATION_META = randomBytes(16).toString('hex');
 const SECRET_SERVICE = randomBytes(32).toString('hex');
+const SECRET_STRIPE = randomBytes(32).toString('hex');
 
 const aucunCompte: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
@@ -222,6 +224,13 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     findWaId: async () => null,
     publish: async () => undefined,
   } satisfies HubspotEventRouteDeps,
+  // Le webhook de Stripe : un VRAI secret aussi, et un dépôt qui ne crédite personne. Une signature fausse ou absente
+  // doit tomber avant le dépôt (sonde 12).
+  stripeWebhook: {
+    secret: SECRET_STRIPE,
+    paiements: { crediterPaiement: async () => 'espace_inconnu' },
+    apresCredit: async () => undefined,
+  } satisfies StripeWebhookRouteDeps,
   // Clé d'API : aucune clé ne se résout. `inconnu()` étant une fonction, donc une valeur vraie, les quatre
   // montages de l'entrée (`/v1`, les envois, `/mcp`, le relais du Meta Business Agent) ont bien lieu.
   v1: inconnu('v1'),

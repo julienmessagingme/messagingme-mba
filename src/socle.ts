@@ -67,7 +67,7 @@ import { PgCompteurDebit } from './db/debit.pg';
  */
 export type ConfigSocle = Pick<Config,
   | 'DRY_RUN' | 'PGBOSS_SCHEMA' | 'ENCRYPTION_KEY' | 'META_ACCESS_TOKEN' | 'META_APP_ID' | 'META_APP_SECRET'
-  | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER'
+  | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER' | 'CREDIT_OFFERT_MICRO_EUR'
 >;
 
 export interface DepsSocle {
@@ -233,7 +233,9 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    */
   const numeroDelieStore = new PgNumeroDelieStore(pool);
   const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
-  const esCredentialsStore = new PgEmbeddedSignupStore(pool);
+  // Le crédit offert à la connexion du premier numéro (`CREDIT_OFFERT_MICRO_EUR`, cf. `src/config.ts`) : seule la
+  // liaison par l'inscription intégrée l'écrit, dans sa transaction.
+  const esCredentialsStore = new PgEmbeddedSignupStore(pool, { creditOffertMicroEur: config.CREDIT_OFFERT_MICRO_EUR });
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,
     credentials: esCredentialsStore,

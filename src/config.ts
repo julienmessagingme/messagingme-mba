@@ -443,16 +443,33 @@ export const schema = z.object({
    */
   COMMISSION_MODELE_PCT: z.coerce.number().nonnegative().default(10),
   /**
-   * Le crédit offert à la création d'un espace, en micro-euros (5 000 000 = 5 €). Écrit dans la transaction qui
-   * crée l'espace, avec un mouvement `offert` ; aucune clé Vercel n'est ouverte à ce moment (elle s'ouvre au
-   * premier usage qui en a besoin). Pas rétroactif. 0 l'éteint.
+   * Le crédit offert à la connexion du PREMIER numéro WhatsApp d'un espace, par l'inscription intégrée, en
+   * micro-euros (5 000 000 = 5 €). Écrit dans la transaction qui relie le numéro, avec un mouvement `offert` ;
+   * aucune clé Vercel n'est ouverte à ce moment (elle s'ouvre au premier usage qui en a besoin). 0 l'éteint.
    *
-   * 🔴 0 PAR DÉFAUT, ET C'EST UNE GARDE (relecture du lot 1, 2026-09-28). Offert à CHAQUE espace, sans preuve
-   * d'identité, il se récolte par script : 5 € ouvrent une clé facturée à NOTRE équipe Vercel, et une vingtaine
-   * d'espaces atteignent le plafond d'équipe, qui coupe les bots de tous les clients. Il ne s'allume qu'avec une
-   * borne décidée par Julien.
+   * 🔴 LA BORNE EST EN BASE, ET C'EST ELLE QUI AUTORISE CE DÉFAUT (décision de Julien du 2026-09-29). Offert à la
+   * création d'un espace, sans preuve, il se récoltait par script : chaque espace ouvrait une clé facturée à NOTRE
+   * équipe Vercel, et une vingtaine atteignaient le plafond d'équipe, qui coupe les bots de tous les clients. Relier
+   * un numéro exige de passer la vérification de Meta, et `credits_offerts` (migration 0191) n'offre qu'une fois par
+   * espace ET jamais deux fois pour le même numéro, même s'il change d'espace. Les espaces qui avaient déjà un
+   * numéro sont marqués par la migration : pas rétroactif.
    */
-  CREDIT_OFFERT_MICRO_EUR: z.coerce.number().int().min(0).default(0),
+  CREDIT_OFFERT_MICRO_EUR: z.coerce.number().int().min(0).default(5_000_000),
+  /**
+   * La recharge du crédit par Stripe (Checkout hébergé, puis webhook). Les quatre vides par défaut : la route de
+   * paiement rend 503 et la console dit « recharge pas encore disponible », rien ne casse au démarrage.
+   * 🔴 Côté serveur uniquement, jamais en `NEXT_PUBLIC_`. `STRIPE_SECRET_KEY` est une clé RESTREINTE (sessions
+   * Checkout et clients en écriture) ; son préfixe dit le mode (`_test_` ou `_live_`), et le client Stripe d'un
+   * espace est gardé PAR MODE (migration 0191). En mode test, seul un exploitant (`OPS_EMAILS`) peut ouvrir un
+   * paiement : une carte de test créditerait sinon de vrais euros de modèle à n'importe quel client.
+   * `STRIPE_WEBHOOK_SECRET` est le secret de signature de la destination déclarée chez Stripe (`whsec_...`).
+   * Les deux prix sont les identifiants Stripe (`price_...`) des offres Refill 50 € et Refill 100 € HT : le crédit
+   * accordé de chaque offre vit dans le code (`src/stripe/offres.ts`), jamais dans la requête du client.
+   */
+  STRIPE_SECRET_KEY: z.string().default(''),
+  STRIPE_WEBHOOK_SECRET: z.string().default(''),
+  STRIPE_PRIX_REFILL_50: z.string().default(''),
+  STRIPE_PRIX_REFILL_100: z.string().default(''),
   /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est inerte (aucun job enfilé). */
   CONNECTOR_PUSH_URL: z.string().default(''),
   /** Secret HMAC partagé avec le connecteur (== INGEST_SECRET). Signe le push. */
@@ -576,6 +593,11 @@ export const schema = z.object({
       if (!/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise pour chiffrer les cles Gateway des espaces' });
       }
+    }
+    // La clé Stripe dit son mode par son préfixe, et le client Stripe d'un espace est gardé par mode : une clé posée
+    // sans préfixe reconnaissable laisserait deviner le mode, donc mêler clients de test et clients réels.
+    if (c.STRIPE_SECRET_KEY !== '' && !/^(sk|rk)_(live|test)_/.test(c.STRIPE_SECRET_KEY)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['STRIPE_SECRET_KEY'], message: 'STRIPE_SECRET_KEY doit commencer par sk_live_, rk_live_, sk_test_ ou rk_test_' });
     }
     // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).
     if (c.CONNECTOR_PUSH_URL !== '' && c.CONNECTOR_PUSH_SECRET === '') {

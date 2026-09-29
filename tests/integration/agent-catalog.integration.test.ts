@@ -6,7 +6,6 @@ import { PgJournalAppels, PgToolCatalog } from '../../src/agent/catalog.pg';
 import { NomOutilDejaPris } from '../../src/agent/catalog';
 import { consommateurMba } from '../../src/agent/consommateur';
 import { PgUserStore } from '../../src/user/store.pg';
-import { SANS_CREDIT_OFFERT } from '../credit-offert';
 import { PgAgentSessionStore } from '../../src/agent/session-store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
@@ -376,7 +375,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
     // not null)` : le `set null` declenche par la suppression est une ecriture ordinaire, soumise au check, et
     // il faisait donc echouer TOUT le delete en 23514. Un depart de collaborateur rendait un 500, donc une
     // page Cloudflare, sur un geste parfaitement legitime.
-    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
+    const users = new PgUserStore(pool);
     const u = await pool.query<{ id: string }>(
       `insert into users (tenant_id, email, role, password_hash) values ($1, 'itest-partant@example.test', 'agent', 'x') returning id`,
       [tenantId],
@@ -401,7 +400,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
   it('un refus de suppression n eteint AUCUN outil', async () => {
     // Le dernier administrateur actif ne peut pas etre supprime. Le refus doit laisser la base exactement
     // comme il l a trouvee : un refus qui aurait quand meme eteint des outils ne serait pas un refus.
-    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
+    const users = new PgUserStore(pool);
     const outil = (await catalogue.ajouter(tenantId, agentId, { ...modele, name: 'mba_poser_tag_3' }))!;
     await catalogue.activer(tenantId, agentId, outil.id, true, adminId);
 

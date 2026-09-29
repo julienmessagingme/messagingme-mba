@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { arbresNav, cheminDeNav, contientLaCle, groupesAOuvrir, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
+import { arbresNav, cheminDeNav, contientLaCle, groupesAOuvrir, navPourRole, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -12,12 +12,17 @@ import { arbresNav, cheminDeNav, contientLaCle, groupesAOuvrir, ongletDeLaPage, 
  */
 const NAV: NavEntree[] = [
   { key: 'accueil', href: '/accueil', label: 'Accueil' },
+  // « AI Agent » est à plat depuis le 2026-09-29 (deux feuilles) ; le troisième niveau exercé ici est celui de
+  // Contenu, qui en a un pour de vrai.
   { key: 'ia', label: 'AI Agent', children: [
-    { key: 'mba', label: 'MBA', children: [
-      { key: 'mba-guide', href: '/mba', label: 'Guide' },
-      { key: 'mba-settings', href: '/mba/parametres', label: 'Paramètres' },
-    ] },
+    { key: 'mba-settings', href: '/mba/parametres', label: 'MBA' },
     { key: 'agents', href: '/agents', label: 'Other AI agent' },
+  ] },
+  { key: 'contenu', label: 'Contenu', children: [
+    { key: 'contenu-whatsapp', label: 'WhatsApp', children: [
+      { key: 'templates', href: '/templates', label: 'Templates' },
+      { key: 'flows', href: '/flows', label: 'Formulaires' },
+    ] },
   ] },
   { key: 'analytics', label: 'Analytics', children: [
     // Quantitatif est passé de PAGE à GROUPE : des sous-onglets, donc un troisième niveau de plus.
@@ -35,14 +40,15 @@ const NAV: NavEntree[] = [
 
 describe('cheminDeNav', () => {
   it('une page de TROISIÈME niveau rend ses deux ancêtres, dans l’ordre', () => {
-    // C'est le cas qui a motivé le module : avec l'ancienne table plate, le Guide du MBA n'avait qu'un
-    // ancêtre connu et le sous-menu « MBA » restait fermé sur la page où l'on venait d'arriver.
-    expect(cheminDeNav(NAV, 'mba-guide')).toEqual(['ia', 'mba']);
-    expect(cheminDeNav(NAV, 'mba-settings')).toEqual(['ia', 'mba']);
+    // C'est le cas qui a motivé le module : avec l'ancienne table plate, une page de troisième niveau n'avait
+    // qu'un ancêtre connu et son sous-menu restait fermé sur la page où l'on venait d'arriver.
+    expect(cheminDeNav(NAV, 'templates')).toEqual(['contenu', 'contenu-whatsapp']);
+    expect(cheminDeNav(NAV, 'flows')).toEqual(['contenu', 'contenu-whatsapp']);
   });
 
   it('une page de DEUXIÈME niveau n’a qu’un ancêtre', () => {
     expect(cheminDeNav(NAV, 'agents')).toEqual(['ia']);
+    expect(cheminDeNav(NAV, 'mba-settings')).toEqual(['ia']);
     expect(cheminDeNav(NAV, 'dashboard-quali')).toEqual(['analytics']);
   });
 
@@ -78,7 +84,46 @@ describe('cheminDeNav', () => {
     // `openGroups` est alimenté par ce retour. Si un groupe se rendait comme son propre ancêtre, cliquer
     // pour le refermer le rouvrirait au rendu suivant.
     expect(cheminDeNav(NAV, 'ia')).toEqual([]);
-    expect(cheminDeNav(NAV, 'mba')).toEqual(['ia']);
+    expect(cheminDeNav(NAV, 'contenu-whatsapp')).toEqual(['contenu']);
+  });
+});
+
+/**
+ * 🔴 LE RANGEMENT DU 2026-09-29 (décision de Julien) : « AI Agent » à plat, le crédit dans Paramètres. Lu sur la
+ * VRAIE barre : c'est elle que les clients voient, pas une fixture.
+ */
+describe('le rangement du 2026-09-29', () => {
+  const t = (fr: string) => fr;
+  const feuille = (e: NavEntree) => ({ key: e.key, href: e.href, label: e.label, enfants: e.children?.length ?? 0 });
+
+  it('🔴 « AI Agent » porte exactement DEUX feuilles : MBA vers ses paramètres, Other AI agent vers /agents', () => {
+    const ia = arbresNav(t).console.find((e) => e.key === 'ia');
+    expect((ia?.children ?? []).map(feuille)).toEqual([
+      { key: 'mba-settings', href: '/mba/parametres', label: 'MBA', enfants: 0 },
+      { key: 'agents', href: '/agents', label: 'Other AI agent', enfants: 0 },
+    ]);
+  });
+
+  it('🔴 « Paramètres » est un GROUPE du bloc bas : Général et Crédit IA', () => {
+    const groupe = arbresNav(t).adminBas.find((e) => e.label === 'Paramètres');
+    expect(groupe?.href).toBeUndefined();
+    expect((groupe?.children ?? []).map(feuille)).toEqual([
+      { key: 'parametres', href: '/parametres', label: 'Général', enfants: 0 },
+      { key: 'parametres-credit', href: '/parametres/credit', label: 'Crédit IA', enfants: 0 },
+    ]);
+  });
+
+  it('🔴 plus AUCUNE entrée ne mène au guide retiré ni à l’ancienne adresse du crédit', () => {
+    const { console: haut, adminBas, perf, inbox } = arbresNav(t);
+    const hrefs = (entrees: NavEntree[]): string[] => entrees.flatMap((e) => [...(e.href ? [e.href] : []), ...(e.children ? hrefs(e.children) : [])]);
+    const tous = hrefs([...haut, ...adminBas, ...perf, ...inbox]);
+    expect(tous).not.toContain('/mba');
+    expect(tous).not.toContain('/agents/credit');
+  });
+
+  it('un manager garde le groupe Paramètres avec sa SEULE page, sans le Crédit IA', () => {
+    const groupe = navPourRole(arbresNav(t).adminBas, 'manager').find((e) => e.label === 'Paramètres');
+    expect((groupe?.children ?? []).map((e) => e.key)).toEqual(['parametres']);
   });
 });
 

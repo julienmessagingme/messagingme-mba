@@ -1,6 +1,7 @@
 import type { ControlOwner } from './store.pg';
 import { MetaApiError } from '../meta/errors';
 import { messageDe } from '../lib/erreur';
+import { automatique, parCause, type AuteurDuChangement } from './evenements';
 
 /**
  * Le contrôle du fil : qui répond au client, l'agent de Meta (`mba`), un scénario ou un agent IA (`app_workflow`),
@@ -27,6 +28,9 @@ import { messageDe } from '../lib/erreur';
  *     l'agent répondait, ou collée pour toujours après un refus de Meta (le balayage ne rend jamais un fil escaladé).
  *  5. **Un fil de test** (`is_test`) n'est jamais rendu automatiquement à l'agent : celui qui teste enchaîne les
  *     essais, et l'agent répondrait au scan suivant. Seul « Rendre la main », geste humain explicite, le peut.
+ *  6. **Chaque écriture dit qui la demande** (`EcritureDuFil.par`, requis) : le collaborateur que l'appelant
+ *     nomme pour un geste de la console, une cause écrite ici (`CAUSES`) pour tout le reste. Le dépôt en fait,
+ *     dans la même requête, l'événement que raconte le panneau Détail de l'Inbox (migration 0192).
  *
  * Deux courses sont assumées entre la lecture du détenteur et l'appel à Meta (balayage, client que personne ne
  * suit, lead publicitaire) : un « Reprendre la main » cliqué pendant l'appel, que répare un second clic. Une
@@ -36,6 +40,13 @@ import { messageDe } from '../lib/erreur';
 
 /** Les options d'écriture de la colonne, telles que le dépôt les applique dans un seul `update` gardé. */
 export interface EcritureDuFil {
+  /**
+   * Qui demande la bascule : un collaborateur, ou une cause automatique. REQUIS : le dépôt écrit, dans la même
+   * requête, l'événement que le panneau Détail raconte (`prise_mba`, `rendue_mba`, migration 0192), et une
+   * bascule sans auteur ni cause ne dirait rien. Chaque geste de ce module sait qui le demande, c'est donc ici
+   * qu'il se décide.
+   */
+  par: AuteurDuChangement;
   /** La transition n'a lieu que depuis ces détenteurs (garde atomique, dans le `where`). */
   only?: readonly ControlOwner[];
   /** Un `standby` antérieur à l'escalade est un retardataire : il n'écrit pas (sauf `messageEnvoyeLe` plus récent). */
@@ -56,14 +67,17 @@ export interface DepsControleDuFil {
     /** L'absence de conversation vaut `app_workflow`. */
     getControlOwner(tenantId: string, waId: string): Promise<ControlOwner>;
     /** `true` si la bascule a eu lieu ; jamais d'erreur sur une garde refusée. */
-    setControlOwner(tenantId: string, waId: string, owner: ControlOwner, opts?: EcritureDuFil): Promise<boolean>;
+    setControlOwner(tenantId: string, waId: string, owner: ControlOwner, opts: EcritureDuFil): Promise<boolean>;
     /** Marque le fil « à rendre dès l'accusé de notre dernier envoi » et rend ce message, ou `null` : rien en vol. */
     demanderReleaseMba(tenantId: string, waId: string): Promise<string | null>;
     /** Consomme la marque que ce message portait, et rend le fil concerné. */
     consommerReleaseMba(messageId: string): Promise<{ tenantId: string; waId: string } | null>;
     estConversationDeTest(tenantId: string, waId: string): Promise<boolean>;
-    /** `app_human` plus la marque d'escalade, en upsert : la passation peut précéder l'écho qui crée la conversation. */
-    marquerEscalade(tenantId: string, waId: string): Promise<void>;
+    /**
+     * `app_human` plus la marque d'escalade, en upsert : la passation peut précéder l'écho qui crée la conversation.
+     * `cause` : ce que la frise du panneau Détail dit de la passation.
+     */
+    marquerEscalade(tenantId: string, waId: string, cause: string): Promise<void>;
   };
   reglages: { get(tenantId: string): Promise<{ mbaEnabled: boolean }> };
   /** Un parcours attend-il la réponse de ce contact ? */
@@ -107,19 +121,19 @@ export interface ControleDuFil {
    * Un opérateur ou une machine (API, MCP) vient d'écrire au client : le fil est à l'équipe. Aucun appel à Meta,
    * l'envoi WhatsApp prend le fil implicitement. Ne touche pas l'escalade.
    */
-  prisEnEcrivant(tenantId: string, waId: string): Promise<void>;
+  prisEnEcrivant(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
   /**
    * « Reprendre la main » (et le rangement « À traiter ») : prendre le fil sans écrire au client. Meta n'est appelé
    * que si notre colonne dit `mba` et que l'agent est allumé, avec un rejeu comme les automates. `'refuse'` : Meta
    * n'a pas cédé, rien n'est écrit.
    */
-  reprendreLaMain(tenantId: string, waId: string): Promise<'pris' | 'refuse'>;
+  reprendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<'pris' | 'refuse'>;
   /**
    * « Rendre la main » / « Passer à l'agent Meta ». Sur un fil que notre colonne donne déjà à l'agent, on ne rouvre
    * que notre côté (`release` sans tenir le fil est hors contrat) ; agent éteint : `app_workflow` ; sinon `release`
    * puis `mba`. Lève si Meta refuse. Efface l'escalade. Seul geste qui rend un fil de test.
    */
-  rendreLaMain(tenantId: string, waId: string): Promise<IssueRendreLaMain>;
+  rendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<IssueRendreLaMain>;
   /**
    * Fin de parcours (chaîne finie, question expirée, réponse à côté ; échec d'un geste du relais de l'agent de
    * Meta) : `app_human` en attente, puis remise à l'accusé de notre dernier envoi, ou tout de suite si rien n'est en
@@ -143,9 +157,10 @@ export interface ControleDuFil {
   /**
    * La réponse à une campagne dont le devenir est « Inbox » : prendre le fil pour l'équipe (`app_human`), pour
    * qu'aucun robot ne réponde et que la conversation entre dans « À traiter ». Un fil déjà tenu par un opérateur
-   * reste tel quel. `false` = Meta a refusé de céder le fil, son agent répond.
+   * reste tel quel. `false` = Meta a refusé de céder le fil, son agent répond. `cause` : la campagne, telle que la
+   * frise du panneau Détail la dit (« automatique : campagne Rentrée »).
    */
-  prendrePourLEquipe(tenantId: string, waId: string): Promise<boolean>;
+  prendrePourLEquipe(tenantId: string, waId: string, cause: string): Promise<boolean>;
   /**
    * Un scénario (bloc « passer à un humain », échec d'un parcours) ou un agent IA remonte la conversation à
    * l'équipe, seulement si le fil était encore aux robots. `escalade` : quelqu'un attend une réponse. Rend `true`
@@ -168,6 +183,21 @@ export interface ControleDuFil {
   /** Un scénario ou un agent IA peut-il écrire dans ce fil ? Seulement s'il est `app_workflow`. */
   peutAgir(tenantId: string, waId: string): Promise<boolean>;
 }
+
+/**
+ * Les causes des bascules que ce module décide seul, telles que la frise du panneau Détail les affiche (migration
+ * 0192). Écrites une fois : deux libellés pour le même geste feraient croire à deux gestes. Les gestes d'un
+ * opérateur, eux, reçoivent leur auteur de l'appelant, seul à connaître la session.
+ */
+const CAUSES = {
+  finDeParcours: parCause('fin du scénario'),
+  personneNeSuit: parCause('le contact écrit et personne ne suit la conversation'),
+  scenario: parCause('un scénario reprend la conversation'),
+  versLEquipe: parCause('escalade vers l’équipe'),
+  standby: parCause('Meta rend la conversation à son agent'),
+  inactivite: parCause('délai de reprise écoulé'),
+} satisfies Record<string, AuteurDuChangement>;
+const CAUSE_PASSATION = automatique('agent de Meta');
 
 export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
   const { depot } = deps;
@@ -223,36 +253,36 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
    */
   const rendreMaintenant = async (tenantId: string, waId: string): Promise<void> => {
     if ((await remiseAutomatique(tenantId, waId)) !== 'rendu') return;
-    await depot.setControlOwner(tenantId, waId, 'mba', { only: ['app_human'], effacerEscalade: true });
+    await depot.setControlOwner(tenantId, waId, 'mba', { par: CAUSES.finDeParcours, only: ['app_human'], effacerEscalade: true });
   };
 
   const mbaAllume = async (tenantId: string): Promise<boolean> => (await deps.reglages.get(tenantId)).mbaEnabled;
 
   return {
-    async prisEnEcrivant(tenantId, waId) {
-      await depot.setControlOwner(tenantId, waId, 'app_human');
+    async prisEnEcrivant(tenantId, waId, par) {
+      await depot.setControlOwner(tenantId, waId, 'app_human', { par });
     },
 
-    async reprendreLaMain(tenantId, waId) {
+    async reprendreLaMain(tenantId, waId, par) {
       // `take` sur un fil que nous tenons déjà serait au mieux inutile, au pire une erreur lue comme une panne.
       if ((await depot.getControlOwner(tenantId, waId)) === 'mba' && (await mbaAllume(tenantId))
         && !(await prendreAvecUnRejeu(tenantId, waId))) return 'refuse';
-      await depot.setControlOwner(tenantId, waId, 'app_human');
+      await depot.setControlOwner(tenantId, waId, 'app_human', { par });
       return 'pris';
     },
 
-    async rendreLaMain(tenantId, waId) {
+    async rendreLaMain(tenantId, waId, par) {
       // Les trois écritures clôturent l'escalade : c'est le même geste délibéré quelle que soit la valeur écrite.
       if ((await depot.getControlOwner(tenantId, waId)) === 'mba') {
-        await depot.setControlOwner(tenantId, waId, 'app_workflow', { effacerEscalade: true });
+        await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
         return 'app_workflow';
       }
       if (!(await mbaAllume(tenantId))) {
-        await depot.setControlOwner(tenantId, waId, 'app_workflow', { effacerEscalade: true });
+        await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
         return 'app_workflow';
       }
       if (!(await acteChezMeta(tenantId, waId, 'releaseThread'))) return 'aucun_numero';
-      await depot.setControlOwner(tenantId, waId, 'mba', { effacerEscalade: true });
+      await depot.setControlOwner(tenantId, waId, 'mba', { par, effacerEscalade: true });
       return 'mba';
     },
 
@@ -260,7 +290,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       // L'état d'attente est `app_human` : `mba` mentirait tant que Meta n'a pas confirmé, et `app_workflow` est la
       // seule valeur que « À traiter » exclut. Envoyer un message prend le fil chez Meta : un release émis juste
       // après notre dernier envoi serait annulé par lui, d'où l'attente de son accusé (`demanderReleaseMba`).
-      if (!(await depot.setControlOwner(tenantId, waId, 'app_human', { only: ['app_workflow'], effacerEscalade: true }))) return;
+      if (!(await depot.setControlOwner(tenantId, waId, 'app_human', { par: CAUSES.finDeParcours, only: ['app_workflow'], effacerEscalade: true }))) return;
       if (await depot.demanderReleaseMba(tenantId, waId)) return;
       await rendreMaintenant(tenantId, waId);
     },
@@ -280,7 +310,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       if ((await remiseAutomatique(tenantId, waId)) !== 'rendu') return;
       // `app_workflow` : le défaut d'une conversation née d'un envoi sortant, hors « À traiter » et muette sans ce
       // geste. `mba` : notre colonne peut le dire quand Meta pense l'inverse, et l'appel répare.
-      await depot.setControlOwner(tenantId, waId, 'mba', { only: ['app_workflow', 'mba'], effacerEscalade: true });
+      await depot.setControlOwner(tenantId, waId, 'mba', { par: CAUSES.personneNeSuit, only: ['app_workflow', 'mba'], effacerEscalade: true });
     },
 
     async reprendrePourLApp(tenantId, waId, opts) {
@@ -292,23 +322,23 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       // L'agent de Meta est le répondeur primaire du numéro : tant qu'on ne lui a pas pris le fil, il répond quoi
       // que dise notre base. Dans l'ordre inverse, le scénario répondrait par-dessus lui.
       if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
-      await depot.setControlOwner(tenantId, waId, 'app_workflow', { effacerEscalade: true });
+      await depot.setControlOwner(tenantId, waId, 'app_workflow', { par: CAUSES.scenario, effacerEscalade: true });
       return true;
     },
 
-    async prendrePourLEquipe(tenantId, waId) {
+    async prendrePourLEquipe(tenantId, waId, cause) {
       if ((await depot.getControlOwner(tenantId, waId)) === 'app_human') return true;
       if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
-      await depot.setControlOwner(tenantId, waId, 'app_human');
+      await depot.setControlOwner(tenantId, waId, 'app_human', { par: { cause } });
       return true;
     },
 
     passerAUnHumain(tenantId, waId, { escalade }) {
-      return depot.setControlOwner(tenantId, waId, 'app_human', { only: ['app_workflow'], escalade });
+      return depot.setControlOwner(tenantId, waId, 'app_human', { par: CAUSES.versLEquipe, only: ['app_workflow'], escalade });
     },
 
     agentDeMetaPasseLaMain(tenantId, waId) {
-      return depot.marquerEscalade(tenantId, waId);
+      return depot.marquerEscalade(tenantId, waId, CAUSE_PASSATION);
     },
 
     async entrantEnStandby(tenantId, waId, envoyeLe) {
@@ -316,7 +346,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       // conversation à l'agent sous le nez de l'équipe) ; postérieur, il prouve que Meta a redonné le fil à l'agent.
       // Sans date, la garde reste stricte.
       await depot.setControlOwner(tenantId, waId, 'mba', {
-        saufEscalade: true, effacerEscalade: true, ...(envoyeLe ? { messageEnvoyeLe: envoyeLe } : {}),
+        par: CAUSES.standby, saufEscalade: true, effacerEscalade: true, ...(envoyeLe ? { messageEnvoyeLe: envoyeLe } : {}),
       });
     },
 
@@ -330,7 +360,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
           return false;
         }
       }
-      return depot.setControlOwner(tenantId, waId, vers, { only: [detenteur], effacerEscalade: true });
+      return depot.setControlOwner(tenantId, waId, vers, { par: CAUSES.inactivite, only: [detenteur], effacerEscalade: true });
     },
 
     async peutAgir(tenantId, waId) {

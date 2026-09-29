@@ -15,6 +15,9 @@ import { registerRcsMedia } from './http/rcs-media';
 import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
 import { registerHubspotEvents, type HubspotEventRouteDeps } from './http/hubspot-events';
+import {
+  registerCreditPaiement, registerStripeWebhook, type CreditPaiementRouteDeps, type StripeWebhookRouteDeps,
+} from './http/credit-stripe';
 import { registerStats } from './http/stats';
 import { registerSettings } from './http/settings';
 import { registerUsers } from './http/users';
@@ -206,6 +209,16 @@ export interface ServerDeps {
   /** Canal entrant depuis le connecteur HubSpot (changement d'étape d'un deal). Fourni si le secret partagé
    *  est configuré. Signé, pas authentifié par jeton utilisateur : l'appelant est un service, pas un humain. */
   hubspotEvents?: HubspotEventRouteDeps;
+  /**
+   * La recharge du crédit IA : ouvrir un paiement Stripe (admin). Toujours montée : Stripe non configuré, elle rend
+   * 503, que la console lit comme « recharge pas encore disponible ».
+   */
+  creditPaiement?: CreditPaiementRouteDeps;
+  /**
+   * Le webhook de Stripe, qui crédite un paiement. Signé par Stripe, pas authentifié par un jeton : l'appelant est
+   * un service. Monté seulement quand le secret de signature est posé.
+   */
+  stripeWebhook?: StripeWebhookRouteDeps;
   /** Stats du dashboard (séries 1 pt/jour). */
   stats?: StatsRouteDeps;
   /** Réglages tenant (toggle MBA). */
@@ -344,9 +357,10 @@ export type ClasseDAcces =
   /** La signature de Meta sur le corps de la requête, avec le secret de l'application Meta. */
   | 'signature-meta'
   /**
-   * Une signature HMAC entre nos services, avec un secret partagé (`x-mm-service-signature`) : c'est ainsi
-   * que le connecteur HubSpot pousse ses événements. Pas `code-url` : son adresse ne porte aucun code, et une
-   * adresse devinable ne suffit pas à autoriser un appel.
+   * Une signature HMAC d'un service, avec un secret partagé : le connecteur HubSpot pousse ses événements ainsi
+   * (`x-mm-service-signature`), et Stripe ses webhooks de paiement (`Stripe-Signature`, secret de la destination).
+   * Pas `code-url` : leur adresse ne porte aucun code, et une adresse devinable ne suffit pas à autoriser un appel.
+   * Une signature absente ou fausse rend 401.
    */
   | 'signature-service'
   /**
@@ -502,11 +516,15 @@ export function modulesDeRoutes(
     // conversation est reserve aux administrateurs. Un operateur repond aux clients, il n'efface pas des traces.
     entree('inbox', 'tenant', deps.inbox, (app, d, g) => registerInbox(app, d, g.auth, g.admin, g.limiteCouteuse)),
     entree('hubspotEvents', 'signature-service', deps.hubspotEvents, (app, d) => registerHubspotEvents(app, d)),
+    // Le webhook de Stripe : autorité = la signature du corps brut, vérifiée dans le module avant toute lecture.
+    entree('stripeWebhook', 'signature-service', deps.stripeWebhook, (app, d) => registerStripeWebhook(app, d)),
     entree('stats', 'tenant', deps.stats, (app, d, g) => registerStats(app, d, g.admin)),
     entree('settings', 'tenant', deps.settings, (app, d, g) => registerSettings(app, d, g.admin, g.encadrement)),
     entree('admin', 'tenant', deps.admin, (app, d, g) => registerUsers(app, d, g.admin)),
     entree('flows', 'tenant', deps.flows, (app, d, g) => registerFlows(app, d, g.admin)),
     entree('agents', 'tenant', deps.agents, (app, d, g) => registerAgents(app, d, g.admin)),
+    // Admin comme le solde qu'elle recharge, et plafond coûteux : chaque clic crée des objets chez Stripe.
+    entree('creditPaiement', 'tenant', deps.creditPaiement, (app, d, g) => registerCreditPaiement(app, d, g.admin, g.limiteCouteuse ?? SANS_PLAFOND)),
     entree('agentKnowledge', 'tenant', deps.agentKnowledge, (app, d, g) => registerAgentKnowledge(app, d, g.admin, g.limiteCouteuse)),
     entree('agentTools', 'tenant', deps.agentTools, (app, d, g) => registerAgentTools(app, d, g.admin)),
     entree('agentCatalogue', 'tenant', deps.agentCatalogue, (app, d, g) => registerAgentCatalogue(app, d, g.admin)),

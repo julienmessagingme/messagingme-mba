@@ -31,7 +31,8 @@ test.describe('Barre : où sont rangées les entrées', () => {
     // entière, sinon le test passerait aussi si elles étaient restées en haut. Deviner la structure DOM
     // (« le dernier div de l'aside ») marchait par accident et se serait cassé à la première mise en forme.
     const blocBas = page.getByTestId('nav-bas');
-    await expect(blocBas.getByRole('link', { name: 'Paramètres', exact: true })).toBeVisible();
+    // « Paramètres » est un GROUPE depuis le 2026-09-29 : un bouton qui se déplie, plus un lien.
+    await expect(blocBas.getByRole('button', { name: /Paramètres/ })).toBeVisible();
     await expect(blocBas.getByRole('link', { name: 'Support', exact: true })).toBeVisible();
 
     // Et l'ORDRE demandé : les deux AVANT Developers.
@@ -40,20 +41,32 @@ test.describe('Barre : où sont rangées les entrées', () => {
     expect(textes.indexOf('Support')).toBeLessThan(textes.indexOf('Developers'));
   });
 
-  test('🔴 « Other AI agent » est un GROUPE : Agents et Crédit', async ({ page }) => {
+  test('🔴 « AI Agent » porte deux liens directs : MBA vers ses paramètres, Other AI agent vers /agents', async ({ page }) => {
+    // Le rangement du 2026-09-29 (décision de Julien) : plus de troisième niveau sous « AI Agent », plus de guide.
     await mock(page);
     await page.goto('/agents');
-    await expect(page.getByRole('link', { name: 'Agents', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Crédit|Credit/ })).toBeVisible();
-    // L'adresse de l'écran des agents N'A PAS bougé : seule l'entrée de menu a gagné un parent.
+    await expect(page.getByRole('link', { name: 'MBA', exact: true })).toHaveAttribute('href', '/mba/parametres');
+    await expect(page.getByRole('link', { name: 'Other AI agent', exact: true })).toHaveAttribute('href', '/agents');
+    await expect(page.getByRole('link', { name: 'Guide', exact: true })).toHaveCount(0);
+    // L'adresse de l'écran des agents N'A PAS bougé.
     expect(new URL(page.url()).pathname).toBe('/agents');
   });
 
-  test('la page Crédit montre le solde de l’ESPACE et dit que le rechargement n’est pas ouvert', async ({ page }) => {
+  test('🔴 « Paramètres » est un groupe du bloc bas : Général et Crédit IA', async ({ page }) => {
+    await mock(page);
+    await page.goto('/parametres/credit');
+    const blocBas = page.getByTestId('nav-bas');
+    await expect(blocBas.getByRole('link', { name: 'Général', exact: true })).toHaveAttribute('href', '/parametres');
+    await expect(blocBas.getByRole('link', { name: 'Crédit IA', exact: true })).toHaveAttribute('href', '/parametres/credit');
+    await expect(page.getByTestId('credit-solde')).toContainText('4');
+  });
+
+  test('les anciennes adresses mènent aux nouvelles : /agents/credit et /mba', async ({ page }) => {
     await mock(page);
     await page.goto('/agents/credit');
-    await expect(page.getByTestId('credit-solde')).toContainText('4');
-    await expect(page.getByRole('heading', { name: /Recharger|Top up/ })).toBeVisible();
+    await expect(page).toHaveURL(/\/parametres\/credit$/);
+    await page.goto('/mba');
+    await expect(page).toHaveURL(/\/mba\/parametres$/);
   });
 
   test('les onglets se distinguent du logo : une autre graisse, et un écart', async ({ page }) => {

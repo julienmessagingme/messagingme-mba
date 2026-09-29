@@ -1,12 +1,14 @@
 'use client';
 
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AppShell, UNREAD_CHANGED_EVENT } from '@/components/AppShell';
 import { TemplatePreview } from '@/components/TemplatePreview';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
 import { dayKey, dayLabel, hourMin, jourHeure } from '@/lib/day';
 import type { ControlOwner } from '@/lib/api';
+import { CAUSES_TRADUCTION, causeDeCredit, type CauseTraduction } from '@/lib/api/inbox';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
@@ -67,6 +69,7 @@ import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
+import { InboxDetail } from '@/components/InboxDetail';
 
 export default function InboxPage() {
   // Suspense : useSearchParams (deep-link ?c=) exige une frontière Suspense au build (Next 15).
@@ -260,6 +263,11 @@ function InboxInner({ session }: { session: Session }) {
   const [chargementPage, setChargementPage] = useState(false);
   /** Fiche contact ouverte, par `waId`. `null` = fermée, et la conversation reprend toute la largeur. */
   const [ficheWaId, setFicheWaId] = useState<string | null>(null);
+  /**
+   * Le panneau Détail relit son contenu quand ce nombre change : après un geste de l'en-tête du fil (assigner,
+   * prendre, ranger, rendre la main). Un compteur et pas un appel : le panneau est un frère du fil, pas son enfant.
+   */
+  const [versionDetail, setVersionDetail] = useState(0);
 
   /**
    * Recharge la PREMIÈRE page. Le filtre est passé au serveur : le faire en mémoire ne voyait que les
@@ -490,6 +498,12 @@ function InboxInner({ session }: { session: Session }) {
 
   // Le filtre est appliqué par le SERVEUR (`reload` le passe en paramètre) : la liste reçue est déjà la bonne.
   const visible = conversations;
+
+  /** Un geste de l'en-tête du fil vient d'avoir lieu : la liste se recharge, et le panneau Détail se relit. */
+  const apresGeste = useCallback(() => {
+    setVersionDetail((v) => v + 1);
+    void reload();
+  }, [reload]);
 
   // Au moins une ligne cochée porte-t-elle un signalement HUMAIN ? C'est ce qui décide si « Ne plus
   // signaler » a un sens sur la sélection (cf. `destinationsEnLot`).
@@ -725,11 +739,23 @@ function InboxInner({ session }: { session: Session }) {
             )}
           </ul>
         )}
+        {/* 🔴 LE PANNEAU DÉTAIL, MOITIÉ BASSE DE CETTE COLONNE (cadrage du 2026-09-28), seulement quand une
+            conversation est choisie. La liste au-dessus et lui ont chacun `flex-1` : moitié-moitié, et chacun défile
+            seul. Replié, il ne garde qu'une barre ; illisible (route absente, conversation d'un collègue), il ne
+            prend aucune place. */}
+        {selected && (
+          <InboxDetail
+            session={session}
+            conversationId={selected.id}
+            rafraichir={versionDetail}
+            onOuvrirFiche={() => setFicheWaId(selected.waId)}
+          />
+        )}
       </section>
 
       <section className="lg:min-h-0">
         {selected ? (
-          <Thread key={selected.id} session={session} conversation={selected} dossier={dossier} peutPrendre={peutPrendre} onSent={reload} />
+          <Thread key={selected.id} session={session} conversation={selected} dossier={dossier} peutPrendre={peutPrendre} onSent={apresGeste} />
         ) : (
           <div className="flex h-full min-h-[300px] items-center justify-center rounded-carte border border-ink-200 bg-white text-sm text-ink-500">
             {t('Sélectionnez une conversation', 'Select a conversation')}
@@ -1255,7 +1281,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
    * configuré. On envoyait donc un administrateur recharger un crédit sans rapport, en lui cachant la
    * seule cause réelle. Une phrase fausse coûte plus cher qu'aucune phrase, parce qu'on la suit.
    */
-  const [traductionCause, setTraductionCause] = useState<'instance' | 'credit' | 'cle' | null>(null);
+  const [traductionCause, setTraductionCause] = useState<CauseTraduction | null>(null);
   /** La langue demandée au serveur, ou `undefined` : c'est celle de la console, jamais une question de plus. */
   const cibleLecture = cibleDeLecture(traduireRecus, locale);
   const [showTemplate, setShowTemplate] = useState(false);
@@ -1411,7 +1437,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
       setTraductionIndisponible(res.traductionIndisponible === true);
       // ⚠️ `null` quand le serveur ne dit rien (version plus ancienne, ou traduction qui a marché) : le
       // bandeau retombe alors sur sa formulation prudente plutôt que d'inventer une cause.
-      setTraductionCause(res.traductionCause === 'instance' || res.traductionCause === 'credit' || res.traductionCause === 'cle' ? res.traductionCause : null);
+      setTraductionCause(res.traductionCause !== undefined && CAUSES_TRADUCTION.includes(res.traductionCause) ? res.traductionCause : null);
     } catch (err) {
       // Une requête ANNULÉE n'est pas une panne : changer de conversation annule la précédente, et afficher
       // un bandeau rouge à chaque clic serait absurde.
@@ -1751,6 +1777,18 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
             'Traduction indisponible : le crédit de cet espace est épuisé. Les messages restent dans leur langue d’origine, un administrateur peut le recharger.',
             'Translation unavailable: this workspace has run out of credit. Messages stay in their original language, an admin can top it up.',
           )}
+          {traductionCause === 'credit_insuffisant' && t(
+            'Traduction indisponible : le crédit de cet espace est trop bas pour l’activer. Les messages restent dans leur langue d’origine, un administrateur peut le recharger.',
+            'Translation unavailable: this workspace’s credit is too low to turn it on. Messages stay in their original language, an admin can top it up.',
+          )}
+          {/* 🔴 LE LIEN NE SORT QUE POUR LE CRÉDIT (décision de Julien du 2026-09-29) : ce sont les seules causes que
+              le client règle lui-même. Et seulement pour un ADMIN : la page Crédit IA renvoie un non-admin vers
+              l'Inbox, le lien le ferait tourner en rond ; la phrase lui dit déjà qu'un administrateur recharge. */}
+          {causeDeCredit(traductionCause) && session.role === 'admin' && (
+            <Link href="/parametres/credit" data-testid="traduction-recharger" className="ml-1 font-medium underline hover:text-alerte-700">
+              {t('Recharger le crédit', 'Top up credit')}
+            </Link>
+          )}
           {/* ⚠️ AUCUN RENVOI VERS LE CRÉDIT ICI : la cause est chez nous, et rien de ce que le client
               ferait n'y changerait quoi que ce soit. Lui dire de recharger le ferait payer pour rien. */}
           {traductionCause === 'instance' && t(
@@ -1759,6 +1797,10 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
           )}
           {/* ⚠️ PAS DE CRÉDIT NON PLUS ICI (2026-09-28) : l'espace EN A, c'est sa clé de modèle qui n'a pas pu
               s'ouvrir (panne chez notre fournisseur). L'envoyer recharger le ferait payer pour rien. */}
+          {traductionCause === 'cle_en_preparation' && t(
+            'Traduction en préparation : elle sera disponible dans un instant.',
+            'Translation is being set up: it will be available in a moment.',
+          )}
           {traductionCause === 'cle' && t(
             'Traduction momentanément indisponible : les messages restent dans leur langue d’origine. Réessayez dans un instant.',
             'Translation is temporarily unavailable: messages stay in their original language. Try again in a moment.',

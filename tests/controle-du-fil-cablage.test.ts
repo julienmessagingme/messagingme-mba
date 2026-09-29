@@ -85,7 +85,7 @@ describe('l’escalade est posée par les DEUX câblages, pas seulement par l’
     // ⚠️ `escalade` vient de l'APPELANT : un bloc « passer à un humain » le pose, un échec de réveil (fenêtre
     // fermée, envoi refusé à la reprise) ne le pose pas, parce que personne n'attend à cet instant. Écrire
     // `escalade: true` ici rendrait tous les fils collants, y compris ceux que personne n'attend.
-    expect(wiring).toContain('escalateToHuman: async (tenant, waId, assigneA, escalade) => {');
+    expect(wiring).toContain('escalateToHuman: async (tenant, waId, assigneA, escalade, workflowId) => {');
     expect(wiring).toContain('fil.passerAUnHumain(tenant, waId, { escalade })');
   });
 

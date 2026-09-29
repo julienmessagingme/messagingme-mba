@@ -50,25 +50,25 @@ const escaladee = { escaladeeLe: ESCALADE };
 
 const TABLE: Cas[] = [
   // 1. Un opérateur ou une machine écrit : aucun appel, l'envoi WhatsApp prend le fil.
-  { nom: '1. écrit, depuis mba : app_human sans appel', depart: { owner: 'mba' }, geste: (f) => f.prisEnEcrivant('t1', 'w'), meta: [], arrivee: { owner: 'app_human' } },
-  { nom: '1. écrit, depuis app_workflow : app_human sans appel', depart: { owner: 'app_workflow' }, geste: (f) => f.prisEnEcrivant('t1', 'w'), meta: [], arrivee: { owner: 'app_human' } },
-  { nom: '1. écrit, fil escaladé : l’escalade reste (c’est l’équipe qu’on attend)', depart: { owner: 'mba', ...escaladee }, geste: (f) => f.prisEnEcrivant('t1', 'w'), meta: [], arrivee: { owner: 'app_human', escaladee: true } },
+  { nom: '1. écrit, depuis mba : app_human sans appel', depart: { owner: 'mba' }, geste: (f) => f.prisEnEcrivant('t1', 'w', { collaborateur: null }), meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '1. écrit, depuis app_workflow : app_human sans appel', depart: { owner: 'app_workflow' }, geste: (f) => f.prisEnEcrivant('t1', 'w', { collaborateur: null }), meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '1. écrit, fil escaladé : l’escalade reste (c’est l’équipe qu’on attend)', depart: { owner: 'mba', ...escaladee }, geste: (f) => f.prisEnEcrivant('t1', 'w', { collaborateur: null }), meta: [], arrivee: { owner: 'app_human', escaladee: true } },
 
   // 2. « Reprendre la main ».
-  { nom: '2. reprendre, mba, Meta accepte : take puis app_human', depart: { owner: 'mba' }, geste: (f) => f.reprendreLaMain('t1', 'w'), rend: 'pris', meta: ['take:w'], arrivee: { owner: 'app_human' } },
-  { nom: '2. reprendre, mba, Meta refuse : rien d’écrit', depart: { owner: 'mba' }, banc: { take: ['refuse'] }, geste: (f) => f.reprendreLaMain('t1', 'w'), rend: 'refuse', meta: ['take:w'], arrivee: { owner: 'mba' } },
-  { nom: '2. reprendre, mba, Meta refuse une fois puis accepte : un rejeu', depart: { owner: 'mba' }, banc: { take: ['passager', 'accepte'] }, geste: (f) => f.reprendreLaMain('t1', 'w'), rend: 'pris', meta: ['take:w', 'take:w'], arrivee: { owner: 'app_human' } },
-  { nom: '2. reprendre, agent éteint : aucun appel', depart: { owner: 'mba' }, banc: { mbaEnabled: false }, geste: (f) => f.reprendreLaMain('t1', 'w'), rend: 'pris', meta: [], arrivee: { owner: 'app_human' } },
-  { nom: '2. reprendre, fil déjà à nous : aucun appel', depart: { owner: 'app_workflow' }, geste: (f) => f.reprendreLaMain('t1', 'w'), rend: 'pris', meta: [], arrivee: { owner: 'app_human' } },
-  { nom: '2. reprendre, aucun numéro : aucun appel, le fil est à l’équipe', depart: { owner: 'mba' }, banc: { numero: null }, geste: (f) => f.reprendreLaMain('t1', 'w'), rend: 'pris', meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '2. reprendre, mba, Meta accepte : take puis app_human', depart: { owner: 'mba' }, geste: (f) => f.reprendreLaMain('t1', 'w', { collaborateur: null }), rend: 'pris', meta: ['take:w'], arrivee: { owner: 'app_human' } },
+  { nom: '2. reprendre, mba, Meta refuse : rien d’écrit', depart: { owner: 'mba' }, banc: { take: ['refuse'] }, geste: (f) => f.reprendreLaMain('t1', 'w', { collaborateur: null }), rend: 'refuse', meta: ['take:w'], arrivee: { owner: 'mba' } },
+  { nom: '2. reprendre, mba, Meta refuse une fois puis accepte : un rejeu', depart: { owner: 'mba' }, banc: { take: ['passager', 'accepte'] }, geste: (f) => f.reprendreLaMain('t1', 'w', { collaborateur: null }), rend: 'pris', meta: ['take:w', 'take:w'], arrivee: { owner: 'app_human' } },
+  { nom: '2. reprendre, agent éteint : aucun appel', depart: { owner: 'mba' }, banc: { mbaEnabled: false }, geste: (f) => f.reprendreLaMain('t1', 'w', { collaborateur: null }), rend: 'pris', meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '2. reprendre, fil déjà à nous : aucun appel', depart: { owner: 'app_workflow' }, geste: (f) => f.reprendreLaMain('t1', 'w', { collaborateur: null }), rend: 'pris', meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '2. reprendre, aucun numéro : aucun appel, le fil est à l’équipe', depart: { owner: 'mba' }, banc: { numero: null }, geste: (f) => f.reprendreLaMain('t1', 'w', { collaborateur: null }), rend: 'pris', meta: [], arrivee: { owner: 'app_human' } },
 
   // 3. « Rendre la main ».
-  { nom: '3. rendre, humain escaladé, Meta accepte : release puis mba, escalade effacée', depart: { owner: 'app_human', ...escaladee }, geste: (f) => f.rendreLaMain('t1', 'w'), rend: 'mba', meta: ['release:w'], arrivee: { owner: 'mba', escaladee: false } },
-  { nom: '3. rendre, Meta refuse : lève, rien d’écrit', depart: { owner: 'app_human' }, banc: { release: ['refuse'] }, geste: (f) => f.rendreLaMain('t1', 'w'), leve: true, meta: ['release:w'], arrivee: { owner: 'app_human' } },
-  { nom: '3. rendre, agent éteint : app_workflow sans appel, escalade effacée', depart: { owner: 'app_human', ...escaladee }, banc: { mbaEnabled: false }, geste: (f) => f.rendreLaMain('t1', 'w'), rend: 'app_workflow', meta: [], arrivee: { owner: 'app_workflow', escaladee: false } },
-  { nom: '3. rendre, colonne déjà mba : on rouvre notre côté sans appel (release hors contrat)', depart: { owner: 'mba' }, geste: (f) => f.rendreLaMain('t1', 'w'), rend: 'app_workflow', meta: [], arrivee: { owner: 'app_workflow' } },
-  { nom: '3. rendre, agent allumé sans numéro : rien d’écrit', depart: { owner: 'app_human' }, banc: { numero: null }, geste: (f) => f.rendreLaMain('t1', 'w'), rend: 'aucun_numero', meta: [], arrivee: { owner: 'app_human' } },
-  { nom: '3. rendre, fil de test : le bouton le peut', depart: { owner: 'app_human', test: true }, geste: (f) => f.rendreLaMain('t1', 'w'), rend: 'mba', meta: ['release:w'], arrivee: { owner: 'mba' } },
+  { nom: '3. rendre, humain escaladé, Meta accepte : release puis mba, escalade effacée', depart: { owner: 'app_human', ...escaladee }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'mba', meta: ['release:w'], arrivee: { owner: 'mba', escaladee: false } },
+  { nom: '3. rendre, Meta refuse : lève, rien d’écrit', depart: { owner: 'app_human' }, banc: { release: ['refuse'] }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), leve: true, meta: ['release:w'], arrivee: { owner: 'app_human' } },
+  { nom: '3. rendre, agent éteint : app_workflow sans appel, escalade effacée', depart: { owner: 'app_human', ...escaladee }, banc: { mbaEnabled: false }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'app_workflow', meta: [], arrivee: { owner: 'app_workflow', escaladee: false } },
+  { nom: '3. rendre, colonne déjà mba : on rouvre notre côté sans appel (release hors contrat)', depart: { owner: 'mba' }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'app_workflow', meta: [], arrivee: { owner: 'app_workflow' } },
+  { nom: '3. rendre, agent allumé sans numéro : rien d’écrit', depart: { owner: 'app_human' }, banc: { numero: null }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'aucun_numero', meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '3. rendre, fil de test : le bouton le peut', depart: { owner: 'app_human', test: true }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'mba', meta: ['release:w'], arrivee: { owner: 'mba' } },
 
   // 4. Fin de parcours.
   { nom: '4. fin de parcours, rien en vol, Meta accepte : app_human puis mba', depart: { owner: 'app_workflow' }, geste: (f) => f.rendreApresParcours('t1', 'w'), meta: ['release:w'], arrivee: { owner: 'mba' } },
@@ -106,10 +106,10 @@ const TABLE: Cas[] = [
   { nom: '7. reprise, agent éteint : aucun appel', depart: { owner: 'mba' }, banc: { mbaEnabled: false }, geste: (f) => f.reprendrePourLApp('t1', 'w'), rend: true, meta: [], arrivee: { owner: 'app_workflow' } },
 
   // 7b. Réponse de campagne « Inbox ».
-  { nom: '7b. équipe, app_workflow, Meta accepte : take puis app_human', depart: { owner: 'app_workflow' }, geste: (f) => f.prendrePourLEquipe('t1', 'w'), rend: true, meta: ['take:w'], arrivee: { owner: 'app_human' } },
-  { nom: '7b. équipe, Meta refuse : false, rien d’écrit', depart: { owner: 'mba' }, banc: { take: ['refuse'] }, geste: (f) => f.prendrePourLEquipe('t1', 'w'), rend: false, meta: ['take:w'], arrivee: { owner: 'mba' } },
-  { nom: '7b. équipe, un opérateur tient déjà le fil : rien ne bouge', depart: { owner: 'app_human' }, geste: (f) => f.prendrePourLEquipe('t1', 'w'), rend: true, meta: [], arrivee: { owner: 'app_human' } },
-  { nom: '7b. équipe, agent éteint : app_human sans appel', depart: { owner: 'app_workflow' }, banc: { mbaEnabled: false }, geste: (f) => f.prendrePourLEquipe('t1', 'w'), rend: true, meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '7b. équipe, app_workflow, Meta accepte : take puis app_human', depart: { owner: 'app_workflow' }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: ['take:w'], arrivee: { owner: 'app_human' } },
+  { nom: '7b. équipe, Meta refuse : false, rien d’écrit', depart: { owner: 'mba' }, banc: { take: ['refuse'] }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: false, meta: ['take:w'], arrivee: { owner: 'mba' } },
+  { nom: '7b. équipe, un opérateur tient déjà le fil : rien ne bouge', depart: { owner: 'app_human' }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '7b. équipe, agent éteint : app_human sans appel', depart: { owner: 'app_workflow' }, banc: { mbaEnabled: false }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: [], arrivee: { owner: 'app_human' } },
 
   // 8 et 9. Un scénario ou un agent IA passe à un humain.
   { nom: '8. passer à un humain, avec escalade', depart: { owner: 'app_workflow' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: true }), rend: true, meta: [], arrivee: { owner: 'app_human', escaladee: true } },
@@ -200,11 +200,11 @@ describe('la table des transitions', () => {
     const ordre: string[] = [];
     const surveille = (owner: ControlOwner) => { ordre.push(`colonne:${owner}`); return true; };
     const gestes: Array<[string, (f: ControleDuFil) => Promise<unknown>, ControlOwner]> = [
-      ['reprendreLaMain', (f) => f.reprendreLaMain('t1', 'w'), 'mba'],
-      ['rendreLaMain', (f) => f.rendreLaMain('t1', 'w'), 'app_human'],
+      ['reprendreLaMain', (f) => f.reprendreLaMain('t1', 'w', { collaborateur: null }), 'mba'],
+      ['rendreLaMain', (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), 'app_human'],
       ['remettreSiPersonneNeSuit', (f) => f.remettreSiPersonneNeSuit('t1', 'w'), 'app_workflow'],
       ['reprendrePourLApp', (f) => f.reprendrePourLApp('t1', 'w'), 'mba'],
-      ['prendrePourLEquipe', (f) => f.prendrePourLEquipe('t1', 'w'), 'mba'],
+      ['prendrePourLEquipe', (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), 'mba'],
       ['rendreApresInactivite', (f) => f.rendreApresInactivite('t1', 'w', 'app_human', 'mba'), 'app_human'],
     ];
     for (const [nom, geste, detenteur] of gestes) {
@@ -269,7 +269,7 @@ describe('décision 2 : une réponse de campagne « Inbox » arrive à l’équi
       messages: [{ id: 'wamid.R1', from: WA, type: 'text', timestamp: '1789465356', text: { body: 'Oui, ça m’intéresse' } }],
     } }] }],
   };
-  const campagne: CampagneAssignante = { campaignId: 'c1', devenir: 'inbox', assignation: 'tour_de_role', assignationUserId: null, premiereReponse: true };
+  const campagne: CampagneAssignante = { campaignId: 'c1', nom: 'Rentrée', devenir: 'inbox', assignation: 'tour_de_role', assignationUserId: null, premiereReponse: true };
 
   it('🔴 dans le MÊME job : la prise écrit `app_human`, la remise ne rend pas le fil, la conversation est affectée', async () => {
     // Conversation née de l'envoi de la campagne : `app_workflow` par défaut, l'agent de Meta allumé.
@@ -336,13 +336,13 @@ describe('relecture du lot 4 : une réponse de campagne « Inbox » ne prend le 
       inboundOptOut: aucunStop,
       inboundAssignation: (t, w) => assignerReponse(t, w, {
         campagneDeLaReponse: async () => ({
-          campaignId: 'c1', devenir: 'inbox', assignation: null, assignationUserId: null,
+          campaignId: 'c1', nom: 'Rentrée', devenir: 'inbox', assignation: null, assignationUserId: null,
           premiereReponse: enregistres.length <= 1,
         }),
         membres: async () => ['u1'],
         prendreUnRang: async () => 0,
         assigner: async () => true,
-        prendreLeFil: async (t, waId) => { prises.push(waId); return b.fil.prendrePourLEquipe(t, waId); },
+        prendreLeFil: async (t, waId) => { prises.push(waId); return b.fil.prendrePourLEquipe(t, waId, 'automatique : campagne test'); },
       }),
       remiseMbaEntrant: { remettre: b.fil.remettreSiPersonneNeSuit },
       detenteur: b.fil,
@@ -366,7 +366,7 @@ describe('relecture du lot 4 : une réponse de campagne « Inbox » ne prend le 
     await handleWebhookJob(message('wamid.P1', 'Oui'), j.deps);
     expect(b.etat(WA)?.owner).toBe('app_human');
     // L'opérateur rend la main : `release`, puis `mba`.
-    expect(await b.fil.rendreLaMain('t1', WA)).toBe('mba');
+    expect(await b.fil.rendreLaMain('t1', WA, { collaborateur: null })).toBe('mba');
     await handleWebhookJob(message('wamid.P2', 'Et demain ?'), j.deps);
     expect(j.prises).toEqual([WA]);
     expect(b.appels.filter((a) => a.startsWith('take:')), 'aucun `take` après le geste de l’opérateur').toEqual([`take:${WA}`]);
@@ -402,7 +402,7 @@ describe('décision 3 : le bouton « Reprendre la main » rejoue une fois', () =
   it('🔴 un refus passager suivi d’un accord : le fil est pris, en deux appels', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const b = bancDuFil({ take: ['passager', 'accepte'], conversations: { w: { owner: 'mba' } } });
-    expect(await b.fil.reprendreLaMain('t1', 'w')).toBe('pris');
+    expect(await b.fil.reprendreLaMain('t1', 'w', { collaborateur: null })).toBe('pris');
     expect(b.appels).toEqual(['take:w', 'take:w']);
     expect(b.attentes).toHaveLength(1);
     expect(b.etat('w')?.owner).toBe('app_human');
@@ -411,7 +411,7 @@ describe('décision 3 : le bouton « Reprendre la main » rejoue une fois', () =
   it('⚠️ et jamais deux : deux refus passagers rendent `refuse`', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const b = bancDuFil({ take: ['passager', 'passager', 'accepte'], conversations: { w: { owner: 'mba' } } });
-    expect(await b.fil.reprendreLaMain('t1', 'w')).toBe('refuse');
+    expect(await b.fil.reprendreLaMain('t1', 'w', { collaborateur: null })).toBe('refuse');
     expect(b.appels).toHaveLength(2);
     expect(b.etat('w')?.owner).toBe('mba');
   });
@@ -437,7 +437,7 @@ describe('décision 4 : un agent sans numéro ne s’annonce jamais', () => {
 
   it('🔴 le bouton « Rendre la main » : rien d’écrit, et il le dit', async () => {
     const b = bancDuFil({ numero: null, conversations: { w: { owner: 'app_human' } } });
-    expect(await b.fil.rendreLaMain('t1', 'w')).toBe('aucun_numero');
+    expect(await b.fil.rendreLaMain('t1', 'w', { collaborateur: null })).toBe('aucun_numero');
     expect(b.etat('w')?.owner).toBe('app_human');
   });
 
@@ -577,7 +577,7 @@ describe('décision 5 : un lead ne prend pas la main à un opérateur', () => {
     const b = bancDuFil({ conversations: { [WA]: { owner: 'app_human' } } });
     const affectees: string[] = [];
     const qui = await assignerReponse('t1', WA, {
-      campagneDeLaReponse: async () => ({ campaignId: 'c1', devenir: 'inbox', assignation: 'personne', assignationUserId: 'u1', premiereReponse: true }),
+      campagneDeLaReponse: async () => ({ campaignId: 'c1', nom: 'Rentrée', devenir: 'inbox', assignation: 'personne', assignationUserId: 'u1', premiereReponse: true }),
       membres: async () => ['u1'],
       prendreUnRang: async () => 0,
       assigner: async (_t, waId) => { affectees.push(waId); return true; },

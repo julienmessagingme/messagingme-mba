@@ -154,16 +154,16 @@ describe.skipIf(!url)('PgInboxStore : affectation (Supabase)', () => {
   });
 
   it('affecte, relit, puis libère', async () => {
-    expect(await store.setAssignee(tenantId, conv, membre, membre)).toBe(true);
+    expect(await store.setAssignee(tenantId, conv, membre, { collaborateur: membre })).toBe(true);
     expect(await store.getAssignee(tenantId, conv)).toBe(membre);
-    expect(await store.setAssignee(tenantId, conv, null, membre)).toBe(true);
+    expect(await store.setAssignee(tenantId, conv, null, { collaborateur: membre })).toBe(true);
     expect(await store.getAssignee(tenantId, conv)).toBeNull();
   });
 
   it('🔴 un membre d’un AUTRE espace est refusé', async () => {
     // Sans la vérification d'appartenance, la conversation deviendrait inaccessible à tout le monde :
     // plus personne du tenant ne correspondrait à l'affectataire.
-    expect(await store.setAssignee(tenantId, conv, etranger, membre)).toBe(false);
+    expect(await store.setAssignee(tenantId, conv, etranger, { collaborateur: membre })).toBe(false);
     expect(await store.getAssignee(tenantId, conv)).toBeNull();
   });
 
@@ -176,7 +176,7 @@ describe.skipIf(!url)('PgInboxStore : affectation (Supabase)', () => {
 
   it('la liste rend l’affectation et son NOM, et sait filtrer dessus', async () => {
     await pool.query(`update users set name = 'Bob Agent' where id = $1`, [membre]);
-    await store.setAssignee(tenantId, conv, membre, membre);
+    await store.setAssignee(tenantId, conv, membre, { collaborateur: membre });
 
     const tout = await store.listConversations(tenantId, { limit: 10 });
     expect(tout[0]).toMatchObject({ assignedTo: membre, assignedToName: 'Bob Agent' });
@@ -187,7 +187,7 @@ describe.skipIf(!url)('PgInboxStore : affectation (Supabase)', () => {
 
   it('🔴 supprimer le membre LIBÈRE la conversation au lieu de l’emporter', async () => {
     // Une conversation que plus personne ne peut prendre serait invisible et sans réponse : le pire cas.
-    await store.setAssignee(tenantId, conv, membre, membre);
+    await store.setAssignee(tenantId, conv, membre, { collaborateur: membre });
     await pool.query('delete from users where id = $1', [membre]);
     expect(await store.getAssignee(tenantId, conv)).toBeNull();
     expect(await store.listConversations(tenantId, { limit: 10, affectee: 'aucune' })).toHaveLength(1);

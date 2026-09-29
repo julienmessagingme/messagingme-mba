@@ -21,11 +21,16 @@ import { journaliser } from '../lib/journal';
 
 /**
  * Pourquoi un espace ne traduit pas, quand l'instance, elle, le sait (`TRADUCTION_MODELE` posé) :
- *   - `credit` : le crédit est épuisé, ou trop bas pour ouvrir la clé de l'espace ; le recharger règle ;
+ *   - `credit` : le crédit est ÉPUISÉ (solde nul ou négatif) ; le recharger règle ;
+ *   - `credit_insuffisant` : le crédit est POSITIF mais trop bas pour ouvrir la clé de l'espace (Vercel exige un
+ *     plafond d'au moins 1 $, environ 0,92 €) ; le recharger règle aussi, mais « épuisé » serait faux ;
+ *   - `cle_en_preparation` : la clé de l'espace s'ouvre chez Vercel, en arrière-plan ; quelques secondes, le
+ *     rafraîchissement suivant traduit ;
  *   - `cle` : l'espace a du crédit mais pas de clé, et elle n'a pas pu s'ouvrir ; rien à faire côté client.
- * La troisième cause, la traduction éteinte sur l'instance, n'est pas ici : il n'y a alors aucun traducteur.
+ * La cause « traduction éteinte sur l'instance » n'est pas ici : il n'y a alors aucun traducteur.
+ * ⚠️ L'écran de l'Inbox dit une phrase par cause ; une cause qu'il ne connaît pas retombe sur sa phrase prudente.
  */
-export type CauseSansTraduction = 'credit' | 'cle';
+export type CauseSansTraduction = 'credit' | 'credit_insuffisant' | 'cle_en_preparation' | 'cle';
 
 /** Les deux langues de la console. Ce ne sont pas celles des clients, qui écrivent ce qu'ils veulent. */
 export type LangueConsole = 'fr' | 'en';
@@ -100,15 +105,29 @@ export interface DepsTraduction {
 }
 
 /**
+ * Ce que rend la vérification d'un espace : pourquoi il ne traduit pas, ou de quoi traduire SANS revérifier.
+ * 🔴 `traduireLot` n'existe que dans la branche où la vérification est passée : un appelant ne peut pas appeler le
+ * modèle sans elle (sans clé propre, `cleDe` retomberait sur la clé maison, donc sur notre argent).
+ */
+export type Ouverture =
+  | { empechement: CauseSansTraduction }
+  | { empechement: null; traduireLot(textes: TexteATraduire[], cible: string): Promise<Map<string, Traduction>> };
+
+/**
  * Ne pas confondre avec `Traducteur` de `web/lib/nav.ts` (la fonction `t(fr, en)` de l'i18n) : celui-ci appelle un
  * modèle pour traduire des messages de clients.
  */
 export interface Traducteur {
   /**
-   * `null` = cet espace peut traduire ; sinon, pourquoi il ne le peut pas. Ce n'est pas une panne. Peut ouvrir la
-   * clé de l'espace au passage (première traduction d'un espace qui a du crédit).
+   * `null` = cet espace peut traduire ; sinon, pourquoi il ne le peut pas. Ce n'est pas une panne. Peut lancer
+   * l'ouverture de la clé de l'espace, sans l'attendre (première traduction d'un espace qui a du crédit).
    */
   empechement(tenantId: string): Promise<CauseSansTraduction | null>;
+  /**
+   * La vérification, UNE fois, et de quoi traduire ensuite sans la refaire. C'est l'entrée du fil : il la fait à
+   * chaque rafraîchissement, et la payer deux fois (une lecture de solde et une de clé de plus) ne servait à rien.
+   */
+  ouvrir(tenantId: string): Promise<Ouverture>;
   /**
    * Traduit un lot. Les ids absents de la map rendue ne sont pas traduits, sans que ce soit une erreur : l'appelant
    * seul sait ce qu'il a demandé.
@@ -207,6 +226,20 @@ function consigne(cible: string): string {
   ].join('\n');
 }
 
+/**
+ * Les textes qui partiront vraiment, par identifiant. Un id ne doit apparaître qu'une fois : deux traductions
+ * concurrentes s'écraseraient sans raison lisible. Vide et trop long ne partent pas.
+ */
+function demandesDe(textes: TexteATraduire[]): Map<string, string> {
+  const demandes = new Map<string, string>();
+  for (const t of textes) {
+    const texte = t.texte.trim();
+    if (texte === '' || texte.length > TEXTE_MAX_CARACTERES) continue;
+    if (!demandes.has(t.id)) demandes.set(t.id, texte);
+  }
+  return demandes;
+}
+
 /** Le bloc de données, délimité. L'identifiant est dans le délimiteur, jamais dans le texte lui-même. */
 function blocTextes(textes: TexteATraduire[]): string {
   return textes
@@ -219,21 +252,18 @@ function blocTextes(textes: TexteATraduire[]): string {
  * pour l'appel unitaire), jamais une chaîne vide : une bulle vide ferait croire que le client n'a rien écrit.
  */
 export function creerTraducteur(deps: DepsTraduction): Traducteur {
-  async function traduireLot(
+  /**
+   * L'appel au modèle et son débit, SANS vérification : seul `ouvrir` le rend accessible, une fois la vérification
+   * passée.
+   */
+  async function appeler(
     tenantId: string,
     textes: TexteATraduire[],
     cible: string,
   ): Promise<Map<string, Traduction>> {
     const rien = new Map<string, Traduction>();
-    // Un id ne doit apparaître qu'une fois : deux traductions concurrentes s'écraseraient sans raison lisible.
-    const demandes = new Map<string, string>();
-    for (const t of textes) {
-      const texte = t.texte.trim();
-      if (texte === '' || texte.length > TEXTE_MAX_CARACTERES) continue;
-      if (!demandes.has(t.id)) demandes.set(t.id, texte);
-    }
+    const demandes = demandesDe(textes);
     if (demandes.size === 0) return rien;
-    if ((await empechement(tenantId)) !== null) return rien;
 
     const abandon = new AbortController();
     const minuteur = setTimeout(() => abandon.abort(), deps.delaiMs ?? DELAI_DEFAUT_MS);
@@ -302,17 +332,38 @@ export function creerTraducteur(deps: DepsTraduction): Traducteur {
 
   /**
    * Le solde d'abord : il ne coûte qu'une lecture, alors qu'ouvrir une clé appelle Vercel. Un solde vide n'ouvre donc
-   * jamais de clé.
+   * jamais de clé. L'ouverture elle-même n'est pas attendue (`creerAssureurDeCle`) : la cause dit qu'elle est en cours.
    */
   async function empechement(tenantId: string): Promise<CauseSansTraduction | null> {
     if ((await deps.credit.solde(tenantId)) <= 0) return 'credit';
     const cle = await deps.assurerCle(tenantId);
-    if (cle === 'prete') return null;
-    return cle === 'credit_insuffisant' ? 'credit' : 'cle';
+    switch (cle) {
+      case 'prete': return null;
+      case 'credit_insuffisant': return 'credit_insuffisant';
+      case 'en_preparation': return 'cle_en_preparation';
+      case 'indisponible': return 'cle';
+    }
+  }
+
+  async function ouvrir(tenantId: string): Promise<Ouverture> {
+    const cause = await empechement(tenantId);
+    if (cause !== null) return { empechement: cause };
+    return { empechement: null, traduireLot: (textes, cible) => appeler(tenantId, textes, cible) };
+  }
+
+  /**
+   * Vérifier, puis traduire : une seule vérification par lot. Un lot sans rien à traduire ne vérifie rien (aucune
+   * lecture, aucune ouverture de clé).
+   */
+  async function traduireLot(tenantId: string, textes: TexteATraduire[], cible: string): Promise<Map<string, Traduction>> {
+    if (demandesDe(textes).size === 0) return new Map();
+    const o = await ouvrir(tenantId);
+    return o.empechement === null ? o.traduireLot(textes, cible) : new Map();
   }
 
   return {
     empechement,
+    ouvrir,
     traduireLot,
     async traduire(tenantId, texte, cible, source) {
       // Traduire vers la langue qu'on a déjà est un appel payé pour rien (vocal déjà en français, contact qui écrit

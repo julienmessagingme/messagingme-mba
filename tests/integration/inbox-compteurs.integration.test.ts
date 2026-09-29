@@ -438,10 +438,10 @@ describe.skipIf(!url)('signalement manuel : deux sources, une union', () => {
     parIA = await conv('33610000001');
     await analyseAbusive(parIA, true);
     parHumain = await conv('33610000002');
-    await store.signalerConversation(tenantId, parHumain, true, operateur);
+    await store.signalerConversation(tenantId, parHumain, true, { collaborateur: operateur });
     parLesDeux = await conv('33610000003');
     await analyseAbusive(parLesDeux, true);
-    await store.signalerConversation(tenantId, parLesDeux, true, operateur);
+    await store.signalerConversation(tenantId, parLesDeux, true, { collaborateur: operateur });
     await conv('33610000004'); // ni l'un ni l'autre
   });
 
@@ -477,16 +477,16 @@ describe.skipIf(!url)('signalement manuel : deux sources, une union', () => {
   it('désignaler retire du dossier ET efface l’auteur', async () => {
     // Garder le nom de celui qui avait signalé une conversation qui ne l'est plus laisserait croire à un
     // signalement toujours actif.
-    expect(await store.signalerConversation(tenantId, parHumain, false, null)).toBe(true);
+    expect(await store.signalerConversation(tenantId, parHumain, false, { collaborateur: null })).toBe(true);
     const r = await pool.query<{ signalee_le: Date | null; signalee_par: string | null }>(
       'select signalee_le, signalee_par from conversations where id = $1', [parHumain],
     );
     expect(r.rows[0]).toEqual({ signalee_le: null, signalee_par: null });
     expect((await store.compterConversations(tenantId)).signalees).toBe(2);
-    await store.signalerConversation(tenantId, parHumain, true, operateur); // fixture remise d'aplomb
+    await store.signalerConversation(tenantId, parHumain, true, { collaborateur: operateur }); // fixture remise d'aplomb
   });
 
   it('une conversation d’un AUTRE espace ne se signale pas', async () => {
-    expect(await store.signalerConversation('00000000-0000-4000-8000-000000000000', parHumain, true, operateur)).toBe(false);
+    expect(await store.signalerConversation('00000000-0000-4000-8000-000000000000', parHumain, true, { collaborateur: operateur })).toBe(false);
   });
 });

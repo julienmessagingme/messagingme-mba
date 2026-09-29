@@ -36,15 +36,23 @@ export function MbaGateBanner({ reason }: { reason: 'no-number' | 'not-eligible'
       <Icone nom="attention" className="mt-0.5 text-alerte-700" />
       <div className="text-sm leading-relaxed text-ink-900">
         <p className="font-semibold text-ink-900">{t('L’agent n’est pas encore ouvert sur votre numéro', 'The agent isn’t open on your number yet')}</p>
+        {/*
+          🔴 CE BANDEAU DISAIT « Meta ouvre Business AI progressivement, par pays et par secteur », ce que Meta ne
+          documente pas : sa page de référence donne une liste d'EXCLUSION (relue le 2026-09-24, cf. l'ancien guide).
+          Le guide qui le disait juste a été retiré le 2026-09-29 : ce bandeau est désormais le seul endroit qui
+          explique l'éligibilité, donc il reprend la phrase vraie.
+        */}
         <p className="mt-1">
           {t(
-            'Meta ouvre Business AI progressivement, par pays et par secteur, et les conditions se signent dans WhatsApp Manager. Dès que votre numéro est ouvert, tous les réglages deviennent actifs ici.',
-            'Meta opens Business AI gradually, by country and sector, and the terms are signed in WhatsApp Manager. As soon as your number is opened, every setting becomes active here.',
+            'Meta accepte tous les secteurs sauf la finance, le secteur public, la santé, l’alcool, les jeux d’argent, les médicaments sans ordonnance et les services matrimoniaux, dans les pays autorisés. Les conditions Meta Business AI se signent dans WhatsApp Manager. Dès que votre numéro est ouvert, tous les réglages deviennent actifs ici.',
+            'Meta supports all sectors except finance, government, health, alcohol, gambling, over-the-counter drugs and matrimony services, in authorized countries. The Meta Business AI terms are signed in WhatsApp Manager. As soon as your number is opened, every setting becomes active here.',
           )}
         </p>
-        <Link href="/mba" className="mt-2 inline-block font-medium text-brand-600 hover:text-brand-700">
-          {t('Revoir le guide MBA', 'Back to the MBA guide')} →
-        </Link>
+        {/* Un vrai rechargement (`<a>`, pas `Link`) : la page relit l'état du numéro chez Meta, ce qu'une navigation
+            vers la même adresse ne ferait pas. C'est le geste utile après avoir signé les conditions. */}
+        <a href="/mba/parametres" className="mt-2 inline-block font-medium text-brand-600 hover:text-brand-700" data-testid="mba-gate-reverifier">
+          {t('Vérifier à nouveau', 'Check again')} →
+        </a>
       </div>
     </div>
   );

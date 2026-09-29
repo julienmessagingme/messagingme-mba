@@ -14,6 +14,15 @@ export interface CleGatewayEspace {
   plafondMicroEur: number;
 }
 
+/**
+ * Ce que la base dit de la clé d'un espace : aucune ligne (`absente`), une ligne lue (`lue`), ou une ligne qui ne se
+ * déchiffre pas (`illisible`). Seule `absente` autorise à en ouvrir une.
+ */
+export type LectureCleGateway =
+  | { etat: 'absente' }
+  | { etat: 'illisible' }
+  | { etat: 'lue'; cle: CleGatewayEspace };
+
 export class PgCleGatewayStore {
   constructor(
     private readonly pool: Pool,
@@ -28,27 +37,40 @@ export class PgCleGatewayStore {
 
   /**
    * La clé de cet espace, déchiffrée, ou `null` s'il n'en a pas (pas une erreur : l'appelant retombe sur la
-   * clé maison).
+   * clé maison). Une clé illisible rend aussi `null` ici : qui doit les distinguer lit `lireEtat`.
    */
   async lire(tenantId: string): Promise<CleGatewayEspace | null> {
+    const lu = await this.lireEtat(tenantId);
+    return lu.etat === 'lue' ? lu.cle : null;
+  }
+
+  /**
+   * La clé de cet espace, en distinguant « pas de clé » de « clé illisible ».
+   *
+   * 🔴 LES CONFONDRE FAISAIT BOUCLER L'OUVERTURE (relecture du lot 1, 2026-09-28). Une ligne présente mais
+   * indéchiffrable se lisait comme une absence : le provisionnement créait alors une clé chez Vercel, se heurtait à
+   * la ligne existante, la supprimait, et recommençait au répit suivant, une fois par minute et par espace. Une clé
+   * illisible ne s'ouvre pas à nouveau : c'est une panne (clé de chiffrement changée ou ligne abîmée), qui se
+   * signale et attend un humain.
+   */
+  async lireEtat(tenantId: string): Promise<LectureCleGateway> {
     const res = await this.pool.query<{ cle_id: string; cle_chiffree: string; plafond_micro_eur: string }>(
       'select cle_id, cle_chiffree, plafond_micro_eur from agent_gateway_keys where tenant_id = $1',
       [tenantId],
     );
     const row = res.rows[0];
-    if (!row) return null;
+    if (!row) return { etat: 'absente' };
     try {
       return {
-        cleId: row.cle_id,
-        cle: this.dechiffrer(row.cle_chiffree),
-        plafondMicroEur: Number(row.plafond_micro_eur),
+        etat: 'lue',
+        cle: { cleId: row.cle_id, cle: this.dechiffrer(row.cle_chiffree), plafondMicroEur: Number(row.plafond_micro_eur) },
       };
     } catch (err) {
-      // 🔴 Déchiffrement impossible : on retombe sur la clé maison plutôt que de faire échouer tous les tours
+      // 🔴 Déchiffrement impossible : `lire` retombe sur la clé maison plutôt que de faire échouer tous les tours
       // d'agent de l'espace, mais on le signale, sinon le repli serait indiscernable d'un espace sans clé. La
       // route de création, elle, refuse : là c'est une panne, pas un état normal.
       this.signaler?.(tenantId, err);
-      return null;
+      return { etat: 'illisible' };
     }
   }
 

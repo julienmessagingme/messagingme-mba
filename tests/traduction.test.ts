@@ -7,6 +7,7 @@ import {
   TEXTE_MAX_CARACTERES,
   type DepsTraduction,
 } from '../src/traduction/traduire';
+import { traduireFil } from '../src/traduction/fil';
 
 /** Une reponse de modele qui APPELLE l'outil, avec les arguments donnes tels quels. */
 function appelOutil(argumentsJson: string): ReponseChat {
@@ -246,15 +247,50 @@ describe('traducteur : la clé de l espace', () => {
     expect(clesDemandees).toBeGreaterThan(0);
   });
 
-  it('🔴 un crédit trop bas pour ouvrir une clé est un crédit épuisé, pas une panne', async () => {
+  it('🔴 un crédit POSITIF mais trop bas pour ouvrir une clé a SA cause : il n’est pas épuisé', async () => {
+    // Entre 0 et environ 0,92 €, Vercel refuse le plafond (minimum 1 $). L'écran disait « crédit épuisé » à un
+    // espace qui voyait un solde positif sur sa page Crédit (relecture du lot 1).
     let appels = 0;
     const t = traducteur({
       completer: async () => { appels += 1; return rendTraductions([{ id: 'seul', texte: 'Bonjour' }]); },
+      credit: { solde: async () => 500_000, debiterTraduction: async () => 0 },
       assurerCle: async () => 'credit_insuffisant',
     });
-    expect(await t.empechement('t1')).toBe('credit');
+    expect(await t.empechement('t1')).toBe('credit_insuffisant');
     expect(await t.traduire('t1', 'Hola', 'fr')).toBeNull();
     expect(appels).toBe(0);
+  });
+
+  it('🔴 une clé EN COURS d’ouverture a sa cause, et rien n’est appelé en attendant', async () => {
+    let appels = 0;
+    const t = traducteur({
+      completer: async () => { appels += 1; return rendTraductions([{ id: 'seul', texte: 'Bonjour' }]); },
+      assurerCle: async () => 'en_preparation',
+    });
+    expect(await t.empechement('t1')).toBe('cle_en_preparation');
+    expect(await t.traduire('t1', 'Hola', 'fr')).toBeNull();
+    expect(appels).toBe(0);
+  });
+
+  it('🔴 le fil vérifie l’espace UNE fois par rafraîchissement : un solde lu, une clé demandée', async () => {
+    // Le défaut relevé par la relecture du lot 1 : le fil vérifiait l'espace, puis le lot le revérifiait. Joué ici
+    // avec le VRAI traducteur, parce que c'est lui qui refaisait la vérification.
+    let soldes = 0;
+    let cles = 0;
+    let appels = 0;
+    const t = traducteur({
+      completer: async () => { appels += 1; return rendTraductions([{ id: 'm1', texte: 'Bonjour' }]); },
+      credit: { solde: async () => { soldes += 1; return 5_000_000; }, debiterTraduction: async () => 0 },
+      assurerCle: async () => { cles += 1; return 'prete'; },
+    });
+    const r = await traduireFil(
+      { traducteur: t, traductions: { ranger: async () => {}, apprendreLangueContact: async () => {} } },
+      { tenantId: 't1', conversationId: 'c1', messages: [{ id: 'm1', direction: 'in', body: 'Hola' }], cible: 'fr' },
+    );
+    expect(r.messages[0]!.affiche).toBe('Bonjour');
+    expect(appels).toBe(1);
+    expect(soldes).toBe(1);
+    expect(cles).toBe(1);
   });
 
   it('🔴 une clé qui n a pas pu s ouvrir a SA cause, et ce n est pas le crédit', async () => {

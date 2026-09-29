@@ -5,6 +5,11 @@ import type { OrigineMessage } from './origine';
 import { visibiliteSql, voitTout, type ActeurConversation } from './assignment';
 import { MEDIA_EXPIRE_SQL } from './media-entrant';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
+import type { EcritureDuFil } from './fil';
+import {
+  CAUSE_MESSAGE_DU_CONTACT, HISTORIQUE_MAX, acteurSql, borner, colonnesAuteur,
+  type AuteurDuChangement, type DetailConversation, type EvenementConversation, type QuiEvenement, type TypeEvenement,
+} from './evenements';
 
 /**
  * Au-delà de cet âge, notre dernier envoi n'est plus « en vol » : Meta l'a traité (il acquitte en une seconde),
@@ -246,7 +251,22 @@ export class PgInboxStore implements InboxStore {
     const conv = await this.pool.query<{ id: string }>(
       // Un contact = une conversation, quel que soit le canal : c'est le message qui porte son canal. L'unique
       // (tenant_id, wa_id) arbitre ce ON CONFLICT, et la reprise de main vaut pour le contact entier.
-      `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview, last_direction)
+      //
+      // 🔴 CHEMIN DE CHAQUE MESSAGE REÇU, ET UNE SEULE INSTRUCTION. L'evenement « rouverte » (migration 0192)
+      // s'ecrit dans la meme requete que l'upsert, et seulement si archived_at ou traitee_le etait pose AVANT
+      // et ne l'est plus APRES : un message sur une conversation ni archivee ni traitee n'ecrit rien, et une
+      // reaction sur une conversation seulement traitee non plus (elle ne retire pas ce statut).
+      // « avant » est lu dans l'instantane de la requete (toutes les parties d'un WITH partagent le meme) : il
+      // porte donc l'etat d'avant l'upsert. Ne le lit que le chemin qui peut rouvrir ($4 ou $6) : un envoi
+      // sortant ne paie pas cette lecture. Fenetre residuelle, assumee : un rangement ecrit par une autre
+      // transaction entre l'instantane et le verrou de ligne ; les entrants d'un meme contact sont serialises.
+      // ⚠️ Aucun accent grave dans ce commentaire : il vit DANS un gabarit TypeScript.
+      `with avant as (
+         select id, archived_at, traitee_le from conversations
+          where tenant_id = $1 and wa_id = $2 and ($4::boolean or $6::boolean)
+       ),
+       maj as (
+       insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview, last_direction)
        values ($1, $2, (select id from contacts where tenant_id = $1
          ${MATCH_BY_WAID_SQL}), now(), $3, $5)
        on conflict (tenant_id, wa_id) do update set
@@ -270,8 +290,17 @@ export class PgInboxStore implements InboxStore {
          -- ecriture : c'est ce qui la fait revenir dans « A traiter », que le fragment de ce dossier exclut
          -- tant que la colonne est posee. Drapeau A PART ($6) : une reaction ne le retire pas.
          traitee_le = case when $6::boolean then null else conversations.traitee_le end
-       returning id`,
-      [tenantId, waId, preview, rouvre.archive, sens === 'out' ? 'out' : 'in', rouvre.traite, sens === 'reaction'],
+       returning id, archived_at, traitee_le
+       ),
+       rouverte as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, cause)
+         select $1, maj.id, 'rouverte', $8::text
+           from maj join avant on avant.id = maj.id
+          where (avant.archived_at is not null and maj.archived_at is null)
+             or (avant.traitee_le is not null and maj.traitee_le is null)
+       )
+       select id from maj`,
+      [tenantId, waId, preview, rouvre.archive, sens === 'out' ? 'out' : 'in', rouvre.traite, sens === 'reaction', CAUSE_MESSAGE_DU_CONTACT],
     );
     return conv.rows[0]!.id;
   }
@@ -283,13 +312,29 @@ export class PgInboxStore implements InboxStore {
    * main.
    *
    * 🔴 L'`exists` sur `users` est la garde : un membre d'un autre espace, ou un compte révoqué, ne reçoit rien.
+   *
+   * `cause` est REQUISE (« automatique : scénario Bienvenue ») : c'est ce que la frise du panneau Détail dit à la
+   * place d'un auteur. L'événement ne s'écrit que si l'affectataire change : un scénario rejoué qui renomme la
+   * même personne ne remplit pas la frise.
    */
-  async setAssigneeByWaId(tenantId: string, waId: string, assignee: string): Promise<boolean> {
+  async setAssigneeByWaId(tenantId: string, waId: string, assignee: string, cause: string): Promise<boolean> {
     const res = await this.pool.query(
-      `update conversations set assigned_to = $3, assigned_at = now(), assigned_by = null
-        where tenant_id = $1 and wa_id = $2
-          and exists (select 1 from users u where u.id = $3 and u.tenant_id = $1 and u.disabled_at is null)`,
-      [tenantId, waId, assignee],
+      // L'ancien affectataire est lu dans un sous-select VERROUILLÉ (for update) : c'est la valeur que
+      // l'update remplace, même sous une écriture concurrente, pas celle d'un instantané périmé.
+      `with maj as (
+         update conversations c set assigned_to = $3::uuid, assigned_at = now(), assigned_by = null
+           from (select id as avant_id, assigned_to as ancien
+                   from conversations where tenant_id = $1 and wa_id = $2 for update) avant
+          where c.id = avant.avant_id
+            and exists (select 1 from users u where u.id = $3::uuid and u.tenant_id = $1 and u.disabled_at is null)
+         returning c.id, avant.ancien
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, cible_id, cause)
+         select $1, maj.id, 'assignee', $3::uuid, $4::text from maj where maj.ancien is distinct from $3::uuid
+       )
+       select id from maj`,
+      [tenantId, waId, assignee, borner(cause)],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -300,13 +345,22 @@ export class PgInboxStore implements InboxStore {
    *
    * `assigned_to is null` est dans le `where`, pas dans une lecture préalable : deux réponses simultanées ne
    * peuvent pas écrire toutes les deux. 🔴 Même garde d'espace que sa jumelle. `assigned_by` reste NULL.
+   * `cause` REQUISE (« automatique : campagne Rentrée ») ; une écriture qui a lieu est toujours un changement.
    */
-  async assignerSiLibre(tenantId: string, waId: string, assignee: string): Promise<boolean> {
+  async assignerSiLibre(tenantId: string, waId: string, assignee: string, cause: string): Promise<boolean> {
     const res = await this.pool.query(
-      `update conversations set assigned_to = $3, assigned_at = now(), assigned_by = null
-        where tenant_id = $1 and wa_id = $2 and assigned_to is null
-          and exists (select 1 from users u where u.id = $3 and u.tenant_id = $1 and u.disabled_at is null)`,
-      [tenantId, waId, assignee],
+      `with maj as (
+         update conversations set assigned_to = $3::uuid, assigned_at = now(), assigned_by = null
+          where tenant_id = $1 and wa_id = $2 and assigned_to is null
+            and exists (select 1 from users u where u.id = $3::uuid and u.tenant_id = $1 and u.disabled_at is null)
+         returning id
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, cible_id, cause)
+         select $1, maj.id, 'assignee', $3::uuid, $4::text from maj
+       )
+       select id from maj`,
+      [tenantId, waId, assignee, borner(cause)],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -356,35 +410,58 @@ export class PgInboxStore implements InboxStore {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: {
-      only?: readonly ControlOwner[]; saufEscalade?: boolean; effacerEscalade?: boolean; messageEnvoyeLe?: Date;
-      /**
-       * Cette prise de fil est une escalade (bloc « passer à un humain », escalade d'un agent IA ou de l'agent
-       * de Meta) : la dernière phrase est sortante, et sans ce drapeau la conversation n'entrerait pas dans « À
-       * traiter » et serait rendue à l'agent au bout de 2 h. N'écrit que si la bascule a lieu.
-       */
-      escalade?: boolean;
-    },
+    /**
+     * Les options d'écriture (`EcritureDuFil`, `src/inbox/fil.ts`), dont `par`, REQUIS : qui demande la bascule
+     * (un collaborateur, ou une cause automatique). `escalade` : cette prise de fil est une escalade (bloc
+     * « passer à un humain », agent IA, agent de Meta) ; sans ce drapeau la conversation n'entrerait pas dans « À
+     * traiter » et serait rendue à l'agent au bout de 2 h. N'écrit que si la bascule a lieu.
+     */
+    opts: EcritureDuFil,
   ): Promise<boolean> {
-    const only = opts?.only;
+    const only = opts.only;
+    const auteur = colonnesAuteur(opts.par);
     // `effacerEscalade` : l'appelant décide, et la règle vit dans `src/inbox/fil.ts` (un robot qui reprend le fil,
     // ou un opérateur qui le rend, efface l'escalade ; le fil qui va à l'équipe la garde). `saufEscalade` : un
     // `standby` traité après l'escalade est un retardataire, sauf s'il est plus récent qu'elle (`messageEnvoyeLe`,
     // preuve que l'agent a repris le fil) ; sans date, la garde reste stricte.
+    //
+    // 🔴 LE JOURNAL (migration 0192), DANS LA MÊME REQUÊTE : `prise_mba` quand le fil quitte l'agent de Meta,
+    // `rendue_mba` quand il y va ; aucun événement entre scénario et équipe, le cadrage ne les raconte pas. Et
+    // l'escalade qui sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`, `non_traitee`), sans
+    // quoi la frise la montrerait encore rangée. L'état d'avant est lu dans un sous-select VERROUILLÉ.
     const res = await this.pool.query(
-      `update conversations set control_owner = $3, control_changed_at = now(),
-              escaladee_le = case when $6::boolean then null
-                                  when $8::boolean and $3 = 'app_human' then now()
-                                  else escaladee_le end,
-              traitee_le = case when $8::boolean and $3 = 'app_human' then null else traitee_le end,
-              archived_at = case when $8::boolean and $3 = 'app_human' then null else archived_at end
-       where tenant_id = $1 and wa_id = $2
-         and control_owner is distinct from $3
-         and ($4::text[] is null or control_owner = any($4::text[]))
-         and (not $5::boolean or escaladee_le is null
-              or ($7::timestamptz is not null and $7::timestamptz > escaladee_le))`,
-      [tenantId, waId, owner, only ? [...only] : null, opts?.saufEscalade === true, opts?.effacerEscalade === true,
-       opts?.messageEnvoyeLe ?? null, opts?.escalade === true],
+      `with maj as (
+         update conversations c set control_owner = $3, control_changed_at = now(),
+                escaladee_le = case when $6::boolean then null
+                                    when $8::boolean and $3 = 'app_human' then now()
+                                    else c.escaladee_le end,
+                traitee_le = case when $8::boolean and $3 = 'app_human' then null else c.traitee_le end,
+                archived_at = case when $8::boolean and $3 = 'app_human' then null else c.archived_at end
+           from (select id as avant_id, control_owner as ancien_detenteur, traitee_le as ancienne_traitee,
+                        archived_at as ancienne_archive
+                   from conversations where tenant_id = $1 and wa_id = $2 for update) avant
+          where c.id = avant.avant_id
+            and c.control_owner is distinct from $3
+            and ($4::text[] is null or c.control_owner = any($4::text[]))
+            and (not $5::boolean or c.escaladee_le is null
+                 or ($7::timestamptz is not null and $7::timestamptz > c.escaladee_le))
+         returning c.id, avant.ancien_detenteur, avant.ancienne_traitee, avant.ancienne_archive,
+                   c.traitee_le, c.archived_at
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cause)
+         select $1, maj.id, e.type, ${acteurSql('$9', '$1')}, $10::text
+           from maj
+           cross join lateral (values
+             (case when maj.ancien_detenteur = 'mba' then 'prise_mba' when $3 = 'mba' then 'rendue_mba' end),
+             (case when maj.ancienne_archive is not null and maj.archived_at is null then 'desarchivee' end),
+             (case when maj.ancienne_traitee is not null and maj.traitee_le is null then 'non_traitee' end)
+           ) as e(type)
+          where e.type is not null
+       )
+       select id from maj`,
+      [tenantId, waId, owner, only ? [...only] : null, opts.saufEscalade === true, opts.effacerEscalade === true,
+       opts.messageEnvoyeLe ?? null, opts.escalade === true, auteur.acteur, auteur.cause],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -393,15 +470,42 @@ export class PgInboxStore implements InboxStore {
    * L'agent de Meta a passé la main à l'équipe (`control_passed`) : la conversation devient `app_human`, entre
    * dans « À traiter » (`escaladee_le`) et sort d'« Archivées » et de « Traité ». Upsert : la passation peut
    * être traitée avant l'écho de la phrase de l'agent, qui crée d'habitude la conversation.
+   *
+   * `cause` REQUISE. L'événement `passee_par_mba` ne s'écrit que si quelque chose change (fil qui n'était pas à
+   * l'équipe, ou escalade pas encore posée) : un `control_passed` redélivré ne double pas la ligne.
    */
-  async marquerEscalade(tenantId: string, waId: string): Promise<void> {
+  async marquerEscalade(tenantId: string, waId: string, cause: string): Promise<void> {
     await this.pool.query(
-      `insert into conversations (tenant_id, wa_id, contact_id, control_owner, control_changed_at, escaladee_le)
-       values ($1, $2, (select id from contacts where tenant_id = $1 ${MATCH_BY_WAID_SQL}), 'app_human', now(), now())
-       on conflict (tenant_id, wa_id) do update set
-         control_owner = 'app_human', control_changed_at = now(), escaladee_le = now(),
-         traitee_le = null, archived_at = null`,
-      [tenantId, waId],
+      // Upsert : pas de sous-select verrouillé possible, l'état d'avant est lu dans l'instantané de la requête
+      // (toutes les parties d'un WITH partagent le même), donc avant l'upsert. Une conversation neuve n'y est
+      // pas : la passation s'écrit quand même, c'en est une.
+      `with avant as (
+         select id, control_owner, escaladee_le, traitee_le, archived_at
+           from conversations where tenant_id = $1 and wa_id = $2
+       ),
+       maj as (
+         insert into conversations (tenant_id, wa_id, contact_id, control_owner, control_changed_at, escaladee_le)
+         values ($1, $2, (select id from contacts where tenant_id = $1 ${MATCH_BY_WAID_SQL}), 'app_human', now(), now())
+         on conflict (tenant_id, wa_id) do update set
+           control_owner = 'app_human', control_changed_at = now(), escaladee_le = now(),
+           traitee_le = null, archived_at = null
+         returning id
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, cause)
+         select $1, maj.id, e.type, $3::text
+           from maj
+           left join avant on avant.id = maj.id
+           cross join lateral (values
+             (case when avant.id is null or avant.control_owner is distinct from 'app_human'
+                        or avant.escaladee_le is null then 'passee_par_mba' end),
+             (case when avant.archived_at is not null then 'desarchivee' end),
+             (case when avant.traitee_le is not null then 'non_traitee' end)
+           ) as e(type)
+          where e.type is not null
+       )
+       select id from maj`,
+      [tenantId, waId, borner(cause)],
     );
   }
 
@@ -851,16 +955,8 @@ export class PgInboxStore implements InboxStore {
    * (404, jamais un succès silencieux). 🔴 Le `tenant_id` du `where` est le contrôle d'isolation : le pooler
    * est superuser, la RLS est contournée. Idempotent, et désarchiver ce qui ne l'est pas rend `true`.
    */
-  async archiverConversation(tenantId: string, conversationId: string, archive: boolean): Promise<boolean> {
-    const res = await this.pool.query(
-      // Le drapeau passe en paramètre, jamais concaténé. Archiver clôt aussi une escalade, comme « Traité » :
-      // sinon le fil quitte la liste sans que rien ne le rende jamais à l'agent (le balayage saute les escalades).
-      `update conversations set archived_at = case when $3::boolean then now() else null end,
-              escaladee_le = case when $3::boolean then null else escaladee_le end
-        where id = $1 and tenant_id = $2`,
-      [conversationId, tenantId, archive],
-    );
-    return (res.rowCount ?? 0) > 0;
+  async archiverConversation(tenantId: string, conversationId: string, archive: boolean, par: AuteurDuChangement): Promise<boolean> {
+    return this.basculerRangement(tenantId, conversationId, 'archived_at', archive, par, ['archivee', 'desarchivee']);
   }
 
   /**
@@ -868,13 +964,47 @@ export class PgInboxStore implements InboxStore {
    * le statut ne remet pas forcément « À traiter » : la conversation retourne là où son dernier message la
    * range, d'où « Ne plus marquer traité » à l'écran et non « Remettre à traiter ».
    */
-  async marquerTraitee(tenantId: string, conversationId: string, traitee: boolean): Promise<boolean> {
+  async marquerTraitee(tenantId: string, conversationId: string, traitee: boolean, par: AuteurDuChangement): Promise<boolean> {
+    return this.basculerRangement(tenantId, conversationId, 'traitee_le', traitee, par, ['traitee', 'non_traitee']);
+  }
+
+  /**
+   * Le rangement « Archivé » ou « Traité », posé ou retiré, et son événement dans la même requête. Les deux
+   * gestes clôturent aussi une escalade quand ils se posent : « Traité », l'opérateur a jugé qu'il n'y avait rien
+   * à répondre ; « Archivé », sinon le fil quitte la liste sans que rien ne le rende jamais à l'agent (le balayage
+   * saute les escalades).
+   *
+   * Idempotent pour l'appelant (rendre `true` sur une conversation déjà rangée), mais pas pour le journal :
+   * l'événement ne s'écrit que si la colonne passe de nulle à posée, ou l'inverse. `colonne` ne vient jamais
+   * d'une entrée : c'est l'un des deux littéraux du type.
+   */
+  private async basculerRangement(
+    tenantId: string,
+    conversationId: string,
+    colonne: 'archived_at' | 'traitee_le',
+    pose: boolean,
+    par: AuteurDuChangement,
+    types: readonly [TypeEvenement, TypeEvenement],
+  ): Promise<boolean> {
+    const auteur = colonnesAuteur(par);
     const res = await this.pool.query(
-      // « Traité » clôt aussi une escalade : l'opérateur a jugé qu'il n'y avait rien à répondre.
-      `update conversations set traitee_le = case when $3::boolean then now() else null end,
-              escaladee_le = case when $3::boolean then null else escaladee_le end
-        where id = $1 and tenant_id = $2`,
-      [conversationId, tenantId, traitee],
+      // Le drapeau passe en paramètre, jamais concaténé ; la colonne est un littéral du code. L'état d'avant est
+      // lu dans un sous-select VERROUILLÉ : c'est lui qui dit si le geste change quelque chose.
+      `with maj as (
+         update conversations c set ${colonne} = case when $3::boolean then now() else null end,
+                escaladee_le = case when $3::boolean then null else c.escaladee_le end
+           from (select id as avant_id, ${colonne} as avant_valeur
+                   from conversations where id = $1 and tenant_id = $2 for update) avant
+          where c.id = avant.avant_id
+         returning c.id, avant.avant_valeur
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cause)
+         select $2, maj.id, case when $3::boolean then $6::text else $7::text end, ${acteurSql('$4', '$2')}, $5::text
+           from maj where (maj.avant_valeur is null) = $3::boolean
+       )
+       select id from maj`,
+      [conversationId, tenantId, pose, auteur.acteur, auteur.cause, types[0], types[1]],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -883,16 +1013,29 @@ export class PgInboxStore implements InboxStore {
    * Signale une conversation à la main, ou retire ce signalement. N'écrit jamais
    * `conversation_analysis.abusive`, constat du modèle recalculé à chaque analyse, qui effacerait un
    * signalement humain. L'auteur est effacé avec le signalement, sinon il laisserait croire à un signalement
-   * actif.
+   * actif. Événement `signalee` / `designalee` seulement si le signalement manuel change.
    */
-  async signalerConversation(tenantId: string, conversationId: string, signale: boolean, parUserId: string | null): Promise<boolean> {
+  async signalerConversation(tenantId: string, conversationId: string, signale: boolean, par: AuteurDuChangement): Promise<boolean> {
+    const auteur = colonnesAuteur(par);
     const res = await this.pool.query(
-      // Le drapeau est un paramètre ; l'auteur suit le drapeau.
-      `update conversations
-          set signalee_le = case when $3::boolean then now() else null end,
-              signalee_par = case when $3::boolean then $4::uuid else null end
-        where id = $1 and tenant_id = $2`,
-      [conversationId, tenantId, signale, parUserId],
+      // Le drapeau est un paramètre ; l'auteur suit le drapeau. `signalee_par` reçoit l'acteur NETTOYÉ
+      // (`colonnesAuteur`) : un identifiant qui n'est pas un uuid faisait échouer le signalement entier.
+      `with maj as (
+         update conversations c
+            set signalee_le = case when $3::boolean then now() else null end,
+                signalee_par = case when $3::boolean then ${acteurSql('$4', '$2')} else null end
+           from (select id as avant_id, signalee_le as avant_valeur
+                   from conversations where id = $1 and tenant_id = $2 for update) avant
+          where c.id = avant.avant_id
+         returning c.id, avant.avant_valeur
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cause)
+         select $2, maj.id, case when $3::boolean then 'signalee' else 'designalee' end, ${acteurSql('$4', '$2')}, $5::text
+           from maj where (maj.avant_valeur is null) = $3::boolean
+       )
+       select id from maj`,
+      [conversationId, tenantId, signale, auteur.acteur, auteur.cause],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -902,21 +1045,49 @@ export class PgInboxStore implements InboxStore {
    * l'affectataire est vérifié dans le même espace par la même requête : un utilisateur d'un autre client
    * rendrait la conversation inaccessible à tous. `false` si la conversation est inconnue ou l'affectataire
    * étranger (404).
+   *
+   * `par` : un collaborateur (la console), ou une cause (agent tiers par MCP). L'événement suit la VALEUR :
+   * `assignee` quand l'affectataire change (la cible est le nouveau), `desassignee` quand une conversation
+   * affectée est libérée (la cible est l'ancien) ; réassigner au même ou libérer une libre n'écrit rien.
    */
-  async setAssignee(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean> {
+  async setAssignee(tenantId: string, conversationId: string, assignee: string | null, par: AuteurDuChangement): Promise<boolean> {
+    const auteur = colonnesAuteur(par);
     if (assignee === null) {
       const res = await this.pool.query(
-        `update conversations set assigned_to = null, assigned_at = null, assigned_by = null
-          where id = $1 and tenant_id = $2`,
-        [conversationId, tenantId],
+        `with maj as (
+           update conversations c set assigned_to = null, assigned_at = null, assigned_by = null
+             from (select id as avant_id, assigned_to as ancien
+                     from conversations where id = $1 and tenant_id = $2 for update) avant
+            where c.id = avant.avant_id
+           returning c.id, avant.ancien
+         ),
+         evenement as (
+           insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cible_id, cause)
+           select $2, maj.id, 'desassignee', ${acteurSql('$3', '$2')}, maj.ancien, $4::text
+             from maj where maj.ancien is not null
+         )
+         select id from maj`,
+        [conversationId, tenantId, auteur.acteur, auteur.cause],
       );
       return (res.rowCount ?? 0) > 0;
     }
     const res = await this.pool.query(
-      `update conversations set assigned_to = $3, assigned_at = now(), assigned_by = $4
-        where id = $1 and tenant_id = $2
-          and exists (select 1 from users u where u.id = $3 and u.tenant_id = $2 and u.disabled_at is null)`,
-      [conversationId, tenantId, assignee, parUserId],
+      // `assigned_by` reçoit l'acteur résolu dans l'espace : c'était l'identifiant brut de la session.
+      `with maj as (
+         update conversations c set assigned_to = $3::uuid, assigned_at = now(), assigned_by = ${acteurSql('$4', '$2')}
+           from (select id as avant_id, assigned_to as ancien
+                   from conversations where id = $1 and tenant_id = $2 for update) avant
+          where c.id = avant.avant_id
+            and exists (select 1 from users u where u.id = $3::uuid and u.tenant_id = $2 and u.disabled_at is null)
+         returning c.id, avant.ancien
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cible_id, cause)
+         select $2, maj.id, 'assignee', ${acteurSql('$4', '$2')}, $3::uuid, $5::text
+           from maj where maj.ancien is distinct from $3::uuid
+       )
+       select id from maj`,
+      [conversationId, tenantId, assignee, auteur.acteur, auteur.cause],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -926,13 +1097,22 @@ export class PgInboxStore implements InboxStore {
    * `assigned_to is null` est dans le `where` : deux agents qui cliquent ensemble ne peuvent pas se la prendre
    * l'un à l'autre. `assigned_by` vaut l'agent lui-même (prise), distinct d'une distribution ou d'un routage
    * (`null`). Même garde d'espace que `setAssignee`. `false` si inconnue ou déjà prise (l'appelant relit pour
-   * dire 404 ou 409).
+   * dire 404 ou 409). Une prise qui a lieu est toujours un changement : son événement porte l'agent comme
+   * acteur ET comme cible, ce que l'écran lit « a pris la conversation ».
    */
   async prendreSiLibre(tenantId: string, conversationId: string, userId: string): Promise<boolean> {
     const res = await this.pool.query(
-      `update conversations set assigned_to = $3, assigned_at = now(), assigned_by = $3
-        where id = $1 and tenant_id = $2 and assigned_to is null
-          and exists (select 1 from users u where u.id = $3 and u.tenant_id = $2 and u.disabled_at is null)`,
+      `with maj as (
+         update conversations set assigned_to = $3::uuid, assigned_at = now(), assigned_by = $3::uuid
+          where id = $1 and tenant_id = $2 and assigned_to is null
+            and exists (select 1 from users u where u.id = $3::uuid and u.tenant_id = $2 and u.disabled_at is null)
+         returning id
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cible_id)
+         select $2, maj.id, 'assignee', $3::uuid, $3::uuid from maj
+       )
+       select id from maj`,
       [conversationId, tenantId, userId],
     );
     return (res.rowCount ?? 0) > 0;
@@ -966,6 +1146,105 @@ export class PgInboxStore implements InboxStore {
     );
     if (res.rows.length === 0) return undefined;
     return res.rows[0]!.assigned_to;
+  }
+
+  /**
+   * Le panneau Détail d'une conversation : qui est la personne, où en est la conversation, ce qui lui est arrivé
+   * (cadrage du 2026-09-28). `null` = inconnue dans cet espace, OU invisible de cet acteur, et les deux se disent
+   * pareil (404) : un agent n'apprend pas qu'une conversation existe chez un collègue.
+   *
+   * 🔴 LA VISIBILITÉ EST CELLE DE `src/inbox/assignment.ts` (`visibiliteSql`, la même règle que `peutEcrire`) :
+   * l'encadrement voit tout, un agent les siennes et le pot commun. L'identifiant ne part en `::uuid` que pour un
+   * acteur qui ne voit pas tout, et seulement s'il en est un : une clé d'API ou l'identité d'observation de /ops
+   * ferait sinon échouer la requête au lieu de ne rien montrer.
+   */
+  async detailConversation(tenantId: string, conversationId: string, acteur: ActeurConversation): Promise<DetailConversation | null> {
+    const tout = voitTout(acteur);
+    const moi = !tout ? colonnesAuteur({ collaborateur: acteur.userId }).acteur : null;
+    const res = await this.pool.query<{
+      id: string; wa_id: string; contact_id: string | null; nom: string | null; prenom: string | null;
+      telephone: string | null; email: string | null; tags: string[] | null; desabonne: boolean | null;
+      bloque: boolean | null; assigned_to: string | null; assigne_nom: string | null; resume: string | null;
+    }>(
+      // Le contact est relu DANS l'espace et vivant : une fiche supprimée ne prête plus son identité. `name`
+      // et `phone` sont des colonnes, `prenom` et `email` des clés du jsonb (champs système, `src/crm/fields.ts`).
+      `select c.id, c.wa_id, ct.id as contact_id, ct.profile_name as nom, ct.fields ->> 'prenom' as prenom,
+              ct.phone_e164 as telephone, ct.fields ->> 'email' as email, ct.tags,
+              (ct.opt_in_status = 'opted_out') as desabonne, (ct.blocked_at is not null) as bloque,
+              c.assigned_to, coalesce(nullif(u.name, ''), u.email) as assigne_nom, a.summary as resume
+         from conversations c
+         left join contacts ct on ct.id = c.contact_id and ct.tenant_id = c.tenant_id and ct.deleted_at is null
+         left join users u on u.id = c.assigned_to
+         left join conversation_analysis a on a.conversation_id = c.id
+        where c.id = $1 and c.tenant_id = $2 and ${visibiliteSql('$3', '$4')}`,
+      [conversationId, tenantId, tout, moi],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+
+    const ev = await this.pool.query<{
+      id: string; type: TypeEvenement; at: Date; cause: string | null;
+      acteur_id: string | null; acteur_nom: string | null; cible_id: string | null; cible_nom: string | null;
+      reassignation: boolean;
+    }>(
+      // La réassignation se lit sur l'événement d'assignation qui PRÉCÈDE celui-ci dans toute la vie de la
+      // conversation, pas seulement dans les 50 rendus : servie par l'index (conversation_id, at desc, id desc).
+      // L'identité départage deux événements de la même seconde dans leur ordre d'écriture.
+      `select e.id::text as id, e.type, e.at, e.cause,
+              e.acteur_id, coalesce(nullif(ua.name, ''), ua.email) as acteur_nom,
+              e.cible_id, coalesce(nullif(uc.name, ''), uc.email) as cible_nom,
+              (e.type = 'assignee' and coalesce((
+                 select p.type = 'assignee'
+                   from conversation_evenements p
+                  where p.conversation_id = e.conversation_id and p.tenant_id = $2
+                    and p.type in ('assignee', 'desassignee')
+                    and (p.at, p.id) < (e.at, e.id)
+                  order by p.at desc, p.id desc
+                  limit 1), false)) as reassignation
+         from conversation_evenements e
+         left join users ua on ua.id = e.acteur_id
+         left join users uc on uc.id = e.cible_id
+        where e.conversation_id = $1 and e.tenant_id = $2
+        order by e.at desc, e.id desc
+        limit $3`,
+      [conversationId, tenantId, HISTORIQUE_MAX],
+    );
+
+    const historique: EvenementConversation[] = ev.rows.map((e) => {
+      const assignation = e.type === 'assignee' || e.type === 'desassignee';
+      /**
+       * Un acteur nul SANS cause est un collaborateur supprimé depuis (`on delete set null`) : un changement
+       * automatique porte toujours sa cause. La cible n'a de sens que pour une assignation, où elle est toujours
+       * écrite : nulle, c'est elle aussi un collaborateur parti.
+       */
+      const acteurVu: QuiEvenement = e.acteur_id !== null
+        ? { nom: e.acteur_nom ?? '' }
+        : e.cause === null ? { ancien: true } : null;
+      const cibleVue: QuiEvenement = !assignation ? null
+        : e.cible_id !== null ? { nom: e.cible_nom ?? '' } : { ancien: true };
+      return {
+        id: e.id, type: e.type, at: e.at.toISOString(), acteur: acteurVu, cible: cibleVue,
+        cause: e.cause, reassignation: e.reassignation === true,
+      };
+    });
+
+    return {
+      conversationId: r.id,
+      identite: {
+        contactId: r.contact_id,
+        waId: r.wa_id,
+        nom: r.nom,
+        prenom: r.prenom,
+        telephone: r.telephone,
+        email: r.email,
+        tags: Array.isArray(r.tags) ? r.tags : [],
+        desabonne: r.desabonne === true,
+        bloque: r.bloque === true,
+      },
+      resume: r.resume,
+      assignation: r.assigned_to !== null ? { userId: r.assigned_to, nom: r.assigne_nom ?? '' } : null,
+      historique,
+    };
   }
 
   /**

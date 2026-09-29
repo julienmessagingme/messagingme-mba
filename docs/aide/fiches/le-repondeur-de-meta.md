@@ -1,7 +1,7 @@
 ---
-ecran: mba-guide
-source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA > Guide / Paramètres)
-source_empreinte: 6de586
+ecran: mba-settings
+source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
+source_empreinte: 52a9e7
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -14,8 +14,7 @@ qui l'obtient. Si quelqu'un de votre équipe travaille sur la conversation dans 
 Et le fil lui repasse au moment où le message arrive, pas avant : Meta ne peut se voir confier une
 conversation que s'il en existe une d'ouverte, et elle s'ouvre exactement quand la personne écrit.
 
-Deux écrans, sous le menu AI Agent, dans le groupe MBA : le **Guide**, qui explique ce qu'il fait et comment
-le préparer, et les **Paramètres**, qui le règlent pour de vrai.
+Sous le menu AI Agent, l'entrée **MBA** ouvre ses **paramètres**, qui le règlent pour de vrai.
 
 **Un en-tête identifie l'agent en haut des paramètres** : le logo de Meta, la mention « Meta Business Agent »
 qui dit ce que l'écran règle, le nom d'affichage du numéro, le numéro lui-même, une pastille qui dit l'état du
@@ -49,10 +48,11 @@ haut.
 
 Deux situations bloquent l'édition, et l'écran les distingue parce qu'elles ne se règlent pas au même
 endroit : **aucun numéro rattaché**, qui renvoie à l'Accueil, et **Meta n'a pas encore ouvert l'agent sur ce
-numéro**, qui renvoie au guide. Meta accepte tous les secteurs SAUF la finance, le secteur public, la santé,
-l'alcool, les jeux d'argent, les médicaments sans ordonnance et les services matrimoniaux ; il demande aussi un
-pays autorisé, un compte en règle, et qu'aucun autre agent conversationnel ne tourne déjà sur ce numéro. Les
-conditions, elles, se signent dans WhatsApp Manager.
+numéro**, dont le bandeau dit l'éligibilité et porte un lien « Vérifier à nouveau ». Meta accepte tous les
+secteurs SAUF la finance, le secteur public, la santé, l'alcool, les jeux d'argent, les médicaments sans
+ordonnance et les services matrimoniaux ; il demande aussi un pays autorisé, un compte en règle, et qu'aucun
+autre agent conversationnel ne tourne déjà sur ce numéro. Les conditions, elles, se signent dans WhatsApp
+Manager : une fois signées, « Vérifier à nouveau » relit l'état du numéro.
 
 **L'onglet Activation** porte les deux réglages qui décident qui parle au client. D'abord, ce que fait
 l'agent quand le client demande un humain ou qu'il refuse de traiter la demande : il passe la main et la

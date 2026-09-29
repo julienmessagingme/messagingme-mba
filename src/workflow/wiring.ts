@@ -12,6 +12,7 @@ import { PgTagStore } from '../crm/tag-store.pg';
 import { PgTemplateHintStore } from '../crm/template-hints.pg';
 import { PgContactStore } from '../crm/contact-store.pg';
 import { PgInboxStore } from '../inbox/store.pg';
+import { automatique } from '../inbox/evenements';
 import { PgTenantSettingsStore } from '../settings/store.pg';
 import { PgCampaignRepo } from '../campaign/store.pg';
 import { modeleLuDe } from '../api/modele-envoi';
@@ -354,9 +355,15 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Un run qui atteint un bloc `inbox` remonte la conversation à un humain, seulement si le fil était encore aux
     // robots, puis pose l'affectataire désigné par le bloc. `escalade` est relayé, jamais décidé ici : c'est
     // l'exécuteur qui sait si quelqu'un attend une réponse.
-    escalateToHuman: async (tenant, waId, assigneA, escalade) => {
+    escalateToHuman: async (tenant, waId, assigneA, escalade, workflowId) => {
       await fil.passerAUnHumain(tenant, waId, { escalade });
-      if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA);
+      if (assigneA) {
+        // La cause que la frise du panneau Détail affiche à la place d'un auteur : le NOM du scénario. Lu seulement
+        // quand un bloc nomme quelqu'un (le pot commun ne paie pas cette lecture) ; un scénario introuvable ne
+        // bloque pas l'affectation, il est dit par son identifiant.
+        const nom = (await workflowStore.getById(workflowId, tenant).catch(() => null))?.name;
+        await inboxStore.setAssigneeByWaId(tenant, waId, assigneA, automatique(`scénario ${nom ?? workflowId}`));
+      }
     },
     // Le bloc agent : sans ces deux dépendances, il est traversé comme un passe-plat, sans que l'agent parle.
     // Elles vont par paire : une session sans tour resterait vivante et muette, un tour sans session

@@ -13,7 +13,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { arbresNav, groupesAOuvrir, ongletDeLaPage, accesAutorise, navPourRole, type NavEntree, type Onglet } from '@/lib/nav';
 
-type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'publicites' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'parametres' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs' | 'compte';
+type Tab = 'accueil' | 'perf-synthese' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'publicites' | 'workflows' | 'automations' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'parametres' | 'parametres-credit' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs' | 'compte';
 
 // Le modèle d'entrée, le calcul de la chaîne d'ancêtres ET LES QUATRE LISTES vivent dans `lib/nav.ts` : le
 // modèle est récursif depuis que la barre a trois niveaux, et les listes ont suivi le 2026-09-11 parce que

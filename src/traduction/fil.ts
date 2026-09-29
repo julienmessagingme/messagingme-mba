@@ -146,16 +146,16 @@ export async function traduireFil<M extends MessageATraduire>(
     }),
   });
 
-  // Pas de crédit : pas d'appel et pas d'erreur. Le fil se lit en VO avec sa cause, que l'écran explique.
-  const empechement = await deps.traducteur.empechement(o.tenantId);
-  if (empechement !== null) return enVo(empechement);
+  // Pas de crédit, clé qui s'ouvre : pas d'appel et pas d'erreur. Le fil se lit en VO avec sa cause, que l'écran
+  // explique. 🔴 UNE vérification par rafraîchissement : `ouvrir` rend de quoi traduire sans la refaire.
+  const ouverture = await deps.traducteur.ouvrir(o.tenantId);
+  if (ouverture.empechement !== null) return enVo(ouverture.empechement);
 
   const aTenter = candidats(o.messages, o.cible);
   if (aTenter.length === 0) return enVo(null);
 
   const tentes = new Set(aTenter.map((m) => m.id));
-  const obtenues = await deps.traducteur.traduireLot(
-    o.tenantId,
+  const obtenues = await ouverture.traduireLot(
     aTenter.map((m) => ({ id: m.id, texte: texteATraduire(m)! })),
     o.cible,
   );

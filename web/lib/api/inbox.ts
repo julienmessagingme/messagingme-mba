@@ -9,6 +9,7 @@
  */
 
 import { request, requestBlob } from '../http';
+import { lireDetail, type DetailConversation } from '../inbox-detail';
 
 // --- Inbox ---
 
@@ -21,6 +22,14 @@ export type ControlOwner = 'app_workflow' | 'app_human' | 'mba';
 
 /** Destination d'un fil après une prise en main opérateur (C.4). `resume` = rendu au scénario ; `inbox` =
  *  reste à l'humain. Réglé par tenant (défaut) et/ou par conversation (surcharge). Miroir du serveur. */
+
+/**
+ * Pourquoi la traduction du fil est indisponible (la liste du serveur, `CauseSansTraduction` plus `instance`).
+ * `credit` et `credit_insuffisant` se règlent en rechargeant ; les autres, non.
+ */
+export type CauseTraduction = 'instance' | 'credit' | 'credit_insuffisant' | 'cle_en_preparation' | 'cle';
+export const CAUSES_TRADUCTION: readonly CauseTraduction[] = ['instance', 'credit', 'credit_insuffisant', 'cle_en_preparation', 'cle'];
+export const causeDeCredit = (c: CauseTraduction | null): boolean => c === 'credit' || c === 'credit_insuffisant';
 
 export interface Conversation {
   id: string;
@@ -438,7 +447,7 @@ export interface ConversationThread {
    * le premier, qui etait justement l'etat de la production : on envoyait un administrateur recharger un
    * credit sans rapport. Absente = on ne sait pas, et l'ecran reste prudent.
    */
-  traductionCause?: 'instance' | 'credit' | 'cle';
+  traductionCause?: CauseTraduction;
   /** Surcharge de reprise de CE fil (C.4). null = suit le défaut du tenant. */
   messages: InboxMessage[];
 }
@@ -500,6 +509,19 @@ export function traduireSortant(
  */
 export function effacerConversation(tenantId: string, conversationId: string): Promise<{ effaces: number }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/messages`, { method: 'DELETE' });
+}
+/**
+ * Le panneau Détail d'une conversation : identité, résumé de l'analyse, assignation et frise des événements.
+ * Rend `null` quand le détail n'est pas lisible, quelle qu'en soit la raison : route absente (la console part sur
+ * Vercel au push, AVANT l'API qui porte la route), conversation qu'un agent ne voit pas (404), réponse mal formée.
+ * Le panneau se replie alors sans erreur : c'est un complément du fil, jamais une raison de l'empêcher.
+ */
+export async function lireDetailConversation(tenantId: string, conversationId: string): Promise<DetailConversation | null> {
+  try {
+    return lireDetail(await request<unknown>(`/tenants/${tenantId}/conversations/${conversationId}/detail`));
+  } catch {
+    return null;
+  }
 }
 export function releaseConversation(tenantId: string, conversationId: string): Promise<{ controlOwner: ControlOwner }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/release`, { method: 'POST' });

@@ -10,12 +10,16 @@ import { IDS_MODELES_CHOISIS, type ModeleProposable } from '../agent/modeles';
 import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { journaliser } from '../lib/journal';
 import type { ConsommationAgent } from '../agent/session-store';
+import type { LigneHistorique } from '../agent/credits';
 
 /**
  * La fenêtre du suivi de consommation : trente jours, assez pour voir une tendance, assez court pour que
  * l'index `(tenant_id, created_at desc)` serve la requête.
  */
 export const JOURS_CONSOMMATION = 30;
+
+/** Les lignes de l'historique du crédit que la page montre. */
+export const LIGNES_HISTORIQUE = 50;
 
 /** Ce que les routes lisent et écrivent des fiches d'agent. */
 export interface AgentsDep {
@@ -33,10 +37,12 @@ export interface AgentsRouteDeps {
   modeleParDefaut: string;
   credits: {
     /**
-     * Le solde prépayé de l'espace, en micro-euros. 🔴 Lecture seule : un client voit ce qu'il lui reste, il ne
-     * se recharge pas lui-même (le rechargement vit sur `/ops`, sous une autorité séparée).
+     * Le solde prépayé de l'espace, en micro-euros. 🔴 Lecture seule : un client ne s'ajoute pas de crédit par une
+     * écriture de solde. Il paie (webhook Stripe, `src/http/credit-stripe.ts`), ou l'exploitation le recharge (`/ops`).
      */
     solde(tenantId: string): Promise<number>;
+    /** L'historique de ce qui a fait bouger le solde, pour la page Crédit IA (`PgCreditStore.historique`). */
+    historique(tenantId: string, limite: number): Promise<LigneHistorique[]>;
   };
   sessions: {
     /** Ce que cet agent a consommé sur une fenêtre. */
@@ -107,6 +113,16 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   app.get('/tenants/:tenantId/agents/solde', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     return reply.code(200).send({ soldeMicroEur: await deps.credits.solde(tenant) });
+  });
+
+  /**
+   * Ce qui a fait bouger le solde, du plus récent au plus ancien : achats, crédit offert, recharges manuelles, et les
+   * agents et les traductions agrégés par jour. Même garde que le solde. Aucune note : l'écran dit la raison en clair.
+   * Le nombre de lignes est fixé ici, pas pris dans la requête.
+   */
+  app.get('/tenants/:tenantId/agents/mouvements', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    return reply.code(200).send({ mouvements: await deps.credits.historique(tenant, LIGNES_HISTORIQUE) });
   });
 
   /**

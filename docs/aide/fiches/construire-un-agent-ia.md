@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 30c0be
+source_empreinte: c17e87
 ---
 # Construire un agent IA
 
@@ -69,7 +69,9 @@ maintenant : c'est ainsi qu'on voit si une consigne a servi à quelque chose.
 **Le crédit.** Chaque espace a un solde prépayé, affiché en haut de la liste des agents et libellé en euros.
 Le solde descend à chaque tour, au tarif affiché dans la liste des
 modèles (notre commission comprise), et aussi à chaque traduction de l'Inbox. Un avertissement apparaît quand
-il devient bas, et un bandeau rouge à zéro. Le rechargement se fait par nous, jamais depuis la console. **Sans crédit, on ne peut pas créer d'agent et le
+il devient bas, et un bandeau rouge à zéro. Un administrateur le recharge dans **Paramètres > Crédit IA**
+(50 € ou 100 € hors taxe, payés sur la page de Stripe), et 5 € sont offerts à la connexion du premier numéro
+WhatsApp de l'espace. **Sans crédit, on ne peut pas créer d'agent et le
 bac à sable refuse** : un essai appelle vraiment le modèle, il se paie comme une conversation.
 
 **Trois plafonds** protègent chaque conversation en plus du solde : le nombre de tours, le nombre d'appels

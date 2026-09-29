@@ -208,7 +208,7 @@ describe.skipIf(!url)('PgInboxStore : conversations non lues (Supabase)', () => 
           `insert into conversations (tenant_id, wa_id) values ($1, '33640000001') returning id`, [seul],
         )).rows[0]!.id;
 
-        expect(await store.setAssigneeByWaId(seul, '33640000001', membre)).toBe(true);
+        expect(await store.setAssigneeByWaId(seul, '33640000001', membre, 'automatique : scénario test')).toBe(true);
         const apres = await pool.query<{ assigned_to: string | null; assigned_by: string | null }>(
           'select assigned_to, assigned_by from conversations where id = $1', [conv],
         );
@@ -218,7 +218,7 @@ describe.skipIf(!url)('PgInboxStore : conversations non lues (Supabase)', () => 
         expect(apres.rows[0]!.assigned_by).toBeNull();
 
         // Un membre d'un AUTRE espace : refus, et l'affectation précédente ne bouge pas.
-        expect(await store.setAssigneeByWaId(seul, '33640000001', anne)).toBe(false);
+        expect(await store.setAssigneeByWaId(seul, '33640000001', anne, 'automatique : scénario test')).toBe(false);
         const encore = await pool.query<{ assigned_to: string | null }>(
           'select assigned_to from conversations where id = $1', [conv],
         );

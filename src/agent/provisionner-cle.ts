@@ -23,8 +23,20 @@ export class CreditInsuffisantPourCle extends Error {
   }
 }
 
+/**
+ * L'espace a une ligne de clé qui ne se déchiffre pas. On n'en ouvre PAS une autre : Vercel créerait une clé que
+ * l'enregistrement rejetterait sur la ligne existante, puis on la supprimerait, en boucle. C'est une panne à réparer à
+ * la main (clé de chiffrement changée, ligne abîmée), déjà signalée par le dépôt.
+ */
+export class CleIllisible extends Error {
+  constructor() {
+    super('cle de modele illisible : aucune nouvelle cle ouverte');
+    this.name = 'CleIllisible';
+  }
+}
+
 export interface DepsProvisionCle {
-  cles: Pick<PgCleGatewayStore, 'lire' | 'enregistrer' | 'noterPlafond' | 'oublier'>;
+  cles: Pick<PgCleGatewayStore, 'lire' | 'lireEtat' | 'enregistrer' | 'noterPlafond' | 'oublier'>;
   /** Le solde prépayé de l'espace, en micro-euros. C'est lui qui devient le plafond. */
   credits: { solde(tenantId: string): Promise<number> };
   /** Comment nommer la cle dans le tableau de bord Vercel. */
@@ -45,8 +57,11 @@ export interface DepsProvisionCle {
  * conflit (une autre création d'agent a gagné la course, sans aucune exception).
  */
 export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string): Promise<CleGatewayEspace> {
-  const existante = await deps.cles.lire(tenantId);
-  if (existante) return existante;
+  const lu = await deps.cles.lireEtat(tenantId);
+  if (lu.etat === 'lue') return lu.cle;
+  // Seule une ABSENCE autorise à ouvrir une clé : une ligne illisible ferait créer puis supprimer une clé chez
+  // Vercel à chaque essai.
+  if (lu.etat === 'illisible') throw new CleIllisible();
 
   const solde = await deps.credits.solde(tenantId);
   const plafond = dollarsDepuisMicroEuros(solde, deps.tauxEurParDollar);
@@ -82,50 +97,95 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
 
 /**
  * Ce que rend une demande de clé pour un usage qui n'est pas la création d'un agent (la traduction) :
- *   - `prete` : l'espace a sa clé, ou vient de l'obtenir ;
+ *   - `prete` : l'espace a sa clé ;
+ *   - `en_preparation` : pas encore de clé, son ouverture chez Vercel est en cours (quelques secondes) ;
  *   - `credit_insuffisant` : pas de clé, et trop peu de crédit pour en ouvrir une (recharger règle) ;
- *   - `indisponible` : pas de clé, et pas moyen d'en ouvrir une (provisionnement éteint, panne chez Vercel).
+ *   - `indisponible` : pas de clé, et pas moyen d'en ouvrir une (provisionnement éteint, panne chez Vercel, clé
+ *     illisible en base).
  */
-export type VerdictCle = 'prete' | 'credit_insuffisant' | 'indisponible';
+export type VerdictCle = 'prete' | 'en_preparation' | 'credit_insuffisant' | 'indisponible';
 
 /** Après un échec d'ouverture, Vercel n'est pas rappelé pour cet espace avant ce délai. */
 export const REPIT_APRES_ECHEC_MS = 60_000;
 
 /**
+ * Un assureur de clé : la fonction qu'appelle la traduction, plus de quoi attendre une ouverture en vol (tests,
+ * arrêt propre). `enVol` rend `undefined` quand rien n'est en cours pour cet espace.
+ */
+export interface AssureurDeCle {
+  (tenantId: string): Promise<VerdictCle>;
+  enVol(tenantId: string): Promise<void> | undefined;
+}
+
+/**
  * S'assurer d'une clé au premier usage qui en a besoin, et plus seulement à la création du premier agent :
  * l'existante, sinon ouverte sur le crédit de l'espace par `assurerCleGateway`, donc avec la même garde de course.
  *
- * 🔴 Un échec d'ouverture ne lève pas (la traduction retombe en VO, le fil s'affiche) et ouvre un RÉPIT : ce chemin
- * est appelé à chaque rafraîchissement du fil (4 s) par chaque opérateur qui le lit, et une panne chez Vercel se
- * changerait sinon en appels de création en rafale. Le répit vit dans la mémoire du process : N copies de l'API
- * font au plus N appels par répit.
+ * 🔴 L'OUVERTURE NE SE FAIT PAS ATTENDRE (relecture du lot 1, 2026-09-28). Ce chemin est sur le GET du fil, qui se
+ * rafraîchit toutes les 4 secondes : attendre Vercel (jusqu'à 30 s) figeait le fil entier. L'ouverture part donc en
+ * arrière-plan, UNE promesse en vol par espace, et la demande rend `en_preparation` tant qu'elle n'a pas abouti ; le
+ * rafraîchissement suivant trouve la clé en base. Le crédit, lui, se lit AVANT de partir : il ne coûte qu'une lecture,
+ * et un crédit trop bas se dit tout de suite (`credit_insuffisant`) au lieu de se découvrir en arrière-plan.
+ *
+ * 🔴 Un échec d'ouverture ne lève pas (la traduction retombe en VO, le fil s'affiche) et ouvre un RÉPIT : chaque
+ * opérateur qui lit le fil rappellerait sinon Vercel toutes les 4 secondes pendant une panne. Le répit et la promesse
+ * en vol vivent dans la mémoire du process : N copies de l'API font au plus N ouvertures, que la garde de course
+ * d'`assurerCleGateway` ramène à une seule clé.
+ *
+ * Une clé ILLISIBLE en base n'ouvre rien (`CleIllisible`) : elle se journalise, une fois par répit, et la traduction
+ * reste indisponible pour cet espace jusqu'à la réparation.
  */
 export function creerAssureurDeCle(deps: {
-  cles: Pick<PgCleGatewayStore, 'lire'>;
+  cles: Pick<PgCleGatewayStore, 'lireEtat'>;
   /** `null` = provisionnement éteint sur cette instance : seule une clé existante sert. */
   provision: DepsProvisionCle | null;
   journal: (msg: string, err: unknown, tenantId: string) => void;
   now?: () => number;
-}): (tenantId: string) => Promise<VerdictCle> {
+}): AssureurDeCle {
   const echecs = new Map<string, number>();
-  return async (tenantId) => {
-    if ((await deps.cles.lire(tenantId)) !== null) return 'prete';
-    if (!deps.provision) return 'indisponible';
-    const maintenant = deps.now ? deps.now() : Date.now();
+  const vols = new Map<string, Promise<void>>();
+  const horloge = (): number => (deps.now ? deps.now() : Date.now());
+  const enRepit = (tenantId: string, maintenant: number): boolean => {
     const dernier = echecs.get(tenantId);
-    if (dernier !== undefined && maintenant - dernier < REPIT_APRES_ECHEC_MS) return 'indisponible';
-    try {
-      await assurerCleGateway(deps.provision, tenantId);
-      echecs.delete(tenantId);
-      return 'prete';
-    } catch (err) {
-      // Pas de répit ici : Vercel n'a pas été appelé, et une recharge doit ouvrir la clé tout de suite.
-      if (err instanceof CreditInsuffisantPourCle) return 'credit_insuffisant';
-      echecs.set(tenantId, maintenant);
-      deps.journal('cle de modele non ouverte', err, tenantId);
+    return dernier !== undefined && maintenant - dernier < REPIT_APRES_ECHEC_MS;
+  };
+
+  const assurer = async (tenantId: string): Promise<VerdictCle> => {
+    const lu = await deps.cles.lireEtat(tenantId);
+    if (lu.etat === 'lue') return 'prete';
+    const maintenant = horloge();
+    if (lu.etat === 'illisible') {
+      if (!enRepit(tenantId, maintenant)) {
+        echecs.set(tenantId, maintenant);
+        deps.journal('cle de modele illisible, aucune cle ouverte', new CleIllisible(), tenantId);
+      }
       return 'indisponible';
     }
+    const provision = deps.provision;
+    if (!provision) return 'indisponible';
+    if (vols.has(tenantId)) return 'en_preparation';
+    if (enRepit(tenantId, maintenant)) return 'indisponible';
+    // Pas de répit pour un crédit trop bas : Vercel n'est pas appelé, et une recharge doit ouvrir la clé tout de suite.
+    if (dollarsDepuisMicroEuros(await provision.credits.solde(tenantId), provision.tauxEurParDollar) === null) {
+      return 'credit_insuffisant';
+    }
+    // Relu après l'`await` du solde : deux demandes simultanées du même espace ne lancent qu'une ouverture.
+    if (vols.has(tenantId)) return 'en_preparation';
+    const vol = assurerCleGateway(provision, tenantId)
+      .then(
+        () => { echecs.delete(tenantId); },
+        (err: unknown) => {
+          // Le solde a pu baisser entre la lecture et l'ouverture : pas de répit, comme au-dessus.
+          if (err instanceof CreditInsuffisantPourCle) return;
+          echecs.set(tenantId, horloge());
+          deps.journal('cle de modele non ouverte', err, tenantId);
+        },
+      )
+      .finally(() => { vols.delete(tenantId); });
+    vols.set(tenantId, vol);
+    return 'en_preparation';
   };
+  return Object.assign(assurer, { enVol: (tenantId: string) => vols.get(tenantId) });
 }
 
 /**

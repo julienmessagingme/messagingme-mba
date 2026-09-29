@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgCreditStore, NOTE_CREDIT_OFFERT } from '../../src/agent/credits.pg';
 import { PgUserStore } from '../../src/user/store.pg';
-import { SANS_CREDIT_OFFERT } from '../credit-offert';
+import { PgEmbeddedSignupStore, TenantConflictError } from '../../src/account/es-store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -200,41 +200,124 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
     });
   });
 
-  /** LES 5 € OFFERTS À L'OUVERTURE (2026-09-28) : écrits par la transaction qui crée l'espace. */
-  describe('le crédit offert à la création d un espace', () => {
-    async function creer(ouverture: { creditOffertMicroEur: number }): Promise<{ tenantId: string; email: string }> {
-      const email = `credit.offert.${Date.now()}.${Math.random().toString(36).slice(2, 8)}@exemple.fr`;
-      const { tenantId } = await new PgUserStore(pool, ouverture).createTenantWithAdmin('Espace itest crédit', { email, name: null, passwordHash: null });
-      return { tenantId, email };
+  /**
+   * LES 5 € OFFERTS À LA CONNEXION DU PREMIER NUMÉRO (migration 0191, décision de Julien du 2026-09-29). Les deux
+   * bornes sont des CONTRAINTES (clé primaire sur l'espace, unique sur le numéro) : seule une vraie base les tient.
+   */
+  describe('le crédit offert à la connexion du premier numéro', () => {
+    const CINQ = { creditOffertMicroEur: 5_000_000 };
+    const suffixe = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const espaces: string[] = [];
+    const numeros: string[] = [];
+    const wabas: string[] = [];
+    async function espace(nom: string): Promise<string> {
+      const id = (await pool.query<{ id: string }>(`insert into tenants (name) values ($1) returning id`, [nom])).rows[0]!.id;
+      espaces.push(id);
+      return id;
     }
-    async function oublier(c: { tenantId: string; email: string }): Promise<void> {
-      await pool.query('delete from tenants where id = $1', [c.tenantId]);
-      await pool.query('delete from identities where lower(email) = lower($1)', [c.email]);
+    async function relier(tenantId: string, o: { waba?: string; numero?: string } = {}): Promise<{ numero: string; offert: number }> {
+      const waba = o.waba ?? `waba-offre-${suffixe()}`;
+      const numero = o.numero ?? `pn-offre-${suffixe()}`;
+      wabas.push(waba);
+      numeros.push(numero);
+      const r = await new PgEmbeddedSignupStore(pool, CINQ).linkTenant({ tenantId, wabaId: waba, phoneNumberId: numero, displayPhoneNumber: null, verifiedName: null });
+      return { numero, offert: r.creditOffertMicroEur };
     }
+    afterAll(async () => {
+      await pool.query('delete from phone_numbers where id = any($1::text[])', [numeros]);
+      await pool.query('delete from waba where id = any($1::text[])', [wabas]);
+      // `credits_offerts` n'a pas de clé étrangère vers `tenants`, délibérément : on la nettoie à la main.
+      await pool.query('delete from credits_offerts where tenant_id = any($1::uuid[]) or phone_number_id = any($2::text[])', [espaces, numeros]);
+      await pool.query('delete from tenants where id = any($1::uuid[])', [espaces]);
+    });
 
-    it('🔴 un espace créé porte 5 € et UNE ligne `offert` avec sa note', async () => {
-      const c = await creer({ creditOffertMicroEur: 5_000_000 });
+    it('🔴 la création d un espace n offre RIEN', async () => {
+      const email = `credit.offert.${suffixe()}@exemple.fr`;
+      const { tenantId: t } = await new PgUserStore(pool).createTenantWithAdmin('Espace itest crédit', { email, name: null, passwordHash: null });
+      espaces.push(t);
       try {
-        expect(await credits.solde(c.tenantId)).toBe(5_000_000);
-        const m = await credits.mouvements(c.tenantId, 10);
-        expect(m).toHaveLength(1);
-        expect(m[0]).toMatchObject({ deltaMicroEur: 5_000_000, raison: 'offert', note: NOTE_CREDIT_OFFERT });
-        // Aucune clé Vercel à l'inscription : elle s'ouvre au premier usage qui en a besoin.
-        const cles = await pool.query('select 1 from agent_gateway_keys where tenant_id = $1', [c.tenantId]);
-        expect(cles.rowCount).toBe(0);
+        expect(await credits.solde(t)).toBe(0);
+        expect(await credits.mouvements(t, 10)).toHaveLength(0);
       } finally {
-        await oublier(c);
+        await pool.query('delete from identities where lower(email) = lower($1)', [email]);
       }
     });
 
-    it('à 0, l espace naît sans crédit ni mouvement', async () => {
-      const c = await creer(SANS_CREDIT_OFFERT);
-      try {
-        expect(await credits.solde(c.tenantId)).toBe(0);
-        expect(await credits.mouvements(c.tenantId, 10)).toHaveLength(0);
-      } finally {
-        await oublier(c);
-      }
+    it('🔴 premier numéro : 5 € et UNE ligne `offert`, sans clé Vercel ouverte', async () => {
+      const t = await espace('itest-offre-premier');
+      const r = await relier(t);
+      expect(r.offert).toBe(5_000_000);
+      expect(await credits.solde(t)).toBe(5_000_000);
+      const m = await credits.mouvements(t, 10);
+      expect(m).toHaveLength(1);
+      expect(m[0]).toMatchObject({ deltaMicroEur: 5_000_000, raison: 'offert', note: NOTE_CREDIT_OFFERT });
+      const cles = await pool.query('select 1 from agent_gateway_keys where tenant_id = $1', [t]);
+      expect(cles.rowCount).toBe(0);
+      // Rejouer l'inscription sur le MÊME numéro (geste idempotent) n'offre rien de plus.
+      expect((await relier(t, { numero: r.numero })).offert).toBe(0);
+      expect(await credits.solde(t)).toBe(5_000_000);
+    });
+
+    it('🔴 second numéro du même espace (le premier détaché) : rien', async () => {
+      const t = await espace('itest-offre-second');
+      const premier = await relier(t);
+      expect(premier.offert).toBe(5_000_000);
+      await pool.query('delete from phone_numbers where id = $1', [premier.numero]);
+      expect((await relier(t)).offert).toBe(0);
+      expect(await credits.solde(t)).toBe(5_000_000);
+    });
+
+    it('🔴 le même numéro relié à un AUTRE espace : rien, même après son départ du premier', async () => {
+      const a = await espace('itest-offre-a');
+      const b = await espace('itest-offre-b');
+      const r = await relier(a);
+      await pool.query('delete from phone_numbers where id = $1', [r.numero]);
+      expect((await relier(b, { numero: r.numero })).offert).toBe(0);
+      expect(await credits.solde(b)).toBe(0);
+      expect(await credits.mouvements(b, 10)).toHaveLength(0);
+    });
+
+    it('🔴 une liaison REFUSÉE (numéro d un autre espace) n offre rien', async () => {
+      const a = await espace('itest-offre-refus-a');
+      const b = await espace('itest-offre-refus-b');
+      const r = await relier(a);
+      await expect(relier(b, { numero: r.numero })).rejects.toBeInstanceOf(TenantConflictError);
+      expect(await credits.solde(b)).toBe(0);
+      const offre = await pool.query('select 1 from credits_offerts where tenant_id = $1', [b]);
+      expect(offre.rowCount).toBe(0);
+    });
+  });
+
+  /**
+   * L'HISTORIQUE MONTRÉ AU CLIENT (page Crédit IA) : les tours d'agent agrégés par jour de Paris, le reste tel quel,
+   * et aucune note (celle d'une recharge porte l'adresse de l'exploitant).
+   */
+  describe('l historique du client', () => {
+    let h: string;
+    beforeAll(async () => {
+      h = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-credits-historique') returning id`)).rows[0]!.id;
+      await credits.crediter(h, 1_000_000, 'julien@exemple.fr : geste');
+      await credits.debiter(h, 100);
+      await credits.debiter(h, 250);
+      await credits.debiterTraduction(h, 40);
+    });
+    afterAll(async () => { if (h) await pool.query('delete from tenants where id = $1', [h]); });
+
+    it('🔴 les tours d agent du jour font UNE ligne, sans note, et la recharge garde la sienne', async () => {
+      const lignes = await credits.historique(h, 50);
+      const agents = lignes.filter((l) => l.raison === 'conso');
+      expect(agents).toHaveLength(1);
+      expect(agents[0]!.deltaMicroEur).toBe(-350);
+      expect(agents[0]!.jour).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(lignes.find((l) => l.raison === 'recharge')).toMatchObject({ deltaMicroEur: 1_000_000, jour: null });
+      expect(lignes.find((l) => l.raison === 'traduction')!.jour).toBe(agents[0]!.jour);
+      // Aucune note ne sort vers le client : la forme de la ligne n'en porte pas.
+      expect(lignes.every((l) => !('note' in l))).toBe(true);
+    });
+
+    it('🔴 l historique est PAR ESPACE : ni les mouvements ni l agrégat des tours d un autre', async () => {
+      const siennes = await credits.historique(autreTenantId, 50);
+      expect(siennes.some((l) => l.deltaMicroEur === -350 || l.deltaMicroEur === 1_000_000)).toBe(false);
     });
   });
 });

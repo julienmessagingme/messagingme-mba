@@ -425,7 +425,11 @@ test.describe('Centre de sécurité & compliance', () => {
     await expect(bas.getByRole('link', { name: 'Consentement' })).toBeVisible();
     // Parametres est pour lui depuis le 2026-09-19 : il y regle UNE chose, la prise d une conversation par
     // les agents (demande de Julien). Ce cas affirmait le contraire et a rougi la CI : il suit la decision.
-    await expect(bas.getByRole('link', { name: 'Paramètres' })).toBeVisible();
+    // ⚠️ Parametres est un GROUPE depuis le 2026-09-29 (General et Credit IA) : pour lui, un groupe qui ne porte que
+    // General, sa seule page. Le Credit IA reste admin.
+    await bas.getByRole('button', { name: 'Paramètres' }).click();
+    await expect(bas.getByRole('link', { name: 'Général' })).toBeVisible();
+    await expect(bas.getByRole('link', { name: 'Crédit IA' })).toHaveCount(0);
     // Support et Developers sont dans le MEME bloc bas, et ils ne sont toujours pas pour lui.
     await expect(bas.getByRole('link', { name: 'Support' })).toHaveCount(0);
   });

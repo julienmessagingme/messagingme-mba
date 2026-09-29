@@ -66,7 +66,7 @@ describe('assignerReponse', () => {
   };
 
   it('assigne a la personne designee, sans consommer de rang', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'personne', assignationUserId: 'u-fixe', premiereReponse: true } });
+    const f = faux({ campagne: { campaignId: 'c1', nom: 'Rentrée', devenir: null, assignation: 'personne', assignationUserId: 'u-fixe', premiereReponse: true } });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBe('u-fixe');
     expect(f.journal.assignations).toEqual([['33600000001', 'u-fixe']]);
     // 🔴 UNE ASSIGNATION FIXE NE FAIT PAS TOURNER LE ROULEMENT. Consommer un rang ici décalerait le tour
@@ -77,7 +77,7 @@ describe('assignerReponse', () => {
   });
 
   it('sur un tour de role, prend un rang et suit le roulement', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'tour_de_role', assignationUserId: null, premiereReponse: true }, rang: 1 });
+    const f = faux({ campagne: { campaignId: 'c1', nom: 'Rentrée', devenir: null, assignation: 'tour_de_role', assignationUserId: null, premiereReponse: true }, rang: 1 });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBe('b');
     expect(f.journal.rangsPris).toEqual(['c1']);
   });
@@ -98,7 +98,7 @@ describe('assignerReponse', () => {
   // ⚠️ Une équipe VIDE (tous les comptes révoqués) ne doit rien assigner : la conversation tombe dans
   // « À traiter ». On ne consomme pas de rang non plus, puisque personne ne l'a reçu.
   it('sans membre, n assigne personne', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'tour_de_role', assignationUserId: null, premiereReponse: true }, membres: [] });
+    const f = faux({ campagne: { campaignId: 'c1', nom: 'Rentrée', devenir: null, assignation: 'tour_de_role', assignationUserId: null, premiereReponse: true }, membres: [] });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
     expect(f.journal.assignations).toEqual([]);
   });
@@ -110,7 +110,7 @@ describe('assignerReponse', () => {
    * « assignée à une personne ».
    */
   it('une personne designee qui a quitte l espace n assigne personne', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'personne', assignationUserId: null, premiereReponse: true } });
+    const f = faux({ campagne: { campaignId: 'c1', nom: 'Rentrée', devenir: null, assignation: 'personne', assignationUserId: null, premiereReponse: true } });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
     expect(f.journal.assignations).toEqual([]);
   });
@@ -121,7 +121,7 @@ describe('assignerReponse', () => {
    * conversation n'a pas été assignée », plutôt que le nom de quelqu'un qui ne l'a pas reçue.
    */
   it('une ecriture refusee rend null, pas un faux succes', async () => {
-    const f = faux({ campagne: { campaignId: 'c1', devenir: null, assignation: 'tour_de_role', assignationUserId: null, premiereReponse: true }, assigne: false });
+    const f = faux({ campagne: { campaignId: 'c1', nom: 'Rentrée', devenir: null, assignation: 'tour_de_role', assignationUserId: null, premiereReponse: true }, assigne: false });
     expect(await assignerReponse('t1', '33600000001', f.deps)).toBeNull();
   });
 });
@@ -136,7 +136,7 @@ describe('assignerReponse', () => {
  */
 describe('le devenir d’un étage décide qui répond', () => {
   const campagne = (sur: Partial<CampagneAssignante> = {}): CampagneAssignante => ({
-    campaignId: 'c1', devenir: null, assignation: null, assignationUserId: null, premiereReponse: true, ...sur,
+    campaignId: 'c1', nom: 'Rentrée', devenir: null, assignation: null, assignationUserId: null, premiereReponse: true, ...sur,
   });
 
   describe('devenirEffectif (pur)', () => {
@@ -241,7 +241,7 @@ describe('l’ordre des deux gestes est l’invariant', () => {
     const journal: string[] = [];
     const deps = {
       campagneDeLaReponse: async () => ({
-        campaignId: 'c1', devenir: 'inbox' as const, assignation: 'tour_de_role' as const, assignationUserId: null, premiereReponse: true,
+        campaignId: 'c1', nom: 'Rentrée', devenir: 'inbox' as const, assignation: 'tour_de_role' as const, assignationUserId: null, premiereReponse: true,
       }),
       membres: async () => ['a', 'b', 'c'],
       prendreUnRang: async () => { journal.push('rang'); return 1; },

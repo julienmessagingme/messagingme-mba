@@ -31,15 +31,24 @@ function faux(opts: {
   empechement?: CauseSansTraduction;
 } = {}) {
   const appels: Array<{ tenantId: string; textes: Array<{ id: string; texte: string }>; cible: string }> = [];
+  /** Combien de fois l'espace a été vérifié : une fois par ouverture de fil, jamais deux. */
+  let verifications = 0;
+  const traduireLot = async (tenantId: string, textes: Array<{ id: string; texte: string }>, cible: string) => {
+    appels.push({ tenantId, textes: textes.map((t) => ({ ...t })), cible });
+    const paires = opts.reponses
+      ? opts.reponses(textes)
+      : textes.map((t): [string, Traduction] => [t.id, { texte: `[${cible}] ${t.texte}`, langueSource: 'es' }]);
+    return new Map(paires);
+  };
   const traducteur: Traducteur = {
-    empechement: async () => opts.empechement ?? null,
-    traduireLot: async (tenantId, textes, cible) => {
-      appels.push({ tenantId, textes: textes.map((t) => ({ ...t })), cible });
-      const paires = opts.reponses
-        ? opts.reponses(textes)
-        : textes.map((t): [string, Traduction] => [t.id, { texte: `[${cible}] ${t.texte}`, langueSource: 'es' }]);
-      return new Map(paires);
+    empechement: async () => { verifications += 1; return opts.empechement ?? null; },
+    ouvrir: async (tenantId) => {
+      verifications += 1;
+      return opts.empechement
+        ? { empechement: opts.empechement }
+        : { empechement: null, traduireLot: (textes, cible) => traduireLot(tenantId, textes, cible) };
     },
+    traduireLot,
     traduire: async () => null,
   };
   const ranges: Array<{ messageId: string; texte: string; langue: string }> = [];
@@ -51,7 +60,7 @@ function faux(opts: {
       apprendreLangueContact: async (_t, _c, langue) => { languesApprises.push(langue); },
     },
   };
-  return { deps, appels, ranges, languesApprises };
+  return { deps, appels, ranges, languesApprises, verifications: () => verifications };
 }
 
 const OU = { tenantId: 't1', conversationId: 'c1' };
@@ -156,6 +165,22 @@ describe('traduction du fil : qui est traduit, et combien de fois on paie', () =
     expect(f.appels).toHaveLength(0);
     expect(r.messages[0]!.affiche).toBe('Hola');
     expect(r.messages[0]!.traductionEchouee).toBe(false);
+  });
+
+  it('🔴 UNE seule vérification de l’espace par rafraîchissement qui traduit', async () => {
+    // Le fil vérifiait l'espace (solde, clé), puis le lot le revérifiait : deux lectures de solde et deux de clé
+    // à chaque rafraîchissement de 4 s, pour une réponse identique (relecture du lot 1, 2026-09-28).
+    const f = faux();
+    await traduireFil(f.deps, { ...OU, messages: [msg({ id: 'm1', body: 'Hola' })], cible: 'fr' });
+    expect(f.appels).toHaveLength(1);
+    expect(f.verifications()).toBe(1);
+  });
+
+  it('une clé qui s’ouvre rend le fil en VO avec sa cause, sans rien appeler', async () => {
+    const f = faux({ empechement: 'cle_en_preparation' });
+    const r = await traduireFil(f.deps, { ...OU, messages: [msg({ id: 'm1', body: 'Hola' })], cible: 'fr' });
+    expect(r.indisponible).toBe('cle_en_preparation');
+    expect(f.appels).toHaveLength(0);
   });
 
   it('un espace sans cle affiche quand meme les traductions DEJA rangees', async () => {

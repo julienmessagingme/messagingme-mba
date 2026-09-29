@@ -493,7 +493,7 @@ async function main(): Promise<void> {
         campagneDeLaReponse: (t, w) => repo.campagneAssignanteDuContact(t, w),
         membres: (t) => inboxStore.membresAffectables(t),
         prendreUnRang: (t, campaignId) => repo.prendreUnRangDeTourDeRole(t, campaignId),
-        assigner: (t, w, userId) => inboxStore.assignerSiLibre(t, w, userId),
+        assigner: (t, w, userId, cause) => inboxStore.assignerSiLibre(t, w, userId, cause),
         /**
          * Ce qui rend « la conversation arrive dans l'Inbox » vrai : l'agent de Meta, répondeur primaire du
          * numéro, répondrait sinon avant que l'équipe ne voie quoi que ce soit. Le fil va à l'équipe (`app_human`) :

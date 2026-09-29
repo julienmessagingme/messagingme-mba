@@ -173,7 +173,7 @@ function monterBouton(o: { numero?: string | null; detenteur: 'mba' | 'app_human
 describe('rendre le fil à Meta (« Rendre la main »)', () => {
   it('appelle `releaseThread` avec le numéro du client, puis écrit `mba`', async () => {
     const m = monterBouton({ detenteur: 'app_human' });
-    expect(await m.fil.rendreLaMain('tenant-1', '33633921577')).toBe('mba');
+    expect(await m.fil.rendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('mba');
     expect(m.appels).toEqual([['release', '1234840649713976', '33633921577']]);
     expect(m.etat('33633921577')?.owner).toBe('mba');
   });
@@ -182,7 +182,7 @@ describe('rendre le fil à Meta (« Rendre la main »)', () => {
     // Même règle que le balayage et la fin de parcours (décision de Julien du 2026-09-27) : la colonne ne bouge
     // pas, ni vers `mba` (un agent qui ne peut pas répondre), ni vers `app_workflow` (hors « À traiter »).
     const m = monterBouton({ detenteur: 'app_human', numero: null });
-    expect(await m.fil.rendreLaMain('tenant-1', '33633921577')).toBe('aucun_numero');
+    expect(await m.fil.rendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('aucun_numero');
     expect(m.clientDemande()).toBe(false);
     expect(m.etat('33633921577')?.owner).toBe('app_human');
   });
@@ -191,7 +191,7 @@ describe('rendre le fil à Meta (« Rendre la main »)', () => {
     // C'est ce qui permet à la route de répondre 409 sans avoir écrit son état local. Un `catch` silencieux ici
     // recréerait le défaut qu'on répare : un état local qui annonce ce que Meta n'a pas fait.
     const m = monterBouton({ detenteur: 'app_human', release: async () => { throw new Error('jeton expiré'); } });
-    await expect(m.fil.rendreLaMain('tenant-1', '33633921577')).rejects.toThrow('jeton expiré');
+    await expect(m.fil.rendreLaMain('tenant-1', '33633921577', { collaborateur: null })).rejects.toThrow('jeton expiré');
     expect(m.etat('33633921577')?.owner).toBe('app_human');
   });
 });
@@ -202,14 +202,14 @@ describe('prendre le fil à Meta (« Reprendre la main »)', () => {
     // rendrait le fil à l'agent de Meta sous un bouton qui promet de le lui prendre, et le symptôme serait
     // exactement celui qu'on répare.
     const m = monterBouton({ detenteur: 'mba' });
-    expect(await m.fil.reprendreLaMain('tenant-1', '33633921577')).toBe('pris');
+    expect(await m.fil.reprendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('pris');
     expect(m.appels).toEqual([['take', '1234840649713976', '33633921577']]);
     expect(m.etat('33633921577')?.owner).toBe('app_human');
   });
 
   it('sans numéro connecté : AUCUN appel, et le fil est à l’équipe (notre colonne est la seule vérité)', async () => {
     const m = monterBouton({ detenteur: 'mba', numero: null });
-    expect(await m.fil.reprendreLaMain('tenant-1', '33633921577')).toBe('pris');
+    expect(await m.fil.reprendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('pris');
     expect(m.appels).toEqual([]);
     expect(m.etat('33633921577')?.owner).toBe('app_human');
   });
@@ -220,7 +220,7 @@ describe('prendre le fil à Meta (« Reprendre la main »)', () => {
     // l'agent continue de répondre. Le geste rejoue un refus passager (décision de Julien du 2026-09-27), jamais
     // un refus définitif : un seul appel ici.
     const m = monterBouton({ detenteur: 'mba', take: async () => { throw new Error('not the configured escalation partner'); } });
-    expect(await m.fil.reprendreLaMain('tenant-1', '33633921577')).toBe('refuse');
+    expect(await m.fil.reprendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('refuse');
     expect(m.appels).toHaveLength(1);
     expect(m.etat('33633921577')?.owner).toBe('mba');
   });

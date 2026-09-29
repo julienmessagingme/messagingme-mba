@@ -568,13 +568,20 @@ function Ecran({ tenantId }: { tenantId: string }) {
 function Solde({ microEur }: { microEur: number }) {
   const t = useT();
   const euros = eurosDepuisMicro(microEur);
+  // Depuis la recharge par Stripe (2026-09-29), le geste existe : on y mène, au lieu de « contactez-nous ».
+  const recharger = (
+    <Link href="/parametres/credit" className="ml-1 font-medium underline" data-testid="agent-solde-recharger">
+      {t('Recharger le crédit IA', 'Top up the AI credit')}
+    </Link>
+  );
   if (microEur <= 0) {
     return (
       <MbaNotice kind="error" testid="agent-solde-vide">
         {t(
-          'Votre crédit est épuisé : vos agents ne répondent plus et sortent par « Plafond atteint ». Contactez-nous pour recharger.',
-          'Your credit is used up: your agents no longer answer and leave through “Cap reached”. Contact us to top up.',
+          'Votre crédit est épuisé : vos agents ne répondent plus et sortent par « Plafond atteint ».',
+          'Your credit is used up: your agents no longer answer and leave through “Cap reached”.',
         )}
+        {recharger}
       </MbaNotice>
     );
   }
@@ -585,6 +592,7 @@ function Solde({ microEur }: { microEur: number }) {
           `Crédit restant : ${euros} €. C’est bas : au bout, vos agents cesseront de répondre.`,
           `Credit left: €${euros}. That is low: once it runs out, your agents will stop answering.`,
         )}
+        {recharger}
       </MbaNotice>
     );
   }

@@ -80,8 +80,9 @@ export async function listAgents(tenantId: string, opts: { tous?: boolean } = {}
 /**
  * Le solde prépayé du workspace, en micro-euros. `null` = aucun solde configuré sur cette instance.
  *
- * 🔴 LECTURE SEULE, et c'est le sujet. Le rechargement vit sur la surface d'exploitation, sous une autorité
- * séparée du compte client : un client qui pourrait se créditer lui-même n'aurait plus de prépayé du tout.
+ * 🔴 LECTURE SEULE, et c'est le sujet. Un client ne s'écrit pas de crédit : il paie (Stripe, dont le webhook
+ * signé crédite, `lib/api-credit.ts`), ou l'exploitation le recharge. Un client qui pourrait se créditer
+ * lui-même n'aurait plus de prépayé du tout.
  */
 export async function getSoldeAgent(tenantId: string): Promise<number | null> {
   const r = await request<{ soldeMicroEur: number | null }>(`/tenants/${tenantId}/agents/solde`);

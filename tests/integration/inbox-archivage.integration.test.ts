@@ -71,14 +71,14 @@ describe.skipIf(!url)('archivage d une conversation', () => {
     (await store.listConversations(tenantId, opts)).map((c) => c.id);
 
   it('🔴 archiver sort des dossiers ordinaires et met dans Archivé', async () => {
-    expect(await store.archiverConversation(tenantId, convId, true)).toBe(true);
+    expect(await store.archiverConversation(tenantId, convId, true, { collaborateur: null })).toBe(true);
     expect(await ids()).not.toContain(convId);
     expect(await ids({ archivees: true })).toEqual([convId]);
   });
 
   it('désarchiver la remet dans les dossiers ordinaires, et la retire d’Archivé', async () => {
-    await store.archiverConversation(tenantId, convId, true);
-    expect(await store.archiverConversation(tenantId, convId, false)).toBe(true);
+    await store.archiverConversation(tenantId, convId, true, { collaborateur: null });
+    expect(await store.archiverConversation(tenantId, convId, false, { collaborateur: null })).toBe(true);
     expect(await ids()).toContain(convId);
     expect(await ids({ archivees: true })).toEqual([]);
   });
@@ -86,7 +86,7 @@ describe.skipIf(!url)('archivage d une conversation', () => {
   it('🔴 un MESSAGE DU CONTACT désarchive, dans la même écriture que celle qui avance le fil', async () => {
     // La décision de Julien, et le point le plus facile à casser plus tard : une conversation archivée que
     // le client relance doit revenir, sinon on l'a rendue muette.
-    await store.archiverConversation(tenantId, convId, true);
+    await store.archiverConversation(tenantId, convId, true, { collaborateur: null });
     await store.recordInbound(tenantId, entrant('wamid.itest-retour', 'vous êtes là ?'));
     expect(await ids()).toContain(convId);
     expect(await ids({ archivees: true })).toEqual([]);
@@ -96,7 +96,7 @@ describe.skipIf(!url)('archivage d une conversation', () => {
     // `recordInbound` et `recordOutboundByWaId` partagent le MÊME upsert. Sans une décision prise par le
     // CHEMIN appelant, une campagne qui touche mille contacts ferait remonter dans l'inbox tous ceux qu'on
     // avait rangés, et le dossier Archivé se viderait au premier envoi de masse.
-    await store.archiverConversation(tenantId, convId, true);
+    await store.archiverConversation(tenantId, convId, true, { collaborateur: null });
     await store.recordOutboundByWaId(tenantId, WA_ID, {
       body: 'notre promo du mois', messageId: 'wamid.itest-promo', origine: 'campagne',
     });
@@ -106,11 +106,11 @@ describe.skipIf(!url)('archivage d une conversation', () => {
 
   it('🔴 une conversation d’un AUTRE espace ne s’archive pas', async () => {
     // Le pooler est superuser, la RLS est contournée : ce `tenant_id` dans le `where` est LE contrôle.
-    expect(await store.archiverConversation(autreTenantId, convId, true)).toBe(false);
+    expect(await store.archiverConversation(autreTenantId, convId, true, { collaborateur: null })).toBe(false);
     expect(await ids()).toContain(convId);
   });
 
   it('une conversation inconnue rend false, pour que la route en fasse un 404', async () => {
-    expect(await store.archiverConversation(tenantId, '00000000-0000-4000-8000-000000000000', true)).toBe(false);
+    expect(await store.archiverConversation(tenantId, '00000000-0000-4000-8000-000000000000', true, { collaborateur: null })).toBe(false);
   });
 });

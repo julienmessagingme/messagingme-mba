@@ -1,7 +1,8 @@
 /**
  * Le modèle de la barre de navigation, et la seule fonction qui sache où se trouve une page dedans.
  *
- * Pourquoi un module à part : la barre a désormais TROIS niveaux (« AI Agent » > « MBA » > « Guide »).
+ * Pourquoi un module à part : la barre a TROIS niveaux (« Contenu » > « WhatsApp » > « Templates » ; c'était
+ * « AI Agent » > « MBA » > « Guide » jusqu'au 2026-09-29, où ce groupe est redevenu plat).
  * Tant qu'elle en avait deux, l'appartenance d'une page à son groupe se lisait dans une table plate écrite à
  * la main dans `AppShell`. À trois niveaux ça ne suffit plus, parce qu'une page a maintenant une CHAÎNE
  * d'ancêtres et que deux choses en dépendent : le groupe à surligner (le premier), et les groupes à déplier
@@ -23,7 +24,8 @@ export interface NavEntree {
 }
 
 /**
- * La chaîne des groupes qui MÈNENT à `key`, du plus haut au plus bas (`['ia', 'mba']` pour le Guide du MBA).
+ * La chaîne des groupes qui MÈNENT à `key`, du plus haut au plus bas (`['contenu', 'contenu-whatsapp']` pour les
+ * Templates).
  *
  * Vide si la clé est une entrée de premier niveau, ou si elle est inconnue : l'appelant traite les deux de
  * la même façon (aucun groupe à ouvrir), et c'est voulu. Une clé inconnue est une page dont l'onglet n'a pas
@@ -264,29 +266,17 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // la seule des trois qui va chercher quelqu'un qui ne nous connait pas encore.
     { key: 'publicites', href: '/publicites', label: t('Publicités', 'Ads'), icone: icons.pubs },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), icone: icons.automation },
-    // Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA, son guide et ses réglages,
-    // qui gardent leurs URL) et le nôtre. MBA est un SOUS-GROUPE et non deux entrées voisines : ses deux
-    // écrans parlent du même agent, les mettre au même rang que « Other AI agent » laissait croire à trois
-    // agents. C'est ce qui a fait passer la barre à trois niveaux (cf. `lib/nav.ts`).
+    /**
+     * Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA) et le nôtre. Deux FEUILLES
+     * depuis le 2026-09-29 (décision de Julien), plus de troisième niveau ici : « MBA » mène droit à ses
+     * paramètres (le guide qui vivait sur `/mba` a été retiré, l'adresse redirige), et « Other AI agent » droit à
+     * `/agents`. Le crédit, qui en faisait un groupe, est parti dans Paramètres : il paie aussi la traduction de
+     * l'Inbox, c'est un réglage de l'ESPACE et pas d'un agent.
+     * ⚠️ Les CLÉS ne changent pas (`mba-settings`, `agents`) : les pages et les fiches d'aide les nomment.
+     */
     { key: 'ia', label: t('AI Agent', 'AI Agent'), icone: icons.mba, children: [
-      // Les deux enfants ne RÉPÈTENT PAS « MBA » : leur groupe le porte déjà, et la barre affiche les
-      // trois niveaux. « MBA, guide » sous un groupe « MBA » disait deux fois la même chose.
-      { key: 'mba', label: t('MBA', 'MBA'), children: [
-        { key: 'mba-guide', href: '/mba', label: t('Guide', 'Guide') },
-        { key: 'mba-settings', href: '/mba/parametres', label: t('Paramètres', 'Settings') },
-      ] },
-      /**
-       * « Other AI agent » devient un GROUPE le 2026-09-08 (demande de Julien) : la fiche des agents d'un
-       * côté, le crédit de l'autre. Le solde n'est pas un réglage d'agent, il est celui de l'ESPACE : tous
-       * les agents y puisent, et le ranger dans la fiche de l'un d'eux laisserait croire le contraire.
-       *
-       * ⚠️ `/agents` NE BOUGE PAS : c'est l'écran d'aujourd'hui, avec ses huit onglets et ses liens déjà
-       * partagés. Seule l'entrée de menu gagne un parent.
-       */
-      { key: 'agents-groupe', label: t('Other AI agent', 'Other AI agent'), children: [
-        { key: 'agents', href: '/agents', label: t('Agents', 'Agents') },
-        { key: 'agents-credit', href: '/agents/credit', label: t('Crédit', 'Credit') },
-      ] },
+      { key: 'mba-settings', href: '/mba/parametres', label: t('MBA', 'MBA') },
+      { key: 'agents', href: '/agents', label: t('Other AI agent', 'Other AI agent') },
     ] },
     // Contenu, rangé PAR CANAL. Les sept entrées étaient à plat et l'oeil devait relire les libellés pour
     // retrouver le sien : « Templates WhatsApp », « Formulaires WhatsApp », « Messages RCS », « Modèles
@@ -362,7 +352,17 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // du haut. Ils ne servent pas le travail quotidien : ils le RÈGLENT, comme Developers juste en dessous.
     // Les laisser en fin de liste haute les mettait au même rang que Campagnes ou Scénario, qu'on ouvre dix
     // fois par jour. Aucune adresse ne change.
-    { key: 'parametres', href: '/parametres', label: t('Paramètres', 'Settings'), icone: icons.settings },
+    /**
+     * PARAMÈTRES DEVIENT UN GROUPE le 2026-09-29 (décision de Julien) : « Général », la page d'aujourd'hui, et
+     * « Crédit IA », venu de « Other AI agent ». Le crédit paie les agents ET la traduction de l'Inbox : c'est un
+     * réglage de l'espace.
+     * ⚠️ `parametres` reste la clé de la page GÉNÉRALE (ouverte aux managers, `ECRANS_ENCADREMENT`) ; le groupe a
+     * la sienne. Le Crédit IA reste admin : un manager voit le groupe avec la seule page qu'il peut ouvrir.
+     */
+    { key: 'parametres-groupe', label: t('Paramètres', 'Settings'), icone: icons.settings, children: [
+      { key: 'parametres', href: '/parametres', label: t('Général', 'General') },
+      { key: 'parametres-credit', href: '/parametres/credit', label: t('Crédit IA', 'AI credit') },
+    ] },
     { key: 'support', href: '/support', label: t('Support', 'Support'), icone: icons.support },
     /**
      * LE CENTRE DE SÉCURITÉ & COMPLIANCE (2026-09-13).

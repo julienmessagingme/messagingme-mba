@@ -58,7 +58,7 @@ describe.skipIf(!url)('l assignation d une reponse de campagne', () => {
       campagneDeLaReponse: (t, w) => repo.campagneAssignanteDuContact(t, w),
       membres: (t) => inbox.membresAffectables(t),
       prendreUnRang: (t, c) => repo.prendreUnRangDeTourDeRole(t, c),
-      assigner: (t, w, u) => inbox.assignerSiLibre(t, w, u),
+      assigner: (t, w, u) => inbox.assignerSiLibre(t, w, u, 'automatique : campagne test'),
     };
     tenantId = (await pool.query<{ id: string }>(
       `insert into tenants (name) values ('itest-assignation') returning id`,

@@ -1,0 +1,146 @@
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  CAUSE_MAX, auteurDeLEnvoi, automatique, colonnesAuteur, type AuteurDuChangement,
+} from '../src/inbox/evenements';
+import { assignerReponse, type AssignationDeps, type CampagneAssignante } from '../src/inbox/assignation-campagne';
+import { bancDuFil } from './banc-du-fil';
+
+/**
+ * LE JOURNAL DES ÉVÉNEMENTS D'UNE CONVERSATION (migration 0192, panneau Détail de l'Inbox), ce qui se vérifie
+ * sans base. Ce que les requêtes écrivent vraiment, et quand elles n'écrivent rien : le test d'intégration
+ * `tests/integration/conversation-evenements.integration.test.ts`, en CI.
+ */
+
+const UUID = '11111111-1111-4111-8111-111111111111';
+
+describe('qui a fait le geste : un collaborateur, ou une cause', () => {
+  it('un identifiant de collaborateur passe tel quel', () => {
+    expect(colonnesAuteur({ collaborateur: UUID })).toEqual({ acteur: UUID, cause: null });
+  });
+
+  it('🔴 un identifiant qui n’est pas un uuid devient null AVANT la base', () => {
+    // Une clé d'API (`apikey:...`) ou l'identité d'observation de /ops, passée à `::uuid`, ferait échouer la
+    // requête entière : c'est-à-dire le CHANGEMENT lui-même, pour une ligne de journal.
+    expect(colonnesAuteur({ collaborateur: 'apikey:abc' })).toEqual({ acteur: null, cause: null });
+    expect(colonnesAuteur({ collaborateur: null })).toEqual({ acteur: null, cause: null });
+  });
+
+  it('une cause est bornée, jamais refusée : un nom de campagne trop long ne fait pas échouer l’assignation', () => {
+    const longue = colonnesAuteur({ cause: automatique('campagne ' + 'x'.repeat(500)) }).cause ?? '';
+    expect(longue.length).toBe(CAUSE_MAX);
+    expect(longue.endsWith('…')).toBe(true);
+    expect(colonnesAuteur({ cause: '   ' })).toEqual({ acteur: null, cause: null });
+  });
+
+  it('l’envoi qui prend le fil dit qui écrit : l’opérateur, ou la machine par sa cause', () => {
+    expect(auteurDeLEnvoi('humain', UUID)).toEqual({ collaborateur: UUID });
+    expect(auteurDeLEnvoi('api', null)).toEqual({ cause: 'automatique : envoi par l’API' });
+    expect(auteurDeLEnvoi('mcp', null)).toEqual({ cause: 'automatique : envoi par un agent tiers (MCP)' });
+  });
+});
+
+/**
+ * 🔴 L'ÉVÉNEMENT S'ÉCRIT DANS LA MÊME REQUÊTE QUE LE CHANGEMENT. Deux requêtes laisseraient une fenêtre où l'un
+ * existe sans l'autre. Garde structurelle, sur la source : chaque écriture de l'Inbox porte son `insert into
+ * conversation_evenements`, et autant d'inserts que de requêtes (une requête séparée pour le journal ferait
+ * passer le compte à deux requêtes pour un insert).
+ */
+describe('chaque écriture de l’Inbox porte son événement dans sa propre requête', () => {
+  const source = readFileSync(resolve(__dirname, '../src/inbox/store.pg.ts'), 'utf8');
+  /** Le corps d'une méthode, jusqu'à la méthode suivante. */
+  const corps = (signature: string): string => {
+    const i = source.indexOf(signature);
+    expect(i, `méthode introuvable : ${signature}`).toBeGreaterThan(-1);
+    const suite = source.slice(i + signature.length);
+    const fin = suite.search(/\n {2}(?:private )?async [a-zA-Z]+\(/);
+    return fin === -1 ? suite : suite.slice(0, fin);
+  };
+  const compte = (texte: string, motif: string): number => texte.split(motif).length - 1;
+
+  it.each([
+    'private async upsertConversationByWaId(',
+    'async setAssigneeByWaId(',
+    'async assignerSiLibre(',
+    'async setControlOwner(',
+    'async marquerEscalade(',
+    'private async basculerRangement(',
+    'async signalerConversation(',
+    'async setAssignee(',
+    'async prendreSiLibre(',
+  ])('%s', (signature) => {
+    const c = corps(signature);
+    const requetes = compte(c, 'this.pool.query');
+    expect(requetes, 'au moins une requête').toBeGreaterThan(0);
+    expect(compte(c, 'insert into conversation_evenements'), 'un événement par requête, dans la requête').toBe(requetes);
+  });
+
+  it('« Archivé » et « Traité » passent par le même rangement, qui écrit l’événement', () => {
+    expect(corps('async archiverConversation(')).toContain('this.basculerRangement(');
+    expect(corps('async marquerTraitee(')).toContain('this.basculerRangement(');
+  });
+});
+
+describe('le contrôle du fil dit qui demande chaque bascule', () => {
+  const OPERATEUR: AuteurDuChangement = { collaborateur: UUID };
+  const parDe = (b: ReturnType<typeof bancDuFil>): unknown[] => b.ecritures.map((e) => e.opts?.par);
+
+  it('🔴 un geste de la console porte l’opérateur que la route lui passe, pas une cause', async () => {
+    const b = bancDuFil({ conversations: { m: { owner: 'mba' }, h: { owner: 'app_human' } } });
+    await b.fil.reprendreLaMain('t1', 'm', OPERATEUR);
+    await b.fil.rendreLaMain('t1', 'h', OPERATEUR);
+    expect(parDe(b)).toEqual([OPERATEUR, OPERATEUR]);
+  });
+
+  it('🔴 un envoi prend le fil au nom de celui qui écrit', async () => {
+    const b = bancDuFil({ conversations: { m: { owner: 'mba' } } });
+    await b.fil.prisEnEcrivant('t1', 'm', OPERATEUR);
+    expect(parDe(b)).toEqual([OPERATEUR]);
+  });
+
+  it('les bascules automatiques portent leur cause, écrite par le module', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const b = bancDuFil({ conversations: { h: { owner: 'app_human' }, w: { owner: 'app_workflow' }, m: { owner: 'mba' } } });
+    await b.fil.rendreApresInactivite('t1', 'h', 'app_human', 'mba');
+    await b.fil.reprendrePourLApp('t1', 'm');
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w');
+    expect(parDe(b)).toEqual([
+      { cause: 'automatique : délai de reprise écoulé' },
+      { cause: 'automatique : un scénario reprend la conversation' },
+      { cause: 'automatique : le contact écrit et personne ne suit la conversation' },
+    ]);
+  });
+
+  it('la prise pour l’équipe porte la campagne que son appelant nomme', async () => {
+    const b = bancDuFil({ conversations: { m: { owner: 'mba' } } });
+    await b.fil.prendrePourLEquipe('t1', 'm', 'automatique : campagne Rentrée');
+    expect(parDe(b)).toEqual([{ cause: 'automatique : campagne Rentrée' }]);
+  });
+
+  it('la passation de l’agent de Meta porte sa cause jusqu’au dépôt', async () => {
+    const causes: string[] = [];
+    const b = bancDuFil({ depot: { marquerEscalade: async (_t, _w, cause) => { causes.push(cause); } } });
+    await b.fil.agentDeMetaPasseLaMain('t1', 'w');
+    expect(causes).toEqual(['automatique : agent de Meta']);
+  });
+});
+
+describe('la campagne qui répartit se nomme dans la frise', () => {
+  const campagne: CampagneAssignante = {
+    campaignId: 'c1', nom: 'Rentrée', devenir: 'inbox', assignation: 'personne', assignationUserId: 'u1', premiereReponse: true,
+  };
+
+  it('🔴 l’affectation ET la prise du fil portent « automatique : campagne <nom> »', async () => {
+    const vus: string[] = [];
+    const deps: AssignationDeps = {
+      campagneDeLaReponse: async () => campagne,
+      membres: async () => [],
+      prendreUnRang: async () => 0,
+      assigner: async (_t, _w, _u, cause) => { vus.push(`assigner:${cause}`); return true; },
+      prendreLeFil: async (_t, _w, cause) => { vus.push(`fil:${cause}`); return true; },
+    };
+    expect(await assignerReponse('t1', 'w', deps)).toBe('u1');
+    expect(vus).toEqual(['fil:automatique : campagne Rentrée', 'assigner:automatique : campagne Rentrée']);
+  });
+});

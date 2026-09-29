@@ -16,6 +16,7 @@ import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } 
 import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTraduction, type LangueConsole, type Traduction } from '../traduction/traduire';
 import type { FilTraduit } from '../traduction/fil';
 import { messageDe } from '../lib/erreur';
+import type { AuteurDuChangement, DetailConversation } from '../inbox/evenements';
 
 /**
  * Durée de vie du micro-cache des compteurs de l'Inbox : 5 secondes, ce qui mutualise les utilisateurs d'un même
@@ -58,23 +59,26 @@ export interface InboxDep extends ConversationsRepondre {
   countATraiter(tenantId: string): Promise<number>;
   /** Les compteurs du menu de dossiers, plus la charge par membre. */
   compterConversations(tenantId: string): Promise<CompteursInbox>;
-  /** Range une conversation dans Archivé, ou l'en sort. `false` = inconnue dans cet espace -> 404. */
-  archiverConversation(tenantId: string, conversationId: string, archive: boolean): Promise<boolean>;
+  /**
+   * Range une conversation dans Archivé, ou l'en sort. `false` = inconnue dans cet espace -> 404. `par` : qui le
+   * fait, pour le journal du panneau Détail (les écritures de l'Inbox disent toutes qui les demande).
+   */
+  archiverConversation(tenantId: string, conversationId: string, archive: boolean, par: AuteurDuChangement): Promise<boolean>;
   /**
    * Signale une conversation à la main, ou retire ce signalement. N'écrit pas le constat de l'analyse : le
    * dossier « Signalé » réunit les deux sources.
    */
-  signalerConversation(tenantId: string, conversationId: string, signale: boolean, parUserId: string | null): Promise<boolean>;
+  signalerConversation(tenantId: string, conversationId: string, signale: boolean, par: AuteurDuChangement): Promise<boolean>;
   /**
    * Marque une conversation « Traité », ou retire ce statut. `false` = inconnue dans cet espace -> 404.
    */
-  marquerTraitee(tenantId: string, conversationId: string, traitee: boolean): Promise<boolean>;
+  marquerTraitee(tenantId: string, conversationId: string, traitee: boolean, par: AuteurDuChangement): Promise<boolean>;
   /**
    * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
    */
   getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
   /** Affecte (ou libère avec `null`). `false` = conversation inconnue, ou membre étranger au tenant. */
-  setAssignee(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
+  setAssignee(tenantId: string, conversationId: string, assignee: string | null, par: AuteurDuChangement): Promise<boolean>;
   /**
    * Prend une conversation du pot commun pour `userId`, seulement si elle est à personne. `false` = inconnue ou
    * déjà prise : la route relit l'affectation pour dire lequel.
@@ -99,6 +103,12 @@ export interface InboxDep extends ConversationsRepondre {
   getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
   /** Détenteur courant du fil, pour l'afficher dans le détail de la conversation. */
   getControlOwner(tenantId: string, waId: string): Promise<'app_workflow' | 'app_human' | 'mba'>;
+  /**
+   * Le panneau Détail : identité, résumé de l'analyse, assignation, et les 50 derniers événements. `null` =
+   * inconnue dans cet espace OU invisible de cet acteur (la règle de `src/inbox/assignment.ts`) : les deux
+   * rendent 404, un agent n'apprend pas qu'une conversation existe chez un collègue.
+   */
+  detailConversation(tenantId: string, conversationId: string, acteur: { userId: string | null; role: string | null }): Promise<DetailConversation | null>;
 }
 
 export interface InboxRouteDeps extends DepsRepondre {
@@ -158,14 +168,14 @@ export interface InboxRouteDeps extends DepsRepondre {
    * Un opérateur vient d'écrire : il prend le fil. Posé depuis la route, seule à savoir qu'un humain authentifié
    * envoie. Sans condition : un humain prend toujours la main, y compris sur MBA (chez Meta, envoyer suffit).
    */
-  takeControl(tenantId: string, waId: string): Promise<void>;
+  takeControl(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
   /**
    * « Reprendre la main » sans écrire au client : prend le fil à l'agent de Meta (`thread_control`, action `take`),
    * puis écrit notre état. Distincte de `takeControl`, qui n'écrit que notre état local (sur un envoi, le message
    * prend déjà le fil chez Meta) : ici il n'y a pas de message, il faut le dire à Meta. `'refuse'` : Meta n'a pas
    * cédé le fil, rien n'est écrit, la route en fait un 409 lisible.
    */
-  reprendreLaMain(tenantId: string, waId: string): Promise<'pris' | 'refuse'>;
+  reprendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<'pris' | 'refuse'>;
   /**
    * L'opérateur rend la main : la conversation repart en automatique ; rend qui la détient désormais. Elle appelle
    * Meta (`thread_control`, action `release`) pour que l'agent de Meta redevienne le répondeur principal. Un échec
@@ -173,7 +183,7 @@ export interface InboxRouteDeps extends DepsRepondre {
    * `'aucun_numero'` : l'agent de Meta est allumé mais aucun numéro n'est connecté, il ne peut rien reprendre, et
    * rien n'est écrit.
    */
-  releaseControl(tenantId: string, waId: string): Promise<'app_workflow' | 'mba' | 'aucun_numero'>;
+  releaseControl(tenantId: string, waId: string, par: AuteurDuChangement): Promise<'app_workflow' | 'mba' | 'aucun_numero'>;
   /**
    * Variables d'un template déjà résolues sur la fiche de ce contact, avec le libellé du champ qui les
    * alimente. C'est ce que l'écran d'envoi affiche : l'opérateur voit les vraies valeurs, pas `{{1}}`.
@@ -245,6 +255,11 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    */
   const optsAdmin = { preHandler: gardeAdmin };
   const journal = makeJournal(deps.audit);
+  /**
+   * L'auteur d'un geste de la console, pour le journal du panneau Détail : toujours la SESSION, jamais le corps
+   * de la requête, sinon on écrirait un geste au nom d'un collègue.
+   */
+  const parLaSession = (req: FastifyRequest): AuteurDuChangement => ({ collaborateur: req.auth?.userId ?? null });
   // Micro-cache des compteurs, un par serveur construit (deux instances de test ne partagent rien). Trois
   // compteurs (non-lus, à traiter, menu de dossiers), d'où la seconde instance juste en dessous.
   const compteurs = cacheCourt<number>(COMPTEURS_TTL_MS);
@@ -361,7 +376,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       const { conversationId } = req.params as { conversationId: string };
       // 404 et non 200 : une conversation inconnue (ou d'un autre espace) doit se voir, sinon l'écran
       // annoncerait un rangement qui n'a pas eu lieu.
-      if (!(await deps.inbox.archiverConversation(tenant, conversationId, archive))) {
+      if (!(await deps.inbox.archiverConversation(tenant, conversationId, archive, parLaSession(req)))) {
         return reply.code(404).send({ error: 'conversation inconnue' });
       }
       invaliderCompteurs(tenant); // deux dossiers viennent de changer de contenu.
@@ -377,7 +392,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
       const tenant = espaceVerifie(req);
       const { conversationId } = req.params as { conversationId: string };
-      if (!(await deps.inbox.signalerConversation(tenant, conversationId, signale, req.auth?.userId ?? null))) {
+      if (!(await deps.inbox.signalerConversation(tenant, conversationId, signale, parLaSession(req)))) {
         return reply.code(404).send({ error: 'conversation inconnue' });
       }
       invaliderCompteurs(tenant); // le dossier « Signalé » vient de changer de contenu.
@@ -394,7 +409,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
       const tenant = espaceVerifie(req);
       const { conversationId } = req.params as { conversationId: string };
-      if (!estUuid(conversationId) || !(await deps.inbox.marquerTraitee(tenant, conversationId, traitee))) {
+      if (!estUuid(conversationId) || !(await deps.inbox.marquerTraitee(tenant, conversationId, traitee, parLaSession(req)))) {
         return reply.code(404).send({ error: 'conversation inconnue' });
       }
       invaliderCompteurs(tenant); // « À traiter » et « Traité » viennent de changer de contenu.
@@ -428,7 +443,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * voir (une panne de base sort en erreur, jamais en 200). Un refus de Meta, après un rejeu, sort en 409 (Meta
      * réserve `take` au partenaire d'escalade configuré), et l'écran rappelle qu'écrire prend le fil à coup sûr.
      */
-    if ((await deps.reprendreLaMain(tenant, ctx.waId)) === 'refuse') {
+    if ((await deps.reprendreLaMain(tenant, ctx.waId, parLaSession(req))) === 'refuse') {
       // eslint-disable-next-line no-console
       console.error(`prendre: Meta a refusé de céder le fil (${tenant}/${ctx.waId})`);
       return reply.code(409).send({ error: 'Meta n’a pas cédé la conversation, son agent peut encore répondre. Envoyez un message : écrire prend le fil à coup sûr.' });
@@ -538,9 +553,11 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       // 422 et non 503 : ce n'est pas une panne de l'instance, c'est l'état de cet espace. L'écran affiche le
       // message tel quel : il dit la cause, et seul le crédit épuisé envoie recharger.
       return reply.code(422).send({
-        error: empechement === 'credit'
-          ? 'Le crédit de cet espace est épuisé : la traduction est indisponible. Un administrateur peut le recharger.'
-          : 'La traduction est momentanément indisponible pour cet espace. Réessayez dans un instant.',
+        error: empechement === 'credit' || empechement === 'credit_insuffisant'
+          ? 'Le crédit de cet espace est épuisé ou insuffisant : la traduction est indisponible. Un administrateur peut le recharger.'
+          : empechement === 'cle_en_preparation'
+            ? 'La traduction se prépare pour cet espace : réessayez dans un instant.'
+            : 'La traduction est momentanément indisponible pour cet espace. Réessayez dans un instant.',
         code: 'traduction_indisponible',
         cause: empechement,
       });
@@ -647,10 +664,11 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
        */
       ...(cible !== null ? { traductionIndisponible: traduit === null || traduit.indisponible !== null } : {}),
       /**
-       * Pourquoi la traduction est indisponible, en trois causes qui n'appellent pas le même geste : `instance`,
-       * aucun modèle configuré (`TRADUCTION_MODELE` vide) ; `credit`, le crédit de l'espace est épuisé (le recharger
-       * règle) ; `cle`, l'espace a du crédit mais sa clé n'a pas pu s'ouvrir. L'écran ne doit envoyer recharger que
-       * dans le deuxième cas.
+       * Pourquoi la traduction est indisponible, en causes qui n'appellent pas le même geste : `instance`, aucun
+       * modèle configuré (`TRADUCTION_MODELE` vide) ; `credit`, le crédit de l'espace est épuisé, et
+       * `credit_insuffisant`, il reste trop peu pour ouvrir la clé (recharger règle les deux) ; `cle_en_preparation`,
+       * la clé s'ouvre en arrière-plan ; `cle`, l'espace a du crédit mais sa clé n'a pas pu s'ouvrir. L'écran
+       * n'envoie recharger que pour les deux causes de crédit.
        */
       ...(cible !== null && (traduit === null || traduit.indisponible !== null)
         ? { traductionCause: traduit === null ? 'instance' : traduit.indisponible }
@@ -660,6 +678,25 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       controlOwner: await deps.inbox.getControlOwner(tenant, ctx.waId),
       messages: traduit ? traduit.messages : messages,
     });
+  });
+
+  /**
+   * Le panneau Détail d'une conversation (cadrage du 2026-09-28) : identité (champs système, tags, désabonné,
+   * bloqué), résumé de l'analyse, assignation, et les 50 derniers événements du journal (migration 0192). Lecture
+   * seule : les gestes restent dans l'en-tête du fil.
+   *
+   * 🔴 404 et non 403 pour une conversation qu'un agent ne voit pas : c'est la réponse d'une conversation qui
+   * n'existe pas, et elle ne lui apprend rien. La règle de visibilité vit dans le dépôt (`visibiliteSql`,
+   * `src/inbox/assignment.ts`), pas ici. `estUuid` avant la base : un identifiant mal formé ferait lever Postgres.
+   */
+  app.get('/tenants/:tenantId/conversations/:conversationId/detail', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const { conversationId } = req.params as { conversationId: string };
+    if (!estUuid(conversationId)) return reply.code(404).send({ error: 'conversation inconnue' });
+    const acteur = { userId: req.auth?.userId ?? null, role: req.auth?.role ?? null };
+    const detail = await deps.inbox.detailConversation(tenant, conversationId, acteur);
+    if (!detail) return reply.code(404).send({ error: 'conversation inconnue' });
+    return reply.code(200).send(detail);
   });
 
   /**
@@ -733,7 +770,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // ne doit pas se traduire par une libération silencieuse, qui rouvrirait la conversation à tous.
     if (brut !== null && !nonEmpty(brut)) return reply.code(400).send({ error: 'assignee requis (identifiant de membre, ou null pour libérer)' });
     const assignee = brut === null ? null : (brut as string);
-    const ok = await deps.inbox.setAssignee(tenant, conversationId, assignee, req.auth?.userId ?? null);
+    const ok = await deps.inbox.setAssignee(tenant, conversationId, assignee, parLaSession(req));
     if (!ok) return reply.code(404).send({ error: 'conversation inconnue, ou membre étranger à cet espace' });
     return reply.code(200).send({ conversationId, assignee });
   });
@@ -813,7 +850,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
 
     // L'opérateur prend le fil, comme sur une réponse texte. Au mieux et après l'envoi réussi : un échec d'état
     // ne doit pas faire croire à un message perdu.
-    await deps.takeControl(tenant, ctx.waId).catch(() => {});
+    await deps.takeControl(tenant, ctx.waId, parLaSession(req)).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
     await deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'humain', 'rcs', null, null, req.auth?.userId ?? null, 'rcs');
     return reply.code(200).send({ messageId: issue.messageId });
@@ -908,7 +945,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       ...(carousel ? { carousel } : {}),
     });
     // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
-    await deps.takeControl(tenant, ctx.waId).catch(() => {});
+    await deps.takeControl(tenant, ctx.waId, parLaSession(req)).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
     await deps.inbox.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'humain', 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
@@ -954,7 +991,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      */
     let owner: 'app_workflow' | 'mba' | 'aucun_numero';
     try {
-      owner = await deps.releaseControl(tenant, ctx.waId);
+      owner = await deps.releaseControl(tenant, ctx.waId, parLaSession(req));
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`release: Meta a refusé de reprendre le fil (${tenant}/${ctx.waId}):`, messageDe(err));

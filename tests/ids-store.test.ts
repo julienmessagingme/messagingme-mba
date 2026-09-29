@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import type { Pool } from 'pg';
 import { PgWorkflowStore } from '../src/workflow/store.pg';
 import { PgUserStore } from '../src/user/store.pg';
-import { SANS_CREDIT_OFFERT } from './credit-offert';
 import { PgUserFieldStore } from '../src/crm/field-store.pg';
 import { PgTagStore } from '../src/crm/tag-store.pg';
 
@@ -48,7 +47,7 @@ describe('génération de code public à l\'INSERT (schéma A)', () => {
 
   it('user (invitation) -> usr_<client>_<ulid>', async () => {
     const { pool, queries } = fakePool();
-    await new PgUserStore(pool, SANS_CREDIT_OFFERT).createPending('t1', 'a@b.fr', 'agent');
+    await new PgUserStore(pool).createPending('t1', 'a@b.fr', 'agent');
     const ins = queries.find((q) => /insert into users/i.test(q.sql))!;
     expect(ins.params[3]).toMatch(CODE_RE('usr')); // (tenant_id, email, role, code) — name/password_hash = littéraux null
   });

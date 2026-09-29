@@ -55,7 +55,7 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     await conversationMenéeParLAgent(waId);
     const avant = await store.listConversations(tenantId, { aTraiter: true });
     expect(avant.some((c) => c.waId === waId)).toBe(false); // l'ancien comportement : invisible
-    await store.marquerEscalade(tenantId, waId);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
     const c = await lire(waId);
     expect(c?.control_owner).toBe('app_human');
     expect(c?.escaladee_le).not.toBeNull();
@@ -66,7 +66,7 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
   it('🔴 la passation CRÉE la conversation si elle arrive avant l’écho de l’agent', async () => {
     const waId = '33600000202';
     expect(await lire(waId)).toBeUndefined();
-    await store.marquerEscalade(tenantId, waId);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
     expect((await lire(waId))?.control_owner).toBe('app_human');
   });
 
@@ -74,7 +74,7 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     const waId = '33600000203';
     const id = await conversationMenéeParLAgent(waId);
     await pool.query(`update conversations set archived_at = now(), traitee_le = now() where id = $1`, [id]);
-    await store.marquerEscalade(tenantId, waId);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
     const c = await lire(waId);
     expect(c?.archived_at).toBeNull();
     expect(c?.traitee_le).toBeNull();
@@ -83,7 +83,7 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
   it('🔴 la première réponse d’un OPÉRATEUR efface l’escalade ; celle d’un automate, non', async () => {
     const waId = '33600000204';
     const id = await conversationMenéeParLAgent(waId);
-    await store.marquerEscalade(tenantId, waId);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
     await store.recordOutbound(id, 'relance auto', null, 'scenario');
     expect((await lire(waId))?.escaladee_le).not.toBeNull();
     await store.recordOutbound(id, 'Bonjour, je regarde ça', null, 'humain');
@@ -93,8 +93,8 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
   it('« Traité » efface l’escalade ; ARCHIVER aussi', async () => {
     const a = '33600000205';
     const idA = await conversationMenéeParLAgent(a);
-    await store.marquerEscalade(tenantId, a);
-    await store.marquerTraitee(tenantId, idA, true);
+    await store.marquerEscalade(tenantId, a, 'automatique : agent de Meta');
+    await store.marquerTraitee(tenantId, idA, true, { collaborateur: null });
     expect((await lire(a))?.escaladee_le).toBeNull();
 
     // 🔴 ARCHIVER LA CLÔT AUSSI (revue finale du 2026-09-23) : sans ça, la conversation quitte la liste et plus
@@ -102,8 +102,8 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     // toujours.
     const b = '33600000206';
     const idB = await conversationMenéeParLAgent(b);
-    await store.marquerEscalade(tenantId, b);
-    expect(await store.archiverConversation(tenantId, idB, true)).toBe(true);
+    await store.marquerEscalade(tenantId, b, 'automatique : agent de Meta');
+    expect(await store.archiverConversation(tenantId, idB, true, { collaborateur: null })).toBe(true);
     expect((await lire(b))?.escaladee_le).toBeNull();
   });
 
@@ -113,11 +113,11 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     // et `tests/fil.test.ts` les exécute.
     const waId = '33600000212';
     await conversationMenéeParLAgent(waId);
-    await store.marquerEscalade(tenantId, waId);
-    expect(await store.setControlOwner(tenantId, waId, 'mba')).toBe(true);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { par: { cause: 'automatique : test' } })).toBe(true);
     expect((await lire(waId))?.escaladee_le).not.toBeNull();
-    await store.setControlOwner(tenantId, waId, 'app_human');
-    expect(await store.setControlOwner(tenantId, waId, 'mba', { effacerEscalade: true })).toBe(true);
+    await store.setControlOwner(tenantId, waId, 'app_human', { par: { cause: 'automatique : test' } });
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { par: { cause: 'automatique : test' }, effacerEscalade: true })).toBe(true);
     expect((await lire(waId))?.escaladee_le).toBeNull();
   });
 
@@ -126,15 +126,15 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     // envoie un `standby` que lorsqu'une AUTRE app tient le fil.
     const waId = '33600000210';
     await conversationMenéeParLAgent(waId);
-    await store.marquerEscalade(tenantId, waId);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
     const escalade = (await lire(waId))!.escaladee_le!;
     const avant = new Date(escalade.getTime() - 60_000);
     const apres = new Date(escalade.getTime() + 60_000);
     // Le retardataire, daté d'AVANT la passation : écarté.
-    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, messageEnvoyeLe: avant })).toBe(false);
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { par: { cause: 'automatique : test' }, saufEscalade: true, messageEnvoyeLe: avant })).toBe(false);
     expect((await lire(waId))?.control_owner).toBe('app_human');
     // Celui d'APRÈS : il écrit pour de bon, le fil repart à l'agent.
-    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, messageEnvoyeLe: apres })).toBe(true);
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { par: { cause: 'automatique : test' }, saufEscalade: true, messageEnvoyeLe: apres })).toBe(true);
     expect((await lire(waId))?.control_owner).toBe('mba');
     // ⚠️ Sans `effacerEscalade`, l'escalade RESTE posée : la garde et l'effacement sont deux options distinctes.
     expect((await lire(waId))?.escaladee_le).not.toBeNull();
@@ -145,13 +145,13 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     // garde laisse passer l'écriture. Un retardataire ne doit donc effacer AUCUNE escalade.
     const waId = '33600000217';
     await conversationMenéeParLAgent(waId);
-    await store.marquerEscalade(tenantId, waId);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
     const escalade = (await lire(waId))!.escaladee_le!;
     const avant = new Date(escalade.getTime() - 60_000);
     const apres = new Date(escalade.getTime() + 60_000);
-    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, effacerEscalade: true, messageEnvoyeLe: avant })).toBe(false);
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { par: { cause: 'automatique : test' }, saufEscalade: true, effacerEscalade: true, messageEnvoyeLe: avant })).toBe(false);
     expect((await lire(waId))?.escaladee_le).not.toBeNull();
-    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, effacerEscalade: true, messageEnvoyeLe: apres })).toBe(true);
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { par: { cause: 'automatique : test' }, saufEscalade: true, effacerEscalade: true, messageEnvoyeLe: apres })).toBe(true);
     expect((await lire(waId))?.control_owner).toBe('mba');
     expect((await lire(waId))?.escaladee_le).toBeNull();
   });
@@ -162,15 +162,15 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     // où elle redeviendrait `app_human` (revue finale du 2026-09-23).
     const waId = '33600000214';
     await conversationMenéeParLAgent(waId);
-    await store.marquerEscalade(tenantId, waId);
-    expect(await store.setControlOwner(tenantId, waId, 'app_workflow', { effacerEscalade: true })).toBe(true);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
+    expect(await store.setControlOwner(tenantId, waId, 'app_workflow', { par: { cause: 'automatique : test' }, effacerEscalade: true })).toBe(true);
     expect((await lire(waId))?.escaladee_le).toBeNull();
   });
 
   it('🔴 le lot du balayage ne se remplit plus d’escalades : elles sortent en SQL', async () => {
     const waId = '33600000213';
     await conversationMenéeParLAgent(waId);
-    await store.marquerEscalade(tenantId, waId);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
     const tenus = await store.listHeldControl(5000);
     expect(tenus.some((c) => c.tenantId === tenantId && c.waId === waId)).toBe(false);
   });
@@ -178,13 +178,13 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
   it('🔴 un `standby` retardataire ne rend PAS une conversation escaladée à l’agent', async () => {
     const waId = '33600000207';
     await conversationMenéeParLAgent(waId);
-    await store.marquerEscalade(tenantId, waId);
-    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true })).toBe(false);
+    await store.marquerEscalade(tenantId, waId, 'automatique : agent de Meta');
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { par: { cause: 'automatique : test' }, saufEscalade: true })).toBe(false);
     expect((await lire(waId))?.control_owner).toBe('app_human');
     // Sans escalade, le `standby` écrit comme avant.
     const autre = '33600000208';
     await pool.query(`insert into conversations (tenant_id, wa_id, control_owner) values ($1, $2, 'app_human')`, [tenantId, autre]);
-    expect(await store.setControlOwner(tenantId, autre, 'mba', { saufEscalade: true })).toBe(true);
+    expect(await store.setControlOwner(tenantId, autre, 'mba', { par: { cause: 'automatique : test' }, saufEscalade: true })).toBe(true);
   });
 
   it('🔴 un SCÉNARIO ou un AGENT IA qui passe la main pose la même escalade (arbitrage du 2026-09-23)', async () => {
@@ -193,7 +193,7 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     const waId = '33600000215';
     const id = await conversationMenéeParLAgent(waId);
     await pool.query(`update conversations set control_owner = 'app_workflow', archived_at = now(), traitee_le = now() where id = $1`, [id]);
-    expect(await store.setControlOwner(tenantId, waId, 'app_human', { only: ['app_workflow'], escalade: true })).toBe(true);
+    expect(await store.setControlOwner(tenantId, waId, 'app_human', { par: { cause: 'automatique : test' }, only: ['app_workflow'], escalade: true })).toBe(true);
     const c = await lire(waId);
     expect(c?.escaladee_le).not.toBeNull();
     expect(c?.archived_at).toBeNull();
@@ -203,7 +203,7 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     // booléen rendu le dit à l'appelant (l'agent IA s'en sert pour savoir s'il peut écrire une dernière phrase).
     const autre = '33600000216';
     await pool.query(`insert into conversations (tenant_id, wa_id, control_owner) values ($1, $2, 'app_human')`, [tenantId, autre]);
-    expect(await store.setControlOwner(tenantId, autre, 'app_human', { only: ['app_workflow'], escalade: true })).toBe(false);
+    expect(await store.setControlOwner(tenantId, autre, 'app_human', { par: { cause: 'automatique : test' }, only: ['app_workflow'], escalade: true })).toBe(false);
     expect((await lire(autre))?.escaladee_le).toBeNull();
   });
 

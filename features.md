@@ -51,16 +51,21 @@ Le reste de ses prérogatives n'est toujours pas décidé.
 
 **Le menu de gauche change avec l'onglet.**
 
-**Console** : **Accueil · mini-CRM · Campagnes · Chaîne · Scénario · Automation · AI Agent (MBA [MBA, guide /
-MBA, paramètres] / Other AI agent [Agents / Crédit]) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
+**Console** : **Accueil · mini-CRM · Campagnes · Chaîne · Scénario · Automation · AI Agent (MBA / Other AI
+agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
 d'email / Messages RCS / Blocs / Étiquettes / Champs, rangés par canal depuis le 2026-09-02 : WhatsApp /
 RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API / Connecteurs MCP / Outils)**, puis, collés **en bas** de la barre,
-**Paramètres · Support · Developers (Documentation API / Clés d'API / Serveur MCP)**.
+**Paramètres (Général / Crédit IA) · Support · Developers (Documentation API / Clés d'API / Serveur MCP)**.
 ⚠️ **Paramètres et Support sont descendus en bas le 2026-09-08** : ils ne servent pas le travail quotidien,
 ils le règlent, comme Developers. Aucune adresse n'a changé.
-- ✅ **« Other AI agent » se déplie en deux** (2026-09-08) : **Agents** (l'écran des agents IA, inchangé) et
-  **Crédit**, qui montre le crédit prépayé de l'espace. Le rechargement en ligne n'est pas ouvert : l'écran
-  le dit et donne le solde, plutôt que de laisser une entrée de menu mener nulle part.
+- ✅ **« AI Agent » tient en deux liens directs** (2026-09-29, décision de Julien) : **MBA** mène droit aux
+  paramètres de l'agent de Meta, **Other AI agent** droit à l'écran des agents IA. Le guide du MBA a été
+  retiré (son adresse `/mba` mène aux paramètres), et ce qu'il disait de juste sur l'éligibilité est dit là où
+  elle bloque, sur le bandeau du numéro pas encore ouvert.
+- ✅ **« Paramètres » se déplie en deux** (2026-09-29) : **Général** (la page d'avant, inchangée) et **Crédit
+  IA**, venu de « Other AI agent » : le crédit paie les agents IA ET la traduction de l'Inbox, c'est un réglage
+  de l'espace et pas d'un agent. L'ancienne adresse `/agents/credit` mène à `/parametres/credit`. Un manager
+  n'y voit que Général.
 
 **Performance Lab** : **Quantitatif (Messages & contacts / Coûts / Funnel) · Analyse des conversations ·
 Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans cet onglet, il EST le menu.
@@ -76,10 +81,9 @@ de Meta.
 
 **Inbox** : **aucune barre de navigation**, ni sur ordinateur ni dans le tiroir mobile. L'écran portera son
 propre menu de dossiers, façon boîte mail.
-- ✅ **La barre a TROIS niveaux depuis le 2026-09-01**, et « MBA » est le seul groupe de deuxième niveau :
-  ses deux écrans (guide, paramètres) parlent du même agent, alors que « Other AI agent » en est un autre.
-  Les mettre au même rang laissait croire à trois agents.
-Les groupes **AI Agent**, **Contenu**, **Tools**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
+- ✅ **La barre a TROIS niveaux**, portés par Contenu (Contenu > WhatsApp > Templates). « AI Agent » en a eu un
+  troisième (MBA > guide / paramètres) du 2026-09-01 au 2026-09-29 ; il est redevenu plat avec le retrait du guide.
+Les groupes **AI Agent**, **Contenu**, **Tools**, **Paramètres**, **Sécurité**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte & équipe, **Boîtes email**, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
 - ✅ **Interface bilingue FR/EN COMPLÈTE** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais
@@ -95,7 +99,7 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   d'espace : la relance obéit à la case « Réessayer les envois qui échouent » de chaque campagne, qui existait
   déjà et que rien ne lisait. Les campagnes créées avant gardent la règle d'espace, figée dans l'état où elle
   était (voir « Campagnes »).
-- ✅ **Paramètres (menu « Paramètres », admin ; un manager n'y voit que le réglage « Je m'en occupe »)** : le
+- ✅ **Paramètres (menu « Paramètres » > Général, admin ; un manager n'y voit que le réglage « Je m'en occupe »)** : le
   **fuseau horaire** de l'espace et les **heures d'ouverture**
   jour par jour (heure de début, heure de fin, ou « fermé »). C'est la base sur laquelle s'appuient les conditions
   de temps des scénarios (l'heure qu'il est, le jour de la semaine, « dans les heures d'ouverture »). Un jour dont
@@ -1075,6 +1079,27 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Inbox
 
+- 🟡 **LE PANNEAU DÉTAIL D'UNE CONVERSATION** (2026-09-29, écrit, pas encore déployé ; migration 0192). Quand
+  une conversation est choisie, la colonne des conversations se partage : la liste en haut, le détail en bas,
+  moitié-moitié, chacun défile seul. Il montre **qui est la personne** (nom, prénom, téléphone, e-mail, ses tags,
+  un badge « désabonné » ou « bloqué », le lien « Ouvrir la fiche »), **le résumé de l'analyse** (« pas encore
+  analysée » tant qu'elle n'est pas passée), **à qui elle est assignée**, et **ce qui lui est arrivé** : une frise,
+  du plus récent au plus ancien, des assignations (assignée, réassignée, désassignée : à qui, par qui), des prises
+  et des rendus à l'agent de Meta, de « Traité », « Archivé », « Signalé » et de leurs inverses, et de la
+  rouverture par un message du contact.
+  - **Un changement automatique porte sa cause** au lieu d'un nom : « automatique : campagne Rentrée »,
+    « automatique : scénario Bienvenue », « automatique : délai de reprise écoulé ». Un collaborateur supprimé
+    depuis s'affiche « ancien collaborateur ».
+  - **Un geste sans effet n'apparaît pas** : réassigner à la même personne, archiver une conversation déjà
+    archivée. Les réponses de l'agent de Meta et des collaborateurs n'y sont pas non plus : le fil les montre.
+  - **Lecture seule** : les gestes restent dans l'en-tête du fil, et le panneau se relit après chacun d'eux.
+  - **Repliable**, et le choix est retenu par navigateur.
+  - **On voit le détail des conversations qu'on voit** : un agent, les siennes et celles que personne n'a ;
+    l'encadrement, toutes. Ailleurs, le panneau ne s'affiche pas.
+  - L'historique **part avec la conversation** (purge, effacement RGPD). Au déploiement, il est amorcé depuis
+    l'état réel (assignation en cours, traitée, archivée, signalée, fil tenu par l'équipe), marqué « état au
+    déploiement » ; rien n'est inventé, un fait sans date n'a pas de ligne.
+
 - ✅ **« Ouvrir la conversation » depuis la fiche d'un contact** (2026-09-23, menu Contacts). Le bouton est en
   haut de la fiche du mini-CRM et emmène directement sur le fil de ce contact dans l'Inbox.
   🔴 **Le fil est CRÉÉ s'il n'existe pas**, et c'est le cas qui compte : un contact qu'on vient d'importer n'a
@@ -1119,7 +1144,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   fil peut lancer quarante traductions. Un espace **sans agent** traduit aussi : sa clé de modèle s'ouvre à
   sa première traduction s'il a du crédit.
   Un espace sans crédit ne traduit pas, et l'écran le dit au lieu de rester muet. Il distingue **trois
-  causes** : crédit épuisé (un administrateur peut le recharger), traduction momentanément indisponible
+  causes** : crédit épuisé (un administrateur peut le recharger, et le bandeau porte le lien « Recharger le
+  crédit » vers Paramètres, Crédit IA, montré à tous : la page dit à un non-admin de demander à un
+  administrateur), traduction momentanément indisponible
   (l'espace a du crédit, recharger n'y changerait rien) ou traduction pas encore activée sur le serveur
   (rien à faire côté client).
 
@@ -1673,8 +1700,8 @@ scénario, comment importer des contacts.
 - ✅ **Toggle « Campagnes via données HubSpot »**, juste sous le bloc HubSpot : autorise l'import d'une liste HubSpot
   comme destinataires de campagne. Tant que l'accès aux listes n'a pas été accordé, un bouton **« Autoriser l'accès
   aux listes HubSpot »** demande ce droit au portail déjà connecté, sans re-solliciter le reste.
-- ✅ **Guide « Configurer HubSpot avec Messaging Me »** (ouvert dans un nouvel onglet depuis l'Accueil et depuis le
-  Guide MBA) : connecter son compte HubSpot, **ajouter la carte Messaging Me sur la fiche contact** (Paramètres >
+- ✅ **Guide « Configurer HubSpot avec Messaging Me »** (ouvert dans un nouvel onglet depuis l'Accueil ; le Guide
+  MBA, qui y menait aussi, a été retiré le 2026-09-29) : connecter son compte HubSpot, **ajouter la carte Messaging Me sur la fiche contact** (Paramètres >
   Objets > Contacts > onglet Personnalisation de la fiche > Ajouter des cartes), et ce que cette carte affiche.
 - 🗑️ **Relancer automatiquement les échecs : PLUS D'INTERRUPTEUR D'ESPACE** (2026-09-23). La case de la campagne
   décide (« Réessayer les envois qui échouent ») : un envoi bloqué par une limite Meta est retenté le lendemain
@@ -2341,9 +2368,8 @@ il ne le remplace pas : les deux peuvent vivre sur le même numéro, et le clien
 
 ✅ **Livré et déployé** (2026-08-28) : la fiche, la base de connaissance, les outils, la construction en
 parlant, le bac à sable, le tour de production et le solde prépayé.
-⚠️ **Sans crédit, un agent ne répond pas** (voir « Le crédit » plus bas). Le crédit offert à la création
-d'un espace existe mais reste **éteint** tant que sa borne n'est pas décidée : offert à chaque espace sans preuve
-d'identité, il se récolterait par script. ⚠️ **Rien n'a encore tourné sur du vrai trafic** : un contact qui atteint un bloc agent, une
+⚠️ **Sans crédit, un agent ne répond pas** (voir « Le crédit » plus bas, et la page **Paramètres > Crédit IA**,
+où un admin le recharge). ⚠️ **Rien n'a encore tourné sur du vrai trafic** : un contact qui atteint un bloc agent, une
 réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario, tout cela reste à voir en vol.
 
 ### Où l'agent parle : le bloc « Agent IA » d'un scénario
@@ -2710,12 +2736,14 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - ✅ **Trois états, et ils préviennent avant la panne** : le solde en clair, un avertissement sous **0,50 €**
   (« c'est bas, au bout vos agents cesseront de répondre »), et un bandeau rouge à zéro (« vos agents ne
   répondent plus et sortent par Plafond atteint »).
-- ✅ **Le rechargement se fait par nous, jamais par le client** : un client ne doit pas pouvoir créditer son
-  propre compte. À la main pour l'instant, sans paiement en ligne (voir la section `/ops`).
-- ✅ **5 € OFFERTS À LA CRÉATION D'UN ESPACE** (2026-09-28, décision de Julien), avec une ligne « crédit
-  offert à l'ouverture » dans le journal du crédit. **Pas rétroactif** : les espaces créés avant n'ont que ce
-  qu'on leur a rechargé. Aucune clé de modèle n'est ouverte à l'inscription, elle s'ouvre au premier usage.
-  Le montant est un réglage du serveur (0 l'éteint).
+- ✅ **Un admin le recharge lui-même, en payant** (2026-09-29) : **Paramètres > Crédit IA**, 50 € ou 100 € HT,
+  sur la page de paiement de Stripe (voir « Crédit IA »). Un client ne s'écrit jamais de crédit : seul le paiement
+  confirmé par Stripe en ajoute. La recharge à la main par l'exploitation reste possible (voir la section `/ops`).
+- ✅ **5 € OFFERTS À LA CONNEXION DU PREMIER NUMÉRO WHATSAPP** (2026-09-29, décision de Julien), et non plus à la
+  création d'un espace, où ils se récoltaient par script. Une fois par espace, et jamais deux fois pour le même
+  numéro, même s'il change d'espace. **Pas rétroactif** : les espaces qui avaient déjà un numéro n'en reçoivent
+  pas. Aucune clé de modèle n'est ouverte à ce moment, elle s'ouvre au premier usage. Le montant est un réglage
+  du serveur (0 l'éteint).
 - 🔴 **Sans crédit, rien ne démarre**, et c'est le bon défaut : un crédit implicite ferait payer une
   consommation que personne n'a autorisée. Conséquence concrète : **un espace à zéro n'a ni agent qui
   démarre, ni bac à sable, ni traduction**.
@@ -2729,8 +2757,10 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   gratuite : le bac à sable appelle vraiment le modèle, donc un espace sans crédit mettrait son agent au
   point à nos frais.
   ⚠️ **Le client ne choisit pas son plafond en le tapant**, il le choisit **en achetant du crédit**. Un
-  plafond saisi librement ne protégerait personne. Il monte à chaque rechargement, et ne redescend jamais
-  tout seul.
+  plafond saisi librement ne protégerait personne. Il monte à chaque rechargement (achat, recharge manuelle,
+  crédit offert), et ne redescend jamais tout seul.
+  ⚠️ **Sous environ 0,92 €, la clé ne s'ouvre pas** (Vercel exige un plafond d'au moins 1 $) : un espace sans
+  clé et avec ce peu de crédit ne traduit pas, et la cause est « crédit insuffisant », pas « épuisé ».
   ⚠️ **Un espace créé AVANT ce lot n'a pas de clé propre** et continue de fonctionner sur la clé maison : sa
   dépense n'est simplement pas séparée des autres. Il en aura une au prochain agent qu'il créera, ou à sa
   prochaine traduction.
@@ -2773,7 +2803,37 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - ⛔ **Pas de « temps 2 »** : l'agent ne relit pas ses vraies conversations pour se corriger tout seul. Cela
   n'a de valeur qu'une fois qu'il existe des conversations.
 
-## MBA, le répondeur de Meta (menu « AI Agent » > MBA > Guide / Paramètres)
+## Crédit IA (menu « Paramètres » > Crédit IA)
+
+Le crédit prépayé de l'espace. Il paie **les agents IA** (chaque échange avec leur modèle, en production comme
+au bac à sable) **et la traduction des conversations de l'Inbox**, au tarif affiché dans l'onglet Modèle d'un
+agent (notre commission comprise). Écran réservé aux admins. Il vivait sous « AI Agent » > Other AI agent >
+Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
+
+- ✅ **Le solde**, en euros, avec un avertissement sous 0,50 € et un bandeau rouge à zéro (« vos agents ne
+  répondent plus et l'Inbox ne traduit plus »).
+- ✅ **Recharger 50 € HT ou 100 € HT** (2026-09-29, lot 2 du chantier Stripe) : deux boutons. Un clic ouvre la
+  **page de paiement hébergée par Stripe**, où l'admin saisit sa carte, sa raison sociale, son adresse de
+  facturation et, s'il le veut, son numéro de TVA. La TVA s'ajoute au paiement ; 50 € HT payés donnent 50 € de
+  crédit. **Stripe émet la facture** et l'envoie par e-mail. Le crédit n'expire pas et n'est pas remboursé.
+  - Le client choisit une **offre**, jamais un montant : le prix vit chez Stripe, le crédit accordé chez nous.
+  - **Au retour**, l'écran dit « paiement reçu : le crédit arrive dans quelques secondes » et relit le solde
+    jusqu'à le voir monter. 🔴 **Le retour ne crédite rien** : seul l'avis signé que Stripe nous envoie crédite,
+    une fois par paiement, même si Stripe le renvoie plusieurs fois. Un paiement abandonné le dit, sans rien
+    débiter.
+  - Un paiement dont le montant encaissé ne correspond pas à l'offre ne crédite rien et se signale chez nous.
+  - Tant que la recharge n'est pas ouverte sur le serveur, l'écran dit « la recharge en ligne n'est pas encore
+    disponible » au lieu d'une erreur.
+  - ⚠️ **Pendant les essais en mode test de Stripe, seul un exploitant peut payer** : une carte de test
+    donnerait sinon de vrais euros de modèle à n'importe quel client.
+- ✅ **L'historique** de ce qui a fait bouger le solde, raisons en clair : achat de crédit, crédit offert,
+  recharge manuelle, **agents IA du jour** (tous les tours d'une journée en une ligne, sur trente jours) et
+  **traductions du jour**. Aucune note interne n'y apparaît.
+- ✅ **5 € offerts à la connexion du premier numéro WhatsApp** de l'espace, une seule fois (voir « Agent IA »,
+  le crédit et les plafonds).
+- ⛔ Hors périmètre : recharge automatique, montant libre, abonnement, e-mail de solde bas, remboursement en ligne.
+
+## MBA, le répondeur de Meta (menu « AI Agent » > MBA)
 
 - ✅ **Il répond quand un client revient après un silence** (2026-09-16), même trois mois plus tard, et même
   si le dernier échange était passé par un autre canal. C'est la raison d'être de cet agent : répondre quand
@@ -2786,7 +2846,10 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
     parce que le produit croyait avoir confié le fil à Meta sans que Meta l'ait accepté, soit parce que la
     conversation n'apparaissait dans aucun dossier. Les deux sont corrigés.
 
-- ✅ **Page de guidage `/mba`** (2026-07-28) : page de contenu **côté client** (ton produit) qui explique
+- 🗑️ **LA PAGE DE GUIDAGE `/mba` A ÉTÉ RETIRÉE LE 2026-09-29** (décision de Julien) : le menu « AI Agent » >
+  MBA mène droit aux paramètres, et l'adresse `/mba` y renvoie. Ce qu'elle disait de juste sur l'éligibilité est
+  désormais sur le bandeau du numéro pas encore ouvert. Son historique, pour mémoire :
+- **Page de guidage `/mba`** (2026-07-28) : page de contenu **côté client** (ton produit) qui explique
   l'**agent MBA** (le répondeur intelligent WhatsApp de Meta). Sections : ce qu'il fait (répond seul, passe la
   main à l'Inbox, vous gardez le contrôle) ; **paramétrer en 5 étapes** (activer via les conditions Meta Business
   AI + éligibilité → base de connaissance → personnalité → tester → activer et garder la main) ; **gestion des
@@ -2815,8 +2878,11 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   (un bac à sable où l'on parle à l'agent sans consommer de conversation facturée).
   Deux situations, deux bandeaux distincts, parce qu'elles ne se règlent pas au même endroit :
   **aucun numéro rattaché** (renvoie à l'Accueil) et **Meta n'a pas encore ouvert l'agent sur ce
-  numéro** (renvoie au Guide ; Meta ouvre Business AI progressivement, par pays et par secteur, et
-  les conditions se signent dans WhatsApp Manager). Hors de ces deux cas, tout s'édite.
+  numéro** (le bandeau dit l'éligibilité telle que Meta la documente : tous les secteurs SAUF finance, secteur
+  public, santé, alcool, jeux d'argent, médicaments sans ordonnance et services matrimoniaux, dans les pays
+  autorisés, les conditions se signant dans WhatsApp Manager ; son lien « Vérifier à nouveau » relit l'état du
+  numéro). ⚠️ Jusqu'au 2026-09-29, ce bandeau renvoyait au guide et annonçait une ouverture « progressive, par
+  pays et par secteur », ce que Meta ne documente pas. Hors de ces deux cas, tout s'édite.
 
 - ✅ **Onglet « Activation »** (2026-08-21) : les deux réglages qui décident **qui parle au client**, réunis au
   même endroit, en deux questions. (1) *Quand le client demande un humain, ou que l'agent ne sait pas* : l'agent

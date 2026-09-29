@@ -1,0 +1,138 @@
+/**
+ * LE JOURNAL DES ÉVÉNEMENTS D'UNE CONVERSATION (migration 0192, panneau Détail de l'Inbox, cadrage du 2026-09-28).
+ *
+ * Ce qui est arrivé à une conversation, qui l'a fait, et pourquoi quand personne ne l'a fait : les assignations,
+ * les prises et les rendus à l'agent de Meta, « Traité », « Archivé », « Signalé » et leurs inverses, et la
+ * rouverture par un message du contact.
+ *
+ * 🔴 DEUX RÈGLES D'ÉCRITURE, tenues par `PgInboxStore` et par lui seul :
+ *  - l'événement s'écrit dans la MÊME requête que le changement qu'il décrit (une requête à CTE). Deux écritures
+ *    laisseraient une fenêtre où l'un existe sans l'autre, et la frise mentirait sur l'état qu'elle raconte ;
+ *  - seulement si la valeur a VRAIMENT changé. Réassigner à la même personne, archiver une conversation déjà
+ *    archivée : aucun événement, sinon la frise se remplit de gestes sans effet.
+ *
+ * ⚠️ UNE LIGNE PORTE UN ACTEUR OU UNE CAUSE, et c'est ce qui permet de lire un acteur nul : un événement
+ * automatique porte toujours sa cause (« automatique : campagne Rentrée »). Un acteur nul SANS cause est donc un
+ * collaborateur supprimé depuis (`on delete set null`), que l'écran dit « ancien collaborateur ».
+ */
+import type { OrigineMessage } from './origine';
+
+/** Les types, dans l'ordre du cadrage. Miroir du CHECK de 0192, tenu par `tests/migration-0192.test.ts`. */
+export const TYPES_EVENEMENT = [
+  'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
+  'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
+] as const;
+export type TypeEvenement = (typeof TYPES_EVENEMENT)[number];
+
+/**
+ * La cause des lignes amorcées par la migration depuis l'état qu'elle a trouvé. Recopiée dans le SQL de 0192
+ * (une migration ne s'importe pas), et un test vérifie que les deux sont le même texte.
+ */
+export const CAUSE_AMORCAGE = 'état au déploiement';
+
+/** La cause d'une rouverture : c'est le contact qui a écrit, pas quelqu'un de l'équipe. */
+export const CAUSE_MESSAGE_DU_CONTACT = 'message du contact';
+
+/**
+ * Au-delà, une cause est coupée : elle porte parfois un nom saisi par le client (une campagne, un scénario), et
+ * un CHECK de longueur ferait échouer le CHANGEMENT lui-même (une assignation perdue pour un nom trop long).
+ */
+export const CAUSE_MAX = 200;
+
+/**
+ * Qui demande un changement : un collaborateur de la console (son identifiant, `null` quand la session n'en porte
+ * pas), ou une cause automatique dite en clair. Un paramètre REQUIS des écritures de `PgInboxStore` : un nouvel
+ * appelant qui l'oublierait ne compile pas, et une frise où un changement arrive sans auteur ni cause ne dit rien.
+ */
+export type AuteurDuChangement = { collaborateur: string | null } | { cause: string };
+
+/** La cause d'un changement automatique, telle que la frise l'affiche : « automatique : campagne Rentrée ». */
+export function automatique(quoi: string): string {
+  return `automatique : ${quoi}`;
+}
+
+/** Raccourci des chemins automatiques. */
+export function parCause(quoi: string): AuteurDuChangement {
+  return { cause: automatique(quoi) };
+}
+
+/**
+ * Qui prend le fil en écrivant au client, d'après l'origine du message : l'opérateur qui signe, ou la machine qui
+ * écrit (API publique, agent tiers par MCP). Un seul endroit pour les deux routes d'envoi qui prennent le fil.
+ */
+export function auteurDeLEnvoi(origine: OrigineMessage, auteur: string | null): AuteurDuChangement {
+  if (origine === 'humain') return { collaborateur: auteur };
+  if (origine === 'api') return parCause('envoi par l’API');
+  if (origine === 'mcp') return parCause('envoi par un agent tiers (MCP)');
+  return parCause(`envoi (${origine})`);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Les deux colonnes que l'auteur remplit. 🔴 Un identifiant qui n'est pas un uuid (clé d'API `apikey:...`,
+ * identité d'observation de /ops) devient `null` ICI, avant la base : passé à `::uuid`, il ferait échouer la
+ * requête entière, donc le changement que l'événement décrit, pour une ligne de journal.
+ */
+export function colonnesAuteur(a: AuteurDuChangement): { acteur: string | null; cause: string | null } {
+  if ('cause' in a) return { acteur: null, cause: borner(a.cause) };
+  return { acteur: a.collaborateur !== null && UUID_RE.test(a.collaborateur) ? a.collaborateur : null, cause: null };
+}
+
+/** Coupe une cause trop longue ; `null` pour une cause vide. */
+export function borner(cause: string): string | null {
+  const c = cause.trim();
+  if (c === '') return null;
+  return c.length > CAUSE_MAX ? `${c.slice(0, CAUSE_MAX - 1)}…` : c;
+}
+
+/**
+ * L'acteur d'un événement, résolu dans l'espace (`$acteur` = un uuid ou null, `$tenant` = l'espace). 🔴 Relu dans
+ * `users` et pas écrit tel quel : un identifiant d'un autre espace n'est jamais inscrit dans ce journal, et un
+ * compte inconnu donne `null` plutôt qu'une violation de clé étrangère qui ferait échouer le changement.
+ */
+export function acteurSql(paramActeur: string, paramTenant: string): string {
+  return `(select u.id from users u where u.id = ${paramActeur}::uuid and u.tenant_id = ${paramTenant})`;
+}
+
+/** Un nom de la frise : un collaborateur, un collaborateur supprimé depuis, ou personne (changement automatique). */
+export type QuiEvenement = { nom: string } | { ancien: true } | null;
+
+export interface EvenementConversation {
+  id: string;
+  type: TypeEvenement;
+  at: string;
+  /** Qui a fait le geste. `null` = personne : la cause dit alors pourquoi. */
+  acteur: QuiEvenement;
+  /** Le collaborateur assigné (ou désassigné), pour les deux types d'assignation ; `null` sinon. */
+  cible: QuiEvenement;
+  cause: string | null;
+  /** Une assignation qui en remplace une autre : l'écran dit « réassignée ». */
+  reassignation: boolean;
+}
+
+export interface DetailConversation {
+  conversationId: string;
+  identite: {
+    /** La fiche du mini-CRM, `null` quand la conversation n'y est rattachée à aucune (ou à une fiche supprimée). */
+    contactId: string | null;
+    waId: string;
+    /** Les champs système `name`, `prenom`, `phone`, `email` (`SYSTEM_FIELD_KEYS`, `src/crm/fields.ts`). */
+    nom: string | null;
+    prenom: string | null;
+    telephone: string | null;
+    email: string | null;
+    tags: string[];
+    desabonne: boolean;
+    bloque: boolean;
+  };
+  /** Le résumé de l'analyse des conversations, `null` tant qu'elle n'est pas passée. */
+  resume: string | null;
+  /** À qui la conversation est confiée, `null` = personne. */
+  assignation: { userId: string; nom: string } | null;
+  /** Les 50 derniers événements, du plus récent au plus ancien. */
+  historique: EvenementConversation[];
+}
+
+/** Combien d'événements le panneau montre. */
+export const HISTORIQUE_MAX = 50;

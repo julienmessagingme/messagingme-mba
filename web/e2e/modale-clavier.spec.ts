@@ -80,8 +80,8 @@ test.describe('Modale et confirmation : clavier et historique', () => {
     // Navigation DANS l'application (le fournisseur de confirmation vit à la racine et survit donc au
     // changement de page), puis retour arrière du navigateur.
     await page.getByRole('button', { name: 'AI Agent' }).click();
-    await page.getByRole('button', { name: 'Other AI agent' }).click();
-    await page.getByRole('link', { name: 'Agents', exact: true }).click();
+    // Un lien direct depuis le 2026-09-29 (le groupe « Other AI agent » a perdu le crédit, parti dans Paramètres).
+    await page.getByRole('link', { name: 'Other AI agent', exact: true }).click();
     await expect(page).toHaveURL(/\/agents/);
 
     await page.getByTestId('agent-supprimer-ag1').click();

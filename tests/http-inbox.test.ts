@@ -10,6 +10,7 @@ import { MediaTropGros } from '../src/meta/media';
 import { capturerJournal } from './journal';
 import { inboxDepInerte, inboxInerte } from './routes-inertes';
 import { bancDuFil } from './banc-du-fil';
+import type { AuteurDuChangement } from '../src/inbox/evenements';
 
 const SECRET = 'test-secret';
 const CONV = '11111111-1111-4111-8111-111111111111';
@@ -648,11 +649,11 @@ describe('affectation des conversations', () => {
 
   /** App dont la conversation `c1` est affectée à `assignee`. */
   function appAvecAffectation(assignee: string | null) {
-    const poses: Array<{ id: string; assignee: string | null; par: string | null }> = [];
+    const poses: Array<{ id: string; assignee: string | null; par: AuteurDuChangement }> = [];
     const a = app({
       inbox: {
         getAssignee: async () => assignee,
-        setAssignee: async (_t: string, id: string, who: string | null, par: string | null) => { poses.push({ id, assignee: who, par }); return true; },
+        setAssignee: async (_t: string, id: string, who: string | null, par: AuteurDuChangement) => { poses.push({ id, assignee: who, par }); return true; },
       },
       // Câblé comme en production : sans lui la route rend 503 « indisponible sur cette instance » AVANT
       // d'arriver à la règle d'affectation, et le test ne prouverait rien du refus.
@@ -710,7 +711,7 @@ describe('affectation des conversations', () => {
     const { a, poses } = appAvecAffectation(null);
     const ok = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/assignee', ...comme(jetons.manager), payload: { assignee: 'u-affecte' } });
     expect(ok.statusCode).toBe(200);
-    expect(poses).toEqual([{ id: 'c1', assignee: 'u-affecte', par: 'u-manager' }]);
+    expect(poses).toEqual([{ id: 'c1', assignee: 'u-affecte', par: { collaborateur: 'u-manager' } }]);
 
     const ko = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/assignee', ...comme(jetons.autre), payload: { assignee: 'u-autre' } });
     expect(ko.statusCode).toBe(403);
@@ -870,12 +871,12 @@ describe('signaler à la main, et prendre le fil', () => {
   it('🔴 signaler passe l’auteur pris dans la SESSION, jamais dans le corps', async () => {
     // Un identifiant fourni par l'appelant laisserait signaler au nom d'un collègue, sur la conversation
     // d'un client. C'est la seule chose que cette route ne doit pas déléguer.
-    const vus: Array<{ id: string; signale: boolean; par: string | null }> = [];
+    const vus: Array<{ id: string; signale: boolean; par: AuteurDuChangement }> = [];
     const a = app({ inbox: { signalerConversation: async (_t, id, signale, par) => { vus.push({ id, signale, par }); return true; } } });
     const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/signaler`, ...auth(), payload: { parUserId: 'u-quelqu-un-dautre' } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ signalee: true });
-    expect(vus).toEqual([{ id: 'c1', signale: true, par: 'u1' }]); // u1 = la session, pas le corps
+    expect(vus).toEqual([{ id: 'c1', signale: true, par: { collaborateur: 'u1' } }]); // u1 = la session, pas le corps
   });
 
   it('« ne plus signaler » est une adresse à part, pas un drapeau dans le corps', async () => {
@@ -1276,6 +1277,57 @@ describe('les filtres de la liste arrivent au magasin', () => {
     await a.inject({ method: 'GET', url: '/tenants/t1/conversations?aTraiter=1&signalees=1&archivees=1&traitees=1', ...auth() });
     // `traitees` (migration 0160) : le maillon qu'on oublie est la ROUTE, cf. le docblock de ce bloc.
     expect(vus[0]).toMatchObject({ aTraiter: true, signalees: true, archivees: true, traitees: true });
+    await a.close();
+  });
+});
+
+/**
+ * LE PANNEAU DÉTAIL (migration 0192) : la route ne décide que l'espace, la forme de l'identifiant et le 404. La
+ * VISIBILITÉ (un agent voit les siennes et le pot commun) vit dans la requête du dépôt, éprouvée en CI par
+ * `tests/integration/conversation-evenements.integration.test.ts` : ici, on vérifie qu'elle reçoit l'acteur de la
+ * SESSION, et qu'un refus du dépôt devient un 404 qui ne dit rien de plus.
+ */
+describe('GET detail d’une conversation', () => {
+  const DETAIL = {
+    conversationId: CONV,
+    identite: { contactId: null, waId: '33611', nom: 'Julie', prenom: null, telephone: '+33611', email: null, tags: ['vip'], desabonne: false, bloque: false },
+    resume: null,
+    assignation: null,
+    historique: [],
+  };
+
+  it('rend le détail du dépôt, et lui passe l’acteur de la session', async () => {
+    const acteurs: unknown[] = [];
+    const a = app({ inbox: { detailConversation: async (_t, _id, acteur) => { acteurs.push(acteur); return DETAIL; } } });
+    const res = await a.inject({ method: 'GET', url: `/tenants/t1/conversations/${CONV}/detail`, ...authAgent() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(DETAIL);
+    expect(acteurs).toEqual([{ userId: 'u2', role: 'agent' }]);
+    await a.close();
+  });
+
+  it('🔴 invisible ou inconnue : 404, la même réponse, qui ne dit pas qu’elle existe chez un collègue', async () => {
+    const a = app({ inbox: { detailConversation: async () => null } });
+    const res = await a.inject({ method: 'GET', url: `/tenants/t1/conversations/${CONV}/detail`, ...authAgent() });
+    expect(res.statusCode).toBe(404);
+    await a.close();
+  });
+
+  it('un identifiant mal formé : 404 sans toucher la base', async () => {
+    let appels = 0;
+    const a = app({ inbox: { detailConversation: async () => { appels += 1; return DETAIL; } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/pas-un-uuid/detail', ...auth() });
+    expect(res.statusCode).toBe(404);
+    expect(appels).toBe(0);
+    await a.close();
+  });
+
+  it('🔴 un autre espace : 403, et le dépôt n’est pas appelé', async () => {
+    let appels = 0;
+    const a = app({ inbox: { detailConversation: async () => { appels += 1; return DETAIL; } } });
+    const res = await a.inject({ method: 'GET', url: `/tenants/t2/conversations/${CONV}/detail`, ...auth() });
+    expect(res.statusCode).toBe(403);
+    expect(appels).toBe(0);
     await a.close();
   });
 });

@@ -10,7 +10,6 @@ import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgEventStore } from '../../src/webhooks/store';
 import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
 import { PgUserStore } from '../../src/user/store.pg';
-import { SANS_CREDIT_OFFERT } from '../credit-offert';
 import { PgTrackedLinkStore } from '../../src/links/tracked-links.pg';
 import { fabriquerJeton, estJeton } from '../../src/links/jeton-contact';
 import { newTrackingCode } from '../../src/ids/code';
@@ -36,6 +35,7 @@ import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
 import { resolveScenario } from '../../src/ids/resolve';
 import { PgTenantSettingsStore, DEFAULT_TIMEZONE, DEFAULT_BUSINESS_HOURS } from '../../src/settings/store.pg';
 import { PgEmbeddedSignupStore, TenantConflictError, SecondNumeroRefuseError } from '../../src/account/es-store.pg';
+import { SANS_CREDIT_OFFERT } from '../credit-offert';
 import { PgPhoneStatusStore } from '../../src/account/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
@@ -345,7 +345,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   });
 
   it('auth : createTenantWithAdmin (transaction) + createPending + setPassword + getAuthState(tenantStatus)', async () => {
-    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
+    const users = new PgUserStore(pool);
     const email = `admin.itest.${Date.now()}@exemple.fr`;
     const { tenantId: newTenant, userId } = await users.createTenantWithAdmin('Espace itest', { email, name: 'Admin', passwordHash: 'scrypt$aa$bb' });
     try {
@@ -406,7 +406,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // Deux invariants tenus ensemble, parce qu'ils se contredisent facilement : un rôle qui n'est pas admin
     // doit pouvoir changer librement (le prédicat écrit en dur sur 'agent' bloquait le manager dès qu'il ne
     // restait qu'un admin), et le DERNIER admin doit rester intouchable.
-    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
+    const users = new PgUserStore(pool);
     const { tenantId: espace, userId: admin } = await users.createTenantWithAdmin('Espace roles', {
       email: `roles.itest.${Date.now()}@exemple.fr`, name: 'Admin', passwordHash: null,
     });
@@ -428,7 +428,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   });
 
   it('PgAuthTokenStore : create renvoie le token en clair, consume valide/atomique/usage-unique/expiration', async () => {
-    const users = new PgUserStore(pool, SANS_CREDIT_OFFERT);
+    const users = new PgUserStore(pool);
     const tokens = new PgAuthTokenStore(pool);
     const { tenantId: newTenant, userId } = await users.createTenantWithAdmin('Espace tok', { email: `tok.itest.${Date.now()}@exemple.fr`, name: null, passwordHash: null });
     try {
@@ -1816,7 +1816,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   });
 
   it('PgEmbeddedSignupStore : refuse de réaffecter un numéro/WABA à un autre workspace (TenantConflictError, ligne inchangée)', async () => {
-    const es = new PgEmbeddedSignupStore(pool);
+    const es = new PgEmbeddedSignupStore(pool, SANS_CREDIT_OFFERT);
     // ⚠️ Espace DÉDIÉ pour A, et non l'espace partagé du fichier : depuis la règle « un seul numéro par
     // espace » (2026-08-31), l'espace partagé porte déjà `pn-red`, et le rattachement serait refusé pour
     // cette raison-là au lieu de la raison testée ici.
@@ -1864,7 +1864,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
    * FUSIONNERAIT les deux canaux au lieu d'en créer un second, en silence.
    */
   it('PgEmbeddedSignupStore : un SECOND numéro sur le même espace est refusé, et le premier reste intact', async () => {
-    const es = new PgEmbeddedSignupStore(pool);
+    const es = new PgEmbeddedSignupStore(pool, SANS_CREDIT_OFFERT);
     const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-mono') returning id`)).rows[0]!.id;
     const wabaId = 'waba-es-mono';
     try {
@@ -1890,7 +1890,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   });
 
   it('PgEmbeddedSignupStore : lecture des credentials + markTokenInvalid (B1)', async () => {
-    const es = new PgEmbeddedSignupStore(pool);
+    const es = new PgEmbeddedSignupStore(pool, SANS_CREDIT_OFFERT);
     const wabaId = 'waba-b1-read';
     try {
       await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w') on conflict (id) do nothing`, [wabaId, tenantId]);
@@ -1920,7 +1920,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
    * condamné de nouveau utilisable.
    */
   it('PgEmbeddedSignupStore : l’ancien jeton qui échoue ne condamne pas le nouveau, et une reconnexion réactive', async () => {
-    const es = new PgEmbeddedSignupStore(pool);
+    const es = new PgEmbeddedSignupStore(pool, SANS_CREDIT_OFFERT);
     const wabaId = 'waba-jeton-perime';
     try {
       await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w') on conflict (id) do nothing`, [wabaId, tenantId]);

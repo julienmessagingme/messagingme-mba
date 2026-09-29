@@ -11,6 +11,7 @@
  *      croire à un message perdu.
  */
 import type { OrigineMessage } from './origine';
+import { auteurDeLEnvoi, type AuteurDuChangement } from './evenements';
 
 /** Ce que la réponse lit et écrit des conversations. */
 export interface ConversationsRepondre {
@@ -43,7 +44,11 @@ export interface DepsRepondre {
   inbox: ConversationsRepondre;
   repo: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
   sendReply(tenantId: string, phoneNumberId: string, to: string, text: string): Promise<string>;
-  takeControl(tenantId: string, waId: string): Promise<void>;
+  /**
+   * Prend le fil. `par` : qui écrit, l'opérateur ou la machine (`auteurDeLEnvoi`), pour le journal du panneau
+   * Détail de l'Inbox, qui dit « prise à l'agent de Meta par ... ».
+   */
+  takeControl(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
   /**
    * 🔴 Ce contact a-t-il demandé à ne plus être contacté ? Requise, lue seulement pour une origine machine :
    * la réponse d'un opérateur ne paie aucune requête.
@@ -103,7 +108,7 @@ export async function repondreDansLaFenetre(
   // soit le tiers qui écrit. Ce que ça n'arrête pas : une campagne (`ignoreHumanControl` dans `executor.ts`,
   // déclenchée par un opérateur) et un clic sur un bouton de chaîne (geste explicite de l'abonné). Une
   // automation ordinaire par mot-clé reste arrêtée.
-  await deps.takeControl(tenantId, ctx.waId).catch(() => {});
+  await deps.takeControl(tenantId, ctx.waId, auteurDeLEnvoi(origine, auteur)).catch(() => {});
   await deps.inbox.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
   return { messageId };
 }

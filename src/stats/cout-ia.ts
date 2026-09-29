@@ -1,6 +1,11 @@
 /**
- * Ce que le client a dépensé en IA, sur son crédit prépayé et rien d'autre : ce que MessagingMe absorbe sur sa
- * propre clé (transcription, bot d'aide, assistants de configuration) n'a rien à faire sur son écran.
+ * Ce que les AGENTS IA du client ont consommé sur son crédit prépayé : ses sessions d'agent en production
+ * (`agent_sessions.cout_micro_eur`, commission comprise). Ce que MessagingMe absorbe sur sa propre clé
+ * (transcription, bot d'aide, assistants de configuration) n'a rien à faire sur son écran.
+ *
+ * ⚠️ CE N'EST PAS TOUT CE QUE LE CRÉDIT PAIE, et le dire complet serait faux depuis le 2026-09-28 : la traduction des
+ * conversations et les essais « Tester » de la console sont débités du même crédit sans ouvrir de session d'agent.
+ * Ils se lisent dans l'historique du crédit (`PgCreditStore.historique`, page Crédit IA), pas ici.
  *
  * Le Meta Business Agent n'est pas une mesure manquante : il tourne chez Meta, qui le facture au message de
  * service, donc son coût est déjà dans la ligne « messages ». L'écran doit le dire.

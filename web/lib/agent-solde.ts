@@ -6,8 +6,9 @@
  * les agents du workspace s'arrêtent : ils sortent par « Plafond atteint », comme pour les autres plafonds,
  * donc le client câble cette branche une seule fois quelle qu'en soit la raison.
  *
- * ⚠️ Le rechargement n'est PAS ici, et ne doit pas y être : il vit sur la surface d'exploitation, sous une
- * autorité séparée du compte client. Un client qui pourrait se créditer lui-même n'aurait plus de prépayé.
+ * ⚠️ Aucune écriture de solde n'est ici, et ne doit y être : le client PAIE (page Crédit IA, Stripe), et seul le
+ * webhook signé de Stripe crédite ; l'exploitation garde sa recharge manuelle. Un client qui pourrait se
+ * créditer lui-même n'aurait plus de prépayé. Le solde paie les agents IA ET la traduction de l'Inbox.
  */
 
 /** Miroir de `eurosDepuisMicro` (`src/agent/devise.ts`), que les deux builds ne partagent pas. Deux

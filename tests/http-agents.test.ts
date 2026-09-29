@@ -128,6 +128,30 @@ describe('routes agents : lecture', () => {
   });
 });
 
+describe('routes agents : l’historique du crédit', () => {
+  it('🔴 rend l’historique de l’espace du JETON, sans note, et le nombre de lignes est fixé par le serveur', async () => {
+    const vus: Array<{ tenant: string; limite: number }> = [];
+    const { srv } = app(undefined, {
+      credits: {
+        solde: async () => 0,
+        historique: async (tenant, limite) => {
+          vus.push({ tenant, limite });
+          return [{ id: 'a', deltaMicroEur: 50_000_000, raison: 'achat', jour: null, at: '2026-09-29T10:00:00.000Z' }];
+        },
+      },
+    });
+    const r = await srv.inject({ method: 'GET', url: '/tenants/t1/agents/mouvements?limite=100000', ...h(adminTok) });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ mouvements: [{ id: 'a', deltaMicroEur: 50_000_000, raison: 'achat', jour: null, at: '2026-09-29T10:00:00.000Z' }] });
+    expect(vus).toEqual([{ tenant: 't1', limite: 50 }]);
+    // L'espace d'un autre, et un membre non admin : refusés comme le solde.
+    expect((await srv.inject({ method: 'GET', url: '/tenants/t2/agents/mouvements', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents/mouvements', ...h(agentTok) })).statusCode).toBe(403);
+    expect(vus).toHaveLength(1);
+    await srv.close();
+  });
+});
+
 describe('routes agents : création', () => {
   it('🔴 un agent naît en BROUILLON, et le corps ne peut PAS en décider', async () => {
     // Un agent créé actif serait proposable dans un scénario avant que quiconque ait relu ce qu'il dira.

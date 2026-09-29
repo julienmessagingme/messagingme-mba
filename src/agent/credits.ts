@@ -12,9 +12,11 @@
  *   - `conso` : un tour d'agent ou un essai depuis la console ;
  *   - `recharge` : un rechargement manuel (`/ops`) ;
  *   - `traduction` : les traductions d'un JOUR (Paris), agrégées en une ligne qui grossit ;
- *   - `offert` : le crédit offert à la création de l'espace.
+ *   - `offert` : le crédit offert à la connexion du premier numéro WhatsApp de l'espace (une fois par espace, jamais
+ *     deux fois pour le même numéro, migration 0191) ;
+ *   - `achat` : un paiement Stripe, crédité par le webhook (`src/stripe/`), une fois par session Checkout.
  */
-export type RaisonMouvement = 'conso' | 'recharge' | 'traduction' | 'offert';
+export type RaisonMouvement = 'conso' | 'recharge' | 'traduction' | 'offert' | 'achat';
 
 export interface MouvementCredit {
   /** Négatif = consommation, positif = rechargement. */
@@ -29,12 +31,28 @@ export interface MouvementCredit {
 
 /**
  * Un mouvement relu. `raison` est rendue TELLE QU'ÉCRITE, et c'est pour ça qu'elle est une chaîne : une valeur
- * écrite par une version plus récente (un achat, demain) ne doit ni casser la lecture ni se déguiser en
- * consommation. Les valeurs connues sont celles de `RaisonMouvement`.
+ * écrite par une version plus récente ne doit ni casser la lecture ni se déguiser en consommation. Les valeurs
+ * connues sont celles de `RaisonMouvement`.
  */
 export interface MouvementLu extends Omit<MouvementCredit, 'raison'> {
   id: string;
   at: string;
   raison: string;
+}
+
+/**
+ * Une ligne de l'historique que la console montre au client (page Crédit IA).
+ *
+ * 🔴 SANS NOTE, délibérément : celle d'une recharge manuelle porte l'adresse de l'exploitant et sa raison interne
+ * (`noteSignee`, `src/http/ops.ts`), qui n'ont rien à faire chez le client. L'écran dit la raison en clair.
+ * `jour` (AAAA-MM-JJ, Paris) est posé sur les lignes qui agrègent une journée : les traductions (une ligne par jour
+ * en base, migration 0190) et les tours d'agent (agrégés à la lecture, sinon ils noient tout le reste).
+ */
+export interface LigneHistorique {
+  id: string;
+  deltaMicroEur: number;
+  raison: string;
+  jour: string | null;
+  at: string;
 }
 

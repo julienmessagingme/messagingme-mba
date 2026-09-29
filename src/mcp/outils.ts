@@ -1,6 +1,7 @@
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
 import type { ContactRow, ContactFilters } from '../crm/contact-store.pg';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
+import { parCause, type AuteurDuChangement } from '../inbox/evenements';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 
 /**
@@ -24,7 +25,7 @@ export interface DepsMcp extends DepsRepondre {
     getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
     getControlOwner(tenantId: string, waId: string): Promise<ControlOwner>;
     getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
-    setAssignee(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
+    setAssignee(tenantId: string, conversationId: string, assignee: string | null, par: AuteurDuChangement): Promise<boolean>;
   };
   contacts: {
     /** Recherche de contacts (le même moteur de filtres que le mini-CRM). */
@@ -360,8 +361,9 @@ export const OUTILS: OutilMcp[] = [
         throw new RefusOutil('paramètre « member_id » invalide (identifiant de membre, ou null pour libérer)');
       }
       const membre = typeof brut === 'string' ? brut.trim() : null;
-      // `parUserId = null` : ce n'est pas un humain de la console qui affecte, le journal d'audit le verra.
-      const ok = await deps.inbox.setAssignee(tenantId, id, membre, null);
+      // Pas un collaborateur : un agent tiers. `assigned_by` reste nul, et la frise du panneau Détail le dit par
+      // sa cause au lieu d'afficher « ancien collaborateur ».
+      const ok = await deps.inbox.setAssignee(tenantId, id, membre, parCause('agent tiers (MCP)'));
       if (!ok) throw new RefusOutil('conversation inconnue, ou membre étranger à cet espace');
       return { conversation_id: id, assigned_to: membre };
     },

@@ -11,6 +11,7 @@ import { envoyerRcsLibre, type DepsRcsLibre, type RefusRcsLibre } from '../rcs/e
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messages';
 import { messageDe } from '../lib/erreur';
+import { auteurDeLEnvoi, type AuteurDuChangement } from '../inbox/evenements';
 
 /**
  * `POST /v1/messages/rcs` : un texte en RCS, à une personne qui a une fiche.
@@ -37,7 +38,8 @@ export interface V1MessagesRcsRouteDeps {
     /** Le fil du contact, créé s'il n'existe pas (la fonction du bouton « Ouvrir la conversation »). */
     ouvrirConversationDuContact(tenantId: string, contactId: string): Promise<string | null>;
   };
-  takeControl(tenantId: string, waId: string): Promise<void>;
+  /** Prend le fil ; `par` dit qui (ici l'API), pour le journal du panneau Détail de l'Inbox. */
+  takeControl(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
   /** Le garde d'usage, injecté par `buildServer`. Requis, comme sur les autres routes /v1. */
   usage: ApiUsageGuard;
 }
@@ -107,7 +109,7 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
      */
     const conversationId = await deps.inbox.ouvrirConversationDuContact(tenantId, fiche.contactId).catch(() => null);
     if (conversationId) {
-      await deps.takeControl(tenantId, waId).catch(() => {});
+      await deps.takeControl(tenantId, waId, auteurDeLEnvoi('api', null)).catch(() => {});
       await deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'api', 'rcs', null, null, null, 'rcs').catch((err: unknown) => {
         // eslint-disable-next-line no-console
         console.error(`v1/messages/rcs: RCS parti mais non inscrit dans l'Inbox (${tenantId}):`, messageDe(err));

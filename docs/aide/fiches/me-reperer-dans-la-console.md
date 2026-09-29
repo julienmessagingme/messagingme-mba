@@ -1,6 +1,6 @@
 ---
 source_section: Navigation (trois onglets en haut, barre latérale par onglet)
-source_empreinte: ee3e49
+source_empreinte: 07a889
 ---
 # Me repérer dans la console
 
@@ -9,10 +9,11 @@ ne se pratiquent ni au même moment ni par les mêmes personnes : configurer, tr
 les résultats.
 
 **Console**, pour tout ce qui se règle : Accueil, mini-CRM, Campagnes, Chaîne, Scénario, Automation,
-AI Agent (MBA, avec son guide et ses paramètres ; Other AI agent, avec vos agents et leur crédit), Contenu
+AI Agent (MBA, qui ouvre les paramètres de l'agent de Meta ; Other AI agent, qui ouvre vos agents IA), Contenu
 (rangé par canal : WhatsApp, RCS, Email, puis la Bibliothèque avec vos blocs, vos étiquettes et vos champs)
 et Tools (Webhooks, Connecteurs API, Connecteurs MCP). Collés en bas de la barre, parce qu'ils ne servent
-pas le travail quotidien mais le règlent : **Paramètres**, **Support** et **Developers**.
+pas le travail quotidien mais le règlent : **Paramètres** (Général, et Crédit IA pour recharger le crédit
+de l'espace), **Support** et **Developers**.
 
 **Inbox**, pour répondre : cet onglet n'a aucune barre de navigation, il porte son propre menu de dossiers,
 à la manière d'une boîte mail.
@@ -35,8 +36,10 @@ L'abonnement et la facturation y figurent grisés, ils ne sont pas encore ouvert
 mémorisée par navigateur, elle vaut donc pour vous et pas pour vos collègues, et elle est aussi disponible
 avant de vous connecter.
 
-**Paramètres** porte le fuseau horaire de votre espace et vos heures d'ouverture, jour par jour, avec une
+**Paramètres > Général** porte le fuseau horaire de votre espace et vos heures d'ouverture, jour par jour, avec une
 heure de début, une heure de fin, ou « fermé ». C'est la base sur laquelle s'appuient toutes les conditions
 de temps de vos scénarios et l'option qui limite une campagne à vos heures d'ouverture. Un jour dont l'heure
 de fin précède l'heure de début est signalé en rouge et bloque l'enregistrement. Un manager n'y voit qu'un
-seul réglage, celui qui autorise vos agents à prendre eux-mêmes une conversation.
+seul réglage, celui qui autorise vos agents à prendre eux-mêmes une conversation. **Paramètres > Crédit IA**
+montre le crédit prépayé de l'espace, permet à un administrateur de le recharger, et liste ce qui l'a fait
+bouger.

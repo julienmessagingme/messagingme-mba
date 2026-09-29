@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 71fb1f
+source_empreinte: 1fba76
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -13,6 +13,8 @@ choisissez votre compte professionnel et votre numéro, et tout le reste se fait
 déjà commencé une première fois, recommencer fonctionne : vous n'avez rien à ressaisir et aucun nouveau code
 à redemander, vous retrouvez le compte et le numéro existants. Quand Meta refuse, c'est SON motif qui
 s'affiche (code expiré, compte non partagé, plusieurs numéros à départager), pas un message d'erreur opaque.
+À la connexion du premier numéro de votre espace, **5 € de crédit IA vous sont offerts**, une seule fois : ils
+paient vos agents IA et la traduction de l'Inbox (voir Paramètres > Crédit IA).
 
 **Un espace pilote un seul numéro.** En connecter un second est refusé, en vous disant lequel est déjà là et
 quoi faire : créer un second espace, ou détacher celui-ci. Accepter les deux mélangerait les conversations

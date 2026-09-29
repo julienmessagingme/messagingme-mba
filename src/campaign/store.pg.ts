@@ -828,19 +828,20 @@ export class PgCampaignRepo {
   ): Promise<CampagneAssignante | null> {
     const res = await this.pool.query<{
       id: string;
+      nom: string;
       assignation: 'personne' | 'tour_de_role' | null;
       assignation_user_id: string | null;
       devenir: 'mba' | 'inbox' | null;
       premiere_reponse: boolean;
     }>(
-      `select d.id, d.assignation, d.assignation_user_id, e.devenir,
+      `select d.id, d.nom, d.assignation, d.assignation_user_id, e.devenir,
               (select count(*) from (
                  select 1 from conversation_messages m
                   where m.conversation_id = d.conversation_id and m.direction = 'in' and m.created_at > d.sent_at
                   limit 2
                ) entrants) <= 1 as premiere_reponse
          from (
-           select c.id, c.assignation, c.assignation_user_id, r.etage_courant, r.sent_at, cv.id as conversation_id
+           select c.id, c.name as nom, c.assignation, c.assignation_user_id, r.etage_courant, r.sent_at, cv.id as conversation_id
              from conversations cv
              join campaign_recipients r on r.contact_id = cv.contact_id
              join campaigns c on c.id = r.campaign_id
@@ -857,6 +858,7 @@ export class PgCampaignRepo {
     return row
       ? {
         campaignId: row.id,
+        nom: row.nom,
         devenir: row.devenir,
         assignation: row.assignation,
         assignationUserId: row.assignation_user_id,

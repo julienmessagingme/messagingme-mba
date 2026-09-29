@@ -366,7 +366,7 @@ describe('balayage : le drapeau d’escalade périmé part avec le fil qu’on d
     const opts: Array<EcritureDuFil | undefined> = [];
     const { deps } = sweepDeps([{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(100 * H), escaladee: false }], { app_human: 2 * H });
     await runControlSweep({ ...deps, fil: filQuiEcrit(async (_t, _w, _o, o) => { opts.push(o); return true; }) });
-    expect(opts).toEqual([{ only: ['app_human'], effacerEscalade: true }]);
+    expect(opts).toEqual([{ par: { cause: 'automatique : délai de reprise écoulé' }, only: ['app_human'], effacerEscalade: true }]);
   });
 });
 
