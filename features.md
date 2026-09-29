@@ -2512,6 +2512,11 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   doit répondre. Un CSV enregistré par Excel sous Windows en français (« CSV (séparateur: point-virgule) »,
   dont l'encodage n'est pas l'UTF-8) passe aussi. Avant cette date, un export ordinaire ne donnait aucune fiche,
   avec un message « trop court » qui taisait la cause.
+- ✅ **L'agent lit chaque fiche en entier** (2026-09-29) : une fiche fait au plus 2 000 caractères, ce que
+  l'agent en reçoit, qu'elle vienne d'une page, d'un document ou de la main. Une section plus longue devient
+  plusieurs fiches « (suite 2) », « (suite 3) », rien n'est coupé. Avant cette date, une fiche allait jusqu'à
+  4 000 caractères quand l'agent n'en recevait que les 2 000 premiers : la recherche pouvait la retenir pour une
+  phrase de sa seconde moitié, et l'agent répondait sans elle ; une section de page plus longue perdait sa fin.
 - ✅ **Écrire une fiche à la main** : un titre (la question ou le sujet) et une réponse, telle qu'on voudrait
   la lire. Chaque fiche s'édite sur place.
 - ✅ **La provenance est sous chaque fiche** : « écrite à la main », ou « lue sur <adresse> le <date> (N

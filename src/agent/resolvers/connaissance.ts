@@ -15,8 +15,9 @@ export const FICHES_RENDUES = 3;
 /**
  * Bornes de ce qui repart au modèle, fiche par fiche. Le tronc commun borne déjà la réponse entière, mais
  * remplace alors toute la structure par un aperçu : trois fiches entières rendraient une source mutilée.
- * ⚠️ Elle borne aussi les fiches d'un CSV (`src/agent/setup/piece-jointe.ts`), pour que l'agent en lise chaque
- * rangée ; elle doit rester sous `MAX_CORPS`, sans quoi ces fiches ne seraient plus modifiables à l'écran.
+ * ⚠️ Elle borne aussi toute fiche écrite : `MAX_CORPS` en dérive (`src/agent/scrape.ts`), l'écran la rejoue.
+ * La recherche lisant la fiche entière, une fiche plus longue serait trouvée pour une phrase que l'agent ne
+ * reçoit pas ; la coupe plus bas n'est plus qu'une ceinture.
  */
 export const CORPS_MAX = 2_000;
 

@@ -23,7 +23,7 @@ export const JOURS_AVANT_ALERTE = 90;
  * une erreur technique pour une saisie que le champ savait déjà mauvaise.
  */
 export const MAX_TITRE_FICHE = 200;
-export const MAX_CORPS_FICHE = 4000;
+export const MAX_CORPS_FICHE = 2000;
 
 const JOUR_MS = 86_400_000;
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE, pageEnFiches } from '../src/agent/scrape';
+import { chercherConnaissance } from '../src/agent/resolvers/connaissance';
 
 /**
  * Une page de site transformée en fiches de connaissance.
@@ -70,14 +71,35 @@ describe('pageEnFiches', () => {
     expect(fiches.map((f) => f.titre)).toEqual(['Les horaires']);
   });
 
-  it('🔴 borne le nombre de fiches et la taille d’un corps', () => {
+  it('🔴 borne le nombre de fiches', () => {
     const grosse = Array.from({ length: 120 }, (_, i) => `<h2>Section ${i}</h2><p>${'du contenu de section bien assez long pour compter. '.repeat(3)}</p>`).join('');
     const fiches = pageEnFiches(`<html><body>${grosse}</body></html>`, 'https://exemple.fr/tout');
     expect(fiches).toHaveLength(MAX_FICHES_PAR_PAGE);
+  });
 
-    const enorme = `<h1>Le règlement</h1><p>${'phrase du règlement intérieur. '.repeat(1000)}</p>`;
-    const [fiche] = pageEnFiches(enorme, 'https://exemple.fr/reglement');
-    expect(fiche!.corps.length).toBe(MAX_CORPS);
+  it('🔴 une section plus longue qu’une fiche est DÉCOUPÉE, pas tronquée : rien n’est perdu', () => {
+    const reglement = 'phrase du règlement intérieur. '.repeat(200);
+    const fiches = pageEnFiches(`<h1>Le règlement</h1><p>${reglement}</p>`, 'https://exemple.fr/reglement');
+    expect(fiches.length).toBeGreaterThan(1);
+    expect(fiches[1]!.titre).toBe('Le règlement (suite 2)');
+    for (const f of fiches) expect(f.corps.length).toBeLessThanOrEqual(MAX_CORPS);
+    // Les caractères non blancs, les frontières de coupe mangeant des espaces.
+    expect(fiches.map((f) => f.corps).join('').replace(/\s+/g, '')).toBe(reglement.replace(/\s+/g, ''));
+  });
+
+  it('🔴 une phrase de la fin d’une section longue arrive à l’agent : la fiche qui la porte lui est rendue entière', async () => {
+    // Le défaut du 2026-09-29 : la recherche lit la fiche entière, l'agent n'en recevait que les CORPS_MAX
+    // premiers caractères. Une fiche retenue pour sa fin partait donc sans elle.
+    const debut = 'La résidence propose de nombreuses activités tout au long de l’année. '.repeat(40);
+    const fiches = pageEnFiches(`<h1>Les activités</h1><p>${debut}</p><p>Le cours de yoga a lieu le jeudi à 18 h.</p>`, 'https://exemple.fr/activites');
+    const trouvee = fiches.find((f) => f.corps.includes('yoga'))!;
+    const rendu = await chercherConnaissance(
+      { chercher: async () => [{ id: 'f', ...trouvee, sourceUrl: null, termesTrouves: 2, couverture: 1, proximiteTitre: 0 }] },
+      { tenantId: 't', agentId: 'a' },
+      'yoga jeudi',
+    );
+    const [source] = (rendu.contenu as { sources: Array<{ contenu: string }> }).sources;
+    expect(source!.contenu).toContain('Le cours de yoga a lieu le jeudi à 18 h.');
   });
 
   it('décode les entités, et &amp; en dernier', () => {

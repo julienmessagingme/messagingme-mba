@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { reconnaitre, extraireTexte, texteEnFiches, TAILLE_DOCUMENT_MAX } from '../src/agent/setup/piece-jointe';
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE } from '../src/agent/scrape';
-import { CORPS_MAX } from '../src/agent/resolvers/connaissance';
+import { CORPS_MAX, chercherConnaissance } from '../src/agent/resolvers/connaissance';
 
 /**
  * Les pièces jointes de la conversation de construction.
@@ -119,6 +119,20 @@ describe('découpage en fiches', () => {
     // les frontières de coupe mangeant des espaces.
     const sansBlancs = (s: string) => s.replace(/\s+/g, '');
     expect(fiches.map((f) => f.corps).join('').replace(/\s+/g, '')).toBe(sansBlancs(source));
+  });
+
+  it('🔴 une phrase de la fin d’une longue section arrive à l’agent : la fiche qui la porte lui est rendue entière', async () => {
+    // Le défaut du 2026-09-29 : la recherche lit la fiche entière, l'agent n'en recevait que les CORPS_MAX
+    // premiers caractères. Une fiche retenue pour sa fin partait donc sans elle.
+    const fiches = texteEnFiches(`Les activités\n${long(60)}\nLe cours de yoga a lieu le jeudi à 18 h.`, 'Brochure', 'pdf');
+    const trouvee = fiches.find((f) => f.corps.includes('yoga'))!;
+    const rendu = await chercherConnaissance(
+      { chercher: async () => [{ id: 'f', ...trouvee, sourceUrl: null, termesTrouves: 2, couverture: 1, proximiteTitre: 0 }] },
+      { tenantId: 't', agentId: 'a' },
+      'yoga jeudi',
+    );
+    const [source] = (rendu.contenu as { sources: Array<{ contenu: string }> }).sources;
+    expect(source!.contenu).toContain('Le cours de yoga a lieu le jeudi à 18 h.');
   });
 
   it('les plafonds sont ceux de l’import de page web, pas des copies', () => {
@@ -251,7 +265,9 @@ describe('🔴 un CSV : des rangées ENTIÈRES, l’en-tête en tête de chaque 
     // Il ne laisserait presque plus de place aux rangées, et à la limite aucune : la coupe ne finirait jamais.
     const entete = `${'Colonne'.repeat(185)};Autre`;
     const rangee = `x;${'mot '.repeat(75)}`;
-    expect(texteEnFiches([entete, rangee, rangee, rangee].join('\n'), 'Doc', 'texte')).toHaveLength(1);
+    const fiches = texteEnFiches([entete, rangee, rangee, rangee].join('\n'), 'Doc', 'texte');
+    // Lu comme du texte : l'en-tête n'est pas repris en tête de chaque fiche, comme il le serait dans un tableau.
+    expect(fiches.filter((f) => f.corps.startsWith(entete))).toHaveLength(1);
   });
 
   it('une fiche de CSV reste modifiable à l’écran, où la route refuse un corps de plus de MAX_CORPS', () => {

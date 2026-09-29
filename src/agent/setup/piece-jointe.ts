@@ -1,6 +1,6 @@
 import { unzipSync } from 'fflate';
 import Papa from 'papaparse';
-import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, type FicheExtraite } from '../scrape';
+import { MAX_FICHES_PAR_PAGE, MAX_TITRE, empilerEnFiches, type FicheExtraite } from '../scrape';
 import { CORPS_MAX } from '../resolvers/connaissance';
 
 /**
@@ -266,9 +266,10 @@ export async function extraireTexte(bytes: Buffer, nature: NaturePieceJointe): P
 
 /**
  * Un texte découpé en fiches : par titres quand le document en a, sinon en tranches numérotées, jamais en une
- * fiche unique. Les plafonds sont ceux de l'import de page web, importés pour qu'une fiche produite ici reste
- * modifiable telle quelle à l'écran. Un fichier TEXTE qui a la forme d'un CSV est découpé par rangées
- * (`csvEnFiches`) ; un PDF, un Word ou le texte lu dans une image jamais, même quand ils en ont la forme.
+ * fiche unique. Les tranches sont celles de l'import de page web (`empilerEnFiches`), pour qu'une fiche produite
+ * ici reste modifiable telle quelle à l'écran et soit lue en entier par l'agent. Un fichier TEXTE qui a la forme
+ * d'un CSV est découpé par rangées (`csvEnFiches`) ; un PDF, un Word ou le texte lu dans une image jamais, même
+ * quand ils en ont la forme.
  */
 export function texteEnFiches(texte: string, titreDefaut: string, nature: NaturePieceJointe): FicheExtraite[] {
   const csv = nature === 'texte' ? lireCsv(texte) : null;
@@ -292,29 +293,11 @@ export function texteEnFiches(texte: string, titreDefaut: string, nature: Nature
     courante().lignes.push(ligne);
   }
 
-  // Chaque section devient une ou plusieurs fiches : découpée, jamais tronquée, sinon le reste serait perdu
-  // en silence et le client croirait son document importé.
+  // Chaque section devient une ou plusieurs fiches : découpée, jamais tronquée.
   const fiches: FicheExtraite[] = [];
   for (const s of sections) {
-    let reste = contenuDe(s);
-    if (reste.length < MIN_CORPS) continue;
-    let tranche = 0;
-    while (reste.length > 0 && fiches.length < MAX_FICHES_PAR_PAGE) {
-      let coupe = Math.min(MAX_CORPS, reste.length);
-      if (coupe < reste.length) {
-        // Coupe sur une frontière de mot ou de ligne quand il y en a une dans le dernier quart.
-        const frontiere = Math.max(reste.lastIndexOf('\n', coupe), reste.lastIndexOf(' ', coupe));
-        if (frontiere > coupe * 0.75) coupe = frontiere;
-      }
-      const corps = reste.slice(0, coupe).trim();
-      reste = reste.slice(coupe).trim();
-      if (corps.length === 0) break;
-      tranche += 1;
-      fiches.push({
-        titre: (tranche === 1 ? s.titre : `${s.titre} (suite ${tranche})`).slice(0, MAX_TITRE),
-        corps,
-      });
-    }
+    const contenu = contenuDe(s);
+    if (contenu.length >= MIN_CORPS) empilerEnFiches(fiches, s.titre, contenu);
   }
   return fiches;
 }

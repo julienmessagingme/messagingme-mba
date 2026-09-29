@@ -6,7 +6,8 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentKnowledgeRouteDeps } from '../src/http/agent-knowledge';
 import type { FicheAEcrire, FicheConnaissance } from '../src/agent/knowledge';
 import type { PageDistante } from '../src/lib/page-distante';
-import { MAX_CORPS, MAX_FICHES_PAR_PAGE } from '../src/agent/scrape';
+import { MAX_FICHES_PAR_PAGE } from '../src/agent/scrape';
+import { CORPS_MAX } from '../src/agent/resolvers/connaissance';
 import { connaissanceInerte } from './routes-inertes';
 
 /**
@@ -127,7 +128,8 @@ describe('base de connaissance : lecture et écriture', () => {
       {},
       { titre: '', corps: 'x' },
       { titre: 'T', corps: '   ' },
-      { titre: 'T', corps: 'x'.repeat(MAX_CORPS + 1) },
+      // Plus long que ce que l'agent en lit : la recherche trouverait la fin, l'agent ne la recevrait pas.
+      { titre: 'T', corps: 'x'.repeat(CORPS_MAX + 1) },
       { titre: 'T'.repeat(201), corps: 'x' },
     ]) {
       const res = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload });

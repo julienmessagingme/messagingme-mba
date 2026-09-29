@@ -1,3 +1,5 @@
+import { CORPS_MAX } from './resolvers/connaissance';
+
 /**
  * Une page HTML transformée en fiches de connaissance. Pure : la lecture et la garde SSRF sont dans
  * `src/lib/page-distante.ts`.
@@ -15,9 +17,12 @@ export interface FicheExtraite {
 /** Au-delà, ce n'est plus une page de contenu mais un plan de site ou un catalogue : on refuse d'en faire
  *  trois cents fiches que personne ne relira. */
 export const MAX_FICHES_PAR_PAGE = 40;
-/** Un corps plus long qu'un article n'est plus une réponse : il sature le contexte du modèle au moment où il
- *  répond. Coupé, jamais rejeté, sinon la fiche entière serait perdue pour un paragraphe de trop. */
-export const MAX_CORPS = 4000;
+/**
+ * Le corps d'une fiche, au plus : ce que l'agent en lit, et pas un caractère de plus. La recherche lit la fiche
+ * entière, donc une fiche plus longue serait trouvée pour une phrase que l'agent ne reçoit pas. Dérivé et non
+ * recopié : deux nombres écrits à la main ont divergé une fois, c'est le défaut du 2026-09-29.
+ */
+export const MAX_CORPS = CORPS_MAX;
 /** Un titre de fiche tient sur une ligne de l'écran. Exporté pour le schéma de la route : deux plafonds
  *  différents rendraient un titre importé impossible à modifier tel quel. */
 export const MAX_TITRE = 200;
@@ -111,6 +116,31 @@ function titreDuDocument(html: string, url: string): string {
 }
 
 /**
+ * Un texte en fiches de `MAX_CORPS` au plus, ajoutées à `fiches` tant que le plafond le permet ; la suite prend
+ * « (suite N) ». Coupé sur une frontière de ligne ou de mot quand il y en a une dans le dernier quart, jamais
+ * entre les deux moitiés d'un emoji (une moitié seule ne passe pas en base), et jamais tronqué : le reste
+ * serait perdu en silence, et le client croirait sa page ou son document importé.
+ */
+export function empilerEnFiches(fiches: FicheExtraite[], titre: string, contenu: string): void {
+  let reste = contenu.trim();
+  let tranche = 0;
+  while (reste.length > 0 && fiches.length < MAX_FICHES_PAR_PAGE) {
+    let coupe = Math.min(MAX_CORPS, reste.length);
+    if (coupe < reste.length) {
+      const frontiere = Math.max(reste.lastIndexOf('\n', coupe), reste.lastIndexOf(' ', coupe));
+      if (frontiere > coupe * 0.75) coupe = frontiere;
+      const avant = reste.charCodeAt(coupe - 1);
+      if (avant >= 0xd800 && avant <= 0xdbff) coupe -= 1;
+    }
+    const corps = reste.slice(0, coupe).trim();
+    reste = reste.slice(coupe).trim();
+    if (corps.length === 0) break;
+    tranche += 1;
+    fiches.push({ titre: (tranche === 1 ? titre : `${titre} (suite ${tranche})`).slice(0, MAX_TITRE), corps });
+  }
+}
+
+/**
  * Découpe une page en fiches, une par titre de niveau 1 à 3. Le texte qui précède le premier titre devient
  * une fiche au titre du document : la réponse est parfois dans le chapeau.
  */
@@ -132,13 +162,13 @@ export function pageEnFiches(html: string, url: string): FicheExtraite[] {
   const fiches: FicheExtraite[] = [];
   // Le chapeau : tout ce qui précède le premier titre, ou la page entière quand elle n'en a aucun.
   const chapeau = texte(propre.slice(0, decoupes[0]?.ouverture ?? propre.length));
-  if (chapeau.length >= MIN_CORPS) fiches.push({ titre: titreDoc, corps: chapeau.slice(0, MAX_CORPS) });
+  if (chapeau.length >= MIN_CORPS) empilerEnFiches(fiches, titreDoc, chapeau);
 
   for (const d of decoupes) {
     if (fiches.length >= MAX_FICHES_PAR_PAGE) break;
     const corps = texte(propre.slice(d.debut, d.fin));
     if (corps.length < MIN_CORPS) continue;
-    fiches.push({ titre: d.titre, corps: corps.slice(0, MAX_CORPS) });
+    empilerEnFiches(fiches, d.titre, corps);
   }
   return fiches;
 }
