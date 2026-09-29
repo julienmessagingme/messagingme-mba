@@ -206,17 +206,22 @@ affirmait : « quand le Meta Business Agent tient le fil, Meta n'envoie plus `fi
 | entrants arrivés en `standby` | **zéro** |
 | payloads `standby` | **23, aucun ne porte d'expéditeur**, tous un `message` SORTANT |
 
-`standby` est donc **l'ÉCHO de ce que l'agent de Meta ENVOIE**, pas un canal d'entrants. Le cas décisif est
-daté : le 2026-09-15 à 07:58:39 un message du client est arrivé en `messages` alors que l'agent de Meta
-tenait le fil, ce que prouve sa réponse sept secondes plus tard. **Un entrant arrive toujours sur
-`messages`, que l'agent tienne le fil ou non.**
+`standby` était donc **l'ÉCHO de ce que l'agent de Meta ENVOIE**, pas un canal d'entrants : le 2026-09-15 à
+07:58:39 un message du client est arrivé en `messages` alors que l'agent de Meta tenait le fil, ce que prouve
+sa réponse sept secondes plus tard.
 
-⚠️ **CONSÉQUENCE SUR LA GARDE `field !== 'messages'`, ET ELLE EST OUVERTE.** Ce qui doit se TAIRE quand le
-MBA tient le fil (déclencheurs d'automation, avance de scénario, jeton de test) teste `field !== 'messages'`.
-Puisqu'un entrant est toujours `messages`, **cette garde ne fait rien taire du tout**. Le risque est
-aujourd'hui borné par le fait qu'un scénario qui démarre PREND le fil explicitement
-(`ControleDuFil.reprendrePourLApp`, `src/inbox/fil.ts`), donc il ne parle plus par-dessus l'agent : c'est un garde-fou de ceinture qui
-s'est révélé inerte, pas un trou vivant. À retrancher sur un signal vrai, cf. `todo.md`.
+🔴 **DEPUIS LE 2026-09-29, UN ENTRANT ARRIVE AUSSI EN `standby`, ET C'EST LA LISTE DE L'AGENT QUI DIT À QUI IL
+PARLE.** Mesuré ce jour-là sur le numéro de test : après un MODÈLE, la réponse du contact arrive en `standby`
+(un modèle rend la conversation à l'agent chez Meta, un message libre nous la donne), et en mode liste Meta
+continue d'y ranger des messages alors que l'agent se tait. Juste après le rattachement, avant
+`processInbound` et tout ce qui lit `field`, la réception réécrit donc en `messages` le `standby` d'un contact
+ABSENT de la liste de l'agent (`requalifierLesStandby`, `src/webhooks/standby-hors-liste.ts` ; une lecture des
+réglages et une de la liste par espace et par lot, qui lève en échec et fait rejouer le job). L'avance (texte et
+bouton), les automations, la remise « personne ne suit », le routage et l'arrivée publicitaires le traitent
+comme un message ordinaire, et la correction du détenteur n'écrit pas `mba`. Le champ reçu reste sur l'entrant
+(`fieldRecu`) et au journal (`standby_hors_liste`). Contact PRÉSENT sur la liste, ou agent éteint : le
+`standby` reste un `standby`, et la garde `field !== 'messages'` (automations, avance, jeton de test) le fait
+taire, l'agent lui parlant. `WebhookJobDeps` rend `listeALArrivee` obligatoire avec `inbox`.
 
 ⚠️ **ET ON N'EN DÉDUIT PLUS LE DÉTENTEUR** (2026-09-15). `accorderLeDetenteur` écrivait `app_workflow` sur
 chaque entrant qu'on croyait tenu par l'agent, donc sur chaque message de chaque client : c'est la valeur que
@@ -238,13 +243,16 @@ Meta -> POST /webhooks/meta (mba-api)
                       |
       worker, job `webhook` :
         dédup par meta_message_id (les webhooks arrivent en double)
+        rattachement à l'espace, puis un `standby` d'un contact absent de la liste de
+          l'agent de Meta devient un `messages` (une lecture de la liste par lot)
         auto-création ou mise à jour du contact (isolée : un échec ne casse pas l'inbox)
         capture du referral CTWA (premier message seulement) : champs de la fiche
         enregistrement dans le fil
         arrivée publicitaire (`arrivees_pub`, ctwa_clid et standby compris), isolée
         routage du lead publicitaire (lot 3), isolé : il ANNOTE l'arrivée ci-dessus et
           RESTREINT les déclencheurs ci-dessous, et il reprend le fil à l'agent de Meta
-          quand la publicité confie ses prospects à un scénario (jamais à un opérateur)
+          (le contact quitte sa liste) quand la publicité confie ses prospects à un
+          scénario (jamais à un opérateur)
         puis, DANS CET ORDRE et chacun isolé en try/catch :
           1. mapping de formulaire  (nfm_reply -> champs de la fiche)
           2. jeton de test          (CONSOMME le message, personne d'autre ne le voit)
@@ -252,6 +260,7 @@ Meta -> POST /webhooks/meta (mba-api)
              et le routage publicitaire peut n'en autoriser QU'UNE, ou aucune
           4. rendu des fils pris pour rien (le routage a pris le fil, rien n'a démarré)
           5. avance de scénario     (le contact a répondu, sur ce qui reste)
+          6. remise à l'agent de Meta quand personne ne suit (règle 2 du mode liste)
 ```
 
 🔴 **LE ROUTAGE PUBLICITAIRE EST ENCADRÉ PAR SES DEUX VOISINS, ET C'EST LA MOITIÉ DE SON COMPORTEMENT.**
@@ -997,9 +1006,10 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   « Inbox », passage à un humain, passation de l'agent de Meta, entrant `standby`, balayage), et le module porte
   seul ce que chacun faisait à sa façon : **Meta d'abord, la colonne ensuite, rien d'écrit sur un refus** (deux
   exceptions : l'état d'attente `app_human` d'une fin de parcours, posé avant la remise ; la marque d'accusé,
-  consommée avant l'appel), un **rejeu** pour toute prise (`take`, bouton compris), jamais pour une remise, et
-  la **marque d'escalade**. `tests/fil.test.ts` exécute la table contre un faux Meta et un dépôt en mémoire, et
-  refuse tout autre appelant de l'écriture ou des actes `take` / `release`. Trois règles qui y vivent :
+  consommée avant l'appel), un **rejeu** pour toute reprise (le retrait de la liste), jamais pour une remise,
+  et la **marque d'escalade**. `tests/fil.test.ts` exécute la table contre un faux Meta, un dépôt et une liste en
+  mémoire, refuse tout autre appelant de l'écriture ou du `release`, tout autre appelant de la liste que
+  `src/mba/liste.ts`, et toute trace de `take`. Trois règles qui y vivent :
   - **agent de Meta allumé, aucun numéro connecté : la colonne ne bouge pas vers l'agent**, quelle que soit la
     porte (balayage, fin de parcours, client qui revient, bouton, qui répond alors 409) ;
   - **un démarrage que le CLIENT déclenche ne prend pas le fil à un opérateur** (`saufOperateur` : l'automation
@@ -1026,6 +1036,46 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   inverse, une première réponse de campagne « Inbox » arrivée en `standby` était prise pour l'équipe, puis réécrite
   `mba` par ce même `standby`, alors que Meta venait de nous céder le fil ; la prise n'ayant lieu qu'une fois, rien
   ne la refaisait.
+- 🔴 **L'AGENT DE META EST TOUJOURS EN MODE LISTE, ET C'EST LA PLATEFORME QUI TIENT LA LISTE** (mesuré le
+  2026-09-29). Un contact absent de la liste n'entend jamais l'agent, même quand Meta lui a rendu le fil : c'est
+  le seul interrupteur par contact que Meta nous donne. L'action `take` de `thread_control` ne nous rendait rien
+  (200 sans effet, ou la phrase de passation de l'agent au client) : elle n'existe plus. Deux gestes, dans
+  `src/inbox/fil.ts`, sur `src/mba/liste.ts` :
+  - **confier** = ajouter le contact à la liste (Meta en E.164, PUIS la ligne de `mba_liste` avec l'identifiant
+    rendu, l'ajout défait si la ligne échoue ; un contact déjà dans notre table ne coûte aucun appel ; le 400
+    sans code que Meta rend sur un doublon se résout par UNE relecture), puis `release`. Agent éteint, aucun
+    numéro, ou fil de test sur un chemin automatique : rien. Un `release` refusé laisse le contact sur la liste :
+    le prochain message arrive chez nous et rejoue la remise ;
+  - **reprendre** = retirer le contact (Meta, avec le numéro et l'identifiant gardés, PUIS la ligne ; un 404
+    vaut retrait ; un rejeu sur une erreur rejouable, jamais deux ; absent de la table, aucun appel). 🔴 Il ne
+    dépend pas de l'allumage de l'agent : une ligne présente se retire même agent éteint, sinon l'agent
+    répondrait à ce contact le jour où on le rallume. `false` = refus de Meta, et chaque appelant garde son
+    comportement de refus (409 dans l'Inbox, démarrage de scénario annulé, lead `reprise_refusee`).
+  Toute écriture des réglages porte `ai_audience: ALLOWLISTED_ONLY` (`modifierSettings`, `src/mba/client.ts`),
+  et l'allumage suit l'ordre de Meta : l'audience, une relecture, puis `rollout.enabled` (`ecrireRollout`, qui
+  refuse d'allumer si la relecture ne rend pas la liste). Le PATCH des réglages refuse `aiAudience` (400), et la
+  liste n'a plus de route : une entrée posée à la main échapperait à notre table.
+- 🔴 **AUCUN MODÈLE NE PART VERS UN CONTACT DE LA LISTE** : `MetaClientFactory.clientForTenant`, par où passent
+  tous les envois, enveloppe `sendTemplate` et `sendMarketing` d'un retrait préalable (`listeDeLAgent`, requise
+  comme `numerosDelies`). Un modèle rend la conversation à l'agent chez Meta : sur la liste, l'agent répondrait
+  à la réponse du contact à la place du scénario. Retrait refusé : le modèle ne part pas
+  (`RetraitDeLaListeRefuse`, une `MetaApiError` 503 que `classify` range en rejouable et qui n'est jamais un
+  plafond du numéro ; la campagne marque le destinataire en échec avec ce motif, l'Inbox l'affiche, le scénario
+  suit son chemin d'échec d'envoi). Coût : une lecture par clé primaire par modèle, un appel à Meta pour les
+  seuls contacts de la liste. Un message libre ne retire rien : il nous donne la conversation.
+- 🔴 **UN MESSAGE QUE PERSONNE NE PREND EST CONFIÉ À L'AGENT, QUI Y RÉPOND TOUT DE SUITE**
+  (`remettreSiPersonneNeSuit`) : après ses gardes (agent allumé, aucun parcours en attente, pas d'opérateur),
+  confier, écrire `mba`, puis `agent_event` `message_sans_suite` avec le texte reçu (`src/mba/evenement.ts`).
+  Plusieurs messages du même contact dans un lot : un seul geste, textes bout à bout, dans la borne de 4 096
+  caractères (`processRemiseMbaEntrant` ; `rendreLesFilsSansReponse` fait de même pour les leads). Aucun
+  événement si confier échoue, ni sur une conversation DÉJÀ confiée (sur la liste et `mba`) : la réponse « à
+  côté » d'un scénario vient alors d'être transmise par la fin du parcours, dans le même lot, et un second
+  événement ferait répondre l'agent deux fois. Un événement refusé est journalisé, la colonne reste `mba`.
+  « Rendre la main », la fin de parcours et le balayage confient SANS événement : l'agent parle au prochain
+  message du client.
+- ⚠️ **LA PURGE RGPD RETIRE AUSSI LE CONTACT DE LA LISTE** : `purgeMany` supprime sa ligne de `mba_liste` dans
+  sa transaction et la rend, et la route retire l'entrée chez Meta APRÈS la validation (au mieux, journalisé :
+  un appel à un tiers ne se fait pas dans une transaction qu'il retiendrait).
 - ⚠️ `on delete set null` sur l'affectataire : supprimer un membre LIBÈRE ses conversations. Une conversation
   que plus personne ne peut prendre serait invisible et sans réponse.
 - ⚠️ `control_changed_at` ne se rafraîchit PAS quand un opérateur répond une seconde fois : le compte à
@@ -2356,7 +2406,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/campaign/enqueue.ts` -> `relanceurDeCampagnes` | l'enfilement d'un run au débit RÉSOLU sur la configuration du process : les relances du worker (hors planification et reprise après plafond, qui résolvent le débit dans leur balayage) et l'envoi de l'API publique |
 | `src/stats/chiffrage.ts` -> `creerChiffrage` | 🔴 toutes les lectures de COÛT de la console (statistiques, fiche de campagne, bilan contact) : le tarif Meta et son cache (60 s, un par process, `null` jamais mémorisé), la marge, la classification RCS simple ou conversationnel (`repartirRcs`) et la lecture des liens tracés d'un scénario (`liensDesTemplates`), écrites une fois. La racine le construit et passe ses membres aux routes ; `tests/chiffrage.test.ts` l'exécute contre de faux dépôts |
 | `src/pubs/connexion.ts` -> `creerConnexionPub` | la connexion publicitaire d'un espace : jeton chiffré au repos et déchiffré à la demande, connexion concurrente, révocation (Meta d'abord, puis la base), état du compte en cache 2 min, dépôt de jeton par `/ops` |
-| `src/inbox/fil.ts` -> `creerControleDuFil` | 🔴 le contrôle du fil : les gestes qui prennent, rendent ou passent une conversation (agent de Meta, scénario, équipe), l'ordre « Meta d'abord, la colonne ensuite », les gardes (agent allumé, `only`, fil de test, parcours en attente, détenteur relu avant Meta, opérateur épargné par un démarrage du client), le rejeu d'une prise et la marque d'escalade. Seul appelant de `setControlOwner`, `demanderReleaseMba`, `consommerReleaseMba` et des actes `take` / `release` de Meta ; `tests/fil.test.ts` exécute sa table |
+| `src/inbox/fil.ts` -> `creerControleDuFil` | 🔴 le contrôle du fil : les gestes qui confient, reprennent ou passent une conversation (agent de Meta, scénario, équipe), l'ordre « Meta d'abord, la colonne ensuite », les gardes (agent allumé, `only`, fil de test, parcours en attente, détenteur relu avant Meta, opérateur épargné par un démarrage du client), l'événement `message_sans_suite` et la marque d'escalade. Seul appelant de `setControlOwner`, `demanderReleaseMba`, `consommerReleaseMba` et du `release` de Meta ; `tests/fil.test.ts` exécute sa table |
+| `src/mba/liste.ts` -> `creerListeDeLAgent` | 🔴 la liste de l'agent de Meta (`mba_liste`, migration 0195) : ajouter (Meta puis la ligne, défait si la ligne échoue), retirer (Meta puis la ligne, un rejeu, un 404 vaut retrait), retirer avant un modèle (`RetraitDeLaListeRefuse`), lire qui y est. Seul appelant des routes `allowlist` de Meta ; `tests/mba-liste.test.ts` |
 | `src/socle.ts` -> `construireSocle` | 🔴 ce que l'API et le worker doivent construire À L'IDENTIQUE : les dépôts communs, le dépôt de contacts décoré (un opt-out écrit par l'un ou l'autre processus est annoncé et signalé), la pile d'envoi Meta et ses freins, la clé de modèle par espace (avec son signalement d'échec de déchiffrement), le résolveur e-mail, le numéro de l'espace en cache, le contrôle du fil, le runtime de scénario. Il reçoit le pool, la file et la configuration : chaque processus garde son pool, sa file et ses caches. `tests/socle.test.ts` le construit contre un faux pool et une fausse file |
 | `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; `round2`, l'arrondi au centime des coûts |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |

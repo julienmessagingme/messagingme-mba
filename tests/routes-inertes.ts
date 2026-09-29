@@ -159,7 +159,7 @@ export const creationInerte: CampaignRepoLike = {
 };
 
 export const contactsInertes: Pick<ContactsRouteDeps,
-  'audit' | 'journal' | 'erreurs' | 'ensureSocleField' | 'createOneContact' | 'getBilanContact' | 'emitTagAdded'> = {
+  'audit' | 'journal' | 'erreurs' | 'ensureSocleField' | 'createOneContact' | 'getBilanContact' | 'emitTagAdded' | 'listeDeLAgent'> = {
   audit: journalMuet,
   journal: { list: async () => [] },
   erreurs: { lister: async () => [], listerEchecsSysteme: async () => [] },
@@ -169,6 +169,8 @@ export const contactsInertes: Pick<ContactsRouteDeps,
   getBilanContact: async () => null,
   // Absente : aucune émission.
   emitTagAdded: async () => {},
+  // Aucun contact purgé n'est sur la liste de l'agent de Meta : rien à y retirer (la purge y est d'ailleurs inerte).
+  listeDeLAgent: { oublierChezMeta: async () => {} },
 };
 
 export const contactsDepInerte: Pick<ContactsDep,

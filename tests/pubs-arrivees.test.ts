@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { arriveeDepuisMessage, processArriveesPub, type ArriveePub, type IssueArrivee } from '../src/webhooks/arrivees-pub';
 import { handleWebhookJob } from '../src/webhooks/handler';
-import { aucunSignalReponse, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
+import { agentEteintALArrivee, aucunSignalReponse, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 
 const referral = {
@@ -110,7 +110,7 @@ describe('handleWebhookJob : l’arrivée publicitaire', () => {
       inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => {} },
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
-      inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
+      inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
       inboundContactUpsert: async () => { ordre.push('upsert'); return 'created'; },
       arriveesPub: {
         enregistrer: async () => { ordre.push('arrivee'); return 'ecrite'; },

@@ -397,8 +397,8 @@ function InboxInner({ session }: { session: Session }) {
        *
        * Cette boucle attrapait TOUT en silence, et c'était juste tant que le geste n'écrivait qu'en local :
        * une conversation disparue entre l'affichage et le clic ne doit pas bloquer les autres. Depuis que
-       * « À traiter » appelle META (`thread_control` action `take`), un refus est un cas NORMAL et lourd de
-       * conséquence : l'opérateur croirait avoir éteint l'agent de Meta sur toute sa sélection alors qu'il
+       * « À traiter » appelle META (le contact quitte la liste de l'agent), un refus est un cas NORMAL et lourd
+       * de conséquence : l'opérateur croirait avoir éteint l'agent de Meta sur toute sa sélection alors qu'il
        * répond encore sur une partie, et il cesserait de surveiller ces fils.
        *
        * ⚠️ ON CONTINUE QUAND MÊME la sélection : un échec partiel qui annulerait tout serait pire. Ce qui
@@ -1656,8 +1656,8 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
    * sont deux gestes OPPOSÉS, et les deux appelaient `/release`. Sur un fil tenu par l'agent de Meta,
    * « Reprendre la main » revenait donc à demander à Meta de le garder, puis à remettre notre côté en
    * automatique : l'agent répondait au message suivant du client, exactement ce que le libellé promet
-   * d'empêcher. Le sens du geste décide maintenant de la route, et `/prendre` appelle `thread_control`
-   * avec l'action `take`.
+   * d'empêcher. Le sens du geste décide maintenant de la route, et `/prendre` retire le contact de la liste
+   * de l'agent de Meta, seul moyen de le faire taire.
    */
   async function basculerLeFil() {
     setReleasing(true);
@@ -1742,7 +1742,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
 
             ⚠️ Le libellé n'est PAS le même dans les deux sens, et LA ROUTE NON PLUS depuis le 2026-09-11.
             Un opérateur REND une main qu'il a prise (`/release`) ; face à l'agent de Meta, on la lui PREND
-            (`/prendre`, qui appelle `thread_control` avec l'action `take`). Les deux ont longtemps partagé
+            (`/prendre`, qui retire le contact de la liste de l'agent de Meta). Les deux ont longtemps partagé
             le même appel, et c'est ce qui laissait l'agent de Meta répondre juste après un clic sur
             « Reprendre la main ».
           */}

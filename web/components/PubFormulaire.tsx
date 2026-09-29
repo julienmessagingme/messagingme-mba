@@ -916,8 +916,8 @@ export function PubFormulaire({
       </select>
       {agentMetaOuvert === false && (
         <p className="mt-1 text-xs text-ink-500" data-testid="pub-agent-indispo">
-          {t('L’agent de Meta n’est pas ouvert à tout le monde sur ce numéro : il ne peut pas répondre à ces prospects.',
-             'The Meta agent is not open to everyone on this number: it cannot answer these leads.')}
+          {t('L’agent de Meta n’est pas allumé pour cet espace : il ne peut pas répondre à ces prospects.',
+             'The Meta agent is not turned on for this space: it cannot answer these leads.')}
         </p>
       )}
       {agentMetaOuvert === null && (

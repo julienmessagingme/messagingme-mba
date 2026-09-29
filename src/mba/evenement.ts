@@ -1,6 +1,7 @@
 /**
- * L'événement qui fait répondre l'agent de Meta à un client sorti d'un parcours : l'agent ne parle qu'au message
- * suivant du client, et la question posée « à côté » resterait sans réponse. `agent_event` lui passe le message.
+ * Les événements qui font parler l'agent de Meta tout de suite : sans eux, il ne parle qu'au message suivant du
+ * client. `agent_event` lui passe le message déjà reçu (la réponse « à côté » d'un client sorti d'un parcours, le
+ * message que personne ne prend), ou la raison d'un envoi échoué après sa réponse (plus bas).
  *
  * `payload` est une chaîne JSON (pas un objet), bornée à 4 096 caractères mesurés après échappement. Le type et la
  * description sont figés ici : l'agent s'appuie sur eux en langage naturel, un renommage changerait son
@@ -29,6 +30,20 @@ function payloadBorne(cle: string, texteEntier: string): string {
 
 export function evenementHorsParcours(message: string): EvenementAgent {
   return { type: TYPE_HORS_PARCOURS, description: DESCRIPTION_HORS_PARCOURS, payload: payloadBorne('message', message) };
+}
+
+/**
+ * Un message que personne ne prend : aucun parcours ne l'attend et aucun opérateur ne tient la conversation, que la
+ * plateforme vient de confier à l'agent (`ControleDuFil.remettreSiPersonneNeSuit`). Sans l'événement, l'agent
+ * attendrait le message suivant pour parler. `message` : le texte reçu, plusieurs messages d'un même lot mis bout à
+ * bout, sur la même borne que la réponse « à côté ».
+ */
+export const TYPE_MESSAGE_SANS_SUITE = 'message_sans_suite';
+export const DESCRIPTION_MESSAGE_SANS_SUITE =
+  "Le client vient de t'écrire et aucun parcours automatique ne lui répond : tu prends la conversation. Réponds-lui maintenant, brièvement et naturellement, à partir de son message.";
+
+export function evenementMessageSansSuite(message: string): EvenementAgent {
+  return { type: TYPE_MESSAGE_SANS_SUITE, description: DESCRIPTION_MESSAGE_SANS_SUITE, payload: payloadBorne('message', message) };
 }
 
 /**

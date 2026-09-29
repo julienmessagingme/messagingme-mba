@@ -41,8 +41,8 @@ export interface ControlSweepDeps {
     mbaActifParTenant?(tenantIds: readonly string[]): Promise<Set<string>>;
   };
   /**
-   * Le geste qui rend un fil (`src/inbox/fil.ts`) : vers `mba`, Meta d'abord (`thread_control` action `release`),
-   * et un refus, une absence de numéro ou un fil de test empêchent la bascule, sinon notre colonne annoncerait
+   * Le geste qui rend un fil (`src/inbox/fil.ts`) : vers `mba`, Meta d'abord (le contact sur la liste de l'agent,
+   * puis `release`), et un refus, une absence de numéro ou un fil de test empêchent la bascule, sinon notre colonne annoncerait
    * `mba` quand Meta pense le contraire. Il efface le drapeau d'escalade : une escalade en cours est sautée avant,
    * donc un drapeau qui subsiste est périmé, et le laisser l'armerait pour le jour où le fil redeviendrait humain.
    */
@@ -85,7 +85,7 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     // `changedAt` null = bascule ancienne, donc éligible (sinon bloquée pour toujours).
     if (c.changedAt !== null && now() - c.changedAt.getTime() < ms) continue;
     // Destination : l'agent de Meta s'il est allumé chez ce client, le scénario sinon (`app_workflow` rend aussi
-    // la main, puisque `take` prend le fil pour de vrai). On ne passe pas la main sur une fenêtre fermée : l'agent
+    // la main, puisqu'un parcours reprend le fil pour de vrai). On ne passe pas la main sur une fenêtre fermée : l'agent
     // ne prendrait rien et personne ne répondrait. On saute, sans replier sur `app_workflow` que « À traiter »
     // exclut. `lastMessageAt` prouve une fenêtre fermée, pas une fenêtre ouverte.
     const fenetreOuverte = c.lastMessageAt !== null && now() - c.lastMessageAt.getTime() < FENETRE_META_MS;

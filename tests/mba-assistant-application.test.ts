@@ -18,6 +18,8 @@ const SUPPR: Operation = { type: 'faq.supprimer', cible: 'f1', libelle: 'Horaire
 function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | null } = {}) {
   const journal: LigneHistorique[] = [];
   const faits: string[] = [];
+  // Des réglages qui gardent ce qu'on y écrit, comme Meta : la mise en service relit l'audience qu'elle vient de poser.
+  let reglages: unknown = { locale: 'fr' };
   const client = {
     listFaqs: async () => [{ id: 'f1', question: 'Horaires du dimanche', answer: 'Fermé' }],
     createFaq: async () => { faits.push('createFaq'); },
@@ -32,8 +34,8 @@ function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | 
     listFiles: async () => [], uploadFile: async () => {}, deleteFile: async () => {},
     getBusinessInfo: async () => ({ business_description: 'Un garage', address: 'Lyon' }),
     putBusinessInfo: async (_p: string, info: unknown) => { faits.push(`put:${JSON.stringify(info)}`); },
-    getSettings: async () => ({ locale: 'fr' }),
-    putSettings: async (_p: string, s: unknown) => { faits.push(`settings:${JSON.stringify(s)}`); },
+    getSettings: async () => reglages,
+    putSettings: async (_p: string, s: unknown) => { reglages = s; faits.push(`settings:${JSON.stringify(s)}`); },
     ...sur,
   } as ClientMbaEcriture;
   const deps: ApplicationDeps = {
@@ -139,12 +141,14 @@ describe('les pièges de l’API Meta', () => {
     expect(m.faits.find((f) => f.startsWith('put:'))).toContain('business_description');
   });
 
-  it('🔴 la mise en service ne remplace pas les autres réglages', async () => {
+  it('🔴 la mise en service ne remplace pas les autres réglages, et allume dans l’ordre de Meta', async () => {
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [{ type: 'activation.mettreEnService' }]);
-    const envoye = m.faits.find((f) => f.startsWith('settings:'))!;
-    expect(envoye).toContain('"locale":"fr"');
-    expect(envoye).toContain('"enabled":true');
+    const r = await appliquer(m.deps, 't1', 'ag1', [{ type: 'activation.mettreEnService' }]);
+    expect(r.echec).toBeNull();
+    // L'audience d'abord (la liste, sans allumer), une relecture, puis l'allumage.
+    const [audience, allumage] = m.faits.filter((f) => f.startsWith('settings:')).map((f) => JSON.parse(f.slice('settings:'.length)) as Record<string, unknown>);
+    expect(audience).toEqual({ locale: 'fr', ai_audience: 'ALLOWLISTED_ONLY' });
+    expect(allumage).toEqual({ locale: 'fr', ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: true } });
   });
 });
 

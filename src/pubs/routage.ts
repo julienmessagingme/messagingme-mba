@@ -131,9 +131,10 @@ export interface RoutageDuMessage {
   /**
    * Le fil a été pris à l'agent de Meta pour ce message, et voici à qui il appartient ; `null` = rien à
    * rendre. On prend le fil avant de savoir si l'automation démarrera (anti-rebond, scénario disparu) : sans ce
-   * retour, personne ne parlerait jusqu'au balayage de contrôle, fenêtre de service déjà fermée.
+   * retour, personne ne parlerait jusqu'au balayage de contrôle, fenêtre de service déjà fermée. `contenu` : le
+   * texte du lead, que l'agent reçoit quand on lui rend la conversation, pour y répondre tout de suite.
    */
-  repris: { tenantId: string; waId: string } | null;
+  repris: { tenantId: string; waId: string; contenu: string } | null;
 }
 
 /**

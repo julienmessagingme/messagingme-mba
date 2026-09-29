@@ -155,7 +155,7 @@ describe('le contrôle du fil dit qui demande chaque bascule', () => {
     const b = bancDuFil({ conversations: { h: { owner: 'app_human' }, w: { owner: 'app_workflow' }, m: { owner: 'mba' } } });
     await b.fil.rendreApresInactivite('t1', 'h', 'app_human', 'mba');
     await b.fil.reprendrePourLApp('t1', 'm');
-    await b.fil.remettreSiPersonneNeSuit('t1', 'w');
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
     expect(parDe(b)).toEqual([
       { cause: 'automatique : délai de reprise écoulé' },
       { cause: 'automatique : un scénario reprend la conversation' },

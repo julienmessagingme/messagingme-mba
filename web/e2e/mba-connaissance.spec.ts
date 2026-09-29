@@ -67,27 +67,3 @@ test.describe('MBA Paramètres : fichiers', () => {
     await expect(page.getByTestId('mba-files-list')).toContainText(/indexation|Indexing/i);
   });
 });
-
-test.describe('MBA Paramètres : numéros de test (dans la vue d’ensemble)', () => {
-  test('avertit quand la liste ne sert à rien (audience ouverte)', async ({ page }) => {
-    await mockMba(page);
-    await page.goto('/mba/parametres?tab=apercu');
-    await expect(page.getByTestId('mba-allowlist-inactive')).toBeVisible();
-  });
-
-  test('avertit quand l’audience est restreinte et la liste vide (agent muet)', async ({ page }) => {
-    await mockMba(page, {
-      status: { settings: { agent_id: 'AG1', rollout: { enabled: true }, ai_audience: 'ALLOWLISTED_ONLY', never_say_phrases: [], followup: { enabled: false } } },
-    });
-    await page.goto('/mba/parametres?tab=apercu');
-    await expect(page.getByTestId('mba-allowlist-empty')).toBeVisible();
-  });
-
-  test('ajoute un numéro', async ({ page }) => {
-    const calls = await mockMba(page);
-    await page.goto('/mba/parametres?tab=apercu');
-    await page.getByTestId('mba-allowlist-phone').fill('06 33 92 15 77');
-    await page.getByTestId('mba-allowlist-add').click();
-    await expect.poll(() => appelsMba(calls, 'POST', '/allowlist')[0]?.body).toEqual({ phone: '06 33 92 15 77' });
-  });
-});

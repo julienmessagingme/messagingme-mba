@@ -58,6 +58,8 @@ import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
 import { creerControleDuFil } from './inbox/fil';
+import { creerListeDeLAgent } from './mba/liste';
+import { PgListeStore } from './mba/liste.pg';
 import { PgVerrousCourts } from './db/verrous-courts.pg';
 import { PgCompteurDebit } from './db/debit.pg';
 
@@ -242,6 +244,17 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
     fallbackToken: config.META_ACCESS_TOKEN,
   });
+  /**
+   * La liste de l'agent de Meta (`src/mba/liste.ts`, migration 0195) : la fabrique y retire le destinataire avant
+   * chaque modèle, le contrôle du fil y ajoute et en retire les contacts, la réception la lit. Elle reçoit le client
+   * MBA par une fonction qui interroge la fabrique au moment du geste : la fabrique, construite juste après, dépend
+   * d'elle.
+   */
+  const listeDeLAgent = creerListeDeLAgent({
+    store: new PgListeStore(pool),
+    clientMba: (t) => metaFactory.mbaClientForTenant(t),
+    attendre: (ms) => dormir(ms),
+  });
   const metaFactory = new MetaClientFactory({
     resolver: metaCredentials,
     transport,
@@ -256,6 +269,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
       depsPorteDebitPg(pool),
     ),
     numerosDelies: gardeNumeroDelie,
+    listeDeLAgent,
   });
 
   /**
@@ -279,18 +293,22 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const runStore = new PgWorkflowRunStore(pool);
 
   /**
-   * Le contrôle du fil (`src/inbox/fil.ts`) : le seul endroit qui parle à Meta (`thread_control`) et écrit qui
-   * détient une conversation. Ici parce que les deux processus s'en servent : l'Inbox de l'API (« Reprendre la
-   * main », « Rendre la main », un opérateur qui écrit), le worker (réception, accusés, balayage) et le runtime de
-   * scénario, dans l'un comme dans l'autre.
+   * Le contrôle du fil (`src/inbox/fil.ts`) : le seul endroit qui confie une conversation à l'agent de Meta ou la
+   * lui reprend (sa liste, `thread_control`) et écrit qui détient une conversation. Ici parce que les deux processus
+   * s'en servent : l'Inbox de l'API (« Reprendre la main », « Rendre la main », un opérateur qui écrit), le worker
+   * (réception, accusés, balayage) et le runtime de scénario, dans l'un comme dans l'autre.
    */
   const fil = creerControleDuFil({
     depot: inboxStore,
     reglages: settingsStore,
     parcours: runStore,
     numeros: { getTenantPhoneNumberId: numeroDeLEspace },
+    liste: listeDeLAgent,
+    consentement: {
+      estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
+      estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
+    },
     meta: metaFactory,
-    attendre: (ms) => dormir(ms),
   });
 
   /**
@@ -321,7 +339,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
-    wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory,
+    wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil,
   };
 }

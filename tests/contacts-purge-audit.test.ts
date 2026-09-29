@@ -33,6 +33,9 @@ function app(over: Partial<Omit<ContactsRouteDeps, 'contacts'>> & { contacts?: P
   const limitesSysteme: Array<number | undefined> = [];
   const purges: string[][] = [];
   const editsRecus: unknown[] = [];
+  // Le journal commun de la purge et du retrait chez Meta : l'ordre des deux est ce qu'on vérifie.
+  const ordre: string[] = [];
+  const oubliees: Array<{ tenantId: string; lignes: unknown[] }> = [];
   const deps = {
     contacts: {
       applyEdits: async () => null,
@@ -40,7 +43,10 @@ function app(over: Partial<Omit<ContactsRouteDeps, 'contacts'>> & { contacts?: P
       contactIdsForTarget: async (_t: string, target: unknown) => ('ids' in (target as { ids?: string[] }) ? (target as { ids: string[] }).ids : ['c-filtre']),
       purgeMany: async (_t: string, ids: readonly string[]) => {
         purges.push([...ids]);
-        return { purges: ids.length, conversations: ids.length, messages: 12, analyses: 1 };
+        ordre.push('purge');
+        // `c1` était sur la liste de l'agent de Meta : sa ligne part dans la transaction, et elle est rendue.
+        const listeAgent = ids.includes('c1') ? [{ waId: '33611223344', phoneNumberId: 'pn1', entreeId: 'e-c1' }] : [];
+        return { purges: ids.length, conversations: ids.length, messages: 12, analyses: 1, listeAgent };
       },
       ...surContacts,
     },
@@ -72,9 +78,12 @@ function app(over: Partial<Omit<ContactsRouteDeps, 'contacts'>> & { contacts?: P
     audit: async (_t: string, actor: { userId: string | null }, action: string, target: { kind: string; id: string }, detail: Record<string, unknown> = {}) => {
       journal.push({ action, target, detail, actor });
     },
+    listeDeLAgent: {
+      oublierChezMeta: async (tenantId: string, lignes: readonly unknown[]) => { ordre.push('meta'); oubliees.push({ tenantId, lignes: [...lignes] }); },
+    },
     ...reste,
   } as unknown as ContactsRouteDeps;
-  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs, limitesSysteme };
+  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs, limitesSysteme, ordre, oubliees };
 }
 
 const url = '/tenants/t1/contacts/purge';
@@ -97,6 +106,20 @@ describe('suppression d’un contact (la seule, et elle efface)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ purges: 2, conversations: 2, messages: 12, analyses: 1 });
     expect(purges).toEqual([['c1', 'c2']]);
+    await server.close();
+  });
+
+  it('🔴 un contact purgé qui était sur la liste de l’agent de Meta en est retiré chez Meta, APRÈS la purge', async () => {
+    // Le numéro d'un contact effacé n'a rien à faire chez Meta. Le retrait suit la validation de la purge, jamais
+    // dedans : un appel à un tiers retiendrait la transaction ouverte. Vérifié dans les deux sens : l'appel retiré
+    // de la route, le cas échoue (aucun retrait).
+    const { server, ordre, oubliees } = app();
+    const res = await server.inject({ method: 'POST', url, ...h(adminTok), payload: { target: { ids: ['c1', 'c2'] }, confirm: 'SUPPRIMER' } });
+    expect(res.statusCode).toBe(200);
+    expect(ordre).toEqual(['purge', 'meta']);
+    expect(oubliees).toEqual([{ tenantId: 't1', lignes: [{ waId: '33611223344', phoneNumberId: 'pn1', entreeId: 'e-c1' }] }]);
+    // Et le numéro ne repart pas vers le navigateur dans la réponse de la purge.
+    expect(JSON.stringify(res.json())).not.toContain('33611223344');
     await server.close();
   });
 

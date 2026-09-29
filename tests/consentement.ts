@@ -19,6 +19,9 @@ export const jamaisDesabonne = async (): Promise<boolean> => false;
  */
 export const toujoursDesabonne = async (): Promise<boolean> => true;
 
+/** Aucun contact n'est bloqué : le comportement d'une fixture qui ne parle pas de blocage. */
+export const jamaisBloque = async (): Promise<boolean> => false;
+
 /**
  * L'écriture du STOP qui ne touche aucune fiche (`InboundOptOut` rend `null`), pour les fixtures qui ne parlent pas
  * de consentement. Elle est requise dans `processInbound` et `WebhookJobDeps` : un STOP reçu avec ce faux est

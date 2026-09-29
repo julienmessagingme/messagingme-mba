@@ -46,7 +46,6 @@ export interface MbaFixtures {
    * c est ce cas-la qui a laisse passer un libelle faux (« obligatoires ») sur un compte qui les inclut.
    */
   completion?: unknown;
-  allowlist?: Array<Record<string, unknown>>;
   preview?: Record<string, unknown>;
   importResult?: Record<string, unknown>;
   testReply?: Record<string, unknown>;
@@ -74,7 +73,8 @@ const statutParDefaut = {
   eligible: true,
   onboarded: true,
   agentId: 'AG1',
-  settings: { agent_id: 'AG1', channel: 'whatsapp', rollout: { enabled: false }, ai_audience: 'EVERYONE', never_say_phrases: [], followup: { enabled: false } },
+  // L'audience vaut toujours la liste : le serveur la pose à chaque écriture des réglages (`modifierSettings`).
+  settings: { agent_id: 'AG1', channel: 'whatsapp', rollout: { enabled: false }, ai_audience: 'ALLOWLISTED_ONLY', never_say_phrases: [], followup: { enabled: false } },
 };
 
 export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]> {
@@ -87,7 +87,6 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
     skills: [...(f.skills ?? [])],
     websites: [...(f.websites ?? [])],
     files: [...(f.files ?? [])],
-    allowlist: [...(f.allowlist ?? [])],
   };
   /** Applique l'écriture à la collection et rend l'entité créée ou modifiée. */
   const ecrire = (nom: string, method: string, url: string, entree: Record<string, unknown>): Record<string, unknown> => {
@@ -123,7 +122,6 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
   /** Applique un PATCH de réglages du VOCABULAIRE DE LA CONSOLE vers celui de Meta, comme le vrai serveur. */
   const appliquerSettings = (patch: Record<string, unknown>): Record<string, unknown> => {
     const courant: Record<string, unknown> = { ...(settings ?? { agent_id: 'AG1', channel: 'whatsapp' }) };
-    if (patch.aiAudience !== undefined) courant.ai_audience = patch.aiAudience;
     if (patch.neverSay !== undefined) courant.never_say_phrases = patch.neverSay;
     if (patch.followupEnabled !== undefined) courant.followup = { ...(courant.followup as object ?? {}), enabled: patch.followupEnabled };
     if (patch.enabled !== undefined) courant.rollout = { ...(courant.rollout as object ?? {}), enabled: patch.enabled };
@@ -223,10 +221,6 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
       if (url.includes('/files')) {
         if (method === 'GET') return json({ files: collections.files });
         return json(ecrire('files', method, url, { id: 'file-neuf', file_name: (body ?? {}).fileName, indexationInconnue: true }), method === 'POST' ? 201 : 200);
-      }
-      if (url.includes('/allowlist')) {
-        if (method === 'GET') return json({ allowlist: collections.allowlist });
-        return json(ecrire('allowlist', method, url, { id: 'a-neuf', consumer_phone_number: (body ?? {}).phone }), method === 'POST' ? 201 : 200);
       }
       if (url.includes('/test')) return json(f.testReply ?? { agent_response: 'Bonjour, comment puis-je aider ?', conversation_id: 'conv-1' });
     }

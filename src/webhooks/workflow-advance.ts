@@ -6,12 +6,6 @@ export interface WorkflowAdvanceDeps {
   /** Avance le run en attente de ce contact. `buttonPayload` = bouton tapé (branche par bouton). */
   advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null): Promise<void>;
   /**
-   * Un tap sur un de NOS boutons arrivé en `standby` : reprendre le fil si un parcours attend ce contact
-   * (`ControleDuFil.reprendreSurNotreBouton`). Requise : absente, la réponse au scénario resterait à l'agent de Meta
-   * sans un mot, ce qui est exactement le défaut qu'elle ferme.
-   */
-  reprendreSurNotreBouton(tenantId: string, waId: string): Promise<boolean>;
-  /**
    * Consigne un échec d'avance là où quelqu'un le verra : l'isolation par message reste, mais un acquittement
    * silencieux laisserait le contact bloqué sur son bloc sans rejeu ni trace. Optionnelle et best-effort :
    * absente ou en échec, on retombe sur le log.
@@ -42,13 +36,6 @@ function contexteDeLAvance(err: unknown): { workflowId?: string; runId?: string;
 }
 
 /**
- * Nos boutons, tels que nos envois les nomment : `btn:<i>` (modèle, message rapide) et `card:<c>:btn:<b>` (carrousel),
- * cf. `src/meta/template-components.ts` et `src/meta/client.ts`. L'agent de Meta ne produit pas ces identifiants :
- * un tap qui les porte répond forcément à un message d'un de nos parcours.
- */
-export const NOTRE_BOUTON = /^(card:\d+:)?btn:\d+$/;
-
-/**
  * Avance les workflows sur les messages entrants (une réponse du contact = un pas dans le graphe). Isolé dans le
  * handler : ne doit jamais faire échouer le job webhook partagé. Le bouton tapé choisit la branche ; une réponse
  * texte suit la 1re arête sortante.
@@ -60,24 +47,11 @@ export async function processWorkflowAdvance(entrants: readonly EntrantRattache[
     if (consumed?.has(m.messageId)) continue;
     // Numéro inconnu : aucun parcours à faire avancer.
     if (!tenantId) continue;
-    // Pas d'avance sur un `standby` (le MBA tient le fil) : répondre lui reprendrait implicitement le contrôle.
-    // L'inbox enregistre bien ce message. `field` null (anciennes fixtures) -> on avance.
-    // 🔴 SAUF un tap sur un de NOS boutons alors qu'un parcours attend : cette réponse est pour le scénario, pas pour
-    // l'agent de Meta (décision de Julien du 2026-09-29). Un texte libre, lui, reste à l'agent : rien ne dit à qui il
-    // s'adresse.
-    if (m.field && m.field !== 'messages') {
-      if (m.field !== 'standby' || m.buttonPayload === null || !NOTRE_BOUTON.test(m.buttonPayload)) continue;
-      let repris = false;
-      try {
-        repris = await deps.reprendreSurNotreBouton(tenantId, m.waId);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('processWorkflowAdvance: reprise sur bouton impossible:', messageDe(err));
-      }
-      // eslint-disable-next-line no-console
-      console.log(JSON.stringify({ lvl: 'info', msg: 'bouton_scenario_en_standby', tenantId, waId: m.waId, repris }));
-      if (!repris) continue;
-    }
+    // Pas d'avance sur un `standby` : le contact est sur la liste de l'agent de Meta, qui lui répond, et répondre
+    // lui reprendrait implicitement le fil. Le `standby` d'un contact absent de la liste arrive ici déjà réécrit en
+    // `messages` (`./standby-hors-liste.ts`) : texte comme bouton, il fait avancer le parcours. L'inbox enregistre
+    // bien ce message. `field` null (anciennes fixtures) -> on avance.
+    if (m.field && m.field !== 'messages') continue;
     // Isolation par message : une erreur sur un contact ne prive pas les autres du même webhook.
     try {
       await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload);

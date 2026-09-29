@@ -1342,14 +1342,6 @@ parce qu'un journal qui promet plus qu'il ne montre fait conclure « ça n'a pas
 « ce n'est pas encore journalisé ». Les routes à couvrir : `PATCH /tenants/:t/agents/:id` (la fiche), les
 écritures d'outils (`agent-tools.ts`), et les créations de FAQ, compétences, sites et documents du MBA.
 
-**Ajouté le 2026-09-15 : la garde `field !== 'messages'` est INERTE, lui donner un signal vrai.** Mesuré sur
-30 jours de webhooks : un message entrant arrive TOUJOURS sur `messages`, même quand l'agent de Meta tient le
-fil (cas daté : 2026-09-15 07:58:39). Tout ce qui devait se taire quand l'agent tient le fil (déclencheurs
-d'automation, avance de scénario, jeton de test) teste ce champ, et ne se tait donc jamais. ⚠️ Ce n'est pas un
-trou vivant : un scénario qui démarre PREND le fil explicitement, donc il ne parle plus par-dessus l'agent. Le
-signal vrai est notre colonne `control_owner` (alimentée par `standby` et `messaging_handovers`), pas le
-`field` de l'entrant. À retrancher là-dessus.
-
 Ce `todo.md` reste le **backlog de fond et l'historique des lots livrés**. Il ne porte PAS le séquencement : un
 ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et ce fichier.
 
@@ -1985,13 +1977,6 @@ Détail complet et citations : `docs/MBA-API-REFERENCE.md`, section « Second re
   réel : libeller `COMPLETED_NO_DATA` (« Exploré, rien d'exploitable », surtout pas en rouge) et afficher
   `crawl_error` **uniquement** si `crawl_status` vaut `FAILED` et que la valeur n'est pas vide (Meta le
   laisse vide pendant le crawl et sur tout crawl ayant ramené des pages).
-- 🔴 **Scinder le PUT d'activation en deux appels.** `scripts/mba-activer-restreint.mts` envoie
-  `ai_audience` et `rollout.enabled` dans le MÊME PUT. Meta prescrit maintenant : régler `ai_audience`,
-  **relire en GET**, puis allumer. Si Meta évalue l'audience stockée au moment d'allumer, le PUT combiné
-  se heurterait au 400 de facturation et on croirait à tort que la barrière n'a pas bougé.
-- 🟠 **L'avertissement qui manque dans la console.** Allumer un agent avec `ai_audience = EVERYONE` sur un
-  numéro vivant l'expose immédiatement à tout le monde. Le panneau allowlist dit que la liste est sans
-  effet en `EVERYONE` ; rien ne dit ce que coûte le clic d'allumage. À écrire au moment du clic.
 
 ## ⚠️ Revue du bloc Question : ce qui n'a PAS été instruit (2026-08-26)
 
@@ -2454,10 +2439,6 @@ Contexte : `agent_eligibility` renvoie `is_eligible:true` sur `+33 5 25 68 03 01
 et Meta a modifié 6 pages entre le 11 et le 15 août dont une page `changelog` neuve. Relevé complet :
 `docs/MBA-API-REFERENCE.md` § « Ce qui a changé chez Meta ». Rien n'est cassé, rien n'est branché.
 
-- 🔴 **Instruire « configured escalation partner ».** C'est la condition d'accès à l'action `take` de
-  `thread_control`, donc au handoff propre vers un humain, donc à la plus-value centrale du produit. Meta
-  écrit la restriction et ne définit NI qui désigne ce partenaire, NI comment. Sans réponse, on reste sur la
-  prise de contrôle par envoi de message. À poser à Meta, ou à mesurer sur le numéro de test.
 - 🔴 **Relever le nom exact des deux nouveaux champs de `handoff`** (« release thread control after sending a
   handoff message » et « source du message : CUSTOM / AGENT / DEFAULT »). Leur description est documentée,
   pas leur nom : il faut le lire dans le rendu de la page ou le déduire d'un GET une fois un handoff

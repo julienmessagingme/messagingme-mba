@@ -3,7 +3,8 @@ import { mockMba, appelsMba } from './support/mba';
 import { repondre } from './aide/confirmation';
 
 /**
- * Vue d'ensemble : l'allumage de l'agent, l'audience, les interdits de langage.
+ * Vue d'ensemble : l'allumage de l'agent, les interdits de langage. L'audience ne se choisit plus : l'agent ne
+ * répond qu'aux contacts de sa liste, que la plateforme tient seule.
  *
  * L'allumage est le point sensible de tout l'écran. Meta documente une asymétrie : éteindre arrête l'agent sur
  * TOUTES les conversations, y compris en cours ; rallumer ne reprend que les nouvelles. Un clic par erreur ne
@@ -57,19 +58,27 @@ test.describe('MBA Paramètres : vue d’ensemble', () => {
     await expect(page.getByTestId('mba-bi-description')).toBeVisible();
   });
 
-  test('audience et interdits de langage partent en PATCH settings', async ({ page }) => {
+  test('les interdits de langage partent en PATCH settings', async ({ page }) => {
     const calls = await mockMba(page);
     await page.goto('/mba/parametres');
-
-    await page.getByTestId('mba-audience').selectOption('ALLOWLISTED_ONLY');
-    await expect.poll(() => appelsMba(calls, 'PATCH', '/settings')[0]?.body).toEqual({ aiAudience: 'ALLOWLISTED_ONLY' });
 
     await page.getByTestId('mba-neversay-input').fill('c’est garanti');
     await page.getByTestId('mba-neversay-add').click();
     await expect.poll(() => appelsMba(calls, 'PATCH', '/settings').at(-1)?.body).toEqual({ neverSay: ['c’est garanti'] });
     // La phrase doit APPARAÎTRE : c'est ce qui prouve que la réponse est remontée dans l'état de l'écran.
-    await expect(page.getByTestId('mba-audience')).toHaveValue('ALLOWLISTED_ONLY');
     await expect(page.getByText('c’est garanti')).toBeVisible();
+  });
+
+  test('🔴 l’audience ne se choisit plus, et la liste ne se remplit plus à la main', async ({ page }) => {
+    // La plateforme tient la liste de l'agent (elle y met les conversations qu'elle lui confie) : un numéro posé à
+    // la main serait ignoré de sa table, et « tout le monde » ferait répondre l'agent par-dessus nos scénarios.
+    await mockMba(page);
+    await page.goto('/mba/parametres');
+    // Ancre positive : la vue d'ensemble est bien affichée, et elle dit à qui l'agent répond.
+    await expect(page.getByTestId('mba-audience-liste')).toContainText(/confie|hands over/);
+    await expect(page.getByTestId('mba-audience')).toHaveCount(0);
+    await expect(page.getByTestId('mba-allowlist-phone')).toHaveCount(0);
+    await expect(page.getByTestId('mba-allowlist-list')).toHaveCount(0);
   });
 
   test('agent pas encore créé chez Meta : ce n’est PAS un blocage général', async ({ page }) => {

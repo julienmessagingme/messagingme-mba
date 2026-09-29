@@ -25,10 +25,12 @@ type Methode = (...args: unknown[]) => unknown;
 /** Faux client MBA : chaque appel est enregistré, chaque méthode surchargeable. Aucun réseau. */
 function fauxClient(over: Record<string, Methode> = {}) {
   const appels: Array<{ m: string; args: unknown[] }> = [];
+  // Des réglages qui GARDENT ce qu'on y écrit, comme Meta : l'allumage relit l'audience qu'il vient de poser.
+  let reglages: Record<string, unknown> = { agent_id: 'AG1', channel: 'whatsapp', rollout: { enabled: false }, ai_audience: 'EVERYONE' };
   const defauts: Record<string, Methode> = {
     isEligible: () => true,
-    getSettings: () => ({ agent_id: 'AG1', channel: 'whatsapp', rollout: { enabled: false }, ai_audience: 'EVERYONE' }),
-    putSettings: () => ({}),
+    getSettings: () => reglages,
+    putSettings: (_pn: unknown, corps: unknown) => { reglages = { agent_id: 'AG1', channel: 'whatsapp', ...(corps as object) }; return {}; },
     getBusinessInfo: () => ({ business_description: 'Réseau de bus', contact_info: { email: 'contact@bus.fr' } }),
     putBusinessInfo: (_pn: unknown, info: unknown) => info,
     listFaqs: () => [],
@@ -45,9 +47,6 @@ function fauxClient(over: Record<string, Methode> = {}) {
     listFiles: () => [],
     uploadFile: (_pn: unknown, nom: unknown) => ({ id: 'file1', file_name: nom }),
     deleteFile: () => undefined,
-    listAllowlist: () => [],
-    addToAllowlist: (_pn: unknown, tel: unknown) => ({ id: 'a1', consumer_phone_number: tel }),
-    removeFromAllowlist: () => undefined,
     test: () => ({ agent_response: 'Bonjour', conversation_id: 'c1' }),
   };
   const table = { ...defauts, ...over };
@@ -111,10 +110,11 @@ describe('routes MBA : état et réglages', () => {
 
   it('PATCH settings ne touche QUE les clés demandées (lecture-modification-écriture)', async () => {
     const { server, appels } = app();
-    const res = await server.inject({ method: 'PATCH', url: url('/settings'), ...h(adminTok), payload: { aiAudience: 'ALLOWLISTED_ONLY' } });
+    const res = await server.inject({ method: 'PATCH', url: url('/settings'), ...h(adminTok), payload: { neverSay: ['c’est garanti'] } });
     expect(res.statusCode).toBe(200);
     const put = appels.find((a) => a.m === 'putSettings');
-    expect(put?.args[1]).toMatchObject({ ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: false } });
+    // Et l'audience de la liste, posée à CHAQUE écriture, quelle que soit celle que Meta avait (`EVERYONE` ici).
+    expect(put?.args[1]).toMatchObject({ never_say_phrases: ['c’est garanti'], ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: false } });
     // agent_id repart en QUERY (3e argument), pas dans le corps : il n'est pas au schéma de requête.
     expect(put?.args[2]).toBe('AG1');
     await server.close();
@@ -123,7 +123,6 @@ describe('routes MBA : état et réglages', () => {
   it('PATCH settings : valeurs invalides et patch vide -> 400', async () => {
     const { server } = app();
     const bad = async (payload: unknown) => (await server.inject({ method: 'PATCH', url: url('/settings'), ...h(adminTok), payload: payload as object })).statusCode;
-    expect(await bad({ aiAudience: 'TOUT_LE_MONDE' })).toBe(400);
     expect(await bad({ neverSay: ['ok', ''] })).toBe(400);
     expect(await bad({})).toBe(400);
     await server.close();
@@ -156,12 +155,37 @@ describe('routes MBA : état et réglages', () => {
     await server.close();
   });
 
-  it('l’allumage a sa PROPRE route (effet asymétrique documenté par Meta)', async () => {
+  it('🔴 PATCH settings refuse `aiAudience`, en le disant, et n’écrit rien', async () => {
+    // L'agent ne répond qu'aux contacts de sa liste, que la plateforme tient : « tout le monde » le ferait répondre
+    // par-dessus nos scénarios, et une liste posée à la main serait ignorée de notre table.
+    const { server, appels } = app();
+    for (const aiAudience of ['EVERYONE', 'ALLOWLISTED_ONLY']) {
+      const res = await server.inject({ method: 'PATCH', url: url('/settings'), ...h(adminTok), payload: { aiAudience, neverSay: ['x'] } });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/aiAudience ne se règle plus/);
+    }
+    expect(appels.some((a) => a.m === 'putSettings')).toBe(false);
+    await server.close();
+  });
+
+  it('🔴 l’allumage a sa PROPRE route, et suit l’ordre de Meta : audience, relecture, puis rollout', async () => {
     const { server, appels } = app();
     const res = await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: { enabled: true } });
     expect(res.statusCode).toBe(200);
-    expect((appels.find((a) => a.m === 'putSettings')?.args[1] as { rollout: unknown }).rollout).toEqual({ enabled: true });
+    expect(appels.map((a) => a.m)).toEqual(['getSettings', 'putSettings', 'getSettings', 'putSettings', 'getSettings']);
+    const [audience, allumage] = appels.filter((a) => a.m === 'putSettings').map((a) => a.args[1] as Record<string, unknown>);
+    expect(audience).toMatchObject({ ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: false } });
+    expect(allumage).toMatchObject({ ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: true } });
     expect((await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: {} })).statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('🔴 si Meta ne confirme pas l’audience à la relecture : 409 lisible, l’agent n’est pas allumé', async () => {
+    const { server, appels } = app({ getSettings: () => ({ agent_id: 'AG1', ai_audience: 'EVERYONE', rollout: { enabled: false } }) });
+    const res = await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: { enabled: true } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/pas été allumé/);
+    expect(appels.filter((a) => a.m === 'putSettings')).toHaveLength(1);
     await server.close();
   });
 });
@@ -304,7 +328,7 @@ describe('routes MBA : skills', () => {
   });
 });
 
-describe('routes MBA : sites, fichiers, allowlist, bac à sable', () => {
+describe('routes MBA : sites, fichiers, bac à sable', () => {
   it('site : adresse sans schéma refusée avant l’appel Meta', async () => {
     const { server, appels } = app();
     expect((await server.inject({ method: 'POST', url: url('/websites'), ...h(adminTok), payload: { url: 'www.exemple.fr' } })).statusCode).toBe(400);
@@ -326,14 +350,15 @@ describe('routes MBA : sites, fichiers, allowlist, bac à sable', () => {
     await server.close();
   });
 
-  it('allowlist : numéro normalisé en E.164, doublon idempotent', async () => {
-    const { server, appels } = app({ listAllowlist: () => [{ id: 'a1', consumer_phone_number: '+33633921577' }] });
-    const deja = await server.inject({ method: 'POST', url: url('/allowlist'), ...h(adminTok), payload: { phone: '06 33 92 15 77' } });
-    expect(deja.statusCode).toBe(200);
-    expect(appels.some((a) => a.m === 'addToAllowlist')).toBe(false);
-    const neuf = await server.inject({ method: 'POST', url: url('/allowlist'), ...h(adminTok), payload: { phone: '0612345678' } });
-    expect(neuf.json()).toMatchObject({ consumer_phone_number: '+33612345678' });
-    expect((await server.inject({ method: 'POST', url: url('/allowlist'), ...h(adminTok), payload: { phone: 'bonjour' } })).statusCode).toBe(400);
+  it('🔴 la liste de l’agent n’a plus de route : la plateforme la tient seule', async () => {
+    // Une entrée posée à la main échapperait à notre table (migration 0195) : un contact sur la liste que plus rien
+    // ne retire, qui recevrait nos modèles avec l'agent qui répond.
+    const { server, appels } = app();
+    for (const [method, suffixe] of [['GET', '/allowlist'], ['POST', '/allowlist'], ['DELETE', '/allowlist/a1']] as const) {
+      const res = await server.inject({ method, url: url(suffixe), ...h(adminTok), ...(method === 'POST' ? { payload: { phone: '0612345678' } } : {}) });
+      expect(res.statusCode, `${method} ${suffixe}`).toBe(404);
+    }
+    expect(appels).toEqual([]);
     await server.close();
   });
 

@@ -13,7 +13,7 @@ import { messageDePause } from '../src/campaign/pause';
 import { ecarterLesNumerosDelies, ecarterLesEntrantsDelies, numerosAInterroger } from '../src/webhooks/numeros-delies';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import type { InboundMessage } from '../src/webhooks/inbound';
-import { aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
+import { agentEteintALArrivee, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
@@ -54,6 +54,8 @@ function fabrique(delies: ReadonlySet<string>, transport: Transport, resolutions
   return new MetaClientFactory({
     resolver, transport, version: 'v25.0', marketingViaLite: false,
     numerosDelies: { estDelie: async (pn) => delies.has(pn) },
+    // Aucun contact sur la liste de l'agent de Meta : ces tests ne portent pas sur elle, et le DISENT.
+    listeDeLAgent: { retirerAvantUnModele: async () => {} },
   });
 }
 
@@ -411,7 +413,7 @@ describe('l’écart des entrants dans le job webhook', () => {
       payloadDe(change('pn-delie', { messages: [message('w-delie')] }), change('pn-relie', { messages: [message('w-relie', '33622')] })),
       {
         store, inbox: i.store, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse,
-        inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
+        inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
         numerosDelies: async (ids) => { lectures.push(ids); return new Set(['pn-delie']); },
       },
     );
@@ -425,7 +427,7 @@ describe('l’écart des entrants dans le job webhook', () => {
     const i = inbox();
     await expect(handleWebhookJob(payloadDe(change('pn-x', { messages: [message('w-x')] })), {
       store, inbox: i.store, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse,
-      inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
+      inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
       numerosDelies: async () => { throw new Error('base indisponible'); },
     })).resolves.toBeUndefined();
     expect(i.enregistres).toEqual(['w-x']);

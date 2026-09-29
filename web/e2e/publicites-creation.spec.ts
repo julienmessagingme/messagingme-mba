@@ -287,7 +287,7 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
   test('🔴 agent ÉTEINT : l’option disparaît, et l’écran dit que c’est leur numéro', async ({ page }) => {
     await brancher(page, { reglages: false });
     await ouvrirLeFormulaire(page);
-    await expect(page.getByTestId('pub-agent-indispo')).toContainText(/pas ouvert à tout le monde|not open to everyone/);
+    await expect(page.getByTestId('pub-agent-indispo')).toContainText(/pas allumé pour cet espace|not turned on for this space/);
     await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
     await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
     // Ancre : ce testid ne naît que sous la destination « scénario », donc un `0` dirait aussi bien
@@ -314,7 +314,7 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
       // configuration. Sans ce sens-là, la passer en `!== false` ne faisait tomber aucun test.
       await expect(page.getByTestId('pub-scenario')).toBeVisible();
       await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(0);
-      await expect(page.locator('body')).not.toContainText(/pas ouvert à tout le monde|not open to everyone/);
+      await expect(page.locator('body')).not.toContainText(/pas allumé pour cet espace|not turned on for this space/);
     });
   }
 

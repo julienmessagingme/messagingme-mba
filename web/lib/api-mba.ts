@@ -93,8 +93,8 @@ export function getMbaMessages(tenantId: string, phoneNumberId: string): Promise
   return request<MessagesMba>(`${base(tenantId, phoneNumberId)}/messages`);
 }
 
+/** L'audience n'y est pas : elle vaut toujours la liste, que la plateforme tient seule (le serveur refuse `aiAudience`). */
 export interface MbaSettingsPatch {
-  aiAudience?: 'EVERYONE' | 'ALLOWLISTED_ONLY';
   neverSay?: string[];
   followupEnabled?: boolean;
 }
@@ -267,25 +267,6 @@ export function uploadMbaFile(tenantId: string, phoneNumberId: string, fileName:
 
 export function deleteMbaFile(tenantId: string, phoneNumberId: string, fileId: string): Promise<{ deleted: string }> {
   return request(`${base(tenantId, phoneNumberId)}/files/${fileId}`, { method: 'DELETE' });
-}
-
-// --- Liste d'autorisation -------------------------------------------------------------------------
-
-export interface MbaAllowlistEntry {
-  id?: string;
-  consumer_phone_number: string;
-}
-
-export function listMbaAllowlist(tenantId: string, phoneNumberId: string): Promise<{ allowlist: MbaAllowlistEntry[] }> {
-  return request(`${base(tenantId, phoneNumberId)}/allowlist`);
-}
-
-export function addMbaAllowlistEntry(tenantId: string, phoneNumberId: string, phone: string): Promise<MbaAllowlistEntry> {
-  return request(`${base(tenantId, phoneNumberId)}/allowlist`, { method: 'POST', body: JSON.stringify({ phone }) });
-}
-
-export function removeMbaAllowlistEntry(tenantId: string, phoneNumberId: string, entryId: string): Promise<{ deleted: string }> {
-  return request(`${base(tenantId, phoneNumberId)}/allowlist/${entryId}`, { method: 'DELETE' });
 }
 
 // --- Bac à sable ----------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { estSuppression, type Operation } from './proposition';
 import type { LigneHistorique } from '../../reglages/historique';
 import { messageDe, texteDe } from '../../lib/erreur';
+import { ecrireRollout } from '../client';
 
 /**
  * Appliquer un diff chez Meta, opération par opération, en s'arrêtant à la première erreur avec l'état exact :
@@ -214,8 +215,8 @@ async function executer(
       return;
     }
     case 'activation.mettreEnService': {
-      const actuel = (await client.getSettings(numero)) as Record<string, unknown> | null;
-      await client.putSettings(numero, { ...(actuel ?? {}), rollout: { enabled: true } }, agentId);
+      // L'ordre que Meta prescrit (audience, relecture, puis `rollout`), sur la configuration de cet agent.
+      await ecrireRollout(client, numero, true, agentId);
       return;
     }
     default: throw new Error('operation inconnue');

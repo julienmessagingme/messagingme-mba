@@ -5,14 +5,14 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputClsAuto } from '@/lib/ui';
 import { Toggle } from './Toggle';
 import { MbaNotice } from './MbaNotice';
-import { MbaAllowlistPanel } from './MbaAllowlistPanel';
 import { patchMbaSettings, putMbaRollout, type MbaStatus, type MbaSettings } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
 
 /**
  * Vue d'ensemble : l'état réel de l'agent chez Meta, son allumage, et les réglages qui décident de son
- * comportement global (audience, interdits de langage, relances).
+ * comportement global (interdits de langage, relances). L'audience ne se choisit pas : l'agent ne répond qu'aux
+ * contacts de sa liste, que la plateforme tient seule (elle y met les conversations qu'elle lui confie).
  */
 export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: {
   tenantId: string;
@@ -56,8 +56,8 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
           'Turning the agent off stops its replies on all conversations, including ongoing ones. When you turn it back on, it only picks up new conversations: the interrupted threads will need a human. Continue?',
         )
       : t(
-          'Allumer l’agent : il répondra aux nouvelles conversations de l’audience choisie. Continuer ?',
-          'Turn the agent on: it will answer new conversations from the selected audience. Continue?',
+          'Allumer l’agent : il répondra aux nouvelles conversations que la plateforme lui confie, quand un client écrit sans qu’un scénario ni un membre de l’équipe ne lui réponde. Continuer ?',
+          'Turn the agent on: it will answer the new conversations the platform hands over to it, when a customer writes and no scenario or team member answers. Continue?',
         );
     if (!(await confirmer({ titre: allume ? t('Éteindre l’agent', 'Turn the agent off') : t('Allumer l’agent', 'Turn the agent on'), message: message, confirmer: allume ? t('Éteindre', 'Turn off') : t('Allumer', 'Turn on') }))) return;
     void appliquer(() => putMbaRollout(tenantId, phoneNumberId, !allume));
@@ -105,37 +105,16 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
                 'Turning off acts immediately on all conversations; turning back on only resumes new ones.',
               )}
             </p>
+            <p className="mt-1 text-xs leading-relaxed text-ink-500" data-testid="mba-audience-liste">
+              {t(
+                'L’agent ne répond qu’aux conversations que la plateforme lui confie : un client qui écrit sans qu’un scénario ni l’équipe ne lui réponde. Pendant un scénario, il se tait.',
+                'The agent only answers the conversations the platform hands over to it: a customer who writes with no scenario or team member answering. During a scenario, it stays silent.',
+              )}
+            </p>
           </div>
           <Toggle checked={allume} onChange={basculerAllumage} disabled={busy} testid="mba-rollout-toggle" />
         </div>
       </section>
-
-      <section className={cardCls}>
-        <h3 className="text-sm font-semibold text-ink-900">{t('Audience', 'Audience')}</h3>
-        <p className="mt-1 text-xs text-ink-500">
-          {t('Qui l’agent a le droit de gérer.', 'Who the agent is allowed to handle.')}
-        </p>
-        <select
-          className={`${inputClsAuto} mt-3 bg-white`}
-          data-testid="mba-audience"
-          disabled={busy}
-          value={s?.ai_audience ?? 'EVERYONE'}
-          onChange={(e) => {
-            const aiAudience = e.target.value === 'ALLOWLISTED_ONLY' ? 'ALLOWLISTED_ONLY' : 'EVERYONE';
-            void appliquer(() => patchMbaSettings(tenantId, phoneNumberId, { aiAudience }));
-          }}
-        >
-          <option value="EVERYONE">{t('Tout le monde', 'Everyone')}</option>
-          <option value="ALLOWLISTED_ONLY">{t('Liste d’autorisation uniquement', 'Allowlisted only')}</option>
-        </select>
-      </section>
-
-      {/* Les numéros de test vivent ICI, sous le choix d'audience : ils n'ont de sens que par rapport à lui. */}
-      <MbaAllowlistPanel
-        tenantId={tenantId}
-        phoneNumberId={phoneNumberId}
-        audience={s?.ai_audience === 'ALLOWLISTED_ONLY' ? 'ALLOWLISTED_ONLY' : 'EVERYONE'}
-      />
 
       <section className={cardCls}>
         <h3 className="text-sm font-semibold text-ink-900">{t('Ce que l’agent ne doit jamais dire', 'What the agent must never say')}</h3>

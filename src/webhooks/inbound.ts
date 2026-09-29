@@ -24,9 +24,15 @@ export interface InboundMessage {
    * `field` du change source : `'messages'` pour un vrai entrant, `'standby'` quand une autre app (le Meta
    * Business Agent) tient le fil. L'avance de scénario et les automations ignorent un standby, pour ne pas
    * reprendre implicitement le fil ; l'Inbox enregistre tout (grâce à `valeurEffective`, tenu par un test sur un
-   * payload réel). `null` si le champ est absent.
+   * payload réel). `null` si le champ est absent. ⚠️ Agent de Meta allumé, le `standby` d'un contact absent de sa
+   * liste est réécrit en `messages` avant tout traitement (`requalifierLesStandby`) : l'agent ne lui répond pas.
    */
   field: string | null;
+  /**
+   * Le `field` que Meta avait posé, quand la réception l'a réécrit (`requalifierLesStandby`) : lisible pour le
+   * journal, jamais lu pour décider. Absent : `field` est celui de Meta.
+   */
+  fieldRecu?: string;
   /** Publicité Click-to-WhatsApp à l'origine du message. Absent sur un message ordinaire. */
   referral?: InboundReferral;
   /**
@@ -334,9 +340,10 @@ export async function processInbound(
     }
     /**
      * 🔴 Le détenteur se corrige AVANT l'affectation : on met notre colonne d'accord avec Meta, puis on agit. Dans
-     * l'ordre inverse, une réponse de campagne « Inbox » arrivée en `standby` prenait le fil pour l'équipe (`take`
-     * accepté, `app_human`), puis ce `standby` réécrivait `mba` : Meta nous donnait le fil, notre colonne le donnait
-     * à l'agent, et la prise n'ayant lieu qu'à la première réponse, rien ne la refaisait ensuite.
+     * l'ordre inverse, une réponse de campagne « Inbox » arrivée en `standby` était prise pour l'équipe (le contact
+     * retiré de la liste de l'agent, `app_human`), puis ce `standby` réécrivait `mba` : l'agent ne lui parlait plus,
+     * notre colonne le donnait à l'agent, et la prise n'ayant lieu qu'à la première réponse, rien ne la refaisait
+     * ensuite.
      */
     await accorderLeDetenteur(detenteur, tenantId, m);
     /**

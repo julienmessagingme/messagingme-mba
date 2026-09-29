@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS } from '../src/inbox/fil';
+import { REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS } from '../src/mba/liste';
 import { MetaApiError } from '../src/meta/errors';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -192,7 +192,8 @@ describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
   it('🔴 rien n’a été envoyé -> on relâche TOUT DE SUITE, sinon le fil attend un accusé qui ne viendra pas', async () => {
     const b = bancDuFil({ conversations: { w: { owner: 'app_workflow' } } });
     await b.fil.rendreApresParcours('t1', 'w');
-    expect(b.appels).toEqual(['release:w']);
+    // Confier : le contact sur la liste de l'agent, puis le release.
+    expect(b.appels).toEqual(['ajout:w', 'release:w']);
     expect(b.etat('w')?.owner).toBe('mba');
   });
 
@@ -206,7 +207,7 @@ describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
     });
     await accepte.fil.remettreSurAccuse('wamid.A');
     ordre.push(`colonne:${accepte.etat('w')?.owner}`);
-    expect(ordre).toEqual(['release:w', 'colonne:mba']);
+    expect(ordre).toEqual(['ajout:w', 'release:w', 'colonne:mba']);
 
     const refuse = bancDuFil({ release: ['refuse'], conversations: { w: { owner: 'app_human', marque: 'wamid.A' } } });
     await expect(refuse.fil.remettreSurAccuse('wamid.A')).rejects.toThrow();
@@ -228,30 +229,32 @@ describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
     // attendre un accusé qui n'arrivera jamais sur une conversation sans envoi récent.
     const b = bancDuFil({ conversations: { w: { owner: 'app_human', enVol: 'wamid.VIEUX' } } });
     expect(await b.fil.rendreApresInactivite('t1', 'w', 'app_human', 'mba')).toBe(true);
-    expect(b.appels).toEqual(['release:w']);
+    expect(b.appels).toEqual(['ajout:w', 'release:w']);
     expect(b.etat('w')?.marque).toBeNull();
   });
 });
 
 /**
- * LE REJEU DE PRISE DU FIL, ENFIN EXERÇABLE (lot du 2026-09-15, plan `2026-09-15-rejeu-prise-du-fil.md`).
+ * LE REJEU DE LA REPRISE DU FIL, ENFIN EXERÇABLE (lot du 2026-09-15, plan `2026-09-15-rejeu-prise-du-fil.md`).
  *
  * 🔴 CES CAS REMPLACENT UN GREP, et c'est tout l'intérêt du lot. Le rejeu vivait dans une fermeture de
  * `buildWorkflowRuntime` : il n'avait aucune interface, donc personne ne pouvait l'appeler, donc ses quatre
  * règles étaient gardées par `tests/scenario-fil-non-repris.test.ts` qui cherchait les chaînes
  * `err.retryable` et `tentative < 2` dans le TEXTE de `wiring.ts`. Ce grep prouvait qu'un motif était écrit ;
  * il ne prouvait ni qu'on rejoue UNE fois, ni qu'on ne rejoue pas un refus définitif, ni combien on attend.
- * Il s'exerce désormais par le geste qui l'emprunte (`reprendrePourLApp`, `src/inbox/fil.ts`).
+ * Il s'exerce par le geste qui l'emprunte (`reprendrePourLApp`, `src/inbox/fil.ts`). Depuis le mode liste, reprendre
+ * c'est retirer le contact de la liste de l'agent de Meta (`src/mba/liste.ts`), qui porte le rejeu.
  */
-describe('prendre le fil chez Meta : un rejeu, et jamais deux', () => {
+describe('reprendre le fil (retrait de la liste) : un rejeu, et jamais deux', () => {
   const rejouable = (retryAfterMs?: number) => new MetaApiError(429, null, retryAfterMs);
   const definitif = () => new MetaApiError(400, null);
 
-  /** Un banc qui compte les appels et les attentes, sans jamais dormir. */
+  /** Un banc qui compte les appels et les attentes, sans jamais dormir. Les deux contacts sont sur la liste. */
   function banc(resultats: Array<'ok' | Error>) {
     const b = bancDuFil({
       conversations: { '33600000001': { owner: 'mba' }, w: { owner: 'mba' } },
-      take: resultats.map((r): ReponseMeta => (r === 'ok' ? 'accepte' : r)),
+      surLaListe: ['33600000001', 'w'],
+      retrait: resultats.map((r): ReponseMeta => (r === 'ok' ? 'accepte' : r)),
     });
     return { prendre: (t: string, w: string) => b.fil.reprendrePourLApp(t, w), attentes: b.attentes, appels: () => b.appels.length };
   }
@@ -271,8 +274,7 @@ describe('prendre le fil chez Meta : un rejeu, et jamais deux', () => {
   });
 
   it('🔴 deux refus rejouables : on s’arrête à DEUX appels, on ne boucle pas', async () => {
-    // Meta réserve `take` au « configured escalation partner » : insister ajouterait N appels inutiles au
-    // milieu d'une campagne, un par destinataire.
+    // Insister ajouterait N appels inutiles au milieu d'une campagne, un par destinataire.
     const b = banc([rejouable(), rejouable(), 'ok']);
     expect(await b.prendre('t1', '33600000001')).toBe(false);
     expect(b.appels()).toBe(2);
@@ -298,11 +300,12 @@ describe('prendre le fil chez Meta : un rejeu, et jamais deux', () => {
     expect(b.attentes).toEqual([REJEU_ATTENTE_DEFAUT_MS]);
   });
 
-  it('🔴 AUCUN NUMÉRO CONNECTÉ rend `true`, et ce contrat était implicite', async () => {
-    // Sans numéro, il n'y a aucun agent Meta à qui prendre le fil, donc écrire notre état local est correct.
-    // `true` signifie « Meta n'a pas protesté », ce qui couvre les deux cas.
+  it('🔴 un contact ABSENT de la liste se reprend sans aucun appel, numéro connecté ou non', async () => {
+    // Absent de la liste, l'agent ne lui parle pas : écrire notre état local suffit. `true` signifie « Meta n'a pas
+    // protesté », ce qui couvre ce cas.
     const b = bancDuFil({ numero: null, conversations: { '33600000001': { owner: 'mba' } } });
     expect(await b.fil.reprendrePourLApp('t1', '33600000001')).toBe(true);
+    expect(b.appels).toEqual([]);
     expect(b.attentes).toEqual([]);
   });
 

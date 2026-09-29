@@ -130,6 +130,13 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
        values ($1, 'itest-purge-echec', $2, 'rcs', 'UNDELIVERABLE'), ($3, 'itest-purge-echec-voisin', $2, 'rcs', 'UNDELIVERABLE')`,
       [tenantId, WA_ID, autreTenantId],
     );
+    // LA LISTE DE L'AGENT DE META (migration 0195) : la personne y est chez ce client ET chez le voisin. Seule la
+    // ligne de ce client doit partir, et elle doit être RENDUE : l'entrée chez Meta ne se retire qu'avec elle.
+    await pool.query(
+      `insert into mba_liste (tenant_id, wa_id, phone_number_id, entree_id)
+       values ($1, $2, 'itest-pn-purge', 'itest-entree-purge'), ($3, $2, 'itest-pn-voisin', 'itest-entree-voisin')`,
+      [tenantId, WA_ID, autreTenantId],
+    );
     // ANCRE : les deux données existent AVANT la purge. Sans elle, les assertions d'absence plus bas
     // passeraient à vide sur une insertion ratée.
     const avant = await pool.query<{ v: unknown; e: number }>(
@@ -152,6 +159,8 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
   it('🔴 la conversation et ses messages sont RÉELLEMENT effacés (wa_id sans « + » vs E.164)', async () => {
     const res = await store.purgeMany(tenantId, [contactId]);
     expect(res).toMatchObject({ purges: 1, conversations: 1, messages: 2 });
+    // La ligne de la liste de l'agent est rendue, pour que la route la retire chez Meta après la transaction.
+    expect(res.listeAgent).toEqual([{ waId: WA_ID, phoneNumberId: 'itest-pn-purge', entreeId: 'itest-entree-purge' }]);
 
     const fils = await pool.query('select 1 from conversations where id = $1', [convId]);
     expect(fils.rowCount).toBe(0);
@@ -244,6 +253,11 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     // l'autre : sans le filtre par numéro destinataire, l'effacement se ferait par wa_id, donc partout.
     const voisin = await pool.query(`select 1 from webhook_events where phone_number_id = 'itest-pn-voisin'`);
     expect(voisin.rowCount).toBe(1);
+  });
+
+  it('🔴 la ligne de la liste de l’agent part, pas celle d’un autre espace (migration 0195)', async () => {
+    const r = await pool.query<{ tenant_id: string }>('select tenant_id from mba_liste where wa_id = $1', [WA_ID]);
+    expect(r.rows.map((x) => x.tenant_id)).toEqual([autreTenantId]);
   });
 
   it('purger deux fois ne compte pas deux fois (anonymized_at fait garde)', async () => {

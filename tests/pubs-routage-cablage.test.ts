@@ -347,24 +347,27 @@ describe('la restriction écarte réellement les autres automations', () => {
  * fenêtre de service de Meta est déjà fermée. Sur un clic PAYÉ, c'est un silence complet.
  */
 describe('rendreLesFilsSansReponse', () => {
-  const carte = (over: Partial<{ repris: { tenantId: string; waId: string } | null }> = {}) =>
+  const carte = (over: Partial<{ repris: { tenantId: string; waId: string; contenu: string } | null }> = {}) =>
     new Map([['wamid.x', {
       restriction: { sorte: 'seule' as const, automationId: 'auto-pub' },
       campagneId: 'camp-1',
-      repris: over.repris === undefined ? { tenantId: 't1', waId: '33611223344' } : over.repris,
+      repris: over.repris === undefined ? { tenantId: 't1', waId: '33611223344', contenu: 'Bonjour' } : over.repris,
     }]]);
 
   const capte = () => {
     const rendus: string[] = [];
-    return { rendus, deps: { rendreLeFil: async (_t: string, waId: string) => { rendus.push(waId); } } };
+    const contenus: string[] = [];
+    return { rendus, contenus, deps: { rendreLeFil: async (_t: string, waId: string, contenu: string) => { rendus.push(waId); contenus.push(contenu); } } };
   };
 
   it('🔴 fil PRIS et rien démarré : il est RENDU', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { rendus, deps } = capte();
+    const { rendus, contenus, deps } = capte();
     await rendreLesFilsSansReponse(carte(), new Set(), deps);
     spy.mockRestore();
     expect(rendus).toEqual(['33611223344']);
+    // Avec le texte du lead : l'agent de Meta y répond tout de suite au lieu d'attendre le message suivant.
+    expect(contenus).toEqual(['Bonjour']);
   });
 
   it('🔴 fil PRIS et un scénario a démarré : on ne rend RIEN', async () => {
@@ -393,10 +396,10 @@ describe('rendreLesFilsSansReponse', () => {
 });
 
 describe('ce que `processRoutagePub` retient de la reprise', () => {
-  it('une reprise RÉUSSIE retient à qui rendre le fil', async () => {
+  it('une reprise RÉUSSIE retient à qui rendre le fil, et le texte du lead que l’agent recevra alors', async () => {
     const { deps } = monter();
     const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.r1', referral())], 'standby')), deps);
-    expect(routes.get('wamid.r1')?.repris).toEqual({ tenantId: 't1', waId: '33611223344' });
+    expect(routes.get('wamid.r1')?.repris).toEqual({ tenantId: 't1', waId: '33611223344', contenu: 'Bonjour' });
   });
 
   it('🔴 une reprise REFUSÉE ne retient RIEN : il n’y a rien à rendre', async () => {

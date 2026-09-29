@@ -107,10 +107,11 @@ describe('un scénario ne démarre pas sur un fil que Meta a refusé de rendre',
 describe('le vrai geste prend le fil CHEZ META avant d’écrire chez nous', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
 
-  it('appelle bien Meta', async () => {
-    const b = bancDuFil({ conversations: { '33600000000': { owner: 'mba' } } });
+  it('appelle bien Meta : le contact quitte la liste de l’agent', async () => {
+    const b = bancDuFil({ surLaListe: ['33600000000'], conversations: { '33600000000': { owner: 'mba' } } });
     expect(await b.fil.reprendrePourLApp('t1', '33600000000')).toBe(true);
-    expect(b.appels).toEqual(['take:33600000000']);
+    expect(b.appels).toEqual(['retrait:33600000000']);
+    expect(b.table.has('33600000000')).toBe(false);
   });
 
   it('🔴 appelle Meta AVANT d’écrire notre colonne', async () => {
@@ -119,15 +120,16 @@ describe('le vrai geste prend le fil CHEZ META avant d’écrire chez nous', () 
     const ordre: string[] = [];
     const b = bancDuFil({
       appels: ordre,
+      surLaListe: ['33600000000'],
       depot: { getControlOwner: async () => 'mba', setControlOwner: async (_t, _w, owner) => { ordre.push(`colonne:${owner}`); return true; } },
     });
     await b.fil.reprendrePourLApp('t1', '33600000000');
-    expect(ordre).toEqual(['take:33600000000', 'colonne:app_workflow']);
+    expect(ordre).toEqual(['retrait:33600000000', 'colonne:app_workflow']);
   });
 
   it('🔴 n’écrit PAS notre colonne quand Meta refuse', async () => {
     // C'est la doctrine du module, « un état local qui annonce ce que Meta n'a pas fait ».
-    const b = bancDuFil({ take: ['refuse'], conversations: { '33600000000': { owner: 'mba' } } });
+    const b = bancDuFil({ surLaListe: ['33600000000'], retrait: ['refuse'], conversations: { '33600000000': { owner: 'mba' } } });
     expect(await b.fil.reprendrePourLApp('t1', '33600000000')).toBe(false);
     expect(b.etat('33600000000')?.owner).toBe('mba');
   });

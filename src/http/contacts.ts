@@ -12,6 +12,7 @@ import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filte
 import { makeJournal, type AuditSink } from '../audit/journal';
 import type { AuditEntry } from '../audit/store.pg';
 import { messageDe } from '../lib/erreur';
+import type { ListeDeLAgent, LigneDeLaListe } from '../mba/liste';
 
 /** Ce que les routes lisent et écrivent des fiches de contact. */
 export interface ContactsDep {
@@ -47,9 +48,12 @@ export interface ContactsDep {
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
   /**
    * 🔴 Suppression : efface le contenu (fil, messages, analyse qualitative) et anonymise ce qui porte les
-   * compteurs. Irréversible.
+   * compteurs. Irréversible. `listeAgent` : les entrées de la liste de l'agent de Meta dont la ligne vient de
+   * partir, à retirer chez Meta après la transaction. Jamais renvoyé au navigateur.
    */
-  purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }>;
+  purgeMany(tenantId: string, ids: readonly string[]): Promise<{
+    purges: number; conversations: number; messages: number; analyses: number; listeAgent: LigneDeLaListe[];
+  }>;
   /** Résout une cible (ids ou filtres) en identifiants. Nécessaire à la purge, qui travaille par identifiants. */
   contactIdsForTarget(tenantId: string, target: BulkTarget): Promise<string[]>;
 }
@@ -118,6 +122,12 @@ export interface ContactsRouteDeps {
    * déclencherait autant de scénarios, donc autant de messages facturés.
    */
   emitTagAdded(tenantId: string, contactId: string, tags: string[]): Promise<void>;
+  /**
+   * 🔴 Retire chez Meta les contacts purgés qui étaient sur la liste de l'agent (`ListeDeLAgent.oublierChezMeta`) :
+   * le numéro d'un contact effacé n'a rien à faire chez Meta. Requise : optionnelle, un câblage qui l'oublierait
+   * laisserait ces numéros chez Meta sans rien dire. Au mieux, après la purge : ne lève jamais.
+   */
+  listeDeLAgent: Pick<ListeDeLAgent, 'oublierChezMeta'>;
 }
 
 /** Borne les listes d'ids d'une action en masse (dédup, non vides). Au-delà du plafond, on tronque
@@ -527,8 +537,10 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
     const ids = await deps.contacts.contactIdsForTarget(tenant, target);
     if (ids.length === 0) return reply.code(200).send({ purges: 0, conversations: 0, messages: 0, analyses: 0 });
-    const res = await deps.contacts.purgeMany(tenant, ids);
+    const { listeAgent, ...res } = await deps.contacts.purgeMany(tenant, ids);
     for (const id of ids) await journal(tenant, req, 'contact.purged', { kind: 'contact', id }, { lot: ids.length });
+    // Après la validation de la purge, jamais dedans : un appel à Meta retiendrait la transaction ouverte.
+    await deps.listeDeLAgent.oublierChezMeta(tenant, listeAgent);
     return reply.code(200).send(res);
   });
 }

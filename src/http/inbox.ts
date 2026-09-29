@@ -170,15 +170,17 @@ export interface InboxRouteDeps extends DepsRepondre {
    */
   takeControl(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
   /**
-   * « Reprendre la main » sans écrire au client : prend le fil à l'agent de Meta (`thread_control`, action `take`),
-   * puis écrit notre état. Distincte de `takeControl`, qui n'écrit que notre état local (sur un envoi, le message
-   * prend déjà le fil chez Meta) : ici il n'y a pas de message, il faut le dire à Meta. `'refuse'` : Meta n'a pas
-   * cédé le fil, rien n'est écrit, la route en fait un 409 lisible.
+   * « Reprendre la main » sans écrire au client : retire le contact de la liste de l'agent de Meta s'il y est (seul
+   * moyen de faire taire l'agent, `ControleDuFil.reprendreLaMain`), puis écrit notre état. Distincte de
+   * `takeControl`, qui n'écrit que notre état local (sur un envoi, le message prend déjà le fil chez Meta) : ici il
+   * n'y a pas de message, il faut le dire à Meta. `'refuse'` : Meta a refusé le retrait, rien n'est écrit, la route
+   * en fait un 409 lisible.
    */
   reprendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<'pris' | 'refuse'>;
   /**
    * L'opérateur rend la main : la conversation repart en automatique ; rend qui la détient désormais. Elle appelle
-   * Meta (`thread_control`, action `release`) pour que l'agent de Meta redevienne le répondeur principal. Un échec
+   * Meta (le contact sur la liste de l'agent, puis `release`) pour que l'agent de Meta redevienne le répondeur
+   * principal, au prochain message du client. Un échec
    * remonte (409 lisible) et notre état local ne bouge pas : il ne doit pas annoncer ce que Meta n'a pas fait.
    * `'aucun_numero'` : l'agent de Meta est allumé mais aucun numéro n'est connecté, il ne peut rien reprendre, et
    * rien n'est écrit.
@@ -440,8 +442,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     /**
      * Prendre le fil sans rien écrire au client (le miroir de `release`) : la bascule est le geste, son échec doit se
-     * voir (une panne de base sort en erreur, jamais en 200). Un refus de Meta, après un rejeu, sort en 409 (Meta
-     * réserve `take` au partenaire d'escalade configuré), et l'écran rappelle qu'écrire prend le fil à coup sûr.
+     * voir (une panne de base sort en erreur, jamais en 200). Un refus de Meta de retirer le contact de la liste de
+     * son agent, après un rejeu, sort en 409, et l'écran rappelle qu'écrire prend le fil à coup sûr.
      */
     if ((await deps.reprendreLaMain(tenant, ctx.waId, parLaSession(req))) === 'refuse') {
       // eslint-disable-next-line no-console

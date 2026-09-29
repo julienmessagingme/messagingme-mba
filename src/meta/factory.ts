@@ -10,6 +10,8 @@ import type { MessageSender } from '../campaign/engine';
 import type { MetaCredentialsResolver, ResolvedToken } from './credentials';
 import type { ArbitreDeDebit } from './arbitre-debit';
 import { NumeroDelieError } from './numero-delie';
+import type { MarketingParams, TemplateSpec } from './types';
+import type { ListeDeLAgent } from '../mba/liste';
 
 /**
  * Fabrique de clients Meta par tenant. Elle résout le token du tenant (repli sur le token global quand le WABA
@@ -17,7 +19,9 @@ import { NumeroDelieError } from './numero-delie';
  * qui échoue sur une erreur d'auth Meta (190, 401, OAuthException) invalide le token du WABA puis relance.
  *
  * L'intercepteur vit ici parce que seule la fabrique connaît le wabaId ; il s'applique à toutes les méthodes
- * (envois et lectures) par un Proxy. Sans WABA propre (wabaId null), il ne fait rien.
+ * (envois et lectures) par un Proxy. Sans WABA propre (wabaId null), il ne fait rien. Tous les envois passent par
+ * ici : c'est aussi là que vivent le frein du numéro, la garde du numéro délié et le retrait de la liste de l'agent
+ * de Meta avant un modèle.
  */
 export interface MetaClientFactoryOpts {
   resolver: MetaCredentialsResolver;
@@ -35,6 +39,15 @@ export interface MetaClientFactoryOpts {
    * un numéro que l'administrateur croit éteint. Les fixtures disent leur hypothèse (`jamaisDelie`).
    */
   numerosDelies: { estDelie(phoneNumberId: string): Promise<boolean> };
+  /**
+   * La liste de l'agent de Meta (`src/mba/liste.ts`) : le client d'envoi retire le destinataire de la liste avant
+   * tout modèle (`sendTemplate`, `sendMarketing`), et un retrait refusé veut dire aucun envoi. Un modèle rend la
+   * conversation à l'agent chez Meta (mesuré le 2026-09-29) : sur la liste, l'agent répondrait à la réponse du
+   * contact à la place du scénario. 🔴 Requise, pour la même raison que `numerosDelies` : une garde optionnelle
+   * oubliée par un câblage compilerait et laisserait partir le modèle. Les fixtures disent leur hypothèse
+   * (`listeToujoursVide`, `tests/meta-factory.test.ts`).
+   */
+  listeDeLAgent: Pick<ListeDeLAgent, 'retirerAvantUnModele'>;
 }
 
 export class MetaClientFactory {
@@ -53,7 +66,10 @@ export class MetaClientFactory {
     if (await this.o.numerosDelies.estDelie(phoneNumberId)) throw new NumeroDelieError(phoneNumberId);
   }
 
-  /** MetaClient complet pour un tenant (envois workflow : template/interactif/flow), enveloppé de l'intercepteur. */
+  /**
+   * MetaClient complet pour un tenant (envois workflow : template/interactif/flow), enveloppé de l'intercepteur et
+   * de la garde de la liste de l'agent (`avantUnModele`).
+   */
   async clientForTenant(tenantId: string, phoneNumberId: string): Promise<MetaClient> {
     // Avant le jeton : un numéro délié ne coûte ni la résolution du jeton ni un appel à Meta.
     await this.verifierNumero(phoneNumberId);
@@ -69,7 +85,7 @@ export class MetaClientFactory {
       // appel `messages`, et seulement celui-là : lire un template ou téléverser un média ne consomme pas le budget.
       ...(this.o.arbitreDebit ? { rateLimiter: this.o.arbitreDebit.pour(phoneNumberId) } : {}),
     });
-    return this.guard(client, resolu);
+    return this.avantUnModele(this.guard(client, resolu), tenantId);
   }
 
   templateClientForTenant(tenantId: string): Promise<MetaTemplateClient> {
@@ -105,6 +121,34 @@ export class MetaClientFactory {
   private async pour<T extends object>(tenantId: string, fabrique: (token: string) => T): Promise<T> {
     const resolu = await this.o.resolver.resolveForTenant(tenantId);
     return this.guard(fabrique(resolu.token), resolu);
+  }
+
+  /**
+   * Retire le destinataire de la liste de l'agent de Meta avant chaque modèle, et seulement avant un modèle : un
+   * message libre nous donne la conversation chez Meta, un modèle la rend à l'agent. Le retrait passe AVANT l'envoi,
+   * et s'il est refusé l'envoi n'a pas lieu (`RetraitDeLaListeRefuse`, rejouable). Une lecture de notre table par
+   * modèle, un appel à Meta pour les seuls contacts qui y sont.
+   */
+  private avantUnModele(client: MetaClient, tenantId: string): MetaClient {
+    const liste = this.o.listeDeLAgent;
+    return new Proxy(client, {
+      get(obj, prop, receiver) {
+        if (prop === 'sendTemplate') {
+          return async (to: string, tpl: TemplateSpec) => {
+            await liste.retirerAvantUnModele(tenantId, to);
+            return obj.sendTemplate(to, tpl);
+          };
+        }
+        if (prop === 'sendMarketing') {
+          return async (params: MarketingParams) => {
+            // `to` prime sur `recipient`, comme chez Meta : c'est ce destinataire-là qui recevra le modèle.
+            await liste.retirerAvantUnModele(tenantId, params.to ?? params.recipient ?? '');
+            return obj.sendMarketing(params);
+          };
+        }
+        return Reflect.get(obj, prop, receiver);
+      },
+    });
   }
 
   /**

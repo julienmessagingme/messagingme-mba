@@ -2916,6 +2916,27 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
     parce que le produit croyait avoir confié le fil à Meta sans que Meta l'ait accepté, soit parce que la
     conversation n'apparaissait dans aucun dossier. Les deux sont corrigés.
 
+- ✅ **Pendant un scénario, l'agent se tait ; il ne parle qu'aux conversations qu'Engage Me lui confie**
+  (2026-09-29). L'agent de Meta ne répond qu'aux contacts de sa **liste**, et c'est Engage Me qui la tient :
+  - **un client écrit et personne ne lui répond** (aucun scénario n'attend sa réponse, personne de l'équipe ne
+    tient la conversation) : la conversation est confiée à l'agent, qui répond **tout de suite** à ce message.
+    Plusieurs messages envoyés d'affilée reçoivent une seule réponse ;
+  - **un client répond à côté d'un scénario** (du texte au lieu d'un bouton) : le scénario s'arrête, et l'agent
+    répond tout de suite à ce message ;
+  - **un modèle part** (scénario, campagne, envoi depuis l'Inbox) : le contact sort d'abord de la liste, pour que
+    sa réponse revienne au scénario et que l'agent ne réponde pas à sa place. Si Meta refuse de l'en sortir, le
+    modèle ne part pas, et l'Inbox le dit (« réessayez dans un instant ») ;
+  - **« Rendre la main », la fin d'un scénario et la reprise automatique** confient la conversation sans faire
+    parler l'agent : il répond au prochain message du client ;
+  - **« Reprendre la main »** fait sortir le contact de la liste : l'agent se tait pour lui.
+  🔴 **Le choix « tout le monde » n'existe plus**, ni la liste de numéros de test à remplir à la main : l'agent
+  est toujours réglé sur sa liste, à chaque écriture de ses réglages, et l'allumage suit l'ordre que Meta
+  prescrit (la liste d'abord, une vérification, puis l'allumage). Un agent qui répond à tout le monde répondait
+  par-dessus nos scénarios dès qu'un modèle lui rendait la conversation (vécu le 2026-09-29 : le bouton d'un
+  scénario commencé par un modèle obtenait la réponse de l'agent à la place de la suite).
+  ⚠️ Un contact effacé (suppression RGPD) sort aussi de la liste chez Meta. Un client qui n'a pas partagé son
+  numéro (identifiant WhatsApp seul) ne peut pas y entrer : l'agent ne lui parle pas.
+
 - 🗑️ **LA PAGE DE GUIDAGE `/mba` A ÉTÉ RETIRÉE LE 2026-09-29** (décision de Julien) : le menu « AI Agent » >
   MBA mène droit aux paramètres, et l'adresse `/mba` y renvoie. Ce qu'elle disait de juste sur l'éligibilité est
   désormais sur le bandeau du numéro pas encore ouvert. Son historique, pour mémoire :
@@ -3042,14 +3063,14 @@ lui : cette page en garde **le seul exemplaire**.
 ### Reprendre la main sur l'agent de Meta
 
 Dans l'Inbox, sur une conversation que l'agent de Meta tient, le bouton **« Reprendre la main »** la lui
-PREND réellement : la console appelle Meta pour cela, sans qu'aucun message ne parte chez le contact. L'agent
-de Meta se tait alors jusqu'à la reprise automatique (deux heures par défaut, réglable), même si personne
-n'écrit au client entre-temps.
+PREND réellement : la console fait sortir le contact de la liste de l'agent, sans qu'aucun message ne parte
+chez lui. L'agent de Meta se tait alors pour ce contact jusqu'à ce qu'une conversation lui soit de nouveau
+confiée (« Rendre la main », fin d'un scénario, reprise automatique, deux heures par défaut, réglable).
 
-⚠️ **Meta peut refuser**, et l'écran le dit alors au lieu de laisser croire que c'est fait : l'action est
-réservée par Meta au partenaire d'escalade configuré. La porte de secours reste vraie dans tous les cas,
-**écrire au contact prend le fil à coup sûr**. Sur un rangement en lot, le nombre de conversations refusées
-est annoncé.
+⚠️ **Meta peut refuser**, et l'écran le dit alors au lieu de laisser croire que c'est fait. La porte de secours
+reste vraie dans tous les cas, **écrire au contact prend le fil à coup sûr**. Sur un rangement en lot, le nombre
+de conversations refusées est annoncé. ⚠️ Jusqu'au 2026-09-29, ce bouton demandait à Meta de lui céder le fil
+(`take`) : Meta ne l'accordait pas, et l'agent continuait de répondre.
 
 ### Voir d'un coup d'œil qui tient chaque conversation
 
@@ -3270,8 +3291,9 @@ Page pas choisis, accès refusé par Meta, ou compte sans moyen de paiement. Ce 
 trompeur : la publicité se créerait, se publierait, et ne partirait jamais.
 
 **Qui répond aux prospects** : chaque publicité choisit, **un scénario** ou **l'agent de Meta**. Le choix
-« agent de Meta » n'est proposé que s'il répond vraiment à tout le monde sur ce numéro, et l'écran rappelle
-que ses messages restent facturés au jeton même pendant les 72 heures gratuites. Sur un scénario, Engage Me
+« agent de Meta » n'est proposé que si l'agent est allumé pour l'espace (la conversation d'un prospect lui est
+alors confiée à son premier message, personne d'autre ne lui répondant), et l'écran rappelle que ses messages
+restent facturés au jeton même pendant les 72 heures gratuites. Sur un scénario, Engage Me
 **reprend la conversation à l'agent de Meta** à l'arrivée du prospect, pour que le scénario parle seul. Jamais
 à un opérateur (depuis le 2026-09-27) : si quelqu'un de l'équipe parle déjà à ce client, il garde la
 conversation, le message arrive dans son Inbox et le scénario de la publicité ne part pas.
@@ -3375,10 +3397,10 @@ Les envois WhatsApp ne sont pas concernés : leur débit se règle campagne par 
   éprouvé depuis le 2026-08-17** (voir la section Accueil) : un vrai numéro d’un business tiers est passé
   connecté et vérifié. Ce qui reste ouvert, c’est de proposer un numéro quand le client n’en a aucun.
 - 🚧 **Allumer l'agent MBA en production** : la configuration est LIVE (menu **AI Agent > MBA,
-  paramètres**, dix onglets branchés) et l'agent répond dans le bac à sable, mais Meta refuse de
-  l'activer sur le numéro tant qu'un **moyen de paiement** n'est pas posé sur le compte WhatsApp
-  Business. Le numéro de test est déjà dans la liste d'autorisation, l'activation se fait en une
-  commande le moment venu.
+  paramètres**, onglets branchés) et l'agent répond dans le bac à sable. Meta exige un **moyen de paiement**
+  sur le compte WhatsApp Business pour allumer un agent qui répond à tout le monde ; l'agent étant toujours
+  réglé sur sa liste depuis le 2026-09-29, cette barrière ne s'applique pas à l'allumage (elle reste à vérifier
+  sur la livraison des messages de l'agent). L'allumage se fait depuis l'onglet Aperçu.
 - 🔲 **Abonnement / Billing** (Stripe) : menus câblés (désactivés), intégration hors lot.
 - 🔲 **Rapport mensuel auto** : score agent + stats campagnes.
 - Hors V1 (discipline anti tailor-made) : multicanal, segments avancés, A/B testing.

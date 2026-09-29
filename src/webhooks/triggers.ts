@@ -6,10 +6,11 @@ import { messageDe } from '../lib/erreur';
 /**
  * Déclenche les automations sur les messages entrants (mot-clé, 1er message d'un nouveau contact). Isolé dans
  * le handler : ne doit jamais faire échouer le job webhook partagé.
- * Un `standby` (le MBA tient le fil) ne déclenche rien, sinon un scénario lui reprendrait implicitement le
- * contrôle. Seule exception, ici : un lead de publicité routé vers un scénario, dont le routage a déjà repris
- * le fil par `take` chez Meta. La restriction `seule` le traduit, et seul `processRoutagePub` la produit, après
- * une reprise confirmée.
+ * Un `standby` (le contact est sur la liste de l'agent de Meta, qui tient le fil) ne déclenche rien, sinon un
+ * scénario répondrait par-dessus l'agent. Le `standby` d'un contact absent de la liste arrive ici déjà réécrit en
+ * `messages` (`./standby-hors-liste.ts`). Seule exception, ici : un lead de publicité routé vers un scénario, dont
+ * le routage a déjà repris le fil (le contact a quitté la liste). La restriction `seule` le traduit, et seul
+ * `processRoutagePub` la produit, après une reprise confirmée.
  */
 export interface TriggerDeps {
   /**

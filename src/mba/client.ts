@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { MetaApiError } from '../meta/errors';
 import type { MetaErrorBody } from '../meta/errors';
 import type { FetchLike } from '../meta/templates';
@@ -99,11 +100,6 @@ export interface AgentSettings {
   };
   /** Tout champ que Meta ajouterait : conservé tel quel par le read-modify-write. */
   [autre: string]: unknown;
-}
-
-export interface AllowlistEntry {
-  id?: string;
-  consumer_phone_number: string;
 }
 
 export class MbaClient {
@@ -242,7 +238,7 @@ export class MbaClient {
     await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/files/${fileId}`);
   }
 
-  // ---------- Réglages, allowlist, éligibilité ----------
+  // ---------- Réglages, éligibilité ----------
 
   async isEligible(phoneNumberId: string): Promise<boolean> {
     const r = await this.appel<{ is_eligible?: boolean }>('GET', `${phoneNumberId}/agent_eligibility`);
@@ -339,50 +335,44 @@ export class MbaClient {
     await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_connectors/${connectorId}/tools/${toolId}`);
   }
 
-  async listAllowlist(phoneNumberId: string): Promise<AllowlistEntry[]> {
-    return this.appel<AllowlistEntry[]>('GET', `${phoneNumberId}/agent_config/allowlist`);
+  // ---------- Liste de l'agent ----------
+
+  /**
+   * La liste des contacts à qui l'agent répond (mode `ALLOWLISTED_ONLY`, toujours posé). `unknown` : la plateforme
+   * la tient seule (`src/mba/liste.ts`), qui lit ces réponses par `safeParse`.
+   */
+  async listAllowlist(phoneNumberId: string): Promise<unknown> {
+    return this.appel<unknown>('GET', `${phoneNumberId}/agent_config/allowlist`);
   }
 
-  async addToAllowlist(phoneNumberId: string, consumerPhoneNumber: string): Promise<AllowlistEntry> {
-    return this.appel<AllowlistEntry>('POST', `${phoneNumberId}/agent_config/allowlist`, { consumer_phone_number: consumerPhoneNumber });
+  /**
+   * `consumer_phone_number` en E.164. Rend `{ id, consumer_phone_number }` ; un numéro déjà présent rend un 400 sans
+   * code qui le distingue d'un numéro invalide (mesuré le 2026-09-29).
+   */
+  async addToAllowlist(phoneNumberId: string, consumerPhoneNumber: string): Promise<unknown> {
+    return this.appel<unknown>('POST', `${phoneNumberId}/agent_config/allowlist`, { consumer_phone_number: consumerPhoneNumber });
   }
 
   async removeFromAllowlist(phoneNumberId: string, entryId: string): Promise<void> {
-    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/allowlist/${entryId}`);
+    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/allowlist/${encodeURIComponent(entryId)}`);
   }
 
   // ---------- Contrôle du fil ----------
 
   /**
-   * Rend le fil à MBA, qui redevient le répondeur automatique (miroir : `takeThread`). Précondition de Meta :
-   * « You must currently hold thread control for the conversation » ; l'appelant consulte son état de contrôle
-   * avant. La réponse ne porte aucune information et aucun endpoint ne dit qui détient un fil : la confirmation
-   * arrive par le webhook `messaging_handovers`.
+   * Rend le fil à l'agent de Meta (action `release` de `thread_control`). Précondition de Meta : « You must
+   * currently hold thread control for the conversation ». La réponse ne porte aucune information et aucun endpoint
+   * ne dit qui détient un fil. En mode liste, l'agent ne répond qu'aux contacts de sa liste : la plateforme ajoute
+   * le contact avant de rendre le fil (`ControleDuFil`, `src/inbox/fil.ts`). Il n'y a pas d'action inverse : `take`
+   * ne nous rend rien (mesuré le 2026-09-29), et c'est le retrait de la liste qui fait taire l'agent.
    *
    * @param to Identifiant du consommateur. Convention Cloud API : E.164 sans `+` ni séparateur.
    */
   async releaseThread(phoneNumberId: string, to: string): Promise<void> {
-    await this.controleDuFil(phoneNumberId, 'release', to);
-  }
-
-  /**
-   * Prend le fil à l'agent de Meta, sans écrire au client (action `take` de `thread_control`, absente du corpus
-   * OpenAPI téléchargé mais documentée : « Use the `take` action to take control before you send anything »).
-   * Meta la réserve au « configured escalation partner », qu'il ne définit pas : un refus est un cas normal, que
-   * l'appelant traduit pour l'opérateur ; écrire prend le fil à coup sûr. Confirmation asynchrone, comme `release`.
-   *
-   * @param to Identifiant du consommateur. Convention Cloud API : E.164 sans `+` ni séparateur.
-   */
-  async takeThread(phoneNumberId: string, to: string): Promise<void> {
-    await this.controleDuFil(phoneNumberId, 'take', to);
-  }
-
-  /** L'appel commun à `releaseThread` et `takeThread` : seule l'action change. */
-  private async controleDuFil(phoneNumberId: string, action: 'release' | 'take', to: string): Promise<void> {
     await this.appel<unknown>(
       'POST',
       `business/whatsapp/phone_numbers/${phoneNumberId}/thread_control`,
-      { messaging_product: 'whatsapp', action, to },
+      { messaging_product: 'whatsapp', action: 'release', to },
       VERSION_THREAD_CONTROL,
     );
   }
@@ -435,27 +425,87 @@ export async function fusionnerBusinessInfo(
 }
 
 /**
+ * L'audience de l'agent de Meta, toujours : il ne répond qu'aux contacts de sa liste, et c'est la plateforme qui la
+ * tient (`src/mba/liste.ts`). Le choix « tout le monde » n'existe plus : un agent qui répond à tous répond aussi
+ * par-dessus nos scénarios, dès qu'un modèle lui rend le fil (mesuré le 2026-09-29).
+ */
+export const AUDIENCE_DE_L_AGENT = 'ALLOWLISTED_ONLY';
+
+/** Ce que l'écriture des réglages lit et écrit : le vrai client, comme le sous-ensemble de l'assistant. */
+export interface ClientReglages {
+  getSettings(phoneNumberId: string): Promise<unknown>;
+  putSettings(phoneNumberId: string, settings: AgentSettings, agentId?: string): Promise<unknown>;
+}
+
+/** Un objet de réglages relu chez Meta ; tout le reste (aucun réglage, forme inattendue) vaut `{}`. */
+const objetLu = z.record(z.string(), z.unknown()).catch({});
+
+/**
+ * Écrit les réglages relus `actuel`, modifiés par `patch`, avec l'audience de l'agent posée en dernier : aucun
+ * appelant ne peut écrire une autre audience, ni la laisser à ce que Meta avait. Les sous-objets sont fusionnés
+ * avec l'existant, sinon patcher `handoff.enabled` seul effacerait `message` et `message_selection`, donc le texte
+ * lu par le client au transfert.
+ */
+function ecrireReglages(
+  client: ClientReglages,
+  phoneNumberId: string,
+  actuel: Record<string, unknown>,
+  patch: Partial<AgentSettings>,
+  agentId: string | undefined,
+): Promise<unknown> {
+  const fusion = (cle: 'rollout' | 'followup' | 'handoff'): Record<string, unknown> => {
+    const valeur = patch[cle];
+    return valeur ? { [cle]: { ...objetLu.parse(actuel[cle]), ...valeur } } : {};
+  };
+  const corps: AgentSettings = {
+    ...actuel, ...patch, ...fusion('rollout'), ...fusion('followup'), ...fusion('handoff'), ai_audience: AUDIENCE_DE_L_AGENT,
+  };
+  // Relu à l'instant : c'est la configuration qu'on vient de lire qu'on réécrit, pas « la plus récente ».
+  const lu = actuel.agent_id;
+  return client.putSettings(phoneNumberId, corps, agentId ?? (typeof lu === 'string' ? lu : undefined));
+}
+
+/**
  * Lecture puis modification ciblée des réglages. Les clés absentes du patch sont repassées telles quelles, y
- * compris celles que ce code ne connaît pas : seule façon de survivre à un champ ajouté par Meta.
+ * compris celles que ce code ne connaît pas : seule façon de survivre à un champ ajouté par Meta. 🔴 Toute écriture
+ * porte `ai_audience: ALLOWLISTED_ONLY` (`AUDIENCE_DE_L_AGENT`), quel que soit le patch : l'activation, le passage
+ * de main et le PATCH des réglages en héritent.
  */
 export async function modifierSettings(
-  client: MbaClient,
+  client: ClientReglages,
   phoneNumberId: string,
   patch: Partial<AgentSettings>,
 ): Promise<unknown> {
-  const actuel = (await client.getSettings(phoneNumberId)) ?? {};
-  return client.putSettings(
-    phoneNumberId,
-    {
-      ...actuel,
-      ...patch,
-      ...(patch.rollout ? { rollout: { ...(actuel.rollout ?? {}), ...patch.rollout } } : {}),
-      ...(patch.followup ? { followup: { ...(actuel.followup ?? {}), ...patch.followup } } : {}),
-      // Même fusion par sous-objet que ci-dessus, et pour la même raison : patcher `handoff.enabled` seul
-      // effacerait sinon `message` et `message_selection`, donc le texte lu par le client au transfert.
-      ...(patch.handoff ? { handoff: { ...(actuel.handoff ?? {}), ...patch.handoff } } : {}),
-    },
-    // Relu à l'instant : c'est la configuration qu'on vient de lire qu'on réécrit, pas « la plus récente ».
-    typeof actuel.agent_id === 'string' ? actuel.agent_id : undefined,
-  );
+  return ecrireReglages(client, phoneNumberId, objetLu.parse(await client.getSettings(phoneNumberId)), patch, undefined);
+}
+
+/**
+ * La relecture des réglages ne rend pas l'audience de la liste : l'agent n'a pas été allumé. Distincte d'un refus de
+ * Meta (une `MetaApiError`) : Meta a accepté l'écriture, c'est sa relecture qui ne la confirme pas.
+ */
+export class AudienceNonConfirmee extends Error {
+  constructor(lue: unknown) {
+    super(`l’audience de l’agent relue chez Meta vaut ${JSON.stringify(lue ?? null)} et non ${AUDIENCE_DE_L_AGENT} : l’agent n’est pas allumé`);
+    this.name = 'AudienceNonConfirmee';
+  }
+}
+
+/**
+ * Allume ou éteint l'agent. L'allumage suit l'ordre que Meta prescrit : l'audience d'abord, une relecture, puis
+ * `rollout.enabled`. En un seul PUT, Meta évaluerait l'audience stockée au moment d'allumer. 🔴 Si la relecture ne
+ * rend pas l'audience de la liste, on n'allume pas : un agent allumé pour tout le monde répondrait par-dessus nos
+ * scénarios. Éteindre n'a pas d'ordre à suivre. `agentId` : la configuration visée, quand l'appelant la connaît.
+ */
+export async function ecrireRollout(
+  client: ClientReglages,
+  phoneNumberId: string,
+  enabled: boolean,
+  agentId?: string,
+): Promise<unknown> {
+  const actuel = objetLu.parse(await client.getSettings(phoneNumberId));
+  if (!enabled) return ecrireReglages(client, phoneNumberId, actuel, { rollout: { enabled: false } }, agentId);
+  await ecrireReglages(client, phoneNumberId, actuel, {}, agentId);
+  const relu = objetLu.parse(await client.getSettings(phoneNumberId));
+  if (relu.ai_audience !== AUDIENCE_DE_L_AGENT) throw new AudienceNonConfirmee(relu.ai_audience);
+  return ecrireReglages(client, phoneNumberId, relu, { rollout: { enabled: true } }, agentId);
 }

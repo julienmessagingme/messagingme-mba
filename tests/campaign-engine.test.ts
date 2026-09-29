@@ -8,6 +8,7 @@ import type { Campaign, Recipient, QualityRating, GuardrailThresholds } from '..
 import type { Etage } from '../src/campaign/etages';
 import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/types';
 import { MetaApiError } from '../src/meta/errors';
+import { RetraitDeLaListeRefuse } from '../src/mba/liste';
 import type { MotifDePause } from '../src/campaign/pause';
 
 class FakeSender implements MessageSender {
@@ -1328,5 +1329,42 @@ describe('etageServable', () => {
     expect(v.refus).toContain('email');
     // Et le rang ABSENT de la chaîne est un refus distinct, pas un repli sur le rang 1.
     expect(etageServable({ chaine: trouee }, 2)).toMatchObject({ rang: 2, refus: expect.stringContaining('absent') });
+  });
+});
+
+/**
+ * 🔴 UN MODÈLE REFUSÉ PARCE QUE LE CONTACT N'A PAS PU QUITTER LA LISTE DE L'AGENT DE META (mode liste, 2026-09-29).
+ * La fabrique Meta lève `RetraitDeLaListeRefuse` avant l'envoi (`src/meta/factory.ts`) : rien n'est parti. La campagne
+ * le traite comme tout refus d'envoi rejouable qui ne vise PAS le numéro : ce destinataire en échec avec le motif, les
+ * suivants continuent, et surtout AUCUNE pause (un plafond du numéro mettrait toute la campagne en pause pour le refus
+ * d'un seul contact).
+ */
+describe('runCampaign : retrait de la liste de l’agent refusé avant le modèle', () => {
+  class SenderListe implements MessageSender {
+    readonly envoyes: string[] = [];
+    constructor(private readonly refuses: Set<string>) {}
+    async sendMarketing(p: MarketingParams): Promise<SendResult> { return this.sendTemplate(p.to ?? p.recipient ?? '', p.template); }
+    async sendTemplate(to: string, _tpl: TemplateSpec): Promise<SendResult> {
+      if (this.refuses.has(to)) throw new RetraitDeLaListeRefuse();
+      this.envoyes.push(to);
+      return { messageId: `m-${to}` };
+    }
+  }
+
+  it('🔴 ce destinataire en échec avec le motif, les autres partent, et la campagne n’est PAS mise en pause', async () => {
+    const sender = new SenderListe(new Set(['+33611']));
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const campaigns = new FakeCampaigns();
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns }));
+    expect(report).toMatchObject({ sent: 1, failed: 1 });
+    expect(report.paused).toBeFalsy();
+    expect(campaigns.pauses).toEqual([]);
+    expect(recipients.relaches).toEqual([]);
+    expect(sender.envoyes).toEqual(['+33622']);
+    const r1 = recipients.results.get('r1');
+    expect(r1?.status).toBe('failed');
+    expect(r1?.error).toContain('retrait de la liste de l’agent de Meta refusé');
+    // Le motif s'inscrit sur le destinataire, que la purge RGPD ne réécrit pas : il ne porte pas le numéro.
+    expect(r1?.error).not.toContain('33611');
   });
 });

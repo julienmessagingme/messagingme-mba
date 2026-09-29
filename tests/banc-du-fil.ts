@@ -1,12 +1,15 @@
 import { creerControleDuFil, type ControleDuFil, type DepsControleDuFil, type EcritureDuFil } from '../src/inbox/fil';
+import { creerListeDeLAgent, type EntreeDeLaListe, type ListeDeLAgent, type ListeStore } from '../src/mba/liste';
+import type { EvenementAgent } from '../src/mba/evenement';
 import type { ControlOwner } from '../src/inbox/store.pg';
 import { MetaApiError } from '../src/meta/errors';
 
 /**
- * LE BANC DU CONTRÔLE DU FIL : le VRAI module (`src/inbox/fil.ts`) monté sur un dépôt en mémoire et un faux
- * client Meta. Les tests des consommateurs (balayage, réception, routes) le montent au lieu de fabriquer chacun
- * un faux `setControlOwner` : l'ordre « Meta d'abord » et les gardes sont ceux du module, pas ceux d'un faux qui
- * bouge avec le code.
+ * LE BANC DU CONTRÔLE DU FIL : le VRAI module (`src/inbox/fil.ts`) et la VRAIE liste de l'agent de Meta
+ * (`src/mba/liste.ts`), montés sur un dépôt et une table en mémoire et un faux client Meta. Les tests des
+ * consommateurs (balayage, réception, routes) le montent au lieu de fabriquer chacun un faux `setControlOwner` :
+ * l'ordre « Meta d'abord », les gardes et la tenue de la liste sont ceux des modules, pas ceux d'un faux qui bouge
+ * avec le code.
  *
  * ⚠️ Dans `tests/`, jamais dans `src/` : un Meta qui accepte tout y serait importable par le câblage de production.
  */
@@ -74,79 +77,167 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
   return { depot, lignes, ecritures, etat: (waId: string): EtatDuFil | undefined => lignes.get(waId) };
 }
 
+/** L'identifiant que le faux Meta donne à l'entrée d'un contact : on retrouve le contact en le lisant. */
+export const entreeDe = (waId: string): string => `entree-${waId}`;
+
 /**
- * Ce que Meta répond à un geste : il accepte, il refuse pour de bon (`take` réservé au partenaire d'escalade), ou
- * il refuse pour une raison passagère (429, rejouable), ou il lève l'erreur donnée.
+ * La table `mba_liste` en mémoire, un seul espace. `initial` : les contacts déjà sur la liste. `poser` peut être
+ * rendu défaillant pour éprouver la compensation de `ajouter`.
  */
-export type ReponseMeta = 'accepte' | 'refuse' | 'passager' | Error;
+export function listeEnMemoire(initial: readonly string[] = [], o: { poserEchoue?: boolean } = {}) {
+  const lignes = new Map<string, EntreeDeLaListe>();
+  for (const waId of initial) lignes.set(waId, { phoneNumberId: 'pn1', entreeId: entreeDe(waId) });
+  const store: ListeStore = {
+    presents: async (_t, waIds) => new Set(waIds.filter((w) => lignes.has(w))),
+    trouver: async (_t, waId) => lignes.get(waId) ?? null,
+    poser: async (_t, waId, phoneNumberId, entreeId) => {
+      if (o.poserEchoue) throw new Error('base indisponible');
+      lignes.set(waId, { phoneNumberId, entreeId });
+    },
+    supprimer: async (_t, waId) => { lignes.delete(waId); },
+  };
+  return { store, lignes };
+}
+
+/**
+ * Ce que Meta répond à un geste : il accepte, il refuse pour de bon (403), il refuse pour une raison passagère (429,
+ * rejouable), il ne connaît pas l'entrée (404), il répond « doublon » à un ajout (le 400 sans code mesuré le
+ * 2026-09-29), ou il lève l'erreur donnée.
+ */
+export type ReponseMeta = 'accepte' | 'refuse' | 'passager' | 'absente' | 'doublon' | Error;
+
+/** Les gestes du faux Meta, tels que `appels` les note (`ajout:<waId>`, `retrait:<waId>`, ...). */
+export type ActeMeta = 'ajout' | 'retrait' | 'release' | 'evenement' | 'lecture';
 
 /**
  * Le faux client Meta. Chaque liste est jouée dans l'ordre, la dernière réponse se répète : `['passager',
- * 'accepte']` = refuse une fois puis accepte. `appels` garde `take:<waId>` et `release:<waId>`, dans l'ordre.
+ * 'accepte']` = refuse une fois puis accepte. `appels` garde `ajout:<waId>`, `retrait:<waId>`, `release:<waId>`,
+ * `evenement:<waId>` et `lecture:liste`, dans l'ordre. `surLaListe` : les contacts que Meta a déjà sur la liste.
  */
 export function metaFactice(
-  script: { take?: ReponseMeta[]; release?: ReponseMeta[] } = {},
+  script: { ajout?: ReponseMeta[]; retrait?: ReponseMeta[]; release?: ReponseMeta[]; evenement?: ReponseMeta[] } = {},
   appels: string[] = [],
-  observer?: (acte: 'take' | 'release', waId: string) => void,
+  observer?: (acte: ActeMeta, waId: string) => void,
+  surLaListe: readonly string[] = [],
 ) {
-  const rangs = { take: 0, release: 0 };
-  const jouer = (acte: 'take' | 'release', waId: string): void => {
+  const rangs = { ajout: 0, retrait: 0, release: 0, evenement: 0 };
+  const listeChezMeta = new Set<string>(surLaListe);
+  const evenements: Array<{ waId: string; event: EvenementAgent }> = [];
+  const jouer = (acte: Exclude<ActeMeta, 'lecture'>, waId: string): void => {
     appels.push(`${acte}:${waId}`);
     observer?.(acte, waId);
     const liste = script[acte] ?? ['accepte'];
     const r = liste[Math.min(rangs[acte], liste.length - 1)] ?? 'accepte';
     rangs[acte] += 1;
-    if (r === 'refuse') throw new MetaApiError(400, { message: 'not the configured escalation partner' });
+    if (r === 'refuse') throw new MetaApiError(403, { message: 'refusé par Meta' });
     if (r === 'passager') throw new MetaApiError(429, null, 10);
+    if (r === 'absente') throw new MetaApiError(404, { message: 'Not Found', type: 'MbaError' });
+    if (r === 'doublon') throw new MetaApiError(400, { message: 'The request or consumer identifier is invalid', type: 'MbaError' });
     if (r instanceof Error) throw r;
   };
-  const meta: DepsControleDuFil['meta'] = {
-    mbaClientForTenant: async () => ({
-      takeThread: async (_pn: string, waId: string) => { jouer('take', waId); },
-      releaseThread: async (_pn: string, waId: string) => { jouer('release', waId); },
-    }),
+  const client = {
+    releaseThread: async (_pn: string, waId: string) => { jouer('release', waId); },
+    agentEvent: async (_pn: string, to: string, event: EvenementAgent) => {
+      const waId = to.replace(/^\+/, '');
+      jouer('evenement', waId);
+      evenements.push({ waId, event });
+      return { id: `ev-${evenements.length}` };
+    },
+    listAllowlist: async () => {
+      appels.push('lecture:liste');
+      return [...listeChezMeta].map((w) => ({ id: entreeDe(w), consumer_phone_number: `+${w}` }));
+    },
+    addToAllowlist: async (_pn: string, numero: string) => {
+      const waId = numero.replace(/^\+/, '');
+      jouer('ajout', waId);
+      // Le vrai Meta rend un 400 sans code sur un numéro déjà présent.
+      if (listeChezMeta.has(waId)) throw new MetaApiError(400, { message: 'The request or consumer identifier is invalid', type: 'MbaError' });
+      listeChezMeta.add(waId);
+      return { id: entreeDe(waId), consumer_phone_number: numero };
+    },
+    removeFromAllowlist: async (_pn: string, entreeId: string) => {
+      const waId = entreeId.replace(/^entree-/, '');
+      jouer('retrait', waId);
+      listeChezMeta.delete(waId);
+    },
   };
-  return { meta, appels };
+  const meta: DepsControleDuFil['meta'] = { mbaClientForTenant: async () => client };
+  return { meta, client, appels, evenements, listeChezMeta };
 }
 
 export interface OptionsBanc {
   /** Les conversations existantes, par `waId`. */
   conversations?: Record<string, Partial<EtatDuFil>>;
+  /** Les contacts déjà sur la liste de l'agent (notre table ET chez Meta). Défaut : aucun. */
+  surLaListe?: string[];
   /** L'agent de Meta est-il allumé ? Défaut : oui. */
   mbaEnabled?: boolean;
   /** Le numéro de l'espace ; `null` = aucun numéro connecté. Défaut : un numéro. */
   numero?: string | null;
   /** Un parcours attend-il la réponse du contact ? Défaut : non. */
   enAttente?: boolean;
-  take?: ReponseMeta[];
+  /** Les contacts qui ont dit STOP. Défaut : aucun. */
+  desabonnes?: string[];
+  /** Les contacts bloqués. Défaut : aucun. */
+  bloques?: string[];
+  ajout?: ReponseMeta[];
+  retrait?: ReponseMeta[];
   release?: ReponseMeta[];
+  evenement?: ReponseMeta[];
+  /** La ligne de la table refuse de s'écrire (compensation de l'ajout). */
+  poserEchoue?: boolean;
   /** Remplace des méthodes du dépôt en mémoire (tests qui gardent leur propre faux). */
   depot?: Partial<DepsControleDuFil['depot']>;
   /** Le journal où le faux Meta écrit ses appels, pour l'entrelacer avec celui d'un faux dépôt. */
   appels?: string[];
   /** Appelé à chaque geste reçu par le faux Meta, avant sa réponse. */
-  auMeta?: (acte: 'take' | 'release', waId: string) => void;
+  auMeta?: (acte: ActeMeta, waId: string) => void;
 }
 
-/** Le module réel sur le dépôt en mémoire et le faux Meta. */
+/** Le module réel et la liste réelle, sur le dépôt et la table en mémoire et le faux Meta. */
 export function bancDuFil(o: OptionsBanc = {}): {
   fil: ControleDuFil;
+  liste: ListeDeLAgent;
   etat: (waId: string) => EtatDuFil | undefined;
   lignes: Map<string, EtatDuFil>;
+  /** Notre table `mba_liste`, par `waId`. */
+  table: Map<string, EntreeDeLaListe>;
   ecritures: Array<{ waId: string; owner: ControlOwner; opts: EcritureDuFil | undefined }>;
   appels: string[];
+  evenements: Array<{ waId: string; event: EvenementAgent }>;
   attentes: number[];
+  /** Le faux client Meta lui-même, pour câbler un autre module sur le même journal (`agentEvent`, ...). */
+  client: ReturnType<typeof metaFactice>['client'];
 } {
   const memoire = depotEnMemoire(o.conversations);
-  const { meta, appels } = metaFactice({ ...(o.take ? { take: o.take } : {}), ...(o.release ? { release: o.release } : {}) }, o.appels, o.auMeta);
+  const table = listeEnMemoire(o.surLaListe, { poserEchoue: o.poserEchoue === true });
+  const script = {
+    ...(o.ajout ? { ajout: o.ajout } : {}),
+    ...(o.retrait ? { retrait: o.retrait } : {}),
+    ...(o.release ? { release: o.release } : {}),
+    ...(o.evenement ? { evenement: o.evenement } : {}),
+  };
+  const faux = metaFactice(script, o.appels, o.auMeta, o.surLaListe);
   const attentes: number[] = [];
+  const liste = creerListeDeLAgent({
+    store: table.store,
+    clientMba: async () => faux.client,
+    attendre: async (ms) => { attentes.push(ms); },
+  });
   const fil = creerControleDuFil({
     depot: { ...memoire.depot, ...o.depot },
     reglages: { get: async () => ({ mbaEnabled: o.mbaEnabled ?? true }) },
     parcours: { findWaitingByWaId: async () => (o.enAttente ? { id: 'run-1' } : null) },
     numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? 'pn1' : o.numero) },
-    meta,
-    attendre: async (ms) => { attentes.push(ms); },
+    liste,
+    consentement: {
+      estDesabonne: async (_t, waId) => (o.desabonnes ?? []).includes(waId),
+      estBloque: async (_t, waId) => (o.bloques ?? []).includes(waId),
+    },
+    meta: faux.meta,
   });
-  return { fil, etat: memoire.etat, lignes: memoire.lignes, ecritures: memoire.ecritures, appels, attentes };
+  return {
+    fil, liste, etat: memoire.etat, lignes: memoire.lignes, table: table.lignes, ecritures: memoire.ecritures,
+    appels: faux.appels, evenements: faux.evenements, attentes, client: faux.client,
+  };
 }

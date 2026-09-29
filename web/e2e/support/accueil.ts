@@ -181,8 +181,8 @@ export async function mockAccueil(
     // 2026-09-10 : avant, elle montrait notre drapeau local sous une phrase ecrite en dur annoncant qu'on
     // attendait l'ouverture de Meta. Les deux etaient faux le meme jour. Defaut : eligible et ETEINT, le
     // cas le plus courant d'un numero fraichement ouvert.
-    if (url.includes('/mba/') && url.endsWith('/status')) return json(over.mbaStatus ?? { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: false }, ai_audience: 'EVERYONE' } });
-    if (url.includes('/mba/') && url.endsWith('/rollout')) return json({ rollout: { enabled: true }, ai_audience: 'EVERYONE' });
+    if (url.includes('/mba/') && url.endsWith('/status')) return json(over.mbaStatus ?? { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: false }, ai_audience: 'ALLOWLISTED_ONLY' } });
+    if (url.includes('/mba/') && url.endsWith('/rollout')) return json({ rollout: { enabled: true }, ai_audience: 'ALLOWLISTED_ONLY' });
     /**
      * 🔴 LA ROUTE UNIQUE D'ACTIVATION (2026-09-10). Elle a remplacé une orchestration côté navigateur qui a
      * cassé trois fois dans la même journée : le bouton n'échouait pas, il SAUTAIT l'appel à Meta et écrivait

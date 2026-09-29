@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { handleWebhookJob, type WebhookJobDeps } from '../src/webhooks/handler';
 import type { InboundMessage } from '../src/webhooks/inbound';
-import { aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur, aucuneRepriseSurBouton } from './webhook-fixtures';
+import { agentEteintALArrivee, aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
 import { aucunStop, jamaisDesabonne } from './consentement';
 
 /**
@@ -63,7 +63,7 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
     store: { insertEvent: async () => true },
     inbox,
     numerosDelies: aucunNumeroDelie,
-    inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
+    inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
     inboundContactUpsert: async (t) => { vus.push(`upsert:${t}`); return 'updated'; },
     signalReponse: async (t) => { vus.push(`signal:${t}`); },
     arriveesPub: { enregistrer: async (t) => { vus.push(`arrivee:${t}`); return 'ecrite'; } },
@@ -83,7 +83,7 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
       startTestRun: async (t) => { vus.push(`test:${t}`); return true; },
     },
     triggers: { run: async (t) => { vus.push(`automation:${t}`); return 0; } },
-    workflowAdvance: { reprendreSurNotreBouton: aucuneRepriseSurBouton, advance: async (t) => { vus.push(`avance:${t}`); } },
+    workflowAdvance: { advance: async (t) => { vus.push(`avance:${t}`); } },
     remiseMbaEntrant: { remettre: async (t) => { vus.push(`remise:${t}`); } },
     handover: {
       marquerEscalade: async (t) => { vus.push(`escalade:${t}`); },
@@ -189,11 +189,13 @@ describe('le type tient ce que le rattachement suppose', () => {
     const base = { store: { insertEvent: async () => true } };
     const inbox = { phoneNumberTenant: async () => 't1', recordInbound: async () => {} };
     // @ts-expect-error `inboundOptOut` manque : une dépendance de consentement n'est jamais optionnelle.
-    const sansStop: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie, detenteur: aucuneCorrectionDuDetenteur };
+    const sansStop: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee };
     // @ts-expect-error `detenteur` manque : sans lui, un `standby` ne corrigerait plus notre colonne (relecture du lot 4).
-    const sansDetenteur: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie, inboundOptOut: aucunStop };
+    const sansDetenteur: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie, inboundOptOut: aucunStop, listeALArrivee: agentEteintALArrivee };
+    // @ts-expect-error `listeALArrivee` manque : sans elle, la réponse texte d'un contact absent de la liste de l'agent à un modèle n'arriverait à personne.
+    const sansListe: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie, inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur };
     // @ts-expect-error une étape qui lit l'espace d'un entrant sans l'Inbox qui le rattache.
     const sansInbox: WebhookJobDeps = { ...base, triggers: { run: async () => 0 } };
-    expect([sansStop, sansDetenteur, sansInbox]).toHaveLength(3);
+    expect([sansStop, sansDetenteur, sansListe, sansInbox]).toHaveLength(4);
   });
 });

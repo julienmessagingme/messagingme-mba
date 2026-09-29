@@ -25,6 +25,7 @@ import type { AuditSink } from '../audit/journal';
 import type { SignalAccuse } from './delivery';
 import type { SignalReponse } from './inbound';
 import { rattacherLesEntrants, uneLectureParNumero, type EntrantRattache, type NumeroVersEspace } from './rattachement';
+import { requalifierLesStandby, type ListeALArrivee } from './standby-hors-liste';
 import { tenter } from '../lib/tenter';
 import { messageDe } from '../lib/erreur';
 
@@ -68,8 +69,8 @@ interface WebhookJobDepsCommunes {
 interface EtapesRattachees {
   workflowAdvance?: WorkflowAdvanceDeps;
   /**
-   * Rend le fil à l'agent de Meta quand un client revient et que personne ne suit. Câblé sur la file `webhook`
-   * seulement : `webhook-status` ne porte que des accusés.
+   * Confie la conversation à l'agent de Meta quand un client écrit et que personne ne suit. Câblé sur la file
+   * `webhook` seulement : `webhook-status` ne porte que des accusés.
    */
   remiseMbaEntrant?: RemiseMbaEntrantDeps;
   handover?: HandoverDeps;
@@ -90,10 +91,13 @@ interface EtapesRattachees {
  *    dépendance de consentement n'est jamais optionnelle, un câblage qui l'oublierait laisserait `opted_in` un
  *    contact qui a répondu STOP. Elle corrige aussi le détenteur du fil (`detenteur`) : un `standby` rend le fil à
  *    l'agent de Meta (`ControleDuFil.entrantEnStandby`, `src/inbox/fil.ts`), et un câblage qui l'oublierait
- *    laisserait notre colonne contredire Meta. Le numéro vers l'espace se lit dans `inbox` (`NumeroVersEspace`).
+ *    laisserait notre colonne contredire Meta. Elle lit enfin la liste de l'agent de Meta (`listeALArrivee`) : un
+ *    `standby` d'un contact absent de la liste est pour nous (`./standby-hors-liste.ts`), et un câblage qui
+ *    l'oublierait laisserait sans réponse, en silence, toute réponse texte à un modèle. Le numéro vers l'espace se
+ *    lit dans `inbox` (`NumeroVersEspace`).
  * Les tests qui n'en parlent pas passent les fixtures de `tests/webhook-fixtures.ts` (`aucunTarif`,
  * `aucuneArriveePub`, `aucunRoutagePub`, `aucunSignalAccuse`, `aucunSignalReponse`, `aucunNumeroDelie`,
- * `aucuneCorrectionDuDetenteur`, `aucunStop`), qui disent leur hypothèse.
+ * `aucuneCorrectionDuDetenteur`, `agentEteintALArrivee`, `aucunStop`), qui disent leur hypothèse.
  */
 export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
@@ -105,11 +109,11 @@ export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
     ({
       inbox: InboxStore & NumeroVersEspace; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps; signalReponse: SignalReponse;
-      numerosDelies: NumerosDelies; inboundOptOut: InboundOptOut; detenteur: DetenteurDuFil;
+      numerosDelies: NumerosDelies; inboundOptOut: InboundOptOut; detenteur: DetenteurDuFil; listeALArrivee: ListeALArrivee;
     } & EtapesRattachees)
     | ({
       inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined; signalReponse?: undefined;
-      numerosDelies?: undefined; inboundOptOut?: undefined; detenteur?: undefined;
+      numerosDelies?: undefined; inboundOptOut?: undefined; detenteur?: undefined; listeALArrivee?: undefined;
     } & { [K in keyof EtapesRattachees]?: undefined })
   );
 
@@ -161,7 +165,12 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   const espaceDe = deps.inbox ? uneLectureParNumero(deps.inbox) : null;
   let entrants: readonly EntrantRattache[] = [];
   if (deps.inbox && espaceDe) {
-    entrants = await rattacherLesEntrants(extractInbound(raw), espaceDe);
+    /**
+     * Juste après le rattachement, avant tout ce qui lit `field` : un `standby` d'un contact absent de la liste de
+     * l'agent de Meta devient un `messages` pour toutes les étapes (`./standby-hors-liste.ts`). Une lecture de la
+     * liste par espace pour le lot ; en échec, elle lève avant l'enregistrement et fait rejouer le job.
+     */
+    entrants = await requalifierLesStandby(await rattacherLesEntrants(extractInbound(raw), espaceDe), deps.listeALArrivee);
     await processInbound(entrants, deps.inbox, {
       upsertContact: upsert, optOut: deps.inboundOptOut, assignation: inboundAssignation, signalReponse, detenteur: deps.detenteur,
     });
@@ -171,9 +180,10 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   if (arriveesPub) await processArriveesPub(entrants, arriveesPub);
   /**
    * Le routage d'un lead publicitaire, entre l'arrivée (dont il annote la ligne) et les déclencheurs (qu'il
-   * restreint) : placé après, il regarderait partir les automations qu'il devait écarter. Il reprend le fil chez
-   * Meta pour un lead `standby` : appel borné (un essai et un rejeu, `ControleDuFil.reprendrePourLApp`) et isolé. Une
-   * panne rend la carte vide, donc le chemin ordinaire : mieux vaut un lead ramassé qu'un lead qui ne va nulle part.
+   * restreint) : placé après, il regarderait partir les automations qu'il devait écarter. Il reprend le fil pour un
+   * lead resté en `standby` (son contact est sur la liste de l'agent) : retrait borné (un essai et un rejeu,
+   * `ControleDuFil.reprendrePourLApp`) et isolé. Une panne rend la carte vide, donc le chemin ordinaire : mieux vaut
+   * un lead ramassé qu'un lead qui ne va nulle part.
    */
   let routage: ReadonlyMap<string, RoutageDuMessage> = new Map();
   if (routagePub) {
@@ -234,9 +244,10 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
     await tenter('handleWebhookJob: avance workflow ignorée:', () => processWorkflowAdvance(entrants, workflowAdvance, consumed));
   }
   /**
-   * Un client revient et personne ne suit : le fil repart chez l'agent de Meta. Après l'avance, et l'ordre est le
-   * correctif : l'avance peut laisser un run en attente, que la garde du câblage lit pour refuser la remise ; placé
-   * avant, ce bloc donnerait à l'agent un fil qu'un scénario s'apprête à utiliser. Isolé : le balayage reste le filet.
+   * Un client écrit et personne ne suit : la conversation est confiée à l'agent de Meta, qui y répond. Après
+   * l'avance, et l'ordre est le correctif : l'avance peut laisser un run en attente, que la garde du câblage lit pour
+   * refuser la remise ; placé avant, ce bloc donnerait à l'agent un fil qu'un scénario s'apprête à utiliser. Isolé :
+   * le balayage reste le filet.
    */
   if (remiseMbaEntrant) {
     await tenter('handleWebhookJob: remise à l’agent de Meta ignorée:', () => processRemiseMbaEntrant(entrants, remiseMbaEntrant, consumed));

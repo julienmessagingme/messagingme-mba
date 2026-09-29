@@ -1,14 +1,20 @@
 import type { ControlOwner } from './store.pg';
-import { MetaApiError } from '../meta/errors';
 import { messageDe } from '../lib/erreur';
 import { automatique, parCause, type AuteurDuChangement } from './evenements';
+import type { ListeDeLAgent } from '../mba/liste';
+import { destinataireAgentEvent, evenementMessageSansSuite, traceReponse, type EvenementAgent } from '../mba/evenement';
 
 /**
  * Le contrôle du fil : qui répond au client, l'agent de Meta (`mba`), un scénario ou un agent IA (`app_workflow`),
- * ou l'équipe (`app_human`). C'est le seul endroit qui parle à Meta (`thread_control`, actions `take` et `release`)
+ * ou l'équipe (`app_human`). C'est le seul endroit qui confie une conversation à l'agent de Meta ou la lui reprend
  * ET qui écrit notre colonne `conversations.control_owner` : chaque geste a son nom ici, et aucun appelant ne
  * compose lui-même « appel à Meta, puis écriture de la colonne ». Meta n'offre aucun moyen de LIRE qui tient le
  * fil : notre colonne est une croyance, que deux webhooks corrigent (`entrantEnStandby`, `agentDeMetaPasseLaMain`).
+ *
+ * L'agent de Meta est toujours en mode liste : il ne répond qu'aux contacts de sa liste, que la plateforme tient
+ * (`src/mba/liste.ts`). Deux gestes en découlent. **Confier** : ajouter le contact à la liste, puis `release`
+ * (`thread_control`). **Reprendre** : le retirer de la liste, ce qui fait taire l'agent même quand Meta lui a rendu
+ * le fil. L'action `take` ne nous rendait rien (mesuré le 2026-09-29) et n'existe plus.
  *
  * Les règles que tous les gestes suivent, et qui ne s'écrivent donc qu'ici :
  *
@@ -17,11 +23,12 @@ import { automatique, parCause, type AuteurDuChangement } from './evenements';
  *     exceptions délibérées : l'état d'attente `app_human` d'une fin de parcours est posé AVANT la remise (il est
  *     vrai tout de suite, garde la conversation dans « À traiter » et arme le balayage), et la marque d'accusé est
  *     consommée AVANT l'appel (un refus ne se retente pas à chaque statut du même message, le balayage reprend).
- *  2. **Prendre est un privilège, rendre un droit.** Meta réserve `take` au « configured escalation partner » : un
- *     refus est un cas normal, rejoué une fois s'il est passager, jamais deux. `release` exige de tenir le fil.
- *  3. **Aucun numéro connecté : aucun fil à contrôler chez Meta.** Une prise réussit alors (notre colonne est la
- *     seule vérité), une remise vers l'agent n'écrit rien : annoncer `mba` sur un espace où l'agent ne peut pas
- *     répondre mentirait, et `app_workflow` sortirait la conversation d'« À traiter ». Même règle partout.
+ *  2. **Reprendre ne dépend que de notre table.** Un contact absent de la liste se reprend sans aucun appel ; présent,
+ *     il est retiré, avec un rejeu sur un refus passager et jamais deux, même agent éteint (sinon l'agent lui
+ *     répondrait le jour où on le rallume). `release` exige de tenir le fil.
+ *  3. **Aucun numéro connecté : rien à confier chez Meta.** Une remise vers l'agent n'écrit rien : annoncer `mba`
+ *     sur un espace où l'agent ne peut pas répondre mentirait, et `app_workflow` sortirait la conversation
+ *     d'« À traiter ». Même règle partout. Une reprise, elle, retire avec le numéro que notre table a gardé.
  *  4. **La marque d'escalade** (`escaladee_le` : quelqu'un a promis un humain au client) s'efface dès qu'un robot
  *     reprend le fil, agent de Meta ou scénario, et quand un opérateur le rend. Elle ne s'efface pas quand le fil
  *     va à l'équipe : c'est l'équipe qu'on attend. Sans ça, une conversation restait dans « À traiter » pendant que
@@ -103,27 +110,28 @@ export interface DepsControleDuFil {
   parcours: { findWaitingByWaId(tenantId: string, waId: string): Promise<object | null> };
   /** Numéro Meta de l'espace ; `null` = aucun numéro connecté. */
   numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
+  /**
+   * La liste de l'agent de Meta (`src/mba/liste.ts`) : confier y ajoute le contact, reprendre l'en retire. Requise :
+   * sans elle, un geste compilerait et laisserait l'agent parler (ou se taire) à contre-emploi.
+   */
+  liste: Pick<ListeDeLAgent, 'ajouter' | 'retirer'>;
+  /**
+   * Le contact a-t-il dit STOP, ou a-t-il été bloqué ? Requise, comme partout où une machine parle (`tests/consentement.ts`) :
+   * une remise AUTOMATIQUE confie le contact à l'agent de Meta, qui lui parle. Sans elle, un « STOP » que personne
+   * ne prenait partait chez l'agent avec l'ordre de répondre, et le contact restait sur sa liste (relecture du
+   * 2026-09-30). Le bouton « Rendre la main » n'y passe pas : c'est un geste humain, délibéré.
+   */
+  consentement: {
+    estDesabonne(tenantId: string, waId: string): Promise<boolean>;
+    estBloque(tenantId: string, waId: string): Promise<boolean>;
+  };
   meta: {
     mbaClientForTenant(tenantId: string): Promise<{
       releaseThread(phoneNumberId: string, waId: string): Promise<unknown>;
-      takeThread(phoneNumberId: string, waId: string): Promise<unknown>;
+      agentEvent(phoneNumberId: string, to: string, event: EvenementAgent, signal?: AbortSignal): Promise<unknown>;
     }>;
   };
-  /**
-   * Attendre, en millisecondes, entre deux tentatives de prise. Injectée et requise : la durée d'attente est un
-   * comportement observable, et un test doit pouvoir vérifier le plafond sans dormir.
-   */
-  attendre(ms: number): Promise<void>;
 }
-
-/**
- * L'attente entre les deux tentatives de prise quand Meta ne dit pas combien patienter, et son plafond : dans la
- * boucle d'envoi d'une campagne, une attente longue retarde tous les destinataires suivants.
- */
-export const REJEU_ATTENTE_DEFAUT_MS = 500;
-export const REJEU_ATTENTE_MAX_MS = 2000;
-/** Le nombre total de tentatives de prise : un essai, puis un rejeu. */
-export const REJEU_TENTATIVES = 2;
 
 /** Ce que « Rendre la main » a fait : le nouveau détenteur, ou rien faute de numéro (règle 3). */
 export type IssueRendreLaMain = 'app_workflow' | 'mba' | 'aucun_numero';
@@ -142,15 +150,16 @@ export interface ControleDuFil {
    */
   prisEnEcrivant(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
   /**
-   * « Reprendre la main » (et le rangement « À traiter ») : prendre le fil sans écrire au client. Meta n'est appelé
-   * que si notre colonne dit `mba` et que l'agent est allumé, avec un rejeu comme les automates. `'refuse'` : Meta
-   * n'a pas cédé, rien n'est écrit.
+   * « Reprendre la main » (et le rangement « À traiter ») : prendre le fil sans écrire au client. Le contact est
+   * retiré de la liste de l'agent s'il y est, quelle que soit notre colonne ; absent, aucun appel. `'refuse'` : Meta
+   * a refusé le retrait, rien n'est écrit.
    */
   reprendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<'pris' | 'refuse'>;
   /**
    * « Rendre la main » / « Passer à l'agent Meta ». Sur un fil que notre colonne donne déjà à l'agent, on ne rouvre
-   * que notre côté (`release` sans tenir le fil est hors contrat) ; agent éteint : `app_workflow` ; sinon `release`
-   * puis `mba`. Lève si Meta refuse. Efface l'escalade. Seul geste qui rend un fil de test.
+   * que notre côté (`release` sans tenir le fil est hors contrat) ; agent éteint : `app_workflow` ; sinon on confie
+   * (liste, puis `release`) et on écrit `mba`. Aucun événement : l'agent parle au prochain message du client. Lève si
+   * Meta refuse. Efface l'escalade. Seul geste qui confie un fil de test.
    */
   rendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<IssueRendreLaMain>;
   /**
@@ -162,40 +171,28 @@ export interface ControleDuFil {
   /** L'accusé d'un de nos envois est arrivé : si un fil l'attendait, il est rendu à l'agent maintenant. */
   remettreSurAccuse(messageId: string): Promise<void>;
   /**
-   * Le client revient et personne ne suit : le fil repart chez l'agent. Gardes : agent allumé, aucun parcours en
-   * attente, et un opérateur n'est pas doublé (détenteur relu AVANT l'appel, `only` ne protégeant que la colonne).
+   * Le client écrit et personne ne suit : la conversation est confiée à l'agent, qui y répond tout de suite
+   * (événement `message_sans_suite`, avec `contenu`, le texte du ou des messages reçus). Gardes : agent allumé,
+   * aucun parcours en attente, et un opérateur n'est pas doublé (détenteur relu AVANT l'appel, `only` ne protégeant
+   * que la colonne). Lève si Meta refuse de confier, et aucun événement ne part alors. Aucun événement non plus sur
+   * une conversation déjà confiée (sur la liste, et `mba` chez nous) : l'agent a déjà la parole, et la réponse
+   * « à côté » d'un scénario vient d'être transmise par son propre événement.
    */
-  remettreSiPersonneNeSuit(tenantId: string, waId: string): Promise<void>;
+  remettreSiPersonneNeSuit(tenantId: string, waId: string, contenu: string): Promise<void>;
   /**
    * Reprendre le fil pour un scénario qu'on démarre délibérément (campagne, lancement depuis l'Inbox, lien de
-   * chaîne, `/v1/sends`, jeton de test, relais de l'agent de Meta) : `take` avec un rejeu si l'agent est allumé,
+   * chaîne, `/v1/sends`, jeton de test, relais de l'agent de Meta) : le contact est retiré de la liste de l'agent,
    * puis `app_workflow`. Reprend même un fil d'opérateur, sauf `saufOperateur` : un démarrage que le CLIENT
    * déclenche (clic sur une publicité) laisse la main à l'opérateur qui la tient.
    */
   reprendrePourLApp(tenantId: string, waId: string, opts?: { saufOperateur?: boolean }): Promise<IssueReprise>;
   /**
-   * Le contact tape un de NOS boutons, mais Meta le livre en `standby` (il croit que son agent tient le fil) alors
-   * qu'un parcours attend ce contact : la réponse est pour le scénario (décision de Julien du 2026-09-29, vécu le
-   * même jour : le bouton « En savoir plus » d'un scénario lancé depuis l'Inbox n'a jamais atteint le bloc suivant).
-   * On reprend le fil comme au démarrage, et l'appelant fait avancer le parcours. `false` : aucun parcours
-   * n'attend (la réponse reste à l'agent de Meta), ou Meta refuse de céder le fil.
-   */
-  reprendreSurNotreBouton(tenantId: string, waId: string): Promise<boolean>;
-  /**
-   * Un scénario vient d'envoyer un MODÈLE : reprendre le fil chez Meta tout de suite, avant la réponse du contact.
-   * Mesuré le 2026-09-29, trois fois de suite : le fil pris au lancement ne survit pas à l'envoi d'un modèle, la
-   * réponse arrive chez l'agent de Meta (`standby`), et le reprendre à ce moment-là lui fait envoyer son message de
-   * passation au client. Un message libre, lui, garde le fil (les boutons d'un scénario sans modèle marchaient).
-   * Seulement sur un fil que tient le scénario (`app_workflow`) et si l'agent est allumé ; rien n'est écrit chez
-   * nous, la colonne dit déjà `app_workflow`. Un refus de Meta est journalisé, jamais levé.
-   */
-  retenirApresNotreModele(tenantId: string, waId: string): Promise<void>;
-  /**
    * La réponse à une campagne dont le devenir est « Inbox » : prendre le fil pour l'équipe (`app_human`), pour
    * qu'aucun robot ne réponde et que la conversation entre dans « À traiter ». Un fil déjà tenu par un opérateur
-   * reste tel quel. `false` = Meta a refusé de céder le fil, son agent répond. `cause` : la campagne, telle que la
-   * frise du panneau Détail la dit (« automatique : campagne Rentrée »). La bascule ouvre une demande du
-   * Quantitatif > Performance (`escaladee`, `ouvreUneDemande`) : le client vient de répondre et attend l'équipe.
+   * reste tel quel. `false` = Meta a refusé de retirer le contact de la liste, son agent répond. `cause` : la
+   * campagne, telle que la frise du panneau Détail la dit (« automatique : campagne Rentrée »). La bascule ouvre une
+   * demande du Quantitatif > Performance (`escaladee`, `ouvreUneDemande`) : le client vient de répondre et attend
+   * l'équipe.
    */
   prendrePourLEquipe(tenantId: string, waId: string, cause: string): Promise<boolean>;
   /**
@@ -219,9 +216,10 @@ export interface ControleDuFil {
    */
   entrantEnStandby(tenantId: string, waId: string, envoyeLe?: Date): Promise<void>;
   /**
-   * Le balayage d'inactivité rend un fil que plus personne ne traite. Vers `mba` : Meta d'abord, et un refus, une
-   * absence de numéro ou un fil de test n'écrivent rien (réessai à la passe suivante). Rend `true` si la bascule a
-   * eu lieu. `detenteur` est celui que le balayage a lu : la garde `only` refuse s'il a changé depuis.
+   * Le balayage d'inactivité rend un fil que plus personne ne traite. Vers `mba` : on confie d'abord (liste, puis
+   * `release`), et un refus, une absence de numéro ou un fil de test n'écrivent rien (réessai à la passe suivante).
+   * Aucun événement : l'agent parle au prochain message. Rend `true` si la bascule a eu lieu. `detenteur` est celui
+   * que le balayage a lu : la garde `only` refuse s'il a changé depuis.
    */
   rendreApresInactivite(tenantId: string, waId: string, detenteur: ControlOwner, vers: 'mba' | 'app_workflow'): Promise<boolean>;
   /** Un scénario ou un agent IA peut-il écrire dans ce fil ? Seulement s'il est `app_workflow`. */
@@ -239,70 +237,79 @@ const CAUSES = {
   finDeParcours: parCause('fin du scénario'),
   personneNeSuit: parCause('le contact écrit et personne ne suit la conversation'),
   scenario: parCause('un scénario reprend la conversation'),
-  boutonDuScenario: parCause('le contact répond au bouton d’un scénario'),
   standby: parCause('Meta rend la conversation à son agent'),
   inactivite: parCause('délai de reprise écoulé'),
 } satisfies Record<string, AuteurDuChangement>;
 const CAUSE_PASSATION = automatique('agent de Meta');
 
+/**
+ * Ce que « confier » a fait. `confie` : le contact est sur la liste et le fil rendu à l'agent ; `ajoute` dit s'il
+ * vient d'y entrer. Les trois autres n'ont rien fait chez Meta.
+ */
+type IssueConfier =
+  | { sorte: 'confie'; numero: string; ajoute: boolean }
+  | { sorte: 'agent_eteint' | 'aucun_numero' | 'conversation_de_test' | 'contact_muet' };
+
 export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
   const { depot } = deps;
 
-  /** L'acte chez Meta. `false` sans numéro connecté ; lève si Meta refuse. */
-  const acteChezMeta = async (tenantId: string, waId: string, acte: 'releaseThread' | 'takeThread'): Promise<boolean> => {
-    const numero = await deps.numeros.getTenantPhoneNumberId(tenantId);
-    if (!numero) return false;
-    const client = await deps.meta.mbaClientForTenant(tenantId);
-    await client[acte](numero, waId);
-    return true;
-  };
+  const mbaAllume = async (tenantId: string): Promise<boolean> => (await deps.reglages.get(tenantId)).mbaEnabled;
 
   /**
-   * Prendre le fil chez Meta, avec un rejeu et jamais deux. `true` = Meta n'a pas protesté (il a cédé le fil, ou
-   * aucun numéro n'est connecté). Ne lève pas : l'appelant écrit sa colonne selon ce booléen. Le client MBA lève
-   * sur tout refus, 429 compris, et ce geste devient un appel par destinataire de campagne : sans rejeu, un
-   * plafond de débit ferait échouer tous les suivants. `classify` (`src/meta/errors.ts`) dit ce qui se rejoue.
+   * Confier la conversation à l'agent : le contact sur sa liste, puis `release`, dans cet ordre (rendu sans être sur
+   * la liste, le fil irait à un agent qui ne parle pas à ce contact). Agent éteint, aucun numéro, ou fil de test sur
+   * un chemin automatique (règle 5) : rien. Lève si Meta refuse l'ajout ou le `release` ; un `release` refusé laisse
+   * le contact sur la liste, et le prochain message, arrivé chez nous, rejoue la remise.
    */
-  const prendreAvecUnRejeu = async (tenantId: string, waId: string): Promise<boolean> => {
-    for (let tentative = 0; tentative < REJEU_TENTATIVES; tentative += 1) {
-      try {
-        await acteChezMeta(tenantId, waId, 'takeThread');
-        return true;
-      } catch (err) {
-        const derniere = tentative === REJEU_TENTATIVES - 1;
-        const rejouable = err instanceof MetaApiError && err.retryable;
-        if (!rejouable || derniere) {
-          // eslint-disable-next-line no-console
-          console.warn(`prise du fil : Meta a REFUSÉ de nous céder le fil pour ${waId} (${tenantId}) après ${tentative + 1} tentative(s), le détenteur ne change pas :`, messageDe(err));
-          return false;
-        }
-        await deps.attendre(Math.min(err.retryAfterMs ?? REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS));
-      }
-    }
-    return false;
-  };
-
-  /** Toute remise AUTOMATIQUE à l'agent passe par ici : jamais un fil de test (règle 5). Lève si Meta refuse. */
-  const remiseAutomatique = async (tenantId: string, waId: string): Promise<'rendu' | 'aucun_numero' | 'conversation_de_test'> => {
-    if (await depot.estConversationDeTest(tenantId, waId)) {
+  const confier = async (tenantId: string, waId: string, o: { automatique: boolean }): Promise<IssueConfier> => {
+    if (!(await mbaAllume(tenantId))) return { sorte: 'agent_eteint' };
+    if (o.automatique && await depot.estConversationDeTest(tenantId, waId)) {
       // eslint-disable-next-line no-console
-      console.log(`release vers MBA ignoré pour ${waId} : conversation de TEST, le fil reste à l'app`);
-      return 'conversation_de_test';
+      console.log(`remise à l’agent de Meta ignorée pour ${waId} : conversation de TEST, le fil reste à l’app`);
+      return { sorte: 'conversation_de_test' };
     }
-    return (await acteChezMeta(tenantId, waId, 'releaseThread')) ? 'rendu' : 'aucun_numero';
+    // Un contact désabonné ou bloqué n'est jamais confié par une machine : l'agent lui parlerait.
+    if (o.automatique && ((await deps.consentement.estDesabonne(tenantId, waId)) || (await deps.consentement.estBloque(tenantId, waId)))) {
+      return { sorte: 'contact_muet' };
+    }
+    const numero = await deps.numeros.getTenantPhoneNumberId(tenantId);
+    if (!numero) return { sorte: 'aucun_numero' };
+    const ajoute = await deps.liste.ajouter(tenantId, numero, waId);
+    await (await deps.meta.mbaClientForTenant(tenantId)).releaseThread(numero, waId);
+    return { sorte: 'confie', numero, ajoute };
   };
 
   /**
-   * Relâche le fil maintenant, puis écrit `mba`, depuis l'état d'attente seulement. Sur un refus, un fil de test
-   * ou une absence de numéro, rien n'est écrit : l'état d'attente est déjà visible. La réponse de Meta ne dit rien
-   * (`{"messaging_product":"whatsapp"}`) : le balayage reste le filet.
+   * Prévient l'agent qu'un message l'attend, pour qu'il y réponde tout de suite. Un refus est journalisé, jamais
+   * levé : la colonne dit `mba`, et l'agent répondra au prochain message du client.
+   */
+  const prevenir = async (tenantId: string, numero: string, waId: string, contenu: string): Promise<void> => {
+    if (contenu.trim() === '') {
+      // eslint-disable-next-line no-console
+      console.log(`agent_event non envoyé pour ${waId} : aucun texte lisible, l’agent répondra au prochain message`);
+      return;
+    }
+    try {
+      const client = await deps.meta.mbaClientForTenant(tenantId);
+      const reponse = await client.agentEvent(numero, destinataireAgentEvent(waId), evenementMessageSansSuite(contenu), AbortSignal.timeout(10_000));
+      // La réponse porte l'identifiant de l'événement, seul moyen de demander ensuite à Meta ce qu'il en a fait.
+      // eslint-disable-next-line no-console
+      console.log(`agent_event sans suite envoyé pour ${waId} : ${traceReponse(reponse)}`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`agent_event sans suite REFUSÉ pour ${waId} (${tenantId}), l’agent répondra au prochain message :`, messageDe(err));
+    }
+  };
+
+  /**
+   * Confie maintenant, puis écrit `mba`, depuis l'état d'attente seulement. Sur un refus, un fil de test ou une
+   * absence de numéro, rien n'est écrit : l'état d'attente est déjà visible. La réponse de Meta au `release` ne dit
+   * rien (`{"messaging_product":"whatsapp"}`) : le balayage reste le filet.
    */
   const rendreMaintenant = async (tenantId: string, waId: string): Promise<void> => {
-    if ((await remiseAutomatique(tenantId, waId)) !== 'rendu') return;
+    if ((await confier(tenantId, waId, { automatique: true })).sorte !== 'confie') return;
     await depot.setControlOwner(tenantId, waId, 'mba', { par: CAUSES.finDeParcours, only: ['app_human'], effacerEscalade: true });
   };
-
-  const mbaAllume = async (tenantId: string): Promise<boolean> => (await deps.reglages.get(tenantId)).mbaEnabled;
 
   return {
     async prisEnEcrivant(tenantId, waId, par) {
@@ -310,9 +317,8 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     },
 
     async reprendreLaMain(tenantId, waId, par) {
-      // `take` sur un fil que nous tenons déjà serait au mieux inutile, au pire une erreur lue comme une panne.
-      if ((await depot.getControlOwner(tenantId, waId)) === 'mba' && (await mbaAllume(tenantId))
-        && !(await prendreAvecUnRejeu(tenantId, waId))) return 'refuse';
+      // Quelle que soit notre colonne : elle peut dire `app_human` d'un contact que l'agent a encore sur sa liste.
+      if (!(await deps.liste.retirer(tenantId, waId))) return 'refuse';
       await depot.setControlOwner(tenantId, waId, 'app_human', { par });
       return 'pris';
     },
@@ -329,7 +335,8 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
         return 'app_workflow';
       }
-      if (!(await acteChezMeta(tenantId, waId, 'releaseThread'))) return 'aucun_numero';
+      // Geste humain : un fil de test se confie aussi (règle 5).
+      if ((await confier(tenantId, waId, { automatique: false })).sorte !== 'confie') return 'aucun_numero';
       await depot.setControlOwner(tenantId, waId, 'mba', { par, effacerEscalade: true });
       return 'mba';
     },
@@ -350,15 +357,24 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       await rendreMaintenant(cible.tenantId, cible.waId);
     },
 
-    async remettreSiPersonneNeSuit(tenantId, waId) {
+    async remettreSiPersonneNeSuit(tenantId, waId, contenu) {
       if (!(await mbaAllume(tenantId))) return;
       // Donner à l'agent un fil qu'un parcours attend serait bien pire que le silence qu'on répare.
       if (await deps.parcours.findWaitingByWaId(tenantId, waId)) return;
-      if ((await depot.getControlOwner(tenantId, waId)) === 'app_human') return;
-      if ((await remiseAutomatique(tenantId, waId)) !== 'rendu') return;
+      const detenteur = await depot.getControlOwner(tenantId, waId);
+      if (detenteur === 'app_human') return;
+      const issue = await confier(tenantId, waId, { automatique: true });
+      if (issue.sorte !== 'confie') return;
       // `app_workflow` : le défaut d'une conversation née d'un envoi sortant, hors « À traiter » et muette sans ce
       // geste. `mba` : notre colonne peut le dire quand Meta pense l'inverse, et l'appel répare.
-      await depot.setControlOwner(tenantId, waId, 'mba', { par: CAUSES.personneNeSuit, only: ['app_workflow', 'mba'], effacerEscalade: true });
+      const ecrit = await depot.setControlOwner(tenantId, waId, 'mba', { par: CAUSES.personneNeSuit, only: ['app_workflow', 'mba'], effacerEscalade: true });
+      /**
+       * Déjà confiée (sur la liste, et `mba` chez nous) : l'agent a la parole, et le prévenir le ferait répondre deux
+       * fois quand une réponse « à côté » vient de lui être transmise par la fin du scénario, dans le même lot.
+       * Colonne pas écrite depuis un autre détenteur : quelqu'un a pris le fil entre-temps, on ne lui parle pas dessus.
+       */
+      if (detenteur === 'mba' ? !issue.ajoute : !ecrit) return;
+      await prevenir(tenantId, issue.numero, waId, contenu);
     },
 
     async reprendrePourLApp(tenantId, waId, opts) {
@@ -367,29 +383,16 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         console.log(`reprise du fil écartée pour ${waId} (${tenantId}) : un opérateur le tient, et ce démarrage vient du client`);
         return 'operateur';
       }
-      // L'agent de Meta est le répondeur primaire du numéro : tant qu'on ne lui a pas pris le fil, il répond quoi
-      // que dise notre base. Dans l'ordre inverse, le scénario répondrait par-dessus lui.
-      if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
+      // Tant que le contact est sur la liste de l'agent, l'agent peut lui répondre quoi que dise notre base. Dans
+      // l'ordre inverse, le scénario répondrait par-dessus lui.
+      if (!(await deps.liste.retirer(tenantId, waId))) return false;
       await depot.setControlOwner(tenantId, waId, 'app_workflow', { par: CAUSES.scenario, effacerEscalade: true });
       return true;
     },
 
-    async reprendreSurNotreBouton(tenantId, waId) {
-      if (!(await deps.parcours.findWaitingByWaId(tenantId, waId))) return false;
-      if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
-      await depot.setControlOwner(tenantId, waId, 'app_workflow', { par: CAUSES.boutonDuScenario, effacerEscalade: true });
-      return true;
-    },
-
-    async retenirApresNotreModele(tenantId, waId) {
-      if (!(await mbaAllume(tenantId))) return;
-      if ((await depot.getControlOwner(tenantId, waId)) !== 'app_workflow') return;
-      await prendreAvecUnRejeu(tenantId, waId);
-    },
-
     async prendrePourLEquipe(tenantId, waId, cause) {
       if ((await depot.getControlOwner(tenantId, waId)) === 'app_human') return true;
-      if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
+      if (!(await deps.liste.retirer(tenantId, waId))) return false;
       await depot.setControlOwner(tenantId, waId, 'app_human', { par: { cause }, ouvreUneDemande: true });
       return true;
     },
@@ -414,10 +417,10 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     async rendreApresInactivite(tenantId, waId, detenteur, vers) {
       if (vers === 'mba') {
         try {
-          if ((await remiseAutomatique(tenantId, waId)) !== 'rendu') return false;
+          if ((await confier(tenantId, waId, { automatique: true })).sorte !== 'confie') return false;
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error(`release vers MBA REFUSÉ pour ${waId}, l’état local n’a pas été écrit:`, messageDe(err));
+          console.error(`remise à l’agent de Meta REFUSÉE pour ${waId}, l’état local n’a pas été écrit:`, messageDe(err));
           return false;
         }
       }

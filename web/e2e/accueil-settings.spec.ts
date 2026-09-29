@@ -37,10 +37,10 @@ test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
    * PARTIE (Julien, 2026-09-25 : on retire, on n'ajoute rien). Ce qui reste vrai se vérifie : l'interrupteur dit
    * notre état, le chiffre de l'agent est là, et aucune phrase ne prétend le contraire.
    */
-  test('🔴 l’agent de Meta répond à tout le monde : l’interrupteur et le chiffre, sans la phrase', async ({ page }) => {
+  test('🔴 l’agent de Meta répond : l’interrupteur et le chiffre, sans la phrase', async ({ page }) => {
     await mockAccueil(page, {
       settings: { controlHandbackSeconds: null, mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false },
-      mbaStatus: { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: true }, ai_audience: 'EVERYONE' } },
+      mbaStatus: { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: true }, ai_audience: 'ALLOWLISTED_ONLY' } },
       mbaMessages: { messages: 1412 },
     });
     const carte = page.getByTestId('settings-card');
@@ -60,14 +60,6 @@ test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
     await expect(etat).toContainText(/n’a pas encore ouvert|has not opened/);
     // Et le bouton DIT qu'il ne pilote que notre côté, ce que son silence laissait croire l'inverse.
     await expect(page.getByTestId('settings-card')).toContainText(/côté Engage Me seulement|Engage Me side only/);
-  });
-
-  test('agent qui répond à la liste autorisée : aucune phrase d’état (décision du 2026-09-25)', async ({ page }) => {
-    await mockAccueil(page, {
-      mbaStatus: { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: true }, ai_audience: 'ALLOWLISTED_ONLY' } },
-    });
-    await expect(page.getByTestId('mba-toggle')).toBeVisible();
-    await expect(page.getByTestId('mba-etat-reel')).toHaveCount(0);
   });
 
   test('le toggle MBA reflète CE QUE LE SERVEUR A FAIT, plus une bascule optimiste', async ({ page }) => {
@@ -101,7 +93,7 @@ test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
  * (`web/e2e/mba-parametres-entete.spec.ts`). Un nombre et son libellé, aucune légende.
  */
 test.describe('Accueil : les messages écrits par l’agent de Meta', () => {
-  const REPOND = { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: true }, ai_audience: 'EVERYONE' } };
+  const REPOND = { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: true }, ai_audience: 'ALLOWLISTED_ONLY' } };
 
   test('l’agent RÉPOND chez Meta : le chiffre DANS le cadre, avec son seul libellé', async ({ page }) => {
     await mockAccueil(page, { mbaStatus: REPOND, mbaMessages: { messages: 1412 } });

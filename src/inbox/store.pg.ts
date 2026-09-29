@@ -602,8 +602,8 @@ export class PgInboxStore implements InboxStore {
     ageScenarioMs = 0,
   ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null; escaladee: boolean }>> {
     /**
-     * Les fils tenus par un scénario entrent aussi, puisque `take` prend le fil pour de vrai : un parcours
-     * abandonné le garderait à jamais. Leur délai est fixe, donc filtré ici ; sans ce filtre, `app_workflow`
+     * Les fils tenus par un scénario entrent aussi, puisqu'un parcours reprend le fil pour de vrai (le contact
+     * quitte la liste de l'agent de Meta) : un parcours abandonné le garderait à jamais. Leur délai est fixe, donc filtré ici ; sans ce filtre, `app_workflow`
      * (l'état normal) saturerait le lot de 500 et les fils humains à rendre ne seraient jamais atteints.
      *
      * `control_changed_at is null` est éligible : envoyer un message prend le fil chez Meta, donc une

@@ -380,7 +380,6 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * colonne ensuite, un rejeu : le geste est `ControleDuFil.reprendrePourLApp`.
      */
     reclaimControl: fil.reprendrePourLApp,
-    retenirApresModele: fil.retenirApresNotreModele,
     // L'agent de Meta est-il allumé chez ce client ? Décide qu'une étape sans choix cesse de bloquer le
     // parcours, et qu'on rende le fil à Meta en fin de chaîne.
     mbaActifPour: async (tenant) => (await settingsStore.get(tenant)).mbaEnabled,

@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { processInbound, type DepsEntrants, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
 import { creerControleDuFil } from '../src/inbox/fil';
-import { bancDuFil, depotEnMemoire } from './banc-du-fil';
+import { creerListeDeLAgent } from '../src/mba/liste';
+import { bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
 import { aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
-import { aucunStop } from './consentement';
+import { aucunStop, jamaisBloque, jamaisDesabonne } from './consentement';
 
 /**
  * Qui détient le fil d'une conversation, et comment on l'apprend.
@@ -144,37 +145,49 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
 });
 
 /**
- * Les deux boutons, par le VRAI geste (`src/inbox/fil.ts`) : un numéro et un client Meta qui notent ce qu'on leur
- * passe, sur un dépôt en mémoire. Ces cas gardaient les deux fabriques d'appel à Meta, absorbées par le module.
+ * Les deux boutons, par le VRAI geste (`src/inbox/fil.ts`) et la VRAIE liste de l'agent (`src/mba/liste.ts`) : un
+ * numéro et un client Meta qui notent ce qu'on leur passe, sur un dépôt et une table en mémoire. Ces cas gardaient
+ * les deux fabriques d'appel à Meta, absorbées par le module.
  */
-function monterBouton(o: { numero?: string | null; detenteur: 'mba' | 'app_human'; release?: () => Promise<void>; take?: () => Promise<void> }) {
+function monterBouton(o: {
+  numero?: string | null; detenteur: 'mba' | 'app_human'; surLaListe?: boolean;
+  release?: () => Promise<void>; retrait?: () => Promise<void>;
+}) {
+  const WA = '33633921577';
   const appels: Array<[string, string, string]> = [];
   let clientDemande = false;
-  const memoire = depotEnMemoire({ '33633921577': { owner: o.detenteur } });
+  const memoire = depotEnMemoire({ [WA]: { owner: o.detenteur } });
+  const table = listeEnMemoire(o.surLaListe ? [WA] : []);
+  const client = {
+    releaseThread: async (pn: string, waId: string) => { appels.push(['release', pn, waId]); await o.release?.(); },
+    agentEvent: async () => ({ id: 'ev' }),
+    listAllowlist: async () => [],
+    addToAllowlist: async (pn: string, numero: string) => { appels.push(['ajout', pn, numero]); return { id: entreeDe(WA), consumer_phone_number: numero }; },
+    removeFromAllowlist: async (pn: string, entree: string) => { appels.push(['retrait', pn, entree]); await o.retrait?.(); },
+  };
+  const liste = creerListeDeLAgent({ store: table.store, clientMba: async () => client, attendre: async () => {} });
   const fil = creerControleDuFil({
     depot: memoire.depot,
     reglages: { get: async () => ({ mbaEnabled: true }) },
     parcours: { findWaitingByWaId: async () => null },
     numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? '1234840649713976' : o.numero) },
-    meta: {
-      mbaClientForTenant: async () => {
-        clientDemande = true;
-        return {
-          releaseThread: async (pn: string, waId: string) => { appels.push(['release', pn, waId]); await o.release?.(); },
-          takeThread: async (pn: string, waId: string) => { appels.push(['take', pn, waId]); await o.take?.(); },
-        };
-      },
-    },
-    attendre: async () => {},
+    liste,
+    consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
+    meta: { mbaClientForTenant: async () => { clientDemande = true; return client; } },
   });
-  return { fil, appels, clientDemande: () => clientDemande, etat: memoire.etat };
+  return { fil, appels, clientDemande: () => clientDemande, etat: memoire.etat, table: table.lignes };
 }
 
 describe('rendre le fil à Meta (« Rendre la main »)', () => {
-  it('appelle `releaseThread` avec le numéro du client, puis écrit `mba`', async () => {
+  it('ajoute le contact à la liste de l’agent (E.164), puis `releaseThread` avec le numéro du client, puis écrit `mba`', async () => {
     const m = monterBouton({ detenteur: 'app_human' });
     expect(await m.fil.rendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('mba');
-    expect(m.appels).toEqual([['release', '1234840649713976', '33633921577']]);
+    expect(m.appels).toEqual([
+      ['ajout', '1234840649713976', '+33633921577'],
+      ['release', '1234840649713976', '33633921577'],
+    ]);
+    // La ligne garde le numéro et l'identifiant rendu par Meta : sans eux, on ne pourrait plus retirer ce contact.
+    expect(m.table.get('33633921577')).toEqual({ phoneNumberId: '1234840649713976', entreeId: entreeDe('33633921577') });
     expect(m.etat('33633921577')?.owner).toBe('mba');
   });
 
@@ -197,31 +210,32 @@ describe('rendre le fil à Meta (« Rendre la main »)', () => {
 });
 
 describe('prendre le fil à Meta (« Reprendre la main »)', () => {
-  it('🔴 appelle `takeThread`, PAS `releaseThread`', async () => {
-    // Les deux actes partent sur la MÊME URL et ne different que par un mot dans le corps : les confondre
-    // rendrait le fil à l'agent de Meta sous un bouton qui promet de le lui prendre, et le symptôme serait
-    // exactement celui qu'on répare.
-    const m = monterBouton({ detenteur: 'mba' });
+  it('🔴 RETIRE le contact de la liste de l’agent, avec le numéro et l’identifiant gardés, et n’appelle PAS `release`', async () => {
+    // `thread_control` n'a plus de geste inverse qui marche (`take` ne nous rendait rien, mesuré le 2026-09-29) :
+    // seul le retrait de la liste fait taire l'agent. Confondre les deux rendrait le fil à l'agent sous un bouton
+    // qui promet de le lui prendre.
+    const m = monterBouton({ detenteur: 'mba', surLaListe: true });
     expect(await m.fil.reprendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('pris');
-    expect(m.appels).toEqual([['take', '1234840649713976', '33633921577']]);
+    expect(m.appels).toEqual([['retrait', 'pn1', entreeDe('33633921577')]]);
+    expect(m.table.has('33633921577')).toBe(false);
     expect(m.etat('33633921577')?.owner).toBe('app_human');
   });
 
-  it('sans numéro connecté : AUCUN appel, et le fil est à l’équipe (notre colonne est la seule vérité)', async () => {
-    const m = monterBouton({ detenteur: 'mba', numero: null });
+  it('contact absent de la liste : AUCUN appel, et le fil est à l’équipe (l’agent ne lui parle pas)', async () => {
+    const m = monterBouton({ detenteur: 'mba' });
     expect(await m.fil.reprendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('pris');
     expect(m.appels).toEqual([]);
     expect(m.etat('33633921577')?.owner).toBe('app_human');
   });
 
   it('🔴 un refus de Meta est RENDU, et rien n’est écrit', async () => {
-    // Meta réserve `take` au « configured escalation partner » : le refus est un cas NORMAL. L'avaler laisserait
-    // un opérateur croire qu'il a éteint l'agent de Meta, donc cesser de surveiller la conversation pendant que
-    // l'agent continue de répondre. Le geste rejoue un refus passager (décision de Julien du 2026-09-27), jamais
-    // un refus définitif : un seul appel ici.
-    const m = monterBouton({ detenteur: 'mba', take: async () => { throw new Error('not the configured escalation partner'); } });
+    // L'avaler laisserait un opérateur croire qu'il a éteint l'agent de Meta, donc cesser de surveiller la
+    // conversation pendant que l'agent continue de répondre. Le geste rejoue un refus passager (décision de
+    // Julien du 2026-09-27), jamais un refus définitif : un seul appel ici.
+    const m = monterBouton({ detenteur: 'mba', surLaListe: true, retrait: async () => { throw new Error('refusé'); } });
     expect(await m.fil.reprendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('refuse');
     expect(m.appels).toHaveLength(1);
+    expect(m.table.has('33633921577')).toBe(true);
     expect(m.etat('33633921577')?.owner).toBe('mba');
   });
 });

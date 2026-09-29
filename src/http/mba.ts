@@ -1,10 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { MbaClient, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
+import { AudienceNonConfirmee, MbaClient, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
 import type { BusinessInfo, Faq, Skill } from '../mba/client';
 import { extraireDepuisCsv, extraireDepuisHtml, extraireDepuisJson, normaliser, planifierImport } from '../mba/faq-import';
 import type { FaqRow } from '../mba/faq-import';
-import { normalizePhone } from '../crm/phone';
 import { isSendableButtonUrl } from '../meta/button-url';
 import { urlRecuperable } from '../lib/page-distante';
 import type { PageDistante } from '../lib/page-distante';
@@ -14,7 +13,8 @@ import { appliquerActivation, EtatMetaIllisible, MetaARefuse } from '../mba/acti
 
 /**
  * Configuration du Meta Business Agent depuis la console : base de connaissance (informations business, FAQ,
- * fichiers, sites), compétences, réglages, liste d'autorisation et bac à sable. Groupe admin (ces routes écrivent
+ * fichiers, sites), compétences, réglages et bac à sable. La liste d'autorisation n'a plus de route : la plateforme
+ * la tient seule (`src/mba/liste.ts`), et une entrée posée à la main serait ignorée de notre table. Groupe admin (ces routes écrivent
  * la connaissance publique de la marque).
  * 🔴 La surface MBA est indexée par numéro : `phoneNumberBelongsToTenant` est ici le vrai contrôle d'isolation,
  * sans lui un admin piloterait l'agent du numéro d'un autre client en changeant l'id dans l'URL.
@@ -272,6 +272,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
    * Réglages : seules les clés reconnues sont modifiables, le reste de l'objet est repassé tel quel par
    * `modifierSettings` (le PUT de Meta est un remplacement complet). L'allumage n'est pas ici : action à
    * conséquence asymétrique (éteindre coupe tous les fils, rallumer ne reprend que les nouveaux), elle a sa route.
+   * L'audience non plus : elle vaut toujours la liste, que la plateforme tient, et `modifierSettings` la pose à
+   * chaque écriture. La demander est refusé en le disant, plutôt qu'ignoré en silence.
    */
   app.patch(`${base}/settings`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -280,10 +282,9 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const patch: Record<string, unknown> = {};
 
     if (b.aiAudience !== undefined) {
-      if (b.aiAudience !== 'EVERYONE' && b.aiAudience !== 'ALLOWLISTED_ONLY') {
-        return reply.code(400).send({ error: "aiAudience invalide ('EVERYONE' | 'ALLOWLISTED_ONLY')" });
-      }
-      patch.ai_audience = b.aiAudience;
+      return reply.code(400).send({
+        error: 'aiAudience ne se règle plus : l’agent de Meta ne répond qu’aux contacts de sa liste, que la plateforme tient elle-même (elle y met les conversations qu’elle lui confie).',
+      });
     }
     if (b.neverSay !== undefined) {
       if (!Array.isArray(b.neverSay) || !b.neverSay.every((p) => nonEmpty(p))) {
@@ -327,13 +328,22 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   /**
    * Allumage / extinction, route séparée. Meta documente l'asymétrie : `false` arrête l'agent sur toutes les
    * conversations, y compris en cours ; `true` ne le remet que sur les nouvelles. L'écran doit le dire avant.
+   * L'allumage suit l'ordre que Meta prescrit (audience, relecture, puis `rollout`) : `ecrireRollout`.
    */
   app.put(`${base}/rollout`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const enabled = (req.body as { enabled?: unknown } | null)?.enabled;
     if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled requis (booléen)' });
-    await modifierSettings(ctx.client, ctx.pn, { rollout: { enabled } });
+    try {
+      await ecrireRollout(ctx.client, ctx.pn, enabled);
+    } catch (err) {
+      // 4xx, jamais 5xx : Cloudflare remplacerait le corps, et l'écran ne dirait plus pourquoi rien n'a changé.
+      if (!(err instanceof AudienceNonConfirmee)) throw err;
+      // eslint-disable-next-line no-console
+      console.error(`mba rollout: ${err.message} (${ctx.tenant})`);
+      return reply.code(409).send({ error: 'Meta n’a pas confirmé que l’agent ne répond qu’aux contacts de sa liste : il n’a pas été allumé. Réessayez dans un instant.' });
+    }
     return reply.code(200).send(await ctx.client.getSettings(ctx.pn));
   });
 
@@ -654,36 +664,6 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     return reply.code(200).send({ deleted: fileId });
   });
 
-  // ---------- Liste d'autorisation ----------
-
-  app.get(`${base}/allowlist`, g, async (req, reply) => {
-    const ctx = await contexte(req, reply, deps);
-    if (!ctx) return;
-    return reply.code(200).send({ allowlist: await ctx.client.listAllowlist(ctx.pn) });
-  });
-
-  app.post(`${base}/allowlist`, g, async (req, reply) => {
-    const ctx = await contexte(req, reply, deps);
-    if (!ctx) return;
-    const brut = (req.body as { phone?: unknown } | null)?.phone;
-    if (!nonEmpty(brut)) return reply.code(400).send({ error: 'phone requis' });
-    const { e164, error } = normalizePhone(brut);
-    if (!e164) return reply.code(400).send({ error: error ?? 'numéro invalide' });
-    // Déjà présent -> succès idempotent : le bouton « ajouter » ne doit pas échouer sur un doublon.
-    const deja = await ctx.client.listAllowlist(ctx.pn);
-    const connu = (Array.isArray(deja) ? deja : []).find((e) => normalizePhone(e.consumer_phone_number ?? '').e164 === e164);
-    if (connu) return reply.code(200).send(connu);
-    return reply.code(201).send(await ctx.client.addToAllowlist(ctx.pn, e164));
-  });
-
-  app.delete(`${base}/allowlist/:entryId`, g, async (req, reply) => {
-    const ctx = await contexte(req, reply, deps);
-    if (!ctx) return;
-    const { entryId } = req.params as { entryId: string };
-    await ctx.client.removeFromAllowlist(ctx.pn, entryId);
-    return reply.code(200).send({ deleted: entryId });
-  });
-
   // ---------- Bac à sable ----------
 
   /**
@@ -715,10 +695,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
         // Par l'objet, jamais la méthode détachée : une méthode de classe y perdrait son `this`.
         numeroDuTenant: (t) => deps.repo.getTenantPhoneNumberId(t),
         eligible: async (t, pn) => (await deps.meta.mbaClientForTenant(t)).isEligible(pn),
-        // `modifierSettings` relit puis n'écrit que `rollout` : un modèle typé fermé effacerait `never_say_phrases`,
-        // `followup` et tout champ que Meta ajouterait.
+        // `ecrireRollout` relit puis n'écrit que `rollout` et l'audience, dans l'ordre que Meta prescrit : un modèle
+        // typé fermé effacerait `never_say_phrases`, `followup` et tout champ que Meta ajouterait.
         ecrireChezMeta: async (t, pn, enabled) => {
-          await modifierSettings(await deps.meta.mbaClientForTenant(t), pn, { rollout: { enabled } });
+          await ecrireRollout(await deps.meta.mbaClientForTenant(t), pn, enabled);
         },
         ecrireDrapeau: (t, enabled) => deps.reglages.setMbaEnabled(t, enabled),
       }, tenant, b.enabled);

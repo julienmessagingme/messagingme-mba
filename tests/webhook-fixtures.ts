@@ -5,6 +5,7 @@ import type { RoutagePubDeps } from '../src/webhooks/routage-pub';
 import type { SignalAccuse } from '../src/webhooks/delivery';
 import type { DetenteurDuFil, SignalReponse } from '../src/webhooks/inbound';
 import type { NumerosDelies } from '../src/webhooks/numeros-delies';
+import type { ListeALArrivee } from '../src/webhooks/standby-hors-liste';
 import { extractInbound } from '../src/webhooks/inbound';
 import { rattacherLesEntrants, type EntrantRattache, type EspaceDuNumero } from '../src/webhooks/rattachement';
 
@@ -23,10 +24,15 @@ export const aucunSignalAccuse: SignalAccuse = async () => {};
 export const aucunSignalReponse: SignalReponse = async () => {};
 export const aucuneArriveePub: ArriveesPubDeps = { enregistrer: async () => 'ecrite' };
 /**
- * Aucun parcours n'attend le contact : un tap sur nos boutons arrivé en `standby` reste à l'agent de Meta (le
- * comportement d'avant le 2026-09-29). Les tests qui ne parlent pas de cette reprise le disent en la passant.
+ * L'agent de Meta est éteint pour tous les espaces : aucun `standby` n'est réécrit à l'arrivée, chacun reste un
+ * `standby` que le reste du code ignore (le comportement d'avant le mode liste). Les tests qui ne parlent pas de la
+ * liste de l'agent le disent en la passant ; un test qui la VÉRIFIE câble la vraie liste
+ * (`bancDuFil(...).liste`, `tests/banc-du-fil.ts`).
  */
-export const aucuneRepriseSurBouton = async (): Promise<boolean> => false;
+export const agentEteintALArrivee: ListeALArrivee = {
+  agentAllume: async () => false,
+  presents: () => { throw new Error('agentEteintALArrivee : la liste ne se lit pas quand l’agent est éteint'); },
+};
 
 /** Aucun numéro délié (migration 0180) : le test ne porte pas sur le geste de l'Accueil, et le DIT. */
 export const aucunNumeroDelie: NumerosDelies = async () => new Set();

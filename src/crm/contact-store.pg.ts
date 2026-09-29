@@ -5,6 +5,7 @@ import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import type { ContactStore, ContactUpsert, ContactDeLot, LotContacts } from './import';
 import { classifyWaId, waIdOf } from './identity';
 import { messageDe } from '../lib/erreur';
+import type { LigneDeLaListe } from '../mba/liste';
 
 export interface ContactRow {
   id: string;
@@ -1290,15 +1291,18 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * 🔴 Purge : efface réellement les données d'une personne, en gardant les compteurs.
+   * 🔴 Purge : efface réellement les données d'une personne, en gardant les compteurs. `listeAgent` : les lignes
+   * de la liste de l'agent de Meta supprimées ici, à retirer chez Meta après la transaction (la route s'en charge).
    * Effacé : le fil, ses messages, son analyse (texte libre tiré de la conversation), et les traces techniques
    * qui portent le numéro (parcours, déclenchements d'automation, cache RCS). Anonymisé : la fiche et ses lignes
    * de campagne restent, colonnes identifiantes remplacées, pour que les totaux restent justes.
    * L'identifiant de remplacement est aléatoire, pas une empreinte du numéro (réversible en quelques minutes).
    * Transactionnel : une purge à moitié faite laisserait du contenu sans moyen de le retrouver.
    */
-  async purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }> {
-    if (ids.length === 0) return { purges: 0, conversations: 0, messages: 0, analyses: 0 };
+  async purgeMany(tenantId: string, ids: readonly string[]): Promise<{
+    purges: number; conversations: number; messages: number; analyses: number; listeAgent: LigneDeLaListe[];
+  }> {
+    if (ids.length === 0) return { purges: 0, conversations: 0, messages: 0, analyses: 0, listeAgent: [] };
     return enTransaction(this.pool, async (client) => {
       // Numéros des contacts visés, lus avant l'anonymisation : le cache RCS est indexé en E.164 (`+33…`), pas en wa_id.
       const cibles = await client.query<{ phone_e164: string | null }>(
@@ -1369,6 +1373,14 @@ export class PgContactStore implements ContactStore {
         );
       }
 
+      // La liste de l'agent de Meta (migration 0195) : la ligne part ici, et elle est RENDUE, parce que l'entrée chez
+      // Meta ne peut se retirer qu'avec l'identifiant qu'elle porte. La route la retire chez Meta après la validation :
+      // un appel à un tiers ne se fait pas dans une transaction qu'il retiendrait ouverte.
+      const listeAgent = waIdsAAnonymiser.length === 0 ? [] : (await client.query<{ wa_id: string; phone_number_id: string; entree_id: string }>(
+        `delete from mba_liste where tenant_id = $1 and wa_id = any($2::text[]) returning wa_id, phone_number_id, entree_id`,
+        [tenantId, waIdsAAnonymiser],
+      )).rows.map((r) => ({ waId: r.wa_id, phoneNumberId: r.phone_number_id, entreeId: r.entree_id }));
+
       // L'échec d'un message libre garde le numéro et le motif : effacé, pas anonymisé (journal d'exploitation, sans
       // quantitatif). Visé par les deux formes du numéro : un échec survit à son fil, et peut précéder le message.
       if (waIdsAAnonymiser.length > 0) {
@@ -1409,7 +1421,7 @@ export class PgContactStore implements ContactStore {
           where tenant_id = $1 and id = any($2::uuid[]) and anonymized_at is null`,
         [tenantId, ids],
       );
-      return { purges: res.rowCount ?? 0, conversations: convIds.length, messages, analyses };
+      return { purges: res.rowCount ?? 0, conversations: convIds.length, messages, analyses, listeAgent };
     });
   }
 }

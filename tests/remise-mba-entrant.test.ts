@@ -5,7 +5,8 @@ import { entrantsDe } from './webhook-fixtures';
 import { bancDuFil } from './banc-du-fil';
 
 /**
- * L'AGENT DE META REPREND LA MAIN QUAND UN CLIENT REVIENT ET QUE PERSONNE NE SUIT (2026-09-15).
+ * L'AGENT DE META REPREND LA MAIN QUAND UN CLIENT REVIENT ET QUE PERSONNE NE SUIT (2026-09-15), ET IL Y RÉPOND TOUT
+ * DE SUITE (mode liste, 2026-09-29 : la conversation lui est confiée, et un événement lui passe le message).
  *
  * 🔴 CE QUE CES TESTS GARDENT, ET POURQUOI ILS EXISTENT. Deux incidents mesurés en production le même jour :
  * un message resté sans réponse parce que notre base disait `mba` quand Meta pensait l'inverse, et une
@@ -35,22 +36,55 @@ const PAYLOAD = (over: { field?: string; from?: string; id?: string } = {}): unk
 });
 
 function harnais(tenant: string | null = 't1') {
-  const remises: Array<{ tenantId: string; waId: string }> = [];
+  const remises: Array<{ tenantId: string; waId: string; contenu: string }> = [];
   return {
     remises,
     tenant,
     deps: {
-      remettre: async (tenantId: string, waId: string) => { remises.push({ tenantId, waId }); },
+      remettre: async (tenantId: string, waId: string, contenu: string) => { remises.push({ tenantId, waId, contenu }); },
     },
   };
 }
+
+/** Plusieurs messages dans un même lot. */
+const LOT = (messages: Array<Record<string, unknown>>): unknown => ({
+  object: 'whatsapp_business_account',
+  entry: [{ id: 'waba1', changes: [{ field: 'messages', value: {
+    messaging_product: 'whatsapp', metadata: { display_phone_number: '33525680250', phone_number_id: 'pn1' }, messages,
+  } }] }],
+});
 
 describe('remise du fil à l’agent de Meta sur un message entrant', () => {
   it('🔴 un client qui revient déclenche la remise', async () => {
     // L'incident 1, rejoué : 33685973811 écrit après huit jours de silence et personne ne répondait.
     const h = harnais();
     await processRemiseMbaEntrant(await entrantsDe(PAYLOAD(), h.tenant), h.deps);
-    expect(h.remises).toEqual([{ tenantId: 't1', waId: '33685973811' }]);
+    // Avec son texte : l'agent y répond tout de suite, au lieu d'attendre le message suivant.
+    expect(h.remises).toEqual([{ tenantId: 't1', waId: '33685973811', contenu: 'bonjour, je reviens vers vous' }]);
+  });
+
+  it('🔴 plusieurs messages du même contact dans un lot : UN seul geste, leurs textes mis bout à bout', async () => {
+    // Deux gestes feraient deux événements, donc deux réponses de l'agent au même client.
+    const h = harnais();
+    await processRemiseMbaEntrant(await entrantsDe(LOT([
+      { from: '33600000001', id: 'wamid.1', timestamp: '1789465356', type: 'text', text: { body: 'Bonjour' } },
+      { from: '33600000002', id: 'wamid.2', timestamp: '1789465356', type: 'text', text: { body: 'Autre contact' } },
+      { from: '33600000001', id: 'wamid.3', timestamp: '1789465357', type: 'image', image: { id: 'media-1', caption: 'ma facture' } },
+      { from: '33600000001', id: 'wamid.4', timestamp: '1789465358', type: 'audio', audio: { id: 'media-2' } },
+    ]), h.tenant), h.deps);
+    expect(h.remises).toEqual([
+      { tenantId: 't1', waId: '33600000001', contenu: 'Bonjour\nma facture\n[audio]' },
+      { tenantId: 't1', waId: '33600000002', contenu: 'Autre contact' },
+    ]);
+  });
+
+  it('⚠️ une réaction confie la conversation, mais ne dit rien à l’agent', async () => {
+    // Son corps est un emoji posé sur un de nos messages, pas une question à laquelle répondre.
+    const h = harnais();
+    await processRemiseMbaEntrant(await entrantsDe(LOT([
+      { from: '33600000001', id: 'wamid.r', timestamp: '1789465356', type: 'reaction', reaction: { emoji: '👍', message_id: 'wamid.nous' } },
+    ]), h.tenant), h.deps);
+    expect(h.remises).toEqual([{ tenantId: 't1', waId: '33600000001', contenu: '' }]);
   });
 
   it('🔴 un `standby` ne déclenche RIEN : l’agent tient déjà le fil', async () => {
@@ -152,16 +186,16 @@ describe('ce que ce module ne porte pas : l’ordre du job, et les gardes du ges
    */
   it('🔴 les trois gardes du geste sont là : agent allumé, aucun parcours en attente, et `only`', async () => {
     const eteint = bancDuFil({ mbaEnabled: false, conversations: { w: { owner: 'app_workflow' } } });
-    await eteint.fil.remettreSiPersonneNeSuit('t1', 'w');
+    await eteint.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
     expect(eteint.appels, 'l’agent doit être allumé').toEqual([]);
 
     const attendu = bancDuFil({ enAttente: true, conversations: { w: { owner: 'app_workflow' } } });
-    await attendu.fil.remettreSiPersonneNeSuit('t1', 'w');
+    await attendu.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
     expect(attendu.appels, 'un parcours en attente doit REFUSER la remise').toEqual([]);
 
     const libre = bancDuFil({ conversations: { w: { owner: 'app_workflow' } } });
-    await libre.fil.remettreSiPersonneNeSuit('t1', 'w');
-    expect(libre.appels, 'la remise doit appeler Meta, pas seulement écrire').toEqual(['release:w']);
+    await libre.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
+    expect(libre.appels, 'la remise doit appeler Meta, pas seulement écrire').toEqual(['ajout:w', 'release:w', 'evenement:w']);
     expect(libre.etat('w')?.owner).toBe('mba');
   });
 
@@ -177,7 +211,7 @@ describe('ce que ce module ne porte pas : l’ordre du job, et les gardes du ges
      * ⚠️ CE CAS VÉRIFIE L'EFFET, pas la présence : aucun appel à Meta, et la colonne intacte.
      */
     const b = bancDuFil({ conversations: { w: { owner: 'app_human' } } });
-    await b.fil.remettreSiPersonneNeSuit('t1', 'w');
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
     expect(b.appels, 'un humain doit faire SORTIR avant l’appel Meta').toEqual([]);
     expect(b.etat('w')?.owner).toBe('app_human');
   });
@@ -192,7 +226,7 @@ describe('ce que ce module ne porte pas : l’ordre du job, et les gardes du ges
      *  - `app_human` doit rester DEHORS : un opérateur qui travaille dans l'Inbox ne se fait pas doubler.
      */
     const b = bancDuFil({ conversations: { w: { owner: 'app_workflow' } } });
-    await b.fil.remettreSiPersonneNeSuit('t1', 'w');
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
     const seulement = b.ecritures[0]?.opts?.only;
     expect(seulement, 'la remise doit borner les états qu’elle écrase').toBeDefined();
     expect(seulement).toContain('app_workflow');

@@ -10,6 +10,7 @@ import { MediaTropGros } from '../src/meta/media';
 import { capturerJournal } from './journal';
 import { inboxDepInerte, inboxInerte } from './routes-inertes';
 import { bancDuFil } from './banc-du-fil';
+import { RetraitDeLaListeRefuse } from '../src/mba/liste';
 import type { AuteurDuChangement } from '../src/inbox/evenements';
 
 const SECRET = 'test-secret';
@@ -156,6 +157,21 @@ describe('inbox routes', () => {
     expect(res.json<{ messageId: string }>().messageId).toBe('wamid.TPL');
     expect(sent).toMatchObject({ tenant: 't1', pn: 'pn1', to: '33611', tpl: { name: 'promo', language: 'fr', bodyParams: ['Julie'], headerMediaUrl: 'https://x.fr/v.mp4', headerFormat: 'VIDEO' } });
     expect(recordedType).toBe('template');
+    await a.close();
+  });
+
+  it('🔴 POST send-template : retrait de la liste de l’agent refusé -> erreur LISIBLE, rien de journalisé', async () => {
+    // La fabrique Meta retire le contact de la liste de l'agent de Meta avant le modèle ; refusé, le modèle ne part
+    // pas. 4xx et non 5xx (Cloudflare remplacerait le corps), avec la phrase qui dit quoi faire.
+    let journalise = false;
+    const a = app({
+      inbox: { recordOutbound: async () => { journalise = true; } },
+      sendTemplateMessage: async () => { throw new RetraitDeLaListeRefuse(); },
+    });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(), payload: { templateName: 'promo', language: 'fr' } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toMatch(/liste de l’agent de Meta.*Réessayez/);
+    expect(journalise).toBe(false);
     await a.close();
   });
 
@@ -946,21 +962,23 @@ describe('signaler à la main, et prendre le fil', () => {
     const ordre: string[] = [];
     const { fil } = bancDuFil({
       appels: ordre,
+      // Le contact est sur la liste de l'agent de Meta : prendre, c'est l'en retirer.
+      surLaListe: ['33611'],
       depot: { getControlOwner: async () => 'mba', setControlOwner: async () => { ordre.push('local'); return true; } },
     });
     const a = app({ reprendreLaMain: fil.reprendreLaMain });
     const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
     expect(res.statusCode).toBe(200);
-    expect(ordre).toEqual(['take:33611', 'local']);
+    expect(ordre).toEqual(['retrait:33611', 'local']);
   });
 
   it('🔴 Meta refuse -> 409 qui donne la porte de secours, et AUCUNE écriture locale', async () => {
     // 409 et non 500 : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc un
-    // message destiné à l'opérateur n'arriverait jamais à l'écran. Et le refus est un cas NORMAL, Meta
-    // réservant `take` au « configured escalation partner ».
+    // message destiné à l'opérateur n'arriverait jamais à l'écran.
     let localEcrit = false;
     const { fil } = bancDuFil({
-      take: ['refuse'],
+      surLaListe: ['33611'],
+      retrait: ['refuse'],
       depot: { getControlOwner: async () => 'mba', setControlOwner: async () => { localEcrit = true; return true; } },
     });
     const a = app({ reprendreLaMain: fil.reprendreLaMain });
@@ -971,14 +989,15 @@ describe('signaler à la main, et prendre le fil', () => {
     expect(localEcrit).toBe(false);
   });
 
-  it('sans agent de Meta, le bouton garde son ancien comportement purement local', async () => {
+  it('contact absent de la liste de l’agent (un espace sans MBA, en particulier) : un geste purement local', async () => {
     // Le bon repli pour un espace sans MBA : aucun appel à Meta ne doit faire disparaître un geste de rangement
-    // qui n'a rien à voir avec lui.
+    // qui n'a rien à voir avec lui. Notre table seule le décide, sans lire l'allumage de l'agent.
     const pris: string[] = [];
-    const { fil } = bancDuFil({ mbaEnabled: false, depot: { getControlOwner: async () => 'mba', setControlOwner: async (_t, waId) => { pris.push(waId); return true; } } });
-    const a = app({ reprendreLaMain: fil.reprendreLaMain });
+    const b = bancDuFil({ mbaEnabled: false, depot: { getControlOwner: async () => 'mba', setControlOwner: async (_t, waId) => { pris.push(waId); return true; } } });
+    const a = app({ reprendreLaMain: b.fil.reprendreLaMain });
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() })).statusCode).toBe(200);
     expect(pris).toEqual(['33611']);
+    expect(b.appels).toEqual([]);
   });
 });
 

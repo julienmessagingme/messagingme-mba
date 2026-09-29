@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MbaClient, fusionnerBusinessInfo, modifierSettings } from '../src/mba/client';
+import { MbaClient, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../src/mba/client';
 import { MetaApiError } from '../src/meta/errors';
 
 /** Faux fetch : enregistre les appels et rend des réponses scriptées. Aucun réseau. */
@@ -68,7 +68,7 @@ describe('MbaClient : la surface MBA n’est pas Graph', () => {
   });
 });
 
-describe('thread_control : rendre le fil, et le prendre', () => {
+describe('thread_control : rendre le fil', () => {
   it('🔴 part sur son PROPRE chemin et sa PROPRE version, 1.0.0 et non 2.0.0', () => {
     // `thread_control` est le seul endpoint du corpus versionné en 1.0.0. Une constante de client globale
     // enverrait 2.0.0, valeur hors enum, et l'appel serait rejeté sans qu'on comprenne pourquoi.
@@ -81,19 +81,11 @@ describe('thread_control : rendre le fil, et le prendre', () => {
     });
   });
 
-  it('🔴 `take` part sur le MÊME chemin, avec la MÊME version, et un corps qui ne diffère QUE par le mot', () => {
-    // 🔴 CE TEST EXISTE PARCE QUE LES DEUX ACTES SE RESSEMBLENT TROP. Même URL, même en-tête, même enveloppe :
-    // seul le mot `action` les sépare, et les confondre RENDRAIT le fil à l'agent de Meta sous un bouton qui
-    // promet de le lui prendre. `detenteur-du-fil.test.ts` éprouve le geste, mais à travers un faux client :
-    // il ne verrait ni une URL de travers, ni une version d'API fausse, qui est précisément le piège ayant
-    // déjà coûté sur `release`.
-    const { impl, appels } = faux([{ body: { messaging_product: 'whatsapp' } }]);
-    return new MbaClient('tok', impl).takeThread('PN1', '33612345678').then(() => {
-      expect(appels[0]!.url).toBe('https://api.facebook.com/business/whatsapp/phone_numbers/PN1/thread_control');
-      expect(appels[0]!.method).toBe('POST');
-      expect(appels[0]!.headers['X-API-Version']).toBe('1.0.0');
-      expect(appels[0]!.body).toEqual({ messaging_product: 'whatsapp', action: 'take', to: '33612345678' });
-    });
+  it('🔴 le client n’a plus de geste `take` : il ne nous rendait rien (mesuré le 2026-09-29)', () => {
+    // Reprendre une conversation, c'est retirer le contact de la liste de l'agent (`src/mba/liste.ts`). Un `take`
+    // revenu par mégarde serait un geste mort, que l'opérateur croirait efficace.
+    expect('takeThread' in MbaClient.prototype).toBe(false);
+    expect(typeof MbaClient.prototype.releaseThread).toBe('function');
   });
 
   it('🔴 les autres appels MBA restent en 2.0.0 (la version est par APPEL, pas par client)', async () => {
@@ -135,9 +127,8 @@ describe('modifierSettings : survivre à un champ que Meta ajouterait', () => {
       champ_invente_par_meta_demain: { garde: 'moi' },
     };
     const { impl, appels } = faux([{ body: [actuel] }, { body: {} }]);
-    await modifierSettings(new MbaClient('tok', impl), 'PN1', { ai_audience: 'ALLOWLISTED_ONLY' });
+    await modifierSettings(new MbaClient('tok', impl), 'PN1', { never_say_phrases: ['jamais ça'] });
     const envoye = appels[1]!.body as Record<string, unknown>;
-    expect(envoye.ai_audience).toBe('ALLOWLISTED_ONLY');
     expect(envoye.never_say_phrases).toEqual(['jamais ça']);
     expect(envoye.followup).toEqual({ enabled: true, followup_interval_in_seconds: 3600 });
     // Le point du test : un modèle typé fermé aurait supprimé ce champ inconnu au passage.
@@ -198,5 +189,94 @@ describe('MbaClient : agent_event', () => {
     const impl = async (): Promise<Response> => new Response('{"title":"Bad request","detail":"x"}', { status: 400 });
     await expect(new MbaClient('tok', impl as unknown as typeof fetch)
       .agentEvent('PN1', '+33600000001', { type: 't', description: 'd', payload: '{}' })).rejects.toBeDefined();
+  });
+});
+
+/**
+ * 🔴 L'AGENT DE META EST TOUJOURS EN MODE LISTE (2026-09-29) : il ne répond qu'aux contacts de sa liste, que la
+ * plateforme tient. Une écriture des réglages qui laisserait `EVERYONE` rendrait la parole à l'agent sur tous les
+ * contacts, y compris au milieu d'un scénario. Vérifié dans les deux sens : l'audience retirée de
+ * `ecrireReglages`, les deux premiers cas échouent (`EVERYONE` repasse tel quel).
+ */
+describe('toute écriture des réglages porte ALLOWLISTED_ONLY', () => {
+  it('🔴 quel que soit le patch, et quelle que soit l’audience que Meta avait', async () => {
+    const { impl, appels } = faux([{ body: [{ agent_id: 'a1', ai_audience: 'EVERYONE', rollout: { enabled: true } }] }, { body: {} }]);
+    await modifierSettings(new MbaClient('tok', impl), 'PN1', { followup: { enabled: false } });
+    expect((appels[1]!.body as Record<string, unknown>).ai_audience).toBe('ALLOWLISTED_ONLY');
+  });
+
+  it('🔴 même un patch qui demanderait EVERYONE ne passe pas', async () => {
+    const { impl, appels } = faux([{ body: [{ agent_id: 'a1' }] }, { body: {} }]);
+    await modifierSettings(new MbaClient('tok', impl), 'PN1', { ai_audience: 'EVERYONE' });
+    expect((appels[1]!.body as Record<string, unknown>).ai_audience).toBe('ALLOWLISTED_ONLY');
+  });
+
+  it('⚠️ un numéro sans réglages (pas encore onboardé) reçoit aussi l’audience', async () => {
+    const { impl, appels } = faux([{ body: [] }, { body: {} }]);
+    await modifierSettings(new MbaClient('tok', impl), 'PN1', { never_say_phrases: [] });
+    expect((appels[1]!.body as Record<string, unknown>).ai_audience).toBe('ALLOWLISTED_ONLY');
+  });
+});
+
+/**
+ * 🔴 L'ALLUMAGE SUIT L'ORDRE QUE META PRESCRIT : l'audience, une relecture en GET, puis `rollout.enabled`. En un seul
+ * PUT, Meta évaluerait l'audience stockée au moment d'allumer (l'entrée « Scinder le PUT d'activation » de
+ * `todo.md`). Vérifié dans les deux sens : `ecrireRollout` remis en un seul PUT, le premier cas échoue (deux appels
+ * au lieu de quatre).
+ */
+describe('ecrireRollout : allumer dans l’ordre', () => {
+  it('🔴 audience, relecture, puis rollout : quatre appels, dans cet ordre', async () => {
+    const { impl, appels } = faux([
+      { body: [{ agent_id: 'a1', ai_audience: 'EVERYONE', rollout: { enabled: false }, never_say_phrases: ['x'] }] },
+      { body: {} },
+      { body: [{ agent_id: 'a1', ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: false }, never_say_phrases: ['x'] }] },
+      { body: {} },
+    ]);
+    await ecrireRollout(new MbaClient('tok', impl), 'PN1', true);
+    expect(appels.map((a) => a.method)).toEqual(['GET', 'PUT', 'GET', 'PUT']);
+    const audience = appels[1]!.body as Record<string, unknown>;
+    expect(audience.ai_audience).toBe('ALLOWLISTED_ONLY');
+    expect(audience.rollout, 'le premier PUT n’allume pas').toEqual({ enabled: false });
+    const allumage = appels[3]!.body as Record<string, unknown>;
+    expect(allumage.rollout).toEqual({ enabled: true });
+    expect(allumage.ai_audience).toBe('ALLOWLISTED_ONLY');
+    expect(allumage.never_say_phrases).toEqual(['x']);
+    expect(appels[3]!.url).toContain('agent_id=a1');
+  });
+
+  it('🔴 si la relecture ne rend pas la liste, l’agent n’est PAS allumé', async () => {
+    // Un agent allumé pour tout le monde répondrait par-dessus nos scénarios : mieux vaut un refus lisible.
+    const { impl, appels } = faux([{ body: [{ agent_id: 'a1' }] }, { body: {} }, { body: [{ agent_id: 'a1', ai_audience: 'EVERYONE' }] }]);
+    await expect(ecrireRollout(new MbaClient('tok', impl), 'PN1', true)).rejects.toThrow(/audience/);
+    expect(appels.filter((a) => a.method === 'PUT')).toHaveLength(1);
+  });
+
+  it('éteindre n’a pas d’ordre à suivre : un seul PUT, qui porte aussi l’audience', async () => {
+    const { impl, appels } = faux([{ body: [{ agent_id: 'a1', rollout: { enabled: true } }] }, { body: {} }]);
+    await ecrireRollout(new MbaClient('tok', impl), 'PN1', false);
+    expect(appels.map((a) => a.method)).toEqual(['GET', 'PUT']);
+    expect(appels[1]!.body).toMatchObject({ rollout: { enabled: false }, ai_audience: 'ALLOWLISTED_ONLY' });
+  });
+
+  it('`agentId` explicite (la mise en service de l’assistant) vise cette configuration', async () => {
+    const { impl, appels } = faux([
+      { body: [{ agent_id: 'autre' }] }, { body: {} }, { body: [{ agent_id: 'autre', ai_audience: 'ALLOWLISTED_ONLY' }] }, { body: {} },
+    ]);
+    await ecrireRollout(new MbaClient('tok', impl), 'PN1', true, 'ag-assistant');
+    expect(appels[1]!.url).toContain('agent_id=ag-assistant');
+    expect(appels[3]!.url).toContain('agent_id=ag-assistant');
+  });
+});
+
+describe('MbaClient : la liste de l’agent', () => {
+  it('ajout en E.164 sur le bon chemin, retrait par identifiant', async () => {
+    const { impl, appels } = faux([{ body: { id: 'e1', consumer_phone_number: '+33612345678' } }, { body: {} }]);
+    const c = new MbaClient('tok', impl);
+    expect(await c.addToAllowlist('PN1', '+33612345678')).toEqual({ id: 'e1', consumer_phone_number: '+33612345678' });
+    await c.removeFromAllowlist('PN1', 'e1');
+    expect(appels[0]!.url).toBe('https://api.facebook.com/PN1/agent_config/allowlist');
+    expect(appels[0]!.body).toEqual({ consumer_phone_number: '+33612345678' });
+    expect(appels[1]!.url).toBe('https://api.facebook.com/PN1/agent_config/allowlist/e1');
+    expect(appels[1]!.method).toBe('DELETE');
   });
 });

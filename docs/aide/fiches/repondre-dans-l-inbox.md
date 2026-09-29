@@ -67,8 +67,8 @@ connecté, elle reste à vous : un agent sans numéro ne pourrait pas répondre.
 **Sur un fil tenu par l'agent de Meta**, le même bouton le lui prend pour de bon, sans qu'aucun message ne
 parte chez le client : l'agent se tait jusqu'à la reprise prévue, même si vous n'écrivez rien. Ces
 conversations-là se repèrent dans la liste à leur fond bleu dégradé et à la petite baguette devant le nom.
-Il arrive que Meta refuse de céder le fil : l'écran réessaie une fois, puis vous le dit, et écrire au client
-le prend à coup sûr.
+Il arrive que Meta refuse de sortir ce contact de la liste de son agent : l'écran réessaie une fois, puis vous
+le dit, et écrire au client le prend à coup sûr.
 
 **Si votre client n'écrit pas dans votre langue**, l'interrupteur « Traduire les messages reçus », en haut
 de la conversation, affiche ses messages dans la langue de votre console. Le réglage vaut pour votre

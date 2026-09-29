@@ -726,9 +726,9 @@ const constantes = {
    *  Beaucoup plus long : l'agent est censé répondre seul, on ne le préempte qu'en cas de silence anormal. */
   CONTROL_MBA_TIMEOUT_MS: 24 * 60 * 60 * 1000,
   /**
-   * Inactivité au bout de laquelle un fil tenu par un scénario revient à l'agent de Meta : la soupape du
-   * geste `take`. Un parcours abandonné (le contact ne répond jamais, le run reste `waiting`) garderait sinon
-   * le fil à jamais. La fin normale d'un parcours le rend déjà (`releaseToMba`), en deux temps : le fil passe
+   * Inactivité au bout de laquelle un fil tenu par un scénario revient à l'agent de Meta : la soupape de la
+   * reprise d'un parcours (le contact quitte la liste de l'agent). Un parcours abandonné (le contact ne répond
+   * jamais, le run reste `waiting`) garderait sinon le fil à jamais. La fin normale d'un parcours le rend déjà (`releaseToMba`), en deux temps : le fil passe
    * en `app_human` jusqu'à l'accusé du dernier envoi, et relève alors de `CONTROL_HUMAN_TIMEOUT_MS`.
    * Fixe, jamais réglable par client : c'est un garde-fou technique, et c'est ce qui permet de le filtrer en
    * SQL sans saturer le lot du balayage. 24 h et pas 2 h : un scénario attend légitimement longtemps (une

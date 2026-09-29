@@ -1,6 +1,7 @@
 import { jamaisDesabonne } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect, vi } from 'vitest';
+import { RetraitDeLaListeRefuse } from '../src/mba/liste';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
@@ -1774,47 +1775,21 @@ describe('resume : échéance d inactivité sur un bloc agent (tâche 17)', () =
   });
 });
 
-describe('WorkflowExecutor : le fil repris juste après un modèle (2026-09-29)', () => {
-  /**
-   * Mesuré le 2026-09-29 : le fil pris au lancement ne survit pas à l'envoi d'un modèle chez Meta, et la réponse du
-   * contact part chez son agent. On le reprend donc juste après chaque modèle PARTI, et seulement après un modèle.
-   */
-  const graphe = (premier: 'template' | 'quick'): WorkflowGraph => ({
-    nodes: premier === 'template'
-      ? [n('tpl', 'template', { templateName: 'promo', language: 'fr', templateButtons: [{ type: 'QUICK_REPLY', text: 'Oui' }] }), n('ib', 'inbox')]
-      : [n('qm', 'quick_message', { body: 'Bonjour', quickReplies: ['Oui'] }), n('ib', 'inbox')],
-    edges: [eh('e1', premier === 'template' ? 'tpl' : 'qm', 'ib', 'btn:0')],
-  });
+/**
+ * 🔴 UN MODÈLE DE SCÉNARIO REFUSÉ PARCE QUE LE CONTACT N'A PAS PU QUITTER LA LISTE DE L'AGENT DE META (mode liste,
+ * 2026-09-29). La fabrique lève avant l'envoi ; l'exécuteur suit le chemin d'un envoi en échec, celui de toute
+ * exception de Meta : l'erreur remonte à l'appelant (campagne : scénario non démarré ; Inbox : erreur lisible ;
+ * avance : journal des échecs), et le parcours ne continue pas au bloc suivant comme si le modèle était parti.
+ */
+describe('WorkflowExecutor : modèle refusé faute de retrait de la liste de l’agent', () => {
+  const graphe: WorkflowGraph = {
+    nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('ib', 'inbox')],
+    edges: [e('e1', 'tpl', 'ib')],
+  };
 
-  it('🔴 un modèle parti : le fil est repris une fois, pour ce contact', async () => {
-    const retenues: string[] = [];
-    const { ex } = make(graphe('template'), { retenirApresModele: async (t, w) => { retenues.push(`${t}:${w}`); } });
-    await ex.start('t1', 'wf1', graphe('template'), { waId: '33600', contactId: 'c1' });
-    expect(retenues).toEqual(['t1:33600']);
-  });
-
-  it('un modèle REFUSÉ n’est pas parti : rien à reprendre', async () => {
-    const retenues: string[] = [];
-    const { ex } = make(graphe('template'), {
-      sendTemplate: async () => 'template introuvable',
-      retenirApresModele: async (t, w) => { retenues.push(`${t}:${w}`); },
-    });
-    await ex.start('t1', 'wf1', graphe('template'), { waId: '33600', contactId: 'c1' }).catch(() => {});
-    expect(retenues).toEqual([]);
-  });
-
-  it('un message libre garde le fil de lui-même : aucune reprise', async () => {
-    const retenues: string[] = [];
-    const { ex } = make(graphe('quick'), { retenirApresModele: async (t, w) => { retenues.push(`${t}:${w}`); } });
-    await ex.start('t1', 'wf1', graphe('quick'), { waId: '33600', contactId: 'c1' });
-    expect(retenues).toEqual([]);
-  });
-
-  it('une reprise qui échoue ne fait pas échouer le parcours', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { ex, runs } = make(graphe('template'), { retenirApresModele: async () => { throw new Error('Meta injoignable'); } });
-    await ex.start('t1', 'wf1', graphe('template'), { waId: '33600', contactId: 'c1' });
-    expect(runs.run?.status).toBe('waiting');
-    vi.restoreAllMocks();
+  it('🔴 l’erreur remonte, et le bloc suivant n’est pas joué', async () => {
+    const { ex, escalations } = make(graphe, { sendTemplate: async () => { throw new RetraitDeLaListeRefuse(); } });
+    await expect(ex.start('t1', 'wf1', graphe, { waId: '33600', contactId: 'c1' })).rejects.toBeInstanceOf(RetraitDeLaListeRefuse);
+    expect(escalations).toEqual([]);
   });
 });

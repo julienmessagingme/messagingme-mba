@@ -176,7 +176,7 @@ async function main(): Promise<void> {
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
-    clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil,
+    clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
   } = construireSocle({ pool, queue, config });
 
   const campaignDraftStore = new PgCampaignDraftStore(pool);
@@ -480,8 +480,8 @@ async function main(): Promise<void> {
     /**
      * Qui écrit prend le fil : le scénario cesse d'avancer tout seul et l'agent de Meta cesse de répondre.
      * Écrire suffit côté Meta (« Sending a message to a conversation takes control implicitly », et mesuré) :
-     * appeler `take` sur un chemin d'envoi serait une redondance payante ; il est câblé sur « Reprendre la
-     * main » (`reprendreLaMain`). Une campagne part quand même : un opérateur l'a déclenchée, et elle reprend la
+     * retirer le contact de la liste de l'agent sur un chemin d'envoi serait une redondance payante ; c'est le
+     * geste de « Reprendre la main » (`reprendreLaMain`). Une campagne part quand même : un opérateur l'a déclenchée, et elle reprend la
      * conduite du fil (`ignoreHumanControl`, cf. `tests/campagne-controle-humain.test.ts`).
      * `app_human` aussi pour une machine (API publique, agent tiers par MCP) : `ControlOwner` n'a que trois
      * valeurs et celle-ci produit l'effet voulu. Qui a parlé est porté par l'origine du message (`api`, `mcp`).
@@ -738,9 +738,9 @@ async function main(): Promise<void> {
         return 'refus' in issue ? { refus: phraseOperateur(issue.refus) } : issue;
       },
       /**
-       * Les deux boutons de contrôle du fil de l'Inbox, « Reprendre la main » (action `take`) et « Rendre la main »
-       * (action `release`) : Meta d'abord, notre état ensuite, dans le module (`src/inbox/fil.ts`). Un refus de
-       * Meta devient un 409 lisible dans la route (Cloudflare mange le corps des 5xx).
+       * Les deux boutons de contrôle du fil de l'Inbox, « Reprendre la main » (le contact quitte la liste de l'agent
+       * de Meta) et « Rendre la main » (il y entre, puis `release`) : Meta d'abord, notre état ensuite, dans le module
+       * (`src/inbox/fil.ts`). Un refus de Meta devient un 409 lisible dans la route (Cloudflare mange le corps des 5xx).
        */
       reprendreLaMain: fil.reprendreLaMain,
       releaseControl: fil.rendreLaMain,
@@ -1417,6 +1417,8 @@ async function main(): Promise<void> {
           await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
         }
       },
+      // Les contacts purgés sortent de la liste de l'agent de Meta, après la purge (`src/mba/liste.ts`).
+      listeDeLAgent,
     },
     embeddedSignup: (() => {
       const esClient = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);

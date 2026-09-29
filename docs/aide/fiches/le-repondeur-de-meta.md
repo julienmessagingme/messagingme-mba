@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: 52a9e7
+source_empreinte: 6e0d1d
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -13,6 +13,14 @@ silence de trois mois, ou qui pose une question hors de tout scénario, obtient 
 qui l'obtient. Si quelqu'un de votre équipe travaille sur la conversation dans l'Inbox, il n'est pas doublé.
 Et le fil lui repasse au moment où le message arrive, pas avant : Meta ne peut se voir confier une
 conversation que s'il en existe une d'ouverte, et elle s'ouvre exactement quand la personne écrit.
+
+**L'agent ne parle qu'aux conversations qu'Engage Me lui confie.** Il ne répond qu'aux contacts de sa liste,
+et c'est Engage Me qui la tient : vous n'avez ni audience à choisir, ni numéros à y ajouter. Quand un client
+écrit et que personne ne lui répond, la conversation lui est confiée et il répond tout de suite ; quand un
+client répond à côté d'un scénario, aussi. Avant chaque modèle (scénario, campagne, Inbox), le contact sort de
+la liste, pour que sa réponse revienne au scénario : pendant un scénario, l'agent se tait. « Rendre la main »
+lui confie la conversation, et il répond au message suivant du client ; « Reprendre la main » fait sortir le
+contact de la liste.
 
 Sous le menu AI Agent, l'entrée **MBA** ouvre ses **paramètres**, qui le règlent pour de vrai.
 
@@ -79,8 +87,9 @@ effacé » vous le rouvre. Le remettre le **recrée**, cela ne le ressuscite pas
 obtenez un élément neuf. Rien n'y est purgé.
 
 **Reprendre la main.** Dans l'Inbox, sur une conversation que l'agent de Meta tient, le bouton « Reprendre
-la main » la lui prend réellement, sans qu'aucun message ne parte chez le contact : il se tait jusqu'à la
-reprise automatique. Meta peut refuser, et l'écran le dit alors au lieu de laisser croire que c'est fait.
+la main » la lui prend réellement, sans qu'aucun message ne parte chez le contact : le contact sort de la liste
+de l'agent, qui se tait pour lui jusqu'à ce qu'une conversation lui soit de nouveau confiée. Meta peut refuser,
+et l'écran le dit alors au lieu de laisser croire que c'est fait.
 Dans tous les cas, **écrire au contact prend le fil à coup sûr**.
 
 **Pour repérer ces conversations dans la liste de l'Inbox** : un dégradé bleu vers violet et une baguette à

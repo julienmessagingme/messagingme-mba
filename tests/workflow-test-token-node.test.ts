@@ -253,7 +253,7 @@ describe('un jeton de test désenclenche l’agent de Meta', () => {
     const accuse = bancDuFil({ conversations: { w: { owner: 'app_human', marque: 'wamid.A', ...test } } });
     await accuse.fil.remettreSurAccuse('wamid.A');
     const retour = bancDuFil({ conversations: { w: { owner: 'app_workflow', ...test } } });
-    await retour.fil.remettreSiPersonneNeSuit('t1', 'w');
+    await retour.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
     const balayage = bancDuFil({ conversations: { w: { owner: 'app_human', ...test } } });
     expect(await balayage.fil.rendreApresInactivite('t1', 'w', 'app_human', 'mba')).toBe(false);
     for (const b of [fin, accuse, retour, balayage]) expect(b.appels, 'un fil de test a été rendu chez Meta').toEqual([]);
@@ -276,13 +276,13 @@ describe('un jeton de test désenclenche l’agent de Meta', () => {
     const accuse = bancDuFil({ conversations: { w: { owner: 'app_human', marque: 'wamid.A', ...test } } });
     await accuse.fil.remettreSurAccuse('wamid.A');
     const retour = bancDuFil({ conversations: { w: { owner: 'app_workflow', ...test } } });
-    await retour.fil.remettreSiPersonneNeSuit('t1', 'w');
+    await retour.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
     const balayage = bancDuFil({ conversations: { w: { owner: 'app_human', ...test } } });
     await balayage.fil.rendreApresInactivite('t1', 'w', 'app_human', 'mba');
     for (const b of [fin, accuse, retour, balayage]) expect(b.etat('w')?.owner, 'la colonne annonce l’agent sur un fil de test').not.toBe('mba');
 
     const bouton = bancDuFil({ conversations: { w: { owner: 'app_human', ...test } } });
     expect(await bouton.fil.rendreLaMain('t1', 'w', { collaborateur: null })).toBe('mba');
-    expect(bouton.appels).toEqual(['release:w']);
+    expect(bouton.appels).toEqual(['ajout:w', 'release:w']);
   });
 });

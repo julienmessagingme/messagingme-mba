@@ -39,6 +39,11 @@ au « configured escalation partner », une notion que Meta ne définit nulle pa
 désignation est inconnue et dont rien ne dit qu'elle nous soit ouverte. La prise de contrôle par envoi d'un
 message reste le seul chemin vérifié. Question à instruire avant de concevoir le handoff.
 
+🔴 **Tranché par la mesure le 2026-09-29 : `take` ne nous rend rien.** Meta répond 200 sans effet, ou l'agent
+envoie sa phrase de passation au client. Le code ne l'appelle plus : faire taire l'agent pour un contact passe
+par la liste (`ai_audience = ALLOWLISTED_ONLY` toujours posé, contact retiré de la liste), que la plateforme
+tient (`src/mba/liste.ts`, migration 0195).
+
 ### 🟠 Réglages : le handoff pilote enfin le contrôle du fil
 
 Notre transcription posait, à trois endroits, que le lien entre `handoff.enabled` et le transfert de contrôle
@@ -182,9 +187,11 @@ La séquence est désormais prescrite, dans cet ordre :
 > « This ordering matters when you are testing against a live WhatsApp Business phone number, because
 > **enabling the agent first exposes it to real conversations**. »
 
-**Notre console dit déjà la moitié de cette règle** (`MbaAllowlistPanel` avertit que la liste est sans effet
-quand l'audience est « tout le monde »). Elle ne dit PAS l'autre moitié : allumer avec `EVERYONE` sur un
-numéro vivant expose immédiatement l'agent à tout le monde, et rien ne l'annonce au moment du clic.
+**Notre code suit cette séquence depuis le 2026-09-29.** L'audience vaut toujours `ALLOWLISTED_ONLY` (chaque
+écriture des réglages la pose, `modifierSettings`), l'allumage fait l'audience, la relecture en GET puis
+`rollout.enabled` (`ecrireRollout`, `src/mba/client.ts`), et la liste n'est plus remplie à la main : la
+plateforme y ajoute les contacts qu'elle confie à l'agent et les en retire avant tout modèle
+(`src/mba/liste.ts`). Le choix d'audience et le panneau de liste ont quitté la console.
 
 ### 🆕 UI Skills : une surface entière que nous n'implémentons pas
 
@@ -357,12 +364,10 @@ garantit qu'un message parte. **Seule une mesure tranche.**
 📌 Fait daté relevé au passage sur la page de facturation : les **cartes bancaires** deviennent un moyen de
 paiement possible **à partir du 8 septembre 2026**, pour les entreprises sans ligne de crédit Meta.
 
-⚠️ **Notre script d'activation ne suit pas la séquence prescrite.**
-`scripts/mba-activer-restreint.mts` remplit l'allowlist, puis envoie `ai_audience` **et** `rollout.enabled`
-dans **un seul PUT**. Meta prescrit désormais : régler `ai_audience`, **relire en GET pour confirmer**, et
-seulement ensuite allumer. Si Meta évalue l'audience **stockée** au moment d'allumer, un PUT combiné se
-heurterait au 400 de facturation et nous conclurions à tort que la barrière tient toujours. À scinder en deux
-appels avant le premier allumage.
+✅ **Corrigé le 2026-09-29 : l'allumage suit la séquence prescrite.** Le script d'activation restreinte, qui
+envoyait `ai_audience` et `rollout.enabled` dans un seul PUT, a disparu. Tout allumage (écran Aperçu, activation
+depuis l'Accueil, mise en service par l'assistant) passe par `ecrireRollout` : `ai_audience`, relecture en GET,
+puis `rollout.enabled`, et il refuse d'allumer si la relecture ne rend pas `ALLOWLISTED_ONLY`.
 
 ### 🟡 Corrections apportées au relevé du matin
 

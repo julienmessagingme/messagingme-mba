@@ -153,7 +153,7 @@ async function main(): Promise<void> {
     poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
-    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil,
+    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
   } = construireSocle({ pool, queue, config });
 
   // Heartbeat : le worker écrit un signal de vie best-effort, dont /ops/overview lit l'âge. Il prouve que le
@@ -390,8 +390,8 @@ async function main(): Promise<void> {
         contactBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
         // La même lecture que l'exécuteur de scénario et que l'agent, sur le même dépôt.
         estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
-        // `take` avec un seul rejeu, puis `app_workflow` ; jamais sur un fil qu'un opérateur tient : c'est le client
-        // qui déclenche, pas l'équipe (`saufOperateur`).
+        // Le contact quitte la liste de l'agent (un seul rejeu), puis `app_workflow` ; jamais sur un fil qu'un
+        // opérateur tient : c'est le client qui déclenche, pas l'équipe (`saufOperateur`).
         reprendreLeFil: (t, waId) => fil.reprendrePourLApp(t, waId, { saufOperateur: true }),
         // Filet du fil pris pour rien : on prend le fil avant de savoir si l'automation démarre ; si elle ne démarre
         // pas, ce geste le rend, avec ses gardes (agent éteint, parcours en attente, opérateur).
@@ -403,7 +403,6 @@ async function main(): Promise<void> {
       flowMapping: { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
       workflowAdvance: {
         advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp),
-        reprendreSurNotreBouton: (t, w) => fil.reprendreSurNotreBouton(t, w),
         // Une avance qui échoue atterrit dans le journal des erreurs que l'écran montre : sinon le job finirait en
         // succès, sans rejeu ni trace, et le contact resterait bloqué sur son bloc.
         journaliserEchec: (e) => erreursLivraison.enregistrerEchecAvance(e),
@@ -432,6 +431,14 @@ async function main(): Promise<void> {
       },
       // Ce que Meta dit du détenteur à travers le `field` d'un entrant : un `standby` rend le fil à l'agent de Meta.
       detenteur: fil,
+      /**
+       * Un `standby` d'un contact absent de la liste de l'agent de Meta est pour nous : réécrit en `messages` avant
+       * tout le reste (`src/webhooks/standby-hors-liste.ts`). La liste, et les réglages de l'espace sans cache.
+       */
+      listeALArrivee: {
+        agentAllume: async (t) => (await settingsStore.get(t)).mbaEnabled,
+        presents: (t, waIds) => listeDeLAgent.presents(t, waIds),
+      },
       // Bascules de contrôle et messages de l'agent de Meta.
       handover: {
         marquerEscalade: fil.agentDeMetaPasseLaMain,

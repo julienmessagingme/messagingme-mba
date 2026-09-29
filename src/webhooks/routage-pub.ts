@@ -34,17 +34,17 @@ export interface RoutagePubDeps {
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /**
-   * Reprend le fil à l'agent de Meta et pose le contrôle local à `app_workflow` ; `false` = Meta a refusé,
-   * `'operateur'` = un opérateur tient la conversation et un lead ne la lui prend pas. C'est
-   * `ControleDuFil.reprendrePourLApp` avec `saufOperateur` (`src/inbox/fil.ts`), câblé et non réécrit.
+   * Reprend le fil à l'agent de Meta (le contact quitte sa liste) et pose le contrôle local à `app_workflow` ;
+   * `false` = Meta a refusé, `'operateur'` = un opérateur tient la conversation et un lead ne la lui prend pas.
+   * C'est `ControleDuFil.reprendrePourLApp` avec `saufOperateur` (`src/inbox/fil.ts`), câblé et non réécrit.
    */
   reprendreLeFil(tenantId: string, waId: string): Promise<boolean | 'operateur'>;
   /**
-   * Rend le fil à l'agent de Meta, quand on l'a pris et que personne n'a finalement parlé. C'est
-   * `ControleDuFil.remettreSiPersonneNeSuit` (`src/inbox/fil.ts`), qui porte déjà ses gardes (agent éteint,
-   * parcours en attente, opérateur) : câblé, non réécrit.
+   * Rend la conversation à l'agent de Meta, quand on l'a prise et que personne n'a finalement parlé, avec le texte
+   * du lead pour qu'il y réponde. C'est `ControleDuFil.remettreSiPersonneNeSuit` (`src/inbox/fil.ts`), qui porte déjà
+   * ses gardes (agent éteint, parcours en attente, opérateur) : câblé, non réécrit.
    */
-  rendreLeFil(tenantId: string, waId: string): Promise<void>;
+  rendreLeFil(tenantId: string, waId: string, contenu: string): Promise<void>;
   /**
    * Inscrit sur l'arrivée déjà écrite ce que le routage a décidé, seulement si l'issue est encore nulle : un
    * webhook redélivré ne doit pas réécrire l'histoire d'un lead déjà routé, ni déplacer l'heure de reprise.
@@ -71,7 +71,7 @@ export async function processRoutagePub(
   deps: RoutagePubDeps,
   /**
    * Les messages que Meta nous redélivre (`insertEvent` a dit « déjà vu »). On ne reprend pas le fil une seconde
-   * fois : `noterIssue` protège l'histoire, pas le geste, et un second `take` arracherait la conversation à un
+   * fois : `noterIssue` protège l'histoire, pas le geste, et une seconde reprise arracherait la conversation à un
    * opérateur qui l'aurait reprise. On ne devine pas non plus ce que la première livraison a obtenu : la
    * restriction d'un rejeu vaut `aucun`.
    */
@@ -122,7 +122,7 @@ export async function processRoutagePub(
         restriction: restrictionDuRoutage(decision, repriseReussie),
         campagneId,
         // On ne retient QUE les prises réussies : il n'y a que celles-là qu'on puisse avoir à rendre.
-        repris: repriseReussie ? { tenantId, waId: m.waId } : null,
+        repris: repriseReussie ? { tenantId, waId: m.waId, contenu: m.body?.trim() ?? '' } : null,
       });
       await deps.noterIssue(tenantId, m.messageId, { campagneId, issue, repriseLe });
 
@@ -169,19 +169,28 @@ async function campagneDuLead(
  * Rend les fils qu'on a pris pour rien. Le fil se prend avant les déclencheurs (un scénario ne démarre pas sur un
  * fil tenu par l'agent de Meta), sans savoir si quelque chose parlera : l'automation peut être en anti-rebond, ou
  * son scénario avoir disparu. Sans ce rendu, personne ne répondrait avant le balayage, fenêtre de service
- * fermée, sur un clic payé. Ne rend que ce qu'on a pris, et seulement si rien n'a démarré. Isolé, ne lève jamais.
+ * fermée, sur un clic payé. Ne rend que ce qu'on a pris, et seulement si rien n'a démarré. Un seul rendu par
+ * contact, ses leads du lot mis bout à bout, pour que l'agent ne réponde qu'une fois. Isolé, ne lève jamais.
  */
 export async function rendreLesFilsSansReponse(
   routes: ReadonlyMap<string, RoutageDuMessage>,
   demarres: ReadonlySet<string>,
   deps: Pick<RoutagePubDeps, 'rendreLeFil'>,
 ): Promise<void> {
+  const parContact = new Map<string, { tenantId: string; waId: string; textes: string[]; leads: string[] }>();
   for (const [messageId, route] of routes) {
     if (route.repris === null || demarres.has(messageId)) continue;
+    const { tenantId, waId, contenu } = route.repris;
+    const contact = parContact.get(`${tenantId}:${waId}`) ?? { tenantId, waId, textes: [], leads: [] };
+    if (contenu !== '') contact.textes.push(contenu);
+    contact.leads.push(messageId);
+    parContact.set(`${tenantId}:${waId}`, contact);
+  }
+  for (const { tenantId, waId, textes, leads } of parContact.values()) {
     try {
-      await deps.rendreLeFil(route.repris.tenantId, route.repris.waId);
+      await deps.rendreLeFil(tenantId, waId, textes.join('\n'));
       // eslint-disable-next-line no-console
-      console.warn(`routage pub : fil repris pour le lead ${messageId} mais aucun scénario n’a démarré, il est rendu à l’agent de Meta`);
+      console.warn(`routage pub : fil repris pour le lead ${leads.join(', ')} mais aucun scénario n’a démarré, il est rendu à l’agent de Meta`);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('routage pub : fil non rendu :', messageDe(err));
