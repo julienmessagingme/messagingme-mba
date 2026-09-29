@@ -1,7 +1,7 @@
 ---
 ecran: perf-synthese
 source_section: Analytics (menu Analytics)
-source_empreinte: 115477
+source_empreinte: d7ec0b
 ---
 # Lire mes résultats dans le Performance Lab
 
@@ -38,6 +38,16 @@ ne baisse jamais, ou **actifs**, ce qu'il vous reste après vos suppressions), l
 échangés, le coût estimé par jour, filtrable par campagne ou par modèle, et les erreurs de Meta par code et
 par modèle. Un tableau dit aussi **qui a écrit les messages de service** : l'IA, un scénario, ou une
 personne de votre équipe, avec le détail de l'IA (votre agent, celui de Meta, un agent tiers).
+
+La page **Quantitatif > Performance** mesure votre équipe sur les conversations qu'un robot lui a passées (un
+scénario, un agent IA ou l'agent de Meta) : le **temps de réponse**, jusqu'au premier message écrit dans l'Inbox
+par un collaborateur, et le **temps de résolution**, jusqu'au premier « Traité », archivage ou retour à un robot.
+Vous y lisez la médiane et le 90e centile de chacun, la courbe par jour et un tableau par collaborateur (la réponse
+à celui qui a répondu le premier, la résolution à celui qui a clos). Les durées se comptent **en heures
+d'ouverture** de votre espace, réglées dans Paramètres : une demande arrivée vendredi soir et répondue lundi matin
+n'a pas attendu tout le week-end. Un chiffre qu'on ne connaît pas encore s'écrit « non disponible », jamais zéro ;
+les demandes closes sans aucune réponse sont comptées à part ; et la mesure démarre à sa mise en service, que la
+page date.
 
 Le **funnel par campagne** va de l'envoi à la réponse. Il ne suit pas le sélecteur de période, il porte
 toujours sur la totalité de la campagne choisie. « Délivrés » et « lus » affichent un tiret quand Meta n'a

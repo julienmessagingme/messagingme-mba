@@ -272,6 +272,30 @@ describe('stats route', () => {
     await a.close();
   });
 
+  it('GET /stats/performance : la plage de la requête, l’espace du jeton, et les gardes des voisines', async () => {
+    // Quantitatif > Performance : même garde (admin) et même paramètre de période que les onglets voisins.
+    const vus: Array<[string, unknown]> = [];
+    const a = app({ stats: { getPerformance: async (t, r) => {
+      vus.push([t, r]);
+      return {
+        mesureDepuis: '2026-09-30T08:00:00.000Z', mode: 'ouvre', fuseau: 'Europe/Paris',
+        reponse: { mediane: 60_000, p90: 120_000, n: 2 }, resolution: { mediane: null, p90: null, n: 0 },
+        demandes: 2, resolues: 0, resoluesSansReponse: 0, ouvertes: 2, plusAncienneOuverte: '2026-09-30T09:00:00.000Z',
+        parJour: [], parCollaborateur: [],
+      };
+    } } });
+    const ok = await a.inject({ method: 'GET', url: '/tenants/t1/stats/performance?from=2026-09-01&to=2026-09-10', ...h(adminTok) });
+    expect(ok.statusCode).toBe(200);
+    expect(vus).toEqual([['t1', { from: '2026-09-01', to: '2026-09-10' }]]);
+    // Un chiffre inconnu voyage en `null`, jamais en zéro : c'est ce que l'écran dit « non disponible ».
+    expect(ok.json().resolution).toEqual({ mediane: null, p90: null, n: 0 });
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/performance?days=30', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats/performance?days=30', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/performance?from=2026-01-10&to=2026-01-01', ...h(adminTok) })).statusCode).toBe(400);
+    expect(vus).toHaveLength(1);
+    await a.close();
+  });
+
   it('tenant != token -> 403', async () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats', ...h(adminTok) });

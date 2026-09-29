@@ -132,9 +132,9 @@ describe('la bascule vers un humain rend son verdict', () => {
   it('🔴 `escalateToHuman` REND le verdict de la bascule, il ne l’avale pas', () => {
     // ⚠️ `escalade: true` depuis le 2026-09-23 : la prise de fil d'un agent IA est une ESCALADE (migration 0164).
     // Le geste (`ControleDuFil.passerAUnHumain`) rend lui-même le verdict du dépôt : `tests/fil.test.ts`.
-    expect(source).toContain(
-      'escalateToHuman: (t, waId) => fil.passerAUnHumain(t, waId, { escalade: true })',
-    );
+    // ⚠️ `async` depuis 0194 (la cause nomme l'agent, lue avant la bascule), mais SANS accolades : la flèche rend
+    // toujours la promesse de la bascule, que le cas suivant garde.
+    expect(source).toMatch(/escalateToHuman: async \(t, waId, agentId\) => fil\.passerAUnHumain\(t, waId, \{\s*escalade: true,/);
   });
 
   it('⚠️ et il ne reste aucune forme à accolades, qui rendrait `void` sans que rien ne le signale', () => {

@@ -86,11 +86,14 @@ describe('l’escalade est posée par les DEUX câblages, pas seulement par l’
     // fermée, envoi refusé à la reprise) ne le pose pas, parce que personne n'attend à cet instant. Écrire
     // `escalade: true` ici rendrait tous les fils collants, y compris ceux que personne n'attend.
     expect(wiring).toContain('escalateToHuman: async (tenant, waId, assigneA, escalade, workflowId) => {');
-    expect(wiring).toContain('fil.passerAUnHumain(tenant, waId, { escalade })');
+    // Avec la cause qui nomme le scénario (l'événement `escaladee`, migration 0194), et la MÊME pour l'affectation.
+    expect(wiring).toContain('fil.passerAUnHumain(tenant, waId, { escalade, cause })');
+    expect(wiring).toContain('const cause = automatique(`scénario ${nom ?? workflowId}`);');
   });
 
   it('🔴 l’escalade d’un agent IA aussi, et elle REND toujours son verdict', () => {
-    expect(worker).toContain('escalateToHuman: (t, waId) => fil.passerAUnHumain(t, waId, { escalade: true })');
+    // Sans accolades : la flèche rend la promesse de la bascule. La cause nomme l'agent (migration 0194).
+    expect(worker).toMatch(/escalateToHuman: async \(t, waId, agentId\) => fil\.passerAUnHumain\(t, waId, \{\s*escalade: true,\s*cause: automatique\(`agent IA /);
   });
 
   it('🔴 et la passation de l’agent de Meta passe, elle, par `marquerEscalade`', () => {

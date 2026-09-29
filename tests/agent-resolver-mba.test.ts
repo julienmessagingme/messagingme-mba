@@ -25,7 +25,7 @@ function harnais(over: Partial<DepsResolveurMba> = {}) {
   const journal: string[] = [];
   const deps: DepsResolveurMba = {
     envoyerBloc: async (i) => { journal.push(`bloc:${i.code}`); return { ok: true }; },
-    escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}`); return true; },
+    escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}:${i.agentId}`); return true; },
     poserTag: async (_t, _w, tag) => { journal.push(`tag:${tag}`); },
     ecrireChamp: async (_t, _w, cle, valeur) => { journal.push(`champ:${cle}=${valeur}`); },
     // La recherche a sa propre suite (`tests/agent-knowledge.test.ts`) : ici elle ne rend rien.
@@ -74,7 +74,7 @@ describe('résolveur maison (tâche 16)', () => {
     // `rendu` est ce qui empêche l'agent d'écrire un message de plus alors que la main n'est plus à lui.
     const { resolveur, journal } = harnais();
     const r = await resolveur(appel('escalader'));
-    expect(journal).toEqual(['escalade:33600:s1']);
+    expect(journal).toEqual([`escalade:33600:s1:ag1`]);
     expect(r.rendu).toBe(true);
     expect(r.sortie).toBeUndefined(); // la dep a DÉJÀ tout fait : une seconde sortie doublerait la reprise
     // La bascule a EU LIEU, donc c'est nous qui tenons la main : le tour a le droit d'écrire sa dernière

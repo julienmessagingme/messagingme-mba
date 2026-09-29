@@ -7,6 +7,7 @@ import type { CostSeries, CoutParCampagne } from '../stats/cost';
 import type { DetailCoutCampagne } from '../stats/cout-campagne';
 import type { CoutMessages } from '../stats/cout-messages';
 import type { CoutIa } from '../stats/cout-ia';
+import type { Performance } from '../stats/performance';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
@@ -73,6 +74,11 @@ export interface StatsRouteDeps {
   getDetailCoutCampagne(tenantId: string, campaignId: string): Promise<DetailCoutCampagne | null>;
   /** Mesures d'un scénario, bloc par bloc (« Mes tableaux »). */
   getWorkflowNodeCounts(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
+  /**
+   * Le temps de réponse et de résolution de l'équipe (Quantitatif > Performance) : `lirePerformance`
+   * (`src/stats/performance.ts`), qui dit ce qu'est une demande et comment ses durées se comptent.
+   */
+  getPerformance(tenantId: string, range: DateRange): Promise<Performance>;
 }
 
 /** Ce que les routes lisent du dépôt des statistiques d'envoi. */
@@ -290,6 +296,18 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getCoutIa(tenant, r.range));
+  });
+
+  /**
+   * Quantitatif > Performance : médiane et 90e centile du temps de réponse et de résolution, par jour et par
+   * collaborateur, sur la même plage que les onglets voisins. Les durées sont en heures d'ouverture de l'espace ;
+   * `mode: 'brut'` dit qu'il n'en a aucune d'exploitable, et l'écran l'annonce.
+   */
+  app.get('/tenants/:tenantId/stats/performance', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getPerformance(tenant, r.range));
   });
 
   /**

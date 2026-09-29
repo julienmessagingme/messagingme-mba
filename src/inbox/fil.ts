@@ -54,7 +54,10 @@ export interface EcritureDuFil {
   messageEnvoyeLe?: Date;
   /** Efface la marque d'escalade, si l'écriture a lieu. */
   effacerEscalade?: boolean;
-  /** Pose la marque d'escalade, si l'écriture a lieu et vise `app_human`. */
+  /**
+   * Pose la marque d'escalade, si l'écriture a lieu et vise `app_human`. Depuis un robot (`app_workflow`), écrit
+   * aussi l'événement `escaladee` (migration 0194) : l'ouverture d'une demande du Quantitatif > Performance.
+   */
   escalade?: boolean;
   /**
    * Ce geste REND le fil à l'agent de Meta, quelle que soit la valeur écrite : l'événement est `rendue_mba`. Seul
@@ -188,8 +191,12 @@ export interface ControleDuFil {
    * Un scénario (bloc « passer à un humain », échec d'un parcours) ou un agent IA remonte la conversation à
    * l'équipe, seulement si le fil était encore aux robots. `escalade` : quelqu'un attend une réponse. Rend `true`
    * si la bascule a eu lieu.
+   *
+   * `cause` REQUISE, portée par l'appelant, le seul à savoir QUI passe la main (« automatique : scénario
+   * Bienvenue », « automatique : agent IA Léa ») : avec le drapeau, la bascule écrit l'événement `escaladee`
+   * (migration 0194), qui ouvre une demande du Quantitatif > Performance et que la frise du panneau Détail raconte.
    */
-  passerAUnHumain(tenantId: string, waId: string, opts: { escalade: boolean }): Promise<boolean>;
+  passerAUnHumain(tenantId: string, waId: string, opts: { escalade: boolean; cause: string }): Promise<boolean>;
   /** L'agent de Meta passe la main à l'équipe (`control_passed`) : `app_human` et escalade. */
   agentDeMetaPasseLaMain(tenantId: string, waId: string): Promise<void>;
   /**
@@ -210,14 +217,15 @@ export interface ControleDuFil {
 /**
  * Les causes des bascules que ce module décide seul, telles que la frise du panneau Détail les affiche (migration
  * 0192). Écrites une fois : deux libellés pour le même geste feraient croire à deux gestes. Les gestes d'un
- * opérateur, eux, reçoivent leur auteur de l'appelant, seul à connaître la session.
+ * opérateur, eux, reçoivent leur auteur de l'appelant, seul à connaître la session ; et le passage d'un robot à
+ * l'équipe reçoit la sienne de l'appelant aussi (`passerAUnHumain`), seul à savoir quel scénario ou quel agent IA
+ * passe la main. Il portait ici un « escalade vers l'équipe » qui ne disait ni l'un ni l'autre.
  */
 const CAUSES = {
   finDeParcours: parCause('fin du scénario'),
   personneNeSuit: parCause('le contact écrit et personne ne suit la conversation'),
   scenario: parCause('un scénario reprend la conversation'),
   boutonDuScenario: parCause('le contact répond au bouton d’un scénario'),
-  versLEquipe: parCause('escalade vers l’équipe'),
   standby: parCause('Meta rend la conversation à son agent'),
   inactivite: parCause('délai de reprise écoulé'),
 } satisfies Record<string, AuteurDuChangement>;
@@ -372,8 +380,8 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       return true;
     },
 
-    passerAUnHumain(tenantId, waId, { escalade }) {
-      return depot.setControlOwner(tenantId, waId, 'app_human', { par: CAUSES.versLEquipe, only: ['app_workflow'], escalade });
+    passerAUnHumain(tenantId, waId, { escalade, cause }) {
+      return depot.setControlOwner(tenantId, waId, 'app_human', { par: { cause }, only: ['app_workflow'], escalade });
     },
 
     agentDeMetaPasseLaMain(tenantId, waId) {

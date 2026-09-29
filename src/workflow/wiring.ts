@@ -356,14 +356,15 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // robots, puis pose l'affectataire désigné par le bloc. `escalade` est relayé, jamais décidé ici : c'est
     // l'exécuteur qui sait si quelqu'un attend une réponse.
     escalateToHuman: async (tenant, waId, assigneA, escalade, workflowId) => {
-      await fil.passerAUnHumain(tenant, waId, { escalade });
-      if (assigneA) {
-        // La cause que la frise du panneau Détail affiche à la place d'un auteur : le NOM du scénario. Lu seulement
-        // quand un bloc nomme quelqu'un (le pot commun ne paie pas cette lecture) ; un scénario introuvable ne
-        // bloque pas l'affectation, il est dit par son identifiant.
-        const nom = (await workflowStore.getById(workflowId, tenant).catch(() => null))?.name;
-        await inboxStore.setAssigneeByWaId(tenant, waId, assigneA, automatique(`scénario ${nom ?? workflowId}`));
-      }
+      // La cause que la frise du panneau Détail affiche à la place d'un auteur : le NOM du scénario, pour le passage
+      // à l'équipe (l'événement `escaladee`, migration 0194, qui ouvre une demande du Quantitatif > Performance) et
+      // pour l'affectation. Lu seulement quand l'un des deux l'écrit : sans drapeau d'escalade la bascule n'écrit
+      // aucun événement, et le pot commun ne paie pas cette lecture. Un scénario introuvable ne bloque rien, il est
+      // dit par son identifiant.
+      const nom = escalade || assigneA ? (await workflowStore.getById(workflowId, tenant).catch(() => null))?.name : undefined;
+      const cause = automatique(`scénario ${nom ?? workflowId}`);
+      await fil.passerAUnHumain(tenant, waId, { escalade, cause });
+      if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA, cause);
     },
     // Le bloc agent : sans ces deux dépendances, il est traversé comme un passe-plat, sans que l'agent parle.
     // Elles vont par paire : une session sans tour resterait vivante et muette, un tour sans session

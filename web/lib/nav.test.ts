@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { arbresNav, cheminDeNav, contientLaCle, groupesAOuvrir, navPourRole, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
+import { accesAutorise, arbresNav, cheminDeNav, contientLaCle, groupesAOuvrir, navPourRole, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -124,6 +124,34 @@ describe('le rangement du 2026-09-29', () => {
   it('un manager garde le groupe Paramètres avec sa SEULE page, sans le Crédit IA', () => {
     const groupe = navPourRole(arbresNav(t).adminBas, 'manager').find((e) => e.label === 'Paramètres');
     expect((groupe?.children ?? []).map((e) => e.key)).toEqual(['parametres']);
+  });
+});
+
+/**
+ * 🔴 QUANTITATIF > PERFORMANCE (2026-09-29) : le temps de réponse et de résolution de l'équipe. Lu sur la VRAIE barre.
+ * Une entrée mal rangée ne casse rien de visible : elle ouvre la page sous un menu replié, ou dans un autre onglet.
+ */
+describe('Quantitatif > Performance', () => {
+  const t = (fr: string) => fr;
+
+  it('🔴 le groupe Quantitatif la porte, à son adresse, après le Funnel', () => {
+    const quanti = arbresNav(t).perf.find((e) => e.key === 'quantitatif');
+    expect((quanti?.children ?? []).map((e) => [e.key, e.href, e.label])).toEqual([
+      ['quanti-messages', '/dashboard', 'Messages & contacts'],
+      ['quanti-couts', '/dashboard/couts', 'Coûts'],
+      ['quanti-funnel', '/dashboard/funnel', 'Funnel'],
+      ['quanti-performance', '/dashboard/performance', 'Performance'],
+    ]);
+  });
+
+  it('🔴 elle s’ouvre sous l’onglet Performance, son groupe déplié, et reste réservée aux admins comme ses voisines', () => {
+    const arbres = arbresNav(t);
+    expect(ongletDeLaPage({ console: [...arbres.console, ...arbres.adminBas], inbox: arbres.inbox, perf: arbres.perf }, 'quanti-performance')).toBe('perf');
+    expect(cheminDeNav(arbres.perf, 'quanti-performance')).toEqual(['quantitatif']);
+    // La route est montée sous la garde admin, comme toutes les statistiques : un manager n'y serait pas servi.
+    expect(accesAutorise('quanti-performance', 'admin')).toBe(true);
+    expect(accesAutorise('quanti-performance', 'manager')).toBe(false);
+    expect(accesAutorise('quanti-performance', 'agent')).toBe(false);
   });
 });
 

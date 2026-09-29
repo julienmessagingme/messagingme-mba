@@ -98,6 +98,16 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
     expect(c).toContain('opts.rendAgentDeMeta === true]');
   });
 
+  it('🔴 les bornes d’une demande (0194) : `escaladee` exige le drapeau ET un robot, `rendue_scenario` vient de l’équipe', () => {
+    // `escaladee` ouvre une demande du Quantitatif > Performance. Sans le drapeau, un opérateur qui prend le fil en
+    // écrivant (`prisEnEcrivant`, de `app_workflow` à `app_human`) ouvrirait une demande déjà répondue, à 0 s.
+    // Et les deux viennent APRÈS les branches de l'agent de Meta : un fil qui le quitte reste `prise_mba`.
+    const c = corps('async setControlOwner(');
+    expect(c).toMatch(/when \$3 = 'mba' then 'rendue_mba'\s+when \$8::boolean and \$3 = 'app_human' and maj\.ancien_detenteur = 'app_workflow' then 'escaladee'\s+when \$3 = 'app_workflow' and maj\.ancien_detenteur = 'app_human' then 'rendue_scenario' end\)/);
+    // Le drapeau `$8` est bien `escalade`, et rien d'autre.
+    expect(c).toContain('opts.messageEnvoyeLe ?? null, opts.escalade === true, auteur.acteur');
+  });
+
   it('🔴 la frise ne nomme que des collaborateurs DE L’ESPACE (acteur, cible, et l’assigné du panneau)', () => {
     const c = corps('async detailConversation(');
     expect(c).toContain('left join users ua on ua.id = e.acteur_id and ua.tenant_id = e.tenant_id');
@@ -147,6 +157,16 @@ describe('le contrôle du fil dit qui demande chaque bascule', () => {
       { cause: 'automatique : un scénario reprend la conversation' },
       { cause: 'automatique : le contact écrit et personne ne suit la conversation' },
     ]);
+  });
+
+  it('🔴 le passage à l’équipe porte la cause de SON appelant, le scénario ou l’agent IA qui passe la main (0194)', async () => {
+    // Elle portait « escalade vers l'équipe », qui ne disait ni l'un ni l'autre ; c'est désormais la cause de
+    // l'événement `escaladee`, que la frise raconte.
+    const b = bancDuFil({ conversations: { w: { owner: 'app_workflow' }, v: { owner: 'app_workflow' } } });
+    await b.fil.passerAUnHumain('t1', 'w', { escalade: true, cause: 'automatique : scénario Bienvenue' });
+    await b.fil.passerAUnHumain('t1', 'v', { escalade: true, cause: 'automatique : agent IA Léa' });
+    expect(parDe(b)).toEqual([{ cause: 'automatique : scénario Bienvenue' }, { cause: 'automatique : agent IA Léa' }]);
+    expect(b.ecritures.map((e) => e.opts?.escalade)).toEqual([true, true]);
   });
 
   it('la prise pour l’équipe porte la campagne que son appelant nomme', async () => {

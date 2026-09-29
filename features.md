@@ -1415,6 +1415,28 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Analytics (menu Analytics)
 
+- ✅ **Quantitatif > Performance : le temps de réponse et le temps de résolution de l'équipe** (2026-09-29,
+  `/dashboard/performance`). Sur les seules conversations qu'un **robot a passées à l'équipe** : un scénario (bloc
+  « passer à un humain »), un agent IA, ou l'agent de Meta. Chaque passage est une **demande** ; un nouveau passage
+  pendant qu'une demande est ouverte n'en ouvre pas une seconde, et un collaborateur qui prend le fil lui-même en
+  écrivant n'en ouvre pas (personne n'attendait). Le **temps de réponse** va du passage au premier message écrit
+  dans l'Inbox par un collaborateur (texte ou modèle ; pas l'API, pas un assistant MCP, pas une campagne) ; le
+  **temps de résolution** va du passage au premier « Traité », archivage ou retour à un robot. L'écran montre la
+  **médiane** et le **90e centile** de chacun, les demandes de la période (résolues, résolues sans aucune réponse,
+  encore ouvertes et depuis quand la plus ancienne), une **courbe par jour** des deux médianes, et un **tableau par
+  collaborateur** : la réponse à celui qui a répondu le premier, la résolution à celui qui a clos, une clôture faite
+  par la console elle-même dans une ligne « Automatique ». Même période que les autres onglets du Quantitatif.
+  🔴 **Les durées se comptent en heures d'ouverture de l'espace** (Paramètres) : une demande arrivée le vendredi à
+  17 h 50 et répondue le lundi à 9 h 05 a attendu un quart d'heure. Un espace sans heures d'ouverture est compté en
+  temps brut, et l'écran le dit.
+  🔴 **Un chiffre inconnu s'écrit « non disponible », jamais 0** : une médiane sans demande dirait que l'équipe
+  répond instantanément.
+  ⚠️ **Les demandes résolues sans aucune réponse sont comptées à part** et n'entrent pas dans le temps de
+  résolution : un fil rendu au scénario au bout de deux heures sans que personne ait répondu ne mesure rien de
+  l'équipe.
+  ⚠️ **La mesure démarre à sa mise en service**, que l'écran date (« mesuré depuis le ... ») : rien ne datait
+  avant elle le passage d'un scénario à l'équipe, et l'historique n'est pas reconstruit.
+
 - ✅ **Contacts : cumulés ou actifs** (2026-09-23), une bascule sur la carte Contacts de Quantitatif >
   Messages & contacts. **Cumulés** = tout ce que vous avez collecté depuis le début, la courbe historique,
   qui ne baisse jamais. **Actifs** = ce qu'il vous reste dans le mini-CRM ce jour-là, donc la même courbe
@@ -1489,7 +1511,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   ⚠️ **Les analyses sans ces notes sont comptées à part, sous le graphe, et ne valent PAS zéro.** Les
   placer en (0,0) rangerait tout l'historique dans le coin « client furieux, urgence nulle » et ferait
   mentir la moyenne.
-- ✅ **Trois pages** : **Quantitatif** (volumes, coûts, funnels), **Analyse des conversations** (ce que les
+- ✅ **Trois pages** : **Quantitatif** (volumes, coûts, funnels, et depuis le 2026-09-29 le temps de réponse et
+  de résolution de l'équipe), **Analyse des conversations** (ce que les
   conversations disent, appelée « Qualitatif » jusqu'au 2026-09-17) et **Mes tableaux** (2026-08-19,
   ci-dessous). Les deux premières ont le **même bandeau
   de période** et la **même

@@ -418,7 +418,13 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs') },
       { key: 'quanti-funnel', href: '/dashboard/funnel', label: t('Funnel', 'Funnel') },
       /**
-       * ⚠️ IL Y AVAIT UNE QUATRIÈME ENTRÉE ICI, « Erreurs », ET ELLE EST PARTIE DANS LE CENTRE DE SÉCURITÉ
+       * Le temps de réponse et de résolution de l'équipe (cadrage du 2026-09-29). ⚠️ À ne pas confondre avec
+       * l'ONGLET Performance (`perf`) ni avec sa Synthèse (`/performance`) : cette page vit sous Quantitatif,
+       * à `/dashboard/performance`, comme ses voisines.
+       */
+      { key: 'quanti-performance', href: '/dashboard/performance', label: t('Performance', 'Performance') },
+      /**
+       * ⚠️ IL Y AVAIT UNE AUTRE ENTRÉE ICI, « Erreurs », ET ELLE EST PARTIE DANS LE CENTRE DE SÉCURITÉ
        * le 2026-09-17 (Julien : « l'onglet erreur dans quantitatif n'a plus rien à faire là »). Sa carte
        * n'a PAS été supprimée pour autant : le journal de Sécurité montre les dernières lignes, cet
        * agrégat montre quel code d'erreur revient le plus sur une période, et c'est la seule des deux

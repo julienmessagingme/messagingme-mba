@@ -34,6 +34,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"quanti-couts","href":"/dashboard/couts","fr":"Coûts","en":"Costs","acces":"admin","chemin":["Quantitatif"]},
   {"cle":"quanti-funnel","href":"/dashboard/funnel","fr":"Funnel","en":"Funnel","acces":"admin","chemin":["Quantitatif"]},
   {"cle":"quanti-messages","href":"/dashboard","fr":"Messages & contacts","en":"Messages & contacts","acces":"admin","chemin":["Quantitatif"]},
+  {"cle":"quanti-performance","href":"/dashboard/performance","fr":"Performance","en":"Performance","acces":"admin","chemin":["Quantitatif"]},
   {"cle":"rcs-messages","href":"/rcs-messages","fr":"Messages","en":"Messages","acces":"admin","chemin":["Contenu","RCS"]},
   {"cle":"securite-audit","href":"/securite/audit","fr":"Audit trails","en":"Audit trails","acces":"encadrement","chemin":["Sécurité"]},
   {"cle":"securite-consentement","href":"/securite/consentement","fr":"Consentement","en":"Consent","acces":"encadrement","chemin":["Sécurité"]},

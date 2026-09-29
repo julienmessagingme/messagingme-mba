@@ -856,11 +856,16 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   e.tenant_id`, pour l'acteur, la cible et l'assigné) : un identifiant qu'elle n'y retrouve pas se lit « ancien
   collaborateur ». Une assignation dont l'acteur est la cible est marquée `prise`, que l'écran dit « Prise en
   charge ».
-  ⚠️ Côté détenteur du fil, seul ce qui touche l'agent de Meta s'écrit (`prise_mba`, `rendue_mba`,
-  `passee_par_mba`) ; une escalade qui sort la conversation d'Archivé ou de Traité le dit aussi
-  (`desarchivee`, `non_traitee`, avec sa cause). Le type se lit sur les colonnes (le fil quitte `mba` : prise ;
-  il y va : rendu), SAUF quand l'écriture le dit (`EcritureDuFil.rendAgentDeMeta`) : « Rendre la main » sur un fil
-  que notre colonne croit déjà `mba` écrit `app_workflow`, et les colonnes y liraient une prise. La rétention est
+  ⚠️ Côté détenteur du fil, s'écrit ce qui touche l'agent de Meta (`prise_mba`, `rendue_mba`, `passee_par_mba`)
+  et, depuis 0194, les deux bornes d'une demande du Quantitatif > Performance : `escaladee` quand le drapeau
+  d'escalade fait passer un fil d'un robot (`app_workflow`) à l'équipe, avec une cause qui nomme le scénario ou
+  l'agent IA (portée par l'appelant de `passerAUnHumain`, qui l'exige), et `rendue_scenario` quand un fil
+  `app_human` repasse à `app_workflow`. Un opérateur qui prend le fil en écrivant (sans drapeau) n'écrit rien. Les
+  branches de l'agent de Meta passent AVANT : un fil qui quitte `mba` reste `prise_mba`. Une escalade qui sort la
+  conversation d'Archivé ou de Traité le dit aussi (`desarchivee`, `non_traitee`, avec sa cause). Le type se lit sur
+  les colonnes (le fil quitte `mba` : prise ; il y va : rendu), SAUF quand l'écriture le dit
+  (`EcritureDuFil.rendAgentDeMeta`) : « Rendre la main » sur un fil que notre colonne croit déjà `mba` écrit
+  `app_workflow`, et les colonnes y liraient une prise. La rétention est
   celle de la conversation (`on delete cascade`). La migration amorce le journal depuis l'état réel (cause
   `CAUSE_AMORCAGE`), une ligne par fait daté.
   ⚠️ **L'en-tête de la migration 0192 est inexact sur deux points** (relecture du 2026-09-29 ; le fichier est
@@ -868,6 +873,35 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   son `union all`), pas une ; et sa clé étrangère vers `tenants` pose, elle aussi, son verrou pendant la
   transaction. L'amorçage a recopié `assigned_by` et `signalee_par` sans filtrer l'espace : c'est pourquoi la
   lecture le filtre.
+- 🔴 **LES DEMANDES DU QUANTITATIF > PERFORMANCE** (`GET /tenants/:tenantId/stats/performance`, garde admin et
+  période des autres statistiques). Elles ne sont PAS stockées : `PgPerformanceStore.lire`
+  (`src/stats/performance.pg.ts`) les reconstruit du journal, et `calculerPerformance` (`src/stats/performance.ts`)
+  en tire les durées. Une durée stockée deviendrait fausse le jour où l'espace change ses horaires.
+  - **Ouverture** : `escaladee` ou `passee_par_mba`, seulement si rien n'était ouvert, c'est-à-dire si l'événement
+    d'ouverture ou de fin qui précède sur la conversation (`lag`) est une fin, ou s'il n'y en a pas. Deux passages
+    sans fin entre eux font UNE demande, datée du premier. Elle appartient au jour (Paris, `STATS_TZ`) où elle
+    s'ouvre : sa réponse et sa fin peuvent tomber après la période.
+  - **Fin** : le premier `traitee`, `archivee`, `rendue_mba` ou `rendue_scenario` qui suit. Son auteur est l'acteur
+    de l'événement ; nul AVEC une cause, c'est « automatique » ; nul SANS cause, ou introuvable dans l'espace, c'est
+    un ancien collaborateur (la règle du journal, ci-dessus).
+  - **Réponse** : le premier message `direction = 'out'` et `origin = 'humain'` (écrit dans l'Inbox, texte, modèle
+    ou RCS) entre l'ouverture et la fin, attribué à son `sender_user_id`. Ni l'API, ni un assistant MCP, ni une
+    campagne, ni un robot.
+  - **Durées** : en heures d'ouverture de l'espace (`tempsOuvre`, `src/lib/heures-ouvrees.ts` : jours civils du
+    fuseau, ouvertures murales converties en instants, donc juste au changement d'heure). Un espace sans aucun
+    créneau exploitable (`horairesExploitables`) est compté en temps brut, et la réponse le dit (`mode: 'brut'`).
+    Les horaires lus sont ceux de `settingsStore.get`, défauts du serveur compris : ceux que l'écran Paramètres
+    montre. Médiane et 90e centile en TypeScript, par interpolation (`percentile_cont`), `null` sans mesure.
+  - ⚠️ **Les résolues SANS réponse sont une catégorie à part, hors du temps de résolution** : le balayage qui rend
+    un fil au bout de deux heures ne mesure rien de l'équipe. Les compteurs forment une partition : demandes =
+    résolues (avec réponse) + résolues sans réponse + encore ouvertes.
+  - ⚠️ **La mesure démarre à l'application de 0194**, lue dans `public.schema_migrations`
+    (`MIGRATION_DES_DEMANDES`) : avant elle, ni le passage d'un scénario ni le retour au scénario n'étaient datés,
+    donc une demande de l'agent de Meta d'avant 0194 pouvait n'avoir jamais de fin. Aucune ouverture antérieure
+    n'est comptée, et l'écran dit « mesuré depuis le ... ».
+  - ⚠️ Le journal n'a d'index que par conversation : la lecture filtre l'espace sur `conversations` et sur le
+    journal, puis descend par conversation. À surveiller le jour où un espace porte des dizaines de milliers
+    d'événements.
 - 🔴 **UNE ESCALADE EST « À TRAITER » TOUT DE SUITE** (`escaladee_le`, migration 0164), et TROIS chemins la
   posent : l'agent de Meta qui nous passe le fil (`control_passed`), le bloc « passer à un humain » d'un
   scénario, et l'escalade d'un agent IA. Les trois font la même promesse au client, et souffraient du même
@@ -2240,7 +2274,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
 | `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds), et le refus d'un niveau de risque inconnu (`FiltreContactInvalide`, 400) |
 | `src/engagement/risque.ts` | 🔴 la grille du risque de désengagement, en règles PURES (`calculerRisque`), ses niveaux et ses codes de raisons (`NIVEAUX_RISQUE`, `RAISONS_RISQUE`), les seuils par défaut et `passeEnEleve`. La base (CHECK de 0178), l'API, les signaux et la console (`web/lib/risque.ts`, par `tests/web-risque-parite.test.ts`) lui sont tenus |
-| `src/inbox/evenements.ts` | 🔴 le journal des événements d'une conversation : ses types (miroir du CHECK de 0192 et de `web/lib/inbox-detail.ts`, tenus par deux tests), `AuteurDuChangement` (le paramètre requis de toute écriture de l'Inbox), `colonnesAuteur` (un identifiant qui n'est pas un uuid devient nul avant la base, et porte une cause), `automatique` (la forme d'une cause), `auteurDeLEnvoi` (qui prend le fil en écrivant) et `acteurSql` (l'acteur résolu DANS l'espace) |
+| `src/inbox/evenements.ts` | 🔴 le journal des événements d'une conversation : ses types (miroir du CHECK en vigueur, celui de 0194, et de `web/lib/inbox-detail.ts`, tenus par deux tests), `AuteurDuChangement` (le paramètre requis de toute écriture de l'Inbox), `colonnesAuteur` (un identifiant qui n'est pas un uuid devient nul avant la base, et porte une cause), `automatique` (la forme d'une cause), `auteurDeLEnvoi` (qui prend le fil en écrivant) et `acteurSql` (l'acteur résolu DANS l'espace) |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |
 | `src/inbox/origine.ts` -> `ORIGINE_EFFECTIVE_SQL` | 🔴 le fragment SQL qui dit d'OÙ vient un message sortant, avec sa dérivation bornée pour l'historique d'avant la migration 0099. Il attend l'alias `m` pour `conversation_messages`. Le recopier ferait diverger un total de sa ventilation : la ventilation du Performance Lab et le compte de messages de l'en-tête de l'agent de Meta doivent classer un message de la même façon. ⚠️ Une requête qui le lit se restreint aux SORTANTS (`m.direction = 'out'`), sans quoi elle sort du prédicat de l'index partiel `conversation_messages_origin_idx`, sans qu'aucune erreur ne le dise. `THEME_DE_ORIGINE` et `DETAIL_IA` vivent dans le même fichier, pour la même raison |
 | `src/stats/prix.ts` -> `coutRcsEuros()` | le prix d'un lot de RCS depuis la grille UNIQUE (simple / conversationnel ; « de l'espace » jusqu'au 2026-09-23, où la grille est devenue globale, migration 0168). 🔴 Deux écrans l'appliquent, « coût des messages envoyés » et « coût par engagement » : la formule tient en une ligne, ce qui est exactement pourquoi elle allait être recopiée, et deux copies donneraient deux prix pour le même envoi |
@@ -2264,6 +2298,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/lib/http-get.ts` | une lecture GET injectable, testable sans réseau |
 | `src/lib/heures-ouvrees.ts` -> `prochaineOuverture` | « quand est le prochain créneau ouvert ? », pour le bloc Attente et les campagnes |
 | `src/lib/heures-ouvrees.ts` -> `fenetreDeRattrapageOuverte` | « a-t-on le droit de RATTRAPER maintenant ? ». 🔴 Autre question que `business_hours_only` (l'envoi initial, côté moteur), et une semaine entièrement fermée y rend `true` : sinon ses rattrapages gèlent pour toujours |
+| `src/lib/heures-ouvrees.ts` -> `tempsOuvre`, `mesureurDeTempsOuvre`, `horairesExploitables` | « combien de temps OUVRÉ entre deux instants ? », pour le Quantitatif > Performance. Temps brut quand l'espace n'a aucun créneau exploitable, et l'appelant le dit |
 | `src/lib/adresses-publiques.ts` | les adresses que le produit DISTRIBUE (`/r/`, `/m/`, `/w/`) |
 | `src/agent/devise.ts` | dollars du Gateway -> micro-euros, en UN endroit |
 | `src/agent/modeles.ts` | les modèles proposables et leur tarif client : le menu ET la garde d'écriture y lisent |

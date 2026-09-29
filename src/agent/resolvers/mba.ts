@@ -19,8 +19,11 @@ export interface DepsResolveurMba {
     tenantId: string; waId: string; runId: string; workflowId: string; code: string;
   }): Promise<{ ok: boolean; raison?: string }>;
 
-  /** Escalade vers un humain (`mba_escalader_humain`), par `creerEscaladeVersHumain` qui ordonne les effets. */
-  escaladerVersHumain(input: { tenantId: string; waId: string; runId: string; sessionId: string }): Promise<boolean>;
+  /**
+   * Escalade vers un humain (`mba_escalader_humain`), par `creerEscaladeVersHumain` qui ordonne les effets.
+   * `agentId` : l'agent qui passe la main, nommé dans la cause que la frise et le journal gardent.
+   */
+  escaladerVersHumain(input: { tenantId: string; waId: string; runId: string; sessionId: string; agentId: string }): Promise<boolean>;
 
   /** Pose un tag sur le contact (`mba_poser_tag`). */
   poserTag(tenantId: string, waId: string, tag: string): Promise<void>;
@@ -65,7 +68,7 @@ const HANDLERS: Record<string, Handler> = {
    */
   escalader: async ({ ctx }, deps) => {
     const mainPrise = await deps.escaladerVersHumain({
-      tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, sessionId: ctx.sessionId,
+      tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, sessionId: ctx.sessionId, agentId: ctx.agentId,
     });
     return { contenu: { escalade: true }, rendu: true, mainPrise };
   },

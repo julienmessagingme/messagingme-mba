@@ -47,6 +47,8 @@ interface Cas {
 }
 
 const escaladee = { escaladeeLe: ESCALADE };
+/** La cause que l'appelant d'un passage à l'équipe porte (le scénario ou l'agent IA qui passe la main). */
+const CAUSE_SCENARIO = 'automatique : scénario test';
 
 const TABLE: Cas[] = [
   // 1. Un opérateur ou une machine écrit : aucun appel, l'envoi WhatsApp prend le fil.
@@ -125,10 +127,10 @@ const TABLE: Cas[] = [
   { nom: '7b. équipe, agent éteint : app_human sans appel', depart: { owner: 'app_workflow' }, banc: { mbaEnabled: false }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: [], arrivee: { owner: 'app_human' } },
 
   // 8 et 9. Un scénario ou un agent IA passe à un humain.
-  { nom: '8. passer à un humain, avec escalade', depart: { owner: 'app_workflow' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: true }), rend: true, meta: [], arrivee: { owner: 'app_human', escaladee: true } },
-  { nom: '8. passer à un humain, sans escalade (échec de réveil)', depart: { owner: 'app_workflow' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: false }), rend: true, meta: [], arrivee: { owner: 'app_human', escaladee: false } },
-  { nom: '8. passer à un humain, un opérateur tient déjà le fil : false', depart: { owner: 'app_human' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: true }), rend: false, meta: [], arrivee: { owner: 'app_human', escaladee: false } },
-  { nom: '8. passer à un humain, l’agent tient le fil : false', depart: { owner: 'mba' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: true }), rend: false, meta: [], arrivee: { owner: 'mba' } },
+  { nom: '8. passer à un humain, avec escalade', depart: { owner: 'app_workflow' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: true, cause: CAUSE_SCENARIO }), rend: true, meta: [], arrivee: { owner: 'app_human', escaladee: true } },
+  { nom: '8. passer à un humain, sans escalade (échec de réveil)', depart: { owner: 'app_workflow' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: false, cause: CAUSE_SCENARIO }), rend: true, meta: [], arrivee: { owner: 'app_human', escaladee: false } },
+  { nom: '8. passer à un humain, un opérateur tient déjà le fil : false', depart: { owner: 'app_human' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: true, cause: CAUSE_SCENARIO }), rend: false, meta: [], arrivee: { owner: 'app_human', escaladee: false } },
+  { nom: '8. passer à un humain, l’agent tient le fil : false', depart: { owner: 'mba' }, geste: (f) => f.passerAUnHumain('t1', 'w', { escalade: true, cause: CAUSE_SCENARIO }), rend: false, meta: [], arrivee: { owner: 'mba' } },
 
   // 10. L'agent de Meta passe la main.
   { nom: '10. control_passed : app_human et escalade', depart: { owner: 'mba' }, geste: (f) => f.agentDeMetaPasseLaMain('t1', 'w'), meta: [], arrivee: { owner: 'app_human', escaladee: true } },

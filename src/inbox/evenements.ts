@@ -2,8 +2,8 @@
  * LE JOURNAL DES ÉVÉNEMENTS D'UNE CONVERSATION (migration 0192, panneau Détail de l'Inbox, cadrage du 2026-09-28).
  *
  * Ce qui est arrivé à une conversation, qui l'a fait, et pourquoi quand personne ne l'a fait : les assignations,
- * les prises et les rendus à l'agent de Meta, « Traité », « Archivé », « Signalé » et leurs inverses, et la
- * rouverture par un message du contact.
+ * les prises et les rendus à l'agent de Meta, « Traité », « Archivé », « Signalé » et leurs inverses, la
+ * rouverture par un message du contact, et depuis 0194 le passage d'un robot à l'équipe et le retour à un scénario.
  *
  * 🔴 DEUX RÈGLES D'ÉCRITURE, tenues par `PgInboxStore` et par lui seul :
  *  - l'événement s'écrit dans la MÊME requête que le changement qu'il décrit (une requête à CTE). Deux écritures
@@ -17,10 +17,18 @@
  */
 import type { OrigineMessage } from './origine';
 
-/** Les types, dans l'ordre du cadrage. Miroir du CHECK de 0192, tenu par `tests/migration-0192.test.ts`. */
+/**
+ * Les types, dans l'ordre du cadrage. Miroir du CHECK en vigueur, celui de 0194, tenu par
+ * `tests/migration-0194.test.ts` ; les douze premiers sont ceux de 0192.
+ *
+ * Les deux derniers (0194) datent ce que le Quantitatif > Performance mesure : `escaladee`, un scénario ou un agent
+ * IA passe la main à l'équipe (celle de l'agent de Meta est `passee_par_mba`, pas doublée) ; `rendue_scenario`,
+ * l'équipe rend le fil à un scénario. Comment ils ouvrent et ferment une demande : `src/stats/performance.ts`.
+ */
 export const TYPES_EVENEMENT = [
   'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
   'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
+  'escaladee', 'rendue_scenario',
 ] as const;
 export type TypeEvenement = (typeof TYPES_EVENEMENT)[number];
 

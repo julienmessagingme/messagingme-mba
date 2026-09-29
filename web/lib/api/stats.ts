@@ -568,6 +568,17 @@ export function getCoutIa(tenantId: string, range?: StatsRange): Promise<CoutIa>
 }
 
 /**
+ * Quantitatif > Performance : temps de réponse et de résolution de l'équipe.
+ *
+ * ⚠️ `unknown`, DÉLIBÉRÉMENT : la réponse ne se lit QUE par `lirePerformance` (`@/lib/performance`), qui rend `null`
+ * pour tout ce qui n'a pas la bonne forme. Un 404 (la console part sur Vercel avant l'API) remonte en `ApiError`,
+ * que l'écran traduit en « pas encore disponible ».
+ */
+export function getPerformance(tenantId: string, range?: StatsRange): Promise<unknown> {
+  return request<unknown>(`/tenants/${tenantId}/stats/performance${rangeQuery(range)}`);
+}
+
+/**
  * Le damier « satisfaction x urgence » (lot F du 2026-09-08, migration 0121).
  *
  * Un point par CASE occupee du damier (les deux notes sont des entiers de 0 a 10 : 121 positions au plus),

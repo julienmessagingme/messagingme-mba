@@ -19,7 +19,7 @@ function harnais(over: { sortirRend?: boolean } = {}) {
         return over.sortirRend ?? true;
       },
     },
-    escalateToHuman: async (_t, waId) => { journal.push(`bascule:${waId}`); return true; },
+    escalateToHuman: async (_t, waId, agentId) => { journal.push(`bascule:${waId}:${agentId}`); return true; },
   });
   return { escalader, journal };
 }
@@ -30,15 +30,15 @@ describe('escalade vers un humain (tâche 16)', () => {
     // inopérante (`advance` sort en premier sur `mayAct`), et ne pas sortir du tout ferait reprendre l'agent
     // après le passage de l'humain (`runControlSweep` rend automatiquement la main au scénario).
     const { escalader, journal } = harnais();
-    await escalader({ tenantId: 't1', waId: '33600', runId: 'r1', sessionId: 's1' });
-    expect(journal).toEqual(['clore:s1:sortie:humain', 'sortir:s1:humain', 'bascule:33600']);
+    await escalader({ tenantId: 't1', waId: '33600', runId: 'r1', sessionId: 's1', agentId: 'a1' });
+    expect(journal).toEqual(['clore:s1:sortie:humain', 'sortir:s1:humain', 'bascule:33600:a1']);
   });
 
   it('bascule quand même si aucun parcours n attendait sur un bloc agent', async () => {
     // Le but premier est qu'un humain reprenne la conversation : un run introuvable ne doit pas laisser le
     // contact sans personne.
     const { escalader, journal } = harnais({ sortirRend: false });
-    await escalader({ tenantId: 't1', waId: '33600', runId: 'r1', sessionId: 's1' });
-    expect(journal).toContain('bascule:33600');
+    await escalader({ tenantId: 't1', waId: '33600', runId: 'r1', sessionId: 's1', agentId: 'a1' });
+    expect(journal).toContain('bascule:33600:a1');
   });
 });

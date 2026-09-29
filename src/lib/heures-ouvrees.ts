@@ -51,6 +51,83 @@ export function prochaineOuverture(depuis: Date, timeZone: string, hours: Busine
 }
 
 /**
+ * Un instant quelconque, fixe, d'où chercher un créneau : `prochaineOuverture` regarde huit jours, donc chaque jour
+ * de la semaine au moins une fois, et sa réponse (« il existe un créneau ») ne dépend pas du point de départ.
+ */
+const REFERENCE = new Date(Date.UTC(2026, 0, 5, 12));
+
+/**
+ * L'espace a-t-il au moins un créneau d'ouverture exploitable dans la semaine ? Non (horaires absents, tous les
+ * jours fermés, plages mal saisies) : le temps ouvré n'a pas de sens, `tempsOuvre` compte en temps brut, et
+ * l'écran qui l'affiche doit le dire. Même critère que `prochaineOuverture`, à qui on le demande.
+ */
+export function horairesExploitables(timeZone: string, hours: BusinessHours | null): boolean {
+  return hours !== null && prochaineOuverture(REFERENCE, timeZone, hours) !== null;
+}
+
+/**
+ * Le temps OUVRÉ entre deux instants, en millisecondes : la part de `[debut, fin]` qui tombe dans les heures
+ * d'ouverture de l'espace, dans son fuseau. C'est ce que mesure le Quantitatif > Performance : une demande arrivée
+ * vendredi à 17 h et répondue lundi à 9 h 30 a attendu une heure et demie d'équipe, pas soixante-quatre heures.
+ *
+ * - `fin` antérieure à `debut` (ou instant invalide) : 0, jamais une durée négative ;
+ * - horaires absents ou sans créneau exploitable (`horairesExploitables`) : le temps BRUT, que l'appelant annonce ;
+ * - le changement d'heure : on itère sur des jours CIVILS du fuseau, et chaque ouverture ou fermeture murale
+ *   devient un instant par `parseInstant`. Un jour de 23 ou 25 heures garde donc ses vraies heures d'ouverture,
+ *   là où une arithmétique en « + 24 h » sauterait ou répéterait un jour, comme dans `prochaineOuverture`.
+ */
+export function tempsOuvre(debut: Date, fin: Date, timeZone: string, hours: BusinessHours | null): number {
+  return mesureurDeTempsOuvre(timeZone, hours)(debut, fin);
+}
+
+/**
+ * `tempsOuvre` pour un même espace, avec la plage de chaque jour civil calculée une seule fois : une période de
+ * statistiques mesure des centaines de demandes qui partagent leurs jours, et chaque plage coûte plusieurs
+ * formatages `Intl`. Même résultat que `tempsOuvre`, qui l'appelle.
+ */
+export function mesureurDeTempsOuvre(timeZone: string, hours: BusinessHours | null): (debut: Date, fin: Date) => number {
+  const brut = (debut: Date, fin: Date): number => {
+    const d = fin.getTime() - debut.getTime();
+    return d > 0 ? d : 0;
+  };
+  if (hours === null || !horairesExploitables(timeZone, hours)) return brut;
+
+  const jourCivil = new Intl.DateTimeFormat('en-CA', { timeZone });
+  const plages = new Map<string, readonly [number, number] | null>();
+  /** L'ouverture et la fermeture du jour civil `jour`, en instants ; `null` = fermé ou plage inexploitable. */
+  const plageDu = (jour: string): readonly [number, number] | null => {
+    const connue = plages.get(jour);
+    if (connue !== undefined) return connue;
+    let plage: readonly [number, number] | null = null;
+    // Le jour de la semaine se lit sur midi, jamais sur minuit : un décalage d'une heure ferait lire la veille.
+    const h = hours[String(weekdayInZone(parseInstant(`${jour}T12:00`, timeZone), timeZone))];
+    if (h && !h.closed) {
+      const ouverture = parseInstant(`${jour}T${h.open}`, timeZone).getTime();
+      const fermeture = parseInstant(`${jour}T${h.close}`, timeZone).getTime();
+      // Une plage mal saisie (`close <= open`) n'est pas ouverte : même règle que `withinBusinessHours`.
+      if (fermeture > ouverture && withinBusinessHours(new Date(ouverture), timeZone, hours)) plage = [ouverture, fermeture];
+    }
+    plages.set(jour, plage);
+    return plage;
+  };
+
+  return (debut, fin) => {
+    const a = debut.getTime();
+    const b = fin.getTime();
+    // `!(b > a)` et pas `b <= a` : un instant invalide (NaN) rend 0 au lieu d'une boucle sans fin.
+    if (!(b > a)) return 0;
+    const dernier = jourCivil.format(fin);
+    let total = 0;
+    // Les dates `YYYY-MM-DD` se comparent comme des chaînes.
+    for (let jour = jourCivil.format(debut); jour <= dernier; jour = addDays(jour, 1)) {
+      const p = plageDu(jour);
+      if (p) total += Math.max(0, Math.min(b, p[1]) - Math.max(a, p[0]));
+    }
+    return total;
+  };
+}
+
+/**
  * « A-t-on le droit de rattraper maintenant ? », pour un réessai ou un repli d'étage.
  *
  * Question distincte de `business_hours_only`, qui gouverne l'envoi initial, le moment que l'opérateur

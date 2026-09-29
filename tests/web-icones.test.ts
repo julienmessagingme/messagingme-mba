@@ -55,7 +55,7 @@ describe('Les icônes de la console', () => {
       'components/Logo.tsx', 'components/LogosCanaux.tsx', 'lib/logos-llm.ts',
       // Graphiques de données.
       'components/DailyChart.tsx', 'components/NuageQualitatifCard.tsx', 'components/TableauHistogramme.tsx',
-      'components/ConversationAnalysisCard.tsx',
+      'components/ConversationAnalysisCard.tsx', 'components/analytics/PerformanceCourbe.tsx',
       // Maquettes de ce que le destinataire verra.
       'components/WhatsAppPreview.tsx', 'components/PubApercu.tsx',
     ]);

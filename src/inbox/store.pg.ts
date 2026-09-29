@@ -435,7 +435,10 @@ export class PgInboxStore implements InboxStore {
     // preuve que l'agent a repris le fil) ; sans date, la garde reste stricte.
     //
     // 🔴 LE JOURNAL (migration 0192), DANS LA MÊME REQUÊTE : `prise_mba` quand le fil quitte l'agent de Meta,
-    // `rendue_mba` quand il y va ; aucun événement entre scénario et équipe, le cadrage ne les raconte pas. Et
+    // `rendue_mba` quand il y va. Entre scénario et équipe (0194, les demandes du Quantitatif > Performance) :
+    // `escaladee` quand le drapeau d'escalade fait passer un fil d'un robot (`app_workflow`) à l'équipe, et
+    // `rendue_scenario` quand l'équipe le rend à un scénario. Un opérateur qui prend le fil en écrivant (sans
+    // drapeau) n'écrit rien : ce n'est pas une attente du client, et il ouvrirait une demande déjà répondue. Et
     // l'escalade qui sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`, `non_traitee`), sans
     // quoi la frise la montrerait encore rangée. L'état d'avant est lu dans un sous-select VERROUILLÉ.
     // ⚠️ `rendAgentDeMeta` passe AVANT la lecture des colonnes : « Rendre la main » sur un fil que notre colonne
@@ -466,7 +469,9 @@ export class PgInboxStore implements InboxStore {
            from maj
            cross join lateral (values
              (case when $11::boolean then 'rendue_mba'
-                   when maj.ancien_detenteur = 'mba' then 'prise_mba' when $3 = 'mba' then 'rendue_mba' end),
+                   when maj.ancien_detenteur = 'mba' then 'prise_mba' when $3 = 'mba' then 'rendue_mba'
+                   when $8::boolean and $3 = 'app_human' and maj.ancien_detenteur = 'app_workflow' then 'escaladee'
+                   when $3 = 'app_workflow' and maj.ancien_detenteur = 'app_human' then 'rendue_scenario' end),
              (case when maj.ancienne_archive is not null and maj.archived_at is null then 'desarchivee' end),
              (case when maj.ancienne_traitee is not null and maj.traitee_le is null then 'non_traitee' end)
            ) as e(type)

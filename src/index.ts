@@ -14,6 +14,8 @@ import { PgCampaignDraftStore } from './campaign/draft-store.pg';
 import type { ConversationMessage } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
+import { PgPerformanceStore } from './stats/performance.pg';
+import { lirePerformance } from './stats/performance';
 import { creerChiffrage } from './stats/chiffrage';
 
 import { cacheCourt } from './lib/cache-court';
@@ -182,6 +184,7 @@ async function main(): Promise<void> {
   const templateHintStore = new PgTemplateHintStore(pool);
   const tagStore = new PgTagStore(pool);
   const statsStore = new PgStatsStore(pool);
+  const performanceStore = new PgPerformanceStore(pool);
   // Agrégats d'analyse de conversation. `enabled` = état de la feature côté serveur (empty-state différencié).
   // La rétention vient de la même variable que la purge du worker (`CONVERSATION_RETENTION_DAYS`) : l'écran
   // annonce le nombre réellement appliqué. Hors du socle : le worker construit le sien pour écrire les agrégats,
@@ -845,6 +848,12 @@ async function main(): Promise<void> {
       getCoutIa: chiffrage.getCoutIa,
       getDetailCoutCampagne: chiffrage.getDetailCoutCampagne,
       getWorkflowNodeCounts: chiffrage.getWorkflowNodeCounts,
+      // Quantitatif > Performance : les demandes de la base, les durées en heures d'ouverture de L'ESPACE (ses
+      // réglages, défauts du serveur compris, ceux que l'écran Paramètres lui montre).
+      getPerformance: (tenant, range) => lirePerformance(
+        { demandes: (t, r) => performanceStore.lire(t, r), reglages: (t) => settingsStore.get(t) },
+        tenant, range,
+      ),
       // Le même journal que l'écran d'exploitation (`/parametres`), avec le code et la plage en filtre : deux
       // requêtes sur des populations voisines feraient se contredire deux écrans de même titre.
       getErrorContacts: (tenant, range, code, filter) => erreursLivraison.lister(tenant, {

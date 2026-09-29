@@ -7,11 +7,18 @@
 
 export type TypeEvenement =
   | 'assignee' | 'desassignee' | 'prise_mba' | 'rendue_mba' | 'passee_par_mba'
-  | 'traitee' | 'non_traitee' | 'archivee' | 'desarchivee' | 'signalee' | 'designalee' | 'rouverte';
+  | 'traitee' | 'non_traitee' | 'archivee' | 'desarchivee' | 'signalee' | 'designalee' | 'rouverte'
+  | 'escaladee' | 'rendue_scenario';
 
+/**
+ * ⚠️ Les deux derniers (migration 0194) doivent être ICI avant que l'API ne les écrive : un type inconnu de
+ * l'écran est écarté par `lireDetail`, et la frise perdrait la ligne sans rien dire. La console part avant l'API,
+ * donc cet ordre est celui du déploiement.
+ */
 export const TYPES_EVENEMENT: readonly TypeEvenement[] = [
   'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
   'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
+  'escaladee', 'rendue_scenario',
 ];
 
 /** Un collaborateur, un collaborateur supprimé depuis, ou personne (un changement automatique porte sa cause). */
@@ -150,6 +157,11 @@ export function libelleEvenement(e: EvenementConversation, t: T): string {
       return t('Plus signalée', 'No longer flagged');
     case 'rouverte':
       return t('Rouverte', 'Reopened');
+    // La cause dit QUI passe la main ou reprend (« automatique : scénario Bienvenue ») : la phrase reste générique.
+    case 'escaladee':
+      return t('Passée à l’équipe', 'Handed over to the team');
+    case 'rendue_scenario':
+      return t('Rendue au scénario', 'Handed back to the scenario');
   }
 }
 

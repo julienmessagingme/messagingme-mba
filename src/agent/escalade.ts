@@ -24,16 +24,17 @@ export function creerEscaladeVersHumain(deps: {
   /**
    * La bascule du détenteur du fil (`escalateToHuman` du câblage, `only: ['app_workflow']`). Rend `true`
    * seulement si elle a vraiment basculé : le tour s'en sert pour savoir s'il peut écrire une dernière
-   * phrase, et relire le détenteur à la place rouvrirait la course avec un opérateur.
+   * phrase, et relire le détenteur à la place rouvrirait la course avec un opérateur. `agentId` : l'agent qui
+   * passe la main, que le câblage nomme dans la cause de l'événement `escaladee` (migration 0194).
    */
-  escalateToHuman(tenantId: string, waId: string): Promise<boolean>;
+  escalateToHuman(tenantId: string, waId: string, agentId: string): Promise<boolean>;
   /** Handle emprunté à la sortie du bloc. Le client le câble vers ce qu'il veut voir après une escalade. */
   sortie?: string;
-}): (input: { tenantId: string; waId: string; runId: string; sessionId: string }) => Promise<boolean> {
+}): (input: { tenantId: string; waId: string; runId: string; sessionId: string; agentId: string }) => Promise<boolean> {
   const sortie = deps.sortie ?? SORTIE_HUMAIN;
-  return async ({ tenantId, waId, sessionId }) => {
+  return async ({ tenantId, waId, sessionId, agentId }) => {
     await deps.sessions.clore(tenantId, sessionId, 'sortie', sortie);
     await deps.parcours.sortirDuBlocAgent(tenantId, waId, sessionId, sortie);
-    return deps.escalateToHuman(tenantId, waId);
+    return deps.escalateToHuman(tenantId, waId, agentId);
   };
 }

@@ -67,6 +67,7 @@ import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerEscaladeVersHumain } from './agent/escalade';
+import { automatique } from './inbox/evenements';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { runAnalysisSweep } from './analysis/sweep';
@@ -1418,7 +1419,13 @@ async function main(): Promise<void> {
       // `app_workflow` à `app_human`, ce qui dit au tour que sa garde de détenteur est fausse à cause de lui
       // (sinon la dernière phrase de l'agent serait muette quand l'équipe est fermée). `escalade: true` : un agent
       // IA qui passe la main promet une réponse, la conversation entre dans « À traiter » tout de suite.
-      escalateToHuman: (t, waId) => fil.passerAUnHumain(t, waId, { escalade: true }),
+      // La cause nomme l'agent (l'événement `escaladee`, migration 0194, ouvre une demande du Quantitatif >
+      // Performance et la frise du panneau Détail le raconte) : son libellé, lu seulement au moment d'escalader ;
+      // un agent introuvable est dit par son identifiant plutôt que de retarder la bascule d'une erreur.
+      escalateToHuman: async (t, waId, agentId) => fil.passerAUnHumain(t, waId, {
+        escalade: true,
+        cause: automatique(`agent IA ${(await agentStore.complet(t, agentId).catch(() => null))?.label ?? agentId}`),
+      }),
     });
 
     // Les vrais outils maison, à comparer à `resolvers/simulation.ts` (bac à sable) : ici chaque dépendance
