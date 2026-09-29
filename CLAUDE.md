@@ -96,6 +96,16 @@ dans AUCUN `settings.json` : il n'a jamais rien bloqué, et il reste débranché
 qu'il « couvrait » ; c'était faux. Ce qui tient l'ordre, c'est la discipline : une relecture par lot (un rouge =
 ce qui casse la production), la CI lue avant le `up`, la migration AVANT le code qui la lit.
 
+🔴 **TROIS PIÈGES DE LA RECHARGE STRIPE (2026-09-29).**
+- `STRIPE_SECRET_KEY` et `STRIPE_WEBHOOK_SECRET` se posent ENSEMBLE ou pas du tout : une seule des deux fait
+  REFUSER le démarrage de l'API. Les deux sont posées par Julien dans `.env.prod`, jamais par Claude.
+- Une migration qui touche `agent_credit_mouvements` bloque TOUT mouvement de crédit, donc chaque débit de tour
+  d'agent dans le WORKER : elle passe AVANT le `up` des DEUX conteneurs (vécu avec 0193, colonne nommée par
+  l'insertion commune `bouger`).
+- Un override dans `.env.prod` (`CREDIT_OFFERT_MICRO_EUR=0`) coupe une offre sans déployer de code : c'est ainsi
+  que les 5 € ont été éteints entre la relecture qui les a jugés récoltables et le correctif. Le retirer ensuite,
+  sinon le défaut du code ne s'applique jamais.
+
 Runbook VPS complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
 Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 

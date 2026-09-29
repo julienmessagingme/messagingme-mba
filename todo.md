@@ -1,5 +1,22 @@
 # todo.md : backlog
 
+## 🟠 Suites de la recharge Stripe et du panneau Détail (2026-09-29)
+
+- **Julien** : ajouter l'autorisation **Invoices : Lecture** à la clé restreinte « Engage Me console », puis
+  cliquer « Facture » sur l'achat ENGAGE100 de Paramètres > Crédit IA. Sans elle, le lien rend un refus lisible.
+- 🔴 **À VÉRIFIER : la lecture du fil n'a pas de garde de visibilité.** Relevé par l'implémenteur du panneau :
+  la route de détail passe par `visibiliteSql`, la lecture des messages du fil non. Un agent qui ne voit que ses
+  conversations lirait donc le fil d'un collègue par l'URL, sans voir son panneau. Mesurer avant de corriger.
+- 🟡 **Une traduction coupée par le délai n'est pas débitée** (`src/traduction/traduire.ts`) alors que Vercel l'a
+  peut-être facturée : la commission de 10 % absorbe l'écart tant que c'est rare.
+- 🟡 **La révocation d'une clé (`DELETE /ops/cle-modele/:tenantId`) est défaite par la traduction suivante**, qui
+  rouvre une clé si l'espace a du crédit. Aucun chemin ne supprime un espace aujourd'hui ; à fermer le jour où il
+  existera (révoquer ET empêcher la réouverture).
+- 🟡 **Mode test Stripe** (produits, clé restreinte, destination webhook en test) : facultatif, l'essai final a
+  été fait en live avec un code promo à 100 %.
+- 🟡 **La CI est rouge sur le plan d'une autre session** (`docs/superpowers/plans/2026-09-28-vitrine-fonctionnalites.md`
+  ne nomme pas son essai réel, `tests/plan-methode.test.ts`). Elle masque tout autre échec du job `unit`.
+
 ## 🟠 Suites de « approfondir la racine » (2026-09-27 et 28, plan `docs/superpowers/plans/2026-09-27-approfondir-la-racine.md`)
 
 1. **Essais réels à faire par Julien** (ils demandent sa session) : répondre depuis l'Inbox ; s'envoyer un message

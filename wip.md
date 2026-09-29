@@ -12,12 +12,22 @@
 | | |
 |---|---|
 | `origin/main` | voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **À JOUR AU 2026-09-28** : les cinq lots « approfondir la racine » (relais supprimés, chiffrage, socle commun, réception rattachée une fois, contrôle du fil avec les cinq décisions de Julien), aucune migration, CI verte et fumée à chaque lot. ⚠️ Essai réel de la RÉCEPTION pas encore fait : aucun message entrant depuis le déploiement du lot 5 ; les trois gestes de Julien sont dans `todo.md`. Le SHA n'est pas recopié ici (`git log` fait foi). |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **À JOUR AU 2026-09-29** : la recharge Stripe (Crédit IA sous Paramètres, commission au débit, traduction débitée, code promo, lien Facture, 5 € au numéro vérifié), le panneau Détail de l'Inbox et les publicités archivées ou programmées, migrations 0189 à 0193 appliquées AVANT chaque `up` et relues en base. CI verte job par job, sauf le plan d'une autre session (voir `todo.md`). Le SHA n'est pas recopié ici (`git log` fait foi). |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
+
+## PANNEAU DÉTAIL DE L'INBOX (DÉPLOYÉ LE 2026-09-29, ESSAI RÉEL DÛ)
+
+Spec `docs/superpowers/specs/2026-09-28-inbox-panneau-detail-design.md`. Le journal `conversation_evenements`
+(0192) s'écrit dans la même requête que chaque changement de `PgInboxStore`. En production, la frise ne porte
+encore que sa ligne d'amorçage (la seule assignation en cours sur 17 conversations).
+
+🔴 **L'ESSAI RÉEL, PAR JULIEN** : sur une conversation de l'espace MessagingMe, assigner, réassigner,
+désassigner, prendre puis rendre à l'agent de Meta, archiver ; relire la frise (qui, par qui, quand, dans
+l'ordre) ; puis vérifier qu'un message du contact sur la conversation archivée ajoute « rouverte ».
 
 ## LES DEUX ÉCRANS D'AGENT : EN-TÊTE ET MENU EN COLONNE (DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
 

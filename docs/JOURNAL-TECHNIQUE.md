@@ -5,6 +5,42 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-28 soir au 29 : publicités archivées et programmées, recharge Stripe, panneau Détail de l'Inbox
+
+**Publicités.** Archiver une publicité qui ne diffuse pas (0189, `publicites.archivee_le`, refus 409 côté serveur
+sur ce qui peut diffuser) ; puis la liste range « Programmées » les publicités publiées dont le début est à venir,
+parce que Meta les dit `ACTIVE` dès la publication et que l'écran affichait « Diffuse » et « Mettre en pause » sur
+une campagne qui démarrait le lendemain. Les fixtures e2e portaient un début en octobre 2026 : elles auraient
+basculé avec le calendrier.
+
+**Recharge Stripe, en quatre temps.**
+- Lot 1 (0190) : un prix client en un seul point (coût brut x 1,10, la commission affichée devient la commission
+  débitée), la traduction gardée par le solde, débitée et agrégée en une ligne par jour ; la clé Vercel s'ouvre à
+  la première traduction. 🔴 **La relecture a trouvé un rouge** : 5 € offerts à CHAQUE espace créé, sans preuve
+  d'identité, se récoltaient par script ; une vingtaine d'espaces atteignaient le plafond d'équipe Vercel
+  (100 $/mois), qui coupe les bots de TOUS les clients. Parti éteint (défaut 0).
+- Lot 2 (0191) : Stripe Checkout (TVA automatique, numéro de TVA, facture), webhook signé et idempotent par la
+  session dans une seule transaction avec le crédit, menu « Paramètres > Crédit IA », 5 € à la liaison du premier
+  numéro. Fusionné avec le panneau Détail, écrit en parallèle sur une autre copie (quatre fichiers en commun, un
+  conflit sur le compteur, deux causes de traduction du lot 2 branchées dans l'Inbox du panneau). Déployé avec
+  l'offre coupée par un override d'environnement : la relecture avait vu qu'elle partait aussi pour un numéro
+  NON vérifié.
+- Code promo : `allow_promotion_codes`, et le webhook crédite aussi `no_payment_required`. `amount_subtotal` étant
+  le prix AVANT remise, le crédit reste plein (décision de Julien).
+- Lot des jaunes des deux relectures (0193) : 5 € seulement pour un numéro que Meta dit vérifié, jamais deux fois
+  pour un numéro affiché E.164 ; plafond Vercel recalculé et sérialisé ; prix relu avant chaque session ; Adaptive
+  Pricing coupé ; mode de l'événement recoupé ; paire de secrets exigée au démarrage ; lien « Facture » par achat.
+  Offre rallumée au déploiement.
+
+**Essais réels, tous faits le 2026-09-29.** Refill 50 € avec le code ENGAGE100 à 100 % : une ligne de paiement
+live, un mouvement `achat` de +50 €, facture Stripe, plafond de la clé à 60 € (9,98 + 50). Webhook renvoyé depuis
+Stripe à 11 h 48 : `"credite": false`, toujours un seul paiement. Traductions de Julien dans l'Inbox : une ligne
+« traductions du 29/09 » qui grossit, le solde baisse d'autant au micro-euro près.
+
+**Panneau Détail de l'Inbox (0192).** Journal `conversation_evenements` écrit dans la même requête que chaque
+changement, seulement s'il y a eu changement ; amorcé d'une ligne en production. Relecture : 0 rouge. Essai réel
+dû (`wip.md`).
+
 ## 2026-09-27 soir au 28 : la racine de composition approfondie, cinq lots d'une nuit
 
 - **Revue d'architecture** (`/improve-codebase-architecture`) : `src/index.ts` faisait 3 043 lignes, touché par 137
