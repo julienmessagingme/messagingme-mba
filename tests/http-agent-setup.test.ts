@@ -9,6 +9,7 @@ import { OUTIL_PROPOSER } from '../src/agent/setup/proposition';
 import { AGENDA } from '../src/agent/setup/couverture';
 import type { EntretienComplet, EntretienStore } from '../src/agent/setup/entretien-store';
 import { ficheVide } from '../src/agent/fiche';
+import { MAX_FICHES_PAR_PAGE } from '../src/agent/scrape';
 import { LlmApiError } from '../src/llm/errors';
 import { capturerJournal } from './journal';
 import { assistantAgentInerte } from './routes-inertes';
@@ -699,6 +700,20 @@ describe('conversation de construction', () => {
       expect(res.json().nature).toBe('texte');
       expect(fiches[0]!.titre).toBe('Nos horaires');
       expect(fiches[0]!.corps).toContain('9h à 20h');
+    });
+
+    it('🔴 un CSV devient des fiches de rangées entières, et la réponse porte le plafond pour que l’écran le dise', async () => {
+      const fiches: Array<{ titre: string; corps: string }> = [];
+      const entete = 'Question;Réponse';
+      const csv = [entete, ...Array.from({ length: 120 }, (_, i) => `Question ${i} ?;Réponse détaillée numéro ${i}`)].join('\n');
+      const res = await app({ fiches }).srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok),
+        payload: { nom: 'FAQ', dataUrl: dataUrl(csv, 'text/csv') },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().plafond).toBe(MAX_FICHES_PAR_PAGE);
+      expect(fiches.length).toBeGreaterThan(1);
+      for (const f of fiches) expect(f.corps.split('\n')[0]).toBe(entete);
     });
 
     it('🔴 un fichier qui MENT sur son type est refusé en 415, et rien n’est écrit', async () => {

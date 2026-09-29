@@ -402,6 +402,51 @@ describe('base de connaissance : importer un DOCUMENT', () => {
     await srv.close();
   });
 
+  it('🔴 un CSV devient des fiches de rangees entieres, en UTF-8 comme en Windows-1252 (l export d Excel)', async () => {
+    // Mesure le 2026-09-29 : un export ordinaire rendait 422 « trop court », le meme en Windows-1252 un 415.
+    const entete = 'Espèce;Race;Formule 1;Formule 2';
+    const csv = [entete, ...Array.from({ length: 200 }, (_, i) => `Chien;Épagneul ${i};20,00;30,00`)].join('\r\n');
+    for (const octets of [Buffer.from(csv, 'utf8'), Buffer.from(csv, 'latin1')]) {
+      const { srv, cap } = app();
+      const res = await srv.inject({
+        method: 'POST', url: `${base('t1')}/document`, ...h(adminTok),
+        payload: { nom: 'Grille.csv', dataUrl: `data:text/csv;base64,${octets.toString('base64')}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const fiches = cap.remplacements[0]!.fiches;
+      expect(fiches.length).toBeGreaterThan(1);
+      for (const f of fiches) expect(f.corps.split('\n')[0]).toBe(entete);
+      await srv.close();
+    }
+  });
+
+  it('🔴 un fichier de plus d un mega passe : la route annonce 8 Mo, et heritait du plafond global de corps', async () => {
+    // Mesure par la relecture du 2026-09-29 : un fichier de 742 Ko recevait 413, son data URL base64 depassant
+    // le million d octets accepte par defaut.
+    const csv = ['Espèce;Race;Tarif', ...Array.from({ length: 40000 }, (_, i) => `Chien;Labrador ${i};20,00`)].join('\n');
+    const { srv } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/document`, ...h(adminTok),
+      payload: { nom: 'Catalogue.csv', dataUrl: `data:text/csv;base64,${Buffer.from(csv, 'utf8').toString('base64')}` },
+    });
+    expect(res.statusCode).toBe(200);
+    // Au plafond de fiches, la reponse porte de quoi le dire a l ecran.
+    expect(res.json()).toMatchObject({ ecrites: MAX_FICHES_PAR_PAGE, plafond: MAX_FICHES_PAR_PAGE });
+    await srv.close();
+  });
+
+  it('un texte en Windows-1252 qui n est pas un CSV est refuse en disant qu il faut de l UTF-8', async () => {
+    const { srv, cap } = app();
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/document`, ...h(adminTok),
+      payload: { nom: 'notes.txt', dataUrl: `data:text/plain;base64,${Buffer.from('Le café est ouvert le dimanche.', 'latin1').toString('base64')}` },
+    });
+    expect(res.statusCode).toBe(415);
+    expect(res.json<{ error: string }>().error).toContain('UTF-8');
+    expect(cap.remplacements).toEqual([]);
+    await srv.close();
+  });
+
   it('un AGENT ne peut pas importer : ces routes sont reservees aux administrateurs', async () => {
     const { srv } = app();
     const res = await srv.inject({

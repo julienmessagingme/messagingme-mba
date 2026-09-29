@@ -215,7 +215,9 @@ export function registerAgentKnowledge(
    * fichier, jamais par son extension : ce texte finit dans le prompt d'un agent qui parle à de vrais contacts.
    * Les images ne passent pas ici : il faudrait un modèle de vision.
    */
-  app.post(`${base}/document`, optsLourds, async (req, reply) => {
+  // Son propre plafond de corps, comme la pièce jointe de la conversation : le plafond global (un million d'octets)
+  // refusait en 413 tout fichier de plus de 750 Ko environ, les octets transitant en base64 (+33 %).
+  app.post(`${base}/document`, { ...optsLourds, bodyLimit: Math.ceil(TAILLE_DOCUMENT_MAX * 1.4) }, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const parse = documentSchema.safeParse(req.body ?? {});
@@ -225,7 +227,7 @@ export function registerAgentKnowledge(
     if (!bytes) return reply.code(400).send({ error: 'fichier illisible (data URL base64 attendu)' });
     const reconnu = reconnaitre(bytes);
     // 415 et pas 400 : le corps est bien formé, c'est le type du contenu qu'on refuse.
-    if (!reconnu) return reply.code(415).send({ error: 'format non accepté (texte, CSV, PDF ou Word)' });
+    if (!reconnu) return reply.code(415).send({ error: 'format non accepté (texte en UTF-8, CSV, PDF ou Word)' });
     if (reconnu.nature === 'image') {
       return reply.code(415).send({
         error: 'une image se dépose dans la conversation de construction, qui sait la lire ; ici on attend un document texte, CSV, PDF ou Word',
@@ -241,7 +243,7 @@ export function registerAgentKnowledge(
     if (texte === null || texte.trim() === '') {
       return reply.code(422).send({ error: 'aucun texte lisible dans ce fichier (un PDF scanné, par exemple, n’en contient pas)' });
     }
-    const fiches = texteEnFiches(texte, parse.data.nom);
+    const fiches = texteEnFiches(texte, parse.data.nom, reconnu.nature);
     if (fiches.length === 0) return reply.code(422).send({ error: 'ce fichier est trop court pour faire une fiche' });
 
     // Remplace, comme une page relue : redéposer le même fichier retire ses fiches d'avant (sinon deux dépôts

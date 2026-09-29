@@ -4,6 +4,7 @@ import { parse as secureJsonParse } from 'secure-json-parse';
 import type { Guard } from '../auth/middleware';
 import type { ChatMessage, ChatMessageImage, ReponseChat, OutilExpose } from '../agent/llm/chat-client';
 import { octetsDepuisDataUrl } from '../rcs/image';
+import { MAX_FICHES_PAR_PAGE } from '../agent/scrape';
 import {
   extraireTexte, reconnaitre, texteEnFiches, TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
 } from '../agent/setup/piece-jointe';
@@ -264,7 +265,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     // 415 et pas 400 : le corps est bien formé, c'est le type du contenu qu'on refuse. Et le refus se fonde
     // sur la signature réelle, jamais sur l'extension du nom, qui ne prouve rien.
     if (!reconnu) {
-      return reply.code(415).send({ error: 'format non accepté (texte, CSV, PDF, Word, ou image JPEG/PNG/GIF/WebP)' });
+      return reply.code(415).send({ error: 'format non accepté (texte en UTF-8, CSV, PDF, Word, ou image JPEG/PNG/GIF/WebP)' });
     }
     const plafond = reconnu.nature === 'image' ? TAILLE_IMAGE_MAX : TAILLE_DOCUMENT_MAX;
     if (bytes.length > plafond) {
@@ -311,7 +312,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       return reply.code(422).send({ error: 'aucun texte lisible dans ce fichier (un PDF scanné, par exemple, n’en contient pas)' });
     }
 
-    const fiches = texteEnFiches(texte, parse.data.nom);
+    const fiches = texteEnFiches(texte, parse.data.nom, reconnu.nature);
     if (fiches.length === 0) return reply.code(422).send({ error: 'ce fichier est trop court pour faire une fiche' });
     const bilan = await deps.ecrireFichesDocument(ctx.tenant, ctx.agentId, parse.data.nom, fiches);
     if (!bilan) return reply.code(404).send({ error: 'agent introuvable' });
@@ -321,6 +322,8 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       remplacees: bilan.retirees,
       titres: fiches.map((f) => f.titre),
       nature: reconnu.nature,
+      // Le plafond, pour que l'écran dise quand il a mordu : la suite du document n'a pas été lue.
+      plafond: MAX_FICHES_PAR_PAGE,
     });
   });
 

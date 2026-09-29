@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { reconnaitre, extraireTexte, texteEnFiches, TAILLE_DOCUMENT_MAX } from '../src/agent/setup/piece-jointe';
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE } from '../src/agent/scrape';
+import { CORPS_MAX } from '../src/agent/resolvers/connaissance';
 
 /**
  * Les pièces jointes de la conversation de construction.
@@ -98,7 +99,7 @@ describe('découpage en fiches', () => {
   const long = (n: number) => 'phrase de contenu qui remplit la fiche. '.repeat(n);
 
   it('découpe sur les titres, et le corps suit son titre', async () => {
-    const fiches = texteEnFiches((await extraireTexte(docx(), 'docx'))!, 'Document');
+    const fiches = texteEnFiches((await extraireTexte(docx(), 'docx'))!, 'Document', 'docx');
     expect(fiches.map((f) => f.titre)).toEqual(['Nos horaires d’ouverture', 'Nos tarifs']);
     expect(fiches[0]!.corps).toContain('9h à 20h');
     expect(fiches[1]!.corps).toContain('45 €');
@@ -109,7 +110,7 @@ describe('découpage en fiches', () => {
     // tous les mots du métier et deviendrait pertinente pour n'importe quelle question. Le reste ne doit pas
     // non plus être perdu en silence.
     const source = long(600);
-    const fiches = texteEnFiches(source, 'Manuel');
+    const fiches = texteEnFiches(source, 'Manuel', 'pdf');
     expect(fiches.length).toBeGreaterThan(1);
     expect(fiches[1]!.titre).toContain('suite');
     for (const f of fiches) expect(f.corps.length).toBeLessThanOrEqual(MAX_CORPS);
@@ -121,7 +122,7 @@ describe('découpage en fiches', () => {
   });
 
   it('les plafonds sont ceux de l’import de page web, pas des copies', () => {
-    const fiches = texteEnFiches(long(20000), 'Gros');
+    const fiches = texteEnFiches(long(20000), 'Gros', 'texte');
     expect(fiches.length).toBeLessThanOrEqual(MAX_FICHES_PAR_PAGE);
     for (const f of fiches) {
       expect(f.titre.length).toBeLessThanOrEqual(MAX_TITRE);
@@ -130,22 +131,193 @@ describe('découpage en fiches', () => {
   });
 
   it('une section trop courte est écartée : elle ferait du bruit sans jamais répondre', () => {
-    expect(texteEnFiches('Un titre\ncourt', 'Doc')).toEqual([]);
+    expect(texteEnFiches('Un titre\ncourt', 'Doc', 'texte')).toEqual([]);
   });
 
   it('deux titres de suite ne produisent pas de fiche vide au milieu', () => {
-    const fiches = texteEnFiches(`Le guide\nChapitre premier\n${long(3)}`, 'Doc');
+    const fiches = texteEnFiches(`Le guide\nChapitre premier\n${long(3)}`, 'Doc', 'texte');
     expect(fiches).toHaveLength(1);
     expect(fiches[0]!.titre).toBe('Chapitre premier'); // le plus proche du contenu
   });
 
   it('une puce n’est PAS un titre : c’est du contenu', () => {
-    const fiches = texteEnFiches(`Nos services\n- la piscine\n- le sauna\n${long(3)}`, 'Doc');
+    const fiches = texteEnFiches(`Nos services\n- la piscine\n- le sauna\n${long(3)}`, 'Doc', 'texte');
     expect(fiches).toHaveLength(1);
     expect(fiches[0]!.corps).toContain('- la piscine');
   });
 
   it('le plafond de poids est exporté, pour que la route et l’écran annoncent le MÊME chiffre', () => {
     expect(TAILLE_DOCUMENT_MAX).toBe(8 * 1024 * 1024);
+  });
+});
+
+/** Une FAQ en point-virgule dont les réponses portent plusieurs virgules : laissé deviner, papaparse choisit la virgule. */
+const FAQ_VIRGULES = [
+  'Question;Réponse',
+  'Quels animaux ?;Les chiens, les chats, et les NAC de moins de 10 kg',
+  'Quels délais ?;Trois mois, six mois, ou un an, selon la formule',
+  'Et après ?;Rien, sauf avis contraire, du vétérinaire',
+].join('\n');
+
+describe('🔴 un CSV : des rangées ENTIÈRES, l’en-tête en tête de chaque fiche', () => {
+  /**
+   * Mesuré le 2026-09-29 sur une grille de tarifs de 301 lignes : un CSV passait par le découpage du texte libre,
+   * qui prend chaque rangée courte pour un titre. Un export ordinaire rendait ZÉRO fiche (un 422 « trop court »
+   * qui taisait la cause), et le même fichier avec un séparateur final des fiches coupées au milieu d'une rangée,
+   * l'en-tête perdu dès la deuxième : une fiche du milieu ne disait plus ce que valent ses colonnes.
+   */
+  const ENTETE = 'Espèce;Race;Formule 1;Formule 2;Formule 3';
+  const rangees = Array.from({ length: 300 }, (_, i) => `Chien;Labrador ${i};${20 + (i % 9)},00;30,00;40,00`);
+  const grille = [ENTETE, ...rangees].join('\n');
+  const sousEntete = (corps: string): string[] => corps.split('\n').slice(1);
+
+  it('un export ordinaire fait des fiches de rangées entières, sans en couper ni en perdre aucune', () => {
+    const fiches = texteEnFiches(grille, 'Grille', 'texte');
+    expect(fiches.length).toBeGreaterThan(1);
+    for (const f of fiches) expect(f.corps.split('\n')[0]).toBe(ENTETE);
+    // Chaque rangée, entière, une seule fois et dans l'ordre.
+    expect(fiches.flatMap((f) => sousEntete(f.corps))).toEqual(rangees);
+    expect(fiches.slice(0, 2).map((f) => f.titre)).toEqual(['Grille', 'Grille (suite 2)']);
+  });
+
+  it('🔴 une fiche ne dépasse pas ce que l’agent en LIT : ses dernières rangées lui seraient invisibles', () => {
+    // La recherche et le juge de pertinence lisent la fiche entière, l'agent ses CORPS_MAX premiers caractères :
+    // une rangée plus bas serait trouvée, puis cachée à celui qui doit répondre.
+    for (const f of texteEnFiches(grille, 'Grille', 'texte')) expect(f.corps.length).toBeLessThanOrEqual(CORPS_MAX);
+  });
+
+  it('un séparateur en fin de ligne ne change rien', () => {
+    const fiches = texteEnFiches([ENTETE, ...rangees].map((l) => `${l};`).join('\n'), 'Grille', 'texte');
+    for (const f of fiches) expect(f.corps.split('\n')[0]).toBe(`${ENTETE};`);
+    expect(fiches.flatMap((f) => sousEntete(f.corps))).toEqual(rangees.map((r) => `${r};`));
+  });
+
+  it('un CSV de questions-réponses, la forme que l’écran annonce, garde chaque réponse avec sa question', () => {
+    // Entre guillemets, un champ peut porter le séparateur et des sauts de ligne : c'est toujours la même rangée.
+    const faq = 'Question;Réponse\n"Horaires ; en été ?";"Du lundi au vendredi,\nde 9h à 18h"\nLes chiens sont-ils couverts ?;Oui, dès 3 mois';
+    const fiches = texteEnFiches(faq, 'FAQ', 'texte');
+    expect(fiches).toHaveLength(1);
+    expect(fiches[0]!.corps).toBe(faq);
+  });
+
+  it('🔴 une FAQ en point-virgule dont les réponses portent des virgules reste un CSV', () => {
+    // Les séparateurs sont essayés dans l'ordre, le point-virgule d'abord : laissé deviner, papaparse prenait la
+    // virgule, et la FAQ retombait dans le découpage du texte libre.
+    expect(texteEnFiches(FAQ_VIRGULES, 'FAQ', 'texte').map((f) => f.corps)).toEqual([FAQ_VIRGULES]);
+  });
+
+  it('une rangée plus longue qu’une fiche est coupée en morceaux sur une espace, jamais tronquée', () => {
+    const longue = `Résiliation;${'Le contrat se résilie par lettre recommandée. '.repeat(100)}`;
+    const fiches = texteEnFiches(`Sujet;Détail\n${longue}\nTarif;6 €`, 'Conditions', 'texte');
+    expect(fiches.length).toBeGreaterThan(2);
+    for (const f of fiches) {
+      expect(f.corps.split('\n')[0]).toBe('Sujet;Détail');
+      expect(f.corps.length).toBeLessThanOrEqual(CORPS_MAX);
+    }
+    expect(fiches.flatMap((f) => sousEntete(f.corps)).join('')).toBe(`${longue}Tarif;6 €`);
+    // La suite reprend sur l'espace où la coupe est tombée : aucun mot, aucun montant n'est coupé en deux.
+    expect(sousEntete(fiches[1]!.corps)[0]!.startsWith(' ')).toBe(true);
+  });
+
+  it('🔴 une coupe ne sépare jamais les deux moitiés d’un emoji : une moitié seule ne passe pas en base', () => {
+    const emoji = String.fromCodePoint(0x1f600);
+    const orpheline = (s: string): boolean => [...s].some((c) => c.length === 1 && c.charCodeAt(0) >= 0xd800 && c.charCodeAt(0) <= 0xdfff);
+    // Deux en-têtes de longueurs de parités différentes : l'une des deux fait tomber la coupe au milieu d'un emoji.
+    for (const entete of ['Sujet;Avis', 'Sujet;Avis!']) {
+      const fiches = texteEnFiches(`${entete}\nAvis;${emoji.repeat(1500)}`, 'Avis', 'texte');
+      expect(fiches.length).toBeGreaterThan(1);
+      for (const f of fiches) expect(orpheline(f.corps)).toBe(false);
+    }
+  });
+
+  it('un TSV à case d’angle vide, avec un BOM et des rangées vides d’Excel, garde ses colonnes', async () => {
+    // Couper les bords du texte retirait la tabulation de tête : l'en-tête perdait sa case vide, et le tableau
+    // n'était plus régulier.
+    const tsv = `${String.fromCharCode(0xfeff)}\tFormule 1\tFormule 2\r\nLabrador\t20,00\t30,00\r\n\t\t\r\nCaniche\t25,00\t\r\n`;
+    const octets = Buffer.from(tsv, 'utf8');
+    const texte = (await extraireTexte(octets, reconnaitre(octets)!.nature))!;
+    expect(texteEnFiches(texte, 'Grille', 'texte').map((f) => f.corps))
+      .toEqual(['\tFormule 1\tFormule 2\nLabrador\t20,00\t30,00\nCaniche\t25,00\t']);
+  });
+
+  it('un titre posé au-dessus du tableau rejoint l’en-tête : les noms de colonnes restent dans chaque fiche', () => {
+    const fiches = texteEnFiches(['Grille tarifaire 2026;;;;', ';;;;', ENTETE, ...rangees].join('\n'), 'Grille', 'texte');
+    expect(fiches.length).toBeGreaterThan(1);
+    for (const f of fiches) expect(f.corps.split('\n').slice(0, 2)).toEqual(['Grille tarifaire 2026;;;;', ENTETE]);
+    expect(fiches.flatMap((f) => f.corps.split('\n').slice(2))).toEqual(rangees);
+  });
+
+  it('un en-tête qui prendrait plus de la moitié d’une fiche n’est pas lu comme un tableau', () => {
+    // Il ne laisserait presque plus de place aux rangées, et à la limite aucune : la coupe ne finirait jamais.
+    const entete = `${'Colonne'.repeat(185)};Autre`;
+    const rangee = `x;${'mot '.repeat(75)}`;
+    expect(texteEnFiches([entete, rangee, rangee, rangee].join('\n'), 'Doc', 'texte')).toHaveLength(1);
+  });
+
+  it('une fiche de CSV reste modifiable à l’écran, où la route refuse un corps de plus de MAX_CORPS', () => {
+    expect(CORPS_MAX).toBeLessThanOrEqual(MAX_CORPS);
+  });
+
+  it('au-delà du plafond de fiches, la suite n’est pas écrite, comme pour une page', () => {
+    const enorme = [ENTETE, ...Array.from({ length: 5000 }, (_, i) => `Chat;Siamois ${i};20,00;30,00;40,00`)].join('\n');
+    expect(texteEnFiches(enorme, 'Grille', 'texte')).toHaveLength(MAX_FICHES_PAR_PAGE);
+  });
+
+  it('un texte dont les lignes n’ont pas toutes le même nombre de colonnes garde le découpage par titres', () => {
+    // Des virgules sur chaque ligne, mais pas le même nombre : de la prose, pas un tableau.
+    const prose = 'Nos tarifs, à jour\nL’entrée coûte 6 €, l’abonnement 45 €, la carte 50 €.\nLes enfants, eux, entrent gratuitement.';
+    expect(texteEnFiches(prose, 'Doc', 'texte').map((f) => f.titre)).toEqual(['Nos tarifs, à jour']);
+  });
+
+  it('une cellule bordée d’espaces ou portant un guillemet revient telle quelle, sans guillemets ajoutés', () => {
+    const grille = 'Écran ; Taille ; Tarif\nTV ; 27" pouces ; 199,00 €\nMoniteur ; 24" pouces ; 149,00 €';
+    expect(texteEnFiches(grille, 'Grille', 'texte').map((f) => f.corps)).toEqual([grille]);
+  });
+
+  it('seul un fichier TEXTE est lu comme un CSV : un PDF, un Word ou une image lue gardent le découpage par titres', () => {
+    const texte = 'Nos horaires, tarifs\nLa piscine, ouverte de 9h à 20h.\nLe sauna, ouvert de 10h à 19h.';
+    const parTitres = [{ titre: 'Nos horaires, tarifs', corps: 'La piscine, ouverte de 9h à 20h.\nLe sauna, ouvert de 10h à 19h.' }];
+    for (const nature of ['pdf', 'docx', 'image'] as const) expect(texteEnFiches(texte, 'Doc', nature)).toEqual(parTitres);
+    // Dans un fichier texte, une virgule par ligne a la forme d'un CSV : il est lu comme tel, sans rien perdre.
+    expect(texteEnFiches(texte, 'Doc', 'texte')).toEqual([{ titre: 'Doc', corps: texte }]);
+  });
+});
+
+describe('🔴 un CSV enregistré par Excel en Windows-1252', () => {
+  /**
+   * Excel sous Windows en français enregistre « CSV (séparateur: point-virgule) » en Windows-1252, pas en UTF-8.
+   * Mesuré le 2026-09-29 : le « è » d'« Espèce » suffisait pour un refus 415 « format non accepté (texte, CSV,
+   * PDF ou Word) ». Ce fichier passe désormais, mais SEULEMENT s'il a la forme d'un CSV : n'importe quelle
+   * suite d'octets se lit en Windows-1252, et un binaire ne doit toujours pas passer pour du texte.
+   */
+  /** Ce qu'écrit Excel : un octet par caractère, l'euro rangé en 0x80. */
+  const enWindows1252 = (s: string): Buffer => Buffer.from([...s].map((c) => (c === '€' ? 0x80 : c.charCodeAt(0))));
+  const grille = 'Espèce;Race;Formule 1 (€);Formule 2 (€)\nChien;Épagneul breton;20,00;30,00\nChat;Européen;15,00;25,00';
+
+  it('est reconnu comme du texte, et relu avec ses accents et son euro', async () => {
+    const octets = enWindows1252(grille);
+    expect(reconnaitre(octets)).toEqual({ nature: 'texte', mime: 'text/plain' });
+    expect(await extraireTexte(octets, 'texte')).toBe(grille);
+  });
+
+  it('une FAQ en point-virgule dont les réponses portent des virgules passe aussi', () => {
+    expect(reconnaitre(Buffer.from(FAQ_VIRGULES, 'latin1'))).toEqual({ nature: 'texte', mime: 'text/plain' });
+  });
+
+  it('🔴 un texte en Windows-1252 qui n’a PAS la forme d’un CSV reste refusé', () => {
+    expect(reconnaitre(enWindows1252('Le café est ouvert de 9h à 18h, même le dimanche.'))).toBeNull();
+  });
+
+  it('🔴 un caractère de contrôle, ou un octet que Windows-1252 ne définit pas, le fait refuser', () => {
+    expect(reconnaitre(Buffer.concat([enWindows1252(grille), Buffer.from([0x01])]))).toBeNull();
+    expect(reconnaitre(Buffer.concat([enWindows1252(grille), Buffer.from([0x81])]))).toBeNull();
+  });
+
+  it('le décodage est celui de Windows-1252, octet par octet', async () => {
+    // La table de 0x80 à 0x9F est écrite à la main (le décodeur de la plateforme dépend de l'ICU embarqué) : on
+    // la compare ici à celui de Node, sur tous les octets hauts que ce jeu définit.
+    const hauts = Array.from({ length: 128 }, (_, i) => 0x80 + i).filter((o) => ![0x81, 0x8d, 0x8f, 0x90, 0x9d].includes(o));
+    const octets = Buffer.concat([Buffer.from('a;b\nc;'), Buffer.from(hauts)]);
+    expect(await extraireTexte(octets, 'texte')).toBe(new TextDecoder('windows-1252').decode(octets));
   });
 });

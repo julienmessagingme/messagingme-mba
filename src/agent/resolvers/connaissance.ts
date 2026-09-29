@@ -15,6 +15,8 @@ export const FICHES_RENDUES = 3;
 /**
  * Bornes de ce qui repart au modèle, fiche par fiche. Le tronc commun borne déjà la réponse entière, mais
  * remplace alors toute la structure par un aperçu : trois fiches entières rendraient une source mutilée.
+ * ⚠️ Elle borne aussi les fiches d'un CSV (`src/agent/setup/piece-jointe.ts`), pour que l'agent en lise chaque
+ * rangée ; elle doit rester sous `MAX_CORPS`, sans quoi ces fiches ne seraient plus modifiables à l'écran.
  */
 export const CORPS_MAX = 2_000;
 

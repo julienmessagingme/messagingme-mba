@@ -1,5 +1,21 @@
 # todo.md : backlog
 
+## 🟠 Base de connaissance : ce que la réparation du CSV a trouvé à côté (2026-09-29)
+
+- 🟠 **L'agent ne lit que la moitié d'une fiche longue.** L'import d'une page, d'un PDF, d'un Word ou d'un texte
+  fait des fiches jusqu'à `MAX_CORPS` (4 000 caractères, `src/agent/scrape.ts`) ; la recherche et le juge de
+  pertinence lisent la fiche entière, l'agent n'en reçoit que les `CORPS_MAX` premiers (2 000,
+  `src/agent/resolvers/connaissance.ts`). Une fiche peut donc être retenue pour une phrase de sa seconde moitié,
+  et l'agent reçoit une source qui ne la contient pas. Le CSV y échappe depuis le 2026-09-29 (fiches bornées à
+  `CORPS_MAX`). À trancher : découper à `CORPS_MAX` (le plafond de 40 fiches mord alors deux fois plus tôt) ou
+  rendre à l'agent la fiche entière (trois fois 4 000 caractères de contexte par recherche). Les fiches déjà en
+  base ne se redécoupent pas seules, et une fiche écrite à la main peut aussi dépasser 2 000 caractères.
+- 🟡 **L'import de FAQ de l'agent de Meta devine mal le séparateur** (`src/mba/faq-import.ts`, par `parseCsv` de
+  `src/crm/csv.ts`), mesuré par la relecture : laissé deviner, papaparse prend la virgule dès que les réponses
+  d'une FAQ en point-virgule en portent deux, et l'import rend zéro paire. Parade : essayer les séparateurs dans
+  l'ordre, comme `separateurCsv` (`src/agent/setup/piece-jointe.ts`). ⚠️ `parseCsv` sert aussi l'import de
+  contacts : à mesurer avant de toucher.
+
 ## 🟠 Suites de la recharge Stripe et du panneau Détail (2026-09-29)
 
 - **Julien** : ajouter l'autorisation **Invoices : Lecture** à la clé restreinte « Engage Me console », puis

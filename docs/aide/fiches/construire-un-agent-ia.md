@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 844205
+source_empreinte: 6d7ae8
 ---
 # Construire un agent IA
 
@@ -37,10 +37,13 @@ tarifs, par exemple) : le texte en est extrait et découpé en fiches de connais
 
 **Sa base de connaissance est la seule chose dont il a le droit de se servir.** Sur une question qu'aucune
 fiche ne couvre, il n'invente pas : il sort du bloc par « Aucune source ». Une base vide fait donc un agent
-qui transfère tout. Vous remplissez cette base de trois façons : en collant l'adresse d'une page de votre
-site, qui est lue une fois et découpée en fiches ; en écrivant une fiche à la main ; ou en joignant un
-document à l'assistant. La provenance est écrite sous chaque fiche, et une fiche que personne n'a touchée
-depuis plus de quatre-vingt-dix jours porte une pastille « À relire ».
+qui transfère tout. Vous remplissez cette base de quatre façons : en collant l'adresse d'une page de votre
+site, qui est lue une fois et découpée en fiches ; en déposant un document (PDF, Word, texte ou CSV) ; en
+écrivant une fiche à la main ; ou en joignant un document à l'assistant. Un CSV, une grille de tarifs par
+exemple, est découpé par lignes entières, son en-tête repris dans chaque fiche, et celui qu'Excel enregistre
+sous Windows passe aussi. Au-delà de 40 fiches, la suite d'une page ou d'un document n'est pas lue, et l'écran
+le dit. La provenance est écrite sous chaque fiche, et une fiche que personne n'a touchée depuis plus de
+quatre-vingt-dix jours porte une pastille « À relire ».
 
 **Les outils sont ce qu'il a le droit de FAIRE**, en plus de parler : chercher dans sa base de
 connaissance, lire la fiche du contact, poser une étiquette, enregistrer une information, envoyer un bloc de

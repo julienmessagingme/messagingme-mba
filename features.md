@@ -2502,6 +2502,16 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   bougent pas.
 - ✅ **Le plafond est dit quand il mord** : au-delà de 40 fiches pour une page, la suite de la page n'a PAS été
   lue, et l'écran le signale au lieu de laisser croire que tout le contenu est devenu une source.
+- ✅ **Déposer un document** : un PDF, un Word ou un fichier texte devient des fiches découpées sur ses titres,
+  8 Mo au plus. Redéposer le même fichier remplace les fiches qu'il avait produites. Au-delà de 40 fiches, la
+  suite du document n'est pas lue, et l'écran le dit (2026-09-29). Avant cette date, tout fichier de plus de
+  750 Ko environ était refusé, malgré les 8 Mo annoncés.
+- ✅ **Un CSV est découpé par lignes entières, son en-tête repris en tête de chaque fiche** (2026-09-29) : une
+  grille de tarifs ou une liste de questions-réponses. Chaque fiche reste assez courte pour que l'agent la lise
+  en entier : plus longue, les dernières lignes seraient trouvées par la recherche, puis cachées à l'agent qui
+  doit répondre. Un CSV enregistré par Excel sous Windows en français (« CSV (séparateur: point-virgule) »,
+  dont l'encodage n'est pas l'UTF-8) passe aussi. Avant cette date, un export ordinaire ne donnait aucune fiche,
+  avec un message « trop court » qui taisait la cause.
 - ✅ **Écrire une fiche à la main** : un titre (la question ou le sujet) et une réponse, telle qu'on voudrait
   la lire. Chaque fiche s'édite sur place.
 - ✅ **La provenance est sous chaque fiche** : « écrite à la main », ou « lue sur <adresse> le <date> (N
@@ -2638,8 +2648,10 @@ partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les 
 - ✅ **On peut joindre un document ou une image** (2026-08-31) : txt, csv, markdown, PDF, Word, et les images
   (JPEG, PNG, GIF, WebP). Le texte en est extrait et **découpé en fiches de connaissance**, relisibles et
   modifiables dans l'onglet Base de connaissance. Une image est lue par l'IA, qui en relève le texte : une
-  photo d'une grille de tarifs devient des fiches. Un fichier sans texte lisible (un PDF scanné, par exemple)
-  le dit clairement au lieu d'annoncer un import réussi. 8 Mo par document, 5 Mo par image.
+  photo d'une grille de tarifs devient des fiches. Un CSV est découpé comme dans l'onglet Base de connaissance,
+  par lignes entières, son en-tête repris dans chaque fiche. Un fichier sans texte lisible (un PDF scanné, par
+  exemple) le dit clairement au lieu d'annoncer un import réussi, et le plafond de 40 fiches, quand il mord, est
+  dit dans le message qui annonce l'import. 8 Mo par document, 5 Mo par image.
 - ✅ **Il ne change RIEN tout seul.** Il propose, et l'écran affiche exactement ce que ça changerait, ligne par
   ligne, avec la valeur d'avant barrée.
 - ✅ **Chaque règle se garde, se corrige sur place, ou se jette séparément** (2026-08-28, demande de Julien) :

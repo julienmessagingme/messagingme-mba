@@ -217,6 +217,8 @@ export interface PieceJointeImportee {
   fiches: number;
   titres: string[];
   nature: 'texte' | 'pdf' | 'docx' | 'image';
+  /** Le plafond de fiches par document : atteint, la suite du document n'a pas été lue. */
+  plafond: number;
 }
 
 /**

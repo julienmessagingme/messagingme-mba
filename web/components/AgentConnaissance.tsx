@@ -114,12 +114,20 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
 
       <ImportDocument busy={busy} onDeposer={(nom, dataUrl) => agir(async () => {
         const r = await importerDocument(tenantId, agentId, nom, dataUrl);
-        return r.retirees > 0
+        const ecrites = r.retirees > 0
           ? t(
             `${r.ecrites} fiche(s) écrite(s) depuis « ${r.nom} », ${r.retirees} remplacée(s).`,
             `${r.ecrites} entry(ies) written from “${r.nom}”, ${r.retirees} replaced.`,
           )
           : t(`${r.ecrites} fiche(s) écrite(s) depuis « ${r.nom} ».`, `${r.ecrites} entry(ies) written from “${r.nom}”.`);
+        // Même règle que pour une page : un document tronqué en silence laisserait croire que tout son contenu
+        // est devenu une source.
+        return r.ecrites >= r.plafond
+          ? `${ecrites} ${t(
+            `Le plafond de ${r.plafond} fiches par document est atteint : la suite du document n’a pas été lue. Découpez-le, ou complétez à la main.`,
+            `The cap of ${r.plafond} entries per document was reached: the rest of the document was not read. Split it, or fill in by hand.`,
+          )}`
+          : ecrites;
       })} />
 
       <AjoutManuel busy={busy} onAdd={(titre, corps) => agir(async () => {
@@ -369,8 +377,8 @@ function ImportDocument({ busy, onDeposer }: { busy: boolean; onDeposer: (nom: s
         <p className="text-sm font-medium text-ink-900">{t('Déposer un document', 'Upload a document')}</p>
         <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
-            'Un PDF, un Word, un fichier texte ou CSV de questions-réponses, découpé en fiches sur ses titres. Le type se reconnaît au contenu du fichier, pas à son extension.',
-            'A PDF, a Word file, a text or CSV of questions and answers, split into entries on its headings. The type is recognised from the file content, not its extension.',
+            'Un PDF, un Word ou un fichier texte, découpé en fiches sur ses titres ; un CSV (une grille de tarifs, des questions-réponses), par lignes entières, son en-tête repris dans chaque fiche. Le type se reconnaît au contenu du fichier, pas à son extension.',
+            'A PDF, a Word or a text file, split into entries on its headings; a CSV (a price grid, questions and answers), by whole rows, its header repeated in each entry. The type is recognised from the file content, not its extension.',
           )}
         </p>
       </div>

@@ -148,9 +148,11 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
       const nom = fichier.name.replace(/\.[a-z0-9]{1,8}$/i, '').trim() || fichier.name;
       const r = await joindrePiece(tenantId, agentId, nom, dataUrl);
       setBusy(false);
+      // Le plafond est dit quand il mord, au client comme à l'assistant : la suite du document n'a pas été lue.
+      const tronque = r.fiches >= r.plafond;
       await envoyer(t(
-        `J’ai joint « ${nom} » : ${r.fiches} fiche${r.fiches > 1 ? 's' : ''} ajoutée${r.fiches > 1 ? 's' : ''} à la base de connaissance (${r.titres.slice(0, 5).join(', ')}).`,
-        `I attached “${nom}”: ${r.fiches} card${r.fiches > 1 ? 's' : ''} added to the knowledge base (${r.titres.slice(0, 5).join(', ')}).`,
+        `J’ai joint « ${nom} » : ${r.fiches} fiche${r.fiches > 1 ? 's' : ''} ajoutée${r.fiches > 1 ? 's' : ''} à la base de connaissance (${r.titres.slice(0, 5).join(', ')}).${tronque ? ` Le plafond de ${r.plafond} fiches par document est atteint : la suite n’a pas été lue.` : ''}`,
+        `I attached “${nom}”: ${r.fiches} card${r.fiches > 1 ? 's' : ''} added to the knowledge base (${r.titres.slice(0, 5).join(', ')}).${tronque ? ` The cap of ${r.plafond} cards per document was reached: the rest was not read.` : ''}`,
       ));
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Pièce jointe refusée', 'Attachment refused'));
