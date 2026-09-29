@@ -415,7 +415,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .f-une{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);align-items:center;gap:clamp(40px,12vw - 80px,96px);padding-top:40px;padding-bottom:104px}
 .f-surtitre{display:inline-flex;align-items:center;gap:8px;margin:0 0 18px;color:var(--action-ink);font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .f-surtitre .ic{font-size:1.1rem}
-.f-une h1{margin:0 0 22px;font-size:clamp(2.3rem,4.4vw,3.5rem)}
+.f-une h1,.f-une-large h1{margin:0 0 22px;font-size:clamp(2.3rem,4.4vw,3.5rem)}
 .f-duo{position:relative;display:flex;justify-content:center;align-items:flex-start;margin:0}
 .f-duo img{display:block;width:min(262px,48%);height:auto;filter:drop-shadow(0 40px 44px rgb(0 2 20 / .55))}
 .f-duo img + img{margin:16% 0 0 -2%}
@@ -424,11 +424,19 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
   .f-duo img{width:min(230px,47%)}
 }
 
+/* La une en largeur : le texte, puis un visuel large dessous (deux téléphones reliés, WhatsApp et RCS) */
+.f-une-large{display:grid;grid-template-columns:minmax(0,1fr);gap:40px;padding-top:40px;padding-bottom:104px}
+.f-une-large > div{max-width:720px}
+.f-large{margin:0}
+.f-large img{display:block;width:100%;max-width:1040px;height:auto;margin:0 auto;filter:drop-shadow(0 40px 44px rgb(0 2 20 / .55))}
+@media (max-width:960px){.f-une-large{padding-top:24px;padding-bottom:80px}}
+
 /* 2. Avant : la pub qui mène à un formulaire (Click-to-WhatsApp) */
 .f-avant .cadre{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);align-items:center;gap:64px}
 .f-avant-visuel{display:flex;align-items:center;justify-content:center;gap:14px;margin:0}
 .f-avant-visuel img{width:min(210px,40%);height:auto;filter:saturate(.55) brightness(.9) drop-shadow(0 28px 32px rgb(0 2 20 / .5))}
 .f-avant-visuel > .ic{flex:none;font-size:1.6rem;color:var(--muted)}
+.f-avant-visuel img.f-fenetre{width:100%;max-width:520px}
 @media (max-width:900px){.f-avant .cadre{grid-template-columns:minmax(0,1fr);gap:40px}}
 /* En miroir au bureau : le visuel à gauche, le texte à droite. Le texte reste PREMIER dans le code, pour qu'il
    passe en tête sur mobile et pour un lecteur d'écran. */
@@ -505,6 +513,13 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .f-posts b{text-align:right;font-size:1.5rem;line-height:1;font-weight:800;font-variant-numeric:tabular-nums}
 .f-posts b small{display:block;margin-top:4px;font-size:.72rem;font-weight:600}
 @media (max-width:900px){.f-mesure .cadre{grid-template-columns:minmax(0,1fr);gap:40px}}
+
+/* Les outils où l'analyse arrive (Conversations en actions) : les logos de l'accueil, seuls */
+.f-logos{list-style:none;margin:40px 0 0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;max-width:760px}
+.f-logos li{display:grid;place-items:center;height:72px;border-radius:14px;background:#FFFFFF;box-shadow:0 18px 36px -18px rgb(0 0 0 / .6)}
+.f-logos svg{width:32px;height:32px}
+.f-logos .batch{width:72px;height:auto}
+@media (max-width:560px){.f-logos{gap:8px}.f-logos li{height:54px}.f-logos svg{width:24px;height:24px}.f-logos .batch{width:52px}}
 
 /* 7. L'appel de fin */
 .f-appel{padding:96px 0 112px;border-top:1px solid var(--line);text-align:center}

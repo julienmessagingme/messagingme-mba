@@ -36,6 +36,21 @@ aucun chemin que la production emprunte (ni envoi, ni donnée), réversibles par
   film part muet à l'écran et s'arrête hors écran, l'entonnoir et le compteur s'animent une fois.
 - Le menu : ouverture au clic, fermeture par Échap (focus rendu) et par un clic ailleurs, au bureau et sur mobile.
 
+## Ajout du 2026-09-29 : deux pages de plus
+
+Demande de Julien : deux fonctionnalités tirées des derniers films de l'atelier (`~/engageme-motion`), même méthode
+(en direct), mêmes décisions (film intégré plus son récit en HTML, « Demander une démo »).
+
+- `/fonctionnalites/conversations-en-actions/` (short 4, « la brique manquante ») : la conversation analysée, la
+  tâche qui en découle, le CRM rempli tout seul, et les logos de l'accueil. ⚠️ Salesforce et Pipedrive y figurent,
+  comme sur l'accueil et dans le film : ce sont des intégrations en feuille de route, montrées parce que Julien l'a
+  choisi (règle de l'atelier : « ce qui s'affiche est vrai du produit »).
+- `/fonctionnalites/whatsapp-et-rcs/` (short 5) : « fallback » est dit **repli**, le mot de la console, comme
+  « Fonctionnalités » a été préféré à « Features ». Le hero porte les deux téléphones en grand, et une version
+  resserrée (`<picture>`) sur mobile.
+- Le menu passe à quatre entrées, le pied de page aussi. Les écrans sont rendus par
+  `~/engageme-motion/rendre-images.cjs`, dont les trois pièges sont écrits dans le `CLAUDE.md` de l'atelier.
+
 ## Essai réel qui clôt
 
 Julien parcourt les deux pages en production, sur ordinateur et sur son téléphone : il ouvre le menu, lance les
