@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_CORPS, MAX_FICHES_PAR_PAGE, pageEnFiches } from '../src/agent/scrape';
+import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, pageEnFiches } from '../src/agent/scrape';
 import { chercherConnaissance } from '../src/agent/resolvers/connaissance';
 
 /**
@@ -85,6 +85,13 @@ describe('pageEnFiches', () => {
     for (const f of fiches) expect(f.corps.length).toBeLessThanOrEqual(MAX_CORPS);
     // Les caractères non blancs, les frontières de coupe mangeant des espaces.
     expect(fiches.map((f) => f.corps).join('').replace(/\s+/g, '')).toBe(reglement.replace(/\s+/g, ''));
+  });
+
+  it('un titre long garde son « (suite N) », sans dépasser MAX_TITRE', () => {
+    const titre = 'Conditions générales de location '.repeat(7).slice(0, MAX_TITRE);
+    const fiches = pageEnFiches(`<h1>${titre}</h1><p>${'phrase du règlement intérieur. '.repeat(100)}</p>`, 'https://exemple.fr/cg');
+    expect(fiches[1]!.titre.endsWith(' (suite 2)')).toBe(true);
+    expect(fiches[1]!.titre.length).toBeLessThanOrEqual(MAX_TITRE);
   });
 
   it('🔴 une phrase de la fin d’une section longue arrive à l’agent : la fiche qui la porte lui est rendue entière', async () => {

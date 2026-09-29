@@ -136,7 +136,9 @@ export function empilerEnFiches(fiches: FicheExtraite[], titre: string, contenu:
     reste = reste.slice(coupe).trim();
     if (corps.length === 0) break;
     tranche += 1;
-    fiches.push({ titre: (tranche === 1 ? titre : `${titre} (suite ${tranche})`).slice(0, MAX_TITRE), corps });
+    // Le suffixe est réservé avant de couper le titre : coupé après, il disparaîtrait d'un titre long.
+    const suite = tranche === 1 ? '' : ` (suite ${tranche})`;
+    fiches.push({ titre: titre.slice(0, MAX_TITRE - suite.length).replace(/[\ud800-\udbff]$/, '') + suite, corps });
   }
 }
 
