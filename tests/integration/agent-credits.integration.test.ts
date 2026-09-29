@@ -239,6 +239,9 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
         expect(await credits.solde(t)).toBe(0);
         expect(await credits.mouvements(t, 10)).toHaveLength(0);
       } finally {
+        // L'espace d'abord : il emporte l'utilisateur, qui référence encore l'identité (clé étrangère sans
+        // cascade). Dans l'autre ordre, le nettoyage lève et fait échouer un test dont l'assertion est passée.
+        await pool.query('delete from tenants where id = $1', [t]);
         await pool.query('delete from identities where lower(email) = lower($1)', [email]);
       }
     });
