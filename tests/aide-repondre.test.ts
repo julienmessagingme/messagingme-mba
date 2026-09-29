@@ -90,6 +90,15 @@ describe('répondeur d’aide', () => {
     expect(messages[1]!.content).toContain('FICHE 1');
   });
 
+  it('🔴 la consigne interdit de renvoyer vers une fiche ou un lien : les fiches ne s’ouvrent pas', async () => {
+    // Vu le 2026-09-29 : « je vous renvoie vers la fiche Modèle ou scénario (cliquez sur le lien) », sans lien.
+    const completer = vi.fn().mockResolvedValue(repondu('ok'));
+    await creerRepondeur(deps({ completer }))(question);
+    const { messages } = completer.mock.calls[0]![0] as { messages: Array<{ content: string }> };
+    expect(messages[0]!.content).toMatch(/RÉPONDS TOI-MÊME/);
+    expect(messages[0]!.content).toMatch(/Ne renvoie JAMAIS vers une fiche/);
+  });
+
   it('⚠️ la consigne ne montre à un AGENT que les écrans qu’il peut atteindre', async () => {
     const completer = vi.fn().mockResolvedValue(repondu('ok'));
     await creerRepondeur(deps({ completer }))({ ...question, role: 'agent' });

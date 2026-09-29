@@ -72,7 +72,8 @@ export const SCHEMA_REPONSE = {
   properties: {
     reponse: {
       type: 'string',
-      description: 'Ta réponse au client, dans sa langue, en t’appuyant UNIQUEMENT sur les fiches fournies.',
+      description: 'Ta réponse au client, dans sa langue, en t’appuyant UNIQUEMENT sur les fiches fournies. '
+        + 'Donne le contenu toi-même : ne renvoie jamais vers une fiche, un article ou un lien.',
     },
     ecrans: {
       type: 'array',
@@ -161,6 +162,11 @@ function consigne(q: QuestionAide, ecrans: EcranAide[]): string {
     `RÉPONDS EN ${q.langue === 'en' ? 'ANGLAIS' : 'FRANÇAIS'}, brièvement, en expliquant les étapes dans l’ordre.`,
     'Appuie-toi UNIQUEMENT sur les fiches qui te sont données. Si elles ne répondent pas, dis-le simplement.',
     'N’invente aucune fonctionnalité, aucun bouton, aucun écran.',
+    // Le 2026-09-29, le bot a répondu « je vous renvoie vers la fiche … (cliquez sur le lien) » : les fiches sont
+    // ses sources, pas des pages que la personne peut ouvrir, et l'écran n'affiche aucun lien vers elles.
+    'RÉPONDS TOI-MÊME avec le contenu des fiches. Ne renvoie JAMAIS vers une fiche, un article, une documentation '
+      + 'ou un lien, et ne promets aucun lien : la personne ne peut pas les ouvrir. Les seuls liens qu’elle verra '
+      + 'sont les boutons des écrans que tu rends dans `ecrans`.',
     ici,
     '',
     'ÉCRANS où tu peux envoyer la personne. Rends leurs CLÉS dans `ecrans`, jamais leur nom ni une adresse :',
