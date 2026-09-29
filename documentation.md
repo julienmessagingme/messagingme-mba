@@ -857,12 +857,16 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   collaborateur ». Une assignation dont l'acteur est la cible est marquée `prise`, que l'écran dit « Prise en
   charge ».
   ⚠️ Côté détenteur du fil, s'écrit ce qui touche l'agent de Meta (`prise_mba`, `rendue_mba`, `passee_par_mba`)
-  et, depuis 0194, les deux bornes d'une demande du Quantitatif > Performance : `escaladee` quand le drapeau
-  d'escalade fait passer un fil d'un robot (`app_workflow`) à l'équipe, avec une cause qui nomme le scénario ou
-  l'agent IA (portée par l'appelant de `passerAUnHumain`, qui l'exige), et `rendue_scenario` quand un fil
-  `app_human` repasse à `app_workflow`. Un opérateur qui prend le fil en écrivant (sans drapeau) n'écrit rien. Les
-  branches de l'agent de Meta passent AVANT : un fil qui quitte `mba` reste `prise_mba`. Une escalade qui sort la
-  conversation d'Archivé ou de Traité le dit aussi (`desarchivee`, `non_traitee`, avec sa cause). Le type se lit sur
+  et, depuis 0194, les deux bornes d'une demande du Quantitatif > Performance : `escaladee` quand un geste qui
+  ouvre une demande (`EcritureDuFil.ouvreUneDemande`, posé par `passerAUnHumain` et `prendrePourLEquipe`, et par
+  eux seuls) fait passer un fil d'un robot (`app_workflow` ou `mba`) à l'équipe, drapeau d'escalade ou non, avec
+  une cause qui nomme le scénario, l'agent IA ou la campagne (portée par l'appelant, qui l'exige) ; et
+  `rendue_scenario` quand un fil `app_human` repasse à `app_workflow`. Le drapeau `escalade` ne pose que la marque
+  collante (`escaladee_le`), jamais l'événement. Un opérateur qui prend le fil en écrivant, et l'état d'attente
+  d'une fin de parcours, n'écrivent rien. Les branches de l'agent de Meta passent AVANT `rendue_scenario` : un fil
+  qui quitte `mba` reste `prise_mba`, et s'il va à l'équipe par un geste qui ouvre une demande, il écrit la prise
+  PUIS `escaladee`. Une escalade qui sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`,
+  `non_traitee`, avec sa cause). Le type se lit sur
   les colonnes (le fil quitte `mba` : prise ; il y va : rendu), SAUF quand l'écriture le dit
   (`EcritureDuFil.rendAgentDeMeta`) : « Rendre la main » sur un fil que notre colonne croit déjà `mba` écrit
   `app_workflow`, et les colonnes y liraient une prise. La rétention est
@@ -872,36 +876,61 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   appliqué et ne se corrige pas, la vérité est ici) : l'amorçage lit `conversations` CINQ fois (une par branche de
   son `union all`), pas une ; et sa clé étrangère vers `tenants` pose, elle aussi, son verrou pendant la
   transaction. L'amorçage a recopié `assigned_by` et `signalee_par` sans filtrer l'espace : c'est pourquoi la
-  lecture le filtre.
+  lecture le filtre. ⚠️ Même chose pour l'en-tête de 0194, qui dit `escaladee` écrit « drapeau d'escalade posé » :
+  vrai à son écriture, faux depuis le 2026-09-29, où c'est `ouvreUneDemande` qui décide (ci-dessus).
 - 🔴 **LES DEMANDES DU QUANTITATIF > PERFORMANCE** (`GET /tenants/:tenantId/stats/performance`, garde admin et
   période des autres statistiques). Elles ne sont PAS stockées : `PgPerformanceStore.lire`
   (`src/stats/performance.pg.ts`) les reconstruit du journal, et `calculerPerformance` (`src/stats/performance.ts`)
   en tire les durées. Une durée stockée deviendrait fausse le jour où l'espace change ses horaires.
   - **Ouverture** : `escaladee` ou `passee_par_mba`, seulement si rien n'était ouvert, c'est-à-dire si l'événement
     d'ouverture ou de fin qui précède sur la conversation (`lag`) est une fin, ou s'il n'y en a pas. Deux passages
-    sans fin entre eux font UNE demande, datée du premier. Elle appartient au jour (Paris, `STATS_TZ`) où elle
-    s'ouvre : sa réponse et sa fin peuvent tomber après la période.
-  - **Fin** : le premier `traitee`, `archivee`, `rendue_mba` ou `rendue_scenario` qui suit. Son auteur est l'acteur
-    de l'événement ; nul AVEC une cause, c'est « automatique » ; nul SANS cause, ou introuvable dans l'espace, c'est
-    un ancien collaborateur (la règle du journal, ci-dessus).
+    sans fin entre eux font UNE demande.
+  - 🔴 **Début** (le chrono part quand le CLIENT a écrit) : l'ouverture si, à cet instant, le dernier message
+    significatif de la conversation est entrant ; sinon le premier message entrant qui suit l'ouverture et précède
+    la fin. Significatif (`MESSAGE_SIGNIFICATIF_SQL`) : un entrant, un modèle sortant (`type = 'template'`), ou un
+    sortant `origin = 'humain'` ; les autres messages d'un robot (scénario, agent IA, agent de Meta) ne rendent pas
+    la balle au client. Sans entrant, la demande n'a jamais commencé et n'est comptée NULLE PART : une campagne
+    « modèle puis passer à un humain » n'en compte que pour les destinataires qui répondent, datées de leur
+    réponse. La période et le jour (Paris, `STATS_TZ`) se lisent sur le début : sa réponse et sa fin peuvent tomber
+    après la période.
+  - **Fin** : le premier `traitee`, `archivee`, `rendue_mba` ou `rendue_scenario` qui suit l'ouverture. Son auteur
+    est l'acteur de l'événement ; nul AVEC une cause, c'est « automatique » (un geste sans auteur connu : délai de
+    reprise, scénario qui reprend la conversation, y compris lancé depuis l'Inbox, clé d'API) ; nul SANS cause, ou
+    introuvable dans l'espace, c'est un ancien collaborateur (la règle du journal, ci-dessus).
   - **Réponse** : le premier message `direction = 'out'` et `origin = 'humain'` (écrit dans l'Inbox, texte, modèle
-    ou RCS) entre l'ouverture et la fin, attribué à son `sender_user_id`. Ni l'API, ni un assistant MCP, ni une
-    campagne, ni un robot.
+    ou RCS) entre le début et la fin, attribué à son `sender_user_id`. Ni l'API, ni un assistant MCP, ni une
+    campagne, ni un robot. La lecture rend aussi la DERNIÈRE réponse avant la fin.
   - **Durées** : en heures d'ouverture de l'espace (`tempsOuvre`, `src/lib/heures-ouvrees.ts` : jours civils du
     fuseau, ouvertures murales converties en instants, donc juste au changement d'heure). Un espace sans aucun
     créneau exploitable (`horairesExploitables`) est compté en temps brut, et la réponse le dit (`mode: 'brut'`).
     Les horaires lus sont ceux de `settingsStore.get`, défauts du serveur compris : ceux que l'écran Paramètres
     montre. Médiane et 90e centile en TypeScript, par interpolation (`percentile_cont`), `null` sans mesure.
-  - ⚠️ **Les résolues SANS réponse sont une catégorie à part, hors du temps de résolution** : le balayage qui rend
-    un fil au bout de deux heures ne mesure rien de l'équipe. Les compteurs forment une partition : demandes =
-    résolues (avec réponse) + résolues sans réponse + encore ouvertes.
+  - 🔴 **Une fin automatique après une réponse s'arrête à la dernière réponse.** Le balayage ne rend jamais un fil
+    dont l'escalade attend sa première réponse ; cette réponse efface la marque, et le balayage rend ensuite le fil
+    au robot au bout du délai de reprise de l'espace (deux heures par défaut) compté depuis la DERNIÈRE réponse
+    humaine, faute de « Traité ». Pour une demande close par un geste automatique et répondue, la résolution
+    s'arrête donc à la dernière réponse avant la fin, sans quoi elle mesurerait le minuteur ; elle reste résolue.
+  - ⚠️ **Les résolues SANS réponse sont une catégorie à part, hors du temps de résolution** : une demande close
+    sans qu'aucun collaborateur ait répondu (archivée, marquée Traité, reprise par un scénario, ou rendue par le
+    balayage quand le passage n'a pas posé de marque d'escalade) n'a pas de travail de l'équipe à mesurer.
+  - **Par collaborateur** : la réponse va à celui qui a répondu le premier ; « demandes closes » compte TOUTES
+    celles qu'il a closes, avec ou sans réponse, et la médiane de résolution ne porte que sur celles qui ont eu une
+    réponse.
+  - ⚠️ **« Encore ouvertes » et la plus ancienne portent sur TOUTES les demandes ouvertes en ce moment**, depuis le
+    début de la mesure et quelle que soit la période : la lecture les rend en plus de celles de la période
+    (`dansLaPeriode` à faux). Les autres compteurs sont ceux de la période, dont les demandes se partagent entre
+    résolues, résolues sans réponse et encore ouvertes.
+  - **Écriture des durées** (`fmtDuree`, `web/lib/performance.ts`) : en heures d'ouverture, jamais de jours (« 45 h
+    12 ») ; un jour y vaudrait 24 heures ouvrées. En temps brut, les jours s'écrivent.
   - ⚠️ **La mesure démarre à l'application de 0194**, lue dans `public.schema_migrations`
     (`MIGRATION_DES_DEMANDES`) : avant elle, ni le passage d'un scénario ni le retour au scénario n'étaient datés,
     donc une demande de l'agent de Meta d'avant 0194 pouvait n'avoir jamais de fin. Aucune ouverture antérieure
     n'est comptée, et l'écran dit « mesuré depuis le ... ».
   - ⚠️ Le journal n'a d'index que par conversation : la lecture filtre l'espace sur `conversations` et sur le
-    journal, puis descend par conversation. À surveiller le jour où un espace porte des dizaines de milliers
-    d'événements.
+    journal, puis descend par conversation, et relit tous les événements depuis le début de la mesure (les encore
+    ouvertes n'ont pas de borne de date). Le début, qui coûte deux lectures de messages, n'est calculé que pour les
+    demandes encore ouvertes ou qui peuvent commencer dans la période. À surveiller le jour où un espace porte des
+    dizaines de milliers d'événements (`todo.md`).
 - 🔴 **UNE ESCALADE EST « À TRAITER » TOUT DE SUITE** (`escaladee_le`, migration 0164), et TROIS chemins la
   posent : l'agent de Meta qui nous passe le fil (`control_passed`), le bloc « passer à un humain » d'un
   scénario, et l'escalade d'un agent IA. Les trois font la même promesse au client, et souffraient du même

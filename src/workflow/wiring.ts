@@ -358,10 +358,11 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     escalateToHuman: async (tenant, waId, assigneA, escalade, workflowId) => {
       // La cause que la frise du panneau Détail affiche à la place d'un auteur : le NOM du scénario, pour le passage
       // à l'équipe (l'événement `escaladee`, migration 0194, qui ouvre une demande du Quantitatif > Performance) et
-      // pour l'affectation. Lu seulement quand l'un des deux l'écrit : sans drapeau d'escalade la bascule n'écrit
-      // aucun événement, et le pot commun ne paie pas cette lecture. Un scénario introuvable ne bloque rien, il est
-      // dit par son identifiant.
-      const nom = escalade || assigneA ? (await workflowStore.getById(workflowId, tenant).catch(() => null))?.name : undefined;
+      // pour l'affectation. Lu à CHAQUE passage : depuis le 2026-09-29, tout passage d'un robot à l'équipe écrit
+      // l'événement, drapeau d'escalade ou non (`ouvreUneDemande`, `src/inbox/fil.ts`). Un scénario introuvable ne
+      // bloque rien, il est dit par son identifiant. Tenu par un test qui monte ce câblage
+      // (`tests/controle-du-fil-cablage.test.ts`).
+      const nom = (await workflowStore.getById(workflowId, tenant).catch(() => null))?.name;
       const cause = automatique(`scénario ${nom ?? workflowId}`);
       await fil.passerAUnHumain(tenant, waId, { escalade, cause });
       if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA, cause);

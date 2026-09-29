@@ -55,10 +55,20 @@ export interface EcritureDuFil {
   /** Efface la marque d'escalade, si l'écriture a lieu. */
   effacerEscalade?: boolean;
   /**
-   * Pose la marque d'escalade, si l'écriture a lieu et vise `app_human`. Depuis un robot (`app_workflow`), écrit
-   * aussi l'événement `escaladee` (migration 0194) : l'ouverture d'une demande du Quantitatif > Performance.
+   * Pose la marque d'escalade (`escaladee_le` : « À traiter » tout de suite, et le balayage ne rend plus le fil tant
+   * que personne n'a répondu), si l'écriture a lieu et vise `app_human`. N'écrit AUCUN événement : c'est
+   * `ouvreUneDemande` qui ouvre une demande, drapeau posé ou non.
    */
   escalade?: boolean;
+  /**
+   * Ce passage d'un robot à l'équipe OUVRE UNE DEMANDE du Quantitatif > Performance : l'événement `escaladee`
+   * (migration 0194), si l'écriture a lieu, vise `app_human` et part d'un robot (`app_workflow` ou `mba`). Posé
+   * par `passerAUnHumain` et `prendrePourLEquipe`, et par eux seuls : un opérateur qui prend le fil en écrivant
+   * (`prisEnEcrivant`) et l'état d'attente d'une fin de parcours (`rendreApresParcours`) n'en ouvrent jamais.
+   * Indépendant d'`escalade` (décision de Julien du 2026-09-29) : un scénario qui passe la main sans rien avoir
+   * envoyé laisse un client qui attend, et une campagne sans marque d'escalade aussi.
+   */
+  ouvreUneDemande?: boolean;
   /**
    * Ce geste REND le fil à l'agent de Meta, quelle que soit la valeur écrite : l'événement est `rendue_mba`. Seul
    * « Rendre la main » sur un fil que notre colonne croit déjà à l'agent le pose, parce qu'il y écrit `app_workflow`
@@ -184,17 +194,21 @@ export interface ControleDuFil {
    * La réponse à une campagne dont le devenir est « Inbox » : prendre le fil pour l'équipe (`app_human`), pour
    * qu'aucun robot ne réponde et que la conversation entre dans « À traiter ». Un fil déjà tenu par un opérateur
    * reste tel quel. `false` = Meta a refusé de céder le fil, son agent répond. `cause` : la campagne, telle que la
-   * frise du panneau Détail la dit (« automatique : campagne Rentrée »).
+   * frise du panneau Détail la dit (« automatique : campagne Rentrée »). La bascule ouvre une demande du
+   * Quantitatif > Performance (`escaladee`, `ouvreUneDemande`) : le client vient de répondre et attend l'équipe.
    */
   prendrePourLEquipe(tenantId: string, waId: string, cause: string): Promise<boolean>;
   /**
    * Un scénario (bloc « passer à un humain », échec d'un parcours) ou un agent IA remonte la conversation à
-   * l'équipe, seulement si le fil était encore aux robots. `escalade` : quelqu'un attend une réponse. Rend `true`
-   * si la bascule a eu lieu.
+   * l'équipe, seulement si le fil était encore aux robots. `escalade` : quelqu'un attend une réponse, la marque
+   * collante est posée. Rend `true` si la bascule a eu lieu.
    *
    * `cause` REQUISE, portée par l'appelant, le seul à savoir QUI passe la main (« automatique : scénario
-   * Bienvenue », « automatique : agent IA Léa ») : avec le drapeau, la bascule écrit l'événement `escaladee`
-   * (migration 0194), qui ouvre une demande du Quantitatif > Performance et que la frise du panneau Détail raconte.
+   * Bienvenue », « automatique : agent IA Léa ») : drapeau ou non, la bascule écrit l'événement `escaladee`
+   * (migration 0194, `ouvreUneDemande`), qui ouvre une demande du Quantitatif > Performance et que la frise du
+   * panneau Détail raconte. Le chrono de la demande, lui, ne part que quand le client a écrit
+   * (`src/stats/performance.ts`) : une campagne qui passe la main juste après son modèle n'a encore personne à
+   * faire attendre.
    */
   passerAUnHumain(tenantId: string, waId: string, opts: { escalade: boolean; cause: string }): Promise<boolean>;
   /** L'agent de Meta passe la main à l'équipe (`control_passed`) : `app_human` et escalade. */
@@ -376,12 +390,12 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     async prendrePourLEquipe(tenantId, waId, cause) {
       if ((await depot.getControlOwner(tenantId, waId)) === 'app_human') return true;
       if ((await mbaAllume(tenantId)) && !(await prendreAvecUnRejeu(tenantId, waId))) return false;
-      await depot.setControlOwner(tenantId, waId, 'app_human', { par: { cause } });
+      await depot.setControlOwner(tenantId, waId, 'app_human', { par: { cause }, ouvreUneDemande: true });
       return true;
     },
 
     passerAUnHumain(tenantId, waId, { escalade, cause }) {
-      return depot.setControlOwner(tenantId, waId, 'app_human', { par: { cause }, only: ['app_workflow'], escalade });
+      return depot.setControlOwner(tenantId, waId, 'app_human', { par: { cause }, only: ['app_workflow'], escalade, ouvreUneDemande: true });
     },
 
     agentDeMetaPasseLaMain(tenantId, waId) {

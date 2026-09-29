@@ -711,6 +711,10 @@ elle recommande de les prendre.
   qu aucune ecriture ni lecture ne subsiste (`grep` dans `mba-api` et `mba-worker`, comme pour 0128), puis
   ecrire la migration du `drop`. ⚠️ Tant qu elles sont la, elles portent les anciennes valeurs par espace :
   un lecteur qui les trouverait pourrait croire a une grille par client.
+- 🟡 **Quantitatif > Performance relit TOUT le journal de l espace depuis 0194 a chaque ouverture** (relecture du
+  2026-09-29) : `conversation_evenements` n a d index que par conversation ; un index `(tenant_id, at)` demande une migration.
+- 🟡 **Une course rare sur `passee_par_mba`** (relecture du 2026-09-29) : traite APRES une reponse deja enregistree de
+  l equipe, il ouvre une demande que cette reponse precede, donc ne compte pas ; a mesurer avant de corriger.
 
 
 ## 🟡 Quatre ecarts mineurs releves par les revues finales (2026-09-17 et 18)

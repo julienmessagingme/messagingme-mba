@@ -30,10 +30,12 @@ export interface LigneCollaborateur {
   qui: Qui;
   reponses: number;
   reponseMediane: number | null;
+  /** TOUTES les demandes qu'il a closes, avec ou sans réponse ; la médiane ne porte que sur celles avec réponse. */
   closes: number;
   resolutionMediane: number | null;
 }
 
+/** La forme est tenue par `tests/web-performance-parite.test.ts` : un champ renommé d'un seul côté le casse. */
 export interface Performance {
   mesureDepuis: string | null;
   /** `ouvre` : en heures d'ouverture de l'espace ; `brut` : il n'en a aucune, l'écran le dit. */
@@ -41,10 +43,13 @@ export interface Performance {
   fuseau: string;
   reponse: Centiles;
   resolution: Centiles;
+  /** Les demandes commencées sur la période. */
   demandes: number;
   resolues: number;
   resoluesSansReponse: number;
+  /** TOUTES les demandes ouvertes en ce moment, quelle que soit la période : pas un sous-total de `demandes`. */
   ouvertes: number;
+  /** Le début de la plus ancienne encore ouverte, toutes périodes. */
   plusAncienneOuverte: string | null;
   parJour: JourPerformance[];
   parCollaborateur: LigneCollaborateur[];
@@ -128,15 +133,19 @@ const H = 60 * MIN;
  * la minute, la minute sous le jour, l'heure au-delà) : un temps de réponse ne se lit pas à la seconde près quand il
  * se compte en heures. Chaque palier se décide sur la valeur ARRONDIE, sinon 59,6 s s'écrirait « 60 s ».
  * `null` : « non disponible », jamais « 0 ».
+ *
+ * 🔴 EN HEURES D'OUVERTURE (`mode: 'ouvre'`), JAMAIS DE JOURS : des heures et des minutes (« 45 h 12 »). Un « jour »
+ * y vaudrait 24 heures OUVRÉES, soit trois jours de bureau : « 1 j 21 h » se lirait « presque deux jours » pour 45 h
+ * ouvrées. `mode` est requis pour qu'aucun appelant ne l'oublie.
  */
-export function fmtDuree(ms: number | null, locale: Locale): string {
+export function fmtDuree(ms: number | null, locale: Locale, mode: Performance['mode']): string {
   const en = locale === 'en';
   if (ms === null) return en ? 'not available' : 'non disponible';
   const secondes = Math.round(ms / 1000);
   if (secondes < 60) return `${secondes} s`;
   const minutes = Math.round(ms / MIN);
   if (minutes < 60) return `${minutes} min`;
-  if (minutes < 24 * 60) {
+  if (minutes < 24 * 60 || mode === 'ouvre') {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
     return m === 0 ? `${h} h` : `${h} h ${String(m).padStart(2, '0')}`;

@@ -435,12 +435,14 @@ export class PgInboxStore implements InboxStore {
     // preuve que l'agent a repris le fil) ; sans date, la garde reste stricte.
     //
     // 🔴 LE JOURNAL (migration 0192), DANS LA MÊME REQUÊTE : `prise_mba` quand le fil quitte l'agent de Meta,
-    // `rendue_mba` quand il y va. Entre scénario et équipe (0194, les demandes du Quantitatif > Performance) :
-    // `escaladee` quand le drapeau d'escalade fait passer un fil d'un robot (`app_workflow`) à l'équipe, et
-    // `rendue_scenario` quand l'équipe le rend à un scénario. Un opérateur qui prend le fil en écrivant (sans
-    // drapeau) n'écrit rien : ce n'est pas une attente du client, et il ouvrirait une demande déjà répondue. Et
-    // l'escalade qui sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`, `non_traitee`), sans
-    // quoi la frise la montrerait encore rangée. L'état d'avant est lu dans un sous-select VERROUILLÉ.
+    // `rendue_mba` quand il y va. Entre robots et équipe (0194, les demandes du Quantitatif > Performance) :
+    // `escaladee` quand un geste qui OUVRE UNE DEMANDE (`ouvreUneDemande`, posé par `passerAUnHumain` et
+    // `prendrePourLEquipe` seulement) fait passer un fil d'un robot (`app_workflow` ou `mba`) à l'équipe, drapeau
+    // d'escalade ou non ; et `rendue_scenario` quand l'équipe le rend à un scénario. Un fil qui quitte l'agent de
+    // Meta pour l'équipe écrit donc les DEUX : la prise, puis le passage. Un opérateur qui prend le fil en écrivant,
+    // ou l'état d'attente d'une fin de parcours, n'ouvre rien : ce n'est pas une attente du client. Et l'escalade qui
+    // sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`, `non_traitee`), sans quoi la frise la
+    // montrerait encore rangée. L'état d'avant est lu dans un sous-select VERROUILLÉ.
     // ⚠️ `rendAgentDeMeta` passe AVANT la lecture des colonnes : « Rendre la main » sur un fil que notre colonne
     // croit déjà `mba` écrit `app_workflow` (on ne rouvre que notre côté), et la règle des colonnes y lisait un fil
     // qui QUITTE l'agent, donc `prise_mba` signée de l'opérateur, l'inverse de son geste (relecture du 2026-09-29).
@@ -470,8 +472,8 @@ export class PgInboxStore implements InboxStore {
            cross join lateral (values
              (case when $11::boolean then 'rendue_mba'
                    when maj.ancien_detenteur = 'mba' then 'prise_mba' when $3 = 'mba' then 'rendue_mba'
-                   when $8::boolean and $3 = 'app_human' and maj.ancien_detenteur = 'app_workflow' then 'escaladee'
                    when $3 = 'app_workflow' and maj.ancien_detenteur = 'app_human' then 'rendue_scenario' end),
+             (case when $12::boolean and $3 = 'app_human' and maj.ancien_detenteur in ('app_workflow', 'mba') then 'escaladee' end),
              (case when maj.ancienne_archive is not null and maj.archived_at is null then 'desarchivee' end),
              (case when maj.ancienne_traitee is not null and maj.traitee_le is null then 'non_traitee' end)
            ) as e(type)
@@ -479,7 +481,8 @@ export class PgInboxStore implements InboxStore {
        )
        select id from maj`,
       [tenantId, waId, owner, only ? [...only] : null, opts.saufEscalade === true, opts.effacerEscalade === true,
-       opts.messageEnvoyeLe ?? null, opts.escalade === true, auteur.acteur, auteur.cause, opts.rendAgentDeMeta === true],
+       opts.messageEnvoyeLe ?? null, opts.escalade === true, auteur.acteur, auteur.cause, opts.rendAgentDeMeta === true,
+       opts.ouvreUneDemande === true],
     );
     return (res.rowCount ?? 0) > 0;
   }

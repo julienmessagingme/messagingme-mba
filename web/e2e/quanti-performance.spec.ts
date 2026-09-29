@@ -65,7 +65,8 @@ test.describe('Quantitatif > Performance', () => {
     await expect(page.getByTestId('perf-demandes')).toHaveText('5');
     await expect(page.getByTestId('perf-sans-reponse')).toHaveText('2');
     await expect(page.getByTestId('perf-ouvertes')).toHaveText('3');
-    await expect(page.getByTestId('perf-plus-ancienne')).toBeVisible();
+    // Une demande répondue mais pas close est OUVERTE, pas « en attente » : la phrase dit ce qui est vrai.
+    await expect(page.getByTestId('perf-plus-ancienne')).toContainText(/ouverte depuis|open since/);
     await expect(page.getByTestId('perf-mesure-depuis')).toContainText(/29\/09\/2026|Mesuré depuis/);
     await expect(page.getByTestId('perf-mode')).toContainText(/heures d.ouverture|opening hours/);
     await expect(page.getByTestId('perf-courbe')).toBeVisible();
@@ -102,6 +103,21 @@ test.describe('Quantitatif > Performance', () => {
     await mock(page, { perf: { ...PERF, mode: 'brut' } });
     await page.goto('/dashboard/performance');
     await expect(page.getByTestId('perf-mode')).toContainText(/temps brut|raw time/);
+  });
+
+  // 45 h 12 : presque une semaine de bureau en heures ouvrées, que « 1 j 21 h » ferait lire « presque deux jours ».
+  const LONGUE = { ...PERF, reponse: { mediane: 45 * 3_600_000 + 12 * 60_000, p90: 45 * 3_600_000 + 12 * 60_000, n: 1 } };
+
+  test('🔴 en heures d’ouverture, une durée ne s’écrit JAMAIS en jours', async ({ page }) => {
+    await mock(page, { perf: LONGUE });
+    await page.goto('/dashboard/performance');
+    await expect(page.getByTestId('perf-kpi-reponse-mediane')).toHaveText('45 h 12');
+  });
+
+  test('en temps brut, un jour est un vrai jour, et il s’écrit', async ({ page }) => {
+    await mock(page, { perf: { ...LONGUE, mode: 'brut' } });
+    await page.goto('/dashboard/performance');
+    await expect(page.getByTestId('perf-kpi-reponse-mediane')).toHaveText(/^1 (j|d) 21 h$/);
   });
 
   test('changer de période relance la lecture sur la nouvelle plage', async ({ page }) => {

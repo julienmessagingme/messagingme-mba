@@ -4,6 +4,8 @@ import { MetaApiError } from '../src/meta/errors';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runControlSweep } from '../src/inbox/control-sweep';
+import { buildWorkflowRuntime } from '../src/workflow/wiring';
+import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import { bancDuFil, type ReponseMeta } from './banc-du-fil';
 
 /**
@@ -66,30 +68,75 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
 });
 
 /**
+ * 🔴 LE VRAI CÂBLAGE D'UN SCÉNARIO, MONTÉ ET EXÉCUTÉ (relecture du 2026-09-29). Ces cas lisaient le TEXTE de
+ * `src/workflow/wiring.ts` : remettre la condition `assigneA` seule à la place de `escalade || assigneA` devant la
+ * lecture du nom laissait tout vert, et la frise aurait affiché « scénario <uuid> ». `buildWorkflowRuntime` se monte
+ * sans base (ses dépôts ne font que retenir le pool) : on le monte sur des dépendances inertes, seuls le nom du
+ * scénario, le fil et l'affectation parlent, et on appelle la dépendance `escalateToHuman` qu'il a donnée à
+ * l'exécuteur. Ce que le geste écrit ensuite : `tests/fil.test.ts` et `tests/inbox-evenements.test.ts`.
+ */
+function cablageDuScenario(lireNom: () => Promise<{ name: string } | null> = async () => ({ name: 'Bienvenue' })) {
+  const appels: unknown[][] = [];
+  const inerte = {} as never;
+  const { executor } = buildWorkflowRuntime({
+    pool: inerte, queue: { enqueue: async () => {} }, dryRun: true, repo: inerte, contactStore: inerte,
+    inboxStore: { setAssigneeByWaId: async (...a: unknown[]) => { appels.push(['affecter', ...a]); return true; } } as never,
+    settingsStore: inerte,
+    workflowStore: { getById: async (id: string, t: string) => { appels.push(['nom', id, t]); return lireNom(); } } as never,
+    metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
+    numeroDeLEspace: async () => null, runStore: inerte,
+    fil: { passerAUnHumain: async (...a: unknown[]) => { appels.push(['passer', ...a]); return true; } } as never,
+  });
+  // `deps` est privé à l'exécuteur : on lit la dépendance que le câblage lui a donnée, sans monter un parcours entier.
+  const { escalateToHuman } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
+  return { escalateToHuman, appels };
+}
+
+describe('le câblage d’un scénario nomme le scénario à CHAQUE passage à l’équipe (0194, 2026-09-29)', () => {
+  it('🔴 sans marque d’escalade ni affectataire, la cause nomme quand même le scénario', async () => {
+    // Tout passage d'un robot à l'équipe écrit désormais l'événement `escaladee`, drapeau ou non. Ne lire le nom
+    // qu'avec une escalade ou un affectataire afficherait « scénario wf-1 » pour un scénario qui passe la main sans
+    // rien avoir envoyé.
+    const { escalateToHuman, appels } = cablageDuScenario();
+    await escalateToHuman('t1', '33600000001', null, false, 'wf-1');
+    expect(appels).toEqual([
+      ['nom', 'wf-1', 't1'],
+      ['passer', 't1', '33600000001', { escalade: false, cause: 'automatique : scénario Bienvenue' }],
+    ]);
+  });
+
+  it('🔴 le drapeau est RELAYÉ, jamais décidé, et l’affectation porte la MÊME cause', async () => {
+    // ⚠️ `escalade` vient de l'APPELANT : un bloc « passer à un humain » le pose, un échec de réveil (fenêtre
+    // fermée, envoi refusé à la reprise) ne le pose pas, parce que personne n'attend à cet instant. Écrire
+    // `escalade: true` dans le câblage rendrait tous les fils collants, y compris ceux que personne n'attend.
+    const { escalateToHuman, appels } = cablageDuScenario();
+    await escalateToHuman('t1', 'w', 'u-marie', true, 'wf-1');
+    expect(appels.slice(1)).toEqual([
+      ['passer', 't1', 'w', { escalade: true, cause: 'automatique : scénario Bienvenue' }],
+      ['affecter', 't1', 'w', 'u-marie', 'automatique : scénario Bienvenue'],
+    ]);
+  });
+
+  it('un scénario introuvable, ou une lecture en panne, ne bloque rien : il est dit par son identifiant', async () => {
+    for (const lireNom of [async () => null, async () => { throw new Error('base indisponible'); }]) {
+      const { escalateToHuman, appels } = cablageDuScenario(lireNom);
+      await escalateToHuman('t1', 'w', null, true, 'wf-1');
+      expect(appels.at(-1)).toEqual(['passer', 't1', 'w', { escalade: true, cause: 'automatique : scénario wf-1' }]);
+    }
+  });
+});
+
+/**
  * 🔴 LES TROIS CHEMINS D'ESCALADE POSENT LE MÊME DRAPEAU (arbitrage de Julien du 2026-09-23, migration 0164).
  *
  * L'agent de Meta, le bloc « passer à un humain » d'un scénario et l'escalade d'un agent IA promettent la même
  * chose au client. Les deux derniers posaient `app_human` SANS le drapeau : leur dernière phrase étant sortante,
  * la conversation n'entrait dans « À traiter » qu'au message suivant du client, et le balayage rendait le fil à
- * l'agent au bout de 2 h sans que personne ait répondu.
- *
- * ⚠️ UN CÂBLAGE N'A AUCUN DÉPENDANT : ces cas lisent la SOURCE, parce qu'un faux accepterait n'importe quelles
- * options sans rien dire (une flèche à trois paramètres est assignable à un contrat qui en déclare quatre). Ce que
- * le geste écrit, lui, s'exécute : `tests/fil.test.ts` (`passerAUnHumain`).
+ * l'agent au bout de 2 h sans que personne ait répondu. Le câblage d'un scénario est exécuté plus haut ; ceux du
+ * worker lisent encore la SOURCE, parce que `src/worker.ts` démarre un processus quand on l'importe.
  */
 describe('l’escalade est posée par les DEUX câblages, pas seulement par l’agent de Meta', () => {
-  const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
   const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
-
-  it('🔴 le câblage d’un scénario RELAIE le drapeau, il ne le décide pas', () => {
-    // ⚠️ `escalade` vient de l'APPELANT : un bloc « passer à un humain » le pose, un échec de réveil (fenêtre
-    // fermée, envoi refusé à la reprise) ne le pose pas, parce que personne n'attend à cet instant. Écrire
-    // `escalade: true` ici rendrait tous les fils collants, y compris ceux que personne n'attend.
-    expect(wiring).toContain('escalateToHuman: async (tenant, waId, assigneA, escalade, workflowId) => {');
-    // Avec la cause qui nomme le scénario (l'événement `escaladee`, migration 0194), et la MÊME pour l'affectation.
-    expect(wiring).toContain('fil.passerAUnHumain(tenant, waId, { escalade, cause })');
-    expect(wiring).toContain('const cause = automatique(`scénario ${nom ?? workflowId}`);');
-  });
 
   it('🔴 l’escalade d’un agent IA aussi, et elle REND toujours son verdict', () => {
     // Sans accolades : la flèche rend la promesse de la bascule. La cause nomme l'agent (migration 0194).

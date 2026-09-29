@@ -1417,23 +1417,31 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 - ✅ **Quantitatif > Performance : le temps de réponse et le temps de résolution de l'équipe** (2026-09-29,
   `/dashboard/performance`). Sur les seules conversations qu'un **robot a passées à l'équipe** : un scénario (bloc
-  « passer à un humain »), un agent IA, ou l'agent de Meta. Chaque passage est une **demande** ; un nouveau passage
-  pendant qu'une demande est ouverte n'en ouvre pas une seconde, et un collaborateur qui prend le fil lui-même en
-  écrivant n'en ouvre pas (personne n'attendait). Le **temps de réponse** va du passage au premier message écrit
+  « passer à un humain »), un agent IA, l'agent de Meta, ou la réponse à une campagne dont le devenir est l'Inbox.
+  Chaque passage est une **demande** ; un nouveau passage pendant qu'une demande est ouverte n'en ouvre pas une
+  seconde, et un collaborateur qui prend le fil lui-même en écrivant n'en ouvre pas (personne n'attendait).
+  🔴 **Le chrono part quand le client a écrit** : au passage si le client attendait déjà, sinon à son message
+  suivant. Une campagne « modèle puis passer à un humain » ne compte donc que les destinataires qui répondent, à
+  partir de leur réponse, et pas 2 000 demandes à l'envoi. Le **temps de réponse** va de là au premier message écrit
   dans l'Inbox par un collaborateur (texte ou modèle ; pas l'API, pas un assistant MCP, pas une campagne) ; le
-  **temps de résolution** va du passage au premier « Traité », archivage ou retour à un robot. L'écran montre la
-  **médiane** et le **90e centile** de chacun, les demandes de la période (résolues, résolues sans aucune réponse,
-  encore ouvertes et depuis quand la plus ancienne), une **courbe par jour** des deux médianes, et un **tableau par
-  collaborateur** : la réponse à celui qui a répondu le premier, la résolution à celui qui a clos, une clôture faite
-  par la console elle-même dans une ligne « Automatique ». Même période que les autres onglets du Quantitatif.
+  **temps de résolution** va de là au premier « Traité », archivage ou retour à un robot. L'écran montre la
+  **médiane** et le **90e centile** de chacun, les demandes commencées sur la période (résolues, résolues sans
+  aucune réponse), les demandes **encore ouvertes, toutes dates confondues**, et depuis quand la plus ancienne est
+  ouverte, une **courbe par jour** des deux médianes, et un **tableau par collaborateur** : la réponse à celui qui a
+  répondu le premier, la résolution à celui qui a clos (« demandes closes » compte toutes celles qu'il a closes,
+  avec ou sans réponse), un geste sans auteur connu (délai de reprise écoulé, scénario qui reprend la conversation,
+  appel d'API) dans une ligne « Automatique ». Même période que les autres onglets du Quantitatif.
   🔴 **Les durées se comptent en heures d'ouverture de l'espace** (Paramètres) : une demande arrivée le vendredi à
   17 h 50 et répondue le lundi à 9 h 05 a attendu un quart d'heure. Un espace sans heures d'ouverture est compté en
-  temps brut, et l'écran le dit.
+  temps brut, et l'écran le dit. En heures d'ouverture, une durée s'écrit en heures et minutes, jamais en jours
+  (« 45 h 12 » et pas « 1 j 21 h », qui se lirait « presque deux jours »).
   🔴 **Un chiffre inconnu s'écrit « non disponible », jamais 0** : une médiane sans demande dirait que l'équipe
   répond instantanément.
   ⚠️ **Les demandes résolues sans aucune réponse sont comptées à part** et n'entrent pas dans le temps de
-  résolution : un fil rendu au scénario au bout de deux heures sans que personne ait répondu ne mesure rien de
-  l'équipe.
+  résolution : personne n'y a travaillé.
+  ⚠️ **Quand l'équipe a répondu sans cliquer « Traité »**, la console rend le fil au robot au bout du délai de
+  reprise (deux heures par défaut) après la dernière réponse : la résolution s'arrête alors à cette dernière
+  réponse, et ne mesure pas le délai.
   ⚠️ **La mesure démarre à sa mise en service**, que l'écran date (« mesuré depuis le ... ») : rien ne datait
   avant elle le passage d'un scénario à l'équipe, et l'historique n'est pas reconstruit.
 

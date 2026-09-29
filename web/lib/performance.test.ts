@@ -54,21 +54,34 @@ describe('lirePerformance', () => {
 
 describe('fmtDuree', () => {
   it('🔴 `null` : « non disponible », jamais « 0 »', () => {
-    expect(fmtDuree(null, 'fr')).toBe('non disponible');
-    expect(fmtDuree(null, 'en')).toBe('not available');
+    expect(fmtDuree(null, 'fr', 'ouvre')).toBe('non disponible');
+    expect(fmtDuree(null, 'en', 'brut')).toBe('not available');
     // Zéro, lui, est une mesure : une réponse dans la seconde.
-    expect(fmtDuree(0, 'fr')).toBe('0 s');
+    expect(fmtDuree(0, 'fr', 'ouvre')).toBe('0 s');
   });
 
   it('chaque palier, décidé sur la valeur arrondie', () => {
-    expect(fmtDuree(45_000, 'fr')).toBe('45 s');
-    expect(fmtDuree(59_600, 'fr')).toBe('1 min');
-    expect(fmtDuree(12 * 60_000, 'fr')).toBe('12 min');
-    expect(fmtDuree(65 * 60_000, 'fr')).toBe('1 h 05');
-    expect(fmtDuree(120 * 60_000, 'fr')).toBe('2 h');
-    expect(fmtDuree(51 * 3_600_000, 'fr')).toBe('2 j 3 h');
-    expect(fmtDuree(51 * 3_600_000, 'en')).toBe('2 d 3 h');
-    expect(fmtDuree(48 * 3_600_000, 'fr')).toBe('2 j');
+    for (const mode of ['ouvre', 'brut'] as const) {
+      expect(fmtDuree(45_000, 'fr', mode)).toBe('45 s');
+      expect(fmtDuree(59_600, 'fr', mode)).toBe('1 min');
+      expect(fmtDuree(12 * 60_000, 'fr', mode)).toBe('12 min');
+      expect(fmtDuree(65 * 60_000, 'fr', mode)).toBe('1 h 05');
+      expect(fmtDuree(120 * 60_000, 'fr', mode)).toBe('2 h');
+    }
+  });
+
+  it('en temps BRUT, au-delà de 24 h : des jours, qui sont de vrais jours', () => {
+    expect(fmtDuree(51 * 3_600_000, 'fr', 'brut')).toBe('2 j 3 h');
+    expect(fmtDuree(51 * 3_600_000, 'en', 'brut')).toBe('2 d 3 h');
+    expect(fmtDuree(48 * 3_600_000, 'fr', 'brut')).toBe('2 j');
+  });
+
+  it('🔴 en heures d’OUVERTURE, jamais de jours : 24 heures ouvrées font trois jours de bureau, pas un', () => {
+    // « 1 j 21 h » se lisait « presque deux jours » pour 45 h ouvrées, soit une semaine de travail.
+    expect(fmtDuree(45 * 3_600_000 + 12 * 60_000, 'fr', 'ouvre')).toBe('45 h 12');
+    expect(fmtDuree(45 * 3_600_000 + 12 * 60_000, 'en', 'ouvre')).toBe('45 h 12');
+    expect(fmtDuree(48 * 3_600_000, 'fr', 'ouvre')).toBe('48 h');
+    expect(fmtDuree(24 * 3_600_000, 'fr', 'ouvre')).toBe('24 h');
   });
 });
 

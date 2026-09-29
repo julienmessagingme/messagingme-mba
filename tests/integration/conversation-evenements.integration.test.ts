@@ -226,7 +226,7 @@ describe.skipIf(!url)('le journal des événements d’une conversation', () => 
       const id = await idDe();
       await store.archiverConversation(tenantId, id, true, OPERATEUR());
       await store.marquerTraitee(tenantId, id, true, OPERATEUR());
-      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: AUTO, only: ['app_workflow'], escalade: true })).toBe(true);
+      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: AUTO, only: ['app_workflow'], escalade: true, ouvreUneDemande: true })).toBe(true);
       expect((await journal(id)).slice(2)).toEqual([
         { type: 'escaladee', acteur_id: null, cible_id: null, cause: 'automatique : test' },
         { type: 'desarchivee', acteur_id: null, cible_id: null, cause: 'automatique : test' },
@@ -234,21 +234,49 @@ describe.skipIf(!url)('le journal des événements d’une conversation', () => 
       ]);
     });
 
-    it('🔴 `escaladee` : un robot passe la main avec le drapeau, une fois, et seulement lui', async () => {
-      // Un opérateur qui prend le fil en ÉCRIVANT (sans drapeau) n'ouvre pas de demande : ce n'est pas une attente
-      // du client, et elle serait déjà répondue. Une escalade sur un fil déjà à l'équipe ne change rien, donc
-      // n'écrit rien : c'est la même demande.
+    it('🔴 `escaladee` : un robot passe la main (`ouvreUneDemande`), une fois, et seulement lui', async () => {
+      // Un opérateur qui prend le fil en ÉCRIVANT n'ouvre pas de demande : ce n'est pas une attente du client, et
+      // elle serait déjà répondue. Une escalade sur un fil déjà à l'équipe ne change rien, donc n'écrit rien : c'est
+      // la même demande.
       await entrant('wamid.ev-44');
       const id = await idDe();
-      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: OPERATEUR() })).toBe(true); // sans drapeau
+      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: OPERATEUR() })).toBe(true); // prise en écrivant
       expect(await journal(id)).toEqual([]);
       expect(await store.setControlOwner(tenantId, WA, 'app_workflow', { par: AUTO })).toBe(true);
       const SCENARIO = { cause: 'automatique : scénario Bienvenue' };
-      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: SCENARIO, only: ['app_workflow'], escalade: true })).toBe(true);
-      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: SCENARIO, only: ['app_workflow'], escalade: true })).toBe(false);
+      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: SCENARIO, only: ['app_workflow'], escalade: true, ouvreUneDemande: true })).toBe(true);
+      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: SCENARIO, only: ['app_workflow'], escalade: true, ouvreUneDemande: true })).toBe(false);
       expect(await journal(id)).toEqual([
         { type: 'rendue_scenario', acteur_id: null, cible_id: null, cause: 'automatique : test' },
         { type: 'escaladee', acteur_id: null, cible_id: null, cause: 'automatique : scénario Bienvenue' },
+      ]);
+    });
+
+    it('🔴 le drapeau d’escalade n’ouvre RIEN seul, et `ouvreUneDemande` ouvre SANS lui (décision du 2026-09-29)', async () => {
+      // Un scénario démarré par le client qui passe la main sans rien avoir envoyé ne pose pas de marque collante,
+      // et le client attend pourtant : l'ouverture ne dépend que du geste.
+      await entrant('wamid.ev-46');
+      const id = await idDe();
+      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: AUTO, only: ['app_workflow'], escalade: true })).toBe(true);
+      expect(await types(id)).toEqual([]);
+      expect(await store.setControlOwner(tenantId, WA, 'app_workflow', { par: AUTO })).toBe(true);
+      const SCENARIO = { cause: 'automatique : scénario Mot-clé' };
+      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: SCENARIO, only: ['app_workflow'], escalade: false, ouvreUneDemande: true })).toBe(true);
+      expect(await journal(id)).toEqual([
+        { type: 'rendue_scenario', acteur_id: null, cible_id: null, cause: 'automatique : test' },
+        { type: 'escaladee', acteur_id: null, cible_id: null, cause: 'automatique : scénario Mot-clé' },
+      ]);
+    });
+
+    it('🔴 la campagne au devenir Inbox qui prend le fil à l’agent de Meta : la prise ET le passage', async () => {
+      await entrant('wamid.ev-47');
+      const id = await idDe();
+      await pool.query(`update conversations set control_owner = 'mba' where id = $1`, [id]);
+      const CAMPAGNE = { cause: 'automatique : campagne Rentrée' };
+      expect(await store.setControlOwner(tenantId, WA, 'app_human', { par: CAMPAGNE, ouvreUneDemande: true })).toBe(true);
+      expect(await journal(id)).toEqual([
+        { type: 'prise_mba', acteur_id: null, cible_id: null, cause: 'automatique : campagne Rentrée' },
+        { type: 'escaladee', acteur_id: null, cible_id: null, cause: 'automatique : campagne Rentrée' },
       ]);
     });
 

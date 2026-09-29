@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useT, useLocale } from '@/lib/i18n';
 import { brand, ink, navy } from '@/lib/couleurs';
-import { fmtDuree, type JourPerformance } from '@/lib/performance';
+import { fmtDuree, type JourPerformance, type Performance } from '@/lib/performance';
 
 /**
  * Quantitatif > Performance : les deux médianes, réponse et résolution, jour par jour. SVG maison, comme les autres
@@ -31,7 +31,7 @@ function joursEntre(from: string, to: string): string[] {
 
 const jj = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-export function PerformanceCourbe({ parJour, from, to }: { parJour: JourPerformance[]; from: string; to: string }) {
+export function PerformanceCourbe({ parJour, from, to, mode }: { parJour: JourPerformance[]; from: string; to: string; mode: Performance['mode'] }) {
   const t = useT();
   const { locale } = useLocale();
   const [survol, setSurvol] = useState<number | null>(null);
@@ -72,7 +72,7 @@ export function PerformanceCourbe({ parJour, from, to }: { parJour: JourPerforma
             {s.libelle}
           </span>
         ))}
-        <span>{t(`Échelle : jusqu’à ${fmtDuree(max, locale)}`, `Scale: up to ${fmtDuree(max, locale)}`)}</span>
+        <span>{t(`Échelle : jusqu’à ${fmtDuree(max, locale, mode)}`, `Scale: up to ${fmtDuree(max, locale, mode)}`)}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: 'visible' }} role="img"
         aria-label={t('Médianes de réponse et de résolution, par jour', 'Median response and resolution times, by day')}>
@@ -109,7 +109,7 @@ export function PerformanceCourbe({ parJour, from, to }: { parJour: JourPerforma
           {series.map((s) => (
             <div key={s.cle} className="flex items-center gap-1.5 whitespace-nowrap">
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.couleur }} />
-              {s.libelle} <span className="font-semibold tabular-nums">{fmtDuree(s.valeurs[survol] ?? null, locale)}</span>
+              {s.libelle} <span className="font-semibold tabular-nums">{fmtDuree(s.valeurs[survol] ?? null, locale, mode)}</span>
             </div>
           ))}
         </div>

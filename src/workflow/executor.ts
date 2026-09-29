@@ -270,8 +270,9 @@ export interface WorkflowExecutorDeps {
    * soustrairait à l'agent pour toujours.
    *
    * `workflowId` : le scénario qui remonte la conversation, requis. Le câblage en tire la cause que la frise du
-   * panneau Détail de l'Inbox affiche à côté de l'affectation qu'il pose (« automatique : scénario Bienvenue »,
-   * migration 0192) : un affectataire nommé par un bloc n'a pas d'auteur humain.
+   * panneau Détail de l'Inbox affiche à côté du passage à l'équipe et de l'affectation qu'il pose (« automatique :
+   * scénario Bienvenue », migrations 0192 et 0194) : un affectataire nommé par un bloc n'a pas d'auteur humain, et
+   * chaque passage, `escalade` ou non, ouvre une demande du Quantitatif > Performance.
    */
   escalateToHuman(tenantId: string, waId: string, assigneA: string | null, escalade: boolean, workflowId: string): Promise<void>;
   /**

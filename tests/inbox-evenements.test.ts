@@ -95,17 +95,21 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
     // Sans cet ordre, le drapeau serait lu après `ancien_detenteur = 'mba'`, qui rend `prise_mba` : l'inverse du geste.
     const c = corps('async setControlOwner(');
     expect(c).toMatch(/case when \$11::boolean then 'rendue_mba'\s+when maj\.ancien_detenteur = 'mba' then 'prise_mba'/);
-    expect(c).toContain('opts.rendAgentDeMeta === true]');
+    // `$11` : la onzième valeur, juste après l'acteur (`$9`) et la cause (`$10`).
+    expect(c).toContain('auteur.acteur, auteur.cause, opts.rendAgentDeMeta === true,');
   });
 
-  it('🔴 les bornes d’une demande (0194) : `escaladee` exige le drapeau ET un robot, `rendue_scenario` vient de l’équipe', () => {
-    // `escaladee` ouvre une demande du Quantitatif > Performance. Sans le drapeau, un opérateur qui prend le fil en
+  it('🔴 les bornes d’une demande (0194) : `escaladee` exige `ouvreUneDemande` ET un robot, `rendue_scenario` vient de l’équipe', () => {
+    // `escaladee` ouvre une demande du Quantitatif > Performance. Sans l'option, un opérateur qui prend le fil en
     // écrivant (`prisEnEcrivant`, de `app_workflow` à `app_human`) ouvrirait une demande déjà répondue, à 0 s.
-    // Et les deux viennent APRÈS les branches de l'agent de Meta : un fil qui le quitte reste `prise_mba`.
+    // `rendue_scenario` vient APRÈS les branches de l'agent de Meta : un fil qui le quitte reste `prise_mba`.
     const c = corps('async setControlOwner(');
-    expect(c).toMatch(/when \$3 = 'mba' then 'rendue_mba'\s+when \$8::boolean and \$3 = 'app_human' and maj\.ancien_detenteur = 'app_workflow' then 'escaladee'\s+when \$3 = 'app_workflow' and maj\.ancien_detenteur = 'app_human' then 'rendue_scenario' end\)/);
-    // Le drapeau `$8` est bien `escalade`, et rien d'autre.
+    expect(c).toMatch(/when \$3 = 'mba' then 'rendue_mba'\s+when \$3 = 'app_workflow' and maj\.ancien_detenteur = 'app_human' then 'rendue_scenario' end\)/);
+    // `escaladee` a SA ligne : un fil qui quitte l'agent de Meta pour l'équipe (la campagne au devenir Inbox) écrit
+    // la prise ET le passage. Le drapeau d'escalade (`$8`) n'y est pour rien (décision du 2026-09-29).
+    expect(c).toContain(`(case when $12::boolean and $3 = 'app_human' and maj.ancien_detenteur in ('app_workflow', 'mba') then 'escaladee' end)`);
     expect(c).toContain('opts.messageEnvoyeLe ?? null, opts.escalade === true, auteur.acteur');
+    expect(c).toMatch(/opts\.rendAgentDeMeta === true,\s+opts\.ouvreUneDemande === true\]/);
   });
 
   it('🔴 la frise ne nomme que des collaborateurs DE L’ESPACE (acteur, cible, et l’assigné du panneau)', () => {
@@ -167,6 +171,33 @@ describe('le contrôle du fil dit qui demande chaque bascule', () => {
     await b.fil.passerAUnHumain('t1', 'v', { escalade: true, cause: 'automatique : agent IA Léa' });
     expect(parDe(b)).toEqual([{ cause: 'automatique : scénario Bienvenue' }, { cause: 'automatique : agent IA Léa' }]);
     expect(b.ecritures.map((e) => e.opts?.escalade)).toEqual([true, true]);
+  });
+
+  it('🔴 seuls les passages d’un robot à l’équipe OUVRENT une demande, drapeau d’escalade ou non (2026-09-29)', async () => {
+    // Le bloc « passer à un humain » et l'agent IA, avec la marque ; un scénario démarré par le client qui passe la
+    // main sans rien avoir envoyé, sans elle (le client attend pourtant) ; la réponse à une campagne au devenir Inbox.
+    const b = bancDuFil({ conversations: { e: { owner: 'app_workflow' }, s: { owner: 'app_workflow' }, c: { owner: 'mba' } } });
+    await b.fil.passerAUnHumain('t1', 'e', { escalade: true, cause: 'automatique : scénario Bienvenue' });
+    await b.fil.passerAUnHumain('t1', 's', { escalade: false, cause: 'automatique : scénario Mot-clé' });
+    await b.fil.prendrePourLEquipe('t1', 'c', 'automatique : campagne Rentrée');
+    expect(b.ecritures.map((e) => [e.waId, e.owner, e.opts?.ouvreUneDemande, e.opts?.escalade])).toEqual([
+      ['e', 'app_human', true, true],
+      ['s', 'app_human', true, false],
+      ['c', 'app_human', true, undefined],
+    ]);
+  });
+
+  it('🔴 un opérateur qui écrit ou reprend la main, et l’attente d’une fin de parcours, n’en ouvrent JAMAIS', async () => {
+    // Trois bascules vers `app_human` : personne n'attend l'équipe (l'opérateur a déjà la main, le parcours a fini).
+    const b = bancDuFil({ conversations: { w: { owner: 'app_workflow' }, m: { owner: 'mba' }, f: { owner: 'app_workflow', enVol: 'wamid.X' } } });
+    await b.fil.prisEnEcrivant('t1', 'w', OPERATEUR);
+    await b.fil.reprendreLaMain('t1', 'm', OPERATEUR);
+    await b.fil.rendreApresParcours('t1', 'f');
+    expect(b.ecritures.map((e) => [e.waId, e.owner, e.opts?.ouvreUneDemande])).toEqual([
+      ['w', 'app_human', undefined],
+      ['m', 'app_human', undefined],
+      ['f', 'app_human', undefined],
+    ]);
   });
 
   it('la prise pour l’équipe porte la campagne que son appelant nomme', async () => {

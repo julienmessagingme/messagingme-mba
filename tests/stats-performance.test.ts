@@ -26,17 +26,27 @@ const MARIE: Qui = { genre: 'collaborateur', userId: 'u-marie', nom: 'Marie' };
 const JEAN: Qui = { genre: 'collaborateur', userId: 'u-jean', nom: 'Jean' };
 const AUTO: Qui = { genre: 'automatique' };
 const ANCIEN: Qui = { genre: 'ancien' };
+const nom = (q: Qui): string => (q.genre === 'collaborateur' ? q.nom : q.genre);
 
 let n = 0;
-/** Une demande ouverte à `ouverte`, avec sa réponse et sa fin optionnelles. */
-function demande(ouverte: string, o: { repondu?: [string, Qui]; close?: [string, Qui] } = {}): DemandeBrute {
+/**
+ * Une demande commencée à `debut` (le client attend), avec sa première réponse, sa dernière (par défaut la première)
+ * et sa fin optionnelles. `horsPeriode` : une demande que la base rend parce qu'elle est encore ouverte, commencée
+ * avant la période.
+ */
+function demande(
+  debut: string,
+  o: { repondu?: [string, Qui]; derniere?: string; close?: [string, Qui]; horsPeriode?: boolean } = {},
+): DemandeBrute {
   n += 1;
   return {
     conversationId: `cv${n}`,
-    ouverteLe: paris(ouverte),
-    jour: ouverte.slice(0, 10),
+    debutLe: paris(debut),
+    jour: debut.slice(0, 10),
+    dansLaPeriode: o.horsPeriode !== true,
     reponduLe: o.repondu ? paris(o.repondu[0]) : null,
     repondant: o.repondu ? o.repondu[1] : null,
+    derniereReponseLe: o.derniere ? paris(o.derniere) : o.repondu ? paris(o.repondu[0]) : null,
     closeLe: o.close ? paris(o.close[0]) : null,
     closePar: o.close ? o.close[1] : null,
   };
@@ -84,8 +94,8 @@ describe('calculerPerformance', () => {
   });
 
   it('🔴 une demande close SANS réponse est comptée à part, et n’entre PAS dans le temps de résolution', () => {
-    // Le balayage qui rend le fil au scénario au bout de deux heures ne mesure rien de l'équipe : le compter tirerait
-    // la médiane de résolution vers son délai.
+    // Personne n'y a travaillé : un passage sans marque d'escalade que le balayage rend au robot, l'archivage d'un
+    // message sans suite. La compter tirerait la médiane de résolution vers ces délais.
     const p = calculerPerformance([
       demande('2026-09-08 10:00', { close: ['2026-09-08 12:00', AUTO] }),
       demande('2026-09-08 11:00', { repondu: ['2026-09-08 11:02', MARIE], close: ['2026-09-08 11:10', MARIE] }),
@@ -93,8 +103,23 @@ describe('calculerPerformance', () => {
     expect(p.resoluesSansReponse).toBe(1);
     expect(p.resolues).toBe(1);
     expect(p.resolution).toEqual({ mediane: 10 * MIN, p90: 10 * MIN, n: 1 });
-    // La clôture automatique sans réponse n'apparaît dans aucune ligne : ce n'est un travail de personne.
-    expect(p.parCollaborateur.map((l) => l.qui)).toEqual([MARIE]);
+  });
+
+  it('🔴 « demandes closes » compte TOUTES les clôtures, avec ou sans réponse ; la médiane, les seules avec réponse', () => {
+    // Un collaborateur qui archive deux messages sans suite a clos deux demandes : les taire le ferait paraître
+    // inactif. Mais une clôture sans réponse n'a pas de durée de travail, elle reste hors de la médiane.
+    const p = calculerPerformance([
+      demande('2026-09-08 10:00', { close: ['2026-09-08 10:20', JEAN] }),
+      demande('2026-09-08 10:30', { close: ['2026-09-08 10:40', JEAN] }),
+      demande('2026-09-08 11:00', { repondu: ['2026-09-08 11:02', MARIE], close: ['2026-09-08 11:10', JEAN] }),
+      demande('2026-09-08 14:00', { close: ['2026-09-08 16:00', AUTO] }),
+    ], ctx);
+    expect(p.parCollaborateur.map((l) => [nom(l.qui), l.reponses, l.closes, l.resolutionMediane])).toEqual([
+      ['Jean', 0, 3, 10 * MIN],
+      ['Marie', 1, 0, null],
+      // Le délai de reprise qui rend un passage sans réponse au robot : une clôture, sans médiane.
+      ['automatique', 0, 1, null],
+    ]);
   });
 
   it('une clôture automatique après une réponse va dans la ligne « automatique », un compte supprimé dans « ancien »', () => {
@@ -110,6 +135,22 @@ describe('calculerPerformance', () => {
     ]);
   });
 
+  it('🔴 une fin AUTOMATIQUE après une réponse : la résolution s’arrête à la DERNIÈRE réponse, pas au délai de reprise', () => {
+    // Marie répond à 10 h 05 et 10 h 40 sans cliquer « Traité » ; le balayage rend le fil deux heures après sa
+    // dernière réponse. Compter jusqu'à 12 h 40 mesurerait le minuteur : la demande se résout à 10 h 40.
+    const auto = demande('2026-09-08 10:00', { repondu: ['2026-09-08 10:05', MARIE], derniere: '2026-09-08 10:40', close: ['2026-09-08 12:40', AUTO] });
+    // La même, close par un collaborateur : sa fin reste son geste.
+    const main = demande('2026-09-09 10:00', { repondu: ['2026-09-09 10:05', MARIE], derniere: '2026-09-09 10:40', close: ['2026-09-09 12:40', JEAN] });
+    const p = calculerPerformance([auto, main], ctx);
+    expect(p.parJour.map((j) => [j.jour, j.resolutionMediane])).toEqual([
+      ['2026-09-08', 40 * MIN],
+      ['2026-09-09', 160 * MIN],
+    ]);
+    // Elle reste « résolue », et attribuée à la ligne « automatique ».
+    expect(p.resolues).toBe(2);
+    expect(p.parCollaborateur.find((l) => l.qui.genre === 'automatique')?.resolutionMediane).toBe(40 * MIN);
+  });
+
   it('🔴 les encore ouvertes : comptées, la plus ancienne datée, et une réponse ne les ferme pas', () => {
     const p = calculerPerformance([
       demande('2026-09-09 10:00'),
@@ -120,7 +161,22 @@ describe('calculerPerformance', () => {
     expect(p.plusAncienneOuverte).toBe(paris('2026-09-08 16:00').toISOString());
     // La réponse d'une demande encore ouverte compte dans le temps de réponse.
     expect(p.reponse.n).toBe(2);
-    expect(p.demandes).toBe(p.resolues + p.resoluesSansReponse + p.ouvertes);
+  });
+
+  it('🔴 « encore ouvertes » porte sur TOUTES les demandes ouvertes, même commencées avant la période', () => {
+    // Une demande de 31 jours toujours ouverte ne doit pas disparaître d'une vue de 30. Elle ne compte QUE là :
+    // ni dans les demandes de la période, ni dans le temps de réponse, ni dans la courbe, ni dans le tableau.
+    const p = calculerPerformance([
+      demande('2026-08-01 10:00', { repondu: ['2026-08-01 10:30', JEAN], horsPeriode: true }),
+      demande('2026-09-08 11:00', { repondu: ['2026-09-08 11:10', MARIE], close: ['2026-09-08 11:20', MARIE] }),
+      demande('2026-09-08 16:00'),
+    ], ctx);
+    expect(p.ouvertes).toBe(2);
+    expect(p.plusAncienneOuverte).toBe(paris('2026-08-01 10:00').toISOString());
+    expect(p.demandes).toBe(2);
+    expect(p.reponse.n).toBe(1);
+    expect(p.parJour.map((j) => j.jour)).toEqual(['2026-09-08']);
+    expect(p.parCollaborateur.map((l) => nom(l.qui))).toEqual(['Marie']);
   });
 
   it('🔴 en heures d’OUVERTURE : la nuit et le week-end ne comptent pas, et l’écran sait qu’on compte ainsi', () => {

@@ -1,7 +1,7 @@
 ---
 ecran: perf-synthese
 source_section: Analytics (menu Analytics)
-source_empreinte: d7ec0b
+source_empreinte: 5bed2b
 ---
 # Lire mes résultats dans le Performance Lab
 
@@ -40,14 +40,19 @@ par modèle. Un tableau dit aussi **qui a écrit les messages de service** : l'I
 personne de votre équipe, avec le détail de l'IA (votre agent, celui de Meta, un agent tiers).
 
 La page **Quantitatif > Performance** mesure votre équipe sur les conversations qu'un robot lui a passées (un
-scénario, un agent IA ou l'agent de Meta) : le **temps de réponse**, jusqu'au premier message écrit dans l'Inbox
-par un collaborateur, et le **temps de résolution**, jusqu'au premier « Traité », archivage ou retour à un robot.
-Vous y lisez la médiane et le 90e centile de chacun, la courbe par jour et un tableau par collaborateur (la réponse
-à celui qui a répondu le premier, la résolution à celui qui a clos). Les durées se comptent **en heures
-d'ouverture** de votre espace, réglées dans Paramètres : une demande arrivée vendredi soir et répondue lundi matin
-n'a pas attendu tout le week-end. Un chiffre qu'on ne connaît pas encore s'écrit « non disponible », jamais zéro ;
-les demandes closes sans aucune réponse sont comptées à part ; et la mesure démarre à sa mise en service, que la
-page date.
+scénario, un agent IA, l'agent de Meta, ou la réponse à une campagne qui arrive dans l'Inbox). Le chrono part quand
+le client a écrit : un destinataire de campagne qui ne répond jamais ne compte pas, et celui qui répond deux jours
+plus tard compte à partir de sa réponse. Le **temps de réponse** va jusqu'au premier message écrit dans l'Inbox par
+un collaborateur, et le **temps de résolution** jusqu'au premier « Traité », archivage ou retour à un robot ; si
+personne ne clique « Traité » et que la console rend la conversation au robot après le délai de reprise, la
+résolution s'arrête à la dernière réponse de l'équipe. Vous y lisez la médiane et le 90e centile de chacun, la
+courbe par jour et un tableau par collaborateur (la réponse à celui qui a répondu le premier, la résolution à celui
+qui a clos, et toutes les demandes qu'il a closes, avec ou sans réponse). Les durées se comptent **en heures
+d'ouverture** de votre espace, réglées dans Paramètres, et s'écrivent alors en heures, jamais en jours : une
+demande arrivée vendredi soir et répondue lundi matin n'a pas attendu tout le week-end. Un chiffre qu'on ne connaît
+pas encore s'écrit « non disponible », jamais zéro ; les demandes closes sans aucune réponse sont comptées à part ;
+« encore ouvertes » compte toutes les demandes ouvertes en ce moment, quelle que soit la période choisie ; et la
+mesure démarre à sa mise en service, que la page date.
 
 Le **funnel par campagne** va de l'envoi à la réponse. Il ne suit pas le sélecteur de période, il porte
 toujours sur la totalité de la campagne choisie. « Délivrés » et « lus » affichent un tiret quand Meta n'a
