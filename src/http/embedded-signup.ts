@@ -40,6 +40,15 @@ export interface EmbeddedSignupRouteDeps {
   inscriptions: {
     linkTenant(input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }): Promise<void>;
   };
+  /**
+   * Le crédit de bienvenue (5 €, décision de Julien du 2026-09-29), pour un numéro de cet espace que Meta dit
+   * VÉRIFIÉ. La route ne l'appelle qu'avec cette preuve : à l'inscription si Meta le dit déjà vérifié (ou vient
+   * d'accepter son enregistrement), sinon à l'activation, dès que le code est accepté. Une fois par espace, jamais
+   * deux fois pour un numéro : ce sont les contraintes de la base qui le tiennent (migrations 0191 et 0193), donc
+   * l'appeler deux fois est sans effet. Requis : un câblage qui l'oublierait relierait des numéros sans rien offrir.
+   * Ne fait pas attendre la route pour la clé de modèle : le câblage remonte son plafond en arrière-plan.
+   */
+  offrirCredit(tenantId: string, phoneNumberId: string): Promise<void>;
   /** Persiste le token business (le câblage chiffre avant, la route ne voit jamais le stockage en clair). */
   saveCredentials(wabaId: string, tenantId: string, businessToken: string, pin: string | null): Promise<void>;
 
@@ -108,10 +117,11 @@ export function cleDemandeCode(phoneNumberId: string): string {
  *  - GET  /embedded-signup/config   : de quoi le front lance la popup (appId + configId publics, pas de secret).
  *  - POST /embedded-signup/complete : reçoit { code, wabaId, phoneNumberId } de la popup (code TTL 30 s),
  *    échange le code contre un business token, rattache WABA et numéro à l'espace, abonne les webhooks, register
- *    un numéro neuf (jamais un numéro déjà CONNECTED ni non vérifié), stocke le token chiffré. Les étapes non
- *    bloquantes qui échouent remontent en `warnings`.
+ *    un numéro neuf (jamais un numéro déjà CONNECTED ni non vérifié), stocke le token chiffré, et offre le crédit
+ *    de bienvenue si Meta dit le numéro vérifié. Les étapes non bloquantes qui échouent remontent en `warnings`.
  *  - POST /numero/code              : Meta envoie le code de vérification du numéro (appel par défaut, ou SMS).
- *  - POST /numero/activer           : vérifie le code s'il le faut, puis enregistre le numéro sur la Cloud API.
+ *  - POST /numero/activer           : vérifie le code s'il le faut (le crédit de bienvenue part alors), puis
+ *    enregistre le numéro sur la Cloud API.
  * Les deux dernières existent parce que la fenêtre Meta peut se terminer sur un numéro non vérifié.
  */
 export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
@@ -120,6 +130,20 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
   // Les deux routes d'activation appellent Meta sur un quota étroit : elles portent la limite coûteuse, comme
   // l'import ou l'aperçu de site.
   const couteux = gardeEtendue(garde, limiteCouteuse);
+
+  /**
+   * Le crédit de bienvenue, APRÈS le geste que Meta a accepté. Il ne lève jamais : Meta a déjà relié, vérifié ou
+   * activé le numéro, et faire échouer la route annoncerait une panne au client, qui recommencerait un geste
+   * compté par Meta. Un échec se journalise ; l'offre reste due au prochain geste réussi (elle est idempotente).
+   */
+  const offrir = async (tenant: string, phoneNumberId: string): Promise<void> => {
+    try {
+      await deps.offrirCredit(tenant, phoneNumberId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`credit offert: non ecrit (tenant ${tenant}, numéro ${phoneNumberId}) : ${texteDe(err)}`);
+    }
+  };
 
   app.get('/tenants/:tenantId/embedded-signup/config', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -261,6 +285,14 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     await journal(tenant, req, 'numero.connecte', { kind: 'phone_number', id: phoneNumberId }, {
       wabaId, avertissements: warnings.length,
     });
+
+    // 7. 🔴 Le crédit de bienvenue, SEULEMENT pour un numéro que Meta dit vérifié : déjà sur la Cloud API, code
+    //    vérifié, ou enregistrement que Meta vient d'accepter (`pin` n'est gardé que dans ce cas). Il était offert
+    //    à l'étape 3, avant ce constat : un numéro `NOT_VERIFIED` recevait ses 5 €. Sinon, c'est l'activation qui
+    //    l'offrira, dès que le code sera accepté.
+    if (phone.status === 'CONNECTED' || phone.codeVerificationStatus === 'VERIFIED' || pin !== null) {
+      await offrir(tenant, phoneNumberId);
+    }
     return reply.code(200).send({
       connected: true,
       wabaId,
@@ -352,8 +384,12 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       return reply.code(422).send({ error: `état du numéro illisible chez Meta : ${msg}` });
     }
     // Déjà activé : on ne fait rien et on le dit. Un register de plus serait un essai brûlé pour confirmer ce
-    // que Meta vient de nous dire.
-    if (etat.status === 'CONNECTED') return reply.code(200).send({ actif: true, deja: true });
+    // que Meta vient de nous dire. Le numéro est vérifié (Meta l'a activé, par exemple depuis son propre écran) :
+    // le crédit de bienvenue lui revient s'il ne l'a pas déjà eu.
+    if (etat.status === 'CONNECTED') {
+      await offrir(tenant, phoneNumberId);
+      return reply.code(200).send({ actif: true, deja: true });
+    }
 
     // Vérification, seulement si Meta dit que le numéro ne l'est pas. Sur un numéro déjà vérifié, elle
     // échouerait, et l'échec coûterait un essai.
@@ -371,6 +407,10 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
         return reply.code(422).send({ error: `Meta a refusé ce code : ${msg}` });
       }
     }
+
+    // 🔴 Ici, Meta dit le numéro VÉRIFIÉ : il l'était déjà, ou il vient d'accepter le code. C'est le point juste du
+    // crédit de bienvenue, avant l'enregistrement : un enregistrement refusé ensuite ne défait pas la vérification.
+    await offrir(tenant, phoneNumberId);
 
     // Enregistrement sur la Cloud API. Le PIN est le PIN 2FA du numéro : tiré au CSPRNG, et conservé seulement
     // si Meta l'accepte. En conserver un que Meta n'a pas posé donnerait un secret faux en base, qui ferait

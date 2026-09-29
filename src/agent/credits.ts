@@ -54,5 +54,12 @@ export interface LigneHistorique {
   raison: string;
   jour: string | null;
   at: string;
+  /**
+   * Le paiement Stripe d'une ligne `achat` (sa session Checkout), `null` sur toute autre ligne et sur un achat
+   * antérieur au lien (migration 0193). C'est l'identifiant que la route de facture reçoit.
+   */
+  paiementId: string | null;
+  /** Ce paiement a-t-il une facture chez Stripe ? L'écran n'offre le lien « Facture » que dans ce cas. */
+  facture: boolean;
 }
 

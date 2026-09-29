@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  CAUSE_MAX, auteurDeLEnvoi, automatique, colonnesAuteur, type AuteurDuChangement,
+  CAUSE_CLE_API, CAUSE_HORS_COMPTE, CAUSE_MAX, auteurDeLEnvoi, automatique, colonnesAuteur, type AuteurDuChangement,
 } from '../src/inbox/evenements';
 import { assignerReponse, type AssignationDeps, type CampagneAssignante } from '../src/inbox/assignation-campagne';
 import { bancDuFil } from './banc-du-fil';
@@ -20,11 +20,14 @@ describe('qui a fait le geste : un collaborateur, ou une cause', () => {
     expect(colonnesAuteur({ collaborateur: UUID })).toEqual({ acteur: UUID, cause: null });
   });
 
-  it('🔴 un identifiant qui n’est pas un uuid devient null AVANT la base', () => {
+  it('🔴 un identifiant qui n’est pas un uuid devient null AVANT la base, et porte une CAUSE', () => {
     // Une clé d'API (`apikey:...`) ou l'identité d'observation de /ops, passée à `::uuid`, ferait échouer la
-    // requête entière : c'est-à-dire le CHANGEMENT lui-même, pour une ligne de journal.
-    expect(colonnesAuteur({ collaborateur: 'apikey:abc' })).toEqual({ acteur: null, cause: null });
-    expect(colonnesAuteur({ collaborateur: null })).toEqual({ acteur: null, cause: null });
+    // requête entière : c'est-à-dire le CHANGEMENT lui-même, pour une ligne de journal. Et sans cause, la ligne
+    // n'aurait ni acteur ni cause, ce que la lecture réserve au collaborateur SUPPRIMÉ : une clé d'API s'affichait
+    // « ancien collaborateur » (relecture du 2026-09-29).
+    expect(colonnesAuteur({ collaborateur: 'apikey:abc' })).toEqual({ acteur: null, cause: CAUSE_CLE_API });
+    expect(colonnesAuteur({ collaborateur: 'ops-observation' })).toEqual({ acteur: null, cause: CAUSE_HORS_COMPTE });
+    expect(colonnesAuteur({ collaborateur: null })).toEqual({ acteur: null, cause: CAUSE_HORS_COMPTE });
   });
 
   it('une cause est bornée, jamais refusée : un nom de campagne trop long ne fait pas échouer l’assignation', () => {
@@ -80,6 +83,27 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
     expect(corps('async archiverConversation(')).toContain('this.basculerRangement(');
     expect(corps('async marquerTraitee(')).toContain('this.basculerRangement(');
   });
+
+  it('🔴 l’état d’avant se lit sous `for no key update`, jamais `for update` (relecture du 2026-09-29)', () => {
+    // `for update` bloque aussi les insertions filles (message, événement, analyse), dont la clé étrangère pose
+    // `for key share` sur la conversation. Le verrou juste est celui que l'update prend lui-même.
+    expect(source).not.toMatch(/for update\) avant/);
+    expect(source.match(/for no key update\) avant/g)).toHaveLength(6);
+  });
+
+  it('🔴 « rendre » à l’agent de Meta se classe AVANT la lecture des colonnes', () => {
+    // Sans cet ordre, le drapeau serait lu après `ancien_detenteur = 'mba'`, qui rend `prise_mba` : l'inverse du geste.
+    const c = corps('async setControlOwner(');
+    expect(c).toMatch(/case when \$11::boolean then 'rendue_mba'\s+when maj\.ancien_detenteur = 'mba' then 'prise_mba'/);
+    expect(c).toContain('opts.rendAgentDeMeta === true]');
+  });
+
+  it('🔴 la frise ne nomme que des collaborateurs DE L’ESPACE (acteur, cible, et l’assigné du panneau)', () => {
+    const c = corps('async detailConversation(');
+    expect(c).toContain('left join users ua on ua.id = e.acteur_id and ua.tenant_id = e.tenant_id');
+    expect(c).toContain('left join users uc on uc.id = e.cible_id and uc.tenant_id = e.tenant_id');
+    expect(c).toContain('left join users u on u.id = c.assigned_to and u.tenant_id = c.tenant_id');
+  });
 });
 
 describe('le contrôle du fil dit qui demande chaque bascule', () => {
@@ -91,6 +115,19 @@ describe('le contrôle du fil dit qui demande chaque bascule', () => {
     await b.fil.reprendreLaMain('t1', 'm', OPERATEUR);
     await b.fil.rendreLaMain('t1', 'h', OPERATEUR);
     expect(parDe(b)).toEqual([OPERATEUR, OPERATEUR]);
+  });
+
+  it('🔴 « Rendre la main » sur un fil que notre colonne croit déjà à l’agent reste un RENDU dans la frise', async () => {
+    // Relecture du 2026-09-29 : ce chemin écrit `app_workflow` (on ne rouvre que notre côté), et la frise, qui ne
+    // lisait que les colonnes, y voyait un fil QUITTER l'agent, donc « prise à l'agent de Meta par Alice ».
+    const b = bancDuFil({ conversations: { m: { owner: 'mba' }, h: { owner: 'app_human' } } });
+    expect(await b.fil.rendreLaMain('t1', 'm', OPERATEUR)).toBe('app_workflow');
+    expect(b.ecritures[0]!.opts?.rendAgentDeMeta).toBe(true);
+    // Les autres gestes ne le posent pas : un vrai rendu écrit `mba`, que les colonnes classent seules, et une
+    // prise reste une prise.
+    await b.fil.rendreLaMain('t1', 'h', OPERATEUR);
+    await b.fil.reprendreLaMain('t1', 'm', OPERATEUR);
+    expect(b.ecritures.slice(1).map((e) => e.opts?.rendAgentDeMeta)).toEqual([undefined, undefined]);
   });
 
   it('🔴 un envoi prend le fil au nom de celui qui écrit', async () => {

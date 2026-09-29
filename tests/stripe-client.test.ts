@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import {
-  creerClientStripe, creerSessionCheckout, estCleLive, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
+  creerClientStripe, creerSessionCheckout, estCleLive, lireFactureStripe, lirePrixStripe, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
 } from '../src/stripe/client';
 import { creditDeLOffre, definitionOffre, estOffreRecharge } from '../src/stripe/offres';
 
@@ -17,6 +17,13 @@ class FauxTransport implements TransportStripe {
   constructor(private readonly reponses: Array<ReponseStripe | Error>) {}
   async post(url: string, corps: string, entetes: Record<string, string>): Promise<ReponseStripe> {
     this.appels.push({ url, corps: new URLSearchParams(corps), entetes });
+    const r = this.reponses.shift();
+    if (!r) throw new Error('appel non prévu');
+    if (r instanceof Error) throw r;
+    return r;
+  }
+  async get(url: string, entetes: Record<string, string>): Promise<ReponseStripe> {
+    this.appels.push({ url, corps: new URLSearchParams(), entetes });
     const r = this.reponses.shift();
     if (!r) throw new Error('appel non prévu');
     if (r instanceof Error) throw r;
@@ -49,6 +56,7 @@ describe('créer une session Checkout', () => {
       customer: 'cus_A',
       'line_items[0][price]': 'price_refill_50',
       'line_items[0][quantity]': '1',
+      'adaptive_pricing[enabled]': 'false',
       'automatic_tax[enabled]': 'true',
       'tax_id_collection[enabled]': 'true',
       'customer_update[name]': 'auto',
@@ -91,6 +99,46 @@ describe('créer une session Checkout', () => {
   it('🔴 un 200 au corps illisible échoue au lieu de deviner une adresse', async () => {
     const t = new FauxTransport([{ status: 200, json: { id: 'cs_x' } }]);
     await expect(creerSessionCheckout(t, demande())).rejects.toBeInstanceOf(StripeError);
+  });
+});
+
+describe('lire un prix', () => {
+  it('🔴 un GET sur le prix, clé en Bearer, version épinglée, SANS clé d’idempotence (une lecture ne crée rien)', async () => {
+    const t = new FauxTransport([{ status: 200, json: { id: 'price_refill_50', unit_amount: 5_000, currency: 'eur', active: true } }]);
+    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_refill_50' })).toEqual({ montantCentimes: 5_000, devise: 'eur' });
+    expect(t.appels[0]!.url).toBe('https://api.stripe.com/v1/prices/price_refill_50');
+    expect(t.appels[0]!.entetes).toEqual({ authorization: `Bearer ${CLE}`, 'stripe-version': VERSION_API_STRIPE });
+  });
+
+  it('un prix sans montant unitaire se lit `null` ; un corps illisible, ou un refus, lève', async () => {
+    const t = new FauxTransport([
+      { status: 200, json: { id: 'price_x', unit_amount: null, currency: 'eur' } },
+      { status: 200, json: { id: 'pas_un_prix' } },
+      { status: 404, json: { error: { type: 'invalid_request_error', code: 'resource_missing', message: 'No such price' } } },
+    ]);
+    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).toEqual({ montantCentimes: null, devise: 'eur' });
+    await expect(lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).rejects.toBeInstanceOf(StripeError);
+    await expect(lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).rejects.toMatchObject({ operation: 'prix', status: 404, code: 'resource_missing' });
+  });
+});
+
+describe('lire une facture', () => {
+  it('🔴 un GET sur la facture, clé en Bearer, version épinglée ; l’adresse de sa page hébergée', async () => {
+    const t = new FauxTransport([{ status: 200, json: { id: 'in_1', hosted_invoice_url: 'https://invoice.stripe.com/i/acct_x/in_1', status: 'paid' } }]);
+    expect(await lireFactureStripe(t, { cle: CLE, facture: 'in_1' })).toEqual({ url: 'https://invoice.stripe.com/i/acct_x/in_1' });
+    expect(t.appels[0]!.url).toBe('https://api.stripe.com/v1/invoices/in_1');
+    expect(t.appels[0]!.entetes).toEqual({ authorization: `Bearer ${CLE}`, 'stripe-version': VERSION_API_STRIPE });
+  });
+
+  it('🔴 sans page hébergée : `null`, jamais une adresse inventée ; une adresse non https est illisible', async () => {
+    const t = new FauxTransport([
+      { status: 200, json: { id: 'in_1' } },
+      { status: 200, json: { id: 'in_1', hosted_invoice_url: null } },
+      { status: 200, json: { id: 'in_1', hosted_invoice_url: 'http://invoice.stripe.com/i/in_1' } },
+    ]);
+    expect(await lireFactureStripe(t, { cle: CLE, facture: 'in_1' })).toEqual({ url: null });
+    expect(await lireFactureStripe(t, { cle: CLE, facture: 'in_1' })).toEqual({ url: null });
+    await expect(lireFactureStripe(t, { cle: CLE, facture: 'in_1' })).rejects.toMatchObject({ name: 'StripeError', operation: 'facture' });
   });
 });
 

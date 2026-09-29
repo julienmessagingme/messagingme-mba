@@ -38,8 +38,9 @@ describe('migration 0191', () => {
     );
     // Sans clé étrangère, délibérément : la supprimer avec l'espace rouvrirait l'offre au même numéro.
     expect(code).not.toMatch(/credits_offerts \([^;]*references/);
-    // `on conflict do nothing` SANS cible : il doit couvrir les DEUX contraintes, pas l'une des deux.
-    expect(credits).toContain('insert into credits_offerts (tenant_id, phone_number_id, montant_micro_eur) values ($1, $2, $3) on conflict do nothing');
+    // `on conflict do nothing` SANS cible : il doit couvrir TOUTES les contraintes (celles-ci, et le numéro affiché
+    // de 0193), pas l'une d'elles.
+    expect(credits).toMatch(/insert into credits_offerts \(tenant_id, phone_number_id, numero_affiche, montant_micro_eur\) select [^;]*? on conflict do nothing`/);
   });
 
   it('🔴 pas rétroactif : les espaces qui ont déjà un numéro sont marqués, à zéro', () => {

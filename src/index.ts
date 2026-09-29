@@ -138,6 +138,8 @@ import { tenter } from './lib/tenter';
 import { messageDe } from './lib/erreur';
 import { PgStripeStore } from './stripe/store.pg';
 import { estCleLive, FetchTransportStripe } from './stripe/client';
+import { creerPayeurAutorise } from './http/credit-stripe';
+import { creerOffreDeBienvenue } from './account/offre-bienvenue';
 
 async function main(): Promise<void> {
   /**
@@ -264,6 +266,7 @@ async function main(): Promise<void> {
       teamId: config.VERCEL_TEAM_ID,
       cleGatewayMaison: config.AI_GATEWAY_API_KEY,
       tauxEurParDollar: config.EUR_PER_USD,
+      journal: (msg, err, tenant) => { journaliser('error', msg, { err, tenantId: tenant, pour: 'cle_modele' }); },
     }
     : null;
 
@@ -303,6 +306,13 @@ async function main(): Promise<void> {
   const traductionStore = new PgTraductionStore(pool);
   /** Les clients Stripe des espaces et les paiements déjà crédités (migration 0191). L'API seule s'en sert. */
   const stripeStore = new PgStripeStore(pool);
+  /**
+   * Les travaux qu'une réponse laisse en route : les gestes du relais de l'agent de Meta (un envoi attend la fin du
+   * tour de l'agent, une quinzaine de secondes), le signal d'un clic sur un lien suivi, l'ouverture d'une clé de
+   * modèle pour une première traduction, et la remontée d'un plafond après un crédit. L'arrêt de cette copie les
+   * attend avant de fermer la file et le pool. ⚠️ Déclaré ICI, avant le traducteur qui en a besoin.
+   */
+  const travauxEnVol = creerTravauxEnVol();
   const traducteur = gateway && config.TRADUCTION_MODELE
     ? creerTraducteur({
       client: gateway,
@@ -312,6 +322,7 @@ async function main(): Promise<void> {
         cles: clesGateway,
         provision: provisionCle,
         journal: (msg, err, tenantId) => { journaliser('error', msg, { err, tenantId, pour: 'traduction' }); },
+        travaux: travauxEnVol,
       }),
       tauxEurParDollar: config.EUR_PER_USD,
       commissionPct: config.COMMISSION_MODELE_PCT,
@@ -474,13 +485,6 @@ async function main(): Promise<void> {
      */
     takeControl: fil.prisEnEcrivant,
   } satisfies DepsRepondre;
-
-  /**
-   * Les travaux qu'une réponse laisse en route : les gestes du relais de l'agent de Meta (un envoi attend la fin du
-   * tour de l'agent, une quinzaine de secondes) et le signal d'un clic sur un lien suivi. L'arrêt de cette copie les
-   * attend avant de fermer la file et le pool.
-   */
-  const travauxEnVol = creerTravauxEnVol();
 
   const app = buildServer({
     /**
@@ -802,26 +806,29 @@ async function main(): Promise<void> {
         : null,
       clients: stripeStore,
       // 🔴 En mode test, seul un exploitant (`OPS_EMAILS`) paie : sinon, le temps des essais, n'importe quel admin
-      // client recevrait de vrais euros de modèle contre une carte de test.
-      payeurAutorise: async (userId: string) => {
-        if (estCleLive(config.STRIPE_SECRET_KEY)) return true;
-        const moi = await userStore.getById(userId);
-        return moi !== null && estAdresseOps(opsEmails, moi.email);
-      },
+      // client recevrait de vrais euros de modèle contre une carte de test. La règle et son test :
+      // `creerPayeurAutorise`, `tests/http-credit-stripe.test.ts`.
+      payeurAutorise: creerPayeurAutorise({
+        livemode: estCleLive(config.STRIPE_SECRET_KEY),
+        adresseDe: async (userId: string) => (await userStore.getById(userId))?.email ?? null,
+        estExploitant: (adresse: string) => estAdresseOps(opsEmails, adresse),
+      }),
+      // La facture d'un achat, relue dans les paiements de l'espace (lien « Facture » de la page Crédit IA).
+      factures: stripeStore,
     },
-    // Le webhook de Stripe, monté seulement avec son secret (une signature sans secret ne prouverait rien).
+    // Le webhook de Stripe, monté seulement avec son secret (une signature sans secret ne prouverait rien). La
+    // configuration refuse de démarrer avec le secret sans la clé, ou l'inverse : monté, il connaît donc le mode.
     ...(config.STRIPE_WEBHOOK_SECRET ? {
       stripeWebhook: {
         secret: config.STRIPE_WEBHOOK_SECRET,
+        livemode: estCleLive(config.STRIPE_SECRET_KEY),
         paiements: stripeStore,
         // 🔴 Le plafond de la clé de modèle suit l'achat, exactement comme après une recharge par `/ops` : sinon le
         // client paie et Vercel le coupe au plafond d'avant. La route répond sans l'attendre : l'arrêt du processus,
         // lui, l'attend (`travauxEnVol`), pour ne pas couper l'appel à Vercel en route.
-        apresCredit: (tenantId: string, creditMicroEur: number) => travauxEnVol.suivre((async () => {
+        apresCredit: (tenantId: string) => travauxEnVol.suivre((async () => {
           if (!provisionCle) return;
-          await remonterPlafondApresRecharge(provisionCle, tenantId, creditMicroEur, (msg, err) => {
-            journaliser('error', msg, { err, tenantId, pour: 'achat' });
-          });
+          await remonterPlafondApresRecharge(provisionCle, tenantId);
         })()),
       },
     } : {}),
@@ -1411,25 +1418,20 @@ async function main(): Promise<void> {
         graphVersion: config.META_GRAPH_VERSION,
         meta: esClient,
         inscriptions: {
-          /**
-           * La liaison offre le crédit de bienvenue au premier numéro de l'espace (dans sa transaction). 🔴 Un espace
-           * qui a déjà une clé de modèle voit son plafond remonter du montant offert, comme après une recharge : sinon
-           * Vercel le couperait avant qu'il ait consommé ce crédit.
-           * ⚠️ Ne lève JAMAIS après la liaison : la route enchaîne l'abonnement aux webhooks et la conservation du
-           * jeton, et une exception ici laisserait un numéro relié qui ne reçoit rien. Un plafond non remonté se
-           * journalise et se rattrape à la recharge suivante.
-           */
-          linkTenant: async (input) => {
-            const { creditOffertMicroEur } = await esCredentialsStore.linkTenant(input);
-            if (creditOffertMicroEur > 0 && provisionCle) {
-              const journal = (msg: string, err: unknown): void => {
-                journaliser('error', msg, { err, tenantId: input.tenantId, pour: 'credit_offert' });
-              };
-              await remonterPlafondApresRecharge(provisionCle, input.tenantId, creditOffertMicroEur, journal)
-                .catch((err: unknown) => { journal('plafond gateway non remonte', err); });
-            }
-          },
+          linkTenant: (input) => esCredentialsStore.linkTenant(input),
         },
+        /**
+         * Le crédit de bienvenue, que la route n'appelle que pour un numéro que Meta dit vérifié. 🔴 Un espace qui a
+         * déjà une clé de modèle voit son plafond remonter, comme après une recharge (sinon Vercel le couperait avant
+         * qu'il ait consommé ce crédit), EN ARRIÈRE-PLAN et suivi par l'arrêt propre : Vercel peut prendre 30 s, que
+         * l'inscription n'a pas à attendre (`creerOffreDeBienvenue`).
+         */
+        offrirCredit: creerOffreDeBienvenue({
+          offrir: (tenant: string, phoneNumberId: string) => esCredentialsStore.offrirCredit(tenant, phoneNumberId),
+          remonterPlafond: provisionCle ? (tenant: string) => remonterPlafondApresRecharge(provisionCle, tenant) : null,
+          travaux: travauxEnVol,
+          journal: (msg, err, tenant) => { journaliser('error', msg, { err, tenantId: tenant, pour: 'credit_offert' }); },
+        }),
         // 🔴 Chiffrement au repos ici (la route ne voit jamais le stockage) : AES-GCM avec ENCRYPTION_KEY,
         // pour le token et le PIN 2FA du numéro (un secret Meta).
         saveCredentials: (waba: string, tenant: string, token: string, pin: string | null) =>
@@ -1968,13 +1970,10 @@ async function main(): Promise<void> {
         if ((await opsStore.getTenantName(tenantId)) === null) return null;
         const solde = await credits.crediter(tenantId, montant, note);
         // 🔴 Le plafond de la clé suit le rechargement, sinon le client paie et reste bloqué au plafond
-        // d'avant. C'est le seul endroit où du crédit est ajouté. Ne lève pas et n'annule rien : le
-        // rechargement est écrit, et le plafond rattrapera au mouvement suivant.
-        if (provisionCle) {
-          await remonterPlafondApresRecharge(provisionCle, tenantId, montant, (msg, err) => {
-            journaliser('error', msg, { err, tenantId });
-          });
-        }
+        // d'avant. Les deux autres crédits (achat Stripe, crédit de bienvenue) le remontent aussi, par la même
+        // fonction. Ne lève pas et n'annule rien : le rechargement est écrit, et le plafond rattrapera à la
+        // remontée suivante, qui recalcule depuis le solde.
+        if (provisionCle) await remonterPlafondApresRecharge(provisionCle, tenantId);
         return solde;
       },
       /**

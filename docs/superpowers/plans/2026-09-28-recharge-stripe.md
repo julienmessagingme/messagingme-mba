@@ -15,8 +15,8 @@ paiement) et portent des invariants invisibles (idempotence d'un paiement, plafo
 Aucun workflow. Les jaunes de la relecture se poussent après le déploiement.
 
 Essai réel qui clôt le lot 1 : sur l'espace MessagingMe, une traduction dans l'Inbox fait descendre le solde du
-coût majoré de 10 % et ajoute (ou grossit) la ligne « traductions du jour » ; un espace créé pour l'essai
-affiche 5 € offerts.
+coût majoré de 10 % et ajoute (ou grossit) la ligne « traductions du jour » ; un espace dont le premier numéro
+vient d'être vérifié par Meta affiche 5 € offerts (décision du 2026-09-29, plus un espace simplement créé).
 Essai réel qui clôt le lot 2 : un vrai Refill 50 € en live sur l'espace MessagingMe (solde +50 € une seule fois,
 webhook rejoué depuis Stripe sans second crédit, facture avec TVA, plafond Vercel remonté).
 
@@ -54,10 +54,17 @@ webhook rejoué depuis Stripe sans second crédit, facture avec TVA, plafond Ver
 
 ### Tâche 3 : 5 € offerts à la création d'un espace
 
+⚠️ **Remplacée par la décision de Julien du 2026-09-29** (spec § 4) : les 5 € s'offrent à la connexion du
+**premier numéro vérifié par Meta**, une fois par espace, jamais deux fois par numéro (identifiant Meta ou numéro
+affiché), et plus à la création d'un espace. Ce qui a été livré :
+
 - `src/config.ts` : `CREDIT_OFFERT_MICRO_EUR` (défaut 5 000 000, 0 l'éteint), documentée dans `.env.example`.
-- `src/user/store.pg.ts`, dans la transaction de l'`insert into tenants` : solde initial et mouvement `offert`
-  (« crédit offert à l'ouverture »). Pas de clé Vercel ici.
-- Tests : un espace créé porte 5 € et une ligne `offert` ; à 0, rien. Intégration (CI).
+- `credits_offerts` (migrations 0191 et 0193) tient les bornes ; `PgEmbeddedSignupStore.offrirCredit`, appelé par
+  la route de l'inscription (numéro déjà vérifié ou enregistré) et par celle de l'activation (code accepté), écrit
+  l'offre, puis le solde et le mouvement `offert`. Pas de clé Vercel ici ; le plafond d'une clé existante remonte
+  en arrière-plan.
+- Tests : un numéro non vérifié ne reçoit rien ; vérifié, une seule offre ; le même numéro affiché sous un autre
+  identifiant, rien. Intégration (CI) pour les contraintes.
 
 **Déploiement du lot 1 :** CI verte lue job par job ; migration appliquée et relue en base AVANT le `up` ; `up`
 de l'API et du worker ; fumée publique ; `features.md` (crédit, traduction payante), `documentation.md` (la table

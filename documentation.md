@@ -836,7 +836,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
     laisseraient une fenêtre où l'un existe sans l'autre. `tests/inbox-evenements.test.ts` compte, dans chaque
     écriture, autant d'`insert into conversation_evenements` que de requêtes ;
   - **seulement si la valeur a VRAIMENT changé** : l'état d'avant est lu dans un sous-select verrouillé
-    (`for update`), ou, pour un upsert, dans l'instantané de la requête. Réassigner au même, archiver
+    (`for no key update`, le verrou que l'`update` prend lui-même ; `for update` bloquait aussi les insertions
+    filles, message ou événement, dont la clé étrangère pose `for key share`), ou, pour un upsert, dans
+    l'instantané de la requête. Réassigner au même, archiver
     l'archivée, libérer une libre n'écrivent rien. Sur le chemin de chaque message reçu, `rouverte` ne s'écrit
     que si `archived_at` ou `traitee_le` était posé avant et ne l'est plus : un message ordinaire n'écrit rien,
     une réaction sur une conversation seulement traitée non plus (elle ne retire pas ce statut), une réaction
@@ -845,12 +847,27 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   (`{ collaborateur }` ou `{ cause }`) : les gestes de la console passent la session, les chemins automatiques
   leur cause (« automatique : campagne Rentrée », « automatique : scénario Bienvenue », celles de `CAUSES` dans
   `src/inbox/fil.ts`). Un acteur nul SANS cause est donc un collaborateur supprimé depuis (`on delete set null`),
-  que l'écran dit « ancien collaborateur ». Un identifiant qui n'est pas un uuid (clé d'API, observation /ops)
-  devient nul AVANT la base (`colonnesAuteur`), sans quoi le changement lui-même échouerait.
+  que l'écran dit « ancien collaborateur ». Un identifiant qui n'est pas un uuid (clé d'API, observation /ops,
+  session sans identifiant) devient nul AVANT la base (`colonnesAuteur`), sans quoi le changement lui-même
+  échouerait, et porte alors une CAUSE (`CAUSE_CLE_API`, `CAUSE_HORS_COMPTE`) : sans elle, une clé d'API se lisait
+  « ancien collaborateur ». ⚠️ Les lignes écrites entre le déploiement de 0192 et ce correctif par une telle
+  identité n'ont ni acteur ni cause : elles restent lues « ancien collaborateur ».
+  ⚠️ La lecture (`detailConversation`) ne nomme que des collaborateurs DE L'ESPACE (`users.tenant_id =
+  e.tenant_id`, pour l'acteur, la cible et l'assigné) : un identifiant qu'elle n'y retrouve pas se lit « ancien
+  collaborateur ». Une assignation dont l'acteur est la cible est marquée `prise`, que l'écran dit « Prise en
+  charge ».
   ⚠️ Côté détenteur du fil, seul ce qui touche l'agent de Meta s'écrit (`prise_mba`, `rendue_mba`,
   `passee_par_mba`) ; une escalade qui sort la conversation d'Archivé ou de Traité le dit aussi
-  (`desarchivee`, `non_traitee`, avec sa cause). La rétention est celle de la conversation (`on delete
-  cascade`). La migration amorce le journal depuis l'état réel (cause `CAUSE_AMORCAGE`), une ligne par fait daté.
+  (`desarchivee`, `non_traitee`, avec sa cause). Le type se lit sur les colonnes (le fil quitte `mba` : prise ;
+  il y va : rendu), SAUF quand l'écriture le dit (`EcritureDuFil.rendAgentDeMeta`) : « Rendre la main » sur un fil
+  que notre colonne croit déjà `mba` écrit `app_workflow`, et les colonnes y liraient une prise. La rétention est
+  celle de la conversation (`on delete cascade`). La migration amorce le journal depuis l'état réel (cause
+  `CAUSE_AMORCAGE`), une ligne par fait daté.
+  ⚠️ **L'en-tête de la migration 0192 est inexact sur deux points** (relecture du 2026-09-29 ; le fichier est
+  appliqué et ne se corrige pas, la vérité est ici) : l'amorçage lit `conversations` CINQ fois (une par branche de
+  son `union all`), pas une ; et sa clé étrangère vers `tenants` pose, elle aussi, son verrou pendant la
+  transaction. L'amorçage a recopié `assigned_by` et `signalee_par` sans filtrer l'espace : c'est pourquoi la
+  lecture le filtre.
 - 🔴 **UNE ESCALADE EST « À TRAITER » TOUT DE SUITE** (`escaladee_le`, migration 0164), et TROIS chemins la
   posent : l'agent de Meta qui nous passe le fil (`control_passed`), le bloc « passer à un humain » d'un
   scénario, et l'escalade d'un agent IA. Les trois font la même promesse au client, et souffraient du même
@@ -1702,11 +1719,11 @@ constantes du bloc `constantes` en fin de `src/config.ts` depuis le 2026-09-25 :
 | **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS` | une réponse RGPD fausse |
 | **Paramètres commerciaux** | `EUR_PER_USD`, `COMMISSION_MODELE_PCT`, `CREDIT_OFFERT_MICRO_EUR` | ce qu'on facture, et ce qu'on offre |
 | **Provisionnement des clés client** | `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` | les deux vides = éteint ; une seule moitié = refus au boot (chaque création d'agent échouerait, donc plus aucun client ne pourrait en créer) |
-| **Recharge par Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRIX_REFILL_50`, `STRIPE_PRIX_REFILL_100` | vides = recharge fermée (la route rend 503, le webhook n'est pas monté) ; une clé sans préfixe `sk_`/`rk_` + `live_`/`test_` = refus au boot |
+| **Recharge par Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRIX_REFILL_50`, `STRIPE_PRIX_REFILL_100` | vides = recharge fermée (la route rend 503, le webhook n'est pas monté) ; une clé sans préfixe `sk_`/`rk_` + `live_`/`test_`, ou la clé sans le secret du webhook (ou l'inverse) = refus au boot |
 
 🔴 **Le boot ÉCHOUE VITE plutôt que de dégrader en silence**, et c'est délibéré : `AUTH_SECRET` trop court en
 production, `CORS_ORIGINS` à `*`, une entrée de `OPS_EMAILS` qui n'a pas la forme d'une adresse, `AI_GATEWAY_API_KEY` sans ses deux modèles, une seule moitié des clés
-Zadarma, `VERCEL_API_TOKEN` sans `VERCEL_TEAM_ID` ou sans `ENCRYPTION_KEY`, `STRIPE_SECRET_KEY` sans un préfixe qui dise son mode. Chacun de ces cas produirait sinon une panne en pleine conversation, des semaines plus tard.
+Zadarma, `VERCEL_API_TOKEN` sans `VERCEL_TEAM_ID` ou sans `ENCRYPTION_KEY`, `STRIPE_SECRET_KEY` sans un préfixe qui dise son mode, une seule moitié de Stripe (la clé seule laisserait payer sans que rien ne crédite ; le secret seul monterait un webhook qui ignore le mode de la clé). Chacun de ces cas produirait sinon une panne en pleine conversation, des semaines plus tard.
 
 ⚠️ **`EUR_PER_USD` est un paramètre commercial, pas un cours.** Le Gateway facture en dollars, tous nos
 compteurs sont en micro-euros. Aller chercher un cours en temps réel ferait varier le prix d'une même
@@ -1731,19 +1748,38 @@ prendre jusqu'à 30 s, le fil se rafraîchit toutes les 4). Le crédit se lit av
 d'une clé (1 $, environ 0,92 €), la cause est `credit_insuffisant`, distincte de `credit` (épuisé). Un répit
 d'une minute suit un échec chez Vercel. Une clé ILLISIBLE en base (`PgCleGatewayStore.lireEtat` la distingue
 d'une absence) n'en fait ouvrir aucune autre : elle se journalise, une fois par répit, et la traduction reste
-indisponible (`cle`). Le fil vérifie l'espace UNE fois par rafraîchissement (`Traducteur.ouvrir`).
-⚠️ **Le plafond de la clé Vercel reste le cumul acheté au COÛT BRUT** : notre solde, décompté au prix client,
+indisponible (`cle`). Le fil vérifie l'espace UNE fois par rafraîchissement (`Traducteur.ouvrir`). L'ouverture en
+vol est confiée à `travauxEnVol` (déclaré AVANT le traducteur dans `src/index.ts`) : l'arrêt d'une copie l'attend,
+sans quoi une clé créée chez Vercel ne s'enregistrait pas chez nous. Quand la cause disparaît, la console reprend
+le fil ENTIER au tour suivant (`traductionIndisponibleRef`, `web/app/inbox/page.tsx`) : le delta seul laissait
+l'historique en VO.
+⚠️ **Le plafond de la clé Vercel reste le cumul crédité au COÛT BRUT** : notre solde, décompté au prix client,
 s'épuise avant lui. Il n'est qu'un filet pour un bug de comptage. Il suit les TROIS portes d'entrée du crédit
 (achat Stripe, recharge `/ops`, crédit offert), chacune appelant `remonterPlafondApresRecharge` après sa
-transaction.
-⚠️ **`CREDIT_OFFERT_MICRO_EUR`** (5 € par défaut depuis le 2026-09-29) s'écrit à la connexion du PREMIER
-numéro WhatsApp, dans la transaction de `PgEmbeddedSignupStore.linkTenant`, après ses deux gardes (conflit
-entre espaces, second numéro) : `offrirALaConnexion` insère dans `credits_offerts` (migration 0191, clé
-primaire sur l'espace, unique sur le numéro, SANS clé étrangère pour survivre à l'espace) et n'écrit le crédit
-et son mouvement `offert` que si l'insertion a pris. Une fois par espace, jamais deux fois pour un numéro ; la
-migration a marqué à zéro les espaces qui avaient déjà un numéro (pas rétroactif). La création d'un espace
-n'offre plus rien : sans preuve, l'offre s'y récoltait par script. Les raisons de mouvement sont listées par
-`RaisonMouvement` (`src/agent/credits.ts`), et la lecture les rend telles qu'écrites.
+transaction (l'achat et l'offre en arrière-plan, suivis par `travauxEnVol`), et l'ouverture de la clé elle-même.
+🔴 **La cible se RECALCULE, elle ne s'incrémente pas** (`PgCleGatewayStore.ajusterPlafond`) : le solde, plus tout
+ce qui en a été débité depuis `agent_gateway_keys.created_at`, c'est-à-dire tout ce qui a été crédité depuis
+l'ouverture de la clé, plafond initial compris. Sous le verrou de la ligne de la clé (`for update`, tenu pendant
+l'appel à Vercel), la cible se lit dans une SECONDE instruction, qui voit donc ce que la remontée précédente a
+noté. Deux remontées simultanées convergent, et un crédit écrit pendant l'ouverture de la clé (quand il n'y avait
+encore rien à remonter) est rattrapé par la remontée qui suit l'enregistrement de la clé.
+⚠️ **`CREDIT_OFFERT_MICRO_EUR`** (5 € par défaut depuis le 2026-09-29) s'offre au PREMIER numéro WhatsApp que
+**Meta dit vérifié**, jamais à la liaison seule (`PgEmbeddedSignupStore.linkTenant` n'offre rien : elle tourne
+avant que la route ne sache si le numéro est `NOT_VERIFIED`). La route l'appelle (`offrirCredit`, câblé par
+`creerOffreDeBienvenue`) à l'inscription si Meta le dit `CONNECTED`, `VERIFIED`, ou vient d'accepter son
+enregistrement ; sinon à l'activation, dès que le code est accepté (ou si Meta le dit déjà vérifié ou activé). Une
+offre qui échoue ne fait pas échouer la route. `offrirAuNumeroVerifie` relit le numéro dans `phone_numbers` DE CET
+ESPACE et insère dans `credits_offerts` : clé primaire sur l'espace, unique sur l'identifiant Meta (0191), unique
+sur le numéro AFFICHÉ normalisé en E.164 (0193, `NUMERO_AFFICHE_SQL`, la même expression que la reprise), SANS clé
+étrangère pour survivre à l'espace ; le crédit et son mouvement `offert` ne s'écrivent que si l'insertion a pris.
+Un numéro retiré puis rajouté sous un autre identifiant ne repart donc pas avec 5 €. Les migrations ont marqué à
+zéro les espaces qui avaient déjà un numéro (pas rétroactif). La création d'un espace n'offre rien : sans preuve,
+l'offre s'y récoltait par script. Les raisons de mouvement sont listées par `RaisonMouvement`
+(`src/agent/credits.ts`), et la lecture les rend telles qu'écrites.
+⚠️ **L'historique du client** (`PgCreditStore.historique`) lit les `JOURS_HISTORIQUE` derniers jours, sur ses DEUX
+branches (les tours d'agent agrégés par jour, et le reste tel qu'écrit) : l'index `(tenant_id, at desc)` ne
+connaît pas la raison, donc une branche sans fenêtre parcourait tous les mouvements de l'espace. Une ligne
+`achat` porte son paiement (`paiementId`, la session Stripe) et s'il a une facture (`facture`).
 
 🔴 **LA RECHARGE PAR STRIPE** (lot 2, 2026-09-29, `src/http/credit-stripe.ts`, `src/stripe/`). Le client REST
 est écrit sans SDK (formulaire `x-www-form-urlencoded`, `Stripe-Version` épinglée sur celle de la destination
@@ -1752,14 +1788,28 @@ injectable : aucun test n'appelle Stripe.
 - `POST /tenants/:tenantId/credit/paiement` (admin, plafond coûteux) : le corps ne porte qu'une offre
   (`refill_50`, `refill_100`) ; le prix Stripe vient de la configuration, le crédit de `src/stripe/offres.ts`
   (dérivé du HT). Le client Stripe de l'espace est créé au premier achat et gardé PAR MODE (`stripe_clients`,
-  clé `(tenant_id, livemode)`) : un client de test n'existe pas en live. La session Checkout porte la taxe
-  automatique, la collecte du numéro de TVA, l'adresse de facturation requise, la facture, et nos métadonnées
-  (`tenant_id`, `offre`, `client_reference_id`). Une erreur de Stripe rend 422 lisible et son message part au
-  journal, jamais au navigateur. Clé de test : seul un exploitant (`OPS_EMAILS`) peut payer.
+  clé `(tenant_id, livemode)`) : un client de test n'existe pas en live. 🔴 **Le prix est relu chez Stripe AVANT
+  tout** (`lirePrixStripe`, la clé restreinte a les prix en lecture) : s'il ne vaut pas le HT de l'offre, en
+  `eur`, la route rend 422 `prix_incoherent` et une trace `stripe_prix_incoherent`, sans rien créer, au lieu de
+  laisser payer un paiement que le webhook refuserait de créditer. La session Checkout porte la taxe
+  automatique, l'Adaptive Pricing ÉTEINT (le client paie en euros, que le webhook sait recouper), la collecte du
+  numéro de TVA, l'adresse de facturation requise, la facture, et nos métadonnées (`tenant_id`, `offre`,
+  `client_reference_id`). Une erreur de Stripe rend 422 lisible et son message part au journal, jamais au
+  navigateur. Clé de test : seul un exploitant (`OPS_EMAILS`) peut payer (`creerPayeurAutorise`, dont le câblage
+  est tenu par `tests/credit-cablage.test.ts`).
+- `GET /tenants/:tenantId/credit/factures/:sessionId` (mêmes gardes, même règle du mode test) : le paiement se relit
+  dans `stripe_paiements` DE CET ESPACE (`PgStripeStore.factureDe`), puis sa facture chez Stripe
+  (`lireFactureStripe`, `GET /v1/invoices/{id}`, la clé restreinte doit avoir les factures en lecture) ; la route
+  rend `{ url }` depuis `hosted_invoice_url`, https seulement. Paiement inconnu ou d'un autre espace : 404
+  `paiement_inconnu`, sans appel à Stripe ; sans facture : 404 `sans_facture` ; facture sans page hébergée : 422 ;
+  erreur de Stripe : 422, jamais 5xx. Le lien entre un mouvement `achat` et son paiement est une DONNÉE
+  (`agent_credit_mouvements.stripe_session_id`, migration 0193, écrite par `crediterAchat` dans la transaction du
+  webhook), jamais la note ; la reprise de 0193 a rattaché par la note, une fois, l'achat d'avant la colonne.
 - `POST /webhooks/stripe` (classe `signature-service`) : 🔴 **la signature d'abord**, sur le corps brut
   (HMAC SHA-256 de `t.corps`, chaque `v1`, temps constant, cinq minutes), 401 sinon, avant toute lecture ;
   puis `safeParse`. Seuls `checkout.session.completed` payé et `checkout.session.async_payment_succeeded`
-  créditent ; une session sans nos métadonnées rend 200 sans effet. 🔴 **Le recoupement** : `amount_subtotal`
+  créditent ; une session sans nos métadonnées rend 200 sans effet. Un événement d'un autre `livemode` que la clé
+  configurée ne crédite rien (200, trace `stripe_mode_incoherent`). 🔴 **Le recoupement** : `amount_subtotal`
   doit valoir le HT de l'offre, en `eur`, et la référence désigner le même espace, sinon aucun crédit et une trace
   `stripe_paiement_incoherent`. 🔴 **L'idempotence** : UNE transaction (ligne `stripe_paiements`, clé primaire
   sur la session, puis crédit et mouvement `achat`) ; un conflit veut dire déjà crédité (rejeu de Stripe, ou
@@ -1767,7 +1817,11 @@ injectable : aucun test n'appelle Stripe.
   422 pour la même raison. La réponse part dès la transaction passée : la remontée du plafond Vercel suit sans
   être attendue par Stripe (suivie par l'arrêt propre du processus, `travauxEnVol`).
 - Le retour de Stripe se fait sur la page Crédit IA de la console (`APP_URL/parametres/credit`) et ne crédite
-  rien : il relit le solde.
+  rien : il relit le solde et l'historique, et reconnaît l'arrivée à la ligne `achat` postérieure au départ vers
+  Stripe (`achatArriveDepuis`, `web/lib/api-credit.ts`), dès la première lecture : un solde comparé à lui-même ne
+  « montait » jamais quand le webhook passait avant.
+- La console ouvre la facture dans un onglet ouvert SYNCHRONEMENT au clic, qui reçoit son adresse ensuite (sinon
+  bloqué comme fenêtre surgissante), `opener` coupé ; un échec referme l'onglet vide et se dit dans la page.
 
 ⚠️ **Un changement de `.env.prod` exige `docker compose up -d --force-recreate`** : `env_file` n'est rechargé
 qu'à la recréation, pas à un `restart`.
@@ -2186,7 +2240,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
 | `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds), et le refus d'un niveau de risque inconnu (`FiltreContactInvalide`, 400) |
 | `src/engagement/risque.ts` | 🔴 la grille du risque de désengagement, en règles PURES (`calculerRisque`), ses niveaux et ses codes de raisons (`NIVEAUX_RISQUE`, `RAISONS_RISQUE`), les seuils par défaut et `passeEnEleve`. La base (CHECK de 0178), l'API, les signaux et la console (`web/lib/risque.ts`, par `tests/web-risque-parite.test.ts`) lui sont tenus |
-| `src/inbox/evenements.ts` | 🔴 le journal des événements d'une conversation : ses types (miroir du CHECK de 0192 et de `web/lib/inbox-detail.ts`, tenus par deux tests), `AuteurDuChangement` (le paramètre requis de toute écriture de l'Inbox), `colonnesAuteur` (un identifiant qui n'est pas un uuid devient nul avant la base), `automatique` (la forme d'une cause), `auteurDeLEnvoi` (qui prend le fil en écrivant) et `acteurSql` (l'acteur résolu DANS l'espace) |
+| `src/inbox/evenements.ts` | 🔴 le journal des événements d'une conversation : ses types (miroir du CHECK de 0192 et de `web/lib/inbox-detail.ts`, tenus par deux tests), `AuteurDuChangement` (le paramètre requis de toute écriture de l'Inbox), `colonnesAuteur` (un identifiant qui n'est pas un uuid devient nul avant la base, et porte une cause), `automatique` (la forme d'une cause), `auteurDeLEnvoi` (qui prend le fil en écrivant) et `acteurSql` (l'acteur résolu DANS l'espace) |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |
 | `src/inbox/origine.ts` -> `ORIGINE_EFFECTIVE_SQL` | 🔴 le fragment SQL qui dit d'OÙ vient un message sortant, avec sa dérivation bornée pour l'historique d'avant la migration 0099. Il attend l'alias `m` pour `conversation_messages`. Le recopier ferait diverger un total de sa ventilation : la ventilation du Performance Lab et le compte de messages de l'en-tête de l'agent de Meta doivent classer un message de la même façon. ⚠️ Une requête qui le lit se restreint aux SORTANTS (`m.direction = 'out'`), sans quoi elle sort du prédicat de l'index partiel `conversation_messages_origin_idx`, sans qu'aucune erreur ne le dise. `THEME_DE_ORIGINE` et `DETAIL_IA` vivent dans le même fichier, pour la même raison |
 | `src/stats/prix.ts` -> `coutRcsEuros()` | le prix d'un lot de RCS depuis la grille UNIQUE (simple / conversationnel ; « de l'espace » jusqu'au 2026-09-23, où la grille est devenue globale, migration 0168). 🔴 Deux écrans l'appliquent, « coût des messages envoyés » et « coût par engagement » : la formule tient en une ligne, ce qui est exactement pourquoi elle allait être recopiée, et deux copies donneraient deux prix pour le même envoi |

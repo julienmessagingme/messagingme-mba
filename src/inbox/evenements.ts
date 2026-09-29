@@ -70,13 +70,25 @@ export function auteurDeLEnvoi(origine: OrigineMessage, auteur: string | null): 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Ce que la frise dit d'un geste fait par une identité qui n'est PAS un collaborateur de l'espace : une clé d'API, ou
+ * une session sans compte (l'observation de /ops, une session sans identifiant).
+ */
+export const CAUSE_CLE_API = 'par une clé d’API';
+export const CAUSE_HORS_COMPTE = 'par un accès sans compte collaborateur';
+
+/**
  * Les deux colonnes que l'auteur remplit. 🔴 Un identifiant qui n'est pas un uuid (clé d'API `apikey:...`,
- * identité d'observation de /ops) devient `null` ICI, avant la base : passé à `::uuid`, il ferait échouer la
+ * identité d'observation de /ops) devient un acteur `null` ICI, avant la base : passé à `::uuid`, il ferait échouer la
  * requête entière, donc le changement que l'événement décrit, pour une ligne de journal.
+ *
+ * 🔴 ET IL PORTE ALORS UNE CAUSE (relecture du 2026-09-29). Sans elle, la ligne n'avait ni acteur ni cause, ce que la
+ * lecture réserve au collaborateur SUPPRIMÉ depuis : une clé d'API s'affichait « ancien collaborateur ». La règle
+ * « une ligne porte un acteur OU une cause » tient désormais pour toute identité.
  */
 export function colonnesAuteur(a: AuteurDuChangement): { acteur: string | null; cause: string | null } {
   if ('cause' in a) return { acteur: null, cause: borner(a.cause) };
-  return { acteur: a.collaborateur !== null && UUID_RE.test(a.collaborateur) ? a.collaborateur : null, cause: null };
+  if (a.collaborateur !== null && UUID_RE.test(a.collaborateur)) return { acteur: a.collaborateur, cause: null };
+  return { acteur: null, cause: a.collaborateur?.startsWith('apikey:') ? CAUSE_CLE_API : CAUSE_HORS_COMPTE };
 }
 
 /** Coupe une cause trop longue ; `null` pour une cause vide. */
@@ -109,6 +121,11 @@ export interface EvenementConversation {
   cause: string | null;
   /** Une assignation qui en remplace une autre : l'écran dit « réassignée ». */
   reassignation: boolean;
+  /**
+   * Une assignation que le collaborateur s'est faite à lui-même (acteur = cible) : une PRISE, que l'écran dit
+   * « Prise en charge » au lieu de « Assignée à Marie, par Marie ».
+   */
+  prise: boolean;
 }
 
 export interface DetailConversation {

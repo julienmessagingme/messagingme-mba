@@ -41,7 +41,8 @@ peut pas traduire, quel que soit son crédit.
 | Traduction | **Débitée** au solde comme un tour d'agent |
 | Qui achète | Un **admin** de l'espace, sur la page de paiement hébergée par Stripe |
 | Alerte de solde bas | **Le bandeau de la page Crédit seulement**, pas d'e-mail |
-| Crédit offert | **5 €** à la création d'un espace, **pas rétroactif** |
+| Crédit offert | ~~**5 €** à la création d'un espace~~ ; **décision du 2026-09-29** : **5 €** à la connexion du **premier numéro vérifié par Meta**, **une fois par espace**, **jamais deux fois par numéro** (ni par son identifiant Meta, ni par son numéro affiché) ; **pas rétroactif** |
+| Facture (2026-09-29) | Un lien **« Facture »** sur chaque ligne `achat` de l'historique, qui ouvre la facture hébergée par Stripe |
 | Expiration, remboursement | Le crédit **n'expire pas** et **n'est pas remboursé** (un geste exceptionnel reste manuel) |
 
 ## Design
@@ -79,10 +80,19 @@ ne recopie pas le calcul.
 
 ### 4. Les 5 € offerts
 
-- Dans la transaction qui crée l'espace (`src/user/store.pg.ts`, seul `insert into tenants`) : solde initial et
-  mouvement de raison `offert`, note « crédit offert à l'ouverture ». Pas de clé Vercel à ce moment (elle s'ouvre
-  au premier usage) : une inscription ne fabrique pas de clé facturable.
-- Pas rétroactif : les espaces existants n'ont rien.
+⚠️ **Remplacé par la décision de Julien du 2026-09-29** : offert à la création d'un espace, sans preuve, le crédit
+se récoltait par script (chaque espace ouvrait une clé facturée à notre équipe Vercel). Il s'offre désormais :
+
+- au **premier numéro WhatsApp de l'espace que Meta dit vérifié** : à la connexion si Meta le dit déjà vérifié
+  (`CONNECTED`, `VERIFIED`, ou un enregistrement qu'il vient d'accepter), sinon à l'activation du numéro, dès que le
+  code est accepté. **Relier un numéro ne suffit pas** : la liaison se fait avant que Meta ne confirme la
+  vérification ;
+- **une fois par espace**, et **jamais deux fois pour un numéro**, ni par son identifiant Meta (migration 0191) ni
+  par son numéro affiché normalisé en E.164 (migration 0193 : un numéro retiré puis rajouté ailleurs change
+  d'identifiant) ;
+- avec un mouvement de raison `offert`, et sans clé Vercel à ce moment (elle s'ouvre au premier usage) ; un espace
+  qui en a déjà une voit son plafond remonter, en arrière-plan.
+- Pas rétroactif : les espaces qui avaient déjà un numéro ont été marqués à zéro.
 - Montant en configuration (`CREDIT_OFFERT_MICRO_EUR`, défaut 5 €, 0 l'éteint).
 
 ### 5. L'achat
@@ -133,11 +143,14 @@ du code, et la lecture des mouvements (`PgCreditStore.mouvements`, qui ramène a
 ### 8. La page Crédit
 
 Solde, bandeau bas et épuisé (existants), les deux boutons, l'historique des mouvements avec leur raison en clair
-(achat, offert, recharge manuelle, agents, traductions du jour). Les factures arrivent par e-mail de Stripe.
+(achat, offert, recharge manuelle, agents, traductions du jour). Les factures arrivent par e-mail de Stripe, et
+(décision du 2026-09-29) chaque ligne `achat` porte un lien « Facture » : `GET /tenants/:tenantId/credit/factures/:sessionId`
+relit le paiement dans l'espace, puis `hosted_invoice_url` chez Stripe (la clé restreinte doit avoir les factures
+en lecture). Le mouvement porte sa session Stripe (`agent_credit_mouvements.stripe_session_id`, migration 0193).
 
 ## Secrets et configuration
 
-`STRIPE_SECRET_KEY` (clé **restreinte** : sessions Checkout et clients en écriture, prix en lecture),
+`STRIPE_SECRET_KEY` (clé **restreinte** : sessions Checkout et clients en écriture, prix et factures en lecture),
 `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRIX_REFILL_50`, `STRIPE_PRIX_REFILL_100`. Côté serveur uniquement, jamais en
 `NEXT_PUBLIC_`. **Julien les pose lui-même** dans `.env.prod`. Vides : les boutons disent « recharge pas encore
 disponible » et la route rend 503, rien ne casse au démarrage.
@@ -155,7 +168,8 @@ disponible » et la route rend 503, rien ne casse au démarrage.
 ## Lots
 
 **Lot 1, sans Stripe** : fonction unique de débit avec commission, traduction débitée (garde, débit, agrégat
-quotidien), clé ouverte à la première traduction, 5 € offerts à la création d'un espace. Déployable seul.
+quotidien), clé ouverte à la première traduction, 5 € offerts (à la création d'un espace dans ce lot, puis au
+premier numéro vérifié depuis la décision du 2026-09-29, § 4). Déployable seul.
 
 **Lot 2, Stripe** : migration, route de paiement, webhook, page Crédit.
 

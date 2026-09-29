@@ -1,28 +1,32 @@
 import { describe, it, expect } from 'vitest';
 import type { Pool } from 'pg';
-import { PgEmbeddedSignupStore, TenantConflictError, SecondNumeroRefuseError } from '../src/account/es-store.pg';
+import { PgEmbeddedSignupStore, TenantConflictError } from '../src/account/es-store.pg';
 import { PgUserStore } from '../src/user/store.pg';
 import { NOTE_CREDIT_OFFERT } from '../src/agent/credits.pg';
+import { creerOffreDeBienvenue } from '../src/account/offre-bienvenue';
 import { SANS_CREDIT_OFFERT } from './credit-offert';
 
 /**
- * LES 5 € OFFERTS À LA CONNEXION DU PREMIER NUMÉRO WHATSAPP (décision de Julien du 2026-09-29).
+ * LES 5 € OFFERTS AU PREMIER NUMÉRO WHATSAPP VÉRIFIÉ PAR META (décision de Julien du 2026-09-29, relecture du même
+ * jour).
  *
- * 🔴 CE QUI COMPTE ICI EST L'ENDROIT ET L'ORDRE DES ÉCRITURES. L'offre s'insère DANS la transaction qui relie le
- * numéro, APRÈS les deux gardes de la liaison, et le crédit ne s'écrit que si l'insertion de l'offre a pris. Les
- * bornes elles-mêmes (une offre par espace, jamais deux pour un numéro) sont des contraintes de la migration 0191 :
- * leur vérité en base est tenue par `tests/integration/agent-credits.integration.test.ts`, joué en CI. Ici, la base
- * est simulée et dit ce que la contrainte aurait dit (`offrePrend`).
+ * 🔴 CE QUI COMPTE ICI EST L'ENDROIT ET L'ORDRE DES ÉCRITURES. La liaison n'offre plus rien : elle tourne avant que la
+ * route ne sache si Meta a vérifié le numéro. L'offre est un geste à part (`offrirCredit`), que la route appelle avec
+ * cette preuve (`tests/embedded-signup.test.ts`, `tests/numero-activation.test.ts`). Dans sa transaction, l'offre
+ * s'insère d'abord, et le crédit ne s'écrit que si elle a pris. Les bornes (une offre par espace, jamais deux pour un
+ * numéro, par son identifiant ni par son numéro affiché) sont des contraintes des migrations 0191 et 0193 : leur
+ * vérité en base est tenue par `tests/integration/agent-credits.integration.test.ts`, joué en CI. Ici, la base est
+ * simulée et dit ce que la contrainte aurait dit (`offrePrend`).
  */
-function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean; secondNumero?: boolean } = {}) {
+function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean } = {}) {
   const surLePool: string[] = [];
   const surLaConnexion: Array<{ sql: string; params: unknown[] }> = [];
   const repondre = (sql: string) => {
     if (/insert into waba/i.test(sql)) return { rows: [], rowCount: 1 };
-    if (/select id from phone_numbers/i.test(sql)) return { rows: o.secondNumero ? [{ id: 'pn-deja' }] : [], rowCount: o.secondNumero ? 1 : 0 };
+    if (/select id from phone_numbers/i.test(sql)) return { rows: [], rowCount: 0 };
     // L'upsert gardé du numéro : 0 ligne quand il appartient à un autre espace.
     if (/insert into phone_numbers/i.test(sql)) return { rows: [], rowCount: o.numeroDejaAilleurs ? 0 : 1 };
-    // La contrainte de `credits_offerts` : l'insertion prend, ou le conflit l'annule en silence.
+    // Les contraintes de `credits_offerts` : l'insertion prend, ou le conflit l'annule en silence.
     if (/insert into credits_offerts/i.test(sql)) return { rows: [], rowCount: o.offrePrend === false ? 0 : 1 };
     if (/returning/i.test(sql)) return { rows: [{ id: 'x', solde_micro_eur: '5000000' }], rowCount: 1 };
     return { rows: [], rowCount: 1 };
@@ -42,64 +46,58 @@ const CINQ_EUROS = { creditOffertMicroEur: 5_000_000 };
 const indexDe = (b: ReturnType<typeof fausseBase>, re: RegExp) => b.surLaConnexion.findIndex((q) => re.test(q.sql));
 const premiersMots = (b: ReturnType<typeof fausseBase>) => b.surLaConnexion.map((q) => q.sql.trim().split(/\s+/)[0]!.toLowerCase());
 
-describe('le crédit offert à la connexion du premier numéro', () => {
-  it('🔴 premier numéro : l’offre, PUIS le crédit et sa ligne `offert`, dans la transaction de la liaison', async () => {
+describe('le crédit offert au premier numéro vérifié', () => {
+  it('🔴 la LIAISON n’offre plus rien : ni offre ni crédit, même au premier numéro', async () => {
+    // Le sens inverse de tout le lot : si l'offre revenait dans `linkTenant`, un numéro que Meta dit `NOT_VERIFIED`
+    // recevrait de nouveau ses 5 €, puisque la route relie AVANT de savoir.
     const b = fausseBase();
-    const r = await new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).linkTenant(LIAISON);
-    expect(r).toEqual({ creditOffertMicroEur: 5_000_000 });
+    await new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).linkTenant(LIAISON);
+    expect(indexDe(b, /insert into phone_numbers/i)).toBeGreaterThan(-1);
+    expect([...b.surLePool, ...b.surLaConnexion.map((q) => q.sql)].filter((s) => /credits_offerts|agent_credit/i.test(s))).toEqual([]);
+  });
 
-    const numero = indexDe(b, /insert into phone_numbers/i);
+  it('🔴 l’offre, PUIS le crédit et sa ligne `offert`, dans une seule transaction', async () => {
+    const b = fausseBase();
+    expect(await new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).offrirCredit('t1', 'pn-1')).toBe(5_000_000);
+
     const offre = indexDe(b, /insert into credits_offerts/i);
     const credit = indexDe(b, /insert into agent_credit_mouvements/i);
-    // Après les gardes de la liaison, l'offre avant le crédit, et tout entre `begin` et `commit`.
-    expect(numero).toBeGreaterThan(-1);
-    expect(offre).toBeGreaterThan(numero);
+    expect(offre).toBeGreaterThan(-1);
     expect(credit).toBeGreaterThan(offre);
-    expect(premiersMots(b).indexOf('begin')).toBeLessThan(numero);
+    expect(premiersMots(b).indexOf('begin')).toBeLessThan(offre);
     expect(premiersMots(b).indexOf('commit')).toBeGreaterThan(credit);
-    // Rien sur le pool à côté : une écriture hors de la transaction survivrait à une liaison annulée.
+    // Rien sur le pool à côté : une écriture hors de la transaction survivrait à une offre annulée.
     expect(b.surLePool).toEqual([]);
-    // L'offre nomme l'espace ET le numéro, ce sont ses deux bornes.
+    // L'offre nomme l'espace ET le numéro, et relit le numéro DANS cet espace, avec son numéro affiché.
     expect(b.surLaConnexion[offre]!.params).toEqual(['t1', 'pn-1', 5_000_000]);
+    expect(b.surLaConnexion[offre]!.sql).toMatch(/from phone_numbers pn\s+where pn\.id = \$2 and pn\.tenant_id = \$1/);
+    expect(b.surLaConnexion[offre]!.sql).toContain('numero_affiche');
     // (espace, montant, raison, session, note) : positif, `offert`, sans session.
-    expect(b.surLaConnexion[credit]!.params).toEqual(['t1', 5_000_000, 'offert', null, NOTE_CREDIT_OFFERT]);
+    expect(b.surLaConnexion[credit]!.params).toEqual(['t1', 5_000_000, 'offert', null, NOTE_CREDIT_OFFERT, null]);
   });
 
-  it('🔴 second numéro du même espace, ou même numéro sur un autre espace : l’offre ne prend pas, RIEN n’est crédité', async () => {
-    // Les deux cas sont le même geste pour le code : la contrainte (clé primaire ou unique) annule l'insertion.
+  it('🔴 déjà servi (cet espace, ce numéro, ou ce numéro affiché ailleurs) : l’offre ne prend pas, RIEN n’est crédité', async () => {
+    // Les trois cas sont le même geste pour le code : une contrainte annule l'insertion.
     const b = fausseBase({ offrePrend: false });
-    const r = await new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).linkTenant(LIAISON);
-    expect(r).toEqual({ creditOffertMicroEur: 0 });
+    expect(await new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).offrirCredit('t1', 'pn-1')).toBe(0);
     expect(indexDe(b, /insert into credits_offerts/i)).toBeGreaterThan(-1);
     expect(b.surLaConnexion.filter((q) => /agent_credit/i.test(q.sql))).toEqual([]);
-    // La liaison, elle, est faite.
-    expect(premiersMots(b)).toContain('commit');
   });
 
-  it('🔴 échec de la liaison (numéro d’un autre espace) : ni offre ni crédit, et tout est annulé', async () => {
+  it('échec de la liaison (numéro d’un autre espace) : rien d’offert, et tout est annulé', async () => {
     const b = fausseBase({ numeroDejaAilleurs: true });
     await expect(new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).linkTenant(LIAISON)).rejects.toBeInstanceOf(TenantConflictError);
     expect(b.surLaConnexion.filter((q) => /credits_offerts|agent_credit/i.test(q.sql))).toEqual([]);
     expect(premiersMots(b)).toContain('rollback');
-    expect(premiersMots(b)).not.toContain('commit');
-  });
-
-  it('échec de la liaison (second numéro refusé) : ni offre ni crédit', async () => {
-    const b = fausseBase({ secondNumero: true });
-    await expect(new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).linkTenant(LIAISON)).rejects.toBeInstanceOf(SecondNumeroRefuseError);
-    expect(b.surLaConnexion.filter((q) => /credits_offerts|agent_credit/i.test(q.sql))).toEqual([]);
   });
 
   it('à 0, rien n’est marqué ni crédité : l’offre reste due le jour où on la rallume', async () => {
     const b = fausseBase();
-    const r = await new PgEmbeddedSignupStore(b.pool, SANS_CREDIT_OFFERT).linkTenant(LIAISON);
-    expect(r).toEqual({ creditOffertMicroEur: 0 });
+    expect(await new PgEmbeddedSignupStore(b.pool, SANS_CREDIT_OFFERT).offrirCredit('t1', 'pn-1')).toBe(0);
     expect(b.surLaConnexion.filter((q) => /credits_offerts|agent_credit/i.test(q.sql))).toEqual([]);
   });
 
   it('🔴 la création d’un espace n’offre PLUS rien : l’offre y était récoltable par script', async () => {
-    // Le sens inverse du premier cas : si l'ancienne écriture revenait dans `createTenantWithAdmin`, chaque
-    // inscription redonnerait 5 € sans preuve, et ce test tomberait.
     const b = fausseBase();
     const pool = {
       ...b.pool,
@@ -122,5 +120,61 @@ describe('le crédit offert à la connexion du premier numéro', () => {
     await new PgUserStore(pool).createTenantWithAdmin('Espace', { email: 'a@b.fr', name: null, passwordHash: null });
     expect(b.surLaConnexion.some((q) => /insert into tenants/i.test(q.sql))).toBe(true);
     expect([...b.surLePool, ...b.surLaConnexion.map((q) => q.sql)].filter((s) => /agent_credit|credits_offerts/i.test(s))).toEqual([]);
+  });
+});
+
+/**
+ * LE CÂBLAGE DE L'OFFRE (`creerOffreDeBienvenue`, relecture du 2026-09-29) : la remontée du plafond de la clé de
+ * modèle suit une offre qui a pris, SANS faire attendre la route d'inscription (Vercel peut prendre 30 s), et en
+ * étant confiée aux travaux que l'arrêt du processus attend.
+ */
+describe('le crédit offert, puis le plafond de la clé', () => {
+  function cablage(o: { offert: number; remonter?: ((t: string) => Promise<unknown>) | null }) {
+    const suivis: Array<Promise<unknown>> = [];
+    const remontes: string[] = [];
+    const journal: string[] = [];
+    const offrir = creerOffreDeBienvenue({
+      offrir: async () => o.offert,
+      remonterPlafond: o.remonter === undefined ? async (t) => { remontes.push(t); } : o.remonter,
+      travaux: { suivre: <T>(p: Promise<T>): Promise<T> => { suivis.push(p); return p; } },
+      journal: (msg) => { journal.push(msg); },
+    });
+    return { offrir, suivis, remontes, journal };
+  }
+
+  it('🔴 une offre qui a pris remonte le plafond de l’espace, confiée aux travaux de l’arrêt', async () => {
+    const c = cablage({ offert: 5_000_000 });
+    await c.offrir('t1', 'pn-1');
+    expect(c.suivis).toHaveLength(1);
+    await Promise.all(c.suivis);
+    expect(c.remontes).toEqual(['t1']);
+  });
+
+  it('🔴 la route n’attend PAS la remontée : Vercel qui ne répond jamais ne retient pas l’inscription', async () => {
+    const c = cablage({ offert: 5_000_000, remonter: () => new Promise(() => {}) });
+    const course = await Promise.race([c.offrir('t1', 'pn-1').then(() => 'rendu'), new Promise((r) => { setTimeout(() => r('bloque'), 50); })]);
+    expect(course).toBe('rendu');
+    expect(c.suivis).toHaveLength(1);
+  });
+
+  it('aucune offre (déjà servie, éteinte) : rien ne part chez Vercel', async () => {
+    const c = cablage({ offert: 0 });
+    await c.offrir('t1', 'pn-1');
+    expect(c.suivis).toEqual([]);
+    expect(c.remontes).toEqual([]);
+  });
+
+  it('provisionnement éteint : l’offre s’écrit, aucun plafond à suivre', async () => {
+    const c = cablage({ offert: 5_000_000, remonter: null });
+    await c.offrir('t1', 'pn-1');
+    expect(c.suivis).toEqual([]);
+  });
+
+  it('une remontée qui échoue se journalise, sans lever', async () => {
+    const c = cablage({ offert: 5_000_000, remonter: async () => { throw new Error('vercel'); } });
+    await c.offrir('t1', 'pn-1');
+    await Promise.allSettled(c.suivis);
+    await new Promise((r) => { setTimeout(r, 0); });
+    expect(c.journal).toHaveLength(1);
   });
 });

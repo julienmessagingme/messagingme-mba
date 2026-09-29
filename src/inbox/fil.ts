@@ -56,6 +56,12 @@ export interface EcritureDuFil {
   effacerEscalade?: boolean;
   /** Pose la marque d'escalade, si l'écriture a lieu et vise `app_human`. */
   escalade?: boolean;
+  /**
+   * Ce geste REND le fil à l'agent de Meta, quelle que soit la valeur écrite : l'événement est `rendue_mba`. Seul
+   * « Rendre la main » sur un fil que notre colonne croit déjà à l'agent le pose, parce qu'il y écrit `app_workflow`
+   * et que la règle des colonnes lirait alors un fil qui QUITTE l'agent (`prise_mba`), l'inverse du geste.
+   */
+  rendAgentDeMeta?: boolean;
 }
 
 /**
@@ -273,8 +279,10 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
 
     async rendreLaMain(tenantId, waId, par) {
       // Les trois écritures clôturent l'escalade : c'est le même geste délibéré quelle que soit la valeur écrite.
+      // Sur un fil que notre colonne donne déjà à l'agent, le geste reste un rendu : la frise le dit comme tel
+      // (`rendAgentDeMeta`), et pas comme une prise, que la seule lecture des colonnes y aurait vue.
       if ((await depot.getControlOwner(tenantId, waId)) === 'mba') {
-        await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
+        await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true, rendAgentDeMeta: true });
         return 'app_workflow';
       }
       if (!(await mbaAllume(tenantId))) {

@@ -419,6 +419,10 @@ function InboxInner({ session }: { session: Session }) {
           echecs += 1;
         }
       }
+      // 🔴 LE LOT A PU RANGER LA CONVERSATION OUVERTE (relecture du 2026-09-29) : son panneau Détail se relit, comme
+      // après un geste de l'en-tête du fil. Sans ça, la frise ne montrait pas l'archivage qu'on venait de faire.
+      // Relu même sur un échec partiel : on ne sait pas lequel a échoué, et relire ne coûte qu'une requête.
+      if (selected && cibles.includes(selected.id)) setVersionDetail((v) => v + 1);
       setCochees(new Set());
       await reload();
       await rechargerCompteur();
@@ -1355,6 +1359,8 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
    * C'est cette référence stable qui rend le fil calme.
    */
   const remplacerAuProchainRef = useRef(false);
+  /** Le tour précédent disait-il la traduction impossible ? Sert à voir le moment où elle le redevient. */
+  const traductionIndisponibleRef = useRef(false);
 
   const load = useCallback(async (o?: { passerSiEnVol?: boolean }) => {
     if (o?.passerSiEnVol === true && enCoursRef.current) return;
@@ -1363,6 +1369,8 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
     enVolRef.current = ctrl;
     enCoursRef.current = true;
     try {
+      // Cette requête ne demande-t-elle que le delta ? Lu AVANT elle : la suite du tour réécrit le curseur.
+      const etaitUnDelta = bornRef.current !== null;
       // DELTA (lot 5 du programme II) : on ne redemande que ce qui est arrivé APRÈS ce qu'on a déjà. Le fil
       // se rafraîchit toutes les 4 s ; il retéléchargeait jusqu'à 500 messages à chaque tour, par onglet.
       const res = await getConversationMessages(session.tenantId, conversation.id, {
@@ -1434,7 +1442,21 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
        * lorsqu'on a demandé `traduire` : absent, il vaut faux, ce qui éteint le bandeau dès que
        * l'opérateur coupe le réglage. Ce n'est pas une panne et c'est un 200 : le fil s'affiche, en VO.
        */
-      setTraductionIndisponible(res.traductionIndisponible === true);
+      const indisponible = res.traductionIndisponible === true;
+      setTraductionIndisponible(indisponible);
+      /**
+       * 🔴 LA TRADUCTION VIENT DE DEVENIR POSSIBLE : LE PROCHAIN TOUR REPREND LE FIL ENTIER, ET IL REMPLACE
+       * (relecture du 2026-09-29). Cas type : la première traduction d'un espace, pendant que sa clé de modèle
+       * s'ouvre (`cle_en_preparation`) ; ou un crédit rechargé. Le fil déjà affiché est en VO, et le tour suivant ne
+       * ramène que le delta, déjà traduit : sans ceci, l'historique restait en VO jusqu'à ce qu'on rouvre la
+       * conversation. Les deux mêmes gestes qu'au changement de langue de lecture (voir plus bas), pour la même raison.
+       * ⚠️ Seulement après un DELTA : un fil entier vient d'arriver traduit, le redemander paierait deux fois.
+       */
+      if (cibleLecture && traductionIndisponibleRef.current && !indisponible && etaitUnDelta) {
+        bornRef.current = null;
+        remplacerAuProchainRef.current = true;
+      }
+      traductionIndisponibleRef.current = indisponible;
       // ⚠️ `null` quand le serveur ne dit rien (version plus ancienne, ou traduction qui a marché) : le
       // bandeau retombe alors sur sa formulation prudente plutôt que d'inventer une cause.
       setTraductionCause(res.traductionCause !== undefined && CAUSES_TRADUCTION.includes(res.traductionCause) ? res.traductionCause : null);

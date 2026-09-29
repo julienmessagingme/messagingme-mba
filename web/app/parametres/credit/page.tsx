@@ -4,7 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { getSoldeAgent } from '@/lib/api-agent';
-import { getMouvementsCredit, ouvrirPaiement, estPageDePaiement, type LigneCredit, type OffreRecharge } from '@/lib/api-credit';
+import {
+  aUneFacture, achatArriveDepuis, estPageDePaiement, getMouvementsCredit, lireDepartPaiement, oublierDepartPaiement,
+  ouvrirFacture, ouvrirPaiement, retenirDepartPaiement, seuilDuRetour, type LigneCredit, type OffreRecharge,
+} from '@/lib/api-credit';
 import { eurosDepuisMicro, SOLDE_BAS_MICRO_EUR } from '@/lib/agent-solde';
 import { erreurDeChargement } from '@/lib/http';
 import { fmtCost } from '@/lib/format';
@@ -54,36 +57,55 @@ function CreditInner({ session }: { session: Session }) {
   const [erreur, setErreur] = useState<string | null>(null);
   // Le crédit est-il arrivé depuis le retour de paiement ? Tant que non, l'écran le dit et relit.
   const [arrive, setArrive] = useState(false);
+  // Une facture qui n'a pas pu s'ouvrir : dit dans la page, sous l'historique.
+  const [erreurFacture, setErreurFacture] = useState<string | null>(null);
 
-  const relire = useCallback(async (): Promise<number | null> => {
-    const s = await getSoldeAgent(session.tenantId);
+  /** Relit le solde et l'historique. L'historique ne fait jamais échouer la lecture : une liste vide le remplace. */
+  const relire = useCallback(async (): Promise<{ solde: number | null; mouvements: LigneCredit[] }> => {
+    const [s, m] = await Promise.all([
+      getSoldeAgent(session.tenantId),
+      getMouvementsCredit(session.tenantId).catch((): LigneCredit[] => []),
+    ]);
     setSolde(s);
     setCharge(true);
-    getMouvementsCredit(session.tenantId).then(setMouvements).catch(() => setMouvements([]));
-    return s;
+    setMouvements(m);
+    return { solde: s, mouvements: m };
   }, [session.tenantId]);
 
   useEffect(() => {
     let vivant = true;
     let minuteur: ReturnType<typeof setTimeout> | undefined;
+    // 🔴 L'ARRIVÉE SE LIT SUR LA LIGNE `achat` DE CE PAIEMENT (`achatArriveDepuis`), dès la PREMIÈRE lecture : le
+    // webhook passe souvent avant elle, et un solde comparé à lui-même ne « montait » alors jamais (relecture du
+    // 2026-09-29). Le solde qui monte pendant les relectures reste un second signal.
+    const seuil = seuilDuRetour(lireDepartPaiement(), Date.now());
+    const constater = (): void => {
+      setArrive(true);
+      oublierDepartPaiement();
+    };
     const demarrer = async (): Promise<void> => {
       let initial: number | null = null;
       try {
-        initial = await relire();
+        const r = await relire();
+        initial = r.solde;
+        if (vivant && retour === 'recu' && achatArriveDepuis(r.mouvements, seuil)) {
+          constater();
+          return;
+        }
       } catch {
         if (vivant) setCharge(true);
       }
       if (retour !== 'recu') return;
-      // Le webhook arrive en quelques secondes : on relit jusqu'à voir le solde monter, sans insister au-delà.
+      // Le webhook arrive en quelques secondes : on relit jusqu'à voir l'achat, sans insister au-delà.
       let restantes = RELECTURES_APRES_PAIEMENT;
       const suivante = (): void => {
         if (!vivant || restantes <= 0) return;
         restantes -= 1;
         minuteur = setTimeout(() => {
           relire()
-            .then((s) => {
+            .then((r) => {
               if (!vivant) return;
-              if (s !== null && (initial === null || s > initial)) setArrive(true);
+              if (achatArriveDepuis(r.mouvements, seuil) || (initial !== null && r.solde !== null && r.solde > initial)) constater();
               else suivante();
             })
             .catch(() => suivante());
@@ -106,11 +128,39 @@ function CreditInner({ session }: { session: Session }) {
         return;
       }
       if (!estPageDePaiement(r.url)) throw new Error(t('Adresse de paiement invalide.', 'Invalid payment address.'));
+      // Le moment du départ, pour reconnaître au retour la ligne `achat` de CE paiement.
+      retenirDepartPaiement(Date.now());
       // La page de paiement est hébergée par Stripe : on la quitte, le bouton reste en cours jusqu'au départ.
       window.location.assign(r.url);
     } catch (err) {
       setErreur(erreurDeChargement(err, t));
       setEnCours(null);
+    }
+  }
+
+  /**
+   * LA FACTURE D'UN ACHAT, dans un nouvel onglet (décision de Julien du 2026-09-29).
+   *
+   * 🔴 L'ONGLET S'OUVRE DANS LE CLIC, DE FAÇON SYNCHRONE, et reçoit son adresse ensuite. L'adresse vient du serveur,
+   * qui la lit chez Stripe : l'ouvrir APRÈS l'attente ferait bloquer l'onglet comme fenêtre surgissante, le navigateur
+   * ne le rattachant plus à un geste de l'utilisateur. Un échec se dit dans la page, et l'onglet vide se referme.
+   * ⚠️ `opener` est coupé avant de naviguer : la page de Stripe n'a pas à pouvoir piloter la console.
+   */
+  async function voirFacture(paiementId: string): Promise<void> {
+    setErreurFacture(null);
+    const onglet = window.open('', '_blank');
+    try {
+      const url = await ouvrirFacture(session.tenantId, paiementId);
+      if (onglet) {
+        onglet.opener = null;
+        onglet.location.href = url;
+      } else {
+        // Le navigateur a refusé l'onglet malgré le clic : la facture s'ouvre ici plutôt que pas du tout.
+        window.location.assign(url);
+      }
+    } catch (err) {
+      onglet?.close();
+      setErreurFacture(erreurDeChargement(err, t));
     }
   }
 
@@ -210,8 +260,8 @@ function CreditInner({ session }: { session: Session }) {
         {erreur && <p className="mt-2 text-sm text-danger" data-testid="credit-erreur">{erreur}</p>}
         <p className="mt-3 text-xs text-ink-500">
           {t(
-            'Ce que le crédit paie : chaque échange d’un agent IA avec son modèle (en production comme au bac à sable) et chaque traduction de l’Inbox, au tarif affiché dans l’onglet Modèle. 5 € sont offerts à la connexion du premier numéro WhatsApp de l’espace.',
-            'What the credit pays for: every exchange between an AI agent and its model (in production as in the sandbox) and every Inbox translation, at the rate shown in the Model tab. €5 are offered when the workspace connects its first WhatsApp number.',
+            'Ce que le crédit paie : chaque échange d’un agent IA avec son modèle (en production comme au bac à sable) et chaque traduction de l’Inbox, au tarif affiché dans l’onglet Modèle. 5 € sont offerts au premier numéro WhatsApp de l’espace, dès que Meta l’a vérifié.',
+            'What the credit pays for: every exchange between an AI agent and its model (in production as in the sandbox) and every Inbox translation, at the rate shown in the Model tab. €5 are offered for the workspace’s first WhatsApp number, as soon as Meta has verified it.',
           )}
         </p>
       </section>
@@ -229,6 +279,16 @@ function CreditInner({ session }: { session: Session }) {
                 <span className="text-ink-900">
                   {libelle(m, t)}
                   <span className="ml-2 text-xs text-ink-500">{dateCourte(m.at, locale)}</span>
+                  {aUneFacture(m) && (
+                    <button
+                      type="button"
+                      onClick={() => { void voirFacture(m.paiementId); }}
+                      data-testid="credit-facture"
+                      className="ml-2 text-xs font-medium text-brand-600 hover:underline"
+                    >
+                      {t('Facture', 'Invoice')}
+                    </button>
+                  )}
                 </span>
                 <span className={`tabular-nums ${m.deltaMicroEur >= 0 ? 'text-ink-900' : 'text-ink-500'}`}>
                   {m.deltaMicroEur >= 0 ? '+' : ''}{fmtCost(m.deltaMicroEur / 1_000_000, locale, 'EUR')}
@@ -237,6 +297,7 @@ function CreditInner({ session }: { session: Session }) {
             ))}
           </ul>
         )}
+        {erreurFacture && <p className="mt-2 text-sm text-danger" data-testid="credit-facture-erreur">{erreurFacture}</p>}
       </section>
     </div>
   );

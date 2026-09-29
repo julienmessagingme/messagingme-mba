@@ -33,6 +33,10 @@ class FauxTransport implements HttpTransportPatch, HttpTransportSuppression {
 /**
  * Faux dépôt de clés, en mémoire, qui note ce qu'on lui écrit. `'illisible'` : une ligne existe et ne se déchiffre
  * pas (`lire` rend alors `null`, comme le vrai dépôt, et seul `lireEtat` le distingue d'une absence).
+ *
+ * `ajusterPlafond` rend la CIBLE que la base calculerait (le cumul crédité depuis l'ouverture de la clé) : ici un
+ * nombre que le test pose (`cible`). Le calcul SQL et le verrou de la ligne, eux, sont tenus par
+ * `tests/integration/cle-plafond.integration.test.ts`, en CI. Les appels sont sérialisés comme le verrou le fait.
  */
 function fauxCles(initial?: CleGatewayEspace | 'illisible') {
   let illisible = initial === 'illisible';
@@ -40,10 +44,13 @@ function fauxCles(initial?: CleGatewayEspace | 'illisible') {
   const ecritures: Array<{ cleId: string; plafondMicroEur: number }> = [];
   const plafondsNotes: number[] = [];
   const oublis: boolean[] = [];
-  return {
+  let file: Promise<unknown> = Promise.resolve();
+  const f = {
     ecritures,
     plafondsNotes,
     oublis,
+    /** Ce que la base calculerait comme cible. Par défaut : le plafond déjà noté, donc rien à remonter. */
+    cible: null as number | null,
     lire: async () => etat,
     lireEtat: async (): Promise<LectureCleGateway> => {
       if (illisible) return { etat: 'illisible' };
@@ -55,12 +62,24 @@ function fauxCles(initial?: CleGatewayEspace | 'illisible') {
       etat = { cleId: o.cleId, cle: o.cle, plafondMicroEur: o.plafondMicroEur };
       return etat;
     },
-    noterPlafond: async (_t: string, p: number) => { plafondsNotes.push(p); if (etat) etat.plafondMicroEur = p; },
+    ajusterPlafond: (_t: string, poser: (cle: { cleId: string; plafondMicroEur: number }, cible: number) => Promise<number | null>): Promise<boolean> => {
+      const tour = file.then(async () => {
+        if (!etat) return false;
+        const pose = await poser({ cleId: etat.cleId, plafondMicroEur: etat.plafondMicroEur }, f.cible ?? etat.plafondMicroEur);
+        if (pose === null) return false;
+        plafondsNotes.push(pose);
+        etat.plafondMicroEur = pose;
+        return true;
+      });
+      file = tour.catch(() => undefined);
+      return tour;
+    },
     oublier: async (_t: string) => { const y = etat !== null; etat = null; oublis.push(true); return y; },
   };
+  return f;
 }
 
-function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: HttpTransportPatch & HttpTransportSuppression }): DepsProvisionCle {
+function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: HttpTransportPatch & HttpTransportSuppression; journal?: string[] }): DepsProvisionCle {
   return {
     cles: o.cles,
     credits: { solde: async () => o.solde },
@@ -70,7 +89,14 @@ function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: 
     teamId: 'team_x',
     cleGatewayMaison: 'vck_maison',
     tauxEurParDollar: TAUX,
+    journal: (msg) => { o.journal?.push(msg); },
   };
+}
+
+/** Les travaux que l'arrêt attend : ceux-ci ne font que noter ce qu'on leur confie. */
+function travauxNotes() {
+  const suivis: Array<Promise<unknown>> = [];
+  return { suivis, suivre: <T>(p: Promise<T>): Promise<T> => { suivis.push(p); return p; } };
 }
 
 // La forme REELLE de Vercel (mesuree le 2026-09-09) : `apiKeyString` a la racine, l'identifiant sous `apiKey`.
@@ -193,45 +219,89 @@ describe('assurerCleGateway', () => {
     await assurerCleGateway(d, 't1');
     expect(ordre).toEqual(['vercel', 'enregistre']);
   });
+
+  it('🔴 un crédit arrivé PENDANT l’ouverture n’est pas perdu : le plafond est recalculé une fois la clé enregistrée', async () => {
+    // Relecture du 2026-09-29. La clé naît au solde lu AVANT l'appel à Vercel (10 €). Un achat de 50 € écrit pendant
+    // l'appel tente de remonter un plafond qui n'existe pas encore (aucune ligne), et ne fait rien : sans le recalcul
+    // qui suit l'enregistrement, la clé resterait à 10 € et Vercel couperait un client qui en a payé 60.
+    const cles = fauxCles();
+    const t = new FauxTransport([OK, { status: 200, json: {} }]);
+    const post = t.post.bind(t);
+    t.post = async (u, b) => {
+      const r = await post(u, b);
+      cles.cible = 60 * MICRO; // l'achat arrive pendant que Vercel ouvre la clé
+      return r;
+    };
+    await assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1');
+    expect(cles.ecritures).toEqual([{ cleId: 'key_neuf', plafondMicroEur: 10 * MICRO }]);
+    // 60 € au taux de 0,92 valent 65,22 $ : 66.
+    expect(t.appels.find((a) => a.methode === 'PATCH')!.body).toEqual({ limitAmount: 66, refreshPeriod: 'none' });
+    expect(cles.plafondsNotes).toEqual([60 * MICRO]);
+  });
+
+  it('sans crédit pendant l’ouverture, le recalcul n’appelle PAS Vercel une seconde fois', async () => {
+    const cles = fauxCles();
+    const t = new FauxTransport([OK]);
+    await assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1');
+    expect(t.appels.map((a) => a.methode)).toEqual(['POST']);
+  });
 });
 
 describe('remonterPlafondApresRecharge', () => {
-  it('🔴 le plafond MONTE du montant acheté, il ne recopie pas le solde', async () => {
-    // Le solde DESCEND à chaque tour d'agent ; le compteur de Vercel, lui, MONTE. Recopier le solde
-    // couperait un client bien avant qu'il ait consommé ce qu'il a payé.
+  it('🔴 le plafond monte jusqu’à la CIBLE recalculée (le cumul crédité), il ne recopie pas le solde', async () => {
+    // Le solde DESCEND à chaque tour d'agent ; le compteur de Vercel, lui, MONTE. Recopier le solde (2 €) couperait
+    // un client bien avant qu'il ait consommé ce qu'il a payé. La cible, calculée par la base, vaut ici 30 €.
     const cles = fauxCles({ cleId: 'key_a', cle: 'vck_a', plafondMicroEur: 10 * MICRO });
+    cles.cible = 30 * MICRO;
     const t = new FauxTransport([{ status: 200, json: {} }]);
-    expect(await remonterPlafondApresRecharge(deps({ cles, solde: 2 * MICRO, transport: t }), 't1', 20 * MICRO)).toBe(true);
+    expect(await remonterPlafondApresRecharge(deps({ cles, solde: 2 * MICRO, transport: t }), 't1')).toBe(true);
 
-    // 10 achetés + 20 rechargés = 30 €, soit 32,60 $ au taux de 0,92, donc 33 (arrondi au supérieur).
+    // 30 €, soit 32,60 $ au taux de 0,92, donc 33 (arrondi au supérieur).
     expect(t.appels[0]!.body).toEqual({ limitAmount: 33, refreshPeriod: 'none' });
     expect(cles.plafondsNotes).toEqual([30 * MICRO]);
   });
 
-  it('🔴 un rechargement NUL n’appelle pas Vercel', async () => {
-    // Le solde bouge à chaque tour d'agent. Suivre le solde ferait un appel réseau par tour, pour réécrire
-    // le même nombre : on compare donc au dernier plafond POSÉ.
+  it('🔴 DEUX remontées simultanées convergent vers la cible : aucune ne perd l’achat de l’autre', async () => {
+    // Relecture du 2026-09-29 : l'ancienne remontée ajoutait le montant de SON achat au plafond qu'elle avait lu.
+    // Deux achats (50 et 100 €) remontés ensemble lisaient tous deux 10 €, et la seconde écriture (110 €) écrasait la
+    // première (60 €) : 160 € payés, 110 € de plafond. La cible ne dépend plus du montant de l'achat.
     const cles = fauxCles({ cleId: 'key_a', cle: 'vck_a', plafondMicroEur: 10 * MICRO });
+    cles.cible = 160 * MICRO;
+    const t = new FauxTransport([{ status: 200, json: {} }, { status: 200, json: {} }]);
+    const d = deps({ cles, solde: 160 * MICRO, transport: t });
+    await Promise.all([remonterPlafondApresRecharge(d, 't1'), remonterPlafondApresRecharge(d, 't1')]);
+    expect(cles.plafondsNotes).toEqual([160 * MICRO]);
+    // La seconde voit le plafond noté par la première : Vercel n'est appelé qu'une fois.
+    expect(t.appels).toHaveLength(1);
+  });
+
+  it('🔴 une cible qui ne dépasse pas le plafond posé n’appelle pas Vercel', async () => {
+    // Le solde bouge à chaque tour d'agent. Suivre le solde ferait un appel réseau par tour, pour réécrire
+    // le même nombre : on compare donc au dernier plafond POSÉ, et on ne descend jamais.
+    const cles = fauxCles({ cleId: 'key_a', cle: 'vck_a', plafondMicroEur: 10 * MICRO });
+    cles.cible = 8 * MICRO;
     const t = new FauxTransport([]);
-    expect(await remonterPlafondApresRecharge(deps({ cles, solde: 1, transport: t }), 't1', 0)).toBe(false);
+    expect(await remonterPlafondApresRecharge(deps({ cles, solde: 1, transport: t }), 't1')).toBe(false);
     expect(t.appels).toHaveLength(0);
+    expect(cles.plafondsNotes).toEqual([]);
   });
 
   it('un espace SANS clé ne déclenche rien', async () => {
     const cles = fauxCles();
+    cles.cible = 50 * MICRO;
     const t = new FauxTransport([]);
-    expect(await remonterPlafondApresRecharge(deps({ cles, solde: 50 * MICRO, transport: t }), 't1', 50 * MICRO)).toBe(false);
+    expect(await remonterPlafondApresRecharge(deps({ cles, solde: 50 * MICRO, transport: t }), 't1')).toBe(false);
     expect(t.appels).toHaveLength(0);
   });
 
-  it('🔴 un échec chez Vercel NE FAIT PAS échouer le rechargement', async () => {
+  it('🔴 un échec chez Vercel NE FAIT PAS échouer le crédit, et se journalise', async () => {
     // Un client vient de payer. Lui rendre une erreur parce qu'un tiers est indisponible serait le pire
-    // moment : son crédit est déjà crédité chez nous, son plafond rattrapera au prochain mouvement.
+    // moment : son crédit est déjà crédité chez nous, son plafond rattrapera à la remontée suivante.
     const cles = fauxCles({ cleId: 'key_a', cle: 'vck_a', plafondMicroEur: 10 * MICRO });
+    cles.cible = 30 * MICRO;
     const t = new FauxTransport([{ status: 500, json: {} }]);
     const vus: string[] = [];
-    expect(await remonterPlafondApresRecharge(deps({ cles, solde: 0, transport: t }), 't1', 20 * MICRO, (m) => vus.push(m)))
-      .toBe(false);
+    expect(await remonterPlafondApresRecharge(deps({ cles, solde: 0, transport: t, journal: vus }), 't1')).toBe(false);
     // Et le plafond n'est PAS noté : sinon on croirait l'avoir posé, et on ne réessaierait jamais.
     expect(cles.plafondsNotes).toEqual([]);
     expect(vus).toHaveLength(1);
@@ -291,14 +361,31 @@ describe('revoquerCleGateway', () => {
 describe('creerAssureurDeCle', () => {
   function assureur(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: FauxTransport; provision?: false; now?: () => number }) {
     const journal: string[] = [];
+    const travaux = travauxNotes();
     const assurer = creerAssureurDeCle({
       cles: o.cles,
       provision: o.provision === false ? null : deps({ cles: o.cles, solde: o.solde, transport: o.transport }),
       journal: (msg) => { journal.push(msg); },
+      travaux,
       ...(o.now ? { now: o.now } : {}),
     });
-    return { assurer, journal };
+    return { assurer, journal, travaux };
   }
+
+  it('🔴 l’ouverture en arrière-plan est confiée aux travaux que l’arrêt du processus attend', async () => {
+    // Relecture du 2026-09-29 : personne n'attendait cette promesse. L'arrêt d'une copie de l'API fermait le pool
+    // pendant qu'elle attendait Vercel, et la clé créée chez Vercel ne s'enregistrait jamais chez nous.
+    const cles = fauxCles();
+    const t = new FauxTransport([OK]);
+    const { assurer, travaux } = assureur({ cles, solde: 5 * MICRO, transport: t });
+    expect(await assurer('t1')).toBe('en_preparation');
+    expect(travaux.suivis).toHaveLength(1);
+    await Promise.all(travaux.suivis);
+    expect(cles.ecritures).toHaveLength(1);
+    // Une clé déjà là n'ouvre rien, donc ne confie rien.
+    expect(await assurer('t1')).toBe('prete');
+    expect(travaux.suivis).toHaveLength(1);
+  });
 
   it('une clé qui existe est rendue sans appeler Vercel', async () => {
     const cles = fauxCles({ cleId: 'key_deja', cle: 'vck_deja', plafondMicroEur: 10 * MICRO });
@@ -357,6 +444,7 @@ describe('creerAssureurDeCle', () => {
       cles,
       provision: { ...deps({ cles, solde: 0, transport: t }), credits: { solde: async () => solde } },
       journal: () => {},
+      travaux: travauxNotes(),
     });
     expect(await a('t1')).toBe('credit_insuffisant');
     expect(t.appels).toHaveLength(0);

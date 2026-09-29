@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
@@ -38,10 +38,12 @@ interface Cap {
   relies: string[];
   /** Actions écrites au journal d'audit. */
   audit: string[];
+  /** Les numéros pour lesquels la route a demandé le crédit de bienvenue. */
+  offerts: string[];
 }
 
 function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
-  const cap: Cap = { codes: [], verifies: [], registres: [], pins: [], delies: [], relies: [], audit: [] };
+  const cap: Cap = { codes: [], verifies: [], registres: [], pins: [], delies: [], relies: [], audit: [], offerts: [] };
   const deps: EmbeddedSignupRouteDeps = {
     ...signupInerte,
     audit: async (_t, _acteur, action) => { cap.audit.push(action); },
@@ -58,6 +60,7 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     },
     inscriptions: { linkTenant: async () => {} },
     saveCredentials: async () => {},
+    offrirCredit: async (_t, phoneNumberId) => { cap.offerts.push(phoneNumberId); },
     numeroDuTenant: async () => 'pn-1',
     etatNumero: async () => ({ status: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED' }),
     demanderCode: async (_t, phoneNumberId, methode) => { cap.codes.push({ phoneNumberId, methode }); },
@@ -251,6 +254,52 @@ describe('POST /tenants/:tenantId/numero/activer', () => {
     const { server } = app();
     expect((await server.inject({ method: 'POST', url: ACTIVER_URL, ...h(agentTok), payload: {} })).statusCode).toBe(403);
     await server.close();
+  });
+});
+
+/**
+ * LE CRÉDIT DE BIENVENUE À L'ACTIVATION (relecture du 2026-09-29) : un numéro relié sans être vérifié n'a rien reçu à
+ * l'inscription, il le reçoit dès que Meta le dit vérifié. Jamais avant.
+ */
+describe('POST /tenants/:tenantId/numero/activer : le crédit de bienvenue', () => {
+  const activer = async (over: Partial<EmbeddedSignupRouteDeps>, payload: object) => {
+    const { server, cap } = app(over);
+    const res = await server.inject({ method: 'POST', url: ACTIVER_URL, ...h(adminTok), payload });
+    await server.close();
+    return { res, cap };
+  };
+
+  it('🔴 code ACCEPTÉ : l’offre est demandée, une fois, pour le numéro de l’espace', async () => {
+    const { res, cap } = await activer({}, { code: '123456' });
+    expect(res.statusCode).toBe(200);
+    expect(cap.offerts).toEqual(['pn-1']);
+  });
+
+  it('🔴 code REFUSÉ, ou absent : rien n’est offert', async () => {
+    expect((await activer({ verifierCode: async () => { throw new Error('Graph 400 (#136025) : invalid code'); } }, { code: '000000' })).cap.offerts).toEqual([]);
+    expect((await activer({}, {})).cap.offerts).toEqual([]);
+  });
+
+  it('déjà vérifié, ou déjà activé par Meta : l’offre est demandée (le numéro est vérifié)', async () => {
+    expect((await activer({ etatNumero: async () => ({ status: 'PENDING', codeVerificationStatus: 'VERIFIED' }) }, {})).cap.offerts).toEqual(['pn-1']);
+    expect((await activer({ etatNumero: async () => ({ status: 'CONNECTED', codeVerificationStatus: 'VERIFIED' }) }, {})).cap.offerts).toEqual(['pn-1']);
+  });
+
+  it('un enregistrement refusé APRÈS un code accepté ne reprend pas l’offre : la vérification a eu lieu', async () => {
+    const { res, cap } = await activer({ enregistrerNumero: async () => { throw new Error('Graph 400 : 133005'); } }, { code: '123456' });
+    expect(res.statusCode).toBe(422);
+    expect(cap.offerts).toEqual(['pn-1']);
+  });
+
+  it('🔴 une offre qui échoue ne fait pas échouer l’activation : Meta a déjà vérifié et activé le numéro', async () => {
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { res, cap } = await activer({ offrirCredit: async () => { throw new Error('base indisponible'); } }, { code: '123456' });
+      expect(res.statusCode).toBe(200);
+      expect(cap.registres).toHaveLength(1);
+    } finally {
+      erreurs.mockRestore();
+    }
   });
 });
 

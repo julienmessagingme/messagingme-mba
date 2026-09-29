@@ -25,6 +25,8 @@ export interface EvenementConversation {
   cible: QuiEvenement;
   cause: string | null;
   reassignation: boolean;
+  /** Une assignation que le collaborateur s'est faite à lui-même : une prise (« Prise en charge »). */
+  prise: boolean;
 }
 
 export interface DetailConversation {
@@ -71,6 +73,8 @@ function lireEvenement(v: unknown): EvenementConversation | null {
   return {
     id: v.id, type: v.type, at: v.at, acteur, cible, cause: v.cause,
     reassignation: v.reassignation === true,
+    // Absent d'une API plus ancienne : faux, et la ligne dit « Assignée à Marie », comme avant.
+    prise: v.prise === true,
   };
 }
 
@@ -118,6 +122,9 @@ export function libelleEvenement(e: EvenementConversation, t: T): string {
   const cible = nomDe(e.cible, t) ?? t('un collaborateur', 'a teammate');
   switch (e.type) {
     case 'assignee':
+      // Une prise (le collaborateur se l'assigne lui-même) : « Prise en charge », et la ligne d'origine dit par qui.
+      // « Assignée à Marie · par Marie » disait le fait sans dire le geste.
+      if (e.prise) return t('Prise en charge', 'Taken on');
       return e.reassignation ? t(`Réassignée à ${cible}`, `Reassigned to ${cible}`) : t(`Assignée à ${cible}`, `Assigned to ${cible}`);
     case 'desassignee':
       return t(`Désassignée (était à ${cible})`, `Unassigned (was ${cible})`);

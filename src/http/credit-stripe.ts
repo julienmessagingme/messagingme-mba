@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { journaliser } from '../lib/journal';
-import { creerClientStripe, creerSessionCheckout, StripeError, type TransportStripe } from '../stripe/client';
+import { creerClientStripe, creerSessionCheckout, lireFactureStripe, lirePrixStripe, StripeError, type TransportStripe } from '../stripe/client';
 import { verifierSignatureStripe } from '../stripe/signature';
 import { creditDeLOffre, definitionOffre, OFFRES_RECHARGE, type OffreRecharge } from '../stripe/offres';
 import type { IssuePaiement, PaiementStripe } from '../stripe/store.pg';
@@ -42,9 +42,36 @@ export interface CreditPaiementRouteDeps {
   };
   /**
    * Ce compte peut-il ouvrir un paiement ? Toujours oui en live. 🔴 En mode test, seul un exploitant : une carte de
-   * test créditerait sinon de vrais euros de modèle à n'importe quel client, le temps des essais.
+   * test créditerait sinon de vrais euros de modèle à n'importe quel client, le temps des essais. La même règle
+   * ouvre les factures.
    */
   payeurAutorise(userId: string): Promise<boolean>;
+  /**
+   * La facture d'un paiement DE CET ESPACE (`PgStripeStore.factureDe`) : `null` = paiement inconnu ici (ou d'un autre
+   * espace), `factureId` nul = Stripe n'en a pas émis. Requis : la route n'a pas d'autre source.
+   */
+  factures: { factureDe(tenantId: string, sessionId: string): Promise<{ factureId: string | null } | null> };
+}
+
+/** Une session Checkout, telle que Stripe les nomme. Autre chose ne désigne aucun paiement : 404, sans lecture. */
+const SESSION_STRIPE = /^cs_[A-Za-z0-9_]{1,250}$/;
+
+/**
+ * Qui peut ouvrir un paiement, selon le MODE de la clé Stripe : tout admin en live ; en test, seul un exploitant
+ * (`OPS_EMAILS`), parce qu'une carte de test créditerait sinon de vrais euros de modèle à n'importe quel client.
+ * Une fonction et pas trois lignes dans le câblage : inverser la condition du mode doit faire échouer un test
+ * (`tests/http-credit-stripe.test.ts`), et le câblage qui lui passe le mode est tenu par un autre.
+ */
+export function creerPayeurAutorise(o: {
+  livemode: boolean;
+  adresseDe(userId: string): Promise<string | null>;
+  estExploitant(adresse: string): boolean;
+}): (userId: string) => Promise<boolean> {
+  return async (userId) => {
+    if (o.livemode) return true;
+    const adresse = await o.adresseDe(userId);
+    return adresse !== null && o.estExploitant(adresse);
+  };
 }
 
 const corpsPaiement = z.object({ offre: z.enum(OFFRES_RECHARGE) });
@@ -70,6 +97,22 @@ export function registerCreditPaiement(app: FastifyInstance, deps: CreditPaiemen
     if (!(await deps.payeurAutorise(req.auth?.userId ?? ''))) return reply.code(503).send(INDISPONIBLE);
 
     try {
+      // 🔴 LE PRIX CONFIGURÉ EST RELU CHEZ STRIPE, AVANT TOUT (relecture du 2026-09-29). Le webhook ne crédite un
+      // paiement que s'il a encaissé, en euros, le HT de l'offre : un prix mal configuré (un identifiant interverti
+      // entre les deux offres, un prix en dollars, un montant faux) laissait payer le client, puis refusait de le
+      // créditer. On refuse donc AVANT le paiement, sans rien créer chez Stripe, et on le dit au journal.
+      const attendu = definitionOffre(offre).htCentimes;
+      const lu = await lirePrixStripe(s.transport, { cle: s.cle, prix: s.prix[offre] });
+      if (lu.montantCentimes !== attendu || lu.devise !== 'eur') {
+        journaliser('error', 'stripe_prix_incoherent', {
+          tenantId: tenant, offre, prix: s.prix[offre], attenduCentimes: attendu, luCentimes: lu.montantCentimes, devise: lu.devise,
+        });
+        return reply.code(422).send({
+          error: 'La recharge est momentanément indisponible : son tarif est en cours de correction. Réessayez plus tard, ou contactez-nous.',
+          code: 'prix_incoherent',
+        });
+      }
+
       let client = await deps.clients.clientDe(tenant, s.livemode);
       if (client === null) {
         const cree = await creerClientStripe(s.transport, { cle: s.cle, tenantId: tenant });
@@ -100,6 +143,52 @@ export function registerCreditPaiement(app: FastifyInstance, deps: CreditPaiemen
       });
     }
   });
+
+  /**
+   * La facture d'un achat (décision de Julien du 2026-09-29) : l'adresse de sa page hébergée par Stripe (consultation
+   * et PDF), que la console ouvre dans un onglet. Mêmes gardes que le paiement : admin, espace vérifié, plafond coûteux
+   * (chaque clic appelle Stripe), et la même règle du mode test.
+   *
+   * 🔴 LE PAIEMENT SE RELIT DANS CET ESPACE (`tenant_id = $1`) : un identifiant de session d'un autre espace rend 404,
+   * exactement comme un identifiant inconnu, et Stripe n'est pas appelé. La facture vient de notre base, jamais de la
+   * requête. Aucun refus ne part en 5xx sur une erreur de Stripe : Cloudflare en remplacerait le corps.
+   */
+  app.get('/tenants/:tenantId/credit/factures/:sessionId', couteux, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const sessionId = (req.params as { sessionId?: unknown }).sessionId;
+    const s = deps.stripe;
+    if (s === null) return reply.code(503).send(INDISPONIBLE);
+    if (!(await deps.payeurAutorise(req.auth?.userId ?? ''))) return reply.code(503).send(INDISPONIBLE);
+    const inconnu = { error: 'paiement inconnu', code: 'paiement_inconnu' } as const;
+    if (typeof sessionId !== 'string' || !SESSION_STRIPE.test(sessionId)) return reply.code(404).send(inconnu);
+
+    const paiement = await deps.factures.factureDe(tenant, sessionId);
+    if (paiement === null) return reply.code(404).send(inconnu);
+    if (paiement.factureId === null) {
+      return reply.code(404).send({ error: 'Ce paiement n’a pas de facture chez Stripe.', code: 'sans_facture' });
+    }
+
+    try {
+      const facture = await lireFactureStripe(s.transport, { cle: s.cle, facture: paiement.factureId });
+      if (facture.url === null) {
+        // Une facture sans page hébergée : encore un brouillon chez Stripe, ou finalisée hors de Checkout.
+        journaliser('error', 'stripe_facture_sans_adresse', { tenantId: tenant, session: sessionId, facture: paiement.factureId });
+        return reply.code(422).send({ error: 'La facture n’est pas encore consultable chez Stripe. Réessayez plus tard.', code: 'facture_sans_adresse' });
+      }
+      return reply.code(200).send({ url: facture.url });
+    } catch (err) {
+      if (!(err instanceof StripeError)) throw err;
+      // Le message de Stripe reste au journal : il parle de NOTRE compte (clé sans droit de lecture des factures,
+      // par exemple), et peut citer la fin de la clé.
+      journaliser('error', 'stripe_facture_impossible', {
+        tenantId: tenant, session: sessionId, operation: err.operation, status: err.status, type: err.type, code: err.code, err: err.message,
+      });
+      return reply.code(422).send({
+        error: 'La facture n’a pas pu être ouverte. Réessayez dans un instant ; si cela persiste, contactez-nous.',
+        code: 'facture_impossible',
+      });
+    }
+  });
 }
 
 // ------------------------------------------------------------------------------------------------------------
@@ -112,13 +201,20 @@ type AvecCorpsBrut = FastifyRequest & { rawBody?: Buffer };
 export interface StripeWebhookRouteDeps {
   /** Le secret de signature de la destination déclarée chez Stripe (`whsec_...`). Vide : tout est refusé. */
   secret: string;
+  /**
+   * Le mode de la clé Stripe configurée (`estCleLive`). Un événement d'un AUTRE mode ne crédite rien : un paiement
+   * de test ne donne jamais de vrais euros de modèle, et un paiement réel reçu par une instance réglée en test ne se
+   * crédite pas sur une base qui n'est pas la bonne. Requis : la configuration refuse le secret sans la clé.
+   */
+  livemode: boolean;
   paiements: { crediterPaiement(p: PaiementStripe): Promise<IssuePaiement> };
   /**
-   * Après un crédit : remonter le plafond de la clé de modèle de l'espace (`remonterPlafondApresRecharge`). La route
-   * ne l'attend pas (le câblage le fait suivre par l'arrêt propre du processus) ; un échec est journalisé et ne
-   * change pas la réponse : le crédit est écrit.
+   * Après un crédit : remonter le plafond de la clé de modèle de l'espace (`remonterPlafondApresRecharge`, qui
+   * recalcule la cible depuis le solde : le montant de CE crédit ne lui sert pas). La route ne l'attend pas (le
+   * câblage le fait suivre par l'arrêt propre du processus) ; un échec est journalisé et ne change pas la réponse :
+   * le crédit est écrit.
    */
-  apresCredit(tenantId: string, creditMicroEur: number): Promise<void>;
+  apresCredit(tenantId: string): Promise<void>;
   now?: () => number;
 }
 
@@ -171,6 +267,13 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       return reply.code(400).send({ error: 'événement illisible' });
     }
     if (!EVENEMENTS_CREDITANTS.has(ev.data.type)) return reply.code(200).send({ recu: true });
+
+    // 2 bis. 🔴 Le mode de l'événement doit être celui de la clé configurée (relecture du 2026-09-29). Rejouer n'y
+    //        changerait rien, donc 200, et une trace en erreur : c'est une destination mal déclarée chez Stripe.
+    if (ev.data.livemode !== deps.livemode) {
+      journaliser('error', 'stripe_mode_incoherent', { evenement: ev.data.id, type: ev.data.type, livemodeEvenement: ev.data.livemode, livemodeCle: deps.livemode });
+      return reply.code(200).send({ recu: true, credite: false });
+    }
 
     // 3. La session. Un événement qui crédite et qu'on ne sait pas lire est de l'argent encaissé sans crédit : 422,
     //    donc rejoué par Stripe pendant trois jours, le temps de corriger le code.
@@ -227,7 +330,7 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       // Après la transaction, et SANS la faire attendre à Stripe : la réponse part dès que le crédit est écrit (Stripe
       // abandonne un webhook trop lent, et Vercel peut prendre jusqu'à 30 s). Un échec se journalise : le crédit est
       // écrit, le plafond rattrapera au mouvement suivant.
-      deps.apresCredit(tenantId, credit).catch((err: unknown) => {
+      deps.apresCredit(tenantId).catch((err: unknown) => {
         journaliser('error', 'stripe_plafond_non_remonte', { tenantId, err });
       });
     }

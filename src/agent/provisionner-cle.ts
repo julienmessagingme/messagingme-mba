@@ -2,6 +2,7 @@ import { dollarsDepuisMicroEuros, PLAFOND_GATEWAY_MIN_DOLLARS } from './devise';
 import { creerCleGateway, majPlafondCleGateway, supprimerCleGateway, CleGatewayError, type HttpTransportSuppression } from './llm/cles-gateway';
 import type { CleGatewayEspace, PgCleGatewayStore } from './cles-gateway.pg';
 import type { HttpTransportPatch } from '../meta/http';
+import type { TravauxEnVol } from '../lib/en-vol';
 
 /**
  * S'assurer qu'un espace a sa clé AI Gateway, et la créer chez Vercel s'il n'en a pas.
@@ -36,7 +37,7 @@ export class CleIllisible extends Error {
 }
 
 export interface DepsProvisionCle {
-  cles: Pick<PgCleGatewayStore, 'lire' | 'lireEtat' | 'enregistrer' | 'noterPlafond' | 'oublier'>;
+  cles: Pick<PgCleGatewayStore, 'lire' | 'lireEtat' | 'enregistrer' | 'ajusterPlafond' | 'oublier'>;
   /** Le solde prépayé de l'espace, en micro-euros. C'est lui qui devient le plafond. */
   credits: { solde(tenantId: string): Promise<number> };
   /** Comment nommer la cle dans le tableau de bord Vercel. */
@@ -46,6 +47,11 @@ export interface DepsProvisionCle {
   teamId: string;
   cleGatewayMaison: string;
   tauxEurParDollar: number;
+  /**
+   * Où dire qu'un plafond n'a pas pu être remonté. Requis : la remontée ne lève jamais (un crédit payé ne doit pas
+   * échouer à cause de Vercel), donc sans journal son échec serait muet, et le client coupé au plafond d'avant.
+   */
+  journal(msg: string, err: unknown, tenantId: string): void;
 }
 
 /**
@@ -92,6 +98,11 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
   if (enregistree.cleId !== creee.id) {
     await supprimerCleGateway(deps.transport, { jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: creee.id });
   }
+  // 🔴 LE CRÉDIT ARRIVÉ PENDANT L'OUVERTURE (relecture du 2026-09-29). La clé naît plafonnée au solde lu AVANT l'appel
+  // à Vercel ; un achat, une offre ou une recharge écrits entre cette lecture et l'enregistrement ont tenté de remonter
+  // un plafond qui n'existait pas encore, et n'ont rien fait. On recalcule donc la cible maintenant que la ligne
+  // existe : sans crédit entre-temps elle ne dépasse pas le plafond posé, et Vercel n'est pas rappelé.
+  await remonterPlafondApresRecharge(deps, tenantId);
   return enregistree;
 }
 
@@ -134,12 +145,18 @@ export interface AssureurDeCle {
  *
  * Une clé ILLISIBLE en base n'ouvre rien (`CleIllisible`) : elle se journalise, une fois par répit, et la traduction
  * reste indisponible pour cet espace jusqu'à la réparation.
+ *
+ * 🔴 L'OUVERTURE EN VOL EST SUIVIE PAR `travaux` (relecture du 2026-09-29). Personne ne l'attend, par construction :
+ * sans ce suivi, l'arrêt d'une copie de l'API fermait le pool pendant qu'elle attendait Vercel, et une clé créée chez
+ * Vercel ne s'enregistrait jamais chez nous (facturable, identifiant perdu). Requis, pour qu'un câblage ne l'oublie pas.
  */
 export function creerAssureurDeCle(deps: {
   cles: Pick<PgCleGatewayStore, 'lireEtat'>;
   /** `null` = provisionnement éteint sur cette instance : seule une clé existante sert. */
   provision: DepsProvisionCle | null;
   journal: (msg: string, err: unknown, tenantId: string) => void;
+  /** Les travaux que l'arrêt du processus attend (`src/lib/en-vol.ts`). */
+  travaux: Pick<TravauxEnVol, 'suivre'>;
   now?: () => number;
 }): AssureurDeCle {
   const echecs = new Map<string, number>();
@@ -183,43 +200,42 @@ export function creerAssureurDeCle(deps: {
       )
       .finally(() => { vols.delete(tenantId); });
     vols.set(tenantId, vol);
+    void deps.travaux.suivre(vol);
     return 'en_preparation';
   };
   return Object.assign(assurer, { enVol: (tenantId: string) => vols.get(tenantId) });
 }
 
 /**
- * Remonte le plafond après un rechargement du crédit.
+ * Remonte le plafond de la clé après un crédit (achat, offre, recharge manuelle), ou après l'ouverture de la clé.
  *
- * N'appelle Vercel que si le plafond change : on compare au dernier plafond posé, pas au solde qui descend
- * à chaque tour. Ne descend jamais : Vercel mesure ce que la clé a déjà dépensé, notre solde ce qui reste,
- * donc le plafond est le cumul de ce qui a été acheté. Ne lève pas : un rechargement payé ne doit jamais
- * échouer à cause de Vercel. Rend `true` si Vercel a été appelé.
+ * La CIBLE est le cumul crédité depuis l'ouverture de la clé, recalculé depuis le solde et les mouvements sous le
+ * verrou de la clé (`PgCleGatewayStore.ajusterPlafond`, qui dit pourquoi) : elle ne dépend pas du montant de CE
+ * crédit, donc deux remontées simultanées, tardives ou rejouées convergent vers la même valeur, et un achat arrivé
+ * pendant l'ouverture de la clé n'est pas perdu.
+ *
+ * N'appelle Vercel que si la cible dépasse le dernier plafond posé : le solde descend à chaque tour, pas la cible. Ne
+ * descend jamais : Vercel mesure ce que la clé a déjà dépensé, notre solde ce qui reste. Ne lève pas : un crédit payé
+ * ne doit jamais échouer à cause de Vercel ; l'échec va au journal et la remontée suivante rattrape. Rend `true` si
+ * un plafond a été posé chez Vercel.
  */
-export async function remonterPlafondApresRecharge(
-  deps: DepsProvisionCle,
-  tenantId: string,
-  achetteMicroEur: number,
-  journal?: (msg: string, err: unknown) => void,
-): Promise<boolean> {
-  const cle = await deps.cles.lire(tenantId);
-  if (!cle) return false;
-  const cible = cle.plafondMicroEur + Math.max(0, Math.round(achetteMicroEur));
-  if (cible <= cle.plafondMicroEur) return false;
-  const dollars = dollarsDepuisMicroEuros(cible, deps.tauxEurParDollar);
-  if (dollars === null) return false;
+export async function remonterPlafondApresRecharge(deps: DepsProvisionCle, tenantId: string): Promise<boolean> {
   try {
-    await majPlafondCleGateway(deps.transport, {
-      cleGatewayMaison: deps.cleGatewayMaison,
-      cleId: cle.cleId,
-      plafondDollars: dollars,
+    return await deps.cles.ajusterPlafond(tenantId, async (cle, cible) => {
+      if (cible <= cle.plafondMicroEur) return null;
+      const dollars = dollarsDepuisMicroEuros(cible, deps.tauxEurParDollar);
+      if (dollars === null) return null;
+      await majPlafondCleGateway(deps.transport, {
+        cleGatewayMaison: deps.cleGatewayMaison,
+        cleId: cle.cleId,
+        plafondDollars: dollars,
+      });
+      return cible;
     });
   } catch (err) {
-    journal?.('plafond gateway non remonte', err instanceof CleGatewayError ? err.message : err);
+    deps.journal('plafond gateway non remonte', err instanceof CleGatewayError ? err.message : err, tenantId);
     return false;
   }
-  await deps.cles.noterPlafond(tenantId, cible);
-  return true;
 }
 
 /**

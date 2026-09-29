@@ -65,11 +65,13 @@ humain. Une ligne amorcée porte la cause « état au déploiement ». Rien n'es
 
 ### 2. La lecture
 
-`GET /tenants/:tenantId/inbox/conversations/:id/detail` : identité (champs système, tags, désabonné, bloqué,
+`GET /tenants/:tenantId/conversations/:conversationId/detail` : identité (champs système, tags, désabonné, bloqué,
 identifiant de la fiche), résumé de l'analyse (ou `null`), assignation courante (nom du collaborateur), historique
-(les 50 derniers événements, nom des acteurs et cibles résolus, un collaborateur supprimé s'affiche « ancien
-collaborateur »). **Même garde de visibilité que le fil** (`src/inbox/assignment.ts`) : un agent qui ne voit que
-ses conversations et les non affectées ne lit que leur détail ; sinon 404. `tenant_id = $1` sur chaque requête.
+(les 50 derniers événements, nom des acteurs et cibles résolus DANS l'espace, un collaborateur supprimé s'affiche
+« ancien collaborateur », une identité qui n'est pas un collaborateur, comme une clé d'API, porte sa cause ; une
+assignation qu'un collaborateur se fait à lui-même se lit « Prise en charge », relecture du 2026-09-29). **Même
+garde de visibilité que le fil** (`src/inbox/assignment.ts`) : un agent qui ne voit que ses conversations et les
+non affectées ne lit que leur détail ; sinon 404. `tenant_id = $1` sur chaque requête.
 
 ### 3. L'écran
 

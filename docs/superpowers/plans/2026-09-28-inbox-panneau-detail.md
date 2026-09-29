@@ -33,7 +33,7 @@ par qui, quand, dans l'ordre) ; et vérifier qu'un message du contact sur une co
 
 ## Tâche 2 : la route de lecture
 
-- `GET /tenants/:tenantId/inbox/conversations/:id/detail` (spec § 2), dans le module Inbox existant, avec sa
+- `GET /tenants/:tenantId/conversations/:conversationId/detail` (spec § 2), dans le module Inbox existant, avec sa
   garde de visibilité.
 - Tests : un admin lit tout ; un agent lit les siennes et les non affectées, 404 sur celle d'un autre ; un autre
   espace, 403 ; un résumé absent rend `null` ; un collaborateur supprimé devient « ancien collaborateur ».

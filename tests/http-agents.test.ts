@@ -136,13 +136,13 @@ describe('routes agents : l’historique du crédit', () => {
         solde: async () => 0,
         historique: async (tenant, limite) => {
           vus.push({ tenant, limite });
-          return [{ id: 'a', deltaMicroEur: 50_000_000, raison: 'achat', jour: null, at: '2026-09-29T10:00:00.000Z' }];
+          return [{ id: 'a', deltaMicroEur: 50_000_000, raison: 'achat', jour: null, at: '2026-09-29T10:00:00.000Z', paiementId: 'cs_live_1', facture: true }];
         },
       },
     });
     const r = await srv.inject({ method: 'GET', url: '/tenants/t1/agents/mouvements?limite=100000', ...h(adminTok) });
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ mouvements: [{ id: 'a', deltaMicroEur: 50_000_000, raison: 'achat', jour: null, at: '2026-09-29T10:00:00.000Z' }] });
+    expect(r.json()).toEqual({ mouvements: [{ id: 'a', deltaMicroEur: 50_000_000, raison: 'achat', jour: null, at: '2026-09-29T10:00:00.000Z', paiementId: 'cs_live_1', facture: true }] });
     expect(vus).toEqual([{ tenant: 't1', limite: 50 }]);
     // L'espace d'un autre, et un membre non admin : refusés comme le solde.
     expect((await srv.inject({ method: 'GET', url: '/tenants/t2/agents/mouvements', ...h(adminTok) })).statusCode).toBe(403);

@@ -13,8 +13,9 @@ choisissez votre compte professionnel et votre numéro, et tout le reste se fait
 déjà commencé une première fois, recommencer fonctionne : vous n'avez rien à ressaisir et aucun nouveau code
 à redemander, vous retrouvez le compte et le numéro existants. Quand Meta refuse, c'est SON motif qui
 s'affiche (code expiré, compte non partagé, plusieurs numéros à départager), pas un message d'erreur opaque.
-À la connexion du premier numéro de votre espace, **5 € de crédit IA vous sont offerts**, une seule fois : ils
-paient vos agents IA et la traduction de l'Inbox (voir Paramètres > Crédit IA).
+Pour le premier numéro de votre espace, **5 € de crédit IA vous sont offerts** dès que Meta l'a vérifié, une seule
+fois : à la connexion s'il l'est déjà, sinon quand vous l'activez avec le code de vérification. Ils paient vos
+agents IA et la traduction de l'Inbox (voir Paramètres > Crédit IA).
 
 **Un espace pilote un seul numéro.** En connecter un second est refusé, en vous disant lequel est déjà là et
 quoi faire : créer un second espace, ou détacher celui-ci. Accepter les deux mélangerait les conversations

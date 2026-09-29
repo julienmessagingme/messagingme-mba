@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 
 /**
  * La clé AI Gateway d'un espace : lecture, écriture, et déplacement de son plafond.
@@ -103,11 +104,53 @@ export class PgCleGatewayStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Note le plafond réellement posé chez Vercel, pour ne rappeler Vercel que quand il change. */
-  async noterPlafond(tenantId: string, plafondMicroEur: number): Promise<void> {
-    await this.pool.query(
-      'update agent_gateway_keys set plafond_micro_eur = $2, updated_at = now() where tenant_id = $1',
-      [tenantId, Math.max(0, Math.round(plafondMicroEur))],
-    );
+  /**
+   * Ajuste le plafond de la clé d'un espace, SOUS LE VERROU DE SA LIGNE, et note ce qui a été posé chez Vercel.
+   * `poser` reçoit la clé (son identifiant, le dernier plafond noté) et la CIBLE, et rend le plafond qu'il a posé
+   * chez Vercel, ou `null` s'il n'a rien posé. Rend `true` si un plafond a été posé, `false` si l'espace n'a pas de
+   * clé ou si rien n'a bougé. Une exception de `poser` annule tout et remonte : rien n'est noté.
+   *
+   * 🔴 LA CIBLE SE RECALCULE DEPUIS LE SOLDE, ELLE NE S'INCRÉMENTE PAS (relecture du 2026-09-29). Ajouter le montant
+   * d'un achat au dernier plafond noté perdait des achats de deux façons : un achat arrivé pendant l'ouverture de la
+   * clé (pas encore de ligne, donc rien à remonter, et la clé naissait au solde lu AVANT lui), et deux remontées
+   * simultanées qui lisaient le même plafond (la seconde écrasait la première). La cible est le cumul de ce qui a été
+   * crédité depuis l'ouverture de la clé, plafond initial compris : le solde d'aujourd'hui, plus tout ce qui en a été
+   * débité depuis `created_at`. Une remontée tardive ou rejouée converge donc vers la même valeur.
+   *
+   * 🔴 SÉRIALISÉE PAR ESPACE, ENTRE TOUTES LES COPIES : `for update` sur la ligne de la clé, tenu jusqu'à la fin de la
+   * transaction, donc pendant l'appel à Vercel. La cible se calcule dans une SECONDE instruction, après le verrou :
+   * en lecture validée, elle voit alors tout ce que la remontée précédente a vu, et le plafond qu'elle a noté. Le
+   * verrou ne gêne pas le chemin chaud : les tours d'agent LISENT la clé (`lireEtat`), sans verrou. Il retient une
+   * connexion du pool le temps de l'appel à Vercel (30 s au pire), sur un geste rare : un achat, une offre, une
+   * recharge, l'ouverture d'une clé.
+   */
+  async ajusterPlafond(
+    tenantId: string,
+    poser: (cle: { cleId: string; plafondMicroEur: number }, cibleMicroEur: number) => Promise<number | null>,
+  ): Promise<boolean> {
+    return enTransaction(this.pool, async (client) => {
+      const lu = await client.query<{ cle_id: string; plafond_micro_eur: string }>(
+        'select cle_id, plafond_micro_eur from agent_gateway_keys where tenant_id = $1 for update',
+        [tenantId],
+      );
+      const row = lu.rows[0];
+      if (!row) return false;
+      const calcul = await client.query<{ cible: string | null }>(
+        `select coalesce((select solde_micro_eur from agent_credits where tenant_id = $1), 0)
+              - coalesce((select sum(m.delta_micro_eur)
+                            from agent_credit_mouvements m
+                            join agent_gateway_keys k on k.tenant_id = m.tenant_id
+                           where m.tenant_id = $1 and m.delta_micro_eur < 0 and m.at >= k.created_at), 0) as cible`,
+        [tenantId],
+      );
+      const cible = Number(calcul.rows[0]?.cible ?? 0);
+      const pose = await poser({ cleId: row.cle_id, plafondMicroEur: Number(row.plafond_micro_eur) }, cible);
+      if (pose === null) return false;
+      await client.query(
+        'update agent_gateway_keys set plafond_micro_eur = $2, updated_at = now() where tenant_id = $1',
+        [tenantId, Math.max(0, Math.round(pose))],
+      );
+      return true;
+    });
   }
 }

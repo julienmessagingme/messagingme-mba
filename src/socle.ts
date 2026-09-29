@@ -233,8 +233,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    */
   const numeroDelieStore = new PgNumeroDelieStore(pool);
   const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
-  // Le crédit offert à la connexion du premier numéro (`CREDIT_OFFERT_MICRO_EUR`, cf. `src/config.ts`) : seule la
-  // liaison par l'inscription intégrée l'écrit, dans sa transaction.
+  // Le crédit offert au premier numéro que Meta dit vérifié (`CREDIT_OFFERT_MICRO_EUR`, cf. `src/config.ts`) : seules
+  // les routes de l'inscription et de l'activation le demandent (`offrirCredit`), jamais la liaison elle-même.
   const esCredentialsStore = new PgEmbeddedSignupStore(pool, { creditOffertMicroEur: config.CREDIT_OFFERT_MICRO_EUR });
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,

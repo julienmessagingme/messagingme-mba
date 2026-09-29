@@ -212,7 +212,16 @@ const CIBLE_DU_CONTACT_SQL = `cible as (
  */
 export type FilDuContact = { etat: 'fil'; conversationId: string } | { etat: 'sans_fil' } | { etat: 'injoignable' };
 
-/** Store Postgres de la boîte de réception (conversations + messages). */
+/**
+ * Store Postgres de la boîte de réception (conversations + messages).
+ *
+ * ⚠️ LE VERROU DES ÉCRITURES QUI JOURNALISENT (migration 0192) : l'état d'avant se lit dans un sous-select
+ * `for no key update`, jamais `for update` (relecture du 2026-09-29). C'est exactement le verrou que l'`update`
+ * lui-même prend (aucune de ces écritures ne touche une clé de `conversations`) : il sérialise deux gestes sur la
+ * même conversation, et c'est tout ce qu'on lui demande. `for update` en prend un plus fort, qui bloque aussi les
+ * insertions FILLES (un message, un événement, une analyse : leur clé étrangère pose `for key share` sur la
+ * conversation), qui n'avaient aucune raison d'attendre un geste de la console.
+ */
 export class PgInboxStore implements InboxStore {
   constructor(private readonly pool: Pool) {}
 
@@ -319,12 +328,12 @@ export class PgInboxStore implements InboxStore {
    */
   async setAssigneeByWaId(tenantId: string, waId: string, assignee: string, cause: string): Promise<boolean> {
     const res = await this.pool.query(
-      // L'ancien affectataire est lu dans un sous-select VERROUILLÉ (for update) : c'est la valeur que
-      // l'update remplace, même sous une écriture concurrente, pas celle d'un instantané périmé.
+      // L'ancien affectataire est lu dans un sous-select VERROUILLÉ (`for no key update`, cf. la classe) : c'est la
+      // valeur que l'update remplace, même sous une écriture concurrente, pas celle d'un instantané périmé.
       `with maj as (
          update conversations c set assigned_to = $3::uuid, assigned_at = now(), assigned_by = null
            from (select id as avant_id, assigned_to as ancien
-                   from conversations where tenant_id = $1 and wa_id = $2 for update) avant
+                   from conversations where tenant_id = $1 and wa_id = $2 for no key update) avant
           where c.id = avant.avant_id
             and exists (select 1 from users u where u.id = $3::uuid and u.tenant_id = $1 and u.disabled_at is null)
          returning c.id, avant.ancien
@@ -429,6 +438,9 @@ export class PgInboxStore implements InboxStore {
     // `rendue_mba` quand il y va ; aucun événement entre scénario et équipe, le cadrage ne les raconte pas. Et
     // l'escalade qui sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`, `non_traitee`), sans
     // quoi la frise la montrerait encore rangée. L'état d'avant est lu dans un sous-select VERROUILLÉ.
+    // ⚠️ `rendAgentDeMeta` passe AVANT la lecture des colonnes : « Rendre la main » sur un fil que notre colonne
+    // croit déjà `mba` écrit `app_workflow` (on ne rouvre que notre côté), et la règle des colonnes y lisait un fil
+    // qui QUITTE l'agent, donc `prise_mba` signée de l'opérateur, l'inverse de son geste (relecture du 2026-09-29).
     const res = await this.pool.query(
       `with maj as (
          update conversations c set control_owner = $3, control_changed_at = now(),
@@ -439,7 +451,7 @@ export class PgInboxStore implements InboxStore {
                 archived_at = case when $8::boolean and $3 = 'app_human' then null else c.archived_at end
            from (select id as avant_id, control_owner as ancien_detenteur, traitee_le as ancienne_traitee,
                         archived_at as ancienne_archive
-                   from conversations where tenant_id = $1 and wa_id = $2 for update) avant
+                   from conversations where tenant_id = $1 and wa_id = $2 for no key update) avant
           where c.id = avant.avant_id
             and c.control_owner is distinct from $3
             and ($4::text[] is null or c.control_owner = any($4::text[]))
@@ -453,7 +465,8 @@ export class PgInboxStore implements InboxStore {
          select $1, maj.id, e.type, ${acteurSql('$9', '$1')}, $10::text
            from maj
            cross join lateral (values
-             (case when maj.ancien_detenteur = 'mba' then 'prise_mba' when $3 = 'mba' then 'rendue_mba' end),
+             (case when $11::boolean then 'rendue_mba'
+                   when maj.ancien_detenteur = 'mba' then 'prise_mba' when $3 = 'mba' then 'rendue_mba' end),
              (case when maj.ancienne_archive is not null and maj.archived_at is null then 'desarchivee' end),
              (case when maj.ancienne_traitee is not null and maj.traitee_le is null then 'non_traitee' end)
            ) as e(type)
@@ -461,7 +474,7 @@ export class PgInboxStore implements InboxStore {
        )
        select id from maj`,
       [tenantId, waId, owner, only ? [...only] : null, opts.saufEscalade === true, opts.effacerEscalade === true,
-       opts.messageEnvoyeLe ?? null, opts.escalade === true, auteur.acteur, auteur.cause],
+       opts.messageEnvoyeLe ?? null, opts.escalade === true, auteur.acteur, auteur.cause, opts.rendAgentDeMeta === true],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -994,7 +1007,7 @@ export class PgInboxStore implements InboxStore {
          update conversations c set ${colonne} = case when $3::boolean then now() else null end,
                 escaladee_le = case when $3::boolean then null else c.escaladee_le end
            from (select id as avant_id, ${colonne} as avant_valeur
-                   from conversations where id = $1 and tenant_id = $2 for update) avant
+                   from conversations where id = $1 and tenant_id = $2 for no key update) avant
           where c.id = avant.avant_id
          returning c.id, avant.avant_valeur
        ),
@@ -1025,7 +1038,7 @@ export class PgInboxStore implements InboxStore {
             set signalee_le = case when $3::boolean then now() else null end,
                 signalee_par = case when $3::boolean then ${acteurSql('$4', '$2')} else null end
            from (select id as avant_id, signalee_le as avant_valeur
-                   from conversations where id = $1 and tenant_id = $2 for update) avant
+                   from conversations where id = $1 and tenant_id = $2 for no key update) avant
           where c.id = avant.avant_id
          returning c.id, avant.avant_valeur
        ),
@@ -1057,7 +1070,7 @@ export class PgInboxStore implements InboxStore {
         `with maj as (
            update conversations c set assigned_to = null, assigned_at = null, assigned_by = null
              from (select id as avant_id, assigned_to as ancien
-                     from conversations where id = $1 and tenant_id = $2 for update) avant
+                     from conversations where id = $1 and tenant_id = $2 for no key update) avant
             where c.id = avant.avant_id
            returning c.id, avant.ancien
          ),
@@ -1076,7 +1089,7 @@ export class PgInboxStore implements InboxStore {
       `with maj as (
          update conversations c set assigned_to = $3::uuid, assigned_at = now(), assigned_by = ${acteurSql('$4', '$2')}
            from (select id as avant_id, assigned_to as ancien
-                   from conversations where id = $1 and tenant_id = $2 for update) avant
+                   from conversations where id = $1 and tenant_id = $2 for no key update) avant
           where c.id = avant.avant_id
             and exists (select 1 from users u where u.id = $3::uuid and u.tenant_id = $2 and u.disabled_at is null)
          returning c.id, avant.ancien
@@ -1098,7 +1111,7 @@ export class PgInboxStore implements InboxStore {
    * l'un à l'autre. `assigned_by` vaut l'agent lui-même (prise), distinct d'une distribution ou d'un routage
    * (`null`). Même garde d'espace que `setAssignee`. `false` si inconnue ou déjà prise (l'appelant relit pour
    * dire 404 ou 409). Une prise qui a lieu est toujours un changement : son événement porte l'agent comme
-   * acteur ET comme cible, ce que l'écran lit « a pris la conversation ».
+   * acteur ET comme cible, que la lecture marque `prise` et que la frise dit « Prise en charge », par lui.
    */
   async prendreSiLibre(tenantId: string, conversationId: string, userId: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -1174,7 +1187,7 @@ export class PgInboxStore implements InboxStore {
               c.assigned_to, coalesce(nullif(u.name, ''), u.email) as assigne_nom, a.summary as resume
          from conversations c
          left join contacts ct on ct.id = c.contact_id and ct.tenant_id = c.tenant_id and ct.deleted_at is null
-         left join users u on u.id = c.assigned_to
+         left join users u on u.id = c.assigned_to and u.tenant_id = c.tenant_id
          left join conversation_analysis a on a.conversation_id = c.id
         where c.id = $1 and c.tenant_id = $2 and ${visibiliteSql('$3', '$4')}`,
       [conversationId, tenantId, tout, moi],
@@ -1184,15 +1197,19 @@ export class PgInboxStore implements InboxStore {
 
     const ev = await this.pool.query<{
       id: string; type: TypeEvenement; at: Date; cause: string | null;
-      acteur_id: string | null; acteur_nom: string | null; cible_id: string | null; cible_nom: string | null;
+      acteur_id: string | null; acteur_trouve: boolean; acteur_nom: string | null;
+      cible_id: string | null; cible_trouvee: boolean; cible_nom: string | null;
       reassignation: boolean;
     }>(
       // La réassignation se lit sur l'événement d'assignation qui PRÉCÈDE celui-ci dans toute la vie de la
       // conversation, pas seulement dans les 50 rendus : servie par l'index (conversation_id, at desc, id desc).
       // L'identité départage deux événements de la même seconde dans leur ordre d'écriture.
+      // 🔴 Les noms ne se lisent que DANS l'espace (`u.tenant_id = e.tenant_id`, relecture du 2026-09-29) : les
+      // écritures le garantissent (`acteurSql`), mais l'amorçage de 0192 a recopié `assigned_by` et `signalee_par`
+      // sans ce filtre. Un identifiant d'un autre espace n'y prête donc jamais son nom.
       `select e.id::text as id, e.type, e.at, e.cause,
-              e.acteur_id, coalesce(nullif(ua.name, ''), ua.email) as acteur_nom,
-              e.cible_id, coalesce(nullif(uc.name, ''), uc.email) as cible_nom,
+              e.acteur_id, (ua.id is not null) as acteur_trouve, coalesce(nullif(ua.name, ''), ua.email) as acteur_nom,
+              e.cible_id, (uc.id is not null) as cible_trouvee, coalesce(nullif(uc.name, ''), uc.email) as cible_nom,
               (e.type = 'assignee' and coalesce((
                  select p.type = 'assignee'
                    from conversation_evenements p
@@ -1202,8 +1219,8 @@ export class PgInboxStore implements InboxStore {
                   order by p.at desc, p.id desc
                   limit 1), false)) as reassignation
          from conversation_evenements e
-         left join users ua on ua.id = e.acteur_id
-         left join users uc on uc.id = e.cible_id
+         left join users ua on ua.id = e.acteur_id and ua.tenant_id = e.tenant_id
+         left join users uc on uc.id = e.cible_id and uc.tenant_id = e.tenant_id
         where e.conversation_id = $1 and e.tenant_id = $2
         order by e.at desc, e.id desc
         limit $3`,
@@ -1214,17 +1231,21 @@ export class PgInboxStore implements InboxStore {
       const assignation = e.type === 'assignee' || e.type === 'desassignee';
       /**
        * Un acteur nul SANS cause est un collaborateur supprimé depuis (`on delete set null`) : un changement
-       * automatique porte toujours sa cause. La cible n'a de sens que pour une assignation, où elle est toujours
-       * écrite : nulle, c'est elle aussi un collaborateur parti.
+       * automatique porte toujours sa cause, et une identité qui n'est pas un collaborateur (clé d'API, session sans
+       * compte) aussi, depuis le 2026-09-29 (`colonnesAuteur`). Un identifiant qu'on ne retrouve pas DANS l'espace ne
+       * se nomme pas non plus. La cible n'a de sens que pour une assignation, où elle est toujours écrite : nulle ou
+       * introuvable, c'est elle aussi un collaborateur parti.
        */
       const acteurVu: QuiEvenement = e.acteur_id !== null
-        ? { nom: e.acteur_nom ?? '' }
+        ? (e.acteur_trouve ? { nom: e.acteur_nom ?? '' } : { ancien: true })
         : e.cause === null ? { ancien: true } : null;
       const cibleVue: QuiEvenement = !assignation ? null
-        : e.cible_id !== null ? { nom: e.cible_nom ?? '' } : { ancien: true };
+        : e.cible_id !== null && e.cible_trouvee ? { nom: e.cible_nom ?? '' } : { ancien: true };
       return {
         id: e.id, type: e.type, at: e.at.toISOString(), acteur: acteurVu, cible: cibleVue,
         cause: e.cause, reassignation: e.reassignation === true,
+        // Une assignation que le collaborateur se fait à lui-même : l'écran dit « Prise en charge ».
+        prise: e.type === 'assignee' && e.acteur_id !== null && e.acteur_id === e.cible_id,
       };
     });
 

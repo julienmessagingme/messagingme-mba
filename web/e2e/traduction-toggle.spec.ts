@@ -64,11 +64,17 @@ interface Options {
   dejaActif?: boolean;
   /** Le rôle de la session. Défaut : admin. */
   role?: 'admin' | 'agent';
+  /**
+   * L'indisponibilité LUE À CHAQUE REQUÊTE, que le test fait changer en cours de route (une clé qui finit de
+   * s'ouvrir). Prime sur `sansCredit`.
+   */
+  etat?: { indisponible: boolean };
 }
 
 async function monter(page: Page, opts: Options = {}) {
   /** Toutes les URL de fil demandées, dans l'ordre. C'est la seule preuve de ce que l'écran envoie. */
   const filsDemandes: string[] = [];
+  const indispo = (): boolean => (opts.etat ? opts.etat.indisponible : opts.sansCredit === true);
   const transcriptions: unknown[] = [];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), { ...SESSION, role: opts.role ?? SESSION.role });
   if (opts.dejaActif) {
@@ -94,18 +100,18 @@ async function monter(page: Page, opts: Options = {}) {
           controlOwner: 'app_human', langueContact: 'es', messages: [],
           // Le serveur rend ce champ dès que `traduire` est demandé, delta vide compris : il ne dépend
           // pas des messages, mais de la présence d'une clé de modèle sur l'espace.
-          ...(cible ? { traductionIndisponible: opts.sansCredit === true } : {}),
-        ...(cible && opts.sansCredit === true ? { traductionCause: opts.cause ?? 'credit' } : {}),
-          ...(cible && opts.sansCredit === true ? { traductionCause: opts.cause ?? 'credit' } : {}),
+          ...(cible ? { traductionIndisponible: indispo() } : {}),
+        ...(cible && indispo() ? { traductionCause: opts.cause ?? 'credit' } : {}),
+          ...(cible && indispo() ? { traductionCause: opts.cause ?? 'credit' } : {}),
         });
       }
       return json({
         waId: CONV.waId, windowOpen: true, lastInboundAt: '2026-09-13T10:00:02Z',
         controlOwner: 'app_human', langueContact: 'es',
         // Sans crédit, la route rend le fil EN VO avec son drapeau : ce n'est pas une panne.
-        messages: cible && opts.sansCredit !== true ? TRADUIT : VO,
-        ...(cible ? { traductionIndisponible: opts.sansCredit === true } : {}),
-        ...(cible && opts.sansCredit === true ? { traductionCause: opts.cause ?? 'credit' } : {}),
+        messages: cible && !indispo() ? TRADUIT : VO,
+        ...(cible ? { traductionIndisponible: indispo() } : {}),
+        ...(cible && indispo() ? { traductionCause: opts.cause ?? 'credit' } : {}),
       });
     }
     if (/\/conversations\/counts/.test(url)) return json({ tout: 1, aTraiter: 1, signalees: 0, archivees: 0, nonAffectees: 1, parMembre: [] });
@@ -282,6 +288,26 @@ test.describe('Inbox : traduire les messages reçus', () => {
     await expect(bandeau).toHaveAttribute('data-cause', 'credit_insuffisant');
     await expect(bandeau).toHaveText(/trop bas/i);
     await expect(page.getByTestId('traduction-recharger')).toHaveAttribute('href', '/parametres/credit');
+  });
+
+  test('🔴 la clé qui s’ouvre (première traduction d’un espace) : prête, le fil ENTIER revient traduit, sans rouvrir', async ({ page }) => {
+    // Relecture du 2026-09-29 : le fil s'affichait en VO pendant l'ouverture de la clé, puis le tour suivant ne
+    // ramenait que le DELTA (déjà traduit, et vide ici). L'historique restait en VO jusqu'à ce qu'on rouvre la
+    // conversation.
+    test.setTimeout(45_000); // quatre tours de minuteur de 4 s, sans raccourci possible
+    const etat = { indisponible: true };
+    const { filsDemandes } = await monter(page, { etat, cause: 'cle_en_preparation', dejaActif: true });
+    const fil = page.getByTestId('fil-messages');
+    await expect(fil).toContainText('Hola, tengo un problema');
+    // Tant que la clé s'ouvre, les tours demandent le delta, et JAMAIS le fil entier : rien ne se paie deux fois.
+    await expect.poll(() => filsDemandes.filter((u) => u.includes('afterAt=')).length, { timeout: 12_000 }).toBeGreaterThanOrEqual(2);
+    expect(filsDemandes.slice(1).every((u) => u.includes('afterAt='))).toBe(true);
+
+    const avant = filsDemandes.length;
+    etat.indisponible = false;
+    await expect(fil).toContainText('Bonjour, j’ai un problème', { timeout: 15_000 });
+    await expect(fil).not.toContainText('Hola, tengo un problema');
+    expect(filsDemandes.slice(avant).some((u) => u.includes('traduire=') && !u.includes('afterAt=')), 'le fil entier n’a pas été redemandé').toBe(true);
   });
 
   test('une clé en préparation ne parle PAS de crédit', async ({ page }) => {

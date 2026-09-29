@@ -52,6 +52,19 @@ export class PgStripeStore {
   }
 
   /**
+   * La facture d'un paiement DE CET ESPACE : `null` quand la session est inconnue ici (inconnue tout court, ou d'un
+   * autre espace, et les deux se disent pareil), `factureId` nul quand Stripe n'a pas émis de facture.
+   */
+  async factureDe(tenantId: string, sessionId: string): Promise<{ factureId: string | null } | null> {
+    const r = await this.pool.query<{ facture_id: string | null }>(
+      'select facture_id from stripe_paiements where tenant_id = $1 and session_id = $2',
+      [tenantId, sessionId],
+    );
+    const ligne = r.rows[0];
+    return ligne ? { factureId: ligne.facture_id } : null;
+  }
+
+  /**
    * Crédite un paiement, UNE FOIS. 🔴 Une seule transaction : la ligne de paiement (clé primaire sur la session),
    * puis le crédit et son mouvement `achat`. Un conflit sur la session veut dire « déjà crédité », et rien d'autre ne
    * s'écrit ; un échec du crédit annule la ligne de paiement, et Stripe, qui recevra un 5xx, rejouera.
@@ -67,8 +80,10 @@ export class PgStripeStore {
           [p.sessionId, p.tenantId, p.offre, p.creditMicroEur, p.htCentimes, p.ttcCentimes, p.factureId, p.livemode],
         );
         if ((ligne.rowCount ?? 0) === 0) return 'deja';
-        // La note sert l'exploitation (le client lit la raison) : elle rattache le mouvement à sa session Stripe.
-        await crediterAchat(client, p.tenantId, p.creditMicroEur, `achat Stripe ${p.offre} (${p.sessionId})`);
+        // Le mouvement porte sa session Stripe (migration 0193) : c'est le lien que suit la facture. La note, elle,
+        // sert l'exploitation (le client lit la raison), et plus rien ne la relit. ⚠️ La reprise de 0193 a relu CE
+        // texte une fois, pour l'achat d'avant la colonne : `tests/migration-0193.test.ts` compare les deux.
+        await crediterAchat(client, p.tenantId, p.creditMicroEur, `achat Stripe ${p.offre} (${p.sessionId})`, p.sessionId);
         return 'credite';
       });
     } catch (err) {

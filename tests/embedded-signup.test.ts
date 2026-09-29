@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
@@ -24,13 +24,16 @@ interface Cap {
   subscribed: string[];
   registered: Array<{ phoneNumberId: string; pin: string }>;
   saved: Array<{ wabaId: string; tenantId: string; token: string; pin: string | null }>;
+  /** Les numéros pour lesquels la route a demandé le crédit de bienvenue. */
+  offerts: Array<{ tenantId: string; phoneNumberId: string }>;
 }
 
 function app(
   over: Partial<MetaInscriptionDep> & { configId?: string } = {},
   linkTenant?: EmbeddedSignupRouteDeps['inscriptions']['linkTenant'],
+  offrirCredit?: EmbeddedSignupRouteDeps['offrirCredit'],
 ) {
-  const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [] };
+  const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [], offerts: [] };
   const { configId = 'cfg-123', ...meta } = over;
   const deps: EmbeddedSignupRouteDeps = {
     ...signupInerte,
@@ -50,6 +53,7 @@ function app(
       linkTenant: linkTenant ?? (async (input) => { cap.linked.push({ tenantId: input.tenantId, wabaId: input.wabaId, phoneNumberId: input.phoneNumberId, displayPhoneNumber: input.displayPhoneNumber }); }),
     },
     saveCredentials: async (wabaId, tenantId, token, pin) => { cap.saved.push({ wabaId, tenantId, token, pin }); },
+    offrirCredit: offrirCredit ?? (async (tenantId, phoneNumberId) => { cap.offerts.push({ tenantId, phoneNumberId }); }),
     // L'activation du numéro a son propre fichier (`tests/numero-activation.test.ts`). Ici, ces dépendances
     // LÈVENT au lieu de ne rien faire : si un chemin d'inscription se mettait à les appeler, il faut le voir,
     // pas le laisser passer sous un faux silence.
@@ -356,6 +360,66 @@ describe('POST /embedded-signup/complete : numéro non vérifié (v4)', () => {
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(200);
     expect(cap.registered).toHaveLength(1);
+    await server.close();
+  });
+});
+
+/**
+ * LE CRÉDIT DE BIENVENUE, SEULEMENT POUR UN NUMÉRO QUE META DIT VÉRIFIÉ (relecture du 2026-09-29).
+ *
+ * 🔴 L'offre partait à la LIAISON (étape 3), avant le constat `NOT_VERIFIED` de l'étape 5 : un numéro que Meta n'a
+ * pas vérifié recevait ses 5 €. Les bornes « une fois par espace, jamais deux fois par numéro » sont des contraintes
+ * de la base (`tests/integration/agent-credits.integration.test.ts`) ; ici, QUAND la route demande l'offre.
+ */
+describe('POST /embedded-signup/complete : le crédit de bienvenue', () => {
+  const inscrire = async (phone: Awaited<ReturnType<MetaInscriptionDep['getPhone']>>, over: Partial<MetaInscriptionDep> = {}) => {
+    const { server, cap } = app({ getPhone: async () => phone, ...over });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    await server.close();
+    return { res, cap };
+  };
+
+  it('🔴 numéro NOT_VERIFIED : relié, et RIEN n’est offert', async () => {
+    const { res, cap } = await inscrire({ displayPhoneNumber: '+33600000000', verifiedName: null, status: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED' });
+    expect(res.statusCode).toBe(200);
+    expect(cap.linked).toHaveLength(1);
+    expect(cap.offerts).toEqual([]);
+  });
+
+  it('numéro déjà CONNECTED, ou VERIFIED : l’offre est demandée, une fois, pour CE numéro', async () => {
+    expect((await inscrire({ displayPhoneNumber: '+33600000000', verifiedName: 'X', status: 'CONNECTED' })).cap.offerts)
+      .toEqual([{ tenantId: 't1', phoneNumberId: 'pn-1' }]);
+    expect((await inscrire({ displayPhoneNumber: '+33600000000', verifiedName: 'X', status: 'PENDING', codeVerificationStatus: 'VERIFIED' })).cap.offerts)
+      .toEqual([{ tenantId: 't1', phoneNumberId: 'pn-1' }]);
+  });
+
+  it('numéro sans statut de vérification : offert SEULEMENT si Meta accepte son enregistrement', async () => {
+    const neuf = { displayPhoneNumber: null, verifiedName: null, status: 'PENDING', codeVerificationStatus: null };
+    expect((await inscrire(neuf)).cap.offerts).toHaveLength(1);
+    const refuse = await inscrire(neuf, { register: async () => { throw new Error('Graph 400 : 133006 not verified'); } });
+    expect(refuse.res.statusCode).toBe(200);
+    expect(refuse.cap.offerts).toEqual([]);
+  });
+
+  it('🔴 une offre qui échoue ne fait pas échouer l’inscription : Meta a déjà relié le numéro', async () => {
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { server, cap } = app({}, undefined, async () => { throw new Error('base indisponible'); });
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+      expect(res.statusCode).toBe(200);
+      expect(cap.saved).toHaveLength(1);
+      expect(erreurs.mock.calls.flat().join(' ')).toContain('credit offert');
+      await server.close();
+    } finally {
+      erreurs.mockRestore();
+    }
+  });
+
+  it('une inscription refusée (numéro d’un autre espace) n’offre rien', async () => {
+    const { server, cap } = app({}, async () => { throw new TenantConflictError('phone_number', 'pn-1'); });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    expect(res.statusCode).toBe(409);
+    expect(cap.offerts).toEqual([]);
     await server.close();
   });
 });

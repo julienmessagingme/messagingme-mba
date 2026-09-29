@@ -46,6 +46,9 @@ describe('PgStripeStore.crediterPaiement', () => {
     expect(premiers(b).indexOf('begin')).toBeLessThan(paiement);
     expect(premiers(b).indexOf('commit')).toBeGreaterThan(credit);
     expect(b.surLaConnexion[credit]!.params.slice(0, 3)).toEqual([P.tenantId, 50_000_000, 'achat']);
+    // 🔴 Le mouvement porte SA session Stripe (migration 0193) : c'est le lien que suit le lien « Facture ».
+    expect(b.surLaConnexion[credit]!.sql).toContain('stripe_session_id');
+    expect(b.surLaConnexion[credit]!.params[5]).toBe('cs_1');
   });
 
   it('🔴 une session DÉJÀ créditée n’écrit aucun crédit', async () => {
@@ -58,6 +61,20 @@ describe('PgStripeStore.crediterPaiement', () => {
     const b = fausseBase({ erreur: { code: '23503' } });
     expect(await new PgStripeStore(b.pool).crediterPaiement(P)).toBe('espace_inconnu');
     expect(premiers(b)).toContain('rollback');
+  });
+
+  it('🔴 la facture d’un paiement se lit DANS L’ESPACE : `tenant_id = $1`', async () => {
+    const vues: Array<{ sql: string; params: unknown[] }> = [];
+    const pool = {
+      query: async (sql: string, params: unknown[]) => {
+        vues.push({ sql, params });
+        return params[0] === P.tenantId && params[1] === 'cs_1' ? { rows: [{ facture_id: 'in_1' }], rowCount: 1 } : { rows: [], rowCount: 0 };
+      },
+    } as unknown as Pool;
+    const s = new PgStripeStore(pool);
+    expect(await s.factureDe(P.tenantId, 'cs_1')).toEqual({ factureId: 'in_1' });
+    expect(await s.factureDe('11111111-1111-4111-8111-111111111111', 'cs_1')).toBeNull();
+    expect(vues[0]!.sql).toMatch(/where tenant_id = \$1 and session_id = \$2/);
   });
 
   it('toute autre erreur REMONTE : le webhook rendra 5xx et Stripe rejouera', async () => {

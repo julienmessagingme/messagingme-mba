@@ -225,7 +225,7 @@ export class PgUserStore {
    * Inscription libre : crée un espace et son admin en une transaction (jamais d'espace sans admin).
    * `passwordHash` null = compte Google seul. 409 si l'email est déjà pris (rollback, aucun espace créé).
    * 🔴 AUCUN CRÉDIT OFFERT ICI (décision de Julien du 2026-09-29) : offert à chaque espace qui naît, sans preuve,
-   * il se récoltait par script. Il s'offre à la connexion du premier numéro WhatsApp (`offrirALaConnexion`).
+   * il se récoltait par script. Il s'offre au premier numéro WhatsApp que Meta dit vérifié (`offrirAuNumeroVerifie`).
    */
   async createTenantWithAdmin(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }> {
     try {

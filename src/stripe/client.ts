@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { HTTP_TIMEOUT_DEFAUT_MS } from '../meta/http';
 
 /**
- * Le client REST de Stripe, sans SDK : deux appels (créer un client, créer une session Checkout), comme les clients
- * Vercel et Meta du dépôt, avec un transport injectable pour que les tests n'appellent jamais Stripe.
+ * Le client REST de Stripe, sans SDK : quatre appels (lire un prix, lire une facture, créer un client, créer une session
+ * Checkout), comme les clients Vercel et Meta du dépôt, avec un transport injectable pour que les tests n'appellent
+ * jamais Stripe.
  *
  * Trois règles d'écriture, toutes de Stripe :
  *   - le corps est en `application/x-www-form-urlencoded`, avec les objets imbriqués en crochets
@@ -28,34 +29,42 @@ export interface ReponseStripe {
   json: unknown;
 }
 
-/** POST en formulaire. Le seul verbe dont ce module a besoin. */
+/** POST en formulaire pour créer, GET pour lire un prix. */
 export interface TransportStripe {
   post(url: string, corps: string, entetes: Record<string, string>): Promise<ReponseStripe>;
+  get(url: string, entetes: Record<string, string>): Promise<ReponseStripe>;
 }
 
 /** Le transport de production : `fetch`, plafonné comme les autres appels sortants (30 s). */
 export class FetchTransportStripe implements TransportStripe {
   async post(url: string, corps: string, entetes: Record<string, string>): Promise<ReponseStripe> {
-    const res = await fetch(url, {
+    return lireReponse(await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', ...entetes },
       body: corps,
       signal: AbortSignal.timeout(HTTP_TIMEOUT_DEFAUT_MS),
-    });
-    let json: unknown = null;
-    try {
-      json = await res.json();
-    } catch {
-      json = null;
-    }
-    return { status: res.status, json };
+    }));
   }
+
+  async get(url: string, entetes: Record<string, string>): Promise<ReponseStripe> {
+    return lireReponse(await fetch(url, { method: 'GET', headers: entetes, signal: AbortSignal.timeout(HTTP_TIMEOUT_DEFAUT_MS) }));
+  }
+}
+
+async function lireReponse(res: Response): Promise<ReponseStripe> {
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  return { status: res.status, json };
 }
 
 /** Stripe a refusé, ou n'a pas répondu. `type` et `code` sont ceux de Stripe quand il les donne. */
 export class StripeError extends Error {
   constructor(
-    readonly operation: 'client' | 'session',
+    readonly operation: 'prix' | 'facture' | 'client' | 'session',
     readonly status: number | null,
     readonly type: string | null,
     readonly code: string | null,
@@ -83,21 +92,23 @@ const clientSchema = z.object({ id: z.string().startsWith('cus_') });
 /** L'adresse de la page de paiement, où la console enverra l'admin : https seulement. */
 const sessionSchema = z.object({ id: z.string().startsWith('cs_'), url: z.string().url().startsWith('https://') });
 
+/**
+ * Un appel à Stripe, et sa réponse vérifiée. `champs` absent : une lecture (GET), sans corps ni clé d'idempotence.
+ */
 async function appeler<T>(
   transport: TransportStripe,
-  operation: 'client' | 'session',
+  operation: 'prix' | 'facture' | 'client' | 'session',
   chemin: string,
-  champs: Record<string, string>,
-  o: { cle: string; idempotence: string },
+  champs: Record<string, string> | null,
+  o: { cle: string; idempotence?: string },
   schema: z.ZodType<T>,
 ): Promise<T> {
+  const entetes: Record<string, string> = { authorization: `Bearer ${o.cle}`, 'stripe-version': VERSION_API_STRIPE };
   let res: ReponseStripe;
   try {
-    res = await transport.post(`${API}${chemin}`, formulaire(champs), {
-      authorization: `Bearer ${o.cle}`,
-      'stripe-version': VERSION_API_STRIPE,
-      'idempotency-key': o.idempotence,
-    });
+    res = champs === null
+      ? await transport.get(`${API}${chemin}`, entetes)
+      : await transport.post(`${API}${chemin}`, formulaire(champs), { ...entetes, 'idempotency-key': o.idempotence ?? '' });
   } catch (err) {
     throw new StripeError(operation, null, null, null, err instanceof Error ? err.name : 'appel impossible');
   }
@@ -110,6 +121,47 @@ async function appeler<T>(
   const lu = schema.safeParse(res.json);
   if (!lu.success) throw new StripeError(operation, res.status, null, null, 'reponse illisible');
   return lu.data;
+}
+
+/** Ce qu'on lit d'un prix, et rien de plus. `unit_amount` est nul sur un prix à paliers ou « au choix du client ». */
+const prixSchema = z.object({
+  id: z.string().startsWith('price_'),
+  unit_amount: z.number().int().nullable(),
+  currency: z.string(),
+});
+
+export interface PrixStripe {
+  /** En centimes, `null` quand le prix n'a pas de montant unitaire fixe. */
+  montantCentimes: number | null;
+  devise: string;
+}
+
+/**
+ * Lit un prix chez Stripe (la clé restreinte a les prix en LECTURE). Sert à recouper, AVANT d'ouvrir un paiement, le
+ * prix configuré avec l'offre qu'il est censé vendre (`src/http/credit-stripe.ts`). L'identifiant vient de la
+ * configuration serveur, jamais du client : il est quand même encodé dans le chemin.
+ */
+export async function lirePrixStripe(transport: TransportStripe, o: { cle: string; prix: string }): Promise<PrixStripe> {
+  const p = await appeler(transport, 'prix', `/prices/${encodeURIComponent(o.prix)}`, null, { cle: o.cle }, prixSchema);
+  return { montantCentimes: p.unit_amount, devise: p.currency };
+}
+
+/**
+ * Ce qu'on lit d'une facture : sa page hébergée par Stripe (consultation et PDF), https seulement. Nulle ou absente
+ * tant que la facture est un brouillon, ce que rend `url: null` plutôt qu'un échec : l'appelant le dit au client.
+ */
+const factureSchema = z.object({
+  id: z.string().startsWith('in_'),
+  hosted_invoice_url: z.string().url().startsWith('https://').nullable().optional(),
+});
+
+/**
+ * Lit une facture chez Stripe (la clé restreinte doit avoir les factures en LECTURE). L'identifiant vient de notre
+ * base (`stripe_paiements.facture_id`, écrit par le webhook), jamais du client : il est quand même encodé.
+ */
+export async function lireFactureStripe(transport: TransportStripe, o: { cle: string; facture: string }): Promise<{ url: string | null }> {
+  const f = await appeler(transport, 'facture', `/invoices/${encodeURIComponent(o.facture)}`, null, { cle: o.cle }, factureSchema);
+  return { url: f.hosted_invoice_url ?? null };
 }
 
 /**
@@ -143,6 +195,10 @@ export interface DemandeSession {
  * Les métadonnées (`tenant_id`, `offre`) et `client_reference_id` sont ce que le webhook relira : sans elles, une
  * session n'est pas une recharge.
  *
+ * 🔴 L'ADAPTIVE PRICING EST ÉTEINT (relecture du 2026-09-29). Allumé sur le compte, il présente le paiement dans la
+ * devise du client : la session serait réglée en dollars ou en francs suisses, et le webhook, qui exige l'euro au
+ * montant HT de l'offre, refuserait de créditer un paiement bel et bien encaissé.
+ *
  * Le champ « code promo » est ouvert à tous (décision de Julien du 2026-09-29) : un code se crée dans le tableau de
  * bord Stripe, donc par nous seuls, et il donne le crédit PLEIN de l'offre (voir le recoupement du webhook).
  */
@@ -152,6 +208,7 @@ export async function creerSessionCheckout(transport: TransportStripe, d: Demand
     customer: d.customerId,
     'line_items[0][price]': d.prix,
     'line_items[0][quantity]': '1',
+    'adaptive_pricing[enabled]': 'false',
     'automatic_tax[enabled]': 'true',
     'tax_id_collection[enabled]': 'true',
     'customer_update[name]': 'auto',

@@ -1088,11 +1088,15 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   et des rendus à l'agent de Meta, de « Traité », « Archivé », « Signalé » et de leurs inverses, et de la
   rouverture par un message du contact.
   - **Un changement automatique porte sa cause** au lieu d'un nom : « automatique : campagne Rentrée »,
-    « automatique : scénario Bienvenue », « automatique : délai de reprise écoulé ». Un collaborateur supprimé
-    depuis s'affiche « ancien collaborateur ».
+    « automatique : scénario Bienvenue », « automatique : délai de reprise écoulé ». Un geste fait par une clé
+    d'API porte « par une clé d'API ». Seul un collaborateur supprimé depuis s'affiche « ancien collaborateur ».
+  - **Une prise** (un collaborateur qui prend la conversation pour lui) se lit « Prise en charge », par lui.
+  - **« Rendre la main » se lit toujours « Rendue à l'agent de Meta »**, y compris sur un fil que la console
+    croyait déjà à l'agent.
   - **Un geste sans effet n'apparaît pas** : réassigner à la même personne, archiver une conversation déjà
     archivée. Les réponses de l'agent de Meta et des collaborateurs n'y sont pas non plus : le fil les montre.
-  - **Lecture seule** : les gestes restent dans l'en-tête du fil, et le panneau se relit après chacun d'eux.
+  - **Lecture seule** : les gestes restent dans l'en-tête du fil, et le panneau se relit après chacun d'eux,
+    comme après un rangement en lot qui contient la conversation ouverte.
   - **Repliable**, et le choix est retenu par navigateur.
   - **On voit le détail des conversations qu'on voit** : un agent, les siennes et celles que personne n'a ;
     l'encadrement, toutes. Ailleurs, le panneau ne s'affiche pas.
@@ -1142,7 +1146,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   avant, elle usait le crédit sans apparaître au solde, qui s'affichait donc trop haut. Le journal du
   crédit n'en garde qu'**une ligne par jour** (« traductions du 28/09 »), qui grossit : une ouverture de
   fil peut lancer quarante traductions. Un espace **sans agent** traduit aussi : sa clé de modèle s'ouvre à
-  sa première traduction s'il a du crédit.
+  sa première traduction s'il a du crédit. Pendant ces quelques secondes, le fil s'affiche en VO ; **dès que
+  la clé est prête, le fil entier revient traduit**, sans qu'il faille rouvrir la conversation (de même après
+  une recharge qui rend la traduction possible).
   Un espace sans crédit ne traduit pas, et l'écran le dit au lieu de rester muet. Il distingue **trois
   causes** : crédit épuisé (un administrateur peut le recharger, et le bandeau porte le lien « Recharger le
   crédit » vers Paramètres, Crédit IA, montré aux admins seulement : la page Crédit IA renvoie un non-admin vers
@@ -2739,11 +2745,13 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - ✅ **Un admin le recharge lui-même, en payant** (2026-09-29) : **Paramètres > Crédit IA**, 50 € ou 100 € HT,
   sur la page de paiement de Stripe (voir « Crédit IA »). Un client ne s'écrit jamais de crédit : seul le paiement
   confirmé par Stripe en ajoute. La recharge à la main par l'exploitation reste possible (voir la section `/ops`).
-- ✅ **5 € OFFERTS À LA CONNEXION DU PREMIER NUMÉRO WHATSAPP** (2026-09-29, décision de Julien), et non plus à la
-  création d'un espace, où ils se récoltaient par script. Une fois par espace, et jamais deux fois pour le même
-  numéro, même s'il change d'espace. **Pas rétroactif** : les espaces qui avaient déjà un numéro n'en reçoivent
-  pas. Aucune clé de modèle n'est ouverte à ce moment, elle s'ouvre au premier usage. Le montant est un réglage
-  du serveur (0 l'éteint).
+- ✅ **5 € OFFERTS AU PREMIER NUMÉRO WHATSAPP VÉRIFIÉ PAR META** (2026-09-29, décision de Julien), et non plus à
+  la création d'un espace, où ils se récoltaient par script. **Seulement une fois que Meta dit le numéro vérifié** :
+  à la connexion s'il l'est déjà, sinon dès que le code de vérification est accepté (« Activer le numéro » sur
+  l'Accueil). Un numéro relié mais pas vérifié ne reçoit rien. Une fois par espace, et jamais deux fois pour le même
+  numéro, même s'il change d'espace ou d'identifiant chez Meta (c'est le numéro de téléphone qui compte). **Pas
+  rétroactif** : les espaces qui avaient déjà un numéro n'en reçoivent pas. Aucune clé de modèle n'est ouverte à ce
+  moment, elle s'ouvre au premier usage. Le montant est un réglage du serveur (0 l'éteint).
 - 🔴 **Sans crédit, rien ne démarre**, et c'est le bon défaut : un crédit implicite ferait payer une
   consommation que personne n'a autorisée. Conséquence concrète : **un espace à zéro n'a ni agent qui
   démarre, ni bac à sable, ni traduction**.
@@ -2758,7 +2766,8 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   point à nos frais.
   ⚠️ **Le client ne choisit pas son plafond en le tapant**, il le choisit **en achetant du crédit**. Un
   plafond saisi librement ne protégerait personne. Il monte à chaque rechargement (achat, recharge manuelle,
-  crédit offert), et ne redescend jamais tout seul.
+  crédit offert), jusqu'au total crédité depuis l'ouverture de la clé, recalculé à chaque fois : deux achats
+  simultanés, ou un achat payé pendant que la clé s'ouvre, comptent tous les deux. Il ne redescend jamais tout seul.
   ⚠️ **Sous environ 0,92 €, la clé ne s'ouvre pas** (Vercel exige un plafond d'au moins 1 $) : un espace sans
   clé et avec ce peu de crédit ne traduit pas, et la cause est « crédit insuffisant », pas « épuisé ».
   ⚠️ **Un espace créé AVANT ce lot n'a pas de clé propre** et continue de fonctionner sur la clé maison : sa
@@ -2820,20 +2829,30 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   - **Code promo** (2026-09-29) : la page de Stripe porte un champ « code promo », ouvert à tous. Un code se crée
     dans le tableau de bord Stripe (donc par nous seuls) et donne le **crédit plein** : Refill 50 € avec -20 %,
     40 € HT payés, 50 € de crédit. Un code à 100 % crédite sans paiement.
-  - **Au retour**, l'écran dit « paiement reçu : le crédit arrive dans quelques secondes » et relit le solde
-    jusqu'à le voir monter. 🔴 **Le retour ne crédite rien** : seul l'avis signé que Stripe nous envoie crédite,
-    une fois par paiement, même si Stripe le renvoie plusieurs fois. Un paiement abandonné le dit, sans rien
-    débiter.
+  - **Au retour**, l'écran dit « paiement reçu : le crédit arrive dans quelques secondes » et relit le solde et
+    l'historique jusqu'à y voir **la ligne d'achat de ce paiement**, puis dit « votre crédit est à jour ». Si
+    l'avis de Stripe est arrivé avant le retour (c'est fréquent), il le dit tout de suite. 🔴 **Le retour ne
+    crédite rien** : seul l'avis signé que Stripe nous envoie crédite, une fois par paiement, même si Stripe le
+    renvoie plusieurs fois. Un paiement abandonné le dit, sans rien débiter.
   - Un paiement dont le montant encaissé ne correspond pas à l'offre ne crédite rien et se signale chez nous.
+    Pour que ça n'arrive pas, **le prix de l'offre est relu chez Stripe avant d'ouvrir le paiement** : s'il ne vaut
+    pas le montant HT de l'offre, en euros, l'écran dit que la recharge est momentanément indisponible, et rien
+    n'est payé. Le paiement se fait toujours **en euros**, quel que soit le pays de la carte.
+  - Un avis de Stripe d'un autre mode que celui du serveur (un paiement de test reçu en production, ou
+    l'inverse) ne crédite rien et se signale chez nous.
   - Tant que la recharge n'est pas ouverte sur le serveur, l'écran dit « la recharge en ligne n'est pas encore
     disponible » au lieu d'une erreur.
   - ⚠️ **Pendant les essais en mode test de Stripe, seul un exploitant peut payer** : une carte de test
     donnerait sinon de vrais euros de modèle à n'importe quel client.
-- ✅ **L'historique** de ce qui a fait bouger le solde, raisons en clair : achat de crédit, crédit offert,
-  recharge manuelle, **agents IA du jour** (tous les tours d'une journée en une ligne, sur trente jours) et
-  **traductions du jour**. Aucune note interne n'y apparaît.
-- ✅ **5 € offerts à la connexion du premier numéro WhatsApp** de l'espace, une seule fois (voir « Agent IA »,
-  le crédit et les plafonds).
+- ✅ **L'historique** des quatre-vingt-dix derniers jours, raisons en clair : achat de crédit, crédit offert,
+  recharge manuelle, **agents IA du jour** (tous les tours d'une journée en une ligne) et **traductions du jour**.
+  Aucune note interne n'y apparaît. Au-delà de quatre-vingt-dix jours, le solde compte tout, l'écran ne liste plus.
+- ✅ **« Facture » sur chaque achat qui en a une** (2026-09-29, décision de Julien) : le lien ouvre, dans un nouvel
+  onglet, la facture hébergée par Stripe (consultation et PDF). Si elle ne s'ouvre pas, l'onglet vide se referme
+  et la page le dit. Un achat payé avant ce lien, ou sans facture chez Stripe, n'en montre pas. On ne lit que les
+  factures des achats de SON espace.
+- ✅ **5 € offerts au premier numéro WhatsApp de l'espace, une fois que Meta l'a vérifié**, une seule fois (voir
+  « Agent IA », le crédit et les plafonds).
 - ⛔ Hors périmètre : recharge automatique, montant libre, abonnement, e-mail de solde bas, remboursement en ligne.
 
 ## MBA, le répondeur de Meta (menu « AI Agent » > MBA)

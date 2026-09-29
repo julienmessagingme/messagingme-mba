@@ -2,7 +2,7 @@ import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
-import { PgCreditStore, NOTE_CREDIT_OFFERT } from '../../src/agent/credits.pg';
+import { PgCreditStore, NOTE_CREDIT_OFFERT, JOURS_HISTORIQUE } from '../../src/agent/credits.pg';
 import { PgUserStore } from '../../src/user/store.pg';
 import { PgEmbeddedSignupStore, TenantConflictError } from '../../src/account/es-store.pg';
 
@@ -201,12 +201,16 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
   });
 
   /**
-   * LES 5 € OFFERTS À LA CONNEXION DU PREMIER NUMÉRO (migration 0191, décision de Julien du 2026-09-29). Les deux
-   * bornes sont des CONTRAINTES (clé primaire sur l'espace, unique sur le numéro) : seule une vraie base les tient.
+   * LES 5 € OFFERTS AU PREMIER NUMÉRO VÉRIFIÉ (migrations 0191 et 0193, décision de Julien du 2026-09-29). Les trois
+   * bornes sont des CONTRAINTES (clé primaire sur l'espace, unique sur l'identifiant Meta, unique sur le numéro
+   * affiché) : seule une vraie base les tient. La route n'appelle l'offre que pour un numéro que Meta dit vérifié ;
+   * ici, on relie puis on offre, comme elle.
    */
-  describe('le crédit offert à la connexion du premier numéro', () => {
+  describe('le crédit offert au premier numéro vérifié', () => {
     const CINQ = { creditOffertMicroEur: 5_000_000 };
     const suffixe = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    /** Un numéro affiché neuf à chaque appel, écrit comme Meta l'écrit (espaces compris). */
+    const affiche = () => `+33 7 ${String(Math.floor(Math.random() * 1e8)).padStart(8, '0').replace(/(\d{2})(?=\d)/g, '$1 ')}`;
     const espaces: string[] = [];
     const numeros: string[] = [];
     const wabas: string[] = [];
@@ -215,13 +219,15 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
       espaces.push(id);
       return id;
     }
-    async function relier(tenantId: string, o: { waba?: string; numero?: string } = {}): Promise<{ numero: string; offert: number }> {
+    async function relier(tenantId: string, o: { waba?: string; numero?: string; affiche?: string | null } = {}): Promise<{ numero: string; affiche: string | null; offert: number }> {
       const waba = o.waba ?? `waba-offre-${suffixe()}`;
       const numero = o.numero ?? `pn-offre-${suffixe()}`;
+      const numeroAffiche = o.affiche === undefined ? affiche() : o.affiche;
       wabas.push(waba);
       numeros.push(numero);
-      const r = await new PgEmbeddedSignupStore(pool, CINQ).linkTenant({ tenantId, wabaId: waba, phoneNumberId: numero, displayPhoneNumber: null, verifiedName: null });
-      return { numero, offert: r.creditOffertMicroEur };
+      const es = new PgEmbeddedSignupStore(pool, CINQ);
+      await es.linkTenant({ tenantId, wabaId: waba, phoneNumberId: numero, displayPhoneNumber: numeroAffiche, verifiedName: null });
+      return { numero, affiche: numeroAffiche, offert: await es.offrirCredit(tenantId, numero) };
     }
     afterAll(async () => {
       await pool.query('delete from phone_numbers where id = any($1::text[])', [numeros]);
@@ -289,6 +295,43 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
       const offre = await pool.query('select 1 from credits_offerts where tenant_id = $1', [b]);
       expect(offre.rowCount).toBe(0);
     });
+
+    it('🔴 le MÊME numéro affiché sous un AUTRE identifiant Meta, sur un autre espace : rien (migration 0193)', async () => {
+      // Un numéro retiré d'un compte WhatsApp puis rajouté ailleurs change d'identifiant. La normalisation ignore
+      // les espaces et les tirets : c'est le même numéro de téléphone.
+      const a = await espace('itest-offre-affiche-a');
+      const b = await espace('itest-offre-affiche-b');
+      const r = await relier(a);
+      expect(r.offert).toBe(5_000_000);
+      const memeNumeroAutrementEcrit = r.affiche!.replace(/ /g, '-');
+      expect((await relier(b, { affiche: memeNumeroAutrementEcrit })).offert).toBe(0);
+      expect(await credits.solde(b)).toBe(0);
+      const ligne = await pool.query<{ numero_affiche: string }>('select numero_affiche from credits_offerts where tenant_id = $1', [a]);
+      expect(ligne.rows[0]!.numero_affiche).toBe(`+${r.affiche!.replace(/\D/g, '')}`);
+    });
+
+    it('🔴 un numéro qui n est pas relié à CET espace, ou sans numéro affiché, n offre rien (l offre reste due)', async () => {
+      const a = await espace('itest-offre-autre-espace-a');
+      const b = await espace('itest-offre-autre-espace-b');
+      const r = await relier(a);
+      expect(await new PgEmbeddedSignupStore(pool, CINQ).offrirCredit(b, r.numero)).toBe(0);
+      expect(await credits.solde(b)).toBe(0);
+      const c = await espace('itest-offre-sans-affiche');
+      expect((await relier(c, { affiche: null })).offert).toBe(0);
+      const offre = await pool.query('select 1 from credits_offerts where tenant_id = $1', [c]);
+      expect(offre.rowCount).toBe(0);
+    });
+
+    it('🔴 la LIAISON seule n offre rien : sans la preuve de Meta, pas de crédit', async () => {
+      const t = await espace('itest-offre-liaison-seule');
+      const numero = `pn-offre-${suffixe()}`;
+      const waba = `waba-offre-${suffixe()}`;
+      numeros.push(numero);
+      wabas.push(waba);
+      await new PgEmbeddedSignupStore(pool, CINQ).linkTenant({ tenantId: t, wabaId: waba, phoneNumberId: numero, displayPhoneNumber: affiche(), verifiedName: null });
+      expect(await credits.solde(t)).toBe(0);
+      expect((await pool.query('select 1 from credits_offerts where tenant_id = $1', [t])).rowCount).toBe(0);
+    });
   });
 
   /**
@@ -321,6 +364,20 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
     it('🔴 l historique est PAR ESPACE : ni les mouvements ni l agrégat des tours d un autre', async () => {
       const siennes = await credits.historique(autreTenantId, 50);
       expect(siennes.some((l) => l.deltaMicroEur === -350 || l.deltaMicroEur === 1_000_000)).toBe(false);
+    });
+
+    it('🔴 la FENÊTRE borne aussi les mouvements hors consommation (relecture du 2026-09-29)', async () => {
+      // Sans elle, cette branche parcourait tous les mouvements de l'espace depuis son ouverture. Une recharge plus
+      // ancienne que la fenêtre ne sort plus ; une recharge dans la fenêtre, si.
+      await pool.query(
+        `insert into agent_credit_mouvements (tenant_id, delta_micro_eur, raison, note, at)
+         values ($1, 777, 'recharge', 'itest ancienne', now() - make_interval(days => $2::int + 1)),
+                ($1, 778, 'recharge', 'itest recente', now() - make_interval(days => $2::int - 1))`,
+        [h, JOURS_HISTORIQUE],
+      );
+      const lignes = await credits.historique(h, 50);
+      expect(lignes.some((l) => l.deltaMicroEur === 777)).toBe(false);
+      expect(lignes.some((l) => l.deltaMicroEur === 778)).toBe(true);
     });
   });
 });

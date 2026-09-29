@@ -114,6 +114,30 @@ test.describe('Inbox : le panneau Détail', () => {
     await expect.poll(lectures, { timeout: 10_000 }).toBeGreaterThan(avant);
   });
 
+  test('🔴 un rangement EN LOT qui contient la conversation ouverte relit aussi le détail', async ({ page }) => {
+    // Relecture du 2026-09-29 : seul l'en-tête du fil prévenait le panneau. Archiver la sélection laissait la frise
+    // sans l'archivage qu'on venait de faire.
+    const appels = await monter(page);
+    await ouvrir(page);
+    await expect(page.getByTestId('inbox-detail-frise')).toBeVisible();
+    const lectures = () => appels.filter((a) => /GET .*\/c1\/detail$/.test(a)).length;
+    const avant = lectures();
+    await page.getByTestId('cocher-c1').check();
+    await page.getByTestId('inbox-ranger-selection').selectOption('archiver');
+    await expect.poll(() => appels.some((a) => /POST .*\/c1\/archive$/.test(a)), { timeout: 10_000 }).toBe(true);
+    await expect.poll(lectures, { timeout: 10_000 }).toBeGreaterThan(avant);
+  });
+
+  test('une PRISE se lit « Prise en charge », par qui', async ({ page }) => {
+    await monter(page, { detail: { ...DETAIL, historique: [
+      { id: '9', type: 'assignee', at: '2026-09-28T12:00:00Z', acteur: { nom: 'Jean' }, cible: { nom: 'Jean' }, cause: null, reassignation: false, prise: true },
+    ] } });
+    await ouvrir(page);
+    const ligne = page.getByTestId('inbox-detail-evenement').first();
+    await expect(ligne).toContainText('Prise en charge');
+    await expect(ligne).toContainText('par Jean');
+  });
+
   test('🔴 le repli est retenu au rechargement, et se défait', async ({ page }) => {
     await monter(page);
     await ouvrir(page);

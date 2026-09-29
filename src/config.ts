@@ -443,26 +443,32 @@ export const schema = z.object({
    */
   COMMISSION_MODELE_PCT: z.coerce.number().nonnegative().default(10),
   /**
-   * Le crédit offert à la connexion du PREMIER numéro WhatsApp d'un espace, par l'inscription intégrée, en
-   * micro-euros (5 000 000 = 5 €). Écrit dans la transaction qui relie le numéro, avec un mouvement `offert` ;
-   * aucune clé Vercel n'est ouverte à ce moment (elle s'ouvre au premier usage qui en a besoin). 0 l'éteint.
+   * Le crédit offert au PREMIER numéro WhatsApp d'un espace que Meta dit VÉRIFIÉ, en micro-euros (5 000 000 = 5 €),
+   * avec un mouvement `offert`. Aucune clé Vercel n'est ouverte à ce moment (elle s'ouvre au premier usage qui en a
+   * besoin). 0 l'éteint.
    *
-   * 🔴 LA BORNE EST EN BASE, ET C'EST ELLE QUI AUTORISE CE DÉFAUT (décision de Julien du 2026-09-29). Offert à la
+   * 🔴 LA PREUVE EST LA VÉRIFICATION DE META, ET LA BORNE EST EN BASE (décision de Julien du 2026-09-29). Offert à la
    * création d'un espace, sans preuve, il se récoltait par script : chaque espace ouvrait une clé facturée à NOTRE
-   * équipe Vercel, et une vingtaine atteignaient le plafond d'équipe, qui coupe les bots de tous les clients. Relier
-   * un numéro exige de passer la vérification de Meta, et `credits_offerts` (migration 0191) n'offre qu'une fois par
-   * espace ET jamais deux fois pour le même numéro, même s'il change d'espace. Les espaces qui avaient déjà un
-   * numéro sont marqués par la migration : pas rétroactif.
+   * équipe Vercel, et une vingtaine atteignaient le plafond d'équipe, qui coupe les bots de tous les clients.
+   * ⚠️ RELIER un numéro ne prouve PAS sa vérification : la liaison se fait avant que Meta ne la confirme, et un numéro
+   * `NOT_VERIFIED` se relie très bien (ce commentaire affirmait l'inverse, et l'offre partait à la liaison). La route
+   * de l'inscription n'offre donc que si Meta dit le numéro vérifié ; sinon c'est l'activation, dès que Meta accepte
+   * le code (`src/http/embedded-signup.ts`). `credits_offerts` n'offre qu'une fois par espace, et jamais deux fois
+   * pour le même numéro, ni par son identifiant Meta (0191) ni par son numéro affiché (0193), même s'il change
+   * d'espace. Les espaces qui avaient déjà un numéro sont marqués par la migration : pas rétroactif.
    */
   CREDIT_OFFERT_MICRO_EUR: z.coerce.number().int().min(0).default(5_000_000),
   /**
    * La recharge du crédit par Stripe (Checkout hébergé, puis webhook). Les quatre vides par défaut : la route de
    * paiement rend 503 et la console dit « recharge pas encore disponible », rien ne casse au démarrage.
    * 🔴 Côté serveur uniquement, jamais en `NEXT_PUBLIC_`. `STRIPE_SECRET_KEY` est une clé RESTREINTE (sessions
-   * Checkout et clients en écriture) ; son préfixe dit le mode (`_test_` ou `_live_`), et le client Stripe d'un
-   * espace est gardé PAR MODE (migration 0191). En mode test, seul un exploitant (`OPS_EMAILS`) peut ouvrir un
-   * paiement : une carte de test créditerait sinon de vrais euros de modèle à n'importe quel client.
-   * `STRIPE_WEBHOOK_SECRET` est le secret de signature de la destination déclarée chez Stripe (`whsec_...`).
+   * Checkout et clients en écriture ; prix et factures en lecture : la route relit le prix avant d'ouvrir un
+   * paiement, et le lien « Facture » lit la facture d'un achat) ; son
+   * préfixe dit le mode (`_test_` ou `_live_`), et le client Stripe d'un espace est gardé PAR MODE (migration 0191).
+   * En mode test, seul un exploitant (`OPS_EMAILS`) peut ouvrir un paiement : une carte de test créditerait sinon de
+   * vrais euros de modèle à n'importe quel client, et le webhook refuse un événement d'un autre mode que la clé.
+   * `STRIPE_WEBHOOK_SECRET` est le secret de signature de la destination déclarée chez Stripe (`whsec_...`). En
+   * production, la clé et le secret se posent ensemble ou pas du tout (garde plus bas).
    * Les deux prix sont les identifiants Stripe (`price_...`) des offres Refill 50 € et Refill 100 € HT : le crédit
    * accordé de chaque offre vit dans le code (`src/stripe/offres.ts`), jamais dans la requête du client.
    */
@@ -598,6 +604,12 @@ export const schema = z.object({
     // sans préfixe reconnaissable laisserait deviner le mode, donc mêler clients de test et clients réels.
     if (c.STRIPE_SECRET_KEY !== '' && !/^(sk|rk)_(live|test)_/.test(c.STRIPE_SECRET_KEY)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['STRIPE_SECRET_KEY'], message: 'STRIPE_SECRET_KEY doit commencer par sk_live_, rk_live_, sk_test_ ou rk_test_' });
+    }
+    // Stripe : les deux moitiés vont ensemble, comme le jeton et l'équipe Vercel. La clé seule laisse payer des
+    // clients qu'aucun webhook ne créditera jamais (encaissé, jamais crédité) ; le secret seul monte un webhook qui
+    // ne connaît pas le mode de la clé, donc ne peut pas refuser un événement de l'autre mode.
+    if ((c.STRIPE_SECRET_KEY === '') !== (c.STRIPE_WEBHOOK_SECRET === '')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [c.STRIPE_SECRET_KEY === '' ? 'STRIPE_SECRET_KEY' : 'STRIPE_WEBHOOK_SECRET'], message: 'STRIPE_SECRET_KEY et STRIPE_WEBHOOK_SECRET se posent ensemble (ou aucun des deux)' });
     }
     // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).
     if (c.CONNECTOR_PUSH_URL !== '' && c.CONNECTOR_PUSH_SECRET === '') {

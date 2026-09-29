@@ -132,6 +132,19 @@ describe('gardes de config en production', () => {
     expect(schema.safeParse({ ...prodEnv, ...cle, VERCEL_API_TOKEN: 'jeton', VERCEL_TEAM_ID: 'team_x' }).success).toBe(true);
   });
 
+  it('🔴 la clé Stripe SANS le secret du webhook -> refusé, et l’inverse aussi (relecture du 2026-09-29)', () => {
+    // La clé seule laisse des clients payer sans qu'aucun webhook ne les crédite jamais : de l'argent encaissé,
+    // jamais crédité. Le secret seul monte un webhook qui ignore le mode de la clé. Les deux se posent ensemble.
+    // Les deux valeurs sont fabriquées (aucune vraie clé ici), préfixe compris.
+    asProd();
+    const cleStripe = ['rk', 'live', 'x'.repeat(24)].join('_');
+    const secret = ['whsec', 'y'.repeat(24)].join('_');
+    expect(errPaths(schema.safeParse({ ...prodEnv, STRIPE_SECRET_KEY: cleStripe }))).toContain('STRIPE_WEBHOOK_SECRET');
+    expect(errPaths(schema.safeParse({ ...prodEnv, STRIPE_WEBHOOK_SECRET: secret }))).toContain('STRIPE_SECRET_KEY');
+    expect(schema.safeParse({ ...prodEnv, STRIPE_SECRET_KEY: cleStripe, STRIPE_WEBHOOK_SECRET: secret }).success).toBe(true);
+    expect(schema.safeParse(prodEnv).success).toBe(true);
+  });
+
   it('🔴 le provisionnement SANS clé de chiffrement -> refusé', () => {
     // Sans elle, la clé Gateway d'un client finirait en clair dans la base, ou l'écriture échouerait au
     // premier agent créé. Les deux sont inacceptables, et aucun des deux ne se voit avant la production.

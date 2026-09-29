@@ -104,4 +104,52 @@ describe.skipIf(!url)('la recharge Stripe, en base', () => {
     // Et un autre espace ne lit pas ce client.
     expect(await store.clientDe(autre, true)).toBeNull();
   });
+
+  it('🔴 un achat porte SA session sur son mouvement ; l’historique rend son paiement et sa facture, dans l’espace', async () => {
+    // Migration 0193 : le lien « Facture » de la page Crédit IA suit cette colonne, jamais la note.
+    const store = new PgStripeStore(poolA);
+    const credits = new PgCreditStore(poolA);
+    const avecFacture = paiement({ factureId: 'in_itest_facture' });
+    const sansFacture = paiement();
+    await store.crediterPaiement(avecFacture);
+    await store.crediterPaiement(sansFacture);
+    const col = await poolA.query<{ stripe_session_id: string }>(
+      `select stripe_session_id from agent_credit_mouvements where tenant_id = $1 and raison = 'achat' and stripe_session_id = $2`,
+      [tenantId, avecFacture.sessionId],
+    );
+    expect(col.rowCount).toBe(1);
+    const achats = (await credits.historique(tenantId, 50)).filter((l) => l.raison === 'achat');
+    expect(achats.find((l) => l.paiementId === avecFacture.sessionId)).toMatchObject({ facture: true });
+    expect(achats.find((l) => l.paiementId === sansFacture.sessionId)).toMatchObject({ facture: false });
+    // Les autres lignes n'ont ni paiement ni facture.
+    expect((await credits.historique(tenantId, 50)).filter((l) => l.raison !== 'achat').every((l) => l.paiementId === null && !l.facture)).toBe(true);
+    // La facture se relit dans l'espace, et seulement là.
+    expect(await store.factureDe(tenantId, avecFacture.sessionId)).toEqual({ factureId: 'in_itest_facture' });
+    expect(await store.factureDe(tenantId, sansFacture.sessionId)).toEqual({ factureId: null });
+    expect(await store.factureDe(autre, avecFacture.sessionId)).toBeNull();
+  });
+
+  it('🔴 la reprise de 0193 rattache un achat d’AVANT la colonne par sa note exacte, et rien d’autre', async () => {
+    // L'achat de production d'avant la colonne : son mouvement n'a que la note. Le SQL de la reprise est LU dans la
+    // migration, pas recopié, et rejoué ici.
+    const store = new PgStripeStore(poolA);
+    const p = paiement();
+    await store.crediterPaiement(p);
+    await poolA.query(`update agent_credit_mouvements set stripe_session_id = null where tenant_id = $1 and stripe_session_id = $2`, [tenantId, p.sessionId]);
+    // Un achat d'un AUTRE espace qui porterait la même note ne doit pas être rattaché à ce paiement.
+    await poolA.query(
+      `insert into agent_credit_mouvements (tenant_id, delta_micro_eur, raison, note) values ($1, 1, 'achat', $2)`,
+      [autre, `achat Stripe ${p.offre} (${p.sessionId})`],
+    );
+    const { readFileSync } = await import('node:fs');
+    const sql = readFileSync(new URL('../../db/migrations/0193_credit_offert_et_factures.sql', import.meta.url), 'utf8');
+    const reprise = sql.slice(sql.indexOf('update agent_credit_mouvements m'), sql.indexOf(';', sql.indexOf('update agent_credit_mouvements m')) + 1);
+    await poolA.query(reprise);
+    const r = await poolA.query<{ tenant_id: string; stripe_session_id: string | null }>(
+      `select tenant_id, stripe_session_id from agent_credit_mouvements where raison = 'achat' and note = $1 order by tenant_id`,
+      [`achat Stripe ${p.offre} (${p.sessionId})`],
+    );
+    expect(r.rows.find((l) => l.tenant_id === tenantId)?.stripe_session_id).toBe(p.sessionId);
+    expect(r.rows.find((l) => l.tenant_id === autre)?.stripe_session_id).toBeNull();
+  });
 });

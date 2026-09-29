@@ -228,6 +228,7 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   // doit tomber avant le dépôt (sonde 12).
   stripeWebhook: {
     secret: SECRET_STRIPE,
+    livemode: true,
     paiements: { crediterPaiement: async () => 'espace_inconnu' },
     apresCredit: async () => undefined,
   } satisfies StripeWebhookRouteDeps,

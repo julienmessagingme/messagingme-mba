@@ -19,6 +19,13 @@ export interface LigneCredit {
   /** AAAA-MM-JJ quand la ligne agrège une journée (agents, traductions). */
   jour: string | null;
   at: string;
+  /**
+   * Le paiement Stripe d'une ligne `achat` (sa session), que la route de facture reçoit. Absent d'une API plus
+   * ancienne, ou nul : pas de lien « Facture ».
+   */
+  paiementId?: string | null;
+  /** Ce paiement a une facture chez Stripe : c'est ce qui offre le lien. */
+  facture?: boolean;
 }
 
 /**
@@ -50,6 +57,72 @@ export async function ouvrirPaiement(tenantId: string, offre: OffreRecharge): Pr
     if (err instanceof ApiError && (err.status === 404 || err.status === 503)) return { indisponible: true };
     throw err;
   }
+}
+
+/**
+ * L'adresse de la facture d'un achat, hébergée par Stripe (consultation et PDF). Toute réponse en échec remonte, avec
+ * le message du serveur (paiement inconnu, pas de facture, Stripe qui refuse). 🔴 Une adresse qui n'est pas https
+ * est refusée ici aussi : l'écran va y envoyer un onglet.
+ */
+export async function ouvrirFacture(tenantId: string, paiementId: string): Promise<string> {
+  const r = await request<{ url?: unknown }>(`/tenants/${tenantId}/credit/factures/${encodeURIComponent(paiementId)}`);
+  if (typeof r.url !== 'string' || !estPageDePaiement(r.url)) throw new Error('adresse de facture invalide');
+  return r.url;
+}
+
+/** La ligne offre-t-elle le lien « Facture » ? Un achat, rattaché à son paiement, qui a une facture. */
+export function aUneFacture(m: LigneCredit): m is LigneCredit & { paiementId: string } {
+  return m.raison === 'achat' && typeof m.paiementId === 'string' && m.paiementId !== '' && m.facture === true;
+}
+
+/**
+ * LE CRÉDIT EST-IL ARRIVÉ, au retour d'un paiement ? (relecture du 2026-09-29)
+ *
+ * 🔴 ON CHERCHE LA LIGNE `achat`, PAS UN SOLDE QUI MONTE. L'écran comparait le solde relu à la PREMIÈRE lecture : si
+ * le webhook de Stripe était passé avant elle (il est souvent plus rapide que le retour du navigateur), le solde ne
+ * « montait » jamais pendant les relectures, et l'écran gardait « le crédit arrive… » alors qu'il était là. L'historique
+ * porte une ligne `achat` par paiement crédité : elle est arrivée si elle date d'APRÈS le départ vers Stripe.
+ */
+const CLE_DEPART_PAIEMENT = 'mba_credit_depart_paiement';
+/** L'horloge du navigateur et celle du serveur ne sont pas la même : une marge, en deçà du départ. */
+export const MARGE_HORLOGE_MS = 5 * 60_000;
+/** Sans départ retenu (autre onglet, stockage bloqué) : un achat de la dernière heure compte. */
+export const FENETRE_SANS_DEPART_MS = 60 * 60_000;
+
+/** Retient le moment du départ vers Stripe, pour cet onglet. Jamais bloquant : un stockage refusé n'empêche pas de payer. */
+export function retenirDepartPaiement(maintenant: number): void {
+  try {
+    window.sessionStorage.setItem(CLE_DEPART_PAIEMENT, String(maintenant));
+  } catch {
+    /* le retour se rabattra sur la fenêtre sans départ */
+  }
+}
+
+export function lireDepartPaiement(): number | null {
+  try {
+    const v = Number(window.sessionStorage.getItem(CLE_DEPART_PAIEMENT));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function oublierDepartPaiement(): void {
+  try {
+    window.sessionStorage.removeItem(CLE_DEPART_PAIEMENT);
+  } catch {
+    /* rien à oublier */
+  }
+}
+
+/** À partir de quand une ligne `achat` est celle de CE paiement. */
+export function seuilDuRetour(depart: number | null, maintenant: number): number {
+  return depart !== null ? depart - MARGE_HORLOGE_MS : maintenant - FENETRE_SANS_DEPART_MS;
+}
+
+/** L'historique porte-t-il un achat crédité depuis `seuilMs` ? */
+export function achatArriveDepuis(mouvements: readonly LigneCredit[], seuilMs: number): boolean {
+  return mouvements.some((m) => m.raison === 'achat' && Date.parse(m.at) >= seuilMs);
 }
 
 /**

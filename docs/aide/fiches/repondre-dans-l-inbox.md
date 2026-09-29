@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 431ce7
+source_empreinte: c0354c
 ---
 # Répondre à un client dans l'Inbox
 
@@ -27,8 +27,11 @@ personne (nom, téléphone, e-mail, ses tags, si elle s'est désabonnée ou si e
 l'analyse quand elle est passée, à qui la conversation est assignée, et son historique, du plus récent au plus
 ancien : les assignations (à qui, par qui), les prises et les rendus à l'agent de Meta, « Traité », « Archivé »,
 « Signalé », et quand le client l'a rouverte en écrivant. Un changement fait par un scénario ou une campagne dit
-sa cause (« automatique : campagne Rentrée ») au lieu d'un nom. Le panneau ne sert qu'à lire : les gestes restent
-en haut de la conversation. Le lien « Ouvrir la fiche » affiche la fiche du contact à droite. Le bouton en haut
+sa cause (« automatique : campagne Rentrée ») au lieu d'un nom, et un geste fait par une clé d'API le dit aussi.
+Quand un collègue prend une conversation pour lui, la ligne dit « Prise en charge », par lui. Le panneau ne sert
+qu'à lire : les gestes restent en haut de la conversation, et il se met à jour après chacun d'eux, comme après un
+rangement de plusieurs conversations qui contient celle-ci. Le lien « Ouvrir la fiche » affiche la fiche du contact
+à droite. Le bouton en haut
 du panneau le replie, et votre navigateur s'en souvient. Un agent ne voit ce détail que sur ses conversations et
 celles que personne n'a.
 
@@ -86,4 +89,6 @@ Chaque traduction en est décomptée, au même tarif que les agents IA, et le jo
 une ligne par jour. Sans crédit, le fil reste dans sa langue d'origine et l'écran vous le dit. Un administrateur y trouve le
 lien « Recharger le crédit », vers Paramètres, Crédit IA ; si vous n'êtes pas administrateur, demandez à l'un
 d'eux de le recharger. S'il dit que la traduction est momentanément indisponible, votre
-crédit n'est pas en cause, réessayez un peu plus tard.
+crédit n'est pas en cause, réessayez un peu plus tard. La toute première traduction de votre espace prend
+quelques secondes de plus : le fil s'affiche d'abord dans sa langue d'origine, puis revient traduit en entier,
+sans que vous ayez à rouvrir la conversation.

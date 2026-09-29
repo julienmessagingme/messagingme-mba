@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
-import { offrirALaConnexion } from '../agent/credits.pg';
+import { offrirAuNumeroVerifie } from '../agent/credits.pg';
 
 /**
  * 🔴 Un WABA, un numéro ou des credentials appartiennent déjà à un autre espace : on refuse de les réaffecter en
@@ -42,16 +42,17 @@ export class SecondNumeroRefuseError extends Error {
  */
 export class PgEmbeddedSignupStore {
   /**
-   * `offre.creditOffertMicroEur` : le crédit offert à la connexion du premier numéro (`CREDIT_OFFERT_MICRO_EUR`, 0
+   * `offre.creditOffertMicroEur` : le crédit offert au premier numéro vérifié (`CREDIT_OFFERT_MICRO_EUR`, 0
    * l'éteint). Requis : un câblage qui l'oublierait relierait des numéros sans jamais rien offrir, sans le dire.
    */
   constructor(private readonly pool: Pool, private readonly offre: { creditOffertMicroEur: number }) {}
 
   /**
-   * Rattache le WABA et le numéro à l'espace, et offre le crédit de bienvenue si c'est son premier numéro. Rend le
-   * montant offert (0 si rien), pour que le câblage remonte le plafond d'une clé de modèle déjà ouverte.
-   * 🔴 L'offre est dans la MÊME transaction que la liaison : une liaison refusée (conflit, second numéro) n'offre
-   * rien, et une liaison faite ne peut pas perdre son offre.
+   * Rattache le WABA et le numéro à l'espace.
+   *
+   * 🔴 ELLE N'OFFRE PLUS RIEN (relecture du 2026-09-29). L'offre y était écrite, dans sa transaction, et la liaison
+   * tourne AVANT que la route ne sache si Meta a vérifié le numéro : un numéro que Meta dit `NOT_VERIFIED` recevait
+   * donc ses 5 €. L'offre vit dans `offrirCredit`, que la route appelle quand Meta dit le numéro vérifié.
    */
   async linkTenant(input: {
     tenantId: string;
@@ -59,8 +60,8 @@ export class PgEmbeddedSignupStore {
     phoneNumberId: string;
     displayPhoneNumber: string | null;
     verifiedName: string | null;
-  }): Promise<{ creditOffertMicroEur: number }> {
-    return enTransaction(this.pool, async (client) => {
+  }): Promise<void> {
+    await enTransaction(this.pool, async (client) => {
       // Conflit d'id avec un autre espace : l'update ne s'exécute pas, rowCount 0, refus.
       const wabaRes = await client.query(
         `insert into waba (id, tenant_id) values ($1, $2)
@@ -91,12 +92,21 @@ export class PgEmbeddedSignupStore {
         [input.phoneNumberId, input.wabaId, input.tenantId, input.displayPhoneNumber, input.verifiedName],
       );
       if ((phoneRes.rowCount ?? 0) === 0) throw new TenantConflictError('phone_number', input.phoneNumberId);
-
-      // Après les deux gardes : un numéro refusé n'arrive jamais ici. L'offre tient elle-même ses bornes (une par
-      // espace, jamais deux pour un numéro) : rejouer l'inscription sur le même numéro n'offre rien de plus.
-      const offert = await offrirALaConnexion(client, input.tenantId, input.phoneNumberId, this.offre.creditOffertMicroEur);
-      return { creditOffertMicroEur: offert };
     });
+  }
+
+  /**
+   * Offre le crédit de bienvenue pour ce numéro, que Meta vient de dire VÉRIFIÉ (`CONNECTED`, `VERIFIED`, ou un code
+   * accepté). C'est la ROUTE qui le sait, pas ce dépôt : il ne l'appelle jamais de lui-même. Rend le montant offert (0
+   * si rien), pour que le câblage remonte le plafond d'une clé de modèle déjà ouverte.
+   *
+   * Les bornes sont celles de `offrirAuNumeroVerifie` (une par espace, jamais deux pour un numéro, par son identifiant
+   * ni par son numéro affiché) : rappeler ce geste sur un numéro déjà servi n'offre rien de plus. Une transaction :
+   * l'offre et son crédit s'écrivent ensemble ou pas du tout.
+   */
+  async offrirCredit(tenantId: string, phoneNumberId: string): Promise<number> {
+    return enTransaction(this.pool, (client) =>
+      offrirAuNumeroVerifie(client, tenantId, phoneNumberId, this.offre.creditOffertMicroEur));
   }
 
   /**

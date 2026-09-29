@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgInboxStore } from '../../src/inbox/store.pg';
-import { CAUSE_AMORCAGE, CAUSE_MESSAGE_DU_CONTACT } from '../../src/inbox/evenements';
+import { CAUSE_AMORCAGE, CAUSE_CLE_API, CAUSE_MESSAGE_DU_CONTACT } from '../../src/inbox/evenements';
 
 /**
  * LE JOURNAL DES ÉVÉNEMENTS D'UNE CONVERSATION (migration 0192) et le panneau Détail qui le lit.
@@ -240,6 +240,14 @@ describe.skipIf(!url)('le journal des événements d’une conversation', () => 
       expect(await journal(id)).toEqual([{ type: 'passee_par_mba', acteur_id: null, cible_id: null, cause: 'automatique : agent de Meta' }]);
     });
 
+    it('🔴 « Rendre la main » sur un fil que la colonne croit à l’agent : `rendue_mba`, pas `prise_mba` (2026-09-29)', async () => {
+      await entrant('wamid.ev-43');
+      const id = await idDe();
+      await pool.query(`update conversations set control_owner = 'mba' where id = $1`, [id]);
+      expect(await store.setControlOwner(tenantId, WA, 'app_workflow', { par: OPERATEUR(), effacerEscalade: true, rendAgentDeMeta: true })).toBe(true);
+      expect(await journal(id)).toEqual([{ type: 'rendue_mba', acteur_id: admin, cible_id: null, cause: null }]);
+    });
+
     it('la passation avant l’écho crée la conversation ET son événement', async () => {
       await store.marquerEscalade(tenantId, '33600000193', 'automatique : agent de Meta');
       expect(await types(await idDe('33600000193'))).toEqual(['passee_par_mba']);
@@ -309,6 +317,40 @@ describe.skipIf(!url)('le journal des événements d’une conversation', () => 
         ['archivee', null, null],
         ['assignee', { ancien: true }, { ancien: true }],
       ]);
+    });
+
+    it('🔴 une clé d’API n’est pas un « ancien collaborateur » : elle porte sa cause (relecture du 2026-09-29)', async () => {
+      await entrant('wamid.ev-64');
+      const id = await idDe();
+      await store.archiverConversation(tenantId, id, true, { collaborateur: 'apikey:itest' });
+      expect(await journal(id)).toEqual([{ type: 'archivee', acteur_id: null, cible_id: null, cause: CAUSE_CLE_API }]);
+      const h = (await store.detailConversation(tenantId, id, ADMIN()))?.historique ?? [];
+      expect(h.map((e) => [e.acteur, e.cause])).toEqual([[null, CAUSE_CLE_API]]);
+    });
+
+    it('🔴 un acteur d’un AUTRE espace ne prête jamais son nom à la frise (défense en profondeur)', async () => {
+      // Les écritures ne l'inscrivent pas (`acteurSql`), mais l'amorçage de 0192 a recopié `assigned_by` et
+      // `signalee_par` sans filtrer l'espace. La lecture filtre donc elle aussi.
+      await entrant('wamid.ev-65');
+      const id = await idDe();
+      const etranger = await membre(autreTenantId, 'y@evenements.itest', 'Nom Étranger', 'admin');
+      await pool.query(
+        `insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cible_id, cause)
+         values ($1, $2, 'assignee', $3, $3, 'état au déploiement')`,
+        [tenantId, id, etranger],
+      );
+      const h = (await store.detailConversation(tenantId, id, ADMIN()))?.historique ?? [];
+      expect(h.map((e) => [e.acteur, e.cible])).toEqual([[{ ancien: true }, { ancien: true }]]);
+      expect(JSON.stringify(h)).not.toContain('Nom Étranger');
+    });
+
+    it('une prise (acteur = cible) est marquée `prise` ; une assignation par un autre ne l’est pas', async () => {
+      await entrant('wamid.ev-66');
+      const id = await idDe();
+      await store.prendreSiLibre(tenantId, id, marie);
+      await store.setAssignee(tenantId, id, jean, OPERATEUR());
+      const h = (await store.detailConversation(tenantId, id, ADMIN()))?.historique ?? [];
+      expect(h.map((e) => [e.cible, e.prise])).toEqual([[{ nom: 'Jean' }, false], [{ nom: 'Marie' }, true]]);
     });
 
     it('🔴 la visibilité du fil : un agent voit les siennes et le pot commun, pas celle d’un collègue', async () => {
