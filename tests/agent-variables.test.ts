@@ -161,6 +161,14 @@ describe('les formes anciennes sont relues, jamais refusées', () => {
     expect(normaliserOrigine({ type: 'inconnu' })).toBeNull();
     expect(normaliserOrigine(null)).toBeNull();
   });
+
+  it('🔴 une clé système qui nomme une propriété HÉRITÉE d’Object est écartée', () => {
+    // Un accès nu à la table des anciennes clés rendrait `Object.prototype.constructor` : une origine `fiche`
+    // dont la clé est une fonction.
+    for (const cle of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(normaliserOrigine({ type: 'systeme', cle }), cle).toBeNull();
+    }
+  });
 });
 
 describe('libellés annoncés au client', () => {
@@ -176,6 +184,10 @@ describe('libellés annoncés au client', () => {
     expect(libelleOrigine({ type: 'fiche', cle: 'risque_depart' })).toContain('risque');
     expect(libelleOrigine({ type: 'modele' })).toContain('agent');
     expect(libelleOrigine({ type: 'fixe', valeur: 'FR' })).toContain('FR');
+  });
+
+  it('une origine inconnue à l’exécution rend un TEXTE, jamais l’objet', () => {
+    expect(libelleOrigine({ type: 'contact', cle: 'nom' } as never)).toBe('origine inconnue');
   });
 });
 

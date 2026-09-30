@@ -52,7 +52,8 @@ export interface DepsAppelHttpScenario extends DepsResolveurHttp {
   /** Le libellé de la requête jouée, pour que le journal nomme ce qu'un humain reconnaît. */
   libelleRequete?(tenantId: string, requestId: string): Promise<string | null>;
   /**
-   * La projection du contact (`{nom, tags, champs}`), source des variables `champ` et `contact`. Chargée à
+   * La projection du contact (`{nom, tags, champs}`), source des variables `champ` (celles d'origine `fiche` se
+   * lisent par `ficheDuContact`). Chargée à
    * chaque appel : le bloc peut suivre un bloc qui vient d'écrire un champ, et une photo d'avant enverrait
    * l'ancienne valeur.
    */

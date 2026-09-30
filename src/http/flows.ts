@@ -6,6 +6,7 @@ import type { MetaFlowClient } from '../meta/flows';
 import type { FlowRow } from '../flow/store.pg';
 import type { UserFieldType, UserFieldDef } from '../crm/types';
 import { WHATSAPP_OPTIN_FIELD_KEY } from '../crm/fields';
+import { estCleReservee } from '../crm/champs-fiche';
 import type { Guard } from '../auth/middleware';
 import { espaceVerifie, nonEmpty } from './scope';
 
@@ -153,6 +154,14 @@ async function deriveAndMap(
   for (let i = 0; i < fields.length; i += 1) {
     const f = fields[i]!;
     const saveTo = parsed.saveTos[i];
+    // La clé d'un champ FIXE de la fiche (`analyse_sentiment`, `external_id`...) n'est jamais une cible : un champ
+    // perso homonyme se confondrait avec lui, et la dernière analyse n'est écrite que par l'analyse. ⚠️ Sauf `nom`
+    // et `wa_id`, qu'un formulaire écrivait déjà avant la liste unique : une question « Nom » est la plus courante,
+    // la refuser casserait la création comme l'édition des formulaires.
+    const cible = saveTo ?? f.key;
+    if (estCleReservee(cible) && cible !== 'nom' && cible !== 'wa_id') {
+      return { error: `« ${f.label} » : « ${cible} » est un champ réservé de la fiche, renommez la question` };
+    }
     if (f.type === 'optin') {
       // Consentement : cible = champ booléen choisi (validé) ou, à défaut, whatsapp_optin (créé à la volée).
       if (saveTo) {

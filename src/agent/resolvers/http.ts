@@ -77,8 +77,9 @@ function extraire(source: unknown, chemin: string): unknown {
 export interface AppelConnecteur {
   tenantId: string;
   waId: string;
-  /** Projection du contact (`{nom, tags, champs}`), source des variables `champ` et `contact`. `null` : un
-   *  appel dont une variable la réclame est refusé, jamais envoyé avec une valeur inventée. */
+  /** Projection du contact (`{nom, tags, champs}`), source des variables `champ` (celles d'origine `fiche` se
+   *  lisent par `ficheDuContact`). `null` : un appel dont une variable la réclame est refusé, jamais envoyé avec
+   *  une valeur inventée. */
   contact: Record<string, unknown> | null;
   /** La requête à jouer (`connector_requests`). */
   requestId: string;

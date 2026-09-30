@@ -240,6 +240,31 @@ describe('routes flows — création', () => {
     await server.close();
   });
 
+  it('🔴 une question qui prendrait la clé d’un champ FIXE de la fiche est refusée, rien n’est créé', async () => {
+    // Sans ça, « Analyse sentiment » créerait un champ perso `analyse_sentiment` qui se confondrait avec la
+    // dernière analyse, écrite par l'analyse seule.
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'Contact', elements: [{ kind: 'field', label: 'Analyse sentiment', type: 'text', required: true }] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('analyse_sentiment');
+    expect(cap.inserted).toHaveLength(0);
+    await server.close();
+  });
+
+  it('une question « Nom » reste permise : les formulaires l’écrivaient déjà', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'Contact', elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true }] },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(cap.inserted).toHaveLength(1);
+    await server.close();
+  });
+
   it('POST name vide -> 400', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: '', elements: validBody.elements } });

@@ -226,6 +226,50 @@ describe('requêtes : déclarer', () => {
     expect(res.json().catalogue.systeme).toContain('derniere_saisie');
     expect(res.json().catalogue.entetesReserves).toContain('authorization');
   });
+
+  it('🔴 le catalogue rend les champs de la FICHE avec leur libellé, et garde `contact` pour une console d’avant', async () => {
+    const { srv } = app();
+    const cat = (await srv.inject({ method: 'GET', url: base(), ...h(adminTok) })).json().catalogue;
+    const fiche = cat.fiche as Array<{ cle: string; libelle: string[] }>;
+    expect(fiche.map((c) => c.cle)).toEqual(expect.arrayContaining(['wa_id', 'nom', 'external_id', 'analyse_sentiment', 'risque_depart']));
+    // Le libellé en français puis en anglais : l'écran l'affiche tel quel, il n'en tient aucune copie.
+    expect(fiche.every((c) => c.libelle.length === 2 && c.libelle.every((l) => typeof l === 'string' && l !== ''))).toBe(true);
+    // L'analyse n'est plus une valeur système : la proposer des deux côtés ferait deux chemins pour la même valeur.
+    expect(cat.systeme).toEqual(['derniere_saisie', 'maintenant']);
+    expect(cat.contact).toEqual(['wa_id', 'nom']);
+  });
+
+  it('🔴 une origine ANCIENNE envoyée par une console d’avant est réécrite, jamais refusée', async () => {
+    // Une console encore ouverte au déploiement envoie `contact:wa_id` ou `systeme:analyse_*` : refuser
+    // l'enregistrement lui ferait perdre la requête qu'elle vient de construire.
+    const { cap, srv } = app();
+    const res = await srv.inject({
+      method: 'POST', url: base(), ...h(adminTok),
+      payload: corps({
+        chemin: '/commandes/{ref}/{tel}/{humeur}',
+        variables: [
+          { nom: 'ref', type: 'string', origine: { type: 'modele' } },
+          { nom: 'tel', type: 'string', origine: { type: 'contact', cle: 'wa_id' } },
+          { nom: 'humeur', type: 'string', origine: { type: 'systeme', cle: 'analyse_sentiment' } },
+        ],
+      }),
+    });
+    expect(res.statusCode).toBe(201);
+    const origines = (cap.creations[0]!.variables as Array<{ origine: unknown }>).map((v) => v.origine);
+    expect(origines).toEqual([{ type: 'modele' }, { type: 'fiche', cle: 'wa_id' }, { type: 'fiche', cle: 'analyse_sentiment' }]);
+  });
+
+  it('🔴 un champ de fiche HORS de la liste est refusé à l’écriture', async () => {
+    const { srv } = app();
+    const res = await srv.inject({
+      method: 'POST', url: base(), ...h(adminTok),
+      payload: corps({
+        chemin: '/commandes/{ref}',
+        variables: [{ nom: 'ref', type: 'string', origine: { type: 'fiche', cle: 'jeton_public' } }],
+      }),
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 describe('requêtes : modifier et supprimer', () => {

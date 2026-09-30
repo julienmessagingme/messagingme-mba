@@ -64,8 +64,8 @@ export function normaliserOrigine(o: unknown): OrigineVariable | null {
   if (type === 'contact') return cle === 'wa_id' || cle === 'nom' ? { type: 'fiche', cle } : null;
   if (type === 'systeme') {
     if ((CLES_SYSTEME as readonly string[]).includes(cle)) return { type: 'systeme', cle: cle as CleSysteme };
-    const ancienne = ANCIENNES_CLES_ANALYSE[cle];
-    return ancienne ? { type: 'fiche', cle: ancienne } : null;
+    // `hasOwn` et pas un simple accès : `constructor` ou `__proto__` rendraient une propriété héritée d'Object.
+    return Object.hasOwn(ANCIENNES_CLES_ANALYSE, cle) ? { type: 'fiche', cle: ANCIENNES_CLES_ANALYSE[cle]! } : null;
   }
   return null;
 }
@@ -202,8 +202,9 @@ export function libelleOrigine(origine: OrigineVariable): string {
     case 'systeme': return LIBELLES_SYSTEME[origine.cle];
     case 'fixe': return `valeur fixe « ${String(origine.valeur)} »`;
     default: {
-      const jamais: never = origine;
-      return jamais;
+      // Exhaustivité à la compilation ; à l'exécution, un texte et jamais l'objet (même raison que `resoudreVariable`).
+      const _jamais: never = origine;
+      return 'origine inconnue';
     }
   }
 }
