@@ -65,6 +65,22 @@ describe('importContacts', () => {
     expect(userFields.defs.map((d) => d.key)).toContain('ville'); // user field créé
   });
 
+  it('🔴 une colonne qui prendrait la clé d’un champ FIXE de la fiche est écartée, et le rapport le dit', async () => {
+    // Sans cette garde, « analyse_sentiment » deviendrait un champ perso homonyme du champ d'analyse (lot 2).
+    const contacts = new FakeContactStore();
+    const userFields = new FakeFieldStore();
+    const mappingReserve: ColumnMapping = {
+      columns: { tel: { target: 'phone' }, sentiment: { target: 'custom', key: 'analyse_sentiment' }, ville: { target: 'custom', key: 'ville' } },
+    };
+    const report = await importContacts(
+      { rows: [{ tel: '0612345678', sentiment: 'positif', ville: 'Lyon' }], mapping: mappingReserve, tenantId: 't1', optIn: false },
+      { contacts, userFields },
+    );
+    expect(userFields.defs.map((d) => d.key)).toEqual(['ville']);
+    expect(contacts.byPhone.get('t1|+33612345678')?.fields).toEqual({ ville: 'Lyon' });
+    expect(report.errors.map((e) => e.reason).join(' ')).toMatch(/analyse_sentiment.*réservé/);
+  });
+
   it('tags : appliqués à tous les contacts importés', async () => {
     const contacts = new FakeContactStore();
     const userFields = new FakeFieldStore();

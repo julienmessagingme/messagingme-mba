@@ -5,7 +5,6 @@ import type { EntreeResolveur } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
 import type { SourceAppel } from '../src/agent/sources';
 import type { RequeteConnecteur } from '../src/agent/requetes';
-import type { AnalyseDuContact } from '../src/agent/variables';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE } from './gestes';
 
@@ -69,15 +68,15 @@ function harnais(over: {
   requete?: RequeteConnecteur | null;
   ctx?: Partial<typeof CTX>;
   derniereSaisie?: string | null;
-  /** La dernière analyse rendue par la dépendance `analyses`. */
-  analyse?: AnalyseDuContact | null;
+  /** Les champs fixes de la fiche rendus par la dépendance `fiche`. */
+  fiche?: Record<string, string | number | boolean | null> | null;
   lance?: Error;
   /** Verdict de la garde de résolution. Absent = « publique », le cas nominal. */
   resolution?: (url: string) => Promise<{ ok: boolean; raison?: string }>;
 } = {}) {
   const appels: Array<{ url: string; init: RequestInit }> = [];
   const epreuves: Array<{ ok: boolean; erreur?: string }> = [];
-  const lecturesAnalyse = { n: 0 };
+  const lecturesFiche = { n: 0 };
   const fetchImpl = (async (url: unknown, init: unknown) => {
     appels.push({ url: String(url), init: (init ?? {}) as RequestInit });
     if (over.lance) throw over.lance;
@@ -92,7 +91,7 @@ function harnais(over: {
     },
     requetes: { parId: async () => (over.requete === undefined ? REQUETE : over.requete) },
     inbox: { derniereSaisieDuContact: async () => over.derniereSaisie ?? null },
-    analyses: { analyseDuContact: async () => { lecturesAnalyse.n += 1; return over.analyse ?? null; } },
+    fiche: { ficheDuContact: async () => { lecturesFiche.n += 1; return over.fiche ?? null; } },
     fuseau: async () => 'Europe/Paris',
     // Horloge figee : la valeur systeme « maintenant » doit etre reproductible.
     now: () => new Date('2026-09-02T09:45:00.000Z'),
@@ -109,7 +108,7 @@ function harnais(over: {
     ctx: { ...CTX, ...over.ctx },
     signal: AbortSignal.timeout(10_000),
   };
-  return { resolveur, entree, appels, epreuves, lecturesAnalyse };
+  return { resolveur, entree, appels, epreuves, lecturesFiche };
 }
 
 describe('résolveur http : le chemin nominal', () => {
@@ -367,33 +366,47 @@ describe('résolveur http : le corps et les variables', () => {
     expect((appels[0]!.init.headers as Record<string, string>)['content-type']).toBe('application/json');
   });
 
-  it('🔴 les valeurs de la DERNIÈRE ANALYSE partent avec leur vraie valeur et leur type', async () => {
+  it('🔴 les valeurs de la DERNIÈRE ANALYSE, lues sur la FICHE, partent avec leur vraie valeur et leur type', async () => {
     // Le cas Brevo : « signaler que ce client est mécontent », avec ce que l'analyse a VRAIMENT mesuré, et non des
     // valeurs écrites en dur dans l'appel.
-    const { resolveur, entree, appels, lecturesAnalyse } = harnais({
+    const { resolveur, entree, appels, lecturesFiche } = harnais({
       requete: {
         ...REQUETE, methode: 'POST', chemin: '/events',
         corps: { mode: 'json', gabarit: '{"intention": "{{i}}", "sentiment": "{{s}}", "urgence": "{{u}}", "resolue": "{{r}}"}' },
         variables: [
-          { nom: 'i', type: 'string', origine: { type: 'systeme', cle: 'analyse_intention' } },
-          { nom: 's', type: 'string', origine: { type: 'systeme', cle: 'analyse_sentiment' } },
-          { nom: 'u', type: 'number', origine: { type: 'systeme', cle: 'analyse_urgence' } },
-          { nom: 'r', type: 'boolean', origine: { type: 'systeme', cle: 'analyse_resolue' } },
+          { nom: 'i', type: 'string', origine: { type: 'fiche', cle: 'analyse_intention' } },
+          { nom: 's', type: 'string', origine: { type: 'fiche', cle: 'analyse_sentiment' } },
+          { nom: 'u', type: 'number', origine: { type: 'fiche', cle: 'analyse_urgence' } },
+          { nom: 'r', type: 'boolean', origine: { type: 'fiche', cle: 'analyse_resolue' } },
         ],
       },
-      analyse: { intention: 'reclamation', sentiment: 'negatif', satisfaction: 2, urgence: 8, resolue: false, risque: 'eleve' },
+      fiche: { analyse_intention: 'reclamation', analyse_sentiment: 'negatif', analyse_satisfaction: 2, analyse_urgence: 8, analyse_resolue: false, risque_depart: 'eleve' },
     });
     const r = await resolveur(entree);
     expect(r.ok).not.toBe(false);
     expect(JSON.parse(String(appels[0]!.init.body))).toEqual({ intention: 'reclamation', sentiment: 'negatif', urgence: 8, resolue: false });
-    // UNE lecture pour les quatre variables.
-    expect(lecturesAnalyse.n).toBe(1);
+    // UNE lecture de la fiche pour les quatre variables.
+    expect(lecturesFiche.n).toBe(1);
   });
 
-  it('⚠️ une requête sans variable d’analyse ne lit PAS l’analyse', async () => {
-    const { resolveur, entree, lecturesAnalyse } = harnais();
+  it('⚠️ une requête sans champ de fiche (hors numéro) ne lit PAS la fiche', async () => {
+    const { resolveur, entree, lecturesFiche } = harnais();
     await resolveur(entree);
-    expect(lecturesAnalyse.n).toBe(0);
+    expect(lecturesFiche.n).toBe(0);
+  });
+
+  it('🔴 le numéro (fiche:wa_id) vient du tour, sans lire la fiche, même si elle en porte un autre', async () => {
+    const { resolveur, entree, appels, lecturesFiche } = harnais({
+      requete: {
+        ...REQUETE, methode: 'POST', chemin: '/events',
+        corps: { mode: 'json', gabarit: '{"numero": "{{n}}"}' },
+        variables: [{ nom: 'n', type: 'string', origine: { type: 'fiche', cle: 'wa_id' } }],
+      },
+      fiche: { wa_id: '33699999999' },
+    });
+    await resolveur(entree);
+    expect(JSON.parse(String(appels[0]!.init.body))).toEqual({ numero: entree.ctx.waId });
+    expect(lecturesFiche.n).toBe(0);
   });
 
   it('la valeur système « maintenant » part avec le décalage du fuseau de l’espace', async () => {

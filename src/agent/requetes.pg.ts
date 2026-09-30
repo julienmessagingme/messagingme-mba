@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { MethodeConnecteur } from './http-cible';
 import type { GabaritCorps, EnTete, ParametreUrl } from './requete-http';
+import { normaliserOrigine } from './variables';
 import {
   LabelRequeteDejaPris, SourceIntrouvable,
   type CreationRequete, type PatchRequete, type RequeteConnecteur, type RequeteStore, type VariableDeclaree,
@@ -57,12 +58,14 @@ function lireCorps(mode: string, brut: string | null, champs: unknown): GabaritC
 function lireVariables(v: unknown): VariableDeclaree[] {
   if (!Array.isArray(v)) return [];
   return v.flatMap((x) => {
-    const o = (x ?? {}) as Partial<VariableDeclaree> & { origine?: { type?: unknown } };
+    const o = (x ?? {}) as Partial<VariableDeclaree> & { origine?: unknown };
     if (typeof o.nom !== 'string' || o.nom === '') return [];
     if (typeof o.type !== 'string') return [];
-    const t = o.origine?.type;
-    if (t !== 'modele' && t !== 'contact' && t !== 'champ' && t !== 'systeme' && t !== 'fixe') return [];
-    return [o as VariableDeclaree];
+    // Les formes anciennes (`contact:*`, `systeme:analyse_*`) sont RÉÉCRITES en origine `fiche`, pas refusées :
+    // une requête enregistrée avant le lot 2 garde toutes ses variables, sans reprise en base.
+    const origine = normaliserOrigine(o.origine);
+    if (origine === null) return [];
+    return [{ ...(o as VariableDeclaree), origine }];
   });
 }
 

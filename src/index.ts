@@ -174,7 +174,7 @@ async function main(): Promise<void> {
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
     nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
-    agentSources, agentRequetes, lecturesAnalyse, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
+    agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
   } = construireSocle({ pool, queue, config });
@@ -2120,7 +2120,7 @@ async function main(): Promise<void> {
           sources: agentSources,
           requetes: agentRequetes,
           inbox: inboxStore,
-          analyses: lecturesAnalyse,
+          fiche: contactStore,
           fuseau: async (t) => (await settingsStore.get(t)).timezone,
         }),
         journal: journalAppels,

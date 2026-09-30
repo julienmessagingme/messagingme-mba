@@ -152,7 +152,7 @@ async function main(): Promise<void> {
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
     poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
-    journalAppels, credits, agentSources, agentRequetes, lecturesAnalyse, essaisStore, depotAide, metaFactory, connexionsPub,
+    journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
   } = construireSocle({ pool, queue, config });
 
@@ -693,7 +693,7 @@ async function main(): Promise<void> {
     journalAppels,
     libelleRequete: async (t, id) => (await agentRequetes.parId(t, id))?.label ?? null,
     inbox: inboxStore,
-    analyses: lecturesAnalyse,
+    fiche: contactStore,
     fuseau: async (t) => (await settingsStore.get(t)).timezone,
     // Relue à chaque appel : la fiche a pu bouger entre le refus et la reprise du job.
     contacts: contactStore,
@@ -1508,7 +1508,7 @@ async function main(): Promise<void> {
             requetes: agentRequetes,
             // Chargées paresseusement : appelées seulement si la requête déclare une variable qui les réclame.
             inbox: inboxStore,
-            analyses: lecturesAnalyse,
+            fiche: contactStore,
             fuseau: async (t) => (await settingsStore.get(t)).timezone,
           }),
           /**

@@ -20,7 +20,7 @@ const REQUETE = {
   id: 'rq1', tenantId: 't1', sourceId: 'src1', label: 'Desabonner dans le CRM',
   methode: 'POST' as const, chemin: '/unsubscribe', parametres: [], entetes: [],
   corps: { mode: 'json' as const, gabarit: '{"phone":"{{tel}}"}' },
-  variables: [{ nom: 'tel', type: 'string' as const, origine: { type: 'contact' as const, cle: 'wa_id' as const } }],
+  variables: [{ nom: 'tel', type: 'string' as const, origine: { type: 'fiche' as const, cle: 'wa_id' as const } }],
   outputPaths: ['ok'], valeursTest: {}, outils: 0, updatedAt: '2026-09-14T00:00:00.000Z',
 };
 /**
@@ -49,6 +49,7 @@ function depsConnecteur(fetchImpl: typeof fetch) {
   return {
     sources: { pourAppel: async () => SOURCE, marquerEpreuve: async () => {} },
     requetes: { parId: async () => REQUETE as never },
+    fiche: { ficheDuContact: async () => null },
     fetchImpl,
     verifierResolution: async () => ({ ok: true as const }),
   };

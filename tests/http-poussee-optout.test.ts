@@ -36,7 +36,7 @@ const REQUETE: RequeteConnecteur = {
   id: RQ, tenantId: 't1', sourceId: SRC, label: 'Desabonner dans le CRM',
   methode: 'POST', chemin: '/unsubscribe', parametres: [], entetes: [],
   corps: { mode: 'json', gabarit: '{"phone":"{{tel}}"}' },
-  variables: [{ nom: 'tel', type: 'string', origine: { type: 'contact', cle: 'wa_id' } }],
+  variables: [{ nom: 'tel', type: 'string', origine: { type: 'fiche', cle: 'wa_id' } }],
   outputPaths: ['ok'], valeursTest: {}, outils: 0, updatedAt: '2026-09-13T00:00:00.000Z',
 };
 

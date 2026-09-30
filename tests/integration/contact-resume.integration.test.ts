@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgConversationAnalysisStore } from '../../src/analysis/store.pg';
 import { PgContactHistoryStore } from '../../src/crm/contact-history.pg';
+import { PgContactStore } from '../../src/crm/contact-store.pg';
 import type { ConversationAnalysis } from '../../src/analysis/schema';
 
 const url = process.env.DATABASE_URL ?? '';
@@ -131,6 +132,26 @@ describe.skipIf(!url)('résumé et dernière analyse de la fiche (Postgres)', ()
     const r = await fiches.resumeContact(tenantId, c);
     expect(r).toMatchObject({ texte: 'Résumé du fil A.', conversationId: a, conversations: 2 });
     expect(r?.derniereAnalyse).toMatchObject({ intention: 'reclamation' });
+  });
+
+  it('🔴 ficheDuContact (données de connecteur) rend les champs fixes, une note à 0 comprise, dans son espace seulement', async () => {
+    const c = await contact('+33600100307');
+    await pool.query(`update contacts set profile_name = 'Léa', external_id = 'crm-307' where id = $1`, [c]);
+    const conv = await fil('33600100307', c);
+    await message(conv, 'rien ne va');
+    await analyser(conv);
+    const fiches2 = new PgContactStore(pool);
+    const f = await fiches2.ficheDuContact(tenantId, '33600100307');
+    expect(f).toMatchObject({
+      nom: 'Léa', external_id: 'crm-307', analyse_intention: 'reclamation', analyse_sentiment: 'negatif',
+      analyse_satisfaction: 0, analyse_urgence: 9, analyse_resolue: false, analyse_sujet: 'colis abîmé',
+      analyse_traitee_par: 'humain', analyse_action: 'rappeler', risque_depart: null,
+    });
+    expect(typeof f?.created_at).toBe('string');
+    expect(typeof f?.analyse_le).toBe('string');
+    // Le même numéro vu d'un autre espace, et un numéro inconnu : rien.
+    expect(await fiches2.ficheDuContact(autreTenantId, '33600100307')).toBeNull();
+    expect(await fiches2.ficheDuContact(tenantId, '33600100999')).toBeNull();
   });
 
   it('🔴 la fiche d’un autre espace n’est jamais rendue', async () => {

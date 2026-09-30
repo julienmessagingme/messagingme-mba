@@ -5,7 +5,6 @@ import { creerAppelHttpScenario } from './appel-http';
 import { executerFonctionJs } from './fonction-js';
 import { PgSourceStore } from '../agent/sources.pg';
 import { PgRequeteStore } from '../agent/requetes.pg';
-import { PgSignauxStore } from '../signaux/store.pg';
 import { PgJournalAppels } from '../agent/catalog.pg';
 import { PgWorkflowStore } from './store.pg';
 import { PgWorkflowNodeEventStore } from './node-events.pg';
@@ -439,8 +438,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       journalAppels: new PgJournalAppels(pool),
       libelleRequete: async (t, id) => (await new PgRequeteStore(pool).parId(t, id))?.label ?? null,
       inbox: inboxStore,
-      // La dernière analyse du contact (variables `CLES_ANALYSE`) : « signaler à Brevo que ce client est mécontent ».
-      analyses: new PgSignauxStore(pool),
+      // Les champs fixes de la fiche (origine `fiche` : dernière analyse, identifiant externe...).
+      fiche: contactStore,
       fuseau: async (t) => (await settingsStore.get(t)).timezone,
       // Relue à chaque appel, pas portée par le contexte du parcours : le bloc peut suivre un bloc qui vient
       // d'écrire un champ.

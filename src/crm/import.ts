@@ -1,5 +1,6 @@
 import { normalizePhone } from './phone';
 import { slugify, validateFieldValue, canonicalizeFieldValue } from './fields';
+import { estCleReservee } from './champs-fiche';
 import type { UserFieldStore } from './fields';
 import type { ColumnMapping, ImportReport, UserFieldDef } from './types';
 import type { CountryCode } from 'libphonenumber-js';
@@ -90,7 +91,6 @@ export interface ImportDeps {
  */
 export async function importContacts(input: ImportInput, deps: ImportDeps): Promise<ImportReport> {
   const report: ImportReport = { created: 0, updated: 0, skipped: 0, errors: [] };
-  const cols = Object.entries(input.mapping.columns);
   /**
    * Une erreur par ligne rejetée, plafonnée : un gros fichier sans téléphone produirait sinon une réponse de
    * plusieurs mégaoctets pour un écran qui en affiche cinq. Le compte (`skipped`), lui, reste exact.
@@ -98,6 +98,15 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
   const signaler = (line: number, reason: string): void => {
     if (report.errors.length < 100) report.errors.push({ line, reason });
   };
+  // Une colonne qui prendrait la clé d'un champ FIXE de la fiche (`analyse_sentiment`, `external_id`...) est
+  // écartée et le rapport le dit : sinon elle créerait un champ perso qui se confondrait avec le champ fixe.
+  const cols = Object.entries(input.mapping.columns).filter(([header, m]) => {
+    if (m.target !== 'custom') return true;
+    const key = m.key ?? slugify(header);
+    if (!estCleReservee(key)) return true;
+    signaler(1, `colonne « ${header} » ignorée : « ${key} » est un champ réservé de la fiche`);
+    return false;
+  });
 
   // 1) Enregistrer une fois les champs perso mappés qui n'existent pas encore, et repérer
   //    les collisions (plusieurs en-têtes -> même clé) pour les signaler (perte silencieuse).

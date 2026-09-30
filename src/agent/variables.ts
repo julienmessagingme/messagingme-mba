@@ -2,59 +2,73 @@
  * D'où peut venir la valeur d'une variable de connecteur, et comment on la calcule.
  *
  * 🔴 Catalogue fermé, c'est la garde : un chemin libre ferait dériver une variable de n'importe quelle clé
- * future de la projection. Les origines possibles :
+ * future de la fiche. Les origines possibles :
  *  - `modele`   : le modèle décide de la valeur ;
- *  - `contact`  : un attribut de la fiche, dans la liste fermée de `champs-contact.ts` ;
+ *  - `fiche`    : un champ fixe de la fiche, dans la liste unique `src/crm/champs-fiche.ts` (numéro, nom,
+ *                 identifiant externe, date de création, dernière analyse, risque de départ) ;
  *  - `champ`    : un champ personnalisé du contact, désigné par sa clé ;
- *  - `systeme`  : une valeur calculée par la plateforme, liste fermée ci-dessous ;
+ *  - `systeme`  : une valeur calculée par la plateforme (dernier message, instant courant) ;
  *  - `fixe`     : une constante écrite dans la configuration du connecteur.
  *
  * `champ` prend une clé libre, mais dans l'espace des champs que le client a lui-même déclarés : il ne peut
  * pas atteindre une donnée que le client n'a pas créée. La route vérifie que la clé existe.
+ *
+ * ⚠️ DEUX FORMES ANCIENNES SONT LUES ET RÉÉCRITES, jamais refusées (`normaliserOrigine`) : `contact:wa_id` et
+ * `contact:nom`, et les valeurs d'analyse `systeme:analyse_*` / `systeme:risque_depart` du 2026-09-30 matin.
+ * Des requêtes enregistrées les portent : les refuser ferait perdre une variable en silence à la relecture.
  */
 
-import { CHAMPS_CONTACT_AUTORISES, type ChampContact } from './champs-contact';
-
-/**
- * Ce que la dernière analyse dit du contact, et son risque de départ. Les valeurs sont celles que reçoivent Batch
- * et Salesforce (`em_last_intent`, `em_last_sentiment`, `em_satisfaction`, `em_urgency`, `em_last_resolved`,
- * `em_risk_level`) : un même contact ne doit pas porter deux vérités selon l'outil qui les lit. `null` = pas de
- * mesure (conversation jamais analysée, note absente), jamais 0 ni une chaîne vide.
- */
-export const CLES_ANALYSE = [
-  'analyse_intention', 'analyse_sentiment', 'analyse_satisfaction', 'analyse_urgence', 'analyse_resolue', 'risque_depart',
-] as const;
-export type CleAnalyse = (typeof CLES_ANALYSE)[number];
-
-export interface AnalyseDuContact {
-  intention: string | null;
-  sentiment: string | null;
-  satisfaction: number | null;
-  urgence: number | null;
-  resolue: boolean | null;
-  risque: string | null;
-}
+import { champFiche, CLES_FICHE_SORTIE, type CleFicheFixe } from '../crm/champs-fiche';
 
 /**
  * Les valeurs système, liste fermée. `derniere_saisie` : le dernier message texte du contact, envoyé tel quel
  * sans demander au modèle de le recopier (donc de le reformuler). `maintenant` : l'instant courant en ISO
- * 8601 avec le décalage du fuseau de l'espace (`formatMaintenant`). Les clés `CLES_ANALYSE` : ce que la
- * dernière analyse de conversation dit du contact (renvoyer à un CRM « ce client est mécontent »).
+ * 8601 avec le décalage du fuseau de l'espace (`formatMaintenant`). Ce que la dernière analyse dit du contact
+ * est un champ de la FICHE depuis le lot 2 (origine `fiche`), plus une valeur système.
  */
-export const CLES_SYSTEME = ['derniere_saisie', 'maintenant', ...CLES_ANALYSE] as const;
+export const CLES_SYSTEME = ['derniere_saisie', 'maintenant'] as const;
 export type CleSysteme = (typeof CLES_SYSTEME)[number];
-
-/** Cette valeur système demande-t-elle la dernière analyse ? Sert au chargement paresseux du résolveur. */
-export function estCleAnalyse(cle: string): cle is CleAnalyse {
-  return (CLES_ANALYSE as readonly string[]).includes(cle);
-}
 
 export type OrigineVariable =
   | { type: 'modele' }
-  | { type: 'contact'; cle: ChampContact }
+  | { type: 'fiche'; cle: CleFicheFixe }
   | { type: 'champ'; cle: string }
   | { type: 'systeme'; cle: CleSysteme }
   | { type: 'fixe'; valeur: string | number | boolean };
+
+/** Les anciennes clés système d'analyse, et le champ de fiche qu'elles désignent désormais. */
+const ANCIENNES_CLES_ANALYSE: Readonly<Record<string, CleFicheFixe>> = {
+  analyse_intention: 'analyse_intention',
+  analyse_sentiment: 'analyse_sentiment',
+  analyse_satisfaction: 'analyse_satisfaction',
+  analyse_urgence: 'analyse_urgence',
+  analyse_resolue: 'analyse_resolue',
+  risque_depart: 'risque_depart',
+};
+
+/**
+ * Une origine lue (en base ou dans un corps de requête), ramenée à la forme actuelle ; `null` si elle n'est
+ * reconnue par aucune forme, actuelle ou ancienne. Ne valide que la FORME : les valeurs (`fixe`, clé de `champ`)
+ * restent à la charge du schéma de la route.
+ */
+export function normaliserOrigine(o: unknown): OrigineVariable | null {
+  if (o === null || typeof o !== 'object') return null;
+  const { type, cle, valeur } = o as { type?: unknown; cle?: unknown; valeur?: unknown };
+  if (type === 'modele') return { type: 'modele' };
+  if (type === 'fixe' && (typeof valeur === 'string' || typeof valeur === 'number' || typeof valeur === 'boolean')) {
+    return { type: 'fixe', valeur };
+  }
+  if (typeof cle !== 'string') return null;
+  if (type === 'champ') return { type: 'champ', cle };
+  if (type === 'fiche') return (CLES_FICHE_SORTIE as readonly string[]).includes(cle) ? { type: 'fiche', cle: cle as CleFicheFixe } : null;
+  if (type === 'contact') return cle === 'wa_id' || cle === 'nom' ? { type: 'fiche', cle } : null;
+  if (type === 'systeme') {
+    if ((CLES_SYSTEME as readonly string[]).includes(cle)) return { type: 'systeme', cle: cle as CleSysteme };
+    const ancienne = ANCIENNES_CLES_ANALYSE[cle];
+    return ancienne ? { type: 'fiche', cle: ancienne } : null;
+  }
+  return null;
+}
 
 export type ValeurResolue = string | number | boolean | null;
 
@@ -68,16 +82,15 @@ export interface ContexteVariables {
    * sinon un connecteur offrirait la commande du voisin au premier qui la demande.
    */
   waId: string;
-  /** La projection du contact (bornée par l'appelant), ou `null` si le contact est inconnu. */
-  contact: Record<string, unknown> | null;
-  /** Les champs personnalisés du contact. Séparés de la projection : celle-ci part chez le fournisseur de
-   *  modèle, ceux-là ne partent que dans la requête du client. */
+  /** Les champs personnalisés du contact, lus dans la projection que l'appelant a bornée. */
   champs: Record<string, unknown> | null;
   /** Le dernier message texte écrit par le contact, ou `null` s'il n'y en a pas encore. */
   derniereSaisie: string | null;
-  /** La dernière analyse du contact et son risque, ou `null` si rien n'a été lu (aucune variable ne la réclame,
-   *  ou dépendance absente). */
-  analyse: AnalyseDuContact | null;
+  /**
+   * Les champs fixes de la fiche (`PgContactStore.ficheDuContact`), ou `null` si rien n'a été lu (aucune variable
+   * ne les réclame, ou contact inconnu). `wa_id` n'y est jamais lu : il vient de `waId`.
+   */
+  fiche: Partial<Record<CleFicheFixe, ValeurResolue>> | null;
   /** Instant de référence. Injecté pour que le test ne dépende pas de l'horloge. */
   maintenant: Date;
   /** Fuseau IANA de l'espace (`tenant_settings.timezone`). */
@@ -123,10 +136,10 @@ export function resoudreVariable(origine: OrigineVariable, ctx: ContexteVariable
   switch (origine.type) {
     case 'fixe':
       return origine.valeur;
-    case 'contact':
-      // `wa_id` ne vient pas de la projection : voir `ContexteVariables.waId`.
+    case 'fiche':
+      // `wa_id` ne vient pas de la base : voir `ContexteVariables.waId`.
       if (origine.cle === 'wa_id') return ctx.waId;
-      return normaliser(ctx.contact ? ctx.contact[origine.cle] : null);
+      return normaliser(ctx.fiche ? ctx.fiche[origine.cle] : null);
     case 'champ':
       return normaliser(ctx.champs ? ctx.champs[origine.cle] : null);
     case 'systeme': {
@@ -134,12 +147,6 @@ export function resoudreVariable(origine: OrigineVariable, ctx: ContexteVariable
       switch (cle) {
         case 'maintenant': return formatMaintenant(ctx.maintenant, ctx.fuseau);
         case 'derniere_saisie': return ctx.derniereSaisie;
-        case 'analyse_intention': return ctx.analyse?.intention ?? null;
-        case 'analyse_sentiment': return ctx.analyse?.sentiment ?? null;
-        case 'analyse_satisfaction': return ctx.analyse?.satisfaction ?? null;
-        case 'analyse_urgence': return ctx.analyse?.urgence ?? null;
-        case 'analyse_resolue': return ctx.analyse?.resolue ?? null;
-        case 'risque_depart': return ctx.analyse?.risque ?? null;
         default: {
           // Exhaustivité : une clé système ajoutée sans son cas ici ne compile pas. À l'exécution, `null` et
           // non la clé : `lireVariables` ne relit que le type de l'origine, donc une clé inconnue lue en base
@@ -154,9 +161,11 @@ export function resoudreVariable(origine: OrigineVariable, ctx: ContexteVariable
       // exhaustif, pour que le compilateur refuse une origine oubliée.
       return null;
     default: {
-      // Exhaustivité vérifiée à la compilation : ajouter une origine sans la traiter ici ne compile pas.
-      const jamais: never = origine;
-      return jamais;
+      // Exhaustivité vérifiée à la compilation : ajouter une origine sans la traiter ici ne compile pas. À
+      // l'exécution, `null` et JAMAIS l'origine elle-même : une forme non réécrite (une requête construite hors de
+      // `lireVariables`) partirait sinon comme valeur, l'objet entier dans le corps envoyé au client.
+      const _jamais: never = origine;
+      return null;
     }
   }
 }
@@ -178,22 +187,17 @@ function normaliser(v: unknown): ValeurResolue {
 export const LIBELLES_SYSTEME: Record<CleSysteme, string> = {
   derniere_saisie: 'dernier message du contact',
   maintenant: 'date et heure courantes',
-  analyse_intention: 'intention de la dernière analyse',
-  analyse_sentiment: 'sentiment de la dernière analyse',
-  analyse_satisfaction: 'satisfaction de la dernière analyse (0 à 10)',
-  analyse_urgence: 'urgence de la dernière analyse (0 à 10)',
-  analyse_resolue: 'dernière conversation résolue (oui/non)',
-  risque_depart: 'risque de départ du contact',
 };
 
 /**
  * Le libellé d'une origine, tel que la console l'affiche. Ici, à côté de la définition, parce que la
- * confirmation de ce qui part dans la requête doit dire ce qui part réellement.
+ * confirmation de ce qui part dans la requête doit dire ce qui part réellement. Le libellé d'un champ de fiche
+ * vient de la liste unique, jamais d'une copie.
  */
 export function libelleOrigine(origine: OrigineVariable): string {
   switch (origine.type) {
     case 'modele': return 'décidée par l’agent';
-    case 'contact': return origine.cle === 'wa_id' ? 'numéro WhatsApp du contact' : 'nom du contact';
+    case 'fiche': return champFiche(origine.cle)?.libelle[0] ?? origine.cle;
     case 'champ': return `champ « ${origine.cle} » du contact`;
     case 'systeme': return LIBELLES_SYSTEME[origine.cle];
     case 'fixe': return `valeur fixe « ${String(origine.valeur)} »`;
@@ -203,6 +207,3 @@ export function libelleOrigine(origine: OrigineVariable): string {
     }
   }
 }
-
-/** Les attributs de fiche proposés par la console. Ré-exporté pour que l'écran n'ait qu'un import. */
-export { CHAMPS_CONTACT_AUTORISES };

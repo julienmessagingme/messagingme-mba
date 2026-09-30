@@ -10,6 +10,7 @@ import type { PgUserFieldStore } from '../crm/field-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { CountryCode } from 'libphonenumber-js';
 import { MAX_EXTERNAL_ID } from './fiche';
+import { estCleReservee } from '../crm/champs-fiche';
 
 /**
  * Les bornes de forme d'un contact poussé par l'API : champs et étiquettes par fiche, 20 à l'unité, 10 dans
@@ -164,6 +165,11 @@ export async function preparateurDeChamps(
     for (const [ref, rawVal] of Object.entries(champs ?? {})) {
       const resolved = await resolveFieldKey(tenantId, ref, cache);
       if (!resolved.ok) return { ok: false, raison: `champ inconnu : ${ref}` };
+      // La clé d'un champ FIXE de la fiche ne s'écrit jamais par ce chemin : la dernière analyse n'est écrite que par
+      // l'analyse, et un champ perso homonyme se confondrait avec elle.
+      if (!resolved.known && estCleReservee(resolved.key)) {
+        return { ok: false, raison: `« ${ref} » : champ réservé de la fiche, il ne s'écrit pas par l'API.` };
+      }
       if (!resolved.known && !ensured.has(resolved.key)) {
         if (deps.champInconnu === 'refuser') {
           return { ok: false, raison: `« ${ref} » : champ inconnu de cet espace. Créez-le dans la console (Bibliothèque > Champs), puis relancez.` };

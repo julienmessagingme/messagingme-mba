@@ -43,6 +43,16 @@ describe('libellés réservés aux champs de base', () => {
     for (const key of SYSTEM_FIELD_KEYS) expect(isReservedFieldLabel(key), key).toBe(true);
   });
 
+  it('🔴 refuse la CLÉ d’un champ fixe de la fiche (lot 2), mais pas un mot voisin', () => {
+    for (const label of ['analyse_sentiment', 'Analyse sentiment', 'external_id', 'risque_depart', 'analyse_le']) {
+      expect(isReservedFieldLabel(label), label).toBe(true);
+    }
+    // « satisfaction » reste libre : un Flow de satisfaction a pu créer ce champ.
+    for (const label of ['satisfaction', 'Sentiment client', 'urgence']) {
+      expect(isReservedFieldLabel(label), label).toBe(false);
+    }
+  });
+
   // Le test ANTI-DÉRIVE (les libellés du serveur couvrent ceux que le front affiche) vit dans
   // `tests/web-system-field-labels-parity.test.ts`, à côté des autres `web-*-parity`.
 });

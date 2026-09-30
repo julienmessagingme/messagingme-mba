@@ -26,6 +26,7 @@ function appelAvec(reponse: { status: number; body: string | null }) {
   const appel = creerAppelConnecteur({
     sources: { pourAppel: async () => SOURCE, marquerEpreuve: async () => {} },
     requetes: { parId: async () => REQUETE },
+    fiche: { ficheDuContact: async () => null },
     fetchImpl: (async () => new Response(reponse.body, { status: reponse.status })) as unknown as typeof fetch,
     verifierResolution: async () => ({ ok: true }),
   });

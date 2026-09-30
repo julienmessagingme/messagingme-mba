@@ -372,7 +372,7 @@ describe('le travail de poussée', () => {
     id: 'rq1', tenantId: TENANT, sourceId: 'src1', label: 'Desabonner dans le CRM',
     methode: 'POST' as const, chemin: '/contacts/unsubscribe', parametres: [], entetes: [],
     corps: { mode: 'json' as const, gabarit: '{"phone":"{{tel}}"}' },
-    variables: [{ nom: 'tel', type: 'string' as const, origine: { type: 'contact' as const, cle: 'wa_id' as const } }],
+    variables: [{ nom: 'tel', type: 'string' as const, origine: { type: 'fiche' as const, cle: 'wa_id' as const } }],
     outputPaths: ['ok'], valeursTest: {}, outils: 0, updatedAt: '2026-09-13T00:00:00.000Z',
   };
   /**

@@ -6,6 +6,7 @@ import type { ContactStore, ContactUpsert, ContactDeLot, LotContacts } from './i
 import { classifyWaId, waIdOf } from './identity';
 import { messageDe } from '../lib/erreur';
 import type { LigneDeLaListe } from '../mba/liste';
+import type { CleFicheFixe } from './champs-fiche';
 
 export interface ContactRow {
   id: string;
@@ -603,6 +604,46 @@ export class PgContactStore implements ContactStore {
   ): Promise<{ nom: string; tags: string[]; champs: Record<string, unknown> } | null> {
     const etat = await this.getContactStateByWaId(tenantId, waId);
     return etat ? { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields } : null;
+  }
+
+  /**
+   * Les valeurs des champs FIXES de la fiche (`src/crm/champs-fiche.ts`), pour l'origine `fiche` d'une donnée de
+   * connecteur ; `null` hors base. Une seule lecture par appel, faite seulement si une donnée la réclame.
+   * `wa_id` n'y est pas : il vient du tour, authentifié par la signature du webhook Meta, jamais de la base.
+   * Les dates partent en ISO 8601 ; une note ou « résolue » à `null` veut dire « pas de mesure », jamais 0 ni non.
+   * Le risque de départ est le NIVEAU (les codes de `NIVEAUX_RISQUE`), comme avant ce lot.
+   */
+  async ficheDuContact(tenantId: string, waId: string): Promise<Partial<Record<CleFicheFixe, string | number | boolean | null>> | null> {
+    const res = await this.pool.query<{
+      profile_name: string | null; external_id: string | null; created_at: Date;
+      analyse_intention: string | null; analyse_sentiment: string | null; analyse_satisfaction: number | null;
+      analyse_urgence: number | null; analyse_resolue: boolean | null; analyse_sujet: string | null;
+      analyse_traitee_par: string | null; analyse_action: string | null; analyse_le: Date | null; risque_niveau: string | null;
+    }>(
+      `select profile_name, external_id, created_at, analyse_intention, analyse_sentiment, analyse_satisfaction,
+              analyse_urgence, analyse_resolue, analyse_sujet, analyse_traitee_par, analyse_action, analyse_le, risque_niveau
+         from contacts
+        where tenant_id = $1 and deleted_at is null
+        ${MATCH_BY_WAID_SQL}`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return {
+      nom: r.profile_name,
+      external_id: r.external_id,
+      created_at: r.created_at.toISOString(),
+      analyse_intention: r.analyse_intention,
+      analyse_sentiment: r.analyse_sentiment,
+      analyse_satisfaction: r.analyse_satisfaction,
+      analyse_urgence: r.analyse_urgence,
+      analyse_resolue: r.analyse_resolue,
+      analyse_sujet: r.analyse_sujet,
+      analyse_traitee_par: r.analyse_traitee_par,
+      analyse_action: r.analyse_action,
+      analyse_le: r.analyse_le ? r.analyse_le.toISOString() : null,
+      risque_depart: r.risque_niveau,
+    };
   }
 
   /**

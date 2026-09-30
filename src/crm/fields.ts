@@ -1,5 +1,6 @@
 import type { UserFieldDef, UserFieldType } from './types';
 import { normaliserDate } from './date-iso';
+import { estCleReservee } from './champs-fiche';
 
 const COMBINING_MARKS = /[̀-ͯ]/g;
 
@@ -109,7 +110,10 @@ const SLUGS_RESERVES: ReadonlySet<string> = new Set([
  * modification et la suppression : l'élargir rendrait indélébiles les doublons déjà créés.
  */
 export function isReservedFieldLabel(label: string): boolean {
-  return SLUGS_RESERVES.has(slugify(label));
+  const slug = slugify(label);
+  // Et la clé d'un champ FIXE de la fiche (`analyse_sentiment`, `external_id`...) : sa CLÉ seulement, jamais un mot
+  // voisin (« satisfaction » reste libre, un Flow de satisfaction peut l'avoir créé).
+  return SLUGS_RESERVES.has(slug) || estCleReservee(slug);
 }
 
 /**

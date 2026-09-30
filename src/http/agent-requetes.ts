@@ -4,7 +4,8 @@ import type { Guard } from '../auth/middleware';
 import { LabelRequeteDejaPris, SourceIntrouvable, type RequeteConnecteur } from '../agent/requetes';
 import { construireCible, risqueSelonMethode } from '../agent/http-cible';
 import { assemblerAppel, cheminsDeLaReponse, estEnTeteReserve, variablesUtilisees, EN_TETES_RESERVES, type ValeurVariable } from '../agent/requete-http';
-import { CHAMPS_CONTACT_AUTORISES, CLES_SYSTEME } from '../agent/variables';
+import { CLES_SYSTEME, normaliserOrigine } from '../agent/variables';
+import { CHAMPS_FICHE_FIXES, CLES_FICHE_SORTIE, type CleFicheFixe } from '../crm/champs-fiche';
 import { espaceVerifie, estUuid } from './scope';
 import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
 import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../lib/connexion-publique';
@@ -55,13 +56,19 @@ export interface AgentRequetesRouteDeps {
 const LABEL = z.string().trim().min(1).max(80);
 const NOM_VARIABLE = z.string().trim().regex(/^[\w.-]{1,64}$/, 'nom de variable invalide');
 
-const origineSchema = z.discriminatedUnion('type', [
+/**
+ * L'origine d'une variable. Les formes anciennes (`contact:*`, `systeme:analyse_*`) sont ramenées à l'origine
+ * `fiche` AVANT la validation (`normaliserOrigine`) : une console plus ancienne que l'API continue d'enregistrer,
+ * et ce qui est écrit en base est toujours la forme actuelle. La clé d'un champ de fiche doit être dans la liste
+ * unique ET pouvoir sortir (`CLES_FICHE_SORTIE`) : un 400 sinon.
+ */
+const origineSchema = z.preprocess((o) => normaliserOrigine(o) ?? o, z.discriminatedUnion('type', [
   z.object({ type: z.literal('modele') }),
-  z.object({ type: z.literal('contact'), cle: z.enum(CHAMPS_CONTACT_AUTORISES) }),
+  z.object({ type: z.literal('fiche'), cle: z.enum(CLES_FICHE_SORTIE as [CleFicheFixe, ...CleFicheFixe[]]) }),
   z.object({ type: z.literal('champ'), cle: z.string().trim().min(1).max(64) }),
   z.object({ type: z.literal('systeme'), cle: z.enum(CLES_SYSTEME) }),
   z.object({ type: z.literal('fixe'), valeur: z.union([z.string().max(500), z.number(), z.boolean()]) }),
-]);
+]));
 
 const variableSchema = z.object({
   nom: NOM_VARIABLE,
@@ -216,9 +223,15 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
   const appeler = deps.fetchImpl ?? fetchPublic;
   const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
 
-  /** Ce que la console propose : les origines de variable, pour que l'écran ne recopie pas une liste serveur. */
+  /**
+   * Ce que la console propose : les origines de variable, pour que l'écran ne recopie pas une liste serveur.
+   * `fiche` : les champs de la liste unique qui peuvent sortir, avec leurs libellés. ⚠️ `contact` reste, pour une
+   * console publiée AVANT cette API (elle lit `catalogue.contact` et planterait sans) : ses `contact:*` sont
+   * réécrits en `fiche:*` à l'enregistrement. À retirer quand plus aucune console ancienne ne tourne.
+   */
   const CATALOGUE = {
-    contact: CHAMPS_CONTACT_AUTORISES,
+    fiche: CHAMPS_FICHE_FIXES.filter((c) => c.sortieTiers).map((c) => ({ cle: c.cle, libelle: c.libelle, provenance: c.provenance })),
+    contact: ['wa_id', 'nom'] as const,
     systeme: CLES_SYSTEME,
     entetesReserves: EN_TETES_RESERVES,
   };

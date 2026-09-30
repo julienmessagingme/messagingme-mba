@@ -45,7 +45,7 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
     const rq = await requetes.creer(tenantId, {
       sourceId: src.id, label, methode: 'POST', chemin: '/unsubscribe',
       parametres: [], entetes: [], corps: { mode: 'json', gabarit: '{"phone":"{{tel}}"}' },
-      variables: [{ nom: 'tel', type: 'string', origine: { type: 'contact', cle: 'wa_id' } }],
+      variables: [{ nom: 'tel', type: 'string', origine: { type: 'fiche', cle: 'wa_id' } }],
       outputPaths: ['ok'], valeursTest: {},
     });
     return rq.id;

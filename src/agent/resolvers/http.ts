@@ -7,7 +7,8 @@ import { resolutionPublique, type VerdictResolution } from '../../lib/adresse-pr
 import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../../lib/connexion-publique';
 import { lireCorpsBorne } from '../../lib/corps-borne';
 import { assemblerAppel } from '../requete-http';
-import { estCleAnalyse, resoudreVariable, type AnalyseDuContact, type ValeurResolue } from '../variables';
+import { resoudreVariable, type ValeurResolue } from '../variables';
+import type { CleFicheFixe } from '../../crm/champs-fiche';
 
 /**
  * Le résolveur des outils de connecteur : un appel HTTP vers le système du client.
@@ -30,11 +31,12 @@ export interface DepsResolveurHttp {
    */
   inbox?: { derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> };
   /**
-   * La dernière analyse du contact et son risque de départ (`CLES_ANALYSE`), lue elle aussi paresseusement.
-   * Absente, les variables d'analyse valent `null` (refus si elles sont requises) : chaque câblage de
-   * `creerAppelConnecteur` la porte, pour qu'une requête ne marche pas sur un chemin et rende `null` sur un autre.
+   * Les champs fixes de la fiche (origine `fiche` : nom, identifiant externe, dernière analyse, risque...), lus
+   * paresseusement, une seule fois par appel. 🔴 REQUISE : quand elle était facultative, un câblage qui l'oubliait
+   * compilait et rendait `null` pour ces variables sur un chemin seulement. Les quatre câblages de
+   * `creerAppelConnecteur` passent `PgContactStore`.
    */
-  analyses?: { analyseDuContact(tenantId: string, waId: string): Promise<AnalyseDuContact | null> };
+  fiche: { ficheDuContact(tenantId: string, waId: string): Promise<Partial<Record<CleFicheFixe, ValeurResolue>> | null> };
   fuseau?: (tenantId: string) => Promise<string>;
   /** Injecté pour tester sans réseau, comme partout dans ce dépôt. */
   fetchImpl?: typeof fetch;
@@ -208,12 +210,12 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       ? await deps.inbox.derniereSaisieDuContact(ctx.tenantId, ctx.waId) : null;
     // Le fuseau ne sert qu'à « maintenant ». Sans dépendance, UTC, dit dans la valeur (`+00:00`).
     const fuseau = besoin('systeme', 'maintenant') && deps.fuseau ? await deps.fuseau(ctx.tenantId) : 'UTC';
-    // La dernière analyse, lue UNE fois pour toutes les variables qui la réclament.
-    const besoinAnalyse = requete.variables.some((v) => v.origine.type === 'systeme' && estCleAnalyse(v.origine.cle));
-    const analyse = besoinAnalyse && deps.analyses ? await deps.analyses.analyseDuContact(ctx.tenantId, ctx.waId) : null;
+    // La fiche, lue UNE fois pour toutes les variables qui la réclament. `wa_id` ne la réclame pas : il vient du tour.
+    const besoinFiche = requete.variables.some((v) => v.origine.type === 'fiche' && v.origine.cle !== 'wa_id');
+    const fiche = besoinFiche ? await deps.fiche.ficheDuContact(ctx.tenantId, ctx.waId) : null;
 
     const contexte = {
-      waId: ctx.waId, contact: ctx.contact, champs, derniereSaisie, analyse,
+      waId: ctx.waId, champs, derniereSaisie, fiche,
       maintenant: deps.now ? deps.now() : new Date(), fuseau,
     };
     const valeurs: Record<string, ValeurResolue> = {};

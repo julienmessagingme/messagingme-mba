@@ -31,6 +31,15 @@ describe('preparateurDeChamps', () => {
     expect(etat.crees).toEqual(['ville']);
   });
 
+  it('🔴 la clé d’un champ FIXE de la fiche ne s’écrit pas par l’API, même en mode « créer »', async () => {
+    const { store, etat } = fields([champ('prenom')]);
+    const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 0, champInconnu: 'creer' });
+    const r = await preparer({ analyse_satisfaction: '10' });
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.raison).toMatch(/champ réservé de la fiche/);
+    expect(etat.crees).toEqual([]);
+  });
+
   it('au plafond, un champ INCONNU est refusé en le disant, et rien n’est créé', async () => {
     const { store, etat } = fields([champ('prenom')]);
     const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 1, champInconnu: 'creer' });
