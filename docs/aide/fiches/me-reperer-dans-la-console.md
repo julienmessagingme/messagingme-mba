@@ -1,6 +1,6 @@
 ---
 source_section: Navigation (trois onglets en haut, barre latérale par onglet)
-source_empreinte: 07a889
+source_empreinte: b530dd
 ---
 # Me repérer dans la console
 

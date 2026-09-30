@@ -74,8 +74,13 @@ Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans
 Journal des erreurs**, où sa carte d'agrégat par code Meta vit désormais à côté du journal ligne à ligne.
 **Synthèse** est sa première entrée depuis le 2026-09-08 (`/performance`) : elle porte une carte
 « Coûts » à trois lignes dépliables (coût moyen par engagement, coût des messages envoyés, coût de l'IA),
-le nuage « urgence et satisfaction » et les conversations par intention. Le tableau du coût par engagement
-existe toujours, replié sous la première ligne. Le coût des messages ne compte pas ceux que Meta ne facture
+le nuage « urgence et satisfaction » et les conversations par intention. **Le coût par engagement réunit les
+campagnes push et les publicités Click-to-WhatsApp** (depuis le 2026-09-30) : sous la première ligne, deux
+accordéons avec chacun sa moyenne, « Campagnes push » (le tableau par campagne) et « Campagnes publicitaires
+CTWA » (la dépense de la période, les personnes qui ont cliqué PUIS écrit sur WhatsApp, et le coût par engagé ;
+un prospect qualifié est l'étape d'après, dans la page de la publicité). La dépense des publicités est relue
+jour par jour chez Meta, donc elle suit la période choisie ; deux devises différentes ne s'additionnent pas, et
+l'écran le dit. Le coût des messages ne compte pas ceux que Meta ne facture
 pas : les messages envoyés dans les 72 h qui suivent un clic sur une pub Click-to-WhatsApp, d'après l'accusé
 de Meta.
 
