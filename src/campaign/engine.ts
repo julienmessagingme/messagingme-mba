@@ -53,13 +53,14 @@ export interface MessageSender {
 }
 
 /** Ce que la réclamation d'un destinataire a lu sur sa fiche au moment d'envoyer, et qui interdit l'envoi. */
-export type EcartALEnvoi = 'desabonne' | 'bloque';
+export type EcartALEnvoi = 'efface' | 'desabonne' | 'bloque';
 
 /**
  * Le motif écrit sur un destinataire écarté à l'envoi. Le STOP reprend le texte du scénario (`MOTIF_DESABONNE`) :
  * l'opérateur lit le même refus d'où qu'il vienne.
  */
 export const MOTIF_ECART_A_L_ENVOI: Readonly<Record<EcartALEnvoi, string>> = {
+  efface: 'contact effacé (purge RGPD) : plus aucun message ne lui est envoyé',
   desabonne: MOTIF_DESABONNE,
   bloque: 'contact bloqué : plus aucun message ne lui est envoyé',
 };
@@ -71,8 +72,8 @@ export interface RecipientStore {
    * déjà pris : un destinataire n'est envoyé qu'une fois malgré les runs concurrents et les rejeux pg-boss.
    *
    * 🔴 `{ ecart }` : réservé, mais il ne doit pas partir. La liste est filtrée à sa construction, or un envoi
-   * étalé peut partir bien après un STOP : la réclamation relit donc la fiche au moment d'envoyer. Réservé
-   * d'abord, pour que le marquer `skipped` ne se fasse qu'une fois.
+   * étalé peut partir bien après un STOP ou une purge : la réclamation relit donc la fiche au moment d'envoyer.
+   * Réservé d'abord, pour que le marquer `skipped` ne se fasse qu'une fois.
    */
   claim(id: string): Promise<boolean | { ecart: EcartALEnvoi }>;
   /**

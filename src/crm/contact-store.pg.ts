@@ -1447,11 +1447,10 @@ export class PgContactStore implements ContactStore {
                 analyse_resolue = null, analyse_sujet = null, analyse_traitee_par = null, analyse_action = null,
                 analyse_le = null, analyse_fenetre_fin = null, analyse_conversation_id = null,
                 -- RESTENT, deliberement : le statut d opt-in et sa date (0138), la date du blocage, le STOP RCS
-                -- (0057). Un run de campagne en cours tient le VRAI numero en memoire, et claim relit cette fiche
-                -- par sa cle primaire juste avant d envoyer : desabonne ou bloque, il ecarte. Remettre ces deux-la
-                -- a zero ferait ecrire a quelqu un qui a dit STOP puis demande l effacement. Le STOP RCS n a pas
-                -- ce lecteur aujourd hui et reste pour la meme raison : sans numero, un refus n identifie
-                -- personne, et l effacer est la seule des deux erreurs qui ne se rattrape pas.
+                -- (0057). Sans numero, un refus n identifie personne, et l effacer est la seule des deux erreurs
+                -- qui ne se rattrape pas. Ce ne sont plus eux qui protegent un run de campagne en cours (il tient
+                -- le VRAI numero en memoire) : claim relit cette fiche par sa cle primaire juste avant d envoyer,
+                -- et ecarte d abord une fiche purgee, par anonymized_at, avant de regarder le STOP et le blocage.
                 updated_at = now()
           where tenant_id = $1 and id = any($2::uuid[]) and anonymized_at is null`,
         [tenantId, ids],

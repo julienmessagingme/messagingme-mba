@@ -313,7 +313,7 @@ POST /campaigns/:id/run  -> job `campaign-run` (expiration DIMENSIONNÉE au volu
        relecture du statut (l'opérateur a pu mettre en pause)
        quality gate Meta
        claim ATOMIQUE (pending -> sending)   <- ce qui empêche le double envoi
-         et relit la fiche : STOP ou blocage posés depuis -> écarté (`skipped`), rien ne part
+         et relit la fiche : purge, STOP ou blocage posés depuis -> écarté (`skipped`), rien ne part
        envoi, puis résultat persisté HORS du catch d'envoi
 ```
 
@@ -322,10 +322,11 @@ la donnent : aucune file de ce dépôt ne déduplique quoi que ce soit (voir § 
 
 🔴 **Le consentement se lit DEUX fois : à la construction de la liste (`optInAllows`), puis au moment d'envoyer,
 par le claim** (`PgRecipientStore.claim`, son `returning` lit la fiche par sa clé primaire). Une campagne étalée
-(débit bas, pause, heures ouvrées) part des heures après sa construction : un STOP ou un blocage posés entre les
-deux rendent un écart, marqué `skipped` avec son motif (`MOTIF_ECART_A_L_ENVOI`, celui du STOP étant le texte du
-scénario), jamais `failed` (la porte de qualité ne le compte pas). Le destinataire est réservé quand même : un
-seul run l'écarte.
+(débit bas, pause, heures ouvrées) part des heures après sa construction : une purge, un STOP ou un blocage posés
+entre les deux rendent un écart, marqué `skipped` avec son motif (`MOTIF_ECART_A_L_ENVOI`, celui du STOP étant le
+texte du scénario), jamais `failed` (la porte de qualité ne le compte pas). Le destinataire est réservé quand
+même : un seul run l'écarte. La purge se lit sur `anonymized_at` et prime : le run tient le VRAI numéro lu à son
+début, et une fiche purgée n'est ni désabonnée ni bloquée pour autant.
 
 🔴 **Un plafond de numéro Meta ne se compte pas en échec du destinataire.** Le refus vise le numéro émetteur,
 pas ce contact : on le rend à la file, on met la campagne en pause, et le balayage de reprise la relance. Le
@@ -808,9 +809,11 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   espace de numéros français. Les totaux d'envoi et de livraison restent donc justes.
   Sur la fiche, elle vide aussi ce qui DÉCRIT la personne (étiquettes, risque, langue détectée, joignabilité
   WhatsApp, source du consentement, auteur du blocage) et GARDE ce qui dit NON (statut d'opt-in et sa date,
-  STOP RCS, date du blocage) : un run de campagne en cours tient le vrai numéro en mémoire, et `claim` relit
-  la fiche par sa clé primaire avant d'envoyer. Aucune recherche par numéro, BSUID ou `wa_id` ne retrouve une
-  fiche purgée : ces refus ne protègent donc pas un retour futur de la personne, seulement cette course.
+  STOP RCS, date du blocage) : sans numéro, un refus n'identifie personne, et l'effacer est la seule des deux
+  erreurs qui ne se rattrape pas. La course avec un run de campagne en cours (il tient le vrai numéro en
+  mémoire) est fermée ailleurs : `claim` écarte d'abord une fiche purgée (`anonymized_at`, motif `efface`), et
+  les balayages de relance et de bascule ne reprennent plus une ligne purgée (`to_e164 = 'anonyme'`, que la
+  purge écrit), qui garde son statut pour les totaux.
   🔴 **Toute colonne ajoutée à `contacts` décide son sort dans l'`update` de `purgeMany`**, où chaque colonne
   porte sa raison ; et un écrivain qui vise une fiche par son identifiant filtre `deleted_at is null`
   (l'identifiant survit à la purge, dans `campaign_recipients.contact_id` entre autres).

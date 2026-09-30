@@ -228,6 +228,13 @@ export const RETRYABLE_TEMPLATE_VAR_CODES = new Set([131009, 132012, 132000]);
 const SANS_REPLI_SQL = `not exists (select 1 from campaign_etages ce where ce.campaign_id = r.campaign_id and ce.rang > ${RANG_INITIAL})`;
 
 /**
+ * « Ce destinataire n'a pas été purgé » : `purgeMany` écrit `to_e164 = 'anonyme'` sur ses lignes de campagne. Une
+ * ligne purgée ne se relance ni ne bascule : elle garde son statut pour que les totaux restent justes, et le second
+ * 131026 enverrait `anonyme` à HubSpot comme numéro à marquer injoignable.
+ */
+const NON_PURGE_SQL = `r.to_e164 <> 'anonyme'`;
+
+/**
  * Un destinataire repris par le balayage de relance. `contactId` sert à écrire la joignabilité sur la ligne
  * `contacts` : retrouver le contact par son numéro serait une seconde définition de son identité.
  */
@@ -695,7 +702,7 @@ export class PgCampaignRepo {
          left join tenant_settings ts on ts.tenant_id = c.tenant_id
        where (case when c.reessai_par_campagne then c.reessayer else coalesce(ts.auto_retry_enabled, false) end)
          and (${RECIPIENT_FAILED_SQL}) and ${cond}
-         and ${SANS_REPLI_SQL}
+         and ${SANS_REPLI_SQL} and ${NON_PURGE_SQL}
        order by r.id
        limit ${limit}`,
       params,
@@ -727,7 +734,7 @@ export class PgCampaignRepo {
               r.error_code, r.etage_courant, r.retry_count, c.reessayer, c.rattrapage_hors_horaires
        from campaign_recipients r
          join campaigns c on c.id = r.campaign_id
-       where (${RECIPIENT_FAILED_SQL})
+       where (${RECIPIENT_FAILED_SQL}) and ${NON_PURGE_SQL}
          and r.campaign_id in (select campaign_id from campaign_etages where rang > ${RANG_INITIAL})
        order by r.id
        limit ${limit}`,
@@ -1567,9 +1574,16 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
   /**
    * Claim atomique pending -> sending (rowCount=1 si ce run réserve, 0 si déjà pris).
    *
-   * 🔴 Elle relit la fiche au moment d'envoyer : un STOP ou un blocage posé depuis la construction de la liste
-   * rend `{ ecart }`, que le moteur marque `skipped`. Le destinataire est réservé quand même, ce qui garantit
-   * qu'un seul run l'écarte. Le STOP prime sur le blocage.
+   * 🔴 Elle relit la fiche au moment d'envoyer : une purge, un STOP ou un blocage posé depuis la construction de
+   * la liste rend `{ ecart }`, que le moteur marque `skipped`. Le destinataire est réservé quand même, ce qui
+   * garantit qu'un seul run l'écarte. La purge prime (elle dit aussi pourquoi la ligne n'a plus de numéro), puis
+   * le STOP, puis le blocage.
+   *
+   * 🔴 La purge se lit sur `anonymized_at` : un run tient la liste lue à son début, VRAI numéro compris, et une
+   * purge tombée entre-temps laisse une fiche ni désabonnée ni bloquée. Relu après la purge, le destinataire
+   * porte `to_e164 = 'anonyme'` : sans cet écart, le moteur l'enverrait à Meta, ou démarrerait un parcours sur ce
+   * wa_id. ⚠️ Une purge validée entre cette lecture et l'appel à Meta n'est pas vue : la fenêtre passe de la
+   * durée d'un run (des heures) à celle d'un envoi.
    *
    * La sous-requête lit une fiche par sa clé primaire. Une fiche disparue rend `null` : le moteur envoie. Le
    * `contact_id` vient d'une liste construite sur l'espace de la campagne, aucune fiche d'un autre espace n'y
@@ -1579,7 +1593,8 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
     const res = await this.pool.query<{ ecart: EcartALEnvoi | null }>(
       `update campaign_recipients set status = 'sending', claimed_at = now()
        where id = $1 and status = 'pending'
-       returning (select case when c.opt_in_status = 'opted_out' then 'desabonne'
+       returning (select case when c.anonymized_at is not null then 'efface'
+                              when c.opt_in_status = 'opted_out' then 'desabonne'
                               when c.blocked_at is not null then 'bloque' end
                     from contacts c where c.id = campaign_recipients.contact_id) as ecart`,
       [id],

@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : une purge pendant un run de campagne n'envoie plus rien à la personne effacée
+
+Le moteur lit la liste d'un run UNE fois, vrai numéro compris, et un run étalé dure des heures. Juste avant
+chaque envoi, `claim` relisait la fiche, mais n'écartait que le STOP et le blocage. Une purge tombée pendant le
+run sur une fiche ni désabonnée ni bloquée laissait donc partir le message vers le vrai numéro, APRÈS
+l'effacement demandé. Relu après la purge, le destinataire portait `to_e164 = 'anonyme'` et partait chez Meta
+sous ce « numéro », ou démarrait un parcours sur ce wa_id. Voisin : les balayages de relance reprenaient la
+ligne purgée en échec, et le second 131026 envoyait `anonyme` à HubSpot. Sans migration, l'API seule change.
+
+**Un seul point de passage, et c'est pour ça qu'il suffit.** `claim` écarte d'abord une fiche purgée
+(`anonymized_at`, écart `efface`, marqué `skipped` avec son motif), avant le STOP et le blocage. Tout chemin qui
+remet un destinataire en attente (relance, bascule, renvoi manuel `resetRecipientForRetry`, relevé le même jour
+par la relecture de `PATCH /contacts/:id`) repasse par elle. Les listes de relance et de bascule excluent en plus
+les lignes purgées (`NON_PURGE_SQL`) : elles gardent leur statut, donc les totaux, et plus rien ne part vers
+HubSpot. La purge garde toujours opt-in, dates de STOP et de blocage ; seule la raison écrite a changé.
+
+**Vérifié dans les deux sens** sur un Postgres jetable du VPS : trois mutations (la ligne de `claim`, le filtre
+de `listAutoRetry`, celui de `listCandidatsBascule`), chacune fait tomber le test neuf sur sa propre assertion.
+Reste ouvert, hors de ce lot : une purge validée entre `claim` et l'appel à Meta, ou pendant la boucle du second
+131026 (le numéro part vers HubSpot tel que lu au `select`). La fenêtre n'est plus un run entier, mais un appel.
+
 ## 2026-09-30 : `PATCH /contacts/:id` rend 404 sur une fiche purgée, et ne la réécrit plus
 
 `applyEdits`, l'écriture de la fiche depuis la console, ne filtrait `deleted_at is null` nulle part : ni son

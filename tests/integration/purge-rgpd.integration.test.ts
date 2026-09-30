@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
-import { PgCampaignRepo } from '../../src/campaign/store.pg';
+import { PgCampaignRepo, PgRecipientStore } from '../../src/campaign/store.pg';
 import { creerNoteurJoignabilite } from '../../src/contacts/joignabilite.pg';
 
 /**
@@ -338,5 +338,56 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
 
   it('purger deux fois ne compte pas deux fois (anonymized_at fait garde)', async () => {
     expect((await store.purgeMany(tenantId, [contactId])).purges).toBe(0);
+  });
+
+  /**
+   * 🔴 UNE PURGE PENDANT UN RUN DE CAMPAGNE. Le run tient la liste lue à son début, VRAI numéro compris, et la
+   * réclamation relit la fiche juste avant d'envoyer. Une fiche ni désabonnée ni bloquée (celle du haut porte un
+   * STOP, elle ne prouverait rien ici) partait quand même, après l'effacement demandé. Et une ligne purgée en
+   * échec était reprise par les balayages : le second 131026 envoyait `anonyme` à HubSpot.
+   */
+  it('🔴 une fiche purgée pendant un run est ÉCARTÉE à la réclamation, et les balayages de relance ne la reprennent plus', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const fiche = async (tel: string): Promise<string> => (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, tel],
+    )).rows[0]!.id;
+    const purgee = await fiche('+33600000911');
+    const temoin = await fiche('+33600000912');
+    const campagne = async (nom: string): Promise<string> => {
+      const id = await repo.insertCampaign({
+        tenantId, phoneNumberId: 'itest-pn-purge', name: nom, category: 'marketing', templateName: 't',
+        templateLanguage: 'fr', paramMapping: [], reessayer: true,
+      });
+      await repo.insertRecipients(id, [
+        { contactId: purgee, toE164: '+33600000911', resolvedParams: [] },
+        { contactId: temoin, toE164: '+33600000912', resolvedParams: [] },
+      ]);
+      return id;
+    };
+    const simple = await campagne('itest-purge-en-cours');
+    const chainee = await campagne('itest-purge-repli');
+    await pool.query(`insert into campaign_etages (campaign_id, rang, canal) values ($1, 2, 'rcs')`, [chainee]);
+
+    // Le run lit sa liste AVANT la purge : c'est tout le cas.
+    const liste = new Map((await recipients.listPending(simple)).map((p) => [p.contactId, p]));
+    expect(liste.get(purgee)?.toE164).toBe('+33600000911');
+    expect((await store.purgeMany(tenantId, [purgee])).purges).toBe(1);
+
+    expect(await recipients.claim(liste.get(purgee)!.id)).toEqual({ ecart: 'efface' });
+    // Le témoin part : l'écart vise la purge, pas la campagne.
+    expect(await recipients.claim(liste.get(temoin)!.id)).toBe(true);
+
+    // Second échec 131026 sur la campagne sans repli, échec sur la campagne à repli : seul le témoin est repris.
+    await pool.query(
+      `update campaign_recipients set status = 'failed', error_code = 131026, retry_count = 1 where campaign_id = $1`, [simple],
+    );
+    await pool.query(
+      `update campaign_recipients set status = 'failed', error_code = 131026, retry_count = 0 where campaign_id = $1`, [chainee],
+    );
+    const de = (lignes: Array<{ campaignId: string; contactId: string }>, campagneId: string): string[] =>
+      lignes.filter((l) => l.campaignId === campagneId).map((l) => l.contactId);
+    expect(de(await repo.listRetry131026SecondFail(), simple)).toEqual([temoin]);
+    expect(de(await repo.listCandidatsBascule(), chainee)).toEqual([temoin]);
   });
 });
