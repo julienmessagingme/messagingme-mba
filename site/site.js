@@ -61,3 +61,47 @@
   }, { threshold: 0.35 });
   document.querySelectorAll('.f-revele').forEach(function (el) { revele.observe(el); });
 })();
+
+// Page contact. Le formulaire part SANS script (formulaire HTML natif, l'API répond par une redirection) ; ceci
+// ajoute seulement le message d'erreur au retour, le brouillon gardé le temps de l'onglet, et le bouton désactivé
+// pendant l'envoi. Le stockage peut être refusé (navigation privée) : tout est dans des try.
+(function () {
+  var CLE = 'engageme-contact';
+  if (document.querySelector('.c-merci')) { try { sessionStorage.removeItem(CLE); } catch (e) {} return; }
+  var form = document.querySelector('form.c-form');
+  if (!form) return;
+  var champs = [].slice.call(form.querySelectorAll('input[name]:not([name="site"]), textarea[name]'));
+  try {
+    var brouillon = JSON.parse(sessionStorage.getItem(CLE) || '{}');
+    champs.forEach(function (c) { if (typeof brouillon[c.name] === 'string' && !c.value) c.value = brouillon[c.name]; });
+  } catch (e) {}
+  form.addEventListener('input', function () {
+    var b = {};
+    champs.forEach(function (c) { b[c.name] = c.value; });
+    try { sessionStorage.setItem(CLE, JSON.stringify(b)); } catch (e) {}
+  });
+
+  var MESSAGES = {
+    champs: 'Un champ manque ou n’est pas valide. Vérifiez le formulaire, puis renvoyez-le.',
+    trop: 'Beaucoup de messages en ce moment : réessayez dans quelques minutes, ou écrivez-nous à ',
+    envoi: 'Votre message n’a pas pu partir. Réessayez, ou écrivez-nous à '
+  };
+  var code = new URLSearchParams(location.search).get('erreur');
+  var zone = form.querySelector('.c-erreur');
+  if (zone && MESSAGES[code]) {
+    zone.textContent = MESSAGES[code];
+    if (code !== 'champs') {
+      var a = document.createElement('a');
+      a.href = 'mailto:contact@messagingme.fr';
+      a.textContent = 'contact@messagingme.fr';
+      zone.appendChild(a);
+      zone.appendChild(document.createTextNode('.'));
+    }
+    zone.hidden = false;
+  }
+
+  // Un seul envoi par clic ; le bouton revient si la page est rouverte par le bouton « Retour » du navigateur.
+  var bouton = form.querySelector('button[type="submit"]');
+  form.addEventListener('submit', function () { setTimeout(function () { bouton.disabled = true; }, 0); });
+  window.addEventListener('pageshow', function () { bouton.disabled = false; });
+})();

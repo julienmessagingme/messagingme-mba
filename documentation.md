@@ -144,8 +144,8 @@ Le worker voyage avec l'API : il lit la base et travaille.
   (l'éditeur de graphe) et `qrcode`. **Aucune bibliothèque de graphiques** : les courbes, donuts et nuages de
   points sont du SVG écrit à la main.
 - **Auth** : JWT (jose HS256), scrypt asynchrone, session dans un en-tête `Authorization`, jamais un cookie.
-- **E-mail** : deux chemins sans rapport. **Resend** pour les mails du produit (support, invitation,
-  réinitialisation), destinataire et expéditeur fixés côté serveur. **nodemailer / SMTP par workspace** pour le
+- **E-mail** : deux chemins sans rapport. **Resend** pour les mails du produit (support, formulaire de contact de
+  la vitrine, invitation, réinitialisation), destinataire et expéditeur fixés côté serveur. **nodemailer / SMTP par workspace** pour le
   CANAL e-mail du builder, boîte déclarée par le client, mot de passe chiffré au repos.
 
 ### Comment le navigateur trouve l'API
@@ -1583,7 +1583,8 @@ Restent EN MÉMOIRE, par copie, délibérément :
 - **le plafond par utilisateur** (`RATE_LIMIT_USER_PAR_MINUTE`, 300/min) : le plus fréquent (chaque requête de la
   console), le porter en base coûterait une écriture par requête ; N copies en font N fois 300, ce qui borne encore un
   compte qui martèle ;
-- **les petits plafonds** : l'aide et le support (par compte), la chaîne (demandes de lien), le relais du Meta
+- **les petits plafonds** : l'aide et le support (par compte), le formulaire de contact de la vitrine (un seul
+  compteur pour tous : sans `trustProxy`, `req.ip` est le proxy), la chaîne (demandes de lien), le relais du Meta
   Business Agent (par clé), le budget des empreintes et des codes jamais résolus (`API_KEY_PREFILTRE_MAX`,
   `CODES_INCONNUS_PAR_MINUTE`, qui protègent la base AVANT toute lecture, donc ne peuvent pas la payer), les codes de
   `/w/:code` et `/rcs/callback/:code`, et les cinq essais par minute du second facteur (le total est tenu en base par

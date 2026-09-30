@@ -1,19 +1,19 @@
 <!doctype html>
-<!-- Page fonctionnalité de la vitrine Engage Me. L'en-tête, le pied et les icônes sont RECOPIÉS de l'accueil
-     (site/index.html) : une modification de l'un d'eux se reporte dans les trois pages. Le style et le script
-     sont communs (/site.css, /site.js). Les écrans sont rendus depuis les sources des films du reel. -->
+<!-- Page de la vitrine Engage Me. L'en-tête, le pied et les icônes sont RECOPIÉS de l'accueil (site/index.html) :
+     une modification de l'un d'eux se reporte dans toutes les pages. Le style et le script sont communs
+     (/site.css, /site.js). Les écrans des fonctionnalités sont rendus depuis les sources des films du reel. -->
 <html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WhatsApp et RCS, avec repli · Engage Me</title>
-<meta name="description" content="Ne choisissez plus entre WhatsApp et RCS : chaque client reçoit le message sur son canal, avec un repli dans le sens que vous voulez, et toutes les réponses arrivent dans la même Inbox.">
+<title>WhatsApp et RCS, avec fallback · Engage Me</title>
+<meta name="description" content="Ne choisissez plus entre WhatsApp et RCS : chaque client reçoit le message sur son canal, avec un fallback dans le sens que vous voulez, et toutes les réponses arrivent dans la même Inbox.">
 <link rel="canonical" href="https://engageme.messagingme.fr/fonctionnalites/whatsapp-et-rcs/">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://engageme.messagingme.fr/fonctionnalites/whatsapp-et-rcs/">
-<meta property="og:title" content="WhatsApp et RCS, avec repli · Engage Me">
-<meta property="og:description" content="WhatsApp ou RCS ? Ne choisissez plus : le repli part dans le sens que vous voulez, et toutes les réponses arrivent dans la même Inbox.">
+<meta property="og:title" content="WhatsApp et RCS, avec fallback · Engage Me">
+<meta property="og:description" content="WhatsApp ou RCS ? Ne choisissez plus : le fallback part dans le sens que vous voulez, et toutes les réponses arrivent dans la même Inbox.">
 <meta property="og:image" content="https://engageme.messagingme.fr/films/whatsapp-et-rcs.webp">
 <meta name="theme-color" content="#010630">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -73,8 +73,8 @@
       <div class="menu-panneau">
         <a href="/fonctionnalites/publicites-click-to-whatsapp/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><span><strong>Publicités Click-to-WhatsApp</strong><small>Vos pubs Meta ouvrent une conversation</small></span></a>
         <a href="/fonctionnalites/chaines-whatsapp/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg></span><span><strong>Chaînes WhatsApp</strong><small>Publiez à tous, parlez à chacun</small></span></a>
-        <a href="/fonctionnalites/conversations-en-actions/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Conversations en actions</strong><small>Votre CRM se remplit tout seul</small></span></a>
-        <a href="/fonctionnalites/whatsapp-et-rcs/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-arrows-left-right"/></svg></span><span><strong>WhatsApp et RCS</strong><small>Le repli dans le sens que vous voulez</small></span></a>
+        <a href="/fonctionnalites/conversations-en-actions/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Analyse de conversations</strong><small>Définition d’action dans votre CRM</small></span></a>
+        <a href="/fonctionnalites/whatsapp-et-rcs/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-arrows-left-right"/></svg></span><span><strong>WhatsApp et RCS</strong><small>Le fallback dans le sens que vous voulez</small></span></a>
         <a class="menu-seul-mobile" href="/#developpeurs"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg></span><span><strong>Développeurs</strong><small>L’API et le serveur MCP</small></span></a>
       </div>
     </details>
@@ -128,12 +128,12 @@
         <ol class="f-liste">
           <li class="f-etape actif">
             <span class="f-num">1</span>
-            <div><h3>Choisissez WhatsApp et RCS, avec repli</h3><p>À la création de la campagne, une seule option : un envoi qui échoue repart aussitôt sur l’autre canal, sans double envoi.</p></div>
+            <div><h3>Activez le fallback en une option</h3><p>À la création de la campagne, choisissez « WhatsApp et RCS, avec repli » : un envoi qui échoue repart aussitôt sur l’autre canal, sans double envoi.</p></div>
             <img src="/img/canaux-repli.webp" width="1300" height="1083" alt="La création d’une campagne : WhatsApp et RCS, avec repli" loading="lazy">
           </li>
           <li class="f-etape">
             <span class="f-num">2</span>
-            <div><h3>Décidez lequel part en premier</h3><p>WhatsApp en premier, ou RCS en premier. En cas d’échec, le repli part dans l’autre sens.</p></div>
+            <div><h3>Décidez lequel part en premier</h3><p>WhatsApp en premier, ou RCS en premier. En cas d’échec, le fallback part dans l’autre sens.</p></div>
             <img src="/img/canaux-ordre.webp" width="1300" height="1083" alt="Lequel part en premier : RCS en premier, le repli part en WhatsApp" loading="lazy">
           </li>
           <li class="f-etape">
@@ -154,7 +154,7 @@
   <section class="f-bloc">
     <div class="cadre">
       <p class="f-grand">Chaque client reçoit un message. <span>Un seul.</span></p>
-      <p class="f-texte">Le repli ne part que si le premier envoi échoue : personne ne reçoit deux fois le même message.</p>
+      <p class="f-texte">Le fallback ne part que si le premier envoi échoue : personne ne reçoit deux fois le même message.</p>
     </div>
   </section>
 
@@ -181,7 +181,7 @@
       <ul>
         <li><a href="/fonctionnalites/publicites-click-to-whatsapp/">Publicités <span style="white-space:nowrap">Click-to-WhatsApp</span></a></li>
         <li><a href="/fonctionnalites/chaines-whatsapp/">Chaînes WhatsApp</a></li>
-        <li><a href="/fonctionnalites/conversations-en-actions/">Conversations en actions</a></li>
+        <li><a href="/fonctionnalites/conversations-en-actions/">Analyse de conversations</a></li>
         <li><a href="/fonctionnalites/whatsapp-et-rcs/">WhatsApp et RCS</a></li>
         <li><a href="https://engageme.messagingme.app/login">Se connecter</a></li>
         <li><a href="https://engageme.messagingme.app/developers/api">Documentation de l’API</a></li>
@@ -195,7 +195,7 @@
         <li><a href="https://www.messagingme.fr/a-propos/">A propos</a></li>
         <li><a href="https://www.messagingme.fr/services/">Services</a></li>
         <li><a href="https://www.messagingme.fr/articles/">Blog</a></li>
-        <li><a href="https://www.messagingme.fr/contact/">Contact</a></li>
+        <li><a href="/contact/">Contact</a></li>
       </ul>
     </nav>
     <nav aria-label="Support">

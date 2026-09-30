@@ -59,6 +59,12 @@ propose les 31 variables du `.env.example` RACINE (le backend), même avec `site
 supprime toutes. `ci.yml` ignore `site/**` (aucun test ne la lit) ; les docs API et MCP de la console, vers
 lesquelles elle pointe, sont PUBLIQUES depuis le 2026-09-25.
 
+⚠️ **La vitrine appelle UNE route de l'API** (2026-09-30) : son formulaire de contact (`site/contact/`) poste
+`POST /vitrine/contact` en formulaire HTML natif, et la route répond par une redirection 303 vers la vitrine, donc
+aucun CORS. Chaque adresse est écrite en dur chez l'autre : `api.messagingme.app` dans `site/contact/index.html`, la
+vitrine dans `VITRINE` (`src/http/contact-vitrine.ts`). Renommer l'une casse le formulaire sans erreur ailleurs, et
+une page qui poste vers une route pas encore déployée aussi : l'API se déploie AVANT la vitrine.
+
 🔴 **L'IGNORED BUILD STEP DE LA VITRINE NE DOIT JAMAIS FINIR EN ERROR, et il vit dans `site/vercel.json`**
 (2026-09-26). `VERCEL_GIT_PREVIOUS_SHA` est le SHA du dernier déploiement READY (un CANCELED ne l'avance pas),
 et Vercel clone en profondeur 10 SANS aucun remote, mesuré. Dès dix commits sans changement dans `site/`, ce SHA

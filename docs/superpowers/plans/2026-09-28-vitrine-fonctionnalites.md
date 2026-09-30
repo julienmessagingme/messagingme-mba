@@ -53,7 +53,29 @@ Demande de Julien : deux fonctionnalités tirées des derniers films de l'atelie
 - Le menu passe à quatre entrées, le pied de page aussi. Les écrans sont rendus par
   `~/engageme-motion/rendre-images.cjs`, dont les trois pièges sont écrits dans le `CLAUDE.md` de l'atelier.
 
+## Ajout du 2026-09-30 : le formulaire de contact, et deux noms
+
+Demande de Julien : le lien « Contact » du pied menait à la page contact de messagingme.fr ; il veut un formulaire
+de la vitrine qui arrive chez lui, par le même chemin que le formulaire de support de la console. Et deux noms.
+
+**Méthode : en direct, plus UNE relecture indépendante de la route.** La route est publique et c'est la seule pièce
+de ce plan que la production emprunte (un envoi d'e-mail) ; le reste est de la page statique.
+
+- `POST /vitrine/contact` (`src/http/contact-vitrine.ts`) : formulaire HTML natif (pas de `fetch`, donc pas de
+  CORS), validation Zod, e-mail Resend à `SUPPORT_TO` comme le support, redirection 303 vers une adresse FIXE de la
+  vitrine. Pot de miel (champ `site`), plafond global de dix envois par dix minutes. Tests :
+  `tests/contact-vitrine.test.ts`, chacun vu en échec sur son défaut remis (pot de miel, plafond, portée du lecteur).
+- `/contact/` et `/contact/merci/` (hors index) ; le lien « Contact » du pied y mène. Le brouillon survit à un
+  retour en erreur (stockage de l'onglet), le bouton se désactive pendant l'envoi.
+- **Ordre de déploiement : l'API d'abord**, la vitrine ensuite. Pousser la page avant la route la ferait poster
+  vers un 404.
+- Noms : « Conversations en actions » devient **« Analyse de conversations »** (sous-titre « Définition d’action
+  dans votre CRM ») ; **« fallback »** remplace « repli » dans le texte de la page WhatsApp et RCS. Le libellé de la
+  console, « WhatsApp et RCS, avec repli », reste cité tel quel à côté de sa capture. L'adresse
+  `/fonctionnalites/conversations-en-actions/` ne change pas : elle circule depuis la veille.
+
 ## Essai réel qui clôt
 
 Julien parcourt les deux pages en production, sur ordinateur et sur son téléphone : il ouvre le menu, lance les
-deux films, et clique « Demander une démo ».
+deux films, et clique « Demander une démo ». Pour le formulaire : il envoie un message depuis `/contact/` sur son
+téléphone, le reçoit dans sa boîte, et sa réponse part à l'adresse saisie.

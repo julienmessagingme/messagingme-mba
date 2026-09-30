@@ -536,3 +536,37 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
   .js .f-chiffre.vu .compte{animation:compte-f 1.6s cubic-bezier(.2,.7,.2,1) both}
   @keyframes compte-f{from{--n:0}}
 }
+
+/* ============================================================================================================
+   PAGE CONTACT (/contact/ et /contact/merci/). Classes préfixées c-. Le formulaire part vers l'API
+   (POST /vitrine/contact) en formulaire HTML natif : aucune requête CORS, et il marche sans JavaScript.
+   ============================================================================================================ */
+.c-une{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);align-items:start;gap:clamp(40px,12vw - 80px,96px);padding-top:56px;padding-bottom:112px}
+.c-une h1,.c-merci h1{margin:0 0 22px;font-size:clamp(2.3rem,4.4vw,3.5rem)}
+.c-direct{margin:0;color:var(--muted)}
+.c-direct a{color:var(--ink);font-weight:600}
+/* La carte du formulaire, plus claire que la page comme la carte « Analysé par » de l'accueil. */
+.c-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 16px;margin:0;padding:28px;border-radius:16px;background:#0E1A66;border:1px solid rgb(255 255 255 / .16);box-shadow:inset 0 1px 0 rgb(255 255 255 / .07),0 1px 2px rgb(0 0 0 / .2),0 24px 44px -20px var(--ombre)}
+.c-champ{display:grid;gap:7px;min-width:0}
+.c-champ.large{grid-column:1 / -1}
+.c-champ label{font-size:.88rem;font-weight:600}
+.c-champ small{font-size:inherit;font-weight:500;color:var(--muted)}
+/* 1rem au moins : en dessous, Safari sur iPhone zoome dans la page au premier toucher. */
+.c-champ input,.c-champ textarea{width:100%;margin:0;padding:.72em .9em;border-radius:10px;border:1px solid rgb(255 255 255 / .22);background:var(--nuit);color:var(--ink);font:inherit;font-size:1rem;line-height:1.5;transition:border-color .15s,box-shadow .15s}
+.c-champ textarea{min-height:9.5em;resize:vertical}
+.c-champ input:hover,.c-champ textarea:hover{border-color:rgb(255 255 255 / .38)}
+.c-champ input:focus-visible,.c-champ textarea:focus-visible{outline:none;border-color:var(--action);box-shadow:0 0 0 3px var(--action-wash)}
+.c-champ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);caret-color:var(--ink);box-shadow:0 0 0 100px var(--nuit) inset;transition:background-color 9999s}
+/* Le pot de miel : hors de l'écran et hors du clavier, seul un robot le remplit. */
+.c-piege{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.c-envoi{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:14px 24px;flex-wrap:wrap}
+.c-envoi .bouton-plein{border:0;font-family:inherit;cursor:pointer}
+.c-envoi .bouton-plein:disabled{opacity:.6;cursor:progress}
+.c-mention{margin:0;max-width:24em;font-size:.82rem;color:var(--muted)}
+.c-erreur{grid-column:1 / -1;margin:0;padding:12px 14px;border-radius:10px;background:rgb(255 92 92 / .12);border:1px solid rgb(255 128 128 / .38);color:#FFD6D6;font-size:.92rem}
+.c-erreur a{font-weight:600}
+.c-merci{padding:120px 0 136px;text-align:center}
+.c-merci .f-texte{margin:0 auto 34px}
+.c-merci .appels{justify-content:center}
+@media (max-width:960px){.c-une{grid-template-columns:minmax(0,1fr);gap:40px;padding-top:24px;padding-bottom:80px}}
+@media (max-width:560px){.c-form{grid-template-columns:minmax(0,1fr);padding:20px 16px}.c-merci{padding:72px 0 96px}}
