@@ -15,6 +15,7 @@ import { lireChemin } from '@/lib/chemin-relatif';
 import { Bouton } from '@/components/Bouton';
 import { erreurDeChargement } from '@/lib/http';
 import { Icone } from '@/components/Icone';
+import { libelleValeurSysteme } from '@/lib/valeurs-systeme';
 
 /**
  * METTRE AU POINT UN APPEL vers le système du client, et l'ÉPROUVER avant de l'ouvrir aux agents.
@@ -578,7 +579,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
             {champs.map((c) => <option key={c} value={`champ:${c}`}>{t(`champ « ${c} »`, `field “${c}”`)}</option>)}
             {catalogue.systeme.map((c) => (
               <option key={c} value={`systeme:${c}`}>
-                {c === 'maintenant' ? t('date et heure courantes', 'current date and time') : t('dernier message du contact', 'contact’s last message')}
+                {t(...libelleValeurSysteme(c))}
               </option>
             ))}
             <option value="fixe">{t('valeur fixe', 'fixed value')}</option>

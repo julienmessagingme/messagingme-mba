@@ -108,6 +108,17 @@ describe.skipIf(!url)('signaux : lectures et réglage (Postgres)', () => {
     expect(await lectures.waIdDeLaConversation(tenantId, conversationId)).toBe('33600000881');
   });
 
+  it('🔴 la dernière analyse d’un contact (variable de connecteur), dans son espace seulement', async () => {
+    // Les valeurs de l'analyse posée plus haut, sous les noms d'une variable ; un 0 ou un null gardé tel quel.
+    expect(await lectures.analyseDuContact(tenantId, '33600000881')).toEqual({
+      intention: 'sav', sentiment: 'positif', satisfaction: null, urgence: 3, resolue: true, risque: null,
+    });
+    // Le même numéro vu d'un autre espace : rien, ni analyse ni fiche.
+    expect(await lectures.analyseDuContact(autreTenantId, '33600000881')).toBeNull();
+    // Un numéro inconnu : rien non plus.
+    expect(await lectures.analyseDuContact(tenantId, '33600000999')).toBeNull();
+  });
+
   it('le lien : son template et sa destination, dans son espace seulement', async () => {
     const code = await new PgTrackedLinkStore(pool).allocate(
       tenantId, 'itestsig0001', { templateName: 'promo', templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 }, 'https://client.fr/promo', true,

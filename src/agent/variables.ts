@@ -16,12 +16,38 @@
 import { CHAMPS_CONTACT_AUTORISES, type ChampContact } from './champs-contact';
 
 /**
+ * Ce que la dernière analyse dit du contact, et son risque de départ. Les valeurs sont celles que reçoivent Batch
+ * et Salesforce (`em_last_intent`, `em_last_sentiment`, `em_satisfaction`, `em_urgency`, `em_last_resolved`,
+ * `em_risk_level`) : un même contact ne doit pas porter deux vérités selon l'outil qui les lit. `null` = pas de
+ * mesure (conversation jamais analysée, note absente), jamais 0 ni une chaîne vide.
+ */
+export const CLES_ANALYSE = [
+  'analyse_intention', 'analyse_sentiment', 'analyse_satisfaction', 'analyse_urgence', 'analyse_resolue', 'risque_depart',
+] as const;
+export type CleAnalyse = (typeof CLES_ANALYSE)[number];
+
+export interface AnalyseDuContact {
+  intention: string | null;
+  sentiment: string | null;
+  satisfaction: number | null;
+  urgence: number | null;
+  resolue: boolean | null;
+  risque: string | null;
+}
+
+/**
  * Les valeurs système, liste fermée. `derniere_saisie` : le dernier message texte du contact, envoyé tel quel
  * sans demander au modèle de le recopier (donc de le reformuler). `maintenant` : l'instant courant en ISO
- * 8601 avec le décalage du fuseau de l'espace (`formatMaintenant`).
+ * 8601 avec le décalage du fuseau de l'espace (`formatMaintenant`). Les clés `CLES_ANALYSE` : ce que la
+ * dernière analyse de conversation dit du contact (renvoyer à un CRM « ce client est mécontent »).
  */
-export const CLES_SYSTEME = ['derniere_saisie', 'maintenant'] as const;
+export const CLES_SYSTEME = ['derniere_saisie', 'maintenant', ...CLES_ANALYSE] as const;
 export type CleSysteme = (typeof CLES_SYSTEME)[number];
+
+/** Cette valeur système demande-t-elle la dernière analyse ? Sert au chargement paresseux du résolveur. */
+export function estCleAnalyse(cle: string): cle is CleAnalyse {
+  return (CLES_ANALYSE as readonly string[]).includes(cle);
+}
 
 export type OrigineVariable =
   | { type: 'modele' }
@@ -49,6 +75,9 @@ export interface ContexteVariables {
   champs: Record<string, unknown> | null;
   /** Le dernier message texte écrit par le contact, ou `null` s'il n'y en a pas encore. */
   derniereSaisie: string | null;
+  /** La dernière analyse du contact et son risque, ou `null` si rien n'a été lu (aucune variable ne la réclame,
+   *  ou dépendance absente). */
+  analyse: AnalyseDuContact | null;
   /** Instant de référence. Injecté pour que le test ne dépende pas de l'horloge. */
   maintenant: Date;
   /** Fuseau IANA de l'espace (`tenant_settings.timezone`). */
@@ -100,9 +129,24 @@ export function resoudreVariable(origine: OrigineVariable, ctx: ContexteVariable
       return normaliser(ctx.contact ? ctx.contact[origine.cle] : null);
     case 'champ':
       return normaliser(ctx.champs ? ctx.champs[origine.cle] : null);
-    case 'systeme':
-      if (origine.cle === 'maintenant') return formatMaintenant(ctx.maintenant, ctx.fuseau);
-      return ctx.derniereSaisie;
+    case 'systeme': {
+      const cle = origine.cle;
+      switch (cle) {
+        case 'maintenant': return formatMaintenant(ctx.maintenant, ctx.fuseau);
+        case 'derniere_saisie': return ctx.derniereSaisie;
+        case 'analyse_intention': return ctx.analyse?.intention ?? null;
+        case 'analyse_sentiment': return ctx.analyse?.sentiment ?? null;
+        case 'analyse_satisfaction': return ctx.analyse?.satisfaction ?? null;
+        case 'analyse_urgence': return ctx.analyse?.urgence ?? null;
+        case 'analyse_resolue': return ctx.analyse?.resolue ?? null;
+        case 'risque_depart': return ctx.analyse?.risque ?? null;
+        default: {
+          // Exhaustivité : une clé système ajoutée sans son cas ici ne compile pas.
+          const jamais: never = cle;
+          return jamais;
+        }
+      }
+    }
     case 'modele':
       // La valeur vient des arguments du modèle, déjà validés par l'exécuteur. Ce cas rend le catalogue
       // exhaustif, pour que le compilateur refuse une origine oubliée.
@@ -128,6 +172,18 @@ function normaliser(v: unknown): ValeurResolue {
   return null;
 }
 
+/** Le libellé de chaque valeur système. Un `Record` sur la clé : une clé ajoutée sans libellé ne compile pas. */
+export const LIBELLES_SYSTEME: Record<CleSysteme, string> = {
+  derniere_saisie: 'dernier message du contact',
+  maintenant: 'date et heure courantes',
+  analyse_intention: 'intention de la dernière analyse',
+  analyse_sentiment: 'sentiment de la dernière analyse',
+  analyse_satisfaction: 'satisfaction de la dernière analyse (0 à 10)',
+  analyse_urgence: 'urgence de la dernière analyse (0 à 10)',
+  analyse_resolue: 'dernière conversation résolue (oui/non)',
+  risque_depart: 'risque de départ du contact',
+};
+
 /**
  * Le libellé d'une origine, tel que la console l'affiche. Ici, à côté de la définition, parce que la
  * confirmation de ce qui part dans la requête doit dire ce qui part réellement.
@@ -137,7 +193,7 @@ export function libelleOrigine(origine: OrigineVariable): string {
     case 'modele': return 'décidée par l’agent';
     case 'contact': return origine.cle === 'wa_id' ? 'numéro WhatsApp du contact' : 'nom du contact';
     case 'champ': return `champ « ${origine.cle} » du contact`;
-    case 'systeme': return origine.cle === 'maintenant' ? 'date et heure courantes' : 'dernier message du contact';
+    case 'systeme': return LIBELLES_SYSTEME[origine.cle];
     case 'fixe': return `valeur fixe « ${String(origine.valeur)} »`;
     default: {
       const jamais: never = origine;

@@ -22,8 +22,10 @@ const compter = (texte: string, motif: RegExp): number => texte.match(motif)?.le
 describe('isolation des lectures des signaux', () => {
   it('🔴 PgSignauxStore : chaque `from` porte son `tenant_id = $1`', () => {
     const rs = requetes('src/signaux/store.pg.ts');
-    // Six requêtes : ficheParWaId, ficheParId, waIdDeLaConversation, contexteDuMessage, lien, analyse.
-    expect(rs.length, 'une requête échappe au balayage : c’est le test qui est cassé').toBe(6);
+    // Huit requêtes : ficheParWaId, ficheParId, waIdDeLaConversation, contexteDuMessage, lien, analyse, et les deux
+    // d'analyseDuContact (l'analyse par la conversation, le risque par la fiche). L'analyse jointe l'est par
+    // l'identifiant d'une conversation déjà filtrée sur l'espace : un `from`, un filtre.
+    expect(rs.length, 'une requête échappe au balayage : c’est le test qui est cassé').toBe(8);
     for (const r of rs) {
       expect(compter(r, /tenant_id = \$1/g), r).toBe(compter(r, /\bfrom\b/gi));
     }

@@ -6,6 +6,7 @@ const ctx = (p: Partial<ContexteVariables> = {}): ContexteVariables => ({
   contact: { nom: 'Léa' },
   champs: { ville: 'Lyon', points: 12, vide: '' },
   derniereSaisie: 'je voudrais changer ma commande',
+  analyse: null,
   maintenant: new Date('2026-09-02T09:45:00.000Z'),
   fuseau: 'Europe/Paris',
   ...p,
@@ -108,6 +109,35 @@ describe('libellés annoncés au client', () => {
 
 describe('catalogue fermé des valeurs système', () => {
   it('la liste est celle qu’on croit', () => {
-    expect([...CLES_SYSTEME]).toEqual(['derniere_saisie', 'maintenant']);
+    expect([...CLES_SYSTEME]).toEqual([
+      'derniere_saisie', 'maintenant',
+      'analyse_intention', 'analyse_sentiment', 'analyse_satisfaction', 'analyse_urgence', 'analyse_resolue', 'risque_depart',
+    ]);
+  });
+});
+
+describe('les valeurs de la dernière analyse', () => {
+  const analyse = { intention: 'reclamation', sentiment: 'negatif', satisfaction: 0, urgence: 8, resolue: false, risque: 'eleve' };
+
+  it('🔴 chaque clé rend SA valeur, avec son type : un 0 reste un 0, un false reste un false', () => {
+    // Une satisfaction de 0 est la mesure qui alarme : la perdre en null la ferait disparaître côté CRM.
+    const c = ctx({ analyse });
+    expect(resoudreVariable({ type: 'systeme', cle: 'analyse_intention' }, c)).toBe('reclamation');
+    expect(resoudreVariable({ type: 'systeme', cle: 'analyse_sentiment' }, c)).toBe('negatif');
+    expect(resoudreVariable({ type: 'systeme', cle: 'analyse_satisfaction' }, c)).toBe(0);
+    expect(resoudreVariable({ type: 'systeme', cle: 'analyse_urgence' }, c)).toBe(8);
+    expect(resoudreVariable({ type: 'systeme', cle: 'analyse_resolue' }, c)).toBe(false);
+    expect(resoudreVariable({ type: 'systeme', cle: 'risque_depart' }, c)).toBe('eleve');
+  });
+
+  it('🔴 sans analyse, null : jamais une valeur inventée', () => {
+    for (const cle of ['analyse_intention', 'analyse_sentiment', 'analyse_satisfaction', 'analyse_urgence', 'analyse_resolue', 'risque_depart'] as const) {
+      expect(resoudreVariable({ type: 'systeme', cle }, ctx({ analyse: null }))).toBeNull();
+    }
+  });
+
+  it('chaque valeur système a un libellé qui dit ce qui part', () => {
+    expect(libelleOrigine({ type: 'systeme', cle: 'analyse_sentiment' })).toContain('sentiment');
+    expect(libelleOrigine({ type: 'systeme', cle: 'risque_depart' })).toContain('risque');
   });
 });

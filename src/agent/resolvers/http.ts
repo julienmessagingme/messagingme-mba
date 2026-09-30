@@ -7,7 +7,7 @@ import { resolutionPublique, type VerdictResolution } from '../../lib/adresse-pr
 import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../../lib/connexion-publique';
 import { lireCorpsBorne } from '../../lib/corps-borne';
 import { assemblerAppel } from '../requete-http';
-import { resoudreVariable, type ValeurResolue } from '../variables';
+import { estCleAnalyse, resoudreVariable, type AnalyseDuContact, type ValeurResolue } from '../variables';
 
 /**
  * Le résolveur des outils de connecteur : un appel HTTP vers le système du client.
@@ -29,6 +29,12 @@ export interface DepsResolveurHttp {
    * personnalisés : la projection du contact les porte déjà.
    */
   inbox?: { derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> };
+  /**
+   * La dernière analyse du contact et son risque de départ (`CLES_ANALYSE`), lue elle aussi paresseusement.
+   * Absente, les variables d'analyse valent `null` (refus si elles sont requises) : chaque câblage de
+   * `creerAppelConnecteur` la porte, pour qu'une requête ne marche pas sur un chemin et rende `null` sur un autre.
+   */
+  analyses?: { analyseDuContact(tenantId: string, waId: string): Promise<AnalyseDuContact | null> };
   fuseau?: (tenantId: string) => Promise<string>;
   /** Injecté pour tester sans réseau, comme partout dans ce dépôt. */
   fetchImpl?: typeof fetch;
@@ -202,9 +208,12 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       ? await deps.inbox.derniereSaisieDuContact(ctx.tenantId, ctx.waId) : null;
     // Le fuseau ne sert qu'à « maintenant ». Sans dépendance, UTC, dit dans la valeur (`+00:00`).
     const fuseau = besoin('systeme', 'maintenant') && deps.fuseau ? await deps.fuseau(ctx.tenantId) : 'UTC';
+    // La dernière analyse, lue UNE fois pour toutes les variables qui la réclament.
+    const besoinAnalyse = requete.variables.some((v) => v.origine.type === 'systeme' && estCleAnalyse(v.origine.cle));
+    const analyse = besoinAnalyse && deps.analyses ? await deps.analyses.analyseDuContact(ctx.tenantId, ctx.waId) : null;
 
     const contexte = {
-      waId: ctx.waId, contact: ctx.contact, champs, derniereSaisie,
+      waId: ctx.waId, contact: ctx.contact, champs, derniereSaisie, analyse,
       maintenant: deps.now ? deps.now() : new Date(), fuseau,
     };
     const valeurs: Record<string, ValeurResolue> = {};

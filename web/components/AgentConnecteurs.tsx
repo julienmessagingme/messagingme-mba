@@ -11,6 +11,7 @@ import { Bouton } from '@/components/Bouton';
 import { Squelette } from '@/components/Squelette';
 import { erreurDeChargement } from '@/lib/http';
 import { Icone } from '@/components/Icone';
+import { libelleValeurSysteme } from '@/lib/valeurs-systeme';
 
 /**
  * CE QUE CET AGENT A LE DROIT D'APPELER dans les systèmes du workspace.
@@ -163,7 +164,7 @@ function libelleOrigine(o: RequeteApi['variables'][number]['origine']): [string,
   if (o.type === 'modele') return ['décidée par l’agent', 'decided by the agent'];
   if (o.type === 'contact') return o.cle === 'wa_id' ? ['numéro WhatsApp du contact', 'contact’s WhatsApp number'] : ['nom du contact', 'contact’s name'];
   if (o.type === 'champ') return [`champ « ${o.cle} » du contact`, `contact field “${o.cle}”`];
-  if (o.type === 'systeme') return o.cle === 'maintenant' ? ['date et heure courantes', 'current date and time'] : ['dernier message du contact', 'contact’s last message'];
+  if (o.type === 'systeme') return libelleValeurSysteme(o.cle);
   return [`valeur fixe « ${String(o.valeur)} »`, `fixed value “${String(o.valeur)}”`];
 }
 

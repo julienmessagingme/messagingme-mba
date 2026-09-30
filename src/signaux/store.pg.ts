@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { AnalyseDuSignal } from './types';
+import type { AnalyseDuContact } from '../agent/variables';
 import type { FicheDuSignal, LecturesSignal } from './completer';
 
 /**
@@ -111,6 +112,43 @@ export class PgSignauxStore implements LecturesSignal {
       handledBy: r.handled_by,
       exchangesCount: r.exchanges_count,
       summary: r.summary,
+    };
+  }
+
+  /**
+   * Ce que la dernière analyse dit d'un contact, et son risque de départ : les valeurs d'une variable de connecteur
+   * (`CLES_ANALYSE`). Une analyse par conversation, une conversation par canal : la plus récemment analysée gagne.
+   * `null` = ni analyse ni fiche. Les mêmes champs que `analyse()` et que ce qui part vers Batch, sans recopie de
+   * sens : l'intention et le sentiment sont les codes de l'analyse, tels quels.
+   */
+  async analyseDuContact(tenantId: string, waId: string): Promise<AnalyseDuContact | null> {
+    const [a, f] = await Promise.all([
+      this.pool.query<{ intent: string; sentiment: string; satisfaction: number | null; urgence: number | null; resolved: boolean }>(
+        `select ca.intent, ca.sentiment, ca.satisfaction, ca.urgence, ca.resolved
+           from conversations cv
+           join conversation_analysis ca on ca.conversation_id = cv.id
+          where cv.tenant_id = $1 and cv.wa_id = $2
+          order by cv.analyzed_at desc nulls last
+          limit 1`,
+        [tenantId, waId],
+      ),
+      this.pool.query<{ risque_niveau: string | null }>(
+        `select risque_niveau from contacts
+          where tenant_id = $1 and deleted_at is null
+          ${MATCH_BY_WAID_SQL}`,
+        [tenantId, waId],
+      ),
+    ]);
+    const analyse = a.rows[0];
+    const risque = f.rows[0]?.risque_niveau ?? null;
+    if (!analyse && f.rows.length === 0) return null;
+    return {
+      intention: analyse?.intent ?? null,
+      sentiment: analyse?.sentiment ?? null,
+      satisfaction: analyse?.satisfaction ?? null,
+      urgence: analyse?.urgence ?? null,
+      resolue: analyse ? analyse.resolved : null,
+      risque,
     };
   }
 }

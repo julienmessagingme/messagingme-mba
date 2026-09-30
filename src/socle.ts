@@ -62,6 +62,7 @@ import { creerListeDeLAgent } from './mba/liste';
 import { PgListeStore } from './mba/liste.pg';
 import { PgVerrousCourts } from './db/verrous-courts.pg';
 import { PgCompteurDebit } from './db/debit.pg';
+import { PgSignauxStore } from './signaux/store.pg';
 
 /**
  * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
@@ -203,6 +204,9 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   // Les requêtes de connecteur : un appel mis au point une fois dans la bibliothèque de l'espace, que l'outil d'un
   // agent, un bloc de scénario ou la poussée d'un opt-out désigne au lieu de le redécrire.
   const agentRequetes = new PgRequeteStore(pool);
+  // Ce que la dernière analyse dit d'un contact, pour les variables de connecteur `CLES_ANALYSE`. Les QUATRE câblages
+  // de `creerAppelConnecteur` (scénario, agent IA, poussée d'un opt-out, relais du MBA) le reçoivent.
+  const lecturesAnalyse = new PgSignauxStore(pool);
   const essaisStore = new PgTestRunStore(pool);
   // Les fiches du mode d'emploi de la console : l'API y cherche, le worker les vectorise.
   const depotAide = new PgDepotAide(pool);
@@ -338,7 +342,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
     poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
-    credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
+    credits, agentSources, agentRequetes, lecturesAnalyse, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil,
   };
