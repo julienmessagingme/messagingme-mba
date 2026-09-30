@@ -41,8 +41,9 @@ const ENTETES_QUESTION = new Set(['question', 'questions', 'q', 'demande', 'inti
 const ENTETES_REPONSE = new Set(['reponse', 'reponses', 'answer', 'answers', 'response', 'r', 'a', 'contenu']);
 
 /**
- * CSV (et TSV, papaparse devine le séparateur). Colonnes reconnues par leur nom, sinon les deux premières : la
- * plupart des exports n'ont pas d'en-tête normalisé, et l'écran montre le résultat avant d'écrire chez Meta.
+ * CSV (et TSV, le séparateur est celui de `separateurCsv`). Colonnes reconnues par leur nom, sinon les deux
+ * premières : la plupart des exports n'ont pas d'en-tête normalisé, et l'écran montre le résultat avant d'écrire
+ * chez Meta.
  */
 export function extraireDepuisCsv(brut: string): FaqRow[] {
   const { headers, rows } = parseCsv(brut);

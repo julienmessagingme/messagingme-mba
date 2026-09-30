@@ -1,5 +1,21 @@
 # todo.md : backlog
 
+## 🟡 Lecture des CSV : les restes de la réparation du séparateur (2026-09-30)
+
+- 🟡 **Un CSV aux rangées inégales retombe encore sur la devinette de papaparse** (`parseCsv`, `src/crm/csv.ts`) :
+  `separateurCsv` exige que les 50 premières rangées aient toutes le même nombre de colonnes. Une seule rangée
+  courte (une question de FAQ sans réponse, une cellule de fin absente d'un fichier écrit à la main) suffit, et un
+  fichier en point-virgule dont les cellules portent des virgules est lu en virgule : zéro paire de FAQ, zéro
+  contact (mesuré par la relecture). Un export Excel écrit toutes ses cellules et n'est pas concerné. Remède
+  esquissé et mesuré par la relecture : une seconde passe propre à `parseCsv`, qui a un en-tête (même ordre de
+  séparateurs, en-tête d'au moins deux colonnes, aucune rangée plus longue que lui, la majorité aussi longue).
+- 🟡 **Une ligne unique de 8 Mo occupe l'API environ 6 secondes** (`parseCsv`, antérieur à la réparation, mesuré
+  par la relecture : 6,8 s avant, 6,2 s après) : papaparse traite 4 millions d'en-têtes, doublons renommés
+  compris. Qui : un administrateur d'un espace client, par `/contacts/import` (8 Mo, 10 appels par minute et par
+  espace). Effet : la boucle d'événements de `mba-api` occupée, donc la console et la réception des webhooks de
+  Meta ralenties pour TOUS les espaces tant qu'il insiste. Parade : borner le nombre de colonnes de la première
+  ligne avant de parser.
+
 ## 🟠 Base de connaissance : ce que la réparation du CSV a trouvé à côté (2026-09-29)
 
 - 🟠 **Le bot d'aide ne lit que le début de ses fiches** (mesuré en lecture seule le 2026-09-29) : 20 fiches sur
@@ -9,11 +25,6 @@
   connaissance des agents, réparée le même jour en bornant chaque fiche à ce que l'agent lit ; ici le remède est
   à trancher : découper les fiches par section au chargement (`db/charger-aide.ts`), ou les rendre entières au
   modèle, sur notre clé.
-- 🟡 **L'import de FAQ de l'agent de Meta devine mal le séparateur** (`src/mba/faq-import.ts`, par `parseCsv` de
-  `src/crm/csv.ts`), mesuré par la relecture : laissé deviner, papaparse prend la virgule dès que les réponses
-  d'une FAQ en point-virgule en portent deux, et l'import rend zéro paire. Parade : essayer les séparateurs dans
-  l'ordre, comme `separateurCsv` (`src/agent/setup/piece-jointe.ts`). ⚠️ `parseCsv` sert aussi l'import de
-  contacts : à mesurer avant de toucher.
 
 ## 🟠 Suites de la recharge Stripe et du panneau Détail (2026-09-29)
 

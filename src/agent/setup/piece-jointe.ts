@@ -1,5 +1,6 @@
 import { unzipSync } from 'fflate';
 import Papa from 'papaparse';
+import { separateurCsv } from '../../crm/csv';
 import { MAX_FICHES_PAR_PAGE, MAX_TITRE, empilerEnFiches, type FicheExtraite } from '../scrape';
 import { CORPS_MAX } from '../resolvers/connaissance';
 
@@ -97,24 +98,6 @@ const CONTROLE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/;
  * Les tabulations des bords restent : dans un TSV, ce sont des cellules vides (la case d'angle d'une grille).
  */
 const normaliser = (texte: string): string => texte.replace(/\r\n?/g, '\n').replace(/^[^\S\t]+|[^\S\t]+$/g, '');
-
-/** Les séparateurs essayés, dans l'ordre : le point-virgule d'abord, c'est celui d'Excel en français. */
-const SEPARATEURS = [';', '\t', ',', '|'];
-/** Les premières lignes lues pour reconnaître un tableau (lignes vides comprises, c'est ainsi que papaparse compte). */
-const APERCU = 50;
-
-/**
- * Le séparateur d'un CSV, ou `null` si le texte n'en a pas la forme : ses premières rangées, deux au moins, ont
- * toutes le même nombre de colonnes, deux au moins, sans guillemet mal fermé. Chaque séparateur est essayé plutôt
- * que deviné par papaparse, qui choisit la virgule dès que les réponses d'une FAQ en point-virgule en portent deux.
- */
-function separateurCsv(texte: string): string | null {
-  return SEPARATEURS.find((sep) => {
-    const { data, errors } = Papa.parse<string[]>(texte, { delimiter: sep, preview: APERCU, skipEmptyLines: 'greedy' });
-    const colonnes = data[0]?.length ?? 0;
-    return errors.length === 0 && data.length >= 2 && colonnes >= 2 && data.every((r) => r.length === colonnes);
-  }) ?? null;
-}
 
 /**
  * Un CSV lu, chaque rangée réécrite en une ligne ; `null` si le texte n'en est pas un. L'en-tête va jusqu'à la

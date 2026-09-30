@@ -132,6 +132,9 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
 
   // Aperçu : parse le CSV + propose un mapping (même parseCsv que l'import réel -> en-têtes
   // identiques, pas de désync). Le front affiche l'écran de mapping pré-rempli.
+  // ⚠️ L'aperçu ne reçoit que la tête du fichier (`teteCsv`, 512 000 caractères) : l'identité tient tant qu'elle
+  // porte les 50 rangées où `separateurCsv` cherche le séparateur (plus de 10 000 caractères par rangée en moyenne,
+  // l'aperçu et l'import peuvent lire deux séparateurs).
   app.post('/tenants/:tenantId/contacts/import/preview', optsApercuCouteux, async (req, reply) => {
     const effectiveTenant = espaceVerifie(req);
     const body = (req.body ?? {}) as { csv?: unknown };

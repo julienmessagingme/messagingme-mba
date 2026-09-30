@@ -22,6 +22,32 @@ describe('extraction CSV', () => {
     expect(rows).toEqual([{ question: 'Horaires ?', answer: 'De 6h à 21h' }]);
   });
 
+  it('🔴 une FAQ en point-virgule dont les réponses portent des virgules garde ses deux colonnes', () => {
+    // Mesuré le 2026-09-29 : laissé deviner, papaparse prenait la virgule dès que les réponses en portaient deux,
+    // l'en-tête devenait une seule colonne et l'import rendait zéro paire.
+    const csv = [
+      'Question;Réponse',
+      'Quels animaux ?;Les chiens, les chats, et les NAC de moins de 10 kg',
+      'Quels délais ?;Trois mois, six mois, ou un an, selon la formule',
+    ].join('\n');
+    expect(extraireDepuisCsv(csv)).toEqual([
+      { question: 'Quels animaux ?', answer: 'Les chiens, les chats, et les NAC de moins de 10 kg' },
+      { question: 'Quels délais ?', answer: 'Trois mois, six mois, ou un an, selon la formule' },
+    ]);
+  });
+
+  it('une FAQ en TSV dont les réponses portent des virgules garde aussi ses deux colonnes', () => {
+    const tsv = [
+      'Question\tRéponse',
+      'Quels animaux ?\tLes chiens, les chats, et les NAC',
+      'Quels délais ?\tTrois mois, six mois, ou un an',
+    ].join('\n');
+    expect(extraireDepuisCsv(tsv)).toEqual([
+      { question: 'Quels animaux ?', answer: 'Les chiens, les chats, et les NAC' },
+      { question: 'Quels délais ?', answer: 'Trois mois, six mois, ou un an' },
+    ]);
+  });
+
   it('réduit les espaces des exports Excel (retours et insécables)', () => {
     const rows = extraireDepuisCsv('question,answer\n"Tarif ?","2,00 €\n  le ticket"\n');
     expect(rows[0]).toEqual({ question: 'Tarif ?', answer: '2,00 € le ticket' });

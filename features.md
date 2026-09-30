@@ -248,6 +248,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   de lignes annoncé avant l'import devient une **estimation**, affichée avec un « ≈ » (l'écran n'analyse plus
   que le début du fichier) ; le compte rendu final, lui, reste exact. Un fichier encore plus gros est refusé par
   un message **en français** qui dit quoi faire : le découper.
+  **Séparateur reconnu (2026-09-30)** : point-virgule (l'export d'Excel en français), tabulation, virgule ou
+  barre, même quand des cellules portent des virgules (une adresse, des notes). Avant cette date, un tel fichier
+  en point-virgule pouvait être lu comme une seule colonne, et l'import rejetait alors chaque ligne.
 - ✅ **Fiche contact éditable** : sur la fiche, on **modifie ou supprime** la valeur de chaque champ perso en
   place, et on édite le **Nom** et le **Prénom**. Le **téléphone et le BSUID restent en lecture seule** (ce sont
   les identités qui routent les messages WhatsApp). Un champ « orphelin » (dont la définition a été supprimée)
@@ -2974,6 +2977,8 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   autorisés, les conditions se signant dans WhatsApp Manager ; son lien « Vérifier à nouveau » relit l'état du
   numéro). ⚠️ Jusqu'au 2026-09-29, ce bandeau renvoyait au guide et annonçait une ouverture « progressive, par
   pays et par secteur », ce que Meta ne documente pas. Hors de ces deux cas, tout s'édite.
+  Un CSV de FAQ en point-virgule ou en tabulation dont les réponses portent des virgules est lu dans ses deux
+  colonnes depuis le 2026-09-30 ; avant, l'import n'en tirait aucune question.
 
 - ✅ **Onglet « Activation »** (2026-08-21) : les deux réglages qui décident **qui parle au client**, réunis au
   même endroit, en deux questions. (1) *Quand le client demande un humain, ou que l'agent ne sait pas* : l'agent
