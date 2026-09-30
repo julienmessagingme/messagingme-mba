@@ -59,6 +59,19 @@ export const JOIGNABILITE_BADGE: Record<Verdict, { text: [string, string]; cls: 
   inconnu: { text: ['Jamais testé', 'Never tested'], cls: 'bg-ink-100 text-ink-500' },
 };
 
+/**
+ * Les onglets de la fiche, dans l'ordre (demande de Julien du 2026-09-30). « Fiche » garde TOUT, comme avant :
+ * les onglets Tags, Champs (les champs personnalisés) et Analyse (risque, dernière analyse, résumé) montrent
+ * chacun une partie, pour y aller directement. « Historique » n'a pas bougé.
+ */
+type OngletFiche = 'fiche' | 'tags' | 'champs' | 'analyse' | 'historique';
+const ONGLETS_FICHE: ReadonlyArray<{ cle: OngletFiche; libelle: [string, string] }> = [
+  { cle: 'fiche', libelle: ['Fiche', 'Details'] },
+  { cle: 'tags', libelle: ['Tags', 'Tags'] },
+  { cle: 'champs', libelle: ['Champs', 'Fields'] },
+  { cle: 'analyse', libelle: ['Analyse', 'Analysis'] },
+  { cle: 'historique', libelle: ['Historique', 'History'] },
+];
 
 /** Input adapté au type d'un user field. */
 function FieldValueInput({ type, value, onChange }: { type: UserFieldKind; value: string; onChange: (v: string) => void }) {
@@ -223,7 +236,7 @@ export function ContactDetail({
   const [createdRef, setCreatedRef] = useState<UserFieldDef | null>(null);
   // Onglet courant. L'historique se charge au premier affichage seulement (le panneau fait son propre fetch,
   // et n'est monté que quand l'onglet est actif).
-  const [tab, setTab] = useState<'fiche' | 'historique'>('fiche');
+  const [tab, setTab] = useState<OngletFiche>('fiche');
 
   const selectedDef = defByKey.get(newKey);
 
@@ -341,6 +354,217 @@ export function ContactDetail({
     }
   }
 
+  /*
+   * LES BLOCS DE LA FICHE, chacun rendu dans l'onglet « Fiche » (qui reste complet) ET dans son onglet dédié
+   * (Tags, Champs, Analyse ; demande de Julien du 2026-09-30). Une seule définition par bloc : deux copies d'un
+   * même bloc divergeraient au premier correctif. Un seul onglet est monté à la fois, donc un `data-testid` n'est
+   * jamais présent deux fois dans la page.
+   */
+  const valeurRisque = (
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="fiche-risque">
+          {risque === null ? (
+            <span
+              className="text-xs text-ink-500"
+              data-testid="fiche-risque-absent"
+              title={t('Le calcul passe chaque nuit, pour les contacts qui ont reçu un message.', 'It is computed every night, for contacts who received a message.')}
+            >
+              {t('pas encore calculé', 'not computed yet')}
+            </span>
+          ) : (
+            <>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_NIVEAU_RISQUE[risque.niveau].cls}`} data-testid="fiche-risque-niveau">
+                {t(...BADGE_NIVEAU_RISQUE[risque.niveau].text)}
+              </span>
+              {/* Le score n'existe pas pour « inconnu » : rien n'a été observé, il n'y a rien à noter. */}
+              {risque.score !== null && (
+                <span className="text-xs text-ink-500" data-testid="fiche-risque-score">{risque.score} / 100</span>
+              )}
+              {/* « DEPUIS LE » ET PAS « CALCULÉ LE » : la date ne bouge qu'au changement de niveau, le calcul
+                  repasse chaque nuit sans la toucher (`PgRisqueStore.ecrire`). */}
+              <span className="text-xs text-ink-500" data-testid="fiche-risque-depuis">{t('depuis le', 'since')} {formatDate(risque.calculeLe, locale)}</span>
+              {risque.niveau === 'inconnu' && (
+                <span className="basis-full text-xs text-ink-500">
+                  {t('Aucun message ne lui a été délivré sur les 90 derniers jours : rien à observer.', 'No message was delivered to them in the last 90 days: nothing to observe.')}
+                </span>
+              )}
+              {risque.raisons.length > 0 && (
+                <ul className="basis-full list-disc space-y-0.5 pl-4 text-xs text-ink-500" data-testid="fiche-risque-raisons">
+                  {risque.raisons.map((r) => <li key={r}>{t(...libelleRaisonRisque(r))}</li>)}
+                </ul>
+              )}
+            </>
+          )}
+        </span>
+  );
+  const blocDerniereAnalyse =
+      resume?.derniereAnalyse && (() => {
+        const a = resume.derniereAnalyse;
+        const note = (n: number | null): string => (n === null ? t('non mesurée', 'not measured') : `${n} / 10`);
+        return (
+          <div className="mt-4 rounded-controle border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-derniere-analyse">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span className="text-xs font-medium text-ink-500">{t('Dernière analyse', 'Latest analysis')}</span>
+              <span className="text-xs text-ink-500">{t('analysée le', 'analyzed on')} {formatDate(a.analyseLe, locale)}</span>
+            </div>
+            <div className="mt-2 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-1 text-sm">
+              <span className="text-ink-500">{t('Intention', 'Intent')}</span>
+              <span className="text-ink-900" data-testid="fiche-analyse-intention">{libelleIntention(a.intention, t)}</span>
+              <span className="text-ink-500">{t('Sentiment', 'Sentiment')}</span>
+              <span>
+                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${sentimentBadge(a.sentiment)}`} data-testid="fiche-analyse-sentiment">
+                  {sentimentLabel(a.sentiment, t)}
+                </span>
+              </span>
+              <span className="text-ink-500">{t('Satisfaction', 'Satisfaction')}</span>
+              <span className="text-ink-900" data-testid="fiche-analyse-satisfaction">{note(a.satisfaction)}</span>
+              <span className="text-ink-500">{t('Urgence', 'Urgency')}</span>
+              <span className="text-ink-900" data-testid="fiche-analyse-urgence">{note(a.urgence)}</span>
+              <span className="text-ink-500">{t('Résolue', 'Resolved')}</span>
+              <span className="text-ink-900" data-testid="fiche-analyse-resolue">{a.resolue ? t('oui', 'yes') : t('non', 'no')}</span>
+              <span className="text-ink-500">{t('Sujet', 'Topic')}</span>
+              <span className="min-w-0 break-words text-ink-900" data-testid="fiche-analyse-sujet">{a.sujet}</span>
+              <span className="text-ink-500">{t('Traitée par', 'Handled by')}</span>
+              <span className="text-ink-900">{traiteParLabel(a.traiteePar, t)}</span>
+              <span className="text-ink-500">{t('Action suggérée', 'Suggested action')}</span>
+              <span className="text-ink-900">{actionLabel(a.action, t)}</span>
+            </div>
+            {a.perimee && (
+              <p className="mt-1 text-xs text-alerte-700" data-testid="fiche-analyse-perimee">
+                {t('Nouveaux messages depuis l’analyse : elle ne couvre pas la fin de l’échange.',
+                   'New messages since the analysis: it does not cover the end of the exchange.')}
+              </p>
+            )}
+          </div>
+        );
+      })()
+  ;
+  const blocResume =
+      etat !== 'aucune-conversation' && (
+        <div className="mt-4 rounded-controle border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-contact-resume">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="text-xs font-medium text-ink-500">
+              {t('Résumé de la conversation', 'Conversation summary')}
+            </span>
+            {/* La DATE de l'analyse, et le lien vers le fil. Sans la date, un résumé de mars et un résumé
+                d'hier se lisent pareil ; sans le lien, il faut retrouver la conversation à la main. */}
+            <span className="flex items-center gap-2 text-xs text-ink-500">
+              {resume?.analyseLe && <span>{t('analysé le', 'analyzed on')} {formatDate(resume.analyseLe, locale)}</span>}
+              {resume?.conversationId && (
+                <Link href={`/inbox?c=${resume.conversationId}`} className="text-brand-600 underline decoration-dotted hover:text-brand-700">
+                  {t('voir le fil', 'open thread')}
+                </Link>
+              )}
+            </span>
+          </div>
+          {etat === 'resume' ? (
+            <p className="mt-1 whitespace-pre-line text-sm text-ink-900" data-testid="fiche-contact-resume-texte">{resume?.texte}</p>
+          ) : (
+            <p className="mt-1 text-sm italic text-ink-500" data-testid="fiche-contact-resume-absent">{phraseAbsent}</p>
+          )}
+          {/* PÉRIMÉ : l'analyse existe, mais un message est arrivé depuis. Le dire vaut mieux que de
+              présenter un résumé partiel comme s'il couvrait tout le fil. Même mot que dans l'onglet
+              Historique, pour que les deux écrans ne décrivent pas le même état de deux façons. */}
+          {resume?.perime && (
+            <p className="mt-1 text-xs text-alerte-700" data-testid="fiche-contact-resume-perime">
+              {t('Un message est arrivé depuis : ce résumé ne couvre pas la fin de la conversation.',
+                 'A message has arrived since: this summary does not cover the end of the conversation.')}
+            </p>
+          )}
+        </div>
+      )
+  ;
+  const messageErreur =
+      error && <p className="mt-4 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>
+  ;
+  const blocTags = (
+      <div className="mt-5" data-testid="fiche-bloc-tags">
+        <h4 className="mb-2 text-xs font-medium text-ink-500">Tags</h4>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(contact.tags ?? []).map((tag) => (
+            <span key={tag} className="inline-flex items-center gap-1 rounded-controle bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+              {tag}
+              <button onClick={() => void apply({ removeTags: [tag] })} disabled={busy} className="text-brand-400 hover:text-danger" aria-label={`${t('Retirer', 'Remove')} ${tag}`}><Icone nom="fermer" taille="petite" /></button>
+            </span>
+          ))}
+          {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-500">{t('Aucune étiquette.', 'No tags.')}</span>}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            list="tag-suggestions"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void addTag(); }}
+            placeholder={t('Ajouter une étiquette…', 'Add a tag…')}
+            className="flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          />
+          <datalist id="tag-suggestions">{tagSuggestions.map((tag) => <option key={tag} value={tag} />)}</datalist>
+          <Bouton onClick={addTag} disabled={busy || newTag.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
+        </div>
+      </div>
+  );
+  const blocChamps = (
+      <div className="mt-5" data-testid="fiche-bloc-champs">
+        <h4 className="mb-2 text-xs font-medium text-ink-500">{t('Champs', 'Fields')}</h4>
+        {fieldEntries.length === 0 ? (
+          <p className="text-sm text-ink-500">{t('Aucun champ perso.', 'No custom fields.')}</p>
+        ) : (
+          <div className="overflow-hidden rounded-controle border border-ink-200">
+            {fieldEntries.map(([k, v], i) => (
+              <div key={k} className={`grid grid-cols-[130px_1fr] items-center gap-3 px-3 py-1.5 text-sm ${i % 2 ? 'bg-ink-50' : 'bg-white'}`}>
+                <span className="truncate text-ink-500">{defByKey.get(k)?.label ?? k}</span>
+                <EditableField
+                  value={String(v)}
+                  type={defByKey.get(k)?.type ?? 'text'}
+                  busy={busy}
+                  editable={defByKey.has(k)}
+                  onSave={(nv) => (nv.trim() === '' ? apply({ removeFields: [k] }) : apply({ fields: { [k]: nv.trim() } }))}
+                  onDelete={() => apply({ removeFields: [k] })}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-2 space-y-2">
+          {addable.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-controle border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
+                <option value="">{t('Ajouter un champ existant…', 'Add an existing field…')}</option>
+                {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+              </select>
+              {selectedDef && (
+                <>
+                  <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
+                  <Bouton onClick={addField} disabled={busy || newVal.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
+                </>
+              )}
+            </div>
+          )}
+          {!creatingField ? (
+            <button onClick={() => setCreatingField(true)} className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"><Icone nom="ajouter" />{t('Créer un nouveau champ', 'Create a new field')}</button>
+          ) : (
+            <div className="space-y-2 rounded-controle border border-brand-200 bg-brand-50/40 p-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <input value={cLabel} onChange={(e) => setCLabel(e.target.value)} placeholder={t('Nom du champ (ex. Métier)', 'Field name (e.g. Job)')} className="flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+                <select value={cType} onChange={(e) => setCType(e.target.value as UserFieldKind)} className="rounded-controle border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
+                  <option value="text">{t('texte', 'text')}</option>
+                  <option value="number">{t('nombre', 'number')}</option>
+                  <option value="date">{t('date', 'date')}</option>
+                  <option value="datetime">{t('date et heure', 'date & time')}</option>
+                  <option value="boolean">{t('oui/non', 'yes/no')}</option>
+                  <option value="url">{t('lien', 'link')}</option>
+                </select>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <FieldValueInput type={cType} value={cVal} onChange={setCVal} />
+                <Bouton onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''}>{t('Créer et ajouter', 'Create and add')}</Bouton>
+                <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-500 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+  );
+
   return (
     <Modale
       titre={contact.profileName ?? contactIdentity(contact) ?? '-'}
@@ -360,20 +584,43 @@ export function ContactDetail({
         <p className="mt-2 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="fiche-ouvrir-erreur">{erreurOuverture}</p>
       )}
 
-      <div className="mt-4 flex gap-1 border-b border-ink-100 text-sm">
-        {(['fiche', 'historique'] as const).map((k) => (
+      <div className="mt-4 flex gap-1 overflow-x-auto border-b border-ink-100 text-sm" role="tablist">
+        {ONGLETS_FICHE.map(({ cle, libelle }) => (
           <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={`-mb-px border-b-2 px-3 py-1.5 transition-colors duration-150 ${tab === k ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-900'}`}
+            key={cle}
+            role="tab"
+            aria-selected={tab === cle}
+            data-testid={`fiche-onglet-${cle}`}
+            onClick={() => setTab(cle)}
+            className={`-mb-px shrink-0 border-b-2 px-3 py-1.5 transition-colors duration-150 ${tab === cle ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-900'}`}
           >
-            {k === 'fiche' ? t('Fiche', 'Details') : t('Historique', 'History')}
+            {t(...libelle)}
           </button>
         ))}
       </div>
 
       {tab === 'historique' ? (
         <ContactHistoryPanel tenantId={tenantId} contactId={contact.id} />
+      ) : tab === 'tags' ? (
+        <>{messageErreur}{blocTags}</>
+      ) : tab === 'champs' ? (
+        <>{messageErreur}{blocChamps}</>
+      ) : tab === 'analyse' ? (
+        <>
+          {/* Tout ce que la plateforme a DÉDUIT du contact, réuni : son risque, sa dernière analyse, et le
+              résumé de sa conversation. Chaque bloc garde ses propres règles d'absence. */}
+          <div data-testid="fiche-analyse-risque" className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
+            <span className="text-ink-500">{t('Risque de désengagement', 'Disengagement risk')}</span>
+            {valeurRisque}
+          </div>
+          {blocDerniereAnalyse}
+          {blocResume}
+          {!resume?.derniereAnalyse && etat === 'aucune-conversation' && (
+            <p className="mt-4 text-sm text-ink-500" data-testid="fiche-analyse-vide">
+              {t('Aucune conversation analysée pour ce contact.', 'No analyzed conversation for this contact.')}
+            </p>
+          )}
+        </>
       ) : (
       <>
       {/* Les champs de BASE de la fiche : toujours rendus, même vides. Le testid sert à les cibler sans
@@ -498,40 +745,7 @@ export function ContactDetail({
             le lire, par `risqueLu`, qui rend `null` pour un champ absent (API d'avant le lot 7), `null` ou
             illisible. Les trois se lisent « pas encore calculé », jamais un niveau inventé. */}
         <span className="text-ink-500">{t('Risque de désengagement', 'Disengagement risk')}</span>
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="fiche-risque">
-          {risque === null ? (
-            <span
-              className="text-xs text-ink-500"
-              data-testid="fiche-risque-absent"
-              title={t('Le calcul passe chaque nuit, pour les contacts qui ont reçu un message.', 'It is computed every night, for contacts who received a message.')}
-            >
-              {t('pas encore calculé', 'not computed yet')}
-            </span>
-          ) : (
-            <>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_NIVEAU_RISQUE[risque.niveau].cls}`} data-testid="fiche-risque-niveau">
-                {t(...BADGE_NIVEAU_RISQUE[risque.niveau].text)}
-              </span>
-              {/* Le score n'existe pas pour « inconnu » : rien n'a été observé, il n'y a rien à noter. */}
-              {risque.score !== null && (
-                <span className="text-xs text-ink-500" data-testid="fiche-risque-score">{risque.score} / 100</span>
-              )}
-              {/* « DEPUIS LE » ET PAS « CALCULÉ LE » : la date ne bouge qu'au changement de niveau, le calcul
-                  repasse chaque nuit sans la toucher (`PgRisqueStore.ecrire`). */}
-              <span className="text-xs text-ink-500" data-testid="fiche-risque-depuis">{t('depuis le', 'since')} {formatDate(risque.calculeLe, locale)}</span>
-              {risque.niveau === 'inconnu' && (
-                <span className="basis-full text-xs text-ink-500">
-                  {t('Aucun message ne lui a été délivré sur les 90 derniers jours : rien à observer.', 'No message was delivered to them in the last 90 days: nothing to observe.')}
-                </span>
-              )}
-              {risque.raisons.length > 0 && (
-                <ul className="basis-full list-disc space-y-0.5 pl-4 text-xs text-ink-500" data-testid="fiche-risque-raisons">
-                  {risque.raisons.map((r) => <li key={r}>{t(...libelleRaisonRisque(r))}</li>)}
-                </ul>
-              )}
-            </>
-          )}
-        </span>
+        {valeurRisque}
         <span className="text-ink-500">{t('Ajouté le', 'Added on')}</span>
         <span className="text-ink-900">{formatDate(contact.createdAt, locale)}</span>
       </div>
@@ -564,168 +778,15 @@ export function ContactDetail({
 
         ⚠️ Une note absente se lit « non mesurée », jamais 0 : un 0 est une vraie mesure, celle qui alarme.
       */}
-      {resume?.derniereAnalyse && (() => {
-        const a = resume.derniereAnalyse;
-        const note = (n: number | null): string => (n === null ? t('non mesurée', 'not measured') : `${n} / 10`);
-        return (
-          <div className="mt-4 rounded-controle border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-derniere-analyse">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="text-xs font-medium text-ink-500">{t('Dernière analyse', 'Latest analysis')}</span>
-              <span className="text-xs text-ink-500">{t('analysée le', 'analyzed on')} {formatDate(a.analyseLe, locale)}</span>
-            </div>
-            <div className="mt-2 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-1 text-sm">
-              <span className="text-ink-500">{t('Intention', 'Intent')}</span>
-              <span className="text-ink-900" data-testid="fiche-analyse-intention">{libelleIntention(a.intention, t)}</span>
-              <span className="text-ink-500">{t('Sentiment', 'Sentiment')}</span>
-              <span>
-                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${sentimentBadge(a.sentiment)}`} data-testid="fiche-analyse-sentiment">
-                  {sentimentLabel(a.sentiment, t)}
-                </span>
-              </span>
-              <span className="text-ink-500">{t('Satisfaction', 'Satisfaction')}</span>
-              <span className="text-ink-900" data-testid="fiche-analyse-satisfaction">{note(a.satisfaction)}</span>
-              <span className="text-ink-500">{t('Urgence', 'Urgency')}</span>
-              <span className="text-ink-900" data-testid="fiche-analyse-urgence">{note(a.urgence)}</span>
-              <span className="text-ink-500">{t('Résolue', 'Resolved')}</span>
-              <span className="text-ink-900" data-testid="fiche-analyse-resolue">{a.resolue ? t('oui', 'yes') : t('non', 'no')}</span>
-              <span className="text-ink-500">{t('Sujet', 'Topic')}</span>
-              <span className="min-w-0 break-words text-ink-900" data-testid="fiche-analyse-sujet">{a.sujet}</span>
-              <span className="text-ink-500">{t('Traitée par', 'Handled by')}</span>
-              <span className="text-ink-900">{traiteParLabel(a.traiteePar, t)}</span>
-              <span className="text-ink-500">{t('Action suggérée', 'Suggested action')}</span>
-              <span className="text-ink-900">{actionLabel(a.action, t)}</span>
-            </div>
-            {a.perimee && (
-              <p className="mt-1 text-xs text-alerte-700" data-testid="fiche-analyse-perimee">
-                {t('Nouveaux messages depuis l’analyse : elle ne couvre pas la fin de l’échange.',
-                   'New messages since the analysis: it does not cover the end of the exchange.')}
-              </p>
-            )}
-          </div>
-        );
-      })()}
+      {blocDerniereAnalyse}
 
-      {etat !== 'aucune-conversation' && (
-        <div className="mt-4 rounded-controle border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-contact-resume">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <span className="text-xs font-medium text-ink-500">
-              {t('Résumé de la conversation', 'Conversation summary')}
-            </span>
-            {/* La DATE de l'analyse, et le lien vers le fil. Sans la date, un résumé de mars et un résumé
-                d'hier se lisent pareil ; sans le lien, il faut retrouver la conversation à la main. */}
-            <span className="flex items-center gap-2 text-xs text-ink-500">
-              {resume?.analyseLe && <span>{t('analysé le', 'analyzed on')} {formatDate(resume.analyseLe, locale)}</span>}
-              {resume?.conversationId && (
-                <Link href={`/inbox?c=${resume.conversationId}`} className="text-brand-600 underline decoration-dotted hover:text-brand-700">
-                  {t('voir le fil', 'open thread')}
-                </Link>
-              )}
-            </span>
-          </div>
-          {etat === 'resume' ? (
-            <p className="mt-1 whitespace-pre-line text-sm text-ink-900" data-testid="fiche-contact-resume-texte">{resume?.texte}</p>
-          ) : (
-            <p className="mt-1 text-sm italic text-ink-500" data-testid="fiche-contact-resume-absent">{phraseAbsent}</p>
-          )}
-          {/* PÉRIMÉ : l'analyse existe, mais un message est arrivé depuis. Le dire vaut mieux que de
-              présenter un résumé partiel comme s'il couvrait tout le fil. Même mot que dans l'onglet
-              Historique, pour que les deux écrans ne décrivent pas le même état de deux façons. */}
-          {resume?.perime && (
-            <p className="mt-1 text-xs text-alerte-700" data-testid="fiche-contact-resume-perime">
-              {t('Un message est arrivé depuis : ce résumé ne couvre pas la fin de la conversation.',
-                 'A message has arrived since: this summary does not cover the end of the conversation.')}
-            </p>
-          )}
-        </div>
-      )}
+      {blocResume}
 
-      {error && <p className="mt-4 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {messageErreur}
 
-      <div className="mt-5">
-        <h4 className="mb-2 text-xs font-medium text-ink-500">Tags</h4>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(contact.tags ?? []).map((tag) => (
-            <span key={tag} className="inline-flex items-center gap-1 rounded-controle bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-              {tag}
-              <button onClick={() => void apply({ removeTags: [tag] })} disabled={busy} className="text-brand-400 hover:text-danger" aria-label={`${t('Retirer', 'Remove')} ${tag}`}><Icone nom="fermer" taille="petite" /></button>
-            </span>
-          ))}
-          {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-500">{t('Aucune étiquette.', 'No tags.')}</span>}
-        </div>
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            list="tag-suggestions"
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void addTag(); }}
-            placeholder={t('Ajouter une étiquette…', 'Add a tag…')}
-            className="flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          />
-          <datalist id="tag-suggestions">{tagSuggestions.map((tag) => <option key={tag} value={tag} />)}</datalist>
-          <Bouton onClick={addTag} disabled={busy || newTag.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
-        </div>
-      </div>
+      {blocTags}
 
-      <div className="mt-5">
-        <h4 className="mb-2 text-xs font-medium text-ink-500">{t('Champs', 'Fields')}</h4>
-        {fieldEntries.length === 0 ? (
-          <p className="text-sm text-ink-500">{t('Aucun champ perso.', 'No custom fields.')}</p>
-        ) : (
-          <div className="overflow-hidden rounded-controle border border-ink-200">
-            {fieldEntries.map(([k, v], i) => (
-              <div key={k} className={`grid grid-cols-[130px_1fr] items-center gap-3 px-3 py-1.5 text-sm ${i % 2 ? 'bg-ink-50' : 'bg-white'}`}>
-                <span className="truncate text-ink-500">{defByKey.get(k)?.label ?? k}</span>
-                <EditableField
-                  value={String(v)}
-                  type={defByKey.get(k)?.type ?? 'text'}
-                  busy={busy}
-                  editable={defByKey.has(k)}
-                  onSave={(nv) => (nv.trim() === '' ? apply({ removeFields: [k] }) : apply({ fields: { [k]: nv.trim() } }))}
-                  onDelete={() => apply({ removeFields: [k] })}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-2 space-y-2">
-          {addable.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-controle border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
-                <option value="">{t('Ajouter un champ existant…', 'Add an existing field…')}</option>
-                {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
-              </select>
-              {selectedDef && (
-                <>
-                  <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
-                  <Bouton onClick={addField} disabled={busy || newVal.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
-                </>
-              )}
-            </div>
-          )}
-          {!creatingField ? (
-            <button onClick={() => setCreatingField(true)} className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"><Icone nom="ajouter" />{t('Créer un nouveau champ', 'Create a new field')}</button>
-          ) : (
-            <div className="space-y-2 rounded-controle border border-brand-200 bg-brand-50/40 p-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <input value={cLabel} onChange={(e) => setCLabel(e.target.value)} placeholder={t('Nom du champ (ex. Métier)', 'Field name (e.g. Job)')} className="flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
-                <select value={cType} onChange={(e) => setCType(e.target.value as UserFieldKind)} className="rounded-controle border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
-                  <option value="text">{t('texte', 'text')}</option>
-                  <option value="number">{t('nombre', 'number')}</option>
-                  <option value="date">{t('date', 'date')}</option>
-                  <option value="datetime">{t('date et heure', 'date & time')}</option>
-                  <option value="boolean">{t('oui/non', 'yes/no')}</option>
-                  <option value="url">{t('lien', 'link')}</option>
-                </select>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <FieldValueInput type={cType} value={cVal} onChange={setCVal} />
-                <Bouton onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''}>{t('Créer et ajouter', 'Create and add')}</Bouton>
-                <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-500 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      {blocChamps}
       </>
       )}
     </Modale>

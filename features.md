@@ -322,6 +322,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   du contact. Le risque de désengagement lit désormais ces constats sur la fiche (et, pour une fiche pas encore
   remplie, dans la conversation comme avant). Les filtres, les connecteurs, les automations et les sorties
   vers les outils tiers les liront aux lots suivants.
+- ✅ **La fiche contact en onglets** (2026-09-30) : **Fiche**, **Tags**, **Champs**, **Analyse**, **Historique**.
+  L'onglet Fiche garde TOUT, comme avant ; les trois suivants montrent chacun une partie, pour y aller
+  directement : les étiquettes, les champs personnalisés, et tout ce que la plateforme a déduit du contact
+  (risque de désengagement, dernière analyse, résumé de la conversation). Historique ne change pas.
 - ✅ **Onglet « Historique » sur la fiche contact** (2026-07-20) : deux vues de tout ce que ce contact a vécu.
   **Campagnes reçues** : quelle campagne, quel template ou scénario, quand, et où en est le message (envoyé,
   délivré, lu, non délivré, écarté, envoi en échec avec son motif). Un message parti dont Meta n'a jamais

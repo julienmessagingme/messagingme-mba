@@ -1,7 +1,7 @@
 ---
 ecran: contacts
 source_section: Contacts & CRM
-source_empreinte: 70bb15
+source_empreinte: 70635d
 ---
 # Ajouter ou importer mes contacts
 
@@ -21,6 +21,10 @@ de quoi savoir de quoi vous avez parlé avant de la rappeler, sans rouvrir l'éc
 l'analyse, il ne se modifie pas à la main, et il disparaît en même temps que la conversation quand celle-ci
 atteint votre durée de conservation. L'onglet « Historique » de la fiche montre, lui, le résumé de chacune
 de ses conversations.
+
+La fiche s'organise en onglets : **Fiche** montre tout, **Tags**, **Champs** et **Analyse** en montrent chacun
+une partie (les étiquettes, les champs personnalisés, ce que la plateforme a déduit de la personne), et
+**Historique** reprend ses campagnes et ses conversations.
 
 Le bloc **Dernière analyse** de la fiche dit ce que la dernière conversation a appris de la personne :
 intention, sentiment, satisfaction et urgence sur 10, demande résolue ou non, sujet, qui l'a traitée et

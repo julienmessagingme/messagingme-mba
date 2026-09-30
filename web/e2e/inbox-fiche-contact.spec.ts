@@ -208,3 +208,64 @@ test.describe('Fiche contact : la derniere analyse (Tout sur la fiche, lot 1)', 
     await expect(page.getByTestId('fiche-analyse-perimee')).toBeVisible();
   });
 });
+
+test.describe('Fiche contact : les onglets Fiche, Tags, Champs, Analyse, Historique', () => {
+  const ANALYSE = {
+    intention: 'reclamation', sentiment: 'negatif', satisfaction: 2, urgence: 8, resolue: false,
+    sujet: 'colis abime', traiteePar: 'humain', action: 'rappeler', analyseLe: '2026-09-30T09:10:00.000Z', perimee: false,
+  };
+  const ouvrir = async (page: import('@playwright/test').Page): Promise<void> => {
+    await mock(page, [CONTACT], { ...SANS_CONVERSATION, derniereAnalyse: ANALYSE });
+    await page.goto('/contacts');
+    await page.getByText('Alice Martin').first().click();
+  };
+
+  test('les cinq onglets, dans l ordre', async ({ page }) => {
+    await ouvrir(page);
+    await expect(page.locator('[data-testid^="fiche-onglet-"]')).toHaveText([/Fiche|Details/, 'Tags', /Champs|Fields/, /Analyse|Analysis/, /Historique|History/]);
+  });
+
+  test('🔴 l onglet Fiche garde TOUT : champs de base, analyse, tags et champs perso', async ({ page }) => {
+    await ouvrir(page);
+    await expect(page.getByTestId('fiche-champs-base')).toBeVisible();
+    await expect(page.getByTestId('fiche-risque')).toBeVisible();
+    await expect(page.getByTestId('fiche-derniere-analyse')).toBeVisible();
+    await expect(page.getByTestId('fiche-bloc-tags')).toBeVisible();
+    await expect(page.getByTestId('fiche-bloc-champs')).toBeVisible();
+  });
+
+  test('l onglet Tags ne montre que les tags', async ({ page }) => {
+    await ouvrir(page);
+    await page.getByTestId('fiche-onglet-tags').click();
+    await expect(page.getByTestId('fiche-bloc-tags')).toContainText('client');
+    await expect(page.getByTestId('fiche-champs-base')).toHaveCount(0);
+    await expect(page.getByTestId('fiche-bloc-champs')).toHaveCount(0);
+  });
+
+  test('l onglet Champs ne montre que les champs perso', async ({ page }) => {
+    await ouvrir(page);
+    await page.getByTestId('fiche-onglet-champs').click();
+    await expect(page.getByTestId('fiche-bloc-champs')).toBeVisible();
+    await expect(page.getByTestId('fiche-champs-base')).toHaveCount(0);
+    await expect(page.getByTestId('fiche-bloc-tags')).toHaveCount(0);
+  });
+
+  test('🔴 l onglet Analyse réunit le risque, la dernière analyse et le résumé', async ({ page }) => {
+    await ouvrir(page);
+    await page.getByTestId('fiche-onglet-analyse').click();
+    await expect(page.getByTestId('fiche-analyse-risque')).toBeVisible();
+    await expect(page.getByTestId('fiche-derniere-analyse')).toBeVisible();
+    await expect(page.getByTestId('fiche-analyse-urgence')).toHaveText('8 / 10');
+    await expect(page.getByTestId('fiche-champs-base')).toHaveCount(0);
+    await expect(page.getByTestId('fiche-bloc-tags')).toHaveCount(0);
+  });
+
+  test('un contact jamais analyse -> l onglet Analyse le dit, sans bloc vide', async ({ page }) => {
+    await mock(page);
+    await page.goto('/contacts');
+    await page.getByText('Alice Martin').first().click();
+    await page.getByTestId('fiche-onglet-analyse').click();
+    await expect(page.getByTestId('fiche-analyse-vide')).toBeVisible();
+    await expect(page.getByTestId('fiche-derniere-analyse')).toHaveCount(0);
+  });
+});
