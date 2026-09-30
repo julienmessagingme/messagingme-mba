@@ -5,6 +5,45 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-01 : tout sur la fiche, lot 2b, filtrer et conditionner sur la dernière analyse
+
+**Serveur (`8b9e92fc`), déployé le 2026-10-01 vers 1 h 40 (heure de Paris), puis console (`76485b62`).** Les
+filtres de la liste des contacts et du ciblage d'une campagne acceptent les champs de la dernière analyse, et le
+bloc Condition d'un scénario les évalue avec la MÊME sémantique (`src/crm/filtre-fiche.ts`, un seul module pur
+pour le SQL et l'évaluation en mémoire). Route `GET /tenants/:t/champs-fiche`. Aucune migration : mesuré avant
+d'écrire, 22 fiches actives en production, 17 au plus par espace, aucun index justifié.
+
+🔴 **Le piège qui aurait élargi une audience : un refus avalé par un `catch`.** `parseFilters` normalisait les
+filtres de champ DANS le `try` qui décode leur JSON. Un filtre d'analyse invalide y lève `FiltreContactInvalide`,
+que le `catch` aurait transformé en « aucun filtre », donc en tout l'espace pour une campagne. La normalisation
+est sortie du `try`, et un test vérifié par mutation le tient. Même famille, deux autres gardes : un filtre qui
+n'a pas traversé la validation pose `false` (personne), jamais l'absence de clause ; un opérateur inconnu sur une
+clé d'analyse est refusé, jamais ramené à `eq` (« urgence au moins 7 » serait devenu « égale à 7 »).
+
+⚠️ **La parité SQL et évaluateur est tenue contre une VRAIE base** (`tests/integration/filtre-fiche.integration.test.ts`,
+job `integration`, vert) : pour chaque filtre, les fiches que retient la requête sont exactement celles que
+retient le bloc Condition, `null`, 0 et `false` compris.
+
+⚠️ **Relecture indépendante : aucun rouge, un jaune corrigé avant le commit** : le bloc Condition pouvait lire le
+SUJET de l'analyse par les opérateurs texte génériques, alors que la décision 12 le déclare non filtrable. La
+garde de `attributeOrField` (qui protégeait déjà les clés filtrables contre un champ perso homonyme) rend
+désormais `null` pour le sujet.
+
+⚠️ **Deux défauts évités en écrivant, que le compilateur ne voyait pas** : React n'est pas résoluble depuis la
+suite racine en CI (le job `unit` n'installe pas `web/`), d'où le hook sorti dans `web/lib/use-champs-filtrables.ts`
+pour que `web/lib/champs-fiche.ts` reste testable ; et une garde des formulaires Flow sur `nom` aurait bloqué la
+question la plus courante (vu au lot 2a, même raisonnement ici : le panneau n'exige rien sur les clés de base).
+
+**Vérifié en production par le vrai code, en lecture seule, sur l'espace d'essai** : la copie d'analyse de la
+fiche de Julien est dans l'état du bloc Condition et absente des champs perso ; « sentiment neutre » compte 1
+fiche, « négatif » 0, « jamais analysée » 16 sur 17 ; un seuil de 42 est refusé en 400 ; la condition tranche
+comme le filtre. Contrôle public complet après le `up`, fiches d'aide rechargées (`aide:charger`, 26).
+
+Le déploiement a emporté `92a67808` et `3eb27889`, le lot des pages web d'une session voisine (relu, CI verte,
+sans migration), prévenue ; son essai réel lui reste. **Reste l'essai réel du lot 2**, à faire par Julien : un
+message mécontent sur l'espace d'essai, puis « sentiment négatif, urgence au moins 7 » dans la liste et dans le
+ciblage d'une campagne.
+
 ## 2026-10-01 : les pages d'un site se lisent hors de la boucle, après le déploiement de `5e8bc5b5`
 
 **`5e8bc5b5` est en production depuis le 2026-09-30 à 21 h 22 UTC**, par un `checkout` détaché de ce commit

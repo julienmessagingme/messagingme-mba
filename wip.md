@@ -19,6 +19,28 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## TOUT SUR LA FICHE (LOTS 1, 2A ET 2B DÉPLOYÉS ; ESSAI RÉEL DU LOT 2 DÛ ; LOTS 3 ET 4 À FAIRE)
+
+Spec `docs/superpowers/specs/2026-09-30-fiche-unique-design.md`, plan
+`docs/superpowers/plans/2026-09-30-fiche-unique.md` (le plan veut chaque lot essayé avant le suivant). Le récit
+des trois lots est dans le journal technique, le présent dans `documentation.md` § Contacts.
+
+- ✅ **Lot 1** (la dernière analyse recopiée sur la fiche) : essai réel fait le 2026-09-30, la copie s'est posée
+  sur la fiche de Julien dans l'espace SANDBOX.
+- ✅ **Lot 2a** (liste unique, connecteurs sur l'origine `fiche`) et **lot 2b** (filtres de la liste et du
+  ciblage, bloc Condition), déployés et vérifiés par le vrai code en production.
+- 🔴 **L'ESSAI RÉEL DU LOT 2, PAR JULIEN** : un message mécontent sur l'espace d'essai ; après l'analyse,
+  « sentiment négatif, urgence au moins 7 » trouve la fiche dans la liste des contacts ET dans le ciblage d'une
+  campagne ; un bloc Condition sur la dernière analyse la fait passer par « Si réunie » ; l'appel `signaler` du
+  connecteur de Messaging me Bis envoie les valeurs lues sur la fiche (étape E de Brevo).
+- **Lot 3** (le déclencheur « un champ d'analyse devient », anti-rebond de 7 jours réglable à l'écran) et
+  **lot 4** (API contacts `lastAnalysis`, MCP, trois attributs de signaux, outil « Lire la fiche » de l'agent IA) :
+  pas commencés.
+- 🟡 **Jaunes du lot 2a encore ouverts** : les connecteurs et les signaux ne lisent pas encore la même liste
+  (divergence voulue jusqu'au lot 4) ; le format des dates envoyées (ISO complet) reste à confirmer avec un
+  premier intégrateur ; une note du journal sur le retour arrière du lot 2a (une API d'avant refuserait
+  `fiche:*` à l'enregistrement).
+
 ## PANNEAU DÉTAIL DE L'INBOX (DÉPLOYÉ LE 2026-09-29, ESSAI RÉEL DÛ)
 
 Spec `docs/superpowers/specs/2026-09-28-inbox-panneau-detail-design.md`. Le journal `conversation_evenements`
