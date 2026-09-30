@@ -105,6 +105,34 @@ describe.skipIf(!url)('résumé et dernière analyse de la fiche (Postgres)', ()
     expect(r?.derniereAnalyse).toMatchObject({ intention: 'reclamation', sentiment: 'negatif', perimee: false });
   });
 
+  it('🔴 deux fils : le résumé vient du fil que la COPIE désigne, pas du plus récent par last_message_at', async () => {
+    // Le fil A porte la copie (son analyse couvre les messages les plus récents du contact). Le fil B a un
+    // last_message_at plus récent et une analyse posée à la main (plus ancienne en messages) : la règle d'avant la
+    // copie prendrait B. Sans la clause « id = analyse_conversation_id », ce test tombe.
+    const c = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, bsuid) values ($1, '+33600100306', 'itest-bsuid-306') returning id`, [tenantId],
+    )).rows[0]!.id;
+    const a = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, contact_id, analysis_status, last_message_at)
+       values ($1, '33600100306', $2, 'queued', now() - interval '2 hours') returning id`, [tenantId, c],
+    )).rows[0]!.id;
+    await pool.query(`insert into conversation_messages (conversation_id, direction, type, body, created_at) values ($1, 'in', 'text', 'a', now() - interval '2 hours')`, [a]);
+    await analyser(a, { ...base, summary: 'Résumé du fil A.' });
+    const b = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, contact_id, analysis_status, last_message_at)
+       values ($1, 'itest-bsuid-306', $2, 'done', now()) returning id`, [tenantId, c],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into conversation_analysis (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by,
+         exchanges_count, action_suggestion, confidence, justification, llm_provider, llm_model, summary)
+       values ($1, $2, 'positif', 'achat', 'b', true, 'automatise', 1, 'aucune', 0.9, 'j', 'test', 'test', 'Résumé du fil B.')`,
+      [b, tenantId],
+    );
+    const r = await fiches.resumeContact(tenantId, c);
+    expect(r).toMatchObject({ texte: 'Résumé du fil A.', conversationId: a, conversations: 2 });
+    expect(r?.derniereAnalyse).toMatchObject({ intention: 'reclamation' });
+  });
+
   it('🔴 la fiche d’un autre espace n’est jamais rendue', async () => {
     const c = await contact('+33600100305');
     expect(await fiches.resumeContact(autreTenantId, c)).toBeNull();

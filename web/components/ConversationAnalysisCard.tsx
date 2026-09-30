@@ -738,8 +738,8 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
             <p className="mt-4 text-xs text-ink-500">
               {summary.retentionDays > 0
                 ? t(
-                  `Les conversations et leurs analyses sont conservées ${summary.retentionDays} jours. Au-delà, elles ne sont plus consultables ni exportables.`,
-                  `Conversations and their analyses are kept for ${summary.retentionDays} days. Beyond that, they can no longer be viewed or exported.`,
+                  `Les conversations et leurs analyses sont conservées ${summary.retentionDays} jours. Au-delà, elles ne sont plus consultables ni exportables ici ; les constats de la dernière analyse restent sur la fiche de chaque contact.`,
+                  `Conversations and their analyses are kept for ${summary.retentionDays} days. Beyond that, they can no longer be viewed or exported here; the findings of the latest analysis stay on each contact's record.`,
                 )
                 : t(
                   'Les conversations et leurs analyses sont conservées sans limite de durée : la purge est désactivée sur cet espace.',

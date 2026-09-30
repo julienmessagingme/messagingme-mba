@@ -233,7 +233,10 @@ export class PgContactHistoryStore {
               (select analysis_status from derniere) as analysis_status,
               (select analyse_le from derniere) as analyse_resume_le,
               (select summary from derniere) as summary,
-              (select max(m.created_at) from conv join conversation_messages m on m.conversation_id = conv.id) as dernier_message_le,
+              (select max(d.le) from conv cross join lateral (
+                 select m.created_at as le from conversation_messages m
+                  where m.conversation_id = conv.id order by m.created_at desc limit 1
+               ) d) as dernier_message_le,
               ${COLONNES_ANALYSE_FICHE.map((k) => `(select ${k} from fiche) as ${k}`).join(',\n              ')}`,
       [tenantId, contactId],
     );
