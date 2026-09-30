@@ -45,6 +45,7 @@ import { registerMedia } from './http/media';
 import { registerTags } from './http/tags';
 import { registerFields } from './http/fields';
 import { registerSupport } from './http/support';
+import { registerContactVitrine } from './http/contact-vitrine';
 import { registerAide, type AideRouteDeps } from './http/aide';
 import { registerContacts } from './http/contacts';
 import { registerWorkflowReports } from './http/workflow-reports';
@@ -114,6 +115,7 @@ import type { MediaRouteDeps } from './http/media';
 import type { TagsRouteDeps } from './http/tags';
 import type { FieldsRouteDeps } from './http/fields';
 import type { SupportRouteDeps } from './http/support';
+import type { ContactVitrineDeps } from './http/contact-vitrine';
 import type { ContactsRouteDeps } from './http/contacts';
 import type { AccountRouteDeps } from './http/account';
 import type { MeRouteDeps } from './http/me';
@@ -261,6 +263,8 @@ export interface ServerDeps {
   fields?: FieldsRouteDeps;
   /** Formulaire de support (envoi email via Resend), tout compte authentifié. */
   support?: SupportRouteDeps;
+  /** Formulaire de contact de la vitrine (engageme.messagingme.fr) : public, même envoi que le support. */
+  contactVitrine?: ContactVitrineDeps;
   /** Le bot d'aide de la console : il explique et il emmène, il n'écrit jamais rien. */
   aide?: AideRouteDeps;
   /** Édition d'un contact (fields/tags depuis la fiche), réservé aux admins. */
@@ -497,6 +501,8 @@ export function modulesDeRoutes(
       registerRcsCallback(app, d, new RateLimiter(config.RCS_CALLBACK_PAR_MINUTE, 60_000),
         new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000))),
     entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth, debit)),
+    // Le formulaire de contact de la vitrine : public par nature, son plafond et son pot de miel sont dans le module.
+    entree('contactVitrine', 'anonyme', deps.contactVitrine, (app, d) => registerContactVitrine(app, d)),
     entree('import', 'tenant', deps.import, (app, d, g) => registerImport(app, d, g.admin, g.limiteCouteuse)),
     entree('campaigns', 'tenant', deps.campaigns, (app, d, g) => registerCampaigns(app, d, g.admin, g.limiteCouteuse)),
     // Bibliothèque RCS : montée avec `auth` et non `admin`, car la liste doit être lisible par un agent (bloc

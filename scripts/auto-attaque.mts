@@ -394,6 +394,8 @@ const OUVERTES: ReadonlyArray<{ motif: RegExp; raison: string }> = [
   // autorise est un jeton de CHOIX signé, qui porte la liste des espaces permis et dont la route vérifie que
   // l'espace demandé s'y trouve. Sa propre sonde (10) attaque cette vérification.
   { motif: /^\/auth\/choose-workspace$/, raison: 'entrée : autorisé par un jeton de choix signé, pas par une session' },
+  // Le formulaire de contact de la vitrine : un visiteur n'a par définition aucun compte.
+  { motif: /^\/vitrine\/contact$/, raison: 'formulaire de contact public de la vitrine' },
 ];
 
 const estOuverte = (chemin: string): string | null => OUVERTES.find((o) => o.motif.test(chemin))?.raison ?? null;

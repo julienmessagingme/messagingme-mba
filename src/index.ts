@@ -2059,6 +2059,19 @@ async function main(): Promise<void> {
         });
       },
     },
+    // Même envoi et même destinataire que le support : le texte du courriel se construit dans la route (testée).
+    contactVitrine: {
+      enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
+      envoyer: async ({ sujet, texte, repondreA }) => {
+        await new ResendClient(config.RESEND_API_KEY).send({
+          from: config.SUPPORT_FROM,
+          to: config.SUPPORT_TO,
+          subject: sujet,
+          text: texte,
+          replyTo: repondreA,
+        });
+      },
+    },
     apiKeys: {
       audit: auditSink,
       cles: apiKeyStore,
