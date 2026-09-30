@@ -141,9 +141,11 @@ export function resoudreVariable(origine: OrigineVariable, ctx: ContexteVariable
         case 'analyse_resolue': return ctx.analyse?.resolue ?? null;
         case 'risque_depart': return ctx.analyse?.risque ?? null;
         default: {
-          // Exhaustivité : une clé système ajoutée sans son cas ici ne compile pas.
-          const jamais: never = cle;
-          return jamais;
+          // Exhaustivité : une clé système ajoutée sans son cas ici ne compile pas. À l'exécution, `null` et
+          // non la clé : `lireVariables` ne relit que le type de l'origine, donc une clé inconnue lue en base
+          // (retour arrière depuis une version qui l'aurait ajoutée) partirait sinon comme valeur.
+          const _jamais: never = cle;
+          return null;
         }
       }
     }

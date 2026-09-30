@@ -117,9 +117,9 @@ export class PgSignauxStore implements LecturesSignal {
 
   /**
    * Ce que la dernière analyse dit d'un contact, et son risque de départ : les valeurs d'une variable de connecteur
-   * (`CLES_ANALYSE`). Une analyse par conversation, une conversation par canal : la plus récemment analysée gagne.
-   * `null` = ni analyse ni fiche. Les mêmes champs que `analyse()` et que ce qui part vers Batch, sans recopie de
-   * sens : l'intention et le sentiment sont les codes de l'analyse, tels quels.
+   * (`CLES_ANALYSE`). Une analyse par conversation, et un seul fil par contact (`conversations_tenant_wa_idx`, 0058) :
+   * le tri n'est qu'une ceinture. `null` = ni analyse ni fiche. Les mêmes champs que `analyse()` et que ce qui part
+   * vers Batch, sans recopie de sens : l'intention et le sentiment sont les codes de l'analyse, tels quels.
    */
   async analyseDuContact(tenantId: string, waId: string): Promise<AnalyseDuContact | null> {
     const [a, f] = await Promise.all([

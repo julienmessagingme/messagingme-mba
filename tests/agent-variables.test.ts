@@ -136,6 +136,13 @@ describe('les valeurs de la dernière analyse', () => {
     }
   });
 
+  it('🔴 une clé système INCONNUE lue en base rend null, jamais la clé elle-même comme valeur', () => {
+    // `lireVariables` ne relit que le type de l'origine : après un retour arrière, une clé ajoutée par une version
+    // future arrive jusqu'ici, et elle satisferait `requis` si elle partait comme chaîne.
+    const inconnue = { type: 'systeme', cle: 'cle_future' } as unknown as Parameters<typeof resoudreVariable>[0];
+    expect(resoudreVariable(inconnue, ctx({ derniereSaisie: 'bonjour' }))).toBeNull();
+  });
+
   it('chaque valeur système a un libellé qui dit ce qui part', () => {
     expect(libelleOrigine({ type: 'systeme', cle: 'analyse_sentiment' })).toContain('sentiment');
     expect(libelleOrigine({ type: 'systeme', cle: 'risque_depart' })).toContain('risque');
