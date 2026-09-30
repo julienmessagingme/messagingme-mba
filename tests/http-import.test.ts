@@ -455,4 +455,20 @@ describe('import : plafond de corps dédié et refus lisible', () => {
     expect(message).not.toContain('body'); // plus le « Request body is too large » de Fastify
     await app.close();
   });
+
+  it('🔴 en-tête de plus de 16 384 colonnes -> 400 en français, sur l’aperçu comme sur l’import, rien d’écrit', async () => {
+    // Une ligne unique de 8 Mo occupait l'API plusieurs secondes, pour tous les espaces (mesuré le 2026-09-30).
+    const contacts = new FakeContacts();
+    const journal: Trace[] = [];
+    const app = inject(contacts, new FakeFields(), undefined, journal);
+    const csv = `${Array(16_385).fill('Tel').join(';')}\n+33611111111`;
+    for (const url of ['/tenants/t1/contacts/import/preview', '/tenants/t1/contacts/import']) {
+      const res = await app.inject({ method: 'POST', url, ...auth(), payload: { csv, optIn: true } });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.json<{ error: string }>().error, url).toContain('16385 colonnes');
+    }
+    expect(contacts.upserts).toHaveLength(0);
+    expect(journal).toEqual([]);
+    await app.close();
+  });
 });

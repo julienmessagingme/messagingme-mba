@@ -324,6 +324,20 @@ describe('routes MBA : FAQ', () => {
     await server.close();
   });
 
+  it('🔴 un CSV à l’en-tête de plus de 16 384 colonnes -> 400 lisible, par le corps comme par une URL, rien chez Meta', async () => {
+    const csv = `${Array(16_385).fill('question').join(';')}\nHoraires ?`;
+    const { server, appels } = app({}, { fetchUrl: async () => ({ status: 200, contentType: 'text/csv', body: csv }) });
+    for (const route of ['/faq/preview', '/faq/import']) {
+      for (const payload of [{ csv }, { url: 'https://www.exemple.fr/faq.csv' }]) {
+        const res = await server.inject({ method: 'POST', url: url(route), ...h(adminTok), payload });
+        expect(res.statusCode, `${route} ${Object.keys(payload)[0]}`).toBe(400);
+        expect(res.json<{ error: string }>().error).toContain('16385 colonnes');
+      }
+    }
+    expect(appels).toEqual([]);
+    await server.close();
+  });
+
   it('🔴 import depuis une URL : hôte interne REFUSÉ (SSRF)', async () => {
     const { server } = app({}, { fetchUrl: async () => ({ status: 200, contentType: 'text/html', body: '<dl><dt>Q</dt><dd>R</dd></dl>' }) });
     for (const u of ['http://192.168.1.10/faq', 'http://127.0.0.1:8080/faq', 'http://169.254.169.254/latest/meta-data', 'file:///etc/passwd']) {

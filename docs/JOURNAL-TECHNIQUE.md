@@ -5,6 +5,41 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : l'en-tête d'un CSV importé est borné à 16 384 colonnes, et une rangée courte n'est plus complétée
+
+Relevé par la relecture du correctif du séparateur : une ligne unique de 8 Mo (`a;a;a...`, 4 millions de champs)
+tenait la boucle d'événements de `mba-api` plusieurs secondes, papaparse traitant chaque en-tête, doublons renommés
+compris. Un administrateur de n'importe quel espace pouvait le déclencher par `/contacts/import` (8 Mo), son aperçu
+(2 Mo) ou l'import de FAQ de l'agent de Meta (1 Mo par le corps, 2 Mo par une URL), et ralentir la console et la
+réception des webhooks de tous les espaces.
+
+`parseCsv` (`src/crm/csv.ts`) compte désormais l'en-tête avant la lecture et refuse au-delà de 16 384 colonnes, le
+maximum d'Excel : `CsvTropDeColonnes` porte `statusCode = 400`, et le gestionnaire d'erreurs de `src/server.ts` rend
+le message en français sur chaque route qui lit un CSV, sans rien écrire ni rien appeler chez Meta.
+
+La relecture du lot a trouvé deux rouges, corrigés avant le premier envoi. **Le contournement** : le contrôle comptait
+la première rangée NON VIDE, or papaparse renomme les doublons de la première rangée physique (`''`, `_1`, `_2`...)
+AVANT de sauter les vides, si bien qu'une rangée de séparateurs seuls devient l'en-tête. Le contrôle prend donc la
+plus large des rangées jusqu'à la première non vide. **L'effet de levier antérieur** : `parseCsv` complétait chaque
+rangée jusqu'à la largeur de l'en-tête, soit en-têtes x rangées ; une cellule absente reste désormais absente, ses
+trois lecteurs (import de contacts, FAQ, écran d'aperçu) la lisaient déjà comme vide. Le séparateur se fixe une seule fois, avec les réglages de la lecture :
+faute de séparateur trouvé, la devinette de papaparse coûte 1,7 à 2,9 s sur 8 Mo et n'est plus refaite.
+
+Mesuré sur le poste de dev (Node 24), un processus neuf par mesure, avant puis après. D'autres sessions chargeaient
+le poste et le même code variait du simple au triple : seuls les écarts nets comptent.
+- Ligne unique de 8 Mo : 9 à 13 s, puis refusée en 0,9 s.
+- Rangée de séparateurs puis un en-tête : 4,0 s sur 1 Mo (76 s sur 8 Mo selon la relecture), puis refusée en 0,1 s
+  sur 1 Mo et en 0,9 s sur 8 Mo.
+- En-tête de 16 384 colonnes puis 1 000 rangées d'un caractère, une centaine de Ko : 8,1 s et 1,1 Go de tas, puis
+  33 ms et 22 Mo (la relecture : 9,9 s et 893 Mo pour 34 Ko, avec des noms d'une lettre).
+- Fichier réaliste de 8 Mo : 0,4 s avant comme après.
+
+Reste ouvert dans `todo.md` : 8 Mo de rangées d'un caractère coûtent toujours 4 à 6 s (le coût suit maintenant la
+taille du corps, sans effet de levier). Et une première ligne faite de séparateurs seuls reste lue comme en-tête,
+défaut fonctionnel antérieur vu en chemin. Tests rouges sur le code d'avant (aucun refus, aperçu en 200, FAQ en 422,
+rangées complétées), verts après ; mutations attrapées : borne décalée d'un cran, première ligne physique seule,
+maximum retiré, complément par `''` remis, filtre des colonnes retiré, `statusCode` retiré (les routes tombent en 500).
+
 ## 2026-09-30 : un connecteur pousse depuis un scénario, et reçoit les valeurs de la dernière analyse
 
 Deux lots nés de l'essai Brevo (renvoyer nos signaux dans leur API d'événements, `POST /v3/events`, 204 sans corps).

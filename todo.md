@@ -9,12 +9,21 @@
   contact (mesuré par la relecture). Un export Excel écrit toutes ses cellules et n'est pas concerné. Remède
   esquissé et mesuré par la relecture : une seconde passe propre à `parseCsv`, qui a un en-tête (même ordre de
   séparateurs, en-tête d'au moins deux colonnes, aucune rangée plus longue que lui, la majorité aussi longue).
-- 🟡 **Une ligne unique de 8 Mo occupe l'API environ 6 secondes** (`parseCsv`, antérieur à la réparation, mesuré
-  par la relecture : 6,8 s avant, 6,2 s après) : papaparse traite 4 millions d'en-têtes, doublons renommés
-  compris. Qui : un administrateur d'un espace client, par `/contacts/import` (8 Mo, 10 appels par minute et par
-  espace). Effet : la boucle d'événements de `mba-api` occupée, donc la console et la réception des webhooks de
-  Meta ralenties pour TOUS les espaces tant qu'il insiste. Parade : borner le nombre de colonnes de la première
-  ligne avant de parser.
+- 🟡 **Un CSV de 8 Mo en rangées d'un caractère occupe encore l'API 4 à 6 secondes** (`parseCsv`, mesuré le
+  2026-09-30 après la borne de 16 384 colonnes et la fin du complément des rangées, qui ont fermé les deux effets de
+  levier) : `nom;tel` puis 4 millions de rangées `x` coûte 4,4 s et 0,8 Go de tas sur le poste de dev ; sous un
+  en-tête de 16 384 colonnes, 6 s et 1,6 Go (papaparse fait un objet ET une erreur « Too few fields » par rangée).
+  Un fichier réaliste de 8 Mo en coûte 0,4 s. Le coût suit désormais la taille du corps, mais aucune limite mémoire
+  n'est posée sur `mba-api` (`docker-compose.yml`). Qui : un administrateur d'un espace client, par
+  `/contacts/import` (8 Mo, 10 appels par minute et par espace). Effet : la boucle d'événements occupée, donc la
+  console et la réception des webhooks de Meta ralenties pour TOUS les espaces tant qu'il insiste. Pistes : un
+  plafond de rangées compté avant la lecture (un fichier réel de 8 Mo en porte au plus 650 000 environ, un numéro
+  seul par ligne), ou la lecture hors de la boucle d'événements.
+- 🟡 **Une première ligne faite de séparateurs seuls devient l'en-tête** (`parseCsv`, vu le 2026-09-30, antérieur) :
+  papaparse renomme ses cellules vides (`_1`, `_2`...) avant de sauter les lignes vides. Sur `;;;` puis
+  `nom;tel;ville;cp`, les en-têtes lus sont `_1`, `_2`, `_3`, le vrai en-tête devient une rangée de données et la
+  colonne `nom` disparaît : l'import ne trouve plus le téléphone et écarte tout. Un export de tableur dont la
+  première ligne est vide le produit. Remède esquissé : lire à partir de la première rangée non vide.
 
 ## 🟡 L'agent de Meta en mode liste : deux courses que la relecture a laissées porter (2026-09-30)
 
