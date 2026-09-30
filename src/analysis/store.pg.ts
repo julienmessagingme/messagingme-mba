@@ -1,9 +1,12 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
+import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
+import { waIdOf } from '../crm/identity';
 import type { AnalysisContext } from './analyzer';
 import type { AnalysisMessage } from './engine';
 import type { ConversationAnalysis } from './schema';
 import type { StoredConversationAnalysis } from './events';
+import { analyseDeLaLigne, COLONNES_ANALYSE_FICHE, type CopieFiche, type LigneAnalyseFiche } from './fiche';
 
 /** Une conversation réclamée pour analyse. */
 export interface ClaimedConversation {
@@ -87,10 +90,12 @@ export class PgConversationAnalysisStore {
   /**
    * Persiste l'analyse (une ligne par conversation) et avance `analyzed_at` jusqu'à `windowEnd` (texte, précision
    * µs), jamais jusqu'à now() ; repasse en `pending` s'il reste des messages arrivés pendant l'analyse, sinon `done`.
-   * En une transaction.
+   * Puis recopie l'analyse sur la fiche du contact (`copierSurLaFiche`) et rend ce qui a été recopié. En une
+   * transaction : une copie qui échoue annule l'analyse, d'où la parité des CHECK tenue par
+   * `tests/fiche-analyse-migration.test.ts`.
    */
-  async save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<void> {
-    await enTransaction(this.pool, async (client) => {
+  async save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<CopieFiche | null> {
+    return enTransaction(this.pool, async (client) => {
       // `on conflict ... set tenant_id` n'est pas une réaffectation entre espaces : la clé est `conversation_id`, et
       // une conversation appartient à un seul espace, celui que reçoit save().
       await client.query(
@@ -125,6 +130,7 @@ export class PgConversationAnalysisStore {
          where id = $1`,
         [conversationId, windowEnd],
       );
+      return windowEnd === null ? null : copierSurLaFiche(client, conversationId, tenantId, a, windowEnd);
     });
   }
 
@@ -234,4 +240,85 @@ export class PgConversationAnalysisStore {
       [conversationId],
     );
   }
+}
+
+/**
+ * Recopie une analyse sur la fiche du contact de sa conversation (Tout sur la fiche, lot 1, migration 0196), dans
+ * la transaction de `save`. Rend ce qui a été recopié, ou `null`.
+ *
+ * LE CONTACT : celui que la conversation désigne (`contact_id`) s'il est actif, sinon la règle de routage des
+ * messages entrants (`MATCH_BY_WAID_SQL`). `contact_id` est posé sans regarder `deleted_at` et reste nul pour un
+ * fil ouvert avant sa fiche : sans le repli, ces contacts ne recevraient jamais leur analyse. Une fiche supprimée ou
+ * purgée ne reçoit rien.
+ *
+ * 🔴 LA RÈGLE « DERNIÈRE », UNE SEULE POUR TOUT LE PRODUIT : la copie ne se fait que si la fenêtre de cette analyse
+ * n'est pas plus ancienne que celle déjà sur la fiche. Une vieille conversation analysée après coup (un fil ouvert
+ * sur le BSUID) n'écrase pas une analyse plus récente. `<=` et non `<` : un rejeu du même job réécrit la même copie
+ * au lieu d'être refusé, et son `avant` vaut alors son `apres`, ce qui ne fait naître aucun changement.
+ *
+ * L'ancienne copie est lue sous verrou dans la même instruction (`for update`), sur le modèle du risque
+ * (`PgRisqueStore.ecrire`) : deux analyses de deux fils du même contact se sérialisent sur la fiche. `updated_at`
+ * ne bouge pas : une analyse n'est pas une modification de la fiche.
+ */
+async function copierSurLaFiche(
+  client: PoolClient, conversationId: string, tenantId: string, a: ConversationAnalysis, windowEnd: string,
+): Promise<CopieFiche | null> {
+  const conv = await client.query<{ wa_id: string; contact_id: string | null }>(
+    `select wa_id, contact_id from conversations where id = $1 and tenant_id = $2`,
+    [conversationId, tenantId],
+  );
+  const fil = conv.rows[0];
+  if (!fil) return null;
+  let contactId: string | null = null;
+  if (fil.contact_id !== null) {
+    const designe = await client.query<{ id: string }>(
+      `select id from contacts where tenant_id = $1 and id = $2 and deleted_at is null and anonymized_at is null`,
+      [tenantId, fil.contact_id],
+    );
+    contactId = designe.rows[0]?.id ?? null;
+  }
+  if (contactId === null) {
+    const trouve = await client.query<{ id: string }>(
+      `select id from contacts where tenant_id = $1 and deleted_at is null and anonymized_at is null
+        ${MATCH_BY_WAID_SQL}`,
+      [tenantId, fil.wa_id],
+    );
+    contactId = trouve.rows[0]?.id ?? null;
+  }
+  if (contactId === null) return null;
+
+  const avantCols = COLONNES_ANALYSE_FICHE.map((k) => `a.${k}`).join(', ');
+  const res = await client.query<LigneAnalyseFiche & {
+    id: string; phone_e164: string | null; bsuid: string | null; apres_le: Date; apres_fenetre_fin: Date;
+  }>(
+    `with avant as (
+       select c.id, ${COLONNES_ANALYSE_FICHE.map((k) => `c.${k}`).join(', ')}
+         from contacts c
+        where c.tenant_id = $1 and c.id = $2 and c.deleted_at is null and c.anonymized_at is null
+        for update of c
+     )
+     update contacts c
+        set analyse_intention = $4, analyse_sentiment = $5, analyse_satisfaction = $6, analyse_urgence = $7,
+            analyse_resolue = $8, analyse_sujet = $9, analyse_traitee_par = $10, analyse_action = $11,
+            analyse_le = now(), analyse_fenetre_fin = $12::timestamptz, analyse_conversation_id = $3
+       from avant a
+      where c.tenant_id = $1 and c.id = a.id
+        and (c.analyse_fenetre_fin is null or c.analyse_fenetre_fin <= $12::timestamptz)
+     returning c.id, c.phone_e164, c.bsuid, c.analyse_le as apres_le, c.analyse_fenetre_fin as apres_fenetre_fin,
+               ${avantCols}`,
+    [tenantId, contactId, conversationId, a.intent, a.sentiment, a.satisfaction ?? null, a.urgence ?? null,
+      a.resolved, a.topic, a.handled_by, a.action_suggestion, windowEnd],
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    contactId: r.id,
+    waId: waIdOf(r.phone_e164, r.bsuid),
+    avant: analyseDeLaLigne(r),
+    apres: {
+      intention: a.intent, sentiment: a.sentiment, satisfaction: a.satisfaction ?? null, urgence: a.urgence ?? null,
+      resolue: a.resolved, sujet: a.topic, traiteePar: a.handled_by, action: a.action_suggestion,
+      analyseLe: r.apres_le, fenetreFin: r.apres_fenetre_fin, conversationId,
+    },
+  };
 }

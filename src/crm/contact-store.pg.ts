@@ -1434,6 +1434,12 @@ export class PgContactStore implements ContactStore {
                 opt_in_source = null,
                 -- QUI a bloque part (0071) : un membre de l equipe, que personne ne relit.
                 blocked_by = null,
+                -- LA DERNIERE ANALYSE part entiere (0196) : des jugements sur la personne (reclamation,
+                -- mecontentement, urgence), qui survivent sinon a l effacement de ses conversations, puisque
+                -- c est precisement leur objet. Entiere, a cause de sa contrainte de coherence.
+                analyse_intention = null, analyse_sentiment = null, analyse_satisfaction = null, analyse_urgence = null,
+                analyse_resolue = null, analyse_sujet = null, analyse_traitee_par = null, analyse_action = null,
+                analyse_le = null, analyse_fenetre_fin = null, analyse_conversation_id = null,
                 -- RESTENT, deliberement : le statut d opt-in et sa date (0138), la date du blocage, le STOP RCS
                 -- (0057). Un run de campagne en cours tient le VRAI numero en memoire, et claim relit cette fiche
                 -- par sa cle primaire juste avant d envoyer : desabonne ou bloque, il ecarte. Remettre ces deux-la

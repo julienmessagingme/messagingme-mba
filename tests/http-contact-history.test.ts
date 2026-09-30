@@ -228,6 +228,11 @@ const RESUME: ResumeContact = {
   conversations: 2,
   analysee: true,
   perime: false,
+  // La dernière analyse recopiée sur la fiche (0196) voyage avec le résumé, une note à 0 comprise.
+  derniereAnalyse: {
+    intention: 'suivi_commande', sentiment: 'neutre', satisfaction: 0, urgence: null, resolue: true,
+    sujet: 'suivi de livraison', traiteePar: 'humain', action: 'aucune', analyseLe: '2026-07-02T09:10:00.000Z', perimee: false,
+  },
 };
 
 describe('GET /tenants/:t/contacts/:id/resume', () => {
@@ -242,7 +247,7 @@ describe('GET /tenants/:t/contacts/:id/resume', () => {
   it('contact SANS conversation -> 200, pas un 404', async () => {
     // Un contact importe et jamais contacte existe : c'est l'ecran qui decide de ne pas afficher le bloc
     // (`conversations: 0`), pas le serveur de nier le contact.
-    const vide: ResumeContact = { texte: null, analyseLe: null, conversationId: null, conversations: 0, analysee: false, perime: false };
+    const vide: ResumeContact = { texte: null, analyseLe: null, conversationId: null, conversations: 0, analysee: false, perime: false, derniereAnalyse: null };
     const a = app(known, undefined, undefined, async () => vide);
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/resume', ...h(adminTok) });
     expect(res.statusCode).toBe(200);

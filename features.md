@@ -198,9 +198,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   ne lance pas l'automation « tag ajouté », sinon ce serait autant de messages facturés. Seul un tag posé sur
   **une** fiche la déclenche. Pour toucher une liste entière, c'est la campagne.
 - ✅ **Les conversations sont conservées 90 jours** (durée abaissée depuis un an le 2026-09-17). Passé ce
-  délai sans le moindre message, une conversation est effacée automatiquement, avec ses messages et son
-  analyse qualitative. La **fiche du contact reste** : c'est l'historique de discussion qui part, pas la
-  personne. 🔴 **La durée se règle PAR ESPACE**, et c'est le client qui tranche, pas nous : le RGPD ne fixe
+  délai sans le moindre message, une conversation est effacée automatiquement, avec ses messages, son
+  analyse qualitative et son résumé. La **fiche du contact reste** : c'est l'historique de discussion qui part,
+  pas la personne. Et depuis le 2026-09-30, **les constats de la dernière analyse restent sur la fiche**
+  (intention, sentiment, notes, résolue, sujet, traitée par, action suggérée) : ce sont des constats, pas des
+  propos, et c'est ce qui permet de cibler ou de relancer un contact après l'effacement de son fil. 🔴 **La durée se règle PAR ESPACE**, et c'est le client qui tranche, pas nous : le RGPD ne fixe
   aucun chiffre (« pas plus longtemps que nécessaire »), donc imposer le nôtre à tout le monde ferait de
   nous le décideur d'une chose qui ne nous appartient pas. Les 90 jours sont le défaut de qui n'a rien
   réglé, et **0 veut dire « ne jamais purger cet espace »**. Elle peut être raccourcie, jamais rallongée
@@ -304,6 +306,17 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   l'ouverture, donc il **disparaît de lui-même** quand la conversation atteint la durée de conservation de
   l'espace. Et il n'est **pas utilisable comme variable dans un message** : c'est une note interne, pas du
   contenu à renvoyer au client.
+- ✅ **La dernière analyse, en champs de la fiche** (2026-09-30, chantier « Tout sur la fiche », lot 1) : à chaque
+  analyse d'une conversation, ses constats sont recopiés sur la fiche du contact (intention, sentiment,
+  satisfaction et urgence sur 10, demande résolue, sujet, traitée par, action suggérée, date), et la fiche les
+  montre dans un bloc **Dernière analyse**, en lecture seule. 🔴 **Ils survivent à l'effacement de la
+  conversation**, contrairement au résumé ; seule la suppression de la fiche les efface. Une note absente se
+  lit « non mesurée », jamais 0. Quand de nouveaux messages sont arrivés depuis, le bloc le dit. La fiche garde
+  la DERNIÈRE analyse, celle qui couvre les messages les plus récents du contact : une vieille conversation
+  analysée après coup ne l'écrase pas. ⚠️ Pas de reprise du passé : une fiche se remplit à la prochaine analyse
+  du contact. Le risque de désengagement lit désormais ces constats sur la fiche (et, pour une fiche pas encore
+  remplie, dans la conversation comme avant). Les filtres, les connecteurs, les automations et les sorties
+  vers les outils tiers les liront aux lots suivants.
 - ✅ **Onglet « Historique » sur la fiche contact** (2026-07-20) : deux vues de tout ce que ce contact a vécu.
   **Campagnes reçues** : quelle campagne, quel template ou scénario, quand, et où en est le message (envoyé,
   délivré, lu, non délivré, écarté, envoi en échec avec son motif). Un message parti dont Meta n'a jamais

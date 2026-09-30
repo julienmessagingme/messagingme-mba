@@ -137,6 +137,48 @@ describe.skipIf(!url)('risque de désengagement (Postgres)', () => {
     expect(lot.every((c) => c.niveauStocke === null)).toBe(true);
   });
 
+  it('🔴 la dernière analyse se lit sur la FICHE (0196), prime sur la conversation, et survit à son effacement', async () => {
+    // Un espace à part : les cas voisins comptent exactement les fiches de A.
+    const C = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-risque-c') returning id`)).rows[0]!.id;
+    try {
+      const copie = async (id: string, jours: number, sentiment: string): Promise<void> => {
+        await pool.query(
+          `update contacts set analyse_intention = 'reclamation', analyse_sentiment = $2, analyse_satisfaction = 2,
+             analyse_resolue = false, analyse_sujet = 'livraison', analyse_traitee_par = 'humain', analyse_action = 'rappeler',
+             analyse_le = $3, analyse_fenetre_fin = $3
+           where id = $1`,
+          [id, sentiment, ilYa(jours)],
+        );
+      };
+      // Aucune conversation : elle a été effacée, seule la fiche porte encore l'analyse.
+      const seule = await contact(C, 'fiche_seule', '+33600000911');
+      await copie(seule, 3, 'negatif');
+      // La fiche dit positif, une conversation dit négatif : la fiche gagne, jamais un mélange des deux.
+      const prime = await contact(C, 'fiche_prime', '+33600000912');
+      await copie(prime, 3, 'positif');
+      const filP = (await pool.query<{ id: string }>(
+        `insert into conversations (tenant_id, wa_id, contact_id) values ($1, '33600000912', $2) returning id`, [C, prime],
+      )).rows[0]!.id;
+      await pool.query(
+        `insert into conversation_analysis (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by,
+           exchanges_count, action_suggestion, confidence, justification, llm_provider, llm_model, satisfaction, created_at)
+         values ($1, $2, 'negatif', 'sav', 'x', false, 'humain', 1, 'aucune', 0.9, 'j', 'test', 'test', 1, $3)`,
+        [filP, C, ilYa(2)],
+      );
+      // Une copie plus vieille que la fenêtre ne compte plus.
+      const vieille = await contact(C, 'fiche_vieille', '+33600000913');
+      await copie(vieille, 120, 'negatif');
+
+      const lot = await store.faits(C, [seule, prime, vieille], debutFenetre(maintenant), maintenant);
+      const par = Object.fromEntries(lot.map((c) => [c.contactId, c.faits.derniereAnalyse]));
+      expect(par[seule]).toMatchObject({ intent: 'reclamation', sentiment: 'negatif', resolved: false, satisfaction: 2 });
+      expect(par[prime]).toMatchObject({ intent: 'reclamation', sentiment: 'positif', satisfaction: 2 });
+      expect(par[vieille]).toBeNull();
+    } finally {
+      await pool.query('delete from tenants where id = $1', [C]);
+    }
+  });
+
   it('🔴 le balayage écrit, rend les changements de niveau, publie UN passage en élevé ; rejoué, il ne voit plus rien', async () => {
     const publies: string[] = [];
     const signaux: Signal[] = [];

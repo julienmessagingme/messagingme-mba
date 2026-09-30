@@ -2,11 +2,13 @@ import { analyzeConversation, InvalidLlmOutputError, type AnalysisContext } from
 import type { LlmClient } from './llm-client';
 import type { OnConversationAnalyzed } from './events';
 import type { ConversationAnalysis } from './schema';
+import type { CopieFiche } from './fiche';
 
 /** IO du job, injectée (sous-ensemble de PgConversationAnalysisStore). */
 export interface AnalyzeStore {
   getContext(conversationId: string): Promise<AnalysisContext | null>;
-  save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<void>;
+  /** Rend ce que l'analyse a recopié sur la fiche du contact (`CopieFiche`), ou `null`. */
+  save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<CopieFiche | null>;
   markDone(conversationId: string): Promise<void>;
   markFailed(conversationId: string): Promise<void>;
 }

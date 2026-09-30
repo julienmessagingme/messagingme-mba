@@ -158,9 +158,10 @@ export function getContactBilan(tenantId: string, contactId: string): Promise<Bi
 /**
  * Le résumé de la DERNIÈRE conversation analysée d'un contact : la ligne « champ de base » de sa fiche.
  *
- * 🔴 DÉRIVÉ, JAMAIS STOCKÉ DANS LA FICHE. Il vit dans `conversation_analysis`, que la purge des
- * conversations efface en cascade : le champ se vide donc tout seul au bout de la rétention de l'espace,
- * ce qu'une copie posée dans `contacts.fields` ne ferait pas.
+ * 🔴 LE RÉSUMÉ EST DÉRIVÉ, JAMAIS STOCKÉ DANS LA FICHE. Il porte les propos du client et vit dans
+ * `conversation_analysis`, que la purge des conversations efface en cascade : il se vide donc tout seul au
+ * bout de la rétention de l'espace. Les CODES de l'analyse, eux, sont recopiés sur la fiche et y RESTENT
+ * (`derniereAnalyse`, migration 0196, décision du 2026-09-30).
  *
  * ⚠️ APPEL À PART, ET DÉLIBÉRÉMENT PLUS LÉGER QUE `getContactHistory` : il part à l'ouverture de la fiche,
  * quand l'historique n'est chargé que si l'on clique l'onglet.
@@ -174,6 +175,26 @@ export interface ResumeContact {
   analysee: boolean;
   /** Un message est arrivé depuis l'analyse : le résumé ne couvre pas la fin du fil. */
   perime: boolean;
+  /**
+   * La dernière analyse recopiée sur la fiche ; `null` si la fiche n'a jamais été analysée. FACULTATIVE : une API
+   * d'avant le lot ne la rend pas, et l'écran n'affiche alors rien plutôt qu'un bloc vide.
+   */
+  derniereAnalyse?: DerniereAnalyseFiche | null;
+}
+
+/** La dernière analyse d'un contact, lue sur sa fiche. Une note `null` = pas de mesure, jamais 0. */
+export interface DerniereAnalyseFiche {
+  intention: string;
+  sentiment: string;
+  satisfaction: number | null;
+  urgence: number | null;
+  resolue: boolean;
+  sujet: string;
+  traiteePar: string;
+  action: string;
+  analyseLe: string;
+  /** Un message est plus récent que le dernier message couvert par l'analyse. */
+  perimee: boolean;
 }
 export function getContactResume(tenantId: string, contactId: string): Promise<ResumeContact> {
   return request<ResumeContact>(`/tenants/${tenantId}/contacts/${contactId}/resume`);

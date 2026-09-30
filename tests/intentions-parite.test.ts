@@ -28,15 +28,17 @@ const lire = (chemin: string): string => readFileSync(resolve(RACINE, chemin), '
 const sansCommentaires = (sql: string): string => sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
 
 /**
- * Les valeurs du DERNIER CHECK d'intention écrit dans `db/migrations`, fichiers pris dans l'ordre de leur
- * nom, qui est l'ordre d'application du runner : c'est celui que la base porte une fois tout appliqué.
+ * Les valeurs du DERNIER CHECK écrit dans `db/migrations` sur une colonne d'intention, fichiers pris dans l'ordre
+ * de leur nom, qui est l'ordre d'application du runner : c'est celui que la base porte une fois tout appliqué.
+ * Deux colonnes : `conversation_analysis.intent` et sa copie sur la fiche, `contacts.analyse_intention` (0196).
  */
-function dernierCheckIntention(): { fichier: string; valeurs: string[] } | null {
+function dernierCheckIntention(colonne: 'intent' | 'analyse_intention'): { fichier: string; valeurs: string[] } | null {
   const fichiers = readdirSync(resolve(RACINE, 'db', 'migrations')).filter((n) => n.endsWith('.sql')).sort();
   let dernier: { fichier: string; valeurs: string[] } | null = null;
+  const motif = new RegExp(`check\\s*\\(\\s*${colonne}\\s+in\\s*\\(([^)]*)\\)\\s*\\)`, 'gi');
   for (const fichier of fichiers) {
     const sql = sansCommentaires(lire(`db/migrations/${fichier}`));
-    for (const m of sql.matchAll(/check\s*\(\s*intent\s+in\s*\(([^)]*)\)\s*\)/gi)) {
+    for (const m of sql.matchAll(motif)) {
       dernier = { fichier, valeurs: [...m[1]!.matchAll(/'([a-z_]+)'/g)].map((v) => v[1]!) };
     }
   }
@@ -44,12 +46,14 @@ function dernierCheckIntention(): { fichier: string; valeurs: string[] } | null 
 }
 
 describe('les intentions : la base accepte exactement ce que le schéma accepte', () => {
-  it('🔴 le DERNIER CHECK écrit porte les valeurs de INTENTS, ni plus ni moins', () => {
-    const check = dernierCheckIntention();
-    // Sans cette ligne, un CHECK reformaté rendrait `null` et le test passerait en ne comparant rien.
-    expect(check, 'aucun CHECK d’intention lu dans db/migrations : ce test ne garde plus rien').not.toBeNull();
-    expect([...check!.valeurs].sort(), `CHECK lu dans ${check!.fichier}`).toEqual([...INTENTS].sort());
-  });
+  for (const colonne of ['intent', 'analyse_intention'] as const) {
+    it(`🔴 le DERNIER CHECK écrit sur ${colonne} porte les valeurs de INTENTS, ni plus ni moins`, () => {
+      const check = dernierCheckIntention(colonne);
+      // Sans cette ligne, un CHECK reformaté rendrait `null` et le test passerait en ne comparant rien.
+      expect(check, `aucun CHECK sur ${colonne} lu dans db/migrations : ce test ne garde plus rien`).not.toBeNull();
+      expect([...check!.valeurs].sort(), `CHECK lu dans ${check!.fichier}`).toEqual([...INTENTS].sort());
+    });
+  }
 });
 
 describe('les intentions : le modèle se voit proposer exactement INTENTS', () => {

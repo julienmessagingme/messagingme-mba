@@ -126,6 +126,11 @@ export class PgRisqueStore {
    * `contact_id` seul perd les conversations ouvertes avant la fiche, on rattrape par `wa_id`. En union de deux
    * jointures indexées, le `or` du fragment ne servant qu'un contact à la fois.
    * Une réponse est tout message entrant (un appui de bouton compte comme « oui » écrit à la main).
+   * 🔴 LA DERNIÈRE ANALYSE SE LIT SUR LA FICHE (colonnes `analyse_*`, 0196), qui survit à l'effacement de la
+   * conversation : une réclamation continue de peser jusqu'à 90 jours. Repli par la conversation pour une fiche qui
+   * n'a pas encore de copie, et pour elle seule : il n'y a pas de reprise du passé, et sans ce repli toutes les
+   * réclamations des 90 derniers jours sortiraient du calcul le jour du déploiement. Jamais un mélange des deux
+   * sources : c'est l'une ou l'autre, entière.
    */
   async faits(tenantId: string, ids: readonly string[], depuis: Date, maintenant: Date): Promise<ContactAEvaluer[]> {
     if (ids.length === 0) return [];
@@ -133,6 +138,8 @@ export class PgRisqueStore {
       `with cible as (
          select c.id, c.opt_in_status, c.rcs_optout_at, c.blocked_at, c.whatsapp_joignable, c.whatsapp_joignable_le,
                 c.risque_niveau,
+                c.analyse_intention, c.analyse_sentiment, c.analyse_resolue, c.analyse_satisfaction,
+                c.analyse_le as fiche_analyse_le,
                 nullif(regexp_replace(coalesce(c.phone_e164, ''), '[^0-9]', '', 'g'), '') as digits,
                 nullif(c.bsuid, '') as bsuid
            from contacts c
@@ -169,8 +176,9 @@ export class PgRisqueStore {
        ),
        analyses as (
          select distinct on (f.contact_id) f.contact_id, ca.intent, ca.sentiment, ca.resolved, ca.satisfaction, ca.created_at
-           from fils f join conversation_analysis ca on ca.conversation_id = f.conversation_id
-          where ca.tenant_id = $1 and ca.created_at >= $3
+           from fils f join cible ct on ct.id = f.contact_id
+           join conversation_analysis ca on ca.conversation_id = f.conversation_id
+          where ca.tenant_id = $1 and ca.created_at >= $3 and ct.fiche_analyse_le is null
           order by f.contact_id, ca.created_at desc
        ),
        agent as (
@@ -178,7 +186,11 @@ export class PgRisqueStore {
        )
        select ct.id, ct.opt_in_status, ct.rcs_optout_at, ct.blocked_at, ct.whatsapp_joignable, ct.whatsapp_joignable_le,
               ct.risque_niveau, e.envoyes_le, e.lus, e.lus_le, rp.le as derniere_reponse, cl.le as dernier_clic,
-              an.intent, an.sentiment, an.resolved, an.satisfaction, an.created_at as analyse_le,
+              case when ct.fiche_analyse_le is null then an.intent when ct.fiche_analyse_le >= $3 then ct.analyse_intention end as intent,
+              case when ct.fiche_analyse_le is null then an.sentiment when ct.fiche_analyse_le >= $3 then ct.analyse_sentiment end as sentiment,
+              case when ct.fiche_analyse_le is null then an.resolved when ct.fiche_analyse_le >= $3 then ct.analyse_resolue end as resolved,
+              case when ct.fiche_analyse_le is null then an.satisfaction when ct.fiche_analyse_le >= $3 then ct.analyse_satisfaction end as satisfaction,
+              case when ct.fiche_analyse_le is null then an.created_at when ct.fiche_analyse_le >= $3 then ct.fiche_analyse_le end as analyse_le,
               rcs.reachable as rcs_joignable, rcs.checked_at as rcs_verifie_le
          from cible ct
          left join envois e on e.contact_id = ct.id

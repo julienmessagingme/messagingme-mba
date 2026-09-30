@@ -1,7 +1,7 @@
 ---
 ecran: contacts
 source_section: Contacts & CRM
-source_empreinte: 2dc35b
+source_empreinte: 70bb15
 ---
 # Ajouter ou importer mes contacts
 
@@ -21,6 +21,12 @@ de quoi savoir de quoi vous avez parlé avant de la rappeler, sans rouvrir l'éc
 l'analyse, il ne se modifie pas à la main, et il disparaît en même temps que la conversation quand celle-ci
 atteint votre durée de conservation. L'onglet « Historique » de la fiche montre, lui, le résumé de chacune
 de ses conversations.
+
+Le bloc **Dernière analyse** de la fiche dit ce que la dernière conversation a appris de la personne :
+intention, sentiment, satisfaction et urgence sur 10, demande résolue ou non, sujet, qui l'a traitée et
+l'action suggérée. Il ne se modifie pas à la main non plus, et il signale quand de nouveaux messages sont
+arrivés depuis. Contrairement au résumé, il **reste** sur la fiche quand la conversation est effacée : ce sont
+des constats, pas les propos de la personne. Seule la suppression de la fiche l'efface.
 
 La fiche montre aussi le **risque de désengagement** de la personne : faible, moyen, élevé, ou inconnu, avec
 un score sur 100, les raisons principales écrites en clair et depuis quand elle est à ce niveau. Il est

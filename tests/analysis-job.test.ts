@@ -23,7 +23,7 @@ function fakeStore(ctx: AnalysisContext | null): { store: AnalyzeStore; cap: Cap
   const cap: Cap = { saved: [], failed: [], done: [] };
   const store: AnalyzeStore = {
     getContext: async () => ctx,
-    save: async (id, _t, a, _m, windowEnd) => { cap.saved.push({ id, a, windowEnd }); },
+    save: async (id, _t, a, _m, windowEnd) => { cap.saved.push({ id, a, windowEnd }); return null; },
     markDone: async (id) => { cap.done.push(id); },
     markFailed: async (id) => { cap.failed.push(id); },
   };

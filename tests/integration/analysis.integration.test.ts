@@ -249,3 +249,134 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     expect(status).toBe('pending');
   });
 });
+
+// Tout sur la fiche, lot 1 : la copie de l'analyse sur la fiche du contact (migration 0196).
+describe.skipIf(!url)('save recopie l’analyse sur la fiche (Postgres)', () => {
+  let pool: Pool;
+  let store: PgConversationAnalysisStore;
+  let tenantId: string;
+  let autreTenantId: string;
+
+  const modele = { provider: 'anthropic', model: 'm' };
+  const base: ConversationAnalysis = {
+    sentiment: 'negatif', intent: 'reclamation', topic: 'retard de livraison', resolved: false, entities: {},
+    action_suggestion: 'rappeler', confidence: 0.8, justification: 'client mécontent', handled_by: 'humain',
+    exchanges_count: 3, abusive: false, satisfaction: 0, urgence: 8,
+  };
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    store = new PgConversationAnalysisStore(pool);
+    tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-fiche-analyse') returning id`)).rows[0]!.id;
+    autreTenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-fiche-analyse-autre') returning id`)).rows[0]!.id;
+  });
+  afterAll(async () => {
+    for (const t of [tenantId, autreTenantId]) if (t) await pool.query('delete from tenants where id = $1', [t]);
+    await pool.end();
+  });
+
+  const contact = async (t: string, o: { phone?: string | null; bsuid?: string | null; supprime?: boolean }): Promise<string> =>
+    (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, bsuid, deleted_at) values ($1, $2, $3, case when $4 then now() else null end) returning id`,
+      [t, o.phone ?? null, o.bsuid ?? null, o.supprime === true],
+    )).rows[0]!.id;
+  const fil = async (t: string, waId: string, contactId: string | null = null): Promise<string> =>
+    (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, contact_id, analysis_status) values ($1, $2, $3, 'queued') returning id`,
+      [t, waId, contactId],
+    )).rows[0]!.id;
+  const fiche = async (id: string) =>
+    (await pool.query<Record<string, unknown>>(
+      `select analyse_intention, analyse_sentiment, analyse_satisfaction, analyse_urgence, analyse_resolue, analyse_sujet,
+              analyse_traitee_par, analyse_action, analyse_le, analyse_fenetre_fin, analyse_conversation_id
+         from contacts where id = $1`, [id],
+    )).rows[0]!;
+
+  it('🔴 un fil sans contact_id trouve la fiche par le numéro, et une note à 0 reste 0', async () => {
+    const c = await contact(tenantId, { phone: '+33600100201' });
+    const conv = await fil(tenantId, '33600100201');
+    const copie = await store.save(conv, tenantId, base, modele, '2026-09-30 10:00:00.000001+00');
+    expect(copie).toMatchObject({ contactId: c, waId: '33600100201', avant: null });
+    expect(copie!.apres).toMatchObject({ intention: 'reclamation', sentiment: 'negatif', satisfaction: 0, urgence: 8, resolue: false, sujet: 'retard de livraison', traiteePar: 'humain', action: 'rappeler', conversationId: conv });
+    expect(await fiche(c)).toMatchObject({
+      analyse_intention: 'reclamation', analyse_sentiment: 'negatif', analyse_satisfaction: 0, analyse_urgence: 8,
+      analyse_resolue: false, analyse_sujet: 'retard de livraison', analyse_traitee_par: 'humain', analyse_action: 'rappeler',
+      analyse_conversation_id: conv,
+    });
+  });
+
+  it('une note absente reste null, jamais 0', async () => {
+    const c = await contact(tenantId, { phone: '+33600100202' });
+    const conv = await fil(tenantId, '33600100202');
+    await store.save(conv, tenantId, { ...base, satisfaction: undefined, urgence: undefined }, modele, '2026-09-30 10:00:00+00');
+    expect(await fiche(c)).toMatchObject({ analyse_satisfaction: null, analyse_urgence: null, analyse_intention: 'reclamation' });
+  });
+
+  it('🔴 le contact désigné supprimé : la copie va à la fiche active qui porte l’identité du fil', async () => {
+    const supprime = await contact(tenantId, { phone: '+33600100203', supprime: true });
+    const actif = await contact(tenantId, { bsuid: 'itest-bsuid-203' });
+    const conv = await fil(tenantId, 'itest-bsuid-203', supprime);
+    const copie = await store.save(conv, tenantId, base, modele, '2026-09-30 10:00:00+00');
+    expect(copie?.contactId).toBe(actif);
+    expect((await fiche(supprime)).analyse_le).toBeNull();
+    expect((await fiche(actif)).analyse_intention).toBe('reclamation');
+  });
+
+  it('🔴 une vieille fenêtre n’écrase pas une analyse plus récente, d’un autre fil du même contact', async () => {
+    const c = await contact(tenantId, { phone: '+33600100204', bsuid: 'itest-bsuid-204' });
+    const recent = await fil(tenantId, '33600100204', c);
+    const ancien = await fil(tenantId, 'itest-bsuid-204', c);
+    await store.save(recent, tenantId, base, modele, '2026-09-30 12:00:00+00');
+    const copie = await store.save(ancien, tenantId, { ...base, sentiment: 'positif', intent: 'achat' }, modele, '2026-09-30 11:00:00+00');
+    expect(copie).toBeNull();
+    expect(await fiche(c)).toMatchObject({ analyse_sentiment: 'negatif', analyse_intention: 'reclamation', analyse_conversation_id: recent });
+  });
+
+  it('🔴 la fenêtre suivante remplace, et rend l’ancienne copie dans « avant »', async () => {
+    const c = await contact(tenantId, { phone: '+33600100205' });
+    const conv = await fil(tenantId, '33600100205');
+    await store.save(conv, tenantId, { ...base, sentiment: 'positif' }, modele, '2026-09-30 10:00:00+00');
+    const copie = await store.save(conv, tenantId, base, modele, '2026-09-30 11:00:00+00');
+    expect(copie!.avant).toMatchObject({ sentiment: 'positif' });
+    expect(copie!.apres).toMatchObject({ sentiment: 'negatif' });
+  });
+
+  it('un rejeu du même job réécrit la même copie : « avant » vaut « après »', async () => {
+    const c = await contact(tenantId, { phone: '+33600100206' });
+    const conv = await fil(tenantId, '33600100206');
+    const fenetre = '2026-09-30 10:00:00.123456+00';
+    await store.save(conv, tenantId, base, modele, fenetre);
+    const copie = await store.save(conv, tenantId, base, modele, fenetre);
+    expect(copie?.contactId).toBe(c);
+    expect(copie!.avant).toMatchObject({ sentiment: 'negatif', intention: 'reclamation', satisfaction: 0 });
+  });
+
+  it('🔴 une fiche supprimée ne reçoit rien, et l’analyse est quand même enregistrée', async () => {
+    const c = await contact(tenantId, { phone: '+33600100207', supprime: true });
+    const conv = await fil(tenantId, '33600100207');
+    expect(await store.save(conv, tenantId, base, modele, '2026-09-30 10:00:00+00')).toBeNull();
+    expect((await fiche(c)).analyse_le).toBeNull();
+    const n = (await pool.query<{ n: number }>(`select count(*)::int as n from conversation_analysis where conversation_id = $1`, [conv])).rows[0]!.n;
+    expect(n).toBe(1);
+  });
+
+  it('🔴 la fiche d’un autre espace, au même numéro, n’est jamais écrite', async () => {
+    const ailleurs = await contact(autreTenantId, { phone: '+33600100208' });
+    const conv = await fil(tenantId, '33600100208');
+    expect(await store.save(conv, tenantId, base, modele, '2026-09-30 10:00:00+00')).toBeNull();
+    expect((await fiche(ailleurs)).analyse_le).toBeNull();
+  });
+
+  it('🔴 la conversation effacée : les codes RESTENT sur la fiche, seul le lien retombe à null', async () => {
+    const c = await contact(tenantId, { phone: '+33600100209' });
+    const conv = await fil(tenantId, '33600100209');
+    await store.save(conv, tenantId, base, modele, '2026-09-30 10:00:00+00');
+    await pool.query(`delete from conversations where id = $1`, [conv]);
+    expect(await fiche(c)).toMatchObject({ analyse_intention: 'reclamation', analyse_sentiment: 'negatif', analyse_conversation_id: null });
+  });
+
+  it('la cohérence est tenue en base : une copie partielle est refusée', async () => {
+    const c = await contact(tenantId, { phone: '+33600100210' });
+    await expect(pool.query(`update contacts set analyse_intention = 'sav' where id = $1`, [c])).rejects.toThrow();
+  });
+});

@@ -22,6 +22,7 @@ import { phraseResumeAbsent } from '@/lib/resume-conversation';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { entetesQuali, ligneQuali } from '@/lib/quali-export';
 import { INTENTIONS, comptesParIntention, estIntention, libelleIntention } from '@/lib/intentions';
+import { ACTIONS, SENTIMENTS, actionLabel, sentimentBadge, sentimentLabel, traiteParLabel } from '@/lib/analyse';
 import { Bouton } from '@/components/Bouton';
 import { danger, ink, succes } from '@/lib/couleurs';
 import { Icone } from '@/components/Icone';
@@ -46,37 +47,8 @@ const SELECT =
   'rounded-controle border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 const SECTION_LABEL = 'mb-2 text-xs font-medium text-ink-500';
 
-// Clés d'énumération LLM (filtres + mapping libellé). Les VALEURS backend passent telles quelles si inconnues.
-const SENTIMENTS = ['positif', 'neutre', 'negatif'] as const;
-// Les intentions vivent dans `@/lib/intentions` (liste, ordre, libellés), partagées avec la carte du Performance Lab.
-const ACTIONS = ['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune'] as const;
-
-/** Libellé localisé d'un sentiment (repli : valeur brute si clé inconnue). */
-function sentimentLabel(s: string, t: Tr): string {
-  switch (s) {
-    case 'positif': return t('Positif', 'Positive');
-    case 'neutre': return t('Neutre', 'Neutral');
-    case 'negatif': return t('Négatif', 'Negative');
-    default: return s;
-  }
-}
-function actionLabel(a: string, t: Tr): string {
-  switch (a) {
-    case 'creer_devis': return t('Créer un devis', 'Create a quote');
-    case 'rappeler': return t('Rappeler', 'Call back');
-    case 'relancer': return t('Relancer', 'Follow up');
-    case 'escalader': return t('Escalader', 'Escalate');
-    case 'aucune': return t('Aucune', 'None');
-    default: return a;
-  }
-}
-
-/** Classe de badge selon le sentiment (3 couleurs). */
-function sentimentBadge(s: string): string {
-  if (s === 'positif') return 'bg-succes-50 text-succes-700';
-  if (s === 'negatif') return 'bg-danger-50 text-danger-700';
-  return 'bg-ink-100 text-ink-500';
-}
+// Les sentiments, actions et « traitée par » vivent dans `@/lib/analyse`, les intentions dans `@/lib/intentions`
+// (listes, ordre, libellés), partagés avec la fiche contact et la carte du Performance Lab.
 
 /** Compteur (même style que Metric du dashboard, gardé local pour ne pas le redéclarer globalement). */
 function Counter({ label, value }: { label: string; value: string }) {
@@ -361,7 +333,7 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
           {champ(t('Résolu', 'Resolved'), c.resolved ? t('Oui', 'Yes') : t('Non', 'No'))}
           {champ(t('Action suggérée', 'Suggested action'), actionLabel(c.actionSuggestion, t))}
           {champ(t('Confiance', 'Confidence'), `${Math.round(c.confidence * 100)} %`)}
-          {champ(t('Qui a géré', 'Handled by'), c.handledBy === 'humain' ? t('Humain', 'Human') : c.handledBy === 'mba' ? 'MBA' : t('Automatisé', 'Automated'))}
+          {champ(t('Qui a géré', 'Handled by'), traiteParLabel(c.handledBy, t))}
           {champ(t('Échanges', 'Exchanges'), fmtNum(c.exchangesCount, locale))}
         </div>
 

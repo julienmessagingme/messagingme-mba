@@ -137,6 +137,17 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
       [contactId, bloqueurId],
     );
 
+    // LA DERNIÈRE ANALYSE RECOPIÉE SUR LA FICHE (migration 0196) : des jugements sur la personne, qui survivent
+    // exprès à l'effacement de ses conversations. La purge, elle, doit les emporter.
+    await pool.query(
+      `update contacts set analyse_intention = 'reclamation', analyse_sentiment = 'negatif', analyse_satisfaction = 1,
+         analyse_urgence = 9, analyse_resolue = false, analyse_sujet = 'sujet qui identifie la personne',
+         analyse_traitee_par = 'humain', analyse_action = 'rappeler', analyse_le = now(), analyse_fenetre_fin = now(),
+         analyse_conversation_id = $2
+       where id = $1`,
+      [contactId, convId],
+    );
+
     // LOT 3 DE L'API PUBLIQUE : les VARIABLES d'un destinataire (migration 0174) et l'ÉCHEC d'un message libre
     // (migration 0175) portent des données de la personne (un numéro de commande, un numéro de téléphone).
     // Une ligne d'échec est posée AUSSI chez le voisin, sur le même numéro : elle prouve le cloisonnement.
@@ -165,12 +176,13 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     );
     expect(avant.rows[0]).toEqual({ v: { commande: '8412' }, e: 1 });
     const fiche = await pool.query(
-      `select tags, risque_niveau, langue_detectee, whatsapp_joignable, opt_in_source, blocked_by from contacts where id = $1`,
+      `select tags, risque_niveau, langue_detectee, whatsapp_joignable, opt_in_source, blocked_by, analyse_intention
+         from contacts where id = $1`,
       [contactId],
     );
     expect(fiche.rows[0]).toEqual({
       tags: ['vip', 'mauvais payeur'], risque_niveau: 'eleve', langue_detectee: 'en', whatsapp_joignable: false,
-      opt_in_source: 'formulaire de Jean Dupont', blocked_by: bloqueurId,
+      opt_in_source: 'formulaire de Jean Dupont', blocked_by: bloqueurId, analyse_intention: 'reclamation',
     });
   });
 
@@ -227,6 +239,13 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     expect(row.fields).toEqual({});
     expect(row.anonymized_at).not.toBeNull();
     expect(row.external_id).toBeNull();
+    // La dernière analyse recopiée part ENTIÈRE (0196) : aucune colonne ne survit, lien compris.
+    const analyse = (await pool.query<Record<string, unknown>>(
+      `select analyse_intention, analyse_sentiment, analyse_satisfaction, analyse_urgence, analyse_resolue, analyse_sujet,
+              analyse_traitee_par, analyse_action, analyse_le, analyse_fenetre_fin, analyse_conversation_id
+         from contacts where id = $1`, [contactId],
+    )).rows[0]!;
+    expect(Object.values(analyse).every((v) => v === null), JSON.stringify(analyse)).toBe(true);
     // Et l'identifiant est LIBÉRÉ : une fiche neuve peut le reprendre (index unique par espace).
     const reprise = await store.creerFicheApi(tenantId, { phoneE164: '+33600000902', externalId: 'itest-ext-purge' });
     expect(reprise).not.toBe('conflit');

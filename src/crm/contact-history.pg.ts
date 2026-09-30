@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { horsEntreeGratuite } from '../stats/entree-gratuite';
 import { journaliser } from '../lib/journal';
+import { analyseDeLaLigne, COLONNES_ANALYSE_FICHE, type LigneAnalyseFiche } from '../analysis/fiche';
 
 /**
  * Historique d'un contact : ce qu'on lui a envoyé, et ce qu'il a échangé avec nous. Store de lecture seule.
@@ -61,11 +62,32 @@ export interface ContactConversationAnalysis {
 }
 
 /**
+ * La dernière analyse du contact, lue sur sa FICHE (colonnes `analyse_*`, migration 0196) : la section « Dernière
+ * analyse » de l'onglet Fiche. Elle survit à l'effacement de la conversation (décision du 2026-09-30).
+ */
+export interface DerniereAnalyseFiche {
+  intention: string;
+  sentiment: string;
+  /** `null` = pas de mesure, jamais 0. */
+  satisfaction: number | null;
+  urgence: number | null;
+  resolue: boolean;
+  sujet: string;
+  traiteePar: string;
+  action: string;
+  analyseLe: string;
+  /** Un message des fils du contact, entrant ou sortant, est plus récent que le dernier message couvert par l'analyse. */
+  perimee: boolean;
+}
+
+/**
  * Le résumé affiché comme champ de base du mini-CRM.
- * 🔴 Dérivé à la lecture, jamais recopié dans `contacts.fields` : la purge de rétention efface la conversation et
- * son analyse en cascade, et une copie survivrait dans la fiche au-delà de la durée promise. Ce n'est pas non
- * plus une variable de message : `contactVars` sert les campagnes (une jointure par destinataire), et envoyer à
- * quelqu'un le résumé de sa propre conversation ne doit pas être possible en un clic.
+ * 🔴 Dérivé à la lecture, jamais recopié dans la fiche : il porte les propos du client, et la purge de rétention
+ * efface la conversation et son analyse en cascade ; une copie survivrait au-delà de la durée promise. Les CODES
+ * de l'analyse, eux, sont recopiés sur la fiche, délibérément (colonnes `analyse_*`, 0196) : ce sont des constats,
+ * pas des propos. Ce n'est pas non plus une variable de message : `contactVars` sert les campagnes (une jointure
+ * par destinataire), et envoyer à quelqu'un le résumé de sa propre conversation ne doit pas être possible en un
+ * clic.
  */
 export interface ResumeContact {
   /**
@@ -83,6 +105,8 @@ export interface ResumeContact {
   analysee: boolean;
   /** Un message est arrivé après l'analyse : le résumé ne couvre pas la fin du fil (même règle qu'`analysisStale`). */
   perime: boolean;
+  /** La dernière analyse recopiée sur la fiche, `null` si la fiche n'a jamais été analysée. */
+  derniereAnalyse: DerniereAnalyseFiche | null;
 }
 
 export interface ContactConversation {
@@ -160,13 +184,18 @@ export class PgContactHistoryStore {
    * afficherait un texte périmé comme actuel ; sans résumé, l'écran le dit (cas fréquent, pas un repli rare).
    */
   async resumeContact(tenantId: string, contactId: string): Promise<ResumeContact | null> {
-    const res = await this.pool.query<{
+    const res = await this.pool.query<LigneAnalyseFiche & {
       connu: boolean; conversations: number; conversation_id: string | null;
-      analysis_status: string | null; analyse_le: Date | null; summary: string | null;
+      analysis_status: string | null; analyse_resume_le: Date | null; summary: string | null;
+      dernier_message_le: Date | null;
     }>(
       // Les deux fragments sont cités, jamais recopiés : leur justification est à leur définition.
       `with ct as (
          ${CONTACT_IDENTITES_SQL}
+       ),
+       fiche as (
+         select ${COLONNES_ANALYSE_FICHE.join(', ')}
+           from contacts where id = $2 and tenant_id = $1
        ),
        conv as (
          select c.id, c.last_message_at, c.analysis_status,
@@ -186,9 +215,15 @@ export class PgContactHistoryStore {
          -- « Analysée » = une ligne d'analyse existe ET porte un sentiment, exactement le test que fait le
          -- mapping de listConversations. Une seule définition, sinon la fiche et la liste ne compteraient
          -- pas les mêmes conversations comme analysées.
+         --
+         -- Une fiche qui porte une copie de l analyse (0196) prend le résumé de la MÊME analyse, celle de la
+         -- conversation que la copie désigne : les codes et le résumé ne peuvent pas venir de deux analyses. Une
+         -- fiche sans copie (analysée avant 0196, pas de reprise) garde la règle ci-dessus, sinon tous les
+         -- résumés disparaîtraient le jour du déploiement.
          select id, analysis_status, analyse_le, summary
            from conv
           where analyse_le is not null and sentiment is not null
+            and ((select analyse_le from fiche) is null or id = (select analyse_conversation_id from fiche))
           order by last_message_at desc
           limit 1
        )
@@ -196,23 +231,40 @@ export class PgContactHistoryStore {
               (select count(*) from conv)::int as conversations,
               (select id from derniere) as conversation_id,
               (select analysis_status from derniere) as analysis_status,
-              (select analyse_le from derniere) as analyse_le,
-              (select summary from derniere) as summary`,
+              (select analyse_le from derniere) as analyse_resume_le,
+              (select summary from derniere) as summary,
+              (select max(m.created_at) from conv join conversation_messages m on m.conversation_id = conv.id) as dernier_message_le,
+              ${COLONNES_ANALYSE_FICHE.map((k) => `(select ${k} from fiche) as ${k}`).join(',\n              ')}`,
       [tenantId, contactId],
     );
     const r = res.rows[0];
     if (!r || !r.connu) return null;
-    const analysee = r.analyse_le !== null;
+    const analysee = r.analyse_resume_le !== null;
+    const copie = analyseDeLaLigne(r);
     return {
       // Chaîne vide = absence, comme à l'écriture et comme dans la liste des conversations.
       texte: analysee && r.summary !== null && r.summary.trim() !== '' ? r.summary : null,
-      analyseLe: r.analyse_le ? r.analyse_le.toISOString() : null,
+      analyseLe: r.analyse_resume_le ? r.analyse_resume_le.toISOString() : null,
       conversationId: r.conversation_id,
       conversations: r.conversations,
       analysee,
       // Une analyse existe et le statut est reparti hors 'done' -> un message est arrivé depuis (même règle
       // qu'`analysisStale`).
       perime: analysee && r.analysis_status !== 'done',
+      derniereAnalyse: copie === null ? null : {
+        intention: copie.intention,
+        sentiment: copie.sentiment,
+        satisfaction: copie.satisfaction,
+        urgence: copie.urgence,
+        resolue: copie.resolue,
+        sujet: copie.sujet,
+        traiteePar: copie.traiteePar,
+        action: copie.action,
+        analyseLe: copie.analyseLe.toISOString(),
+        // Le plus récent MESSAGE des fils du contact, comparé à la borne de l'analyse. Jamais `last_message_at`,
+        // posé par now() à chaque écriture : toutes les fiches paraîtraient périmées.
+        perimee: r.dernier_message_le !== null && r.dernier_message_le > copie.fenetreFin,
+      },
     };
   }
 

@@ -18,6 +18,8 @@ import { formatDate } from '@/lib/day';
 import { verdictWhatsApp, type Verdict } from '@/lib/joignabilite';
 import { BADGE_NIVEAU_RISQUE, libelleRaisonRisque, risqueLu } from '@/lib/risque';
 import { etatResume, phraseResumeAbsent } from '@/lib/resume-conversation';
+import { libelleIntention } from '@/lib/intentions';
+import { actionLabel, sentimentBadge, sentimentLabel, traiteParLabel } from '@/lib/analyse';
 import {
   updateContact,
   createUserField,
@@ -550,6 +552,59 @@ export function ContactDetail({
         ⚠️ HORS de la grille des champs de base : deux à trois phrases dans une colonne de valeur large de
         110 px se liraient en escalier. Le bloc garde le libellé, il change de forme.
       */}
+      {/*
+        LA DERNIÈRE ANALYSE, RECOPIÉE SUR LA FICHE (Tout sur la fiche, lot 1, migration 0196).
+
+        🔴 ELLE RESTE QUAND LA CONVERSATION EST EFFACÉE (décision de Julien du 2026-09-30), d'où un bloc à part
+        du résumé, qui, lui, part avec la conversation : ce bloc s'affiche même sans aucune conversation.
+
+        🔴 EN LECTURE SEULE, comme le résumé : seule l'analyse l'écrit, une retouche disparaîtrait au passage
+        suivant. Absente tant que le contact n'a jamais été analysé, et absente aussi face à une API d'avant ce
+        lot (`derniereAnalyse` manquant), jamais un bloc vide.
+
+        ⚠️ Une note absente se lit « non mesurée », jamais 0 : un 0 est une vraie mesure, celle qui alarme.
+      */}
+      {resume?.derniereAnalyse && (() => {
+        const a = resume.derniereAnalyse;
+        const note = (n: number | null): string => (n === null ? t('non mesurée', 'not measured') : `${n} / 10`);
+        return (
+          <div className="mt-4 rounded-controle border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-derniere-analyse">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span className="text-xs font-medium text-ink-500">{t('Dernière analyse', 'Latest analysis')}</span>
+              <span className="text-xs text-ink-500">{t('analysée le', 'analyzed on')} {formatDate(a.analyseLe, locale)}</span>
+            </div>
+            <div className="mt-2 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-1 text-sm">
+              <span className="text-ink-500">{t('Intention', 'Intent')}</span>
+              <span className="text-ink-900" data-testid="fiche-analyse-intention">{libelleIntention(a.intention, t)}</span>
+              <span className="text-ink-500">{t('Sentiment', 'Sentiment')}</span>
+              <span>
+                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${sentimentBadge(a.sentiment)}`} data-testid="fiche-analyse-sentiment">
+                  {sentimentLabel(a.sentiment, t)}
+                </span>
+              </span>
+              <span className="text-ink-500">{t('Satisfaction', 'Satisfaction')}</span>
+              <span className="text-ink-900" data-testid="fiche-analyse-satisfaction">{note(a.satisfaction)}</span>
+              <span className="text-ink-500">{t('Urgence', 'Urgency')}</span>
+              <span className="text-ink-900" data-testid="fiche-analyse-urgence">{note(a.urgence)}</span>
+              <span className="text-ink-500">{t('Résolue', 'Resolved')}</span>
+              <span className="text-ink-900" data-testid="fiche-analyse-resolue">{a.resolue ? t('oui', 'yes') : t('non', 'no')}</span>
+              <span className="text-ink-500">{t('Sujet', 'Topic')}</span>
+              <span className="min-w-0 break-words text-ink-900" data-testid="fiche-analyse-sujet">{a.sujet}</span>
+              <span className="text-ink-500">{t('Traitée par', 'Handled by')}</span>
+              <span className="text-ink-900">{traiteParLabel(a.traiteePar, t)}</span>
+              <span className="text-ink-500">{t('Action suggérée', 'Suggested action')}</span>
+              <span className="text-ink-900">{actionLabel(a.action, t)}</span>
+            </div>
+            {a.perimee && (
+              <p className="mt-1 text-xs text-alerte-700" data-testid="fiche-analyse-perimee">
+                {t('Nouveaux messages depuis l’analyse : elle ne couvre pas la fin de l’échange.',
+                   'New messages since the analysis: it does not cover the end of the exchange.')}
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
       {etat !== 'aucune-conversation' && (
         <div className="mt-4 rounded-controle border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-contact-resume">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">

@@ -24,6 +24,13 @@ export const NOTE_MIN = 0;
 export const NOTE_MAX = 10;
 
 /**
+ * Longueur maximale du sujet. Le CHECK de `contacts.analyse_sujet` (migration 0196) la porte aussi, tenu par
+ * `tests/fiche-analyse-migration.test.ts` : un sujet que Zod accepte et que la base refuse ferait échouer la
+ * transaction de `save`, analyse comprise.
+ */
+export const SUJET_MAX = 120;
+
+/**
  * Une note de 0 à 10 rendue par le modèle, tolérante : `.catch(undefined)` évite qu'une note invalide fasse échouer
  * `safeParse` sur l'objet entier et perdre toute l'analyse.
  * `8.5` et `"9"` sont lus (le modèle a bien rendu une mesure) ; `12`, `-1`, `"huit"`, `null` deviennent absents :
@@ -44,7 +51,7 @@ const note0a10 = z
 export const llmOutputSchema = z.object({
   sentiment: z.enum(SENTIMENTS),
   intent: z.enum(INTENTS),
-  topic: z.string().trim().min(1).max(120),
+  topic: z.string().trim().min(1).max(SUJET_MAX),
   resolved: z.boolean(),
   entities: z.record(z.string(), z.unknown()).default({}),
   action_suggestion: z.enum(ACTIONS),

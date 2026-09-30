@@ -170,3 +170,41 @@ test.describe('Fiche contact : le resume de la conversation', () => {
     await expect(page.getByTestId('fiche-contact-resume-perime')).toBeVisible();
   });
 });
+
+test.describe('Fiche contact : la derniere analyse (Tout sur la fiche, lot 1)', () => {
+  const ANALYSE = {
+    intention: 'reclamation', sentiment: 'negatif', satisfaction: 0, urgence: null, resolue: false,
+    sujet: 'colis abime', traiteePar: 'humain', action: 'rappeler', analyseLe: '2026-09-30T09:10:00.000Z', perimee: false,
+  };
+
+  test('🔴 une API d avant le lot (champ absent) -> AUCUN bloc, pas un bloc vide', async ({ page }) => {
+    await mock(page);
+    await page.goto('/contacts');
+    await page.getByText('Alice Martin').first().click();
+    await expect(page.getByTestId('fiche-champs-base')).toBeVisible();
+    await expect(page.getByTestId('fiche-derniere-analyse')).toHaveCount(0);
+  });
+
+  test('🔴 la conversation effacee : le bloc RESTE, sans resume, et une note a 0 se lit 0', async ({ page }) => {
+    await mock(page, [CONTACT], { ...SANS_CONVERSATION, derniereAnalyse: ANALYSE });
+    await page.goto('/contacts');
+    await page.getByText('Alice Martin').first().click();
+    await expect(page.getByTestId('fiche-derniere-analyse')).toBeVisible();
+    await expect(page.getByTestId('fiche-analyse-intention')).toContainText(/Réclamation|Complaint/);
+    await expect(page.getByTestId('fiche-analyse-sentiment')).toContainText(/Négatif|Negative/);
+    await expect(page.getByTestId('fiche-analyse-satisfaction')).toHaveText('0 / 10');
+    // Absente n'est pas zero : une note manquante le dit.
+    await expect(page.getByTestId('fiche-analyse-urgence')).toContainText(/non mesurée|not measured/);
+    await expect(page.getByTestId('fiche-analyse-sujet')).toHaveText('colis abime');
+    // Le resume, lui, est parti avec la conversation.
+    await expect(page.getByTestId('fiche-contact-resume')).toHaveCount(0);
+    await expect(page.getByTestId('fiche-analyse-perimee')).toHaveCount(0);
+  });
+
+  test('des messages depuis l analyse -> le bloc le dit', async ({ page }) => {
+    await mock(page, [CONTACT], { ...SANS_CONVERSATION, conversations: 1, analysee: true, derniereAnalyse: { ...ANALYSE, perimee: true } });
+    await page.goto('/contacts');
+    await page.getByText('Alice Martin').first().click();
+    await expect(page.getByTestId('fiche-analyse-perimee')).toBeVisible();
+  });
+});
