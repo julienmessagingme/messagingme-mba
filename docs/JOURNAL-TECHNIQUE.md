@@ -5,6 +5,38 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : le séparateur d'un CSV est essayé, plus deviné (contacts et FAQ de l'agent de Meta)
+
+**Le défaut**, relevé par la relecture de `25f5af1b` : `parseCsv` (`src/crm/csv.ts`) laissait papaparse deviner le
+séparateur. Sa devinette part de la virgule et ne cède qu'à un candidat qui a à la fois moins d'écart ET plus de
+colonnes en moyenne : un fichier en point-virgule dont les cellules portent assez de virgules est lu en virgule.
+L'import de FAQ de l'agent de Meta rendait zéro paire sur `Question;Réponse` dès que les réponses en portaient deux.
+
+**La mesure sur l'import de contacts**, avant de toucher `parseCsv` qu'il partage : vrai `parseCsv` puis vrai
+`importContacts` sur un dépôt en mémoire. `Nom;Téléphone;Adresse` avec des adresses à trois virgules donnait un
+en-tête d'une seule colonne, zéro contact créé, chaque ligne rejetée « numéro invalide » ; à une ou deux virgules,
+ou avec cinq colonnes et des notes à cinq virgules, le fichier passait. Même défaut à un seuil plus haut, donc
+`parseCsv` est corrigé pour les deux.
+
+**Livré** (`feb03cf0`) : `separateurCsv`, écrite la veille pour la connaissance d'un agent, quitte
+`src/agent/setup/piece-jointe.ts` pour `src/crm/csv.ts` et sert `parseCsv` ; sans tableau régulier, la devinette
+de papaparse reste le repli. Quatre tests, vérifiés dans les deux sens : sans le correctif, les trois tests du
+défaut retombent sur ses symptômes ; avec un repli imposé sur la virgule, le test du repli tombe. La détection
+coûte une dizaine de millisecondes sur un CSV de 15 Mo.
+
+**Relecture indépendante** : aucun rouge, cinq jaunes traités dans le même commit (la limite de l'aperçu d'import,
+qui ne reçoit que la tête du fichier, écrite dans `src/http/import.ts` ; le manuel et le commentaire précisés ;
+`features.md` daté, avec l'empreinte des deux fiches d'aide qui citent ces sections ; un test de FAQ en TSV). Deux
+restes vont à `todo.md` : un fichier aux rangées inégales retombe encore sur la devinette, et une ligne unique de
+8 Mo occupe l'API environ six secondes (antérieur au lot, mesuré par la relecture).
+
+**CI** verte sur ses trois jobs (`securite`, `integration`, `unit`), lue job par job.
+
+**Déploiement** à 8 h 07 UTC, sans migration : `feb03cf0` était le seul commit que la production n'avait pas.
+`nginx -s reload` une fois `mba-api` sain, puis `fumee.mjs` : les six chemins publics comme attendus.
+`aide:charger` : 26 fiches chargées. Le code DÉPLOYÉ a été exécuté dans `mba-api` sur les deux fichiers mesurés,
+sans toucher à la base : la FAQ rend ses deux paires, le fichier de contacts ses trois colonnes.
+
 ## 2026-09-30 : l'essai réel des bornes de `/v1/contacts`, fait
 
 Six appels en production avec une clé de test de l'espace démo, aucun n'écrit : un lot de 51 fiches rend 400 ;
