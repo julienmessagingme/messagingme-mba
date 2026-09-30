@@ -60,6 +60,7 @@ proprement, aucun intégrateur n'était branché).
 🔴 **LES ESSAIS RÉELS, À FAIRE PAR JULIEN** (une vraie clé d'API, droits Écrire + Lire les contacts et
 Envois, le numéro d'essai) :
 1. **Lot 1** : `POST /v1/contacts` avec un `externalId`, puis la fiche dans le mini-CRM porte « Identifiant API ».
+   ⚠️ Depuis le 2026-09-26, un champ ou une étiquette envoyés dans l'essai doivent déjà exister dans l'espace.
 2. **Lot 2** : `POST /v1/sends` cible template avec `idempotencyKey` dans le corps ; rejouer la même clé
    avec un autre corps rend 422 `idempotency_key_reused` ; `GET /v1/sends/{id}` rend le rapport.
 3. **Lot 3** : les six gestes du plan du lot 3 (§ « Essai réel »), dont un RCS vers un appareil SANS RCS :
@@ -82,18 +83,6 @@ Envois, le numéro d'essai) :
 - une panne de Meta rend 422 sans `code` (un code dédié élargirait la table des codes) ;
 - un événement trop vieux pour l'outil est écarté sans compteur visible, et un refus partiel répété de l'outil
   écrit une ligne par job dans le journal (plafond à décider).
-
-## BORNES DE `/v1/contacts` (DÉPLOYÉ LE 2026-09-26, ESSAI RÉEL DÛ)
-
-Lot de 50 fiches au plus, 10 champs et 10 étiquettes par fiche dans un lot, 20 à l'unité et en `PATCH`, et
-l'API ne crée plus ni champ ni étiquette. Relecture unique sans rouge, CI verte job par job, contrôle public
-vert. Le récit : journal technique, 2026-09-26.
-
-🔴 **L'ESSAI RÉEL, TROIS APPELS QUI N'ÉCRIVENT RIEN** (une clé de test sur l'espace démo, droit Écrire les
-contacts) : un lot de 51 fiches rend 400 ; dans un lot, une fiche à 11 champs est refusée à son index ; un
-champ inconnu est refusé et n'apparaît pas dans Bibliothèque > Champs.
-⚠️ **Et les essais du lot 1 ci-dessus en dépendent désormais** : un `fields` ou un `tags` de l'essai doit
-exister dans l'espace AVANT l'appel, sinon la fiche est refusée, et c'est le comportement voulu.
 
 ## HUBSPOT MASQUÉ SANS PORTAIL (LOT 9, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
 

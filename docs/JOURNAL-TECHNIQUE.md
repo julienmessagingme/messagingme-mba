@@ -5,6 +5,13 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : l'essai réel des bornes de `/v1/contacts`, fait
+
+Six appels en production avec une clé de test de l'espace démo, aucun n'écrit : un lot de 51 fiches rend 400 ;
+une fiche à 11 champs dans un lot est refusée à son index ; un champ inconnu est refusé, et rejoué, refusé encore
+(donc jamais créé) ; une étiquette inconnue est refusée ; une fiche seule à 21 champs rend 400. Chaque réponse
+porte le message attendu et `created: 0`. La clé, passée dans la conversation, est à révoquer.
+
 ## 2026-09-29 soir : la connaissance d'un agent, l'agent reçoit ce que la recherche trouve (2 000 caractères)
 
 **Le défaut**, relevé en réparant le CSV (`25f5af1b`). Le plein texte, le rappel vectoriel et le reclassement
