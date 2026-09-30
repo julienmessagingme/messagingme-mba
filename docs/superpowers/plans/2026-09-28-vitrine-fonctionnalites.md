@@ -73,6 +73,10 @@ de ce plan que la production emprunte (un envoi d'e-mail) ; le reste est de la p
   dans votre CRM ») ; **« fallback »** remplace « repli » dans le texte de la page WhatsApp et RCS. Le libellé de la
   console, « WhatsApp et RCS, avec repli », reste cité tel quel à côté de sa capture. L'adresse
   `/fonctionnalites/conversations-en-actions/` ne change pas : elle circule depuis la veille.
+- Page Publicités Click-to-WhatsApp : **deux messages, tous deux voulus par Julien** : la pub ouvre une conversation
+  (pas une landing page), ET tout se pilote au même endroit (plus d'allers-retours entre le Business Manager de
+  Meta et une plateforme conversationnelle). Le second est porté par un avant/après en HTML, juste après la une.
+  Les boutons « Demander une démo » mènent au formulaire, message pré-rempli avec la fonctionnalité.
 
 ## Essai réel qui clôt
 
