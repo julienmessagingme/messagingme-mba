@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { parseCsv } from '../crm/csv';
+import { apercuCsvHorsBoucle, parseCsvHorsBoucle } from '../crm/csv';
 import { recognizeColumns } from '../crm/recognize';
 import { importContacts } from '../crm/import';
 import type { ContactStore, ImportDeps } from '../crm/import';
@@ -141,14 +141,9 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
     if (typeof body.csv !== 'string' || body.csv.trim() === '') {
       return reply.code(400).send({ error: 'csv requis (texte brut)' });
     }
-    const parsed = parseCsv(body.csv);
-    if (parsed.headers.length === 0) return reply.code(400).send({ error: 'aucune colonne détectée (1re ligne = en-têtes)' });
-    return reply.code(200).send({
-      headers: parsed.headers,
-      sampleRows: parsed.rows.slice(0, 4),
-      rowCount: parsed.rows.length,
-      mapping: mappingFromHeaders(parsed.headers),
-    });
+    const apercu = await apercuCsvHorsBoucle(body.csv);
+    if (apercu.headers.length === 0) return reply.code(400).send({ error: 'aucune colonne détectée (1re ligne = en-têtes)' });
+    return reply.code(200).send({ ...apercu, mapping: mappingFromHeaders(apercu.headers) });
   });
 
   app.post('/tenants/:tenantId/contacts/import', optsImportCouteux, async (req, reply) => {
@@ -179,7 +174,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
     // sinon une liste que le garde-fou de campagne écarte du marketing, sans rien signaler.
     const optIn = body.optIn !== false;
 
-    const parsed = parseCsv(body.csv);
+    const parsed = await parseCsvHorsBoucle(body.csv);
     const mapping = body.mapping ?? mappingFromHeaders(parsed.headers);
     // 🔴 La case cochée réabonne aussi qui a dit STOP : c'est le seul import qui le peut, parce que l'opérateur le
     // demande. HubSpot, le webhook entrant et la création à la main gardent le STOP.

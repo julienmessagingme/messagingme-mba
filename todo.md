@@ -1,37 +1,53 @@
 # todo.md : backlog
 
-## 🔴 Lecture des CSV et des documents : des formes de quelques centaines de Ko figent l'API (2026-09-30)
+## 🔴 Une page web choisie par un administrateur fige encore l'API (2026-09-30)
 
-Trouvées par la relecture des bornes de `parseCsv` (colonnes, lignes), reproduites ensuite, antérieures à elles.
-Qui : un administrateur de n'importe quel espace, par l'import de contacts ou son aperçu (10 appels par minute et
-par espace), l'import de FAQ de l'agent de Meta (1 Mo par le corps, 2 Mo par URL, sans plafond coûteux) ou la
-connaissance d'un agent. Effet : `mba-api` ne répond plus à personne, console et webhooks de Meta compris, pour
-TOUS les espaces ; le healthcheck la marque `unhealthy` sans la redémarrer.
+- 🔴 **`pageEnFiches` se lit dans le fil principal** (`src/agent/scrape.ts`, appelée par l'aperçu et l'import d'une
+  page ou d'un site de la connaissance d'un agent, `src/http/agent-knowledge.ts`). Mesuré par la relecture du lot du
+  worker : 200 Ko de `<` coûtent 65,6 s, 200 Ko de `<!--` 17,2 s, en temps quadratique. Qui : un administrateur de
+  n'importe quel espace, qui pointe l'import sur une page qu'il contrôle. Effet : `mba-api` ne répond plus à
+  personne pendant la lecture. Remède : le même motif `...HorsBoucle` (`src/lib/hors-boucle.ts`), mais PAR LOT de
+  pages (un site en compte jusqu'à 50, et un worker coûte 0,35 à 0,5 s de démarrage), puis l'ajout de
+  `pageEnFiches` à `tests/lecture-hors-boucle-inventaire.test.ts`. La FAQ par page HTML (`extraireDepuisHtml`) est,
+  elle, passée par le worker le même jour.
 
-- 🔴 **Guillemets mal placés puis une traîne d'espaces** : `"` + `a"` x N + une espace x K + un saut de ligne.
-  papaparse reparcourt toute la traîne à chaque guillemet (`extraSpaces`, puis `trim()`), soit N x K par lecture, et
-  `parseCsv` lit le texte plusieurs fois. Reproduit : 101 Ko coûtent 1,5 s, le temps double avec N comme avec K ;
-  la relecture a mesuré 123 s pour 330 Ko, soit des dizaines de minutes pour 1 Mo. Aucune borne ne joue (une ligne,
-  une colonne), et `separateurCsv` seul y passe aussi.
-- 🔴 **Doublons d'en-tête** : `a_1` ... `a_8192` puis 8 192 fois `a` fait 16 384 colonnes, donc passe la borne, et
-  le renommage de papaparse repart de `a_1` pour chaque doublon, soit un coût quadratique. Reproduit : 1,8 s pour
-  8 192 colonnes ; la relecture : 55 s pour 520 Ko avec des noms plus longs.
-- 🔴 **Un .docx de quelques centaines d'octets** (`texteDocx`, `src/agent/setup/piece-jointe.ts`, mesuré par la
-  relecture du 2026-09-30) : ses trois expressions (`<w:br\b[^>]*\/?>`, `<w:t\b[^>]*>([\s\S]*?)<\/w:t>`, `<[^>]+>`)
-  sont quadratiques sur un `document.xml` fait de `<` ou de balises non fermées. 80 000 `<` dans un .docx de 227
-  octets : 8,2 s dans `reconnaitre`, puis autant dans `extraireTexte` ; le zip ramène ces motifs à presque rien, et
-  `MAX_DOCX_DECOMPRESSE` laisse passer 64 Mo décompressés. Piste mesurée linéaire : `[^<>]` au lieu de `[^>]`, et
-  `[^<]*` au lieu de `[\s\S]*?` (un `<` brut n'existe pas dans un `document.xml` valide).
-- 🔴 **Une suite de lignes courtes dans un document texte** (`texteEnFiches`, même fichier, mesuré par la même
-  relecture) : chaque ligne qui ressemble à un titre recolle toute la section courante (`contenuDe`), et une section
-  de moins de 40 caractères ne se ferme jamais. `T` suivi de deux sauts de ligne, répété : 60 Ko 3,2 s, 120 Ko
-  10,2 s. Piste : tenir la longueur au fil de la lecture au lieu de tout recoller.
+## 🟡 Lecture des fichiers déposés : ce que le worker borne sans le corriger (2026-09-30)
 
-Remède proposé, le seul qui ne dépende pas d'une liste de formes (chaque lot en a fermé
-une, chaque relecture en a trouvé d'autres) : lire le fichier dans un worker thread, avec une échéance
-(`terminate()` au bout de quelques secondes, puis un 400) et des `resourceLimits`, pour le CSV comme pour toute la
-chaîne d'un document (`reconnaitre`, `extraireTexte`, `texteEnFiches`). À cadrer : le chargement d'un worker TypeScript
-sous `tsx` en production et sous vitest, et le coût du retour des rangées vers le fil principal.
+Depuis le 2026-09-30, un CSV, une page de FAQ ou un document déposé se lit dans un worker (`src/lib/hors-boucle.ts`) :
+échéance de 10 s (30 s pour un document), 1 Go de tas, quatre lectures à la fois. Les formes ci-dessous ne figent
+donc plus l'API ; chacune occupe un cœur jusqu'à l'échéance, puis le fichier est refusé en 400. Ce qui reste : un vrai
+fichier qui les frôle serait refusé au lieu d'être lu, et quatre dépôts hostiles simultanés occupent quatre des huit
+cœurs du VPS le temps de l'échéance.
+
+- 🟡 **Guillemets mal placés puis une traîne d'espaces** : papaparse reparcourt la traîne à chaque guillemet
+  (`extraSpaces`, puis `trim()`), soit N x K par lecture. 101 Ko : 1,5 s ; 330 Ko : 123 s selon la relecture.
+- 🟡 **Doublons d'en-tête** : `a_1` ... `a_8192` puis 8 192 fois `a` passe la borne de colonnes, et le renommage de
+  papaparse repart de `a_1` pour chaque doublon, soit un coût quadratique. 1,8 s pour 8 192 colonnes.
+- 🟡 **Un .docx de quelques centaines d'octets** (`texteDocx`, `src/agent/setup/piece-jointe.ts`) : ses trois
+  expressions sont quadratiques sur un `document.xml` fait de `<` ou de balises non fermées (80 000 `<` dans 227
+  octets : 8,2 s, selon la relecture). Piste mesurée linéaire : `[^<>]` au lieu de `[^>]`, et `[^<]*` au lieu de
+  `[\s\S]*?` (un `<` brut n'existe pas dans un `document.xml` valide).
+- 🟡 **Une suite de lignes courtes dans un document texte** (`texteEnFiches`, même fichier) : chaque ligne qui
+  ressemble à un titre recolle toute la section courante (`contenuDe`). `T` suivi de deux sauts de ligne, répété :
+  120 Ko 10,2 s selon la relecture. Piste : tenir la longueur au fil de la lecture au lieu de tout recoller.
+- 🟡 **Sous les bornes, le coût suit la taille**, dans le worker désormais : un million de lignes d'un caractère 1,9
+  à 2,7 s, un guillemet sur deux caractères sur 8 Mo 6,2 s et 1,2 Go, 16 384 noms puis 250 rangées pleines 7,5 s et
+  700 Mo.
+- 🟡 **Le fil principal paie encore la copie de l'entrée et la reconstruction des rangées d'un import**, en
+  proportion des cellules présentes : 0,18 s pour le plus gros vrai fichier (762 600 numéros) ; 0,8 s de blocage et
+  228 Mo de tas pour un CSV forgé de 7,5 Mo (16 384 noms de 200 caractères, 140 rangées pleines), contre 1,8 s et 1,4 Go
+  quand les rangées revenaient par nom. L'aperçu, lui, ne rapporte que quatre rangées (0,12 s sur le même fichier).
+  Pour aller plus loin : que `importContacts` lise les rangées par numéro de colonne.
+- 🟡 **Le plafond de quatre lectures est commun à tous les espaces**, et compté par process. Les routes de la FAQ et
+  des pièces jointes de l'assistant n'ont pas le plafond coûteux par espace : un seul administrateur peut y garder
+  les quatre places (quatre fichiers lents toutes les 10 s), et l'import de contacts, la FAQ et les documents de
+  TOUS les espaces rendent alors 429 le temps qu'il insiste. Remède : une part par espace, ou le plafond coûteux sur
+  ces routes ; et un compteur partagé, en base, le jour où l'API tourne en plusieurs instances.
+- 🟡 **`--max-old-space-size` l'emporterait sans bruit sur la limite de 1 Go d'un worker** (mesuré par la relecture
+  sous Node 24, en ligne de commande comme dans `NODE_OPTIONS`). Rien ne le pose aujourd'hui (`NODE_OPTIONS` vide
+  dans le conteneur de production, vérifié le 2026-09-30) : à ne pas ajouter sans relever cette limite.
+- 🟡 **Une image lue par le modèle de vision peut ensuite tomber en 429 ou à l'échéance** du découpage (pièce
+  jointe de l'assistant) : la lecture payée est perdue. Le plafond de 2 € par mois des assistants borne la perte.
 
 ## 🟡 Lecture des CSV : les restes de la réparation du séparateur (2026-09-30)
 
@@ -42,12 +58,6 @@ sous `tsx` en production et sous vitest, et le coût du retour des rangées vers
   contact (mesuré par la relecture). Un export Excel écrit toutes ses cellules et n'est pas concerné. Remède
   esquissé et mesuré par la relecture : une seconde passe propre à `parseCsv`, qui a un en-tête (même ordre de
   séparateurs, en-tête d'au moins deux colonnes, aucune rangée plus longue que lui, la majorité aussi longue).
-- 🟡 **Sous les bornes, un CSV coûte encore quelques secondes** (`parseCsv`, mesuré le 2026-09-30, hors les formes
-  🔴 ci-dessus) : un million de lignes d'un caractère 1,9 à 2,7 s sur le poste de dev, autant qu'un vrai fichier de
-  8 Mo de numéros seuls ; la relecture : un guillemet sur deux caractères sur 8 Mo 6,2 s et 1,2 Go (une erreur
-  `InvalidQuotes` par guillemet), 16 384 noms distincts puis 250 rangées pleines 7,5 s et 700 Mo. Et refuser une
-  ligne unique de 8 Mo coûte encore 1,4 s en production : sa rangée est lue quatre fois (`separateurCsv`, la
-  devinette, le contrôle). Le worker thread du 🔴 ci-dessus les couvrirait aussi.
 - 🟡 **Une première ligne faite de séparateurs seuls devient l'en-tête** (`parseCsv`, vu le 2026-09-30, antérieur) :
   papaparse renomme ses cellules vides (`_1`, `_2`...) avant de sauter les lignes vides. Sur `;;;` puis
   `nom;tel;ville;cp`, les en-têtes lus sont `_1`, `_2`, `_3`, le vrai en-tête devient une rangée de données et la

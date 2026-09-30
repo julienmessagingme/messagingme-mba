@@ -8,6 +8,7 @@ import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef } from '../src/crm/types';
 import type { ContactFilters } from '../src/crm/contact-store.pg';
 import { journalMuet } from './routes-inertes';
+import { csvLent, retardPendant } from './boucle';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -82,7 +83,7 @@ function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryC
   });
 }
 
-describe('POST /tenants/:tenantId/contacts/import', () => {
+describe('POST /tenants/:tenantId/contacts/import', { timeout: 30_000 }, () => {
   it('parse le CSV, reconnaît les colonnes, upsert les contacts opt-in', async () => {
     const contacts = new FakeContacts();
     const app = inject(contacts, new FakeFields());
@@ -116,6 +117,7 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     const b = res.json<{ headers: string[]; rowCount: number; mapping: { columns: Record<string, { target: string }> } }>();
     expect(b.headers).toEqual(['Nom', 'Téléphone', 'Ville']);
     expect(b.rowCount).toBe(1);
+    expect(res.json<{ sampleRows: unknown[] }>().sampleRows).toEqual([{ Nom: 'Julie', 'Téléphone': '+33611111111', Ville: 'Lyon' }]);
     expect(b.mapping.columns['Téléphone']?.target).toBe('phone');
     expect(b.mapping.columns['Nom']?.target).toBe('name');
     expect(b.mapping.columns['Ville']?.target).toBe('custom');
@@ -342,7 +344,7 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
   });
 });
 
-describe('journal d’audit de l’import', () => {
+describe('journal d’audit de l’import', { timeout: 30_000 }, () => {
   // Littéral multi-ligne : le CSV porte de vrais sauts de ligne, comme le corps réel de la requête.
   const csv = `Nom,Téléphone
 Julie,+33611111111
@@ -414,7 +416,7 @@ Marc,0622222222`;
  * anglais brut de Fastify, sans savoir quoi faire. Deux garanties ici : la route d'import accepte
  * beaucoup plus que le plafond global, et le refus, quand il tombe, est en français et dit l'issue.
  */
-describe('import : plafond de corps dédié et refus lisible', () => {
+describe('import : plafond de corps dédié et refus lisible', { timeout: 30_000 }, () => {
   /** CSV synthétique d'environ `mo` mégaoctets (en-tête + lignes de ~40 caractères). */
   function gros(mo: number): string {
     const lignes = ['Nom,Telephone'];
@@ -455,6 +457,21 @@ describe('import : plafond de corps dédié et refus lisible', () => {
     expect(message).not.toContain('body'); // plus le « Request body is too large » de Fastify
     await app.close();
   });
+
+  it('🔴 un fichier lent à lire ne bloque pas la boucle d’événements, sur l’aperçu comme sur l’import', async () => {
+    // Relevé le 2026-09-30 : lu dans le fil principal, un tel fichier (guillemets mal placés puis des espaces, un
+    // coût en N x K dans papaparse) figeait l'API pour tous les espaces. Il se lit désormais dans un worker.
+    const app = inject(new FakeContacts(), new FakeFields());
+    await app.ready(); // le démarrage du serveur ne doit pas entrer dans la mesure
+    for (const url of ['/tenants/t1/contacts/import/preview', '/tenants/t1/contacts/import']) {
+      const { retard, duree, resultat } = await retardPendant(() =>
+        app.inject({ method: 'POST', url, ...auth(), payload: { csv: csvLent(1_000, 200_000), optIn: true } }));
+      expect(resultat.statusCode, url).not.toBe(500);
+      expect(duree, url).toBeGreaterThan(500);
+      expect(retard, url).toBeLessThan(duree / 4);
+    }
+    await app.close();
+  }, 30_000);
 
   it('🔴 en-tête de plus de 16 384 colonnes -> 400 en français, sur l’aperçu comme sur l’import, rien d’écrit', async () => {
     // Une ligne unique de 8 Mo occupait l'API plusieurs secondes, pour tous les espaces (mesuré le 2026-09-30).

@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { horsBoucle } from '../lib/hors-boucle';
 
 export interface ParsedCsv {
   headers: string[];
@@ -103,4 +104,61 @@ export function parseCsv(text: string): ParsedCsv {
     return o;
   });
   return { headers, rows };
+}
+
+/** Une rangée indexée par numéro de colonne : le nom de l'en-tête n'est pas répété à chaque rangée. */
+type RangeeCompacte = Record<number, string>;
+
+/**
+ * `parseCsv` sous la forme qui voyage du worker au fil principal : les rangées indexées par numéro de colonne.
+ * Relevé par la relecture du 2026-09-30 : rendues par nom, 16 384 noms de 200 caractères répétés sur 140 rangées
+ * pesaient 473 Mo de JSON, et le fil principal payait 1,8 s et 1,4 Go pour les relire.
+ */
+export function parseCsvCompact(text: string): { headers: string[]; rows: RangeeCompacte[] } {
+  const { headers, rows } = parseCsv(text);
+  const colonne = new Map<string, number>();
+  headers.forEach((h, i) => { if (!colonne.has(h)) colonne.set(h, i); });
+  return {
+    headers,
+    rows: rows.map((r) => {
+      const o: RangeeCompacte = {};
+      for (const [h, v] of Object.entries(r)) o[colonne.get(h)!] = v;
+      return o;
+    }),
+  };
+}
+
+/**
+ * `parseCsv` hors de la boucle d'événements (`src/lib/hors-boucle.ts`) : ce que l'import appelle. Les bornes
+ * ci-dessus ferment des formes, cette lecture borne le TEMPS : sous elles, des fichiers de quelques centaines de Ko
+ * tenaient encore la boucle des minutes (relevé le 2026-09-30). Le fil principal ne paie plus que la relecture des
+ * cellules présentes.
+ */
+export async function parseCsvHorsBoucle(text: string): Promise<ParsedCsv> {
+  const { headers, rows } = await horsBoucle<{ headers: string[]; rows: RangeeCompacte[] }>(new URL(import.meta.url), 'parseCsvCompact', [text]);
+  return {
+    headers,
+    rows: rows.map((r) => {
+      const o: Record<string, string> = {};
+      for (const [i, v] of Object.entries(r)) o[headers[Number(i)]!] = v;
+      return o;
+    }),
+  };
+}
+
+/** Ce que l'aperçu d'un import montre, et rien de plus : l'en-tête, quatre rangées d'exemple, le compte. */
+export interface ApercuCsv {
+  headers: string[];
+  sampleRows: Array<Record<string, string>>;
+  rowCount: number;
+}
+
+export function apercuCsv(text: string): ApercuCsv {
+  const { headers, rows } = parseCsv(text);
+  return { headers, sampleRows: rows.slice(0, 4), rowCount: rows.length };
+}
+
+/** `apercuCsv` hors de la boucle d'événements : l'aperçu ne rapporte au fil principal que ce qu'il montre. */
+export function apercuCsvHorsBoucle(text: string): Promise<ApercuCsv> {
+  return horsBoucle<ApercuCsv>(new URL(import.meta.url), 'apercuCsv', [text]);
 }

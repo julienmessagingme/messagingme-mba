@@ -6,7 +6,7 @@ import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, pageEnFiches } from '../agen
 import { urlRecuperable, type PageDistante } from '../lib/page-distante';
 import { PAGES_MAX, dansLaPortee, normaliserUrl, porteeParDefaut, visiter } from '../agent/crawl';
 import {
-  TAILLE_DOCUMENT_MAX, extraireTexte, reconnaitre, texteEnFiches,
+  TAILLE_DOCUMENT_MAX, lireDocumentHorsBoucle,
 } from '../agent/setup/piece-jointe';
 import { octetsDepuisDataUrl } from '../rcs/image';
 import { espaceVerifie, estUuid } from './scope';
@@ -225,7 +225,9 @@ export function registerAgentKnowledge(
 
     const bytes = octetsDepuisDataUrl(parse.data.dataUrl);
     if (!bytes) return reply.code(400).send({ error: 'fichier illisible (data URL base64 attendu)' });
-    const reconnu = reconnaitre(bytes);
+    // Nature, texte et fiches en UN seul worker : seules les fiches reviennent, jamais le texte.
+    const lu = await lireDocumentHorsBoucle(bytes, parse.data.nom, TAILLE_DOCUMENT_MAX);
+    const reconnu = lu.reconnu;
     // 415 et pas 400 : le corps est bien formé, c'est le type du contenu qu'on refuse.
     if (!reconnu) return reply.code(415).send({ error: 'format non accepté (texte en UTF-8, CSV, PDF ou Word)' });
     if (reconnu.nature === 'image') {
@@ -237,13 +239,12 @@ export function registerAgentKnowledge(
       return reply.code(413).send({ error: `fichier trop lourd (${Math.round(TAILLE_DOCUMENT_MAX / 1024 / 1024)} Mo maximum)` });
     }
 
-    const texte = await extraireTexte(bytes, reconnu.nature);
     // 422 : le type est accepté mais le fichier ne porte aucun texte. Le dire vaut mieux qu'un succès à zéro
     // fiche, que le client lirait comme un import réussi.
-    if (texte === null || texte.trim() === '') {
+    if (!lu.fiches) {
       return reply.code(422).send({ error: 'aucun texte lisible dans ce fichier (un PDF scanné, par exemple, n’en contient pas)' });
     }
-    const fiches = texteEnFiches(texte, parse.data.nom, reconnu.nature);
+    const fiches = lu.fiches;
     if (fiches.length === 0) return reply.code(422).send({ error: 'ce fichier est trop court pour faire une fiche' });
 
     // Remplace, comme une page relue : redéposer le même fichier retire ses fiches d'avant (sinon deux dépôts

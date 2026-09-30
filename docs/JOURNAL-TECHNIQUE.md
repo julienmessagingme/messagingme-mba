@@ -5,6 +5,44 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : un fichier déposé se lit hors de la boucle d'événements
+
+Décidé par Julien le jour même, après la relecture du plafond de lignes : sous toutes les bornes de forme posées sur
+un CSV, des fichiers de quelques centaines de Ko tenaient encore la boucle de `mba-api` des secondes à des minutes
+(guillemets mal placés suivis d'espaces, N x K dans papaparse ; doublons d'en-tête ; puis, dans la connaissance d'un
+agent, un .docx de 227 octets et un texte de lignes courtes). Chaque borne fermait une forme, chaque relecture en
+trouvait d'autres : on borne désormais le TEMPS.
+
+`src/lib/hors-boucle.ts` lance un worker par lecture (tsx s'y enregistre lui-même : sous Node 22, celui dont il hérite
+n'enregistre pas ses hooks hors du fil principal), avec une échéance (10 s ; 30 s pour un document, pour ne pas
+refuser un vrai gros PDF que la boucle supportait en la bloquant), 1 Go de tas, et quatre lectures à la fois (429
+au-delà : la FAQ et les pièces jointes de l'assistant n'ont pas le plafond coûteux, et le VPS a huit cœurs pour tous
+ses services). Chaque refus est journalisé. Les lectures restent des fonctions pures (synchrones, sauf
+`extraireTexte`) ; chaque module expose sa version `...HorsBoucle`, que les routes appellent : import de contacts et
+son aperçu, FAQ de l'agent de Meta (corps, URL en CSV ou en HTML), connaissance d'un agent, pièces jointes de
+l'assistant. `pageEnFiches` (import d'une page ou d'un site) reste dans le fil principal : lot suivant, en rouge au
+`todo.md`.
+
+La relecture du lot a trouvé ce que le worker ne borne pas : son RETOUR. Un CSV forgé de 7,9 Mo (16 384 noms de 200
+caractères, 140 rangées pleines) rendait 473 Mo de JSON, les noms répétés à chaque rangée, et le fil principal payait
+1,8 s et 1,4 Go pour les relire. D'où trois choix : les rangées d'un import voyagent indexées par numéro de colonne
+(0,8 s et 228 Mo de tas sur le même fichier, reconstruites par nom sur le fil principal) ; l'aperçu ne rapporte que
+quatre rangées (0,12 s) ; et un document se lit en UN seul worker, de sa nature à ses fiches, dont seules les fiches
+reviennent (trois workers par dépôt, premier jet, dépassaient les 5 s des tests sous la suite complète). Elle a aussi
+trouvé que le compteur montait avant `new Worker` : quatre workers qui ne démarrent pas auraient rendu 429 à tout le
+monde jusqu'au redémarrage.
+
+Éprouvé dans un conteneur jetable lancé depuis l'image de production (Node 22.23.2, tsx, sans les dépendances de dev)
+: démarrage et résultat en 0,5 s, refus à 400 conservé, une lecture de 3,7 s ne retarde la boucle que de 12 ms,
+l'échéance coupe en 400. Tests : le helper (résultat, erreur à `statusCode`, échéance, boucle libre, 429, worker qui
+ne démarre pas) ; une propriété par route, la boucle jamais bloquée plus du quart de la durée d'une lecture lente,
+rouge sur le code d'avant (2,5 à 3,1 s de blocage) ; et un inventaire qui refuse tout appel direct de ces lectures
+hors de leurs modules. ⚠️ Le premier jet du test de boucle ne voyait rien : la promesse de la requête se résolvait
+juste après le blocage, avant que le minuteur en retard ne l'ait constaté (17 ms mesurés pour 1,7 s de blocage réel) ;
+`tests/boucle.ts` laisse désormais passer un tour de minuteur avant de lire le retard. Mutations attrapées : chaque
+enveloppe rendue synchrone, plafond retiré, échéance retirée, compteur remonté avant `new Worker`, décodage des
+rangées décalé, aperçu vidé de ses exemples, une route ramenée à l'appel direct.
+
 ## 2026-09-30 : la normalisation d'un document texte redevient linéaire
 
 Vu en passant par la relecture du plafond de lignes des CSV : `normaliser` (`src/agent/setup/piece-jointe.ts`), qui

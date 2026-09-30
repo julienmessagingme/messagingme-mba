@@ -9,6 +9,7 @@ import type { PageDistante } from '../src/lib/page-distante';
 import { MAX_FICHES_PAR_PAGE } from '../src/agent/scrape';
 import { CORPS_MAX } from '../src/agent/resolvers/connaissance';
 import { connaissanceInerte } from './routes-inertes';
+import { csvLent, retardPendant } from './boucle';
 
 /**
  * Routes de la base de connaissance d'un agent IA.
@@ -352,7 +353,7 @@ describe('base de connaissance : parcourir un site (crawl)', () => {
   });
 });
 
-describe('base de connaissance : importer un DOCUMENT', () => {
+describe('base de connaissance : importer un DOCUMENT', { timeout: 30_000 }, () => {
   /**
    * 🔴 CE QUE CETTE ROUTE NE REECRIT PAS. La reconnaissance, l extraction et le decoupage vivent deja dans
    * `src/agent/setup/piece-jointe.ts`, ecrits pour la conversation de construction : ils n etaient
@@ -365,6 +366,21 @@ describe('base de connaissance : importer un DOCUMENT', () => {
     'Arret de travail', '',
     'Une indemnite journaliere complete les prestations de la Securite sociale des le 4e jour.',
   ].join(String.fromCharCode(10));
+
+  it('🔴 un document lent a decouper ne bloque pas la boucle d evenements', async () => {
+    // Releve le 2026-09-30 : lu dans le fil principal, un tel texte (guillemets mal places puis des espaces, que le
+    // decoupage essaie de lire en CSV) figeait l API pour tous les espaces. Il se lit desormais dans un worker.
+    const { srv } = app();
+    await srv.ready(); // le demarrage du serveur ne doit pas entrer dans la mesure
+    const { retard, duree, resultat } = await retardPendant(() => srv.inject({
+      method: 'POST', url: `${base('t1')}/document`, ...h(adminTok),
+      payload: { nom: 'lent.txt', dataUrl: texteEnDataUrl(csvLent(2_000, 400_000)) },
+    }));
+    expect(resultat.statusCode).not.toBe(500);
+    expect(duree).toBeGreaterThan(500);
+    expect(retard).toBeLessThan(duree / 4);
+    await srv.close();
+  }, 30_000);
 
   it('un document devient des fiches, et sa PROVENANCE est portee', async () => {
     const { srv, cap } = app();

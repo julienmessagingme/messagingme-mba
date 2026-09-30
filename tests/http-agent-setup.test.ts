@@ -13,6 +13,7 @@ import { MAX_FICHES_PAR_PAGE } from '../src/agent/scrape';
 import { LlmApiError } from '../src/llm/errors';
 import { capturerJournal } from './journal';
 import { assistantAgentInerte } from './routes-inertes';
+import { csvLent, retardPendant } from './boucle';
 
 /**
  * La route de la conversation de construction.
@@ -684,7 +685,7 @@ describe('conversation de construction', () => {
    * déclare : ce texte finit dans la base de connaissance, donc dans le prompt d'un agent qui parle à de vrais
    * contacts. Le découpage, lui, est prouvé dans `tests/agent-piece-jointe.test.ts`.
    */
-  describe('pièce jointe', () => {
+  describe('pièce jointe', { timeout: 30_000 }, () => {
     const urlPiece = (tenant: string, agentId = AG) => `${url(tenant, agentId)}/piece-jointe`;
     const dataUrl = (contenu: string, mime = 'text/plain') => `data:${mime};base64,${Buffer.from(contenu, 'utf8').toString('base64')}`;
     const document = ['Nos horaires', 'La piscine est ouverte de 9h à 20h tous les jours, sauf le mardi.'].join('\n');
@@ -701,6 +702,20 @@ describe('conversation de construction', () => {
       expect(fiches[0]!.titre).toBe('Nos horaires');
       expect(fiches[0]!.corps).toContain('9h à 20h');
     });
+
+    it('🔴 un document lent à découper ne bloque pas la boucle d’événements', async () => {
+      // Relevé le 2026-09-30 : lu dans le fil principal, un tel texte (guillemets mal placés puis des espaces, que le
+      // découpage essaie de lire en CSV) figeait l'API pour tous les espaces. Il se lit désormais dans un worker.
+      const { srv } = app({});
+      await srv.ready(); // le démarrage du serveur ne doit pas entrer dans la mesure
+      const { retard, duree, resultat } = await retardPendant(() => srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok),
+        payload: { nom: 'lent.txt', dataUrl: dataUrl(csvLent(2_000, 400_000)) },
+      }));
+      expect(resultat.statusCode).not.toBe(500);
+      expect(duree).toBeGreaterThan(500);
+      expect(retard).toBeLessThan(duree / 4);
+    }, 30_000);
 
     it('🔴 un CSV devient des fiches de rangées entières, et la réponse porte le plafond pour que l’écran le dise', async () => {
       const fiches: Array<{ titre: string; corps: string }> = [];

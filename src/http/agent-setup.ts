@@ -4,9 +4,9 @@ import { parse as secureJsonParse } from 'secure-json-parse';
 import type { Guard } from '../auth/middleware';
 import type { ChatMessage, ChatMessageImage, ReponseChat, OutilExpose } from '../agent/llm/chat-client';
 import { octetsDepuisDataUrl } from '../rcs/image';
-import { MAX_FICHES_PAR_PAGE } from '../agent/scrape';
+import { MAX_FICHES_PAR_PAGE, type FicheExtraite } from '../agent/scrape';
 import {
-  extraireTexte, reconnaitre, texteEnFiches, TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
+  lireDocumentHorsBoucle, texteEnFichesHorsBoucle, TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
 } from '../agent/setup/piece-jointe';
 import { construireMessages, inventaireDe, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
 import {
@@ -261,7 +261,10 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
 
     const bytes = octetsDepuisDataUrl(parse.data.dataUrl);
     if (!bytes) return reply.code(400).send({ error: 'fichier illisible (data URL base64 attendu)' });
-    const reconnu = reconnaitre(bytes);
+    // Nature, texte et fiches d'un document en UN seul worker : seules les fiches reviennent, jamais le texte. Une
+    // image, elle, revient sans fiches : c'est le modèle de vision qui la lit, plus bas.
+    const doc = await lireDocumentHorsBoucle(bytes, parse.data.nom, TAILLE_DOCUMENT_MAX);
+    const reconnu = doc.reconnu;
     // 415 et pas 400 : le corps est bien formé, c'est le type du contenu qu'on refuse. Et le refus se fonde
     // sur la signature réelle, jamais sur l'extension du nom, qui ne prouve rien.
     if (!reconnu) {
@@ -272,7 +275,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       return reply.code(413).send({ error: `fichier trop lourd (${Math.round(plafond / 1024 / 1024)} Mo maximum pour ce type)` });
     }
 
-    let texte: string | null;
+    let fiches: FicheExtraite[] | null | undefined;
     if (reconnu.nature === 'image') {
       // Refus explicite plutôt qu'un appel voué à un 400 illisible : sans modèle de vision, on le dit, et les
       // documents continuent de passer par ailleurs (ils n'ont besoin d'aucun modèle).
@@ -301,18 +304,16 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         return reply.code(422).send({ error: `l’image n’a pas pu être lue : ${raison}` });
       }
       await noterDepense(deps, ctx.tenant, lu.coutDollars);
-      texte = lu.texte;
+      fiches = lu.texte === null || lu.texte.trim() === '' ? null : await texteEnFichesHorsBoucle(lu.texte, parse.data.nom, reconnu.nature);
     } else {
-      texte = await extraireTexte(bytes, reconnu.nature);
+      fiches = doc.fiches;
     }
-    if (texte === null || texte.trim() === '') {
+    if (!fiches) {
       // 422 : le fichier est d'un type accepté mais ne porte aucun texte exploitable (PDF scanné, image sans
       // écriture, document vide). Le dire est plus utile qu'un succès à zéro fiche, que le client lirait
       // comme un import réussi.
       return reply.code(422).send({ error: 'aucun texte lisible dans ce fichier (un PDF scanné, par exemple, n’en contient pas)' });
     }
-
-    const fiches = texteEnFiches(texte, parse.data.nom, reconnu.nature);
     if (fiches.length === 0) return reply.code(422).send({ error: 'ce fichier est trop court pour faire une fiche' });
     const bilan = await deps.ecrireFichesDocument(ctx.tenant, ctx.agentId, parse.data.nom, fiches);
     if (!bilan) return reply.code(404).send({ error: 'agent introuvable' });

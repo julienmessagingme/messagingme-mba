@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { AudienceNonConfirmee, MbaClient, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
 import type { BusinessInfo, Faq, Skill } from '../mba/client';
-import { extraireDepuisCsv, extraireDepuisHtml, extraireDepuisJson, normaliser, planifierImport } from '../mba/faq-import';
+import { extraireDepuisCsvHorsBoucle, extraireDepuisHtmlHorsBoucle, extraireDepuisJson, normaliser, planifierImport } from '../mba/faq-import';
 import type { FaqRow } from '../mba/faq-import';
 import { isSendableButtonUrl } from '../meta/button-url';
 import { urlRecuperable } from '../lib/page-distante';
@@ -191,7 +191,7 @@ async function extraire(
   }
 
   if (nonEmpty(corps.csv)) {
-    return { lignes: extraireDepuisCsv(corps.csv), source: 'csv' };
+    return { lignes: await extraireDepuisCsvHorsBoucle(corps.csv), source: 'csv' };
   }
 
   if (nonEmpty(corps.url)) {
@@ -212,8 +212,8 @@ async function extraire(
         return { error: 'la page annonce du JSON mais il est illisible', code: 422 };
       }
     }
-    if (type.includes('csv') || type.includes('plain')) return { lignes: extraireDepuisCsv(page.body), source: 'url (csv)' };
-    return { lignes: extraireDepuisHtml(page.body), source: 'url (html)' };
+    if (type.includes('csv') || type.includes('plain')) return { lignes: await extraireDepuisCsvHorsBoucle(page.body), source: 'url (csv)' };
+    return { lignes: await extraireDepuisHtmlHorsBoucle(page.body), source: 'url (html)' };
   }
 
   return { error: 'source requise : items, csv ou url', code: 400 };

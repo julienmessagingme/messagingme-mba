@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import { separateurCsv } from '../../crm/csv';
 import { MAX_FICHES_PAR_PAGE, MAX_TITRE, empilerEnFiches, type FicheExtraite } from '../scrape';
 import { CORPS_MAX } from '../resolvers/connaissance';
+import { horsBoucle } from '../../lib/hors-boucle';
 
 /**
  * Une pièce jointe de la conversation de construction, transformée en texte puis en fiches de connaissance.
@@ -231,6 +232,40 @@ export function reconnaitre(bytes: Buffer): PieceJointeReconnue | null {
     if (!CONTROLE.test(texte) && separateurCsv(normaliser(texte)) !== null) return { nature: 'texte', mime: 'text/plain' };
   }
   return null;
+}
+
+/**
+ * Un document déposé, lu d'un seul tenant : sa nature, puis ses fiches. `fiches` manque quand elles ne sont pas à
+ * lire (nature inconnue, image, document plus lourd que `plafondDocument`), vaut `null` quand le document ne porte
+ * aucun texte, `[]` quand il est trop court pour faire une fiche.
+ */
+export interface DocumentLu {
+  reconnu: PieceJointeReconnue | null;
+  fiches?: FicheExtraite[] | null;
+}
+
+export async function lireDocument(bytes: Buffer, nom: string, plafondDocument: number): Promise<DocumentLu> {
+  const reconnu = reconnaitre(bytes);
+  if (reconnu === null || reconnu.nature === 'image' || bytes.length > plafondDocument) return { reconnu };
+  const texte = await extraireTexte(bytes, reconnu.nature);
+  if (texte === null || texte.trim() === '') return { reconnu, fiches: null };
+  return { reconnu, fiches: texteEnFiches(texte, nom, reconnu.nature) };
+}
+
+/**
+ * `lireDocument` hors de la boucle d'événements (`src/lib/hors-boucle.ts`) : ce que les routes appellent. 🔴 Relevé
+ * le 2026-09-30 : un .docx de quelques centaines d'octets, un texte de lignes courtes ou un CSV aux guillemets mal
+ * placés tenaient la boucle des secondes, voire des minutes. UN worker par document (chacun coûte 0,35 à 0,5 s de
+ * démarrage), et seules les fiches reviennent au fil principal, jamais le texte. 30 s d'échéance : un vrai gros PDF,
+ * que la boucle supportait en la bloquant, ne doit pas devenir un refus.
+ */
+export function lireDocumentHorsBoucle(bytes: Buffer, nom: string, plafondDocument: number): Promise<DocumentLu> {
+  return horsBoucle(new URL(import.meta.url), 'lireDocument', [bytes, nom, plafondDocument], { delaiMs: 30_000 });
+}
+
+/** `texteEnFiches` hors de la boucle : pour le texte qu'un modèle de vision a lu dans une image. */
+export function texteEnFichesHorsBoucle(texte: string, titreDefaut: string, nature: NaturePieceJointe): Promise<FicheExtraite[]> {
+  return horsBoucle(new URL(import.meta.url), 'texteEnFiches', [texte, titreDefaut, nature]);
 }
 
 /**

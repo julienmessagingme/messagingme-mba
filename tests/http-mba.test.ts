@@ -7,6 +7,7 @@ import type { MbaClient } from '../src/mba/client';
 import type { MbaRouteDeps } from '../src/http/mba';
 import { MetaApiError } from '../src/meta/errors';
 import { mbaInerte } from './routes-inertes';
+import { csvLent, retardPendant } from './boucle';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -252,7 +253,7 @@ describe('routes MBA : informations business', () => {
   });
 });
 
-describe('routes MBA : FAQ', () => {
+describe('routes MBA : FAQ', { timeout: 30_000 }, () => {
   const existantes = [{ id: '1', question: 'Horaires ?', answer: '6h-21h' }];
 
   it('création : question ET réponse obligatoires', async () => {
@@ -323,6 +324,32 @@ describe('routes MBA : FAQ', () => {
     expect(vide.statusCode).toBe(422);
     await server.close();
   });
+
+  it('🔴 un CSV lent à lire ne bloque pas la boucle d’événements', async () => {
+    // Relevé le 2026-09-30 : lu dans le fil principal, un tel fichier figeait l'API pour tous les espaces.
+    const { server } = app();
+    await server.ready(); // le démarrage du serveur ne doit pas entrer dans la mesure
+    const { retard, duree, resultat } = await retardPendant(() =>
+      server.inject({ method: 'POST', url: url('/faq/preview'), ...h(adminTok), payload: { csv: csvLent(1_000, 200_000) } }));
+    expect(resultat.statusCode).not.toBe(500);
+    expect(duree).toBeGreaterThan(500);
+    expect(retard).toBeLessThan(duree / 4);
+    await server.close();
+  }, 30_000);
+
+  it('🔴 une page HTML lente à lire ne bloque pas la boucle d’événements', async () => {
+    // Relevé par la relecture du 2026-09-30 : des `<details>` non fermés coûtaient un temps quadratique dans le fil
+    // principal, sur une page de 2 Mo choisie par l'administrateur.
+    const html = '<details>'.repeat(28_000);
+    const { server } = app({}, { fetchUrl: async () => ({ status: 200, contentType: 'text/html', body: html }) });
+    await server.ready(); // le démarrage du serveur ne doit pas entrer dans la mesure
+    const { retard, duree, resultat } = await retardPendant(() =>
+      server.inject({ method: 'POST', url: url('/faq/preview'), ...h(adminTok), payload: { url: 'https://www.exemple.fr/faq' } }));
+    expect(resultat.statusCode).not.toBe(500);
+    expect(duree).toBeGreaterThan(500);
+    expect(retard).toBeLessThan(duree / 4);
+    await server.close();
+  }, 30_000);
 
   it('🔴 un CSV à l’en-tête de plus de 16 384 colonnes -> 400 lisible, par le corps comme par une URL, rien chez Meta', async () => {
     const csv = `${Array(16_385).fill('question').join(';')}\nHoraires ?`;

@@ -1,5 +1,6 @@
 import { parse as secureJsonParse } from 'secure-json-parse';
 import { parseCsv } from '../crm/csv';
+import { horsBoucle } from '../lib/hors-boucle';
 import type { Faq } from './client';
 
 /**
@@ -53,6 +54,11 @@ export function extraireDepuisCsv(brut: string): FaqRow[] {
   const colA = trouve(ENTETES_REPONSE) ?? headers.find((h) => h !== colQ);
   if (colQ === undefined || colA === undefined) return [];
   return rows.map((r) => ({ question: texte(r[colQ]), answer: texte(r[colA]) }));
+}
+
+/** `extraireDepuisCsv` hors de la boucle d'événements (`src/lib/hors-boucle.ts`) : ce que les routes appellent. */
+export function extraireDepuisCsvHorsBoucle(brut: string): Promise<FaqRow[]> {
+  return horsBoucle<FaqRow[]>(new URL(import.meta.url), 'extraireDepuisCsv', [brut]);
 }
 
 /** Reconnaît une paire Q/R dans un objet, quel que soit le nom des clés (question/q/demande, answer/reponse...). */
@@ -129,6 +135,15 @@ export function extraireDepuisHtml(html: string): FaqRow[] {
     dl.push({ question: sansBalises(m[1] ?? ''), answer: sansBalises(m[2] ?? '') });
   }
   return dl;
+}
+
+/**
+ * `extraireDepuisHtml` hors de la boucle d'événements (`src/lib/hors-boucle.ts`) : ce que la route appelle. Relevé par
+ * la relecture du 2026-09-30 : 200 Ko de `<details>` non fermés coûtaient 1 s, en temps quadratique, sur une page de
+ * 2 Mo choisie par l'administrateur.
+ */
+export function extraireDepuisHtmlHorsBoucle(html: string): Promise<FaqRow[]> {
+  return horsBoucle<FaqRow[]>(new URL(import.meta.url), 'extraireDepuisHtml', [html]);
 }
 
 /** Parcourt les blocs `application/ld+json` et en tire les `Question`/`acceptedAnswer` de schema.org. */
