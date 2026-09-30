@@ -81,3 +81,40 @@ agent rendent les mêmes lignes et les mêmes fiches qu'avant.
 
 Aucune migration, aucun ordre imposé. CI lue job par job, `up -d --build`, fumée publique, puis l'essai réel
 ci-dessus par la sonde du conteneur.
+
+## Lot 2 : les pages web
+
+Décidé par Julien le 2026-09-30 au soir, après le déploiement du premier lot. Même méthode : en direct, puis UNE
+relecture indépendante du diff, parce que les chemins sont ceux de la production (aperçu et import d'une page ou d'un
+site dans la connaissance d'un agent) et que le critère se vérifie par le même test de boucle.
+Essai réel : la sonde dans le conteneur, sur une page hostile (refusée à l'échéance, boucle libre) et sur une vraie
+page (mêmes fiches qu'avant).
+
+Mesuré avant d'écrire : `liensDeLaPage` (`src/agent/crawl.ts`, les liens de chaque page d'un parcours) coûte 0,4 s
+pour 50 Ko de `<a ` non fermés, `pageEnFiches` (`src/agent/scrape.ts`) 3,4 s pour 50 Ko de `<`, en temps
+quadratique, sur des pages de 2 Mo au plus. Toutes les expressions de `scrape.ts` ont cette forme : les rendre
+linéaires une à une reviendrait au jeu de taupe que le worker arrête.
+
+- **Un lecteur gardé le temps d'une requête** (`avecLecteur`, `src/lib/hors-boucle.ts`) : un worker, plusieurs
+  lectures, une à la fois. Un parcours de 50 pages ne paie ainsi qu'un démarrage (0,5 s en production), au lieu de
+  25 s. `horsBoucle` devient une lecture unique sur un lecteur ; le worker passe d'un appel unique à une boucle de
+  messages. Trois décisions prises en l'écrivant :
+  - le lecteur se donne à un TRAVAIL et se ferme quand il finit, quelle qu'en soit l'issue, plutôt que d'être ouvert
+    puis fermé par la route : un lecteur oublié ouvert garderait un worker vivant par requête ;
+  - l'échéance est CUMULÉE sur ses lectures (20 s pour les pages d'une requête) : une échéance par lecture laisserait
+    une page hostile tenir un worker jusqu'à elle, cinquante fois pour un seul aperçu ;
+  - une place du plafond de quatre se prend PAR LECTURE, pas pour la vie du lecteur : un aperçu attend surtout le
+    réseau, et garder sa place pendant ce temps rendrait 429 à tous les espaces dès que quatre sites seraient
+    parcourus à la fois. Le worker ne démarre qu'à la première lecture.
+- **`visiter` reçoit l'extraction des liens en paramètre**, sans valeur par défaut : aucun appelant ne peut l'oublier
+  et retomber dans le fil principal. L'aperçu d'un site lit liens et fiches sur un seul lecteur ; l'import d'une ou
+  plusieurs pages, ses fiches sur un seul lecteur, TOUTES avant la première écriture : un refus en cours de route
+  (échéance, 429) laisserait sinon les premières pages importées derrière une réponse d'erreur.
+- Tests : le lecteur (plusieurs lectures sur un même worker, fin du travail qui tue le worker, échéance cumulée,
+  worker tué à l'échéance, lecteur au repos sans place, une lecture à la fois, message des pages) ; la propriété de
+  boucle sur l'aperçu d'un site (une page qui ne ralentit QUE les liens, une autre QUE les fiches, pour que l'oubli de
+  l'une ne se cache pas derrière l'autre) et sur l'import d'une page ; l'ordre lectures puis écritures de l'import ;
+  `pageEnFiches` et `liensDeLaPage` ajoutées à l'inventaire.
+- Hors lot, au `todo.md` : en production, le plus gros vrai CSV bloque encore le fil principal 1,2 s (relire le JSON
+  et reconstruire ses 762 600 rangées, à parts égales) ; y remédier demande de faire arriver les rangées par
+  morceaux.

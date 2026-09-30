@@ -1,3 +1,5 @@
+import { threadId } from 'node:worker_threads';
+
 /**
  * Ce que la boucle d'événements perd pendant `f` : le plus long retard d'un minuteur de 10 ms, avec la durée de `f`
  * et son résultat. Une lecture faite dans le fil principal porte ce retard à sa propre durée ; faite dans un worker,
@@ -27,3 +29,16 @@ export async function retardPendant<T>(f: () => Promise<T>): Promise<{ retard: n
 
 /** Guillemets mal placés puis une traîne d'espaces : papaparse y passe un temps en N x K (relevé le 2026-09-30). */
 export const csvLent = (n: number, k: number): string => `"${'a"'.repeat(n)}${' '.repeat(k)}\nx`;
+
+// Les sondes que les tests du lecteur (`tests/lib-hors-boucle.test.ts`) font tourner DANS le worker.
+
+/** Le fil qui lit : deux lectures sur un même worker rendent le même. */
+export const fil = (): number => threadId;
+
+/** Une lecture qui dure sans occuper le processeur. */
+export const attendre = (ms: number): Promise<number> => new Promise((fin) => setTimeout(() => fin(ms), ms));
+
+/** Un compteur partagé qui bat toutes les 10 ms tant que le worker vit : sa mort se voit à l'arrêt du compteur. */
+export function battre(pouls: Int32Array): void {
+  setInterval(() => Atomics.add(pouls, 0, 1), 10);
+}

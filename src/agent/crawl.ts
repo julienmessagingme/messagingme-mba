@@ -7,8 +7,11 @@
  * cette partie du site » se choisit, ne se devine pas.
  *
  * 🔴 Module pur : la lecture est injectée, et la garde anti-SSRF (`urlRecuperable`) est appelée par
- * l'appelant sur chaque adresse, y compris celles découvertes dans le HTML.
+ * l'appelant sur chaque adresse, y compris celles découvertes dans le HTML. L'extraction des liens l'est aussi : la
+ * route la fait tourner hors de la boucle d'événements (`liensDeLaPageHorsBoucle`).
  */
+
+import type { Lecteur } from '../lib/hors-boucle';
 
 /** Ce qu'on accepte de visiter à partir de l'adresse donnée. */
 export type PorteeImport = 'page' | 'sous-arbre' | 'site';
@@ -74,6 +77,8 @@ export function dansLaPortee(candidat: string, depart: string, portee: PorteeImp
 /**
  * Les adresses vers lesquelles cette page pointe, dans la portée, canoniques et dédoublonnées. Une
  * expression régulière sur `href`, pas de DOM : un lien manqué coûte une page non importée, jamais une erreur.
+ * 🔴 Quadratique sur une page hostile : l'expression repart de chaque `<a` jusqu'au bout d'une page où aucun `>` ne
+ * le ferme (1,2 s pour 90 Ko sur le poste, et une page peut en faire 2 Mo). La route la lit donc hors de la boucle.
  */
 export function liensDeLaPage(html: string, base: string, portee: PorteeImport): string[] {
   const vus = new Set<string>();
@@ -93,6 +98,11 @@ export function liensDeLaPage(html: string, base: string, portee: PorteeImport):
     vus.add(absolu);
   }
   return [...vus];
+}
+
+/** `liensDeLaPage` sur un lecteur (`src/lib/hors-boucle.ts`), hors de la boucle d'événements. */
+export function liensDeLaPageHorsBoucle(lecteur: Lecteur, html: string, base: string, portee: PorteeImport): Promise<string[]> {
+  return lecteur.lire<string[]>(new URL(import.meta.url), 'liensDeLaPage', [html, base, portee]);
 }
 
 /** Une page lue, telle que le parcours a besoin de la voir. */
@@ -120,6 +130,11 @@ export async function visiter(
   depart: string,
   portee: PorteeImport,
   lire: (url: string) => Promise<{ html: string } | { erreur: string }>,
+  /**
+   * Les liens d'une page, sans valeur par défaut : la route les fait extraire hors de la boucle, et un appelant qui
+   * l'oublierait retomberait dans le fil principal sans que rien ne le dise.
+   */
+  liens: (html: string, base: string, portee: PorteeImport) => string[] | Promise<string[]>,
   bornes: { profondeurMax?: number; pagesMax?: number } = {},
 ): Promise<VisiteResultat> {
   const profondeurMax = bornes.profondeurMax ?? PROFONDEUR_MAX;
@@ -147,7 +162,7 @@ export async function visiter(
 
     // Une page à la profondeur maximale est lue, mais ses liens ne sont pas suivis.
     if (portee === 'page' || courant.profondeur >= profondeurMax) continue;
-    for (const lien of liensDeLaPage(res.html, racine, portee)) {
+    for (const lien of await liens(res.html, racine, portee)) {
       if (vues.has(lien)) continue;
       vues.add(lien);
       file.push({ url: lien, profondeur: courant.profondeur + 1 });

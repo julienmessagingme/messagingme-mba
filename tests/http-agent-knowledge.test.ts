@@ -244,7 +244,7 @@ describe('base de connaissance : import d’une page', () => {
   });
 });
 
-describe('base de connaissance : parcourir un site (crawl)', () => {
+describe('base de connaissance : parcourir un site (crawl)', { timeout: 30_000 }, () => {
   /**
    * 🔴 CE QUE CES ROUTES REPARENT. L'import ne prenait qu'UNE page. Julien a donné `ganprevoyance.fr`, on a
    * importé la vitrine, et son agent ne savait rien. La portée se DEDUIT desormais de l'adresse : racine du
@@ -258,6 +258,8 @@ describe('base de connaissance : parcourir un site (crawl)', () => {
   function siteApp(pages: Record<string, string>) {
     const lues: string[] = [];
     const remplacements: string[] = [];
+    /** Lectures et écritures dans l'ordre où elles arrivent. */
+    const journal: string[] = [];
     const deps: AgentKnowledgeRouteDeps = {
       ...connaissanceInerte,
       connaissance: {
@@ -267,18 +269,20 @@ describe('base de connaissance : parcourir un site (crawl)', () => {
         supprimer: async () => true,
         remplacerSource: async (_t, _a, source, fiches) => {
           remplacements.push(source.type === 'page' ? source.url : `document:${source.type === 'document' ? source.nom : ''}`);
+          journal.push(`ecrit ${source.type === 'page' ? source.url : ''}`);
           return { retirees: 0, ecrites: fiches.length };
         },
       },
       fetchUrl: async (u) => {
         lues.push(u);
+        journal.push(`lu ${u}`);
         const html = pages[u];
         if (html === undefined) throw new Error('404');
         return { status: 200, contentType: 'text/html', body: html };
       },
     };
     return {
-      lues, remplacements,
+      lues, remplacements, journal,
       srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentKnowledge: deps }),
     };
   }
@@ -349,6 +353,68 @@ describe('base de connaissance : parcourir un site (crawl)', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json<{ error: string }>().error).toMatch(/injoignable|aucun contenu/);
+    await srv.close();
+  });
+
+  /**
+   * 🔴 UNE PAGE HOSTILE NE FIGE PLUS L'API (2026-09-30). Les expressions qui lisent une page repartent de chaque `<`
+   * jusqu'au bout de la page quand aucun `>` ne la ferme : quelques dizaines de Ko tenaient la boucle des secondes
+   * (2 Mo sont permis), donc la console et les webhooks de Meta de TOUS les espaces. Elles se lisent dans un worker.
+   * Chaque test ralentit UNE seule des deux lectures, pour que l'oubli de l'autre ne se cache pas derrière elle. Le
+   * statut n'est pas exigé : sous la charge de la suite complète, la lecture atteint l'échéance et la route refuse en
+   * 400, ce qui est le comportement voulu. Seul un 500 serait une faute.
+   */
+  it('🔴 l’aperçu ne bloque pas la boucle pendant l’extraction des liens', async () => {
+    // `<a ` répétés puis un seul `>` final : l'expression des liens repart de chaque `<a` jusqu'au bout (1,2 s sur le
+    // poste), la découpe en fiches passe d'un trait.
+    const { srv } = siteApp({ 'https://exemple.fr/': `${'<a '.repeat(30_000)}>` });
+    await srv.ready(); // le démarrage du serveur ne doit pas entrer dans la mesure
+    const { retard, duree, resultat } = await retardPendant(() => srv.inject({
+      method: 'POST', url: `${base('t1')}/apercu`, ...h(adminTok), payload: { url: 'https://exemple.fr/' },
+    }));
+    expect(resultat.statusCode).not.toBe(500);
+    expect(duree).toBeGreaterThan(500);
+    expect(retard).toBeLessThan(duree / 4);
+    await srv.close();
+  });
+
+  it('🔴 l’aperçu ne bloque pas la boucle pendant la découpe en fiches', async () => {
+    // Des `<` sans aucun `>` : la découpe en fiches y passe 2,2 s sur le poste, l'extraction des liens rien.
+    const { srv } = siteApp({ 'https://exemple.fr/': '<'.repeat(40_000) });
+    await srv.ready();
+    const { retard, duree, resultat } = await retardPendant(() => srv.inject({
+      method: 'POST', url: `${base('t1')}/apercu`, ...h(adminTok), payload: { url: 'https://exemple.fr/' },
+    }));
+    expect(resultat.statusCode).not.toBe(500);
+    expect(duree).toBeGreaterThan(500);
+    expect(retard).toBeLessThan(duree / 4);
+    await srv.close();
+  });
+
+  it('🔴 l’import d’une page ne bloque pas la boucle', async () => {
+    const { srv } = siteApp({ 'https://exemple.fr/p': '<'.repeat(40_000) });
+    await srv.ready();
+    const { retard, duree, resultat } = await retardPendant(() => srv.inject({
+      method: 'POST', url: `${base('t1')}/import`, ...h(adminTok), payload: { url: 'https://exemple.fr/p' },
+    }));
+    expect(resultat.statusCode).not.toBe(500);
+    expect(duree).toBeGreaterThan(500);
+    expect(retard).toBeLessThan(duree / 4);
+    await srv.close();
+  });
+
+  it('🔴 l’import lit TOUTES ses pages avant d’en écrire une : un refus de lecture n’en laisse aucune à moitié', async () => {
+    // Le worker peut refuser une lecture en cours de route (échéance, mémoire, trop de lectures à la fois). Écrire
+    // page par page laisserait alors les premières importées derrière une réponse d'erreur.
+    const { srv, journal } = siteApp(SITE);
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/import`, ...h(adminTok),
+      payload: { url: 'https://exemple.fr/', pages: ['https://exemple.fr/', 'https://exemple.fr/contrats'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(journal).toEqual([
+      'lu https://exemple.fr/', 'lu https://exemple.fr/contrats', 'ecrit https://exemple.fr/', 'ecrit https://exemple.fr/contrats',
+    ]);
     await srv.close();
   });
 });

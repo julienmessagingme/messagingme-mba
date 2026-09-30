@@ -1,4 +1,5 @@
 import { CORPS_MAX } from './resolvers/connaissance';
+import type { Lecteur } from '../lib/hors-boucle';
 
 /**
  * Une page HTML transformée en fiches de connaissance. Pure : la lecture et la garde SSRF sont dans
@@ -173,4 +174,13 @@ export function pageEnFiches(html: string, url: string): FicheExtraite[] {
     empilerEnFiches(fiches, d.titre, corps);
   }
   return fiches;
+}
+
+/**
+ * `pageEnFiches` sur un lecteur (`src/lib/hors-boucle.ts`), hors de la boucle d'événements. 🔴 Les expressions de ce
+ * module repartent de chaque `<` jusqu'au bout d'une page où aucun `>` ne le ferme : 2,2 s pour 40 Ko sur le poste,
+ * et une page peut en faire 2 Mo. Les rendre linéaires une à une serait sans fin ; le worker borne le temps.
+ */
+export function pageEnFichesHorsBoucle(lecteur: Lecteur, html: string, url: string): Promise<FicheExtraite[]> {
+  return lecteur.lire<FicheExtraite[]>(new URL(import.meta.url), 'pageEnFiches', [html, url]);
 }

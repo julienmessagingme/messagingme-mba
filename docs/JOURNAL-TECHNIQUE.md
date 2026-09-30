@@ -5,6 +5,44 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-01 : les pages d'un site se lisent hors de la boucle, après le déploiement de `5e8bc5b5`
+
+**`5e8bc5b5` est en production depuis le 2026-09-30 à 21 h 22 UTC**, par un `checkout` détaché de ce commit
+(`main` portait déjà le travail d'autres sessions), CI lue job par job, `up -d --build`, fumée publique verte.
+L'essai réel, par une sonde dans `mba-api` effacée ensuite : un CSV « guillemets et espaces » de 330 Ko est refusé en
+400 à 10,0 s, et la boucle n'a pas pris plus de 15 ms de retard pendant ce temps ; un document CSV déposé dans la
+connaissance d'un agent rend sa fiche ; le plus gros vrai fichier (762 600 numéros) se lit en 5,9 s, mais bloque
+encore la boucle 1,2 s au RETOUR (relire le JSON, reconstruire les rangées). Le `todo.md` annonçait 0,18 s : c'était
+la seule relecture, mesurée sur le poste. Corrigé là-bas, et laissé hors de ce lot : y remédier demande de faire
+arriver les rangées par morceaux.
+
+**Les pages d'un site** (aperçu et import de la connaissance d'un agent) étaient le dernier chemin de lecture resté
+dans le fil principal : `pageEnFiches` coûtait 2,2 s pour 40 Ko de `<`, `liensDeLaPage` 1,2 s pour 90 Ko de `<a `
+suivis d'un seul `>`, en temps quadratique, sur des pages qui peuvent faire 2 Mo. Un site en compte jusqu'à cinquante,
+à deux lectures chacune : un worker par lecture aurait ajouté 50 s de démarrages à un aperçu. D'où le LECTEUR
+(`avecLecteur`, `src/lib/hors-boucle.ts`) : un worker gardé le temps d'une requête, qui lit une chose à la fois et
+meurt avec le travail qu'on lui confie. `horsBoucle` en devient la lecture unique, et le worker passe d'un appel
+unique à une boucle de messages. Trois choix, chacun tenu par un test : l'échéance est CUMULÉE sur les lectures d'un
+lecteur (20 s pour les pages d'une requête ; par lecture, une page hostile tiendrait un worker jusqu'à l'échéance,
+cinquante fois de suite) ; une place du plafond de quatre se prend PAR LECTURE, pas pour la vie du lecteur (un aperçu
+attend surtout le réseau) ; et l'import lit et découpe toutes ses pages AVANT d'en écrire une, pour qu'un refus en
+cours de route n'en laisse pas la moitié derrière une réponse d'erreur. `visiter` reçoit l'extraction des liens en
+paramètre, sans défaut.
+
+Tests : le lecteur (même worker d'une lecture à l'autre ; worker tué à la fin du travail comme à l'échéance, vu à
+l'arrêt d'un compteur partagé qu'il faisait battre ; échéance cumulée ; lecteur au repos sans place ; une lecture à la
+fois ; refus qui parle de pages) ; la propriété de boucle sur l'aperçu, avec une page qui ne ralentit QUE les liens et
+une autre QUE les fiches, pour que l'oubli de l'une ne se cache pas derrière l'autre, et sur l'import ; l'ordre
+lectures puis écritures ; l'inventaire étendu à `pageEnFiches` et `liensDeLaPage`. Mutations attrapées : les liens,
+puis les fiches de l'aperçu, puis celles de l'import ramenés dans le fil principal ; l'import réécrit page par page ;
+l'échéance remise par lecture ; la place gardée toute la vie du lecteur ; la fin du travail, puis l'échéance, qui ne
+tuent plus le worker ; la garde d'une lecture à la fois retirée ; un refus qui parle toujours de fichier ; `visiter`
+qui rappelle `liensDeLaPage` en direct ; un worker qui ne répond qu'à un message ; la place prise avant que la lecture
+parte. ⚠️ Le premier jet de la mutation « place gardée toute la vie du lecteur » est passé : son compte devenait
+négatif sur un test antérieur du même fichier, ce qui ouvrait le plafond. C'est la mutation qui était fausse, pas le
+test ; refaite avec un compte juste, elle tombe. Une mutation qui passe se relit avant de conclure que le test est
+faible.
+
 ## 2026-09-30 : tout sur la fiche, lots 1 et 2a, et la fiche contact en onglets
 
 **Lot 1 (`187b36bb`, `4938172b`, jaunes `657fad5a`).** La dernière analyse d'une conversation est recopiée sur la

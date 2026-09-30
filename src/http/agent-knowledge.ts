@@ -2,9 +2,12 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import type { FicheAEcrire, FicheConnaissance, SourceFiche } from '../agent/knowledge';
-import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, pageEnFiches } from '../agent/scrape';
+import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, pageEnFichesHorsBoucle, type FicheExtraite } from '../agent/scrape';
 import { urlRecuperable, type PageDistante } from '../lib/page-distante';
-import { PAGES_MAX, dansLaPortee, normaliserUrl, porteeParDefaut, visiter } from '../agent/crawl';
+import { avecLecteur, type OptionsLecture } from '../lib/hors-boucle';
+import {
+  PAGES_MAX, dansLaPortee, liensDeLaPageHorsBoucle, normaliserUrl, porteeParDefaut, visiter,
+} from '../agent/crawl';
 import {
   TAILLE_DOCUMENT_MAX, lireDocumentHorsBoucle,
 } from '../agent/setup/piece-jointe';
@@ -73,6 +76,15 @@ const importSchema = z.object({
    */
   pages: z.array(z.string().trim().min(1).max(2000)).max(PAGES_MAX).optional(),
 });
+
+/**
+ * La lecture des pages d'un aperçu ou d'un import, dans un worker, sous une échéance CUMULÉE sur toutes ses pages. Une
+ * page ordinaire (500 Ko) coûte 20 ms par lecture sur le poste, liens comme fiches, une page au plafond de lecture
+ * (2 Mo) 50 à 80 ms, et le VPS en met deux à trois fois plus : cinquante pages ordinaires y tiennent en 6 s, cinquante
+ * pages au plafond frôleraient l'échéance, et le refus dit alors d'importer une partie du site. Une page hostile y est
+ * coupée, en 400. Plus haut, un seul espace tiendrait les quatre places du plafond de lecture (`todo.md`).
+ */
+const LECTURE_PAGES: OptionsLecture = { nature: 'pages', delaiMs: 20_000 };
 
 export function registerAgentKnowledge(
   app: FastifyInstance, deps: AgentKnowledgeRouteDeps, garde: Guard, limiteCouteuse?: PreHandler,
@@ -271,26 +283,21 @@ export function registerAgentKnowledge(
     // La portée se déduit de l'adresse quand personne n'en a choisi une : racine -> le site, chemin -> la page.
     const portee = parse.data.portee ?? porteeParDefaut(url);
 
-    const visite = await visiter(url, portee, lireUnePage);
-    if (visite.pages.length === 0) {
-      const pourquoi = visite.ecartees[0]?.raison ?? 'aucune page lisible';
-      return reply.code(422).send({ error: `rien à importer : ${pourquoi}` });
-    }
-    return reply.code(200).send({
-      url,
-      portee,
-      plafondAtteint: visite.plafondAtteint,
-      ecartees: visite.ecartees,
+    // Liens et fiches se lisent sur un même lecteur : un worker pour tout l'aperçu, et une échéance pour toutes ses pages.
+    return avecLecteur(LECTURE_PAGES, async (lecteur) => {
+      const visite = await visiter(url, portee, lireUnePage, (html, racine, p) => liensDeLaPageHorsBoucle(lecteur, html, racine, p));
+      if (visite.pages.length === 0) {
+        const pourquoi = visite.ecartees[0]?.raison ?? 'aucune page lisible';
+        return reply.code(422).send({ error: `rien à importer : ${pourquoi}` });
+      }
       // On rend le compte de fiches par page, jamais leur contenu : l'aperçu sert à décider d'une portée,
       // pas à relire cinquante pages dans une réponse HTTP.
-      pages: visite.pages.map((p) => {
-        const fiches = pageEnFiches(p.html, p.url);
-        return {
-          url: p.url,
-          fiches: fiches.length,
-          caracteres: fiches.reduce((n, f) => n + f.corps.length, 0),
-        };
-      }).filter((p) => p.fiches > 0),
+      const pages: Array<{ url: string; fiches: number; caracteres: number }> = [];
+      for (const p of visite.pages) {
+        const fiches = await pageEnFichesHorsBoucle(lecteur, p.html, p.url);
+        if (fiches.length > 0) pages.push({ url: p.url, fiches: fiches.length, caracteres: fiches.reduce((n, f) => n + f.corps.length, 0) });
+      }
+      return reply.code(200).send({ url, portee, plafondAtteint: visite.plafondAtteint, ecartees: visite.ecartees, pages });
     });
   });
 
@@ -322,17 +329,28 @@ export function registerAgentKnowledge(
       .filter((u) => u !== '' && urlRecuperable(u) && dansLaPortee(u, url, 'site'));
     if (aImporter.length === 0) return reply.code(400).send({ error: 'aucune adresse importable dans la demande' });
 
+    // 🔴 Toutes les pages sont lues et découpées AVANT la première écriture : le worker peut refuser une lecture en
+    // cours de route (échéance, mémoire, trop de lectures à la fois), et écrire page par page laisserait alors les
+    // premières importées derrière une réponse d'erreur.
+    const ecartees: Array<{ url: string; raison: string }> = [];
+    const decoupees = await avecLecteur(LECTURE_PAGES, async (lecteur) => {
+      const faites: Array<{ cible: string; fiches: FicheExtraite[] }> = [];
+      for (const cible of aImporter) {
+        const lu = await lireUnePage(cible);
+        if ('erreur' in lu) { ecartees.push({ url: cible, raison: lu.erreur }); continue; }
+        const fiches = await pageEnFichesHorsBoucle(lecteur, lu.html, cible);
+        if (fiches.length === 0) { ecartees.push({ url: cible, raison: 'aucun contenu exploitable' }); continue; }
+        faites.push({ cible, fiches });
+      }
+      return faites;
+    });
+
     let ecrites = 0;
     let retirees = 0;
     const importees: string[] = [];
-    const ecartees: Array<{ url: string; raison: string }> = [];
-    for (const cible of aImporter) {
-      const lu = await lireUnePage(cible);
-      if ('erreur' in lu) { ecartees.push({ url: cible, raison: lu.erreur }); continue; }
-      const fiches = pageEnFiches(lu.html, cible);
-      if (fiches.length === 0) { ecartees.push({ url: cible, raison: 'aucun contenu exploitable' }); continue; }
+    for (const { cible, fiches } of decoupees) {
       const bilan = await deps.connaissance.remplacerSource(ctx.tenant, ctx.agentId, { type: 'page', url: cible }, fiches);
-      // `null` = l'agent n'existe pas : inutile de continuer les 49 pages suivantes.
+      // `null` = l'agent n'existe pas : inutile d'écrire les pages suivantes.
       if (!bilan) return reply.code(404).send({ error: 'agent introuvable' });
       ecrites += bilan.ecrites;
       retirees += bilan.retirees;

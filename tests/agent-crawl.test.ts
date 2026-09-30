@@ -107,7 +107,7 @@ describe('visiter', () => {
       'https://x.fr/n1': A('/n2'),
       'https://x.fr/n2': A('/n3'),
       'https://x.fr/n3': '',
-    }), { profondeurMax: 2 });
+    }), liensDeLaPage, { profondeurMax: 2 });
     // n3 est à trois sauts : lu par personne. n2 est LU mais ses liens ne sont pas suivis.
     expect(r.pages.map((p) => p.url)).toEqual(['https://x.fr/', 'https://x.fr/n1', 'https://x.fr/n2']);
   });
@@ -117,13 +117,13 @@ describe('visiter', () => {
     // complète alors qu'il en manque la moitié.
     const pages: Record<string, string> = { 'https://x.fr/': [A('/a'), A('/b'), A('/c')].join('') };
     for (const p of ['a', 'b', 'c']) pages[`https://x.fr/${p}`] = '';
-    const r = await visiter('https://x.fr/', 'site', site(pages), { pagesMax: 2 });
+    const r = await visiter('https://x.fr/', 'site', site(pages), liensDeLaPage, { pagesMax: 2 });
     expect(r.pages).toHaveLength(2);
     expect(r.plafondAtteint).toBe(true);
   });
 
   it('🔴 preuve inverse : sous le plafond, il ne prétend PAS avoir coupé', async () => {
-    const r = await visiter('https://x.fr/', 'site', site({ 'https://x.fr/': '' }));
+    const r = await visiter('https://x.fr/', 'site', site({ 'https://x.fr/': '' }), liensDeLaPage);
     expect(r.plafondAtteint).toBe(false);
   });
 
@@ -131,7 +131,7 @@ describe('visiter', () => {
     const r = await visiter('https://x.fr/', 'site', site({
       'https://x.fr/': [A('/mort'), A('/vivant')].join(''),
       'https://x.fr/vivant': '',
-    }));
+    }), liensDeLaPage);
     expect(r.pages.map((p) => p.url)).toEqual(['https://x.fr/', 'https://x.fr/vivant']);
     expect(r.ecartees).toEqual([{ url: 'https://x.fr/mort', raison: 'page injoignable' }]);
   });
@@ -140,7 +140,7 @@ describe('visiter', () => {
     const r = await visiter('https://x.fr/', 'site', site({
       'https://x.fr/': A('/a'),
       'https://x.fr/a': [A('/'), A('/a')].join(''),
-    }));
+    }), liensDeLaPage);
     expect(r.pages.map((p) => p.url)).toEqual(['https://x.fr/', 'https://x.fr/a']);
   });
 
@@ -148,7 +148,19 @@ describe('visiter', () => {
     const r = await visiter('https://x.fr/nos-contrats', 'page', site({
       'https://x.fr/nos-contrats': [A('/a'), A('/b')].join(''),
       'https://x.fr/a': '', 'https://x.fr/b': '',
-    }));
+    }), liensDeLaPage);
     expect(r.pages.map((p) => p.url)).toEqual(['https://x.fr/nos-contrats']);
+  });
+
+  it('🔴 suit les liens que rend l’extraction REÇUE, et pas ceux qu’elle lirait elle-même', async () => {
+    // L'extraction des liens est quadratique sur une page hostile (0,4 s pour 50 Ko de `<a ` non fermés) : la
+    // route la fait tourner dans un worker. Un parcours qui la rappellerait en direct figerait la boucle.
+    const appels: unknown[][] = [];
+    const r = await visiter('https://x.fr/', 'site', site({
+      'https://x.fr/': A('/a'),
+      'https://x.fr/b': '',
+    }), async (...args) => { appels.push(args); return args[0] === A('/a') ? ['https://x.fr/b'] : []; });
+    expect(r.pages.map((p) => p.url)).toEqual(['https://x.fr/', 'https://x.fr/b']);
+    expect(appels[0]).toEqual([A('/a'), 'https://x.fr/', 'site']);
   });
 });

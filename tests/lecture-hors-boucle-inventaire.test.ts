@@ -8,22 +8,21 @@ import { join, relative, resolve } from 'node:path';
  * Les tests de boucle des routes (import de contacts, FAQ, connaissance, pièces jointes) ne couvrent que les routes
  * qui existent : une route écrite demain qui appellerait `parseCsv` en direct figerait l'API pour tous les espaces
  * sur un fichier de quelques centaines de Ko, et aucun d'eux ne tomberait. Cet inventaire, lui, la voit : hors des
- * trois modules qui les définissent, personne n'appelle ces lectures en direct, seulement leur version
- * `...HorsBoucle`.
- *
- * ⚠️ `pageEnFiches` (`src/agent/scrape.ts`, l'import d'une page ou d'un site) n'y est PAS encore : elle se lit toujours
- * dans le fil principal, en temps quadratique sur une page hostile. C'est le lot suivant (`todo.md`).
+ * modules qui les définissent, personne n'appelle ces lectures en direct, seulement leur version `...HorsBoucle`.
+ * Les pages web en sont depuis le lot suivant, le même jour (`pageEnFiches`, `liensDeLaPage`).
  */
 
 const RACINE = resolve(__dirname, '..');
 const SRC = join(RACINE, 'src');
 
-/** Les lectures qui tiennent la boucle sur un fichier hostile, et les modules qui les définissent. */
+/** Les lectures qui tiennent la boucle sur un fichier ou une page hostile, et les modules qui les définissent. */
 const LECTURES = [
   'parseCsv', 'parseCsvCompact', 'apercuCsv', 'separateurCsv', 'extraireDepuisCsv', 'extraireDepuisHtml',
-  'reconnaitre', 'extraireTexte', 'texteEnFiches', 'lireDocument',
+  'reconnaitre', 'extraireTexte', 'texteEnFiches', 'lireDocument', 'pageEnFiches', 'liensDeLaPage',
 ];
-const DEFINISSENT = ['src/crm/csv.ts', 'src/mba/faq-import.ts', 'src/agent/setup/piece-jointe.ts'];
+const DEFINISSENT = [
+  'src/crm/csv.ts', 'src/mba/faq-import.ts', 'src/agent/setup/piece-jointe.ts', 'src/agent/scrape.ts', 'src/agent/crawl.ts',
+];
 
 function fichiers(dossier: string): string[] {
   return readdirSync(dossier).flatMap((nom) => {

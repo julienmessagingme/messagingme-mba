@@ -1,23 +1,13 @@
 # todo.md : backlog
 
-## 🔴 Une page web choisie par un administrateur fige encore l'API (2026-09-30)
-
-- 🔴 **`pageEnFiches` se lit dans le fil principal** (`src/agent/scrape.ts`, appelée par l'aperçu et l'import d'une
-  page ou d'un site de la connaissance d'un agent, `src/http/agent-knowledge.ts`). Mesuré par la relecture du lot du
-  worker : 200 Ko de `<` coûtent 65,6 s, 200 Ko de `<!--` 17,2 s, en temps quadratique. Qui : un administrateur de
-  n'importe quel espace, qui pointe l'import sur une page qu'il contrôle. Effet : `mba-api` ne répond plus à
-  personne pendant la lecture. Remède : le même motif `...HorsBoucle` (`src/lib/hors-boucle.ts`), mais PAR LOT de
-  pages (un site en compte jusqu'à 50, et un worker coûte 0,35 à 0,5 s de démarrage), puis l'ajout de
-  `pageEnFiches` à `tests/lecture-hors-boucle-inventaire.test.ts`. La FAQ par page HTML (`extraireDepuisHtml`) est,
-  elle, passée par le worker le même jour.
-
 ## 🟡 Lecture des fichiers déposés : ce que le worker borne sans le corriger (2026-09-30)
 
-Depuis le 2026-09-30, un CSV, une page de FAQ ou un document déposé se lit dans un worker (`src/lib/hors-boucle.ts`) :
-échéance de 10 s (30 s pour un document), 1 Go de tas, quatre lectures à la fois. Les formes ci-dessous ne figent
-donc plus l'API ; chacune occupe un cœur jusqu'à l'échéance, puis le fichier est refusé en 400. Ce qui reste : un vrai
-fichier qui les frôle serait refusé au lieu d'être lu, et quatre dépôts hostiles simultanés occupent quatre des huit
-cœurs du VPS le temps de l'échéance.
+Depuis le 2026-09-30, un CSV, une page de FAQ, un document déposé ou les pages d'un site se lisent dans un worker
+(`src/lib/hors-boucle.ts`) : échéance de 10 s (30 s pour un document, 20 s cumulées pour les pages d'un aperçu ou d'un
+import de site), 1 Go de tas, quatre lectures à la fois. Les formes ci-dessous ne figent donc plus l'API ; chacune
+occupe un cœur jusqu'à l'échéance, puis le fichier est refusé en 400. Ce qui reste : un vrai fichier qui les frôle
+serait refusé au lieu d'être lu, et quatre dépôts hostiles simultanés occupent quatre des huit cœurs du VPS le temps
+de l'échéance.
 
 - 🟡 **Guillemets mal placés puis une traîne d'espaces** : papaparse reparcourt la traîne à chaque guillemet
   (`extraSpaces`, puis `trim()`), soit N x K par lecture. 101 Ko : 1,5 s ; 330 Ko : 123 s selon la relecture.
@@ -33,16 +23,23 @@ cœurs du VPS le temps de l'échéance.
 - 🟡 **Sous les bornes, le coût suit la taille**, dans le worker désormais : un million de lignes d'un caractère 1,9
   à 2,7 s, un guillemet sur deux caractères sur 8 Mo 6,2 s et 1,2 Go, 16 384 noms puis 250 rangées pleines 7,5 s et
   700 Mo.
-- 🟡 **Le fil principal paie encore la copie de l'entrée et la reconstruction des rangées d'un import**, en
-  proportion des cellules présentes : 0,18 s pour le plus gros vrai fichier (762 600 numéros) ; 0,8 s de blocage et
-  228 Mo de tas pour un CSV forgé de 7,5 Mo (16 384 noms de 200 caractères, 140 rangées pleines), contre 1,8 s et 1,4 Go
-  quand les rangées revenaient par nom. L'aperçu, lui, ne rapporte que quatre rangées (0,12 s sur le même fichier).
-  Pour aller plus loin : que `importContacts` lise les rangées par numéro de colonne.
+- 🟡 **Le fil principal paie encore la relecture et la reconstruction des rangées d'un import**, en proportion des
+  cellules présentes. Mesuré EN PRODUCTION le 2026-09-30, sur le plus gros vrai fichier (762 600 numéros) : 1,2 s de
+  boucle bloquée, pendant une lecture de 5,9 s. Cette ligne annonçait 0,18 s : c'était, sur le poste, la seule
+  relecture du JSON ; la reconstruction des rangées y pèse autant, et le VPS a mis près de trois fois le temps du
+  poste pour les deux. Un CSV forgé de
+  7,5 Mo (16 384 noms de 200 caractères, 140 rangées pleines) : 0,8 s et 228 Mo de tas sur le poste, contre 1,8 s et
+  1,4 Go quand les rangées revenaient par nom. L'aperçu ne rapporte que quatre rangées (0,12 s sur le même fichier).
+  Remède : faire arriver les rangées par morceaux, chacun relu et reconstruit entre deux tours de boucle ; ou que
+  `importContacts` lise les rangées par numéro de colonne.
 - 🟡 **Le plafond de quatre lectures est commun à tous les espaces**, et compté par process. Les routes de la FAQ et
   des pièces jointes de l'assistant n'ont pas le plafond coûteux par espace : un seul administrateur peut y garder
   les quatre places (quatre fichiers lents toutes les 10 s), et l'import de contacts, la FAQ et les documents de
   TOUS les espaces rendent alors 429 le temps qu'il insiste. Remède : une part par espace, ou le plafond coûteux sur
-  ces routes ; et un compteur partagé, en base, le jour où l'API tourne en plusieurs instances.
+  ces routes ; et un compteur partagé, en base, le jour où l'API tourne en plusieurs instances. Les pages d'un site
+  ne gardent une place que pendant leurs lectures (pas pendant qu'elles attendent le réseau), 20 s au plus par
+  requête, sous le plafond coûteux (10 par minute et par espace) : un seul espace peut tout de même tenir les quatre
+  places par rafales.
 - 🟡 **`--max-old-space-size` l'emporterait sans bruit sur la limite de 1 Go d'un worker** (mesuré par la relecture
   sous Node 24, en ligne de commande comme dans `NODE_OPTIONS`). Rien ne le pose aujourd'hui (`NODE_OPTIONS` vide
   dans le conteneur de production, vérifié le 2026-09-30) : à ne pas ajouter sans relever cette limite.
