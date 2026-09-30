@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : un connecteur pousse depuis un scénario, et reçoit les valeurs de la dernière analyse
+
+Deux lots nés de l'essai Brevo (renvoyer nos signaux dans leur API d'événements, `POST /v3/events`, 204 sans corps).
+
+**`4882059d`, le bloc « Appel HTTP » d'un scénario sait POUSSER.** Il exigeait un champ cible et lisait la réponse en
+`integre` : un appel qui ne rend rien d'utile était refusé. Sans champ cible, il lit désormais en `pousse` et ne range
+rien (`src/workflow/appel-http.ts`, `executor.ts`, `engine.ts`) ; la console dit « facultatif ». Relu, déployé.
+
+**`b4a62d3b`, les valeurs de la dernière analyse comme source d'une donnée de connecteur.** Six clés s'ajoutent aux
+valeurs système (`CLES_ANALYSE` : intention, sentiment, satisfaction, urgence, résolue, risque de départ), sous les
+mêmes codes que ce qui part vers Batch. Lecture PARESSEUSE : `PgSignauxStore.analyseDuContact` ne tourne que si l'appel
+déclare une de ces clés, une seule fois par appel, et les quatre appelants de `creerAppelConnecteur` la reçoivent par
+`src/socle.ts`. Aucune migration (colonnes de 0027, 0121, 0178). CI verte job par job, relecture sans rouge, déployé
+le 2026-09-30 vers 8 h 45 UTC ; la lecture exécutée par le vrai code en production sur l'espace d'essai rend
+l'analyse réelle (réclamation, négatif, 2, 8, non résolue), sonde effacée ensuite.
+
+⚠️ **Retour arrière de `b4a62d3b`, à savoir avant de le faire** (relevé par la relecture) : une fois qu'une requête
+porte une clé d'analyse, l'ancien code rend `derniereSaisie` pour toute clé autre que `maintenant`, donc le dernier
+message du contact partirait dans le champ « intention » si la requête déclare aussi `derniere_saisie` ; et son
+`z.enum` à deux valeurs refuse toute édition de cette requête (400). Les jaunes de la relecture (`ae65a599`) : une clé
+système inconnue rend désormais `null` au lieu de partir comme valeur, et le commentaire de `analyseDuContact` suit le
+schéma (un seul fil par contact).
+
 ## 2026-09-30 : le séparateur d'un CSV est essayé, plus deviné (contacts et FAQ de l'agent de Meta)
 
 **Le défaut**, relevé par la relecture de `25f5af1b` : `parseCsv` (`src/crm/csv.ts`) laissait papaparse deviner le
