@@ -32,7 +32,7 @@ const g = (nodes: WorkflowNode[], edges: WorkflowGraph['edges'] = []): WorkflowG
 
 /** Par défaut : mardi 8 septembre 2026, 1 h du matin à Paris. Le cas exact décrit par Julien. */
 const ctx = (over: Partial<EvalContext> = {}): EvalContext => ({
-  fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+  fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null, analyse: null,
   now: new Date('2026-09-07T23:00:00Z'), timeZone: PARIS, businessHours: BH, ...over,
 });
 

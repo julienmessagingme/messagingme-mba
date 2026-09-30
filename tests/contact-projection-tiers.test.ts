@@ -12,8 +12,13 @@ describe('PgContactStore.projectionPourTiers', () => {
 
   it('🔴 nom, tags et champs, et RIEN d’autre de la fiche', async () => {
     const s = store();
+    // La dernière analyse est dans l'état de la fiche (pour le bloc Condition) : elle ne doit pas en sortir.
     vi.spyOn(s, 'getContactStateByWaId').mockResolvedValue({
       fields: { ville: 'Auxerre' }, tags: ['vip'], optIn: 'opted_in', name: 'Julie', phone: '+33600000001', bsuid: 'B1',
+      analyse: {
+        intention: 'reclamation', sentiment: 'negatif', satisfaction: 2, urgence: 8, resolue: false, sujet: 'colis',
+        traiteePar: 'humain', action: 'rappeler', analyseLe: new Date(), fenetreFin: new Date(), conversationId: null,
+      },
     });
     expect(await s.projectionPourTiers('t1', '33600000001')).toEqual({ nom: 'Julie', tags: ['vip'], champs: { ville: 'Auxerre' } });
     expect(s.getContactStateByWaId).toHaveBeenCalledWith('t1', '33600000001');
@@ -21,7 +26,7 @@ describe('PgContactStore.projectionPourTiers', () => {
 
   it('un contact sans nom rend un nom VIDE, un contact inconnu rend `null`', async () => {
     const s = store();
-    vi.spyOn(s, 'getContactStateByWaId').mockResolvedValueOnce({ fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null });
+    vi.spyOn(s, 'getContactStateByWaId').mockResolvedValueOnce({ fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null, analyse: null });
     expect(await s.projectionPourTiers('t1', 'w')).toEqual({ nom: '', tags: [], champs: {} });
     vi.spyOn(s, 'getContactStateByWaId').mockResolvedValueOnce(null);
     expect(await s.projectionPourTiers('t1', 'w')).toBeNull();

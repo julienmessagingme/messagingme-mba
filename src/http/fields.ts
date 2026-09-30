@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { isUserFieldType, isSystemFieldKey, isReservedFieldLabel, slugify } from '../crm/fields';
 import type { UserFieldDef, UserFieldType } from '../crm/types';
+import { champsDeLaFiche } from '../crm/champs-fiche';
+import { operateursDuChamp } from '../crm/filtre-fiche';
 import { espaceVerifie, nonEmpty } from './scope';
 
 /** Ce que les routes lisent et écrivent du référentiel des champs. */
@@ -37,6 +39,20 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
   app.get('/tenants/:tenantId/user-fields/usage', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     return reply.code(200).send(await deps.contacts.fieldUsage(tenant));
+  });
+
+  /**
+   * LA LISTE UNIQUE DES CHAMPS DE LA FICHE (`src/crm/champs-fiche.ts`), avec les opérateurs de filtre de chacun
+   * (vides pour un champ qui ne se filtre pas ainsi). Route à part, délibérément : `/user-fields` alimente dix
+   * écrans, dont les variables de message, qui ne doivent pas recevoir l'analyse (décisions 9 et 10 de la spec). La
+   * carte des colonnes n'en sort jamais.
+   */
+  app.get('/tenants/:tenantId/champs-fiche', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const champs = champsDeLaFiche(await deps.fields.list(tenant)).map((c) => ({
+      cle: c.cle, libelle: c.libelle, provenance: c.provenance, type: c.type, operateurs: operateursDuChamp(c),
+    }));
+    return reply.code(200).send({ champs });
   });
 
   app.get('/tenants/:tenantId/user-fields', opts, async (req, reply) => {

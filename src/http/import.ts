@@ -39,13 +39,13 @@ export function parseFilters(q: Record<string, unknown>): ContactFilters {
   const csv = (v: unknown): string[] =>
     typeof v === 'string' ? v.split(',') : [];
   // Les filtres de champ arrivent ici en JSON dans un query param : illisible -> ignoré (donnée externe).
-  let fieldFilters: ContactFieldFilter[] = [];
+  let parsed: unknown = null;
   if (typeof q.fields === 'string' && q.fields.trim() !== '') {
-    try {
-      const parsed = JSON.parse(q.fields) as unknown;
-      if (Array.isArray(parsed)) fieldFilters = normalizeFieldFilters(parsed);
-    } catch { /* filtre de champ illisible -> ignoré (donnée externe) */ }
+    try { parsed = JSON.parse(q.fields) as unknown; } catch { /* filtre de champ illisible -> ignoré (donnée externe) */ }
   }
+  // 🔴 HORS du `try` : un filtre d'analyse invalide lève `FiltreContactInvalide` (400), qu'un `catch` avalerait en
+  // « aucun filtre », donc en tout l'espace.
+  const fieldFilters: ContactFieldFilter[] = Array.isArray(parsed) ? normalizeFieldFilters(parsed) : [];
   return buildContactFilters({
     tags: csv(q.tags),
     tagMode: q.tagMode,

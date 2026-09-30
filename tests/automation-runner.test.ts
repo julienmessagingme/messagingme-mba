@@ -25,7 +25,7 @@ const auto = (over: Partial<AutomationRow> = {}): AutomationRow => ({
   workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, possedePar: null, ...over,
 });
 const ctx = (over: Partial<EvalContext> = {}): EvalContext => ({
-  fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+  fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null, analyse: null,
   now: new Date(T), timeZone: 'Europe/Paris', businessHours: {}, ...over,
 });
 const MSG: AutomationEvent = { kind: 'message', waId: '33611', body: 'je veux un rdv', isNewContact: false, channel: 'whatsapp' };

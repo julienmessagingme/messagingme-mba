@@ -185,3 +185,35 @@ describe('buildContactWhere : risque de désengagement', () => {
     expect(buildContactWhere('t1', {}).where).not.toContain('risque');
   });
 });
+
+describe('buildContactWhere : les filtres de la dernière analyse (lot 2b)', () => {
+  it('🔴 une clé d’analyse va à SA colonne, jamais au jsonb, même si un champ perso homonyme existait', () => {
+    const { where, params } = buildContactWhere('t1', {
+      fieldFilters: [
+        { key: 'analyse_sentiment', op: 'in', value: 'negatif' },
+        { key: 'analyse_urgence', op: 'gte', value: '7' },
+      ],
+    });
+    expect(where).toBe('tenant_id = $1 and deleted_at is null and analyse_sentiment = any($2::text[]) and analyse_urgence >= $3::int');
+    expect(params).toEqual(['t1', ['negatif'], 7]);
+    expect(where).not.toContain('fields');
+  });
+
+  it('une clé perso reste dans le jsonb, avec ses opérateurs texte', () => {
+    const { where } = buildContactWhere('t1', { fieldFilters: [{ key: 'ville', op: 'eq', value: 'Paris' }] });
+    expect(where).toContain('fields ->> $2 = $3');
+  });
+
+  it('🔴 un filtre qui n’a pas traversé la validation ne s’efface jamais : il vise « personne »', () => {
+    // Deux chemins : une clé d'analyse mal formée, un opérateur de colonne sur un champ perso. Sauter la clause
+    // rendrait l'espace entier à une campagne.
+    for (const ff of [
+      { key: 'analyse_urgence', op: 'gte' as const, value: 'beaucoup' },
+      { key: 'ville', op: 'gte' as const, value: '3' },
+    ]) {
+      const { where, params } = buildContactWhere('t1', { fieldFilters: [ff] });
+      expect(where, ff.key).toBe('tenant_id = $1 and deleted_at is null and false');
+      expect(params).toEqual(['t1']);
+    }
+  });
+});

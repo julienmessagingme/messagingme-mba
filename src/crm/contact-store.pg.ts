@@ -7,6 +7,8 @@ import { classifyWaId, waIdOf } from './identity';
 import { messageDe } from '../lib/erreur';
 import type { LigneDeLaListe } from '../mba/liste';
 import type { CleFicheFixe } from './champs-fiche';
+import { clauseFiltreFiche, estCleFiltrable, estOperateurFicheSeul, type OperateurFicheSeul } from './filtre-fiche';
+import { COLONNES_ANALYSE_FICHE, analyseDeLaLigne, type AnalyseDeFiche, type LigneAnalyseFiche } from '../analysis/fiche';
 
 export interface ContactRow {
   id: string;
@@ -125,8 +127,12 @@ export function isContactFieldOp(v: unknown): v is ContactFieldOp {
   return typeof v === 'string' && (CONTACT_FIELD_OPS as readonly string[]).includes(v);
 }
 
-/** Un filtre sur la valeur d'un champ perso. `value` ignorée pour `empty`/`not_empty`. */
-export interface ContactFieldFilter { key: string; op: ContactFieldOp; value: string }
+/**
+ * Un filtre sur la valeur d'un champ. `value` ignorée pour `empty`/`not_empty`. Sur une clé de la dernière analyse
+ * (`src/crm/filtre-fiche.ts`), la colonne de la fiche, avec les opérateurs de son type ; sur toute autre clé, le
+ * jsonb des champs perso, avec les opérateurs texte.
+ */
+export interface ContactFieldFilter { key: string; op: ContactFieldOp | OperateurFicheSeul; value: string }
 
 /**
  * Résolution d'un contact à partir d'un `wa_id` : E.164 exact (`'+' || wa_id`), sinon chiffres nus, sinon BSUID ;
@@ -653,15 +659,17 @@ export class PgContactStore implements ContactStore {
   async getContactStateByWaId(
     tenantId: string,
     waId: string,
-  ): Promise<{ fields: Record<string, unknown>; tags: string[]; optIn: string; name: string | null; phone: string | null; bsuid: string | null } | null> {
-    const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string; fields: Record<string, unknown> | null; tags: string[] | null }>(
-      `select phone_e164, bsuid, profile_name, opt_in_status, fields, tags from contacts where tenant_id = $1
+  ): Promise<{ fields: Record<string, unknown>; tags: string[]; optIn: string; name: string | null; phone: string | null; bsuid: string | null; analyse: AnalyseDeFiche | null } | null> {
+    const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string; fields: Record<string, unknown> | null; tags: string[] | null } & LigneAnalyseFiche>(
+      `select phone_e164, bsuid, profile_name, opt_in_status, fields, tags, ${COLONNES_ANALYSE_FICHE.join(', ')}
+         from contacts where tenant_id = $1
          ${MATCH_BY_WAID_SQL}`,
       [tenantId, waId],
     );
     const r = res.rows[0];
+    // La dernière analyse voyage À CÔTÉ des champs, jamais dedans : la fonction JS d'un scénario reçoit `fields`.
     return r
-      ? { fields: r.fields ?? {}, tags: r.tags ?? [], optIn: r.opt_in_status, name: r.profile_name, phone: r.phone_e164, bsuid: r.bsuid }
+      ? { fields: r.fields ?? {}, tags: r.tags ?? [], optIn: r.opt_in_status, name: r.profile_name, phone: r.phone_e164, bsuid: r.bsuid, analyse: analyseDeLaLigne(r) }
       : null;
   }
 
@@ -1555,6 +1563,11 @@ export function buildContactWhere(tenantId: string, f: ContactFilters): { where:
   for (const ff of f.fieldFilters ?? []) {
     const key = String(ff.key ?? '').trim();
     if (key === '') continue;
+    // Une clé de la dernière analyse va à SA colonne, par la carte fermée de `filtre-fiche` : jamais au jsonb, où un
+    // champ perso homonyme ne peut plus naître (clés réservées) mais pourrait exister d'avant.
+    if (estCleFiltrable(key)) { clauses.push(clauseFiltreFiche(key, ff.op, ff.value, add)); continue; }
+    // Un opérateur de colonne sur un champ perso n'a pas de sens : personne, jamais « pas de filtre ».
+    if (estOperateurFicheSeul(ff.op)) { clauses.push('false'); continue; }
     // `fields ->> $key` : la clé jsonb est paramétrée, et son placeholder réutilisé. Ne pousser le param de clé
     // qu'une fois la clause décidée, sinon un filtre sauté laisserait un param orphelin qui décalerait la numérotation.
     if (ff.op === 'empty') { const kr = add(key); clauses.push(`(fields ->> ${kr} is null or fields ->> ${kr} = '')`); continue; }

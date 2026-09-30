@@ -154,7 +154,7 @@ describe('🔴 le bloc « Fonction JS » à l’exécution', () => {
     const setField = vi.fn().mockResolvedValue(undefined);
     const executerJs = vi.fn().mockResolvedValue({ ok: true, valeur: 'FRAIS!' });
     const evalContext = vi.fn().mockResolvedValue({
-      fields: { brut: 'frais' }, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+      fields: { brut: 'frais' }, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null, analyse: null,
       now: new Date(), timeZone: 'UTC', businessHours: { lundi: { closed: true, open: '09:00', close: '18:00' } } as never,
     });
     const ex = new WorkflowExecutor(deps({ setField, executerJs, evalContext }) as WorkflowExecutorDeps);
@@ -174,7 +174,7 @@ describe('🔴 le bloc « Fonction JS » à l’exécution', () => {
       setField,
       executerJs: async () => ({ ok: false, valeur: '' }),
       evalContext: async () => ({
-        fields: { brut: 'frais' }, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+        fields: { brut: 'frais' }, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null, analyse: null,
         now: new Date(), timeZone: 'UTC', businessHours: { lundi: { closed: true, open: '09:00', close: '18:00' } } as never,
       }),
     } as Partial<WorkflowExecutorDeps>) as WorkflowExecutorDeps);

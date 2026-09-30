@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { filtersToQuery, type ContactFilters } from '../web/lib/contact-filters';
 import { parseFilters } from '../src/http/import';
+import { parseBulkTarget } from '../src/http/contacts';
 import { FiltreContactInvalide } from '../src/crm/contact-filters';
 import { NIVEAUX_RISQUE } from '../src/engagement/risque';
 
@@ -78,5 +79,61 @@ describe('parseFilters : le niveau de risque', () => {
   it('vide ou absent : ce n’est pas un filtre, rien n’est posé', () => {
     expect(parseFilters({ risque: '' })).toEqual({});
     expect(parseFilters({})).toEqual({});
+  });
+});
+
+/**
+ * 🔴 LES FILTRES DE LA DERNIÈRE ANALYSE SE REFUSENT AUSSI (lot 2b « Tout sur la fiche »). Ils voyagent dans
+ * `fieldFilters`, dont le reste retombe sur `eq` quand l'opérateur est inconnu : pour eux, rien n'est deviné.
+ */
+describe('parseFilters et le corps d’une action en masse : les filtres de la dernière analyse', () => {
+  const champ = (fieldFilters: unknown[]) => ({ fields: JSON.stringify(fieldFilters) });
+
+  it('chaque opérateur survit au round-trip, sous sa forme canonique', () => {
+    const f: ContactFilters = {
+      fieldFilters: [
+        { key: 'analyse_sentiment', op: 'in', value: 'negatif,neutre' },
+        { key: 'analyse_urgence', op: 'gte', value: '7' },
+        { key: 'analyse_satisfaction', op: 'lte', value: '0' },
+        { key: 'analyse_resolue', op: 'is_false', value: '' },
+        { key: 'analyse_le', op: 'newer_than_days', value: '30' },
+        { key: 'analyse_action', op: 'empty', value: '' },
+        { key: 'ville', op: 'contains', value: 'paris' },
+      ],
+    };
+    expect(roundTrip(f)).toEqual(f);
+    expect(parseFilters(champ([{ key: 'analyse_urgence', op: 'gte', value: '07' }]))).toEqual({
+      fieldFilters: [{ key: 'analyse_urgence', op: 'gte', value: '7' }],
+    });
+  });
+
+  it.each([
+    [{ key: 'analyse_urgence', op: 'eq', value: '7' }],
+    [{ key: 'analyse_urgence', op: 'gte', value: '' }],
+    [{ key: 'analyse_urgence', value: '7' }],
+    [{ key: 'analyse_sentiment', op: 'in', value: '' }],
+    [{ key: 'analyse_sentiment', op: 'in', value: 'furieux' }],
+    [{ key: 'analyse_sujet', op: 'contains', value: 'colis' }],
+    [{ key: 'ville', op: 'gte', value: '3' }],
+  ])('🔴 %j est REFUSÉ en 400, jamais ignoré ni ramené à « égal »', (filtre) => {
+    let erreur: unknown = null;
+    try { parseFilters(champ([filtre])); } catch (e) { erreur = e; }
+    expect(erreur).toBeInstanceOf(FiltreContactInvalide);
+    expect((erreur as FiltreContactInvalide).statusCode).toBe(400);
+  });
+
+  it('🔴 le refus traverse le décodage de l’adresse : il n’est pas avalé en « aucun filtre »', () => {
+    // Le JSON illisible reste ignoré (donnée externe), mais un JSON lisible qui porte un filtre invalide lève : si
+    // la normalisation retournait dans le `try` du décodage, ce refus deviendrait tout l'espace.
+    expect(parseFilters({ fields: '{pas du json' })).toEqual({});
+    expect(() => parseFilters(champ([{ key: 'analyse_sentiment', op: 'in', value: 'furieux' }]))).toThrow(FiltreContactInvalide);
+  });
+
+  it('🔴 la cible d’une campagne est refusée de la même façon', () => {
+    expect(() => parseBulkTarget({ filters: { fieldFilters: [{ key: 'analyse_urgence', op: 'gte', value: '42' }] } }))
+      .toThrow(FiltreContactInvalide);
+    expect(parseBulkTarget({ filters: { fieldFilters: [{ key: 'analyse_urgence', op: 'gte', value: '7' }] } })).toEqual({
+      filters: { fieldFilters: [{ key: 'analyse_urgence', op: 'gte', value: '7' }] }, excludeIds: [],
+    });
   });
 });

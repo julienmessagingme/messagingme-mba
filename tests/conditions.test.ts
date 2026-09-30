@@ -18,7 +18,7 @@ const BH: BusinessHours = {
 
 function ctx(over: Partial<EvalContext> = {}): EvalContext {
   return {
-    fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+    fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null, analyse: null,
     now: new Date('2026-08-03T12:00:00Z'), // lundi 14:00 à Paris (été = UTC+2)
     timeZone: PARIS, businessHours: BH, ...over,
   };
@@ -266,5 +266,67 @@ describe('robustesse défensive (Phase 2 nourrira l’évaluateur avec des donn�
   it('op non reconnu sur un champ -> clause non satisfaite (false), pas de throw', () => {
     const weird = { kind: 'field', key: 'age', op: 'wat' } as unknown as Clause;
     expect(evaluateConditionGroup(grp([weird]), ctx({ fields: { age: '18' } }))).toBe(false);
+  });
+});
+
+/**
+ * Le bloc Condition sur la dernière analyse (lot 2b « Tout sur la fiche ») : les mêmes opérateurs et le même sens
+ * des seuils que les filtres de la liste des contacts, lus sur la copie de la fiche (`ctx.analyse`), jamais sur un
+ * champ perso homonyme.
+ */
+describe('clause field sur la dernière analyse', () => {
+  const analyse = {
+    intention: 'reclamation', sentiment: 'negatif', satisfaction: 0, urgence: 8, resolue: false, sujet: 'colis',
+    traiteePar: 'humain', action: 'rappeler', analyseLe: new Date('2026-08-01T12:00:00Z'),
+    fenetreFin: new Date('2026-08-01T11:00:00Z'), conversationId: null,
+  } as const satisfies EvalContext['analyse'];
+  const si = (c: Clause, o: Partial<EvalContext> = {}) => evaluateConditionGroup(grp([c]), ctx(o));
+
+  it('les opérateurs de la liste des contacts : choix, seuils, oui/non, ancienneté', () => {
+    expect(si({ kind: 'field', key: 'analyse_sentiment', op: 'in', value: 'neutre,negatif' }, { analyse })).toBe(true);
+    expect(si({ kind: 'field', key: 'analyse_urgence', op: 'gte', value: '7' }, { analyse })).toBe(true);
+    expect(si({ kind: 'field', key: 'analyse_urgence', op: 'gte', value: '9' }, { analyse })).toBe(false);
+    expect(si({ kind: 'field', key: 'analyse_resolue', op: 'is_false' }, { analyse })).toBe(true);
+    // Deux jours avant « maintenant » (2026-08-03 12:00 UTC).
+    expect(si({ kind: 'field', key: 'analyse_le', op: 'newer_than_days', value: '3' }, { analyse })).toBe(true);
+    expect(si({ kind: 'field', key: 'analyse_le', op: 'newer_than_days', value: '1' }, { analyse })).toBe(false);
+  });
+
+  it('🔴 une satisfaction de 0 est une mesure, `null` n’en est pas une', () => {
+    expect(si({ kind: 'field', key: 'analyse_satisfaction', op: 'lte', value: '3' }, { analyse })).toBe(true);
+    expect(si({ kind: 'field', key: 'analyse_satisfaction', op: 'lte', value: '3' }, { analyse: { ...analyse, satisfaction: null } })).toBe(false);
+    expect(si({ kind: 'field', key: 'analyse_satisfaction', op: 'empty' }, { analyse: { ...analyse, satisfaction: null } })).toBe(true);
+  });
+
+  it('🔴 une fiche jamais analysée : « non résolue » est faux, seul « vide » est vrai', () => {
+    expect(si({ kind: 'field', key: 'analyse_resolue', op: 'is_false' })).toBe(false);
+    expect(si({ kind: 'field', key: 'analyse_resolue', op: 'empty' })).toBe(true);
+  });
+
+  it('🔴 un champ perso homonyme est IGNORÉ : seule la copie de la fiche compte', () => {
+    const fields = { analyse_sentiment: 'negatif', analyse_urgence: '10', analyse_resolue: 'false' };
+    expect(si({ kind: 'field', key: 'analyse_sentiment', op: 'in', value: 'negatif' }, { fields })).toBe(false);
+    expect(si({ kind: 'field', key: 'analyse_urgence', op: 'gte', value: '7' }, { fields })).toBe(false);
+    expect(si({ kind: 'field', key: 'analyse_resolue', op: 'is_false' }, { fields })).toBe(false);
+  });
+
+  it('un opérateur que le champ ne connaît pas rend faux, jamais une égalité de texte devinée', () => {
+    expect(si({ kind: 'field', key: 'analyse_sentiment', op: 'eq', value: 'negatif' }, { analyse })).toBe(false);
+    expect(si({ kind: 'field', key: 'analyse_sentiment', op: 'contains', value: 'neg' }, { analyse })).toBe(false);
+  });
+
+  it('une clause datée sur la date d’analyse lit la copie (ISO)', () => {
+    expect(si({ kind: 'datetime', key: 'analyse_le', op: 'before', value: '2026-08-02' }, { analyse })).toBe(true);
+    expect(si({ kind: 'datetime', key: 'analyse_le', op: 'after', value: '2026-08-02' }, { analyse })).toBe(false);
+    expect(si({ kind: 'datetime', key: 'analyse_le', op: 'empty' })).toBe(true);
+  });
+
+  it('🔴 le sujet n’est pas un critère (décision 12), même écrit à la main dans un graphe', () => {
+    expect(si({ kind: 'field', key: 'analyse_sujet', op: 'contains', value: 'colis' }, { analyse })).toBe(false);
+    expect(si({ kind: 'field', key: 'analyse_sujet', op: 'not_empty' }, { analyse })).toBe(false);
+  });
+
+  it('un opérateur de colonne sur un champ perso rend faux', () => {
+    expect(si({ kind: 'field', key: 'ville', op: 'in', value: 'Paris' }, { fields: { ville: 'Paris' } })).toBe(false);
   });
 });

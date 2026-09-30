@@ -3,6 +3,9 @@
 // reproduisent la sémantique SQL de `buildContactWhere` (mini-CRM) : voir `matchStringOp` et son test de parité.
 
 import type { ContactFieldOp } from '../crm/contact-store.pg';
+import type { AnalyseDeFiche } from '../analysis/fiche';
+import { estCleFiltrable, evaluerFiltreFiche, texteDeLaCopie, type OperateurFicheSeul } from '../crm/filtre-fiche';
+import { champFiche } from '../crm/champs-fiche';
 
 /** 0 = dimanche … 6 = samedi (convention getUTCDay / Intl). */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -17,7 +20,7 @@ export type DateTimeOp = 'before' | 'after' | 'older_than' | 'newer_than' | 'emp
 
 export type Clause =
   | { kind: 'tag'; op: 'has' | 'not_has'; tag: string }
-  | { kind: 'field'; key: string; op: StringOp | NumberOp | BoolOp; value?: string; valueType?: 'number' }
+  | { kind: 'field'; key: string; op: StringOp | NumberOp | BoolOp | OperateurFicheSeul; value?: string; valueType?: 'number' }
   | { kind: 'datetime'; key: string; op: DateTimeOp; value?: string; amount?: number; unit?: TimeUnit }
   | { kind: 'optin'; value: 'opted_in' | 'opted_out' | 'unknown' }
   | { kind: 'weekday'; op: 'is_weekday' | 'is_weekend' | 'is_one_of'; days?: Weekday[] }
@@ -48,6 +51,13 @@ export interface EvalContext {
    * valeur inventée.
    */
   derniereSaisie?: string | null;
+  /**
+   * La dernière analyse de la fiche (colonnes `analyse_*`, migration 0196), `null` si elle n'a jamais été analysée.
+   * 🔴 Un membre SÉPARÉ de `fields`, jamais fusionné dedans : la fonction JS d'un scénario reçoit `fields`, et
+   * l'analyse ne doit pas y entrer (amendement 7 de la spec). Requis : un câblage qui l'oublierait ne compile pas,
+   * au lieu de rendre toute condition d'analyse fausse sans le dire.
+   */
+  analyse: AnalyseDeFiche | null;
 }
 
 /**
@@ -81,6 +91,9 @@ function evaluateClause(c: Clause, ctx: EvalContext): boolean {
       return c.op === 'has' ? has : !has;
     }
     case 'field': {
+      // Un champ de la dernière analyse : la sémantique des filtres de la liste des contacts, lue sur la copie,
+      // jamais sur un champ perso homonyme. Un opérateur que le champ ne connaît pas rend `false`.
+      if (estCleFiltrable(c.key)) return evaluerFiltreFiche(c.key, c.op, c.value ?? '', ctx.analyse, ctx.now);
       const v = attributeOrField(ctx, c.key);
       if (c.op === 'is_true' || c.op === 'is_false') return matchBoolOp(v, c.op);
       // `eq`/`empty`/`not_empty` sont partagés texte/nombre : comparaison numérique seulement si le champ est typé
@@ -133,11 +146,14 @@ function evaluateClause(c: Clause, ctx: EvalContext): boolean {
 
 // --- Accès aux valeurs ---
 
-/** name/phone/bsuid = attributs (hors `contacts.fields`) ; tout le reste (prenom/email/champs perso) = fields. */
+/** name/phone/bsuid = attributs (hors `contacts.fields`) ; un champ filtrable de la dernière analyse = la copie de la
+ *  fiche, avant le jsonb (dates en ISO), et le sujet rien ; tout le reste (prenom/email/champs perso) = fields. */
 function attributeOrField(ctx: EvalContext, key: string): string | null {
   if (key === 'name') return strOrNull(ctx.name);
   if (key === 'phone') return strOrNull(ctx.phone);
   if (key === 'bsuid') return strOrNull(ctx.bsuid);
+  // Le sujet (texte libre) n'est lisible nulle part comme critère (décision 12) : jamais une valeur, ici non plus.
+  if (champFiche(key)?.provenance === 'analyse') return estCleFiltrable(key) ? texteDeLaCopie(key, ctx.analyse ?? null) : null;
   return strOrNull(ctx.fields[key]);
 }
 function strOrNull(v: unknown): string | null {

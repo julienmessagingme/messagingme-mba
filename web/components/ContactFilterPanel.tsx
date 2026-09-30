@@ -78,7 +78,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
     empty: t('vide', 'empty'),
     not_empty: t('rempli', 'filled'),
   };
-  const needsValue = (op: ContactFieldOp) => op === 'contains' || op === 'not_contains' || op === 'eq';
+  const needsValue = (op: ContactFieldFilter['op']) => op === 'contains' || op === 'not_contains' || op === 'eq';
 
   return (
     <div className="space-y-3 rounded-carte border border-ink-200 bg-white p-4">

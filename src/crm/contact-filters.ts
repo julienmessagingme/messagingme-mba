@@ -1,5 +1,7 @@
 import { NIVEAUX_RISQUE, type NiveauRisque } from '../engagement/risque';
 import { isContactFieldOp, type ContactFieldFilter, type ContactFilters } from './contact-store.pg';
+import { champFiche } from './champs-fiche';
+import { estCleFiltrable, estOperateurFicheSeul, lireFiltreFiche } from './filtre-fiche';
 
 /**
  * Construction d'un `ContactFilters` à partir de données non fiables. Deux entrées : les query params d'une URL
@@ -25,20 +27,39 @@ export function tagsFiltre(v: string[]): string[] {
 }
 
 /**
- * Filtres de champ perso normalisés. Chaque élément doit être un objet portant une `key` texte ; un opérateur
- * inconnu retombe sur `eq` et `empty`/`not_empty` n'ont pas de valeur. Les éléments non-objets (`[null]` d'un
- * corps JSON hostile) sont écartés avant lecture, sinon la route tombe en 500 sur `f.key`.
+ * Filtres de champ normalisés. Chaque élément doit être un objet portant une `key` texte. Les éléments non-objets
+ * (`[null]` d'un corps JSON hostile) sont écartés avant lecture, sinon la route tombe en 500 sur `f.key`.
+ *
+ * Deux régimes. Un champ PERSO : un opérateur inconnu retombe sur `eq`, et `empty`/`not_empty` n'ont pas de valeur.
+ * Un champ de la DERNIÈRE ANALYSE : 🔴 rien n'est deviné, un opérateur ou une valeur invalide lève
+ * `FiltreContactInvalide` (400), comme le niveau de risque. Ramené à `eq`, « urgence au moins 7 » deviendrait
+ * « urgence égale à 7 », et une valeur jetée rendrait tout l'espace. Le sujet (texte libre) n'est pas filtrable, et
+ * un opérateur de colonne n'a pas de sens sur un champ perso : refusés aussi.
  */
 export function normalizeFieldFilters(raw: unknown[]): ContactFieldFilter[] {
   return raw
     .filter((f): f is { key?: unknown; op?: unknown; value?: unknown } => f !== null && typeof f === 'object' && !Array.isArray(f))
     .filter((f) => typeof f.key === 'string')
-    .map((f): ContactFieldFilter => ({
-      key: String(f.key).slice(0, MAX_FIELD_KEY),
-      op: isContactFieldOp(f.op) ? f.op : 'eq',
-      value: typeof f.value === 'string' ? String(f.value).slice(0, MAX_FIELD_VALUE) : '',
-    }))
-    .slice(0, MAX_FIELD_FILTERS);
+    .slice(0, MAX_FIELD_FILTERS)
+    .map((f): ContactFieldFilter => {
+      const key = String(f.key).slice(0, MAX_FIELD_KEY);
+      if (estCleFiltrable(key)) {
+        const lu = lireFiltreFiche(key, f.op, typeof f.value === 'string' ? f.value.slice(0, MAX_FIELD_VALUE) : f.value);
+        if (!lu.ok) throw new FiltreContactInvalide(lu.raison);
+        return { key, op: lu.filtre.op, value: lu.filtre.valeur };
+      }
+      if (champFiche(key)?.provenance === 'analyse') {
+        throw new FiltreContactInvalide(`« ${champFiche(key)!.libelle[0]} » n’est pas filtrable`);
+      }
+      if (estOperateurFicheSeul(f.op)) {
+        throw new FiltreContactInvalide(`opérateur « ${f.op} » réservé aux champs de la dernière analyse`);
+      }
+      return {
+        key,
+        op: isContactFieldOp(f.op) ? f.op : 'eq',
+        value: typeof f.value === 'string' ? String(f.value).slice(0, MAX_FIELD_VALUE) : '',
+      };
+    });
 }
 
 /** Entrées déjà décodées par l'appelant (chacun sait lire sa forme), avant les règles communes. */

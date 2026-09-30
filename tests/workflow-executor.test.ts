@@ -506,7 +506,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
     return { ex, runs, calls };
   }
   const baseCtx = (over: Partial<EvalContext> = {}): EvalContext => ({
-    fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+    fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null, analyse: null,
     now: new Date('2026-08-02T14:30:00Z'), timeZone: 'Europe/Paris',
     businessHours: {
       '0': { closed: true, open: '', close: '' }, '1': { closed: false, open: '09:00', close: '18:00' },

@@ -10,8 +10,17 @@ import { estNiveauRisque, type NiveauRisque } from './risque';
  *  `empty`/`not_empty` n'en prennent pas. Miroir de `ContactFieldOp` côté serveur. */
 export type ContactFieldOp = 'eq' | 'contains' | 'not_contains' | 'empty' | 'not_empty';
 
-/** Un filtre sur la valeur d'un champ perso (jsonb, valeur texte). `value` ignorée pour `empty`/`not_empty`. */
-export interface ContactFieldFilter { key: string; op: ContactFieldOp; value: string }
+/**
+ * Les opérateurs des champs de la DERNIÈRE ANALYSE (colonnes typées de la fiche), qu'un champ perso ne connaît pas.
+ * Miroir de `OPERATEURS_FICHE_SEULS` (`src/crm/filtre-fiche.ts`), tenu par `tests/filtre-fiche.test.ts`. Quels
+ * opérateurs pour quel champ : la route `champs-fiche` le dit, l'écran n'en garde aucune copie.
+ */
+export const OPERATEURS_FICHE_SEULS = ['in', 'gte', 'lte', 'is_true', 'is_false', 'newer_than_days'] as const;
+export type OperateurFicheSeul = (typeof OPERATEURS_FICHE_SEULS)[number];
+
+/** Un filtre sur la valeur d'un champ : perso (jsonb, texte) ou de la dernière analyse. `value` ignorée pour
+ *  `empty`/`not_empty`/`is_true`/`is_false`. */
+export interface ContactFieldFilter { key: string; op: ContactFieldOp | OperateurFicheSeul; value: string }
 
 /** Critères composables de la « Liste de contacts » (source de campagne) et du mini-CRM. Tous optionnels. */
 export interface ContactFilters {
@@ -47,7 +56,7 @@ export function filtersActive(f: ContactFilters): boolean {
   return Boolean(
     f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch ||
     f.joignabiliteWhatsApp || f.risque ||
-    f.fieldFilters?.some((ff) => ff.op === 'empty' || ff.op === 'not_empty' || ff.value.trim() !== ''),
+    f.fieldFilters?.some((ff) => ff.op === 'empty' || ff.op === 'not_empty' || ff.op === 'is_true' || ff.op === 'is_false' || ff.value.trim() !== ''),
   );
 }
 
@@ -72,13 +81,15 @@ export function filtresRepris(v: unknown): ContactFilters {
     const l = Array.isArray(o[k]) ? (o[k] as unknown[]).filter((x): x is string => typeof x === 'string') : [];
     return l.length > 0 ? l : undefined;
   };
-  const ops: ContactFieldOp[] = ['eq', 'contains', 'not_contains', 'empty', 'not_empty'];
+  // 🔴 Les opérateurs de la dernière analyse en font partie : un brouillon repris qui les jetterait perdrait son
+  // filtre d'analyse, et sa campagne partirait à une audience plus large que celle qu'on avait construite.
+  const ops: ReadonlyArray<ContactFieldOp | OperateurFicheSeul> = ['eq', 'contains', 'not_contains', 'empty', 'not_empty', ...OPERATEURS_FICHE_SEULS];
   const champs = (Array.isArray(o.fieldFilters) ? (o.fieldFilters as unknown[]) : [])
     .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x))
     // `value` est requis MÊME pour `empty`/`not_empty`, qui l'ignorent : le type le déclare non optionnel, et
     // c'est lui que `filtersActive` appelle `.trim()` sans détour.
     .filter((x) => typeof x.key === 'string' && typeof x.value === 'string' && ops.includes(x.op as ContactFieldOp))
-    .map((x) => ({ key: x.key as string, op: x.op as ContactFieldOp, value: x.value as string }));
+    .map((x) => ({ key: x.key as string, op: x.op as ContactFieldOp | OperateurFicheSeul, value: x.value as string }));
   return {
     ...(listeDeTextes('tags') ? { tags: listeDeTextes('tags')! } : {}),
     ...(listeDeTextes('tagsExclude') ? { tagsExclude: listeDeTextes('tagsExclude')! } : {}),

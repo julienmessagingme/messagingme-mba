@@ -740,17 +740,44 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   dont une autre est un `exists`, et aucun index ne sert la condition entière (la requête parcourt les fiches de
   l'espace). Il sert le filtre par niveau et le compte du plafond du jour, deux égalités nues. Une migration
   appliquée ne se réécrit pas : la correction vit dans `PgRisqueStore.contactsAEvaluer` et ici.
-- 🔴 **Le filtre par niveau de risque est le SEUL filtre de contacts qui se REFUSE au lieu de s'ignorer.** Une
-  valeur hors des quatre niveaux lève `FiltreContactInvalide` dans `buildContactFilters`, et son `statusCode`
-  la fait rendre en 400 par le gestionnaire d'erreurs, sur toute route qui lit des filtres, sans que la route
-  ait à le traiter. Ignorée, elle ne poserait aucune clause, et « risque élevé » rendrait tout l'espace à une
-  campagne. ⚠️ Son prédicat est une égalité NUE, `risque_niveau = $n`, derrière `tenant_id = $1 and deleted_at
+- 🔴 **Le filtre par niveau de risque se REFUSE au lieu de s'ignorer**, comme les filtres de la dernière analyse
+  (ci-dessous) : ce sont les deux seuls. Une valeur hors des quatre niveaux lève `FiltreContactInvalide` dans
+  `buildContactFilters`, et son `statusCode` la fait rendre en 400 par le gestionnaire d'erreurs, sur toute route
+  qui lit des filtres, sans que la route ait à le traiter. Ignorée, elle ne poserait aucune clause, et « risque
+  élevé » rendrait tout l'espace à une campagne. ⚠️ Son prédicat est une égalité NUE, `risque_niveau = $n`, derrière `tenant_id = $1 and deleted_at
   is null` : c'est le contrat de l'index partiel `contacts_tenant_risque_idx (tenant_id, risque_niveau) where
   deleted_at is null`, et `tests/contact-where.test.ts` relit la migration pour le tenir. Une fiche jamais
   calculée n'est dans aucun niveau, `inconnu` compris : `inconnu` est un calcul qui n'a rien pu observer.
   ⚠️ La console ne PROPOSE ce filtre que si l'API a montré qu'elle le connaît (une ligne de `/contacts` porte la
   clé `risque`, `apiConnaitLeRisque`) : une API qui ne le connaît pas l'ignorerait, et « élevé » rendrait tout
   l'espace. Un filtre déjà posé reste affiché.
+- 🔴 **La dernière analyse vit SUR LA FICHE** (colonnes `analyse_*`, migration 0196, chantier « Tout sur la
+  fiche », spec `docs/superpowers/specs/2026-09-30-fiche-unique-design.md`). Son SEUL écrivain est
+  `PgConversationAnalysisStore.save`, dans la transaction de l'analyse, et `tests/fiche-analyse-ecrivains.test.ts`
+  le tient. Règle de la plus récente : une analyse n'écrase la copie que si sa borne de fenêtre est postérieure ou
+  égale (`analyse_fenetre_fin`), l'ancienne copie lue `for update`. La copie est entière ou absente (CHECK de
+  cohérence) et survit à l'effacement de la conversation, sauf `analyse_conversation_id`, qui retombe à `null` ;
+  le résumé, lui, part avec la conversation (il suit `analyse_conversation_id` quand la copie existe). Aucune
+  reprise de l'historique : une fiche se remplit à sa prochaine analyse. Le risque lit la copie, et retombe sur
+  les conversations pour une fiche qui n'en a pas.
+- 🔴 **La liste unique des champs de la fiche est `src/crm/champs-fiche.ts`** : les données envoyées d'un
+  connecteur (origine `fiche`), les filtres de contacts, le ciblage d'une campagne et le bloc Condition la
+  lisent, la console la reçoit de `GET /tenants/:t/champs-fiche` (admin, comme `/user-fields`, qui n'est PAS
+  enrichie : les variables de message ne reçoivent jamais l'analyse). Ses clés sont réservées : ni la
+  bibliothèque de champs, ni l'import CSV, ni l'API, ni un formulaire Flow ne peuvent en faire un champ perso
+  (`estCleReservee`, ensemble séparé de `SYSTEM_FIELD_KEYS`), `nom` et `wa_id` exceptés pour un formulaire.
+- 🔴 **Les filtres de la dernière analyse passent par `fieldFilters`**, jamais par un membre neuf de
+  `ContactFilters` : un serveur plus ancien ignorerait ce membre, et l'audience deviendrait l'espace entier. Une
+  clé d'analyse va à SA colonne par la carte fermée de `src/crm/filtre-fiche.ts` (seule source des noms de
+  colonne du SQL), avec les opérateurs de son type (`in`, `gte`, `lte`, `is_true`, `is_false`,
+  `newer_than_days`, plus `empty`/`not_empty`) ; le sujet ne se filtre pas. Une valeur ou un opérateur invalide
+  lève `FiltreContactInvalide` (400), et `parseFilters` normalise HORS du `try` qui décode le JSON, sans quoi le
+  refus deviendrait « aucun filtre ». Un filtre qui n'a pas traversé la validation pose `false`, jamais l'absence
+  de clause. `null` ne satisfait aucune comparaison et seul `empty` le retient ; une note de 0 est une mesure.
+  Le bloc Condition applique la MÊME sémantique (`evaluerFiltreFiche`) sur `EvalContext.analyse`, membre séparé
+  de `fields` (la fonction JS d'un scénario reçoit `fields`), rempli par `getContactStateByWaId` ; la parité
+  avec le SQL est tenue contre une vraie base (`tests/integration/filtre-fiche.integration.test.ts`). La console
+  ne propose ces filtres que si `champs-fiche` répond, et `filtresRepris` garde leurs opérateurs.
 - 🔴 **`/v1/contacts` désigne une personne par sa FICHE, et UNE fonction la trouve** : `resoudreFiche`
   (`src/api/fiche.ts`). Quatre clés, `contactId`, `externalId`, `phone`, `bsuid` : toutes celles qu'on donne
   doivent désigner la même fiche (sinon `identity_conflict`, et la fiche n'est pas modifiée) ; une clé que la

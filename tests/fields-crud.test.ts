@@ -222,3 +222,58 @@ describe('GET /user-fields/usage', () => {
     await server.close();
   });
 });
+
+/**
+ * La liste unique des champs de la fiche (lot 2b « Tout sur la fiche »). La console la lit pour proposer les filtres
+ * de la dernière analyse, au lieu d'en porter une copie.
+ */
+describe('GET /champs-fiche', () => {
+  type Champ = { cle: string; libelle: [string, string]; provenance: string; type: { nature: string; valeurs?: string[] }; operateurs: string[] };
+  const lire = async (over: Partial<FieldsRouteDeps> = {}) => {
+    const { server } = app(over);
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/champs-fiche', ...h(adminTok) });
+    await server.close();
+    return res;
+  };
+
+  it('les champs fixes puis les champs perso, chacun avec ses opérateurs de filtre', async () => {
+    const res = await lire();
+    expect(res.statusCode).toBe(200);
+    const champs = res.json<{ champs: Champ[] }>().champs;
+    const par = new Map(champs.map((c) => [c.cle, c]));
+    expect(par.get('analyse_sentiment')).toMatchObject({ provenance: 'analyse', type: { nature: 'choix' }, operateurs: ['in', 'empty', 'not_empty'] });
+    expect(par.get('analyse_sentiment')!.type.valeurs).toEqual(expect.arrayContaining(['positif', 'neutre', 'negatif']));
+    expect(par.get('analyse_urgence')!.operateurs).toEqual(['gte', 'lte', 'empty', 'not_empty']);
+    // Ni le sujet (texte libre), ni les champs de base, ni un champ perso ne se filtrent par cette liste.
+    expect(par.get('analyse_sujet')!.operateurs).toEqual([]);
+    expect(par.get('nom')!.operateurs).toEqual([]);
+    expect(par.get('ville')).toMatchObject({ provenance: 'perso', operateurs: [] });
+    expect(champs.at(-1)!.cle).toBe('ville');
+  });
+
+  it('🔴 un champ perso qui porterait une clé réservée n’y entre pas : il se confondrait avec le champ fixe', async () => {
+    const res = await lire({
+      fields: {
+        list: async () => [{ key: 'analyse_sentiment', label: 'Humeur', type: 'text' }],
+        create: async () => 'created', updateField: async () => false, deleteField: async () => false,
+      },
+    });
+    const champs = res.json<{ champs: Champ[] }>().champs;
+    expect(champs.filter((c) => c.cle === 'analyse_sentiment')).toHaveLength(1);
+    expect(champs.find((c) => c.cle === 'analyse_sentiment')!.provenance).toBe('analyse');
+  });
+
+  it('🔴 la carte des colonnes ne sort pas : la réponse ne nomme aucune colonne technique', async () => {
+    const texte = (await lire()).body;
+    for (const technique of ['jeton_public', 'blocked_by', 'risque_niveau', 'analyse_conversation_id', 'analyse_fenetre_fin']) {
+      expect(texte, technique).not.toContain(technique);
+    }
+  });
+
+  it('réservée aux admins, comme la liste des champs perso', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/champs-fiche', ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+});

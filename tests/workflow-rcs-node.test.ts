@@ -12,7 +12,7 @@ const BH_9_18: BusinessHours = {
   '6': { closed: true, open: '', close: '' },
 };
 const evalCtx = (over: Partial<EvalContext> = {}): EvalContext => ({
-  fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+  fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null, analyse: null,
   now: new Date('2026-08-03T12:00:00Z'), timeZone: 'Europe/Paris', businessHours: BH_9_18, ...over,
 });
 
