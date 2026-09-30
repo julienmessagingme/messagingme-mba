@@ -65,6 +65,11 @@ aucun CORS. Chaque adresse est écrite en dur chez l'autre : `api.messagingme.ap
 vitrine dans `VITRINE` (`src/http/contact-vitrine.ts`). Renommer l'une casse le formulaire sans erreur ailleurs, et
 une page qui poste vers une route pas encore déployée aussi : l'API se déploie AVANT la vitrine.
 
+⚠️ **Le référencement de la vitrine tient à des fichiers à tenir à jour** (2026-09-30) : `site/sitemap.xml`
+(l'accueil et chaque page indexable ; une page ajoutée y entre, une page `noindex` non), `site/robots.txt`,
+`site/llms.txt`, et le bloc JSON-LD de chaque page (fil d'Ariane, fiche du film). `site/vercel.json` redirige
+`engageme-site.vercel.app`, `/index.html` et les adresses sans barre finale vers l'adresse canonique.
+
 🔴 **L'IGNORED BUILD STEP DE LA VITRINE NE DOIT JAMAIS FINIR EN ERROR, et il vit dans `site/vercel.json`**
 (2026-09-26). `VERCEL_GIT_PREVIOUS_SHA` est le SHA du dernier déploiement READY (un CANCELED ne l'avance pas),
 et Vercel clone en profondeur 10 SANS aucun remote, mesuré. Dès dix commits sans changement dans `site/`, ce SHA

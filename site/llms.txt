@@ -1,0 +1,21 @@
+# Engage Me
+
+> Plateforme conversationnelle WhatsApp et RCS éditée par Messaging Me (Paris) : campagnes, service client et
+> analyse de chaque conversation, au même endroit. Vous choisissez qui répond : votre équipe, un agent IA ou le
+> Meta Business Agent.
+
+## Fonctionnalités
+
+- [Publicités Click-to-WhatsApp](https://engageme.messagingme.fr/fonctionnalites/publicites-click-to-whatsapp/) : des pubs Meta qui ouvrent une conversation, pas une landing page, pilotées du même endroit (la pub, le scénario qui répond, les résultats).
+- [Chaînes WhatsApp](https://engageme.messagingme.fr/fonctionnalites/chaines-whatsapp/) : publier gratuitement sur sa chaîne ; un bouton sous chaque publication ouvre une conversation en tête-à-tête.
+- [Analyse de conversations](https://engageme.messagingme.fr/fonctionnalites/conversations-en-actions/) : chaque conversation WhatsApp et RCS est analysée (intention, urgence, satisfaction, risque de départ) et devient une action dans le CRM.
+- [WhatsApp et RCS](https://engageme.messagingme.fr/fonctionnalites/whatsapp-et-rcs/) : chaque client reçoit le message sur son canal, avec un fallback dans le sens voulu, et toutes les réponses arrivent dans la même Inbox.
+
+## Développeurs
+
+- [Documentation de l’API](https://engageme.messagingme.app/developers/api)
+- [Serveur MCP](https://engageme.messagingme.app/developers/mcp)
+
+## Contact
+
+- [Demander une démo](https://engageme.messagingme.fr/contact/)

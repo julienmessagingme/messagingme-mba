@@ -81,6 +81,12 @@ de ce plan que la production emprunte (un envoi d'e-mail) ; le reste est de la p
   Julien (Odalys, Groupama, Gan, Mieux Assuré, Groupe EDH, NEOMA, DPD, Picoty). Logos en couleurs d'origine sur
   des tuiles blanches (choix de Julien), repris des projets clients du poste ; celui de Picoty, seul absent,
   téléchargé sur picoty.fr avec son accord. Dans `site/img/clients/`.
+- Référencement (bilan SEO du 2026-09-30, corrections validées par Julien) : `sitemap.xml`, `robots.txt`,
+  `llms.txt`, page 404, redirections des doublons (`vercel.app`, `/index.html`, barre finale), cache des images,
+  polices et films ; titre de l'accueil « Plateforme WhatsApp Business et RCS », descriptions sous 155 caractères,
+  images de partage JPEG 1200x630 et carte Twitter, JSON-LD (éditeur, site, logiciel ; fil d'Ariane et film par
+  page). Le surtitre des pages fonctionnalités entre dans le h1, sans rien changer à l'affichage (positions
+  mesurées avant et après). Restent chez Julien : Search Console, et un lien depuis messagingme.fr.
 
 ## Essai réel qui clôt
 

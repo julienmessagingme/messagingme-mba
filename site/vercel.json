@@ -1,4 +1,48 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "P=\"$VERCEL_GIT_PREVIOUS_SHA\"; [ -n \"$P\" ] || exit 1; git cat-file -e \"$P\" 2>/dev/null || GIT_TERMINAL_PROMPT=0 git fetch --depth=1 https://github.com/julienmessagingme/messagingme-mba \"$P\" || exit 1; git diff --quiet \"$P\" HEAD -- ./ && exit 0; exit 1"
+  "ignoreCommand": "P=\"$VERCEL_GIT_PREVIOUS_SHA\"; [ -n \"$P\" ] || exit 1; git cat-file -e \"$P\" 2>/dev/null || GIT_TERMINAL_PROMPT=0 git fetch --depth=1 https://github.com/julienmessagingme/messagingme-mba \"$P\" || exit 1; git diff --quiet \"$P\" HEAD -- ./ && exit 0; exit 1",
+  "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/:chemin*",
+      "has": [
+        {
+          "type": "host",
+          "value": "engageme-site.vercel.app"
+        }
+      ],
+      "destination": "https://engageme.messagingme.fr/:chemin*",
+      "permanent": true
+    },
+    {
+      "source": "/index.html",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/:dossier*/index.html",
+      "destination": "/:dossier*/",
+      "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/fonts/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(img|films)/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
+    }
+  ]
 }
