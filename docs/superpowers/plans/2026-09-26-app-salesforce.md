@@ -1,4 +1,4 @@
-# L'app Salesforce d'Engage Me : plan de livraison (L0 à L5)
+# L'app Salesforce d'Engage Me : plan de livraison (L0 à L6)
 
 **But** : le pendant de HubSpot pour le Salesforce « core » : remonter le quali sur les fiches, un segment
 Salesforce en audience de campagne, une transition Salesforce qui déclenche un scénario, une carte sur la fiche
@@ -7,6 +7,13 @@ qui envoie un WhatsApp.
 **Spec** : `docs/superpowers/specs/2026-09-26-app-salesforce-design.md`, AMENDÉE le 2026-09-26 (§ « Les
 amendements »). Elle fait foi sur le QUOI ; ce plan dit le COMMENT dans le code existant, établi par une
 cartographie en lecture seule du dépôt (sept sous-systèmes) le même jour.
+
+**Les ajouts du 2026-09-30** (spec, § « Les ajouts du 2026-09-30 ») ne sont PAS encore découpés en tâches ci-dessous :
+correspondance libre des champs et règles selon l'analyse (L2), bouton sur la Campaign et action de Flow « lancer
+une campagne » (L3), action « envoyer à une personne » (L4), action « lire la dernière analyse » (L5), et un lot L6
+de synchro de nuit Salesforce vers Engage Me. Ils reposent sur la liste unique des champs de la fiche
+(`docs/superpowers/plans/2026-09-30-fiche-unique.md`), qui passe d'abord : chacun se détaille, par une
+cartographie puis ses tâches, au début de son lot.
 
 **Pile** : Fastify, pg-boss, Postgres (schéma `salesforce` neuf), Next.js (`web/`), et un package géré 2GP
 Salesforce (Apex, LWC, métadonnées) dans un sous-dossier `salesforce/` du dépôt.

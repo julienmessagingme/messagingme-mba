@@ -3,7 +3,9 @@
 **Date** : 2026-09-26. **Statut** : design validé par Julien le 2026-09-26 (cinq rondes de questions, trois
 sections validées une à une), puis AMENDÉ le même jour après la cartographie du code qui a précédé le plan
 (sept lecteurs, lecture seule) : dix arbitrages de plus (§ « Les amendements du 2026-09-26 ») et deux
-affirmations corrigées. Plan : `docs/superpowers/plans/2026-09-26-app-salesforce.md`.
+affirmations corrigées. ÉTENDU le 2026-09-30 (§ « Les ajouts du 2026-09-30 ») : écriture dans les champs du
+client, lecture de champs Salesforce, campagnes lancées depuis Salesforce, actions de Flow. Plan :
+`docs/superpowers/plans/2026-09-26-app-salesforce.md`.
 
 ## Le problème
 
@@ -108,6 +110,36 @@ Décisions techniques prises sans arbitrage :
 - **Le statut délivré / lu / échec** d'une activité n'est suivi que pour un template ; pour un scénario, l'activité
   dit « scénario démarré » (un scénario parti par campagne n'a pas de wamid rattachable).
 - **Un déclencheur sur un membre de Campaign vise UNE Campaign** : les statuts de membres sont définis par Campaign.
+
+### Les ajouts du 2026-09-30
+
+Julien, le jour du cadrage « Tout sur la fiche » (`docs/superpowers/specs/2026-09-30-fiche-unique-design.md`) :
+l'app ne se contente pas de créer des activités sur la qualité d'une conversation, elle met à jour les champs du
+client, lit des champs Salesforce, et lance des campagnes. Deux rondes de questions, tranchées le même jour.
+
+| Question | Décision |
+|---|---|
+| Écrire dans les champs du client | **Une correspondance libre** : l'admin relie un champ de la liste unique de la fiche Engage Me (base, personnalisé, analyse), parmi ceux qui peuvent sortir, à un champ Salesforce de son choix, standard ou personnalisé, sur Lead et Contact. Écrit à chaque changement. |
+| Règles selon l'analyse | « si <condition sur la fiche> alors <champ Salesforce> = <valeur> », évaluées à chaque nouvelle analyse, **dans l'ordre : pour un champ donné, la première qui correspond écrit**. Les conditions prennent les opérateurs des filtres de la liste unique, par le même évaluateur. |
+| Écrasement d'une valeur saisie par un commercial | **Toujours** : Engage Me fait foi sur les champs qu'on lui confie. |
+| Sens Salesforce vers Engage Me | **Oui, par correspondance** : des champs du Lead, du Contact et de l'opportunité ouverte la plus récemment modifiée nourrissent la fiche Engage Me. Pas le Compte. |
+| Fréquence de ce sens | **Chaque nuit**, et seulement pour les fiches déjà reliées (économe en quota d'API du client). |
+| Ces champs dans Engage Me | **Un groupe « Salesforce » de la liste unique, en lecture seule** (Salesforce fait foi, la nuit suivante écraserait une retouche). Filtrables, utilisables en condition, en connecteur, **et en variable de message** : c'est la seule provenance de la liste qui entre dans les variables de message, l'analyse n'y entre toujours pas. |
+| Lancer une campagne | Trois entrées : dans Engage Me avec une audience Salesforce (L3, déjà prévu) ; **un bouton sur la Campaign** (template ou scénario de la liste autorisée, nombre de destinataires joignables, maintenant ou programmé, réservé à un jeu de permissions dédié) ; **une action de Flow** « lancer une campagne ». |
+| Actions de Flow | **« Envoyer à une personne »** (template ou scénario autorisé, utilisable en masse par lots de 200), **« Lancer une campagne »**, **« Lire la dernière analyse »** (intention, sentiment, notes, risque : un Flow décide sur cette base, et c'est la brique des futures actions Agentforce). |
+| Ordre des chantiers | **La fiche unique d'abord** : la correspondance repose sur sa liste, et l'app attend de toute façon la liaison du namespace. |
+
+Décisions techniques prises sans arbitrage :
+
+- **Un champ n'est relié que dans UN sens**, et un champ visé par une règle ne figure pas dans la correspondance
+  libre : sinon les deux outils s'écrasent en boucle, ou deux écrivains se disputent le même champ.
+- **Une campagne lancée depuis Salesforce suit le même chemin qu'une campagne créée dans Engage Me** : lecture des
+  membres à la création, consentement lu dans le champ désigné et jamais présumé, plafond de 20 000 destinataires,
+  débit, qualité du numéro. Le bouton et l'action appellent une route signée de plus (classe `signature-salesforce`).
+- **Nos propres écritures de champs ne relancent aucun déclencheur Apex** : la règle existante (les modifications de
+  l'utilisateur d'intégration sont ignorées) les couvre, et elle devient d'autant plus nécessaire.
+- **Les règles et la correspondance écrivent par le même écrivain** que les champs Engage Me, dans le même appel
+  (un seul écrivain pour ce qu'Engage Me pose dans Salesforce).
 
 ### Salesforce appelle notre API : ce que le choix achète et ce qu'il coûte
 
@@ -372,10 +404,11 @@ que Salesforce refuse (PKCE exigé sur sa propre application de liaison).
 |---|---|
 | **L0 Mesures** | Deux orgs Developer Edition gratuites, créées par Julien (une pour le Dev Hub et le namespace, une qui joue le client). Les mesures ci-dessus, consignées. Aucun code de production. |
 | **L1 Socle** | Package v0.1 (app, jeu de permissions, champs, objet de configuration, paramètre protégé et sa ressource REST). Migration du schéma `salesforce`. Client REST, connexion, guide, déconnexion, interrupteur d'espace. |
-| **L2 Remonter** | L'adaptateur de signaux : fiche retrouvée ou Lead créé, champs, activités, tâches, STOP vers le champ du client, joignabilité, écran des erreurs, compteur de quota. |
-| **L3 Segments** | La source « Salesforce » d'une campagne (Campaign, vue de liste, rapport), le consentement lu, les statuts de membres. |
-| **L4 Déclencheurs** | Déclencheurs Apex et boîte d'envoi, route de notifications, le type `salesforce_transition` et son écran. |
-| **L5 Carte** | La carte, la liste autorisée, la route d'envoi synchrone et sa file dédiée, les accusés, les réponses et l'affectation dans l'Inbox. |
+| **L2 Remonter** | L'adaptateur de signaux : fiche retrouvée ou Lead créé, champs, activités, tâches, STOP vers le champ du client, joignabilité, écran des erreurs, compteur de quota. **Ajout du 2026-09-30** : la correspondance libre des champs et les règles selon l'analyse. |
+| **L3 Segments** | La source « Salesforce » d'une campagne (Campaign, vue de liste, rapport), le consentement lu, les statuts de membres. **Ajout du 2026-09-30** : le bouton sur la Campaign et l'action de Flow « lancer une campagne ». |
+| **L4 Déclencheurs** | Déclencheurs Apex et boîte d'envoi, route de notifications, le type `salesforce_transition` et son écran. **Ajout du 2026-09-30** : l'action de Flow « envoyer à une personne ». |
+| **L5 Carte** | La carte, la liste autorisée, la route d'envoi synchrone et sa file dédiée, les accusés, les réponses et l'affectation dans l'Inbox. **Ajout du 2026-09-30** : l'action de Flow « lire la dernière analyse ». |
+| **L6 Synchro montante** | Ajout du 2026-09-30 : la synchro de nuit du Lead, du Contact et de l'opportunité ouverte la plus récemment modifiée vers le groupe « Salesforce » de la liste unique de la fiche, pour les fiches déjà reliées. |
 | **Hors V1** | Listing AppExchange et security review. |
 
 ## Méthode de livraison
