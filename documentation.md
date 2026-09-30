@@ -806,6 +806,14 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   identifie (conversation, messages, analyse, parcours, déclenchements, cache RCS) et ANONYMISE ce qui porte
   le quantitatif : le numéro devient `anon:<uuid>` ALÉATOIRE, pas une empreinte, qui serait réversible sur un
   espace de numéros français. Les totaux d'envoi et de livraison restent donc justes.
+  Sur la fiche, elle vide aussi ce qui DÉCRIT la personne (étiquettes, risque, langue détectée, joignabilité
+  WhatsApp, source du consentement, auteur du blocage) et GARDE ce qui dit NON (statut d'opt-in et sa date,
+  STOP RCS, date du blocage) : un run de campagne en cours tient le vrai numéro en mémoire, et `claim` relit
+  la fiche par sa clé primaire avant d'envoyer. Aucune recherche par numéro, BSUID ou `wa_id` ne retrouve une
+  fiche purgée : ces refus ne protègent donc pas un retour futur de la personne, seulement cette course.
+  🔴 **Toute colonne ajoutée à `contacts` décide son sort dans l'`update` de `purgeMany`**, où chaque colonne
+  porte sa raison ; et un écrivain qui vise une fiche par son identifiant filtre `deleted_at is null`
+  (l'identifiant survit à la purge, dans `campaign_recipients.contact_id` entre autres).
 - 🔴 **Bloqué n'est pas supprimé.** `contacts.blocked_at` est une DÉCISION humaine (plus aucun envoi,
   conversation masquée) ; `conversation_analysis.abusive` est un CONSTAT posé par l'analyse, qui ne déclenche
   rien. Les mélanger laisserait un modèle bloquer des clients tout seul. Les messages d'un contact bloqué

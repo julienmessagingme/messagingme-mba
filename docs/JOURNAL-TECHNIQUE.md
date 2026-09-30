@@ -5,6 +5,41 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : la purge RGPD vide aussi ce qui décrit la personne, et garde ce qui dit non
+
+`purgeMany` anonymisait le numéro, le nom, les champs, le jeton public et l'identifiant externe, mais laissait
+sur la fiche les étiquettes, le risque de désengagement, la langue détectée, la joignabilité WhatsApp, la source
+du consentement et l'auteur du blocage. Commit `e215919e`, déployé le jour même (API et worker, sans migration).
+
+**Ce qui part, et pourquoi.** Les étiquettes sont du texte libre (équipe, import, scénario, agent) et restaient
+comptées sur la page des étiquettes, pour une liste vide au clic. Le risque est un jugement calculé sur des
+faits que la purge efface, et le balayage de nuit ignore les fiches supprimées : il restait figé. La langue vient
+des messages effacés, la joignabilité décrit un numéro disparu, la source du consentement peut être un texte
+libre de l'intégrateur, et `blocked_by` n'a aucun lecteur.
+
+**Ce qui reste, décidé par Julien.** `opt_in_status`, `opt_out_at`, `blocked_at`, `rcs_optout_at`. Mesuré avant
+de décider : aucune recherche par identité ne retrouve une fiche purgée, donc ces refus ne protègent pas un retour
+de la personne. Leur seul lecteur est `claim`, pour un run de campagne déjà en cours qui tient le vrai numéro en
+mémoire ; les remettre à zéro aurait fait écrire à quelqu'un qui a dit STOP puis demandé l'effacement.
+
+**L'écrivain de joignabilité** (`creerNoteurJoignabilite`) filtre désormais `deleted_at is null` : le balayage
+131026 et un envoi en cours réécrivaient sinon la joignabilité d'une fiche purgée, par son identifiant.
+
+**Vérifié dans les deux sens en CI, sans branche**, les tests d'intégration ne tournant pas sur le poste : un
+commit portant le test SANS le correctif, poussé sous une ÉTIQUETTE jetable (`git push origin <sha>:refs/tags/x`)
+et joué par `gh workflow run ci.yml --ref x`. Sans le correctif, les deux cas neufs échouent ; avec la purge
+corrigée mais sans le filtre de l'écrivain, seul le cas de la joignabilité échoue ; au complet, vert. Les
+étiquettes ont été supprimées ensuite.
+
+**Les fiches déjà purgées ont été nettoyées une fois**, sur décision de Julien, par le même `set` que la purge,
+dans une transaction gardée (compte avant, lignes touchées égales à ce compte, recompte à zéro, sinon
+`rollback`) : 6 fiches sur les 7 purgées portaient un résidu, toutes dans un seul espace. `updated_at` n'a pas
+été touché, il garde la date de la purge. Relu ensuite : zéro résidu, et le seul désabonné purgé l'est resté.
+
+Deux défauts voisins, hors de ce lot, confiés à des sessions séparées : une campagne en cours envoie encore au
+vrai numéro d'un contact purgé qui n'était ni désabonné ni bloqué, et `PATCH /contacts/:id` répond 200 sur une
+fiche purgée et peut la réécrire.
+
 ## 2026-09-30 : l'en-tête d'un CSV importé est borné à 16 384 colonnes, et une rangée courte n'est plus complétée
 
 Relevé par la relecture du correctif du séparateur : une ligne unique de 8 Mo (`a;a;a...`, 4 millions de champs)
