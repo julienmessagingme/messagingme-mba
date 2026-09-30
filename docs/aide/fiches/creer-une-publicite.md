@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 021851
+source_empreinte: 4c535b
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -118,8 +118,9 @@ quinze minutes, et ses dates de début et de fin. Une publicité publiée dont l
 « Empêcher le démarrage » la met en pause chez Meta ; « Relancer » la reprogramme. L'écran vous dit l'heure de la dernière lecture : si un chiffre vous surprend, regardez-la
 avant de chercher un problème.
 
-L'entonnoir montre, étape par étape : la dépense, les clics, les personnes qui ont écrit, et celles que vous
-avez qualifiées. Pour chaque étape, ce qu'elle coûte et la part qui passe à la suivante.
+L'entonnoir montre, étape par étape : la dépense, les impressions (et leur coût pour 1 000), les personnes
+touchées, les clics (et leur taux de clic, rapporté aux impressions), les personnes qui ont écrit, et celles
+que vous avez qualifiées. Pour chaque étape, ce qu'elle coûte et la part de l'étape précédente qui y arrive.
 
 **Quand un chiffre n'est pas connu, il est écrit « non disponible », jamais « 0 ».** Zéro personne ne donne
 pas un coût de zéro par personne : il ne donne aucun coût. Un « 0 € » ressemblerait au meilleur résultat
