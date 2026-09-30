@@ -411,6 +411,16 @@ régionale France activable manuellement pour certains contrats, sans bouton dan
 n'est pas livré et testé, elle reste une option d'architecture et non une capacité de production. La source
 unique de cette cible et de ses limites est `docs/ARCHITECTURE-CIBLE.md`, §2.1.
 
+🔴 **CE QUE LA RECHERCHE DE CONNAISSANCE LIT, L'AGENT LE REÇOIT.** Le plein texte, le rappel vectoriel et le
+reclassement lisent une fiche entière ; l'agent en reçoit au plus `CORPS_MAX`
+(`src/agent/resolvers/connaissance.ts`). Une fiche ne dépasse donc jamais cette borne : `MAX_CORPS`
+(`src/agent/scrape.ts`) en DÉRIVE, et c'est lui qui borne l'import d'une page, celui d'un document, la route
+d'une fiche écrite à la main et l'écran, qui le rejoue (`web/lib/agent-connaissance.ts`). Une section plus
+longue est découpée en « (suite N) » par `empilerEnFiches`, jamais tronquée ; le CSV a son découpage à lui, par
+rangées, sous la même borne. Plus longue, une fiche serait retenue pour une phrase que l'agent ne reçoit pas.
+⚠️ Tout nouveau chemin d'écriture d'une fiche passe par cette borne. Le bot d'aide (`src/aide/repondre.ts`)
+porte sa propre copie de `CORPS_MAX` et ne tient pas encore cet invariant (`todo.md`).
+
 🔴 **LA DÉFINITION D'UN OUTIL APPARTIENT À L'ESPACE, LE CONSENTEMENT AU COUPLE (outil, consommateur).**
 `agent_tools` porte ce qu'un outil EST (son nom, unique par espace, sa description, ses paramètres, sa
 liaison, son risque, ses plafonds) ; `agent_tool_consommateurs` porte qui a le droit de s'en servir. Les

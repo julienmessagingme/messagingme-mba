@@ -5,6 +5,42 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-29 soir : la connaissance d'un agent, l'agent reçoit ce que la recherche trouve (2 000 caractères)
+
+**Le défaut**, relevé en réparant le CSV (`25f5af1b`). Le plein texte, le rappel vectoriel et le reclassement
+lisaient une fiche entière ; l'agent n'en recevait que les 2 000 premiers caractères (`CORPS_MAX`), alors que
+l'import d'une page, d'un PDF, d'un Word ou d'un texte faisait des fiches jusqu'à 4 000 (`MAX_CORPS`). Une fiche
+pouvait être retenue pour une phrase de sa seconde moitié, et l'agent répondait sans elle. Une section de page
+était en plus tronquée à 4 000, sa fin perdue.
+
+**La mesure, en lecture seule sur la production** (transaction `READ ONLY`) : `agent_knowledge` portait ZÉRO
+fiche (un agent, cinq espaces), donc la reprise des fiches déjà en base ne se posait pas. La même mesure a trouvé
+le défaut chez le bot d'aide, où il vit : 20 fiches sur 26 de `aide_fiches` dépassent 2 000 caractères (la plus
+longue 10 008, « créer une publicité »). Noté dans `todo.md`, traité à part sur décision de Julien.
+
+**La décision de Julien** : 2 000 partout plutôt que la fiche entière à l'agent (jusqu'à 6 000 caractères de
+contexte de plus à chaque aller-retour qui suit une recherche, et une règle « deux mots en commun » plus facile à
+passer), et le plafond de 40 fiches gardé (un document est lu jusqu'à environ 80 000 caractères, l'écran le dit
+quand il mord).
+
+**Livré** (`2f63d523`, `d8935b6c`) : `MAX_CORPS` dérive de `CORPS_MAX` ; page et document partagent
+`empilerEnFiches` ; la fiche écrite à la main est bornée par la route et par l'écran ; le CSV n'est pas touché.
+Relecture indépendante : aucun rouge, un jaune (un titre de près de 200 caractères perdait son « (suite N) »),
+corrigé dans le second commit, non relu.
+
+**CI** : le job `unit` est rouge sur UN test, `plan-methode` (le plan `2026-09-28-vitrine-fonctionnalites.md`
+d'une autre session), à l'identique sur `a3d67af7`, alors en production ; `integration`, `securite` et la CI de
+la console sont verts. Le lot est parti malgré ce rouge, qui lui est étranger.
+
+**Déploiement** à 22 h 26 UTC, sans migration. Le 502 public est revenu (interne 200, `api.` et le chemin
+`/api/backend/` de `mba.` à 502) ; `nginx -s reload` l'a levé en une trentaine de secondes, le chemin du webhook
+Meta répondant ensuite 403 (vérification sans jeton). `aide:charger` : 26 fiches chargées. Le découpage a été
+exécuté PAR LE CODE DÉPLOYÉ dans `mba-api`, sur une page d'essai et sans toucher à la base : une section de
+2 840 caractères devient deux fiches de 1 994 et 845, la phrase de fin dans la seconde.
+
+**L'essai réel, qui revient à Julien** : importer une vraie page longue dans l'onglet Connaissance d'un agent,
+puis poser au bac à sable une question dont la réponse est à la fin d'une section.
+
 ## 2026-09-28 soir au 29 : publicités archivées et programmées, recharge Stripe, panneau Détail de l'Inbox
 
 **Publicités.** Archiver une publicité qui ne diffuse pas (0189, `publicites.archivee_le`, refus 409 côté serveur
