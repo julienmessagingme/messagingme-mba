@@ -228,6 +228,17 @@ describe('base de connaissance : import d’une page', () => {
     expect(cap.lues[0]).toBe('https://exemple.fr/');
   });
 
+  it('🔴 l’import sur l’agent d’un autre espace rend 404, jamais un succès', async () => {
+    // Le magasin rend `null` pour un agent qu'il ne trouve pas dans l'espace du jeton : la route doit le dire en 404,
+    // même quand la page a été lue et découpée (l'import lit toutes ses pages avant d'écrire).
+    const { cap, srv } = app();
+    const autre = '33333333-3333-4333-8333-333333333333';
+    const res = await srv.inject({ method: 'POST', url: `${base('t1', autre)}/import`, ...h(adminTok), payload: { url: 'https://exemple.fr/residence' } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'agent introuvable' });
+    expect(cap.lues).toEqual(['https://exemple.fr/residence']);
+  });
+
   it('rend 503 quand la lecture de page n’est pas branchée', async () => {
     const srv = buildServer({
       queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },

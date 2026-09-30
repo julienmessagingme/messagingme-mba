@@ -97,15 +97,16 @@ linéaires une à une reviendrait au jeu de taupe que le worker arrête.
 
 - **Un lecteur gardé le temps d'une requête** (`avecLecteur`, `src/lib/hors-boucle.ts`) : un worker, plusieurs
   lectures, une à la fois. Un parcours de 50 pages ne paie ainsi qu'un démarrage (0,5 s en production), au lieu de
-  25 s. `horsBoucle` devient une lecture unique sur un lecteur ; le worker passe d'un appel unique à une boucle de
-  messages. Trois décisions prises en l'écrivant :
+  50 s (cent lectures). `horsBoucle` devient une lecture unique sur un lecteur ; le worker passe d'un appel unique à
+  une boucle de messages. Trois décisions prises en l'écrivant :
   - le lecteur se donne à un TRAVAIL et se ferme quand il finit, quelle qu'en soit l'issue, plutôt que d'être ouvert
     puis fermé par la route : un lecteur oublié ouvert garderait un worker vivant par requête ;
   - l'échéance est CUMULÉE sur ses lectures (20 s pour les pages d'une requête) : une échéance par lecture laisserait
     une page hostile tenir un worker jusqu'à elle, cinquante fois pour un seul aperçu ;
   - une place du plafond de quatre se prend PAR LECTURE, pas pour la vie du lecteur : un aperçu attend surtout le
     réseau, et garder sa place pendant ce temps rendrait 429 à tous les espaces dès que quatre sites seraient
-    parcourus à la fois. Le worker ne démarre qu'à la première lecture.
+    parcourus à la fois. Le worker ne démarre qu'à la première lecture, et (ajout de la relecture) il est rendu après
+    5 s de repos : un worker au repos pèse 15 à 25 Mo, et le plafond ne bornait plus les workers vivants.
 - **`visiter` reçoit l'extraction des liens en paramètre**, sans valeur par défaut : aucun appelant ne peut l'oublier
   et retomber dans le fil principal. L'aperçu d'un site lit liens et fiches sur un seul lecteur ; l'import d'une ou
   plusieurs pages, ses fiches sur un seul lecteur, TOUTES avant la première écriture : un refus en cours de route

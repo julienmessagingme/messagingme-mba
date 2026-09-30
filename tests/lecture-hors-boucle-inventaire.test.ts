@@ -36,12 +36,18 @@ describe('les lectures de fichiers déposés passent par le worker', () => {
     expect(fichiers(SRC).length).toBeGreaterThan(100);
   });
 
-  it('🔴 hors des modules qui les définissent, aucun appel direct', () => {
-    const appel = new RegExp(`\\b(${LECTURES.join('|')})\\(`, 'g');
+  it('🔴 hors des modules qui les définissent, aucun appel direct, ni passage en référence', () => {
+    // Le nom seul, et pas seulement `nom(` : passer `liensDeLaPage` à `visiter` par référence le ferait tourner dans le
+    // fil principal sans un seul appel écrit (relevé par la relecture du 2026-10-01). Les commentaires peuvent le citer.
+    const mention = new RegExp(`\\b(${LECTURES.join('|')})\\b`);
     const trouves = fichiers(SRC)
       .map((f) => relative(RACINE, f).replace(/\\/g, '/'))
       .filter((f) => !DEFINISSENT.includes(f))
-      .flatMap((f) => [...readFileSync(join(RACINE, f), 'utf8').matchAll(appel)].map((m) => `${f} : ${m[1]}(`));
+      .flatMap((f) => readFileSync(join(RACINE, f), 'utf8').split('\n').flatMap((ligne, i) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(ligne)) return [];
+        const nom = ligne.replace(/(^|\s)\/\/.*$/, '').match(mention)?.[1];
+        return nom === undefined ? [] : [`${f}:${i + 1} : ${nom}`];
+      }));
     expect(trouves).toEqual([]);
   });
 });

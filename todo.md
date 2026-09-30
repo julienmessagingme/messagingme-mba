@@ -4,10 +4,10 @@
 
 Depuis le 2026-09-30, un CSV, une page de FAQ, un document déposé ou les pages d'un site se lisent dans un worker
 (`src/lib/hors-boucle.ts`) : échéance de 10 s (30 s pour un document, 20 s cumulées pour les pages d'un aperçu ou d'un
-import de site), 1 Go de tas, quatre lectures à la fois. Les formes ci-dessous ne figent donc plus l'API ; chacune
-occupe un cœur jusqu'à l'échéance, puis le fichier est refusé en 400. Ce qui reste : un vrai fichier qui les frôle
-serait refusé au lieu d'être lu, et quatre dépôts hostiles simultanés occupent quatre des huit cœurs du VPS le temps
-de l'échéance.
+import de site), 1 Go de tas, quatre lectures EN COURS à la fois. Les formes ci-dessous ne figent donc plus l'API ;
+chacune occupe un cœur jusqu'à l'échéance, puis le fichier est refusé en 400. Ce qui reste : un vrai fichier qui les
+frôle serait refusé au lieu d'être lu, et quatre dépôts hostiles simultanés occupent quatre des huit cœurs du VPS le
+temps de l'échéance.
 
 - 🟡 **Guillemets mal placés puis une traîne d'espaces** : papaparse reparcourt la traîne à chaque guillemet
   (`extraSpaces`, puis `trim()`), soit N x K par lecture. 101 Ko : 1,5 s ; 330 Ko : 123 s selon la relecture.
@@ -27,19 +27,35 @@ de l'échéance.
   cellules présentes. Mesuré EN PRODUCTION le 2026-09-30, sur le plus gros vrai fichier (762 600 numéros) : 1,2 s de
   boucle bloquée, pendant une lecture de 5,9 s. Cette ligne annonçait 0,18 s : c'était, sur le poste, la seule
   relecture du JSON ; la reconstruction des rangées y pèse autant, et le VPS a mis près de trois fois le temps du
-  poste pour les deux. Un CSV forgé de
-  7,5 Mo (16 384 noms de 200 caractères, 140 rangées pleines) : 0,8 s et 228 Mo de tas sur le poste, contre 1,8 s et
-  1,4 Go quand les rangées revenaient par nom. L'aperçu ne rapporte que quatre rangées (0,12 s sur le même fichier).
-  Remède : faire arriver les rangées par morceaux, chacun relu et reconstruit entre deux tours de boucle ; ou que
-  `importContacts` lise les rangées par numéro de colonne.
+  poste pour les deux. Un CSV forgé de 7,5 Mo (16 384 noms de 200 caractères, 140 rangées pleines) : 0,8 s et 228 Mo
+  de tas sur le poste, contre 1,8 s et 1,4 Go quand les rangées revenaient par nom. L'aperçu ne rapporte que quatre
+  rangées (0,12 s sur le même fichier). Remède : faire arriver les rangées par morceaux, chacun relu et reconstruit
+  entre deux tours de boucle ; ou que `importContacts` lise les rangées par numéro de colonne.
+- 🟡 **Le plus gros vrai CSV n'a qu'une marge de 1,7 sous l'échéance de 10 s, en production** : 5,9 s mesurées le
+  2026-09-30, contre 3 s sur le poste. Un VPS chargé pourrait le refuser. Déclencheur : un refus `echeance` sur
+  `parseCsvCompact` pour un vrai fichier (journal `lecture_interrompue`). Remède : relever l'échéance de l'import de
+  contacts, ou la lecture par morceaux ci-dessus.
 - 🟡 **Le plafond de quatre lectures est commun à tous les espaces**, et compté par process. Les routes de la FAQ et
   des pièces jointes de l'assistant n'ont pas le plafond coûteux par espace : un seul administrateur peut y garder
   les quatre places (quatre fichiers lents toutes les 10 s), et l'import de contacts, la FAQ et les documents de
   TOUS les espaces rendent alors 429 le temps qu'il insiste. Remède : une part par espace, ou le plafond coûteux sur
   ces routes ; et un compteur partagé, en base, le jour où l'API tourne en plusieurs instances. Les pages d'un site
   ne gardent une place que pendant leurs lectures (pas pendant qu'elles attendent le réseau), 20 s au plus par
-  requête, sous le plafond coûteux (10 par minute et par espace) : un seul espace peut tout de même tenir les quatre
-  places par rafales.
+  requête, sous le plafond coûteux (10 par minute et par espace) : à 10 requêtes par minute de 20 s de lecture, un
+  seul espace en tient pourtant 3,3 en moyenne, en continu.
+- 🟡 **Un 429 peut tomber au milieu d'un parcours de site** : chaque lecture d'un aperçu (jusqu'à cent) repasse le
+  plafond de quatre, et quatre imports lents d'autres espaces pendant la soixantième font refuser l'aperçu après des
+  minutes de réseau. Rare, une lecture de page durant quelques millisecondes ; chaque refus est journalisé
+  (`lecture_interrompue`, raison `occupe`). Déclencheur : ces refus apparaissent sur `pageEnFiches` ou
+  `liensDeLaPage`. Remède proposé par la relecture du 2026-10-01 : un lecteur qui a déjà lu attend une place, pendant
+  un temps borné, avant de refuser.
+- 🟡 **Un parcours de site n'a pas de durée maximale** : `visiter` ne compte dans ses cinquante pages que les pages
+  LUES, jamais les écartées, et chaque lien peut attendre 10 s par redirection (`src/lib/page-distante.ts`). Un
+  accueil de mille liens lents fait durer un aperçu près de trois heures, pages déjà lues gardées en mémoire (jusqu'à
+  cinquante de 2 Mo), alors que le client a reçu une erreur du proxy bien avant (60 s par défaut chez nginx, donc NPM
+  sauf réglage contraire, 100 s chez Cloudflare). Antérieur au lot des pages ; depuis le 2026-10-01, le repos du
+  lecteur (`REPOS_MS`) empêche au moins qu'un worker y reste attaché. Remède : une échéance par requête d'aperçu et
+  d'import, réseau compris, alignée sur celle du proxy ; ou compter les pages écartées dans un plafond de visites.
 - 🟡 **`--max-old-space-size` l'emporterait sans bruit sur la limite de 1 Go d'un worker** (mesuré par la relecture
   sous Node 24, en ligne de commande comme dans `NODE_OPTIONS`). Rien ne le pose aujourd'hui (`NODE_OPTIONS` vide
   dans le conteneur de production, vérifié le 2026-09-30) : à ne pas ajouter sans relever cette limite.

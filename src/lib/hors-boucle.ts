@@ -29,14 +29,17 @@ export class LectureInterrompue extends Error {
 export interface OptionsLecture {
   /**
    * Le temps de lecture CUMULÉ du lecteur ; au-delà, le worker est tué et la lecture refusée en 400. Défaut 10 s : le
-   * plus gros vrai CSV en coûte 3. Cumulé, et pas par lecture : une page hostile tiendrait sinon un worker jusqu'à
-   * l'échéance, cinquante fois pour un seul aperçu de site.
+   * plus gros vrai CSV (762 600 numéros) en coûte 3 sur le poste, 5,9 en production, soit une marge de 1,7
+   * (`todo.md`). Cumulé, et pas par lecture : une page hostile tiendrait sinon un worker jusqu'à l'échéance, cinquante
+   * fois pour un seul aperçu de site.
    */
   delaiMs?: number;
   /** Le tas du worker. Défaut 1 024 Mo : le plus gros vrai CSV en demande 440. ⚠️ `--max-old-space-size` l'emporte. */
   memoireMo?: number;
   /** Ce qu'on lit, pour que le refus parle de ce que le client a donné. Défaut : un fichier. */
   nature?: 'fichier' | 'pages';
+  /** Au-delà de ce repos entre deux lectures, le lecteur rend son worker (`REPOS_MS`). */
+  reposMs?: number;
 }
 
 const REFUS = {
@@ -55,11 +58,21 @@ const REFUS = {
  * Les routes de la FAQ et des pièces jointes de l'assistant n'ont pas le plafond coûteux par espace ; sans cette
  * limite, des lectures en rafale prendraient tous les cœurs. Un lecteur au repos (un aperçu qui attend le réseau entre
  * deux pages) n'occupe aucune place : il ne prend pas de cœur, et garder sa place rendrait 429 à tous les espaces dès
- * que quatre sites seraient parcourus à la fois. ponytail: un compteur par process et pour tous les espaces, à
- * partager par espace (et en base, le jour où l'API a plusieurs instances).
+ * que quatre sites seraient parcourus à la fois. ⚠️ Ce plafond borne donc les lectures, PAS les workers vivants : c'est
+ * `REPOS_MS` qui borne ceux-là. ponytail: un compteur par process et pour tous les espaces, à partager par espace (et
+ * en base, le jour où l'API a plusieurs instances).
  */
 const LECTURES_MAX = 4;
 let lecturesEnCours = 0;
+
+/**
+ * Un lecteur au repos rend son worker au bout de 5 s, et sa lecture suivante en démarre un autre (0,35 à 0,5 s,
+ * comptés dans son échéance). Relevé par la relecture du 2026-10-01 : un worker au repos pèse 15 à 25 Mo, et un
+ * aperçu attend surtout le réseau. Un site aux liens lents (jusqu'à 10 s chacun, par redirection, et une page écartée
+ * ne compte pas dans les cinquante) garderait sinon un worker par aperçu pendant des heures : quelques centaines
+ * d'aperçus en vol feraient tomber `mba-api`, qui n'a pas de limite de mémoire.
+ */
+const REPOS_MS = 5_000;
 
 const WORKER = new URL('./hors-boucle-worker.mjs', import.meta.url);
 
@@ -88,18 +101,31 @@ interface LectureEnCours {
 /**
  * Ouvre un lecteur pour `travail`, et tue son worker quand le travail finit, quelle qu'en soit l'issue : un lecteur
  * laissé ouvert garderait un worker vivant par requête, jusqu'à la chute de `mba-api`. Le worker ne démarre qu'à la
- * première lecture : un aperçu dont aucune page ne répond n'en coûte aucun, un refus 429 non plus.
+ * première lecture (un aperçu dont aucune page ne répond n'en coûte aucun, un refus 429 non plus), et il est rendu
+ * après `REPOS_MS` sans lecture.
  */
 export async function avecLecteur<T>(options: OptionsLecture, travail: (lecteur: Lecteur) => Promise<T>): Promise<T> {
-  const { delaiMs = 10_000, memoireMo = 1_024, nature = 'fichier' } = options;
+  const { delaiMs = 10_000, memoireMo = 1_024, nature = 'fichier', reposMs = REPOS_MS } = options;
   let worker: Worker | null = null;
   /** Pourquoi le lecteur ne lit plus (échéance, mémoire, worker sorti, travail fini), ou `null` tant qu'il lit. */
   let mort: Error | null = null;
   /** Une lecture à la fois : le worker ne rend pas d'identifiant avec sa réponse. */
   let enCours: LectureEnCours | null = null;
   let consomme = 0;
+  let repos: NodeJS.Timeout | undefined;
 
-  /** La lecture en cours s'achève : sa place se libère et son temps s'ajoute au cumul. */
+  /** Rend le worker sans fermer le lecteur : sa lecture suivante en démarrera un autre. */
+  const rendre = (): void => {
+    const w = worker;
+    if (w === null || enCours !== null) return;
+    worker = null;
+    w.removeAllListeners();
+    // Sans écouteur, un `error` que le worker lèverait en mourant serait levé comme une exception, dans le process.
+    w.on('error', () => undefined);
+    void w.terminate();
+  };
+
+  /** La lecture en cours s'achève : sa place se libère, son temps s'ajoute au cumul, et le repos commence. */
   const achever = (): LectureEnCours | null => {
     const lecture = enCours;
     if (lecture === null) return null;
@@ -107,11 +133,13 @@ export async function avecLecteur<T>(options: OptionsLecture, travail: (lecteur:
     lecturesEnCours -= 1;
     clearTimeout(lecture.minuteur);
     consomme += performance.now() - lecture.debut;
+    if (mort === null) repos = setTimeout(rendre, reposMs);
     return lecture;
   };
 
   /** Le lecteur ne lit plus : le worker est tué, et la lecture en cours rejetée avec la même raison. */
   const tuer = (raison: Error): void => {
+    clearTimeout(repos);
     if (mort === null) {
       mort = raison;
       void worker?.terminate();
@@ -136,7 +164,8 @@ export async function avecLecteur<T>(options: OptionsLecture, travail: (lecteur:
       if (lecturesEnCours >= LECTURES_MAX) {
         return Promise.reject(refus(fonction, 'occupe', 'Trop de lectures en cours sur le serveur : réessayez dans un instant.', 429));
       }
-      return new Promise<Reponse>((resoudre, rejeter) => {
+      clearTimeout(repos);
+      const lecture = new Promise<Reponse>((resoudre, rejeter) => {
         try {
           worker ??= demarrer();
           worker.postMessage({ module: module.href, fonction, args });
@@ -158,6 +187,10 @@ export async function avecLecteur<T>(options: OptionsLecture, travail: (lecteur:
         if (m.erreur.pile !== undefined) err.stack = m.erreur.pile;
         throw err;
       });
+      // Une lecture que son travail n'attend pas serait rejetée à la fin du travail (« lecteur fermé ») sans personne
+      // pour l'entendre, et un rejet sans gestionnaire fait tomber le process. Qui l'attend reçoit toujours le rejet.
+      lecture.catch(() => undefined);
+      return lecture;
     },
   };
 

@@ -1,8 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { threadId } from 'node:worker_threads';
 import { avecLecteur, horsBoucle, type Lecteur } from '../src/lib/hors-boucle';
 import type { ParsedCsv } from '../src/crm/csv';
 import { csvLent as lent, retardPendant } from './boucle';
+
+/** Le vrai `Worker`, compté : un refus 429 ne doit en démarrer aucun. */
+const workers = vi.hoisted(() => ({ demarres: 0 }));
+vi.mock('node:worker_threads', async (importOriginal) => {
+  const reel = await importOriginal<typeof import('node:worker_threads')>();
+  class WorkerCompte extends reel.Worker {
+    constructor(...args: ConstructorParameters<typeof reel.Worker>) {
+      super(...args);
+      workers.demarres += 1;
+    }
+  }
+  return { ...reel, Worker: WorkerCompte };
+});
 
 /**
  * La lecture d'un fichier déposé, hors de la boucle d'événements.
@@ -26,11 +39,16 @@ describe('horsBoucle : lire un fichier hors de la boucle d’événements', () =
       .toMatchObject({ statusCode: 400, message: expect.stringContaining('16385 colonnes') });
   });
 
-  it('🔴 coupe une lecture qui dépasse son échéance, en 400, et ne garde pas le lecteur occupé', async () => {
-    const debut = performance.now();
-    await expect(horsBoucle(CSV, 'parseCsv', [lent(2_000, 200_000)], { delaiMs: 300 })).rejects
-      .toMatchObject({ statusCode: 400, message: expect.stringContaining('dépassé') });
-    expect(performance.now() - debut).toBeLessThan(3_000);
+  it('🔴 une lecture coupée à son échéance rend sa place : après quatre échéances, la lecture suivante passe', async () => {
+    // Une seule échéance ne prouverait rien : une place perdue en laisserait trois, et la lecture suivante passerait
+    // quand même (relevé par la relecture du 2026-10-01, en mutant `tuer`). Quatre places perdues rendraient 429 à tout
+    // le monde, jusqu'au redémarrage.
+    for (let i = 0; i < 4; i += 1) {
+      const debut = performance.now();
+      await expect(horsBoucle(CSV, 'parseCsv', [lent(2_000, 200_000)], { delaiMs: 300 })).rejects
+        .toMatchObject({ statusCode: 400, message: expect.stringContaining('dépassé') });
+      expect(performance.now() - debut).toBeLessThan(3_000);
+    }
     await expect(horsBoucle<ParsedCsv>(CSV, 'parseCsv', ['a;b\n1;2'])).resolves.toMatchObject({ headers: ['a', 'b'] });
   });
 
@@ -131,7 +149,11 @@ describe('avecLecteur : plusieurs lectures sur un même worker, le temps d’une
     const lecteurs = Array.from({ length: 4 }, () => {
       let pret!: () => void;
       prets.push(new Promise<void>((fin) => { pret = fin; }));
-      return avecLecteur({}, async (l) => { await l.lire(SONDE, 'fil', []); pret(); await repos; });
+      return avecLecteur({}, async (l) => {
+        // Dans un `finally` : une lecture refusée laisserait sinon le test attendre jusqu'à son délai.
+        try { await l.lire(SONDE, 'fil', []); } finally { pret(); }
+        await repos;
+      });
     });
     await Promise.all(prets);
     await expect(horsBoucle<number>(SONDE, 'fil', [])).resolves.toEqual(expect.any(Number));
@@ -152,5 +174,46 @@ describe('avecLecteur : plusieurs lectures sur un même worker, le temps d’une
   it('parle de pages quand il lit des pages', async () => {
     await expect(avecLecteur({ nature: 'pages', delaiMs: 1_000 }, (l) => l.lire(SONDE, 'attendre', [5_000])))
       .rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('ces pages') });
+  });
+
+  it('🔴 un lecteur au repos rend son worker, et sa lecture suivante en démarre un autre', async () => {
+    // Relevé par la relecture du 2026-10-01 : un worker au repos pèse 15 à 25 Mo, et un aperçu attend surtout le réseau.
+    // Sans repos borné, un site aux liens lents garderait un worker par aperçu pendant des heures.
+    const pouls = new Int32Array(new SharedArrayBuffer(4));
+    await avecLecteur({ reposMs: 300 }, async (l) => {
+      const premier = await l.lire<number>(SONDE, 'fil', []);
+      await l.lire(SONDE, 'battre', [pouls]);
+      await pause(100);
+      expect(Atomics.load(pouls, 0)).toBeGreaterThan(0);
+      await pause(500);
+      const apres = Atomics.load(pouls, 0);
+      await pause(200);
+      expect(Atomics.load(pouls, 0)).toBe(apres);
+      await expect(l.lire<number>(SONDE, 'fil', [])).resolves.not.toBe(premier);
+    });
+  });
+
+  it('🔴 une lecture que son travail n’attend pas ne fait pas tomber le process', async () => {
+    // La fin du travail rejette la lecture restée en vol (« lecteur fermé »), que personne n'écoute. Un rejet sans
+    // gestionnaire fait tomber Node, et le dépôt n'en pose aucun.
+    const rejets: unknown[] = [];
+    const surRejet = (raison: unknown): void => { rejets.push(raison); };
+    process.on('unhandledRejection', surRejet);
+    try {
+      await expect(avecLecteur({}, async (l) => { void l.lire(SONDE, 'attendre', [1_000]); return 1; })).resolves.toBe(1);
+      await pause(50);
+      expect(rejets).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', surRejet);
+    }
+  });
+
+  it('un refus 429 ne démarre aucun worker', async () => {
+    // Démarré pour rien, il coûterait sa mémoire et son démarrage, justement quand le serveur est saturé.
+    const occupees = Array.from({ length: 4 }, () => horsBoucle(SONDE, 'attendre', [1_000]));
+    const avant = workers.demarres;
+    await expect(horsBoucle(SONDE, 'fil', [])).rejects.toMatchObject({ statusCode: 429 });
+    expect(workers.demarres).toBe(avant);
+    await Promise.all(occupees);
   });
 });

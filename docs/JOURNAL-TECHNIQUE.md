@@ -43,6 +43,20 @@ négatif sur un test antérieur du même fichier, ce qui ouvrait le plafond. C'e
 test ; refaite avec un compte juste, elle tombe. Une mutation qui passe se relit avant de conclure que le test est
 faible.
 
+**La relecture du lot (`92a67808`) : aucun rouge, huit jaunes, corrigés dans la foulée** et relus avec le lot
+suivant, comme le veut la règle des jaunes. Le plus lourd : le plafond de quatre bornait les lectures, plus les
+workers vivants. Un worker au repos pèse 15 à 25 Mo, un aperçu attend surtout le réseau, et un parcours n'a pas de
+durée maximale (une page écartée ne compte pas dans les cinquante) : quelques centaines d'aperçus en vol sur un site
+aux liens lents auraient fait tomber `mba-api`, qui n'a pas de limite de mémoire. Un lecteur rend désormais son
+worker après 5 s de repos (`REPOS_MS`), et sa lecture suivante en démarre un autre. La durée du parcours elle-même
+reste sans borne, antérieure au lot : au `todo.md`, avec le 429 qui peut tomber en cours de parcours. Corrigés
+aussi : une lecture que son travail n'attend pas ne peut plus faire tomber le process (un rejet sans gestionnaire) ;
+l'inventaire refuse le passage en référence, plus seulement l'appel ; le test de l'échéance enchaîne quatre échéances,
+parce qu'une place perdue en laissait trois et passait inaperçue ; un 429 ne démarre aucun worker, et c'est compté ;
+le 404 de l'import sur l'agent d'un autre espace est tenu par un test ; et les textes (la marge de 1,7 du plus gros
+vrai CSV sous l'échéance en production, les 50 s de démarrages évités, les 3,3 places qu'un seul espace tient en
+continu). Chaque correctif est vérifié dans les deux sens, par mutation.
+
 ## 2026-09-30 : tout sur la fiche, lots 1 et 2a, et la fiche contact en onglets
 
 **Lot 1 (`187b36bb`, `4938172b`, jaunes `657fad5a`).** La dernière analyse d'une conversation est recopiée sur la
