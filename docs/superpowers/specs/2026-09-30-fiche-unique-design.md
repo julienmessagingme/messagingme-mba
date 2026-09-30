@@ -1,7 +1,8 @@
 # Tout sur la fiche : l'analyse devient des champs du contact, et une seule liste des champs
 
 **Date** : 2026-09-30. **Statut** : design validé par Julien le 2026-09-30, après une cartographie du code (cinq
-lecteurs, lecture seule, sur origin/main `75a5e215`) et sept rondes de questions. Plan à écrire :
+lecteurs, lecture seule, sur origin/main `75a5e215`) et sept rondes de questions, puis AMENDÉ le même jour par
+la cartographie qui a précédé le plan (§ « Les amendements du 2026-09-30 »). Plan :
 `docs/superpowers/plans/2026-09-30-fiche-unique.md`.
 
 ## Le problème
@@ -149,9 +150,9 @@ l'API et ne recopie aucune liste ; un test tient la parité des libellés.
 - **Bloc Condition d'un scénario** : les mêmes tests sur les champs d'analyse (le contexte de condition lit les
   colonnes).
 
-**Les clés sont réservées** : un champ personnalisé ne peut pas prendre la clé d'un champ de la liste
-(`SYSTEM_FIELD_KEYS` étendu). Sans ça, un import CSV avec une colonne « sentiment » créerait un champ perso qui
-se confondrait avec le champ d'analyse.
+**Les clés sont réservées** : un champ personnalisé ne peut pas prendre la clé d'un champ de la liste (par un
+ensemble séparé, pas `SYSTEM_FIELD_KEYS` : amendement 1). Sans ça, un import CSV avec une colonne « sentiment »
+créerait un champ perso qui se confondrait avec le champ d'analyse.
 
 ### Lot 3 : les automations
 
@@ -220,7 +221,42 @@ Sur l'espace d'essai, avec le téléphone de Julien :
 5. L'agent IA qui a l'outil « Lire la fiche » sait que le contact est mécontent.
 6. Une fois la conversation effacée, la fiche garde ses valeurs et le résumé disparaît.
 
-## Laissé au plan
+## Les amendements du 2026-09-30
 
-Les noms exacts des colonnes et des attributs, le besoin réel de `analyse_conversation_id`, les index à
-construire, le cas d'une fenêtre d'analyse absente, et la forme exacte de la fiche dans l'API.
+Apportés par la cartographie du code qui a précédé le plan (quatre lecteurs, un par lot, lecture seule). Plan :
+`docs/superpowers/plans/2026-09-30-fiche-unique.md`.
+
+1. **Les clés réservées ne passent PAS par `SYSTEM_FIELD_KEYS`.** Cette liste alimente les variables de message
+   (qui ne doivent pas recevoir l'analyse), est tenue égale à la liste de la console par `tests/web-codes.test.ts`,
+   ferait résoudre `fld_x_sys_analyse_sentiment` en champ texte écrit dans le jsonb, et rend 403 en suppression,
+   ce qui rendrait indélébile un doublon déjà créé. Un ensemble séparé, consulté par la création de champ,
+   l'import CSV et l'upsert de l'API.
+2. **Le résumé suit `analyse_conversation_id` quand la copie existe, sinon la règle actuelle.** Sans ce repli,
+   faute de reprise (décision 6), tous les résumés disparaîtraient de toutes les fiches au déploiement.
+   `analyse_conversation_id` est gardée : sans elle, les codes et le résumé pourraient venir de deux analyses
+   différentes.
+3. **`analyse_conversation_id` porte un index partiel**, construit `CONCURRENTLY` dans une migration à part :
+   sinon chaque conversation effacée (rétention, purge) parcourt `contacts` pour appliquer le `set null`.
+4. **« Périmée » compare le plus récent message des fils du contact à `analyse_fenetre_fin`**, jamais
+   `last_message_at`, posé par `now()` à chaque écriture : toutes les fiches paraîtraient périmées.
+5. **`save` rend la copie faite (ancienne et nouvelle valeurs), ou `null`.** Le déclencheur « devient » du lot 3
+   s'en sert, sans rouvrir une transaction de production déjà relue. Une fenêtre d'analyse absente : pas de copie.
+6. **Les filtres d'analyse passent par `fieldFilters`**, avec six opérateurs neufs, et non par des membres neufs de
+   `ContactFilters` : un membre inconnu serait IGNORÉ par un serveur plus ancien, donc l'audience d'une campagne
+   deviendrait l'espace entier. Une valeur ou un opérateur invalide est refusé, jamais ignoré. La console garde les
+   opérateurs neufs quand elle reprend un brouillon de campagne.
+7. **Le bloc Condition lit l'analyse dans un membre SÉPARÉ du contexte**, jamais dans `fields`, que la fonction JS
+   d'un scénario reçoit.
+8. **Connecteurs** : une origine `fiche` ; les variables enregistrées (`contact:*`, `systeme:analyse_*`) sont
+   réécrites à la lecture, sans reprise ; une lecture unique de la fiche remplace `analyseDuContact` et devient une
+   dépendance REQUISE. `CHAMPS_CONTACT_AUTORISES` n'est pas élargie (paramètres d'outil et MCP la lisent).
+9. **Une route neuve pour la liste** (`GET /tenants/:tenantId/champs-fiche`). `/user-fields` n'est pas enrichie :
+   dix écrans l'appellent, dont les sélecteurs de variables de message.
+10. **API** : `lastAnalysis` envoyé en écriture est ignoré comme `engagementRisk`, pas refusé : refuser casserait
+    l'aller-retour lecture puis écriture d'un intégrateur.
+11. **L'anti-rebond est réglable À L'ÉCRAN** : il ne l'est aujourd'hui que par l'API, et la décision 13 le veut
+    réglable.
+12. **L'agent IA reçoit l'analyse par une lecture propre à l'outil « Lire la fiche »**, pas par la projection du
+    contact : la projection part aussi vers les connecteurs, qui ne doivent rien recevoir de plus.
+13. **Nommer les trois nouveaux attributs de signaux avant le package Salesforce v0.1** : un package géré fige ses
+    noms de champs une fois publié.
