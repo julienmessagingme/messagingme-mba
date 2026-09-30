@@ -225,6 +225,23 @@ describe.skipIf(!url)('identité des fiches : external_id et les clés de l’AP
     expect(brute.rows[0]).toEqual({ opt_in_status: 'opted_in', opt_out_at: null });
   });
 
+  it('🔴 une fiche PURGÉE ne se réécrit pas par son identifiant : `applyEdits` et `getById` rendent null, et rien ne bouge', async () => {
+    const c = await creer(tenantId, { phoneE164: '+33600000725' });
+    // Un STOP avant la purge : c'est le refus que la purge garde exprès, et qu'une fiche réécrite lèverait.
+    expect(await store.applyEdits(tenantId, c.id, { fields: { ville: 'Lyon' }, addTags: ['vip'], removeTags: [], profileName: 'Camille', optInStatus: 'opted_out' })).not.toBeNull();
+    await store.purgeMany(tenantId, [c.id]);
+    const avant = await majLe(c.id);
+    expect(await store.applyEdits(tenantId, c.id, { fields: { ville: 'Paris' }, addTags: ['intrus'], removeTags: [], profileName: 'Intrus', optInStatus: 'opted_in' })).toBeNull();
+    expect(await store.getById(tenantId, c.id)).toBeNull();
+    // La ligne brute : relire par `getById` ne prouverait rien, il écarte maintenant la fiche. Et `updated_at` à
+    // la microseconde : null rendu APRÈS des écritures commitées passerait les deux lectures ci-dessus.
+    const brute = await pool.query<{ fields: Record<string, string>; tags: string[]; profile_name: string | null; opt_in_status: string }>(
+      'select fields, tags, profile_name, opt_in_status from contacts where tenant_id = $1 and id = $2', [tenantId, c.id],
+    );
+    expect(brute.rows[0]).toEqual({ fields: {}, tags: [], profile_name: null, opt_in_status: 'opted_out' });
+    expect(await majLe(c.id)).toBe(avant);
+  });
+
   it('🔴 résolution contre la base : deux clés sur deux fiches, `identity_conflict`, et rien n’est écrit', async () => {
     const a = await creer(tenantId, { phoneE164: '+33600000711' });
     const b = await creer(tenantId, { phoneE164: '+33600000712', externalId: 'itest-ext-712' });

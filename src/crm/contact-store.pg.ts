@@ -1059,9 +1059,9 @@ export class PgContactStore implements ContactStore {
   private static readonly SELECT_ONE =
     `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
             whatsapp_joignable, whatsapp_joignable_le, ${PgContactStore.COLONNES_RISQUE}
-       from contacts where id = $1 and tenant_id = $2`;
+       from contacts where id = $1 and tenant_id = $2 and deleted_at is null`;
 
-  /** Un contact par id, scopé tenant. null si absent ou d'un autre tenant. */
+  /** Un contact par id, scopé tenant. null si absent, supprimé ou d'un autre tenant. */
   async getById(tenantId: string, contactId: string): Promise<ContactRow | null> {
     const res = await this.pool.query(PgContactStore.SELECT_ONE, [contactId, tenantId]);
     const r = res.rows[0];
@@ -1070,7 +1070,8 @@ export class PgContactStore implements ContactStore {
 
   /**
    * Édite un contact (fiche) en une transaction, ligne verrouillée : fusion des champs (seules les clés fournies),
-   * ajout et retrait de tags. Rend le contact à jour, ou null s'il n'existe pas dans le tenant (404).
+   * ajout et retrait de tags. Rend le contact à jour, ou null s'il n'existe pas dans le tenant ou s'il est
+   * supprimé (404).
    */
   async applyEdits(
     tenantId: string,
@@ -1085,7 +1086,12 @@ export class PgContactStore implements ContactStore {
     const ecrit = await enTransaction(this.pool, async (client) => {
       // Les tags d'avant, lus sous le verrou : seul moyen de savoir lesquels sont réellement nouveaux, et « tag
       // ajouté » relance un scénario.
-      const exists = await client.query<{ tags: string[] | null }>('select tags from contacts where id = $1 and tenant_id = $2 for update', [contactId, tenantId]);
+      // 🔴 `deleted_at is null` ICI, sous le verrou, et pas seulement dans la relecture : les écritures qui suivent
+      // n'ont que `id` et `tenant_id`. Une fiche purgée garde son identifiant (lignes de campagne, journal), et
+      // la réécrire y rattacherait de nouveau un nom, des champs, des étiquettes, ou lèverait le refus que la purge
+      // garde exprès. Face à une purge concurrente : validée avant, la ligne est invisible ici ; écrite mais pas
+      // validée, on attend son verrou puis Postgres réévalue ce `where` ; verrouillée ici d'abord, la purge attend.
+      const exists = await client.query<{ tags: string[] | null }>('select tags from contacts where id = $1 and tenant_id = $2 and deleted_at is null for update', [contactId, tenantId]);
       if ((exists.rowCount ?? 0) === 0) return null;
       if (Object.keys(edits.fields).length > 0) {
         // Fusion : n'écrase que les clés fournies.

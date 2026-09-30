@@ -765,7 +765,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 - 🔴 **L'API écrit champs, étiquettes et nom par `editerFicheApi`, jamais par `applyEdits`** : une requête
   filtrée par `deleted_at is null`, sans transaction ni client dédié. Une fiche purgée entre la résolution et
   l'écriture n'est donc pas réécrite (`unknown_contact`), et un lot ne retient pas une connexion par élément.
-  `applyEdits` (la fiche de la console) verrouille sans ce filtre.
+  `applyEdits` (la fiche de la console) pose le même filtre sous son verrou : une fiche purgée y rend 404.
 - 🔴 **Un consentement posé par l'API passe par `ecrireConsentementParId`**, qui n'écrit RIEN quand la valeur
   ne change pas : un outil qui renvoie `opted_out` à chaque appel ne repousse pas la date du désabonnement et
   n'écrit pas une ligne d'audit par appel. Sur une fiche déjà `opted_in`, un `opted_in` d'une autre source ne

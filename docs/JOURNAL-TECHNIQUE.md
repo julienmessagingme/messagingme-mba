@@ -5,6 +5,36 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : `PATCH /contacts/:id` rend 404 sur une fiche purgée, et ne la réécrit plus
+
+`applyEdits`, l'écriture de la fiche depuis la console, ne filtrait `deleted_at is null` nulle part : ni son
+`select ... for update`, ni ses `update`, ni sa relecture. Sur une fiche purgée, un admin recevait 200, voyait
+consentement, blocage et risque dans la réponse, et pouvait réécrire nom, champs, étiquettes et consentement sur
+la ligne anonymisée, dont l'identifiant survit dans `campaign_recipients.contact_id` et le journal d'audit. Le
+pire cas : repasser en `opted_in` une fiche purgée après un STOP, alors que ce refus est précisément ce que la
+purge garde pour `claim`. Aucune automation ne partait (`waIdOfContact` filtre déjà). Le défaut violait
+l'invariant écrit dans `documentation.md` (§ Contacts, « un écrivain qui vise une fiche par son identifiant
+filtre `deleted_at is null` »). Sans migration, l'API seule change.
+
+**Le filtre est posé au verrou, pas seulement à la relecture.** Les `update` qui suivent n'ont que `id` et
+`tenant_id` : ne filtrer que la relecture aurait rendu 404 APRÈS avoir écrit, ce qu'aucune réponse HTTP ne
+montre. `SELECT_ONE` filtre aussi, donc `getById` (que seuls des tests lisent) rend null sur une fiche
+supprimée. La route traitait déjà null en 404. Face à une purge concurrente : validée avant, la ligne est
+invisible ; écrite mais pas validée, le verrou l'attend puis Postgres réévalue le `where` et ne la rend pas ;
+verrouillée d'abord par l'édition, c'est la purge qui attend, puis efface par-dessus. Le seul appel de l'écran
+qui y menait encore est le renvoi du détail de campagne (`contactId` tiré de `campaign_recipients`) : il répond
+désormais « contact inconnu ».
+
+**Vérifié dans les deux sens** sur un Postgres jetable du VPS (cf. « Vérifier un test d'INTÉGRATION sans
+attendre la CI ») : code d'origine, filtre du verrou seul retiré, filtre de la relecture seul retiré. Chacune
+fait tomber le test neuf sur son symptôme ; sans le filtre du verrou, la fiche purgée repasse en `opted_in` sous
+le nom « Intrus » alors que la route aurait répondu 404.
+
+Deux points voisins relevés par la relecture, hors de ce lot et sans personne atteinte : les lectures de
+`contact-history.pg.ts` (historique, résumé, bilan, export) rendent encore 200 sur une fiche purgée, avec les
+seuls compteurs que la purge garde ; et `resetRecipientForRetry` peut remettre en attente un destinataire purgé,
+dont l'envoi part vers `anonyme` et échoue.
+
 ## 2026-09-30 : un CSV de plus de 1 048 576 lignes est refusé, et `e09d210a` est déployé
 
 **`e09d210a` déployé** le 2026-09-30 vers 15 h 40 UTC, après sa CI verte job par job : `mba-api` et `mba-worker`

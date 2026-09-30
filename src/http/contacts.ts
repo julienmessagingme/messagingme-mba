@@ -18,7 +18,7 @@ import type { TravauxEnVol } from '../lib/en-vol';
 /** Ce que les routes lisent et écrivent des fiches de contact. */
 export interface ContactsDep {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
-   *  contact n'existe pas (tenant). */
+   *  contact n'existe pas dans le tenant, ou s'il est supprimé. */
   applyEdits(
     tenantId: string,
     contactId: string,
@@ -307,7 +307,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       return reply.code(400).send({ error: 'rien à modifier (fields / removeFields / addTags / removeTags / profileName / optInStatus)' });
     }
 
-    // Une transaction : MERGE/suppression fields + Nom + tags, ou 404 si le contact n'est pas dans le tenant.
+    // Une transaction : MERGE/suppression fields + Nom + tags, ou 404 si le contact n'est pas dans le tenant ou s'il
+    // est supprimé (purgé).
     const updated = await deps.contacts.applyEdits(tenant, contactId, {
       fields: values, removeFields, addTags, removeTags,
       ...(profileName !== undefined ? { profileName } : {}),

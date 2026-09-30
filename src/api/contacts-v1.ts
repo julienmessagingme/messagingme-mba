@@ -140,8 +140,8 @@ export interface ServiceContactsV1 {
 }
 
 export interface DepsServiceContactsV1 {
-  // `editerFicheApi` et pas `applyEdits` : une requête filtrée par `deleted_at is null`, pas une transaction
-  // par élément qui verrouille sans ce filtre.
+  // `editerFicheApi` et pas `applyEdits` : une seule requête filtrée par `deleted_at is null`, pas une transaction
+  // et un client dédié par élément du lot.
   contacts: Pick<PgContactStore, 'chercherParCles' | 'creerFicheApi' | 'rattacherCles' | 'editerFicheApi' | 'poserExternalId' | 'lireFicheApi' | 'ecrireConsentementParId' | 'etiquettesInconnues'>;
   fields: UserFieldStore;
   /** Requis : le consentement posé par l'API se journalise (`appliquerConsentement`). */
