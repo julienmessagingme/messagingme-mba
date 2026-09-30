@@ -59,6 +59,7 @@ import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
+import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
 import type { FastifyInstance } from 'fastify';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -235,6 +236,12 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   // Clé d'API : aucune clé ne se résout. `inconnu()` étant une fonction, donc une valeur vraie, les quatre
   // montages de l'entrée (`/v1`, les envois, `/mcp`, le relais du Meta Business Agent) ont bien lieu.
   v1: inconnu('v1'),
+  // Le formulaire de contact de la vitrine : public par nature, il n'a aucune autorité à tromper. Sa fausse autorité
+  // est un envoi COUPÉ : une sonde qui l'atteindrait n'enverrait aucun courriel, même en visant une cible distante.
+  contactVitrine: {
+    enabled: false,
+    envoyer: async () => { throw new Error('auto-attaque : le formulaire de contact n’envoie rien'); },
+  } satisfies ContactVitrineDeps,
 };
 
 /**
