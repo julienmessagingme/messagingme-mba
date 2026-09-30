@@ -1622,7 +1622,13 @@ async function main(): Promise<void> {
         const publicite = await publicites.lire(t, publiciteId);
         if (publicite === null) return null;
         const comptes = await publicites.comptesDeLaCampagne(t, publicite.campagneId, ISSUES_NON_PRISES_EN_CHARGE);
-        return { publicite, entonnoir: entonnoir({ depense: publicite.depense, clics: publicite.clics, ...comptes }) };
+        return {
+          publicite,
+          entonnoir: entonnoir({
+            depense: publicite.depense, clics: publicite.clics,
+            impressions: publicite.impressions, couverture: publicite.couverture, ...comptes,
+          }),
+        };
       },
 
       /**

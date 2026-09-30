@@ -284,7 +284,9 @@ describe('GET /pubs/:id : la page d’une publicité', () => {
     publicite: { id: 'pub-1', nom: 'Rentrée' } as never,
     entonnoir: {
       depense: 100,
-      clics: { nombre: 200, cout: 0.5, passage: null },
+      impressions: { nombre: 10000, cout: 10, passage: null },
+      couverture: 6000,
+      clics: { nombre: 200, cout: 0.5, passage: 0.02 },
       leads: { nombre: 50, cout: 2, passage: 0.25 },
       qualifies: { nombre: 10, cout: 10, passage: 0.2 },
       nonPrisEnCharge: 3,

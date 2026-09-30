@@ -1363,6 +1363,8 @@ async function main(): Promise<void> {
           budgetTotal: v.etat?.budgetTotal ?? null,
           depense: v.depense?.depense ?? null,
           clics: v.depense?.clics ?? null,
+          impressions: v.depense?.impressions ?? null,
+          couverture: v.depense?.couverture ?? null,
         }),
         connexions: connexionsPub,
         // Sur le code de Meta, jamais sur la phrase : une garde qui lit une phrase casse en silence le jour où

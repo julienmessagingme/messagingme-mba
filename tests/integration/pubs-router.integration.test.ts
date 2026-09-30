@@ -327,6 +327,7 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
     it('écrit ce que Meta a rendu', async () => {
       await publicites.noterSuivi(tenantId, 'camp-suivi', {
         statutMeta: 'ACTIVE', motifRefus: null, debut: null, fin: null, budgetTotal: 150, depense: 12.5, clics: 40,
+        impressions: 5000, couverture: 3200,
       });
       const r = (await pool.query(
         `select statut_meta, depense, clics, lu_le from publicites where tenant_id = $1 and campagne_id = 'camp-suivi'`,
@@ -336,6 +337,10 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
       expect(Number(r?.depense)).toBe(12.5);
       expect(r?.clics).toBe(40);
       expect(r?.lu_le).not.toBeNull();
+      // Relues par le store, en NOMBRES : `pg` rend un `bigint` en chaîne, et l'entonnoir diviserait une chaîne.
+      const lue = (await publicites.lister(tenantId)).find((p) => p.campagneId === 'camp-suivi');
+      expect(lue?.impressions).toBe(5000);
+      expect(lue?.couverture).toBe(3200);
     });
 
     it('🔴 une lecture SANS chiffres n’EFFACE PAS la dépense d’hier, mais fait avancer `lu_le`', async () => {
@@ -346,13 +351,15 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
       )).rows[0]?.lu_le as Date;
       await publicites.noterSuivi(tenantId, 'camp-suivi', {
         statutMeta: null, motifRefus: null, debut: null, fin: null, budgetTotal: null, depense: null, clics: null,
+        impressions: null, couverture: null,
       });
       const r = (await pool.query(
-        `select statut_meta, depense, clics, lu_le from publicites where tenant_id = $1 and campagne_id = 'camp-suivi'`,
+        `select statut_meta, depense, clics, impressions, lu_le from publicites where tenant_id = $1 and campagne_id = 'camp-suivi'`,
         [tenantId],
       )).rows[0];
       expect(r?.statut_meta).toBe('ACTIVE');
       expect(Number(r?.depense)).toBe(12.5);
+      expect(Number(r?.impressions)).toBe(5000);
       expect((r?.lu_le as Date).getTime()).toBeGreaterThanOrEqual(avant.getTime());
     });
 
@@ -360,6 +367,7 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
       await poserPub(voisinId, 'camp-suivi');
       await publicites.noterSuivi(voisinId, 'camp-suivi', {
         statutMeta: 'DISAPPROVED', motifRefus: 'x', debut: null, fin: null, budgetTotal: 9, depense: 99, clics: 9,
+        impressions: 9, couverture: 9,
       });
       const chezNous = (await pool.query(
         `select statut_meta from publicites where tenant_id = $1 and campagne_id = 'camp-suivi'`, [tenantId],

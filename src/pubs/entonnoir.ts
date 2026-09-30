@@ -13,6 +13,10 @@ export interface ComptesPub {
   depense: number | null;
   /** Les clics sur le lien vers WhatsApp, tels que Meta les compte. `null` = jamais lus. */
   clics: number | null;
+  /** Les affichages de la publicité, tels que Meta les compte. `null` = jamais lus. */
+  impressions: number | null;
+  /** Les personnes distinctes touchées. `null` = jamais lue. */
+  couverture: number | null;
   /** Contacts distincts arrivés par cette campagne. Pas des arrivées : un contact qui reclique reste un. */
   leads: number;
   /** Contacts distincts dont une arrivée porte `qualifie_le`. */
@@ -28,7 +32,10 @@ export interface ComptesPub {
 export interface EtapeEntonnoir {
   /** Le nombre atteint à cette étape. `null` = on ne l'a pas encore lu chez Meta. */
   nombre: number | null;
-  /** Ce que coûte une unité de cette étape. `null` = indéterminé (pas de dépense connue, ou zéro unité). */
+  /**
+   * Ce que coûte une unité de cette étape, et pour les impressions MILLE impressions (l'unité du métier : par
+   * impression, le coût s'écrirait 0.00). `null` = indéterminé (pas de dépense connue, ou zéro unité).
+   */
   cout: number | null;
   /** La part de l'étape précédente qui arrive ici, entre 0 et 1. `null` = indéterminé. */
   passage: number | null;
@@ -36,6 +43,9 @@ export interface EtapeEntonnoir {
 
 export interface Entonnoir {
   depense: number | null;
+  impressions: EtapeEntonnoir;
+  /** Un chiffre à côté, pas une étape : une personne touchée n'est pas un passage vers les clics. */
+  couverture: number | null;
   clics: EtapeEntonnoir;
   leads: EtapeEntonnoir;
   qualifies: EtapeEntonnoir;
@@ -54,18 +64,25 @@ export function diviserOuRien(numerateur: number | null, denominateur: number | 
 }
 
 /**
- * L'entonnoir complet : dépense, clics, prospects, qualifiés, avec le coût de chaque étape et le taux de
- * passage vers la suivante. Le premier taux dit la part des clics payés qui n'écrivent jamais, la perte la
- * plus silencieuse du produit.
+ * L'entonnoir complet : dépense, impressions, clics, prospects, qualifiés, avec le coût de chaque étape et le
+ * taux de passage depuis la précédente. Celui des clics est le taux de clic ; celui des prospects dit la part
+ * des clics payés qui n'écrivent jamais, la perte la plus silencieuse du produit.
  */
 export function entonnoir(c: ComptesPub): Entonnoir {
   return {
     depense: c.depense,
+    impressions: {
+      nombre: c.impressions,
+      cout: diviserOuRien(c.depense === null ? null : c.depense * 1000, c.impressions),
+      // Rien ne précède les impressions : le taux de passage n'a pas de sens ici, et `null` le dit.
+      passage: null,
+    },
+    couverture: c.couverture,
     clics: {
       nombre: c.clics,
       cout: diviserOuRien(c.depense, c.clics),
-      // Rien ne précède les clics : le taux de passage n'a pas de sens ici, et `null` le dit.
-      passage: null,
+      // Le taux de clic. `null` tant que les impressions n'ont pas été lues, jamais 100 % ni 0 % inventés.
+      passage: diviserOuRien(c.clics, c.impressions),
     },
     leads: {
       nombre: c.leads,

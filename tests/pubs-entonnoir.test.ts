@@ -15,7 +15,7 @@ import { ISSUES_ROUTAGE } from '../src/pubs/routage';
  */
 
 const comptes = (over: Partial<ComptesPub> = {}): ComptesPub => ({
-  depense: 100, clics: 200, leads: 50, qualifies: 10, nonPrisEnCharge: 3, ...over,
+  depense: 100, impressions: 10000, couverture: 6000, clics: 200, leads: 50, qualifies: 10, nonPrisEnCharge: 3, ...over,
 });
 
 describe('diviser : trois façons de ne pas avoir de réponse', () => {
@@ -53,21 +53,41 @@ describe('l’entonnoir complet', () => {
   it('rend chaque étape avec son coût et son taux de passage', () => {
     const e = entonnoir(comptes());
     expect(e.depense).toBe(100);
-    expect(e.clics).toEqual({ nombre: 200, cout: 0.5, passage: null });
+    // Le coût des impressions est pour MILLE : 100 € pour 10 000 impressions, 10 € les mille.
+    expect(e.impressions).toEqual({ nombre: 10000, cout: 10, passage: null });
+    expect(e.couverture).toBe(6000);
+    // Le passage des clics est le taux de clic : 200 clics sur 10 000 impressions.
+    expect(e.clics).toEqual({ nombre: 200, cout: 0.5, passage: 0.02 });
     expect(e.leads).toEqual({ nombre: 50, cout: 2, passage: 0.25 });
     expect(e.qualifies).toEqual({ nombre: 10, cout: 10, passage: 0.2 });
     expect(e.nonPrisEnCharge).toBe(3);
   });
 
-  it('🔴 LE TAUX DE PASSAGE DES CLICS EST `null` : rien ne précède les clics', () => {
+  it('🔴 LE TAUX DE PASSAGE DES IMPRESSIONS EST `null` : rien ne les précède', () => {
     // Poser 1 ou 0 ici serait inventer une étape qui n'existe pas, et l'écran afficherait « 100 % des ...
-    // arrivent aux clics ». De quoi ?
-    expect(entonnoir(comptes()).clics.passage).toBeNull();
+    // arrivent aux impressions ». De quoi ?
+    expect(entonnoir(comptes()).impressions.passage).toBeNull();
+  });
+
+  it('🔴 sans impressions lues, le taux de clic est `null`, pas 100 % ni 0 %', () => {
+    expect(entonnoir(comptes({ impressions: null })).clics.passage).toBeNull();
+    expect(entonnoir(comptes({ impressions: 0, clics: 0 })).clics.passage).toBeNull();
+  });
+
+  it('des impressions et aucun clic : le taux de clic vaut ZÉRO, le coût par clic est indéterminé', () => {
+    const e = entonnoir(comptes({ clics: 0 }));
+    expect(e.clics.passage).toBe(0);
+    expect(e.clics.cout).toBeNull();
   });
 
   it('🔴 une publicité qui vient d’être publiée : aucun coût, aucun taux, et surtout AUCUN zéro', () => {
-    const e = entonnoir(comptes({ depense: null, clics: null, leads: 0, qualifies: 0, nonPrisEnCharge: 0 }));
+    const e = entonnoir(comptes({
+      depense: null, impressions: null, couverture: null, clics: null, leads: 0, qualifies: 0, nonPrisEnCharge: 0,
+    }));
     expect(e.depense).toBeNull();
+    expect(e.impressions).toEqual({ nombre: null, cout: null, passage: null });
+    expect(e.couverture).toBeNull();
+    expect(e.clics.passage).toBeNull();
     expect(e.clics.nombre).toBeNull();
     expect(e.clics.cout).toBeNull();
     expect(e.leads.cout).toBeNull();

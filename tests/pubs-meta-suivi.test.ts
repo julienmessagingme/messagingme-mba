@@ -88,14 +88,24 @@ describe('le budget rendu par Meta', () => {
 });
 
 describe('lireDepenses', () => {
-  it('rend la dépense et les clics SUR LE LIEN, pas tous les clics', async () => {
+  it('rend la dépense, les clics SUR LE LIEN, les impressions et la couverture, en un seul appel', async () => {
     const { c, urls } = client({
-      'c-1': { insights: { data: [{ spend: '12.5', inline_link_clicks: '40' }] } },
+      'c-1': { insights: { data: [{ spend: '12.5', inline_link_clicks: '40', impressions: '5000', reach: '3200' }] } },
     });
     const r = (await c.lireDepenses(['c-1'], 'jeton')).get('c-1');
-    expect(r).toEqual({ depense: 12.5, clics: 40 });
+    expect(r).toEqual({ depense: 12.5, clics: 40, impressions: 5000, couverture: 3200 });
+    expect(urls).toHaveLength(1);
     // `clicks` compterait tout clic sur la publicité : une réaction, un nom de Page, un déroulé de texte.
-    expect(decodeURIComponent(urls[0] ?? '')).toContain('inline_link_clicks');
+    expect(decodeURIComponent(urls[0] ?? '')).toContain('{spend,inline_link_clicks,impressions,reach}');
+  });
+
+  it('🔴 un compte absent, illisible ou fractionnaire vaut `null` : il ferait échouer l’écriture de sa colonne', async () => {
+    // Les trois colonnes sont entières : un `NaN` ou un `2.5` y lèverait, et tout le balayage de l'espace tomberait.
+    const { c } = client({
+      'c-1': { insights: { data: [{ spend: '3', inline_link_clicks: '2.5', impressions: 'abc' }] } },
+    });
+    expect((await c.lireDepenses(['c-1'], 'jeton')).get('c-1'))
+      .toEqual({ depense: 3, clics: null, impressions: null, couverture: null });
   });
 
   it('⚠️ aucune ligne de statistiques est un cas NORMAL : rien n’est rendu pour cette campagne', async () => {

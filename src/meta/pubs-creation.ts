@@ -51,10 +51,13 @@ export interface EtatCampagneMeta {
   budgetTotal: number | null;
 }
 
-/** La dépense et les clics d'une campagne, depuis le début. */
+/** La dépense, les clics, les impressions et la couverture d'une campagne, depuis le début. */
 export interface DepensePub {
   depense: number | null;
   clics: number | null;
+  impressions: number | null;
+  /** Les personnes distinctes touchées (`reach` chez Meta). */
+  couverture: number | null;
 }
 
 /**
@@ -82,6 +85,8 @@ const lotInsightsSchema = z.record(z.string(), z.object({
     data: z.array(z.object({
       spend: z.string().optional(),
       inline_link_clicks: z.string().optional(),
+      impressions: z.string().optional(),
+      reach: z.string().optional(),
     })).optional(),
   }).optional(),
 }));
@@ -99,13 +104,22 @@ function montantMajeur(brut: string | undefined): number | null {
 /**
  * Un nombre rendu par Meta, ou `null`, jamais `NaN` : `depense` est un `numeric`, qui accepte `NaN` (l'écran
  * afficherait « NaN »), et `clics` un `integer`, qui le refuse (tout le balayage de suivi de l'espace tomberait).
- * Garantit le fini, pas l'entier : un `inline_link_clicks` fractionnaire casserait encore l'écriture de `clics`.
+ * Garantit le fini, pas l'entier : les comptes passent en plus par `entierOuRien`.
  * Zéro est une mesure valide ici, contrairement au budget.
  */
 function nombreFini(brut: string | undefined): number | null {
   if (brut === undefined) return null;
   const n = Number(brut);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Un compte de Meta (clics, impressions, couverture), ou `null` s'il n'est pas entier : leurs colonnes sont
+ * entières, et une valeur fractionnaire y ferait échouer l'écriture, donc tout le balayage de l'espace.
+ */
+function entierOuRien(brut: string | undefined): number | null {
+  const n = nombreFini(brut);
+  return n !== null && Number.isInteger(n) ? n : null;
 }
 
 /**
@@ -633,16 +647,18 @@ export class MetaPubsCreationClient extends ClientGraph {
   }
 
   /**
-   * La dépense et les clics par campagne, depuis le début (`date_preset=maximum`). Clics = `inline_link_clicks`,
-   * les clics sur le lien, et non `clicks` qui compte tout clic sur la pub ; champ à confirmer contre le
-   * Gestionnaire au premier jour du pilote.
+   * La dépense, les clics, les impressions et la couverture par campagne, depuis le début
+   * (`date_preset=maximum`), en un seul appel. Clics = `inline_link_clicks`, les clics sur le lien, et non
+   * `clicks` qui compte tout clic sur la pub ; champ à confirmer contre le Gestionnaire au premier jour du pilote.
+   * Couverture = `reach`, des personnes distinctes : elle ne s'additionne pas d'un jour à l'autre, d'où la
+   * lecture sur toute la durée plutôt qu'un cumul de notre côté.
    */
   async lireDepenses(campagneIds: readonly string[], jeton: string): Promise<Map<string, DepensePub>> {
     const out = new Map<string, DepensePub>();
     for (const paquet of parPaquets(campagneIds, IDS_PAR_APPEL)) {
       const qs = new URLSearchParams({
         ids: paquet.join(','),
-        fields: 'insights.date_preset(maximum){spend,inline_link_clicks}',
+        fields: 'insights.date_preset(maximum){spend,inline_link_clicks,impressions,reach}',
       });
       const brut = await this.call(`${this.baseUrl}/${this.version}/?${qs.toString()}`, {
         headers: { Authorization: `Bearer ${jeton}` },
@@ -658,7 +674,9 @@ export class MetaPubsCreationClient extends ClientGraph {
           // Meta rend la dépense en chaîne, dans l'unité principale de la devise : l'inverse de ce qu'il attend en
           // écriture pour un budget.
           depense: nombreFini(ligne.spend),
-          clics: nombreFini(ligne.inline_link_clicks),
+          clics: entierOuRien(ligne.inline_link_clicks),
+          impressions: entierOuRien(ligne.impressions),
+          couverture: entierOuRien(ligne.reach),
         });
       }
     }

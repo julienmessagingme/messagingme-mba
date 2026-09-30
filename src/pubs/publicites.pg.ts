@@ -24,6 +24,9 @@ export interface Publicite {
   automationId: string | null;
   depense: number | null;
   clics: number | null;
+  impressions: number | null;
+  /** Les personnes distinctes touchées (`reach` chez Meta). */
+  couverture: number | null;
   luLe: Date | null;
   creeLe: Date;
   /** Rangée hors de la liste par le client (0189). Un rangement d'écran : rien d'autre ne la lit. */
@@ -32,14 +35,17 @@ export interface Publicite {
 
 const COLS = `id, campagne_id, ensemble_id, crea_id, pub_id, nom, etat, statut_meta, motif_refus,
               budget_total, debut, fin, destination, workflow_id, tag_qualification, automation_id,
-              depense, clics, lu_le, cree_le, archivee_le`;
+              depense, clics, impressions, couverture, lu_le, cree_le, archivee_le`;
 
 interface Brut {
   id: string; campagne_id: string; ensemble_id: string | null; crea_id: string | null; pub_id: string | null;
   nom: string; etat: string; statut_meta: string | null; motif_refus: string | null;
   budget_total: string | null; debut: Date | null; fin: Date | null; destination: string;
   workflow_id: string | null; tag_qualification: string | null; automation_id: string | null;
-  depense: string | null; clics: number | null; lu_le: Date | null; cree_le: Date; archivee_le: Date | null;
+  depense: string | null; clics: number | null;
+  /** `bigint` : `pg` le rend en chaîne, comme un `numeric`. */
+  impressions: string | null; couverture: string | null;
+  lu_le: Date | null; cree_le: Date; archivee_le: Date | null;
 }
 
 /**
@@ -73,6 +79,8 @@ function versPublicite(r: Brut): Publicite {
     automationId: r.automation_id,
     depense: nombre(r.depense),
     clics: r.clics,
+    impressions: nombre(r.impressions),
+    couverture: nombre(r.couverture),
     luLe: r.lu_le,
     creeLe: r.cree_le,
     archiveeLe: r.archivee_le,
@@ -332,7 +340,7 @@ export class PgPublicitesStore {
      * sinon « dépense sur budget » deviendrait faux sans bruit.
      */
     budgetTotal: number | null;
-    depense: number | null; clics: number | null;
+    depense: number | null; clics: number | null; impressions: number | null; couverture: number | null;
   }): Promise<void> {
     await this.pool.query(
       `update publicites
@@ -343,9 +351,12 @@ export class PgPublicitesStore {
               budget_total = coalesce($7, budget_total),
               depense      = coalesce($8, depense),
               clics        = coalesce($9, clics),
+              impressions  = coalesce($10, impressions),
+              couverture   = coalesce($11, couverture),
               lu_le        = now()
         where tenant_id = $1 and campagne_id = $2`,
-      [tenantId, campagneId, v.statutMeta, v.motifRefus, v.debut, v.fin, v.budgetTotal, v.depense, v.clics],
+      [tenantId, campagneId, v.statutMeta, v.motifRefus, v.debut, v.fin, v.budgetTotal, v.depense, v.clics,
+       v.impressions, v.couverture],
     );
   }
 

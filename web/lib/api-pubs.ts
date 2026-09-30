@@ -176,6 +176,14 @@ export interface EtapeEntonnoir {
 
 export interface Entonnoir {
   depense: number | null;
+  /**
+   * Optionnels : la console part sur Vercel au `git push`, avant le déploiement de l'API qui les rend. Leur
+   * absence s'affiche « non disponible », comme un chiffre pas encore lu.
+   */
+  impressions?: EtapeEntonnoir;
+  /** Les personnes distinctes touchées. */
+  couverture?: number | null;
+  /** Le `passage` des clics est le taux de clic (clics sur impressions). */
   clics: EtapeEntonnoir;
   leads: EtapeEntonnoir;
   qualifies: EtapeEntonnoir;

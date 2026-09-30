@@ -80,6 +80,9 @@ function arrondi(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(2);
 }
 
+/** Une étape pas encore lue, ou pas rendue par une API d'avant ce champ. */
+const ETAPE_INCONNUE: EtapeEntonnoir = { nombre: null, cout: null, passage: null };
+
 function pourcent(v: number | null, t: T): string {
   return v === null ? t('non disponible', 'not available') : `${(v * 100).toFixed(1)} %`;
 }
@@ -439,9 +442,12 @@ function Detail({ tenantId, id, t, budgetTotal }: {
         <Gros libelle={t('Dépensé à date', 'Spent to date')} valeur={ouRien(e.depense, t)} />
         <Gros libelle={t('Clics vers WhatsApp', 'Clicks to WhatsApp')} valeur={ouRien(e.clics.nombre, t)} />
       </dl>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3" data-testid={`pub-etapes-${id}`}>
         <Chiffre libelle={t('Dépense', 'Spend')} valeur={ouRien(e.depense, t)} />
-        <Etape t={t} libelle={t('Clics', 'Clicks')} etape={e.clics} />
+        <Etape t={t} libelle={t('Impressions', 'Impressions')} etape={e.impressions ?? ETAPE_INCONNUE}
+               cout={t('coût pour 1 000', 'cost per 1,000')} />
+        <Chiffre libelle={t('Personnes touchées', 'Reach')} valeur={ouRien(e.couverture ?? null, t)} />
+        <Etape t={t} libelle={t('Clics', 'Clicks')} etape={e.clics} passage={t('taux de clic', 'click rate')} />
         <Etape t={t} libelle={t('Prospects', 'Leads')} etape={e.leads} />
         <Etape t={t} libelle={t('Qualifiés', 'Qualified')} etape={e.qualifies} />
       </dl>
@@ -483,14 +489,17 @@ function Chiffre({ libelle, valeur }: { libelle: string; valeur: string }) {
   );
 }
 
-function Etape({ t, libelle, etape }: { t: T; libelle: string; etape: EtapeEntonnoir }) {
+/** `cout` et `passage` nomment ces deux chiffres quand « coût » et un pourcentage nu ne suffisent pas. */
+function Etape({ t, libelle, etape, cout, passage }: {
+  t: T; libelle: string; etape: EtapeEntonnoir; cout?: string; passage?: string;
+}) {
   return (
     <div>
       <dt className="text-ink-500">{libelle}</dt>
       <dd className="font-medium text-ink-900">{ouRien(etape.nombre, t)}</dd>
       <dd className="text-ink-500">
-        {t('coût', 'cost')} {ouRien(etape.cout, t)}
-        {etape.passage !== null && ` · ${pourcent(etape.passage, t)}`}
+        {cout ?? t('coût', 'cost')} {ouRien(etape.cout, t)}
+        {etape.passage !== null && ` · ${passage === undefined ? '' : `${passage} `}${pourcent(etape.passage, t)}`}
       </dd>
     </div>
   );
