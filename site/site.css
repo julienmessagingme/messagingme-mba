@@ -551,12 +551,13 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .c-champ.large{grid-column:1 / -1}
 .c-champ label{font-size:.88rem;font-weight:600}
 .c-champ small{font-size:inherit;font-weight:500;color:var(--muted)}
-/* 1rem au moins : en dessous, Safari sur iPhone zoome dans la page au premier toucher. */
-.c-champ input,.c-champ textarea{width:100%;margin:0;padding:.72em .9em;border-radius:10px;border:1px solid rgb(255 255 255 / .22);background:var(--nuit);color:var(--ink);font:inherit;font-size:1rem;line-height:1.5;transition:border-color .15s,box-shadow .15s}
+/* Des champs BLANCS, qu'on repère d'un coup d'œil sur le bleu nuit. `color-scheme:light` rend le curseur, la barre de
+   défilement et le remplissage automatique du navigateur clairs eux aussi (la page, elle, est en `dark`).
+   1rem au moins : en dessous, Safari sur iPhone zoome dans la page au premier toucher. */
+.c-champ input,.c-champ textarea{color-scheme:light;width:100%;margin:0;padding:.72em .9em;border-radius:10px;border:1px solid #FFFFFF;background:#FFFFFF;color:#0B1033;font:inherit;font-size:1rem;line-height:1.5;transition:border-color .15s,box-shadow .15s}
 .c-champ textarea{min-height:9.5em;resize:vertical}
-.c-champ input:hover,.c-champ textarea:hover{border-color:rgb(255 255 255 / .38)}
-.c-champ input:focus-visible,.c-champ textarea:focus-visible{outline:none;border-color:var(--action);box-shadow:0 0 0 3px var(--action-wash)}
-.c-champ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);caret-color:var(--ink);box-shadow:0 0 0 100px var(--nuit) inset;transition:background-color 9999s}
+.c-champ input:focus-visible,.c-champ textarea:focus-visible{outline:none;border-color:var(--action);box-shadow:0 0 0 3px rgb(51 171 254 / .45)}
+.c-champ input:-webkit-autofill{-webkit-text-fill-color:#0B1033;caret-color:#0B1033;box-shadow:0 0 0 100px #FFFFFF inset;transition:background-color 9999s}
 /* Le pot de miel : hors de l'écran et hors du clavier, seul un robot le remplit. */
 .c-piege{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .c-envoi{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:14px 24px;flex-wrap:wrap}

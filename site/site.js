@@ -75,6 +75,17 @@
     var brouillon = JSON.parse(sessionStorage.getItem(CLE) || '{}');
     champs.forEach(function (c) { if (typeof brouillon[c.name] === 'string' && !c.value) c.value = brouillon[c.name]; });
   } catch (e) {}
+  // Venu d'un bouton « Demander une démo » : le message est pré-rempli avec la fonctionnalité, si rien n'est déjà
+  // écrit. Seules les quatre pages connues : aucun texte n'est recopié de l'adresse.
+  var DEMOS = {
+    'publicites-click-to-whatsapp': 'Publicités Click-to-WhatsApp',
+    'chaines-whatsapp': 'Chaînes WhatsApp',
+    'conversations-en-actions': 'Analyse de conversations',
+    'whatsapp-et-rcs': 'WhatsApp et RCS'
+  };
+  var demo = DEMOS[new URLSearchParams(location.search).get('demo')];
+  var message = form.querySelector('textarea[name="message"]');
+  if (demo && message && !message.value) message.value = 'Bonjour, je souhaite une démo d’Engage Me : ' + demo + '.';
   form.addEventListener('input', function () {
     var b = {};
     champs.forEach(function (c) { b[c.name] = c.value; });
