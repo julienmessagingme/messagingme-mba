@@ -2072,13 +2072,19 @@ scénario, comment importer des contacts.
   **champ personnalisé** de sa fiche, une **valeur système**, ou une constante. Une donnée peut être marquée
   « sans elle, on n'appelle pas ». **L'agent ne peut pas fabriquer un identifiant de client** : c'est ce qui
   empêche quelqu'un de demander à votre agent la commande d'un autre.
+- ✅ **Les champs de la fiche** (2026-09-30, chantier « Tout sur la fiche », lot 2) : la liste déroulante « D'où
+  vient sa valeur » propose, groupés, les champs de la **fiche du contact** (numéro, nom, **identifiant
+  externe**, **date de création**), la **dernière analyse et le risque** (intention, sentiment, satisfaction et
+  urgence de 0 à 10, résolue, sujet, traitée par, action suggérée, date de l'analyse, risque de départ), les
+  **champs personnalisés**, puis les valeurs système. Ces valeurs sont lues sur la **fiche**, pas dans la
+  conversation : elles restent disponibles quand la conversation est effacée. De quoi dire à votre CRM « ce
+  client est mécontent, urgence 8 » avec les vraies valeurs mesurées. Sans analyse, la valeur est vide, jamais
+  inventée ; une note à 0 reste 0. Ce sont les mêmes codes que ceux que reçoivent Batch et Salesforce. ⚠️ Les
+  appels enregistrés avant ce lot gardent leurs données : l'API relit les anciennes formes. ⚠️ Une fiche n'a de
+  dernière analyse qu'à partir de la prochaine analyse du contact (pas de reprise du passé).
 - ✅ **Les valeurs système** : la **date et l'heure courantes** (au format international, avec le décalage de
-  votre fuseau), le **dernier message écrit par le contact**, ce qui permet de transmettre à votre système
-  ce que la personne vient de demander, mot pour mot, et depuis le 2026-09-30 **ce que la dernière analyse dit
-  du contact** : son **intention**, son **sentiment**, sa **satisfaction** et son **urgence** (de 0 à 10), si la
-  conversation est **résolue**, et son **risque de départ**. De quoi dire à votre CRM « ce client est mécontent,
-  urgence 8 » avec les vraies valeurs mesurées, et non des valeurs écrites en dur. Sans analyse, la valeur est
-  vide, jamais inventée. Ce sont les mêmes valeurs que celles que reçoivent Batch et Salesforce.
+  votre fuseau) et le **dernier message écrit par le contact**, ce qui permet de transmettre à votre système ce
+  que la personne vient de demander, mot pour mot.
 - ✅ **Essayer l'appel** avec des valeurs de test, et voir la vraie réponse : le statut, la durée, ce qui est
   parti, et le contenu reçu.
 - ✅ **Cocher les champs à garder** dans la réponse reçue, au lieu d'écrire des chemins de mémoire. ⚠️ Depuis

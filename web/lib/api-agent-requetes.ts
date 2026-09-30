@@ -11,10 +11,14 @@ import { request } from './http';
 
 export type MethodeRequete = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-/** D'où vient la valeur d'une variable. Liste FERMÉE, alignée sur `src/agent/variables.ts`. */
+/**
+ * D'où vient la valeur d'une variable. Liste FERMÉE, alignée sur `src/agent/variables.ts`. `fiche` : un champ fixe de
+ * la liste unique des champs de la fiche (numéro, nom, identifiant externe, dernière analyse, risque...). L'API
+ * réécrit les formes anciennes (`contact:*`, `systeme:analyse_*`) en `fiche:*` : l'écran ne les voit plus.
+ */
 export type OrigineVariable =
   | { type: 'modele' }
-  | { type: 'contact'; cle: string }
+  | { type: 'fiche'; cle: string }
   | { type: 'champ'; cle: string }
   | { type: 'systeme'; cle: string }
   | { type: 'fixe'; valeur: string | number | boolean };
@@ -61,7 +65,12 @@ export interface RequeteApi {
 /** Ce que le serveur propose, pour que l'écran ne recopie pas une liste qui vit là-bas. Deux listes
  *  finiraient par diverger, et celle de l'écran proposerait une origine que le serveur refuse. */
 export interface CatalogueVariables {
-  contact: readonly string[];
+  /**
+   * Les champs de la fiche qui peuvent partir, avec leurs libellés [fr, en]. FACULTATIF : une API d'avant le lot 2
+   * ne le rend pas, et l'écran retombe alors sur `contact` (numéro et nom).
+   */
+  fiche?: ReadonlyArray<{ cle: string; libelle: readonly [string, string]; provenance: string }>;
+  contact?: readonly string[];
   systeme: readonly string[];
   entetesReserves: readonly string[];
 }

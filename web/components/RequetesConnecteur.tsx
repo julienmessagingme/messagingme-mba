@@ -92,7 +92,7 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
       // ⚠️ Défensif : une réponse mal formée doit dégrader, jamais blanchir l'écran.
       setRequetes(Array.isArray(r?.requetes) ? r.requetes : []);
       setChamps(Array.isArray(r?.champs) ? r.champs : []);
-      setCatalogue(r?.catalogue ?? { contact: [], systeme: [], entetesReserves: [] });
+      setCatalogue(r?.catalogue ?? { fiche: [], contact: [], systeme: [], entetesReserves: [] });
     } catch (err) {
       setErreur(erreurDeChargement(err, t));
     }
@@ -532,8 +532,17 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
     if (clef === 'modele') return { type: 'modele' };
     if (clef === 'fixe') return { type: 'fixe', valeur: '' };
     const [type, cle] = clef.split(':');
-    return { type: type as 'contact' | 'champ' | 'systeme', cle: cle ?? '' } as OrigineVariable;
+    return { type: type as 'fiche' | 'champ' | 'systeme', cle: cle ?? '' } as OrigineVariable;
   };
+  // Les champs de la fiche, venus du SERVEUR. Une API d'avant le lot 2 ne rend que `contact` (numéro et nom) : on
+  // les présente sous la forme actuelle. ⚠️ Cette API-là REFUSERAIT `fiche:*` à l'enregistrement : c'est pourquoi
+  // cette console part toujours APRÈS le déploiement de l'API qui l'accepte (lot 2a, 2026-09-30).
+  const champsFiche = catalogue.fiche ?? (catalogue.contact ?? []).map((c) => ({
+    cle: c, provenance: 'base',
+    libelle: (c === 'wa_id' ? ['numéro du contact', 'contact’s number'] : ['nom du contact', 'contact’s name']) as readonly [string, string],
+  }));
+  const deBase = champsFiche.filter((c) => c.provenance === 'base');
+  const deduits = champsFiche.filter((c) => c.provenance !== 'base');
 
   return (
     <div className="flex flex-col gap-2">
@@ -573,10 +582,21 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
             onChange={(e) => changer(i, { origine: origineDe(e.target.value) })}
           >
             <option value="modele">{t('décidée par l’agent', 'decided by the agent')}</option>
-            {catalogue.contact.map((c) => (
-              <option key={c} value={`contact:${c}`}>{c === 'wa_id' ? t('numéro du contact', 'contact’s number') : t('nom du contact', 'contact’s name')}</option>
-            ))}
-            {champs.map((c) => <option key={c} value={`champ:${c}`}>{t(`champ « ${c} »`, `field “${c}”`)}</option>)}
+            {deBase.length > 0 && (
+              <optgroup label={t('Fiche du contact', 'Contact record')}>
+                {deBase.map((c) => <option key={c.cle} value={`fiche:${c.cle}`}>{t(c.libelle[0], c.libelle[1])}</option>)}
+              </optgroup>
+            )}
+            {deduits.length > 0 && (
+              <optgroup label={t('Dernière analyse et risque', 'Latest analysis and risk')}>
+                {deduits.map((c) => <option key={c.cle} value={`fiche:${c.cle}`}>{t(c.libelle[0], c.libelle[1])}</option>)}
+              </optgroup>
+            )}
+            {champs.length > 0 && (
+              <optgroup label={t('Champs personnalisés', 'Custom fields')}>
+                {champs.map((c) => <option key={c} value={`champ:${c}`}>{t(`champ « ${c} »`, `field “${c}”`)}</option>)}
+              </optgroup>
+            )}
             {catalogue.systeme.map((c) => (
               <option key={c} value={`systeme:${c}`}>
                 {t(...libelleValeurSysteme(c))}

@@ -39,6 +39,8 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
   const t = useT();
   const [sources, setSources] = useState<SourceAgent[] | null>(null);
   const [requetes, setRequetes] = useState<RequeteApi[]>([]);
+  // Les libellés des champs de la fiche, venus du catalogue du SERVEUR (aucune copie ici).
+  const [libellesFiche, setLibellesFiche] = useState<Record<string, readonly [string, string]>>({});
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [ouvert, setOuvert] = useState<string | null>(null);
@@ -51,6 +53,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
       // maison, qui n'a rien à voir. Même précaution que la liste des conversations de l'inbox.
       setSources(Array.isArray(s) ? s : []);
       setRequetes(Array.isArray(r?.requetes) ? r.requetes : []);
+      setLibellesFiche(Object.fromEntries((r?.catalogue?.fiche ?? []).map((c) => [c.cle, c.libelle])));
     } catch (err) {
       setErreur(erreurDeChargement(err, t));
     }
@@ -132,6 +135,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
               <NouvelAppel
                 tenantId={tenantId}
                 requete={rq}
+                libellesFiche={libellesFiche}
                 busy={busy}
                 /**
                  * 🔴 LE FORMULAIRE NE SE FERME QUE SI ÇA A MARCHÉ. Il se refermait dans la foulée de l'appel,
@@ -160,17 +164,19 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
  * vérité (il renvoie `envoi` à la création) ; celui-ci sert à montrer ce qui partira AVANT de valider, donc
  * quand il n'y a encore rien à demander au serveur.
  */
-function libelleOrigine(o: RequeteApi['variables'][number]['origine']): [string, string] {
+function libelleOrigine(o: RequeteApi['variables'][number]['origine'], libellesFiche: Record<string, readonly [string, string]>): [string, string] {
   if (o.type === 'modele') return ['décidée par l’agent', 'decided by the agent'];
-  if (o.type === 'contact') return o.cle === 'wa_id' ? ['numéro WhatsApp du contact', 'contact’s WhatsApp number'] : ['nom du contact', 'contact’s name'];
+  // Un champ de la fiche : son libellé vient du catalogue du serveur ; inconnu, la clé telle quelle.
+  if (o.type === 'fiche') { const l = libellesFiche[o.cle]; return l ? [l[0], l[1]] : [o.cle, o.cle]; }
   if (o.type === 'champ') return [`champ « ${o.cle} » du contact`, `contact field “${o.cle}”`];
   if (o.type === 'systeme') return libelleValeurSysteme(o.cle);
   return [`valeur fixe « ${String(o.valeur)} »`, `fixed value “${String(o.valeur)}”`];
 }
 
-function NouvelAppel({ tenantId, requete, busy, onCreer }: {
+function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
   tenantId: string;
   requete: RequeteApi;
+  libellesFiche: Record<string, readonly [string, string]>;
   busy: boolean;
   onCreer: (mots: {
     name: string; title: string; description: string; nePasUtiliser: string;
@@ -263,7 +269,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
           <ul className="mt-1 space-y-0.5">
             {requete.variables.map((v) => (
               <li key={v.nom} className="text-xs text-ink-500">
-                <code>{v.nom}</code> : {t(...libelleOrigine(v.origine))}
+                <code>{v.nom}</code> : {t(...libelleOrigine(v.origine, libellesFiche))}
               </li>
             ))}
           </ul>

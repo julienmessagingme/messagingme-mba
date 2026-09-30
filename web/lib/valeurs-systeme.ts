@@ -7,12 +7,6 @@
 export const LIBELLES_VALEURS_SYSTEME: Record<string, [string, string]> = {
   derniere_saisie: ['dernier message du contact', 'contact’s last message'],
   maintenant: ['date et heure courantes', 'current date and time'],
-  analyse_intention: ['intention de la dernière analyse', 'intent from the last analysis'],
-  analyse_sentiment: ['sentiment de la dernière analyse', 'sentiment from the last analysis'],
-  analyse_satisfaction: ['satisfaction de la dernière analyse (0 à 10)', 'satisfaction from the last analysis (0 to 10)'],
-  analyse_urgence: ['urgence de la dernière analyse (0 à 10)', 'urgency from the last analysis (0 to 10)'],
-  analyse_resolue: ['dernière conversation résolue (oui/non)', 'last conversation resolved (yes/no)'],
-  risque_depart: ['risque de départ du contact', 'contact’s churn risk'],
 };
 
 export function libelleValeurSysteme(cle: string): [string, string] {

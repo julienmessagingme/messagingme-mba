@@ -45,7 +45,7 @@ const TEST_OK = {
   risqueMinimum: 'read',
 };
 
-async function mock(page: import('@playwright/test').Page, capture: { posts: Array<{ url: string; body: unknown }> }, over: { requetes?: unknown[]; test?: unknown; creationRefusee?: string } = {}) {
+async function mock(page: import('@playwright/test').Page, capture: { posts: Array<{ url: string; body: unknown }> }, over: { requetes?: unknown[]; test?: unknown; creationRefusee?: string; catalogue?: unknown } = {}) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -66,7 +66,7 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
     if (url.includes('/agent-requetes')) {
       return json({
         requetes: over.requetes ?? [REQUETE], champs: ['ville'],
-        catalogue: { contact: ['wa_id', 'nom'], systeme: ['derniere_saisie', 'maintenant'], entetesReserves: ['authorization', 'content-type'] },
+        catalogue: over.catalogue ?? { contact: ['wa_id', 'nom'], systeme: ['derniere_saisie', 'maintenant'], entetesReserves: ['authorization', 'content-type'] },
       });
     }
     if (url.includes('/agent-sources')) return json({ sources: [SOURCE] });
@@ -81,6 +81,36 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
   await page.getByTestId(`source-ligne-${SRC}`).click();
   await expect(page.getByTestId('requetes-bloc')).toBeVisible();
 }
+
+test.describe('Connecteurs : les champs de la fiche (Tout sur la fiche, lot 2)', () => {
+  const CATALOGUE_FICHE = {
+    fiche: [
+      { cle: 'wa_id', libelle: ['numéro du contact', 'contact’s number'], provenance: 'base' },
+      { cle: 'external_id', libelle: ['identifiant externe', 'external ID'], provenance: 'base' },
+      { cle: 'analyse_sentiment', libelle: ['sentiment de la dernière analyse', 'latest analysis sentiment'], provenance: 'analyse' },
+    ],
+    contact: ['wa_id', 'nom'], systeme: ['derniere_saisie', 'maintenant'], entetesReserves: ['authorization', 'content-type'],
+  };
+
+  test('🔴 un champ d’analyse se choisit dans la liste, et c’est fiche:… qui part à l’enregistrement', async ({ page }) => {
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture, { catalogue: CATALOGUE_FICHE });
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    await page.getByTestId('var-origine-0').selectOption('fiche:analyse_sentiment');
+    await page.getByTestId('requete-enregistrer').click();
+    await expect.poll(() => capture.posts.some((p) => p.url.includes(RQ) && !p.url.includes('/test'))).toBe(true);
+    const envoi = capture.posts.find((p) => p.url.includes(RQ) && !p.url.includes('/test'))!;
+    expect((envoi.body as { variables: Array<{ origine: unknown }> }).variables[0]!.origine).toEqual({ type: 'fiche', cle: 'analyse_sentiment' });
+  });
+
+  test('une API d’avant le lot (catalogue sans fiche) propose encore le numéro et le nom', async ({ page }) => {
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture);
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    await expect(page.getByTestId('var-origine-0').locator('option[value="fiche:wa_id"]')).toHaveCount(1);
+    await expect(page.getByTestId('var-origine-0').locator('option[value="fiche:nom"]')).toHaveCount(1);
+  });
+});
 
 test.describe('Connecteurs : mettre au point un appel', () => {
   test('🔴 après l’essai, on COCHE les champs de la réponse réelle', async ({ page }) => {
