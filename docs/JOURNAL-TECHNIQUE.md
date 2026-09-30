@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : la normalisation d'un document texte redevient linéaire
+
+Vu en passant par la relecture du plafond de lignes des CSV : `normaliser` (`src/agent/setup/piece-jointe.ts`), qui
+coupe les bords de tout document texte de la connaissance d'un agent (8 Mo au plus), coupait la fin par
+`[^\S\t]+$`. L'expression repartait de chaque espace d'une série qui n'est pas en fin de texte : coût quadratique,
+100 000 espaces au milieu d'un texte tenaient la boucle d'événements 5,6 s. Le début garde son expression, ancrée
+donc linéaire ; la fin se coupe par `trimEnd`, en gardant la dernière tabulation quand elle est dans la fin (une
+boucle caractère par caractère, premier jet, coûtait 0,4 à 0,8 s sur 8 Mo de blancs ; `trimEnd` 35 à 70 ms, mesuré
+par la relecture). Les bords ne bougent pas : le BOM et les espaces partent, les tabulations restent (la case d'angle
+d'un TSV), et la relecture n'a trouvé aucun écart avec l'ancienne expression sur 2,4 millions de comparaisons. Test
+rouge sur le code d'avant (5,6 s), vert après ; mutations attrapées : tabulation de fin coupée, fin non coupée,
+ancienne expression remise.
+
+La même relecture a trouvé deux défauts de même gravité dans ce fichier, antérieurs, consignés en rouge dans
+`todo.md` : les expressions de `texteDocx` (quadratiques sur un `document.xml` de chevrons, 8,2 s pour un .docx de
+227 octets) et le découpage de `texteEnFiches` (quadratique sur une suite de lignes courtes, 10 s pour 120 Ko).
+
 ## 2026-09-30 : une purge pendant un run de campagne n'envoie plus rien à la personne effacée
 
 **`5ef5b33f` déployé** le 2026-09-30 à 17 h 36 UTC, après sa CI verte job par job (`unit`, `securite`,

@@ -16,14 +16,21 @@ TOUS les espaces ; le healthcheck la marque `unhealthy` sans la redémarrer.
 - 🔴 **Doublons d'en-tête** : `a_1` ... `a_8192` puis 8 192 fois `a` fait 16 384 colonnes, donc passe la borne, et
   le renommage de papaparse repart de `a_1` pour chaque doublon, soit un coût quadratique. Reproduit : 1,8 s pour
   8 192 colonnes ; la relecture : 55 s pour 520 Ko avec des noms plus longs.
-- 🔴 **Une expression régulière quadratique dans `normaliser`** (`src/agent/setup/piece-jointe.ts`, vu en passant) :
-  `/^[^\S\t]+|[^\S\t]+$/g` repart de chaque espace d'une longue série qui n'est pas en fin de texte. Reproduit :
-  quadratique, 223 ms pour 20 000 espaces ; tout document texte de la connaissance d'un agent y passe (8 Mo).
-  Remède : garder `^[^\S\t]+`, ancrée donc linéaire, et rogner la fin par une boucle.
+- 🔴 **Un .docx de quelques centaines d'octets** (`texteDocx`, `src/agent/setup/piece-jointe.ts`, mesuré par la
+  relecture du 2026-09-30) : ses trois expressions (`<w:br\b[^>]*\/?>`, `<w:t\b[^>]*>([\s\S]*?)<\/w:t>`, `<[^>]+>`)
+  sont quadratiques sur un `document.xml` fait de `<` ou de balises non fermées. 80 000 `<` dans un .docx de 227
+  octets : 8,2 s dans `reconnaitre`, puis autant dans `extraireTexte` ; le zip ramène ces motifs à presque rien, et
+  `MAX_DOCX_DECOMPRESSE` laisse passer 64 Mo décompressés. Piste mesurée linéaire : `[^<>]` au lieu de `[^>]`, et
+  `[^<]*` au lieu de `[\s\S]*?` (un `<` brut n'existe pas dans un `document.xml` valide).
+- 🔴 **Une suite de lignes courtes dans un document texte** (`texteEnFiches`, même fichier, mesuré par la même
+  relecture) : chaque ligne qui ressemble à un titre recolle toute la section courante (`contenuDe`), et une section
+  de moins de 40 caractères ne se ferme jamais. `T` suivi de deux sauts de ligne, répété : 60 Ko 3,2 s, 120 Ko
+  10,2 s. Piste : tenir la longueur au fil de la lecture au lieu de tout recoller.
 
-Remède proposé pour les deux premières, le seul qui ne dépende pas d'une liste de formes (chaque lot en a fermé
-une, chaque relecture en a trouvé d'autres) : lire le CSV dans un worker thread, avec une échéance (`terminate()`
-au bout de quelques secondes, puis un 400) et des `resourceLimits`. À cadrer : le chargement d'un worker TypeScript
+Remède proposé, le seul qui ne dépende pas d'une liste de formes (chaque lot en a fermé
+une, chaque relecture en a trouvé d'autres) : lire le fichier dans un worker thread, avec une échéance
+(`terminate()` au bout de quelques secondes, puis un 400) et des `resourceLimits`, pour le CSV comme pour toute la
+chaîne d'un document (`reconnaitre`, `extraireTexte`, `texteEnFiches`). À cadrer : le chargement d'un worker TypeScript
 sous `tsx` en production et sous vitest, et le coût du retour des rangées vers le fil principal.
 
 ## 🟡 Lecture des CSV : les restes de la réparation du séparateur (2026-09-30)

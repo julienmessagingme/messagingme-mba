@@ -96,8 +96,16 @@ const CONTROLE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/;
 /**
  * Fins de ligne Windows ramenées à `\n`, bords coupés, BOM d'Excel compris : le texte tel que le découpage le lit.
  * Les tabulations des bords restent : dans un TSV, ce sont des cellules vides (la case d'angle d'une grille).
+ * 🔴 La fin se coupe par `trimEnd` et la dernière tabulation, pas par `[^\S\t]+$` : cette expression repartait de
+ * chaque espace d'une série qui n'est pas en fin de texte, soit un coût quadratique (100 000 espaces : 5,6 s, relevé
+ * le 2026-09-30). `trimEnd` coupe aussi les tabulations : on garde donc jusqu'à la dernière, si elle est dans la fin.
  */
-const normaliser = (texte: string): string => texte.replace(/\r\n?/g, '\n').replace(/^[^\S\t]+|[^\S\t]+$/g, '');
+function normaliser(texte: string): string {
+  const t = texte.replace(/\r\n?/g, '\n').replace(/^[^\S\t]+/, '');
+  const coupe = t.trimEnd().length;
+  const tab = t.lastIndexOf('\t');
+  return t.slice(0, tab >= coupe ? tab + 1 : coupe);
+}
 
 /**
  * Un CSV lu, chaque rangée réécrite en une ligne ; `null` si le texte n'en est pas un. L'en-tête va jusqu'à la

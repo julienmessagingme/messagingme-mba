@@ -85,6 +85,15 @@ describe('extraction du texte', () => {
     expect(await extraireTexte(Buffer.from('a\r\nb\r\n'), 'texte')).toBe('a\nb');
   });
 
+  it('🔴 une longue série d’espaces au milieu du texte se normalise en temps linéaire, bords compris', async () => {
+    // Relevé le 2026-09-30 : l'expression qui coupait la fin (`[^\S\t]+$`) repartait de chaque espace d'une série qui
+    // n'est pas en fin de texte, soit un coût quadratique sur tout document texte (8 Mo) : 20 000 espaces, 0,2 s.
+    const milieu = ' '.repeat(100_000);
+    const debut = performance.now();
+    expect(await extraireTexte(Buffer.from(` \ta${milieu}b\t \n`), 'texte')).toBe(`\ta${milieu}b\t`);
+    expect(performance.now() - debut).toBeLessThan(1_000);
+  });
+
   it('🔴 une IMAGE ne passe pas par l’extraction : c’est un modèle vision qui la lit', async () => {
     expect(await extraireTexte(Buffer.from([0xff, 0xd8, 0xff]), 'image')).toBeNull();
   });
