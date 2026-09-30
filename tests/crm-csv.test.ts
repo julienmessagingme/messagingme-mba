@@ -79,4 +79,17 @@ describe('parseCsv', () => {
   it('une rangée ne porte que les colonnes nommées de l’en-tête, jamais ses cellules en trop', () => {
     expect(parseCsv('a;;b\nx;y;z;t').rows[0]).toEqual({ a: 'x', b: 'z' });
   });
+
+  it('🔴 un fichier de plus de 1 048 576 lignes (le maximum d’Excel) est refusé en 400, quelle que soit sa fin de ligne', () => {
+    // Mesuré le 2026-09-30 : 8 Mo de lignes d'un caractère (près de 3 millions de rangées) coûtaient 4 à 6 s, papaparse
+    // faisant un objet et une erreur par rangée. Ici les fins de ligne vivent dans un champ entre guillemets : le
+    // compte les voit toutes, papaparse n'en fait qu'une rangée, et le test reste instantané.
+    const avecFins = (fin: string, n: number): string => `nom${fin}"x${fin.repeat(n - 1)}"`;
+    expect(parseCsv(avecFins('\n', 1_048_576)).rows).toHaveLength(1);
+    for (const fin of ['\n', '\r', '\r\n']) {
+      expect(() => parseCsv(avecFins(fin, 1_048_577))).toThrow(expect.objectContaining({ statusCode: 400, message: expect.stringContaining('1048576 lignes') }));
+    }
+    // `\r\n` ne compte qu'une fin de ligne : 600 000 fins d'un fichier Windows passent.
+    expect(parseCsv(avecFins('\r\n', 600_000)).rows).toHaveLength(1);
+  });
 });

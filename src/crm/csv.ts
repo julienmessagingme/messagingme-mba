@@ -11,13 +11,26 @@ const SEPARATEURS = [';', '\t', ',', '|'];
 const APERCU = 50;
 /** Le plus d'en-têtes que `parseCsv` accepte : 16 384 est le maximum d'Excel (colonne XFD), un fichier réel en est loin. */
 const COLONNES_MAX = 16_384;
+/**
+ * Le plus de lignes que `parseCsv` accepte, lignes vides comprises : 1 048 576 est le maximum d'Excel, et un export
+ * dont la plage descend au bas de la feuille l'atteint. Le corps de 8 Mo de l'import, où un saut de ligne pèse deux
+ * octets, porte au plus 762 600 lignes de numéros seuls.
+ */
+const LIGNES_MAX = 1_048_576;
 
 /**
  * Un CSV refusé avant d'être lu. `statusCode` le fait rendre en 400 par le gestionnaire d'erreurs de `src/server.ts`,
  * avec ce message, par toutes les routes qui lisent un CSV : aucune ne peut l'oublier.
  */
-export class CsvTropDeColonnes extends Error {
+export class CsvTropGros extends Error {
   readonly statusCode = 400;
+}
+
+/** Les `fin` de `texte`, comptées jusqu'à LIGNES_MAX + 1 au plus : au-delà, le texte est refusé de toute façon. */
+function finsDeLigne(texte: string, fin: '\n' | '\r'): number {
+  let n = 0;
+  for (let i = texte.indexOf(fin); i !== -1 && n <= LIGNES_MAX; i = texte.indexOf(fin, i + 1)) n += 1;
+  return n;
 }
 
 /**
@@ -41,9 +54,16 @@ export function separateurCsv(texte: string): string | null {
  * les champs quotés, BOM, lignes vides. Toutes les valeurs sont ramenées à des strings
  * trimmées ; une cellule absente (rangée plus courte que l'en-tête) reste absente. Le séparateur est celui de
  * `separateurCsv` ; des rangées inégales, où il n'en trouve pas, retombent sur la devinette de papaparse. Lève
- * `CsvTropDeColonnes` (400) sur un en-tête de plus de `COLONNES_MAX` colonnes.
+ * `CsvTropGros` (400) au-delà de `LIGNES_MAX` lignes ou de `COLONNES_MAX` colonnes d'en-tête.
  */
 export function parseCsv(text: string): ParsedCsv {
+  // 🔴 Les lignes se comptent AVANT tout : papaparse fait un objet, et une erreur « Too few fields » pour une rangée
+  // courte, par rangée. 8 Mo de lignes d'un caractère en portent près de 3 millions, soit 4 à 6 s de boucle
+  // d'événements et plus d'un Go de tas (mesuré le 2026-09-30). `\n` et `\r` se comptent à part, et le plus grand
+  // l'emporte : papaparse prend l'un, l'autre ou les deux pour fin de ligne, et `\r\n` n'en fait qu'une.
+  if (Math.max(finsDeLigne(text, '\n'), finsDeLigne(text, '\r')) > LIGNES_MAX) {
+    throw new CsvTropGros(`Le fichier compte plus de ${LIGNES_MAX} lignes (lignes vides comprises), le maximum d'Excel : découpez-le en plusieurs fichiers plus petits.`);
+  }
   // Le séparateur se fixe UNE fois, avec les réglages de la lecture : faute de séparateur trouvé, la devinette de
   // papaparse coûte 2 s environ sur 8 Mo, et ni le contrôle ni la lecture ne doivent la refaire.
   const delimiter = separateurCsv(text) ?? Papa.parse(text, { skipEmptyLines: 'greedy', preview: 1, fastMode: false }).meta.delimiter;
@@ -62,7 +82,7 @@ export function parseCsv(text: string): ParsedCsv {
     },
   });
   if (colonnes > COLONNES_MAX) {
-    throw new CsvTropDeColonnes(`La première ligne compte ${colonnes} colonnes, ${COLONNES_MAX} au plus (le maximum d'Excel) : vérifiez qu'elle porte bien les en-têtes du fichier.`);
+    throw new CsvTropGros(`La première ligne compte ${colonnes} colonnes, ${COLONNES_MAX} au plus (le maximum d'Excel) : vérifiez qu'elle porte bien les en-têtes du fichier.`);
   }
   const res = Papa.parse<Record<string, string>>(text, {
     header: true,

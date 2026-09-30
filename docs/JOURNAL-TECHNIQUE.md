@@ -5,6 +5,36 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : un CSV de plus de 1 048 576 lignes est refusé, et `e09d210a` est déployé
+
+**`e09d210a` déployé** le 2026-09-30 vers 15 h 40 UTC, après sa CI verte job par job : `mba-api` et `mba-worker`
+recréés, NPM rechargé, le contrôle de fumée public vert sur ses six chemins, aucune migration. Sonde exécutée PAR LE
+VRAI CODE dans le conteneur (Node 22, processus à part, effacée ensuite) : un en-tête de 16 385 colonnes refusé en
+24 ms, une rangée de séparateurs puis un en-tête refusés en 8 ms, 16 384 colonnes et 1 000 rangées courtes lues en
+66 ms, une ligne unique de 8 Mo refusée en 1,4 s (6,2 s avant, mesuré par la relecture).
+
+**Le plafond de lignes** ferme la forme qui restait au même coût, décidé par Julien le jour même : 8 Mo de lignes d'un
+caractère (près de 3 millions de rangées dans le corps JSON, où un saut de ligne pèse deux octets ; papaparse fait un
+objet et une erreur « Too few fields » par rangée) coûtaient 4 à 6 s et plus d'un Go de tas. `parseCsv` compte
+désormais les fins de ligne avant tout et refuse au-delà de 1 048 576, le maximum d'Excel, lignes vides comprises ;
+`\n` et `\r` se comptent à part et le plus grand l'emporte (papaparse accepte l'un, l'autre ou les deux, et `\r\n`
+n'en fait qu'une). Le premier jet s'arrêtait à un million : la relecture a montré deux vrais fichiers refusés à tort,
+un export Excel dont la plage descend au bas de la feuille et un fichier en `\r\r\n` (le `csv.writer` de Python sous
+Windows, deux fins par ligne). La classe du refus devient `CsvTropGros`, pour ses deux causes.
+
+Mesuré sur le poste de dev chargé : les 4 millions de rangées refusées en 50 à 60 ms au lieu de 4 à 6 s ; un million
+de lignes d'un caractère encore accepté, 1,9 à 2,7 s, autant qu'un vrai fichier de 8 Mo de numéros seuls. Le
+comptage coûte 20 à 71 ms sur 8 Mo (`indexOf`, plus rapide qu'une boucle sur `charCodeAt`). Test rouge sur le code
+d'avant (aucun refus), vert après ; les fins de ligne du test vivent dans un champ entre guillemets, que papaparse lit
+en une rangée : instantané, et il tient la borne exacte. Mutations attrapées : `\n` seul compté, somme au lieu du
+maximum, `>=` au lieu de `>`, contrôle retiré.
+
+🔴 **La relecture de ce lot a trouvé plus grave, antérieur aux deux bornes**, reproduit ensuite et consigné dans
+`todo.md` : des guillemets mal placés suivis d'une traîne d'espaces coûtent N x K dans papaparse (101 Ko : 1,5 s ;
+330 Ko : 123 s selon la relecture), des doublons d'en-tête coûtent un renommage quadratique, et l'expression régulière
+de `normaliser` (`src/agent/setup/piece-jointe.ts`) est quadratique sur une longue série d'espaces. Les bornes de ces
+deux lots ne bornent donc pas le temps de lecture ; le remède proposé est un worker thread avec une échéance.
+
 ## 2026-09-30 : la purge RGPD vide aussi ce qui décrit la personne, et garde ce qui dit non
 
 `purgeMany` anonymisait le numéro, le nom, les champs, le jeton public et l'identifiant externe, mais laissait

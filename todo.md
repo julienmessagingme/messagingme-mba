@@ -1,5 +1,31 @@
 # todo.md : backlog
 
+## 🔴 Lecture des CSV et des documents : des formes de quelques centaines de Ko figent l'API (2026-09-30)
+
+Trouvées par la relecture des bornes de `parseCsv` (colonnes, lignes), reproduites ensuite, antérieures à elles.
+Qui : un administrateur de n'importe quel espace, par l'import de contacts ou son aperçu (10 appels par minute et
+par espace), l'import de FAQ de l'agent de Meta (1 Mo par le corps, 2 Mo par URL, sans plafond coûteux) ou la
+connaissance d'un agent. Effet : `mba-api` ne répond plus à personne, console et webhooks de Meta compris, pour
+TOUS les espaces ; le healthcheck la marque `unhealthy` sans la redémarrer.
+
+- 🔴 **Guillemets mal placés puis une traîne d'espaces** : `"` + `a"` x N + une espace x K + un saut de ligne.
+  papaparse reparcourt toute la traîne à chaque guillemet (`extraSpaces`, puis `trim()`), soit N x K par lecture, et
+  `parseCsv` lit le texte plusieurs fois. Reproduit : 101 Ko coûtent 1,5 s, le temps double avec N comme avec K ;
+  la relecture a mesuré 123 s pour 330 Ko, soit des dizaines de minutes pour 1 Mo. Aucune borne ne joue (une ligne,
+  une colonne), et `separateurCsv` seul y passe aussi.
+- 🔴 **Doublons d'en-tête** : `a_1` ... `a_8192` puis 8 192 fois `a` fait 16 384 colonnes, donc passe la borne, et
+  le renommage de papaparse repart de `a_1` pour chaque doublon, soit un coût quadratique. Reproduit : 1,8 s pour
+  8 192 colonnes ; la relecture : 55 s pour 520 Ko avec des noms plus longs.
+- 🔴 **Une expression régulière quadratique dans `normaliser`** (`src/agent/setup/piece-jointe.ts`, vu en passant) :
+  `/^[^\S\t]+|[^\S\t]+$/g` repart de chaque espace d'une longue série qui n'est pas en fin de texte. Reproduit :
+  quadratique, 223 ms pour 20 000 espaces ; tout document texte de la connaissance d'un agent y passe (8 Mo).
+  Remède : garder `^[^\S\t]+`, ancrée donc linéaire, et rogner la fin par une boucle.
+
+Remède proposé pour les deux premières, le seul qui ne dépende pas d'une liste de formes (chaque lot en a fermé
+une, chaque relecture en a trouvé d'autres) : lire le CSV dans un worker thread, avec une échéance (`terminate()`
+au bout de quelques secondes, puis un 400) et des `resourceLimits`. À cadrer : le chargement d'un worker TypeScript
+sous `tsx` en production et sous vitest, et le coût du retour des rangées vers le fil principal.
+
 ## 🟡 Lecture des CSV : les restes de la réparation du séparateur (2026-09-30)
 
 - 🟡 **Un CSV aux rangées inégales retombe encore sur la devinette de papaparse** (`parseCsv`, `src/crm/csv.ts`) :
@@ -9,16 +35,12 @@
   contact (mesuré par la relecture). Un export Excel écrit toutes ses cellules et n'est pas concerné. Remède
   esquissé et mesuré par la relecture : une seconde passe propre à `parseCsv`, qui a un en-tête (même ordre de
   séparateurs, en-tête d'au moins deux colonnes, aucune rangée plus longue que lui, la majorité aussi longue).
-- 🟡 **Un CSV de 8 Mo en rangées d'un caractère occupe encore l'API 4 à 6 secondes** (`parseCsv`, mesuré le
-  2026-09-30 après la borne de 16 384 colonnes et la fin du complément des rangées, qui ont fermé les deux effets de
-  levier) : `nom;tel` puis 4 millions de rangées `x` coûte 4,4 s et 0,8 Go de tas sur le poste de dev ; sous un
-  en-tête de 16 384 colonnes, 6 s et 1,6 Go (papaparse fait un objet ET une erreur « Too few fields » par rangée).
-  Un fichier réaliste de 8 Mo en coûte 0,4 s. Le coût suit désormais la taille du corps, mais aucune limite mémoire
-  n'est posée sur `mba-api` (`docker-compose.yml`). Qui : un administrateur d'un espace client, par
-  `/contacts/import` (8 Mo, 10 appels par minute et par espace). Effet : la boucle d'événements occupée, donc la
-  console et la réception des webhooks de Meta ralenties pour TOUS les espaces tant qu'il insiste. Pistes : un
-  plafond de rangées compté avant la lecture (un fichier réel de 8 Mo en porte au plus 650 000 environ, un numéro
-  seul par ligne), ou la lecture hors de la boucle d'événements.
+- 🟡 **Sous les bornes, un CSV coûte encore quelques secondes** (`parseCsv`, mesuré le 2026-09-30, hors les formes
+  🔴 ci-dessus) : un million de lignes d'un caractère 1,9 à 2,7 s sur le poste de dev, autant qu'un vrai fichier de
+  8 Mo de numéros seuls ; la relecture : un guillemet sur deux caractères sur 8 Mo 6,2 s et 1,2 Go (une erreur
+  `InvalidQuotes` par guillemet), 16 384 noms distincts puis 250 rangées pleines 7,5 s et 700 Mo. Et refuser une
+  ligne unique de 8 Mo coûte encore 1,4 s en production : sa rangée est lue quatre fois (`separateurCsv`, la
+  devinette, le contrôle). Le worker thread du 🔴 ci-dessus les couvrirait aussi.
 - 🟡 **Une première ligne faite de séparateurs seuls devient l'en-tête** (`parseCsv`, vu le 2026-09-30, antérieur) :
   papaparse renomme ses cellules vides (`_1`, `_2`...) avant de sauter les lignes vides. Sur `;;;` puis
   `nom;tel;ville;cp`, les en-têtes lus sont `_1`, `_2`, `_3`, le vrai en-tête devient une rangée de données et la
