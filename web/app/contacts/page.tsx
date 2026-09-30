@@ -245,6 +245,7 @@ function ContactsInner({ session }: { session: Session }) {
 
       {showFilters && (
         <ContactFilterPanel
+          tenantId={session.tenantId}
           filters={filters}
           onChange={setFilters}
           userFields={userFields}

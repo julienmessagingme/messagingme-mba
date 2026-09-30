@@ -1,7 +1,7 @@
 ---
 ecran: contacts
 source_section: Contacts & CRM
-source_empreinte: 70635d
+source_empreinte: d66f42
 ---
 # Ajouter ou importer mes contacts
 
@@ -41,8 +41,11 @@ avait rien à observer. Une fiche que le calcul n'a encore jamais vue affiche «
 
 Une fois vos contacts en place, l'écran sert de moteur de recherche. Vous filtrez par tag, par consentement
 marketing, par nom, par numéro de téléphone, par la valeur d'un champ que vous avez créé, par la présence
-d'une adresse e-mail, ou par niveau de risque de désengagement (de quoi préparer une campagne vers ceux qui
-décrochent). Les filtres se cumulent. Vous cochez ensuite des lignes, et le menu « Action » applique
+d'une adresse e-mail, par niveau de risque de désengagement (de quoi préparer une campagne vers ceux qui
+décrochent), ou par ce que dit leur dernière analyse : intention, sentiment, satisfaction ou urgence au-dessus
+ou en dessous d'une note, demande résolue ou non, analysée depuis moins de tant de jours. Une fiche jamais
+analysée n'entre dans aucune de ces valeurs. Les filtres se cumulent, et ce sont les mêmes quand vous
+choisissez les destinataires d'une campagne. Vous cochez ensuite des lignes, et le menu « Action » applique
 le même geste à toute la sélection : poser un tag, en retirer un, remplir un champ, passer en consentement
 accordé ou refusé, supprimer.
 

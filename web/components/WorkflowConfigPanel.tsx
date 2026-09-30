@@ -723,6 +723,7 @@ export function ConfigPanel({
         <div className="space-y-2">
           <p className="text-xs leading-snug text-ink-500">{t('Le contact tire le fil « Si réunie » (vert) quand la condition est vraie, sinon « Sinon » (rouge). Reliez chaque sortie à un bloc.', 'The contact follows “If met” (green) when the condition is true, otherwise “Otherwise” (red). Connect each output to a block.')}</p>
           <ConditionBuilder
+            tenantId={tenantId}
             group={{ match: (d.match as 'all' | 'any') ?? 'all', clauses: Array.isArray(d.clauses) ? (d.clauses as ConditionGroup['clauses']) : [] }}
             onChange={(g) => onPatch({ match: g.match, clauses: g.clauses })}
             fields={fields}

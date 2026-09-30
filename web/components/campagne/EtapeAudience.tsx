@@ -206,6 +206,7 @@ export function EtapeAudience({
           />
         ) : (
           <ListeDestinataires
+            tenantId={tenantId}
             page={page}
             filtres={audience.filtres}
             onFiltres={(filtres) => modifier({ filtres })}

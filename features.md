@@ -320,8 +320,15 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   la DERNIÈRE analyse, celle qui couvre les messages les plus récents du contact : une vieille conversation
   analysée après coup ne l'écrase pas. ⚠️ Pas de reprise du passé : une fiche se remplit à la prochaine analyse
   du contact. Le risque de désengagement lit désormais ces constats sur la fiche (et, pour une fiche pas encore
-  remplie, dans la conversation comme avant). Les filtres, les connecteurs, les automations et les sorties
-  vers les outils tiers les liront aux lots suivants.
+  remplie, dans la conversation comme avant). Les connecteurs les envoient (Tools > Connecteurs API, groupe
+  « Dernière analyse ») ; les automations et les sorties vers les outils tiers les liront aux lots suivants.
+  - **Dans les filtres de la liste des contacts**, donc aussi pour **cibler une campagne** (2026-10-01, lot 2b) :
+    une section **Dernière analyse** filtre par **intention**, **sentiment**, **traitée par** et **action
+    suggérée** (une ou plusieurs valeurs), **satisfaction** et **urgence** (au moins / au plus, de 0 à 10),
+    **résolue** (oui / non) et **analysée depuis moins de N jours** ; chaque champ peut aussi se filtrer
+    « sans valeur » (jamais analysée) ou « renseigné ». Ces filtres se cumulent avec les autres. Une fiche jamais
+    analysée n'est dans aucune valeur, et « non résolue » ne la retient pas. Le sujet ne se filtre pas (c'est un
+    texte libre). La section n'apparaît que si le serveur sait appliquer ces filtres.
 - ✅ **La fiche contact en onglets** (2026-09-30) : **Fiche**, **Tags**, **Champs**, **Analyse**, **Historique**.
   L'onglet Fiche garde TOUT, comme avant ; les trois suivants montrent chacun une partie, pour y aller
   directement : les étiquettes, les champs personnalisés, et tout ce que la plateforme a déduit du contact
@@ -715,7 +722,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   « Si réunie » (verte) et « Sinon » (rouge). On empile plusieurs conditions, combinées en **toutes** ou
   **au moins une** : **tag** (possède / n'a pas), **champ** (texte : contient, ne contient pas, est exactement,
   est renseigné, est vide ; nombre : égal, différent, <, ≤, >, ≥ ; oui/non ; date : est avant, est après,
-  remonte à plus de / à moins de N minutes, heures, jours), **jour de la semaine**, **heures d'ouverture**
+  remonte à plus de / à moins de N minutes, heures, jours), **dernière analyse** (2026-10-01 : les mêmes choix
+  que dans les filtres de la liste des contacts, et le même sens, donc un scénario ne départage pas autrement
+  qu'une campagne ; une fiche jamais analysée part sur « Sinon »), **jour de la semaine**, **heures d'ouverture**
   (celles réglées par le client), **heure de la journée**, **coordonnées** (a un téléphone, un email, un
   identifiant WhatsApp), **consentement**. Sans aucune condition posée, le contact part toujours sur « Si
   réunie » ; une branche laissée non reliée arrête simplement le parcours.

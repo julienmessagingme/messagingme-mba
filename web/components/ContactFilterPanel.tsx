@@ -6,6 +6,9 @@ import type { ContactFilters, ContactFieldFilter, ContactFieldOp, UserFieldDef }
 import { inputClsAuto } from '@/lib/ui';
 import { BADGE_NIVEAU_RISQUE, NIVEAUX_DU_FILTRE, apiConnaitLeRisque, estNiveauRisque } from '@/lib/risque';
 import { Icone } from '@/components/Icone';
+import { EditeurFiltreAnalyse, type FiltreAnalyseValide } from '@/components/EditeurFiltreAnalyse';
+import { estFiltreAnalyse, filtreAnalyseParDefaut } from '@/lib/champs-fiche';
+import { useChampsFiltrables } from '@/lib/use-champs-filtrables';
 
 /**
  * Panneau de filtres de contacts, CONTRÔLÉ (édite un ContactFilters via onChange). Partagé par le mini-CRM
@@ -15,9 +18,11 @@ import { Icone } from '@/components/Icone';
  *
  * Filtres : nom, opt-in, joignabilité, niveau de risque de désengagement, téléphone (commence par / contient),
  * tags (possède ET/OU + ne possède pas), champs perso répétables (contient / ne contient pas / égal / vide /
- * rempli), et un contrôle Email dédié.
+ * rempli), un contrôle Email dédié, et les champs de la dernière analyse (lot 2b « Tout sur la fiche »).
  */
-export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestions, onClear, lignes }: {
+export function ContactFilterPanel({ tenantId, filters, onChange, userFields, tagSuggestions, onClear, lignes }: {
+  /** L'espace, pour lire la liste des champs de la fiche : elle seule dit quels filtres d'analyse l'API sait appliquer. */
+  tenantId: string;
   filters: ContactFilters;
   onChange: (f: ContactFilters) => void;
   userFields: UserFieldDef[];
@@ -42,6 +47,8 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
     if (!risqueConnu && apiConnaitLeRisque(lignes)) setRisqueConnu(true);
   }, [lignes, risqueConnu]);
   const montrerRisque = risqueConnu || filters.risque !== undefined;
+  // Les champs de la dernière analyse, offerts seulement si l'API les décrit (cf. `@/lib/champs-fiche`).
+  const champsAnalyse = useChampsFiltrables(tenantId);
   const [tagInput, setTagInput] = useState('');
   const [tagExInput, setTagExInput] = useState('');
   const set = (patch: Partial<ContactFilters>) => onChange({ ...filters, ...patch });
@@ -53,11 +60,18 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
   const rmTag = (x: string) => set({ tags: tags.filter((v) => v !== x) });
   const rmTagEx = (x: string) => set({ tagsExclude: tagsExclude.filter((v) => v !== x) });
 
-  // Filtres de champ (hors email, géré à part). fieldFilters de la vue = tous sauf key === 'email'.
-  const fieldRows = (filters.fieldFilters ?? []).filter((f) => f.key !== 'email');
-  const emailRow = (filters.fieldFilters ?? []).find((f) => f.key === 'email');
-  const setFieldFilters = (rows: ContactFieldFilter[], email: ContactFieldFilter | undefined) =>
-    set({ fieldFilters: email ? [...rows, email] : rows });
+  // Filtres de champ, en trois groupes : les champs perso (lignes génériques), la dernière analyse (sa section), et
+  // l'email (contrôle dédié). Chaque écriture les recompose tous les trois : n'en réécrire qu'un effacerait les autres.
+  const tous = filters.fieldFilters ?? [];
+  const analyseRows = tous.filter((f) => f.key !== 'email' && estFiltreAnalyse(f, champsAnalyse));
+  const fieldRows = tous.filter((f) => f.key !== 'email' && !estFiltreAnalyse(f, champsAnalyse));
+  const emailRow = tous.find((f) => f.key === 'email');
+  const ecrireFiltres = (rows: ContactFieldFilter[], analyse: ContactFieldFilter[], email: ContactFieldFilter | undefined) =>
+    set({ fieldFilters: [...rows, ...analyse, ...(email ? [email] : [])] });
+  const setFieldFilters = (rows: ContactFieldFilter[], email: ContactFieldFilter | undefined) => ecrireFiltres(rows, analyseRows, email);
+  const addAnalyse = () => { const c = champsAnalyse[0]; if (c) ecrireFiltres(fieldRows, [...analyseRows, filtreAnalyseParDefaut(c)], emailRow); };
+  const updAnalyse = (i: number, f: FiltreAnalyseValide) => ecrireFiltres(fieldRows, analyseRows.map((r, j) => (j === i ? f : r)), emailRow);
+  const rmAnalyse = (i: number) => ecrireFiltres(fieldRows, analyseRows.filter((_, j) => j !== i), emailRow);
   // MIROIR EXACT de la liste d'options du <select> (qui exclut 'email', géré par le contrôle Email dédié) : sinon
   // une ligne par défaut key='email' serait filtrée hors des lignes génériques ET écraserait le filtre Email.
   const fieldKeys = userFields.filter((d) => d.key !== 'email');
@@ -209,6 +223,22 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
           <button type="button" onClick={addRow} className="inline-flex items-center gap-1 self-start text-sm font-medium text-brand-600 hover:text-brand-700"><Icone nom="ajouter" />{t('Filtre de champ', 'Field filter')}</button>
         )}
       </div>
+
+      {/* La dernière analyse : offerte si l'API décrit ses champs ; un filtre déjà posé reste visible pour être retiré. */}
+      {(champsAnalyse.length > 0 || analyseRows.length > 0) && (
+        <div className="flex flex-col gap-1.5" data-testid="filtres-analyse">
+          <span className="text-xs text-ink-500">{t('Dernière analyse', 'Latest analysis')}</span>
+          {analyseRows.map((r, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2" data-testid="filtre-analyse">
+              <EditeurFiltreAnalyse champs={champsAnalyse} filtre={r} onChange={(f) => updAnalyse(i, f)} sel={`${inputClsAuto} bg-white`} inp={`${inputClsAuto} w-20`} />
+              <button type="button" onClick={() => rmAnalyse(i)} className="text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
+            </div>
+          ))}
+          {analyseRows.length < 5 && champsAnalyse.length > 0 && (
+            <button type="button" onClick={addAnalyse} className="inline-flex items-center gap-1 self-start text-sm font-medium text-brand-600 hover:text-brand-700" data-testid="ajouter-filtre-analyse"><Icone nom="ajouter" />{t('Filtre d’analyse', 'Analysis filter')}</button>
+          )}
+        </div>
+      )}
 
       <div className="flex justify-end border-t border-ink-100 pt-2">
         <button type="button" onClick={onClear} className="text-xs text-ink-500 hover:text-danger">{t('Réinitialiser les filtres', 'Reset filters')}</button>

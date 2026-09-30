@@ -4,6 +4,9 @@ import { useT } from '@/lib/i18n';
 import type { UserFieldDef, UserFieldKind } from '@/lib/api';
 import { SYSTEM_FIELDS } from '@/lib/fields';
 import { Icone } from '@/components/Icone';
+import { EditeurFiltreAnalyse } from '@/components/EditeurFiltreAnalyse';
+import { estFiltreAnalyse, filtreAnalyseParDefaut, type ChampFiltrable } from '@/lib/champs-fiche';
+import { useChampsFiltrables } from '@/lib/use-champs-filtrables';
 
 // Types miroir (sous-ensemble v1) de src/workflow/conditions.ts. Le backend est défensif sur `data` opaque ;
 // on ne produit ici que des clauses bien formées. `valueType:'number'` force la comparaison numérique (eq inclus).
@@ -25,18 +28,24 @@ const BASE_FIELDS: { key: string; type: UserFieldKind }[] = [
   { key: 'phone', type: 'text' }, { key: 'bsuid', type: 'text' },
 ];
 
-type Kind = 'field' | 'tag' | 'weekday' | 'business_hours' | 'time_of_day' | 'identity' | 'optin';
-function kindOf(c: Clause): Kind {
+type Kind = 'field' | 'analyse' | 'tag' | 'weekday' | 'business_hours' | 'time_of_day' | 'identity' | 'optin';
+function kindOf(c: Clause, champsAnalyse: readonly ChampFiltrable[]): Kind {
+  // Une clause « champ » sur la dernière analyse s'édite dans SA rubrique : c'est la même clause pour le moteur
+  // (`src/workflow/conditions.ts` la reconnaît à sa clé), mais pas les mêmes opérateurs.
+  if (c.kind === 'field' && estFiltreAnalyse(c, champsAnalyse)) return 'analyse';
   return c.kind === 'datetime' ? 'field' : (c.kind as Kind); // une clause sur un champ date/heure reste « Champ » dans l'UI
 }
 
-export function ConditionBuilder({ group, onChange, fields, tags }: {
+export function ConditionBuilder({ tenantId, group, onChange, fields, tags }: {
+  /** L'espace : la rubrique « Dernière analyse » n'est offerte que si l'API décrit ses champs. */
+  tenantId: string;
   group: ConditionGroup;
   onChange: (g: ConditionGroup) => void;
   fields: UserFieldDef[];
   tags: string[];
 }) {
   const t = useT();
+  const champsAnalyse = useChampsFiltrables(tenantId);
   const clauses = Array.isArray(group.clauses) ? group.clauses : [];
   const match = group.match === 'any' ? 'any' : 'all';
 
@@ -62,6 +71,7 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
     else if (k === 'time_of_day') patch(i, { kind: 'time_of_day', op: 'after', time: '09:00' });
     else if (k === 'identity') patch(i, { kind: 'identity', op: 'has_email' });
     else if (k === 'optin') patch(i, { kind: 'optin', value: 'opted_in' });
+    else if (k === 'analyse' && champsAnalyse[0]) patch(i, { kind: 'field', ...filtreAnalyseParDefaut(champsAnalyse[0]) });
     else patch(i, defaultFieldClause(allFields[0]?.key ?? 'name', typeOfKey(allFields[0]?.key ?? 'name')));
   };
   // Changement de champ -> reconstruit une clause adaptée au TYPE du nouveau champ.
@@ -95,8 +105,9 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
             {/* Colonne : chaque contrôle sur sa propre ligne, pleine largeur. `min-w-0` est indispensable,
                 sinon un select à long libellé impose sa largeur naturelle et pousse la ligne hors du panneau. */}
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <select value={kindOf(c)} onChange={(e) => changeKind(i, e.target.value as Kind)} className={sel}>
+              <select value={kindOf(c, champsAnalyse)} onChange={(e) => changeKind(i, e.target.value as Kind)} className={sel}>
                 <option value="field">{t('Champ', 'Field')}</option>
+                {(champsAnalyse.length > 0 || kindOf(c, champsAnalyse) === 'analyse') && <option value="analyse">{t('Dernière analyse', 'Latest analysis')}</option>}
                 <option value="tag">{t('Étiquette', 'Tag')}</option>
                 <option value="weekday">{t('Jour de la semaine', 'Day of week')}</option>
                 <option value="business_hours">{t('Heures d’ouverture', 'Business hours')}</option>
@@ -104,7 +115,9 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
                 <option value="identity">{t('Coordonnées', 'Contact info')}</option>
                 <option value="optin">{t('Consentement (opt-in)', 'Consent (opt-in)')}</option>
               </select>
-              <ClauseOperands c={c} i={i} patch={patch} allFields={allFields} changeField={changeField} tags={tags} sel={sel} inp={inp} />
+              {kindOf(c, champsAnalyse) === 'analyse' && c.kind === 'field'
+                ? <EditeurFiltreAnalyse champs={champsAnalyse} filtre={{ key: c.key, op: c.op, value: c.value ?? '' }} onChange={(f) => patch(i, { kind: 'field', ...f })} sel={sel} inp={inp} />
+                : <ClauseOperands c={c} i={i} patch={patch} allFields={allFields} changeField={changeField} tags={tags} sel={sel} inp={inp} />}
             </div>
             <button type="button" onClick={() => remove(i)} className="shrink-0 pt-1.5 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
           </div>

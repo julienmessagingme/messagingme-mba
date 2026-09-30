@@ -163,8 +163,10 @@ export function useContactsFiltres(opts: {
  * ici en ferait une liste à rallonger à chaque nouveau cas d'un seul des deux appelants.
  */
 export function ListeDestinataires({
-  page, filtres, onFiltres, selection, onSelection, userFields, tagSuggestions, bandeaux,
+  tenantId, page, filtres, onFiltres, selection, onSelection, userFields, tagSuggestions, bandeaux,
 }: {
+  /** L'espace : le panneau de filtres y lit les champs de la fiche qu'il peut proposer. */
+  tenantId: string;
   page: PageDeContacts;
   filtres: ContactFilters;
   onFiltres: (f: ContactFilters) => void;
@@ -200,6 +202,7 @@ export function ListeDestinataires({
           moteurs de recherche parallèles qui divergent). */}
       <div className="mb-2">
         <ContactFilterPanel
+          tenantId={tenantId}
           filters={filtres}
           onChange={onFiltres}
           userFields={userFields}
