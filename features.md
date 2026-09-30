@@ -3331,8 +3331,9 @@ restent facturés au jeton même pendant les 72 heures gratuites. Sur un scénar
 conversation, le message arrive dans son Inbox et le scénario de la publicité ne part pas.
 
 **Suivre** : statut chez Meta et motif de refus, relus toutes les quinze minutes, avec l'heure de la
-dernière lecture. Et un **entonnoir** : dépense, clics, prospects, qualifiés, avec le coût de chaque étape
-et le taux de passage vers la suivante.
+dernière lecture. Et un **entonnoir** : dépense, impressions (et leur coût pour mille), personnes touchées,
+clics (et leur taux de clic), prospects, qualifiés, avec le coût de chaque étape et le taux de passage depuis la
+précédente.
 **Dates et programmation** (2026-09-28) : chaque publicité affiche « Du … au … », à l'heure de Paris, et la liste
 les range en **En cours**, **Programmées** et **Achevées**. 🔴 **Une publicité publiée dont le début est à venir
 s'affiche « Programmée »**, pas « Diffuse » : Meta la dit active dès la publication, et ce statut seul faisait
