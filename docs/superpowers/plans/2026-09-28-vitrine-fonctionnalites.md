@@ -77,6 +77,10 @@ de ce plan que la production emprunte (un envoi d'e-mail) ; le reste est de la p
   (pas une landing page), ET tout se pilote au même endroit (plus d'allers-retours entre le Business Manager de
   Meta et une plateforme conversationnelle). Le second est porté par un avant/après en HTML, juste après la une.
   Les boutons « Demander une démo » mènent au formulaire, message pré-rempli avec la fonctionnalité.
+- Accueil : un bandeau « Ils nous font confiance » entre la une et la section claire, dans l'ordre donné par
+  Julien (Odalys, Groupama, Gan, Mieux Assuré, Groupe EDH, NEOMA, DPD, Picoty). Logos en couleurs d'origine sur
+  des tuiles blanches (choix de Julien), repris des projets clients du poste ; celui de Picoty, seul absent,
+  téléchargé sur picoty.fr avec son accord. Dans `site/img/clients/`.
 
 ## Essai réel qui clôt
 
