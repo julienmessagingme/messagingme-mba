@@ -51,6 +51,13 @@ export interface EtatCampagneMeta {
   budgetTotal: number | null;
 }
 
+/** Un jour de dépense d'une campagne, dans le fuseau du compte publicitaire. */
+export interface DepenseJour {
+  /** `AAAA-MM-JJ`. */
+  jour: string;
+  depense: number;
+}
+
 /** La dépense, les clics, les impressions et la couverture d'une campagne, depuis le début. */
 export interface DepensePub {
   depense: number | null;
@@ -58,6 +65,11 @@ export interface DepensePub {
   impressions: number | null;
   /** Les personnes distinctes touchées (`reach` chez Meta). */
   couverture: number | null;
+  /**
+   * La dépense jour par jour, qui permet de chiffrer une PÉRIODE (Performance lab) là où le cumul ne se découpe
+   * pas. Un jour sans diffusion n'y figure pas : il n'est pas zéro, il n'existe pas chez Meta.
+   */
+  jours: DepenseJour[];
 }
 
 /**
@@ -80,7 +92,19 @@ const campagneSuivieSchema = z.object({
 });
 const lotCampagnesSchema = z.record(z.string(), campagneSuivieSchema);
 
+/** Le nombre de jours relus par campagne. Au-delà (près de trois ans de diffusion), le journal le dit. */
+const JOURS_PAR_LECTURE = 1000;
+
 const lotInsightsSchema = z.record(z.string(), z.object({
+  // Les jours, sous l'alias `jours` de la même expansion (`.as(jours)`). Forme mesurée le 2026-09-30 sur une
+  // vraie campagne : une ligne par jour de diffusion, `date_start` = le jour.
+  jours: z.object({
+    data: z.array(z.object({
+      spend: z.string().optional(),
+      date_start: z.string().optional(),
+    })).optional(),
+    paging: z.object({ next: z.string().optional() }).optional(),
+  }).optional(),
   insights: z.object({
     data: z.array(z.object({
       spend: z.string().optional(),
@@ -111,6 +135,21 @@ function nombreFini(brut: string | undefined): number | null {
   if (brut === undefined) return null;
   const n = Number(brut);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Les jours de dépense lisibles, un par date. Une ligne sans date valide ou sans montant fini est IGNORÉE plutôt
+ * qu'écrite fausse ; un jour rendu deux fois garde sa dernière valeur, sans quoi l'upsert du même jour dans une
+ * seule instruction échouerait (« cannot affect row a second time »), donc tout le balayage de l'espace.
+ */
+function joursDeDepense(lignes: ReadonlyArray<{ spend?: string | undefined; date_start?: string | undefined }>): DepenseJour[] {
+  const parJour = new Map<string, number>();
+  for (const l of lignes) {
+    const depense = nombreFini(l.spend);
+    if (depense === null || depense < 0 || l.date_start === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(l.date_start)) continue;
+    parJour.set(l.date_start, depense);
+  }
+  return [...parJour].map(([jour, depense]) => ({ jour, depense }));
 }
 
 /**
@@ -652,13 +691,17 @@ export class MetaPubsCreationClient extends ClientGraph {
    * `clicks` qui compte tout clic sur la pub ; champ à confirmer contre le Gestionnaire au premier jour du pilote.
    * Couverture = `reach`, des personnes distinctes : elle ne s'additionne pas d'un jour à l'autre, d'où la
    * lecture sur toute la durée plutôt qu'un cumul de notre côté.
+   * La dépense par jour voyage dans le MÊME appel, sous l'alias `jours` (mesuré le 2026-09-30 : Meta rend les
+   * deux expansions côte à côte, et la somme des jours égale le cumul) : le balayage reste à deux appels par
+   * compte, ce que le niveau « Limited » de l'API exige.
    */
   async lireDepenses(campagneIds: readonly string[], jeton: string): Promise<Map<string, DepensePub>> {
     const out = new Map<string, DepensePub>();
     for (const paquet of parPaquets(campagneIds, IDS_PAR_APPEL)) {
       const qs = new URLSearchParams({
         ids: paquet.join(','),
-        fields: 'insights.date_preset(maximum){spend,inline_link_clicks,impressions,reach}',
+        fields: 'insights.date_preset(maximum){spend,inline_link_clicks,impressions,reach},'
+          + `insights.date_preset(maximum).time_increment(1).limit(${JOURS_PAR_LECTURE}).as(jours){spend}`,
       });
       const brut = await this.call(`${this.baseUrl}/${this.version}/?${qs.toString()}`, {
         headers: { Authorization: `Bearer ${jeton}` },
@@ -667,16 +710,22 @@ export class MetaPubsCreationClient extends ClientGraph {
       if (!lu.success) continue;
       for (const [id, c] of Object.entries(lu.data)) {
         const ligne = c.insights?.data?.[0];
+        const jours = joursDeDepense(c.jours?.data ?? []);
+        if (c.jours?.paging?.next !== undefined) {
+          // eslint-disable-next-line no-console
+          console.warn(`suivi des publicités : campagne ${id}, plus de ${JOURS_PAR_LECTURE} jours de dépense, les suivants ne sont pas relus`);
+        }
         // Aucune ligne est un cas normal (rien encore diffusé) : `null`, et l'écran dit « pas encore de diffusion »
         // plutôt qu'une dépense de zéro qui ressemblerait à une mesure.
-        if (ligne === undefined) continue;
+        if (ligne === undefined && jours.length === 0) continue;
         out.set(id, {
+          jours,
           // Meta rend la dépense en chaîne, dans l'unité principale de la devise : l'inverse de ce qu'il attend en
           // écriture pour un budget.
-          depense: nombreFini(ligne.spend),
-          clics: entierOuRien(ligne.inline_link_clicks),
-          impressions: entierOuRien(ligne.impressions),
-          couverture: entierOuRien(ligne.reach),
+          depense: nombreFini(ligne?.spend),
+          clics: entierOuRien(ligne?.inline_link_clicks),
+          impressions: entierOuRien(ligne?.impressions),
+          couverture: entierOuRien(ligne?.reach),
         });
       }
     }

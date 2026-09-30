@@ -93,10 +93,46 @@ describe('lireDepenses', () => {
       'c-1': { insights: { data: [{ spend: '12.5', inline_link_clicks: '40', impressions: '5000', reach: '3200' }] } },
     });
     const r = (await c.lireDepenses(['c-1'], 'jeton')).get('c-1');
-    expect(r).toEqual({ depense: 12.5, clics: 40, impressions: 5000, couverture: 3200 });
+    expect(r).toEqual({ depense: 12.5, clics: 40, impressions: 5000, couverture: 3200, jours: [] });
     expect(urls).toHaveLength(1);
     // `clicks` compterait tout clic sur la publicité : une réaction, un nom de Page, un déroulé de texte.
     expect(decodeURIComponent(urls[0] ?? '')).toContain('{spend,inline_link_clicks,impressions,reach}');
+  });
+
+  it('🔴 la dépense JOUR PAR JOUR voyage dans le MÊME appel, sous l’alias `jours` (forme mesurée)', async () => {
+    // Réponse réelle du 2026-09-30 : un appel de plus par compte toutes les quinze minutes pèserait sur le niveau
+    // « Limited » de l'API, et c'est l'alias qui l'évite.
+    const { c, urls } = client({
+      'c-1': {
+        insights: { data: [{ spend: '1.37', inline_link_clicks: '5', impressions: '236', reach: '221' }] },
+        jours: { data: [
+          { spend: '0.86', date_start: '2026-09-29', date_stop: '2026-09-29' },
+          { spend: '0.51', date_start: '2026-09-30', date_stop: '2026-09-30' },
+        ] },
+      },
+    });
+    const r = (await c.lireDepenses(['c-1'], 'jeton')).get('c-1');
+    expect(r?.jours).toEqual([{ jour: '2026-09-29', depense: 0.86 }, { jour: '2026-09-30', depense: 0.51 }]);
+    expect(urls).toHaveLength(1);
+    expect(decodeURIComponent(urls[0] ?? '')).toContain('.time_increment(1).limit(1000).as(jours){spend}');
+  });
+
+  it('🔴 un jour illisible est IGNORÉ, un jour rendu deux fois garde sa dernière valeur', async () => {
+    // Deux fois le même jour dans un seul upsert ferait échouer l'instruction, donc tout le balayage de l'espace.
+    const { c } = client({
+      'c-1': { jours: { data: [
+        { spend: '1', date_start: '2026-09-29' },
+        { spend: '2', date_start: '2026-09-29' },
+        { spend: 'abc', date_start: '2026-09-30' },
+        { spend: '3', date_start: '30/09/2026' },
+        { spend: '-1', date_start: '2026-10-01' },
+        { spend: '4' },
+      ] } },
+    });
+    const r = (await c.lireDepenses(['c-1'], 'jeton')).get('c-1');
+    expect(r?.jours).toEqual([{ jour: '2026-09-29', depense: 2 }]);
+    // Sans ligne cumulée, le cumul reste INCONNU, pas zéro.
+    expect(r?.depense).toBeNull();
   });
 
   it('🔴 un compte absent, illisible ou fractionnaire vaut `null` : il ferait échouer l’écriture de sa colonne', async () => {
@@ -105,7 +141,7 @@ describe('lireDepenses', () => {
       'c-1': { insights: { data: [{ spend: '3', inline_link_clicks: '2.5', impressions: 'abc' }] } },
     });
     expect((await c.lireDepenses(['c-1'], 'jeton')).get('c-1'))
-      .toEqual({ depense: 3, clics: null, impressions: null, couverture: null });
+      .toEqual({ depense: 3, clics: null, impressions: null, couverture: null, jours: [] });
   });
 
   it('⚠️ aucune ligne de statistiques est un cas NORMAL : rien n’est rendu pour cette campagne', async () => {

@@ -3,13 +3,13 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  getCoutParCampagne, getCoutMessages, getCoutIa,
-  type CoutParCampagne, type CoutMessages, type CoutIa, type StatsRange,
+  getCoutParCampagne, getCoutParPub, getCoutMessages, getCoutIa,
+  type CoutParCampagne, type CoutParPub, type CoutMessages, type CoutIa, type StatsRange,
 } from '@/lib/api';
 import { fmtNum, fmtCost } from '@/lib/format';
 import { formatDate } from '@/lib/day';
 import { eurosDepuisMicro } from '@/lib/agent-solde';
-import { coutMoyenParEngagement } from '@/lib/cout-moyen';
+import { coutMoyenParEngagement, coutToutConfondu } from '@/lib/cout-moyen';
 import { DetailCampagneModale } from '@/components/DetailCampagneModale';
 import { useT, useLocale } from '@/lib/i18n';
 import { Icone } from '@/components/Icone';
@@ -41,6 +41,9 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
   const t = useT();
   const { locale } = useLocale();
   const [campagnes, setCampagnes] = useState<CoutParCampagne | null | 'erreur'>(null);
+  // Les publicités Click-to-WhatsApp : un appel à part, dont la panne n'éteint pas le tableau des campagnes.
+  const [pubs, setPubs] = useState<CoutParPub | null | 'erreur'>(null);
+  const [sousOuvert, setSousOuvert] = useState<'push' | 'pubs' | null>(null);
   const [messages, setMessages] = useState<CoutMessages | null | 'erreur'>(null);
   const [ia, setIa] = useState<CoutIa | null | 'erreur'>(null);
   const [ouverte, setOuverte] = useState<string | null>(null);
@@ -75,13 +78,16 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
     return () => { vivant = false; };
   }, [tenantId, range.from, range.to]);
 
-  // ⚠️ UN EFFET À PART : basculer les archivées ne relit que les campagnes, pas les deux autres lignes.
+  // ⚠️ UN EFFET À PART : basculer les archivées ne relit que les campagnes et les publicités, pas les deux autres lignes.
   useEffect(() => {
     let vivant = true;
-    setCampagnes(null);
+    setCampagnes(null); setPubs(null);
     getCoutParCampagne(tenantId, range, archivees)
       .then((d) => { if (vivant) setCampagnes(d && Array.isArray(d.lignes) ? d : 'erreur'); })
       .catch(() => { if (vivant) setCampagnes('erreur'); });
+    getCoutParPub(tenantId, range, archivees)
+      .then((d) => { if (vivant) setPubs(d && Array.isArray(d.lignes) ? d : 'erreur'); })
+      .catch(() => { if (vivant) setPubs('erreur'); });
     return () => { vivant = false; };
   }, [tenantId, range.from, range.to, archivees]);
 
@@ -101,8 +107,19 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
   const deviseMessages = messages !== null && messages !== 'erreur'
     ? (messages.currency ?? deviseCampagnes)
     : deviseCampagnes;
-  const moyen = campagnes !== null && campagnes !== 'erreur'
+  const moyenPush = campagnes !== null && campagnes !== 'erreur'
     ? coutMoyenParEngagement(campagnes.lignes)
+    : null;
+  /**
+   * 🔴 UN ENGAGÉ DE PUBLICITÉ EST UNE PERSONNE QUI A CLIQUÉ PUIS ÉCRIT (Julien, 2026-09-30), pas un prospect
+   * qualifié : c'est ce qui le rend comparable à l'engagé d'une campagne push, et c'est ce qui autorise le chiffre
+   * du haut à réunir les deux (`coutToutConfondu`, qui refuse d'additionner deux devises).
+   */
+  const listePubs = pubs !== null && pubs !== 'erreur' ? pubs : null;
+  const lignesPubs = listePubs?.lignes.map((l) => ({ cout: l.depense, engagements: l.engages })) ?? null;
+  const moyenPubs = lignesPubs !== null ? coutMoyenParEngagement(lignesPubs) : null;
+  const tout = campagnes !== null && campagnes !== 'erreur'
+    ? coutToutConfondu(campagnes.lignes, deviseCampagnes, lignesPubs, listePubs?.currency ?? null)
     : null;
 
   return (
@@ -123,16 +140,18 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
           ouverte={ouverte === 'engagement'}
           onBascule={() => setOuverte((v) => (v === 'engagement' ? null : 'engagement'))}
           titre={t('Coût par engagement', 'Cost per engagement')}
-          etat={campagnes === 'erreur' ? 'erreur' : campagnes === null ? 'charge' : 'pret'}
+          /* Le chiffre attend AUSSI les publicités : sans elles, il s'afficherait sur le seul push puis changerait
+             sous les yeux. Une panne des publicités compte comme une réponse (le chiffre reste alors celui du push). */
+          etat={campagnes === 'erreur' ? 'erreur' : campagnes === null || pubs === null ? 'charge' : 'pret'}
           /* Dépliable dès que la liste est lue, même vide : sinon la bascule des archivées serait inatteignable
              sur une période dont toutes les campagnes sont archivées. */
           depliable={campagnes !== null && campagnes !== 'erreur'}
-          valeur={moyen && moyen.valeur !== null ? fmtCost(moyen.valeur, locale, deviseCampagnes) : null}
+          valeur={tout && tout.moyen.valeur !== null ? fmtCost(tout.moyen.valeur, locale, tout.devise) : null}
           /* `null` et pas « 0 € » : un zéro se lirait « c'est gratuit », alors que la vérité est qu'aucune
              campagne de la période n'a à la fois un coût chiffrable et une personne engagée. */
           vide={t('Aucune campagne mesurable sur cette période.', 'No measurable campaign over this period.')}
         >
-          {moyen && campagnes !== null && campagnes !== 'erreur' && (
+          {moyenPush && tout && campagnes !== null && campagnes !== 'erreur' && (
             <>
               <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-xs text-ink-500">
                 <input
@@ -141,6 +160,24 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                 />
                 {t('Inclure les campagnes archivées', 'Include archived campaigns')}
               </label>
+              {(tout.pubsAdditionnees || tout.devisesDifferentes) && (
+                <p className="mb-2 text-xs text-ink-500" data-testid="cout-tout-confondu">
+                  {tout.devisesDifferentes
+                    ? t(
+                      `Les publicités sont dans une autre devise (${listePubs?.currency ?? '?'}) : elles ne sont pas additionnées au chiffre du haut.`,
+                      `Ads are in another currency (${listePubs?.currency ?? '?'}): they are not added to the figure above.`,
+                    )
+                    : t('Le chiffre du haut réunit les campagnes push et les publicités.', 'The figure above combines push campaigns and ads.')}
+                </p>
+              )}
+              <div className="divide-y divide-ink-100 rounded-controle border border-ink-100">
+              <SousLigne
+                cle="push"
+                titre={t('Campagnes push', 'Push campaigns')}
+                valeur={moyenPush.valeur !== null ? fmtCost(moyenPush.valeur, locale, deviseCampagnes) : null}
+                ouverte={sousOuvert === 'push'}
+                onBascule={() => setSousOuvert((v) => (v === 'push' ? null : 'push'))}
+              >
               {campagnes.lignes.length === 0 && (
                 <p className="text-xs text-ink-500" data-testid="cout-aucune-campagne">
                   {t('Aucune campagne n’a envoyé sur cette période.', 'No campaign sent over this period.')}
@@ -199,8 +236,8 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                     en sortent, des DEUX termes. Sans cette phrase, un lecteur qui compte les lignes du
                     tableau et refait la division trouverait autre chose et croirait le chiffre faux. */}
                 {t(
-                  `Calculé sur ${moyen.campagnes} campagne(s)${moyen.ecartees > 0 ? `, ${moyen.ecartees} écartée(s) faute de coût chiffrable ou de personne engagée` : ''}.`,
-                  `Computed over ${moyen.campagnes} campaign(s)${moyen.ecartees > 0 ? `, ${moyen.ecartees} left out for lack of a priceable cost or an engaged person` : ''}.`,
+                  `Calculé sur ${moyenPush.campagnes} campagne(s)${moyenPush.ecartees > 0 ? `, ${moyenPush.ecartees} écartée(s) faute de coût chiffrable ou de personne engagée` : ''}.`,
+                  `Computed over ${moyenPush.campagnes} campaign(s)${moyenPush.ecartees > 0 ? `, ${moyenPush.ecartees} left out for lack of a priceable cost or an engaged person` : ''}.`,
                 )}
               </p>
               {campagnes.tronque && (
@@ -211,6 +248,65 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                   )}
                 </p>
               )}
+              </SousLigne>
+              <SousLigne
+                cle="pubs"
+                titre={t('Campagnes publicitaires CTWA', 'Click-to-WhatsApp ad campaigns')}
+                valeur={moyenPubs && moyenPubs.valeur !== null ? fmtCost(moyenPubs.valeur, locale, listePubs?.currency ?? null) : null}
+                erreur={pubs === 'erreur'}
+                ouverte={sousOuvert === 'pubs'}
+                onBascule={() => setSousOuvert((v) => (v === 'pubs' ? null : 'pubs'))}
+              >
+                {listePubs !== null && moyenPubs !== null && (
+                  <>
+                    {listePubs.lignes.length === 0 ? (
+                      <p className="text-xs text-ink-500" data-testid="cout-aucune-pub">
+                        {t('Aucune publicité n’a dépensé ni reçu de message sur cette période.', 'No ad spent or received a message over this period.')}
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[24rem] border-collapse">
+                          <thead>
+                            <tr className="border-b border-ink-100">
+                              <th className={TH}>{t('Publicité', 'Ad')}</th>
+                              <th className={`${TH} text-right`}>{t('Dépense', 'Spend')}</th>
+                              <th className={`${TH} text-right`}>{t('Engagés', 'Engaged')}</th>
+                              <th className={`${TH} text-right`}>{t('Coût/engagé', 'Cost/engaged')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {listePubs.lignes.map((l) => (
+                              <tr key={l.publiciteId} className="border-b border-ink-50" data-testid={`cout-pub-${l.publiciteId}`}>
+                                <td className={`${TD} max-w-[12rem] truncate font-medium text-ink-900`} title={l.nom}>{l.nom}</td>
+                                <td className={`${TD} text-right tabular-nums`} data-testid={`cout-pub-depense-${l.publiciteId}`}>
+                                  {l.depense === null
+                                    ? <Vide titre={t('Aucune dépense relue chez Meta sur cette période.', 'No spend read from Meta over this period.')} />
+                                    : fmtCost(l.depense, locale, listePubs.currency)}
+                                </td>
+                                <td className={`${TD} text-right tabular-nums`} data-testid={`cout-pub-engages-${l.publiciteId}`}>{fmtNum(l.engages, locale)}</td>
+                                <td className={`${TD} text-right tabular-nums`} data-testid={`cout-pub-ratio-${l.publiciteId}`}>
+                                  {l.coutParEngagement === null
+                                    ? <Vide titre={t('Il manque la dépense, ou personne n’a écrit.', 'The spend is missing, or nobody wrote.')} />
+                                    : fmtCost(l.coutParEngagement, locale, listePubs.currency)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <p className="mt-2 text-xs text-ink-500" data-testid="cout-pubs-denominateur">
+                      {/* Ce qu'est un engagé ici, dit à l'écran : sans cette phrase, on le lirait « prospect qualifié »,
+                          qui est l'étape suivante de l'entonnoir d'une publicité. */}
+                      {t(
+                        `Un engagé est une personne qui a cliqué sur la publicité puis écrit sur WhatsApp. Calculé sur ${moyenPubs.campagnes} publicité(s)${moyenPubs.ecartees > 0 ? `, ${moyenPubs.ecartees} écartée(s) faute de dépense relue ou de personne engagée` : ''}.`,
+                        `An engaged person clicked the ad and then wrote on WhatsApp. Computed over ${moyenPubs.campagnes} ad(s)${moyenPubs.ecartees > 0 ? `, ${moyenPubs.ecartees} left out for lack of a read spend or an engaged person` : ''}.`,
+                      )}
+                    </p>
+                  </>
+                )}
+              </SousLigne>
+              </div>
             </>
           )}
         </Ligne>
@@ -474,6 +570,52 @@ function Poste({ libelle, valeur, detail, href }: { libelle: string; valeur: str
           : <Link href={href} className="text-brand-700 underline decoration-dotted underline-offset-2 hover:decoration-solid">{intitule}</Link>}
       </dt>
       <dd className="shrink-0 tabular-nums text-ink-900">{valeur}</dd>
+    </div>
+  );
+}
+
+/**
+ * UN ACCORDÉON DANS LA LIGNE « COÛT PAR ENGAGEMENT » : les campagnes push, ou les publicités (Julien, 2026-09-30).
+ * Chacun porte sa propre moyenne, le chiffre de la ligne les réunit. Un vrai `<button>` avec `aria-expanded`, pour
+ * la même raison que `Ligne`.
+ */
+function SousLigne({ cle, titre, valeur, erreur = false, ouverte, onBascule, children }: {
+  cle: string;
+  titre: string;
+  /** `null` = rien de mesurable : « n/d », jamais « 0 € ». */
+  valeur: string | null;
+  /** La liste n'a pas pu être lue : l'accordéon le dit et ne s'ouvre pas. */
+  erreur?: boolean;
+  ouverte: boolean;
+  onBascule: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="px-3 py-2" data-testid={`cout-sous-bloc-${cle}`}>
+      <button
+        type="button"
+        onClick={onBascule}
+        aria-expanded={ouverte}
+        disabled={erreur}
+        data-testid={`cout-sous-${cle}`}
+        className="flex w-full items-baseline justify-between gap-3 text-left disabled:cursor-default"
+      >
+        <span className="flex items-center gap-1.5 text-sm font-medium text-ink-900">
+          {titre}
+          {!erreur && (
+            <Icone nom="deplier" taille="petite" className={`text-ink-400 transition-transform duration-150 ${ouverte ? 'rotate-180' : ''}`} />
+          )}
+        </span>
+        <span className="text-sm font-semibold tabular-nums text-ink-900" data-testid={`cout-sous-valeur-${cle}`}>
+          {erreur ? <Nd className="text-sm" /> : (valeur ?? <Nd className="text-sm" />)}
+        </span>
+      </button>
+      {erreur && (
+        <p className="mt-1 text-xs text-danger" data-testid={`cout-sous-erreur-${cle}`}>
+          Ce tableau n’a pas pu être chargé.
+        </p>
+      )}
+      {ouverte && !erreur && <div className="mt-2">{children}</div>}
     </div>
   );
 }

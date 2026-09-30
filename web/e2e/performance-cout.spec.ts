@@ -35,6 +35,12 @@ const COUT = {
   tronque: false,
 };
 
+/** Une publicité CTWA mesurable : 12 € pour 4 personnes qui ont cliqué puis écrit, 3 € par engagé. */
+const PUBS = {
+  currency: 'EUR',
+  lignes: [{ publiciteId: 'p-rentree', nom: 'Rentrée CTWA', depense: 12, engages: 4, coutParEngagement: 3 }],
+};
+
 const MESSAGES = {
   templates: { marketing: 17.17, utility: 3.2 },
   service: {
@@ -67,6 +73,8 @@ async function mock(
   page: import('@playwright/test').Page,
   opts: {
     cout?: unknown; messages?: unknown; ia?: unknown; statutCout?: number; urlsCout?: string[];
+    /** Les publicités de la carte ; absentes = aucune publicité sur la période. */
+    pubs?: unknown;
     /** Les adresses appelees par la page Quantitatif > Couts, pour lire la periode qu elle a retenue. */
     urlsTemplates?: string[];
   } = {},
@@ -80,6 +88,7 @@ async function mock(
     // un test vert pour la mauvaise raison.
     if (url.includes('/stats/cost/messages')) return json(opts.messages ?? MESSAGES);
     if (url.includes('/stats/cost/ia')) return json(opts.ia ?? IA);
+    if (url.includes('/stats/cost/pubs')) return json(opts.pubs ?? { currency: 'EUR', lignes: [] });
     if (url.includes('/stats/cost/campaigns')) {
       opts.urlsCout?.push(url);
       if (opts.statutCout && opts.statutCout !== 200) {
@@ -114,6 +123,42 @@ test.describe('Performance Lab : la carte des couts', () => {
     await expect(page.getByTestId('cout-ligne-c-promo')).toHaveCount(0);
   });
 
+  test('🔴 les publicités CTWA ont leur accordéon et leur moyenne, et le chiffre du haut les RÉUNIT', async ({ page }) => {
+    // (17,17 + 5,72 + 12) / (10 + 4 + 4) = 1,94 : le rapport des totaux sur les deux listes (Julien, 2026-09-30).
+    await mock(page, { pubs: PUBS });
+    await page.goto('/performance');
+    await expect(page.getByTestId('cout-valeur-engagement')).toContainText('1,94');
+    await page.getByTestId('cout-bascule-engagement').click();
+    await expect(page.getByTestId('cout-tout-confondu')).toBeVisible();
+    await expect(page.getByTestId('cout-sous-valeur-push')).toContainText('1,64');
+    await expect(page.getByTestId('cout-sous-valeur-pubs')).toContainText('3,00');
+    // Replié tant qu'on ne l'ouvre pas.
+    await expect(page.getByTestId('cout-pub-p-rentree')).toHaveCount(0);
+    await page.getByTestId('cout-sous-pubs').click();
+    await expect(page.getByTestId('cout-pub-p-rentree')).toContainText('Rentrée CTWA');
+    await expect(page.getByTestId('cout-pub-engages-p-rentree')).toContainText('4');
+    // Ce qu'est un engagé ici, dit à l'écran : pas un prospect qualifié.
+    await expect(page.getByTestId('cout-pubs-denominateur')).toContainText(/cliqué|clicked/);
+  });
+
+  test('🔴 des publicités dans une AUTRE devise ne sont pas additionnées, et l’écran le dit', async ({ page }) => {
+    await mock(page, { pubs: { ...PUBS, currency: 'USD' } });
+    await page.goto('/performance');
+    await expect(page.getByTestId('cout-valeur-engagement')).toContainText('1,64');
+    await page.getByTestId('cout-bascule-engagement').click();
+    await expect(page.getByTestId('cout-tout-confondu')).toContainText('USD');
+  });
+
+  test('une panne des publicités n’éteint pas le tableau des campagnes push', async ({ page }) => {
+    await mock(page, { pubs: { error: 'nope' } });
+    await page.goto('/performance');
+    await expect(page.getByTestId('cout-valeur-engagement')).toContainText('1,64');
+    await page.getByTestId('cout-bascule-engagement').click();
+    await expect(page.getByTestId('cout-sous-erreur-pubs')).toBeVisible();
+    await page.getByTestId('cout-sous-push').click();
+    await expect(page.getByTestId('cout-ligne-c-promo')).toBeVisible();
+  });
+
   test('🔴 le chiffre est le RAPPORT DES TOTAUX, pas la moyenne des ratios', async ({ page }) => {
     // (17,17 + 5,72) / (10 + 4) = 1,635. La moyenne des ratios rendrait (1,717 + 1,43) / 2 = 1,5735.
     // La campagne sans cout chiffrable sort des DEUX termes, elle ne pese sur aucun des deux.
@@ -126,6 +171,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page);
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-denominateur')).toContainText('2');
     await expect(page.getByTestId('cout-denominateur')).toContainText(/écartée|left out/);
   });
@@ -134,6 +180,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page);
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-engages-c-promo')).toHaveText('10');
     await expect(page.getByTestId('cout-ratio-engage-c-promo')).toContainText('1,72');
   });
@@ -144,6 +191,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page);
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-ratio-engage-c-inconnue')).toHaveText('n/d');
   });
 
@@ -153,6 +201,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page);
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-engages-c-parcours')).toHaveText('4');
     await expect(page.getByTestId('cout-ratio-engage-c-parcours')).not.toHaveText('n/d');
   });
@@ -164,6 +213,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page, { cout: sansChamps });
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-engages-c-promo')).toHaveText('n/d');
     await expect(page.getByTestId('cout-ratio-engage-c-promo')).toHaveText('n/d');
   });
@@ -190,6 +240,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page, { cout: { ...COUT, tronque: true } });
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-tronque')).toBeVisible();
   });
 
@@ -245,6 +296,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page, { cout: { ...COUT, lignes: [] } });
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-aucune-campagne')).toBeVisible();
     await expect(page.getByTestId('carte-couts').locator('table')).toHaveCount(0);
     await expect(page.getByTestId('cout-archivees')).toBeVisible();
@@ -255,6 +307,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page, { urlsCout });
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-archivees')).not.toBeChecked();
     expect(urlsCout.every((u) => !u.includes('archivees='))).toBe(true);
     await page.getByTestId('cout-archivees').check();
@@ -267,6 +320,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page, { cout: { ...COUT, lignes } });
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
+    await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-envoyes-c-promo')).toHaveText('7');
   });
 });

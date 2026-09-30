@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coutMoyenParEngagement } from './cout-moyen';
+import { coutMoyenParEngagement, coutToutConfondu } from './cout-moyen';
 
 /**
  * LE CHIFFRE UNIQUE EN HAUT DE LA CARTE « COUTS ».
@@ -83,5 +83,56 @@ describe('le cout moyen par engagement', () => {
     const r = coutMoyenParEngagement([L(100, 50), L(null, 30), L(80, 0), L(20, 10)]);
     expect(r.campagnes).toBe(2);
     expect(r.ecartees).toBe(2);
+  });
+});
+
+/**
+ * LE CHIFFRE DU HAUT, PUSH ET PUBLICITES REUNIS (Julien, 2026-09-30). Un engage de publicite est une personne qui a
+ * clique puis ecrit : il se compare a l'engage d'une campagne push, et le chiffre du haut les reunit.
+ */
+describe('le cout par engagement tout confondu', () => {
+  it('🔴 c est le rapport des totaux sur les DEUX listes, pas la moyenne des deux moyennes', () => {
+    // Push : 10 euros pour 100 engages (0,10). Pubs : 30 euros pour 10 engages (3). Totaux : 40 / 110 = 0,3636.
+    // La moyenne des deux moyennes rendrait 1,55, et ferait peser dix personnes autant que cent.
+    const r = coutToutConfondu([L(10, 100)], 'EUR', [L(30, 10)], 'EUR');
+    expect(r.moyen.valeur).toBe(0.3636);
+    expect(r.devise).toBe('EUR');
+    expect(r.pubsAdditionnees).toBe(true);
+    expect(r.devisesDifferentes).toBe(false);
+  });
+
+  it('🔴 deux devises ne s additionnent pas : le chiffre reste celui du push, et on le dit', () => {
+    const r = coutToutConfondu([L(10, 100)], 'EUR', [L(30, 10)], 'USD');
+    expect(r.moyen.valeur).toBe(0.1);
+    expect(r.devise).toBe('EUR');
+    expect(r.pubsAdditionnees).toBe(false);
+    expect(r.devisesDifferentes).toBe(true);
+  });
+
+  it('🔴 une devise INCONNUE d un cote n est pas une devise egale', () => {
+    expect(coutToutConfondu([L(10, 100)], 'EUR', [L(30, 10)], null).pubsAdditionnees).toBe(false);
+    expect(coutToutConfondu([L(10, 100)], null, [L(30, 10)], 'EUR').pubsAdditionnees).toBe(false);
+  });
+
+  it('la liste des publicites en panne : le chiffre est celui du push, sans rien pretendre des publicites', () => {
+    const r = coutToutConfondu([L(10, 100)], 'EUR', null, null);
+    expect(r).toMatchObject({ devise: 'EUR', pubsAdditionnees: false, devisesDifferentes: false });
+    expect(r.moyen.valeur).toBe(0.1);
+  });
+
+  it('aucune publicite mesurable : rien a ajouter, et aucune devise a comparer', () => {
+    const r = coutToutConfondu([L(10, 100)], 'EUR', [L(null, 3), L(5, 0)], 'USD');
+    expect(r).toMatchObject({ devise: 'EUR', pubsAdditionnees: false, devisesDifferentes: false });
+  });
+
+  it('aucune campagne push mesurable : le chiffre est celui des publicites, dans leur devise', () => {
+    const r = coutToutConfondu([L(null, 3)], 'EUR', [L(30, 10)], 'USD');
+    expect(r.moyen.valeur).toBe(3);
+    expect(r.devise).toBe('USD');
+    expect(r.pubsAdditionnees).toBe(true);
+  });
+
+  it('rien de mesurable nulle part : `null`, jamais zero', () => {
+    expect(coutToutConfondu([], 'EUR', [], 'EUR').moyen.valeur).toBeNull();
   });
 });

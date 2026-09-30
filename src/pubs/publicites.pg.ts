@@ -1,5 +1,28 @@
 import type { Pool } from 'pg';
 import type { DestinationPub, PubDuLead } from './routage';
+import { diviserOuRien } from './entonnoir';
+import { BOUNDS_CTE, STATS_TZ, type DateRange } from '../stats/range';
+
+/**
+ * Une publicité dans le coût par engagé de Performance lab (carte Coûts), sur une période. Un ENGAGÉ est une
+ * personne qui a cliqué ET écrit sur WhatsApp (une arrivée), pas un prospect qualifié.
+ */
+export interface LigneCoutPub {
+  publiciteId: string;
+  nom: string;
+  /** La dépense des jours de la période. `null` = aucun jour relu chez Meta sur la période, jamais zéro. */
+  depense: number | null;
+  /** Les personnes distinctes arrivées par la campagne de cette publicité sur la période. */
+  engages: number;
+  /** `null` quand l'un des deux termes manque, ou que personne n'est arrivé. */
+  coutParEngagement: number | null;
+}
+
+/** Le tableau des publicités de la carte Coûts, et la devise du compte publicitaire (`null` = inconnue). */
+export interface CoutParPub {
+  currency: string | null;
+  lignes: LigneCoutPub[];
+}
 
 /** L'état local d'une publicité, le nôtre, à ne pas confondre avec celui de Meta (`statut_meta`). */
 export type EtatPublicite = 'creation' | 'echec_creation' | 'prete' | 'publiee';
@@ -358,6 +381,65 @@ export class PgPublicitesStore {
       [tenantId, campagneId, v.statutMeta, v.motifRefus, v.debut, v.fin, v.budgetTotal, v.depense, v.clics,
        v.impressions, v.couverture],
     );
+  }
+
+  /**
+   * Écrit la dépense jour par jour d'une campagne. Upsert : le jour en cours se relit toutes les quinze minutes, et
+   * Meta corrige encore un jour passé pendant des semaines. Aucun jour n'est effacé : un jour que Meta ne rend
+   * plus garde sa dernière valeur, comme le cumul garde la sienne sur une lecture vide.
+   */
+  async noterDepensesJour(tenantId: string, campagneId: string, jours: ReadonlyArray<{ jour: string; depense: number }>): Promise<void> {
+    if (jours.length === 0) return;
+    await this.pool.query(
+      `insert into pubs_depense_jour (tenant_id, campagne_id, jour, depense)
+       select $1, $2, j.jour, j.depense from unnest($3::date[], $4::numeric[]) as j(jour, depense)
+       on conflict (tenant_id, campagne_id, jour) do update set depense = excluded.depense`,
+      [tenantId, campagneId, jours.map((j) => j.jour), jours.map((j) => j.depense)],
+    );
+  }
+
+  /**
+   * Le coût par engagé de chaque publicité de l'espace sur une période : la dépense des jours de la période, et les
+   * PERSONNES arrivées par sa campagne dans la période. Une publicité sans dépense ni arrivée sur la période n'est
+   * pas rendue. Les jours de Meta sont dans le fuseau du compte publicitaire, les arrivées bornées à l'heure de
+   * Paris (`BOUNDS_CTE`) : les deux coïncident pour un compte français. `campagne_id is not null` garde la lecture
+   * des arrivées dans le contrat de l'index partiel `arrivees_pub_campagne_idx`.
+   */
+  async coutParPub(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<LigneCoutPub[]> {
+    const { rows } = await this.pool.query<{ id: string; nom: string; depense: string | null; engages: number }>(
+      `with ${BOUNDS_CTE},
+       d as (
+         select campagne_id, sum(depense) as depense from pubs_depense_jour
+          where tenant_id = $1 and jour >= $2::date and jour <= $3::date
+          group by campagne_id
+       ),
+       e as (
+         select a.campagne_id, count(distinct a.contact_id)::int as engages
+           from arrivees_pub a, bounds b
+          where a.tenant_id = $1 and a.campagne_id is not null
+            and a.arrivee_le >= b.start_ts and a.arrivee_le < b.end_ts
+          group by a.campagne_id
+       )
+       select p.id, p.nom, d.depense, coalesce(e.engages, 0)::int as engages
+         from publicites p
+         left join d on d.campagne_id = p.campagne_id
+         left join e on e.campagne_id = p.campagne_id
+        where p.tenant_id = $1
+          and (d.campagne_id is not null or e.campagne_id is not null)
+          and ($5::boolean or p.archivee_le is null)
+        order by d.depense desc nulls last, p.nom asc`,
+      [tenantId, range.from, range.to, STATS_TZ, opts.inclureArchivees],
+    );
+    return rows.map((r) => {
+      const depense = nombre(r.depense);
+      return {
+        publiciteId: r.id,
+        nom: r.nom,
+        depense,
+        engages: r.engages,
+        coutParEngagement: r.engages > 0 ? diviserOuRien(depense, r.engages) : null,
+      };
+    });
   }
 
   /**

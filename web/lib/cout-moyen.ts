@@ -36,6 +36,45 @@ export interface CoutMoyen {
   ecartees: number;
 }
 
+/** Le chiffre du haut, tout confondu, et ce qui y est entré. */
+export interface CoutToutConfondu {
+  moyen: CoutMoyen;
+  /** La devise du chiffre. */
+  devise: string | null;
+  /** Les publicites sont-elles DANS le chiffre ? */
+  pubsAdditionnees: boolean;
+  /** Les deux listes sont mesurables mais pas dans la meme devise : le chiffre reste celui du push, et l'ecran le dit. */
+  devisesDifferentes: boolean;
+}
+
+/**
+ * LE CHIFFRE DU HAUT, PUSH ET PUBLICITES REUNIS (Julien, 2026-09-30) : le rapport des totaux sur les deux listes,
+ * c'est-a-dire ce qu'a coute une personne engagee, quel que soit le canal qui l'a amenee.
+ *
+ * 🔴 DEUX DEVISES NE S'ADDITIONNENT PAS. Les tarifs des messages viennent de Meta, la depense publicitaire du compte
+ * publicitaire : un compte en dollars ajoute a des envois en euros produirait un montant faux et credible. Le
+ * chiffre retombe alors sur le push, et `devisesDifferentes` fait dire pourquoi. Une devise inconnue d'un cote n'est
+ * pas une devise egale.
+ *
+ * `pubs` a `null` = la liste n'a pas pu etre lue : le chiffre est celui du push, sans rien pretendre des publicites.
+ */
+export function coutToutConfondu(
+  push: readonly LigneMesurable[], devisePush: string | null,
+  pubs: readonly LigneMesurable[] | null, devisePubs: string | null,
+): CoutToutConfondu {
+  const mp = coutMoyenParEngagement(push);
+  const seulPush = (devisesDifferentes: boolean): CoutToutConfondu =>
+    ({ moyen: mp, devise: devisePush, pubsAdditionnees: false, devisesDifferentes });
+  if (pubs === null) return seulPush(false);
+  const mb = coutMoyenParEngagement(pubs);
+  // Rien de mesurable cote publicites : rien a ajouter, et aucune devise a comparer.
+  if (mb.campagnes === 0) return seulPush(false);
+  // Rien de mesurable cote push : le chiffre est celui des publicites, dans leur devise.
+  if (mp.campagnes === 0) return { moyen: mb, devise: devisePubs, pubsAdditionnees: true, devisesDifferentes: false };
+  if (devisePush === null || devisePush !== devisePubs) return seulPush(true);
+  return { moyen: coutMoyenParEngagement([...push, ...pubs]), devise: devisePush, pubsAdditionnees: true, devisesDifferentes: false };
+}
+
 export function coutMoyenParEngagement(lignes: readonly LigneMesurable[]): CoutMoyen {
   let cout = 0;
   let engages = 0;

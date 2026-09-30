@@ -7,6 +7,7 @@ import type { CostSeries, CoutParCampagne } from '../stats/cost';
 import type { DetailCoutCampagne } from '../stats/cout-campagne';
 import type { CoutMessages } from '../stats/cout-messages';
 import type { CoutIa } from '../stats/cout-ia';
+import type { CoutParPub } from '../pubs/publicites.pg';
 import type { Performance } from '../stats/performance';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
@@ -58,6 +59,11 @@ export interface StatsRouteDeps {
    * estimé et ses clics. `inclureArchivees` : la bascule de la carte (absente = exclues).
    */
   getCoutParCampagne(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<CoutParCampagne>;
+  /**
+   * Le même tableau pour les publicités Click-to-WhatsApp : leur dépense sur la période, et les personnes qui ont
+   * cliqué puis écrit. `inclureArchivees` : la même bascule que les campagnes.
+   */
+  getCoutParPub(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<CoutParPub>;
   /** Le coût total des messages de la période (ligne 2 de la carte « Coûts »). */
   getCoutMessages(tenantId: string, range: DateRange): Promise<CoutMessages>;
   /**
@@ -272,6 +278,18 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     if ('error' in r) return reply.code(400).send({ error: r.error });
     const inclureArchivees = (req.query as Record<string, unknown>).archivees === '1';
     return reply.code(200).send(await deps.getCoutParCampagne(tenant, r.range, { inclureArchivees }));
+  });
+
+  /**
+   * Coût par engagé des publicités Click-to-WhatsApp (page de synthèse), à côté de celui des campagnes : même garde,
+   * même lecture de période et de bascule des archivées.
+   */
+  app.get('/tenants/:tenantId/stats/cost/pubs', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    const inclureArchivees = (req.query as Record<string, unknown>).archivees === '1';
+    return reply.code(200).send(await deps.getCoutParPub(tenant, r.range, { inclureArchivees }));
   });
 
   /**

@@ -428,4 +428,70 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
         .toEqual({ leads: 0, qualifies: 0, nonPrisEnCharge: 0 });
     });
   });
+
+  /**
+   * LE COÛT PAR ENGAGÉ DES PUBLICITÉS (Performance lab, carte Coûts, 2026-09-30) : la dépense des JOURS de la période
+   * et les PERSONNES arrivées dans la période. Le jour « aujourd'hui » est celui de Paris, comme les bornes des stats.
+   */
+  describe('le coût par engagé des publicités, sur une période', () => {
+    const aujourdhui = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+    const ilYa = (n: number): string =>
+      new Date(Date.parse(`${aujourdhui}T12:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+    const periode = { from: ilYa(1), to: aujourdhui };
+
+    it('🔴 l’upsert du même jour REMPLACE la dépense, il ne l’additionne pas', async () => {
+      await poserPub(tenantId, 'camp-cpe');
+      await publicites.noterDepensesJour(tenantId, 'camp-cpe', [{ jour: aujourdhui, depense: 1.5 }]);
+      await publicites.noterDepensesJour(tenantId, 'camp-cpe', [{ jour: aujourdhui, depense: 2 }, { jour: ilYa(1), depense: 1 }, { jour: ilYa(10), depense: 5 }]);
+      const r = (await pool.query(
+        `select jour::text as jour, depense from pubs_depense_jour where tenant_id = $1 and campagne_id = 'camp-cpe' order by jour`,
+        [tenantId],
+      )).rows;
+      expect(r.map((x) => [x.jour, Number(x.depense)])).toEqual([[ilYa(10), 5], [ilYa(1), 1], [aujourdhui, 2]]);
+    });
+
+    it('🔴 ne compte QUE les jours de la période, et des PERSONNES, pas des arrivées', async () => {
+      // Deux arrivées du même contact : UNE personne engagée. La dépense d'il y a dix jours est hors période.
+      for (const id of ['wamid.cpe1', 'wamid.cpe2']) {
+        await arrivees.enregistrer(tenantId, '33600000701', arrivee(id));
+        await arrivees.noterIssue(tenantId, id, { campagneId: 'camp-cpe', issue: 'scenario', repriseLe: null });
+      }
+      const lignes = await publicites.coutParPub(tenantId, periode, { inclureArchivees: false });
+      const l = lignes.find((x) => x.nom === 'itest' && x.depense === 3);
+      expect(l).toMatchObject({ depense: 3, engages: 1, coutParEngagement: 3 });
+    });
+
+    it('une publicité sans dépense ni arrivée sur la période n’est pas listée ; une arrivée sans dépense garde une dépense INCONNUE', async () => {
+      await poserPub(tenantId, 'camp-cpe-muette');
+      await poserPub(tenantId, 'camp-cpe-sans-depense');
+      await arrivees.enregistrer(tenantId, '33600000701', arrivee('wamid.cpe3'));
+      await arrivees.noterIssue(tenantId, 'wamid.cpe3', { campagneId: 'camp-cpe-sans-depense', issue: 'scenario', repriseLe: null });
+      const lignes = await publicites.coutParPub(tenantId, periode, { inclureArchivees: false });
+      const ids = (await pool.query<{ id: string; campagne_id: string }>(
+        `select id, campagne_id from publicites where tenant_id = $1 and campagne_id like 'camp-cpe%'`, [tenantId],
+      )).rows;
+      const parCampagne = new Map(ids.map((r) => [r.campagne_id, r.id]));
+      expect(lignes.some((x) => x.publiciteId === parCampagne.get('camp-cpe-muette'))).toBe(false);
+      expect(lignes.find((x) => x.publiciteId === parCampagne.get('camp-cpe-sans-depense')))
+        .toMatchObject({ depense: null, engages: 1, coutParEngagement: null });
+    });
+
+    it('🔴 une publicité ARCHIVÉE sort, sauf si la bascule la demande', async () => {
+      const id = await poserPub(tenantId, 'camp-cpe-archivee');
+      await publicites.noterDepensesJour(tenantId, 'camp-cpe-archivee', [{ jour: aujourdhui, depense: 4 }]);
+      await pool.query('update publicites set archivee_le = now() where tenant_id = $1 and id = $2', [tenantId, id]);
+      expect((await publicites.coutParPub(tenantId, periode, { inclureArchivees: false })).some((x) => x.publiciteId === id)).toBe(false);
+      expect((await publicites.coutParPub(tenantId, periode, { inclureArchivees: true })).find((x) => x.publiciteId === id))
+        .toMatchObject({ depense: 4, engages: 0, coutParEngagement: null });
+    });
+
+    it('🔴 PAR ESPACE : la dépense et les arrivées du voisin n’entrent pas dans nos chiffres, ni l’inverse', async () => {
+      await poserPub(voisinId, 'camp-cpe');
+      await publicites.noterDepensesJour(voisinId, 'camp-cpe', [{ jour: aujourdhui, depense: 99 }]);
+      const chezNous = await publicites.coutParPub(tenantId, periode, { inclureArchivees: true });
+      expect(chezNous.some((x) => x.depense === 99 || x.depense === 101)).toBe(false);
+      const chezLui = await publicites.coutParPub(voisinId, periode, { inclureArchivees: true });
+      expect(chezLui).toEqual([expect.objectContaining({ depense: 99, engages: 0 })]);
+    });
+  });
 });

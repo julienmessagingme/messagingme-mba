@@ -844,6 +844,11 @@ async function main(): Promise<void> {
       getPricing: chiffrage.getPricing,
       getCostSeries: chiffrage.getCostSeries,
       getCoutParCampagne: chiffrage.getCoutParCampagne,
+      // Les publicités Click-to-WhatsApp, à côté des campagnes push : la devise est celle du compte publicitaire.
+      getCoutParPub: async (tenant, range, o) => {
+        const [lignes, connexion] = await Promise.all([publicites.coutParPub(tenant, range, o), connexionsPub.lire(tenant)]);
+        return { currency: connexion?.devise ?? null, lignes };
+      },
       getCoutMessages: chiffrage.getCoutMessages,
       getCoutIa: chiffrage.getCoutIa,
       getDetailCoutCampagne: chiffrage.getDetailCoutCampagne,

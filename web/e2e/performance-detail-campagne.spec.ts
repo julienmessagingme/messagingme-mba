@@ -96,6 +96,7 @@ async function ouvrirChiffres(page: import('@playwright/test').Page): Promise<vo
 
 async function ouvrirEngagement(page: import('@playwright/test').Page): Promise<void> {
   await page.getByTestId('cout-bascule-engagement').click();
+  await page.getByTestId('cout-sous-push').click();
 }
 
 test.describe('Performance Lab : la fiche d’une campagne', () => {

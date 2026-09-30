@@ -493,6 +493,30 @@ export function getDetailCoutCampagne(tenantId: string, campaignId: string): Pro
   return request<DetailCoutCampagne>(`/tenants/${tenantId}/stats/cost/campaigns/${campaignId}`);
 }
 
+/**
+ * LE COUT PAR ENGAGE DES PUBLICITES Click-to-WhatsApp sur la periode (carte « Couts », accordeon CTWA). Un engage
+ * est une personne qui a clique PUIS ecrit sur WhatsApp, pas un prospect qualifie.
+ */
+export interface LigneCoutPub {
+  publiciteId: string;
+  nom: string;
+  /** `null` = aucun jour de depense relu sur la periode, JAMAIS zero. */
+  depense: number | null;
+  engages: number;
+  coutParEngagement: number | null;
+}
+export interface CoutParPub {
+  /** La devise du compte publicitaire ; `null` = inconnue. */
+  currency: string | null;
+  lignes: LigneCoutPub[];
+}
+
+export function getCoutParPub(tenantId: string, range?: StatsRange, inclureArchivees = false): Promise<CoutParPub> {
+  const q = rangeQuery(range);
+  const archivees = inclureArchivees ? `${q === '' ? '?' : '&'}archivees=1` : '';
+  return request<CoutParPub>(`/tenants/${tenantId}/stats/cost/pubs${q}${archivees}`);
+}
+
 export function getCoutParCampagne(tenantId: string, range?: StatsRange, inclureArchivees = false): Promise<CoutParCampagne> {
   const q = rangeQuery(range);
   const archivees = inclureArchivees ? `${q === '' ? '?' : '&'}archivees=1` : '';

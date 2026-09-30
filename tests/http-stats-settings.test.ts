@@ -229,6 +229,28 @@ describe('stats route', () => {
     await a.close();
   });
 
+  it('GET /stats/cost/pubs : rend la devise et les lignes, et transmet la bascule des archivées', async () => {
+    const vus: Array<{ inclureArchivees: boolean }> = [];
+    const a = app({ stats: { getCoutParPub: async (_t, _r, opts) => {
+      vus.push(opts);
+      return { currency: 'EUR', lignes: [{ publiciteId: 'p1', nom: 'Rentrée', depense: 3, engages: 2, coutParEngagement: 1.5 }] };
+    } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/pubs?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ currency: 'EUR', lignes: [{ publiciteId: 'p1', nom: 'Rentrée', depense: 3, engages: 2, coutParEngagement: 1.5 }] });
+    await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/pubs?days=30&archivees=1', ...h(adminTok) });
+    expect(vus).toEqual([{ inclureArchivees: false }, { inclureArchivees: true }]);
+    await a.close();
+  });
+
+  it('GET /stats/cost/pubs : agent -> 403, tenant croisé -> 403, plage invalide -> 400', async () => {
+    const a = app({ stats: { getCoutParPub: async () => ({ currency: null, lignes: [] }) } });
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/pubs?days=30', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats/cost/pubs?days=30', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/pubs?from=2026-01-10&to=2026-01-01', ...h(adminTok) })).statusCode).toBe(400);
+    await a.close();
+  });
+
   it('🔴 la bascule des archivées arrive au câblage, et son absence vaut « exclues » (lot 4)', async () => {
     // Une flèche à deux paramètres est assignable à un contrat qui en déclare trois : c'est ce test, pas le
     // compilateur, qui dit que la route TRANSMET la bascule.

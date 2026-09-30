@@ -12,7 +12,7 @@ import type { DepensePub, EtatCampagneMeta } from '../src/meta/pubs-creation';
  */
 
 const etat = (statut: string): EtatCampagneMeta => ({ statut, motifRefus: null, debut: null, fin: null, budgetTotal: null });
-const depense = (d: number, c: number): DepensePub => ({ depense: d, clics: c, impressions: null, couverture: null });
+const depense = (d: number, c: number): DepensePub => ({ depense: d, clics: c, impressions: null, couverture: null, jours: [] });
 
 interface Traces {
   notes: Array<{ tenant: string; campagne: string; statut: string | null; depense: number | null }>;

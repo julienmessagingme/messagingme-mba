@@ -1355,7 +1355,8 @@ async function main(): Promise<void> {
           return chiffre === null ? null : decryptSecret(chiffre, config.ENCRYPTION_KEY);
         },
         meta: clientCreationPubs,
-        noterSuivi: (t, campagneId, v) => publicites.noterSuivi(t, campagneId, {
+        noterSuivi: async (t, campagneId, v) => {
+          await publicites.noterSuivi(t, campagneId, {
           statutMeta: v.etat?.statut ?? null,
           motifRefus: v.etat?.motifRefus ?? null,
           debut: v.etat?.debut ?? null,
@@ -1365,7 +1366,10 @@ async function main(): Promise<void> {
           clics: v.depense?.clics ?? null,
           impressions: v.depense?.impressions ?? null,
           couverture: v.depense?.couverture ?? null,
-        }),
+          });
+          // La dépense jour par jour, lue dans le même appel : c'est elle que Performance lab chiffre sur une période.
+          await publicites.noterDepensesJour(t, campagneId, v.depense?.jours ?? []);
+        },
         connexions: connexionsPub,
         // Sur le code de Meta, jamais sur la phrase : une garde qui lit une phrase casse en silence le jour où
         // Meta la réécrit.
