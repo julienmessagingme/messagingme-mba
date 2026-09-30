@@ -7,6 +7,10 @@
 
 ## 2026-09-30 : une purge pendant un run de campagne n'envoie plus rien à la personne effacée
 
+**`5ef5b33f` déployé** le 2026-09-30 à 17 h 36 UTC, après sa CI verte job par job (`unit`, `securite`,
+`integration`) : `mba-api` et `mba-worker` reconstruits, API saine, worker sur ses dix files, NPM rechargé,
+`fumee.mjs` vert sur les six chemins. Le correctif est lu dans les deux conteneurs.
+
 Le moteur lit la liste d'un run UNE fois, vrai numéro compris, et un run étalé dure des heures. Juste avant
 chaque envoi, `claim` relisait la fiche, mais n'écartait que le STOP et le blocage. Une purge tombée pendant le
 run sur une fiche ni désabonnée ni bloquée laissait donc partir le message vers le vrai numéro, APRÈS
