@@ -9,9 +9,14 @@
  * sont-elles bien calibrees », ou un essai a 10 envois pese autant qu'une campagne a 5000 : c'est une autre
  * question, et elle n'est pas celle de cette carte.
  *
- * 🔴 UNE CAMPAGNE NON MESURABLE SORT DES DEUX TERMES, ET SE COMPTE A PART. La garder au denominateur ferait
+ * 🔴 UNE CAMPAGNE SANS COUT CONNU SORT DES DEUX TERMES, ET SE COMPTE A PART. La garder au denominateur ferait
  * BAISSER le cout moyen a cause d'une campagne dont on ignore le prix : le chiffre descendrait sans qu'un
  * seul euro soit economise. C'est la meme regle que les cases vides de `cost.ts`, appliquee a un total.
+ *
+ * 🔴 UNE CAMPAGNE SANS ENGAGE GARDE SA DEPENSE AU NUMERATEUR (Julien, 2026-09-30). Elle sortait des deux termes :
+ * son argent disparaissait, et le cout par engage paraissait plus bas qu'il n'etait. Sur une publicite, depense et
+ * arrivees sont decalees dans le temps, et une periode courte en montrait souvent. Le chiffre repond a « ce que m'a
+ * coute une personne engagee », donc tout l'argent CONNU de la periode y entre.
  *
  * Module PUR : aucun appel, aucun etat. Il se teste sans navigateur.
  */
@@ -32,7 +37,7 @@ export interface CoutMoyen {
   valeur: number | null;
   /** Les campagnes RETENUES dans le calcul, c'est-a-dire le denominateur reel. */
   campagnes: number;
-  /** Celles qui en sont sorties, faute de cout ou faute d'engage. L'ecran peut le DIRE. */
+  /** Celles qui en sont sorties, faute de cout connu. L'ecran peut le DIRE. */
   ecartees: number;
 }
 
@@ -88,10 +93,12 @@ export function coutMoyenParEngagement(lignes: readonly LigneMesurable[]): CoutM
   for (const l of lignes) {
     // ⚠️ `l.cout === null` et pas `!l.cout` : un cout de ZERO est une mesure valide (tous les envois dans
     // la franchise), et un `!` la confondrait avec « on ne sait pas », donc la ferait disparaitre du calcul.
+    // `undefined` (API plus ancienne que le champ) sort aussi : son denominateur serait invente. `null` et `0`
+    // (mesure faite, personne) restent : leur depense compte, sans personne a ajouter.
     const e = l.engagements;
-    if (l.cout === null || e === null || e === undefined || e <= 0) { ecartees += 1; continue; }
+    if (l.cout === null || e === undefined) { ecartees += 1; continue; }
     cout += l.cout;
-    engages += e;
+    engages += e === null ? 0 : Math.max(0, e);
     campagnes += 1;
   }
   // Le ratio n'existe que si son denominateur existe. Un `0` ici se lirait « gratuit », ce qui est la

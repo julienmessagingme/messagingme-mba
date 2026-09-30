@@ -39,10 +39,15 @@ describe('le cout moyen par engagement', () => {
     expect(r.ecartees).toBe(1);
   });
 
-  it('🔴 une campagne sans AUCUN engage sort aussi : elle n est pas une division par zero', () => {
+  it('🔴 une campagne sans AUCUN engage GARDE sa depense au numerateur (Julien, 2026-09-30)', () => {
+    // (100 + 80) / 50 = 3,6. L'ecarter rendait 2 : ses 80 euros disparaissaient, et le cout par engage
+    // paraissait plus bas qu'il n'etait.
     const r = coutMoyenParEngagement([L(100, 50), L(80, 0)]);
-    expect(r.valeur).toBe(2);
-    expect(r.ecartees).toBe(1);
+    expect(r.valeur).toBe(3.6);
+    expect(r.campagnes).toBe(2);
+    expect(r.ecartees).toBe(0);
+    // `null` = mesure faite, personne : meme regle que zero.
+    expect(coutMoyenParEngagement([L(100, 50), L(80, null)]).valeur).toBe(3.6);
   });
 
   it('🔴 aucune campagne chiffrable : `null`, JAMAIS zero', () => {
@@ -81,8 +86,8 @@ describe('le cout moyen par engagement', () => {
     // Le chiffre « sur N campagnes mesurees » qui accompagne le total doit designer le denominateur reel,
     // sinon la phrase de l'ecran decrit un ensemble qui n'est pas celui du calcul.
     const r = coutMoyenParEngagement([L(100, 50), L(null, 30), L(80, 0), L(20, 10)]);
-    expect(r.campagnes).toBe(2);
-    expect(r.ecartees).toBe(2);
+    expect(r.campagnes).toBe(3);
+    expect(r.ecartees).toBe(1);
   });
 });
 
@@ -120,8 +125,15 @@ describe('le cout par engagement tout confondu', () => {
   });
 
   it('aucune publicite mesurable : rien a ajouter, et aucune devise a comparer', () => {
-    const r = coutToutConfondu([L(10, 100)], 'EUR', [L(null, 3), L(5, 0)], 'USD');
+    const r = coutToutConfondu([L(10, 100)], 'EUR', [L(null, 3)], 'USD');
     expect(r).toMatchObject({ devise: 'EUR', raison: 'push_seul' });
+  });
+
+  it('🔴 une publicite qui a depense SANS arrivee entre dans le chiffre du haut', () => {
+    // (10 + 5) / 100 = 0,15 : ses 5 euros comptent, meme si personne n'a ecrit sur la periode.
+    const r = coutToutConfondu([L(10, 100)], 'EUR', [L(5, 0)], 'EUR');
+    expect(r.moyen.valeur).toBe(0.15);
+    expect(r.raison).toBe('reunis');
   });
 
   it('aucune campagne push mesurable : le chiffre est celui des publicites, dans leur devise', () => {

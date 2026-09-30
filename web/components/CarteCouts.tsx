@@ -245,8 +245,8 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                     en sortent, des DEUX termes. Sans cette phrase, un lecteur qui compte les lignes du
                     tableau et refait la division trouverait autre chose et croirait le chiffre faux. */}
                 {t(
-                  `Calculé sur ${moyenPush.campagnes} campagne(s)${moyenPush.ecartees > 0 ? `, ${moyenPush.ecartees} écartée(s) faute de coût chiffrable ou de personne engagée` : ''}.`,
-                  `Computed over ${moyenPush.campagnes} campaign(s)${moyenPush.ecartees > 0 ? `, ${moyenPush.ecartees} left out for lack of a priceable cost or an engaged person` : ''}.`,
+                  `Calculé sur ${moyenPush.campagnes} campagne(s), celles sans personne engagée comprises${moyenPush.ecartees > 0 ? `, ${moyenPush.ecartees} écartée(s) faute de coût chiffrable` : ''}.`,
+                  `Computed over ${moyenPush.campagnes} campaign(s), those with nobody engaged included${moyenPush.ecartees > 0 ? `, ${moyenPush.ecartees} left out for lack of a priceable cost` : ''}.`,
                 )}
               </p>
               {campagnes.tronque && (
@@ -308,8 +308,8 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                       {/* Ce qu'est un engagé ici, dit à l'écran : sans cette phrase, on le lirait « prospect qualifié »,
                           qui est l'étape suivante de l'entonnoir d'une publicité. */}
                       {t(
-                        `Un engagé est une personne qui a cliqué sur la publicité puis écrit sur WhatsApp. Calculé sur ${moyenPubs.campagnes} publicité(s)${moyenPubs.ecartees > 0 ? `, ${moyenPubs.ecartees} écartée(s) faute de dépense relue ou de personne engagée` : ''}.`,
-                        `An engaged person clicked the ad and then wrote on WhatsApp. Computed over ${moyenPubs.campagnes} ad(s)${moyenPubs.ecartees > 0 ? `, ${moyenPubs.ecartees} left out for lack of a read spend or an engaged person` : ''}.`,
+                        `Un engagé est une personne qui a cliqué sur la publicité puis écrit sur WhatsApp. Calculé sur ${moyenPubs.campagnes} publicité(s), celles sans personne engagée comprises${moyenPubs.ecartees > 0 ? `, ${moyenPubs.ecartees} écartée(s) faute de dépense relue` : ''}.`,
+                        `An engaged person clicked the ad and then wrote on WhatsApp. Computed over ${moyenPubs.campagnes} ad(s), those with nobody engaged included${moyenPubs.ecartees > 0 ? `, ${moyenPubs.ecartees} left out for lack of a read spend` : ''}.`,
                       )}
                     </p>
                   </>
