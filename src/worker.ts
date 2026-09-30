@@ -1368,7 +1368,14 @@ async function main(): Promise<void> {
           couverture: v.depense?.couverture ?? null,
           });
           // La dépense jour par jour, lue dans le même appel : c'est elle que Performance lab chiffre sur une période.
-          await publicites.noterDepensesJour(t, campagneId, v.depense?.jours ?? []);
+          // Son échec est journalisé et n'arrête pas le balayage : sinon les campagnes suivantes de l'espace
+          // perdraient statut et cumul à ce passage, pour une donnée secondaire (relecture du 2026-09-30).
+          try {
+            await publicites.noterDepensesJour(t, campagneId, v.depense?.jours ?? []);
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error(`suivi des publicités : jours de dépense non écrits pour la campagne ${campagneId} :`, err instanceof Error ? err.message : err);
+          }
         },
         connexions: connexionsPub,
         // Sur le code de Meta, jamais sur la phrase : une garde qui lit une phrase casse en silence le jour où

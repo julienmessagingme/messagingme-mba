@@ -393,7 +393,8 @@ export class PgPublicitesStore {
     await this.pool.query(
       `insert into pubs_depense_jour (tenant_id, campagne_id, jour, depense)
        select $1, $2, j.jour, j.depense from unnest($3::date[], $4::numeric[]) as j(jour, depense)
-       on conflict (tenant_id, campagne_id, jour) do update set depense = excluded.depense`,
+       on conflict (tenant_id, campagne_id, jour) do update set depense = excluded.depense
+         where pubs_depense_jour.depense is distinct from excluded.depense`,
       [tenantId, campagneId, jours.map((j) => j.jour), jours.map((j) => j.depense)],
     );
   }

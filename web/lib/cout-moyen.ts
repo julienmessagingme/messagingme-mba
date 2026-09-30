@@ -36,15 +36,20 @@ export interface CoutMoyen {
   ecartees: number;
 }
 
+/**
+ * Ce qui est entre dans le chiffre du haut, pour que l'ecran le dise juste : `reunis` (push et publicites),
+ * `push_seul` (aucune publicite mesurable, ou leur liste en panne : rien a dire), `pubs_seules` (aucune campagne push
+ * mesurable), `devises_differentes` et `devise_inconnue` (les deux sont mesurables mais ne s'additionnent pas : le
+ * chiffre reste celui du push).
+ */
+export type RaisonToutConfondu = 'reunis' | 'push_seul' | 'pubs_seules' | 'devises_differentes' | 'devise_inconnue';
+
 /** Le chiffre du haut, tout confondu, et ce qui y est entré. */
 export interface CoutToutConfondu {
   moyen: CoutMoyen;
   /** La devise du chiffre. */
   devise: string | null;
-  /** Les publicites sont-elles DANS le chiffre ? */
-  pubsAdditionnees: boolean;
-  /** Les deux listes sont mesurables mais pas dans la meme devise : le chiffre reste celui du push, et l'ecran le dit. */
-  devisesDifferentes: boolean;
+  raison: RaisonToutConfondu;
 }
 
 /**
@@ -53,8 +58,8 @@ export interface CoutToutConfondu {
  *
  * 🔴 DEUX DEVISES NE S'ADDITIONNENT PAS. Les tarifs des messages viennent de Meta, la depense publicitaire du compte
  * publicitaire : un compte en dollars ajoute a des envois en euros produirait un montant faux et credible. Le
- * chiffre retombe alors sur le push, et `devisesDifferentes` fait dire pourquoi. Une devise inconnue d'un cote n'est
- * pas une devise egale.
+ * chiffre retombe alors sur le push, et `raison` fait dire pourquoi. Une devise inconnue d'un cote n'est pas une
+ * devise egale.
  *
  * `pubs` a `null` = la liste n'a pas pu etre lue : le chiffre est celui du push, sans rien pretendre des publicites.
  */
@@ -63,16 +68,16 @@ export function coutToutConfondu(
   pubs: readonly LigneMesurable[] | null, devisePubs: string | null,
 ): CoutToutConfondu {
   const mp = coutMoyenParEngagement(push);
-  const seulPush = (devisesDifferentes: boolean): CoutToutConfondu =>
-    ({ moyen: mp, devise: devisePush, pubsAdditionnees: false, devisesDifferentes });
-  if (pubs === null) return seulPush(false);
+  const seulPush = (raison: RaisonToutConfondu): CoutToutConfondu => ({ moyen: mp, devise: devisePush, raison });
+  if (pubs === null) return seulPush('push_seul');
   const mb = coutMoyenParEngagement(pubs);
   // Rien de mesurable cote publicites : rien a ajouter, et aucune devise a comparer.
-  if (mb.campagnes === 0) return seulPush(false);
+  if (mb.campagnes === 0) return seulPush('push_seul');
   // Rien de mesurable cote push : le chiffre est celui des publicites, dans leur devise.
-  if (mp.campagnes === 0) return { moyen: mb, devise: devisePubs, pubsAdditionnees: true, devisesDifferentes: false };
-  if (devisePush === null || devisePush !== devisePubs) return seulPush(true);
-  return { moyen: coutMoyenParEngagement([...push, ...pubs]), devise: devisePush, pubsAdditionnees: true, devisesDifferentes: false };
+  if (mp.campagnes === 0) return { moyen: mb, devise: devisePubs, raison: 'pubs_seules' };
+  if (devisePush === null || devisePubs === null) return seulPush('devise_inconnue');
+  if (devisePush !== devisePubs) return seulPush('devises_differentes');
+  return { moyen: coutMoyenParEngagement([...push, ...pubs]), devise: devisePush, raison: 'reunis' };
 }
 
 export function coutMoyenParEngagement(lignes: readonly LigneMesurable[]): CoutMoyen {

@@ -95,16 +95,22 @@ const lotCampagnesSchema = z.record(z.string(), campagneSuivieSchema);
 /** Le nombre de jours relus par campagne. Au-delà (près de trois ans de diffusion), le journal le dit. */
 const JOURS_PAR_LECTURE = 1000;
 
+/**
+ * Les jours de dépense, sous l'alias `jours` de la même expansion (`.as(jours)`). Forme mesurée le 2026-09-30 sur
+ * une vraie campagne : une ligne par jour de diffusion, `date_start` = le jour.
+ */
+const joursSchema = z.object({
+  data: z.array(z.object({
+    spend: z.string().optional(),
+    date_start: z.string().optional(),
+  })).optional(),
+  paging: z.object({ next: z.string().optional() }).optional(),
+});
+
 const lotInsightsSchema = z.record(z.string(), z.object({
-  // Les jours, sous l'alias `jours` de la même expansion (`.as(jours)`). Forme mesurée le 2026-09-30 sur une
-  // vraie campagne : une ligne par jour de diffusion, `date_start` = le jour.
-  jours: z.object({
-    data: z.array(z.object({
-      spend: z.string().optional(),
-      date_start: z.string().optional(),
-    })).optional(),
-    paging: z.object({ next: z.string().optional() }).optional(),
-  }).optional(),
+  // Les jours, sous l'alias `jours`, lus À PART (`joursSchema`) : une forme inattendue ne doit pas faire perdre la
+  // dépense cumulée, les clics et les impressions de tout le paquet (relecture du 2026-09-30).
+  jours: z.unknown().optional(),
   insights: z.object({
     data: z.array(z.object({
       spend: z.string().optional(),
@@ -707,11 +713,20 @@ export class MetaPubsCreationClient extends ClientGraph {
         headers: { Authorization: `Bearer ${jeton}` },
       });
       const lu = lotInsightsSchema.safeParse(brut);
-      if (!lu.success) continue;
+      if (!lu.success) {
+        // eslint-disable-next-line no-console
+        console.warn(`suivi des publicités : statistiques illisibles pour ${paquet.length} campagne(s), non relues à ce passage`);
+        continue;
+      }
       for (const [id, c] of Object.entries(lu.data)) {
         const ligne = c.insights?.data?.[0];
-        const jours = joursDeDepense(c.jours?.data ?? []);
-        if (c.jours?.paging?.next !== undefined) {
+        const lusJours = c.jours === undefined ? null : joursSchema.safeParse(c.jours);
+        if (lusJours !== null && !lusJours.success) {
+          // eslint-disable-next-line no-console
+          console.warn(`suivi des publicités : campagne ${id}, jours de dépense illisibles, le cumul est gardé`);
+        }
+        const jours = joursDeDepense(lusJours?.success ? (lusJours.data.data ?? []) : []);
+        if (lusJours?.success && lusJours.data.paging?.next !== undefined) {
           // eslint-disable-next-line no-console
           console.warn(`suivi des publicités : campagne ${id}, plus de ${JOURS_PAR_LECTURE} jours de dépense, les suivants ne sont pas relus`);
         }

@@ -97,39 +97,39 @@ describe('le cout par engagement tout confondu', () => {
     const r = coutToutConfondu([L(10, 100)], 'EUR', [L(30, 10)], 'EUR');
     expect(r.moyen.valeur).toBe(0.3636);
     expect(r.devise).toBe('EUR');
-    expect(r.pubsAdditionnees).toBe(true);
-    expect(r.devisesDifferentes).toBe(false);
+    expect(r.raison).toBe('reunis');
   });
 
   it('🔴 deux devises ne s additionnent pas : le chiffre reste celui du push, et on le dit', () => {
     const r = coutToutConfondu([L(10, 100)], 'EUR', [L(30, 10)], 'USD');
     expect(r.moyen.valeur).toBe(0.1);
     expect(r.devise).toBe('EUR');
-    expect(r.pubsAdditionnees).toBe(false);
-    expect(r.devisesDifferentes).toBe(true);
+    expect(r.raison).toBe('devises_differentes');
   });
 
   it('🔴 une devise INCONNUE d un cote n est pas une devise egale', () => {
-    expect(coutToutConfondu([L(10, 100)], 'EUR', [L(30, 10)], null).pubsAdditionnees).toBe(false);
-    expect(coutToutConfondu([L(10, 100)], null, [L(30, 10)], 'EUR').pubsAdditionnees).toBe(false);
+    // Et l'ecran ne parle pas d'une « autre devise » qu'il ne connait pas (relecture du 2026-09-30).
+    expect(coutToutConfondu([L(10, 100)], 'EUR', [L(30, 10)], null).raison).toBe('devise_inconnue');
+    expect(coutToutConfondu([L(10, 100)], null, [L(30, 10)], 'EUR').raison).toBe('devise_inconnue');
   });
 
   it('la liste des publicites en panne : le chiffre est celui du push, sans rien pretendre des publicites', () => {
     const r = coutToutConfondu([L(10, 100)], 'EUR', null, null);
-    expect(r).toMatchObject({ devise: 'EUR', pubsAdditionnees: false, devisesDifferentes: false });
+    expect(r).toMatchObject({ devise: 'EUR', raison: 'push_seul' });
     expect(r.moyen.valeur).toBe(0.1);
   });
 
   it('aucune publicite mesurable : rien a ajouter, et aucune devise a comparer', () => {
     const r = coutToutConfondu([L(10, 100)], 'EUR', [L(null, 3), L(5, 0)], 'USD');
-    expect(r).toMatchObject({ devise: 'EUR', pubsAdditionnees: false, devisesDifferentes: false });
+    expect(r).toMatchObject({ devise: 'EUR', raison: 'push_seul' });
   });
 
   it('aucune campagne push mesurable : le chiffre est celui des publicites, dans leur devise', () => {
     const r = coutToutConfondu([L(null, 3)], 'EUR', [L(30, 10)], 'USD');
     expect(r.moyen.valeur).toBe(3);
     expect(r.devise).toBe('USD');
-    expect(r.pubsAdditionnees).toBe(true);
+    // Et l'ecran le dit : le chiffre ne « reunit » rien.
+    expect(r.raison).toBe('pubs_seules');
   });
 
   it('rien de mesurable nulle part : `null`, jamais zero', () => {

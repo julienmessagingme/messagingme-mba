@@ -117,6 +117,16 @@ describe('lireDepenses', () => {
     expect(decodeURIComponent(urls[0] ?? '')).toContain('.time_increment(1).limit(1000).as(jours){spend}');
   });
 
+  it('🔴 des jours de forme INATTENDUE ne font pas perdre le cumul de la campagne', async () => {
+    // Ils voyagent dans le même appel : lus avec le reste, une forme imprévue ferait tomber dépense, clics et
+    // impressions de tout le paquet (relecture du 2026-09-30).
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { c } = client({ 'c-1': { insights: { data: [{ spend: '3', inline_link_clicks: '2' }] }, jours: { data: 'pas un tableau' } } });
+    const r = (await c.lireDepenses(['c-1'], 'jeton')).get('c-1');
+    spy.mockRestore();
+    expect(r).toMatchObject({ depense: 3, clics: 2, jours: [] });
+  });
+
   it('🔴 un jour illisible est IGNORÉ, un jour rendu deux fois garde sa dernière valeur', async () => {
     // Deux fois le même jour dans un seul upsert ferait échouer l'instruction, donc tout le balayage de l'espace.
     const { c } = client({

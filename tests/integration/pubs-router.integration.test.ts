@@ -461,6 +461,19 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
       expect(l).toMatchObject({ depense: 3, engages: 1, coutParEngagement: 3 });
     });
 
+    it('🔴 une arrivée HORS de la période ne compte pas parmi les engagés', async () => {
+      // Sans les bornes des arrivées, ce contact vieilli de cinq jours compterait sur une période de deux jours.
+      const vieux = (await pool.query<{ id: string }>(
+        `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000709') returning id`, [tenantId],
+      )).rows[0]!.id;
+      expect(vieux).toBeTruthy();
+      await arrivees.enregistrer(tenantId, '33600000709', arrivee('wamid.cpe-vieux'));
+      await arrivees.noterIssue(tenantId, 'wamid.cpe-vieux', { campagneId: 'camp-cpe', issue: 'scenario', repriseLe: null });
+      await vieillir('wamid.cpe-vieux', 5);
+      const lignes = await publicites.coutParPub(tenantId, periode, { inclureArchivees: false });
+      expect(lignes.find((x) => x.depense === 3)).toMatchObject({ engages: 1 });
+    });
+
     it('une publicité sans dépense ni arrivée sur la période n’est pas listée ; une arrivée sans dépense garde une dépense INCONNUE', async () => {
       await poserPub(tenantId, 'camp-cpe-muette');
       await poserPub(tenantId, 'camp-cpe-sans-depense');
@@ -489,7 +502,11 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
       await poserPub(voisinId, 'camp-cpe');
       await publicites.noterDepensesJour(voisinId, 'camp-cpe', [{ jour: aujourdhui, depense: 99 }]);
       const chezNous = await publicites.coutParPub(tenantId, periode, { inclureArchivees: true });
-      expect(chezNous.some((x) => x.depense === 99 || x.depense === 101)).toBe(false);
+      // Notre `camp-cpe` garde SA dépense : sans le filtre d'espace sur les jours, elle vaudrait 3 + 99.
+      const idCpe = (await pool.query<{ id: string }>(
+        `select id from publicites where tenant_id = $1 and campagne_id = 'camp-cpe'`, [tenantId],
+      )).rows[0]!.id;
+      expect(chezNous.find((x) => x.publiciteId === idCpe)).toMatchObject({ depense: 3, engages: 1 });
       const chezLui = await publicites.coutParPub(voisinId, periode, { inclureArchivees: true });
       expect(chezLui).toEqual([expect.objectContaining({ depense: 99, engages: 0 })]);
     });

@@ -28,9 +28,11 @@ import { Nd, useErreurRegroupee } from '@/components/Nd';
  * est un ratio ; « ce que la période a coûté » est un total ; « ce que l'IA m'a coûté » est un autre total,
  * sur un autre budget. Les additionner n'aurait aucun sens, et la carte ne propose donc AUCUN grand total.
  *
- * ⚠️ TROIS APPELS SEPARES, ET C'EST VOULU. Les fondre en une route ferait payer à chaque ouverture ce dont
- * l'écran n'a pas encore besoin, et surtout : si l'un des trois tombe, les deux autres s'affichent. Une
- * route unique ferait disparaître la carte entière pour une panne d'un tiers de son contenu.
+ * ⚠️ UN APPEL PAR TABLEAU, ET C'EST VOULU (quatre depuis les publicités, 2026-09-30). Les fondre en une route
+ * ferait payer à chaque ouverture ce dont l'écran n'a pas encore besoin, et surtout : si l'un tombe, les autres
+ * s'affichent. Une route unique ferait disparaître la carte entière pour une panne d'une partie de son contenu.
+ * ⚠️ Une panne des campagnes push éteint pourtant la ligne entière, publicités comprises : leur accordéon vit
+ * dans cette ligne. L'autre sens est tenu (une panne des publicités laisse le push).
  */
 
 const CARD = 'rounded-carte border border-ink-200 bg-white p-5';
@@ -160,14 +162,21 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                 />
                 {t('Inclure les campagnes archivées', 'Include archived campaigns')}
               </label>
-              {(tout.pubsAdditionnees || tout.devisesDifferentes) && (
+              {tout.raison !== 'push_seul' && (
                 <p className="mb-2 text-xs text-ink-500" data-testid="cout-tout-confondu">
-                  {tout.devisesDifferentes
-                    ? t(
-                      `Les publicités sont dans une autre devise (${listePubs?.currency ?? '?'}) : elles ne sont pas additionnées au chiffre du haut.`,
-                      `Ads are in another currency (${listePubs?.currency ?? '?'}): they are not added to the figure above.`,
-                    )
-                    : t('Le chiffre du haut réunit les campagnes push et les publicités.', 'The figure above combines push campaigns and ads.')}
+                  {tout.raison === 'reunis' && t('Le chiffre du haut réunit les campagnes push et les publicités.', 'The figure above combines push campaigns and ads.')}
+                  {tout.raison === 'pubs_seules' && t(
+                    'Le chiffre du haut ne porte que sur les publicités : aucune campagne push n’est mesurable sur cette période.',
+                    'The figure above covers ads only: no push campaign is measurable over this period.',
+                  )}
+                  {tout.raison === 'devises_differentes' && t(
+                    `Les publicités sont dans une autre devise (${listePubs?.currency ?? ''}) : elles ne sont pas additionnées au chiffre du haut.`,
+                    `Ads are in another currency (${listePubs?.currency ?? ''}): they are not added to the figure above.`,
+                  )}
+                  {tout.raison === 'devise_inconnue' && t(
+                    'Les publicités ne sont pas additionnées au chiffre du haut : une des deux devises est inconnue.',
+                    'Ads are not added to the figure above: one of the two currencies is unknown.',
+                  )}
                 </p>
               )}
               <div className="divide-y divide-ink-100 rounded-controle border border-ink-100">
