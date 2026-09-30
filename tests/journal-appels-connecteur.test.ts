@@ -163,7 +163,7 @@ describe('les deux appelants qui ne journalisaient RIEN le font', () => {
       journalAppels: journal,
       libelleRequete: async () => 'Chercher une commande',
     });
-    const r = await bloc('t1', '33600', 'rq1');
+    const r = await bloc('t1', '33600', 'rq1', 'integre');
     expect(r.ok, 'un 500 vide le champ, comme avant').toBe(false);
     expect(ouvertures[0]).toMatchObject({ source: 'scenario', toolName: 'Chercher une commande' });
   });
@@ -175,7 +175,7 @@ describe('les deux appelants qui ne journalisaient RIEN le font', () => {
       projectionContact: async () => null,
       journalAppels: journal,
     });
-    await bloc('t1', '33600', 'rq1');
+    await bloc('t1', '33600', 'rq1', 'integre');
     // Une ligne incomplète vaut mieux que pas de ligne : même doctrine que `workflow_advance_failures`.
     expect(ouvertures[0]).toMatchObject({ source: 'scenario', toolName: 'rq1' });
   });
@@ -205,7 +205,7 @@ describe('les deux appelants qui ne journalisaient RIEN le font', () => {
       ...depsConnecteur(repond(200)),
       projectionContact: async () => null,
     });
-    expect((await bloc('t1', '33600', 'rq1')).ok).toBe(true);
+    expect((await bloc('t1', '33600', 'rq1', 'integre')).ok).toBe(true);
   });
 });
 

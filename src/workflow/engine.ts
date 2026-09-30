@@ -46,8 +46,9 @@ export type WorkflowAction =
   | { kind: 'clearField'; key: string }
   /**
    * Bloc « Appel HTTP » : joue la requête `requestId` de la bibliothèque et range sa réponse dans `champCible`.
-   * L'action porte de quoi aller chercher la réponse, pas la réponse : le walk est pur, l'exécuteur fait
-   * l'appel.
+   * `champCible` vide = un appel qui POUSSE (envoyer un message, poser une étiquette chez le client) : rien à
+   * ranger, seul le succès compte. L'action porte de quoi aller chercher la réponse, pas la réponse : le walk
+   * est pur, l'exécuteur fait l'appel.
    */
   | { kind: 'appelHttp'; requestId: string; champCible: string }
   /**
@@ -624,11 +625,12 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     return { kind: 'field', key, value: valeurDuChamp(node.data, ctx) };
   }
   if (node.type === 'http') {
-    // Bloc incomplet (aucun appel choisi, ou aucun champ cible) -> `null`, un no-op qui laisse le parcours
-    // continuer : un bloc à moitié réglé ne doit pas casser un scénario en production.
+    // Aucun appel choisi -> `null`, un no-op qui laisse le parcours continuer : un bloc à moitié réglé ne doit
+    // pas casser un scénario en production. Le champ cible, lui, est facultatif : sans lui, l'appel POUSSE
+    // (Brevo répond 204 à un événement, il n'y a rien à ranger).
     const requestId = String(node.data.requestId ?? '').trim();
     const champCible = String(node.data.champCible ?? '').trim();
-    return requestId !== '' && champCible !== '' ? { kind: 'appelHttp', requestId, champCible } : null;
+    return requestId !== '' ? { kind: 'appelHttp', requestId, champCible } : null;
   }
   if (node.type === 'js') {
     /**

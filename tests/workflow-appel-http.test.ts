@@ -58,12 +58,19 @@ describe('le bloc dans le graphe', () => {
     });
   });
 
-  it('⚠️ un bloc À MOITIÉ réglé ne fait RIEN, et ne casse pas le parcours', () => {
+  it('⚠️ un bloc SANS APPEL choisi ne fait RIEN, et ne casse pas le parcours', () => {
     // Un scénario en production ne doit pas s'arrêter parce qu'un bloc est incomplet : il ne fait rien, et
     // l'écran le montre. Même traitement qu'un bloc tag sans tag.
-    for (const data of [{}, { requestId: 'req-1' }, { champCible: 'x' }, { requestId: '  ', champCible: 'x' }]) {
+    for (const data of [{}, { champCible: 'x' }, { requestId: '  ', champCible: 'x' }]) {
       expect(walk(graphe(data), 'a').actions.some((s) => s.action.kind === 'appelHttp')).toBe(false);
     }
+  });
+
+  it('🔴 un appel choisi SANS champ cible est un appel qui POUSSE, pas un bloc incomplet', () => {
+    // Envoyer un événement à Brevo (réponse 204, rien à ranger) : exiger un champ obligeait à garder un
+    // identifiant inutile, et un appel sans réponse n'avait même rien à cocher.
+    const r = walk(graphe({ requestId: 'req-1' }), 'a');
+    expect(r.actions.map((s) => s.action)).toContainEqual({ kind: 'appelHttp', requestId: 'req-1', champCible: '' });
   });
 });
 
@@ -93,7 +100,7 @@ describe('le câblage du bloc', () => {
     const appel = creerAppelHttpScenario(deps({
       fetchImpl: (async () => new Response('{"statut":"expédiée"}', { status: 200 })) as unknown as typeof fetch,
     }) as never);
-    expect(await appel('t1', '33600000001', 'req-1')).toEqual({ ok: true, valeur: 'expédiée' });
+    expect(await appel('t1', '33600000001', 'req-1', 'integre')).toEqual({ ok: true, valeur: 'expédiée' });
   });
 
   it('🔴 un connecteur en panne rend `ok: false` et une valeur VIDE, il ne LÈVE pas', async () => {
@@ -102,7 +109,7 @@ describe('le câblage du bloc', () => {
     const appel = creerAppelHttpScenario(deps({
       fetchImpl: (async () => { throw new Error('réseau'); }) as unknown as typeof fetch,
     }) as never);
-    expect(await appel('t1', '33600000001', 'req-1')).toEqual({ ok: false, valeur: '' });
+    expect(await appel('t1', '33600000001', 'req-1', 'integre')).toEqual({ ok: false, valeur: '' });
   });
 
   it('🔴 une requête introuvable NE PART PAS sur le réseau', async () => {
@@ -111,7 +118,7 @@ describe('le câblage du bloc', () => {
       requetes: { parId: async () => null },
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }) as never);
-    expect(await appel('t1', '33600000001', 'req-absente')).toEqual({ ok: false, valeur: '' });
+    expect(await appel('t1', '33600000001', 'req-absente', 'integre')).toEqual({ ok: false, valeur: '' });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -129,7 +136,45 @@ describe('le câblage du bloc', () => {
       },
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }) as never);
-    expect(await appel('t1', '33600000001', 'req-1')).toEqual({ ok: false, valeur: '' });
+    expect(await appel('t1', '33600000001', 'req-1', 'integre')).toEqual({ ok: false, valeur: '' });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  describe('un appel qui POUSSE (bloc sans champ cible)', () => {
+    // La requête ne déclare AUCUN champ de réponse : c'est le cas d'un événement Brevo, qui répond 204.
+    const sansSortie = {
+      requetes: {
+        parId: async () => ({
+          id: 'req-1', tenantId: 't1', sourceId: 's1', label: 'Événement',
+          methode: 'POST' as const, chemin: '/events', parametres: [], entetes: [],
+          corps: { mode: 'aucun' as const }, variables: [], outputPaths: [],
+          valeursTest: {}, outils: 0, updatedAt: '2026-09-30T00:00:00.000Z',
+        }),
+      },
+    };
+
+    it('🔴 un 204 SANS CORPS est un succès, sans champ de réponse déclaré', async () => {
+      const appel = creerAppelHttpScenario(deps({
+        ...sansSortie,
+        fetchImpl: (async () => new Response(null, { status: 204 })) as unknown as typeof fetch,
+      }) as never);
+      expect(await appel('t1', '33600000001', 'req-1', 'pousse')).toEqual({ ok: true, valeur: '' });
+    });
+
+    it('🔴 la même requête en INTÈGRE reste refusée : rien à lire, et elle ne part pas', async () => {
+      // L'autre sens : c'est bien le bloc sans champ qui ouvre la poussée, pas un assouplissement général.
+      const fetchImpl = vi.fn();
+      const appel = creerAppelHttpScenario(deps({ ...sansSortie, fetchImpl: fetchImpl as unknown as typeof fetch }) as never);
+      expect(await appel('t1', '33600000001', 'req-1', 'integre')).toEqual({ ok: false, valeur: '' });
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('un refus du système du client (4xx) reste un échec', async () => {
+      const appel = creerAppelHttpScenario(deps({
+        ...sansSortie,
+        fetchImpl: (async () => new Response('{"message":"bad"}', { status: 400 })) as unknown as typeof fetch,
+      }) as never);
+      expect(await appel('t1', '33600000001', 'req-1', 'pousse')).toEqual({ ok: false, valeur: '' });
+    });
   });
 });

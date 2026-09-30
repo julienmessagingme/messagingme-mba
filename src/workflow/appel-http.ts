@@ -65,7 +65,9 @@ export interface DepsAppelHttpScenario extends DepsResolveurHttp {
  */
 export function creerAppelHttpScenario(deps: DepsAppelHttpScenario) {
   const appel = creerAppelConnecteur(deps);
-  return async (tenantId: string, waId: string, requestId: string): Promise<{ ok: boolean; valeur: string }> => {
+  return async (
+    tenantId: string, waId: string, requestId: string, lecture: 'pousse' | 'integre',
+  ): Promise<{ ok: boolean; valeur: string }> => {
     try {
       const contact = await deps.projectionContact(tenantId, waId);
       const r = await appel({
@@ -78,10 +80,11 @@ export function creerAppelHttpScenario(deps: DepsAppelHttpScenario) {
         // variable `modele` requise sera refusée avec sa raison.
         args: {},
         /**
-         * Un scénario intègre la réponse et lit les champs de la requête (`champs: null`) : il n'a pas d'outil,
-         * donc pas de liste à lui.
+         * Un bloc avec champ cible intègre la réponse et lit les champs de la requête (`champs: null`) : il n'a
+         * pas d'outil, donc pas de liste à lui. Sans champ cible, il pousse : le corps n'est pas lu, un 2xx
+         * (204 compris) vaut succès, et la requête n'a pas à déclarer de champ de réponse.
          */
-        lecture: { nature: 'integre', champs: null } as const,
+        lecture: lecture === 'pousse' ? { nature: 'pousse' } as const : { nature: 'integre', champs: null } as const,
         signal: AbortSignal.timeout(DELAI_APPEL_HTTP_MS),
         journal: deps.journalAppels
           ? {
@@ -101,7 +104,8 @@ export function creerAppelHttpScenario(deps: DepsAppelHttpScenario) {
         console.warn(`workflow appelHttp: ${requestId} a echoue pour ${waId} (${r.erreur ?? 'sans raison'}), le champ est vide`);
         return { ok: false, valeur: '' };
       }
-      return { ok: true, valeur: valeurPourChamp(r.contenu) };
+      // Un appel qui pousse n'a rien à ranger : son contenu n'est que le verdict (`{ok, statut}`).
+      return { ok: true, valeur: lecture === 'pousse' ? '' : valeurPourChamp(r.contenu) };
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`workflow appelHttp: ${requestId} a leve pour ${waId}:`, messageDe(err));

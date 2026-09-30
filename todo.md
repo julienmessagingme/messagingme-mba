@@ -101,24 +101,17 @@ Trailblazer. La partie serveur de
 L1 (migration 0183, client REST, store, connexion, routes, écrans) est DÉPLOYÉE depuis le 2026-09-27, invisible tant
 que `SALESFORCE_CLIENT_ID` n'est pas posé (la route rend 404, la carte se cache).
 
-## 🟠 Connecteurs API et bloc « Appel HTTP » : trois défauts vus pendant l'essai Brevo (2026-09-28)
+## 🟠 Connecteurs API : un défaut restant, vu pendant l'essai Brevo (2026-09-28)
 
-Vus en montant, avec Julien, un scénario qui répond sur le numéro WhatsApp d'un client Brevo par l'API de Brevo
-(`POST /v3/whatsapp/sendMessage`).
+Vu en montant, avec Julien, un scénario qui répond sur le numéro WhatsApp d'un client Brevo par l'API de Brevo.
 
-- **Le bloc « Appel HTTP » d'un scénario suppose un appel qui RAMÈNE une donnée.** Il exige un champ cible
-  (`src/workflow/engine.ts`, sinon le bloc est un no-op) ET au moins un champ de réponse déclaré sur la requête
-  (`src/workflow/appel-http.ts` passe `lecture: { nature: 'integre', champs: null }` en dur ; sans champ, refus
-  « ce connecteur ne déclare aucun champ à lire »). Or un appel qui POUSSE (envoyer un message, poser une
-  étiquette, créer une fiche) n'a rien d'utile à ranger : on a dû garder `messageId` dans un champ inutile. C'est
-  la question que la migration 0150 a tranchée pour les outils d'agent (`nature` `pousse` / `integre`), jamais
-  portée au bloc de scénario.
-- **Les champs de réponse ne se cochent qu'après un vrai « Essayer ».** Pour une API qui envoie, l'essai envoie
-  un vrai message (ici un WhatsApp, qui exige en plus une fenêtre de 24 h ouverte). Disparaît en grande partie
-  avec le point précédent.
 - **Le mode d'authentification et le nom d'en-tête d'un système ne se modifient pas après création**
   (`web/components/ConnecteursBibliotheque.tsx` : seul le secret se remplace), et le nom d'en-tête est
   pré-rempli à `x-api-key`. Brevo attend `api-key` : il a fallu supprimer et recréer le système deux fois.
+- ✅ **Corrigé le 2026-09-30** : le bloc « Appel HTTP » d'un scénario accepte un appel qui POUSSE. Sans champ
+  cible, la lecture est `pousse` (corps non lu, un 2xx vaut succès, 204 compris, aucun champ de réponse exigé,
+  donc plus besoin d'un vrai « Essayer » pour en cocher un) ; avec un champ cible, rien ne change. Mesuré avant :
+  le seul bloc `http` en production avait un champ, donc aucun comportement n'a bougé.
 
 ## 🟠 `features.md` se contredit à TROIS endroits, trouvé en écrivant les fiches d'aide (2026-09-23)
 

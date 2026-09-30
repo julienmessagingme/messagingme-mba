@@ -1793,3 +1793,34 @@ describe('WorkflowExecutor : modèle refusé faute de retrait de la liste de l�
     expect(escalations).toEqual([]);
   });
 });
+
+describe('bloc « Appel HTTP » à l’exécution', () => {
+  const graphe = (data: Record<string, unknown>): WorkflowGraph => ({
+    nodes: [n('h', 'http', data), n('t', 'tag', { tag: 'apres' })],
+    edges: [e('e1', 'h', 't')],
+  });
+
+  it('🔴 sans champ cible, l’appel POUSSE et ne range RIEN', async () => {
+    // Aucun `setField('')` sur une clé vide : il écrirait un champ sans nom sur la fiche du contact.
+    const vus: string[] = [];
+    const g = graphe({ requestId: 'req-1' });
+    const { ex, calls } = make(g, {
+      appelHttp: async (_t, _w, id, lecture) => { vus.push(`${id}:${lecture}`); return { ok: true, valeur: '' }; },
+    });
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(vus).toEqual(['req-1:pousse']);
+    expect(calls.some((c) => c.startsWith('field:'))).toBe(false);
+    expect(calls).toContain('tag:apres');
+  });
+
+  it('🔴 avec un champ cible, il INTÈGRE et range la valeur', async () => {
+    const vus: string[] = [];
+    const g = graphe({ requestId: 'req-1', champCible: 'statut' });
+    const { ex, calls } = make(g, {
+      appelHttp: async (_t, _w, id, lecture) => { vus.push(`${id}:${lecture}`); return { ok: true, valeur: 'expédiée' }; },
+    });
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(vus).toEqual(['req-1:integre']);
+    expect(calls).toContain('field:statut=expédiée');
+  });
+});

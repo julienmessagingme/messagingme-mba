@@ -825,23 +825,28 @@ export function ConfigPanel({
             </p>
           )}
 
-          <label className="text-xs font-medium text-ink-900">{t('Où ranger la réponse', 'Where to store the answer')}</label>
+          <label className="text-xs font-medium text-ink-900">{t('Où ranger la réponse (facultatif)', 'Where to store the answer (optional)')}</label>
           <select
             data-testid="http-node-champ"
             className={`${cls} bg-white`}
             value={String(d.champCible ?? '')}
             onChange={(e) => onPatch({ champCible: e.target.value })}
           >
-            <option value="">{t('choisir un champ…', 'choose a field…')}</option>
+            <option value="">{t('ne rien ranger : l’appel envoie seulement', 'store nothing: the call only sends')}</option>
             {fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
           </select>
 
           {/* 🔴 CE QUE PERSONNE NE DEVINE, ET QUI DÉCIDE DE LA SUITE DU SCÉNARIO. */}
-          <p className="text-xs text-ink-500">
-            {t(
-              'Si l’appel échoue (système injoignable, information manquante), le champ est vidé. Branchez une condition « ce champ est vide » pour traiter ce cas : une valeur de la veille ferait prendre la bonne branche pour de mauvaises raisons.',
-              'If the call fails (unreachable system, missing information), the field is emptied. Add a condition “this field is empty” to handle that case: a value from yesterday would send the journey down the right branch for the wrong reasons.',
-            )}
+          <p className="text-xs text-ink-500" data-testid="http-node-aide">
+            {String(d.champCible ?? '') === ''
+              ? t(
+                'Sans champ, l’appel envoie une information (un événement, une étiquette, un message) sans rien attendre en retour : la réponse n’est pas lue, et le parcours continue qu’il réussisse ou non. Un échec reste visible dans le journal des appels.',
+                'Without a field, the call sends information (an event, a tag, a message) and expects nothing back: the answer is not read, and the journey continues whether it succeeds or not. A failure stays visible in the call log.',
+              )
+              : t(
+                'Si l’appel échoue (système injoignable, information manquante), le champ est vidé. Branchez une condition « ce champ est vide » pour traiter ce cas : une valeur de la veille ferait prendre la bonne branche pour de mauvaises raisons.',
+                'If the call fails (unreachable system, missing information), the field is emptied. Add a condition “this field is empty” to handle that case: a value from yesterday would send the journey down the right branch for the wrong reasons.',
+              )}
           </p>
         </div>
       )}
