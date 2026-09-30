@@ -5,6 +5,47 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 : tout sur la fiche, lots 1 et 2a, et la fiche contact en onglets
+
+**Lot 1 (`187b36bb`, `4938172b`, jaunes `657fad5a`).** La dernière analyse d'une conversation est recopiée sur la
+fiche du contact, dans la transaction même de `save`, et survit à l'effacement de la conversation. Migration 0196
+appliquée le 2026-09-30 à 16 h 30 UTC, AVANT le code : onze colonnes nullables sans défaut, un CHECK de cohérence
+(la copie est entière ou absente), un index partiel construit `CONCURRENTLY` sous un `lock_timeout` de 5 s. Règle de
+la plus récente : une analyse n'écrase la copie que si sa borne de fenêtre est postérieure ou égale, l'ancienne
+copie étant lue `for update`, donc deux conversations d'un même contact analysées en parallèle ne s'écrasent pas à
+rebours. Aucune reprise de l'historique (décision de Julien : « au fil de l'eau »).
+
+⚠️ **Le risque de départ lisait déjà les analyses des 90 derniers jours, et le brancher sur la seule copie aurait
+effacé ce passé au déploiement**, puisqu'aucune fiche n'en portait encore. Il lit la copie quand elle existe et
+retombe sur les conversations pour une fiche sans copie. Trouvé en relisant avant la revue, pas par un test.
+
+Premier essai réel : un message de Julien, analysé dans l'espace SANDBOX, a posé la copie sur sa fiche.
+
+**Les onglets de la fiche (`18dce92d`, `324fdac6`)** : Fiche, Tags, Champs, Analyse, Historique. 🔴 **Le premier
+commit a rendu la CI front rouge** : les onglets portaient `role="tab"`, et `contact-bilan.spec.ts` trouve le bouton
+Historique par `getByRole('button')`. Un rôle ARIA change la façon dont les tests trouvent l'élément : avant de
+changer le rôle ou le libellé d'un élément, on cherche dans tout `web/e2e` qui s'y appuie. Les onglets sont
+redevenus des boutons, et 21 cas e2e ont été rejoués en local.
+
+**Lot 2a (`5e2af1b1` serveur, `4b29bb53` console, jaunes `ec6832d5`).** Une liste unique des champs de la fiche
+(`src/crm/champs-fiche.ts`), que les connecteurs lisent : l'origine `fiche` remplace `contact:*` et
+`systeme:analyse_*`, qui sont RELUES (réécrites à la lecture comme à l'enregistrement), jamais refusées.
+`ficheDuContact` est une dépendance REQUISE du résolveur. Les clés de la liste sont réservées : ni la bibliothèque
+de champs, ni l'import CSV, ni l'API, ni un formulaire Flow ne peuvent en faire un champ perso.
+
+🔴 **Le cas par défaut de `resoudreVariable` rendait l'origine ELLE-MÊME** : une forme non réécrite partait comme
+valeur, l'objet entier dans le corps envoyé au client. Trouvé par un test de poussée d'opt-out qui envoyait
+`{"phone":{"type":"contact",...}}`. Il rend `null`, et le test est vérifié dans les deux sens.
+
+⚠️ **L'ordre de déploiement : le serveur, PUIS la console**, parce qu'une API d'avant refuse `fiche:*` à
+l'enregistrement. Le serveur est parti après le `5e8bc5b5` d'une session voisine, et il a été vérifié par le vrai
+code dans le conteneur : `ficheDuContact` sur la fiche SANDBOX rend la dernière analyse, et la requête `signaler`
+est relue en `fiche:wa_id`.
+
+⚠️ **La garde des formulaires Flow exempte `nom` et `wa_id`** (jaunes) : la garde complète cassait la création
+d'un formulaire avec une question « Nom », mesuré par mutation (quatre tests existants rouges). Les jaunes ne sont
+pas encore sur le VPS : ils partent avec le prochain déploiement serveur.
+
 ## 2026-09-30 : un fichier déposé se lit hors de la boucle d'événements
 
 Décidé par Julien le jour même, après la relecture du plafond de lignes : sous toutes les bornes de forme posées sur
