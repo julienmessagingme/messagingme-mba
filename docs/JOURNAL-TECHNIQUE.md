@@ -37,6 +37,16 @@ purge garde pour `claim`. Aucune automation ne partait (`waIdOfContact` filtre d
 l'invariant écrit dans `documentation.md` (§ Contacts, « un écrivain qui vise une fiche par son identifiant
 filtre `deleted_at is null` »). Sans migration, l'API seule change.
 
+**Déployé** le 2026-09-30 à 17 h 35 UTC (`ed9aa451`, avec la fiche d'aide `9f942d18`), après la CI verte job par
+job : `mba-api` et `mba-worker` reconstruits, NPM rechargé, `scripts/fumee.mjs` vert sur ses six chemins. Sonde
+exécutée PAR LE VRAI CODE dans `mba-api` sur la dernière fiche purgée de la production, avec des éditions VIDES
+(aucune écriture possible, même sans le correctif) : `applyEdits` et `getById` rendent null, `updated_at`
+inchangé, et une fiche active reste lue. Effacée ensuite. ⚠️ La CI de `ed9aa451` était rouge sur `unit`, pour
+une cause étrangère : `8190c1ea`, un commit de `.md` seul donc sans CI, avait changé la section des publicités
+de `features.md` sans la fiche d'aide qui la cite (`tests/aide-proposer.test.ts`). Réparée par `9f942d18`. Et la
+CI relancée sur `main` a été ANNULÉE par le push d'une autre session (même groupe de concurrence) : elle a été
+rejouée sur une étiquette jetable, que ce push ne pouvait pas annuler.
+
 **Le filtre est posé au verrou, pas seulement à la relecture.** Les `update` qui suivent n'ont que `id` et
 `tenant_id` : ne filtrer que la relecture aurait rendu 404 APRÈS avoir écrit, ce qu'aucune réponse HTTP ne
 montre. `SELECT_ONE` filtre aussi, donc `getById` (que seuls des tests lisent) rend null sur une fiche
