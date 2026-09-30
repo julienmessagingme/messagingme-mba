@@ -4,14 +4,14 @@
   "trailingSlash": true,
   "redirects": [
     {
-      "source": "/:chemin*",
+      "source": "/:chemin(.*)",
       "has": [
         {
           "type": "host",
           "value": "engageme-site.vercel.app"
         }
       ],
-      "destination": "https://engageme.messagingme.fr/:chemin*",
+      "destination": "https://engageme.messagingme.fr/:chemin",
       "permanent": true
     },
     {
