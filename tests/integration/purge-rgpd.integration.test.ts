@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgCampaignRepo } from '../../src/campaign/store.pg';
+import { creerNoteurJoignabilite } from '../../src/contacts/joignabilite.pg';
 
 /**
  * Intégration de la PURGE RGPD. ISOLÉE par tenant jetable (créé/détruit ici), jamais la prod « métier ».
@@ -28,6 +29,7 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
   let contactId = '';
   let convId = '';
   let autreTenantId = '';
+  let bloqueurId = '';
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
@@ -118,6 +120,23 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     // L'identifiant de l'outil du client (migration 0172) : il désigne cette personne chez le client.
     await pool.query(`update contacts set external_id = 'itest-ext-purge' where id = $1`, [contactId]);
 
+    // Ce que l'équipe, les balayages et l'analyse posent sur la fiche : des JUGEMENTS (étiquettes, risque), des
+    // faits tirés des messages ou du numéro (langue, joignabilité), une source de consentement en texte libre, et
+    // les REFUS (opt-out, STOP RCS, blocage). Les premiers doivent partir, les refus rester.
+    bloqueurId = (await pool.query<{ id: string }>(
+      `insert into users (tenant_id, email, role, password_hash) values ($1, 'bloqueur-itest-purge@x.fr', 'admin', 'x') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    await pool.query(
+      `update contacts set tags = array['vip', 'mauvais payeur'],
+         risque_niveau = 'eleve', risque_score = 72, risque_raisons = array['reclamation'], risque_calcule_le = now(),
+         langue_detectee = 'en', langue_detectee_le = now(), whatsapp_joignable = false, whatsapp_joignable_le = now(),
+         opt_in_status = 'opted_out', opt_out_at = now(), opt_in_source = 'formulaire de Jean Dupont',
+         rcs_optout_at = now(), blocked_at = now(), blocked_by = $2
+       where id = $1`,
+      [contactId, bloqueurId],
+    );
+
     // LOT 3 DE L'API PUBLIQUE : les VARIABLES d'un destinataire (migration 0174) et l'ÉCHEC d'un message libre
     // (migration 0175) portent des données de la personne (un numéro de commande, un numéro de téléphone).
     // Une ligne d'échec est posée AUSSI chez le voisin, sur le même numéro : elle prouve le cloisonnement.
@@ -145,6 +164,14 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
       [contactId, tenantId, WA_ID],
     );
     expect(avant.rows[0]).toEqual({ v: { commande: '8412' }, e: 1 });
+    const fiche = await pool.query(
+      `select tags, risque_niveau, langue_detectee, whatsapp_joignable, opt_in_source, blocked_by from contacts where id = $1`,
+      [contactId],
+    );
+    expect(fiche.rows[0]).toEqual({
+      tags: ['vip', 'mauvais payeur'], risque_niveau: 'eleve', langue_detectee: 'en', whatsapp_joignable: false,
+      opt_in_source: 'formulaire de Jean Dupont', blocked_by: bloqueurId,
+    });
   });
 
   afterAll(async () => {
@@ -203,6 +230,36 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     // Et l'identifiant est LIBÉRÉ : une fiche neuve peut le reprendre (index unique par espace).
     const reprise = await store.creerFicheApi(tenantId, { phoneE164: '+33600000902', externalId: 'itest-ext-purge' });
     expect(reprise).not.toBe('conflit');
+  });
+
+  it('🔴 ce qui DÉCRIT la personne part : étiquettes, risque, langue, joignabilité, source du consentement, auteur du blocage', async () => {
+    const r = await pool.query(
+      `select tags, risque_niveau, risque_score, risque_raisons, risque_calcule_le, langue_detectee, langue_detectee_le,
+              whatsapp_joignable, whatsapp_joignable_le, opt_in_source, blocked_by
+         from contacts where id = $1`,
+      [contactId],
+    );
+    expect(r.rows[0]).toEqual({
+      tags: [], risque_niveau: null, risque_score: null, risque_raisons: [], risque_calcule_le: null,
+      langue_detectee: null, langue_detectee_le: null, whatsapp_joignable: null, whatsapp_joignable_le: null,
+      opt_in_source: null, blocked_by: null,
+    });
+  });
+
+  it('🔴 ce qui dit NON reste : l’opt-out et sa date, le STOP RCS, la date du blocage (une campagne en cours les relit)', async () => {
+    const r = await pool.query(
+      `select opt_in_status, opt_out_at is not null as opt_out, rcs_optout_at is not null as rcs, blocked_at is not null as bloque
+         from contacts where id = $1`,
+      [contactId],
+    );
+    expect(r.rows[0]).toEqual({ opt_in_status: 'opted_out', opt_out: true, rcs: true, bloque: true });
+  });
+
+  it('🔴 la joignabilité ne REVIENT pas : un second échec 131026 tardif ne réécrit pas la fiche purgée', async () => {
+    // Le destinataire de campagne garde le `contact_id` de la fiche, et le balayage note par cet identifiant.
+    await creerNoteurJoignabilite(pool)(tenantId, contactId, false);
+    const r = await pool.query('select whatsapp_joignable, whatsapp_joignable_le from contacts where id = $1', [contactId]);
+    expect(r.rows[0]).toEqual({ whatsapp_joignable: null, whatsapp_joignable_le: null });
   });
 
   it('🔴 les mesures par bloc sont ANONYMISEES, pas supprimees (le quanti survit a l’effacement)', async () => {

@@ -7,11 +7,15 @@ import type { Pool } from 'pg';
  * La date est toujours réécrite, même valeur inchangée : elle porte la péremption (`PEREMPTION_WHATSAPP_MS`).
  */
 export function creerNoteurJoignabilite(pool: Pool) {
-  /** 🔴 `tenant_id = $1` : le pooler contourne la RLS, ce filtre est le seul contrôle d'isolation. */
+  /**
+   * 🔴 `tenant_id = $1` : le pooler contourne la RLS, ce filtre est le seul contrôle d'isolation.
+   * `deleted_at is null` : une fiche purgée a perdu son numéro et sa joignabilité (`purgeMany`). Sans ce filtre,
+   * le balayage 131026 ou un envoi en cours la réécrivait par son identifiant, qui survit à la purge.
+   */
   return async (tenantId: string, contactId: string, joignable: boolean): Promise<void> => {
     await pool.query(
       `update contacts set whatsapp_joignable = $3, whatsapp_joignable_le = now()
-       where tenant_id = $1 and id = $2`,
+       where tenant_id = $1 and id = $2 and deleted_at is null`,
       [tenantId, contactId, joignable],
     );
   };

@@ -1417,6 +1417,29 @@ export class PgContactStore implements ContactStore {
                 -- L IDENTIFIANT EXTERNE part aussi : il designe cette personne dans l outil du client, et il
                 -- bloquerait la recreation d une fiche avec le meme identifiant (index unique par espace).
                 external_id = null,
+                -- Les ETIQUETTES partent (0011) : texte libre pose par l equipe, un import ou un scenario, qui
+                -- peut porter un jugement (reclamation, mauvais payeur) ou le nom d une liste. Gardees, elles
+                -- restaient comptees sur la page des etiquettes, pour une liste vide au clic.
+                tags = '{}',
+                -- Le RISQUE part (0178) : un jugement calcule sur la personne, a partir de faits que cette purge
+                -- efface. Le balayage de nuit ignore les fiches supprimees : garde, il restait fige pour toujours.
+                -- Tout a null, comme une fiche jamais calculee (la contrainte de coherence l accepte).
+                risque_niveau = null, risque_score = null, risque_raisons = '{}', risque_calcule_le = null,
+                -- La LANGUE DETECTEE part (0137) : tiree des messages effaces ici, elle dit une origine probable.
+                langue_detectee = null, langue_detectee_le = null,
+                -- La JOIGNABILITE WHATSAPP part (0133) : un fait sur un numero qui n est plus sur la fiche.
+                whatsapp_joignable = null, whatsapp_joignable_le = null,
+                -- La SOURCE du consentement part : l API publique y ecrit un texte libre de l integrateur, et
+                -- un webhook le nom que l equipe lui a donne. Aucun lecteur ne l atteint apres la purge.
+                opt_in_source = null,
+                -- QUI a bloque part (0071) : un membre de l equipe, que personne ne relit.
+                blocked_by = null,
+                -- RESTENT, deliberement : le statut d opt-in et sa date (0138), la date du blocage, le STOP RCS
+                -- (0057). Un run de campagne en cours tient le VRAI numero en memoire, et claim relit cette fiche
+                -- par sa cle primaire juste avant d envoyer : desabonne ou bloque, il ecarte. Remettre ces deux-la
+                -- a zero ferait ecrire a quelqu un qui a dit STOP puis demande l effacement. Le STOP RCS n a pas
+                -- ce lecteur aujourd hui et reste pour la meme raison : sans numero, un refus n identifie
+                -- personne, et l effacer est la seule des deux erreurs qui ne se rattrape pas.
                 updated_at = now()
           where tenant_id = $1 and id = any($2::uuid[]) and anonymized_at is null`,
         [tenantId, ids],
