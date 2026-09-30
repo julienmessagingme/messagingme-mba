@@ -1,5 +1,5 @@
 import { jamaisDesabonne } from './consentement';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
@@ -998,6 +998,39 @@ describe('signaler à la main, et prendre le fil', () => {
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() })).statusCode).toBe(200);
     expect(pris).toEqual(['33611']);
     expect(b.appels).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 L'ESSAI RÉEL DU 2026-09-30, À 06:37:54 UTC : « Rendre la main » juste après un modèle a mis le contact sur la
+ * liste, puis Meta a refusé le `release` (son agent tenait déjà le fil). La route a rendu 409 et la colonne est
+ * restée `app_human`, alors que l'agent a bien répondu au message suivant. Vérifié dans les deux sens : `confier`
+ * remis à lever sur le `release`, ce cas rend 409.
+ */
+describe('rendre la main après un modèle : le `release` refusé n’est pas une erreur', () => {
+  it('🔴 200, `mba`, le contact sur la liste de l’agent', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const b = bancDuFil({ release: ['refuse'], conversations: { '33611': { owner: 'app_human' } } });
+    const a = app({ releaseControl: b.fil.rendreLaMain });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/release', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ controlOwner: 'mba' });
+    expect(b.etat('33611')?.owner).toBe('mba');
+    expect(b.table.has('33611')).toBe(true);
+    expect(b.appels).toEqual(['ajout:33611', 'release:33611']);
+    vi.restoreAllMocks();
+    await a.close();
+  });
+
+  it('⚠️ l’ajout à la liste refusé, lui, reste un 409 : rien n’est écrit', async () => {
+    const b = bancDuFil({ ajout: ['refuse'], conversations: { '33611': { owner: 'app_human' } } });
+    const a = app({ releaseControl: b.fil.rendreLaMain });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/release', ...auth() });
+    expect(res.statusCode).toBe(409);
+    expect(b.etat('33611')?.owner).toBe('app_human');
+    vi.restoreAllMocks();
+    await a.close();
   });
 });
 

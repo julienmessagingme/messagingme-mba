@@ -186,15 +186,15 @@ describe('ce que ce module ne porte pas : l’ordre du job, et les gardes du ges
    */
   it('🔴 les trois gardes du geste sont là : agent allumé, aucun parcours en attente, et `only`', async () => {
     const eteint = bancDuFil({ mbaEnabled: false, conversations: { w: { owner: 'app_workflow' } } });
-    await eteint.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
+    await eteint.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour', { rouverte: false });
     expect(eteint.appels, 'l’agent doit être allumé').toEqual([]);
 
     const attendu = bancDuFil({ enAttente: true, conversations: { w: { owner: 'app_workflow' } } });
-    await attendu.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
+    await attendu.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour', { rouverte: false });
     expect(attendu.appels, 'un parcours en attente doit REFUSER la remise').toEqual([]);
 
     const libre = bancDuFil({ conversations: { w: { owner: 'app_workflow' } } });
-    await libre.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
+    await libre.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour', { rouverte: false });
     expect(libre.appels, 'la remise doit appeler Meta, pas seulement écrire').toEqual(['ajout:w', 'release:w', 'evenement:w']);
     expect(libre.etat('w')?.owner).toBe('mba');
   });
@@ -211,7 +211,7 @@ describe('ce que ce module ne porte pas : l’ordre du job, et les gardes du ges
      * ⚠️ CE CAS VÉRIFIE L'EFFET, pas la présence : aucun appel à Meta, et la colonne intacte.
      */
     const b = bancDuFil({ conversations: { w: { owner: 'app_human' } } });
-    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour', { rouverte: false });
     expect(b.appels, 'un humain doit faire SORTIR avant l’appel Meta').toEqual([]);
     expect(b.etat('w')?.owner).toBe('app_human');
   });
@@ -226,7 +226,7 @@ describe('ce que ce module ne porte pas : l’ordre du job, et les gardes du ges
      *  - `app_human` doit rester DEHORS : un opérateur qui travaille dans l'Inbox ne se fait pas doubler.
      */
     const b = bancDuFil({ conversations: { w: { owner: 'app_workflow' } } });
-    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour', { rouverte: false });
     const seulement = b.ecritures[0]?.opts?.only;
     expect(seulement, 'la remise doit borner les états qu’elle écrase').toBeDefined();
     expect(seulement).toContain('app_workflow');

@@ -27,6 +27,7 @@ import type { DepsMcp } from '../src/mcp/outils';
 import { MODELES_CHOISIS } from '../src/agent/modeles';
 import { SANS_PLAFOND } from '../src/campaign/pacing';
 import { PLAFOND_DESTINATAIRES_DEFAUT } from '../src/campaign/plafond';
+import { creerTravauxEnVol } from '../src/lib/en-vol';
 
 /**
  * LES DÉPENDANCES DE ROUTES DEVENUES REQUISES, EN VALEURS INERTES NOMMÉES (lot 3 de l'audit ponytail, 2026-09-26).
@@ -159,7 +160,7 @@ export const creationInerte: CampaignRepoLike = {
 };
 
 export const contactsInertes: Pick<ContactsRouteDeps,
-  'audit' | 'journal' | 'erreurs' | 'ensureSocleField' | 'createOneContact' | 'getBilanContact' | 'emitTagAdded' | 'listeDeLAgent'> = {
+  'audit' | 'journal' | 'erreurs' | 'ensureSocleField' | 'createOneContact' | 'getBilanContact' | 'emitTagAdded' | 'listeDeLAgent' | 'enVol'> = {
   audit: journalMuet,
   journal: { list: async () => [] },
   erreurs: { lister: async () => [], listerEchecsSysteme: async () => [] },
@@ -171,6 +172,8 @@ export const contactsInertes: Pick<ContactsRouteDeps,
   emitTagAdded: async () => {},
   // Aucun contact purgé n'est sur la liste de l'agent de Meta : rien à y retirer (la purge y est d'ailleurs inerte).
   listeDeLAgent: { oublierChezMeta: async () => {} },
+  // Un vrai registre : le retrait d'après la purge y est suivi, et rien ne l'attend dans ces tests.
+  enVol: creerTravauxEnVol(),
 };
 
 export const contactsDepInerte: Pick<ContactsDep,
@@ -269,10 +272,12 @@ export const relaisMbaInerte: Pick<MbaRelaisDeps, 'journaliserForme'> = {
   journaliserForme: () => {},
 };
 
-export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages' | 'stats'> = {
+export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages' | 'stats' | 'attendre'> = {
   journaliserSuppression: async () => {},
   reglages: { setMbaEnabled: neDevraitPasEtreAppelee('setMbaEnabled') },
   stats: { messagesEcritsParMba: async () => 0 },
+  // Sans attente : la seconde relecture de l'audience à l'allumage part tout de suite.
+  attendre: async () => {},
 };
 
 export const opsInerte: Pick<OpsRouteDeps,

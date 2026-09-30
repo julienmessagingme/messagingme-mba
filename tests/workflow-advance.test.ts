@@ -15,6 +15,20 @@ const payload = {
 };
 
 describe('processWorkflowAdvance', () => {
+  it('🔴 rend les messages qu’un parcours en attente a reçus, et seulement eux', async () => {
+    // La remise à l'agent de Meta, dans le même job, les laisse au parcours (relecture du 2026-09-30).
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const recus = await processWorkflowAdvance(await entrantsDe(payload), {
+      advance: async (_t, _w, m) => m === 'm1',
+    });
+    expect([...recus]).toEqual(['m1']);
+    const aucun = await processWorkflowAdvance(await entrantsDe(payload), { advance: async () => {} });
+    expect(aucun.size).toBe(0);
+    const enEchec = await processWorkflowAdvance(await entrantsDe(payload), { advance: async () => { throw new Error('boum'); } });
+    expect(enEchec.size, 'une avance en échec ne vaut pas réception').toBe(0);
+    vi.restoreAllMocks();
+  });
+
   it('avance chaque message entrant (espace déjà rattaché)', async () => {
     const calls: string[] = [];
     await processWorkflowAdvance(await entrantsDe(payload), {

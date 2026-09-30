@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { processInbound, type DepsEntrants, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
 import { creerControleDuFil } from '../src/inbox/fil';
 import { creerListeDeLAgent } from '../src/mba/liste';
-import { bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
+import { DELAI_REPRISE_DEFAUT_MS, bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
 import { aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop, jamaisBloque, jamaisDesabonne } from './consentement';
 
@@ -42,7 +42,7 @@ const PAYLOAD = (field: 'messages' | 'standby' | null) => ({
 function fauxStore() {
   const ecrits: Array<{ owner: string; only?: readonly string[]; saufEscalade?: boolean; effacerEscalade?: boolean; messageEnvoyeLe?: Date }> = [];
   const store: InboxStore = {
-    recordInbound: async (_t: string, _m: InboundMessage) => {},
+    recordInbound: async (_t: string, _m: InboundMessage) => ({ rouverte: false }),
   };
   const { fil } = bancDuFil({
     depot: {
@@ -106,7 +106,7 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     // Les suites qui ne parlent pas du détenteur passent une correction inerte : le message reste la donnée métier.
     const recus: string[] = [];
     await processInbound(await entrantsDe(PAYLOAD('standby'), 'tenant-1'), {
-      recordInbound: async (_t, m) => { recus.push(m.body ?? ''); },
+      recordInbound: async (_t, m) => { recus.push(m.body ?? ''); return { rouverte: false }; },
     }, { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur });
     expect(recus).toEqual(['coucou']);
   });
@@ -116,7 +116,7 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     // le `standby` du même message, alors que Meta venait de nous céder le fil.
     const ordre: string[] = [];
     await processInbound(await entrantsDe(PAYLOAD('standby'), 'tenant-1'), {
-      recordInbound: async () => { ordre.push('enregistre'); },
+      recordInbound: async () => { ordre.push('enregistre'); return { rouverte: false }; },
     }, {
       optOut: aucunStop,
       detenteur: { entrantEnStandby: async () => { ordre.push('detenteur'); } },
@@ -138,7 +138,7 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     const recus: string[] = [];
     const { fil } = bancDuFil({ depot: { setControlOwner: async () => { throw new Error('base indisponible'); } } });
     await processInbound(await entrantsDe(PAYLOAD('standby'), 'tenant-1'), {
-      recordInbound: async (_t, m) => { recus.push(m.body ?? ''); },
+      recordInbound: async (_t, m) => { recus.push(m.body ?? ''); return { rouverte: false }; },
     }, { optOut: aucunStop, detenteur: fil });
     expect(recus).toEqual(['coucou']);
   });
@@ -151,7 +151,7 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
  */
 function monterBouton(o: {
   numero?: string | null; detenteur: 'mba' | 'app_human'; surLaListe?: boolean;
-  release?: () => Promise<void>; retrait?: () => Promise<void>;
+  release?: () => Promise<void>; retrait?: () => Promise<void>; ajout?: () => Promise<void>;
 }) {
   const WA = '33633921577';
   const appels: Array<[string, string, string]> = [];
@@ -162,13 +162,14 @@ function monterBouton(o: {
     releaseThread: async (pn: string, waId: string) => { appels.push(['release', pn, waId]); await o.release?.(); },
     agentEvent: async () => ({ id: 'ev' }),
     listAllowlist: async () => [],
-    addToAllowlist: async (pn: string, numero: string) => { appels.push(['ajout', pn, numero]); return { id: entreeDe(WA), consumer_phone_number: numero }; },
+    addToAllowlist: async (pn: string, numero: string) => { appels.push(['ajout', pn, numero]); await o.ajout?.(); return { id: entreeDe(WA), consumer_phone_number: numero }; },
     removeFromAllowlist: async (pn: string, entree: string) => { appels.push(['retrait', pn, entree]); await o.retrait?.(); },
   };
   const liste = creerListeDeLAgent({ store: table.store, clientMba: async () => client, attendre: async () => {} });
   const fil = creerControleDuFil({
     depot: memoire.depot,
-    reglages: { get: async () => ({ mbaEnabled: true }) },
+    reglages: { get: async () => ({ mbaEnabled: true, controlHandbackSeconds: null }) },
+    delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
     parcours: { findWaitingByWaId: async () => null },
     numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? '1234840649713976' : o.numero) },
     liste,
@@ -200,12 +201,23 @@ describe('rendre le fil à Meta (« Rendre la main »)', () => {
     expect(m.etat('33633921577')?.owner).toBe('app_human');
   });
 
-  it('🔴 LÈVE si Meta refuse, et n’écrit rien', async () => {
+  it('🔴 LÈVE si Meta refuse l’ajout à la liste, et n’écrit rien', async () => {
     // C'est ce qui permet à la route de répondre 409 sans avoir écrit son état local. Un `catch` silencieux ici
     // recréerait le défaut qu'on répare : un état local qui annonce ce que Meta n'a pas fait.
-    const m = monterBouton({ detenteur: 'app_human', release: async () => { throw new Error('jeton expiré'); } });
+    const m = monterBouton({ detenteur: 'app_human', ajout: async () => { throw new Error('jeton expiré'); } });
     await expect(m.fil.rendreLaMain('tenant-1', '33633921577', { collaborateur: null })).rejects.toThrow('jeton expiré');
     expect(m.etat('33633921577')?.owner).toBe('app_human');
+  });
+
+  it('🔴 un `release` refusé APRÈS la liste ne lève pas : le contact est confié, `mba`', async () => {
+    // Essai réel du 2026-09-30 : après un modèle, l'agent de Meta tient déjà le fil et Meta refuse le `release`. La
+    // liste décide si l'agent parle : il a répondu au message suivant, alors que la route disait « refusé ».
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const m = monterBouton({ detenteur: 'app_human', release: async () => { throw new Error('An unknown error occurred'); } });
+    expect(await m.fil.rendreLaMain('tenant-1', '33633921577', { collaborateur: null })).toBe('mba');
+    expect(m.table.has('33633921577')).toBe(true);
+    expect(m.etat('33633921577')?.owner).toBe('mba');
+    vi.restoreAllMocks();
   });
 });
 

@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: 62f63a
+source_empreinte: b5d853
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -20,7 +20,8 @@ et c'est Engage Me qui la tient : vous n'avez ni audience à choisir, ni numéro
 client répond à côté d'un scénario, aussi. Avant chaque modèle (scénario, campagne, Inbox), le contact sort de
 la liste, pour que sa réponse revienne au scénario : pendant un scénario, l'agent se tait. « Rendre la main »
 lui confie la conversation, et il répond au message suivant du client ; « Reprendre la main » fait sortir le
-contact de la liste.
+contact de la liste. Une conversation que l'agent n'a pas pu prendre (un client qui n'a pas partagé son numéro,
+par exemple) passe à votre équipe, dans « À traiter ».
 
 Sous le menu AI Agent, l'entrée **MBA** ouvre ses **paramètres**, qui le règlent pour de vrai.
 
@@ -66,7 +67,9 @@ Manager : une fois signées, « Vérifier à nouveau » relit l'état du numéro
 l'agent quand le client demande un humain ou qu'il refuse de traiter la demande : il passe la main et la
 conversation remonte dans « À traiter » ; ou seulement pendant vos heures d'ouverture, en dehors desquelles
 il garde la conversation plutôt que d'annoncer un conseiller absent ; ou jamais. Ensuite, combien de temps
-un humain garde la main après avoir répondu, le compte à rebours partant de sa **première** réponse.
+un humain garde la main après avoir répondu, le compte à rebours repartant à **chaque** réponse de l'équipe et à
+chaque « Traité » (le délai court depuis le plus récent des deux) : marquer « Traité » ne rend pas la main. Passé
+ce délai, un client qui écrit est confié tout de suite à l'agent, qui répond à ce message.
 
 Deux choses que cet écran ne promet pas, parce qu'elles ne sont pas tenables : empêcher un humain de
 reprendre la main (aucun verrou n'existe, ni chez nous ni chez Meta), et empêcher l'agent de décider un

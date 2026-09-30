@@ -399,7 +399,7 @@ describe('l’écart des entrants dans le job webhook', () => {
     const enregistres: string[] = [];
     return {
       enregistres,
-      store: { phoneNumberTenant: async () => 't1', recordInbound: async (_t: string, m: InboundMessage) => { enregistres.push(m.messageId); } },
+      store: { phoneNumberTenant: async () => 't1', recordInbound: async (_t: string, m: InboundMessage) => { enregistres.push(m.messageId); return { rouverte: false }; } },
     };
   }
   const bruts: string[] = [];

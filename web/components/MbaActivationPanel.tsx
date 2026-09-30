@@ -166,9 +166,11 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
           {t('Quand un humain répond, il garde la main pendant', 'When a human replies, they keep the thread for')}
         </h3>
         <p className="mt-1 text-xs text-ink-500">
+          {/* Chaque réponse humaine et chaque « Traité » remettent `control_changed_at` à maintenant
+              (`PgInboxStore.recordOutbound`, `basculerRangement`). */}
           {t(
-            'Le décompte part de sa première réponse dans la conversation : répondre à nouveau ne le repousse pas.',
-            'The countdown starts at their first reply in the conversation: replying again does not push it back.',
+            'Le décompte repart à chaque réponse de l’équipe : le délai court depuis la dernière réponse ou le dernier « Traité ». Marquer « Traité » ne rend pas la main, il relance le délai.',
+            'The countdown restarts with every team reply: the delay runs from the last reply or the last “Done”. Marking “Done” does not hand the thread back, it restarts the delay.',
           )}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">

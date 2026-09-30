@@ -968,6 +968,8 @@ async function main(): Promise<void> {
           meta: metaFactory,
           historique: historiqueStore,
           acteur,
+          drapeau: settingsStore,
+          attendre: (ms: number) => dormir(ms),
         }),
       },
     } : {}),
@@ -993,6 +995,7 @@ async function main(): Promise<void> {
       fetchUrl: fetchUrlBorne(),
       reglages: settingsStore,
       stats: statsStore,
+      attendre: (ms) => dormir(ms),
     },
     // Agents IA, en lecture : la palette du builder a besoin de la liste pour proposer le bloc.
     agents: {
@@ -1419,6 +1422,8 @@ async function main(): Promise<void> {
       },
       // Les contacts purgés sortent de la liste de l'agent de Meta, après la purge (`src/mba/liste.ts`).
       listeDeLAgent,
+      // Ce retrait part après la réponse : l'arrêt de cette copie l'attend avant de fermer le pool.
+      enVol: travauxEnVol,
     },
     embeddedSignup: (() => {
       const esClient = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);

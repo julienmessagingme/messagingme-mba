@@ -50,11 +50,15 @@ test.describe('MBA : écran Activation', () => {
     expect(calls.filter((c) => c.url.includes('/settings/control-handback')).at(-1)?.body).toEqual({ seconds: 600 });
   });
 
-  test('🔴 le texte du délai parle de la PREMIÈRE intervention, pas de la dernière', async ({ page }) => {
-    // Le compte à rebours part de la première réponse de l'opérateur : reposer le même détenteur ne rafraîchit
-    // pas `control_changed_at`. L'ancien texte de l'Accueil disait « dernière », ce qui était faux.
+  test('🔴 le texte du délai parle de la DERNIÈRE réponse ou du dernier « Traité », qui ne rend pas la main', async ({ page }) => {
+    // Chaque réponse humaine sur un fil tenu par l'équipe, et chaque « Traité », remettent `control_changed_at` à
+    // maintenant (`PgInboxStore.recordOutbound`, `basculerRangement`) : le délai court depuis le plus récent des deux.
+    // Ce test affirmait l'inverse (« première réponse ») et gardait donc un texte faux.
     await mockMba(page);
     await page.goto('/mba/parametres?tab=activation');
-    await expect(page.getByText(/première réponse|first reply/)).toBeVisible();
+    const texte = page.getByText(/dernière réponse ou le dernier « Traité »|last reply or the last “Done”/);
+    await expect(texte).toBeVisible();
+    await expect(texte).toContainText(/ne rend pas la main, il relance le délai|does not hand the thread back, it restarts the delay/);
+    await expect(page.getByText(/première réponse|first reply/)).toHaveCount(0);
   });
 });

@@ -13,6 +13,7 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 import type { AuditEntry } from '../audit/store.pg';
 import { messageDe } from '../lib/erreur';
 import type { ListeDeLAgent, LigneDeLaListe } from '../mba/liste';
+import type { TravauxEnVol } from '../lib/en-vol';
 
 /** Ce que les routes lisent et écrivent des fiches de contact. */
 export interface ContactsDep {
@@ -128,6 +129,12 @@ export interface ContactsRouteDeps {
    * laisserait ces numéros chez Meta sans rien dire. Au mieux, après la purge : ne lève jamais.
    */
   listeDeLAgent: Pick<ListeDeLAgent, 'oublierChezMeta'>;
+  /**
+   * Les travaux que la réponse laisse derrière elle (`src/lib/en-vol.ts`) : le retrait chez Meta des contacts purgés
+   * part APRÈS la réponse, et l'arrêt de la copie doit l'attendre. Requis : oublié, un arrêt laisserait chez Meta
+   * des numéros dont notre table a déjà perdu la trace, donc plus jamais retirés.
+   */
+  enVol: Pick<TravauxEnVol, 'suivre'>;
 }
 
 /** Borne les listes d'ids d'une action en masse (dédup, non vides). Au-delà du plafond, on tronque
@@ -539,8 +546,21 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (ids.length === 0) return reply.code(200).send({ purges: 0, conversations: 0, messages: 0, analyses: 0 });
     const { listeAgent, ...res } = await deps.contacts.purgeMany(tenant, ids);
     for (const id of ids) await journal(tenant, req, 'contact.purged', { kind: 'contact', id }, { lot: ids.length });
-    // Après la validation de la purge, jamais dedans : un appel à Meta retiendrait la transaction ouverte.
-    await deps.listeDeLAgent.oublierChezMeta(tenant, listeAgent);
-    return reply.code(200).send(res);
+    /**
+     * La réponse part d'abord, le retrait chez Meta ensuite, au mieux : un appel par contact (avec rejeu) avant la
+     * réponse pouvait dépasser le délai de Cloudflare sur une grosse purge, et l'écran annonçait un échec pour des
+     * données effacées. Après la validation, jamais dedans : un appel à Meta retiendrait la transaction ouverte.
+     */
+    reply.code(200).send(res);
+    // La fonction `async` enveloppe aussi une levée synchrone : aucune promesse rejetée ne reste sans gestionnaire.
+    void deps.enVol.suivre((async () => {
+      try {
+        await deps.listeDeLAgent.oublierChezMeta(tenant, listeAgent);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`purge : retrait chez Meta des contacts purgés en échec (${tenant}) :`, messageDe(err));
+      }
+    })());
+    return reply;
   });
 }

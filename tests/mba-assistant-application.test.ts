@@ -49,6 +49,9 @@ function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | 
       ecrire: async (_t, l) => { journal.push(l); },
     },
     acteur: { id: 'u1', email: 'julien@messagingme.fr' },
+    // Notre drapeau, dans le même journal que Meta : la mise en service l'écrit APRÈS Meta.
+    drapeau: { setMbaEnabled: async (_t, enabled) => { faits.push(`drapeau:${enabled}`); } },
+    attendre: async () => {},
   };
   return { deps, journal, faits };
 }
@@ -150,6 +153,23 @@ describe('les pièges de l’API Meta', () => {
     expect(audience).toEqual({ locale: 'fr', ai_audience: 'ALLOWLISTED_ONLY' });
     expect(allumage).toEqual({ locale: 'fr', ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: true } });
   });
+
+  it('🔴 la mise en service écrit aussi notre drapeau, APRÈS Meta', async () => {
+    // Toute la mécanique de la liste lit `tenant_settings.mba_enabled` : allumé chez Meta et éteint pour nous, les
+    // réponses rangées en `standby` n'arrivaient à personne. Vérifié dans les deux sens : l'écriture du drapeau
+    // retirée de `executer`, ce cas échoue (aucun `drapeau:true`).
+    const m = monter();
+    await appliquer(m.deps, 't1', 'ag1', [{ type: 'activation.mettreEnService' }]);
+    expect(m.faits.filter((f) => f.startsWith('settings:') || f.startsWith('drapeau:')).map((f) => f.split(':')[0])).toEqual(['settings', 'settings', 'drapeau']);
+    expect(m.faits.at(-1)).toBe('drapeau:true');
+  });
+
+  it('⚠️ Meta refuse la mise en service : notre drapeau ne bouge pas', async () => {
+    const m = monter({ putSettings: async () => { throw new Error('refusé par Meta'); } });
+    const r = await appliquer(m.deps, 't1', 'ag1', [{ type: 'activation.mettreEnService' }]);
+    expect(r.echec).not.toBeNull();
+    expect(m.faits.some((f) => f.startsWith('drapeau:'))).toBe(false);
+  });
 });
 
 describe('les libellés et les raisons', () => {
@@ -194,6 +214,8 @@ describe('quand le journal est indisponible', () => {
       ecrire: async () => { throw new Error('base indisponible'); },
     },
     acteur: { id: 'u1', email: null },
+    drapeau: { setMbaEnabled: async () => {} },
+    attendre: async () => {},
   });
 
   it('🔴 les opérations passent quand même, et la SUITE est appliquée', async () => {

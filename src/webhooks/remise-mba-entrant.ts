@@ -12,15 +12,19 @@ import type { InboundMessage } from './inbound';
 export interface RemiseMbaEntrantDeps {
   /**
    * Confie la conversation à l'agent de Meta si personne d'autre ne s'en occupe, et lui passe `contenu` pour qu'il y
-   * réponde. Les gardes (agent allumé, aucun parcours en attente, aucun humain dessus) vivent dans le câblage
-   * (`ControleDuFil.remettreSiPersonneNeSuit`) ; ce module ne sait que lire un payload Meta.
+   * réponde. Les gardes (agent allumé, aucun parcours en attente, l'équipe dans son délai de reprise) vivent dans le
+   * câblage (`ControleDuFil.remettreSiPersonneNeSuit`) ; ce module ne sait que lire un payload Meta. `entree.rouverte` :
+   * un message de ce contact vient de sortir la conversation de « Traité » ou d'Archivé, ce qui ouvre une demande
+   * quand l'équipe garde le fil.
    */
-  remettre(tenantId: string, waId: string, contenu: string): Promise<void>;
+  remettre(tenantId: string, waId: string, contenu: string, entree: { rouverte: boolean }): Promise<void>;
 }
 
 /**
- * Ce qu'un message dit à l'agent : son corps enregistré (texte, légende, ou libellé du média). Une réaction n'en dit
- * rien : son corps est un emoji posé sur un de nos messages, pas quelque chose à quoi répondre.
+ * Ce qu'un message dit à l'agent : son corps enregistré (texte, légende, ou libellé du média). Un vocal part donc
+ * comme `[audio]`, jamais avec sa transcription : elle ne se fait qu'à la demande d'un opérateur, bien après ce
+ * webhook. Une réaction n'en dit rien : son corps est un emoji posé sur un de nos messages, pas quelque chose à quoi
+ * répondre.
  */
 function texteDuMessage(m: InboundMessage): string {
   if (m.type === 'reaction') return '';
@@ -35,27 +39,32 @@ function texteDuMessage(m: InboundMessage): string {
  * `messages`, `./standby-hors-liste.ts`). `consumed` est respecté : un message qui vient de démarrer un parcours, ou
  * avalé par un jeton de test, n'est pas un client qui écrit sans que rien ne soit prévu. Isolé par contact (Meta
  * groupe plusieurs contacts) ; un échec n'est jamais fatal, le balayage reste le filet.
+ *
+ * `rouvertes` : les messages dont l'écriture a rouvert la conversation (`processInbound`). Un contact est dit rouvert
+ * si l'un de ses messages retenus l'a fait, hors réaction : un 👍 sort d'Archivé sans rien demander à l'équipe.
  */
 export async function processRemiseMbaEntrant(
   entrants: readonly EntrantRattache[],
   deps: RemiseMbaEntrantDeps,
   consumed?: ReadonlySet<string>,
+  rouvertes: ReadonlySet<string> = new Set(),
 ): Promise<void> {
-  const parContact = new Map<string, { tenantId: string; waId: string; textes: string[] }>();
+  const parContact = new Map<string, { tenantId: string; waId: string; textes: string[]; rouverte: boolean }>();
   for (const { message: m, tenantId } of entrants) {
     if (consumed?.has(m.messageId)) continue;
     // `field` absent = anciennes fixtures, traitées comme des messages normaux (rétro-compat, comme l'avance).
     if (m.field && m.field !== 'messages') continue;
     if (!tenantId) continue;
     const cle = `${tenantId}:${m.waId}`;
-    const contact = parContact.get(cle) ?? { tenantId, waId: m.waId, textes: [] };
+    const contact = parContact.get(cle) ?? { tenantId, waId: m.waId, textes: [], rouverte: false };
     const texte = texteDuMessage(m);
     if (texte !== '') contact.textes.push(texte);
+    if (m.type !== 'reaction' && rouvertes.has(m.messageId)) contact.rouverte = true;
     parContact.set(cle, contact);
   }
-  for (const { tenantId, waId, textes } of parContact.values()) {
+  for (const { tenantId, waId, textes, rouverte } of parContact.values()) {
     try {
-      await deps.remettre(tenantId, waId, textes.join('\n'));
+      await deps.remettre(tenantId, waId, textes.join('\n'), { rouverte });
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('processRemiseMbaEntrant: remise ignorée:', messageDe(err));

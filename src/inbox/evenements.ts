@@ -21,10 +21,12 @@ import type { OrigineMessage } from './origine';
  * Les types, dans l'ordre du cadrage. Miroir du CHECK en vigueur, celui de 0194, tenu par
  * `tests/migration-0194.test.ts` ; les douze premiers sont ceux de 0192.
  *
- * Les deux derniers (0194) datent ce que le Quantitatif > Performance mesure : `escaladee`, un robot passe la main à
- * l'équipe (un scénario ou un agent IA, drapeau d'escalade ou non, et la réponse à une campagne dont le devenir est
- * l'Inbox ; celle de l'agent de Meta est `passee_par_mba`, pas doublée) ; `rendue_scenario`, l'équipe rend le fil à
- * un scénario. Comment ils ouvrent et ferment une demande : `src/stats/performance.ts`.
+ * Les deux derniers (0194) datent ce que le Quantitatif > Performance mesure : `escaladee`, une demande s'ouvre pour
+ * l'équipe, soit qu'un robot lui passe la main (un scénario ou un agent IA, drapeau d'escalade ou non, et la réponse à
+ * une campagne dont le devenir est l'Inbox ; celle de l'agent de Meta est `passee_par_mba`, pas doublée), soit que le
+ * contact rouvre une conversation « Traité » ou archivée qu'elle tient encore (`ControleDuFil.remettreSiPersonneNeSuit`,
+ * sans bascule) ; `rendue_scenario`, l'équipe rend le fil à un scénario. Comment ils ouvrent et ferment une demande :
+ * `src/stats/performance.ts`.
  */
 export const TYPES_EVENEMENT = [
   'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',

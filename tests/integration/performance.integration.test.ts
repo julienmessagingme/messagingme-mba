@@ -6,6 +6,10 @@ import { PgInboxStore } from '../../src/inbox/store.pg';
 import { PgPerformanceStore } from '../../src/stats/performance.pg';
 import { addDays, todayParis } from '../../src/stats/range';
 import type { DemandeBrute } from '../../src/stats/performance';
+import { CAUSE_REOUVERTURE, creerControleDuFil } from '../../src/inbox/fil';
+import { creerListeDeLAgent } from '../../src/mba/liste';
+import { DELAI_REPRISE_DEFAUT_MS, listeEnMemoire, metaFactice } from '../banc-du-fil';
+import { jamaisBloque, jamaisDesabonne } from '../consentement';
 
 /**
  * QUANTITATIF > PERFORMANCE : ce que la base rend comme DEMANDES (migration 0194, `PgPerformanceStore.lire`).
@@ -367,5 +371,76 @@ describe.skipIf(!url)('les demandes du Quantitatif > Performance', () => {
     expect(d!.closePar).toEqual({ genre: 'automatique' });
     expect(d!.derniereReponseLe!.getTime()).toBe(derniere.getTime());
     expect(d!.repondant).toEqual({ genre: 'collaborateur', userId: marie, nom: 'Marie' });
+  });
+
+  /**
+   * 🔴 LE CONSTAT DU 2026-09-30, REJOUÉ SUR LA VRAIE CHAÎNE : une conversation de l'équipe marquée « Traité », le client
+   * réécrit, l'équipe répond et remarque « Traité », et le Quantitatif > Performance ne voyait AUCUNE seconde demande.
+   * Le vrai dépôt (qui rend `rouverte` à l'écriture de l'entrant) et le vrai contrôle du fil (`remettreSiPersonneNeSuit`,
+   * qui ouvre la demande) ; seul Meta est faux. La lecture des demandes n'a pas changé : elle la compte d'elle-même.
+   */
+  describe('un client rouvre une conversation « Traité » que l’équipe tient encore', () => {
+    const faux = metaFactice();
+    const fil = () => creerControleDuFil({
+      depot: inbox,
+      reglages: { get: async () => ({ mbaEnabled: true, controlHandbackSeconds: null }) },
+      delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
+      parcours: { findWaitingByWaId: async () => null },
+      numeros: { getTenantPhoneNumberId: async () => 'pn-itest' },
+      liste: creerListeDeLAgent({ store: listeEnMemoire().store, clientMba: async () => faux.client, attendre: async () => {} }),
+      consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
+      meta: faux.meta,
+    });
+    /** Le contact réécrit, puis la remise « personne ne suit » décide, dans l'ordre du job webhook. */
+    const reecrit = async (waId: string): Promise<boolean> => {
+      const { rouverte } = await ecrit(waId);
+      await fil().remettreSiPersonneNeSuit(tenantId, waId, 'bonjour', { rouverte });
+      return rouverte;
+    };
+    /** Le premier échange : un scénario passe la main, Marie répond et marque « Traité ». */
+    const premierEchange = async () => {
+      const c = await conversation();
+      await escalader(c.waId);
+      await repondre(c.id, marie);
+      expect(await inbox.marquerTraitee(tenantId, c.id, true, { collaborateur: marie })).toBe(true);
+      return c;
+    };
+
+    it('🔴 escalade, réponse, Traité, le client réécrit, réponse, Traité : DEUX demandes, la seconde avec sa réponse et sa fin', async () => {
+      const c = await premierEchange();
+      expect(await reecrit(c.waId)).toBe(true);
+      await repondre(c.id, jean);
+      expect(await inbox.marquerTraitee(tenantId, c.id, true, { collaborateur: jean })).toBe(true);
+      const [premiere, seconde, ...reste] = de(await lire(), c.id);
+      expect(reste).toEqual([]);
+      expect(premiere!.repondant).toEqual({ genre: 'collaborateur', userId: marie, nom: 'Marie' });
+      expect(seconde!.repondant).toEqual({ genre: 'collaborateur', userId: jean, nom: 'Jean' });
+      expect(seconde!.closePar).toEqual({ genre: 'collaborateur', userId: jean, nom: 'Jean' });
+      expect(seconde!.debutLe.getTime()).toBeGreaterThanOrEqual(premiere!.closeLe!.getTime());
+      expect(seconde!.reponduLe!.getTime()).toBeGreaterThanOrEqual(seconde!.debutLe.getTime());
+      expect(seconde!.closeLe!.getTime()).toBeGreaterThanOrEqual(seconde!.reponduLe!.getTime());
+      // La frise dit pourquoi : la cause de l'ouverture, sans auteur.
+      const { rows } = await pool.query<{ cause: string; acteur_id: string | null }>(
+        `select cause, acteur_id from conversation_evenements where conversation_id = $1 and type = 'escaladee' order by at desc, id desc limit 1`, [c.id],
+      );
+      expect(rows[0]).toEqual({ cause: CAUSE_REOUVERTURE, acteur_id: null });
+    });
+
+    it('🔴 le client réécrit APRÈS le délai : aucune demande, la conversation part à l’agent de Meta', async () => {
+      const c = await premierEchange();
+      await pool.query(`update conversations set control_changed_at = now() - interval '3 hours' where id = $1`, [c.id]);
+      expect(await reecrit(c.waId)).toBe(true);
+      expect(de(await lire(), c.id)).toHaveLength(1);
+      const { rows } = await pool.query<{ control_owner: string }>('select control_owner from conversations where id = $1', [c.id]);
+      expect(rows[0]!.control_owner).toBe('mba');
+    });
+
+    it('un message qui ne rouvre rien n’ouvre pas de seconde demande', async () => {
+      const c = await conversation();
+      await escalader(c.waId);
+      await repondre(c.id, marie);
+      expect(await reecrit(c.waId)).toBe(false); // pas de « Traité » : rien n'est rouvert, la demande court toujours
+      expect(de(await lire(), c.id)).toHaveLength(1);
+    });
   });
 });

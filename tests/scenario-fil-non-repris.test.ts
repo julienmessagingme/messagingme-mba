@@ -70,9 +70,11 @@ describe('un scénario ne démarre pas sur un fil que Meta a refusé de rendre',
       { ignoreHumanControl: true });
 
     // La raison remonte en clair : c'est elle qui atterrit dans `campaign_recipients.error`, le seul
-    // endroit où quelqu'un ira la lire.
+    // endroit où quelqu'un ira la lire. 🔴 Et elle dit ce qui a été refusé : le retrait de la liste de l'agent,
+    // pas un fil « repris » ni un fil que Meta aurait refusé de rendre (relecture du 2026-09-30 ; vérifié dans les
+    // deux sens, l'ancienne phrase remise, ce cas échoue).
     expect(typeof issue).toBe('string');
-    expect(String(issue)).toContain('agent de Meta');
+    expect(String(issue)).toContain("le contact n'a pas pu être retiré de la liste de l'agent de Meta");
     // 🔴 ET SURTOUT : rien n'est parti et aucun run n'existe. Un run créé ici serait un parcours mort,
     // gelé dès la première réponse du contact, exactement le défaut du 2026-09-14.
     expect(demarrages).toEqual([]);

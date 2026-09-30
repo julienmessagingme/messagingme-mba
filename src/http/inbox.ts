@@ -180,8 +180,9 @@ export interface InboxRouteDeps extends DepsRepondre {
   /**
    * L'opérateur rend la main : la conversation repart en automatique ; rend qui la détient désormais. Elle appelle
    * Meta (le contact sur la liste de l'agent, puis `release`) pour que l'agent de Meta redevienne le répondeur
-   * principal, au prochain message du client. Un échec
-   * remonte (409 lisible) et notre état local ne bouge pas : il ne doit pas annoncer ce que Meta n'a pas fait.
+   * principal, au prochain message du client. Un ajout à la liste refusé remonte (409 lisible) et notre état local
+   * ne bouge pas : il ne doit pas annoncer ce que Meta n'a pas fait. Un `release` refusé n'en est pas un : l'agent
+   * tenait déjà le fil (`ControleDuFil.rendreLaMain`).
    * `'aucun_numero'` : l'agent de Meta est allumé mais aucun numéro n'est connecté, il ne peut rien reprendre, et
    * rien n'est écrit.
    */
@@ -987,7 +988,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const ctx = await deps.inbox.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     /**
-     * Un échec chez Meta sort en 4xx, pas en 500 : rendre la main appelle Meta (`thread_control`, `release`) avant
+     * Un échec chez Meta sort en 4xx, pas en 500 : rendre la main met le contact sur la liste de l'agent avant
      * d'écrire notre état, et l'opérateur doit le savoir. Notre état local n'a alors pas bougé (`releaseControl`
      * écrit après Meta) : l'écran continue d'annoncer que l'opérateur tient le fil, ce qui est vrai.
      */
@@ -996,7 +997,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       owner = await deps.releaseControl(tenant, ctx.waId, parLaSession(req));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`release: Meta a refusé de reprendre le fil (${tenant}/${ctx.waId}):`, messageDe(err));
+      console.error(`release: l’agent de Meta n’a pas pu prendre la conversation (${tenant}/${ctx.waId}):`, messageDe(err));
       return reply.code(409).send({ error: 'Meta n’a pas repris la conversation. Elle reste de votre côté, réessayez dans un instant.' });
     }
     // Même règle que le balayage : un agent qui ne peut pas répondre ne s'annonce pas, et « Automatique » sortirait

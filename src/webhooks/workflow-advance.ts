@@ -3,8 +3,16 @@ import type { EntrantRattache } from './rattachement';
 
 /** Fait avancer le run de workflow en attente d'un contact quand il envoie un message entrant. */
 export interface WorkflowAdvanceDeps {
-  /** Avance le run en attente de ce contact. `buttonPayload` = bouton tapé (branche par bouton). */
-  advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null): Promise<void>;
+  /**
+   * Avance le run en attente de ce contact. `buttonPayload` = bouton tapé (branche par bouton).
+   *
+   * Rend `true` quand un parcours ATTENDAIT ce contact et a donc reçu ce message : la remise à l'agent de Meta, qui
+   * suit dans le même job, ne le traite pas une seconde fois. Sans ça (relecture du 2026-09-30), une réponse « à
+   * côté » déjà transmise à l'agent par la fin du scénario lui était confiée de nouveau, et un clic qui finissait un
+   * parcours ouvrait une demande fantôme du Quantitatif > Performance dans l'état d'attente de fin de parcours.
+   * `void` ou `false` : aucun parcours n'attendait, la remise décide.
+   */
+  advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null): Promise<boolean | void>;
   /**
    * Consigne un échec d'avance là où quelqu'un le verra : l'isolation par message reste, mais un acquittement
    * silencieux laisserait le contact bloqué sur son bloc sans rejeu ni trace. Optionnelle et best-effort :
@@ -40,7 +48,9 @@ function contexteDeLAvance(err: unknown): { workflowId?: string; runId?: string;
  * handler : ne doit jamais faire échouer le job webhook partagé. Le bouton tapé choisit la branche ; une réponse
  * texte suit la 1re arête sortante.
  */
-export async function processWorkflowAdvance(entrants: readonly EntrantRattache[], deps: WorkflowAdvanceDeps, consumed?: ReadonlySet<string>): Promise<void> {
+/** Rend les messages qu'un parcours en attente a reçus (`advance` a rendu `true`) : la remise les laisse de côté. */
+export async function processWorkflowAdvance(entrants: readonly EntrantRattache[], deps: WorkflowAdvanceDeps, consumed?: ReadonlySet<string>): Promise<ReadonlySet<string>> {
+  const parParcours = new Set<string>();
   for (const { message: m, tenantId } of entrants) {
     // Message déjà consommé par une étape prioritaire (jeton de test) : ce n'est pas une réponse du contact
     // à son parcours, le traiter comme telle ferait avancer le scénario d'un cran pour rien.
@@ -54,7 +64,7 @@ export async function processWorkflowAdvance(entrants: readonly EntrantRattache[
     if (m.field && m.field !== 'messages') continue;
     // Isolation par message : une erreur sur un contact ne prive pas les autres du même webhook.
     try {
-      await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload);
+      if ((await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload)) === true) parParcours.add(m.messageId);
     } catch (err) {
       const erreur = texteDe(err);
       // eslint-disable-next-line no-console
@@ -71,4 +81,5 @@ export async function processWorkflowAdvance(entrants: readonly EntrantRattache[
       }
     }
   }
+  return parParcours;
 }

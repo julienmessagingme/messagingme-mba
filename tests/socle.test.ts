@@ -32,6 +32,7 @@ const configuration: ConfigSocle = {
   PHONE_RATE_PER_MINUTE_MAX: 80,
   RCS_PROVIDER: 'fake',
   CREDIT_OFFERT_MICRO_EUR: 0,
+  CONTROL_HUMAN_TIMEOUT_MS: 2 * 60 * 60 * 1000,
 };
 
 /** Un faux pool qui répond aux deux lectures du chemin (la fiche avant l'écriture, les espaces branchés), et une file qui garde ce qu'on lui confie. */

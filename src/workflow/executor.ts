@@ -234,9 +234,9 @@ export interface WorkflowExecutorDeps {
   isWindowOpen: (tenantId: string, waId: string) => Promise<boolean>;
   /**
    * Rend la main à l'app sur un fil (inverse d'`escalateToHuman`), au lancement voulu d'un parcours : sans
-   * ça, le scénario se bloquerait à la première réponse du contact. Rend `false` quand Meta a refusé de nous
-   * rendre le fil : un démarrage condamné doit échouer tout de suite, avec sa raison, au lieu d'un parcours
-   * gelé pendant que l'agent de Meta répond. `void` (tests) vaut succès ; fixtures : `repriseSansObjection`.
+   * ça, le scénario se bloquerait à la première réponse du contact. Rend `false` quand Meta a refusé de retirer
+   * le contact de la liste de son agent : un démarrage condamné doit échouer tout de suite, avec sa raison, au
+   * lieu d'un parcours gelé pendant que l'agent de Meta répond. `void` (tests) vaut succès ; fixtures : `repriseSansObjection`.
    * `saufOperateur` : un démarrage que le client déclenche (clic sur une publicité) ne prend pas le fil à un
    * opérateur qui le tient, et `'operateur'` le dit (`src/inbox/fil.ts`).
    */
@@ -1041,12 +1041,12 @@ export class WorkflowExecutor {
         console.log(`workflow ${workflowId}: fil tenu par un opérateur, run non démarré pour ${contact.waId}`);
         return "la conversation est tenue par un opérateur : ce démarrage, déclenché par le contact, ne lui prend pas la main. Le message l'attend dans l'Inbox.";
       }
-      // Une reprise qui échoue arrête le démarrage : sinon le parcours partirait sur un fil que l'agent de Meta
-      // tient, gelé à la première réponse. La raison remonte jusqu'au destinataire (`campaign_recipients.error`).
+      // Une reprise qui échoue arrête le démarrage : sinon l'agent de Meta, qui a ce contact sur sa liste, répondrait
+      // à la place du scénario. La raison remonte jusqu'au destinataire (`campaign_recipients.error`).
       if (reprise === false) {
         // eslint-disable-next-line no-console
-        console.warn(`workflow ${workflowId}: fil NON repris pour ${contact.waId}, run non démarré (l'agent de Meta le tient et Meta a refusé de le rendre)`);
-        return "le fil est tenu par l'agent de Meta et Meta a refusé de le rendre : le scénario n'a pas démarré, il aurait été bloqué dès la première réponse du contact.";
+        console.warn(`workflow ${workflowId}: contact ${contact.waId} NON retiré de la liste de l'agent de Meta, run non démarré`);
+        return "le contact n'a pas pu être retiré de la liste de l'agent de Meta : le scénario n'a pas démarré, l'agent aurait répondu à sa place dès la première réponse du contact.";
       }
     } else if (!(await this.deps.mayAct(tenantId, contact.waId))) {
       // eslint-disable-next-line no-console

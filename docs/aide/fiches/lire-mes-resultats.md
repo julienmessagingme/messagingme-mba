@@ -1,7 +1,7 @@
 ---
 ecran: perf-synthese
 source_section: Analytics (menu Analytics)
-source_empreinte: 5bed2b
+source_empreinte: 9d7559
 ---
 # Lire mes résultats dans le Performance Lab
 
@@ -40,7 +40,8 @@ par modèle. Un tableau dit aussi **qui a écrit les messages de service** : l'I
 personne de votre équipe, avec le détail de l'IA (votre agent, celui de Meta, un agent tiers).
 
 La page **Quantitatif > Performance** mesure votre équipe sur les conversations qu'un robot lui a passées (un
-scénario, un agent IA, l'agent de Meta, ou la réponse à une campagne qui arrive dans l'Inbox). Le chrono part quand
+scénario, un agent IA, l'agent de Meta, ou la réponse à une campagne qui arrive dans l'Inbox), et sur celles qu'un
+client rouvre en réécrivant après « Traité » ou un archivage, tant que votre équipe les tient. Le chrono part quand
 le client a écrit : un destinataire de campagne qui ne répond jamais ne compte pas, et celui qui répond deux jours
 plus tard compte à partir de sa réponse. Le **temps de réponse** va jusqu'au premier message écrit dans l'Inbox par
 un collaborateur, et le **temps de résolution** jusqu'au premier « Traité », archivage ou retour à un robot ; si

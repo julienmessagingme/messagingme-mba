@@ -103,7 +103,7 @@ describe('release : la minuterie de reprise après un humain', () => {
   const T0 = Date.parse('2026-08-18T12:00:00Z');
   const ago = (ms: number) => new Date(T0 - ms);
 
-  function sweep(avecMba: string[], releaseKo = false, dernierMessage: Date = ago(1 * H)) {
+  function sweep(avecMba: string[], ajoutKo = false, dernierMessage: Date = ago(1 * H)) {
     const rendues: Array<{ waId: string; dest: string }> = [];
     const releases: string[] = [];
     const deps: ControlSweepDeps = {
@@ -117,9 +117,10 @@ describe('release : la minuterie de reprise après un humain', () => {
         mbaActifParTenant: async () => new Set(avecMba),
       },
       // Le vrai geste de remise (`src/inbox/fil.ts`), sur un dépôt qui note ce qu'on écrit et un Meta qui accepte
-      // ou refuse (un 5xx, rejouable ailleurs, n'est jamais rejoué par une remise).
+      // ou refuse l'ajout à la liste (un 5xx, rejouable ailleurs, n'est jamais rejoué par une remise). Un `release`
+      // refusé après la liste confie quand même : c'est la liste qui décide (`confier`).
       fil: bancDuFil({
-        release: [releaseKo ? 'refuse' : 'accepte'],
+        ...(ajoutKo ? { ajout: ['refuse' as const] } : {}),
         auMeta: (acte, waId) => { if (acte === 'release') releases.push(waId); },
         depot: { setControlOwner: async (_t, waId, owner) => { rendues.push({ waId, dest: owner }); return true; } },
       }).fil,
@@ -137,7 +138,7 @@ describe('release : la minuterie de reprise après un humain', () => {
     expect(releases).toEqual(['a']);
   });
 
-  it('🔴 un release REFUSÉ n’écrit AUCUN état local, et c’est l’inverse d’avant', async () => {
+  it('🔴 une remise REFUSÉE (l’ajout à la liste) n’écrit AUCUN état local, et c’est l’inverse d’avant', async () => {
     /**
      * 🔴 CE TEST REMPLACE SON CONTRAIRE, ET LE DIT. Il affirmait « un release en échec ne regèle PAS la
      * conversation », c'est-à-dire que la bascule locale passait quand même. C'était un choix assumé (ne pas

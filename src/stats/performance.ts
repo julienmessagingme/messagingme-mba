@@ -9,7 +9,10 @@ import { horairesExploitables, mesureurDeTempsOuvre } from '../lib/heures-ouvree
  *
  * UNE DEMANDE S'OUVRE quand un robot passe la main à l'équipe : un scénario ou un agent IA (`escaladee`, migration
  * 0194, à chaque passage, drapeau d'escalade ou non), la réponse à une campagne dont le devenir est l'Inbox
- * (`escaladee` aussi), l'agent de Meta (`passee_par_mba`, 0192). Un collaborateur qui prend le fil lui-même en
+ * (`escaladee` aussi), l'agent de Meta (`passee_par_mba`, 0192). ELLE S'OUVRE AUSSI quand le contact rouvre une
+ * conversation « Traité » ou archivée que l'équipe tient encore, avant son délai de reprise (`escaladee`, sans bascule,
+ * `ControleDuFil.remettreSiPersonneNeSuit`) : la précédente est close, et c'est à l'équipe de répondre. Après le
+ * délai, la conversation part à l'agent de Meta, et rien ne s'ouvre. Un collaborateur qui prend le fil lui-même en
  * écrivant n'en ouvre pas : personne n'attendait, et elle serait répondue en 0 s. Un nouveau passage pendant qu'une
  * demande est ouverte n'en ouvre pas une seconde : le client attend toujours la même réponse.
  *

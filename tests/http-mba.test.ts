@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { MbaClient } from '../src/mba/client';
 import type { MbaRouteDeps } from '../src/http/mba';
+import { MetaApiError } from '../src/meta/errors';
 import { mbaInerte } from './routes-inertes';
 
 const SECRET = 'test-secret';
@@ -168,8 +169,14 @@ describe('routes MBA : état et réglages', () => {
     await server.close();
   });
 
+  /** Notre drapeau `mba_enabled`, dans le même journal que les appels à Meta. */
+  const drapeauNote = (appels: Array<{ m: string; args: unknown[] }>): Partial<MbaRouteDeps> => ({
+    reglages: { setMbaEnabled: async (t, enabled) => { appels.push({ m: 'drapeau', args: [t, enabled] }); } },
+  });
+
   it('🔴 l’allumage a sa PROPRE route, et suit l’ordre de Meta : audience, relecture, puis rollout', async () => {
-    const { server, appels } = app();
+    const journal: Array<{ m: string; args: unknown[] }> = [];
+    const { server, appels } = app({}, drapeauNote(journal));
     const res = await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: { enabled: true } });
     expect(res.statusCode).toBe(200);
     expect(appels.map((a) => a.m)).toEqual(['getSettings', 'putSettings', 'getSettings', 'putSettings', 'getSettings']);
@@ -180,12 +187,45 @@ describe('routes MBA : état et réglages', () => {
     await server.close();
   });
 
-  it('🔴 si Meta ne confirme pas l’audience à la relecture : 409 lisible, l’agent n’est pas allumé', async () => {
-    const { server, appels } = app({ getSettings: () => ({ agent_id: 'AG1', ai_audience: 'EVERYONE', rollout: { enabled: false } }) });
+  it('🔴 si Meta ne confirme pas l’audience à la relecture : 409 lisible, l’agent n’est pas allumé, notre drapeau non plus', async () => {
+    const journal: Array<{ m: string; args: unknown[] }> = [];
+    const { server, appels } = app({ getSettings: () => ({ agent_id: 'AG1', ai_audience: 'EVERYONE', rollout: { enabled: false } }) }, drapeauNote(journal));
     const res = await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: { enabled: true } });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toMatch(/pas été allumé/);
     expect(appels.filter((a) => a.m === 'putSettings')).toHaveLength(1);
+    expect(journal).toEqual([]);
+    await server.close();
+  });
+
+  /**
+   * 🔴 L'INTERRUPTEUR DE L'APERÇU ÉCRIT NOTRE DRAPEAU, APRÈS META. Toute la mécanique de la liste lit
+   * `tenant_settings.mba_enabled` (la remise à l'agent, la requalification d'un `standby`) : un espace allumé par
+   * l'Aperçu avait l'agent allumé chez Meta et le drapeau à `false`, donc ses réponses en `standby` n'arrivaient à
+   * personne. Vérifié dans les deux sens : l'écriture du drapeau retirée de la route, les deux cas échouent.
+   */
+  it('🔴 allumer puis éteindre depuis l’Aperçu : notre drapeau suit, écrit après Meta', async () => {
+    // Chaque écriture du drapeau note combien d'écritures Meta l'ont précédée : 2 à l'allumage (audience, rollout),
+    // 3 à l'extinction qui suit.
+    const drapeaux: Array<[string, boolean, number]> = [];
+    let meta: Array<{ m: string }> = [];
+    const { server, appels } = app({}, {
+      reglages: { setMbaEnabled: async (t, enabled) => { drapeaux.push([t, enabled, meta.filter((a) => a.m === 'putSettings').length]); } },
+    });
+    meta = appels;
+    expect((await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: { enabled: true } })).statusCode).toBe(200);
+    expect(drapeaux).toEqual([['t1', true, 2]]);
+    expect((await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: { enabled: false } })).statusCode).toBe(200);
+    expect(drapeaux).toEqual([['t1', true, 2], ['t1', false, 3]]);
+    await server.close();
+  });
+
+  it('🔴 Meta refuse l’allumage : notre drapeau ne bouge pas', async () => {
+    const journal: Array<{ m: string; args: unknown[] }> = [];
+    const { server } = app({ putSettings: () => { throw new MetaApiError(400, { message: 'refusé', type: 'MbaError' }); } }, drapeauNote(journal));
+    const res = await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: { enabled: true } });
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(journal).toEqual([]);
     await server.close();
   });
 });

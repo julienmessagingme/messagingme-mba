@@ -35,7 +35,10 @@ const MAINTENANT = new Date('2026-09-14T12:00:00Z').getTime();
 function deps(
   held: Array<{ owner: ControlOwner; changedAt: Date | null; lastMessageAt?: Date | null }>,
   over: Partial<ControlSweepDeps> & {
-    /** Ce que Meta fait du `release` : il accepte, il refuse, ou aucun numéro n'est connecté (rien à rendre). */
+    /**
+     * Ce que Meta fait de la remise : il accepte, il refuse l'ajout à la liste (un `release` refusé après elle confie
+     * quand même, `confier`), ou aucun numéro n'est connecté (rien à rendre).
+     */
     meta?: 'accepte' | 'refuse' | 'aucun_numero';
   } = {},
 ): ControlSweepDeps & { ecrits: Array<{ owner: ControlOwner }>; rendus: string[]; vu: { age?: number } } {
@@ -55,7 +58,7 @@ function deps(
     // Le vrai geste de remise (`src/inbox/fil.ts`) : Meta d'abord, puis l'écriture, ici notée.
     fil: bancDuFil({
       numero: meta === 'aucun_numero' ? null : 'pn1',
-      release: [meta === 'refuse' ? 'refuse' : 'accepte'],
+      ...(meta === 'refuse' ? { ajout: ['refuse' as const] } : {}),
       auMeta: (acte, waId) => { if (acte === 'release') rendus.push(waId); },
       depot: {
         setControlOwner: async (_t: string, _w: string, owner: ControlOwner, opts?: { only?: readonly ControlOwner[] }) => {

@@ -1,6 +1,7 @@
 import type { ControlOwner } from './store.pg';
 import type { ControleDuFil } from './fil';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
+import { repriseDue } from './delai-reprise';
 
 /**
  * La fenêtre de service client de Meta : 24 h depuis le dernier message entrant. Au-delà, aucun échange sans
@@ -77,13 +78,10 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     // Le réglage du client prime sur le défaut, et seulement pour le gel humain.
     const reglageClient = c.owner === 'app_human' ? parTenant.get(c.tenantId) : undefined;
     const ms = reglageClient ?? deps.timeouts[c.owner];
-    // Une escalade sans réponse ne revient pas à l'agent : le client attend un humain. La première réponse d'un
-    // opérateur efface l'escalade, et le délai habituel court ensuite.
-    if (c.owner === 'app_human' && c.escaladee) continue;
-    // Absent ou 0 = jamais de reprise automatique pour cet état : un client qui pose 0 garde la main.
-    if (ms === undefined || ms <= 0) continue;
-    // `changedAt` null = bascule ancienne, donc éligible (sinon bloquée pour toujours).
-    if (c.changedAt !== null && now() - c.changedAt.getTime() < ms) continue;
+    // La règle partagée avec la remise « personne ne suit » (`./delai-reprise.ts`) : une escalade sans réponse ne
+    // revient pas à l'agent (le client attend un humain), un délai absent ou nul garde la main, et un fil non daté
+    // est éligible.
+    if (!repriseDue({ owner: c.owner, depuisMs: c.changedAt === null ? null : now() - c.changedAt.getTime(), escaladee: c.escaladee }, ms)) continue;
     // Destination : l'agent de Meta s'il est allumé chez ce client, le scénario sinon (`app_workflow` rend aussi
     // la main, puisqu'un parcours reprend le fil pour de vrai). On ne passe pas la main sur une fenêtre fermée : l'agent
     // ne prendrait rien et personne ne répondrait. On saute, sans replier sur `app_workflow` que « À traiter »

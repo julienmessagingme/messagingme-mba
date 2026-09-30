@@ -52,7 +52,7 @@ function inboxQuiCompte(espaces: Record<string, string | null>) {
     enregistres,
     inbox: {
       phoneNumberTenant: async (pnid: string) => { lectures.push(pnid); return espaces[pnid] ?? null; },
-      recordInbound: async (_t: string, m: InboundMessage) => { enregistres.push(m.messageId); },
+      recordInbound: async (_t: string, m: InboundMessage) => { enregistres.push(m.messageId); return { rouverte: false }; },
     },
   };
 }
@@ -187,7 +187,7 @@ describe('une lecture en échec garde son sort d’avant', () => {
 describe('le type tient ce que le rattachement suppose', () => {
   it('🔴 l’écriture du STOP est requise avec l’Inbox, et une étape rattachée n’existe pas sans elle', () => {
     const base = { store: { insertEvent: async () => true } };
-    const inbox = { phoneNumberTenant: async () => 't1', recordInbound: async () => {} };
+    const inbox = { phoneNumberTenant: async () => 't1', recordInbound: async () => ({ rouverte: false }) };
     // @ts-expect-error `inboundOptOut` manque : une dépendance de consentement n'est jamais optionnelle.
     const sansStop: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee };
     // @ts-expect-error `detenteur` manque : sans lui, un `standby` ne corrigerait plus notre colonne (relecture du lot 4).

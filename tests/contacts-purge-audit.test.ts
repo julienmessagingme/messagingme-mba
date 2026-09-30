@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ContactsDep, ContactsRouteDeps } from '../src/http/contacts';
+import { creerTravauxEnVol } from '../src/lib/en-vol';
 
 /**
  * La purge d'un contact et sa trace auditable.
@@ -35,6 +36,7 @@ function app(over: Partial<Omit<ContactsRouteDeps, 'contacts'>> & { contacts?: P
   const editsRecus: unknown[] = [];
   // Le journal commun de la purge et du retrait chez Meta : l'ordre des deux est ce qu'on vérifie.
   const ordre: string[] = [];
+  const enVol = creerTravauxEnVol();
   const oubliees: Array<{ tenantId: string; lignes: unknown[] }> = [];
   const deps = {
     contacts: {
@@ -81,9 +83,11 @@ function app(over: Partial<Omit<ContactsRouteDeps, 'contacts'>> & { contacts?: P
     listeDeLAgent: {
       oublierChezMeta: async (tenantId: string, lignes: readonly unknown[]) => { ordre.push('meta'); oubliees.push({ tenantId, lignes: [...lignes] }); },
     },
+    // Le vrai registre : le retrait d'après la réponse y est suivi, et un test l'attend.
+    enVol,
     ...reste,
   } as unknown as ContactsRouteDeps;
-  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs, limitesSysteme, ordre, oubliees };
+  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs, limitesSysteme, ordre, oubliees, enVol };
 }
 
 const url = '/tenants/t1/contacts/purge';
@@ -120,6 +124,38 @@ describe('suppression d’un contact (la seule, et elle efface)', () => {
     expect(oubliees).toEqual([{ tenantId: 't1', lignes: [{ waId: '33611223344', phoneNumberId: 'pn1', entreeId: 'e-c1' }] }]);
     // Et le numéro ne repart pas vers le navigateur dans la réponse de la purge.
     expect(JSON.stringify(res.json())).not.toContain('33611223344');
+    await server.close();
+  });
+
+  /**
+   * 🔴 LA RÉPONSE N'ATTEND PAS META. Le retrait (un appel par contact, avec rejeu) passait avant la réponse : une grosse
+   * purge dépassait le délai de Cloudflare, et l'écran annonçait un échec pour des données effacées. Vérifié dans les
+   * deux sens : l'appel remis en `await` avant la réponse, le premier cas échoue (la réponse attend toujours).
+   */
+  it('🔴 la purge répond sans attendre le retrait chez Meta, qui reste suivi jusqu’à sa fin', async () => {
+    let finir: () => void = () => {};
+    const enCours = new Promise<void>((r) => { finir = r; });
+    const { server, enVol } = app({ listeDeLAgent: { oublierChezMeta: () => enCours } } as never);
+    const reponse = server.inject({ method: 'POST', url, ...h(adminTok), payload: { target: { ids: ['c1'] }, confirm: 'SUPPRIMER' } });
+    const premier = await Promise.race([reponse.then(() => 'réponse' as const), new Promise<'bloquée'>((r) => { setTimeout(() => r('bloquée'), 2000); })]);
+    expect(premier, 'la réponse attendait Meta').toBe('réponse');
+    expect((await reponse).statusCode).toBe(200);
+    // L'arrêt de la copie l'attendrait : il est encore en vol, puis fini.
+    expect(await enVol.attendre(0)).toBe(1);
+    finir();
+    expect(await enVol.attendre(1000)).toBe(0);
+    await server.close();
+  });
+
+  it('🔴 un retrait chez Meta en échec ne touche pas la réponse, déjà partie', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { server, enVol } = app({ listeDeLAgent: { oublierChezMeta: async () => { throw new Error('Meta injoignable'); } } } as never);
+    const res = await server.inject({ method: 'POST', url, ...h(adminTok), payload: { target: { ids: ['c1'] }, confirm: 'SUPPRIMER' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ purges: 1 });
+    expect(await enVol.attendre(1000)).toBe(0);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('retrait chez Meta des contacts purgés en échec'), 'Meta injoignable');
+    vi.restoreAllMocks();
     await server.close();
   });
 

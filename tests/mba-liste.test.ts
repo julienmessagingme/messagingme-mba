@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  creerListeDeLAgent, numeroDuDestinataire, RetraitDeLaListeRefuse, REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS,
+  creerListeDeLAgent, formesDuNumero, numeroDuDestinataire, RetraitDeLaListeRefuse, REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS,
   type ClientListe, type ListeStore,
 } from '../src/mba/liste';
 import { creerControleDuFil } from '../src/inbox/fil';
 import { MetaApiError, classify, estPlafondNumero } from '../src/meta/errors';
 import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-directives';
-import { depotEnMemoire, listeEnMemoire } from './banc-du-fil';
+import { DELAI_REPRISE_DEFAUT_MS, depotEnMemoire, listeEnMemoire } from './banc-du-fil';
 import { jamaisBloque, jamaisDesabonne } from './consentement';
 
 /**
@@ -173,11 +173,52 @@ describe('retirer : Meta, puis la ligne', () => {
     expect(m.attentes).toEqual([REJEU_ATTENTE_MAX_MS]);
   });
 
-  it('⚠️ il ne LÈVE jamais, même si le client MBA est indisponible', async () => {
+  it('⚠️ un client MBA indisponible vaut un refus : `false`, sans lever', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const t = listeEnMemoire([WA]);
     const liste = creerListeDeLAgent({ store: t.store, clientMba: async () => { throw new Error('jeton illisible'); }, attendre: async () => {} });
     await expect(liste.retirer(T, WA)).resolves.toBe(false);
+  });
+
+  /**
+   * 🔴 UNE PANNE DE NOTRE TABLE N'EST PAS UN REFUS DE META. Elle rendait `false`, que chaque appelant traite comme un
+   * refus définitif (409 dans l'Inbox, démarrage annulé, lead en `reprise_refusee`, et un modèle d'une campagne
+   * compté comme refusé par Meta). Elle lève : le job ou la requête échoue et se rejoue. Vérifié dans les deux sens :
+   * la lecture de la table remise dans le `try`, les trois cas échouent (`false`, puis `RetraitDeLaListeRefuse`).
+   */
+  it('🔴 la lecture de la table en panne : `retirer` LÈVE, sans aucun appel à Meta', async () => {
+    const journal: string[] = [];
+    const panne = new Error('base indisponible');
+    const liste = creerListeDeLAgent({
+      store: { ...listeEnMemoire([WA]).store, trouver: async () => { throw panne; } },
+      clientMba: async () => clientFactice({ journal }),
+      attendre: async () => {},
+    });
+    await expect(liste.retirer(T, WA)).rejects.toBe(panne);
+    expect(journal).toEqual([]);
+  });
+
+  it('🔴 la suppression de la ligne en panne APRÈS le retrait chez Meta : `retirer` LÈVE (rejoué, Meta rendra 404)', async () => {
+    const journal: string[] = [];
+    const t = listeEnMemoire([WA]);
+    const liste = creerListeDeLAgent({
+      store: { ...t.store, supprimer: async () => { throw new Error('base indisponible'); } },
+      clientMba: async () => clientFactice({ journal }),
+      attendre: async () => {},
+    });
+    await expect(liste.retirer(T, WA)).rejects.toThrow('base indisponible');
+    expect(journal).toEqual([`meta:retrait:pn1:entree-${WA}`]);
+  });
+
+  it('🔴 avant un modèle, une panne de la table remonte telle quelle, pas en « Meta a refusé »', async () => {
+    const liste = creerListeDeLAgent({
+      store: { ...listeEnMemoire([WA]).store, trouver: async () => { throw new Error('base indisponible'); } },
+      clientMba: async () => clientFactice({ journal: [] }),
+      attendre: async () => {},
+    });
+    const err = await liste.retirerAvantUnModele(T, `+${WA}`).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(RetraitDeLaListeRefuse);
+    expect((err as Error).message).toBe('base indisponible');
   });
 });
 
@@ -204,6 +245,35 @@ describe('retirerAvantUnModele', () => {
     const m = monter({ initial: ['13491208655'] });
     await m.liste.retirerAvantUnModele(T, 'US.13491208655');
     expect(m.journal).toEqual([]);
+  });
+
+  /**
+   * 🔴 LE NUMÉRO DE LA FICHE ET LE `wa_id` DU WEBHOOK PEUVENT DIFFÉRER (le 9 des mobiles brésiliens, le 1 des mobiles
+   * mexicains). La ligne porte le `wa_id` ; le modèle part vers le numéro de la fiche. Sans les deux formes, le
+   * retrait ne voyait pas la ligne, le modèle partait, et l'agent répondait à la réponse du contact. Vérifié dans
+   * les deux sens : `retirerAvantUnModele` remis sur la seule forme reçue, les trois premiers cas échouent (aucun
+   * retrait, la ligne reste).
+   */
+  it.each([
+    ['Brésil, fiche avec le 9, ligne sans', '+55 11 98765-4321', '551187654321'],
+    ['Brésil, fiche sans le 9, ligne avec', '+551187654321', '5511987654321'],
+    ['Mexique, fiche en E.164, ligne en 521', '+52 55 1234 5678', '5215512345678'],
+    ['Mexique, fiche en 521, ligne en E.164', '+5215512345678', '525512345678'],
+  ])('🔴 %s : la ligne est retirée avant le modèle', async (_nom, destinataire, ligne) => {
+    const m = monter({ initial: [ligne] });
+    await m.liste.retirerAvantUnModele(T, destinataire);
+    expect(m.journal).toEqual([`meta:retrait:pn1:entree-${ligne}`, `ligne:supprime:${ligne}`]);
+    expect(m.lignes.has(ligne)).toBe(false);
+  });
+
+  it('les formes d’un numéro : la variante du 9 brésilien et du 1 mexicain, rien pour un autre pays ni pour un fixe', () => {
+    expect(formesDuNumero('5511987654321')).toEqual(['5511987654321', '551187654321']);
+    expect(formesDuNumero('551187654321')).toEqual(['551187654321', '5511987654321']);
+    expect(formesDuNumero('5215512345678')).toEqual(['5215512345678', '525512345678']);
+    expect(formesDuNumero('525512345678')).toEqual(['525512345678', '5215512345678']);
+    expect(formesDuNumero(WA)).toEqual([WA]);
+    // Un fixe brésilien (premier chiffre de 2 à 5) n'a jamais reçu de 9 : pas de variante, qui serait un autre abonné.
+    expect(formesDuNumero('551132345678')).toEqual(['551132345678']);
   });
 });
 
@@ -240,7 +310,8 @@ describe('confier et reprendre, dans l’ordre (`src/inbox/fil.ts` sur `src/mba/
         ...memoire.depot,
         setControlOwner: async (t, w, owner, opts) => { journal.push(`colonne:${owner}`); return memoire.depot.setControlOwner(t, w, owner, opts); },
       },
-      reglages: { get: async () => ({ mbaEnabled: true }) },
+      reglages: { get: async () => ({ mbaEnabled: true, controlHandbackSeconds: null }) },
+      delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },
       numeros: { getTenantPhoneNumberId: async () => PN },
       liste,

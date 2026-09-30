@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MbaClient, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../src/mba/client';
+import { MbaClient, RELECTURE_AUDIENCE_ATTENTE_MS, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../src/mba/client';
 import { MetaApiError } from '../src/meta/errors';
 
 /** Faux fetch : enregistre les appels et rend des réponses scriptées. Aucun réseau. */
@@ -225,15 +225,23 @@ describe('toute écriture des réglages porte ALLOWLISTED_ONLY', () => {
  * au lieu de quatre).
  */
 describe('ecrireRollout : allumer dans l’ordre', () => {
-  it('🔴 audience, relecture, puis rollout : quatre appels, dans cet ordre', async () => {
+  /** L'attente injectée : notée, jamais dormie. */
+  const sansDormir = () => {
+    const attentes: number[] = [];
+    return { attentes, attendre: async (ms: number) => { attentes.push(ms); } };
+  };
+
+  it('🔴 audience, relecture, puis rollout : quatre appels, dans cet ordre, et aucune attente', async () => {
+    const d = sansDormir();
     const { impl, appels } = faux([
       { body: [{ agent_id: 'a1', ai_audience: 'EVERYONE', rollout: { enabled: false }, never_say_phrases: ['x'] }] },
       { body: {} },
       { body: [{ agent_id: 'a1', ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: false }, never_say_phrases: ['x'] }] },
       { body: {} },
     ]);
-    await ecrireRollout(new MbaClient('tok', impl), 'PN1', true);
+    await ecrireRollout(new MbaClient('tok', impl), 'PN1', true, d);
     expect(appels.map((a) => a.method)).toEqual(['GET', 'PUT', 'GET', 'PUT']);
+    expect(d.attentes).toEqual([]);
     const audience = appels[1]!.body as Record<string, unknown>;
     expect(audience.ai_audience).toBe('ALLOWLISTED_ONLY');
     expect(audience.rollout, 'le premier PUT n’allume pas').toEqual({ enabled: false });
@@ -244,16 +252,36 @@ describe('ecrireRollout : allumer dans l’ordre', () => {
     expect(appels[3]!.url).toContain('agent_id=a1');
   });
 
-  it('🔴 si la relecture ne rend pas la liste, l’agent n’est PAS allumé', async () => {
+  it('🔴 si les DEUX relectures ne rendent pas la liste, l’agent n’est PAS allumé', async () => {
     // Un agent allumé pour tout le monde répondrait par-dessus nos scénarios : mieux vaut un refus lisible.
-    const { impl, appels } = faux([{ body: [{ agent_id: 'a1' }] }, { body: {} }, { body: [{ agent_id: 'a1', ai_audience: 'EVERYONE' }] }]);
-    await expect(ecrireRollout(new MbaClient('tok', impl), 'PN1', true)).rejects.toThrow(/audience/);
-    expect(appels.filter((a) => a.method === 'PUT')).toHaveLength(1);
+    const d = sansDormir();
+    const tousLeMonde = { body: [{ agent_id: 'a1', ai_audience: 'EVERYONE' }] };
+    const { impl, appels } = faux([{ body: [{ agent_id: 'a1' }] }, { body: {} }, tousLeMonde, tousLeMonde]);
+    await expect(ecrireRollout(new MbaClient('tok', impl), 'PN1', true, d)).rejects.toThrow(/audience/);
+    expect(appels.map((a) => a.method)).toEqual(['GET', 'PUT', 'GET', 'GET']);
+    expect(d.attentes, 'une attente, puis une seule relecture de plus').toEqual([RELECTURE_AUDIENCE_ATTENTE_MS]);
+  });
+
+  it('🔴 Meta propage avec retard : la seconde relecture, après l’attente, confirme, et l’agent s’allume', async () => {
+    // Sans elle, un allumage rendait 409 dès que Meta relisait l'ancienne audience un instant de trop. Vérifié dans
+    // les deux sens : la seconde relecture retirée d'`ecrireRollout`, ce cas lève.
+    const d = sansDormir();
+    const { impl, appels } = faux([
+      { body: [{ agent_id: 'a1', ai_audience: 'EVERYONE', rollout: { enabled: false } }] },
+      { body: {} },
+      { body: [{ agent_id: 'a1', ai_audience: 'EVERYONE', rollout: { enabled: false } }] },
+      { body: [{ agent_id: 'a1', ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: false } }] },
+      { body: {} },
+    ]);
+    await ecrireRollout(new MbaClient('tok', impl), 'PN1', true, d);
+    expect(appels.map((a) => a.method)).toEqual(['GET', 'PUT', 'GET', 'GET', 'PUT']);
+    expect(d.attentes).toEqual([RELECTURE_AUDIENCE_ATTENTE_MS]);
+    expect(appels[4]!.body).toMatchObject({ rollout: { enabled: true }, ai_audience: 'ALLOWLISTED_ONLY' });
   });
 
   it('éteindre n’a pas d’ordre à suivre : un seul PUT, qui porte aussi l’audience', async () => {
     const { impl, appels } = faux([{ body: [{ agent_id: 'a1', rollout: { enabled: true } }] }, { body: {} }]);
-    await ecrireRollout(new MbaClient('tok', impl), 'PN1', false);
+    await ecrireRollout(new MbaClient('tok', impl), 'PN1', false, sansDormir());
     expect(appels.map((a) => a.method)).toEqual(['GET', 'PUT']);
     expect(appels[1]!.body).toMatchObject({ rollout: { enabled: false }, ai_audience: 'ALLOWLISTED_ONLY' });
   });
@@ -262,7 +290,7 @@ describe('ecrireRollout : allumer dans l’ordre', () => {
     const { impl, appels } = faux([
       { body: [{ agent_id: 'autre' }] }, { body: {} }, { body: [{ agent_id: 'autre', ai_audience: 'ALLOWLISTED_ONLY' }] }, { body: {} },
     ]);
-    await ecrireRollout(new MbaClient('tok', impl), 'PN1', true, 'ag-assistant');
+    await ecrireRollout(new MbaClient('tok', impl), 'PN1', true, { ...sansDormir(), agentId: 'ag-assistant' });
     expect(appels[1]!.url).toContain('agent_id=ag-assistant');
     expect(appels[3]!.url).toContain('agent_id=ag-assistant');
   });

@@ -491,21 +491,33 @@ export class AudienceNonConfirmee extends Error {
 }
 
 /**
+ * L'attente avant la seconde relecture de l'audience, quand la première ne la rend pas encore : Meta peut propager
+ * l'écriture avec un temps de retard, et un refus sur la première relecture seule rendrait l'allumage capricieux.
+ */
+export const RELECTURE_AUDIENCE_ATTENTE_MS = 2000;
+
+/**
  * Allume ou éteint l'agent. L'allumage suit l'ordre que Meta prescrit : l'audience d'abord, une relecture, puis
  * `rollout.enabled`. En un seul PUT, Meta évaluerait l'audience stockée au moment d'allumer. 🔴 Si la relecture ne
- * rend pas l'audience de la liste, on n'allume pas : un agent allumé pour tout le monde répondrait par-dessus nos
- * scénarios. Éteindre n'a pas d'ordre à suivre. `agentId` : la configuration visée, quand l'appelant la connaît.
+ * rend pas l'audience de la liste, on attend (`attendre`, injectée : un test vérifie l'attente sans dormir) et on
+ * relit UNE fois de plus ; toujours pas, on n'allume pas : un agent allumé pour tout le monde répondrait par-dessus
+ * nos scénarios. Éteindre n'a pas d'ordre à suivre. `agentId` : la configuration visée, quand l'appelant la connaît.
  */
 export async function ecrireRollout(
   client: ClientReglages,
   phoneNumberId: string,
   enabled: boolean,
-  agentId?: string,
+  o: { attendre(ms: number): Promise<void>; agentId?: string },
 ): Promise<unknown> {
+  const { agentId } = o;
   const actuel = objetLu.parse(await client.getSettings(phoneNumberId));
   if (!enabled) return ecrireReglages(client, phoneNumberId, actuel, { rollout: { enabled: false } }, agentId);
   await ecrireReglages(client, phoneNumberId, actuel, {}, agentId);
-  const relu = objetLu.parse(await client.getSettings(phoneNumberId));
+  let relu = objetLu.parse(await client.getSettings(phoneNumberId));
+  if (relu.ai_audience !== AUDIENCE_DE_L_AGENT) {
+    await o.attendre(RELECTURE_AUDIENCE_ATTENTE_MS);
+    relu = objetLu.parse(await client.getSettings(phoneNumberId));
+  }
   if (relu.ai_audience !== AUDIENCE_DE_L_AGENT) throw new AudienceNonConfirmee(relu.ai_audience);
   return ecrireReglages(client, phoneNumberId, relu, { rollout: { enabled: true } }, agentId);
 }

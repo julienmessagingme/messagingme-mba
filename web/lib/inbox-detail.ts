@@ -157,9 +157,10 @@ export function libelleEvenement(e: EvenementConversation, t: T): string {
       return t('Plus signalée', 'No longer flagged');
     case 'rouverte':
       return t('Rouverte', 'Reopened');
-    // La cause dit QUI passe la main ou reprend (« automatique : scénario Bienvenue ») : la phrase reste générique.
+    // La cause dit QUI passe la main ou reprend (« automatique : scénario Bienvenue »), ou que le contact a rouvert une
+    // conversation que l'équipe tenait déjà : la phrase reste vraie dans les deux cas, une demande s'ouvre pour elle.
     case 'escaladee':
-      return t('Passée à l’équipe', 'Handed over to the team');
+      return t('Demande pour l’équipe', 'Request for the team');
     case 'rendue_scenario':
       return t('Rendue au scénario', 'Handed back to the scenario');
   }

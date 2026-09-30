@@ -174,8 +174,9 @@ class FakeInbox implements InboxStore {
   readonly recorded: Array<{ tenantId: string; m: InboundMessage }> = [];
   /** L'espace auquel le numéro est rattaché dans ces tests. */
   constructor(readonly tenant: string | null) {}
-  async recordInbound(tenantId: string, m: InboundMessage): Promise<void> {
+  async recordInbound(tenantId: string, m: InboundMessage): Promise<{ rouverte: boolean }> {
     this.recorded.push({ tenantId, m });
+    return { rouverte: false };
   }
 }
 

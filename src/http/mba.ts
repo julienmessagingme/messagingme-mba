@@ -46,9 +46,18 @@ export interface MbaRouteDeps {
     phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   };
   reglages: {
-    /** Écrit notre drapeau `tenant_settings.mba_enabled`. */
+    /**
+     * Écrit notre drapeau `tenant_settings.mba_enabled`, que toute la mécanique de la liste lit (la remise à l'agent,
+     * la requalification d'un `standby`). Les deux interrupteurs l'écrivent après Meta : `mba-activation` (l'Accueil)
+     * et `rollout` (l'onglet Aperçu).
+     */
     setMbaEnabled(tenantId: string, enabled: boolean): Promise<void>;
   };
+  /**
+   * Attendre, en millisecondes, avant la seconde relecture de l'audience à l'allumage (`ecrireRollout`). Injectée et
+   * requise : un test vérifie l'attente sans dormir.
+   */
+  attendre(ms: number): Promise<void>;
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
   fetchUrl?(url: string): Promise<PageDistante>;
   stats: {
@@ -329,6 +338,9 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
    * Allumage / extinction, route séparée. Meta documente l'asymétrie : `false` arrête l'agent sur toutes les
    * conversations, y compris en cours ; `true` ne le remet que sur les nouvelles. L'écran doit le dire avant.
    * L'allumage suit l'ordre que Meta prescrit (audience, relecture, puis `rollout`) : `ecrireRollout`.
+   * 🔴 Puis notre drapeau, comme `mba-activation` : Meta d'abord, nous ensuite. Sans lui, un espace allumé depuis
+   * l'Aperçu avait l'agent allumé chez Meta et le drapeau à `false`, que lit toute la mécanique de la liste : ses
+   * réponses en `standby` n'étaient pas requalifiées, et personne ne les prenait.
    */
   app.put(`${base}/rollout`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -336,7 +348,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const enabled = (req.body as { enabled?: unknown } | null)?.enabled;
     if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled requis (booléen)' });
     try {
-      await ecrireRollout(ctx.client, ctx.pn, enabled);
+      await ecrireRollout(ctx.client, ctx.pn, enabled, { attendre: (ms) => deps.attendre(ms) });
     } catch (err) {
       // 4xx, jamais 5xx : Cloudflare remplacerait le corps, et l'écran ne dirait plus pourquoi rien n'a changé.
       if (!(err instanceof AudienceNonConfirmee)) throw err;
@@ -344,6 +356,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
       console.error(`mba rollout: ${err.message} (${ctx.tenant})`);
       return reply.code(409).send({ error: 'Meta n’a pas confirmé que l’agent ne répond qu’aux contacts de sa liste : il n’a pas été allumé. Réessayez dans un instant.' });
     }
+    await deps.reglages.setMbaEnabled(ctx.tenant, enabled);
     return reply.code(200).send(await ctx.client.getSettings(ctx.pn));
   });
 
@@ -698,7 +711,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
         // `ecrireRollout` relit puis n'écrit que `rollout` et l'audience, dans l'ordre que Meta prescrit : un modèle
         // typé fermé effacerait `never_say_phrases`, `followup` et tout champ que Meta ajouterait.
         ecrireChezMeta: async (t, pn, enabled) => {
-          await ecrireRollout(await deps.meta.mbaClientForTenant(t), pn, enabled);
+          await ecrireRollout(await deps.meta.mbaClientForTenant(t), pn, enabled, { attendre: (ms) => deps.attendre(ms) });
         },
         ecrireDrapeau: (t, enabled) => deps.reglages.setMbaEnabled(t, enabled),
       }, tenant, b.enabled);

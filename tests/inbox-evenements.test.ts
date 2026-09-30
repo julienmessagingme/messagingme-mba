@@ -72,6 +72,7 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
     'async signalerConversation(',
     'async setAssignee(',
     'async prendreSiLibre(',
+    'async ouvrirUneDemande(',
   ])('%s', (signature) => {
     const c = corps(signature);
     const requetes = compte(c, 'this.pool.query');
@@ -82,6 +83,24 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
   it('« Archivé » et « Traité » passent par le même rangement, qui écrit l’événement', () => {
     expect(corps('async archiverConversation(')).toContain('this.basculerRangement(');
     expect(corps('async marquerTraitee(')).toContain('this.basculerRangement(');
+  });
+
+  /**
+   * 🔴 A (décision de Julien du 2026-09-30) : « TRAITÉ » RELANCE LE DÉLAI DE REPRISE d'un fil de l'équipe, dans la même
+   * requête ; l'archivage et le retrait de « Traité » n'y touchent pas. Le balayage et la remise « personne ne suit »
+   * comptent donc depuis le plus tardif de la dernière réponse de l'équipe et de ce clic. Son effet en base :
+   * `tests/integration/inbox-traite.integration.test.ts`. Vérifié dans les deux sens : `relance` vidée, ce cas échoue.
+   */
+  it('🔴 « Traité », et lui seul, relance le délai de reprise d’un fil que l’équipe tient', () => {
+    const c = corps('private async basculerRangement(');
+    expect(c).toContain("const relance = colonne === 'traitee_le'");
+    expect(c).toContain("control_changed_at = case when $3::boolean and c.control_owner = 'app_human' then now() else c.control_changed_at end");
+    expect(c).toMatch(/escaladee_le = case when \$3::boolean then null else c\.escaladee_le end\$\{relance\}/);
+  });
+
+  it('🔴 la demande ouverte par une réouverture ne vise qu’un fil que l’équipe tient encore', () => {
+    expect(corps('async ouvrirUneDemande(')).toContain("'escaladee'");
+    expect(corps('async ouvrirUneDemande(')).toContain("c.control_owner = 'app_human'");
   });
 
   it('🔴 l’état d’avant se lit sous `for no key update`, jamais `for update` (relecture du 2026-09-29)', () => {
@@ -155,7 +174,7 @@ describe('le contrôle du fil dit qui demande chaque bascule', () => {
     const b = bancDuFil({ conversations: { h: { owner: 'app_human' }, w: { owner: 'app_workflow' }, m: { owner: 'mba' } } });
     await b.fil.rendreApresInactivite('t1', 'h', 'app_human', 'mba');
     await b.fil.reprendrePourLApp('t1', 'm');
-    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour');
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Bonjour', { rouverte: false });
     expect(parDe(b)).toEqual([
       { cause: 'automatique : délai de reprise écoulé' },
       { cause: 'automatique : un scénario reprend la conversation' },

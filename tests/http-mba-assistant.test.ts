@@ -58,6 +58,8 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
         ecrire: async () => {},
       },
       acteur: { id: 'u1', email: null },
+      drapeau: { setMbaEnabled: async () => {} },
+      attendre: async () => {},
     }),
     completer: async () => {
       journal.appelsModele += 1;

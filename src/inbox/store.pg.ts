@@ -256,8 +256,8 @@ export class PgInboxStore implements InboxStore {
      * traiter ». Obligatoire, sans défaut : un oubli rangerait le fil au mauvais endroit en silence.
      */
     sens: 'in' | 'out' | 'reaction',
-  ): Promise<string> {
-    const conv = await this.pool.query<{ id: string }>(
+  ): Promise<{ id: string; rouverte: boolean }> {
+    const conv = await this.pool.query<{ id: string; rouverte: boolean }>(
       // Un contact = une conversation, quel que soit le canal : c'est le message qui porte son canal. L'unique
       // (tenant_id, wa_id) arbitre ce ON CONFLICT, et la reprise de main vaut pour le contact entier.
       //
@@ -307,11 +307,15 @@ export class PgInboxStore implements InboxStore {
            from maj join avant on avant.id = maj.id
           where (avant.archived_at is not null and maj.archived_at is null)
              or (avant.traitee_le is not null and maj.traitee_le is null)
+         returning conversation_id
        )
-       select id from maj`,
+       -- Rendu a l appelant : c est cette ecriture, et elle seule, qui sait que ce message a rouvert la
+       -- conversation. La remise personne-ne-suit en tire une demande pour l equipe, sans relecture qui ferait une course.
+       select maj.id, exists (select 1 from rouverte) as rouverte from maj`,
       [tenantId, waId, preview, rouvre.archive, sens === 'out' ? 'out' : 'in', rouvre.traite, sens === 'reaction', CAUSE_MESSAGE_DU_CONTACT],
     );
-    return conv.rows[0]!.id;
+    const r = conv.rows[0]!;
+    return { id: r.id, rouverte: r.rouverte === true };
   }
 
   /**
@@ -402,6 +406,52 @@ export class PgInboxStore implements InboxStore {
       [tenantId, waId],
     );
     return res.rows[0]?.control_owner ?? 'app_workflow';
+  }
+
+  /**
+   * Le fil tel que la remise « personne ne suit » le lit (`ControleDuFil.remettreSiPersonneNeSuit`) : détenteur,
+   * temps écoulé depuis `control_changed_at` (mesuré par la base, comme l'instant qu'elle a posé ; `null` = non daté)
+   * et escalade sans réponse. L'absence de conversation vaut `app_workflow`, comme `getControlOwner`.
+   */
+  async etatDuFil(tenantId: string, waId: string): Promise<{ owner: ControlOwner; depuisMs: number | null; escaladee: boolean }> {
+    const res = await this.pool.query<{ control_owner: ControlOwner; depuis_ms: number | null; escaladee: boolean }>(
+      `select control_owner,
+              (extract(epoch from (now() - control_changed_at)) * 1000)::float8 as depuis_ms,
+              escaladee_le is not null as escaladee
+         from conversations where tenant_id = $1 and wa_id = $2`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    return r ? { owner: r.control_owner, depuisMs: r.depuis_ms, escaladee: r.escaladee } : { owner: 'app_workflow', depuisMs: null, escaladee: false };
+  }
+
+  /**
+   * Ouvre une demande du Quantitatif > Performance sans bascule (l'événement `escaladee`, migration 0194) : un client
+   * rouvre une conversation « Traité » ou archivée que l'équipe tient encore. Seulement si le fil est toujours à
+   * l'équipe, dans la même requête. La lecture des demandes (`PgPerformanceStore`) la compte sans rien savoir de plus :
+   * l'événement d'avant est le « Traité » ou l'archivage qui a clos la précédente.
+   */
+  /** Le délai de reprise d'un fil que l'équipe tient repart maintenant (voir `ControleDuFil.prendrePourLEquipe`). */
+  async relancerLeDelai(tenantId: string, waId: string): Promise<void> {
+    await this.pool.query(
+      `update conversations set control_changed_at = now()
+        where tenant_id = $1 and wa_id = $2 and control_owner = 'app_human'`,
+      [tenantId, waId],
+    );
+  }
+
+  async ouvrirUneDemande(tenantId: string, waId: string, cause: string): Promise<void> {
+    const auteur = colonnesAuteur({ cause });
+    await this.pool.query(
+      `insert into conversation_evenements (tenant_id, conversation_id, type, cause)
+       select $1, c.id, 'escaladee', $3::text
+         from conversations c
+        where c.tenant_id = $1 and c.wa_id = $2 and c.control_owner = 'app_human'
+          -- L'attente d'une fin de parcours (app_human en attendant l'accusé de notre dernier envoi) n'est pas
+          -- l'équipe : aucune demande ne s'y ouvre (relecture du 2026-09-30).
+          and c.release_mba_apres_message is null`,
+      [tenantId, waId, auteur.cause],
+    );
   }
 
   /**
@@ -666,13 +716,16 @@ export class PgInboxStore implements InboxStore {
     return res.rows[0]?.is_test === true;
   }
 
-  /** `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp. */
-  async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<void> {
+  /**
+   * `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp. Rend
+   * `rouverte` : ce message vient de sortir la conversation de « Traité » ou d'Archivé (l'événement `rouverte`).
+   */
+  async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<{ rouverte: boolean }> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
     // Un message du contact rouvre la conversation (hors d'Archivé, plus « Traité ») : seul chemin qui le fait.
     // Une réaction (👍) sort seulement d'Archivé, sans retirer « Traité » ni changer qui a parlé en dernier.
     const reaction = m.type === 'reaction';
-    const conversationId = await this.upsertConversationByWaId(
+    const { id: conversationId, rouverte } = await this.upsertConversationByWaId(
       tenantId, m.waId, preview, { archive: true, traite: !reaction }, reaction ? 'reaction' : 'in',
     );
     await this.pool.query(
@@ -683,6 +736,7 @@ export class PgInboxStore implements InboxStore {
        on conflict (meta_message_id) where meta_message_id is not null do nothing`,
       [conversationId, m.type, m.body, m.buttonPayload, m.messageId, channel, m.media?.id ?? null, m.media?.mime ?? null, m.media?.nom ?? null],
     );
+    return { rouverte };
   }
 
   /**
@@ -696,7 +750,7 @@ export class PgInboxStore implements InboxStore {
     msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs'; origine: OrigineMessage },
   ): Promise<void> {
     // Un envoi automatisé ne rouvre rien : une campagne ferait sinon remonter tous les contacts rangés ou traités.
-    const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body, { archive: false, traite: false }, 'out');
+    const { id: conversationId } = await this.upsertConversationByWaId(tenantId, waId, msg.body, { archive: false, traite: false }, 'out');
     await this.pool.query(
       // `origine` est obligatoire : c'est la seule chose qui distingue un envoi de scénario d'une réponse d'agent
       // IA, et le type l'exige pour que l'oubli ne compile pas.
@@ -1008,12 +1062,21 @@ export class PgInboxStore implements InboxStore {
     types: readonly [TypeEvenement, TypeEvenement],
   ): Promise<boolean> {
     const auteur = colonnesAuteur(par);
+    /**
+     * 🔴 « Traité » RELANCE LE DÉLAI DE REPRISE d'un fil que l'équipe tient (décision de Julien du 2026-09-30) : le
+     * balayage et la remise « personne ne suit » comptent depuis `control_changed_at`, donc depuis le plus tardif de la
+     * dernière réponse de l'équipe (`recordOutbound`) et de ce clic. Retirer « Traité » ne change rien, et l'archivage
+     * non plus. Un littéral du code, comme la colonne.
+     */
+    const relance = colonne === 'traitee_le'
+      ? `, control_changed_at = case when $3::boolean and c.control_owner = 'app_human' then now() else c.control_changed_at end`
+      : '';
     const res = await this.pool.query(
       // Le drapeau passe en paramètre, jamais concaténé ; la colonne est un littéral du code. L'état d'avant est
       // lu dans un sous-select VERROUILLÉ : c'est lui qui dit si le geste change quelque chose.
       `with maj as (
          update conversations c set ${colonne} = case when $3::boolean then now() else null end,
-                escaladee_le = case when $3::boolean then null else c.escaladee_le end
+                escaladee_le = case when $3::boolean then null else c.escaladee_le end${relance}
            from (select id as avant_id, ${colonne} as avant_valeur
                    from conversations where id = $1 and tenant_id = $2 for no key update) avant
           where c.id = avant.avant_id

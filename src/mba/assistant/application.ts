@@ -19,6 +19,14 @@ export interface ApplicationDeps {
   historique: { ecrire(tenantId: string, ligne: LigneHistorique): Promise<void> };
   /** Qui agit, pour l'historique. */
   acteur: { id: string | null; email: string | null };
+  /**
+   * Notre drapeau `tenant_settings.mba_enabled`, écrit après la mise en service chez Meta, comme les deux
+   * interrupteurs de la console : toute la mécanique de la liste le lit. Requis : oublié, l'agent serait allumé chez
+   * Meta et éteint pour nous, et les réponses rangées en `standby` n'arriveraient à personne.
+   */
+  drapeau: { setMbaEnabled(tenantId: string, enabled: boolean): Promise<void> };
+  /** Attendre avant la seconde relecture de l'audience à l'allumage (`ecrireRollout`). Injectée : les tests ne dorment pas. */
+  attendre(ms: number): Promise<void>;
 }
 
 /** Ce que l'application attend du client Meta, sous-ensemble strict de `MbaClient`. */
@@ -215,8 +223,10 @@ async function executer(
       return;
     }
     case 'activation.mettreEnService': {
-      // L'ordre que Meta prescrit (audience, relecture, puis `rollout`), sur la configuration de cet agent.
-      await ecrireRollout(client, numero, true, agentId);
+      // L'ordre que Meta prescrit (audience, relecture, puis `rollout`), sur la configuration de cet agent. Puis
+      // notre drapeau : Meta d'abord, nous ensuite.
+      await ecrireRollout(client, numero, true, { attendre: (ms) => deps.attendre(ms), agentId });
+      await deps.drapeau.setMbaEnabled(tenantId, true);
       return;
     }
     default: throw new Error('operation inconnue');

@@ -209,7 +209,8 @@ describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
     ordre.push(`colonne:${accepte.etat('w')?.owner}`);
     expect(ordre).toEqual(['ajout:w', 'release:w', 'colonne:mba']);
 
-    const refuse = bancDuFil({ release: ['refuse'], conversations: { w: { owner: 'app_human', marque: 'wamid.A' } } });
+    // Le refus qui compte est celui de l'ajout à la liste : un `release` refusé après elle confie quand même (`confier`).
+    const refuse = bancDuFil({ ajout: ['refuse'], conversations: { w: { owner: 'app_human', marque: 'wamid.A' } } });
     await expect(refuse.fil.remettreSurAccuse('wamid.A')).rejects.toThrow();
     expect(refuse.etat('w')?.owner, 'un refus de Meta n’écrit pas `mba`').toBe('app_human');
   });

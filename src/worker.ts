@@ -394,15 +394,22 @@ async function main(): Promise<void> {
         // opérateur tient : c'est le client qui déclenche, pas l'équipe (`saufOperateur`).
         reprendreLeFil: (t, waId) => fil.reprendrePourLApp(t, waId, { saufOperateur: true }),
         // Filet du fil pris pour rien : on prend le fil avant de savoir si l'automation démarre ; si elle ne démarre
-        // pas, ce geste le rend, avec ses gardes (agent éteint, parcours en attente, opérateur).
-        rendreLeFil: fil.remettreSiPersonneNeSuit,
+        // pas, ce geste le rend, avec ses gardes (agent éteint, parcours en attente, opérateur). `rouverte: false` :
+        // le routage vient de reprendre le fil pour le scénario, l'équipe ne le tient donc pas, aucune demande à ouvrir.
+        rendreLeFil: (t, waId, contenu) => fil.remettreSiPersonneNeSuit(t, waId, contenu, { rouverte: false }),
         noterIssue: (t, messageId, v) => arriveesPubStore.noterIssue(t, messageId, v),
       },
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi, et
       // le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
       flowMapping: { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
       workflowAdvance: {
-        advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp),
+        // `true` si un parcours attendait ce contact : lu AVANT l'avance, qui peut le terminer (réponse « à côté »,
+        // dernier bloc). La remise à l'agent de Meta, dans le même job, laisse alors ce message au parcours.
+        advance: async (t, w, m, bp) => {
+          const enAttente = await runStore.findWaitingByWaId(t, w);
+          await workflowExecutor.advance(t, w, m, bp);
+          return enAttente !== null;
+        },
         // Une avance qui échoue atterrit dans le journal des erreurs que l'écran montre : sinon le job finirait en
         // succès, sans rejeu ni trace, et le contact resterait bloqué sur son bloc.
         journaliserEchec: (e) => erreursLivraison.enregistrerEchecAvance(e),

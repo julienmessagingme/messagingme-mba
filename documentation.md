@@ -880,8 +880,11 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   ouvre une demande (`EcritureDuFil.ouvreUneDemande`, posé par `passerAUnHumain` et `prendrePourLEquipe`, et par
   eux seuls) fait passer un fil d'un robot (`app_workflow` ou `mba`) à l'équipe, drapeau d'escalade ou non, avec
   une cause qui nomme le scénario, l'agent IA ou la campagne (portée par l'appelant, qui l'exige) ; et
-  `rendue_scenario` quand un fil `app_human` repasse à `app_workflow`. Le drapeau `escalade` ne pose que la marque
-  collante (`escaladee_le`), jamais l'événement. Un opérateur qui prend le fil en écrivant, et l'état d'attente
+  `rendue_scenario` quand un fil `app_human` repasse à `app_workflow`. `escaladee` s'écrit aussi SANS bascule
+  (`PgInboxStore.ouvrirUneDemande`, cause `CAUSE_REOUVERTURE`) quand un client rouvre une conversation « Traité » ou
+  archivée que l'équipe tient encore, avant son délai de reprise (`ControleDuFil.remettreSiPersonneNeSuit`) : c'est
+  une nouvelle demande pour elle. Le drapeau `escalade` ne pose que la marque collante (`escaladee_le`), jamais
+  l'événement. Un opérateur qui prend le fil en écrivant, et l'état d'attente
   d'une fin de parcours, n'écrivent rien. Les branches de l'agent de Meta passent AVANT `rendue_scenario` : un fil
   qui quitte `mba` reste `prise_mba`, et s'il va à l'équipe par un geste qui ouvre une demande, il écrit la prise
   PUIS `escaladee`. Une escalade qui sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`,
@@ -903,7 +906,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   en tire les durées. Une durée stockée deviendrait fausse le jour où l'espace change ses horaires.
   - **Ouverture** : `escaladee` ou `passee_par_mba`, seulement si rien n'était ouvert, c'est-à-dire si l'événement
     d'ouverture ou de fin qui précède sur la conversation (`lag`) est une fin, ou s'il n'y en a pas. Deux passages
-    sans fin entre eux font UNE demande.
+    sans fin entre eux font UNE demande. Un client qui rouvre une conversation « Traité » de l'équipe écrit un
+    `escaladee` après le `traitee` qui a clos la précédente : la lecture en fait une nouvelle demande, sans rien
+    savoir de plus, et son début est ce message du client.
   - 🔴 **Début** (le chrono part quand le CLIENT a écrit) : l'ouverture si, à cet instant, le dernier message
     significatif de la conversation est entrant ; sinon le premier message entrant qui suit l'ouverture et précède
     la fin. Significatif (`MESSAGE_SIGNIFICATIF_SQL`) : un entrant, un modèle sortant (`type = 'template'`), ou un
@@ -1054,42 +1059,71 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   - **confier** = ajouter le contact à la liste (Meta en E.164, PUIS la ligne de `mba_liste` avec l'identifiant
     rendu, l'ajout défait si la ligne échoue ; un contact déjà dans notre table ne coûte aucun appel ; le 400
     sans code que Meta rend sur un doublon se résout par UNE relecture), puis `release`. Agent éteint, aucun
-    numéro, ou fil de test sur un chemin automatique : rien. Un `release` refusé laisse le contact sur la liste :
-    le prochain message arrive chez nous et rejoue la remise ;
+    numéro, ou fil de test sur un chemin automatique : rien. 🔴 Un `release` refusé APRÈS la liste n'est pas une
+    erreur : c'est la liste qui décide si l'agent parle, et Meta refuse le `release` quand son agent tient déjà
+    le fil, ce qui arrive après tout modèle (essai réel du 2026-09-30). Il est journalisé et le contact est
+    confié ; si nous tenions en fait le fil, le prochain message arrive chez nous et la remise le rejoue ;
   - **reprendre** = retirer le contact (Meta, avec le numéro et l'identifiant gardés, PUIS la ligne ; un 404
     vaut retrait ; un rejeu sur une erreur rejouable, jamais deux ; absent de la table, aucun appel). 🔴 Il ne
     dépend pas de l'allumage de l'agent : une ligne présente se retire même agent éteint, sinon l'agent
     répondrait à ce contact le jour où on le rallume. `false` = refus de Meta, et chaque appelant garde son
-    comportement de refus (409 dans l'Inbox, démarrage de scénario annulé, lead `reprise_refusee`).
+    comportement de refus (409 dans l'Inbox, démarrage de scénario annulé avec le motif « le contact n'a pas pu
+    être retiré de la liste de l'agent de Meta », lead `reprise_refusee`). Une panne de `mba_liste` LÈVE, elle
+    n'est jamais rendue comme un refus : le job ou la requête échoue et se rejoue.
   Toute écriture des réglages porte `ai_audience: ALLOWLISTED_ONLY` (`modifierSettings`, `src/mba/client.ts`),
-  et l'allumage suit l'ordre de Meta : l'audience, une relecture, puis `rollout.enabled` (`ecrireRollout`, qui
-  refuse d'allumer si la relecture ne rend pas la liste). Le PATCH des réglages refuse `aiAudience` (400), et la
-  liste n'a plus de route : une entrée posée à la main échapperait à notre table.
+  et l'allumage suit l'ordre de Meta : l'audience, une relecture, puis `rollout.enabled` (`ecrireRollout`). Une
+  relecture qui ne rend pas encore la liste est refaite UNE fois après `RELECTURE_AUDIENCE_ATTENTE_MS` (Meta
+  peut propager avec retard) ; toujours pas, on n'allume pas. 🔴 Les trois chemins d'allumage écrivent ensuite
+  notre drapeau `tenant_settings.mba_enabled`, que toute la mécanique de la liste lit : `mba-activation`
+  (l'Accueil), `rollout` (l'onglet Aperçu) et la mise en service de l'assistant. Le PATCH des réglages refuse
+  `aiAudience` (400), et la liste n'a plus de route : une entrée posée à la main échapperait à notre table.
 - 🔴 **AUCUN MODÈLE NE PART VERS UN CONTACT DE LA LISTE** : `MetaClientFactory.clientForTenant`, par où passent
   tous les envois, enveloppe `sendTemplate` et `sendMarketing` d'un retrait préalable (`listeDeLAgent`, requise
   comme `numerosDelies`). Un modèle rend la conversation à l'agent chez Meta : sur la liste, l'agent répondrait
   à la réponse du contact à la place du scénario. Retrait refusé : le modèle ne part pas
   (`RetraitDeLaListeRefuse`, une `MetaApiError` 503 que `classify` range en rejouable et qui n'est jamais un
   plafond du numéro ; la campagne marque le destinataire en échec avec ce motif, l'Inbox l'affiche, le scénario
-  suit son chemin d'échec d'envoi). Coût : une lecture par clé primaire par modèle, un appel à Meta pour les
-  seuls contacts de la liste. Un message libre ne retire rien : il nous donne la conversation.
+  suit son chemin d'échec d'envoi). Le retrait cherche la ligne sous les deux formes du numéro
+  (`formesDuNumero`) : le modèle part vers le numéro de la fiche, la ligne porte le `wa_id` du webhook, et les deux
+  diffèrent pour un mobile brésilien d'avant le 9 ou un mobile mexicain (`521`). Coût : une lecture par modèle, un
+  appel à Meta pour les seuls contacts de la liste. Un message libre ne retire rien : il nous donne la conversation.
 - 🔴 **UN MESSAGE QUE PERSONNE NE PREND EST CONFIÉ À L'AGENT, QUI Y RÉPOND TOUT DE SUITE**
-  (`remettreSiPersonneNeSuit`) : après ses gardes (agent allumé, aucun parcours en attente, pas d'opérateur),
-  confier, écrire `mba`, puis `agent_event` `message_sans_suite` avec le texte reçu (`src/mba/evenement.ts`).
+  (`remettreSiPersonneNeSuit`) : après ses gardes (agent allumé, aucun parcours en attente, pas d'opérateur dans son
+  délai de reprise, ci-dessous),
+  confier, écrire `mba`, puis `agent_event` `message_sans_suite` avec le texte reçu (`src/mba/evenement.ts` ; le
+  corps enregistré, donc `[audio]` pour un vocal, dont la transcription ne se fait qu'à la demande).
   Plusieurs messages du même contact dans un lot : un seul geste, textes bout à bout, dans la borne de 4 096
-  caractères (`processRemiseMbaEntrant` ; `rendreLesFilsSansReponse` fait de même pour les leads). Aucun
-  événement si confier échoue, ni sur une conversation DÉJÀ confiée (sur la liste et `mba`) : la réponse « à
-  côté » d'un scénario vient alors d'être transmise par la fin du parcours, dans le même lot, et un second
-  événement ferait répondre l'agent deux fois. Un événement refusé est journalisé, la colonne reste `mba`.
-  « Rendre la main », la fin de parcours et le balayage confient SANS événement : l'agent parle au prochain
-  message du client.
+  caractères (`processRemiseMbaEntrant` ; `rendreLesFilsSansReponse` fait de même pour les leads). 🔴 Si confier
+  échoue, aucun événement, et la conversation passe à l'équipe (`app_human`, cause « l'agent de Meta n'a pas pu
+  prendre la conversation ») : laissée `app_workflow`, elle sortait d'« À traiter » sans réponse, cas
+  systématique d'un identifiant qui n'est pas un numéro. Sur une conversation DÉJÀ confiée (sur la liste et
+  `mba`), l'événement ne part que si Meta vient d'accepter le `release` : nous tenions donc le fil et l'agent n'a
+  pas vu ce message. Refusé, son agent tient déjà le fil : c'est la réponse « à côté » d'un scénario, transmise
+  par la fin du parcours dans le même lot, et un second événement ferait répondre l'agent deux fois. Un
+  événement refusé est journalisé, la colonne reste `mba`. « Rendre la main », la fin de parcours et le balayage
+  confient SANS événement : l'agent parle au prochain message du client.
 - ⚠️ **LA PURGE RGPD RETIRE AUSSI LE CONTACT DE LA LISTE** : `purgeMany` supprime sa ligne de `mba_liste` dans
-  sa transaction et la rend, et la route retire l'entrée chez Meta APRÈS la validation (au mieux, journalisé :
-  un appel à un tiers ne se fait pas dans une transaction qu'il retiendrait).
+  sa transaction et la rend, et la route retire l'entrée chez Meta APRÈS avoir répondu (au mieux, journalisé,
+  suivi par `TravauxEnVol` pour que l'arrêt de la copie l'attende) : un appel à un tiers ne se fait pas dans une
+  transaction qu'il retiendrait, et une grosse purge attendant Meta dépasserait le délai de Cloudflare.
 - ⚠️ `on delete set null` sur l'affectataire : supprimer un membre LIBÈRE ses conversations. Une conversation
   que plus personne ne peut prendre serait invisible et sans réponse.
-- ⚠️ `control_changed_at` ne se rafraîchit PAS quand un opérateur répond une seconde fois : le compte à
-  rebours de reprise part de la PREMIÈRE intervention.
+- ⚠️ `control_changed_at` se rafraîchit à CHAQUE réponse humaine sur un fil `app_human`
+  (`PgInboxStore.recordOutbound`) et à chaque « Traité » posé sur un tel fil (`basculerRangement`, dans la même
+  requête ; le retirer et archiver n'y touchent pas) : le compte à rebours de reprise court depuis le plus tardif
+  des deux. Reposer le même détenteur, lui, ne le rafraîchit pas (`setControlOwner` n'écrit rien), et « Traité » ne
+  rend pas la main.
+- 🔴 **LE DÉLAI DE REPRISE EST UNE SEULE RÈGLE, À DEUX LECTEURS** (`repriseDue`, `src/inbox/delai-reprise.ts`) : le
+  balayage (`runControlSweep`) et la remise « personne ne suit ». Une escalade sans réponse n'est jamais échue, un
+  délai absent ou nul garde la main, un fil non daté est échu. Le délai de l'espace
+  (`tenant_settings.control_handback_seconds`) prime sur `CONTROL_HUMAN_TIMEOUT_MS`. La fenêtre de service n'en fait
+  pas partie : le balayage saute une fenêtre fermée, la remise part d'un message du client, qui vient de l'ouvrir.
+  Délai échu, un client qui écrit dans un fil `app_human` est donc confié TOUT DE SUITE à l'agent de Meta (s'il est
+  allumé), qui répond à ce message ; l'écriture de `mba` ne prend que depuis `app_human` et sans escalade venue
+  entre-temps (`only`, `saufEscalade`), sous la cause « le contact réécrit après le délai de reprise ». Avant le
+  délai (ou délai à 0, ou agent éteint), le fil reste à l'équipe, et si CE message vient de rouvrir la conversation
+  (`recordInbound` rend `rouverte`, `processInbound` le garde par message, le job le passe à la remise, sans relecture
+  qui ferait une course), une demande s'ouvre pour elle (`escaladee`, ci-dessus). Une réaction n'en ouvre pas.
 - 🔴 **`conversation_messages.body` N'A PAS LE MÊME SENS DANS LES DEUX DIRECTIONS, et tous ses lecteurs
   en dépendent.** Sur un message ENTRANT, `body` porte ce que le client a ÉCRIT, et `traduction` porte
   notre lecture dans la langue de l'opérateur. Sur un message SORTANT, `body` porte ce qui est PARTI,
@@ -2418,7 +2452,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/stats/chiffrage.ts` -> `creerChiffrage` | 🔴 toutes les lectures de COÛT de la console (statistiques, fiche de campagne, bilan contact) : le tarif Meta et son cache (60 s, un par process, `null` jamais mémorisé), la marge, la classification RCS simple ou conversationnel (`repartirRcs`) et la lecture des liens tracés d'un scénario (`liensDesTemplates`), écrites une fois. La racine le construit et passe ses membres aux routes ; `tests/chiffrage.test.ts` l'exécute contre de faux dépôts |
 | `src/pubs/connexion.ts` -> `creerConnexionPub` | la connexion publicitaire d'un espace : jeton chiffré au repos et déchiffré à la demande, connexion concurrente, révocation (Meta d'abord, puis la base), état du compte en cache 2 min, dépôt de jeton par `/ops` |
 | `src/inbox/fil.ts` -> `creerControleDuFil` | 🔴 le contrôle du fil : les gestes qui confient, reprennent ou passent une conversation (agent de Meta, scénario, équipe), l'ordre « Meta d'abord, la colonne ensuite », les gardes (agent allumé, `only`, fil de test, parcours en attente, détenteur relu avant Meta, opérateur épargné par un démarrage du client), l'événement `message_sans_suite` et la marque d'escalade. Seul appelant de `setControlOwner`, `demanderReleaseMba`, `consommerReleaseMba` et du `release` de Meta ; `tests/fil.test.ts` exécute sa table |
-| `src/mba/liste.ts` -> `creerListeDeLAgent` | 🔴 la liste de l'agent de Meta (`mba_liste`, migration 0195) : ajouter (Meta puis la ligne, défait si la ligne échoue), retirer (Meta puis la ligne, un rejeu, un 404 vaut retrait), retirer avant un modèle (`RetraitDeLaListeRefuse`), lire qui y est. Seul appelant des routes `allowlist` de Meta ; `tests/mba-liste.test.ts` |
+| `src/inbox/delai-reprise.ts` -> `repriseDue`, `delaiHumainMs` | 🔴 le délai de reprise d'un fil tenu, une seule règle pour le balayage (`runControlSweep`) et la remise « personne ne suit » (`remettreSiPersonneNeSuit`) : escalade sans réponse jamais échue, délai nul ou absent = jamais, fil non daté échu ; le réglage de l'espace prime sur `CONTROL_HUMAN_TIMEOUT_MS`. Sans la fenêtre de service, que seul le balayage lit ; `tests/fil-delai-reprise.test.ts` |
+| `src/mba/liste.ts` -> `creerListeDeLAgent` | 🔴 la liste de l'agent de Meta (`mba_liste`, migration 0195) : ajouter (Meta puis la ligne, défait si la ligne échoue), retirer (Meta puis la ligne, un rejeu, un 404 vaut retrait, une panne de la table lève), retirer avant un modèle sous les deux formes du numéro (`formesDuNumero`, `RetraitDeLaListeRefuse`), lire qui y est. Seul appelant des routes `allowlist` de Meta ; `tests/mba-liste.test.ts` |
 | `src/socle.ts` -> `construireSocle` | 🔴 ce que l'API et le worker doivent construire À L'IDENTIQUE : les dépôts communs, le dépôt de contacts décoré (un opt-out écrit par l'un ou l'autre processus est annoncé et signalé), la pile d'envoi Meta et ses freins, la clé de modèle par espace (avec son signalement d'échec de déchiffrement), le résolveur e-mail, le numéro de l'espace en cache, le contrôle du fil, le runtime de scénario. Il reçoit le pool, la file et la configuration : chaque processus garde son pool, sa file et ses caches. `tests/socle.test.ts` le construit contre un faux pool et une fausse file |
 | `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; `round2`, l'arrondi au centime des coûts |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |

@@ -122,6 +122,9 @@ fixtures disent leur hypothèse.
 - **Coût** : une lecture par clé primaire par modèle, et un appel à Meta pour les seuls contacts présents dans la
   table. Une campagne de 1 000 contacts, c'est 1 000 lectures et autant d'appels que de contacts sur la liste.
   Aujourd'hui, une campagne à scénario fait un `take` par destinataire : il disparaît.
+- **Les deux formes d'un numéro** (relecture du 2026-09-30) : le modèle part vers le numéro de la fiche, la ligne
+  porte le `wa_id` du webhook, et les deux diffèrent pour un mobile brésilien d'avant le 9 ou un mobile mexicain
+  (`521`). Le retrait lit donc la table sous les deux formes (`formesDuNumero`).
 - 🔴 **Retrait refusé : le modèle ne part pas.** L'erreur levée est traitée par chaque appelant comme un refus
   temporaire d'envoi : rejeu pour la campagne, message « réessayez » pour l'Inbox, chemin d'échec d'envoi pour le
   scénario. Le plan vérifie ce comportement appelant par appelant.
@@ -158,8 +161,9 @@ a relevé que la garde `mba` saute l'événement dès que la remise est différ�
   répond : tu prends la conversation. Réponds-lui maintenant, brièvement et naturellement, à partir de son
   message. »
 
-Le contenu est le corps enregistré (texte, légende, ou libellé du média). Pour un vocal, c'est la transcription si
-elle est déjà écrite au moment de l'événement.
+Le contenu est le corps enregistré (texte, légende, ou libellé du média). Un vocal part comme `[audio]` : sa
+transcription ne se fait qu'à la demande d'un opérateur, jamais à l'arrivée du message, donc elle n'existe pas
+encore au moment de l'événement.
 
 **Aucun événement quand on rend la main** (bouton de l'Inbox, fin de scénario, balayage) : décision de Julien,
 l'agent parle au prochain message.
@@ -245,9 +249,9 @@ n'a rien à faire chez Meta.
 
 | Geste | Si Meta refuse | Conséquence |
 |---|---|---|
-| Ajout (confier) | Journalisé, rien n'est rendu, la colonne ne bouge pas | La conversation reste chez nous et visible. Le prochain message rejoue la règle 2 |
+| Ajout (confier) | Journalisé, rien n'est rendu. Sur la règle 2, la conversation passe à l'équipe (`app_human`, cause « l'agent de Meta n'a pas pu prendre la conversation ») | Elle entre dans « À traiter » et l'équipe répond. Laissée `app_workflow`, elle en sortait sans réponse (corrigé le 2026-09-30) |
 | Écriture de la ligne après l'ajout | Retrait immédiat chez Meta, puis erreur | Aucune entrée orpheline |
-| `release` après l'ajout | Journalisé, la colonne ne bouge pas | Le contact est sur la liste mais la conversation est chez nous : le prochain message arrive en `messages` et rejoue la règle 2 |
+| `release` après l'ajout (ou la présence) sur la liste | Journalisé, **pas une erreur** : le contact est confié, la colonne passe à `mba` | C'est la liste qui décide si l'agent parle. Meta refuse le `release` quand son agent tient déjà le fil, ce qui arrive après tout modèle (vécu à l'essai réel du 2026-09-30). Si nous tenions en fait le fil, le prochain message arrive en `messages`, la règle 2 rejoue le `release` et, accepté, prévient l'agent |
 | Retrait avant un modèle | Le modèle ne part pas | Refus temporaire d'envoi, rejoué par l'appelant |
 | Retrait (reprise délibérée) | Comme une prise refusée aujourd'hui | 409 dans l'Inbox, démarrage annulé, lead `reprise_refusee` |
 | Événement | Journalisé | La colonne dit `mba`, l'agent répondra au prochain message |

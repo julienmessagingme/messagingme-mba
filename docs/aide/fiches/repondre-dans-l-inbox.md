@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: c0354c
+source_empreinte: 2ce102
 ---
 # Répondre à un client dans l'Inbox
 
@@ -15,8 +15,9 @@ la conversation ouverte à droite.
   chez vous, ou le robot, a répondu : on attend alors le client, il n'y a plus rien à faire.
 - **Traité** : celles que vous avez marquées « Traité » parce qu'il n'y a plus rien à répondre, même si le
   client a écrit en dernier (« merci, bonne journée »). Elles restent aussi dans « Tout », avec une petite
-  pastille. Dès que le client réécrit, le statut saute et la conversation revient dans « À traiter ». Une
-  simple réaction emoji (👍) ne la rouvre pas.
+  pastille. Dès que le client réécrit, le statut saute et la conversation revient dans « À traiter » : c'est une
+  nouvelle demande pour votre équipe. Une simple réaction emoji (👍) ne la rouvre pas. Marquer « Traité » ne
+  rend pas la main au robot : cela relance le délai au bout duquel il la reprend.
 - **Signalé** : celles où un message insulte l'entreprise, repérées automatiquement, plus celles que vous
   avez signalées vous-même.
 - **Archivé** : ce que vous avez rangé. Contrairement à « Traité », une conversation archivée n'apparaît
@@ -54,9 +55,10 @@ se télécharge sous le nom que le client lui a donné. WhatsApp ne garde ces pi
 passé ce délai, la conversation indique « Fichier expiré ».
 
 **Quand vous reprenez la main sur un fil que le scénario gérait**, le robot s'arrête. Il ne reprend la parole
-que si vous le lui rendez explicitement, avec le bouton prévu, ou après un délai sans réponse de votre part.
-C'est voulu : rien n'est plus déroutant pour un client qu'un robot qui reprend la parole au milieu d'un
-échange avec une personne.
+que si vous le lui rendez explicitement, avec le bouton prévu, ou après un délai sans réponse de votre part,
+compté depuis votre dernière réponse ou votre dernier « Traité ». C'est voulu : rien n'est plus déroutant pour un
+client qu'un robot qui reprend la parole au milieu d'un échange avec une personne. Passé ce délai, si l'agent de
+Meta est allumé, le client qui écrit de nouveau lui est confié tout de suite, et il répond à ce message.
 
 **Quand un scénario arrive au bout**, si l'agent de Meta est allumé chez vous, la conversation lui revient et
 il répond de nouveau tout seul. Comptez une à deux minutes après le dernier message du scénario : la remise

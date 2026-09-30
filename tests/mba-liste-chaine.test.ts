@@ -37,14 +37,14 @@ const texte = (id: string, body: string) => ({ id, from: WA, type: 'text', times
 const bouton = (id: string, payload: string) => ({ id, from: WA, type: 'button', timestamp: '1789465356', button: { text: 'En savoir plus', payload } });
 
 /** La file `webhook` complète sur le banc : ce que chaque étape a vu, et l'état du fil et de la liste. */
-function monterLeJob(o: { depart?: ControlOwner; banc?: Omit<OptionsBanc, 'conversations'> } = {}) {
+function monterLeJob(o: { depart?: ControlOwner; banc?: Omit<OptionsBanc, 'conversations'>; parcoursRecoit?: boolean; rouverte?: boolean } = {}) {
   const b = bancDuFil({ ...o.banc, conversations: { [WA]: { owner: o.depart ?? 'app_workflow' } } });
   const enregistres: InboundMessage[] = [];
   const avances: Array<{ m: string; bp: string | null }> = [];
   const declencheurs: string[] = [];
   const deps: WebhookJobDeps = {
     store: { insertEvent: async () => true },
-    inbox: { recordInbound: async (_t, m) => { enregistres.push(m); }, phoneNumberTenant: async () => 't1' },
+    inbox: { recordInbound: async (_t, m) => { enregistres.push(m); return { rouverte: o.rouverte === true }; }, phoneNumberTenant: async () => 't1' },
     arriveesPub: aucuneArriveePub,
     routagePub: aucunRoutagePub,
     signalReponse: aucunSignalReponse,
@@ -53,7 +53,7 @@ function monterLeJob(o: { depart?: ControlOwner; banc?: Omit<OptionsBanc, 'conve
     detenteur: b.fil,
     listeALArrivee: { agentAllume: async () => o.banc?.mbaEnabled ?? true, presents: (t, w) => b.liste.presents(t, w) },
     triggers: { run: async (_t, ev) => { if (ev.kind === 'message') declencheurs.push(ev.body ?? ''); return 0; } },
-    workflowAdvance: { advance: async (_t, _w, m, bp) => { avances.push({ m, bp }); } },
+    workflowAdvance: { advance: async (_t, _w, m, bp) => { avances.push({ m, bp }); return o.parcoursRecoit === true; } },
     remiseMbaEntrant: { remettre: b.fil.remettreSiPersonneNeSuit },
   };
   return { b, deps, enregistres, avances, declencheurs };
@@ -65,6 +65,41 @@ function monterLeJob(o: { depart?: ControlOwner; banc?: Omit<OptionsBanc, 'conve
  * Vérifié dans les deux sens : l'appel à `requalifierLesStandby` retiré du handler, les trois premiers cas échouent
  * (aucune avance, aucun déclencheur, aucune remise, et `entrantEnStandby` écrit `mba`).
  */
+/**
+ * 🔴 RELECTURE DU 2026-09-30 : un message qu'un parcours a reçu n'est pas rejoué par la remise. Deux défauts en
+ * naissaient. (1) Une réponse « à côté », déjà transmise à l'agent par la fin du scénario, lui était confiée de
+ * nouveau : si Meta accepte ce second `release`, l'agent répondait deux fois. (2) Un clic qui finissait un parcours,
+ * sur une conversation archivée ou « Traité », ouvrait une demande fantôme du Quantitatif > Performance dans l'état
+ * d'attente de fin de parcours (`app_human` jusqu'à l'accusé). Vérifié dans les deux sens : la fusion dans
+ * `consumed` retirée du handler, les deux cas échouent (la remise confie et prévient, puis ouvre une demande).
+ */
+describe('un message reçu par un parcours reste au parcours', () => {
+  it('🔴 réponse « à côté » reçue par le parcours, Meta accepterait un second release : la remise ne rejoue rien', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const j = monterLeJob({ parcoursRecoit: true, banc: { release: ['accepte', 'accepte'] } });
+    await handleWebhookJob(lot('messages', [texte('wamid.X', 'Et le prix ?')]), j.deps);
+    expect(j.avances).toEqual([{ m: 'wamid.X', bp: null }]);
+    expect(j.b.appels).toEqual([]);
+    expect(j.b.evenements).toEqual([]);
+  });
+
+  it('🔴 clic qui finit un parcours sur une conversation rouverte, en attente de remise : aucune demande', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const j = monterLeJob({ depart: 'app_human', parcoursRecoit: true, rouverte: true });
+    await handleWebhookJob(lot('messages', [bouton('wamid.C', 'btn:0')]), j.deps);
+    expect(j.b.demandes).toEqual([]);
+    expect(j.b.appels).toEqual([]);
+  });
+
+  it('aucun parcours n’a reçu le message : la remise décide, comme avant', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const j = monterLeJob({ depart: 'app_human', rouverte: true });
+    await handleWebhookJob(lot('messages', [texte('wamid.R', 'Finalement non')]), j.deps);
+    // L'équipe tient la conversation, le délai n'est pas écoulé : elle reste à l'équipe, et une demande s'ouvre.
+    expect(j.b.demandes.map((d) => d.waId)).toEqual([WA]);
+  });
+});
+
 describe('invariant 3 : un contact absent de la liste parle à la plateforme', () => {
   it('🔴 texte en standby : l’automation le voit, le parcours avance, puis la règle 2 le confie à l’agent', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -126,13 +161,19 @@ describe('invariant 3 : un contact absent de la liste parle à la plateforme', (
  * dernier cas échoue (deux événements, deux réponses de l'agent).
  */
 describe('invariant 5 : le message sans suite', () => {
-  it('🔴 confier refusé : aucun événement, la colonne ne bouge pas', async () => {
+  it('🔴 confier refusé : aucun événement, et la conversation passe à l’équipe, dans « À traiter »', async () => {
+    // Laissée `app_workflow`, la seule valeur qu'« À traiter » exclut, elle disparaissait sans que personne réponde :
+    // le cas systématique d'un identifiant qui n'est pas un numéro, refusé à chaque ajout. Vérifié dans les deux
+    // sens : l'écriture d'`app_human` retirée de `remettreSiPersonneNeSuit`, ce cas échoue (`app_workflow`).
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const j = monterLeJob({ banc: { ajout: ['refuse'] } });
     await handleWebhookJob(lot('messages', [texte('wamid.R', 'Bonjour')]), j.deps);
     expect(j.b.appels).toEqual([`ajout:${WA}`]);
     expect(j.b.evenements).toEqual([]);
-    expect(j.b.etat(WA)?.owner).toBe('app_workflow');
+    expect(j.b.etat(WA)?.owner).toBe('app_human');
+    expect(j.b.ecritures.at(-1)?.opts?.par).toEqual({ cause: 'automatique : l’agent de Meta n’a pas pu prendre la conversation' });
+    // Le client attend l'équipe : une demande du KPI s'ouvre (décision de Julien du 2026-09-30).
+    expect(j.b.ecritures.at(-1)?.opts?.ouvreUneDemande).toBe(true);
   });
 
   it('🔴 deux messages du même contact dans un lot : UN événement, leurs textes bout à bout', async () => {
@@ -160,8 +201,8 @@ describe('invariant 4 : la réponse imprévue dans un scénario, sur la chaîne 
     edges: [{ id: 'e1', source: 'n1', target: 'n2', sourceHandle: 'btn:0' }],
   };
 
-  function monterLeScenario(o: { enVol?: string } = {}) {
-    const b = bancDuFil({ conversations: { [WA]: { owner: 'app_workflow', ...(o.enVol ? { enVol: o.enVol } : {}) } } });
+  function monterLeScenario(o: { enVol?: string; release?: OptionsBanc['release'] } = {}) {
+    const b = bancDuFil({ ...(o.release ? { release: o.release } : {}), conversations: { [WA]: { owner: 'app_workflow', ...(o.enVol ? { enVol: o.enVol } : {}) } } });
     const corps = new Map<string, string>([['wamid.X', 'Et pour une livraison demain ?']]);
     const transmettre = creerTransmettreHorsParcours({
       detenteur: async (_t, w) => b.etat(w)?.owner ?? 'app_workflow',
@@ -208,11 +249,24 @@ describe('invariant 4 : la réponse imprévue dans un scénario, sur la chaîne 
 
   it('🔴 et la remise « personne ne suit » du même lot ne le prévient PAS une seconde fois', async () => {
     // Le handler appelle la remise après l'avance, pour le même message : sans la garde « déjà confiée », l'agent
-    // recevrait deux événements et répondrait deux fois au client.
-    const { b, ex } = monterLeScenario();
+    // recevrait deux événements et répondrait deux fois au client. Le second `release` est refusé : l'agent tient
+    // le fil depuis le premier, et Meta exige de tenir le fil pour le rendre.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { b, ex } = monterLeScenario({ release: ['accepte', 'refuse'] });
     await ex.advance('t1', WA, 'wamid.X', null);
-    await b.fil.remettreSiPersonneNeSuit('t1', WA, 'Et pour une livraison demain ?');
+    await b.fil.remettreSiPersonneNeSuit('t1', WA, 'Et pour une livraison demain ?', { rouverte: false });
     expect(b.evenements).toHaveLength(1);
+    expect(b.appels).toEqual([`ajout:${WA}`, `release:${WA}`, `evenement:${WA}`, `release:${WA}`]);
+  });
+
+  it('⚠️ le même lot, quand Meta refusait déjà le premier `release` (son agent tenait le fil après un modèle) : un seul événement', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { b, ex } = monterLeScenario({ release: ['refuse'] });
+    await ex.advance('t1', WA, 'wamid.X', null);
+    await b.fil.remettreSiPersonneNeSuit('t1', WA, 'Et pour une livraison demain ?', { rouverte: false });
+    expect(b.evenements).toHaveLength(1);
+    expect(b.evenements[0]?.event.type).toBe(TYPE_HORS_PARCOURS);
+    expect(b.etat(WA)?.owner).toBe('mba');
   });
 
   it('⚠️ un envoi encore en vol : la remise attend son accusé, et l’événement ne part pas (le balayage reste le filet)', async () => {
@@ -223,5 +277,40 @@ describe('invariant 4 : la réponse imprévue dans un scénario, sur la chaîne 
     await ex.advance('t1', WA, 'wamid.X', null);
     expect(b.appels).toEqual([]);
     expect(b.etat(WA)?.owner).toBe('app_human');
+  });
+});
+
+/**
+ * 🔴 L'ESSAI RÉEL DU 2026-09-30 : « Rendre la main » juste après un modèle. Meta avait rendu le fil à son agent et a
+ * refusé le `release` ; la route a répondu une erreur (409) et la colonne est restée `app_human`, alors que le
+ * contact était sur la liste et que l'agent a répondu au « Salut » suivant, arrivé en `standby`. En mode liste, c'est
+ * la liste qui décide si l'agent parle : un `release` refusé après elle est journalisé, pas levé. Vérifié dans les
+ * deux sens : `confier` remis à lever sur le `release`, les deux cas échouent (le geste lève). Et la garde de
+ * l'événement remise à `!issue.ajoute`, le second échoue (aucun événement : l'agent ne répondait pas à ce message).
+ */
+describe('essai réel du 2026-09-30 : « Rendre la main » après un modèle', () => {
+  it('🔴 son agent tient déjà le fil : confié quand même, et le message suivant, en `standby`, lui revient sans autre geste', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const j = monterLeJob({ depart: 'app_human', banc: { release: ['refuse'] } });
+    expect(await j.b.fil.rendreLaMain('t1', WA, { collaborateur: null })).toBe('mba');
+    expect(j.b.table.has(WA)).toBe(true);
+    await handleWebhookJob(lot('standby', [texte('wamid.S', 'Salut')]), j.deps);
+    expect(j.b.appels).toEqual([`ajout:${WA}`, `release:${WA}`]);
+    expect(j.b.evenements).toEqual([]);
+    expect(j.avances).toEqual([]);
+    expect(j.b.etat(WA)?.owner).toBe('mba');
+  });
+
+  it('🔴 nous tenions en fait le fil : le message suivant arrive chez nous, le `release` est rejoué et l’agent est prévenu, une fois', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const j = monterLeJob({ depart: 'app_human', banc: { release: ['refuse', 'accepte'] } });
+    expect(await j.b.fil.rendreLaMain('t1', WA, { collaborateur: null })).toBe('mba');
+    await handleWebhookJob(lot('messages', [texte('wamid.M', 'Salut')]), j.deps);
+    expect(j.b.appels).toEqual([`ajout:${WA}`, `release:${WA}`, `release:${WA}`, `evenement:${WA}`]);
+    expect(j.b.evenements).toHaveLength(1);
+    expect(j.b.evenements[0]?.event.type).toBe(TYPE_MESSAGE_SANS_SUITE);
+    expect(JSON.parse(j.b.evenements[0]!.event.payload)).toEqual({ message: 'Salut' });
+    expect(j.b.etat(WA)?.owner).toBe('mba');
   });
 });

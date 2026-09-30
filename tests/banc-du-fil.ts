@@ -25,10 +25,18 @@ export interface EtatDuFil {
   marque: string | null;
   /** Notre dernier envoi encore en vol : `demanderReleaseMba` le pose en marque et le rend. */
   enVol: string | null;
+  /**
+   * `control_changed_at` : la dernière bascule, que la remise « personne ne suit » compare au délai de reprise.
+   * Défaut : maintenant (l'équipe vient de prendre le fil) ; `null` = non daté, donc délai échu.
+   */
+  changedAt: Date | null;
 }
 
 /** Tous les tests de ce banc parlent d'un seul espace. */
 export const ESPACE = 't1';
+
+/** Le délai de reprise de l'équipe quand l'espace n'en a pas réglé, celui du serveur par défaut (deux heures). */
+export const DELAI_REPRISE_DEFAUT_MS = 2 * 3600_000;
 
 /**
  * Le dépôt en mémoire, fidèle au `update` gardé de `PgInboxStore.setControlOwner` : update seul (jamais de
@@ -38,9 +46,11 @@ export const ESPACE = 't1';
 export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {}) {
   const lignes = new Map<string, EtatDuFil>();
   for (const [waId, e] of Object.entries(initial)) {
-    lignes.set(waId, { owner: 'app_workflow', escaladeeLe: null, test: false, marque: null, enVol: null, ...e });
+    lignes.set(waId, { owner: 'app_workflow', escaladeeLe: null, test: false, marque: null, enVol: null, changedAt: new Date(), ...e });
   }
   const ecritures: Array<{ waId: string; owner: ControlOwner; opts: EcritureDuFil | undefined }> = [];
+  /** Les demandes ouvertes sans bascule (`ouvrirUneDemande`), par `waId`, avec leur cause. */
+  const demandes: Array<{ waId: string; cause: string }> = [];
   const depot: DepsControleDuFil['depot'] = {
     getControlOwner: async (_t, waId) => lignes.get(waId)?.owner ?? 'app_workflow',
     setControlOwner: async (_t, waId, owner, opts) => {
@@ -51,6 +61,7 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
         && !(opts.messageEnvoyeLe !== undefined && opts.messageEnvoyeLe > l.escaladeeLe)) return false;
       ecritures.push({ waId, owner, opts });
       l.owner = owner;
+      l.changedAt = new Date();
       if (opts?.effacerEscalade) l.escaladeeLe = null;
       else if (opts?.escalade && owner === 'app_human') l.escaladeeLe = new Date();
       return true;
@@ -70,11 +81,25 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
     estConversationDeTest: async (_t, waId) => lignes.get(waId)?.test === true,
     marquerEscalade: async (_t, waId) => {
       const l = lignes.get(waId);
-      if (l) { l.owner = 'app_human'; l.escaladeeLe = new Date(); return; }
-      lignes.set(waId, { owner: 'app_human', escaladeeLe: new Date(), test: false, marque: null, enVol: null });
+      if (l) { l.owner = 'app_human'; l.escaladeeLe = new Date(); l.changedAt = new Date(); return; }
+      lignes.set(waId, { owner: 'app_human', escaladeeLe: new Date(), test: false, marque: null, enVol: null, changedAt: new Date() });
+    },
+    etatDuFil: async (_t, waId) => {
+      const l = lignes.get(waId);
+      if (!l) return { owner: 'app_workflow', depuisMs: null, escaladee: false };
+      return { owner: l.owner, depuisMs: l.changedAt === null ? null : Date.now() - l.changedAt.getTime(), escaladee: l.escaladeeLe !== null };
+    },
+    // Fidèle au `where control_owner = 'app_human'` de `PgInboxStore.ouvrirUneDemande`.
+    ouvrirUneDemande: async (_t, waId, cause) => {
+      if (lignes.get(waId)?.owner === 'app_human') demandes.push({ waId, cause });
+    },
+    // Fidèle au `where control_owner = 'app_human'` de `PgInboxStore.relancerLeDelai`.
+    relancerLeDelai: async (_t, waId) => {
+      const l = lignes.get(waId);
+      if (l?.owner === 'app_human') l.changedAt = new Date();
     },
   };
-  return { depot, lignes, ecritures, etat: (waId: string): EtatDuFil | undefined => lignes.get(waId) };
+  return { depot, lignes, ecritures, demandes, etat: (waId: string): EtatDuFil | undefined => lignes.get(waId) };
 }
 
 /** L'identifiant que le faux Meta donne à l'entrée d'un contact : on retrouve le contact en le lisant. */
@@ -172,6 +197,8 @@ export interface OptionsBanc {
   surLaListe?: string[];
   /** L'agent de Meta est-il allumé ? Défaut : oui. */
   mbaEnabled?: boolean;
+  /** Le délai de reprise réglé par l'espace, en secondes (0 = jamais). Défaut : aucun, le délai par défaut s'applique. */
+  delaiRepriseSecondes?: number | null;
   /** Le numéro de l'espace ; `null` = aucun numéro connecté. Défaut : un numéro. */
   numero?: string | null;
   /** Un parcours attend-il la réponse du contact ? Défaut : non. */
@@ -203,6 +230,8 @@ export function bancDuFil(o: OptionsBanc = {}): {
   /** Notre table `mba_liste`, par `waId`. */
   table: Map<string, EntreeDeLaListe>;
   ecritures: Array<{ waId: string; owner: ControlOwner; opts: EcritureDuFil | undefined }>;
+  /** Les demandes ouvertes sans bascule (`ouvrirUneDemande`). */
+  demandes: Array<{ waId: string; cause: string }>;
   appels: string[];
   evenements: Array<{ waId: string; event: EvenementAgent }>;
   attentes: number[];
@@ -226,7 +255,8 @@ export function bancDuFil(o: OptionsBanc = {}): {
   });
   const fil = creerControleDuFil({
     depot: { ...memoire.depot, ...o.depot },
-    reglages: { get: async () => ({ mbaEnabled: o.mbaEnabled ?? true }) },
+    reglages: { get: async () => ({ mbaEnabled: o.mbaEnabled ?? true, controlHandbackSeconds: o.delaiRepriseSecondes ?? null }) },
+    delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
     parcours: { findWaitingByWaId: async () => (o.enAttente ? { id: 'run-1' } : null) },
     numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? 'pn1' : o.numero) },
     liste,
@@ -237,7 +267,7 @@ export function bancDuFil(o: OptionsBanc = {}): {
     meta: faux.meta,
   });
   return {
-    fil, liste, etat: memoire.etat, lignes: memoire.lignes, table: table.lignes, ecritures: memoire.ecritures,
+    fil, liste, etat: memoire.etat, lignes: memoire.lignes, table: table.lignes, ecritures: memoire.ecritures, demandes: memoire.demandes,
     appels: faux.appels, evenements: faux.evenements, attentes, client: faux.client,
   };
 }

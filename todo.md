@@ -16,6 +16,23 @@
   Meta ralenties pour TOUS les espaces tant qu'il insiste. Parade : borner le nombre de colonnes de la première
   ligne avant de parser.
 
+## 🟡 L'agent de Meta en mode liste : deux courses que la relecture a laissées porter (2026-09-30)
+
+Les deux naissent de l'ordre « Meta d'abord, la ligne de `mba_liste` ensuite » (`src/mba/liste.ts`), voulu : sans
+l'identifiant rendu par Meta, on ne peut plus retirer. Fenêtre de quelques centaines de millisecondes, aucune vue
+en production.
+
+- 🟡 **Un « confier » et un modèle concurrents.** L'ajout est fait chez Meta, la ligne pas encore écrite : le
+  retrait avant un modèle (`retirerAvantUnModele`) lit la table, n'y voit pas le contact, et le modèle part vers un
+  contact que l'agent a sur sa liste. L'agent répond alors à la réponse du contact à la place du scénario. Piste :
+  un verrou court par contact (bail en base, sur le modèle de `src/campaign/run-lock.ts`) pris par les deux gestes.
+- 🟡 **La compensation d'un `poser` en échec peut retirer l'entrée d'un « confier » concurrent.** Deux confier du
+  même contact : le premier ajoute et écrit sa ligne ; le second, parti avant la ligne, reçoit le 400 de doublon,
+  retrouve la MÊME entrée par relecture, puis son `poser` échoue (panne de base) et sa compensation la retire chez
+  Meta. La ligne du premier reste : notre table croit le contact sur la liste, Meta non. Ses messages rangés en
+  `standby` ne sont alors plus requalifiés (il est « présent ») et n'arrivent à personne. Piste : ne compenser que
+  l'entrée que CE geste a créée (pas celle retrouvée par relecture).
+
 ## 🟠 Base de connaissance : ce que la réparation du CSV a trouvé à côté (2026-09-29)
 
 - 🟠 **Le bot d'aide ne lit que le début de ses fiches** (mesuré en lecture seule le 2026-09-29) : 20 fiches sur

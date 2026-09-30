@@ -41,7 +41,7 @@ function harnais(over: { contactExiste?: boolean } = {}) {
   const optOuts: Array<{ tenant: string; waId: string }> = [];
   const messagesDuStop: string[] = [];
   const store: InboxStore = {
-    recordInbound: async () => { gestes.push('inbox'); },
+    recordInbound: async () => { gestes.push('inbox'); return { rouverte: false }; },
   };
   const upsert = async (): Promise<'created'> => { gestes.push('upsert'); return 'created'; };
   const optOut = async (tenant: string, waId: string, messageId: string): Promise<string | null> => {
@@ -134,12 +134,12 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     // webhook, donc aussi les statuts de livraison déjà traités.
     const gestes: string[] = [];
     const store: InboxStore = {
-      recordInbound: async () => { gestes.push('inbox'); },
+      recordInbound: async () => { gestes.push('inbox'); return { rouverte: false }; },
     };
     await expect(processInbound(
       await entrantsDe(payload([texte('STOP')])), store,
       { upsertContact: async () => 'created', optOut: async () => { throw new Error('pooler injoignable'); }, detenteur: aucuneCorrectionDuDetenteur },
-    )).resolves.toBeUndefined();
+    )).resolves.toEqual(new Set());
     expect(gestes).toEqual(['inbox']);
   });
 
@@ -166,7 +166,7 @@ describe('le message entrant reste intact', () => {
   it('un STOP est bien enregistré en inbox : l’opérateur doit VOIR le refus', async () => {
     const vus: InboundMessage[] = [];
     const store: InboxStore = {
-      recordInbound: async (_t, m) => { vus.push(m); },
+      recordInbound: async (_t, m) => { vus.push(m); return { rouverte: false }; },
     };
     await processInbound(await entrantsDe(payload([texte('STOP')])), store, { optOut: async () => 'c1', detenteur: aucuneCorrectionDuDetenteur });
     expect(vus).toHaveLength(1);

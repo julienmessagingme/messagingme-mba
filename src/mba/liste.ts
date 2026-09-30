@@ -80,17 +80,19 @@ export interface ListeDeLAgent {
   ajouter(tenantId: string, phoneNumberId: string, waId: string): Promise<boolean>;
   /**
    * Retire le contact de la liste. `true` : il n'y est plus (retiré maintenant, absent de notre table sans aucun
-   * appel, ou déjà absent chez Meta). `false` : Meta a refusé, journalisé, la ligne reste. Un rejeu sur une erreur
-   * rejouable, jamais deux. Ne lève jamais, et ne dépend pas de l'allumage de l'agent : une ligne présente se retire
-   * même agent éteint, sinon l'agent répondrait à ce contact le jour où on le rallume.
+   * appel, ou déjà absent chez Meta). `false` : Meta a refusé (ou son client est indisponible), journalisé, la ligne
+   * reste. Un rejeu sur une erreur rejouable, jamais deux. Lève sur une panne de notre table : ce n'est pas un refus
+   * de Meta, et le job ou la requête doit échouer pour se rejouer. Ne dépend pas de l'allumage de l'agent : une ligne
+   * présente se retire même agent éteint, sinon l'agent répondrait à ce contact le jour où on le rallume.
    */
   retirer(tenantId: string, waId: string): Promise<boolean>;
   /** Les contacts de `waIds` présents sur la liste, en une lecture de notre table. */
   presents(tenantId: string, waIds: readonly string[]): Promise<Set<string>>;
   /**
-   * Avant un modèle : retire le destinataire (numéro E.164 ou chiffres nus ; un BSUID n'est jamais sur la liste).
-   * Lève `RetraitDeLaListeRefuse`, que `classify` range en rejouable, si le retrait est refusé : le modèle ne part
-   * pas, sinon l'agent répondrait à sa réponse.
+   * Avant un modèle : retire le destinataire (numéro E.164 ou chiffres nus ; un BSUID n'est jamais sur la liste),
+   * sous chacune des formes que Meta peut donner à son numéro (`formesDuNumero`) : la ligne porte le `wa_id` du
+   * webhook, le destinataire vient de la fiche. Lève `RetraitDeLaListeRefuse`, que `classify` range en rejouable, si
+   * le retrait est refusé : le modèle ne part pas, sinon l'agent répondrait à sa réponse.
    */
   retirerAvantUnModele(tenantId: string, destinataire: string): Promise<void>;
   /**
@@ -137,6 +139,25 @@ export function numeroDuDestinataire(destinataire: string): string | null {
   return /^\d{1,15}$/.test(nu) ? nu : null;
 }
 
+/**
+ * Les formes sous lesquelles Meta peut écrire le `wa_id` d'un même mobile, le numéro donné en tête. Au Brésil, un
+ * compte créé avant l'ajout du 9 aux mobiles garde son `wa_id` sans lui (`55` + indicatif + 8 chiffres, contre 9
+ * avec le 9) ; au Mexique, le `wa_id` d'un mobile garde le 1 que l'E.164 a perdu (`521` + 10 chiffres, contre `52`
+ * + 10). Un modèle part vers le numéro de la fiche, la ligne de la liste porte le `wa_id` du webhook : sans ces
+ * formes, le retrait avant un modèle ne verrait pas la ligne, et l'agent répondrait à la réponse du contact.
+ * Seuls les mobiles brésiliens d'avant le 9 (premier chiffre de 6 à 9) sont concernés : un fixe n'a pas de variante.
+ */
+export function formesDuNumero(chiffres: string): string[] {
+  const variantes: Array<[RegExp, string]> = [
+    [/^55(\d{2})9([6-9]\d{7})$/, '55$1$2'],
+    [/^55(\d{2})([6-9]\d{7})$/, '55$19$2'],
+    [/^521(\d{10})$/, '52$1'],
+    [/^52(\d{10})$/, '521$1'],
+  ];
+  const regle = variantes.find(([motif]) => motif.test(chiffres));
+  return regle ? [chiffres, chiffres.replace(regle[0], regle[1])] : [chiffres];
+}
+
 export function creerListeDeLAgent(deps: DepsListe): ListeDeLAgent {
   const { store } = deps;
 
@@ -172,17 +193,19 @@ export function creerListeDeLAgent(deps: DepsListe): ListeDeLAgent {
   };
 
   const retirer = async (tenantId: string, waId: string): Promise<boolean> => {
+    // Une panne de notre table lève, hors du `catch` : la déguiser en refus de Meta la cacherait, et l'appelant
+    // traiterait comme définitif ce qu'un rejeu répare. Rejoué, un retrait déjà fait chez Meta rend 404, qui vaut retrait.
+    const entree = await store.trouver(tenantId, waId);
+    if (!entree) return true;
     try {
-      const entree = await store.trouver(tenantId, waId);
-      if (!entree) return true;
       await retirerChezMeta(await deps.clientMba(tenantId), entree);
-      await store.supprimer(tenantId, waId);
-      return true;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(`liste de l’agent de Meta : retrait REFUSÉ pour ${waId} (${tenantId}), le contact reste sur la liste :`, messageDe(err));
       return false;
     }
+    await store.supprimer(tenantId, waId);
+    return true;
   };
 
   return {
@@ -222,7 +245,10 @@ export function creerListeDeLAgent(deps: DepsListe): ListeDeLAgent {
     async retirerAvantUnModele(tenantId, destinataire) {
       const waId = numeroDuDestinataire(destinataire);
       if (waId === null) return;
-      if (!(await retirer(tenantId, waId))) throw new RetraitDeLaListeRefuse();
+      // Une lecture pour toutes les formes du numéro, un retrait par ligne trouvée (presque toujours aucune).
+      for (const forme of await store.presents(tenantId, formesDuNumero(waId))) {
+        if (!(await retirer(tenantId, forme))) throw new RetraitDeLaListeRefuse();
+      }
     },
 
     async oublierChezMeta(tenantId, lignes) {

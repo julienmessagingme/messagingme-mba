@@ -75,8 +75,9 @@ function AccueilInner({ session }: { session: Session }) {
    * 🔴 CETTE DISTINCTION EST TOUT LE CORRECTIF DU 2026-09-10. La carte affichait `mbaEnabled` sous le titre
    * « Meta Business Agent », a cote d'une phrase ECRITE EN DUR annoncant qu'on attendait l'ouverture de
    * Meta. Les deux etaient faux le meme jour : l'agent tournait chez Meta en `EVERYONE` depuis des jours,
-   * et Julien a bascule ce bouton en croyant l'eteindre. Il a eteint notre drapeau, qui ne commande que le
-   * bloc MBA du constructeur de scenario. `null` = pas encore lu, ou lecture impossible.
+   * et Julien a bascule ce bouton en croyant l'eteindre. Il a eteint notre drapeau, qui ne commandait alors que le
+   * bloc MBA du constructeur de scenario (il decide aujourd'hui aussi si la plateforme confie des conversations a
+   * l'agent). `null` = pas encore lu, ou lecture impossible.
    */
   const [mbaReel, setMbaReel] = useState<MbaStatus | null>(null);
   const [savingMba, setSavingMba] = useState(false);
@@ -354,8 +355,8 @@ function AccueilInner({ session }: { session: Session }) {
     ? affichageHubspotAccueil({ actif: hubspotActif, aUnNumero: account.hasNumber, portailRelie: account.hubspotPortal?.connected === true })
     : 'rien';
 
-  // L'état de l'agent chez Meta, sous le titre de sa carte. `null` : rien à dire (il répond, à tout le monde ou à la
-  // liste autorisée : décision de Julien du 2026-09-25, aucune phrase quand l'agent répond).
+  // L'état de l'agent chez Meta, sous le titre de sa carte. `null` : rien à dire (il est allumé et répond aux
+  // conversations que la plateforme lui confie : décision de Julien du 2026-09-25, aucune phrase quand l'agent répond).
   const etatMbaReel: string | null = mbaReel === null
     ? t('État chez Meta : non lu pour l’instant.', 'State at Meta: not read yet.')
     : !mbaReel.eligible
@@ -431,9 +432,9 @@ function AccueilInner({ session }: { session: Session }) {
                     ECRITE EN DUR ici : elle ne mesurait rien, et elle est restee affichee des semaines
                     apres que le numero soit devenu eligible. Elle ne s'affiche plus que quand elle est
                     VRAIE, c'est-a-dire quand Meta repond `is_eligible: false`.
-                    ⚠️ Quand l'agent répond à TOUT LE MONDE, aucune phrase (Julien, 2026-09-25) : l'interrupteur
-                    et le chiffre le disent déjà. Seule l'audience RESTREINTE reste nommée, parce qu'elle change
-                    qui peut tomber sur l'agent. */}
+                    ⚠️ Quand l'agent est allumé, aucune phrase (Julien, 2026-09-25) : l'interrupteur et le chiffre
+                    le disent déjà. Il n'a plus d'audience à nommer : il ne répond qu'aux contacts que la
+                    plateforme met sur sa liste. */}
                 {etatMbaReel !== null && <p className="mt-0.5 text-xs text-ink-500" data-testid="mba-etat-reel">{etatMbaReel}</p>}
                 {erreurMba && <p className="mt-1 text-xs text-danger" data-testid="mba-erreur">{erreurMba}</p>}
               </div>

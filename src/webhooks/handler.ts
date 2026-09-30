@@ -164,6 +164,8 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
    */
   const espaceDe = deps.inbox ? uneLectureParNumero(deps.inbox) : null;
   let entrants: readonly EntrantRattache[] = [];
+  // Les messages qui viennent de rouvrir leur conversation (« Traité » ou Archivé retiré), su par leur écriture même.
+  let rouvertes: ReadonlySet<string> = new Set();
   if (deps.inbox && espaceDe) {
     /**
      * Juste après le rattachement, avant tout ce qui lit `field` : un `standby` d'un contact absent de la liste de
@@ -171,7 +173,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
      * liste par espace pour le lot ; en échec, elle lève avant l'enregistrement et fait rejouer le job.
      */
     entrants = await requalifierLesStandby(await rattacherLesEntrants(extractInbound(raw), espaceDe), deps.listeALArrivee);
-    await processInbound(entrants, deps.inbox, {
+    rouvertes = await processInbound(entrants, deps.inbox, {
       upsertContact: upsert, optOut: deps.inboundOptOut, assignation: inboundAssignation, signalReponse, detenteur: deps.detenteur,
     });
   }
@@ -241,7 +243,11 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   }
   // Avance des workflows sur les réponses, isolée elle aussi.
   if (workflowAdvance) {
-    await tenter('handleWebhookJob: avance workflow ignorée:', () => processWorkflowAdvance(entrants, workflowAdvance, consumed));
+    await tenter('handleWebhookJob: avance workflow ignorée:', async () => {
+      // Un message qu'un parcours a reçu est à lui : la remise ne le rejoue pas (voir `WorkflowAdvanceDeps.advance`).
+      const parParcours = await processWorkflowAdvance(entrants, workflowAdvance, consumed);
+      if (parParcours.size > 0) consumed = new Set([...consumed, ...parParcours]);
+    });
   }
   /**
    * Un client écrit et personne ne suit : la conversation est confiée à l'agent de Meta, qui y répond. Après
@@ -250,7 +256,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
    * le balayage reste le filet.
    */
   if (remiseMbaEntrant) {
-    await tenter('handleWebhookJob: remise à l’agent de Meta ignorée:', () => processRemiseMbaEntrant(entrants, remiseMbaEntrant, consumed));
+    await tenter('handleWebhookJob: remise à l’agent de Meta ignorée:', () => processRemiseMbaEntrant(entrants, remiseMbaEntrant, consumed, rouvertes));
   }
   /**
    * Bascules de contrôle et messages de l'agent de Meta. Isolé : ces événements sont les moins bien documentés, et

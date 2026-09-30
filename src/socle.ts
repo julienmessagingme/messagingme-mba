@@ -71,6 +71,7 @@ import { PgSignauxStore } from './signaux/store.pg';
 export type ConfigSocle = Pick<Config,
   | 'DRY_RUN' | 'PGBOSS_SCHEMA' | 'ENCRYPTION_KEY' | 'META_ACCESS_TOKEN' | 'META_APP_ID' | 'META_APP_SECRET'
   | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER' | 'CREDIT_OFFERT_MICRO_EUR'
+  | 'CONTROL_HUMAN_TIMEOUT_MS'
 >;
 
 export interface DepsSocle {
@@ -305,6 +306,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const fil = creerControleDuFil({
     depot: inboxStore,
     reglages: settingsStore,
+    // Le délai de reprise de l'équipe quand l'espace n'en a pas réglé : le même que celui du balayage (`src/worker.ts`).
+    delaiRepriseParDefautMs: config.CONTROL_HUMAN_TIMEOUT_MS,
     parcours: runStore,
     numeros: { getTenantPhoneNumberId: numeroDeLEspace },
     liste: listeDeLAgent,

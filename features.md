@@ -1163,7 +1163,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   où le client a écrit en dernier mais où il n'y a plus rien à lui répondre (« merci, bonne journée »). Marquée
   « Traité », la conversation **sort d'« À traiter »**, **reste dans « Tout »** avec une petite pastille
   « Traité », et a son propre dossier. **Dès que le client réécrit, le statut saute** et elle revient dans « À
-  traiter », sans que personne ait rien à faire.
+  traiter », sans que personne ait rien à faire ; une nouvelle demande s'ouvre alors pour l'équipe dans Quantitatif >
+  Performance. Marquer « Traité » ne rend pas la main : il relance le délai de reprise (2026-09-30).
   ⚠️ **Une réaction emoji (👍) ne la rouvre pas** (arbitrage du 2026-09-19) : « merci 👍 » en réponse à votre
   « bonne journée » est exactement ce que ce statut règle. Elle ne change pas non plus « qui a parlé en
   dernier » : une conversation que votre réponse avait sortie d'« À traiter » n'y revient pas pour un 👍.
@@ -1363,7 +1364,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Délai de reprise réglable** (menu **AI Agent > MBA, paramètres > Activation**, en minutes). Passé ce
   délai sans que personne ne rende la main, la conversation repart toute seule : un onglet fermé ou un
   opérateur parti ne bloquent jamais un client indéfiniment. Vide = 2 heures. `0` = jamais de reprise
-  automatique, la main reste à l’opérateur jusqu’à ce qu’il la rende. ⚠️ **Ce réglage vivait sur l’Accueil
+  automatique, la main reste à l’opérateur jusqu’à ce qu’il la rende. Le délai court depuis la **dernière**
+  réponse de l’équipe **ou son dernier « Traité »** (le plus tardif des deux, 2026-09-30) : « Traité » ne rend pas
+  la main, il relance le délai. Passé ce délai, un client qui écrit dans la conversation est **confié tout de suite
+  à l’agent de Meta** (s’il est allumé), qui répond à ce message, même après plus de 24 heures de silence ; une
+  escalade que personne n’a encore répondue reste à l’équipe. ⚠️ **Ce réglage vivait sur l’Accueil
   jusqu’au 2026-08-18** : l’Accueil n’y renvoie plus que par un lien « Régler qui répond au client ».
 - 🗑️ **« Comportement au retour » : SUPPRIMÉ le 2026-08-18.** Il permettait de choisir, pour l’espace puis
   conversation par conversation, si un fil repartait au scénario ou restait à traiter après une intervention.
@@ -1423,6 +1428,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   « passer à un humain »), un agent IA, l'agent de Meta, ou la réponse à une campagne dont le devenir est l'Inbox.
   Chaque passage est une **demande** ; un nouveau passage pendant qu'une demande est ouverte n'en ouvre pas une
   seconde, et un collaborateur qui prend le fil lui-même en écrivant n'en ouvre pas (personne n'attendait).
+  🔴 **Un client qui rouvre une conversation « Traité » ou archivée que l'équipe tient encore** (avant le délai de
+  reprise) ouvre une **nouvelle demande** (2026-09-30) : la précédente est close, et c'est à l'équipe de répondre.
+  Après le délai, la conversation part à l'agent de Meta, et aucune demande ne s'ouvre.
   🔴 **Le chrono part quand le client a écrit** : au passage si le client attendait déjà, sinon à son message
   suivant. Une campagne « modèle puis passer à un humain » ne compte donc que les destinataires qui répondent, à
   partir de leur réponse, et pas 2 000 demandes à l'envoi. Le **temps de réponse** va de là au premier message écrit
@@ -2926,8 +2934,9 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
 - ✅ **Pendant un scénario, l'agent se tait ; il ne parle qu'aux conversations qu'Engage Me lui confie**
   (2026-09-29). L'agent de Meta ne répond qu'aux contacts de sa **liste**, et c'est Engage Me qui la tient :
   - **un client écrit et personne ne lui répond** (aucun scénario n'attend sa réponse, personne de l'équipe ne
-    tient la conversation) : la conversation est confiée à l'agent, qui répond **tout de suite** à ce message.
-    Plusieurs messages envoyés d'affilée reçoivent une seule réponse ;
+    tient la conversation, ou son délai de reprise est écoulé) : la conversation est confiée à l'agent, qui répond
+    **tout de suite** à ce message, même après plus de 24 heures de silence. Plusieurs messages envoyés d'affilée
+    reçoivent une seule réponse ;
   - **un client répond à côté d'un scénario** (du texte au lieu d'un bouton) : le scénario s'arrête, et l'agent
     répond tout de suite à ce message ;
   - **un modèle part** (scénario, campagne, envoi depuis l'Inbox) : le contact sort d'abord de la liste, pour que
@@ -2942,7 +2951,8 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   par-dessus nos scénarios dès qu'un modèle lui rendait la conversation (vécu le 2026-09-29 : le bouton d'un
   scénario commencé par un modèle obtenait la réponse de l'agent à la place de la suite).
   ⚠️ Un contact effacé (suppression RGPD) sort aussi de la liste chez Meta. Un client qui n'a pas partagé son
-  numéro (identifiant WhatsApp seul) ne peut pas y entrer : l'agent ne lui parle pas.
+  numéro (identifiant WhatsApp seul) ne peut pas y entrer : l'agent ne lui parle pas, et sa conversation passe à
+  l'équipe, dans « À traiter », comme toute conversation que l'agent n'a pas pu prendre.
 
 - 🗑️ **LA PAGE DE GUIDAGE `/mba` A ÉTÉ RETIRÉE LE 2026-09-29** (décision de Julien) : le menu « AI Agent » >
   MBA mène droit aux paramètres, et l'adresse `/mba` y renvoie. Ce qu'elle disait de juste sur l'éligibilité est
@@ -3409,7 +3419,9 @@ Les envois WhatsApp ne sont pas concernés : leur débit se règle campagne par 
   paramètres**, onglets branchés) et l'agent répond dans le bac à sable. Meta exige un **moyen de paiement**
   sur le compte WhatsApp Business pour allumer un agent qui répond à tout le monde ; l'agent étant toujours
   réglé sur sa liste depuis le 2026-09-29, cette barrière ne s'applique pas à l'allumage (elle reste à vérifier
-  sur la livraison des messages de l'agent). L'allumage se fait depuis l'onglet Aperçu.
+  sur la livraison des messages de l'agent). L'allumage se fait par l'interrupteur du bloc Meta Business Agent
+  de l'Accueil, ou par celui de l'onglet Aperçu : les deux allument l'agent chez Meta PUIS pour la plateforme
+  (qui ne lui confie des conversations qu'à ce moment-là), et la mise en service par l'Assistant aussi.
 - 🔲 **Abonnement / Billing** (Stripe) : menus câblés (désactivés), intégration hors lot.
 - 🔲 **Rapport mensuel auto** : score agent + stats campagnes.
 - Hors V1 (discipline anti tailor-made) : multicanal, segments avancés, A/B testing.

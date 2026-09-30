@@ -182,4 +182,52 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
   it('une conversation inconnue rend false, pour que la route en fasse un 404', async () => {
     expect(await store.marquerTraitee(tenantId, '00000000-0000-4000-8000-000000000000', true, { collaborateur: null })).toBe(false);
   });
+
+  /** Les secondes écoulées depuis `control_changed_at`, lues en base. */
+  const depuisSecondes = async (): Promise<number> => (await pool.query<{ depuis: number }>(
+    `select extract(epoch from (now() - control_changed_at))::float8 as depuis from conversations where id = $1`, [convId],
+  )).rows[0]!.depuis;
+  const vieillir = () => pool.query(`update conversations set control_changed_at = now() - interval '3 hours' where id = $1`, [convId]);
+
+  /**
+   * 🔴 A (décision de Julien du 2026-09-30) : « TRAITÉ » RELANCE LE DÉLAI DE REPRISE d'un fil que l'équipe tient. Le
+   * balayage et la remise « personne ne suit » comptent depuis `control_changed_at` : sans ce clic, une conversation
+   * répondue puis marquée « Traité » repartait à l'agent au délai compté depuis la réponse.
+   */
+  it('🔴 marquer « Traité » un fil de l’équipe remet `control_changed_at` à maintenant ; le retirer et archiver n’y touchent pas', async () => {
+    await vieillir();
+    expect(await store.marquerTraitee(tenantId, convId, true, { collaborateur: null })).toBe(true);
+    expect(await depuisSecondes()).toBeLessThan(60);
+    await vieillir();
+    expect(await store.marquerTraitee(tenantId, convId, false, { collaborateur: null })).toBe(true);
+    expect(await depuisSecondes()).toBeGreaterThan(3 * 3600 - 60);
+    expect(await store.archiverConversation(tenantId, convId, true, { collaborateur: null })).toBe(true);
+    expect(await depuisSecondes()).toBeGreaterThan(3 * 3600 - 60);
+  });
+
+  it('« Traité » sur un fil que l’équipe ne tient pas ne relance rien', async () => {
+    await pool.query(`update conversations set control_owner = 'mba' where id = $1`, [convId]);
+    await vieillir();
+    expect(await store.marquerTraitee(tenantId, convId, true, { collaborateur: null })).toBe(true);
+    expect(await depuisSecondes()).toBeGreaterThan(3 * 3600 - 60);
+  });
+
+  it('🔴 le message du contact qui retire « Traité » le dit à son appelant (`rouverte`), le suivant non', async () => {
+    // C'est l'information que la remise « personne ne suit » transforme en demande pour l'équipe : elle vient de
+    // l'écriture elle-même, qui seule sait sans course.
+    expect(await store.marquerTraitee(tenantId, convId, true, { collaborateur: null })).toBe(true);
+    expect(await store.recordInbound(tenantId, entrant('wamid.itest-traite-r1', 'finalement, une question'))).toEqual({ rouverte: true });
+    expect(await store.recordInbound(tenantId, entrant('wamid.itest-traite-r2', 'vous êtes là ?'))).toEqual({ rouverte: false });
+  });
+
+  it('l’état du fil lu par la remise : détenteur, temps écoulé depuis la bascule, escalade', async () => {
+    await vieillir();
+    const e = await store.etatDuFil(tenantId, WA_ID);
+    expect(e.owner).toBe('app_human');
+    expect(e.escaladee).toBe(false);
+    expect(e.depuisMs!).toBeGreaterThan(3 * 3600_000 - 60_000);
+    expect(await store.etatDuFil(tenantId, '33600000999')).toEqual({ owner: 'app_workflow', depuisMs: null, escaladee: false });
+    // Et d'un autre espace, rien : le `tenant_id` du `where` est le contrôle.
+    expect((await store.etatDuFil(autreTenantId, WA_ID)).owner).toBe('app_workflow');
+  });
 });

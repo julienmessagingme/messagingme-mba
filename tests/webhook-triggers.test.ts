@@ -69,7 +69,7 @@ describe('processTriggers', () => {
 describe('handleWebhookJob : intégration des automations', () => {
   const inbox = {
     phoneNumberTenant: async () => 't1',
-    recordInbound: async () => {},
+    recordInbound: async () => ({ rouverte: false }),
   };
 
   it('le signal « nouveau contact » vient de l’upsert (created) et est transmis au déclencheur', async () => {
@@ -131,7 +131,7 @@ describe('handleWebhookJob : intégration des automations', () => {
     let inboundRecorded = 0;
     await expect(handleWebhookJob(inboundPayload('33611', 'rdv'), {
       store: eventStore,
-      inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => { inboundRecorded += 1; } },
+      inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => { inboundRecorded += 1; return { rouverte: false }; } },
       arriveesPub: aucuneArriveePub,
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,

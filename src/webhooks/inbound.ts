@@ -95,8 +95,11 @@ export interface FlowCompletion {
  * par numéro (`NumeroVersEspace`, `./rattachement.ts`) et passe des messages déjà rattachés.
  */
 export interface InboxStore {
-  /** Upsert la conversation (par tenant+wa_id) et insère le message (idempotent par wamid). */
-  recordInbound(tenantId: string, m: InboundMessage): Promise<void>;
+  /**
+   * Upsert la conversation (par tenant+wa_id) et insère le message (idempotent par wamid). `rouverte` : ce message
+   * vient de sortir la conversation de « Traité » ou d'Archivé ; seule cette écriture le sait sans course.
+   */
+  recordInbound(tenantId: string, m: InboundMessage): Promise<{ rouverte: boolean }>;
 }
 
 /**
@@ -310,13 +313,17 @@ export interface DepsEntrants {
  *     premier message est STOP serait sinon créé `opted_in` juste après ;
  *  2. avant tout ce qui envoie : le handler appelle `processInbound` avant l'avance et les automations.
  * Un bouton porte son libellé dans `body` : « Stopper la simulation » ne doit désabonner personne.
+ *
+ * Rend les messages (`messageId`) qui ont rouvert leur conversation (« Traité » ou Archivé retiré, `recordInbound`) :
+ * la remise « personne ne suit » en tire une demande pour l'équipe qui tient encore le fil.
  */
 export async function processInbound(
   entrants: readonly EntrantRattache[],
   store: InboxStore,
   deps: DepsEntrants,
-): Promise<void> {
+): Promise<ReadonlySet<string>> {
   const { upsertContact, optOut, assignation, signalReponse, detenteur } = deps;
+  const rouvertes = new Set<string>();
   for (const { message: m, tenantId } of entrants) {
     if (!tenantId) continue;
     if (upsertContact) {
@@ -334,7 +341,7 @@ export async function processInbound(
         console.error('processInbound: opt-out ignoré:', messageDe(err));
       }
     }
-    await store.recordInbound(tenantId, m);
+    if ((await store.recordInbound(tenantId, m)).rouverte) rouvertes.add(m.messageId);
     if (signalReponse) {
       await tenter('processInbound: signal de réponse ignoré:', () => signalReponse(tenantId, m));
     }
@@ -354,6 +361,7 @@ export async function processInbound(
       await tenter('processInbound: affectation de campagne ignorée:', () => assignation(tenantId, m.waId));
     }
   }
+  return rouvertes;
 }
 
 /**

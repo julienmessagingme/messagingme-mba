@@ -75,7 +75,9 @@ const TABLE: Cas[] = [
   { nom: '3. rendre, humain escaladé : ajout, release puis mba, escalade effacée', depart: { owner: 'app_human', ...escaladee }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'mba', meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', escaladee: false, surLaListe: true } },
   { nom: '3. rendre, déjà sur la liste : release seul', depart: { owner: 'app_human' }, banc: surLaListe, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'mba', meta: ['release:w'], arrivee: { owner: 'mba', surLaListe: true } },
   { nom: '3. rendre, Meta refuse l’ajout : lève, rien d’écrit, aucun release', depart: { owner: 'app_human' }, banc: { ajout: ['refuse'] }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), leve: true, meta: ['ajout:w'], arrivee: { owner: 'app_human', surLaListe: false } },
-  { nom: '3. rendre, Meta refuse le release : lève, rien d’écrit, le contact reste sur la liste', depart: { owner: 'app_human' }, banc: { release: ['refuse'] }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), leve: true, meta: ['ajout:w', 'release:w'], arrivee: { owner: 'app_human', surLaListe: true } },
+  // 🔴 Essai réel du 2026-09-30 : après un modèle, l'agent de Meta tient déjà le fil et Meta refuse le `release`. Le
+  // contact est sur la liste, l'agent répond au message suivant : c'est confié, pas une erreur.
+  { nom: '3. rendre, Meta refuse le release (son agent tient déjà le fil) : confié quand même, mba', depart: { owner: 'app_human' }, banc: { release: ['refuse'] }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'mba', meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', surLaListe: true } },
   { nom: '3. rendre, agent éteint : app_workflow sans appel, escalade effacée', depart: { owner: 'app_human', ...escaladee }, banc: { mbaEnabled: false }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'app_workflow', meta: [], arrivee: { owner: 'app_workflow', escaladee: false } },
   { nom: '3. rendre, colonne déjà mba : on rouvre notre côté sans appel (release hors contrat)', depart: { owner: 'mba' }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'app_workflow', meta: [], arrivee: { owner: 'app_workflow' } },
   { nom: '3. rendre, agent allumé sans numéro : rien d’écrit', depart: { owner: 'app_human' }, banc: { numero: null }, geste: (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), rend: 'aucun_numero', meta: [], arrivee: { owner: 'app_human', surLaListe: false } },
@@ -85,8 +87,9 @@ const TABLE: Cas[] = [
   // 4. Fin de parcours.
   { nom: '4. fin de parcours, rien en vol, Meta accepte : app_human puis confié, mba', depart: { owner: 'app_workflow' }, geste: (f) => f.rendreApresParcours('t1', 'w'), meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', surLaListe: true } },
   { nom: '4. fin de parcours, envoi en vol : marque, attente, aucun appel', depart: { owner: 'app_workflow', enVol: 'wamid.X' }, geste: (f) => f.rendreApresParcours('t1', 'w'), meta: [], arrivee: { owner: 'app_human', marque: 'wamid.X' } },
-  { nom: '4. fin de parcours, Meta refuse : lève, reste app_human', depart: { owner: 'app_workflow' }, banc: { release: ['refuse'] }, geste: (f) => f.rendreApresParcours('t1', 'w'), leve: true, meta: ['ajout:w', 'release:w'], arrivee: { owner: 'app_human' } },
-  { nom: '4. fin de parcours, fil escaladé : l’escalade part dès l’attente', depart: { owner: 'app_workflow', ...escaladee }, banc: { release: ['refuse'] }, geste: (f) => f.rendreApresParcours('t1', 'w'), leve: true, meta: ['ajout:w', 'release:w'], arrivee: { owner: 'app_human', escaladee: false } },
+  { nom: '4. fin de parcours, Meta refuse l’ajout : lève, reste app_human', depart: { owner: 'app_workflow' }, banc: { ajout: ['refuse'] }, geste: (f) => f.rendreApresParcours('t1', 'w'), leve: true, meta: ['ajout:w'], arrivee: { owner: 'app_human', surLaListe: false } },
+  { nom: '4. fin de parcours, Meta refuse le release : confié quand même, mba', depart: { owner: 'app_workflow' }, banc: { release: ['refuse'] }, geste: (f) => f.rendreApresParcours('t1', 'w'), meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  { nom: '4. fin de parcours, fil escaladé : l’escalade part dès l’attente', depart: { owner: 'app_workflow', ...escaladee }, banc: { ajout: ['refuse'] }, geste: (f) => f.rendreApresParcours('t1', 'w'), leve: true, meta: ['ajout:w'], arrivee: { owner: 'app_human', escaladee: false } },
   { nom: '4. fin de parcours, un opérateur tient le fil : rien', depart: { owner: 'app_human' }, geste: (f) => f.rendreApresParcours('t1', 'w'), meta: [], arrivee: { owner: 'app_human' } },
   { nom: '4. fin de parcours, aucun numéro : reste en attente, jamais mba', depart: { owner: 'app_workflow' }, banc: { numero: null }, geste: (f) => f.rendreApresParcours('t1', 'w'), meta: [], arrivee: { owner: 'app_human' } },
   { nom: '4. fin de parcours, fil de test : reste en attente, aucun appel', depart: { owner: 'app_workflow', test: true }, geste: (f) => f.rendreApresParcours('t1', 'w'), meta: [], arrivee: { owner: 'app_human', surLaListe: false } },
@@ -96,27 +99,34 @@ const TABLE: Cas[] = [
   // 5. Remise sur accusé.
   { nom: '5. accusé attendu, Meta accepte : marque consommée, confié, mba, escalade effacée', depart: { owner: 'app_human', marque: 'wamid.A', ...escaladee }, geste: (f) => f.remettreSurAccuse('wamid.A'), meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', marque: null, escaladee: false, surLaListe: true } },
   { nom: '5. accusé d’un autre message : rien', depart: { owner: 'app_human', marque: 'wamid.A' }, geste: (f) => f.remettreSurAccuse('wamid.B'), meta: [], arrivee: { owner: 'app_human', marque: 'wamid.A' } },
-  { nom: '5. accusé, Meta refuse : marque consommée quand même, reste app_human', depart: { owner: 'app_human', marque: 'wamid.A' }, banc: { release: ['refuse'] }, geste: (f) => f.remettreSurAccuse('wamid.A'), leve: true, meta: ['ajout:w', 'release:w'], arrivee: { owner: 'app_human', marque: null } },
+  { nom: '5. accusé, Meta refuse l’ajout : marque consommée quand même, reste app_human', depart: { owner: 'app_human', marque: 'wamid.A' }, banc: { ajout: ['refuse'] }, geste: (f) => f.remettreSurAccuse('wamid.A'), leve: true, meta: ['ajout:w'], arrivee: { owner: 'app_human', marque: null } },
+  { nom: '5. accusé, Meta refuse le release : confié quand même, mba', depart: { owner: 'app_human', marque: 'wamid.A' }, banc: { release: ['refuse'] }, geste: (f) => f.remettreSurAccuse('wamid.A'), meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', marque: null, surLaListe: true } },
   { nom: '5. accusé, aucun numéro : reste app_human', depart: { owner: 'app_human', marque: 'wamid.A' }, banc: { numero: null }, geste: (f) => f.remettreSurAccuse('wamid.A'), meta: [], arrivee: { owner: 'app_human', marque: null } },
 
   // 6. Le client écrit et personne ne suit : confier, `mba`, puis l'événement `message_sans_suite`.
-  { nom: '6. personne ne suit, app_workflow : ajout, release, mba, événement', depart: { owner: 'app_workflow' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
-  { nom: '6. personne ne suit, colonne mba mais absent de la liste : confié, et l’agent est prévenu', depart: { owner: 'mba' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
-  { nom: '6. personne ne suit, déjà confié (sur la liste, mba) : release, AUCUN événement', depart: { owner: 'mba' }, banc: surLaListe, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: ['release:w'], arrivee: { owner: 'mba', surLaListe: true } },
-  { nom: '6. personne ne suit, sur la liste mais fil chez nous (release refusé avant) : release, mba, événement', depart: { owner: 'app_workflow' }, banc: surLaListe, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: ['release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
-  { nom: '6. personne ne suit, un opérateur tient le fil : rien', depart: { owner: 'app_human' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '6. personne ne suit, app_workflow : ajout, release, mba, événement', depart: { owner: 'app_workflow' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  { nom: '6. personne ne suit, colonne mba mais absent de la liste : confié, et l’agent est prévenu', depart: { owner: 'mba' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  // Déjà confié : Meta refuse le `release` quand son agent tient le fil (la réponse « à côté » d'un scénario, qu'il
+  // a reçue par son propre événement) ; il l'accepte quand nous le tenions, donc que ce message est arrivé chez nous.
+  { nom: '6. personne ne suit, déjà confié et son agent tient le fil (release refusé) : AUCUN événement', depart: { owner: 'mba' }, banc: { ...surLaListe, release: ['refuse'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['release:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  { nom: '6. personne ne suit, déjà confié mais le fil était chez nous (release accepté) : l’agent est prévenu', depart: { owner: 'mba' }, banc: surLaListe, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  { nom: '6. personne ne suit, sur la liste mais fil chez nous (release refusé avant) : release, mba, événement', depart: { owner: 'app_workflow' }, banc: surLaListe, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  { nom: '6. personne ne suit, un opérateur tient le fil : rien', depart: { owner: 'app_human' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_human' } },
   // 🔴 Relecture du 2026-09-30 : un « STOP » que personne ne prenait partait chez l'agent, avec l'ordre de répondre.
-  { nom: '6. personne ne suit, le contact a dit STOP : ni liste, ni release, ni événement', depart: { owner: 'app_workflow' }, banc: { desabonnes: ['w'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', 'STOP'), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
-  { nom: '6. personne ne suit, le contact est bloqué : ni liste, ni release, ni événement', depart: { owner: 'app_workflow' }, banc: { bloques: ['w'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
-  { nom: '6. personne ne suit, agent éteint : rien', depart: { owner: 'app_workflow' }, banc: { mbaEnabled: false }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: [], arrivee: { owner: 'app_workflow' } },
-  { nom: '6. personne ne suit, un parcours attend : rien', depart: { owner: 'app_workflow' }, banc: { enAttente: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: [], arrivee: { owner: 'app_workflow' } },
-  { nom: '6. personne ne suit, aucun numéro : rien d’écrit', depart: { owner: 'app_workflow' }, banc: { numero: null }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: [], arrivee: { owner: 'app_workflow' } },
-  { nom: '6. personne ne suit, fil de test : rien', depart: { owner: 'app_workflow', test: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
-  { nom: '6. personne ne suit, Meta refuse l’ajout : lève, rien d’écrit, aucun événement', depart: { owner: 'app_workflow' }, banc: { ajout: ['refuse'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), leve: true, meta: ['ajout:w'], arrivee: { owner: 'app_workflow', surLaListe: false } },
-  { nom: '6. personne ne suit, Meta refuse le release : lève, rien d’écrit, aucun événement', depart: { owner: 'app_workflow' }, banc: { release: ['refuse'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), leve: true, meta: ['ajout:w', 'release:w'], arrivee: { owner: 'app_workflow', surLaListe: true } },
-  { nom: '6. personne ne suit, événement refusé : journalisé, la colonne reste mba', depart: { owner: 'app_workflow' }, banc: { evenement: ['refuse'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
-  { nom: '6. personne ne suit, aucun texte lisible : confié, sans événement', depart: { owner: 'app_workflow' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', '  '), meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', surLaListe: true } },
-  { nom: '6. personne ne suit, escalade périmée : effacée', depart: { owner: 'app_workflow', ...escaladee }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', escaladee: false } },
+  { nom: '6. personne ne suit, le contact a dit STOP : ni liste, ni release, ni événement', depart: { owner: 'app_workflow' }, banc: { desabonnes: ['w'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', 'STOP', { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
+  { nom: '6. personne ne suit, le contact est bloqué : ni liste, ni release, ni événement', depart: { owner: 'app_workflow' }, banc: { bloques: ['w'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
+  { nom: '6. personne ne suit, agent éteint : rien', depart: { owner: 'app_workflow' }, banc: { mbaEnabled: false }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
+  { nom: '6. personne ne suit, un parcours attend : rien', depart: { owner: 'app_workflow' }, banc: { enAttente: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
+  { nom: '6. personne ne suit, aucun numéro : rien d’écrit', depart: { owner: 'app_workflow' }, banc: { numero: null }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
+  { nom: '6. personne ne suit, fil de test : rien', depart: { owner: 'app_workflow', test: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
+  // 🔴 Relecture du 2026-09-30 : laissée `app_workflow`, la conversation sortait d'« À traiter » sans que personne
+  // réponde (un identifiant qui n'est pas un numéro est refusé à chaque ajout). Elle passe à l'équipe.
+  { nom: '6. personne ne suit, Meta refuse l’ajout : lève, aucun événement, la conversation passe à l’équipe', depart: { owner: 'app_workflow' }, banc: { ajout: ['refuse'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), leve: true, meta: ['ajout:w'], arrivee: { owner: 'app_human', surLaListe: false } },
+  { nom: '6. personne ne suit, colonne mba, Meta refuse l’ajout : la conversation passe à l’équipe', depart: { owner: 'mba' }, banc: { ajout: ['refuse'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), leve: true, meta: ['ajout:w'], arrivee: { owner: 'app_human', surLaListe: false } },
+  { nom: '6. personne ne suit, Meta refuse le release : confié quand même, mba, événement', depart: { owner: 'app_workflow' }, banc: { release: ['refuse'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  { nom: '6. personne ne suit, événement refusé : journalisé, la colonne reste mba', depart: { owner: 'app_workflow' }, banc: { evenement: ['refuse'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  { nom: '6. personne ne suit, aucun texte lisible : confié, sans événement', depart: { owner: 'app_workflow' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', '  ', { rouverte: false }), meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', surLaListe: true } },
+  { nom: '6. personne ne suit, escalade périmée : effacée', depart: { owner: 'app_workflow', ...escaladee }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', escaladee: false } },
 
   // 7. Reprise pour un scénario : le contact quitte la liste, puis `app_workflow`.
   { nom: '7. reprise, sur la liste, Meta accepte : retrait puis app_workflow', depart: { owner: 'mba' }, banc: surLaListe, geste: (f) => f.reprendrePourLApp('t1', 'w'), rend: true, meta: ['retrait:w'], arrivee: { owner: 'app_workflow', surLaListe: false } },
@@ -132,7 +142,7 @@ const TABLE: Cas[] = [
   // 7b. Réponse de campagne « Inbox ».
   { nom: '7b. équipe, sur la liste, Meta accepte : retrait puis app_human', depart: { owner: 'app_workflow' }, banc: surLaListe, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: ['retrait:w'], arrivee: { owner: 'app_human', surLaListe: false } },
   { nom: '7b. équipe, Meta refuse : false, rien d’écrit', depart: { owner: 'mba' }, banc: { ...surLaListe, retrait: ['refuse'] }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: false, meta: ['retrait:w'], arrivee: { owner: 'mba', surLaListe: true } },
-  { nom: '7b. équipe, un opérateur tient déjà le fil : rien ne bouge', depart: { owner: 'app_human' }, banc: surLaListe, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: [], arrivee: { owner: 'app_human' } },
+  { nom: '7b. équipe, un opérateur tient déjà le fil : aucun appel, il le garde', depart: { owner: 'app_human' }, banc: surLaListe, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: [], arrivee: { owner: 'app_human' } },
   { nom: '7b. équipe, absent de la liste : app_human sans appel', depart: { owner: 'app_workflow' }, geste: (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), rend: true, meta: [], arrivee: { owner: 'app_human' } },
 
   // 8 et 9. Un scénario ou un agent IA passe à un humain.
@@ -153,7 +163,8 @@ const TABLE: Cas[] = [
 
   // 12. Le balayage d'inactivité : vers `mba`, confier, sans événement.
   { nom: '12. balayage vers mba, Meta accepte : ajout, release puis mba', depart: { owner: 'app_human' }, geste: (f) => f.rendreApresInactivite('t1', 'w', 'app_human', 'mba'), rend: true, meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', surLaListe: true } },
-  { nom: '12. balayage vers mba, Meta refuse : false, rien d’écrit', depart: { owner: 'app_human' }, banc: { release: ['refuse'] }, geste: (f) => f.rendreApresInactivite('t1', 'w', 'app_human', 'mba'), rend: false, meta: ['ajout:w', 'release:w'], arrivee: { owner: 'app_human' } },
+  { nom: '12. balayage vers mba, Meta refuse l’ajout : false, rien d’écrit', depart: { owner: 'app_human' }, banc: { ajout: ['refuse'] }, geste: (f) => f.rendreApresInactivite('t1', 'w', 'app_human', 'mba'), rend: false, meta: ['ajout:w'], arrivee: { owner: 'app_human', surLaListe: false } },
+  { nom: '12. balayage vers mba, Meta refuse le release : confié quand même, mba', depart: { owner: 'app_human' }, banc: { release: ['refuse'] }, geste: (f) => f.rendreApresInactivite('t1', 'w', 'app_human', 'mba'), rend: true, meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', surLaListe: true } },
   { nom: '12. balayage vers mba, aucun numéro : false, rien d’écrit', depart: { owner: 'app_human' }, banc: { numero: null }, geste: (f) => f.rendreApresInactivite('t1', 'w', 'app_human', 'mba'), rend: false, meta: [], arrivee: { owner: 'app_human' } },
   { nom: '12. balayage vers mba, fil de test : false, aucun appel', depart: { owner: 'app_human', test: true }, geste: (f) => f.rendreApresInactivite('t1', 'w', 'app_human', 'mba'), rend: false, meta: [], arrivee: { owner: 'app_human' } },
   { nom: '12. balayage mba vers app_workflow : aucun appel', depart: { owner: 'mba' }, geste: (f) => f.rendreApresInactivite('t1', 'w', 'mba', 'app_workflow'), rend: true, meta: [], arrivee: { owner: 'app_workflow' } },
@@ -248,7 +259,7 @@ describe('la table des transitions', () => {
     const gestes: Array<[string, (f: ControleDuFil) => Promise<unknown>, ControlOwner, string[], string[]]> = [
       ['reprendreLaMain', (f) => f.reprendreLaMain('t1', 'w', { collaborateur: null }), 'mba', ['w'], ['retrait:w', 'colonne:app_human']],
       ['rendreLaMain', (f) => f.rendreLaMain('t1', 'w', { collaborateur: null }), 'app_human', [], ['ajout:w', 'release:w', 'colonne:mba']],
-      ['remettreSiPersonneNeSuit', (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG), 'app_workflow', [], ['ajout:w', 'release:w', 'colonne:mba', 'evenement:w']],
+      ['remettreSiPersonneNeSuit', (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), 'app_workflow', [], ['ajout:w', 'release:w', 'colonne:mba', 'evenement:w']],
       ['reprendrePourLApp', (f) => f.reprendrePourLApp('t1', 'w'), 'mba', ['w'], ['retrait:w', 'colonne:app_workflow']],
       ['prendrePourLEquipe', (f) => f.prendrePourLEquipe('t1', 'w', 'automatique : campagne test'), 'mba', ['w'], ['retrait:w', 'colonne:app_human']],
       ['rendreApresInactivite', (f) => f.rendreApresInactivite('t1', 'w', 'app_human', 'mba'), 'app_human', [], ['ajout:w', 'release:w', 'colonne:mba']],
@@ -276,8 +287,8 @@ describe('décision 1 : l’escalade ne survit pas à un robot qui reprend le fi
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     // Une conversation escaladée ; l'opérateur lance un scénario sans répondre, le parcours finit, et Meta refuse
-    // la remise. Avant : `app_human` escaladée, que le balayage exclut pour toujours.
-    const b = bancDuFil({ release: ['refuse', 'accepte'], conversations: { w: { owner: 'app_human', escaladeeLe: ESCALADE } } });
+    // la remise (l'ajout à la liste). Avant : `app_human` escaladée, que le balayage exclut pour toujours.
+    const b = bancDuFil({ ajout: ['refuse', 'accepte'], conversations: { w: { owner: 'app_human', escaladeeLe: ESCALADE } } });
     expect(await b.fil.reprendrePourLApp('t1', 'w')).toBe(true);
     await expect(b.fil.rendreApresParcours('t1', 'w')).rejects.toThrow();
     expect(b.etat('w')?.owner).toBe('app_human');
@@ -324,7 +335,7 @@ describe('décision 2 : une réponse de campagne « Inbox » arrive à l’équi
     const affectees: Array<[string, string]> = [];
     const deps: WebhookJobDeps = {
       store: { insertEvent: async () => true },
-      inbox: { recordInbound: async () => {}, phoneNumberTenant: async () => 't1' },
+      inbox: { recordInbound: async () => ({ rouverte: false }), phoneNumberTenant: async () => 't1' },
       arriveesPub: aucuneArriveePub,
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
@@ -376,7 +387,7 @@ describe('relecture du lot 4 : une réponse de campagne « Inbox » ne prend le 
     const prises: string[] = [];
     const deps: WebhookJobDeps = {
       store: { insertEvent: async () => true },
-      inbox: { recordInbound: async (_t, m) => { enregistres.push(m.messageId); }, phoneNumberTenant: async () => 't1' },
+      inbox: { recordInbound: async (_t, m) => { enregistres.push(m.messageId); return { rouverte: false }; }, phoneNumberTenant: async () => 't1' },
       arriveesPub: aucuneArriveePub,
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
@@ -417,7 +428,14 @@ describe('relecture du lot 4 : une réponse de campagne « Inbox » ne prend le 
     expect(b.etat(WA)?.owner).toBe('app_human');
     // L'opérateur rend la main : le contact revient sur la liste, `release`, puis `mba`.
     expect(await b.fil.rendreLaMain('t1', WA, { collaborateur: null })).toBe('mba');
-    await handleWebhookJob(message('wamid.P2', 'Et demain ?'), j.deps);
+    // Son agent tient désormais le fil : Meta range le message suivant en `standby`, et le contact est sur la liste.
+    // (Arrivé en `messages`, il prouverait que nous tenions encore le fil, et l'agent serait prévenu : table, cas 6.)
+    await handleWebhookJob({
+      entry: [{ changes: [{ field: 'standby', value: {
+        metadata: { phone_number_id: 'pn1' },
+        standby: { contacts: [{ wa_id: WA }], messages: [{ id: 'wamid.P2', from: WA, type: 'text', timestamp: '1789465356', text: { body: 'Et demain ?' } }] },
+      } }] }],
+    }, j.deps);
     expect(j.prises).toEqual([WA]);
     expect(b.appels.filter((a) => a.startsWith('retrait:')), 'aucun retrait après le geste de l’opérateur').toEqual([`retrait:${WA}`]);
     expect(b.table.has(WA), 'le contact est resté sur la liste').toBe(true);
@@ -453,6 +471,27 @@ describe('relecture du lot 4 : une réponse de campagne « Inbox » ne prend le 
  * retrait de la liste de l'agent (`src/mba/liste.ts`), qui porte le rejeu. Vérifié dans les deux sens : sans rejeu,
  * le cas rend `refuse` et le contact reste sur la liste.
  */
+/**
+ * 🔴 RELECTURE DU 2026-09-30 : la réponse à une campagne au devenir « Inbox », sur une conversation que l'équipe tient
+ * depuis longtemps (délai de reprise échu), partait à l'agent de Meta par la remise du même job, alors que la campagne
+ * l'envoie à l'équipe. Vérifié dans les deux sens : `relancerLeDelai` retiré de `prendrePourLEquipe`, ce cas échoue
+ * (ajout, release, événement).
+ */
+describe('la réponse à une campagne au devenir Inbox reste à l’équipe', () => {
+  it('🔴 fil de l’équipe au délai échu : le délai repart, une demande s’ouvre, la remise ne confie rien', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const il_y_a_3h = new Date(Date.now() - 3 * 3600_000);
+    const b = bancDuFil({ conversations: { w: { owner: 'app_human', changedAt: il_y_a_3h } } });
+    expect(await b.fil.prendrePourLEquipe('t1', 'w', 'automatique : campagne Rentrée')).toBe(true);
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Oui, ça m’intéresse', { rouverte: false });
+    expect(b.appels).toEqual([]);
+    expect(b.etat('w')?.owner).toBe('app_human');
+    expect(b.demandes).toEqual([{ waId: 'w', cause: 'automatique : campagne Rentrée' }]);
+    expect(b.etat('w')!.changedAt!.getTime()).toBeGreaterThan(il_y_a_3h.getTime());
+    vi.restoreAllMocks();
+  });
+});
+
 describe('décision 3 : le bouton « Reprendre la main » rejoue une fois', () => {
   it('🔴 un refus passager suivi d’un accord : le fil est pris, en deux appels', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -486,7 +525,7 @@ describe('décision 4 : un agent sans numéro ne s’annonce jamais', () => {
 
   it('🔴 le client revient : rien d’écrit', async () => {
     const b = bancDuFil({ numero: null, conversations: { w: { owner: 'app_workflow' } } });
-    await b.fil.remettreSiPersonneNeSuit('t1', 'w', MSG);
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false });
     expect(b.etat('w')?.owner).toBe('app_workflow');
   });
 
@@ -614,7 +653,8 @@ describe('décision 5 : un lead ne prend pas la main à un opérateur', () => {
       contactBloque: async () => false,
       estDesabonne: jamaisDesabonne,
       reprendreLeFil: (t, w) => b.fil.reprendrePourLApp(t, w, { saufOperateur: true }),
-      rendreLeFil: b.fil.remettreSiPersonneNeSuit,
+      // Le même câblage que `src/worker.ts` : le routage vient de reprendre le fil, rien n'est à rouvrir.
+      rendreLeFil: (t, w, contenu) => b.fil.remettreSiPersonneNeSuit(t, w, contenu, { rouverte: false }),
       noterIssue: async (_t, _m, v) => { notes.push(v.issue); },
     };
     const standby = {

@@ -107,7 +107,7 @@ describe('handleWebhookJob : l’arrivée publicitaire', () => {
     const ordre: string[] = [];
     await handleWebhookJob(payload([message('wamid.h', '33611', referral)]), {
       store: { insertEvent: async () => true },
-      inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => {} },
+      inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => ({ rouverte: false }) },
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
       inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,

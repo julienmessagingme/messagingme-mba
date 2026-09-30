@@ -714,7 +714,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
                   campaign.tenantId, contenu.workflowId, waIdOfTarget(r.toE164), r.contactId, heritees,
                 );
                 if (typeof suite === 'string') scenarioNonDemarre = `Scénario non démarré : ${suite}`;
-                else if (suite === false) scenarioNonDemarre = 'Scénario non démarré (scénario supprimé, ou fil repris par un opérateur / MBA).';
+                else if (suite === false) scenarioNonDemarre = 'Scénario non démarré (scénario supprimé).';
               }
             } catch (e) {
               scenarioNonDemarre = `Scénario non démarré : ${texteDe(e)}`;
@@ -730,7 +730,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         const started = await deps.startWorkflowFromNode(campaign.tenantId, contenu.workflowId, campaign.startNodeId, waId, r.contactId);
         // Une chaîne porte la raison exacte du refus : on l'affiche telle quelle.
         if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
-        else if (started === false) notStarted = 'scénario non démarré (bloc de départ indisponible, ou fil repris par un opérateur / MBA)';
+        else if (started === false) notStarted = 'scénario non démarré (bloc de départ indisponible)';
         res = { messageId: `wf-${contenu.workflowId}` };
       } else if (contenu.workflowId) {
         // Campagne scénario : on démarre le parcours (blocs sync puis premier template). message_id synthétique,
@@ -740,7 +740,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         // Variables du premier template, résolues à la construction : pas de re-résolution à l'envoi.
         const started = await deps.startWorkflow(campaign.tenantId, contenu.workflowId, waId, r.contactId, params);
         if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
-        else if (started === false) notStarted = 'scénario non lançable (ouverture hors fenêtre 24 h, scénario supprimé, ou fil repris par un opérateur / MBA)';
+        else if (started === false) notStarted = 'scénario non lançable (ouverture hors fenêtre 24 h, ou scénario supprimé)';
         res = { messageId: `wf-${contenu.workflowId}` };
       } else {
         const tpl: TemplateSpec = {

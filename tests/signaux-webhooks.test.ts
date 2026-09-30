@@ -67,13 +67,13 @@ describe('les accusés Meta passent au puits des signaux', () => {
 });
 
 describe('les entrants Meta passent au puits des signaux', () => {
-  const inbox = { recordInbound: async () => {} };
+  const inbox = { recordInbound: async () => ({ rouverte: false }) };
 
   it('🔴 la réponse passe au puits APRÈS son enregistrement, avec son espace', async () => {
     const ordre: string[] = [];
     await processInbound(
       await entrantsDe(entrant('text', { text: { body: 'bonjour' } }), T),
-      { recordInbound: async () => { ordre.push('enregistre'); } },
+      { recordInbound: async () => { ordre.push('enregistre'); return { rouverte: false }; } },
       { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, signalReponse: async (t, m: InboundMessage) => { ordre.push(`signal:${t}:${m.messageId}`); } },
     );
     expect(ordre).toEqual(['enregistre', `signal:${T}:wamid.in1`]);
@@ -83,9 +83,9 @@ describe('les entrants Meta passent au puits des signaux', () => {
     let enregistres = 0;
     await expect(processInbound(
       await entrantsDe(entrant('text', { text: { body: 'bonjour' } }), T),
-      { recordInbound: async () => { enregistres += 1; } },
+      { recordInbound: async () => { enregistres += 1; return { rouverte: false }; } },
       { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, signalReponse: async () => { throw new Error('file indisponible'); } },
-    )).resolves.toBeUndefined();
+    )).resolves.toEqual(new Set());
     expect(enregistres).toBe(1);
   });
 
@@ -117,7 +117,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
     const vus: string[] = [];
     await handleWebhookJob(entrant('button', { button: { text: 'Oui', payload: 'Oui' } }), {
       store,
-      inbox: { phoneNumberTenant: async () => T, recordInbound: async () => {} },
+      inbox: { phoneNumberTenant: async () => T, recordInbound: async () => ({ rouverte: false }) },
       arriveesPub: aucuneArriveePub,
       routagePub: aucunRoutagePub,
       signalReponse: async (_t, m) => { vus.push(`${m.type}:${m.body}`); },
