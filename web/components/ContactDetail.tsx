@@ -584,12 +584,12 @@ export function ContactDetail({
         <p className="mt-2 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="fiche-ouvrir-erreur">{erreurOuverture}</p>
       )}
 
-      <div className="mt-4 flex gap-1 overflow-x-auto border-b border-ink-100 text-sm" role="tablist">
+      {/* ⚠️ Des BOUTONS, pas des `role="tab"` : les tests e2e de la console trouvent un onglet par son rôle de
+          bouton (`contact-bilan.spec.ts` ouvre ainsi l'Historique), et un rôle changé l'y rendrait introuvable. */}
+      <div className="mt-4 flex gap-1 overflow-x-auto border-b border-ink-100 text-sm">
         {ONGLETS_FICHE.map(({ cle, libelle }) => (
           <button
             key={cle}
-            role="tab"
-            aria-selected={tab === cle}
             data-testid={`fiche-onglet-${cle}`}
             onClick={() => setTab(cle)}
             className={`-mb-px shrink-0 border-b-2 px-3 py-1.5 transition-colors duration-150 ${tab === cle ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-900'}`}
