@@ -67,7 +67,9 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
     setBusy(true);
     setErreur(null);
     setBilan(null);
-    setRestantes(null);
+    // ⚠️ Les pages restantes d'un import ne sont PAS effacées ici : relire et corriger les fiches importées est le geste
+    // naturel juste après, et les perdre obligerait à refaire l'aperçu puis l'import d'un site lent. Seul un nouvel
+    // import les remplace.
     try {
       setBilan(await travail());
       await charger();
@@ -93,19 +95,23 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
       )
       : t(`${r.ecrites} fiche(s) écrite(s).`, `${r.ecrites} entry(ies) written.`);
     // Le plafond est DIT quand il mord : une page tronquée en silence laisserait croire que tout son
-    // contenu est devenu une source, et l'agent transférerait sur des questions que la page couvrait.
-    const message = r.ecrites >= r.plafond
+    // contenu est devenu une source, et l'agent transférerait sur des questions que la page couvrait. Et SEULEMENT
+    // quand il mord : le serveur nomme les pages qui l'ont atteint, car comparer le total écrit par un import de site au
+    // plafond PAR PAGE annonçait une page tronquée qui ne l'était pas. Une API d'avant le 2026-10-01 ne les nomme pas :
+    // on retombe alors sur cette comparaison, juste pour une page seule.
+    const tronquees = r.tronquees ?? (r.ecrites >= r.plafond ? [url] : []);
+    const message = tronquees.length > 0
       ? `${ecrites} ${t(
-        `Le plafond de ${r.plafond} fiches par page est atteint : la suite de la page n’a pas été lue. Découpez-la, ou complétez à la main.`,
-        `The cap of ${r.plafond} entries per page was reached: the rest of the page was not read. Split it, or fill in by hand.`,
+        `Le plafond de ${r.plafond} fiches par page est atteint sur ${tronquees.length} page(s) : leur suite n’a pas été lue. Découpez-les, ou complétez à la main.`,
+        `The cap of ${r.plafond} entries per page was reached on ${tronquees.length} page(s): the rest was not read. Split them, or fill in by hand.`,
       )}`
       : ecrites;
     const reste = r.restantes ?? [];
     setRestantes(reste.length > 0 ? { url, pages: reste } : null);
     return reste.length > 0
       ? `${message} ${t(
-        `Le site répond lentement : ${reste.length} page(s) n’ont pas pu être lues à temps. Importez-les d’un nouveau clic.`,
-        `The site responds slowly: ${reste.length} page(s) could not be read in time. Import them with another click.`,
+        `Le site répond lentement : ${reste.length} page(s) non lue(s) à temps, à importer d’un nouveau clic.`,
+        `The site responds slowly: ${reste.length} page(s) not read in time, to import with another click.`,
       )}`
       : message;
   });

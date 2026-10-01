@@ -148,6 +148,28 @@ describe('fetchUrlBorne', () => {
     expect(performance.now() - debut).toBeLessThan(600);
   });
 
+  it('avec le signal d’une requête, le délai de CHAQUE saut tient toujours', async () => {
+    // Sans lui, une seule page lente consommerait toute l'échéance de la requête (relevé par la relecture du
+    // 2026-10-01, en retirant ce délai : les tests restaient verts). Ici, 1 s par saut.
+    const pendante = ((_u: string, init?: RequestInit) => new Promise<Response>((_ok, ko) => {
+      init?.signal?.addEventListener('abort', () => ko(init.signal?.reason), { once: true });
+    })) as unknown as typeof fetch;
+    const debut = performance.now();
+    await expect(borne(pendante)('https://www.exemple.fr/faq', new AbortController().signal)).rejects.toBeDefined();
+    expect(performance.now() - debut).toBeLessThan(1_500);
+  });
+
+  it('une requête dont l’échéance est déjà tombée ne lance pas non plus de résolution DNS', async () => {
+    // La résolution ne se laisse pas interrompre (3 s au plus) : lancée après l'échéance, elle la prolongerait d'autant.
+    let resolutions = 0;
+    const compte = async (): Promise<{ ok: boolean }> => { resolutions += 1; return { ok: true }; };
+    const impl = (async () => reponse(200, { 'content-type': 'text/html' }, '<p>x</p>')) as unknown as typeof fetch;
+    const tombe = new AbortController();
+    tombe.abort();
+    await expect(fetchUrlBorne(1000, impl, compte)('https://www.exemple.fr/faq', tombe.signal)).rejects.toBeDefined();
+    expect(resolutions).toBe(0);
+  });
+
   it('une requête dont l’échéance est déjà tombée ne lance aucune lecture', async () => {
     let appels = 0;
     const impl = (async () => { appels += 1; return reponse(200, { 'content-type': 'text/html' }, '<p>x</p>'); }) as unknown as typeof fetch;

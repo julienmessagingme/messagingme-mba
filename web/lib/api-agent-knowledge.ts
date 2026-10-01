@@ -43,6 +43,8 @@ export interface BilanImport {
    * s'importent d'un nouveau clic. Absent d'une API d'avant le 2026-10-01.
    */
   restantes?: string[];
+  /** Les pages dont la suite n'a pas été lue (plafond de fiches atteint). Absent d'une API d'avant le 2026-10-01. */
+  tronquees?: string[];
 }
 
 const base = (tenantId: string, agentId: string) => `/tenants/${tenantId}/agents/${agentId}/knowledge`;

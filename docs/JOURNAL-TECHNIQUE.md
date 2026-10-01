@@ -35,6 +35,21 @@ qui efface les appels enregistrés.
 `features.md` décrit désormais la lecture d'un site entier (elle n'y était pas) avec sa limite, et la fiche d'aide
 « Construire un agent IA » suit, empreinte comprise.
 
+**La relecture du lot (`bf53929a`) : aucun rouge, dix jaunes, corrigés dans la foulée** et relus avec le lot
+suivant. Elle a MESURÉ ce que les tests ne disaient pas : la lecture en cours est bien coupée à l'échéance, y compris
+quand le corps de la page arrive au compte-gouttes (1 013 ms pour une échéance d'une seconde, connexion fermée), et la
+FAQ de l'agent de Meta, qui lit sans signal, coupe toujours à 10 s comme avant. Les jaunes qui changent le
+comportement : une échéance qui coupe la DERNIÈRE page de la file n'était pas dite (l'aperçu annonçait un site
+complet, sans journal) ; les pages restantes disparaissaient au premier autre geste (corriger une fiche obligeait à
+refaire l'aperçu et l'import d'un site lent) ; et un défaut antérieur au lot, sur lequel il accrochait son message :
+l'écran comparait le TOTAL écrit par un import de site au plafond de fiches PAR PAGE, et quarante fiches réparties
+sur plusieurs pages annonçaient une page tronquée qui ne l'était pas. L'import nomme désormais ces pages
+(`tronquees`). La somme des délais n'était tenue que par un commentaire, qui oubliait les écritures de l'import
+(une transaction par page, après les lectures) : un test la tient, réseau, résolution, lecture et écritures sous les
+60 s de NPM. Et trois mutations survivaient : le délai de chaque saut retiré, la résolution DNS lancée après
+l'échéance, l'import qui ignorait l'échéance (le 422 disait « temps » par la raison de la page coupée) ; un test pour
+chacune. ⚠️ Le plan de déploiement oubliait `aide:charger` : la fiche modifiée ne serait jamais arrivée au bot d'aide.
+
 ## 2026-10-01 : essai réel du « Traité », et la réouverture devient une escalade (`23159e8f`)
 
 Sur la conversation de Julien (espace MessagingMe), délai de reprise réglé à 1 minute le temps de l'essai puis remis

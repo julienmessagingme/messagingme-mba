@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 21f740
+source_empreinte: d923ba
 ---
 # Construire un agent IA
 
@@ -40,14 +40,15 @@ fiche ne couvre, il n'invente pas : il sort du bloc par « Aucune source ». Une
 qui transfère tout. Vous remplissez cette base de quatre façons : en collant l'adresse d'une page de votre
 site, qui est lue une fois et découpée en fiches ; en déposant un document (PDF, Word, texte ou CSV) ; en
 écrivant une fiche à la main ; ou en joignant un document à l'assistant. L'adresse de votre domaine fait lire
-tout le site, jusqu'à cinquante pages, et un aperçu vous montre ce qui serait importé avant que rien ne
-s'écrive. Un site lent est lu pendant 30 secondes au plus : l'aperçu dit alors qu'il manque des pages, et un
-import arrêté faute de temps vous propose d'un clic les pages qu'il n'a pas pu lire. Un CSV, une grille de tarifs par
-exemple, est découpé par lignes entières, son en-tête repris dans chaque fiche, et celui qu'Excel enregistre
-sous Windows passe aussi. Une fiche fait au plus 2 000 caractères, ce que l'agent en lit : une section plus
-longue devient plusieurs fiches « (suite 2) », « (suite 3) », rien n'est coupé. Au-delà de 40 fiches, la suite
-d'une page ou d'un document n'est pas lue, et l'écran le dit. La provenance est écrite sous chaque fiche, et une
-fiche que personne n'a touchée depuis plus de quatre-vingt-dix jours porte une pastille « À relire ».
+votre site, jusqu'à cinquante pages proches de l'accueil, et un aperçu vous montre ce qui serait importé avant
+que rien ne s'écrive. Un site lent est lu pendant 30 secondes au plus : l'aperçu dit alors qu'il manque des
+pages, et un import arrêté faute de temps vous propose d'un clic les pages qu'il n'a pas pu lire. Un CSV, une
+grille de tarifs par exemple, est découpé par lignes entières, son en-tête repris dans chaque fiche, et celui
+qu'Excel enregistre sous Windows passe aussi. Une fiche fait au plus 2 000 caractères, ce que l'agent en lit :
+une section plus longue devient plusieurs fiches « (suite 2) », « (suite 3) », rien n'est coupé. Au-delà de 40
+fiches, la suite d'une page ou d'un document n'est pas lue, et l'écran le dit, page par page. La provenance
+est écrite sous chaque fiche, et une fiche que personne n'a touchée depuis plus de quatre-vingt-dix jours porte
+une pastille « À relire ».
 
 **Les outils sont ce qu'il a le droit de FAIRE**, en plus de parler : chercher dans sa base de
 connaissance, lire la fiche du contact, poser une étiquette, enregistrer une information, envoyer un bloc de

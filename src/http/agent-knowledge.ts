@@ -88,16 +88,18 @@ const importSchema = z.object({
  * pages au plafond frôleraient l'échéance, et le refus dit alors d'importer une partie du site. Une page hostile y est
  * coupée, en 400. Plus haut, un seul espace tiendrait les quatre places du plafond de lecture (`todo.md`).
  */
-const LECTURE_PAGES: OptionsLecture = { nature: 'pages', delaiMs: 20_000 };
+export const LECTURE_PAGES: OptionsLecture = { nature: 'pages', delaiMs: 20_000 };
 
 /**
  * Le temps de réseau d'un aperçu ou d'un import de site. 🔴 NPM coupe à 60 s sans réponse : il ne pose aucun
  * `proxy_read_timeout` (configuration de `api.` et de `mba.` lue sur le VPS le 2026-10-01), c'est donc le défaut de
  * nginx, et il coupe avant Cloudflare (100 s). Au-delà, le client a déjà reçu une erreur pendant que le serveur
  * continuait, des heures parfois : une page écartée ne compte pas dans les cinquante. 30 s de réseau, 3 s de
- * résolution DNS qui ne se laisse pas interrompre, et les 20 s de lecture (`LECTURE_PAGES`) tiennent sous les 60 s.
+ * résolution DNS qui ne se laisse pas interrompre (`DELAI_RESOLUTION_MS`), les 20 s de lecture (`LECTURE_PAGES`), et
+ * pour l'import les écritures qui suivent ses lectures (une transaction par page) tiennent sous les 60 s : la somme est
+ * tenue par un test (`tests/http-agent-knowledge.test.ts`), aucune des trois ne se change seule.
  */
-const ECHEANCE_PARCOURS_MS = 30_000;
+export const ECHEANCE_PARCOURS_MS = 30_000;
 
 /** Ce qu'on dit d'une page que l'échéance a coupée : elle n'est pas injoignable, elle n'a pas été attendue. */
 const TEMPS_ECOULE = 'temps de lecture du site écoulé';
@@ -369,7 +371,7 @@ export function registerAgentKnowledge(
         if (signal.aborted) { restantes.push(...aImporter.slice(i)); break; }
         const lu = await lireUnePage(cible, signal);
         // Coupée par l'échéance : elle reste à importer, elle n'est pas en faute.
-        if ('erreur' in lu && signal.aborted) { restantes.push(...aImporter.slice(i)); break; }
+        if ('erreur' in lu && lu.erreur === TEMPS_ECOULE) { restantes.push(...aImporter.slice(i)); break; }
         if ('erreur' in lu) { ecartees.push({ url: cible, raison: lu.erreur }); continue; }
         const fiches = await pageEnFichesHorsBoucle(lecteur, lu.html, cible);
         if (fiches.length === 0) { ecartees.push({ url: cible, raison: 'aucun contenu exploitable' }); continue; }
@@ -384,6 +386,11 @@ export function registerAgentKnowledge(
     let ecrites = 0;
     let retirees = 0;
     const importees: string[] = [];
+    /**
+     * Les pages dont la suite n'a pas été lue (plafond de fiches atteint). L'écran comparait le TOTAL écrit au plafond
+     * PAR PAGE : quarante fiches réparties sur un site annonçaient une page tronquée qui ne l'était pas.
+     */
+    const tronquees: string[] = [];
     for (const { cible, fiches } of decoupees) {
       const bilan = await deps.connaissance.remplacerSource(ctx.tenant, ctx.agentId, { type: 'page', url: cible }, fiches);
       // `null` = l'agent n'existe pas : inutile d'écrire les pages suivantes.
@@ -391,6 +398,7 @@ export function registerAgentKnowledge(
       ecrites += bilan.ecrites;
       retirees += bilan.retirees;
       importees.push(cible);
+      if (fiches.length >= MAX_FICHES_PAR_PAGE) tronquees.push(cible);
     }
     // Aucune page retenue : 422 portant la raison de la première (un 200 à zéro fiche se lirait comme un succès).
     // Si l'échéance n'en a laissé lire aucune, c'est le temps qui a manqué : le dire, plutôt qu'une page vide.
@@ -399,7 +407,7 @@ export function registerAgentKnowledge(
       return reply.code(422).send({ error: `aucun contenu importé : ${pourquoi}` });
     }
     return reply.code(200).send({
-      url, ecrites, retirees, importees, ecartees, restantes, plafond: MAX_FICHES_PAR_PAGE,
+      url, ecrites, retirees, importees, ecartees, restantes, tronquees, plafond: MAX_FICHES_PAR_PAGE,
     });
   });
 }

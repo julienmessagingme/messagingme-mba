@@ -68,9 +68,9 @@ let lecturesEnCours = 0;
 /**
  * Un lecteur au repos rend son worker au bout de 5 s, et sa lecture suivante en démarre un autre (0,35 à 0,5 s,
  * comptés dans son échéance). Relevé par la relecture du 2026-10-01 : un worker au repos pèse 15 à 25 Mo, et un
- * aperçu attend surtout le réseau. Un site aux liens lents (jusqu'à 10 s chacun, par redirection, et une page écartée
- * ne compte pas dans les cinquante) garderait sinon un worker par aperçu pendant des heures : quelques centaines
- * d'aperçus en vol feraient tomber `mba-api`, qui n'a pas de limite de mémoire.
+ * aperçu attend surtout le réseau, jusqu'à l'échéance de sa requête (30 s, `src/http/agent-knowledge.ts`). Sans ce
+ * repos, chaque aperçu en vol garderait son worker tout ce temps, et un afflux d'aperçus multiplierait ces 15 à 25 Mo
+ * dans `mba-api`, qui n'a pas de limite de mémoire. (Avant cette échéance, un parcours pouvait même durer des heures.)
  */
 const REPOS_MS = 5_000;
 

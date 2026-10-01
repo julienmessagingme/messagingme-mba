@@ -3,7 +3,8 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { AgentKnowledgeRouteDeps } from '../src/http/agent-knowledge';
+import { ECHEANCE_PARCOURS_MS, LECTURE_PAGES, type AgentKnowledgeRouteDeps } from '../src/http/agent-knowledge';
+import { DELAI_RESOLUTION_MS } from '../src/lib/adresse-privee';
 import type { FicheAEcrire, FicheConnaissance } from '../src/agent/knowledge';
 import type { PageDistante } from '../src/lib/page-distante';
 import { MAX_FICHES_PAR_PAGE } from '../src/agent/scrape';
@@ -548,8 +549,54 @@ describe('base de connaissance : parcourir un site (crawl)', { timeout: 30_000 }
       method: 'POST', url: `${base('t1')}/import`, ...h(adminTok), payload: { url: 'https://exemple.fr/p0' },
     });
     expect(res.statusCode).toBe(422);
-    expect(res.json<{ error: string }>().error).toContain('temps');
+    // « trop lentement » et pas seulement « temps » : la raison de la page coupée dit déjà « temps », et un import
+    // qui ignorerait l'échéance passerait encore (relevé par la relecture du 2026-10-01).
+    expect(res.json<{ error: string }>().error).toContain('trop lentement');
     expect(remplacements).toEqual([]);
+    await srv.close();
+  });
+
+  it('🔴 l’aperçu d’une page seule, coupée par l’échéance : 422 qui dit le temps, et la coupure est journalisée', async () => {
+    // Coupée pendant sa lecture, la page était la dernière de la file : le parcours finissait sans dire le temps
+    // manqué, et rien n'était journalisé (relevé par la relecture du 2026-10-01).
+    const { srv } = siteLent(3, 2_000, 300);
+    const avertis = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let lignes: string[] = [];
+    const res = await (async () => {
+      try {
+        return await srv.inject({
+          method: 'POST', url: `${base('t1')}/apercu`, ...h(adminTok), payload: { url: 'https://exemple.fr/p0' },
+        });
+      } finally {
+        lignes = avertis.mock.calls.flat().map(String);
+        avertis.mockRestore();
+      }
+    })();
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toContain('temps de lecture du site écoulé');
+    expect(lignes.some((l) => l.includes('"msg":"parcours_coupe"') && l.includes('"route":"apercu"'))).toBe(true);
+    await srv.close();
+  });
+
+  it('🔴 réseau, résolution DNS, lecture et écritures tiennent ensemble sous les 60 s de NPM', () => {
+    // Trois constantes de trois fichiers : chacune est plausible seule, c'est leur somme qui porte l'invariant
+    // (relevé par la relecture du 2026-10-01 : une échéance à cinq minutes passait toute la suite).
+    const NPM_MS = 60_000; // le défaut de nginx : NPM ne pose aucun `proxy_read_timeout` (lu sur le VPS le 2026-10-01)
+    const ECRITURES_MS = 5_000; // l'import écrit APRÈS ses lectures : une transaction par page, cinquante au plus
+    expect(ECHEANCE_PARCOURS_MS + DELAI_RESOLUTION_MS + (LECTURE_PAGES.delaiMs ?? 0) + ECRITURES_MS).toBeLessThanOrEqual(NPM_MS);
+  });
+
+  it('🔴 l’import dit quelles pages ont atteint le plafond de fiches, au lieu de comparer un total au plafond', async () => {
+    // L'écran comparait le TOTAL écrit par un import de plusieurs pages au plafond PAR PAGE : tout import de site de
+    // quarante fiches ou plus annonçait une page tronquée qui ne l'était pas (relevé par la relecture du 2026-10-01).
+    const grande = Array.from({ length: 45 }, (_, i) => `<h2>Rubrique ${i}</h2><p>Le texte de la rubrique ${i}, assez long pour faire une fiche.</p>`).join('');
+    const { srv } = siteApp({ ...SITE, 'https://exemple.fr/grande': `<html><body>${grande}</body></html>` });
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/import`, ...h(adminTok),
+      payload: { url: 'https://exemple.fr/', pages: ['https://exemple.fr/contrats', 'https://exemple.fr/grande'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ tronquees: string[] }>().tronquees).toEqual(['https://exemple.fr/grande']);
     await srv.close();
   });
 });

@@ -48,4 +48,14 @@ inchangé, bien avant l'échéance.
 ## Ordre de déploiement
 
 Aucune migration, aucun ordre imposé : la console (Vercel, au push) tolère l'absence des deux champs, et l'ancienne
-console ignore leur présence. CI lue job par job, `up -d --build`, fumée publique, puis l'essai réel.
+console ignore leur présence. CI lue job par job, `up -d --build`, puis **`sudo docker compose run --rm --no-deps
+mba-api npm run aide:charger`** (la fiche d'aide « Construire un agent IA » a changé, et rien ne la recharge : sans
+ce geste, le bot d'aide garde l'ancien texte, `DEPLOY.md`), fumée publique, puis l'essai réel.
+
+## Après la relecture
+
+Aucun rouge, dix jaunes corrigés dans un second commit, relus avec le lot suivant. Ceux qui changent le comportement :
+une échéance qui coupe la DERNIÈRE page de la file est dite aussi (et journalisée) ; les pages restantes survivent aux
+autres gestes de l'écran ; l'import nomme les pages qui ont atteint le plafond de fiches (`tronquees`), l'écran
+comparant le total écrit au plafond par page. La somme des délais (réseau, résolution, lecture, et les écritures de
+l'import, oubliées dans le calcul du premier jet) est désormais tenue par un test.

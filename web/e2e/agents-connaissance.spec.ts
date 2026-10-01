@@ -173,6 +173,9 @@ test.describe('Agents IA : la base de connaissance', () => {
     await expect(page.getByTestId('kb-apercu')).toBeVisible();
     // La propriete de l'apercu : RIEN n'a encore ete ecrit.
     expect(appels.some((a) => /import$/.test(a.url))).toBe(false);
+    // Preuve inverse, PENDANT que l'aperçu est ouvert : un site qui a répondu à temps ne dit rien du temps. Placée
+    // après la confirmation, qui ferme l'aperçu, elle ne pouvait pas échouer (relecture du 2026-10-01).
+    await expect(page.getByTestId('kb-apercu-temps')).toHaveCount(0);
 
     await page.getByTestId('kb-confirmer').click();
     await expect(page.getByTestId('kb-bilan')).toContainText('3 fiche(s) écrite(s), 2 remplacée(s)');
@@ -180,7 +183,6 @@ test.describe('Agents IA : la base de connaissance', () => {
       .toEqual({ url: 'https://exemple.fr/residence', pages: ['https://exemple.fr/residence'] });
     // Preuve inverse : un import entier ne propose aucune page restante.
     await expect(page.getByTestId('kb-importer-restantes')).toHaveCount(0);
-    await expect(page.getByTestId('kb-apercu-temps')).toHaveCount(0);
   });
 
   /**
@@ -213,10 +215,31 @@ test.describe('Agents IA : la base de connaissance', () => {
     await page.getByTestId('kb-url').fill('https://exemple.fr/residence');
     await page.getByTestId('kb-importer').click();
     await page.getByTestId('kb-confirmer').click();
-    await expect(page.getByTestId('kb-bilan')).toContainText('2 page(s) n’ont pas pu être lues à temps');
+    await expect(page.getByTestId('kb-bilan')).toContainText('2 page(s) non lue(s) à temps');
+    // 🔴 Elles SURVIVENT à un autre geste : relire et corriger les fiches importées est le geste naturel juste après,
+    // et le perdre obligeait à refaire l'aperçu puis l'import d'un site lent (relecture du 2026-10-01).
+    await page.getByTestId('kb-nouveau-titre').fill('Le linge');
+    await page.getByTestId('kb-nouveau-corps').fill('Draps et serviettes fournis.');
+    await page.getByTestId('kb-ajouter').click();
+    await expect.poll(() => appels.some((a) => a.method === 'POST' && (a.body as { titre?: string })?.titre === 'Le linge'), { timeout: 5000 }).toBe(true);
     await page.getByTestId('kb-importer-restantes').click();
     await expect.poll(() => appels.filter((a) => /import$/.test(a.url)).length, { timeout: 5000 }).toBe(2);
     expect(appels.filter((a) => /import$/.test(a.url))[1]?.body).toEqual({ url: 'https://exemple.fr/residence', pages: restantes });
+  });
+
+  test('🔴 le plafond de fiches n’est annoncé que pour une page qui l’a vraiment atteint', async ({ page }) => {
+    // L'écran comparait le TOTAL écrit par un import de site au plafond PAR PAGE : quarante fiches réparties sur
+    // plusieurs pages annonçaient une page tronquée (relecture du 2026-10-01). Le serveur dit désormais lesquelles.
+    await mock(page, [], [], { status: 200, body: {
+      url: 'https://exemple.fr/', retirees: 0, ecrites: 80, plafond: 40,
+      importees: ['https://exemple.fr/a', 'https://exemple.fr/b'], ecartees: [], restantes: [], tronquees: [],
+    } });
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+    await page.getByTestId('kb-url').fill('https://exemple.fr/');
+    await page.getByTestId('kb-importer').click();
+    await page.getByTestId('kb-confirmer').click();
+    await expect(page.getByTestId('kb-bilan')).toContainText('80 fiche(s) écrite(s)');
+    await expect(page.getByTestId('kb-bilan')).not.toContainText('plafond');
   });
 
   test('🔴 une source vieille de plus de trois mois est SIGNALÉE', async ({ page }) => {

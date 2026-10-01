@@ -123,7 +123,7 @@ export interface VerdictResolution {
  * `resolv.conf` et qui n'accepte aucun signal d'abandon. Sans lui, un DNS muet immobilise la requête avant
  * même que le plafond de l'appel HTTP commence à courir.
  */
-const DELAI_RESOLUTION_MS = 3_000;
+export const DELAI_RESOLUTION_MS = 3_000;
 
 /**
  * L'hôte de cette URL résout-il uniquement vers des adresses publiques ?

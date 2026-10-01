@@ -22,7 +22,10 @@ export type PorteeImport = 'page' | 'sous-arbre' | 'site';
  */
 export const PROFONDEUR_MAX = 2;
 
-/** Plafond de pages visitées. Il borne le temps d'attente autant que le coût. */
+/**
+ * Plafond de pages LUES : il borne le coût d'un import. Le temps, c'est l'échéance de la requête qui le borne (une page
+ * écartée ne compte pas ici, et une page peut attendre une cinquantaine de secondes).
+ */
 export const PAGES_MAX = 50;
 
 /**
@@ -171,6 +174,11 @@ export async function visiter(
     const res = await lire(courant.url);
     if ('erreur' in res) {
       ecartees.push({ url: courant.url, raison: res.erreur });
+      // Une page coupée par l'échéance peut être la dernière de la file : le temps manqué se dit aussi là.
+      if (bornes.signal?.aborted) {
+        tempsAtteint = true;
+        break;
+      }
       continue;
     }
     pages.push({ url: courant.url, html: res.html });

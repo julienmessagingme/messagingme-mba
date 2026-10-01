@@ -152,6 +152,19 @@ describe('visiter', () => {
     expect(r.tempsAtteint).toBe(false);
   });
 
+  it('🔴 l’échéance qui COUPE la dernière page de la file est dite aussi', async () => {
+    // Relevé par la relecture du 2026-10-01 : coupée pendant sa lecture, la page part dans les écartées, et si la file
+    // était alors vide, la boucle finissait sans rien dire. L'écran annonçait un site complet, et rien n'était journalisé.
+    const echeance = new AbortController();
+    const r = await visiter('https://x.fr/', 'site', async (u) => {
+      if (u === 'https://x.fr/a') { echeance.abort(); return { erreur: 'temps de lecture du site écoulé' }; }
+      return { html: A('/a') };
+    }, liensDeLaPage, { signal: echeance.signal });
+    expect(r.pages.map((p) => p.url)).toEqual(['https://x.fr/']);
+    expect(r.ecartees).toEqual([{ url: 'https://x.fr/a', raison: 'temps de lecture du site écoulé' }]);
+    expect(r.tempsAtteint).toBe(true);
+  });
+
   it('une échéance qui tombe sur la DERNIÈRE page ne fait rien manquer : il ne le prétend pas', async () => {
     const echeance = new AbortController();
     const r = await visiter('https://x.fr/', 'site', async (u) => { echeance.abort(); return site({ 'https://x.fr/': '' })(u); },

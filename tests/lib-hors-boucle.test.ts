@@ -53,10 +53,12 @@ describe('horsBoucle : lire un fichier hors de la boucle d’événements', () =
   });
 
   it('🔴 la boucle du fil principal reste libre pendant une lecture qui dure', async () => {
-    const { retard, duree } = await retardPendant(() => horsBoucle(CSV, 'parseCsv', [lent(1_000, 200_000)]));
+    // Une échéance large : ce test mesure la boucle, pas l'échéance, et sous la charge de la suite complète la lecture
+    // dépassait les 10 s par défaut (vu le 2026-10-01 : refusée, donc le test tombait pour une autre raison).
+    const { retard, duree } = await retardPendant(() => horsBoucle(CSV, 'parseCsv', [lent(1_000, 200_000)], { delaiMs: 60_000 }));
     expect(duree).toBeGreaterThan(500);
     expect(retard).toBeLessThan(duree / 4);
-  }, 30_000);
+  }, 90_000);
 
   it('🔴 une lecture qui ne part pas ne garde pas de place : la lecture suivante passe', async () => {
     // Relevé par la relecture du 2026-09-30 : le compteur montait avant `new Worker`. Quatre échecs au départ (ici un
@@ -124,10 +126,12 @@ describe('avecLecteur : plusieurs lectures sur un même worker, le temps d’une
 
   it('🔴 à l’échéance, le worker est TUÉ et le lecteur refuse toute autre lecture', async () => {
     const pouls = new Int32Array(new SharedArrayBuffer(4));
-    const issues = await avecLecteur({ delaiMs: 1_500 }, async (l) => {
+    // 4 s : la première lecture compte le démarrage du worker, et sous la charge de la suite complète, 1,5 s ne lui
+    // suffisaient pas (vu le 2026-10-01 : c'est le compteur qui était refusé, pas la lecture visée).
+    const issues = await avecLecteur({ delaiMs: 4_000 }, async (l) => {
       await l.lire(SONDE, 'battre', [pouls]);
       return [
-        await l.lire(SONDE, 'attendre', [10_000]).catch((e: unknown) => e),
+        await l.lire(SONDE, 'attendre', [30_000]).catch((e: unknown) => e),
         await l.lire(SONDE, 'fil', []).catch((e: unknown) => e),
       ];
     });

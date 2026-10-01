@@ -2594,7 +2594,9 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   vos corrections sur celles-là seront perdues. Les fiches venues d'ailleurs et celles écrites à la main ne
   bougent pas.
 - ✅ **Le plafond est dit quand il mord** : au-delà de 40 fiches pour une page, la suite de la page n'a PAS été
-  lue, et l'écran le signale au lieu de laisser croire que tout le contenu est devenu une source.
+  lue, et l'écran le signale au lieu de laisser croire que tout le contenu est devenu une source. Sur l'import de
+  plusieurs pages, il ne parle que de celles qui l'ont atteint (2026-10-01) : avant, quarante fiches au total sur un
+  site suffisaient à annoncer une page tronquée qui ne l'était pas.
 - ✅ **Déposer un document** : un PDF, un Word ou un fichier texte devient des fiches découpées sur ses titres,
   8 Mo au plus. Redéposer le même fichier remplace les fiches qu'il avait produites. Au-delà de 40 fiches, la
   suite du document n'est pas lue, et l'écran le dit (2026-09-29). Avant cette date, tout fichier de plus de
