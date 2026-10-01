@@ -96,6 +96,16 @@ le 404 de l'import sur l'agent d'un autre espace est tenu par un test ; et les t
 vrai CSV sous l'échéance en production, les 50 s de démarrages évités, les 3,3 places qu'un seul espace tient en
 continu). Chaque correctif est vérifié dans les deux sens, par mutation.
 
+**En production depuis le 2026-09-30 à 23 h 35 UTC**, par le déploiement d'une session voisine (`8b9e92fc`, son lot
+2b, qui contient `92a67808` et `3eb27889`, CI verte job par job) : rien n'a été redéployé de ce côté, ce qui aurait
+retiré son lot. L'essai réel, par une sonde dans `mba-api` (un processus à part) effacée ensuite : la vraie page de la
+vitrine (60 Ko) rend par le worker les mêmes quatre fiches et les mêmes six liens qu'en lecture directe, en 549 ms,
+la boucle retardée de 14 ms ; une page hostile de 100 Ko est refusée en 400 à 20,0 s, la boucle retardée de 18 ms ;
+et un lecteur rend bien son worker après 5 s de repos (le même fil à 1 s d'écart, un autre après 6 s). Fumée
+publique verte. ⚠️ Le premier passage de la sonde est tombé sur SON propre fichier : un module TypeScript posé dans
+`/tmp`, sans `package.json` en mode module, est lu en CommonJS par tsx, et un import dynamique n'y voit plus ses
+exports nommés (« f is not a function »). Les modules de l'application, sous `/app`, ne sont pas concernés.
+
 ## 2026-09-30 : tout sur la fiche, lots 1 et 2a, et la fiche contact en onglets
 
 **Lot 1 (`187b36bb`, `4938172b`, jaunes `657fad5a`).** La dernière analyse d'une conversation est recopiée sur la
