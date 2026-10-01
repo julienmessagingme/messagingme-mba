@@ -178,6 +178,45 @@ test.describe('Agents IA : la base de connaissance', () => {
     await expect(page.getByTestId('kb-bilan')).toContainText('3 fiche(s) écrite(s), 2 remplacée(s)');
     expect(appels.find((a) => /import$/.test(a.url))?.body)
       .toEqual({ url: 'https://exemple.fr/residence', pages: ['https://exemple.fr/residence'] });
+    // Preuve inverse : un import entier ne propose aucune page restante.
+    await expect(page.getByTestId('kb-importer-restantes')).toHaveCount(0);
+    await expect(page.getByTestId('kb-apercu-temps')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 UN SITE LENT NE SE TAIT PAS (2026-10-01). L'aperçu et l'import ont désormais une échéance par requête : au-delà,
+   * le proxy avait déjà rendu son erreur au client. Ce qui n'a pas été lu doit être DIT, sinon une partie du site
+   * passerait pour le site entier.
+   */
+  test('🔴 un aperçu coupé faute de temps le DIT, comme le plafond', async ({ page }) => {
+    const lent = {
+      url: 'https://exemple.fr/', portee: 'site', plafondAtteint: false, tempsAtteint: true,
+      ecartees: [{ url: 'https://exemple.fr/lente', raison: 'temps de lecture du site écoulé' }],
+      pages: [{ url: 'https://exemple.fr/', fiches: 2, caracteres: 900 }],
+    };
+    await mock(page, [], [], undefined, { status: 200, body: lent });
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+    await page.getByTestId('kb-url').fill('https://exemple.fr/');
+    await page.getByTestId('kb-importer').click();
+    await expect(page.getByTestId('kb-apercu-temps')).toBeVisible();
+    await expect(page.getByTestId('kb-apercu-plafond')).toHaveCount(0);
+  });
+
+  test('🔴 un import coupé faute de temps DIT ce qui reste, et l’importe d’un clic', async ({ page }) => {
+    const appels: Appel[] = [];
+    const restantes = ['https://exemple.fr/tarifs', 'https://exemple.fr/acces'];
+    await mock(page, appels, [], { status: 200, body: {
+      url: 'https://exemple.fr/residence', retirees: 0, ecrites: 3, plafond: 40,
+      importees: ['https://exemple.fr/residence'], ecartees: [], restantes,
+    } });
+    await page.goto(`/agents?id=${AG}&tab=connaissance`);
+    await page.getByTestId('kb-url').fill('https://exemple.fr/residence');
+    await page.getByTestId('kb-importer').click();
+    await page.getByTestId('kb-confirmer').click();
+    await expect(page.getByTestId('kb-bilan')).toContainText('2 page(s) n’ont pas pu être lues à temps');
+    await page.getByTestId('kb-importer-restantes').click();
+    await expect.poll(() => appels.filter((a) => /import$/.test(a.url)).length, { timeout: 5000 }).toBe(2);
+    expect(appels.filter((a) => /import$/.test(a.url))[1]?.body).toEqual({ url: 'https://exemple.fr/residence', pages: restantes });
   });
 
   test('🔴 une source vieille de plus de trois mois est SIGNALÉE', async ({ page }) => {

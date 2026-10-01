@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
@@ -311,10 +311,11 @@ describe('base de connaissance : parcourir un site (crawl)', { timeout: 30_000 }
       method: 'POST', url: `${base('t1')}/apercu`, ...h(adminTok), payload: { url: 'https://exemple.fr/' },
     });
     expect(res.statusCode).toBe(200);
-    const corps = res.json<{ portee: string; pages: Array<{ url: string }>; plafondAtteint: boolean }>();
+    const corps = res.json<{ portee: string; pages: Array<{ url: string }>; plafondAtteint: boolean; tempsAtteint: boolean }>();
     expect(corps.portee).toBe('site');
     expect(corps.pages.map((p) => p.url)).toEqual(['https://exemple.fr/', 'https://exemple.fr/contrats']);
     expect(corps.plafondAtteint).toBe(false);
+    expect(corps.tempsAtteint).toBe(false);
     // LA propriete de l apercu : rien n a ete ecrit.
     expect(remplacements).toEqual([]);
     await srv.close();
@@ -426,6 +427,129 @@ describe('base de connaissance : parcourir un site (crawl)', { timeout: 30_000 }
     expect(journal).toEqual([
       'lu https://exemple.fr/', 'lu https://exemple.fr/contrats', 'ecrit https://exemple.fr/', 'ecrit https://exemple.fr/contrats',
     ]);
+    await srv.close();
+  });
+
+  /**
+   * 🔴 UN SITE LENT NE TIENT PLUS UNE REQUÊTE SANS FIN (2026-10-01). Une page écartée ne comptait pas dans les
+   * cinquante, et une page pouvait attendre 10 s par redirection : un parcours n'avait aucune durée maximale, alors que
+   * NPM coupe à 60 s et que le client avait déjà reçu son erreur. L'échéance de la requête l'arrête, réseau compris.
+   */
+  function siteLent(nombre: number, msParPage: number, echeanceParcoursMs: number) {
+    const pages: Record<string, string> = {
+      'https://exemple.fr/': `${Array.from({ length: nombre }, (_, i) => `<a href="/p${i}">p${i}</a>`).join('')}${PAGE_HTML}`,
+    };
+    for (let i = 0; i < nombre; i += 1) pages[`https://exemple.fr/p${i}`] = PAGE_HTML.replace('La piscine', `La piscine ${i}`);
+    const lues: string[] = [];
+    const remplacements: string[] = [];
+    let interrompues = 0;
+    const deps: AgentKnowledgeRouteDeps = {
+      ...connaissanceInerte,
+      connaissance: {
+        lister: async () => [FICHE],
+        creer: async () => FICHE,
+        modifier: async () => FICHE,
+        supprimer: async () => true,
+        remplacerSource: async (_t, _a, source, fiches) => {
+          remplacements.push(source.type === 'page' ? source.url : '');
+          return { retirees: 0, ecrites: fiches.length };
+        },
+      },
+      echeanceParcoursMs,
+      // L'accueil répond tout de suite, chaque autre page au bout de `msParPage`, sauf si le signal de la requête tombe
+      // avant : elle est alors coupée. (Le premier worker démarre pendant le parcours : un accueil lent mangerait
+      // l'échéance avant la première lecture longue.)
+      fetchUrl: (u, signal) => new Promise((ok, ko) => {
+        lues.push(u);
+        // Comme la vraie lecture : une requête dont l'échéance est déjà tombée ne lance rien.
+        if (signal?.aborted) { ko(new Error('lecture refusée')); return; }
+        let minuteur: ReturnType<typeof setTimeout> | undefined;
+        const couper = (): void => { clearTimeout(minuteur); interrompues += 1; ko(new Error('lecture coupée')); };
+        minuteur = setTimeout(() => {
+          // Une page qui a répondu n'est plus « en cours » : l'échéance qui tombe après ne la coupe pas.
+          signal?.removeEventListener('abort', couper);
+          ok({ status: 200, contentType: 'text/html', body: pages[u] ?? '' });
+        }, u === 'https://exemple.fr/' ? 0 : msParPage);
+        signal?.addEventListener('abort', couper, { once: true });
+      }),
+    };
+    return {
+      lues, remplacements, interrompues: () => interrompues,
+      srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentKnowledge: deps }),
+    };
+  }
+
+  it('🔴 un site lent : l’aperçu répond à l’échéance avec ce qu’il a lu, coupe la lecture en cours, et le DIT', async () => {
+    // Trente liens vers des pages de 10 s : 300 s sans échéance. Avec 2 s, l'accueil est lu, la page suivante est
+    // coupée net à l'échéance (sans quoi la réponse attendrait ses 10 s), et aucune autre n'est lancée.
+    const { srv, lues, interrompues } = siteLent(30, 10_000, 2_000);
+    await srv.ready();
+    const avertis = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let lignes: string[] = [];
+    const debut = performance.now();
+    const res = await (async () => {
+      try {
+        return await srv.inject({
+          method: 'POST', url: `${base('t1')}/apercu`, ...h(adminTok), payload: { url: 'https://exemple.fr/' },
+        });
+      } finally {
+        // Lus AVANT de restaurer : `mockRestore` efface les appels enregistrés.
+        lignes = avertis.mock.calls.flat().map(String);
+        avertis.mockRestore();
+      }
+    })();
+    const duree = performance.now() - debut;
+    // Journalisé : c'est ce qui dira si de vrais sites sont trop lents pour l'échéance.
+    expect(lignes.some((l) => l.includes('"msg":"parcours_coupe"') && l.includes('"route":"apercu"'))).toBe(true);
+    expect(res.statusCode).toBe(200);
+    const corps = res.json<{ tempsAtteint: boolean; plafondAtteint: boolean; pages: Array<{ url: string }>; ecartees: Array<{ raison: string }> }>();
+    expect(corps.tempsAtteint).toBe(true);
+    expect(corps.plafondAtteint).toBe(false);
+    expect(corps.pages.map((p) => p.url)).toEqual(['https://exemple.fr/']);
+    expect(duree).toBeLessThan(8_000);
+    expect(lues.length).toBeLessThanOrEqual(2);
+    // Sous une forte charge, le premier worker peut démarrer après l'échéance : aucune page n'est alors lancée.
+    expect(interrompues()).toBe(lues.length - 1);
+    if (interrompues() === 1) expect(corps.ecartees.at(-1)?.raison).toContain('temps');
+    await srv.close();
+  });
+
+  it('🔴 un site lent : l’import écrit ce qu’il a lu à l’échéance, et rend les pages RESTANTES', async () => {
+    const { srv, remplacements } = siteLent(10, 100, 1_000);
+    const pages = Array.from({ length: 10 }, (_, i) => `https://exemple.fr/p${i}`);
+    const avertis = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let lignes: string[] = [];
+    const res = await (async () => {
+      try {
+        return await srv.inject({
+          method: 'POST', url: `${base('t1')}/import`, ...h(adminTok), payload: { url: 'https://exemple.fr/', pages },
+        });
+      } finally {
+        // Lus AVANT de restaurer : `mockRestore` efface les appels enregistrés.
+        lignes = avertis.mock.calls.flat().map(String);
+        avertis.mockRestore();
+      }
+    })();
+    expect(lignes.some((l) => l.includes('"msg":"parcours_coupe"') && l.includes('"route":"import"'))).toBe(true);
+    expect(res.statusCode).toBe(200);
+    const corps = res.json<{ importees: string[]; restantes: string[]; ecartees: unknown[] }>();
+    expect(corps.importees.length).toBeGreaterThan(0);
+    expect(corps.restantes.length).toBeGreaterThan(0);
+    // Rien ne se perd et l'ordre tient : le client peut importer les restantes d'un nouveau clic.
+    expect([...corps.importees, ...corps.restantes]).toEqual(pages);
+    expect(corps.ecartees).toEqual([]);
+    expect(remplacements).toEqual(corps.importees);
+    await srv.close();
+  });
+
+  it('un site trop lent pour une seule page : l’import rend 422 en disant que le temps a manqué, rien n’est écrit', async () => {
+    const { srv, remplacements } = siteLent(3, 2_000, 300);
+    const res = await srv.inject({
+      method: 'POST', url: `${base('t1')}/import`, ...h(adminTok), payload: { url: 'https://exemple.fr/p0' },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toContain('temps');
+    expect(remplacements).toEqual([]);
     await srv.close();
   });
 });

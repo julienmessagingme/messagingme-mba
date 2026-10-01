@@ -5,6 +5,8 @@ import type { FicheAEcrire, FicheConnaissance, SourceFiche } from '../agent/know
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, pageEnFichesHorsBoucle, type FicheExtraite } from '../agent/scrape';
 import { urlRecuperable, type PageDistante } from '../lib/page-distante';
 import { avecLecteur, type OptionsLecture } from '../lib/hors-boucle';
+// Sous un autre nom : la route a sa propre fonction `journaliser`, l'historique des fiches supprimées.
+import { journaliser as journaliserLigne } from '../lib/journal';
 import {
   PAGES_MAX, dansLaPortee, liensDeLaPageHorsBoucle, normaliserUrl, porteeParDefaut, visiter,
 } from '../agent/crawl';
@@ -44,8 +46,10 @@ export interface AgentKnowledgeRouteDeps {
     acteurId: string | null;
   }): Promise<void>;
   /** Lecture d'une page distante. Injectée pour rester testable sans réseau ; absente, l'import et
-  *  l'aperçu répondent 503. */
-  fetchUrl?(url: string): Promise<PageDistante>;
+  *  l'aperçu répondent 503. `signal` porte l'échéance de la requête : une lecture en cours s'arrête avec elle. */
+  fetchUrl?(url: string, signal?: AbortSignal): Promise<PageDistante>;
+  /** L'échéance du réseau d'un aperçu ou d'un import (`ECHEANCE_PARCOURS_MS` par défaut). Injectée pour les tests. */
+  echeanceParcoursMs?: number;
 }
 
 /** Titre et corps sont bornés aux mêmes valeurs que ce qu'un import produit (`src/agent/scrape.ts`) : deux
@@ -86,6 +90,18 @@ const importSchema = z.object({
  */
 const LECTURE_PAGES: OptionsLecture = { nature: 'pages', delaiMs: 20_000 };
 
+/**
+ * Le temps de réseau d'un aperçu ou d'un import de site. 🔴 NPM coupe à 60 s sans réponse : il ne pose aucun
+ * `proxy_read_timeout` (configuration de `api.` et de `mba.` lue sur le VPS le 2026-10-01), c'est donc le défaut de
+ * nginx, et il coupe avant Cloudflare (100 s). Au-delà, le client a déjà reçu une erreur pendant que le serveur
+ * continuait, des heures parfois : une page écartée ne compte pas dans les cinquante. 30 s de réseau, 3 s de
+ * résolution DNS qui ne se laisse pas interrompre, et les 20 s de lecture (`LECTURE_PAGES`) tiennent sous les 60 s.
+ */
+const ECHEANCE_PARCOURS_MS = 30_000;
+
+/** Ce qu'on dit d'une page que l'échéance a coupée : elle n'est pas injoignable, elle n'a pas été attendue. */
+const TEMPS_ECOULE = 'temps de lecture du site écoulé';
+
 export function registerAgentKnowledge(
   app: FastifyInstance, deps: AgentKnowledgeRouteDeps, garde: Guard, limiteCouteuse?: PreHandler,
 ): void {
@@ -103,12 +119,13 @@ export function registerAgentKnowledge(
    * 🔴 La garde SSRF s'applique à chaque adresse, y compris celles découvertes dans le HTML : un lien trouvé sur un
    * site tiers ne vaut pas mieux qu'une saisie, et pourrait viser les métadonnées du fournisseur ou le réseau Docker.
    */
-  const lireUnePage = async (url: string): Promise<{ html: string } | { erreur: string }> => {
+  const lireUnePage = async (url: string, signal: AbortSignal): Promise<{ html: string } | { erreur: string }> => {
     if (!urlRecuperable(url)) return { erreur: 'adresse non autorisée' };
     let page: PageDistante;
     try {
-      page = await deps.fetchUrl!(url);
+      page = await deps.fetchUrl!(url, signal);
     } catch (err) {
+      if (signal.aborted) return { erreur: TEMPS_ECOULE };
       return { erreur: `injoignable : ${err instanceof Error ? err.message : 'erreur réseau'}` };
     }
     if (page.status >= 400) return { erreur: `HTTP ${page.status}` };
@@ -268,7 +285,8 @@ export function registerAgentKnowledge(
 
   /**
    * L'aperçu : ce que l'import ramènerait, sans rien écrire (un import de cinquante pages est difficile à défaire).
-   * Il dit aussi ce qu'il n'a pas pris : les pages écartées avec leur raison, et le plafond quand il a coupé.
+   * Il dit aussi ce qu'il n'a pas pris : les pages écartées avec leur raison, le plafond quand il a coupé, et
+   * l'échéance quand elle a coupé (`tempsAtteint`).
    */
   app.post(`${base}/apercu`, optsLourds, async (req, reply) => {
     const ctx = contexte(req);
@@ -284,8 +302,14 @@ export function registerAgentKnowledge(
     const portee = parse.data.portee ?? porteeParDefaut(url);
 
     // Liens et fiches se lisent sur un même lecteur : un worker pour tout l'aperçu, et une échéance pour toutes ses pages.
+    const signal = AbortSignal.timeout(deps.echeanceParcoursMs ?? ECHEANCE_PARCOURS_MS);
     return avecLecteur(LECTURE_PAGES, async (lecteur) => {
-      const visite = await visiter(url, portee, lireUnePage, (html, racine, p) => liensDeLaPageHorsBoucle(lecteur, html, racine, p));
+      const visite = await visiter(url, portee, (u) => lireUnePage(u, signal),
+        (html, racine, p) => liensDeLaPageHorsBoucle(lecteur, html, racine, p), { signal });
+      // Journalisé : c'est ce qui dira si de vrais sites sont trop lents pour l'échéance (`todo.md`).
+      if (visite.tempsAtteint) {
+        journaliserLigne('warn', 'parcours_coupe', { tenantId: ctx.tenant, route: 'apercu', lues: visite.pages.length, ecartees: visite.ecartees.length });
+      }
       if (visite.pages.length === 0) {
         const pourquoi = visite.ecartees[0]?.raison ?? 'aucune page lisible';
         return reply.code(422).send({ error: `rien à importer : ${pourquoi}` });
@@ -297,7 +321,9 @@ export function registerAgentKnowledge(
         const fiches = await pageEnFichesHorsBoucle(lecteur, p.html, p.url);
         if (fiches.length > 0) pages.push({ url: p.url, fiches: fiches.length, caracteres: fiches.reduce((n, f) => n + f.corps.length, 0) });
       }
-      return reply.code(200).send({ url, portee, plafondAtteint: visite.plafondAtteint, ecartees: visite.ecartees, pages });
+      return reply.code(200).send({
+        url, portee, plafondAtteint: visite.plafondAtteint, tempsAtteint: visite.tempsAtteint, ecartees: visite.ecartees, pages,
+      });
     });
   });
 
@@ -332,11 +358,18 @@ export function registerAgentKnowledge(
     // 🔴 Toutes les pages sont lues et découpées AVANT la première écriture : le worker peut refuser une lecture en
     // cours de route (échéance, mémoire, trop de lectures à la fois), et écrire page par page laisserait alors les
     // premières importées derrière une réponse d'erreur.
+    // L'échéance de la requête, elle, n'est pas un refus : ce qui a été lu s'écrit, et les pages qu'elle n'a pas
+    // laissé lire reviennent au client (`restantes`), qui les importe d'un nouveau clic.
+    const signal = AbortSignal.timeout(deps.echeanceParcoursMs ?? ECHEANCE_PARCOURS_MS);
     const ecartees: Array<{ url: string; raison: string }> = [];
+    const restantes: string[] = [];
     const decoupees = await avecLecteur(LECTURE_PAGES, async (lecteur) => {
       const faites: Array<{ cible: string; fiches: FicheExtraite[] }> = [];
-      for (const cible of aImporter) {
-        const lu = await lireUnePage(cible);
+      for (const [i, cible] of aImporter.entries()) {
+        if (signal.aborted) { restantes.push(...aImporter.slice(i)); break; }
+        const lu = await lireUnePage(cible, signal);
+        // Coupée par l'échéance : elle reste à importer, elle n'est pas en faute.
+        if ('erreur' in lu && signal.aborted) { restantes.push(...aImporter.slice(i)); break; }
         if ('erreur' in lu) { ecartees.push({ url: cible, raison: lu.erreur }); continue; }
         const fiches = await pageEnFichesHorsBoucle(lecteur, lu.html, cible);
         if (fiches.length === 0) { ecartees.push({ url: cible, raison: 'aucun contenu exploitable' }); continue; }
@@ -344,6 +377,9 @@ export function registerAgentKnowledge(
       }
       return faites;
     });
+    if (restantes.length > 0) {
+      journaliserLigne('warn', 'parcours_coupe', { tenantId: ctx.tenant, route: 'import', lues: decoupees.length, restantes: restantes.length });
+    }
 
     let ecrites = 0;
     let retirees = 0;
@@ -357,11 +393,13 @@ export function registerAgentKnowledge(
       importees.push(cible);
     }
     // Aucune page retenue : 422 portant la raison de la première (un 200 à zéro fiche se lirait comme un succès).
+    // Si l'échéance n'en a laissé lire aucune, c'est le temps qui a manqué : le dire, plutôt qu'une page vide.
     if (importees.length === 0) {
-      return reply.code(422).send({ error: `aucun contenu importé : ${ecartees[0]?.raison ?? 'page vide'}` });
+      const pourquoi = restantes.length > 0 ? `${TEMPS_ECOULE}, le site répond trop lentement` : ecartees[0]?.raison ?? 'page vide';
+      return reply.code(422).send({ error: `aucun contenu importé : ${pourquoi}` });
     }
     return reply.code(200).send({
-      url, ecrites, retirees, importees, ecartees, plafond: MAX_FICHES_PAR_PAGE,
+      url, ecrites, retirees, importees, ecartees, restantes, plafond: MAX_FICHES_PAR_PAGE,
     });
   });
 }

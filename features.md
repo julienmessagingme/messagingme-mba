@@ -2585,6 +2585,11 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 - ✅ **Lire une page de son site** : on colle une adresse, on lit la page une fois, et elle devient des fiches
   découpées sur ses titres. L'agent ne relit pas le site à chaque question : c'est plus rapide, moins cher, et
   surtout **une mauvaise réponse se corrige ici même**, en éditant la fiche.
+- ✅ **Lire tout un site, et le voir avant d'écrire** : l'adresse d'un domaine fait lire le site, jusqu'à cinquante
+  pages proches de l'accueil, et un aperçu montre ce qui serait importé avant que rien ne s'écrive. **Un site lent est
+  lu pendant 30 secondes au plus** (2026-10-01) : l'aperçu dit alors qu'il manque des pages, et un import coupé faute
+  de temps propose d'un clic les pages qu'il n'a pas pu lire. Avant cette date, un site trop lent faisait échouer
+  l'aperçu ou l'import sur une erreur sans explication.
 - ✅ **Relire la même adresse REMPLACE les fiches qu'elle avait produites**, et le prix est dit avant le clic :
   vos corrections sur celles-là seront perdues. Les fiches venues d'ailleurs et celles écrites à la main ne
   bougent pas.

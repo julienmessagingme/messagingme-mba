@@ -43,6 +43,10 @@ export function urlRecuperable(raw: string): boolean {
  *
  * Les redirections sont suivies à la main et chaque saut est revalidé : en `redirect: 'follow'`, une page
  * publique pourrait renvoyer un 302 vers `169.254.169.254` et contourner le contrôle de l'URL saisie.
+ *
+ * `signal` est l'échéance de la requête qui lit la page (un parcours de site) : chaque saut s'arrête à la première
+ * des deux, la sienne ou celle-là. Une page peut sinon prendre une cinquantaine de secondes (10 s par saut, quatre
+ * sauts, plus la résolution), bien après l'erreur que le proxy a déjà rendue au client.
  */
 export function fetchUrlBorne(
   timeoutMs = 10_000,
@@ -50,17 +54,19 @@ export function fetchUrlBorne(
   fetchImpl: typeof fetch = fetchPublic,
   /** Injectée pour tester sans DNS. Défaut : la vraie résolution. */
   verifierResolution: (url: string) => Promise<VerdictResolution> = resolutionPublique,
-): (url: string) => Promise<PageDistante> {
-  return async (url: string) => {
+): (url: string, signal?: AbortSignal) => Promise<PageDistante> {
+  return async (url: string, signal?: AbortSignal) => {
     let courante = url;
     for (let saut = 0; saut <= 3; saut += 1) {
+      // Avant la résolution, qui ne se laisse pas interrompre (3 s au plus) : rien ne se lance après l'échéance.
+      signal?.throwIfAborted();
       // `urlRecuperable` ne lit que le texte de l'hôte : un nom public peut résoudre vers le réseau Docker ou les
       // métadonnées. La résolution est vérifiée à chaque saut, c'est la redirection qui porte le contournement.
       const resolution = await verifierResolution(courante);
       if (!resolution.ok) throw new Error(`hôte non autorisé (${resolution.raison ?? 'adresse interne'})`);
       const res = await fetchImpl(courante, {
         redirect: 'manual',
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: signal === undefined ? AbortSignal.timeout(timeoutMs) : AbortSignal.any([AbortSignal.timeout(timeoutMs), signal]),
         headers: { accept: 'text/html,application/json,text/csv;q=0.9,*/*;q=0.8' },
       }).catch((err: unknown) => {
         // Refus à la connexion (le nom a résolu vers l'intérieur entre la vérification et l'appel) : même message que

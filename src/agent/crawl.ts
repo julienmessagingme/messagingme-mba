@@ -118,6 +118,8 @@ export interface VisiteResultat {
   ecartees: Array<{ url: string; raison: string }>;
   /** Le plafond a-t-il coupé ? L'écran doit le dire : « 50 pages » n'est pas « tout le site ». */
   plafondAtteint: boolean;
+  /** L'échéance de la requête a-t-elle coupé, alors qu'il restait des pages à lire ? L'écran le dit aussi. */
+  tempsAtteint: boolean;
 }
 
 /**
@@ -135,7 +137,15 @@ export async function visiter(
    * l'oublierait retomberait dans le fil principal sans que rien ne le dise.
    */
   liens: (html: string, base: string, portee: PorteeImport) => string[] | Promise<string[]>,
-  bornes: { profondeurMax?: number; pagesMax?: number } = {},
+  bornes: {
+    profondeurMax?: number;
+    pagesMax?: number;
+    /**
+     * L'échéance de la requête : aucune page ne se lance après elle. 🔴 Une page écartée ne compte pas dans le plafond,
+     * et une page peut attendre 10 s par redirection : sans échéance, un parcours n'a aucune durée maximale.
+     */
+    signal?: AbortSignal;
+  } = {},
 ): Promise<VisiteResultat> {
   const profondeurMax = bornes.profondeurMax ?? PROFONDEUR_MAX;
   const pagesMax = bornes.pagesMax ?? PAGES_MAX;
@@ -146,10 +156,15 @@ export async function visiter(
   const pages: PageLue[] = [];
   const ecartees: Array<{ url: string; raison: string }> = [];
   let plafondAtteint = false;
+  let tempsAtteint = false;
 
   while (file.length > 0) {
     if (pages.length >= pagesMax) {
       plafondAtteint = true;
+      break;
+    }
+    if (bornes.signal?.aborted) {
+      tempsAtteint = true;
       break;
     }
     const courant = file.shift()!;
@@ -168,5 +183,5 @@ export async function visiter(
       file.push({ url: lien, profondeur: courant.profondeur + 1 });
     }
   }
-  return { pages, ecartees, plafondAtteint };
+  return { pages, ecartees, plafondAtteint, tempsAtteint };
 }

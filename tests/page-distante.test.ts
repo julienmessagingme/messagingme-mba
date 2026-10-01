@@ -136,4 +136,24 @@ describe('fetchUrlBorne', () => {
     const impl = (async () => reponse(200, { 'content-type': 'text/html' }, gros)) as unknown as typeof fetch;
     await expect(borne(impl)('https://www.exemple.fr/faq')).rejects.toThrow('trop lourde');
   });
+
+  it('🔴 une lecture en cours s’arrête quand l’échéance de la REQUÊTE tombe, avant la sienne', async () => {
+    // Une page prend jusqu'à 10 s par saut : sans le signal de la requête, un parcours de site dépasserait son
+    // échéance d'autant, et le client aurait reçu l'erreur du proxy avant notre réponse. Ici, 1 s par saut.
+    const pendante = ((_u: string, init?: RequestInit) => new Promise<Response>((_ok, ko) => {
+      init?.signal?.addEventListener('abort', () => ko(init.signal?.reason), { once: true });
+    })) as unknown as typeof fetch;
+    const debut = performance.now();
+    await expect(borne(pendante)('https://www.exemple.fr/faq', AbortSignal.timeout(100))).rejects.toBeDefined();
+    expect(performance.now() - debut).toBeLessThan(600);
+  });
+
+  it('une requête dont l’échéance est déjà tombée ne lance aucune lecture', async () => {
+    let appels = 0;
+    const impl = (async () => { appels += 1; return reponse(200, { 'content-type': 'text/html' }, '<p>x</p>'); }) as unknown as typeof fetch;
+    const tombe = new AbortController();
+    tombe.abort();
+    await expect(borne(impl)('https://www.exemple.fr/faq', tombe.signal)).rejects.toBeDefined();
+    expect(appels).toBe(0);
+  });
 });

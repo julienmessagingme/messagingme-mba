@@ -127,6 +127,39 @@ describe('visiter', () => {
     expect(r.plafondAtteint).toBe(false);
   });
 
+  it('🔴 l’échéance de la requête arrête le parcours, et il le DIT', async () => {
+    // Une page écartée ne compte pas dans les cinquante : sans échéance, un accueil de mille liens lents ferait
+    // durer un aperçu des heures, quand le client a reçu l'erreur du proxy au bout de 60 s (2026-10-01).
+    const echeance = new AbortController();
+    const pages: Record<string, string> = { 'https://x.fr/': [A('/a'), A('/b'), A('/c')].join('') };
+    for (const p of ['a', 'b', 'c']) pages[`https://x.fr/${p}`] = '';
+    const lues: string[] = [];
+    const r = await visiter('https://x.fr/', 'site', async (u) => {
+      lues.push(u);
+      if (u === 'https://x.fr/a') echeance.abort(); // l'échéance tombe pendant la lecture de /a
+      return site(pages)(u);
+    }, liensDeLaPage, { signal: echeance.signal });
+    expect(lues).toEqual(['https://x.fr/', 'https://x.fr/a']);
+    expect(r.pages.map((p) => p.url)).toEqual(['https://x.fr/', 'https://x.fr/a']);
+    expect(r.tempsAtteint).toBe(true);
+    expect(r.plafondAtteint).toBe(false);
+  });
+
+  it('🔴 preuve inverse : tant que l’échéance ne tombe pas, il ne prétend PAS avoir manqué de temps', async () => {
+    const r = await visiter('https://x.fr/', 'site', site({ 'https://x.fr/': A('/a'), 'https://x.fr/a': '' }), liensDeLaPage,
+      { signal: new AbortController().signal });
+    expect(r.pages).toHaveLength(2);
+    expect(r.tempsAtteint).toBe(false);
+  });
+
+  it('une échéance qui tombe sur la DERNIÈRE page ne fait rien manquer : il ne le prétend pas', async () => {
+    const echeance = new AbortController();
+    const r = await visiter('https://x.fr/', 'site', async (u) => { echeance.abort(); return site({ 'https://x.fr/': '' })(u); },
+      liensDeLaPage, { signal: echeance.signal });
+    expect(r.pages).toHaveLength(1);
+    expect(r.tempsAtteint).toBe(false);
+  });
+
   it('une page injoignable est ÉCARTÉE et dite, elle n’arrête pas le parcours', async () => {
     const r = await visiter('https://x.fr/', 'site', site({
       'https://x.fr/': [A('/mort'), A('/vivant')].join(''),

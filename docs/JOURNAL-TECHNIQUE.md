@@ -5,6 +5,36 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-01 : l'aperçu et l'import d'un site ont une échéance par requête
+
+Décidé par Julien le jour même, sur le point que la relecture du lot des pages web avait laissé au `todo.md` : un
+parcours de site n'avait AUCUNE durée maximale. Une page écartée ne comptait pas dans les cinquante, et une page
+pouvait attendre une cinquantaine de secondes (10 s par saut, quatre sauts, plus la résolution DNS) : un accueil de
+mille liens lents faisait durer un aperçu des heures, pages lues gardées en mémoire. Mesuré avant d'écrire : NPM ne
+pose aucun `proxy_read_timeout` (configuration de `api.` et de `mba.` lue sur le VPS), c'est donc le défaut de nginx,
+60 s sans réponse, qui coupe en premier, avant les 100 s de Cloudflare ; la console n'a aucun délai de son côté. Tout
+aperçu ou import plus long finissait déjà en 504 pour le client, pendant que le serveur continuait.
+
+Une échéance de 30 s de réseau par requête (`ECHEANCE_PARCOURS_MS`, `src/http/agent-knowledge.ts`), portée par un
+signal d'abandon : `fetchUrlBorne` arrête la lecture en cours à la première des deux échéances (la sienne, 10 s par
+saut, ou celle de la requête) et ne lance plus rien après ; `visiter` s'arrête et le dit (`tempsAtteint`), comme son
+plafond. 30 s de réseau, 3 s de résolution DNS (qui ne se laisse pas interrompre) et les 20 s de lecture tiennent sous
+les 60 s de NPM. L'aperçu rend `tempsAtteint` ; l'import lit tant qu'il a le temps, écrit ce qu'il a lu, et rend les
+pages qu'il n'a pas eu le temps de lire (`restantes`), que la console propose d'un clic ; si l'échéance n'en a laissé
+lire aucune, un 422 dit que le temps a manqué. Chaque coupure est journalisée (`parcours_coupe`) : c'est ce qui dira si
+de vrais sites sont trop lents, et si lire les pages quatre à la fois devient utile (au `todo.md`). Les deux champs
+sont facultatifs pour la console : une console en avance sur l'API, ou l'inverse, ne casse rien.
+
+⚠️ **Le typecheck a attrapé ce qu'aucun test n'aurait vu au premier passage** : la route a sa propre fonction
+`journaliser` (l'historique des fiches supprimées), qui masquait l'import du journal. Les deux appels de
+`parcours_coupe` auraient appelé l'historique avec de mauvais arguments ; le journal s'importe désormais sous un autre
+nom. Et deux défauts de mes propres tests, vus avant de conclure : un faux site dont la page d'accueil, déjà répondue,
+gardait son écouteur d'abandon et se comptait comme coupée ; et un espion de `console.warn` lu après `mockRestore`,
+qui efface les appels enregistrés.
+
+`features.md` décrit désormais la lecture d'un site entier (elle n'y était pas) avec sa limite, et la fiche d'aide
+« Construire un agent IA » suit, empreinte comprise.
+
 ## 2026-10-01 : essai réel du « Traité », et la réouverture devient une escalade (`23159e8f`)
 
 Sur la conversation de Julien (espace MessagingMe), délai de reprise réglé à 1 minute le temps de l'essai puis remis

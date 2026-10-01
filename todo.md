@@ -94,13 +94,10 @@ temps de l'échéance.
   (`lecture_interrompue`, raison `occupe`). Déclencheur : ces refus apparaissent sur `pageEnFiches` ou
   `liensDeLaPage`. Remède proposé par la relecture du 2026-10-01 : un lecteur qui a déjà lu attend une place, pendant
   un temps borné, avant de refuser.
-- 🟡 **Un parcours de site n'a pas de durée maximale** : `visiter` ne compte dans ses cinquante pages que les pages
-  LUES, jamais les écartées, et chaque lien peut attendre 10 s par redirection (`src/lib/page-distante.ts`). Un
-  accueil de mille liens lents fait durer un aperçu près de trois heures, pages déjà lues gardées en mémoire (jusqu'à
-  cinquante de 2 Mo), alors que le client a reçu une erreur du proxy bien avant (60 s par défaut chez nginx, donc NPM
-  sauf réglage contraire, 100 s chez Cloudflare). Antérieur au lot des pages ; depuis le 2026-10-01, le repos du
-  lecteur (`REPOS_MS`) empêche au moins qu'un worker y reste attaché. Remède : une échéance par requête d'aperçu et
-  d'import, réseau compris, alignée sur celle du proxy ; ou compter les pages écartées dans un plafond de visites.
+- 🟡 **Un parcours de site lit ses pages une à une** : depuis l'échéance de 30 s par requête (2026-10-01), un site à
+  plus de 0,6 s par page ne rend qu'une partie de ses cinquante pages à l'aperçu, et l'import propose les restantes
+  d'un nouveau clic. Les lire quatre à la fois diviserait la durée d'autant. Déclencheur : la ligne de journal
+  `parcours_coupe` chez de vrais clients. ⚠️ L'ordre en largeur et le plafond de pages devront rester ceux d'aujourd'hui.
 - 🟡 **`--max-old-space-size` l'emporterait sans bruit sur la limite de 1 Go d'un worker** (mesuré par la relecture
   sous Node 24, en ligne de commande comme dans `NODE_OPTIONS`). Rien ne le pose aujourd'hui (`NODE_OPTIONS` vide
   dans le conteneur de production, vérifié le 2026-09-30) : à ne pas ajouter sans relever cette limite.

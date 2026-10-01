@@ -49,6 +49,8 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
    *  formulaire géant. */
   const [ouverte, setOuverte] = useState<string | null>(null);
   const [bilan, setBilan] = useState<string | null>(null);
+  /** Les pages qu'un import n'a pas eu le temps de lire (un site lent), proposées d'un nouveau clic. */
+  const [restantes, setRestantes] = useState<{ url: string; pages: string[] } | null>(null);
 
   const charger = useCallback(async () => {
     try {
@@ -65,6 +67,7 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
     setBusy(true);
     setErreur(null);
     setBilan(null);
+    setRestantes(null);
     try {
       setBilan(await travail());
       await charger();
@@ -77,6 +80,36 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
     }
   }
 
+  /**
+   * Importe des pages d'un site. Celles que l'échéance de la requête n'a pas laissé lire (un site lent) sont DITES et
+   * proposées d'un clic : un import qui s'arrête en silence laisserait croire que tout le site est devenu une source.
+   */
+  const importer = (url: string, pages: string[]) => agir(async () => {
+    const r = await importerSource(tenantId, agentId, url, pages);
+    const ecrites = r.retirees > 0
+      ? t(
+        `${r.ecrites} fiche(s) écrite(s), ${r.retirees} remplacée(s) pour cette adresse.`,
+        `${r.ecrites} entry(ies) written, ${r.retirees} replaced for this address.`,
+      )
+      : t(`${r.ecrites} fiche(s) écrite(s).`, `${r.ecrites} entry(ies) written.`);
+    // Le plafond est DIT quand il mord : une page tronquée en silence laisserait croire que tout son
+    // contenu est devenu une source, et l'agent transférerait sur des questions que la page couvrait.
+    const message = r.ecrites >= r.plafond
+      ? `${ecrites} ${t(
+        `Le plafond de ${r.plafond} fiches par page est atteint : la suite de la page n’a pas été lue. Découpez-la, ou complétez à la main.`,
+        `The cap of ${r.plafond} entries per page was reached: the rest of the page was not read. Split it, or fill in by hand.`,
+      )}`
+      : ecrites;
+    const reste = r.restantes ?? [];
+    setRestantes(reste.length > 0 ? { url, pages: reste } : null);
+    return reste.length > 0
+      ? `${message} ${t(
+        `Le site répond lentement : ${reste.length} page(s) n’ont pas pu être lues à temps. Importez-les d’un nouveau clic.`,
+        `The site responds slowly: ${reste.length} page(s) could not be read in time. Import them with another click.`,
+      )}`
+      : message;
+  });
+
   return (
     <div className="flex flex-col gap-4">
       <MbaNotice kind="warning">
@@ -87,6 +120,13 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
       </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="kb-erreur">{erreur}</MbaNotice>}
       {bilan && <MbaNotice kind="success" testid="kb-bilan">{bilan}</MbaNotice>}
+      {restantes && (
+        <div>
+          <Bouton data-testid="kb-importer-restantes" disabled={busy} onClick={() => void importer(restantes.url, restantes.pages)}>
+            {t(`Importer les ${restantes.pages.length} page(s) restante(s)`, `Import the ${restantes.pages.length} remaining page(s)`)}
+          </Bouton>
+        </div>
+      )}
 
       <ImportSource
         tenantId={tenantId}
@@ -94,23 +134,7 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
         busy={busy}
         onErreur={setErreur}
         urlSuggeree={urlSuggeree}
-        onImport={(url, pages) => agir(async () => {
-        const r = await importerSource(tenantId, agentId, url, pages);
-        const ecrites = r.retirees > 0
-          ? t(
-            `${r.ecrites} fiche(s) écrite(s), ${r.retirees} remplacée(s) pour cette adresse.`,
-            `${r.ecrites} entry(ies) written, ${r.retirees} replaced for this address.`,
-          )
-          : t(`${r.ecrites} fiche(s) écrite(s).`, `${r.ecrites} entry(ies) written.`);
-        // Le plafond est DIT quand il mord : une page tronquée en silence laisserait croire que tout son
-        // contenu est devenu une source, et l'agent transférerait sur des questions que la page couvrait.
-        return r.ecrites >= r.plafond
-          ? `${ecrites} ${t(
-            `Le plafond de ${r.plafond} fiches par page est atteint : la suite de la page n’a pas été lue. Découpez-la, ou complétez à la main.`,
-            `The cap of ${r.plafond} entries per page was reached: the rest of the page was not read. Split it, or fill in by hand.`,
-          )}`
-          : ecrites;
-      })} />
+        onImport={(url, pages) => importer(url, pages)} />
 
       <ImportDocument busy={busy} onDeposer={(nom, dataUrl) => agir(async () => {
         const r = await importerDocument(tenantId, agentId, nom, dataUrl);
@@ -317,6 +341,15 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
               {t(
                 'Le plafond de pages est atteint : il en manque. Importez d’abord celles-ci, puis donnez une adresse plus précise pour le reste.',
                 'The page cap was reached: some are missing. Import these first, then give a more precise address for the rest.',
+              )}
+            </p>
+          )}
+          {/* ⚠️ L'échéance est DITE comme le plafond : un site lent n'a rendu qu'une partie de ses pages. */}
+          {apercu.tempsAtteint && (
+            <p className="mt-1 text-xs text-alerte-800" data-testid="kb-apercu-temps">
+              {t(
+                'Le site répond lentement : la lecture s’est arrêtée avant la fin, il manque des pages. Importez d’abord celles-ci, puis donnez une adresse plus précise pour le reste.',
+                'The site responds slowly: reading stopped before the end, some pages are missing. Import these first, then give a more precise address for the rest.',
               )}
             </p>
           )}

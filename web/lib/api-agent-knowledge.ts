@@ -38,6 +38,11 @@ export interface BilanImport {
   retirees: number;
   ecrites: number;
   plafond: number;
+  /**
+   * Les pages que l'échéance de la requête n'a pas laissé lire (un site lent) : rien n'en a été écrit, elles
+   * s'importent d'un nouveau clic. Absent d'une API d'avant le 2026-10-01.
+   */
+  restantes?: string[];
 }
 
 const base = (tenantId: string, agentId: string) => `/tenants/${tenantId}/agents/${agentId}/knowledge`;
@@ -82,6 +87,11 @@ export interface ApercuImport {
   portee: 'page' | 'sous-arbre' | 'site';
   /** ⚠️ VRAI veut dire « il en manque » : 50 pages n'est pas « tout le site ». */
   plafondAtteint: boolean;
+  /**
+   * ⚠️ VRAI veut dire « il en manque » aussi : le site répond lentement, et l'échéance de la requête a arrêté le
+   * parcours avant la fin. Absent d'une API d'avant le 2026-10-01.
+   */
+  tempsAtteint?: boolean;
   pages: Array<{ url: string; fiches: number; caracteres: number }>;
   ecartees: Array<{ url: string; raison: string }>;
 }
