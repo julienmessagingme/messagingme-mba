@@ -440,16 +440,30 @@ export class PgInboxStore implements InboxStore {
     );
   }
 
+  /**
+   * Ouvre une demande du Quantitatif > Performance sur un fil que l'équipe tient déjà (réouverture après « Traité »,
+   * réponse à une campagne au devenir Inbox).
+   *
+   * 🔴 ELLE POSE L'ESCALADE, COMME TOUTE DEMANDE (décision de Julien du 2026-10-01). Le client attend un humain : tant
+   * que personne de l'équipe n'a répondu, le délai de reprise ne rend pas la conversation à l'agent de Meta
+   * (`repriseDue`). Sans elle, mesuré en essai réel le même jour, un client qui réécrivait après « Traité » voyait la
+   * conversation repartir à l'agent au délai compté depuis le clic, son message sans réponse de personne. C'est déjà
+   * ce que pose `setControlOwner` quand l'équipe prend le fil d'un robot avec une demande (`ouvreUneDemande`). La
+   * première réponse de l'équipe ou son « Traité » l'efface. `coalesce` : une escalade déjà ouverte garde sa date.
+   */
   async ouvrirUneDemande(tenantId: string, waId: string, cause: string): Promise<void> {
     const auteur = colonnesAuteur({ cause });
     await this.pool.query(
-      `insert into conversation_evenements (tenant_id, conversation_id, type, cause)
-       select $1, c.id, 'escaladee', $3::text
-         from conversations c
-        where c.tenant_id = $1 and c.wa_id = $2 and c.control_owner = 'app_human'
-          -- L'attente d'une fin de parcours (app_human en attendant l'accusé de notre dernier envoi) n'est pas
-          -- l'équipe : aucune demande ne s'y ouvre (relecture du 2026-09-30).
-          and c.release_mba_apres_message is null`,
+      `with maj as (
+         update conversations c set escaladee_le = coalesce(c.escaladee_le, now())
+          where c.tenant_id = $1 and c.wa_id = $2 and c.control_owner = 'app_human'
+            -- L'attente d'une fin de parcours (app_human en attendant l'accusé de notre dernier envoi) n'est pas
+            -- l'équipe : aucune demande ne s'y ouvre (relecture du 2026-09-30).
+            and c.release_mba_apres_message is null
+         returning c.id
+       )
+       insert into conversation_evenements (tenant_id, conversation_id, type, cause)
+       select $1, maj.id, 'escaladee', $3::text from maj`,
       [tenantId, waId, auteur.cause],
     );
   }

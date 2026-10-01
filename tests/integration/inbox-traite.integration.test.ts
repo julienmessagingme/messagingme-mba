@@ -230,4 +230,37 @@ describe.skipIf(!url)('le statut « Traité » d une conversation', () => {
     // Et d'un autre espace, rien : le `tenant_id` du `where` est le contrôle.
     expect((await store.etatDuFil(autreTenantId, WA_ID)).owner).toBe('app_workflow');
   });
+
+  /**
+   * 🔴 DÉCISION DE JULIEN DU 2026-10-01, après l'essai réel : la demande qu'ouvre une réouverture POSE L'ESCALADE, donc
+   * le délai de reprise ne rend plus la conversation à l'agent de Meta tant que personne de l'équipe n'a répondu.
+   */
+  it('🔴 `ouvrirUneDemande` pose l’escalade avec son événement, garde la date d’une escalade ouverte, et rien d’autre', async () => {
+    await pool.query(`update conversations set control_owner = 'app_human', escaladee_le = null, release_mba_apres_message = null where id = $1`, [convId]);
+    const evenements = async (): Promise<number> => (await pool.query<{ n: number }>(
+      `select count(*)::int as n from conversation_evenements where conversation_id = $1 and type = 'escaladee'`, [convId],
+    )).rows[0]!.n;
+    const avant = await evenements();
+    await store.ouvrirUneDemande(tenantId, WA_ID, 'automatique : itest');
+    expect((await store.etatDuFil(tenantId, WA_ID)).escaladee).toBe(true);
+    expect(await evenements()).toBe(avant + 1);
+    const premiere = (await pool.query<{ e: Date }>(`select escaladee_le as e from conversations where id = $1`, [convId])).rows[0]!.e;
+    await store.ouvrirUneDemande(tenantId, WA_ID, 'automatique : itest');
+    const seconde = (await pool.query<{ e: Date }>(`select escaladee_le as e from conversations where id = $1`, [convId])).rows[0]!.e;
+    expect(seconde.getTime()).toBe(premiere.getTime());
+    // Un fil que l'équipe ne tient pas, ou l'attente d'une fin de parcours : ni demande, ni escalade.
+    await pool.query(`update conversations set escaladee_le = null, release_mba_apres_message = 'wamid.attente' where id = $1`, [convId]);
+    const n = await evenements();
+    await store.ouvrirUneDemande(tenantId, WA_ID, 'automatique : itest');
+    expect((await store.etatDuFil(tenantId, WA_ID)).escaladee).toBe(false);
+    expect(await evenements()).toBe(n);
+    await pool.query(`update conversations set control_owner = 'mba', release_mba_apres_message = null where id = $1`, [convId]);
+    await store.ouvrirUneDemande(tenantId, WA_ID, 'automatique : itest');
+    expect((await store.etatDuFil(tenantId, WA_ID)).escaladee).toBe(false);
+    expect(await evenements()).toBe(n);
+    // Et d'un autre espace, rien.
+    await pool.query(`update conversations set control_owner = 'app_human' where id = $1`, [convId]);
+    await store.ouvrirUneDemande(autreTenantId, WA_ID, 'automatique : itest');
+    expect((await store.etatDuFil(tenantId, WA_ID)).escaladee).toBe(false);
+  });
 });

@@ -141,6 +141,24 @@ describe('C : un client rouvre une conversation « Traité » ou archivée que l
     expect(b.etat('w')?.owner).toBe('app_human');
   });
 
+  /**
+   * 🔴 ESSAI RÉEL DU 2026-10-01 : un « Ok » envoyé dans la minute qui suivait « Traité » est resté à l'équipe, puis le
+   * balayage a rendu la conversation à l'agent de Meta au délai compté depuis le clic, le message sans réponse de
+   * personne. Décision de Julien : la réouverture est une escalade. Vérifié dans les deux sens : sans l'escalade posée
+   * par `ouvrirUneDemande` (banc et store), ce cas échoue (la remise confie le message suivant à l'agent).
+   */
+  it('🔴 la réouverture est une ESCALADE : délai écoulé, le message suivant reste à l’équipe tant que personne n’a répondu', async () => {
+    const b = equipe(HEURE);
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: true });
+    expect(b.etat('w')?.escaladeeLe).not.toBeNull();
+    // Le délai s'écoule sans réponse de l'équipe.
+    b.etat('w')!.changedAt = il(3 * HEURE);
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w', 'Vous êtes là ?', { rouverte: false });
+    expect(b.appels).toEqual([]);
+    expect(b.etat('w')?.owner).toBe('app_human');
+    expect(repriseDue({ owner: 'app_human', depuisMs: 3 * HEURE, escaladee: true }, 2 * HEURE)).toBe(false);
+  });
+
   it('un message qui ne rouvre rien n’ouvre aucune demande', async () => {
     const b = equipe(HEURE);
     await b.fil.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false });

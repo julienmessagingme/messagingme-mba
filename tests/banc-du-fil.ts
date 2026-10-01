@@ -90,8 +90,12 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
       return { owner: l.owner, depuisMs: l.changedAt === null ? null : Date.now() - l.changedAt.getTime(), escaladee: l.escaladeeLe !== null };
     },
     // Fidèle au `where control_owner = 'app_human'` de `PgInboxStore.ouvrirUneDemande`.
+    // Et, comme lui, elle pose l'escalade (une escalade déjà ouverte garde sa date).
     ouvrirUneDemande: async (_t, waId, cause) => {
-      if (lignes.get(waId)?.owner === 'app_human') demandes.push({ waId, cause });
+      const l = lignes.get(waId);
+      if (l?.owner !== 'app_human') return;
+      demandes.push({ waId, cause });
+      l.escaladeeLe = l.escaladeeLe ?? new Date();
     },
     // Fidèle au `where control_owner = 'app_human'` de `PgInboxStore.relancerLeDelai`.
     relancerLeDelai: async (_t, waId) => {

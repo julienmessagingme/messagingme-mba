@@ -103,6 +103,13 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
     expect(corps('async ouvrirUneDemande(')).toContain("c.control_owner = 'app_human'");
   });
 
+  it('🔴 et elle pose l’escalade, dans la même requête que l’événement (décision du 2026-10-01)', () => {
+    // L'événement n'est inséré que pour la ligne mise à jour : jamais une demande sans escalade, ni l'inverse.
+    const c = corps('async ouvrirUneDemande(');
+    expect(c).toContain('escaladee_le = coalesce(c.escaladee_le, now())');
+    expect(c).toContain('from maj');
+  });
+
   it('🔴 l’état d’avant se lit sous `for no key update`, jamais `for update` (relecture du 2026-09-29)', () => {
     // `for update` bloque aussi les insertions filles (message, événement, analyse), dont la clé étrangère pose
     // `for key share` sur la conversation. Le verrou juste est celui que l'update prend lui-même.
