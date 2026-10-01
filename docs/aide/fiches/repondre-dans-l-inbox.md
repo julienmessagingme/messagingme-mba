@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 2ce102
+source_empreinte: baca15
 ---
 # Répondre à un client dans l'Inbox
 
@@ -16,8 +16,9 @@ la conversation ouverte à droite.
 - **Traité** : celles que vous avez marquées « Traité » parce qu'il n'y a plus rien à répondre, même si le
   client a écrit en dernier (« merci, bonne journée »). Elles restent aussi dans « Tout », avec une petite
   pastille. Dès que le client réécrit, le statut saute et la conversation revient dans « À traiter » : c'est une
-  nouvelle demande pour votre équipe. Une simple réaction emoji (👍) ne la rouvre pas. Marquer « Traité » ne
-  rend pas la main au robot : cela relance le délai au bout duquel il la reprend.
+  nouvelle demande pour votre équipe, et tant que personne ne lui a répondu, le robot ne la reprend pas, même passé
+  le délai. Une simple réaction emoji (👍) ne la rouvre pas. Marquer « Traité » ne rend pas la main au robot :
+  cela relance le délai au bout duquel il la reprend.
 - **Signalé** : celles où un message insulte l'entreprise, repérées automatiquement, plus celles que vous
   avez signalées vous-même.
 - **Archivé** : ce que vous avez rangé. Contrairement à « Traité », une conversation archivée n'apparaît
