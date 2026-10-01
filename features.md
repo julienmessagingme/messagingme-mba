@@ -1190,7 +1190,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   (l'espace a du crédit, recharger n'y changerait rien) ou traduction pas encore activée sur le serveur
   (rien à faire côté client).
 
-- ✅ **LE STATUT « TRAITÉ »** (2026-09-19, déployé le jour même, essai réel à faire). Pour les conversations
+- ✅ **LE STATUT « TRAITÉ »** (2026-09-19, déployé le jour même, essai réel fait le 2026-10-01). Pour les conversations
   où le client a écrit en dernier mais où il n'y a plus rien à lui répondre (« merci, bonne journée »). Marquée
   « Traité », la conversation **sort d'« À traiter »**, **reste dans « Tout »** avec une petite pastille
   « Traité », et a son propre dossier. **Dès que le client réécrit, le statut saute** et elle revient dans « À
@@ -1399,7 +1399,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   réponse de l’équipe **ou son dernier « Traité »** (le plus tardif des deux, 2026-09-30) : « Traité » ne rend pas
   la main, il relance le délai. Passé ce délai, un client qui écrit dans la conversation est **confié tout de suite
   à l’agent de Meta** (s’il est allumé), qui répond à ce message, même après plus de 24 heures de silence ; une
-  escalade que personne n’a encore répondue reste à l’équipe. ⚠️ **Ce réglage vivait sur l’Accueil
+  escalade que personne n’a encore répondue reste à l’équipe, et une réouverture aussi (voir plus bas). ⚠️ **Ce réglage vivait sur l’Accueil
   jusqu’au 2026-08-18** : l’Accueil n’y renvoie plus que par un lien « Régler qui répond au client ».
 - 🗑️ **« Comportement au retour » : SUPPRIMÉ le 2026-08-18.** Il permettait de choisir, pour l’espace puis
   conversation par conversation, si un fil repartait au scénario ou restait à traiter après une intervention.
@@ -1461,6 +1461,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   seconde, et un collaborateur qui prend le fil lui-même en écrivant n'en ouvre pas (personne n'attendait).
   🔴 **Un client qui rouvre une conversation « Traité » ou archivée que l'équipe tient encore** (avant le délai de
   reprise) ouvre une **nouvelle demande** (2026-09-30) : la précédente est close, et c'est à l'équipe de répondre.
+  🔴 **Cette réouverture compte comme une escalade** (2026-10-01, après l'essai réel) : tant que personne de
+  l'équipe n'a répondu, le délai ne rend plus la conversation à l'agent de Meta. Avant, elle repartait à l'agent au
+  délai compté depuis « Traité », et le message du client restait sans réponse de personne.
   Après le délai, la conversation part à l'agent de Meta, et aucune demande ne s'ouvre.
   🔴 **Le chrono part quand le client a écrit** : au passage si le client attendait déjà, sinon à son message
   suivant. Une campagne « modèle puis passer à un humain » ne compte donc que les destinataires qui répondent, à
