@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: b50829
+source_empreinte: 1021ef
 ---
 # Créer un scénario
 
@@ -11,7 +11,7 @@ avance de bloc en bloc.
 Les blocs que vous utiliserez le plus :
 
 - **Envoi de modèle** : envoie un message approuvé par WhatsApp. C'est ce qui ouvre une conversation avec
-  quelqu'un qui ne vous a pas écrit récemment.
+  quelqu'un qui ne vous a pas écrit récemment. Sur la toile, le bloc montre une miniature du modèle choisi.
 - **Message rapide** : un texte, avec jusqu'à trois boutons de réponse ou un bouton qui ouvre une page. Il ne
   part que dans une conversation déjà ouverte.
 - **Question** : une question avec un menu de réponses, ou une question ouverte. Le scénario attend la

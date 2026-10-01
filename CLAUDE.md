@@ -1092,6 +1092,11 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   `gh run view <id> --json jobs`, job par job, jamais sur le code de sortie du watch.
   ⚠️ Un push qui ne touche QUE des `.md` ne déclenche AUCUN run (`paths-ignore`, pour le quota) : l'absence
   de run sur `HEAD` n'est donc pas un échec, c'est le dernier commit DE CODE qu'il faut regarder.
+  🔴 **ET CE PUSH-LÀ PEUT QUAND MÊME CASSER LA CI DU SUIVANT** : `tests/aide-proposer.test.ts` lit les sections de
+  `features.md` dont les fiches d'aide (`docs/aide/fiches/`) portent l'empreinte. Toute retouche de `features.md`
+  se vérifie par ce test AVANT de pousser, la fiche relue et son empreinte dans le MÊME commit, et le push ne part
+  que sur ce test vert (`&&`, jamais `;`). Vécu deux fois (2026-09-30 et 10-01) : le job `unit` d'un pair est devenu
+  rouge sur un commit qui n'y était pour rien.
 - 🔴 **QUI PAIE QUOI, ET TOUT N'EST PAS SUR LA MÊME CLÉ.** La **traduction** des conversations
   (`TRADUCTION_MODELE`, `google/gemini-2.5-flash`) et les **tours d'agent** tombent sur le **crédit prépayé
   du client** : ils passent par `gateway`, celui qui porte le résolveur de clé PAR ESPACE. Sur **notre** clé

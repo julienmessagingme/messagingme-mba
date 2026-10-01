@@ -1,5 +1,50 @@
 # todo.md : backlog
 
+## 🟡 Le délai de reprise et le mode liste : les jaunes de la relecture de `53c112e8` (2026-09-30)
+
+Lot « Traité relance le délai » (déployé et éprouvé le 2026-10-01). Aucun ne casse la production.
+
+- 🟡 **`formesDuNumero` (formes brésilienne et mexicaine d'un numéro) ne sert qu'au chemin des modèles** : ni
+  `reprendrePourLApp` ni `retirer` ne l'emploient, donc un contact de ces pays peut rester sur la liste de l'agent
+  après une reprise.
+- 🟡 **Le `catch` du `release` refusé est trop large** (`confier`, `src/inbox/fil.ts`) : il ne devrait tolérer que
+  l'erreur observée de Meta (l'agent tient déjà le fil), pas toute erreur.
+- 🟡 **Deux commentaires faux** : `src/worker.ts` (vers la ligne 510) et la JSDoc du fil qui dit encore « un fil déjà
+  tenu par un opérateur reste tel quel ».
+- 🟡 **La doc écrit comme un fait mesuré que Meta refuse `release` quand son agent tient le fil** : c'est une
+  inférence (un refus observé le 2026-09-30), à écrire comme telle.
+- 🟡 **`rouverte` se perd sur un job rejoué** : le second passage relit la conversation déjà rouverte et ne voit
+  plus la réouverture, donc n'ouvre pas la demande.
+
+## 🟡 Le coût par engagement des publicités : les restes de la relecture de `7ace4c9b` (2026-09-30)
+
+Huit jaunes sur quatorze corrigés et déployés (`c6255bd4`). Ce qui reste ne touche pas un compte français.
+
+- 🟡 **Fuseau** : les jours de Meta suivent le fuseau du compte publicitaire, les arrivées l'heure de Paris
+  (`coutParPub`). `pub_connexion.fuseau` existe et pourrait borner les deux.
+- 🟡 **Devise** : celle de la connexion au moment de la lecture, appliquée à tout l'historique ; après une
+  reconnexion à un compte dans une autre devise, les anciens jours s'afficheraient dans la nouvelle.
+- 🟡 **Performance** : l'index partiel `arrivees_pub_campagne_idx` ne porte pas `arrivee_le`, la CTE des arrivées lit
+  toutes celles de l'espace. Négligeable aux volumes actuels.
+- 🟡 **`limit(1000)` jamais mesuré** sur l'expansion des jours ; `paging.next` n'est pas suivi (journalisé
+  seulement), et ce seraient les jours RÉCENTS qui manqueraient.
+- 🟡 **L'écriture des jours par le câblage du worker n'est couverte par aucun test** (vérifiée en production).
+- 🟡 **Une panne des campagnes push masque aussi l'accordéon des publicités** (il vit dans la même ligne).
+
+## 🟠 L'agent de Meta et les publicités : à regarder (2026-10-01)
+
+- 🟠 **Le message de passation de l'agent de Meta est en ANGLAIS** (« Thanks for reaching out! I'll ask a
+  representative to respond », vu le 2026-09-30 sur une conversation en français) : c'est le message automatique
+  de Meta. Voir s'il se règle (langue, texte) dans les réglages de l'agent.
+- 🟠 **Lire les Business AI Terms connecté au Business Manager** (`facebook.com/legal/meta-business-ai-terms`) :
+  rôle de Meta, usage des conversations pour la publicité ou l'entraînement, clause UE. Requis avant la première
+  question d'une DSI. Le point de départ est dans `brain/MESSAGINGME.md`.
+- 🟠 **L'ancienne console `mba.messagingme.app` n'est pas reconstruite** : elle montre encore le choix d'audience
+  et le panneau de liste retirés de la console actuelle.
+- 🟠 **App Review des six permissions publicitaires** le jour où un client devra brancher SEUL son compte : un texte
+  et une vidéo PAR permission (doc Meta), tournés pendant une vraie création de publicité. Inutile tant qu'un
+  admin de l'app branche les comptes (accès standard, mesuré sur Groupama PJ le 2026-09-30).
+
 ## 🟡 Lecture des fichiers déposés : ce que le worker borne sans le corriger (2026-09-30)
 
 Depuis le 2026-09-30, un CSV, une page de FAQ, un document déposé ou les pages d'un site se lisent dans un worker

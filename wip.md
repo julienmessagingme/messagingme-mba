@@ -164,7 +164,7 @@ Lot 8 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
 - ✅ **La devise est tranchée** (Julien, 2026-09-23) : tous les WABA sont en euros, aucune garde, aucune
   conversion. Ce qui rendrait la question vivante est consigné dans [todo.md](todo.md).
 
-## PUBLICITÉS CLICK-TO-WHATSAPP (LOT 1 « CAPTER » DÉPLOYÉ LE 2026-09-23, PAS ENCORE ÉPROUVÉ)
+## PUBLICITÉS CLICK-TO-WHATSAPP (LOTS 1 À 3 DÉPLOYÉS ; UNE VRAIE CAMPAGNE DIFFUSE DEPUIS LE 2026-09-29)
 
 Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
 `docs/superpowers/plans/2026-09-22-pubs-ctwa-lot1-capter.md`.
@@ -174,10 +174,14 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
   gardés à la réception, 72 h gratuites exclues de toute lecture de coût, `ctwa_clid` effacé par la purge
   RGPD. Migration 0163 appliquée AVANT le `up` et relue en base point par point (le détail vit dans
   [CLAUDE.md](CLAUDE.md) § Déploiement, il ne se recopie pas ici). Revue finale : 0 rouge.
-- 🔴 **CE QUI N'EST PAS ÉPROUVÉ, ET C'EST L'ESSENTIEL : aucun clic réel n'est encore arrivé.** La chaîne
-  `referral` vers `arrivees_pub` n'a jamais vu de vraie publicité, donc `en_standby` n'a RIEN mesuré, et c'est
-  lui qui tranche entre le plan A du lot 3 (prendre le fil à l'arrivée) et le plan B (routage par liste
-  blanche). Les tests sont verts, ce qui ne dit que ce que leur auteur a pensé à vérifier.
+- ✅ **UNE VRAIE CAMPAGNE, créée depuis Engage Me sur le compte publicitaire MessagingMe, diffuse depuis le
+  2026-09-29** : statut, dépense, clics, impressions, couverture et dépense jour par jour relus par le balayage ;
+  dépense recoupée avec le Gestionnaire de Meta par Julien le 2026-10-01, et vue dans le coût par engagement de
+  Performance lab.
+- ✅ **LE PREMIER CLIC RÉEL EST ARRIVÉ LE 2026-09-30 À 14 H 34 UTC** (lu en base le 2026-10-01) : une arrivée
+  rattachée à sa campagne, `en_standby` VRAI (l'agent de Meta tenait le fil, le contact étant sur sa liste), issue
+  `agent_meta` (la destination de cette publicité), et SANS `ctwa_clid`, que Meta n'a pas rendu (la spec le dit
+  « parfois vide »). ⚠️ Une seule arrivée : rien n'est encore mesuré sur un lead routé vers un SCÉNARIO.
 - ⚠️ **La moitié TARIFS se prouve, elle, SANS publicité** : `tarifs_meta` se remplit à chaque accusé ordinaire.
   C'est la preuve la moins chère que le lot tourne vraiment en production, et elle se lit en base. Pas faite.
 - 🟡 **Les jaunes de la revue finale qui portent sur ce lot**, rapport
@@ -223,14 +227,13 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
   `POST /ops/pubs/connexion/:tenantId`, qui dépose un jeton d'utilisateur système créé à la main après
   l'avoir vérifié chez Meta. Notre propre espace est connecté ainsi depuis le 2026-09-23.
 
-### Lot 3 « Router, créer, suivre » : ÉCRIT, PAS ENCORE DÉPLOYÉ (2026-09-23)
+### Lot 3 « Router, créer, suivre » : DÉPLOYÉ LE 2026-09-24
 
 Plan : `docs/superpowers/plans/2026-09-23-pubs-ctwa-lot3-router-creer-suivre.md`. Livré en trois commits,
 comme le cadrage l'impose (routage, puis création, puis suivi), CI verte sur les trois.
 
-- 🔴 **MIGRATION 0170 ÉCRITE ET PAS ENCORE APPLIQUÉE** (`pubs_router` : `publicites`, `pubs_connues`, et
-  quatre colonnes de routage sur `arrivees_pub`). Elle n'AJOUTE que, donc elle passe AVANT le `up`, et elle
-  se relit en base point par point juste après `migrate`. Le compteur qui fait foi est celui de `CLAUDE.md`.
+- ✅ **MIGRATION 0170 APPLIQUÉE LE 2026-09-24, AVANT le `up`** (`pubs_router` : `publicites`, `pubs_connues`, et
+  quatre colonnes de routage sur `arrivees_pub`), relue en base point par point juste après `migrate`. Le compteur qui fait foi est celui de `CLAUDE.md`.
 - ✅ **Le routage** : une fonction PURE, les six lignes du tableau de la spec, et une exception à la doctrine
   du `standby` pour un seul cas, celui d'un lead dont on a DÉJÀ repris le fil chez Meta.
 - ✅ **La création** : tout est créé EN PAUSE chez Meta, chaque identifiant rangé dès qu'il arrive, et un
@@ -395,7 +398,7 @@ un bouton lien ne produit aucun message entrant : le clic, compté sur la fiche,
 ⚠️ **QUESTION OUVERTE** : un texte AU-DESSUS des cartes, comme sur un template WhatsApp. smsmode n'en prévoit
 pas dans un carrousel ; l'option proposée est un message texte envoyé juste avant lui. En attente de Julien.
 
-## 🔴 INBOX : « TRAITÉ », PIÈCES JOINTES, « JE M'EN OCCUPE » (2026-09-19, DÉPLOYÉ, ESSAI RÉEL DÛ)
+## 🔴 INBOX : « TRAITÉ », PIÈCES JOINTES, « JE M'EN OCCUPE » (2026-09-19, DÉPLOYÉ, ESSAI RÉEL EN PARTIE FAIT)
 
 Trois demandes de Julien, arbitrées le jour même. Plan :
 `docs/superpowers/plans/2026-09-19-inbox-traite-medias-prise.md`. Fonctionnel dans [features.md](features.md),
@@ -409,6 +412,9 @@ invariants dans [documentation.md](documentation.md) § Conversations, migration
 2. Marquer la conversation « Traité » : elle quitte « À traiter », reste dans « Tout » avec sa pastille.
    Répondre par un 👍 : elle RESTE « Traité » (c'est le seul endroit où un vrai payload de réaction Meta
    traverse ce chemin). Puis écrire un mot : elle revient dans « À traiter », la pastille disparaît.
+   ✅ **Fait le 2026-10-01 pour « Traité » et la réouverture** (essai du délai de reprise : le délai repart du clic,
+   un message avant le délai reste à l'équipe et ouvre une demande, après le délai l'agent de Meta répond). Le 👍
+   reste à essayer.
 3. Créer un compte agent, activer « Les agents peuvent prendre une conversation non affectée » dans
    Paramètres DEPUIS UN COMPTE MANAGER, et vérifier que l'agent voit « Je m'en occupe » sur une conversation
    non affectée, rien sur celle d'un collègue ; et que le manager peut affecter à quelqu'un (son menu était

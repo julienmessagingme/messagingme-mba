@@ -714,6 +714,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   scénarios existants. Les deux blocs **MBA** (envoi vers MBA, désactivation MBA) ont été
   **retirés du produit** : ils ne faisaient rien ; un ancien scénario qui en contient encore les
   affiche sous le libellé « Bloc MBA (retiré) » et le moteur les traverse sans agir.
+- ✅ **Le bloc « Envoi template » montre son modèle** (2026-09-29) : une miniature compacte (en-tête, titre, début
+  du texte) s'affiche dans le bloc, sur la toile du scénario. On reconnaît le message sans ouvrir le panneau.
 - ✅ **Bloc « Action »** (2026-08-02) : un seul bloc pour agir sur la fiche du contact, avec 4 actions au choix :
   **ajouter un tag**, **retirer un tag**, **mettre à jour un champ** (valeur fixe, ou « maintenant » = la date et
   l'heure du passage du contact), **vider un champ**. Il remplace dans la palette les anciens blocs « ajout de

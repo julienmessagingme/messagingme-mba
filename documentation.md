@@ -921,8 +921,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   `rendue_scenario` quand un fil `app_human` repasse à `app_workflow`. `escaladee` s'écrit aussi SANS bascule
   (`PgInboxStore.ouvrirUneDemande`, cause `CAUSE_REOUVERTURE`) quand un client rouvre une conversation « Traité » ou
   archivée que l'équipe tient encore, avant son délai de reprise (`ControleDuFil.remettreSiPersonneNeSuit`) : c'est
-  une nouvelle demande pour elle. Le drapeau `escalade` ne pose que la marque collante (`escaladee_le`), jamais
-  l'événement. Un opérateur qui prend le fil en écrivant, et l'état d'attente
+  une nouvelle demande pour elle, qui pose AUSSI la marque collante `escaladee_le`, dans la même requête que
+  l'événement : le client attend l'équipe, et le délai ne la lui reprend plus tant que personne n'a répondu
+  (décision du 2026-10-01). Le drapeau `escalade` d'une bascule, lui, ne pose que la marque, jamais l'événement. Un opérateur qui prend le fil en écrivant, et l'état d'attente
   d'une fin de parcours, n'écrivent rien. Les branches de l'agent de Meta passent AVANT `rendue_scenario` : un fil
   qui quitte `mba` reste `prise_mba`, et s'il va à l'équipe par un geste qui ouvre une demande, il écrit la prise
   PUIS `escaladee`. Une escalade qui sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`,
@@ -995,7 +996,8 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
     dizaines de milliers d'événements (`todo.md`).
 - 🔴 **UNE ESCALADE EST « À TRAITER » TOUT DE SUITE** (`escaladee_le`, migration 0164), et TROIS chemins la
   posent : l'agent de Meta qui nous passe le fil (`control_passed`), le bloc « passer à un humain » d'un
-  scénario, et l'escalade d'un agent IA. Les trois font la même promesse au client, et souffraient du même
+  scénario, et l'escalade d'un agent IA (une demande ouverte sans bascule la pose aussi, `ouvrirUneDemande`,
+  ci-dessus). Les trois font la même promesse au client, et souffraient du même
   défaut : leur dernière phrase est SORTANTE, donc la conversation n'entrait dans le dossier qu'au message
   suivant du client. Elle devient `app_human`, entre dans le dossier même si la dernière phrase est sortante,
   et sort d'« Archivé » et de « Traité ». Elle y reste jusqu'à ce que quelqu'un agisse : la PREMIÈRE réponse
@@ -1161,7 +1163,8 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   entre-temps (`only`, `saufEscalade`), sous la cause « le contact réécrit après le délai de reprise ». Avant le
   délai (ou délai à 0, ou agent éteint), le fil reste à l'équipe, et si CE message vient de rouvrir la conversation
   (`recordInbound` rend `rouverte`, `processInbound` le garde par message, le job le passe à la remise, sans relecture
-  qui ferait une course), une demande s'ouvre pour elle (`escaladee`, ci-dessus). Une réaction n'en ouvre pas.
+  qui ferait une course), une demande s'ouvre pour elle, avec l'escalade (`escaladee`, ci-dessus) : passé le délai,
+  elle reste à l'équipe tant que personne n'a répondu. Une réaction n'en ouvre pas.
 - 🔴 **`conversation_messages.body` N'A PAS LE MÊME SENS DANS LES DEUX DIRECTIONS, et tous ses lecteurs
   en dépendent.** Sur un message ENTRANT, `body` porte ce que le client a ÉCRIT, et `traduction` porte
   notre lecture dans la langue de l'opérateur. Sur un message SORTANT, `body` porte ce qui est PARTI,
@@ -2496,6 +2499,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/mba/liste.ts` -> `creerListeDeLAgent` | 🔴 la liste de l'agent de Meta (`mba_liste`, migration 0195) : ajouter (Meta puis la ligne, défait si la ligne échoue), retirer (Meta puis la ligne, un rejeu, un 404 vaut retrait, une panne de la table lève), retirer avant un modèle sous les deux formes du numéro (`formesDuNumero`, `RetraitDeLaListeRefuse`), lire qui y est. Seul appelant des routes `allowlist` de Meta ; `tests/mba-liste.test.ts` |
 | `src/socle.ts` -> `construireSocle` | 🔴 ce que l'API et le worker doivent construire À L'IDENTIQUE : les dépôts communs, le dépôt de contacts décoré (un opt-out écrit par l'un ou l'autre processus est annoncé et signalé), la pile d'envoi Meta et ses freins, la clé de modèle par espace (avec son signalement d'échec de déchiffrement), le résolveur e-mail, le numéro de l'espace en cache, le contrôle du fil, le runtime de scénario. Il reçoit le pool, la file et la configuration : chaque processus garde son pool, sa file et ses caches. `tests/socle.test.ts` le construit contre un faux pool et une fausse file |
 | `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; `round2`, l'arrondi au centime des coûts |
+| `src/meta/pubs-creation.ts` -> `lireDepenses` | le suivi d'une publicité en UN appel par paquet de 50 campagnes : le cumul (dépense, clics sur le lien, impressions, couverture) et, sous l'alias `.as(jours)` de la même expansion `insights`, la dépense jour par jour (forme mesurée le 2026-09-30). Les jours sont lus À PART du cumul (une forme inattendue ne le fait pas perdre) ; les comptes passent par `entierOuRien`, une colonne entière refusant `2.5` ferait tomber le balayage de l'espace |
+| `src/pubs/publicites.pg.ts` -> `coutParPub` | 🔴 le coût par engagé des publicités sur une PÉRIODE (carte Coûts) : la dépense des jours de la période (`pubs_depense_jour`, 0198) et les PERSONNES arrivées par la campagne dans la période. Un engagé a cliqué PUIS écrit, ce n'est pas un prospect qualifié. Les jours sont ceux du compte publicitaire, les arrivées bornées à l'heure de Paris |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |
 | `src/crm/render.ts` -> `escapeHtml` | l'échappement HTML du dépôt (gabarits d'e-mail, pages d'erreur des liens tracés) |
@@ -2506,6 +2511,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | Module | Ce qu'il porte |
 |---|---|
 | `web/lib/format.ts`, `web/lib/day.ts` | les seuls porteurs des tags BCP47. ⚠️ Un nombre affiché passe par `fmtNum`, jamais par un `toLocaleString('fr-FR')` écrit sur place : celui-là ignore la langue choisie |
+| `web/lib/cout-moyen.ts` -> `coutMoyenParEngagement`, `coutToutConfondu` | 🔴 le chiffre du haut de la carte Coûts : le rapport des TOTAUX, pas la moyenne des ratios. Une campagne sans coût connu sort des deux termes, une campagne sans engagé GARDE sa dépense (Julien, 2026-09-30). Campagnes push et publicités ne se réunissent que dans une même devise connue, sinon le chiffre reste celui du push et `raison` fait dire pourquoi |
 | `web/components/EnteteAgent.tsx` | l'en-tête des DEUX écrans de réglage d'agent (l'agent de Meta, la fiche d'un agent IA) : logo, identité, état, ce qui reste à régler, ce qu'on ne sait pas, et le nombre de messages. 🔴 Purement présentationnel, il ne lit rien : les deux écrans le remplissent depuis des sources différentes. Trois de ses props distinguent `null` (« on ne sait pas ») d'une liste vide (« tout est réglé ») ; les confondre fait AFFIRMER à l'écran ce que personne n'a mesuré |
 | `web/components/MbaTabs.tsx` | le menu d'onglets de ces deux mêmes écrans, en barre ou en colonne (`orientation`). 🔴 Une SEULE liste est rendue dans les deux cas : un second bloc ferait exister chaque `data-testid` en double et casserait les clics de toutes les suites e2e qui les utilisent |
 | `web/components/PastilleNumero.tsx` | l'état d'un numéro WhatsApp (puce colorée + libellé), tel que `getAccountStatus` le rend. Extrait de l'Accueil pour l'en-tête de l'agent de Meta |

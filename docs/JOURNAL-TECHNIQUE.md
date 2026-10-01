@@ -5,6 +5,72 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-01 : essai réel du « Traité », et la réouverture devient une escalade (`23159e8f`)
+
+Sur la conversation de Julien (espace MessagingMe), délai de reprise réglé à 1 minute le temps de l'essai puis remis
+à vide, chaque étape relue en base par une sonde en lecture seule.
+
+- **Ce qui marche** : « Traité » relance le délai depuis le clic ; un message dans la minute reste à l'équipe, sans
+  réponse de l'agent, rouvre la conversation et ouvre une demande (`escaladee`, cause réouverture) ; un message
+  après le délai repart à l'agent (`rendue_mba`, « le contact réécrit après le délai de reprise »), qui répond en
+  13 s, sans demande ; « Rendre la main » sans erreur.
+- **Le trou** : la demande ouverte par la réouverture ne posait pas `escaladee_le`. Le délai courait donc toujours
+  depuis « Traité », et le balayage (toutes les 5 min) a rendu la conversation à l'agent, le « Ok » du client sans
+  réponse de personne. Avec le délai réel de 2 h, un client qui réécrit 1 h 50 après « Traité » ne laissait que
+  10 min à l'équipe.
+- **Décision de Julien** : la réouverture est une escalade. `ouvrirUneDemande` pose `escaladee_le` dans la même
+  requête que l'événement, comme `setControlOwner` le faisait déjà pour une demande ouverte par une bascule. Test
+  vérifié dans les deux sens, déployé, puis rejoué en réel : le balayage suivant, délai échu, a laissé la
+  conversation à l'équipe.
+- **Le point de départ, qui était la règle** : une escalade de l'agent de Meta de la veille restait à l'équipe 12 h
+  plus tard, sans réponse (une escalade sans réponse n'est jamais rendue). Le message de passation de l'agent est en
+  anglais (`todo.md`).
+- **Incident de doc** : la mise à jour de `features.md` qui a suivi a périmé une seconde fiche d'aide
+  (`repondre-dans-l-inbox`), poussée sans que le push soit conditionné au test ; réparée dix minutes plus tard
+  (`08cf7b8a`), avant tout commit de code d'un pair. La règle est dans `CLAUDE.md`.
+
+## 2026-09-29 et 30 : l'agent de Meta en mode liste, le KPI Performance, le délai de reprise, et les publicités dans les coûts
+
+- **Mode liste de l'agent de Meta** (`3b006402`, spec `caf45bf6`, plan `3202c5fe`, migration 0195) : demande de
+  Julien, l'agent se tait pendant un scénario et ne parle que quand le client fait quelque chose d'imprévu.
+  `ai_audience: ALLOWLISTED_ONLY` toujours posé, la plateforme tient la liste (`mba_liste`). Règle 1 : un modèle
+  retire le contact avant de partir (`retirerAvantUnModele`, câblé dans `clientForTenant`). Règle 2 : un message
+  que personne ne prend est confié (ajout, `release`, `agent_event`, événement `message_sans_suite`). Le correctif
+  `a3d67af7` et la fausse action `take` sont retirés. Essai réel en quatre étapes réussi.
+- **Les mesures Meta qui ont décidé du lot** : un modèle rend le fil à l'agent, un message libre le prend ; `take`
+  ne sert à rien ; un `release` est refusé quand l'agent tient déjà le fil ; un ajout en double à la liste rend 400
+  sans code distinctif (d'où notre table, et la relecture de la liste sur un 400) ; un `standby` d'un contact absent
+  de la liste est requalifié en `messages`.
+- **KPI Quantitatif > Performance** (`d8d481bd`, 0194 ; correctif `6aff2337`) : demandes calculées à la lecture
+  depuis `conversation_evenements`. Arbitrages de Julien : le chrono part au message du client, la fin automatique
+  arrête la résolution à la dernière réponse de l'équipe. Essai réel : une demande, 2 min 1 s de réponse, 2 min 4 s
+  de résolution.
+- **« Traité » et le délai de reprise** (`53c112e8`) : « Traité » relance le délai depuis le clic ; après le délai,
+  un client qui écrit dans une conversation de l'équipe part à l'agent tout de suite, même après 24 h ; avant, une
+  réouverture d'une conversation « Traité » ou archivée ouvre une demande. La relecture a trouvé deux rouges,
+  corrigés : un message reçu par un parcours était rejoué par la remise, et la réponse à une campagne au devenir
+  Inbox, sur un fil de l'équipe au délai échu, partait à l'agent. Essai réel le 2026-10-01 (entrée précédente).
+- **La miniature du modèle dans le bloc « Envoi template »** (`fc979f27`).
+- **Impressions et couverture des publicités** (`3be8e309`, 0197) : `impressions` et `reach` lus dans le même appel
+  que dépense et clics, `entierOuRien` sur les trois comptes. Premières valeurs réelles : 230 impressions,
+  217 personnes, 1,30 €, 5 clics.
+- **Coût par engagement des publicités CTWA** (`7ace4c9b`, puis `c6255bd4` et `5c740c73` ; 0198) : arbitrages de
+  Julien en quatre questions (deux accordéons, chiffre du haut tout confondu, dépense par jour pour suivre la
+  période, et une campagne sans engagé qui garde sa dépense au numérateur). Mesuré avant d'écrire, sur la vraie
+  campagne : `time_increment(1)` rend une ligne par jour de diffusion dont la somme égale le cumul, et l'alias
+  `.as(jours)` fait passer les deux lectures dans le même appel. Relecture indépendante : 0 rouge, 14 jaunes, 8
+  corrigés et déployés, le reste dans `todo.md`. Les 47 e2e de la carte Coûts lancés à la main (ils ne tournent pas
+  en CI). Vu à l'écran par Julien, dépense recoupée avec le Gestionnaire de Meta.
+- **Incidents** :
+  - `8190c1ea`, un commit de doc seule (donc sans CI), a périmé la fiche d'aide `creer-une-publicite` ; le job
+    `unit` d'un pair (`ed9aa451`) est devenu rouge, réparé par lui (`9f942d18`).
+  - L'embarquement de Groupama PJ ne montrait que le portefeuille Aux'R'M dans la fenêtre de Meta. Plusieurs
+    hypothèses de configuration ont été explorées (intégrations, `business_management`, MM Lite, cas d'usage
+    publicitaire) : la cause était une erreur de manipulation côté Facebook, aucun code n'était en cause. Le numéro
+    est branché depuis.
+- **App Review des publicités** : un texte et une vidéo PAR permission (doc Meta), inutile tant qu'un admin de l'app
+  branche le compte d'un client (accès standard, mesuré sur Groupama PJ).
+
 ## 2026-10-01 : tout sur la fiche, lot 2b, filtrer et conditionner sur la dernière analyse
 
 **Serveur (`8b9e92fc`), déployé le 2026-10-01 vers 1 h 40 (heure de Paris), puis console (`76485b62`).** Les
