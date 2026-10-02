@@ -7,10 +7,9 @@ import { repondreAutomatiquement } from './aide/confirmation';
  * croquis de Julien) : une liste des outils de l'agent de Meta et d'eux seuls, un gros bouton « Ajouter un
  * outil », un état chez Meta par ligne, et enregistrer envoie chez Meta.
  *
- * ⚠️ LES CAS DE L'ANCIEN FICHIER SONT CONSERVÉS OU REMPLACÉS NOMMÉMENT (plan, Task 9). Un seul est retiré :
- * « un outil MCP mort est lisible ». Un outil MCP ne peut plus être exposé à l'agent de Meta (Meta n'appelle
- * que du HTTP), la liste ne peut donc plus en porter ; il est remplacé par « une cible manquante s'affiche en
- * rouge ».
+ * ⚠️ LES CAS DE L'ANCIEN FICHIER SONT CONSERVÉS OU REMPLACÉS NOMMÉMENT (plan, Task 9). Un seul avait été retiré,
+ * « un outil MCP mort est lisible », quand un outil MCP ne partait pas chez Meta. Il en repart depuis le 2026-10-02
+ * (notre relais l'appelle pour Meta) : « un outil MCP disparu de son serveur le dit » le remet, plus bas.
  */
 const OUTIL = {
   id: 'o1',
@@ -59,6 +58,10 @@ interface Monture {
   listeEchoue?: boolean;
   requetesEchouent?: boolean;
   fieldsEchouent?: boolean;
+  /** Les outils MCP proposables (`GET /mba-outils/mcp`). */
+  mcp?: unknown[];
+  /** L'API déployée n'a PAS encore la route MCP : elle rend 404. */
+  mcpAbsente?: boolean;
 }
 
 async function monterOutils(page: Page, m: Monture = {}) {
@@ -94,6 +97,15 @@ async function monterOutils(page: Page, m: Monture = {}) {
         return true;
       }
       if (url.includes(`/tenants/${TENANT}/workflows`)) { await json({ workflows: m.workflows ?? [] }); return true; }
+      // AVANT la liste des outils, comme les blocs : son adresse contient aussi `/mba-outils`.
+      if (url.includes(`/tenants/${TENANT}/mba-outils/mcp`)) {
+        if (m.mcpAbsente) { await json({ error: 'Not Found' }, 404); return true; }
+        if (method === 'GET') { await json({ outils: m.mcp ?? [] }); return true; }
+        ecrits.push({ method, url, body });
+        ordre.push(`${method} mcp`);
+        await json({ id: 'm1' }, 201);
+        return true;
+      }
       if (url.includes(`/tenants/${TENANT}/mba-outils`)) {
         if (method === 'GET') {
           if (m.listeEchoue) { await json({ error: 'base indisponible' }, 500); return true; }
@@ -934,6 +946,48 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect.poll(() => m.ecrits.length).toBe(1);
     expect(m.ecrits[0]!.method).toBe('PATCH');
     expect(m.ecrits[0]!.body).not.toHaveProperty('cible');
+  });
+
+  test('🔴 un outil MCP de la bibliothèque se DONNE à l’agent de Meta, puis part chez Meta dans le même geste', async ({ page }) => {
+    const PROPOSABLE = {
+      id: 'm1', name: 'notion_search', title: 'Chercher dans Notion', description: 'd', serveur: 'notion',
+      risque: 'read', aussiUtilisePar: ['Assistant'],
+    };
+    // Après l'ajout, le plan chez Meta porte l'outil à créer : c'est lui que l'écran envoie.
+    const m = await monterOutils(page, { outils: [OUTIL], mcp: [PROPOSABLE], gestes: () => (m.ecrits.length > 0 ? [{ type: 'outil_creer', nom: 'notion_search' }] : []) });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outils-mcp-notion_search')).toContainText('serveur notion');
+    await page.getByTestId('mba-outils-mcp-donner-m1').click();
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(m.ecrits[0]).toMatchObject({ method: 'POST', url: expect.stringContaining('/mba-outils/mcp/m1') });
+    expect(m.ordre).toEqual(['POST mcp', 'publication']);
+  });
+
+  test('🔴 la ligne d’un outil MCP dit son serveur et renvoie vers ses réglages, sans « Modifier »', async ({ page }) => {
+    const MCP_LIGNE = { ...OUTIL, id: 'o3', name: 'notion_search', type: 'mcp', cible: { type: 'mcp', sourceId: 's1', serveur: 'notion' } };
+    await monterOutils(page, { outils: [MCP_LIGNE] });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outil-type-o3')).toHaveText('MCP');
+    await expect(page.getByTestId('mba-outil-cible-o3')).toHaveText('Serveur MCP : notion');
+    await expect(page.getByTestId('mba-outil-regler-o3')).toHaveAttribute('href', '/connecteurs-mcp');
+    await expect(page.getByTestId('mba-outil-modifier-o3')).toHaveCount(0);
+  });
+
+  test('🔴 un outil MCP disparu de son serveur le dit, et n’est pas « Chez Meta »', async ({ page }) => {
+    const MORT = { ...OUTIL, id: 'o4', name: 'notion_search', type: 'mcp', cible: { type: 'mcp', sourceId: 's1', serveur: 'notion' },
+      cibleManquante: 'cet outil a disparu de son serveur MCP : il n’est plus appelable', publiable: false };
+    await monterOutils(page, { outils: [MORT] });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outil-manque-o4')).toContainText('disparu');
+    await expect(page.getByTestId('mba-outil-etat-o4')).toContainText('Pas chez Meta');
+  });
+
+  test('🔴 une API sans la route MCP (404) ne casse pas l’onglet : la section se tait', async ({ page }) => {
+    await monterOutils(page, { outils: [OUTIL], mcpAbsente: true });
+    await page.goto('/mba/parametres?tab=outils');
+    await expect(page.getByTestId('mba-outil-suivi_commande')).toBeVisible();
+    await expect(page.getByTestId('mba-outils-mcp')).toHaveCount(0);
+    await expect(page.getByTestId('mba-outils-lecture-ratee')).toHaveCount(0);
   });
 
   test('`/outils` renvoie vers l’onglet de l’agent de Meta', async ({ page }) => {

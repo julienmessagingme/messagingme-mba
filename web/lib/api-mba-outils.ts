@@ -12,6 +12,7 @@ export type CibleVue =
   | { type: 'bloc'; workflowId: string; code: string; scenario: string | null; bloc: string | null }
   | { type: 'scenario'; workflowId: string; scenario: string | null }
   | { type: 'connecteur'; requeteId: string; libelle: string | null }
+  | { type: 'mcp'; sourceId: string | null; serveur: string | null }
   | { type: 'inconnu' };
 
 export interface OutilMbaVue {
@@ -20,11 +21,12 @@ export interface OutilMbaVue {
   title: string;
   description: string;
   nePasUtiliser: string;
-  type: TypeOutilMba | 'inconnu';
+  /** `mcp` ne se crée pas dans cet onglet : il vient de la bibliothèque, ses réglages vivent dans Connecteurs MCP. */
+  type: TypeOutilMba | 'mcp' | 'inconnu';
   cible: CibleVue;
   /** Pourquoi la cible n'existe plus, ou `null`. Texte du serveur, affiché tel quel. */
   cibleManquante: string | null;
-  /** Les agents IA qui partagent cet outil (connecteur seulement). */
+  /** Les agents IA qui partagent cet outil (connecteur et MCP). */
   aussiUtilisePar: string[];
   /**
    * Faux quand le départ de son auteur l'a éteint : l'agent de Meta ne peut plus s'en servir (le relais refuse).
@@ -58,6 +60,17 @@ export interface BlocPropose {
 
 export interface TextesOutil { name: string; title: string; description: string; nePasUtiliser: string }
 
+/** Un outil MCP de la bibliothèque que l'agent de Meta peut recevoir (miroir de `src/mba/vue-outils.ts`). */
+export interface OutilMcpProposable {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  serveur: string | null;
+  risque: 'read' | 'write' | 'irreversible';
+  aussiUtilisePar: string[];
+}
+
 const base = (tenantId: string): string => `/tenants/${tenantId}/mba-outils`;
 
 export function listerOutilsMba(tenantId: string): Promise<{ outils: OutilMbaVue[]; phoneNumberId: string | null }> {
@@ -81,6 +94,16 @@ export async function retirerOutilMba(tenantId: string, id: string): Promise<voi
 /** Les blocs d'UN scénario : l'écran choisit d'abord le scénario, puis le bloc. */
 export function listerBlocsMba(tenantId: string, workflowId: string): Promise<{ blocs: BlocPropose[] }> {
   return request(`${base(tenantId)}/blocs?workflowId=${encodeURIComponent(workflowId)}`);
+}
+
+/** Les outils MCP de la bibliothèque, appelables et pas encore donnés à l'agent de Meta (2026-10-02). */
+export function listerMcpProposablesMba(tenantId: string): Promise<{ outils: OutilMcpProposable[] }> {
+  return request(`${base(tenantId)}/mcp`);
+}
+
+/** Donner un outil MCP de la bibliothèque à l'agent de Meta : le serveur le rattache et l'active. */
+export function proposerMcpMba(tenantId: string, id: string): Promise<{ id: string }> {
+  return request(`${base(tenantId)}/mcp/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({}) });
 }
 
 /** Rallumer un outil éteint par le départ de son auteur (plan 2026-09-21-outils-maison-mba, écart 4). */

@@ -1,9 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import type { OutilDefini, JournalAppels } from '../agent/catalog';
+import type { OutilDefini, JournalAppels, StatutAppel } from '../agent/catalog';
 import type { RequeteConnecteur } from '../agent/requetes';
 import type { AppelConnecteur } from '../agent/resolvers/http';
-import type { SortieResolveur } from '../agent/executor';
+import { borner, rediger, type ContexteAppel, type ResolveurOutil, type SortieResolveur } from '../agent/executor';
+import { paramsOutil } from '../agent/llm/tool-schema';
+import { completerArguments } from '../agent/completer-arguments';
+import { variablesMcp } from '../mba/outils-a-publier';
 import { consommateurMba } from '../agent/consommateur';
 import { REPONSE_EN_COURS, lireCibleMaison } from '../mba/outils-maison';
 import { erreurDePanne, executerOutilMaison, type DepsMaison, type IssueMaison } from '../mba/executer-maison';
@@ -31,11 +34,14 @@ export interface MbaRelaisDeps {
   numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
   /** Les outils actifs pour un consommateur, filtrés sur l'espace. */
   catalogue: {
-    listActifsConsommateur(
-      tenantId: string,
-      consommateur: string,
-    ): Promise<Array<Pick<OutilDefini, 'id' | 'name' | 'origin' | 'requestId' | 'timeoutMs' | 'maxBytes' | 'binding'>>>;
+    /** La définition complète : un outil MCP passe tout entier au résolveur (source, schéma, nom distant). */
+    listActifsConsommateur(tenantId: string, consommateur: string): Promise<OutilDefini[]>;
   };
+  /**
+   * Le résolveur des outils MCP, le même que celui des agents IA (`creerResolveurMcp`) : ses gardes (source active,
+   * adresse publique, transport borné) ne sont pas recopiées ici (2026-10-02).
+   */
+  resolveurMcp: ResolveurOutil;
   requetes: { parId(tenantId: string, id: string): Promise<Pick<RequeteConnecteur, 'variables'> | null> };
   /** La projection du contact `{nom, tags, champs}`, ou `null` s'il est inconnu. Jamais la ligne brute. */
   contacts: { projectionPourTiers(tenantId: string, waId: string): Promise<Record<string, unknown> | null> };
@@ -95,7 +101,8 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
       : (await deps.catalogue.listActifsConsommateur(tenant, consommateurMba(pn))).find((o) => o.id === req.params.outilId);
     if (!outil) return refus(PAS_PROPOSE);
     const cible = outil.origin === 'mba' ? lireCibleMaison(outil.binding) : null;
-    if (cible === null && (outil.origin !== 'http' || !outil.requestId)) return refus(PAS_PROPOSE);
+    const estMcp = outil.origin === 'mcp' && outil.mcpNonActivable === null && outil.mcpIndisponibleLe === null;
+    if (cible === null && !estMcp && (outil.origin !== 'http' || !outil.requestId)) return refus(PAS_PROPOSE);
 
     // 2. Le contact, désigné par l'en-tête que Meta remplit lui-même (macro `WHATSAPP_PHONE_NUMBER`). On
     //    n'appelle jamais le système du client sans contact identifié.
@@ -157,6 +164,7 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
       }
       return rendre(await geste);
     }
+    if (estMcp) return appelerMcp(tenant, outil, waId, contact);
     if (!outil.requestId) return refus(PAS_PROPOSE);
 
     // 3. Les valeurs du modèle, validées contre les variables `modele` déclarées, et elles seules. Le lecteur JSON
@@ -182,5 +190,58 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     if (sortie.ok === false) return refus(texteErreur(sortie.contenu));
     const reponse = (sortie.contenu as { reponse?: unknown } | null)?.reponse ?? null;
     return reply.code(200).send({ succes: true, statut: sortie.httpStatus ?? null, reponse });
+
+    /**
+     * Un outil MCP (2026-10-02, route A) : Meta parle HTTP à notre relais, nous parlons MCP au serveur du client. Le
+     * corps porte les paramètres REMPLIS PAR LE MODÈLE (`variablesMcp`, ceux qu'on a déclarés à Meta) ; les autres sont
+     * posés ici depuis la fiche du contact identifié par l'en-tête de Meta (`completerArguments`), jamais lus dans le
+     * corps. Puis le résolveur des agents IA, sous le délai de l'outil, journalisé sous l'appelant `mba`, borné comme
+     * dans l'exécuteur.
+     */
+    async function appelerMcp(t: string, o: OutilDefini, wa: string, fiche: Record<string, unknown>) {
+      const variables = variablesMcp(o.params);
+      if (variables.length > 0 && corpsIllisible((req as { rawBody?: unknown }).rawBody)) {
+        return refus('le corps de la requête n’est pas du JSON lisible');
+      }
+      const lu = lireValeursModele(variables, req.body);
+      if (!lu.ok) return refus(lu.erreur);
+      const args = completerArguments(paramsOutil(o.params), lu.valeurs, { waId: wa, contact: fiche });
+      const debut = Date.now();
+      const ligne = await deps.journal.ouvrir({
+        tenantId: t, sessionId: null, toolId: o.id, toolName: o.name, origin: 'mcp',
+        argsRediges: rediger(lu.valeurs), source: 'mba',
+      }).catch(() => null);
+      let sortie: SortieResolveur;
+      let statut: StatutAppel;
+      try {
+        sortie = await deps.resolveurMcp({ outil: o, args, ctx: contexteDuRelais(t, wa, fiche, o.timeoutMs), signal: AbortSignal.timeout(o.timeoutMs) });
+        statut = sortie.ok === false ? 'erreur_outil' : 'ok';
+      } catch (err) {
+        console.error(`mba-relais: outil MCP ${o.name} en échec :`, messageDe(err));
+        sortie = { ok: false, contenu: { erreur: 'le serveur MCP n’a pas répondu' }, erreur: 'le serveur MCP n’a pas répondu' };
+        statut = 'erreur_protocole';
+      }
+      const { contenu, taille } = borner(sortie.contenu, o.maxBytes);
+      if (ligne !== null) {
+        await deps.journal.clore({
+          tenantId: t, id: ligne, status: statut, dureeMs: Date.now() - debut, tailleReponse: taille,
+          ...(sortie.ok === false ? { erreur: sortie.erreur ?? texteErreur(sortie.contenu) } : {}),
+        }).catch(() => {});
+      }
+      if (sortie.ok === false) return refus(sortie.erreur ?? texteErreur(sortie.contenu));
+      return reply.code(200).send({ succes: true, reponse: contenu });
+    }
   });
+}
+
+/**
+ * Le contexte d'appel que le résolveur MCP reçoit depuis le relais. Le relais n'a ni session ni agent IA : ces champs ne
+ * servent qu'à l'exécuteur d'un agent IA (plafonds, politique du contact inconnu), le résolveur MCP n'en lit que
+ * l'espace (`creerResolveurMcp`). Ils sont posés neutres plutôt que de rendre le contrat facultatif pour tous.
+ */
+function contexteDuRelais(tenantId: string, waId: string, contact: Record<string, unknown>, delaiMs: number): ContexteAppel {
+  return {
+    tenantId, agentId: '', sessionId: '', runId: '', workflowId: '', waId, contact,
+    contactInconnu: 'tous', appelsRestants: 1, budgetRestantMicroEur: 0, deadline: Date.now() + delaiMs,
+  };
 }

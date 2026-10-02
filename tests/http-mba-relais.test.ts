@@ -11,7 +11,8 @@ import { FIN_DE_TOUR_MAX_MS } from '../src/mba/fin-de-tour';
 import { FILET_ARRET_MS } from '../src/shutdown';
 import { REPONSE_EN_COURS, REPONSE_MAISON } from '../src/mba/outils-maison';
 import type { AppelConnecteur } from '../src/agent/resolvers/http';
-import type { JournalAppels } from '../src/agent/catalog';
+import type { JournalAppels, OutilDefini } from '../src/agent/catalog';
+import type { EntreeResolveur } from '../src/agent/executor';
 import { cleApiDeTest } from './aide/cle-api';
 import { baseDuRelais } from '../src/mba/relais';
 import { corpsOutilMeta } from '../src/mba/publication';
@@ -35,7 +36,10 @@ const CLE_RELAIS = cleApiDeTest('relais');
 const CLE_CONTACTS = cleApiDeTest('contacts');
 const CLE_AUTRE_ESPACE = cleApiDeTest('autre_espace');
 
-const OUTIL = { id: 'o1', name: 'add_tag', origin: 'http' as const, requestId: 'rq1', timeoutMs: 5_000, maxBytes: 16_384, binding: {} };
+const OUTIL = {
+  id: 'o1', name: 'add_tag', origin: 'http' as const, requestId: 'rq1', timeoutMs: 5_000, maxBytes: 16_384, binding: {},
+  params: [], mcpNonActivable: null, mcpIndisponibleLe: null,
+} as unknown as OutilDefini;
 
 function monter(over: Partial<MbaRelaisDeps> = {}) {
   const appels: AppelConnecteur[] = [];
@@ -665,5 +669,75 @@ describe('le relais quand l’API tourne en plusieurs copies', () => {
   it('🔴 l’attente de l’arrêt couvre la fin de tour la plus longue, et laisse à la file et au pool de quoi se fermer', () => {
     expect(ATTENTE_GESTES_A_L_ARRET_MS).toBeGreaterThan(FIN_DE_TOUR_MAX_MS);
     expect(ATTENTE_GESTES_A_L_ARRET_MS).toBeLessThanOrEqual(FILET_ARRET_MS - 5_000);
+  });
+});
+
+/**
+ * 🔴 LES OUTILS MCP PAR LE RELAIS (route A, 2026-10-02). Meta parle HTTP à notre relais, nous parlons MCP au serveur du
+ * client par le résolveur des agents IA. Ce qui compte : les paramètres cloués à la fiche du contact sont posés par
+ * NOUS, jamais pris dans le corps que Meta envoie (sinon le modèle de Meta, donc le contact qui écrit, pourrait demander
+ * la donnée d'un autre).
+ */
+describe('le relais et les outils MCP', () => {
+  const MCP = {
+    id: 'm1', name: 'notion_search', origin: 'mcp' as const, requestId: null, timeoutMs: 5_000, maxBytes: 16_384,
+    binding: { outilDistant: 'search' }, sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null,
+    params: [
+      { name: 'question', type: 'string', source: 'modele', required: true },
+      { name: 'reference', type: 'string', source: 'champ', cle: 'tag_ns' },
+    ],
+  } as unknown as OutilDefini;
+  const avecMcp = (outil: OutilDefini, resolveur: MbaRelaisDeps['resolveurMcp'], journal?: JournalAppels) => monter({
+    catalogue: { listActifsConsommateur: async (t, c) => (t === 't1' && c === 'mba:pn1' ? [outil] : []) },
+    resolveurMcp: resolveur,
+    ...(journal ? { journal } : {}),
+  });
+
+  it('🔴 appelle le résolveur MCP avec les valeurs du modèle ET celles de la fiche, jamais celles du corps', async () => {
+    const vus: EntreeResolveur[] = [];
+    const { app } = avecMcp(MCP, async (e) => { vus.push(e); return { ok: true, contenu: { resultats: ['page 1'] } }; });
+    const res = await poster(app, CLE_RELAIS, { question: 'horaires ?', reference: 'celle-d-un-autre' }, '+33612345678', 'm1');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ succes: true, reponse: { resultats: ['page 1'] } });
+    expect(vus).toHaveLength(1);
+    // La référence vient du champ `tag_ns` de la fiche (« vip »), pas du corps.
+    expect(vus[0]!.args).toEqual({ question: 'horaires ?', reference: 'vip' });
+    expect(vus[0]!.outil.id).toBe('m1');
+    expect(vus[0]!.ctx.tenantId).toBe('t1');
+    expect(vus[0]!.ctx.waId).toBe('33612345678');
+  });
+
+  it('journalise l’appel sous l’origine `mcp` et l’appelant `mba`, avec les seuls arguments du modèle', async () => {
+    const ouverts: unknown[] = [];
+    const clos: unknown[] = [];
+    const journal = { ouvrir: async (l: unknown) => { ouverts.push(l); return 'l9'; }, clore: async (l: unknown) => { clos.push(l); } } as unknown as JournalAppels;
+    const { app } = avecMcp(MCP, async () => ({ ok: true, contenu: { ok: true } }), journal);
+    await poster(app, CLE_RELAIS, { question: 'q' }, '+33612345678', 'm1');
+    expect(ouverts[0]).toMatchObject({ tenantId: 't1', toolId: 'm1', origin: 'mcp', source: 'mba', argsRediges: { question: 'q' } });
+    expect(clos[0]).toMatchObject({ id: 'l9', status: 'ok' });
+  });
+
+  it('un refus du serveur MCP part en `succes: false`, lisible par le modèle de Meta', async () => {
+    const { app } = avecMcp(MCP, async () => ({ ok: false, contenu: { erreur: 'le serveur MCP est injoignable' }, erreur: 'le serveur MCP est injoignable' }));
+    const res = await poster(app, CLE_RELAIS, { question: 'q' }, '+33612345678', 'm1');
+    expect(res.json()).toEqual({ succes: false, erreur: 'le serveur MCP est injoignable' });
+  });
+
+  it('🔴 un paramètre requis du modèle qui manque : refusé AVANT tout appel au serveur', async () => {
+    let appele = false;
+    const { app } = avecMcp(MCP, async () => { appele = true; return { ok: true, contenu: {} }; });
+    const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'm1');
+    expect(res.json().succes).toBe(false);
+    expect(appele).toBe(false);
+  });
+
+  it('🔴 un outil MCP non activable ou disparu n’est pas proposé, même s’il est encore activé', async () => {
+    for (const casse of [{ mcpNonActivable: 'schéma imbriqué' }, { mcpIndisponibleLe: new Date() }]) {
+      let appele = false;
+      const { app } = avecMcp({ ...MCP, ...casse } as OutilDefini, async () => { appele = true; return { ok: true, contenu: {} }; });
+      const res = await poster(app, CLE_RELAIS, { question: 'q' }, '+33612345678', 'm1');
+      expect(res.json()).toEqual({ succes: false, erreur: 'cet outil n’est pas proposé à l’agent de Meta' });
+      expect(appele).toBe(false);
+    }
   });
 });

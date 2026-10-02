@@ -97,6 +97,7 @@ import { creerTraducteur, type LangueConsole } from './traduction/traduire';
 import { PgTraductionStore } from './traduction/traduire.pg';
 import { traduireFil } from './traduction/fil';
 import { creerAppelConnecteur } from './agent/resolvers/http';
+import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { lireContexteAvecReglages } from './agent/contexte';
 import { transcrireMessage } from './inbox/transcrire';
 import { lireMediaRecu } from './inbox/media-entrant';
@@ -1254,15 +1255,17 @@ async function main(): Promise<void> {
           const h = (o.binding as { handler?: unknown } | null)?.handler;
           return h === 'bloc_fixe' || h === 'scenario_fixe';
         });
-        const [requetes, champs, bibliotheque, workflows] = await Promise.all([
+        const [requetes, champs, bibliotheque, workflows, sources] = await Promise.all([
           agentRequetes.lister(tenant), fieldStore.list(tenant), toolCatalog.listCatalogue(tenant),
           veutScenarios ? workflowStore.list(tenant) : Promise.resolve([]),
+          outils.some((o) => o.origin === 'mcp') ? agentSources.lister(tenant) : Promise.resolve([]),
         ]);
         return {
           requetes: new Map(requetes.map((r) => [r.id, { label: r.label }])),
           champs: new Set(champs.map((f) => f.key)),
           bibliotheque: new Map(bibliotheque.map((o) => [o.id, o])),
           workflows: new Map(workflows.map((w) => [w.id, { name: w.name, graph: w.graph }])),
+          serveurs: new Map(sources.map((s) => [s.id, { label: s.label }])),
         };
       },
       // Le graphe publié, celui que le relais joue : jamais le brouillon.
@@ -1288,6 +1291,14 @@ async function main(): Promise<void> {
       modifierConnecteur: (tenant, pn, id, patch) => toolCatalog.patchConsommateur(tenant, consommateurMba(pn), id, patch),
       reactiver: async (tenant, pn, id, par) =>
         (await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), id, true, par)) !== null,
+      bibliotheque: (tenant) => toolCatalog.listCatalogue(tenant),
+      serveurs: async (tenant) => new Map((await agentSources.lister(tenant))
+        .filter((s) => s.kind === 'mcp').map((s) => [s.id, { label: s.label }])),
+      // Deux gestes, comme `creerConnecteur` : rattacher (inactif), puis activer au nom de l'administrateur.
+      proposerMcp: async (tenant, pn, id, par) => {
+        if (!(await toolCatalog.rattacherConsommateur(tenant, consommateurMba(pn), id))) return false;
+        return (await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), id, true, par)) !== null;
+      },
     },
     /**
      * Publication du catalogue chez Meta, sous forme de relais.
@@ -2112,6 +2123,9 @@ async function main(): Promise<void> {
       mbaRelais: {
         numeros: repo,
         catalogue: toolCatalog,
+        // Le même résolveur que les agents IA du worker (`src/worker.ts`) : un outil MCP proposé à l'agent de Meta passe
+        // par notre relais, puis par lui, avec ses gardes (source active, adresse publique, transport borné).
+        resolveurMcp: creerResolveurMcp({ sources: agentSources }),
         requetes: agentRequetes,
         // 🔴 Projection, jamais la ligne brute (même règle que `lireContact` du worker) : le numéro, le BSUID
         // et le statut d'opt-in n'ont rien à faire dans ce qui part vers le système du client.

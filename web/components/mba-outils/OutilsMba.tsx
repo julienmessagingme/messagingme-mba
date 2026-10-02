@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { apercuPublicationMba, publierChezMeta, type GestePublication } from '@/lib/api-agent-tools';
 import {
-  listerOutilsMba, reactiverOutilMba, retirerOutilMba, type OutilMbaVue, type TypeOutilMba,
+  listerMcpProposablesMba, listerOutilsMba, proposerMcpMba, reactiverOutilMba, retirerOutilMba,
+  type OutilMbaVue, type OutilMcpProposable, type TypeOutilMba,
 } from '@/lib/api-mba-outils';
 import {
   TEXTES_PAR_TYPE, chezMetaSansLigne, effacementsImprevus, etatsChezMeta, type EtatChezMeta,
@@ -41,6 +43,9 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   const t = useT();
   const confirmer = useConfirmation();
   const [outils, setOutils] = useState<OutilMbaVue[] | null>(null);
+  // Les outils MCP de la bibliothèque, pas encore donnés à l'agent de Meta. BEST-EFFORT : une API d'avant cette route
+  // (la console part sur Vercel avant le déploiement de l'API) rend 404, et la section se tait au lieu de casser.
+  const [mcpProposables, setMcpProposables] = useState<OutilMcpProposable[]>([]);
   // 🔴 Une lecture RATÉE n'est pas une liste VIDE : les confondre disait « Aucun outil » à un espace qui en a.
   const [lectureRatee, setLectureRatee] = useState<string | null>(null);
   const [gestes, setGestes] = useState<GestePublication[] | null>(null);
@@ -80,8 +85,12 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
   /** La liste seule. Avant un envoi, c'est tout ce qu'il faut : `envoyer` relit déjà le plan chez Meta. */
   const chargerListe = useCallback(async (): Promise<void> => {
     try {
-      const r = await listerOutilsMba(tenantId);
+      const [r, mcp] = await Promise.all([
+        listerOutilsMba(tenantId),
+        listerMcpProposablesMba(tenantId).then((m) => (Array.isArray(m?.outils) ? m.outils : [])).catch(() => []),
+      ]);
       setOutils(Array.isArray(r?.outils) ? r.outils : []);
+      setMcpProposables(mcp);
       setLectureRatee(null);
     } catch (e) {
       setOutils((avant) => avant ?? []);
@@ -181,6 +190,25 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
     }
   };
 
+  /**
+   * Donner un outil MCP à l'agent de Meta, puis l'envoyer chez Meta dans le même geste, comme un outil enregistré. Le
+   * geste occupe l'écran (`enregistrementEnCours`) : un retrait lancé pendant ce temps serait confirmé comme imprévu.
+   */
+  const proposerMcp = async (o: OutilMcpProposable): Promise<void> => {
+    if (occupe) return;
+    setEnregistrementEnCours(true);
+    setErreur(null);
+    try {
+      await proposerMcpMba(tenantId, o.id);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : t('L’ajout a échoué.', 'Adding failed.'));
+      setEnregistrementEnCours(false);
+      return;
+    }
+    setEnregistrementEnCours(false);
+    await apresEnregistrement(new Set());
+  };
+
   const reactiver = async (o: OutilMbaVue): Promise<void> => {
     setErreur(null);
     try {
@@ -267,11 +295,42 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
               occupe={occupe} envoiEnCours={envoiEnCours}
               onEnvoyer={() => { void envoyer(new Set()); }}
               onRetirer={() => { void envoyer(new Set([o.name])); }}
-              onModifier={() => { if (o.type !== 'inconnu') setMode({ vue: 'form', type: o.type, outil: o }); }}
+              onModifier={() => { if (o.type !== 'inconnu' && o.type !== 'mcp') setMode({ vue: 'form', type: o.type, outil: o }); }}
               onSupprimer={() => { void supprimer(o); }}
               onReactiver={() => { void reactiver(o); }} />
           ))}
         </ul>
+      )}
+
+      {isAdmin && mode.vue === 'liste' && mcpProposables.length > 0 && (
+        <div className="rounded-carte border border-ink-200 bg-ink-50 p-3" data-testid="mba-outils-mcp">
+          <p className="text-sm font-semibold text-ink-900">{t('Depuis vos serveurs MCP', 'From your MCP servers')}</p>
+          <p className="mb-2 text-xs text-ink-500">
+            {t('Importés dans Tools > Connecteurs MCP, pas encore donnés à l’agent de Meta. Leurs paramètres se règlent là-bas : ce qui vient de la fiche du client y est posé par nous, jamais par l’agent.',
+              'Imported in Tools > MCP connectors, not yet given to Meta’s agent. Their parameters are set over there: what comes from the customer record is filled in by us, never by the agent.')}
+          </p>
+          <ul className="flex flex-col gap-1">
+            {mcpProposables.map((o) => (
+              <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-900" data-testid={`mba-outils-mcp-${o.name}`}>
+                <span className="min-w-0 truncate">
+                  {o.title} <code className="text-xs text-ink-500">{o.name}</code>
+                  {o.serveur && <span className="text-xs text-ink-500">{t(` (serveur ${o.serveur})`, ` (server ${o.serveur})`)}</span>}
+                  {o.risque === 'irreversible' && (
+                    <span className="ml-2 rounded-controle bg-alerte-50 px-2 py-0.5 text-xs text-alerte-800"
+                      title={t('L’agent de Meta l’appelle sans validation humaine.', 'Meta’s agent calls it without human approval.')}>
+                      {t('irréversible', 'irreversible')}
+                    </span>
+                  )}
+                </span>
+                <button type="button" data-testid={`mba-outils-mcp-donner-${o.id}`} disabled={occupe}
+                  onClick={() => { void proposerMcp(o); }}
+                  className="inline-flex shrink-0 items-center gap-1 text-xs text-brand-600 hover:underline disabled:opacity-40">
+                  <Icone nom="ajouter" taille="petite" />{t('Donner à l’agent de Meta', 'Give to Meta’s agent')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );
@@ -285,7 +344,8 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
   envoiEnCours: boolean;
   onEnvoyer: () => void; onRetirer: () => void; onModifier: () => void; onSupprimer: () => void; onReactiver: () => void;
 }) {
-  const badge = o.type === 'inconnu' ? ['Inconnu', 'Unknown'] as const : TEXTES_PAR_TYPE[o.type].badge;
+  const badge = o.type === 'inconnu' ? ['Inconnu', 'Unknown'] as const
+    : o.type === 'mcp' ? ['MCP', 'MCP'] as const : TEXTES_PAR_TYPE[o.type].badge;
   return (
     <li data-testid={`mba-outil-${o.name}`}
       className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_11rem_8.5rem] sm:items-center">
@@ -307,7 +367,9 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
             ce qu'on a choisi là-bas. Un outil dont le type est `inconnu` n'en porte AUCUN plutôt qu'un par
             défaut, parce qu'un dessin affirmerait une nature que personne n'a lue. */}
         <span className="flex items-center gap-1.5 rounded-controle bg-ink-100 px-2 py-0.5 text-xs text-ink-900" data-testid={`mba-outil-type-${o.id}`}>
-          {o.type !== 'inconnu' && <IconeOutil signe={TEXTES_PAR_TYPE[o.type].signe} taille="petite" className="text-ink-500" />}
+          {o.type !== 'inconnu' && (
+            <IconeOutil signe={o.type === 'mcp' ? 'connecteur' : TEXTES_PAR_TYPE[o.type].signe} taille="petite" className="text-ink-500" />
+          )}
           {t(badge[0], badge[1])}
         </span>
         {/*
@@ -378,8 +440,15 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
           {/* Désactivé pendant un envoi, une suppression ou un enregistrement. Pendant un enregistrement, ouvrir un autre
               outil démontait le formulaire en cours, dont l'erreur se perdait avec la saisie, ou que la fin de
               l'enregistrement refermait (relecture du 2026-09-22). */}
-          <button type="button" data-testid={`mba-outil-modifier-${o.id}`} disabled={o.type === 'inconnu' || occupe} onClick={onModifier}
-            className="text-ink-500 hover:underline disabled:opacity-40">{t('Modifier', 'Edit')}</button>
+          {/* Un outil MCP se règle là où il est déclaré : ses mots et ses paramètres sont partagés avec les agents IA. */}
+          {o.type === 'mcp' ? (
+            <Link href="/connecteurs-mcp" data-testid={`mba-outil-regler-${o.id}`} className="text-ink-500 hover:underline">
+              {t('Régler', 'Settings')}
+            </Link>
+          ) : (
+            <button type="button" data-testid={`mba-outil-modifier-${o.id}`} disabled={o.type === 'inconnu' || occupe} onClick={onModifier}
+              className="text-ink-500 hover:underline disabled:opacity-40">{t('Modifier', 'Edit')}</button>
+          )}
           {/* Désactivé pendant un envoi, une suppression ou un enregistrement, comme « Enregistrer » et « Réactiver »
               (spec § 9.2) : sinon le retrait partait pendant qu'un autre envoi lisait encore l'ancien plan, et restait
               en attente sans le dire. */}
@@ -403,6 +472,7 @@ function libelleCible(o: OutilMbaVue, t: Traduire): string {
     }
     case 'scenario': return c.scenario ? t(`Scénario : ${c.scenario}`, `Scenario: ${c.scenario}`) : t('Scénario supprimé', 'Deleted scenario');
     case 'connecteur': return c.libelle ? t(`Appel : ${c.libelle}`, `Call: ${c.libelle}`) : t('Appel supprimé', 'Deleted call');
+    case 'mcp': return c.serveur ? t(`Serveur MCP : ${c.serveur}`, `MCP server: ${c.serveur}`) : t('Serveur MCP supprimé', 'Deleted MCP server');
     case 'inconnu': return t('Format inconnu', 'Unknown format');
   }
 }

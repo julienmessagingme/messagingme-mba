@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { outilsAPublier } from '../src/mba/outils-a-publier';
+import { outilsAPublier, variablesMcp } from '../src/mba/outils-a-publier';
 import { corpsOutilMeta } from '../src/mba/publication';
 
 /**
@@ -7,7 +7,10 @@ import { corpsOutilMeta } from '../src/mba/publication';
  * 🔴 CE QUE CE FICHIER PROTÈGE : qu'un outil qu'on ne sait pas lire ne parte PAS (publié, il serait appelé et
  * refusé à chaque fois), et que l'agent ne fournisse que ce que la cible lui laisse.
  */
-const base = { description: 'Appelle cet outil dès que le client le demande.', nePasUtiliser: 'Jamais.', requestId: null };
+const base = {
+  description: 'Appelle cet outil dès que le client le demande.', nePasUtiliser: 'Jamais.', requestId: null,
+  params: [] as unknown, mcpNonActivable: null as string | null, mcpIndisponibleLe: null as Date | null,
+};
 
 describe('ce qui part chez Meta', () => {
   it('🔴 un champ maison part avec UNE variable `valeur`, requise, et ses valeurs permises dans la description', async () => {
@@ -31,13 +34,29 @@ describe('ce qui part chez Meta', () => {
     expect(corpsOutilMeta(o!).request_definition).not.toHaveProperty('body');
   });
 
-  it('🔴 un outil maison illisible, une action d’agent IA ou un MCP ne partent PAS', async () => {
+  it('🔴 un outil maison illisible, une action d’agent IA, un MCP non activable ou disparu ne partent PAS', async () => {
     const r = await outilsAPublier([
       { ...base, id: 'a', name: 'casse', origin: 'mba', binding: { handler: 'tag_fixe' } },
       { ...base, id: 'b', name: 'mba_poser_tag', origin: 'mba', binding: { handler: 'poser_tag' } },
-      { ...base, id: 'c', name: 'mcp', origin: 'mcp', binding: {} },
+      { ...base, id: 'c', name: 'mcp_casse', origin: 'mcp', binding: {}, mcpNonActivable: 'schéma imbriqué' },
+      { ...base, id: 'd', name: 'mcp_parti', origin: 'mcp', binding: {}, mcpIndisponibleLe: new Date() },
     ], async () => null);
     expect(r).toEqual([]);
+  });
+
+  it('🔴 un outil MCP part (2026-10-02) avec ses SEULS paramètres remplis par le modèle', async () => {
+    // L'e-mail cloué à la fiche du contact ne part pas chez Meta : notre relais le pose lui-même (garde d'identité).
+    const params = [
+      { name: 'question', type: 'string', source: 'modele', required: true, description: 'La question du client' },
+      { name: 'email', type: 'string', source: 'champ', cle: 'email' },
+      { name: 'langue', type: 'string', source: 'fixe', value: 'fr' },
+    ];
+    const [o] = await outilsAPublier([{ ...base, id: 'm1', name: 'notion_search', origin: 'mcp', binding: { outilDistant: 'search' }, params }], async () => null);
+    expect(o?.variables).toEqual([
+      { nom: 'question', type: 'string', origine: { type: 'modele' }, description: 'La question du client', requis: true },
+    ]);
+    expect(corpsOutilMeta(o!).request_definition.body).toMatchObject({ params: { question: expect.anything() }, required: ['question'] });
+    expect(variablesMcp(params).map((v) => v.nom)).toEqual(['question']);
   });
 
   it('un connecteur part avec les variables de sa requête, comme avant ; sans requête, il ne part pas', async () => {

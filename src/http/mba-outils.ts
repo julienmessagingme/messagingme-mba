@@ -1,13 +1,14 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
-import type { OutilComplet, RisqueOutil } from '../agent/catalog';
+import type { OutilBibliotheque, OutilComplet, RisqueOutil } from '../agent/catalog';
 import { NomOutilDejaPris, OutilNonActivable } from '../agent/catalog';
 import type { RequeteConnecteur } from '../agent/requetes';
 import { risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import { espaceVerifie, estUuid } from './scope';
 import { blocSeul, type BlocPropose, type CibleMaison } from '../mba/outils-maison';
-import { vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
+import { mcpInappelable, outilsMcpProposables, vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
+import { consommateurMba } from '../agent/consommateur';
 import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 
@@ -48,6 +49,15 @@ export interface MbaOutilsDeps {
    * de tous les scénarios ne tiendrait pas à 200 scénarios.
    */
   blocs(tenantId: string, workflowId: string): Promise<BlocPropose[]>;
+  /** La bibliothèque d'outils de l'espace (`listCatalogue`), d'où viennent les outils MCP proposés à l'agent de Meta. */
+  bibliotheque(tenantId: string): Promise<OutilBibliotheque[]>;
+  /** Les serveurs MCP de l'espace, par identifiant, pour nommer celui d'un outil. */
+  serveurs(tenantId: string): Promise<ReadonlyMap<string, { label: string }>>;
+  /**
+   * Rattacher un outil MCP de la bibliothèque à l'agent de Meta PUIS l'activer, au nom de `parUtilisateur` : deux gestes
+   * du catalogue. `false` = l'outil n'est plus là, ou il était déjà à l'agent de Meta.
+   */
+  proposerMcp(tenantId: string, phoneNumberId: string, outilId: string, parUtilisateur: string): Promise<boolean>;
 }
 
 const NOM = z.string().trim().regex(/^[a-z0-9_]{1,64}$/, 'nom technique au format [a-z0-9_], 64 caractères au plus');
@@ -149,6 +159,45 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     return reply.code(200).send({ blocs: await deps.blocs(tenant, workflowId) });
   });
 
+  /**
+   * Les outils MCP que l'agent de Meta peut recevoir (2026-10-02, route A). Ils ne se créent pas ici : ils viennent d'un
+   * serveur déclaré dans « Connecteurs MCP », et c'est là que se règlent leurs paramètres.
+   */
+  app.get(`${base}/mcp`, opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
+    if (!pn) return reply.code(200).send({ outils: [] });
+    const [bibliotheque, serveurs] = await Promise.all([deps.bibliotheque(tenant), deps.serveurs(tenant)]);
+    return reply.code(200).send({ outils: outilsMcpProposables(bibliotheque, consommateurMba(pn), serveurs) });
+  });
+
+  app.post<{ Params: { outilId: string } }>(`${base}/mcp/:outilId`, opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    if (!estUuid(req.params.outilId)) return reply.code(404).send({ error: 'outil MCP introuvable' });
+    const userId = utilisateur(req);
+    if (userId === '') return reply.code(403).send({ error: 'ajout impossible sans utilisateur identifié' });
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
+    if (!pn) return reply.code(409).send({ error: SANS_NUMERO });
+    const outil = (await deps.bibliotheque(tenant)).find((o) => o.id === req.params.outilId);
+    // La bibliothèque est lue côté serveur : un identifiant d'outil maison ou de connecteur ne passe pas par ici.
+    if (!outil || outil.origin !== 'mcp') return reply.code(404).send({ error: 'outil MCP introuvable' });
+    if (outil.consommateurs.some((c) => c.cle === consommateurMba(pn))) {
+      return reply.code(409).send({ error: 'cet outil est déjà dans la liste de l’agent de Meta' });
+    }
+    // Vérifié AVANT de rattacher : un rattachement suivi d'un refus d'activer laisserait une ligne éteinte qu'aucun
+    // geste ne peut rallumer.
+    const inappelable = mcpInappelable(outil);
+    if (inappelable !== null) return reply.code(409).send({ error: inappelable });
+    let fait: boolean;
+    try {
+      fait = await deps.proposerMcp(tenant, pn, outil.id, userId);
+    } catch (err) {
+      if (err instanceof OutilNonActivable) return reply.code(409).send({ error: err.raison });
+      throw err;
+    }
+    return fait ? reply.code(201).send({ id: outil.id }) : reply.code(409).send({ error: 'cet outil est déjà dans la liste de l’agent de Meta' });
+  });
+
   app.post(base, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const lu = creationSchema.safeParse(req.body);
@@ -197,6 +246,9 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     const outil = (await deps.lister(tenant, pn)).find((o) => o.id === req.params.outilId);
     if (!outil) return reply.code(404).send({ error: 'outil introuvable' });
     const { cible, ...mots } = lu.data;
+    // Les mots d'un outil MCP sont ceux de la bibliothèque, partagés avec les agents IA : ils se règlent dans
+    // « Connecteurs MCP », comme ses paramètres.
+    if (outil.origin === 'mcp') return reply.code(400).send({ error: 'un outil MCP se règle dans Connecteurs MCP' });
     try {
       if (outil.origin === 'http') {
         // La définition d'un connecteur est partagée avec les agents IA qui l'utilisent : on ne change pas son appel.

@@ -61,6 +61,7 @@ describe('les types, des deux côtés', () => {
     // C'est ce qui a manqué à `publiable` : un champ ajouté d'un seul côté vaut `undefined` de l'autre, sans erreur.
     expect(champsDInterface(web, 'OutilMbaVue')).toEqual(champsDInterface(serveurVue, 'OutilMbaVue'));
     expect(typesDUnionDObjets(web, 'CibleVue')).toEqual(typesDUnionDObjets(serveurVue, 'CibleVue'));
+    expect(champsDInterface(web, 'OutilMcpProposable')).toEqual(champsDInterface(serveurVue, 'OutilMcpProposable'));
   });
 
   it('🔴 ce que l’écran SAISIT est exactement ce que la route accepte', () => {
@@ -129,6 +130,7 @@ describe('« ✓ Chez Meta » ne se dit que de ce qui part chez Meta', () => {
       nodes: [{ id: 'n1', type: 'quick_message', position: { x: 0, y: 0 }, data: { code: CODE, body: 'Brochure', quickReplies: [] } }],
       edges: [],
     } }]]),
+    serveurs: new Map(),
   };
   const requete = async (id: string) => (ctx.requetes.has(id) ? { variables: [] } : null);
 
@@ -145,6 +147,8 @@ describe('« ✓ Chez Meta » ne se dit que de ce qui part chez Meta', () => {
     ['un connecteur dont l’appel est supprimé', outil({ origin: 'http', requestId: 'rq9' })],
     ['un connecteur sans appel', outil({ origin: 'http', requestId: null })],
     ['un outil MCP', outil({ origin: 'mcp', sourceId: 's1' })],
+    ['un outil MCP non activable', outil({ origin: 'mcp', sourceId: 's1', mcpNonActivable: 'schéma illisible' })],
+    ['un outil MCP disparu de son serveur', outil({ origin: 'mcp', sourceId: 's1', mcpIndisponibleLe: new Date() })],
     ['une action d’agent IA', outil({ binding: { handler: 'poser_tag' } })],
     ['un outil maison illisible', outil({ binding: { handler: 'tag_fixe', tag: 'vip', intrus: 1 } })],
   ];

@@ -16,6 +16,7 @@ export type CibleVue =
   | { type: 'bloc'; workflowId: string; code: string; scenario: string | null; bloc: string | null }
   | { type: 'scenario'; workflowId: string; scenario: string | null }
   | { type: 'connecteur'; requeteId: string; libelle: string | null }
+  | { type: 'mcp'; sourceId: string | null; serveur: string | null }
   | { type: 'inconnu' };
 
 export interface OutilMbaVue {
@@ -24,11 +25,12 @@ export interface OutilMbaVue {
   title: string;
   description: string;
   nePasUtiliser: string;
-  type: TypeOutilMba | 'inconnu';
+  /** `mcp` n'est pas un `TypeOutilMba` : un outil MCP ne se CRÉE pas dans cet onglet, il vient de la bibliothèque. */
+  type: TypeOutilMba | 'mcp' | 'inconnu';
   cible: CibleVue;
   /** Pourquoi la cible n'existe plus, ou `null`. Texte du serveur, affiché tel quel. */
   cibleManquante: string | null;
-  /** Les agents IA qui partagent cet outil (connecteur seulement). */
+  /** Les agents IA qui partagent cet outil (connecteur et MCP). */
   aussiUtilisePar: string[];
   actif: boolean;
   /**
@@ -49,6 +51,52 @@ export interface ContexteVue {
   bibliotheque: ReadonlyMap<string, OutilBibliotheque>;
   /** Les scénarios de l'espace, avec leur graphe publié : c'est lui que le relais joue. */
   workflows: ReadonlyMap<string, { name: string; graph: WorkflowGraph }>;
+  /** Les serveurs MCP de l'espace, pour nommer celui d'un outil MCP. */
+  serveurs: ReadonlyMap<string, { label: string }>;
+}
+
+/** Les agents IA qui se servent aussi d'un outil de la bibliothèque, par leur nom. */
+function agentsDe(o: OutilBibliotheque | undefined): string[] {
+  return (o?.consommateurs ?? []).filter((c) => c.agentId !== null).map((c) => c.agentLabel ?? 'un agent IA');
+}
+
+/**
+ * Pourquoi un outil MCP n'est pas appelable, ou `null`. La même règle que la publication (`outilsAPublier`) et que
+ * l'activation (`activerConsommateur`) : marqué non activable à l'import, ou disparu de son serveur.
+ */
+export function mcpInappelable(o: { mcpNonActivable: string | null; mcpIndisponibleLe: Date | string | null }): string | null {
+  if (o.mcpNonActivable !== null) return o.mcpNonActivable;
+  return o.mcpIndisponibleLe !== null ? 'cet outil a disparu de son serveur MCP : il n’est plus appelable' : null;
+}
+
+/** Un outil MCP de la bibliothèque, tel que l'onglet le propose à l'agent de Meta. */
+export interface OutilMcpProposable {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  serveur: string | null;
+  risque: RisqueOutil;
+  aussiUtilisePar: string[];
+}
+
+/**
+ * Les outils MCP de la bibliothèque que l'agent de Meta peut recevoir (2026-10-02) : appelables, et pas déjà à lui. Un
+ * outil déjà rattaché mais éteint n'y est pas : sa ligne dans la liste propose de le rallumer, un second chemin pour
+ * le même geste ferait deux vérités.
+ */
+export function outilsMcpProposables(
+  bibliotheque: readonly OutilBibliotheque[],
+  consommateur: string,
+  serveurs: ReadonlyMap<string, { label: string }>,
+): OutilMcpProposable[] {
+  return bibliotheque
+    .filter((o) => o.origin === 'mcp' && mcpInappelable(o) === null && !o.consommateurs.some((c) => c.cle === consommateur))
+    .map((o) => ({
+      id: o.id, name: o.name, title: o.title, description: o.description, risque: o.risk,
+      serveur: o.sourceId ? serveurs.get(o.sourceId)?.label ?? null : null,
+      aussiUtilisePar: agentsDe(o),
+    }));
 }
 
 export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
@@ -56,11 +104,19 @@ export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
     id: o.id, name: o.name, title: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser, actif: o.actif,
     risque: o.risk,
   };
+  // Un outil MCP part chez Meta depuis le 2026-10-02 : notre relais l'appelle pour Meta (`src/http/mba-relais.ts`). Ses
+  // paramètres et ses mots se règlent dans « Connecteurs MCP », partagés avec les agents IA.
+  if (o.origin === 'mcp') {
+    const manque = mcpInappelable(o);
+    return {
+      ...base, type: 'mcp',
+      cible: { type: 'mcp', sourceId: o.sourceId, serveur: o.sourceId ? ctx.serveurs.get(o.sourceId)?.label ?? null : null },
+      cibleManquante: manque, aussiUtilisePar: agentsDe(ctx.bibliotheque.get(o.id)), publiable: manque === null,
+    };
+  }
   if (o.origin === 'http' && o.requestId) {
     const req = ctx.requetes.get(o.requestId) ?? null;
-    const aussiUtilisePar = (ctx.bibliotheque.get(o.id)?.consommateurs ?? [])
-      .filter((c) => c.agentId !== null)
-      .map((c) => c.agentLabel ?? 'un agent IA');
+    const aussiUtilisePar = agentsDe(ctx.bibliotheque.get(o.id));
     return {
       ...base, type: 'connecteur',
       cible: { type: 'connecteur', requeteId: o.requestId, libelle: req?.label ?? null },

@@ -21,12 +21,10 @@ import { Icone } from '@/components/Icone';
  * et marquer des outils indisponibles : écraser n'est acceptable que si l'on montre quoi avant de le faire.
  * C'est le même dispositif que la publication chez Meta, pour la même raison.
  *
- * 🔴 CES OUTILS NE VONT PAS ENCORE À L'AGENT DE META, et l'écran le DIT au lieu de griser une case sans
- * raison. ⚠️ MAIS LA RAISON A CHANGÉ DE CAMP LE 2026-09-24, et la phrase avec. Elle accusait Meta (« il
- * n'accepte pas encore de connexion MCP »), ce qui était exact au 2026-09-10 et vérifié ce jour-là. Meta
- * documente désormais `connector_protocol: MCP` sur ses connecteurs. Le verrou est donc CHEZ NOUS :
- * `src/mba/outils-a-publier.ts` n'expédie que les appels HTTP et les gestes maison. Dire le contraire
- * enverrait le client réclamer chez Meta une limite qui est la nôtre.
+ * 🔴 CES OUTILS VONT AUSSI À L'AGENT DE META depuis le 2026-10-02, et l'écran dit OÙ on les lui donne. Notre relais
+ * les appelle pour Meta (`src/http/mba-relais.ts`) : Meta ne parle qu'à nous, en HTTP, et les paramètres réglés ici
+ * (fiche du contact, champ, constante) sont posés par le relais, jamais lus dans ce que l'agent envoie. La phrase
+ * précédente disait « l'agent de Meta ne les reçoit pas encore », vraie jusqu'à ce jour.
  */
 export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
   const t = useT();
@@ -89,8 +87,8 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
         {/* ⚠️ ON LE DIT, ON NE GRISE PAS : une case désactivée sans explication enverrait le client ouvrir
             un ticket. Et on dit que la limite est LA NÔTRE, parce qu'elle l'est. */}
         <p className="mt-2 text-xs text-ink-500" data-testid="mcp-note-mba">
-          {t('Ces outils servent vos agents IA. L’agent de Meta ne les reçoit pas encore : notre publication vers Meta ne sait envoyer que des appels HTTP.',
-            'These tools serve your AI agents. Meta’s agent does not receive them yet: what we publish to Meta can only carry HTTP calls.')}
+          {t('Ces outils servent vos agents IA, et l’agent de Meta : on les lui donne dans Meta Business Agent > Paramètres > Outils.',
+            'These tools serve your AI agents, and Meta’s agent: give them to it in Meta Business Agent > Settings > Tools.')}
         </p>
       </header>
 

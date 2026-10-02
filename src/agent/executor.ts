@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Geste } from './gestes';
 import type { JournalAppels, OrigineOutil, OutilDefini, StatutAppel, ToolCatalog } from './catalog';
 import { paramsOutil, type ParamOutil } from './llm/tool-schema';
-import { champDuContact } from './champs-contact';
+import { completerArguments } from './completer-arguments';
 import { tenter } from '../lib/tenter';
 import { messageDe, texteDe } from '../lib/erreur';
 
@@ -124,7 +124,7 @@ function schemaArguments(params: ParamOutil[]): z.ZodObject {
 
 /** Valeurs textuelles raccourcies pour le journal. Les valeurs injectées n'y entrent jamais : on journalise
  *  ce que le modèle a demandé. Entrée `unknown` : elle vient du JSON du modèle. */
-function rediger(args: unknown): Record<string, unknown> {
+export function rediger(args: unknown): Record<string, unknown> {
   if (!args || typeof args !== 'object') return {};
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
@@ -154,7 +154,7 @@ function extraire(valeur: unknown, chemins: string[]): unknown {
  * modèle doit savoir qu'il ne voit pas tout. Comptée en octets, enveloppe comprise : c'est une ligne de
  * facturation directe.
  */
-function borner(valeur: unknown, maxBytes: number): { contenu: unknown; taille: number } {
+export function borner(valeur: unknown, maxBytes: number): { contenu: unknown; taille: number } {
   let json: string;
   try {
     json = JSON.stringify(valeur ?? null) ?? 'null';
@@ -289,23 +289,8 @@ export async function executeTool(
   }
 
   // 4. Compléter. 🔴 C'est ici que le modèle perd la main sur la cible : l'injection écrit en dernier, après
-  // les arguments du modèle, donc une valeur du runtime n'est jamais écrasée. Sans cette séparation, un
-  // connecteur serait un IDOR offert à qui écrit sur le numéro.
-  const args: Record<string, unknown> = { ...argsModele };
-  for (const p of params) {
-    if (p.source === 'contact') {
-      const chemin = p.contactPath ?? p.name;
-      // Le numéro vient du tour (`ctx.waId`, authentifié par la signature du webhook Meta), pas de la
-      // projection, qui ne le porte pas : elle part chez le fournisseur de modèle.
-      args[p.name] = chemin === 'wa_id' ? ctx.waId : (ctx.contact ? (ctx.contact[chemin] ?? null) : null);
-    } else if (p.source === 'champ') {
-      // Un champ personnalisé que le modèle ne voit pas : il cloue un identifiant (e-mail, référence) à la fiche
-      // du contact qui écrit. Absent, il rend `null` et l'appel part quand même : le serveur décide.
-      args[p.name] = champDuContact(ctx.contact, p.cle ?? '');
-    } else if (p.source === 'fixe') {
-      args[p.name] = p.value ?? null;
-    }
-  }
+  // les arguments du modèle (`completerArguments`, partagé avec le relais de l'agent de Meta).
+  const args = completerArguments(params, argsModele, ctx);
 
   // 5. Journaliser avant l'appel, jamais après (raison sur `JournalAppels.ouvrir`).
   const journalId = await ouvrirJournal(outil, rediger(argsModele));

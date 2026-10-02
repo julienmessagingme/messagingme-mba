@@ -70,11 +70,11 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
 }
 
 test.describe('Tools > Connecteurs MCP', () => {
-  test('🔴 l’écran DIT que l’agent de Meta ne peut pas recevoir ces outils', async ({ page }) => {
+  test('🔴 l’écran DIT où l’agent de Meta reçoit ces outils', async ({ page }) => {
     await mock(page);
     await page.goto('/connecteurs-mcp');
     await expect(page.getByTestId('mcp-note-mba')).toBeVisible();
-    await expect(page.getByTestId('mcp-note-mba')).toContainText('Meta');
+    await expect(page.getByTestId('mcp-note-mba')).toContainText('Meta Business Agent > Paramètres > Outils');
   });
 
   test('🔴 l’aperçu montre ce qui va tomber, et n’importe RIEN tant qu’on n’a pas cliqué', async ({ page }) => {

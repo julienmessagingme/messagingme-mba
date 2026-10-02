@@ -4,7 +4,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import { FakeQueue } from './fake-queue';
 import type { MbaOutilsDeps } from '../src/http/mba-outils';
-import { NomOutilDejaPris, OutilNonActivable, type OutilComplet } from '../src/agent/catalog';
+import { NomOutilDejaPris, OutilNonActivable, type OutilBibliotheque, type OutilComplet } from '../src/agent/catalog';
 import { risqueSelonMethode } from '../src/agent/http-cible';
 
 /**
@@ -53,7 +53,9 @@ function monter(
       getTenantPhoneNumberId: async () => numero,
     },
     lister: async () => [complet({})],
-    contexte: async () => ({ requetes: new Map(), champs: new Set(['ville']), bibliotheque: new Map(), workflows: new Map() }),
+    contexte: async () => ({
+      requetes: new Map(), champs: new Set(['ville']), bibliotheque: new Map(), workflows: new Map(), serveurs: new Map(),
+    }),
     requetes: {
       parId: async (_t, id) => (id === REQ ? {
         id: REQ, sourceId: 's1', methode: 'DELETE', variables: [
@@ -74,6 +76,9 @@ function monter(
     reactiver: async (...args) => { gestes.push({ geste: 'reactiver', args }); return true; },
     workflow: async () => null,
     blocs: async () => [],
+    bibliotheque: async () => [],
+    serveurs: async () => new Map(),
+    proposerMcp: async (...args) => { gestes.push({ geste: 'proposerMcp', args }); return true; },
     ...reste,
   };
   const app = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, mbaOutils: deps });
@@ -324,5 +329,84 @@ describe('un bloc et un scénario', () => {
       expect(r.json().error).toContain('scénario');
     }
     expect(lus).toBe(0);
+  });
+});
+
+describe('les outils MCP de la bibliothèque, proposés à l’agent de Meta (2026-10-02)', () => {
+  const MCP = '44444444-4444-4444-8444-444444444444';
+  const entree = (over: Partial<OutilBibliotheque> = {}): OutilBibliotheque => ({
+    id: MCP, name: 'notion_search', title: 'Chercher', description: 'd', nePasUtiliser: 'p', origin: 'mcp', risk: 'read',
+    sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, consommateurs: [], ...over,
+  });
+  const avec = (e: OutilBibliotheque, over: Parameters<typeof monter>[0] = {}) => monter({
+    bibliotheque: async () => [e], serveurs: async () => new Map([['s1', { label: 'notion' }]]), ...over,
+  });
+
+  it('GET /mcp liste les outils proposables, serveur nommé', async () => {
+    const res = await avec(entree()).app.inject({ method: 'GET', url: `${url}/mcp`, ...h() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().outils).toEqual([expect.objectContaining({ id: MCP, serveur: 'notion', risque: 'read' })]);
+  });
+
+  it('GET /mcp sans numéro connecté rend une liste vide, sans lire la bibliothèque', async () => {
+    let lus = 0;
+    const { app } = monter({ bibliotheque: async () => { lus += 1; return [entree()]; } }, null);
+    expect((await app.inject({ method: 'GET', url: `${url}/mcp`, ...h() })).json()).toEqual({ outils: [] });
+    expect(lus).toBe(0);
+  });
+
+  it('🔴 POST /mcp/:id rattache et active pour CE numéro, au nom de l’administrateur', async () => {
+    const { app, gestes } = avec(entree());
+    const res = await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} });
+    expect(res.statusCode).toBe(201);
+    expect(gestes).toEqual([{ geste: 'proposerMcp', args: [TENANT, PN, MCP, 'u1'] }]);
+  });
+
+  it('🔴 un outil qui n’est pas MCP ne passe pas par cette porte : 404, rien d’écrit', async () => {
+    for (const origin of ['http', 'mba'] as const) {
+      const { app, gestes } = avec(entree({ origin }));
+      expect((await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} })).statusCode).toBe(404);
+      expect(gestes).toEqual([]);
+    }
+    const inconnu = avec(entree());
+    expect((await inconnu.app.inject({ method: 'POST', url: `${url}/mcp/${OUTIL}`, ...h(), payload: {} })).statusCode).toBe(404);
+    expect((await inconnu.app.inject({ method: 'POST', url: `${url}/mcp/pas-un-uuid`, ...h(), payload: {} })).statusCode).toBe(404);
+    expect(inconnu.gestes).toEqual([]);
+  });
+
+  it('🔴 un outil non appelable est refusé AVANT de rattacher : aucune ligne éteinte laissée derrière', async () => {
+    for (const e of [entree({ mcpNonActivable: 'schéma illisible' }), entree({ mcpIndisponibleLe: '2026-10-01T00:00:00Z' })]) {
+      const { app, gestes } = avec(e);
+      const res = await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} });
+      expect(res.statusCode).toBe(409);
+      expect(gestes).toEqual([]);
+    }
+  });
+
+  it('un outil déjà à l’agent de Meta rend 409, rien d’écrit', async () => {
+    const { app, gestes } = avec(entree({ consommateurs: [{ cle: `mba:${PN}`, actif: false, agentId: null, agentLabel: null }] }));
+    expect((await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} })).statusCode).toBe(409);
+    expect(gestes).toEqual([]);
+  });
+
+  it('une activation refusée par le catalogue rend 409 lisible, pas 500', async () => {
+    const { app } = avec(entree(), { proposerMcp: async () => { throw new OutilNonActivable('cet outil MCP n’est pas activable'); } });
+    const res = await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'cet outil MCP n’est pas activable' });
+  });
+
+  it('🔴 réservé aux administrateurs, comme le reste de l’onglet', async () => {
+    const { app, gestes } = avec(entree());
+    expect((await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(lecteurTok), payload: {} })).statusCode).toBe(403);
+    expect(gestes).toEqual([]);
+  });
+
+  it('les mots d’un outil MCP ne se corrigent pas ici : ils sont partagés et se règlent dans Connecteurs MCP', async () => {
+    const { app, gestes } = monter({ lister: async () => [complet({ origin: 'mcp', sourceId: 's1', binding: {} })] });
+    const res = await app.inject({ method: 'PATCH', url: `${url}/${OUTIL}`, ...h(), payload: { title: 'Autre' } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('Connecteurs MCP');
+    expect(gestes).toEqual([]);
   });
 });

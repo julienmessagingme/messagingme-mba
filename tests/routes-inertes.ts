@@ -268,8 +268,9 @@ export const liensInertes: Pick<LiensDep, 'contactParJeton'> = {
   contactParJeton: async () => null,
 };
 
-export const relaisMbaInerte: Pick<MbaRelaisDeps, 'journaliserForme'> = {
+export const relaisMbaInerte: Pick<MbaRelaisDeps, 'journaliserForme' | 'resolveurMcp'> = {
   journaliserForme: () => {},
+  resolveurMcp: neDevraitPasEtreAppelee('resolveurMcp'),
 };
 
 export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages' | 'stats' | 'attendre'> = {

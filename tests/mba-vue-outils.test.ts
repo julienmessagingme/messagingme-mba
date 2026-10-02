@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { vueOutilMba, type ContexteVue } from '../src/mba/vue-outils';
+import { outilsMcpProposables, vueOutilMba, type ContexteVue } from '../src/mba/vue-outils';
 import type { OutilComplet, OutilBibliotheque } from '../src/agent/catalog';
 
 /**
@@ -16,7 +16,11 @@ const outil = (over: Partial<OutilComplet>): OutilComplet => ({
 });
 const ctx = (over: Partial<ContexteVue> = {}): ContexteVue => ({
   requetes: new Map([['rq1', { label: 'Poser une étiquette' }]]), champs: new Set(['ville']), bibliotheque: new Map(),
-  workflows: new Map(), ...over,
+  workflows: new Map(), serveurs: new Map([['s1', { label: 'notion' }]]), ...over,
+});
+const entreeBiblio = (over: Partial<OutilBibliotheque>): OutilBibliotheque => ({
+  id: 'o1', name: 'notion_search', title: 'Chercher', description: 'd', nePasUtiliser: 'p', origin: 'mcp', risk: 'read',
+  sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, consommateurs: [], ...over,
 });
 
 describe('la ligne d’un outil dans l’onglet', () => {
@@ -49,6 +53,23 @@ describe('la ligne d’un outil dans l’onglet', () => {
     const v = vueOutilMba(outil({ origin: 'http', requestId: 'rq1' }), ctx({ bibliotheque: new Map([['o1', entree]]) }));
     expect(v.aussiUtilisePar).toEqual(['Support']);
     expect(v.cible).toEqual({ type: 'connecteur', requeteId: 'rq1', libelle: 'Poser une étiquette' });
+  });
+
+  it('🔴 un outil MCP : son serveur nommé, les agents IA qui le partagent, et il part chez Meta', () => {
+    const entree = entreeBiblio({ consommateurs: [
+      { cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' },
+      { cle: 'mba:pn1', actif: true, agentId: null, agentLabel: null },
+    ] });
+    const v = vueOutilMba(outil({ origin: 'mcp', sourceId: 's1' }), ctx({ bibliotheque: new Map([['o1', entree]]) }));
+    expect(v).toMatchObject({ type: 'mcp', cible: { type: 'mcp', sourceId: 's1', serveur: 'notion' }, cibleManquante: null, publiable: true });
+    expect(v.aussiUtilisePar).toEqual(['Support']);
+  });
+
+  it('🔴 un outil MCP disparu de son serveur, ou non activable, est SIGNALÉ et ne part pas', () => {
+    const disparu = vueOutilMba(outil({ origin: 'mcp', sourceId: 's1', mcpIndisponibleLe: new Date() }), ctx());
+    expect(disparu).toMatchObject({ type: 'mcp', publiable: false, cibleManquante: expect.stringContaining('disparu') });
+    const refuse = vueOutilMba(outil({ origin: 'mcp', sourceId: 's1', mcpNonActivable: 'schéma illisible' }), ctx());
+    expect(refuse).toMatchObject({ publiable: false, cibleManquante: 'schéma illisible' });
   });
 
   it('🔴 un outil maison illisible est montré comme tel, pas masqué', () => {
@@ -100,5 +121,28 @@ describe('les lignes d’un bloc et d’un scénario', () => {
     const vide = new Map([[WF, { name: 'Vide', graph: { nodes: [], edges: [] } }]]);
     expect(vueOutilMba(outil({ binding: { handler: 'scenario_fixe', workflowId: WF } }), ctx({ workflows: vide })))
       .toMatchObject({ type: 'scenario', cible: { type: 'scenario', scenario: 'Vide' }, cibleManquante: expect.stringContaining('vide') });
+  });
+});
+
+describe('les outils MCP proposés à l’agent de Meta', () => {
+  const serveurs = new Map([['s1', { label: 'notion' }]]);
+
+  it('🔴 seulement les MCP appelables qui ne sont pas déjà à lui, serveur nommé', () => {
+    const biblio = [
+      entreeBiblio({ id: 'libre', consommateurs: [{ cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' }] }),
+      entreeBiblio({ id: 'deja', consommateurs: [{ cle: 'mba:pn1', actif: false, agentId: null, agentLabel: null }] }),
+      entreeBiblio({ id: 'disparu', mcpIndisponibleLe: '2026-10-01T00:00:00Z' }),
+      entreeBiblio({ id: 'refuse', mcpNonActivable: 'schéma illisible' }),
+      entreeBiblio({ id: 'http', origin: 'http' }),
+    ];
+    expect(outilsMcpProposables(biblio, 'mba:pn1', serveurs)).toEqual([{
+      id: 'libre', name: 'notion_search', title: 'Chercher', description: 'd', serveur: 'notion', risque: 'read',
+      aussiUtilisePar: ['Support'],
+    }]);
+  });
+
+  it('⚠️ un outil d’un AUTRE numéro reste proposable : le consentement est par numéro', () => {
+    const biblio = [entreeBiblio({ consommateurs: [{ cle: 'mba:autre', actif: true, agentId: null, agentLabel: null }] })];
+    expect(outilsMcpProposables(biblio, 'mba:pn1', serveurs).map((o) => o.id)).toEqual(['o1']);
   });
 });
