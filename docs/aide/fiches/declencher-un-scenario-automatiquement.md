@@ -1,7 +1,7 @@
 ---
 ecran: automations
 source_section: Automation (menu « Automation ») | Rappels avant ou après une date (menu Automation) | Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 4f5b00 | 08adbf | 1021ef
+source_empreinte: eda598 | 08adbf | 1021ef
 ---
 # Lancer un scénario tout seul, sans campagne
 
@@ -73,8 +73,8 @@ encore), il ne repartira qu'au prochain vrai changement. Le client n'écrivant p
 le scénario doit commencer par un envoi de modèle.
 
 **Une automation neuve est toujours créée éteinte.** Vous la relisez, puis vous l'allumez d'un clic sur son
-badge. Pour changer son déclencheur ou son scénario, vous la supprimez et vous la recréez : c'est
-volontaire, pour qu'une automation en service ne change jamais de comportement sans qu'on s'en aperçoive.
+badge. Pour la changer, cliquez sur « Modifier » sur sa ligne : le formulaire se rouvre tel que vous l'avez
+rempli. Elle garde son état : si elle est allumée, vos changements s'appliquent dès l'enregistrement.
 
 Attention à un point qui surprend : un tag posé en masse sur une sélection de contacts **ne déclenche rien**.
 Seul un tag posé sur une fiche, une par une, lance l'automation. Sans cette limite, cocher cinq mille

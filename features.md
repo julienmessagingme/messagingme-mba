@@ -802,8 +802,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Lancer un scénario sur un événement, sans campagne** (2026-08-03) : un écran liste les automations (nom
   interne, déclencheur écrit en clair, scénario visé, active ou non). « Ajouter une automation » ouvre le
   formulaire ; une automation neuve est **toujours créée désactivée**, on la relit puis on l'allume d'un clic
-  sur son badge. Une ligne se supprime ; pour changer son déclencheur ou son scénario, on la supprime et on la
-  recrée. Un scénario supprimé entre-temps s'affiche comme tel sur la ligne. Réservé à l'admin.
+  sur son badge. Une ligne se **modifie** (2026-10-02) : « Modifier » rouvre le formulaire avec tout ce qu'elle
+  porte (déclencheur, réglages, scénario, délai de relance) ; elle garde son état allumé ou éteint, et une
+  automation active applique le changement dès l'enregistrement, ce que l'écran rappelle. Elle se supprime
+  aussi. Un scénario supprimé entre-temps s'affiche comme tel sur la ligne. Réservé à l'admin.
 - ✅ **Quatre déclencheurs proposés à l'écran** :
   - **le client envoie un mot-clé** : une liste de mots séparés par des virgules, au choix « le message contient »
     ou « le message est exactement » le mot-clé. Casse et accents ignorés.

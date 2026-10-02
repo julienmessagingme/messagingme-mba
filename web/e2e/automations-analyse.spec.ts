@@ -110,3 +110,66 @@ test.describe('Automation : la dernière analyse', () => {
     await expect(page.getByTestId('automation-trigger').locator('option[value="analyse_devient"]')).toHaveCount(0);
   });
 });
+
+/**
+ * Modifier une automation (demande de Julien, 2026-10-02) : elle se supprimait et se recréait. Le formulaire se
+ * rouvre avec TOUT ce qu'elle porte, l'enregistrement part en PATCH, et son état allumé ou éteint ne bouge pas.
+ */
+test.describe('Automation : modifier', () => {
+  async function monterAvec(page: Page, automations: Array<Record<string, unknown>>, patched: Array<Record<string, unknown>>): Promise<void> {
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.endsWith('/champs-fiche')) return json(CHAMPS_FICHE);
+      if (/\/automations\/a1$/.test(url) && req.method() === 'PATCH') { patched.push(req.postDataJSON() as Record<string, unknown>); return json({ id: 'a1' }); }
+      if (url.endsWith('/automations')) return json({ automations });
+      if (url.endsWith('/workflows')) return json({ workflows: [WF] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/automations');
+  }
+  const base = { id: 'a1', enabled: true, conditionGroup: null, startNodeId: null, workflowId: 'wf1' };
+
+  test('🔴 une automation mot-clé se rouvre préremplie, et l’enregistrement part en PATCH sans toucher à son état', async ({ page }) => {
+    const patched: Array<Record<string, unknown>> = [];
+    await monterAvec(page, [{ ...base, name: 'Demande de RDV', triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'], mode: 'equals' }, cooldownSeconds: null }], patched);
+    await page.getByTestId('automation-modifier-a1').click();
+    await expect(page.getByTestId('automation-name')).toHaveValue('Demande de RDV');
+    await expect(page.getByTestId('automation-trigger')).toHaveValue('keyword');
+    await expect(page.getByTestId('automation-keywords')).toHaveValue('rdv');
+    await expect(page.getByTestId('automation-workflow')).toHaveValue('wf1');
+    // Active : l'écran prévient que le changement s'applique tout de suite.
+    await expect(page.getByTestId('automation-form-note')).toContainText('vos changements s’appliquent');
+    await page.getByTestId('automation-keywords').fill('rdv, devis');
+    await page.getByTestId('automation-submit').click();
+    await expect.poll(() => patched.length).toBe(1);
+    expect(patched[0]).toEqual({
+      name: 'Demande de RDV', triggerKind: 'keyword', triggerConfig: { keywords: ['rdv', 'devis'], mode: 'equals' },
+      workflowId: 'wf1', cooldownSeconds: null,
+    });
+  });
+
+  test('🔴 « la dernière analyse change » se rouvre avec son filtre et son délai, intacts', async ({ page }) => {
+    const patched: Array<Record<string, unknown>> = [];
+    await monterAvec(page, [{
+      ...base, enabled: false, name: 'Mécontents', triggerKind: 'analyse_devient',
+      triggerConfig: { cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' }, cooldownSeconds: 3 * 24 * 3600,
+    }], patched);
+    await page.getByTestId('automation-modifier-a1').click();
+    const bloc = page.getByTestId('config-analyse-devient');
+    await expect(bloc.getByRole('button', { name: 'Négatif' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(bloc.getByRole('button', { name: 'Positif' })).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('automation-anti-rebond')).toHaveValue(String(3 * 24 * 3600));
+    await expect(page.getByTestId('automation-form-note')).toHaveText('Elle reste désactivée.');
+    await page.getByTestId('automation-name').fill('Clients mécontents');
+    await page.getByTestId('automation-submit').click();
+    await expect.poll(() => patched.length).toBe(1);
+    expect(patched[0]).toEqual({
+      name: 'Clients mécontents', triggerKind: 'analyse_devient',
+      triggerConfig: { cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' }, workflowId: 'wf1', cooldownSeconds: 3 * 24 * 3600,
+    });
+  });
+});

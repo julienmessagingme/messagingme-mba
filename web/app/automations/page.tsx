@@ -52,8 +52,11 @@ function AutomationsInner({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Formulaire de création (replié tant qu'on ne clique pas « Ajouter »).
+  // Formulaire de création OU de modification (replié tant qu'on ne clique pas « Ajouter » ou « Modifier »).
   const [creating, setCreating] = useState(false);
+  // L'automation en cours de modification ; `null` = on en crée une. Elle garde son état allumé ou éteint.
+  const [enEdition, setEnEdition] = useState<Automation | null>(null);
+  const formulaire = useRef<HTMLDivElement | null>(null);
   const [name, setName] = useState('');
   const [triggerKind, setTriggerKind] = useState<AutomationTriggerKind>('keyword');
   const [keywords, setKeywords] = useState('');
@@ -190,26 +193,86 @@ function AutomationsInner({ session }: { session: Session }) {
     return {};
   }
 
+  /**
+   * Remise à zéro COMPLÈTE du formulaire : un filtre resté collé (ressenti, « non résolue », étape) produirait une
+   * automation plus restrictive que voulu, sans que rien ne le signale à l'écran.
+   */
+  function reinitialiser() {
+    setCreating(false); setEnEdition(null); setName(''); setKeywords(''); setTag(''); setWorkflowId(''); setDealStageKey('');
+    setMode('contains'); setSentiment('negatif'); setUnresolvedOnly(false); setTriggerKind('keyword'); setAdId('');
+    setFiltreDevient(null); setFiltresAnalyse([]); setAntiRebond(null);
+    setDateField(''); setDelai(2); setUnite('heures'); setSensDate('avant');
+  }
+
+  /**
+   * Rouvre le formulaire sur une automation existante, avec TOUT ce qu'elle porte : un champ laissé à sa valeur de
+   * création écraserait la configuration enregistrée au moment d'enregistrer. Une configuration illisible retombe
+   * sur le défaut du champ, comme à la création.
+   */
+  function ouvrirEdition(a: Automation) {
+    reinitialiser();
+    const c = a.triggerConfig;
+    const texte = (v: unknown): string => (typeof v === 'string' ? v : '');
+    setEnEdition(a);
+    setCreating(true);
+    setName(a.name);
+    setTriggerKind(a.triggerKind);
+    setWorkflowId(a.workflowId);
+    setAntiRebond(a.cooldownSeconds);
+    if (a.triggerKind === 'keyword') {
+      setKeywords((Array.isArray(c.keywords) ? c.keywords : []).map(String).join(', '));
+      setMode(c.mode === 'equals' ? 'equals' : 'contains');
+    }
+    if (a.triggerKind === 'tag_added') setTag(texte(c.tag));
+    if (a.triggerKind === 'ctwa_ad') setAdId(texte(c.adId));
+    if (a.triggerKind === 'conversation_analyzed') {
+      const s = texte(c.sentiment);
+      setSentiment(s === 'positif' || s === 'neutre' || s === 'negatif' ? s : '');
+      setUnresolvedOnly(c.unresolvedOnly === true);
+      const filtres = Array.isArray(c.filtres) ? (c.filtres as Array<Record<string, unknown>>) : [];
+      setFiltresAnalyse(filtres.map((f) => ({ key: texte(f.cle), op: texte(f.op) as FiltreAnalyseValide['op'], value: texte(f.valeur) })));
+    }
+    if (a.triggerKind === 'analyse_devient' && typeof c.cle === 'string') {
+      setFiltreDevient({ key: c.cle, op: texte(c.op) as FiltreAnalyseValide['op'], value: texte(c.valeur) });
+    }
+    if (a.triggerKind === 'avant_date') {
+      setDateField(texte(c.fieldKey));
+      setDelai(typeof c.delai === 'number' ? c.delai : 2);
+      setUnite(c.unite === 'minutes' || c.unite === 'jours' ? c.unite : 'heures');
+      setSensDate(c.sens === 'apres' ? 'apres' : 'avant');
+    }
+    if (a.triggerKind === 'hubspot_deal_stage') setDealStageKey(`${texte(c.pipelineId)}::${texte(c.stageId)}`);
+    // Le formulaire vit en haut de l'écran : une ligne cliquée plus bas le laisserait hors de vue.
+    requestAnimationFrame(() => formulaire.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
   async function submit() {
     setBusy(true);
     setError(null);
     try {
-      await createAutomation(session.tenantId, {
-        name: name.trim(),
-        triggerKind,
-        triggerConfig: configDuDeclencheur(),
-        workflowId,
-        enabled: false, // jamais active à la création : on l'allume explicitement après relecture
-        ...(antiRebond !== null && triggerKind !== 'avant_date' ? { cooldownSeconds: antiRebond } : {}),
-      });
-      // Remise à zéro COMPLÈTE : un filtre resté collé (ressenti, « non résolue », étape) produirait une
-      // automation plus restrictive que voulu, sans que rien ne le signale à l'écran.
-      setCreating(false); setName(''); setKeywords(''); setTag(''); setWorkflowId(''); setDealStageKey('');
-      setMode('contains'); setSentiment('negatif'); setUnresolvedOnly(false); setTriggerKind('keyword'); setAdId('');
-      setFiltreDevient(null); setFiltresAnalyse([]); setAntiRebond(null);
+      if (enEdition) {
+        // Le type et la configuration partent ENSEMBLE (la route l'exige) ; l'état allumé ou éteint ne bouge pas.
+        await updateAutomation(session.tenantId, enEdition.id, {
+          name: name.trim(),
+          triggerKind,
+          triggerConfig: configDuDeclencheur(),
+          workflowId,
+          ...(triggerKind !== 'avant_date' ? { cooldownSeconds: antiRebond } : {}),
+        });
+      } else {
+        await createAutomation(session.tenantId, {
+          name: name.trim(),
+          triggerKind,
+          triggerConfig: configDuDeclencheur(),
+          workflowId,
+          enabled: false, // jamais active à la création : on l'allume explicitement après relecture
+          ...(antiRebond !== null && triggerKind !== 'avant_date' ? { cooldownSeconds: antiRebond } : {}),
+        });
+      }
+      reinitialiser();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Création impossible', 'Unable to create'));
+      setError(err instanceof Error ? err.message : enEdition ? t('Modification impossible', 'Unable to update') : t('Création impossible', 'Unable to create'));
     } finally {
       setBusy(false);
     }
@@ -319,11 +382,11 @@ function AutomationsInner({ session }: { session: Session }) {
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {!creating ? (
-        <Bouton onClick={() => setCreating(true)} data-testid="automation-add">
+        <Bouton onClick={() => { reinitialiser(); setCreating(true); }} data-testid="automation-add">
           <Icone nom="ajouter" />{t('Ajouter une automation', 'Add an automation')}
         </Bouton>
       ) : (
-        <div data-testid="automation-form" className="max-w-formulaire space-y-3 rounded-carte border border-ink-200 bg-white p-4">
+        <div ref={formulaire} data-testid="automation-form" className="max-w-formulaire space-y-3 rounded-carte border border-ink-200 bg-white p-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nom (interne)', 'Name (internal)')}</label>
             <input value={name} onChange={(e) => setName(e.target.value)} data-testid="automation-name" className={inputCls} placeholder={t('Demande de RDV', 'Appointment request')} />
@@ -616,15 +679,26 @@ function AutomationsInner({ session }: { session: Session }) {
               >
                 <option value="">{t(`le délai par défaut (${delaiParDefaut(triggerKind)[0]})`, `the default delay (${delaiParDefaut(triggerKind)[1]})`)}</option>
                 {DELAIS_RELANCE.map((d) => <option key={d.secondes} value={d.secondes}>{t(d.libelle[0], d.libelle[1])}</option>)}
+                {antiRebond !== null && !DELAIS_RELANCE.some((d) => d.secondes === antiRebond) && (
+                  <option value={antiRebond}>{t(`${antiRebond} secondes (réglé par l’API)`, `${antiRebond} seconds (set through the API)`)}</option>
+                )}
               </select>
             </div>
           )}
           <div className="flex items-center gap-2 pt-1">
             <Bouton enCours={busy} onClick={() => { void submit(); }} disabled={!canSubmit || busy} data-testid="automation-submit">
-              {busy ? t('Création…', 'Creating…') : t('Créer (désactivée)', 'Create (disabled)')}
+              {enEdition
+                ? (busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save'))
+                : (busy ? t('Création…', 'Creating…') : t('Créer (désactivée)', 'Create (disabled)'))}
             </Bouton>
-            <button onClick={() => setCreating(false)} className="text-sm text-ink-500 hover:underline">{t('Annuler', 'Cancel')}</button>
-            <span className="text-xs text-ink-500">{t('Elle ne partira qu’une fois activée.', 'It will only run once enabled.')}</span>
+            <button onClick={reinitialiser} className="text-sm text-ink-500 hover:underline">{t('Annuler', 'Cancel')}</button>
+            <span className="text-xs text-ink-500" data-testid="automation-form-note">
+              {!enEdition
+                ? t('Elle ne partira qu’une fois activée.', 'It will only run once enabled.')
+                : enEdition.enabled
+                  ? t('Elle est active : vos changements s’appliquent dès l’enregistrement.', 'It is enabled: your changes apply as soon as you save.')
+                  : t('Elle reste désactivée.', 'It stays disabled.')}
+            </span>
           </div>
         </div>
       )}
@@ -662,7 +736,8 @@ function AutomationsInner({ session }: { session: Session }) {
                       {a.enabled ? t('active', 'enabled') : t('désactivée', 'disabled')}
                     </button>
                   </td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="whitespace-nowrap px-4 py-2 text-right">
+                    <button type="button" onClick={() => ouvrirEdition(a)} data-testid={`automation-modifier-${a.id}`} className="mr-3 text-xs text-brand-600 hover:underline">{t('Modifier', 'Edit')}</button>
                     <BoutonConfirme question={t(`Supprimer « ${a.name} » ?`, `Delete "${a.name}"?`)} onConfirme={() => { void remove(a); }} libelleConfirmer={t('Supprimer', 'Delete')} className="text-xs text-danger hover:underline">{t('Supprimer', 'Delete')}</BoutonConfirme>
                   </td>
                 </tr>
