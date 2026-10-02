@@ -4,6 +4,7 @@ import type { ClesNormalisees, FicheApiLigne, PgContactStore } from '../crm/cont
 import type { UserFieldStore } from '../crm/fields';
 import { verdictWhatsApp } from '../contacts/joignabilite';
 import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
+import type { AnalyseDeFiche } from '../analysis/fiche';
 import { estUuid } from '../http/scope';
 import { resolveFieldKey } from '../ids/resolve';
 import {
@@ -92,7 +93,35 @@ export interface FicheApi {
    * toujours à jour.
    */
   engagementRisk: EngagementRisk | null;
+  /**
+   * La dernière analyse de conversation recopiée sur la fiche, en lecture seule ; `null` si le contact n'a jamais
+   * été analysé. Elle survit à l'effacement de la conversation. Jamais le résumé (décision 15 : il porte les propos
+   * du client). En écriture, la clé est ignorée comme `engagementRisk` (les schémas d'écriture l'écartent).
+   */
+  lastAnalysis: LastAnalysis | null;
   createdAt: string;
+}
+
+/** Les codes sont ceux de l'analyse (`src/analysis/schema.ts`) ; `null` sur une note = pas de mesure, jamais 0. */
+export interface LastAnalysis {
+  intent: AnalyseDeFiche['intention'];
+  sentiment: AnalyseDeFiche['sentiment'];
+  satisfaction: number | null;
+  urgency: number | null;
+  resolved: boolean;
+  topic: string;
+  handledBy: AnalyseDeFiche['traiteePar'];
+  actionSuggestion: AnalyseDeFiche['action'];
+  analyzedAt: string;
+}
+
+/** La dernière analyse telle que l'API la rend. */
+function analyseDeLaFiche(a: AnalyseDeFiche | null): LastAnalysis | null {
+  if (a === null) return null;
+  return {
+    intent: a.intention, sentiment: a.sentiment, satisfaction: a.satisfaction, urgency: a.urgence, resolved: a.resolue,
+    topic: a.sujet, handledBy: a.traiteePar, actionSuggestion: a.action, analyzedAt: a.analyseLe.toISOString(),
+  };
 }
 
 export interface EngagementRisk {
@@ -128,6 +157,7 @@ export function formaterFicheApi(l: FicheApiLigne, rcs: boolean | null, maintena
     blocked: l.blockedAt !== null,
     reachability: { whatsapp: whatsapp === 'inconnu' ? null : whatsapp === 'oui', rcs },
     engagementRisk: risqueDeLaFiche(l),
+    lastAnalysis: analyseDeLaFiche(l.analyse),
     createdAt: l.createdAt,
   };
 }

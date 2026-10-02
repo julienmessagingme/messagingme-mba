@@ -1942,9 +1942,12 @@ scénario, comment importer des contacts.
   `consent: "opted_in"` ou `"opted_out"`, et un `opted_out` est un vrai désabonnement (statut, date, trace dans
   le journal d'audit). 🔴 L'API ne réabonne jamais : un `opted_in` sur une fiche désabonnée est refusé
   (`opted_out`) et rien n'est écrit. La lecture rend aussi la joignabilité WhatsApp et RCS quand elle est
-  connue, et ✅ le **risque de désengagement** (déployé le 2026-09-25 ; `engagementRisk` : niveau, score, codes
+  connue, ✅ le **risque de désengagement** (déployé le 2026-09-25 ; `engagementRisk` : niveau, score, codes
   des raisons, et la date à laquelle le contact est passé à ce niveau ; `null` tant qu'il n'a jamais été
-  calculé), décrit dans la Documentation API.
+  calculé), et ✅ la **dernière analyse** (2026-10-02 ; `lastAnalysis` : intention, sentiment, satisfaction et
+  urgence sur 10, résolue ou non, sujet, qui l'a traitée, action suggérée et date ; `null` si le contact n'a
+  jamais été analysé ; jamais le résumé, qui reprend les propos du client ; lecture seule, ignorée si on
+  l'envoie), décrits dans la Documentation API.
   🔴 Un contact mal formé dans un lot est refusé À SA LIGNE, les autres passent, et la réponse nomme le champ
   fautif.
   🔴 **Des appels bornés, et l'API ne crée plus rien** (2026-09-26) : un lot porte 50 fiches au plus (500
@@ -2050,6 +2053,11 @@ scénario, comment importer des contacts.
   peuvent arriver avec plusieurs dizaines de minutes de retard, pendant que les réponses continuent de partir
   dans la minute. Chaque événement porte l'heure où il s'est produit, et un identifiant stable (`em_event_id`)
   pour dédupliquer un événement reçu deux fois.
+  ✅ **La dernière analyse de la fiche part avec CHAQUE signal** (2026-10-02) : intention, sentiment,
+  satisfaction, urgence et résolue, plus le sujet (`em_last_topic`), qui l'a traitée (`em_last_handled_by`) et
+  l'action suggérée (`em_last_action_suggestion`). Elle est lue sur la fiche au moment de l'envoi, donc c'est
+  toujours l'état courant, même pour un événement ancien rejoué. Une note que l'analyse n'a pas pu mesurer
+  n'efface pas la précédente.
   ⚠️ **Le canal d'un désabonnement n'est dit que s'il est prouvé** : la personne a écrit STOP sur ce canal.
   Un désabonnement posé par l'équipe ou par l'API ne porte que sa source.
   ⚠️ **Le profil est désigné par l'`externalId`** que l'outil nous passe par l'API. Une fiche qui n'en porte
@@ -2058,9 +2066,9 @@ scénario, comment importer des contacts.
   ⚠️ **Une poussée refusée se lit dans Sécurité > Journal des erreurs**, moitié « système ». Des clés
   refusées par l'outil suspendent la remontée jusqu'à ce qu'on en enregistre de nouvelles, et l'écran le dit.
   Un événement resté plus de 24 heures dans la file (une panne prolongée) peut ne pas être envoyé, selon
-  l'outil ; partent alors seulement l'identifiant de la fiche et ses désabonnements, relus à l'envoi, jamais ce
-  que l'événement seul apprenait (dernière réponse, joignabilité RCS, dernière analyse), qui écraserait un état
-  plus récent.
+  l'outil ; part alors seulement l'état de la fiche relu à l'envoi (son identifiant, ses désabonnements, sa
+  dernière analyse), jamais ce que l'événement seul apprenait (dernière réponse, joignabilité RCS), qui
+  écraserait un état plus récent.
   ⚠️ « Conversation analysée » arrive environ une demi-heure après le dernier message : assez pour une
   relance, pas pour une alerte.
   ✅ **Le risque de désengagement remonte aussi** (lot 7, déployé le 2026-09-25) : trois attributs de fiche (le niveau,
@@ -2696,8 +2704,9 @@ d'aide.
   justement pour qu'on le sache avant. (L'écran « bibliothèque de l'espace », Tools > Outils, n'existe plus.)
 - ✅ **Sept outils maison** au catalogue, chacun étiqueté **lecture**, **écriture** ou **irréversible** :
   - **Chercher dans la base de connaissance** (lecture) : à appeler avant toute question de fond.
-  - **Lire la fiche du contact** (lecture) : ce qu'on sait déjà de lui, son nom, ses champs. Jamais la fiche
-    de quelqu'un d'autre.
+  - **Lire la fiche du contact** (lecture) : ce qu'on sait déjà de lui, son nom, ses champs, et (2026-10-02) sa
+    dernière analyse avec son résumé : sentiment, satisfaction, urgence, sujet, résolue ou non. L'agent sait
+    ainsi qu'il parle à un client mécontent. Jamais la fiche de quelqu'un d'autre.
   - **Poser un tag sur le contact** (écriture) : pour le retrouver dans le mini-CRM, ou déclencher une
     automation.
   - **Enregistrer une information sur le contact** (écriture) : écrire dans un champ, pour qu'un bloc plus
@@ -3496,7 +3505,12 @@ pas. L'accès passe par une **clé d'API** portant les droits `mcp:read` et/ou `
 
 **Ce que l'assistant peut faire.** Lire (`mcp:read`) : lister les conversations, ouvrir un fil et savoir si la
 fenêtre de 24 h est ouverte, lire les messages, chercher un contact, lister les membres. Agir (`mcp:write`) :
-répondre dans une conversation ouverte, poser des tags, confier un fil à un membre.
+répondre dans une conversation ouverte, poser des tags, confier un fil à un membre. Une fiche de contact lue par
+le serveur MCP porte sa dernière analyse et son résumé (`last_analysis`, 2026-10-02), `null` si le contact n'a
+jamais été analysé : à la différence de l'API publique, l'assistant lit déjà les conversations, le résumé ne lui
+apprend rien qu'il ne puisse lire. La recherche porte la dernière analyse sans le résumé, `get_contact` les deux.
+⚠️ Un agent qui répond aux clients et appelle `get_contact` doit lier le numéro à la fiche de celui qui écrit :
+sinon un message piégé pourrait lui faire lire la fiche, et le résumé, d'un autre client.
 
 **Ce qu'il ne fait PAS, et c'est délibéré.**
 - **Aucun envoi de template, aucune campagne.** Ouvrir l'envoi de template à un modèle, c'est lui donner un

@@ -43,6 +43,7 @@ function harnais(rendu: FicheTrouvee[] | (() => never)) {
     escaladerVersHumain: async () => true,
     poserTag: async () => {},
     ecrireChamp: async () => {},
+    lireAnalyse: async () => null,
     connaissance: {
       chercher: async (tenantId, agentId, requete, limite) => {
         vues.push({ tenantId, agentId, requete, limite });

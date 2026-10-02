@@ -154,6 +154,40 @@ describe.skipIf(!url)('résumé et dernière analyse de la fiche (Postgres)', ()
     expect(await fiches2.ficheDuContact(tenantId, '33600100999')).toBeNull();
   });
 
+  it('🔴 lot 4 : l’API, le MCP et l’outil de l’agent lisent la copie et le résumé de la MÊME analyse, dans leur espace', async () => {
+    const c = await contact('+33600100308');
+    const conv = await fil('33600100308', c);
+    await message(conv, 'toujours rien reçu');
+    await analyser(conv);
+    const store = new PgContactStore(pool);
+    // L'API publique : la copie, une note à 0 comprise (le résumé n'est pas dans cette lecture).
+    expect((await store.lireFicheApi(tenantId, c))?.analyse).toMatchObject({
+      intention: 'reclamation', satisfaction: 0, urgence: 9, resolue: false, conversationId: conv,
+    });
+    // Le MCP : la page en une lecture, avec le résumé ; vue d'un autre espace, la fiche n'existe pas.
+    expect((await store.analysesEtResumes(tenantId, [c])).get(c)).toMatchObject({
+      analyse: { intention: 'reclamation', satisfaction: 0 }, resume: base.summary,
+    });
+    expect((await store.analysesEtResumes(autreTenantId, [c])).size).toBe(0);
+    // L'outil de l'agent : par le wa_id du fil, sous ses deux formes.
+    expect(await store.analyseEtResumeParWaId(tenantId, '33600100308')).toMatchObject({ analyse: { sentiment: 'negatif' }, resume: base.summary });
+    expect(await store.analyseEtResumeParWaId(autreTenantId, '33600100308')).toBeNull();
+    // La conversation effacée : la copie reste, le résumé part avec elle.
+    await pool.query(`delete from conversations where id = $1`, [conv]);
+    expect((await store.analysesEtResumes(tenantId, [c])).get(c)).toMatchObject({ analyse: { intention: 'reclamation' }, resume: null });
+    expect(await store.analyseEtResumeParWaId(tenantId, '33600100308')).toMatchObject({ analyse: { intention: 'reclamation' }, resume: null });
+  });
+
+  it('🔴 lot 4 : une fiche jamais analysée rend `analyse: null` par les trois lectures', async () => {
+    const c = await contact('+33600100309');
+    const store = new PgContactStore(pool);
+    expect((await store.lireFicheApi(tenantId, c))?.analyse).toBeNull();
+    expect((await store.analysesEtResumes(tenantId, [c])).get(c)).toEqual({ analyse: null, resume: null });
+    expect(await store.analyseEtResumeParWaId(tenantId, '33600100309')).toEqual({ analyse: null, resume: null });
+    expect(await store.analyseEtResumeParWaId(tenantId, '33600100998')).toBeNull();
+    expect((await store.analysesEtResumes(tenantId, [])).size).toBe(0);
+  });
+
   it('🔴 la fiche d’un autre espace n’est jamais rendue', async () => {
     const c = await contact('+33600100305');
     expect(await fiches.resumeContact(autreTenantId, c)).toBeNull();

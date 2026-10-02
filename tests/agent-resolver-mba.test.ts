@@ -28,6 +28,7 @@ function harnais(over: Partial<DepsResolveurMba> = {}) {
     escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}:${i.agentId}`); return true; },
     poserTag: async (_t, _w, tag) => { journal.push(`tag:${tag}`); },
     ecrireChamp: async (_t, _w, cle, valeur) => { journal.push(`champ:${cle}=${valeur}`); },
+    lireAnalyse: async (t, w) => { journal.push(`analyse:${t}:${w}`); return null; },
     // La recherche a sa propre suite (`tests/agent-knowledge.test.ts`) : ici elle ne rend rien.
     connaissance: { chercher: async () => [] },
     ...over,
@@ -62,12 +63,43 @@ describe('résolveur maison (tâche 16)', () => {
   it('« lire_contact » rend la fiche DEJA lue par le tour, sans jamais accepter d identifiant du modele', async () => {
     // Le modèle ne fournit aucun identifiant ici : il n'existe donc aucun chemin pour lire la fiche de
     // quelqu'un d'autre, même en cas d'injection réussie dans le message du contact.
-    const { resolveur } = harnais();
+    const { resolveur, journal } = harnais();
     const r = await resolveur(appel('lire_contact', { wa_id: '33699999999' }));
-    expect(r.contenu).toEqual({ connu: true, champs: { wa_id: '33600', prenom: 'Julien' } });
+    expect(r.contenu).toEqual({ connu: true, champs: { wa_id: '33600', prenom: 'Julien' }, derniere_analyse: null, resume: null });
+    // L'analyse se lit pour le contact du TOUR, jamais pour le numéro que le modèle a glissé dans ses arguments.
+    expect(journal).toEqual(['analyse:t1:33600']);
 
     const inconnu = await resolveur(appel('lire_contact', {}, { ...CTX, contact: null }));
     expect(inconnu.contenu).toEqual({ connu: false });
+    expect(journal).toEqual(['analyse:t1:33600']); // contact inconnu : aucune lecture de plus
+  });
+
+  it('🔴 « lire_contact » rend la dernière analyse et son résumé ; une note à 0 reste 0, `false` reste `false`', async () => {
+    const { resolveur } = harnais({
+      lireAnalyse: async () => ({
+        analyse: {
+          intention: 'reclamation', sentiment: 'negatif', satisfaction: 0, urgence: null, resolue: false, sujet: 'colis perdu',
+          traiteePar: 'humain', action: 'rappeler', analyseLe: new Date('2026-09-26T14:32:00.000Z'),
+          fenetreFin: new Date('2026-09-26T14:30:00.000Z'), conversationId: 'c1',
+        },
+        resume: 'Le client attend son colis depuis dix jours.',
+      }),
+    });
+    const r = await resolveur(appel('lire_contact'));
+    expect(r.contenu).toEqual({
+      connu: true, champs: { wa_id: '33600', prenom: 'Julien' },
+      derniere_analyse: {
+        intention: 'reclamation', sentiment: 'negatif', satisfaction: 0, urgence: null, resolue: false, sujet: 'colis perdu',
+        traitee_par: 'humain', action_suggeree: 'rappeler', analysee_le: '2026-09-26T14:32:00.000Z',
+      },
+      resume: 'Le client attend son colis depuis dix jours.',
+    });
+  });
+
+  it('⚠️ « lire_contact » : une lecture d’analyse ratée rend la fiche et le dit, sans prétendre « jamais analysé »', async () => {
+    const { resolveur } = harnais({ lireAnalyse: async () => { throw new Error('connexion perdue'); } });
+    const r = await resolveur(appel('lire_contact'));
+    expect(r.contenu).toEqual({ connu: true, champs: { wa_id: '33600', prenom: 'Julien' }, analyse_indisponible: true });
   });
 
   it('🔴 « escalader » appelle la dep d escalade et rend « rendu » : le tour doit s arreter', async () => {

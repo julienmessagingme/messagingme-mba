@@ -1485,6 +1485,8 @@ async function main(): Promise<void> {
       // 🔴 La clé vient du modèle : portée bornée aux champs libres du contact courant (jamais l'opt-in, jamais
       // un autre contact), et l'énumération fermée proposée par la console sur ce paramètre pare une injection.
       ecrireChamp: async (t, waId, cle, valeur) => { await contactStore.mergeFieldsByPhone(t, waId, { [cle]: valeur }); },
+      // `mba_lire_contact` : la dernière analyse et son résumé, lus pour le contact du tour seulement.
+      lireAnalyse: (t, waId) => contactStore.analyseEtResumeParWaId(t, waId),
       connaissance: knowledgeStore,
       // Le rappel vectoriel et le verdict du reranker. `null` sans clé du Gateway : la recherche retombe sur le
       // plein texte.

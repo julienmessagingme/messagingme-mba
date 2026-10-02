@@ -115,6 +115,28 @@ function Contacts() {
             '. computedAt: when the contact reached this level; it only changes with the level, while score and reasons are always current.',
           )}
         </p>
+        <p data-testid="doc-last-analysis">
+          <C>lastAnalysis</C>
+          {t(
+            ' : la dernière analyse de conversation du contact, recopiée sur sa fiche ; elle reste là quand la conversation est effacée. null s’il n’a jamais été analysé. Lecture seule : envoyée dans un POST ou un PATCH, elle est ignorée. intent : ',
+            ': the contact’s latest conversation analysis, copied onto the record; it stays when the conversation is deleted. null if never analysed. Read-only: ignored when sent in a POST or a PATCH. intent: ',
+          )}
+          <C>demande_devis</C>, <C>sav</C>, <C>reclamation</C>, <C>information</C>, <C>prise_rdv</C>, <C>achat</C>,{' '}
+          <C>suivi_commande</C>, <C>retour</C>, <C>autre</C>
+          {t('. sentiment : ', '. sentiment: ')}
+          <C>positif</C>, <C>neutre</C>, <C>negatif</C>
+          {t(
+            '. satisfaction et urgency : de 0 à 10, null quand l’analyse n’a pas pu les mesurer (0 est une vraie mesure). resolved : la conversation est-elle résolue. topic : son sujet, en clair. handledBy : ',
+            '. satisfaction and urgency: from 0 to 10, null when the analysis could not measure them (0 is a real measure). resolved: whether the conversation is resolved. topic: its subject, in plain words. handledBy: ',
+          )}
+          <C>humain</C>, <C>automatise</C>, <C>mba</C>
+          {t('. actionSuggestion : ', '. actionSuggestion: ')}
+          <C>creer_devis</C>, <C>rappeler</C>, <C>relancer</C>, <C>escalader</C>, <C>aucune</C>
+          {t(
+            '. analyzedAt : la date de l’analyse. Le résumé de la conversation n’en fait pas partie : il reprend les propos du client.',
+            '. analyzedAt: when the analysis ran. The conversation summary is not included: it quotes what the customer said.',
+          )}
+        </p>
         <Sous>{erreurs}</Sous>
         <Erreurs lignes={[['unknown_contact', t('Fiche inconnue ou supprimée.', 'Unknown or deleted record.')]]} />
       </Route>

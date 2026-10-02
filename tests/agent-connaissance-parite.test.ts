@@ -55,6 +55,7 @@ function lesDeux(fiches: FicheTrouvee[]) {
     escaladerVersHumain: async () => true,
     poserTag: async () => {},
     ecrireChamp: async () => {},
+    lireAnalyse: async () => null,
     connaissance,
   };
   return { production: creerResolveurMba(prod), simulation: creerResolveurSimulation({ connaissance }) };

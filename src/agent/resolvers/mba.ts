@@ -1,6 +1,7 @@
 import type { EntreeResolveur, ResolveurOutil, SortieResolveur } from '../executor';
 import type { KnowledgeStore } from '../knowledge';
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
+import type { AnalyseEtResume } from '../../crm/contact-store.pg';
 
 /**
  * Le résolveur des outils maison : une table `handler` vers fonction TypeScript, sans réseau.
@@ -31,6 +32,14 @@ export interface DepsResolveurMba {
   /** Écrit une valeur dans les champs du contact (`mba_ecrire_variable`), pour qu'un bloc plus loin la relise. */
   ecrireChamp(tenantId: string, waId: string, cle: string, valeur: string): Promise<void>;
 
+  /**
+   * La dernière analyse du contact et le résumé de la même analyse (`mba_lire_contact`), lus seulement à l'appel de
+   * l'outil et toujours pour le contact du TOUR (`ctx.waId`), jamais pour un numéro venu du modèle. Requise : un
+   * câblage qui l'oublierait ne compile pas, au lieu de rendre une fiche sans analyse sans rien dire.
+   * La projection du contact n'en porte rien : les connecteurs, qui la reçoivent aussi, n'ont pas à voir l'analyse.
+   */
+  lireAnalyse(tenantId: string, waId: string): Promise<AnalyseEtResume | null>;
+
   /** La base de connaissance de l'agent (`mba_chercher_connaissance`). */
   connaissance: KnowledgeStore;
   /**
@@ -52,6 +61,34 @@ function echec(raison: string): SortieResolveur {
 }
 
 type Handler = (entree: EntreeResolveur, deps: DepsResolveurMba) => Promise<SortieResolveur>;
+
+/**
+ * La dernière analyse et son résumé, tels que le modèle les lit (`derniere_analyse`, `resume`). Les codes restent ceux
+ * de l'analyse ; une note `null` dit « pas de mesure ». Rien à rendre sans copie : l'agent ne déduit rien d'un vide.
+ */
+function analysePourLeModele(ar: AnalyseEtResume | null): Record<string, unknown> {
+  const a = ar?.analyse ?? null;
+  return {
+    derniere_analyse: a === null ? null : {
+      intention: a.intention, sentiment: a.sentiment, satisfaction: a.satisfaction, urgence: a.urgence, resolue: a.resolue,
+      sujet: a.sujet, traitee_par: a.traiteePar, action_suggeree: a.action, analysee_le: a.analyseLe.toISOString(),
+    },
+    resume: ar?.resume ?? null,
+  };
+}
+
+/**
+ * Une lecture ratée rend `analyse_indisponible`, jamais `derniere_analyse: null` (qui dirait « jamais analysé »),
+ * et ne fait pas perdre la fiche déjà en mémoire au modèle.
+ */
+async function analyseOuIndisponible(deps: DepsResolveurMba, ctx: { tenantId: string; waId: string }): Promise<Record<string, unknown>> {
+  try {
+    return analysePourLeModele(await deps.lireAnalyse(ctx.tenantId, ctx.waId));
+  } catch (e) {
+    console.warn('mba_lire_contact: dernière analyse illisible, fiche rendue sans elle:', e instanceof Error ? e.message : e);
+    return { analyse_indisponible: true };
+  }
+}
 
 const HANDLERS: Record<string, Handler> = {
   /** Terminer par une sortie prédéfinie. Le tronc commun remonte `sortie`, le tour clôt la session et le
@@ -82,8 +119,8 @@ const HANDLERS: Record<string, Handler> = {
 
   /** 🔴 La fiche contact telle que le tour l'a déjà lue : aucun moyen de désigner la fiche de quelqu'un
    *  d'autre, puisque le modèle ne fournit pas d'identifiant ici. */
-  lire_contact: async ({ ctx }) => (
-    ctx.contact === null ? { contenu: { connu: false } } : { contenu: { connu: true, champs: ctx.contact } }
+  lire_contact: async ({ ctx }, deps) => (
+    ctx.contact === null ? { contenu: { connu: false } } : { contenu: { connu: true, champs: ctx.contact, ...await analyseOuIndisponible(deps, ctx) } }
   ),
 
   envoyer_bloc: async ({ args, ctx }, deps) => {

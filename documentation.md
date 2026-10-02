@@ -783,6 +783,15 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   le résumé, lui, part avec la conversation (il suit `analyse_conversation_id` quand la copie existe). Aucune
   reprise de l'historique : une fiche se remplit à sa prochaine analyse. Le risque lit la copie, et retombe sur
   les conversations pour une fiche qui n'en a pas.
+- 🔴 **Hors de la console, quatre lecteurs de la copie, et le résumé n'en suit que deux.** L'API publique rend
+  `lastAnalysis` SANS résumé (décision 15 de la spec : il reprend les propos du client), lecture seule, la clé
+  étant écartée par les schémas d'écriture. Le MCP rend `last_analysis` AVEC le résumé de la même analyse, en UNE
+  requête par page (`PgContactStore.analysesEtResumes`, l'espace filtré sur les deux tables). L'outil
+  `mba_lire_contact` de l'agent IA rend `derniere_analyse` et `resume` par `analyseEtResumeParWaId`, pour le
+  contact du TOUR seulement, une dépendance REQUISE du résolveur et HORS de `projectionPourTiers` : les
+  connecteurs, qui reçoivent cette projection, ne voient rien de plus. Les signaux lisent ses huit valeurs avec
+  la fiche (`COLONNES_FICHE`, aucune requête de plus) et les envoient avec CHAQUE signal (`attributsRelus`) : un
+  signal d'analyse rejoué après une analyse plus récente ne réécrit donc pas un état périmé chez l'outil.
 - 🔴 **La liste unique des champs de la fiche est `src/crm/champs-fiche.ts`** : les données envoyées d'un
   connecteur (origine `fiche`), les filtres de contacts, le ciblage d'une campagne et le bloc Condition la
   lisent, la console la reçoit de `GET /tenants/:t/champs-fiche` (admin, comme `/user-fields`, qui n'est PAS

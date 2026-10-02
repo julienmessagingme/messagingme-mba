@@ -4,6 +4,7 @@ import {
   creerServiceContactsV1, formaterFicheApi, schemaContactV1, schemaPatchContactV1, schemaRechercheContactV1,
   type ResultatFiche,
 } from '../src/api/contacts-v1';
+import type { AnalyseDeFiche } from '../src/analysis/fiche';
 import { joignabiliteRcsConnue, joignabiliteRcsToutesFormes, TTL_MS } from '../src/rcs/reachability';
 import type { AuditSink } from '../src/audit/journal';
 import type { FicheApiLigne } from '../src/crm/contact-store.pg';
@@ -297,7 +298,7 @@ describe('lire et chercher', () => {
     profileName: 'Camille Roy', fields: { ville: 'Lyon' }, tags: ['prospect'], optInStatus: 'opted_in',
     optInSource: 'formulaire-site', optOutAt: null, rcsOptoutAt: null, blockedAt: null,
     whatsappJoignable: true, whatsappJoignableLe: '2026-09-20T10:00:00.000Z', createdAt: '2026-09-01T10:00:00.000Z',
-    risqueNiveau: null, risqueScore: null, risqueRaisons: [], risqueCalculeLe: null,
+    risqueNiveau: null, risqueScore: null, risqueRaisons: [], risqueCalculeLe: null, analyse: null,
   };
 
   it('🔴 le contrat de lecture du § 2, champ pour champ', () => {
@@ -307,7 +308,22 @@ describe('lire et chercher', () => {
       consent: { status: 'opted_in', source: 'formulaire-site', optedOutAt: null },
       rcsOptedOutAt: null, blocked: false, reachability: { whatsapp: true, rcs: null },
       engagementRisk: null,
+      lastAnalysis: null,
       createdAt: '2026-09-01T10:00:00.000Z',
+    });
+  });
+
+  it('🔴 la dernière analyse : `null` si jamais analysée ; une note à 0 reste 0, `false` reste `false`, et jamais de résumé', () => {
+    expect(formaterFicheApi(LIGNE, null, MAINTENANT).lastAnalysis).toBeNull();
+    const analyse: AnalyseDeFiche = {
+      intention: 'suivi_commande', sentiment: 'negatif', satisfaction: 0, urgence: null, resolue: false, sujet: 'Colis en retard',
+      traiteePar: 'humain', action: 'rappeler', analyseLe: new Date('2026-09-26T14:32:00.000Z'),
+      fenetreFin: new Date('2026-09-26T14:30:00.000Z'), conversationId: '00000000-0000-4000-8000-0000000000c1',
+    };
+    // `toEqual` refuse une clé de trop : ni la conversation ni la borne de fenêtre ne sortent par l'API.
+    expect(formaterFicheApi({ ...LIGNE, analyse }, null, MAINTENANT).lastAnalysis).toEqual({
+      intent: 'suivi_commande', sentiment: 'negatif', satisfaction: 0, urgency: null, resolved: false, topic: 'Colis en retard',
+      handledBy: 'humain', actionSuggestion: 'rappeler', analyzedAt: '2026-09-26T14:32:00.000Z',
     });
   });
 

@@ -79,8 +79,36 @@ describe.skipIf(!url)('signaux : lectures et réglage (Postgres)', () => {
   it('la fiche se retrouve par wa_id, avec son identifiant externe et son consentement', async () => {
     expect(await lectures.ficheParWaId(tenantId, '33600000881')).toEqual({
       contactId, externalId: 'crm-itest-1', optOutWhatsapp: true, optOutRcs: false, optInSource: 'whatsapp_stop',
+      derniereAnalyse: null,
     });
     expect((await lectures.ficheParId(tenantId, contactId))?.externalId).toBe('crm-itest-1');
+  });
+
+  it('🔴 la dernière analyse de la fiche se relit avec elle, une note à 0 et `false` compris (décision 16)', async () => {
+    await pool.query(
+      `update contacts set analyse_le = now(), analyse_fenetre_fin = now(), analyse_intention = 'reclamation',
+              analyse_sentiment = 'negatif', analyse_satisfaction = 0, analyse_urgence = null, analyse_resolue = false,
+              analyse_sujet = 'colis perdu', analyse_traitee_par = 'mba', analyse_action = 'rappeler',
+              analyse_conversation_id = $2
+        where id = $1`,
+      [contactId, conversationId],
+    );
+    try {
+      const attendue = {
+        intent: 'reclamation', sentiment: 'negatif', satisfaction: 0, urgence: null, resolved: false, topic: 'colis perdu',
+        handledBy: 'mba', actionSuggestion: 'rappeler',
+      };
+      expect((await lectures.ficheParWaId(tenantId, '33600000881'))?.derniereAnalyse).toEqual(attendue);
+      expect((await lectures.ficheParId(tenantId, contactId))?.derniereAnalyse).toEqual(attendue);
+    } finally {
+      await pool.query(
+        `update contacts set analyse_le = null, analyse_fenetre_fin = null, analyse_intention = null, analyse_sentiment = null,
+                analyse_satisfaction = null, analyse_urgence = null, analyse_resolue = null, analyse_sujet = null,
+                analyse_traitee_par = null, analyse_action = null, analyse_conversation_id = null
+          where id = $1`,
+        [contactId],
+      );
+    }
   });
 
   it('🔴 la fiche d’un espace n’est jamais rendue à un autre', async () => {

@@ -37,6 +37,10 @@ export const NOMS_ATTRIBUTS = [
   'em_satisfaction',
   'em_urgency',
   'em_last_resolved',
+  // Nommés AVANT le package Salesforce v0.1, qui fige ses noms de champs une fois publié (amendement 13).
+  'em_last_topic',
+  'em_last_handled_by',
+  'em_last_action_suggestion',
   'em_last_reply_at',
   'em_whatsapp_optout',
   'em_rcs_optout',
@@ -188,6 +192,23 @@ export interface ContactDuSignal {
   externalId: string | null;
   optOutWhatsapp: boolean;
   optOutRcs: boolean;
+  /**
+   * La dernière analyse recopiée sur la fiche, relue au moment de pousser : l'état COURANT, qui part avec chaque
+   * signal et survit à l'effacement de la conversation (décision 16). `null` = jamais analysée.
+   */
+  derniereAnalyse: DerniereAnalyseDuSignal | null;
+}
+
+/** Les huit valeurs de la dernière analyse d'une fiche. `null` sur une note = pas de mesure, jamais 0. */
+export interface DerniereAnalyseDuSignal {
+  intent: string;
+  sentiment: string;
+  satisfaction: number | null;
+  urgence: number | null;
+  resolved: boolean;
+  topic: string;
+  handledBy: string;
+  actionSuggestion: string;
 }
 
 /**

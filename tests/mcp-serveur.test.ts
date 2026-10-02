@@ -6,6 +6,8 @@ import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { DepsMcp } from '../src/mcp/outils';
+import type { ContactRow } from '../src/crm/contact-store.pg';
+import type { AnalyseDeFiche } from '../src/analysis/fiche';
 import { OUTILS } from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest } from './aide/cle-api';
@@ -82,6 +84,7 @@ function app(
       query: async () => [],
       findByPhone: async () => null,
       addTagsByPhoneReturningNew: async () => ({ touched: 1, added: ['chaud'] }),
+      analysesEtResumes: async () => new Map(),
       ...contacts,
     },
     listerMembres: async () => membres ?? [{ id: 'u1', name: 'Jean', email: 'jean@test.fr', role: 'admin' }],
@@ -408,6 +411,17 @@ describe('serveur MCP : cohérence du catalogue', () => {
   });
 });
 
+const CONTACT_MCP: ContactRow = {
+  id: '00000000-0000-4000-8000-0000000000a1', phoneE164: '+33612345678', bsuid: null, externalId: null, profileName: 'Camille',
+  optInStatus: 'opted_in', fields: {}, tags: [], createdAt: '2026-09-01T10:00:00.000Z', blockedAt: null,
+  whatsappJoignable: null, whatsappJoignableLe: null, risque: null,
+};
+const ANALYSE_MCP: AnalyseDeFiche = {
+  intention: 'suivi_commande', sentiment: 'negatif', satisfaction: 0, urgence: 9, resolue: false, sujet: 'Colis en retard',
+  traiteePar: 'humain', action: 'rappeler', analyseLe: new Date('2026-09-26T14:32:00.000Z'),
+  fenetreFin: new Date('2026-09-26T14:30:00.000Z'), conversationId: '00000000-0000-4000-8000-0000000000c1',
+};
+
 describe('🔴 get_contact cherche la fiche au format de la fiche (essai réel du 2026-10-02)', () => {
   it('un identifiant WhatsApp sans « + », un E.164 et un national cherchent tous +33612345678', async () => {
     const cherches: string[] = [];
@@ -416,6 +430,59 @@ describe('🔴 get_contact cherche la fiche au format de la fiche (essai réel d
       await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('get_contact', { phone }) });
     }
     expect(cherches).toEqual(['+33612345678', '+33612345678', '+33612345678']);
+  });
+
+  it('🔴 la fiche porte sa dernière analyse et son RÉSUMÉ, lus dans l’espace de la clé', async () => {
+    const lus: Array<{ tenant: string; ids: readonly string[] }> = [];
+    const { server } = app({
+      contacts: {
+        findByPhone: async () => CONTACT_MCP,
+        analysesEtResumes: async (tenant: string, ids: readonly string[]) => {
+          lus.push({ tenant, ids });
+          return new Map([[CONTACT_MCP.id, { analyse: ANALYSE_MCP, resume: 'Le client attend son colis depuis dix jours.' }]]);
+        },
+      },
+    });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('get_contact', { phone: '33612345678' }) });
+    expect(contenu(res).isError).toBe(false);
+    expect(JSON.parse(contenu(res).texte).last_analysis).toEqual({
+      intent: 'suivi_commande', sentiment: 'negatif', satisfaction: 0, urgency: 9, resolved: false, topic: 'Colis en retard',
+      handled_by: 'humain', action_suggestion: 'rappeler', analyzed_at: '2026-09-26T14:32:00.000Z',
+      summary: 'Le client attend son colis depuis dix jours.',
+    });
+    expect(lus).toEqual([{ tenant: 't1', ids: [CONTACT_MCP.id] }]);
+  });
+
+  it('jamais analysée : `last_analysis` vaut null ; la recherche lit TOUTE la page en UNE fois', async () => {
+    const lus: Array<readonly string[]> = [];
+    const autre = { ...CONTACT_MCP, id: '00000000-0000-4000-8000-0000000000b2', phoneE164: '+33698765432' };
+    const { server } = app({
+      contacts: {
+        query: async () => [CONTACT_MCP, autre],
+        analysesEtResumes: async (_t: string, ids: readonly string[]) => {
+          lus.push(ids);
+          return new Map([[CONTACT_MCP.id, { analyse: ANALYSE_MCP, resume: null }]]);
+        },
+      },
+    });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('search_contacts', { query: 'Camille' }) });
+    const rendus = JSON.parse(contenu(res).texte).contacts as Array<{ id: string; last_analysis: Record<string, unknown> | null }>;
+    // La recherche ne porte pas le résumé : vingt résumés dépasseraient ce qu'un outil d'agent rend.
+    expect(rendus[0]?.last_analysis).toMatchObject({ sentiment: 'negatif', satisfaction: 0 });
+    expect(rendus[0]?.last_analysis).not.toHaveProperty('summary');
+    expect(rendus[1]?.last_analysis).toBeNull();
+    expect(lus).toEqual([[CONTACT_MCP.id, autre.id]]);
+  });
+
+  it('⚠️ une lecture d’analyse ratée rend la fiche quand même, SANS la clé (et non `null`, qui dirait « jamais analysée »)', async () => {
+    const { server } = app({
+      contacts: { findByPhone: async () => CONTACT_MCP, analysesEtResumes: async () => { throw new Error('connexion perdue'); } },
+    });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('get_contact', { phone: '33612345678' }) });
+    expect(contenu(res).isError).toBe(false);
+    const fiche = JSON.parse(contenu(res).texte) as Record<string, unknown>;
+    expect(fiche.id).toBe(CONTACT_MCP.id);
+    expect(fiche).not.toHaveProperty('last_analysis');
   });
 
   it('un numéro illisible est refusé avec la forme attendue, sans rien chercher', async () => {

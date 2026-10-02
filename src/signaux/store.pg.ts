@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
+import { COLONNES_ANALYSE_FICHE, analyseDeLaLigne, type LigneAnalyseFiche } from '../analysis/fiche';
 import type { AnalyseDuSignal } from './types';
 import type { FicheDuSignal, LecturesSignal } from './completer';
 
@@ -7,22 +8,28 @@ import type { FicheDuSignal, LecturesSignal } from './completer';
  * 🔴 Les lectures des signaux, en Postgres. `tenant_id = $1` sur chaque requête : le pooler est en rôle
  * superuser, la RLS est contournée, ce filtre est le seul contrôle (`tests/signaux-isolation.test.ts`).
  */
-interface LigneFiche {
+type LigneFiche = {
   id: string;
   external_id: string | null;
   opt_in_status: string;
   opt_in_source: string | null;
   rcs_optout_at: Date | null;
-}
-const COLONNES_FICHE = 'id, external_id, opt_in_status, opt_in_source, rcs_optout_at';
+} & LigneAnalyseFiche;
+// La dernière analyse se lit dans la MÊME requête que la fiche : aucune lecture de plus par signal.
+const COLONNES_FICHE = `id, external_id, opt_in_status, opt_in_source, rcs_optout_at, ${COLONNES_ANALYSE_FICHE.join(', ')}`;
 
 function fiche(r: LigneFiche): FicheDuSignal {
+  const a = analyseDeLaLigne(r);
   return {
     contactId: r.id,
     externalId: r.external_id,
     optOutWhatsapp: r.opt_in_status === 'opted_out',
     optOutRcs: r.rcs_optout_at !== null,
     optInSource: r.opt_in_source,
+    derniereAnalyse: a === null ? null : {
+      intent: a.intention, sentiment: a.sentiment, satisfaction: a.satisfaction, urgence: a.urgence, resolved: a.resolue,
+      topic: a.sujet, handledBy: a.traiteePar, actionSuggestion: a.action,
+    },
   };
 }
 

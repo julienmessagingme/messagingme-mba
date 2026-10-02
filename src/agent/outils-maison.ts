@@ -104,8 +104,8 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     nomDefaut: 'mba_lire_contact',
     titre: { fr: 'Lire la fiche du contact', en: 'Read the contact record' },
     description: {
-      fr: 'Rend ce que l’on sait déjà du contact : son nom, ses champs. Aucun identifiant à fournir.',
-      en: 'Returns what is already known about the contact: name, custom fields. No identifier to provide.',
+      fr: 'Rend ce que l’on sait déjà du contact : son nom, ses champs, et ce que la dernière analyse de ses conversations a constaté (intention, sentiment, satisfaction et urgence sur 10, résolue ou non, sujet), avec son résumé s’il existe. Aucun identifiant à fournir.',
+      en: 'Returns what is already known about the contact: name, custom fields, and what the latest analysis of their conversations found (intent, sentiment, satisfaction and urgency out of 10, resolved or not, topic), with its summary if any. No identifier to provide.',
     },
     nePasUtiliser: {
       fr: 'Ne rend jamais la fiche de quelqu’un d’autre : inutile de le demander.',

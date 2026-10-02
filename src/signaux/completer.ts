@@ -62,7 +62,10 @@ export async function completerSignal(l: LecturesSignal, tenantId: string, s: Si
   const base = {
     id: s.id,
     le: s.le,
-    contact: { contactId: fiche.contactId, externalId: fiche.externalId, optOutWhatsapp: fiche.optOutWhatsapp, optOutRcs: fiche.optOutRcs },
+    contact: {
+      contactId: fiche.contactId, externalId: fiche.externalId, optOutWhatsapp: fiche.optOutWhatsapp, optOutRcs: fiche.optOutRcs,
+      derniereAnalyse: fiche.derniereAnalyse,
+    },
   };
   switch (s.nom) {
     case 'em_message_delivered':
@@ -85,6 +88,10 @@ export async function completerSignal(l: LecturesSignal, tenantId: string, s: Si
       // donc aucun canal.
       return { ...base, contenu: { nom: s.nom, canal: canalDuStop(s, fiche), source: s.canal === 'rcs' ? SOURCE_STOP_RCS : fiche.optInSource } };
     case 'em_conversation_analyzed': {
+      // Conversation effacée avant la poussée : on ne retrouve la fiche que par le fil, et l'analyse part avec lui,
+      // donc le signal tombe (`ficheDu` a déjà rendu `null`). Le garder quand la fiche est analysée demanderait que
+      // le signal porte son `contactId` (format du job et émetteur) pour une fenêtre de quelques secondes entre
+      // l'analyse et la poussée : écarté le 2026-10-02. La copie de la fiche part avec le signal suivant.
       const analyse = await l.analyse(tenantId, s.conversationId);
       return analyse === null ? null : { ...base, contenu: { nom: s.nom, analyse } };
     }

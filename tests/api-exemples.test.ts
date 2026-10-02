@@ -27,7 +27,7 @@ import { VALEUR_VARIABLE_MAX, VARIABLES_MAX } from '../src/api/variables';
 import { STATUT_PAR_CODE, type CodeApi } from '../src/api/erreurs';
 import { PLAFOND_API_DEFAUT } from '../src/auth/plafond-espace';
 import { CODES_ECART } from '../src/api/sends-build';
-import type { FicheApi, ResultatFiche } from '../src/api/contacts-v1';
+import type { FicheApi, LastAnalysis, ResultatFiche } from '../src/api/contacts-v1';
 import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
 import { catalogueTemplates, catalogueScenarios, catalogueMessagesRcs } from '../src/http/v1-catalogues';
 import type { MessageRcsCatalogue, ScenarioCatalogue, TemplateCatalogue } from '../src/http/v1-catalogues';
@@ -267,6 +267,8 @@ const envoyeConversation: Egal<(typeof EXEMPLES_REPONSES.messageEnvoye)['convers
 const envoyeCanal: Egal<(typeof EXEMPLES_REPONSES.messageEnvoye)['channel'], ReponseMessageSimple['channel']> = true;
 const fiche: Lecture<FicheApi> = EXEMPLES_REPONSES.contactLu;
 const ficheCles: MemesCles<typeof EXEMPLES_REPONSES.contactLu, FicheApi> = true;
+// `MemesCles` ne descend pas : la dernière analyse, objet imbriqué, se compare pour elle-même.
+const ficheAnalyseCles: MemesCles<typeof EXEMPLES_REPONSES.contactLu.lastAnalysis, LastAnalysis> = true;
 const trouve: Lecture<{ contact: FicheApi | null }> = EXEMPLES_REPONSES.contactTrouve;
 const lot: ReadonlyArray<Lecture<ResultatFiche>> = EXEMPLES_REPONSES.contactsLot.results;
 const ecrit: Lecture<Pick<Extract<ResultatFiche, { status: 'created' | 'updated' }>, 'contactId' | 'status'>> = EXEMPLES_REPONSES.contactEcrit;
@@ -277,7 +279,7 @@ const rcsLus: ReadonlyArray<Lecture<MessageRcsCatalogue>> = EXEMPLES_REPONSES.me
 
 describe('les réponses montrées ont le type de leurs producteurs', () => {
   it('suivi d’un envoi, rapport 201, fiche lue, recherche, lot, écriture, message simple (tenus au typage)', () => {
-    expect([suiviCles, suiviLigneCles, creeCles, ficheCles, envoyeCles, envoyeConversation, envoyeCanal]).toEqual([true, true, true, true, true, true, true]);
+    expect([suiviCles, suiviLigneCles, creeCles, ficheCles, ficheAnalyseCles, envoyeCles, envoyeConversation, envoyeCanal]).toEqual([true, true, true, true, true, true, true, true]);
     expect([suivi, cree, fiche, trouve, lot, ecrit, tpls, scns, rcsLus, envoye].every((v) => v !== null)).toBe(true);
   });
 });

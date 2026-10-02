@@ -27,6 +27,10 @@ const FICHE: FicheApi = {
   fields: { ville: 'Lyon' }, tags: ['prospect'], consent: { status: 'opted_in', source: 'formulaire-site', optedOutAt: null },
   rcsOptedOutAt: null, blocked: false, reachability: { whatsapp: true, rcs: null },
   engagementRisk: { level: 'moyen', score: 40, reasons: ['silence_60j'], computedAt: '2026-09-25T03:05:00.000Z' },
+  lastAnalysis: {
+    intent: 'sav', sentiment: 'negatif', satisfaction: 0, urgency: 8, resolved: false, topic: 'livraison',
+    handledBy: 'humain', actionSuggestion: 'rappeler', analyzedAt: '2026-09-26T14:32:00.000Z',
+  },
   createdAt: '2026-09-24T10:00:00.000Z',
 };
 
@@ -261,6 +265,19 @@ describe('PATCH /v1/contacts/:contactId', () => {
     const res = await server.inject({ method: 'PATCH', url: `/v1/contacts/${ID}`, ...auth(ECRITURE), payload: { consent: 'opted_out' } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ contactId: ID });
+    await server.close();
+  });
+
+  it('🔴 `lastAnalysis` (lecture seule) est ignorée en écriture : ni 400, ni rien d’écrit', async () => {
+    const patches: unknown[] = [];
+    const { server, cap } = app({ modifierFiche: async (_t, id, patch) => { patches.push(patch); return { ok: true, contactId: id }; } });
+    const lue = { ...FICHE.lastAnalysis };
+    const patch = await server.inject({ method: 'PATCH', url: `/v1/contacts/${ID}`, ...auth(ECRITURE), payload: { name: 'Camille', lastAnalysis: lue } });
+    expect(patch.statusCode).toBe(200);
+    expect(patches).toEqual([{ name: 'Camille' }]);
+    const post = await server.inject({ method: 'POST', url: '/v1/contacts', ...auth(ECRITURE), payload: { contacts: [{ phone: '+33612345678', lastAnalysis: lue }] } });
+    expect(post.statusCode).toBe(200);
+    expect(cap.ecrits[0]?.items[0]).not.toHaveProperty('lastAnalysis');
     await server.close();
   });
 

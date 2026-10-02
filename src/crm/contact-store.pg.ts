@@ -98,8 +98,26 @@ export interface FicheApiLigne {
   risqueScore: number | null;
   risqueRaisons: RaisonRisque[];
   risqueCalculeLe: string | null;
+  /** La dernière analyse recopiée sur la fiche (0196), `null` si elle n'a jamais été analysée. Sans résumé. */
+  analyse: AnalyseDeFiche | null;
   createdAt: string;
 }
+
+/**
+ * La dernière analyse d'une fiche et le résumé de la MÊME analyse (celui de la conversation que la copie désigne,
+ * `analyse_conversation_id`). `resume` à `null` : pas de copie, conversation effacée, ou analyse sans résumé. Sert
+ * le MCP et l'outil « Lire la fiche » de l'agent IA ; jamais l'API publique (décision 15 : le résumé porte les
+ * propos du client).
+ */
+export interface AnalyseEtResume {
+  analyse: AnalyseDeFiche | null;
+  resume: string | null;
+}
+
+/** Les colonnes de la copie, qualifiées, plus le résumé de sa conversation : un seul `select` pour les deux lecteurs. */
+const SELECT_ANALYSE_ET_RESUME = `${COLONNES_ANALYSE_FICHE.map((k) => `c.${k}`).join(', ')}, a.summary as resume`;
+/** 🔴 L'espace sur les DEUX tables : la conversation d'une copie appartient à la même fiche, mais le filtre ne le suppose pas. */
+const JOINTURE_RESUME = 'left join conversation_analysis a on a.conversation_id = c.analyse_conversation_id and a.tenant_id = $1';
 
 /**
  * Ce que l'API publique écrit sur une fiche déjà résolue (`editerFicheApi`). `profileName` : `undefined` = on
@@ -1043,11 +1061,11 @@ export class PgContactStore implements ContactStore {
       opt_out_at: Date | null; rcs_optout_at: Date | null; blocked_at: Date | null;
       whatsapp_joignable: boolean | null; whatsapp_joignable_le: Date | null; created_at: Date;
       risque_niveau: NiveauRisque | null; risque_score: number | null; risque_raisons: RaisonRisque[] | null; risque_calcule_le: Date | null;
-    }>(
-      // Colonnes du risque nommées : leur migration passe avant ce code, sinon 42703 sur chaque lecture.
+    } & LigneAnalyseFiche>(
+      // Colonnes du risque et de l'analyse nommées : leurs migrations passent avant ce code, sinon 42703.
       `select id, external_id, phone_e164, bsuid, profile_name, fields, tags, opt_in_status, opt_in_source,
               opt_out_at, rcs_optout_at, blocked_at, whatsapp_joignable, whatsapp_joignable_le, created_at,
-              risque_niveau, risque_score, risque_raisons, risque_calcule_le
+              risque_niveau, risque_score, risque_raisons, risque_calcule_le, ${COLONNES_ANALYSE_FICHE.join(', ')}
          from contacts
         where tenant_id = $1 and id = $2 and deleted_at is null`,
       [tenantId, contactId],
@@ -1062,8 +1080,41 @@ export class PgContactStore implements ContactStore {
       whatsappJoignable: r.whatsapp_joignable, whatsappJoignableLe: iso(r.whatsapp_joignable_le),
       risqueNiveau: r.risque_niveau ?? null, risqueScore: r.risque_score ?? null, risqueRaisons: r.risque_raisons ?? [],
       risqueCalculeLe: iso(r.risque_calcule_le ?? null),
+      analyse: analyseDeLaLigne(r),
       createdAt: r.created_at.toISOString(),
     };
+  }
+
+  /**
+   * La dernière analyse et son résumé pour une PAGE de fiches, en UNE requête (le MCP liste jusqu'à 100 contacts :
+   * une lecture par fiche ferait cent allers-retours). Une fiche absente de la carte est inconnue de l'espace.
+   */
+  async analysesEtResumes(tenantId: string, contactIds: readonly string[]): Promise<Map<string, AnalyseEtResume>> {
+    const ids = [...new Set(contactIds)];
+    if (ids.length === 0) return new Map();
+    const res = await this.pool.query<{ id: string; resume: string | null } & LigneAnalyseFiche>(
+      `select c.id, ${SELECT_ANALYSE_ET_RESUME}
+         from contacts c ${JOINTURE_RESUME}
+        where c.tenant_id = $1 and c.id = any($2::uuid[]) and c.deleted_at is null`,
+      [tenantId, ids],
+    );
+    return new Map(res.rows.map((r) => [r.id, { analyse: analyseDeLaLigne(r), resume: r.resume }]));
+  }
+
+  /**
+   * La même lecture pour UN contact désigné par son `wa_id` (l'outil « Lire la fiche » de l'agent IA, qui ne
+   * connaît que le fil du tour). `null` = contact inconnu de l'espace. Résolution par le fragment partagé.
+   */
+  async analyseEtResumeParWaId(tenantId: string, waId: string): Promise<AnalyseEtResume | null> {
+    const res = await this.pool.query<{ resume: string | null } & LigneAnalyseFiche>(
+      `select ${SELECT_ANALYSE_ET_RESUME}
+         from contacts c ${JOINTURE_RESUME}
+        where c.tenant_id = $1 and c.deleted_at is null and ${matchWaIdPredicat('c.', '$2')}
+        order by (c.phone_e164 = '+' || $2) desc limit 1`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    return r ? { analyse: analyseDeLaLigne(r), resume: r.resume } : null;
   }
 
   /**

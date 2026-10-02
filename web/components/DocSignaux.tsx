@@ -84,8 +84,8 @@ export function DocSignaux() {
           </li>
           <li>
             {t(
-              'Après une panne de plus de 24 heures, selon l’outil, un événement en attente peut ne pas partir. Seuls partent alors l’identifiant de la fiche et ses désabonnements, relus au moment de l’envoi ; jamais ce que l’événement seul apprenait (dernière réponse, joignabilité RCS, dernière analyse), qui écraserait un état plus récent.',
-              'After an outage of more than 24 hours, depending on the tool, a pending event may not go out. Only the contact’s id and unsubscribes then go out, read at sending time; never what the event alone told (last reply, RCS reachability, last analysis), which would overwrite a more recent state.',
+              'Après une panne de plus de 24 heures, selon l’outil, un événement en attente peut ne pas partir. Seul part alors l’état de la fiche relu au moment de l’envoi (son identifiant, ses désabonnements, sa dernière analyse) ; jamais ce que l’événement seul apprenait (dernière réponse, joignabilité RCS), qui écraserait un état plus récent.',
+              'After an outage of more than 24 hours, depending on the tool, a pending event may not go out. Only the record’s state read at sending time then goes out (its id, unsubscribes, last analysis); never what the event alone told (last reply, RCS reachability), which would overwrite a more recent state.',
             )}
           </li>
         </Liste>

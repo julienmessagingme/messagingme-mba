@@ -47,7 +47,7 @@ function neutraliserOutil(message: string): string {
  * - 429, 5xx, panne réseau : déjà rejoués par `pousserVersBatch` ; épuisés, ils s'écrivent et lèvent, et la file
  *   rejoue le job entier. Les mêmes `em_event_id` repartent : l'outil peut dédupliquer.
  * - Un événement de plus de 24 heures serait refusé par l'outil : il n'est pas envoyé, le job le dit dans son
- *   journal, et seul l'état relu de la fiche part (`attributsDuSignal`). Rien dans le journal de la marque.
+ *   journal, et seul l'état relu de la fiche part (`attributsRelus`). Rien dans le journal de la marque.
  * - Le compte des fiches sans identifiant s'écrit après la dernière tranche : un job rejoué après un 5xx
  *   recompterait les mêmes fiches, et seul un job qui ne lève pas arrive jusque-là.
  * - La ligne de journal ne porte que le nombre de signaux, leurs noms et l'`em_event_id` du premier, jamais une

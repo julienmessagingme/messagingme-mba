@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: d923ba
+source_empreinte: c919a6
 ---
 # Construire un agent IA
 
@@ -51,7 +51,8 @@ est écrite sous chaque fiche, et une fiche que personne n'a touchée depuis plu
 une pastille « À relire ».
 
 **Les outils sont ce qu'il a le droit de FAIRE**, en plus de parler : chercher dans sa base de
-connaissance, lire la fiche du contact, poser une étiquette, enregistrer une information, envoyer un bloc de
+connaissance, lire la fiche du contact (ses champs, et sa dernière analyse : s'il est mécontent, l'agent le
+sait), poser une étiquette, enregistrer une information, envoyer un bloc de
 votre scénario, passer la main à un humain, terminer par une règle d'arrêt. Trois choses à retenir :
 
 - **Un outil n'est utilisable qu'une fois activé à la main.** Tant qu'il ne l'est pas, l'agent ne sait même

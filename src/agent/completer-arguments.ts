@@ -25,7 +25,7 @@ export function completerArguments(
       const chemin = p.contactPath ?? p.name;
       args[p.name] = chemin === 'wa_id' ? ctx.waId : (ctx.contact ? (ctx.contact[chemin] ?? null) : null);
     } else if (p.source === 'champ') {
-      // Un champ personnalisé que le modèle ne voit pas : il cloue un identifiant (e-mail, référence) à la fiche du
+      // Un champ personnalisé que le modèle n'a pas à fournir : il cloue un identifiant (e-mail, référence) à la fiche du
       // contact qui écrit. Absent, il rend `null` et l'appel part quand même : le serveur décide.
       args[p.name] = champDuContact(ctx.contact, p.cle ?? '');
     } else if (p.source === 'fixe') {

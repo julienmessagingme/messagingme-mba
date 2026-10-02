@@ -59,7 +59,7 @@ export type LigneAnalyseFiche = {
  * les CHECK de 0196, tenus égaux au schéma par `tests/fiche-analyse-migration.test.ts`, d'où les conversions.
  */
 export function analyseDeLaLigne(r: LigneAnalyseFiche): AnalyseDeFiche | null {
-  if (r.analyse_le === null || r.analyse_fenetre_fin === null) return null;
+  if (r.analyse_le == null || r.analyse_fenetre_fin == null) return null;
   return {
     intention: r.analyse_intention as AnalyseDeFiche['intention'],
     sentiment: r.analyse_sentiment as AnalyseDeFiche['sentiment'],

@@ -175,6 +175,17 @@ const CONTACT_LU = {
   blocked: false,
   reachability: { whatsapp: true, rcs: null },
   engagementRisk: { level: 'moyen', score: 40, reasons: ['silence_60j'], computedAt: '2026-09-25T03:05:00.000Z' },
+  lastAnalysis: {
+    intent: 'suivi_commande',
+    sentiment: 'negatif',
+    satisfaction: 3,
+    urgency: 7,
+    resolved: false,
+    topic: 'Colis en retard',
+    handledBy: 'humain',
+    actionSuggestion: 'rappeler',
+    analyzedAt: '2026-09-26T14:32:00.000Z',
+  },
   createdAt: '2026-09-24T10:00:00.000Z',
 } as const;
 

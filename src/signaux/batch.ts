@@ -98,17 +98,31 @@ function propre(o: Brut): Record<string, ValeurBatch> {
  * valeur ne coûte rien, et se souvenir de « déjà envoyé » serait un état de plus qui peut mentir.
  */
 function attributsRelus(s: SignalComplet): Brut {
+  // La dernière analyse est lue sur la FICHE (décision 16) : l'état courant, juste quel que soit l'âge du signal,
+  // donc envoyé avec chacun. Une note `null` ne s'écrit pas (`propre`) : elle n'efface pas la précédente.
+  const a = s.contact.derniereAnalyse;
   return {
     em_contact_id: s.contact.contactId,
     em_whatsapp_optout: s.contact.optOutWhatsapp,
     em_rcs_optout: s.contact.optOutRcs,
+    ...(a === null ? {} : {
+      em_last_intent: a.intent,
+      em_last_sentiment: a.sentiment,
+      em_last_resolved: a.resolved,
+      em_satisfaction: a.satisfaction,
+      em_urgency: a.urgence,
+      em_last_topic: a.topic,
+      em_last_handled_by: a.handledBy,
+      em_last_action_suggestion: a.actionSuggestion,
+    }),
   };
 }
 
 /**
- * Ce que le signal lui-même apprend de la fiche (dernière réponse, joignabilité RCS, dernière analyse) : vrai à la
- * date du signal, pas forcément aujourd'hui. `versBatch` ne l'écrit donc pas pour un signal trop vieux : un échec
- * RCS rejoué tard écraserait un « délivré » plus récent.
+ * Ce que le signal lui-même apprend de la fiche (dernière réponse, joignabilité RCS) : vrai à la date du signal, pas
+ * forcément aujourd'hui. `versBatch` ne l'écrit donc pas pour un signal trop vieux : un échec RCS rejoué tard
+ * écraserait un « délivré » plus récent. La dernière analyse n'en fait pas partie : elle se relit sur la fiche
+ * (`attributsRelus`).
  */
 function attributsDuSignal(s: SignalComplet): Brut {
   const c = s.contenu;
@@ -116,14 +130,6 @@ function attributsDuSignal(s: SignalComplet): Brut {
   if (c.nom === 'em_replied') a['date(em_last_reply_at)'] = s.le;
   if ((c.nom === 'em_message_delivered' || c.nom === 'em_message_read') && c.canal === 'rcs') a.em_rcs_reachable = true;
   if (c.nom === 'em_message_failed' && c.canal === 'rcs') a.em_rcs_reachable = false;
-  if (c.nom === 'em_conversation_analyzed') {
-    a.em_last_intent = c.analyse.intent;
-    a.em_last_sentiment = c.analyse.sentiment;
-    a.em_last_resolved = c.analyse.resolved;
-    // `null` n'est pas 0 : une analyse sans note ne l'écrase pas (`propre` retire la clé).
-    a.em_satisfaction = c.analyse.satisfaction;
-    a.em_urgency = c.analyse.urgence;
-  }
   if (c.nom === 'em_risk_changed') {
     a.em_risk_level = c.niveau;
     a.em_risk_score = c.score;

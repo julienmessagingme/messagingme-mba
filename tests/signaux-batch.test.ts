@@ -5,7 +5,7 @@ import {
 } from '../src/signaux/batch';
 import {
   NOM_DICTIONNAIRE_RE, CHAMPS_EVENEMENT, CHAMP_ID_EVENEMENT, MORCEAUX_RESUME, TEXTE_SIGNAL_MAX,
-  type AnalyseDuSignal, type ContenuSignal, type NomEvenement, type SignalComplet,
+  NOMS_ATTRIBUTS, type AnalyseDuSignal, type ContenuSignal, type DerniereAnalyseDuSignal, type NomEvenement, type SignalComplet,
 } from '../src/signaux/types';
 import type { HttpResponse, HttpTransport } from '../src/meta/http';
 
@@ -14,14 +14,25 @@ const C = '6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b';
 const S = 'd4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f70';
 const ID = 'a'.repeat(32);
 
-function signal(contenu: ContenuSignal, over: { externalId?: string | null; id?: string } = {}): SignalComplet {
+function signal(
+  contenu: ContenuSignal,
+  over: { externalId?: string | null; id?: string; derniereAnalyse?: DerniereAnalyseDuSignal | null } = {},
+): SignalComplet {
   return {
     id: over.id ?? ID,
     le: LE,
-    contact: { contactId: C, externalId: over.externalId === undefined ? 'crm-7781' : over.externalId, optOutWhatsapp: false, optOutRcs: false },
+    contact: {
+      contactId: C, externalId: over.externalId === undefined ? 'crm-7781' : over.externalId, optOutWhatsapp: false, optOutRcs: false,
+      derniereAnalyse: over.derniereAnalyse ?? null,
+    },
     contenu,
   };
 }
+/** La dernière analyse recopiée sur la fiche : l'état COURANT, qui peut différer de celle d'un signal ancien. */
+const FICHE_ANALYSEE = (over: Partial<DerniereAnalyseDuSignal> = {}): DerniereAnalyseDuSignal => ({
+  intent: 'reclamation', sentiment: 'negatif', satisfaction: 2, urgence: 9, resolved: false, topic: 'colis perdu',
+  handledBy: 'mba', actionSuggestion: 'rappeler', ...over,
+});
 const livre = (canal: 'whatsapp' | 'rcs' = 'whatsapp'): ContenuSignal => ({ nom: 'em_message_delivered', canal, origine: 'api', sendId: S });
 const echecRcs: ContenuSignal = { nom: 'em_message_failed', canal: 'rcs', origine: null, sendId: null, motif: 'UNDELIVERABLE', codeMeta: null };
 const analyse = (over: Partial<AnalyseDuSignal> = {}): ContenuSignal => ({
@@ -77,21 +88,50 @@ describe('versBatch : la traduction du dictionnaire (fonction PURE)', () => {
     expect(p.events?.[0]?.attributes).toEqual({ em_event_id: ID, source: 'crm' });
   });
 
-  it('une conversation analysée met à jour les attributs de la fiche et porte l’analyse dans l’événement', () => {
-    const p = seul(versBatch([signal(analyse())], { resume: false }));
-    expect(p.attributes).toMatchObject({ em_last_intent: 'sav', em_last_sentiment: 'positif', em_last_resolved: true, em_satisfaction: 8, em_urgency: 2 });
+  it('une conversation analysée porte SON analyse dans l’événement', () => {
+    const p = seul(versBatch([signal(analyse(), { derniereAnalyse: FICHE_ANALYSEE({ intent: 'sav', sentiment: 'positif' }) })], { resume: false }));
     expect(p.events?.[0]?.attributes).toMatchObject({
       intent: 'sav', sentiment: 'positif', satisfaction: 8, urgence: 2, resolved: true, topic: 'livraison',
       action_suggestion: 'aucune', handled_by: 'humain', exchanges_count: 6,
     });
   });
 
-  it('🔴 une note ABSENTE n’écrase pas la précédente, une note à 0 est une vraie mesure', () => {
-    const sans = seul(versBatch([signal(analyse({ satisfaction: null, urgence: null }))], { resume: false }));
+  it('🔴 les huit valeurs de la dernière analyse se lisent sur la FICHE et partent avec CHAQUE signal (décision 16)', () => {
+    const attendus = {
+      em_last_intent: 'reclamation', em_last_sentiment: 'negatif', em_last_resolved: false, em_satisfaction: 2, em_urgency: 9,
+      em_last_topic: 'colis perdu', em_last_handled_by: 'mba', em_last_action_suggestion: 'rappeler',
+    };
+    // Un accusé de livraison, qui ne sait rien d'une analyse, les porte quand même : c'est l'état courant de la fiche.
+    expect(seul(versBatch([signal(livre(), { derniereAnalyse: FICHE_ANALYSEE() })], { resume: false })).attributes).toMatchObject(attendus);
+    // Un signal d'analyse ANCIEN (rejoué après une analyse plus récente) : l'événement garde la sienne, les attributs
+    // disent la fiche. Sans ça, le rejeu écraserait chez l'outil un état plus récent par un plus ancien.
+    const ancien = seul(versBatch([signal(analyse(), { derniereAnalyse: FICHE_ANALYSEE() })], { resume: false }));
+    expect(ancien.attributes).toMatchObject(attendus);
+    expect(ancien.events?.[0]?.attributes).toMatchObject({ sentiment: 'positif' });
+    // Une fiche jamais analysée : aucun de ces attributs, même sous un signal d'analyse.
+    const vierge = seul(versBatch([signal(analyse())], { resume: false })).attributes ?? {};
+    for (const nom of Object.keys(attendus)) expect(vierge, nom).not.toHaveProperty(nom);
+  });
+
+  it('🔴 une note ABSENTE n’écrase pas la précédente, une note à 0 est une vraie mesure, `false` reste `false`', () => {
+    const sans = seul(versBatch([signal(livre(), { derniereAnalyse: FICHE_ANALYSEE({ satisfaction: null, urgence: null }) })], { resume: false }));
     expect(sans.attributes).not.toHaveProperty('em_satisfaction');
     expect(sans.attributes).not.toHaveProperty('em_urgency');
-    const zero = seul(versBatch([signal(analyse({ satisfaction: 0, urgence: 0 }))], { resume: false }));
-    expect(zero.attributes).toMatchObject({ em_satisfaction: 0, em_urgency: 0 });
+    const zero = seul(versBatch([signal(livre(), { derniereAnalyse: FICHE_ANALYSEE({ satisfaction: 0, urgence: 0 }) })], { resume: false }));
+    expect(zero.attributes).toMatchObject({ em_satisfaction: 0, em_urgency: 0, em_last_resolved: false });
+  });
+
+  it('🔴 chaque attribut du dictionnaire est produit par au moins un signal, et aucun autre', () => {
+    const contenus: ContenuSignal[] = [
+      livre('rcs'), { nom: 'em_replied', canal: 'whatsapp', bouton: 'Oui' }, analyse(),
+      { nom: 'em_risk_changed', niveau: 'eleve', ancienNiveau: 'moyen', score: 70, raisons: ['silence_60j', 'sans_reponse', 'non_lu'] },
+    ];
+    const vus = new Set<string>();
+    for (const c of contenus) {
+      const a = seul(versBatch([signal(c, { derniereAnalyse: FICHE_ANALYSEE() })], { resume: false })).attributes ?? {};
+      for (const cle of Object.keys(a)) vus.add(cle.replace(/^date\((.+)\)$/, '$1'));
+    }
+    expect([...vus].sort()).toEqual([...NOMS_ATTRIBUTS].sort());
   });
 
   it('🔴 le résumé ne part QUE si l’option est cochée : il contient des propos du client', () => {

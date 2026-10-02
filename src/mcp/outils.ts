@@ -1,5 +1,5 @@
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
-import type { ContactRow, ContactFilters } from '../crm/contact-store.pg';
+import type { AnalyseEtResume, ContactRow, ContactFilters } from '../crm/contact-store.pg';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
 import { parCause, type AuteurDuChangement } from '../inbox/evenements';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
@@ -33,6 +33,8 @@ export interface DepsMcp extends DepsRepondre {
     query(tenantId: string, filtres: ContactFilters, limit: number, offset: number): Promise<ContactRow[]>;
     findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null>;
     addTagsByPhoneReturningNew(tenantId: string, waId: string, tags: string[]): Promise<{ touched: number; added: string[] }>;
+    /** La dernière analyse et son résumé pour une page de fiches, en une requête filtrée sur l'espace. */
+    analysesEtResumes(tenantId: string, contactIds: readonly string[]): Promise<Map<string, AnalyseEtResume>>;
   };
   /** Membres de l'espace, pour qu'un agent puisse confier une conversation à quelqu'un de nommé. */
   listerMembres(tenantId: string): Promise<Array<{ id: string; name: string | null; email: string; role: string }>>;
@@ -90,8 +92,14 @@ async function contexteOuRefus(deps: DepsMcp, tenantId: string, conversationId: 
   return ctx;
 }
 
-/** Un contact rendu à l'agent : on choisit les champs, jamais tout `ContactRow`. */
-function contactPublic(c: ContactRow): Record<string, unknown> {
+/**
+ * Un contact rendu à l'agent : on choisit les champs, jamais tout `ContactRow`. `last_analysis` : la dernière
+ * analyse recopiée sur la fiche, `null` si le contact n'a jamais été analysé. Le résumé de la même analyse
+ * (décision 15 : il sort par le MCP, pas par l'API publique) ne part qu'avec `get_contact` : vingt résumés de
+ * 800 caractères dépasseraient les 16 Ko qu'un outil d'agent rend, et la recherche arriverait tronquée.
+ * `analyses` à `null` (lecture ratée) : la clé manque, plutôt qu'un `null` qui dirait « jamais analysé ».
+ */
+function contactPublic(c: ContactRow, analyses: Map<string, AnalyseEtResume> | null, avecResume: boolean): Record<string, unknown> {
   return {
     id: c.id,
     phone: c.phoneE164,
@@ -99,8 +107,29 @@ function contactPublic(c: ContactRow): Record<string, unknown> {
     opt_in: c.optInStatus,
     tags: c.tags,
     fields: c.fields,
+    ...(analyses === null ? {} : { last_analysis: analysePublique(analyses.get(c.id), avecResume) }),
     created_at: c.createdAt,
   };
+}
+
+function analysePublique(ar: AnalyseEtResume | undefined, avecResume: boolean): Record<string, unknown> | null {
+  const a = ar?.analyse ?? null;
+  if (a === null) return null;
+  return {
+    intent: a.intention, sentiment: a.sentiment, satisfaction: a.satisfaction, urgency: a.urgence, resolved: a.resolue,
+    topic: a.sujet, handled_by: a.traiteePar, action_suggestion: a.action, analyzed_at: a.analyseLe.toISOString(),
+    ...(avecResume ? { summary: ar?.resume ?? null } : {}),
+  };
+}
+
+/** La dernière analyse d'une page de fiches, en une lecture ; `null` si elle échoue : les fiches partent quand même. */
+async function analysesOuRien(deps: DepsMcp, tenantId: string, ids: string[]): Promise<Map<string, AnalyseEtResume> | null> {
+  try {
+    return await deps.contacts.analysesEtResumes(tenantId, ids);
+  } catch (e) {
+    console.warn('mcp: dernière analyse illisible, fiches rendues sans elle:', e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 export const OUTILS: OutilMcp[] = [
@@ -206,7 +235,9 @@ export const OUTILS: OutilMcp[] = [
     nom: 'search_contacts',
     description:
       'Cherche des contacts par nom ou par numéro. Une requête composée de chiffres est comprise comme une '
-      + 'recherche de numéro, sinon comme une recherche de nom.',
+      + 'recherche de numéro, sinon comme une recherche de nom. Chaque contact porte sa dernière analyse '
+      + '(last_analysis : intention, sentiment, satisfaction et urgence sur 10, résolue, sujet ; null s’il n’a jamais '
+      + 'été analysé), sans le résumé : get_contact le rend.',
     scope: 'mcp:read',
     entree: {
       type: 'object',
@@ -224,12 +255,15 @@ export const OUTILS: OutilMcp[] = [
         ? { phoneContains: chiffres }
         : { nameSearch: q };
       const contacts = await deps.contacts.query(tenantId, filtres, entierBorne(args, 'limit', 20, 1, 100), 0);
-      return { contacts: contacts.map(contactPublic) };
+      // UNE lecture pour toute la page.
+      const analyses = await analysesOuRien(deps, tenantId, contacts.map((c) => c.id));
+      return { contacts: contacts.map((c) => contactPublic(c, analyses, false)) };
     },
   },
   {
     nom: 'get_contact',
-    description: 'La fiche d’un contact à partir de son numéro : international avec ou sans « + » (+33612345678, 33612345678), ou national (06 12 34 56 78).',
+    description: 'La fiche d’un contact à partir de son numéro : international avec ou sans « + » (+33612345678, 33612345678), ou national (06 12 34 56 78). '
+      + 'Elle porte la dernière analyse de ses conversations et son résumé (last_analysis, null s’il n’a jamais été analysé).',
     scope: 'mcp:read',
     entree: {
       type: 'object',
@@ -243,7 +277,7 @@ export const OUTILS: OutilMcp[] = [
       if (phone === null) throw new RefusOutil('numéro illisible : donnez-le au format international (+33612345678)');
       const c = await deps.contacts.findByPhone(tenantId, phone);
       if (!c) throw new RefusOutil('aucun contact avec ce numéro dans cet espace');
-      return contactPublic(c);
+      return contactPublic(c, await analysesOuRien(deps, tenantId, [c.id]), true);
     },
   },
   {
