@@ -48,10 +48,15 @@ async function main(): Promise<void> {
       [PHONE_NUMBER_ID, WABA_ID, tenantId, '+33000000000', TENANT_NAME],
     );
     await client.query(
-      // Conflit sur l'index email GLOBAL (migration 0010, users_email_lower_unique) : re-seed
-      // idempotent même à la casse près, cohérent avec « un email = un compte ».
+      // Conflit sur l’unicite PAR ESPACE (`users_tenant_email_unique`, sur `(tenant_id, lower(email))`) :
+      // re-seed idempotent meme a la casse pres.
+      // 🔴 CE N’EST PAS UN INDEX GLOBAL. Le commentaire d’avant l’affirmait en citant un
+      // `users_email_lower_unique` (migration 0010) qui N’EXISTE PAS : l’index global sur `lower(email)`
+      // porte sur `identities`, depuis le multi-espaces (une adresse = plusieurs espaces). Un `on conflict
+      // (lower(email))` sur `users` ne matchait donc AUCUN index, et le semis echouait en 42P10. La CI ne
+      // lance jamais `seed` (elle fait `migrate` puis les tests d’integration), donc personne ne le voyait.
       `insert into users (tenant_id, email, role, password_hash) values ($1, $2, 'admin', $3)
-       on conflict (lower(email)) do update set password_hash = excluded.password_hash, tenant_id = excluded.tenant_id`,
+       on conflict (tenant_id, lower(email)) do update set password_hash = excluded.password_hash, tenant_id = excluded.tenant_id`,
       [tenantId, EMAIL, hashPasswordSync(PASSWORD)],
     );
 
