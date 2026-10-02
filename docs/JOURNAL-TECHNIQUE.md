@@ -75,6 +75,34 @@ l'identifiant de l'agent passe à la ligne dans son cadre. ⚠️ Le premier tes
 BOÎTES et restait vert sur le défaut (un texte qui déborde laisse sa boîte dans le cadre) ; il mesure désormais
 l'étendue du texte, et tombe de 513 px sur l'écran muté.
 
+**Le soir, l'essai réel des outils MCP, et quatre lots écrits en le faisant.** Julien a branché Microsoft Learn,
+puis notre propre serveur MCP, et chaque étape a buté sur quelque chose que les tests ne voyaient pas :
+
+- **Aucun serveur MCP n'était jamais actif** (`27f70b02`). Une source naît `draft`, aucun écran ne l'activait, et
+  le résolveur refuse une source inactive : aucun outil MCP n'avait donc jamais pu tourner, ni pour un agent IA ni
+  pour l'agent de Meta. Les fixtures créaient leurs sources actives, ce qui cachait tout. L'import active
+  désormais le serveur. Test vu rouge sans le correctif en CI, sur une étiquette jetable.
+- **Deux étages de choix** (`1b62b2fe`, migration 0199), décidés par Julien : on enregistre sur Connecteurs MCP les
+  outils proposés aux agents, puis on choisit sur chaque agent. Un outil importé est enregistré d'office ;
+  désenregistrer un outil qu'un agent a est refusé en nommant les agents. Relecture : 0 rouge, 8 jaunes.
+- **Trois retouches d'écran demandées pendant l'essai**, console seule : « Connecter » à la place de trois boutons
+  (`95f62099`, « Voir ce qui va changer » n'était pas clair), chaque outil en ligne repliée avec une coche et des
+  actions groupées (`3dfa1f3b`), et « Appeler un outil MCP » en sixième case de « Ajouter un outil » (`b816dc12`).
+- **La lecture d'une réponse MCP était bornée par `max_bytes`** (`9dae3551`) : l'agent de Meta a bien appelé
+  `microsoft_code_sample_search` à 16 h 50, et l'appel a échoué en « réponse trop grosse » (Microsoft rend 50 à
+  70 Ko, la borne était 16). L'agent a répondu de mémoire, avec du code Azure. Le transport lit jusqu'à 1 Mo, la
+  borne s'applique après. Second essai à 17 h 08 : `ok`, 15 Ko.
+- **`get_contact` ne trouvait jamais la fiche** (`2ae67ba6`) : il cherchait le texte tel quel, et le relais pose
+  l'identifiant WhatsApp sans « + ». `e164DepuisSaisie` ramène les trois formes au E.164 de la fiche. Déployé avec
+  le lot 3 « Tout sur la fiche » d'une autre session, qui avait tiré la tête d'origin sur le VPS : on ne lance pas
+  `up` sur le lot d'un autre, on se coordonne.
+
+L'essai qui clôt : à 17 h 47, `get_contact` lit la fiche de Julien, mais le journal porte `phone` dans les
+arguments du MODÈLE, donc la garde d'identité n'était pas réglée (le réglage n'avait pas été enregistré). Réglé
+(`contact` / `wa_id`) et republié : chez Meta, l'outil ne déclare plus aucun paramètre. À 18 h 05, une question sur
+un autre numéro est refusée par l'agent lui-même, sans appel. ⚠️ Changer la source d'un paramètre ne republie pas
+tout seul : c'est noté au `todo.md`.
+
 ## 2026-10-01 : l'aperçu et l'import d'un site ont une échéance par requête
 
 Décidé par Julien le jour même, sur le point que la relecture du lot des pages web avait laissé au `todo.md` : un

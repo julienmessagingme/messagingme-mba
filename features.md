@@ -2241,7 +2241,9 @@ importez ce qu'il propose.
   serveurs MCP » : les outils proposés ici y apparaissent à côté des outils maison et des appels de
   connecteur, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
   Connecteurs MCP.
-- ✅ **L'agent de Meta reçoit aussi ces outils** (2026-10-02), dans **Meta Business Agent > Paramètres >
+- ✅ **L'agent de Meta reçoit aussi ces outils** (2026-10-02, **éprouvé en conversation réelle le soir même** :
+  Microsoft Learn, puis le serveur MCP d'Engage Me lui-même, l'agent lisant la fiche du client qui écrit et
+  refusant celle d'un autre numéro), dans **Meta Business Agent > Paramètres >
   Outils**, par « Ajouter un outil » > « Appeler un outil MCP », et l'écran de cette page le dit. Engage Me fait l'appel MCP
   pour lui : Meta n'appelle que notre relais, en HTTP. Les paramètres réglés ici s'appliquent à l'agent de Meta
   comme aux agents IA : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe est posé par Engage

@@ -30,9 +30,13 @@ journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont
 - ⏳ **Le message de passage** : demander un humain depuis un téléphone, et lire le message reçu (en base :
   `conversation_messages.origin = 'mba'`). Le bac à sable ne le montre pas (mesuré le 2026-10-02).
 - ⏳ **La carte « Agent de Meta »** de Performance Lab > Synthèse : la lire sur l'espace MessagingMe.
-- ⏳ **Les outils MCP** : connecter un serveur MCP (aucun en production au 2026-10-02, mesuré), donner un de ses
-  outils à l'agent de Meta dans l'onglet Outils, lui poser une question qui l'exige, et lire l'appel au journal sous
-  l'appelant `mba`.
+- ✅ **Les outils MCP** : ÉPROUVÉS le 2026-10-02 au soir sur le numéro MessagingMe. Microsoft Learn (exemples de
+  code, `ok` en 0,9 s), puis le serveur MCP d'Engage Me : `get_contact`, le numéro posé par la console
+  (`contact` / `wa_id`), a lu la fiche de Julien ; une question sur un autre numéro a été refusée par l'agent,
+  sans appel. Trois défauts trouvés en route, corrigés et déployés le soir même (journal du 2026-10-02).
+- ⏳ **Une compétence « Périmètre »** à poser sur l'agent (Julien) : périmètre = l'activité ET tout ce que ses
+  outils permettent, sinon il répond à tout (il a donné du code Azure de mémoire quand l'outil a échoué). Puis
+  retirer l'outil Microsoft.
 
 ## TOUT SUR LA FICHE (LOTS 1, 2A ET 2B DÉPLOYÉS ; ESSAI RÉEL DU LOT 2 DÛ ; LOTS 3 ET 4 À FAIRE)
 

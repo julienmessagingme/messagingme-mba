@@ -282,6 +282,31 @@ La route A est en production (plan `docs/superpowers/plans/2026-10-02-outils-mcp
 - **La description de repli** (« Outil <nom>. ») d'un outil MCP importé sans description : vérifier à l'essai que
   Meta l'accepte et que l'agent l'appelle quand même.
 
+## 🟡 Outils MCP : les restes de la soirée du 2026-10-02 (outils enregistrés, Connecter, essai réel)
+
+Relecture du lot « outils proposés » (`1b62b2fe`) : 0 rouge, 8 jaunes, dont deux corrigés dans « Connecter »
+(`95f62099` : la lecture ratée n'est plus une liste vide ; « Donné à » se tait face à l'API d'avant). Restent :
+
+- **L'assistant de construction d'un agent IA propose un outil MCP désenregistré.** La carte `catalogue`
+  d'`etatCourant` (`src/index.ts`) et `brancheables` (`src/http/agent-setup.ts`) ne filtrent pas `mcpPropose` ;
+  à l'application, `rattacherOutil` reçoit un 404 APRÈS le `patchAgent`, l'erreur ne dit pas pourquoi et le reste
+  de la proposition n'est pas appliqué. Le plus utile des restes.
+- **Un `false` de `rattacherConsommateur` est mal nommé** : 404 « agent ou outil introuvable » côté agent IA
+  (`src/http/agent-tools.ts`), 409 « déjà dans la liste » côté agent de Meta si un désenregistrement tombe entre
+  la vérification et le rattachement. Les commentaires qui énumèrent ses `false` ne citent pas « non enregistré ».
+- **Trois tests manquent** : le filtre de la section MCP d'un agent IA (`web/components/AgentOutils.tsx`), les
+  champs `propose`/`utilisePar` d'`outilsPourEcran` sur une vraie base, et `proposer` face à un espace voisin.
+- **La page Connecteurs MCP relit les outils de TOUS les serveurs à chaque nouvelle liste**, et deux fois le serveur
+  importé. Mineur à l'échelle actuelle.
+- **Un outil MCP qui prend une LISTE est « inutilisable »** (`aplatir.ts`) : `tag_conversation` de notre propre
+  serveur en est un. À ouvrir quand un client en aura besoin.
+- **Changer la source d'un paramètre ne republie pas** : vécu à l'essai, la garde d'identité n'a pris qu'après
+  « À envoyer ». Republier tout seul après « Enregistrer les réglages » d'un outil donné à l'agent de Meta.
+- **Le libellé « query string »** d'un paramètre est brut : « Paramètre query (texte), obligatoire : qui le
+  remplit ? » proposé à Julien.
+- **L'agent de Meta se tait sur un compliment** (« J'aime beaucoup ce que vous faites », 2026-10-02 18 h 00) : ni
+  réponse ni passage à l'équipe. Comportement de Meta, à surveiller sur de vrais clients.
+
 ## 🟡 Plafond et tableau de l'agent de Meta : les restes (2026-10-02)
 
 - **L'écriture du plafond ne laisse aucune trace** dans le journal d'audit, et remplacer un plafond posé ailleurs

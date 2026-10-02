@@ -493,7 +493,9 @@ connecteur, mais le relais exécute son geste lui-même. Les invariants :
   et `mergeFieldsByPhone`. Le journal ne porte que la nature du geste, jamais une valeur du client.
 - **Ce qui part chez Meta** se calcule dans `src/mba/outils-a-publier.ts` (appels de connecteur, gestes maison et
   outils MCP appelables), testé ; une action d'agent IA exposée par l'ancienne route, une cible illisible ou un MCP
-  non activable ou disparu de son serveur ne partent pas. Un MCP déclare à Meta ses seuls paramètres `modele` ; le
+  non activable ou disparu de son serveur ne partent pas. Un MCP sans description part sous « Outil <nom>. », Meta
+  exigeant ce champ. ⚠️ Changer la source d'un paramètre sur Connecteurs MCP ne republie rien : la ligne de l'onglet
+  passe « À envoyer », et c'est l'envoi qui retire le paramètre de ce que Meta déclare. Un MCP déclare à Meta ses seuls paramètres `modele` ; le
   relais pose les autres (`completerArguments`, le point de passage partagé avec l'exécuteur d'un agent IA) et
   l'appelle sous `DELAI_REPONSE_MCP_MS`, sous les trois secondes de Meta.
 - **L'onglet « Outils » du MBA** parle aux routes `src/http/mba-outils.ts` (`/tenants/:tenantId/mba-outils`),
@@ -579,6 +581,24 @@ plafonds, journal des appels, risque, autonomie) s’applique sans être réécr
 dans quatre colonnes nullables (`mcp_annonce`, `mcp_non_activable`, `mcp_indisponible_le`, `mcp_vu_le`).
 Le transport est à part (`src/mcp/client.ts`), la traduction d’une annonce en outil est PURE
 (`src/agent/mcp/`), et la route n’orchestre que les deux.
+
+🔴 **LA PREMIÈRE CONNEXION ACTIVE LE SERVEUR.** Une source MCP naît `draft` ; `PgMcpStore.appliquer` la passe à
+`active` en fin d'import, jamais depuis `disabled`. Le résolveur refuse une source qui n'est pas active : sans
+cette écriture, aucun outil MCP n'était appelable, et les fixtures, qui créaient leurs sources actives, le
+cachaient. À l'écran, « Connecter » enchaîne l'aperçu (qui marque la réponse du serveur) et l'import ; il ne
+demande confirmation que si un agent perdrait un outil (`consentementsTombes > 0`).
+
+🔴 **DEUX ÉTAGES DE CHOIX, ET LE PREMIER VIT SUR L'OUTIL (0199).** `agent_tools.mcp_propose` dit si un outil MCP est
+enregistré pour les agents de l'espace (vrai à l'import). `rattacherConsommateur` refuse un outil MCP non
+enregistré, pour un agent IA comme pour l'agent de Meta. `PgMcpStore.proposer` refuse de désenregistrer un outil
+rattaché à un agent et rend leurs noms (`UTILISE_PAR`, la sous-requête que l'écran affiche aussi). Il verrouille
+l'outil par `verrouillerDefinitions`, en `for update` : c'est ce verrou qui fait attendre le `for key share` d'un
+rattachement concurrent, puis relire `mcp_propose`. Un `for no key update` rouvrirait la course en silence.
+
+🔴 **CE QU'ON LIT D'UN SERVEUR N'EST PAS CE QU'ON TRANSMET.** Le transport lit une réponse jusqu'à
+`LECTURE_MCP_MAX_OCTETS` (1 Mo, comme le catalogue) ; `agent_tools.max_bytes` borne ensuite ce que le modèle reçoit
+(`borner`, dans l'exécuteur et dans le relais). Lire sous `max_bytes` faisait échouer en « réponse trop grosse »
+tout serveur réel (Microsoft Learn rend 50 à 70 Ko).
 
 🔴 **LE CROISEMENT origin/kind EST FERMÉ PAR UNE CLÉ ÉTRANGÈRE COMPOSITE, PAS PAR UN DÉCLENCHEUR** (0152) :
 `agent_tools (source_id, source_kind)` référence `agent_tool_sources (id, kind)`. Sans elle, un outil
