@@ -47,17 +47,25 @@ async function main(): Promise<void> {
        on conflict (id) do update set tenant_id = excluded.tenant_id`,
       [PHONE_NUMBER_ID, WABA_ID, tenantId, '+33000000000', TENANT_NAME],
     );
+    // 🔴 LE MOT DE PASSE VIT SUR L’IDENTITÉ, PAS SUR LE COMPTE, depuis 0072 (« une adresse = plusieurs
+    // espaces ») : `findIdentity` joint `users.identity_id` à `identities.id` et lit `identities.password_hash`.
+    // Un compte SEUL, même avec son propre `password_hash`, NE PEUT PAS SE CONNECTER, et rien dans le schéma
+    // ne l’interdit (`users.identity_id` est NULLABLE). Le semis créait exactement cet état, mesuré sur une
+    // base jetable le 2026-10-02 : 1 compte, 0 identité, et un 401 « identifiants invalides » à la première
+    // connexion. On suit donc le vrai chemin d’inscription (`PgUserStore`), qui écrit l’identité puis le compte.
+    const identityId = (await client.query<{ id: string }>(
+      `insert into identities (email, password_hash) values ($1, $2)
+       on conflict (lower(email)) do update set password_hash = excluded.password_hash
+       returning id`,
+      [EMAIL, hashPasswordSync(PASSWORD)],
+    )).rows[0]!.id;
+    // Conflit sur l’unicité PAR ESPACE (`users_tenant_email_unique`, sur `(tenant_id, lower(email))`).
+    // ⚠️ `password_hash` n’est PAS écrit ici : le login ne le lit pas, et une seconde copie du secret serait
+    // une seconde vérité qui divergerait au premier changement de mot de passe.
     await client.query(
-      // Conflit sur l’unicite PAR ESPACE (`users_tenant_email_unique`, sur `(tenant_id, lower(email))`) :
-      // re-seed idempotent meme a la casse pres.
-      // 🔴 CE N’EST PAS UN INDEX GLOBAL. Le commentaire d’avant l’affirmait en citant un
-      // `users_email_lower_unique` (migration 0010) qui N’EXISTE PAS : l’index global sur `lower(email)`
-      // porte sur `identities`, depuis le multi-espaces (une adresse = plusieurs espaces). Un `on conflict
-      // (lower(email))` sur `users` ne matchait donc AUCUN index, et le semis echouait en 42P10. La CI ne
-      // lance jamais `seed` (elle fait `migrate` puis les tests d’integration), donc personne ne le voyait.
-      `insert into users (tenant_id, email, role, password_hash) values ($1, $2, 'admin', $3)
-       on conflict (tenant_id, lower(email)) do update set password_hash = excluded.password_hash, tenant_id = excluded.tenant_id`,
-      [tenantId, EMAIL, hashPasswordSync(PASSWORD)],
+      `insert into users (tenant_id, email, role, identity_id) values ($1, $2, 'admin', $3)
+       on conflict (tenant_id, lower(email)) do update set identity_id = excluded.identity_id`,
+      [tenantId, EMAIL, identityId],
     );
 
     // eslint-disable-next-line no-console
