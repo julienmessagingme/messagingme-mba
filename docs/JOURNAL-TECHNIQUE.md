@@ -5,6 +5,44 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-02 : tout sur la fiche, lot 3, « la dernière analyse change », essai réel fait
+
+**Serveur (`6ae0a144`), déployé vers 17 h 28 (heure de Paris), puis console (`c5d438c1`).** Nouveau déclencheur
+d'automation `analyse_devient` : un filtre de dernière analyse (`{cle, op, valeur}`, la règle des filtres de
+contacts) qui part quand la NOUVELLE copie sur la fiche le satisfait et l'ANCIENNE non. La copie vient de `save`
+(lot 1) par un type à part, `AnalyseTerminee`, pour ne pas toucher le contrat de la poussée HubSpot ; le worker
+la met dans l'événement `analysis` avec toutes les valeurs. « Conversation analysée » gagne des `filtres` sur
+tous les champs d'analyse. Anti-rebond par défaut de 7 jours, même garde anti-boucle que « conversation
+analysée ». Le délai de relance se règle désormais à l'écran pour toutes les automations. Aucune migration.
+
+⚠️ **Relecture indépendante : aucun rouge, quatre jaunes, trois corrigés avant le commit.** Un `filtres` qui
+n'est pas un tableau (écrit hors de la route) faisait partir l'automation sur toutes les analyses : il bloque.
+Le commentaire « 7 jours par contact » était faux, l'anti-rebond compte par identité WhatsApp du fil (`waId` de
+l'événement, celui du fil analysé, gardé délibérément pour ne rien changer aux automations existantes).
+Le manuel dit d'éteindre les « conversation analysée » filtrées avant un retour arrière de l'API (une image
+ancienne lit leurs filtres comme absents). Le quatrième est une limite assumée, écrite dans `features.md` et
+la fiche d'aide : une transition manquée (fil tenu, anti-rebond, condition) ne se rejoue pas.
+
+🔴 **Deux défauts trouvés par Julien pendant l'essai, corrigés le jour même.** Dans l'éditeur des choix
+d'analyse, la première valeur (Positif) était cochée d'office, et cliquer « Négatif » l'AJOUTAIT : l'automation
+enregistrée valait « positif ou négatif » et ne serait jamais partie dans son essai (`0d74e71a` : le premier clic
+remplace la valeur proposée). Et une automation ne se modifiait pas, elle se supprimait et se recréait
+(`54bcf702` : « Modifier » rouvre le formulaire prérempli, PATCH, l'état allumé ou éteint ne bouge pas). Les deux
+e2e ont été vérifiés dans les deux sens en les jouant contre la console construite juste avant la correction,
+sans reconstruire.
+
+**Essai réel, Messaging me Brevo, automation « devient mecontent » (sentiment devient négatif) vers le scénario
+« signaler à Brevo »**, relevé en base à chaque analyse : à 18 h 55, trois messages lus ensemble, négatif sur une
+fiche déjà négative, AUCUN déclenchement ; à 19 h 25, un message content lu positif, aucun déclenchement ; à
+20 h 00 min 52 s, un message mécontent lu négatif, la fiche passe de positif à négatif, l'automation se déclenche
+dans la même seconde et l'appel `signaler` part chez Brevo en 204. ⚠️ Une première tentative avait échoué pour
+deux raisons de mise en place, pas de code : l'automation n'était pas allumée, et le message mécontent était
+arrivé trois minutes avant l'analyse des messages contents (25 minutes de silence exigées), donc les trois
+avaient été lus ensemble.
+
+Le déploiement a emporté `2ae67ba6` (correction MCP d'une session voisine, sans migration) et appliqué la
+migration 0200 du widget avant le `up`, relue en base ; les deux sessions ont été prévenues.
+
 ## 2026-10-02 : l'agent de Meta pour une démo, passage en français, plafond, tableau et outils MCP
 
 Julien a reçu sa facture de l'agent de Meta (« hyper cher ») et prépare une démonstration le 7 octobre avec un
