@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { analyzeConversationJob, type AnalyzeStore } from '../src/analysis/job';
 import type { AnalysisContext } from '../src/analysis/analyzer';
 import type { LlmClient } from '../src/analysis/llm-client';
-import type { StoredConversationAnalysis } from '../src/analysis/events';
+import type { AnalyseTerminee, StoredConversationAnalysis } from '../src/analysis/events';
 import type { ConversationAnalysis } from '../src/analysis/schema';
 
 const validJson = JSON.stringify({
@@ -42,6 +42,24 @@ describe('analyzeConversationJob', () => {
     expect(cap.saved.map((s) => s.id)).toEqual(['c1']);
     expect(cap.saved[0]!.windowEnd).toEqual(windowEnd); // borne de fenêtre transmise à save (course d'analyse)
     expect(analyzed[0]).toMatchObject({ conversationId: 'c1', tenantId: 't1', intent: 'demande_devis' });
+  });
+
+  it('🔴 la copie faite sur la fiche par `save` part avec l’événement (« un champ d’analyse devient » en naît)', async () => {
+    const { store } = fakeStore(ctx);
+    const apres = {
+      intention: 'demande_devis' as const, sentiment: 'neutre' as const, satisfaction: null, urgence: null, resolue: false,
+      sujet: 'devis', traiteePar: 'automatise' as const, action: 'creer_devis' as const, analyseLe: new Date(), fenetreFin: new Date(), conversationId: 'c1',
+    };
+    const copie = { contactId: 'k1', waId: '33611', avant: null, apres };
+    const recus: AnalyseTerminee[] = [];
+    await analyzeConversationJob({ conversationId: 'c1', tenantId: 't1' }, {
+      store: { ...store, save: async () => copie }, llm: new Llm(validJson), onAnalyzed: async (a) => { recus.push(a); }, model,
+    });
+    expect(recus[0]?.copieFiche).toBe(copie);
+    // Et `null` quand rien n'a été recopié : jamais `undefined`, qui se lirait comme une copie oubliée.
+    const recus2: AnalyseTerminee[] = [];
+    await analyzeConversationJob({ conversationId: 'c1', tenantId: 't1' }, { store, llm: new Llm(validJson), onAnalyzed: async (a) => { recus2.push(a); }, model });
+    expect(recus2[0]?.copieFiche).toBeNull();
   });
 
   it('JSON invalide x2 -> markFailed, PAS de rethrow, pas de save', async () => {

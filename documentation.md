@@ -781,6 +781,24 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   de `fields` (la fonction JS d'un scénario reçoit `fields`), rempli par `getContactStateByWaId` ; la parité
   avec le SQL est tenue contre une vraie base (`tests/integration/filtre-fiche.integration.test.ts`). La console
   ne propose ces filtres que si `champs-fiche` répond, et `filtresRepris` garde leurs opérateurs.
+- 🔴 **Le déclencheur « un champ d'analyse devient » (`analyse_devient`) naît de la copie, jamais d'un balayage.**
+  `save` rend la copie faite (ancienne et nouvelle valeurs, lues dans sa transaction), le job d'analyse la passe
+  au point de sortie (`AnalyseTerminee`, un type à part de `StoredConversationAnalysis`, contrat de la poussée
+  HubSpot), et le worker la met dans l'événement `analysis` avec toutes les valeurs. La config est UN filtre de
+  dernière analyse (`{cle, op, valeur}`, relu par `lireFiltreFiche`, opérateurs bornés à `OPERATEURS_DEVIENT`) :
+  il part quand la nouvelle copie le satisfait et l'ancienne non, une fiche jamais analysée ne satisfaisant rien.
+  Un rejeu recopie la même analyse, donc ne fait rien naître ; une analyse plus ancienne que la copie n'écrit pas,
+  donc non plus. Anti-rebond par défaut de 7 jours par contact (`antiRebondParDefaut`), la même garde
+  anti-boucle que « conversation analysée » (au moins 3 600 s si on le règle). « Conversation analysée » filtre
+  aussi sur tous les champs d'analyse (`filtres`, lus sur les valeurs de l'événement par `evaluerFiltreFiche`) ;
+  `sentiment` et `unresolvedOnly` restent lus tels quels. ⚠️ Une analyse lance ses automations DANS le worker :
+  un événement `analysis` qui passerait par la file `automation-event` y perd valeurs et copie, et n'y fait
+  partir ni « devient » ni filtre. 🔴 **Retour arrière de l'API sous ce lot : éteindre d'abord les automations
+  « conversation analysée » qui portent des `filtres`.** Une image plus ancienne ignore une automation
+  `analyse_devient` (type inconnu, écarté par `toRow`), mais elle lit une « conversation analysée » filtrée
+  comme si elle n'avait que son ressenti : « urgence au moins 7 » partirait à chaque analyse. ⚠️ Une transition
+  manquée ne se rejoue pas : si l'anti-rebond, la condition ou un fil tenu empêchent le départ, l'analyse
+  suivante voit l'ancienne copie égale à la nouvelle.
 - 🔴 **`/v1/contacts` désigne une personne par sa FICHE, et UNE fonction la trouve** : `resoudreFiche`
   (`src/api/fiche.ts`). Quatre clés, `contactId`, `externalId`, `phone`, `bsuid` : toutes celles qu'on donne
   doivent désigner la même fiche (sinon `identity_conflict`, et la fiche n'est pas modifiée) ; une clé que la

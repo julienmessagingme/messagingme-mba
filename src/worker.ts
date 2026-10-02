@@ -70,6 +70,8 @@ import { creerEscaladeVersHumain } from './agent/escalade';
 import { automatique } from './inbox/evenements';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
+import { analyseDeLaConversation } from './analysis/fiche';
+import type { OnConversationAnalyzed } from './analysis/events';
 import { runAnalysisSweep } from './analysis/sweep';
 import { AnthropicClient } from './analysis/llm-client';
 import { getEnrichment } from './analysis/enrichment';
@@ -791,7 +793,7 @@ async function main(): Promise<void> {
     // Trois consommateurs du même point de sortie : le push connecteur, les signaux et les automations
     // « conversation analysée ». Chacun est isolé : un échec de l'un ne prive pas les autres, et aucun ne fait
     // échouer le job d'analyse.
-    const onAnalyzed: typeof pushAnalyzed = async (stored) => {
+    const onAnalyzed: OnConversationAnalyzed = async (stored) => {
       // Chaque consommateur a son try/catch ici : l'isolation est une propriété de cette composition, pas un pari
       // sur l'appelé. Sinon un push qui lève sauterait l'automation et ferait rejouer le job d'analyse, donc
       // re-facturer l'appel LLM.
@@ -808,9 +810,16 @@ async function main(): Promise<void> {
         // L'analyse identifie une conversation ; le moteur de scénario raisonne par wa_id.
         const ctx = await inboxStore.getConversationContext(stored.conversationId, stored.tenantId);
         if (!ctx) return;
+        // L'événement porte toutes les valeurs (filtres de « conversation analysée ») et la copie faite sur la fiche
+        // (« un champ devient »). Le scénario part sur le fil analysé (`ctx.waId`), comme avant ce lot.
+        const copie = stored.copieFiche;
         await runAutomations(
           stored.tenantId,
-          { kind: 'analysis', waId: ctx.waId, sentiment: stored.sentiment, resolved: stored.resolved },
+          {
+            kind: 'analysis', waId: ctx.waId, sentiment: stored.sentiment, resolved: stored.resolved,
+            valeurs: analyseDeLaConversation(stored, stored.conversationId, new Date()),
+            copie: copie ? { avant: copie.avant, apres: copie.apres } : null,
+          },
           automationRunnerDeps,
         );
       } catch (err) {

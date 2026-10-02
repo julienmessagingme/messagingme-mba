@@ -30,6 +30,13 @@ describe('parseAutomationEventJob', () => {
       .toEqual({ tenantId: 't1', event: { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: false } });
   });
 
+  it('une analyse qui passerait par la file perd ses valeurs et sa copie : « un champ devient » n’y part jamais', () => {
+    // Les analyses lancent leurs automations dans le worker, sans la file ; recopier ici des dates sérialisées
+    // ferait un second chemin à tenir. Échouer fermé.
+    const j = parseAutomationEventJob({ tenantId: 't1', event: { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: false, copie: { avant: null, apres: {} }, valeurs: {} } });
+    expect(j).toEqual({ tenantId: 't1', event: { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: false } });
+  });
+
   it('`resolved` absent ou non booléen -> false (on ne suppose pas qu’une demande est réglée)', () => {
     const j = parseAutomationEventJob({ tenantId: 't1', event: { kind: 'analysis', waId: '33611', sentiment: 'neutre' } });
     expect(j?.event).toMatchObject({ resolved: false });

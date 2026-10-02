@@ -51,6 +51,9 @@ export async function analyzeConversationJob(data: unknown, deps: AnalyzeJobDeps
     throw err; // réseau/429/5xx : rethrow -> pg-boss retry + DLQ
   }
 
-  await deps.store.save(conversationId, tenantId, analysis, deps.model, ctx.windowEnd ?? null);
-  await deps.onAnalyzed({ ...analysis, conversationId, tenantId });
+  // La copie rendue par `save` part avec l'événement, UN seul point d'appel, direct : un rejeu recopie la même
+  // analyse (l'ancienne copie vaut la nouvelle), donc ne fait naître aucun « devient » ; un crash entre les deux
+  // lignes perd une transition sans jamais la doubler.
+  const copieFiche = await deps.store.save(conversationId, tenantId, analysis, deps.model, ctx.windowEnd ?? null);
+  await deps.onAnalyzed({ ...analysis, conversationId, tenantId, copieFiche });
 }

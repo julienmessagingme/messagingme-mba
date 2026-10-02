@@ -72,6 +72,29 @@ describe('runAutomations', () => {
     expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: false, reprendLaMain: false }]);
   });
 
+  it('🔴 une analyse charge « conversation analysée » ET « un champ d’analyse devient », et rien d’autre', async () => {
+    const demandes: Array<readonly string[]> = [];
+    const { deps } = make([], {
+      automations: { listEnabled: async (_t, kinds) => { demandes.push(kinds); return []; } },
+    });
+    await runAutomations('t1', { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: false }, deps);
+    expect(demandes).toEqual([['conversation_analyzed', 'analyse_devient']]);
+  });
+
+  it('🔴 « un champ d’analyse devient » sans réglage : 7 jours d’anti-rebond par contact', async () => {
+    const dev = auto({ triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' } });
+    const copie = {
+      intention: 'reclamation' as const, sentiment: 'negatif' as const, satisfaction: 2, urgence: 8, resolue: false, sujet: 's',
+      traiteePar: 'humain' as const, action: 'rappeler' as const, analyseLe: new Date(T), fenetreFin: new Date(T), conversationId: null,
+    };
+    const ev = { kind: 'analysis' as const, waId: '33611', sentiment: 'negatif', resolved: false, copie: { avant: null, apres: copie } };
+    // Tiré il y a 6 jours : encore en anti-rebond. Il y a 8 jours : repart.
+    const six = make([dev], { automations: { lastFiredAt: async () => new Date(T - 6 * 24 * 3600_000) } });
+    expect(await runAutomations('t1', ev, six.deps)).toBe(0);
+    const huit = make([dev], { automations: { lastFiredAt: async () => new Date(T - 8 * 24 * 3600_000) } });
+    expect(await runAutomations('t1', ev, huit.deps)).toBe(1);
+  });
+
   /**
    * 🔴 L'ANTI-REBOND DU RISQUE ÉLEVÉ EST DE 30 JOURS PAR DÉFAUT (relecture du lot 7). La grille n'a pas
    * d'hystérésis : un contact qui oscille autour du seuil repasse en élevé, et relançait le scénario à chaque fois.

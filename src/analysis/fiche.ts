@@ -1,4 +1,4 @@
-import type { ACTIONS, HANDLED_BY, Intent, SENTIMENTS } from './schema';
+import type { ACTIONS, ConversationAnalysis, HANDLED_BY, Intent, SENTIMENTS } from './schema';
 
 /**
  * La dernière analyse d'un contact, telle que sa fiche la porte (colonnes `analyse_*` de `contacts`, migration
@@ -72,5 +72,27 @@ export function analyseDeLaLigne(r: LigneAnalyseFiche): AnalyseDeFiche | null {
     analyseLe: r.analyse_le,
     fenetreFin: r.analyse_fenetre_fin,
     conversationId: r.analyse_conversation_id,
+  };
+}
+
+/**
+ * Une analyse qui vient d'être faite, sous la forme d'une copie de fiche : ce que l'événement « conversation
+ * analysée » transporte, pour que ses filtres se lisent avec l'évaluateur des filtres de contacts
+ * (`src/crm/filtre-fiche.ts`). Les deux dates valent l'instant de l'analyse : aucun filtre de cet événement ne lit
+ * la borne de fenêtre.
+ */
+export function analyseDeLaConversation(a: ConversationAnalysis, conversationId: string, maintenant: Date): AnalyseDeFiche {
+  return {
+    intention: a.intent,
+    sentiment: a.sentiment,
+    satisfaction: a.satisfaction ?? null,
+    urgence: a.urgence ?? null,
+    resolue: a.resolved,
+    sujet: a.topic,
+    traiteePar: a.handled_by,
+    action: a.action_suggestion,
+    analyseLe: maintenant,
+    fenetreFin: maintenant,
+    conversationId,
   };
 }

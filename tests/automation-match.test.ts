@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   matchesTrigger, isInCooldown, keywordsOf, keywordModeOf, normalizeText, isAutomationTriggerKind, antiRebondParDefaut,
-  ANTI_REBOND_RISQUE_ELEVE_SECONDES, AUTOMATION_TRIGGER_KINDS,
+  ANTI_REBOND_RISQUE_ELEVE_SECONDES, ANTI_REBOND_ANALYSE_DEVIENT_SECONDES, AUTOMATION_TRIGGER_KINDS,
 } from '../src/automation/match';
+import type { AnalyseDeFiche } from '../src/analysis/fiche';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 
 /**
@@ -158,10 +159,12 @@ describe('déclencheur « risque élevé » (lot 7, balayage de nuit)', () => {
 });
 
 describe('anti-rebond par défaut, selon le déclencheur', () => {
-  it('🔴 30 jours pour « risque élevé », le défaut de l’instance pour tous les autres', () => {
+  it('🔴 30 jours pour « risque élevé », 7 pour « un champ d’analyse devient », le défaut de l’instance pour tous les autres', () => {
     expect(ANTI_REBOND_RISQUE_ELEVE_SECONDES).toBe(30 * 24 * 3600);
+    expect(ANTI_REBOND_ANALYSE_DEVIENT_SECONDES).toBe(7 * 24 * 3600);
     expect(antiRebondParDefaut('risque_eleve', 3600)).toBe(ANTI_REBOND_RISQUE_ELEVE_SECONDES);
-    for (const k of AUTOMATION_TRIGGER_KINDS.filter((x) => x !== 'risque_eleve')) expect(antiRebondParDefaut(k, 3600), k).toBe(3600);
+    expect(antiRebondParDefaut('analyse_devient', 3600)).toBe(ANTI_REBOND_ANALYSE_DEVIENT_SECONDES);
+    for (const k of AUTOMATION_TRIGGER_KINDS.filter((x) => x !== 'risque_eleve' && x !== 'analyse_devient')) expect(antiRebondParDefaut(k, 3600), k).toBe(3600);
   });
 });
 
@@ -309,5 +312,117 @@ describe('déclencheur publicité (ctwa_ad)', () => {
       expect(matchesTrigger(autoPub(), pubDeCampagne('ad-1', 'camp-1'))).toBe(true);
       expect(matchesTrigger(autoPub({ adId: 'ad-1' }), pubDeCampagne('ad-1', 'camp-1'))).toBe(true);
     });
+  });
+});
+
+/**
+ * Le lot 3 de « Tout sur la fiche » : « conversation analysée » filtre sur tous les champs d'analyse, et le
+ * déclencheur « un champ d'analyse devient » part quand la nouvelle copie sur la fiche correspond et l'ancienne non.
+ */
+const copieDe = (o: Partial<AnalyseDeFiche> = {}): AnalyseDeFiche => ({
+  intention: 'information', sentiment: 'neutre', satisfaction: 6, urgence: 3, resolue: true, sujet: 'horaires',
+  traiteePar: 'humain', action: 'aucune', analyseLe: new Date('2026-10-02T12:00:00Z'),
+  fenetreFin: new Date('2026-10-02T11:59:00Z'), conversationId: 'cv1', ...o,
+});
+const analyse = (avant: AnalyseDeFiche | null, apres: AnalyseDeFiche | null): AutomationEvent => ({
+  kind: 'analysis', waId: '33611', sentiment: apres?.sentiment ?? 'neutre', resolved: apres?.resolue ?? true,
+  ...(apres ? { valeurs: apres } : {}),
+  copie: apres ? { avant, apres } : null,
+});
+const devient = (cfg: Record<string, unknown>) => auto({ triggerKind: 'analyse_devient', triggerConfig: cfg });
+
+describe('déclencheur « un champ d’analyse devient » (lot 3)', () => {
+  it('🔴 part quand la nouvelle copie correspond et l’ancienne non, jamais quand les deux correspondent', () => {
+    const a = devient({ cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' });
+    expect(matchesTrigger(a, analyse(copieDe({ sentiment: 'neutre' }), copieDe({ sentiment: 'negatif' })))).toBe(true);
+    expect(matchesTrigger(a, analyse(copieDe({ sentiment: 'negatif' }), copieDe({ sentiment: 'negatif' })))).toBe(false);
+    expect(matchesTrigger(a, analyse(copieDe({ sentiment: 'negatif' }), copieDe({ sentiment: 'neutre' })))).toBe(false);
+  });
+
+  it('🔴 la première analyse d’un contact compte comme un changement (décision 13)', () => {
+    const a = devient({ cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' });
+    expect(matchesTrigger(a, analyse(null, copieDe({ sentiment: 'negatif' })))).toBe(true);
+  });
+
+  it('🔴 sans copie sur la fiche (aucune fiche, ou une analyse plus récente en place), rien ne part', () => {
+    const a = devient({ cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' });
+    expect(matchesTrigger(a, { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: false, copie: null })).toBe(false);
+    // Un événement d'avant ce lot ne porte pas la copie du tout.
+    expect(matchesTrigger(a, { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: false })).toBe(false);
+  });
+
+  it('chaque champ de la décision 13 : intention, seuils de satisfaction et d’urgence, « résolue » qui devient non', () => {
+    expect(matchesTrigger(devient({ cle: 'analyse_intention', op: 'in', valeur: 'reclamation' }),
+      analyse(copieDe(), copieDe({ intention: 'reclamation' })))).toBe(true);
+    const urgence = devient({ cle: 'analyse_urgence', op: 'gte', valeur: '7' });
+    expect(matchesTrigger(urgence, analyse(copieDe({ urgence: 5 }), copieDe({ urgence: 8 })))).toBe(true);
+    expect(matchesTrigger(urgence, analyse(copieDe({ urgence: 8 }), copieDe({ urgence: 9 })))).toBe(false);
+    const satisfaction = devient({ cle: 'analyse_satisfaction', op: 'lte', valeur: '3' });
+    expect(matchesTrigger(satisfaction, analyse(copieDe({ satisfaction: 6 }), copieDe({ satisfaction: 0 })))).toBe(true);
+    const resolue = devient({ cle: 'analyse_resolue', op: 'is_false' });
+    expect(matchesTrigger(resolue, analyse(copieDe({ resolue: true }), copieDe({ resolue: false })))).toBe(true);
+    expect(matchesTrigger(resolue, analyse(null, copieDe({ resolue: false })))).toBe(true);
+  });
+
+  it('🔴 `null` n’est pas une mesure : une note absente ne « devient » pas sous un seuil', () => {
+    const satisfaction = devient({ cle: 'analyse_satisfaction', op: 'lte', valeur: '3' });
+    expect(matchesTrigger(satisfaction, analyse(copieDe({ satisfaction: 6 }), copieDe({ satisfaction: null })))).toBe(false);
+    // Et une note qui revient d'une absence à une valeur basse, si : avant ne correspondait pas.
+    expect(matchesTrigger(satisfaction, analyse(copieDe({ satisfaction: null }), copieDe({ satisfaction: 2 })))).toBe(true);
+  });
+
+  it('🔴 une config qui ne se relit pas ne déclenche jamais', () => {
+    const passage = analyse(copieDe({ sentiment: 'neutre' }), copieDe({ sentiment: 'negatif' }));
+    for (const cfg of [
+      {},
+      { cle: 'analyse_sentiment', op: 'in', valeur: 'furieux' },
+      { cle: 'analyse_sentiment', op: 'eq', valeur: 'negatif' },
+      { cle: 'analyse_sentiment', op: 'not_empty' },
+      { cle: 'analyse_le', op: 'newer_than_days', valeur: '7' },
+      { cle: 'analyse_sujet', op: 'in', valeur: 'x' },
+      { cle: 'ville', op: 'in', valeur: 'Paris' },
+    ]) expect(matchesTrigger(devient(cfg), passage), JSON.stringify(cfg)).toBe(false);
+  });
+
+  it('ne réagit qu’à une analyse', () => {
+    expect(matchesTrigger(devient({ cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' }), msg('negatif'))).toBe(false);
+  });
+});
+
+describe('« conversation analysée » : les filtres sur tous les champs d’analyse (lot 3)', () => {
+  const anal = (cfg: Record<string, unknown>) => auto({ triggerKind: 'conversation_analyzed', triggerConfig: cfg });
+
+  it('les filtres se lisent sur les valeurs de l’analyse, avec la sémantique des filtres de contacts', () => {
+    const a = anal({ filtres: [{ cle: 'analyse_urgence', op: 'gte', valeur: '7' }, { cle: 'analyse_intention', op: 'in', valeur: 'reclamation,sav' }] });
+    expect(matchesTrigger(a, analyse(null, copieDe({ urgence: 8, intention: 'sav' })))).toBe(true);
+    expect(matchesTrigger(a, analyse(null, copieDe({ urgence: 6, intention: 'sav' })))).toBe(false);
+    expect(matchesTrigger(a, analyse(null, copieDe({ urgence: 8, intention: 'achat' })))).toBe(false);
+  });
+
+  it('« sans valeur » retient une note non mesurée', () => {
+    const a = anal({ filtres: [{ cle: 'analyse_satisfaction', op: 'empty' }] });
+    expect(matchesTrigger(a, analyse(null, copieDe({ satisfaction: null })))).toBe(true);
+    expect(matchesTrigger(a, analyse(null, copieDe({ satisfaction: 0 })))).toBe(false);
+  });
+
+  it('🔴 un événement sans les valeurs ne passe pas un filtre : on ne déclenche pas sur un filtre non vérifié', () => {
+    const a = anal({ filtres: [{ cle: 'analyse_urgence', op: 'gte', valeur: '7' }] });
+    expect(matchesTrigger(a, { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: false })).toBe(false);
+  });
+
+  it('🔴 un `filtres` qui n’est pas un tableau (écrit hors de la route) bloque, il ne vaut pas « aucun filtre »', () => {
+    for (const filtres of ['urgence', null, { cle: 'analyse_urgence' }]) {
+      expect(matchesTrigger(anal({ filtres }), analyse(null, copieDe({ urgence: 9 }))), JSON.stringify(filtres)).toBe(false);
+    }
+  });
+
+  it('🔴 un filtre qui ne se relit pas bloque l’automation au lieu d’être ignoré', () => {
+    const a = anal({ filtres: [{ cle: 'analyse_urgence', op: 'gte', valeur: 'beaucoup' }] });
+    expect(matchesTrigger(a, analyse(null, copieDe({ urgence: 9 })))).toBe(false);
+  });
+
+  it('les configurations d’avant ce lot se comportent exactement comme avant', () => {
+    expect(matchesTrigger(anal({ sentiment: 'negatif' }), { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: true })).toBe(true);
+    expect(matchesTrigger(anal({ filtres: [] }), { kind: 'analysis', waId: '33611', sentiment: 'positif', resolved: true })).toBe(true);
   });
 });

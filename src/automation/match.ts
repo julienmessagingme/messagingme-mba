@@ -1,4 +1,6 @@
 import type { ConditionGroup } from '../workflow/conditions';
+import type { AnalyseDeFiche } from '../analysis/fiche';
+import { estCleFiltrable, evaluerFiltreFiche, lireFiltreFiche, type FiltreFiche } from '../crm/filtre-fiche';
 
 /**
  * Décide si un événement déclenche une automation, plus le garde-fou anti-rebond. Module pur, testable sans
@@ -19,8 +21,11 @@ import type { ConditionGroup } from '../workflow/conditions';
  *   échéance déjà tranchée.
  * - `risque_eleve` : passage en risque élevé constaté par le balayage de nuit, au plus 200 par nuit et par
  *   espace (seul chemin de masse qui émet). Aucune config.
+ * - `analyse_devient` : un champ de la dernière analyse se met à correspondre à un filtre (le sentiment devient
+ *   négatif, l'urgence passe à 7 ou plus). Constaté à l'écriture de la copie sur la fiche, ancienne et nouvelle
+ *   valeurs dans la même transaction, jamais par un balayage : un événement par analyse d'un contact.
  */
-export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date', 'ctwa_ad', 'risque_eleve'] as const;
+export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date', 'ctwa_ad', 'risque_eleve', 'analyse_devient'] as const;
 export type AutomationTriggerKind = (typeof AUTOMATION_TRIGGER_KINDS)[number];
 export function isAutomationTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS as readonly string[]).includes(v);
@@ -107,8 +112,19 @@ export type AutomationEvent =
    *  = campagne inconnue. */
   | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean; channel: 'whatsapp' | 'rcs'; adId?: string; campagneId?: string }
   | { kind: 'tag_added'; waId: string; tag: string }
-  /** Une conversation vient d'être analysée : `sentiment` catégoriel (pas de score numérique) + `resolved`. */
-  | { kind: 'analysis'; waId: string; sentiment: string; resolved: boolean }
+  /**
+   * Une conversation vient d'être analysée. `sentiment` et `resolved` restent à la racine : les automations
+   * d'avant le lot 3 les lisent, et un événement d'avant ce lot ne porte qu'eux.
+   */
+  | {
+    kind: 'analysis'; waId: string; sentiment: string; resolved: boolean;
+    /** Toutes les valeurs de l'analyse, lues par les filtres de « conversation analysée ». Absentes : une
+     *  automation qui filtre ne part pas, faute de pouvoir vérifier. */
+    valeurs?: AnalyseDeFiche;
+    /** Ce que l'analyse a recopié sur la fiche, ancienne et nouvelle valeurs. Absente ou `null` : la fiche n'a pas
+     *  changé (aucune fiche, analyse plus ancienne), donc aucun « devient » possible. */
+    copie?: { avant: AnalyseDeFiche | null; apres: AnalyseDeFiche } | null;
+  }
   /**
    * Un deal HubSpot a changé d'étape (identifiants internes, stables au renommage). Le contact est déjà résolu
    * en `waId` par le connecteur.
@@ -123,6 +139,27 @@ export type AutomationEvent =
   | { kind: 'avant_date'; waId: string; automationId: string; valeur: string }
   /** Le contact vient de passer en risque de désengagement élevé (balayage de nuit). */
   | { kind: 'risque_eleve'; waId: string };
+
+/**
+ * Les opérateurs d'un « devient » : ceux des filtres de contacts, moins ceux qui ne décrivent pas un changement
+ * (« vide », « renseigné », « analysée depuis moins de N jours »).
+ */
+export const OPERATEURS_DEVIENT = ['in', 'gte', 'lte', 'is_true', 'is_false'] as const;
+/** Les opérateurs des filtres de « conversation analysée » : tous, moins l'ancienneté, l'analyse ayant lieu maintenant. */
+export const OPERATEURS_CONVERSATION_ANALYSEE = ['in', 'gte', 'lte', 'is_true', 'is_false', 'empty', 'not_empty'] as const;
+
+/**
+ * Un filtre de dernière analyse écrit dans une config (`{cle, op, valeur}`), relu par la règle des filtres de
+ * contacts (`src/crm/filtre-fiche.ts`) et borné aux opérateurs donnés ; `null` s'il ne se relit pas. Une config
+ * qui ne se relit pas ne déclenche jamais : mieux vaut inerte que partie sur toutes les analyses.
+ */
+export function filtreDeConfig(x: unknown, operateurs: readonly string[]): FiltreFiche | null {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+  const o = x as Record<string, unknown>;
+  if (!estCleFiltrable(o.cle) || typeof o.op !== 'string' || !operateurs.includes(o.op)) return null;
+  const lu = lireFiltreFiche(o.cle, o.op, o.valeur);
+  return lu.ok ? lu.filtre : null;
+}
 
 /** Minuscules, sans accents, espaces resserrés : même esprit que la recherche de blocs (web/lib/node-search). */
 export function normalizeText(v: string): string {
@@ -213,12 +250,33 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
   }
   if (a.triggerKind === 'conversation_analyzed') {
     if (ev.kind !== 'analysis') return false;
-    // Deux filtres cumulatifs, facultatifs : `sentiment` et `unresolvedOnly`. Aucun des deux : déclenche à
-    // chaque analyse, par choix de l'utilisateur.
+    // Filtres cumulatifs, tous facultatifs : `sentiment` et `unresolvedOnly` (les premiers, lus tels quels pour
+    // les automations existantes), puis `filtres`, ceux des filtres de contacts sur tous les champs d'analyse.
+    // Aucun : déclenche à chaque analyse, par choix de l'utilisateur.
     const wantSentiment = String(a.triggerConfig.sentiment ?? '').trim();
     if (wantSentiment !== '' && ev.sentiment !== wantSentiment) return false;
     if (a.triggerConfig.unresolvedOnly === true && ev.resolved) return false;
-    return true;
+    // Absent = aucun filtre. Présent mais pas un tableau (écrit hors de la route) : on ne devine pas, l'automation
+    // ne part pas, au lieu de partir sur toutes les analyses.
+    if (a.triggerConfig.filtres !== undefined && !Array.isArray(a.triggerConfig.filtres)) return false;
+    const filtres = Array.isArray(a.triggerConfig.filtres) ? a.triggerConfig.filtres : [];
+    if (filtres.length === 0) return true;
+    const valeurs = ev.valeurs;
+    if (!valeurs) return false;
+    return filtres.every((brut) => {
+      const f = filtreDeConfig(brut, OPERATEURS_CONVERSATION_ANALYSEE);
+      return f !== null && evaluerFiltreFiche(f.cle, f.op, f.valeur, valeurs, valeurs.analyseLe);
+    });
+  }
+  if (a.triggerKind === 'analyse_devient') {
+    // « Devient » : la nouvelle copie correspond, l'ancienne non. Une fiche jamais analysée ne correspondait à
+    // rien (la première analyse compte, décision 13) ; sans copie, rien n'a changé sur la fiche.
+    if (ev.kind !== 'analysis' || !ev.copie) return false;
+    const f = filtreDeConfig(a.triggerConfig, OPERATEURS_DEVIENT);
+    if (!f) return false;
+    const { avant, apres } = ev.copie;
+    return evaluerFiltreFiche(f.cle, f.op, f.valeur, apres, apres.analyseLe)
+      && !evaluerFiltreFiche(f.cle, f.op, f.valeur, avant, apres.analyseLe);
   }
   return false;
 }
@@ -250,7 +308,18 @@ export function isInCooldown(
  */
 export const ANTI_REBOND_RISQUE_ELEVE_SECONDES = 30 * 24 * 3600;
 
+/**
+ * 7 jours : l'anti-rebond par défaut de « un champ d'analyse devient » (décision 13). Une analyse peut osciller
+ * (négatif, neutre, négatif) au fil d'une même semaine d'échanges ; sans lui, chaque retour relancerait le
+ * scénario. Un défaut, pas un plancher, comme celui du risque élevé. ⚠️ Compté, comme pour toutes les
+ * automations, par identité WhatsApp du fil analysé (`waId` de l'événement) : un contact qui écrit depuis deux
+ * identités (numéro et BSUID) a deux compteurs.
+ */
+export const ANTI_REBOND_ANALYSE_DEVIENT_SECONDES = 7 * 24 * 3600;
+
 /** L'anti-rebond qu'une automation sans réglage propre reçoit, selon son déclencheur. */
 export function antiRebondParDefaut(kind: AutomationTriggerKind, defautInstanceSecondes: number): number {
-  return kind === 'risque_eleve' ? ANTI_REBOND_RISQUE_ELEVE_SECONDES : defautInstanceSecondes;
+  if (kind === 'risque_eleve') return ANTI_REBOND_RISQUE_ELEVE_SECONDES;
+  if (kind === 'analyse_devient') return ANTI_REBOND_ANALYSE_DEVIENT_SECONDES;
+  return defautInstanceSecondes;
 }

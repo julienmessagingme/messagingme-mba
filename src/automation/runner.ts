@@ -102,7 +102,12 @@ function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
   if (ev.kind === 'webhook') return ['webhook'];
   if (ev.kind === 'avant_date') return ['avant_date'];
   if (ev.kind === 'risque_eleve') return ['risque_eleve'];
-  return ['conversation_analyzed'];
+  // Une analyse sert deux déclencheurs : « conversation analysée » (chaque analyse) et « un champ devient »
+  // (seulement quand la copie sur la fiche change). Branche explicite : un genre ajouté demain ne compile pas
+  // tant qu'il n'a pas la sienne.
+  if (ev.kind === 'analysis') return ['conversation_analyzed', 'analyse_devient'];
+  const _jamais: never = ev;
+  return [];
 }
 
 /**

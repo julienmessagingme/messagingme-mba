@@ -51,9 +51,18 @@ describe('le câblage des signaux dans le worker', () => {
 
   it('🔴 la conversation analysée est un consommateur du point de sortie, AVANT l’automation qui peut sortir tôt', () => {
     const signal = worker.indexOf('emetteur.emettreSignal(stored.tenantId, signalAnalyse(stored.conversationId))');
-    const automation = worker.indexOf("{ kind: 'analysis', waId: ctx.waId");
+    const automation = worker.indexOf("kind: 'analysis', waId: ctx.waId");
     expect(signal).toBeGreaterThan(-1);
     expect(automation).toBeGreaterThan(signal);
+  });
+
+  it('🔴 l’événement d’analyse porte la copie de la fiche et toutes les valeurs (lot 3 de « Tout sur la fiche »)', () => {
+    // Sans la copie, « un champ d'analyse devient » ne partirait jamais ; sans les valeurs, aucun filtre de
+    // « conversation analysée » ne passerait. Les deux échecs sont silencieux : aucune erreur, juste rien.
+    const bloc = worker.slice(worker.indexOf("kind: 'analysis', waId: ctx.waId"), worker.indexOf('automationRunnerDeps,', worker.indexOf("kind: 'analysis', waId: ctx.waId")));
+    expect(bloc).toContain('valeurs: analyseDeLaConversation(stored, stored.conversationId, new Date())');
+    expect(bloc).toContain('copie: copie ? { avant: copie.avant, apres: copie.apres } : null');
+    expect(worker).toContain('const copie = stored.copieFiche;');
   });
 
   it('la file des signaux est consommée', () => {

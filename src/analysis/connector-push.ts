@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { signRequest } from '../lib/signature';
 import { withRetry } from '../meta/http';
 import type { HttpTransport } from '../meta/http';
-import type { StoredConversationAnalysis, OnConversationAnalyzed } from './events';
+import type { StoredConversationAnalysis } from './events';
 import { noopOnAnalyzed } from './events';
 import type { Enrichment } from './enrichment';
 
@@ -73,7 +73,9 @@ export function makeOnAnalyzed(deps: {
   enabled: boolean;
   enqueue: (stored: StoredConversationAnalysis) => Promise<void>;
   onError?: (err: unknown) => void;
-}): OnConversationAnalyzed {
+}): (stored: StoredConversationAnalysis) => Promise<void> {
+  // Le contrat de la poussée reste l'analyse stockée, sans la copie de fiche : il reste assignable au point de
+  // sortie (`OnConversationAnalyzed`, `./events`), qui lui passe une `AnalyseTerminee`.
   if (!deps.enabled) return noopOnAnalyzed;
   return async (stored) => {
     try {

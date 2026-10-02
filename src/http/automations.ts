@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { AUTOMATION_TRIGGER_KINDS, isAutomationTriggerKind, keywordsOf } from '../automation/match';
+import { AUTOMATION_TRIGGER_KINDS, OPERATEURS_CONVERSATION_ANALYSEE, OPERATEURS_DEVIENT, isAutomationTriggerKind, keywordsOf } from '../automation/match';
+import { SENTIMENTS } from '../analysis/schema';
+import { CLES_FILTRABLES, estCleFiltrable, lireFiltreFiche } from '../crm/filtre-fiche';
 import { coerceConfigAvantDate, UNITES_DELAI, DELAI_MAX_MINUTES } from '../automation/avant-date';
 import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
@@ -29,13 +31,30 @@ export interface AutomationRouteDeps {
 const TYPES_CREABLES_ICI = AUTOMATION_TRIGGER_KINDS.filter((k) => k !== 'webhook');
 
 /**
- * Borne haute de l'anti-rebond réglé : 7 jours, comme le gel de contrôle. Le défaut d'une automation « risque
- * élevé » sans réglage (30 jours, `antiRebondParDefaut`) s'applique au déclenchement, sans passer par cette borne.
+ * Borne haute de l'anti-rebond réglé : 7 jours, comme le gel de contrôle. Les défauts propres à un déclencheur
+ * (30 jours pour « risque élevé », 7 pour « un champ d'analyse devient », `antiRebondParDefaut`) s'appliquent au
+ * déclenchement, sans passer par cette borne.
  */
 const MAX_COOLDOWN = 7 * 24 * 3600;
-/** Plancher pour « conversation analysée » : doit rester au-dessus du délai d'inactivité qui déclenche une
- *  analyse (25 min par défaut), sinon le scénario et l'analyse se relancent mutuellement. Voir `refuseIfLoopy`. */
+/** Plancher pour les déclencheurs nés d'une analyse : doit rester au-dessus du délai d'inactivité qui déclenche
+ *  une analyse (25 min par défaut), sinon le scénario et l'analyse se relancent mutuellement. Voir `refuseIfLoopy`. */
 const MIN_ANALYSIS_COOLDOWN = 3600;
+/** Au plus dix filtres sur « conversation analysée » : une borne de donnée cliente, comme les filtres de contacts. */
+const MAX_FILTRES_ANALYSE = 10;
+
+/**
+ * Un filtre de dernière analyse dans une config, relu par la règle des filtres de contacts et borné aux
+ * opérateurs donnés. Rend la raison d'un refus, ou null. 🔴 Refuser plutôt que garder : une config qui ne se relit
+ * pas ne déclencherait jamais, et l'automation paraîtrait active pour rien.
+ */
+function raisonFiltreAnalyse(x: unknown, operateurs: readonly string[]): string | null {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return 'filtre invalide (objet {cle, op, valeur})';
+  const o = x as Record<string, unknown>;
+  if (!estCleFiltrable(o.cle)) return `champ d'analyse invalide (${CLES_FILTRABLES.join(' | ')})`;
+  if (typeof o.op !== 'string' || !operateurs.includes(o.op)) return `opérateur invalide pour ce déclencheur (${operateurs.join(' | ')})`;
+  const lu = lireFiltreFiche(o.cle, o.op, o.valeur);
+  return lu.ok ? null : lu.raison;
+}
 
 /**
  * Refuse une combinaison (type, anti-rebond) qui rouvrirait la boucle analyse <-> scénario. Raisonne sur l'état
@@ -43,10 +62,13 @@ const MIN_ANALYSIS_COOLDOWN = 3600;
  * Rend le message d'erreur, ou null.
  */
 function refuseIfLoopy(kind: AutomationTriggerKind | undefined, cooldown: number | null | undefined): string | null {
-  if (kind !== 'conversation_analyzed') return null;
+  // « Un champ devient » aussi : son « devient » freine, mais une analyse qui oscille (négatif, neutre, négatif)
+  // rouvrirait la même boucle avec un délai de zéro.
+  if (kind !== 'conversation_analyzed' && kind !== 'analyse_devient') return null;
   if (cooldown === undefined || cooldown === null) return null; // null = défaut du serveur, largement au-dessus
   if (cooldown >= MIN_ANALYSIS_COOLDOWN) return null;
-  return `pour « conversation analysée », l'anti-rebond doit valoir au moins ${MIN_ANALYSIS_COOLDOWN} s (ou null pour le défaut) : le scénario rouvre l'analyse en écrivant, un délai plus court boucle`;
+  const nom = kind === 'analyse_devient' ? '« un champ d’analyse devient »' : '« conversation analysée »';
+  return `pour ${nom}, l'anti-rebond doit valoir au moins ${MIN_ANALYSIS_COOLDOWN} s (ou null pour le défaut) : le scénario rouvre l'analyse en écrivant, un délai plus court boucle`;
 }
 
 /** Config du déclencheur, validée selon son type. Renvoie un message d'erreur, ou null si tout va bien. */
@@ -72,14 +94,26 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     return null;
   }
   if (kind === 'conversation_analyzed') {
-    // Les deux filtres sont facultatifs (aucun = déclenche à chaque analyse, choix explicite), mais s'ils
-    // sont fournis ils doivent être exploitables : un sentiment hors nomenclature ne matcherait jamais.
+    // Les filtres sont facultatifs (aucun = déclenche à chaque analyse, choix explicite), mais s'ils sont fournis
+    // ils doivent être exploitables : un sentiment hors nomenclature ne matcherait jamais. La liste des
+    // sentiments vient du schéma de l'analyse, plus d'une copie.
     const s = cfg.sentiment;
-    if (s !== undefined && s !== null && s !== '' && s !== 'positif' && s !== 'neutre' && s !== 'negatif') {
-      return "sentiment invalide ('positif' | 'neutre' | 'negatif')";
+    if (s !== undefined && s !== null && s !== '' && !(SENTIMENTS as readonly unknown[]).includes(s)) {
+      return `sentiment invalide (${SENTIMENTS.map((v) => `'${v}'`).join(' | ')})`;
     }
     if (cfg.unresolvedOnly !== undefined && typeof cfg.unresolvedOnly !== 'boolean') return 'unresolvedOnly (booléen)';
+    if (cfg.filtres !== undefined) {
+      if (!Array.isArray(cfg.filtres) || cfg.filtres.length > MAX_FILTRES_ANALYSE) return `filtres (tableau d'au plus ${MAX_FILTRES_ANALYSE} filtres)`;
+      for (const f of cfg.filtres) {
+        const raison = raisonFiltreAnalyse(f, OPERATEURS_CONVERSATION_ANALYSEE);
+        if (raison) return raison;
+      }
+    }
     return null;
+  }
+  if (kind === 'analyse_devient') {
+    // Un champ, un opérateur, une valeur : le filtre que la nouvelle copie doit satisfaire et l'ancienne non.
+    return raisonFiltreAnalyse(cfg, OPERATEURS_DEVIENT);
   }
   if (kind === 'hubspot_deal_stage') {
     // Sans étape, l'automation partirait sur tout changement d'étape du portail : on refuse plutôt que de
@@ -107,7 +141,7 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     return 'un déclencheur « webhook » se configure depuis l’écran Tools > Webhooks';
   }
   // new_contact et risque_eleve : aucune config. Un type ajouté à `AUTOMATION_TRIGGER_KINDS` sans branche arrive
-  // ici : se demander alors ce qu'il exige.
+  // ici : se demander alors ce qu'il exige (analyse_devient l'a fait, juste au-dessus).
   return null;
 }
 

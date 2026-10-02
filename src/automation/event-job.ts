@@ -55,6 +55,10 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
     return tag === '' ? null : { tenantId: j.tenantId, event: { kind: 'tag_added', waId, tag } };
   }
   if (e.kind === 'analysis') {
+    // La forme d'avant le lot 3 seulement : une analyse lance ses automations DANS le worker, sans passer par
+    // cette file (`src/worker.ts`, `onAnalyzed`). Un événement qui y arriverait ne porterait ni les valeurs ni la
+    // copie de fiche : « un champ devient » n'y part donc jamais, et un filtre de « conversation analysée » non
+    // plus (`matchesTrigger` exige les valeurs). Échouer fermé plutôt que deviner.
     return {
       tenantId: j.tenantId,
       event: { kind: 'analysis', waId, sentiment: typeof e.sentiment === 'string' ? e.sentiment : '', resolved: e.resolved === true },

@@ -106,6 +106,16 @@ describe('routes automations', () => {
       { ...VALID, cooldownSeconds: 1.5 },
       { ...VALID, cooldownSeconds: 8 * 24 * 3600 },                  // au-delà de la borne de 7 jours
       { ...VALID, conditionGroup: [] },                              // tableau au lieu d'objet
+      // Lot 3 de « Tout sur la fiche » : un « devient » ou un filtre qui ne se relit pas ne partirait jamais.
+      { ...VALID, triggerKind: 'analyse_devient', triggerConfig: {} },
+      { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_sentiment', op: 'in', valeur: 'furieux' } },
+      { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_sentiment', op: 'not_empty' } },
+      { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_le', op: 'newer_than_days', valeur: '7' } },
+      { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'ville', op: 'in', valeur: 'Paris' } },
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { filtres: 'urgence' } },
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { filtres: [{ cle: 'analyse_urgence', op: 'gte', valeur: '42' }] } },
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { filtres: [{ cle: 'analyse_le', op: 'newer_than_days', valeur: '3' }] } },
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { filtres: Array.from({ length: 11 }, () => ({ cle: 'analyse_resolue', op: 'is_false' })) } },
     ];
     for (const payload of bad) {
       const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload });
@@ -124,6 +134,11 @@ describe('routes automations', () => {
       // Étape de deal HubSpot : les deux identifiants, plus un libellé purement décoratif.
       { ...VALID, triggerKind: 'hubspot_deal_stage', triggerConfig: { pipelineId: 'p1', stageId: 's-devis', stageLabel: 'Devis envoyé' } },
       { ...VALID, triggerKind: 'hubspot_deal_stage', triggerConfig: { pipelineId: 'p1', stageId: 's-devis' } },
+      // Lot 3 de « Tout sur la fiche ».
+      { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' } },
+      { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_urgence', op: 'gte', valeur: '7' } },
+      { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_resolue', op: 'is_false' } },
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { sentiment: 'negatif', filtres: [{ cle: 'analyse_urgence', op: 'gte', valeur: '7' }, { cle: 'analyse_satisfaction', op: 'empty' }] } },
     ];
     for (const payload of ok) {
       const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload });
@@ -131,6 +146,20 @@ describe('routes automations', () => {
     }
     expect(cap.created).toHaveLength(ok.length); // dérivé de la liste : ajouter un cas ne fait plus mentir le compte
     expect(cap.created.every((c) => c.input.enabled === false)).toBe(true); // toujours créées désactivées
+    await server.close();
+  });
+
+  it('🔴 « un champ d’analyse devient » : la même garde anti-boucle que « conversation analysée »', async () => {
+    // Une analyse qui oscille (négatif, neutre, négatif) rouvrirait la boucle analyse et scénario avec un délai nul.
+    const { server, cap } = app();
+    const dev = { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' } };
+    const zero = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...dev, cooldownSeconds: 0 } });
+    const court = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...dev, cooldownSeconds: 600 } });
+    const ok = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...dev, cooldownSeconds: 3600 } });
+    const defaut = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...dev, cooldownSeconds: null } });
+    expect([zero.statusCode, court.statusCode, ok.statusCode, defaut.statusCode]).toEqual([400, 400, 201, 201]);
+    expect(zero.json().error).toContain('un champ d’analyse devient');
+    expect(cap.created).toHaveLength(2);
     await server.close();
   });
 
