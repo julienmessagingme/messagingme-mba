@@ -123,8 +123,11 @@ export type FenetreBudget = 'one_day' | 'seven_days' | 'fourteen_days' | 'thirty
  * en réponses (`ai_turn`), il borne CHAQUE conversation (`./mba-plafond.ts`).
  */
 export interface PlafondMba { unite: UniteBudget; fenetre: FenetreBudget; max: number }
-/** `plafond: null` = illimité ; `autres` = plafonds posés ailleurs, qu'un enregistrement ici remplace. */
-export interface EtatPlafondMba { plafond: PlafondMba | null; autres: number }
+/**
+ * `plafond: null` = illimité ; `autres` = plafonds posés ailleurs, qu'un enregistrement ici remplace ; `entreprise` = le nom
+ * du Business Manager qui porte le plafond (deux espaces au même Business Manager le partagent).
+ */
+export interface EtatPlafondMba { plafond: PlafondMba | null; autres: number; entreprise?: string | null }
 
 /** Prix publics de Meta pour une ESTIMATION (doc « non-template messages ») ; la facture fait foi. */
 export const PRIX_JETONS_USD_PAR_MILLION = 2;

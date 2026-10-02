@@ -8,6 +8,7 @@ import { isSendableButtonUrl } from '../meta/button-url';
 import { urlRecuperable } from '../lib/page-distante';
 import type { PageDistante } from '../lib/page-distante';
 import { espaceVerifie, nonEmpty } from './scope';
+import { MetaApiError } from '../meta/errors';
 import { calculerCompletion } from '../mba/completion';
 import { appliquerActivation, EtatMetaIllisible, MetaARefuse } from '../mba/activation';
 
@@ -39,7 +40,7 @@ export interface MbaRouteDeps {
      * Lit le compte WhatsApp de l'espace chez Meta, pour en connaître le Business Manager propriétaire : c'est lui qui
      * porte le plafond de l'agent. Notre base n'en garde que le nom.
      */
-    phoneClientForTenant(tenantId: string): Promise<{ getWabaHealth(wabaId: string): Promise<{ ownerBusinessId?: string }> }>;
+    phoneClientForTenant(tenantId: string): Promise<{ getWabaHealth(wabaId: string): Promise<{ ownerBusinessId?: string; ownerBusinessName?: string }> }>;
   };
   repo: {
     /**
@@ -83,22 +84,40 @@ export interface MbaRouteDeps {
  */
 export const PRIX_MESSAGE_AGENT_USD = { min: 0.04, max: 0.05 } as const;
 
-/** Les 30 derniers jours, en dates `AAAA-MM-JJ` (UTC) pour Meta, et l'instant de début pour notre comptage. */
+/**
+ * Les 30 derniers jours, en dates `AAAA-MM-JJ` DU PACIFIQUE pour Meta (ses statistiques d'événements comptent en jours
+ * du Pacifique : une date UTC serait « demain » pour Meta entre 0 h et 7 h UTC), et l'instant de début pour notre
+ * comptage (30 x 24 h, à quelques heures près de la fenêtre de Meta : c'est une estimation, et elle le dit).
+ */
 export function trenteDerniersJours(maintenant: Date): { debut: string; fin: string; depuis: Date } {
-  const jour = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-  const t = maintenant.getTime();
-  return { debut: jour(t - 29 * 86_400_000), fin: jour(t), depuis: new Date(t - 30 * 86_400_000) };
+  const fin = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(maintenant);
+  const debut = new Date(Date.parse(`${fin}T12:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);
+  return { debut, fin, depuis: new Date(maintenant.getTime() - 30 * 86_400_000) };
 }
 
+/** Le délai d'une lecture de statistiques chez Meta : la carte de Performance lab ne doit pas pendre sur Meta. */
+const DELAI_INSIGHTS_MS = 8_000;
+
 /** Le premier plafond, dans nos mots ; `autres` dit combien d'autres Meta porte (posés ailleurs que chez nous). */
-function versPlafonds(budgets: readonly BudgetAgent[]): {
-  plafond: { unite: UniteBudget; fenetre: FenetreBudget; max: number } | null; autres: number;
+function versPlafonds(budgets: readonly BudgetAgent[], entreprise: string | null): {
+  plafond: { unite: UniteBudget; fenetre: FenetreBudget; max: number } | null; autres: number; entreprise: string | null;
 } {
   const b = budgets[0];
   return {
     plafond: b ? { unite: b.unit_type, fenetre: b.time_window, max: b.max_budget } : null,
     autres: Math.max(0, budgets.length - 1),
+    entreprise,
   };
+}
+
+/**
+ * Meta refuse le plafond à un Business Manager qui ne l'a pas (403 documenté : « The agent budget API is not enabled for
+ * this business integration ») : un message en français plutôt que l'anglais de Meta en 422 (relecture du 2026-10-02).
+ */
+function refusPlafond(err: unknown): string | null {
+  return err instanceof MetaApiError && err.httpStatus === 403
+    ? 'Meta n’ouvre pas encore le plafond de l’agent à ce Business Manager (refus 403). Le plafond se règle alors dans WhatsApp Manager.'
+    : null;
 }
 
 /** Au-delà, ce n'est plus un import de FAQ : Meta prévient qu'« a few hundred » dégrade déjà les réponses. */
@@ -261,11 +280,11 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
    * Le Business Manager propriétaire du compte WhatsApp de l'espace : c'est LUI qui porte les plafonds de l'agent, et
    * lui que Meta facture. Relu chez Meta à chaque fois ; `null` sans compte relié ou si Meta ne le dit pas.
    */
-  async function entrepriseDeLEspace(tenant: string): Promise<string | null> {
+  async function entrepriseDeLEspace(tenant: string): Promise<{ id: string; nom: string | null } | null> {
     const waba = await deps.repo.getTenantWabaId(tenant);
     if (!waba) return null;
     const info = await (await deps.meta.phoneClientForTenant(tenant)).getWabaHealth(waba);
-    return info.ownerBusinessId ?? null;
+    return info.ownerBusinessId ? { id: info.ownerBusinessId, nom: info.ownerBusinessName ?? null } : null;
   }
   const SANS_ENTREPRISE = 'Le plafond de l’agent se règle sur le Business Manager qui possède votre compte WhatsApp, et Meta ne nous l’a pas indiqué. Reliez d’abord un numéro WhatsApp.';
 
@@ -274,7 +293,13 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const tenant = espaceVerifie(req);
     const bm = await entrepriseDeLEspace(tenant);
     if (!bm) return reply.code(409).send({ error: SANS_ENTREPRISE });
-    return reply.code(200).send(versPlafonds(await (await deps.meta.mbaClientForTenant(tenant)).lireBudgets(bm)));
+    try {
+      return reply.code(200).send(versPlafonds(await (await deps.meta.mbaClientForTenant(tenant)).lireBudgets(bm.id), bm.nom));
+    } catch (err) {
+      const refus = refusPlafond(err);
+      if (refus !== null) return reply.code(409).send({ error: refus });
+      throw err;
+    }
   });
 
   /**
@@ -283,7 +308,11 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
    */
   app.put('/tenants/:tenantId/mba-budget', g, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const b = (req.body ?? {}) as Record<string, unknown>;
+    // Un corps JSON primitif (nombre, chaîne) ferait lever `in` : 400, jamais 500.
+    if (typeof req.body !== 'object' || req.body === null || Array.isArray(req.body)) {
+      return reply.code(400).send({ error: 'plafond requis (objet, ou null pour le retirer)' });
+    }
+    const b = req.body as Record<string, unknown>;
     if (!('plafond' in b)) return reply.code(400).send({ error: 'plafond requis (objet, ou null pour le retirer)' });
     let budgets: BudgetAgent[] = [];
     if (b.plafond !== null) {
@@ -300,7 +329,16 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     }
     const bm = await entrepriseDeLEspace(tenant);
     if (!bm) return reply.code(409).send({ error: SANS_ENTREPRISE });
-    return reply.code(200).send(versPlafonds(await (await deps.meta.mbaClientForTenant(tenant)).ecrireBudgets(bm, budgets)));
+    const client = await deps.meta.mbaClientForTenant(tenant);
+    try {
+      await client.ecrireBudgets(bm.id, budgets);
+      // Relu chez Meta : c'est ce que Meta applique qui s'affiche, pas ce qu'on a cru envoyer.
+      return reply.code(200).send(versPlafonds(await client.lireBudgets(bm.id), bm.nom));
+    } catch (err) {
+      const refus = refusPlafond(err);
+      if (refus !== null) return reply.code(409).send({ error: refus });
+      throw err;
+    }
   });
 
   /**
@@ -315,9 +353,9 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const client = await deps.meta.mbaClientForTenant(tenant);
     const { debut, fin, depuis } = trenteDerniersJours(new Date());
     const [conversations, outils, evenements, messages] = await Promise.all([
-      client.insightsConversations(pn, debut, fin).catch(() => null),
-      client.insightsOutils(pn, debut, fin).catch(() => null),
-      client.insightsEvenements(pn, debut, fin).catch(() => null),
+      client.insightsConversations(pn, debut, fin, AbortSignal.timeout(DELAI_INSIGHTS_MS)).catch(() => null),
+      client.insightsOutils(pn, debut, fin, AbortSignal.timeout(DELAI_INSIGHTS_MS)).catch(() => null),
+      client.insightsEvenements(pn, debut, fin, AbortSignal.timeout(DELAI_INSIGHTS_MS)).catch(() => null),
       deps.stats.messagesEcritsParMba(tenant, depuis).catch(() => null),
     ]);
     return reply.code(200).send({

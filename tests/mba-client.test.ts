@@ -323,10 +323,11 @@ describe('MbaClient : plafond et statistiques de l’agent', () => {
     await expect(new MbaClient('tok', impl).lireBudgets('BM')).rejects.toThrow();
   });
 
-  it('écrit les plafonds par un POST qui porte l’ensemble', async () => {
+  it('écrit les plafonds par un POST qui porte l’ensemble, sans lire sa réponse (jamais mesurée)', async () => {
     const corps = [{ unit_type: 'ai_turn' as const, time_window: 'one_day' as const, max_budget: 3 }];
-    const { impl, appels } = faux([{ body: { budgets: corps } }]);
-    await new MbaClient('tok', impl).ecrireBudgets('BM', corps);
+    // Une réponse de forme imprévue ne fait pas dire « incident » sur un plafond posé : la route relit par GET.
+    const { impl, appels } = faux([{ body: { quelque: 'chose' } }]);
+    await expect(new MbaClient('tok', impl).ecrireBudgets('BM', corps)).resolves.toBeUndefined();
     expect(appels[0]!.method).toBe('POST');
     expect(appels[0]!.body).toEqual({ budgets: corps });
   });
@@ -340,6 +341,11 @@ describe('MbaClient : plafond et statistiques de l’agent', () => {
     expect(await c.insightsConversations('PN1', '2026-09-03', '2026-10-02')).toEqual({ traitees: 4, enAttenteEquipe: 0 });
     expect(appels[0]!.url).toBe('https://api.facebook.com/PN1/insights/conversations?start_date=2026-09-03&end_date=2026-10-02');
     expect(await c.insightsConversations('PN1', '2026-09-03', '2026-10-02')).toEqual({ traitees: null, enAttenteEquipe: null });
+  });
+
+  it('🔴 plusieurs lignes de conversations : « n/d », jamais la première prise pour le total', async () => {
+    const { impl } = faux([{ body: { data: [{ ai_threads: { count: 1 } }, { ai_threads: { count: 3 } }] } }]);
+    expect(await new MbaClient('tok', impl).insightsConversations('PN1', 'a', 'b')).toEqual({ traitees: null, enAttenteEquipe: null });
   });
 
   it('lit les outils (forme mesurée) avec un nom lisible, et les événements', async () => {

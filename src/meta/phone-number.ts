@@ -1,5 +1,12 @@
+import { z } from 'zod';
 import type { FetchLike } from './templates';
 import { appelGraph } from './graph';
+
+/**
+ * Le Business Manager propriétaire, lu par `safeParse` : son identifiant désigne la cible d'une ÉCRITURE (le plafond de
+ * l'agent de Meta), il ne passe pas par un `as` (relecture du 2026-10-02). Un identifiant Meta est fait de chiffres.
+ */
+const proprietaireSchema = z.object({ owner_business_info: z.object({ id: z.string().regex(/^\d+$/) }) });
 
 /** Champs de statut d'un numéro renvoyés par `GET /{phone_number_id}`. Tout optionnel (Meta peut omettre). */
 export interface PhoneNumberInfo {
@@ -99,7 +106,10 @@ export class MetaPhoneNumberClient {
       businessVerificationStatus: json?.business_verification_status,
       marketingMessagesLiteApiStatus: json?.marketing_messages_lite_api_status,
       ownerBusinessName: json?.owner_business_info?.name,
-      ownerBusinessId: json?.owner_business_info?.id,
+      ownerBusinessId: (() => {
+        const lu = proprietaireSchema.safeParse(json);
+        return lu.success ? lu.data.owner_business_info.id : undefined;
+      })(),
     };
   }
 }

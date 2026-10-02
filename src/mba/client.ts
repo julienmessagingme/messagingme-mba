@@ -344,30 +344,30 @@ export class MbaClient {
   /**
    * 🔴 REMPLACE l'ensemble des plafonds : le POST de Meta n'ajoute pas. `[]` = illimité. Au plafond, l'agent finit le tour
    * en cours, cesse de répondre et passe la main à un humain, jusqu'à ce que la fenêtre glisse.
+   * ⚠️ La réponse du POST n'est pas lue (jamais mesurée) : un échec de Meta lève, un succès se RELIT par `lireBudgets`.
+   * Sans quoi une réponse de forme imprévue ferait dire « incident » sur un plafond pourtant posé (relecture du 2026-10-02).
    */
-  async ecrireBudgets(businessId: string, budgets: readonly BudgetAgent[]): Promise<BudgetAgent[]> {
-    const lu = budgetsSchema.safeParse(
-      await this.appel<unknown>('POST', `${encodeURIComponent(businessId)}/agent_budget`, { budgets }),
-    );
-    if (!lu.success) throw new Error('réponse illisible après l’écriture des plafonds');
-    return lu.data.budgets;
+  async ecrireBudgets(businessId: string, budgets: readonly BudgetAgent[]): Promise<void> {
+    await this.appel<unknown>('POST', `${encodeURIComponent(businessId)}/agent_budget`, { budgets });
   }
 
   /** Les conversations de l'agent sur une période (`AAAA-MM-JJ`, 90 jours au plus). */
-  async insightsConversations(phoneNumberId: string, debut: string, fin: string): Promise<InsightConversations> {
-    const lu = insightsConversationsSchema.safeParse(
-      await this.appel<unknown>('GET', `${phoneNumberId}/insights/conversations?start_date=${debut}&end_date=${fin}`),
-    );
+  async insightsConversations(phoneNumberId: string, debut: string, fin: string, signal?: AbortSignal): Promise<InsightConversations> {
+    const lu = insightsConversationsSchema.safeParse(await this.appel<unknown>(
+      'GET', `${phoneNumberId}/insights/conversations?start_date=${debut}&end_date=${fin}`, undefined, VERSION_AGENT_CONFIG, signal,
+    ));
     if (!lu.success) throw new Error('statistiques des conversations illisibles');
-    const ligne = lu.data.data[0];
+    // Meta rend UNE ligne pour toute la période (mesuré). Plusieurs (par jour, paginées) : on ne sait pas les sommer
+    // sans risque, donc « n/d » plutôt qu'un chiffre faux et crédible lu sur la première.
+    const ligne = lu.data.data.length === 1 ? lu.data.data[0] : undefined;
     return { traitees: ligne?.ai_threads?.count ?? null, enAttenteEquipe: ligne?.ai_handoffs?.count ?? null };
   }
 
-  /** Les outils appelés par l'agent sur une période (30 jours au plus), le plus utilisé d'abord. */
-  async insightsOutils(phoneNumberId: string, debut: string, fin: string): Promise<InsightOutil[]> {
-    const lu = insightsOutilsSchema.safeParse(
-      await this.appel<unknown>('GET', `${phoneNumberId}/insights/tool_calls?start_date=${debut}&end_date=${fin}`),
-    );
+  /** Les outils appelés par l'agent sur une période (30 jours au plus), dans l'ordre de Meta (« busiest first », sa doc). */
+  async insightsOutils(phoneNumberId: string, debut: string, fin: string, signal?: AbortSignal): Promise<InsightOutil[]> {
+    const lu = insightsOutilsSchema.safeParse(await this.appel<unknown>(
+      'GET', `${phoneNumberId}/insights/tool_calls?start_date=${debut}&end_date=${fin}`, undefined, VERSION_AGENT_CONFIG, signal,
+    ));
     if (!lu.success) throw new Error('statistiques des outils illisibles');
     return lu.data.data.map((o) => ({
       nom: nomLisibleOutil(o.tool_name),
@@ -381,10 +381,10 @@ export class MbaClient {
   }
 
   /** Les événements métier envoyés à l'agent (`agent_event`) sur une période (30 jours au plus, jours du Pacifique). */
-  async insightsEvenements(phoneNumberId: string, debut: string, fin: string): Promise<InsightEvenement[]> {
-    const lu = insightsEvenementsSchema.safeParse(
-      await this.appel<unknown>('GET', `${phoneNumberId}/insights/agent_events?start_date=${debut}&end_date=${fin}`),
-    );
+  async insightsEvenements(phoneNumberId: string, debut: string, fin: string, signal?: AbortSignal): Promise<InsightEvenement[]> {
+    const lu = insightsEvenementsSchema.safeParse(await this.appel<unknown>(
+      'GET', `${phoneNumberId}/insights/agent_events?start_date=${debut}&end_date=${fin}`, undefined, VERSION_AGENT_CONFIG, signal,
+    ));
     if (!lu.success) throw new Error('statistiques des événements illisibles');
     return lu.data.data.map((e) => ({
       type: e.event_type,

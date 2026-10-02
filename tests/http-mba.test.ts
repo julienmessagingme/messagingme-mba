@@ -68,7 +68,7 @@ function app(overClient: Record<string, Methode> = {}, overDeps: Partial<MbaRout
     ...mbaInerte,
     meta: {
       mbaClientForTenant: async () => client,
-      phoneClientForTenant: async () => ({ getWabaHealth: async () => ({ ownerBusinessId: 'BM1' }) }),
+      phoneClientForTenant: async () => ({ getWabaHealth: async () => ({ ownerBusinessId: 'BM1', ownerBusinessName: 'Messaging Me' }) }),
     },
     repo: {
       getTenantPhoneNumberId: async () => null,
@@ -495,14 +495,14 @@ describe('GET|PUT /tenants/:tenantId/mba-budget', () => {
     const { server, appels } = app({ lireBudgets: () => [{ budget_id: 'b1', unit_type: 'ai_turn', time_window: 'seven_days', max_budget: 500 }] });
     const res = await server.inject({ method: 'GET', url: B, ...h(adminTok) });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ plafond: { unite: 'ai_turn', fenetre: 'seven_days', max: 500 }, autres: 0 });
+    expect(res.json()).toEqual({ plafond: { unite: 'ai_turn', fenetre: 'seven_days', max: 500 }, autres: 0, entreprise: 'Messaging Me' });
     expect(appels.find((a) => a.m === 'lireBudgets')?.args).toEqual(['BM1']);
     await server.close();
   });
 
   it('aucun plafond : `plafond: null`, c’est-à-dire illimité', async () => {
     const { server } = app({ lireBudgets: () => [] });
-    expect((await server.inject({ method: 'GET', url: B, ...h(adminTok) })).json()).toEqual({ plafond: null, autres: 0 });
+    expect((await server.inject({ method: 'GET', url: B, ...h(adminTok) })).json()).toEqual({ plafond: null, autres: 0, entreprise: 'Messaging Me' });
     await server.close();
   });
 
@@ -520,17 +520,38 @@ describe('GET|PUT /tenants/:tenantId/mba-budget', () => {
     }
   });
 
-  it('pose UN plafond : le POST porte l’unité, la fenêtre et le maximum de Meta', async () => {
-    const { server, appels } = app({ ecrireBudgets: (_bm: unknown, b: unknown) => b });
+  it('pose UN plafond : le POST porte l’unité, la fenêtre et le maximum de Meta, puis l’écran lit ce que Meta RELIT', async () => {
+    const { server, appels } = app({
+      ecrireBudgets: () => undefined,
+      lireBudgets: () => [{ budget_id: 'b9', unit_type: 'token', time_window: 'thirty_days', max_budget: 10_000_000 }],
+    });
     const res = await server.inject({ method: 'PUT', url: B, ...json({ plafond: { unite: 'token', fenetre: 'thirty_days', max: 10_000_000 } }) });
     expect(res.statusCode).toBe(200);
     expect(appels.find((a) => a.m === 'ecrireBudgets')?.args).toEqual(['BM1', [{ unit_type: 'token', time_window: 'thirty_days', max_budget: 10_000_000 }]]);
-    expect(res.json()).toEqual({ plafond: { unite: 'token', fenetre: 'thirty_days', max: 10_000_000 }, autres: 0 });
+    expect(appels.map((a) => a.m)).toEqual(['ecrireBudgets', 'lireBudgets']);
+    expect(res.json()).toEqual({ plafond: { unite: 'token', fenetre: 'thirty_days', max: 10_000_000 }, autres: 0, entreprise: 'Messaging Me' });
+    await server.close();
+  });
+
+  it('un refus 403 de Meta devient un 409 en français, pas l’anglais de Meta', async () => {
+    const { server } = app({ lireBudgets: () => Promise.reject(new MetaApiError(403, { message: 'The agent budget API is not enabled for this business integration' })) });
+    const res = await server.inject({ method: 'GET', url: B, ...h(adminTok) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('Meta n’ouvre pas encore le plafond');
+    await server.close();
+  });
+
+  it('un corps JSON primitif est un 400, jamais un 500', async () => {
+    const { server } = app();
+    for (const corps of ['12', '"texte"', 'null', '[1]']) {
+      const res = await server.inject({ method: 'PUT', url: B, ...h(adminTok), payload: corps });
+      expect(res.statusCode, corps).toBe(400);
+    }
     await server.close();
   });
 
   it('`{ plafond: null }` retire tout : le POST part VIDE', async () => {
-    const { server, appels } = app({ ecrireBudgets: () => [] });
+    const { server, appels } = app({ ecrireBudgets: () => undefined, lireBudgets: () => [] });
     const res = await server.inject({ method: 'PUT', url: B, ...json({ plafond: null }) });
     expect(res.statusCode).toBe(200);
     expect(appels.find((a) => a.m === 'ecrireBudgets')?.args).toEqual(['BM1', []]);

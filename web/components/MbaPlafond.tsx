@@ -7,6 +7,7 @@ import { cardCls, inputClsAuto } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
 import { Squelette } from '@/components/Squelette';
 import { MbaNotice } from './MbaNotice';
+import { ApiError } from '@/lib/api';
 import {
   getPlafondMba, putPlafondMba,
   type EtatPlafondMba, type FenetreBudget, type PlafondMba, type UniteBudget,
@@ -57,7 +58,11 @@ export function MbaPlafond({ tenantId }: { tenantId: string }) {
       .catch((err: unknown) => {
         if (!vivant) return;
         setEtat('erreur');
-        setErreur(err instanceof Error ? err.message : '');
+        // Un 404 ne vient que d'une API d'avant cette route (la console part sur Vercel avant le déploiement de l'API) :
+        // « Not Found » ne dirait rien à personne.
+        setErreur(err instanceof ApiError && err.status === 404
+          ? t('Le plafond n’est pas encore disponible sur ce serveur : réessayez dans quelques minutes.', 'The cap is not available on this server yet: try again in a few minutes.')
+          : err instanceof Error ? err.message : '');
       });
     return () => { vivant = false; };
   }, [tenantId]);
@@ -121,6 +126,14 @@ export function MbaPlafond({ tenantId }: { tenantId: string }) {
                 `Current cap: ${libelleUnite(etat.plafond.unite, etat.plafond.max)} over a rolling ${libelleFenetre(etat.plafond.fenetre)}.`,
               )}
           </p>
+          {etat.entreprise && (
+            <p className="mt-1 text-xs text-ink-500" data-testid="mba-plafond-entreprise">
+              {t(
+                `Business Manager : ${etat.entreprise}. Tous ses numéros WhatsApp partagent ce plafond, y compris ceux d’autres espaces.`,
+                `Business Manager: ${etat.entreprise}. All its WhatsApp numbers share this cap, including those of other workspaces.`,
+              )}
+            </p>
+          )}
           {etat.autres > 0 && (
             <p className="mt-1 text-xs text-ink-500" data-testid="mba-plafond-autres">
               {t(
