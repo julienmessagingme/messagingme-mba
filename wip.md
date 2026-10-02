@@ -25,8 +25,10 @@ Le fonctionnel est dans `features.md` (section « MBA, le répondeur de Meta » 
 journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont les essais réels, faits par Julien :
 
 - ✅ **Le message de passage en français** : déployé (console seule).
-- ⏳ **Le plafond** (Activation, en bas) : poser un petit plafond en jetons, écrire depuis un téléphone, voir ce que
-  fait l'agent une fois le plafond atteint, puis le retirer. Ce que Meta fait à ce moment n'est PAS documenté.
+- ⏳ **Le plafond** (Activation, en bas) : poser un petit plafond en jetons, écrire depuis un téléphone, vérifier ce
+  que Meta documente (au plafond, l'agent finit son tour puis passe la main à un humain), puis le retirer.
+- ⏳ **Le message de passage** : demander un humain depuis un téléphone, et lire le message reçu (en base :
+  `conversation_messages.origin = 'mba'`). Le bac à sable ne le montre pas (mesuré le 2026-10-02).
 - ⏳ **La carte « Agent de Meta »** de Performance Lab > Synthèse : la lire sur l'espace MessagingMe.
 - ⏳ **Les outils MCP** : connecter un serveur MCP (aucun en production au 2026-10-02, mesuré), donner un de ses
   outils à l'agent de Meta dans l'onglet Outils, lui poser une question qui l'exige, et lire l'appel au journal sous

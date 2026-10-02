@@ -54,6 +54,27 @@ sur une ligne vide (`'\n\n'`), qu'un fichier en CRLF n'a pas. Le dépôt stocke 
 Déploiements sans migration, contrôle public à chaque fois, fiches d'aide rechargées après le lot 3. Essais réels
 dus (plafond, carte, outils MCP), voir `wip.md`.
 
+⚠️ **Correction du même jour, après mesure : Meta RELIT bien `message_selection`.** Le `GET` des réglages de notre
+numéro rend `"message_selection": "CUSTOM"` ; la mesure du matin avait été faite sur un numéro où rien n'était encore
+choisi (le bloc est alors absent). La phrase ci-dessus et le commentaire de l'écran disaient le contraire. Conséquence
+heureuse : la fusion des réglages (`ecrireReglages`) repasse le choix tel que Meta le rend, aucune écriture ne
+l'efface. Mesuré dans la foulée :
+- le bac à sable (`agent_test`) ne joue PAS le message de passage : avec `CUSTOM` posé, il rend une phrase rédigée
+  par l'agent. C'est ce qui donnait à Julien l'impression que « rédigé par l'agent » était le défaut ;
+- en conversation réelle, deux textes sont sortis de l'agent : le texte standard anglais (« Thanks for reaching out!
+  I'll ask a representative to respond. Someone will be with you shortly! », une fois, le 30/09) et « Merci d'avoir
+  pris contact avec nous. Un membre de l'équipe reprendra la conversation… » (onze fois, du 22 au 30/09), qui n'est
+  PAS le message de passage mais l'avis de Meta quand nous prenons le fil pendant le tour de l'agent ;
+- le texte `CUSTOM` posé sur notre numéro (« Je transmets votre demande a un membre de l equipe… », sans accents)
+  n'a encore servi à aucun passage réel.
+
+À la demande de Julien, la vue d'ensemble a changé le même soir : « Notre texte » ouvre une vraie zone de rédaction
+(cocher n'envoie plus rien, « Enregistrer ce texte » écrit chez Meta et dit « Enregistré chez Meta » sur le texte
+relu), la carte d'allumage n'est plus que l'interrupteur et « Activé » / « Désactivé », comme sur l'Accueil, et
+l'identifiant de l'agent passe à la ligne dans son cadre. ⚠️ Le premier test de cet identifiant comparait des
+BOÎTES et restait vert sur le défaut (un texte qui déborde laisse sa boîte dans le cadre) ; il mesure désormais
+l'étendue du texte, et tombe de 513 px sur l'écran muté.
+
 ## 2026-10-01 : l'aperçu et l'import d'un site ont une échéance par requête
 
 Décidé par Julien le jour même, sur le point que la relecture du lot des pages web avait laissé au `todo.md` : un
