@@ -160,7 +160,7 @@ conversation ; un message de masse n'émet rien (le chemin de masse n'émet jama
   `42P01`). Elle passe AVANT le `up`, avec 0200.
 - **Le démarrage** : l'automation équivalente au widget est construite EN MÉMOIRE (`automationDuWidget` : mot-clé =
   la phrase en `contains`, son scénario, `maxFiresPerHour` = `max_par_heure`, `null` = le plafond de l'instance,
-  anti-rebond de l'instance, `possedePar: null`) et passée à `runAutomations` avec l'objet MÊME des automations du
+  anti-rebond de l'instance, `possedePar: POSSESSEUR_WIDGET` depuis le lot 3b) et passée à `runAutomations` avec l'objet MÊME des automations du
   worker (`automationRunnerDeps`), dont seule la source change : cette automation-là, et ses tirs dans `widget_tirs`.
   Contact bloqué, anti-rebond, plafond, garde du fil, garde du désabonnement : ce sont les leurs. Le runner revérifie
   la phrase par `matchesTrigger` : une reconnaissance fautive ne suffit pas à démarrer un scénario (mesuré par
@@ -173,12 +173,12 @@ conversation ; un message de masse n'émet rien (le chemin de masse n'émet jama
   fil tenu, désabonné) n'est PAS consommé : il suit le chemin d'aujourd'hui.
 - **L'ordre** : l'étape est la DERNIÈRE de `processInbound`, après l'affectation de campagne. Chaque étape existante
   voit l'état qu'elle voyait avant ce lot, et la propriété clé de l'affectation (seule la PREMIÈRE réponse prend le
-  fil) se lit sur un état que le widget n'a pas touché. Si la campagne vient de prendre le fil pour l'équipe, la
-  garde du fil refuse le scénario du widget : la décision déjà prise gagne. Chaque geste est dans un `tenter` : un
+  fil) se lit sur un état que le widget n'a pas touché. Si la campagne vient de prendre le fil pour l'équipe, le
+  scénario du widget ne le lui prend pas (`epargneLOperateur`, lot 3b) : la décision déjà prise gagne. Chaque geste est dans un `tenter` : un
   widget en échec n'empêche ni l'enregistrement, ni l'affectation, ni le message suivant du lot.
-- **Texte seulement, et pas en `standby`** : `wa.me` pré-remplit toujours un message texte ; une légende de média ou
-  un libellé de bouton ne sont pas une arrivée par la bulle (même règle que le STOP). Un `standby` (le contact est
-  sur la liste de l'agent de Meta) pose l'étiquette mais ne démarre rien, la règle de `processTriggers`.
+- **Texte seulement** : `wa.me` pré-remplit toujours un message texte ; une légende de média ou un libellé de bouton
+  ne sont pas une arrivée par la bulle (même règle que le STOP). Un `standby` (le contact est sur la liste de l'agent
+  de Meta) démarre le scénario depuis le lot 3b, la reprise retirant d'abord le contact de la liste de l'agent.
 - **L'étiquette est `widget-<code>`**, dérivée du code public, IMMUABLE : un widget renommé (nom ou phrase) pose la
   même. Aucune colonne n'a donc été ajoutée pour elle. Posée par `addTagsByPhoneReturningNew` (dédoublonné en base)
   puis déclarée dans le référentiel, best-effort, comme `applyTag`.
@@ -202,16 +202,14 @@ conversation ; un message de masse n'émet rien (le chemin de masse n'émet jama
   phrase vide, par accident ; la sélection a été réécrite pour que la garde soit seule à l'écarter. Le scénario
   passe par le VRAI runner et le VRAI exécuteur : démarrage, anti-rebond des deux côtés de sa fenêtre, plafond
   propre et plafond de l'instance, désabonné, bloqué, fil tenu, `standby`.
-- **Pas fait, et ouvert** : un scénario de widget ne REPREND pas un fil tenu par un opérateur ou par l'agent de Meta
-  (automation ordinaire). Lui donner la reprise de la chaîne ou de la publicité (`reprendLaMain`) demanderait de
-  nommer un propriétaire `widget` dans `src/automation/match.ts`, qu'une autre session modifiait ; à trancher par
-  Julien. Et aucun essai réel : c'est l'essai qui clôt la feature.
+- **La reprise du fil**, laissée ouverte ici, est le lot 3b. Aucun essai réel : c'est l'essai qui clôt la
+  feature.
 
 ---
 
 ## Lot 3b : le scénario du widget passe devant l'agent de Meta
 
-**Décidé par Julien le 2026-10-02, pas commencé.** Avec le lot 3 seul, sur tout espace où l'agent de Meta tient le fil,
+**Décidé par Julien le 2026-10-02, poussé le même soir.** Avec le lot 3 seul, sur tout espace où l'agent de Meta tient le fil,
 le devenir `scenario` ne démarre jamais : le scénario respecte la garde du fil, et le widget ne fait que poser son
 étiquette. Le lot 3b donne au widget le comportement des liens de chaîne et des publicités : il REPREND la main à l'agent
 de Meta. ⚠️ Il n'a AUCUN rapport fonctionnel avec les chaînes : il ajoute seulement un troisième nom à la liste de ceux
@@ -226,8 +224,8 @@ qui ont le droit de passer devant l'agent de Meta.
 plus le widget, traité comme la publicité le traite), `tests/automation-chaine-reprend-la-main.test.ts` (le widget y est
 nommé), `tests/widget-devenir.test.ts`.
 
-**Aucune migration** : l'automation du widget n'existe qu'en mémoire, jamais en base, donc le CHECK de
-`automations.possede_par` et le filtre `HORS_WEBHOOK` de l'écran Automation ne la concernent pas. ⚠️ `match.ts` appartient
+**Aucune migration** : l'automation du widget n'existe qu'en mémoire, jamais en base, donc ni la colonne
+`automations.possede_par` (un `text` sans contrainte) ni le filtre `HORS_WEBHOOK` de l'écran Automation ne la concernent. ⚠️ `match.ts` appartient
 à la zone de la session Salesforce : feu vert donné le 2026-10-02 (rien de non poussé, aucun chantier prévu sur
 `reprendLaMain`).
 
@@ -239,9 +237,15 @@ faux), vérifié dans les deux sens.
 
 - Lots 1, 2 et 3 sur `main`, CI verte ; migrations 0200 et 0201 appliquées en production et relues. Le VPS a l'image
   construite SANS `up` : l'API ne sert pas encore les lots 2 et 3.
-- Lot 3b, puis lot 4 (l'écran), puis lot 5 (le MCP), puis le déploiement et l'essai réel.
-- À trancher au lot 4 : une limite au nombre de widgets par espace ; supprimer un scénario utilisé par un widget, refus en
-  409 ou widget inerte (la base fait aujourd'hui « inerte » par `set null`).
+- Lot 3b poussé le 2026-10-02 au soir. Restent le lot 4 (l'écran), le lot 5 (le MCP), puis le déploiement et l'essai
+  réel.
+- Tranché par Julien le 2026-10-02 pour le lot 4 : **5 widgets au plus par espace** ; un scénario supprimé rend son
+  widget **inerte** (la base le fait déjà par `set null`, l'écran du widget le dit) ; l'API des lots 1 à 3b se
+  déploie AVANT que l'écran ne soit poussé.
+- Ouvert, relevé par la relecture du 3b (jaune) : un scénario refusé APRÈS la reprise (envoi Meta en échec) laisse le
+  visiteur d'un `standby` sans réponse jusqu'à son message suivant, comme le bouton de chaîne ; la publicité, elle,
+  rend le fil (`rendreLesFilsSansReponse`). Et un rejeu du webhook n'est pas consommé par le widget : l'avance d'un
+  parcours peut le prendre pour une réponse (hérité du lot 3).
 
 ## Lot 4 : l'écran de la console
 
@@ -322,5 +326,5 @@ Puis le même essai avec le numéro délié, pour voir la bulle grisée.
 ## Questions à trancher avant le lot 1
 
 - [ ] Le texte exact de la bulle grisée, et s'il est traduit.
-- [ ] Une limite au nombre de widgets par espace, et laquelle.
-- [ ] Supprimer un scénario utilisé par un widget : refus en 409, ou widget rendu inerte ?
+- [x] Une limite au nombre de widgets par espace : 5 (Julien, 2026-10-02).
+- [x] Supprimer un scénario utilisé par un widget : le widget devient inerte (Julien, 2026-10-02).

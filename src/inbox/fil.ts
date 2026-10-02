@@ -224,7 +224,7 @@ export interface ControleDuFil {
    * Reprendre le fil pour un scénario qu'on démarre délibérément (campagne, lancement depuis l'Inbox, lien de
    * chaîne, `/v1/sends`, jeton de test, relais de l'agent de Meta) : le contact est retiré de la liste de l'agent,
    * puis `app_workflow`. Reprend même un fil d'opérateur, sauf `saufOperateur` : un démarrage que le CLIENT
-   * déclenche (clic sur une publicité) laisse la main à l'opérateur qui la tient.
+   * déclenche (clic sur une publicité, arrivée par un widget) laisse la main à l'opérateur qui la tient.
    */
   reprendrePourLApp(tenantId: string, waId: string, opts?: { saufOperateur?: boolean }): Promise<IssueReprise>;
   /**

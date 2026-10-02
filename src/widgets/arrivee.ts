@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { AutomationRow } from '../automation/match';
+import { POSSESSEUR_WIDGET, type AutomationRow } from '../automation/match';
 import { runAutomations, type AutomationRunnerDeps } from '../automation/runner';
 import { PgTagStore } from '../crm/tag-store.pg';
 import type { InboundMessage } from '../webhooks/inbound';
@@ -17,7 +17,8 @@ import { PgWidgetTirsStore, type TirsDuWidget } from './tirs.pg';
  *  1. LA SOURCE : une étiquette posée sur le contact, pour TOUS les devenirs, dès que le message contient la phrase
  *     d'un widget actif ;
  *  2. LE DEVENIR, et seul 'scenario' agit au lot 3 :
- *     - 'scenario' : le scénario du widget démarre ICI, par le runner des automations et toutes ses gardes ;
+ *     - 'scenario' : le scénario du widget démarre ICI, par le runner des automations et toutes ses gardes, et il
+ *       REPREND le fil à l'agent de Meta, jamais à un opérateur qui le tient (lot 3b) ;
  *     - 'mba' : rien n'est pris, comme `assignerReponse` pour 'mba' : l'agent de Meta répond s'il est actif ;
  *     - 'agent' : EXACTEMENT comme null au lot 3. Une session d'agent IA exige un parcours de scénario
  *       (`agent_sessions.run_id` NOT NULL), le devenir sera grisé « à venir » à l'écran (lot 4) ;
@@ -64,8 +65,12 @@ export function etiquetteDuWidget(code: string): string {
  * son scénario, son plafond. C'est ce qui fait passer le démarrage par le MÊME chemin qu'une automation, gardes
  * comprises.
  *
- * - `possedePar: null` : une automation ORDINAIRE. Elle ne reprend pas un fil tenu par un opérateur ou par l'agent
- *   de Meta (`reprendLaMain` ne le donne qu'à la chaîne et à la publicité, nommément).
+ * - `possedePar: POSSESSEUR_WIDGET` (lot 3b, décision de Julien du 2026-10-02) : comme la publicité, le scénario du
+ *   widget REPREND le fil à l'agent de Meta (`reprendLaMain`) et le LAISSE à un opérateur qui le tient
+ *   (`epargneLOperateur`) : c'est le visiteur qui déclenche, en cliquant la bulle. Sans la reprise, sur tout espace où
+ *   l'agent de Meta tient le fil, le devenir 'scenario' ne démarrerait jamais. La reprise a lieu au démarrage, dans
+ *   l'exécuteur, donc APRÈS l'anti-rebond, le plafond et le contact bloqué du runner. Un refus qui la suit (contact
+ *   désabonné, numéro délié) laisse le fil à l'app jusqu'au balayage de contrôle, comme pour le bouton de chaîne.
  * - `cooldownSeconds: null` : l'anti-rebond de l'instance (`AUTOMATION_COOLDOWN_SECONDS`), aucun réglage propre.
  * - `maxFiresPerHour` = `max_par_heure` ; `null` = le plafond de l'instance (`AUTOMATION_MAX_FIRES_PER_HOUR`), même
  *   convention des deux côtés. Le CHECK `widgets_max_par_heure_chk` exclut 0, qui voudrait dire « aucun plafond ».
@@ -81,7 +86,7 @@ export function automationDuWidget(tenantId: string, widget: WidgetRow, workflow
     conditionGroup: null,
     workflowId,
     startNodeId: null,
-    possedePar: null,
+    possedePar: POSSESSEUR_WIDGET,
     cooldownSeconds: null,
     maxFiresPerHour: widget.maxParHeure,
   };
@@ -122,9 +127,12 @@ export function creerArriveeParWidget(deps: DepsArriveeParWidget): ArriveeParWid
     // 'scenario' sans scénario (supprimé depuis, `on delete set null`) retombe sur le réglage de l'espace, comme
     // 'agent' et null. `devenir = 'agent'` avec un `agent_id` renseigné ou non : la même chose, sans erreur.
     if (widget.devenir !== 'scenario' || widget.workflowId === null) return false;
-    // Un `standby` (le contact est sur la liste de l'agent de Meta, qui tient le fil) ne démarre rien, sinon un
-    // scénario répondrait par-dessus l'agent : la règle de `processTriggers`, posée au même endroit, chez l'appelant.
-    if (m.field && m.field !== 'messages') return false;
+    // 🔴 Un `standby` (le contact est sur la liste de l'agent de Meta, qui tient le fil) démarre le scénario COMME un
+    // `messages` (lot 3b), à l'inverse de `processTriggers` : la reprise que porte l'automation du widget retire le
+    // contact de la liste de l'agent AVANT tout envoi, ou annule le démarrage si Meta refuse
+    // (`ControleDuFil.reprendrePourLApp`). Le scénario ne répond donc jamais par-dessus l'agent ; la publicité fait
+    // de même, en reprenant avant les déclencheurs (`processRoutagePub`). Tout autre `field` ne démarre rien.
+    if (m.field && m.field !== 'messages' && m.field !== 'standby') return false;
     const workflowId = widget.workflowId;
     let partis = 0;
     await tenter('widget : scénario non démarré:', async () => {

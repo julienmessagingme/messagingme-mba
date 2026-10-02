@@ -1109,13 +1109,13 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   - **agent de Meta allumé, aucun numéro connecté : la colonne ne bouge pas vers l'agent**, quelle que soit la
     porte (balayage, fin de parcours, client qui revient, bouton, qui répond alors 409) ;
   - **un démarrage que le CLIENT déclenche ne prend pas le fil à un opérateur** (`saufOperateur` : l'automation
-    d'une publicité, le routage d'un lead ; la réponse de campagne « Inbox » laisse un fil d'opérateur tel quel) ;
+    d'une publicité, le routage d'un lead, le scénario d'un widget ; la réponse de campagne « Inbox » laisse un fil d'opérateur tel quel) ;
     les lancements EXPLICITES (campagne, Inbox, lien de chaîne, `/v1/sends`, jeton de test, relais de l'agent de
     Meta) le prennent, opérateur compris.
     ⚠️ La garde lit NOTRE colonne, que `processInbound` corrige d'abord. Un lead arrivé en `standby` y fait écrire
     `mba` (`entrantEnStandby` : Meta fait autorité) dès que la conversation n'est pas escaladée, ou que le
     `standby` est daté après l'escalade ; le routage voit alors un fil de l'agent de Meta et le reprend pour le
-    scénario de la publicité. Elle ne protège donc un opérateur que là où notre colonne le dit encore maître du
+    scénario de la publicité, comme le scénario d'un widget le reprend pour le sien. Elle ne protège donc un opérateur que là où notre colonne le dit encore maître du
     fil : un entrant `messages` (le cas mesuré de tous les entrants), ou un `standby` antérieur à une escalade ou
     non daté ;
   - **la réponse à une campagne « Inbox » prend le fil pour l'ÉQUIPE** (`app_human`) : la remise « personne ne

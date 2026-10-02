@@ -122,6 +122,13 @@ table de tirs propre au widget (`widget_tirs`, migration 0201), `automation_fire
 Conséquence à tenir : supprimer un scénario utilisé par un widget doit être refusé ou rendre le widget inerte,
 jamais détruire le widget.
 
+🔴 **Le scénario du widget REPREND le fil à l'agent de Meta, et le laisse à un opérateur** (décision de Julien du
+2026-10-02, lot 3b du plan). Sans la reprise, sur tout espace où l'agent de Meta tient le fil, le devenir
+`scenario` ne démarrerait jamais. C'est le comportement de la publicité, pour la même raison : c'est le visiteur qui
+déclenche, en cliquant. L'automation en mémoire porte donc le propriétaire `POSSESSEUR_WIDGET`, nommé dans
+`reprendLaMain` et dans `epargneLOperateur` (`src/automation/match.ts`), et un entrant en `standby` démarre comme
+les autres.
+
 ## 4. L'écran de la console, et le MCP par-dessus
 
 L'écran est la source : apparence, phrase, devenir, **aperçu en direct** de la bulle, et le code à copier. Les

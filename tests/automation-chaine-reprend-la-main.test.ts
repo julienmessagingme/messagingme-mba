@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runAutomations } from '../src/automation/runner';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
-import { POSSESSEUR_LIEN_CHAINE, POSSESSEUR_PUBLICITE, reprendLaMain } from '../src/automation/match';
+import { POSSESSEUR_LIEN_CHAINE, POSSESSEUR_PUBLICITE, POSSESSEUR_WIDGET, epargneLOperateur, reprendLaMain } from '../src/automation/match';
 import type { AutomationEvent, AutomationRow } from '../src/automation/match';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -146,6 +146,10 @@ describe('le câblage réel, et la constante que le SQL recopie', () => {
     // L'autre sens, et il compte autant : posé en dur, TOUTE automation écraserait l'opérateur.
     expect(bloc, 'le câblage pose la reprise de main en dur : n’importe quel mot-clé écraserait un opérateur')
       .not.toContain('ignoreHumanControl: true');
+    // Et l'exception de l'opérateur : sans elle, une publicité ou un widget écrirait par-dessus l'opérateur qui
+    // répond. Les bancs des tests la retapent à la main, donc seul ce test voit sa disparition du worker.
+    expect(bloc, 'le câblage ne transmet plus l’exception de l’opérateur : une publicité ou un widget lui prendrait la main')
+      .toContain('saufOperateur: opts.saufOperateur === true');
   });
 
   it('🔴 la constante et les gardes SQL du store de liens disent la MÊME chaîne', () => {
@@ -174,14 +178,27 @@ describe('le câblage réel, et la constante que le SQL recopie', () => {
     expect(store).toContain(`possede_par = '${POSSESSEUR_PUBLICITE}'`);
   });
 
-  it('🔴 les DEUX propriétaires reprennent la main, et eux seuls', () => {
+  it('🔴 les TROIS propriétaires reprennent la main, et eux seuls', () => {
     // La règle est NOMINATIVE, pas « possède un propriétaire quelconque » : un futur propriétaire (un autre
     // canal, un connecteur) hériterait sinon d'un pouvoir que personne ne lui a accordé, sans qu'aucun type
     // ne bouge. Les trois cas du haut de ce fichier gardent le sens inverse, celui qui protège un opérateur.
     const p = (possedePar: string | null): AutomationRow => auto({ possedePar });
     expect(reprendLaMain(p(POSSESSEUR_LIEN_CHAINE))).toBe(true);
     expect(reprendLaMain(p(POSSESSEUR_PUBLICITE))).toBe(true);
+    // Le widget (lot 3b) : son visiteur arrive souvent sur un fil que l'agent de Meta tient.
+    expect(reprendLaMain(p(POSSESSEUR_WIDGET))).toBe(true);
     expect(reprendLaMain(p(null))).toBe(false);
     expect(reprendLaMain(p('un_autre_proprietaire'))).toBe(false);
+  });
+
+  it('🔴 la publicité et le widget laissent la main à un opérateur ; la chaîne, non', () => {
+    // C'est le CLIENT qui déclenche une publicité ou un widget (il clique) : un opérateur en train de lui répondre
+    // garde la conversation. Le bouton de chaîne, lancement explicite comme une campagne, la lui prend.
+    const p = (possedePar: string | null): AutomationRow => auto({ possedePar });
+    expect(epargneLOperateur(p(POSSESSEUR_PUBLICITE))).toBe(true);
+    expect(epargneLOperateur(p(POSSESSEUR_WIDGET))).toBe(true);
+    expect(epargneLOperateur(p(POSSESSEUR_LIEN_CHAINE))).toBe(false);
+    expect(epargneLOperateur(p(null))).toBe(false);
+    expect(epargneLOperateur(p('un_autre_proprietaire'))).toBe(false);
   });
 });

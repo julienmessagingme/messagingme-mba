@@ -11,7 +11,7 @@ import {
 } from '../src/widgets/arrivee';
 import type { TirsDuWidget } from '../src/widgets/tirs.pg';
 import type { WidgetRow } from '../src/widgets/store.pg';
-import type { AutomationEvent } from '../src/automation/match';
+import { POSSESSEUR_WIDGET, type AutomationEvent } from '../src/automation/match';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
 import { WorkflowExecutor, type WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
@@ -83,7 +83,10 @@ function banc(o: {
   widgets: WidgetRow[];
   desabonne?: boolean;
   bloque?: boolean;
-  filTenu?: boolean;
+  /** Qui tient le fil ; absent = l'app. */
+  fil?: 'operateur' | 'agent';
+  /** Meta refuse de retirer le contact de la liste de son agent. */
+  repriseRefusee?: boolean;
   plafondInstance?: number;
 } ) {
   let horloge = Date.parse('2026-10-02T10:00:00Z');
@@ -92,7 +95,8 @@ function banc(o: {
   const posees: Array<[string, string, string]> = [];
   const tirs = new Map<string, Date>();
   const effaces: string[] = [];
-  const declenches: Array<{ reprendLaMain: boolean; windowOpen: boolean }> = [];
+  const declenches: Array<{ reprendLaMain: boolean; saufOperateur: boolean; windowOpen: boolean }> = [];
+  const reprises: string[] = [];
 
   const execDeps: WorkflowExecutorDeps = {
     ...depsInertes,
@@ -112,8 +116,16 @@ function banc(o: {
     sendQuickMessage: async (_t, waId, corps) => { envois.push(`${waId}:${corps}`); },
     sendFlow: async () => {},
     sendQuestion: async () => {},
-    // Le fil est à nous, sauf quand le cas dit qu'un opérateur ou l'agent de Meta le tient.
-    mayAct: async () => o.filTenu !== true,
+    // Le fil est à nous, sauf quand le cas dit qu'un opérateur ou l'agent de Meta le tient. `mayAct` ne sert qu'aux
+    // démarrages ordinaires ; la reprise imite `ControleDuFil.reprendrePourLApp` : l'opérateur est épargné quand on le
+    // demande (`'operateur'`), Meta peut refuser (`false`), sinon le contact quitte la liste de l'agent.
+    mayAct: async () => o.fil === undefined,
+    reclaimControl: async (_t, waId, opts) => {
+      if (o.fil === 'operateur' && opts?.saufOperateur === true) return 'operateur';
+      if (o.repriseRefusee === true) return false;
+      reprises.push(waId);
+      return true;
+    },
   };
   const ex = new WorkflowExecutor(execDeps);
 
@@ -132,7 +144,7 @@ function banc(o: {
     // Le MÊME câblage que `src/worker.ts` : fenêtre prouvée ouverte, démarrage unitaire, drapeau de reprise venu du
     // runner et jamais posé en dur.
     startWorkflow: async (tenant, workflowId, waId, opts) => {
-      declenches.push({ reprendLaMain: opts.reprendLaMain, windowOpen: opts.windowOpen });
+      declenches.push({ reprendLaMain: opts.reprendLaMain, saufOperateur: opts.saufOperateur === true, windowOpen: opts.windowOpen });
       const unitaire = { emitEvents: true, ignoreHumanControl: opts.reprendLaMain, saufOperateur: opts.saufOperateur === true };
       return opts.windowOpen
         ? ex.startInWindow(tenant, workflowId, graphe, { waId, contactId: null }, unitaire)
@@ -162,7 +174,7 @@ function banc(o: {
   });
 
   return {
-    arrivee, runner, lecture, envois, etiquettes, posees, tirs, effaces, declenches,
+    arrivee, runner, lecture, envois, etiquettes, posees, tirs, effaces, declenches, reprises,
     avancer: (ms: number) => { horloge += ms; },
   };
 }
@@ -320,13 +332,14 @@ describe('la reconnaissance : widgetDuMessage(tenantId, texte)', () => {
 });
 
 describe('le devenir à l’arrivée', () => {
-  it('🔴 \'scenario\' : le scénario démarre, le message est CONSOMMÉ, et la reprise du fil n’est pas demandée', async () => {
+  it('🔴 \'scenario\' : le scénario démarre, le message est CONSOMMÉ, et il reprend le fil sans le prendre à un opérateur', async () => {
     const b = banc({ widgets: [widget({ devenir: 'scenario', workflowId: 'wf1' })] });
     const r = await traiter(lot([texte('wamid.w', `${PHRASE} !`)]), b.arrivee);
     expect(b.envois).toEqual(['33611:Bienvenue ! Que cherchez-vous ?']);
     expect([...r.prisParUnWidget]).toEqual(['wamid.w']);
-    // Une automation ORDINAIRE : fenêtre prouvée ouverte, aucune reprise d'un fil tenu.
-    expect(b.declenches).toEqual([{ reprendLaMain: false, windowOpen: true }]);
+    // Comme la publicité (lot 3b) : fenêtre prouvée ouverte, reprise du fil, opérateur épargné.
+    expect(b.declenches).toEqual([{ reprendLaMain: true, saufOperateur: true, windowOpen: true }]);
+    expect(b.reprises).toEqual(['33611']);
     expect(b.tirs.size).toBe(1);
   });
 
@@ -388,19 +401,51 @@ describe('le devenir à l’arrivée', () => {
     expect([...r.prisParUnWidget]).toEqual([]);
   });
 
-  it('un fil tenu par un opérateur ou par l’agent de Meta : le scénario ne part pas, le message reste à l’Inbox', async () => {
+  it('🔴 un fil tenu par un OPÉRATEUR : le scénario ne part pas, rien n’est repris, le message reste à l’Inbox', async () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const b = banc({ widgets: [widget({ devenir: 'scenario', workflowId: 'wf1' })], filTenu: true });
+    const b = banc({ widgets: [widget({ devenir: 'scenario', workflowId: 'wf1' })], fil: 'operateur' });
     const r = await traiter(lot([texte('wamid.f', PHRASE)]), b.arrivee);
     spy.mockRestore();
+    expect(b.envois, 'le scénario d’un widget a écrit par-dessus un opérateur').toEqual([]);
+    expect(b.reprises).toEqual([]);
+    expect([...r.prisParUnWidget]).toEqual([]);
+    // Rien n'est parti : le tir s'efface, sa prochaine vraie demande n'attendra pas l'anti-rebond.
+    expect(b.effaces).toEqual(['33611']);
+  });
+
+  it('🔴 un fil tenu par l’AGENT DE META : le scénario part, et il reprend le fil (lot 3b)', async () => {
+    const b = banc({ widgets: [widget({ devenir: 'scenario', workflowId: 'wf1' })], fil: 'agent' });
+    const r = await traiter(lot([texte('wamid.f', PHRASE)]), b.arrivee);
+    expect(b.envois).toEqual(['33611:Bienvenue ! Que cherchez-vous ?']);
+    // La reprise n'est pas un détail : sans elle, l'agent de Meta répondrait à la place du scénario.
+    expect(b.reprises).toEqual(['33611']);
+    expect([...r.prisParUnWidget]).toEqual(['wamid.f']);
+  });
+
+  it('Meta refuse de rendre le fil : rien ne part, et le tir est effacé', async () => {
+    const spies = (['log', 'warn', 'error'] as const).map((k) => vi.spyOn(console, k).mockImplementation(() => {}));
+    const b = banc({ widgets: [widget({ devenir: 'scenario', workflowId: 'wf1' })], fil: 'agent', repriseRefusee: true });
+    const r = await traiter(lot([texte('wamid.f', PHRASE)]), b.arrivee);
+    spies.forEach((s) => s.mockRestore());
     expect(b.envois).toEqual([]);
     expect([...r.prisParUnWidget]).toEqual([]);
     expect(b.effaces).toEqual(['33611']);
   });
 
-  it('un `standby` (l’agent de Meta tient le fil) pose la source mais ne démarre rien', async () => {
-    const b = banc({ widgets: [widget({ devenir: 'scenario', workflowId: 'wf1' })] });
+  it('🔴 un `standby` (l’agent de Meta tient le fil) démarre le scénario, qui reprend le fil (lot 3b)', async () => {
+    // Le cas de tout espace où l'agent de Meta est allumé : sans la reprise, le devenir 'scenario' n'y partirait jamais.
+    const b = banc({ widgets: [widget({ devenir: 'scenario', workflowId: 'wf1' })], fil: 'agent' });
     const r = await traiter(lot([texte('wamid.s', PHRASE)], 'standby'), b.arrivee);
+    expect(b.posees).toHaveLength(1);
+    expect(b.envois).toEqual(['33611:Bienvenue ! Que cherchez-vous ?']);
+    expect(b.declenches).toEqual([{ reprendLaMain: true, saufOperateur: true, windowOpen: true }]);
+    expect(b.reprises).toEqual(['33611']);
+    expect([...r.prisParUnWidget]).toEqual(['wamid.s']);
+  });
+
+  it('un entrant d’un autre `field` que messages et standby pose la source mais ne démarre rien', async () => {
+    const b = banc({ widgets: [widget({ devenir: 'scenario', workflowId: 'wf1' })] });
+    const r = await traiter(lot([texte('wamid.e', PHRASE)], 'un_field_inconnu'), b.arrivee);
     expect(b.posees).toHaveLength(1);
     expect(b.envois).toEqual([]);
     expect(b.declenches).toEqual([]);
@@ -597,15 +642,15 @@ describe('🔴 l’émission d’événements d’automation est décidée par l
     const m: InboundMessage = { phoneNumberId: 'pn1', waId: '33611', messageId: 'wamid.1', type: 'text', body: PHRASE, buttonPayload: null, profileName: null, field: 'messages' };
     const partis = await demarrageParLeRunner(runner, () => tirs)(T, widget({ devenir: 'scenario', workflowId: 'wf1' }), 'wf1', m);
     expect(partis).toBe(1);
-    expect(startWorkflow).toHaveBeenCalledWith(T, 'wf1', '33611', { startNodeId: null, windowOpen: true, reprendLaMain: false });
+    expect(startWorkflow).toHaveBeenCalledWith(T, 'wf1', '33611', { startNodeId: null, windowOpen: true, reprendLaMain: true, saufOperateur: true });
   });
 
-  it('l’automation équivalente : mot-clé = la phrase en contains, son scénario, son plafond, ordinaire', () => {
+  it('l’automation équivalente : mot-clé = la phrase en contains, son scénario, son plafond, le widget pour propriétaire', () => {
     const a = automationDuWidget(T, widget({ id: 'w9', maxParHeure: 40 }), 'wf9');
     expect(a).toMatchObject({
       id: 'w9', tenantId: T, enabled: true, triggerKind: 'keyword',
       triggerConfig: { keywords: [PHRASE], mode: 'contains' }, conditionGroup: null,
-      workflowId: 'wf9', startNodeId: null, possedePar: null, cooldownSeconds: null, maxFiresPerHour: 40,
+      workflowId: 'wf9', startNodeId: null, possedePar: POSSESSEUR_WIDGET, cooldownSeconds: null, maxFiresPerHour: 40,
     });
   });
 });

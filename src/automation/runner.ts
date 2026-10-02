@@ -60,12 +60,12 @@ export interface AutomationRunnerDeps {
     /**
      * Ce démarrage reprend la conduite du fil, même tenu par un opérateur ou par l'agent de Meta. Réservé aux
      * automations possédées nées d'un geste explicite du contact (`reprendLaMain` : bouton de chaîne, clic sur
-     * une publicité) ; une automation ordinaire reste bloquée par un fil tenu.
+     * une publicité, arrivée par un widget) ; une automation ordinaire reste bloquée par un fil tenu.
      */
     reprendLaMain: boolean;
     /**
-     * La reprise laisse la main à un opérateur qui la tient (`epargneLOperateur` : la publicité). Présent seulement
-     * quand c'est vrai : une automation ordinaire ou de chaîne ne le porte pas.
+     * La reprise laisse la main à un opérateur qui la tient (`epargneLOperateur` : la publicité, le widget). Présent
+     * seulement quand c'est vrai : une automation ordinaire ou de chaîne ne le porte pas.
      */
     saufOperateur?: true;
   }): Promise<boolean | string>;
@@ -191,10 +191,10 @@ export async function runAutomations(
       const issue = await deps.startWorkflow(tenantId, a.workflowId, ev.waId, {
         startNodeId: a.startNodeId,
         windowOpen,
-        // Seules la chaîne et la publicité reprennent la main : l'agent de Meta tenant souvent le fil, un clic ne
-        // lancerait sinon rien, en silence.
+        // Seuls la chaîne, la publicité et le widget reprennent la main : l'agent de Meta tenant souvent le fil, un
+        // clic ne lancerait sinon rien, en silence.
         reprendLaMain: reprendLaMain(a),
-        // Le clic sur une publicité ne prend pas la main à un opérateur qui la tient.
+        // Le clic sur une publicité ou sur un widget ne prend pas la main à un opérateur qui la tient.
         ...(epargneLOperateur(a) ? { saufOperateur: true as const } : {}),
       });
       // `false` ou une chaîne = pas parti ; tester la simple vérité JS compterait une chaîne comme un succès, et

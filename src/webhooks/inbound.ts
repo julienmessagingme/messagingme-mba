@@ -376,8 +376,8 @@ export async function processInbound(
      *
      * Face à l'affectation, la campagne passe la première parce qu'elle décide déjà aujourd'hui, et que sa propriété
      * clé (seule la PREMIÈRE réponse prend le fil) se lit sur un état que le widget ne doit pas avoir touché. Si elle
-     * vient de prendre le fil pour l'équipe, le scénario du widget est refusé par la garde du fil (une automation
-     * ordinaire n'écrit pas dans un fil tenu) : la décision déjà prise gagne, et aucun scénario ne part à moitié.
+     * vient de prendre le fil pour l'équipe, le scénario du widget ne le lui prend pas (`epargneLOperateur`, comme la
+     * publicité) : la décision déjà prise gagne, et aucun scénario ne part à moitié.
      *
      * Isolé : un widget qui échoue (lecture, étiquette, scénario) n'empêche ni l'enregistrement, ni l'affectation, ni
      * le message suivant du lot.

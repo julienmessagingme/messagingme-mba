@@ -237,8 +237,8 @@ export interface WorkflowExecutorDeps {
    * ça, le scénario se bloquerait à la première réponse du contact. Rend `false` quand Meta a refusé de retirer
    * le contact de la liste de son agent : un démarrage condamné doit échouer tout de suite, avec sa raison, au
    * lieu d'un parcours gelé pendant que l'agent de Meta répond. `void` (tests) vaut succès ; fixtures : `repriseSansObjection`.
-   * `saufOperateur` : un démarrage que le client déclenche (clic sur une publicité) ne prend pas le fil à un
-   * opérateur qui le tient, et `'operateur'` le dit (`src/inbox/fil.ts`).
+   * `saufOperateur` : un démarrage que le client déclenche (clic sur une publicité, arrivée par un widget) ne prend
+   * pas le fil à un opérateur qui le tient, et `'operateur'` le dit (`src/inbox/fil.ts`).
    */
   reclaimControl: (tenantId: string, waId: string, opts?: { saufOperateur?: boolean }) => Promise<boolean | void | 'operateur'>;
   /**
@@ -1030,10 +1030,10 @@ export class WorkflowExecutor {
     // client. `ignoreHumanControl` : le déclencheur est lui-même le geste explicite (un opérateur qui lance une
     // campagne ou un scénario depuis l'Inbox, un contact qui clique un bouton de chaîne), et on reprend la main
     // pour l'app, sinon le scénario se bloquerait à la première réponse. Réservé aux automations nées d'un lien
-    // de chaîne ou d'une publicité : une automation par mot-clé ordinaire écraserait l'opérateur qui répond. Gardé
-    // dans les deux sens par `tests/automation-chaine-reprend-la-main.test.ts`. `saufOperateur` (la publicité) :
-    // un clic payé reprend le fil à l'agent de Meta, jamais à un opérateur qui le tient ; c'est le client qui
-    // déclenche, pas l'équipe.
+    // de chaîne, d'une publicité ou d'un widget : une automation par mot-clé ordinaire écraserait l'opérateur qui
+    // répond. Gardé dans les deux sens par `tests/automation-chaine-reprend-la-main.test.ts`. `saufOperateur` (la
+    // publicité, le widget) : le clic du client reprend le fil à l'agent de Meta, jamais à un opérateur qui le
+    // tient ; c'est le client qui déclenche, pas l'équipe.
     if (opts.ignoreHumanControl) {
       const reprise = await this.deps.reclaimControl(tenantId, contact.waId, { saufOperateur: opts.saufOperateur === true });
       if (reprise === 'operateur') {

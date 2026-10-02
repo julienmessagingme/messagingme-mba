@@ -50,6 +50,13 @@ export const POSSESSEUR_LIEN_CHAINE = 'channelsme_link';
 export const POSSESSEUR_PUBLICITE = 'publicite';
 
 /**
+ * Le propriétaire de l'automation d'un widget WhatsApp (`automationDuWidget`, `src/widgets/arrivee.ts`). Elle
+ * n'existe qu'en mémoire, jamais en base : aucun SQL ne recopie cette chaîne, et ni la colonne
+ * `automations.possede_par` ni le filtre de l'écran Automation n'ont à la connaître.
+ */
+export const POSSESSEUR_WIDGET = 'widget';
+
+/**
  * Cette automation vient-elle d'un bouton de chaîne ? Un abonné qui clique le bouton d'une publication fait
  * un geste explicite vers ce scénario, comme l'opérateur qui lance une campagne : il reprend la main.
  * Seulement la chaîne : une automation ordinaire par mot-clé écraserait l'opérateur en train de répondre.
@@ -59,23 +66,24 @@ export function vientDuneChaine(a: AutomationRow): boolean {
 }
 
 /**
- * Ce démarrage reprend-il la conduite du fil, même tenu par un opérateur ou par l'agent de Meta ? Deux
- * propriétaires nommés (bouton de chaîne, publicité), pas « un propriétaire quelconque » : un futur
- * propriétaire hériterait sinon d'un pouvoir que personne ne lui a accordé. Le lead d'une pub arrive souvent
- * sur un fil que l'agent de Meta tient : sans reprise, le scénario ne démarrerait jamais sur un clic payé.
- * Une automation ordinaire vaut toujours `false`.
+ * Ce démarrage reprend-il la conduite du fil, même tenu par un opérateur ou par l'agent de Meta ? Trois
+ * propriétaires nommés (bouton de chaîne, publicité, widget), pas « un propriétaire quelconque » : un futur
+ * propriétaire hériterait sinon d'un pouvoir que personne ne lui a accordé. Le lead d'une pub, comme le visiteur
+ * d'un widget, arrive souvent sur un fil que l'agent de Meta tient : sans reprise, le scénario ne démarrerait
+ * jamais sur son clic. Une automation ordinaire vaut toujours `false`.
  */
 export function reprendLaMain(a: AutomationRow): boolean {
-  return vientDuneChaine(a) || a.possedePar === POSSESSEUR_PUBLICITE;
+  return vientDuneChaine(a) || a.possedePar === POSSESSEUR_PUBLICITE || a.possedePar === POSSESSEUR_WIDGET;
 }
 
 /**
- * Cette reprise laisse-t-elle la main à un opérateur qui la tient ? Oui pour la publicité : c'est le client qui
- * déclenche (un clic payé), et un opérateur en train de lui répondre garde la conversation, son message arrivant
- * dans l'Inbox. Non pour le bouton de chaîne, lancement explicite au même titre qu'une campagne.
+ * Cette reprise laisse-t-elle la main à un opérateur qui la tient ? Oui pour la publicité et le widget : c'est le
+ * client qui déclenche (un clic payé, un clic sur la bulle), et un opérateur en train de lui répondre garde la
+ * conversation, son message arrivant dans l'Inbox. Non pour le bouton de chaîne, lancement explicite au même titre
+ * qu'une campagne.
  */
 export function epargneLOperateur(a: AutomationRow): boolean {
-  return a.possedePar === POSSESSEUR_PUBLICITE;
+  return a.possedePar === POSSESSEUR_PUBLICITE || a.possedePar === POSSESSEUR_WIDGET;
 }
 
 export interface AutomationRow {
