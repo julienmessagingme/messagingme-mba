@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { AudienceNonConfirmee, MbaClient, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
-import type { BusinessInfo, Faq, Skill } from '../mba/client';
+import { AudienceNonConfirmee, FENETRES_BUDGET, MbaClient, UNITES_BUDGET, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
+import type { BudgetAgent, BusinessInfo, Faq, FenetreBudget, Skill, UniteBudget } from '../mba/client';
 import { extraireDepuisCsvHorsBoucle, extraireDepuisHtmlHorsBoucle, extraireDepuisJson, normaliser, planifierImport } from '../mba/faq-import';
 import type { FaqRow } from '../mba/faq-import';
 import { isSendableButtonUrl } from '../meta/button-url';
@@ -35,6 +35,11 @@ export interface MbaRouteDeps {
   meta: {
     /** Client MBA du tenant (token résolu par tenant, repli global en sommeil). */
     mbaClientForTenant(tenantId: string): Promise<MbaClient>;
+    /**
+     * Lit le compte WhatsApp de l'espace chez Meta, pour en connaître le Business Manager propriétaire : c'est lui qui
+     * porte le plafond de l'agent. Notre base n'en garde que le nom.
+     */
+    phoneClientForTenant(tenantId: string): Promise<{ getWabaHealth(wabaId: string): Promise<{ ownerBusinessId?: string }> }>;
   };
   repo: {
     /**
@@ -42,6 +47,8 @@ export interface MbaRouteDeps {
      * d'activation, la seule de ce module qui ne reçoit pas le numéro du navigateur.
      */
     getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
+    /** Le compte WhatsApp de l'espace. `null` = aucun compte relié. */
+    getTenantWabaId(tenantId: string): Promise<string | null>;
     /** 🔴 Le numéro appartient-il à ce tenant ? Contrôle d'isolation, en base. */
     phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   };
@@ -65,7 +72,32 @@ export interface MbaRouteDeps {
      * Les messages écrits par l'agent de Meta, depuis toujours. Par espace et non par numéro : `conversations`
      * n'a pas de `phone_number_id`. Un espace à deux numéros verrait la somme.
      */
-    messagesEcritsParMba(tenantId: string): Promise<number>;
+    messagesEcritsParMba(tenantId: string, depuis?: Date): Promise<number>;
+  };
+}
+
+/**
+ * Le prix d'un message de l'agent de Meta, en dollars, pour une ESTIMATION : Meta facture 2 $ le million de jetons, et
+ * annonce 20 000 à 25 000 jetons par message (doc « non-template messages », relue le 2026-10-01). Aucune API ne rend
+ * le coût réel (mesuré le 2026-10-01) : la facture du Billing Hub fait foi, et l'écran le dit.
+ */
+export const PRIX_MESSAGE_AGENT_USD = { min: 0.04, max: 0.05 } as const;
+
+/** Les 30 derniers jours, en dates `AAAA-MM-JJ` (UTC) pour Meta, et l'instant de début pour notre comptage. */
+export function trenteDerniersJours(maintenant: Date): { debut: string; fin: string; depuis: Date } {
+  const jour = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const t = maintenant.getTime();
+  return { debut: jour(t - 29 * 86_400_000), fin: jour(t), depuis: new Date(t - 30 * 86_400_000) };
+}
+
+/** Le premier plafond, dans nos mots ; `autres` dit combien d'autres Meta porte (posés ailleurs que chez nous). */
+function versPlafonds(budgets: readonly BudgetAgent[]): {
+  plafond: { unite: UniteBudget; fenetre: FenetreBudget; max: number } | null; autres: number;
+} {
+  const b = budgets[0];
+  return {
+    plafond: b ? { unite: b.unit_type, fenetre: b.time_window, max: b.max_budget } : null,
+    autres: Math.max(0, budgets.length - 1),
   };
 }
 
@@ -222,6 +254,76 @@ async function extraire(
 export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Guard): void {
   const g = { preHandler: garde };
   const base = '/tenants/:tenantId/mba/:phoneNumberId';
+
+  // ---------- Plafond et tableau de l'agent (routes de Meta relevées le 2026-10-02) ----------
+
+  /**
+   * Le Business Manager propriétaire du compte WhatsApp de l'espace : c'est LUI qui porte les plafonds de l'agent, et
+   * lui que Meta facture. Relu chez Meta à chaque fois ; `null` sans compte relié ou si Meta ne le dit pas.
+   */
+  async function entrepriseDeLEspace(tenant: string): Promise<string | null> {
+    const waba = await deps.repo.getTenantWabaId(tenant);
+    if (!waba) return null;
+    const info = await (await deps.meta.phoneClientForTenant(tenant)).getWabaHealth(waba);
+    return info.ownerBusinessId ?? null;
+  }
+  const SANS_ENTREPRISE = 'Le plafond de l’agent se règle sur le Business Manager qui possède votre compte WhatsApp, et Meta ne nous l’a pas indiqué. Reliez d’abord un numéro WhatsApp.';
+
+  /** Le plafond de l'agent, pour l'onglet Activation. Les routes ne prennent pas de numéro : le serveur le résout. */
+  app.get('/tenants/:tenantId/mba-budget', g, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const bm = await entrepriseDeLEspace(tenant);
+    if (!bm) return reply.code(409).send({ error: SANS_ENTREPRISE });
+    return reply.code(200).send(versPlafonds(await (await deps.meta.mbaClientForTenant(tenant)).lireBudgets(bm)));
+  });
+
+  /**
+   * Pose ou retire le plafond. 🔴 Le POST de Meta REMPLACE tous les plafonds du Business Manager : un plafond posé
+   * ailleurs disparaît, et l'écran le dit avant (`autres`). `{ plafond: null }` retire tout, donc illimité.
+   */
+  app.put('/tenants/:tenantId/mba-budget', g, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    if (!('plafond' in b)) return reply.code(400).send({ error: 'plafond requis (objet, ou null pour le retirer)' });
+    let budgets: BudgetAgent[] = [];
+    if (b.plafond !== null) {
+      const p = b.plafond as Record<string, unknown> | undefined;
+      if (typeof p !== 'object' || p === undefined) return reply.code(400).send({ error: 'plafond invalide' });
+      if (!UNITES_BUDGET.includes(p.unite as UniteBudget)) return reply.code(400).send({ error: "unite invalide ('token' | 'ai_turn')" });
+      if (!FENETRES_BUDGET.includes(p.fenetre as FenetreBudget)) {
+        return reply.code(400).send({ error: "fenetre invalide ('one_day' | 'seven_days' | 'fourteen_days' | 'thirty_days')" });
+      }
+      if (typeof p.max !== 'number' || !Number.isSafeInteger(p.max) || p.max < 1) {
+        return reply.code(400).send({ error: 'max invalide (entier, au moins 1)' });
+      }
+      budgets = [{ unit_type: p.unite as UniteBudget, time_window: p.fenetre as FenetreBudget, max_budget: p.max }];
+    }
+    const bm = await entrepriseDeLEspace(tenant);
+    if (!bm) return reply.code(409).send({ error: SANS_ENTREPRISE });
+    return reply.code(200).send(versPlafonds(await (await deps.meta.mbaClientForTenant(tenant)).ecrireBudgets(bm, budgets)));
+  });
+
+  /**
+   * Le tableau de l'agent (Performance lab), sur les 30 derniers jours : ce que Meta en dit (conversations, outils,
+   * événements) et notre compte de ses messages, avec le prix public pour une ESTIMATION de coût. Chaque lecture est
+   * indépendante : une panne devient `null`, jamais zéro, et n'éteint pas les autres. `numero: false` = rien à montrer.
+   */
+  app.get('/tenants/:tenantId/mba-insights', g, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const pn = await deps.repo.getTenantPhoneNumberId(tenant);
+    if (!pn) return reply.code(200).send({ numero: false });
+    const client = await deps.meta.mbaClientForTenant(tenant);
+    const { debut, fin, depuis } = trenteDerniersJours(new Date());
+    const [conversations, outils, evenements, messages] = await Promise.all([
+      client.insightsConversations(pn, debut, fin).catch(() => null),
+      client.insightsOutils(pn, debut, fin).catch(() => null),
+      client.insightsEvenements(pn, debut, fin).catch(() => null),
+      deps.stats.messagesEcritsParMba(tenant, depuis).catch(() => null),
+    ]);
+    return reply.code(200).send({
+      numero: true, debut, fin, conversations, outils, evenements, messages, prixParMessageUsd: PRIX_MESSAGE_AGENT_USD,
+    });
+  });
 
   // ---------- État général ----------
 

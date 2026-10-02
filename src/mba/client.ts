@@ -102,6 +102,92 @@ export interface AgentSettings {
   [autre: string]: unknown;
 }
 
+// ---------- Plafond et statistiques de l'agent (routes relevées sur notre numéro le 2026-10-02) ----------
+
+export type UniteBudget = 'token' | 'ai_turn';
+export type FenetreBudget = 'one_day' | 'seven_days' | 'fourteen_days' | 'thirty_days';
+export const UNITES_BUDGET: readonly UniteBudget[] = ['token', 'ai_turn'];
+export const FENETRES_BUDGET: readonly FenetreBudget[] = ['one_day', 'seven_days', 'fourteen_days', 'thirty_days'];
+
+/** Un plafond de l'agent : une unité (jetons ou tours d'IA), une fenêtre GLISSANTE, un maximum. */
+export interface BudgetAgent {
+  budget_id?: string;
+  unit_type: UniteBudget;
+  time_window: FenetreBudget;
+  max_budget: number;
+}
+
+const budgetsSchema = z.object({
+  budgets: z.array(z.object({
+    budget_id: z.string().optional(),
+    unit_type: z.enum(['token', 'ai_turn']),
+    time_window: z.enum(['one_day', 'seven_days', 'fourteen_days', 'thirty_days']),
+    max_budget: z.number().int().positive(),
+  })),
+});
+
+/** Un nombre que Meta peut omettre, ou rendre `null` faute de données. */
+const nombreOuRien = z.number().nullable().optional();
+
+const insightsConversationsSchema = z.object({
+  data: z.array(z.object({
+    ai_threads: z.object({ count: z.number() }).optional(),
+    ai_handoffs: z.object({ count: z.number() }).optional(),
+  })),
+});
+const insightsOutilsSchema = z.object({
+  data: z.array(z.object({
+    tool_name: z.string(),
+    thread_count: nombreOuRien,
+    avg_latency_ms: nombreOuRien,
+    success_rate: nombreOuRien,
+    error_rate: nombreOuRien,
+    timeout_rate: nombreOuRien,
+  })),
+});
+const insightsEvenementsSchema = z.object({
+  data: z.array(z.object({
+    event_type: z.string(),
+    received: nombreOuRien,
+    successfully_processed: nombreOuRien,
+    avg_e2e_latency_ms: nombreOuRien,
+  })),
+});
+
+/** Ce que l'agent a fait des conversations de la période. `null` = Meta ne l'a pas rendu, jamais zéro. */
+export interface InsightConversations {
+  /** Conversations où l'agent a répondu au moins une fois sur la période. */
+  traitees: number | null;
+  /** Conversations qu'il a passées à l'entreprise et qui attendent encore sa réponse (instantané, pas la période). */
+  enAttenteEquipe: number | null;
+}
+export interface InsightOutil {
+  /** Le nom lisible (`nomLisibleOutil`), et le brut tel que Meta le rend. */
+  nom: string;
+  brut: string;
+  conversations: number | null;
+  latenceMs: number | null;
+  /** Parts entre 0 et 1. */
+  succes: number | null;
+  erreurs: number | null;
+  timeouts: number | null;
+}
+export interface InsightEvenement {
+  type: string;
+  recus: number | null;
+  traites: number | null;
+  latenceMs: number | null;
+}
+
+/**
+ * Le nom d'un outil tel qu'un humain le lit. Meta le préfixe de l'identifiant de l'agent et joint le connecteur à
+ * l'outil par deux soulignés (mesuré : `1210015078858994_EngageMe__add_tag`) ; on rend `EngageMe › add_tag`. Une forme
+ * inattendue passe telle quelle.
+ */
+export function nomLisibleOutil(brut: string): string {
+  return brut.replace(/^\d+_/, '').split('__').join(' › ');
+}
+
 export class MbaClient {
   constructor(
     private readonly token: string,
@@ -236,6 +322,72 @@ export class MbaClient {
 
   async deleteFile(phoneNumberId: string, fileId: string): Promise<void> {
     await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/files/${fileId}`);
+  }
+
+  // ---------- Plafond et statistiques ----------
+
+  /**
+   * Les plafonds de l'agent. 🔴 PAR BUSINESS MANAGER, pas par numéro : mesuré le 2026-10-02, le numéro rend 404
+   * « Business not found », l'identifiant du Business Manager rend `{"budgets":[]}`. Vide = illimité. Une réponse
+   * illisible LÈVE : la rendre vide afficherait « illimité » sur un plafond qu'on n'a pas su lire.
+   */
+  async lireBudgets(businessId: string): Promise<BudgetAgent[]> {
+    const lu = budgetsSchema.safeParse(await this.appel<unknown>('GET', `${encodeURIComponent(businessId)}/agent_budget`));
+    if (!lu.success) throw new Error('plafonds de l’agent illisibles');
+    return lu.data.budgets;
+  }
+
+  /**
+   * 🔴 REMPLACE l'ensemble des plafonds : le POST de Meta n'ajoute pas. `[]` = illimité. Au plafond, l'agent finit le tour
+   * en cours, cesse de répondre et passe la main à un humain, jusqu'à ce que la fenêtre glisse.
+   */
+  async ecrireBudgets(businessId: string, budgets: readonly BudgetAgent[]): Promise<BudgetAgent[]> {
+    const lu = budgetsSchema.safeParse(
+      await this.appel<unknown>('POST', `${encodeURIComponent(businessId)}/agent_budget`, { budgets }),
+    );
+    if (!lu.success) throw new Error('réponse illisible après l’écriture des plafonds');
+    return lu.data.budgets;
+  }
+
+  /** Les conversations de l'agent sur une période (`AAAA-MM-JJ`, 90 jours au plus). */
+  async insightsConversations(phoneNumberId: string, debut: string, fin: string): Promise<InsightConversations> {
+    const lu = insightsConversationsSchema.safeParse(
+      await this.appel<unknown>('GET', `${phoneNumberId}/insights/conversations?start_date=${debut}&end_date=${fin}`),
+    );
+    if (!lu.success) throw new Error('statistiques des conversations illisibles');
+    const ligne = lu.data.data[0];
+    return { traitees: ligne?.ai_threads?.count ?? null, enAttenteEquipe: ligne?.ai_handoffs?.count ?? null };
+  }
+
+  /** Les outils appelés par l'agent sur une période (30 jours au plus), le plus utilisé d'abord. */
+  async insightsOutils(phoneNumberId: string, debut: string, fin: string): Promise<InsightOutil[]> {
+    const lu = insightsOutilsSchema.safeParse(
+      await this.appel<unknown>('GET', `${phoneNumberId}/insights/tool_calls?start_date=${debut}&end_date=${fin}`),
+    );
+    if (!lu.success) throw new Error('statistiques des outils illisibles');
+    return lu.data.data.map((o) => ({
+      nom: nomLisibleOutil(o.tool_name),
+      brut: o.tool_name,
+      conversations: o.thread_count ?? null,
+      latenceMs: o.avg_latency_ms ?? null,
+      succes: o.success_rate ?? null,
+      erreurs: o.error_rate ?? null,
+      timeouts: o.timeout_rate ?? null,
+    }));
+  }
+
+  /** Les événements métier envoyés à l'agent (`agent_event`) sur une période (30 jours au plus, jours du Pacifique). */
+  async insightsEvenements(phoneNumberId: string, debut: string, fin: string): Promise<InsightEvenement[]> {
+    const lu = insightsEvenementsSchema.safeParse(
+      await this.appel<unknown>('GET', `${phoneNumberId}/insights/agent_events?start_date=${debut}&end_date=${fin}`),
+    );
+    if (!lu.success) throw new Error('statistiques des événements illisibles');
+    return lu.data.data.map((e) => ({
+      type: e.event_type,
+      recus: e.received ?? null,
+      traites: e.successfully_processed ?? null,
+      latenceMs: e.avg_e2e_latency_ms ?? null,
+    }));
   }
 
   // ---------- Réglages, éligibilité ----------

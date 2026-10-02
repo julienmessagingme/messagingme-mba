@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MbaClient, RELECTURE_AUDIENCE_ATTENTE_MS, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../src/mba/client';
+import { MbaClient, RELECTURE_AUDIENCE_ATTENTE_MS, ecrireRollout, fusionnerBusinessInfo, modifierSettings, nomLisibleOutil } from '../src/mba/client';
 import { MetaApiError } from '../src/meta/errors';
 
 /** Faux fetch : enregistre les appels et rend des réponses scriptées. Aucun réseau. */
@@ -306,5 +306,57 @@ describe('MbaClient : la liste de l’agent', () => {
     expect(appels[0]!.body).toEqual({ consumer_phone_number: '+33612345678' });
     expect(appels[1]!.url).toBe('https://api.facebook.com/PN1/agent_config/allowlist/e1');
     expect(appels[1]!.method).toBe('DELETE');
+  });
+});
+
+/** Le plafond et les statistiques de l'agent, sur les formes MESURÉES le 2026-10-02 sur notre numéro. */
+describe('MbaClient : plafond et statistiques de l’agent', () => {
+  it('lit les plafonds sur le BUSINESS MANAGER, et les rend tels quels', async () => {
+    const { impl, appels } = faux([{ body: { budgets: [{ budget_id: 'b1', unit_type: 'token', time_window: 'thirty_days', max_budget: 1000 }] } }]);
+    const b = await new MbaClient('tok', impl).lireBudgets('103185632463539');
+    expect(appels[0]!.url).toBe('https://api.facebook.com/103185632463539/agent_budget');
+    expect(b).toEqual([{ budget_id: 'b1', unit_type: 'token', time_window: 'thirty_days', max_budget: 1000 }]);
+  });
+
+  it('🔴 une réponse de plafond illisible LÈVE : la rendre vide afficherait « illimité »', async () => {
+    const { impl } = faux([{ body: { budgets: [{ unit_type: 'euro', time_window: 'seven_days', max_budget: 3 }] } }]);
+    await expect(new MbaClient('tok', impl).lireBudgets('BM')).rejects.toThrow();
+  });
+
+  it('écrit les plafonds par un POST qui porte l’ensemble', async () => {
+    const corps = [{ unit_type: 'ai_turn' as const, time_window: 'one_day' as const, max_budget: 3 }];
+    const { impl, appels } = faux([{ body: { budgets: corps } }]);
+    await new MbaClient('tok', impl).ecrireBudgets('BM', corps);
+    expect(appels[0]!.method).toBe('POST');
+    expect(appels[0]!.body).toEqual({ budgets: corps });
+  });
+
+  it('lit les conversations (forme mesurée), et rend `null` pour un chiffre absent, jamais zéro', async () => {
+    const { impl, appels } = faux([
+      { body: { data: [{ ai_threads: { count: 4 }, ai_handoffs: { count: 0 } }] } },
+      { body: { data: [] } },
+    ]);
+    const c = new MbaClient('tok', impl);
+    expect(await c.insightsConversations('PN1', '2026-09-03', '2026-10-02')).toEqual({ traitees: 4, enAttenteEquipe: 0 });
+    expect(appels[0]!.url).toBe('https://api.facebook.com/PN1/insights/conversations?start_date=2026-09-03&end_date=2026-10-02');
+    expect(await c.insightsConversations('PN1', '2026-09-03', '2026-10-02')).toEqual({ traitees: null, enAttenteEquipe: null });
+  });
+
+  it('lit les outils (forme mesurée) avec un nom lisible, et les événements', async () => {
+    const { impl } = faux([
+      { body: { data: [{ tool_name: '1210015078858994_EngageMe__add_tag', thread_count: 2, avg_latency_ms: 4179.5, success_rate: 1, error_rate: 0, timeout_rate: 0 }] } },
+      { body: { data: [{ event_type: 'reponse_hors_parcours', received: 4, successfully_processed: 4, avg_e2e_latency_ms: 16651 }] } },
+    ]);
+    const c = new MbaClient('tok', impl);
+    expect(await c.insightsOutils('PN1', 'a', 'b')).toEqual([{
+      nom: 'EngageMe › add_tag', brut: '1210015078858994_EngageMe__add_tag',
+      conversations: 2, latenceMs: 4179.5, succes: 1, erreurs: 0, timeouts: 0,
+    }]);
+    expect(await c.insightsEvenements('PN1', 'a', 'b')).toEqual([{ type: 'reponse_hors_parcours', recus: 4, traites: 4, latenceMs: 16651 }]);
+  });
+
+  it('un nom d’outil de forme inattendue passe tel quel', () => {
+    expect(nomLisibleOutil('add_tag')).toBe('add_tag');
+    expect(nomLisibleOutil('42_Connecteur__outil')).toBe('Connecteur › outil');
   });
 });

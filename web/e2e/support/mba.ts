@@ -26,6 +26,8 @@ export interface MbaFixtures {
   status?: Record<string, unknown>;
   /** Réglages TENANT (`GET .../settings`) : passage de main, délai de reprise, horaires. */
   reglagesTenant?: Record<string, unknown>;
+  /** Le plafond de l'agent (`/mba-budget`), mutable comme chez Meta. Absent = aucun plafond. */
+  plafond?: { unite: string; fenetre: string; max: number } | null;
   businessInfo?: Record<string, unknown>;
   faqs?: Array<Record<string, unknown>>;
   skills?: Array<Record<string, unknown>>;
@@ -79,6 +81,7 @@ const statutParDefaut = {
 
 export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]> {
   const calls: Appel[] = [];
+  let plafond: MbaFixtures['plafond'] = f.plafond ?? null;
   // Collections MUTABLES : un POST ajoute, un DELETE retire. Un faux backend qui rendrait toujours la même
   // liste rendrait invérifiable tout ce qui se passe APRÈS une écriture (l'écran relit-il ? affiche-t-il la
   // nouvelle entrée ?), et un test écrit contre un tel faux prouverait moins qu'il n'en a l'air.
@@ -236,6 +239,11 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
       return json({ controlHandbackSeconds: reglagesTenant.controlHandbackSeconds });
     }
     if (url.includes('/settings')) return json(reglagesTenant);
+    // Le plafond de l'agent : un PUT REMPLACE, comme le POST de Meta.
+    if (url.includes('/mba-budget')) {
+      if (method === 'PUT') plafond = ((body ?? {}).plafond ?? null) as typeof plafond;
+      return json({ plafond, autres: 0 });
+    }
     return json({});
   });
 

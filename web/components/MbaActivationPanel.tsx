@@ -10,6 +10,7 @@ import {
   DEFAULT_MBA_HANDOFF_MODE, type MbaHandoffMode,
 } from '@/lib/api';
 import { Squelette } from '@/components/Squelette';
+import { MbaPlafond } from './MbaPlafond';
 
 /** Défaut du serveur quand rien n'est réglé, en minutes. Sert uniquement au texte d'aide. */
 const DEFAUT_REPRISE_MINUTES = 120;
@@ -196,6 +197,8 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
               : t('Passé ce délai, le scénario ou l’agent peut reprendre la parole.', 'After this delay, the scenario or the agent may speak again.')}
         </p>
       </section>
+
+      <MbaPlafond tenantId={tenantId} />
     </div>
   );
 }

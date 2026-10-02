@@ -6,6 +6,7 @@ import { RangeBar } from '@/components/RangeBar';
 import { CarteCouts } from '@/components/CarteCouts';
 import { NuageQualitatifCard } from '@/components/NuageQualitatifCard';
 import { CarteIntentions } from '@/components/CarteIntentions';
+import { CarteAgentMeta } from '@/components/CarteAgentMeta';
 import type { Session } from '@/lib/session';
 import type { StatsRange } from '@/lib/api';
 import { presetRange } from '@/lib/range';
@@ -62,6 +63,10 @@ function SyntheseInner({ session }: { session: Session }) {
           <CarteIntentions tenantId={session.tenantId} range={range} />
           <NuageQualitatifCard tenantId={session.tenantId} range={range} />
         </div>
+      </div>
+      {/* L'agent de Meta, sur ses 30 derniers jours (la carte le dit, et se tait sans numéro). */}
+      <div className="mt-4">
+        <CarteAgentMeta tenantId={session.tenantId} />
       </div>
       </ErreursRegroupees>
     </div>

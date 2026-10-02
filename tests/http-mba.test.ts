@@ -66,9 +66,13 @@ function app(overClient: Record<string, Methode> = {}, overDeps: Partial<MbaRout
   const { client, appels } = fauxClient(overClient);
   const deps: MbaRouteDeps = {
     ...mbaInerte,
-    meta: { mbaClientForTenant: async () => client },
+    meta: {
+      mbaClientForTenant: async () => client,
+      phoneClientForTenant: async () => ({ getWabaHealth: async () => ({ ownerBusinessId: 'BM1' }) }),
+    },
     repo: {
       getTenantPhoneNumberId: async () => null,
+      getTenantWabaId: async () => 'WABA1',
       phoneNumberBelongsToTenant: async (pn, tenant) => pn === PN && tenant === 't1',
     },
     ...overDeps,
@@ -471,10 +475,150 @@ describe('GET /tenants/:tenantId/mba/:phoneNumberId/messages', () => {
     // croyant qu'il ne sert à rien.
     const { server } = app({}, {
       stats: { messagesEcritsParMba: async () => 87 },
-      repo: { getTenantPhoneNumberId: async () => null, phoneNumberBelongsToTenant: async () => false },
+      repo: { getTenantPhoneNumberId: async () => null, getTenantWabaId: async () => null, phoneNumberBelongsToTenant: async () => false },
     });
     const res = await server.inject({ method: 'GET', url: url('/messages'), ...h(adminTok) });
     expect(res.statusCode).toBe(404);
+    await server.close();
+  });
+});
+
+/**
+ * LE PLAFOND DE L'AGENT (2026-10-02). Il se règle chez Meta sur le BUSINESS MANAGER propriétaire du compte WhatsApp
+ * (mesuré : le numéro rend 404), que le serveur résout lui-même ; et le POST de Meta REMPLACE tous les plafonds.
+ */
+describe('GET|PUT /tenants/:tenantId/mba-budget', () => {
+  const B = '/tenants/t1/mba-budget';
+  const json = (corps: unknown) => ({ ...h(adminTok), payload: JSON.stringify(corps) });
+
+  it('lit le plafond sur le Business Manager du compte WhatsApp de l’espace, et le rend dans nos mots', async () => {
+    const { server, appels } = app({ lireBudgets: () => [{ budget_id: 'b1', unit_type: 'ai_turn', time_window: 'seven_days', max_budget: 500 }] });
+    const res = await server.inject({ method: 'GET', url: B, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ plafond: { unite: 'ai_turn', fenetre: 'seven_days', max: 500 }, autres: 0 });
+    expect(appels.find((a) => a.m === 'lireBudgets')?.args).toEqual(['BM1']);
+    await server.close();
+  });
+
+  it('aucun plafond : `plafond: null`, c’est-à-dire illimité', async () => {
+    const { server } = app({ lireBudgets: () => [] });
+    expect((await server.inject({ method: 'GET', url: B, ...h(adminTok) })).json()).toEqual({ plafond: null, autres: 0 });
+    await server.close();
+  });
+
+  it('🔴 sans compte WhatsApp, ou sans Business Manager connu : 409 qui le dit, et AUCUN appel au plafond', async () => {
+    for (const over of [
+      { repo: { getTenantPhoneNumberId: async () => null, getTenantWabaId: async () => null, phoneNumberBelongsToTenant: async () => true } },
+      { meta: { mbaClientForTenant: async () => ({}) as never, phoneClientForTenant: async () => ({ getWabaHealth: async () => ({}) }) } },
+    ] as Array<Partial<MbaRouteDeps>>) {
+      const { server, appels } = app({}, over);
+      const res = await server.inject({ method: 'GET', url: B, ...h(adminTok) });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toContain('Business Manager');
+      expect(appels.filter((a) => a.m === 'lireBudgets' || a.m === 'ecrireBudgets')).toEqual([]);
+      await server.close();
+    }
+  });
+
+  it('pose UN plafond : le POST porte l’unité, la fenêtre et le maximum de Meta', async () => {
+    const { server, appels } = app({ ecrireBudgets: (_bm: unknown, b: unknown) => b });
+    const res = await server.inject({ method: 'PUT', url: B, ...json({ plafond: { unite: 'token', fenetre: 'thirty_days', max: 10_000_000 } }) });
+    expect(res.statusCode).toBe(200);
+    expect(appels.find((a) => a.m === 'ecrireBudgets')?.args).toEqual(['BM1', [{ unit_type: 'token', time_window: 'thirty_days', max_budget: 10_000_000 }]]);
+    expect(res.json()).toEqual({ plafond: { unite: 'token', fenetre: 'thirty_days', max: 10_000_000 }, autres: 0 });
+    await server.close();
+  });
+
+  it('`{ plafond: null }` retire tout : le POST part VIDE', async () => {
+    const { server, appels } = app({ ecrireBudgets: () => [] });
+    const res = await server.inject({ method: 'PUT', url: B, ...json({ plafond: null }) });
+    expect(res.statusCode).toBe(200);
+    expect(appels.find((a) => a.m === 'ecrireBudgets')?.args).toEqual(['BM1', []]);
+    await server.close();
+  });
+
+  it('🔴 un plafond invalide est refusé AVANT tout appel à Meta : il couperait l’agent de tout un Business Manager', async () => {
+    const { server, appels } = app();
+    for (const corps of [
+      {},
+      { plafond: 'beaucoup' },
+      { plafond: { unite: 'euro', fenetre: 'seven_days', max: 10 } },
+      { plafond: { unite: 'token', fenetre: 'one_week', max: 10 } },
+      { plafond: { unite: 'token', fenetre: 'seven_days', max: 0 } },
+      { plafond: { unite: 'token', fenetre: 'seven_days', max: 2.5 } },
+      { plafond: { unite: 'token', fenetre: 'seven_days', max: '10' } },
+    ]) {
+      const res = await server.inject({ method: 'PUT', url: B, ...json(corps) });
+      expect(res.statusCode, JSON.stringify(corps)).toBe(400);
+    }
+    expect(appels.filter((a) => a.m === 'ecrireBudgets')).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 réservé aux administrateurs, et à SON espace', async () => {
+    const { server } = app();
+    expect((await server.inject({ method: 'GET', url: B, ...h(agentTok) })).statusCode).toBe(403);
+    expect((await server.inject({ method: 'GET', url: B, ...h(autreTok) })).statusCode).toBe(403);
+    await server.close();
+  });
+});
+
+/**
+ * LE TABLEAU DE L'AGENT (Performance lab, 2026-10-02) : les statistiques de Meta et notre compte de ses messages, sur
+ * 30 jours. Aucune ne porte de coût : l'estimation se fait au prix public, que la route rend avec les chiffres.
+ */
+describe('GET /tenants/:tenantId/mba-insights', () => {
+  const I = '/tenants/t1/mba-insights';
+
+  it('sans numéro : `numero: false`, et aucune lecture', async () => {
+    const { server, appels } = app();
+    const res = await server.inject({ method: 'GET', url: I, ...h(adminTok) });
+    expect(res.json()).toEqual({ numero: false });
+    expect(appels).toEqual([]);
+    await server.close();
+  });
+
+  it('rend les trois lectures de Meta, notre compte sur la MÊME fenêtre, et le prix public', async () => {
+    const vus: unknown[][] = [];
+    const { server, appels } = app({
+      insightsConversations: () => ({ traitees: 4, enAttenteEquipe: 0 }),
+      insightsOutils: () => [{ nom: 'EngageMe › add_tag', brut: 'x', conversations: 2, latenceMs: 4179, succes: 1, erreurs: 0, timeouts: 0 }],
+      insightsEvenements: () => [{ type: 'message_sans_suite', recus: 1, traites: 1, latenceMs: 8156 }],
+    }, {
+      repo: { getTenantPhoneNumberId: async () => PN, getTenantWabaId: async () => 'WABA1', phoneNumberBelongsToTenant: async () => true },
+      stats: { messagesEcritsParMba: async (...args: unknown[]) => { vus.push(args); return 36; } },
+    });
+    const res = await server.inject({ method: 'GET', url: I, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const corps = res.json();
+    expect(corps).toMatchObject({
+      numero: true, conversations: { traitees: 4, enAttenteEquipe: 0 }, messages: 36,
+      prixParMessageUsd: { min: 0.04, max: 0.05 },
+    });
+    expect(corps.outils).toHaveLength(1);
+    expect(corps.evenements).toHaveLength(1);
+    // La fenêtre de Meta et la nôtre : 30 jours, bornes comprises.
+    const [debut, fin] = (appels.find((a) => a.m === 'insightsOutils')?.args ?? []).slice(1) as [string, string];
+    expect(Date.parse(fin) - Date.parse(debut)).toBe(29 * 86_400_000);
+    expect(vus[0]?.[0]).toBe('t1');
+    expect(vus[0]?.[1]).toBeInstanceOf(Date);
+    await server.close();
+  });
+
+  it('🔴 une lecture en panne rend `null`, jamais zéro, et n’éteint pas les autres', async () => {
+    const { server } = app({
+      // Une méthode `async` du vrai client REJETTE, elle ne lève pas en synchrone.
+      insightsConversations: () => Promise.reject(new Error('500')),
+      insightsOutils: () => [],
+      insightsEvenements: () => [],
+    }, {
+      repo: { getTenantPhoneNumberId: async () => PN, getTenantWabaId: async () => 'WABA1', phoneNumberBelongsToTenant: async () => true },
+      stats: { messagesEcritsParMba: async () => { throw new Error('base'); } },
+    });
+    const corps = (await server.inject({ method: 'GET', url: I, ...h(adminTok) })).json();
+    expect(corps.conversations).toBeNull();
+    expect(corps.messages).toBeNull();
+    expect(corps.outils).toEqual([]);
     await server.close();
   });
 });

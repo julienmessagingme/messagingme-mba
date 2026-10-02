@@ -516,7 +516,7 @@ export class PgStatsStore {
    * et la RLS est contournée. `m.direction = 'out'` ne change aucun résultat mais tient le contrat de l'index
    * partiel `conversation_messages_origin_idx` (`where direction = 'out'`).
    */
-  async messagesEcritsParMba(tenantId: string): Promise<number> {
+  async messagesEcritsParMba(tenantId: string, depuis?: Date): Promise<number> {
     const { rows } = await this.pool.query<{ n: string }>(
       `select count(*)::text as n
          from conversation_messages m
@@ -524,8 +524,10 @@ export class PgStatsStore {
         where c.tenant_id = $1
           and not c.is_test
           and m.direction = 'out'
-          and ${ORIGINE_EFFECTIVE_SQL} = 'mba'`,
-      [tenantId],
+          and ${ORIGINE_EFFECTIVE_SQL} = 'mba'
+          -- La fenêtre facultative du tableau de l'agent (Performance lab) ; absente = depuis toujours.
+          and ($2::timestamptz is null or m.created_at >= $2::timestamptz)`,
+      [tenantId, depuis ?? null],
     );
     return Number(rows[0]?.n ?? 0);
   }

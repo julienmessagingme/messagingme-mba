@@ -75,6 +75,8 @@ async function mock(
     cout?: unknown; messages?: unknown; ia?: unknown; statutCout?: number; urlsCout?: string[];
     /** Les publicités de la carte ; absentes = aucune publicité sur la période. */
     pubs?: unknown;
+    /** Le tableau de l'agent de Meta ; absent = la route rend `{}` et la carte se tait. */
+    insightsMba?: unknown;
     /** Les adresses appelees par la page Quantitatif > Couts, pour lire la periode qu elle a retenue. */
     urlsTemplates?: string[];
   } = {},
@@ -89,6 +91,7 @@ async function mock(
     if (url.includes('/stats/cost/messages')) return json(opts.messages ?? MESSAGES);
     if (url.includes('/stats/cost/ia')) return json(opts.ia ?? IA);
     if (url.includes('/stats/cost/pubs')) return json(opts.pubs ?? { currency: 'EUR', lignes: [] });
+    if (url.includes('/mba-insights')) return json(opts.insightsMba ?? {});
     if (url.includes('/stats/cost/campaigns')) {
       opts.urlsCout?.push(url);
       if (opts.statutCout && opts.statutCout !== 200) {
@@ -157,6 +160,38 @@ test.describe('Performance Lab : la carte des couts', () => {
     await expect(page.getByTestId('cout-sous-erreur-pubs')).toBeVisible();
     await page.getByTestId('cout-sous-push').click();
     await expect(page.getByTestId('cout-ligne-c-promo')).toBeVisible();
+  });
+
+  test('la carte de l’agent de Meta : ses chiffres sur 30 jours, un coût ESTIMÉ, et ses outils', async ({ page }) => {
+    await mock(page, {
+      insightsMba: {
+        numero: true, debut: '2026-09-03', fin: '2026-10-02',
+        conversations: { traitees: 4, enAttenteEquipe: null },
+        outils: [{ nom: 'EngageMe › add_tag', brut: '1_EngageMe__add_tag', conversations: 2, latenceMs: 4179, succes: 1, erreurs: 0, timeouts: 0 }],
+        evenements: [{ type: 'message_sans_suite', recus: 1, traites: 1, latenceMs: 8156 }],
+        messages: 36,
+        prixParMessageUsd: { min: 0.04, max: 0.05 },
+      },
+    });
+    await page.goto('/performance');
+    const carte = page.getByTestId('carte-agent-meta');
+    await expect(carte).toBeVisible();
+    await expect(page.getByTestId('agent-meta-conversations')).toContainText('4');
+    // 🔴 « n/d », jamais zéro, quand Meta n'a pas rendu le chiffre.
+    await expect(page.getByTestId('agent-meta-attente')).not.toContainText('0');
+    await expect(page.getByTestId('agent-meta-messages')).toContainText('36');
+    // 36 messages à 4 ou 5 cents : 1,44 à 1,80 $.
+    await expect(page.getByTestId('agent-meta-cout')).toContainText('1,44');
+    await expect(carte).toContainText(/la facture de Meta fait foi|Meta’s invoice prevails/);
+    await expect(page.getByTestId('agent-meta-outils')).toContainText('EngageMe › add_tag');
+    await expect(page.getByTestId('agent-meta-evenements')).toContainText('message_sans_suite');
+  });
+
+  test('sans numéro, ou route muette, la carte de l’agent se tait', async ({ page }) => {
+    await mock(page, { insightsMba: { numero: false } });
+    await page.goto('/performance');
+    await expect(page.getByTestId('carte-couts')).toBeVisible();
+    await expect(page.getByTestId('carte-agent-meta')).toHaveCount(0);
   });
 
   test('🔴 le chiffre est le RAPPORT DES TOTAUX, pas la moyenne des ratios', async ({ page }) => {

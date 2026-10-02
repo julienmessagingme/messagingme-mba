@@ -114,6 +114,47 @@ export function patchMbaSettings(tenantId: string, phoneNumberId: string, patch:
   return request<MbaSettings>(`${base(tenantId, phoneNumberId)}/settings`, { method: 'PATCH', body: JSON.stringify(patch) });
 }
 
+// --- Plafond et tableau de l'agent (2026-10-02) ------------------------------------------------------
+
+export type UniteBudget = 'token' | 'ai_turn';
+export type FenetreBudget = 'one_day' | 'seven_days' | 'fourteen_days' | 'thirty_days';
+/** Un plafond de l'agent, posé chez Meta sur le BUSINESS MANAGER (tous ses numéros). */
+export interface PlafondMba { unite: UniteBudget; fenetre: FenetreBudget; max: number }
+/** `plafond: null` = illimité ; `autres` = plafonds posés ailleurs, qu'un enregistrement ici remplace. */
+export interface EtatPlafondMba { plafond: PlafondMba | null; autres: number }
+
+/** Prix publics de Meta pour une ESTIMATION (doc « non-template messages ») ; la facture fait foi. */
+export const PRIX_JETONS_USD_PAR_MILLION = 2;
+export const PRIX_REPONSE_USD = { min: 0.04, max: 0.05 } as const;
+
+/** Le serveur résout lui-même le compte WhatsApp et son Business Manager : aucun numéro ici. 409 sans compte relié. */
+export function getPlafondMba(tenantId: string): Promise<EtatPlafondMba> {
+  return request<EtatPlafondMba>(`/tenants/${tenantId}/mba-budget`);
+}
+
+/** `null` retire le plafond. 🔴 Remplace TOUS les plafonds du Business Manager chez Meta. */
+export function putPlafondMba(tenantId: string, plafond: PlafondMba | null): Promise<EtatPlafondMba> {
+  return request<EtatPlafondMba>(`/tenants/${tenantId}/mba-budget`, { method: 'PUT', body: JSON.stringify({ plafond }) });
+}
+
+/** Le tableau de l'agent sur 30 jours. `null` dans un champ = Meta (ou notre base) n'a pas répondu, jamais zéro. */
+export type InsightsMba =
+  | { numero: false }
+  | {
+    numero: true;
+    debut: string;
+    fin: string;
+    conversations: { traitees: number | null; enAttenteEquipe: number | null } | null;
+    outils: Array<{ nom: string; brut: string; conversations: number | null; latenceMs: number | null; succes: number | null; erreurs: number | null; timeouts: number | null }> | null;
+    evenements: Array<{ type: string; recus: number | null; traites: number | null; latenceMs: number | null }> | null;
+    messages: number | null;
+    prixParMessageUsd: { min: number; max: number };
+  };
+
+export function getInsightsMba(tenantId: string): Promise<InsightsMba> {
+  return request<InsightsMba>(`/tenants/${tenantId}/mba-insights`);
+}
+
 /** Allumage. Route séparée côté serveur : l'effet est asymétrique, ce n'est pas un interrupteur ordinaire. */
 export function putMbaRollout(tenantId: string, phoneNumberId: string, enabled: boolean): Promise<MbaSettings> {
   return request<MbaSettings>(`${base(tenantId, phoneNumberId)}/rollout`, { method: 'PUT', body: JSON.stringify({ enabled }) });

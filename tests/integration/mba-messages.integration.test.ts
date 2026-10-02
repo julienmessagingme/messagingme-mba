@@ -120,5 +120,7 @@ describe.skipIf(!url)('PgStatsStore.messagesEcritsParMba (Postgres)', () => {
     );
 
     expect(await store.messagesEcritsParMba(tenantTotal)).toBe(2);
+    // Et la fenêtre FACULTATIVE du tableau de l'agent (2026-10-02) : 30 jours ne voient que le message récent.
+    expect(await store.messagesEcritsParMba(tenantTotal, new Date(Date.now() - 30 * 86_400_000))).toBe(1);
   });
 });

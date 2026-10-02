@@ -8,6 +8,34 @@ import { mockMba } from './support/mba';
  * sélection sans jamais l'enregistrer passerait un test purement visuel), et que le délai de reprise, déplacé
  * ici depuis l'Accueil, écrive toujours des SECONDES alors que la saisie est en minutes.
  */
+test.describe('MBA : le plafond de dépense de l’agent', () => {
+  test('sans plafond, l’écran le dit ; poser un plafond en réponses l’envoie et l’affiche', async ({ page }) => {
+    const calls = await mockMba(page);
+    await page.goto('/mba/parametres?tab=activation');
+    await expect(page.getByTestId('mba-plafond-actuel')).toContainText(/Aucun plafond|No cap/);
+    await page.getByTestId('mba-plafond-unite-ai_turn').check();
+    await page.getByTestId('mba-plafond-max').fill('500');
+    await page.getByTestId('mba-plafond-fenetre').selectOption('seven_days');
+    // L'ordre de grandeur en dollars : 500 réponses à 4 ou 5 cents.
+    await expect(page.getByTestId('mba-plafond-estimation')).toContainText(/20/);
+    await page.getByTestId('mba-plafond-enregistrer').click();
+    await expect.poll(() => calls.filter((c) => c.url.includes('/mba-budget') && c.method === 'PUT').length).toBe(1);
+    expect(calls.find((c) => c.url.includes('/mba-budget') && c.method === 'PUT')?.body)
+      .toEqual({ plafond: { unite: 'ai_turn', fenetre: 'seven_days', max: 500 } });
+    await expect(page.getByTestId('mba-plafond-actuel')).toContainText('500');
+  });
+
+  test('un plafond existant s’affiche, et « Retirer » part avec `plafond: null`', async ({ page }) => {
+    const calls = await mockMba(page, { plafond: { unite: 'token', fenetre: 'thirty_days', max: 10_000_000 } });
+    await page.goto('/mba/parametres?tab=activation');
+    await expect(page.getByTestId('mba-plafond-actuel')).toContainText(/jetons|tokens/);
+    await page.getByTestId('mba-plafond-retirer').click();
+    await expect.poll(() => calls.filter((c) => c.url.includes('/mba-budget') && c.method === 'PUT').length).toBe(1);
+    expect(calls.find((c) => c.url.includes('/mba-budget') && c.method === 'PUT')?.body).toEqual({ plafond: null });
+    await expect(page.getByTestId('mba-plafond-actuel')).toContainText(/Aucun plafond|No cap/);
+  });
+});
+
 test.describe('MBA : écran Activation', () => {
   test('les trois choix de passage de main sont proposés, avec le défaut usine sélectionné', async ({ page }) => {
     await mockMba(page);

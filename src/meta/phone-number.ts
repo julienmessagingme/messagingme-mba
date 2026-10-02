@@ -28,6 +28,8 @@ export interface WabaInfo {
   marketingMessagesLiteApiStatus?: string;
   /** Nom du business propriétaire du WABA (`owner_business_info.name`). */
   ownerBusinessName?: string;
+  /** Son identifiant : c'est lui qui porte les plafonds de l'agent de Meta (`agent_budget`), et que Meta facture. */
+  ownerBusinessId?: string;
 }
 
 /** Client Graph en lecture d'un numéro WhatsApp (statut du compte sur l'Accueil). Lève MetaApiError si non-2xx. */
@@ -97,6 +99,7 @@ export class MetaPhoneNumberClient {
       businessVerificationStatus: json?.business_verification_status,
       marketingMessagesLiteApiStatus: json?.marketing_messages_lite_api_status,
       ownerBusinessName: json?.owner_business_info?.name,
+      ownerBusinessId: json?.owner_business_info?.id,
     };
   }
 }
