@@ -956,6 +956,10 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     // Après l'ajout, le plan chez Meta porte l'outil à créer : c'est lui que l'écran envoie.
     const m = await monterOutils(page, { outils: [OUTIL], mcp: [PROPOSABLE], gestes: () => (m.ecrits.length > 0 ? [{ type: 'outil_creer', nom: 'notion_search' }] : []) });
     await page.goto('/mba/parametres?tab=outils');
+    // Par « Ajouter un outil », sixième case (Julien, 2026-10-02), et plus par un cadre en bas de liste.
+    await expect(page.getByTestId('mba-outils-mcp')).toHaveCount(0);
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-mcp').click();
     await expect(page.getByTestId('mba-outils-mcp-notion_search')).toContainText('serveur notion');
     await page.getByTestId('mba-outils-mcp-donner-m1').click();
     await expect.poll(() => m.publications()).toBe(1);
@@ -982,12 +986,14 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('mba-outil-etat-o4')).toContainText('Pas chez Meta');
   });
 
-  test('🔴 une API sans la route MCP (404) ne casse pas l’onglet : la section se tait', async ({ page }) => {
+  test('🔴 une API sans la route MCP (404) ne casse pas l’onglet : la case MCP est grisée, avec le lien', async ({ page }) => {
     await monterOutils(page, { outils: [OUTIL], mcpAbsente: true });
     await page.goto('/mba/parametres?tab=outils');
     await expect(page.getByTestId('mba-outil-suivi_commande')).toBeVisible();
-    await expect(page.getByTestId('mba-outils-mcp')).toHaveCount(0);
     await expect(page.getByTestId('mba-outils-lecture-ratee')).toHaveCount(0);
+    await page.getByTestId('mba-outils-ajouter').click();
+    await expect(page.getByTestId('mba-type-mcp')).toBeDisabled();
+    await expect(page.getByTestId('mba-type-mcp-lien')).toHaveAttribute('href', '/connecteurs-mcp');
   });
 
   test('`/outils` renvoie vers l’onglet de l’agent de Meta', async ({ page }) => {

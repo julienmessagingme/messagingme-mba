@@ -2223,7 +2223,7 @@ importez ce qu'il propose.
   connecteur, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
   Connecteurs MCP.
 - ✅ **L'agent de Meta reçoit aussi ces outils** (2026-10-02), dans **Meta Business Agent > Paramètres >
-  Outils**, section « Depuis vos serveurs MCP », et l'écran de cette page le dit. Engage Me fait l'appel MCP
+  Outils**, par « Ajouter un outil » > « Appeler un outil MCP », et l'écran de cette page le dit. Engage Me fait l'appel MCP
   pour lui : Meta n'appelle que notre relais, en HTTP. Les paramètres réglés ici s'appliquent à l'agent de Meta
   comme aux agents IA : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe est posé par Engage
   Me, jamais fourni par l'agent. ⚠️ Cette ligne a dit « pas encore » jusqu'à ce jour, en accusant d'abord Meta
@@ -2242,7 +2242,8 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   API, MCP) et son état chez Meta, avec « Modifier » et « Supprimer ». Les connecteurs d'un agent IA se gèrent
   depuis sa fiche.
 - ✅ **Un gros bouton « Ajouter un outil »**, qui propose : **Poser un tag**, **Enregistrer une
-  information**, **Envoyer un bloc**, **Lancer un scénario**, **Appeler un connecteur API**. Un type est grisé, avec le lien qui y mène, tant que l'espace
+  information**, **Envoyer un bloc**, **Lancer un scénario**, **Appeler un connecteur API**, **Appeler un outil
+  MCP**. Un type est grisé, avec le lien qui y mène, tant que l'espace
   n'a rien à y mettre : aucun appel déclaré (Tools > Connecteurs API), aucun champ déclaré (Contenu >
   Bibliothèque > Champs). Une lecture ratée ne passe pas pour « aucun » : elle le dit, avec « Réessayer ».
 - ✅ **Poser un tag** : l'étiquette est fixée par l'administrateur, l'agent de Meta ne décide que du moment. Elle
@@ -2292,9 +2293,10 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   désactivé dès le clic, jusqu'à la fin de l'envoi.
 - ✅ **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par : … ») : le modifier le modifie pour
   cet agent aussi. « Supprimer » ne le retire alors qu'à l'agent de Meta.
-- ✅ **Les outils de vos serveurs MCP** (2026-10-02) : sous la liste, « Depuis vos serveurs MCP » propose les
-  outils proposés aux agents dans Tools > Connecteurs MCP que l'agent de Meta n'a pas encore. « Donner à l'agent de Meta »
-  l'ajoute ET l'envoie chez Meta dans le même geste. L'agent ne remplit que les paramètres « décidés par
+- ✅ **Les outils de vos serveurs MCP** (2026-10-02) : « Ajouter un outil » > « Appeler un outil MCP » liste les
+  outils enregistrés dans Tools > Connecteurs MCP que l'agent de Meta n'a pas encore (grisée, avec le lien,
+  quand il n'y en a aucun). « Ajouter » l'ajoute ET l'envoie chez Meta dans le même geste. Le cadre « Depuis vos
+  serveurs MCP », en bas de la liste, a disparu le même jour : Julien ne l'y cherchait pas. L'agent ne remplit que les paramètres « décidés par
   l'agent » ; ceux qui viennent de la fiche du client, d'un champ ou d'une valeur fixe sont posés par Engage Me.
   La ligne d'un outil MCP dit son serveur et mène à ses réglages (« Régler », pas de « Modifier ») : ses mots et
   ses paramètres sont partagés avec les agents IA. Un outil disparu de son serveur, ou que son schéma rend

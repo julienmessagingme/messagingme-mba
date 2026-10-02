@@ -23,8 +23,11 @@ export const TYPES_PROPOSES: readonly TypeOutilMba[] = ['tag', 'champ', 'bloc', 
  * déclarer ce qu'il a déjà.
  */
 type Compte = number | null | 'erreur';
-export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler }: {
+export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp }: {
   tenantId: string; onChoisir: (type: TypeOutilMba) => void; onAnnuler: () => void;
+  /** Combien d'outils MCP enregistrés l'agent de Meta n'a pas encore. Lu par la liste de l'onglet. */
+  mcpDisponibles: number;
+  onChoisirMcp: () => void;
 }) {
   const t = useT();
   const [appels, setAppels] = useState<Compte>(null);
@@ -92,6 +95,27 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler }: {
             </div>
           );
         })}
+        {/* 🔴 LA SIXIÈME CASE (Julien, 2026-10-02 : « il faut qu'on ait la capacité de rajouter un MCP via une case quand
+            tu cliques sur Ajouter un outil »). Elle n'est pas un `TypeOutilMba` : un outil MCP ne se crée pas ici, il
+            vient d'un serveur déclaré et enregistré dans Tools > Connecteurs MCP ; la case ouvre la liste de ceux que
+            l'agent de Meta n'a pas encore. Grisée avec le lien, comme les autres, quand il n'y en a aucun. */}
+        <div className={`rounded-carte border p-4 ${mcpDisponibles === 0 ? 'border-ink-100 opacity-60' : 'border-ink-200 hover:border-brand-300 hover:bg-brand-50'}`}>
+          <button type="button" disabled={mcpDisponibles === 0} data-testid="mba-type-mcp"
+            onClick={onChoisirMcp} className="block w-full text-left disabled:cursor-not-allowed">
+            <span className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+              <IconeOutil signe="connecteur" className="text-ink-400" />
+              <span className="min-w-0 truncate">{t('Appeler un outil MCP', 'Call an MCP tool')}</span>
+            </span>
+            <span className="mt-1 block text-xs text-ink-500">
+              {t('Un outil d’un serveur enregistré dans Connecteurs MCP', 'A tool from a server registered in MCP connectors')}
+            </span>
+          </button>
+          {mcpDisponibles === 0 && (
+            <Link href="/connecteurs-mcp" data-testid="mba-type-mcp-lien" className="mt-2 block text-xs text-brand-600 underline">
+              {t('Aucun outil MCP à ajouter : Tools > Connecteurs MCP', 'No MCP tool to add: Tools > MCP connectors')}
+            </Link>
+          )}
+        </div>
       </div>
     </section>
   );

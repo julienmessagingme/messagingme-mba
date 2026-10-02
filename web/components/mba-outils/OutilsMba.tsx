@@ -18,7 +18,7 @@ import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';
 
-type Mode = { vue: 'liste' } | { vue: 'choix' } | { vue: 'form'; type: TypeOutilMba; outil: OutilMbaVue | null };
+type Mode = { vue: 'liste' } | { vue: 'choix' } | { vue: 'mcp' } | { vue: 'form'; type: TypeOutilMba; outil: OutilMbaVue | null };
 type Traduire = (fr: string, en?: string) => string;
 
 /**
@@ -255,7 +255,48 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
 
       {mode.vue === 'choix' && (
         <ChoixTypeOutil tenantId={tenantId} onAnnuler={() => setMode({ vue: 'liste' })}
-          onChoisir={(type) => setMode({ vue: 'form', type, outil: null })} />
+          onChoisir={(type) => setMode({ vue: 'form', type, outil: null })}
+          mcpDisponibles={mcpProposables.length} onChoisirMcp={() => setMode({ vue: 'mcp' })} />
+      )}
+      {/* « Appeler un outil MCP », choisi dans « Quel outil ajouter ? » : les outils enregistrés dans Tools > Connecteurs
+          MCP que l'agent de Meta n'a pas encore. Ce cadre vivait en bas de la liste, et Julien ne l'y cherchait pas. */}
+      {isAdmin && mode.vue === 'mcp' && (
+        <section className="rounded-carte border border-ink-200 bg-white p-4" data-testid="mba-outils-mcp">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold text-ink-900">{t('Quel outil MCP ajouter ?', 'Which MCP tool to add?')}</p>
+            <button type="button" data-testid="mba-outils-mcp-annuler" onClick={() => setMode({ vue: 'liste' })}
+              className="text-xs text-ink-500 hover:underline">{t('Annuler', 'Cancel')}</button>
+          </div>
+          <p className="mb-3 text-xs text-ink-500">
+            {t('Enregistrés dans Tools > Connecteurs MCP, pas encore donnés à l’agent de Meta. Leurs paramètres se règlent là-bas : ce qui vient de la fiche du client y est posé par nous, jamais par l’agent.',
+              'Registered in Tools > MCP connectors, not yet given to Meta’s agent. Their parameters are set over there: what comes from the customer record is filled in by us, never by the agent.')}
+          </p>
+          {mcpProposables.length === 0 ? (
+            <p className="text-xs text-ink-500">{t('Aucun outil MCP à ajouter.', 'No MCP tool to add.')}</p>
+          ) : (
+            <ul className="divide-y divide-ink-100 rounded-carte border border-ink-200">
+              {mcpProposables.map((o) => (
+                <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm text-ink-900" data-testid={`mba-outils-mcp-${o.name}`}>
+                  <span className="min-w-0">
+                    <span className="font-medium">{o.title}</span>
+                    {o.serveur && <span className="ml-2 text-xs text-ink-500">{t(`serveur ${o.serveur}`, `server ${o.serveur}`)}</span>}
+                    {o.risque === 'irreversible' && (
+                      <span className="ml-2 rounded-controle bg-alerte-50 px-2 py-0.5 text-xs text-alerte-800"
+                        title={t('L’agent de Meta l’appelle sans validation humaine.', 'Meta’s agent calls it without human approval.')}>
+                        {t('irréversible', 'irreversible')}
+                      </span>
+                    )}
+                    {o.description && <span className="mt-0.5 block truncate text-xs text-ink-500">{o.description}</span>}
+                  </span>
+                  <Bouton taille="petite" type="button" disabled={occupe} data-testid={`mba-outils-mcp-donner-${o.id}`}
+                    onClick={() => { void proposerMcp(o); }}>
+                    <Icone nom="ajouter" />{t('Ajouter', 'Add')}
+                  </Bouton>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
       {mode.vue === 'form' && (
         <FormulaireOutilMba key={mode.outil?.id ?? `nouveau-${mode.type}`} tenantId={tenantId} type={mode.type} outil={mode.outil}
@@ -307,36 +348,6 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
         </ul>
       )}
 
-      {isAdmin && mode.vue === 'liste' && mcpProposables.length > 0 && (
-        <div className="rounded-carte border border-ink-200 bg-ink-50 p-3" data-testid="mba-outils-mcp">
-          <p className="text-sm font-semibold text-ink-900">{t('Depuis vos serveurs MCP', 'From your MCP servers')}</p>
-          <p className="mb-2 text-xs text-ink-500">
-            {t('Importés dans Tools > Connecteurs MCP, pas encore donnés à l’agent de Meta. Leurs paramètres se règlent là-bas : ce qui vient de la fiche du client y est posé par nous, jamais par l’agent.',
-              'Imported in Tools > MCP connectors, not yet given to Meta’s agent. Their parameters are set over there: what comes from the customer record is filled in by us, never by the agent.')}
-          </p>
-          <ul className="flex flex-col gap-1">
-            {mcpProposables.map((o) => (
-              <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-900" data-testid={`mba-outils-mcp-${o.name}`}>
-                <span className="min-w-0 truncate">
-                  {o.title} <code className="text-xs text-ink-500">{o.name}</code>
-                  {o.serveur && <span className="text-xs text-ink-500">{t(` (serveur ${o.serveur})`, ` (server ${o.serveur})`)}</span>}
-                  {o.risque === 'irreversible' && (
-                    <span className="ml-2 rounded-controle bg-alerte-50 px-2 py-0.5 text-xs text-alerte-800"
-                      title={t('L’agent de Meta l’appelle sans validation humaine.', 'Meta’s agent calls it without human approval.')}>
-                      {t('irréversible', 'irreversible')}
-                    </span>
-                  )}
-                </span>
-                <button type="button" data-testid={`mba-outils-mcp-donner-${o.id}`} disabled={occupe}
-                  onClick={() => { void proposerMcp(o); }}
-                  className="inline-flex shrink-0 items-center gap-1 text-xs text-brand-600 hover:underline disabled:opacity-40">
-                  <Icone nom="ajouter" taille="petite" />{t('Donner à l’agent de Meta', 'Give to Meta’s agent')}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </section>
   );
 }

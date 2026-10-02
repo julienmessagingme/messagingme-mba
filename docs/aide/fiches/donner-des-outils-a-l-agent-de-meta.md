@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: c595e0
+source_empreinte: f5a332
 ---
 # Donner des outils à l'agent de Meta
 
@@ -10,7 +10,7 @@ Par défaut, l'agent de Meta parle. Un outil lui donne le droit de **faire** que
 appeler votre système. L'onglet Outils de ses paramètres les liste, et eux seuls. Réservé aux
 administrateurs.
 
-**Cinq types**, derrière le bouton « Ajouter un outil » :
+**Six types**, derrière le bouton « Ajouter un outil » :
 
 - **Poser un tag.** L'étiquette est fixée par vous, l'agent ne décide que du moment. Elle arrive sur la fiche
   du mini-CRM. Attention : ne comptez pas sur vos automations « tag ajouté » pour prendre le relais. L'agent
@@ -27,10 +27,12 @@ administrateurs.
 - **Lancer un scénario.** Un scénario publié, depuis son début, exactement comme le bouton de l'Inbox. Engage
   Me prend la conversation le temps du parcours, puis la rend à l'agent de Meta.
 - **Appeler un connecteur API.** Un appel que vous avez déclaré une fois dans Tools > Connecteurs API.
+- **Appeler un outil MCP.** Un outil d'un serveur que vous avez connecté et enregistré dans Tools > Connecteurs
+  MCP.
 
-**Les outils de vos serveurs MCP** ne passent pas par « Ajouter un outil » : ils viennent d'un serveur déclaré
-dans Tools > Connecteurs MCP. Sous la liste, « Depuis vos serveurs MCP » montre ceux qui y sont proposés aux agents et que l'agent de Meta n'a pas
-encore ; « Donner à l'agent de Meta » l'ajoute et l'envoie chez Meta. L'agent ne remplit que les paramètres
+**Les outils de vos serveurs MCP** viennent d'un serveur connecté dans Tools > Connecteurs MCP, où vous
+enregistrez ceux que vos agents peuvent recevoir. « Appeler un outil MCP » montre ceux que l'agent de Meta n'a
+pas encore ; « Ajouter » le lui donne et l'envoie chez Meta. L'agent ne remplit que les paramètres
 décidés par lui : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe, réglé dans Connecteurs
 MCP, est posé par Engage Me. Leurs mots et leurs paramètres sont partagés avec vos agents IA : ils se règlent
 là-bas (« Régler »), pas ici. Un outil disparu de son serveur passe en rouge et ne part pas chez Meta.
