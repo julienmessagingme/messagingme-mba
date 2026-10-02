@@ -37,10 +37,13 @@ journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont
 - ⏳ **Une compétence « Périmètre »** à poser sur l'agent (Julien) : périmètre = l'activité ET tout ce que ses
   outils permettent, sinon il répond à tout (il a donné du code Azure de mémoire quand l'outil a échoué). Puis
   retirer l'outil Microsoft.
-- ⏳ **La règle unique du catalogue d'outils** (plan `docs/superpowers/plans/2026-10-02-catalogue-regle-unique.md`),
-  lancée le 2026-10-02 au soir. Date butoir : en production et essai réel faits le lundi 5 au soir, sinon retirée
-  jusqu'après la démo. Essai réel (Julien) : `tag_conversation` absent des trois listes « ajouter », et `get_contact`
-  toujours appelé avec succès par l'agent de Meta (journal `agent_tool_calls`).
+- ⏳ **La règle unique du catalogue d'outils** (plan `docs/superpowers/plans/2026-10-02-catalogue-regle-unique.md`) :
+  DÉPLOYÉE dans la nuit du 2 au 3 octobre (`880b624d` serveur, `b8760b6b` console, `d101358e` jaunes de la relecture,
+  journal du 2026-10-02 et 03). Mesuré en production par le vrai code : `tag_conversation` n'est plus offert, et
+  `get_contact` reste actif et appelable pour l'agent de Meta. **Essai réel dû (Julien), avant le lundi 5 au soir** :
+  `tag_conversation` absent des trois listes « ajouter » (page d'un agent IA, assistant, « Appeler un outil MCP »), et
+  `get_contact` toujours appelé avec succès par l'agent de Meta (`agent_tool_calls`). ⚠️ Effet voulu mais à savoir : un
+  appel de connecteur dont le système est en brouillon ne s'active plus, donc ne s'essaie plus au bac à sable.
 
 ## TOUT SUR LA FICHE (LOTS 1 À 3 DÉPLOYÉS ET ESSAYÉS ; LOT 4 EN COURS)
 

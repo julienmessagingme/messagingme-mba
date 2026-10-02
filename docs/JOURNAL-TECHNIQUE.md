@@ -5,6 +5,59 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-02 et 03 : la règle unique du catalogue d'outils (offrable, appelable, publiable)
+
+**D'où ça vient.** Une revue d'architecture du 2026-10-02 au soir a classé neuf frictions ; Julien a retenu la
+première et l'a cadrée en quatre rondes de questions fermées. La règle « peut-on donner cet outil à cet agent, et
+peut-il l'appeler ? » s'écrivait à cinq endroits, en trois versions qui se contredisaient :
+- un outil MCP mort était écarté pour l'agent de Meta, mais proposé à un agent IA et à l'assistant ;
+- un outil d'un serveur éteint était proposé partout.
+
+Sur ces fichiers, 41 commits en deux semaines, dont 46 % de correctifs ; la migration 0199 avait oublié
+l'assistant, rattrapé deux heures plus tard (590ef8e5). Plan : `docs/superpowers/plans/2026-10-02-catalogue-regle-unique.md`.
+Prévu après la démo du 7, lancé le soir même sur décision de Julien, avec une date butoir (en production et essai
+réel faits le lundi 5 au soir, sinon retiré).
+
+**Ce qui est livré.**
+- **Serveur, `880b624d`, déployé dans la nuit.** Les fragments SQL `CAUSE_INAPPELABLE`, `ENREGISTRE` et
+  `DE_LA_BIBLIOTHEQUE` dans `src/agent/catalog.pg.ts`. Ils servent à :
+  - `offrablesPour` ;
+  - la porte `rattacherConsommateur`, qui rend sa raison au lieu d'un booléen ;
+  - l'activation, qui refuse un outil inappelable ;
+  - `listActifs`, qui ne montre plus d'outil mort au modèle ;
+  - la cause `inappelable`, portée sur chaque ligne.
+  Les listes de l'agent de Meta et de l'assistant, et la publication, ne filtrent plus rien. Route
+  `GET …/agents/:agentId/tools/offrables`. Un connecteur de l'agent de Meta sur une source éteinte est refusé
+  avant d'être créé.
+- **Console, `b8760b6b`, poussée après le `up`.** La section MCP d'un agent IA affiche la liste du serveur, et le
+  bandeau d'un outil mort lit la cause du serveur.
+- **Les jaunes de la relecture, `d101358e`.** Relecture : 0 rouge, 9 jaunes. Le lot ajoute :
+  - le type de la source exigé par la règle ;
+  - la ligne rouge d'un connecteur au système éteint sur la page d'un agent IA, devenue muette sinon ;
+  - les tests de la course « désenregistrer pendant un rattachement » et d'un outil de bibliothèque d'un autre
+    espace.
+
+**Mesures.**
+- **Avant le `up`, en lecture seule.** Sur les 6 consentements actifs de la production, aucun ne tombait sous la
+  règle : la mise en ligne n'a rien retiré à aucun agent.
+- **Après le `up`, par le vrai code et en lecture seule.**
+  - `tag_conversation` (non activable) n'est plus offert, ni à l'agent de Meta ni à l'agent IA. Avant, l'agent IA
+    se le voyait proposer.
+  - `get_contact` reste actif et appelable pour l'agent de Meta.
+- **Contre-épreuves.**
+  - La table de cas tombe en CI sur ses six cas inappelables quand on retire la condition « appelable ».
+  - Le test e2e de la liste tombe sur l'écran muté.
+  - Le test de course tombe sans le `for key share`.
+
+**Ce que la nuit a appris.** La CI d'intégration du premier commit est tombée sur un test que le lot ne touchait pas.
+Ce test d'interblocage supposait un ordre PHYSIQUE des lignes (`order by ctid`), or la nouvelle table de cas, jouée
+avant lui, crée puis efface des outils, et l'espace libéré a inversé l'ordre des insertions. La précondition retente
+désormais au lieu de supposer (`brain/LEARNINGS.md`, 2026-10-03).
+
+**Reste : l'essai réel (Julien).** `tag_conversation` absent des trois listes « ajouter » (page d'un agent IA,
+assistant, « Appeler un outil MCP » de l'agent de Meta), et `get_contact` toujours appelé avec succès par l'agent
+de Meta (`agent_tool_calls`).
+
 ## 2026-10-02 : tout sur la fiche, lot 3, « la dernière analyse change », essai réel fait
 
 **Serveur (`6ae0a144`), déployé vers 17 h 28 (heure de Paris), puis console (`c5d438c1`).** Nouveau déclencheur
