@@ -142,7 +142,7 @@ valeurs, répartition des analyses inchangée). Avant elle, **0175** et **0174**
 `echecs_messages` avec ses neuf colonnes, l'index unique sur `message_id`, l'index `(tenant_id, at desc)` et la
 cascade sur l'espace ; les deux vides). Puis **0173** à 21 h 33 UTC (`idempotence_empreinte`, lot 2), relue en
 base (`text` nullable SANS défaut, table vide). Toutes sont passées AVANT le `up` de leur code.
-Le dossier `db/migrations/` s'arrête à 0198. Avant 0173, **0172** le même jour à
+Le dossier `db/migrations/` s'arrête à **0201**, et il porte **199 fichiers** : deux numéros y manquent, 0153 (RÉSERVÉ, jamais écrit) et **0060**. 🔴 **0060 EST APPLIQUÉE EN PRODUCTION ET SON FICHIER A DISPARU DU DÉPÔT** (mesuré le 2026-10-02 : 200 lignes dans `schema_migrations`, 199 fichiers). Conséquence : une base NEUVE applique 199 migrations et n'a JAMAIS 0060, donc ni la CI ni un banc ne prouvent exactement le schéma de production. `0062_email.sql` porte le même sujet et la recouvre probablement, mais ce n'est PAS vérifié : ⚠️ à mesurer AVANT la bascule Scaleway, qui repart d'une base neuve. Avant 0173, **0172** le même jour à
 20 h 01 UTC (`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
 
 🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à
