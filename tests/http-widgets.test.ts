@@ -348,6 +348,19 @@ describe('🔴 la phrase : l’espace des phrases est widgets ET liens de chaîn
     await server.close();
   });
 
+  it('🔴 une phrase qui COMMENCE par un mot d’arrêt est refusée : chaque visiteur serait désabonné', async () => {
+    const { server, cap } = monter();
+    for (const phrase of ['Stop, je veux un devis', 'Arrêt maladie : un devis', 'désabonner']) {
+      const res = await creer(server, { nom: 'Blog', phrase });
+      expect(res.statusCode, phrase).toBe(400);
+      expect(erreur(res)).toContain('mot d’arrêt');
+    }
+    expect(cap.creations).toEqual([]);
+    // Le pendant : le mot ailleurs que DEVANT ne désabonne personne, la phrase passe.
+    expect((await creer(server, { nom: 'Blog', phrase: 'Bonjour, sans arrêt je cherche' })).statusCode).toBe(201);
+    await server.close();
+  });
+
   it('une course entre deux créations (23505 sur `widgets_phrase_key`) sort en 409, pas en 500', async () => {
     const { server } = monter({ creer: async () => { throw new ErreurPg('23505', 'widgets_phrase_key'); } });
     const res = await creer(server, { nom: 'Blog', phrase: 'Je viens du blog' });

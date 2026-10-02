@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import { normalizeText } from '../automation/match';
+import { estDemandeArret } from '../crm/consentement';
 import { estUuid } from '../http/scope';
 import { PgChannelsMeLinkStore } from '../channels-me/link-store.pg';
 import { PgWorkflowStore, etatDuScenario, type EtatScenario } from '../workflow/store.pg';
@@ -131,6 +132,8 @@ const SCENARIO_INCONNU = 'Ce scénario n’existe pas dans cet espace.';
 export const SCENARIO_NON_PUBLIE =
   'Ce scénario n’a aucune version publiée : publiez-le d’abord, sinon ce widget ne démarrerait rien.';
 const PHRASE_VIDE = 'Cette phrase ne contient aucun caractère exploitable : choisissez une phrase lisible.';
+const PHRASE_ARRET =
+  'Ce message commence par un mot d’arrêt (« stop », « arrêt », « désabonner »…) : chaque visiteur qui l’enverrait serait désabonné. Commencez-le autrement.';
 const PHRASE_DEJA_PRISE = 'Un autre widget de cet espace porte déjà cette phrase.';
 const LIMITE_ATTEINTE =
   `Cet espace a déjà ${LIMITE_WIDGETS_PAR_ESPACE} widgets, le maximum : supprimez-en un avant d’en créer un autre.`;
@@ -237,6 +240,11 @@ async function preparer(
   // widget (lot 5) : raccourcir une phrase qui a servi n'est plus refusé à cause de son propre succès.
   const changeDePhrase = courant === null || normalizeText(phrase) !== normalizeText(courant.phrase);
   if (changeDePhrase) {
+    // 🔴 Un message qui COMMENCE par un mot d'arrêt désabonnerait chaque visiteur : le STOP est reconnu par
+    // `processInbound` AVANT l'étape du widget (`estDemandeArret`, ancré en début de message), et le scénario serait
+    // ensuite refusé par la garde du désabonnement. Seulement quand la phrase change : un widget existant reste
+    // éteignable (revue finale du widget, 2026-10-03).
+    if (estDemandeArret(phrase)) return refus(400, PHRASE_ARRET);
     // Éteints compris : un widget éteint se rallume, et sa balise est toujours posée. Le widget modifié est exclu,
     // sinon une phrase qui prolonge la sienne (« … du site » vers « … du site web ») se heurterait à elle-même.
     const voisin = existants.find((w) => w.id !== courant?.id && phrasesEnConflit(phrase, w.phrase));

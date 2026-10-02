@@ -3354,10 +3354,12 @@ fichier et remplit l'adresse toute seule. Le champ d'adresse reste disponible po
 visuels ailleurs. 2 Mo maximum, JPEG / PNG / GIF (le type réel est relu, un fichier renommé est refusé).
 
 **Le bouton « Discuter ».** Il se rattache à un **lien**, qui associe une **phrase** à un **scénario**. La
-phrase est ce que l'abonné enverra en appuyant. Deux règles la gouvernent, et elles se voient à la création :
+phrase est ce que l'abonné enverra en appuyant. Trois règles la gouvernent, et elles se voient à la création :
 une phrase ne peut ni contenir ni être contenue dans celle d'un autre lien ou d'un **widget WhatsApp**, à la
 ponctuation finale près (sinon un seul appui démarrerait deux scénarios), et la console COMPTE combien de messages existants la contiennent déjà, pour éviter une
-phrase trop banale (« Bonjour » déclencherait sur tout).
+phrase trop banale (« Bonjour » déclencherait sur tout). Enfin, une phrase ne peut pas COMMENCER par un mot
+d'arrêt (« stop », « arrêt », « désabonner »…) : la console reconnaît un tel message comme une demande de
+désabonnement, donc chaque abonné qui appuierait serait désabonné.
 
 - ✅ **Un appui REPREND la conduite du fil** (2026-09-08). Si la conversation était tenue par un opérateur ou
   par l'agent de Meta, le scénario du bouton part quand même et la conduite revient à l'app. C'est le même
@@ -3522,7 +3524,7 @@ image en https). Pas de style libre. « Propulsé par Engage Me » s'affiche sou
 la console, il tient à l'offre.
 
 **Le message pré-rempli dit d'où vient la conversation.** Chaque arrivée par un widget porte une étiquette
-`widget-<code>` sur le contact, qui ne change pas quand le widget est renommé. D'où trois règles, vérifiées à
+`widget-<code>` sur le contact, qui ne change pas quand le widget est renommé. D'où quatre règles, vérifiées à
 l'enregistrement :
 - le message d'un widget ne peut ni contenir ni être contenu dans celui d'un autre widget ou d'un **lien de chaîne**
   (sinon un seul message déclencherait les deux). La règle vaut aussi dans l'autre sens : un lien de chaîne ne peut
@@ -3530,7 +3532,9 @@ l'enregistrement :
 - un message qui apparaît déjà dans des conversations reçues est refusé, avec leur nombre : il s'appliquerait à des
   conversations ordinaires. Les arrivées par un widget ne comptent pas, puisqu'elles sont son succès : reprendre le
   message d'un widget supprimé, le raccourcir ou retirer sa ponctuation finale reste possible ;
-- la casse, les accents, les espaces et la ponctuation finale ne distinguent pas deux messages.
+- la casse, les accents, les espaces et la ponctuation finale ne distinguent pas deux messages ;
+- un message ne peut pas COMMENCER par un mot d'arrêt (« stop », « arrêt », « désabonner »…) : la console le
+  reconnaîtrait comme une demande de désabonnement, et chaque visiteur serait désabonné.
 
 **Qui répond, widget par widget.**
 - **Comme les autres conversations** (par défaut) : le réglage de l'espace décide, rien ne change.

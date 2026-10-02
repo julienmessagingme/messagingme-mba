@@ -6,6 +6,7 @@ import { ClesResolues, avertissementBorne, type RateLimiter } from '../auth/rate
 import type { WidgetRow } from '../widgets/store.pg';
 import type { PhoneNumberRecord } from '../account/types';
 import { construireScript, SCRIPT_INERTE, type ConfigScript } from '../widgets/script';
+import { cacheCourt } from '../lib/cache-court';
 
 /**
  * Le script de la bulle WhatsApp : `GET /widget/<code>.js`, la balise que le client colle sur son site (lot 2 de
@@ -48,6 +49,12 @@ const CACHE_PUBLIC = 'public, max-age=60';
  */
 const SANS_CACHE = 'no-store';
 
+/** Combien de temps un script rendu se garde dans ce process, par code : la moitié du cache du navigateur. */
+const DUREE_RENDU_MS = 30_000;
+
+/** Un rendu qui ne doit PAS se garder : une panne passagère, déjà journalisée, servie `no-store`. */
+class RenduPassager extends Error {}
+
 function repondre(reply: FastifyReply, script: string, cache: string): FastifyReply {
   return reply.code(200)
     .header('content-type', 'application/javascript; charset=utf-8')
@@ -64,43 +71,38 @@ export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRou
     'widget : budget des codes jamais vus épuisé (CODES_INCONNUS_PAR_MINUTE), des codes inconnus reçoivent le script inerte',
   );
 
-  // Le chemin vit à côté de `adresseDuScript`, qui fabrique l'adresse que la console et le MCP distribuent.
-  app.get(ROUTE_SCRIPT, async (req, reply) => {
-    const lu = parametres.safeParse(req.params);
-    // Forme vérifiée avant la base : cette adresse reçoit des robots et des scans, aucune requête SQL par essai.
-    if (!lu.success) return repondre(reply, SCRIPT_INERTE, CACHE_PUBLIC);
-    const code = lu.data.code;
+  /**
+   * 🔴 Le script rendu se garde 30 secondes par code, dans ce process (`cacheCourt` : jamais un échec en cache, et
+   * les chargements simultanés se greffent sur la même lecture). Le cache du navigateur et du CDN se contourne par un
+   * paramètre de requête quelconque (`?x=<aléa>`), et un code se lit sur n'importe quel site client : sans celui-ci,
+   * chaque appel coûterait deux lectures et un QR au pool que partage la réception des messages (revue finale du
+   * widget, 2026-10-03). Un réglage changé se voit donc en 30 secondes ici, plus les 60 du navigateur.
+   */
+  const rendus = cacheCourt<string>(DUREE_RENDU_MS);
 
-    // Le frein des codes jamais vus, avant la base : un code inventé bien formé coûte une lecture, et l'énumération
-    // se paie sur un budget commun à clé constante, qu'aucun code inventé ne peut détourner vers un vrai. Épuisé, il
-    // rend le script inerte et non un 429 : la réponse s'exécute dans la page d'un client.
-    if (!connus.connait(code) && !deps.budgetInconnus.take('codes-inconnus')) {
-      avertirBudget();
-      return repondre(reply, SCRIPT_INERTE, SANS_CACHE);
-    }
-
+  async function rendre(code: string): Promise<string> {
     let widget: WidgetRow | null;
     try {
       widget = await deps.widgets.parCode(code);
     } catch (err) {
       journaliser('error', 'widget_lecture_echouee', { err, code });
-      return repondre(reply, SCRIPT_INERTE, SANS_CACHE);
+      throw new RenduPassager();
     }
     if (widget === null) {
       // Un code qui ne se résout plus perd son laissez-passer.
       connus.oublier(code);
-      return repondre(reply, SCRIPT_INERTE, CACHE_PUBLIC);
+      return SCRIPT_INERTE;
     }
     connus.retenir(code);
     // Éteint : le client garde sa balise, la bulle disparaît, et la réponse est la même que pour un code inconnu.
-    if (!widget.actif) return repondre(reply, SCRIPT_INERTE, CACHE_PUBLIC);
+    if (!widget.actif) return SCRIPT_INERTE;
 
     let numero: PhoneNumberRecord | null;
     try {
       numero = await deps.numero(widget.tenantId);
     } catch (err) {
       journaliser('error', 'widget_numero_illisible', { err, code, tenantId: widget.tenantId });
-      return repondre(reply, SCRIPT_INERTE, SANS_CACHE);
+      throw new RenduPassager();
     }
 
     // 🔴 GRISÉE SEULEMENT SANS NUMÉRO OU SUR UN NUMÉRO DÉLIÉ, JAMAIS SUR `health_status` À `BLOCKED` : la règle et
@@ -130,6 +132,31 @@ export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRou
         badge: widget.badge,
       };
     }
-    return repondre(reply, construireScript(config), CACHE_PUBLIC);
+    return construireScript(config);
+  }
+
+  // Le chemin vit à côté de `adresseDuScript`, qui fabrique l'adresse que la console et le MCP distribuent.
+  app.get(ROUTE_SCRIPT, async (req, reply) => {
+    const lu = parametres.safeParse(req.params);
+    // Forme vérifiée avant la base : cette adresse reçoit des robots et des scans, aucune requête SQL par essai.
+    if (!lu.success) return repondre(reply, SCRIPT_INERTE, CACHE_PUBLIC);
+    const code = lu.data.code;
+
+    // Le frein des codes jamais vus, avant la base : un code inventé bien formé coûte une lecture, et l'énumération
+    // se paie sur un budget commun à clé constante, qu'aucun code inventé ne peut détourner vers un vrai. Épuisé, il
+    // rend le script inerte et non un 429 : la réponse s'exécute dans la page d'un client.
+    if (!connus.connait(code) && !deps.budgetInconnus.take('codes-inconnus')) {
+      avertirBudget();
+      return repondre(reply, SCRIPT_INERTE, SANS_CACHE);
+    }
+
+    try {
+      return repondre(reply, await rendus.lire(code, () => rendre(code)), CACHE_PUBLIC);
+    } catch (err) {
+      // Une panne passagère (lecture, numéro) est déjà journalisée et ne se garde pas : `no-store`, et le chargement
+      // suivant relit. Tout autre échec aussi, sans jamais un 5xx (règle 3).
+      if (!(err instanceof RenduPassager)) journaliser('error', 'widget_rendu_echoue', { err, code });
+      return repondre(reply, SCRIPT_INERTE, SANS_CACHE);
+    }
   });
 }

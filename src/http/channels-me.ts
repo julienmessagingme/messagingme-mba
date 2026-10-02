@@ -6,6 +6,7 @@ import { RateLimiter } from '../auth/rate-limit';
 import { urlRecuperable } from '../lib/page-distante';
 import { lienWaMe } from '../lib/wa-me';
 import { normalizeText } from '../automation/match';
+import { estDemandeArret } from '../crm/consentement';
 import { motCleDepuisPhrase, nouveauJeton, textePreRempli } from '../channels-me/jeton';
 import { ChannelsMeApiError } from '../channels-me/client';
 import type { Connexion, ConnexionPublique, Organisation, MessageChannel, Message } from '../channels-me/types';
@@ -264,6 +265,11 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     // seuls passent `trim().min(1)`, `normalizeText` les réduit à rien, et l'automation ne déclencherait jamais.
     if (normalizeText(phrase) === '') {
       return reply.code(400).send({ error: 'cette phrase ne contient aucun caractere exploitable : choisis une phrase lisible' });
+    }
+    // 🔴 Une phrase qui COMMENCE par un mot d'arrêt désabonnerait chaque abonné qui appuie sur le bouton : le STOP est
+    // reconnu à la réception (`estDemandeArret`), avant les automations (revue finale du widget, 2026-10-03).
+    if (estDemandeArret(phrase)) {
+      return reply.code(400).send({ error: 'cette phrase commence par un mot d arret (stop, arret, desabonner) : chaque abonne qui appuierait serait desabonne. Commence-la autrement.' });
     }
     if (await deps.phraseEnConflit(tenant, phrase)) {
       return reply.code(409).send({

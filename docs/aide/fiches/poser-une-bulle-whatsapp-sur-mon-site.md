@@ -1,7 +1,7 @@
 ---
 ecran: widgets
 source_section: Widget WhatsApp (menu Widget WhatsApp)
-source_empreinte: aaaa3a
+source_empreinte: e86da8
 ---
 # Poser une bulle WhatsApp sur mon site
 
@@ -20,7 +20,9 @@ votre page n'est jamais ralentie.
 contenir ni être contenu dans celui d'un autre widget ou d'un lien de chaîne, et un message qui apparaît déjà
 dans vos conversations est refusé, avec leur nombre. Les conversations arrivées par vos widgets n'y comptent pas :
 vous pouvez reprendre le message d'un widget supprimé, ou raccourcir celui d'un widget. La casse, les accents et
-la ponctuation finale ne distinguent pas deux messages.
+la ponctuation finale ne distinguent pas deux messages. Enfin, le message ne peut pas commencer par un mot d'arrêt
+(« stop », « arrêt », « désabonner »…) : il serait lu comme une demande de désabonnement, et chaque visiteur serait
+désabonné.
 
 **Qui répond.** Par défaut, comme les autres conversations. Vous pouvez aussi confier les conversations du
 widget à l'agent de Meta, ou démarrer un scénario, à condition qu'il soit publié : un scénario jamais publié ne

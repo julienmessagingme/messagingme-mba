@@ -1449,8 +1449,15 @@ export class PgContactStore implements ContactStore {
             where a.id = f.automation_id and a.tenant_id = $1 and f.wa_id = any($2::text[])`,
           [tenantId, waIds],
         );
-        // Le pendant d'`automation_fires` pour le scénario d'un widget (migration 0201), qui porte, lui, son espace.
-        await client.query(`delete from widget_tirs where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
+      }
+      // Le pendant d'`automation_fires` pour le scénario d'un widget (migration 0201), qui porte, lui, son espace. 🔴 Par
+      // TOUS les numéros de la personne, ceux de ses fils ET celui de sa fiche : la rétention efface les conversations
+      // et garde la fiche, donc une demande d'effacement tardive ne trouve plus de fil, et le numéro resterait dans
+      // `widget_tirs`, qui n'expire pas (revue finale du widget, 2026-10-03). `workflow_runs` et `automation_fires`,
+      // juste au-dessus, ont le même trou, antérieur au widget.
+      const waIdsDeLaPersonne = [...new Set([...waIds, ...waIdsDuNumero])];
+      if (waIdsDeLaPersonne.length > 0) {
+        await client.query(`delete from widget_tirs where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIdsDeLaPersonne]);
       }
       // Cache RCS : clé (agent_id, phone_e164). Effacé même sans fil, sinon le numéro resterait dans la table de
       // joignabilité.
@@ -1459,7 +1466,7 @@ export class PgContactStore implements ContactStore {
       }
 
       // Mesures par bloc : anonymisées, pas supprimées, pour que les tableaux gardent des compteurs justes.
-      const waIdsAAnonymiser = [...new Set([...waIds, ...waIdsDuNumero])];
+      const waIdsAAnonymiser = waIdsDeLaPersonne;
       if (waIdsAAnonymiser.length > 0) {
         await client.query(
           `update workflow_node_events set wa_id = 'anonyme' where tenant_id = $1 and wa_id = any($2::text[])`,

@@ -392,6 +392,18 @@ describe('Channels Me : les liens de chaine', () => {
     await server.close();
   });
 
+  it('🔴 une phrase qui COMMENCE par un mot d arret est refusee (400) : chaque abonne serait desabonne', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
+      payload: { workflowId: WF_ID, phrase: 'Stop aux frais caches : je veux le guide' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('mot d arret');
+    expect(cap.liens).toEqual([]);
+    await server.close();
+  });
+
   it('🔴 B6 : une phrase deja vue dans des messages ordinaires est refusee, AVEC son compte', async () => {
     // Le controle qui remplace un seuil de longueur invente : le danger n est pas d etre courte, c est
     // d apparaitre dans la conversation ordinaire. Le nombre est DIT, sinon le client ne peut pas savoir ce

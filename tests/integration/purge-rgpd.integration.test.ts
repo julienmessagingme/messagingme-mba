@@ -357,6 +357,26 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     expect(r.rows.map((x) => x.tenant_id)).toEqual([autreTenantId]);
   });
 
+  it('🔴 le tir d’un widget part aussi pour une personne SANS conversation, par le numéro de sa fiche', async () => {
+    // La rétention efface les fils et garde la fiche : une demande d'effacement tardive ne trouve plus de
+    // conversation. Le tir d'un widget porte le numéro et n'expire pas : il doit partir par la fiche.
+    const tel = '+33600000921';
+    const chiffres = '33600000921';
+    const fiche = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, tel],
+    )).rows[0]!.id;
+    const widget = (await pool.query<{ id: string }>(
+      `insert into widgets (tenant_id, code, nom, phrase) values ($1, gen_random_uuid()::text, 'itest', 'itest purge sans fil') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    await pool.query(`insert into widget_tirs (widget_id, tenant_id, wa_id) values ($1, $2, $3)`, [widget, tenantId, chiffres]);
+    // ANCRES : aucun fil pour ce numéro (c'est tout le cas), et le tir existe AVANT la purge.
+    expect((await pool.query('select 1 from conversations where tenant_id = $1 and wa_id = $2', [tenantId, chiffres])).rowCount).toBe(0);
+    expect((await pool.query('select 1 from widget_tirs where tenant_id = $1 and wa_id = $2', [tenantId, chiffres])).rowCount).toBe(1);
+    expect((await store.purgeMany(tenantId, [fiche])).purges).toBe(1);
+    expect((await pool.query('select 1 from widget_tirs where tenant_id = $1 and wa_id = $2', [tenantId, chiffres])).rowCount).toBe(0);
+  });
+
   it('purger deux fois ne compte pas deux fois (anonymized_at fait garde)', async () => {
     expect((await store.purgeMany(tenantId, [contactId])).purges).toBe(0);
   });

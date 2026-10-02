@@ -251,6 +251,17 @@ faux), vérifié dans les deux sens.
   Tech SANDBOX », aucun client n'était donc touché au déploiement. Les libellés de l'écran des clés et `features.md`
   le disent désormais. Option : un droit à part (`mcp:widgets`), pour qu'une clé confiée à un agent face aux clients
   ne puisse pas toucher au site.
+- **Revue finale complète (lots 1 à 5), 2026-10-03 : aucun rouge.** Trois jaunes corrigés tout de suite, chacun avec
+  son test vérifié dans les deux sens : une phrase (widget ou lien de chaîne) qui COMMENCE par un mot d'arrêt est
+  refusée, sinon `estDemandeArret` désabonnait chaque visiteur avant l'étape du widget ; la purge RGPD efface
+  `widget_tirs` par tous les numéros de la personne, fiche comprise, et plus seulement par ceux de ses fils (la
+  rétention efface les fils et garde la fiche) ; la route publique garde le script rendu 30 s par code
+  (`cacheCourt`), parce qu'un paramètre de requête contourne le cache du navigateur et du CDN. Ouverts, de la même
+  revue : une phrase banale (« Bonjour ») passe sur un espace sans historique, une longueur minimale est à décider ;
+  le scénario du widget démarre dans la boucle d'enregistrement des entrants (`processInbound`), un envoi lent
+  retarde les messages suivants du lot ; une lecture des widgets par message texte entrant, sans cache ; le plafond
+  horaire atteint ne laisse qu'une trace serveur ; `list_scenarios` lit les graphes avant de tronquer ;
+  `workflow_runs` et `automation_fires` ont le même trou de purge que `widget_tirs`, antérieur au widget.
 - Autres jaunes de la relecture du lot 5, ouverts : (a) un contact qui porte l'étiquette d'un widget SUPPRIMÉ voit
   TOUS ses messages qui contiennent la phrase examinée écartés du comptage, pas seulement son arrivée : sur un espace
   dont le trafic venait d'un widget supprimé, une phrase banale peut passer ; n'écarter que le premier message par

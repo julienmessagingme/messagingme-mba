@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import { registerWidgetPublic, type WidgetPublicRouteDeps } from '../src/http/widget-public';
@@ -312,6 +312,47 @@ describe('le lien wa.me et le QR', () => {
   });
 });
 
+describe('🔴 le rendu se garde 30 secondes par code : un paramètre de requête ne refait pas lire la base', () => {
+  it('deux chargements aux requêtes différentes : UNE lecture et UN QR ; passé 30 s, une seconde lecture', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-03T10:00:00Z'));
+      const { app, parCode, qr } = await monter();
+      const a = await app.inject({ method: 'GET', url: `/widget/${CODE}.js?x=1` });
+      const b = await app.inject({ method: 'GET', url: `/widget/${CODE}.js?x=2` });
+      expect(b.body).toBe(a.body);
+      expect(b.headers['cache-control']).toBe('public, max-age=60');
+      expect(parCode).toHaveBeenCalledTimes(1);
+      expect(qr).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(new Date('2026-10-03T10:00:31Z'));
+      await app.inject({ method: 'GET', url: `/widget/${CODE}.js?x=3` });
+      expect(parCode).toHaveBeenCalledTimes(2);
+      await app.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('une lecture en panne ne se garde pas : servie no-store, et le chargement suivant relit', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let appels = 0;
+    const { app, parCode } = await monter({
+      parCode: async () => {
+        appels += 1;
+        if (appels === 1) throw new Error('connexion perdue');
+        return widgetComplet();
+      },
+    });
+    const enPanne = await charger(app);
+    expect(enPanne.headers['cache-control']).toBe('no-store');
+    const suivant = await charger(app);
+    expect(suivant.headers['cache-control']).toBe('public, max-age=60');
+    expect(parCode).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+    await app.close();
+  });
+});
+
 describe('🔴 le chemin exact /widget/<code>.js', () => {
   it('est routé, et le paramètre est le code SANS .js', async () => {
     const chemins: string[] = [];
@@ -340,6 +381,10 @@ describe('🔴 le chemin exact /widget/<code>.js', () => {
 });
 
 describe('le frein des codes jamais vus', () => {
+  // L'horloge avance au-delà du cache du rendu (30 s) sans sortir de la fenêtre du budget (60 s).
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-03T10:00:00Z')); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it('un code inconnu au-delà du budget rend l’inerte sans lire la base ; un code déjà résolu passe', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const connu = 'a1b2c3d4e5f6';
@@ -355,7 +400,9 @@ describe('le frein des codes jamais vus', () => {
     expect(refuse.body).toBe(SCRIPT_INERTE);
     expect(refuse.headers['cache-control']).toBe('no-store');
     expect(parCode).toHaveBeenCalledTimes(1);
-    // Le code résolu n'est plus soumis au budget.
+    // Le code résolu n'est plus soumis au budget. Passé le cache du rendu (30 s) et toujours dans la minute du
+    // budget épuisé : il est RELU en base, donc il a bien franchi le frein, au lieu d'être servi par le cache.
+    vi.setSystemTime(Date.now() + 31_000);
     expect(donnees((await charger(app, connu)).body).etat).toBe('servi');
     expect(parCode).toHaveBeenCalledTimes(2);
     await app.close();
@@ -364,9 +411,10 @@ describe('le frein des codes jamais vus', () => {
   it('un widget ÉTEINT garde son laissez-passer : sa balise ne consomme pas le budget des autres', async () => {
     const { app, parCode } = await monter({ budget: new RateLimiter(1, 60_000), widget: widgetComplet({ actif: false }) });
     await charger(app);
+    // Passé le cache du rendu, dans la minute du budget épuisé par le premier chargement : relu en base, donc passé.
+    vi.setSystemTime(Date.now() + 31_000);
     await charger(app);
-    await charger(app);
-    expect(parCode).toHaveBeenCalledTimes(3);
+    expect(parCode).toHaveBeenCalledTimes(2);
     await app.close();
   });
 });
