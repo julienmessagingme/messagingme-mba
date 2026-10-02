@@ -209,6 +209,40 @@ conversation ; un message de masse n'émet rien (le chemin de masse n'émet jama
 
 ---
 
+## Lot 3b : le scénario du widget passe devant l'agent de Meta
+
+**Décidé par Julien le 2026-10-02, pas commencé.** Avec le lot 3 seul, sur tout espace où l'agent de Meta tient le fil,
+le devenir `scenario` ne démarre jamais : le scénario respecte la garde du fil, et le widget ne fait que poser son
+étiquette. Le lot 3b donne au widget le comportement des liens de chaîne et des publicités : il REPREND la main à l'agent
+de Meta. ⚠️ Il n'a AUCUN rapport fonctionnel avec les chaînes : il ajoute seulement un troisième nom à la liste de ceux
+qui ont le droit de passer devant l'agent de Meta.
+
+**Exception, comme la publicité** : un HUMAIN de l'équipe déjà en train de répondre garde la conversation
+(`epargneLOperateur`). C'est le visiteur qui déclenche en cliquant, comme sur une publicité ; le lien de chaîne, lui,
+écrase l'opérateur comme une campagne.
+
+**Fichiers :** `src/automation/match.ts` (une constante `POSSESSEUR_WIDGET`, nommée dans `reprendLaMain` ET dans
+`epargneLOperateur`), `src/widgets/arrivee.ts` (l'automation en mémoire porte ce `possedePar`, et le `standby` ne bloque
+plus le widget, traité comme la publicité le traite), `tests/automation-chaine-reprend-la-main.test.ts` (le widget y est
+nommé), `tests/widget-devenir.test.ts`.
+
+**Aucune migration** : l'automation du widget n'existe qu'en mémoire, jamais en base, donc le CHECK de
+`automations.possede_par` et le filtre `HORS_WEBHOOK` de l'écran Automation ne la concernent pas. ⚠️ `match.ts` appartient
+à la zone de la session Salesforce : feu vert donné le 2026-10-02 (rien de non poussé, aucun chantier prévu sur
+`reprendLaMain`).
+
+**Tests attendus :** l'agent de Meta tient le fil (standby) : le scénario du widget démarre et prend le fil ; un opérateur
+tient le fil : le scénario ne démarre pas ; une automation ORDINAIRE garde exactement son comportement (`reprendLaMain`
+faux), vérifié dans les deux sens.
+
+## Ce qui reste après le lot 3b (état du 2026-10-02 au soir)
+
+- Lots 1, 2 et 3 sur `main`, CI verte ; migrations 0200 et 0201 appliquées en production et relues. Le VPS a l'image
+  construite SANS `up` : l'API ne sert pas encore les lots 2 et 3.
+- Lot 3b, puis lot 4 (l'écran), puis lot 5 (le MCP), puis le déploiement et l'essai réel.
+- À trancher au lot 4 : une limite au nombre de widgets par espace ; supprimer un scénario utilisé par un widget, refus en
+  409 ou widget inerte (la base fait aujourd'hui « inerte » par `set null`).
+
 ## Lot 4 : l'écran de la console
 
 **Fichiers :** `web/app/widgets/`, les routes d'écriture côté API (`src/http/widgets.ts`, classe `tenant`), les
