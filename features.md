@@ -810,7 +810,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   - **un nouveau contact écrit pour la 1re fois** (aucun réglage).
   - **un tag est posé sur un contact** : on saisit le tag qui déclenche.
   - **une conversation vient d'être analysée** : filtre par ressenti du client (négatif par défaut, neutre,
-    positif, ou peu importe) et, en option, « seulement si la demande n'a pas été résolue ».
+    positif, ou peu importe) et, en option, « seulement si la demande n'a pas été résolue ». Depuis le
+    2026-10-02, on peut y ajouter des **filtres sur l'analyse** (« Et si l'analyse dit aussi »), les mêmes que
+    dans la liste des contacts : intention, urgence ou satisfaction au-dessus ou en dessous d'une note, action
+    suggérée, traitée par, résolue.
 - ✅ **Un cinquième déclencheur, « un deal HubSpot atteint une étape »** (2026-08-16) : on choisit l'étape dans
   un menu qui liste celles du portail par leur NOM, groupées par pipeline (deux pipelines ont souvent une
   étape qui porte le même nom) et signalant les étapes de fin. Le scénario part quand un deal ARRIVE sur cette
@@ -829,14 +832,28 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   ne relance pas le scénario avant 30 jours**, même s'il ressort puis repasse en risque élevé. Un contact
   désabonné ou bloqué ne déclenche rien. Le contact n'a pas écrit : le scénario doit commencer par un envoi de
   template. L'écran le dit avant la création.
+- ✅ **Un déclencheur « la dernière analyse d'un contact change »** (2026-10-02, chantier « Tout sur la fiche »,
+  lot 3) : on choisit un champ de l'analyse et ce qu'il doit devenir, par exemple « le sentiment devient
+  négatif », « l'urgence passe à 7 ou plus », « la demande devient non résolue », « l'intention devient
+  réclamation ». Le scénario part quand une analyse fait **PASSER** le contact dans ce cas, pas quand il y était
+  déjà : un contact qui reste mécontent ne relance rien. La **première analyse** d'un contact compte comme un
+  changement. Par défaut, un même contact ne relance pas le scénario **avant 7 jours**. Le client n'écrivant
+  plus quand l'analyse tourne, le scénario doit commencer par un envoi de template. ⚠️ **Un passage manqué ne se
+  rattrape pas** : si le scénario ne part pas au moment du changement (un opérateur ou l'agent de Meta tient la
+  conversation, le délai de relance court encore, une condition du scénario n'est pas remplie), il ne repartira
+  qu'au prochain vrai changement. Le déclencheur n'apparaît que si le serveur sait l'appliquer.
+- ✅ **Le délai de relance d'un même contact se règle à l'écran** (2026-10-02) : « Pour un même contact, ne pas
+  relancer avant » : le délai par défaut du déclencheur (1 heure, 7 jours pour « la dernière analyse change »,
+  30 jours pour « risque élevé »), ou 1 heure, 6 heures, 1 jour, 3 jours, 7 jours. Il n'existait jusque-là que
+  par l'API. Pas pour « avant ou après une date », qui part une fois par date.
 - ✅ **Ce qui ne déclenche RIEN** (annoncé à l'écran, pas seulement en coulisse) : un tag posé **en masse**, par
   **import de fichier** ou par un scénario lancé en **campagne** (poser un tag sur 5 000 contacts enverrait
   sinon 5 000 messages : pour toucher une liste, l'outil reste la campagne) ; une conversation quand
   l'**analyse n'est pas activée** sur le compte (l'automation s'affiche « active » mais ne part jamais, un
   encart le dit à la création) ; un message reçu alors qu'un **opérateur, ou l'agent de Meta, tient la
   conversation** ; un contact pour lequel un **parcours de scénario est déjà en attente**.
-- ✅ **Garde-fous d'envoi** : **anti-rebond d'une heure** par contact et par automation (un client qui répète le
-  mot-clé ne relance pas le scénario), **plafond de 200 déclenchements par heure et par automation** (borne la
+- ✅ **Garde-fous d'envoi** : **anti-rebond d'une heure** par contact et par automation, sauf réglage à l'écran
+  ou défaut propre au déclencheur (un client qui répète le mot-clé ne relance pas le scénario), **plafond de 200 déclenchements par heure et par automation** (borne la
   facture quand un seul geste produit des milliers d'événements). ⚠️ Depuis le 2026-09-07, un parcours en cours
   ne bloque PLUS un nouveau déclenchement : **le nouveau scénario remplace celui en cours**, et le message qui
   l'a déclenché ne fait plus avancer l'ancien.

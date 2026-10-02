@@ -1,7 +1,7 @@
 ---
 ecran: automations
 source_section: Automation (menu « Automation ») | Rappels avant ou après une date (menu Automation) | Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 424049 | 08adbf | 1021ef
+source_empreinte: 4f5b00 | 08adbf | 1021ef
 ---
 # Lancer un scénario tout seul, sans campagne
 
@@ -18,7 +18,12 @@ clair, le scénario visé, et si c'est allumé ou non.
 - **Un nouveau contact écrit pour la première fois** : rien à régler.
 - **Un tag est posé sur un contact** : vous saisissez le tag qui déclenche.
 - **Une conversation vient d'être analysée** : vous filtrez par ressenti du client, et vous pouvez n'agir
-  que sur les demandes restées sans solution.
+  que sur les demandes restées sans solution. Vous pouvez ajouter d'autres filtres sur l'analyse, les mêmes
+  que dans la liste des contacts : intention, urgence ou satisfaction au-dessus ou en dessous d'une note,
+  action suggérée, demande résolue ou non.
+- **La dernière analyse d'un contact change** : vous choisissez un champ et ce qu'il doit devenir, par exemple
+  « le sentiment devient négatif » ou « l'urgence passe à 7 ou plus ». Le scénario part quand une analyse fait
+  passer le contact dans ce cas, pas quand il y était déjà. La première analyse d'un contact compte.
 - **Un deal HubSpot atteint une étape** : vous choisissez l'étape dans la liste de vos pipelines, les étapes
   de fin étant signalées. Ce déclencheur n'apparaît que si un portail HubSpot est relié à votre espace.
 - **Un délai avant ou après une date enregistrée** : de quoi faire un rappel. Vous dites combien de temps
@@ -31,6 +36,10 @@ clair, le scénario visé, et si c'est allumé ou non.
   contact en risque élevé, et le scénario part pour lui, une seule fois : un contact qui reste en risque élevé
   ne relance rien la nuit suivante, et un même contact ne relance pas le scénario avant 30 jours, même s'il
   ressort puis repasse en risque élevé.
+
+Pour chaque automation, vous réglez aussi le délai avant de relancer le scénario pour un même contact : le
+délai par défaut (une heure, sept jours pour « la dernière analyse change », trente jours pour « le risque
+devient élevé »), ou une heure, six heures, un jour, trois jours, sept jours.
 
 Trois de ces déclencheurs demandent une précision, parce qu'ils surprennent :
 
@@ -57,6 +66,11 @@ l'ouverture de votre espace (vos heures d'ouverture dans Paramètres, du lundi a
 18 heures tant que vous n'avez rien réglé). Comme le calcul porte sur toute votre base, il est plafonné à
 200 contacts par jour ; au-delà, le niveau est bien noté sur leur fiche, mais le scénario ne part pas pour
 eux. Un contact désabonné ou bloqué ne déclenche jamais rien.
+
+**Sur « la dernière analyse change »**, un changement manqué ne se rattrape pas. Si le scénario ne part pas
+à ce moment-là (un membre de l'équipe ou l'agent de Meta tient la conversation, ou le délai de relance court
+encore), il ne repartira qu'au prochain vrai changement. Le client n'écrivant plus quand l'analyse tourne,
+le scénario doit commencer par un envoi de modèle.
 
 **Une automation neuve est toujours créée éteinte.** Vous la relisez, puis vous l'allumez d'un clic sur son
 badge. Pour changer son déclencheur ou son scénario, vous la supprimez et vous la recréez : c'est

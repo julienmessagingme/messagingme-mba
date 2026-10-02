@@ -15,12 +15,34 @@ import { BoutonConfirme } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { erreurDeChargement } from '@/lib/http';
 import { Icone } from '@/components/Icone';
+import { EditeurFiltreAnalyse, type FiltreAnalyseValide } from '@/components/EditeurFiltreAnalyse';
+import { champsPourOperateurs, decrireFiltreAnalyse, filtreAnalyseParDefaut } from '@/lib/champs-fiche';
+import { useChampsFiltrables } from '@/lib/use-champs-filtrables';
+import { OPERATEURS_CONVERSATION_ANALYSEE, OPERATEURS_DEVIENT } from '@/lib/api/integrations';
 
 export default function AutomationsPage() {
   return <AppShell active="automations">{(session) => <AutomationsInner session={session} />}</AppShell>;
 }
 
 const inputCls = 'w-full rounded-controle border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+const inputAuto = 'rounded-controle border border-ink-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+
+/** Les délais de relance proposés, en secondes : tous au-dessus du plancher des déclencheurs d'analyse (1 h), et
+ *  sous la borne de la route (7 jours). `null` = le défaut du déclencheur. */
+const DELAIS_RELANCE: ReadonlyArray<{ secondes: number; libelle: [string, string] }> = [
+  { secondes: 3600, libelle: ['1 heure', '1 hour'] },
+  { secondes: 6 * 3600, libelle: ['6 heures', '6 hours'] },
+  { secondes: 24 * 3600, libelle: ['1 jour', '1 day'] },
+  { secondes: 3 * 24 * 3600, libelle: ['3 jours', '3 days'] },
+  { secondes: 7 * 24 * 3600, libelle: ['7 jours', '7 days'] },
+];
+
+/** Le défaut d'un déclencheur sans réglage, comme le serveur l'applique (`antiRebondParDefaut`, `AUTOMATION_COOLDOWN_SECONDS`). */
+function delaiParDefaut(kind: AutomationTriggerKind): [string, string] {
+  if (kind === 'risque_eleve') return ['30 jours', '30 days'];
+  if (kind === 'analyse_devient') return ['7 jours', '7 days'];
+  return ['1 heure', '1 hour'];
+}
 
 function AutomationsInner({ session }: { session: Session }) {
   const t = useT();
@@ -42,6 +64,16 @@ function AutomationsInner({ session }: { session: Session }) {
   const [adId, setAdId] = useState('');
   const [sentiment, setSentiment] = useState<'' | 'positif' | 'neutre' | 'negatif'>('negatif');
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
+  // La dernière analyse (lot 3 de « Tout sur la fiche ») : la liste des champs vient du serveur, restreinte aux
+  // opérateurs que chaque déclencheur accepte.
+  const champsAnalyse = useChampsFiltrables(session.tenantId);
+  const champsDevient = champsPourOperateurs(champsAnalyse, OPERATEURS_DEVIENT);
+  const champsFiltresAnalyse = champsPourOperateurs(champsAnalyse, OPERATEURS_CONVERSATION_ANALYSEE);
+  const [filtreDevient, setFiltreDevient] = useState<FiltreAnalyseValide | null>(null);
+  const devient = filtreDevient ?? (champsDevient[0] ? filtreAnalyseParDefaut(champsDevient[0]) : null);
+  const [filtresAnalyse, setFiltresAnalyse] = useState<FiltreAnalyseValide[]>([]);
+  // Délai avant de relancer pour un même contact ; `null` = le défaut du déclencheur.
+  const [antiRebond, setAntiRebond] = useState<number | null>(null);
   const [workflowId, setWorkflowId] = useState('');
   // Étapes de deal : chargées SEULEMENT quand on choisit ce déclencheur (elles coûtent un aller-retour
   // jusqu'à HubSpot, inutile de le payer sur chaque ouverture de l'écran). `etatEtapes` distingue « aucun
@@ -142,7 +174,14 @@ function AutomationsInner({ session }: { session: Session }) {
     if (triggerKind === 'keyword') return { keywords: keywords.split(',').map((k) => k.trim()).filter((k) => k !== ''), mode };
     if (triggerKind === 'tag_added') return { tag: tag.trim() };
     if (triggerKind === 'ctwa_ad') return adId.trim() !== '' ? { adId: adId.trim() } : {};
-    if (triggerKind === 'conversation_analyzed') return { ...(sentiment !== '' ? { sentiment } : {}), ...(unresolvedOnly ? { unresolvedOnly: true } : {}) };
+    if (triggerKind === 'conversation_analyzed') {
+      return {
+        ...(sentiment !== '' ? { sentiment } : {}),
+        ...(unresolvedOnly ? { unresolvedOnly: true } : {}),
+        ...(filtresAnalyse.length > 0 ? { filtres: filtresAnalyse.map((f) => ({ cle: f.key, op: f.op, valeur: f.value })) } : {}),
+      };
+    }
+    if (triggerKind === 'analyse_devient') return devient ? { cle: devient.key, op: devient.op, valeur: devient.value } : {};
     if (triggerKind === 'avant_date') return { fieldKey: dateField, delai, unite, sens: sensDate };
     if (triggerKind === 'hubspot_deal_stage') {
       const [pipelineId = '', stageId = ''] = dealStageKey.split('::');
@@ -161,11 +200,13 @@ function AutomationsInner({ session }: { session: Session }) {
         triggerConfig: configDuDeclencheur(),
         workflowId,
         enabled: false, // jamais active à la création : on l'allume explicitement après relecture
+        ...(antiRebond !== null && triggerKind !== 'avant_date' ? { cooldownSeconds: antiRebond } : {}),
       });
       // Remise à zéro COMPLÈTE : un filtre resté collé (ressenti, « non résolue », étape) produirait une
       // automation plus restrictive que voulu, sans que rien ne le signale à l'écran.
       setCreating(false); setName(''); setKeywords(''); setTag(''); setWorkflowId(''); setDealStageKey('');
       setMode('contains'); setSentiment('negatif'); setUnresolvedOnly(false); setTriggerKind('keyword'); setAdId('');
+      setFiltreDevient(null); setFiltresAnalyse([]); setAntiRebond(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Création impossible', 'Unable to create'));
@@ -216,11 +257,17 @@ function AutomationsInner({ session }: { session: Session }) {
     if (a.triggerKind === 'tag_added') return `${t('étiquette « ', 'tag "')}${String(a.triggerConfig.tag ?? '')}${t(' » ajoutée', '" added')}`;
     if (a.triggerKind === 'conversation_analyzed') {
       const s = String(a.triggerConfig.sentiment ?? '');
+      const filtres = Array.isArray(a.triggerConfig.filtres) ? (a.triggerConfig.filtres as Array<{ cle: string; op: string; valeur?: string }>) : [];
       const parts = [
         s !== '' ? `${t('ressenti ', 'sentiment ')}${sentimentLabel(s)}` : t('toute conversation analysée', 'any analyzed conversation'),
         a.triggerConfig.unresolvedOnly === true ? t('non résolue', 'unresolved') : '',
+        ...filtres.map((f) => decrireFiltreAnalyse(f, champsAnalyse, t)),
       ].filter((x) => x !== '');
       return parts.join(', ');
+    }
+    if (a.triggerKind === 'analyse_devient') {
+      const c = a.triggerConfig as { cle?: string; op?: string; valeur?: string };
+      return `${t('la dernière analyse devient : ', 'the latest analysis becomes: ')}${decrireFiltreAnalyse({ cle: String(c.cle ?? ''), op: String(c.op ?? ''), valeur: c.valeur }, champsAnalyse, t)}`;
     }
     if (a.triggerKind === 'avant_date') {
       const c = a.triggerConfig as { fieldKey?: string; delai?: number; unite?: string; sens?: string };
@@ -245,7 +292,8 @@ function AutomationsInner({ session }: { session: Session }) {
     && (triggerKind !== 'keyword' || keywords.trim() !== '')
     && (triggerKind !== 'tag_added' || tag.trim() !== '')
     && (triggerKind !== 'hubspot_deal_stage' || dealStageKey !== '')
-    && (triggerKind !== 'avant_date' || (dateField !== '' && Number.isInteger(delai) && delai > 0));
+    && (triggerKind !== 'avant_date' || (dateField !== '' && Number.isInteger(delai) && delai > 0))
+    && (triggerKind !== 'analyse_devient' || devient !== null);
 
   return (
     <div className="space-y-5 p-4">
@@ -302,6 +350,10 @@ function AutomationsInner({ session }: { session: Session }) {
               <option value="avant_date">{t('un délai avant ou après une date enregistrée', 'a delay before or after a stored date')}</option>
               <option value="ctwa_ad">{t('le contact arrive d’une publicité WhatsApp', 'the contact comes from a WhatsApp ad')}</option>
               <option value="risque_eleve">{t('le risque de désengagement d’un contact devient élevé', 'a contact’s disengagement risk becomes high')}</option>
+              {/* Offert seulement si l'API décrit les champs de la fiche : elle seule sait appliquer ce déclencheur. */}
+              {champsDevient.length > 0 && (
+                <option value="analyse_devient">{t('la dernière analyse d’un contact change (ex. le sentiment devient négatif)', 'a contact’s latest analysis changes (e.g. sentiment becomes negative)')}</option>
+              )}
             </select>
           </div>
           {/* « RISQUE ÉLEVÉ » NE SE RÈGLE PAS, il se constate : aucune configuration, seulement ce qu'il faut savoir
@@ -439,6 +491,22 @@ function AutomationsInner({ session }: { session: Session }) {
               </p>
             </div>
           )}
+          {triggerKind === 'analyse_devient' && (
+            <div data-testid="config-analyse-devient" className="space-y-2">
+              <label className="block text-sm font-medium text-ink-900">{t('Quand la dernière analyse d’un contact devient', 'When a contact’s latest analysis becomes')}</label>
+              {devient && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <EditeurFiltreAnalyse champs={champsDevient} filtre={devient} onChange={setFiltreDevient} sel={inputAuto} inp={`${inputAuto} w-20`} />
+                </div>
+              )}
+              <p className="text-xs text-ink-500">
+                {t(
+                  'Le scénario part quand une analyse fait passer le contact dans ce cas, pas s’il y était déjà : un contact qui reste mécontent ne relance rien. La première analyse d’un contact compte. L’analyse tourne quand la conversation est retombée inactive : le scénario doit commencer par un envoi de template.',
+                  'The scenario runs when an analysis moves the contact into this case, not if they were already there: a contact who stays unhappy triggers nothing again. A contact’s first analysis counts. Analysis runs once the conversation has gone idle: the scenario must start with a template send.',
+                )}
+              </p>
+            </div>
+          )}
           {triggerKind === 'tag_added' && (
             <div>
               <label className="mb-1 block text-sm font-medium text-ink-900">{t('Étiquette déclencheuse', 'Triggering tag')}</label>
@@ -468,6 +536,29 @@ function AutomationsInner({ session }: { session: Session }) {
                   {t('seulement si la demande n’a pas été résolue', 'only if the request was not resolved')}
                 </label>
               </div>
+              {/* Les filtres de la liste des contacts, sur tous les champs de l'analyse (lot 3 de « Tout sur la fiche »). */}
+              {champsFiltresAnalyse.length > 0 && (
+                <div className="flex flex-col gap-1.5 sm:col-span-2" data-testid="automation-filtres-analyse">
+                  <span className="text-sm font-medium text-ink-900">{t('Et si l’analyse dit aussi', 'And if the analysis also says')}</span>
+                  {filtresAnalyse.map((f, i) => (
+                    <div key={i} className="flex flex-wrap items-center gap-2" data-testid="automation-filtre-analyse">
+                      <EditeurFiltreAnalyse
+                        champs={champsFiltresAnalyse} filtre={f}
+                        onChange={(nf) => setFiltresAnalyse(filtresAnalyse.map((x, j) => (j === i ? nf : x)))}
+                        sel={inputAuto} inp={`${inputAuto} w-20`}
+                      />
+                      <button type="button" onClick={() => setFiltresAnalyse(filtresAnalyse.filter((_, j) => j !== i))} className="text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
+                    </div>
+                  ))}
+                  {filtresAnalyse.length < 10 && (
+                    <button
+                      type="button" data-testid="automation-ajouter-filtre-analyse"
+                      onClick={() => { const c = champsFiltresAnalyse[0]; if (c) setFiltresAnalyse([...filtresAnalyse, filtreAnalyseParDefaut(c)]); }}
+                      className="inline-flex items-center gap-1 self-start text-sm font-medium text-brand-600 hover:text-brand-700"
+                    ><Icone nom="ajouter" />{t('Filtre sur l’analyse', 'Analysis filter')}</button>
+                  )}
+                </div>
+              )}
               <p className="text-xs text-ink-500 sm:col-span-2">
                 {t(
                   'L’analyse tourne quand la conversation est retombée inactive : ce déclencheur est donc différé, pas immédiat. Le client n’écrivant plus, le scénario doit commencer par un envoi de template.',
@@ -513,6 +604,21 @@ function AutomationsInner({ session }: { session: Session }) {
               </select>
             )}
           </div>
+          {/* Le délai de relance d'un même contact : réglable ici, et plus seulement par l'API (décision 13). Pas pour
+              « avant une date », dont l'unicité tient à l'occurrence de la date, pas à un délai. */}
+          {triggerKind !== 'avant_date' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Pour un même contact, ne pas relancer avant', 'For the same contact, do not run again within')}</label>
+              <select
+                value={antiRebond === null ? '' : String(antiRebond)}
+                onChange={(e) => setAntiRebond(e.target.value === '' ? null : Number(e.target.value))}
+                data-testid="automation-anti-rebond" className={inputCls}
+              >
+                <option value="">{t(`le délai par défaut (${delaiParDefaut(triggerKind)[0]})`, `the default delay (${delaiParDefaut(triggerKind)[1]})`)}</option>
+                {DELAIS_RELANCE.map((d) => <option key={d.secondes} value={d.secondes}>{t(d.libelle[0], d.libelle[1])}</option>)}
+              </select>
+            </div>
+          )}
           <div className="flex items-center gap-2 pt-1">
             <Bouton enCours={busy} onClick={() => { void submit(); }} disabled={!canSubmit || busy} data-testid="automation-submit">
               {busy ? t('Création…', 'Creating…') : t('Créer (désactivée)', 'Create (disabled)')}

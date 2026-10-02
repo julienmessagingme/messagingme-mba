@@ -181,7 +181,19 @@ export function relierNumero(tenantId: string): Promise<{ relie: true; campagnes
  * Automation ne les liste pas et la route refuse d'en créer (migration 0074). L'ajouter ici offrirait dans le
  * menu un type que le serveur rejette en 400.
  */
-export type AutomationTriggerKind = 'keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed' | 'hubspot_deal_stage' | 'avant_date' | 'ctwa_ad' | 'risque_eleve';
+export const TYPES_DECLENCHEUR = [
+  'keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'avant_date', 'ctwa_ad', 'risque_eleve',
+  'analyse_devient',
+] as const;
+export type AutomationTriggerKind = (typeof TYPES_DECLENCHEUR)[number];
+
+/**
+ * Les opérateurs qu'acceptent les deux déclencheurs nés d'une analyse. Miroirs de `OPERATEURS_DEVIENT` et
+ * `OPERATEURS_CONVERSATION_ANALYSEE` (`src/automation/match.ts`), tenus par `tests/web-automations-parite.test.ts` :
+ * proposer un opérateur que la route refuse ferait échouer la création en 400.
+ */
+export const OPERATEURS_DEVIENT = ['in', 'gte', 'lte', 'is_true', 'is_false'] as const;
+export const OPERATEURS_CONVERSATION_ANALYSEE = ['in', 'gte', 'lte', 'is_true', 'is_false', 'empty', 'not_empty'] as const;
 
 export interface Automation {
   id: string;

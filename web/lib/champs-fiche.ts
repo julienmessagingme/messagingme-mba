@@ -114,3 +114,24 @@ export function filtreAnalyseParDefaut(champ: ChampFiltrable, op: OperateurAnaly
 export function estFiltreAnalyse(f: { key: string; op: string }, champs: readonly ChampFiltrable[]): boolean {
   return champs.some((c) => c.cle === f.key) || (OPERATEURS_FICHE_SEULS as readonly string[]).includes(f.op);
 }
+
+/**
+ * Les champs restreints à des opérateurs donnés, ceux qui n'en gardent aucun écartés. Sert les déclencheurs
+ * d'automation, qui n'acceptent pas tous les opérateurs des filtres de contacts (un « devient vide » ne décrit
+ * pas un changement) : la liste vient du serveur, la restriction est celle que sa route applique.
+ */
+export function champsPourOperateurs(champs: readonly ChampFiltrable[], operateurs: readonly OperateurAnalyse[]): ChampFiltrable[] {
+  return champs
+    .map((c) => ({ ...c, operateurs: c.operateurs.filter((o) => operateurs.includes(o)) }))
+    .filter((c) => c.operateurs.length > 0);
+}
+
+/** Un filtre d'analyse en clair (« urgence de la dernière analyse au moins 7 ») ; la clé brute si la liste manque. */
+export function decrireFiltreAnalyse(f: { cle: string; op: string; valeur?: string }, champs: readonly ChampFiltrable[], t: Tr): string {
+  const champ = champs.find((c) => c.cle === f.cle);
+  const nom = champ ? t(champ.libelle[0], champ.libelle[1]) : f.cle;
+  const nature = champ?.nature ?? 'choix';
+  const op = libelleOperateurAnalyse(f.op as OperateurAnalyse, nature, t);
+  const valeur = (f.valeur ?? '').split(',').filter((v) => v !== '').map((v) => libelleValeurAnalyse(f.cle, v, t)).join(t(' ou ', ' or '));
+  return [nom, op, f.op === 'newer_than_days' ? `${valeur} ${t('jours', 'days')}` : valeur].filter((x) => x !== '').join(' ');
+}
