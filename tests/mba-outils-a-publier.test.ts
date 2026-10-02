@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { outilsAPublier, variablesMcp } from '../src/mba/outils-a-publier';
 import { corpsOutilMeta } from '../src/mba/publication';
+import type { Inappelable } from '../src/agent/catalog';
 
 /**
  * Ce que chaque outil exposé à l'agent de Meta devient chez Meta (spec 2026-09-21-outils-maison-mba, § 8).
@@ -9,7 +10,7 @@ import { corpsOutilMeta } from '../src/mba/publication';
  */
 const base = {
   description: 'Appelle cet outil dès que le client le demande.', nePasUtiliser: 'Jamais.', requestId: null,
-  params: [] as unknown, mcpNonActivable: null as string | null, mcpIndisponibleLe: null as Date | null,
+  params: [] as unknown, inappelable: null as Inappelable | null,
 };
 
 describe('ce qui part chez Meta', () => {
@@ -34,13 +35,18 @@ describe('ce qui part chez Meta', () => {
     expect(corpsOutilMeta(o!).request_definition).not.toHaveProperty('body');
   });
 
-  it('🔴 un outil maison illisible, une action d’agent IA, un MCP non activable ou disparu ne partent PAS', async () => {
+  it('🔴 un outil maison illisible, une action d’agent IA, un outil INAPPELABLE ne partent PAS', async () => {
+    // L'inappelabilité vient du catalogue (la règle unique du 2026-10-02) : la publication ne la recalcule pas, et
+    // elle vaut pour un connecteur HTTP éteint comme pour un MCP mort.
+    const lire = async () => ({ variables: [] });
     const r = await outilsAPublier([
       { ...base, id: 'a', name: 'casse', origin: 'mba', binding: { handler: 'tag_fixe' } },
       { ...base, id: 'b', name: 'mba_poser_tag', origin: 'mba', binding: { handler: 'poser_tag' } },
-      { ...base, id: 'c', name: 'mcp_casse', origin: 'mcp', binding: {}, mcpNonActivable: 'schéma imbriqué' },
-      { ...base, id: 'd', name: 'mcp_parti', origin: 'mcp', binding: {}, mcpIndisponibleLe: new Date() },
-    ], async () => null);
+      { ...base, id: 'c', name: 'mcp_casse', origin: 'mcp', binding: {}, inappelable: { cause: 'non_activable', detail: 'schéma imbriqué' } },
+      { ...base, id: 'd', name: 'mcp_parti', origin: 'mcp', binding: {}, inappelable: { cause: 'disparu' } },
+      { ...base, id: 'e', name: 'mcp_eteint', origin: 'mcp', binding: {}, inappelable: { cause: 'source_inactive' } },
+      { ...base, id: 'f', name: 'http_eteint', origin: 'http', requestId: 'rq1', binding: {}, inappelable: { cause: 'source_inactive' } },
+    ], lire);
     expect(r).toEqual([]);
   });
 

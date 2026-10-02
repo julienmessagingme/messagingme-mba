@@ -1,4 +1,4 @@
-import type { OutilDefini } from '../agent/catalog';
+import type { OutilComplet } from '../agent/catalog';
 import type { VariableDeclaree } from '../agent/requetes';
 import { paramsOutil } from '../agent/llm/tool-schema';
 import type { OutilAPublier } from './publication';
@@ -25,15 +25,17 @@ export function variablesMcp(params: unknown): VariableDeclaree[] {
  * que l'aperçu montre. Trois familles partent : un appel de connecteur (les variables de sa requête), un geste maison
  * (les variables que sa cible laisse à l'agent) et, depuis le 2026-10-02, un outil MCP (ses paramètres remplis par le
  * modèle, `variablesMcp`), que notre relais appelle pour Meta. Le reste est filtré ici plutôt que de faire échouer
- * toute la publication : une action d'agent IA, un outil maison illisible, un connecteur sans appel, un MCP non
- * activable ou disparu de son serveur.
+ * toute la publication : une action d'agent IA, un outil maison illisible, un connecteur sans appel, et tout outil
+ * qui n'est pas APPELABLE (`inappelable`, la règle unique du catalogue : MCP non activable ou disparu, serveur MCP ou
+ * connecteur HTTP éteint ou en brouillon).
  */
 export async function outilsAPublier(
-  actifs: readonly Pick<OutilDefini, 'id' | 'name' | 'description' | 'nePasUtiliser' | 'origin' | 'requestId' | 'binding' | 'params' | 'mcpNonActivable' | 'mcpIndisponibleLe'>[],
+  actifs: readonly Pick<OutilComplet, 'id' | 'name' | 'description' | 'nePasUtiliser' | 'origin' | 'requestId' | 'binding' | 'params' | 'inappelable'>[],
   requete: (id: string) => Promise<{ variables: VariableDeclaree[] } | null>,
 ): Promise<OutilAPublier[]> {
   const sortie: OutilAPublier[] = [];
   for (const o of actifs) {
+    if (o.inappelable !== null) continue;
     const commun = { id: o.id, name: o.name, description: o.description, nePasUtiliser: o.nePasUtiliser };
     if (o.origin === 'mba') {
       const cible = lireCibleMaison(o.binding);
@@ -45,9 +47,7 @@ export async function outilsAPublier(
       // l'exige et qu'un refus arrête toute la publication : son nom la remplace. L'administrateur l'écrit vraiment
       // dans Connecteurs MCP.
       const description = o.description.trim() !== '' ? o.description : `Outil ${o.name}.`;
-      if (o.mcpNonActivable === null && o.mcpIndisponibleLe === null) {
-        sortie.push({ ...commun, description, variables: variablesMcp(o.params) });
-      }
+      sortie.push({ ...commun, description, variables: variablesMcp(o.params) });
       continue;
     }
     if (o.origin !== 'http' || !o.requestId) continue;

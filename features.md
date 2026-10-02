@@ -2249,6 +2249,12 @@ importez ce qu'il propose.
   serveurs MCP » : les outils proposés ici y apparaissent à côté des outils maison et des appels de
   connecteur, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
   Connecteurs MCP.
+- ✅ **Un outil qui ne peut pas servir n'est proposé nulle part** (2026-10-02) : ni à un agent IA, ni à
+  l'assistant de construction, ni à l'agent de Meta. C'est le cas d'un outil que son schéma rend inutilisable,
+  d'un outil disparu de son serveur, et de tous les outils d'un serveur éteint ou en brouillon (il en va de même
+  pour un connecteur API éteint). Un outil déjà donné qui tombe dans ce cas reste sur la page de l'agent, avec un
+  bandeau rouge qui dit pourquoi : l'agent ne le voit plus, et on peut le désactiver ou le retirer. Rallumer le
+  serveur le rend à nouveau disponible. Un refus dit toujours sa raison, au lieu d'un « introuvable ».
 - ✅ **L'agent de Meta reçoit aussi ces outils** (2026-10-02, **éprouvé en conversation réelle le soir même** :
   Microsoft Learn, puis le serveur MCP d'Engage Me lui-même, l'agent lisant la fiche du client qui écrit et
   refusant celle d'un autre numéro), dans **Meta Business Agent > Paramètres >
@@ -2328,9 +2334,12 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   serveurs MCP », en bas de la liste, a disparu le même jour : Julien ne l'y cherchait pas. L'agent ne remplit que les paramètres « décidés par
   l'agent » ; ceux qui viennent de la fiche du client, d'un champ ou d'une valeur fixe sont posés par Engage Me.
   La ligne d'un outil MCP dit son serveur et mène à ses réglages (« Régler », pas de « Modifier ») : ses mots et
-  ses paramètres sont partagés avec les agents IA. Un outil disparu de son serveur, ou que son schéma rend
-  inutilisable, passe en rouge et ne part pas chez Meta ; il n'est pas proposé non plus. « Supprimer » le retire
-  à l'agent de Meta sans l'effacer de l'espace.
+  ses paramètres sont partagés avec les agents IA. Un outil disparu de son serveur, que son schéma rend
+  inutilisable, ou dont le serveur est éteint, passe en rouge et ne part pas chez Meta ; il n'est pas proposé non
+  plus. « Supprimer » le retire à l'agent de Meta sans l'effacer de l'espace.
+- ✅ **Un appel de connecteur dont le système est éteint** (Tools > Connecteurs API) ne s'ajoute pas : l'écran
+  demande de rallumer le système d'abord, et rien n'est créé. Un outil déjà donné dont le système s'éteint passe en
+  rouge et ne part plus chez Meta au prochain envoi.
 - ✅ **« Désactivé », et « Réactiver »** : quand la personne qui avait ajouté un outil quitte l'espace, ses
   consentements s'éteignent et l'agent de Meta ne peut plus s'en servir. La ligne le dit, et un administrateur le
   rallume d'un clic. ⚠️ Meta le liste encore jusqu'au prochain envoi : la ligne propose alors « À envoyer », qui

@@ -1,14 +1,13 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
-import type { OutilBibliotheque, OutilComplet, RisqueOutil } from '../agent/catalog';
-import { NomOutilDejaPris, OutilNonActivable } from '../agent/catalog';
+import type { OutilBibliotheque, OutilComplet, Rattachement, RisqueOutil } from '../agent/catalog';
+import { NomOutilDejaPris, OutilNonActivable, messageDuRefus, refusIntrouvable } from '../agent/catalog';
 import type { RequeteConnecteur } from '../agent/requetes';
 import { risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import { espaceVerifie, estUuid } from './scope';
 import { blocSeul, type BlocPropose, type CibleMaison } from '../mba/outils-maison';
-import { mcpInappelable, outilsMcpProposables, vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
-import { consommateurMba } from '../agent/consommateur';
+import { outilsMcpProposables, vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
 import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 
@@ -49,15 +48,17 @@ export interface MbaOutilsDeps {
    * de tous les scénarios ne tiendrait pas à 200 scénarios.
    */
   blocs(tenantId: string, workflowId: string): Promise<BlocPropose[]>;
-  /** La bibliothèque d'outils de l'espace (`listCatalogue`), d'où viennent les outils MCP proposés à l'agent de Meta. */
+  /** La bibliothèque d'outils de l'espace (`listCatalogue`) : l'origine d'un outil qu'on veut donner. */
   bibliotheque(tenantId: string): Promise<OutilBibliotheque[]>;
+  /** Ce que le catalogue permet d'offrir à cet agent de Meta (`offrablesPour`) : la règle unique, rien à refiltrer. */
+  offrables(tenantId: string, phoneNumberId: string): Promise<OutilBibliotheque[]>;
   /** Les serveurs MCP de l'espace, par identifiant, pour nommer celui d'un outil. */
   serveurs(tenantId: string): Promise<ReadonlyMap<string, { label: string }>>;
   /**
    * Rattacher un outil MCP de la bibliothèque à l'agent de Meta PUIS l'activer, au nom de `parUtilisateur` : deux gestes
-   * du catalogue. `false` = l'outil n'est plus là, ou il était déjà à l'agent de Meta.
+   * du catalogue. Un refus de la porte remonte avec sa raison (`Rattachement`).
    */
-  proposerMcp(tenantId: string, phoneNumberId: string, outilId: string, parUtilisateur: string): Promise<boolean>;
+  proposerMcp(tenantId: string, phoneNumberId: string, outilId: string, parUtilisateur: string): Promise<Rattachement>;
 }
 
 const NOM = z.string().trim().regex(/^[a-z0-9_]{1,64}$/, 'nom technique au format [a-z0-9_], 64 caractères au plus');
@@ -167,8 +168,8 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     const tenant = espaceVerifie(req);
     const pn = await deps.repo.getTenantPhoneNumberId(tenant);
     if (!pn) return reply.code(200).send({ outils: [] });
-    const [bibliotheque, serveurs] = await Promise.all([deps.bibliotheque(tenant), deps.serveurs(tenant)]);
-    return reply.code(200).send({ outils: outilsMcpProposables(bibliotheque, consommateurMba(pn), serveurs) });
+    const [offrables, serveurs] = await Promise.all([deps.offrables(tenant, pn), deps.serveurs(tenant)]);
+    return reply.code(200).send({ outils: outilsMcpProposables(offrables, serveurs) });
   });
 
   app.post<{ Params: { outilId: string } }>(`${base}/mcp/:outilId`, opts, async (req, reply) => {
@@ -181,25 +182,20 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     const outil = (await deps.bibliotheque(tenant)).find((o) => o.id === req.params.outilId);
     // La bibliothèque est lue côté serveur : un identifiant d'outil maison ou de connecteur ne passe pas par ici.
     if (!outil || outil.origin !== 'mcp') return reply.code(404).send({ error: 'outil MCP introuvable' });
-    if (outil.consommateurs.some((c) => c.cle === consommateurMba(pn))) {
-      return reply.code(409).send({ error: 'cet outil est déjà dans la liste de l’agent de Meta' });
-    }
-    // Décoché sur Tools > Connecteurs MCP (0199) : le catalogue refuserait le rattachement, on le dit avant.
-    if (!outil.mcpPropose) {
-      return reply.code(409).send({ error: 'cet outil n’est pas proposé aux agents : cochez-le dans Tools > Connecteurs MCP' });
-    }
-    // Vérifié AVANT de rattacher : un rattachement suivi d'un refus d'activer laisserait une ligne éteinte qu'aucun
-    // geste ne peut rallumer.
-    const inappelable = mcpInappelable(outil);
-    if (inappelable !== null) return reply.code(409).send({ error: inappelable });
-    let fait: boolean;
+    /**
+     * 🔴 RIEN N'EST REVÉRIFIÉ ICI (règle unique du 2026-10-02) : la porte du catalogue refuse un outil non enregistré,
+     * mort ou déjà donné, et dit pourquoi. Elle refuse AVANT de rattacher un outil inappelable, donc l'activation qui
+     * suit ne laisse plus de ligne éteinte qu'aucun geste ne rallume.
+     */
+    let r: Rattachement;
     try {
-      fait = await deps.proposerMcp(tenant, pn, outil.id, userId);
+      r = await deps.proposerMcp(tenant, pn, outil.id, userId);
     } catch (err) {
       if (err instanceof OutilNonActivable) return reply.code(409).send({ error: err.raison });
       throw err;
     }
-    return fait ? reply.code(201).send({ id: outil.id }) : reply.code(409).send({ error: 'cet outil est déjà dans la liste de l’agent de Meta' });
+    if (r.ok) return reply.code(201).send({ id: outil.id });
+    return reply.code(refusIntrouvable(r) ? 404 : 409).send({ error: messageDuRefus(r) });
   });
 
   app.post(base, opts, async (req, reply) => {
@@ -235,6 +231,8 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
       if (!cree) return reply.code(422).send({ error: 'création refusée' });
       return reply.code(201).send({ id: cree.id });
     } catch (err) {
+      // Un connecteur dont la source n'est pas active est refusé AVANT d'être créé (`ajouterConnecteurPourMba`).
+      if (err instanceof OutilNonActivable) return reply.code(409).send({ error: err.raison });
       return siNomPris(err, reply);
     }
   });

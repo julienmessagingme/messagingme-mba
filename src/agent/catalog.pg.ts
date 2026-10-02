@@ -1,10 +1,10 @@
 import type { Pool, PoolClient } from 'pg';
 import type {
-  JournalAppels, NatureOutil, OutilBibliotheque, OutilComplet, OutilDefini, PatchOutil, RisqueOutil,
-  ToolCatalog,
+  Inappelable, JournalAppels, NatureOutil, OutilBibliotheque, OutilComplet, OutilDefini, PatchOutil, Rattachement,
+  RisqueOutil, ToolCatalog,
   SourceAppel,
 } from './catalog';
-import { OutilNonActivable, NomOutilDejaPris } from './catalog';
+import { OutilNonActivable, NomOutilDejaPris, messageInappelable } from './catalog';
 import { lireGestes } from './gestes';
 import { asRecord } from '../webhooks/json';
 import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
@@ -53,6 +53,46 @@ const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_u
                   t.mcp_annonce, t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_vu_le,
                   t.gestes,
                   c.autonome`;
+
+/**
+ * 🔴 LA RÈGLE « APPELABLE », ÉCRITE UNE FOIS (2026-10-02). Rend la cause pour laquelle le résolveur refuserait
+ * l'outil `t`, ou `null`. Elle est lue par la porte de rattachement, par l'activation, par ce que voit le modèle,
+ * par la publication chez Meta et par les listes « ajouter un outil » : la recopier chez un appelant referait les
+ * trois versions contradictoires qu'elle remplace.
+ *
+ * Même ordre que les résolveurs (`src/agent/resolvers/`) : les marques de l'outil d'abord, sa source ensuite. La
+ * source d'un connecteur HTTP est celle de sa REQUÊTE (le résolveur HTTP lit `requete.sourceId`), celle de l'outil
+ * sinon. Un outil maison n'a pas de source, il est toujours appelable.
+ *
+ * ⚠️ Pas d'accent grave dans ce fragment : il vit dans un gabarit de chaîne.
+ */
+const CAUSE_INAPPELABLE = `case
+    when t.mcp_non_activable is not null then 'non_activable'
+    when t.mcp_indisponible_le is not null then 'disparu'
+    when t.origin = 'mba' then null
+    when not exists (
+      select 1 from agent_tool_sources s
+       where s.tenant_id = t.tenant_id and s.status = 'active'
+         and s.id = coalesce((select r.source_id from connector_requests r
+                               where r.tenant_id = t.tenant_id and r.id = t.request_id), t.source_id)
+    ) then 'source_inactive'
+  end`;
+
+/** Un outil MCP décoché sur Tools > Connecteurs MCP (0199) ne s'offre à aucun agent. Les autres origines le sont. */
+const ENREGISTRE = `(t.origin <> 'mcp' or t.mcp_propose)`;
+
+/**
+ * La bibliothèque de l'espace : ce qu'un agent peut brancher. Ni les actions d'un agent, qui lui appartiennent
+ * (0157), ni les outils de l'agent de Meta (0162).
+ */
+const DE_LA_BIBLIOTHEQUE = `t.agent_id is null and not t.pour_agent_meta`;
+
+/** La cause lue en base, en `Inappelable`. Une valeur inconnue se lit `null` : seul le fragment écrit ces trois. */
+function lireInappelable(cause: string | null, mcpNonActivable: string | null): Inappelable | null {
+  if (cause === 'non_activable') return { cause, detail: mcpNonActivable ?? '' };
+  if (cause === 'disparu' || cause === 'source_inactive') return { cause };
+  return null;
+}
 
 function versOutil(r: Ligne): OutilDefini {
   return {
@@ -147,10 +187,25 @@ export class PgToolCatalog implements ToolCatalog {
     return r ? versOutil(r) : null;
   }
 
+  /**
+   * Ce que voit le modèle d'un agent IA : actif ET appelable. Un outil mort n'est plus montré, donc plus tenté ;
+   * `byName` reste non filtré, et le résolveur refuse en le disant si un nom arrive quand même.
+   */
   async listActifs(tenantId: string, agentId: string): Promise<OutilDefini[]> {
-    return this.listActifsConsommateur(tenantId, consommateurAgent(agentId));
+    const res = await this.pool.query<Ligne>(
+      `select ${COLONNES} ${JOINTURE}
+        where t.tenant_id = $1 and c.consommateur = $2 and c.actif and (${CAUSE_INAPPELABLE}) is null
+        order by t.name`,
+      [tenantId, consommateurAgent(agentId)],
+    );
+    return res.rows.map(versOutil);
   }
 
+  /**
+   * Les outils actifs d'un consommateur, appelables ou non. ⚠️ NON FILTRÉ, délibérément : le relais de l'agent de
+   * Meta y cherche l'outil que Meta appelle, et un outil publié avant de mourir y est refusé par les gardes du relais
+   * et du résolveur, comme avant la règle unique (décision du 2026-10-02 : le relais garde son refus).
+   */
   async listActifsConsommateur(tenantId: string, consommateur: string): Promise<OutilDefini[]> {
     const res = await this.pool.query<Ligne>(
       `select ${COLONNES} ${JOINTURE}
@@ -283,6 +338,21 @@ export class PgToolCatalog implements ToolCatalog {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil;
   }): Promise<OutilComplet | null> {
+    /**
+     * 🔴 REFUSÉ AVANT DE CRÉER sur une source qui n'est pas active (Julien, 2026-10-02). Pour l'agent de Meta, créer
+     * puis activer est un seul geste (`creerConnecteur`) : l'activation refusée après coup laisserait un outil créé à
+     * moitié. La source lue est celle de la requête, comme `CAUSE_INAPPELABLE` et le résolveur HTTP. Un agent IA, lui,
+     * peut créer sur un connecteur en brouillon : il active plus tard, une fois le connecteur allumé.
+     */
+    const active = await this.pool.query(
+      `select 1 from agent_tool_sources s
+        where s.tenant_id = $1 and s.status = 'active'
+          and s.id = coalesce((select r.source_id from connector_requests r where r.tenant_id = $1 and r.id = $3), $2)`,
+      [tenantId, outil.sourceId, outil.requestId],
+    );
+    if ((active.rowCount ?? 0) === 0) {
+      throw new OutilNonActivable(messageInappelable({ cause: 'source_inactive' }, 'http'));
+    }
     return this.creerOutilConnecteur(tenantId, consommateurMba(phoneNumberId), {
       ...outil, nature: 'integre', outputPaths: [],
     });
@@ -434,15 +504,15 @@ export class PgToolCatalog implements ToolCatalog {
      * Meta). Seulement à l'activation : désactiver un outil devenu non activable reste le seul geste du client.
      */
     if (actif) {
-      const etat = await this.pool.query<{ mcp_non_activable: string | null; mcp_indisponible_le: Date | null }>(
-        'select mcp_non_activable, mcp_indisponible_le from agent_tools where tenant_id = $1 and id = $2',
+      // La règle unique (`CAUSE_INAPPELABLE`) : un outil mort ou dont la source est éteinte ne s'active pas.
+      const etat = await this.pool.query<{ cause: string | null; mcp_non_activable: string | null; origin: OutilDefini['origin'] }>(
+        `select (${CAUSE_INAPPELABLE}) as cause, t.mcp_non_activable, t.origin
+           from agent_tools t where t.tenant_id = $1 and t.id = $2`,
         [tenantId, outilId],
       );
       const l = etat.rows[0];
-      if (l?.mcp_non_activable) throw new OutilNonActivable(l.mcp_non_activable);
-      if (l?.mcp_indisponible_le) {
-        throw new OutilNonActivable('cet outil a disparu du serveur MCP : il n’est plus appelable');
-      }
+      const inappelable = l ? lireInappelable(l.cause, l.mcp_non_activable) : null;
+      if (l && inappelable) throw new OutilNonActivable(messageInappelable(inappelable, l.origin));
     }
     const res = await this.pool.query(
       `update agent_tool_consommateurs set
@@ -477,35 +547,54 @@ export class PgToolCatalog implements ToolCatalog {
 
   /**
    * Rend cet outil de l'espace disponible pour cet agent, inactif : rattacher et activer sont deux gestes,
-   * sinon ajouter un outil l'exposerait au modèle sans que personne ait relu ses mots. `false` = outil absent
-   * de cet espace, déjà rattaché, réservé à l'agent de Meta, ou effacé à l'instant.
+   * sinon ajouter un outil l'exposerait au modèle sans que personne ait relu ses mots. Un refus dit sa raison.
    */
-  async rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
+  async rattacher(tenantId: string, agentId: string, outilId: string): Promise<Rattachement> {
     return this.rattacherConsommateur(tenantId, consommateurAgent(agentId), outilId);
   }
 
-  /** Même geste, pour un consommateur qui n'est pas un agent (le MBA). Le `where exists` vérifie que l'outil
-   *  est de ce tenant (404 plutôt que 500) ; `do nothing` rend un rattachement répété inoffensif. */
-  async rattacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean> {
-    // Un outil de l'agent de Meta ne s'ouvre jamais à un agent IA : son handler n'existe pas chez eux.
-    // `for key share` : si un dernier détachement tient la définition, on l'attend, puis on rend `false` au lieu
-    // d'un 500 sur la clé étrangère. L'agent d'abord (`verrouillerAgentDuConsommateur`) : jamais de
-    // consentement fantôme.
-    return enTransaction(this.pool, async (client) => {
-      if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) return false;
+  /**
+   * 🔴 LA PORTE DE RATTACHEMENT, pour un agent IA comme pour l'agent de Meta. Elle applique la même règle que les
+   * listes « ajouter un outil » (`offrablesPour`) : un outil MCP non enregistré, ou un outil qui n'est pas
+   * appelable, ne se rattache pas, et le refus dit pourquoi.
+   *
+   * Ordre des verrous : l'agent d'abord (`verrouillerAgentDuConsommateur`, jamais de consentement fantôme), puis la
+   * définition en `for key share`. Ce verrou attend un « proposer » (`PgMcpStore.proposer`, `for update`) ou un
+   * dernier détachement concurrents, et les conditions sont relues sur la ligne APRÈS lui : un désenregistrement
+   * qui passe entre deux ne laisse pas rattacher un outil retiré, un outil effacé rend `introuvable` et non un 500.
+   *
+   * ⚠️ Une action d'un agent IA reste rattachable ailleurs par un appel direct : décision du 2026-10-02, aucune liste
+   * ne la propose. La porte ne tient que ce que les listes promettent.
+   */
+  async rattacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<Rattachement> {
+    return enTransaction(this.pool, async (client): Promise<Rattachement> => {
+      if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) {
+        return { ok: false, refus: 'agent_introuvable' };
+      }
+      const lu = await client.query<{
+        pour_agent_meta: boolean; enregistre: boolean; cause: string | null; mcp_non_activable: string | null;
+        origin: OutilDefini['origin'];
+      }>(
+        `select t.pour_agent_meta, ${ENREGISTRE} as enregistre, (${CAUSE_INAPPELABLE}) as cause,
+                t.mcp_non_activable, t.origin
+           from agent_tools t
+          where t.id = $2 and t.tenant_id = $1
+          for key share of t`,
+        [tenantId, outilId],
+      );
+      const t = lu.rows[0];
+      if (!t) return { ok: false, refus: 'introuvable' };
+      // Un outil de l'agent de Meta ne s'ouvre jamais à un agent IA : son handler n'existe pas chez eux.
+      if (t.pour_agent_meta && !consommateur.startsWith('mba:')) return { ok: false, refus: 'reserve_agent_meta' };
+      if (!t.enregistre) return { ok: false, refus: 'non_enregistre' };
+      const inappelable = lireInappelable(t.cause, t.mcp_non_activable);
+      if (inappelable) return { ok: false, refus: 'inappelable', inappelable, origine: t.origin };
       const res = await client.query(
-        `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
-         select $1, $2, $3
-          where exists (select 1 from agent_tools
-                         where id = $2 and tenant_id = $1 and (not pour_agent_meta or $3::text like 'mba:%')
-                           -- Un outil MCP décoché sur Tools > Connecteurs MCP ne s'offre à aucun agent (0199). Le
-                           -- verrou attend un « proposer » concurrent, et la condition est relue après lui.
-                           and (origin <> 'mcp' or mcp_propose)
-                           for key share)
+        `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)
          on conflict (tool_id, consommateur) do nothing`,
         [tenantId, outilId, consommateur],
       );
-      return (res.rowCount ?? 0) > 0;
+      return (res.rowCount ?? 0) > 0 ? { ok: true } : { ok: false, refus: 'deja_rattache' };
     });
   }
 
@@ -543,14 +632,29 @@ export class PgToolCatalog implements ToolCatalog {
    * branché doit apparaître, c'est celui qu'on vient chercher.
    */
   async listCatalogue(tenantId: string): Promise<OutilBibliotheque[]> {
+    return this.lireBibliotheque(tenantId, null);
+  }
+
+  /**
+   * 🔴 CE QU'ON PEUT OFFRIR À CE CONSOMMATEUR, MAINTENANT : un outil de la bibliothèque, enregistré s'il est MCP,
+   * appelable, et pas déjà à lui. C'est la liste « ajouter un outil » de l'agent de Meta, de la page d'un agent IA et
+   * de l'assistant de construction ; aucun d'eux ne filtre plus rien lui-même. La porte (`rattacherConsommateur`)
+   * applique les mêmes fragments : ce qu'une liste offre se rattache.
+   */
+  async offrablesPour(tenantId: string, consommateur: string): Promise<OutilBibliotheque[]> {
+    return this.lireBibliotheque(tenantId, consommateur);
+  }
+
+  /** La bibliothèque, entière (`consommateur` à `null`) ou réduite à ce qu'on peut offrir à ce consommateur. */
+  private async lireBibliotheque(tenantId: string, consommateur: string | null): Promise<OutilBibliotheque[]> {
     const res = await this.pool.query<{
       id: string; name: string; title: string; description: string; ne_pas_utiliser: string;
       origin: OutilDefini['origin']; risk: OutilDefini['risk']; source_id: string | null;
-      mcp_non_activable: string | null; mcp_indisponible_le: Date | null; mcp_propose: boolean;
+      mcp_non_activable: string | null; mcp_indisponible_le: Date | null; mcp_propose: boolean; cause: string | null;
       consommateurs: Array<{ cle: string; actif: boolean; agent_label: string | null }> | null;
     }>(
       `select t.id, t.name, t.title, t.description, t.ne_pas_utiliser, t.origin, t.risk, t.source_id,
-              t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_propose,
+              t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_propose, (${CAUSE_INAPPELABLE}) as cause,
               coalesce(
                 (select jsonb_agg(jsonb_build_object('cle', c.consommateur, 'actif', c.actif,
                                                      'agent_label', a.label) order by c.consommateur)
@@ -564,11 +668,16 @@ export class PgToolCatalog implements ToolCatalog {
           -- l oublier introduirait le defaut que ce lot vient corriger : l ecran d un agent proposerait
           -- de BRANCHER le terminer d un AUTRE agent, c est-a-dire de partager une definition qui ne se
           -- partage plus. Tools > ne garde que ce qui pointe vers l exterieur (Julien, 2026-09-18).
-          and t.agent_id is null
-          -- NI LES OUTILS DE L AGENT DE META (0162) : cette liste est celle que les agents IA peuvent brancher.
-          and not t.pour_agent_meta
+          -- NI LES OUTILS DE L AGENT DE META (0162) : cette liste est celle que les agents peuvent brancher.
+          and ${DE_LA_BIBLIOTHEQUE}
+          -- Ce qu on peut OFFRIR (2026-10-02) : la regle de la porte, ecrite par les memes fragments.
+          and ($2::text is null or (
+                ${ENREGISTRE}
+                and (${CAUSE_INAPPELABLE}) is null
+                and not exists (select 1 from agent_tool_consommateurs c
+                                 where c.tenant_id = t.tenant_id and c.tool_id = t.id and c.consommateur = $2)))
         order by t.name`,
-      [tenantId],
+      [tenantId, consommateur],
     );
     return res.rows.map((r) => ({
       id: r.id, name: r.name, title: r.title, description: r.description, nePasUtiliser: r.ne_pas_utiliser,
@@ -576,6 +685,7 @@ export class PgToolCatalog implements ToolCatalog {
       mcpNonActivable: r.mcp_non_activable,
       mcpIndisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,
       mcpPropose: r.origin !== 'mcp' || r.mcp_propose,
+      inappelable: lireInappelable(r.cause, r.mcp_non_activable),
       consommateurs: (r.consommateurs ?? []).map((c) => ({
         cle: c.cle,
         actif: c.actif,
@@ -622,14 +732,16 @@ function surNomDejaPris(err: unknown): never {
   throw err;
 }
 
-// `ne_pas_utiliser` est dans `COLONNES`, que le runtime lit aussi.
-const COLONNES_ADMIN = `${COLONNES}, t.title, c.actif, c.active_le, c.autonome_le`;
+// `ne_pas_utiliser` est dans `COLONNES`, que le runtime lit aussi. La cause d'inappelabilité est celle de la règle
+// unique : l'écran d'un agent et la publication chez Meta la lisent ici, jamais recalculée.
+const COLONNES_ADMIN = `${COLONNES}, t.title, c.actif, c.active_le, c.autonome_le, (${CAUSE_INAPPELABLE}) as cause_inappelable`;
 
 interface LigneAdmin extends Ligne {
   title: string;
   actif: boolean;
   active_le: Date | null;
   autonome_le: Date | null;
+  cause_inappelable: string | null;
 }
 
 function versComplet(r: LigneAdmin): OutilComplet {
@@ -639,6 +751,7 @@ function versComplet(r: LigneAdmin): OutilComplet {
     actif: r.actif,
     activeLe: r.active_le ? r.active_le.toISOString() : null,
     autonomeLe: r.autonome_le ? r.autonome_le.toISOString() : null,
+    inappelable: lireInappelable(r.cause_inappelable, r.mcp_non_activable),
   };
 }
 

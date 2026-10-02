@@ -1,7 +1,8 @@
 # Une seule règle pour « quel outil pour quel agent » : le catalogue répond lui-même
 
 Candidat 1 de la revue d'architecture du 2026-10-02, cadré par Julien le soir même en quatre rondes de questions
-fermées. **À lancer après la démo du mercredi 7 octobre** : la zone touchée est celle qu'on y montre.
+fermées. **Lancé le soir même, sur décision de Julien**, avec une date butoir : en production et essai réel faits le
+lundi 5 octobre au soir, sinon retiré jusqu'après la démo du mercredi 7 (la zone touchée est celle qu'on y montre).
 
 **Ce qui fait mal.** La règle « peut-on donner cet outil à cet agent, et peut-il l'appeler ? » est écrite à cinq
 endroits, en trois versions qui se contredisent :
@@ -30,7 +31,8 @@ pour l'agent de Meta mais proposé à un agent IA, qui le rattache puis voit un 
   offrir à ce consommateur » utilisent les mêmes fragments. Les appelants ne filtrent plus rien.
 - **La porte refuse aussi un outil inappelable, et dit pourquoi**, au lieu de rendre `false`.
 - **Un outil activé qui meurt n'est plus montré au modèle d'un agent IA.** Il sort de la publication chez Meta à la
-  prochaine publication. Si Meta l'appelle entre-temps, le relais garde son refus, inscrit au journal des appels.
+  prochaine publication. Si Meta l'appelle entre-temps, le relais le refuse comme aujourd'hui, avec ses propres
+  gardes (`listActifsConsommateur` reste non filtré pour lui).
 - **La page d'un agent IA reçoit sa liste du serveur**, le navigateur ne calcule plus rien.
 - **Décision à ne pas reproposer** : une action qui appartient à un agent IA reste rattachable ailleurs par un
   appel d'API direct. Aucune liste ne la propose ; seul un administrateur du même espace pourrait le faire.

@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: f5a332
+source_empreinte: 5c7eda
 ---
 # Donner des outils à l'agent de Meta
 
@@ -26,7 +26,8 @@ administrateurs.
   l'écran le dit : un message parti ne se rappelle pas.
 - **Lancer un scénario.** Un scénario publié, depuis son début, exactement comme le bouton de l'Inbox. Engage
   Me prend la conversation le temps du parcours, puis la rend à l'agent de Meta.
-- **Appeler un connecteur API.** Un appel que vous avez déclaré une fois dans Tools > Connecteurs API.
+- **Appeler un connecteur API.** Un appel que vous avez déclaré une fois dans Tools > Connecteurs API. Son
+  système doit être allumé : sinon l'écran vous demande de le rallumer d'abord, et rien n'est créé.
 - **Appeler un outil MCP.** Un outil d'un serveur que vous avez connecté et enregistré dans Tools > Connecteurs
   MCP.
 
@@ -35,7 +36,8 @@ enregistrez ceux que vos agents peuvent recevoir. « Appeler un outil MCP » mon
 pas encore ; « Ajouter » le lui donne et l'envoie chez Meta. L'agent ne remplit que les paramètres
 décidés par lui : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe, réglé dans Connecteurs
 MCP, est posé par Engage Me. Leurs mots et leurs paramètres sont partagés avec vos agents IA : ils se règlent
-là-bas (« Régler »), pas ici. Un outil disparu de son serveur passe en rouge et ne part pas chez Meta.
+là-bas (« Régler »), pas ici. Un outil disparu de son serveur, inutilisable, ou dont le serveur est éteint, passe en
+rouge et ne part pas chez Meta ; il ne vous est pas proposé non plus.
 
 Un type reste grisé, avec le lien qui y mène, tant que votre espace n'a rien à y mettre : aucun champ
 déclaré, aucun appel déclaré. Une lecture qui échoue ne passe pas pour « aucun » : elle le dit, avec
@@ -59,7 +61,8 @@ est proposée par type, et l'outil ne s'enregistre pas tant que le trou à compl
 **Ce que l'écran vous signale, et pourquoi :**
 
 - **Une ligne rouge** quand la cible n'existe plus, par exemple un champ que vous avez supprimé du mini-CRM.
-  Un tel outil refuse à chaque appel, rien n'est écrit sur la fiche, et l'agent lit pourquoi.
+  Un tel outil refuse à chaque appel, rien n'est écrit sur la fiche, et l'agent lit pourquoi. Même ligne rouge
+  pour un appel dont le système a été éteint : il ne part plus chez Meta au prochain envoi.
 - **Un appel irréversible le dit**, sur la ligne et au moment de le choisir, en rappelant que l'agent
   l'exécute sans validation humaine.
 - **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par… ») : le modifier le modifie pour

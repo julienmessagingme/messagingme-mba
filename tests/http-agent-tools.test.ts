@@ -4,7 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentToolsRouteDeps } from '../src/http/agent-tools';
-import type { OutilComplet, PatchOutil } from '../src/agent/catalog';
+import type { OutilBibliotheque, OutilComplet, PatchOutil } from '../src/agent/catalog';
 import { NomOutilDejaPris } from '../src/agent/catalog';
 import type { SortieAgent } from '../src/agent/agent-store';
 import type { RequeteConnecteur } from '../src/agent/requetes';
@@ -43,7 +43,14 @@ const OUTIL: OutilComplet = { ...SANS_MCP, ...AUCUN_GESTE(),
   title: 'Terminer', description: 'Termine la conversation.', nePasUtiliser: 'Pas pour escalader.',
   params: [{ name: 'sortie', type: 'string', source: 'modele', required: true }],
   binding: { handler: 'terminer' }, sourceId: null, requestId: null, nature: 'integre' as const, outputPaths: [], risk: 'read',
-  timeoutMs: 8000, maxBytes: 16384, autonome: false, actif: false, activeLe: null, autonomeLe: null,
+  timeoutMs: 8000, maxBytes: 16384, autonome: false, actif: false, activeLe: null, autonomeLe: null, inappelable: null,
+};
+
+/** Un outil de la bibliothèque que le catalogue offre à l'agent `AG` (la règle elle-même est prouvée en intégration). */
+const OFFRABLE: OutilBibliotheque = {
+  id: AUTRE, name: 'notion_search', title: 'Chercher dans Notion', description: 'd', nePasUtiliser: '', origin: 'mcp',
+  risk: 'read', sourceId: SRC, mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null,
+  consommateurs: [],
 };
 
 const SORTIES: SortieAgent[] = [{ code: 'besoin_cerne', label: 'Besoin cerné' }];
@@ -73,6 +80,7 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
     autonomies: [] as Array<{ tenant: string; id: string; autonome: boolean; par: string }>,
     retraits: [] as Array<{ tenant: string; id: string }>,
     rattachements: [] as Array<{ tenant: string; id: string }>,
+    offrables: [] as Array<{ tenant: string; consommateur: string }>,
     connecteurs: [] as Array<{ tenant: string; agentId: string; outil: Record<string, unknown> }>,
   };
   const deps: AgentToolsRouteDeps = {
@@ -101,7 +109,14 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
       // 🔴 DÉTACHE, ne supprime plus : depuis la migration 0127 la définition appartient à l'ESPACE, et la
       // supprimer depuis l'écran d'un seul agent rendrait muets ceux qu'on ne regardait pas.
       detacher: async (tenant, _a, id) => { cap.retraits.push({ tenant, id }); return id === OUT; },
-      rattacher: async (tenant, _a, id) => { cap.rattachements.push({ tenant, id }); return id === OUT; },
+      // Une raison par identifiant : la porte du catalogue dit POURQUOI elle refuse (règle unique du 2026-10-02).
+      rattacher: async (tenant, _a, id) => {
+        cap.rattachements.push({ tenant, id });
+        if (id === OUT) return { ok: true };
+        if (id === AUTRE) return { ok: false, refus: 'inappelable', inappelable: { cause: 'source_inactive' }, origine: 'mcp' };
+        return { ok: false, refus: 'introuvable' };
+      },
+      offrablesPour: async (tenant, consommateur) => { cap.offrables.push({ tenant, consommateur }); return [OFFRABLE]; },
       ajouterConnecteur: async (tenant, agentId, outil) => {
         cap.connecteurs.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
         if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
@@ -430,5 +445,38 @@ describe('outils d’un agent : brancher une requête de connecteur', () => {
     expect((await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(agentTok), payload: corps() })).statusCode).toBe(403);
     expect((await srv.inject({ method: 'POST', url: `${base('t2')}/connecteur`, ...h(adminTok), payload: corps() })).statusCode).toBe(403);
     expect(cap.connecteurs).toEqual([]);
+  });
+});
+
+describe('outils d’un agent : ce qu’on peut lui ajouter, et la porte (règle unique du 2026-10-02)', () => {
+  it('🔴 la liste « ajouter » est celle du CATALOGUE pour CET agent, rendue telle quelle', async () => {
+    const { cap, srv } = app();
+    const res = await srv.inject({ method: 'GET', url: `${base('t1')}/offrables`, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().outils.map((o: { name: string }) => o.name)).toEqual(['notion_search']);
+    expect(cap.offrables).toEqual([{ tenant: 't1', consommateur: `agent:${AG}` }]);
+  });
+
+  it('un agent inconnu rend 404, sans lire le catalogue', async () => {
+    const { cap, srv } = app();
+    const res = await srv.inject({ method: 'GET', url: `${base('t1', AUTRE)}/offrables`, ...h(adminTok) });
+    expect(res.statusCode).toBe(404);
+    expect(cap.offrables).toEqual([]);
+  });
+
+  it('🔴 un refus de la porte DIT SA RAISON (409), au lieu d’un 404 « agent ou outil introuvable »', async () => {
+    const { srv } = app();
+    const res = await srv.inject({ method: 'PUT', url: `${base('t1')}/${AUTRE}/rattachement`, ...h(adminTok), payload: { valeur: true } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('n’est pas actif');
+  });
+
+  it('un outil introuvable reste un 404, et un rattachement accepté un 200', async () => {
+    const { srv } = app();
+    const absent = await srv.inject({ method: 'PUT', url: `${base('t1')}/44444444-0000-4000-8000-000000000000/rattachement`, ...h(adminTok), payload: { valeur: true } });
+    expect(absent.statusCode).toBe(404);
+    const ok = await srv.inject({ method: 'PUT', url: `${base('t1')}/${OUT}/rattachement`, ...h(adminTok), payload: { valeur: true } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ rattache: true });
   });
 });

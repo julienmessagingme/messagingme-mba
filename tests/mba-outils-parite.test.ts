@@ -122,7 +122,7 @@ describe('« ✓ Chez Meta » ne se dit que de ce qui part chez Meta', () => {
     id: 'o1', tenantId: 't1', origin: 'mba', name: 'n', description: 'd', nePasUtiliser: 'p', gestes: [], params: [],
     binding: {}, sourceId: null, requestId: null, nature: 'integre', outputPaths: [], risk: 'write', timeoutMs: 5000,
     maxBytes: 16384, autonome: false, mcpAnnonce: null, mcpNonActivable: null, mcpIndisponibleLe: null, mcpVuLe: null,
-    title: 'T', actif: true, activeLe: null, autonomeLe: null, ...over,
+    title: 'T', actif: true, activeLe: null, autonomeLe: null, inappelable: null, ...over,
   });
   const ctx: ContexteVue = {
     requetes: new Map([['rq1', { label: 'Poser une étiquette' }]]), champs: new Set(['ville']), bibliotheque: new Map(),
@@ -147,8 +147,11 @@ describe('« ✓ Chez Meta » ne se dit que de ce qui part chez Meta', () => {
     ['un connecteur dont l’appel est supprimé', outil({ origin: 'http', requestId: 'rq9' })],
     ['un connecteur sans appel', outil({ origin: 'http', requestId: null })],
     ['un outil MCP', outil({ origin: 'mcp', sourceId: 's1' })],
-    ['un outil MCP non activable', outil({ origin: 'mcp', sourceId: 's1', mcpNonActivable: 'schéma illisible' })],
-    ['un outil MCP disparu de son serveur', outil({ origin: 'mcp', sourceId: 's1', mcpIndisponibleLe: new Date() })],
+    // L'inappelabilité vient du catalogue (la règle unique du 2026-10-02), pour les deux familles qui ont une source.
+    ['un outil MCP non activable', outil({ origin: 'mcp', sourceId: 's1', inappelable: { cause: 'non_activable', detail: 'schéma illisible' } })],
+    ['un outil MCP disparu de son serveur', outil({ origin: 'mcp', sourceId: 's1', inappelable: { cause: 'disparu' } })],
+    ['un outil MCP dont le serveur est éteint', outil({ origin: 'mcp', sourceId: 's1', inappelable: { cause: 'source_inactive' } })],
+    ['un connecteur dont la source est éteinte', outil({ origin: 'http', requestId: 'rq1', inappelable: { cause: 'source_inactive' } })],
     ['une action d’agent IA', outil({ binding: { handler: 'poser_tag' } })],
     ['un outil maison illisible', outil({ binding: { handler: 'tag_fixe', tag: 'vip', intrus: 1 } })],
   ];

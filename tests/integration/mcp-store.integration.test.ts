@@ -163,14 +163,15 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
       `select id from agent_tools where tenant_id = $1 and name = 'notion_decoche'`, [tenantId],
     )).rows[0]!.id;
     expect(await store.proposer(tenantId, id, false)).toEqual({ ok: true });
-    expect(await catalogue.rattacherConsommateur(tenantId, `agent:${agentId}`, id)).toBe(false);
-    expect(await catalogue.rattacherConsommateur(tenantId, 'mba:123456789', id)).toBe(false);
+    // La porte dit POURQUOI (règle unique du 2026-10-02), au lieu d'un simple `false`.
+    expect(await catalogue.rattacherConsommateur(tenantId, `agent:${agentId}`, id)).toEqual({ ok: false, refus: 'non_enregistre' });
+    expect(await catalogue.rattacherConsommateur(tenantId, 'mba:123456789', id)).toEqual({ ok: false, refus: 'non_enregistre' });
     // La bibliothèque le dit, pour que les écrans des agents ne le proposent pas.
     const bib = await catalogue.listCatalogue(tenantId);
     expect(bib.find((o) => o.id === id)?.mcpPropose).toBe(false);
     // Recoché, il se rattache.
     expect(await store.proposer(tenantId, id, true)).toEqual({ ok: true });
-    expect(await catalogue.rattacherConsommateur(tenantId, `agent:${agentId}`, id)).toBe(true);
+    expect(await catalogue.rattacherConsommateur(tenantId, `agent:${agentId}`, id)).toEqual({ ok: true });
   });
 
   it('🔴 un outil MCP ne peut PAS se rattacher à une source HTTP', async () => {

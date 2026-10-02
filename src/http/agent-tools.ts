@@ -2,8 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { resumeEnvoi, type RequeteConnecteur } from '../agent/requetes';
 import type { Guard } from '../auth/middleware';
-import type { OutilComplet, PatchOutil } from '../agent/catalog';
-import { NomOutilDejaPris } from '../agent/catalog';
+import type { OutilBibliotheque, OutilComplet, PatchOutil, Rattachement } from '../agent/catalog';
+import { NomOutilDejaPris, messageDuRefus, refusIntrouvable } from '../agent/catalog';
+import { consommateurAgent } from '../agent/consommateur';
 import { OUTILS_MAISON, outilExpose, outilMaison, paramsInitiaux, type OutilExpose } from '../agent/outils-maison';
 import { risqueAuMoins, risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import type { SortieAgent } from '../agent/agent-store';
@@ -48,8 +49,10 @@ export interface OutilsAgentDep {
    * détache, pas qu'on supprime pour tout le monde.
    */
   detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
-  /** Rend un outil de la bibliothèque de l'espace disponible pour cet agent, inactif. */
-  rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
+  /** Rend un outil de la bibliothèque de l'espace disponible pour cet agent, inactif. Un refus dit sa raison. */
+  rattacher(tenantId: string, agentId: string, outilId: string): Promise<Rattachement>;
+  /** Ce que le catalogue permet d'offrir à ce consommateur (la règle unique) : l'écran l'affiche sans filtrer. */
+  offrablesPour(tenantId: string, consommateur: string): Promise<OutilBibliotheque[]>;
 }
 
 export interface AgentToolsRouteDeps {
@@ -351,11 +354,28 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if (!estUuid(outilId)) return reply.code(404).send({ error: 'outil introuvable' });
     const parse = drapeauSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'valeur booléenne requise' });
-    const fait = parse.data.valeur
-      ? await deps.outils.rattacher(ctx.tenant, ctx.agentId, outilId)
-      : await deps.outils.detacher(ctx.tenant, ctx.agentId, outilId);
-    // « agent OU outil » : un rattachement rend aussi `false` quand l'agent vient d'être supprimé.
-    if (!fait) return reply.code(404).send({ error: 'agent ou outil introuvable' });
-    return reply.code(200).send({ rattache: parse.data.valeur });
+    if (parse.data.valeur) {
+      // Le refus de la porte porte sa raison : non enregistré, mort, réservé à l'agent de Meta, déjà donné.
+      const r = await deps.outils.rattacher(ctx.tenant, ctx.agentId, outilId);
+      if (!r.ok) return reply.code(refusIntrouvable(r) ? 404 : 409).send({ error: messageDuRefus(r) });
+      return reply.code(200).send({ rattache: true });
+    }
+    // « agent OU outil » : un détachement rend aussi `false` quand l'agent vient d'être supprimé.
+    if (!(await deps.outils.detacher(ctx.tenant, ctx.agentId, outilId))) {
+      return reply.code(404).send({ error: 'agent ou outil introuvable' });
+    }
+    return reply.code(200).send({ rattache: false });
+  });
+
+  /**
+   * 🔴 CE QU'ON PEUT AJOUTER À CET AGENT, décidé par le catalogue (`offrablesPour`, la règle unique du 2026-10-02).
+   * La page d'un agent IA filtrait la bibliothèque dans le navigateur, sans savoir qu'un outil était mort : elle
+   * proposait un outil que l'agent ne pouvait pas appeler.
+   */
+  app.get(`${base}/offrables`, opts, async (req, reply) => {
+    const ctx = contexte(req);
+    if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
+    if ((await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) === null) return reply.code(404).send({ error: 'agent introuvable' });
+    return reply.code(200).send({ outils: await deps.outils.offrablesPour(ctx.tenant, consommateurAgent(ctx.agentId)) });
   });
 }

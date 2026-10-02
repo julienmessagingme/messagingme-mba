@@ -39,7 +39,7 @@ const complet = (over: Partial<OutilComplet>): OutilComplet => ({
   params: [], binding: { handler: 'tag_fixe', tag: 'vip' }, sourceId: null, requestId: null, nature: 'integre',
   outputPaths: [], risk: 'write', timeoutMs: 5000, maxBytes: 16384, autonome: false, mcpAnnonce: null,
   mcpNonActivable: null, mcpIndisponibleLe: null, mcpVuLe: null, title: 'Marquer VIP', actif: true, activeLe: null,
-  autonomeLe: null, ...over,
+  autonomeLe: null, inappelable: null, ...over,
 });
 
 function monter(
@@ -77,8 +77,9 @@ function monter(
     workflow: async () => null,
     blocs: async () => [],
     bibliotheque: async () => [],
+    offrables: async () => [],
     serveurs: async () => new Map(),
-    proposerMcp: async (...args) => { gestes.push({ geste: 'proposerMcp', args }); return true; },
+    proposerMcp: async (...args) => { gestes.push({ geste: 'proposerMcp', args }); return { ok: true }; },
     ...reste,
   };
   const app = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, mbaOutils: deps });
@@ -139,6 +140,17 @@ describe('créer un outil de l’agent de Meta', () => {
     const [t, pn, outil, par] = gestes[0]!.args as [string, string, Record<string, unknown>, string];
     expect([gestes[0]!.geste, t, pn, par]).toEqual(['creerConnecteur', TENANT, PN, 'u1']);
     expect(outil).toMatchObject({ risk: risqueSelonMethode('DELETE'), requestId: REQ, sourceId: 's1' });
+  });
+
+  it('🔴 un connecteur dont la source n’est pas active est refusé en 409 lisible, pas en 500', async () => {
+    // Le catalogue refuse AVANT de créer (`ajouterConnecteurPourMba`, Julien, 2026-10-02) : créer puis activer est un
+    // seul geste pour l'agent de Meta, et une activation refusée après coup laisserait un outil créé à moitié.
+    const { app } = monter({ creerConnecteur: async () => {
+      throw new OutilNonActivable('le connecteur de cet outil n’est pas actif : activez-le dans Tools > Connecteurs API');
+    } });
+    const res = await app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'connecteur', requeteId: REQ } } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('Connecteurs API');
   });
 
   it('🔴 (porté) le MODÈLE ne voit que les variables qu’il doit remplir', async () => {
@@ -336,21 +348,25 @@ describe('les outils MCP de la bibliothèque, proposés à l’agent de Meta (20
   const MCP = '44444444-4444-4444-8444-444444444444';
   const entree = (over: Partial<OutilBibliotheque> = {}): OutilBibliotheque => ({
     id: MCP, name: 'notion_search', title: 'Chercher', description: 'd', nePasUtiliser: 'p', origin: 'mcp', risk: 'read',
-    sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, consommateurs: [], ...over,
+    sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, consommateurs: [], ...over,
   });
   const avec = (e: OutilBibliotheque, over: Parameters<typeof monter>[0] = {}) => monter({
-    bibliotheque: async () => [e], serveurs: async () => new Map([['s1', { label: 'notion' }]]), ...over,
+    bibliotheque: async () => [e], offrables: async () => [e], serveurs: async () => new Map([['s1', { label: 'notion' }]]), ...over,
   });
 
-  it('GET /mcp liste les outils proposables, serveur nommé', async () => {
-    const res = await avec(entree()).app.inject({ method: 'GET', url: `${url}/mcp`, ...h() });
+  it('🔴 GET /mcp liste ce que le CATALOGUE offre à ce numéro, serveur nommé, sans refiltrer', async () => {
+    // Ce qui est offrable (enregistré, appelable, pas déjà là) est la règle unique du catalogue, prouvée en intégration.
+    const lus: unknown[][] = [];
+    const { app } = avec(entree(), { offrables: async (...args) => { lus.push(args); return [entree()]; } });
+    const res = await app.inject({ method: 'GET', url: `${url}/mcp`, ...h() });
     expect(res.statusCode).toBe(200);
     expect(res.json().outils).toEqual([expect.objectContaining({ id: MCP, serveur: 'notion', risque: 'read' })]);
+    expect(lus).toEqual([[TENANT, PN]]);
   });
 
-  it('GET /mcp sans numéro connecté rend une liste vide, sans lire la bibliothèque', async () => {
+  it('GET /mcp sans numéro connecté rend une liste vide, sans lire le catalogue', async () => {
     let lus = 0;
-    const { app } = monter({ bibliotheque: async () => { lus += 1; return [entree()]; } }, null);
+    const { app } = monter({ offrables: async () => { lus += 1; return [entree()]; } }, null);
     expect((await app.inject({ method: 'GET', url: `${url}/mcp`, ...h() })).json()).toEqual({ outils: [] });
     expect(lus).toBe(0);
   });
@@ -374,27 +390,22 @@ describe('les outils MCP de la bibliothèque, proposés à l’agent de Meta (20
     expect(inconnu.gestes).toEqual([]);
   });
 
-  it('🔴 un outil non appelable est refusé AVANT de rattacher : aucune ligne éteinte laissée derrière', async () => {
-    for (const e of [entree({ mcpNonActivable: 'schéma illisible' }), entree({ mcpIndisponibleLe: '2026-10-01T00:00:00Z' })]) {
-      const { app, gestes } = avec(e);
-      const res = await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} });
-      expect(res.statusCode).toBe(409);
-      expect(gestes).toEqual([]);
-    }
-  });
-
-  it('🔴 un outil décoché sur Connecteurs MCP rend 409 lisible, rien d’écrit', async () => {
-    const { app, gestes } = avec(entree({ mcpPropose: false }));
+  /**
+   * 🔴 LA ROUTE NE REVÉRIFIE PLUS RIEN (règle unique du 2026-10-02) : la porte du catalogue refuse, AVANT de rattacher,
+   * un outil non enregistré, mort ou déjà là, et la route traduit sa raison. Que la porte refuse vraiment avant
+   * d'écrire est prouvé contre une vraie base (`tests/integration/agent-catalog.integration.test.ts`).
+   */
+  it.each([
+    ['non enregistré', { ok: false, refus: 'non_enregistre' }, 409, 'Connecteurs MCP'],
+    ['mort', { ok: false, refus: 'inappelable', inappelable: { cause: 'disparu' }, origine: 'mcp' }, 409, 'disparu'],
+    ['au serveur éteint', { ok: false, refus: 'inappelable', inappelable: { cause: 'source_inactive' }, origine: 'mcp' }, 409, 'n’est pas actif'],
+    ['déjà donné', { ok: false, refus: 'deja_rattache' }, 409, 'déjà donné'],
+    ['effacé entre-temps', { ok: false, refus: 'introuvable' }, 404, 'introuvable'],
+  ] as const)('un outil %s : le refus de la porte est traduit avec sa raison', async (_nom, refus, code, texte) => {
+    const { app } = avec(entree(), { proposerMcp: async () => refus });
     const res = await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} });
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toContain('Connecteurs MCP');
-    expect(gestes).toEqual([]);
-  });
-
-  it('un outil déjà à l’agent de Meta rend 409, rien d’écrit', async () => {
-    const { app, gestes } = avec(entree({ consommateurs: [{ cle: `mba:${PN}`, actif: false, agentId: null, agentLabel: null }] }));
-    expect((await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} })).statusCode).toBe(409);
-    expect(gestes).toEqual([]);
+    expect(res.statusCode).toBe(code);
+    expect(res.json().error).toContain(texte);
   });
 
   it('une activation refusée par le catalogue rend 409 lisible, pas 500', async () => {

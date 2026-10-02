@@ -252,7 +252,8 @@ async function main(): Promise<void> {
    */
   const outilsPourMeta = async (tenant: string, pn: string): Promise<OutilAPublier[]> =>
     outilsAPublier(
-      await toolCatalog.listActifsConsommateur(tenant, consommateurMba(pn)),
+      // Les lignes d'écran, qui portent la cause d'inappelabilité du catalogue : un outil mort ne part pas.
+      (await toolCatalog.listToutesConsommateur(tenant, consommateurMba(pn))).filter((o) => o.actif),
       (id) => agentRequetes.parId(tenant, id),
     );
   /** La clé « Agent de Meta », par acteur : la fabrique et son audit vivent dans `src/mba/cle-relais.ts`. */
@@ -1103,7 +1104,7 @@ async function main(): Promise<void> {
       etatCourant: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         if (!fiche) return null;
-        const [outils, fiches, sources, catalogue] = await Promise.all([
+        const [outils, fiches, sources, catalogue, offrables] = await Promise.all([
           toolCatalog.listToutes(tenant, agentId),
           knowledgeStore.lister(tenant, agentId),
           // Les sources déclarées de l'espace, branchées sur cet agent ou non, pour répondre « vous avez
@@ -1113,6 +1114,8 @@ async function main(): Promise<void> {
           // brancher. La définition appartient à l'espace, le consentement au couple (outil, consommateur) ;
           // l'assistant n'agit que sur le second et ne crée jamais rien.
           toolCatalog.listCatalogue(tenant),
+          // Ce que le catalogue permet de lui offrir : la règle unique, que l'assistant ne refiltre pas.
+          toolCatalog.offrablesPour(tenant, consommateurAgent(agentId)),
         ]);
         return {
           label: fiche.label,
@@ -1139,9 +1142,8 @@ async function main(): Promise<void> {
           // client peut réécrire.
           sources: sources.map((s) => ({ id: s.id, label: s.label, kind: s.kind, status: s.status })),
           // `branche` se lit sur les consommateurs de la définition : seul le catalogue connaît les outils
-          // non branchés, justement ceux que l'assistant peut proposer de brancher.
-          // Sans les outils MCP désenregistrés sur Tools > Connecteurs MCP (0199), sauf s'ils sont encore branchés.
-          catalogue: catalogueBranchable(catalogue, agentId),
+          // non branchés, justement ceux que l'assistant peut proposer de brancher, s'ils sont offrables.
+          catalogue: catalogueBranchable(catalogue, offrables, agentId),
         };
       },
       /**
@@ -1310,12 +1312,16 @@ async function main(): Promise<void> {
       reactiver: async (tenant, pn, id, par) =>
         (await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), id, true, par)) !== null,
       bibliotheque: (tenant) => toolCatalog.listCatalogue(tenant),
+      offrables: (tenant, pn) => toolCatalog.offrablesPour(tenant, consommateurMba(pn)),
       serveurs: async (tenant) => new Map((await agentSources.lister(tenant))
         .filter((s) => s.kind === 'mcp').map((s) => [s.id, { label: s.label }])),
-      // Deux gestes, comme `creerConnecteur` : rattacher (inactif), puis activer au nom de l'administrateur.
+      // Deux gestes, comme `creerConnecteur` : rattacher (inactif), puis activer au nom de l'administrateur. Le refus
+      // de la porte remonte avec sa raison.
       proposerMcp: async (tenant, pn, id, par) => {
-        if (!(await toolCatalog.rattacherConsommateur(tenant, consommateurMba(pn), id))) return false;
-        return (await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), id, true, par)) !== null;
+        const r = await toolCatalog.rattacherConsommateur(tenant, consommateurMba(pn), id);
+        if (!r.ok) return r;
+        return (await toolCatalog.activerConsommateur(tenant, consommateurMba(pn), id, true, par)) !== null
+          ? r : { ok: false, refus: 'introuvable' };
       },
     },
     /**

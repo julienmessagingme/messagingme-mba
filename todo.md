@@ -287,13 +287,9 @@ La route A est en production (plan `docs/superpowers/plans/2026-10-02-outils-mcp
 Relecture du lot « outils proposés » (`1b62b2fe`) : 0 rouge, 8 jaunes, dont deux corrigés dans « Connecter »
 (`95f62099` : la lecture ratée n'est plus une liste vide ; « Donné à » se tait face à l'API d'avant). Restent :
 
-- **Après la démo du 7 : la règle unique du catalogue** (plan `docs/superpowers/plans/2026-10-02-catalogue-regle-unique.md`,
-  cadré par Julien le 2026-10-02, candidat 1 de la revue d'architecture). Il solde les deux points qui suivent.
-- **Un `false` de `rattacherConsommateur` est mal nommé** : 404 « agent ou outil introuvable » côté agent IA
-  (`src/http/agent-tools.ts`), 409 « déjà dans la liste » côté agent de Meta si un désenregistrement tombe entre
-  la vérification et le rattachement. Les commentaires qui énumèrent ses `false` ne citent pas « non enregistré ».
-- **Trois tests manquent** : le filtre de la section MCP d'un agent IA (`web/components/AgentOutils.tsx`), les
-  champs `propose`/`utilisePar` d'`outilsPourEcran` sur une vraie base, et `proposer` face à un espace voisin.
+- **Deux tests manquent** : les champs `propose`/`utilisePar` d'`outilsPourEcran` sur une vraie base, et
+  `proposer` face à un espace voisin. (Le filtre de la section MCP d'un agent IA a disparu : la page affiche la
+  liste `offrables` du serveur, règle unique du catalogue.)
 - **La page Connecteurs MCP relit les outils de TOUS les serveurs à chaque nouvelle liste**, et deux fois le serveur
   importé. Mineur à l'échelle actuelle.
 - **Un outil MCP qui prend une LISTE est « inutilisable »** (`aplatir.ts`) : `tag_conversation` de notre propre

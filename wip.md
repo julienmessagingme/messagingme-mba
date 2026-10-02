@@ -37,6 +37,10 @@ journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont
 - ⏳ **Une compétence « Périmètre »** à poser sur l'agent (Julien) : périmètre = l'activité ET tout ce que ses
   outils permettent, sinon il répond à tout (il a donné du code Azure de mémoire quand l'outil a échoué). Puis
   retirer l'outil Microsoft.
+- ⏳ **La règle unique du catalogue d'outils** (plan `docs/superpowers/plans/2026-10-02-catalogue-regle-unique.md`),
+  lancée le 2026-10-02 au soir. Date butoir : en production et essai réel faits le lundi 5 au soir, sinon retirée
+  jusqu'après la démo. Essai réel (Julien) : `tag_conversation` absent des trois listes « ajouter », et `get_contact`
+  toujours appelé avec succès par l'agent de Meta (journal `agent_tool_calls`).
 
 ## TOUT SUR LA FICHE (LOTS 1 À 3 DÉPLOYÉS ET ESSAYÉS ; LOT 4 EN COURS)
 

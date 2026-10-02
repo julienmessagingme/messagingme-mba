@@ -105,7 +105,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
 
   it('🔴 il ne se rattache PAS à un agent IA', async () => {
     const o = await duMba('marquer_vip');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), o!.id)).toBe(false);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), o!.id)).toEqual({ ok: false, refus: 'reserve_agent_meta' });
   });
 
   it('modifie la cible et les mots, sans toucher au consentement', async () => {
@@ -130,8 +130,8 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
     const connecteur = (await pool.query<{ id: string }>(
       `select id from agent_tools where tenant_id = $1 and name = 'add_tag'`, [tenantId],
     )).rows[0]!.id;
-    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), connecteur)).toBe(true);
-    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), connecteur)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), connecteur)).toEqual({ ok: true });
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), connecteur)).toEqual({ ok: true });
     expect(await cat.retirerDeMba(tenantId, PN, connecteur)).toBe('detache');
     expect((await pool.query('select 1 from agent_tools where id = $1', [connecteur])).rowCount).toBe(1);
     expect(await cat.retirerDeMba(tenantId, PN, connecteur)).toBe('introuvable');
@@ -145,7 +145,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
 
   it('🔴 un connecteur dont l’agent de Meta était le SEUL utilisateur part avec lui (décision du 2026-09-21)', async () => {
     const id = await connecteurNeuf('seul_mba');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toEqual({ ok: true });
     expect(await cat.retirerDeMba(tenantId, PN, id)).toBe('supprime');
     expect((await pool.query('select 1 from agent_tools where id = $1', [id])).rowCount).toBe(0);
   });
@@ -236,7 +236,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
 
   it('🔴 un rattachement EN COURS n’est pas emporté par le dernier détachement (`detacher`)', async () => {
     const id = await connecteurNeuf('course_detacher');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agentId), id)).toEqual({ ok: true });
     expect(await rattachementEnCours(id, consommateurMba(PN), () => cat.detacher(tenantId, agentId, id))).toBe(true);
     expect(await existe(id)).toBe(true);
     expect(await consommateursDe(id)).toEqual([consommateurMba(PN)]);
@@ -244,7 +244,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
 
   it('🔴 … ni par le retrait de l’agent de Meta (`retirerDeMba`)', async () => {
     const id = await connecteurNeuf('course_retirer_mba');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toEqual({ ok: true });
     expect(await rattachementEnCours(id, consommateurAgent(agentId), () => cat.retirerDeMba(tenantId, PN, id)))
       .toBe('detache');
     expect(await existe(id)).toBe(true);
@@ -257,7 +257,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
       [tenantId],
     )).rows[0]!.id;
     const id = await connecteurNeuf('course_remove');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(partant), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(partant), id)).toEqual({ ok: true });
     const agents = new PgAgentStore(pool);
     expect(await rattachementEnCours(id, consommateurMba(PN), () => agents.remove(tenantId, partant))).toBe(true);
     expect(await existe(id)).toBe(true);
@@ -270,7 +270,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
    * l'insertion passait sa lecture, butait ensuite sur la clé étrangère de la définition effacée, et levait
    * 23503, donc un 500.
    */
-  it('🔴 un rattachement qui arrive PENDANT un effacement rend `false`, jamais une erreur', async () => {
+  it('🔴 un rattachement qui arrive PENDANT un effacement rend un refus « introuvable », jamais une erreur', async () => {
     const id = await connecteurNeuf('course_inverse');
     await avecConnexion(async (effaceur) => {
       await effaceur.query('begin');
@@ -280,7 +280,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
       await attendreUnVerrou();
       await effaceur.query('delete from agent_tools where tenant_id = $1 and id = $2', [tenantId, id]);
       await effaceur.query('commit');
-      expect(await rattachement).toBe(false);
+      expect(await rattachement).toEqual({ ok: false, refus: 'introuvable' });
     });
     expect(await existe(id)).toBe(false);
   });
@@ -314,7 +314,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
   it('🔴 supprimer un agent n’interbloque pas avec un appel qu’il est en train de journaliser', async () => {
     const { agent, session } = await agentAvecSession('partant-journal');
     const id = await connecteurNeuf('course_journal');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toEqual({ ok: true });
     const agents = new PgAgentStore(pool);
     await avecConnexion(async (journal) => {
       await journal.query('begin');
@@ -341,8 +341,8 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
   it('🔴 supprimer un agent n’interbloque pas avec un détachement du même outil', async () => {
     const { agent } = await agentAvecSession('partant-detacher');
     const id = await connecteurNeuf('course_ordre');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toBe(true);
-    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toEqual({ ok: true });
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toEqual({ ok: true });
     const agents = new PgAgentStore(pool);
     await avecConnexion(async (detachement) => {
       await detachement.query('begin');
@@ -372,7 +372,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
   it('🔴 supprimer un agent n’interbloque pas avec un détachement qui EFFACE le connecteur', async () => {
     const { agent, session } = await agentAvecSession('partant-efface');
     const id = await connecteurNeuf('course_efface');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurAgent(agent), id)).toEqual({ ok: true });
     await pool.query(
       `insert into agent_tool_calls (tenant_id, session_id, tool_id, tool_name, origin, status)
        values ($1, $2, $3, 'course_efface', 'http', 'ok')`,
@@ -407,7 +407,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
       [tenantId],
     )).rows[0]!.id;
     const id = await connecteurNeuf('course_fantome');
-    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toBe(true);
+    expect(await cat.rattacherConsommateur(tenantId, consommateurMba(PN), id)).toEqual({ ok: true });
     await avecConnexion(async (suppression) => {
       await suppression.query('begin');
       await suppression.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, partant]);
@@ -416,7 +416,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
       await attendreUnVerrou();
       await suppression.query('delete from agents where tenant_id = $1 and id = $2', [tenantId, partant]);
       await suppression.query('commit');
-      expect(await rattachement).toBe(false);
+      expect(await rattachement).toEqual({ ok: false, refus: 'agent_introuvable' });
     });
     expect(await consommateursDe(id)).toEqual([consommateurMba(PN)]);
   });
@@ -478,11 +478,11 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
 
   /**
    * Une clé `agent:` que la forme de 0127 refuse (un identifiant en majuscules, que `estUuid` accepte) rendait
-   * `true` à la garde de l'agent, puis levait sur le CHECK (23514, donc un 500). Elle rend désormais `false`.
+   * `true` à la garde de l'agent, puis levait sur le CHECK (23514, donc un 500). Elle rend désormais un refus.
    */
-  it('une clé d’agent hors forme rend `false`, pas une erreur de contrainte', async () => {
+  it('une clé d’agent hors forme rend un refus « agent introuvable », pas une erreur de contrainte', async () => {
     const id = await connecteurNeuf('cle_majuscules');
-    expect(await cat.rattacherConsommateur(tenantId, `agent:${agentId.toUpperCase()}`, id)).toBe(false);
+    expect(await cat.rattacherConsommateur(tenantId, `agent:${agentId.toUpperCase()}`, id)).toEqual({ ok: false, refus: 'agent_introuvable' });
   });
 
   /** Deux identifiants dont l'ordre est CONNU, quel que soit le tirage : `bas` avant `haut`. */
@@ -501,25 +501,34 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
        values ($1, 'mcp', $2, 'https://exemple.test/mcp', 'none', 'active') returning id`,
       [tenantId, label],
     )).rows[0]!.id;
-    const ids = deuxIdentifiants();
-    for (const [id, suffixe] of [[ids.haut, 'haut'], [ids.bas, 'bas']] as const) {
-      await pool.query(
-        `insert into agent_tools (id, tenant_id, origin, source_id, source_kind, name, title, description, ne_pas_utiliser, risk, binding)
-         values ($1, $2, 'mcp', $3, 'mcp', $4, 'MCP', 'm', '', 'read', $5::jsonb)`,
-        [id, tenantId, source, `${label}_${suffixe}`, JSON.stringify({ outilDistant: `${label}_${suffixe}` })],
+    /**
+     * ⚠️ L'ORDRE PHYSIQUE NE SE COMMANDE PAS, IL SE CONSTATE. `haut` inséré avant `bas` atterrit d'ordinaire avant lui,
+     * mais l'espace libre que d'autres tests laissent dans la table peut placer `bas` plus tôt (vu en CI le 2026-10-02,
+     * quand un test voisin s'est mis à créer puis effacer des outils). On retente avec un autre couple plutôt que de
+     * dépendre de l'état de la table, et la précondition reste EXIGÉE : jamais obtenue, le test échoue.
+     */
+    for (let essai = 0; essai < 10; essai += 1) {
+      const ids = deuxIdentifiants();
+      for (const [id, suffixe] of [[ids.haut, 'haut'], [ids.bas, 'bas']] as const) {
+        await pool.query(
+          `insert into agent_tools (id, tenant_id, origin, source_id, source_kind, name, title, description, ne_pas_utiliser, risk, binding)
+           values ($1, $2, 'mcp', $3, 'mcp', $4, 'MCP', 'm', '', 'read', $5::jsonb)`,
+          [id, tenantId, source, `${label}_${suffixe}`, JSON.stringify({ outilDistant: `${label}_${suffixe}` })],
+        );
+        await pool.query(
+          'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+          [tenantId, id, consommateurAgent(agent)],
+        );
+      }
+      // La PRÉCONDITION du test, vérifiée plutôt que supposée : sans elle, l'ancien code passerait sans rien
+      // prouver (relecture du 2026-09-22).
+      const physique = await pool.query<{ id: string }>(
+        'select id from agent_tools where source_id = $1 order by ctid', [source],
       );
-      await pool.query(
-        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
-        [tenantId, id, consommateurAgent(agent)],
-      );
+      if (physique.rows.map((r) => r.id).join() === [ids.haut, ids.bas].join()) return { source, ids };
+      await pool.query('delete from agent_tools where tenant_id = $1 and id = any($2::uuid[])', [tenantId, [ids.haut, ids.bas]]);
     }
-    // La PRÉCONDITION du test, vérifiée plutôt que supposée : sans elle, l'ancien code passerait sans rien
-    // prouver (relecture du 2026-09-22).
-    const physique = await pool.query<{ id: string }>(
-      'select id from agent_tools where source_id = $1 order by ctid', [source],
-    );
-    expect(physique.rows.map((r) => r.id)).toEqual([ids.haut, ids.bas]);
-    return { source, ids };
+    throw new Error('précondition jamais obtenue : `haut` avant `bas` dans l’ordre physique de la table');
   };
 
   /**

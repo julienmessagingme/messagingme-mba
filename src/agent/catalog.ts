@@ -104,7 +104,10 @@ export interface ToolCatalog {
    */
   byName(tenantId: string, agentId: string, name: string): Promise<OutilDefini | null>;
 
-  /** Les outils actifs d'un agent, pour construire ce qu'on expose au modèle. */
+  /**
+   * Les outils actifs ET appelables d'un agent, pour construire ce qu'on expose au modèle. Un outil activé qui meurt
+   * ensuite (disparu de son serveur, source éteinte) n'est plus montré : le modèle ne tente plus un appel refusé.
+   */
   listActifs(tenantId: string, agentId: string): Promise<OutilDefini[]>;
 
   /**
@@ -120,6 +123,66 @@ export interface OutilComplet extends OutilDefini {
   /** `null` tant que personne ne l'a activé. La base refuse `actif` sans lui. */
   activeLe: string | null;
   autonomeLe: string | null;
+  /** Pourquoi le résolveur refuserait cet outil, ou `null` : la règle du catalogue (`Inappelable`). */
+  inappelable: Inappelable | null;
+}
+
+/**
+ * 🔴 POURQUOI UN OUTIL N'EST PAS APPELABLE, c'est-à-dire ce que son résolveur refuserait : marqué non activable à
+ * l'import, disparu de son serveur MCP, ou sa source (serveur MCP, connecteur HTTP) en brouillon ou éteinte.
+ *
+ * Calculé par le catalogue (`CAUSE_INAPPELABLE`, `catalog.pg.ts`) et JAMAIS par un appelant (règle unique du
+ * 2026-10-02) : cette décision vivait à cinq endroits, en trois versions qui se contredisaient, et un outil mort
+ * était proposé à un agent IA quand l'agent de Meta l'écartait.
+ */
+export type Inappelable =
+  | { cause: 'non_activable'; detail: string }
+  | { cause: 'disparu' }
+  | { cause: 'source_inactive' };
+
+/**
+ * Le texte d'une cause, pour l'écran et pour un refus. Une cause, un texte : l'activation et la vue de l'agent de
+ * Meta disaient « disparu » chacune à leur façon. `non_activable` rend la raison de l'import telle quelle, qui vient
+ * du schéma distant : le client devra la dire à son fournisseur.
+ */
+export function messageInappelable(i: Inappelable, origine: OrigineOutil): string {
+  switch (i.cause) {
+    case 'non_activable': return i.detail;
+    case 'disparu': return 'cet outil a disparu de son serveur MCP : il n’est plus appelable';
+    case 'source_inactive':
+      return origine === 'mcp'
+        ? 'le serveur MCP de cet outil n’est pas actif : activez-le dans Tools > Connecteurs MCP'
+        : 'le connecteur de cet outil n’est pas actif : activez-le dans Tools > Connecteurs API';
+  }
+}
+
+/**
+ * Ce que rend la porte de rattachement (`rattacherConsommateur`). Un refus dit POURQUOI : un simple `false` se
+ * lisait « agent ou outil introuvable » côté agent IA et « déjà dans la liste » côté agent de Meta, quelle que soit
+ * la vraie raison.
+ */
+export type Rattachement =
+  | { ok: true }
+  | { ok: false; refus: 'introuvable' | 'agent_introuvable' | 'reserve_agent_meta' | 'non_enregistre' | 'deja_rattache' }
+  | { ok: false; refus: 'inappelable'; inappelable: Inappelable; origine: OrigineOutil };
+
+export type RefusRattachement = Extract<Rattachement, { ok: false }>;
+
+/** Le texte d'un refus de rattachement, le même pour toutes les routes. */
+export function messageDuRefus(r: RefusRattachement): string {
+  switch (r.refus) {
+    case 'introuvable': return 'outil introuvable';
+    case 'agent_introuvable': return 'agent introuvable';
+    case 'reserve_agent_meta': return 'cet outil est réservé à l’agent de Meta';
+    case 'non_enregistre': return 'cet outil n’est pas proposé aux agents : cochez-le dans Tools > Connecteurs MCP';
+    case 'deja_rattache': return 'cet outil est déjà donné à cet agent';
+    case 'inappelable': return messageInappelable(r.inappelable, r.origine);
+  }
+}
+
+/** Un refus qui dit que la chose n'existe pas (404), par opposition à un refus de la règle (409). */
+export function refusIntrouvable(r: RefusRattachement): boolean {
+  return r.refus === 'introuvable' || r.refus === 'agent_introuvable';
 }
 
 /** Ce qu'un administrateur peut corriger sur un outil. Ni le `handler` ni le risque : ils viennent du
@@ -136,9 +199,9 @@ export interface PatchOutil {
 }
 
 /**
- * On ne peut pas activer un outil que l'import a déclaré non activable, ni un outil disparu : il partirait
- * au modèle sans paramètre et appellerait le serveur avec `{}` à chaque tour. L'erreur porte la raison, qui
- * vient du schéma distant : le client devra la dire à son fournisseur.
+ * On ne peut pas activer un outil qui n'est pas appelable (`Inappelable`) : un outil que l'import a déclaré non
+ * activable partirait au modèle sans paramètre et appellerait le serveur avec `{}` à chaque tour ; un outil disparu
+ * ou dont la source est éteinte serait refusé à chaque appel. L'erreur porte la raison, en clair.
  */
 export class OutilNonActivable extends Error {
   constructor(public readonly raison: string) {
@@ -183,6 +246,8 @@ export interface OutilBibliotheque {
    * outils proposés s'offrent à un agent. Vrai pour tout outil qui n'est pas MCP (la colonne n'y veut rien dire).
    */
   mcpPropose: boolean;
+  /** Pourquoi le résolveur refuserait cet outil, ou `null`. Calculé par le catalogue, jamais par l'appelant. */
+  inappelable: Inappelable | null;
   consommateurs: Array<{
     cle: string;
     actif: boolean;

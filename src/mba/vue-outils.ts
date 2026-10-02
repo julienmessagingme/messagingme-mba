@@ -1,4 +1,5 @@
 import type { OutilComplet, OutilBibliotheque, RisqueOutil } from '../agent/catalog';
+import { messageInappelable } from '../agent/catalog';
 import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { blocSeul, lireCibleMaison, nomDuBlocParCode, typeDeLaCible, type TypeOutilMba } from './outils-maison';
@@ -60,15 +61,6 @@ function agentsDe(o: OutilBibliotheque | undefined): string[] {
   return (o?.consommateurs ?? []).filter((c) => c.agentId !== null).map((c) => c.agentLabel ?? 'un agent IA');
 }
 
-/**
- * Pourquoi un outil MCP n'est pas appelable, ou `null`. La même règle que la publication (`outilsAPublier`) et que
- * l'activation (`activerConsommateur`) : marqué non activable à l'import, ou disparu de son serveur.
- */
-export function mcpInappelable(o: { mcpNonActivable: string | null; mcpIndisponibleLe: Date | string | null }): string | null {
-  if (o.mcpNonActivable !== null) return o.mcpNonActivable;
-  return o.mcpIndisponibleLe !== null ? 'cet outil a disparu de son serveur MCP : il n’est plus appelable' : null;
-}
-
 /** Un outil MCP de la bibliothèque, tel que l'onglet le propose à l'agent de Meta. */
 export interface OutilMcpProposable {
   id: string;
@@ -81,19 +73,17 @@ export interface OutilMcpProposable {
 }
 
 /**
- * Les outils MCP de la bibliothèque que l'agent de Meta peut recevoir (2026-10-02) : proposés aux agents sur Tools >
- * Connecteurs MCP (0199), appelables, et pas déjà à lui. Un
- * outil déjà rattaché mais éteint n'y est pas : sa ligne dans la liste propose de le rallumer, un second chemin pour
- * le même geste ferait deux vérités.
+ * Les outils MCP que l'agent de Meta peut recevoir, mis en forme pour l'onglet. 🔴 Ce qui est offrable est décidé
+ * par le catalogue (`offrablesPour`, la règle unique du 2026-10-02) : cette fonction ne garde que les outils MCP (la
+ * case « Appeler un outil MCP ») et ne filtre rien d'autre. Un outil déjà rattaché mais éteint n'y est pas : sa ligne
+ * dans la liste propose de le rallumer, un second chemin pour le même geste ferait deux vérités.
  */
 export function outilsMcpProposables(
-  bibliotheque: readonly OutilBibliotheque[],
-  consommateur: string,
+  offrables: readonly OutilBibliotheque[],
   serveurs: ReadonlyMap<string, { label: string }>,
 ): OutilMcpProposable[] {
-  return bibliotheque
-    .filter((o) => o.origin === 'mcp' && o.mcpPropose && mcpInappelable(o) === null
-      && !o.consommateurs.some((c) => c.cle === consommateur))
+  return offrables
+    .filter((o) => o.origin === 'mcp')
     .map((o) => ({
       id: o.id, name: o.name, title: o.title, description: o.description, risque: o.risk,
       serveur: o.sourceId ? serveurs.get(o.sourceId)?.label ?? null : null,
@@ -108,8 +98,9 @@ export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
   };
   // Un outil MCP part chez Meta depuis le 2026-10-02 : notre relais l'appelle pour Meta (`src/http/mba-relais.ts`). Ses
   // paramètres et ses mots se règlent dans « Connecteurs MCP », partagés avec les agents IA.
+  // Pourquoi l'outil n'est pas appelable : la cause du catalogue (`o.inappelable`), jamais recalculée ici.
+  const manque = o.inappelable ? messageInappelable(o.inappelable, o.origin) : null;
   if (o.origin === 'mcp') {
-    const manque = mcpInappelable(o);
     return {
       ...base, type: 'mcp',
       cible: { type: 'mcp', sourceId: o.sourceId, serveur: o.sourceId ? ctx.serveurs.get(o.sourceId)?.label ?? null : null },
@@ -122,8 +113,9 @@ export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
     return {
       ...base, type: 'connecteur',
       cible: { type: 'connecteur', requeteId: o.requestId, libelle: req?.label ?? null },
-      cibleManquante: req ? null : 'l’appel de cet outil a été supprimé dans Connecteurs API',
-      aussiUtilisePar, publiable: req !== null,
+      // Un connecteur éteint ne part plus chez Meta (`outilsAPublier`) : la ligne le dit et passe « À envoyer ».
+      cibleManquante: req ? manque : 'l’appel de cet outil a été supprimé dans Connecteurs API',
+      aussiUtilisePar, publiable: req !== null && manque === null,
     };
   }
   const cible = o.origin === 'mba' ? lireCibleMaison(o.binding) : null;

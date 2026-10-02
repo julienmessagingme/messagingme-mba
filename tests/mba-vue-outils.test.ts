@@ -12,7 +12,7 @@ const outil = (over: Partial<OutilComplet>): OutilComplet => ({
   id: 'o1', tenantId: 't1', origin: 'mba', name: 'n', description: 'd', nePasUtiliser: 'p', gestes: [], params: [],
   binding: {}, sourceId: null, requestId: null, nature: 'integre', outputPaths: [], risk: 'write', timeoutMs: 5000,
   maxBytes: 16384, autonome: false, mcpAnnonce: null, mcpNonActivable: null, mcpIndisponibleLe: null, mcpVuLe: null,
-  title: 'T', actif: true, activeLe: null, autonomeLe: null, ...over,
+  title: 'T', actif: true, activeLe: null, autonomeLe: null, inappelable: null, ...over,
 });
 const ctx = (over: Partial<ContexteVue> = {}): ContexteVue => ({
   requetes: new Map([['rq1', { label: 'Poser une étiquette' }]]), champs: new Set(['ville']), bibliotheque: new Map(),
@@ -20,7 +20,7 @@ const ctx = (over: Partial<ContexteVue> = {}): ContexteVue => ({
 });
 const entreeBiblio = (over: Partial<OutilBibliotheque>): OutilBibliotheque => ({
   id: 'o1', name: 'notion_search', title: 'Chercher', description: 'd', nePasUtiliser: 'p', origin: 'mcp', risk: 'read',
-  sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, consommateurs: [], ...over,
+  sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, consommateurs: [], ...over,
 });
 
 describe('la ligne d’un outil dans l’onglet', () => {
@@ -44,7 +44,7 @@ describe('la ligne d’un outil dans l’onglet', () => {
   it('🔴 un connecteur partagé NOMME les agents IA qui s’en servent, pas l’agent de Meta', () => {
     const entree: OutilBibliotheque = {
       id: 'o1', name: 'n', title: 'T', description: 'd', nePasUtiliser: 'p', origin: 'http', risk: 'write',
-      sourceId: 's', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true,
+      sourceId: 's', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null,
       consommateurs: [
         { cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' },
         { cle: 'mba:pn1', actif: true, agentId: null, agentLabel: null },
@@ -65,11 +65,20 @@ describe('la ligne d’un outil dans l’onglet', () => {
     expect(v.aussiUtilisePar).toEqual(['Support']);
   });
 
-  it('🔴 un outil MCP disparu de son serveur, ou non activable, est SIGNALÉ et ne part pas', () => {
-    const disparu = vueOutilMba(outil({ origin: 'mcp', sourceId: 's1', mcpIndisponibleLe: new Date() }), ctx());
+  it('🔴 un outil MCP disparu de son serveur, non activable ou au serveur éteint, est SIGNALÉ et ne part pas', () => {
+    // La cause vient du catalogue (`inappelable`, la règle unique du 2026-10-02) : la vue ne la recalcule pas.
+    const disparu = vueOutilMba(outil({ origin: 'mcp', sourceId: 's1', inappelable: { cause: 'disparu' } }), ctx());
     expect(disparu).toMatchObject({ type: 'mcp', publiable: false, cibleManquante: expect.stringContaining('disparu') });
-    const refuse = vueOutilMba(outil({ origin: 'mcp', sourceId: 's1', mcpNonActivable: 'schéma illisible' }), ctx());
+    const refuse = vueOutilMba(outil({ origin: 'mcp', sourceId: 's1', inappelable: { cause: 'non_activable', detail: 'schéma illisible' } }), ctx());
     expect(refuse).toMatchObject({ publiable: false, cibleManquante: 'schéma illisible' });
+    const eteint = vueOutilMba(outil({ origin: 'mcp', sourceId: 's1', inappelable: { cause: 'source_inactive' } }), ctx());
+    expect(eteint).toMatchObject({ publiable: false, cibleManquante: expect.stringContaining('Connecteurs MCP') });
+  });
+
+  it('🔴 un connecteur dont la source est éteinte est SIGNALÉ et ne part plus chez Meta', () => {
+    const v = vueOutilMba(outil({ origin: 'http', requestId: 'rq1', inappelable: { cause: 'source_inactive' } }), ctx());
+    expect(v).toMatchObject({ type: 'connecteur', publiable: false, cibleManquante: expect.stringContaining('n’est pas actif') });
+    expect(v.cibleManquante).toContain('Connecteurs API');
   });
 
   it('🔴 un outil maison illisible est montré comme tel, pas masqué', () => {
@@ -127,24 +136,16 @@ describe('les lignes d’un bloc et d’un scénario', () => {
 describe('les outils MCP proposés à l’agent de Meta', () => {
   const serveurs = new Map([['s1', { label: 'notion' }]]);
 
-  it('🔴 seulement les MCP appelables qui ne sont pas déjà à lui, serveur nommé', () => {
-    const biblio = [
+  it('🔴 ne garde que les outils MCP de ce que le catalogue offre, serveur nommé, SANS refiltrer', () => {
+    // Ce qui est offrable (enregistré, appelable, pas déjà à lui, consentement par numéro) est décidé par le catalogue
+    // (`offrablesPour`) et prouvé contre une vraie base : `tests/integration/agent-catalog.integration.test.ts`.
+    const offrables = [
       entreeBiblio({ id: 'libre', consommateurs: [{ cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' }] }),
-      entreeBiblio({ id: 'deja', consommateurs: [{ cle: 'mba:pn1', actif: false, agentId: null, agentLabel: null }] }),
-      entreeBiblio({ id: 'disparu', mcpIndisponibleLe: '2026-10-01T00:00:00Z' }),
-      entreeBiblio({ id: 'refuse', mcpNonActivable: 'schéma illisible' }),
       entreeBiblio({ id: 'http', origin: 'http' }),
-      // Décoché sur Tools > Connecteurs MCP (0199) : il ne s'offre à aucun agent.
-      entreeBiblio({ id: 'decoche', mcpPropose: false }),
     ];
-    expect(outilsMcpProposables(biblio, 'mba:pn1', serveurs)).toEqual([{
+    expect(outilsMcpProposables(offrables, serveurs)).toEqual([{
       id: 'libre', name: 'notion_search', title: 'Chercher', description: 'd', serveur: 'notion', risque: 'read',
       aussiUtilisePar: ['Support'],
     }]);
-  });
-
-  it('⚠️ un outil d’un AUTRE numéro reste proposable : le consentement est par numéro', () => {
-    const biblio = [entreeBiblio({ consommateurs: [{ cle: 'mba:autre', actif: true, agentId: null, agentLabel: null }] })];
-    expect(outilsMcpProposables(biblio, 'mba:pn1', serveurs).map((o) => o.id)).toEqual(['o1']);
   });
 });

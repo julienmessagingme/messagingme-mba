@@ -144,8 +144,9 @@ describe('le vrai câblage', () => {
     // `listToutes(tenant, agentId)` ne connaît que les outils DÉJÀ branchés, c'est-à-dire justement pas ceux
     // que l'assistant peut proposer de brancher.
     expect(index).toContain('toolCatalog.listCatalogue(tenant)');
-    // Par le filtre, qui écarte les outils MCP désenregistrés (relecture du 2026-10-02).
-    expect(index).toContain('catalogue: catalogueBranchable(catalogue, agentId)');
+    // Réduit à ce que le catalogue permet d'offrir à cet agent (la règle unique du 2026-10-02), plus ce qu'il a déjà.
+    expect(index).toContain('toolCatalog.offrablesPour(tenant, consommateurAgent(agentId))');
+    expect(index).toContain('catalogue: catalogueBranchable(catalogue, offrables, agentId)');
   });
 
   it('🔴 la route filtre sur la bibliothèque avant de rendre quoi que ce soit', () => {
@@ -177,27 +178,31 @@ describe('le vrai câblage', () => {
   });
 });
 
-describe('🔴 l assistant ne propose pas un outil MCP desenregistre (relecture du 2026-10-02)', () => {
+describe('🔴 l assistant ne propose que ce que le catalogue offre (règle unique du 2026-10-02)', () => {
   const outil = (name: string, over: Partial<OutilBibliotheque> = {}): OutilBibliotheque => ({
     id: name, name, title: name, description: 'd', nePasUtiliser: '', origin: 'mcp', risk: 'read', sourceId: 's1',
-    mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, consommateurs: [], ...over,
+    mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, consommateurs: [], ...over,
   });
   const branche = [{ cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' }];
 
-  it('un MCP desenregistre disparait du catalogue de l assistant ; un enregistre et un connecteur y restent', () => {
-    const cat = catalogueBranchable([
+  it('un outil hors des offrables (désenregistré, mort) disparaît du catalogue de l assistant, sans refiltre ici', () => {
+    // Ce qui est offrable est décidé par le catalogue et prouvé contre une vraie base
+    // (`tests/integration/agent-catalog.integration.test.ts`) : la fonction ne fait que l'intersection.
+    const bibliotheque = [
       outil('notion_search'),
       outil('notion_decoche', { mcpPropose: false }),
-      outil('erp_commandes', { origin: 'http', mcpPropose: true }),
-    ], 'a1');
+      outil('notion_mort', { inappelable: { cause: 'disparu' } }),
+      outil('erp_commandes', { origin: 'http' }),
+    ];
+    const cat = catalogueBranchable(bibliotheque, [outil('notion_search'), outil('erp_commandes', { origin: 'http' })], 'a1');
     expect(cat.map((c) => c.nom)).toEqual(['notion_search', 'erp_commandes']);
-    // Et la ceinture : meme si le modele le nommait, brancheables l ecarte.
-    expect(brancheables(cat, ['notion_decoche'], false)).toEqual([]);
+    // Et la ceinture : même si le modèle les nommait, brancheables les écarte.
+    expect(brancheables(cat, ['notion_decoche', 'notion_mort'], false)).toEqual([]);
   });
 
-  it('un MCP desenregistre mais encore BRANCHE sur cet agent reste, pour qu on puisse le debrancher', () => {
-    const cat = catalogueBranchable([outil('notion_decoche', { mcpPropose: false, consommateurs: branche })], 'a1');
-    expect(cat).toEqual([{ nom: 'notion_decoche', titre: 'notion_decoche', branche: true }]);
-    expect(brancheables(cat, ['notion_decoche'], true)).toEqual(['notion_decoche']);
+  it('un outil plus offrable mais encore BRANCHÉ sur cet agent reste, pour qu on puisse le débrancher', () => {
+    const cat = catalogueBranchable([outil('notion_mort', { inappelable: { cause: 'disparu' }, consommateurs: branche })], [], 'a1');
+    expect(cat).toEqual([{ nom: 'notion_mort', titre: 'notion_mort', branche: true }]);
+    expect(brancheables(cat, ['notion_mort'], true)).toEqual(['notion_mort']);
   });
 });
