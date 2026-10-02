@@ -94,7 +94,8 @@ CI tient la règle. Mais l'essai réel suivant clôt le lot, en production, sur 
      - déjà rattaché ; outil d'un autre espace ; agent supprimé ;
      - connecteur HTTP de l'agent de Meta créé sur une source en brouillon : refusé, aucune ligne écrite.
 
-     Le test existant du verrou `proposer` contre rattachement reste vert. Mutation à voir rouge en CI (étiquette
+     Un désenregistrement concurrent (`proposer` en `for update`) passé avant un rattachement qui l'attend rend
+     `non_enregistre` (test ajouté après la relecture : il n'existait pas). Mutation à voir rouge en CI (étiquette
      jetable) : retirer `APPELABLE` du fragment `OFFRABLE`.
 
 2. **L'agent de Meta lit la règle** (`src/mba/vue-outils.ts`, `src/mba/outils-a-publier.ts`,

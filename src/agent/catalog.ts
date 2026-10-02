@@ -128,8 +128,10 @@ export interface OutilComplet extends OutilDefini {
 }
 
 /**
- * 🔴 POURQUOI UN OUTIL N'EST PAS APPELABLE, c'est-à-dire ce que son résolveur refuserait : marqué non activable à
- * l'import, disparu de son serveur MCP, ou sa source (serveur MCP, connecteur HTTP) en brouillon ou éteinte.
+ * 🔴 POURQUOI UN OUTIL N'EST PAS APPELABLE, c'est-à-dire ce que son résolveur refuserait à cause de son état : marqué
+ * non activable à l'import, disparu de son serveur MCP, ou sa source (serveur MCP, connecteur HTTP) en brouillon,
+ * éteinte ou du mauvais type. Ce qui dépend de l'appel lui-même (requête effacée, connecteur sans champ à lire) reste
+ * au seul résolveur.
  *
  * Calculé par le catalogue (`CAUSE_INAPPELABLE`, `catalog.pg.ts`) et JAMAIS par un appelant (règle unique du
  * 2026-10-02) : cette décision vivait à cinq endroits, en trois versions qui se contredisaient, et un outil mort

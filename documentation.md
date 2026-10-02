@@ -597,10 +597,11 @@ rattachement concurrent, puis relire `mcp_propose`. Un `for no key update` rouvr
 
 🔴 **LA RÈGLE D'UN OUTIL S'ÉCRIT DANS LE CATALOGUE, JAMAIS CHEZ UN APPELANT.** Trois termes, définis une fois dans
 `src/agent/catalog.pg.ts` (fragments `CAUSE_INAPPELABLE`, `ENREGISTRE`, `DE_LA_BIBLIOTHEQUE`) :
-- **appelable** (un outil) : ce que son résolveur accepterait. Sa source (serveur MCP, ou celle de la REQUÊTE d'un
-  connecteur HTTP) est active, et il n'est ni marqué non activable ni disparu de son serveur. Un outil maison l'est
-  toujours. Sinon, `inappelable` porte la cause (`non_activable`, `disparu`, `source_inactive`), et
-  `messageInappelable` son texte ;
+- **appelable** (un outil) : ce que son résolveur accepterait, à l'état de l'outil et de sa source. Sa source
+  (serveur MCP, ou celle de la REQUÊTE d'un connecteur HTTP) est active et du bon type, et il n'est ni marqué non
+  activable ni disparu de son serveur. Un outil maison l'est toujours. Sinon, `inappelable` porte la cause
+  (`non_activable`, `disparu`, `source_inactive`), et `messageInappelable` son texte. ⚠️ Ce qui dépend de l'appel
+  (requête effacée, connecteur « intègre » sans champ) reste au résolveur ;
 - **offrable** (un outil, à un consommateur) : outil de la bibliothèque de l'espace, enregistré s'il est MCP,
   appelable, et pas déjà rattaché à ce consommateur. C'est `offrablesPour`, la liste « ajouter un outil » de l'agent
   de Meta, de la page d'un agent IA (`GET …/agents/:agentId/tools/offrables`) et de l'assistant de construction ;

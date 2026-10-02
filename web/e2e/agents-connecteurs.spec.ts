@@ -335,3 +335,19 @@ test.describe('Agent : brancher le système du client', () => {
     await expect(page.getByTestId('source-creer')).toHaveCount(0);
   });
 });
+
+test.describe('Agent : un appel dont le système est éteint (règle unique du catalogue, 2026-10-02)', () => {
+  test('🔴 la ligne de l’appel DIT que son système est éteint ; un appel vivant ne dit rien', async ({ page }) => {
+    // L'agent ne voit plus un appel dont le système est éteint : sans cette ligne, la panne était muette.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    const appel = (id: string, name: string, inappelable: unknown) => ({
+      id, origin: 'http', sourceId: SRC, requestId: RQ, name, title: name, description: 'd', nePasUtiliser: 'n',
+      params: [], binding: {}, risk: 'read', actif: true, activeLe: '2026-10-01T00:00:00.000Z', autonome: false,
+      autonomeLe: null, expose: null, gestes: [], inappelable,
+    });
+    await mock(page, capture, { outils: [appel('o7', 'lire_commande', { cause: 'source_inactive' }), appel('o8', 'lire_stock', null)] });
+    await ongletOutils(page);
+    await expect(page.getByTestId('connecteur-mort-o7')).toContainText('Connecteurs API');
+    await expect(page.getByTestId('connecteur-mort-o8')).toHaveCount(0);
+  });
+});

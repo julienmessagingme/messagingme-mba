@@ -266,7 +266,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
 
   /**
    * 🔴 LE CAS INVERSE : l'effacement tient déjà la définition quand le rattachement arrive. `for key share`
-   * (`rattacherConsommateur`) le fait ATTENDRE, puis ne rien trouver : `false`, donc un 404 lisible. Sans lui,
+   * (`rattacherConsommateur`) le fait ATTENDRE, puis ne rien trouver : un refus « introuvable », donc un 404 lisible. Sans lui,
    * l'insertion passait sa lecture, butait ensuite sur la clé étrangère de la définition effacée, et levait
    * 23503, donc un 500.
    */

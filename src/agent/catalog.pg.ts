@@ -56,13 +56,16 @@ const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_u
 
 /**
  * 🔴 LA RÈGLE « APPELABLE », ÉCRITE UNE FOIS (2026-10-02). Rend la cause pour laquelle le résolveur refuserait
- * l'outil `t`, ou `null`. Elle est lue par la porte de rattachement, par l'activation, par ce que voit le modèle,
- * par la publication chez Meta et par les listes « ajouter un outil » : la recopier chez un appelant referait les
- * trois versions contradictoires qu'elle remplace.
+ * l'outil `t` à cause de son ÉTAT ou de celui de sa SOURCE, ou `null`. Elle est lue par la porte de rattachement,
+ * par l'activation, par ce que voit le modèle, par la publication chez Meta et par les listes « ajouter un outil » :
+ * la recopier chez un appelant referait les trois versions contradictoires qu'elle remplace.
  *
  * Même ordre que les résolveurs (`src/agent/resolvers/`) : les marques de l'outil d'abord, sa source ensuite. La
  * source d'un connecteur HTTP est celle de sa REQUÊTE (le résolveur HTTP lit `requete.sourceId`), celle de l'outil
- * sinon. Un outil maison n'a pas de source, il est toujours appelable.
+ * sinon, et elle doit être active ET du bon type (un MCP sur un serveur MCP, un connecteur sur un système HTTP : la
+ * clé étrangère de 0152 est en MATCH SIMPLE, une ligne ancienne peut croiser). Un outil maison n'a pas de source,
+ * il est toujours appelable. ⚠️ Restent au seul résolveur ce qui dépend de l'appel lui-même : une requête effacée,
+ * un connecteur « intègre » sans champ à lire.
  *
  * ⚠️ Pas d'accent grave dans ce fragment : il vit dans un gabarit de chaîne.
  */
@@ -73,6 +76,7 @@ const CAUSE_INAPPELABLE = `case
     when not exists (
       select 1 from agent_tool_sources s
        where s.tenant_id = t.tenant_id and s.status = 'active'
+         and s.kind = case when t.origin = 'mcp' then 'mcp' else 'http' end
          and s.id = coalesce((select r.source_id from connector_requests r
                                where r.tenant_id = t.tenant_id and r.id = t.request_id), t.source_id)
     ) then 'source_inactive'
@@ -85,7 +89,7 @@ const ENREGISTRE = `(t.origin <> 'mcp' or t.mcp_propose)`;
  * La bibliothèque de l'espace : ce qu'un agent peut brancher. Ni les actions d'un agent, qui lui appartiennent
  * (0157), ni les outils de l'agent de Meta (0162).
  */
-const DE_LA_BIBLIOTHEQUE = `t.agent_id is null and not t.pour_agent_meta`;
+const DE_LA_BIBLIOTHEQUE = `(t.agent_id is null and not t.pour_agent_meta)`;
 
 /** La cause lue en base, en `Inappelable`. Une valeur inconnue se lit `null` : seul le fragment écrit ces trois. */
 function lireInappelable(cause: string | null, mcpNonActivable: string | null): Inappelable | null {
@@ -343,10 +347,12 @@ export class PgToolCatalog implements ToolCatalog {
      * puis activer est un seul geste (`creerConnecteur`) : l'activation refusée après coup laisserait un outil créé à
      * moitié. La source lue est celle de la requête, comme `CAUSE_INAPPELABLE` et le résolveur HTTP. Un agent IA, lui,
      * peut créer sur un connecteur en brouillon : il active plus tard, une fois le connecteur allumé.
+     * ⚠️ Vérifié hors de la transaction de création : un système éteint PENDANT le geste (quelques millisecondes)
+     * laisse encore l'outil créé et inactif, que l'écran montre en rouge et qui se retire.
      */
     const active = await this.pool.query(
       `select 1 from agent_tool_sources s
-        where s.tenant_id = $1 and s.status = 'active'
+        where s.tenant_id = $1 and s.status = 'active' and s.kind = 'http'
           and s.id = coalesce((select r.source_id from connector_requests r where r.tenant_id = $1 and r.id = $3), $2)`,
       [tenantId, outil.sourceId, outil.requestId],
     );

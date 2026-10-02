@@ -262,7 +262,8 @@ test.describe('Agents IA : les outils', () => {
     await mock(page, appels, [TAG], [OFFERT]);
     await page.goto(`/agents?id=${AG}&tab=outils`);
     await expect(page.getByTestId('mcp-rattacher-o8')).toBeVisible();
-    await expect.poll(() => appels.length, { timeout: 1000 }).toBe(0);
+    // Montrer ne rattache rien : aucune écriture tant qu'on n'a pas cliqué.
+    expect(appels).toEqual([]);
   });
 
   test('🔴 un outil dont le SERVEUR est éteint le dit, et ne s active pas', async ({ page }) => {

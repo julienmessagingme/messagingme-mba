@@ -656,6 +656,9 @@ describe.skipIf(!url)('la règle unique : offrable, appelable, rattachable (Post
     { nom: 'http_eteint', offrable: false, refus: 'inappelable', cause: 'source_inactive' },
     // La source d'un connecteur est celle de sa REQUÊTE, comme pour le résolveur HTTP, même si l'outil en nomme une autre.
     { nom: 'http_requete_eteinte', offrable: false, refus: 'inappelable', cause: 'source_inactive' },
+    // Une ligne ancienne sans `source_kind` échappe à la clé étrangère (MATCH SIMPLE) : un MCP posé sur un système
+    // HTTP, que le résolveur refuserait. La règle le refuse aussi (relecture du 2026-10-02).
+    { nom: 'mcp_mauvais_type', offrable: false, refus: 'inappelable', cause: 'source_inactive' },
     // Un outil de l'agent de Meta n'est pas dans la bibliothèque, et ne s'ouvre jamais à un agent IA.
     { nom: 'maison_meta', offrable: false, refus: 'reserve_agent_meta', cause: null },
   ];
@@ -684,25 +687,28 @@ describe.skipIf(!url)('la règle unique : offrable, appelable, rattachable (Post
     const mcpEteint = await source('mcp', 'disabled', 'itest-mcp-eteint');
     const httpActive = await source('http', 'active', 'itest-http-actif');
     const httpEteint = await source('http', 'disabled', 'itest-http-eteint');
+    const httpBrouillon = await source('http', 'draft', 'itest-http-brouillon');
     ids.httpActive = httpActive;
     ids.httpEteint = httpEteint;
+    ids.httpBrouillon = httpBrouillon;
     const requete = async (src: string, label: string): Promise<string> => (await pool.query<{ id: string }>(
       `insert into connector_requests (tenant_id, source_id, label, method, path, output_paths)
        values ($1, $2, $3, 'GET', '/x', array['statut']) returning id`, [tenantId, src, label],
     )).rows[0]!.id;
     ids.rqActive = await requete(httpActive, 'itest-rq-actif');
     ids.rqEteinte = await requete(httpEteint, 'itest-rq-eteinte');
+    ids.rqBrouillon = await requete(httpBrouillon, 'itest-rq-brouillon');
 
     const outil = async (name: string, o: {
       origin: 'mcp' | 'http' | 'mba'; source?: string | null; requete?: string | null; propose?: boolean;
-      nonActivable?: string | null; disparu?: boolean; pourAgentMeta?: boolean; tenant?: string;
+      nonActivable?: string | null; disparu?: boolean; pourAgentMeta?: boolean; tenant?: string; sansKind?: boolean;
     }): Promise<string> => (await pool.query<{ id: string }>(
       `insert into agent_tools (tenant_id, origin, source_id, source_kind, request_id, name, title, description,
                                 ne_pas_utiliser, risk, mcp_propose, mcp_non_activable, mcp_indisponible_le,
                                 pour_agent_meta, binding)
        values ($1, $2, $3, $4, $5, $6, $6, 'd', '', 'read', $7, $8, case when $9::boolean then now() end, $10, $11::jsonb)
        returning id`,
-      [o.tenant ?? tenantId, o.origin, o.source ?? null, o.origin === 'mba' ? null : o.origin, o.requete ?? null, name,
+      [o.tenant ?? tenantId, o.origin, o.source ?? null, o.origin === 'mba' || o.sansKind ? null : o.origin, o.requete ?? null, name,
         o.propose ?? true, o.nonActivable ?? null, o.disparu ?? false, o.pourAgentMeta ?? false,
         JSON.stringify(o.origin === 'mba' ? { handler: 'tag_fixe', tag: 'vip' } : {})],
     )).rows[0]!.id;
@@ -716,7 +722,14 @@ describe.skipIf(!url)('la règle unique : offrable, appelable, rattachable (Post
     ids.http_eteint = await outil('http_eteint', { origin: 'http', source: httpEteint, requete: ids.rqEteinte });
     ids.http_requete_eteinte = await outil('http_requete_eteinte', { origin: 'http', source: httpActive, requete: ids.rqEteinte });
     ids.maison_meta = await outil('maison_meta', { origin: 'mba', pourAgentMeta: true });
-    ids.ailleurs = await outil('maison_ailleurs', { origin: 'mba', pourAgentMeta: true, tenant: autreTenantId });
+    ids.mcp_mauvais_type = await outil('mcp_mauvais_type', { origin: 'mcp', source: httpActive, sansKind: true });
+    ids.mcp_course = await outil('mcp_course', { origin: 'mcp', source: mcpActive });
+    // Un outil de BIBLIOTHÈQUE (MCP, vivant) d'un autre espace : seul le filtre d'espace peut l'écarter.
+    const mcpAilleurs = (await pool.query<{ id: string }>(
+      `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+       values ($1, 'mcp', 'itest-mcp-ailleurs', 'https://exemple.test', 'none', 'active') returning id`, [autreTenantId],
+    )).rows[0]!.id;
+    ids.ailleurs = await outil('mcp_ailleurs', { origin: 'mcp', source: mcpAilleurs, tenant: autreTenantId });
   });
 
   afterAll(async () => {
@@ -790,14 +803,62 @@ describe.skipIf(!url)('la règle unique : offrable, appelable, rattachable (Post
     expect(await catalogue.rattacher(tenantId, agentId, ids.ailleurs!)).toEqual({ ok: false, refus: 'introuvable' });
   });
 
-  it('🔴 un connecteur de l’agent de Meta sur une source éteinte est refusé AVANT d’être créé', async () => {
+  it('🔴 un outil de bibliothèque d’un AUTRE espace n’est ni listé ni offert', async () => {
+    // Vivant, MCP, enregistré : rien d'autre que le filtre d'espace ne l'écarte (relecture du 2026-10-02).
+    expect((await catalogue.listCatalogue(tenantId)).some((o) => o.id === ids.ailleurs)).toBe(false);
+    expect((await catalogue.offrablesPour(tenantId, consommateurAgent(agentId))).some((o) => o.id === ids.ailleurs)).toBe(false);
+    expect((await catalogue.offrablesPour(tenantId, MBA)).some((o) => o.id === ids.ailleurs)).toBe(false);
+    // La preuve inverse : dans SON espace, il est bien offert.
+    expect((await catalogue.offrablesPour(autreTenantId, MBA)).some((o) => o.id === ids.ailleurs)).toBe(true);
+  });
+
+  /**
+   * 🔴 LA COURSE AVEC UN DÉSENREGISTREMENT (relecture du 2026-10-02 : ce test n'existait pas). `PgMcpStore.proposer`
+   * verrouille l'outil en `for update` avant de décocher `mcp_propose`. La porte le lit en `for key share` : elle
+   * ATTEND, puis relit la ligne commitée et refuse. Sans ce verrou, elle lisait l'ancienne version et rattachait un
+   * outil qu'on venait de retirer aux agents.
+   */
+  it('🔴 un désenregistrement qui passe pendant un rattachement le fait refuser, jamais l’inverse', async () => {
+    const id = ids.mcp_course!;
+    const autre = await pool.connect();
+    try {
+      await autre.query('begin');
+      await autre.query('select 1 from agent_tools where tenant_id = $1 and id = $2 for update', [tenantId, id]);
+      await autre.query('update agent_tools set mcp_propose = false where tenant_id = $1 and id = $2', [tenantId, id]);
+      const enCours = catalogue.rattacher(tenantId, agentId, id);
+      enCours.catch(() => {});
+      let attend = false;
+      for (let i = 0; i < 200 && !attend; i += 1) {
+        const r = await pool.query(
+          `select 1 from pg_stat_activity
+            where wait_event_type = 'Lock' and datname = current_database() and pid <> pg_backend_pid()`,
+        );
+        attend = (r.rowCount ?? 0) > 0;
+        if (!attend) await new Promise((ok) => setTimeout(ok, 25));
+      }
+      expect(attend, 'le rattachement ne s’est pas bloqué : le test ne prouverait rien').toBe(true);
+      await autre.query('commit');
+      expect(await enCours).toEqual({ ok: false, refus: 'non_enregistre' });
+    } catch (err) {
+      await autre.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      autre.release();
+    }
+    const lie = await pool.query('select 1 from agent_tool_consommateurs where tool_id = $1', [id]);
+    expect(lie.rowCount).toBe(0);
+  });
+
+  it('🔴 un connecteur de l’agent de Meta sur une source éteinte ou en brouillon est refusé AVANT d’être créé', async () => {
     const compter = async (): Promise<number> =>
       Number((await pool.query<{ n: string }>('select count(*) as n from agent_tools where tenant_id = $1', [tenantId])).rows[0]!.n);
     const avant = await compter();
-    await expect(catalogue.ajouterConnecteurPourMba(tenantId, NUMERO, {
-      sourceId: ids.httpEteint!, requestId: ids.rqEteinte!, name: 'http_refuse', title: 'T', description: 'd', nePasUtiliser: '',
-      params: [], risk: 'read',
-    })).rejects.toBeInstanceOf(OutilNonActivable);
+    for (const [source, requete] of [[ids.httpEteint!, ids.rqEteinte!], [ids.httpBrouillon!, ids.rqBrouillon!]]) {
+      await expect(catalogue.ajouterConnecteurPourMba(tenantId, NUMERO, {
+        sourceId: source!, requestId: requete!, name: 'http_refuse', title: 'T', description: 'd', nePasUtiliser: '',
+        params: [], risk: 'read',
+      })).rejects.toBeInstanceOf(OutilNonActivable);
+    }
     expect(await compter()).toBe(avant);
     // Sur une source active, il se crée comme avant.
     const cree = await catalogue.ajouterConnecteurPourMba(tenantId, NUMERO, {

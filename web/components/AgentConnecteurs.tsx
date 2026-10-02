@@ -6,7 +6,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import { listSources, type SourceAgent } from '@/lib/api-agent-sources';
 import { listRequetes, testerBrouillon, type RequeteApi } from '@/lib/api-agent-requetes';
-import { ajouterConnecteur, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
+import { ajouterConnecteur, raisonInappelable, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
 import { Bouton } from '@/components/Bouton';
 import { Squelette } from '@/components/Squelette';
 import { erreurDeChargement } from '@/lib/http';
@@ -115,12 +115,23 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
               <p className="text-xs text-ink-500">{t('Cet agent ne s’en sert pas.', 'This agent does not use it.')}</p>
             ) : (
               <ul className="space-y-0.5">
-                {siens.map((o) => (
-                  <li key={o.id} className="text-xs text-ink-500">
-                    <code>{o.name}</code>
-                    {!o.actif && <span className="ml-1 text-ink-500">{t('(inactif)', '(inactive)')}</span>}
-                  </li>
-                ))}
+                {siens.map((o) => {
+                  /**
+                   * 🔴 UN APPEL DONT LE SYSTÈME EST ÉTEINT LE DIT (relecture du 2026-10-02). L'agent ne le voit plus
+                   * (règle unique du catalogue) : sans cette ligne, la panne était muette, aucun appel n'étant plus
+                   * tenté ni journalisé.
+                   */
+                  const mort = raisonInappelable(o);
+                  return (
+                    <li key={o.id} className="text-xs text-ink-500">
+                      <code>{o.name}</code>
+                      {!o.actif && <span className="ml-1 text-ink-500">{t('(inactif)', '(inactive)')}</span>}
+                      {mort !== null && (
+                        <span data-testid={`connecteur-mort-${o.id}`} className="ml-1 text-danger">{t(mort.fr, mort.en)}</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
 
