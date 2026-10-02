@@ -212,5 +212,7 @@ CHECK du devenir dans les deux sens, et le lien `wa.me` sur un numéro tel que M
 - [ ] La charge d'un site très fréquenté : deux lectures en base par chargement que Cloudflare ne met pas en
   cache. Vérifier que `/widget/*.js` y est bien mis en cache (l'en-tête `public, max-age=60` le permet), sinon
   un cache court en mémoire par code (`cacheCourt`) plutôt qu'un plafond qui refuserait des visiteurs.
-- [ ] Faut-il limiter le nombre de widgets par espace, et à combien ?
-- [ ] Que fait l'écran quand le client supprime un scénario utilisé par un widget : refus, ou widget rendu inerte ?
+- [x] Faut-il limiter le nombre de widgets par espace, et à combien ? Cinq (Julien, 2026-10-02 ; lot 4).
+- [x] Que fait l'écran quand le client supprime un scénario utilisé par un widget : refus, ou widget rendu inerte ?
+  Inerte, sans toucher à la route de suppression des scénarios ; la fiche du widget le dit (Julien, 2026-10-02 ;
+  lot 4).

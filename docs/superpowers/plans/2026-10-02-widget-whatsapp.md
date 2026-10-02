@@ -233,12 +233,22 @@ nommé), `tests/widget-devenir.test.ts`.
 tient le fil : le scénario ne démarre pas ; une automation ORDINAIRE garde exactement son comportement (`reprendLaMain`
 faux), vérifié dans les deux sens.
 
-## Ce qui reste après le lot 3b (état du 2026-10-02 au soir)
+## Ce qui reste (état du 2026-10-02 au soir)
 
-- Lots 1, 2 et 3 sur `main`, CI verte ; migrations 0200 et 0201 appliquées en production et relues. Le VPS a l'image
-  construite SANS `up` : l'API ne sert pas encore les lots 2 et 3.
-- Lot 3b poussé le 2026-10-02 au soir. Restent le lot 4 (l'écran), le lot 5 (le MCP), puis le déploiement et l'essai
+- Lots 1 à 3b sur `main`, CI verte, et DÉPLOYÉS le 2026-10-02 au soir (VPS sur `97cdb65a`, `migrate` sans rien à
+  appliquer, contrôle public à 200) ; migrations 0200 et 0201 appliquées en production et relues.
+- Lot 4 : la moitié API poussée et déployée d'abord, la moitié console ensuite. Restent le lot 5 (le MCP) et l'essai
   réel.
+- Jaunes de la relecture du lot 4, ouverts : (1) le comptage des messages reçus compte les arrivées du widget
+  lui-même, donc recréer un widget avec la même phrase, raccourcir une phrase qui a servi ou retirer sa ponctuation
+  finale est refusé en 409 pendant la rétention des messages ; correctif possible, écarter les contacts qui portent
+  l'étiquette `widget-<code>`. (2) Le scénario désigné n'est contrôlé que sur son espace, pas sur l'existence d'une
+  version publiée : à l'arrivée l'exécuteur rend « le scénario est vide » et la conversation retombe sur le réglage
+  de l'espace, mais la fiche affiche le scénario ; reprendre le contrôle `vide` de Channels Me (409 ou drapeau
+  affiché). (3) Deux créations simultanées peuvent dépasser la limite de 5 d'un widget (pas de verrou).
+- Bornes posées par le lot 4 en l'absence de CHECK de longueur dans 0200, à valider : nom 80, phrase 300 (comme un
+  lien de chaîne), libellé 60, avatar 2 000 caractères en `https://`, plafond horaire de 1 à 100 000 ou `null`. Le
+  badge n'est PAS modifiable par l'API : son retrait relève de l'offre Pro, qui n'existe pas encore.
 - Tranché par Julien le 2026-10-02 pour le lot 4 : **5 widgets au plus par espace** ; un scénario supprimé rend son
   widget **inerte** (la base le fait déjà par `set null`, l'écran du widget le dit) ; l'API des lots 1 à 3b se
   déploie AVANT que l'écran ne soit poussé.
@@ -289,6 +299,48 @@ réservée aux admins (RBAC). (Ce plan exigeait ici « le QR se génère dans le
 ajoutée à l'API » : le lot 2 l'a tranché dans l'autre sens, QR généré côté serveur, spec section 5. L'aperçu de
 l'écran peut reprendre `qrcode`, déjà dans `web/`.)
 
+✍️ **Écrit le 2026-10-02, en attente de relecture.** Ce qui a été livré, et ce qui a bougé par rapport à ce plan :
+
+- **Les décisions de Julien du 2026-10-02, appliquées telles quelles** : cinq widgets au plus (409 au sixième) ; un
+  scénario supprimé rend son widget INERTE, la route de suppression des scénarios ne change pas, l'écran le dit sur
+  le widget (`scenarioSupprime` dans la réponse) ; le devenir `agent` est grisé à l'écran ET refusé par l'API (400,
+  « à venir »), sinon le MCP du lot 5 poserait un choix inerte. Devenirs acceptés : `null`, `mba`, `scenario`.
+- **Les contrôles vivent dans `src/widgets/gestion.ts`, pas dans la route.** Le MCP n'appelle pas de route HTTP, il
+  appelle des fonctions (`repondreDansLaFenetre` en est le modèle) : « les mêmes routes » veut donc dire les mêmes
+  fonctions, `creerWidget`, `modifierWidget`, `supprimerWidget` et `vueDuWidget`. `src/http/widgets.ts` n'ajoute que
+  la garde (`g.admin`, lecture comprise) et les statuts. L'assemblage de production (`gestionDesWidgetsEnBase`) est
+  celui que le test d'intégration éprouve.
+- **La comparaison des phrases est une fonction pure** (`src/widgets/phrases.ts`), appelée par la gestion des widgets
+  ET par le `phraseEnConflit` des liens de chaîne (`conflitDansLEspace`, câblé dans `src/index.ts`, qui lit
+  désormais `phrasesDesWidgets`). 🔴 **Elle retire la ponctuation FINALE des deux côtés**, ce que le plan ne
+  prévoyait pas : le mot-clé d'un lien est sa phrase privée de sa ponctuation finale (`motCleDepuisPhrase`), donc un
+  lien « Je veux le guide ! » déclenche sur le message d'un widget « Je veux le guide. », que deux phrases comparées
+  entières ne voyaient pas en conflit. Effet de bord assumé sur les liens : « Promo! » et « Promo? », qui avaient le
+  même mot-clé, sont désormais refusés comme deux phrases en conflit.
+- **La modification est PARTIELLE** (`PATCH`, un champ absent garde sa valeur), et les gardes se calculent sur
+  l'état EFFECTIF. Une phrase inchangée à la normalisation près ne repasse ni la comparaison ni le comptage (ses
+  propres arrivées la contiennent) ; une phrase qui change se compare aux AUTRES widgets, jamais à elle-même. Un
+  widget inerte reste modifiable (sa couleur, par exemple) : seul CHOISIR le devenir `scenario` exige un scénario.
+- **Le scénario désigné est vérifié à chaque écriture qui en porte un** (`getById(id, tenant)`), en unitaire et en
+  intégration (`tests/integration/widgets-gestion.integration.test.ts`, qui éprouve aussi la vraie lecture des
+  phrases de liens et le nom de la contrainte `widgets_phrase_key`).
+- **Le comptage des messages reçus** reprend `messagesContenantLaPhrase` des liens de chaîne, tel quel.
+- **`badge` n'est pas dans la saisie** : le retirer est un acte commercial (offre Pro) qui n'existe pas encore. Une
+  modification garde la valeur en base.
+- **L'adresse du script, la balise et le lien `wa.me`** sont fabriqués par `src/widgets/adresses.ts`, que la route
+  publique du lot 2 lit aussi (`ROUTE_SCRIPT`, `lienDuWidget`) : un test charge l'adresse distribuée sur la route
+  publique et obtient le script servi.
+- **L'écran** : `web/app/widgets/page.tsx`, `web/components/WidgetFormulaire.tsx` et `WidgetApercu.tsx`, l'entrée
+  « Widget WhatsApp » du menu (juste après Publicités), et `web/lib/widgets.ts`. Le QR est dessiné dans le navigateur
+  par `qrcode`, déjà présent. Une modification n'envoie que l'écart (`ecartsDeSaisie`).
+- 🔴 **Le découpage en deux poussées ne suit pas exactement « src d'un côté, web de l'autre ».** La moitié API porte
+  aussi `web/lib/widgets.ts` (et son test), parce que `tests/web-widgets-parite.test.ts` le lit. La moitié console
+  porte aussi `features.md`, la fiche d'aide `docs/aide/fiches/poser-une-bulle-whatsapp-sur-mon-site.md` et la carte
+  émise `src/aide/carte-console.ts` : la nouvelle section de `features.md` exige sa fiche
+  (`tests/aide-proposer.test.ts`), la fiche désigne l'écran `widgets`, qui n'existe dans la carte qu'avec l'entrée
+  de menu, qui n'existe qu'avec la page. Ils partent donc ensemble, et le bot d'aide ne connaît l'écran qu'au
+  déploiement de l'API qui suit la publication de la console.
+
 ---
 
 ## Lot 5 : les trois outils MCP
@@ -311,7 +363,9 @@ premiers ; un outil appelé sur un espace qui n'est pas celui de la clé est ref
 2. **Lots 1 à 3 déployés avant le lot 4.** 🔴 Vercel publie la console à CHAQUE push, l'API attend son
    `up --build` : un écran poussé avant sa route appelle une route que la production n'a pas, et le client voit
    une page cassée pendant toute la fenêtre. C'est arrivé le 2026-09-21 avec l'onglet « Outils », en 404 pendant
-   plus d'une heure.
+   plus d'une heure. **Le lot 4 lui-même part en deux poussées** : la moitié API (routes, gestion, tests, et
+   `web/lib/widgets.ts` qu'aucune page n'importe encore), déployée et contrôlée ; PUIS la moitié console (l'écran,
+   le menu, `features.md`, la fiche d'aide et la carte émise). Le détail est dans la section du lot 4.
 3. **`gh run list` lu AVANT le déploiement**, job par job sur `gh run view <id> --json jobs` : les tests
    d'intégration ne tournent qu'en CI, et `gh run watch --exit-status` a déjà rendu 0 sur un run en échec.
 4. **Contrôle public après le `up --build`** : les deux portes depuis l'extérieur. Le 502 de NPM tenant une

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { lienWaMe } from '../lib/wa-me';
 import { journaliser } from '../lib/journal';
+import { lienDuWidget, ROUTE_SCRIPT } from '../widgets/adresses';
 import { ClesResolues, avertissementBorne, type RateLimiter } from '../auth/rate-limit';
 import type { WidgetRow } from '../widgets/store.pg';
 import type { PhoneNumberRecord } from '../account/types';
@@ -64,7 +64,8 @@ export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRou
     'widget : budget des codes jamais vus épuisé (CODES_INCONNUS_PAR_MINUTE), des codes inconnus reçoivent le script inerte',
   );
 
-  app.get('/widget/:code.js', async (req, reply) => {
+  // Le chemin vit à côté de `adresseDuScript`, qui fabrique l'adresse que la console et le MCP distribuent.
+  app.get(ROUTE_SCRIPT, async (req, reply) => {
     const lu = parametres.safeParse(req.params);
     // Forme vérifiée avant la base : cette adresse reçoit des robots et des scans, aucune requête SQL par essai.
     if (!lu.success) return repondre(reply, SCRIPT_INERTE, CACHE_PUBLIC);
@@ -102,14 +103,9 @@ export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRou
       return repondre(reply, SCRIPT_INERTE, SANS_CACHE);
     }
 
-    // 🔴 GRISÉE SEULEMENT SANS NUMÉRO OU SUR UN NUMÉRO DÉLIÉ, JAMAIS SUR `health_status` À `BLOCKED`. Mesuré en
-    // production le 2026-10-02 : un compte BLOCKED (moyen de paiement en erreur, entreprise non vérifiée) REÇOIT et
-    // RÉPOND normalement dans la fenêtre de 24 h ; seules les conversations que l'entreprise ouvre sont bloquées.
-    // Or le visiteur du widget écrit le premier, donc il ouvre lui-même la fenêtre : griser sur BLOCKED éteindrait
-    // un widget qui marche. Un numéro sans aucun chiffre ne permet pas de lien (`lienWaMe` rend null) : grisée aussi.
-    const lien = numero !== null && numero.delieLe === null
-      ? lienWaMe(numero.displayPhoneNumber, widget.phrase.trim())
-      : null;
+    // 🔴 GRISÉE SEULEMENT SANS NUMÉRO OU SUR UN NUMÉRO DÉLIÉ, JAMAIS SUR `health_status` À `BLOCKED` : la règle et
+    // sa mesure sont dans `lienDuWidget`, que la console lit aussi pour annoncer une bulle grisée.
+    const lien = lienDuWidget(numero, widget.phrase);
 
     let config: ConfigScript;
     if (lien === null) {

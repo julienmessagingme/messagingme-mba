@@ -62,11 +62,12 @@ import { makeDbReadinessCheck } from './db/readiness';
 import { lanceurBalayageRisque } from './engagement/cablage';
 import { PgChannelsMeConnectionStore } from './channels-me/connection-store.pg';
 import { PgChannelsMeLinkStore } from './channels-me/link-store.pg';
-import { normalizeText } from './automation/match';
 import { PgChannelsMePostStore } from './channels-me/post-store.pg';
 import { ChannelsMeClient } from './channels-me/client';
 import { PgWidgetStore } from './widgets/store.pg';
 import { qrSvg } from './widgets/qr';
+import { conflitDansLEspace } from './widgets/phrases';
+import { gestionDesWidgetsEnBase } from './widgets/gestion';
 import { enfilerEvenementAutomation, type AutomationEventJob } from './automation/event-job';
 import { RateLimiter } from './auth/rate-limit';
 import { resolveTenantCode } from './ids/tenant-code';
@@ -340,6 +341,8 @@ async function main(): Promise<void> {
   const channelsMeConnections = new PgChannelsMeConnectionStore(pool, config.ENCRYPTION_KEY);
   const channelsMeLinks = new PgChannelsMeLinkStore(pool);
   const channelsMePosts = new PgChannelsMePostStore(pool);
+  // Les widgets WhatsApp : le script public les lit par leur code, le contrôle des liens de chaîne par leur phrase.
+  const widgetStore = new PgWidgetStore(pool);
   // Hôte fixe et de confiance : aucune vérification d'adresse privée, même traitement que Meta et Zadarma.
   const channelsMeClient = new ChannelsMeClient();
   const rcsMessageStore = new PgRcsMessageStore(pool);
@@ -594,10 +597,17 @@ async function main(): Promise<void> {
     // Le script public de la bulle WhatsApp. L'espace vient du widget retrouvé par son code ; le numéro est celui
     // que l'écran Accueil affiche, et son état (délié ou non) décide de la bulle grisée.
     widgetPublic: {
-      widgets: new PgWidgetStore(pool),
+      widgets: widgetStore,
       numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
       qrSvg,
       budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
+    },
+    // Les mêmes widgets, côté console. Le numéro est celui du script public, donc le lien `wa.me` montré à l'écran
+    // est celui que la bulle ouvrira ; l'adresse du script vit sur l'API, comme celle d'un webhook entrant.
+    widgets: {
+      gestion: gestionDesWidgetsEnBase(pool),
+      numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
+      baseApi: adressesApi.avecPrefixe,
     },
     // Réception publique des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
     // l'écriture du contact passe par `upsertContactsFromApi`, le chemin partagé avec la console.
@@ -1919,18 +1929,14 @@ async function main(): Promise<void> {
       //  - `mode: 'contains'`, qui laisse passer un abonné ayant ajouté un mot devant ou derrière la phrase.
       // L'unicité se tranche avec la même normalisation que la correspondance (`normalizeText`, celle de
       // `matchesTrigger` et `keywordsOf`) : une comparaison SQL approchée laisserait passer « Ça m'intéresse »
-      // et « ca m interesse ».
-      phraseEnConflit: async (tenant, phrase) => {
-        const cible = normalizeText(phrase);
-        const existantes = await channelsMeLinks.phrasesDesLiens(tenant);
-        // L'inclusion dans les deux sens, pas l'égalité : en mode `contains`, un abonné qui appuie sur « Je
-        // veux le guide 2026 » envoie aussi « Je veux le guide ». Les deux automations matcheraient, et le
-        // second scénario clôturerait le premier ; sur un post déjà publié, c'est sans recours.
-        return existantes.some((p) => {
-          const n = normalizeText(p);
-          return n.includes(cible) || cible.includes(n);
-        });
-      },
+      // et « ca m interesse ». L'inclusion dans les deux sens, pas l'égalité : en mode `contains`, un abonné qui
+      // appuie sur « Je veux le guide 2026 » envoie aussi « Je veux le guide ».
+      // 🔴 Contre les liens ET les widgets (lot 4 du widget) : la comparaison est celle de la route des widgets,
+      // écrite une fois dans `src/widgets/phrases.ts`.
+      phraseEnConflit: conflitDansLEspace({
+        phrasesDesLiens: (tenant) => channelsMeLinks.phrasesDesLiens(tenant),
+        phrasesDesWidgets: (tenant) => widgetStore.phrasesDesWidgets(tenant),
+      }),
       creerAutomationCompagnon: (tenant, input) => automationStore.create(tenant, {
         name: input.nom,
         triggerKind: 'keyword',

@@ -80,6 +80,7 @@ import { registerWebhooksAdmin } from './http/webhooks-admin';
 import type { WebhooksAdminRouteDeps } from './http/webhooks-admin';
 import type { LinksRouteDeps } from './http/links';
 import { registerWidgetPublic, type WidgetPublicRouteDeps } from './http/widget-public';
+import { registerWidgets, type WidgetsRouteDeps } from './http/widgets';
 import { registerMba } from './http/mba';
 import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
@@ -333,6 +334,8 @@ export interface ServerDeps {
    * d'un visiteur du site client qui le charge. L'espace vient du widget retrouvé par son code, jamais de l'URL.
    */
   widgetPublic?: WidgetPublicRouteDeps;
+  /** Les widgets WhatsApp d'un espace, côté console (lister, créer, modifier, supprimer), réservé aux admins. */
+  widgets?: WidgetsRouteDeps;
   /**
    * Réception publique des webhooks entrants (`POST /w/:code`). Aucune authentification : c'est un outil
    * tiers qui poste. Le tenant vient du code retrouvé en base, jamais du corps.
@@ -573,6 +576,9 @@ export function modulesDeRoutes(
     // `auth` et non `admin` : les écrans de la chaîne se lisent avec un compte agent, et les six
     // ecritures sont fermees dans la route par `forbidNonAdmin`.
     entree('channelsMe', 'tenant', deps.channelsMe, (app, d, g) => registerChannelsMeRoutes(app, d, g.auth)),
+    // `admin`, lecture comprise : l'écran n'est ouvert qu'aux administrateurs, et poser une bulle sur le site d'un
+    // client décide qui répond à ses visiteurs.
+    entree('widgets', 'tenant', deps.widgets, (app, d, g) => registerWidgets(app, d, g.admin)),
     entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.admin, g.limiteCouteuse)),
     entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin)),
     entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin)),

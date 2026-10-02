@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { normalizeText } from '../src/automation/match';
+import { conflitDansLEspace } from '../src/widgets/phrases';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildServer } from '../src/server';
@@ -347,19 +347,34 @@ describe('Channels Me : les liens de chaine', () => {
     // clot le premier. Sur un post deja publie, c est sans recours.
     //
     // Ce test exerce la vraie regle en branchant le VRAI comparateur sur des phrases qui s incluent, plutot
-    // que de faire confiance a un faux qui rendrait `true` sans rien comparer.
-    const existante = 'Je veux le guide';
-    const enConflit = async (_t: string, phrase: string): Promise<boolean> => {
-      const n = normalizeText(existante);
-      const c = normalizeText(phrase);
-      return n.includes(c) || c.includes(n);
-    };
-    const { server, cap } = app({ phraseEnConflit: enConflit });
+    // que de faire confiance a un faux qui rendrait `true` sans rien comparer. C'est celui que le cablage pose
+    // (`conflitDansLEspace`, `src/widgets/phrases.ts`), et non une copie : il en avait une jusqu'au lot 4 du widget.
+    const { server, cap } = app({
+      phraseEnConflit: conflitDansLEspace({ phrasesDesLiens: async () => ['Je veux le guide'], phrasesDesWidgets: async () => [] }),
+    });
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok),
       payload: { workflowId: WF_ID, phrase: 'Je veux le guide 2026' },
     });
     expect(res.statusCode).toBe(409);
+    expect(cap.liens).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 une phrase de lien qui contient celle d’un WIDGET est refusee aussi, et l’inverse (lot 4 du widget)', async () => {
+    // Le widget et le lien se reconnaissent dans le meme message entrant : un lien qui contiendrait la phrase d'un
+    // widget ferait appliquer le devenir du widget a chaque abonne qui appuie sur le bouton.
+    const { server, cap } = app({
+      phraseEnConflit: conflitDansLEspace({ phrasesDesLiens: async () => [], phrasesDesWidgets: async () => ['Je viens du blog'] }),
+    });
+    for (const phrase of ['Bonjour, je viens du blog', 'du blog']) {
+      const res = await server.inject({
+        method: 'POST', url: '/tenants/t1/channels-me/links', ...h(adminTok), payload: { workflowId: WF_ID, phrase },
+      });
+      expect(res.statusCode, phrase).toBe(409);
+      expect(res.json<{ error: string }>().error).toContain('widget');
+    }
+    expect(cap.automations).toEqual([]);
     expect(cap.liens).toEqual([]);
     await server.close();
   });

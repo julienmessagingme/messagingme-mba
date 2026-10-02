@@ -91,7 +91,8 @@ export interface ChannelsMeRouteDeps {
    * Cette phrase entre-t-elle en conflit avec celle d'un lien existant de l'espace ? Conflit veut dire inclusion,
    * pas égalité (comparaison en `contains`) : « Je veux le guide » et « Je veux le guide 2026 » déclencheraient les
    * deux scénarios sur le second bouton. Porte sur tous les liens, éteints compris : un lien éteint peut être
-   * rallumé, et son post circule encore.
+   * rallumé, et son post circule encore. Et sur les widgets WhatsApp de l'espace, qui se reconnaissent dans le même
+   * message (`conflitDansLEspace`, `src/widgets/phrases.ts`).
    */
   phraseEnConflit(tenantId: string, phrase: string): Promise<boolean>;
   creerAutomationCompagnon(tenantId: string, input: {
@@ -265,7 +266,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     }
     if (await deps.phraseEnConflit(tenant, phrase)) {
       return reply.code(409).send({
-        error: "cette phrase entre en conflit avec celle d'un autre lien (l'une contient l'autre) : un seul message declencherait les deux scenarios",
+        error: "cette phrase entre en conflit avec celle d'un autre lien ou d'un widget WhatsApp (l'une contient l'autre) : un seul message declencherait les deux",
       });
     }
     const dejaVus = await deps.liens.messagesContenantLaPhrase(tenant, phrase);
