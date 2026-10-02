@@ -25,8 +25,16 @@ export interface MbaSettings {
   ai_audience?: 'EVERYONE' | 'ALLOWLISTED_ONLY';
   followup?: { enabled?: boolean; followup_interval_in_seconds?: number };
   never_say_phrases?: string[];
+  handoff?: { enabled?: boolean; message?: string; message_selection?: SelectionMessagePassage };
   [autre: string]: unknown;
 }
+
+/**
+ * D'où vient la phrase que l'agent envoie quand il passe la main à un humain. `DEFAULT` est le texte standard de Meta,
+ * en ANGLAIS (vu le 2026-09-30 dans une conversation en français) ; `AGENT` le fait rédiger par l'agent, dans la langue
+ * du client ; `CUSTOM` envoie notre texte (`handoff.message`).
+ */
+export type SelectionMessagePassage = 'DEFAULT' | 'AGENT' | 'CUSTOM';
 
 export interface MbaStatus {
   phoneNumberId: string;
@@ -97,6 +105,9 @@ export function getMbaMessages(tenantId: string, phoneNumberId: string): Promise
 export interface MbaSettingsPatch {
   neverSay?: string[];
   followupEnabled?: boolean;
+  /** `CUSTOM` exige `handoffMessage` dans le même appel : le serveur refuse sinon. */
+  handoffMessageSelection?: SelectionMessagePassage;
+  handoffMessage?: string;
 }
 
 export function patchMbaSettings(tenantId: string, phoneNumberId: string, patch: MbaSettingsPatch): Promise<MbaSettings> {

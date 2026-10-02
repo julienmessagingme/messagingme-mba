@@ -5,7 +5,7 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputClsAuto } from '@/lib/ui';
 import { Toggle } from './Toggle';
 import { MbaNotice } from './MbaNotice';
-import { patchMbaSettings, putMbaRollout, type MbaStatus, type MbaSettings } from '@/lib/api-mba';
+import { patchMbaSettings, putMbaRollout, type MbaStatus, type MbaSettings, type SelectionMessagePassage } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
 
@@ -29,6 +29,25 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
   const [err, setErr] = useState('');
   const [nouvelInterdit, setNouvelInterdit] = useState('');
   const interdits = s?.never_say_phrases ?? [];
+  /**
+   * ⚠️ META NE RELIT PAS CE CHOIX (mesuré le 2026-10-02) : la lecture des réglages rend `handoff.message` mais jamais
+   * `message_selection`. On ne coche donc rien tant qu'il n'a pas été fait ICI, plutôt que d'afficher « texte standard »
+   * sur un choix qu'on ignore. Ce qu'on vient d'écrire reste coché pour la durée de l'écran.
+   */
+  const [selection, setSelection] = useState<SelectionMessagePassage | null>(s?.handoff?.message_selection ?? null);
+  const [texteCustom, setTexteCustom] = useState(s?.handoff?.message ?? '');
+
+  function choisirPassage(cle: SelectionMessagePassage): void {
+    // `CUSTOM` part avec son texte : sans texte, le serveur refuse, et l'écran le dit (`err`).
+    const patch = cle === 'CUSTOM'
+      ? { handoffMessageSelection: cle, handoffMessage: texteCustom }
+      : { handoffMessageSelection: cle };
+    void appliquer(async () => {
+      const r = await patchMbaSettings(tenantId, phoneNumberId, patch);
+      setSelection(cle);
+      return r;
+    });
+  }
 
   async function appliquer(action: () => Promise<MbaSettings>): Promise<void> {
     setBusy(true);
@@ -172,6 +191,59 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
             testid="mba-followup-toggle"
             onChange={() => void appliquer(() => patchMbaSettings(tenantId, phoneNumberId, { followupEnabled: s?.followup?.enabled !== true }))}
           />
+        </div>
+      </section>
+
+      {/* 🔴 LE MESSAGE DE PASSAGE À UN HUMAIN. Par défaut, Meta envoie son texte standard, en anglais, au milieu d'une
+          conversation en français (vu le 2026-09-30). Le choix existait côté serveur, pas à l'écran. */}
+      <section className={cardCls} data-testid="mba-message-passage">
+        <h3 className="text-sm font-semibold text-ink-900">{t('Message de passage à un humain', 'Handoff message')}</h3>
+        <p className="mt-1 text-xs text-ink-500">
+          {t('Ce que l’agent écrit au client quand il passe la main à votre équipe.',
+            'What the agent writes to the customer when it hands over to your team.')}
+        </p>
+        {selection === null && (
+          <p className="mt-2 text-xs text-ink-500" data-testid="mba-passage-inconnu">
+            {t('Meta ne dit pas quel choix est actif. Tant qu’aucun n’a été fait ici, c’est son texte standard, en anglais.',
+              'Meta does not report which choice is active. Until one is made here, its standard English text is used.')}
+          </p>
+        )}
+        <div className="mt-3 space-y-2" role="radiogroup">
+          {([
+            ['AGENT', t('Rédigé par l’agent, dans la langue du client', 'Written by the agent, in the customer’s language')],
+            ['CUSTOM', t('Notre texte', 'Our own text')],
+            ['DEFAULT', t('Texte standard de Meta (en anglais)', 'Meta’s standard text (in English)')],
+          ] as const).map(([cle, libelle]) => (
+            <label key={cle} className="flex cursor-pointer items-center gap-2 text-sm text-ink-900">
+              <input
+                type="radio"
+                name="mba-message-passage"
+                data-testid={`mba-passage-${cle}`}
+                checked={selection === cle}
+                disabled={busy}
+                onChange={() => choisirPassage(cle)}
+              />
+              {libelle}
+            </label>
+          ))}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <input
+            className={inputClsAuto}
+            value={texteCustom}
+            onChange={(e) => setTexteCustom(e.target.value)}
+            placeholder={t('Je transmets votre demande à un conseiller, il vous répond au plus vite.', 'I am passing your request to an advisor, who will reply shortly.')}
+            data-testid="mba-passage-texte"
+            disabled={busy}
+          />
+          <Bouton
+            variante="secondaire"
+            disabled={busy || texteCustom.trim() === ''}
+            data-testid="mba-passage-enregistrer"
+            onClick={() => choisirPassage('CUSTOM')}
+          >
+            {t('Utiliser ce texte', 'Use this text')}
+          </Bouton>
         </div>
       </section>
     </div>
