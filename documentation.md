@@ -1696,10 +1696,12 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
 - La clé du relais du Meta Business Agent (droit `mba:relais`, attribué par la seule publication) n'entre PAS
   dans ce plafond : elle garde un compteur PAR CLÉ (`API_KEY_RATE_LIMIT_MAX`, sur l'empreinte), pour qu'un
   intégrateur qui charge l'API ne coupe pas les outils de l'agent de Meta en pleine conversation.
-- `/w/:code` et `/rcs/callback/:code` : AVANT la base, un budget COMMUN (`CODES_INCONNUS_PAR_MINUTE`, clé
-  constante, en silence) freine les codes jamais résolus par ce process, et un code résolu en est exempté, comme
-  une clé sur `/v1`. APRÈS la lecture, le plafond par code EXISTANT (`WEBHOOK_IN_RATE_LIMIT_*`,
-  `RCS_CALLBACK_PAR_MINUTE`). Le second se calcule sur le débit RCS d'un run de campagne, et ne tient que parce
+- `/w/:code`, `/rcs/callback/:code` et `/widget/:code.js` : AVANT la base, un budget COMMUN
+  (`CODES_INCONNUS_PAR_MINUTE`, clé constante, en silence, une instance par porte) freine les codes jamais résolus
+  par ce process, et un code résolu en est exempté, comme une clé sur `/v1`. Épuisé, il rend 429, sauf au widget,
+  qui rend son script inerte sans cache (la réponse s'exécute dans la page d'un client). APRÈS la lecture, pour
+  les deux premières seulement (le widget n'a pas de plafond par code : sa réponse se met en cache 60 s), le
+  plafond par code EXISTANT (`WEBHOOK_IN_RATE_LIMIT_*`, `RCS_CALLBACK_PAR_MINUTE`). Le second se calcule sur le débit RCS d'un run de campagne, et ne tient que parce
   qu'un seul run tourne à la fois par espace ; des tests tiennent le débit, la concurrence par groupe et le
   `groupId` de chaque enfilement. Les envois RCS d'un scénario n'y passent pas : la marge les absorbe. Un code
   déjà résolu prend aussi son plafond AVANT la base (un refus ne coûte plus de lecture), et un budget épuisé se

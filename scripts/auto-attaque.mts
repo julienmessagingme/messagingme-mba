@@ -55,6 +55,7 @@ import { FakeQueue } from '../tests/fake-queue';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { signSession, signSessionOps } from '../src/auth/token';
 import { API_KEY_PREFIX } from '../src/auth/api-key-store.pg';
+import { SCRIPT_INERTE } from '../src/widgets/script';
 import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
@@ -215,6 +216,9 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   links: inconnu('links'),
   webhookEntrant: inconnuSaufLimiteurs('webhookEntrant', ['limiter', 'budgetInconnus']),
   rcsCallback: inconnu('rcsCallback'),
+  // Le script de la bulle WhatsApp : aucun widget ne se résout, donc ni numéro ni QR ne sont jamais demandés. Son
+  // budget des codes jamais vus est un vrai limiteur désactivé, pour la raison écrite sur `inconnuSaufLimiteurs`.
+  widgetPublic: inconnuSaufLimiteurs('widgetPublic', ['budgetInconnus']),
   // Avant toute session : aucun compte n'existe, et le secret de session est celui des jetons fabriqués ici.
   // La liste d'exploitation nomme une adresse dont l'identité n'a aucun facteur actif : une session
   // d'exploitation bien signée doit quand même tomber, sur la relecture du facteur à chaque requête.
@@ -422,6 +426,18 @@ const AUTORITE_DANS_L_APPEL: ReadonlySet<ClasseDAcces> = new Set(['code-url', 's
 const CROCKFORD = '0123456789abcdefghjkmnpqrstvwxyz';
 const auHasard = (n: number): string => Array.from(randomBytes(n), (o) => CROCKFORD[o % CROCKFORD.length]).join('');
 const CODES_INCONNUS = [auHasard(12), auHasard(26), `rcs-${randomBytes(12).toString('hex')}`];
+
+/**
+ * Ce qu'une route `code-url` rend à un code que personne n'a émis : 404, SAUF pour les modules nommés ici, chacun
+ * avec ce qu'il doit rendre à la place et la raison. Même polarité que `OUVERTES` : l'exception s'écrit, elle ne
+ * se déduit pas, et un nom qui ne désigne plus un module `code-url` est une trouvaille de la sonde 11.
+ */
+const CODE_INCONNU_SAUF: Readonly<Record<string, { attendu: string; juste: (r: Reponse) => boolean }>> = {
+  // Le script de la bulle WhatsApp s'exécute dans la page d'un CLIENT, chargé par une balise `<script>` : une
+  // erreur s'y lirait dans la console de son site. Un code inconnu rend donc 200 et le script inerte, octet pour
+  // octet, qui n'exécute rien et ne dit pas plus qu'un 404 (un widget éteint rend la même chose).
+  widgetPublic: { attendu: '200 et le script inerte', juste: (r) => r.statut === 200 && r.corps === SCRIPT_INERTE },
+};
 
 /** Chemins qu'on n'envoie JAMAIS sur une cible distante : ils effacent ou dépensent pour de vrai. */
 const DESTRUCTRICES = /purge|\/run$|broadcast|\/send|\/stop$|\/archive$|import$/;
@@ -694,19 +710,31 @@ async function main(): Promise<void> {
   };
 
   // --- Sonde 11 : classe `code-url`, un code que personne n'a émis ---------------------------------------
-  // C'est le code de l'adresse qui autorise. Un code bien formé mais inconnu doit rendre 404, sans rien
-  // écrire ni rediriger nulle part. En local le faux magasin ne connaît aucun code ; à distance, un code tiré
-  // au hasard n'existe pas.
+  // C'est le code de l'adresse qui autorise. Un code bien formé mais inconnu doit rendre 404 (ou ce que
+  // `CODE_INCONNU_SAUF` déclare pour son module), sans rien écrire ni rediriger nulle part. En local le faux
+  // magasin ne connaît aucun code ; à distance, un code tiré au hasard n'existe pas.
   {
     const avant = new Map(interrogations);
     for (const r of deClasse('code-url').filter(jouables)) {
+      const module = classes.get(r.chemin)?.module;
+      const sauf = module !== undefined && Object.hasOwn(CODE_INCONNU_SAUF, module) ? CODE_INCONNU_SAUF[module] : undefined;
       for (const methode of r.methodes) {
         for (const code of r.chemin.includes(':code') ? CODES_INCONNUS : ['']) {
           const chemin = concretiser(r.chemin.replace(':code', code), tenantA);
           const res = await envoyer({ methode, chemin, ...(methode === 'GET' ? {} : { corps: {} }) });
-          verifier('11. code inconnu dans l’adresse', `${methode} ${r.chemin} (${code || 'sans code'})`, res.statut === 404, '404', String(res.statut));
+          verifier(
+            '11. code inconnu dans l’adresse',
+            `${methode} ${r.chemin} (${code || 'sans code'})`,
+            sauf ? sauf.juste(res) : res.statut === 404,
+            sauf?.attendu ?? '404',
+            sauf ? `${res.statut} ${res.corps.slice(0, 80)}` : String(res.statut),
+          );
         }
       }
+    }
+    const modulesCodeUrl = new Set([...classes.values()].filter((v) => v.classe === 'code-url').map((v) => v.module));
+    for (const nom of Object.keys(CODE_INCONNU_SAUF)) {
+      verifier('11. une exception au 404 désigne un module code-url', nom, modulesCodeUrl.has(nom), 'un module code-url du registre', 'absent du registre, ou d’une autre classe');
     }
     verifierAtteinte('11. code inconnu : la sonde atteint le magasin', 'code-url', avant, 'aucun code candidat n’a le format de ce module : l’ajouter à CODES_INCONNUS');
   }

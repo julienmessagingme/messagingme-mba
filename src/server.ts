@@ -79,6 +79,7 @@ import type { WebhookEntrantRouteDeps } from './http/webhook-entrant';
 import { registerWebhooksAdmin } from './http/webhooks-admin';
 import type { WebhooksAdminRouteDeps } from './http/webhooks-admin';
 import type { LinksRouteDeps } from './http/links';
+import { registerWidgetPublic, type WidgetPublicRouteDeps } from './http/widget-public';
 import { registerMba } from './http/mba';
 import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
@@ -328,6 +329,11 @@ export interface ServerDeps {
    */
   links?: LinksRouteDeps;
   /**
+   * Le script public de la bulle WhatsApp (`GET /widget/:code.js`). Aucune authentification : c'est le navigateur
+   * d'un visiteur du site client qui le charge. L'espace vient du widget retrouvé par son code, jamais de l'URL.
+   */
+  widgetPublic?: WidgetPublicRouteDeps;
+  /**
    * Réception publique des webhooks entrants (`POST /w/:code`). Aucune authentification : c'est un outil
    * tiers qui poste. Le tenant vient du code retrouvé en base, jamais du corps.
    */
@@ -354,8 +360,9 @@ export type ClasseDAcces =
   | 'anonyme'
   /**
    * Un code opaque dans l'adresse autorise l'appel : lien tracé (`/r/:code`), rappel du fournisseur RCS
-   * (`/rcs/callback/:code`), webhook entrant (`/w/:code`). Le webhook entrant accepte en plus un secret
-   * d'en-tête facultatif (`x-webhook-secret`) : le code autorise, le secret durcit.
+   * (`/rcs/callback/:code`), webhook entrant (`/w/:code`), script de la bulle WhatsApp (`/widget/:code.js`). Le
+   * webhook entrant accepte en plus un secret d'en-tête facultatif (`x-webhook-secret`) : le code autorise, le
+   * secret durcit.
    */
   | 'code-url'
   /** La signature de Meta sur le corps de la requête, avec le secret de l'application Meta. */
@@ -492,6 +499,9 @@ export function modulesDeRoutes(
     // Redirection des liens tracés : publique (un destinataire clique depuis WhatsApp, sans session), montée
     // avant les gardes d'auth.
     entree('links', 'code-url', deps.links, (app, d) => registerLinks(app, d)),
+    // Le script de la bulle WhatsApp : public aussi (le navigateur d'un visiteur le charge depuis le site d'un
+    // client), autorisé par le code opaque de l'URL. Une balise posée est une porte à sens unique.
+    entree('widgetPublic', 'code-url', deps.widgetPublic, (app, d) => registerWidgetPublic(app, d)),
     // Réception des webhooks entrants : publique aussi (l'appelant est un outil tiers), montée avant les gardes.
     entree('webhookEntrant', 'code-url', deps.webhookEntrant, (app, d) => registerWebhookEntrant(app, d)),
     // Rappels du fournisseur RCS : publique aussi (l'appelant est smsmode), autorisée par le code opaque de

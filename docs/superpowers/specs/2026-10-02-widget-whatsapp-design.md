@@ -41,10 +41,20 @@ affiche publiquement), la phrase, et l'apparence. Aucune clé, aucun identifiant
 garde cette propriété, parce qu'un champ ajouté par distraction y serait lisible par tout le monde.
 
 **Cache de 60 secondes.** Assez pour absorber le trafic d'un site, assez court pour qu'un changement de couleur
-se voie presque tout de suite. Un cache long ferait croire le réglage cassé.
+se voie presque tout de suite. Un cache long ferait croire le réglage cassé. Une réponse de REPLI (lecture en
+panne, budget épuisé) part en `no-store` : une bulle absente pour une raison passagère ne doit pas le rester.
 
 **Plafond de débit** sur la route, comme les autres routes publiques, avec `0` qui le désactive (convention du
-dépôt). La bulle ne poste rien : elle ne fait que se charger, puis ouvrir WhatsApp.
+dépôt). La bulle ne poste rien : elle ne fait que se charger, puis ouvrir WhatsApp. ⚠️ **Le lot 2 n'en pose
+qu'une moitié** : le frein des codes jamais vus (`CODES_INCONNUS_PAR_MINUTE`, comme `/w/:code`), qui borne
+l'énumération, puisqu'un code inventé coûte une lecture en base. Il n'y a PAS de plafond par code : un vrai widget
+est chargé à chaque vue d'une page de son site, et un plafond y refuserait des visiteurs réels, exactement comme
+`/r/:code`. Ce que coûte un site très fréquenté (deux lectures par chargement non mis en cache) reste une question
+ouverte, en bas de cette page.
+
+**Rien ne s'affiche (code inconnu, mal formé ou vide, widget éteint, lecture en panne) : 200 et un script inerte**,
+le même dans tous les cas. Jamais une 5xx, ni même un 4xx : la réponse s'exécute dans la page d'un client, où une
+erreur se lirait dans SA console. L'auto-attaque déclare cette exception au 404 de la classe `code-url`.
 
 ## 2. Les données
 
@@ -123,14 +133,19 @@ un CSS libre rendrait le badge trivial à masquer.
 ## 5. Le visiteur, selon son appareil
 
 - **Mobile** : la bulle ouvre WhatsApp sur une conversation avec le numéro de l'espace, message pré-rempli. Le
-  lien se fabrique avec `waMeLink` (`src/lib/wa-me.ts`), **déjà écrit, déjà testé, module pur**. Il porte les deux
-  pièges qu'on ne veut pas réapprendre : le numéro arrive tel que Meta l'affiche et doit être réduit à ses
-  chiffres, et le texte doit être encodé sinon il est tronqué au premier espace, ce qui couperait la phrase et
-  empêcherait la reconnaissance de la source.
-- **Ordinateur** : un QR code et un lien vers WhatsApp Web. 🔴 **Le QR se génère dans le navigateur du visiteur**,
-  pas chez nous : `qrcode` n'est présent que dans `web/package.json`, donc côté console, et le widget est servi
-  par l'API. Le générer côté serveur ajouterait une dépendance à l'API pour une image que le navigateur sait
-  dessiner.
+  lien se fabrique avec `lienWaMe` (`src/lib/wa-me.ts`), **déjà écrit, déjà testé, module pur**, appelé par la
+  route et jamais refabriqué dans le navigateur. Il porte les deux pièges qu'on ne veut pas réapprendre : le numéro
+  arrive tel que Meta l'affiche et doit être réduit à ses chiffres, et le texte doit être encodé sinon il est
+  tronqué au premier espace, ce qui couperait la phrase et empêcherait la reconnaissance de la source. (Cette
+  ligne nommait `waMeLink`, qui n'existe pas.)
+- **Ordinateur** : un clic ouvre un petit panneau avec le QR code et le lien `wa.me`, ouvert dans un nouvel onglet.
+  🔴 **Le QR se génère CÔTÉ SERVEUR**, au moment de servir le script (`src/widgets/qr.ts`), et voyage dedans en
+  SVG, posé par une balise `img` en `data:` URI. Trois raisons : aucune bibliothèque de QR n'est téléchargée par
+  chaque site client, donc par chacun de ses visiteurs ; `qrcode` est déjà une dépendance du dépôt, côté console
+  (`web/package.json`), et l'API la reprend aux mêmes versions ; et le contenu du QR, le lien `wa.me`, est connu
+  au moment de servir. Cette section disait l'inverse avant le lot 2 (générer dans le navigateur pour ne pas
+  ajouter de dépendance à l'API) : le prix réel en était une bibliothèque tierce chargée sur les sites de nos
+  clients.
 
 ## 6. Quand le numéro ne répond plus
 
@@ -143,7 +158,16 @@ il n'écrit pas dans le vide à un numéro qui ne répondra jamais, ce qui laiss
 client**, pas de nous.
 
 C'est le script généré qui porte cet état : il le connaît au moment où il est servi, et le cache de 60 secondes
-borne le délai de bascule.
+borne le délai de bascule. La bulle grisée n'a ni lien ni gestionnaire de clic, porte « Messagerie WhatsApp
+momentanément indisponible » en `title` et `aria-label` seulement (aucun texte visible, pas de traduction au
+premier lot), et ne publie ni la phrase ni le numéro.
+
+🔴 **GRISÉE SEULEMENT SANS NUMÉRO OU SUR UN NUMÉRO DÉLIÉ (`phone_numbers.delie_le`), JAMAIS SUR `health_status` À
+`BLOCKED`.** Mesuré en production le 2026-10-02 : un compte BLOCKED (moyen de paiement en erreur, entreprise non
+vérifiée) reçoit ET répond normalement dans la fenêtre de 24 h, seules les conversations ouvertes par l'entreprise
+sont bloquées. Or le visiteur du widget écrit le premier : griser sur BLOCKED éteindrait un widget qui marche. Le
+« compte suspendu » du paragraphe d'ouverture ne grise donc pas la bulle au lot 2 ; un numéro réellement banni par
+Meta, s'il se mesure un jour, sera un état à part.
 
 **Plafond horaire par widget**, comme `channelsme_links.max_par_heure` : une phrase publique peut être envoyée en
 rafale, et un envoi de masse involontaire se facture au client.
@@ -171,6 +195,10 @@ CHECK du devenir dans les deux sens, et le lien `wa.me` sur un numéro tel que M
 ## Questions encore ouvertes
 
 - [ ] Le numéro de migration : à lire dans `db/migrations/` d'**origin** au moment d'écrire le fichier (0199 au 2026-10-02).
-- [ ] Le texte exact de la bulle grisée, et s'il est traduit.
+- [ ] Le texte exact de la bulle grisée, et s'il est traduit. (Lot 2 : « Messagerie WhatsApp momentanément
+  indisponible », en `title` et `aria-label`, en français seulement.)
+- [ ] La charge d'un site très fréquenté : deux lectures en base par chargement que Cloudflare ne met pas en
+  cache. Vérifier que `/widget/*.js` y est bien mis en cache (l'en-tête `public, max-age=60` le permet), sinon
+  un cache court en mémoire par code (`cacheCourt`) plutôt qu'un plafond qui refuserait des visiteurs.
 - [ ] Faut-il limiter le nombre de widgets par espace, et à combien ?
 - [ ] Que fait l'écran quand le client supprime un scénario utilisé par un widget : refus, ou widget rendu inerte ?

@@ -250,14 +250,14 @@ export const schema = z.object({
    */
   RCS_CALLBACK_PAR_MINUTE: z.coerce.number().int().min(0).default(3000),
   /**
-   * Codes d'URL jamais vus que `/w/:code` et `/rcs/callback/:code` acceptent d'aller lire en base, par minute
-   * et par porte, tous appelants confondus. 0 le désactive.
+   * Codes d'URL jamais vus que `/w/:code`, `/rcs/callback/:code` et `/widget/:code.js` acceptent d'aller lire en
+   * base, par minute et par porte, tous appelants confondus. 0 le désactive.
    * Borne les codes inventés : chacun coûtait une lecture sur le pool partagé avec la console et la réception
    * des messages. Un code déjà résolu par ce process n'y est plus soumis (`ClesResolues`).
    * Prix assumé : un vrai code pas encore servi depuis le démarrage consomme ce budget, et attend la minute
-   * suivante (429 avec `Retry-After`) quand il est épuisé, y compris hors attaque (plus de 120 codes réels
-   * différents juste après un redémarrage). Un budget épuisé se journalise au plus une fois par minute : le
-   * relever si ce message apparaît hors attaque.
+   * suivante quand il est épuisé (429 avec `Retry-After` ; pour le widget, le script inerte sans cache, donc une
+   * bulle absente), y compris hors attaque (plus de 120 codes réels différents juste après un redémarrage). Un
+   * budget épuisé se journalise au plus une fois par minute : le relever si ce message apparaît hors attaque.
    * `/r/:code` et `/m/:code` n'ont pas ce frein : leurs codes réels sont très nombreux et cliqués en rafale
    * pendant une campagne, un tel budget y refuserait des clics réels.
    */

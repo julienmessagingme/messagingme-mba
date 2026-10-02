@@ -65,6 +65,8 @@ import { PgChannelsMeLinkStore } from './channels-me/link-store.pg';
 import { normalizeText } from './automation/match';
 import { PgChannelsMePostStore } from './channels-me/post-store.pg';
 import { ChannelsMeClient } from './channels-me/client';
+import { PgWidgetStore } from './widgets/store.pg';
+import { qrSvg } from './widgets/qr';
 import { enfilerEvenementAutomation, type AutomationEventJob } from './automation/event-job';
 import { RateLimiter } from './auth/rate-limit';
 import { resolveTenantCode } from './ids/tenant-code';
@@ -587,6 +589,14 @@ async function main(): Promise<void> {
       signalerClic: (tenant, contactId, code) => emetteur.emettreSignal(tenant, signalDuClic(contactId, code)),
       // Le signal part après le 302 : l'arrêt de cette copie l'attend avant de fermer la file.
       enVol: travauxEnVol,
+    },
+    // Le script public de la bulle WhatsApp. L'espace vient du widget retrouvé par son code ; le numéro est celui
+    // que l'écran Accueil affiche, et son état (délié ou non) décide de la bulle grisée.
+    widgetPublic: {
+      widgets: new PgWidgetStore(pool),
+      numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
+      qrSvg,
+      budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
     },
     // Réception publique des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
     // l'écriture du contact passe par `upsertContactsFromApi`, le chemin partagé avec la console.

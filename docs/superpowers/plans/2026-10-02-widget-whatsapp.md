@@ -89,6 +89,30 @@ une 5xx (Cloudflare remplacerait le corps) ; le lien `wa.me` est bien formé à 
 l'affiche, espaces et `+` compris ; un widget `actif = false` rend un script qui n'affiche rien ; la phrase est
 encodée, donc non tronquée au premier espace.
 
+✍️ **Écrit le 2026-10-02, en attente de relecture.** Ce qui a été livré, et ce qui a bougé par rapport à ce plan :
+
+- **Fichiers** : ceux annoncés, plus `src/widgets/qr.ts` (le QR, généré CÔTÉ SERVEUR : spec section 5),
+  l'entrée `widgetPublic` dans `src/server.ts` et son câblage dans `src/index.ts` (fichier de câblage PARTAGÉ :
+  commit par patch sur `origin`), la dépendance `qrcode` (et `@types/qrcode` en développement) aux versions de
+  `web/`, et `scripts/auto-attaque.mts`.
+- **La route** rend `public, max-age=60` ; un repli (lecture en panne, budget épuisé) rend `no-store`. Code inconnu,
+  mal formé ou vide, widget éteint, panne : 200 et `SCRIPT_INERTE`, le même dans tous les cas, jamais une erreur.
+  Le frein des codes jamais vus (`CODES_INCONNUS_PAR_MINUTE`) est celui de `/w/:code`, à une différence près :
+  épuisé, il rend le script inerte et non un 429. Un widget ÉTEINT garde son laissez-passer : sa balise, encore
+  posée sur un site fréquenté, aurait sinon entamé le budget de tous les autres.
+- **`construireScript` reçoit le lien, pas le numéro et la phrase** : la route appelle `lienWaMe` une seule fois,
+  et l'état comme le QR en dérivent. Sa configuration est une union : la bulle grisée ne reçoit que sa position,
+  donc ne publie ni lien, ni phrase, ni libellé.
+- **Grisée seulement sans numéro, sur un numéro délié, ou sur un numéro sans chiffre**, jamais sur `BLOCKED`
+  (spec section 6, avec la mesure).
+- **L'auto-attaque** déclare la fausse autorité du module et sa seule exception au 404 de la sonde 11
+  (`CODE_INCONNU_SAUF`) : 200 et le script inerte, comparé octet pour octet. Vérifié dans les deux sens.
+- **Les tests** exécutent le script contre un faux DOM : le libellé hostile arrive dans `textContent`, l'avatar
+  dans `img.src`, l'ombre est FERMÉE, la bulle grisée n'a aucun gestionnaire de clic. Le test « aucun secret »,
+  BLOCKED, `innerHTML`, l'échappement de `<` et le laissez-passer du widget éteint ont été vérifiés par mutation.
+- **Pas fait** : un plafond par code (voir la question ouverte de la spec sur la charge d'un site fréquenté), et
+  aucun essai dans un vrai navigateur ni sur un vrai téléphone : c'est l'essai qui clôt la feature.
+
 ---
 
 ## Lot 3 : la source et le devenir à l'arrivée
@@ -145,7 +169,9 @@ de suppression des scénarios ne compte pas les widgets parmi ses usages.
 
 **Tests attendus :** un widget qui désigne l'agent d'un autre espace est refusé ; une phrase qui CONTIENT celle d'un lien de chaîne est refusée, et l'inverse ; une phrase déjà
 présente dans des messages reçus est refusée ; `tests/scope-tenant.test.ts` voit le nouveau module et exige sa garde ; une écriture est
-réservée aux admins (RBAC) ; le QR se génère dans le navigateur, donc aucune dépendance ajoutée à l'API.
+réservée aux admins (RBAC). (Ce plan exigeait ici « le QR se génère dans le navigateur, donc aucune dépendance
+ajoutée à l'API » : le lot 2 l'a tranché dans l'autre sens, QR généré côté serveur, spec section 5. L'aperçu de
+l'écran peut reprendre `qrcode`, déjà dans `web/`.)
 
 ---
 
