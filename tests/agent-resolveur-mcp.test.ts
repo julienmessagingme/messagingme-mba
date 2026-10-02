@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { creerResolveurMcp } from '../src/agent/resolvers/mcp';
+import { creerResolveurMcp, LECTURE_MCP_MAX_OCTETS } from '../src/agent/resolvers/mcp';
 import type { EntreeResolveur } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
 import type { SourceAppel } from '../src/agent/sources';
@@ -72,6 +72,18 @@ function harnais(over: {
 
 const entree = (outil: OutilDefini, args: Record<string, unknown> = {}): EntreeResolveur => ({
   outil, args, ctx: CTX, signal: AbortSignal.timeout(10_000),
+});
+
+describe('🔴 la lecture d une reponse MCP n est PAS bornee par max_bytes (essai reel du 2026-10-02)', () => {
+  it('le transport lit jusqu au plafond de lecture, et la borne de l outil s applique apres', async () => {
+    // Microsoft Learn rend 50 a 70 Ko : lu sous les 16 Ko de l outil, l appel echouait en « reponse trop grosse »,
+    // et l agent de Meta repondait de lui-meme. `borner` (executeur, relais) tronque ensuite pour le modele.
+    const h = harnais();
+    await h.resolveur(entree(OUTIL({ maxBytes: 16_384 })));
+    const cible = (h.ouvrirSession.mock.calls[0] as unknown[])[0] as { maxOctets: number };
+    expect(cible.maxOctets).toBe(LECTURE_MCP_MAX_OCTETS);
+    expect(LECTURE_MCP_MAX_OCTETS).toBeGreaterThan(16_384);
+  });
 });
 
 describe('le resolveur MCP : ce a quoi il refuse de parler', () => {

@@ -18,6 +18,15 @@ import { ouvrirSessionMcp, type CibleMcp, type EchecMcp, type SessionMcp } from 
  * puisqu'une `erreur_protocole` arrêterait le tour.
  */
 
+/**
+ * 🔴 CE QU'ON LIT N'EST PAS CE QU'ON TRANSMET (essai réel du 2026-10-02). Le transport lisait la réponse du serveur sous la
+ * borne de l'OUTIL (`max_bytes`, 16 Ko par défaut) : Microsoft Learn rend 50 à 70 Ko, et l'appel échouait en « réponse
+ * trop grosse » quand le modèle n'aurait reçu de toute façon que ses 16 premiers Ko. La borne de l'outil s'applique
+ * APRÈS la lecture (`borner`, dans l'exécuteur comme dans le relais) ; la lecture a son propre plafond, celui d'une
+ * protection mémoire, aligné sur le catalogue (`MAX_OCTETS_CATALOGUE`, `src/http/agent-mcp.ts`).
+ */
+export const LECTURE_MCP_MAX_OCTETS = 1_000_000;
+
 export interface DepsResolveurMcp {
   /** Relue à chaque appel, jamais figée : une source désactivée doit cesser d'être appelée tout de suite. */
   sources: Pick<SourceStore, 'pourAppel' | 'marquerEpreuve'>;
@@ -134,7 +143,7 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
       enTetes: enTetesAuthSource(source),
       timeoutMs: outil.timeoutMs,
       budgetTotalMs: outil.timeoutMs,
-      maxOctets: outil.maxBytes,
+      maxOctets: Math.max(outil.maxBytes, LECTURE_MCP_MAX_OCTETS),
     };
     const ouverte = await ouvrir(cible);
     if ('echec' in ouverte) {
