@@ -3346,8 +3346,8 @@ visuels ailleurs. 2 Mo maximum, JPEG / PNG / GIF (le type réel est relu, un fic
 
 **Le bouton « Discuter ».** Il se rattache à un **lien**, qui associe une **phrase** à un **scénario**. La
 phrase est ce que l'abonné enverra en appuyant. Deux règles la gouvernent, et elles se voient à la création :
-une phrase ne peut ni contenir ni être contenue dans celle d'un autre lien (sinon un seul appui démarrerait
-deux scénarios), et la console COMPTE combien de messages existants la contiennent déjà, pour éviter une
+une phrase ne peut ni contenir ni être contenue dans celle d'un autre lien ou d'un **widget WhatsApp**, à la
+ponctuation finale près (sinon un seul appui démarrerait deux scénarios), et la console COMPTE combien de messages existants la contiennent déjà, pour éviter une
 phrase trop banale (« Bonjour » déclencherait sur tout).
 
 - ✅ **Un appui REPREND la conduite du fil** (2026-09-08). Si la conversation était tenue par un opérateur ou
@@ -3490,6 +3490,63 @@ une campagne qui dépense. Rien ne change chez Meta, rien n'est effacé.
 **Ce qui reste dans le Gestionnaire de Meta** : la création des audiences, les questions rapides, le ciblage
 détaillé (centres d'intérêt, langues), les emplacements, les catégories spéciales, et toute modification d'une
 publicité déjà créée.
+
+## Widget WhatsApp (menu Widget WhatsApp)
+
+🚧 **Écran livré, essai réel à venir** (lot 4, 2026-10-02). Ce qui clôt la fonctionnalité n'est pas un test : la
+balise posée sur un vrai site, un message envoyé depuis un vrai téléphone, la conversation qui arrive marquée de la
+bonne source, et le devenir du widget qui prend la main.
+
+**À quoi il sert.** Une bulle WhatsApp que le client pose sur son site. Le visiteur clique, WhatsApp s'ouvre avec un
+message déjà écrit, il l'envoie : c'est lui qui parle le premier, donc la conversation s'ouvre sans modèle approuvé,
+et elle arrive dans l'Inbox comme les autres. Sur un téléphone, la bulle ouvre WhatsApp directement ; sur un
+ordinateur, elle montre un QR code à scanner et un lien.
+
+**Comment on le pose.** L'écran crée le widget (un nom, le message pré-rempli, qui répond, l'apparence), montre un
+**aperçu en direct** de la bulle dans son coin, puis donne **le code à copier** : une seule balise, à coller sur
+chaque page où la bulle doit apparaître. Elle se charge sans jamais ralentir la page : si Engage Me ne répond pas, la
+bulle n'apparaît simplement pas. Le QR code et le lien WhatsApp de la bulle sont montrés sur la fiche, pour essayer.
+🔴 **Une balise posée ne doit jamais casser** : son adresse ne change pas, même si le widget est renommé.
+
+**L'apparence est bornée** : une couleur, un des quatre coins, un libellé court à côté de la bulle, un avatar (une
+image en https). Pas de style libre. « Propulsé par Engage Me » s'affiche sous la bulle ; il ne se retire pas depuis
+la console, il tient à l'offre.
+
+**Le message pré-rempli dit d'où vient la conversation.** Chaque arrivée par un widget porte une étiquette
+`widget-<code>` sur le contact, qui ne change pas quand le widget est renommé. D'où trois règles, vérifiées à
+l'enregistrement :
+- le message d'un widget ne peut ni contenir ni être contenu dans celui d'un autre widget ou d'un **lien de chaîne**
+  (sinon un seul message déclencherait les deux). La règle vaut aussi dans l'autre sens : un lien de chaîne ne peut
+  plus reprendre le message d'un widget ;
+- un message qui apparaît déjà dans des conversations reçues est refusé, avec leur nombre : il s'appliquerait à des
+  conversations ordinaires ;
+- la casse, les accents, les espaces et la ponctuation finale ne distinguent pas deux messages.
+
+**Qui répond, widget par widget.**
+- **Comme les autres conversations** (par défaut) : le réglage de l'espace décide, rien ne change.
+- **L'agent de Meta** : il répond s'il est allumé.
+- **Un scénario** : il démarre à l'arrivée du message, avec les gardes d'une automation (contact bloqué ou
+  désabonné, anti-rebond, plafond horaire). Il reprend la main à l'agent de Meta, mais laisse la conversation à un
+  membre de l'équipe qui est déjà en train de répondre. Un plafond horaire propre au widget est réglable : le message
+  est public, n'importe qui peut l'envoyer en rafale.
+- **Un agent IA** : visible et grisé, **à venir**. L'API le refuse aussi.
+
+⚠️ **Un scénario supprimé rend son widget inerte**, sans le détruire : la bulle reste sur le site, l'étiquette se
+pose encore, mais plus rien ne démarre. La fiche du widget le dit (« scénario supprimé, ce widget ne démarre plus
+rien ») et invite à en choisir un autre. Supprimer un scénario n'est pas bloqué pour autant.
+
+**Cinq widgets au plus par espace** (un site vitrine, un blog, une page tarifs…). Au-delà, la création est refusée.
+
+**Éteindre ou supprimer.** Éteint, le widget garde sa balise sur le site et la bulle disparaît ; on le rallume d'un
+geste. Supprimé, la bulle disparaît aussi, sans erreur sur le site du client ; les conversations déjà arrivées
+gardent leur étiquette.
+
+**Quand le numéro ne répond plus** (aucun numéro relié, ou numéro délié), la bulle reste à sa place, **grisée et
+sans clic**, pour ne pas casser la mise en page du site ni laisser un visiteur écrire dans le vide. L'écran le
+signale sur la fiche du widget.
+
+Réservé aux administrateurs, lecture comprise. Les outils MCP (créer, modifier, lister un widget depuis Claude Code)
+passeront par les mêmes contrôles : c'est le lot suivant.
 
 ## Serveur MCP : brancher un assistant sur la console (LIVE, 2026-09-01)
 

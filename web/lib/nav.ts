@@ -208,6 +208,9 @@ const icons = {
   // Publicites : une cible. Surtout PAS le porte-voix de Campagnes : une campagne parle a des contacts
   // qu on possede deja, une publicite va en chercher qu on ne connait pas.
   pubs: 'publicites',
+  // Widget : un clic. Ni la bulle de Chaine ni la cible de Publicites : le widget est le geste du VISITEUR d'un
+  // site, qui clique pour ouvrir la conversation lui-meme.
+  widget: 'clic',
   content: 'contenu',
   analytics: 'analytics',
   flow: 'scenario',
@@ -265,6 +268,8 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // Juste apres Chaine : les trois entrees repondent a « comment j'atteins des gens ». La publicite est
     // la seule des trois qui va chercher quelqu'un qui ne nous connait pas encore.
     { key: 'publicites', href: '/publicites', label: t('Publicités', 'Ads'), icone: icons.pubs },
+    // Juste apres Publicites, et pour la meme question : le widget amene celui qui visite le site du client.
+    { key: 'widgets', href: '/widgets', label: t('Widget WhatsApp', 'WhatsApp widget'), icone: icons.widget },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), icone: icons.automation },
     /**
      * Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA) et le nôtre. Deux FEUILLES

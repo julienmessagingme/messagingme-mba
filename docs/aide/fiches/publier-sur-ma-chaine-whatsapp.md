@@ -1,7 +1,7 @@
 ---
 ecran: chaine
 source_section: Chaîne WhatsApp (menu Chaîne) : publier, et démarrer des conversations
-source_empreinte: 131d2a
+source_empreinte: 3ad06e
 ---
 # Publier sur ma chaîne WhatsApp
 
@@ -22,8 +22,8 @@ est refusé.
 
 **Le bouton « Discuter »** se rattache à un **lien**, qui associe une **phrase** à un **scénario**. La
 phrase est ce que l'abonné enverra en appuyant. Deux règles la gouvernent, et elles se voient à la création :
-une phrase ne peut ni contenir ni être contenue dans celle d'un autre lien, sinon un seul appui démarrerait
-deux scénarios ; et la console compte combien de messages existants la contiennent déjà, pour vous éviter
+une phrase ne peut ni contenir ni être contenue dans celle d'un autre lien ou d'un widget WhatsApp (« Promo ! » et
+« Promo ? » comptent pour la même phrase), sinon un seul appui démarrerait deux scénarios ; et la console compte combien de messages existants la contiennent déjà, pour vous éviter
 une phrase trop banale (« Bonjour » déclencherait sur tout).
 
 **Un appui reprend la conduite du fil.** Si la conversation était tenue par un opérateur ou par l'agent de
