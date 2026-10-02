@@ -6,7 +6,7 @@ import { creerTravauxEnVol } from '../src/lib/en-vol';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import { ATTENTE_GESTES_A_L_ARRET_MS, DELAI_REPONSE_ENVOI_MS, type MbaRelaisDeps } from '../src/http/mba-relais';
+import { ATTENTE_GESTES_A_L_ARRET_MS, DELAI_REPONSE_ENVOI_MS, DELAI_REPONSE_MCP_MS, type MbaRelaisDeps } from '../src/http/mba-relais';
 import { FIN_DE_TOUR_MAX_MS } from '../src/mba/fin-de-tour';
 import { FILET_ARRET_MS } from '../src/shutdown';
 import { REPONSE_EN_COURS, REPONSE_MAISON } from '../src/mba/outils-maison';
@@ -713,8 +713,33 @@ describe('le relais et les outils MCP', () => {
     const journal = { ouvrir: async (l: unknown) => { ouverts.push(l); return 'l9'; }, clore: async (l: unknown) => { clos.push(l); } } as unknown as JournalAppels;
     const { app } = avecMcp(MCP, async () => ({ ok: true, contenu: { ok: true } }), journal);
     await poster(app, CLE_RELAIS, { question: 'q' }, '+33612345678', 'm1');
-    expect(ouverts[0]).toMatchObject({ tenantId: 't1', toolId: 'm1', origin: 'mcp', source: 'mba', argsRediges: { question: 'q' } });
+    expect(ouverts[0]).toMatchObject({ tenantId: 't1', toolId: 'm1', origin: 'mcp', source: 'mba' });
+    // `toEqual` et pas `toMatchObject` : celui-ci accepterait la valeur tirée de la fiche (`reference`) en plus.
+    expect((ouverts[0] as { argsRediges: unknown }).argsRediges).toEqual({ question: 'q' });
     expect(clos[0]).toMatchObject({ id: 'l9', status: 'ok' });
+  });
+
+  it('🔴 un serveur MCP trop lent est coupé SOUS le délai de Meta : refus lisible, journal en `timeout`', async () => {
+    const clos: Array<{ status?: string }> = [];
+    const journal = { ouvrir: async () => 'l9', clore: async (l: { status?: string }) => { clos.push(l); } } as unknown as JournalAppels;
+    const vus: Array<{ outil: { timeoutMs: number } }> = [];
+    const { app } = avecMcp({ ...MCP, timeoutMs: 8000 }, (e) => { vus.push(e as never); return new Promise<never>(() => {}); }, journal);
+    const debut = Date.now();
+    const res = await poster(app, CLE_RELAIS, { question: 'q' }, '+33612345678', 'm1');
+    expect(Date.now() - debut).toBeLessThan(DELAI_REPONSE_MCP_MS + 1000);
+    expect(res.json()).toEqual({ succes: false, erreur: 'le serveur MCP n’a pas répondu à temps' });
+    expect(clos[0]).toMatchObject({ status: 'timeout' });
+    // La session MCP puise dans le délai du relais, pas dans les 8 s de l'outil.
+    expect(vus[0]!.outil.timeoutMs).toBe(DELAI_REPONSE_MCP_MS);
+  });
+
+  it('un résolveur MCP qui lève est une erreur de l’OUTIL au journal, comme dans l’exécuteur', async () => {
+    const clos: Array<{ status?: string }> = [];
+    const journal = { ouvrir: async () => 'l9', clore: async (l: { status?: string }) => { clos.push(l); } } as unknown as JournalAppels;
+    const { app } = avecMcp(MCP, async () => { throw new Error('boum'); }, journal);
+    const res = await poster(app, CLE_RELAIS, { question: 'q' }, '+33612345678', 'm1');
+    expect(res.json()).toMatchObject({ succes: false });
+    expect(clos[0]).toMatchObject({ status: 'erreur_outil' });
   });
 
   it('un refus du serveur MCP part en `succes: false`, lisible par le modèle de Meta', async () => {

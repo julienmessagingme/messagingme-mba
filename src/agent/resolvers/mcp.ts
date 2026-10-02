@@ -177,8 +177,10 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
       // `src/agent/executor.ts`), il rendrait `{}`.
       return { ok: true, contenu: { texte: resultat.texte } };
     } finally {
-      // Fermer est un geste de politesse envers le serveur, jamais une étape dont dépend le résultat.
-      await session.fermer().catch(() => {});
+      // Fermer est un geste de politesse envers le serveur, jamais une étape dont dépend le résultat : il n'est donc
+      // pas ATTENDU. L'attendre ajoutait son propre délai à chaque appel, sur le chemin de la réponse (relecture du
+      // 2026-10-02 : le relais de l'agent de Meta doit répondre sous trois secondes).
+      void session.fermer().catch(() => {});
     }
   };
 }

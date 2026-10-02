@@ -87,8 +87,8 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
         {/* ⚠️ ON LE DIT, ON NE GRISE PAS : une case désactivée sans explication enverrait le client ouvrir
             un ticket. Et on dit que la limite est LA NÔTRE, parce qu'elle l'est. */}
         <p className="mt-2 text-xs text-ink-500" data-testid="mcp-note-mba">
-          {t('Ces outils servent vos agents IA, et l’agent de Meta : on les lui donne dans Meta Business Agent > Paramètres > Outils.',
-            'These tools serve your AI agents, and Meta’s agent: give them to it in Meta Business Agent > Settings > Tools.')}
+          {t('Ces outils servent vos agents IA, et l’agent de Meta : on les lui donne dans AI Agent > MBA, onglet Outils.',
+            'These tools serve your AI agents, and Meta’s agent: give them to it in AI Agent > MBA, Tools tab.')}
         </p>
       </header>
 

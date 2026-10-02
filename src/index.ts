@@ -243,8 +243,8 @@ async function main(): Promise<void> {
    */
   const adresseDuRelais = (): string | null => baseDuRelais(config.PUBLIC_API_URL);
   /**
-   * Les outils exposés à l'agent de Meta, tels qu'ils partent chez Meta : appels de connecteur et gestes
-   * maison. Le tri vit dans `src/mba/outils-a-publier.ts`, testé.
+   * Les outils exposés à l'agent de Meta, tels qu'ils partent chez Meta : appels de connecteur, gestes maison et
+   * outils MCP. Le tri vit dans `src/mba/outils-a-publier.ts`, testé.
    */
   const outilsPourMeta = async (tenant: string, pn: string): Promise<OutilAPublier[]> =>
     outilsAPublier(

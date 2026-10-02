@@ -59,6 +59,14 @@ describe('ce qui part chez Meta', () => {
     expect(variablesMcp(params).map((v) => v.nom)).toEqual(['question']);
   });
 
+  it('un outil MCP SANS description part avec une description de repli : Meta l’exige, un refus arrêterait tout', async () => {
+    const mcp = { ...base, id: 'm1', name: 'notion_search', origin: 'mcp' as const, binding: { outilDistant: 'search' }, params: [] };
+    const [vide] = await outilsAPublier([{ ...mcp, description: '   ' }], async () => null);
+    expect(vide?.description).toBe('Outil notion_search.');
+    const [ecrite] = await outilsAPublier([{ ...mcp, description: 'Cherche dans la base Notion.' }], async () => null);
+    expect(ecrite?.description).toBe('Cherche dans la base Notion.');
+  });
+
   it('un connecteur part avec les variables de sa requête, comme avant ; sans requête, il ne part pas', async () => {
     const lire = async (id: string) => (id === 'rq1' ? { variables: [{ nom: 'user', type: 'string' as const, origine: { type: 'modele' as const } }] } : null);
     const r = await outilsAPublier([

@@ -24,6 +24,7 @@ import {
  * agit au nom de n'importe quel contact de l'espace (l'en-tête désigne le contact).
  * Un outil de connecteur passe par `creerAppelConnecteur`, comme pour un agent IA (mêmes gardes, journal sous
  * l'appelant `mba`). Un outil maison n'appelle personne : son geste s'exécute ici (`src/mba/executer-maison.ts`).
+ * Un outil MCP passe par le résolveur MCP des agents IA, sous `DELAI_REPONSE_MCP_MS` (2026-10-02).
  * Un échec métier sort en 200 `{ succes: false, erreur }` pour que le modèle de Meta puisse le dire au client (un
  * 4xx ou 5xx risquerait d'être lu comme une panne de transport). Seule la garde de clé répond avant la route :
  * 401, 403 (droit, `tenant_locked`), 429. Un envoi qui échoue après `DELAI_REPONSE_ENVOI_MS` est signalé par un
@@ -85,15 +86,27 @@ export const ATTENTE_GESTES_A_L_ARRET_MS = FIN_DE_TOUR_MAX_MS + 5_000;
  */
 export const DELAI_REPONSE_ENVOI_MS = 1500;
 
+/**
+ * L'échéance d'un appel MCP depuis le relais, sous les trois secondes après lesquelles Meta abandonne un outil (mesuré :
+ * 3 005 ms traités comme un échec). Au-delà, Meta a déjà dit au client qu'un conseiller allait reprendre : mieux vaut lui
+ * rendre un refus lisible avant, et journaliser `timeout` plutôt qu'un `ok` que personne n'a reçu. La session MCP puise
+ * dans ce même délai (relecture du 2026-10-02 : sans lui, le pire cas valait deux fois le délai de l'outil, plus la
+ * vérification d'adresse).
+ */
+export const DELAI_REPONSE_MCP_MS = 2500;
+
+const ECHEANCE_MCP = Symbol('echeance-mcp');
+const MCP_TROP_LENT = 'le serveur MCP n’a pas répondu à temps';
+
 export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, garde: Guard): void {
   app.post<{ Params: { outilId: string } }>(`${CHEMIN_RELAIS}/outils/:outilId`, { preHandler: garde }, async (req, reply) => {
     const tenant = req.auth?.tenantId;
     if (!tenant) return reply.code(401).send({ error: 'clé d’API requise' });
     const refus = (erreur: string) => reply.code(200).send({ succes: false, erreur });
 
-    // 1. L'outil : un outil de cet espace, exposé et actif pour son agent de Meta. Deux familles : un appel de
-    //    connecteur (`http`), ou un geste maison dont la cible se relit et se valide (`mba`). Un autre handler est
-    //    refusé, jamais joué.
+    // 1. L'outil : un outil de cet espace, exposé et actif pour son agent de Meta. Trois familles : un appel de
+    //    connecteur (`http`), un geste maison dont la cible se relit et se valide (`mba`), ou un outil MCP appelable
+    //    (`mcp`). Un autre handler est refusé, jamais joué.
     const PAS_PROPOSE = 'cet outil n’est pas proposé à l’agent de Meta';
     const pn = await deps.numeros.getTenantPhoneNumberId(tenant);
     const outil = pn === null
@@ -195,8 +208,8 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
      * Un outil MCP (2026-10-02, route A) : Meta parle HTTP à notre relais, nous parlons MCP au serveur du client. Le
      * corps porte les paramètres REMPLIS PAR LE MODÈLE (`variablesMcp`, ceux qu'on a déclarés à Meta) ; les autres sont
      * posés ici depuis la fiche du contact identifié par l'en-tête de Meta (`completerArguments`), jamais lus dans le
-     * corps. Puis le résolveur des agents IA, sous le délai de l'outil, journalisé sous l'appelant `mba`, borné comme
-     * dans l'exécuteur.
+     * corps. Puis le résolveur des agents IA, sous `DELAI_REPONSE_MCP_MS` (ou le délai de l'outil s'il est plus court),
+     * journalisé sous l'appelant `mba`, borné comme dans l'exécuteur.
      */
     async function appelerMcp(t: string, o: OutilDefini, wa: string, fiche: Record<string, unknown>) {
       const variables = variablesMcp(o.params);
@@ -211,15 +224,37 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
         tenantId: t, sessionId: null, toolId: o.id, toolName: o.name, origin: 'mcp',
         argsRediges: rediger(lu.valeurs), source: 'mba',
       }).catch(() => null);
+      const delai = Math.min(o.timeoutMs, DELAI_REPONSE_MCP_MS);
+      const controleur = new AbortController();
+      let minuteur: ReturnType<typeof setTimeout> | undefined;
       let sortie: SortieResolveur;
       let statut: StatutAppel;
       try {
-        sortie = await deps.resolveurMcp({ outil: o, args, ctx: contexteDuRelais(t, wa, fiche, o.timeoutMs), signal: AbortSignal.timeout(o.timeoutMs) });
-        statut = sortie.ok === false ? 'erreur_outil' : 'ok';
+        // La course de l'exécuteur : on tranche avant d'abandonner, sinon un résultat tardif glisserait après l'échéance.
+        const echeance = new Promise<typeof ECHEANCE_MCP>((resolve) => {
+          minuteur = setTimeout(() => { resolve(ECHEANCE_MCP); controleur.abort(); }, delai);
+        });
+        // L'outil passé au résolveur porte le délai du relais : la session MCP (initialisation et appel) en tire son
+        // budget, et ne continue donc pas bien après la réponse rendue à Meta.
+        const course = await Promise.race([
+          deps.resolveurMcp({ outil: { ...o, timeoutMs: delai }, args, ctx: contexteDuRelais(t, wa, fiche, delai), signal: controleur.signal }),
+          echeance,
+        ]);
+        if (course === ECHEANCE_MCP) {
+          sortie = { ok: false, contenu: { erreur: MCP_TROP_LENT }, erreur: MCP_TROP_LENT };
+          statut = 'timeout';
+        } else {
+          sortie = course;
+          statut = sortie.ok === false ? 'erreur_outil' : 'ok';
+        }
       } catch (err) {
         console.error(`mba-relais: outil MCP ${o.name} en échec :`, messageDe(err));
         sortie = { ok: false, contenu: { erreur: 'le serveur MCP n’a pas répondu' }, erreur: 'le serveur MCP n’a pas répondu' };
-        statut = 'erreur_protocole';
+        // Le rangement de l'exécuteur d'un agent IA : un résolveur qui lève est une erreur de l'OUTIL ;
+        // `erreur_protocole` est réservé à un défaut de notre client.
+        statut = 'erreur_outil';
+      } finally {
+        if (minuteur) clearTimeout(minuteur);
       }
       const { contenu, taille } = borner(sortie.contenu, o.maxBytes);
       if (ligne !== null) {

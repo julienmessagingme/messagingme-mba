@@ -205,8 +205,13 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       setEnregistrementEnCours(false);
       return;
     }
-    setEnregistrementEnCours(false);
-    await apresEnregistrement(new Set());
+    // Occupé jusqu'à la fin de l'envoi, comme le formulaire : un « Supprimer » pendant la relecture qui suit serait
+    // confirmé comme un effacement imprévu.
+    try {
+      await apresEnregistrement(new Set());
+    } finally {
+      setEnregistrementEnCours(false);
+    }
   };
 
   const reactiver = async (o: OutilMbaVue): Promise<void> => {
@@ -406,8 +411,13 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
         )}
         {(etat === 'desactive' || etat === 'desactive_a_retirer') && (
           <span className="flex flex-wrap items-center gap-2 text-xs text-alerte-800"
-            title={t('La personne qui l’avait ajouté a quitté l’espace : l’agent de Meta ne peut plus s’en servir.',
-              'The person who added it left the workspace: Meta’s agent can no longer use it.')}>
+            title={o.type === 'mcp'
+              // Un rafraîchissement de son serveur éteint aussi un outil MCP : le départ d'un collaborateur n'est pas la
+              // seule cause, et la dire seule enverrait chercher une personne qui n'est pas partie.
+              ? t('Son serveur MCP l’a modifié, ou la personne qui l’avait ajouté a quitté l’espace : l’agent de Meta ne peut plus s’en servir. Vérifiez ses réglages avant de le réactiver.',
+                'Its MCP server changed it, or the person who added it left the workspace: Meta’s agent can no longer use it. Check its settings before reactivating.')
+              : t('La personne qui l’avait ajouté a quitté l’espace : l’agent de Meta ne peut plus s’en servir.',
+                'The person who added it left the workspace: Meta’s agent can no longer use it.')}>
             {t('Désactivé', 'Disabled')}
             {isAdmin && (
               <Bouton variante="secondaire" type="button" data-testid={`mba-outil-reactiver-${o.id}`} disabled={occupe} onClick={onReactiver}>

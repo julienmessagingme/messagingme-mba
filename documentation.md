@@ -491,8 +491,11 @@ connecteur, mais le relais exécute son geste lui-même. Les invariants :
 - **La cible est FIXÉE par l'administrateur** ; Meta ne fournit que la valeur d'un champ (`{"valeur": …}`,
   bornée à la liste permise). Les gestes réutilisent `creerPoserTagAgent` (déclaration, `tag_added` si nouveau)
   et `mergeFieldsByPhone`. Le journal ne porte que la nature du geste, jamais une valeur du client.
-- **Ce qui part chez Meta** se calcule dans `src/mba/outils-a-publier.ts` (appels de connecteur ET gestes
-  maison), testé ; un MCP, une action d'agent IA exposée par l'ancienne route ou une cible illisible ne partent pas.
+- **Ce qui part chez Meta** se calcule dans `src/mba/outils-a-publier.ts` (appels de connecteur, gestes maison et
+  outils MCP appelables), testé ; une action d'agent IA exposée par l'ancienne route, une cible illisible ou un MCP
+  non activable ou disparu de son serveur ne partent pas. Un MCP déclare à Meta ses seuls paramètres `modele` ; le
+  relais pose les autres (`completerArguments`, le point de passage partagé avec l'exécuteur d'un agent IA) et
+  l'appelle sous `DELAI_REPONSE_MCP_MS`, sous les trois secondes de Meta.
 - **L'onglet « Outils » du MBA** parle aux routes `src/http/mba-outils.ts` (`/tenants/:tenantId/mba-outils`),
   qui ne voient que le consommateur `mba:<numéro>`. `src/http/agent-catalogue.ts` ne garde que la lecture de la
   bibliothèque (agents IA, assistant). « Supprimer » retire l'outil à l'agent de Meta (`retirerDeMba` : SUPPRIME

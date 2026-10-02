@@ -74,7 +74,7 @@ test.describe('Tools > Connecteurs MCP', () => {
     await mock(page);
     await page.goto('/connecteurs-mcp');
     await expect(page.getByTestId('mcp-note-mba')).toBeVisible();
-    await expect(page.getByTestId('mcp-note-mba')).toContainText('Meta Business Agent > Paramètres > Outils');
+    await expect(page.getByTestId('mcp-note-mba')).toContainText('AI Agent > MBA, onglet Outils');
   });
 
   test('🔴 l’aperçu montre ce qui va tomber, et n’importe RIEN tant qu’on n’a pas cliqué', async ({ page }) => {

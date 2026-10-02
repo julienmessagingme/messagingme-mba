@@ -41,7 +41,13 @@ export async function outilsAPublier(
       continue;
     }
     if (o.origin === 'mcp') {
-      if (o.mcpNonActivable === null && o.mcpIndisponibleLe === null) sortie.push({ ...commun, variables: variablesMcp(o.params) });
+      // Un outil MCP peut arriver SANS description (l'import écrit `''` quand le serveur n'en donne pas), quand Meta
+      // l'exige et qu'un refus arrête toute la publication : son nom la remplace. L'administrateur l'écrit vraiment
+      // dans Connecteurs MCP.
+      const description = o.description.trim() !== '' ? o.description : `Outil ${o.name}.`;
+      if (o.mcpNonActivable === null && o.mcpIndisponibleLe === null) {
+        sortie.push({ ...commun, description, variables: variablesMcp(o.params) });
+      }
       continue;
     }
     if (o.origin !== 'http' || !o.requestId) continue;
