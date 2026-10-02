@@ -3,6 +3,7 @@ import type { ContactRow, ContactFilters } from '../crm/contact-store.pg';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
 import { parCause, type AuteurDuChangement } from '../inbox/evenements';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
+import { e164DepuisSaisie } from '../crm/phone';
 
 /**
  * Le catalogue d'outils exposé aux agents tiers par le serveur MCP.
@@ -228,7 +229,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'get_contact',
-    description: 'La fiche d’un contact à partir de son numéro au format international (ex. +33612345678).',
+    description: 'La fiche d’un contact à partir de son numéro : international avec ou sans « + » (+33612345678, 33612345678), ou national (06 12 34 56 78).',
     scope: 'mcp:read',
     entree: {
       type: 'object',
@@ -236,7 +237,10 @@ export const OUTILS: OutilMcp[] = [
       required: ['phone'],
     },
     async executer(deps, tenantId, args) {
-      const phone = texteObligatoire(args, 'phone', 32);
+      // Ramené au format de la fiche : l'agent de Meta pose l'identifiant WhatsApp, sans « + », et une recherche du
+      // texte tel quel ne trouvait jamais la fiche (2026-10-02).
+      const phone = e164DepuisSaisie(texteObligatoire(args, 'phone', 32));
+      if (phone === null) throw new RefusOutil('numéro illisible : donnez-le au format international (+33612345678)');
       const c = await deps.contacts.findByPhone(tenantId, phone);
       if (!c) throw new RefusOutil('aucun contact avec ce numéro dans cet espace');
       return contactPublic(c);

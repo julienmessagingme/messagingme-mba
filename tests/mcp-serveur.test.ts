@@ -407,3 +407,23 @@ describe('serveur MCP : cohérence du catalogue', () => {
     }
   });
 });
+
+describe('🔴 get_contact cherche la fiche au format de la fiche (essai réel du 2026-10-02)', () => {
+  it('un identifiant WhatsApp sans « + », un E.164 et un national cherchent tous +33612345678', async () => {
+    const cherches: string[] = [];
+    const { server } = app({ contacts: { findByPhone: async (_t: string, p: string) => { cherches.push(p); return null; } } });
+    for (const phone of ['33612345678', '+33612345678', '06 12 34 56 78']) {
+      await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('get_contact', { phone }) });
+    }
+    expect(cherches).toEqual(['+33612345678', '+33612345678', '+33612345678']);
+  });
+
+  it('un numéro illisible est refusé avec la forme attendue, sans rien chercher', async () => {
+    const cherches: string[] = [];
+    const { server } = app({ contacts: { findByPhone: async (_t: string, p: string) => { cherches.push(p); return null; } } });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('get_contact', { phone: 'n importe quoi' }) });
+    expect(contenu(res).isError).toBe(true);
+    expect(contenu(res).texte).toContain('+33612345678');
+    expect(cherches).toEqual([]);
+  });
+});
