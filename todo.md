@@ -263,47 +263,33 @@ le risque n'est donc pas qu'il réponde faux aujourd'hui, c'est que la PROCHAINE
 section périmée le fasse. 🔴 Et la garde de dérive ne peut rien y voir, par construction : elle compare une
 fiche à SA section, jamais une section à la réalité.
 
-## 🔴 MCP par la ROUTE A : les outils MCP jusqu'à l'agent de Meta (2026-09-24)
+## 🟡 Outils MCP de l'agent de Meta : les restes de la route A (livrée le 2026-10-02)
 
-**Arbitré par Julien le 2026-09-24 : on garde la route A.** Ce lot mérite sa spec avant une ligne de code.
+La route A est en production (plan `docs/superpowers/plans/2026-10-02-outils-mcp-agent-meta.md`, récit au journal du
+2026-10-02). Restent, de sa relecture :
 
-🔴 **META ACCEPTE MCP DEPUIS MOINS DE DEUX SEMAINES, ET NOTRE CODE AFFIRMAIT LE CONTRAIRE.** Vérifié sur
-la page de référence des connecteurs le 2026-09-24 : `connector_protocol` ∈ `HTTP` | `MCP` (« defaults to
-HTTP when omitted and cannot be changed after creation »), `base_url` décrit comme « external HTTP API **or
-remote MCP server** », un `POST /{connector_id}/refreshMCPTools`, et un objet `mcp_tool_sync`
-(`PENDING` / `READY` / `ERROR`). Le commentaire de `src/mba/client.ts` disait l'inverse, daté et mesuré le
-2026-09-10 : c'était vrai ce jour-là. Corrigé dans `7fef0a32`.
+- **Le relais ne transmet pas l'abandon au résolveur MCP.** Passé `DELAI_REPONSE_MCP_MS`, le relais répond à Meta et
+  journalise `timeout`, mais `src/agent/resolvers/mcp.ts` ne lit pas `entree.signal` : un outil d'écriture lent peut
+  encore agir chez le serveur sans que l'agent le sache. Le budget de la session est déjà ramené à l'échéance.
+- **Le câblage de « Donner à l'agent de Meta » (`proposerMcp`, `src/index.ts`) n'a pas de test d'intégration** : les
+  tests de route passent par un faux, un câblage qui ne ferait plus que rattacher resterait vert. Et un
+  rafraîchissement MCP concurrent peut, entre le rattachement et l'activation, laisser une ligne éteinte (que
+  « Supprimer » retire).
+- **Les gestes d'un outil MCP partagé ne sont pas joués par le relais** (ceux d'un connecteur HTTP non plus) : un
+  geste réglé côté agent IA est muet côté agent de Meta, sans que rien ne le dise.
+- **« Réactiver » un outil MCP éteint par un rafraîchissement ne montre pas ce qui a changé**, alors que la fiche d'un
+  agent IA a `debranchesParRafraichissement`. La ligne dit désormais les deux causes possibles.
+- **La description de repli** (« Outil <nom>. ») d'un outil MCP importé sans description : vérifier à l'essai que
+  Meta l'accepte et que l'agent l'appelle quand même.
 
-### Les deux routes, et pourquoi Julien a tranché pour la première
+## 🟡 Plafond et tableau de l'agent de Meta : les restes (2026-10-02)
 
-- **Route A, par le relais.** Meta parle HTTP à NOTRE relais, nous parlons MCP au serveur du client. On garde
-  le consentement outil par outil, les paramètres cloués, les valeurs prises dans le mini-CRM, le journal des
-  appels, la garde d'adresse privée et la garde d'opt-out.
-- **Route B, le natif.** Meta parle MCP directement au serveur du client, `refreshMCPTools` découvre les
-  outils tout seul. Moins de code, mais on perd le milieu, donc les six gardes d'un coup. Et la découverte
-  automatique contredit de face la règle du produit « un outil n'est utilisable qu'une fois activé à la main ».
-
-### Ce qu'il reste à faire, mesuré
-
-1. Une branche `mcp` dans `src/mba/outils-a-publier.ts`, qui doit produire les **variables déclarées** que Meta
-   annonce à son modèle. Pour un connecteur HTTP elles viennent de `connector_requests` ; pour un MCP elles
-   viennent du schéma du serveur distant, que `src/agent/mcp/aplatir.ts` sait déjà mettre à plat.
-2. Une troisième branche dans `src/http/mba-relais.ts`, vers le résolveur MCP au lieu de
-   `creerAppelConnecteur`. ⚠️ Le résolveur (`src/agent/resolvers/mcp.ts`) **refuse délibérément** de passer
-   par ce point de passage, avec sa raison écrite : un MCP n'a pas de requête, ses paramètres viennent du
-   schéma distant, et son transport a son propre module. Ne pas l'y forcer.
-3. L'onglet Outils de l'agent de Meta doit proposer les outils MCP, et la phrase de `McpServeurs.tsx` change
-   à nouveau (elle dit aujourd'hui que le verrou est chez nous, ce qui sera faux une fois le lot fait).
-4. **Aucune migration**, sauf erreur : `agent_tools.origin` accepte déjà `mcp`, et le CHECK
-   `agent_tools_pour_agent_meta_chk` ne gouverne que le drapeau des outils MAISON, pas cette porte-ci.
-
-🔴 **LE POINT DUR EST UNE DÉCISION PRODUIT, PAS UN DÉTAIL TECHNIQUE.** Une variable déclarée porte son
-ORIGINE : remplie par le modèle, ou prise dans la fiche du contact. C'est **précisément ce que le relais a été
-créé pour permettre** (l'outil `add_tag` est parti chez Meta sans son corps le 2026-09-21, faute de ça). Un
-schéma MCP ne connaît pas cette notion. Sans écran pour la poser, **tous** les paramètres d'un outil MCP
-seraient remplis par le modèle de Meta, et on perdrait la raison d'être du relais sur ces outils. Soit on s'en
-contente pour commencer (aujourd'hui c'est zéro, donc ce serait déjà mieux), soit on ajoute le réglage
-d'origine par paramètre sur la fiche d'un outil MCP, et le lot double.
+- **L'écriture du plafond ne laisse aucune trace** dans le journal d'audit, et remplacer un plafond posé ailleurs
+  (`autres`, rendu par la route) ne se fait pas confirmer.
+- **L'estimation de coût repose sur le prix public** (2 $ le million de jetons, 4 à 5 cents la réponse,
+  `PRIX_MESSAGE_AGENT_USD` et `web/lib/api-mba.ts`, tenus égaux par `tests/mba-prix-parite.test.ts`) : à confronter
+  à la facture de Meta avec Julien. Aucune API ne rend la consommation de l'agent (mesuré le 2026-10-02).
+- **La carte « Agent de Meta » de Performance Lab s'affiche aussi pour un espace sans agent de Meta**, avec des zéros.
 
 ### Deux voisins trouvés dans la même page de Meta, à ne pas mélanger avec ce lot
 

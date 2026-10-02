@@ -19,6 +19,19 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)
+
+Le fonctionnel est dans `features.md` (section « MBA, le répondeur de Meta » et onglet « Outils »), le récit dans le
+journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont les essais réels, faits par Julien :
+
+- ✅ **Le message de passage en français** : déployé (console seule).
+- ⏳ **Le plafond** (Activation, en bas) : poser un petit plafond en jetons, écrire depuis un téléphone, voir ce que
+  fait l'agent une fois le plafond atteint, puis le retirer. Ce que Meta fait à ce moment n'est PAS documenté.
+- ⏳ **La carte « Agent de Meta »** de Performance Lab > Synthèse : la lire sur l'espace MessagingMe.
+- ⏳ **Les outils MCP** : connecter un serveur MCP (aucun en production au 2026-10-02, mesuré), donner un de ses
+  outils à l'agent de Meta dans l'onglet Outils, lui poser une question qui l'exige, et lire l'appel au journal sous
+  l'appelant `mba`.
+
 ## TOUT SUR LA FICHE (LOTS 1, 2A ET 2B DÉPLOYÉS ; ESSAI RÉEL DU LOT 2 DÛ ; LOTS 3 ET 4 À FAIRE)
 
 Spec `docs/superpowers/specs/2026-09-30-fiche-unique-design.md`, plan

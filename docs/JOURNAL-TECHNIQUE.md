@@ -5,6 +5,55 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-02 : l'agent de Meta pour une démo, passage en français, plafond, tableau et outils MCP
+
+Julien a reçu sa facture de l'agent de Meta (« hyper cher ») et prépare une démonstration le 7 octobre avec un
+interlocuteur de Meta. Exploration de la documentation de l'API du Meta Business Agent, puis quatre chantiers, tous
+choisis par lui. La récolte détaillée vit dans `messagingme-pilot/docs/META-BUSINESS-AGENT-API.md` (« RÉCOLTE DU
+2026-10-02 »).
+
+**Mesuré avant d'écrire.** Aucune API ne rend le coût ni les jetons de l'agent : il n'est pas dans
+`pricing_analytics`, et ses statuts de message ne portent aucun objet de prix. On compte donc nous-mêmes les messages
+qu'il a écrits, au prix public. `agent_budget` se pose sur l'identifiant du BUSINESS MANAGER : sur le numéro, Meta
+rend 404 « Business not found ». Un `POST` remplace TOUS les plafonds. Et Meta le dit mot pour mot : « Token budgets
+apply across the Business Manager », « AI-turn budgets apply to each conversation ». Le texte anglais du passage à un
+humain venait de `handoff.message_selection` laissé à `DEFAULT`, que le `GET` des réglages ne rend même pas.
+
+**Lot 1, le message de passage (`608a63cf`, console seule).** Trois choix dans « Vue d'ensemble » : rédigé par
+l'agent, notre texte, ou le texte standard de Meta. L'état part de `null` quand Meta ne le dit pas.
+
+**Lot 2, le plafond et la carte de Performance Lab (`e0551f27`).** Routes `GET|PUT /tenants/:tenantId/mba-budget` (le
+Business Manager se résout par la WABA de l'espace) et `GET /tenants/:tenantId/mba-insights` (conversations,
+outils, événements, sur trente jours en jours du Pacifique). 🔴 **La relecture a trouvé UN rouge, corrigé dans
+`6d0ca755`** : l'écran proposait par défaut le plafond « en réponses », présenté avec un montant en dollars qui se
+lisait comme un total, alors qu'il borne CHAQUE conversation. Un client se serait cru protégé après une facture trop
+chère, et ne l'était pas. L'unité par défaut est devenue le jeton, et l'écran dit la portée de chacune. Son test a
+été vu tomber avec le défaut remis. Les jaunes ont suivi dans `e2ab6d78` après le déploiement : écriture relue chez
+Meta, nom du Business Manager à l'écran, refus 403 en 409 français, délai de 8 s sur les statistiques, jours du
+Pacifique, `safeParse` du propriétaire, parité des prix.
+
+**Lot 3, les outils MCP jusqu'à l'agent de Meta par la route A (`8f47e605`).** Julien a tranché que les paramètres
+sont remplis par l'agent ; mais la console savait déjà régler, paramètre par paramètre, d'où vient une valeur, et
+c'est la garde d'identité des agents IA. Le relais la respecte donc : seuls les paramètres `modele` partent chez Meta,
+les autres sont posés par nous depuis la fiche du contact (`completerArguments`, sortie de l'exécuteur pour être le
+point de passage des deux). Garde vérifiée dans les deux sens. L'onglet Outils propose les outils MCP de la
+bibliothèque, refuse un outil non appelable AVANT de le rattacher, et l'écran tolère une API d'avant la route.
+Relecture : **0 rouge, 10 jaunes**. Mesuré avant le `up` comme elle le demandait : la production ne porte AUCUN outil
+MCP, donc aucun consentement dormant ne pouvait partir chez Meta. Le plus important des jaunes : le relais n'était pas
+borné sous les trois secondes de Meta (pire cas : deux fois le délai de l'outil plus la vérification d'adresse). Il
+l'est désormais par une course à 2,5 s (`DELAI_REPONSE_MCP_MS`), la session MCP puisant dans le même délai et sa
+fermeture n'étant plus attendue. Les trois tests neufs ont été vus tomber sous mutation.
+
+⚠️ **Une mesure de l'e2e a été faite sur un export dont un fichier était MUTÉ, et le patch du lot a été fabriqué à ce
+moment-là.** Vu avant l'envoi : fichier restauré, patch refait, relecteur prévenu. La leçon tient en une ligne :
+une mutation vit le temps d'UNE mesure, puis on restaure AVANT tout autre geste.
+
+⚠️ **Dans un export en CRLF, le test de parité de l'onglet Outils rend des listes absurdes** : il découpe le source
+sur une ligne vide (`'\n\n'`), qu'un fichier en CRLF n'a pas. Le dépôt stocke en LF ; converti en LF, il passe.
+
+Déploiements sans migration, contrôle public à chaque fois, fiches d'aide rechargées après le lot 3. Essais réels
+dus (plafond, carte, outils MCP), voir `wip.md`.
+
 ## 2026-10-01 : l'aperçu et l'import d'un site ont une échéance par requête
 
 Décidé par Julien le jour même, sur le point que la relecture du lot des pages web avait laissé au `todo.md` : un
