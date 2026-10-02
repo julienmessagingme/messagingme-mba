@@ -128,6 +128,13 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
     if (patch.neverSay !== undefined) courant.never_say_phrases = patch.neverSay;
     if (patch.followupEnabled !== undefined) courant.followup = { ...(courant.followup as object ?? {}), enabled: patch.followupEnabled };
     if (patch.enabled !== undefined) courant.rollout = { ...(courant.rollout as object ?? {}), enabled: patch.enabled };
+    if (patch.handoffMessage !== undefined || patch.handoffMessageSelection !== undefined) {
+      courant.handoff = {
+        ...(courant.handoff as object ?? {}),
+        ...(patch.handoffMessage !== undefined ? { message: patch.handoffMessage } : {}),
+        ...(patch.handoffMessageSelection !== undefined ? { message_selection: patch.handoffMessageSelection } : {}),
+      };
+    }
     settings = courant;
     return courant;
   };

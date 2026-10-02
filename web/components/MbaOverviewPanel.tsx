@@ -30,21 +30,48 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
   const [nouvelInterdit, setNouvelInterdit] = useState('');
   const interdits = s?.never_say_phrases ?? [];
   /**
-   * ⚠️ META NE RELIT PAS CE CHOIX (mesuré le 2026-10-02) : la lecture des réglages rend `handoff.message` mais jamais
-   * `message_selection`. On ne coche donc rien tant qu'il n'a pas été fait ICI, plutôt que d'afficher « texte standard »
-   * sur un choix qu'on ignore. Ce qu'on vient d'écrire reste coché pour la durée de l'écran.
+   * Le choix ACTIF chez Meta. Meta le relit quand il a été posé (`handoff.message_selection`, mesuré le 2026-10-02 sur
+   * le numéro MessagingMe) ; absent, il n'a jamais été choisi, et c'est le texte standard de Meta qui part.
+   * ⚠️ Une première version de cet écran affirmait l'inverse (« Meta ne relit pas ce choix ») : c'était une mesure faite
+   * sur un numéro où rien n'avait encore été choisi.
    */
   const [selection, setSelection] = useState<SelectionMessagePassage | null>(s?.handoff?.message_selection ?? null);
+  /** Le texte tel que Meta le porte : c'est lui qui part, pas ce qu'on a tapé sans l'enregistrer. */
+  const [texteEnregistre, setTexteEnregistre] = useState(s?.handoff?.message ?? '');
   const [texteCustom, setTexteCustom] = useState(s?.handoff?.message ?? '');
+  /**
+   * « Notre texte » coché ICI et pas encore enregistré : cocher n'envoie rien, on rédige d'abord. Sans ça, le clic
+   * envoyait aussitôt le texte du champ, vide ou ancien, et on ne pouvait pas écrire.
+   */
+  const [redaction, setRedaction] = useState(false);
+  const [texteConfirme, setTexteConfirme] = useState(false);
+  const coche: SelectionMessagePassage | null = redaction ? 'CUSTOM' : selection;
 
   function choisirPassage(cle: SelectionMessagePassage): void {
-    // `CUSTOM` part avec son texte : sans texte, le serveur refuse, et l'écran le dit (`err`).
-    const patch = cle === 'CUSTOM'
-      ? { handoffMessageSelection: cle, handoffMessage: texteCustom }
-      : { handoffMessageSelection: cle };
+    setTexteConfirme(false);
+    if (cle === 'CUSTOM') {
+      setRedaction(true);
+      return;
+    }
+    setRedaction(false);
     void appliquer(async () => {
-      const r = await patchMbaSettings(tenantId, phoneNumberId, patch);
+      const r = await patchMbaSettings(tenantId, phoneNumberId, { handoffMessageSelection: cle });
       setSelection(cle);
+      return r;
+    });
+  }
+
+  function enregistrerTexte(): void {
+    const texte = texteCustom.trim();
+    void appliquer(async () => {
+      const r = await patchMbaSettings(tenantId, phoneNumberId, { handoffMessageSelection: 'CUSTOM', handoffMessage: texte });
+      setSelection('CUSTOM');
+      setRedaction(false);
+      // Relu dans la réponse : ce qui s'affiche « enregistré » est ce que Meta porte, pas ce qu'on a cru envoyer.
+      const relu = r.handoff?.message ?? texte;
+      setTexteEnregistre(relu);
+      setTexteCustom(relu);
+      setTexteConfirme(relu === texte);
       return r;
     });
   }
@@ -99,9 +126,11 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
               {status.onboarded ? t('Oui', 'Yes') : t('Pas encore', 'Not yet')}
             </dd>
           </div>
-          <div>
+          {/* `min-w-0` et `break-all` : l'identifiant de Meta est une longue chaîne sans espace, et une cellule de grille ne
+              se rétrécit pas sous la largeur de son contenu. Sans eux, il sortait du cadre. */}
+          <div className="min-w-0">
             <dt className="text-xs text-ink-500">{t('Identifiant d’agent', 'Agent id')}</dt>
-            <dd className="font-mono text-xs text-ink-900">{status.agentId ?? t('pas encore créé', 'not created yet')}</dd>
+            <dd className="break-all font-mono text-xs text-ink-900">{status.agentId ?? t('pas encore créé', 'not created yet')}</dd>
           </div>
         </dl>
         {!status.onboarded && (
@@ -114,24 +143,14 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
         )}
       </section>
 
+      {/* L'interrupteur seul, comme sur l'Accueil (Julien, 2026-10-02) : les deux écrivent la même chose, Meta puis notre
+          drapeau. Ce que l'allumage a d'asymétrique est dit dans la confirmation, au moment du geste. */}
       <section className={cardCls}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-semibold text-ink-900">{t('Agent actif', 'Agent on')}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-ink-500">
-              {t(
-                'Éteindre agit tout de suite sur toutes les conversations ; rallumer ne reprend que les nouvelles.',
-                'Turning off acts immediately on all conversations; turning back on only resumes new ones.',
-              )}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-ink-500" data-testid="mba-audience-liste">
-              {t(
-                'L’agent ne répond qu’aux conversations que la plateforme lui confie : un client qui écrit sans qu’un scénario ni l’équipe ne lui réponde. Pendant un scénario, il se tait.',
-                'The agent only answers the conversations the platform hands over to it: a customer who writes with no scenario or team member answering. During a scenario, it stays silent.',
-              )}
-            </p>
-          </div>
-          <Toggle checked={allume} onChange={basculerAllumage} disabled={busy} testid="mba-rollout-toggle" />
+        <div className="flex items-center gap-3">
+          <Toggle checked={allume} onChange={basculerAllumage} disabled={busy} testid="mba-rollout-toggle" title={t('Agent de Meta', 'Meta’s agent')} />
+          <span className="text-sm font-medium text-ink-900" data-testid="mba-rollout-etat">
+            {allume ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}
+          </span>
         </div>
       </section>
 
@@ -204,8 +223,8 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
         </p>
         {selection === null && (
           <p className="mt-2 text-xs text-ink-500" data-testid="mba-passage-inconnu">
-            {t('Meta ne dit pas quel choix est actif. Tant qu’aucun n’a été fait ici, c’est son texte standard, en anglais.',
-              'Meta does not report which choice is active. Until one is made here, its standard English text is used.')}
+            {t('Aucun choix n’a encore été fait : c’est le texte standard de Meta qui part, en anglais.',
+              'No choice made yet: Meta’s standard text is sent, in English.')}
           </p>
         )}
         <div className="mt-3 space-y-2" role="radiogroup">
@@ -219,7 +238,7 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
                 type="radio"
                 name="mba-message-passage"
                 data-testid={`mba-passage-${cle}`}
-                checked={selection === cle}
+                checked={coche === cle}
                 disabled={busy}
                 onChange={() => choisirPassage(cle)}
               />
@@ -227,24 +246,41 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
             </label>
           ))}
         </div>
-        <div className="mt-3 flex gap-2">
-          <input
-            className={inputClsAuto}
-            value={texteCustom}
-            onChange={(e) => setTexteCustom(e.target.value)}
-            placeholder={t('Je transmets votre demande à un conseiller, il vous répond au plus vite.', 'I am passing your request to an advisor, who will reply shortly.')}
-            data-testid="mba-passage-texte"
-            disabled={busy}
-          />
-          <Bouton
-            variante="secondaire"
-            disabled={busy || texteCustom.trim() === ''}
-            data-testid="mba-passage-enregistrer"
-            onClick={() => choisirPassage('CUSTOM')}
-          >
-            {t('Utiliser ce texte', 'Use this text')}
-          </Bouton>
-        </div>
+        {/* La zone de rédaction n'existe que pour « Notre texte » : les deux autres choix n'ont rien à écrire. */}
+        {coche === 'CUSTOM' && (
+          <div className="mt-3 space-y-2">
+            <textarea
+              className={`${inputClsAuto} w-full`}
+              rows={3}
+              value={texteCustom}
+              onChange={(e) => { setTexteCustom(e.target.value); setTexteConfirme(false); }}
+              placeholder={t('Je transmets votre demande à un membre de l’équipe. Il vous répond ici même, dans cette conversation.', 'I am passing your request to a team member. They will reply right here, in this conversation.')}
+              aria-label={t('Notre texte', 'Our own text')}
+              data-testid="mba-passage-texte"
+              disabled={busy}
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <Bouton
+                disabled={busy || texteCustom.trim() === '' || (selection === 'CUSTOM' && !redaction && texteCustom.trim() === texteEnregistre)}
+                data-testid="mba-passage-enregistrer"
+                onClick={enregistrerTexte}
+              >
+                {t('Enregistrer ce texte', 'Save this text')}
+              </Bouton>
+              {redaction && (
+                <span className="text-xs text-ink-500" data-testid="mba-passage-a-enregistrer">
+                  {t('Pas encore enregistré : rien ne change chez Meta tant que vous n’avez pas cliqué.',
+                    'Not saved yet: nothing changes at Meta until you click.')}
+                </span>
+              )}
+              {texteConfirme && (
+                <span className="text-xs text-succes-700" data-testid="mba-passage-enregistre">
+                  {t('Enregistré chez Meta.', 'Saved at Meta.')}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
