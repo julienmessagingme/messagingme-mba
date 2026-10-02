@@ -109,7 +109,11 @@ export type FenetreBudget = 'one_day' | 'seven_days' | 'fourteen_days' | 'thirty
 export const UNITES_BUDGET: readonly UniteBudget[] = ['token', 'ai_turn'];
 export const FENETRES_BUDGET: readonly FenetreBudget[] = ['one_day', 'seven_days', 'fourteen_days', 'thirty_days'];
 
-/** Un plafond de l'agent : une unité (jetons ou tours d'IA), une fenêtre GLISSANTE, un maximum. */
+/**
+ * Un plafond de l'agent : une unité, une fenêtre GLISSANTE, un maximum. 🔴 Les deux unités ne bornent pas la même chose
+ * (Meta, mot pour mot) : « Token budgets apply across the Business Manager », « AI-turn budgets apply to each
+ * conversation ». Seul le plafond en jetons borne la dépense totale.
+ */
 export interface BudgetAgent {
   budget_id?: string;
   unit_type: UniteBudget;

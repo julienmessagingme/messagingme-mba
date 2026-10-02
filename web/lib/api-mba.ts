@@ -118,7 +118,10 @@ export function patchMbaSettings(tenantId: string, phoneNumberId: string, patch:
 
 export type UniteBudget = 'token' | 'ai_turn';
 export type FenetreBudget = 'one_day' | 'seven_days' | 'fourteen_days' | 'thirty_days';
-/** Un plafond de l'agent, posé chez Meta sur le BUSINESS MANAGER (tous ses numéros). */
+/**
+ * Un plafond de l'agent, posé chez Meta sur le BUSINESS MANAGER. 🔴 En jetons, il borne la dépense de tous ses numéros ;
+ * en réponses (`ai_turn`), il borne CHAQUE conversation (`./mba-plafond.ts`).
+ */
 export interface PlafondMba { unite: UniteBudget; fenetre: FenetreBudget; max: number }
 /** `plafond: null` = illimité ; `autres` = plafonds posés ailleurs, qu'un enregistrement ici remplace. */
 export interface EtatPlafondMba { plafond: PlafondMba | null; autres: number }

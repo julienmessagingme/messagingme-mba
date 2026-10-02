@@ -8,16 +8,19 @@ import { Bouton } from '@/components/Bouton';
 import { Squelette } from '@/components/Squelette';
 import { MbaNotice } from './MbaNotice';
 import {
-  getPlafondMba, putPlafondMba, PRIX_JETONS_USD_PAR_MILLION, PRIX_REPONSE_USD,
+  getPlafondMba, putPlafondMba,
   type EtatPlafondMba, type FenetreBudget, type PlafondMba, type UniteBudget,
 } from '@/lib/api-mba';
+import { UNITE_PAR_DEFAUT, estimationPlafond } from '@/lib/mba-plafond';
 
 /**
- * LE PLAFOND DE DÉPENSE DE L'AGENT DE META (2026-10-02), dans l'onglet Activation.
+ * LE PLAFOND DE L'AGENT DE META (2026-10-02), dans l'onglet Activation.
  *
- * 🔴 IL VAUT POUR TOUT LE BUSINESS MANAGER, pas pour ce seul numéro : c'est là que Meta le pose (mesuré : le numéro rend
- * 404) et c'est là qu'il facture. Au plafond, l'agent finit sa réponse, passe la main à l'équipe, et reprend quand la
- * période glisse. L'écran le dit, sans quoi un client croirait son agent en panne.
+ * 🔴 IL SE POSE CHEZ META SUR LE BUSINESS MANAGER (mesuré : le numéro rend 404), MAIS SES DEUX UNITÉS NE BORNENT PAS LA
+ * MÊME CHOSE (relecture du 2026-10-02, `web/lib/mba-plafond.ts`) : en jetons, la dépense de tous les numéros du
+ * Business Manager ; en réponses, CHAQUE conversation, donc pas la dépense totale. L'unité par défaut est le jeton, et
+ * l'écran dit la portée de chacune. Au plafond, l'agent finit sa réponse, passe la main à l'équipe, et reprend quand la
+ * période glisse.
  *
  * ⚠️ L'ESTIMATION EN DOLLARS EST UN ORDRE DE GRANDEUR : 2 $ le million de jetons, 20 000 à 25 000 jetons par réponse
  * selon Meta. Aucune API ne rend le coût réel ; la facture du Billing Hub fait foi.
@@ -28,7 +31,7 @@ export function MbaPlafond({ tenantId }: { tenantId: string }) {
   const [etat, setEtat] = useState<EtatPlafondMba | null | 'erreur'>(null);
   const [erreur, setErreur] = useState('');
   const [ok, setOk] = useState('');
-  const [unite, setUnite] = useState<UniteBudget>('ai_turn');
+  const [unite, setUnite] = useState<UniteBudget>(UNITE_PAR_DEFAUT);
   const [fenetre, setFenetre] = useState<FenetreBudget>('thirty_days');
   const [max, setMax] = useState('');
   const [busy, setBusy] = useState(false);
@@ -85,17 +88,18 @@ export function MbaPlafond({ tenantId }: { tenantId: string }) {
   ];
   const libelleFenetre = (f: FenetreBudget): string => fenetres.find(([cle]) => cle === f)?.[1] ?? f;
   const libelleUnite = (u: UniteBudget, n: number): string => (u === 'ai_turn'
-    ? t(`${fmtNum(n, locale)} réponse(s) de l’agent`, `${fmtNum(n, locale)} agent reply(ies)`)
-    : t(`${fmtNum(n, locale)} jetons`, `${fmtNum(n, locale)} tokens`));
+    ? t(`${fmtNum(n, locale)} réponse(s) de l’agent PAR CONVERSATION`, `${fmtNum(n, locale)} agent reply(ies) PER CONVERSATION`)
+    : t(`${fmtNum(n, locale)} jetons sur tout le Business Manager`, `${fmtNum(n, locale)} tokens across the Business Manager`));
+  const estimation = maxValide ? estimationPlafond(unite, nombre) : null;
   const dollars = (n: number): string => fmtCost(n, locale, 'USD');
 
   return (
     <section className={cardCls} data-testid="mba-plafond">
-      <h3 className="text-sm font-semibold text-ink-900">{t('Plafond de dépense de l’agent', 'Agent spending cap')}</h3>
+      <h3 className="text-sm font-semibold text-ink-900">{t('Plafond de l’agent', 'Agent cap')}</h3>
       <p className="mt-1 text-xs text-ink-500">
         {t(
-          'Au plafond, l’agent termine sa réponse, passe la main à votre équipe, puis reprend quand la période glisse. Le plafond vaut pour tous les numéros de votre Business Manager : c’est lui que Meta facture.',
-          'At the cap, the agent finishes its reply, hands over to your team, and resumes when the period rolls over. The cap applies to every number of your Business Manager: that is what Meta bills.',
+          'Au plafond, l’agent termine sa réponse, passe la main à votre équipe, puis reprend quand la période glisse. En jetons, le plafond borne la dépense de tous les numéros de votre Business Manager, celui que Meta facture. En réponses, il borne chaque conversation, pas la dépense totale.',
+          'At the cap, the agent finishes its reply, hands over to your team, and resumes when the period rolls over. In tokens, the cap bounds the spend of every number of your Business Manager, the one Meta bills. In replies, it bounds each conversation, not the total spend.',
         )}
       </p>
 
@@ -128,8 +132,8 @@ export function MbaPlafond({ tenantId }: { tenantId: string }) {
 
           <div className="mt-3 space-y-2" role="radiogroup">
             {([
-              ['ai_turn', t('En réponses de l’agent', 'In agent replies')],
-              ['token', t('En jetons', 'In tokens')],
+              ['token', t('En jetons : un plafond de dépense, sur tout le Business Manager', 'In tokens: a spending cap, across the Business Manager')],
+              ['ai_turn', t('En réponses de l’agent : un plafond PAR CONVERSATION', 'In agent replies: a cap PER CONVERSATION')],
             ] as const).map(([cle, libelle]) => (
               <label key={cle} className="flex cursor-pointer items-center gap-2 text-sm text-ink-900">
                 <input type="radio" name="mba-plafond-unite" data-testid={`mba-plafond-unite-${cle}`}
@@ -158,16 +162,16 @@ export function MbaPlafond({ tenantId }: { tenantId: string }) {
             </select>
             <span className="text-sm text-ink-500">{t('glissants', 'rolling')}</span>
           </div>
-          {maxValide && (
+          {estimation !== null && (
             <p className="mt-1.5 text-xs text-ink-500" data-testid="mba-plafond-estimation">
-              {unite === 'token'
+              {estimation.portee === 'business_manager'
                 ? t(
-                  `Soit environ ${dollars((nombre / 1_000_000) * PRIX_JETONS_USD_PAR_MILLION)} au prix public de Meta (2 $ le million de jetons).`,
-                  `About ${dollars((nombre / 1_000_000) * PRIX_JETONS_USD_PAR_MILLION)} at Meta’s public price ($2 per million tokens).`,
+                  `Soit environ ${dollars(estimation.minUsd)} au prix public de Meta (2 $ le million de jetons), pour tous les numéros du Business Manager.`,
+                  `About ${dollars(estimation.minUsd)} at Meta’s public price ($2 per million tokens), for every number of the Business Manager.`,
                 )
                 : t(
-                  `Soit environ ${dollars(nombre * PRIX_REPONSE_USD.min)} à ${dollars(nombre * PRIX_REPONSE_USD.max)}, à 4 ou 5 cents la réponse selon Meta.`,
-                  `About ${dollars(nombre * PRIX_REPONSE_USD.min)} to ${dollars(nombre * PRIX_REPONSE_USD.max)}, at 4 to 5 cents per reply according to Meta.`,
+                  `Soit environ ${dollars(estimation.minUsd)} à ${dollars(estimation.maxUsd)} par conversation. Ce n’est pas un plafond de dépense : il ne limite pas le nombre de conversations.`,
+                  `About ${dollars(estimation.minUsd)} to ${dollars(estimation.maxUsd)} per conversation. This is not a spending cap: it does not limit the number of conversations.`,
                 )}
             </p>
           )}

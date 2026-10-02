@@ -9,6 +9,17 @@ import { mockMba } from './support/mba';
  * ici depuis l'Accueil, écrive toujours des SECONDES alors que la saisie est en minutes.
  */
 test.describe('MBA : le plafond de dépense de l’agent', () => {
+  test('🔴 l’unité par défaut est le JETON ; en réponses, l’écran dit « par conversation », pas une dépense', async ({ page }) => {
+    // « AI-turn budgets apply to each conversation » (Meta) : relecture du 2026-10-02.
+    await mockMba(page);
+    await page.goto('/mba/parametres?tab=activation');
+    await expect(page.getByTestId('mba-plafond-unite-token')).toBeChecked();
+    await page.getByTestId('mba-plafond-unite-ai_turn').check();
+    await page.getByTestId('mba-plafond-max').fill('500');
+    await expect(page.getByTestId('mba-plafond-estimation')).toContainText(/par conversation|per conversation/);
+    await expect(page.getByTestId('mba-plafond-estimation')).toContainText(/pas un plafond de dépense|not a spending cap/);
+  });
+
   test('sans plafond, l’écran le dit ; poser un plafond en réponses l’envoie et l’affiche', async ({ page }) => {
     const calls = await mockMba(page);
     await page.goto('/mba/parametres?tab=activation');
@@ -16,13 +27,14 @@ test.describe('MBA : le plafond de dépense de l’agent', () => {
     await page.getByTestId('mba-plafond-unite-ai_turn').check();
     await page.getByTestId('mba-plafond-max').fill('500');
     await page.getByTestId('mba-plafond-fenetre').selectOption('seven_days');
-    // L'ordre de grandeur en dollars : 500 réponses à 4 ou 5 cents.
+    // L'ordre de grandeur en dollars : 500 réponses à 4 ou 5 cents, PAR CONVERSATION.
     await expect(page.getByTestId('mba-plafond-estimation')).toContainText(/20/);
     await page.getByTestId('mba-plafond-enregistrer').click();
     await expect.poll(() => calls.filter((c) => c.url.includes('/mba-budget') && c.method === 'PUT').length).toBe(1);
     expect(calls.find((c) => c.url.includes('/mba-budget') && c.method === 'PUT')?.body)
       .toEqual({ plafond: { unite: 'ai_turn', fenetre: 'seven_days', max: 500 } });
     await expect(page.getByTestId('mba-plafond-actuel')).toContainText('500');
+    await expect(page.getByTestId('mba-plafond-actuel')).toContainText(/PAR CONVERSATION|PER CONVERSATION/);
   });
 
   test('un plafond existant s’affiche, et « Retirer » part avec `plafond: null`', async ({ page }) => {

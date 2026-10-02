@@ -26,7 +26,7 @@ function fauxPool(n: string | null) {
 const plat = (sql: string): string => sql.replace(/\s+/g, ' ');
 
 describe('PgStatsStore.messagesEcritsParMba', () => {
-  it('🔴 la requête est filtrée par l espace, en paramètre $1, hors fils de test, et c est son SEUL paramètre', async () => {
+  it('🔴 la requête est filtrée par l espace, en paramètre $1, hors fils de test ; sans fenêtre, $2 vaut null', async () => {
     const { pool, appels } = fauxPool('0');
     await new PgStatsStore(pool).messagesEcritsParMba('espace-a');
     expect(appels).toHaveLength(1);
@@ -35,7 +35,16 @@ describe('PgStatsStore.messagesEcritsParMba', () => {
     // clients de la plateforme (la RLS est contournée en production).
     expect(sql).toContain('c.tenant_id = $1');
     expect(sql).toContain('not c.is_test');
-    expect(appels[0]!.params).toEqual(['espace-a']);
+    // Le compte de l'onglet de l'agent court depuis toujours : sa fenêtre est ABSENTE (`null`), jamais un défaut.
+    expect(appels[0]!.params).toEqual(['espace-a', null]);
+  });
+
+  it('la fenêtre facultative du tableau de l’agent (2026-10-02) passe en $2, et ne remplace pas le filtre d’espace', async () => {
+    const { pool, appels } = fauxPool('0');
+    const depuis = new Date('2026-09-02T00:00:00Z');
+    await new PgStatsStore(pool).messagesEcritsParMba('espace-a', depuis);
+    expect(plat(appels[0]!.sql)).toContain('m.created_at >= $2::timestamptz');
+    expect(appels[0]!.params).toEqual(['espace-a', depuis]);
   });
 
   it('🔴 seuls les SORTANTS dont l origine EFFECTIVE est `mba` : le fragment partagé, pas une recopie', async () => {
