@@ -20,8 +20,8 @@ navigateur, sur un vrai site, avec un vrai téléphone.
 
 - 🔴 **L'arbre local est en retard de 153 commits sur `origin`** (constaté le 2026-10-02). Travailler depuis
   `origin/main`, et lire chaque référence avec `git show origin/main:<fichier>` plutôt que dans l'arbre.
-- 🔴 **Le numéro de migration se lit dans `db/migrations/` d'`origin` au moment d'écrire le fichier.** 0199 au
-  2026-10-02, mais plusieurs sessions en écrivent : le dossier tranche sur ce qui est PRIS, la base sur ce qui est
+- 🔴 **Le numéro de migration se lit dans `db/migrations/` d'`origin` au moment d'écrire le fichier.** 0199 a été pris
+  par une autre session le jour même (`0199_mcp_propose.sql`), donc **0200** au moment du lot 1 ; et ça recommence, mais plusieurs sessions en écrivent : le dossier tranche sur ce qui est PRIS, la base sur ce qui est
   APPLIQUÉ, et le compteur du `CLAUDE.md` ne fait foi ni pour l'un ni pour l'autre.
 - 🔴 **L'identifiant public du widget est opaque et immuable.** Une balise posée chez un client est une porte à
   sens unique : l'adresse devra répondre pour toujours.
@@ -34,10 +34,14 @@ navigateur, sur un vrai site, avec un vrai téléphone.
 
 ## Lot 1 : la table et son store
 
-**Fichiers :** une migration `db/migrations/0199_widgets.sql` (numéro à relire), `src/widgets/store.pg.ts`,
-`tests/widgets-store.test.ts` (intégration).
+**Fichiers :** une migration `db/migrations/0200_widgets.sql` (0199 pris le 2026-10-02 pendant la rédaction du plan), `src/widgets/store.pg.ts`,
+`tests/integration/widgets-store.integration.test.ts`. ⚠️ Ce plan disait `tests/widgets-store.test.ts` : sous ce
+chemin le test n'aurait tourné NULLE PART, `vitest.config.ts` excluant `tests/integration/**` et
+`vitest.integration.config.ts` ne prenant que ce dossier.
 
-**Interfaces :** `PgWidgetStore` expose `creer`, `parCode(code)`, `lister(tenantId)`, `modifier`, `supprimer`.
+**Interfaces :** `PgWidgetStore` expose `creer`, `parCode(code)`, `lister(tenantId)`, `modifier`, `supprimer`,
+`phrasesDesWidgets(tenantId)`. Le lot ne crée QUE des fichiers neufs, délibérément : aucun risque de collision avec
+les autres sessions qui partagent l'arbre.
 `parCode` est le seul accès SANS `tenant_id` : il en RETOURNE un, puisque le code opaque est l'autorité, comme
 `getByCode` des liens tracés.
 
@@ -49,6 +53,12 @@ CHECK à SENS UNIQUE (`agent_id is null or devenir = 'agent'`), l'apparence born
 **Tests attendus :** le CHECK refuse un `agent_id` sans `devenir = 'agent'` ; il ACCEPTE `devenir = 'agent'` avec
 `agent_id` à null (état atteignable, agent supprimé) ; deux widgets d'un même espace ne peuvent pas partager une
 phrase ; deux espaces le peuvent ; supprimer un scénario met `workflow_id` à null sans détruire le widget.
+
+✅ **Livré le 2026-10-02**, relu sans rouge. 🔴 **Ses CHECK à sens unique s'écrivent avec `coalesce`, PAS comme dans
+0144**, et c'est la leçon du lot : un CHECK qui vaut `NULL` est SATISFAIT, donc `agent_id is null or devenir =
+'agent'` laisse passer `devenir` à null avec un `agent_id` renseigné. Ici `null` a un sens (le réglage de l'espace),
+d'où `coalesce(devenir = 'agent', false)`. Le trou de 0144 n'existe plus en production, 0145 ayant retiré la colonne
+(mesuré en base le 2026-10-02) : ne pas recopier 0144 tel quel.
 
 ---
 
@@ -62,6 +72,16 @@ phrase ; deux espaces le peuvent ; supprimer un scénario met `workflow_id` à n
 
 **Ce que le script contient :** le numéro, la phrase, l'apparence, le badge, et l'état `servi` ou `grise`. Rien
 d'autre.
+
+🔴 **LE SCRIPT SE CONSTRUIT DEPUIS UNE LISTE EXPLICITE DE CHAMPS, JAMAIS PAR UN SPREAD DE `WidgetRow`.** `parCode`
+rend la ligne ENTIÈRE (`tenantId`, `agentId`, `workflowId`, `maxParHeure`) : un spread les publierait dans un
+JavaScript que n'importe qui lit. Le test « aucun secret » part donc d'un `WidgetRow` COMPLET et vérifie que ces
+champs n'apparaissent pas, sinon il ne prouve rien.
+
+🔴 **AVATAR, LIBELLÉ ET PHRASE SE POSENT PAR LES PROPRIÉTÉS DU DOM, JAMAIS CONCATÉNÉS DANS DU HTML OU DU CSS.** Le
+CHECK `^https://` sur `avatar_url` ferme `javascript:` et `data:`, mais laisse passer guillemets, chevrons et
+parenthèses (`https://x" onerror=...`, ou `https://x)` dans un `url()`). Donc `img.src = valeur` sérialisée en JSON,
+`textContent` pour les textes : la page qui reçoit le script est celle du CLIENT.
 
 **Tests attendus :** 🔴 le script ne contient AUCUN secret ni identifiant d'espace, vérifié en cherchant
 `tenant_id` et les noms des variables sensibles dans la sortie ; un code inconnu rend un script inerte et JAMAIS
@@ -97,7 +117,34 @@ tests d'écran.
 **Interfaces :** l'écran liste, crée, modifie, montre un APERÇU en direct et le code à copier. Les routes sont
 celles que le MCP appellera : une seule vérité.
 
-**Tests attendus :** `tests/scope-tenant.test.ts` voit le nouveau module et exige sa garde ; une écriture est
+🔴 **LE CONTRÔLE DE LA PHRASE SE FAIT ICI, ET IL EST CROISÉ AVEC LES LIENS DE CHAÎNE.** Le produit l'a déjà résolu
+pour Channels Me (`src/http/channels-me.ts`, câblé dans `src/index.ts`) : le conflit se juge par INCLUSION dans les
+deux sens avec `normalizeText` (en mode `contains`, une phrase qui contient l'autre fait déclencher les deux), et une
+phrase qui apparaît déjà dans des messages reçus est refusée (elle déclencherait sur des conversations
+ordinaires). L'espace des phrases d'un espace est donc **widgets ∪ liens de chaîne**, dans les DEUX sens : créer un
+widget regarde les liens, et créer un lien doit désormais regarder les widgets. Extraire la comparaison en fonction
+pure partagée plutôt que la recopier. ⚠️ `src/index.ts` est un fichier de CÂBLAGE PARTAGÉ : annonce aux autres
+sessions avant de l'éditer, commit par patch sur `origin`.
+
+🔴 **L'AGENT ET LE SCÉNARIO DÉSIGNÉS DOIVENT APPARTENIR AU MÊME ESPACE, et seule la route le garantit.** Les clés
+étrangères de 0200 vérifient qu'ils EXISTENT, pas à qui ils sont : sans contrôle, un widget de l'espace A
+désignerait l'agent IA de l'espace B, qui prendrait les conversations de A. C'est une fuite entre espaces. Contrôle
+obligatoire dans la route, avec un test d'intégration, comme pour `campaign_etages`. (Autre voie possible : une clé
+composite `(tenant_id, agent_id)` avec `on delete set null (agent_id)`, PG15.)
+
+**Les autres contrôles que la base ne fait pas :** borner en Zod les longueurs de `nom`, `phrase`, `libelle` ; traduire
+le `23505` sur `widgets_phrase_key` en 409 ; refuser une phrase que `normalizeText` réduit à rien (le CHECK `'\S'` ne
+voit que le cas flagrant) ; à la MODIFICATION d'une phrase, exclure le widget lui-même de la comparaison (passer par
+`lister`, qui porte les identifiants, et non par `phrasesDesWidgets`).
+
+⚠️ **Deux décisions à prendre avant ce lot.** Le devenir `scenario` passe par une automation en mode `contains`, mais
+la table n'a pas d'`automation_id` : si on crée une automation compagnon, `workflow_id` ferait doublon avec
+`automations.workflow_id`. Ajouter `automation_id` (migration additive, sur le modèle de `channelsme_links`) ou
+dériver. Et supprimer un scénario utilisé rend aujourd'hui le widget silencieusement inerte (`set null`) : la route
+de suppression des scénarios ne compte pas les widgets parmi ses usages.
+
+**Tests attendus :** un widget qui désigne l'agent d'un autre espace est refusé ; une phrase qui CONTIENT celle d'un lien de chaîne est refusée, et l'inverse ; une phrase déjà
+présente dans des messages reçus est refusée ; `tests/scope-tenant.test.ts` voit le nouveau module et exige sa garde ; une écriture est
 réservée aux admins (RBAC) ; le QR se génère dans le navigateur, donc aucune dépendance ajoutée à l'API.
 
 ---
