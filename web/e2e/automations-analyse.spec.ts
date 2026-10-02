@@ -55,8 +55,8 @@ test.describe('Automation : la dernière analyse', () => {
     ]);
     // Les opérateurs « vide » et « renseigné » ne décrivent pas un changement : seul « est l'un de » reste.
     await expect(bloc.getByTestId('filtre-analyse-operateur').locator('option')).toHaveCount(1);
+    // 🔴 Un seul clic sur « Négatif » suffit : la valeur cochée d'office est remplacée, pas complétée.
     await bloc.getByRole('button', { name: 'Négatif' }).click();
-    await bloc.getByRole('button', { name: 'Positif' }).click();
     await expect(page.getByTestId('automation-anti-rebond').locator('option').first()).toHaveText(/7 jours/);
     await page.getByTestId('automation-anti-rebond').selectOption(String(3 * 24 * 3600));
     await page.getByTestId('automation-workflow').selectOption('wf1');

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import {
   filtreAnalyseParDefaut, libelleOperateurAnalyse, libelleValeurAnalyse, type ChampFiltrable, type OperateurAnalyse,
@@ -19,6 +20,10 @@ export interface FiltreAnalyseValide { key: string; op: OperateurAnalyse; value:
  * valide, un choix multiple garde toujours au moins une case, une note reste entre 0 et 10. Le serveur refuse le
  * reste en 400 plutôt que de l'ignorer, et c'est ce refus qu'on évite de montrer pendant la saisie.
  *
+ * 🔴 La valeur cochée d'office (la première de la liste) est REMPLACÉE au premier clic, pas complétée. Sans ça,
+ * cliquer « Négatif » donnait « Positif ou Négatif » : un « le sentiment devient négatif » ainsi créé ne partait
+ * jamais (Julien, 2026-10-02). Les clics suivants ajoutent ou retirent, comme avant.
+ *
  * Rend des contrôles FRÈRES : c'est le parent qui décide de la disposition (en ligne ou empilée).
  */
 export function EditeurFiltreAnalyse({ champs, filtre, onChange, sel, inp }: {
@@ -29,6 +34,9 @@ export function EditeurFiltreAnalyse({ champs, filtre, onChange, sel, inp }: {
   inp: string;
 }) {
   const t = useT();
+  // Un clic a-t-il déjà eu lieu sur les choix de ce champ et de cet opérateur ? Remis à zéro quand l'un des deux change.
+  const [touche, setTouche] = useState(false);
+  useEffect(() => { setTouche(false); }, [filtre.key, filtre.op]);
   const champ = champs.find((c) => c.cle === filtre.key);
   const langue = (l: readonly [string, string]) => t(l[0], l[1]);
 
@@ -40,7 +48,11 @@ export function EditeurFiltreAnalyse({ champs, filtre, onChange, sel, inp }: {
   const op = (champ.operateurs as readonly string[]).includes(filtre.op) ? (filtre.op as OperateurAnalyse) : champ.operateurs[0]!;
   const choisis = filtre.value.split(',').filter((v) => v !== '');
   const basculer = (code: string) => {
-    const suivants = choisis.includes(code) ? choisis.filter((c) => c !== code) : [...choisis, code];
+    const parDefaut = filtreAnalyseParDefaut(champ, op).value;
+    const suivants = !touche && filtre.value === parDefaut && code !== parDefaut
+      ? [code]
+      : choisis.includes(code) ? choisis.filter((c) => c !== code) : [...choisis, code];
+    setTouche(true);
     if (suivants.length === 0) return; // au moins une case : un choix vide serait refusé par le serveur
     onChange({ key: filtre.key, op, value: champ.valeurs.filter((v) => suivants.includes(v)).join(',') });
   };

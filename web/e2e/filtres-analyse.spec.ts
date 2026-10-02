@@ -64,11 +64,16 @@ test.describe('Liste des contacts : filtres de la dernière analyse', () => {
     const section = page.getByTestId('filtres-analyse');
     await expect(section).toContainText('Dernière analyse');
 
-    // Premier filtre : sentiment, qui part avec un choix valide ; on garde « Négatif » seul.
+    // Premier filtre : sentiment. 🔴 La valeur cochée d'office (Positif) est REMPLACÉE au premier clic.
     await section.getByTestId('ajouter-filtre-analyse').click();
     const premier = section.getByTestId('filtre-analyse').nth(0);
+    await expect(premier.getByRole('button', { name: 'Positif' })).toHaveAttribute('aria-pressed', 'true');
     await premier.getByRole('button', { name: 'Négatif' }).click();
-    await premier.getByRole('button', { name: 'Positif' }).click();
+    await expect(premier.getByRole('button', { name: 'Positif' })).toHaveAttribute('aria-pressed', 'false');
+    // Les clics suivants ajoutent et retirent.
+    await premier.getByRole('button', { name: 'Neutre' }).click();
+    await expect(premier.getByRole('button', { name: 'Neutre' })).toHaveAttribute('aria-pressed', 'true');
+    await premier.getByRole('button', { name: 'Neutre' }).click();
     // La dernière case restante ne se décoche pas : un choix vide serait refusé par le serveur.
     await premier.getByRole('button', { name: 'Négatif' }).click();
     await expect(premier.getByRole('button', { name: 'Négatif' })).toHaveAttribute('aria-pressed', 'true');
@@ -120,7 +125,7 @@ test('🔴 le ciblage d’une campagne propose les mêmes filtres, et la liste c
   await section.getByTestId('ajouter-filtre-analyse').click();
   await section.getByTestId('filtre-analyse').first().getByRole('button', { name: 'Négatif' }).click();
   await expect.poll(() => requetes.map(champsDe).some((ff) =>
-    ff.some((f) => f.key === 'analyse_sentiment' && f.op === 'in' && f.value === 'positif,negatif'))).toBe(true);
+    ff.some((f) => f.key === 'analyse_sentiment' && f.op === 'in' && f.value === 'negatif'))).toBe(true);
 });
 
 test.describe('Bloc Condition : la dernière analyse', () => {
