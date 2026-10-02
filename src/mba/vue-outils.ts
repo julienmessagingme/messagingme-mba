@@ -81,7 +81,8 @@ export interface OutilMcpProposable {
 }
 
 /**
- * Les outils MCP de la bibliothèque que l'agent de Meta peut recevoir (2026-10-02) : appelables, et pas déjà à lui. Un
+ * Les outils MCP de la bibliothèque que l'agent de Meta peut recevoir (2026-10-02) : proposés aux agents sur Tools >
+ * Connecteurs MCP (0199), appelables, et pas déjà à lui. Un
  * outil déjà rattaché mais éteint n'y est pas : sa ligne dans la liste propose de le rallumer, un second chemin pour
  * le même geste ferait deux vérités.
  */
@@ -91,7 +92,8 @@ export function outilsMcpProposables(
   serveurs: ReadonlyMap<string, { label: string }>,
 ): OutilMcpProposable[] {
   return bibliotheque
-    .filter((o) => o.origin === 'mcp' && mcpInappelable(o) === null && !o.consommateurs.some((c) => c.cle === consommateur))
+    .filter((o) => o.origin === 'mcp' && o.mcpPropose && mcpInappelable(o) === null
+      && !o.consommateurs.some((c) => c.cle === consommateur))
     .map((o) => ({
       id: o.id, name: o.name, title: o.title, description: o.description, risque: o.risk,
       serveur: o.sourceId ? serveurs.get(o.sourceId)?.label ?? null : null,

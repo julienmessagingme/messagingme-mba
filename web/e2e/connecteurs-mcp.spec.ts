@@ -35,7 +35,7 @@ const OUTILS = [
   },
 ];
 
-async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun?: boolean; apercuRefuse?: string; serveur?: Record<string, unknown> } = {}): Promise<Array<{ method: string; url: string }>> {
+async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun?: boolean; apercuRefuse?: string; serveur?: Record<string, unknown>; outils?: unknown[]; proposeRefuse?: string } = {}): Promise<Array<{ method: string; url: string }>> {
   const appels: Array<{ method: string; url: string }> = [];
   // Mutable comme en base : une épreuve réussie pose `lastOkAt`, que la carte doit relire.
   let lastOkAt: string | null = null;
@@ -47,9 +47,13 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
     const method = route.request().method();
     appels.push({ method, url });
     const json = (body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    if (url.includes('/propose')) {
+      if (over.proposeRefuse) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: over.proposeRefuse }) });
+      return json({ propose: false });
+    }
     if (url.includes('/mcp/') && url.endsWith('/outils')) {
       // Les deux listes de clouage viennent du SERVEUR : l ecran ne les recopie pas.
-      return json({ outils: OUTILS, champs: ['email', 'reference'], champsContact: ['wa_id', 'nom'] });
+      return json({ outils: over.outils ?? OUTILS, champs: ['email', 'reference'], champsContact: ['wa_id', 'nom'] });
     }
     if (url.endsWith(`/tenants/${TENANT}/mcp`) && method === 'POST') {
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ serveur: SERVEUR }) });
@@ -113,7 +117,6 @@ test.describe('Tools > Connecteurs MCP', () => {
   test('🔴 un outil non activable dit POURQUOI, en nommant le paramètre', async ({ page }) => {
     await mock(page);
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-outils-${SOURCE}`).click();
     await expect(page.getByTestId('mcp-outil-non-activable-notion_creer')).toContainText('lignes');
   });
 
@@ -123,7 +126,6 @@ test.describe('Tools > Connecteurs MCP', () => {
     // donnée de quelqu'un d'autre. C'est pour ça que l'écran montre chaque paramètre un par un.
     await mock(page);
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-outils-${SOURCE}`).click();
     await expect(page.getByTestId('mcp-source-client_id')).toBeVisible();
     await page.getByTestId('mcp-source-client_id').selectOption('champ');
     // Une LISTE, pas une saisie libre : proposer un champ libre revient a inviter la faute de frappe puis
@@ -137,7 +139,6 @@ test.describe('Tools > Connecteurs MCP', () => {
     // vide, et la reaction naturelle serait de repasser en « l agent decide ».
     await mock(page);
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-outils-${SOURCE}`).click();
     await page.getByTestId('mcp-source-client_id').selectOption('contact');
     await expect(page.getByTestId('mcp-contact-client_id')).toHaveValue('wa_id');
   });
@@ -147,7 +148,6 @@ test.describe('Tools > Connecteurs MCP', () => {
     // s annonce « lecture seule » obtenait `risk: read` sans aucun acte humain.
     await mock(page);
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-outils-${SOURCE}`).click();
     await expect(page.getByTestId('mcp-risque-notion_search')).toHaveValue('read');
     await page.getByTestId('mcp-risque-notion_search').selectOption('irreversible');
     await expect(page.getByTestId('mcp-risque-notion_search')).toHaveValue('irreversible');
@@ -164,7 +164,6 @@ test.describe('Tools > Connecteurs MCP', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-outils-${SOURCE}`).click();
     await page.getByTestId('mcp-nepasutiliser-notion_search').fill('jamais sans numero de commande');
     await page.getByTestId('mcp-enregistrer-notion_search').click();
     await expect(page.getByTestId('mcp-reglage-ok-notion_search')).toBeVisible();
@@ -176,7 +175,6 @@ test.describe('Tools > Connecteurs MCP', () => {
     // serveur qui décide. Le client doit le savoir quand il décide, pas quand ça rate.
     await mock(page);
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-outils-${SOURCE}`).click();
     await expect(page.getByTestId('mcp-requis-q')).toBeVisible();
   });
 });
@@ -226,5 +224,33 @@ test.describe('declarer un serveur MCP', () => {
     await page.goto('/connecteurs-mcp');
     await expect(page.getByTestId(`mcp-statut-${SOURCE}`)).toContainText(/import/);
     await expect(page.getByTestId(`mcp-serveur-${SOURCE}`)).not.toContainText('draft');
+  });
+  test('🔴 les outils importés se voient SANS clic, avec à qui ils sont donnés', async ({ page }) => {
+    await mock(page, { outils: [{ ...OUTILS[0], propose: true, utilisePar: ['Agent de Meta'] }] });
+    await page.goto('/connecteurs-mcp');
+    await expect(page.getByTestId('mcp-outil-notion_search')).toBeVisible();
+    await expect(page.getByTestId('mcp-utilise-par-notion_search')).toContainText('Agent de Meta');
+    await expect(page.getByTestId(`mcp-apercu-${SOURCE}`)).toHaveText(/Rafraîchir|Refresh/);
+  });
+
+  test('🔴 « Proposé aux agents » se décoche en PUT ; un refus nomme les agents', async ({ page }) => {
+    const appels = await mock(page, { outils: [{ ...OUTILS[0], propose: true, utilisePar: [] }] });
+    await page.goto('/connecteurs-mcp');
+    await page.getByTestId('mcp-propose-notion_search').click();
+    await expect.poll(() => appels.filter((a) => a.method === 'PUT' && a.url.endsWith('/outils/o1/propose')).length).toBe(1);
+
+    const refus = 'utilisé par Agent de Meta : retirez-le d’abord de cet agent';
+    await mock(page, { outils: [{ ...OUTILS[0], propose: true, utilisePar: ['Agent de Meta'] }], proposeRefuse: refus });
+    await page.goto('/connecteurs-mcp');
+    await page.getByTestId('mcp-propose-notion_search').click();
+    await expect(page.getByTestId('mcp-reglage-erreur-notion_search')).toContainText('Agent de Meta');
+  });
+
+  test('un serveur sans outil propose « Importer ses outils », et l’aperçu « Importer ces N outil(s) »', async ({ page }) => {
+    await mock(page, { outils: [], plan: [{ type: 'nouveau', nom: 'search' }, { type: 'nouveau', nom: 'fetch' }] });
+    await page.goto('/connecteurs-mcp');
+    await expect(page.getByTestId(`mcp-liste-outils-${SOURCE}`)).toContainText(/Importer ses outils|Import its tools/);
+    await page.getByTestId(`mcp-apercu-${SOURCE}`).click();
+    await expect(page.getByTestId(`mcp-importer-${SOURCE}`)).toHaveText(/Importer ces 2 outil|Import these 2 tool/);
   });
 });

@@ -112,7 +112,8 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
    * ⚠️ ON RAPPROCHE PAR IDENTIFIANT, jamais par nom : le nom exposé est réécrit par le client.
    */
   const rattaches = new Set((vue?.outils ?? []).map((o) => o.id));
-  const mcpARattacher = bibliotheque.filter((o) => o.origin === 'mcp' && !rattaches.has(o.id));
+  // Seuls les outils proposés sur Tools > Connecteurs MCP (0199) : on y choisit d'abord, puis ici, agent par agent.
+  const mcpARattacher = bibliotheque.filter((o) => o.origin === 'mcp' && o.mcpPropose !== false && !rattaches.has(o.id));
 
   return (
     <div className="flex flex-col gap-4">

@@ -184,6 +184,10 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     if (outil.consommateurs.some((c) => c.cle === consommateurMba(pn))) {
       return reply.code(409).send({ error: 'cet outil est déjà dans la liste de l’agent de Meta' });
     }
+    // Décoché sur Tools > Connecteurs MCP (0199) : le catalogue refuserait le rattachement, on le dit avant.
+    if (!outil.mcpPropose) {
+      return reply.code(409).send({ error: 'cet outil n’est pas proposé aux agents : cochez-le dans Tools > Connecteurs MCP' });
+    }
     // Vérifié AVANT de rattacher : un rattachement suivi d'un refus d'activer laisserait une ligne éteinte qu'aucun
     // geste ne peut rallumer.
     const inappelable = mcpInappelable(outil);

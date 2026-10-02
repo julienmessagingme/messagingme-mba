@@ -20,7 +20,7 @@ const ctx = (over: Partial<ContexteVue> = {}): ContexteVue => ({
 });
 const entreeBiblio = (over: Partial<OutilBibliotheque>): OutilBibliotheque => ({
   id: 'o1', name: 'notion_search', title: 'Chercher', description: 'd', nePasUtiliser: 'p', origin: 'mcp', risk: 'read',
-  sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, consommateurs: [], ...over,
+  sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, consommateurs: [], ...over,
 });
 
 describe('la ligne d’un outil dans l’onglet', () => {
@@ -44,7 +44,7 @@ describe('la ligne d’un outil dans l’onglet', () => {
   it('🔴 un connecteur partagé NOMME les agents IA qui s’en servent, pas l’agent de Meta', () => {
     const entree: OutilBibliotheque = {
       id: 'o1', name: 'n', title: 'T', description: 'd', nePasUtiliser: 'p', origin: 'http', risk: 'write',
-      sourceId: 's', mcpNonActivable: null, mcpIndisponibleLe: null,
+      sourceId: 's', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true,
       consommateurs: [
         { cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' },
         { cle: 'mba:pn1', actif: true, agentId: null, agentLabel: null },
@@ -134,6 +134,8 @@ describe('les outils MCP proposés à l’agent de Meta', () => {
       entreeBiblio({ id: 'disparu', mcpIndisponibleLe: '2026-10-01T00:00:00Z' }),
       entreeBiblio({ id: 'refuse', mcpNonActivable: 'schéma illisible' }),
       entreeBiblio({ id: 'http', origin: 'http' }),
+      // Décoché sur Tools > Connecteurs MCP (0199) : il ne s'offre à aucun agent.
+      entreeBiblio({ id: 'decoche', mcpPropose: false }),
     ];
     expect(outilsMcpProposables(biblio, 'mba:pn1', serveurs)).toEqual([{
       id: 'libre', name: 'notion_search', title: 'Chercher', description: 'd', serveur: 'notion', risque: 'read',

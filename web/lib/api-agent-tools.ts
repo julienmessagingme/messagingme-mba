@@ -188,6 +188,8 @@ export interface OutilBibliotheque {
   mcpNonActivable: string | null;
   /** L'outil a disparu du catalogue distant. La ligne reste, elle est la trace de ce qui a tourné. */
   mcpIndisponibleLe: string | null;
+  /** Proposé aux agents sur Tools > Connecteurs MCP (0199). Absent sur une API d'avant : proposé. */
+  mcpPropose?: boolean;
   consommateurs: Array<{ cle: string; actif: boolean; agentId: string | null; agentLabel: string | null }>;
 }
 

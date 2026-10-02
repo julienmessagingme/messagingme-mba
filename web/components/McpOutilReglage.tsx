@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
-import { reglerOutilMcp, type OutilMcp, type ParamMcp, type SourceParamMcp } from '@/lib/api-mcp-connecteurs';
+import { proposerOutilMcp, reglerOutilMcp, type OutilMcp, type ParamMcp, type SourceParamMcp } from '@/lib/api-mcp-connecteurs';
 import { Bouton } from '@/components/Bouton';
 
 /**
@@ -65,6 +65,25 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enregistre, setEnregistre] = useState(false);
+  const propose = outil.propose !== false;
+  const utilisePar = outil.utilisePar ?? [];
+
+  /**
+   * Proposer l'outil aux agents, ou le retirer (Julien, 2026-10-02 : on choisit d'abord ici, puis sur chaque agent).
+   * Un retrait refusé (un agent l'a) affiche le message du serveur, qui nomme les agents.
+   */
+  async function basculerPropose(): Promise<void> {
+    setBusy(true);
+    setErreur(null);
+    try {
+      await proposerOutilMcp(tenantId, outil.id, !propose);
+      onChange();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : t('Le changement a échoué.', 'The change failed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function poser(nom: string, patch: Partial<ParamMcp>): void {
     setEnregistre(false);
@@ -143,6 +162,23 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
         )}
       </div>
       {outil.description && <p className="mt-1 text-sm text-ink-500">{outil.description}</p>}
+
+      {/* Le premier étage du choix : proposé aux agents de l'espace, ou non. Le second se fait sur chaque agent. */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-900">
+          <input type="checkbox" checked={propose} disabled={busy} data-testid={`mcp-propose-${outil.name}`}
+            onChange={() => void basculerPropose()} />
+          {t('Proposé aux agents', 'Offered to agents')}
+        </label>
+        <span className="text-xs text-ink-500" data-testid={`mcp-utilise-par-${outil.name}`}>
+          {utilisePar.length > 0
+            ? t(`Donné à : ${utilisePar.join(', ')}`, `Given to: ${utilisePar.join(', ')}`)
+            : propose
+              ? t('Donné à aucun agent : on le donne sur la page d’un agent (AI Agent > MBA > Outils, ou un agent IA).',
+                'Given to no agent: give it from an agent’s page (AI Agent > MBA > Tools, or an AI agent).')
+              : t('Donné à aucun agent.', 'Given to no agent.')}
+        </span>
+      </div>
 
       {outil.indisponibleLe && (
         /* La ligne est CONSERVÉE, pas supprimée : c'est la trace de ce qui a tourné, et le journal des

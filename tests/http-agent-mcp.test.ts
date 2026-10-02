@@ -49,6 +49,8 @@ function harnais(over: {
   resolution?: { ok: boolean; raison?: string };
   cles?: string[];
   reglerOk?: boolean;
+  /** Ce que rend `proposer` : accepté, refusé avec des noms, ou outil introuvable. */
+  proposer?: { ok: true } | { utilisePar: string[] } | null;
   label?: string;
   vues?: never[];
   /** Le `kind` de la source rendue par `pourAppel` : c est ce qui distingue un serveur MCP d un connecteur API. */
@@ -69,6 +71,7 @@ function harnais(over: {
   const crees: unknown[] = [];
   const epreuves: Array<{ ok: boolean }> = [];
   const regles: unknown[] = [];
+  const proposes: Array<{ id: string; propose: boolean }> = [];
   /**
    * ⚠️ IL SATISFAIT `SessionMcp` EN ENTIER, sans `as never`. Trois fixtures de ce depot ont deja passe le
    * typecheck en mentant de cette facon puis ont echoue AU RUNTIME sur un `... is not a function` : un faux
@@ -91,6 +94,10 @@ function harnais(over: {
       nomsPris: async () => over.nomsPris ?? [],
       appliquer: async (_t, _s, e) => { ecrit.push(e); },
       reglerOutil: async (_t, id, patch) => { regles.push({ id, patch }); return over.reglerOk ?? true; },
+      proposer: async (_t, id, propose) => {
+        proposes.push({ id, propose });
+        return over.proposer === undefined ? { ok: true } : over.proposer;
+      },
     },
     creerServeur: async (_t, input) => { crees.push(input); return { ...SERVEUR, ...input }; },
     sources: {
@@ -103,7 +110,7 @@ function harnais(over: {
   };
   const app = Fastify();
   monterAvecEtapeEspace(app, () => registerAgentMcp(app, deps, gardeQuiPose));
-  return { app, ecrit, epreuves, regles, session, crees, traces };
+  return { app, ecrit, epreuves, regles, proposes, session, crees, traces };
 }
 
 describe('eprouver un serveur MCP', () => {
@@ -536,5 +543,34 @@ describe('declarer un serveur MCP', () => {
     const h = harnais();
     const r = await h.app.inject({ method: 'DELETE', url: `/tenants/${TENANT}/mcp/${SOURCE}` });
     expect(r.statusCode).toBe(204);
+  });
+});
+
+describe('proposer un outil aux agents de l espace (0199)', () => {
+  const url = `/tenants/${TENANT}/mcp/outils/${OUTIL}/propose`;
+
+  it('decocher puis recocher passe au store, et rend la valeur posee', async () => {
+    const h = harnais();
+    const r = await h.app.inject({ method: 'PUT', url, payload: { propose: false } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ propose: false });
+    expect(h.proposes).toEqual([{ id: OUTIL, propose: false }]);
+  });
+
+  it('🔴 decocher un outil qu un agent a est REFUSE en 409, avec les noms', async () => {
+    const h = harnais({ proposer: { utilisePar: ['Agent de Meta', 'Support'] } });
+    const r = await h.app.inject({ method: 'PUT', url, payload: { propose: false } });
+    expect(r.statusCode).toBe(409);
+    expect(r.json().utilisePar).toEqual(['Agent de Meta', 'Support']);
+    expect(r.json().error).toContain('Agent de Meta, Support');
+  });
+
+  it('un outil introuvable rend 404 ; un corps sans booleen, 400 sans rien appeler', async () => {
+    expect((await harnais({ proposer: null }).app.inject({ method: 'PUT', url, payload: { propose: true } })).statusCode).toBe(404);
+    const h = harnais();
+    for (const payload of [{}, { propose: 'oui' }, { propose: true, intrus: 1 }]) {
+      expect((await h.app.inject({ method: 'PUT', url, payload })).statusCode).toBe(400);
+    }
+    expect(h.proposes).toEqual([]);
   });
 });

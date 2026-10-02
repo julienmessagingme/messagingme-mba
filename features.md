@@ -2176,6 +2176,13 @@ importez ce qu'il propose.
 - ✅ **Importer active le serveur** (2026-10-02) : avant, un serveur déclaré restait « brouillon » et aucun
   écran ne l'activait, donc chaque appel de ses outils était refusé. La carte dit « pas encore importé » tant
   que ce n'est pas fait. Un serveur désactivé ne se rallume pas à un nouvel import.
+- ✅ **Les outils importés se voient sur la carte du serveur**, sans clic (2026-10-02), et le bouton dit ce
+  qu'il fera : « Importer ses outils » la première fois, « Rafraîchir depuis le serveur » ensuite.
+- ✅ **On choisit d'abord ICI ce qui est proposé aux agents** (2026-10-02, décision de Julien) : chaque outil
+  porte « Proposé aux agents », coché d'office à l'import, et « Donné à : … ». Seuls les outils proposés
+  s'offrent ensuite sur la page d'un agent (AI Agent > MBA > Outils, ou un agent IA), où l'on choisit pour
+  cet agent. 🔴 Décocher un outil qu'un agent a déjà est refusé, et l'écran nomme les agents : on le retire
+  d'abord de ces agents, sinon l'agent de Meta continuerait d'appeler un outil sorti de sa liste.
   🔴 **Un outil dont le schéma a changé n'est plus l'outil que vous aviez autorisé**, donc son autorisation
   tombe et il faut la redonner. C’est ce qui empêche un serveur distant d’élargir en silence ce qu’un outil
   autorisé sait faire.
@@ -2207,7 +2214,7 @@ importez ce qu'il propose.
   visible nulle part. ⚠️ Ça n'empêche PAS d'activer l'agent : un serveur tiers n'a pas à décider ça.
 - ✅ **Un serveur utilisé ne se supprime pas** tant qu'un outil actif en dépend.
 - ✅ **Chaque agent choisit ce qu'il a le droit d'appeler**, dans **AI Agent > Outils**, section « Vos
-  serveurs MCP » : les outils importés y apparaissent à côté des outils maison et des appels de
+  serveurs MCP » : les outils proposés ici y apparaissent à côté des outils maison et des appels de
   connecteur, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
   Connecteurs MCP.
 - ✅ **L'agent de Meta reçoit aussi ces outils** (2026-10-02), dans **Meta Business Agent > Paramètres >
@@ -2281,7 +2288,7 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
 - ✅ **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par : … ») : le modifier le modifie pour
   cet agent aussi. « Supprimer » ne le retire alors qu'à l'agent de Meta.
 - ✅ **Les outils de vos serveurs MCP** (2026-10-02) : sous la liste, « Depuis vos serveurs MCP » propose les
-  outils importés dans Tools > Connecteurs MCP que l'agent de Meta n'a pas encore. « Donner à l'agent de Meta »
+  outils proposés aux agents dans Tools > Connecteurs MCP que l'agent de Meta n'a pas encore. « Donner à l'agent de Meta »
   l'ajoute ET l'envoie chez Meta dans le même geste. L'agent ne remplit que les paramètres « décidés par
   l'agent » ; ceux qui viennent de la fiche du client, d'un champ ou d'une valeur fixe sont posés par Engage Me.
   La ligne d'un outil MCP dit son serveur et mène à ses réglages (« Régler », pas de « Modifier ») : ses mots et

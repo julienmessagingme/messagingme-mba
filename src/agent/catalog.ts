@@ -178,6 +178,11 @@ export interface OutilBibliotheque {
    */
   mcpNonActivable: string | null;
   mcpIndisponibleLe: string | null;
+  /**
+   * Un outil MCP est-il proposé aux agents de l'espace (0199) ? Décidé sur Tools > Connecteurs MCP ; seuls les
+   * outils proposés s'offrent à un agent. Vrai pour tout outil qui n'est pas MCP (la colonne n'y veut rien dire).
+   */
+  mcpPropose: boolean;
   consommateurs: Array<{
     cle: string;
     actif: boolean;

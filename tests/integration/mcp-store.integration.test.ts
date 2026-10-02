@@ -136,6 +136,43 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     expect(await statut(eteint)).toBe('disabled');
   });
 
+  it('🔴 un outil importé est PROPOSÉ d’office ; le décocher est refusé tant qu’un agent l’a (0199)', async () => {
+    await store.appliquer(tenantId, sourceMcp, {
+      nouveaux: [aImporter('propose', 'notion_propose')], changes: [], disparus: [], vus: [],
+    });
+    const id = (await pool.query<{ id: string; mcp_propose: boolean }>(
+      `select id, mcp_propose from agent_tools where tenant_id = $1 and name = 'notion_propose'`, [tenantId],
+    )).rows[0]!;
+    expect(id.mcp_propose).toBe(true);
+
+    await consentir(id.id);
+    expect(await store.proposer(tenantId, id.id, false)).toEqual({ utilisePar: ['itest'] });
+    expect((await pool.query<{ mcp_propose: boolean }>('select mcp_propose from agent_tools where id = $1', [id.id])).rows[0]!.mcp_propose).toBe(true);
+
+    await pool.query('delete from agent_tool_consommateurs where tool_id = $1', [id.id]);
+    expect(await store.proposer(tenantId, id.id, false)).toEqual({ ok: true });
+    expect((await pool.query<{ mcp_propose: boolean }>('select mcp_propose from agent_tools where id = $1', [id.id])).rows[0]!.mcp_propose).toBe(false);
+    expect(await store.proposer(tenantId, '99999999-9999-4999-8999-999999999999', true)).toBeNull();
+  });
+
+  it('🔴 un outil MCP décoché ne se rattache à AUCUN agent, l’agent de Meta compris', async () => {
+    await store.appliquer(tenantId, sourceMcp, {
+      nouveaux: [aImporter('decoche', 'notion_decoche')], changes: [], disparus: [], vus: [],
+    });
+    const id = (await pool.query<{ id: string }>(
+      `select id from agent_tools where tenant_id = $1 and name = 'notion_decoche'`, [tenantId],
+    )).rows[0]!.id;
+    expect(await store.proposer(tenantId, id, false)).toEqual({ ok: true });
+    expect(await catalogue.rattacherConsommateur(tenantId, `agent:${agentId}`, id)).toBe(false);
+    expect(await catalogue.rattacherConsommateur(tenantId, 'mba:123456789', id)).toBe(false);
+    // La bibliothèque le dit, pour que les écrans des agents ne le proposent pas.
+    const bib = await catalogue.listCatalogue(tenantId);
+    expect(bib.find((o) => o.id === id)?.mcpPropose).toBe(false);
+    // Recoché, il se rattache.
+    expect(await store.proposer(tenantId, id, true)).toEqual({ ok: true });
+    expect(await catalogue.rattacherConsommateur(tenantId, `agent:${agentId}`, id)).toBe(true);
+  });
+
   it('🔴 un outil MCP ne peut PAS se rattacher à une source HTTP', async () => {
     // La garde de `kind`, vue depuis l'écriture : l'`insert` exige `kind = 'mcp'`, donc il n'écrit RIEN
     // plutôt que de lever une erreur de contrainte en 500.

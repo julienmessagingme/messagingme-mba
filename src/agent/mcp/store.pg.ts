@@ -27,6 +27,18 @@ interface LigneOutil {
   mcp_annonce: unknown; mcp_indisponible_le: Date | null; actifs: string;
 }
 
+/**
+ * Les agents qui ont un outil, par leur nom, dans un ordre stable. Un consommateur `mba:` est l'agent de Meta ; un
+ * agent supprimé n'a plus de consommateur (cascade). Sous-requête corrélée sur `t`, partagée par l'écran et par
+ * `proposer`, pour que ce que l'écran affiche soit ce qui refuse.
+ */
+const UTILISE_PAR = `select coalesce(jsonb_agg(case when c.consommateur like 'mba:%' then 'Agent de Meta'
+                                              else coalesce(a.label, 'un agent IA') end
+                                         order by c.consommateur), '[]'::jsonb)
+                       from agent_tool_consommateurs c
+                       left join agents a on a.tenant_id = c.tenant_id and 'agent:' || a.id = c.consommateur
+                      where c.tool_id = t.id and c.tenant_id = t.tenant_id`;
+
 export class PgMcpStore {
   constructor(private readonly pool: Pool) {}
 
@@ -87,12 +99,13 @@ export class PgMcpStore {
       id: string; name: string; title: string; description: string; ne_pas_utiliser: string;
       params: unknown; binding: { outilDistant?: unknown } | null; risk: string;
       mcp_annonce: unknown; mcp_non_activable: string | null;
-      mcp_indisponible_le: Date | null; actifs: string;
+      mcp_indisponible_le: Date | null; actifs: string; mcp_propose: boolean; utilise_par: string[] | null;
     }>(
       `select t.id, t.name, t.title, t.description, t.ne_pas_utiliser, t.params, t.binding, t.risk,
-              t.mcp_annonce, t.mcp_non_activable, t.mcp_indisponible_le,
+              t.mcp_annonce, t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_propose,
               (select count(*) from agent_tool_consommateurs c
-                where c.tool_id = t.id and c.tenant_id = t.tenant_id and c.actif)::text as actifs
+                where c.tool_id = t.id and c.tenant_id = t.tenant_id and c.actif)::text as actifs,
+              (${UTILISE_PAR}) as utilise_par
          from agent_tools t
         where t.tenant_id = $1 and t.source_id = $2 and t.origin = 'mcp'
         order by t.name`,
@@ -111,7 +124,35 @@ export class PgMcpStore {
       nonActivable: r.mcp_non_activable,
       indisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,
       consommateursActifs: Number(r.actifs),
+      propose: r.mcp_propose,
+      utilisePar: r.utilise_par ?? [],
     }));
+  }
+
+  /**
+   * Proposer ou retirer un outil MCP aux agents de l'espace (0199). 🔴 Retirer est REFUSÉ tant qu'un agent l'a
+   * (Julien, 2026-10-02) : le retirer en silence ferait appeler par l'agent de Meta un outil disparu de sa liste,
+   * faute de republication. Le refus rend les noms, pour que l'écran dise à qui le retirer d'abord.
+   * L'outil est verrouillé (`verrouillerDefinitions`) avant de lire ses consommateurs : un rattachement concurrent
+   * (`for key share` sur la même ligne) attend, puis relit `mcp_propose`. `null` = outil introuvable.
+   */
+  async proposer(tenantId: string, outilId: string, propose: boolean): Promise<{ ok: true } | { utilisePar: string[] } | null> {
+    return enTransaction(this.pool, async (client) => {
+      await verrouillerDefinitions(client, tenantId, [outilId]);
+      const lu = await client.query<{ utilise_par: string[] | null }>(
+        `select (${UTILISE_PAR}) as utilise_par from agent_tools t
+          where t.tenant_id = $1 and t.id = $2 and t.origin = 'mcp'`,
+        [tenantId, outilId],
+      );
+      if (lu.rowCount === 0) return null;
+      const utilisePar = lu.rows[0]!.utilise_par ?? [];
+      if (!propose && utilisePar.length > 0) return { utilisePar };
+      await client.query(
+        `update agent_tools set mcp_propose = $3, updated_at = now() where tenant_id = $1 and id = $2 and origin = 'mcp'`,
+        [tenantId, outilId, propose],
+      );
+      return { ok: true };
+    });
   }
 
   /** Les noms d'outils déjà pris dans l'espace, pas seulement chez ce serveur : un nom occupé par un

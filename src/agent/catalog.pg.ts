@@ -498,6 +498,9 @@ export class PgToolCatalog implements ToolCatalog {
          select $1, $2, $3
           where exists (select 1 from agent_tools
                          where id = $2 and tenant_id = $1 and (not pour_agent_meta or $3::text like 'mba:%')
+                           -- Un outil MCP décoché sur Tools > Connecteurs MCP ne s'offre à aucun agent (0199). Le
+                           -- verrou attend un « proposer » concurrent, et la condition est relue après lui.
+                           and (origin <> 'mcp' or mcp_propose)
                            for key share)
          on conflict (tool_id, consommateur) do nothing`,
         [tenantId, outilId, consommateur],
@@ -543,11 +546,11 @@ export class PgToolCatalog implements ToolCatalog {
     const res = await this.pool.query<{
       id: string; name: string; title: string; description: string; ne_pas_utiliser: string;
       origin: OutilDefini['origin']; risk: OutilDefini['risk']; source_id: string | null;
-      mcp_non_activable: string | null; mcp_indisponible_le: Date | null;
+      mcp_non_activable: string | null; mcp_indisponible_le: Date | null; mcp_propose: boolean;
       consommateurs: Array<{ cle: string; actif: boolean; agent_label: string | null }> | null;
     }>(
       `select t.id, t.name, t.title, t.description, t.ne_pas_utiliser, t.origin, t.risk, t.source_id,
-              t.mcp_non_activable, t.mcp_indisponible_le,
+              t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_propose,
               coalesce(
                 (select jsonb_agg(jsonb_build_object('cle', c.consommateur, 'actif', c.actif,
                                                      'agent_label', a.label) order by c.consommateur)
@@ -572,6 +575,7 @@ export class PgToolCatalog implements ToolCatalog {
       origin: r.origin, risk: r.risk, sourceId: r.source_id,
       mcpNonActivable: r.mcp_non_activable,
       mcpIndisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,
+      mcpPropose: r.origin !== 'mcp' || r.mcp_propose,
       consommateurs: (r.consommateurs ?? []).map((c) => ({
         cle: c.cle,
         actif: c.actif,

@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: 719a4d
+source_empreinte: c595e0
 ---
 # Donner des outils à l'agent de Meta
 
@@ -29,7 +29,7 @@ administrateurs.
 - **Appeler un connecteur API.** Un appel que vous avez déclaré une fois dans Tools > Connecteurs API.
 
 **Les outils de vos serveurs MCP** ne passent pas par « Ajouter un outil » : ils viennent d'un serveur déclaré
-dans Tools > Connecteurs MCP. Sous la liste, « Depuis vos serveurs MCP » montre ceux que l'agent de Meta n'a pas
+dans Tools > Connecteurs MCP. Sous la liste, « Depuis vos serveurs MCP » montre ceux qui y sont proposés aux agents et que l'agent de Meta n'a pas
 encore ; « Donner à l'agent de Meta » l'ajoute et l'envoie chez Meta. L'agent ne remplit que les paramètres
 décidés par lui : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe, réglé dans Connecteurs
 MCP, est posé par Engage Me. Leurs mots et leurs paramètres sont partagés avec vos agents IA : ils se règlent

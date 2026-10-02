@@ -336,7 +336,7 @@ describe('les outils MCP de la bibliothèque, proposés à l’agent de Meta (20
   const MCP = '44444444-4444-4444-8444-444444444444';
   const entree = (over: Partial<OutilBibliotheque> = {}): OutilBibliotheque => ({
     id: MCP, name: 'notion_search', title: 'Chercher', description: 'd', nePasUtiliser: 'p', origin: 'mcp', risk: 'read',
-    sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, consommateurs: [], ...over,
+    sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, consommateurs: [], ...over,
   });
   const avec = (e: OutilBibliotheque, over: Parameters<typeof monter>[0] = {}) => monter({
     bibliotheque: async () => [e], serveurs: async () => new Map([['s1', { label: 'notion' }]]), ...over,
@@ -381,6 +381,14 @@ describe('les outils MCP de la bibliothèque, proposés à l’agent de Meta (20
       expect(res.statusCode).toBe(409);
       expect(gestes).toEqual([]);
     }
+  });
+
+  it('🔴 un outil décoché sur Connecteurs MCP rend 409 lisible, rien d’écrit', async () => {
+    const { app, gestes } = avec(entree({ mcpPropose: false }));
+    const res = await app.inject({ method: 'POST', url: `${url}/mcp/${MCP}`, ...h(), payload: {} });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('Connecteurs MCP');
+    expect(gestes).toEqual([]);
   });
 
   it('un outil déjà à l’agent de Meta rend 409, rien d’écrit', async () => {

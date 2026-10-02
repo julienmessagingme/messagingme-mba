@@ -56,6 +56,10 @@ export interface OutilMcpVue {
   nonActivable: string | null;
   indisponibleLe: string | null;
   consommateursActifs: number;
+  /** Proposé aux agents de l'espace (0199) : décoché, il ne s'offre à aucun agent. */
+  propose: boolean;
+  /** Les agents qui l'ont (rattaché, actif ou non), par leur nom : « Agent de Meta », le nom d'un agent IA. */
+  utilisePar: string[];
 }
 
 /** Ce que l'import écrit, en un seul objet, pour que le store le pose dans une transaction. */
@@ -91,6 +95,11 @@ export interface McpDep {
     risk?: RisqueOutil;
     nePasUtiliser?: string;
   }): Promise<boolean>;
+  /**
+   * Proposer ou retirer un outil aux agents de l'espace. Retirer est refusé tant qu'un agent l'a : le refus rend
+   * leurs noms. `null` = outil introuvable dans cet espace.
+   */
+  proposer(tenantId: string, outilId: string, propose: boolean): Promise<{ ok: true } | { utilisePar: string[] } | null>;
 }
 
 export interface AgentMcpRouteDeps {
@@ -155,6 +164,8 @@ const reglageSchema = z.object({
     value: z.union([z.string().max(500), z.number(), z.boolean()]).optional(),
   })).max(100).optional(),
 });
+
+const proposeSchema = z.object({ propose: z.boolean() }).strict();
 
 function direEchec(e: EchecMcp): string {
   switch (e.genre) {
@@ -429,6 +440,27 @@ export function registerAgentMcp(
 
     const ok = await deps.mcp.reglerOutil(tenant, outilId, d);
     return ok ? reply.code(200).send({ ok: true }) : reply.code(404).send({ error: 'outil introuvable' });
+  });
+
+  /**
+   * Proposer un outil importé aux agents de l'espace, ou le retirer (Julien, 2026-10-02 : on choisit d'abord ici, puis
+   * sur chaque agent). Retirer un outil qu'un agent a déjà est refusé en 409, avec les noms.
+   */
+  app.put('/tenants/:tenantId/mcp/outils/:outilId/propose', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const { outilId } = req.params as { outilId: string };
+    if (!estUuid(outilId)) return reply.code(400).send({ error: 'identifiant invalide' });
+    const parse = proposeSchema.safeParse(req.body);
+    if (!parse.success) return reply.code(400).send({ error: 'valeur booléenne requise' });
+    const r = await deps.mcp.proposer(tenant, outilId, parse.data.propose);
+    if (r === null) return reply.code(404).send({ error: 'outil introuvable' });
+    if ('utilisePar' in r) {
+      return reply.code(409).send({
+        error: `utilisé par ${r.utilisePar.join(', ')} : retirez-le d’abord de ${r.utilisePar.length > 1 ? 'ces agents' : 'cet agent'}`,
+        utilisePar: r.utilisePar,
+      });
+    }
+    return reply.code(200).send({ propose: parse.data.propose });
   });
 }
 

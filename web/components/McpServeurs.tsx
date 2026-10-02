@@ -30,7 +30,6 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
   const t = useT();
   const { locale } = useLocale();
   const [serveurs, setServeurs] = useState<ServeurMcp[] | null>(null);
-  const [ouvert, setOuvert] = useState<string | null>(null);
   const [outils, setOutils] = useState<Record<string, OutilMcp[]>>({});
   const [champs, setChamps] = useState<{ champs: string[]; champsContact: string[] }>({ champs: [], champsContact: [] });
   const [plan, setPlan] = useState<{ sourceId: string; plan: ChangementMcp[]; tronque: boolean } | null>(null);
@@ -54,6 +53,15 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
       setChamps({ champs: r.champs, champsContact: r.champsContact });
     } catch { setOutils((v) => ({ ...v, [sourceId]: [] })); }
   }, [tenantId]);
+
+  /**
+   * 🔴 LES OUTILS DE CHAQUE SERVEUR SE LISENT D'OFFICE (Julien, 2026-10-02 : « il faut qu'on voie ici la liste des
+   * outils qui ont été importés »). Ils étaient repliés derrière un bouton « Les outils importés », et un serveur
+   * importé ressemblait à un serveur vide. Une lecture par serveur, à chaque nouvelle liste de serveurs.
+   */
+  useEffect(() => {
+    for (const s of serveurs ?? []) void chargerOutils(s.id);
+  }, [serveurs, chargerOutils]);
 
   async function agir(travail: () => Promise<void>): Promise<void> {
     if (busy) return;
@@ -192,9 +200,13 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                     })}>
                     {t('Éprouver la connexion', 'Test the connection')}
                   </Bouton>
+                  {/* Un seul bouton pour les deux gestes, nommé selon ce qu'il fera : importer la première fois,
+                      rafraîchir ensuite. Les deux passent par l'aperçu, rien n'est écrit avant le second clic. */}
                   <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-apercu-${s.id}`}
                     onClick={() => void agir(async () => { setPlan({ sourceId: s.id, ...(await apercuMcp(tenantId, s.id)) }); })}>
-                    {t('Voir ce qui va changer', 'Preview changes')}
+                    {(outils[s.id] ?? []).length === 0
+                      ? t('Importer ses outils', 'Import its tools')
+                      : t('Rafraîchir depuis le serveur', 'Refresh from the server')}
                   </Bouton>
                   <button type="button" disabled={busy} data-testid={`mcp-supprimer-${s.id}`}
                     className="rounded-controle border border-ink-300 bg-white px-2 py-0.5 text-xs text-danger transition-colors duration-150 hover:bg-danger-50 disabled:opacity-50"
@@ -204,13 +216,6 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                     })}>
                     {t('Supprimer', 'Delete')}
                   </button>
-                  <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-outils-${s.id}`}
-                    onClick={() => void agir(async () => {
-                      setOuvert(ouvert === s.id ? null : s.id);
-                      if (ouvert !== s.id) await chargerOutils(s.id);
-                    })}>
-                    {t('Les outils importés', 'Imported tools')}
-                  </Bouton>
                 </div>
               )}
 
@@ -253,18 +258,20 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                         await importerMcp(tenantId, s.id);
                         setPlan(null);
                         setServeurs((await listerServeursMcp(tenantId)).serveurs);
-                        if (ouvert === s.id) await chargerOutils(s.id);
+                        await chargerOutils(s.id);
                       })}>
-                      {t(`Appliquer ces ${plan.plan.length} changement(s)`, `Apply these ${plan.plan.length} change(s)`)}
+                      {(outils[s.id] ?? []).length === 0
+                        ? t(`Importer ces ${plan.plan.length} outil(s)`, `Import these ${plan.plan.length} tool(s)`)
+                        : t(`Appliquer ces ${plan.plan.length} changement(s)`, `Apply these ${plan.plan.length} change(s)`)}
                     </Bouton>
                   )}
                 </div>
               )}
 
-              {ouvert === s.id && (
+              {outils[s.id] !== undefined && (
                 <ul className="mt-3 space-y-2" data-testid={`mcp-liste-outils-${s.id}`}>
                   {(outils[s.id] ?? []).length === 0
-                    ? <li className="text-xs text-ink-500">{t('Aucun outil importé.', 'No imported tool.')}</li>
+                    ? <li className="text-xs text-ink-500">{t('Aucun outil importé : cliquez sur « Importer ses outils ».', 'No imported tool: click “Import its tools”.')}</li>
                     : (outils[s.id] ?? []).map((o) => (
                       <li key={o.id}>
                         <McpOutilReglage tenantId={tenantId} outil={o} champs={champs.champs}

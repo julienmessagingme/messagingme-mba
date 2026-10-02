@@ -56,6 +56,13 @@ export interface OutilMcp {
   nonActivable: string | null;
   indisponibleLe: string | null;
   consommateursActifs: number;
+  /**
+   * Proposé aux agents de l'espace (0199). Facultatif : une API d'avant ce champ ne le rend pas, et un outil était
+   * alors proposé à tous, donc `undefined` se lit `true`.
+   */
+  propose?: boolean;
+  /** Les agents qui ont cet outil, par leur nom. Absent sur une API d'avant 0199. */
+  utilisePar?: string[];
 }
 
 export type ChangementMcp =
@@ -127,6 +134,13 @@ export function apercuMcp(tenantId: string, sourceId: string): Promise<{ plan: C
 
 export function importerMcp(tenantId: string, sourceId: string): Promise<{ plan: ChangementMcp[]; tronque: boolean }> {
   return request<{ plan: ChangementMcp[]; tronque: boolean }>(`${base(tenantId)}/${sourceId}/importer`, { method: 'POST' });
+}
+
+/** Proposer un outil aux agents de l'espace, ou le retirer. Un retrait refusé (un agent l'a) lève l'erreur du serveur. */
+export function proposerOutilMcp(tenantId: string, outilId: string, propose: boolean): Promise<{ propose: boolean }> {
+  return request<{ propose: boolean }>(`${base(tenantId)}/outils/${outilId}/propose`, {
+    method: 'PUT', body: JSON.stringify({ propose }),
+  });
 }
 
 export function reglerOutilMcp(tenantId: string, outilId: string, patch: {
