@@ -3502,7 +3502,7 @@ publicité déjà créée.
 
 ## Widget WhatsApp (menu Widget WhatsApp)
 
-🚧 **Écran livré, essai réel à venir** (lot 4, 2026-10-02). Ce qui clôt la fonctionnalité n'est pas un test : la
+🚧 **Écran et outils MCP livrés, essai réel à venir** (lots 4 et 5, 2026-10-02). Ce qui clôt la fonctionnalité n'est pas un test : la
 balise posée sur un vrai site, un message envoyé depuis un vrai téléphone, la conversation qui arrive marquée de la
 bonne source, et le devenir du widget qui prend la main.
 
@@ -3528,7 +3528,8 @@ l'enregistrement :
   (sinon un seul message déclencherait les deux). La règle vaut aussi dans l'autre sens : un lien de chaîne ne peut
   plus reprendre le message d'un widget ;
 - un message qui apparaît déjà dans des conversations reçues est refusé, avec leur nombre : il s'appliquerait à des
-  conversations ordinaires ;
+  conversations ordinaires. Les arrivées par un widget ne comptent pas, puisqu'elles sont son succès : reprendre le
+  message d'un widget supprimé, le raccourcir ou retirer sa ponctuation finale reste possible ;
 - la casse, les accents, les espaces et la ponctuation finale ne distinguent pas deux messages.
 
 **Qui répond, widget par widget.**
@@ -3537,7 +3538,8 @@ l'enregistrement :
 - **Un scénario** : il démarre à l'arrivée du message, avec les gardes d'une automation (contact bloqué ou
   désabonné, anti-rebond, plafond horaire). Il reprend la main à l'agent de Meta, mais laisse la conversation à un
   membre de l'équipe qui est déjà en train de répondre. Un plafond horaire propre au widget est réglable : le message
-  est public, n'importe qui peut l'envoyer en rafale.
+  est public, n'importe qui peut l'envoyer en rafale. **Seul un scénario publié se choisit** : un scénario sans
+  version publiée est refusé, avec l'invitation à le publier d'abord, puisqu'il ne démarrerait rien.
 - **Un agent IA** : visible et grisé, **à venir**. L'API le refuse aussi.
 
 ⚠️ **Un scénario supprimé rend son widget inerte**, sans le détruire : la bulle reste sur le site, l'étiquette se
@@ -3554,8 +3556,8 @@ gardent leur étiquette.
 sans clic**, pour ne pas casser la mise en page du site ni laisser un visiteur écrire dans le vide. L'écran le
 signale sur la fiche du widget.
 
-Réservé aux administrateurs, lecture comprise. Les outils MCP (créer, modifier, lister un widget depuis Claude Code)
-passeront par les mêmes contrôles : c'est le lot suivant.
+Réservé aux administrateurs, lecture comprise. Un assistant branché sur le serveur MCP (Claude Code, par exemple)
+peut aussi lister, créer et modifier les widgets, avec exactement les mêmes contrôles : voir « Serveur MCP ».
 
 ## Serveur MCP : brancher un assistant sur la console (LIVE, 2026-09-01)
 
@@ -3570,13 +3572,24 @@ pas. L'accès passe par une **clé d'API** portant les droits `mcp:read` et/ou `
 « Clés d'API ». Pour couper un assistant : révoquer sa clé.
 
 **Ce que l'assistant peut faire.** Lire (`mcp:read`) : lister les conversations, ouvrir un fil et savoir si la
-fenêtre de 24 h est ouverte, lire les messages, chercher un contact, lister les membres. Agir (`mcp:write`) :
-répondre dans une conversation ouverte, poser des tags, confier un fil à un membre. Une fiche de contact lue par
+fenêtre de 24 h est ouverte, lire les messages, chercher un contact, lister les membres, lister les widgets WhatsApp
+et les scénarios (en disant lesquels sont publiés). Agir (`mcp:write`) : répondre dans une conversation ouverte,
+poser des tags, confier un fil à un membre, créer et modifier un widget WhatsApp. Une fiche de contact lue par
 le serveur MCP porte sa dernière analyse et son résumé (`last_analysis`, 2026-10-02), `null` si le contact n'a
 jamais été analysé : à la différence de l'API publique, l'assistant lit déjà les conversations, le résumé ne lui
 apprend rien qu'il ne puisse lire. La recherche porte la dernière analyse sans le résumé, `get_contact` les deux.
 ⚠️ Un agent qui répond aux clients et appelle `get_contact` doit lier le numéro à la fiche de celui qui écrit :
 sinon un message piégé pourrait lui faire lire la fiche, et le résumé, d'un autre client.
+
+**Poser une bulle WhatsApp depuis un assistant** (2026-10-02). `create_widget` crée le widget et rend sa balise,
+que l'assistant colle juste avant la fin de la page (`</body>`) du site qu'il est en train de modifier ;
+`update_widget` modifie un widget sans jamais changer sa balise ; `list_scenarios` dit quel scénario un widget peut
+démarrer. Les contrôles sont ceux de l'écran, au mot près : message propre au widget, scénario publié de l'espace,
+cinq widgets au plus, et un refus dit sa raison. Les champs annoncent leurs limites, l'assistant n'a pas à les
+deviner. L'écran est réservé aux administrateurs. Une clé qui porte `mcp:write` est créée par un administrateur,
+mais elle donne ce pouvoir à QUICONQUE la détient : elle peut changer ce que la bulle affiche sur le site public
+(libellé, avatar, message, extinction). Ne la confiez pas à un agent qui répond aux clients. Pas de suppression
+depuis un assistant : elle reste un geste de la console.
 
 **Ce qu'il ne fait PAS, et c'est délibéré.**
 - **Aucun envoi de template, aucune campagne.** Ouvrir l'envoi de template à un modèle, c'est lui donner un

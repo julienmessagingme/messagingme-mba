@@ -1,7 +1,7 @@
 ---
 ecran: widgets
 source_section: Widget WhatsApp (menu Widget WhatsApp)
-source_empreinte: 97a5e9
+source_empreinte: aaaa3a
 ---
 # Poser une bulle WhatsApp sur mon site
 
@@ -18,13 +18,19 @@ votre page n'est jamais ralentie.
 
 **Le message pré-rempli dit d'où vient la conversation.** Il doit être propre à ce widget : il ne peut ni
 contenir ni être contenu dans celui d'un autre widget ou d'un lien de chaîne, et un message qui apparaît déjà
-dans vos conversations est refusé, avec leur nombre. La casse, les accents et la ponctuation finale ne
-distinguent pas deux messages.
+dans vos conversations est refusé, avec leur nombre. Les conversations arrivées par vos widgets n'y comptent pas :
+vous pouvez reprendre le message d'un widget supprimé, ou raccourcir celui d'un widget. La casse, les accents et
+la ponctuation finale ne distinguent pas deux messages.
 
 **Qui répond.** Par défaut, comme les autres conversations. Vous pouvez aussi confier les conversations du
-widget à l'agent de Meta, ou démarrer un scénario. Un agent IA est prévu, pas encore disponible. Si le
-scénario choisi est supprimé, le widget ne démarre plus rien : sa fiche le signale, choisissez-en un autre.
+widget à l'agent de Meta, ou démarrer un scénario, à condition qu'il soit publié : un scénario jamais publié ne
+démarrerait rien, publiez-le d'abord. Un agent IA est prévu, pas encore disponible. Si le scénario choisi est
+supprimé, le widget ne démarre plus rien : sa fiche le signale, choisissez-en un autre.
 
 **Éteindre ou supprimer.** Éteint, la bulle disparaît mais la balise peut rester sur votre site ; vous le
 rallumez d'un geste. Vous pouvez créer cinq widgets au plus. Sans numéro WhatsApp relié, la bulle s'affiche
 grisée et ne s'ouvre pas.
+
+**Depuis un assistant.** Un assistant comme Claude Code, branché sur votre espace par le serveur MCP (menu
+Developers), peut aussi lister, créer et modifier vos widgets, avec les mêmes règles, et coller lui-même la balise
+sur votre site.

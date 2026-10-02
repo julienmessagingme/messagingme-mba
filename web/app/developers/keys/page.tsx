@@ -55,8 +55,8 @@ function KeysInner({ session }: { session: Session }) {
     'contacts:write': t('Créer et mettre à jour des contacts', 'Create and update contacts'),
     'contacts:read': t('Lire les contacts', 'Read contacts'),
     'sends:create': t('Déclencher des envois', 'Trigger sends'),
-    'mcp:read': t('MCP : lire les conversations et les contacts', 'MCP: read conversations and contacts'),
-    'mcp:write': t('MCP : répondre, taguer, affecter', 'MCP: reply, tag, assign'),
+    'mcp:read': t('MCP : lire les conversations, les contacts, les widgets et les scénarios', 'MCP: read conversations, contacts, widgets and scenarios'),
+    'mcp:write': t('MCP : répondre, taguer, affecter, créer et modifier les widgets du site', 'MCP: reply, tag, assign, create and edit the website widgets'),
   };
 
   function toggleScope(s: string) {

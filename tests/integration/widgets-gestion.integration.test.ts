@@ -3,7 +3,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
-import { creerWidget, gestionDesWidgetsEnBase, modifierWidget, type DepsGestionWidgets } from '../../src/widgets/gestion';
+import {
+  SCENARIO_NON_PUBLIE, creerWidget, gestionDesWidgetsEnBase, modifierWidget, type DepsGestionWidgets,
+} from '../../src/widgets/gestion';
 import { conflitDansLEspace } from '../../src/widgets/phrases';
 import { PgWidgetStore, type WidgetInput } from '../../src/widgets/store.pg';
 import { PgChannelsMeLinkStore } from '../../src/channels-me/link-store.pg';
@@ -44,18 +46,28 @@ describe.skipIf(!url)('la gestion des widgets (Postgres réel)', () => {
       'select phrase, workflow_id from widgets where tenant_id = $1', [tenant],
     )).rows;
 
+  /**
+   * Un scénario PUBLIÉ : son graphe publié porte un bloc (lot 5, un widget ne désigne qu'un scénario qui peut
+   * démarrer). `brouillon` : le bloc n'est que dans le brouillon, le publié reste celui de la création, vide.
+   */
+  const scenario = async (tenant: string, o: { brouillon?: boolean } = {}): Promise<string> => {
+    const graphe = JSON.stringify({ nodes: [{ id: 'n1', type: 'message', data: { text: 'Bonjour' } }], edges: [] });
+    return (await pool.query<{ id: string }>(
+      o.brouillon === true
+        ? `insert into workflows (tenant_id, name, draft_graph) values ($1, 'itest-widget-gestion', $2::jsonb) returning id`
+        : `insert into workflows (tenant_id, name, graph) values ($1, 'itest-widget-gestion', $2::jsonb) returning id`,
+      [tenant, graphe],
+    )).rows[0]!.id;
+  };
+
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
     deps = gestionDesWidgetsEnBase(pool);
     store = new PgWidgetStore(pool);
     tenantA = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-widgets-gestion-a') returning id`)).rows[0]!.id;
     tenantB = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-widgets-gestion-b') returning id`)).rows[0]!.id;
-    scenarioA = (await pool.query<{ id: string }>(
-      `insert into workflows (tenant_id, name) values ($1, 'itest-widget-gestion') returning id`, [tenantA],
-    )).rows[0]!.id;
-    scenarioB = (await pool.query<{ id: string }>(
-      `insert into workflows (tenant_id, name) values ($1, 'itest-widget-gestion') returning id`, [tenantB],
-    )).rows[0]!.id;
+    scenarioA = await scenario(tenantA);
+    scenarioB = await scenario(tenantB);
   });
 
   afterAll(async () => {
@@ -82,6 +94,18 @@ describe.skipIf(!url)('la gestion des widgets (Postgres réel)', () => {
     const r = await creerWidget(deps, tenantA, { nom: 'itest', phrase: p, devenir: 'scenario', workflowId: scenarioA });
     expect(r.ok).toBe(true);
     expect(await widgetsDe(tenantA)).toContainEqual({ phrase: p, workflow_id: scenarioA });
+  });
+
+  it('🔴 un scénario de l’espace SANS version publiée est refusé (409), même avec un brouillon, par la vraie lecture', async () => {
+    // `etatDuScenario` lit le graphe PUBLIÉ, le seul que l'exécuteur joue : un brouillon plein ne démarre rien.
+    for (const id of [await scenario(tenantA, { brouillon: true }), (await pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name) values ($1, 'itest-widget-gestion') returning id`, [tenantA],
+    )).rows[0]!.id]) {
+      const p = phrase();
+      const r = await creerWidget(deps, tenantA, { nom: 'itest', phrase: p, devenir: 'scenario', workflowId: id });
+      expect(r).toMatchObject({ ok: false, statut: 409, erreur: SCENARIO_NON_PUBLIE });
+      expect(await widgetsDe(tenantA)).not.toContainEqual({ phrase: p, workflow_id: id });
+    }
   });
 
   it('🔴 à la modification aussi : le widget garde son état', async () => {

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { normalizeText } from '../automation/match';
 import { estUuid } from '../http/scope';
 import { PgChannelsMeLinkStore } from '../channels-me/link-store.pg';
-import { PgWorkflowStore } from '../workflow/store.pg';
+import { PgWorkflowStore, etatDuScenario, type EtatScenario } from '../workflow/store.pg';
 import { PgWidgetStore, type DevenirWidget, type PositionWidget, type WidgetInput, type WidgetRow } from './store.pg';
 import { enConflitAvec, phrasesEnConflit } from './phrases';
 import { adresseDuScript, baliseDuScript, lienDuWidget, type NumeroDuWidget } from './adresses';
@@ -13,18 +13,21 @@ import { adresseDuScript, baliseDuScript, lienDuWidget, type NumeroDuWidget } fr
  * docs/superpowers/plans/2026-10-02-widget-whatsapp.md).
  *
  * 🔴 UNE SEULE VÉRITÉ, DEUX PORTES. La route de la console (`src/http/widgets.ts`) et les outils MCP du lot 5
- * appellent CES fonctions : un widget créé par Claude Code passe exactement les mêmes contrôles qu'un widget créé
- * à la main. La route n'ajoute que ce qui est propre au HTTP (la garde d'administrateur, les codes de statut).
+ * (`src/mcp/outils.ts`) appellent CES fonctions : un widget créé par Claude Code passe exactement les mêmes
+ * contrôles qu'un widget créé à la main. La route n'ajoute que ce qui est propre au HTTP (la garde
+ * d'administrateur, les codes de statut), l'outil ce qui est propre à MCP (le refus lisible par un modèle).
  *
  * Les contrôles que la base ne fait pas, et qui vivent donc ici :
  *  - la saisie, bornée par Zod (`safeParse`, `.strict()` : une clé inconnue est une faute, pas un ajout) ;
  *  - 🔴 le scénario désigné appartient à CET espace. La clé étrangère de 0200 vérifie qu'il EXISTE, pas à qui il
  *    est : sans ce contrôle, un widget de l'espace A démarrerait un scénario de l'espace B, qui enverrait ses
  *    messages depuis le numéro de B aux visiteurs de A. Une fuite entre espaces ;
+ *  - le scénario CHOISI a une version publiée (lot 5) : sans elle, la fiche annoncerait un scénario qui, à
+ *    l'arrivée, ne démarrerait rien ;
  *  - le devenir `agent` est REFUSÉ (décision de Julien du 2026-10-02) : une session d'agent IA exige un parcours de
  *    scénario, le lot 3 le traite comme `null`, et l'accepter ici laisserait le MCP poser un choix inerte ;
  *  - la phrase : réduite à rien par `normalizeText`, en conflit avec un autre widget ou un lien de chaîne
- *    (`./phrases`), ou déjà présente dans des messages reçus ;
+ *    (`./phrases`), ou déjà présente dans la conversation ordinaire ;
  *  - cinq widgets au plus par espace (décision de Julien du 2026-10-02).
  */
 
@@ -42,15 +45,21 @@ export const MAX_PAR_HEURE_WIDGET = 100_000;
 /** Le vert de WhatsApp, défaut de la colonne `couleur` (0200). */
 export const COULEUR_PAR_DEFAUT = '#25d366';
 export const POSITIONS_WIDGET = ['bas_droite', 'bas_gauche', 'haut_droite', 'haut_gauche'] as const satisfies readonly PositionWidget[];
-/** Le CHECK `widgets_couleur_chk`, recopié : six chiffres hexadécimaux, la forme que rend `<input type="color">`. */
-const COULEUR_RE = /^#[0-9A-Fa-f]{6}$/;
+/**
+ * Le CHECK `widgets_couleur_chk`, recopié : six chiffres hexadécimaux, la forme que rend `<input type="color">`.
+ * Exporté en TEXTE : le schéma d'entrée des outils MCP l'annonce tel quel (`pattern`), sans le recopier.
+ */
+export const MOTIF_COULEUR = '^#[0-9A-Fa-f]{6}$';
+const COULEUR_RE = new RegExp(MOTIF_COULEUR);
+/** Le début qu'une adresse d'avatar doit avoir (`widgets_avatar_https_chk`), annoncé aussi aux modèles. */
+export const DEBUT_AVATAR = 'https://';
 
 /**
  * Le CHECK `widgets_avatar_https_chk` (`^https://`, sensible à la casse), plus une adresse qui se lit : une valeur
  * que le CHECK refuserait finirait sinon en 500, et le client ne saurait pas pourquoi.
  */
 function estAdresseHttps(v: string): boolean {
-  if (!v.startsWith('https://')) return false;
+  if (!v.startsWith(DEBUT_AVATAR)) return false;
   try {
     return new URL(v).protocol === 'https:';
   } catch {
@@ -82,10 +91,15 @@ const CHAMPS = {
  * ⚠️ `badge` N'EST PAS DANS LA SAISIE, délibérément. « Propulsé par Engage Me » disparaît en offre Pro (spec,
  * section 4), et la colonne le dit : le retirer est un acte COMMERCIAL, qui doit se décider explicitement. Tant que
  * cette offre n'existe pas, ni l'écran ni le MCP ne peuvent l'éteindre ; une modification garde la valeur en base.
+ *
+ * Exportés pour UNE raison : le schéma d'entrée des outils MCP doit annoncer chaque borne qu'ils appliquent, et
+ * `tests/mcp-widgets.test.ts` la lit ICI plutôt que dans une copie.
  */
-const schemaModification = z.object(CHAMPS).partial().strict();
-const schemaCreation = z.object(CHAMPS).partial().required({ nom: true, phrase: true }).strict();
-type Saisie = z.infer<typeof schemaModification>;
+export const saisieDeModification = z.object(CHAMPS).partial().strict();
+export const saisieDeCreation = z.object(CHAMPS).partial().required({ nom: true, phrase: true }).strict();
+type Saisie = z.infer<typeof saisieDeModification>;
+/** Les champs qu'une saisie peut porter, la même liste pour la route et pour les outils MCP. */
+export type ChampWidget = keyof Saisie;
 
 /** Ce qu'il faut savoir d'un champ refusé pour corriger sa saisie, sans lire le code. */
 const AIDE_DES_CHAMPS: Readonly<Record<string, string>> = {
@@ -114,6 +128,8 @@ export const DEVENIR_AGENT_A_VENIR =
 const SCENARIO_A_CHOISIR = 'Choisissez le scénario que ce widget démarre.';
 const SCENARIO_SANS_DEVENIR = 'Un scénario ne se désigne qu’avec le devenir « scénario ».';
 const SCENARIO_INCONNU = 'Ce scénario n’existe pas dans cet espace.';
+export const SCENARIO_NON_PUBLIE =
+  'Ce scénario n’a aucune version publiée : publiez-le d’abord, sinon ce widget ne démarrerait rien.';
 const PHRASE_VIDE = 'Cette phrase ne contient aucun caractère exploitable : choisissez une phrase lisible.';
 const PHRASE_DEJA_PRISE = 'Un autre widget de cet espace porte déjà cette phrase.';
 const LIMITE_ATTEINTE =
@@ -133,10 +149,16 @@ export interface DepsGestionWidgets {
   };
   /** Les phrases des liens de chaîne de l'espace (`PgChannelsMeLinkStore.phrasesDesLiens`). */
   phrasesDesLiens(tenantId: string): Promise<string[]>;
-  /** Combien de messages reçus récents contiennent déjà cette phrase (`PgChannelsMeLinkStore.messagesContenantLaPhrase`). */
+  /**
+   * Combien de messages reçus récents contiennent déjà cette phrase, HORS arrivées par un widget
+   * (`PgChannelsMeLinkStore.messagesContenantLaPhrase`).
+   */
   messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number>;
-  /** Ce scénario appartient-il à CET espace ? Un scénario d'un autre espace répond non, comme un inconnu. */
-  scenarioDeLEspace(tenantId: string, workflowId: string): Promise<boolean>;
+  /**
+   * Ce scénario peut-il démarrer, et est-il de CET espace (`etatDuScenario`) ? Un scénario d'un autre espace rend
+   * 'inconnu', comme un identifiant qui n'existe pas.
+   */
+  scenarioEtat(tenantId: string, workflowId: string): Promise<EtatScenario>;
 }
 
 /**
@@ -149,11 +171,14 @@ export function gestionDesWidgetsEnBase(pool: Pool): DepsGestionWidgets {
   return {
     widgets: new PgWidgetStore(pool),
     phrasesDesLiens: (tenantId) => liens.phrasesDesLiens(tenantId),
-    // Le comptage des liens de chaîne convient tel quel : `tenant_id = $1`, une fenêtre de 90 jours, la casse
-    // ignorée. Il écarte les messages qui portent un jeton de lien, des clics et non de la conversation ordinaire.
-    messagesContenantLaPhrase: (tenantId, phrase) => liens.messagesContenantLaPhrase(tenantId, phrase),
-    // `getById` filtre sur `id` ET `tenant_id` : un scénario d'un autre espace y est introuvable.
-    scenarioDeLEspace: async (tenantId, workflowId) => (await scenarios.getById(workflowId, tenantId)) !== null,
+    // Le comptage des liens de chaîne (`tenant_id = $1`, une fenêtre de 90 jours, la casse ignorée, les messages
+    // à jeton de lien écartés), PLUS les arrivées par un widget écartées (lot 5) : elles sont le succès d'un widget,
+    // pas de la conversation ordinaire, et les compter refusait de reprendre une phrase qui avait servi.
+    messagesContenantLaPhrase: (tenantId, phrase) =>
+      liens.messagesContenantLaPhrase(tenantId, phrase, { horsArriveesDeWidget: true }),
+    // `getById` filtre sur `id` ET `tenant_id` : un scénario d'un autre espace y est introuvable. La lecture est
+    // celle du bouton d'un lien de chaîne (`etatDuScenario`), câblée pour lui dans `src/index.ts`.
+    scenarioEtat: async (tenantId, workflowId) => etatDuScenario(await scenarios.getById(workflowId, tenantId)),
   };
 }
 
@@ -173,13 +198,15 @@ async function preparer(
   if (devenir === 'agent') return refus(400, DEVENIR_AGENT_A_VENIR);
 
   let workflowId: string | null = null;
+  // La requête CHOISIT-elle le scénario ? Toujours à la création ; à la modification, quand elle porte le devenir ou
+  // le scénario. Une modification de la couleur seule ne choisit rien.
+  const choisitLeScenario = courant === null || s.devenir !== undefined || s.workflowId !== undefined;
   if (devenir === 'scenario') {
     workflowId = s.workflowId !== undefined ? s.workflowId : (courant?.workflowId ?? null);
     // Un scénario manquant n'est refusé que si la requête CHOISIT le devenir. Un widget devenu inerte (scénario
     // supprimé après coup, `on delete set null`) reste ainsi modifiable, sa couleur par exemple : l'écran dit qu'il
     // ne démarre plus rien et invite à choisir un autre scénario, sans l'exiger pour toucher au reste.
-    const choisitLeDevenir = courant === null || s.devenir !== undefined || s.workflowId !== undefined;
-    if (workflowId === null && choisitLeDevenir) return refus(400, SCENARIO_A_CHOISIR);
+    if (workflowId === null && choisitLeScenario) return refus(400, SCENARIO_A_CHOISIR);
   } else if (s.workflowId !== undefined && s.workflowId !== null) {
     // Sinon la base refuserait (`widgets_scenario_sans_devenir_chk`), en 500.
     return refus(400, SCENARIO_SANS_DEVENIR);
@@ -193,12 +220,21 @@ async function preparer(
   // `normalizeText` les réduit à rien. Une phrase vide serait contenue dans TOUS les messages.
   if (normalizeText(phrase) === '') return refus(400, PHRASE_VIDE);
 
-  // 🔴 À chaque désignation, y compris inchangée : une requête de plus, contre un contrôle qui ne dépend pas de
-  // l'histoire de la ligne.
-  if (workflowId !== null && !(await deps.scenarioDeLEspace(tenantId, workflowId))) return refus(400, SCENARIO_INCONNU);
+  if (workflowId !== null) {
+    const etat = await deps.scenarioEtat(tenantId, workflowId);
+    // 🔴 L'espace, à chaque désignation, y compris inchangée : une requête de plus, contre un contrôle qui ne dépend
+    // pas de l'histoire de la ligne. C'est un contrôle d'ISOLATION, il ne connaît pas d'exception.
+    if (etat === 'inconnu') return refus(400, SCENARIO_INCONNU);
+    // La version publiée, seulement quand la requête CHOISIT le scénario : c'est une hygiène, pas une frontière. Un
+    // widget dont le scénario n'est pas publié (créé avant ce contrôle, ou dépublié depuis) ne démarre rien, comme un
+    // widget inerte, et reste modifiable comme lui : sinon on ne pourrait même plus l'éteindre. 409 et non 400 :
+    // la saisie est juste, c'est l'état du scénario qui ne l'est pas encore.
+    if (etat === 'vide' && choisitLeScenario) return refus(409, SCENARIO_NON_PUBLIE);
+  }
 
-  // Une phrase inchangée (à la normalisation près) n'a rien à reprouver : ses conflits n'ont pas bougé, et ses
-  // propres arrivées la contiennent, donc le comptage la refuserait à cause de son propre succès.
+  // Une phrase inchangée (à la normalisation près) n'a rien à reprouver : ses conflits n'ont pas bougé, et la
+  // recompter la jugerait sur ce qu'elle a déjà capté. Une phrase qui CHANGE est recomptée, hors arrivées par un
+  // widget (lot 5) : raccourcir une phrase qui a servi n'est plus refusé à cause de son propre succès.
   const changeDePhrase = courant === null || normalizeText(phrase) !== normalizeText(courant.phrase);
   if (changeDePhrase) {
     // Éteints compris : un widget éteint se rallume, et sa balise est toujours posée. Le widget modifié est exclu,
@@ -249,7 +285,7 @@ function estPhraseDejaPrise(err: unknown): boolean {
 }
 
 export async function creerWidget(deps: DepsGestionWidgets, tenantId: string, corps: unknown): Promise<Issue<WidgetRow>> {
-  const lu = schemaCreation.safeParse(corps ?? {});
+  const lu = saisieDeCreation.safeParse(corps ?? {});
   if (!lu.success) return refus(400, messageDeSaisie(lu.error));
   const existants = await deps.widgets.lister(tenantId);
   // ⚠️ Deux créations simultanées peuvent passer à 4 et finir à 6 : un dépassement d'un widget, sans conséquence,
@@ -270,7 +306,7 @@ export async function modifierWidget(
   deps: DepsGestionWidgets, tenantId: string, id: string, corps: unknown,
 ): Promise<Issue<WidgetRow>> {
   if (!estUuid(id)) return refus(404, WIDGET_INCONNU);
-  const lu = schemaModification.safeParse(corps ?? {});
+  const lu = saisieDeModification.safeParse(corps ?? {});
   if (!lu.success) return refus(400, messageDeSaisie(lu.error));
   // `lister` et non une lecture par identifiant : elle porte aussi les AUTRES widgets, contre lesquels la phrase se
   // compare, et c'est elle qui permet d'exclure le widget lui-même de cette comparaison.
@@ -354,4 +390,34 @@ export function vueDuWidget(w: WidgetRow, baseApi: string, numero: NumeroDuWidge
     waMeUrl: lienDuWidget(numero, w.phrase),
     scenarioSupprime: w.devenir === 'scenario' && w.workflowId === null,
   };
+}
+
+/**
+ * Les deux portes reçoivent le MÊME objet du câblage (`src/index.ts`) : la gestion, et de quoi montrer un widget. Un
+ * second assemblage pour le MCP pourrait montrer un autre numéro, donc un autre lien `wa.me`, que celui de la console.
+ */
+export interface DepsWidgets {
+  gestion: DepsGestionWidgets;
+  /** Le numéro principal de l'espace (`PgPhoneStatusStore.getPhoneNumber`), pour le lien `wa.me` de la bulle. */
+  numero(tenantId: string): Promise<NumeroDuWidget | null>;
+  /**
+   * La base des routes d'API (`adressesPubliques(...).avecPrefixe`), celle de l'adresse du script. Ni la route ni
+   * l'outil ne la recomposent : l'écran et l'assistant reçoivent l'adresse et la balise prêtes à copier.
+   */
+  baseApi: string;
+}
+
+/**
+ * La mise en vue des widgets d'un espace. 🔴 Le numéro est lu AVANT toute écriture : lu après, sa panne rendrait une
+ * erreur sur un widget pourtant créé, et celui qui réessaierait se ferait refuser sa propre phrase.
+ */
+export async function miseEnVue(deps: DepsWidgets, tenantId: string): Promise<(w: WidgetRow) => VueWidget> {
+  const numero = await deps.numero(tenantId);
+  return (w) => vueDuWidget(w, deps.baseApi, numero);
+}
+
+/** La liste d'un espace telle que la console et le MCP la rendent, avec la limite qui s'applique à la création. */
+export async function listerEnVue(deps: DepsWidgets, tenantId: string): Promise<{ widgets: VueWidget[]; limite: number }> {
+  const [widgets, vue] = await Promise.all([deps.gestion.widgets.lister(tenantId), miseEnVue(deps, tenantId)]);
+  return { widgets: widgets.map(vue), limite: LIMITE_WIDGETS_PAR_ESPACE };
 }

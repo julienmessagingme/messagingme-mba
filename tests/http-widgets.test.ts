@@ -11,7 +11,9 @@ import { lienWaMe } from '../src/lib/wa-me';
 import { registerWidgetPublic } from '../src/http/widget-public';
 import { SCRIPT_INERTE } from '../src/widgets/script';
 import { RateLimiter } from '../src/auth/rate-limit';
-import { LIMITE_WIDGETS_PAR_ESPACE, DEVENIR_AGENT_A_VENIR, type DepsGestionWidgets } from '../src/widgets/gestion';
+import {
+  LIMITE_WIDGETS_PAR_ESPACE, DEVENIR_AGENT_A_VENIR, SCENARIO_NON_PUBLIE, type DepsGestionWidgets,
+} from '../src/widgets/gestion';
 import type { NumeroDuWidget } from '../src/widgets/adresses';
 import type { WidgetInput, WidgetRow } from '../src/widgets/store.pg';
 import type { PhoneNumberRecord } from '../src/account/types';
@@ -45,6 +47,8 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 /** Le scénario de l'espace t1, et celui de l'espace t2 : le second ne doit jamais être désignable depuis t1. */
 const WF_T1 = '11111111-1111-4111-8111-111111111111';
 const WF_T2 = '22222222-2222-4222-8222-222222222222';
+/** Un scénario de t1 SANS version publiée (lot 5) : il existe, il est de l'espace, et il ne démarrerait rien. */
+const WF_T1_NON_PUBLIE = '33333333-3333-4333-8333-333333333333';
 const BASE_API = 'https://api.exemple.test';
 const NUMERO: NumeroDuWidget = { displayPhoneNumber: '+33 5 25 68 02 50', delieLe: null };
 /** Le même numéro, en entier, pour la route publique, qui lit un `PhoneNumberRecord`. */
@@ -112,7 +116,11 @@ function monter(o: {
     },
     phrasesDesLiens: async () => o.liens ?? [],
     messagesContenantLaPhrase: async (_t, phrase) => { cap.comptages.push(phrase); return o.dejaVus ?? 0; },
-    scenarioDeLEspace: async (t, id) => (t === 't1' && id === WF_T1) || (t === 't2' && id === WF_T2),
+    // Comme `etatDuScenario` sur `getById(id, tenant)` : un scénario d'un autre espace est un inconnu.
+    scenarioEtat: async (t, id) => {
+      if ((t === 't1' && id === WF_T1) || (t === 't2' && id === WF_T2)) return 'ok';
+      return t === 't1' && id === WF_T1_NON_PUBLIE ? 'vide' : 'inconnu';
+    },
   };
   const server = buildServer({
     queue: new FakeQueue(),
@@ -225,6 +233,17 @@ describe('créer', () => {
     expect((await creer(server, { nom: 'Blog', phrase: 'Je viens du blog', devenir: 'scenario' })).statusCode).toBe(400);
     expect((await creer(server, { nom: 'Blog', phrase: 'Je viens du blog', devenir: 'mba', workflowId: WF_T1 })).statusCode).toBe(400);
     expect((await creer(server, { nom: 'Blog', phrase: 'Je viens du blog', workflowId: WF_T1 })).statusCode).toBe(400);
+    expect(cap.creations).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un scénario SANS version publiée est refusé (409), avec la marche à suivre, et rien n’est écrit', async () => {
+    // Jaune 2 de la relecture du lot 4 : la fiche annonçait un scénario qui, à l'arrivée, ne démarrait rien.
+    const { server, cap } = monter();
+    const res = await creer(server, { nom: 'Blog', phrase: 'Je viens du blog', devenir: 'scenario', workflowId: WF_T1_NON_PUBLIE });
+    expect(res.statusCode).toBe(409);
+    expect(erreur(res)).toBe(SCENARIO_NON_PUBLIE);
+    expect(erreur(res)).toContain('publiez-le');
     expect(cap.creations).toEqual([]);
     await server.close();
   });
@@ -418,6 +437,25 @@ describe('modifier', () => {
     await server.close();
   });
 
+  it('🔴 CHOISIR un scénario non publié est refusé ; un widget qui en porte déjà un reste modifiable, et se répare', async () => {
+    // Un widget créé avant ce contrôle, ou dont le scénario a été dépublié : inerte comme un widget dont le scénario
+    // est supprimé, et modifiable comme lui. Sinon on ne pourrait même plus l'éteindre.
+    const w = ligne({ devenir: 'scenario', workflowId: WF_T1_NON_PUBLIE });
+    const { server, cap } = monter({ widgets: [w] });
+    const url = `${URL_WIDGETS}/${w.id}`;
+    const patch = (payload: Record<string, unknown>) => server.inject({ method: 'PATCH', url, ...h(adminTok), payload });
+    // La requête qui PORTE le scénario le choisit, même inchangé : refusée.
+    expect((await patch({ workflowId: WF_T1_NON_PUBLIE })).statusCode).toBe(409);
+    expect((await patch({ devenir: 'scenario' })).statusCode).toBe(409);
+    expect(cap.modifications).toEqual([]);
+    // Toucher au reste : accepté.
+    expect((await patch({ actif: false })).statusCode).toBe(200);
+    // Le réparer : un scénario publié de l'espace.
+    expect((await patch({ workflowId: WF_T1 })).statusCode).toBe(200);
+    expect(cap.modifications.map((m) => m.w.workflowId)).toEqual([WF_T1_NON_PUBLIE, WF_T1]);
+    await server.close();
+  });
+
   it('changer de devenir efface le scénario, et le badge en base est gardé', async () => {
     const w = ligne({ devenir: 'scenario', workflowId: WF_T1, badge: false });
     const { server, cap } = monter({ widgets: [w] });
@@ -475,16 +513,21 @@ describe('🔴 qui peut faire quoi', () => {
 });
 
 describe('le câblage', () => {
-  /** Le bloc d'une clé de `buildServer` dans `src/index.ts`, sans ses commentaires (qui citent ce qu'on cherche). */
-  function bloc(cle: string): string {
-    const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
-    const debut = src.indexOf(`\n    ${cle}: {`);
-    expect(debut, `bloc « ${cle} » introuvable`).toBeGreaterThan(0);
-    return src.slice(debut, src.indexOf('\n    },', debut)).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  /** `src/index.ts` sans ses commentaires, qui citent ce qu'on cherche. */
+  const index = (): string => readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  /** Le bloc qui s'ouvre sur `ouverture` et se ferme à la même indentation. */
+  function bloc(ouverture: string): string {
+    const src = index();
+    const debut = src.indexOf(ouverture);
+    expect(debut, `bloc « ${ouverture.trim()} » introuvable`).toBeGreaterThan(0);
+    const retrait = /^\n( *)/.exec(ouverture)?.[1] ?? '';
+    return src.slice(debut, src.indexOf(`\n${retrait}}`, debut));
   }
 
   it('les widgets de la console sont câblés sur l’assemblage de production et la base des routes d’API', () => {
-    const b = bloc('widgets');
+    const b = bloc('\n  const widgetsDeLaConsole: DepsWidgets = {');
     expect(b).toContain('gestion: gestionDesWidgetsEnBase(pool)');
     // La même base que l'adresse d'un webhook entrant : la route vit sur l'API.
     expect(b).toContain('baseApi: adressesApi.avecPrefixe');
@@ -492,9 +535,24 @@ describe('le câblage', () => {
     expect(b).toContain('numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant)');
   });
 
+  it('🔴 l’écran et les outils MCP reçoivent le MÊME objet (lot 5) : un seul numéro, une seule adresse de script', () => {
+    // Un second assemblage pour le MCP pourrait montrer un autre lien `wa.me` que la console, sans que rien le dise.
+    expect(index()).toContain('\n    widgets: widgetsDeLaConsole,');
+    const mcp = bloc('\n      mcp: {');
+    expect(mcp).toContain('widgets: widgetsDeLaConsole,');
+    expect(mcp).toContain('scenarios: workflowStore,');
+    expect(index().match(/gestionDesWidgetsEnBase\(/g)).toHaveLength(1);
+  });
+
   it('🔴 le contrôle des liens de chaîne lit les phrases des widgets', () => {
-    const b = bloc('channelsMe');
+    const b = bloc('\n    channelsMe: {');
     expect(b).toContain('phraseEnConflit: conflitDansLEspace(');
     expect(b).toContain('phrasesDesWidgets: (tenant) => widgetStore.phrasesDesWidgets(tenant)');
+  });
+
+  it('🔴 les liens de chaîne et les widgets lisent l’état d’un scénario par la MÊME fonction (lot 5)', () => {
+    expect(bloc('\n    channelsMe: {')).toContain(
+      'scenarioEtat: async (tenant, wfId) => etatDuScenario(await workflowStore.getById(wfId, tenant))',
+    );
   });
 });

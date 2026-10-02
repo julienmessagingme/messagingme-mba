@@ -4,13 +4,21 @@ import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } 
 import { parCause, type AuteurDuChangement } from '../inbox/evenements';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 import { e164DepuisSaisie } from '../crm/phone';
+import {
+  DEBUT_AVATAR, MAX_AVATAR_URL, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PAR_HEURE_WIDGET, MAX_PHRASE_WIDGET,
+  MOTIF_COULEUR, POSITIONS_WIDGET, LIMITE_WIDGETS_PAR_ESPACE,
+  creerWidget, listerEnVue, miseEnVue, modifierWidget,
+  type ChampWidget, type DepsWidgets, type Issue,
+} from '../widgets/gestion';
+import type { WorkflowResumeRow } from '../workflow/store.pg';
 
 /**
  * Le catalogue d'outils exposé aux agents tiers par le serveur MCP.
  *
  * 🔴 Un outil n'a jamais de logique métier à lui : il appelle la fonction que la console appelle
- * (`reply_in_open_window` passe par `repondreDansLaFenetre`). Une seconde implémentation dériverait, et sur une
- * surface d'écriture ce serait un agent qui envoie avec d'autres garde-fous (fenêtre de 24 h, prise du fil, journal).
+ * (`reply_in_open_window` passe par `repondreDansLaFenetre`, les outils des widgets par `src/widgets/gestion.ts`).
+ * Une seconde implémentation dériverait, et sur une surface d'écriture ce serait un agent qui écrit avec d'autres
+ * garde-fous (fenêtre de 24 h, prise du fil, journal, phrase d'un widget).
  * Lecture d'abord, écriture étroite : pas d'envoi de template ni de campagne, un mégaphone facturé sur un numéro
  * dont Meta note la qualité.
  * 🔴 Aucun outil n'émet d'événement d'automation : un agent qui boucle sur 500 conversations déclencherait 500
@@ -38,13 +46,38 @@ export interface DepsMcp extends DepsRepondre {
   };
   /** Membres de l'espace, pour qu'un agent puisse confier une conversation à quelqu'un de nommé. */
   listerMembres(tenantId: string): Promise<Array<{ id: string; name: string | null; email: string; role: string }>>;
+  /**
+   * Les widgets WhatsApp : la gestion et la mise en vue de l'écran de la console, le MÊME objet (`src/index.ts`).
+   * Les outils n'y ajoutent aucun contrôle : un refus de la gestion devient un `RefusOutil`, avec sa phrase.
+   */
+  widgets: DepsWidgets;
+  /** Les scénarios de l'espace (`PgWorkflowStore.listResume`), pour qu'un assistant sache lequel un widget peut démarrer. */
+  scenarios: { listResume(tenantId: string): Promise<Array<Pick<WorkflowResumeRow, 'id' | 'name' | 'nodeCount'>>> };
+}
+
+/**
+ * Une propriété d'un schéma d'entrée. 🔴 Toute borne que l'outil applique s'y annonce (longueur, motif, énumération,
+ * intervalle) : un modèle ne respecte que ce qu'on lui a dit, et une borne tue ne se découvre qu'au refus.
+ */
+interface ProprieteEntree {
+  type: string | string[];
+  description: string;
+  enum?: Array<string | null>;
+  format?: string;
+  pattern?: string;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
 }
 
 /** Un schéma JSON d'entrée, tel que MCP l'attend (sous-ensemble volontairement pauvre : objet et propriétés). */
 interface SchemaEntree {
   type: 'object';
-  properties: Record<string, { type: string; description: string; enum?: string[] }>;
+  properties: Record<string, ProprieteEntree>;
   required?: string[];
+  /** `false` quand l'outil REFUSE une clé inconnue (la saisie d'un widget est `.strict()`) : le modèle le sait. */
+  additionalProperties?: false;
 }
 
 export interface OutilMcp {
@@ -131,6 +164,74 @@ async function analysesOuRien(deps: DepsMcp, tenantId: string, ids: string[]): P
     return null;
   }
 }
+
+/**
+ * Un refus de la gestion des widgets devient un refus d'OUTIL, avec sa phrase telle que l'écran la montre : le modèle
+ * lit pourquoi (phrase en conflit, scénario non publié, cinq widgets déjà) et corrige, au lieu de croire l'outil
+ * cassé. Le statut HTTP ne sert qu'à la route.
+ */
+function valeurOuRefus<T>(r: Issue<T>): T {
+  if (!r.ok) throw new RefusOutil(r.erreur);
+  return r.valeur;
+}
+
+/**
+ * Les champs d'un widget, tels que `create_widget` et `update_widget` les annoncent. Les mêmes NOMS que la route de
+ * la console, parce que la saisie passe telle quelle à la gestion, qui refuse une clé qu'elle ne connaît pas ; et les
+ * mêmes BORNES, lues dans `src/widgets/gestion.ts`, jamais recopiées. `satisfies` sur `ChampWidget` : un champ ajouté
+ * à la saisie sans être annoncé ici ne compile pas, et `tests/mcp-widgets.test.ts` vérifie que chaque borne de Zod y
+ * figure avec la même valeur.
+ */
+const CHAMPS_WIDGET = {
+  nom: {
+    type: 'string', minLength: 1, maxLength: MAX_NOM_WIDGET,
+    description: 'Le nom du widget, pour s’y retrouver dans la console. Le visiteur ne le voit jamais.',
+  },
+  phrase: {
+    type: 'string', minLength: 1, maxLength: MAX_PHRASE_WIDGET,
+    description: 'Le message pré-rempli que le VISITEUR enverra lui-même en cliquant la bulle (exemple : « Bonjour, je '
+      + 'viens de la page tarifs »). C’est lui qui reconnaît les conversations du widget, donc il lui est propre : '
+      + 'refusé s’il contient, ou s’il est contenu dans, celui d’un autre widget ou d’un lien de chaîne, ou s’il '
+      + 'apparaît déjà dans des conversations ordinaires. La casse, les accents et la ponctuation finale ne '
+      + 'distinguent pas deux phrases.',
+  },
+  devenir: {
+    type: ['string', 'null'], enum: ['mba', 'scenario', null],
+    description: 'Qui répond aux conversations du widget. null (défaut) : comme les autres conversations, le réglage '
+      + 'de l’espace décide. « mba » : l’agent de Meta, s’il est allumé. « scenario » : un scénario démarre à '
+      + 'l’arrivée du message, il exige workflowId. Confier à un agent IA n’est pas encore possible.',
+  },
+  workflowId: {
+    type: ['string', 'null'], format: 'uuid',
+    description: 'Avec devenir « scenario » seulement : l’identifiant d’un scénario de l’espace qui a une version '
+      + 'PUBLIÉE (list_scenarios, publie = true).',
+  },
+  couleur: {
+    type: 'string', pattern: MOTIF_COULEUR,
+    description: 'La couleur de la bulle, six chiffres hexadécimaux (défaut #25d366, le vert de WhatsApp).',
+  },
+  position: {
+    type: 'string', enum: [...POSITIONS_WIDGET],
+    description: 'Le coin de l’écran où la bulle se pose (défaut bas_droite).',
+  },
+  libelle: {
+    type: ['string', 'null'], maxLength: MAX_LIBELLE_WIDGET,
+    description: 'Un texte court affiché à côté de la bulle, ou null pour aucun.',
+  },
+  avatarUrl: {
+    type: ['string', 'null'], maxLength: MAX_AVATAR_URL, pattern: `^${DEBUT_AVATAR}`,
+    description: 'L’adresse https:// d’une image affichée dans la bulle, ou null pour aucune.',
+  },
+  actif: {
+    type: 'boolean',
+    description: 'false éteint la bulle sans qu’il faille retirer la balise du site ; true la rallume (défaut true).',
+  },
+  maxParHeure: {
+    type: ['integer', 'null'], minimum: 1, maximum: MAX_PAR_HEURE_WIDGET,
+    description: 'Le nombre de scénarios que ce widget peut démarrer par heure (la phrase est publique, n’importe '
+      + 'qui peut l’envoyer en rafale), ou null pour le plafond de l’instance.',
+  },
+} satisfies Record<ChampWidget, ProprieteEntree>;
 
 export const OUTILS: OutilMcp[] = [
   {
@@ -404,6 +505,92 @@ export const OUTILS: OutilMcp[] = [
       const ok = await deps.inbox.setAssignee(tenantId, id, membre, parCause('agent tiers (MCP)'));
       if (!ok) throw new RefusOutil('conversation inconnue, ou membre étranger à cet espace');
       return { conversation_id: id, assigned_to: membre };
+    },
+  },
+  /**
+   * LES WIDGETS WHATSAPP (lot 5 de docs/superpowers/plans/2026-10-02-widget-whatsapp.md). Créer une bulle depuis
+   * Claude Code est le cas d'usage : l'assistant qui travaille sur le site du client y pose aussi la balise. Ce que
+   * l'écran de la console réserve aux administrateurs, une clé d'API l'ouvre : ses droits sont donnés par un
+   * administrateur, la création de clé leur étant réservée.
+   */
+  {
+    nom: 'list_widgets',
+    description:
+      `Les widgets WhatsApp de l’espace (${LIMITE_WIDGETS_PAR_ESPACE} au plus) : des bulles posées sur un site, qui `
+      + 'ouvrent WhatsApp avec un message pré-rempli. Chacun porte son identifiant (id, pour update_widget), son nom, '
+      + 'sa phrase, qui répond (devenir, workflowId), s’il est actif, la balise à coller sur le site (balise) et '
+      + 'l’adresse de son script, le lien wa.me de la bulle (waMeUrl ; null = la bulle s’affiche grisée, aucun '
+      + 'numéro WhatsApp n’est relié), et scenarioSupprime (vrai = son scénario a été supprimé, il ne démarre plus '
+      + 'rien : en désigner un autre avec update_widget).',
+    scope: 'mcp:read',
+    entree: { type: 'object', properties: {} },
+    async executer(deps, tenantId) {
+      return listerEnVue(deps.widgets, tenantId);
+    },
+  },
+  {
+    nom: 'list_scenarios',
+    description:
+      'Les scénarios de l’espace, le plus récent en premier : identifiant (id), nom, et publie (vrai = il a une '
+      + 'version publiée, donc il peut démarrer). Un widget au devenir « scenario » ne peut désigner qu’un scénario '
+      + 'publié : create_widget et update_widget refusent les autres.',
+    scope: 'mcp:read',
+    entree: {
+      type: 'object',
+      properties: { limit: { type: 'integer', description: 'Nombre de scénarios (1 à 200, défaut 100).' } },
+    },
+    /** Borné comme `list_members`, et pour la même raison : `tronque` dit qu'il en reste. */
+    async executer(deps, tenantId, args) {
+      const limit = entierBorne(args, 'limit', 100, 1, 200);
+      const tous = await deps.scenarios.listResume(tenantId);
+      return {
+        // `nodeCount` compte les blocs du graphe PUBLIÉ (en SQL) : la lecture d'`etatDuScenario`, qui décide du refus.
+        scenarios: tous.slice(0, limit).map((s) => ({ id: s.id, nom: s.name, publie: s.nodeCount > 0 })),
+        tronque: tous.length > limit,
+      };
+    },
+  },
+  {
+    nom: 'create_widget',
+    description:
+      'Crée un widget WhatsApp : une bulle à poser sur un site, qui ouvre WhatsApp avec la phrase déjà écrite. Le '
+      + 'visiteur clique, puis ENVOIE lui-même la phrase : c’est lui qui ouvre la conversation, sans modèle approuvé, '
+      + 'et la phrase dit qu’il vient de ce widget (son contact reçoit l’étiquette widget-<code>, devenir décide qui '
+      + 'répond). Rend le widget, dont sa balise (balise) : la coller dans le code HTML du site, juste avant la balise '
+      + 'fermante </body>, sur chaque page où la bulle doit apparaître. Elle se charge sans ralentir la page et ne '
+      + `change jamais. ${LIMITE_WIDGETS_PAR_ESPACE} widgets au plus par espace. Les contrôles sont ceux de l’écran `
+      + 'de la console : un refus dit sa raison.',
+    scope: 'mcp:write',
+    entree: { type: 'object', properties: CHAMPS_WIDGET, required: ['nom', 'phrase'], additionalProperties: false },
+    async executer(deps, tenantId, args) {
+      // La vue AVANT l'écriture, comme la route : une panne de la lecture du numéro après coup rendrait une erreur
+      // sur un widget créé, et l'assistant qui réessaierait se ferait refuser sa propre phrase.
+      const vue = await miseEnVue(deps.widgets, tenantId);
+      return { widget: vue(valeurOuRefus(await creerWidget(deps.widgets.gestion, tenantId, args))) };
+    },
+  },
+  {
+    nom: 'update_widget',
+    description:
+      'Modifie un widget : seuls les champs fournis changent, null efface un champ facultatif. Son code, donc la '
+      + 'balise déjà posée sur le site, ne change jamais. Les contrôles sont ceux de la création. Un widget dont le '
+      + 'scénario a été supprimé reste modifiable sans en choisir un autre.',
+    scope: 'mcp:write',
+    entree: {
+      type: 'object',
+      properties: {
+        widget_id: { type: 'string', format: 'uuid', description: 'L’identifiant (id) rendu par list_widgets ou create_widget.' },
+        ...CHAMPS_WIDGET,
+      },
+      required: ['widget_id'],
+      additionalProperties: false,
+    },
+    async executer(deps, tenantId, args) {
+      const id = texteObligatoire(args, 'widget_id', 100);
+      // Le reste est la saisie de la route, telle quelle : une clé inconnue y est refusée, `tenantId` compris.
+      const corps = Object.fromEntries(Object.entries(args).filter(([cle]) => cle !== 'widget_id'));
+      const vue = await miseEnVue(deps.widgets, tenantId);
+      return { widget: vue(valeurOuRefus(await modifierWidget(deps.widgets.gestion, tenantId, id, corps))) };
     },
   },
 ];

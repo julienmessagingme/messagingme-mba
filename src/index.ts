@@ -67,7 +67,8 @@ import { ChannelsMeClient } from './channels-me/client';
 import { PgWidgetStore } from './widgets/store.pg';
 import { qrSvg } from './widgets/qr';
 import { conflitDansLEspace } from './widgets/phrases';
-import { gestionDesWidgetsEnBase } from './widgets/gestion';
+import { gestionDesWidgetsEnBase, type DepsWidgets } from './widgets/gestion';
+import { etatDuScenario } from './workflow/store.pg';
 import { enfilerEvenementAutomation, type AutomationEventJob } from './automation/event-job';
 import { RateLimiter } from './auth/rate-limit';
 import { resolveTenantCode } from './ids/tenant-code';
@@ -497,6 +498,17 @@ async function main(): Promise<void> {
     takeControl: fil.prisEnEcrivant,
   } satisfies DepsRepondre;
 
+  /**
+   * Les widgets WhatsApp, pour leurs DEUX portes : l'écran de la console et les outils MCP (lot 5 du widget). Un seul
+   * objet, donc un seul numéro (celui du script public : le lien `wa.me` montré est celui que la bulle ouvrira) et une
+   * seule adresse de script (sur l'API, comme celle d'un webhook entrant).
+   */
+  const widgetsDeLaConsole: DepsWidgets = {
+    gestion: gestionDesWidgetsEnBase(pool),
+    numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
+    baseApi: adressesApi.avecPrefixe,
+  };
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -603,13 +615,8 @@ async function main(): Promise<void> {
       qrSvg,
       budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
     },
-    // Les mêmes widgets, côté console. Le numéro est celui du script public, donc le lien `wa.me` montré à l'écran
-    // est celui que la bulle ouvrira ; l'adresse du script vit sur l'API, comme celle d'un webhook entrant.
-    widgets: {
-      gestion: gestionDesWidgetsEnBase(pool),
-      numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
-      baseApi: adressesApi.avecPrefixe,
-    },
+    // Les mêmes widgets, côté console : l'objet que les outils MCP reçoivent aussi (`v1.mcp`).
+    widgets: widgetsDeLaConsole,
     // Réception publique des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
     // l'écriture du contact passe par `upsertContactsFromApi`, le chemin partagé avec la console.
     webhookEntrant: {
@@ -1957,13 +1964,8 @@ async function main(): Promise<void> {
         possedePar: 'channelsme_link',
         maxFiresPerHour: input.maxParHeure,
       }),
-      scenarioEtat: async (tenant, wfId) => {
-        const wf = await workflowStore.getById(wfId, tenant);
-        if (!wf) return 'inconnu';
-        // « Aucune version publiée » se lit sur le graphe publié, le seul que l'exécuteur lise : vide, il ne
-        // démarrerait rien, même avec un brouillon à côté.
-        return wf.graph.nodes.length > 0 ? 'ok' : 'vide';
-      },
+      // La lecture que les widgets font aussi (`gestionDesWidgetsEnBase`) : écrite une fois, dans `etatDuScenario`.
+      scenarioEtat: async (tenant, wfId) => etatDuScenario(await workflowStore.getById(wfId, tenant)),
       getDisplayPhoneNumber: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
       // Notification best-effort : `sendTelegram` ne lève jamais et est un no-op sans Telegram. Le jeton d'un
       // lien n'apparaît nulle part dans ce message.
@@ -2309,6 +2311,9 @@ async function main(): Promise<void> {
         ...depsRepondre,
         contacts: contactStore,
         listerMembres: async (tenant) => (await userStore.list(tenant)).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
+        // Les widgets de l'écran, le MÊME objet : un outil MCP n'est qu'un second appelant de leur gestion.
+        widgets: widgetsDeLaConsole,
+        scenarios: workflowStore,
       },
     },
   });

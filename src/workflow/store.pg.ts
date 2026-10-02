@@ -27,6 +27,26 @@ export function canalDOuverture(graph: WorkflowGraph): CanalOuverture {
   return String(scan.firstTemplate.data.templateName ?? '').trim() !== '' ? 'whatsapp' : null;
 }
 
+/** 'inconnu' = absent de cet espace. 'vide' = aucune version publiée. 'ok' = démarrable. */
+export type EtatScenario = 'inconnu' | 'vide' | 'ok';
+
+/**
+ * Ce scénario peut-il DÉMARRER ? La question que se posent ceux qui désignent un scénario à démarrer plus tard, sans
+ * personne devant : le bouton d'un lien de chaîne, la bulle d'un widget. Écrite une fois, pour eux deux.
+ *
+ * « Aucune version publiée » se lit sur le graphe PUBLIÉ, le seul que l'exécuteur lise : vide, il ne démarrerait
+ * rien, même avec un brouillon à côté. `null` = la lecture par `getById(id, tenant)` n'a rien trouvé, donc un
+ * scénario d'un autre espace se lit comme un inconnu.
+ *
+ * ⚠️ Une ancienne ligne peut porter un graphe SANS `nodes` (`listResume` le prévoit par `coalesce`) : lire
+ * `.length` sans garde lèverait, donc une 500 à la console et un « échec interne » au MCP pour un scénario que
+ * `list_scenarios` montre pourtant comme non publié. Il se lit `vide`, comme ce qu'il est.
+ */
+export function etatDuScenario(wf: Pick<WorkflowRow, 'graph'> | null): EtatScenario {
+  if (wf === null) return 'inconnu';
+  return (wf.graph.nodes?.length ?? 0) > 0 ? 'ok' : 'vide';
+}
+
 /**
  * Une ligne de la liste des scénarios, sans les graphes : ce que les écrans en lisaient est devenu trois
  * champs (nombre de blocs, brouillon, ouverture de campagne).

@@ -12,6 +12,7 @@ import type { Connexion, ConnexionPublique, Organisation, MessageChannel, Messag
 import type { LienRow } from '../channels-me/link-store.pg';
 import type { ConversationsDunLien } from '../channels-me/conversions';
 import type { PostRow } from '../channels-me/post-store.pg';
+import type { EtatScenario } from '../workflow/store.pg';
 import { espaceVerifie, estUuid } from './scope';
 import { texteDe } from '../lib/erreur';
 
@@ -103,8 +104,8 @@ export interface ChannelsMeRouteDeps {
     cooldownSeconds: number; maxParHeure: number | null;
   }): Promise<{ id: string }>;
 
-  /** 'inconnu' = pas au tenant. 'vide' = aucune version publiee. 'ok' = demarrable. */
-  scenarioEtat(tenantId: string, workflowId: string): Promise<'inconnu' | 'vide' | 'ok'>;
+  /** `etatDuScenario` (`src/workflow/store.pg.ts`), la même lecture que celle des widgets. */
+  scenarioEtat(tenantId: string, workflowId: string): Promise<EtatScenario>;
   /** Numero WhatsApp affiche du tenant. null = aucun numero connecte, donc aucun lien wa.me possible. */
   getDisplayPhoneNumber(tenantId: string): Promise<string | null>;
 

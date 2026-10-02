@@ -23,4 +23,8 @@ export const OUTILS_MCP: OutilDocumente[] = [
   { nom: 'reply_in_open_window', scope: 'mcp:write', quoi: ['Répondre, uniquement si la fenêtre de 24 h est ouverte.', 'Reply, only while the 24 h window is open.'] },
   { nom: 'tag_conversation', scope: 'mcp:write', quoi: ['Poser des tags sur le contact d’un fil.', 'Add tags to a thread’s contact.'] },
   { nom: 'assign_conversation', scope: 'mcp:write', quoi: ['Confier un fil à un membre, ou le libérer.', 'Assign a thread to a member, or release it.'] },
+  { nom: 'list_widgets', scope: 'mcp:read', quoi: ['Les widgets WhatsApp de l’espace, avec la balise à coller sur le site.', 'The workspace’s WhatsApp widgets, with the tag to paste on the site.'] },
+  { nom: 'list_scenarios', scope: 'mcp:read', quoi: ['Les scénarios, et lesquels sont publiés : un widget ne démarre qu’un scénario publié.', 'Scenarios, and which are published: a widget only starts a published scenario.'] },
+  { nom: 'create_widget', scope: 'mcp:write', quoi: ['Créer un widget WhatsApp, avec les contrôles de l’écran, et recevoir sa balise.', 'Create a WhatsApp widget, with the screen’s checks, and get its tag.'] },
+  { nom: 'update_widget', scope: 'mcp:write', quoi: ['Modifier un widget ; sa balise ne change jamais.', 'Edit a widget; its tag never changes.'] },
 ];

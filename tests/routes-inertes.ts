@@ -419,3 +419,26 @@ export const mcpInerte: Pick<DepsMcp['inbox'], 'getControlOwner' | 'getAssignee'
   getAssignee: async () => undefined,
   setAssignee: neDevraitPasEtreAppelee('setAssignee'),
 };
+
+/**
+ * Les widgets et les scénarios du MCP (lot 5 du widget), pour les montages qui ne parlent pas des widgets : les
+ * LECTURES rendent le vide, les ÉCRITURES lèvent. Leurs outils ont leur propre fichier, `tests/mcp-widgets.test.ts`.
+ */
+export const mcpWidgetsInertes: Pick<DepsMcp, 'widgets' | 'scenarios'> = {
+  widgets: {
+    gestion: {
+      widgets: {
+        lister: async () => [],
+        creer: neDevraitPasEtreAppelee('widgets.creer'),
+        modifier: neDevraitPasEtreAppelee('widgets.modifier'),
+        supprimer: neDevraitPasEtreAppelee('widgets.supprimer'),
+      },
+      phrasesDesLiens: async () => [],
+      messagesContenantLaPhrase: async () => 0,
+      scenarioEtat: async () => 'inconnu',
+    },
+    numero: async () => null,
+    baseApi: 'https://api.inerte.test',
+  },
+  scenarios: { listResume: async () => [] },
+};

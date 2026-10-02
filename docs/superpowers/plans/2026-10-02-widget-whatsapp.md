@@ -237,15 +237,36 @@ faux), vérifié dans les deux sens.
 
 - Lots 1 à 3b sur `main`, CI verte, et DÉPLOYÉS le 2026-10-02 au soir (VPS sur `97cdb65a`, `migrate` sans rien à
   appliquer, contrôle public à 200) ; migrations 0200 et 0201 appliquées en production et relues.
-- Lot 4 : la moitié API poussée et déployée d'abord, la moitié console ensuite. Restent le lot 5 (le MCP) et l'essai
-  réel.
-- Jaunes de la relecture du lot 4, ouverts : (1) le comptage des messages reçus compte les arrivées du widget
-  lui-même, donc recréer un widget avec la même phrase, raccourcir une phrase qui a servi ou retirer sa ponctuation
-  finale est refusé en 409 pendant la rétention des messages ; correctif possible, écarter les contacts qui portent
-  l'étiquette `widget-<code>`. (2) Le scénario désigné n'est contrôlé que sur son espace, pas sur l'existence d'une
-  version publiée : à l'arrivée l'exécuteur rend « le scénario est vide » et la conversation retombe sur le réglage
-  de l'espace, mais la fiche affiche le scénario ; reprendre le contrôle `vide` de Channels Me (409 ou drapeau
-  affiché). (3) Deux créations simultanées peuvent dépasser la limite de 5 d'un widget (pas de verrou).
+- Lot 4 : la moitié API poussée et déployée d'abord, la moitié console ensuite. Lot 5 (les quatre outils MCP, et
+  les jaunes 1 et 2 du lot 4) écrit le 2026-10-02 au soir, en attente de relecture, en UNE moitié API. Reste
+  l'essai réel.
+- Jaunes de la relecture du lot 4 : (1) ✅ **replié au lot 5** : le comptage des messages reçus écarte les
+  arrivées par un widget (la règle, et pourquoi elle écarte l'arrivée et non le contact : section du lot 5).
+  (2) ✅ **replié au lot 5** : un widget ne choisit qu'un scénario publié, 409 sinon, par `etatDuScenario`,
+  partagé avec Channels Me. (3) Ouvert : deux créations simultanées peuvent dépasser la limite de 5 d'un widget
+  (pas de verrou).
+- 🔴 **À trancher par Julien avant de donner une clé `mcp:write` à un client** (relecture du lot 5) : ce droit gagne le
+  pouvoir de créer et modifier les widgets, donc de changer ce que la bulle affiche sur le site public. Mesuré en
+  base le 2026-10-02 au soir : les 3 clés actives qui le portent sont toutes dans l'espace interne « Messaging Me
+  Tech SANDBOX », aucun client n'était donc touché au déploiement. Les libellés de l'écran des clés et `features.md`
+  le disent désormais. Option : un droit à part (`mcp:widgets`), pour qu'une clé confiée à un agent face aux clients
+  ne puisse pas toucher au site.
+- Autres jaunes de la relecture du lot 5, ouverts : (a) un contact qui porte l'étiquette d'un widget SUPPRIMÉ voit
+  TOUS ses messages qui contiennent la phrase examinée écartés du comptage, pas seulement son arrivée : sur un espace
+  dont le trafic venait d'un widget supprimé, une phrase banale peut passer ; n'écarter que le premier message par
+  contact (`row_number()`). (b) L'exclusion compare en SQL avec `strpos(lower(...))`, la reconnaissance avec
+  `normalizeText` (accents, espaces) : une arrivée reconnue malgré un accent différent continue de compter, dans le
+  sens prudent. (c) `type: ['string','null']` et `null` dans un `enum` sont une première dans le catalogue MCP :
+  Claude Code les accepte, certains clients (ceux qui s'appuient sur Gemini) les rejettent et peuvent alors perdre
+  TOUS les outils de la clé ; à vérifier sur les clients réellement branchés. (d) `list_widgets` signale un scénario
+  supprimé mais pas un scénario non publié : un drapeau `scenarioNonPublie` dans la vue, partagé avec l'écran.
+  (e) Le jaune 3 du lot 4 devient plus probable avec le MCP (deux `create_widget` en parallèle), et il couvre aussi
+  deux phrases dont l'une contient l'autre ; un verrou d'avis par espace (`pg_advisory_xact_lock`) le fermerait.
+  Replié tout de suite : `etatDuScenario` lit un graphe sans `nodes` comme `vide` au lieu de lever (500).
+- Ouvert, relevé au lot 5 (jaune) : le formulaire du widget (`web/components/WidgetFormulaire.tsx`) propose tous les
+  scénarios sans dire lesquels sont en ligne, alors que la console a la règle et son helper (`estEnLigne`,
+  `web/lib/api/scenarios.ts` : « à afficher partout où l'on CHOISIT un scénario à déclencher »). L'API refuse
+  désormais un scénario non publié avec sa raison ; l'écran pourrait le signaler avant l'envoi. Une moitié console.
 - Bornes posées par le lot 4 en l'absence de CHECK de longueur dans 0200, à valider : nom 80, phrase 300 (comme un
   lien de chaîne), libellé 60, avatar 2 000 caractères en `https://`, plafond horaire de 1 à 100 000 ou `null`. Le
   badge n'est PAS modifiable par l'API : son retrait relève de l'offre Pro, qui n'existe pas encore.
@@ -324,7 +345,8 @@ l'écran peut reprendre `qrcode`, déjà dans `web/`.)
 - **Le scénario désigné est vérifié à chaque écriture qui en porte un** (`getById(id, tenant)`), en unitaire et en
   intégration (`tests/integration/widgets-gestion.integration.test.ts`, qui éprouve aussi la vraie lecture des
   phrases de liens et le nom de la contrainte `widgets_phrase_key`).
-- **Le comptage des messages reçus** reprend `messagesContenantLaPhrase` des liens de chaîne, tel quel.
+- **Le comptage des messages reçus** reprend `messagesContenantLaPhrase` des liens de chaîne, tel quel. (Au lot 5 :
+  hors arrivées par un widget, jaune 1.)
 - **`badge` n'est pas dans la saisie** : le retirer est un acte commercial (offre Pro) qui n'existe pas encore. Une
   modification garde la valeur en base.
 - **L'adresse du script, la balise et le lien `wa.me`** sont fabriqués par `src/widgets/adresses.ts`, que la route
@@ -343,7 +365,7 @@ l'écran peut reprendre `qrcode`, déjà dans `web/`.)
 
 ---
 
-## Lot 5 : les trois outils MCP
+## Lot 5 : les outils MCP (quatre), et deux jaunes du lot 4
 
 **Fichiers :** `src/mcp/outils.ts`, `tests/mcp-widgets.test.ts`.
 
@@ -351,6 +373,70 @@ l'écran peut reprendre `qrcode`, déjà dans `web/`.)
 
 **Tests attendus :** les trois outils entrent dans le catalogue et portent le droit `mcp:write` pour les deux
 premiers ; un outil appelé sur un espace qui n'est pas celui de la clé est refusé.
+
+✍️ **Écrit le 2026-10-02, en attente de relecture.** Ce qui a été livré, et ce qui a bougé par rapport à ce plan :
+
+- **Un quatrième outil, `list_scenarios`** (`mcp:read`, décision de la session du lot 5) : sans lui, `create_widget`
+  avec le devenir `scenario` était inutilisable par un modèle, qui n'a aucun autre moyen de connaître l'identifiant
+  d'un scénario. Il rend `id`, `nom` et `publie` (le graphe PUBLIÉ porte au moins un bloc, la lecture qui décide du
+  refus), borné à 200 avec `tronque`, comme `list_members`. Lecture seule, sur `PgWorkflowStore.listResume`
+  (`tenant_id = $1`), aucune requête neuve.
+- **« Les mêmes routes » veut dire les mêmes FONCTIONS** (`src/widgets/gestion.ts`), comme au lot 4 : un `Refus`
+  devient un `RefusOutil` avec sa phrase (`valeurOuRefus`), aucun contrôle n'est recopié. La mise en vue, qui vivait
+  dans la route, est montée dans la gestion (`miseEnVue`, `listerEnVue`, `DepsWidgets`) : la route et l'outil lisent
+  le numéro AVANT d'écrire, de la même façon. `src/index.ts` donne aux deux portes le MÊME objet
+  (`widgetsDeLaConsole`), donc le même numéro et la même adresse de script ; un test lit le câblage.
+- **Les champs gardent les NOMS de la route** (`workflowId`, `avatarUrl`, `maxParHeure`) : la saisie passe telle
+  quelle à la gestion, qui est `.strict()`. Seul l'identifiant d'`update_widget` suit la convention des autres
+  outils (`widget_id`), et il est retiré avant la saisie. Un `tenantId` glissé dans les arguments est donc une clé
+  inconnue, refusée.
+- 🔴 **Les schémas d'entrée annoncent chaque borne de la saisie, avec sa valeur** (longueurs, motif de la couleur,
+  énumérations, `format: uuid`, l'intervalle du plafond horaire, `^https://` de l'avatar, `additionalProperties:
+  false`), construits sur les constantes de la gestion et jamais sur des nombres recopiés ; `satisfies
+  Record<ChampWidget, ...>` refuse à la compilation un champ de saisie non annoncé. Le test DÉRIVE les bornes des
+  internes de Zod (`saisieDeCreation`, `saisieDeModification`, désormais exportés) et les compare valeur par
+  valeur, avec un compte plancher et un échec sur toute forme de borne inconnue de l'extracteur. Le devenir `agent`
+  n'est pas PROPOSÉ au modèle (la saisie l'accepte pour le refuser avec sa raison). La limite de cinq widgets et la
+  balise à coller juste avant `</body>` sont dans la description de `create_widget`.
+- **Pas d'outil de suppression** : le plan n'en prévoyait pas, et une balise posée ne doit pas disparaître sur un mot
+  d'un modèle. Le test le dit.
+- **Le catalogue de la console** (`web/lib/mcp-outils.ts`) porte les quatre outils ; la parité de
+  `tests/mcp-doc-parite.test.ts` les vérifie. **`features.md`** : la section « Widget WhatsApp » (jaunes 1 et 2,
+  l'accès par MCP) et la section « Serveur MCP » ; la fiche d'aide `poser-une-bulle-whatsapp-sur-mon-site.md`
+  relue, complétée et son empreinte reposée.
+- **Jaune 2 du lot 4, replié** : un widget ne CHOISIT qu'un scénario publié, 409 sinon (« publiez-le d'abord »). La
+  lecture est celle des liens de chaîne, PARTAGÉE et non recopiée : `etatDuScenario` (`src/workflow/store.pg.ts`),
+  que le câblage Channels Me de `src/index.ts` appelle aussi, et la dépendance de la gestion devient `scenarioEtat`.
+  L'isolation (`inconnu`, 400) reste vérifiée à CHAQUE désignation, inchangée comprise ; la publication seulement
+  quand la requête porte le devenir ou le scénario : un widget inerte, ou dont le scénario n'est plus publié, reste
+  modifiable (sinon on ne pourrait même plus l'éteindre). Vaut pour la route et le MCP.
+- **Jaune 1 du lot 4, replié** : la garde d'un widget compte les messages reçus HORS arrivées par un widget
+  (`messagesContenantLaPhrase(..., { horsArriveesDeWidget: true })`, une condition neutralisée par un drapeau dans la
+  MÊME requête que celle des liens, qui rend exactement ce qu'elle rendait). 🔴 **La règle écarte l'ARRIVÉE, pas le
+  contact** : un message n'est écarté que si son contact porte l'étiquette d'un widget de l'espace ET contient la
+  phrase ACTUELLE de ce widget. Écarter tous les messages des contacts étiquetés aveuglerait la garde sur un espace
+  dont les visiteurs viennent surtout de ses bulles (un widget « Bonjour » y capterait tout). Un widget SUPPRIMÉ a
+  perdu sa phrase : les messages de ses contacts qui contiennent la phrase examinée sont alors présumés être ses
+  arrivées, la seule imprécision, écrite. L'étiquette se reconnaît à sa forme EXACTE (`MOTIF_ETIQUETTE_WIDGET`,
+  confronté au générateur), pas à son préfixe : « widget-salon » posée à la main n'écarte rien.
+- ⚠️ **Limite connue** : une phrase qui a servi AVANT d'être modifiée (« A » puis « A web ») n'est plus la phrase
+  actuelle du widget ; revenir à un fragment de « A » recompterait ces anciennes arrivées. Rare, et refusé avec son
+  nombre plutôt qu'accepté à tort.
+- **Tests** : `tests/mcp-widgets.test.ts` (catalogue et droits, clé de lecture, refus lisibles, espace étranger, saisie
+  partielle, bornes dérivées de Zod), `tests/widget-comptage.test.ts` (qui demande l'exclusion, forme de
+  l'étiquette, filtres d'espace de la requête), jaune 2 dans `tests/http-widgets.test.ts`, et pour la CI
+  `tests/integration/widgets-comptage.integration.test.ts` plus deux ajouts à
+  `widgets-gestion.integration.test.ts` (ses scénarios sont désormais PUBLIÉS, un scénario sans version publiée,
+  brouillon compris, est refusé). Vérifiés dans les DEUX SENS par mutation : borne retirée de l'annonce, borne
+  ajoutée à Zod, droit de `create_widget` abaissé, saisie non stricte, refus traduit en panne, espace pris ailleurs
+  que dans la clé, jaune 2 retiré puis appliqué sans l'exception du widget existant, exclusion non demandée, motif
+  réduit au préfixe puis plus étroit que le générateur. Les tests d'intégration n'ont PAS tourné (aucune base
+  locale) : la CI les joue.
+- **Un seul envoi** : la seule modification de `web/` est `web/lib/mcp-outils.ts`, module pur lu par un test du
+  serveur et affiché par l'écran Developers > Serveur MCP. Tout part en une moitié API. ⚠️ Vercel publie l'écran au
+  push : il annonce les quatre outils avant le `up` de l'API, une fenêtre de documentation seulement (un appel rend
+  « outil inconnu » jusqu'au déploiement). `src/index.ts` est un fichier de câblage PARTAGÉ : commit par patch.
+- **Aucune migration.**
 
 ---
 

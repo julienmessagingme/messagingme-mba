@@ -12,7 +12,7 @@ import { OUTILS } from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
-import { mcpInerte } from './routes-inertes';
+import { mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -88,6 +88,8 @@ function app(
       ...contacts,
     },
     listerMembres: async () => membres ?? [{ id: 'u1', name: 'Jean', email: 'jean@test.fr', role: 'admin' }],
+    // Les outils des widgets ont leur fichier (`tests/mcp-widgets.test.ts`) : ici, ils ne servent à rien.
+    ...mcpWidgetsInertes,
     ...reste,
   };
   const keys = new FakeApiKeys()

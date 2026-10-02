@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { MOTIF_JETON } from './jeton';
 import { compterParLien, type ConversationsDunLien } from './conversions';
+import { MOTIF_ETIQUETTE_WIDGET, PREFIXE_ETIQUETTE_WIDGET } from '../widgets/arrivee';
 
 /**
  * Une ligne de `channelsme_links`, telle que les routes et la console la lisent. Pas de champ `enabled`
@@ -150,11 +151,30 @@ export class PgChannelsMeLinkStore {
    * tout) : on le compte. La comparaison ignore la casse, pas les accents : plus permissive que
    * `normalizeText`, parce qu'une garde qui refuse à tort la phrase d'un client est pire que celle qui rate un
    * cas rare.
+   *
+   * `horsArriveesDeWidget` : la garde d'un WIDGET (`gestionDesWidgetsEnBase`) écarte en plus les arrivées par un
+   * widget, qui sont son propre succès et non de la conversation ordinaire. Sans elle, recréer un widget avec la
+   * phrase d'un widget supprimé, raccourcir une phrase qui a servi ou retirer sa ponctuation finale était refusé à
+   * cause des visiteurs que la bulle avait amenés. 🔴 Absente (le contrôle d'un lien de chaîne), la requête rend
+   * EXACTEMENT ce qu'elle rendait : la condition ajoutée vaut vrai dès que le drapeau est faux.
+   *
+   * 🔴 UNE ARRIVÉE, PAS UN CONTACT ARRIVÉ, et c'est la règle qui compte. L'étiquette `widget-<code>` est posée sur
+   * le contact dont un message contient la phrase d'un widget actif (`creerArriveeParWidget`). Écarter TOUS les
+   * messages de ces contacts aveuglerait la garde sur un espace dont les contacts viennent surtout de ses bulles :
+   * leur « Bonjour » de tous les jours est justement de la conversation ordinaire, et un widget « Bonjour » y
+   * capterait tout. Un message n'est donc écarté que s'il est l'arrivée elle-même : son contact porte l'étiquette
+   * d'un widget de l'espace ET le message contient la phrase ACTUELLE de ce widget. Un widget SUPPRIMÉ a perdu sa
+   * phrase : les messages de ses contacts qui contiennent la phrase examinée sont alors présumés être ses
+   * arrivées. C'est la seule imprécision de la règle, bornée aux contacts d'un widget supprimé et aux messages qui
+   * contiennent la phrase examinée. Une étiquette se reconnaît à sa forme exacte (`MOTIF_ETIQUETTE_WIDGET`), pas à
+   * son préfixe, sinon « widget-salon » posée à la main passerait pour un widget supprimé.
    */
-  async messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number> {
+  async messagesContenantLaPhrase(
+    tenantId: string, phrase: string, options: { horsArriveesDeWidget?: boolean } = {},
+  ): Promise<number> {
     const res = await this.pool.query<{ n: number }>(
       `select count(*)::int as n from (
-         select m.body from conversation_messages m
+         select m.body, c.contact_id from conversation_messages m
            join conversations c on c.id = m.conversation_id
           where c.tenant_id = $1 and m.direction = 'in'
             -- 🔴 UNE FENETRE, EN PLUS DU PLAFOND. Le plafond seul s'applique APRES le tri de tous les
@@ -174,8 +194,28 @@ export class PgChannelsMeLinkStore {
        -- rate un cas rare est acceptable, une garde qui accuse a tort ne l'est pas.
        -- ⚠️ Aucun accent grave dans ce bloc : il vit dans un litteral de gabarit TypeScript, ou un accent
        -- grave termine la chaine. Deja rencontre deux fois dans ce depot.
-       where strpos(lower(recents.body), lower($2)) > 0`,
-      [tenantId, phrase, MESSAGES_EXAMINES, MOTIF_JETON],
+       where strpos(lower(recents.body), lower($2)) > 0
+         -- Les arrivees par un widget, quand la garde est celle d'un widget ($5) : la regle et sa raison sont
+         -- dans le commentaire de la methode. Posee APRES la coupe, donc sur les seuls messages qui contiennent
+         -- la phrase : la sous-requete ne tourne pas sur les deux mille derniers messages de l'espace. Faux, le
+         -- drapeau rend toute la condition vraie, et la requete compte ce qu'elle comptait.
+         and not ($5::boolean and exists (
+           select 1
+             from contacts ct
+             cross join lateral unnest(ct.tags) as e(etiquette)
+             left join widgets w
+               on w.tenant_id = $1 and w.code = substr(e.etiquette, char_length($7::text) + 1)
+            where ct.id = recents.contact_id
+              and ct.tenant_id = $1
+              and e.etiquette ~ $6
+              -- un widget supprime (aucune ligne) a perdu sa phrase ; un widget present n'a amene que les
+              -- messages qui contiennent la sienne
+              and (w.id is null or strpos(lower(recents.body), lower(w.phrase)) > 0)
+         ))`,
+      [
+        tenantId, phrase, MESSAGES_EXAMINES, MOTIF_JETON,
+        options.horsArriveesDeWidget === true, MOTIF_ETIQUETTE_WIDGET, PREFIXE_ETIQUETTE_WIDGET,
+      ],
     );
     return res.rows[0]?.n ?? 0;
   }

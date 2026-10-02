@@ -49,6 +49,8 @@ export interface DepsArriveeParWidget {
   demarrerScenario(tenantId: string, widget: WidgetRow, workflowId: string, m: InboundMessage): Promise<number>;
 }
 
+export const PREFIXE_ETIQUETTE_WIDGET = 'widget-';
+
 /**
  * L'étiquette de source d'un widget. 🔴 DÉRIVÉE DU CODE, jamais du nom ni de la phrase : le code est IMMUABLE
  * (`widgets_code_key`, aucun `update` ne le réécrit), quand le nom et la phrase se modifient. Un widget renommé
@@ -57,8 +59,17 @@ export interface DepsArriveeParWidget {
  * Le code est public (il est dans l'adresse du script) : l'étiquette ne révèle rien de plus.
  */
 export function etiquetteDuWidget(code: string): string {
-  return `widget-${code}`;
+  return `${PREFIXE_ETIQUETTE_WIDGET}${code}`;
 }
+
+/**
+ * La forme EXACTE d'une étiquette de widget, ancrée : le préfixe et un code tel que `newTrackingCode` le tire (12
+ * caractères de son alphabet). Le comptage des messages reçus (`PgChannelsMeLinkStore.messagesContenantLaPhrase`)
+ * s'en sert pour reconnaître les contacts arrivés par un widget, y compris SUPPRIMÉ. Un simple préfixe prendrait
+ * pour une arrivée l'étiquette « widget-salon » qu'un client aurait posée lui-même. Compatible avec les expressions
+ * régulières de Postgres comme de JavaScript ; `tests/widget-comptage.test.ts` la confronte au générateur.
+ */
+export const MOTIF_ETIQUETTE_WIDGET = `^${PREFIXE_ETIQUETTE_WIDGET}[0-9a-hjkmnp-tv-z]{12}$`;
 
 /**
  * L'automation équivalente au widget, construite en mémoire et jamais écrite : mot-clé = sa phrase en `contains`,
