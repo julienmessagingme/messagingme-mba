@@ -1398,6 +1398,8 @@ export class PgContactStore implements ContactStore {
             where a.id = f.automation_id and a.tenant_id = $1 and f.wa_id = any($2::text[])`,
           [tenantId, waIds],
         );
+        // Le pendant d'`automation_fires` pour le scénario d'un widget (migration 0201), qui porte, lui, son espace.
+        await client.query(`delete from widget_tirs where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
       }
       // Cache RCS : clé (agent_id, phone_e164). Effacé même sans fil, sinon le numéro resterait dans la table de
       // joignabilité.

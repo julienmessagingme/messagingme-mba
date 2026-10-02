@@ -113,9 +113,14 @@ widget, le devenir de ce widget s'applique à cette conversation, puis les règl
 (`src/inbox/fil.ts`). Il n'y a donc pas deux règles en concurrence sur un même message : il y a une décision
 d'entrée, puis le fonctionnement normal.
 
-⚠️ **Le devenir `scenario` passe par une automation en mode `contains` sur la phrase**, comme un lien de chaîne,
-et non par un chemin neuf. Conséquence à tenir : supprimer un scénario utilisé par un widget doit être refusé ou
-rendre le widget inerte, jamais détruire le widget.
+⚠️ **Le devenir `scenario` démarre DIRECTEMENT dans le chemin de réception, pas par une automation compagnon**
+(décision de Julien du 2026-10-02, contre la recommandation d'une automation compagnon comme les liens de chaîne).
+Le démarrage passe par le MÊME chemin que le runner d'automation, avec ses gardes (contact bloqué, anti-rebond,
+plafond horaire, garde du fil), sans les recopier : une automation équivalente est construite en mémoire. D'où une
+table de tirs propre au widget (`widget_tirs`, migration 0201), `automation_fires` référençant `automations(id)`.
+🔴 Elle porte un `wa_id`, donc la purge RGPD la nomme : la migration est BLOQUANTE et passe AVANT le code.
+Conséquence à tenir : supprimer un scénario utilisé par un widget doit être refusé ou rendre le widget inerte,
+jamais détruire le widget.
 
 ## 4. L'écran de la console, et le MCP par-dessus
 

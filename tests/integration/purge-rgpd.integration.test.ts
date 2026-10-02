@@ -167,6 +167,22 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
        values ($1, $2, 'itest-pn-purge', 'itest-entree-purge'), ($3, $2, 'itest-pn-voisin', 'itest-entree-voisin')`,
       [tenantId, WA_ID, autreTenantId],
     );
+    // LE TIR D'UN WIDGET (migration 0201), le pendant d'`automation_fires` pour le scénario d'un widget : il porte
+    // le numéro. Un tir chez le voisin, sur le même numéro, prouve que l'effacement reste cloisonné.
+    const widgetIci = (await pool.query<{ id: string }>(
+      `insert into widgets (tenant_id, code, nom, phrase) values ($1, gen_random_uuid()::text, 'itest', 'itest purge') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const widgetVoisin = (await pool.query<{ id: string }>(
+      `insert into widgets (tenant_id, code, nom, phrase) values ($1, gen_random_uuid()::text, 'itest', 'itest purge') returning id`,
+      [autreTenantId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into widget_tirs (widget_id, tenant_id, wa_id) values ($1, $2, $5), ($3, $4, $5)`,
+      [widgetIci, tenantId, widgetVoisin, autreTenantId, WA_ID],
+    );
+    // ANCRE du tir : il existe AVANT la purge, sinon son absence plus bas ne prouverait rien.
+    expect((await pool.query('select 1 from widget_tirs where tenant_id = $1 and wa_id = $2', [tenantId, WA_ID])).rowCount).toBe(1);
     // ANCRE : les deux données existent AVANT la purge. Sans elle, les assertions d'absence plus bas
     // passeraient à vide sur une insertion ratée.
     const avant = await pool.query<{ v: unknown; e: number }>(
@@ -222,6 +238,11 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
       [tenantId, WA_ID],
     );
     expect(fires.rowCount).toBe(0);
+    // Le tir d'un widget (migration 0201) part aussi, chez ce client seulement : celui du voisin, même numéro, reste.
+    const tirsIci = await pool.query('select 1 from widget_tirs where tenant_id = $1 and wa_id = $2', [tenantId, WA_ID]);
+    expect(tirsIci.rowCount).toBe(0);
+    const tirsVoisin = await pool.query('select 1 from widget_tirs where tenant_id = $1 and wa_id = $2', [autreTenantId, WA_ID]);
+    expect(tirsVoisin.rowCount).toBe(1);
   });
 
   it('🔴 le cache de joignabilité RCS est purgé (indexé en E.164, pas en wa_id)', async () => {

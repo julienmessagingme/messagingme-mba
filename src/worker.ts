@@ -23,6 +23,7 @@ import { creerNoteurJoignabilite } from './contacts/joignabilite.pg';
 import { creerNoteurEnvois } from './campaign/envois.pg';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
 import { assignerReponse } from './inbox/assignation-campagne';
+import { arriveeParWidget } from './widgets/arrivee';
 import { relanceurDeCampagnes } from './campaign/enqueue';
 import { plafondDuCanal, plafondLePlusBas } from './campaign/pacing';
 import { flagContactUnreachable } from './crm/hubspot-service';
@@ -519,6 +520,13 @@ async function main(): Promise<void> {
          */
         prendreLeFil: fil.prendrePourLEquipe,
       }),
+      /**
+       * L'arrivée par un widget WhatsApp : l'étiquette de source, puis le devenir du widget, dont seul 'scenario'
+       * agit (`src/widgets/arrivee.ts`). 🔴 `automationRunnerDeps`, l'objet MÊME des automations ci-dessus et pas une
+       * copie : le scénario d'un widget démarre avec leurs gardes (contact bloqué, anti-rebond et plafond de
+       * l'instance, garde du fil) et leur `startWorkflow` de démarrage unitaire. Lu par `tests/widget-devenir.test.ts`.
+       */
+      inboundWidget: arriveeParWidget(pool, { contacts: contactStore, runner: automationRunnerDeps }),
     });
     // Concurrence des entrants : les deux options vont ensemble. `concurrency` seul remettrait le désordre entre
     // deux messages d'un même contact ; `groupConcurrency` seul serait un no-op. Le groupe est le couple numéro +

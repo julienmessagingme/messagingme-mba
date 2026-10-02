@@ -15,6 +15,7 @@ import { ecarterLesEntrantsDelies, type NumerosDelies } from './numeros-delies';
 import type { TarifsMetaSink } from './tarif-meta';
 import type { DeliveryStore } from './delivery';
 import type { DetenteurDuFil, InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
+import type { ArriveeParWidget } from '../widgets/arrivee';
 import type { FlowMappingLookup, ContactFieldWriter } from './flow-mapping';
 import type { WorkflowAdvanceDeps } from './workflow-advance';
 import type { HandoverDeps } from './handover';
@@ -55,6 +56,11 @@ interface WebhookJobDepsCommunes {
    * automatique, la conversation tombe dans « À traiter ».
    */
   inboundAssignation?: InboundAssignation;
+  /**
+   * L'arrivée par un widget WhatsApp (`src/widgets/arrivee.ts`), en dernière étape de `processInbound`. Absente :
+   * aucun widget n'est reconnu, le comportement d'avant le lot 3 du widget.
+   */
+  inboundWidget?: ArriveeParWidget;
   /**
    * Remise du fil à l'agent de Meta à l'arrivée de l'accusé de notre dernier envoi. Absente : les fils sont
    * rendus par le balayage de contrôle, plus tard.
@@ -125,7 +131,7 @@ export type WebhookJobDeps = WebhookJobDepsCommunes
 export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
     store, delivery, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
-    handover, triggers, testTokens, nodeEvents, inboundAssignation, remiseMba,
+    handover, triggers, testTokens, nodeEvents, inboundAssignation, inboundWidget, remiseMba,
     tarifsMeta, echecsLibres, arriveesPub, routagePub, signauxAccuse, signalReponse, numerosDelies,
   } = deps;
   /**
@@ -157,6 +163,18 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
       }
     : undefined;
   /**
+   * Les messages qui ont démarré le scénario d'un widget, captés de la même façon, pour la durée de ce job : ils sont
+   * CONSOMMÉS, comme ceux qui démarrent une automation, et forment le premier contenu de `consumed`, plus bas.
+   */
+  const prisParUnWidget = new Set<string>();
+  const widget: ArriveeParWidget | undefined = inboundWidget
+    ? async (tenantId, m) => {
+        const pris = await inboundWidget(tenantId, m);
+        if (pris) prisParUnWidget.add(m.messageId);
+        return pris;
+      }
+    : undefined;
+  /**
    * Les entrants, extraits une fois et rattachés à leur espace : une lecture par numéro distinct pour tout le job, et
    * aucune étape ne relit le numéro, sinon un message coûterait une lecture par étape. Une lecture en échec lève ici,
    * avant tout enregistrement, et fait rejouer le job : l'enregistrement, cœur du webhook, ne se fait pas sans
@@ -175,6 +193,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
     entrants = await requalifierLesStandby(await rattacherLesEntrants(extractInbound(raw), espaceDe), deps.listeALArrivee);
     rouvertes = await processInbound(entrants, deps.inbox, {
       upsertContact: upsert, optOut: deps.inboundOptOut, assignation: inboundAssignation, signalReponse, detenteur: deps.detenteur,
+      widget,
     });
   }
   // L'arrivée publicitaire, après l'upsert du contact qu'elle retrouve par son wa_id. Isolée par message : elle
@@ -204,10 +223,13 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   }
   // Jetons de test d'un scénario, en premier : un jeton n'est ni une réponse à un parcours ni un mot-clé. Ordre :
   // jetons -> automations -> avance, chacune retirant à la suivante les messages qu'elle a consommés. Isolé.
-  let consumed: ReadonlySet<string> = new Set();
+  // `consumed` part de ce que les widgets ont pris dans `processInbound` : un message qui a démarré le scénario d'un
+  // widget ne démarre pas d'automation par-dessus, et n'est la réponse d'aucun parcours (`src/widgets/arrivee.ts`).
+  let consumed: ReadonlySet<string> = prisParUnWidget;
   if (testTokens) {
     try {
-      consumed = await processTestTokens(entrants, testTokens, alreadySeen);
+      const parJeton = await processTestTokens(entrants, testTokens, alreadySeen);
+      if (parJeton.size > 0) consumed = new Set([...consumed, ...parJeton]);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: jeton de test ignoré:', messageDe(err));

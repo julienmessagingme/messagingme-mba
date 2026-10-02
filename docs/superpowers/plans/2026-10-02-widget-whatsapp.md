@@ -131,6 +131,82 @@ non-régression, à vérifier dans les DEUX SENS) ; `devenir = 'agent'` avec un 
 réglage de l'espace au lieu d'échouer ; la décision ne se repose PAS aux messages suivants de la même
 conversation ; un message de masse n'émet rien (le chemin de masse n'émet jamais, invariant du dépôt).
 
+**Les décisions de Julien (2026-10-02), appliquées telles quelles :**
+
+1. `scenario` : **démarrage DIRECT dans le chemin de réception, PAS d'automation compagnon.** Par le runner des
+   automations et toutes ses gardes, sans les recopier.
+2. `agent` : impossible aujourd'hui (une session d'agent IA exige un parcours de scénario). **Grisé « à venir » à
+   l'écran au lot 4** ; au lot 3, il se comporte EXACTEMENT comme `null`, sans erreur.
+3. `mba` : ne rien prendre, comme `assignerReponse` pour `mba` : l'agent de Meta répond s'il est actif.
+4. `null` : rien, le réglage de l'espace gouverne.
+5. **La source est une ÉTIQUETTE** posée sur le contact à l'arrivée, pour TOUS les devenirs, dès que le message
+   contient la phrase d'un widget actif. Sans doublon, et stable si le widget est renommé.
+6. L'émission d'un événement d'automation se décide par le chemin appelant (règle du dépôt), explicitement.
+
+✍️ **Écrit le 2026-10-02, en attente de relecture.** Ce qui a été livré, et ce qui a bougé par rapport à ce plan :
+
+- **Fichiers** : `src/widgets/reconnaissance.ts` (`widgetDuMessage`), `src/widgets/arrivee.ts` (l'étape et son
+  assemblage de production), `src/widgets/tirs.pg.ts`, la migration **0201** (`widget_tirs`), l'étape dans
+  `processInbound` (`src/webhooks/inbound.ts`), sa propagation dans `handleWebhookJob` (`src/webhooks/handler.ts`), la
+  purge RGPD (`PgContactStore.purgeMany`), le câblage dans le job `webhook` de `src/worker.ts` (un import et une
+  entrée, à côté d'`inboundAssignation`), `tests/widget-devenir.test.ts`, et en intégration
+  `tests/integration/widget-tirs.integration.test.ts` plus deux ajouts à `purge-rgpd.integration.test.ts`.
+- 🔴 **0201 était INÉVITABLE, et c'est la conséquence de la décision 1.** Les gardes du runner (anti-rebond par
+  contact, plafond horaire, annulation du tir quand rien ne part) lisent et écrivent des tirs par (identifiant,
+  contact) ; `automation_fires.automation_id` référence `automations(id)`, et l'identifiant d'un widget y viole la
+  clé étrangère. Sans automation compagnon, il fallait une table de tirs à soi, de la forme d'`automation_fires`,
+  plus `tenant_id`. Elle porte un numéro : elle **entre dans la purge RGPD**, ce qui la rend **BLOQUANTE** (le code
+  qui la nomme dans la transaction de purge, déployé avant elle, ferait échouer toute suppression de contact en
+  `42P01`). Elle passe AVANT le `up`, avec 0200.
+- **Le démarrage** : l'automation équivalente au widget est construite EN MÉMOIRE (`automationDuWidget` : mot-clé =
+  la phrase en `contains`, son scénario, `maxFiresPerHour` = `max_par_heure`, `null` = le plafond de l'instance,
+  anti-rebond de l'instance, `possedePar: null`) et passée à `runAutomations` avec l'objet MÊME des automations du
+  worker (`automationRunnerDeps`), dont seule la source change : cette automation-là, et ses tirs dans `widget_tirs`.
+  Contact bloqué, anti-rebond, plafond, garde du fil, garde du désabonnement : ce sont les leurs. Le runner revérifie
+  la phrase par `matchesTrigger` : une reconnaissance fautive ne suffit pas à démarrer un scénario (mesuré par
+  mutation, voir les tests).
+- **Le message qui démarre le scénario d'un widget est CONSOMMÉ**, comme celui qui démarre une automation : le job le
+  capte par une enveloppe autour de l'étape (comme il capte déjà le signal « nouveau contact » autour de l'upsert,
+  sans toucher au type de retour de `processInbound`), et ne le donne ni aux automations (une automation « nouveau
+  contact » démarrerait un second scénario par-dessus), ni à l'avance d'un parcours (qui prendrait la phrase pour la
+  réponse à la première question du scénario neuf), ni à l'agent de Meta. Un message refusé (anti-rebond, plafond,
+  fil tenu, désabonné) n'est PAS consommé : il suit le chemin d'aujourd'hui.
+- **L'ordre** : l'étape est la DERNIÈRE de `processInbound`, après l'affectation de campagne. Chaque étape existante
+  voit l'état qu'elle voyait avant ce lot, et la propriété clé de l'affectation (seule la PREMIÈRE réponse prend le
+  fil) se lit sur un état que le widget n'a pas touché. Si la campagne vient de prendre le fil pour l'équipe, la
+  garde du fil refuse le scénario du widget : la décision déjà prise gagne. Chaque geste est dans un `tenter` : un
+  widget en échec n'empêche ni l'enregistrement, ni l'affectation, ni le message suivant du lot.
+- **Texte seulement, et pas en `standby`** : `wa.me` pré-remplit toujours un message texte ; une légende de média ou
+  un libellé de bouton ne sont pas une arrivée par la bulle (même règle que le STOP). Un `standby` (le contact est
+  sur la liste de l'agent de Meta) pose l'étiquette mais ne démarre rien, la règle de `processTriggers`.
+- **L'étiquette est `widget-<code>`**, dérivée du code public, IMMUABLE : un widget renommé (nom ou phrase) pose la
+  même. Aucune colonne n'a donc été ajoutée pour elle. Posée par `addTagsByPhoneReturningNew` (dédoublonné en base)
+  puis déclarée dans le référentiel, best-effort, comme `applyTag`.
+- 🔴 **L'émission, décidée par le chemin appelant** : l'étiquette n'émet RIEN. Le chemin de réception décide ICI qui
+  prend la conversation ; une publication « tag ajouté » laisserait une automation démarrer un second scénario sur la
+  même arrivée, par la file, hors de l'anti-rebond du widget, soit deux règles sur un message (spec section 3). Le
+  scénario démarré, lui, est un démarrage UNITAIRE : il passe par le `startWorkflow` des automations, donc ses
+  propres blocs « tag » publient comme ceux de tout scénario déclenché par un message. Gardé par test (les modules du
+  widget ne publient rien ; le démarrage passe par le `startWorkflow` du runner ; le worker passe
+  `automationRunnerDeps`).
+- **« La décision ne se repose pas »** : elle se repose à chaque message qui CONTIENT la phrase, ce qui est rare
+  après le premier ; l'étiquette est idempotente, et le scénario ne redémarre pas dans l'anti-rebond (décision de
+  Julien). Au-delà, il redémarre, comme un mot-clé.
+- **Tests** : la non-régression compare le même lot (texte, média, bouton, STOP, réouverture) traité avec et sans le
+  widget, jusqu'à ce que le job donne aux automations, à l'avance et à l'agent de Meta. Vérifiée dans les DEUX SENS
+  par mutation : la reconnaissance qui agit sans phrase (l'étiquette se pose, le test rougit sur ce symptôme ; le
+  scénario, lui, ne part pas, le runner revérifiant la phrase) ; l'enveloppe du job qui consomme sans démarrage
+  (automations, avance et agent de Meta privés du message) ; la même qui ne consomme jamais (une automation reçoit le
+  message qui vient de démarrer le scénario du widget) ; la garde de la phrase vide retirée (le widget capte tout).
+  Cette dernière était VERTE au premier essai : un départ à 0 de la comparaison des longueurs écartait aussi la
+  phrase vide, par accident ; la sélection a été réécrite pour que la garde soit seule à l'écarter. Le scénario
+  passe par le VRAI runner et le VRAI exécuteur : démarrage, anti-rebond des deux côtés de sa fenêtre, plafond
+  propre et plafond de l'instance, désabonné, bloqué, fil tenu, `standby`.
+- **Pas fait, et ouvert** : un scénario de widget ne REPREND pas un fil tenu par un opérateur ou par l'agent de Meta
+  (automation ordinaire). Lui donner la reprise de la chaîne ou de la publicité (`reprendLaMain`) demanderait de
+  nommer un propriétaire `widget` dans `src/automation/match.ts`, qu'une autre session modifiait ; à trancher par
+  Julien. Et aucun essai réel : c'est l'essai qui clôt la feature.
+
 ---
 
 ## Lot 4 : l'écran de la console
@@ -161,11 +237,13 @@ le `23505` sur `widgets_phrase_key` en 409 ; refuser une phrase que `normalizeTe
 voit que le cas flagrant) ; à la MODIFICATION d'une phrase, exclure le widget lui-même de la comparaison (passer par
 `lister`, qui porte les identifiants, et non par `phrasesDesWidgets`).
 
-⚠️ **Deux décisions à prendre avant ce lot.** Le devenir `scenario` passe par une automation en mode `contains`, mais
-la table n'a pas d'`automation_id` : si on crée une automation compagnon, `workflow_id` ferait doublon avec
-`automations.workflow_id`. Ajouter `automation_id` (migration additive, sur le modèle de `channelsme_links`) ou
-dériver. Et supprimer un scénario utilisé rend aujourd'hui le widget silencieusement inerte (`set null`) : la route
-de suppression des scénarios ne compte pas les widgets parmi ses usages.
+⚠️ **Une décision à prendre avant ce lot.** Supprimer un scénario utilisé rend aujourd'hui le widget silencieusement
+inerte (`set null`) : la route de suppression des scénarios ne compte pas les widgets parmi ses usages. (La question
+« `automation_id` ou dériver » est tranchée par le lot 3 : il n'y a PAS d'automation compagnon, le scénario démarre
+directement dans le chemin de réception.)
+
+**Le devenir `agent` est grisé « à venir »** à l'écran (décision de Julien du 2026-10-02) : une session d'agent IA
+exige un parcours de scénario, et le lot 3 le traite comme `null`.
 
 **Tests attendus :** un widget qui désigne l'agent d'un autre espace est refusé ; une phrase qui CONTIENT celle d'un lien de chaîne est refusée, et l'inverse ; une phrase déjà
 présente dans des messages reçus est refusée ; `tests/scope-tenant.test.ts` voit le nouveau module et exige sa garde ; une écriture est
@@ -189,7 +267,9 @@ premiers ; un outil appelé sur un espace qui n'est pas celui de la clé est ref
 ## Ordre de déploiement
 
 1. **La migration AVANT le code**, puisqu'elle crée une table que le code écrit. Image construite, `migrate`,
-   puis `up -d --build`.
+   puis `up -d --build`. 🔴 **0201 l'est doublement** : la transaction de purge RGPD la nomme, et le code déployé
+   avant elle ferait échouer toute suppression de contact (`42P01`). 0200 et 0201 passent ensemble, avant le `up`
+   du lot 3, et se relisent en base juste après `migrate`.
 2. **Lots 1 à 3 déployés avant le lot 4.** 🔴 Vercel publie la console à CHAQUE push, l'API attend son
    `up --build` : un écran poussé avant sa route appelle une route que la production n'a pas, et le client voit
    une page cassée pendant toute la fenêtre. C'est arrivé le 2026-09-21 avec l'onglet « Outils », en 404 pendant

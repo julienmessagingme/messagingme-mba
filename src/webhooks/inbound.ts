@@ -11,6 +11,7 @@ import { valeurEffective } from './change';
 import { tenter } from '../lib/tenter';
 import { messageDe } from '../lib/erreur';
 import type { EntrantRattache } from './rattachement';
+import type { ArriveeParWidget } from '../widgets/arrivee';
 
 export interface InboundMessage {
   phoneNumberId: string;
@@ -300,6 +301,13 @@ export interface DepsEntrants {
    * (`tests/webhook-fixtures.ts`).
    */
   detenteur: DetenteurDuFil;
+  /**
+   * L'arrivée par un widget WhatsApp (`src/widgets/arrivee.ts`) : l'étiquette de source, et le devenir du widget.
+   * Absente : aucun widget n'est reconnu, le comportement d'avant le lot 3 du widget. Ce qu'elle rend (un scénario
+   * est parti, donc le message est consommé) n'est pas lu ici : c'est le job qui le capte, par une enveloppe
+   * (`handleWebhookJob`), comme le signal « nouveau contact » de `upsertContact`.
+   */
+  widget?: ArriveeParWidget;
 }
 
 /**
@@ -322,7 +330,7 @@ export async function processInbound(
   store: InboxStore,
   deps: DepsEntrants,
 ): Promise<ReadonlySet<string>> {
-  const { upsertContact, optOut, assignation, signalReponse, detenteur } = deps;
+  const { upsertContact, optOut, assignation, signalReponse, detenteur, widget } = deps;
   const rouvertes = new Set<string>();
   for (const { message: m, tenantId } of entrants) {
     if (!tenantId) continue;
@@ -359,6 +367,23 @@ export async function processInbound(
      */
     if (assignation) {
       await tenter('processInbound: affectation de campagne ignorée:', () => assignation(tenantId, m.waId));
+    }
+    /**
+     * 🔴 Le widget en DERNIER, après l'affectation de campagne, et c'est ce qui le rend sans risque pour l'existant :
+     * chaque étape au-dessus voit exactement l'état qu'elle voyait avant le lot 3, dans le même ordre. Après
+     * l'opt-out, pour qu'un STOP soit écrit avant tout démarrage ; après `recordInbound`, qui crée la conversation
+     * (le scénario y écrit) ; après le détenteur, pour agir sur une colonne d'accord avec Meta.
+     *
+     * Face à l'affectation, la campagne passe la première parce qu'elle décide déjà aujourd'hui, et que sa propriété
+     * clé (seule la PREMIÈRE réponse prend le fil) se lit sur un état que le widget ne doit pas avoir touché. Si elle
+     * vient de prendre le fil pour l'équipe, le scénario du widget est refusé par la garde du fil (une automation
+     * ordinaire n'écrit pas dans un fil tenu) : la décision déjà prise gagne, et aucun scénario ne part à moitié.
+     *
+     * Isolé : un widget qui échoue (lecture, étiquette, scénario) n'empêche ni l'enregistrement, ni l'affectation, ni
+     * le message suivant du lot.
+     */
+    if (widget) {
+      await tenter('processInbound: widget ignoré:', () => widget(tenantId, m));
     }
   }
   return rouvertes;
