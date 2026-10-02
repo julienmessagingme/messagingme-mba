@@ -50,6 +50,15 @@ sur plusieurs pages annonçaient une page tronquée qui ne l'était pas. L'impor
 l'échéance, l'import qui ignorait l'échéance (le 422 disait « temps » par la raison de la page coupée) ; un test pour
 chacune. ⚠️ Le plan de déploiement oubliait `aide:charger` : la fiche modifiée ne serait jamais arrivée au bot d'aide.
 
+**En production depuis le 2026-10-02 à 7 h UTC** (`2f5ef261`, le lot et ses jaunes). Le VPS était sur `23159e8f`, que
+la session voisine venait de déployer : entre les deux, `main` n'ajoutait que des documents. CI lue job par job
+(serveur et console), `merge --ff-only` du commit exact, `up -d --build`, NPM rechargé après `healthy`,
+`aide:charger` (26 fiches, dont la mienne et quatre fiches de sessions voisines, déjà relues), fumée publique verte,
+aucune erreur au journal de l'API. L'essai réel, par une sonde dans `mba-api` effacée ensuite, avec le vrai code de
+lecture et le vrai parcours sur le vrai réseau : une adresse publique qui répond en 8 s, sous une échéance de 2 s, est
+coupée net à 2,02 s ; un vrai parcours sous une échéance de 1,5 s lit trois pages, s'arrête et le dit
+(`tempsAtteint`) ; la vitrine, sous l'échéance de production, est lue entière (dix pages, rien d'écarté) en 1,5 s.
+
 ## 2026-10-01 : essai réel du « Traité », et la réouverture devient une escalade (`23159e8f`)
 
 Sur la conversation de Julien (espace MessagingMe), délai de reprise réglé à 1 minute le temps de l'essai puis remis
