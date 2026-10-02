@@ -2182,11 +2182,15 @@ importez ce qu'il propose.
 - ✅ **La première connexion active le serveur** (2026-10-02) : avant, un serveur déclaré restait
   « brouillon » et aucun écran ne l'activait, donc chaque appel de ses outils était refusé. La carte dit
   « pas encore connecté » tant que ce n'est pas fait. Un serveur désactivé ne se rallume pas.
-- ✅ **On choisit d'abord ICI ce qui est proposé aux agents** (2026-10-02, décision de Julien) : chaque outil
-  porte « Proposé aux agents », coché d'office, et « Donné à : … ». Seuls les outils proposés s'offrent
-  ensuite sur la page d'un agent (AI Agent > MBA > Outils, ou un agent IA), où l'on choisit pour cet agent.
-  🔴 Décocher un outil qu'un agent a déjà est refusé, et l'écran nomme les agents : on le retire d'abord de
-  ces agents, sinon l'agent de Meta continuerait d'appeler un outil sorti de sa liste.
+- ✅ **On choisit d'abord ICI les outils ENREGISTRÉS pour les agents** (2026-10-02, décisions de Julien) :
+  chaque outil est une ligne repliée, avec son nom, « Enregistré » ou « Non enregistré », à qui il est donné, et
+  un bouton « Enregistrer » ou « Désenregistrer » ; le détail (paramètres, risque, quand ne pas l'appeler) se
+  déplie, pour qu'un serveur de trente outils reste lisible. Une coche devant chaque outil, et « Tout
+  sélectionner », enregistrent ou désenregistrent plusieurs outils d'un coup ; un refus se dit pour l'outil
+  concerné, les autres passent. Un outil est enregistré d'office à la connexion. Seuls les outils enregistrés
+  s'offrent ensuite sur la page d'un agent (AI Agent > MBA > Outils, ou un agent IA), où l'on choisit pour cet
+  agent. 🔴 Désenregistrer un outil qu'un agent a déjà est refusé, et l'écran nomme les agents : on le retire
+  d'abord de ces agents, sinon l'agent de Meta continuerait d'appeler un outil sorti de sa liste.
 - ✅ **Un outil qui disparaît du serveur est MARQUÉ, jamais supprimé** : la fiche reste, avec la date, et le
   journal des appels continue d'y renvoyer.
 - ✅ **Un catalogue trop gros le dit**, et l'import n'en RETIRE alors rien : sur une liste partielle, marquer

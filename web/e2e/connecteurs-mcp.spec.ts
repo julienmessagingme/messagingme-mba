@@ -124,6 +124,9 @@ test.describe('Tools > Connecteurs MCP', () => {
   test('🔴 un outil non activable dit POURQUOI, en nommant le paramètre', async ({ page }) => {
     await mock(page);
     await page.goto('/connecteurs-mcp');
+    // Replié, la ligne le dit déjà ; déplié, la raison complète.
+    await expect(page.getByTestId('mcp-etat-outil-notion_creer')).toContainText(/inutilisable|unusable/);
+    await page.getByTestId('mcp-deplier-notion_creer').click();
     await expect(page.getByTestId('mcp-outil-non-activable-notion_creer')).toContainText('lignes');
   });
 
@@ -133,6 +136,7 @@ test.describe('Tools > Connecteurs MCP', () => {
     // donnée de quelqu'un d'autre. C'est pour ça que l'écran montre chaque paramètre un par un.
     await mock(page);
     await page.goto('/connecteurs-mcp');
+    await page.getByTestId('mcp-deplier-notion_search').click();
     await expect(page.getByTestId('mcp-source-client_id')).toBeVisible();
     await page.getByTestId('mcp-source-client_id').selectOption('champ');
     // Une LISTE, pas une saisie libre : proposer un champ libre revient a inviter la faute de frappe puis
@@ -146,6 +150,7 @@ test.describe('Tools > Connecteurs MCP', () => {
     // vide, et la reaction naturelle serait de repasser en « l agent decide ».
     await mock(page);
     await page.goto('/connecteurs-mcp');
+    await page.getByTestId('mcp-deplier-notion_search').click();
     await page.getByTestId('mcp-source-client_id').selectOption('contact');
     await expect(page.getByTestId('mcp-contact-client_id')).toHaveValue('wa_id');
   });
@@ -155,6 +160,7 @@ test.describe('Tools > Connecteurs MCP', () => {
     // s annonce « lecture seule » obtenait `risk: read` sans aucun acte humain.
     await mock(page);
     await page.goto('/connecteurs-mcp');
+    await page.getByTestId('mcp-deplier-notion_search').click();
     await expect(page.getByTestId('mcp-risque-notion_search')).toHaveValue('read');
     await page.getByTestId('mcp-risque-notion_search').selectOption('irreversible');
     await expect(page.getByTestId('mcp-risque-notion_search')).toHaveValue('irreversible');
@@ -171,6 +177,7 @@ test.describe('Tools > Connecteurs MCP', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
     await page.goto('/connecteurs-mcp');
+    await page.getByTestId('mcp-deplier-notion_search').click();
     await page.getByTestId('mcp-nepasutiliser-notion_search').fill('jamais sans numero de commande');
     await page.getByTestId('mcp-enregistrer-notion_search').click();
     await expect(page.getByTestId('mcp-reglage-ok-notion_search')).toBeVisible();
@@ -182,6 +189,7 @@ test.describe('Tools > Connecteurs MCP', () => {
     // serveur qui décide. Le client doit le savoir quand il décide, pas quand ça rate.
     await mock(page);
     await page.goto('/connecteurs-mcp');
+    await page.getByTestId('mcp-deplier-notion_search').click();
     await expect(page.getByTestId('mcp-requis-q')).toBeVisible();
   });
 });
@@ -240,7 +248,7 @@ test.describe('declarer un serveur MCP', () => {
     await expect(page.getByTestId(`mcp-connecter-${SOURCE}`)).toHaveText(/Connecter|Connect/);
   });
 
-  test('🔴 « Proposé aux agents » se décoche en PUT ; un refus nomme les agents', async ({ page }) => {
+  test('🔴 « Désenregistrer » part en PUT ; un refus nomme les agents', async ({ page }) => {
     const appels = await mock(page, { outils: [{ ...OUTILS[0], propose: true, utilisePar: [] }] });
     await page.goto('/connecteurs-mcp');
     await page.getByTestId('mcp-propose-notion_search').click();
@@ -263,5 +271,38 @@ test.describe('declarer un serveur MCP', () => {
     await expect(page.getByTestId(`mcp-connecte-${SOURCE}`)).toContainText('2 outil');
     expect(appels.filter((a) => a.url.includes('/importer'))).toHaveLength(1);
     await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toHaveCount(0);
+  });
+  test('🔴 chaque outil est une ligne repliée : nom, état, bouton ; le détail se déplie', async ({ page }) => {
+    // Julien, 2026-10-02 : « ça évitera que ce soit illisible s'il y a 30 outils ».
+    await mock(page, { outils: [{ ...OUTILS[0], propose: true, utilisePar: [] }] });
+    await page.goto('/connecteurs-mcp');
+    await expect(page.getByTestId('mcp-etat-outil-notion_search')).toHaveText(/Enregistré|Registered/);
+    await expect(page.getByTestId('mcp-propose-notion_search')).toHaveText(/Désenregistrer|Unregister/);
+    await expect(page.getByTestId('mcp-detail-notion_search')).toHaveCount(0);
+    await page.getByTestId('mcp-deplier-notion_search').click();
+    await expect(page.getByTestId('mcp-detail-notion_search')).toBeVisible();
+    await expect(page.getByTestId('mcp-deplier-notion_search')).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('🔴 action groupée : tout cocher puis « Désenregistrer » ; un refus se dit pour CET outil, les autres passent', async ({ page }) => {
+    const deux = [{ ...OUTILS[0], propose: true, utilisePar: [] }, { ...OUTILS[1], propose: true, utilisePar: [] }];
+    const appels = await mock(page, { outils: deux });
+    await page.goto('/connecteurs-mcp');
+    await expect(page.getByTestId(`mcp-groupe-desenregistrer-${SOURCE}`)).toBeDisabled();
+    await page.getByTestId(`mcp-tout-${SOURCE}`).check();
+    await expect(page.getByTestId(`mcp-coches-${SOURCE}`)).toContainText('2');
+    await page.getByTestId(`mcp-groupe-desenregistrer-${SOURCE}`).click();
+    await expect.poll(() => appels.filter((a) => a.method === 'PUT' && a.url.endsWith('/propose')).length).toBe(2);
+    await expect(page.getByTestId(`mcp-bilan-${SOURCE}`)).toContainText('2');
+
+    // Un refus, nommé, sans empêcher l'autre.
+    await page.route('**/api/backend/**/mcp/outils/o1/propose', (route: Route) => route.fulfill({
+      status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'utilisé par Agent de Meta : retirez-le d’abord de cet agent' }),
+    }));
+    await page.getByTestId('mcp-selection-notion_search').check();
+    await page.getByTestId('mcp-selection-notion_creer').check();
+    await page.getByTestId(`mcp-groupe-desenregistrer-${SOURCE}`).click();
+    await expect(page.getByTestId(`mcp-bilan-${SOURCE}`)).toContainText('Agent de Meta');
+    await expect(page.getByTestId(`mcp-bilan-${SOURCE}`)).toContainText(/1 outil/);
   });
 });

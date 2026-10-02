@@ -5,6 +5,7 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { proposerOutilMcp, reglerOutilMcp, type OutilMcp, type ParamMcp, type SourceParamMcp } from '@/lib/api-mcp-connecteurs';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /**
  * Le réglage d'UN outil importé : d'où vient chacun de ses paramètres.
@@ -49,9 +50,12 @@ function valeurTypee(brut: unknown, type: string): string | number | boolean {
   return brut;
 }
 
-export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChange }: {
+export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChange, selectionne, onSelection }: {
   tenantId: string;
   outil: OutilMcp;
+  /** La coche de la ligne, pour les actions groupées de la page. */
+  selectionne: boolean;
+  onSelection: (coche: boolean) => void;
   /** Les clés de champs que le client a créées dans Bibliothèque > Champs. Viennent du serveur. */
   champs: string[];
   /** Les attributs de fiche auxquels on peut clouer. Liste FERMÉE côté serveur, jamais recopiée ici. */
@@ -65,6 +69,11 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enregistre, setEnregistre] = useState(false);
+  /**
+   * 🔴 REPLIÉ D'OFFICE (Julien, 2026-10-02 : « ça évitera que ce soit illisible s'il y a 30 outils »). La ligne dit
+   * l'essentiel, le nom, l'état et le geste ; le détail (paramètres, risque, quand ne pas l'appeler) se déplie.
+   */
+  const [ouvert, setOuvert] = useState(false);
   const propose = outil.propose !== false;
   /** `undefined` = API d'avant 0199, qui ne le dit pas : on se tait plutôt que d'annoncer « donné à aucun agent ». */
   const utilisePar = outil.utilisePar;
@@ -150,36 +159,51 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
     { v: 'fixe', libelle: t('une valeur fixe', 'a fixed value') },
   ];
 
+  // « Enregistré » est le mot de Julien pour « proposé aux agents de l'espace » (le premier étage du choix ; le second se
+  // fait sur chaque agent). Un outil inutilisable le dit à la place, parce que l'enregistrer ne servirait à rien.
+  const etat = outil.indisponibleLe ? t('disparu du serveur', 'gone from the server')
+    : outil.nonActivable ? t('inutilisable', 'unusable')
+      : propose ? t('Enregistré', 'Registered') : t('Non enregistré', 'Not registered');
+  const etatCls = outil.indisponibleLe || outil.nonActivable ? 'bg-danger-50 text-danger-700'
+    : propose ? 'bg-succes-50 text-succes-700' : 'bg-ink-100 text-ink-500';
+
   return (
-    <div className="rounded-carte border border-ink-200 bg-white p-3" data-testid={`mcp-outil-${outil.name}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="font-medium text-ink-900">{outil.title}</span>
-        <code className="text-xs text-ink-500">{outil.name}</code>
-        <span className="text-xs text-ink-500">{t('chez le serveur : ', 'on the server: ')}<code>{outil.nomDistant}</code></span>
+    <div className="rounded-carte border border-ink-200 bg-white px-3 py-2" data-testid={`mcp-outil-${outil.name}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <input type="checkbox" checked={selectionne} onChange={(e) => onSelection(e.target.checked)}
+          aria-label={t(`Sélectionner ${outil.title}`, `Select ${outil.title}`)} data-testid={`mcp-selection-${outil.name}`} />
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-expanded={ouvert}
+          data-testid={`mcp-deplier-${outil.name}`} onClick={() => setOuvert((v) => !v)}>
+          <Icone nom="deplier" taille="petite" className={`shrink-0 text-ink-500 transition-transform duration-150 ${ouvert ? '' : '-rotate-90'}`} />
+          <span className="truncate font-medium text-ink-900">{outil.title}</span>
+          <code className="hidden truncate text-xs text-ink-500 sm:inline">{outil.name}</code>
+        </button>
+        <span className={`rounded-full px-2 py-0.5 text-xs ${etatCls}`} data-testid={`mcp-etat-outil-${outil.name}`}>{etat}</span>
+        {utilisePar !== undefined && (
+          <span className="text-xs text-ink-500" data-testid={`mcp-utilise-par-${outil.name}`}>
+            {utilisePar.length > 0
+              ? t(`donné à ${utilisePar.join(', ')}`, `given to ${utilisePar.join(', ')}`)
+              : t('donné à aucun agent', 'given to no agent')}
+          </span>
+        )}
         {outil.risk === 'irreversible' && (
           <span className="rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700">
             {t('action irréversible', 'irreversible action')}
           </span>
         )}
+        <Bouton variante={propose ? 'secondaire' : 'principal'} taille="petite" type="button" disabled={busy}
+          data-testid={`mcp-propose-${outil.name}`} onClick={() => void basculerPropose()}>
+          {propose ? t('Désenregistrer', 'Unregister') : t('Enregistrer', 'Register')}
+        </Bouton>
       </div>
-      {outil.description && <p className="mt-1 text-sm text-ink-500">{outil.description}</p>}
 
-      {/* Le premier étage du choix : proposé aux agents de l'espace, ou non. Le second se fait sur chaque agent. */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-900">
-          <input type="checkbox" checked={propose} disabled={busy} data-testid={`mcp-propose-${outil.name}`}
-            onChange={() => void basculerPropose()} />
-          {t('Proposé aux agents', 'Offered to agents')}
-        </label>
-        {utilisePar !== undefined && <span className="text-xs text-ink-500" data-testid={`mcp-utilise-par-${outil.name}`}>
-          {utilisePar.length > 0
-            ? t(`Donné à : ${utilisePar.join(', ')}`, `Given to: ${utilisePar.join(', ')}`)
-            : propose
-              ? t('Donné à aucun agent : on le donne sur la page d’un agent (AI Agent > MBA > Outils, ou un agent IA).',
-                'Given to no agent: give it from an agent’s page (AI Agent > MBA > Tools, or an AI agent).')
-              : t('Donné à aucun agent.', 'Given to no agent.')}
-        </span>}
-      </div>
+      {erreur && <p className="mt-1 text-xs text-danger" data-testid={`mcp-reglage-erreur-${outil.name}`}>{erreur}</p>}
+      {enregistre && <p className="mt-1 text-xs text-succes-700" data-testid={`mcp-reglage-ok-${outil.name}`}>{t('Réglages enregistrés.', 'Settings saved.')}</p>}
+
+      {ouvert && (
+      <div className="mt-2 border-t border-ink-100 pt-2" data-testid={`mcp-detail-${outil.name}`}>
+      <p className="text-xs text-ink-500">{t('chez le serveur : ', 'on the server: ')}<code>{outil.nomDistant}</code></p>
+      {outil.description && <p className="mt-1 text-sm text-ink-500">{outil.description}</p>}
 
       {outil.indisponibleLe && (
         /* La ligne est CONSERVÉE, pas supprimée : c'est la trace de ce qui a tourné, et le journal des
@@ -279,14 +303,13 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
             <Bouton taille="petite" type="button" disabled={busy} data-testid={`mcp-enregistrer-${outil.name}`}
               className="mt-2"
               onClick={() => void enregistrer()}>
-              {t('Enregistrer', 'Save')}
+              {t('Enregistrer les réglages', 'Save settings')}
             </Bouton>
           )}
         </>
       )}
-
-      {erreur && <p className="mt-1 text-xs text-danger" data-testid={`mcp-reglage-erreur-${outil.name}`}>{erreur}</p>}
-      {enregistre && <p className="mt-1 text-xs text-succes-700" data-testid={`mcp-reglage-ok-${outil.name}`}>{t('Enregistré.', 'Saved.')}</p>}
+      </div>
+      )}
     </div>
   );
 }

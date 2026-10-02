@@ -6,7 +6,7 @@ import { dateHeure } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { McpOutilReglage } from '@/components/McpOutilReglage';
 import {
-  apercuMcp, creerServeurMcp, importerMcp, listerOutilsMcp, listerServeursMcp,
+  apercuMcp, creerServeurMcp, importerMcp, proposerOutilMcp, listerOutilsMcp, listerServeursMcp,
   supprimerServeurMcp,
   type AuthMcp, type ChangementMcp, type OutilMcp, type ServeurMcp,
 } from '@/lib/api-mcp-connecteurs';
@@ -33,6 +33,10 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
   const [outils, setOutils] = useState<Record<string, OutilMcp[]>>({});
   const [champs, setChamps] = useState<{ champs: string[]; champsContact: string[] }>({ champs: [], champsContact: [] });
   const [plan, setPlan] = useState<{ sourceId: string; plan: ChangementMcp[]; tronque: boolean } | null>(null);
+  /** Les outils cochés, par serveur, pour les actions groupées. */
+  const [selection, setSelection] = useState<Record<string, string[]>>({});
+  /** Ce qu'a fait la dernière action groupée, dit en clair sous la barre. */
+  const [bilan, setBilan] = useState<{ sourceId: string; texte: string; refus: boolean } | null>(null);
   /** La dernière connexion réussie de cette visite, et si le catalogue était tronqué. */
   const [connexion, setConnexion] = useState<{ sourceId: string; tronque: boolean } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -93,6 +97,34 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
       await listerServeursMcp(tenantId).then((r) => setServeurs(r.serveurs)).catch(() => {});
       await chargerOutils(sourceId);
     }
+  }
+
+  /**
+   * Enregistrer ou désenregistrer d'un coup les outils cochés (Julien, 2026-10-02). Un appel par outil, à la suite : le
+   * serveur refuse de désenregistrer un outil qu'un agent a, et ce refus doit se dire POUR CET OUTIL, avec les noms des
+   * agents, pendant que les autres passent. Les outils déjà dans l'état voulu ne sont pas rappelés.
+   */
+  async function groupe(sourceId: string, propose: boolean): Promise<void> {
+    const cibles = (outils[sourceId] ?? []).filter((o) => (selection[sourceId] ?? []).includes(o.id) && (o.propose !== false) !== propose);
+    let faits = 0;
+    const refus: string[] = [];
+    for (const o of cibles) {
+      try {
+        await proposerOutilMcp(tenantId, o.id, propose);
+        faits += 1;
+      } catch (e) {
+        refus.push(`${o.title} (${e instanceof Error ? e.message : t('échec', 'failed')})`);
+      }
+    }
+    const fait = propose
+      ? t(`${faits} outil(s) enregistré(s).`, `${faits} tool(s) registered.`)
+      : t(`${faits} outil(s) désenregistré(s).`, `${faits} tool(s) unregistered.`);
+    setBilan({
+      sourceId, refus: refus.length > 0,
+      texte: refus.length > 0 ? `${fait} ${t(`Refusé pour ${refus.length} : `, `Refused for ${refus.length}: `)}${refus.join(' ; ')}` : fait,
+    });
+    setSelection((v) => ({ ...v, [sourceId]: [] }));
+    await chargerOutils(sourceId);
   }
 
   async function agir(travail: () => Promise<void>): Promise<void> {
@@ -301,6 +333,33 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                 </div>
               )}
 
+              {isAdmin && (outils[s.id] ?? []).length > 0 && (() => {
+                const liste = outils[s.id] ?? [];
+                const coches = selection[s.id] ?? [];
+                const tous = coches.length === liste.length;
+                return (
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-ink-500" data-testid={`mcp-groupe-${s.id}`}>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-900">
+                      <input type="checkbox" checked={tous} data-testid={`mcp-tout-${s.id}`}
+                        onChange={() => setSelection((v) => ({ ...v, [s.id]: tous ? [] : liste.map((o) => o.id) }))} />
+                      {t('Tout sélectionner', 'Select all')}
+                    </label>
+                    <span data-testid={`mcp-coches-${s.id}`}>{t(`${coches.length} sélectionné(s)`, `${coches.length} selected`)}</span>
+                    <Bouton taille="petite" type="button" disabled={busy || coches.length === 0} data-testid={`mcp-groupe-enregistrer-${s.id}`}
+                      onClick={() => void agir(() => groupe(s.id, true))}>
+                      {t('Enregistrer', 'Register')}
+                    </Bouton>
+                    <Bouton variante="secondaire" taille="petite" type="button" disabled={busy || coches.length === 0} data-testid={`mcp-groupe-desenregistrer-${s.id}`}
+                      onClick={() => void agir(() => groupe(s.id, false))}>
+                      {t('Désenregistrer', 'Unregister')}
+                    </Bouton>
+                  </div>
+                );
+              })()}
+              {bilan?.sourceId === s.id && (
+                <p className={`mt-2 text-xs ${bilan.refus ? 'text-danger' : 'text-succes-700'}`} data-testid={`mcp-bilan-${s.id}`}>{bilan.texte}</p>
+              )}
+
               {outils[s.id] !== undefined && (
                 <ul className="mt-3 space-y-2" data-testid={`mcp-liste-outils-${s.id}`}>
                   {(outils[s.id] ?? []).length === 0
@@ -308,7 +367,12 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                     : (outils[s.id] ?? []).map((o) => (
                       <li key={o.id}>
                         <McpOutilReglage tenantId={tenantId} outil={o} champs={champs.champs}
-                          champsContact={champs.champsContact} onChange={() => void chargerOutils(s.id)} />
+                          champsContact={champs.champsContact} onChange={() => void chargerOutils(s.id)}
+                          selectionne={(selection[s.id] ?? []).includes(o.id)}
+                          onSelection={(coche) => setSelection((v) => {
+                            const avant = (v[s.id] ?? []).filter((id) => id !== o.id);
+                            return { ...v, [s.id]: coche ? [...avant, o.id] : avant };
+                          })} />
                       </li>
                     ))}
                 </ul>
