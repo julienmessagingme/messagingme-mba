@@ -546,12 +546,6 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs text-ink-500">
-        {t(
-          'Chaque donnée envoyée porte un nom, et vous dites d’où vient sa valeur. Insérez-la ensuite dans le chemin, les paramètres, les en-têtes ou le corps avec les pastilles.',
-          'Each piece of data sent has a name, and you say where its value comes from. Then insert it into the path, params, headers or body with the chips.',
-        )}
-      </p>
       {/* Mêmes intitulés visibles que les autres onglets : la VALEUR D'ESSAI surtout, qui, remplie, se lisait comme
           la donnée elle-même (Julien, 2026-09-23).
           ⚠️ LES LIGNES NE PASSENT PLUS À LA LIGNE, le bloc DÉFILE : une ligne qui se replie décale ses champs sous
@@ -564,7 +558,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
           <span className="w-32">{t('Nom de la donnée', 'Data name')}</span>
           <span className="w-56">{t('D’où vient sa valeur', 'Where its value comes from')}</span>
           <span className="w-28">{t('Type', 'Type')}</span>
-          <span className="w-40">{t('Obligatoire', 'Required')}</span>
+          <span className="w-24">{t('Obligatoire', 'Required')}</span>
           <span className="w-32">{t('Valeur d’essai', 'Test value')}</span>
         </div>
       )}
@@ -573,7 +567,9 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
           <input
             className={`${inputClsAuto} w-32 font-mono`} data-testid={`var-nom-${i}`} value={v.nom} placeholder="ville"
             aria-label={t('Nom de la donnée', 'Data name')}
-            onChange={(e) => changer(i, { nom: e.target.value })}
+            // Le serveur n'accepte que lettres, chiffres, `_`, `-` et `.` : une espace devient `_` et un accent tombe
+            // à la saisie, au lieu d'un refus « corps invalide » à l'enregistrement.
+            onChange={(e) => changer(i, { nom: e.target.value.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s/g, '_').replace(/[^\w.-]/g, '') })}
           />
           <div className="flex w-56 flex-col gap-1">
           <select
@@ -618,10 +614,13 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
             <option value="integer">{t('entier', 'integer')}</option>
             <option value="boolean">{t('oui/non', 'yes/no')}</option>
           </select>
-          <label className="flex w-40 items-center gap-1 text-xs text-ink-500">
-            <input type="checkbox" data-testid={`var-requis-${i}`} checked={v.requis === true} onChange={(e) => changer(i, { requis: e.target.checked })} />
-            {t('sans elle, on n’appelle pas', 'without it, no call')}
-          </label>
+          {/* La case seule, sous l'intitulé « Obligatoire » ; la hauteur est celle d'un champ, pour rester alignée. */}
+          <div className="flex h-[38px] w-24 items-center">
+            <input
+              type="checkbox" data-testid={`var-requis-${i}`} checked={v.requis === true} aria-label={t('Obligatoire', 'Required')}
+              onChange={(e) => changer(i, { requis: e.target.checked })}
+            />
+          </div>
           {/* La valeur d'essai vit À CÔTÉ de la variable : c'est là qu'on la cherche au moment d'essayer. */}
           <input
             className={`${inputClsAuto} w-32`} data-testid={`var-test-${i}`} value={String(brouillon.valeursTest[v.nom] ?? '')}
