@@ -84,16 +84,18 @@ const AGENT = {
 
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], outils: unknown[], bibliotheque: unknown[] = []) {
+async function mock(page: import('@playwright/test').Page, appels: Appel[], outils: unknown[], offrables: unknown[] = []) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const url = req.url();
     const method = req.method();
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
-    // La BIBLIOTHEQUE de l espace : c est elle qui porte les outils MCP importes mais pas encore
-    // rattaches a cet agent. Sans cette route, l ecran ne peut pas les proposer.
-    if (/\/agent-tools(\?|$)/.test(url)) return json({ outils: bibliotheque });
+    // CE QUE LE SERVEUR PERMET D AJOUTER a cet agent (la regle unique du 2026-10-02) : c est elle qui porte les
+    // outils MCP importes mais pas encore rattaches. Avant `/tools`, qu elle prolonge. La bibliotheque de l espace
+    // rend la meme liste, pour les ecrans qui la lisent encore.
+    if (/\/tools\/offrables(\?|$)/.test(url)) return json({ outils: offrables });
+    if (/\/agent-tools(\?|$)/.test(url)) return json({ outils: offrables });
     if (/\/tools/.test(url)) {
       if (method === 'GET') return json({ outils, catalogue: CATALOGUE });
       appels.push({ method, url, body: req.postDataJSON() });
@@ -220,7 +222,7 @@ test.describe('Agents IA : les outils', () => {
      */
     const appels: Appel[] = [];
     const IMPORTE = { ...MCP_MORT, id: 'o9', name: 'notion_search', title: 'Chercher Notion', mcpNonActivable: null };
-    // La bibliotheque de l espace le porte, la liste de CET agent non : il est importe, pas rattache.
+    // Le serveur l offre, la liste de CET agent ne le porte pas : il est importe, pas rattache.
     await mock(page, appels, [TAG], [IMPORTE]);
     await page.goto(`/agents?id=${AG}&tab=outils`);
 
@@ -247,6 +249,33 @@ test.describe('Agents IA : les outils', () => {
     await expect(page.getByTestId('outil-mcp-mort-o4')).toContainText('lignes');
     // ⚠️ LA PREUVE INVERSE : sans elle, un bandeau affiche en permanence passerait le test.
     await expect(page.getByTestId('outil-mcp-mort-o1')).toHaveCount(0);
+  });
+
+  test('🔴 la section MCP montre CE QUE LE SERVEUR OFFRE, sans refiltrer (règle unique du 2026-10-02)', async ({ page }) => {
+    /**
+     * L ecran filtrait la bibliotheque lui-meme (« enregistre ») sans savoir qu un outil etait mort, et proposait
+     * donc un outil que l agent ne pouvait pas appeler. La regle vit au serveur : un outil que le serveur offre
+     * est montre, quoi que portent ses autres champs. Si un filtre revenait ici, cet outil disparaitrait.
+     */
+    const appels: Appel[] = [];
+    const OFFERT = { ...MCP_MORT, id: 'o8', name: 'notion_offert', title: 'Offert par le serveur', mcpNonActivable: null, mcpPropose: false };
+    await mock(page, appels, [TAG], [OFFERT]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await expect(page.getByTestId('mcp-rattacher-o8')).toBeVisible();
+    await expect.poll(() => appels.length, { timeout: 1000 }).toBe(0);
+  });
+
+  test('🔴 un outil dont le SERVEUR est éteint le dit, et ne s active pas', async ({ page }) => {
+    // La cause vient du serveur (`inappelable`) : le modele ne voit plus cet outil, le client peut le retirer.
+    const appels: Appel[] = [];
+    const ETEINT = { ...MCP_MORT, id: 'o5', mcpNonActivable: null, inappelable: { cause: 'source_inactive' } };
+    await mock(page, appels, [TAG, ETEINT]);
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await expect(page.getByTestId('outil-mcp-mort-o5')).toContainText('Connecteurs MCP');
+    await expect(page.getByTestId('outil-activer-o5')).toBeDisabled();
+    // La preuve inverse : un outil vivant n a ni bandeau ni bouton grise.
+    await expect(page.getByTestId('outil-mcp-mort-o1')).toHaveCount(0);
+    await expect(page.getByTestId('outil-activer-o1')).toBeEnabled();
   });
 
   test('🔴 l autonomie n est proposée QUE sur une action irréversible', async ({ page }) => {

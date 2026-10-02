@@ -85,6 +85,39 @@ export interface OutilAgent {
    */
   mcpNonActivable?: string | null;
   mcpIndisponibleLe?: string | null;
+  /**
+   * Pourquoi le serveur refuserait cet outil (la règle unique du catalogue, 2026-10-02), ou `null`. Absent sur une API
+   * d'avant : l'écran retombe alors sur les deux marques MCP ci-dessus.
+   */
+  inappelable?: Inappelable | null;
+}
+
+/** Miroir de `Inappelable` (`src/agent/catalog.ts`), recopié plutôt qu'importé : pas de code serveur dans le bundle. */
+export type Inappelable =
+  | { cause: 'non_activable'; detail: string }
+  | { cause: 'disparu' }
+  | { cause: 'source_inactive' };
+
+/**
+ * Pourquoi un outil déjà donné ne peut plus servir, ou `null`. La cause du serveur d'abord ; face à une API d'avant,
+ * les deux marques MCP qu'elle envoyait.
+ */
+export function raisonInappelable(o: Pick<OutilAgent, 'origin' | 'inappelable' | 'mcpNonActivable' | 'mcpIndisponibleLe'>):
+  { fr: string; en: string } | null {
+  const i: Inappelable | null = o.inappelable !== undefined ? o.inappelable
+    : o.mcpNonActivable ? { cause: 'non_activable', detail: o.mcpNonActivable }
+      : o.mcpIndisponibleLe ? { cause: 'disparu' } : null;
+  if (i === null) return null;
+  switch (i.cause) {
+    case 'non_activable':
+      return { fr: `Cet outil n’est pas activable : ${i.detail}`, en: `This tool cannot be activated: ${i.detail}` };
+    case 'disparu':
+      return { fr: 'Cet outil a disparu du serveur MCP : il n’est plus appelable.', en: 'This tool is gone from the MCP server: it can no longer be called.' };
+    case 'source_inactive':
+      return o.origin === 'mcp'
+        ? { fr: 'Le serveur MCP de cet outil n’est pas actif : activez-le dans Tools > Connecteurs MCP.', en: 'This tool’s MCP server is not active: turn it on in Tools > MCP connectors.' }
+        : { fr: 'Le connecteur de cet outil n’est pas actif : activez-le dans Tools > Connecteurs API.', en: 'This tool’s connector is not active: turn it on in Tools > API connectors.' };
+  }
 }
 
 export interface VueOutils {
@@ -201,6 +234,15 @@ export interface OutilBibliotheque {
  */
 export function getBibliothequeOutils(tenantId: string): Promise<{ outils: OutilBibliotheque[] }> {
   return request<{ outils: OutilBibliotheque[] }>(`/tenants/${tenantId}/agent-tools`);
+}
+
+/**
+ * 🔴 CE QU'ON PEUT AJOUTER À CET AGENT, décidé par le serveur (la règle unique du catalogue, 2026-10-02) : un outil de
+ * l'espace, enregistré s'il est MCP, appelable, et pas déjà à lui. L'écran l'affiche sans rien filtrer : il filtrait la
+ * bibliothèque lui-même, sans savoir qu'un outil était mort, et proposait un outil que l'agent ne pouvait pas appeler.
+ */
+export function getOutilsOffrables(tenantId: string, agentId: string): Promise<{ outils: OutilBibliotheque[] }> {
+  return request<{ outils: OutilBibliotheque[] }>(`${base(tenantId, agentId)}/offrables`);
 }
 
 /**

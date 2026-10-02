@@ -10,7 +10,7 @@ import { AgentConnecteurs } from '@/components/AgentConnecteurs';
 import { normaliserNomOutil } from '@/lib/agent-outils';
 import { listNodes, type NodeListItem } from '@/lib/api/scenarios';
 import {
-  activerOutil, ajouterOutil, autonomieOutil, getBibliothequeOutils, listOutils, patchOutil,
+  activerOutil, ajouterOutil, autonomieOutil, getOutilsOffrables, listOutils, patchOutil, raisonInappelable,
   rattacherOutil, retirerOutil,
   type GesteMoment, type ModeleOutil, type OutilAgent, type OutilBibliotheque, type TexteBilingue,
 } from '@/lib/api-agent-tools';
@@ -46,29 +46,29 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
   const [vue, setVue] = useState<{ outils: OutilAgent[]; catalogue: ModeleOutil[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [bibliotheque, setBibliotheque] = useState<OutilBibliotheque[]>([]);
+  const [offrables, setOffrables] = useState<OutilBibliotheque[]>([]);
 
   const charger = useCallback(async () => {
     try {
       /**
        * 🔴 DEUX LECTURES, ET LA SECONDE EST CE QUI REND LES OUTILS MCP ATTEIGNABLES. `listOutils` fait une
        * jointure INTERNE sur les consommateurs (délibéré : cet écran montre ce que CET agent utilise, pas
-       * tout le catalogue), donc un outil importé mais jamais rattaché n'y figure PAS. Et l'import n'écrit
-       * aucune ligne de consommateur. Sans la bibliothèque de l'espace, la section « Vos serveurs MCP »
-       * était donc vide POUR TOUJOURS : une porte de plus sans producteur, la troisième de ce chantier.
+       * tout le catalogue), donc un outil importé mais jamais rattaché n'y figure PAS. La seconde est ce que le
+       * serveur permet d'AJOUTER à cet agent (`offrables`, la règle unique du 2026-10-02) : l'écran la montre sans
+       * la refiltrer. Il filtrait la bibliothèque lui-même et proposait un outil mort.
        *
-       * ⚠️ BEST-EFFORT : la bibliothèque n'est qu'une aide au rattachement. Si elle échoue, l'écran
-       * continue de montrer ce qui est déjà rattaché plutôt que de ne rien montrer du tout.
+       * ⚠️ BEST-EFFORT : cette liste n'est qu'une aide au rattachement. Si elle échoue, l'écran continue de
+       * montrer ce qui est déjà rattaché plutôt que de ne rien montrer du tout.
        */
-      const [v, bib] = await Promise.all([
+      const [v, offerts] = await Promise.all([
         listOutils(tenantId, agentId),
         // ⚠️ `?? []` ET PAS SEULEMENT UN `catch` : un serveur qui rend 200 avec un corps vide ne LEVE
         // pas, donc `outils` vaut `undefined` et le `filter` plus bas faisait planter tout le rendu de
         // l onglet. Attrape par un test existant, pas par la relecture.
-        getBibliothequeOutils(tenantId).then((r) => r.outils ?? []).catch(() => []),
+        getOutilsOffrables(tenantId, agentId).then((r) => r.outils ?? []).catch(() => []),
       ]);
       setVue(v);
-      setBibliotheque(bib);
+      setOffrables(offerts);
     } catch (err) {
       setErreur(erreurDeChargement(err, t));
     }
@@ -106,14 +106,11 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
    * où quelqu'un s'y fiera.
    */
   /**
-   * Les outils MCP de l'ESPACE que cet agent n'a pas encore. Le jumeau exact de `restants` pour les outils
-   * maison, et de « Donner cet appel à l'agent » pour les connecteurs API.
-   *
-   * ⚠️ ON RAPPROCHE PAR IDENTIFIANT, jamais par nom : le nom exposé est réécrit par le client.
+   * Les outils MCP que le serveur permet d'ajouter à cet agent. Le jumeau exact de `restants` pour les outils
+   * maison, et de « Donner cet appel à l'agent » pour les connecteurs API. 🔴 Aucun filtre ici, sinon l'origine (cette
+   * section ne montre que le MCP) : enregistré, appelable et pas déjà à lui sont décidés par le catalogue.
    */
-  const rattaches = new Set((vue?.outils ?? []).map((o) => o.id));
-  // Seuls les outils proposés sur Tools > Connecteurs MCP (0199) : on y choisit d'abord, puis ici, agent par agent.
-  const mcpARattacher = bibliotheque.filter((o) => o.origin === 'mcp' && o.mcpPropose !== false && !rattaches.has(o.id));
+  const mcpARattacher = offrables.filter((o) => o.origin === 'mcp');
 
   return (
     <div className="flex flex-col gap-4">
@@ -304,6 +301,8 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
   const t = useT();
   const confirmer = useConfirmation();
   const [ouvert, setOuvert] = useState(false);
+  // Pourquoi l'outil ne peut plus servir : la cause du serveur (règle unique du 2026-10-02), ou `null`.
+  const mort = raisonInappelable(outil);
   return (
     <div data-testid={`outil-${outil.id}`} className={`${cardCls} flex flex-col gap-3`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -332,7 +331,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
              * ⚠️ La DÉSACTIVATION reste possible : c'est le seul geste qui reste au client sur un outil
              * qu'un rafraîchissement a rendu inappelable alors qu'il était actif.
              */
-            disabled={busy || (!outil.actif && Boolean(outil.mcpNonActivable || outil.mcpIndisponibleLe))}
+            disabled={busy || (!outil.actif && mort !== null)}
             onClick={() => onActiver(!outil.actif)}
           >
             {outil.actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
@@ -362,15 +361,12 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
       </div>
 
       {/* 🔴 UN OUTIL MORT NE SE PRÉSENTE PAS COMME UN OUTIL VIVANT sur l'écran où l'on décide de
-          l'autoriser. La raison vient du serveur distant : le client ne peut pas la corriger, mais il
-          doit pouvoir la montrer à son fournisseur. */}
-      {(outil.mcpIndisponibleLe || outil.mcpNonActivable) && (
+          l'autoriser. La raison vient du serveur : marqué non activable, disparu de son serveur MCP, ou serveur
+          (connecteur) éteint. Le modèle ne le voit plus ; le client peut le désactiver ou le retirer. */}
+      {mort !== null && (
         <p data-testid={`outil-mcp-mort-${outil.id}`}
           className="rounded-controle border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-ink-900">
-          {outil.mcpIndisponibleLe
-            ? t('Cet outil a disparu du serveur MCP : il n’est plus appelable.',
-              'This tool is gone from the MCP server: it can no longer be called.')
-            : t('Cet outil n’est pas activable : ', 'This tool cannot be activated: ') + (outil.mcpNonActivable ?? '')}
+          {t(mort.fr, mort.en)}
         </p>
       )}
 
