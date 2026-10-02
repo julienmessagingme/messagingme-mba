@@ -2169,23 +2169,24 @@ importez ce qu'il propose.
   vous nommez). Le secret est chiffré et ne ressort jamais de nos serveurs.
   ⚠️ **L'adresse est vérifiée deux fois** : sur son texte quand vous l'enregistrez, et sur ce vers quoi elle
   RÉSOUT à chaque appel. Une adresse publique qui pointe vers un réseau interne est refusée.
-- ✅ **Éprouver** le serveur en un clic : on s'y connecte pour de vrai et on vous dit ce qui se passe. Un
-  serveur injoignable, un jeton refusé ou un protocole trop ancien sont nommés.
-- ✅ **Aperçu avant import** : ce qui sera ajouté, ce qui a changé, ce qui a disparu, et **combien
-  d'autorisations vont tomber**. Rien n'est écrit tant que vous n'avez pas cliqué « Importer ».
-- ✅ **Importer active le serveur** (2026-10-02) : avant, un serveur déclaré restait « brouillon » et aucun
-  écran ne l'activait, donc chaque appel de ses outils était refusé. La carte dit « pas encore importé » tant
-  que ce n'est pas fait. Un serveur désactivé ne se rallume pas à un nouvel import.
-- ✅ **Les outils importés se voient sur la carte du serveur**, sans clic (2026-10-02), et le bouton dit ce
-  qu'il fera : « Importer ses outils » la première fois, « Rafraîchir depuis le serveur » ensuite.
-- ✅ **On choisit d'abord ICI ce qui est proposé aux agents** (2026-10-02, décision de Julien) : chaque outil
-  porte « Proposé aux agents », coché d'office à l'import, et « Donné à : … ». Seuls les outils proposés
-  s'offrent ensuite sur la page d'un agent (AI Agent > MBA > Outils, ou un agent IA), où l'on choisit pour
-  cet agent. 🔴 Décocher un outil qu'un agent a déjà est refusé, et l'écran nomme les agents : on le retire
-  d'abord de ces agents, sinon l'agent de Meta continuerait d'appeler un outil sorti de sa liste.
+- ✅ **« Connecter », un seul bouton** (2026-10-02, demandé par Julien) : on se connecte au serveur pour de
+  vrai, on lit ses outils et on les importe, et ils apparaissent juste sous la carte. Un serveur injoignable,
+  un jeton refusé ou un protocole trop ancien sont nommés. Reconnecter rafraîchit la liste. Il remplace
+  « Éprouver la connexion », « Voir ce qui va changer » et « Appliquer ».
+- ✅ **Une seule confirmation, quand un agent perdrait un outil** : si le serveur a changé le schéma d'un
+  outil qu'un agent a, ou l'a retiré, « Connecter » montre ce qui va tomber (« N agent(s) perdront
+  l'accès ») et attend « Confirmer ». Sinon, rien à confirmer.
   🔴 **Un outil dont le schéma a changé n'est plus l'outil que vous aviez autorisé**, donc son autorisation
   tombe et il faut la redonner. C’est ce qui empêche un serveur distant d’élargir en silence ce qu’un outil
   autorisé sait faire.
+- ✅ **La première connexion active le serveur** (2026-10-02) : avant, un serveur déclaré restait
+  « brouillon » et aucun écran ne l'activait, donc chaque appel de ses outils était refusé. La carte dit
+  « pas encore connecté » tant que ce n'est pas fait. Un serveur désactivé ne se rallume pas.
+- ✅ **On choisit d'abord ICI ce qui est proposé aux agents** (2026-10-02, décision de Julien) : chaque outil
+  porte « Proposé aux agents », coché d'office, et « Donné à : … ». Seuls les outils proposés s'offrent
+  ensuite sur la page d'un agent (AI Agent > MBA > Outils, ou un agent IA), où l'on choisit pour cet agent.
+  🔴 Décocher un outil qu'un agent a déjà est refusé, et l'écran nomme les agents : on le retire d'abord de
+  ces agents, sinon l'agent de Meta continuerait d'appeler un outil sorti de sa liste.
 - ✅ **Un outil qui disparaît du serveur est MARQUÉ, jamais supprimé** : la fiche reste, avec la date, et le
   journal des appels continue d'y renvoyer.
 - ✅ **Un catalogue trop gros le dit**, et l'import n'en RETIRE alors rien : sur une liste partielle, marquer

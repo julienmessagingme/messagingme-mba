@@ -66,7 +66,8 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
   const [erreur, setErreur] = useState<string | null>(null);
   const [enregistre, setEnregistre] = useState(false);
   const propose = outil.propose !== false;
-  const utilisePar = outil.utilisePar ?? [];
+  /** `undefined` = API d'avant 0199, qui ne le dit pas : on se tait plutôt que d'annoncer « donné à aucun agent ». */
+  const utilisePar = outil.utilisePar;
 
   /**
    * Proposer l'outil aux agents, ou le retirer (Julien, 2026-10-02 : on choisit d'abord ici, puis sur chaque agent).
@@ -170,14 +171,14 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
             onChange={() => void basculerPropose()} />
           {t('Proposé aux agents', 'Offered to agents')}
         </label>
-        <span className="text-xs text-ink-500" data-testid={`mcp-utilise-par-${outil.name}`}>
+        {utilisePar !== undefined && <span className="text-xs text-ink-500" data-testid={`mcp-utilise-par-${outil.name}`}>
           {utilisePar.length > 0
             ? t(`Donné à : ${utilisePar.join(', ')}`, `Given to: ${utilisePar.join(', ')}`)
             : propose
               ? t('Donné à aucun agent : on le donne sur la page d’un agent (AI Agent > MBA > Outils, ou un agent IA).',
                 'Given to no agent: give it from an agent’s page (AI Agent > MBA > Tools, or an AI agent).')
               : t('Donné à aucun agent.', 'Given to no agent.')}
-        </span>
+        </span>}
       </div>
 
       {outil.indisponibleLe && (

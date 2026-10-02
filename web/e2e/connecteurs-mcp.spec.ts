@@ -39,6 +39,8 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
   const appels: Array<{ method: string; url: string }> = [];
   // Mutable comme en base : une épreuve réussie pose `lastOkAt`, que la carte doit relire.
   let lastOkAt: string | null = null;
+  // Comme en base : l'import pose les outils, que la carte relit ensuite.
+  let outilsCourants: unknown[] = over.outils ?? OUTILS;
   await page.addInitScript((s) => {
     window.localStorage.setItem('mba.session', JSON.stringify(s));
   }, SESSION);
@@ -53,7 +55,7 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
     }
     if (url.includes('/mcp/') && url.endsWith('/outils')) {
       // Les deux listes de clouage viennent du SERVEUR : l ecran ne les recopie pas.
-      return json({ outils: over.outils ?? OUTILS, champs: ['email', 'reference'], champsContact: ['wa_id', 'nom'] });
+      return json({ outils: outilsCourants, champs: ['email', 'reference'], champsContact: ['wa_id', 'nom'] });
     }
     if (url.endsWith(`/tenants/${TENANT}/mcp`) && method === 'POST') {
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ serveur: SERVEUR }) });
@@ -63,12 +65,14 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
       return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: over.apercuRefuse }) });
     }
     if (url.includes('/apercu')) {
+      // Le vrai serveur marque la réponse pendant l'aperçu (`calculer`).
+      lastOkAt = '2026-10-02T12:00:00Z';
       return json({
         plan: over.plan ?? [{ type: 'schema_change', nom: 'search', consentementsTombes: 2 }],
         tronque: over.tronque ?? false,
       });
     }
-    if (url.includes('/importer')) return json({ plan: [], tronque: false });
+    if (url.includes('/importer')) { outilsCourants = OUTILS; return json({ plan: [], tronque: false }); }
     if (url.includes('/eprouver')) { lastOkAt = '2026-10-02T12:00:00Z'; return json({ ok: true }); }
     return json({});
   });
@@ -83,15 +87,18 @@ test.describe('Tools > Connecteurs MCP', () => {
     await expect(page.getByTestId('mcp-note-mba')).toContainText('AI Agent > MBA, onglet Outils');
   });
 
-  test('🔴 l’aperçu montre ce qui va tomber, et n’importe RIEN tant qu’on n’a pas cliqué', async ({ page }) => {
+  test('🔴 reconnecter ce qui ferait PERDRE un outil à un agent se fait confirmer, et rien n’est importé avant', async ({ page }) => {
     // 🔴 Un rafraîchissement peut faire tomber des consentements : écraser n'est acceptable que si l'on
-    // montre quoi avant de le faire. Un aperçu qui importerait serait un import qui ment sur son nom.
+    // montre quoi avant de le faire. C'est la seule confirmation que « Connecter » garde.
     const appels = await mock(page);
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-apercu-${SOURCE}`).click();
+    await page.getByTestId(`mcp-connecter-${SOURCE}`).click();
     await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toContainText('search');
     await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toContainText('2 agent(s)');
     expect(appels.filter((a) => a.url.includes('/importer'))).toHaveLength(0);
+    await page.getByTestId(`mcp-importer-${SOURCE}`).click();
+    await expect.poll(() => appels.filter((a) => a.url.includes('/importer')).length).toBe(1);
+    await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toHaveCount(0);
   });
 
   test('🔴 un serveur qui refuse l’aperçu : l’écran montre la RAISON du serveur, pas « Erreur 422 »', async ({ page }) => {
@@ -100,17 +107,17 @@ test.describe('Tools > Connecteurs MCP', () => {
     // un 422 n'est PAS un statut que l'écran ignore, sa raison arrive telle quelle.
     await mock(page, { apercuRefuse: 'le serveur a refusé la connexion (401)' });
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-apercu-${SOURCE}`).click();
+    await page.getByTestId(`mcp-connecter-${SOURCE}`).click();
     await expect(page.getByTestId('mcp-erreur')).toHaveText('le serveur a refusé la connexion (401)');
     await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toHaveCount(0);
   });
 
-  test('🔴 un catalogue TRONQUÉ prévient que rien ne sera retiré', async ({ page }) => {
+  test('🔴 un catalogue TRONQUÉ prévient que rien n’a été retiré', async ({ page }) => {
     // Le client doit savoir que la liste est partielle ET ce que ça implique : sur un catalogue tronqué,
     // l'import n'enlève rien, sinon il débrancherait tout ce qui vit au delà de la borne.
     await mock(page, { tronque: true, plan: [{ type: 'nouveau', nom: 'search' }] });
     await page.goto('/connecteurs-mcp');
-    await page.getByTestId(`mcp-apercu-${SOURCE}`).click();
+    await page.getByTestId(`mcp-connecter-${SOURCE}`).click();
     await expect(page.getByTestId(`mcp-tronque-${SOURCE}`)).toBeVisible();
   });
 
@@ -209,20 +216,20 @@ test.describe('declarer un serveur MCP', () => {
     await page.getByTestId('mcp-neuf-auth').selectOption('none');
     await expect(page.getByTestId('mcp-neuf-secret')).toHaveCount(0);
   });
-  test('🔴 « Éprouver » relit la carte : elle ne dit plus « Jamais éprouvé » sous « Le serveur répond »', async ({ page }) => {
-    await mock(page);
+  test('🔴 « Connecter » relit la carte : elle ne dit plus « Jamais connecté » après une connexion', async ({ page }) => {
+    await mock(page, { plan: [{ type: 'inchange', nom: 'search' }] });
     await page.goto('/connecteurs-mcp');
     const carte = page.getByTestId(`mcp-serveur-${SOURCE}`);
-    await expect(carte).toContainText(/Jamais éprouvé|Never tested/);
-    await page.getByTestId(`mcp-eprouver-${SOURCE}`).click();
-    await expect(carte).toContainText(/A répondu le|Answered on/);
-    await expect(carte).not.toContainText(/Jamais éprouvé|Never tested/);
+    await expect(carte).toContainText(/Jamais connecté|Never connected/);
+    await page.getByTestId(`mcp-connecter-${SOURCE}`).click();
+    await expect(carte).toContainText(/Connecté le|Connected on/);
+    await expect(carte).not.toContainText(/Jamais connecté|Never connected/);
   });
 
-  test('un serveur en brouillon le dit en mots, et qu’il s’active à l’import', async ({ page }) => {
+  test('un serveur en brouillon le dit en mots', async ({ page }) => {
     await mock(page, { serveur: { status: 'draft' } });
     await page.goto('/connecteurs-mcp');
-    await expect(page.getByTestId(`mcp-statut-${SOURCE}`)).toContainText(/import/);
+    await expect(page.getByTestId(`mcp-statut-${SOURCE}`)).toContainText(/connecté|connected/);
     await expect(page.getByTestId(`mcp-serveur-${SOURCE}`)).not.toContainText('draft');
   });
   test('🔴 les outils importés se voient SANS clic, avec à qui ils sont donnés', async ({ page }) => {
@@ -230,7 +237,7 @@ test.describe('declarer un serveur MCP', () => {
     await page.goto('/connecteurs-mcp');
     await expect(page.getByTestId('mcp-outil-notion_search')).toBeVisible();
     await expect(page.getByTestId('mcp-utilise-par-notion_search')).toContainText('Agent de Meta');
-    await expect(page.getByTestId(`mcp-apercu-${SOURCE}`)).toHaveText(/Rafraîchir|Refresh/);
+    await expect(page.getByTestId(`mcp-connecter-${SOURCE}`)).toHaveText(/Connecter|Connect/);
   });
 
   test('🔴 « Proposé aux agents » se décoche en PUT ; un refus nomme les agents', async ({ page }) => {
@@ -246,11 +253,15 @@ test.describe('declarer un serveur MCP', () => {
     await expect(page.getByTestId('mcp-reglage-erreur-notion_search')).toContainText('Agent de Meta');
   });
 
-  test('un serveur sans outil propose « Importer ses outils », et l’aperçu « Importer ces N outil(s) »', async ({ page }) => {
-    await mock(page, { outils: [], plan: [{ type: 'nouveau', nom: 'search' }, { type: 'nouveau', nom: 'fetch' }] });
+  test('🔴 « Connecter » importe d’un geste : les outils apparaissent juste dessous, sans autre bouton', async ({ page }) => {
+    // Julien, 2026-10-02 : « quand tu connectes, je veux la liste des outils juste en dessous ».
+    const appels = await mock(page, { outils: [], plan: [{ type: 'nouveau', nom: 'search' }, { type: 'nouveau', nom: 'creer' }] });
     await page.goto('/connecteurs-mcp');
-    await expect(page.getByTestId(`mcp-liste-outils-${SOURCE}`)).toContainText(/Importer ses outils|Import its tools/);
-    await page.getByTestId(`mcp-apercu-${SOURCE}`).click();
-    await expect(page.getByTestId(`mcp-importer-${SOURCE}`)).toHaveText(/Importer ces 2 outil|Import these 2 tool/);
+    await expect(page.getByTestId(`mcp-liste-outils-${SOURCE}`)).toContainText(/Connecter|Connect/);
+    await page.getByTestId(`mcp-connecter-${SOURCE}`).click();
+    await expect(page.getByTestId('mcp-outil-notion_search')).toBeVisible();
+    await expect(page.getByTestId(`mcp-connecte-${SOURCE}`)).toContainText('2 outil');
+    expect(appels.filter((a) => a.url.includes('/importer'))).toHaveLength(1);
+    await expect(page.getByTestId(`mcp-plan-${SOURCE}`)).toHaveCount(0);
   });
 });

@@ -6,7 +6,7 @@ import { dateHeure } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { McpOutilReglage } from '@/components/McpOutilReglage';
 import {
-  apercuMcp, creerServeurMcp, eprouverServeurMcp, importerMcp, listerOutilsMcp, listerServeursMcp,
+  apercuMcp, creerServeurMcp, importerMcp, listerOutilsMcp, listerServeursMcp,
   supprimerServeurMcp,
   type AuthMcp, type ChangementMcp, type OutilMcp, type ServeurMcp,
 } from '@/lib/api-mcp-connecteurs';
@@ -33,7 +33,8 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
   const [outils, setOutils] = useState<Record<string, OutilMcp[]>>({});
   const [champs, setChamps] = useState<{ champs: string[]; champsContact: string[] }>({ champs: [], champsContact: [] });
   const [plan, setPlan] = useState<{ sourceId: string; plan: ChangementMcp[]; tronque: boolean } | null>(null);
-  const [epreuve, setEpreuve] = useState<{ sourceId: string; ok: boolean; erreur?: string } | null>(null);
+  /** La dernière connexion réussie de cette visite, et si le catalogue était tronqué. */
+  const [connexion, setConnexion] = useState<{ sourceId: string; tronque: boolean } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [neuf, setNeuf] = useState<{ label: string; baseUrl: string; authKind: AuthMcp; authSecret: string; authHeaderName: string } | null>(null);
@@ -51,7 +52,10 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
       const r = await listerOutilsMcp(tenantId, sourceId);
       setOutils((v) => ({ ...v, [sourceId]: r.outils }));
       setChamps({ champs: r.champs, champsContact: r.champsContact });
-    } catch { setOutils((v) => ({ ...v, [sourceId]: [] })); }
+    } catch {
+      // 🔴 Une lecture ratée n'est pas une liste VIDE : « Aucun outil : cliquez sur Connecter » mentirait sur un serveur
+      // qui en a. On garde ce qu'on avait, et sans rien de lu, la liste ne s'affiche pas (relecture du 2026-10-02).
+    }
   }, [tenantId]);
 
   /**
@@ -62,6 +66,34 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
   useEffect(() => {
     for (const s of serveurs ?? []) void chargerOutils(s.id);
   }, [serveurs, chargerOutils]);
+
+  /**
+   * 🔴 « CONNECTER », UN SEUL GESTE (Julien, 2026-10-02 : « quand tu connectes, je veux la liste des outils juste en
+   * dessous »). Il se connecte et lit le catalogue (l'aperçu, qui marque aussi la réponse du serveur), puis importe
+   * aussitôt : les outils apparaissent sous la carte. Il remplace « Éprouver la connexion », « Voir ce qui va
+   * changer » et « Appliquer », trois boutons pour un geste que personne ne comprenait.
+   * Une seule exception, qui reste une confirmation : reconnecter ferait PERDRE un outil à un agent (son schéma a
+   * changé, ou il a disparu du serveur, alors qu'un agent l'a). Écraser sans le dire retirerait une capacité en
+   * silence. ⚠️ L'import recalcule le plan : un serveur qui change entre les deux appels, à la seconde près, passe
+   * sans confirmation. Résidu assumé.
+   */
+  async function connecter(sourceId: string): Promise<void> {
+    setPlan(null);
+    setConnexion(null);
+    try {
+      const apercu = await apercuMcp(tenantId, sourceId);
+      if (apercu.plan.some((c) => 'consentementsTombes' in c && c.consentementsTombes > 0)) {
+        setPlan({ sourceId, ...apercu });
+        return;
+      }
+      await importerMcp(tenantId, sourceId);
+      setConnexion({ sourceId, tronque: apercu.tronque });
+    } finally {
+      // Relue dans tous les cas : un échec de connexion se lit aussi sur la carte (« Dernière erreur »).
+      await listerServeursMcp(tenantId).then((r) => setServeurs(r.serveurs)).catch(() => {});
+      await chargerOutils(sourceId);
+    }
+  }
 
   async function agir(travail: () => Promise<void>): Promise<void> {
     if (busy) return;
@@ -169,11 +201,11 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="font-medium text-ink-900">{s.label}</span>
                 <code className="text-xs text-ink-500">{s.baseUrl}</code>
-                {/* Des mots, pas la valeur brute (« draft ») : un brouillon s'active à l'import de ses outils. */}
+                {/* Des mots, pas la valeur brute (« draft ») : un brouillon s'active à la première connexion. */}
                 {s.status !== 'active' && (
                   <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs text-ink-500" data-testid={`mcp-statut-${s.id}`}>
                     {s.status === 'draft'
-                      ? t('pas encore importé : il s’active à l’import de ses outils', 'not imported yet: it activates when its tools are imported')
+                      ? t('pas encore connecté', 'not connected yet')
                       : t('désactivé', 'disabled')}
                   </span>
                 )}
@@ -186,27 +218,15 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                 {s.lastError
                   ? <span className="text-danger">{t('Dernière erreur : ', 'Last error: ')}{s.lastError}</span>
                   : s.lastOkAt
-                    ? `${t('A répondu le ', 'Answered on ')}${dateHeure(s.lastOkAt, locale)}`
-                    : t('Jamais éprouvé.', 'Never tested.')}
+                    ? `${t('Connecté le ', 'Connected on ')}${dateHeure(s.lastOkAt, locale)}`
+                    : t('Jamais connecté.', 'Never connected.')}
               </p>
 
               {isAdmin && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-eprouver-${s.id}`}
-                    onClick={() => void agir(async () => {
-                      setEpreuve({ sourceId: s.id, ...(await eprouverServeurMcp(tenantId, s.id)) });
-                      // Relue après l'épreuve : sinon la carte disait « Jamais éprouvé » sous « Le serveur répond ».
-                      setServeurs((await listerServeursMcp(tenantId)).serveurs);
-                    })}>
-                    {t('Éprouver la connexion', 'Test the connection')}
-                  </Bouton>
-                  {/* Un seul bouton pour les deux gestes, nommé selon ce qu'il fera : importer la première fois,
-                      rafraîchir ensuite. Les deux passent par l'aperçu, rien n'est écrit avant le second clic. */}
-                  <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-apercu-${s.id}`}
-                    onClick={() => void agir(async () => { setPlan({ sourceId: s.id, ...(await apercuMcp(tenantId, s.id)) }); })}>
-                    {(outils[s.id] ?? []).length === 0
-                      ? t('Importer ses outils', 'Import its tools')
-                      : t('Rafraîchir depuis le serveur', 'Refresh from the server')}
+                  <Bouton taille="petite" type="button" disabled={busy} data-testid={`mcp-connecter-${s.id}`}
+                    onClick={() => void agir(() => connecter(s.id))}>
+                    {t('Connecter', 'Connect')}
                   </Bouton>
                   <button type="button" disabled={busy} data-testid={`mcp-supprimer-${s.id}`}
                     className="rounded-controle border border-ink-300 bg-white px-2 py-0.5 text-xs text-danger transition-colors duration-150 hover:bg-danger-50 disabled:opacity-50"
@@ -219,14 +239,25 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                 </div>
               )}
 
-              {epreuve?.sourceId === s.id && (
-                <p className={`mt-2 text-xs ${epreuve.ok ? 'text-succes-700' : 'text-danger'}`} data-testid={`mcp-epreuve-${s.id}`}>
-                  {epreuve.ok ? t('Le serveur répond.', 'The server answers.') : epreuve.erreur}
+              {connexion?.sourceId === s.id && (
+                <p className="mt-2 text-xs text-succes-700" data-testid={`mcp-connecte-${s.id}`}>
+                  {t(`Connecté : ${(outils[s.id] ?? []).length} outil(s).`, `Connected: ${(outils[s.id] ?? []).length} tool(s).`)}
+                </p>
+              )}
+              {connexion?.sourceId === s.id && connexion.tronque && (
+                /* 🔴 UN PLAFOND SILENCIEUX SE LIT COMME UNE COUVERTURE COMPLÈTE : rien n'a été retiré, la liste est partielle. */
+                <p className="mt-2 rounded-controle bg-alerte-50 px-2 py-1 text-xs text-ink-900" data-testid={`mcp-tronque-${s.id}`}>
+                  {t('Ce serveur annonce plus d’outils que nous n’en lisons d’un coup. Rien n’a été retiré, la liste est incomplète.',
+                    'This server announces more tools than we read at once. Nothing was removed, the list is incomplete.')}
                 </p>
               )}
 
               {plan?.sourceId === s.id && (
-                <div className="mt-3 rounded-carte border border-ink-200 bg-ink-50/50 p-3" data-testid={`mcp-plan-${s.id}`}>
+                <div className="mt-3 rounded-carte border border-alerte-200 bg-alerte-50 p-3" data-testid={`mcp-plan-${s.id}`}>
+                  <p className="mb-2 text-xs font-medium text-ink-900">
+                    {t('Ce serveur a changé : des agents vont perdre l’accès à certains outils. Confirmez pour mettre à jour.',
+                      'This server changed: some agents will lose access to some tools. Confirm to update.')}
+                  </p>
                   {plan.tronque && (
                     /* 🔴 UN PLAFOND SILENCIEUX SE LIT COMME UNE COUVERTURE COMPLÈTE. Et il a une conséquence
                        que le client doit connaître : sur un catalogue tronqué, rien n'est retiré. */
@@ -251,27 +282,29 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                       ))}
                     </ul>
                   )}
-                  {plan.plan.length > 0 && (
+                  <div className="mt-2 flex gap-2">
                     <Bouton taille="petite" type="button" disabled={busy} data-testid={`mcp-importer-${s.id}`}
-                      className="mt-2"
                       onClick={() => void agir(async () => {
                         await importerMcp(tenantId, s.id);
+                        setConnexion({ sourceId: s.id, tronque: plan.tronque });
                         setPlan(null);
                         setServeurs((await listerServeursMcp(tenantId)).serveurs);
                         await chargerOutils(s.id);
                       })}>
-                      {(outils[s.id] ?? []).length === 0
-                        ? t(`Importer ces ${plan.plan.length} outil(s)`, `Import these ${plan.plan.length} tool(s)`)
-                        : t(`Appliquer ces ${plan.plan.length} changement(s)`, `Apply these ${plan.plan.length} change(s)`)}
+                      {t('Confirmer', 'Confirm')}
                     </Bouton>
-                  )}
+                    <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-annuler-${s.id}`}
+                      onClick={() => setPlan(null)}>
+                      {t('Annuler', 'Cancel')}
+                    </Bouton>
+                  </div>
                 </div>
               )}
 
               {outils[s.id] !== undefined && (
                 <ul className="mt-3 space-y-2" data-testid={`mcp-liste-outils-${s.id}`}>
                   {(outils[s.id] ?? []).length === 0
-                    ? <li className="text-xs text-ink-500">{t('Aucun outil importé : cliquez sur « Importer ses outils ».', 'No imported tool: click “Import its tools”.')}</li>
+                    ? <li className="text-xs text-ink-500">{t('Aucun outil : cliquez sur « Connecter ».', 'No tool: click “Connect”.')}</li>
                     : (outils[s.id] ?? []).map((o) => (
                       <li key={o.id}>
                         <McpOutilReglage tenantId={tenantId} outil={o} champs={champs.champs}
