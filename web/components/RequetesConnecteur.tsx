@@ -556,7 +556,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
       {brouillon.variables.length > 0 && (
         <div className="flex gap-2 text-xs font-medium text-ink-500" data-testid="var-intitules">
           <span className="w-32">{t('Nom de la donnée', 'Data name')}</span>
-          <span className="w-56">{t('D’où vient sa valeur', 'Where its value comes from')}</span>
+          <span className="w-96">{t('D’où vient sa valeur', 'Where its value comes from')}</span>
           <span className="w-28">{t('Type', 'Type')}</span>
           <span className="w-24">{t('Obligatoire', 'Required')}</span>
           <span className="w-32">{t('Valeur d’essai', 'Test value')}</span>
@@ -569,11 +569,11 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
             aria-label={t('Nom de la donnée', 'Data name')}
             // Le serveur n'accepte que lettres, chiffres, `_`, `-` et `.` : une espace devient `_` et un accent tombe
             // à la saisie, au lieu d'un refus « corps invalide » à l'enregistrement.
-            onChange={(e) => changer(i, { nom: e.target.value.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s/g, '_').replace(/[^\w.-]/g, '') })}
+            onChange={(e) => changer(i, { nom: e.target.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s/g, '_').replace(/[^\w.-]/g, '') })}
           />
-          <div className="flex w-56 flex-col gap-1">
+          <div className="flex w-96 flex-col gap-1">
           <select
-            className={`${inputClsAuto} w-56`} data-testid={`var-origine-${i}`} value={clefDe(v.origine)}
+            className={`${inputClsAuto} w-96`} data-testid={`var-origine-${i}`} value={clefDe(v.origine)}
             aria-label={t('D’où vient sa valeur', 'Where its value comes from')}
             onChange={(e) => changer(i, { origine: origineDe(e.target.value) })}
           >
@@ -602,7 +602,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
           </select>
           {v.origine.type === 'fixe' && (
             <input
-              className={`${inputClsAuto} w-56`} data-testid={`var-fixe-${i}`} value={String(v.origine.valeur)}
+              className={`${inputClsAuto} w-96`} data-testid={`var-fixe-${i}`} value={String(v.origine.valeur)}
               placeholder={t('la valeur fixe', 'the fixed value')} aria-label={t('Valeur fixe', 'Fixed value')}
               onChange={(e) => changer(i, { origine: { type: 'fixe', valeur: e.target.value } })}
             />
