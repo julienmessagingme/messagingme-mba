@@ -136,6 +136,7 @@ import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown, arreterApi } from './shutdown';
 import { creerTravauxEnVol } from './lib/en-vol';
 import { ATTENTE_GESTES_A_L_ARRET_MS } from './http/mba-relais';
+import { catalogueBranchable } from './http/agent-setup';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
 import type { TemplateSummary } from './meta/templates';
@@ -1129,11 +1130,8 @@ async function main(): Promise<void> {
           sources: sources.map((s) => ({ id: s.id, label: s.label, kind: s.kind, status: s.status })),
           // `branche` se lit sur les consommateurs de la définition : seul le catalogue connaît les outils
           // non branchés, justement ceux que l'assistant peut proposer de brancher.
-          catalogue: catalogue.map((c) => ({
-            nom: c.name,
-            titre: c.title,
-            branche: c.consommateurs.some((x) => x.agentId === agentId),
-          })),
+          // Sans les outils MCP désenregistrés sur Tools > Connecteurs MCP (0199), sauf s'ils sont encore branchés.
+          catalogue: catalogueBranchable(catalogue, agentId),
         };
       },
       /**

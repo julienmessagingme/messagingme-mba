@@ -18,6 +18,7 @@ import {
 } from '../agent/setup/couverture';
 import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { espaceVerifie, estUuid } from './scope';
+import type { OutilBibliotheque } from '../agent/catalog';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
 import { microEurosDepuisDollars } from '../agent/devise';
 import { direPanneModele } from '../llm/errors';
@@ -169,6 +170,22 @@ function avancement(etat: EntretienComplet, ctx: ContexteConstruction | null): {
  * changerait vraiment d'état. `brancheAttendu` dit l'état dans lequel l'outil doit être maintenant pour que
  * le geste ait un sens (`false` pour brancher, `true` pour débrancher).
  */
+/**
+ * Ce que l'assistant voit de la bibliothèque de l'espace, pour un agent : chaque outil, et s'il est branché sur lui.
+ * 🔴 UN OUTIL MCP DÉSENREGISTRÉ (0199) N'Y EST PAS, sauf s'il est encore branché sur cet agent (pour qu'on puisse
+ * proposer de le débrancher). Sinon l'assistant proposait de le brancher, et l'application échouait APRÈS avoir écrit
+ * la fiche, sur un 404 qui ne disait pas pourquoi (relecture du 2026-10-02). `brancheables` écarte ensuite tout nom
+ * absent d'ici : c'est la ceinture, côté application.
+ */
+export function catalogueBranchable(
+  bibliotheque: readonly Pick<OutilBibliotheque, 'name' | 'title' | 'origin' | 'mcpPropose' | 'consommateurs'>[], agentId: string,
+): NonNullable<ContexteConstruction['catalogue']> {
+  return bibliotheque
+    .map((o) => ({ o, branche: o.consommateurs.some((c) => c.agentId === agentId) }))
+    .filter(({ o, branche }) => o.origin !== 'mcp' || o.mcpPropose || branche)
+    .map(({ o, branche }) => ({ nom: o.name, titre: o.title, branche }));
+}
+
 export function brancheables(
   catalogue: ContexteConstruction['catalogue'], noms: readonly string[] | undefined, brancheAttendu: boolean,
 ): string[] {

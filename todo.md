@@ -287,10 +287,6 @@ La route A est en production (plan `docs/superpowers/plans/2026-10-02-outils-mcp
 Relecture du lot « outils proposés » (`1b62b2fe`) : 0 rouge, 8 jaunes, dont deux corrigés dans « Connecter »
 (`95f62099` : la lecture ratée n'est plus une liste vide ; « Donné à » se tait face à l'API d'avant). Restent :
 
-- **L'assistant de construction d'un agent IA propose un outil MCP désenregistré.** La carte `catalogue`
-  d'`etatCourant` (`src/index.ts`) et `brancheables` (`src/http/agent-setup.ts`) ne filtrent pas `mcpPropose` ;
-  à l'application, `rattacherOutil` reçoit un 404 APRÈS le `patchAgent`, l'erreur ne dit pas pourquoi et le reste
-  de la proposition n'est pas appliqué. Le plus utile des restes.
 - **Un `false` de `rattacherConsommateur` est mal nommé** : 404 « agent ou outil introuvable » côté agent IA
   (`src/http/agent-tools.ts`), 409 « déjà dans la liste » côté agent de Meta si un désenregistrement tombe entre
   la vérification et le rattachement. Les commentaires qui énumèrent ses `false` ne citent pas « non enregistré ».

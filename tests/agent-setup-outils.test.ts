@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { differences, propositionSchema, type EtatCourant } from '../src/agent/setup/proposition';
 import { construireMessages, type ContexteConstruction } from '../src/agent/setup/conversation';
-import { brancheables } from '../src/http/agent-setup';
+import { brancheables, catalogueBranchable } from '../src/http/agent-setup';
+import type { OutilBibliotheque } from '../src/agent/catalog';
 import { ficheVide } from '../src/agent/fiche';
 
 /**
@@ -143,7 +144,8 @@ describe('le vrai câblage', () => {
     // `listToutes(tenant, agentId)` ne connaît que les outils DÉJÀ branchés, c'est-à-dire justement pas ceux
     // que l'assistant peut proposer de brancher.
     expect(index).toContain('toolCatalog.listCatalogue(tenant)');
-    expect(index).toContain('catalogue: catalogue.map(');
+    // Par le filtre, qui écarte les outils MCP désenregistrés (relecture du 2026-10-02).
+    expect(index).toContain('catalogue: catalogueBranchable(catalogue, agentId)');
   });
 
   it('🔴 la route filtre sur la bibliothèque avant de rendre quoi que ce soit', () => {
@@ -172,5 +174,30 @@ describe('le vrai câblage', () => {
     expect(front).toContain('rattacherOutil(tenantId, agentId, id, false)');
     // Les noms se résolvent sur la BIBLIOTHÈQUE : un outil à brancher n'est pas encore sur l'agent.
     expect(front).toContain('getBibliothequeOutils(tenantId)');
+  });
+});
+
+describe('🔴 l assistant ne propose pas un outil MCP desenregistre (relecture du 2026-10-02)', () => {
+  const outil = (name: string, over: Partial<OutilBibliotheque> = {}): OutilBibliotheque => ({
+    id: name, name, title: name, description: 'd', nePasUtiliser: '', origin: 'mcp', risk: 'read', sourceId: 's1',
+    mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, consommateurs: [], ...over,
+  });
+  const branche = [{ cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' }];
+
+  it('un MCP desenregistre disparait du catalogue de l assistant ; un enregistre et un connecteur y restent', () => {
+    const cat = catalogueBranchable([
+      outil('notion_search'),
+      outil('notion_decoche', { mcpPropose: false }),
+      outil('erp_commandes', { origin: 'http', mcpPropose: true }),
+    ], 'a1');
+    expect(cat.map((c) => c.nom)).toEqual(['notion_search', 'erp_commandes']);
+    // Et la ceinture : meme si le modele le nommait, brancheables l ecarte.
+    expect(brancheables(cat, ['notion_decoche'], false)).toEqual([]);
+  });
+
+  it('un MCP desenregistre mais encore BRANCHE sur cet agent reste, pour qu on puisse le debrancher', () => {
+    const cat = catalogueBranchable([outil('notion_decoche', { mcpPropose: false, consommateurs: branche })], 'a1');
+    expect(cat).toEqual([{ nom: 'notion_decoche', titre: 'notion_decoche', branche: true }]);
+    expect(brancheables(cat, ['notion_decoche'], true)).toEqual(['notion_decoche']);
   });
 });
