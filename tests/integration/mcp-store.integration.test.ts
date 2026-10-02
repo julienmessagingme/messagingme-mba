@@ -118,6 +118,24 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     expect(lu.rows[0]!.mcp_vu_le).not.toBeNull();
   });
 
+  it('🔴 importer ACTIVE un serveur en brouillon, sans rallumer un serveur désactivé', async () => {
+    // Un serveur se crée en brouillon et aucun écran ne l'activait : le résolveur refusait alors CHAQUE appel. Les
+    // fixtures de ce fichier créent leur serveur actif, ce qui cachait le défaut : ce cas part du vrai état initial.
+    const creer = async (label: string, status: string): Promise<string> => (await pool.query<{ id: string }>(
+      `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
+       values ($1, 'mcp', $2, 'https://exemple.test/mcp', 'none', $3) returning id`,
+      [tenantId, label, status],
+    )).rows[0]!.id;
+    const statut = async (id: string): Promise<string> =>
+      (await pool.query<{ status: string }>('select status from agent_tool_sources where id = $1', [id])).rows[0]!.status;
+    const brouillon = await creer('itest-brouillon', 'draft');
+    const eteint = await creer('itest-eteint', 'disabled');
+    await store.appliquer(tenantId, brouillon, { nouveaux: [aImporter('b', 'brouillon_b')], changes: [], disparus: [], vus: [] });
+    await store.appliquer(tenantId, eteint, { nouveaux: [aImporter('e', 'eteint_e')], changes: [], disparus: [], vus: [] });
+    expect(await statut(brouillon)).toBe('active');
+    expect(await statut(eteint)).toBe('disabled');
+  });
+
   it('🔴 un outil MCP ne peut PAS se rattacher à une source HTTP', async () => {
     // La garde de `kind`, vue depuis l'écriture : l'`insert` exige `kind = 'mcp'`, donc il n'écrit RIEN
     // plutôt que de lever une erreur de contrainte en 500.

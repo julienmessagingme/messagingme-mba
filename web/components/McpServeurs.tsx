@@ -161,8 +161,13 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="font-medium text-ink-900">{s.label}</span>
                 <code className="text-xs text-ink-500">{s.baseUrl}</code>
+                {/* Des mots, pas la valeur brute (« draft ») : un brouillon s'active à l'import de ses outils. */}
                 {s.status !== 'active' && (
-                  <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs text-ink-500">{s.status}</span>
+                  <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs text-ink-500" data-testid={`mcp-statut-${s.id}`}>
+                    {s.status === 'draft'
+                      ? t('pas encore importé : il s’active à l’import de ses outils', 'not imported yet: it activates when its tools are imported')
+                      : t('désactivé', 'disabled')}
+                  </span>
                 )}
               </div>
 
@@ -180,7 +185,11 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
               {isAdmin && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-eprouver-${s.id}`}
-                    onClick={() => void agir(async () => { setEpreuve({ sourceId: s.id, ...(await eprouverServeurMcp(tenantId, s.id)) }); })}>
+                    onClick={() => void agir(async () => {
+                      setEpreuve({ sourceId: s.id, ...(await eprouverServeurMcp(tenantId, s.id)) });
+                      // Relue après l'épreuve : sinon la carte disait « Jamais éprouvé » sous « Le serveur répond ».
+                      setServeurs((await listerServeursMcp(tenantId)).serveurs);
+                    })}>
                     {t('Éprouver la connexion', 'Test the connection')}
                   </Bouton>
                   <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-apercu-${s.id}`}

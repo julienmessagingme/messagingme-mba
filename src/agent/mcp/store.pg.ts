@@ -262,6 +262,19 @@ export class PgMcpStore {
         );
       }
 
+      /**
+       * 🔴 IMPORTER ACTIVE LE SERVEUR (2026-10-02). Un serveur se crée en brouillon, et AUCUN écran ne le faisait passer
+       * à `active` : le résolveur refusait alors chaque appel (« le serveur MCP de cet outil n'est pas actif »), pour
+       * les agents IA comme pour l'agent de Meta. Les fixtures créaient leurs serveurs actifs, ce qui le cachait.
+       * Importer est le geste qui dit « je veux m'en servir ». Seulement depuis le brouillon : un serveur désactivé
+       * exprès ne se rallume pas à un rafraîchissement. En dernier dans la transaction : les insertions ont déjà pris
+       * le serveur par leur clé étrangère (`key share`), que cette mise à jour hors clé ne contrarie pas.
+       */
+      await client.query(
+        `update agent_tool_sources set status = 'active', updated_at = now()
+          where tenant_id = $1 and id = $2 and kind = 'mcp' and status = 'draft'`,
+        [tenantId, sourceId],
+      );
     });
   }
 

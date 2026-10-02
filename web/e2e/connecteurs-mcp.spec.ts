@@ -35,8 +35,10 @@ const OUTILS = [
   },
 ];
 
-async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun?: boolean; apercuRefuse?: string } = {}): Promise<Array<{ method: string; url: string }>> {
+async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun?: boolean; apercuRefuse?: string; serveur?: Record<string, unknown> } = {}): Promise<Array<{ method: string; url: string }>> {
   const appels: Array<{ method: string; url: string }> = [];
+  // Mutable comme en base : une épreuve réussie pose `lastOkAt`, que la carte doit relire.
+  let lastOkAt: string | null = null;
   await page.addInitScript((s) => {
     window.localStorage.setItem('mba.session', JSON.stringify(s));
   }, SESSION);
@@ -52,7 +54,7 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
     if (url.endsWith(`/tenants/${TENANT}/mcp`) && method === 'POST') {
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ serveur: SERVEUR }) });
     }
-    if (url.endsWith(`/tenants/${TENANT}/mcp`)) return json({ serveurs: over.aucun ? [] : [SERVEUR] });
+    if (url.endsWith(`/tenants/${TENANT}/mcp`)) return json({ serveurs: over.aucun ? [] : [{ ...SERVEUR, lastOkAt, ...over.serveur }] });
     if (url.includes('/apercu') && over.apercuRefuse) {
       return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: over.apercuRefuse }) });
     }
@@ -63,7 +65,7 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
       });
     }
     if (url.includes('/importer')) return json({ plan: [], tronque: false });
-    if (url.includes('/eprouver')) return json({ ok: true });
+    if (url.includes('/eprouver')) { lastOkAt = '2026-10-02T12:00:00Z'; return json({ ok: true }); }
     return json({});
   });
   return appels;
@@ -208,5 +210,21 @@ test.describe('declarer un serveur MCP', () => {
     // Et le jeton disparait quand il n y a pas d authentification.
     await page.getByTestId('mcp-neuf-auth').selectOption('none');
     await expect(page.getByTestId('mcp-neuf-secret')).toHaveCount(0);
+  });
+  test('🔴 « Éprouver » relit la carte : elle ne dit plus « Jamais éprouvé » sous « Le serveur répond »', async ({ page }) => {
+    await mock(page);
+    await page.goto('/connecteurs-mcp');
+    const carte = page.getByTestId(`mcp-serveur-${SOURCE}`);
+    await expect(carte).toContainText(/Jamais éprouvé|Never tested/);
+    await page.getByTestId(`mcp-eprouver-${SOURCE}`).click();
+    await expect(carte).toContainText(/A répondu le|Answered on/);
+    await expect(carte).not.toContainText(/Jamais éprouvé|Never tested/);
+  });
+
+  test('un serveur en brouillon le dit en mots, et qu’il s’active à l’import', async ({ page }) => {
+    await mock(page, { serveur: { status: 'draft' } });
+    await page.goto('/connecteurs-mcp');
+    await expect(page.getByTestId(`mcp-statut-${SOURCE}`)).toContainText(/import/);
+    await expect(page.getByTestId(`mcp-serveur-${SOURCE}`)).not.toContainText('draft');
   });
 });

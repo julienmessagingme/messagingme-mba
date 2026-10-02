@@ -2173,6 +2173,9 @@ importez ce qu'il propose.
   serveur injoignable, un jeton refusé ou un protocole trop ancien sont nommés.
 - ✅ **Aperçu avant import** : ce qui sera ajouté, ce qui a changé, ce qui a disparu, et **combien
   d'autorisations vont tomber**. Rien n'est écrit tant que vous n'avez pas cliqué « Importer ».
+- ✅ **Importer active le serveur** (2026-10-02) : avant, un serveur déclaré restait « brouillon » et aucun
+  écran ne l'activait, donc chaque appel de ses outils était refusé. La carte dit « pas encore importé » tant
+  que ce n'est pas fait. Un serveur désactivé ne se rallume pas à un nouvel import.
   🔴 **Un outil dont le schéma a changé n'est plus l'outil que vous aviez autorisé**, donc son autorisation
   tombe et il faut la redonner. C’est ce qui empêche un serveur distant d’élargir en silence ce qu’un outil
   autorisé sait faire.
