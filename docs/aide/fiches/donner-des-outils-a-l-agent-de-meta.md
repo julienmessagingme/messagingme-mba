@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: 59179a
+source_empreinte: 719a4d
 ---
 # Donner des outils à l'agent de Meta
 
@@ -27,6 +27,13 @@ administrateurs.
 - **Lancer un scénario.** Un scénario publié, depuis son début, exactement comme le bouton de l'Inbox. Engage
   Me prend la conversation le temps du parcours, puis la rend à l'agent de Meta.
 - **Appeler un connecteur API.** Un appel que vous avez déclaré une fois dans Tools > Connecteurs API.
+
+**Les outils de vos serveurs MCP** ne passent pas par « Ajouter un outil » : ils viennent d'un serveur déclaré
+dans Tools > Connecteurs MCP. Sous la liste, « Depuis vos serveurs MCP » montre ceux que l'agent de Meta n'a pas
+encore ; « Donner à l'agent de Meta » l'ajoute et l'envoie chez Meta. L'agent ne remplit que les paramètres
+décidés par lui : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe, réglé dans Connecteurs
+MCP, est posé par Engage Me. Leurs mots et leurs paramètres sont partagés avec vos agents IA : ils se règlent
+là-bas (« Régler »), pas ici. Un outil disparu de son serveur passe en rouge et ne part pas chez Meta.
 
 Un type reste grisé, avec le lien qui y mène, tant que votre espace n'a rien à y mettre : aucun champ
 déclaré, aucun appel déclaré. Une lecture qui échoue ne passe pas pour « aucun » : elle le dit, avec

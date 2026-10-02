@@ -2207,11 +2207,12 @@ importez ce qu'il propose.
   serveurs MCP » : les outils importés y apparaissent à côté des outils maison et des appels de
   connecteur, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
   Connecteurs MCP.
-- ⛔ **L'agent de Meta ne reçoit PAS encore ces outils**, et l'écran le dit. ⚠️ La raison a CHANGÉ, et la
-  phrase avec : elle accusait Meta (« il n'accepte pas encore de connexion MCP »), ce qui était vrai au
-  2026-09-10 et ne l'est plus. Meta accepte désormais un connecteur en protocole MCP. **Le verrou est
-  chez nous** : notre publication vers Meta ne sait traiter qu'un appel HTTP. Ils se déclarent donc aux
-  agents IA, dans **AI Agent > Outils**.
+- ✅ **L'agent de Meta reçoit aussi ces outils** (2026-10-02), dans **Meta Business Agent > Paramètres >
+  Outils**, section « Depuis vos serveurs MCP », et l'écran de cette page le dit. Engage Me fait l'appel MCP
+  pour lui : Meta n'appelle que notre relais, en HTTP. Les paramètres réglés ici s'appliquent à l'agent de Meta
+  comme aux agents IA : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe est posé par Engage
+  Me, jamais fourni par l'agent. ⚠️ Cette ligne a dit « pas encore » jusqu'à ce jour, en accusant d'abord Meta
+  (vrai au 2026-09-10), puis notre publication, qui ne savait envoyer qu'un appel HTTP.
 - ⛔ **Pas encore : OAuth.** L'authentification se fait par jeton ou par en-tête. OAuth viendra ensuite.
 
 ## L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
@@ -2222,8 +2223,9 @@ information posées par l'agent de Meta, relues en base. **Envoyer un bloc, lanc
 côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conversation reste à faire.
 
 - ✅ **Une liste claire des outils de l'agent de Meta, et d'eux seuls** : pour chacun, son titre, ce qu'il vise
-  (« Tag : vip », « Champ : ville », « Appel : … »), son type (Tag, Information, Connecteur API) et son état
-  chez Meta, avec « Modifier » et « Supprimer ». Les connecteurs d'un agent IA se gèrent depuis sa fiche.
+  (« Tag : vip », « Champ : ville », « Appel : … », « Serveur MCP : … »), son type (Tag, Information, Connecteur
+  API, MCP) et son état chez Meta, avec « Modifier » et « Supprimer ». Les connecteurs d'un agent IA se gèrent
+  depuis sa fiche.
 - ✅ **Un gros bouton « Ajouter un outil »**, qui propose : **Poser un tag**, **Enregistrer une
   information**, **Envoyer un bloc**, **Lancer un scénario**, **Appeler un connecteur API**. Un type est grisé, avec le lien qui y mène, tant que l'espace
   n'a rien à y mettre : aucun appel déclaré (Tools > Connecteurs API), aucun champ déclaré (Contenu >
@@ -2275,6 +2277,14 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   désactivé dès le clic, jusqu'à la fin de l'envoi.
 - ✅ **Un connecteur partagé avec un agent IA le dit** (« Aussi utilisé par : … ») : le modifier le modifie pour
   cet agent aussi. « Supprimer » ne le retire alors qu'à l'agent de Meta.
+- ✅ **Les outils de vos serveurs MCP** (2026-10-02) : sous la liste, « Depuis vos serveurs MCP » propose les
+  outils importés dans Tools > Connecteurs MCP que l'agent de Meta n'a pas encore. « Donner à l'agent de Meta »
+  l'ajoute ET l'envoie chez Meta dans le même geste. L'agent ne remplit que les paramètres « décidés par
+  l'agent » ; ceux qui viennent de la fiche du client, d'un champ ou d'une valeur fixe sont posés par Engage Me.
+  La ligne d'un outil MCP dit son serveur et mène à ses réglages (« Régler », pas de « Modifier ») : ses mots et
+  ses paramètres sont partagés avec les agents IA. Un outil disparu de son serveur, ou que son schéma rend
+  inutilisable, passe en rouge et ne part pas chez Meta ; il n'est pas proposé non plus. « Supprimer » le retire
+  à l'agent de Meta sans l'effacer de l'espace.
 - ✅ **« Désactivé », et « Réactiver »** : quand la personne qui avait ajouté un outil quitte l'espace, ses
   consentements s'éteignent et l'agent de Meta ne peut plus s'en servir. La ligne le dit, et un administrateur le
   rallume d'un clic. ⚠️ Meta le liste encore jusqu'au prochain envoi : la ligne propose alors « À envoyer », qui
@@ -2282,7 +2292,6 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
 - ⚠️ **L'appel d'un connecteur ne change pas au « Modifier »** : pour changer d'appel, on crée un autre outil
   (la définition est partagée avec les agents IA qui s'en servent).
 - ⛔ **Réservé aux administrateurs.**
-- ⛔ **Pas encore : « Envoyer un bloc » et « Lancer un scénario »** (lot 3 du même plan).
 - ⚠️ **L'ancienne adresse `/outils` renvoie vers cet onglet.** L'écran « bibliothèque de l'espace » qu'elle
   servait (la case « Exposé à l'agent de Meta », « Supprimer de l'espace ») n'existe plus.
 
@@ -3022,7 +3031,7 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   prospects éligibles et entretenait l'espoir de ceux qui ne le seront jamais.
 - ✅ **Page « Paramètres de l'agent »** (LIVE depuis le 2026-08-18) : l'écran de réglage de
   l'agent MBA, en **onze onglets**, branché pour de vrai sur la configuration Meta du numéro.
-  **Aperçu** (l'état de l'agent), **Assistant** (régler l'agent en lui parlant, cf. ci-dessous),
+  **Vue d'ensemble** (l'état de l'agent), **Assistant** (régler l'agent en lui parlant, cf. ci-dessous),
   **Activation** (qui parle au client, cf. ci-dessous),
   **Business** (les informations de l'entreprise), **FAQ** (saisie question par question **et
   import en masse** depuis un CSV, un Excel, un PDF ou une URL, avec aperçu avant écriture et
@@ -3042,6 +3051,24 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   pays et par secteur », ce que Meta ne documente pas. Hors de ces deux cas, tout s'édite.
   Un CSV de FAQ en point-virgule ou en tabulation dont les réponses portent des virgules est lu dans ses deux
   colonnes depuis le 2026-09-30 ; avant, l'import n'en tirait aucune question.
+
+- ✅ **Le message de passage à un humain se choisit** (2026-10-02), dans l'onglet « Vue d'ensemble » : « Rédigé par l'agent,
+  dans la langue du client », « Notre texte » (saisi une fois) ou « Texte standard de Meta (en anglais) ». Le
+  dernier était le seul jusque-là, et c'est lui qui faisait lire au client un message en anglais au moment où
+  l'agent passait la main.
+
+- ✅ **Un plafond pour l'agent** (2026-10-02), en bas de l'onglet Activation, sur 1, 7, 14 ou 30 jours glissants.
+  🔴 **Les deux unités ne bornent pas la même chose**, et l'écran le dit : **en jetons**, c'est un plafond de
+  DÉPENSE, sur tout le Business Manager (tous ses numéros WhatsApp, y compris ceux d'un autre espace, et l'écran
+  nomme ce Business Manager) ; **en réponses de l'agent**, c'est un plafond PAR CONVERSATION, qui ne borne pas la
+  dépense totale. Le jeton est donc l'unité par défaut. Une estimation au prix public de Meta accompagne le
+  chiffre. Le plafond est écrit puis RELU chez Meta : l'écran montre ce que Meta applique. Meta ne donne la
+  consommation de l'agent par aucune API : sa facture fait foi.
+
+- ✅ **La carte « Agent de Meta » dans Performance Lab > Synthèse** (2026-10-02), sous la grille, sur les 30
+  derniers jours (Meta ne garde pas ses statistiques plus longtemps) : les conversations tenues par l'agent,
+  celles qui attendent votre équipe en ce moment, les messages qu'il a écrits, un coût estimé au prix public (la
+  facture de Meta fait foi), et les outils qu'il a appelés, avec leur taux de réussite et leur temps moyen.
 
 - ✅ **Onglet « Activation »** (2026-08-21) : les deux réglages qui décident **qui parle au client**, réunis au
   même endroit, en deux questions. (1) *Quand le client demande un humain, ou que l'agent ne sait pas* : l'agent

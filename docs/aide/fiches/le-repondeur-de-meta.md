@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: b5d853
+source_empreinte: 2737f9
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -44,7 +44,7 @@ Performance Lab, qui eux écartent les modèles envoyés. Les conversations d'es
 ce nombre n'est pas connu, rien ne s'affiche. Sur un numéro que Meta n'a pas encore ouvert, ni les étapes, ni
 les lignes grises, ni ce nombre ne s'affichent : ils mèneraient vers un écran bloqué.
 
-**Les paramètres, en onze onglets** : Aperçu (l'état de l'agent), Assistant (le régler en lui parlant),
+**Les paramètres, en onze onglets** : Vue d'ensemble (l'état de l'agent), Assistant (le régler en lui parlant),
 Activation (qui parle au client), Business (les informations de votre entreprise), FAQ (question par
 question, ou en masse depuis un fichier ou une adresse, avec aperçu avant écriture et sans jamais dupliquer
 une question existante), Compétences (le ton, les procédures, les interdits, par exemple « ne jamais
@@ -70,6 +70,20 @@ il garde la conversation plutôt que d'annoncer un conseiller absent ; ou jamais
 un humain garde la main après avoir répondu, le compte à rebours repartant à **chaque** réponse de l'équipe et à
 chaque « Traité » (le délai court depuis le plus récent des deux) : marquer « Traité » ne rend pas la main. Passé
 ce délai, un client qui écrit est confié tout de suite à l'agent, qui répond à ce message.
+
+**Le message que lit le client quand l'agent passe la main** se choisit dans l'onglet « Vue d'ensemble » : rédigé par
+l'agent, dans la langue du client ; votre propre texte ; ou le texte standard de Meta, qui est en anglais.
+
+**Un plafond pour l'agent**, en bas de l'onglet Activation, sur 1, 7, 14 ou 30 jours glissants. Les deux unités
+ne bornent pas la même chose. **En jetons**, c'est un plafond de dépense, partagé par tous les numéros WhatsApp
+de votre Business Manager, y compris ceux d'un autre espace : l'écran nomme ce Business Manager. **En réponses
+de l'agent**, c'est un plafond par conversation : il ne borne pas la dépense totale. Une estimation au prix
+public de Meta accompagne le chiffre, et ce qui s'affiche est ce que Meta applique, relu chez lui. Meta ne donne
+la consommation de l'agent par aucune API : sa facture fait foi.
+
+**Dans Performance Lab, la Synthèse porte une carte « Agent de Meta »** sur les 30 derniers jours : les
+conversations qu'il a tenues, celles qui attendent votre équipe en ce moment, les messages qu'il a écrits, un
+coût estimé au prix public, et les outils qu'il a appelés, avec leur réussite et leur temps moyen.
 
 Deux choses que cet écran ne promet pas, parce qu'elles ne sont pas tenables : empêcher un humain de
 reprendre la main (aucun verrou n'existe, ni chez nous ni chez Meta), et empêcher l'agent de décider un
