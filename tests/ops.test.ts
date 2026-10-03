@@ -41,26 +41,29 @@ function app(over: Surcharges = {}) {
 const withTok = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
 
 describe('route /ops/overview', () => {
-  it('session d’exploitation -> 200 { tenants, daily, queues, worker }', async () => {
+  it('session d’exploitation -> 200 { tenants, daily, queues, workers }', async () => {
     const server = app();
     const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ tenants: unknown[]; daily: unknown[]; queues: unknown[]; worker: unknown }>();
+    const body = res.json<{ tenants: unknown[]; daily: unknown[]; queues: unknown[]; workers: unknown[] }>();
     expect(body.tenants).toHaveLength(1);
     expect(body.daily).toHaveLength(1);
     expect(body.queues).toHaveLength(1);
-    // getWorkerHeartbeat est OPTIONNEL : non fourni par app() -> worker = null, la route ne casse pas.
-    expect(body).toHaveProperty('worker');
-    expect(body.worker).toBeNull();
+    // Aucun worker n’a battu : la liste est VIDE, et la route ne casse pas.
+    expect(body).toHaveProperty('workers');
+    expect(body.workers).toEqual([]);
     await server.close();
   });
 
-  it('inclut le heartbeat worker quand le getter est fourni', async () => {
-    const hb = { beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:1', ageSeconds: 12 };
-    const server = app({ heartbeat: { get: async () => hb } });
+  it('inclut UN battement PAR RÔLE quand le magasin en rend', async () => {
+    const hb = [
+      { role: 'analyse', beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:2', ageSeconds: 700 },
+      { role: 'principal', beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:1', ageSeconds: 12 },
+    ];
+    const server = app({ heartbeat: { lister: async () => hb } });
     const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ worker: unknown }>().worker).toEqual(hb);
+    expect(res.json<{ workers: unknown[] }>().workers).toEqual(hb);
     await server.close();
   });
 

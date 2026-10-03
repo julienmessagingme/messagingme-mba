@@ -102,7 +102,7 @@ export interface OpsRouteDeps {
   file: { enqueue(queue: string, data: unknown): Promise<unknown> };
   /** Signal de vie du worker. `null` -> `worker: null` dans le payload. Distinct des files (queues) : prouve que
   *  le process worker vit, pas que les files se vident. */
-  heartbeat: { get(): Promise<WorkerHeartbeatRow | null> };
+  heartbeat: { lister(): Promise<WorkerHeartbeatRow[]> };
   /**
    * Le solde prépayé d'un espace, en micro-euros, avec son journal. `null` = espace inconnu, distinct de zéro :
    * un opérateur qui lirait 0 sur un identifiant mal tapé rechargerait un espace qui n'existe pas.
@@ -198,11 +198,11 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
   });
 
   app.get('/ops/overview', opts, async (_req, reply) => {
-    const [tenants, daily, queues, worker, queuesParGroupe, attentesPool, latences] = await Promise.all([
+    const [tenants, daily, queues, workers, queuesParGroupe, attentesPool, latences] = await Promise.all([
       deps.exploitation.getTenantOverview(),
       deps.exploitation.getGlobalDaily(14),
       deps.exploitation.getQueueLoad(),
-      deps.heartbeat.get(),
+      deps.heartbeat.lister(),
       // Au mieux : une lecture d'équité en échec ne doit pas priver l'exploitation du reste de l'écran. Elle sert à
       // voir, elle ne garantit rien.
       deps.exploitation.getQueueLoadParGroupe().catch(() => []),
@@ -214,7 +214,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
       deps.exploitation.getQueueLatence(24).catch(() => []),
     ]);
     const poolInstantane = deps.etatPoolInstantane();
-    return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe, poolInstantane, attentesPool, latences });
+    return reply.code(200).send({ tenants, daily, queues, workers, queuesParGroupe, poolInstantane, attentesPool, latences });
   });
 
   /**

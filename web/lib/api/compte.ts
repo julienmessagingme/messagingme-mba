@@ -190,6 +190,8 @@ export interface QueueLoadRow {
 /** Signal de vie du worker (item 4.9). null = aucun battement (worker jamais démarré, ou table absente avant
  *  migration 0044). `ageSeconds` élevé = worker probablement mort (crash-loop invisible côté mba-api). */
 export interface WorkerHeartbeat {
+  /** Le rôle du worker (`principal`, `analyse`, `all`). Absent d’une API d’avant le 2026-10-03. */
+  role?: string;
   beatAt: string;
   bootedAt: string | null;
   instance: string | null;
@@ -205,8 +207,10 @@ export interface OpsOverview {
    * bavard. Optionnelle a la lecture : une API d'avant ne l'envoie pas.
    */
   queuesParGroupe?: QueueGroupLoadRow[];
-  /** Peut être absent d'une réponse antérieure au 4.9 -> traité comme null côté page. */
-  worker: WorkerHeartbeat | null;
+  /** UN battement PAR RÔLE (2026-10-03). Absent d’une API d’avant : la page retombe alors sur `worker`. */
+  workers?: WorkerHeartbeat[];
+  /** L’ancienne forme, une ligne unique. Gardée en lecture le temps que Vercel publie la console AVANT l’API. */
+  worker?: WorkerHeartbeat | null;
   /**
    * L'état du pool de connexions DE L'API, lu en mémoire. Le worker a le SIEN, invisible d'ici : il ne se lit
    * que dans la courbe agrégée ci-dessous. Optionnel : une API d'avant le lot 7 ne l'envoie pas.

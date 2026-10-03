@@ -292,7 +292,7 @@ export const opsInerte: Pick<OpsRouteDeps,
   observerTenant: async () => null,
   file: { enqueue: neDevraitPasEtreAppelee('file.enqueue') },
   // Absent : `worker: null`.
-  heartbeat: { get: async () => null },
+  heartbeat: { lister: async () => [] },
   soldeAgent: async () => null,
   rechargerAgent: neDevraitPasEtreAppelee('rechargerAgent'),
   // Absente : `poolInstantane: null`. Aucun état ne dit « rien » ; un pool vide est le plus proche.

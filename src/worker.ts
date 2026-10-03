@@ -169,7 +169,7 @@ async function main(): Promise<void> {
   const instanceId = `${process.env.HOSTNAME ?? 'host'}:${process.pid}`;
   const beat = async (boot: boolean): Promise<void> => {
     try {
-      await heartbeatStore.beat(instanceId, boot);
+      await heartbeatStore.beat(config.WORKER_ROLE, instanceId, boot);
     } catch (err) {
       // Best-effort : une écriture heartbeat qui throw tuerait le worker.
       // eslint-disable-next-line no-console

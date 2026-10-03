@@ -156,7 +156,7 @@ export default function OpsPage() {
               <Stat label={t('Contacts', 'Contacts')} value={fmtNum(totalContacts, locale)} />
             </div>
 
-            <WorkerCard worker={data.worker} />
+            <WorkerCard workers={data.workers ?? (data.worker ? [data.worker] : [])} />
 
             <QueueCard queues={data.queues} />
             <LatenceCard lignes={data.latences ?? []} />
@@ -416,34 +416,46 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  manqués). En dessous, un simple hoquet réseau/DB ne doit pas afficher une fausse panne. */
 const WORKER_STALE_S = 90;
 
-/** Signal de vie du worker (item 4.9). Le worker est le SEUL process qui envoie les messages : un crash-loop
- *  passait inaperçu (mba-api répond 200). Vert = battement récent ; rouge = silencieux/absent = à investiguer. */
-function WorkerCard({ worker }: { worker: WorkerHeartbeat | null }) {
+/** Signal de vie des workers (item 4.9), UN PAR RÔLE depuis le 2026-10-03. Le worker est le SEUL process qui
+ *  envoie les messages : un crash-loop passait inaperçu (mba-api répond 200). Vert = battement récent ; rouge =
+ *  silencieux = à investiguer. 🔴 Une ligne PAR RÔLE : avec deux workers, une ligne unique laissait le survivant
+ *  rafraîchir la ligne du mort, donc sa mort était invisible d'ici. */
+function WorkerCard({ workers }: { workers: WorkerHeartbeat[] }) {
   const t = useT();
   const { locale } = useLocale();
-  const alive = worker !== null && worker.ageSeconds <= WORKER_STALE_S;
-  const color = worker === null ? ink[300] : alive ? succes[400] : danger[500];
-  const label = worker === null ? t('Aucun signal', 'No signal') : alive ? t('Actif', 'Alive') : t('Silencieux', 'Silent');
   const age = (s: number) => (s < 60 ? t(`il y a ${s} s`, `${s} s ago`) : t(`il y a ${Math.floor(s / 60)} min`, `${Math.floor(s / 60)} min ago`));
   const fmtDate = (iso: string) => formatDate(iso, locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   return (
     <div className="rounded-carte border border-ink-200 bg-white p-5">
-      <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Worker (envoi des messages)', 'Worker (message sending)')}</h3>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-          <span className="text-sm font-medium text-ink-900">{label}</span>
-        </span>
-        {worker ? (
-          <>
-            <span className="text-xs text-ink-500">{t('Dernier battement', 'Last heartbeat')} : <span className="tabular-nums text-ink-900">{age(worker.ageSeconds)}</span></span>
-            {worker.bootedAt && <span className="text-xs text-ink-500">{t('Démarré', 'Booted')} : <span className="text-ink-900">{fmtDate(worker.bootedAt)}</span></span>}
-            {worker.instance && <span className="font-mono text-xs text-ink-500">{worker.instance}</span>}
-          </>
-        ) : (
-          <span className="text-xs text-ink-500">{t('Le worker n’a jamais signalé de vie (jamais démarré, ou table absente).', 'The worker has never reported liveness (never started, or table missing).')}</span>
-        )}
-      </div>
+      <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Workers (envoi des messages)', 'Workers (message sending)')}</h3>
+      {workers.length === 0 ? (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ink[300] }} />
+            <span className="text-sm font-medium text-ink-900">{t('Aucun signal', 'No signal')}</span>
+          </span>
+          <span className="text-xs text-ink-500">{t('Aucun worker n’a jamais signalé de vie (jamais démarré, ou table absente).', 'No worker has ever reported liveness (never started, or table missing).')}</span>
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {workers.map((w) => {
+            const alive = w.ageSeconds <= WORKER_STALE_S;
+            const nom = w.role ?? 'worker';
+            return (
+              <li key={nom} className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: alive ? succes[400] : danger[500] }} />
+                  <span className="font-mono text-sm font-medium text-ink-900">{nom}</span>
+                  <span className="text-xs text-ink-500">{alive ? t('Actif', 'Alive') : t('Silencieux', 'Silent')}</span>
+                </span>
+                <span className="text-xs text-ink-500">{t('Dernier battement', 'Last heartbeat')} : <span className="tabular-nums text-ink-900">{age(w.ageSeconds)}</span></span>
+                {w.bootedAt && <span className="text-xs text-ink-500">{t('Démarré', 'Booted')} : <span className="text-ink-900">{fmtDate(w.bootedAt)}</span></span>}
+                {w.instance && <span className="font-mono text-xs text-ink-500">{w.instance}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
