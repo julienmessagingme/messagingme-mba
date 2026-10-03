@@ -722,7 +722,8 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 ## 15. La règle de fond
 
 **On ne construit pas pour une échelle qu'on n'a pas mesurée.** Chaque plafond réel de ce produit a été
-trouvé par la mesure, jamais par le raisonnement : les 16 clients vers le pooler, les deux accusés par minute,
+trouvé par la mesure, jamais par le raisonnement : les 16 clients vers le pooler (qui étaient le réglage « Pool
+Size » de Supabase, 15, monté à 30 le 2026-10-03 : `tests/budget-pooler.test.ts`), les deux accusés par minute,
 les dix-sept par seconde en rafale, les 738 000 jetons par minute du Gateway sans un seul refus.
 
 Ce document ne demande donc rien à construire « au cas où ». Il nomme **quatre états-dans-un-processus à

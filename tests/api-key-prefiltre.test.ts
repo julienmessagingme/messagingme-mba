@@ -211,7 +211,7 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
   /**
    * 🔴 UNE CLÉ VALIDE AU-DELÀ DE SON PLAFOND NE COÛTE PLUS DE LECTURE EN BASE (contre-audit du 2026-09-14).
    * Le plafond par clé était compté sur l'identifiant de la clé RÉSOLUE, donc APRÈS le lookup : chaque 429
-   * payait quand même une requête Postgres, sur un pool de 8 connexions partagé avec la console et le worker.
+   * payait quand même une requête Postgres, sur le pool de la copie, partagé avec la console et les webhooks.
    * Il est désormais compté sur l'EMPREINTE, AVANT la base dès que la clé a été résolue une fois par ce
    * process ; son tout premier appel est compté après la lecture (cf. le cas des bearers inventés, plus bas).
    * Une clé et son empreinte sont en bijection, donc le quota d'un porteur ne change pas.

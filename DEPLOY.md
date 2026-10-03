@@ -128,7 +128,7 @@ sudo docker compose up -d --build                                # 3) bascule le
 ⚠️ **`mba-api` et `mba-worker` sont DEUX images distinctes** (même Dockerfile, `image:` implicite `mba-mba-api` / `mba-mba-worker`). `docker compose build mba-api` ne rebuild PAS le worker : un `up --force-recreate` ensuite relance le worker sur son ANCIENNE image (constaté 4.11 : nouvel env `DB_SSL_CA_FILE` + ancienne image sans la CA -> ENOENT crash-loop worker pendant que l'api tournait). Pour un changement de code/fichier baké : `docker compose up -d --build` (rebuild les DEUX), ou builder explicitement `mba-api` ET `mba-worker`.
 
 🔴 **DEUX WORKERS DEPUIS LE 2026-10-03, ET QUATRE RÈGLES QUI EN DÉCOULENT** (`WORKER_ROLE`, `src/worker/roles.ts`).
-- **Les déployer en DEUX TEMPS** : `up -d mba-api mba-worker mba-web`, attendre dans les journaux la ligne « démarré » du principal, PUIS `up -d mba-worker-analyse`. Le pooler en mode session est plafonné à 15 sessions et seuls les workers en tiennent (pg-boss plus l'écoute) : les relancer d'un coup pendant que le pooler retient encore les sessions des conteneurs tués frôle ce plafond, et `EMAXCONNSESSION` fait redémarrer en boucle. Fait ainsi le 2026-10-03, sans un refus.
+- **Les déployer en DEUX TEMPS** : `up -d mba-api mba-worker mba-web`, attendre dans les journaux la ligne « démarré » du principal, PUIS `up -d mba-worker-analyse`. Le pooler en mode session est plafonné à « Pool Size » sessions (15 jusqu'au 2026-10-03, 30 depuis) et seuls les workers en tiennent (pg-boss plus l'écoute) : les relancer d'un coup pendant que le pooler retient encore les sessions des conteneurs tués frôle ce plafond, et `EMAXCONNSESSION` fait redémarrer en boucle. Fait ainsi le 2026-10-03, sans un refus.
 - **Un `--force-recreate` après un changement de `.env.prod` doit NOMMER `mba-worker-analyse`** : sinon il garde l'ancien environnement, en silence.
 - **Une migration qui doit passer APRÈS le `up` casse la routine build, migrate, up**, puisque `migrate` applique tout ce que l'image porte. Cas de 0202 (elle efface une ligne que l'ancien worker réécrivait toutes les 20 s) : build, `up`, PUIS `migrate`.
 - **Chaque rôle en UN SEUL exemplaire** : `groupConcurrency` est local au processus pg-boss, deux copies d'un rôle doubleraient le plafond par espace et dédoubleraient les minuteries.
@@ -265,14 +265,28 @@ curl -s -o /dev/null -w '%{http_code}\n' https://api.messagingme.app/health
 Interne 200 + public 502 = le proxy. Interne 502 = l'application. (Rappel : Cloudflare remplace le corps de
 toute réponse 5xx par sa page d'erreur, donc le corps public n'apprend rien.)
 
+## 🔴 Ajouter une copie d'API ou un worker : le budget du pooler AVANT le conteneur
+
+Chaque processus ouvre son propre pool (`DB_POOL_MAX`, fixé par service dans `docker-compose.yml`), et leur
+SOMME doit tenir dans le « Pool Size » du pooler de Supabase, sinon les requêtes attendent chez Supavisor sans
+aucune trace. Dans cet ordre :
+1. Ajouter le service au compose, avec son `DB_POOL_MAX` (et son `PGBOSS_MAX` si c'est un worker).
+2. `npx vitest run tests/budget-pooler.test.ts` : il refuse un compose qui dépasse le pool, ou une copie d'API
+   trop petite pour ses opérations lourdes.
+3. S'il refuse : redimensionner chaque copie, ou monter « Pool Size » (Supabase : Database, Settings, Connection
+   pooling) dans la limite que le même test calcule (pool plein, sessions et services de Supabase sous 80 % des
+   connexions de Postgres).
+4. Après tout changement du réglage, le MESURER (la sonde est décrite en tête du test) avant de changer la
+   constante du test : un réglage enregistré n'est pas un réglage appliqué.
+
 ## ⚠️ Crash-loop transitoire au redéploiement (EMAXCONNSESSION) — normal, s'auto-résout
 
 Juste après `up -d --build`, `mba-api` peut apparaître `Restarting (1)` pendant ~30-60 s. Deux symptômes
 possibles, tous deux transitoires : soit le process redémarre (`/health` et `/live` injoignables -> NPM
 renvoie une 5xx), soit le process est up mais la DB pas encore joignable (`/health` = **503 readiness**,
-tandis que `/live` répond déjà 200). Cause : le pooler Supabase (session mode) est plafonné à **15 sessions** ;
+tandis que `/live` répond déjà 200). Cause : le pooler Supabase (session mode) est plafonné à **« Pool Size » sessions** (15 jusqu'au 2026-10-03, 30 depuis : le même réglage que le mode transaction, cf. `tests/budget-pooler.test.ts`) ;
 quand `mba-api` et `mba-worker` (deux instances pg-boss) cold-start EN MÊME TEMPS pendant que le pooler tient
-encore les sessions des conteneurs qu'on vient de tuer, le total dépasse 15 -> `EMAXCONNSESSION`. pg-boss émet
+encore les sessions des conteneurs qu'on vient de tuer, le total dépasse « Pool Size » -> `EMAXCONNSESSION`. pg-boss émet
 un event `error` non capté (Timekeeper.onCron) qui tue le process -> Docker le relance -> crash-loop bref.
 (Depuis 4.3, le pool applicatif est en mode transaction sur `APP_DATABASE_URL:6543`, hors du budget session ->
 la contention au cold-start est réduite mais pas nulle, pg-boss restant en session.)
@@ -312,7 +326,7 @@ l'état vit dans le projet Supabase `npdqnrirxhqsyyvtvtjz`. La reprise = restaur
   restore Supabase est destructif). Ramène les 4 schémas à l'instant T.
 - **(b) Dégât localisé** (une table écrasée) : `pg_dump`/`pg_restore` d'un schéma via le **pooler session mode**
   `aws-1-eu-west-2.pooler.supabase.com:5432` (le host direct `db.<ref>.supabase.co` est IPv6-only, injoignable).
-  Non fourni par le plan : dump à lancer soi-même, read-only, hors pic (consomme une session du budget 15).
+  Non fourni par le plan : dump à lancer soi-même, read-only, hors pic (consomme une session du budget « Pool Size »).
 
 ### Remise en service de l'app (RTO)
 Restore vers un nouveau projet -> l'host du pooler change. Dans `.env.prod` (mba **ET** mm-hubspot) : mettre à jour

@@ -325,8 +325,8 @@ describe('ce que /ops montre de l’usage', () => {
 describe('le plafond des opérations LOURDES en vol', () => {
   /**
    * 🔴 CE QUE CE PLAFOND REMPLACE : une attente de huit secondes suivie d'une erreur d'acquisition de
-   * connexion. Le pool sert 8 connexions pour TOUT le process API, et un lot de contacts en demande
-   * jusqu'à 4 : dix lots simultanés mettent quarante acquisitions en file derrière huit places, pendant
+   * connexion. Le pool de la copie (`DB_POOL_MAX` de `mba-api`) sert TOUT le process API, et un lot de contacts
+   * en demande jusqu'à 4 : dix lots simultanés mettent quarante acquisitions en file derrière une poignée de places, pendant
    * que l'Inbox et le worker se disputent les mêmes emplacements. Un 429 avec `Retry-After` est une
    * réponse ; une attente qui finit en erreur n'en est pas une.
    */

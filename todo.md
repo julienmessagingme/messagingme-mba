@@ -1113,7 +1113,7 @@ Relevé par l'audit du coût des règles d'envoi, à garder sous la main le jour
 `src/traduction/traduire.ts:264` refait `await disponible(tenantId)`. Deux `select` identiques sur
 `agent_gateway_keys` (`src/agent/cles-gateway.pg.ts:43`) par clic sur le bouton de traduction.
 
-Sans gravité (geste humain, pas une boucle), mais c'est une requête pour rien sur un pool de 8.
+Sans gravité (geste humain, pas une boucle), mais c'est une requête pour rien sur le pool de l'API.
 
 ## 🟠 Le contrôle des symboles morts n'est branché NULLE PART (2026-09-15)
 

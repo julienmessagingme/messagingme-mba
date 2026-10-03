@@ -83,8 +83,8 @@ export interface ApiUsageGuard {
   /** Les compteurs agrégés encore gardés, de toutes les copies de l'API, du plus récent au plus ancien. */
   compteurs(): Promise<CompteurUsage[]>;
   /**
-   * Réserve une place pour une opération lourde ; `null` quand il n'y en a plus. Le pool sert 8 connexions
-   * pour tout le process API, et `/v1/contacts/batch` en demande jusqu'à `ECRITURES_EN_VOL` par requête : dix
+   * Réserve une place pour une opération lourde ; `null` quand il n'y en a plus. Le pool (`DB_POOL_MAX` de
+   * `mba-api`, `docker-compose.yml`) sert tout le process API, et `/v1/contacts/batch` en demande jusqu'à `ECRITURES_EN_VOL` par requête : dix
    * lots simultanés satureraient le pool, Inbox et worker compris. Le limiteur de débit n'y suffit pas :
    * fenêtre fixe, ses 60 requêtes peuvent tomber dans la même milliseconde.
    * 🔴 PAR COPIE, délibérément et seul de ce garde à l'être : ce qu'il protège est le pool DE LA COPIE, que chaque

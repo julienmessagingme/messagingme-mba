@@ -63,7 +63,7 @@ const CLE_BUDGET_SPECULATIF = 'lookups-speculatifs';
  *
  * 🔴 Deux protections, qui ne se remplacent pas : `plafonds` ne compte que des clés qui existent (ce qu'un
  * espace demande) ; `prefiltre` borne les lookups spéculatifs, qu'une rafale de fausses clés toutes
- * différentes ferait sinon payer d'un SHA-256 et d'une requête Postgres chacune, sur 8 connexions partagées.
+ * différentes ferait sinon payer d'un SHA-256 et d'une requête Postgres chacune, sur le pool partagé de la copie.
  * `prefiltre` est obligatoire ; le désactiver se fait par la configuration (`API_KEY_PREFILTRE_MAX=0`).
  *
  * La clé du relais du Meta Business Agent n'entre pas dans le plafond de l'espace : elle garde un compteur

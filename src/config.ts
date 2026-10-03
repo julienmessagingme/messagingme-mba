@@ -96,7 +96,7 @@ export const schema = z.object({
   DATABASE_URL: z.string().default(''),
   /**
    * URL du pooler Supabase mode transaction (port 6543) pour le pool applicatif (tous les stores, API +
-   * worker), qu'elle sort du budget de ~15 sessions partagé avec mm-hubspot. Vide -> repli sur DATABASE_URL.
+   * worker), qu'elle sort du budget des sessions partagé avec mm-hubspot. Vide -> repli sur DATABASE_URL.
    * Le pg-boss du WORKER reste obligatoirement sur DATABASE_URL : son écoute, sa supervision et sa migration ne
    * survivent pas au transaction pooling (le pooler réassigne le backend entre transactions). Celui de l'API,
    * qui ne fait qu'empiler, passe par ce pool : ses instructions sont autonomes (un `insert`, ou un bloc
@@ -106,20 +106,19 @@ export const schema = z.object({
   APP_DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
   /**
-   * Taille du pool applicatif (mode transaction, `APP_DATABASE_URL`), instancié PAR PROCESS. API et worker
-   * faisaient 2 x 8 = 16 clients vers le pooler, sa capacité observée (au-delà, la latence double sans erreur).
-   * Depuis le second worker (2026-10-03), c'est 8 + 8 + 3 = 19 (`docker-compose.yml` le règle à 3 pour
-   * `mba-worker-analyse`) : au-dessus de l'observé, à surveiller sur `/ops`. Chaque copie de l'API ajoutée
-   * ajouterait encore 8, donc ce nombre se redimensionne AVANT de doubler quoi que ce soit.
-   * Plus haut, l'attente passerait de notre pool, borné par `DB_CONN_TIMEOUT_MS`, à celle de Supavisor, qui
-   * est muette. Le budget des ~15 sessions partagé avec mm-hubspot ne concerne que pg-boss (`PGBOSS_MAX`).
+   * Taille du pool applicatif (mode transaction, `APP_DATABASE_URL`), instancié PAR PROCESS. 🔴 CHAQUE SERVICE
+   * LA FIXE dans `docker-compose.yml`, et ce défaut n'est qu'un repli : la SOMME des pools de tous les
+   * processus doit tenir dans le pool du pooler de Supabase, sans quoi l'attente passerait de notre pool, borné
+   * par `DB_CONN_TIMEOUT_MS` et visible dans `/ops`, à celle de Supavisor, qui est muette (au-delà, la latence
+   * double sans erreur). Ce budget, mesuré, et sa règle par copie : `tests/budget-pooler.test.ts`, qui refuse un
+   * compose qui le dépasse. Ajouter une copie d'API se paie donc ici, AVANT de la lancer.
    * Côté API, ce pool porte AUSSI les enfilements (pg-boss l'emprunte), dont l'accusé des webhooks de Meta :
    * une attente ici est une attente de la réception, et `mesureAttentePool` la voit.
    */
   DB_POOL_MAX: z.coerce.number().default(8),
-  /** Max de connexions du pool pg-boss du WORKER, resté en mode session : c'est lui qui vit dans le budget de
-   *  ~15 sessions partagé avec mm-hubspot (2 par worker plus l'écoute des notifications, soit 6 pour les DEUX
-   *  rôles depuis le 2026-10-03, + 2 x 2 chez lui). L'API ne le lit plus : elle n'ouvre aucun pool pg-boss,
+  /** Max de connexions du pool pg-boss du WORKER, resté en mode session : c'est lui qui vit dans le budget des
+   *  sessions du pooler, partagé avec mm-hubspot (PGBOSS_MAX par worker plus l'écoute des notifications, plus
+   *  les sessions de mm-hubspot ; le calcul et sa borne : `tests/budget-pooler.test.ts`). L'API ne le lit plus : elle n'ouvre aucun pool pg-boss,
    *  donc le nombre de ses copies ne compte pas dans ce budget.
    *  Ne pas le relever sans refaire l'arithmétique de ce budget. */
   PGBOSS_MAX: z.coerce.number().default(2),
@@ -184,7 +183,7 @@ export const schema = z.object({
   /**
    * Pré-filtre des clés d'API : ce qu'un porteur non résolu peut coûter, par minute.
    * Le plafond ci-dessus ne compte que des clés résolues : sans ce budget, chaque fausse clé coûte un SHA-256
-   * et une requête Postgres sur un pool de 8 connexions partagé avec la console et le worker.
+   * et une requête Postgres sur le pool de la copie, partagé avec la console et la réception des webhooks.
    * Global et non par clé : un compteur par empreinte ne freine rien (trente fausses clés, trente compteurs
    * à 1). Une empreinte déjà résolue n'y est plus soumise, donc 30 est très large. 0 le désactive.
    */
@@ -192,8 +191,9 @@ export const schema = z.object({
   /**
    * Nombre d'opérations lourdes de l'API publique (lot de contacts, création d'envoi) en vol en même temps.
    * 0 désactive.
-   * Un, et le chiffre se calcule : le pool de l'API porte `DB_POOL_MAX` = 8 connexions pour tout le process,
-   * et un lot en prend jusqu'à 4 (`ECRITURES_EN_VOL`). Saturer le pool ferait attendre la console et la
+   * Un, et le chiffre se calcule : le pool de l'API (`DB_POOL_MAX` de `mba-api`) sert tout le process, et un lot
+   * en prend jusqu'à `ECRITURES_EN_VOL`. Que le pool reste plus grand que ce qu'en prennent les opérations
+   * lourdes est tenu par `tests/budget-pooler.test.ts`. Saturer le pool ferait attendre la console et la
    * réception des webhooks de Meta : le travail d'un intégrateur ne doit jamais prendre tout le pool.
    * La place est globale au process, tous clients confondus (un autre espace reçoit 429, `Retry-After: 2`) :
    * un plafond par espace ne protégerait pas un pool partagé.
@@ -709,8 +709,8 @@ const constantes = {
    * Sûr seulement parce que l'enfilement pose une clé de groupe par contact et que `work` plafonne à un job
    * en vol par groupe : deux messages d'un même contact restent sérialisés. Ne pas relever l'un sans l'autre.
    * 3 et pas plus : le worker tient déjà 4 runs de campagne, les accusés, les automations et les tours
-   * d'agent, sur un pool de 8 connexions par process (cf. `DB_POOL_MAX`). Relever ce nombre demande de refaire
-   * cette arithmétique.
+   * d'agent, sur le pool du worker principal (`DB_POOL_MAX` de `mba-worker`, `docker-compose.yml`). Relever ce
+   * nombre demande de refaire cette arithmétique.
    */
   WEBHOOK_CONCURRENCY: 3,
   /**

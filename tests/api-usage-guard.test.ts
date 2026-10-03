@@ -168,9 +168,9 @@ describe('la politique de refus, quand un seuil EXISTE', () => {
 
 describe('les opérations LOURDES ont un plafond de places simultanées', () => {
   /**
-   * 🔴 LE CHIFFRE QUI REND CE PLAFOND NÉCESSAIRE : le pool sert 8 connexions pour TOUT le process API, et
-   * un lot de contacts en demande jusqu'à 4 à la fois. Rien ne comptait les requêtes lourdes EN VOL : dix
-   * lots simultanés mettent quarante acquisitions en file derrière huit places, échouent au bout de huit
+   * 🔴 LE CHIFFRE QUI REND CE PLAFOND NÉCESSAIRE : le pool de la copie (`DB_POOL_MAX` de `mba-api`) sert TOUT le
+   * process API, et un lot de contacts en demande jusqu'à 4 à la fois. Rien ne comptait les requêtes lourdes EN
+   * VOL : dix lots simultanés mettent quarante acquisitions en file derrière une poignée de places, échouent au bout de huit
    * secondes, et pendant ce temps l'Inbox et le worker se disputent les mêmes emplacements.
    *
    * ⚠️ ET LE LIMITEUR DE DÉBIT N'Y CHANGE RIEN : c'est une fenêtre FIXE, donc les 60 requêtes d'une minute

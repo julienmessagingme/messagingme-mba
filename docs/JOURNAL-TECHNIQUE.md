@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : le pool du pooler Supabase monté à 30, et chaque copie dimensionnée
+
+**Demandé par Julien** (« fais le redimensionnement du pool par copie maintenant »), après le second banc. Ce qui
+devait être un partage des 16 connexions entre copies a été renversé par la MESURE, et c'est la leçon du lot.
+- **Le pool du pooler, mesuré** : une sonde de N `select pg_sleep(1)` simultanés par `APP_DATABASE_URL` voyait 16
+  requêtes dans la première vague. Ce n'est pas une limite de Supabase, c'est le réglage « Pool Size » (15 ; la
+  sonde voit le réglage plus un), qui vaut par utilisateur, base et MODE : le même borne les sessions de pg-boss.
+- **Nos pools le dépassaient déjà, et le payaient** : API 8 + principal 8 + analyse 3 = 19, et sur sept jours de
+  `pool_attentes`, le pool de l'API saturait 6 % de ses prises de connexion (3 558 sur 56 235, au pire 246 ms), le
+  principal dix fois en cinq heures. « Redimensionner par copie » dans 16 aurait aggravé une saturation mesurée.
+- **Le levier était le réglage** : Supabase autorise jusqu'à 80 % des 60 connexions de la base au pooler. Julien
+  l'a monté à 30, la sonde voit 31 juste après. L'API passe à 10, le principal reste à 8, l'analyse à 3 (21), et
+  9 restent pour une seconde copie d'API.
+- **Le budget est tenu par un test**, `tests/budget-pooler.test.ts`, qui lit le compose : une taille par service,
+  la somme sous le pool, les sessions sous le pool, le pire cas sous les 80 %, et chaque copie d'API plus grande
+  que ce que prennent ses opérations lourdes. Vérifié dans les deux sens (une seconde copie d'API à 10 ajoutée
+  sans redimensionner, et une API sans taille déclarée, le font tomber).
+- ⚠️ **Appliquer le réglage coupe les connexions en cours** : à l'enregistrement, Supabase a terminé les connexions
+  du pooler (« terminating connection due to administrator command »), et l'alerte Telegram de pg-boss est partie.
+  Rien n'a redémarré ni n'est resté bloqué : les pools ont rouvert, et la supervision de pg-boss a réécrit deux
+  minutes plus tard. À prévoir à chaque changement de ce réglage : le faire à une heure creuse, et s'attendre à
+  cette alerte.
+
 ## 2026-10-03 : les envois d'un bloc de scénario sortent du câblage (piste 2 du rapport d'architecture)
 
 **Cadrage.** Deux rondes de questions fermées. Julien a retenu :

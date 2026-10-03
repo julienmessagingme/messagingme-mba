@@ -130,8 +130,9 @@ export const normalizeTags = (v: unknown): string[] =>
   Array.isArray(v) ? [...new Set(v.map((t) => String(t).trim().slice(0, 64)).filter((t) => t !== ''))].slice(0, 50) : [];
 
 /**
- * Combien d'upserts en vol à la fois : 4 et pas 8, le pool de ce process en compte 8 au total
- * (`DB_POOL_MAX`), et cette API ne doit pas les prendre toutes pendant qu'un opérateur charge son inbox.
+ * Combien d'upserts en vol à la fois : 4, MOINS que le pool de la copie (`DB_POOL_MAX` de `mba-api`, dans
+ * `docker-compose.yml` ; l'écart est tenu par `tests/budget-pooler.test.ts`), parce que cette API ne doit pas prendre tout
+ * le pool pendant qu'un opérateur charge son inbox.
  * Chaque upsert est une instruction `on conflict` : deux vagues ne peuvent pas s'interbloquer.
  */
 export const ECRITURES_EN_VOL = 4;

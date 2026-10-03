@@ -24,6 +24,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+    # 🔴 LA TAILLE DE CHAQUE POOL EST ÉCRITE ICI, POUR CHAQUE SERVICE, et leur SOMME est tenue par
+    # `tests/budget-pooler.test.ts` sous la taille du pool de Supabase (mesurée, pas supposée). Ajouter une copie
+    # d'API, c'est ajouter un service ici : le test refuse alors le dépassement, et il faut redimensionner
+    # chaque copie, ou monter le pool de Supabase dans la limite que le test calcule.
+    environment:
+      DB_POOL_MAX: "10"
     networks: [mcp-robot_default]
 
   mba-worker:
@@ -45,6 +51,9 @@ services:
     # minuteries. `environment` prime sur `env_file`.
     environment:
       WORKER_ROLE: principal
+      # Ses tailles, explicites comme celles de chaque service (budget : `tests/budget-pooler.test.ts`).
+      DB_POOL_MAX: "8"
+      PGBOSS_MAX: "2"
     networks: [mcp-robot_default]
 
   # LE SECOND WORKER (2026-10-03) : l'analyse des conversations et ce qu'elle alimente, isolée du chemin chaud.
@@ -60,14 +69,9 @@ services:
     restart: unless-stopped
     environment:
       WORKER_ROLE: analyse
-      # DIMENSIONNÉ PETIT, parce que le plafond qui mord est celui du POOLER, pas de Postgres (relecture du
-      # 2026-10-03). En mode session, Supavisor plafonne à ~15 sessions, partagées avec mm-hubspot : chaque
-      # worker en tient PGBOSS_MAX plus une pour l'écoute, donc ce conteneur en ajoute trois. En mode
-      # transaction, le pooler tenait 16 clients sans broncher (API 8 + worker 8, observé) : avec ces 3, on
-      # passe à 19, au-delà de ce qui a été observé. Les 60 connexions de Postgres (21 utilisées) sont un
-      # troisième plafond, le plus lâche. Sa charge est légère (trois files de fond, une analyse par espace à
-      # la fois) et un appel de modèle ne retient aucune connexion. Le principal garde les défauts : c'est lui
-      # qui porte les messages entrants, et on ne réduit pas le pool du chemin chaud pour en loger un autre.
+      # DIMENSIONNÉ PETIT : sa charge est légère (trois files de fond, une analyse par espace à la fois) et un
+      # appel de modèle ne retient aucune connexion. Mesuré sur sa première journée : zéro attente de pool. Le
+      # budget de tous les pools, et pourquoi c'est celui du POOLER qui mord : `tests/budget-pooler.test.ts`.
       DB_POOL_MAX: "3"
       PGBOSS_MAX: "2"
     stop_grace_period: 30s
