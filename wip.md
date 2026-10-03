@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : LIVRAISON 2a ÉCRITE, PAS DÉPLOYÉE
+## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : 2a DÉPLOYÉE LE 2026-10-03, 2b À FAIRE
 
 Spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, plan `docs/superpowers/plans/2026-10-03-oauth-mcp.md`.
 La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp` »).
@@ -37,14 +37,19 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   réel, une fenêtre de grâce sinon) ; un code présenté deux fois est refusé sans révoquer l'autorisation (OAuth 2.1
   le recommande) ; chaque jeton d'accès neuf coûte une unité du budget des empreintes inconnues de chaque copie ;
   la liste « Applications autorisées » montre encore celles d'un admin rétrogradé (elles ne marchent plus).
-- ⏳ **Ordre de déploiement 2a** : `compose build mba-api`, `migrate` (0204 est BLOQUANTE : sans elle, un jeton `mbo_`
-  bien formé, même inventé, rend 500 au lieu de 401) et relecture en base, PUIS `up -d --build` de `mba-api` et des
-  workers, rechargement NPM après `mba-api` sain, contrôle public, `npm run oauth:fiches`.
-- ⏳ **Trois mesures après le `up`, sur la production** : `curl -sI https://api.messagingme.app/.well-known/oauth-authorization-server`
-  montre les en-têtes de l'API (pas une 404 de NPM) ; `curl -si -X POST https://api.messagingme.app/mcp` porte
-  `www-authenticate` (sinon NPM ne transmet pas le `Host` d'origine, et Claude ne lancera jamais la connexion) ;
-  `/oauth/token` répond 400 à un client en ligne de commande (sinon Cloudflare le bloque, et Julien pose la règle
-  « Skip » de la spec, section 7).
+- ✅ **2a déployée le 2026-10-03** (`0a399f9a`) : 0204 appliquée à 16 h 27 UTC et relue en base, `mba-api` et les
+  deux workers reconstruits, NPM rechargé, les trois portes à 200, `npm run oauth:fiches` CONFORME. CI verte, et un
+  commit faussé jetable (lecteurs « humain » et rejeu défaits) l'a vu rouge sur ces seuls tests.
+- ✅ **Les trois mesures, depuis l'extérieur** : `/.well-known/oauth-authorization-server` porte les en-têtes de l'API
+  (pas une 404 de NPM), sans `registration_endpoint` ; `POST /mcp` sans jeton rend 401 avec `www-authenticate` sur
+  `api.` et sans lui sur `mba.` ; `/oauth/token` rend 400 `invalid_grant` à un client en ligne de commande (Cloudflare
+  laisse passer). `/oauth/authorize` encodé comme Claude l'envoie : 302 vers `engageme…/autoriser` ; client inconnu :
+  400 en texte, sans redirection.
+- ⚠️ **NPM refuse en 403 (« openresty ») une adresse `http://` écrite EN CLAIR dans la requête** (sa protection contre
+  les exploits courants) : `?redirect_uri=http://localhost…` non encodé ne parvient jamais à l'API. Claude encode ses
+  paramètres, donc rien ne casse ; à confirmer à l'essai réel.
+- ⚠️ **Entre 2a et 2b, la page de consentement n'existe pas** : une connexion lancée depuis Claude arrive sur une 404
+  de la console. Personne n'est branché sur cette adresse sans clé, donc personne n'est touché.
 - ⏳ **Livraison 2b (la console)** : la page `/autoriser` et « Applications autorisées », APRÈS le `up` de 2a
   (elle appelle des routes neuves).
 - ⏳ **L'essai réel qui clôt le lot** (spec, section 8) : Claude Code sur le poste de Julien, `https://api.messagingme.app/mcp`

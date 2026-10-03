@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : l'OAuth devant `/mcp`, livraison 2a (l'API)
+
+**Déployé en `0a399f9a`** (migration 0204 appliquée à 16 h 27 UTC, `mba-api` et les deux workers reconstruits,
+portes à 200). Lot 2 du plan « Engage Me pour Claude Code », cadré le même jour avec Julien : Claude Code et
+claude.ai seulement, fiches d'identité épinglées, seuls les admins autorisent, appels dans le plafond de l'espace.
+
+**Méthode** : deux implémenteurs à la suite dans une extraction d'origin, puis une relecture indépendante (aucun
+rouge, neuf jaunes). Quatre jaunes corrigés avant le commit, dont un de rayon de souffle : la personne qui signe
+désormais une réponse de Claude remplit `sender_user_id`, et deux lecteurs en déduisaient « humain » (l'analyse) ou
+« pas une sollicitation » (le bilan du contact). Ils lisent maintenant l'origine `mcp`. Les tests d'intégration de
+ces lecteurs et du rejeu, qui ne tournent qu'en CI, ont été vus rouges sur un commit faussé jetable.
+
+**Mesuré après le déploiement** : métadonnées servies par l'API, `www-authenticate` sur le 401 de `api.` et pas de
+`mba.`, `/oauth/token` atteint depuis un client en ligne de commande. Et une surprise : le proxy NPM rend 403 à une
+adresse `http://` écrite en clair dans la requête (protection contre les exploits courants). Claude encode ses
+paramètres, l'essai réel le confirmera.
+
 ## 2026-10-03 : le pool du pooler Supabase monté à 30, et chaque copie dimensionnée
 
 **Déployé en `f4eec9f2`** (`mba-api` seul, à 15 h 49 UTC, `DB_POOL_MAX=10` relu dans le conteneur, portes à 200).
