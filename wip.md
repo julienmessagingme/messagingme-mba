@@ -56,8 +56,9 @@ Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, déci
 - ✅ **La clé coincée est corrigée et DÉPLOYÉE** (`0c476865`, le 2026-10-03 à 11 h 46 UTC, avec la migration 0203
   appliquée avant et le lot `cdcbde3e` d'une session voisine dans le même `up`) : bail de 5 min et jeton de garde.
   Relue sans rouge, CI verte job par job, et l'essai réel fait au banc (clé coupée en 409, puis 201 une fois le bail
-  passé, aucune orpheline lancée). Ses deux jaunes de comportement sont traités par le lot suivant (création et
-  scellement dans UNE transaction, bail limité au même corps), relu sans rouge et rejoué au banc.
+  passé, aucune orpheline lancée). Ses deux jaunes de comportement sont traités et DÉPLOYÉS (`f74ebb59`, `mba-api`
+  seul, le 2026-10-03 à 14 h 59 UTC) : création et scellement dans UNE transaction, bail limité au même corps.
+  Relus sans rouge, prouvés en base (atomicité comprise) et rejoués au banc, zéro campagne orpheline.
 - ⏳ **Ce qui reste avant d'autoriser l'autoscaling** : redimensionner `DB_POOL_MAX` par copie ; mettre un
   répartiteur devant les copies ; remesurer la capacité sur Scaleway.
 

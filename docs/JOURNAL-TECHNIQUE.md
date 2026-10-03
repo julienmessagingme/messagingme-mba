@@ -114,7 +114,8 @@ du banc avec deux mutations (sans jeton, sans bail) qui le font tomber exactemen
 scellement, sa clé en 409 sans envoi, puis 201 avec son envoi une fois le bail passé (285 s d'attente, à l'heure
 de la base), et aucune campagne orpheline lancée.
 
-**Ses deux jaunes de comportement, le même après-midi** (plan `docs/superpowers/plans/2026-10-03-cle-idempotence-jaunes.md`).
+**Ses deux jaunes de comportement, le même après-midi**, déployés en `f74ebb59` à 14 h 59 UTC (`mba-api` seul ; plan
+`docs/superpowers/plans/2026-10-03-cle-idempotence-jaunes.md`).
 La relecture proposait de supprimer après coup la campagne d'une clé reprise, et de repérer par un ménage celles
 des copies tuées. 🔴 **Écarté, parce que rien ne distingue de façon fiable un envoi d'API d'un brouillon de la
 console** : le préfixe `[API] ` se tape à la main, et un ménage fondé dessus pourrait effacer le brouillon de
