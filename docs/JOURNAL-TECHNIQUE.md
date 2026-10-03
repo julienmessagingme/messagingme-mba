@@ -131,6 +131,17 @@ désormais au lieu de supposer (`brain/LEARNINGS.md`, 2026-10-03).
 assistant, « Appeler un outil MCP » de l'agent de Meta), et `get_contact` toujours appelé avec succès par l'agent
 de Meta (`agent_tool_calls`).
 
+**Essai réel fait le 2026-10-03, et pas tout à fait celui prévu.** Avant l'essai, Julien a supprimé l'ancien
+connecteur du serveur Messaging ME puis l'a rebranché, avec une clé de LECTURE. Le serveur ne montrant à une telle
+clé que ses huit outils de lecture, `tag_conversation` n'est plus importé du tout. L'écran ne pouvait donc plus
+montrer son refus : ce point reste établi par la mesure faite par le vrai code après le `up`. En échange, le second
+point a parcouru toute la règle :
+- `get_contact` proposé dans « Quel outil MCP ajouter ? » ;
+- réglé, avec le téléphone pris dans `wa_id` ;
+- activé, puis publié chez Meta ;
+- appelé par l'agent de Meta à 12 h 26 (heure de Paris) : `agent_tool_calls` rend `ok` en 557 ms, pour 1 525
+  octets, et la réponse de l'agent cite la fiche.
+
 ## 2026-10-02 : tout sur la fiche, lot 3, « la dernière analyse change », essai réel fait
 
 **Serveur (`6ae0a144`), déployé vers 17 h 28 (heure de Paris), puis console (`c5d438c1`).** Nouveau déclencheur

@@ -60,13 +60,16 @@ journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont
 - ⏳ **Une compétence « Périmètre »** à poser sur l'agent (Julien) : périmètre = l'activité ET tout ce que ses
   outils permettent, sinon il répond à tout (il a donné du code Azure de mémoire quand l'outil a échoué). Puis
   retirer l'outil Microsoft.
-- ⏳ **La règle unique du catalogue d'outils** (plan `docs/superpowers/plans/2026-10-02-catalogue-regle-unique.md`) :
-  DÉPLOYÉE dans la nuit du 2 au 3 octobre (`880b624d` serveur, `b8760b6b` console, `d101358e` jaunes de la relecture,
-  journal du 2026-10-02 et 03). Mesuré en production par le vrai code : `tag_conversation` n'est plus offert, et
-  `get_contact` reste actif et appelable pour l'agent de Meta. **Essai réel dû (Julien), avant le lundi 5 au soir** :
-  `tag_conversation` absent des trois listes « ajouter » (page d'un agent IA, assistant, « Appeler un outil MCP »), et
-  `get_contact` toujours appelé avec succès par l'agent de Meta (`agent_tool_calls`). ⚠️ Effet voulu mais à savoir : un
+- ✅ **La règle unique du catalogue d'outils** (plan `docs/superpowers/plans/2026-10-02-catalogue-regle-unique.md`) :
+  déployée dans la nuit du 2 au 3 octobre, **essai réel fait le 3 à 12 h 26** (journal du 2026-10-02 et 03) :
+  `get_contact` proposé, réglé, publié puis appelé avec succès par l'agent de Meta. ⚠️ Effet voulu mais à savoir : un
   appel de connecteur dont le système est en brouillon ne s'active plus, donc ne s'essaie plus au bac à sable.
+- ⏳ **Remplacer la clé `mba_HZak…`** (écrite en clair dans une conversation le 2026-10-03) : elle sert À LA FOIS au
+  connecteur « Serveur Messaging ME MCP » de l'espace de démo et à Claude Code (`~/.claude.json`, serveur `mba`). Les
+  deux se changent ensemble, sinon ils cassent ensemble.
+- ⏳ **Après le lot 1 du serveur MCP (autre session)** : l'annonce des douze outils change (annotations, bornes), donc
+  le premier rafraîchissement du connecteur marquera `get_contact` modifié et l'éteindra pour l'agent de Meta. Le
+  revalider, puis republier l'agent.
 
 ## WIDGET WHATSAPP (LOTS 1 À 5 DÉPLOYÉS DANS LA NUIT DU 2 AU 3 OCTOBRE ; ESSAI RÉEL DÛ)
 
