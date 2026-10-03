@@ -5,6 +5,20 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : l'OAuth devant `/mcp`, livraison 2b (la console) et essai réel
+
+**Publié en `332d9f6c`** (Vercel, console seule ; la fiche d'aide rechargée sur le VPS par `aide:charger`, avec
+l'image en place et le dossier des fiches monté en lecture seule, pour ne pas construire une image qui aurait
+emporté le code non déployé d'une autre session). La page `/autoriser` et « Applications autorisées ». Relecture :
+aucun rouge ; un jaune corrigé avant le push (une réponse sans la liste faisait tomber toute la page des clés).
+
+**Essai réel par Julien, le soir même** : depuis Claude Code en terminal (`api.messagingme.app/mcp` sans clé,
+Authenticate, « Autoriser », lecture des conversations, révocation, nouvelle connexion exigée), puis depuis l'app
+de bureau. Trois frictions, toutes du poste et pas du serveur, pour la FAQ du plugin : PowerShell refuse
+`claude.ps1` quand l'exécution de scripts est désactivée (`claude.cmd` passe) ; Claude Code n'a pas ouvert le
+navigateur (lien à copier) ; dans l'app de bureau, un serveur ajouté en cours de session n'apparaît qu'à la
+suivante, et `/mcp` s'utilise seul. Mesuré au passage : l'app de bureau et le terminal partagent le jeton.
+
 ## 2026-10-03 : la latence HTTP par route, dans `/ops`
 
 Point 1 de ce qui restait de l'audit de performance du 2026-10-02 (§ 11) : `/ops` mesurait les files, rien des

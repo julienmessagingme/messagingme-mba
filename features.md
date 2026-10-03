@@ -3621,10 +3621,10 @@ depuis un assistant : elle reste un geste de la console.
 
 ### Connecter Claude à votre espace, sans clé (2026-10-03)
 
-🚧 **Livré, essai réel à venir.** Ce qui clôt la fonctionnalité : depuis Claude Code, ajouter le serveur sans clé,
-se connecter, autoriser, et lire les derniers messages d'un fil ; révoquer depuis la console et voir Claude
-redemander une connexion ; une adresse Google jamais vue qui crée son espace ; le même serveur ajouté en connecteur
-dans claude.ai.
+✅ **En production, essai réel fait depuis Claude Code le 2026-10-03** : le serveur ajouté sans clé, la connexion et
+« Autoriser », Claude qui liste les conversations, puis la révocation depuis la console et Claude qui redemande une
+connexion. Même parcours vérifié dans l'app de bureau de Claude (onglet Code, `/mcp` puis « Connecter »). Restent à
+essayer : une adresse Google jamais vue qui crée son espace, et le même serveur en connecteur dans claude.ai.
 
 **À quoi ça sert.** Claude Desktop et claude.ai ne savent pas porter une clé d'API, et un nouvel utilisateur de
 Claude Code devait d'abord ouvrir la console pour en créer une. Désormais, la personne ajoute

@@ -19,7 +19,23 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : 2a ET 2b EN PRODUCTION LE 2026-10-03, ESSAI RÉEL DÛ
+## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : EN PRODUCTION, ESSAI RÉEL FAIT DEPUIS CLAUDE CODE
+
+- ✅ **Essai réel du 2026-10-03, vers 20 h 30 UTC, par Julien, depuis Claude Code 2.1.257 sous Windows** :
+  `api.messagingme.app/mcp` ajouté sans clé, `/mcp`, Authenticate, page « Autoriser », retour vers Claude Code, et
+  Claude liste les conversations ; révocation depuis « Applications autorisées », Claude redemande la connexion.
+  L'adresse de retour `http://localhost` passe le proxy NPM (Claude encode ses paramètres). Puis depuis l'app de
+  bureau (onglet Code) : le serveur apparaît dans `/mcp` (seul, sans nom) dans une NOUVELLE session, « Connecter »
+  ouvre la page « Autoriser », et Claude lit les conversations ; le jeton du terminal est partagé avec l'app.
+- ⚠️ **Deux frictions du poste, pas du serveur, à écrire dans la FAQ du plugin (lot 10)** : PowerShell refuse
+  `claude.ps1` quand l'exécution de scripts est désactivée, et `claude.cmd` passe sans toucher à ce réglage ; Claude
+  Code n'a pas ouvert le navigateur tout seul, il a fallu copier le lien qu'il affiche ; dans l'app de bureau, un
+  serveur ajouté pendant une session n'apparaît qu'à la session suivante, et `/mcp <nom>` n'est pas une commande
+  (`/mcp` seul ouvre le panneau, avec « Connecter »).
+- ⏳ **Reste à essayer** : une adresse Google jamais vue qui crée son espace ; le même serveur en connecteur dans
+  claude.ai ; et une connexion qui dure plus d'une heure (le renouvellement du jeton, et le jaune des deux
+  renouvellements simultanés).
+
 
 Spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, plan `docs/superpowers/plans/2026-10-03-oauth-mcp.md`.
 La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp` »).
