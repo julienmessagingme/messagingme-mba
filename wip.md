@@ -81,7 +81,7 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   un essai fini chez l'agent remet le contact sur sa liste, et le jeton suivant lui arrive. Il a répondu par son
   message de passage. Parade : attendre sa réponse avant de relancer le lien.
 
-## DOUBLE WORKER (DÉPLOYÉ LE 2026-10-03 À 8 H 17 UTC ; ESSAI RÉEL DÛ)
+## DOUBLE WORKER, BANCS, CLÉ D'IDEMPOTENCE, POOLS (TOUT DÉPLOYÉ LE 2026-10-03 ; ESSAI RÉEL FAIT)
 
 Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, décidé par Julien le 2026-10-02.
 
@@ -95,9 +95,10 @@ Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, déci
 - ✅ **Le banc à deux copies d'API** est vert sur ses trois propriétés (clé acceptée des deux côtés, clé révoquée
   refusée par les DEUX, plafond par espace GLOBAL : 54 acceptés contre 76 refusés sur 130 tirs, plafond 60). Il a
   été DÉMONTÉ du VPS le 2026-10-03 ; la recette pour le remonter est en tête de `scripts/banc-deux-api.mts`.
-- 🔴 **L'ESSAI RÉEL, À MOITIÉ CONSTATÉ** : le message WhatsApp de Julien a été traité par le principal (sept
-  webhooks à 9 h 50 UTC le 2026-10-03). Reste l'analyse, par l'autre worker : elle ne part qu'après 25 minutes
-  SANS message sur la conversation (`CONVERSATION_INACTIVITY_MS`, et non 15), donc à compter du DERNIER message.
+- ✅ **L'ESSAI RÉEL EST FAIT** : le message WhatsApp de Julien traité par le principal (webhooks à 9 h 50 UTC le
+  2026-10-03), son analyse par le worker d'analyse (job pris à 10 h 54 min 57, fini à 10 h 55 min 24 : sentiment
+  négatif, SAV, satisfaction 3/10, urgence 6/10, « escalader »), puis poussée vers HubSpot. L'analyse ne part qu'après
+  25 minutes SANS message sur la conversation (`CONVERSATION_INACTIVITY_MS`), à compter du DERNIER message.
 - ✅ **Les cinq jaunes de la relecture** : corrigés (`8b37a1ba`) et déployés le 2026-10-03 à 10 h 18 UTC (les deux
   workers seulement). Vérifié en production : le principal rejoue les agrégats au démarrage, l'analyse non ; les
   attentes de pool arrivent sous `worker-principal` et `worker-analyse` ; deux battements frais ; portes à 200.
@@ -118,7 +119,31 @@ Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, déci
   répartiteur viendra avec les conteneurs serverless, minimum 1 copie). Deux faits mesurés pour ce jour-là : sur
   la base Micro actuelle, le budget du pooler plafonne à DEUX copies d'API de 8 connexions (27 avec les workers,
   la limite exacte des 80 % ; `tests/budget-pooler.test.ts` refuse au-delà) ; et le VPS aurait eu la place (16,8 Go
-  libres, 160 Mo par copie), l'API n'ayant qu'une tâche périodique, déjà prévue pour plusieurs copies.
+  libres, 160 Mo par copie), l'API n'ayant qu'une tâche périodique, déjà prévue pour plusieurs copies. La liste
+  complète est dans `docs/ARCHITECTURE-CIBLE.md` (en tête, et §10).
+- ✅ **Plus de 502 durable après un `up`** (2026-10-03) : les quatre routes de `mba.` (hôte NPM 21) nomment `mba-api`
+  par une variable ; essai réel, 4 à 5 s de 502 pendant le redémarrage puis 200, sans recharger NPM.
+- ✅ **La migration 0060 vérifiée** (2026-10-03) : ancien nom de `0062_email.sql`, SQL identique, en `if not exists`.
+
+## PROCHAIN : CE QUI RESTE DE L'AUDIT DE PERFORMANCE DU 2026-10-02 (`docs/prive/AUDIT-PERFORMANCE-COMPLET-2026-10-02.md`)
+
+Déjà fait : la preuve à deux copies (deux bancs), le budget de connexions (test, Pool Size 30), les deux workers et
+leur battement par rôle, le cache Cloudflare du widget, le document de bascule. Ce qui reste, dans l'ordre recommandé
+à Julien le 2026-10-03 (il a demandé de compacter avant de commencer le 1) :
+1. ⏳ **PROCHAIN, demandé par Julien : la latence HTTP par route** normalisée et code de retour (p50, p95),
+   webhooks, Inbox et `/v1` en tête ; l'audit y ajoute CPU, mémoire et redémarrages par conteneur, connexions côté
+   pooler et Postgres, durée des gros balayages, volume des fichiers en base. Rien n'existe côté HTTP aujourd'hui
+   (`/ops` mesure finement les FILES, pas les routes). Méthode : implémenteur + une relecture, essai réel en lisant
+   `/ops` en production.
+2. Le banc « Inbox à 30 utilisateurs » (Postgres jetable, p95), et tuer un WORKER en plein travail sans perte ni
+   doublon (les bancs n'ont tué que l'API).
+3. Au plus 5 clés d'API actives par espace (sécurité, petit lot).
+4. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
+5. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant » ; au minimum leur volume dans `/ops`.
+6. Décision de Julien : les quotas par espace de l'API publique (à partir de `/ops/usage`).
+7. Reliquat de doc : trois passages de `docs/ARCHITECTURE-CIBLE.md` (§3.1, §3.3, §9) disent encore « deux copies au
+   plus » comme une limite actuelle.
+Le reste de l'audit (équité des campagnes, agrégats, Redis, temps réel, troisième worker) attend un seuil mesuré.
 
 ## L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)
 
