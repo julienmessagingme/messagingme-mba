@@ -79,7 +79,6 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
     },
     testTokens: {
       findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
-      markConversationTest: async () => {},
       startTestRun: async (t) => { vus.push(`test:${t}`); return true; },
     },
     triggers: { run: async (t) => { vus.push(`automation:${t}`); return 0; } },

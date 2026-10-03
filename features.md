@@ -740,9 +740,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   **lien WhatsApp** avec un mot déjà écrit. On scanne, on appuie sur Envoyer, et le scénario démarre sur son
   propre numéro, sans campagne et sans attendre qu'un vrai client écrive. Comme c'est le testeur qui parle en
   premier, même un scénario qui ouvre par un message rapide ou un formulaire se teste. Le lien est **permanent**
-  pour ce scénario. La conversation de test est **marquée comme telle** : ses messages ne comptent ni dans les
-  statistiques ni dans l'analyse (le numéro testeur apparaît en revanche dans le mini-CRM, comme tout numéro qui
-  écrit). Sans numéro WhatsApp connecté, le mot à envoyer est affiché pour être recopié à la main.
+  pour ce scénario. **Depuis le 2026-10-03, la conversation n'est plus marquée comme test** (décision de Julien) :
+  un essai se comporte exactement comme une vraie conversation, statistiques, analyse et reprise par l'agent de
+  Meta comprises. Marquée, elle l'était pour toujours, et l'agent ne la reprenait plus jamais tout seul. Le numéro
+  testeur apparaît dans le mini-CRM, comme tout numéro qui écrit. Sans numéro WhatsApp connecté, le mot à envoyer
+  est affiché pour être recopié à la main.
 - ✅ **Tester À PARTIR D'UN BLOC précis** (2026-09-16) : chaque bloc du constructeur porte un **petit bouton
   lecture** en haut à gauche. Il ouvre le même panneau (QR + lien), mais le scénario démarrera **à ce
   bloc-là**, pas au début. On teste ainsi un bout de parcours sans avoir à dérouler tout ce qui précède, et
@@ -752,9 +754,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   **le panneau ne prévient pas** : décision de Julien, « tant pis, il ne se passe rien ».
 - ✅ **Un test DÉSENCLENCHE l'agent de Meta** (2026-09-16) : envoyer un lien de test reprend la conversation à
   l'agent, même s'il la tenait, et le scénario démarre. Avant, l'agent répondait « je n'ai pas bien compris
-  votre message » et le test ne partait jamais. Le fil **reste ensuite côté application** : on enchaîne les
-  essais sans que l'agent s'intercale, et on le réenclenche quand on veut avec le bouton de la conversation
-  dans l'Inbox. Une conversation née d'un test le reste.
+  votre message » et le test ne partait jamais. Ensuite, la conversation suit les règles de toutes les autres
+  (depuis le 2026-10-03) : l'agent se tait pendant le scénario, et une réponse que le scénario ne prend pas (un
+  texte libre sur un bloc dont la sortie « Toute autre réponse » n'est pas reliée) lui est confiée, et il y
+  répond. Les conversations marquées comme test avant cette date le restent : l'agent ne les reprend pas tout
+  seul, le bouton de la conversation dans l'Inbox le réenclenche.
 - ✅ **Un test joue LA MÊME version du début à la fin** (2026-09-16) : le brouillon est figé dans le parcours
   au démarrage. Avant, un test démarrait sur le brouillon mais **repartait sur la version en ligne** dès que
   le testeur répondait à une question ou qu'une attente se réveillait : on essayait deux versions sans le
@@ -1697,10 +1701,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   confiance en %** (grisé sous 50 %, pour repérer les verdicts à ne pas prendre au pied de la lettre) et la
   **justification** ; un **clic ouvre le fil réel dans l'inbox**. Analyse IA = **indicative**. Vide tant que peu
   de trafic (message « aucune conversation analysée sur la période » ou « analyse non activée »). Réservé admin.
-- ✅ **Les conversations de test ne polluent aucun chiffre** : une conversation ouverte par « Tester le scénario »
-  est marquée comme test et **écartée des statistiques** (messages échangés, templates envoyés, détail par
-  template, attribution des réponses du funnel) **et de l'analyse** (elle n'est jamais analysée, donc absente
-  de la page Analyse des conversations). Tester un scénario depuis son propre téléphone ne déforme donc pas les compteurs.
+- ✅ **Les conversations marquées comme test ne polluent aucun chiffre** : elles sont **écartées des statistiques**
+  (messages échangés, templates envoyés, détail par template, attribution des réponses du funnel) **et de
+  l'analyse** (jamais analysées, donc absentes de la page Analyse des conversations). ⚠️ **Depuis le 2026-10-03,
+  « Tester le scénario » ne marque plus rien** (décision de Julien) : un essai compte désormais comme une vraie
+  conversation. Seules les conversations marquées avant cette date restent écartées.
 
 ## L'aide de la console (bouton flottant, sur tous les écrans)
 

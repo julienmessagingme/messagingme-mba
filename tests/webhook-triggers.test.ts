@@ -179,7 +179,6 @@ describe('handleWebhookJob : intégration des automations', () => {
       triggers: { run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
       testTokens: {
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
-        markConversationTest: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
     });
@@ -205,7 +204,6 @@ describe('handleWebhookJob : intégration des automations', () => {
       triggers: { run: async (_t, ev) => { triggered.push(ev.waId); return demarres; } },
       testTokens: {
         findByTestToken: async () => null,
-        markConversationTest: async () => {},
         startTestRun: async () => true,
       },
     });
@@ -246,7 +244,6 @@ describe('handleWebhookJob : intégration des automations', () => {
       inboundContactUpsert: async () => 'updated',
       testTokens: {
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
-        markConversationTest: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
     });
@@ -265,7 +262,6 @@ describe('handleWebhookJob : intégration des automations', () => {
       inboundContactUpsert: async () => 'updated',
       testTokens: {
         findByTestToken: async () => { throw new Error('base indisponible'); },
-        markConversationTest: async () => {},
         startTestRun: async () => true,
       },
     })).resolves.toBeUndefined();

@@ -1,7 +1,7 @@
 ---
 ecran: perf-synthese
 source_section: Analytics (menu Analytics)
-source_empreinte: b07c3f
+source_empreinte: 5224f7
 ---
 # Lire mes résultats dans le Performance Lab
 
@@ -72,5 +72,6 @@ cliqué, le clic sur un lien, « a répondu sans cliquer »). Le tableau se nomm
 rendu en histogramme.
 
 Deux derniers points qui évitent des surprises : la **période ne suit pas d'une page à l'autre**, chacune
-repart de son défaut de trente jours ; et **une conversation ouverte depuis « Tester le scénario » n'entre
-dans aucun chiffre**, ni dans l'analyse. Tester depuis votre propre téléphone ne déforme rien.
+repart de son défaut de trente jours ; et **un essai lancé par « Tester le scénario » compte comme une vraie
+conversation**, dans les chiffres comme dans l'analyse. Seules les conversations de test d'avant le
+3 octobre 2026 restent écartées.

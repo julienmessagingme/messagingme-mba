@@ -37,8 +37,9 @@ import { destinataireAgentEvent, evenementMessageSansSuite, traceReponse, type E
  *     reprend le fil, agent de Meta ou scénario, et quand un opérateur le rend. Elle ne s'efface pas quand le fil
  *     va à l'équipe : c'est l'équipe qu'on attend. Sans ça, une conversation restait dans « À traiter » pendant que
  *     l'agent répondait, ou collée pour toujours après un refus de Meta (le balayage ne rend jamais un fil escaladé).
- *  5. **Un fil de test** (`is_test`) n'est jamais rendu automatiquement à l'agent : celui qui teste enchaîne les
- *     essais, et l'agent répondrait au scan suivant. Seul « Rendre la main », geste humain explicite, le peut.
+ *  5. **Un fil de test** (`is_test`) n'est jamais rendu automatiquement à l'agent. Seul « Rendre la main », geste
+ *     humain explicite, le peut. ⚠️ Plus rien ne marque une conversation comme test depuis le 2026-10-03 (le lien
+ *     de test ne le fait plus, décision de Julien) : la règle ne vaut que pour les conversations marquées avant.
  *  6. **Chaque écriture dit qui la demande** (`EcritureDuFil.par`, requis) : le collaborateur que l'appelant
  *     nomme pour un geste de la console, une cause écrite ici (`CAUSES`) pour tout le reste. Le dépôt en fait,
  *     dans la même requête, l'événement que raconte le panneau Détail de l'Inbox (migration 0192).

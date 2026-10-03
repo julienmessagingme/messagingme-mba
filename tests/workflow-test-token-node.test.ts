@@ -133,7 +133,6 @@ describe('processTestTokens transmet le bloc', () => {
       trace,
       deps: {
         findByTestToken: async (token: string) => { trace.cherche.push(token); return { workflowId: 'wf1', tenantId: 't1' }; },
-        markConversationTest: async () => {},
         startTestRun: async (_t: string, wf: string, _w: string, nodeId: string | null) => {
           trace.demarres.push({ wf, nodeId });
           return true;
@@ -246,7 +245,8 @@ describe('un jeton de test désenclenche l’agent de Meta', () => {
     // Quatre chemins rendent le fil tout seuls (fin de parcours, accusé du dernier envoi, retour d'un client que
     // personne ne suit, balayage de contrôle). La garde est posée une fois, dans le module du fil
     // (`src/inbox/fil.ts`), entre le geste chez Meta et tous ses appelants : la poser dans chacun serait quatre
-    // endroits où l'oublier. Sans elle, le fil repart entre deux essais et l'agent de Meta répond au scan suivant.
+    // endroits où l'oublier. ⚠️ Depuis le 2026-10-03, le jeton ne marque plus la conversation (décision de Julien) :
+    // la règle ne vaut plus que pour les conversations marquées avant, et ce cas les garde.
     const test = { test: true } as const;
     const fin = bancDuFil({ conversations: { w: { owner: 'app_workflow', ...test } } });
     await fin.fil.rendreApresParcours('t1', 'w');

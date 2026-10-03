@@ -26,11 +26,6 @@ export interface TestTokenDeps {
    * lisiblement si Meta ne le rend pas.
    */
   /**
-   * Marque la conversation comme un fil de test : elle sort de l'analyse (donc du push HubSpot) et des
-   * statistiques, pour qu'un essai interne ne ressemble pas à un vrai client.
-   */
-  markConversationTest(tenantId: string, waId: string): Promise<void>;
-  /**
    * Démarre le scénario ; le contact vient d'écrire, la fenêtre de 24 h est ouverte. `nodeId` = le bloc désigné
    * par le suffixe du jeton, `null` = l'entrée du scénario. `true` = parti ; `false` ou une chaîne (la raison) =
    * pas parti, et l'appelant journalise la raison.
@@ -99,7 +94,9 @@ export async function processTestTokens(
       // reste un jeton) mais on ne relance rien.
       if (alreadySeen?.has(m.messageId)) continue;
 
-      await deps.markConversationTest(tenantId, m.waId);
+      // 🔴 La conversation n'est PAS marquée comme test (décision de Julien du 2026-10-03) : un essai se comporte
+      // comme une vraie conversation, statistiques, analyse et remise à l'agent de Meta comprises. Marquée, elle
+      // l'était pour toujours, et l'agent ne la reprenait plus jamais tout seul, même hors de tout test.
       // La fermeture du parcours en cours se fait dans `runFrom` (`closeActiveByWaId`), après les gardes de
       // l'exécuteur : un test qui ne démarre pas ne tue pas le parcours, et un parcours endormi est fermé aussi.
       // Un refus se journalise : un lien permanent peut désigner un bloc supprimé depuis, que l'exécuteur refuse.

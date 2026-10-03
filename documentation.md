@@ -575,8 +575,9 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
   (`src/mba/transmettre-hors-parcours.ts`, testé ; l'événement dans `src/mba/evenement.ts`, `payload` en chaîne
   JSON bornée à 4 096 caractères APRÈS échappement, `to` en E.164 avec « + », mesuré). Seulement sur un VRAI
   message WhatsApp : cette branche reçoit aussi une réaction (sa charge porte le message visé) et un rapport RCS,
-  qui ne se transmettent pas. Seulement si le fil est vraiment à lui (`mba`) : une conversation de test, un
-  release refusé ou un marqueur en attente laissent un autre détenteur. Rien sur une fin normale de parcours ni
+  qui ne se transmettent pas. Seulement si le fil est vraiment à lui (`mba`) : une conversation de test (marquée
+  avant le 2026-10-03 : le lien de test ne marque plus rien), un release refusé ou un marqueur en attente laissent
+  un autre détenteur. Rien sur une fin normale de parcours ni
   sur un bouton sans suite (qui part à un humain), ni pour un message sans texte.
 - 🔴 **LE MARQUEUR DE 0149 NE SE POSE PLUS SUR UN ENVOI DÉJÀ TRAITÉ PAR META** (`demanderReleaseMba`) : il
   n'attend que si notre dernier envoi est le dernier message du fil (aucun ENTRANT plus récent), n'est pas acquitté
@@ -1184,7 +1185,8 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   - **confier** = ajouter le contact à la liste (Meta en E.164, PUIS la ligne de `mba_liste` avec l'identifiant
     rendu, l'ajout défait si la ligne échoue ; un contact déjà dans notre table ne coûte aucun appel ; le 400
     sans code que Meta rend sur un doublon se résout par UNE relecture), puis `release`. Agent éteint, aucun
-    numéro, ou fil de test sur un chemin automatique : rien. 🔴 Un `release` refusé APRÈS la liste n'est pas une
+    numéro, ou fil de test sur un chemin automatique (seules les conversations marquées avant le 2026-10-03 le
+    sont : le lien de test ne marque plus rien) : rien. 🔴 Un `release` refusé APRÈS la liste n'est pas une
     erreur : c'est la liste qui décide si l'agent parle, et Meta refuse le `release` quand son agent tient déjà
     le fil, ce qui arrive après tout modèle (essai réel du 2026-09-30). Il est journalisé et le contact est
     confié ; si nous tenions en fait le fil, le prochain message arrive chez nous et la remise le rejoue ;

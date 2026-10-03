@@ -752,20 +752,9 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
-   * Marque le fil comme une conversation de test (jeton de test d'un scénario). Sens unique. Exclut le fil de
-   * l'analyse (donc du push HubSpot) et des statistiques. Update seul : `recordInbound` a déjà créé la
-   * conversation.
-   */
-  async markConversationTest(tenantId: string, waId: string): Promise<void> {
-    await this.pool.query(
-      `update conversations set is_test = true where tenant_id = $1 and wa_id = $2 and not is_test`,
-      [tenantId, waId],
-    );
-  }
-
-  /**
-   * Cette conversation est-elle un fil de test ? Absente -> `false`. Sert à ne pas renvoyer le fil chez l'agent
-   * de Meta au milieu d'une série d'essais : un testeur le réenclenche lui-même depuis l'Inbox.
+   * Cette conversation est-elle un fil de test ? Absente -> `false`. Plus rien ne marque une conversation comme
+   * test depuis le 2026-10-03 (le lien de test ne le fait plus) : seules celles marquées avant le restent, et
+   * l'agent de Meta ne les reprend pas tout seul (règle 5 de `src/inbox/fil.ts`).
    */
   async estConversationDeTest(tenantId: string, waId: string): Promise<boolean> {
     const res = await this.pool.query<{ is_test: boolean }>(

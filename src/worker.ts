@@ -478,7 +478,6 @@ async function main(): Promise<void> {
           const wf = await workflowStore.findByTestToken(token);
           return wf ? { workflowId: wf.id, tenantId: wf.tenantId } : null;
         },
-        markConversationTest: (tenant, waId) => inboxStore.markConversationTest(tenant, waId),
         // Un testeur qui relance son lien repart du début : le parcours resté en attente est clos, sinon il resterait
         // orphelin (l'avance ne retrouve qu'un run à la fois par contact).
         startTestRun: async (tenant, workflowId, waId, nodeId) => {

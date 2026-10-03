@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { newTestToken, lireJetonDeTest, waMeTestLink } from '../src/workflow/test-token';
 import { processTestTokens } from '../src/webhooks/test-token';
 import { entrantsDe } from './webhook-fixtures';
@@ -61,27 +63,26 @@ describe('processTestTokens', () => {
   // Jeton FICTIF (aucun secret) : valeur figée pour rendre les assertions lisibles.
   const MOT_TEST = 'test-a7k2m9p3';
   function deps(over: Partial<Parameters<typeof processTestTokens>[1]> = {}) {
-    const trace = { marked: [] as string[], started: [] as string[] };
+    const trace = { started: [] as string[] };
     return {
       trace,
       deps: {
         findByTestToken: async (tok: string) => (tok === MOT_TEST ? { workflowId: 'wf1', tenantId: 't1' } : null),
         mayStart: async () => true,
-        markConversationTest: async (_t: string, waId: string) => { trace.marked.push(waId); },
         startTestRun: async (_t: string, wf: string) => { trace.started.push(wf); return true; },
         ...over,
       },
     };
   }
 
-  it('jeton reconnu -> fil marqué test, parcours en cours clos, scénario démarré, message CONSOMMÉ', async () => {
+  it('jeton reconnu -> scénario démarré, message CONSOMMÉ, et la conversation n’est PAS marquée test', async () => {
     const { deps: d, trace } = deps();
     const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d);
-    // 🔴 CAS CONSERVE, ATTENTE AJUSTEE. Ce test verifiait que cette etape fermait elle-meme le parcours en
-    // cours (`ended`). Elle ne le fait plus : la fermeture est descendue dans `runFrom`, ou elle couvre AUSSI
-    // les parcours endormis et ne tire qu APRES les gardes. Ce qui est exerce ici reste le meme : le jeton
-    // marque la conversation et demarre le test.
-    expect(trace).toEqual({ marked: ['33611'], started: ['wf1'] });
+    // 🔴 CAS CONSERVE, ATTENTE AJUSTEE, deux fois. Ce test verifiait que cette etape fermait elle-meme le parcours
+    // en cours (`ended`) : la fermeture est descendue dans `runFrom`. Il verifiait ensuite que le jeton MARQUAIT la
+    // conversation (`marked`) : il ne le fait plus depuis le 2026-10-03 (decision de Julien, un essai se comporte
+    // comme une vraie conversation), et `TestTokenDeps` n'a plus de quoi marquer, ce qui tient la regle au type.
+    expect(trace).toEqual({ started: ['wf1'] });
     expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
   });
 
@@ -138,16 +139,17 @@ describe('processTestTokens', () => {
     expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
   });
 
+  // L'écriture qui lève était le marquage, retiré le 2026-10-03 : c'est désormais le démarrage, seule écriture
+  // restante après la consommation.
   it('une erreur sur un jeton n’empêche pas les autres messages du webhook', async () => {
-    const { deps: d, trace } = deps({ markConversationTest: async () => { throw new Error('base indisponible'); } });
+    const { deps: d } = deps({ startTestRun: async () => { throw new Error('base indisponible'); } });
     await expect(processTestTokens(await entrantsDe(payload(MOT_TEST)), d)).resolves.toBeInstanceOf(Set);
-    expect(trace.started).toEqual([]);
   });
 
   // --- Corrections issues de la revue du Lot F ---
 
   it('le message est CONSOMMÉ même si une écriture LÈVE (sinon il retomberait dans l’avance et les automations)', async () => {
-    const { deps: d } = deps({ markConversationTest: async () => { throw new Error('base indisponible'); } });
+    const { deps: d } = deps({ startTestRun: async () => { throw new Error('base indisponible'); } });
     const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d);
     expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
   });
@@ -171,17 +173,31 @@ describe('processTestTokens', () => {
       const { deps: d, trace } = deps();
       const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d);
       expect(trace.started).toEqual(['wf1']);
-      expect(trace.marked).toEqual(['33611']);
       expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true); // le message reste un jeton, pas une réponse
     });
   });
+
+  /**
+   * 🔴 PLUS RIEN NE MARQUE UNE CONVERSATION COMME TEST (décision de Julien du 2026-10-03, « ne mets plus jamais un
+   * flag test sur ma conversation »). Marquée, elle l'était pour toujours, et l'agent de Meta ne la reprenait plus
+   * jamais tout seul, même hors de tout test. Le type de `TestTokenDeps` n'a plus de quoi marquer ; ce cas garde le
+   * reste de `src/`, où une écriture de la colonne reviendrait sans qu'aucun type ne bouge.
+   */
+  it('🔴 aucun code de src/ n’écrit `is_test = true`', () => {
+    const racine = join(__dirname, '..', 'src');
+    const fautifs = (readdirSync(racine, { recursive: true }) as string[])
+      .filter((f) => f.endsWith('.ts'))
+      .filter((f) => /is_test\s*=\s*true/i.test(readFileSync(join(racine, f), 'utf8')));
+    expect(fautifs).toEqual([]);
+    // Il lit tout `src/` : près de 5 s mesurées sur le poste, la limite par défaut de vitest.
+  }, 30_000);
 
   describe('rejeu du webhook (at-least-once)', () => {
     it('message DÉJÀ traité -> aucune relance (pas de double envoi facturé), mais toujours consommé', async () => {
       const { deps: d, trace } = deps();
       const seen = new Set([`wamid.${MOT_TEST}`]);
       const consumed = await processTestTokens(await entrantsDe(payload(MOT_TEST)), d, seen);
-      expect(trace).toEqual({ marked: [], started: [] });
+      expect(trace).toEqual({ started: [] });
       expect(consumed.has(`wamid.${MOT_TEST}`)).toBe(true);
     });
 
