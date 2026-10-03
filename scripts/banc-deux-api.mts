@@ -8,6 +8,26 @@
  * COPIE, donc deux fois le quota vendu ; une clé révoquée reste vivante sur la copie qui n'a pas vu la
  * révocation, et celle d'un prestataire parti ne meurt jamais.
  *
+ * 🔴 COMMENT REMONTER LE BANC, ET POURQUOI C'EST ÉCRIT ICI (2026-10-03). Il a tourné sur le VPS le
+ * 2026-10-02 et rendu trois verdicts verts, puis il a été DÉMONTÉ : il occupait le VPS partagé sans servir,
+ * et un banc qui tourne sans que personne s'en souvienne est une dette. Le remonter prend dix minutes :
+ *   1. Pas de Docker sur le poste de Julien : tout se fait sur le VPS, dans un dossier À PART, jamais dans
+ *      `/home/ubuntu/mba` (le dépôt de production). `git clone --depth 1 <url publique> /home/ubuntu/banc-2api`.
+ *   2. Une image DÉDIÉE, pour ne pas toucher l'image de production : `docker build -t banc-mba:2api .`
+ *   3. Un réseau dédié et un Postgres jetable, la MÊME image que la CI (`pgvector/pgvector:pg16`, la migration
+ *      0110 pose `create extension vector`), publié sur 127.0.0.1 seulement :
+ *      `docker network create banc2api_net` puis `docker run -d --name banc-postgres --label banc=2api
+ *      --network banc2api_net -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:54329:5432 pgvector/pgvector:pg16`.
+ *   4. Un `.env.banc` aux secrets JETABLES (jamais ceux de `.env.prod`) : `DATABASE_URL` vers `banc-postgres`,
+ *      `DB_SSL=off`, `NODE_ENV=production`, `DRY_RUN=true`, et les trois que la configuration exige en
+ *      production, `ENCRYPTION_KEY`, `AUTH_SECRET`, `META_APP_SECRET` (`openssl rand -hex 32`).
+ *   5. `npm run migrate` puis `SEED_DEMO=true npm run seed`, dans un conteneur de l'image sur le réseau.
+ *   6. 🔴 LE WORKER D'ABORD, l'API ensuite : l'API refuse de démarrer tant que le worker n'a pas migré pg-boss
+ *      (« pg-boss is not installed »). Puis deux copies d'API, `banc-api-a` et `banc-api-b`.
+ *   7. Ce script, lancé dans un conteneur sur le même réseau.
+ * Démontage : `docker rm -f $(docker ps -aq --filter label=banc=2api)`, `docker network rm banc2api_net`,
+ * `docker rmi banc-mba:2api`, et le dossier.
+ *
  * Usage (jamais contre la production, cf. les deux gardes) :
  *   BANC_CONFIRME=1 BANC_API_A=http://banc-api-a:8095 BANC_API_B=http://banc-api-b:8095 \
  *     DATABASE_URL=postgres://...base-jetable... npx tsx scripts/banc-deux-api.mts

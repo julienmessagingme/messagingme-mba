@@ -1,7 +1,7 @@
 # Déploiement — mba.messagingme.app (VPS OVH + NPM)
 
-Trois conteneurs sur le réseau `mcp-robot_default` : `mba-api` (Fastify :8095), `mba-worker`
-(pg-boss), `mba-web` (Next.js :3000). NPM expose `mba.messagingme.app` -> `mba-web:3000` ;
+Quatre conteneurs sur le réseau `mcp-robot_default` : `mba-api` (Fastify :8095), DEUX workers pg-boss
+(`mba-worker` au rôle `principal`, `mba-worker-analyse` au rôle `analyse`, depuis le 2026-10-03), `mba-web` (Next.js :3000). NPM expose `mba.messagingme.app` -> `mba-web:3000` ;
 le front proxifie `/api/backend/*` -> `mba-api:8095` (interne, pas de CORS, backend non public).
 
 🔴 **`$VPS` N'EST PAS UNE VARIABLE D'ENVIRONNEMENT, C'EST UNE CAVITÉ VOLONTAIRE.** L'adresse IP du VPS ne
@@ -126,6 +126,12 @@ sudo docker compose up -d --build                                # 3) bascule le
 ⚠️ **Avec une seule copie de l'API, le trou du `up` peut s'allonger jusqu'à ~20 s** si un envoi du relais de l'agent de Meta (ou le signal d'un clic) est en vol : l'arrêt de l'ancien conteneur l'attend (`ATTENTE_GESTES_A_L_ARRET_MS`) avant de rendre la place. Rien n'est perdu : les webhooks de Meta non acquittés sont rejoués par Meta.
 
 ⚠️ **`mba-api` et `mba-worker` sont DEUX images distinctes** (même Dockerfile, `image:` implicite `mba-mba-api` / `mba-mba-worker`). `docker compose build mba-api` ne rebuild PAS le worker : un `up --force-recreate` ensuite relance le worker sur son ANCIENNE image (constaté 4.11 : nouvel env `DB_SSL_CA_FILE` + ancienne image sans la CA -> ENOENT crash-loop worker pendant que l'api tournait). Pour un changement de code/fichier baké : `docker compose up -d --build` (rebuild les DEUX), ou builder explicitement `mba-api` ET `mba-worker`.
+
+🔴 **DEUX WORKERS DEPUIS LE 2026-10-03, ET QUATRE RÈGLES QUI EN DÉCOULENT** (`WORKER_ROLE`, `src/worker/roles.ts`).
+- **Les déployer en DEUX TEMPS** : `up -d mba-api mba-worker mba-web`, attendre dans les journaux la ligne « démarré » du principal, PUIS `up -d mba-worker-analyse`. Le pooler en mode session est plafonné à 15 sessions et seuls les workers en tiennent (pg-boss plus l'écoute) : les relancer d'un coup pendant que le pooler retient encore les sessions des conteneurs tués frôle ce plafond, et `EMAXCONNSESSION` fait redémarrer en boucle. Fait ainsi le 2026-10-03, sans un refus.
+- **Un `--force-recreate` après un changement de `.env.prod` doit NOMMER `mba-worker-analyse`** : sinon il garde l'ancien environnement, en silence.
+- **Une migration qui doit passer APRÈS le `up` casse la routine build, migrate, up**, puisque `migrate` applique tout ce que l'image porte. Cas de 0202 (elle efface une ligne que l'ancien worker réécrivait toutes les 20 s) : build, `up`, PUIS `migrate`.
+- **Chaque rôle en UN SEUL exemplaire** : `groupConcurrency` est local au processus pg-boss, deux copies d'un rôle doubleraient le plafond par espace et dédoubleraient les minuteries.
 
 🔴 **Le `build` de l'étape 1 n'est pas optionnel, et son oubli est SILENCIEUX.** `docker compose run mba-api`
 démarre un conteneur depuis l'IMAGE, pas depuis le répertoire du VPS. Les migrations sont copiées dans l'image

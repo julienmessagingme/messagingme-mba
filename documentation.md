@@ -1502,6 +1502,17 @@ Ce qui reste par copie, et pourquoi c'est juste :
 
 Tous en `unref()`, chacun avec sa variable de cadence (les valeurs sont dans `src/config.ts`).
 
+Ils se répartissent entre DEUX RÔLES de worker, choisis par `WORKER_ROLE` (table d'appartenance dans
+`src/worker/roles.ts`, tenue par `tests/worker-roles.test.ts`, qui la dérive de `worker.ts` dans les deux sens) :
+`principal` porte le chemin que la production emprunte (webhooks, campagnes, scénarios, tours d'agent, purges,
+reprises), `analyse` porte l'analyse des conversations et ce qu'elle alimente, et `all`, le défaut, porte tout.
+Les minuteries d'infrastructure du processus (`heartbeat`, `pool-attentes`) tournent dans les deux. 🔴
+`agregats-analyse` reste sur `principal` avec `retention-conversations` : ils se parlent par un drapeau en
+mémoire (`agregatsAJour`), et les séparer arrêterait la purge RGPD en silence. Le filtre des files vit dans
+`PgBossQueue.neTravailleQue` et non aux enregistrements, parce que des tests dérivent les files consommées du
+texte de `worker.ts`. ⚠️ Un rôle peut ENFILER vers une file qu'il ne consomme pas (l'analyse déclenche signaux et
+automations, servis par le principal) : ça tient parce que `enqueue` crée sa file lui-même.
+
 | Balayeur | Ce qu'il fait |
 |---|---|
 | reclaim | ramène à `pending` un destinataire `sending` trop vieux |
@@ -1521,7 +1532,7 @@ Tous en `unref()`, chacun avec sa variable de cadence (les valeurs sont dans `sr
 | purge des événements Meta | `WEBHOOK_EVENTS_RETENTION_DAYS` |
 | `ops/dlq-sweep` | alerte Telegram sur les DLQ non vides |
 | `compteurs-debit` | toutes les 5 min, efface les fenêtres échues des plafonds partagés (`compteurs_debit`) : une tentative de connexion sur une adresse inventée écrit une ligne, six heures de rafale en garderaient des millions |
-| heartbeat | écrit `worker_heartbeat`, lu par `/ops` pour voir un worker mort |
+| heartbeat | écrit `worker_heartbeat`, UNE LIGNE PAR RÔLE (clé = le rôle), lu par `/ops` pour voir un worker mort ; une ligne unique laisserait le survivant masquer la mort de l’autre |
 
 🔴 **LE BALAYAGE DU RISQUE EST LE SEUL CHEMIN DE MASSE QUI ÉMET UN ÉVÉNEMENT D'AUTOMATION** (exception décidée,
 spec § 19, invariant 8). Ses bornes en sont la condition, et elles vivent au point d'émission
@@ -2281,7 +2292,7 @@ par opération, avec le TRAVAIL demandé (un lot de 50 contacts y compte 50, pas
 qui sert la requête, jamais en base : une ligne SQL par appel ferait amplifier par la journalisation la
 charge qu'elle observe. Aucun seuil n'est posé à ce jour, ces compteurs OBSERVENT.
 
-`/ops/overview` (session d'exploitation) : rollup par tenant, charge des files, heartbeat du worker. Les DLQ non
+`/ops/overview` (session d'exploitation) : rollup par tenant, charge des files, battement de chaque rôle de worker. Les DLQ non
 vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md](docs/SLO-2026-09-01.md).
 
 ---

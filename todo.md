@@ -1,5 +1,27 @@
 # todo.md : backlog
 
+## 🟡 Double worker : les jaunes de la relecture (2026-10-03)
+
+Relecture indépendante du lot déployé le 2026-10-03, verdict « DÉPLOIE », aucun rouge. À corriger dans un petit
+lot, relu par le suivant.
+
+- 🔴 **D'abord, un commentaire FAUX, parce qu'il serait recopié** : `src/queue/pgboss.ts` (au-dessus du filtre de
+  `work()`) et le plan affirment que les dix sites d'`enqueue` du worker visent tous une file du MÊME rôle, « mesuré ».
+  C'est faux : l'analyse enfile INDIRECTEMENT vers le principal (`emettreSignal` vers `signaux-batch`, les
+  automations de type `analysis` vers `automation-event`, `agent-turn`, `optout-poussee`). Ça marche parce que
+  `PgBossQueue.enqueue` fait son propre `ensure`. Réécrire la raison ainsi ; sinon quelqu'un qui retirerait ce
+  `ensure` en croyant le commentaire casserait le chemin analyse vers principal.
+- **Le balayage d'agrégats du DÉMARRAGE tourne aussi dans le rôle `analyse`** (`src/worker.ts`, le bloc qui
+  précède `taches.programmer('agregats-analyse'`, hors du registre donc hors du filtre). Les deux processus
+  recalculent 400 jours d'agrégats au `up`. Sans corruption (upsert monotone), mais un interblocage repousserait la
+  purge d'un cycle. Le garder derrière `assume(config.WORKER_ROLE, 'principal')`.
+- **`pool-attentes` écrit le nom de processus `'worker'` en dur** : les deux workers fusionnent dans la même courbe
+  de `/ops`, et le signal « pool saturé » ne dit plus de quel processus il vient. Un nom par rôle.
+- **Le commentaire du compose sur la taille du worker d'analyse mesure le mauvais budget** : « 60 connexions, 21
+  utilisées » compte les backends Postgres, alors que la contrainte qui mord est le plafond de 15 SESSIONS du pooler.
+  Et le commentaire de `DB_POOL_MAX` dans `src/config.ts` annonce encore 2 x 8 = 16 clients (maximum théorique : 19).
+- **Les alertes Telegram portent toutes `[mba-worker]`** sans le rôle.
+
 ## 🟡 RGPD : `workflow_runs` et `automation_fires` ne sont pas purgés pour une personne sans conversation (2026-10-03)
 
 Trouvé par la revue finale du widget, ANTÉRIEUR au widget. `PgContactStore.purgeMany` (`src/crm/contact-store.pg.ts`)

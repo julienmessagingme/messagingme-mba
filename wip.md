@@ -19,6 +19,26 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## DOUBLE WORKER (DÉPLOYÉ LE 2026-10-03 À 8 H 17 UTC ; ESSAI RÉEL DÛ)
+
+Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, décidé par Julien le 2026-10-02.
+
+- ✅ **En production** : `mba-worker` au rôle `principal` (7 files : webhooks, campagnes, scénarios, tours d'agent,
+  opt-out, signaux), `mba-worker-analyse` au rôle `analyse` (3 files : `analyze-conversation`, `push-analysis`,
+  `hubspot-catchup`). Les 10 ensemble, sans recouvrement, lu dans leurs journaux de démarrage.
+- ✅ **Un battement par rôle**, depuis deux conteneurs distincts, relu en base après 0202 ; l'ancienne ligne
+  `worker` a disparu. `/ops` expose `workers`, la console une ligne par rôle (et lit encore l'ancienne forme).
+- ✅ **Déployé en deux temps** (principal, puis analyse) à cause du plafond de 15 sessions du pooler : aucun
+  `EMAXCONNSESSION`. Cinq portes publiques à 200.
+- ✅ **Le banc à deux copies d'API** est vert sur ses trois propriétés (clé acceptée des deux côtés, clé révoquée
+  refusée par les DEUX, plafond par espace GLOBAL : 54 acceptés contre 76 refusés sur 130 tirs, plafond 60). Il a
+  été DÉMONTÉ du VPS le 2026-10-03 ; la recette pour le remonter est en tête de `scripts/banc-deux-api.mts`.
+- 🔴 **L'ESSAI RÉEL EST DÛ** : aucun trafic au moment du déploiement. Julien envoie un message WhatsApp au numéro
+  Zadarma ; on doit voir le webhook traité par le principal, puis l'analyse de la conversation traitée par l'autre
+  worker. C'est l'isolation achetée, elle se constate en vrai.
+- 🟡 **Les jaunes de la relecture** sont dans `todo.md` (« Double worker : les jaunes de la relecture »), dont un
+  commentaire FAUX à corriger en premier (`src/queue/pgboss.ts`).
+
 ## L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)
 
 Le fonctionnel est dans `features.md` (section « MBA, le répondeur de Meta » et onglet « Outils »), le récit dans le

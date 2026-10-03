@@ -5,6 +5,36 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-02 et 03 : le double worker en production, et le banc à deux copies d'API vert
+
+**Déployé le 2026-10-03 à 8 h 17 UTC**, décidé par Julien après l'audit de performance du 2026-10-02 : un second
+worker pour isoler l'analyse du chemin que la production emprunte, et un crash test à deux copies d'API avant tout
+autoscaling.
+
+**Le banc a tourné sur un Postgres jetable monté sur le VPS** (199 migrations depuis zéro), avec deux vraies copies
+de l'image et un worker. Trois verdicts verts : une clé créée est acceptée des deux côtés, une clé révoquée est
+refusée immédiatement par les DEUX, et le plafond par espace est GLOBAL (54 acceptés contre 76 refusés sur 130 tirs
+alternés, plafond 60 ; à compteur par copie on aurait passé ~120). Démonté ensuite ; sa recette est dans le script.
+
+**Trois défauts trouvés en chemin, sans rapport avec le lot.** `npm run seed` était cassé DEUX fois : un
+`on conflict (lower(email))` sur un index global que la migration 0073 avait supprimé (42P10), puis, réparé, un
+compte incapable de se connecter, le mot de passe vivant sur l'identité depuis 0072. Et 0060 est appliquée en
+production alors que son fichier a disparu du dépôt : une base neuve n'a jamais 0060.
+
+**Deux révisions sur donnée mesurée.** Le filtre des files a d'abord été posé en renommant l'appel `queue.work` :
+cinq gardes du dépôt sont tombées d'un coup, celles qui dérivent les files consommées du texte de `worker.ts`. Il
+vit donc dans la file (`neTravailleQue`). Et le battement, ligne unique `id = 'worker'`, aurait laissé le survivant
+masquer la mort de l'autre : il passe à une ligne par rôle, SANS changement de schéma, `id` étant déjà une clé.
+
+🔴 **Ce que la relecture a corrigé chez moi** : j'avais écrit « mesuré » que tous les enfilements du worker visaient
+une file du même rôle. C'était incomplet, l'analyse enfile indirectement vers le principal. La conclusion tenait
+pour une autre raison (`enqueue` crée sa file). **Une mesure qui ne couvre que les appels DIRECTS ne dit rien des
+chemins qui traversent le câblage** ; c'est la même famille que « un test unitaire monte un faux câblage ».
+
+**Déployé en deux temps**, principal puis analyse, à cause du plafond de 15 sessions du pooler, et 0202 APRÈS le
+`up`. Partition parfaite en production (7 files contre 3), deux battements de deux conteneurs, portes publiques à
+200. L'essai réel reste dû : aucun trafic ce samedi matin.
+
 ## 2026-10-02 et 03 : le widget WhatsApp, lots 3b à 5 et revue finale, tout en production
 
 **D'où ça vient.** Une bulle WhatsApp à poser sur le site d'un client, voulue par Julien pour TOUS les clients de la
