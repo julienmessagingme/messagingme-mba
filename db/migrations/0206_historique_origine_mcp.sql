@@ -18,4 +18,4 @@
 set local lock_timeout = '5s';
 alter table reglages_historique drop constraint if exists reglages_historique_origine_chk;
 alter table reglages_historique add constraint reglages_historique_origine_chk
-  check (origine in ('assistant', 'formulaire', 'mcp'));
+  check (origine in ('assistant', 'formulaire'));
