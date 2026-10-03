@@ -180,6 +180,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Webhooks entrants** | un tiers poste du JSON, on en fait un contact et un événement | `src/webhook-entrant/` | `/webhooks` | `webhooks` | |
 | **Connecteur HubSpot** | import de listes, étapes de deal | `src/hubspot/` | `/tuto-hubspot` | | `hubspot-catchup` |
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
+| **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
 | **API publique v1** | ce qu'un intégrateur du client appelle | `src/api/`, `src/http/v1-*.ts` | `/developers` | `api_keys`, `api_idempotency` | |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log` | `dlq-sweep` |
 | **Auth et comptes** | connexion, invitations, rôles, multi-espace | `src/auth/`, `src/user/` | `/login`, `/admin` | `users`, `identities`, `auth_tokens` | |
@@ -300,6 +301,20 @@ une condition. Chaque arrivée garde aussi sa ligne dans `arrivees_pub` (migrati
 c'est la seule trace de `ctwa_clid`. La purge RGPD efface `ctwa_clid` et garde la ligne (elle anonymise la
 fiche sans la supprimer, donc la cascade ne joue pas). `WebhookJobDeps` rend `arriveesPub` obligatoire avec
 `inbox`.
+
+🔴 **L'ÉTAPE DU WIDGET EST LA DERNIÈRE DE `processInbound`** (`src/widgets/arrivee.ts`). Chaque étape au-dessus
+voit exactement ce qu'elle voyait sans widget, et un message qui ne porte aucune phrase ne coûte qu'une lecture des
+widgets de son espace (`reconnaissanceDesWidgets`). Un message TEXTE qui CONTIENT la phrase d'un widget actif (à la
+casse, aux accents et aux espaces près ; la plus longue gagne) reçoit l'étiquette `widget-<code>`, dérivée du code
+donc stable quand le widget est renommé, et qui n'émet AUCUN événement d'automation. Puis le devenir du widget :
+`scenario` démarre son scénario par le runner des automations et toutes ses gardes, sur une automation construite
+en mémoire dont le propriétaire est `POSSESSEUR_WIDGET` (`src/automation/match.ts`). Elle REPREND donc le fil à
+l'agent de Meta (`reprendLaMain`) et le LAISSE à un opérateur qui le tient (`epargneLOperateur`), comme une
+publicité ; un `standby` démarre comme un `messages`, la reprise retirant le contact de la liste de l'agent avant
+tout envoi, ou annulant le démarrage si Meta refuse. Le message qui démarre le scénario est CONSOMMÉ : ni
+automation, ni avance de parcours, ni remise à l'agent de Meta ne le voient. `mba`, `agent` (grisé « à venir » à
+l'écran et refusé par l'API) et `null` ne démarrent rien. Les tirs du widget vivent dans `widget_tirs`, pas dans
+`automation_fires`, qui référence `automations`.
 
 ### 4.2 Une campagne part
 
@@ -1298,6 +1313,29 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   `call_to_action.value.link` (`VALEUR_BOUTON_VIDEO`), faute de champ `link` dans `video_data`. La première
   création réelle tranche.
 
+**Widgets**
+
+- `widgets` (0200) : une ligne par bulle. 🔴 **Le `code` est une porte à SENS UNIQUE** : il est dans l'adresse du
+  script collé sur le site du client (`/widget/<code>.js`), aucun `update` ne le réécrit, et il donne aussi
+  l'étiquette de source. `devenir` vaut `agent`, `mba`, `scenario` ou `null` (le réglage de l'espace), avec des
+  CHECK à SENS UNIQUE sur `agent_id` et `workflow_id`, écrits `coalesce(devenir = 'x', false)` parce qu'un CHECK qui
+  vaut NULL est satisfait. Les deux clés étrangères sont en `on delete set null` : un scénario supprimé rend le
+  widget INERTE sans le détruire. `widgets_phrase_key` rend la phrase unique par espace, à la casse et aux espaces
+  près.
+- `widget_tirs` (0201) : l'anti-rebond et le plafond horaire du scénario d'un widget, clé `(widget_id, wa_id)`. Il
+  porte un numéro : 🔴 la purge RGPD l'efface par TOUS les numéros de la personne, ceux de ses fils ET celui de sa
+  fiche, parce que la rétention efface les fils et garde la fiche.
+- 🔴 **Un seul point de passage pour écrire : `src/widgets/gestion.ts`**, appelé par la route de la console
+  (`src/http/widgets.ts`, réservée aux admins, lecture comprise) ET par les outils MCP (`create_widget`,
+  `update_widget`, `list_widgets`, `list_scenarios`). Ses contrôles, que la base ne fait pas : cinq widgets au plus
+  par espace ; le scénario désigné appartient au MÊME espace (sinon fuite entre espaces) et, quand la requête le
+  choisit, a une version publiée ; le devenir `agent` est refusé ; et la phrase. L'espace des phrases d'un espace
+  est **widgets UNION liens de chaîne**, comparés par INCLUSION dans les deux sens après normalisation et
+  ponctuation finale retirée (`src/widgets/phrases.ts`, partagé avec la création d'un lien de chaîne). Une phrase
+  déjà vue dans des messages reçus est refusée, les arrivées par un widget n'y comptant pas. Une phrase qui
+  COMMENCE par un mot d'arrêt est refusée, sinon `estDemandeArret` désabonnerait chaque visiteur avant l'étape du
+  widget ; même règle pour un lien de chaîne.
+
 **Journal**
 
 - `webhook_events` : le corps brut de chaque webhook Meta, `meta_message_id` unique (c'est l'idempotence).
@@ -1326,7 +1364,9 @@ même tenant est préservé par référence, tout le reste est re-minté.
 
 ⚠️ **Deux longueurs de code, deux raisons.** Une clé d'ACCÈS publique (webhook entrant, visuel RCS) fait 26
 caractères base32, soit 130 bits : c'est elle qui tient l'accès à elle seule. Un code de lien tracé se
-contente de 60 bits parce qu'il doit tenir dans l'URL d'un bouton WhatsApp.
+contente de 60 bits parce qu'il doit tenir dans l'URL d'un bouton WhatsApp. Le code d'un widget a la même forme
+que celui d'un lien tracé : il ne donne aucun accès, il désigne une bulle publique, et il ne change jamais (bloc
+« Widgets » plus haut).
 
 ### Le schéma `salesforce` (l'app Salesforce)
 
@@ -1749,7 +1789,9 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   (`CODES_INCONNUS_PAR_MINUTE`, clé constante, en silence, une instance par porte) freine les codes jamais résolus
   par ce process, et un code résolu en est exempté, comme une clé sur `/v1`. Épuisé, il rend 429, sauf au widget,
   qui rend son script inerte sans cache (la réponse s'exécute dans la page d'un client). APRÈS la lecture, pour
-  les deux premières seulement (le widget n'a pas de plafond par code : sa réponse se met en cache 60 s), le
+  les deux premières seulement (le widget n'a pas de plafond par code : sa réponse se met en cache 60 s chez le navigateur et le CDN, et son
+  rendu se garde 30 s par code dans le process, `cacheCourt`, parce qu'un paramètre de requête contourne le
+  premier), le
   plafond par code EXISTANT (`WEBHOOK_IN_RATE_LIMIT_*`, `RCS_CALLBACK_PAR_MINUTE`). Le second se calcule sur le débit RCS d'un run de campagne, et ne tient que parce
   qu'un seul run tourne à la fois par espace ; des tests tiennent le débit, la concurrence par groupe et le
   `groupId` de chaque enfilement. Les envois RCS d'un scénario n'y passent pas : la marge les absorbe. Un code

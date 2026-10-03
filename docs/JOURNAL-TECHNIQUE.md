@@ -5,6 +5,41 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-02 et 03 : le widget WhatsApp, lots 3b à 5 et revue finale, tout en production
+
+**D'où ça vient.** Une bulle WhatsApp à poser sur le site d'un client, voulue par Julien pour TOUS les clients de la
+console et pas seulement pour « Engage Me pour Claude Code ». Spec `docs/superpowers/specs/2026-10-02-widget-whatsapp-design.md`,
+plan `docs/superpowers/plans/2026-10-02-widget-whatsapp.md`. Lots 1 à 3 le 2 octobre (table, route publique, arrivée).
+
+**Ce qui est livré, dans l'ordre des déploiements.**
+- **Lot 3b, `97cdb65a`** : le scénario d'un widget reprend le fil à l'agent de Meta et le laisse à un opérateur
+  (`POSSESSEUR_WIDGET`), et un `standby` démarre. Sans lui, le devenir `scenario` ne partait jamais sur un espace où
+  l'agent de Meta tient le fil. Déployé avec le lot 3 : le conteneur portait déjà tout jusqu'au dernier commit d'un
+  pair (vérifié à l'octet), donc le `up` n'a embarqué que ces deux lots.
+- **Lot 4, en deux poussées** : l'API (`81f258b7`, routes et `gestion.ts`) déployée AVANT l'écran (`4d5acbb8`), pour
+  que Vercel ne publie jamais une console qui appelle une route absente. Décisions de Julien : cinq widgets par
+  espace, un scénario supprimé rend le widget inerte, l'API avant l'écran.
+- **Lot 5, `4551324c`** : quatre outils MCP sur les mêmes fonctions, plus deux jaunes du lot 4 (scénario publié
+  exigé ; arrivées du widget hors du comptage des messages reçus). `list_scenarios` a été ajouté en cours de route :
+  sans lui, `create_widget` en devenir scénario était inutilisable par un modèle.
+- **Revue finale complète des lots 1 à 5 : aucun rouge.** Trois jaunes corrigés dans `e5a66e58` : le mot d'arrêt en
+  tête de phrase (il aurait désabonné chaque visiteur), la purge de `widget_tirs` par la fiche, le cache de 30 s de
+  la route publique.
+
+**Mesures.**
+- Le droit `mcp:write` gagne la création et la modification des widgets : les 3 clés actives qui le portaient au
+  déploiement étaient toutes dans l'espace interne SANDBOX (lecture en base), aucun client n'était concerné.
+- Chaque lot : une relecture indépendante (aucun rouge sur les lots 3b, 4 et 5), l'arbre exact de chaque commit
+  revérifié hors du dépôt (typechecks, suite complète, auto-attaque), la CI lue job par job, le contrôle public après
+  chaque `up`, les fiches d'aide rechargées (`aide:charger`).
+- Le test d'intégration de la purge, qui ne tourne pas en local, a été vérifié dans les deux sens par un commit MUTÉ
+  poussé sur une étiquette jetable : rouge exactement sur ce test, le vrai commit vert.
+- Coordination : deux sessions voisines (catalogue d'outils de l'agent de Meta, fiche unique) ont déployé entre mes
+  lots ; chaque `up` a été annoncé et n'a embarqué un commit voisin qu'avec l'accord de son auteur.
+
+**Ce qui reste.** L'essai réel et trois décisions de Julien (`wip.md`), les jaunes (plan, « Ce qui reste »), et un
+trou RGPD antérieur au widget sur `workflow_runs` et `automation_fires` (`todo.md`).
+
 ## 2026-10-02 et 03 : la règle unique du catalogue d'outils (offrable, appelable, publiable)
 
 **D'où ça vient.** Une revue d'architecture du 2026-10-02 au soir a classé neuf frictions ; Julien a retenu la

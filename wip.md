@@ -45,6 +45,22 @@ journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont
   `get_contact` toujours appelé avec succès par l'agent de Meta (`agent_tool_calls`). ⚠️ Effet voulu mais à savoir : un
   appel de connecteur dont le système est en brouillon ne s'active plus, donc ne s'essaie plus au bac à sable.
 
+## WIDGET WHATSAPP (LOTS 1 À 5 DÉPLOYÉS DANS LA NUIT DU 2 AU 3 OCTOBRE ; ESSAI RÉEL DÛ)
+
+Le fonctionnel est dans `features.md` (section « Widget WhatsApp »), la technique dans `documentation.md` (§4.1 et
+bloc « Widgets »), le récit dans le journal du 2026-10-02 et 03, les jaunes ouverts dans le plan
+(`docs/superpowers/plans/2026-10-02-widget-whatsapp.md`, « Ce qui reste »). Ce qui reste EN COURS :
+
+- ⏳ **Le passage sur l'écran** (Julien) : créer un widget, l'éteindre, copier la balise, modifier un widget dont le
+  scénario a été supprimé. Personne n'a encore cliqué.
+- ⏳ **L'essai réel qui clôt la feature** : la balise sur un vrai site, un message depuis un vrai téléphone, la
+  conversation marquée `widget-<code>`, le devenir qui prend la main ; puis la bulle grisée sur un numéro délié ;
+  puis `create_widget` depuis Claude Code avec une clé `mcp:write`.
+- ⏳ **Trois décisions de Julien** : un droit à part pour les widgets (`mcp:write` peut aujourd'hui changer ce que la
+  bulle affiche sur le site public ; au déploiement, les clés qui le portaient étaient toutes dans l'espace
+  SANDBOX) ; une longueur minimale de phrase (« Bonjour » passe sur un espace sans historique) ; les bornes posées au
+  lot 4 (nom 80, phrase 300, libellé 60).
+
 ## TOUT SUR LA FICHE (LOTS 1 À 3 DÉPLOYÉS ET ESSAYÉS ; LOT 4 EN COURS)
 
 Spec `docs/superpowers/specs/2026-09-30-fiche-unique-design.md`, plan

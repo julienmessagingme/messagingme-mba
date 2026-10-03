@@ -1,5 +1,20 @@
 # todo.md : backlog
 
+## 🟡 RGPD : `workflow_runs` et `automation_fires` ne sont pas purgés pour une personne sans conversation (2026-10-03)
+
+Trouvé par la revue finale du widget, ANTÉRIEUR au widget. `PgContactStore.purgeMany` (`src/crm/contact-store.pg.ts`)
+ne les vise que par les numéros des FILS de la personne ; la rétention efface les fils et garde la fiche, donc une
+demande d'effacement tardive laisse le numéro dans ces deux tables. `widget_tirs` a été corrigé par
+`waIdsDeLaPersonne` (fils ET fiche), avec un test d'intégration vérifié dans les deux sens par un commit muté poussé
+sur une étiquette jetable : même correctif et même test à appliquer aux deux autres.
+
+## 🟡 Widget WhatsApp : les jaunes ouverts (2026-10-03)
+
+La liste vit dans le plan (`docs/superpowers/plans/2026-10-02-widget-whatsapp.md`, « Ce qui reste ») : la recopier
+ici la ferait dériver. Les plus importants : une longueur minimale de phrase ; le scénario d'un widget qui démarre
+DANS la boucle d'enregistrement des entrants (un envoi lent retarde les messages suivants du lot) ; une lecture des
+widgets par message texte entrant, sans cache.
+
 ## 🟡 Le délai de reprise et le mode liste : les jaunes de la relecture de `53c112e8` (2026-09-30)
 
 Lot « Traité relance le délai » (déployé et éprouvé le 2026-10-01). Aucun ne casse la production.
