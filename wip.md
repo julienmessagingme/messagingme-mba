@@ -112,8 +112,12 @@ Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, déci
 - ✅ **Les pools sont dimensionnés par copie, et DÉPLOYÉS** (`f4eec9f2`, `mba-api` recréé à 15 h 49 UTC, `DB_POOL_MAX=10` relu dans le conteneur ; 2026-10-03) : le « Pool Size » du pooler Supabase monté de 15 à 30
   par Julien (mesuré : 31 connexions simultanées, contre 16), chaque service fixe son `DB_POOL_MAX` dans le compose
   (API 10, principal 8, analyse 3), et `tests/budget-pooler.test.ts` refuse tout compose qui dépasse le budget.
-- ⏳ **Ce qui reste avant d'autoriser l'autoscaling** : mettre un répartiteur devant les copies ; remesurer la
-  capacité sur Scaleway (la base et le pooler y changent).
+- ⏳ **Ce qui reste avant d'autoriser l'autoscaling** : le répartiteur et la capacité, **sur Scaleway** (décision de
+  Julien du 2026-10-03 : pas de seconde copie fixe sur le VPS, où des copies ne créeraient aucune capacité ; le
+  répartiteur viendra avec les conteneurs serverless, minimum 1 copie). Deux faits mesurés pour ce jour-là : sur
+  la base Micro actuelle, le budget du pooler plafonne à DEUX copies d'API de 8 connexions (27 avec les workers,
+  la limite exacte des 80 % ; `tests/budget-pooler.test.ts` refuse au-delà) ; et le VPS aurait eu la place (16,8 Go
+  libres, 160 Mo par copie), l'API n'ayant qu'une tâche périodique, déjà prévue pour plusieurs copies.
 
 ## L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)
 
