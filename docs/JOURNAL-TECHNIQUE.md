@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-30 au 2026-10-03 : la vitrine, du formulaire de contact au widget
+
+Demandes de Julien, livrées en direct (plan `docs/superpowers/plans/2026-09-28-vitrine-fonctionnalites.md`).
+
+- **Formulaire de contact** : `POST /vitrine/contact` (`2894b215`), formulaire HTML natif et redirection 303, donc
+  sans CORS ; e-mail Resend à `SUPPORT_TO`. Déployé AVANT la page (`529f2300`), qui sinon aurait posté vers un 404.
+  La CI a été rouge sur l'auto-attaque, que `npm test` ne lance pas : le module public n'avait pas sa fausse
+  autorité (`54f36f1b`). Après le `up`, le 502 public habituel, levé par un rechargement de NPM ; contrôle sans
+  aucun envoi (corps vide, pot de miel). Les boutons « Demander une démo » mènent au formulaire, message
+  pré-rempli (`6cfe5cb7`).
+- **Pages** : « Analyse de conversations », « fallback », page Publicités à deux messages (la pub ouvre une
+  conversation, et tout se pilote du même endroit), bandeau « Ils nous font confiance » (huit logos, celui de
+  Picoty téléchargé avec l'accord de Julien).
+- **SEO** : bilan à 56/100 (ni sitemap ni robots.txt, adresses en double, titre de l'accueil sans mot cherché,
+  aucune donnée structurée), corrigé en `b326a5fc`. Le domaine technique `engageme-site.vercel.app` rendait
+  encore 200 sur `/` : le motif `/:chemin*` ne capte ni le chemin vide ni la barre finale, `/:chemin(.*)` si
+  (`a66aae1f`). PageSpeed Insights refusait les appels sans clé (429) : les Core Web Vitals restent à lire dans la
+  Search Console.
+- **Widget en essai sur l'accueil** (`c535d62b`). En chemin : Cloudflare servait son script avec 4 h de cache
+  navigateur au lieu des 60 s de l'API (son Browser Cache TTL par défaut sur les `.js`). Julien a posé une Cache
+  Rule « Respect origin TTL » sur `/widget/*`, vérifiée juste après (`max-age=60`) et écrite dans
+  `documentation.md` (`5dc88377`).
+
 ## 2026-10-03 : le second banc à deux copies d'API, et la clé d'idempotence qui reste coincée
 
 **Décidé par Julien le jour même**, avant tout autoscaling (plan `docs/superpowers/plans/2026-10-03-second-banc-deux-api.md`).

@@ -193,8 +193,20 @@ en production.
   existera (révoquer ET empêcher la réouverture).
 - 🟡 **Mode test Stripe** (produits, clé restreinte, destination webhook en test) : facultatif, l'essai final a
   été fait en live avec un code promo à 100 %.
-- 🟡 **La CI est rouge sur le plan d'une autre session** (`docs/superpowers/plans/2026-09-28-vitrine-fonctionnalites.md`
-  ne nomme pas son essai réel, `tests/plan-methode.test.ts`). Elle masque tout autre échec du job `unit`.
+
+## 🟡 Vitrine (`engageme.messagingme.fr`) : restes du 2026-10-03
+
+- **Search Console** (Julien) : déclarer la propriété du domaine (enregistrement TXT chez OVH, ou un fichier de
+  vérification que Claude pose), puis soumettre `https://engageme.messagingme.fr/sitemap.xml`. C'est ce qui
+  déclenche l'indexation : un moteur de recherche ne trouvait aucune page du domaine le 2026-09-30.
+- **Un lien depuis messagingme.fr** vers la vitrine (aucun sur l'accueil du site mère), avec le travail sur le lien
+  entre les deux sites.
+- **Rapatrier l'assembleur des pages dans le dépôt.** Les pages fonctionnalités, contact, merci et 404 sont
+  assemblées par un script (en-tête, pied et icônes recopiés de l'accueil, sitemap généré) qui ne vit, avec leurs
+  corps de page, que dans le dossier temporaire d'une session. Sans lui, un changement d'en-tête ou de pied se
+  reporte à la main dans sept pages, et le sitemap se tient à la main. Cible : `scripts/vitrine/`, jamais `site/`
+  (tout y est publié).
+- **Le widget en essai sur l'accueil** (`ndabjvs20vc4`) : le garder ou le retirer une fois l'essai réel fait.
 
 ## 🟠 Suites de « approfondir la racine » (2026-09-27 et 28, plan `docs/superpowers/plans/2026-09-27-approfondir-la-racine.md`)
 

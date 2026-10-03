@@ -85,9 +85,12 @@ bloc « Widgets »), le récit dans le journal du 2026-10-02 et 03, les jaunes o
 
 - ⏳ **Le passage sur l'écran** (Julien) : créer un widget, l'éteindre, copier la balise, modifier un widget dont le
   scénario a été supprimé. Personne n'a encore cliqué.
-- ⏳ **L'essai réel qui clôt la feature** : la balise sur un vrai site, un message depuis un vrai téléphone, la
-  conversation marquée `widget-<code>`, le devenir qui prend la main ; puis la bulle grisée sur un numéro délié ;
-  puis `create_widget` depuis Claude Code avec une clé `mcp:write`.
+- ⏳ **L'essai réel qui clôt la feature** : ✅ la balise sur un vrai site (l'accueil de la vitrine depuis le
+  2026-10-03, widget `ndabjvs20vc4`, servi : bulle, panneau du QR au clic au bureau, appui direct vers WhatsApp sur
+  téléphone) ; ✅ la bulle grisée constatée en production sur un espace SANS numéro (`kh532t8hq6nr`, « Test DIDWA
+  claude code ») ; reste un message depuis un vrai téléphone, la conversation marquée `widget-<code>`, le devenir
+  qui prend la main, la bulle grisée sur un numéro DÉLIÉ, puis `create_widget` depuis Claude Code avec une clé
+  `mcp:write`.
 - ⏳ **Trois décisions de Julien** : un droit à part pour les widgets (`mcp:write` peut aujourd'hui changer ce que la
   bulle affiche sur le site public ; au déploiement, les clés qui le portaient étaient toutes dans l'espace
   SANDBOX) ; une longueur minimale de phrase (« Bonjour » passe sur un espace sans historique) ; les bornes posées au

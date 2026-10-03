@@ -42,6 +42,11 @@ unitaire ne pouvait voir.
 ⚠️ En prod l'app tourne **via tsx en conteneur** (`node dist` casse : ESM `moduleResolution:
 Bundler` sans extensions). Plus de script `build` ni `start` à la racine : le contrôle est `npm run typecheck`.
 
+⚠️ **La CI `unit` lance aussi l'auto-attaque** (`npx tsx scripts/auto-attaque.mts`), que `npm test` ne couvre pas.
+Un module de routes ajouté au registre hors classe `tenant` doit déclarer sa fausse autorité dans
+`FAUSSES_AUTORITES`, sinon le job est rouge alors que tout est vert en local (vécu le 2026-09-30) : la lancer en
+local avant de pousser.
+
 ## Déploiement
 
 🔴 **TROIS NOMS DEPUIS LE 2026-09-03 (QUATRE avec la vitrine du 2026-09-25), et ils n'ont pas le même hébergeur.** Détail et journal d'exécution :
