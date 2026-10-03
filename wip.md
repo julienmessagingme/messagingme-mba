@@ -73,7 +73,7 @@ Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, déci
   passé, aucune orpheline lancée). Ses deux jaunes de comportement sont traités et DÉPLOYÉS (`f74ebb59`, `mba-api`
   seul, le 2026-10-03 à 14 h 59 UTC) : création et scellement dans UNE transaction, bail limité au même corps.
   Relus sans rouge, prouvés en base (atomicité comprise) et rejoués au banc, zéro campagne orpheline.
-- ✅ **Les pools sont dimensionnés par copie** (2026-10-03) : le « Pool Size » du pooler Supabase monté de 15 à 30
+- ✅ **Les pools sont dimensionnés par copie, et DÉPLOYÉS** (`f4eec9f2`, `mba-api` recréé à 15 h 49 UTC, `DB_POOL_MAX=10` relu dans le conteneur ; 2026-10-03) : le « Pool Size » du pooler Supabase monté de 15 à 30
   par Julien (mesuré : 31 connexions simultanées, contre 16), chaque service fixe son `DB_POOL_MAX` dans le compose
   (API 10, principal 8, analyse 3), et `tests/budget-pooler.test.ts` refuse tout compose qui dépasse le budget.
 - ⏳ **Ce qui reste avant d'autoriser l'autoscaling** : mettre un répartiteur devant les copies ; remesurer la

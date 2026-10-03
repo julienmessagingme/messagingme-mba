@@ -7,6 +7,8 @@
 
 ## 2026-10-03 : le pool du pooler Supabase monté à 30, et chaque copie dimensionnée
 
+**Déployé en `f4eec9f2`** (`mba-api` seul, à 15 h 49 UTC, `DB_POOL_MAX=10` relu dans le conteneur, portes à 200).
+
 **Demandé par Julien** (« fais le redimensionnement du pool par copie maintenant »), après le second banc. Ce qui
 devait être un partage des 16 connexions entre copies a été renversé par la MESURE, et c'est la leçon du lot.
 - **Le pool du pooler, mesuré** : une sonde de N `select pg_sleep(1)` simultanés par `APP_DATABASE_URL` voyait 16
