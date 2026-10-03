@@ -283,7 +283,7 @@ export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages'
 
 export const opsInerte: Pick<OpsRouteDeps,
   'deposerJetonPub' | 'lireGrillePrix' | 'reglages' | 'verrouillerEspace' | 'observerTenant'
-  | 'file' | 'heartbeat' | 'soldeAgent' | 'rechargerAgent' | 'etatPoolInstantane' | 'attentesPool'
+  | 'file' | 'heartbeat' | 'soldeAgent' | 'rechargerAgent' | 'etatPoolInstantane' | 'attentesPool' | 'latencesHttp'
   | 'balayerRisque' | 'reinitialiserMfa'> = {
   deposerJetonPub: neDevraitPasEtreAppelee('deposerJetonPub'),
   lireGrillePrix: neDevraitPasEtreAppelee('lireGrillePrix'),
@@ -298,6 +298,7 @@ export const opsInerte: Pick<OpsRouteDeps,
   // Absente : `poolInstantane: null`. Aucun état ne dit « rien » ; un pool vide est le plus proche.
   etatPoolInstantane: () => ({ process: 'test', total: 0, libres: 0, enAttente: 0, max: 0, maxMsDepuisDemarrage: 0 }),
   attentesPool: { lireDernieresMinutes: async () => [] },
+  latencesHttp: { lire: async () => [] },
   balayerRisque: async () => null,
   reinitialiserMfa: async () => null,
 };

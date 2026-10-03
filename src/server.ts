@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import type { SurveillanceOps } from './ops/tentatives';
+import type { MesureLatenceHttp } from './ops/latence-http';
 import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
@@ -158,6 +159,11 @@ export interface ServerDeps {
    * `src/index.ts` quand Telegram est configuré.
    */
   surveillanceOps?: SurveillanceOps;
+  /**
+   * La durée de chaque requête, par route normalisée et code de retour, vidée en base par `src/index.ts`
+   * (`src/ops/latence-http.ts`). Absente (tests) : rien n'est mesuré.
+   */
+  mesureLatence?: MesureLatenceHttp;
   queue: Queue;
   /** Sonde de readiness (DB joignable ?). Optionnelle pour garder buildServer sans DB : absente (tests) ->
    *  /health répond 200 inconditionnel ; fournie (prod) -> /health = readiness (503 si elle rejette). */
@@ -729,6 +735,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     for (const [nom, valeur] of Object.entries(ENTETES_SECURITE_API)) reply.header(nom, valeur);
     return payload;
   });
+
+  /**
+   * La durée de chaque requête, sous le MOTIF de sa route (`/contacts/:id`, jamais l'identifiant réel) : `onResponse`
+   * passe une fois la réponse partie, refus et erreurs compris, et `elapsedTime` court depuis l'arrivée de la
+   * requête. Une requête qu'aucune route ne reconnaît n'a pas de motif : la mesure la range sous un seul nom.
+   */
+  const mesureLatence = deps.mesureLatence;
+  if (mesureLatence) {
+    app.addHook('onResponse', async (req, reply) => {
+      mesureLatence.enregistrer(req.method, req.routeOptions.url, reply.statusCode, reply.elapsedTime);
+    });
+  }
 
   /**
    * 🔴 Le CORS n'est posé que si une origine est inscrite. Liste blanche, jamais `*` (refusé au chargement

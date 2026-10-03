@@ -6,6 +6,7 @@ import { journaliser } from '../lib/journal';
 import type { SortAncienAcces } from '../meta/pubs';
 import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
+import type { LatenceHttpRow } from '../ops/latence-http';
 import type { BilanRisque } from '../engagement/balayage';
 import { messageDe } from '../lib/erreur';
 
@@ -126,6 +127,8 @@ export interface OpsRouteDeps {
    */
   etatPoolInstantane(): { process: string; total: number; libres: number; enAttente: number; max: number; maxMsDepuisDemarrage: number };
   attentesPool: { lireDernieresMinutes(minutes: number): Promise<unknown[]> };
+  /** La latence HTTP par route normalisée et code de retour, toutes copies confondues. Au mieux, comme le pool. */
+  latencesHttp: { lire(heures: number): Promise<LatenceHttpRow[]> };
   /**
    * Lance le balayage du risque de désengagement d'un espace, tout de suite. Rend son bilan, ou `null` si
    * l'espace est inconnu.
@@ -198,7 +201,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
   });
 
   app.get('/ops/overview', opts, async (_req, reply) => {
-    const [tenants, daily, queues, workers, queuesParGroupe, attentesPool, latences] = await Promise.all([
+    const [tenants, daily, queues, workers, queuesParGroupe, attentesPool, latences, latencesHttp] = await Promise.all([
       deps.exploitation.getTenantOverview(),
       deps.exploitation.getGlobalDaily(14),
       deps.exploitation.getQueueLoad(),
@@ -212,9 +215,11 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
       // Fenêtre de 24 h : assez longue pour que le p95 ait un sens, assez courte pour qu'il décrive aujourd'hui.
       // Sur sept jours, un incident d'il y a six jours tiendrait encore le chiffre.
       deps.exploitation.getQueueLatence(24).catch(() => []),
+      // La même fenêtre que les files, et la même doctrine : table absente ou lecture en échec, la carte reste vide.
+      deps.latencesHttp.lire(24).catch(() => []),
     ]);
     const poolInstantane = deps.etatPoolInstantane();
-    return reply.code(200).send({ tenants, daily, queues, workers, queuesParGroupe, poolInstantane, attentesPool, latences });
+    return reply.code(200).send({ tenants, daily, queues, workers, queuesParGroupe, poolInstantane, attentesPool, latences, latencesHttp });
   });
 
   /**

@@ -19,6 +19,7 @@ import { PgAuditStore } from './audit/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
 import { PgEchecsMessagesStore } from './delivery/echecs-messages.pg';
 import { PgPoolAttentesStore } from './ops/pool-attentes.pg';
+import { PgHttpLatencesStore } from './ops/latence-http.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
@@ -166,6 +167,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   // reçu par l'API, purgés par le balayage de rétention.
   const echecsMessages = new PgEchecsMessagesStore(pool);
   const poolAttentesStore = new PgPoolAttentesStore(pool);
+  // La latence HTTP : l'API l'écrit et la lit dans `/ops`, le worker la purge.
+  const httpLatencesStore = new PgHttpLatencesStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const trackedLinkStore = new PgTrackedLinkStore(pool);
   const webhookStore = new PgWebhookStore(pool);
@@ -339,7 +342,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   return {
     clesGateway, dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
+    poolAttentesStore, httpLatencesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,

@@ -55,6 +55,23 @@ describe('route /ops/overview', () => {
     await server.close();
   });
 
+  it('porte la latence HTTP lue sur 24 h, et une lecture en échec ne fait pas tomber l’écran', async () => {
+    const ligne = { methode: 'POST', route: '/webhooks/meta', code: 200, groupe: 'webhooks' as const, requetes: 4, p50Ms: 10, p95Ms: 25, maxMs: 22, moyenneMs: 10 };
+    const heuresLues: number[] = [];
+    const lue = app({ latencesHttp: { lire: async (h) => { heuresLues.push(h); return [ligne]; } } });
+    const res = await lue.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ latencesHttp: unknown[] }>().latencesHttp).toEqual([ligne]);
+    expect(heuresLues).toEqual([24]);
+    await lue.close();
+
+    const enPanne = app({ latencesHttp: { lire: async () => { throw new Error('relation "http_latences" does not exist'); } } });
+    const res2 = await enPanne.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
+    expect(res2.statusCode).toBe(200);
+    expect(res2.json<{ latencesHttp: unknown[]; tenants: unknown[] }>()).toMatchObject({ latencesHttp: [], tenants: [{ id: 't1' }] });
+    await enPanne.close();
+  });
+
   it('inclut UN battement PAR RÔLE quand le magasin en rend', async () => {
     const hb = [
       { role: 'analyse', beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:2', ageSeconds: 700 },

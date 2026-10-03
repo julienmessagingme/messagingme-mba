@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
-  type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type WorkerHeartbeat, type PoolInstantane,
+  type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type LatenceHttpRow, type WorkerHeartbeat, type PoolInstantane,
   type PoolAttentePoint, type GrillePrix, type EtapeSecondFacteur, type SessionOpsOuverte } from '@/lib/api';
 import { ApiError } from '@/lib/http';
 import { GrillePrixChamps } from '@/components/GrillePrixChamps';
@@ -160,6 +160,7 @@ export default function OpsPage() {
 
             <QueueCard queues={data.queues} />
             <LatenceCard lignes={data.latences ?? []} />
+            <LatenceHttpCard lignes={data.latencesHttp ?? []} />
             <PoolCard instantane={data.poolInstantane ?? null} points={data.attentesPool ?? []} />
             <EquiteCard groupes={data.queuesParGroupe ?? []} />
 
@@ -713,6 +714,94 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
       )}
     </div>
   );
+}
+
+/**
+ * La latence HTTP par route normalisée et code de retour (audit de performance du 2026-10-02, § 11). Les webhooks,
+ * l'Inbox et l'API publique d'abord, comme l'audit le demande ; dans chaque groupe, la plus lente en tête.
+ */
+function LatenceHttpCard({ lignes }: { lignes: LatenceHttpRow[] }) {
+  const t = useT();
+  const { locale } = useLocale();
+  /**
+   * Le haut de la fourchette de l'audit (p95 de l'Inbox au-delà de 500 à 800 ms). Il ne colore que les webhooks et
+   * l'Inbox : ailleurs, des routes lentes par nature (import, export, essai d'agent qui appelle un modèle)
+   * crieraient au loup. 800 est une borne de tranche, donc la comparaison est exacte.
+   */
+  const SEUIL_MS = 800;
+  /** Les autres routes sont nombreuses : les plus lentes seulement, et le compte de ce qui ne s'affiche pas. */
+  const AUTRES_MAX = 15;
+  const groupes: { cle: LatenceHttpRow['groupe']; nom: string; seuil: boolean }[] = [
+    { cle: 'webhooks', nom: t('Webhooks', 'Webhooks'), seuil: true },
+    { cle: 'inbox', nom: t('Inbox', 'Inbox'), seuil: true },
+    { cle: 'v1', nom: t('API publique (/v1)', 'Public API (/v1)'), seuil: false },
+    { cle: 'autres', nom: t('Autres routes', 'Other routes'), seuil: false },
+  ];
+  const parP95 = (a: LatenceHttpRow, b: LatenceHttpRow) => (b.p95Ms ?? 0) - (a.p95Ms ?? 0) || b.requetes - a.requetes;
+  return (
+    <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="latence-http">
+      <h3 className="text-sm font-semibold text-ink-900">{t('Latence HTTP par route (24 h)', 'HTTP latency by route (24 h)')}</h3>
+      <p className="mb-3 mt-1 text-xs text-ink-500">
+        {t(
+          'Toutes copies de l’API confondues. p50 et p95 sont des majorants (« au plus »), tirés de tranches de durée.',
+          'All API copies combined. p50 and p95 are upper bounds (“at most”), derived from duration buckets.',
+        )}
+      </p>
+      {lignes.length === 0 ? (
+        <p className="text-xs text-ink-500">{t('Aucune requête mesurée sur la fenêtre.', 'No request measured in this window.')}</p>
+      ) : (
+        <div className="grid gap-4">
+          {groupes.map((g) => {
+            const toutes = lignes.filter((l) => l.groupe === g.cle).sort(parP95);
+            if (toutes.length === 0) return null;
+            const montrees = g.cle === 'autres' ? toutes.slice(0, AUTRES_MAX) : toutes;
+            const total = toutes.reduce((n, l) => n + l.requetes, 0);
+            const erreurs = toutes.filter((l) => l.code >= 500).reduce((n, l) => n + l.requetes, 0);
+            return (
+              <div key={g.cle} className="grid gap-2">
+                <p className="text-xs font-medium text-ink-900">
+                  {g.nom} <span className="font-normal text-ink-500">· {fmtNum(total, locale)} {t('requêtes', 'requests')}</span>
+                  {erreurs > 0 && <span className="font-normal text-danger"> · {fmtNum(erreurs, locale)} {t('en 5xx', 'in 5xx')}</span>}
+                </p>
+                {montrees.map((l) => (
+                  <div key={`${l.methode} ${l.code} ${l.route}`} className="flex items-center justify-between gap-3 rounded-controle bg-ink-50 px-3 py-2">
+                    <span className="min-w-0 break-all font-mono text-xs text-ink-900">
+                      {l.methode} {l.route}{' '}
+                      <span className={l.code >= 500 ? 'font-medium text-danger' : 'text-ink-500'}>{l.code}</span>
+                    </span>
+                    <span className="flex shrink-0 gap-3 text-xs tabular-nums">
+                      {/* L'effectif EN PREMIER : un p95 sur trois requêtes ne veut rien dire. */}
+                      <span className="text-ink-500">{fmtNum(l.requetes, locale)} {t('req.', 'req.')}</span>
+                      <span className="text-ink-500">p50 ≤ {fmtMs(l.p50Ms)}</span>
+                      <span
+                        data-testid={`latence-http-p95-${l.methode}-${l.code}-${l.route}`}
+                        className={g.seuil && (l.p95Ms ?? 0) > SEUIL_MS ? 'font-medium text-danger' : 'text-ink-500'}
+                      >
+                        p95 ≤ {fmtMs(l.p95Ms)}
+                      </span>
+                      <span className="text-ink-500">{t('pire', 'worst')} {fmtMs(l.maxMs)}</span>
+                    </span>
+                  </div>
+                ))}
+                {toutes.length > montrees.length && (
+                  <p className="text-xs text-ink-500">
+                    {t(`et ${toutes.length - montrees.length} autre(s) ligne(s), plus rapides`, `and ${toutes.length - montrees.length} more line(s), faster`)}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Millisecondes lisibles : « 320 ms », « 1,2 s ». */
+function fmtMs(ms: number | null): string {
+  if (ms === null) return '-';
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return fmtSecondes(ms / 1000);
 }
 
 /** Secondes lisibles : un « 505,652 s » ne se lit pas, un « 8 min » se lit. */

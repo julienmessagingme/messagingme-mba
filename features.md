@@ -2516,6 +2516,11 @@ boîte par sous-menu.
   journal), et l'observation d'un espace (la session d'observation elle-même porte l'adresse de
   l'observateur). La note reste demandée là où elle l'était : elle dit POURQUOI, l'adresse dit QUI.
 - ✅ **Un lien « Exploitation » dans le menu du compte**, visible seulement pour une adresse de la liste.
+- ✅ **La latence HTTP par route** (2026-10-03) : pour chaque route de l'API (sous sa forme générique, jamais une
+  adresse réelle) et chaque code de retour, le nombre de requêtes, la médiane, le 95e centile et le pire cas des
+  dernières 24 heures, toutes copies de l'API confondues. Les webhooks, l'Inbox et l'API publique en tête ; le
+  95e centile passe en rouge au-delà de 800 ms sur les webhooks et l'Inbox. C'est le premier signal qui dira quand
+  l'API a besoin d'une copie de plus.
 - ✅ **Signal de vie du worker** (le process qui envoie réellement les messages) : « Actif », « Silencieux » ou
   « Aucun signal », affiché à côté du signal de charge des files. Distingue « les files ne se vident pas » de « le
   process est mort », ce que la seule charge des files ne dit pas.

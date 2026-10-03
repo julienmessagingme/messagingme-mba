@@ -227,6 +227,24 @@ export interface OpsOverview {
    * traitement. Un objectif de service se verifie sur une DUREE.
    */
   latences?: QueueLatenceRow[];
+  /** La latence HTTP par route normalisée et code de retour, sur 24 h, toutes copies. Absente d'une API d'avant. */
+  latencesHttp?: LatenceHttpRow[];
+}
+
+/**
+ * Une route sur la fenêtre. `p50Ms` et `p95Ms` sont des MAJORANTS (la borne haute de la tranche où tombe le
+ * centile, plafonnée par le maximum) : « p95 ≤ 500 ms », jamais une précision inventée. `null` sans requête.
+ */
+export interface LatenceHttpRow {
+  methode: string;
+  route: string;
+  code: number;
+  groupe: 'webhooks' | 'inbox' | 'v1' | 'autres';
+  requetes: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  maxMs: number;
+  moyenneMs: number;
 }
 
 /**

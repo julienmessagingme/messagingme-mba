@@ -42,6 +42,8 @@ import { traiterRapportRcs } from './rcs/rapport-livraison';
 import { envoyerRcsLibre, phraseOperateur, type DepsRcsLibre } from './rcs/envoyer-libre';
 import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
 import { viderVersLaBase } from './ops/pool-attentes.pg';
+import { viderLatencesVersLaBase } from './ops/latence-http.pg';
+import { MesureLatenceHttp } from './ops/latence-http';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { lienDe, lienTraceAvecJeton } from './links/rewrite';
 import { fabriquerJeton } from './links/jeton-contact';
@@ -182,7 +184,7 @@ async function main(): Promise<void> {
   const {
     transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
-    nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
+    httpLatencesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
@@ -514,6 +516,9 @@ async function main(): Promise<void> {
     baseApi: adressesApi.avecPrefixe,
   };
 
+  // La durée de chaque requête, par route normalisée : mesurée par le serveur, vidée en base avec l'attente du pool.
+  const mesureLatence = new MesureLatenceHttp();
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -521,6 +526,7 @@ async function main(): Promise<void> {
      * seule, sans erreur. `tests/debit-cablage.test.ts` tient cette ligne.
      */
     debit: compteurDebit,
+    mesureLatence,
     /**
      * 🔴 Surveillance de `/ops`, qui ouvre la lecture de toutes les conversations de tous les clients alors
      * que Fastify tourne sans journal d'accès. L'accès est nominatif et exige le second facteur ; ses refus
@@ -2017,6 +2023,7 @@ async function main(): Promise<void> {
         maxMsDepuisDemarrage: Math.round(mesureAttentePool.maxDepuisDemarrage),
       }),
       attentesPool: poolAttentesStore,
+      latencesHttp: httpLatencesStore,
       // 🔴 Le solde prépayé d'un espace pour l'agent IA. La recharge est ici parce qu'un client ne doit
       // jamais pouvoir créditer son propre compte. L'espace est résolu d'abord : en lecture, un espace inconnu
       // rendrait un solde de zéro qu'on rechargerait ; en écriture, la clé étrangère lèverait un 500 masqué
@@ -2346,6 +2353,16 @@ async function main(): Promise<void> {
     void viderVersLaBase(poolAttentesStore, mesureAttentePool, NOM_API, new Date(), (err) => {
       // eslint-disable-next-line no-console
       console.error('pool-attentes: écriture impossible:', messageDe(err));
+    });
+    // La latence HTTP, sous le même nom de copie. Sans se mesurer dans le pool : sinon chaque vidage deviendrait
+    // une acquisition de la minute suivante, et la télémétrie s'alimenterait elle-même.
+    const latences = {
+      enregistrer: (p: string, f: Date, l: Parameters<typeof httpLatencesStore.enregistrer>[2]) =>
+        mesureAttentePool.sansSeMesurer(() => httpLatencesStore.enregistrer(p, f, l)),
+    };
+    void viderLatencesVersLaBase(latences, mesureLatence, NOM_API, new Date(), (err) => {
+      // eslint-disable-next-line no-console
+      console.error('latences-http: écriture impossible:', messageDe(err));
     });
   }, 60_000);
   minuteriePoolAttentes.unref?.();

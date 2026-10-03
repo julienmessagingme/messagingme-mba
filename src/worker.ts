@@ -5,6 +5,7 @@ import { pool, mesureAttentePool } from './db/pool';
 import { construireSocle } from './socle';
 import { fabriquerJeton } from './links/jeton-contact';
 import { RETENTION_ESSAIS_JOURS } from './agent/test-runs';
+import { RETENTION_LATENCES_JOURS } from './ops/latence-http';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { todayParis, addDays } from './stats/range';
 import { handleWebhookJob } from './webhooks/handler';
@@ -159,7 +160,7 @@ async function main(): Promise<void> {
   const {
     dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
+    poolAttentesStore, httpLatencesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
@@ -1220,6 +1221,8 @@ async function main(): Promise<void> {
       () => echecsMessages.purgerAvant(config.AVANCE_ECHECS_RETENTION_DAYS));
     await etape('pool', `minute(s) d’attente du pool effacée(s) (au-delà de ${config.POOL_ATTENTES_RETENTION_DAYS} j)`,
       () => poolAttentesStore.purgeOlderThan(config.POOL_ATTENTES_RETENTION_DAYS));
+    await etape('latences', `fenêtre(s) de latence HTTP effacée(s) (au-delà de ${RETENTION_LATENCES_JOURS} j)`,
+      () => httpLatencesStore.purgeOlderThan(RETENTION_LATENCES_JOURS));
     // Les essais du bac à sable : rétention courte et en dur (14 j), ce ne sont pas des conversations de
     // clients (ni contact ni `wa_id`, seulement ce que l'administrateur a tapé).
     await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,
