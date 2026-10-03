@@ -1593,7 +1593,8 @@ premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé.
   pg-boss »), ni supervision, ni écoute, ni cron. Il reste, sur le pool prêté : quatre `select` au démarrage, le
   cache des files (un `select` par minute) et les `send`. Conséquences : **une copie de l'API ne coûte plus aucune
   session**, quel que soit leur nombre ; et **l'accusé d'un webhook de Meta attend sur le même pool que la
-  console**, donc `pool_attentes` (ligne `api`) mesure aussi la réception. ⚠️ Un `send` part sur une connexion
+  console**, donc `pool_attentes` (ligne `api`, ou `api-<copie>` quand `API_COPIE` nomme une copie parmi
+  plusieurs) mesure aussi la réception. ⚠️ Un `send` part sur une connexion
   prise au pool, jamais sur celle d'une transaction ouverte : enfiler DANS une transaction (`enTransaction`) n'y
   inscrirait pas la tâche (comme avant) et prendrait une SECONDE connexion au même pool. Aucun code ne le fait
   (l'opt-out annonce après le `commit`).

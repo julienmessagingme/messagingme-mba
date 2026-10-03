@@ -154,6 +154,13 @@ export const schema = z.object({
    * pg-boss : deux copies d un meme role doubleraient le plafond par espace et dedoubleraient les minuteries.
    */
   WORKER_ROLE: z.enum(['principal', 'analyse', 'all']).default('all'),
+  /**
+   * LE NOM DE CETTE COPIE DE L'API dans `/ops` (attentes de pool) et dans ses alertes Telegram. Vide (défaut) =
+   * `api`, le nom d'une copie unique, donc rien ne change tant qu'on n'en lance pas une seconde ; renseigné =
+   * `api-<copie>`. Sans lui, deux copies s'additionnent dans la même courbe d'attentes, et une alerte ne dit pas
+   * de laquelle elle vient. Même rôle que `nomDuProcessus` pour les workers.
+   */
+  API_COPIE: z.string().regex(/^[a-z0-9-]{0,20}$/).default(''),
   /** Cadence du heartbeat worker (ms). Défaut 20 s : écriture négligeable pour le pooler, assez fine pour
    *  qu'un worker mort dépasse vite le seuil d'âge côté /ops. */
   HEARTBEAT_INTERVAL_MS: z.coerce.number().default(20_000),

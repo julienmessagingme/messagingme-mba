@@ -149,6 +149,9 @@ import { estCleLive, FetchTransportStripe } from './stripe/client';
 import { creerPayeurAutorise } from './http/credit-stripe';
 import { creerOffreDeBienvenue } from './account/offre-bienvenue';
 
+/** Le nom de cette copie de l'API dans `/ops` et dans ses alertes : `api` seule, `api-<copie>` à plusieurs (`API_COPIE`). */
+const NOM_API = config.API_COPIE === '' ? 'api' : `api-${config.API_COPIE}`;
+
 async function main(): Promise<void> {
   /**
    * Les deux bases d'adresses publiques, résolues une fois. `PUBLIC_API_URL` vide rend exactement ce que
@@ -523,7 +526,7 @@ async function main(): Promise<void> {
      * sans alerter. Compte et repos partagés par les copies : une alerte pour toutes, au seuil de toutes.
      */
     surveillanceOps: surveillerOps({
-      alerter: (m) => { void sendTelegram(`[mba-api] ${m}`); },
+      alerter: (m) => { void sendTelegram(`[mba-${NOM_API}] ${m}`); },
       // eslint-disable-next-line no-console
       journaliser: (m) => { console.warn(m); },
       compteur: compteurDebit,
@@ -2319,12 +2322,12 @@ async function main(): Promise<void> {
   });
 
   /**
-   * L'attente du pool, versée en base une fois par minute. L'API a son propre pool, distinct de celui du
-   * worker : deux lignes par minute, jamais agrégées, pour savoir lequel des deux souffre. Une seule
+   * L'attente du pool, versée en base une fois par minute. Chaque processus a son propre pool : une ligne par
+   * processus et par minute, sous son nom (`NOM_API` ici), jamais agrégées, pour savoir lequel souffre. Une seule
    * minuterie, posée à la main, `unref` (elle ne retient pas le process) et arrêtée dans l'arrêt propre.
    */
   const minuteriePoolAttentes = setInterval(() => {
-    void viderVersLaBase(poolAttentesStore, mesureAttentePool, 'api', new Date(), (err) => {
+    void viderVersLaBase(poolAttentesStore, mesureAttentePool, NOM_API, new Date(), (err) => {
       // eslint-disable-next-line no-console
       console.error('pool-attentes: écriture impossible:', messageDe(err));
     });
