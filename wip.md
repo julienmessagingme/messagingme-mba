@@ -19,6 +19,16 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## LES ENVOIS D'UN BLOC SORTIS DU CÂBLAGE (DÉPLOYÉ LE 2026-10-03 À 11 H 46 UTC ; ESSAI RÉEL DÛ)
+
+- ✅ Refactor à comportement identique, plan `docs/superpowers/plans/2026-10-03-envois-de-bloc.md` : les quatre
+  envois WhatsApp d'un bloc de scénario vivent dans `src/workflow/envois-bloc.ts` (`cdcbde3e`), exécutés par leurs
+  tests. Relecture : 0 rouge, 4 jaunes, poussés après le déploiement. Déployé avec `0c476865` (API et deux workers).
+- ⏳ **Essai réel dû (Julien), avant le lundi 5 au soir, sinon le lot est retiré** (revert puis `up`) : un
+  scénario d'essai « Essai envois » lancé par « Tester le scénario » (modèle avec variable, message rapide avec
+  image et boutons, question en liste, formulaire) ; je vérifie en base les quatre lignes du fil (`origine =
+  'scenario'`, catégorie du modèle) et le passage dans chaque bloc.
+
 ## DOUBLE WORKER (DÉPLOYÉ LE 2026-10-03 À 8 H 17 UTC ; ESSAI RÉEL DÛ)
 
 Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, décidé par Julien le 2026-10-02.

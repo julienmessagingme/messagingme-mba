@@ -105,8 +105,8 @@ describe('origine d’un message de service', () => {
 
     it('🔴 l’envoi de l’AGENT IA déclare « ia », et pas l’origine de ses voisins', () => {
       // Garde de SOURCE, sur le modèle de `tests/queue-names.test.ts` : TypeScript exige une origine, mais
-      // il ne peut pas voir qu'un copier-coller depuis l'envoi de scénario juste au-dessus (`origine:
-      // 'scenario'`) ferait compter toutes les réponses de l'agent comme du scripté. C'est silencieux,
+      // il ne peut pas voir qu'un copier-coller depuis un envoi de scénario (`origine: 'scenario'`,
+      // `src/workflow/envois-bloc.ts`) ferait compter toutes les réponses de l'agent comme du scripté. C'est silencieux,
       // c'est faux, et seul l'écran le montrerait, des semaines plus tard.
       const src = readFileSync(new URL('../src/workflow/wiring.ts', import.meta.url), 'utf8');
       const debut = src.indexOf('const envoyerTexteAgent');

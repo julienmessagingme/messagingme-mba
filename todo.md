@@ -989,10 +989,11 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
    n'avait été trouvé qu'en revue. Approfondir À L'INTÉRIEUR du dépôt (compatible avec le refus du découpage) : un
    fragment porte la transition et son annonce après écriture, les six chemins l'appellent. Tests aujourd'hui :
    un faux pool qui reconnaît les requêtes par regex, et un seul test sur vraie base.
-2. **Sortir l'envoi d'un bloc de scénario du câblage** (fort). C'est le **candidat 1 du rapport du 2026-09-14**,
-   ci-dessous : `sendTemplate` (108 lignes, deux chemins), `sendQuickMessage`, `sendQuestion`, `sendFlow` vivent
-   dans le littéral de `buildWorkflowRuntime` (`src/workflow/wiring.ts`, 20 commits en deux semaines dont 8
-   correctifs), et aucun test ne les exécute. Patron : `src/inbox/fil.ts`. À coupler au point d'envoi unique.
+2. ✅ **Sortir l'envoi d'un bloc de scénario du câblage : FAIT et déployé le 2026-10-03** (`cdcbde3e`, plan
+   `docs/superpowers/plans/2026-10-03-envois-de-bloc.md`). Les quatre envois vivent dans
+   `src/workflow/envois-bloc.ts`, exécutés par `tests/workflow-envois-bloc.test.ts`. Pas couplé au point d'envoi
+   unique (décision de Julien), qui reste le candidat 2 ci-dessous. ⚠️ Les « 20 commits dont 8 correctifs »
+   portaient sur tout `wiring.ts`, pas sur ces quatre fonctions.
 3. **L'accès publicitaire d'un espace, lié une fois** (à explorer). Chaque appel Graph ajouté se câble trois fois
    (client, flèche de `src/index.ts` autour d'`accesPub`, dépendance de route), et `src/worker.ts` déchiffre le
    jeton lui-même, hors de la règle « le jeton ne sort en clair que par `jetonClair` » (`src/pubs/connexion.ts`).
@@ -1036,9 +1037,10 @@ prise du fil extrait), racontés dans `docs/JOURNAL-TECHNIQUE.md`.
 
 1. **`buildWorkflowRuntime` reste un câblage ET le domicile de onze comportements.** 906 lignes, deux
    appelants, zéro test ne l'importe, alors que 17 fichiers de tests montent l'exécuteur qu'il câble. Le rejeu
-   de prise du fil en est sorti le 2026-09-15 et établit le patron. Les trois suivants à sortir, dans cet
-   ordre : le cache de corps de modèle (il décide CE QU'ON ENVOIE), `buildEvalContext` (il alimente les
-   conditions d'un scénario), `sendEmail`. Les autres ne font que composer.
+   de prise du fil en est sorti le 2026-09-15 et établit le patron, les quatre envois d'un bloc le 2026-10-03
+   (`src/workflow/envois-bloc.ts`). Les trois suivants à sortir, dans cet ordre : le cache de corps de modèle
+   (il décide CE QU'ON ENVOIE), `buildEvalContext` (il alimente les conditions d'un scénario), `sendEmail`. Les
+   autres ne font que composer.
 2. **Le point d'envoi unique**, rétrogradé après l'audit du coût des règles : il doit se placer SOUS les
    règles (là où `metaFactory.clientForTenant` réunit déjà les quatre chemins) et porter seulement le JOURNAL
    et la frontière d'import, pas les sept règles. Cf. les deux dettes voisines.
@@ -2225,8 +2227,9 @@ mais aucun n'a été vérifié non plus.
   dans le graphe. Branche morte, invisible.
 - **Le journal de conversation garde la question, pas le menu** : un opérateur qui relit un fil ne voit pas
   les choix qui ont été proposés.
-- **Trous de couverture nommés** : `wiring.sendQuestion` (le seul code qui décide « liste ou texte ») n'a aucun
-  test ; la branche `question` de `waitBeforeSessionMessage` côté front n'est exercée par aucun cas ; rien ne
+- **Trous de couverture nommés** : ~~`wiring.sendQuestion` n'a aucun test~~ (fermé le 2026-10-03 : « liste ou
+  texte » est exécuté par `tests/workflow-envois-bloc.test.ts`) ; la branche `question` de
+  `waitBeforeSessionMessage` côté front n'est exercée par aucun cas ; rien ne
   prouve de bout en bout qu'un `row:<i>` reçu du webhook redescend jusqu'au routage.
 
 ### 🔴 Un point qui touche la base de PRODUCTION

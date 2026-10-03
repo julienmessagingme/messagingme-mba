@@ -290,6 +290,37 @@ describe('sendTemplate, branche « indications » (réponse du contact)', () => 
 });
 
 /**
+ * LES VISUELS, DANS LES DEUX BRANCHES. C'est sur eux que les deux branches de `sendTemplate` ont divergé
+ * (le carousel, puis l'en-tête média, non branchés côté campagne) : chaque cas joue les deux.
+ */
+describe('sendTemplate, visuels préparés (les deux branches)', () => {
+  const BRANCHES: Array<[string, (e: EnvoisDeBloc) => Promise<SendRefusal>]> = [
+    ['variables déjà résolues', (e) => e.sendTemplate(T, W, NOM, LANGUE, [], [])],
+    ['indications', (e) => e.sendTemplate(T, W, NOM, LANGUE, [])],
+  ];
+
+  it.each(BRANCHES)('%s : un carousel préparé part avec ses cartes, sans en-tête top-level', async (_branche, envoyer) => {
+    const cartes = [{ mediaUrl: 'https://cdn.meta/c1.jpg' }];
+    const { envois, deps, appels } = monter({ templateVarInfo: vi.fn(async () => ({ ...LECTURE, carousel: { cards: cartes } })) });
+    expect(await envoyer(envois)).toEqual({ messageId: MESSAGE_ID });
+    expect(deps.prepareCarouselMedia).toHaveBeenCalledWith(T, cartes);
+    expect(deps.prepareHeaderMedia).not.toHaveBeenCalled();
+    expect(appels).toEqual([['sendTemplate', W, { name: NOM, language: LANGUE, components: [
+      { type: 'carousel', cards: [{ card_index: 0, components: [{ type: 'header', parameters: [{ type: 'image', image: { id: 'media-carte' } }] }] }] },
+    ] }]]);
+  });
+
+  it.each(BRANCHES)('%s : un en-tête VIDÉO part en vidéo, pas en image', async (_branche, envoyer) => {
+    const { envois, deps, appels } = monter({ templateVarInfo: vi.fn(async () => ({ ...LECTURE, headerFormat: 'VIDEO' as const, headerMediaUrl: 'https://cdn.meta/v.mp4' })) });
+    expect(await envoyer(envois)).toEqual({ messageId: MESSAGE_ID });
+    expect(deps.prepareHeaderMedia).toHaveBeenCalledWith(T, 'https://cdn.meta/v.mp4');
+    expect(appels).toEqual([['sendTemplate', W, { name: NOM, language: LANGUE, components: [
+      { type: 'header', parameters: [{ type: 'video', video: { id: 'media-entete' } }] },
+    ] }]]);
+  });
+});
+
+/**
  * LA CATÉGORIE JOURNALISÉE. Sans elle, un envoi de scénario compte en volume et pas dans le coût
  * (`estimateCostSeries` ignore la ligne, `src/stats/cost.ts`), et l'écran affiche zéro sans rien signaler.
  */

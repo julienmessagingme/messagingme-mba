@@ -22,7 +22,7 @@ import { MetaCredentialsResolver } from '../meta/credentials';
 import { TemplateMediaPreparer } from '../meta/template-media';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { WorkflowExecutor } from './executor';
-import { creerEnvoisDeBloc, type EnvoisDeBloc, type TplInfo } from './envois-bloc';
+import { creerEnvoisDeBloc, type TplInfo } from './envois-bloc';
 import { buildRcsStack } from '../rcs/factory';
 import { urlRappelRcs } from '../rcs/callback';
 import { adressesPubliques } from '../lib/adresses-publiques';
@@ -432,9 +432,10 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
     // Mesure par bloc. L'exécuteur l'appelle en best-effort : une panne ici n'arrête jamais un parcours.
     recordNodeEvent: (e) => nodeEvents.record(e),
-    // Modèle, message rapide, question et formulaire : `src/workflow/envois-bloc.ts`. Le `satisfies` tient le
-    // contrat sur l'objet étalé, que le contrôle des propriétés en trop ne traverse pas.
-    ...(envois satisfies EnvoisDeBloc),
+    // Modèle, message rapide, question et formulaire : `src/workflow/envois-bloc.ts`, étalés tels quels. Leur
+    // contrat est tenu par le type de retour de `creerEnvoisDeBloc` ; une clé réécrite APRÈS cet étalement le
+    // remplacerait sans erreur de compilation, seuls les tests du vrai câblage le voient.
+    ...envois,
     // Node « Envoi de mail » : `apply` enveloppe cet appel d'un try/catch best-effort, rien ici ne doit faire
     // échouer le parcours.
     sendEmail,

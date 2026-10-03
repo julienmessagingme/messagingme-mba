@@ -593,9 +593,10 @@ describe('message rapide à visuel sur un parcours RCS', () => {
 /**
  * LE BOUTON DE LIEN D'UN MESSAGE RAPIDE, SUR UN PARCOURS RCS.
  *
- * 🔴 POURQUOI CE BLOC EXISTE : `sendQuickMessage` a DEUX consommateurs, le câblage WhatsApp et ce chemin RCS,
- * et une capacité ajoutée au premier seulement est un correctif à moitié. Mesuré : en retirant la branche
- * `openUrl` de `envoyerQuickEnRcs`, les quinze tests de `tests/workflow-lien-bouton.test.ts` restaient VERTS
+ * 🔴 POURQUOI CE BLOC EXISTE : `sendQuickMessage` a DEUX consommateurs, l'envoi WhatsApp
+ * (`src/workflow/envois-bloc.ts`) et ce chemin RCS, et une capacité ajoutée au premier seulement est un
+ * correctif à moitié. Mesuré : en retirant la branche `openUrl` de `envoyerQuickEnRcs`, les tests du lien
+ * WhatsApp (alors `tests/workflow-lien-bouton.test.ts`) restaient VERTS
  * et le message partait sans son bouton, en silence. Exactement la faute déjà fermée juste au-dessus pour le
  * visuel.
  *

@@ -79,8 +79,9 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
   },
   'src/workflow/executor.ts': {
     verdict: 'delegue',
-    pourquoi: 'L’exécuteur n’appelle jamais Meta : il appelle ses dépendances, que `src/workflow/wiring.ts` '
-      + 'fournit. C’est là que la garde est posée, une fois, pour le scénario, l’automation et l’agent IA.',
+    pourquoi: 'L’exécuteur n’appelle jamais Meta : il appelle ses dépendances (`src/workflow/envois-bloc.ts`, '
+      + 'branchées par `src/workflow/wiring.ts`). La garde, elle, est posée ICI, une fois, dans `apply`, avant '
+      + 'tout envoi d’un parcours (scénario, automation). La réponse d’un agent IA n’y passe pas.',
   },
   'src/workflow/envois-bloc.ts': {
     verdict: 'bloque',
