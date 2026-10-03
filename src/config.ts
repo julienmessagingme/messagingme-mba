@@ -142,6 +142,14 @@ export const schema = z.object({
    *  worker n'a pas accès au config.json de l'hôte utilisé par les crons ops. Vide -> aucune alerte. */
   TELEGRAM_BOT_TOKEN: z.string().default(''),
   TELEGRAM_CHAT_ID: z.string().default(''),
+  /**
+   * LE ROLE DE CE WORKER : quelles files il consomme et quelles minuteries il programme
+   * (`src/worker/roles.ts`). `all` est le DEFAUT et reproduit EXACTEMENT le comportement d un worker unique,
+   * donc un deploiement qui ne pose pas cette variable ne change rien : on livre le code, puis on decoupe.
+   * 🔴 CHAQUE ROLE TOURNE EN UN SEUL EXEMPLAIRE (min=1, max=1). `groupConcurrency` est local au processus
+   * pg-boss : deux copies d un meme role doubleraient le plafond par espace et dedoubleraient les minuteries.
+   */
+  WORKER_ROLE: z.enum(['principal', 'analyse', 'all']).default('all'),
   /** Cadence du heartbeat worker (ms). Défaut 20 s : écriture négligeable pour le pooler, assez fine pour
    *  qu'un worker mort dépasse vite le seuil d'âge côté /ops. */
   HEARTBEAT_INTERVAL_MS: z.coerce.number().default(20_000),

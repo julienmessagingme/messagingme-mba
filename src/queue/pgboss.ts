@@ -134,6 +134,8 @@ export class PgBossQueue implements Queue {
   private readonly ensured = new Set<string>();
   /** Files consommées par ce process, dans l'ordre : le message de démarrage en dérive (jamais recopié). */
   private readonly travaillees: string[] = [];
+  /** Restriction des files CONSOMMEES par ce processus. Absente = toutes, le comportement historique. */
+  private travaille?: (nom: string) => boolean;
   private readonly retryLimit: number;
   /** `false` = instance sur un pool PRÊTÉ, qui ne migre jamais le schéma : son échec au démarrage le dit. */
   private readonly migre: boolean;
@@ -257,6 +259,21 @@ export class PgBossQueue implements Queue {
     await this.boss.send(name, data as object, sendOptions(opts));
   }
 
+  /**
+   * Restreint les files que ce processus CONSOMME. Sans appel, il les consomme toutes : le defaut est
+   * exactement le comportement d avant, et l API ne pose jamais cette restriction.
+   *
+   * 🔴 LA RESTRICTION VIT ICI ET PAS AUX ENREGISTREMENTS, et ce n est pas un detail de style : dix tests du
+   * depot DERIVENT les files consommees du TEXTE de `worker.ts` en y cherchant `queue.work(`. Filtrer en
+   * renommant l appel cassait cinq de ces gardes d un coup (mesure le 2026-10-03), donc il aurait fallu
+   * reecrire des tests dont le role est precisement de verifier qu aucune file ne perd son consommateur.
+   * Ici, elles restent intactes, et `filesTravaillees()` (donc le journal de demarrage) dit la verite sur ce
+   * que ce processus ecoute, sans qu on ait a y penser.
+   */
+  neTravailleQue(predicat: (nom: string) => boolean): void {
+    this.travaille = predicat;
+  }
+
   filesTravaillees(): readonly string[] {
     return [...this.travaillees];
   }
@@ -266,6 +283,10 @@ export class PgBossQueue implements Queue {
     handler: (data: unknown) => Promise<void>,
     opts?: { concurrency?: number; groupConcurrency?: number },
   ): Promise<void> {
+    // ⚠️ AVANT le `ensure`, et c est MESURE : les dix sites d `enqueue` du worker visent tous une file du
+    // MEME role (relus le 2026-10-03), donc aucun role n a besoin de CREER une file qu il ne consomme pas.
+    // L API n en a jamais cree : elle a toujours dependu du worker pour ca.
+    if (this.travaille !== undefined && !this.travaille(name)) return;
     await this.ensure(name);
     this.travaillees.push(name);
     // `batchSize: 1` garde l'invariant par job (un throw ne fait pas échouer un lot, ni rejouer des jobs réussis).

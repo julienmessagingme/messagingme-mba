@@ -95,6 +95,30 @@ APPARTENANCE et à filtrer dessus.
   d'aujourd'hui. C'est la garantie que le défaut ne change rien.
 - Les deux vérifiés par mutation, dans les deux sens, sur le CÂBLAGE et pas sur la fonction pure.
 
+### Ce que la mesure du 2026-10-03 a tranché, et le bloqueur qu’elle a sorti
+
+✅ **La question du `ensure` est tranchée, par la mesure et pas par un raisonnement** : les DIX sites
+d’`enqueue` du worker ont été relus, et **tous visent une file du MÊME rôle**. Aucun rôle n’a donc besoin de
+CRÉER une file qu’il ne consomme pas, et le filtre peut se poser avant le `ensure`. L’API, elle, n’a jamais
+créé de file : elle a toujours dépendu du worker pour ça, et le découpage n’y change rien.
+
+✅ **Le filtre est posé DANS la file, pas aux enregistrements**, et c’est une révision sur donnée mesurée :
+renommer l’appel cassait **cinq gardes du dépôt d’un coup**, celles qui dérivent les files consommées du TEXTE
+de `worker.ts`. Les réécrire aurait voulu dire toucher des tests dont le rôle est justement de vérifier
+qu’aucune file ne perd son consommateur. `PgBossQueue.neTravailleQue(predicat)` les laisse intactes, et
+`filesTravaillees()` rend le journal de démarrage juste tout seul.
+
+✅ **VÉRIFIÉ SUR LE BANC, PAS SEULEMENT EN TEST** : `all` consomme 8 files, `principal` les mêmes MOINS
+`analyze-conversation`, et `analyse` exactement `analyze-conversation`. La partition est celle qui est
+déclarée, sans recouvrement ni perte.
+
+🔴 **BLOQUEUR TROUVÉ, ET IL DOIT PASSER AVANT LES DEUX SERVICES : le battement est une LIGNE UNIQUE.**
+`worker_heartbeat` porte `id = worker` ÉCRIT EN DUR (`src/ops/heartbeat-store.pg.ts`). Deux rôles
+l’écriraient tous les deux, le survivant rafraîchirait la ligne du mort, et `/ops` la lirait vivante : le
+découpage rendrait la surveillance **strictement pire qu’aujourd’hui**, où un worker unique et une ligne
+unique sont honnêtes. Il faut clefer le battement par rôle (migration), le lire par rôle et alerter par rôle.
+C’est un sous-lot à part, avec sa migration, donc il ne s’improvise pas.
+
 ### Ordre de déploiement
 
 Aucune migration. Donc :

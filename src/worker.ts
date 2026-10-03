@@ -92,6 +92,7 @@ import type { Campaign } from './campaign/types';
 import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
 import { registreDeTaches } from './worker/taches';
+import { fileDuRole, tachesDuRole } from './worker/roles';
 import { tenter } from './lib/tenter';
 import { messageDe, texteDe } from './lib/erreur';
 
@@ -107,6 +108,9 @@ async function main(): Promise<void> {
     flowIntervalSeconds: 60,
     ecouteNotifications: true,
   });
+  // Le role de ce processus decide des files qu il consomme et des minuteries qu il programme
+  // (`src/worker/roles.ts`). `WORKER_ROLE` absent = `all` = exactement le comportement d avant.
+  queue.neTravailleQue((nom) => fileDuRole(nom, config.WORKER_ROLE));
   // L'enfilement d'un run de campagne au débit résolu, partagé par les relances du worker qui ne résolvent pas
   // le débit elles-mêmes.
   const relancerCampagne = relanceurDeCampagnes(queue, config);
@@ -174,7 +178,7 @@ async function main(): Promise<void> {
   };
   await beat(true);
   // Registre des tâches périodiques : programmer et arrêter sont le même geste (voir `worker/taches.ts`).
-  const taches = registreDeTaches();
+  const taches = tachesDuRole(registreDeTaches(), config.WORKER_ROLE);
   taches.programmer('heartbeat', config.HEARTBEAT_INTERVAL_MS, () => beat(false));
   /**
    * L'échec d'un balayage, au format commun : `<journal> erreur: <message>` dans les journaux, puis l'alerte
