@@ -462,7 +462,7 @@ describe('les variables du modèle', () => {
   /**
    * ⚠️ UNE CAMPAGNE DE SCÉNARIO EMPORTE AUSSI SON MAPPING : le premier envoi du parcours reçoit ces
    * variables déjà résolues et les utilise telles quelles, sans relire les indices du modèle
-   * (`explicitParams`, `src/workflow/wiring.ts`). Un mapping vide y produit le même refus global.
+   * (`explicitParams`, `src/workflow/envois-bloc.ts`). Un mapping vide y produit le même refus global.
    */
   it('une campagne de scenario emporte le mapping du modele par lequel il ouvre', () => {
     const etat: EtatPourCreation = {

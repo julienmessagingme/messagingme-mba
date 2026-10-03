@@ -6,9 +6,9 @@ import { readFileSync } from 'node:fs';
  *
  * 🔴 POURQUOI LIRE LE TEXTE PLUTÔT QUE LE COMPORTEMENT. Un câblage n'a par construction aucun dépendant :
  * le retirer ne casse aucun appelant, donc aucun test unitaire ne s'en aperçoit, et un test unitaire monte
- * de toute façon son PROPRE faux, qui bouge avec le code. C'est le même motif que
- * `tests/workflow-cablage-categorie.test.ts` : là-bas, retirer le contexte de catégorie passait tsc ET
- * toute la suite.
+ * de toute façon son PROPRE faux, qui bouge avec le code. C'est le même motif que la catégorie d'un template
+ * envoyé par un scénario (`tests/workflow-envois-bloc.test.ts`) : retirer son contexte passait tsc ET toute la
+ * suite.
  *
  * Ce que ces trois lectures protègent, et qui a coûté une semaine de mutisme en production le 2026-09-07 :
  * un lien de chaîne cliqué pendant qu'un autre parcours attendait n'ouvrait jamais son scénario.

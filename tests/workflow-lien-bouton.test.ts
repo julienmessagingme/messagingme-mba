@@ -1,7 +1,6 @@
 import { jamaisDesabonne } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { walk, etapeOffreUnChoix, problemeLienBouton } from '../src/workflow/engine';
 import { WorkflowExecutor, type WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
@@ -120,7 +119,8 @@ describe('bouton de lien : ce qui le rend inutilisable', () => {
 describe('bouton de lien : ce qui arrive à la couche d’envoi', () => {
   it('🔴 le lien traverse l’exécuteur jusqu’au SIXIÈME argument', async () => {
     // C'est le paramètre qu'une implémentation trop courte avale en silence (le piège documenté du
-    // CLAUDE.md). Ici on prouve qu'il PART ; le test de câblage plus bas prouve qu'il ARRIVE.
+    // CLAUDE.md). Ici on prouve qu'il PART ; `tests/workflow-envois-bloc.test.ts` prouve qu'il ARRIVE, dans le
+    // module d'envoi et à travers le vrai câblage.
     const sendQuickMessage = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(deps({ sendQuickMessage }));
     await ex.startInWindow('t1', 'wf1', graphe({ body: 'La brochure', lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }), { waId: '336', contactId: null });
@@ -132,41 +132,5 @@ describe('bouton de lien : ce qui arrive à la couche d’envoi', () => {
     const ex = new WorkflowExecutor(deps({ sendQuickMessage, varsFor: async () => ({ prenom: 'Camille' }) }));
     await ex.startInWindow('t1', 'wf1', graphe({ body: 'Bonjour {{prenom}}', lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }), { waId: '336', contactId: null });
     expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'Bonjour Camille', [], undefined, expect.anything());
-  });
-});
-
-/**
- * LE CÂBLAGE RÉEL, lu dans la source.
- *
- * 🔴 POURQUOI PAS UN TEST ORDINAIRE : un test unitaire monte un FAUX `sendQuickMessage`, et le faux bouge
- * avec le code. Surtout, `lien` est le SIXIÈME paramètre d'un contrat qui les déclare tous facultatifs à
- * partir du cinquième : une flèche qui n'en déclare que cinq COMPILE, et le lien disparaît sans un mot.
- * C'est le piège déjà vécu sur le plafond de campagne (`tests/campagne-cablage.test.ts`) et sur la catégorie
- * de template (`tests/workflow-cablage-categorie.test.ts`). Ce qui traverse un câblage ne se vérifie pas au
- * type, il se vérifie en le regardant.
- */
-const source = readFileSync(new URL('../src/workflow/wiring.ts', import.meta.url), 'utf8');
-/** Sans les commentaires : sinon une explication qui CITE le bon code ferait passer un câblage fautif. */
-const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-
-describe('câblage du bouton de lien (scénario)', () => {
-  it('🔴 le câblage DÉCLARE le sixième paramètre', () => {
-    expect(sansCommentaires, 'sendQuickMessage doit recevoir `lien` en sixième paramètre')
-      .toMatch(/sendQuickMessage:\s*async\s*\(tenant,\s*waId,\s*body,\s*buttons,\s*mediaUrl,\s*lien\)/);
-  });
-
-  it('🔴 un bloc à lien part en `cta_url`, jamais en message à boutons', () => {
-    expect(sansCommentaires, 'le câblage doit appeler sendCtaUrl avec le lien')
-      .toMatch(/client\.sendCtaUrl\(waId,\s*body,\s*lien,\s*mediaId\)/);
-    // Et la branche à boutons reste ATTEIGNABLE : le lien ne doit pas l'avoir remplacée, sinon les blocs
-    // à réponses rapides, qui sont le cas courant, partiraient en texte nu.
-    expect(sansCommentaires).toMatch(/client\.sendInteractive\(waId,\s*body,\s*buttons,\s*mediaId\)/);
-  });
-
-  it('🔴 un lien inutilisable REFUSE l’envoi, il ne laisse pas partir un message nu', () => {
-    // Le client a coché la case : lui livrer le texte seul parce que l'adresse manque, c'est exactement le
-    // silence que ce bloc ferme déjà pour le visuel non préparable.
-    expect(sansCommentaires, 'le câblage doit consulter problemeLienBouton et rendre la raison')
-      .toMatch(/problemeLienBouton\(lien\)[\s\S]{0,120}return problemeLien;/);
   });
 });

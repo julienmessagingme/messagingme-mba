@@ -459,7 +459,7 @@ export function entreeDeCreation(
      *
      * ⚠️ IL PART AUSSI SUR UNE CAMPAGNE DE SCÉNARIO, et ce n'est pas un oubli du contraire : le premier
      * envoi du scénario reçoit ces variables DÉJÀ RÉSOLUES et les utilise telles quelles, sans relire les
-     * indices du modèle (`explicitParams`, `src/workflow/wiring.ts`). Un mapping vide y produit le même
+     * indices du modèle (`explicitParams`, `src/workflow/envois-bloc.ts`). Un mapping vide y produit le même
      * refus global de Meta que sur une campagne de modèle direct.
      *
      * ⚠️ VIDE SUR UN PREMIER ÉTAGE RCS : ce canal n'a pas de variables de modèle, et le serveur valide de

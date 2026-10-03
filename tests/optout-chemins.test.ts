@@ -82,13 +82,21 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
     pourquoi: 'L’exécuteur n’appelle jamais Meta : il appelle ses dépendances, que `src/workflow/wiring.ts` '
       + 'fournit. C’est là que la garde est posée, une fois, pour le scénario, l’automation et l’agent IA.',
   },
+  'src/workflow/envois-bloc.ts': {
+    verdict: 'bloque',
+    pourquoi: '🔴 LE POINT DE PASSAGE DES ENVOIS D’UN PARCOURS (scénario, automation) : modèle, message rapide, '
+      + 'question, formulaire. Ses quatre envois ne sont appelés que par `WorkflowExecutor.apply`, APRÈS la garde '
+      + '(`EST_UN_ENVOI`, `deps.estDesabonne`), posée une fois là où quatre gardes auraient divergé. Mesuré en '
+      + 'suivant l’appel : `this.deps.sendTemplate`, `sendQuickMessage`, `sendQuestion` et `sendFlow` n’ont aucun '
+      + 'autre appelant dans `src/`.',
+  },
   'src/workflow/wiring.ts': {
     verdict: 'bloque',
-    pourquoi: '🔴 LE POINT DE PASSAGE DES ENVOIS D’UN PARCOURS (scénario, automation) : la garde est posée '
-      + 'une fois dans `WorkflowExecutor.apply`, là où trois gardes auraient divergé. '
-      + '⚠️ CETTE RAISON A DIT « ET AGENT IA », ET C’ÉTAIT FAUX : la réponse d’un agent part par '
-      + '`envoyerTexteAgent`, qui appelle `client.sendText` DIRECTEMENT, sans passer par l’exécuteur. '
-      + 'L’agent a donc sa propre garde, au rang de ses plafonds, dans `src/agent/run-turn.ts`. '
+    pourquoi: 'La réponse d’un agent IA : `envoyerTexteAgent` appelle `client.sendText` DIRECTEMENT, sans passer '
+      + 'par l’exécuteur, donc sans sa garde. L’agent a la sienne, au rang de ses plafonds, dans '
+      + '`src/agent/run-turn.ts`. Les envois d’un bloc de scénario, construits ici, sont classés à part '
+      + '(`src/workflow/envois-bloc.ts`). '
+      + '⚠️ CETTE RAISON A DIT « ET AGENT IA » POUR LA GARDE DE L’EXÉCUTEUR, ET C’ÉTAIT FAUX. '
       + '🔴 LA LEÇON EST SUR CE TEST LUI-MÊME : un inventaire prouve que la LISTE est complète, jamais que '
       + 'les VERDICTS sont justes. Celui-ci a été écrit par la même main que la garde, dans la même heure, '
       + 'depuis la même croyance. Un verdict se MESURE en suivant l’appel, il ne se déduit pas d’un voisinage.',

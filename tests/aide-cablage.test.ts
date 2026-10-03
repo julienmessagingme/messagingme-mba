@@ -15,8 +15,8 @@ import { GardeUsageMemoire } from './aide/usage';
  * Le mécanisme est celui de `cleDe` (`src/agent/llm/chat-client.ts`) : sans résolveur de clé par espace, la
  * clé maison est utilisée. Le client de l'aide est donc construit SANS ce résolveur, délibérément.
  *
- * Même famille que `tests/campagne-cablage.test.ts` et `tests/workflow-cablage-categorie.test.ts` : ce qui
- * traverse un câblage ne se vérifie pas au type, il se vérifie en le regardant.
+ * Même famille que `tests/campagne-cablage.test.ts` : ce qui traverse un câblage ne se vérifie pas au type, il
+ * se vérifie en le regardant.
  */
 const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
 /** Sans les commentaires : sinon une explication qui CITE le bon code ferait passer un câblage fautif. */

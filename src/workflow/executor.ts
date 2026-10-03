@@ -179,8 +179,8 @@ export interface WorkflowExecutorDeps {
    *  vide).
    *
    *  Sixième paramètre : une implémentation qui n'en déclare que cinq compile et avale le lien en silence
-   *  (une flèche à moins de paramètres reste assignable). Le vrai câblage est tenu par
-   *  `tests/workflow-lien-bouton.test.ts`. */
+   *  (une flèche à moins de paramètres reste assignable). La vraie implémentation (`src/workflow/envois-bloc.ts`)
+   *  et son câblage sont exécutés par `tests/workflow-envois-bloc.test.ts`. */
   sendQuickMessage(tenantId: string, waId: string, body: string, buttons: WorkflowButton[], mediaUrl?: string, lien?: LienBouton): Promise<SendRefusal>;
   /** Envoie un formulaire (message interactif type flow) hors template. Même contrainte de fenêtre 24 h que
    *  sendQuickMessage. */

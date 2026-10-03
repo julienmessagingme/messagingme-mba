@@ -29,7 +29,7 @@ export type LectureModele =
   | { statut: 'categorie_non_admise'; categorie: string }
   | { statut: 'non_envoyable'; raison: string };
 
-/** Ce que la lecture partagée rend d'un template (`TplInfo`, `src/workflow/wiring.ts`), réduit à ce qui sert ici. */
+/** Ce que la lecture partagée rend d'un template (`TplInfo`, `src/workflow/envois-bloc.ts`), réduit à ce qui sert ici. */
 export interface ModeleLu {
   statut?: string;
   langue?: string;

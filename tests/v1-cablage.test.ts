@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
  * 🔴 POURQUOI UN TEST DE SOURCE. Une flèche à moins de paramètres est assignable à un contrat qui en déclare
  * plus : `(tenant, key) => store.claim(tenant, key, 'x')` ou `(t, id, consent) => appliquerConsentement(…,
  * 'api')` compileraient et avaleraient l'empreinte ou la source du consentement, en silence. Même famille que
- * `tests/workflow-cablage-categorie.test.ts` et `tests/campagne-cablage.test.ts`.
+ * `tests/campagne-cablage.test.ts`.
  */
 const sansCommentaires = (chemin: string): string => readFileSync(new URL(chemin, import.meta.url), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
