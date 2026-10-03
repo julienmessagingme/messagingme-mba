@@ -928,6 +928,59 @@ qui attend quelqu'un, et il garderait la conversation visible.
 conversation qu'un scénario mène n'est pas une ligne de travail). C'est la DESTINATION de la reprise qui est
 discutable, pas le filtre.
 
+## 🟠 Le rapport d'architecture du 2026-10-02 : huit pistes restantes sur neuf (2026-10-03)
+
+Une revue de profondeur sur les zones les plus modifiées des deux semaines précédentes, rendue en HTML dans le
+scratchpad de session, donc NON DURABLE (`architecture-review-20261002-2234.html`). Ce qui compte est recopié ici.
+Base analysée : `origin/main` 9334e840. Les décisions déjà écrites n'y sont pas rediscutées (pas de découpage des
+gros dépôts, gardes de consentement en flèches nommées, émission décidée par le chemin appelant).
+
+**La piste 1 est faite et déployée** : la règle unique du catalogue d'outils (offrable, appelable, publiable),
+`880b624d`, `b8760b6b`, `d101358e`, journal du 2026-10-02 et 03.
+
+**Les huit restantes**, de la plus forte à la plus spéculative :
+
+1. **Une seule transition de consentement dans la fiche contact** (fort). « Qui peut lever un STOP, et alors la
+   date et la source suivent » est réécrit en six CASE SQL dans `src/crm/contact-store.pg.ts`
+   (`upsertByPhoneReturningId`, `upsertManyByPhone`, `setOptInByWaId`, `ecrireConsentementParId`, `applyEdits`,
+   `applyEditsMany`) ; deux d'entre eux réabonnaient un contact STOP (738a7c3d), et le quatrième chemin de 0138
+   n'avait été trouvé qu'en revue. Approfondir À L'INTÉRIEUR du dépôt (compatible avec le refus du découpage) : un
+   fragment porte la transition et son annonce après écriture, les six chemins l'appellent. Tests aujourd'hui :
+   un faux pool qui reconnaît les requêtes par regex, et un seul test sur vraie base.
+2. **Sortir l'envoi d'un bloc de scénario du câblage** (fort). C'est le **candidat 1 du rapport du 2026-09-14**,
+   ci-dessous : `sendTemplate` (108 lignes, deux chemins), `sendQuickMessage`, `sendQuestion`, `sendFlow` vivent
+   dans le littéral de `buildWorkflowRuntime` (`src/workflow/wiring.ts`, 20 commits en deux semaines dont 8
+   correctifs), et aucun test ne les exécute. Patron : `src/inbox/fil.ts`. À coupler au point d'envoi unique.
+3. **L'accès publicitaire d'un espace, lié une fois** (à explorer). Chaque appel Graph ajouté se câble trois fois
+   (client, flèche de `src/index.ts` autour d'`accesPub`, dépendance de route), et `src/worker.ts` déchiffre le
+   jeton lui-même, hors de la règle « le jeton ne sort en clair que par `jetonClair` » (`src/pubs/connexion.ts`).
+   Rendre un accès déjà lié au compte publicitaire, construit dans le socle. À trancher en passant :
+   `noterSiRefus` ne marque un jeton refusé que sur la connexion, pas sur la création ni la publication.
+4. **Un point d'entrée par type de lancement de scénario** (à explorer). C'est le **candidat 6** de « approfondir
+   la racine » (section des suites du 2026-09-27, plus haut), différé « à reprendre seulement s'il gêne » : il a
+   gêné une fois, `saufOperateur` (les leads publicitaires du 27) a atterri dans la racine. Cinq lancements
+   (Inbox, outil de l'agent de Meta, automation, jeton de test, campagne) décident dans une flèche de racine qui
+   reprend le fil, qui émet et quel graphe, et ce choix n'est gardé que par lecture de texte. Relire avant « Trois
+   lectures qu'un point d'envoi unique perdrait », plus bas.
+5. **La réception RCS en module, comme sa jumelle WhatsApp** (à explorer). `onMo` (`src/index.ts`, rcsCallback)
+   enchaîne STOP, opt-out, signal, journal, contact, automation et scénario dans une flèche qu'aucun test
+   n'exécute (le test la remplace par un faux) ; la jumelle WhatsApp est un module (`src/webhooks/inbound.ts`).
+   Peu modifiée : le coût est un risque sur le consentement, pas une fréquence.
+6. **Un seul geste « poser une étiquette »** (à explorer). `src/agent/poser-tag.ts` est le vrai module, mais le
+   scénario (`wiring.ts`), le widget (`src/widgets/arrivee.ts`) et l'outil MCP `tag_conversation`
+   (`src/mcp/outils.ts`, sans la borne de 64 caractères ni le référentiel des étiquettes) le réimplémentent ;
+   `trim().slice(0, 64)` apparaît dans dix fichiers et `mergeFieldsByPhone` est câblé à la main quatre fois.
+   Étendre le module aux autres portes, l'émission restant au choix du chemin appelant.
+7. **Le cerveau de l'agent IA construit deux fois** (spéculatif). `src/index.ts` (bac à sable) et `src/worker.ts`
+   (production) recopient la moitié commune de `creerCerveauGateway`, alignées par deux tests de texte ; l'écart du
+   2026-09-16 (bac à sable sans résolveur) venait de là. Une fabrique « production / essai » dans `src/agent/`.
+8. **Le bail anti-double-envoi de l'exécuteur, requis** (spéculatif). `reserverAvance`, `prolongerAvance`,
+   `libererAvance` sont optionnels « pour les fixtures » (`src/workflow/executor.ts`) ; un câblage qui les
+   oublierait compilerait. Les rendre requis, les fixtures passant par `avecGardesDEtatInertes`. Rejoint le
+   **candidat 6 du rapport du 2026-09-14** (dépendances optionnelles).
+
+Écartée : les deux journaux du sortant de `PgInboxStore`, déjà décrits plus bas (« un échec du JOURNAL »).
+
 ## 🟠 Le rapport d'architecture du 2026-09-14 : huit candidats restants sur onze (2026-09-15)
 
 Une revue de PROFONDEUR (« quel levier une interface donne-t-elle par unité de complexité à apprendre ? »),
