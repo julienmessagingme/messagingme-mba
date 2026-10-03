@@ -5,6 +5,32 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : la latence HTTP par route, dans `/ops`
+
+Point 1 de ce qui restait de l'audit de performance du 2026-10-02 (§ 11) : `/ops` mesurait les files, rien des
+routes, alors que deux seuils de l'audit sont des latences de routes. Plan :
+`docs/superpowers/plans/2026-10-03-latence-http-par-route.md`.
+- **Livré en deux commits** : le lot (`22d01fe4`, migration 0205), puis les jaunes de sa relecture (`b1d3bc8a`).
+  Une relecture indépendante, aucun rouge ; quinze mutations à la main, quinze échecs.
+- **Déployé à 20 h 33 UTC** : 0205 appliquée avant le `up` de l'API et des deux workers, relue en base ; les six
+  chemins publics à 200 ou 403 comme attendu (`scripts/fumee.mjs`), démarrages sans erreur.
+- **L'essai réel** : au premier vidage, dix lignes écrites par le vrai trafic (la console qui sonde l'Inbox,
+  `/health`, `/live`, le webhook de Meta, `/mcp` et sa découverte OAuth), toutes sous un motif de route, aucune
+  ne portant d'identifiant, et zéro erreur d'écriture dans les journaux de l'API.
+
+**Ce que la construction a appris.**
+- **Un p95 ne s'additionne pas**, ni entre copies ni entre fenêtres : la table garde des compteurs par tranche de
+  durée, qui s'additionnent, et le centile s'en tire à la lecture (un majorant, plafonné par le maximum mesuré).
+- **`onResponse` ne voit pas une requête abandonnée par le client**, et ce sont les plus lentes (relevé par la
+  relecture, mesuré). Un premier correctif partageait les requêtes sur `writableFinished` : vert sur une vraie
+  connexion, il comptait TOUTES les requêtes de `inject` en abandon, parce que la réponse simulée ne pose pas ce
+  drapeau. Le crochet officiel `onRequestAbort` (qui ne se déclenche que sur un vrai abandon), avec une marque
+  contre le double compte, tient dans les deux cas : un test sur une vraie connexion le prouve.
+- **Le rouge ne vise que ce qui doit être rapide** (webhooks entrants, lectures de l'Inbox, dès 20 requêtes) : la
+  traduction, la transcription ou un envoi chez Meta sont dans l'Inbox et lents par nature.
+- **La mesure ne suspend plus celle du pool** : `sansSeMesurer` vaut pour tout le processus, et un vidage qui
+  attend un pool saturé aurait rendu la saturation invisible au moment exact où elle a lieu.
+
 ## 2026-10-03 : plus de 502 durable après un `up` de l'API, et le document de bascule Scaleway remis à jour
 
 **Le 502 après chaque `up`, corrigé à la source.** Le diagnostic, lu dans les fichiers que NPM génère : l'hôte

@@ -138,11 +138,12 @@ Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, déci
 Déjà fait : la preuve à deux copies (deux bancs), le budget de connexions (test, Pool Size 30), les deux workers et
 leur battement par rôle, le cache Cloudflare du widget, le document de bascule. Ce qui reste, dans l'ordre recommandé
 à Julien le 2026-10-03 (il a demandé de compacter avant de commencer le 1) :
-1. ⏳ **PROCHAIN, demandé par Julien : la latence HTTP par route** normalisée et code de retour (p50, p95),
-   webhooks, Inbox et `/v1` en tête ; l'audit y ajoute CPU, mémoire et redémarrages par conteneur, connexions côté
-   pooler et Postgres, durée des gros balayages, volume des fichiers en base. Rien n'existe côté HTTP aujourd'hui
-   (`/ops` mesure finement les FILES, pas les routes). Méthode : implémenteur + une relecture, essai réel en lisant
-   `/ops` en production.
+1. ✅ **La latence HTTP par route** (2026-10-03) : déployée à 20 h 33 UTC (`22d01fe4`, migration 0205), essai réel
+   fait en base (dix lignes du vrai trafic, aucune adresse réelle). Les jaunes de sa relecture sont poussés
+   (`b1d3bc8a` : l'abandon par le client mesuré en 499, le rouge réservé aux webhooks et lectures de l'Inbox, un
+   plafond de lignes, l'écriture triée, un vidage final), PAS ENCORE DÉPLOYÉS. Reste à Julien : ouvrir `/ops` et
+   voir la carte. Le reste du § 11 de l'audit (CPU, mémoire et redémarrages par conteneur, connexions côté pooler
+   et Postgres, durée des gros balayages, volume des fichiers en base) n'est pas fait.
 2. Le banc « Inbox à 30 utilisateurs » (Postgres jetable, p95), et tuer un WORKER en plein travail sans perte ni
    doublon (les bancs n'ont tué que l'API).
 3. Au plus 5 clés d'API actives par espace (sécurité, petit lot).
