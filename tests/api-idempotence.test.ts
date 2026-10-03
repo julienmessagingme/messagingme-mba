@@ -125,6 +125,26 @@ describe('la durée de vie d’une clé : UNE constante, et la purge ne descend 
     expect(String(appels[1]!.params[3])).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
+  it('🔴 le bail ne libère qu’une pose du MÊME corps : « même clé, autre corps » reste un 422', async () => {
+    // Relecture du 2026-10-03 : sans cette condition, une pose abandonnée laissait un AUTRE corps reprendre la
+    // clé, alors que la doc publique promet le refus pendant toute la vie de la clé.
+    const { pool, appels } = poolEspion();
+    await new PgApiIdempotencyStore(pool).claim('t1', 'k1', 'empreinte-du-corps');
+    expect(appels[0]!.sql).toMatch(/and \(request_hash is null or request_hash = \$5\)\)\)/);
+    expect(appels[0]!.params[4]).toBe('empreinte-du-corps');
+  });
+
+  it('🔴 complete scelle avec le client de transaction qu’on lui donne, pas avec le pool', async () => {
+    // C'est ce qui fait naître la clé et la campagne ensemble : scellée sur le pool, elle sortirait de la
+    // transaction de création, et une copie tuée entre les deux laisserait une campagne sans clé.
+    const duPool = poolEspion();
+    const deLaTransaction = poolEspion();
+    await new PgApiIdempotencyStore(duPool.pool).complete('t1', 'k1', 'jeton-1', 's1', { a: 1 }, deLaTransaction.pool);
+    expect(duPool.appels).toHaveLength(0);
+    expect(deLaTransaction.appels).toHaveLength(1);
+    expect(deLaTransaction.appels[0]!.sql).toMatch(/update api_idempotency set send_id/);
+  });
+
   it('🔴 complete, release et possede ne touchent que la ligne de LEUR jeton, encore en cours', async () => {
     // Sans le jeton, un traitement lent qui dépasse le bail scellerait (ou libérerait) la pose de celui qui l'a
     // reprise : deux campagnes partiraient. C'est ce qui part en base qu'on juge, pas ce que rend la fonction.

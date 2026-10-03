@@ -2211,8 +2211,12 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // Plus jeune que le bail : toujours « en cours », le second appel attend (409).
     await vieillir(k, DUREE_CLE_EN_COURS_MAX_MS - 60_000);
     expect(await store.claim(tenantId, k, 'empreinte-x')).toEqual({ claimed: false, pending: true });
-    // Au-delà du bail : abandonnée, le second appel la REPREND, avec un autre jeton.
+    // Au-delà du bail : abandonnée. 🔴 Un AUTRE corps ne la reprend pas, même abandonnée : « même clé, autre
+    // corps » reste un 422 pendant toute la vie de la clé (relecture du 2026-10-03), et la pose reste en place.
     await vieillir(k, DUREE_CLE_EN_COURS_MAX_MS + 1_000);
+    expect(await store.claim(tenantId, k, 'empreinte-AUTRE')).toEqual({ claimed: false, reused: true });
+    expect(await store.possede(tenantId, k, premier.jeton)).toBe(true);
+    // Le MÊME corps la reprend, avec un autre jeton.
     const second = await store.claim(tenantId, k, 'empreinte-x');
     if (!second.claimed) throw new Error(`la pose abandonnee n a pas ete reprise : ${JSON.stringify(second)}`);
     expect(second.jeton).not.toBe(premier.jeton);
@@ -2237,6 +2241,67 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.complete(tenantId, ancienne, second.jeton, '66666666-6666-6666-6666-666666666666', {})).toBe(false);
     await vieillir(ancienne, DUREE_CLE_EN_COURS_MAX_MS + 1_000);
     expect(await store.claim(tenantId, ancienne, 'empreinte-y')).toMatchObject({ claimed: true });
+    // Une pose d'avant les EMPREINTES (request_hash nul) s'abandonne quel que soit le corps : rien ne dit lequel.
+    const sansEmpreinte = `idem-sans-empreinte-${Date.now()}`;
+    await pool.query('insert into api_idempotency (tenant_id, idempotency_key) values ($1, $2)', [tenantId, sansEmpreinte]);
+    await vieillir(sansEmpreinte, DUREE_CLE_EN_COURS_MAX_MS + 1_000);
+    expect(await store.claim(tenantId, sansEmpreinte, 'nimporte')).toMatchObject({ claimed: true });
+  });
+
+  it('🔴 PgCampaignRepo.createWithRecipientsSiConfirme : la campagne et le scellement de sa clé naissent ensemble, ou rien', async () => {
+    // Relecture du 2026-10-03 : créées en deux temps, une copie tuée entre la campagne et le scellement laissait
+    // un brouillon sans clé qui le désigne, lançable depuis la console. Ici, une seule transaction.
+    const repo = new PgCampaignRepo(pool);
+    const store = new PgApiIdempotencyStore(pool);
+    const entree = {
+      tenantId, phoneNumberId: 'pn-cle', name: '[API] cle', category: 'utility' as const,
+      templateName: '', templateLanguage: '', paramMapping: [],
+    };
+    const compter = async (): Promise<number> => Number((await pool.query<{ n: string }>(
+      'select count(*) as n from campaigns where tenant_id = $1', [tenantId],
+    )).rows[0]!.n);
+    const poser = async (k: string): Promise<string> => {
+      const c = await store.claim(tenantId, k, 'empreinte-c');
+      if (!c.claimed) throw new Error(`clé ${k} non posée`);
+      return c.jeton;
+    };
+
+    // Scellée dans la transaction : la campagne existe, et le rejeu rend SON identifiant.
+    const k1 = `idem-creation-${Date.now()}`;
+    const jeton1 = await poser(k1);
+    const cree = await repo.createWithRecipientsSiConfirme(entree, [], (tx, id) => store.complete(tenantId, k1, jeton1, id, { sendId: id }, tx));
+    if (cree === null) throw new Error('creation confirmee refusee');
+    expect(await store.claim(tenantId, k1, 'empreinte-c')).toMatchObject({ claimed: false, sendId: cree.campaignId });
+    const avant = await compter();
+
+    // Scellement REFUSÉ (la clé n'est plus à ce porteur) : null, AUCUNE campagne, et la pose de l'autre intacte.
+    const k2 = `idem-reprise-${Date.now()}`;
+    const jeton2 = await poser(k2);
+    const refusee = await repo.createWithRecipientsSiConfirme(entree, [], (tx, id) => store.complete(tenantId, k2, 'ffffffff-ffff-4fff-8fff-ffffffffffff', id, {}, tx));
+    expect(refusee).toBeNull();
+    expect(await compter()).toBe(avant);
+    expect(await store.possede(tenantId, k2, jeton2)).toBe(true);
+
+    // Une erreur dans la confirmation annule aussi tout, et remonte.
+    await expect(repo.createWithRecipientsSiConfirme(entree, [], async () => { throw new Error('panne pendant le scellement'); }))
+      .rejects.toThrow('panne pendant le scellement');
+    expect(await compter()).toBe(avant);
+
+    // 🔴 L'ATOMICITÉ, prouvée par la base et pas par un espion : le scellement RÉUSSIT (complete rend vrai), puis la
+    // transaction échoue. Ni campagne ni scellement ne doivent survivre : la clé reste EN COURS, à son porteur.
+    // Scellée hors de la transaction (sur le pool), la clé désignerait une campagne annulée, et le rejeu rendrait
+    // le rapport d'un envoi qui n'existe pas : c'est exactement ce que ce cas attrape.
+    const k3 = `idem-atomicite-${Date.now()}`;
+    const jeton3 = await poser(k3);
+    let scelleDansLaTransaction = false;
+    await expect(repo.createWithRecipientsSiConfirme(entree, [], async (tx, id) => {
+      scelleDansLaTransaction = await store.complete(tenantId, k3, jeton3, id, { sendId: id }, tx);
+      throw new Error('panne apres le scellement');
+    })).rejects.toThrow('panne apres le scellement');
+    expect(scelleDansLaTransaction).toBe(true); // le scellement a bien eu lieu, puis a été annulé
+    expect(await compter()).toBe(avant);
+    expect(await store.possede(tenantId, k3, jeton3)).toBe(true);
+    expect(await store.claim(tenantId, k3, 'empreinte-c')).toEqual({ claimed: false, pending: true });
   });
 
   it('resolveScenario (Postgres réel) : par code scn_, par nom, nom AMBIGU -> ambiguous', async () => {

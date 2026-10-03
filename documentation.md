@@ -1460,12 +1460,15 @@ reprise rejouerait le même bloc.
 
 🔴 **Une clé d'idempotence EN COURS est un verrou, et elle en porte deux pièces** (`api_idempotency`,
 `src/api/idempotency-store.pg.ts`). Son **bail** : une pose jamais scellée depuis plus de
-`DUREE_CLE_EN_COURS_MAX_MS` est abandonnée (son traitement est mort), et `claim` la retire avant d'insérer ; une
-clé SCELLÉE ne s'abandonne jamais, seule sa durée de 24 h la libère. Son **jeton de garde** (`jeton`) :
-`possede`, `complete` et `release` ne touchent que la ligne de LEUR jeton. `POST /v1/sends` demande `possede`
-juste avant de créer la campagne, et ne lance jamais une campagne dont le scellement a été refusé (clé reprise
-entre-temps) : elle reste en brouillon, journalisée. C'est le jeton, pas la durée du bail, qui empêche le double
-envoi ; le bail décide seulement combien de temps une clé abandonnée bloque son client. ⚠️ Le code d'avant 0203
+`DUREE_CLE_EN_COURS_MAX_MS` est abandonnée (son traitement est mort), et `claim` la retire avant d'insérer, pour
+le MÊME corps seulement (un autre corps reste un 422 toute la vie de la clé) ; une clé SCELLÉE ne s'abandonne
+jamais, seule sa durée de 24 h la libère. Son **jeton de garde** (`jeton`) : `possede`, `complete` et `release`
+ne touchent que la ligne de LEUR jeton. `POST /v1/sends` demande `possede` juste avant de créer la campagne, puis
+crée la campagne ET scelle la clé dans UNE transaction (`createWithRecipientsSiConfirme`, `complete` recevant le
+client de cette transaction) : une campagne d'API n'existe que si sa clé la désigne. Copie tuée ou clé reprise
+entre-temps, tout est annulé, et il ne reste aucun brouillon qu'on pourrait lancer depuis la console. C'est le
+jeton, pas la durée du bail, qui empêche le double envoi ; le bail décide seulement combien de temps une clé
+abandonnée bloque son client. ⚠️ Le code d'avant 0203
 scelle et libère SANS jeton : une copie ancienne qui vivrait plus d'un bail à côté d'une copie neuve pourrait
 écraser le scellement de celle-ci. Impossible avec une seule copie (`stop_grace_period` de 30 s, très en deçà du
 bail) ; un déploiement progressif à plusieurs copies doit garder son délai d'arrêt sous le bail.

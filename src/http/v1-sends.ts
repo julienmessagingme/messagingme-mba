@@ -1,6 +1,7 @@
 import { setTimeout as dormir } from 'node:timers/promises';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
+import type { PoolClient } from 'pg';
 import type { Guard } from '../auth/middleware';
 import { waIdOf } from '../crm/identity';
 import type { BuiltRecipient, ContactEnvoi } from '../campaign/build';
@@ -63,7 +64,15 @@ export interface V1SendsRouteDeps {
     phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
     /** Les fiches désignées, bloquées comprises. */
     listContactsPourEnvoiApi(tenantId: string, ids: string[]): Promise<ContactEnvoi[]>;
-    createWithRecipients(input: V1SendCreateInput, recipients: BuiltRecipient[]): Promise<{ campaignId: string; recipientCount: number }>;
+    /**
+     * Crée la campagne si `confirmer` le dit, dans la même transaction (`null` = rien n'a été créé). La route y
+     * scelle la clé d'idempotence : jamais de campagne sans la clé qui la désigne.
+     */
+    createWithRecipientsSiConfirme(
+      input: V1SendCreateInput,
+      recipients: BuiltRecipient[],
+      confirmer: (tx: PoolClient, campaignId: string) => Promise<boolean>,
+    ): Promise<{ campaignId: string; recipientCount: number } | null>;
     /** L'envoi tel que `GET /v1/sends/{sendId}` le décrit, avant mise en forme. */
     lireEnvoiApi(sendId: string, tenantId: string): Promise<EnvoiApiBrut | null>;
   };
@@ -92,8 +101,11 @@ export interface V1SendsRouteDeps {
     claim(tenantId: string, key: string, empreinte: string): Promise<IdempotencyClaim>;
     /** La clé est-elle encore à ce porteur, et encore en cours ? */
     possede(tenantId: string, key: string, jeton: string): Promise<boolean>;
-    /** `false` = la clé a été reprise : ne PAS lancer la campagne, l'autre appel enverra. */
-    complete(tenantId: string, key: string, jeton: string, sendId: string, response: unknown): Promise<boolean>;
+    /**
+     * `false` = la clé a été reprise, l'autre appel enverra. `tx` : la transaction qui crée la campagne, pour
+     * que la clé et la campagne naissent ensemble ou pas du tout.
+     */
+    complete(tenantId: string, key: string, jeton: string, sendId: string, response: unknown, tx: PoolClient): Promise<boolean>;
     release(tenantId: string, key: string, jeton: string): Promise<void>;
   };
   /** La cible `rcsMessage` : un message de la bibliothèque par son nom, et l'agent RCS de l'espace. */
@@ -431,6 +443,17 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
     }
     if (!claim.claimed) return reply.code(201).send(claim.response);
     const { jeton } = claim;
+    const poseeLe = Date.now();
+    /**
+     * Une clé reprise par un autre appel est une ANOMALIE à surveiller : un envoi légitime prend quelques secondes,
+     * et il a fallu dépasser le bail pour la perdre. On trace l'espace et le délai, jamais la clé, qu'un outil
+     * compose parfois avec les données d'un contact.
+     */
+    const cleReprise = () => {
+      // eslint-disable-next-line no-console
+      console.warn(`v1/sends: clé d'idempotence reprise par un autre appel, espace ${tenantId}, ${Math.round((Date.now() - poseeLe) / 1000)} s après sa pose : rien n'est créé`);
+      return refuser(reply, 409, 'idempotency_in_progress', MESSAGE_CLE_REPRISE);
+    };
 
     /** Un refus après le claim n'a rien créé : la clé est libérée, le même appel repartira une fois corrigé. */
     const libererEtRefuser = async (r: Refus['refus']) => {
@@ -440,8 +463,6 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
 
     // Rempli + scellé dans le try ; l'enqueue (hors try) le lit après scellement (definite assignment).
     let report!: RapportEnvoi;
-    /** La campagne créée alors que la clé avait été reprise : jamais lancée (cf. le scellement ci-dessous). */
-    let orpheline: string | null = null;
     try {
       // Un message RCS part de l'agent RCS de l'espace : aucun numéro WhatsApp n'est exigé, et un `phoneNumberId`
       // fourni est ignoré (`numeroDEnvoi` rendrait sinon 409 `no_whatsapp_number` à un espace qui n'a que le RCS).
@@ -498,10 +519,16 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
        * `DUREE_CLE_EN_COURS_MAX_MS` a pu la voir abandonnée et reprise par un autre appel, qui enverra : on
        * s'arrête sans créer de campagne, et sans libérer la clé, qui n'est plus la nôtre.
        */
-      if (!await deps.idempotence.possede(tenantId, idem.cle, jeton)) {
-        return refuser(reply, 409, 'idempotency_in_progress', MESSAGE_CLE_REPRISE);
-      }
-      const send = await deps.repo.createWithRecipients(
+      if (!await deps.idempotence.possede(tenantId, idem.cle, jeton)) return cleReprise();
+      /**
+       * 🔴 Créée ET scellée dans la MÊME transaction. Scellée avant l'enqueue : sinon un échec de `complete` après
+       * un enqueue réussi libérerait la clé, et un retry recréerait une campagne, donc renverrait les messages en
+       * double. Et scellée DANS la création : en deux temps, une copie tuée entre les deux laissait une campagne
+       * sans clé qui la désigne, un brouillon lançable depuis la console. Clé reprise entre la garde et ici
+       * (`complete` rend faux) -> la création est annulée, rien n'existe, l'appel qui a repris la clé enverra.
+       * Échec en cours de route -> rollback, release + throw (retry propre).
+       */
+      const send = await deps.repo.createWithRecipientsSiConfirme(
         {
           // Le préfixe est `PREFIXE_ENVOI_API`, que le suivi relit (`nomDuMessageRcs`). Le nom d'un envoi RCS n'est pas
           // coupé : le suivi y relit le nom du message (jusqu'à 120 caractères). Les autres cibles gardent leur coupe.
@@ -513,21 +540,16 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
           ...(cible.rcs ? { channel: 'rcs' as const, rcsAgentId: cible.rcs.agentId, rcsMessage: cible.rcs.contenu } : {}),
         },
         recipients,
+        (tx, campaignId) => {
+          report.sendId = campaignId;
+          return deps.idempotence.complete(tenantId, idem.cle, jeton, campaignId, report, tx);
+        },
       );
-      report.sendId = send.campaignId;
-      // 🔴 Scelle l'idempotence avant l'enqueue : sinon un échec de `complete` après un enqueue réussi libérerait la
-      // clé, et un retry recréerait une campagne, donc renverrait les messages en double. Échec avant scellement ->
-      // release + throw (retry propre). Scellement REFUSÉ (clé reprise entre la garde et ici) -> la campagne
-      // n'est pas lancée : l'appel qui a repris la clé enverra, et lancer celle-ci enverrait deux fois.
-      if (!await deps.idempotence.complete(tenantId, idem.cle, jeton, send.campaignId, report)) orpheline = send.campaignId;
+      // La clé a été reprise : rien n'a été créé, et elle n'est plus la nôtre, donc rien à libérer.
+      if (send === null) return cleReprise();
     } catch (err) {
       await deps.idempotence.release(tenantId, idem.cle, jeton);
       throw err;
-    }
-    if (orpheline !== null) {
-      // eslint-disable-next-line no-console
-      console.error(`v1/sends: clé d'idempotence reprise par un autre appel pendant la création de la campagne ${orpheline}, laissée en brouillon et JAMAIS lancée`);
-      return refuser(reply, 409, 'idempotency_in_progress', MESSAGE_CLE_REPRISE);
     }
 
     // Idempotence scellée, définitivement : plus aucun release ci-dessous. On retente l'enfilement (hoquet

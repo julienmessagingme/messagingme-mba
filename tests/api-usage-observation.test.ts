@@ -5,6 +5,7 @@ import { sha256Hex } from '../src/lib/signature';
 import { GardeUsageMemoire } from './aide/usage';
 import { cleApiDeTest } from './aide/cle-api';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
+import type { PoolClient } from 'pg';
 import type { V1SendsRouteDeps } from '../src/http/v1-sends';
 import type { DepsMcp } from '../src/mcp/outils';
 import { contactsV1Muets } from './aide/contacts-v1';
@@ -50,7 +51,8 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
     getTenantPhoneNumberId: async () => 'pn-1',
     phoneNumberBelongsToTenant: async () => true,
     listContactsPourEnvoiApi: async () => [],
-    createWithRecipients: async () => ({ campaignId: 'camp1', recipientCount: 0 }),
+    // Comme la transaction : rien n'est créé si la confirmation (le scellement de la clé) refuse.
+    createWithRecipientsSiConfirme: async (_i, _r, confirmer) => (await confirmer({} as PoolClient, 'camp1') ? { campaignId: 'camp1', recipientCount: 0 } : null),
     lireEnvoiApi: async () => null,
   },
   numerosDelies: {

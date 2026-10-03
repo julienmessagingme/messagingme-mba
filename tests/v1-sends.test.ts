@@ -8,6 +8,7 @@ import { formaterSuiviEnvoi } from '../src/api/suivi-envoi';
 import { nomDuMessageRcs, PREFIXE_ENVOI_API } from '../src/api/cible-rcs';
 import { appliquerConsentement, type IssueConsentement } from '../src/api/consentement';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
+import type { PoolClient } from 'pg';
 import type { V1SendsRouteDeps, V1SendCreateInput } from '../src/http/v1-sends';
 import type { BuiltRecipient, ContactEnvoi } from '../src/campaign/build';
 import type { EnvoiApiBrut } from '../src/campaign/store.pg';
@@ -97,6 +98,9 @@ interface Monde {
   modele: LectureModele;
 }
 
+/** Le client de transaction que les faux dépôts passent à la confirmation : opaque, aucun faux ne le lit. */
+const TX_FACTICE = {} as PoolClient;
+
 /** Le dépôt et le magasin d'idempotence se surchargent membre par membre. */
 type Surcharges = Partial<Omit<V1SendsRouteDeps, 'usage' | 'repo' | 'idempotence'>> & {
   repo?: Partial<V1SendsRouteDeps['repo']>; idempotence?: Partial<V1SendsRouteDeps['idempotence']>;
@@ -163,7 +167,12 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
         cap.lectures += 1;
         return ids.flatMap((id) => { const f = m.fiches.get(id); return f ? [{ ...f }] : []; });
       },
-      createWithRecipients: async (input, recipients) => { cap.sends.push({ input, recipients }); return { campaignId: 'camp1', recipientCount: recipients.length }; },
+      // Comme la vraie transaction : la campagne n'existe que si la confirmation (le scellement) l'accepte.
+      createWithRecipientsSiConfirme: async (input, recipients, confirmer) => {
+        if (!(await confirmer(TX_FACTICE, 'camp1'))) return null;
+        cap.sends.push({ input, recipients });
+        return { campaignId: 'camp1', recipientCount: recipients.length };
+      },
       lireEnvoiApi: async () => null,
       ...surRepo,
     },
@@ -876,7 +885,10 @@ describe('POST /v1/sends : idempotence', () => {
     let released = false;
     const { server } = app({
       repo: {
-        createWithRecipients: async (_i, recipients) => { order.push('createSend'); return { campaignId: 'campX', recipientCount: recipients.length }; },
+        createWithRecipientsSiConfirme: async (_i, recipients, confirmer) => {
+          order.push('createSend');
+          return (await confirmer(TX_FACTICE, 'campX')) ? { campaignId: 'campX', recipientCount: recipients.length } : null;
+        },
       },
       idempotence: {
         complete: async () => { order.push('complete'); return true; },
@@ -925,7 +937,7 @@ describe('POST /v1/sends : idempotence', () => {
     let released = false;
     const { server } = app({
       repo: {
-        createWithRecipients: async () => { throw new Error('db down'); },
+        createWithRecipientsSiConfirme: async () => { throw new Error('db down'); },
       },
       idempotence: {
         release: async () => { released = true; },
@@ -987,7 +999,7 @@ describe('POST /v1/sends : une clé reprise par un autre appel', () => {
     await server.close();
   });
 
-  it('🔴 reprise APRÈS la création (scellement refusé) : 409, la campagne n’est JAMAIS lancée, rien n’est libéré', async () => {
+  it('🔴 reprise APRÈS la garde (scellement refusé dans la transaction) : 409, AUCUNE campagne, rien n’est libéré', async () => {
     let released = false;
     const { server, cap } = app({
       idempotence: {
@@ -998,9 +1010,34 @@ describe('POST /v1/sends : une clé reprise par un autre appel', () => {
     const res = await envoyer(server, CORPS, 'k-reprise-apres');
     expect(res.statusCode).toBe(409);
     expect(res.json()).toMatchObject({ code: 'idempotency_in_progress' });
-    expect(cap.sends).toHaveLength(1); // créée avant de savoir : elle reste en brouillon
-    expect(cap.enqueued).toHaveLength(0); // et c'est tout l'enjeu : lancée, elle enverrait une seconde fois
+    // La création et le scellement sont une seule transaction : refusé, rien n'existe, pas même un brouillon
+    // qu'un admin pourrait lancer depuis la console. ⚠️ Cette ligne-ci est garantie par le CONTRAT du faux dépôt
+    // (il ne crée que si la confirmation l'accepte) : la base le prouve dans `stores.integration.test.ts`. Ce que
+    // ce test prouve de la ROUTE, ce sont les trois lignes qui suivent.
+    expect(cap.sends).toHaveLength(0);
+    expect(cap.enqueued).toHaveLength(0);
     expect(released).toBe(false);
+    await server.close();
+  });
+
+  it('🔴 le scellement part avec le client de la transaction qui crée la campagne', async () => {
+    // Scellée avec un autre client que celui de la création, la clé ne naîtrait plus AVEC la campagne : une copie
+    // tuée entre les deux laisserait de nouveau une campagne sans clé.
+    const txVus: unknown[] = [];
+    const tx = { marque: 'transaction-de-creation' } as unknown as PoolClient;
+    const { server } = app({
+      repo: {
+        createWithRecipientsSiConfirme: async (_i, recipients, confirmer) =>
+          ((await confirmer(tx, 'camp-tx')) ? { campaignId: 'camp-tx', recipientCount: recipients.length } : null),
+      },
+      idempotence: {
+        complete: async (_t, _k, _j, sendId, _r, txRecu) => { txVus.push(txRecu, sendId); return true; },
+      },
+    });
+    const res = await envoyer(server, CORPS, 'k-tx');
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ sendId: 'camp-tx' });
+    expect(txVus).toEqual([tx, 'camp-tx']);
     await server.close();
   });
 

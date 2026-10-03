@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { DUREE_CLE_EN_COURS_MAX_MS, DUREE_CLE_IDEMPOTENCE_MS } from './idempotence';
 
 /**
@@ -40,7 +40,7 @@ export function verdictLigne(r: LigneIdempotence | undefined, empreinte: string)
  * que le ménage.
  *
  * 🔴 UNE CLÉ EN COURS EST UN VERROU SUR L'ENVOI, donc elle a les pièces d'un verrou (`src/campaign/run-lock.ts`) :
- * un BAIL (`DUREE_CLE_EN_COURS_MAX_MS` : au-delà, la pose est abandonnée et `claim` la retire) et un JETON DE
+ * un BAIL (`DUREE_CLE_EN_COURS_MAX_MS` : au-delà, la pose est abandonnée et `claim` la retire, pour le même corps) et un JETON DE
  * GARDE (seul le porteur scelle ou libère). Sans le bail, une copie tuée entre pose et scellement bloquait la
  * clé 24 h (trois arrêts brutaux sur cinq au second banc) ; sans le jeton, le bail rendrait possible le double
  * envoi : un traitement lent scellerait ou libérerait la ligne de celui qui l'a reprise.
@@ -52,12 +52,16 @@ export class PgApiIdempotencyStore {
     // La clé vit 24 h, pas « jusqu'à la prochaine purge » (horaire) : une ligne expirée est retirée avant
     // l'insertion, et la clé redevient libre à l'heure exacte. Une pose ABANDONNÉE (en cours au-delà du bail)
     // l'est aussi ; une clé SCELLÉE, jamais avant ses 24 h.
+    // 🔴 Seulement pour le MÊME corps (ou une pose d'avant les empreintes) : une clé désigne un seul envoi, et
+    // « même clé, autre corps » reste un 422 pendant toute la vie de la clé, abandonnée ou non. Sans cette
+    // condition, le bail aurait laissé un AUTRE corps reprendre la clé (relecture du 2026-10-03).
     await this.pool.query(
       `delete from api_idempotency
        where tenant_id = $1 and idempotency_key = $2
          and (created_at < now() - ($3::bigint || ' milliseconds')::interval
-              or (send_id is null and created_at < now() - ($4::bigint || ' milliseconds')::interval))`,
-      [tenantId, key, DUREE_CLE_IDEMPOTENCE_MS, DUREE_CLE_EN_COURS_MAX_MS],
+              or (send_id is null and created_at < now() - ($4::bigint || ' milliseconds')::interval
+                  and (request_hash is null or request_hash = $5)))`,
+      [tenantId, key, DUREE_CLE_IDEMPOTENCE_MS, DUREE_CLE_EN_COURS_MAX_MS, empreinte],
     );
     const jeton = randomUUID();
     const ins = await this.pool.query<{ id: string }>(
@@ -88,10 +92,15 @@ export class PgApiIdempotencyStore {
 
   /**
    * Scelle la clé, pour ce porteur seulement. Rend `false` si elle ne lui appartient plus (abandonnée puis
-   * reprise) : l'appelant ne doit alors PAS lancer sa campagne, l'autre appel enverra.
+   * reprise) : l'appelant ne doit alors rien créer, l'autre appel enverra.
+   *
+   * `tx` : le client de la transaction qui crée la campagne (`createWithRecipientsSiConfirme`). Scellée DANS
+   * cette transaction, la clé et la campagne naissent ensemble ou pas du tout : aucune campagne sans clé.
    */
-  async complete(tenantId: string, key: string, jeton: string, sendId: string, response: unknown): Promise<boolean> {
-    const res = await this.pool.query(
+  async complete(
+    tenantId: string, key: string, jeton: string, sendId: string, response: unknown, tx: Pool | PoolClient = this.pool,
+  ): Promise<boolean> {
+    const res = await tx.query(
       `update api_idempotency set send_id = $4, response = $5::jsonb
        where tenant_id = $1 and idempotency_key = $2 and jeton = $3 and send_id is null`,
       [tenantId, key, jeton, sendId, JSON.stringify(response)],

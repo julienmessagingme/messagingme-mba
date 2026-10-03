@@ -11,21 +11,6 @@ Le comportement est antérieur au déplacement des envois
 `SendRefusal` lisible (sortie d'échec du bloc, événement de bloc), au moins pour les erreurs de paramètre, qui ne
 se corrigent pas en rejouant.
 
-## 🟡 Clé d'idempotence : les deux jaunes de comportement de la relecture du 2026-10-03
-
-Le correctif de la clé coincée (bail + jeton de garde, migration 0203) a été relu sans rouge. Deux jaunes changent
-un comportement, donc partent dans un lot à part, relu par le suivant :
-- **La campagne orpheline reste visible et lançable** : quand le scellement est refusé (clé reprise après un
-  traitement de plus de `DUREE_CLE_EN_COURS_MAX_MS`), la campagne déjà créée reste en brouillon `[API] …`, avec un
-  bouton Lancer dans la console : un admin qui clique renverrait ce que l'appel qui a repris la clé a envoyé. Elle
-  bloque aussi l'édition de son template (`listActiveCampaignsForTemplate`). Correctif : la supprimer dans cette
-  branche (jamais enfilée, destinataires tous `pending`). Pour une copie tuée entre création et scellement,
-  repérer ces brouillons sans clé qui les désigne (la requête d'orphelines du banc) en alerte `/ops` ou en ménage.
-- **Une clé abandonnée accepte un AUTRE corps** : le `delete` du bail ignore `request_hash`, donc après abandon la
-  même clé avec un corps différent crée un envoi, là où la doc publique (« Même clé, autre corps ») et
-  `features.md` promettent 422. Aucun double envoi. Correctif : borner le bail à `request_hash is null or
-  request_hash = <empreinte>`, avec son test d'intégration.
-
 ## 🟡 RGPD : `workflow_runs` et `automation_fires` ne sont pas purgés pour une personne sans conversation (2026-10-03)
 
 Trouvé par la revue finale du widget, ANTÉRIEUR au widget. `PgContactStore.purgeMany` (`src/crm/contact-store.pg.ts`)

@@ -114,6 +114,19 @@ du banc avec deux mutations (sans jeton, sans bail) qui le font tomber exactemen
 scellement, sa clé en 409 sans envoi, puis 201 avec son envoi une fois le bail passé (285 s d'attente, à l'heure
 de la base), et aucune campagne orpheline lancée.
 
+**Ses deux jaunes de comportement, le même après-midi** (plan `docs/superpowers/plans/2026-10-03-cle-idempotence-jaunes.md`).
+La relecture proposait de supprimer après coup la campagne d'une clé reprise, et de repérer par un ménage celles
+des copies tuées. 🔴 **Écarté, parce que rien ne distingue de façon fiable un envoi d'API d'un brouillon de la
+console** : le préfixe `[API] ` se tape à la main, et un ménage fondé dessus pourrait effacer le brouillon de
+quelqu'un. À la place, la cause : la campagne et le scellement de sa clé naissent dans UNE transaction
+(`createWithRecipientsSiConfirme`, `complete` sur le client de cette transaction). Il n'y a plus d'orpheline à
+supprimer ni à repérer, sans migration ni balayage. Et le bail ne libère plus qu'une pose du même corps : « même
+clé, autre corps » reste un 422 toute la vie de la clé. Relu sans rouge (sept jaunes, tous intégrés : aucun ne
+change rien pour un client). Prouvé en base sur le Postgres du banc, y compris l'atomicité : un scellement réussi
+puis annulé ne laisse ni campagne ni clé scellée, et le même test tombe si `complete` repasse par le pool. Rejoué
+au banc : idempotence entre copies, et trois arrêts brutaux, dont un coupé au pire moment (409 puis 201 après le
+bail), avec ZÉRO campagne orpheline.
+
 **Trois pièges du montage**, pour le prochain : l'image ne contient pas `scripts/`, il faut monter le dossier du
 clone dans le conteneur du script ; les files d'analyse n'existent pas sur le banc (aucun modèle configuré), le
 worker n'en annonce que six ; et l'image de production n'embarque pas `vitest` (`--omit=dev`) : un test

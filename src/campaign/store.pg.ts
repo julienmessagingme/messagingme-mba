@@ -289,6 +289,11 @@ const summarySelect = (colonnesEnPlus = '') => `select c.id, c.name, c.category,
        from campaigns c
        left join campaign_recipients r on r.campaign_id = c.id`;
 
+/** Levée dans la transaction pour l'annuler quand `confirmer` refuse ; jamais visible hors de ce fichier. */
+class CreationNonConfirmee extends Error {
+  constructor() { super('création de campagne non confirmée : annulée'); this.name = 'CreationNonConfirmee'; }
+}
+
 /** Lecture/écriture des campagnes et de leurs destinataires (assemblage). */
 export class PgCampaignRepo {
   constructor(private readonly pool: Pool) {}
@@ -1296,6 +1301,33 @@ export class PgCampaignRepo {
       const inserted = await bulkInsertRecipients(client, campaignId, recipients);
       return { campaignId, recipientCount: inserted };
     });
+  }
+
+  /**
+   * Comme `createWithRecipients`, mais la création ne tient que si `confirmer` le dit, DANS la même transaction
+   * et avec le même client : s'il rend `false`, tout est annulé et la méthode rend `null` (rien n'existe).
+   *
+   * 🔴 C'est ce que demande `POST /v1/sends` : la campagne et le scellement de sa clé d'idempotence naissent
+   * ENSEMBLE ou pas du tout. Créés en deux temps, une copie tuée entre les deux laissait une campagne sans clé
+   * qui la désigne, et une clé reprise après le bail faisait de même : un brouillon « [API] » lançable depuis la
+   * console, qui aurait renvoyé ce que l'appel suivant avait envoyé (relecture du 2026-10-03).
+   */
+  async createWithRecipientsSiConfirme(
+    input: CreateCampaignInput,
+    recipients: BuiltRecipient[],
+    confirmer: (tx: PoolClient, campaignId: string) => Promise<boolean>,
+  ): Promise<{ campaignId: string; recipientCount: number } | null> {
+    try {
+      return await enTransaction(this.pool, async (client) => {
+        const campaignId = await insertCampaignRow(client, input);
+        const inserted = await bulkInsertRecipients(client, campaignId, recipients);
+        if (!(await confirmer(client, campaignId))) throw new CreationNonConfirmee();
+        return { campaignId, recipientCount: inserted };
+      });
+    } catch (err) {
+      if (err instanceof CreationNonConfirmee) return null;
+      throw err;
+    }
   }
 
   /** Insère les destinataires (idempotent par (campaign_id, contact_id)). Retourne le nb inséré. */

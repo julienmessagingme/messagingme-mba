@@ -291,8 +291,11 @@ async function arret(b: Banc): Promise<void> {
     [b.espace, debut],
   );
   const lancees = orphelines.rows.filter((o) => o.partie || o.status !== 'draft');
-  if (lancees.length > 0) poser(`arret ${mode} : aucune campagne orpheline lancee`, 'echec', lancees.map((o) => `${o.id} ${o.status}`).join(', '));
-  else poser(`arret ${mode} : aucune campagne orpheline lancee`, 'ok', `${orphelines.rows.length} orpheline(s), toutes restees en brouillon`);
+  // 🔴 Depuis que la campagne et le scellement de sa clé naissent dans UNE transaction, il ne doit plus en exister
+  // AUCUNE, lancée ou non : une seule orpheline dirait que le scellement est ressorti de la transaction.
+  if (lancees.length > 0) poser(`arret ${mode} : aucune campagne orpheline`, 'echec', `LANCEE(S) : ${lancees.map((o) => `${o.id} ${o.status}`).join(', ')}`);
+  else if (orphelines.rows.length > 0) poser(`arret ${mode} : aucune campagne orpheline`, 'echec', `${orphelines.rows.length} orpheline(s) en brouillon : ${orphelines.rows.map((o) => o.id).join(', ')}`);
+  else poser(`arret ${mode} : aucune campagne orpheline`, 'ok', 'aucune campagne sans la cle qui la designe');
 }
 
 // ---------------------------------------------------------------------------------------------------------------
