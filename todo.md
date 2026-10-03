@@ -1,5 +1,23 @@
 # todo.md : backlog
 
+## 🔴 Avant tout autoscaling : une copie tuée laisse la clé d'idempotence « en cours » 24 h (2026-10-03)
+
+Mesuré par le second banc (`scripts/banc-deux-api-2.mts`, épreuve `arret` en mode brutal) : sur cinq SIGKILL de
+la copie A pendant des `POST /v1/sends`, **trois** ont laissé la ligne d'`api_idempotency` posée SANS envoi
+(`send_id` nul). Aucun envoi fantôme ni envoi en double (zéro campagne orpheline, vérifié en base), mais chaque
+rejeu de la même clé rend **409 `idempotency_in_progress` pendant 24 h** : `verdictLigne`
+(`src/api/idempotency-store.pg.ts`) ne regarde pas l'âge d'une clé en cours, et seul le traitement qui l'a posée
+la libère. Le client ne peut ni obtenir son envoi, ni le refaire, sauf à changer de clé.
+- **Aujourd'hui** : une seule copie, `stop_grace_period: 30s`, et l'arrêt propre laisse finir ce qui est en vol
+  (épreuve `arret` en mode propre : zéro requête coupée sur 909). Le défaut ne mord que sur un crash, un OOM, ou
+  un envoi de plus de 30 s pendant un déploiement.
+- **Avec l'autoscaling**, chaque réduction du nombre de copies qui tue sans SIGTERM le reproduit.
+- **Le correctif** : une clé en cours plus vieille qu'une borne est abandonnée, et `claim` la retire avant
+  d'insérer, comme il le fait déjà pour une clé expirée. 🔴 La borne doit dépasser la durée MAXIMALE d'un
+  traitement légitime (à mesurer sur `MAX_RECIPIENTS` destinataires) : trop courte, un envoi lent serait repris
+  par un second appel, donc envoyé deux fois. Chemin de production : implémenteur + revue du diff, puis rejouer
+  l'épreuve `arret` brutale jusqu'à ne plus voir de 409.
+
 ## 🟡 RGPD : `workflow_runs` et `automation_fires` ne sont pas purgés pour une personne sans conversation (2026-10-03)
 
 Trouvé par la revue finale du widget, ANTÉRIEUR au widget. `PgContactStore.purgeMany` (`src/crm/contact-store.pg.ts`)

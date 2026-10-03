@@ -5,6 +5,35 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : le second banc à deux copies d'API, et la clé d'idempotence qui reste coincée
+
+**Décidé par Julien le jour même**, avant tout autoscaling (plan `docs/superpowers/plans/2026-10-03-second-banc-deux-api.md`).
+Monté sur le VPS selon la recette du premier banc, avec deux copies nommées (`API_COPIE=a` et `b`, poussé en
+`b44fd32f`), un pool réduit à 3 connexions par copie, un worker et un Postgres jetable ; démonté ensuite, la
+production n'a pas bougé.
+
+**Ce qui est prouvé, chaque verdict lu en base :**
+- **Une clé, un envoi, entre deux copies** : dix clés tirées EN MÊME TEMPS sur A et B, neuf vraies courses (une
+  409 « en cours » pour le perdant), dix envois en base, aucune clé à deux envois.
+- **Arrêt propre** (`docker stop`) en plein tir : 909 tirs, 904 acquittés et tous en base avec leur clé, AUCUNE
+  requête coupée (l'arrêt laisse finir ce qui est en vol), l'autre copie n'a rien vu.
+- **Webhooks sous pression de pool** : 12 209 lectures en rafale sur A (24 en parallèle sur 3 connexions, 6 282
+  attentes de pool versées sous `api-a`), et pourtant les 73 webhooks signés sont acquittés ET enfilés, accusé à
+  19 ms au médian, 45 ms au 95e centile, 196 ms au pire.
+- **Connexions par copie** : au plus 3 chacune sous charge, pour un pool de 3, et aucune connexion en `LISTEN`
+  côté API : seul le worker écoute.
+
+🔴 **Ce qui casse : l'arrêt BRUTAL** (`docker kill`). Toute requête acquittée est bien en base et l'autre copie
+ne voit rien, mais sur cinq arrêts, TROIS ont coupé un envoi entre la pose de sa clé et son scellement : la clé
+reste « en cours », sans campagne (ni fantôme, ni double), et chaque rejeu rend 409 pendant 24 h. Rien ne libère
+une clé abandonnée. Le premier tir avait réussi par hasard (la coupure était tombée avant la pose) : **un
+échantillon ne prouve pas l'absence d'une fenêtre**, il a fallu répéter l'arrêt pour la voir. Le correctif est
+dans `todo.md`, il bloque l'autoscaling.
+
+**Deux pièges du montage**, pour le prochain : l'image ne contient pas `scripts/`, il faut monter le dossier du
+clone dans le conteneur du script ; et les files d'analyse n'existent pas sur le banc (aucun modèle configuré),
+le worker n'en annonce que six.
+
 ## 2026-10-02 et 03 : le double worker en production, et le banc à deux copies d'API vert
 
 **Déployé le 2026-10-03 à 8 h 17 UTC**, décidé par Julien après l'audit de performance du 2026-10-02 : un second
