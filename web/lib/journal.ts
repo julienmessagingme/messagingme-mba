@@ -42,6 +42,10 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   'mfa.reinitialise': ['Double authentification réinitialisée', 'Two-factor authentication reset'],
   'mfa.codes_regeneres': ['Codes de secours régénérés', 'Backup codes regenerated'],
   'mfa.desactive': ['Double authentification désactivée', 'Two-factor authentication disabled'],
+  // Claude connecté par le consentement (migration 0204), et l'accès révoqué depuis la page des clés d'API. Le
+  // détail porte le client et les droits, jamais un jeton ni un code.
+  'oauth.autorise': ['Claude autorisé dans l’espace', 'Claude authorized in the workspace'],
+  'oauth.revoque': ['Accès de Claude révoqué', 'Claude access revoked'],
 };
 
 /** Détail compact : « created 2 · optIn oui ». Rien à interpréter, ce sont des compteurs et des drapeaux. */

@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : 2a DÉPLOYÉE LE 2026-10-03, 2b À FAIRE
+## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : 2a ET 2b EN PRODUCTION LE 2026-10-03, ESSAI RÉEL DÛ
 
 Spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, plan `docs/superpowers/plans/2026-10-03-oauth-mcp.md`.
 La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp` »).
@@ -50,8 +50,16 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   paramètres, donc rien ne casse ; à confirmer à l'essai réel.
 - ⚠️ **Entre 2a et 2b, la page de consentement n'existe pas** : une connexion lancée depuis Claude arrive sur une 404
   de la console. Personne n'est branché sur cette adresse sans clé, donc personne n'est touché.
-- ⏳ **Livraison 2b (la console)** : la page `/autoriser` et « Applications autorisées », APRÈS le `up` de 2a
-  (elle appelle des routes neuves).
+- ✅ **2b (la console)** : la page `/autoriser` (consentement par Google ou par la session de la console, admin
+  seulement, départ vers la seule adresse rendue par l'API et vers l'hôte affiché) et « Applications autorisées »
+  sur la page des clés. Relecture : aucun rouge ; corrigé dans le lot, une réponse sans la liste qui emportait toute
+  la page des clés. `npm run aide:charger` sur le VPS (la fiche `retrouver-qui-a-fait-quoi` a changé d'empreinte).
+- 🟡 **Ouverts de la 2b** : l'e2e « Google ne pose aucune session de la console » lit le stockage APRÈS le départ
+  vers Claude, donc il ne vérifie rien (à relire juste après le clic Google) ; la liste d'espaces recopie celle de la
+  page de connexion au lieu d'être partagée, et `fmt` est recopié dans la page des clés ; un admin à mot de passe
+  connecté sur un autre espace ne voit pas qu'il doit se reconnecter ; le bouton direct disparaît sans explication
+  si la lecture du nom de l'espace échoue ; la mention « Il sera créé avec votre adresse Google » reste affichée si
+  Google est éteint ; la page « Serveur MCP » ne parle encore que de la clé (à réécrire après l'essai réel).
 - ⏳ **L'essai réel qui clôt le lot** (spec, section 8) : Claude Code sur le poste de Julien, `https://api.messagingme.app/mcp`
   ajouté SANS clé, Google, « Autoriser », lecture d'un fil ; révocation depuis la console, nouvelle connexion exigée ;
   une adresse Google jamais vue qui crée son espace ; le même serveur en connecteur dans claude.ai.

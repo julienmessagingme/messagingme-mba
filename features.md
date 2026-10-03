@@ -2463,9 +2463,10 @@ boîte par sous-menu.
   contacts y figurent par identifiant interne, **jamais par numéro** : y écrire un numéro annulerait la
   suppression d'un contact, dans un registre fait pour ne jamais être modifié.
   - ✅ **Il couvre aussi les ACCÈS et les PORTES depuis le 2026-09-16** : qui a invité un collaborateur,
-    changé son rôle, révoqué ou supprimé son compte ; qui a créé ou révoqué une clé d'API ; les échecs de
-    connexion ; qui a créé, modifié ou supprimé un webhook entrant ou un connecteur, et qui a touché à leur
-    secret ; qui a rattaché un numéro WhatsApp ; et **qui a exporté l'historique d'un contact**. Avant, le
+    changé son rôle, révoqué ou supprimé son compte ; qui a créé ou révoqué une clé d'API ; qui a autorisé
+    Claude dans l'espace, et qui a révoqué cet accès ; les échecs de connexion ; qui a créé, modifié ou
+    supprimé un webhook entrant ou un connecteur, et qui a touché à leur secret ; qui a rattaché un numéro
+    WhatsApp ; et **qui a exporté l'historique d'un contact**. Avant, le
     journal ne savait répondre qu'aux questions sur les personnes, jamais à « qui a donné les droits admin ? ».
   - 🔴 **Ce qu'il ne contient JAMAIS**, et c'est vérifié à l'écriture par le produit lui-même : aucune adresse
     e-mail (sauf celle de l'auteur de l'action), aucun numéro, aucun texte de message, ni le code d'un
@@ -3583,9 +3584,10 @@ coûté un dépôt entier pour UN partenaire, le serveur MCP rend la console joi
 protocole, pour un seul travail.
 
 **Comment ça s'utilise.** Menu **Developers > Serveur MCP**. L'écran donne l'adresse
-(`https://mba.messagingme.app/mcp`), la commande à copier, la liste des outils et ce que le serveur ne fait
+(`https://api.messagingme.app/mcp`), la commande à copier, la liste des outils et ce que le serveur ne fait
 pas. L'accès passe par une **clé d'API** portant les droits `mcp:read` et/ou `mcp:write`, créée dans
-« Clés d'API ». Pour couper un assistant : révoquer sa clé.
+« Clés d'API », ou, pour Claude seulement, par une connexion sans clé (ci-dessous). Pour couper un assistant :
+révoquer sa clé, ou son autorisation.
 
 **Ce que l'assistant peut faire.** Lire (`mcp:read`) : lister les conversations, ouvrir un fil et savoir si la
 fenêtre de 24 h est ouverte, lire les messages, chercher un contact, lister les membres, lister les widgets WhatsApp
@@ -3616,8 +3618,47 @@ depuis un assistant : elle reste un geste de la console.
   pas les automations qui écoutent ce tag : un agent qui boucle sur 500 fils déclencherait 500 envois.
 - **Une clé de lecture ne VOIT même pas les outils qui écrivent** : ils ne sont pas listés.
 
-⚠️ **L'accès est une clé, pas un compte.** Le scénario « fenêtre de login, je choisis mon organisation,
-j'approuve l'accès » (OAuth 2.1 délégué) n'est pas encore là : voir `todo.md`.
+### Connecter Claude à votre espace, sans clé (2026-10-03)
+
+🚧 **Livré, essai réel à venir.** Ce qui clôt la fonctionnalité : depuis Claude Code, ajouter le serveur sans clé,
+se connecter, autoriser, et lire les derniers messages d'un fil ; révoquer depuis la console et voir Claude
+redemander une connexion ; une adresse Google jamais vue qui crée son espace ; le même serveur ajouté en connecteur
+dans claude.ai.
+
+**À quoi ça sert.** Claude Desktop et claude.ai ne savent pas porter une clé d'API, et un nouvel utilisateur de
+Claude Code devait d'abord ouvrir la console pour en créer une. Désormais, la personne ajoute
+`https://api.messagingme.app/mcp` dans Claude, sans clé : Claude ouvre une page de la console, elle s'y identifie,
+clique « Autoriser », et Claude travaille dans son espace. Les clés d'API ne changent pas, et restent la seule voie
+pour les autres clients MCP (Cursor, VS Code, ChatGPT).
+
+**La page « Autoriser ».** Avant tout bouton, elle dit quel client demande l'accès (« Claude Code » ou « Claude »),
+vers quelle adresse il repartira (`localhost` ou `claude.ai`), ce qu'il pourra lire et faire, et que ces données
+seront lues par Claude et traitées par Anthropic, avec un lien vers notre politique de confidentialité. Puis deux
+façons de prouver qui l'on est :
+- **déjà connecté à la console comme administrateur** : un bouton « Autoriser dans <espace> ». Un compte à mot de
+  passe (et second facteur) passe ainsi par sa connexion habituelle : se connecter à la console, puis recharger la
+  page, que la demande attend dix minutes ;
+- **« Continuer avec Google »** : la page liste les espaces de la personne, un bouton « Autoriser dans <espace> »
+  pour chacun de ceux où elle est administrateur, les autres affichés avec « demandez à un administrateur ». Une
+  adresse Google inconnue crée son espace au passage, et la page le dit sous le bouton, avant le clic.
+
+Une demande expirée (dix minutes) le dit, et invite à relancer la connexion depuis Claude.
+
+**Seul un administrateur autorise**, et son rôle est relu au clic, puis à chaque appel de Claude : un compte
+rétrogradé ou désactivé perd l'accès à l'appel suivant. Une autorisation vaut pour un seul espace : changer
+d'espace, c'est autoriser de nouveau. Aucun second facteur n'est demandé par Google, comme pour la connexion Google
+à la console.
+
+**Révoquer.** Menu **Developers > Clés d'API**, section « Applications autorisées », réservée aux administrateurs :
+une ligne par autorisation (le client, qui l'a autorisé, quand, son dernier appel) et un bouton « Révoquer », qui
+coupe l'accès dès l'appel suivant ; Claude redemande alors une connexion. Deux Claude Code sur deux machines font
+deux lignes, révocables séparément. Le journal des actions (menu Sécurité) garde qui a autorisé Claude, et qui a
+révoqué cet accès.
+
+**Ce qui ne change pas.** Les mêmes outils et les mêmes refus qu'avec une clé : rien hors de la fenêtre de 24 h,
+aucun envoi de template, aucune automation réveillée. Les appels comptent dans le plafond de l'API de l'espace.
+Une réponse envoyée ou une conversation confiée par Claude connecté ainsi porte le nom de la personne qui l'a
+autorisé. L'ancienne adresse `https://mba.messagingme.app/mcp` reste à clé seulement.
 
 ## Plafonds d'usage (visible seulement si on force)
 

@@ -1927,7 +1927,10 @@ brique réutilisable. Rien ne presse : sans appelant, elle ne coûte rien.
 
 ## Ce que le lot MCP du 2026-09-01 laisse ouvert
 
-**1. Le grant OAuth 2.1 délégué (le gros morceau).** Aujourd'hui l'accès MCP passe par une **clé d'API** à
+**1. Le grant OAuth 2.1 délégué (le gros morceau).** ✅ **Fait le 2026-10-03** (lot 2 du plan « Engage Me pour
+Claude Code », spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`), sans enregistrement dynamique : les deux
+clients Claude sont épinglés, la métadonnée de ressource et le consentement sont en place. Le texte qui suit est
+l'énoncé d'origine. Aujourd'hui l'accès MCP passe par une **clé d'API** à
 scopes : révocable par clé, limitée en débit, déjà en place. Ce que ça ne donne PAS, et que le scénario de
 Julien décrivait (`claude mcp add`, une fenêtre de login, choisir son organisation, approuver l'accès), c'est
 une **délégation par (utilisateur, client tiers, espace, scopes)**, révocable par utilisateur et traçable.

@@ -52,13 +52,17 @@ function loadGis(): Promise<void> {
  * affiche la même liste que pour le mot de passe. Sans `onChoix` (inscription, invitation), un message dit de
  * passer par la page de connexion : mieux vaut un clic de plus qu'entrer au hasard dans l'un des espaces.
  *
- * `surJeton` (console d'exploitation) : le jeton ID Google est confié à l'appelant, qui le présente lui-même ;
- * aucune session d'espace n'est ouverte ici.
+ * `surJeton` (console d'exploitation, consentement de Claude) : le jeton ID Google est confié à l'appelant, qui le
+ * présente lui-même ; aucune session d'espace n'est ouverte ici.
+ *
+ * `separateur` (vrai par défaut) : le « ou » qui sépare le bouton d'une autre façon d'entrer, posée au-dessus. La page
+ * de consentement l'éteint quand Google est la seule façon offerte.
  */
-export function GoogleButton({ onError, onChoix, surJeton }: {
+export function GoogleButton({ onError, onChoix, surJeton, separateur = true }: {
   onError?: (msg: string) => void;
   onChoix?: (c: LoginChoice) => void;
   surJeton?: (idToken: string) => void;
+  separateur?: boolean;
 }) {
   const router = useRouter();
   const t = useT();
@@ -132,12 +136,14 @@ export function GoogleButton({ onError, onChoix, surJeton }: {
   if (!clientId) return null; // pas encore chargé, ou Google désactivé -> rien
 
   return (
-    <div className="mt-4 space-y-3">
-      <div className="flex items-center gap-3 text-xs text-ink-500">
-        <span className="h-px flex-1 bg-ink-200" />
-        {t('ou', 'or')}
-        <span className="h-px flex-1 bg-ink-200" />
-      </div>
+    <div className={separateur ? 'mt-4 space-y-3' : ''}>
+      {separateur && (
+        <div className="flex items-center gap-3 text-xs text-ink-500">
+          <span className="h-px flex-1 bg-ink-200" />
+          {t('ou', 'or')}
+          <span className="h-px flex-1 bg-ink-200" />
+        </div>
+      )}
       <div ref={ref} className="flex justify-center" />
     </div>
   );

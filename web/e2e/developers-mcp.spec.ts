@@ -18,6 +18,7 @@ async function mock(page: import('@playwright/test').Page, cles: unknown[] = [cl
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (url.includes('/api-keys')) return json({ keys: cles });
+    if (url.includes('/oauth/autorisations')) return json({ autorisations: [] });
     return json({});
   });
 }

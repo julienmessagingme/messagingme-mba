@@ -14,6 +14,7 @@ import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 import { erreurDeChargement } from '@/lib/http';
+import { listerAutorisations, personneDe, revoquerAutorisation, type AutorisationOauth } from '@/lib/oauth';
 
 export default function ApiKeysPage() {
   return <AppShell active="api-keys">{(session) => <KeysInner session={session} />}</AppShell>;
@@ -206,6 +207,8 @@ function KeysInner({ session }: { session: Session }) {
         )}
       </div>
 
+      <ApplicationsAutorisees tenantId={session.tenantId} />
+
       {created && (
         <Modale
           titre={`${t('Clé créée', 'Key created')} : ${created.name}`}
@@ -232,6 +235,107 @@ function KeysInner({ session }: { session: Session }) {
             </Bouton>
           </div>
         </Modale>
+      )}
+    </div>
+  );
+}
+
+/**
+ * « APPLICATIONS AUTORISÉES » (spec `2026-10-03-oauth-mcp-design.md`, section 6) : les Claude qu'un admin a connectés
+ * à l'espace par le consentement (`/autoriser`), une ligne par passage dans le consentement. Deux Claude Code sur deux
+ * machines font deux lignes, révocables séparément.
+ *
+ * Sur la page des clés parce que c'est la même question, « qui peut appeler l'espace de l'extérieur ? », et la même
+ * réserve aux admins. Une autorisation révoquée disparaît de la liste (le serveur ne rend que les vivantes), à la
+ * différence d'une clé, qui reste listée avec son badge.
+ */
+function ApplicationsAutorisees({ tenantId }: { tenantId: string }) {
+  const t = useT();
+  const confirmer = useConfirmation();
+  const { locale } = useLocale();
+  const [autorisations, setAutorisations] = useState<AutorisationOauth[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setAutorisations(await listerAutorisations(tenantId));
+    } catch (err) {
+      setError(erreurDeChargement(err, t));
+    }
+  }, [tenantId, t]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function revoke(a: AutorisationOauth) {
+    const ok = await confirmer({
+      titre: t('Révoquer l’accès', 'Revoke access'),
+      message: t(
+        `Révoquer l’accès de « ${a.client} », autorisé par ${personneDe(a)} ? Son prochain appel sera refusé, et il devra demander une nouvelle autorisation.`,
+        `Revoke “${a.client}” access, authorized by ${personneDe(a)}? Its next call will be refused, and it will have to ask for a new authorization.`,
+      ),
+      confirmer: t('Révoquer', 'Revoke'),
+    });
+    if (!ok) return;
+    setError(null);
+    try {
+      await revoquerAutorisation(tenantId, a.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Révocation impossible', 'Revocation failed'));
+    }
+    // Relue dans les deux cas : un 404 veut dire « déjà révoquée », la ligne ne doit pas rester affichée.
+    await load();
+  }
+
+  const fmt = (iso: string) => `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}`;
+
+  return (
+    <div className="overflow-hidden rounded-carte border border-ink-200 bg-white" data-testid="applications-autorisees">
+      <div className="border-b border-ink-100 px-5 py-3">
+        <h2 className="text-sm font-medium text-ink-900">{t('Applications autorisées', 'Authorized applications')}</h2>
+        <p className="mt-0.5 text-xs text-ink-500">
+          {t(
+            'Claude (Claude Code, claude.ai) connecté à cet espace par un administrateur, sans clé d’API. Révoquer coupe l’accès dès son prochain appel.',
+            'Claude (Claude Code, claude.ai) connected to this workspace by an administrator, without an API key. Revoking cuts access on its next call.',
+          )}
+        </p>
+      </div>
+      {error && <p className="mx-5 mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {autorisations === null ? (
+        error ? null : <Squelette forme="lignes" lignes={2} className="px-5 py-6" />
+      ) : autorisations.length === 0 ? (
+        <p className="px-5 py-6 text-sm text-ink-500" data-testid="applications-vide">
+          {t(
+            'Aucune application autorisée. Quand un administrateur connecte Claude à cet espace, il apparaît ici.',
+            'No authorized application. When an administrator connects Claude to this workspace, it shows up here.',
+          )}
+        </p>
+      ) : (
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-ink-100 text-xs text-ink-500">
+            <tr>
+              <th className="px-5 py-2 font-medium">{t('Application', 'Application')}</th>
+              <th className="px-5 py-2 font-medium">{t('Autorisée par', 'Authorized by')}</th>
+              <th className="px-5 py-2 font-medium">{t('Autorisée le', 'Authorized')}</th>
+              <th className="px-5 py-2 font-medium">{t('Dernier appel', 'Last call')}</th>
+              <th className="px-5 py-2 font-medium" />
+            </tr>
+          </thead>
+          <tbody>
+            {autorisations.map((a) => (
+              <tr key={a.id} className="border-b border-ink-50 last:border-0">
+                <td className="px-5 py-2.5 text-ink-900">{a.client}</td>
+                <td className="px-5 py-2.5 text-ink-500">{personneDe(a)}</td>
+                <td className="px-5 py-2.5 text-ink-500">{fmt(a.creeLe)}</td>
+                <td className="px-5 py-2.5 text-ink-500">{a.dernierUsageLe ? fmt(a.dernierUsageLe) : t('jamais', 'never')}</td>
+                <td className="px-5 py-2.5 text-right">
+                  <button onClick={() => { void revoke(a); }} className="text-xs text-danger-600 hover:underline" data-testid={`revoquer-${a.id}`}>
+                    {t('Révoquer', 'Revoke')}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

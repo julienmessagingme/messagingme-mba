@@ -1,7 +1,7 @@
 ---
 ecran: securite-audit
 source_section: Journaux et traces (menu Sécurité)
-source_empreinte: 07f303
+source_empreinte: 50b685
 ---
 # Retrouver qui a fait quoi, et pourquoi un message n'est pas parti
 
@@ -10,8 +10,9 @@ Le menu Sécurité porte deux journaux, qui ne répondent pas à la même questi
 **Le journal des actions** dit qui a fait quoi, et quand. Les gestes sur vos contacts d'abord : qui a
 ajouté, supprimé, effacé, ou basculé un consentement. Mais aussi les **accès et les portes** : qui a invité
 un collaborateur, changé son rôle, révoqué ou supprimé son compte ; qui a créé ou révoqué une clé d'API ;
-les échecs de connexion ; qui a créé, modifié ou supprimé un webhook entrant ou un connecteur, et qui a
-touché à leur secret ; qui a rattaché un numéro WhatsApp ; et qui a exporté l'historique d'un contact.
+qui a autorisé Claude dans l'espace, et qui a révoqué cet accès ; les échecs de connexion ; qui a créé,
+modifié ou supprimé un webhook entrant ou un connecteur, et qui a touché à leur secret ; qui a rattaché un
+numéro WhatsApp ; et qui a exporté l'historique d'un contact.
 
 Ce journal est fait pour ne jamais être modifié, et cela dicte ce qu'il contient :
 

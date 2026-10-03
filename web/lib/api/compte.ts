@@ -8,7 +8,7 @@
  * `lib/api.ts` reste le point d'entree et reexporte tout, donc AUCUN des 67 importeurs ne change.
  */
 
-import { request, ApiError, BASE } from '../http';
+import { request, ApiError, BASE, type Refus401 } from '../http';
 import type { LoginResult, EtapeSecondFacteur } from './auth';
 import type { ImportReport } from './contacts';
 // La grille de prix : le TYPE vit avec les autres types de stats, les deux appels d'exploitation ici.
@@ -388,9 +388,12 @@ export function inviteMember(tenantId: string, email: string, role: UserRole, na
 export function renommerMembre(tenantId: string, userId: string, name: string): Promise<{ id: string; name: string | null }> {
   return request(`/tenants/${tenantId}/users/${userId}/name`, { method: 'PATCH', body: JSON.stringify({ name }) });
 }
-/** Le nom de l'espace (`tenants.name`), carte « Espace » de Compte & équipe. Admin seulement. */
-export function lireNomEspace(tenantId: string): Promise<{ nom: string }> {
-  return request(`/tenants/${tenantId}/nom`);
+/**
+ * Le nom de l'espace (`tenants.name`), carte « Espace » de Compte & équipe. Admin seulement.
+ * `etape` : la page de consentement de Claude le lit sans jamais vider la session de la console (`lib/oauth.ts`).
+ */
+export function lireNomEspace(tenantId: string, refus401: Refus401 = 'session'): Promise<{ nom: string }> {
+  return request(`/tenants/${tenantId}/nom`, {}, refus401);
 }
 /** Renomme l'espace. Le serveur rend le nom EFFECTIF (rogné), c'est lui que l'écran affiche. */
 export function renommerEspace(tenantId: string, nom: string): Promise<{ nom: string }> {
