@@ -32,6 +32,7 @@ import { WorkflowExecutor } from '../../src/workflow/executor';
 import { PgFlowStore } from '../../src/flow/store.pg';
 import { PgApiKeyStore } from '../../src/auth/api-key-store.pg';
 import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
+import { DUREE_CLE_EN_COURS_MAX_MS } from '../../src/api/idempotence';
 import { resolveScenario } from '../../src/ids/resolve';
 import { PgTenantSettingsStore, DEFAULT_TIMEZONE, DEFAULT_BUSINESS_HOURS } from '../../src/settings/store.pg';
 import { PgEmbeddedSignupStore, TenantConflictError, SecondNumeroRefuseError } from '../../src/account/es-store.pg';
@@ -2137,21 +2138,29 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
   it('PgApiIdempotencyStore : claim atomique AVEC empreinte, complete rejoue, reused refusé, release libère, sweep purge', async () => {
     const store = new PgApiIdempotencyStore(pool);
+    /** Pose une clé et rend son jeton ; une pose refusée fait échouer le test (c'était `toEqual({ claimed: true })`). */
+    const poser = async (k: string, e: string): Promise<string> => {
+      const c = await store.claim(tenantId, k, e);
+      if (!c.claimed) throw new Error(`clé ${k} non posée : ${JSON.stringify(c)}`);
+      return c.jeton;
+    };
     const key = `idem-${Date.now()}`;
-    expect(await store.claim(tenantId, key, 'empreinte-a')).toEqual({ claimed: true });
+    const jeton = await poser(key, 'empreinte-a');
     // 2e claim avant complete, MÊME corps -> pending ; AUTRE corps -> reused, même pendant le calcul.
     expect(await store.claim(tenantId, key, 'empreinte-a')).toEqual({ claimed: false, pending: true });
     expect(await store.claim(tenantId, key, 'empreinte-b')).toEqual({ claimed: false, reused: true });
-    await store.complete(tenantId, key, '11111111-1111-1111-1111-111111111111', { ok: 1 });
+    expect(await store.complete(tenantId, key, jeton, '11111111-1111-1111-1111-111111111111', { ok: 1 })).toBe(true);
     // après complete -> rejeu du rapport pour le même corps, refus pour un autre.
     expect(await store.claim(tenantId, key, 'empreinte-a')).toMatchObject({ claimed: false, sendId: '11111111-1111-1111-1111-111111111111', response: { ok: 1 } });
     expect(await store.claim(tenantId, key, 'empreinte-b')).toEqual({ claimed: false, reused: true });
     // 🔴 L'empreinte est bien ÉCRITE : c'est la colonne de la migration, et le claim la nomme.
-    const ligne = await pool.query<{ request_hash: string | null }>(
-      'select request_hash from api_idempotency where tenant_id = $1 and idempotency_key = $2',
+    const ligne = await pool.query<{ request_hash: string | null; jeton: string | null }>(
+      'select request_hash, jeton from api_idempotency where tenant_id = $1 and idempotency_key = $2',
       [tenantId, key],
     );
     expect(ligne.rows[0]?.request_hash).toBe('empreinte-a');
+    // 🔴 Le jeton aussi (migration 0203) : c'est lui que `complete` et `release` exigent.
+    expect(ligne.rows[0]?.jeton).toBe(jeton);
     // Une ligne d'AVANT la migration (empreinte nulle) rejoue son rapport, quel que soit le corps.
     const ancienne = `idem-ancienne-${Date.now()}`;
     await pool.query(
@@ -2159,23 +2168,23 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       [tenantId, ancienne, '22222222-2222-2222-2222-222222222222', JSON.stringify({ ok: 2 })],
     );
     expect(await store.claim(tenantId, ancienne, 'nimporte')).toMatchObject({ claimed: false, sendId: '22222222-2222-2222-2222-222222222222', response: { ok: 2 } });
-    // release ne touche PAS une clé complétée (send_id non null).
-    await store.release(tenantId, key);
+    // release ne touche PAS une clé complétée (send_id non null), même avec son propre jeton.
+    await store.release(tenantId, key, jeton);
     expect((await store.claim(tenantId, key, 'empreinte-a')).claimed).toBe(false);
     // release libère une clé PENDING (claim sans complete).
     const key2 = `idem2-${Date.now()}`;
-    await store.claim(tenantId, key2, 'empreinte-c');
-    await store.release(tenantId, key2);
-    expect(await store.claim(tenantId, key2, 'empreinte-d')).toEqual({ claimed: true }); // re-claimable, nouvel envoi
+    const jeton2 = await poser(key2, 'empreinte-c');
+    await store.release(tenantId, key2, jeton2);
+    expect(await store.claim(tenantId, key2, 'empreinte-d')).toMatchObject({ claimed: true }); // re-claimable, nouvel envoi
     // 🔴 Une clé de PLUS de 24 h est libre au claim, sans attendre la purge horaire.
     const vieille = `idem-vieille-${Date.now()}`;
-    await store.claim(tenantId, vieille, 'empreinte-e');
-    await store.complete(tenantId, vieille, '33333333-3333-3333-3333-333333333333', { ok: 3 });
+    const jetonVieille = await poser(vieille, 'empreinte-e');
+    await store.complete(tenantId, vieille, jetonVieille, '33333333-3333-3333-3333-333333333333', { ok: 3 });
     await pool.query(
       `update api_idempotency set created_at = now() - interval '24 hours 1 minute' where tenant_id = $1 and idempotency_key = $2`,
       [tenantId, vieille],
     );
-    expect(await store.claim(tenantId, vieille, 'empreinte-f')).toEqual({ claimed: true });
+    expect(await store.claim(tenantId, vieille, 'empreinte-f')).toMatchObject({ claimed: true });
     // 🔴 La purge ne descend JAMAIS sous la vie d'une clé (`DUREE_CLE_IDEMPOTENCE_MS`), même à fenêtre 0 : elle
     // retire la ligne vieillie au-delà, et laisse une clé fraîche prise (sinon un rejeu enverrait deux fois).
     await pool.query(
@@ -2184,6 +2193,50 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     );
     expect(await store.sweepOlderThan(0)).toBeGreaterThanOrEqual(1);
     expect(await store.claim(tenantId, key, 'empreinte-a')).toMatchObject({ claimed: false });
+  });
+
+  it('🔴 PgApiIdempotencyStore : une pose ABANDONNÉE se reprend, et le jeton empêche le premier porteur de sceller ou libérer', async () => {
+    // Mesuré par le second banc (2026-10-03) : une copie tuée entre pose et scellement laissait la clé « en
+    // cours » 24 h. Le bail la libère ; le jeton empêche le double envoi que ce bail rendrait possible.
+    const store = new PgApiIdempotencyStore(pool);
+    const vieillir = async (k: string, ms: number): Promise<void> => {
+      await pool.query(
+        `update api_idempotency set created_at = now() - ($3::bigint || ' milliseconds')::interval where tenant_id = $1 and idempotency_key = $2`,
+        [tenantId, k, ms],
+      );
+    };
+    const k = `idem-abandon-${Date.now()}`;
+    const premier = await store.claim(tenantId, k, 'empreinte-x');
+    if (!premier.claimed) throw new Error('premiere pose refusee');
+    // Plus jeune que le bail : toujours « en cours », le second appel attend (409).
+    await vieillir(k, DUREE_CLE_EN_COURS_MAX_MS - 60_000);
+    expect(await store.claim(tenantId, k, 'empreinte-x')).toEqual({ claimed: false, pending: true });
+    // Au-delà du bail : abandonnée, le second appel la REPREND, avec un autre jeton.
+    await vieillir(k, DUREE_CLE_EN_COURS_MAX_MS + 1_000);
+    const second = await store.claim(tenantId, k, 'empreinte-x');
+    if (!second.claimed) throw new Error(`la pose abandonnee n a pas ete reprise : ${JSON.stringify(second)}`);
+    expect(second.jeton).not.toBe(premier.jeton);
+    // Le premier porteur (lent, pas mort) ne la possède plus : il ne crée pas de campagne...
+    expect(await store.possede(tenantId, k, premier.jeton)).toBe(false);
+    expect(await store.possede(tenantId, k, second.jeton)).toBe(true);
+    // ... ne peut ni la sceller (sinon deux campagnes partiraient)...
+    expect(await store.complete(tenantId, k, premier.jeton, '44444444-4444-4444-4444-444444444444', { ok: 'premier' })).toBe(false);
+    // ... ni la libérer (sinon un troisième la prendrait pendant que le second envoie).
+    await store.release(tenantId, k, premier.jeton);
+    expect(await store.possede(tenantId, k, second.jeton)).toBe(true);
+    // Le second scelle, et le rejeu rend SON rapport.
+    expect(await store.complete(tenantId, k, second.jeton, '55555555-5555-5555-5555-555555555555', { ok: 'second' })).toBe(true);
+    expect(await store.claim(tenantId, k, 'empreinte-x')).toMatchObject({ claimed: false, sendId: '55555555-5555-5555-5555-555555555555', response: { ok: 'second' } });
+    expect(await store.possede(tenantId, k, second.jeton)).toBe(false); // scellée : plus « en cours »
+    // 🔴 Une clé SCELLÉE ne s'abandonne JAMAIS au bail : seule sa durée de 24 h la libère.
+    await vieillir(k, DUREE_CLE_EN_COURS_MAX_MS + 60_000);
+    expect(await store.claim(tenantId, k, 'empreinte-x')).toMatchObject({ claimed: false, sendId: '55555555-5555-5555-5555-555555555555' });
+    // Une pose de l'ANCIEN code (jeton nul) s'abandonne au bail comme les autres, et aucun jeton ne la scelle.
+    const ancienne = `idem-ancienne-pose-${Date.now()}`;
+    await pool.query('insert into api_idempotency (tenant_id, idempotency_key, request_hash) values ($1, $2, $3)', [tenantId, ancienne, 'empreinte-y']);
+    expect(await store.complete(tenantId, ancienne, second.jeton, '66666666-6666-6666-6666-666666666666', {})).toBe(false);
+    await vieillir(ancienne, DUREE_CLE_EN_COURS_MAX_MS + 1_000);
+    expect(await store.claim(tenantId, ancienne, 'empreinte-y')).toMatchObject({ claimed: true });
   });
 
   it('resolveScenario (Postgres réel) : par code scn_, par nom, nom AMBIGU -> ambiguous', async () => {

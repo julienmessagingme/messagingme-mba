@@ -24,6 +24,7 @@ import { lookup } from 'node:dns/promises';
 import { Pool } from 'pg';
 import { PgApiKeyStore } from '../src/auth/api-key-store.pg';
 import { PgWorkflowStore } from '../src/workflow/store.pg';
+import { DUREE_CLE_EN_COURS_MAX_MS } from '../src/api/idempotence';
 
 const A = process.env.BANC_API_A ?? '';
 const B = process.env.BANC_API_B ?? '';
@@ -191,6 +192,7 @@ interface Tir { copie: 'A' | 'B'; cle: string; i: number; r: Reponse }
 async function arret(b: Banc): Promise<void> {
   const mode = process.env.BANC_ARRET ?? 'inconnu';
   const run = randomUUID().slice(0, 8);
+  const debut = new Date();
   const tirs: Tir[] = [];
   const fin = Date.now() + DUREE_MS;
   let n = 0;
@@ -249,20 +251,48 @@ async function arret(b: Banc): Promise<void> {
     return;
   }
   let coincees = 0;
+  let apresBail = 0;
   const issues: string[] = [];
+  const etatCle = async (cle: string): Promise<{ send_id: string | null; age_ms: string } | undefined> => (await b.pool.query<{ send_id: string | null; age_ms: string }>(
+    `select send_id, round(extract(epoch from now() - created_at) * 1000) as age_ms from api_idempotency where tenant_id = $1 and idempotency_key = $2`,
+    [b.espace, cle],
+  )).rows[0];
   for (const t of coupes) {
-    const r = await rejouer(B, b, t.cle, t.i);
-    const etat = await b.pool.query<{ send_id: string | null; age: string }>(
-      `select send_id, round(extract(epoch from now() - created_at)) as age from api_idempotency where tenant_id = $1 and idempotency_key = $2`,
-      [b.espace, t.cle],
-    );
-    const ligne = etat.rows[0];
+    let r = await rejouer(B, b, t.cle, t.i);
+    let ligne = await etatCle(t.cle);
     issues.push(`${t.cle} -> ${'statut' in r ? r.statut : r.erreur} (cle en base : ${ligne ? (ligne.send_id ?? 'SANS ENVOI') : 'absente'})`);
+    // 🔴 Toujours « en cours » : la pose est orpheline. Le bail (`DUREE_CLE_EN_COURS_MAX_MS`) doit la libérer ; on
+    // attend qu'il soit passé, à l'heure de la BASE (l'âge qu'elle donne), puis on rejoue la même clé.
+    if ('statut' in r && r.statut === 409 && ligne && ligne.send_id === null) {
+      const attente = Math.max(0, DUREE_CLE_EN_COURS_MAX_MS - Number(ligne.age_ms)) + 3000;
+      dire(`${t.cle} : pose orpheline, on attend la fin du bail (${Math.round(attente / 1000)} s)`);
+      await attendre(attente);
+      r = await rejouer(B, b, t.cle, t.i);
+      ligne = await etatCle(t.cle);
+      issues.push(`${t.cle} apres le bail -> ${'statut' in r ? r.statut : r.erreur} (cle en base : ${ligne ? (ligne.send_id ?? 'SANS ENVOI') : 'absente'})`);
+      if (sendIdDe(r) !== null) apresBail++;
+    }
     if ('statut' in r && r.statut === 409) coincees++;
   }
   for (const s of issues) dire(s);
   if (coincees > 0) poser(`arret ${mode} : une requete coupee se rejoue`, 'echec', `${coincees} cle(s) restee(s) EN COURS : le client recoit 409 sans fin`);
-  else poser(`arret ${mode} : une requete coupee se rejoue`, 'ok', `${coupes.length} requete(s) coupee(s), toutes abouties une fois rejouees sur B`);
+  else poser(`arret ${mode} : une requete coupee se rejoue`, 'ok', `${coupes.length} requete(s) coupee(s), toutes abouties (dont ${apresBail} une fois le bail passe)`);
+
+  // 🔴 Une campagne créée par la copie tuée, sans clé qui la désigne, ne doit JAMAIS avoir été lancée : la clé
+  // reprise a créé la sienne, et lancer les deux enverrait deux fois.
+  // « Lancée » se juge sur les DESTINATAIRES et pas sur le statut : une campagne d'API enfilée reste `draft` tant
+  // que son run n'a pas démarré, alors qu'un destinataire sorti de `pending` prouve qu'elle est partie.
+  const orphelines = await b.pool.query<{ id: string; status: string; partie: boolean }>(
+    `select c.id, c.status,
+            exists (select 1 from campaign_recipients r where r.campaign_id = c.id and r.status <> 'pending') as partie
+     from campaigns c
+     where c.tenant_id = $1 and c.created_at >= $2
+       and not exists (select 1 from api_idempotency k where k.tenant_id = c.tenant_id and k.send_id = c.id)`,
+    [b.espace, debut],
+  );
+  const lancees = orphelines.rows.filter((o) => o.partie || o.status !== 'draft');
+  if (lancees.length > 0) poser(`arret ${mode} : aucune campagne orpheline lancee`, 'echec', lancees.map((o) => `${o.id} ${o.status}`).join(', '));
+  else poser(`arret ${mode} : aucune campagne orpheline lancee`, 'ok', `${orphelines.rows.length} orpheline(s), toutes restees en brouillon`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

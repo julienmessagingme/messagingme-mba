@@ -133,6 +133,16 @@ function Concepts() {
             { cle: 'rejeu', cellules: [t('Même clé, même corps', 'Same key, same body'), t('Le rapport 201 du premier appel, tel quel, même si la cible a changé depuis. Rien n’est renvoyé.', 'The first call’s 201 report, as is, even if the target has changed since. Nothing is sent again.')] },
             { cle: 'autre', cellules: [t('Même clé, autre corps', 'Same key, different body'), <span key="r"><Refus c="idempotency_key_reused" /></span>] },
             { cle: 'cours', cellules: [t('Premier appel encore en cours', 'First call still running'), <span key="r"><Refus c="idempotency_in_progress" /></span>] },
+            {
+              cle: 'abandon',
+              cellules: [
+                t('Premier appel interrompu avant sa réponse (coupure, panne)', 'First call cut off before its response (dropped connection, outage)'),
+                t(
+                  `Rejouer la même clé rend son rapport si l’envoi a abouti ; sinon la clé reste en cours ${BORNES.cleEnCoursMinutes} min au plus, puis se libère, et la même clé crée l’envoi, une seule fois.`,
+                  `Replaying the same key returns its report if the send went through; otherwise the key stays in progress for at most ${BORNES.cleEnCoursMinutes} min, then is released, and the same key creates the send, once.`,
+                ),
+              ],
+            },
             { cle: 'deux', cellules: [t('En-tête et champ présents et différents', 'Header and field present and different'), <span key="r"><Refus c="invalid_body" /></span>] },
             { cle: 'refus', cellules: [t('Envoi refusé (cible introuvable, numéro absent…)', 'Send refused (target not found, number missing…)'), t('Clé libérée : l’appel corrigé repart avec la même.', 'Key released: the fixed call goes out with the same one.')] },
           ]}

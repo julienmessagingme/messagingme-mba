@@ -15,6 +15,18 @@ import { sha256Hex } from '../lib/signature';
  */
 export const DUREE_CLE_IDEMPOTENCE_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Au-delà de cette durée, une clé EN COURS (posée, jamais scellée) est abandonnée : le traitement qui l'a posée
+ * est mort (copie tuée, crash) et ne la libérera jamais. `claim` la retire alors, et la clé redevient libre.
+ *
+ * 🔴 CE N'EST PAS ELLE QUI EMPÊCHE LE DOUBLE ENVOI, c'est le jeton de garde (`api_idempotency.jeton`) : un
+ * traitement lent qui dépasserait la borne ne peut plus ni sceller ni libérer la clé reprise, donc sa campagne
+ * n'est jamais lancée. La borne décide seulement combien de temps une clé abandonnée bloque son client (avant
+ * elle : 24 h, mesuré par le second banc du 2026-10-03). Un envoi légitime prend quelques secondes
+ * (au plus `MAX_RECIPIENTS` destinataires) : cinq minutes laissent une marge large sans faire attendre longtemps.
+ */
+export const DUREE_CLE_EN_COURS_MAX_MS = 5 * 60 * 1000;
+
 /** La borne d'une clé : de quoi porter un identifiant, une étape et une date, pas un document. */
 export const CLE_IDEMPOTENCE_MAX = 255;
 

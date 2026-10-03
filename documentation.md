@@ -1458,6 +1458,18 @@ refus de Meta ou redéploiement, laissant un fil tenu par un parcours mort que r
 `waiting` serait pire encore : le run redeviendrait visible d'`advance`, et un message du contact pendant la
 reprise rejouerait le même bloc.
 
+🔴 **Une clé d'idempotence EN COURS est un verrou, et elle en porte deux pièces** (`api_idempotency`,
+`src/api/idempotency-store.pg.ts`). Son **bail** : une pose jamais scellée depuis plus de
+`DUREE_CLE_EN_COURS_MAX_MS` est abandonnée (son traitement est mort), et `claim` la retire avant d'insérer ; une
+clé SCELLÉE ne s'abandonne jamais, seule sa durée de 24 h la libère. Son **jeton de garde** (`jeton`) :
+`possede`, `complete` et `release` ne touchent que la ligne de LEUR jeton. `POST /v1/sends` demande `possede`
+juste avant de créer la campagne, et ne lance jamais une campagne dont le scellement a été refusé (clé reprise
+entre-temps) : elle reste en brouillon, journalisée. C'est le jeton, pas la durée du bail, qui empêche le double
+envoi ; le bail décide seulement combien de temps une clé abandonnée bloque son client. ⚠️ Le code d'avant 0203
+scelle et libère SANS jeton : une copie ancienne qui vivrait plus d'un bail à côté d'une copie neuve pourrait
+écraser le scellement de celle-ci. Impossible avec une seule copie (`stop_grace_period` de 30 s, très en deçà du
+bail) ; un déploiement progressif à plusieurs copies doit garder son délai d'arrêt sous le bail.
+
 ### Plusieurs copies de l'API : ce qui ne doit arriver qu'une fois se garde en base
 
 L'API peut tourner en plusieurs copies derrière un répartiteur (le worker reste un exemplaire par rôle). Une garde

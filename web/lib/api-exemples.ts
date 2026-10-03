@@ -353,6 +353,8 @@ export const BORNES = {
   externalId: 512,
   debitParMinute: 80,
   dureeIdempotenceHeures: 24,
+  /** Le bail d'une clé EN COURS dont l'appel est mort en route (`DUREE_CLE_EN_COURS_MAX_MS`) : au-delà, elle se libère. */
+  cleEnCoursMinutes: 5,
   /** Le plafond de l'API PAR ESPACE (2026-09-25), tenus égaux à `PLAFOND_API_DEFAUT` par `tests/api-exemples.test.ts`. */
   plafondEspaceMinute: 60,
   plafondEspaceHeure: 1000,

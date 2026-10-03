@@ -21,7 +21,7 @@ import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
-import { cleIdempotence, CLE_IDEMPOTENCE_MAX, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
+import { cleIdempotence, CLE_IDEMPOTENCE_MAX, DUREE_CLE_EN_COURS_MAX_MS, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
 import { MAX_OPT_IN_SOURCE, MAX_PAR_FICHE, MAX_PAR_FICHE_EN_LOT } from '../src/api/contacts-upsert';
 import { VALEUR_VARIABLE_MAX, VARIABLES_MAX } from '../src/api/variables';
 import { STATUT_PAR_CODE, type CodeApi } from '../src/api/erreurs';
@@ -187,6 +187,8 @@ describe('les bornes affichées sont celles des routes', () => {
     expect(BORNES.destinatairesParEnvoi).toBe(MAX_RECIPIENTS);
     expect(BORNES.ecartsDetailles).toBe(MAX_SKIPPED_REPORT);
     expect(BORNES.dureeIdempotenceHeures * 3_600_000).toBe(DUREE_CLE_IDEMPOTENCE_MS);
+    // Le bail d'une clé abandonnée : la page l'annonce en minutes, le serveur l'applique en millisecondes.
+    expect(BORNES.cleEnCoursMinutes * 60_000).toBe(DUREE_CLE_EN_COURS_MAX_MS);
   });
 
   it('source du consentement, clé d’idempotence, variables d’un destinataire : les constantes des routes', () => {

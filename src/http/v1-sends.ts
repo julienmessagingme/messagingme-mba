@@ -83,12 +83,18 @@ export interface V1SendsRouteDeps {
   appliquerConsentement(tenantId: string, contactId: string, consent: 'opted_in' | 'opted_out', source: string): Promise<IssueConsentement>;
   /** `tenantId` porte le groupe de la file : la concurrence des runs est plafonnée par espace. */
   enqueue(campaignId: string, tenantId: string, pendingCount: number, ratePerMinute: number | null): Promise<void>;
-  /** Le magasin d'idempotence. */
+  /**
+   * Le magasin d'idempotence. Le `jeton` rendu par `claim` est REQUIS partout ensuite : une clé abandonnée
+   * puis reprise par un autre appel n'appartient plus à celui-ci, qui ne doit ni la sceller, ni la libérer.
+   */
   idempotence: {
     /** `empreinte` = `empreinteCorps(corps)` : la même clé avec un autre corps rend `reused`. */
     claim(tenantId: string, key: string, empreinte: string): Promise<IdempotencyClaim>;
-    complete(tenantId: string, key: string, sendId: string, response: unknown): Promise<void>;
-    release(tenantId: string, key: string): Promise<void>;
+    /** La clé est-elle encore à ce porteur, et encore en cours ? */
+    possede(tenantId: string, key: string, jeton: string): Promise<boolean>;
+    /** `false` = la clé a été reprise : ne PAS lancer la campagne, l'autre appel enverra. */
+    complete(tenantId: string, key: string, jeton: string, sendId: string, response: unknown): Promise<boolean>;
+    release(tenantId: string, key: string, jeton: string): Promise<void>;
   };
   /** La cible `rcsMessage` : un message de la bibliothèque par son nom, et l'agent RCS de l'espace. */
   rcs: DepsCibleRcs;
@@ -369,6 +375,8 @@ async function fenetresParContact(deps: V1SendsRouteDeps, tenantId: string, cont
 const FORME_ID_ENVOI = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const schemaIdEnvoi = z.object({ sendId: z.string().regex(FORME_ID_ENVOI) });
 
+/** Une clé abandonnée (traitement trop long) puis reprise : réessayer rend le rapport de l'appel qui a repris. */
+const MESSAGE_CLE_REPRISE = 'un autre appel a repris cette clé d’idempotence et traite l’envoi : réessayez dans un instant pour lire son rapport';
 
 /**
  * API publique /v1 des envois. L'espace vient de la clé (`req.auth`), jamais du corps. Garde attendue :
@@ -422,15 +430,18 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
       return refuser(reply, 409, 'idempotency_in_progress', 'un envoi avec cette clé d’idempotence est en cours : réessayez dans un instant');
     }
     if (!claim.claimed) return reply.code(201).send(claim.response);
+    const { jeton } = claim;
 
     /** Un refus après le claim n'a rien créé : la clé est libérée, le même appel repartira une fois corrigé. */
     const libererEtRefuser = async (r: Refus['refus']) => {
-      await deps.idempotence.release(tenantId, idem.cle);
+      await deps.idempotence.release(tenantId, idem.cle, jeton);
       return refuser(reply, r.statut, r.code, r.message);
     };
 
     // Rempli + scellé dans le try ; l'enqueue (hors try) le lit après scellement (definite assignment).
     let report!: RapportEnvoi;
+    /** La campagne créée alors que la clé avait été reprise : jamais lancée (cf. le scellement ci-dessous). */
+    let orpheline: string | null = null;
     try {
       // Un message RCS part de l'agent RCS de l'espace : aucun numéro WhatsApp n'est exigé, et un `phoneNumberId`
       // fourni est ignoré (`numeroDEnvoi` rendrait sinon 409 `no_whatsapp_number` à un espace qui n'a que le RCS).
@@ -482,6 +493,14 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
         skipped: ecarts.slice(0, MAX_SKIPPED_REPORT),
         skippedTotal: ecarts.length,
       };
+      /**
+       * 🔴 Juste avant le geste irréversible : la clé est-elle encore à nous ? Un traitement qui a dépassé
+       * `DUREE_CLE_EN_COURS_MAX_MS` a pu la voir abandonnée et reprise par un autre appel, qui enverra : on
+       * s'arrête sans créer de campagne, et sans libérer la clé, qui n'est plus la nôtre.
+       */
+      if (!await deps.idempotence.possede(tenantId, idem.cle, jeton)) {
+        return refuser(reply, 409, 'idempotency_in_progress', MESSAGE_CLE_REPRISE);
+      }
       const send = await deps.repo.createWithRecipients(
         {
           // Le préfixe est `PREFIXE_ENVOI_API`, que le suivi relit (`nomDuMessageRcs`). Le nom d'un envoi RCS n'est pas
@@ -498,11 +517,17 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
       report.sendId = send.campaignId;
       // 🔴 Scelle l'idempotence avant l'enqueue : sinon un échec de `complete` après un enqueue réussi libérerait la
       // clé, et un retry recréerait une campagne, donc renverrait les messages en double. Échec avant scellement ->
-      // release + throw (retry propre).
-      await deps.idempotence.complete(tenantId, idem.cle, send.campaignId, report);
+      // release + throw (retry propre). Scellement REFUSÉ (clé reprise entre la garde et ici) -> la campagne
+      // n'est pas lancée : l'appel qui a repris la clé enverra, et lancer celle-ci enverrait deux fois.
+      if (!await deps.idempotence.complete(tenantId, idem.cle, jeton, send.campaignId, report)) orpheline = send.campaignId;
     } catch (err) {
-      await deps.idempotence.release(tenantId, idem.cle);
+      await deps.idempotence.release(tenantId, idem.cle, jeton);
       throw err;
+    }
+    if (orpheline !== null) {
+      // eslint-disable-next-line no-console
+      console.error(`v1/sends: clé d'idempotence reprise par un autre appel pendant la création de la campagne ${orpheline}, laissée en brouillon et JAMAIS lancée`);
+      return refuser(reply, 409, 'idempotency_in_progress', MESSAGE_CLE_REPRISE);
     }
 
     // Idempotence scellée, définitivement : plus aucun release ci-dessous. On retente l'enfilement (hoquet

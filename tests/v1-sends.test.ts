@@ -123,7 +123,7 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
     lectures: 0,
     fenetresDemandees: [] as string[][],
   };
-  const idem = new Map<string, { hash: string; sendId?: string; response?: unknown }>();
+  const idem = new Map<string, { hash: string; jeton?: string; sendId?: string; response?: unknown }>();
   const keys = new FakeApiKeys()
     .add(SEND_KEY, { id: 'k1', tenantId: 't1', scopes: ['sends:create'] })
     .add(NOSCOPE_KEY, { id: 'k2', tenantId: 't1', scopes: ['contacts:write'] });
@@ -209,11 +209,18 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
       // Le MÊME verdict que le magasin : c'est sa fonction pure qui décide.
       claim: async (_t, key, empreinte): Promise<IdempotencyClaim> => {
         const ligne = idem.get(key);
-        if (!ligne) { idem.set(key, { hash: empreinte }); return { claimed: true }; }
+        if (!ligne) { const jeton = `jeton-${key}`; idem.set(key, { hash: empreinte, jeton }); return { claimed: true, jeton }; }
         return verdictLigne({ send_id: ligne.sendId ?? null, response: ligne.response ?? null, request_hash: ligne.hash }, empreinte);
       },
-      complete: async (_t, key, sendId, response) => { const l = idem.get(key); if (l) { l.sendId = sendId; l.response = response; } },
-      release: async (_t, key) => { idem.delete(key); },
+      // Comme le vrai magasin : seul le porteur du jeton voit sa pose, la scelle ou la libère.
+      possede: async (_t, key, jeton) => { const l = idem.get(key); return l?.jeton === jeton && l.sendId === undefined; },
+      complete: async (_t, key, jeton, sendId, response) => {
+        const l = idem.get(key);
+        if (l?.jeton !== jeton || l.sendId !== undefined) return false;
+        l.sendId = sendId; l.response = response;
+        return true;
+      },
+      release: async (_t, key, jeton) => { const l = idem.get(key); if (l?.jeton === jeton && l.sendId === undefined) idem.delete(key); },
       ...surIdempotence,
     },
     // La cible `rcsMessage` (lot 3) : un seul message dans la bibliothèque, un agent RCS actif.
@@ -872,7 +879,7 @@ describe('POST /v1/sends : idempotence', () => {
         createWithRecipients: async (_i, recipients) => { order.push('createSend'); return { campaignId: 'campX', recipientCount: recipients.length }; },
       },
       idempotence: {
-        complete: async () => { order.push('complete'); },
+        complete: async () => { order.push('complete'); return true; },
         release: async () => { released = true; },
       },
       enqueue: async () => { order.push('enqueue'); throw new Error('pg-boss down'); },
@@ -926,6 +933,83 @@ describe('POST /v1/sends : idempotence', () => {
     });
     await expect(envoyer(server, CORPS, 'k-fail')).resolves.toMatchObject({ statusCode: 500 });
     expect(released).toBe(true);
+    await server.close();
+  });
+});
+
+/**
+ * 🔴 LA CLÉ ABANDONNÉE PUIS REPRISE (second banc du 2026-10-03). Une clé en cours au-delà du bail est reprise par
+ * un autre appel : le premier porteur, s'il vit encore, ne doit ni créer de campagne, ni lancer celle qu'il a
+ * déjà créée, ni libérer la clé de l'autre. Chacun de ces trois gestes ferait partir l'envoi deux fois.
+ */
+describe('POST /v1/sends : une clé reprise par un autre appel', () => {
+  const CORPS = { ...TPL, recipients: [{ contactId: C1 }] };
+
+  it('le jeton du claim est celui que reçoivent possede, complete et release', async () => {
+    const vus: string[] = [];
+    const { server } = app({
+      idempotence: {
+        claim: async () => ({ claimed: true, jeton: 'jeton-pose' }),
+        possede: async (_t, _k, jeton) => { vus.push(`possede:${jeton}`); return true; },
+        complete: async (_t, _k, jeton) => { vus.push(`complete:${jeton}`); return true; },
+      },
+    });
+    expect((await envoyer(server, CORPS, 'k-jeton')).statusCode).toBe(201);
+    expect(vus).toEqual(['possede:jeton-pose', 'complete:jeton-pose']);
+    // Et le refus d'une cible libère avec CE jeton, pas la ligne d'un autre.
+    const liberes: string[] = [];
+    const { server: s2 } = app({
+      idempotence: {
+        claim: async () => ({ claimed: true, jeton: 'jeton-refus' }),
+        release: async (_t, _k, jeton) => { liberes.push(jeton); },
+      },
+    }, { modele: { statut: 'absent' } });
+    expect((await envoyer(s2, CORPS, 'k-jeton-refus')).statusCode).toBe(404);
+    expect(liberes).toEqual(['jeton-refus']);
+    await s2.close();
+    await server.close();
+  });
+
+  it('🔴 reprise AVANT la création : 409, AUCUNE campagne, et la clé de l’autre n’est pas libérée', async () => {
+    let released = false;
+    const { server, cap } = app({
+      idempotence: {
+        possede: async () => false,
+        release: async () => { released = true; },
+      },
+    });
+    const res = await envoyer(server, CORPS, 'k-reprise-avant');
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'idempotency_in_progress' });
+    expect(cap.sends).toHaveLength(0);
+    expect(cap.enqueued).toHaveLength(0);
+    expect(released).toBe(false);
+    await server.close();
+  });
+
+  it('🔴 reprise APRÈS la création (scellement refusé) : 409, la campagne n’est JAMAIS lancée, rien n’est libéré', async () => {
+    let released = false;
+    const { server, cap } = app({
+      idempotence: {
+        complete: async () => false,
+        release: async () => { released = true; },
+      },
+    });
+    const res = await envoyer(server, CORPS, 'k-reprise-apres');
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'idempotency_in_progress' });
+    expect(cap.sends).toHaveLength(1); // créée avant de savoir : elle reste en brouillon
+    expect(cap.enqueued).toHaveLength(0); // et c'est tout l'enjeu : lancée, elle enverrait une seconde fois
+    expect(released).toBe(false);
+    await server.close();
+  });
+
+  it('le chemin normal pose, garde et scelle avec le même jeton (le faux magasin les exige comme le vrai)', async () => {
+    // Garde du faux lui-même : s'il ignorait le jeton, un jeton perdu en route passerait ici sans bruit.
+    const { server, idem } = app();
+    const res = await envoyer(server, CORPS, 'k-faux');
+    expect(res.statusCode).toBe(201);
+    expect(idem.get('k-faux')).toMatchObject({ jeton: 'jeton-k-faux', sendId: res.json().sendId });
     await server.close();
   });
 });

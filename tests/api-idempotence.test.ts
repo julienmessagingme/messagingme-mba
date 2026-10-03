@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Pool } from 'pg';
 import { readFileSync } from 'node:fs';
-import { cleIdempotence, empreinteCorps, CLE_IDEMPOTENCE_MAX, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
+import { cleIdempotence, empreinteCorps, CLE_IDEMPOTENCE_MAX, DUREE_CLE_EN_COURS_MAX_MS, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
 import { PgApiIdempotencyStore, verdictLigne } from '../src/api/idempotency-store.pg';
 
 /**
@@ -110,6 +110,38 @@ describe('la durée de vie d’une clé : UNE constante, et la purge ne descend 
     await new PgApiIdempotencyStore(pool).claim('t1', 'k1', 'h1');
     expect(appels[0]!.sql).toMatch(/delete from api_idempotency/);
     expect(appels[0]!.params).toContain(DUREE_CLE_IDEMPOTENCE_MS);
+  });
+
+  it('🔴 le claim libère aussi une pose ABANDONNÉE au bail, et seulement une pose EN COURS', async () => {
+    // Second banc du 2026-10-03 : sans ce bail, une copie tuée entre pose et scellement bloquait la clé 24 h.
+    const { pool, appels } = poolEspion();
+    const r = await new PgApiIdempotencyStore(pool).claim('t1', 'k1', 'h1');
+    expect(appels[0]!.params).toContain(DUREE_CLE_EN_COURS_MAX_MS);
+    // Le bail ne vise qu'une ligne sans envoi : une clé scellée ne se libère qu'à ses 24 h.
+    expect(appels[0]!.sql).toMatch(/send_id is null and created_at < now\(\) - \(\$4::bigint/);
+    // La pose écrit un jeton, et c'est lui que le claim rend.
+    expect(appels[1]!.sql).toMatch(/insert into api_idempotency \(tenant_id, idempotency_key, request_hash, jeton\)/);
+    expect(r).toEqual({ claimed: true, jeton: appels[1]!.params[3] });
+    expect(String(appels[1]!.params[3])).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it('🔴 complete, release et possede ne touchent que la ligne de LEUR jeton, encore en cours', async () => {
+    // Sans le jeton, un traitement lent qui dépasse le bail scellerait (ou libérerait) la pose de celui qui l'a
+    // reprise : deux campagnes partiraient. C'est ce qui part en base qu'on juge, pas ce que rend la fonction.
+    const { pool, appels } = poolEspion();
+    const store = new PgApiIdempotencyStore(pool);
+    await store.complete('t1', 'k1', 'jeton-1', 's1', { a: 1 });
+    await store.release('t1', 'k1', 'jeton-1');
+    await store.possede('t1', 'k1', 'jeton-1');
+    for (const a of appels) {
+      expect(a.sql).toMatch(/and jeton = \$3 and send_id is null/);
+      expect(a.params.slice(0, 3)).toEqual(['t1', 'k1', 'jeton-1']);
+    }
+  });
+
+  it('cinq minutes de bail, bien en deçà des 24 h de la clé', () => {
+    expect(DUREE_CLE_EN_COURS_MAX_MS).toBe(5 * 60 * 1000);
+    expect(DUREE_CLE_EN_COURS_MAX_MS).toBeLessThan(DUREE_CLE_IDEMPOTENCE_MS);
   });
 
   it('🔴 la purge ne descend JAMAIS sous la durée du claim, quelle que soit la fenêtre demandée', async () => {

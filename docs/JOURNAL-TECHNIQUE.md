@@ -50,12 +50,27 @@ production n'a pas bougé.
 ne voit rien, mais sur cinq arrêts, TROIS ont coupé un envoi entre la pose de sa clé et son scellement : la clé
 reste « en cours », sans campagne (ni fantôme, ni double), et chaque rejeu rend 409 pendant 24 h. Rien ne libère
 une clé abandonnée. Le premier tir avait réussi par hasard (la coupure était tombée avant la pose) : **un
-échantillon ne prouve pas l'absence d'une fenêtre**, il a fallu répéter l'arrêt pour la voir. Le correctif est
-dans `todo.md`, il bloque l'autoscaling.
+échantillon ne prouve pas l'absence d'une fenêtre**, il a fallu répéter l'arrêt pour la voir.
 
-**Deux pièges du montage**, pour le prochain : l'image ne contient pas `scripts/`, il faut monter le dossier du
-clone dans le conteneur du script ; et les files d'analyse n'existent pas sur le banc (aucun modèle configuré),
-le worker n'en annonce que six.
+**Corrigé le jour même**, à la demande de Julien (plan `docs/superpowers/plans/2026-10-03-cle-idempotence-coincee.md`).
+Une clé en cours EST un verrou sur l'envoi, et il lui manquait deux des trois pièces de `run-lock.ts` : un **bail**
+(`DUREE_CLE_EN_COURS_MAX_MS`, 5 min : au-delà, `claim` retire la pose abandonnée) et un **jeton de garde**
+(`api_idempotency.jeton`, migration 0203 poussée SEULE et appliquée avant le code : `possede`, `complete` et
+`release` ne touchent que la ligne de leur jeton). La route demande `possede` avant de créer la campagne, et ne
+lance jamais celle dont le scellement est refusé. 🔴 **C'est le jeton, pas la durée du bail, qui empêche le double
+envoi** : sans lui, un traitement lent qui dépasse le bail scellerait ou libérerait la pose de celui qui l'a reprise.
+Une relecture indépendante, sans rouge (sept jaunes : cinq de texte intégrés, deux de comportement au backlog).
+Les tests vérifiés dans les deux sens, y compris le test d'intégration du magasin, joué contre le Postgres jetable
+du banc avec deux mutations (sans jeton, sans bail) qui le font tomber exactement à l'assertion attendue.
+**L'essai réel**, le banc remonté avec le correctif : au premier arrêt brutal, un envoi coupé entre pose et
+scellement, sa clé en 409 sans envoi, puis 201 avec son envoi une fois le bail passé (285 s d'attente, à l'heure
+de la base), et aucune campagne orpheline lancée.
+
+**Trois pièges du montage**, pour le prochain : l'image ne contient pas `scripts/`, il faut monter le dossier du
+clone dans le conteneur du script ; les files d'analyse n'existent pas sur le banc (aucun modèle configuré), le
+worker n'en annonce que six ; et l'image de production n'embarque pas `vitest` (`--omit=dev`) : un test
+d'intégration se joue dans un conteneur `node:22` à part, avec `npm ci --include=dev`, parce que le
+`NODE_ENV=production` du `.env.banc` ferait sauter les dépendances de développement.
 
 ## 2026-10-02 et 03 : le double worker en production, et le banc à deux copies d'API vert
 

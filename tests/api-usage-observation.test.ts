@@ -60,8 +60,9 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
   appliquerConsentement: async () => 'inchange',
   enqueue: async () => { /* rien */ },
   idempotence: {
-    claim: async () => ({ claimed: true as const }),
-    complete: async () => { /* rien */ },
+    claim: async () => ({ claimed: true as const, jeton: 'jeton-1' }),
+    possede: async () => true,
+    complete: async () => true,
     release: async () => { /* rien */ },
   },
   rcs: { messages: { getByName: async () => null }, agents: { agentIdForTenant: async () => null } },
