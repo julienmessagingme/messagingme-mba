@@ -35,7 +35,8 @@ chemins qui traversent le câblage** ; c'est la même famille que « un test uni
 `up`. Partition parfaite en production (7 files contre 3), deux battements de deux conteneurs, portes publiques à
 200. L'essai réel reste dû : aucun trafic ce samedi matin.
 
-**Les cinq jaunes de la relecture, corrigés le jour même** (non déployés, relus par le lot suivant) : le
+**Les cinq jaunes de la relecture, corrigés le jour même** (`8b37a1ba`, déployés à 10 h 18 UTC sur les deux
+workers, relus par le lot suivant) : le
 commentaire faux de `work()` réécrit sur sa vraie raison ; le balayage d'agrégats du DÉMARRAGE, qui tourne hors du
 registre, gardé par `minuterieDuRole` (le rôle `analyse` le jouait à chaque `up`) ; un nom de processus par rôle
 (`nomDuProcessus`) pour les attentes de pool et les alertes Telegram ; les commentaires de budget recalés sur le

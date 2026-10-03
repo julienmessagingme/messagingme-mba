@@ -33,11 +33,14 @@ Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, déci
 - ✅ **Le banc à deux copies d'API** est vert sur ses trois propriétés (clé acceptée des deux côtés, clé révoquée
   refusée par les DEUX, plafond par espace GLOBAL : 54 acceptés contre 76 refusés sur 130 tirs, plafond 60). Il a
   été DÉMONTÉ du VPS le 2026-10-03 ; la recette pour le remonter est en tête de `scripts/banc-deux-api.mts`.
-- 🔴 **L'ESSAI RÉEL EST DÛ** : aucun trafic au moment du déploiement. Julien envoie un message WhatsApp au numéro
-  Zadarma ; on doit voir le webhook traité par le principal, puis l'analyse de la conversation traitée par l'autre
-  worker. C'est l'isolation achetée, elle se constate en vrai.
-- 🟡 **Les jaunes de la relecture** sont dans `todo.md` (« Double worker : les jaunes de la relecture »), dont un
-  commentaire FAUX à corriger en premier (`src/queue/pgboss.ts`).
+- 🔴 **L'ESSAI RÉEL, À MOITIÉ CONSTATÉ** : le message WhatsApp de Julien a été traité par le principal (sept
+  webhooks à 9 h 50 UTC le 2026-10-03). Reste l'analyse, par l'autre worker : elle ne part qu'après 25 minutes
+  SANS message sur la conversation (`CONVERSATION_INACTIVITY_MS`, et non 15), donc à compter du DERNIER message.
+- ✅ **Les cinq jaunes de la relecture** : corrigés (`8b37a1ba`) et déployés le 2026-10-03 à 10 h 18 UTC (les deux
+  workers seulement). Vérifié en production : le principal rejoue les agrégats au démarrage, l'analyse non ; les
+  attentes de pool arrivent sous `worker-principal` et `worker-analyse` ; deux battements frais ; portes à 200.
+- ⏳ **Un second banc à deux copies d'API AVANT tout autoscaling**, avec deux correctifs préalables (taille du pool
+  par copie, nom de processus `api` en dur dans les attentes de pool). Quand : à décider par Julien.
 
 ## L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)
 
