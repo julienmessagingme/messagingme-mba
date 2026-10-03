@@ -5,6 +5,43 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : le banc des trente espaces (Inbox, pic de messages, worker tué)
+
+Point 2 de ce qui restait de l'audit de performance du 2026-10-02, recadré par Julien : le cas réel n'est pas un
+client à 30 agents, c'est **30 espaces de 2 personnes et 10 conversations**, plus un pic où les 30 reçoivent des
+messages dans la même minute. Plan : `docs/superpowers/plans/2026-10-03-banc-trente-espaces.md` ; script :
+`scripts/banc-trente-espaces.mts` (sa recette de montage est en tête).
+
+**Le montage.** Sur le VPS, dossier, image, réseau et conteneurs dédiés (`banc=inbox30`), le code de production
+(`70833a75`, que de la documentation de plus que `f7e9acd0`), les tailles de pool de la production, `DRY_RUN`.
+Les 30 espaces naissent par `db/seed.ts`, les 300 conversations par de vrais webhooks signés. 🔴 Le délai réseau de
+la production vers Supabase, **10,2 ms** mesurés depuis `mba-api`, est imposé au Postgres jetable (`tc netem`, relu
+à 10,9 ms) : sans lui, une connexion du pool se libérerait cinquante fois plus vite et le banc conclurait que le pool
+tient pour une raison qui n'existe pas en production. Ce que le banc ne reproduit pas (Supavisor, le calcul et le
+volume de la base, les campagnes, analyses et agents) borne ses conclusions à l'API et aux workers.
+
+**`charge`** (60 onglets aux cadences de la console, 5 min, environ 15 requêtes/s, et 600 messages en une minute) :
+p95 de l'Inbox **54 ms** sur tout le banc comme pendant le pic (seuil de l'audit : 800), zéro erreur, **zéro attente
+du pool de l'API** sur 25 640 prises, webhooks acquittés en 22 ms (p95), messages du pic écrits en 94 ms (p50),
+217 ms (p95), 366 ms au pire, l'espace le moins bien servi à 366 ms. L'API du banc tenait à 12 % d'un cœur. La carte
+de latence livrée le même jour a rendu les mêmes ordres de grandeur que le client : première lecture réelle de la mesure.
+
+**`crash`** (worker principal tué en plein pic, une tâche en cours, relancé 6 s après) : aucune perte, aucun doublon,
+file d'échec vide, mais le message dont la tâche était en cours a attendu **932 s** : pg-boss ne rejoue une tâche
+active qu'à son expiration (15 min), vérifié en base (reprise après `expire_seconds`). Les messages arrivés pendant la
+coupure : 8,6 s au p95.
+
+**`arret`** (`docker stop -t 30`, le geste d'un déploiement) : le worker finit ses tâches en cours en une seconde,
+rien n'est rejoué ni abandonné. Premier passage : pire message à 8,9 s. Second passage : **22 messages arrivés en fin
+de pic, 17 s après la relance, pris 61,7 s plus tard** au filet de sondage de 60 s ; l'écoute était pourtant en place.
+Les deux défauts et leurs remèdes sont dans `todo.md`.
+
+**La relecture du script a trouvé deux rouges, corrigés le soir même** : un verdict `arret` ou `crash` pouvait être
+vert sans que le geste ait eu lieu au bon moment, et le plan affirmait que la base « répondait comme la production ».
+Le geste se cale désormais sur un repère que le script écrit, il est prouvé par l'heure de démarrage du worker
+(`worker_heartbeat.booted_at`), seule une reprise après expiration prouve un crash, et une tâche restée active est un
+échec. Les résultats ci-dessus ont été revérifiés en base avec ces critères ; le script corrigé a rejoué `arret`.
+
 ## 2026-10-03 : l'OAuth devant `/mcp`, livraison 2b (la console) et essai réel
 
 **Publié en `332d9f6c`** (Vercel, console seule ; la fiche d'aide rechargée sur le VPS par `aide:charger`, avec

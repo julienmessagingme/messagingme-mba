@@ -1,5 +1,20 @@
 # todo.md : backlog
 
+## 🟠 Un message entrant peut attendre 15 minutes (crash du worker) ou 60 secondes (réveil manqué) : trouvé par le banc des trente espaces (2026-10-03)
+
+Mesuré sur le banc (`scripts/banc-trente-espaces.mts`, journal du 2026-10-03), code de production :
+- **Crash du worker principal** (`docker kill` en plein pic) : aucune perte, aucun doublon, mais le message dont la
+  tâche était EN COURS a attendu **932 s**. pg-boss 12 ne rejoue une tâche active qu'au bout de son délai d'expiration
+  (15 min par défaut), et aucune file de mba ne déclare `heartbeatSeconds`. Remède : un battement de cœur sur les
+  files (pg-boss l'envoie seul pendant chaque tâche, 10 s minimum) et un superviseur plus fréquent
+  (`superviseIntervalSeconds`, 60 s par défaut) : une orpheline repartirait en 20 à 30 s, sans tuer une tâche lente.
+- **Réveil manqué, intermittent** (une fois sur deux arrêts propres) : 22 messages arrivés dans les deux dernières
+  secondes du pic, 17 s après la relance du worker, n'ont été pris que **61,7 s** plus tard, tous ensemble, au filet de
+  60 s (`SONDAGE_FILET_NOTIFIE`, `src/queue/names.ts`). L'écoute du worker était en place (`LISTEN` ouvert avant
+  leur arrivée) et l'émetteur suit son chemin normal : la cause n'est pas trouvée. Remède qui n'en dépend pas : un
+  filet de quelques secondes pour la seule file `webhook` (trois boucles, une lecture chacune toutes les N s).
+- Les deux ont un essai réel tout prêt : rejouer `crash` et `arret` sur le banc, avec le code corrigé.
+
 ## 🟡 Meta a refusé deux fois de relancer l'agent sur une réponse « à côté », puis accepté : cause non établie (2026-10-03)
 
 Scénario lancé par le lien de test, sortie « Toute autre réponse » non reliée, réponse en texte libre : le parcours

@@ -160,8 +160,12 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
    plafond de lignes, l'écriture triée, un vidage final), déployés à 20 h 47 UTC (`f7e9acd0`) ; l'écriture a continué à
    travers le redémarrage. Reste à Julien : ouvrir `/ops` et voir la carte. Le reste du § 11 de l'audit (CPU, mémoire et redémarrages par conteneur, connexions côté pooler
    et Postgres, durée des gros balayages, volume des fichiers en base) n'est pas fait.
-2. Le banc « Inbox à 30 utilisateurs » (Postgres jetable, p95), et tuer un WORKER en plein travail sans perte ni
-   doublon (les bancs n'ont tué que l'API).
+2. ✅ **Le banc des trente espaces** (2026-10-03, recadré par Julien : 30 espaces de 2 personnes et 10 conversations,
+   pas un client à 30 agents) : `charge` vert avec une marge énorme (p95 de l'Inbox 54 ms pour un seuil de 800, zéro
+   attente du pool de l'API, 600 messages du pic écrits en 366 ms au pire) ; `crash` et `arret` sans perte ni doublon.
+   Deux défauts trouvés, dans `todo.md` (🟠, en tête) : 15 min d'attente pour le message en cours lors d'un crash, et
+   un réveil manqué intermittent de 60 s. Le banc reste MONTÉ sur le VPS (`banc=inbox30`) pour l'essai réel de ce
+   correctif ; le démonter s'il n'est pas fait (recette en tête du script).
 3. Au plus 5 clés d'API actives par espace (sécurité, petit lot).
 4. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
 5. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant » ; au minimum leur volume dans `/ops`.
