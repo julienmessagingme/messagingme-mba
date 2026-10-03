@@ -41,12 +41,13 @@ Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, déci
   attentes de pool arrivent sous `worker-principal` et `worker-analyse` ; deux battements frais ; portes à 200.
 - ✅ **Le second banc à deux copies d'API a tourné le 2026-10-03** (`scripts/banc-deux-api-2.mts`, démonté
   ensuite) : idempotence entre copies, arrêt propre, webhooks sous pression de pool et connexions par copie
-  VERTS ; 🔴 l'arrêt BRUTAL laisse la clé d'idempotence « en cours » 24 h dans 3 cas sur 5. Le défaut et son
-  correctif sont dans `todo.md`, le détail dans le journal. `API_COPIE` (`b44fd32f`) est poussé, pas déployé :
-  vide par défaut, il ne change rien et peut partir avec le `up` d'une autre session.
-- ⏳ **Ce qui reste avant d'autoriser l'autoscaling** : corriger la clé coincée et rejouer l'arrêt brutal ;
-  redimensionner `DB_POOL_MAX` par copie ; mettre un répartiteur devant les copies ; remesurer la capacité sur
-  Scaleway.
+  VERTS ; l'arrêt BRUTAL laissait la clé d'idempotence « en cours » 24 h dans 3 cas sur 5.
+- ✅ **La clé coincée est corrigée et DÉPLOYÉE** (`0c476865`, le 2026-10-03 à 11 h 46 UTC, avec la migration 0203
+  appliquée avant et le lot `cdcbde3e` d'une session voisine dans le même `up`) : bail de 5 min et jeton de garde.
+  Relue sans rouge, CI verte job par job, et l'essai réel fait au banc (clé coupée en 409, puis 201 une fois le bail
+  passé, aucune orpheline lancée). Les deux jaunes de comportement de la relecture sont dans `todo.md`.
+- ⏳ **Ce qui reste avant d'autoriser l'autoscaling** : redimensionner `DB_POOL_MAX` par copie ; mettre un
+  répartiteur devant les copies ; remesurer la capacité sur Scaleway.
 
 ## L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)
 

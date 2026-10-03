@@ -52,7 +52,8 @@ reste « en cours », sans campagne (ni fantôme, ni double), et chaque rejeu re
 une clé abandonnée. Le premier tir avait réussi par hasard (la coupure était tombée avant la pose) : **un
 échantillon ne prouve pas l'absence d'une fenêtre**, il a fallu répéter l'arrêt pour la voir.
 
-**Corrigé le jour même**, à la demande de Julien (plan `docs/superpowers/plans/2026-10-03-cle-idempotence-coincee.md`).
+**Corrigé et déployé le jour même** (`0c476865`, à 11 h 46 UTC), à la demande de Julien (plan
+`docs/superpowers/plans/2026-10-03-cle-idempotence-coincee.md`).
 Une clé en cours EST un verrou sur l'envoi, et il lui manquait deux des trois pièces de `run-lock.ts` : un **bail**
 (`DUREE_CLE_EN_COURS_MAX_MS`, 5 min : au-delà, `claim` retire la pose abandonnée) et un **jeton de garde**
 (`api_idempotency.jeton`, migration 0203 poussée SEULE et appliquée avant le code : `possede`, `complete` et
