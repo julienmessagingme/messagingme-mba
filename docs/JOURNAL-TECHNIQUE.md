@@ -5,6 +5,53 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : les envois d'un bloc de scénario sortent du câblage (piste 2 du rapport d'architecture)
+
+**Cadrage.** Deux rondes de questions fermées. Julien a retenu :
+- les quatre envois seulement (modèle, message rapide, question, formulaire) ;
+- pas de point d'envoi unique ;
+- un comportement strictement identique ;
+- le cache des modèles laissé dans le câblage ;
+- des gardes qui exécutent au lieu de relire le texte ;
+- une mise en production avant la démo, avec un essai réel avant le lundi 5 au soir, sans quoi le lot était retiré.
+
+Plan : `docs/superpowers/plans/2026-10-03-envois-de-bloc.md`. ⚠️ Le rapport annonçait « 20 commits dont 8 correctifs » : le
+chiffre portait sur tout `wiring.ts`, pas sur ces quatre fonctions, qui n'avaient bougé que par des nettoyages.
+
+**Livré.**
+- **`cdcbde3e`** : `src/workflow/envois-bloc.ts` (`creerEnvoisDeBloc`), avec les corps déplacés octet pour octet.
+- **Les tests** : 60 tests qui exécutent le vrai module, dont des passages par le vrai câblage. Ils remplacent
+  `workflow-cablage-categorie` et le describe textuel du bouton de lien.
+- **La relecture indépendante** : 0 rouge, 4 jaunes, dix défauts remis tous détectés.
+- **La CI** : le run de `cdcbde3e` a été annulé par un push voisin, donc le premier run qui a testé le lot est celui de
+  `0c476865`, vert job par job.
+- **Le déploiement** : fait par la session RSSI à 11 h 46 UTC, avec son correctif d'idempotence (API et deux workers).
+- **Les jaunes** : `e253e4a5`, après le déploiement. Il ajoute les deux visuels sans test (carousel et en-tête VIDÉO,
+  dans les deux branches, vérifiés dans les deux sens). Il retire aussi un `satisfies` qui ne contrôlait rien et
+  corrige des commentaires périmés.
+
+**Essai réel, le 3 à 16 h 38 (Paris), avec le scénario « test0310 » lancé par « Tester le scénario ».**
+- Le modèle `test_0310` est parti, journalisé avec sa catégorie `marketing`.
+- Puis le message rapide, la question en liste et le formulaire : tous journalisés en `origine = 'scenario'`.
+- Chaque réponse (bouton du modèle, bouton du message rapide, ligne de la liste) est routée sur son bloc.
+
+Le premier formulaire désignait un formulaire inexistant : Meta a refusé (#131009) et le parcours est resté en
+attente, avec pour seule trace `processWorkflowAdvance: message ignoré`. Ce comportement existait avant le lot. Avec
+un vrai formulaire, l'envoi est passé.
+
+**Constat à côté, non lié au lot : l'agent de Meta a parlé à un contact absent de sa liste.**
+- **Le message** : à 16 h 38 min 48 s, il a envoyé son message de passage (le texte `CUSTOM`, « Je transmets votre
+  demande… »), juste après notre modèle.
+- **Lu chez Meta, en lecture seule** : `ai_audience = ALLOWLISTED_ONLY`, une liste vide chez Meta comme chez nous, un
+  `handoff` en `enabled: true` avec `message_selection: CUSTOM`.
+- **Ce que disent les journaux du worker** : la réponse « Génial ! » au bouton du modèle est arrivée en `standby` (un
+  modèle rend le fil à l'agent, mesuré le 2026-09-29). Elle a été requalifiée (`standby_hors_liste`), puis l'écho du
+  message de passage est arrivé, sans aucun `messaging_handovers`.
+
+L'agent n'a donc pas répondu en tant qu'IA : il a annoncé un passage à l'équipe. Sur dix jours, c'est le seul message
+de passage parti vers un contact hors liste ; les deux autres suivaient une vraie demande. Une occurrence ne dit pas
+la règle : la mesure (réponse au modèle par un bouton, puis par du texte) reste à faire.
+
 ## 2026-09-30 au 2026-10-03 : la vitrine, du formulaire de contact au widget
 
 Demandes de Julien, livrées en direct (plan `docs/superpowers/plans/2026-09-28-vitrine-fonctionnalites.md`).

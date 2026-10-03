@@ -1,5 +1,16 @@
 # todo.md : backlog
 
+## 🟡 Un envoi refusé par Meta en pleine avance laisse le parcours en attente, en silence (vu le 2026-10-03)
+
+Pendant l'essai réel des envois de bloc, un bloc « formulaire » désignait un formulaire inexistant. Meta a refusé
+(#131009) : `sendFlowMessage` lève, l'avance s'arrête, et la seule trace est la ligne
+`processWorkflowAdvance: message ignoré` dans le journal du worker. Le parcours est resté en cours sur le bloc
+précédent jusqu'à ce qu'un nouveau test le remplace ; ce que la console en montre n'a pas été vérifié à l'écran.
+Le comportement est antérieur au déplacement des envois
+(`src/workflow/envois-bloc.ts` ne fait que relayer l'erreur du client Meta). À regarder : rendre ce refus comme un
+`SendRefusal` lisible (sortie d'échec du bloc, événement de bloc), au moins pour les erreurs de paramètre, qui ne
+se corrigent pas en rejouant.
+
 ## 🟡 Clé d'idempotence : les deux jaunes de comportement de la relecture du 2026-10-03
 
 Le correctif de la clé coincée (bail + jeton de garde, migration 0203) a été relu sans rouge. Deux jaunes changent
