@@ -1,5 +1,29 @@
 # todo.md : backlog
 
+## 🟠 Après un MODÈLE, une réponse en texte libre ne fait pas parler l'agent de Meta (mesuré le 2026-10-03)
+
+Scénario lancé par le lien de test, sortie « Toute autre réponse » non reliée. Ouvert par un **message rapide**, le
+texte libre arrête le parcours, la conversation est rendue à l'agent et l'`agent_event` « réponse hors parcours » est
+accepté : l'agent répond (19 h 40, Paris). Ouvert par un **modèle**, Meta refuse l'événement (« Validation error :
+Event request was not accepted », deux fois, dont une renvoyée à la main 15 minutes plus tard avec le contact sur la
+liste et l'agent tenant le fil). Ce qui diffère, et qui est l'hypothèse à prouver : après un modèle, Meta rend le
+fil à l'agent, la réponse du client lui arrive alors qu'il est HORS de sa liste (retiré avant le modèle), il l'écarte,
+et Meta refuse ensuite de le relancer sur ce message. Le `release` est d'ailleurs refusé dans ce cas (l'agent tient
+déjà le fil). Avant le mode liste (2026-09-30), le même chemin, après un modèle, était accepté (statistiques Meta :
+quatre « réponse hors parcours » traitées entre le 21 et le 29/09 ; depuis, seulement celle du 3 à 19 h 40, ouverte
+par un message rapide). Pistes à mesurer : remettre le contact sur la liste
+avant qu'une réponse au modèle n'arrive quand le bloc n'a pas de sortie « Toute autre réponse » reliée (mais
+l'agent répondrait alors aussi aux boutons) ; l'événement `message_sans_suite` au lieu de `reponse_hors_parcours` ;
+interroger Meta. Parade en place : ouvrir les scénarios de démonstration par un message rapide.
+
+## 🟡 Enchaîner deux tests : l'agent de Meta réagit au mot du lien (jaune n°2 de la relecture de `0c4e2099`, vu le 2026-10-03)
+
+Un test qui finit chez l'agent (réponse hors parcours, fin de parcours) remet le contact sur sa liste. Le jeton du
+test suivant arrive donc à un agent qui tient le fil et a le contact sur sa liste : il l'a lu le 3 à 19 h 38 et a
+répondu par son message de passage, en plein test. Le test démarre quand même (le jeton reprend le fil). Pistes : un
+parcours de TEST qui ne rend pas le fil en se terminant normalement (mais garde la réponse hors parcours), ou une
+consigne à l'agent sur les mots `test-…`. Parade : attendre la réponse de l'agent avant de relancer le lien.
+
 ## 🟡 Le 502 public après chaque `up` de `mba-api` : faire résoudre NPM par le DNS de Docker (2026-10-03)
 
 NPM fige l'adresse IP de `mba-api` à son chargement : chaque recréation du conteneur rend un 502 public jusqu'au

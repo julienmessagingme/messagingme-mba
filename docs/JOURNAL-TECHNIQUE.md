@@ -5,6 +5,40 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : « Tester le scénario » ne marque plus la conversation, et ce que les essais ont appris de l'agent
+
+**Le constat.** Après l'essai des envois de bloc, Julien a voulu que l'agent de Meta réponde quand il répond en
+texte libre à un scénario de test. Le worker journalisait « remise à l'agent de Meta ignorée : conversation de
+TEST ». Le jeton de test marquait la conversation `is_test` à sens unique, et la règle 5 du contrôle du fil
+interdisait pour toujours toute remise automatique à l'agent, même hors de tout test.
+
+**Livré.**
+- **Sa conversation, démarquée à la main** (une ligne, sur son accord).
+- **`0c4e2099`** : le jeton ne marque plus rien (décision de Julien, « ne plus marquer du tout »), avec une garde
+  qui refuse toute affectation de `is_test` dans `src/`. Relecture : 0 rouge, 9 jaunes. Workers déployés à 15 h 33
+  UTC, l'un après l'autre.
+- **Jaunes `70613288`**. Le n°1 est un vrai défaut, que la règle 5 masquait pour les tests :
+  - un accusé attendu en fin de parcours, arrivé après qu'un test relancé avait repris le fil, mettait le contact
+    sur la liste et rendait le fil à l'agent en plein parcours ;
+  - `rendreMaintenant` relit désormais le détenteur avant de confier, vérifié dans les deux sens ;
+  - workers redéployés à 15 h 50 UTC.
+
+**Essais réels, le soir (heures de Paris), et ce qu'ils ont mesuré.**
+- **Message rapide, puis texte libre : l'agent répond** (19 h 40 à 19 h 41, `agent_event` accepté, réponse en 23 s).
+- **Modèle, puis texte libre : l'agent se tait.** Meta refuse l'`agent_event` (« Event request was not
+  accepted ») :
+  - en fin de parcours à 19 h 25 ;
+  - puis renvoyé à la main un quart d'heure plus tard, le contact sur la liste et l'agent tenant le fil.
+
+  Le `release` est refusé aussi, l'agent tenant déjà le fil depuis le modèle. Les statistiques de Meta montrent
+  quatre « réponse hors parcours » traitées du 21 au 29/09, avant le mode liste, puis aucune jusqu'à celle de 19 h 40.
+  Hypothèse, non prouvée (`todo.md`) : l'agent reçoit la réponse au modèle alors que le contact est hors de sa liste,
+  l'écarte, et Meta refuse ensuite de le relancer dessus.
+- **Enchaîner les tests : l'agent lit le jeton suivant.** À 19 h 38, il a répondu au mot du lien par son message de
+  passage : un essai fini chez lui avait remis le contact sur sa liste.
+- **Faux soupçon écarté** : l'état « passé à l'équipe » chez Meta (deux conversations au compteur) n'empêche pas
+  l'agent de répondre à un message neuf (vérifié à 19 h 34).
+
 ## 2026-10-03 : l'OAuth devant `/mcp`, livraison 2a (l'API)
 
 **Déployé en `0a399f9a`** (migration 0204 appliquée à 16 h 27 UTC, `mba-api` et les deux workers reconstruits,

@@ -65,20 +65,21 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   (essai du 3 à 16 h 38, une seule occurrence, journal du 2026-10-03). Deux essais suivants (16 h 53 et 16 h 54,
   réponse au modèle par un bouton puis par du texte) : l'agent n'a rien dit. Occurrence isolée, à surveiller.
 
-## « TESTER LE SCÉNARIO » NE MARQUE PLUS LA CONVERSATION (WORKERS DÉPLOYÉS LE 2026-10-03 À 15 H 33 UTC ; ESSAI RÉEL DÛ)
+## « TESTER LE SCÉNARIO » NE MARQUE PLUS LA CONVERSATION (DÉPLOYÉ LE 2026-10-03 ; ESSAI RÉEL FAIT)
 
 - ✅ Décision de Julien (« ne mets plus jamais un flag test sur ma conversation »), plan
-  `docs/superpowers/plans/2026-10-03-lien-de-test-sans-marquage.md`, `0c4e2099`. Relecture : 0 rouge, 9 jaunes,
-  poussés après le déploiement des deux workers. La conversation de Julien a été démarquée à la main le 3.
-- ⏳ **Le correctif du jaune n°1 n'est PAS encore en production** : `rendreMaintenant` relit le détenteur avant de
-  confier (un accusé arrivé après qu'un test relancé a repris le fil rendait le fil à l'agent en plein parcours).
-  Il partira avec le prochain `up` des workers (celui du lot OAuth 2a), ou seul s'il faut avant la démo.
-- ⏳ **Essai réel (Julien)** :
-  1. « Tester le scénario », réponse en texte libre au modèle (sortie « Toute autre réponse » non reliée) :
-     l'agent de Meta doit répondre ;
-  2. finir un test, puis relancer le lien dans les 30 s : observer si l'agent répond au jeton lui-même (jaune n°2
-     de la relecture, non corrigé : l'agent tient le fil à la fin d'un test, comme le 2026-09-16) et, une fois le
-     correctif du n°1 déployé, s'il reprend la main pendant le second test.
+  `docs/superpowers/plans/2026-10-03-lien-de-test-sans-marquage.md`, `0c4e2099` ; ses jaunes (`70613288`, dont la
+  relecture du détenteur avant de confier) en production sur les workers depuis 15 h 50 UTC. La conversation de
+  Julien a été démarquée à la main le 3.
+- ✅ **Essai réel du 3 à 19 h 40 (Paris)** : test lancé par le lien, message rapide, réponse en texte libre
+  (« Tu es là MBA ? ») : le parcours s'arrête, la conversation est rendue à l'agent, `agent_event` accepté, l'agent
+  répond 23 s plus tard. Conversation non marquée.
+- ⏳ **Modèle PUIS texte libre : l'agent ne répond pas** (mesuré deux fois le 3, `todo.md`). Meta refuse
+  l'`agent_event` (« Validation error : Event request was not accepted »). **Parade pour la démo du 7 : ouvrir les
+  scénarios par un message rapide.**
+- ⏳ **Enchaîner les tests : l'agent peut réagir au mot du lien** (jaune n°2 de la relecture, vu le 3 à 19 h 38) :
+  un essai fini chez l'agent remet le contact sur sa liste, et le jeton suivant lui arrive. Il a répondu par son
+  message de passage. Parade : attendre sa réponse avant de relancer le lien.
 
 ## DOUBLE WORKER (DÉPLOYÉ LE 2026-10-03 À 8 H 17 UTC ; ESSAI RÉEL DÛ)
 
