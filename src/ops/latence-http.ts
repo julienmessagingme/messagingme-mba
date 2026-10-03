@@ -14,6 +14,17 @@ export const BORNES_LATENCE_MS = [10, 25, 50, 100, 200, 300, 500, 800, 1200, 200
 /** Le nom unique d'une requête qu'aucune route ne reconnaît : ni cardinalité qui explose, ni adresse en clair. */
 export const ROUTE_INCONNUE = '(aucune route)';
 
+/**
+ * Au-delà de ce nombre de lignes entre deux vidages, une ligne NEUVE se replie sous `ROUTE_AU_DELA` (méthode et
+ * code gardés). Le trafic réel en tient quelques dizaines ; un robot qui balaie toutes les routes avec des corps
+ * invalides en produirait des milliers par fenêtre, que la table garderait sept jours.
+ */
+export const MAX_LIGNES_PAR_VIDAGE = 300;
+export const ROUTE_AU_DELA = '(au-delà du plafond)';
+
+/** Le code d'une requête abandonnée par le client avant sa réponse (la convention de nginx). */
+export const CODE_ABANDON = 499;
+
 /** Rétention en base : de l'exploitation, pas une preuve. */
 export const RETENTION_LATENCES_JOURS = 7;
 
@@ -42,17 +53,25 @@ export class MesureLatenceHttp {
 
   enregistrer(methode: string, route: string | undefined, code: number, ms: number): void {
     const duree = Number.isFinite(ms) && ms > 0 ? ms : 0;
-    const motif = route === undefined || route === '' ? ROUTE_INCONNUE : route;
+    const ligne = this.ligneDe(methode, route === undefined || route === '' ? ROUTE_INCONNUE : route, code);
+    const i = trancheDe(duree);
+    ligne.seaux[i] = (ligne.seaux[i] ?? 0) + 1;
+    ligne.sommeMs += duree;
+    if (duree > ligne.maxMs) ligne.maxMs = duree;
+  }
+
+  /** La ligne d'une clé, créée au besoin, repliée sous `ROUTE_AU_DELA` au-delà du plafond. */
+  private ligneDe(methode: string, route: string, code: number): LigneLatence {
+    const existante = this.lignes.get(`${methode} ${code} ${route}`);
+    if (existante) return existante;
+    const motif = this.lignes.size >= MAX_LIGNES_PAR_VIDAGE ? ROUTE_AU_DELA : route;
     const cle = `${methode} ${code} ${motif}`;
     let ligne = this.lignes.get(cle);
     if (!ligne) {
       ligne = { methode, route: motif, code, seaux: nouveauxSeaux(), sommeMs: 0, maxMs: 0 };
       this.lignes.set(cle, ligne);
     }
-    const i = trancheDe(duree);
-    ligne.seaux[i] = (ligne.seaux[i] ?? 0) + 1;
-    ligne.sommeMs += duree;
-    if (duree > ligne.maxMs) ligne.maxMs = duree;
+    return ligne;
   }
 
   /** Rend ce qui s'est accumulé et repart à vide (boucle à un seul fil : rien ne se perd entre les deux). */
@@ -65,12 +84,7 @@ export class MesureLatenceHttp {
   /** Remet des lignes qu'on n'a pas pu écrire, fusionnées avec ce qui s'est accumulé entre-temps. */
   reinjecter(lignes: LigneLatence[]): void {
     for (const l of lignes) {
-      const cle = `${l.methode} ${l.code} ${l.route}`;
-      const courante = this.lignes.get(cle);
-      if (!courante) {
-        this.lignes.set(cle, { ...l, seaux: [...l.seaux] });
-        continue;
-      }
+      const courante = this.ligneDe(l.methode, l.route, l.code);
       l.seaux.forEach((n, i) => { courante.seaux[i] = (courante.seaux[i] ?? 0) + n; });
       courante.sommeMs += l.sommeMs;
       if (l.maxMs > courante.maxMs) courante.maxMs = l.maxMs;
@@ -101,8 +115,14 @@ export function centile(seaux: readonly number[], q: number, maxMs: number): num
 /** Les groupes que l'audit met en tête, puis le reste. */
 export type GroupeRoute = 'webhooks' | 'inbox' | 'v1' | 'autres';
 
+/**
+ * Les webhooks ENTRANTS, tous : Meta et Stripe, les webhooks des clients (`/w/`), le rapport RCS et HubSpot. Un tiers
+ * attend notre accusé, et l'abandonne s'il traîne.
+ */
+const PREFIXES_WEBHOOKS = ['/webhooks/', '/w/', '/rcs/callback/', '/hubspot/deal-stage'];
+
 export function groupeDeRoute(route: string): GroupeRoute {
-  if (route.startsWith('/webhooks/')) return 'webhooks';
+  if (PREFIXES_WEBHOOKS.some((p) => route.startsWith(p))) return 'webhooks';
   if (route.startsWith('/tenants/:tenantId/conversations')) return 'inbox';
   if (route.startsWith('/v1/')) return 'v1';
   return 'autres';

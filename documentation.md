@@ -2393,15 +2393,20 @@ charge qu'elle observe. Aucun seuil n'est posé à ce jour, ces compteurs OBSERV
 vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md](docs/SLO-2026-09-01.md).
 
 **La latence HTTP par route** (carte de `/ops/overview`, sur 24 h). Chaque requête de l'API est mesurée par un
-crochet `onResponse` (`src/server.ts`) sous le MOTIF de sa route (`req.routeOptions.url`, jamais l'adresse
+crochet `onResponse` (`src/server.ts`), ou `onRequestAbort` sous le code 499 quand le client l'abandonne avant sa
+réponse (ce sont les plus lentes, qu'`onResponse` ne voit jamais), sous le MOTIF de sa route (`req.routeOptions.url`, jamais l'adresse
 réelle ; une adresse qu'aucune route ne reconnaît tombe sous `(aucune route)`), par méthode et code de retour,
 dans des tranches de durée à bornes fixes (`BORNES_LATENCE_MS`, `src/ops/latence-http.ts`). Chaque copie vide sa
 mesure chaque minute dans `http_latences` (fenêtres de cinq minutes, sous `NOM_API`), comme l'attente du pool :
 `/ops` est servi par UNE copie et voit les autres par la table.
 - p50 et p95 se tirent des tranches ADDITIONNÉES entre copies et fenêtres, parce qu'un centile ne s'additionne
   pas. Ce sont des MAJORANTS : la borne haute de la tranche, plafonnée par le maximum mesuré.
-- La carte colore le p95 au-delà de 800 ms (le haut de la fourchette de l'audit du 2026-10-02) sur les webhooks
-  et l'Inbox seulement : ailleurs, des routes lentes par nature (import, export, essai d'agent) crieraient au loup.
+- La carte colore le p95 au-delà de 800 ms (le haut de la fourchette de l'audit du 2026-10-02), à partir de 20
+  requêtes, sur ce qui DOIT être rapide : les webhooks entrants (Meta, Stripe, `/w/`, rapport RCS, HubSpot) et les
+  lectures de l'Inbox. Pas ses écritures ni ses médias, ni le reste, lents par nature (envoi chez Meta, modèle,
+  import, export) : ils crieraient au loup (`web/lib/latence-http.ts`).
+- Au-delà de `MAX_LIGNES_PAR_VIDAGE` lignes entre deux vidages, une ligne neuve se replie sous
+  `(au-delà du plafond)` : un robot qui balaie toutes les routes ne gonfle pas la table.
 - Rétention `RETENTION_LATENCES_JOURS`, purgée par le balayage de rétention du worker. Écriture et lecture au
   mieux : une mesure ne fait jamais tomber ce qu'elle mesure.
 - 🔴 Changer les bornes rend les lignes déjà en base incohérentes : vider la table dans le même déploiement.

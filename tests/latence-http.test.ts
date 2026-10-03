@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { request } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import {
-  BORNES_LATENCE_MS, MesureLatenceHttp, ROUTE_INCONNUE, centile, groupeDeRoute, trancheDe, versLigneOps, type LigneLatence,
+  BORNES_LATENCE_MS, CODE_ABANDON, MAX_LIGNES_PAR_VIDAGE, MesureLatenceHttp, ROUTE_AU_DELA, ROUTE_INCONNUE, centile, groupeDeRoute,
+  trancheDe, versLigneOps, type LigneLatence,
 } from '../src/ops/latence-http';
-import { fenetreDe, viderLatencesVersLaBase } from '../src/ops/latence-http.pg';
+import { PgHttpLatencesStore, fenetreDe, viderLatencesVersLaBase } from '../src/ops/latence-http.pg';
+import type { Pool } from 'pg';
 
 /**
  * LA LATENCE HTTP PAR ROUTE (audit de performance du 2026-10-02, § 11). Le SQL (fusion des tranches, agrégat entre
@@ -98,6 +102,28 @@ describe('la mesure', () => {
     expect(lignes.find((l) => l.route === '/y')!.seaux.reduce((s, n) => s + n, 0)).toBe(1);
   });
 
+  it('🔴 au-delà du plafond, une ligne NEUVE se replie sous un seul nom, et rien ne se perd', () => {
+    const m = new MesureLatenceHttp();
+    for (let i = 0; i < MAX_LIGNES_PAR_VIDAGE + 50; i += 1) m.enregistrer('POST', `/route-${i}`, 415, 1);
+    m.enregistrer('POST', '/route-0', 415, 1); // une clé déjà là continue de compter sous son nom
+    const lignes = m.vider();
+    expect(lignes).toHaveLength(MAX_LIGNES_PAR_VIDAGE + 1);
+    const repliee = lignes.find((l) => l.route === ROUTE_AU_DELA)!;
+    expect(repliee).toMatchObject({ methode: 'POST', code: 415 });
+    expect(repliee.seaux.reduce((s, n) => s + n, 0)).toBe(50);
+    expect(lignes.find((l) => l.route === '/route-0')!.seaux[0]).toBe(2);
+    expect(lignes.reduce((s, l) => s + l.seaux.reduce((a, n) => a + n, 0), 0)).toBe(MAX_LIGNES_PAR_VIDAGE + 51);
+  });
+
+  it('la réinjection respecte le plafond', () => {
+    const m = new MesureLatenceHttp();
+    for (let i = 0; i < MAX_LIGNES_PAR_VIDAGE; i += 1) m.enregistrer('GET', `/r${i}`, 200, 1);
+    m.reinjecter([{ methode: 'GET', route: '/neuve', code: 200, seaux: [1, ...new Array<number>(BORNES_LATENCE_MS.length).fill(0)], sommeMs: 1, maxMs: 1 }]);
+    const lignes = m.vider();
+    expect(lignes.some((l) => l.route === '/neuve')).toBe(false);
+    expect(lignes.find((l) => l.route === ROUTE_AU_DELA)!.seaux[0]).toBe(1);
+  });
+
   it('réinjecter une ligne absente ne partage pas son tableau avec l’appelant', () => {
     const m = new MesureLatenceHttp();
     const l: LigneLatence = { methode: 'GET', route: '/z', code: 200, seaux: seauxAvec([[0, 1]]), sommeMs: 1, maxMs: 1 };
@@ -140,6 +166,10 @@ describe('le groupe d’une route', () => {
   it('webhooks, Inbox et API publique en tête, comme l’audit le demande', () => {
     expect(groupeDeRoute('/webhooks/meta')).toBe('webhooks');
     expect(groupeDeRoute('/webhooks/stripe')).toBe('webhooks');
+    // Les autres webhooks entrants : ceux des clients, le rapport RCS, HubSpot.
+    expect(groupeDeRoute('/w/:code')).toBe('webhooks');
+    expect(groupeDeRoute('/rcs/callback/:code')).toBe('webhooks');
+    expect(groupeDeRoute('/hubspot/deal-stage')).toBe('webhooks');
     expect(groupeDeRoute('/tenants/:tenantId/conversations')).toBe('inbox');
     expect(groupeDeRoute('/tenants/:tenantId/conversations/:conversationId/messages')).toBe('inbox');
     expect(groupeDeRoute('/v1/sends')).toBe('v1');
@@ -187,6 +217,48 @@ describe('🔴 le crochet, sur un VRAI serveur', () => {
     expect(lignes[0]).toMatchObject({ route: '/essai-panne', code: 500 });
   });
 
+  it('🔴 sur une vraie connexion : une requête abandonnée par le client est mesurée sous CODE_ABANDON, avec son motif', async () => {
+    const mesure = new MesureLatenceHttp();
+    const app = buildServer({ queue: new FakeQueue(), mesureLatence: mesure });
+    let fini!: () => void;
+    const termine = new Promise<void>((r) => { fini = r; });
+    app.get('/lente/:id', async () => { await new Promise((r) => setTimeout(r, 300)); fini(); return { ok: true }; });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = app.server.address() as AddressInfo;
+    await new Promise<void>((resolve) => {
+      const req = request({ host: '127.0.0.1', port, path: '/lente/42', method: 'GET' });
+      req.on('error', () => resolve());
+      req.end();
+      setTimeout(() => { req.destroy(); resolve(); }, 80);
+    });
+    await termine;
+    await new Promise((r) => setTimeout(r, 50));
+    const lignes = mesure.vider();
+    await app.close();
+    expect(lignes).toHaveLength(1); // une seule fois : ni compté aussi par onResponse, ni perdu
+    expect(lignes[0]).toMatchObject({ methode: 'GET', route: '/lente/:id', code: CODE_ABANDON });
+    expect(lignes[0]!.maxMs).toBeGreaterThanOrEqual(50);
+  });
+
+  it('sur une vraie connexion : une requête servie compte UNE fois (la fermeture ne la recompte pas)', async () => {
+    const mesure = new MesureLatenceHttp();
+    const app = buildServer({ queue: new FakeQueue(), mesureLatence: mesure });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = app.server.address() as AddressInfo;
+    const code = await new Promise<number>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port, path: '/health', method: 'GET', agent: false }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode ?? 0)); });
+      req.on('error', reject);
+      req.end();
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const lignes = mesure.vider();
+    await app.close();
+    expect(code).toBe(200);
+    expect(lignes).toHaveLength(1);
+    expect(lignes[0]!.seaux.reduce((s, n) => s + n, 0)).toBe(1);
+    expect(lignes[0]).toMatchObject({ route: '/health', code: 200 });
+  });
+
   it('sans mesure (les tests), le serveur sert normalement', async () => {
     const app = buildServer({ queue: new FakeQueue() });
     expect((await app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200);
@@ -195,6 +267,17 @@ describe('🔴 le crochet, sur un VRAI serveur', () => {
 });
 
 describe('le vidage en base', () => {
+  it('🔴 les lignes partent TRIÉES par clé (deux écritures concurrentes ne s’interbloquent pas), le maximum borné', async () => {
+    const appels: unknown[][] = [];
+    const store = new PgHttpLatencesStore({ query: async (_sql: string, params: unknown[]) => { appels.push(params); return { rows: [], rowCount: 0 }; } } as unknown as Pool);
+    const l = (methode: string, route: string, code: number, maxMs = 1): LigneLatence => ({ methode, route, code, seaux: [1], sommeMs: 1, maxMs });
+    await store.enregistrer('api', new Date(), [l('POST', '/b', 200), l('GET', '/z', 200, 9e12), l('GET', '/a', 404), l('GET', '/a', 200)]);
+    const [, , methodes, routes, codes, , , maxima] = appels[0]!;
+    expect((methodes as string[]).map((m, i) => `${m} ${(codes as number[])[i]} ${(routes as string[])[i]}`))
+      .toEqual(['GET 200 /a', 'GET 200 /z', 'GET 404 /a', 'POST 200 /b']);
+    expect((maxima as number[])[1]).toBe(2_147_483_647);
+  });
+
   it('la fenêtre de cinq minutes qui contient l’instant', () => {
     expect(fenetreDe(new Date('2026-10-03T12:07:31.500Z')).toISOString()).toBe('2026-10-03T12:05:00.000Z');
     expect(fenetreDe(new Date('2026-10-03T12:05:00.000Z')).toISOString()).toBe('2026-10-03T12:05:00.000Z');
@@ -243,12 +326,16 @@ describe('🔴 le câblage', () => {
     expect(INDEX).toContain('const mesureLatence = new MesureLatenceHttp();');
     // Sur sa propre ligne : la seule propriété abrégée de ce nom est dans l'appel à `buildServer`.
     expect(INDEX).toMatch(/\n\s+mesureLatence,\n/);
-    expect(INDEX).toContain('viderLatencesVersLaBase(latences, mesureLatence, NOM_API,');
+    expect(INDEX).toContain('viderLatencesVersLaBase(httpLatencesStore, mesureLatence, NOM_API,');
     expect(INDEX).toContain('latencesHttp: httpLatencesStore,');
   });
 
-  it('le vidage ne se mesure pas lui-même dans le pool', () => {
-    expect(INDEX).toContain('mesureAttentePool.sansSeMesurer(() => httpLatencesStore.enregistrer(p, f, l))');
+  it('le vidage ne suspend PAS la mesure du pool (la suspension vaut pour tout le processus)', () => {
+    expect(INDEX).not.toContain('mesureAttentePool.sansSeMesurer(() => httpLatencesStore');
+  });
+
+  it('un dernier vidage part à l’arrêt, avant la fermeture du pool', () => {
+    expect(INDEX).toContain('fermerPool: async () => { await viderLatences(); await pool.end(); },');
   });
 
   it('le worker purge la table à sa rétention', () => {

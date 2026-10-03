@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import type { SurveillanceOps } from './ops/tentatives';
-import type { MesureLatenceHttp } from './ops/latence-http';
+import { CODE_ABANDON, type MesureLatenceHttp } from './ops/latence-http';
 import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
@@ -740,12 +740,23 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * La durée de chaque requête, sous le MOTIF de sa route (`/contacts/:id`, jamais l'identifiant réel) : `onResponse`
    * passe une fois la réponse partie, refus et erreurs compris, et `elapsedTime` court depuis l'arrivée de la
    * requête. Une requête qu'aucune route ne reconnaît n'a pas de motif : la mesure la range sous un seul nom.
+   * ⚠️ Une requête abandonnée par le client (coupure par le proxy, Meta qui n'attend plus l'accusé) n'atteint jamais
+   * `onResponse`, et ce sont les plus lentes : `onRequestAbort` la mesure sous `CODE_ABANDON`. Une marque garantit
+   * qu'aucune ne compte deux fois, si le handler répond quand même après l'abandon.
    */
   const mesureLatence = deps.mesureLatence;
   if (mesureLatence) {
-    app.addHook('onResponse', async (req, reply) => {
-      mesureLatence.enregistrer(req.method, req.routeOptions.url, reply.statusCode, reply.elapsedTime);
-    });
+    // `onRequestAbort` ne reçoit que la requête : la réponse, qui porte le chronomètre, se retrouve par elle.
+    const reponses = new WeakMap<FastifyRequest, FastifyReply>();
+    const mesurees = new WeakSet<FastifyRequest>();
+    const mesurer = (req: FastifyRequest, code: number, ms: number): void => {
+      if (mesurees.has(req)) return;
+      mesurees.add(req);
+      mesureLatence.enregistrer(req.method, req.routeOptions.url, code, ms);
+    };
+    app.addHook('onRequest', async (req, reply) => { reponses.set(req, reply); });
+    app.addHook('onResponse', async (req, reply) => { mesurer(req, reply.statusCode, reply.elapsedTime); });
+    app.addHook('onRequestAbort', async (req) => { mesurer(req, CODE_ABANDON, reponses.get(req)?.elapsedTime ?? 0); });
   }
 
   /**

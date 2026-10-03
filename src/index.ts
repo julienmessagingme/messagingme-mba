@@ -2349,21 +2349,21 @@ async function main(): Promise<void> {
    * processus et par minute, sous son nom (`NOM_API` ici), jamais agrégées, pour savoir lequel souffre. Une seule
    * minuterie, posée à la main, `unref` (elle ne retient pas le process) et arrêtée dans l'arrêt propre.
    */
+  /**
+   * La latence HTTP, sous le même nom de copie. ⚠️ PAS dans `sansSeMesurer` : la suspension vaut pour tout le
+   * processus, et sur un pool saturé ce vidage attendrait jusqu'au délai de connexion, rendant la saturation
+   * invisible au moment exact où elle a lieu. Il compte donc pour une acquisition par minute, ce qui est vrai.
+   */
+  const viderLatences = (): Promise<boolean> => viderLatencesVersLaBase(httpLatencesStore, mesureLatence, NOM_API, new Date(), (err) => {
+    // eslint-disable-next-line no-console
+    console.error('latences-http: écriture impossible:', messageDe(err));
+  });
   const minuteriePoolAttentes = setInterval(() => {
     void viderVersLaBase(poolAttentesStore, mesureAttentePool, NOM_API, new Date(), (err) => {
       // eslint-disable-next-line no-console
       console.error('pool-attentes: écriture impossible:', messageDe(err));
     });
-    // La latence HTTP, sous le même nom de copie. Sans se mesurer dans le pool : sinon chaque vidage deviendrait
-    // une acquisition de la minute suivante, et la télémétrie s'alimenterait elle-même.
-    const latences = {
-      enregistrer: (p: string, f: Date, l: Parameters<typeof httpLatencesStore.enregistrer>[2]) =>
-        mesureAttentePool.sansSeMesurer(() => httpLatencesStore.enregistrer(p, f, l)),
-    };
-    void viderLatencesVersLaBase(latences, mesureLatence, NOM_API, new Date(), (err) => {
-      // eslint-disable-next-line no-console
-      console.error('latences-http: écriture impossible:', messageDe(err));
-    });
+    void viderLatences();
   }, 60_000);
   minuteriePoolAttentes.unref?.();
 
@@ -2374,7 +2374,9 @@ async function main(): Promise<void> {
       travaux: travauxEnVol,
       borneMs: ATTENTE_GESTES_A_L_ARRET_MS,
       fermerFile: () => queue.stop(),
-      fermerPool: () => pool.end(),
+      // Le dernier vidage, une fois le serveur fermé et les requêtes en vol finies : sinon chaque déploiement perd sa
+      // dernière minute, celle du redémarrage.
+      fermerPool: async () => { await viderLatences(); await pool.end(); },
       // eslint-disable-next-line no-console
       journal: (ligne) => console.warn(ligne),
     });

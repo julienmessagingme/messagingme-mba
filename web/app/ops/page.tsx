@@ -10,6 +10,7 @@ import { GrillePrixChamps } from '@/components/GrillePrixChamps';
 import { enChamps, depuisChamps } from '@/lib/grille-saisie';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
+import { ordonnerLatences, enAlerte, SEUIL_P95_MS, EFFECTIF_MIN, CODE_ABANDON } from '@/lib/latence-http';
 import { useLocale, useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { saveSession, getSessionOps, saveSessionOps, clearSessionOps, type SessionOps } from '@/lib/session';
@@ -718,79 +719,64 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
 
 /**
  * La latence HTTP par route normalisée et code de retour (audit de performance du 2026-10-02, § 11). Les webhooks,
- * l'Inbox et l'API publique d'abord, comme l'audit le demande ; dans chaque groupe, la plus lente en tête.
+ * l'Inbox et l'API publique d'abord, comme l'audit le demande. Ce qui passe en rouge, et l'ordre : `lib/latence-http`.
  */
 function LatenceHttpCard({ lignes }: { lignes: LatenceHttpRow[] }) {
   const t = useT();
   const { locale } = useLocale();
-  /**
-   * Le haut de la fourchette de l'audit (p95 de l'Inbox au-delà de 500 à 800 ms). Il ne colore que les webhooks et
-   * l'Inbox : ailleurs, des routes lentes par nature (import, export, essai d'agent qui appelle un modèle)
-   * crieraient au loup. 800 est une borne de tranche, donc la comparaison est exacte.
-   */
-  const SEUIL_MS = 800;
-  /** Les autres routes sont nombreuses : les plus lentes seulement, et le compte de ce qui ne s'affiche pas. */
-  const AUTRES_MAX = 15;
-  const groupes: { cle: LatenceHttpRow['groupe']; nom: string; seuil: boolean }[] = [
-    { cle: 'webhooks', nom: t('Webhooks', 'Webhooks'), seuil: true },
-    { cle: 'inbox', nom: t('Inbox', 'Inbox'), seuil: true },
-    { cle: 'v1', nom: t('API publique (/v1)', 'Public API (/v1)'), seuil: false },
-    { cle: 'autres', nom: t('Autres routes', 'Other routes'), seuil: false },
-  ];
-  const parP95 = (a: LatenceHttpRow, b: LatenceHttpRow) => (b.p95Ms ?? 0) - (a.p95Ms ?? 0) || b.requetes - a.requetes;
+  const noms: Record<LatenceHttpRow['groupe'], string> = {
+    webhooks: t('Webhooks entrants', 'Inbound webhooks'),
+    inbox: t('Inbox', 'Inbox'),
+    v1: t('API publique (/v1)', 'Public API (/v1)'),
+    autres: t('Autres routes', 'Other routes'),
+  };
   return (
     <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="latence-http">
       <h3 className="text-sm font-semibold text-ink-900">{t('Latence HTTP par route (24 h)', 'HTTP latency by route (24 h)')}</h3>
       <p className="mb-3 mt-1 text-xs text-ink-500">
         {t(
-          'Toutes copies de l’API confondues. p50 et p95 sont des majorants (« au plus »), tirés de tranches de durée.',
-          'All API copies combined. p50 and p95 are upper bounds (“at most”), derived from duration buckets.',
+          `Toutes copies de l’API confondues. p50 et p95 sont des majorants (« au plus »), tirés de tranches de durée. Rouge : p95 au-delà de ${SEUIL_P95_MS} ms sur un webhook ou une lecture de l’Inbox, à partir de ${EFFECTIF_MIN} requêtes. ${CODE_ABANDON} : requête abandonnée par le client avant sa réponse.`,
+          `All API copies combined. p50 and p95 are upper bounds (“at most”), derived from duration buckets. Red: p95 above ${SEUIL_P95_MS} ms on a webhook or an Inbox read, from ${EFFECTIF_MIN} requests. ${CODE_ABANDON}: request abandoned by the client before its response.`,
         )}
       </p>
       {lignes.length === 0 ? (
         <p className="text-xs text-ink-500">{t('Aucune requête mesurée sur la fenêtre.', 'No request measured in this window.')}</p>
       ) : (
         <div className="grid gap-4">
-          {groupes.map((g) => {
-            const toutes = lignes.filter((l) => l.groupe === g.cle).sort(parP95);
-            if (toutes.length === 0) return null;
-            const montrees = g.cle === 'autres' ? toutes.slice(0, AUTRES_MAX) : toutes;
-            const total = toutes.reduce((n, l) => n + l.requetes, 0);
-            const erreurs = toutes.filter((l) => l.code >= 500).reduce((n, l) => n + l.requetes, 0);
-            return (
-              <div key={g.cle} className="grid gap-2">
-                <p className="text-xs font-medium text-ink-900">
-                  {g.nom} <span className="font-normal text-ink-500">· {fmtNum(total, locale)} {t('requêtes', 'requests')}</span>
-                  {erreurs > 0 && <span className="font-normal text-danger"> · {fmtNum(erreurs, locale)} {t('en 5xx', 'in 5xx')}</span>}
+          {ordonnerLatences(lignes).map((g) => (
+            <div key={g.cle} className="grid gap-2">
+              <p className="text-xs font-medium text-ink-900">
+                {noms[g.cle]} <span className="font-normal text-ink-500">· {fmtNum(g.requetes, locale)} {t('requêtes', 'requests')}</span>
+                {g.erreurs > 0 && <span className="font-normal text-danger"> · {fmtNum(g.erreurs, locale)} {t('en 5xx', 'in 5xx')}</span>}
+                {g.abandons > 0 && <span className="font-normal text-danger"> · {fmtNum(g.abandons, locale)} {t('abandonnée(s)', 'abandoned')}</span>}
+              </p>
+              {g.lignes.map((l) => (
+                <div key={`${l.methode} ${l.code} ${l.route}`} className="flex items-center justify-between gap-3 rounded-controle bg-ink-50 px-3 py-2">
+                  <span className="min-w-0 break-all font-mono text-xs text-ink-900">
+                    {l.methode} {l.route}{' '}
+                    <span className={l.code >= CODE_ABANDON ? 'font-medium text-danger' : 'text-ink-500'}>{l.code}</span>
+                  </span>
+                  <span className="flex shrink-0 gap-3 text-xs tabular-nums">
+                    {/* L'effectif EN PREMIER : un p95 sur trois requêtes ne veut rien dire. */}
+                    <span className="text-ink-500">{fmtNum(l.requetes, locale)} {t('req.', 'req.')}</span>
+                    <span className="text-ink-500">p50 ≤ {fmtMs(l.p50Ms)}</span>
+                    <span
+                      data-testid={`latence-http-p95-${l.methode}-${l.code}-${l.route}`}
+                      className={enAlerte(l) ? 'font-medium text-danger' : 'text-ink-500'}
+                    >
+                      p95 ≤ {fmtMs(l.p95Ms)}
+                    </span>
+                    <span className="text-ink-500">{t('pire', 'worst')} {fmtMs(l.maxMs)}</span>
+                  </span>
+                </div>
+              ))}
+              {g.cachees > 0 && (
+                <p className="text-xs text-ink-500">
+                  {t(`et ${g.cachees} autre(s) ligne(s), plus rapides ou à faible effectif`, `and ${g.cachees} more line(s), faster or with few requests`)}
                 </p>
-                {montrees.map((l) => (
-                  <div key={`${l.methode} ${l.code} ${l.route}`} className="flex items-center justify-between gap-3 rounded-controle bg-ink-50 px-3 py-2">
-                    <span className="min-w-0 break-all font-mono text-xs text-ink-900">
-                      {l.methode} {l.route}{' '}
-                      <span className={l.code >= 500 ? 'font-medium text-danger' : 'text-ink-500'}>{l.code}</span>
-                    </span>
-                    <span className="flex shrink-0 gap-3 text-xs tabular-nums">
-                      {/* L'effectif EN PREMIER : un p95 sur trois requêtes ne veut rien dire. */}
-                      <span className="text-ink-500">{fmtNum(l.requetes, locale)} {t('req.', 'req.')}</span>
-                      <span className="text-ink-500">p50 ≤ {fmtMs(l.p50Ms)}</span>
-                      <span
-                        data-testid={`latence-http-p95-${l.methode}-${l.code}-${l.route}`}
-                        className={g.seuil && (l.p95Ms ?? 0) > SEUIL_MS ? 'font-medium text-danger' : 'text-ink-500'}
-                      >
-                        p95 ≤ {fmtMs(l.p95Ms)}
-                      </span>
-                      <span className="text-ink-500">{t('pire', 'worst')} {fmtMs(l.maxMs)}</span>
-                    </span>
-                  </div>
-                ))}
-                {toutes.length > montrees.length && (
-                  <p className="text-xs text-ink-500">
-                    {t(`et ${toutes.length - montrees.length} autre(s) ligne(s), plus rapides`, `and ${toutes.length - montrees.length} more line(s), faster`)}
-                  </p>
-                )}
-              </div>
-            );
-          })}
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

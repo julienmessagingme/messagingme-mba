@@ -1,6 +1,9 @@
 import type { Pool } from 'pg';
 import { versLigneOps, type LatenceHttpRow, type LigneLatence, type MesureLatenceHttp } from './latence-http';
 
+/** Le plus grand `integer` de Postgres. */
+const INT_MAX = 2_147_483_647;
+
 /**
  * La latence HTTP, écrite et relue (`db/migrations/0205_http_latences.sql`). Tout est au mieux, dans les deux sens :
  * une écriture en échec se réinjecte, une lecture en échec rend l'écran sans la carte.
@@ -11,10 +14,14 @@ export class PgHttpLatencesStore {
   /**
    * Écrit les lignes d'un vidage dans leur fenêtre, en UNE instruction. `on conflict` additionne tranche à tranche
    * au lieu de remplacer : plusieurs vidages tombent dans la même fenêtre de cinq minutes. Les clés d'un vidage sont
-   * uniques (la mesure les tient dans une `Map`), condition d'un `on conflict` sur plusieurs lignes.
+   * uniques (la mesure les tient dans une `Map`), condition d'un `on conflict` sur plusieurs lignes. Triées par clé :
+   * deux écritures concurrentes sur les mêmes clés (deux copies sous le même nom, un vidage qui déborde la minute)
+   * prennent alors leurs verrous dans le même ordre, et ne peuvent pas s'interbloquer.
    */
-  async enregistrer(processus: string, fenetre: Date, lignes: LigneLatence[]): Promise<void> {
-    if (lignes.length === 0) return;
+  async enregistrer(processus: string, fenetre: Date, entree: LigneLatence[]): Promise<void> {
+    if (entree.length === 0) return;
+    const cle = (l: LigneLatence): string => `${l.methode} ${l.code} ${l.route}`;
+    const lignes = [...entree].sort((a, b) => (cle(a) < cle(b) ? -1 : cle(a) > cle(b) ? 1 : 0));
     await this.pool.query(
       `insert into http_latences (fenetre, process, methode, route, code, seaux, somme_ms, max_ms)
        select $1, $2, l.methode, l.route, l.code, l.seaux::integer[], l.somme_ms, l.max_ms
@@ -36,7 +43,8 @@ export class PgHttpLatencesStore {
         // Un tableau par ligne voyage en littéral (`{1,0,3}`) : un tableau de tableaux serait aplati par `unnest`.
         lignes.map((l) => `{${l.seaux.map((n) => Math.round(n)).join(',')}}`),
         lignes.map((l) => Math.round(l.sommeMs)),
-        lignes.map((l) => Math.round(l.maxMs)),
+        // Borné à la capacité d'un `integer` : une valeur hors limites ferait échouer CHAQUE vidage, réinjecté sans fin.
+        lignes.map((l) => Math.min(Math.round(l.maxMs), INT_MAX)),
       ],
     );
   }
