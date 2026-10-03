@@ -14,8 +14,13 @@ export const ELEMENTS = [
 ] as const;
 export type Element = (typeof ELEMENTS)[number];
 
-/** D'où vient la modification. Miroir du CHECK `reglages_historique_origine_chk`. */
-export type Origine = 'assistant' | 'formulaire';
+/**
+ * D'où vient la modification : l'assistant de la console, ses onglets, ou un agent tiers par le serveur MCP (lot 8a).
+ * Miroir du CHECK `reglages_historique_origine_chk` (0146, élargi par 0206) ; `tests/reglages-historique.test.ts`
+ * compare les deux listes.
+ */
+export const ORIGINES = ['assistant', 'formulaire', 'mcp'] as const;
+export type Origine = (typeof ORIGINES)[number];
 
 /** Miroir du CHECK `reglages_historique_operation_chk`. */
 export type Operation = 'ajout' | 'modification' | 'suppression';

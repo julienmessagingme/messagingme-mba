@@ -5,9 +5,9 @@ import type { BusinessHours, DayHours } from '../workflow/conditions';
 import { withinBusinessHours } from '../workflow/conditions';
 import { espaceVerifie } from './scope';
 import { estFrequenceMention, FREQUENCES_MENTION_IA, type FrequenceMentionIa } from '../agent/agent-store';
-import {
-  estModeTransfert, MODES_TRANSFERT, MODE_TRANSFERT_DEFAUT, type ModeTransfert,
-} from '../agent/disponibilite-equipe';
+import { MODE_TRANSFERT_DEFAUT, type ModeTransfert } from '../agent/disponibilite-equipe';
+import { reglerModeTransfert } from '../agent/reglages';
+import { corpsDuRefus } from '../lib/issue';
 import { valideGrille, BORNES_GRILLE } from '../stats/prix';
 import { messageDe } from '../lib/erreur';
 
@@ -274,12 +274,10 @@ export function registerSettings(
   /** ...et son écriture, admin seulement, comme tout ce qui change ce qu'un robot dit à de vrais contacts. */
   app.patch('/tenants/:tenantId/settings/transfert-agent', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const brut = (req.body as { mode?: unknown } | null)?.mode;
-    if (!estModeTransfert(brut)) {
-      return reply.code(400).send({ error: `mode requis (${MODES_TRANSFERT.join(' | ')})` });
-    }
-    await deps.reglages.setAgentTransfertMode(tenant, brut);
-    return reply.code(200).send({ mode: brut });
+    // `reglerModeTransfert`, que l'outil MCP `set_transfer_mode` appelle aussi.
+    const r = await reglerModeTransfert(deps.reglages, tenant, (req.body as { mode?: unknown } | null)?.mode);
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send({ mode: r.valeur });
   });
 
   /**

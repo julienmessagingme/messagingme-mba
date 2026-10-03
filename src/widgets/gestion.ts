@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { normalizeText } from '../automation/match';
 import { estDemandeArret } from '../crm/consentement';
 import { estUuid } from '../http/scope';
+import { refus, type Issue } from '../lib/issue';
 import { PgChannelsMeLinkStore } from '../channels-me/link-store.pg';
 import { PgWorkflowStore, etatDuScenario, type EtatScenario } from '../workflow/store.pg';
 import { PgWidgetStore, type DevenirWidget, type PositionWidget, type WidgetInput, type WidgetRow } from './store.pg';
@@ -137,11 +138,6 @@ const PHRASE_ARRET =
 const PHRASE_DEJA_PRISE = 'Un autre widget de cet espace porte déjà cette phrase.';
 const LIMITE_ATTEINTE =
   `Cet espace a déjà ${LIMITE_WIDGETS_PAR_ESPACE} widgets, le maximum : supprimez-en un avant d’en créer un autre.`;
-
-/** Un refus explicable, que la route traduit en statut HTTP et le MCP en refus d'outil. */
-export interface Refus { ok: false; statut: 400 | 404 | 409; erreur: string }
-export type Issue<T> = { ok: true; valeur: T } | Refus;
-const refus = (statut: Refus['statut'], erreur: string): Refus => ({ ok: false, statut, erreur });
 
 export interface DepsGestionWidgets {
   widgets: {

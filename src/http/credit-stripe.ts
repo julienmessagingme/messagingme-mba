@@ -1,12 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { journaliser } from '../lib/journal';
-import { creerClientStripe, creerSessionCheckout, lireFactureStripe, lirePrixStripe, StripeError, type TransportStripe } from '../stripe/client';
+import { corpsDuRefus } from '../lib/issue';
+import { lireFactureStripe, StripeError } from '../stripe/client';
 import { verifierSignatureStripe } from '../stripe/signature';
-import { creditDeLOffre, definitionOffre, OFFRES_RECHARGE, type OffreRecharge } from '../stripe/offres';
+import { creditDeLOffre, definitionOffre, OFFRES_RECHARGE } from '../stripe/offres';
+import { ouvrirPaiement, RECHARGE_INDISPONIBLE, type DepsPaiement } from '../stripe/paiement';
 import type { IssuePaiement, PaiementStripe } from '../stripe/store.pg';
 
 /**
@@ -21,31 +22,10 @@ import type { IssuePaiement, PaiementStripe } from '../stripe/store.pg';
 // La route de paiement (admin)
 // ------------------------------------------------------------------------------------------------------------
 
-/** Stripe configuré sur cette instance. `null` = recharge pas encore disponible (503). */
-export interface StripeConfigure {
-  /** La clé secrète (restreinte). Jamais journalisée, jamais rendue. */
-  cle: string;
-  /** Le mode de la clé : le client Stripe d'un espace est gardé par mode (migration 0191). */
-  livemode: boolean;
-  /** L'identifiant Stripe du prix de chaque offre. Vide = cette offre n'est pas encore en vente. */
-  prix: Readonly<Record<OffreRecharge, string>>;
-  transport: TransportStripe;
-  /** L'adresse de la page Crédit IA de la console, où Stripe renvoie après le paiement ou l'abandon. */
-  pageCredit: string;
-}
+export type { StripeConfigure } from '../stripe/paiement';
 
-export interface CreditPaiementRouteDeps {
-  stripe: StripeConfigure | null;
-  clients: {
-    clientDe(tenantId: string, livemode: boolean): Promise<string | null>;
-    retenirClient(tenantId: string, livemode: boolean, customerId: string): Promise<string>;
-  };
-  /**
-   * Ce compte peut-il ouvrir un paiement ? Toujours oui en live. 🔴 En mode test, seul un exploitant : une carte de
-   * test créditerait sinon de vrais euros de modèle à n'importe quel client, le temps des essais. La même règle
-   * ouvre les factures.
-   */
-  payeurAutorise(userId: string): Promise<boolean>;
+/** L'ouverture d'un paiement (`src/stripe/paiement.ts`, les MÊMES objets que le MCP reçoit), plus les factures. */
+export interface CreditPaiementRouteDeps extends DepsPaiement {
   /**
    * La facture d'un paiement DE CET ESPACE (`PgStripeStore.factureDe`) : `null` = paiement inconnu ici (ou d'un autre
    * espace), `factureId` nul = Stripe n'en a pas émis. Requis : la route n'a pas d'autre source.
@@ -74,10 +54,8 @@ export function creerPayeurAutorise(o: {
   };
 }
 
-const corpsPaiement = z.object({ offre: z.enum(OFFRES_RECHARGE) });
-
-/** Le même refus pour « pas configuré » et « pas encore ouvert à ce compte » : l'écran dit la même chose. */
-const INDISPONIBLE = { error: 'recharge pas encore disponible', code: 'recharge_indisponible' } as const;
+/** Le refus de l'ouverture d'un paiement, repris tel quel par les factures : mêmes règles, même phrase à l'écran. */
+const INDISPONIBLE = corpsDuRefus(RECHARGE_INDISPONIBLE);
 
 export function registerCreditPaiement(app: FastifyInstance, deps: CreditPaiementRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
   // Admin (la garde) et plafond coûteux : chaque clic crée des objets chez Stripe.
@@ -85,63 +63,13 @@ export function registerCreditPaiement(app: FastifyInstance, deps: CreditPaiemen
 
   /**
    * Ouvre une session Checkout pour une offre et rend son adresse ; la console y redirige. Le corps ne porte qu'une
-   * offre, jamais un montant ni un prix.
+   * offre, jamais un montant ni un prix (`ouvrirPaiement`).
    */
   app.post('/tenants/:tenantId/credit/paiement', couteux, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const corps = corpsPaiement.safeParse(req.body ?? {});
-    if (!corps.success) return reply.code(400).send({ error: 'offre inconnue (refill_50 ou refill_100)' });
-    const offre = corps.data.offre;
-    const s = deps.stripe;
-    if (s === null || s.prix[offre] === '') return reply.code(503).send(INDISPONIBLE);
-    if (!(await deps.payeurAutorise(req.auth?.userId ?? ''))) return reply.code(503).send(INDISPONIBLE);
-
-    try {
-      // 🔴 LE PRIX CONFIGURÉ EST RELU CHEZ STRIPE, AVANT TOUT (relecture du 2026-09-29). Le webhook ne crédite un
-      // paiement que s'il a encaissé, en euros, le HT de l'offre : un prix mal configuré (un identifiant interverti
-      // entre les deux offres, un prix en dollars, un montant faux) laissait payer le client, puis refusait de le
-      // créditer. On refuse donc AVANT le paiement, sans rien créer chez Stripe, et on le dit au journal.
-      const attendu = definitionOffre(offre).htCentimes;
-      const lu = await lirePrixStripe(s.transport, { cle: s.cle, prix: s.prix[offre] });
-      if (lu.montantCentimes !== attendu || lu.devise !== 'eur') {
-        journaliser('error', 'stripe_prix_incoherent', {
-          tenantId: tenant, offre, prix: s.prix[offre], attenduCentimes: attendu, luCentimes: lu.montantCentimes, devise: lu.devise,
-        });
-        return reply.code(422).send({
-          error: 'La recharge est momentanément indisponible : son tarif est en cours de correction. Réessayez plus tard, ou contactez-nous.',
-          code: 'prix_incoherent',
-        });
-      }
-
-      let client = await deps.clients.clientDe(tenant, s.livemode);
-      if (client === null) {
-        const cree = await creerClientStripe(s.transport, { cle: s.cle, tenantId: tenant });
-        client = await deps.clients.retenirClient(tenant, s.livemode, cree);
-      }
-      const session = await creerSessionCheckout(s.transport, {
-        cle: s.cle,
-        tenantId: tenant,
-        offre,
-        prix: s.prix[offre],
-        customerId: client,
-        urlSucces: `${s.pageCredit}?paiement=recu`,
-        urlAbandon: `${s.pageCredit}?paiement=abandon`,
-        idempotence: `session-${tenant}-${randomUUID()}`,
-      });
-      return reply.code(200).send({ url: session.url });
-    } catch (err) {
-      if (!(err instanceof StripeError)) throw err;
-      // 🔴 4xx et jamais 5xx : Cloudflare remplacerait le corps. Le message de Stripe (Stripe Tax pas activé, prix
-      // archivé...) part dans le journal et pas au navigateur : il parle de NOTRE compte, et un message d'erreur
-      // d'authentification de Stripe cite la fin de la clé.
-      journaliser('error', 'stripe_paiement_impossible', {
-        tenantId: tenant, offre, operation: err.operation, status: err.status, type: err.type, code: err.code, err: err.message,
-      });
-      return reply.code(422).send({
-        error: 'Le paiement n’a pas pu être préparé. Réessayez dans un instant ; si cela persiste, contactez-nous.',
-        code: 'paiement_impossible',
-      });
-    }
+    const r = await ouvrirPaiement(deps, tenant, req.body, req.auth?.userId ?? '');
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send({ url: r.valeur.url });
   });
 
   /**

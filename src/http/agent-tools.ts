@@ -5,7 +5,9 @@ import type { Guard } from '../auth/middleware';
 import type { OutilBibliotheque, OutilComplet, PatchOutil, Rattachement } from '../agent/catalog';
 import { NomOutilDejaPris, messageDuRefus, refusIntrouvable } from '../agent/catalog';
 import { consommateurAgent } from '../agent/consommateur';
-import { OUTILS_MAISON, outilExpose, outilMaison, paramsInitiaux, type OutilExpose } from '../agent/outils-maison';
+import { OUTILS_MAISON, outilExpose, outilMaison, type OutilExpose } from '../agent/outils-maison';
+import { ajouterOutilMaison } from '../agent/reglages';
+import { corpsDuRefus } from '../lib/issue';
 import { risqueAuMoins, risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import type { SortieAgent } from '../agent/agent-store';
 import { espaceVerifie, estUuid } from './scope';
@@ -156,26 +158,12 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const parse = ajoutSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'handler requis, nom au format [a-z0-9_]' });
-    // 🔴 Le modèle d'outil vient du catalogue, jamais du corps : titre, mots, paramètres et risque avec lui.
-    const modele = outilMaison(parse.data.handler);
-    if (!modele) return reply.code(400).send({ error: 'outil inconnu' });
-    try {
-      const outil = await deps.outils.ajouter(ctx.tenant, ctx.agentId, {
-        handler: modele.handler,
-        name: parse.data.name ?? modele.nomDefaut,
-        title: modele.titre.fr,
-        description: modele.description.fr,
-        nePasUtiliser: modele.nePasUtiliser.fr,
-        params: paramsInitiaux(modele),
-        risk: modele.risk,
-      });
-      if (!outil) return reply.code(404).send({ error: 'agent introuvable' });
-      const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];
-      return reply.code(201).send({ outil: vue(outil, sorties) });
-    } catch (err) {
-      if (err instanceof NomOutilDejaPris) return reply.code(409).send({ error: err.message });
-      throw err;
-    }
+    // 🔴 Le modèle d'outil vient du catalogue, jamais du corps (`ajouterOutilMaison`, que l'outil MCP
+    // `set_agent_tools` appelle aussi) : titre, mots, paramètres et risque avec lui.
+    const r = await ajouterOutilMaison(deps.outils, ctx.tenant, ctx.agentId, parse.data.handler, parse.data.name);
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];
+    return reply.code(201).send({ outil: vue(r.valeur, sorties) });
   });
 
   /**

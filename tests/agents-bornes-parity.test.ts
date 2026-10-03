@@ -13,7 +13,8 @@ import { readFileSync } from 'node:fs';
  * décorative, exactement le défaut que `tests/queue-names.test.ts` a déjà eu à corriger.
  */
 const migration = readFileSync(new URL('../db/migrations/0086_agent_ia.sql', import.meta.url), 'utf8');
-const route = readFileSync(new URL('../src/http/agents.ts', import.meta.url), 'utf8');
+// Le schéma vit dans la gestion partagée par la console et le MCP depuis le lot 8a (`src/agent/gestion.ts`).
+const route = readFileSync(new URL('../src/agent/gestion.ts', import.meta.url), 'utf8');
 
 /** `col int not null default N check (col between A and B)` -> [A, B]. */
 function borneSql(colonne: string): [number, number] {

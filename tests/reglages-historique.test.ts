@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { problemeDeLigne, type LigneHistorique } from '../src/reglages/historique';
+import { ORIGINES, problemeDeLigne, type LigneHistorique } from '../src/reglages/historique';
 
 const SQL = readFileSync(
   resolve(__dirname, '../db/migrations/0146_historique_reglages_et_plafond.sql'), 'utf8');
@@ -86,5 +86,25 @@ describe('problemeDeLigne', () => {
 
   it('une ligne ordinaire passe', () => {
     expect(problemeDeLigne(ligne())).toBeNull();
+  });
+});
+
+/**
+ * 🔴 LES ORIGINES DU CODE SONT CELLES DU CHECK, DANS LES DEUX SENS (0206, lot 8a). Une origine que le code écrit et que
+ * le CHECK refuse fait perdre la ligne en 500 ; une origine que le CHECK accepte et que le code ne connaît pas est une
+ * valeur que l'écran ne saurait pas dire. Le CHECK lu est le DERNIER posé sous ce nom, parce qu'une migration le
+ * remplace en entier (`drop` puis `add`) : 0146 l'a créé, 0206 l'a élargi.
+ */
+describe('les origines de l’historique', () => {
+  it('🔴 le dernier CHECK `reglages_historique_origine_chk` porte exactement `ORIGINES`', () => {
+    const dossier = resolve(__dirname, '../db/migrations');
+    const definitions = readdirSync(dossier).filter((f) => f.endsWith('.sql')).sort()
+      .map((f) => readFileSync(resolve(dossier, f), 'utf8'))
+      .map((sql) => /reglages_historique_origine_chk\s+check\s*\(origine in \(([^)]*)\)\)/.exec(sql))
+      .filter((m): m is RegExpExecArray => m !== null);
+    // Au moins deux : celle de 0146 et celle de 0206. Une seule voudrait dire que l'élargissement a été perdu.
+    expect(definitions.length).toBeGreaterThanOrEqual(2);
+    const derniere = [...definitions.at(-1)![1]!.matchAll(/'([^']+)'/g)].map((x) => x[1]);
+    expect([...derniere].sort()).toEqual([...ORIGINES].sort());
   });
 });

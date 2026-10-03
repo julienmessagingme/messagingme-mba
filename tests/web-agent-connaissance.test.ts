@@ -54,7 +54,8 @@ describe('parité des bornes de fiche, navigateur contre serveur', () => {
     // C'est le vrai verrou : tant que la route importe les constantes, un changement de plafond se propage
     // tout seul. Le jour où quelqu'un remet un littéral, ce test le voit, alors que les deux assertions
     // ci-dessus resteraient vertes jusqu'à ce que les valeurs divergent pour de bon.
-    const source = readFileSync(new URL('../src/http/agent-knowledge.ts', import.meta.url), 'utf8');
+    // Le schéma vit dans la gestion partagée par la console et le MCP depuis le lot 8a (`src/agent/connaissance.ts`).
+    const source = readFileSync(new URL('../src/agent/connaissance.ts', import.meta.url), 'utf8');
     expect(source).toContain('const TITRE = z.string().trim().min(1).max(MAX_TITRE)');
     expect(source).toContain('const CORPS = z.string().trim().min(1).max(MAX_CORPS)');
   });

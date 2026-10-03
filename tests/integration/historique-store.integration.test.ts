@@ -100,6 +100,24 @@ describe.skipIf(!url)('l historique des reglages', () => {
     )).rejects.toThrow(/reglages_historique_surface_id_chk/);
   });
 
+  it('🔴 la BASE accepte l’origine `mcp` (0206), et refuse toujours une origine inconnue', async () => {
+    // Une modification de fiche faite par Claude Code, par le serveur MCP (lot 8a). Sans 0206, le CHECK de 0146 la
+    // refusait en 500, et la ligne de journal se perdait derrière une modification pourtant écrite.
+    await store.ecrire(tenantId, ligne({
+      surface: 'agent', surfaceId: agentId, element: 'fiche_agent', operation: 'modification',
+      libelle: 'Fiche de l’agent : objectif', avant: { contenu: { objectif: '' } }, apres: { contenu: { objectif: 'Aider.' } },
+      origine: 'mcp',
+    }));
+    const lu = (await store.lister(tenantId, { surface: 'agent', surfaceId: agentId }))
+      .find((l) => l.libelle === 'Fiche de l’agent : objectif');
+    expect(lu?.origine).toBe('mcp');
+    await expect(pool.query(
+      `insert into reglages_historique (tenant_id, surface, element, operation, libelle, origine)
+       values ($1, 'mba', 'faq', 'ajout', 'origine inconnue', 'robot')`,
+      [tenantId],
+    )).rejects.toThrow(/reglages_historique_origine_chk/);
+  });
+
   it('⚠️ le contenu effacé fait l’aller-retour en jsonb, tel quel', async () => {
     const efface = { question: 'Horaires du dimanche', reponse: 'Fermé', tags: ['horaires'] };
     await store.ecrire(tenantId, ligne({ operation: 'suppression', avant: efface, apres: null, libelle: 'FAQ supprimée' }));

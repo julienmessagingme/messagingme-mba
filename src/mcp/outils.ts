@@ -8,8 +8,9 @@ import {
   DEBUT_AVATAR, MAX_AVATAR_URL, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PAR_HEURE_WIDGET, MAX_PHRASE_WIDGET,
   MOTIF_COULEUR, POSITIONS_WIDGET, LIMITE_WIDGETS_PAR_ESPACE,
   creerWidget, listerEnVue, miseEnVue, modifierWidget,
-  type ChampWidget, type DepsWidgets, type Issue,
+  type ChampWidget, type DepsWidgets,
 } from '../widgets/gestion';
+import type { Issue } from '../lib/issue';
 import type { WorkflowResumeRow } from '../workflow/store.pg';
 
 /**

@@ -101,7 +101,7 @@ const CONTROLE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/;
  * chaque espace d'une série qui n'est pas en fin de texte, soit un coût quadratique (100 000 espaces : 5,6 s, relevé
  * le 2026-09-30). `trimEnd` coupe aussi les tabulations : on garde donc jusqu'à la dernière, si elle est dans la fin.
  */
-function normaliser(texte: string): string {
+export function normaliser(texte: string): string {
   const t = texte.replace(/\r\n?/g, '\n').replace(/^[^\S\t]+/, '');
   const coupe = t.trimEnd().length;
   const tab = t.lastIndexOf('\t');

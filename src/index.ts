@@ -1053,6 +1053,8 @@ async function main(): Promise<void> {
       credits,
       // Absente quand le provisionnement est éteint : la création d'agent se passe alors de clé propre.
       ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
+      // Chaque modification de la fiche y laisse sa ligne `fiche_agent`, avec son auteur et sa porte.
+      historique: historiqueStore,
       sessions: agentSessions,
       // Le blocage dur avant activation (un agent activé finira par écrire à de vrais clients) : il lit la
       // fiche, la connaissance, et les outils actifs avec leurs handlers, parce que le compte seul ne dit pas

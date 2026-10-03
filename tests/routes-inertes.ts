@@ -109,7 +109,7 @@ export const essaiAgentInerte: Pick<AgentTestRouteDeps, 'essais' | 'credits' | '
   debiter: sansDebit,
 };
 
-export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes'> = {
+export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes' | 'historique'> = {
   credits: { solde: async () => 0, historique: async () => [] },
   sessions: {
     consommation: neDevraitPasEtreAppelee('consommation'),
@@ -119,6 +119,8 @@ export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etat
   etatPourLint: async () => null,
   // Absente : nos modèles, SANS tarif. C'est exactement ce que la route rendait.
   modelesProposes: async () => MODELES_CHOISIS.map((m) => ({ ...m, prixEntree: null, prixSortie: null })),
+  // Absent : aucune modification de fiche n'était journalisée (lot 8a). Un journal muet dit la même chose.
+  historique: { ecrire: async () => {} },
 };
 
 export const campagnesInertes: Pick<CampaignRouteDeps,
