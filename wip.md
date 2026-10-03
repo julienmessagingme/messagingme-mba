@@ -98,9 +98,9 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
 - ✅ **Essai réel du 3 à 19 h 40 (Paris)** : test lancé par le lien, message rapide, réponse en texte libre
   (« Tu es là MBA ? ») : le parcours s'arrête, la conversation est rendue à l'agent, `agent_event` accepté, l'agent
   répond 23 s plus tard. Conversation non marquée.
-- ⏳ **Modèle PUIS texte libre : l'agent ne répond pas** (mesuré deux fois le 3, `todo.md`). Meta refuse
-  l'`agent_event` (« Validation error : Event request was not accepted »). **Parade pour la démo du 7 : ouvrir les
-  scénarios par un message rapide.**
+- ✅ **Modèle PUIS texte libre : l'agent répond aussi** (23 h 01, après « Reprendre la main »). Deux refus de Meta
+  plus tôt dans la soirée restent inexpliqués (`todo.md`). **Parade pour la démo du 7 : « Reprendre la main » sur la
+  conversation juste avant de lancer le scénario.**
 - ⏳ **Enchaîner les tests : l'agent peut réagir au mot du lien** (jaune n°2 de la relecture, vu le 3 à 19 h 38) :
   un essai fini chez l'agent remet le contact sur sa liste, et le jeton suivant lui arrive. Il a répondu par son
   message de passage. Parade : attendre sa réponse avant de relancer le lien.

@@ -105,6 +105,13 @@ interdisait pour toujours toute remise automatique à l'agent, même hors de tou
 - **Faux soupçon écarté** : l'état « passé à l'équipe » chez Meta (deux conversations au compteur) n'empêche pas
   l'agent de répondre à un message neuf (vérifié à 19 h 34).
 
+⚠️ **Correction du même soir : la conclusion « modèle, puis texte libre : l'agent se tait » était fausse.** À
+23 h 01, après « Reprendre la main » dans l'Inbox, un test ouvert par un MODÈLE puis une réponse en texte libre :
+`release` refusé comme à 19 h 25, mais `agent_event` ACCEPTÉ, et l'agent a répondu en 18 s. Les deux refus de la
+soirée restent inexpliqués (`todo.md`). Seule différence repérée : ils tombaient pendant que l'agent n'avait pas
+reparlé depuis son message de passage de 16 h 38. La leçon tient en une ligne : deux mesures dans le même état ne
+font pas une règle sur le modèle, il fallait faire varier l'état avant de conclure.
+
 ## 2026-10-03 : l'OAuth devant `/mcp`, livraison 2a (l'API)
 
 **Déployé en `0a399f9a`** (migration 0204 appliquée à 16 h 27 UTC, `mba-api` et les deux workers reconstruits,
