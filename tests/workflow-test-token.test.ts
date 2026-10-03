@@ -142,8 +142,23 @@ describe('processTestTokens', () => {
   // L'écriture qui lève était le marquage, retiré le 2026-10-03 : c'est désormais le démarrage, seule écriture
   // restante après la consommation.
   it('une erreur sur un jeton n’empêche pas les autres messages du webhook', async () => {
-    const { deps: d } = deps({ startTestRun: async () => { throw new Error('base indisponible'); } });
-    await expect(processTestTokens(await entrantsDe(payload(MOT_TEST)), d)).resolves.toBeInstanceOf(Set);
+    // Deux jetons dans le même webhook : le premier lève, le second doit partir quand même.
+    let appels = 0;
+    const { deps: d, trace } = deps({
+      startTestRun: async (_t: string, wf: string) => {
+        appels += 1;
+        if (appels === 1) throw new Error('base indisponible');
+        trace.started.push(wf);
+        return true;
+      },
+    });
+    const deuxJetons = { entry: [{ changes: [{ field: 'messages', value: { metadata: { phone_number_id: 'pn1' }, messages: [
+      { id: 'wamid.un', from: '33611', type: 'text', text: { body: MOT_TEST } },
+      { id: 'wamid.deux', from: '33622', type: 'text', text: { body: MOT_TEST } },
+    ] } }] }] };
+    const consumed = await processTestTokens(await entrantsDe(deuxJetons), d);
+    expect(trace.started).toEqual(['wf1']);
+    expect([...consumed].sort()).toEqual(['wamid.deux', 'wamid.un']);
   });
 
   // --- Corrections issues de la revue du Lot F ---
@@ -183,11 +198,14 @@ describe('processTestTokens', () => {
    * jamais tout seul, même hors de tout test. Le type de `TestTokenDeps` n'a plus de quoi marquer ; ce cas garde le
    * reste de `src/`, où une écriture de la colonne reviendrait sans qu'aucun type ne bouge.
    */
-  it('🔴 aucun code de src/ n’écrit `is_test = true`', () => {
+  it('🔴 aucun code de src/ n’affecte `is_test`', () => {
+    // Toute affectation, pas seulement `= true` : la forme la plus probable d'un retour est `set is_test = $3`.
+    // Les lectures s'écrivent `is_test` ou `not is_test`, jamais avec `=`. Hors de portée : une liste de colonnes
+    // d'`insert`.
     const racine = join(__dirname, '..', 'src');
     const fautifs = (readdirSync(racine, { recursive: true }) as string[])
       .filter((f) => f.endsWith('.ts'))
-      .filter((f) => /is_test\s*=\s*true/i.test(readFileSync(join(racine, f), 'utf8')));
+      .filter((f) => /\bis_test"?\s*=(?!=)/i.test(readFileSync(join(racine, f), 'utf8')));
     expect(fautifs).toEqual([]);
     // Il lit tout `src/` : près de 5 s mesurées sur le poste, la limite par défaut de vitest.
   }, 30_000);

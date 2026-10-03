@@ -259,8 +259,8 @@ export function CanauxServices(p: {
    * « tout le canal, envois de campagne compris » ne se lit plus qu'au survol.
    */
   const aideVolume = (jours: number): string => t(
-    `Messages partis et arrivés sur ce canal ces ${jours} derniers jours, modèles de campagne compris, hors conversations de test.`,
-    `Messages sent and received on this channel over the last ${jours} days, campaign templates included, test conversations excluded.`,
+    `Messages partis et arrivés sur ce canal ces ${jours} derniers jours, modèles de campagne compris, hors conversations marquées comme test avant le 3 octobre 2026.`,
+    `Messages sent and received on this channel over the last ${jours} days, campaign templates included, excluding conversations flagged as test before October 3, 2026.`,
   );
   const chiffreVolume = (v: Volume | null | undefined): Chiffre | null => {
     const texte = volumes === null ? null : phraseVolume(v ?? null, volumes.jours, locale);

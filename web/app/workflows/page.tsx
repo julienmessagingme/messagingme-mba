@@ -346,8 +346,8 @@ function WorkflowsInner({ session }: { session: Session }) {
           </p>
           <p className="mt-2 text-xs text-ink-500">
             {t(
-              'Ce lien est permanent pour ce scénario. La conversation de test est marquée comme telle : ses messages ne comptent ni dans les statistiques, ni dans l’analyse. Le numéro qui teste apparaît en revanche comme un contact du mini-CRM, comme n’importe quel numéro qui écrit.',
-              'This link is permanent for this scenario. The test conversation is flagged as such: its messages count neither in statistics nor in analysis. The testing number does appear as a mini-CRM contact, like any number that writes in.',
+              'Ce lien est permanent pour ce scénario. Un essai se comporte comme une vraie conversation : il compte dans les statistiques et l’analyse, et l’agent de Meta peut reprendre la main à la fin. Le numéro qui teste apparaît comme un contact du mini-CRM, comme n’importe quel numéro qui écrit.',
+              'This link is permanent for this scenario. A test behaves like a real conversation: it counts in statistics and analysis, and the Meta agent may take over at the end. The testing number appears as a mini-CRM contact, like any number that writes in.',
             )}
           </p>
           <div className="mt-5 flex justify-end">

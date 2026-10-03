@@ -13,8 +13,9 @@ import { STATS_TZ, BOUNDS_CTE, addDays, isValidDateStr } from '../stats/range';
  * unique par `(tenant_id, wa_id)` pour toujours, un habitué qui réécrit n'ouvre aucune ligne. Les ouvertures
  * sont comptées à part (`conversationsNouvelles`).
  *
- * `not c.is_test` sur chaque requête, comme les requêtes sœurs des stats : les essais du client depuis son
- * téléphone n'entrent pas dans « hier : X conversations ».
+ * `not c.is_test` sur chaque requête, comme les requêtes sœurs des stats : une conversation marquée comme test
+ * n'entre pas dans « hier : X conversations ». Plus rien ne pose ce marquage depuis le 2026-10-03 : un essai du
+ * client depuis son téléphone y compte désormais.
  *
  * 🔴 `tenant_id = $1` sur chaque requête : `conversation_messages` n'a pas de `tenant_id`, l'isolation passe
  * par la jointure sur `conversations`.

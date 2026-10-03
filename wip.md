@@ -26,9 +26,23 @@
   tests. Relecture : 0 rouge, 4 jaunes, poussés après le déploiement (`e253e4a5`). **Essai réel fait le 3 à
   16 h 38** (journal du 2026-10-03) : les quatre envois partis, journalisés et routés.
 - ⏳ **L'agent de Meta a envoyé son message de passage à un contact ABSENT de sa liste**, juste après un modèle
-  (essai du 3 à 16 h 38, une seule occurrence, journal du 2026-10-03). Mesure à faire avec Julien avant d'y toucher :
-  réponse au modèle par un bouton, puis par du texte libre. Parade pour la démo du 7 : faire ouvrir un scénario de
-  démonstration par un message rapide plutôt que par un modèle.
+  (essai du 3 à 16 h 38, une seule occurrence, journal du 2026-10-03). Deux essais suivants (16 h 53 et 16 h 54,
+  réponse au modèle par un bouton puis par du texte) : l'agent n'a rien dit. Occurrence isolée, à surveiller.
+
+## « TESTER LE SCÉNARIO » NE MARQUE PLUS LA CONVERSATION (WORKERS DÉPLOYÉS LE 2026-10-03 À 15 H 33 UTC ; ESSAI RÉEL DÛ)
+
+- ✅ Décision de Julien (« ne mets plus jamais un flag test sur ma conversation »), plan
+  `docs/superpowers/plans/2026-10-03-lien-de-test-sans-marquage.md`, `0c4e2099`. Relecture : 0 rouge, 9 jaunes,
+  poussés après le déploiement des deux workers. La conversation de Julien a été démarquée à la main le 3.
+- ⏳ **Le correctif du jaune n°1 n'est PAS encore en production** : `rendreMaintenant` relit le détenteur avant de
+  confier (un accusé arrivé après qu'un test relancé a repris le fil rendait le fil à l'agent en plein parcours).
+  Il partira avec le prochain `up` des workers (celui du lot OAuth 2a), ou seul s'il faut avant la démo.
+- ⏳ **Essai réel (Julien)** :
+  1. « Tester le scénario », réponse en texte libre au modèle (sortie « Toute autre réponse » non reliée) :
+     l'agent de Meta doit répondre ;
+  2. finir un test, puis relancer le lien dans les 30 s : observer si l'agent répond au jeton lui-même (jaune n°2
+     de la relecture, non corrigé : l'agent tient le fil à la fin d'un test, comme le 2026-09-16) et, une fois le
+     correctif du n°1 déployé, s'il reprend la main pendant le second test.
 
 ## DOUBLE WORKER (DÉPLOYÉ LE 2026-10-03 À 8 H 17 UTC ; ESSAI RÉEL DÛ)
 

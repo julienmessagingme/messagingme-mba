@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: 2737f9
+source_empreinte: aab219
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 

@@ -742,7 +742,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   premier, même un scénario qui ouvre par un message rapide ou un formulaire se teste. Le lien est **permanent**
   pour ce scénario. **Depuis le 2026-10-03, la conversation n'est plus marquée comme test** (décision de Julien) :
   un essai se comporte exactement comme une vraie conversation, statistiques, analyse et reprise par l'agent de
-  Meta comprises. Marquée, elle l'était pour toujours, et l'agent ne la reprenait plus jamais tout seul. Le numéro
+  Meta comprises. Analysée, elle suit aussi tout ce qu'une analyse déclenche : l'envoi vers HubSpot si l'espace
+  est connecté, les automations « conversation analysée », les demandes de Quantitatif > Performance. Marquée, elle
+  l'était pour toujours, et l'agent ne la reprenait plus jamais tout seul. Le numéro
   testeur apparaît dans le mini-CRM, comme tout numéro qui écrit. Sans numéro WhatsApp connecté, le mot à envoyer
   est affiché pour être recopié à la main.
 - ✅ **Tester À PARTIR D'UN BLOC précis** (2026-09-16) : chaque bloc du constructeur porte un **petit bouton
@@ -1778,7 +1780,7 @@ scénario, comment importer des contacts.
   compte et la Page restent à choisir, ou un numéro relié que Meta signale), la phrase d'état et, pour la chaîne,
   les publicités et HubSpot, le lien vers leur écran. Les cartes « Numéro WhatsApp » et « Canal RCS » affichent
   les messages envoyés et reçus sur ce canal ces 30 derniers jours (envois de campagne compris ; la carte du
-  numéro compte tout le canal WhatsApp de l'espace ; conversations de test exclues) ; la carte « Chaîne » affiche le nombre total de publications faites depuis la console. Quand
+  numéro compte tout le canal WhatsApp de l'espace ; conversations marquées comme test avant le 2026-10-03 exclues) ; la carte « Chaîne » affiche le nombre total de publications faites depuis la console. Quand
   l'agent de Meta répond, son cadre affiche « Messages écrits par le MBA » : les messages écrits par l'agent de Meta
   depuis sa mise en service, ni réponses des clients, ni équipe, ni campagnes ; même chiffre dans MBA > Paramètres. Un chiffre qu'on n'a pas pu lire ne s'affiche pas, il
   n'est jamais remplacé par zéro. Éteindre demande une confirmation qui dit ce qui
@@ -2307,7 +2309,7 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   (« vous êtes ouverts dimanche ? »), le parcours s'arrête, la conversation revient à l'agent de Meta ET son
   message lui est transmis : il y répond aussitôt, au lieu d'attendre le message suivant du client. Rien n'est
   transmis sur une fin normale de parcours, ni quand le client tape un bouton qui ne mène nulle part (la
-  conversation part alors à un humain), ni pour une simple réaction, ni sur une conversation de test.
+  conversation part alors à un humain), ni pour une simple réaction, ni sur une conversation marquée comme test avant le 2026-10-03.
 - ✅ **Enregistrer, c'est envoyer à Meta.** Créer, modifier ou supprimer un outil le porte chez Meta dans le même
   geste ; il n'y a plus de bouton « Envoyer » à retenir (c'est son oubli qui avait fait rater le premier essai
   du relais). Un envoi qui échoue ne défait pas l'enregistrement : la ligne reste « À envoyer ».
@@ -2588,7 +2590,7 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   messages, entrants et sortants, des conversations que cet agent a tenues au moins une fois pendant cette
   période, **y compris les envois de campagne et ce que votre équipe a écrit après avoir repris la main sur
   l'agent** : ce n'est donc pas une mesure de ce que l'agent a lui-même produit, mais du volume de ces
-  conversations. Les conversations de test n'y comptent pas.
+  conversations. Les conversations marquées comme test avant le 2026-10-03 n'y comptent pas.
   ⚠️ **Ce n'est pas le même périmètre que le « messages échangés » de l'Accueil et du Performance Lab**, qui
   eux écartent les modèles envoyés. La légende de l'en-tête le dit, pour que le même mot ne se lise pas de
   deux façons.
@@ -3161,7 +3163,7 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   messages, entrants et sortants, des conversations que cet agent a tenues au moins une fois pendant cette
   période, **y compris les envois de campagne et ce que votre équipe a écrit après avoir repris la main sur
   l'agent** : ce n'est donc pas une mesure de ce que l'agent a lui-même produit, mais du volume de ces
-  conversations. Les conversations de test n'y comptent pas.
+  conversations. Les conversations marquées comme test avant le 2026-10-03 n'y comptent pas.
   ⚠️ **Ce n'est pas le même périmètre que le « messages échangés » de l'Accueil et du Performance Lab**, qui
   eux écartent les modèles envoyés. La légende de l'en-tête le dit, pour que le même mot ne se lise pas de
   deux façons.

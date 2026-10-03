@@ -102,6 +102,9 @@ const TABLE: Cas[] = [
   { nom: '5. accusé, Meta refuse l’ajout : marque consommée quand même, reste app_human', depart: { owner: 'app_human', marque: 'wamid.A' }, banc: { ajout: ['refuse'] }, geste: (f) => f.remettreSurAccuse('wamid.A'), leve: true, meta: ['ajout:w'], arrivee: { owner: 'app_human', marque: null } },
   { nom: '5. accusé, Meta refuse le release : confié quand même, mba', depart: { owner: 'app_human', marque: 'wamid.A' }, banc: { release: ['refuse'] }, geste: (f) => f.remettreSurAccuse('wamid.A'), meta: ['ajout:w', 'release:w'], arrivee: { owner: 'mba', marque: null, surLaListe: true } },
   { nom: '5. accusé, aucun numéro : reste app_human', depart: { owner: 'app_human', marque: 'wamid.A' }, banc: { numero: null }, geste: (f) => f.remettreSurAccuse('wamid.A'), meta: [], arrivee: { owner: 'app_human', marque: null } },
+  // Un scénario a repris le fil pendant l'attente (un test relancé dans les 30 s du sondage des accusés) : l'accusé
+  // qui arrive ensuite ne doit ni mettre le contact sur la liste ni rendre le fil à l'agent en plein parcours.
+  { nom: '5. accusé arrivé APRÈS qu’un scénario a repris le fil : marque consommée, aucun appel, reste app_workflow', depart: { owner: 'app_workflow', marque: 'wamid.A' }, geste: (f) => f.remettreSurAccuse('wamid.A'), meta: [], arrivee: { owner: 'app_workflow', marque: null, surLaListe: false } },
 
   // 6. Le client écrit et personne ne suit : confier, `mba`, puis l'événement `message_sans_suite`.
   { nom: '6. personne ne suit, app_workflow : ajout, release, mba, événement', depart: { owner: 'app_workflow' }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: ['ajout:w', 'release:w', 'evenement:w'], arrivee: { owner: 'mba', surLaListe: true } },

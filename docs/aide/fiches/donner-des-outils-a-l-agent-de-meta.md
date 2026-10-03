@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: 5c7eda
+source_empreinte: 2429c2
 ---
 # Donner des outils à l'agent de Meta
 

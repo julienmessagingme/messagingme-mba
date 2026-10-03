@@ -365,6 +365,10 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
    * dit rien (`{"messaging_product":"whatsapp"}`) : le balayage reste le filet.
    */
   const rendreMaintenant = async (tenantId: string, waId: string): Promise<void> => {
+    // 🔴 Relu AVANT de confier : l'accusé attendu peut arriver après qu'un scénario a repris le fil (un test relancé
+    // dans la foulée, un mot-clé). Confier d'abord mettait le contact sur la liste et rendait le fil à l'agent en
+    // plein parcours, l'écriture gardée `only: ['app_human']` ne protégeant que notre colonne (relecture du 3/10).
+    if ((await depot.getControlOwner(tenantId, waId)) !== 'app_human') return;
     if ((await confier(tenantId, waId, { automatique: true })).sorte !== 'confie') return;
     await depot.setControlOwner(tenantId, waId, 'mba', { par: CAUSES.finDeParcours, only: ['app_human'], effacerEscalade: true });
   };

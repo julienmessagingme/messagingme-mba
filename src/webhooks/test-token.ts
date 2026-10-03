@@ -21,14 +21,13 @@ export interface TestTokenDeps {
   /** Scénario portant ce jeton, avec son tenant (le jeton est unique globalement). null si inconnu. */
   findByTestToken(token: string): Promise<{ workflowId: string; tenantId: string } | null>;
   /**
-   * Pas de garde « le fil appartient-il au scénario ? » : un jeton est un geste délibéré de qui tient le
-   * téléphone, même quand l'agent de Meta tient le fil. L'exécuteur prend le fil (`ignoreHumanControl`) et refuse
-   * lisiblement si Meta ne le rend pas.
-   */
-  /**
    * Démarre le scénario ; le contact vient d'écrire, la fenêtre de 24 h est ouverte. `nodeId` = le bloc désigné
    * par le suffixe du jeton, `null` = l'entrée du scénario. `true` = parti ; `false` ou une chaîne (la raison) =
    * pas parti, et l'appelant journalise la raison.
+   *
+   * Pas de garde « le fil appartient-il au scénario ? » : un jeton est un geste délibéré de qui tient le
+   * téléphone, même quand l'agent de Meta tient le fil. L'exécuteur prend le fil (`ignoreHumanControl`) et refuse
+   * lisiblement si Meta ne le rend pas.
    */
   startTestRun(tenantId: string, workflowId: string, waId: string, nodeId: string | null): Promise<boolean | string>;
 }

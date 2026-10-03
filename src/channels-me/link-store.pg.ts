@@ -111,8 +111,9 @@ export class PgChannelsMeLinkStore {
    * des messages antérieurs à la création d'un bouton donné (un abonné qui a écrit la phrase spontanément). Une
    * borne par lien coûterait une requête par lien ; l'écran dit qu'on compte des messages reçus.
    *
-   * `not c.is_test` exclut pour toujours un contact qui a servi de cible de test (`is_test` n'est jamais remis
-   * à false) : compter notre trafic de test gonflerait tous les liens. `partiel` dit que le plafond a été
+   * `not c.is_test` exclut une conversation marquée comme test : compter notre trafic de test gonflerait tous les
+   * liens. Plus rien ne pose ce marquage depuis le 2026-10-03 (le lien de test ne le fait plus), seules les
+   * conversations marquées avant restent exclues. `partiel` dit que le plafond a été
    * atteint, donc que les chiffres sont des minimums.
    */
   async conversationsParLien(tenantId: string): Promise<{ parLien: ConversationsDunLien[]; partiel: boolean }> {

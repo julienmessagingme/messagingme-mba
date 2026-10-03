@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: c919a6
+source_empreinte: 35ca4c
 ---
 # Construire un agent IA
 
