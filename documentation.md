@@ -1803,7 +1803,10 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   (`CODES_INCONNUS_PAR_MINUTE`, clé constante, en silence, une instance par porte) freine les codes jamais résolus
   par ce process, et un code résolu en est exempté, comme une clé sur `/v1`. Épuisé, il rend 429, sauf au widget,
   qui rend son script inerte sans cache (la réponse s'exécute dans la page d'un client). APRÈS la lecture, pour
-  les deux premières seulement (le widget n'a pas de plafond par code : sa réponse se met en cache 60 s chez le navigateur et le CDN, et son
+  les deux premières seulement (le widget n'a pas de plafond par code : sa réponse se met en cache 60 s chez le navigateur et le CDN (🔴 chez le navigateur
+  GRÂCE À une Cache Rule Cloudflare, « Widget WhatsApp » : `https://api.messagingme.app/widget/*`, Browser TTL
+  « Respect origin TTL », posée le 2026-10-03 ; sans elle, Cloudflare impose 4 h à tout `.js`, son Browser Cache
+  TTL par défaut, et un réglage changé dans la console met jusqu'à 4 h à apparaître), et son
   rendu se garde 30 s par code dans le process, `cacheCourt`, parce qu'un paramètre de requête contourne le
   premier), le
   plafond par code EXISTANT (`WEBHOOK_IN_RATE_LIMIT_*`, `RCS_CALLBACK_PAR_MINUTE`). Le second se calcule sur le débit RCS d'un run de campagne, et ne tient que parce
