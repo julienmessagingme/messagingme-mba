@@ -7,6 +7,8 @@ import { ClesResolues, consommerAvecEntetes, consommerEnSilence, type RateLimite
 import type { PlafondEspace } from './plafond-espace';
 import { refuser } from '../api/erreurs';
 import { DROIT_RELAIS } from '../mba/cle-relais';
+import type { AccesOauthLookup } from '../oauth/store.pg';
+import { formeDeJeton, PREFIXE_ACCES } from '../oauth/jetons';
 
 /**
  * Les deux plafonds d'une clé résolue ; une clé n'est comptée que par l'un des deux. Deux champs requis :
@@ -30,11 +32,26 @@ declare module 'fastify' {
   interface FastifyRequest {
     apiScopes?: string[];
     /**
-     * `api_keys.id` de la clé résolue, jamais la clé ni son empreinte. Posé ici plutôt que déduit de
-     * `req.auth.userId` (`apikey:<id>`) : une route ne doit pas dépendre d'un format d'identifiant synthétique.
+     * Ce qui a ouvert l'appel : une clé (`api_keys.id`) ou une autorisation OAuth (`oauth_autorisations.id`),
+     * jamais le jeton ni son empreinte. Posé ici plutôt que déduit de `req.auth.userId` (`apikey:<id>`,
+     * `oauth:<id>`) : une route ne doit pas dépendre d'un format d'identifiant synthétique.
      */
-    apiKeyId?: string;
+    apiAcces?: { type: 'cle' | 'oauth'; id: string };
+    /**
+     * La personne derrière un jeton OAuth, `null` derrière une clé, qui n'en a pas. Elle signe les écritures de
+     * `/mcp` ; son rôle n'est pas ici, il est relu en base à chaque appel et doit valoir `admin`.
+     */
+    apiPersonne?: { userId: string } | null;
   }
+}
+
+/** Ce que la base a dit du porteur d'un appel, clé ou jeton, une fois résolu. */
+interface Porteur {
+  readonly tenantId: string;
+  readonly tenantStatus?: string;
+  readonly scopes: string[];
+  readonly acces: { type: 'cle' | 'oauth'; id: string };
+  readonly personne: { userId: string } | null;
 }
 
 /**
@@ -54,9 +71,17 @@ const FORMAT_CLE = /^[A-Za-z0-9_-]{43}$/;
 const CLE_BUDGET_SPECULATIF = 'lookups-speculatifs';
 
 /**
- * preHandler de `/v1` : authentifie une clé d'API (Bearer `mba_...`), autorité séparée du JWT tenant (comme
- * `/ops`). Sur succès, pose un `req.auth` synthétique au rôle dédié `'api'` (jamais 'admin' : `/v1` se garde
- * par scope, `requireScope`) et `req.apiScopes`. Le tenant vient tout entier de la clé résolue.
+ * preHandler de `/v1`, `/mcp` et du relais : authentifie une clé d'API (Bearer `mba_...`) ou un jeton d'accès
+ * OAuth (Bearer `mbo_...`, migration 0204), autorité séparée du JWT tenant (comme `/ops`). Le préfixe aiguille, et
+ * les deux suivent le même ordre. Sur succès, pose un `req.auth` synthétique au rôle dédié `'api'` (jamais 'admin',
+ * même pour un jeton dont la personne est admin : `/v1` se garde par scope, `requireScope`, et le vrai rôle
+ * ouvrirait un jour une route qui le composerait), `req.apiScopes`, `req.apiAcces` et `req.apiPersonne`. Le tenant
+ * vient tout entier de la clé ou de l'autorisation résolue.
+ *
+ * 🔴 Un jeton OAuth ne porte que `mcp:read` et `mcp:write` (CHECK de 0204) : `/v1` et le relais le refusent par
+ * leurs droits, sans code de plus. Il compte dans le plafond de l'ESPACE, partagé avec `/v1` (décision du
+ * 2026-10-03). Un jeton révoqué, échu, ou dont la personne n'est plus admin ou est désactivée rend 401 : Claude
+ * redemande une connexion, que le consentement refusera à un non-admin.
  *
  * En-têtes `x-ratelimit-*` sur les réponses comptées : ceux de l'espace de la clé, ou de sa clé pour le
  * relais. Le 401 d'une clé inconnue et le 429 du budget spéculatif n'en portent aucun (`consommerEnSilence`).
@@ -71,21 +96,42 @@ const CLE_BUDGET_SPECULATIF = 'lookups-speculatifs';
  * reconnaît à son droit `DROIT_RELAIS`, que seule la publication attribue et qui n'ouvre que les routes du
  * relais.
  */
-export function makeRequireApiKey(store: ApiKeyLookup, plafonds: PlafondsCle, prefiltre: RateLimiter): PreHandler {
+export function makeRequireApiKey(
+  store: ApiKeyLookup,
+  plafonds: PlafondsCle,
+  prefiltre: RateLimiter,
+  oauth: AccesOauthLookup,
+): PreHandler {
   // Les empreintes déjà résolues par ce process : hors budget spéculatif (`ClesResolues`), avec l'espace et le
-  // droit de relais de leur clé, pour que le plafond se prenne avant la base.
+  // droit de relais de leur clé, pour que le plafond se prenne avant la base. Clés et jetons partagent la table :
+  // leurs empreintes ne se rencontrent pas, et un jeton n'est jamais du relais.
   const connues = new ClesResolues<CleResolue>(1000);
   const plafonner = (cle: CleResolue, empreinte: string, reply: FastifyReply): Promise<boolean> => (cle.relais
     ? consommerAvecEntetes(plafonds.relais, empreinte, reply, 'trop de requêtes', 'rate_limited')
     : plafonds.espace.consommer(cle.tenantId, reply));
+  /** La base, à chaque appel : une révocation, une désactivation ou une rétrogradation prend effet tout de suite. */
+  const resoudre = async (empreinte: string, jeton: boolean): Promise<Porteur | null> => {
+    if (jeton) {
+      const a = await oauth.resoudreAcces(empreinte);
+      if (!a?.valide) return null;
+      return { tenantId: a.tenantId, tenantStatus: a.tenantStatus, scopes: a.scopes, acces: { type: 'oauth', id: a.autorisationId }, personne: { userId: a.userId } };
+    }
+    const k = await store.findActiveByHash(empreinte);
+    if (!k) return null;
+    return { tenantId: k.tenantId, tenantStatus: k.tenantStatus, scopes: k.scopes, acces: { type: 'cle', id: k.id }, personne: null };
+  };
   return async function requireApiKey(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;
     const raw = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
+    const jeton = raw.startsWith(PREFIXE_ACCES);
     /**
-     * Le format se contrôle avant tout, avant le SHA-256 et la base : une rafale de `mba_x` ne coûte rien. Même
-     * message que pour une clé absente, pour ne pas renseigner sur la forme des clés.
+     * Le format se contrôle avant tout, avant le SHA-256 et la base : une rafale de `mba_x` ou de `mbo_x` ne coûte
+     * rien. Même message que pour une clé absente, pour ne pas renseigner sur la forme des clés.
      */
-    if (!raw || !raw.startsWith(API_KEY_PREFIX) || !FORMAT_CLE.test(raw.slice(API_KEY_PREFIX.length))) {
+    const bienForme = jeton
+      ? formeDeJeton(raw, PREFIXE_ACCES)
+      : raw.startsWith(API_KEY_PREFIX) && FORMAT_CLE.test(raw.slice(API_KEY_PREFIX.length));
+    if (!bienForme) {
       await refuser(reply, 401, 'unauthorized', 'clé d’API requise');
       return;
     }
@@ -117,12 +163,12 @@ export function makeRequireApiKey(store: ApiKeyLookup, plafonds: PlafondsCle, pr
      * avant 403. Le lookup reste fait à chaque appel accepté : une révocation prend effet tout de suite.
      */
     if (vue !== undefined && !(await plafonner(vue, empreinte, reply))) return;
-    const found = await store.findActiveByHash(empreinte);
+    const found = await resoudre(empreinte, jeton);
     if (!found) {
-      // Elle ne se résout plus (révoquée, ou jamais valide) : elle perd son laissez-passer et repasse
+      // Elle ne se résout plus (révoquée, échue, ou jamais valide) : elle perd son laissez-passer et repasse
       // sous le budget dès l'appel suivant.
       connues.oublier(empreinte);
-      await refuser(reply, 401, 'unauthorized', 'clé d’API invalide ou révoquée');
+      await refuser(reply, 401, 'unauthorized', jeton ? 'jeton d’accès invalide, échu ou révoqué' : 'clé d’API invalide ou révoquée');
       return;
     }
     // Elle a été résolue : elle ne sert pas à sonder.
@@ -139,11 +185,13 @@ export function makeRequireApiKey(store: ApiKeyLookup, plafonds: PlafondsCle, pr
       await refuser(reply, 403, 'tenant_locked', 'espace suspendu');
       return;
     }
-    // Date de dernier usage : best-effort, ne doit jamais faire échouer la requête.
-    void store.touchLastUsed(found.id).catch(() => { /* best-effort */ });
-    req.auth = { userId: `apikey:${found.id}`, tenantId: found.tenantId, role: 'api' };
+    // Date de dernier usage d'une clé : best-effort, ne doit jamais faire échouer la requête. Celle d'un jeton
+    // s'écrit dans sa résolution (`PgOauthStore.resoudreAcces`).
+    if (found.acces.type === 'cle') void store.touchLastUsed(found.acces.id).catch(() => { /* best-effort */ });
+    req.auth = { userId: `${found.acces.type === 'cle' ? 'apikey' : 'oauth'}:${found.acces.id}`, tenantId: found.tenantId, role: 'api' };
     req.apiScopes = found.scopes;
-    req.apiKeyId = found.id;
+    req.apiAcces = found.acces;
+    req.apiPersonne = found.personne;
   };
 }
 

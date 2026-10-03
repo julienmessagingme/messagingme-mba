@@ -182,6 +182,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
 | **API publique v1** | ce qu'un intégrateur du client appelle | `src/api/`, `src/http/v1-*.ts` | `/developers` | `api_keys`, `api_idempotency` | |
+| **Serveur MCP et son OAuth** | Claude (Claude Code, claude.ai) lit et agit dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes` | `retention-oauth` |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log` | `dlq-sweep` |
 | **Auth et comptes** | connexion, invitations, rôles, multi-espace | `src/auth/`, `src/user/` | `/login`, `/admin` | `users`, `identities`, `auth_tokens` | |
 
@@ -770,6 +771,13 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   c'est une promesse, et c'est exactement ce que la revue du chantier 6 a trouvé.
   ⚠️ **Le reste des prérogatives d'un manager n'est pas décidé** (campagnes, contacts, scénarios, réglages) :
   ça se décide écriture par écriture, cf. `todo.md`.
+- `oauth_autorisations` et `oauth_codes` (0204) : une autorisation par PASSAGE dans le consentement, pour UN espace
+  et une personne admin (`tenant_id` et `user_id` en cascade : supprimer le compte révoque). Elle porte UNE paire de
+  jetons vivante, remplacée à chaque renouvellement : `acces_hash` (1 h), `refresh_hash`, `refresh_precedent_hash`
+  (le précédent, qui reconnaît un rejeu), `refresh_expire_le` (30 jours sans usage), `refresh_max_le` (90 jours, fixé
+  au premier échange), `revoque_le`. `client_id` est borné aux deux fiches de Claude et `scopes` à `mcp:read` et
+  `mcp:write` par deux CHECK. Un code (60 s, usage unique) garde son défi PKCE et son adresse de retour. Seules des
+  empreintes SHA-256 y entrent ; le rôle et la désactivation ne sont PAS recopiés, ils se relisent dans `users`.
 - 🔴 **La connexion multi-espace est en deux temps.** Un seul espace -> session directe. Plusieurs -> le
   serveur rend la LISTE et un jeton de CHOIX, jamais une session. Ce jeton ne peut pas tenir lieu de session
   (pas de `tenantId` ni de `role` à la racine, `kind` vérifié) et il PORTE la liste signée des espaces
@@ -1549,6 +1557,7 @@ automations, servis par le principal) : ça tient parce que `enqueue` crée sa f
 | purge des événements Meta | `WEBHOOK_EVENTS_RETENTION_DAYS` |
 | `ops/dlq-sweep` | alerte Telegram sur les DLQ non vides |
 | `compteurs-debit` | toutes les 5 min, efface les fenêtres échues des plafonds partagés (`compteurs_debit`) : une tentative de connexion sur une adresse inventée écrit une ligne, six heures de rafale en garderaient des millions |
+| `retention-oauth` | toutes les 6 h (`principal`), efface les codes OAuth échus depuis une heure et les autorisations révoquées ou expirées depuis 30 jours, par paquets (`PgOauthStore.purger`) |
 | heartbeat | écrit `worker_heartbeat`, UNE LIGNE PAR RÔLE (clé = le rôle), lu par `/ops` pour voir un worker mort ; une ligne unique laisserait le survivant masquer la mort de l’autre |
 
 🔴 **LE BALAYAGE DU RISQUE EST LE SEUL CHEMIN DE MASSE QUI ÉMET UN ÉVÉNEMENT D'AUTOMATION** (exception décidée,
@@ -1647,6 +1656,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | `requireAdmin` (`g.admin`, au montage) ; `forbidNonAdmin` dans le handler des modules sur `g.auth`, plus deux écarts délibérés sur `g.admin` (`contacts`, dont les lectures de conformité passent par `g.encadrement`, et `mbaAssistant`) | écritures | un opérateur d'inbox qui modifierait la configuration |
 | Plafonds de débit | routes authentifiées | l'épuisement par un client, volontaire ou non |
 | Session d'exploitation (`makeRequireOps`, `src/auth/middleware.ts`) | `/ops` | l'exploitation cross-tenant par qui n'est pas une adresse de `OPS_EMAILS` avec son second facteur |
+| Jeton d'accès OAuth (`mbo_`) dans `makeRequireApiKey`, relu en base à chaque appel | `/mcp` ; `/v1` et le relais le refusent faute de leurs droits | un Claude dont l'autorisation est révoquée ou échue, ou dont la personne n'est plus admin ou est désactivée |
 | Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée, et toute connexion d'exploitation (Google compris) | une session d'admin, ou d'exploitation, ouverte avec le seul mot de passe |
 | `urlRecuperable` + `resolutionPublique` | toute URL saisie par un client | le SSRF vers le réseau interne |
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
@@ -1737,6 +1747,60 @@ changement. La valeur est arrimée entre le serveur et les quatre écrans par
 `web/lib/mot-de-passe.test.ts`, parce qu'elle était écrite huit fois et que quatre copies ont dérivé le
 jour même du changement.
 
+🔴 **L'OAUTH DEVANT `/mcp`** (migration 0204, spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`). Claude
+Code et claude.ai se connectent à `/mcp` sans clé : la personne clique « Authenticate », prouve qui elle est,
+clique « Autoriser » dans un espace où elle est admin, et Claude reçoit un jeton. Les clés d'API ne changent pas.
+- **La surface publique** (`src/http/oauth.ts`, classe `anonyme`) : `GET /.well-known/oauth-protected-resource`
+  et `.../oauth-protected-resource/mcp` (RFC 9728), `GET /.well-known/oauth-authorization-server` (RFC 8414),
+  `GET /oauth/authorize` (302 vers `<APP_URL>/autoriser?demande=<jeton signé>`), `POST /oauth/token`,
+  `POST /oauth/revoke` (toujours 200), `POST /oauth/consentement/demande`, `.../google` et `.../autoriser`. La
+  console (`src/http/oauth-consentement.ts`, classe `tenant`, `g.admin`) : `POST /tenants/:tenantId/oauth/autoriser`
+  (le même clic avec la session), `GET /tenants/:tenantId/oauth/autorisations` et `DELETE .../:id` (404 si inconnue,
+  d'un autre espace ou déjà révoquée ; `oauth.revoque` au journal).
+- 🔴 **TOUT SE DÉRIVE DE `PUBLIC_API_URL`, JAMAIS DE `Host`** (`src/oauth/metadonnees.ts`) : l'émetteur, la
+  ressource (`<PUBLIC_API_URL>/mcp`) et chaque adresse annoncée. Le client compare l'adresse qu'il appelle au champ
+  `resource` (RFC 9728, 3.3) : renommer `api.messagingme.app` ou son `/mcp` déconnecterait tous les Claude
+  autorisés. Sans `PUBLIC_API_URL`, rien ne se monte (404 partout, la route de la console comprise) : l'émetteur
+  serait l'adresse de la console. `mba.messagingme.app/mcp` reste à clé seulement : son proxy envoie `/.well-known/*`
+  à l'ancienne console, et la ressource annoncée ne correspondrait pas.
+- **Le 401 de `/mcp`** porte `WWW-Authenticate: Bearer resource_metadata=..., scope="mcp:read mcp:write"` (plus
+  `error="invalid_token"` quand un jeton `mbo_` a été présenté), et c'est lui qui déclenche la connexion chez Claude.
+  Posé par un crochet de la route `/mcp` (`src/http/mcp.ts`), jamais par la garde partagée : ni `/v1`, ni un 403, ni
+  un 429 ne le portent. Et seulement quand l'hôte appelé est celui de `PUBLIC_API_URL`, ce qui suppose que NPM
+  transmet le `Host` d'origine (à mesurer après le déploiement : `curl -si -X POST https://api.messagingme.app/mcp`).
+- **Deux clients, épinglés** (`src/oauth/clients.ts`) : les fiches de Claude Code et de claude.ai, RECOPIÉES et
+  jamais récupérées à la volée (pas de requête sortante vers une adresse fournie par un tiers, pas de dépendance au
+  Cloudflare de claude.ai). Claude Code revient sur `http://localhost:<port>/callback` ou `127.0.0.1`, tout port ;
+  claude.ai sur son adresse exacte. Tout autre client, ou une adresse de retour non validée : 400 en texte, AUCUNE
+  redirection. `npm run oauth:fiches` relit les fiches publiées à chaque déploiement de l'API (`DEPLOY.md`).
+- **Les jetons sont opaques**, jamais des JWT : `mbo_` l'accès (1 h, `expires_in` rendu), `mbr_` le renouvellement
+  (30 jours sans usage, 90 au plus, remplacé à chaque usage), `mbc_` le code (60 s, usage unique, brûlé même si
+  l'échange échoue ensuite). PKCE S256 seul. 🔴 **Un ancien jeton de renouvellement présenté révoque toute
+  l'autorisation** (RFC 9700, 4.14) : `invalid_grant`, et Claude redemande une connexion. ⚠️ Deux renouvellements
+  simultanés du même jeton y mènent aussi.
+- **La garde** (`makeRequireApiKey`) reste le seul point d'entrée de `/mcp`, `/v1` et du relais : le préfixe aiguille
+  (`mba_` vers les clés, `mbo_` vers les autorisations), le même ordre (forme, budget des empreintes inconnues,
+  plafond de l'ESPACE, partagé avec `/v1`), et la base relue à chaque appel : révoquée, échue, compte désactivé ou
+  plus admin, 401 ; espace suspendu, 403 (un 401 relancerait la connexion en boucle). `req.auth.role` reste `api`,
+  la personne vit dans `req.apiPersonne` et signe les réponses et assignations faites par `/mcp`, et le journal
+  d'usage range l'appel sous `oauth:<autorisation>`. Un jeton ne porte que `mcp:read` et `mcp:write` (CHECK) : `/v1`
+  et le relais le refusent par leurs droits.
+- 🔴 **LE CONSENTEMENT N'EST JAMAIS SAUTÉ, ET SEUL UN ADMIN AUTORISE.** La page vit dans la console (la CSP de l'API
+  est fermée, l'origine de la console est déjà autorisée chez Google). Deux preuves d'identité : la session de la
+  console, ou un jeton Google frais vérifié comme `/auth/google`, qui rend une preuve signée (`oauth_choix`, 5 min,
+  liée à l'empreinte de LA demande). Les deux portes passent par UNE fonction, `autoriser` (`src/oauth/autoriser.ts`),
+  qui relit le rôle en base AU CLIC, jamais dans la preuve ni la session. Une adresse Google inconnue crée son espace
+  par le MÊME chemin que `/auth/google` (`creerEspaceParGoogle`, `src/auth/routes.ts`). Pas de second facteur exigé :
+  c'est la règle de la connexion Google à un espace.
+- **Les erreurs de `/oauth/token` sont au format OAuth et en 400** (`invalid_grant`, `invalid_request`,
+  `invalid_client`, `invalid_target`, `unsupported_grant_type`) : un refus n'est jamais un 5xx, dont Cloudflare
+  remplacerait le corps. Seule une panne de base y rend 500, délibérément : un `invalid_grant` ferait jeter ses
+  jetons à Claude pour une panne passagère ; leur `error_description` est en anglais ASCII (RFC 6749, 5.2). Une demande expirée rend 400
+  `demande_expiree`, jamais 401 : la route de la console le rend aussi. Toute réponse de `/oauth/*` part en
+  `Cache-Control: no-store`. Aucun jeton, code, vérificateur ni empreinte dans un journal ; `oauth.autorise` et
+  `oauth.revoque` ne portent que le client et les droits. La révocation par le client lui-même n'est pas tracée :
+  elle ne connaît que le jeton, pas l'espace.
+
 🔴 **LE CORS EST EN LISTE BLANCHE ET SANS `credentials`, et les deux comptent.** `CORS_ORIGINS` refuse `*` AU
 CHARGEMENT de la configuration. Jamais `credentials: true` : la session voyage dans un en-tête
 `Authorization`, jamais dans un cookie, donc **il n'y a aucun CSRF aujourd'hui** ; l'activer en créerait un de
@@ -1764,6 +1828,7 @@ construction) :
 | connexion : `login` (et le choix d'espace), `signup`, `forgot-password`, `reset-password`, `invitations/accept`, `google`, clé = l’EMPREINTE de `ip::discriminant` (jamais l’adresse ni le jeton en clair : la clé vit en base, donc dans ses sauvegardes) | compteur partagé | la tentative est REFUSÉE (429, « vérification momentanément impossible ») : une panne n'ouvre jamais un essai de plus |
 | la minute entre deux demandes de code d'un numéro (`/numero/code`, le quota de Meta : dix requêtes sur 72 h) | verrou court `es-code:<numéro>`, jamais relâché | REFUSÉE (429), Meta n'est pas appelé |
 | refus de `/ops` et repos de leur alerte Telegram | compteur partagé (`ops.refus`), verrou court `ops.alerte` | le refus est journalisé (`dansLaFenetre: null`), aucune alerte |
+| OAuth : un MÊME code ou jeton de renouvellement sur `/oauth/token` (`oauth.jeton`, 10/min), le consentement par jeton Google ou par preuve (`oauth.consentement`, 20/min), clé = l’empreinte de `ip::jeton` | compteur partagé | REFUSÉ (429), comme la connexion |
 
 Restent EN MÉMOIRE, par copie, délibérément :
 - **le plafond par utilisateur** (`RATE_LIMIT_USER_PAR_MINUTE`, 300/min) : le plus fréquent (chaque requête de la
@@ -1937,7 +2002,7 @@ outil qui reçoit les signaux (la table de son adaptateur, dans `src/signaux/`),
 
 **Hachés, jamais stockés en clair** : les clés d'API publiques (`api_keys`, sha256), les jetons d'invitation et
 de réinitialisation (`auth_tokens`), les secrets de webhook entrant, les codes de secours du second facteur
-(`mfa_codes_secours`, sha256).
+(`mfa_codes_secours`, sha256), les jetons et codes OAuth (`oauth_autorisations`, `oauth_codes`, sha256).
 
 🔴 **`/ops` EST NOMINATIF, AVEC SECOND FACTEUR** (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
 Plus de jeton partagé : `OPS_TOKEN` n'existe plus, et il n'y a aucun accès de secours. `OPS_EMAILS` (des

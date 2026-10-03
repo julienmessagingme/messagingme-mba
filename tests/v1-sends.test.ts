@@ -18,7 +18,7 @@ import { catalogueTemplates } from '../src/http/v1-catalogues';
 import type { TemplateSummary } from '../src/meta/templates';
 import { lienTraceAvecJeton } from '../src/links/rewrite';
 import type { WorkflowGraph, WorkflowNode } from '../src/workflow/graph';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
 
@@ -247,7 +247,7 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
     ...reste,
   };
   // Le module `/v1/contacts` n'est pas appelé ici : le double muet du lot 1 suffit à le monter.
-  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts: contactsV1Muets(), sends } }), cap, idem, m };
+  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, oauth: aucunJetonOauth, contacts: contactsV1Muets(), sends } }), cap, idem, m };
 }
 
 const H = (key: string, idemKey?: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${key}`, ...(idemKey ? { 'idempotency-key': idemKey } : {}) } });

@@ -1,4 +1,5 @@
 import { API_KEY_PREFIX } from '../../src/auth/api-key-store.pg';
+import type { AccesOauthLookup } from '../../src/oauth/store.pg';
 
 /**
  * UNE CLÉ D'API AU FORMAT QUE LE PRODUIT ÉMET VRAIMENT.
@@ -18,3 +19,10 @@ export function cleApiDeTest(graine: string): string {
   const corps = graine.replace(/[^A-Za-z0-9_-]/g, '_').padEnd(43, 'x').slice(0, 43);
   return `${API_KEY_PREFIX}${corps}`;
 }
+
+/**
+ * AUCUN JETON OAUTH NE SE RÉSOUT (migration 0204). Le quatrième paramètre de `makeRequireApiKey` et `v1.oauth` du
+ * serveur sont requis : un test de clé qui ne parle pas d'OAuth passe cet adaptateur, qui DIT son hypothèse et
+ * reproduit exactement le comportement d'avant le lot (tout `mbo_` refusé en 401).
+ */
+export const aucunJetonOauth: AccesOauthLookup = { resoudreAcces: async () => null };

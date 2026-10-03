@@ -8,7 +8,7 @@ import { DROIT_RELAIS } from '../src/mba/cle-relais';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { PlafondApiStore, ReglagePlafondApi } from '../src/auth/plafond-espace';
 import type { MbaRelaisDeps } from '../src/http/mba-relais';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { capturerJournal } from './journal';
 
@@ -75,7 +75,7 @@ function monter(apiParMinute = 2) {
     auth: acces.auth,
     plafonds: { apiParMinute, apiParHeure: 1000 },
     plafondApi: magasin,
-    v1: { apiKeys: new Cles(), contacts: contactsV1Muets(), mcp: {} as never, mbaRelais: relaisMuet },
+    v1: { apiKeys: new Cles(), oauth: aucunJetonOauth, contacts: contactsV1Muets(), mcp: {} as never, mbaRelais: relaisMuet },
   });
   return { server, magasin };
 }
@@ -229,7 +229,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
   it('⚠️ sans magasin câblé, la route n’existe pas, et le limiteur applique le défaut', async () => {
     const server = buildServer({
       queue: new FakeQueue(), auth: acces.auth, plafonds: { apiParMinute: 1 },
-      v1: { apiKeys: new Cles(), contacts: contactsV1Muets(), mcp: {} as never },
+      v1: { apiKeys: new Cles(), oauth: aucunJetonOauth, contacts: contactsV1Muets(), mcp: {} as never },
     });
     expect((await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: ops })).statusCode).toBe(404);
     expect((await mcp(server, CLE_A)).statusCode).toBe(405);

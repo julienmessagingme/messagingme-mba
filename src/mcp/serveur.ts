@@ -1,4 +1,4 @@
-import { outilsPourScopes, RefusOutil, type DepsMcp, type OutilMcp } from './outils';
+import { outilsPourScopes, RefusOutil, type DepsMcp, type OutilMcp, type PersonneMcp } from './outils';
 import { messageDe } from '../lib/erreur';
 
 /**
@@ -7,8 +7,8 @@ import { messageDe } from '../lib/erreur';
  * Écrit à la main plutôt qu'avec le SDK : la surface utile tient en cinq méthodes, et le SDK apporte une gestion de
  * session et un canal SSE inutiles à un serveur d'outils sans état.
  * Sans état : ni `Mcp-Session-Id` ni reprise de flux, deux requêtes d'un même client peuvent tomber sur deux process.
- * 🔴 L'autorisation n'est pas ici : le preHandler de la route la pose (clé d'API, comme `/v1`), et ce module ne
- * reçoit que l'espace résolu et les scopes. Il ne doit pas décider des droits autrement que `/v1`.
+ * 🔴 L'autorisation n'est pas ici : le preHandler de la route la pose (clé d'API ou jeton OAuth, comme `/v1`), et ce
+ * module ne reçoit que l'espace résolu, les scopes et la personne. Il ne doit pas décider des droits autrement que `/v1`.
  */
 
 /** Version du protocole que ce serveur parle. Un client qui en demande une autre reçoit celle-ci et décide. */
@@ -32,6 +32,11 @@ export type ReponseRpc = { jsonrpc: '2.0'; id: string | number; result: unknown 
 export interface ContexteMcp {
   tenantId: string;
   scopes: string[];
+  /**
+   * La personne derrière un jeton OAuth, toujours un admin de l'espace (relu à chaque appel par la garde) ; `null`
+   * derrière une clé d'API. Requise : un appelant qui l'oublierait ferait signer par personne en silence.
+   */
+  personne: PersonneMcp | null;
 }
 
 function ok(id: string | number, result: unknown): ReponseRpc {
@@ -100,7 +105,7 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
         ? params.arguments as Record<string, unknown>
         : {};
       try {
-        const resultat = await outil.executer(deps, ctx.tenantId, args);
+        const resultat = await outil.executer(deps, ctx.tenantId, args, ctx.personne);
         return ok(id, { content: [{ type: 'text', text: JSON.stringify(resultat, null, 2) }], isError: false });
       } catch (err) {
         if (err instanceof RefusOutil) {

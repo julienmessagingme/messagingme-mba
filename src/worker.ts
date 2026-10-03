@@ -30,6 +30,7 @@ import { flagContactUnreachable } from './crm/hubspot-service';
 import { DUREE_CLE_IDEMPOTENCE_MS } from './api/idempotence';
 import { PgArriveesPubStore } from './pubs/arrivees.pg';
 import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
+import { PgOauthStore } from './oauth/store.pg';
 import { balayerLesPubs } from './pubs/suivi';
 import { estJetonRefuse } from './meta/graph';
 import { runControlSweep } from './inbox/control-sweep';
@@ -1241,6 +1242,18 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`compteurs-debit: ${n} fenêtre(s) échue(s) effacée(s)`);
   }, { immediat: true, enEchec: echecDeBalayage('compteurs-debit', 'sweeper:compteurs-debit') });
+
+  /**
+   * L'OAuth devant `/mcp` (migration 0204) : les codes échus depuis une heure (un code ne s'échange qu'une minute),
+   * et les autorisations révoquées ou expirées depuis 30 jours, avec leurs codes. Par paquets bornés
+   * (`PgOauthStore.purger`), idempotente : sans danger le jour où ce rôle aura deux exemplaires.
+   */
+  const oauthStore = new PgOauthStore(pool);
+  taches.programmer('retention-oauth', 6 * 60 * 60 * 1000, async () => {
+    const n = await oauthStore.purger();
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`retention-oauth: ${n} code(s) ou autorisation(s) OAuth effacé(s)`);
+  }, { immediat: true, enEchec: echecDeBalayage('retention-oauth', 'sweeper:retention-oauth') });
 
   // Déclencheur « X avant la date d'un champ », le seul qui répond à l'écoulement du temps. Il publie dans la
   // file sans rien démarrer : le scénario part par le chemin commun, avec les mêmes garde-fous.

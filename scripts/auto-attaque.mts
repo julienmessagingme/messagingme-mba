@@ -47,14 +47,18 @@
  *   npx tsx scripts/auto-attaque.mts --cible=https://api.messagingme.app --je-sais-ce-que-je-fais \
  *     --jeton=<JWT d'un compte de test> --tenant=<son espace>
  */
-import { randomBytes } from 'node:crypto';
+import { hash, randomBytes } from 'node:crypto';
 import Fastify from 'fastify';
 import { buildServer, modulesDeRoutes } from '../src/server';
 import type { ClasseDAcces, Gardes, ServerDeps } from '../src/server';
 import { FakeQueue } from '../tests/fake-queue';
 import { RateLimiter } from '../src/auth/rate-limit';
-import { signSession, signSessionOps } from '../src/auth/token';
+import { signChoixOauth, signDemandeOauth, signSession, signSessionOps } from '../src/auth/token';
 import { API_KEY_PREFIX } from '../src/auth/api-key-store.pg';
+import { PREFIXE_ACCES, PREFIXE_CODE, PREFIXE_RENOUVELLEMENT } from '../src/oauth/jetons';
+import { CLIENTS_OAUTH } from '../src/oauth/clients';
+import { sha256Hex } from '../src/lib/signature';
+import type { OauthRouteDeps } from '../src/http/oauth';
 import { SCRIPT_INERTE } from '../src/widgets/script';
 import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
@@ -172,6 +176,27 @@ const JETON_VERIFICATION_META = randomBytes(16).toString('hex');
 const SECRET_SERVICE = randomBytes(32).toString('hex');
 const SECRET_STRIPE = randomBytes(32).toString('hex');
 
+/**
+ * L'OAUTH DEVANT `/mcp` (migration 0204) NE SE MONTE QU'AVEC `PUBLIC_API_URL` : sans cette base, ses routes
+ * n'existeraient pas ici, et rien ne les attaquerait. La même base sert au serveur construit ET au classement des
+ * routes (`classesDesRoutes`), sans quoi ses routes y seraient « hors registre ».
+ */
+const BASE_OAUTH = 'https://api.exemple.test';
+/** Les deux clients acceptés, dans l'ordre de `CLIENTS_OAUTH` : Claude Code, puis Claude. */
+const CLAUDE_CODE = CLIENTS_OAUTH[0]!;
+const CLAUDE_AI = CLIENTS_OAUTH[1]!;
+/**
+ * 🔴 UN CODE QUE LE FAUX MAGASIN RECONNAÎT, émis à Claude Code pour un AUTRE vérificateur et une AUTRE adresse de
+ * retour que ceux que la sonde 14 présente. Tout le reste est inconnu. Seules les comparaisons de `/oauth/token`
+ * peuvent donc le refuser : c'est ce que la sonde attaque, et une paire de jetons posée pour lui (`jetonsPoses`)
+ * serait la trouvaille. Tiré au hasard, comme les secrets ci-dessus.
+ */
+const CODE_RECONNU = `${PREFIXE_CODE}${randomBytes(32).toString('base64url')}`;
+const VERIFICATEUR_LEGITIME = randomBytes(32).toString('base64url');
+const RETOUR_LEGITIME = 'http://localhost:4567/callback';
+let codeReconnuPresente = 0;
+let jetonsPoses = 0;
+
 const aucunCompte: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
 /**
@@ -240,6 +265,37 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   // Clé d'API : aucune clé ne se résout. `inconnu()` étant une fonction, donc une valeur vraie, les quatre
   // montages de l'entrée (`/v1`, les envois, `/mcp`, le relais du Meta Business Agent) ont bien lieu.
   v1: inconnu('v1'),
+  // L'OAuth : aucun code, aucun jeton de renouvellement, aucune adresse ne se résout, SAUF le code reconnu de la sonde
+  // 14 (voir `CODE_RECONNU`), et aucun espace ne se crée. Le secret est celui des jetons fabriqués ici : une demande
+  // signée par le script est donc valide en local, forgée à distance.
+  oauth: {
+    store: new Proxy(inconnu('oauth'), {
+      get: (cible, p) => {
+        if (p === 'consommerCode') {
+          return async (empreinte: string) => {
+            interrogations.set('oauth', (interrogations.get('oauth') ?? 0) + 1);
+            if (empreinte !== sha256Hex(CODE_RECONNU)) return null;
+            codeReconnuPresente += 1;
+            return {
+              autorisationId: 'a-sonde', tenantId: 'aaaaaaaa-0000-4000-8000-000000000001', clientId: CLAUDE_CODE.id,
+              challenge: hash('sha256', VERIFICATEUR_LEGITIME, 'base64url'), redirectUri: RETOUR_LEGITIME,
+              scopes: ['mcp:read', 'mcp:write'], resource: `${BASE_OAUTH}/mcp`,
+            };
+          };
+        }
+        if (p === 'poserJetons') return async () => { jetonsPoses += 1; return true; };
+        return Reflect.get(cible, p);
+      },
+    }),
+    comptes: {
+      getByEmail: async () => { interrogations.set('oauth', (interrogations.get('oauth') ?? 0) + 1); return []; },
+      createTenantWithAdmin: async () => { throw new Error('auto-attaque : aucun espace ne se crée'); },
+    },
+    verifyGoogle: inconnu('oauth'),
+    secret: SECRET,
+    appUrl: 'https://console.exemple.test',
+    audit: async () => undefined,
+  } satisfies OauthRouteDeps,
   // Le formulaire de contact de la vitrine : public par nature, il n'a aucune autorité à tromper. Sa fausse autorité
   // est un envoi COUPÉ : une sonde qui l'atteindrait n'enverrait aucun courriel, même en visant une cible distante.
   contactVitrine: {
@@ -277,6 +333,7 @@ function clesDuRegistre(): string[] {
 function dependancesDuRegistre(): Record<string, unknown> {
   const deps: Record<string, unknown> = {
     corsOrigins: ['https://engageme.messagingme.app'],
+    publicApiUrl: BASE_OAUTH,
     appSecret: SECRET_META,
     verifyToken: JETON_VERIFICATION_META,
     // Plafonds larges : les sondes d'autorisation ne doivent pas être refusées pour cause de débit. La sonde
@@ -337,7 +394,7 @@ async function classesDesRoutes(deps: Record<string, unknown>): Promise<Map<stri
   const passe: PreHandler = async () => undefined;
   const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe], ops: passe };
   const classes = new Map<string, { classe: ClasseDAcces; module: string }>();
-  for (const m of modulesDeRoutes(deps as unknown as ServerDeps, bidon())) {
+  for (const m of modulesDeRoutes(deps as unknown as ServerDeps, bidon(), undefined, BASE_OAUTH)) {
     const seul = Fastify({ logger: false });
     m.monte(seul, gardes);
     await seul.ready();
@@ -407,6 +464,11 @@ const OUVERTES: ReadonlyArray<{ motif: RegExp; raison: string }> = [
   { motif: /^\/auth\/choose-workspace$/, raison: 'entrée : autorisé par un jeton de choix signé, pas par une session' },
   // Le formulaire de contact de la vitrine : un visiteur n'a par définition aucun compte.
   { motif: /^\/vitrine\/contact$/, raison: 'formulaire de contact public de la vitrine' },
+  // L'OAuth devant `/mcp` : par construction, personne n'a encore de jeton quand il les appelle. Chacune est autorisée
+  // par ce qu'elle reçoit (une demande signée, un code, un jeton, une preuve Google signée), attaqué par la sonde 14.
+  { motif: /^\/\.well-known\/oauth-(protected-resource(\/mcp)?|authorization-server)$/, raison: 'métadonnées OAuth publiques (RFC 9728, RFC 8414)' },
+  { motif: /^\/oauth\/(authorize|token|revoke)$/, raison: 'OAuth : le client n’a pas encore de jeton (sonde 14)' },
+  { motif: /^\/oauth\/consentement\/(demande|google|autoriser)$/, raison: 'consentement OAuth : demande et preuve signées, pas de session (sonde 14)' },
 ];
 
 const estOuverte = (chemin: string): string | null => OUVERTES.find((o) => o.motif.test(chemin))?.raison ?? null;
@@ -468,7 +530,8 @@ function transportReseau(base: string) {
     const res = await fetch(new URL(a.chemin, base), {
       method: a.methode,
       headers: { 'content-type': 'application/json', ...(a.entetes ?? {}) },
-      ...(a.corps === undefined ? {} : { body: JSON.stringify(a.corps) }),
+      // Une chaîne part telle quelle (un formulaire urlencoded), un objet en JSON.
+      ...(a.corps === undefined ? {} : { body: typeof a.corps === 'string' ? a.corps : JSON.stringify(a.corps) }),
       redirect: 'manual',
     });
     const entetes: Record<string, string> = {};
@@ -773,6 +836,100 @@ async function main(): Promise<void> {
       }
     }
     verifierAtteinte('13. clé inventée : la sonde atteint le magasin', 'cle-api', avant, 'la clé inventée n’a pas le format attendu : revoir `cleInventee`');
+  }
+
+  // --- Sonde 13 bis : classe `cle-api`, un jeton d'accès OAuth inventé (migration 0204) -----------------
+  // Le préfixe `mbo_` aiguille la garde vers les autorisations OAuth : un jeton BIEN FORMÉ que personne n'a émis
+  // doit tomber en 401 sur `/v1` comme sur `/mcp`, et le refus doit venir du magasin, pas du seul format.
+  {
+    const jetonInvente = `${PREFIXE_ACCES}${randomBytes(32).toString('base64url')}`;
+    const avant = new Map(interrogations);
+    for (const r of deClasse('cle-api').filter(jouables)) {
+      for (const methode of r.methodes) {
+        const res = await envoyer({ methode, chemin: concretiser(r.chemin, tenantA), entetes: bearer(jetonInvente) });
+        verifier('13 bis. API publique avec un jeton OAuth inventé', `${methode} ${r.chemin}`, res.statut === 401, '401', String(res.statut));
+      }
+    }
+    verifierAtteinte('13 bis. jeton OAuth inventé : la sonde atteint le magasin', 'cle-api', avant, 'le jeton inventé n’a pas le format attendu : revoir `jetonInvente`');
+  }
+
+  // --- Sonde 14 : l'OAuth devant /mcp (migration 0204), ses routes publiques ----------------------------
+  // Elles sont ouvertes (`OUVERTES`), donc leur autorité est dans ce qu'elles reçoivent : on présente le faux de
+  // chacune. Aucune ne doit émettre de code, de jeton ni de redirection vers une adresse non validée.
+  {
+    const formulaire = (champs: Record<string, string>) => ({
+      methode: 'POST', chemin: '/oauth/token', corps: new URLSearchParams(champs).toString(),
+      entetes: { 'content-type': 'application/x-www-form-urlencoded' },
+    });
+    const refuse = (r: Reponse, erreur: string): boolean => r.statut === 400 && r.corps.includes(`"error":"${erreur}"`);
+    const avant = interrogations.get('oauth') ?? 0;
+
+    // Une demande d'autorisation pour un client inconnu, ou vers une adresse de retour étrangère : 400 et AUCUNE
+    // redirection (OAuth 2.1, 7.12.2), sinon la route deviendrait une redirection ouverte.
+    const defi = hash('sha256', VERIFICATEUR_LEGITIME, 'base64url');
+    for (const [geste, client, retour] of [
+      ['client inconnu', 'https://evil.test/fiche', 'https://evil.test/callback'],
+      ['adresse de retour étrangère', CLAUDE_CODE.id, 'https://evil.test/callback'],
+      ['adresse de claude.ai pour Claude Code', CLAUDE_CODE.id, CLAUDE_AI.adressesDeRetour[0]!],
+    ] as const) {
+      const q = new URLSearchParams({ response_type: 'code', client_id: client, redirect_uri: retour, code_challenge: defi, code_challenge_method: 'S256', state: 's' });
+      const r = await envoyer({ methode: 'GET', chemin: `/oauth/authorize?${q}` });
+      verifier(`14. /oauth/authorize, ${geste}`, 'GET /oauth/authorize', r.statut === 400 && r.entetes.location === undefined, '400 sans redirection', `${r.statut} ${r.entetes.location ?? ''}`);
+    }
+
+    // Un code et un jeton de renouvellement BIEN FORMÉS que personne n'a émis : le refus doit venir du magasin.
+    const codeInvente = await envoyer(formulaire({
+      grant_type: 'authorization_code', code: `${PREFIXE_CODE}${randomBytes(32).toString('base64url')}`, client_id: CLAUDE_CODE.id,
+      redirect_uri: RETOUR_LEGITIME, code_verifier: VERIFICATEUR_LEGITIME,
+    }));
+    verifier('14. /oauth/token, code inventé', 'POST /oauth/token', refuse(codeInvente, 'invalid_grant'), '400 invalid_grant', `${codeInvente.statut} ${codeInvente.corps.slice(0, 80)}`);
+    const renouvellementInvente = await envoyer(formulaire({
+      grant_type: 'refresh_token', refresh_token: `${PREFIXE_RENOUVELLEMENT}${randomBytes(32).toString('base64url')}`, client_id: CLAUDE_CODE.id,
+    }));
+    verifier('14. /oauth/token, renouvellement inventé', 'POST /oauth/token', refuse(renouvellementInvente, 'invalid_grant'), '400 invalid_grant', `${renouvellementInvente.statut} ${renouvellementInvente.corps.slice(0, 80)}`);
+
+    if (LOCAL) {
+      // Le code RECONNU, présenté avec un défaut à chaque fois : seules les comparaisons de la route le refusent.
+      for (const [geste, champs] of [
+        ['mauvais vérificateur PKCE', { redirect_uri: RETOUR_LEGITIME, client_id: CLAUDE_CODE.id, code_verifier: randomBytes(32).toString('base64url') }],
+        ['autre adresse de retour', { redirect_uri: 'http://localhost:9999/callback', client_id: CLAUDE_CODE.id, code_verifier: VERIFICATEUR_LEGITIME }],
+        ['autre client', { redirect_uri: RETOUR_LEGITIME, client_id: CLAUDE_AI.id, code_verifier: VERIFICATEUR_LEGITIME }],
+      ] as const) {
+        const r = await envoyer(formulaire({ grant_type: 'authorization_code', code: CODE_RECONNU, ...champs }));
+        verifier(`14. /oauth/token, code réel avec ${geste}`, 'POST /oauth/token', refuse(r, 'invalid_grant'), '400 invalid_grant', `${r.statut} ${r.corps.slice(0, 80)}`);
+      }
+      // Les trois refus ci-dessus ne prouvent rien si le code n'a pas été reconnu : ils seraient tombés plus tôt.
+      verifier('14. le code réel a bien été reconnu par le magasin', 'oauth.consommerCode', codeReconnuPresente === 3, '3 présentations reconnues', String(codeReconnuPresente));
+      verifier('14. aucune paire de jetons posée', 'oauth.poserJetons', jetonsPoses === 0, '0', String(jetonsPoses));
+    }
+
+    // Le consentement : une demande forgée, une preuve forgée ou prise pour une autre demande n'autorisent rien.
+    const forgeDemande = await signDemandeOauth({
+      clientId: CLAUDE_CODE.id, redirectUri: RETOUR_LEGITIME, codeChallenge: defi, scopes: ['mcp:read', 'mcp:write'], state: 's',
+      resource: `${BASE_OAUTH}/mcp`,
+    }, randomBytes(32).toString('hex'));
+    const demandeForgee = await envoyer({ methode: 'POST', chemin: '/oauth/consentement/autoriser', corps: { demande: forgeDemande, choix: forgeDemande, tenantId: tenantA } });
+    verifier('14. consentement, demande forgée', 'POST /oauth/consentement/autoriser', demandeForgee.statut === 400, '400', String(demandeForgee.statut));
+    if (LOCAL) {
+      const demande = await signDemandeOauth({
+        clientId: CLAUDE_CODE.id, redirectUri: RETOUR_LEGITIME, codeChallenge: defi, scopes: ['mcp:read', 'mcp:write'], state: 's',
+        resource: `${BASE_OAUTH}/mcp`,
+      }, SECRET);
+      const preuve = (pour: string, secret: string) => signChoixOauth({ email: 'attaquant@exemple.test', demande: sha256Hex(pour) }, secret);
+      for (const [geste, choix, attendu] of [
+        ['une preuve signée AILLEURS', await preuve(demande, randomBytes(32).toString('hex')), 401],
+        ['une preuve donnée pour une AUTRE demande', await preuve(`${demande}x`, SECRET), 401],
+        ['une adresse sans compte dans l’espace', await preuve(demande, SECRET), 403],
+      ] as const) {
+        const r = await envoyer({ methode: 'POST', chemin: '/oauth/consentement/autoriser', corps: { demande, choix, tenantId: tenantA } });
+        verifier(`14. consentement avec ${geste}`, 'POST /oauth/consentement/autoriser', r.statut === attendu, String(attendu), String(r.statut));
+      }
+      // Un jeton Google que Google ne reconnaît pas : 401, et surtout aucun espace créé (la fausse autorité lève).
+      const google = await envoyer({ methode: 'POST', chemin: '/oauth/consentement/google', corps: { demande, idToken: randomBytes(24).toString('hex') } });
+      verifier('14. consentement avec un jeton Google faux', 'POST /oauth/consentement/google', google.statut === 401, '401', String(google.statut));
+      const n = (interrogations.get('oauth') ?? 0) - avant;
+      verifier('14. les sondes OAuth atteignent leur magasin', 'oauth', n > 0, 'au moins une recherche', String(n));
+    }
   }
 
   // --- Sonde 10 : jeton de CHOIX présenté pour un espace qui n'y est pas --------------------------------

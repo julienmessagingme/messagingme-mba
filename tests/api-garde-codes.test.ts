@@ -5,7 +5,7 @@ import { RateLimiter, consommerAvecEntetes } from '../src/auth/rate-limit';
 import { compterOuRefuser, type ApiUsageGuard } from '../src/api/usage-guard';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { plafondsDeTest } from './aide/plafonds';
 
 /**
@@ -37,7 +37,7 @@ const requete = (h?: string): FastifyRequest => ({ headers: h ? { authorization:
 
 describe('la garde de clé', () => {
   it('🔴 clé absente, mal formée ou inconnue : 401 `unauthorized`', async () => {
-    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest(), large());
+    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest(), large(), aucunJetonOauth);
     for (const h of [undefined, 'Bearer jwt', `Bearer ${cleApiDeTest('inconnue')}`]) {
       const { reply, state } = fauxReply();
       await garde(requete(h), reply);
@@ -54,7 +54,7 @@ describe('la garde de clé', () => {
   });
 
   it('🔴 plafond de l’espace : 429 `rate_limited`, avec les MÊMES en-têtes qu’avant', async () => {
-    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest({ minute: 1 }), large());
+    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest({ minute: 1 }), large(), aucunJetonOauth);
     await garde(requete(`Bearer ${CLE}`), fauxReply().reply);
     const { reply, state } = fauxReply();
     await garde(requete(`Bearer ${CLE}`), reply);
@@ -69,8 +69,8 @@ describe('la garde de clé', () => {
     // celle d'une clé résolue pour la première fois, dont l'espace a déjà épuisé son plafond. Le plafond est
     // partagé avec une première garde qui l'a vidé ; la seconde ne connaît pas encore la clé.
     const plafonds = plafondsDeTest({ minute: 1 });
-    await makeRequireApiKey(new FauxCles(CLE), plafonds, large())(requete(`Bearer ${CLE}`), fauxReply().reply);
-    const garde = makeRequireApiKey(new FauxCles(CLE), plafonds, large());
+    await makeRequireApiKey(new FauxCles(CLE), plafonds, large(), aucunJetonOauth)(requete(`Bearer ${CLE}`), fauxReply().reply);
+    const garde = makeRequireApiKey(new FauxCles(CLE), plafonds, large(), aucunJetonOauth);
     const { reply, state } = fauxReply();
     await garde(requete(`Bearer ${CLE}`), reply);
     expect(state.statusCode).toBe(429);
@@ -79,7 +79,7 @@ describe('la garde de clé', () => {
   });
 
   it('budget spéculatif épuisé : 429 `rate_limited`, et toujours AUCUN en-tête x-ratelimit', async () => {
-    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest(), new RateLimiter(1, 60_000));
+    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest(), new RateLimiter(1, 60_000), aucunJetonOauth);
     await garde(requete(`Bearer ${cleApiDeTest('sonde_a')}`), fauxReply().reply);
     const { reply, state } = fauxReply();
     await garde(requete(`Bearer ${cleApiDeTest('sonde_b')}`), reply);
@@ -111,7 +111,7 @@ describe('le garde d’usage', () => {
     expect(await compterOuRefuser(refusant, requete(), sansAuth.reply, 'contacts.upsert')).toBe(false);
     expect(sansAuth.state).toMatchObject({ statusCode: 401, body: { code: 'unauthorized' } });
 
-    const authentifiee = { headers: {}, auth: { userId: 'apikey:k1', tenantId: 't1', role: 'api' }, apiKeyId: 'k1' } as unknown as FastifyRequest;
+    const authentifiee = { headers: {}, auth: { userId: 'apikey:k1', tenantId: 't1', role: 'api' }, apiAcces: { type: 'cle', id: 'k1' } } as unknown as FastifyRequest;
     const quota = fauxReply();
     expect(await compterOuRefuser(refusant, authentifiee, quota.reply, 'contacts.upsert')).toBe(false);
     expect(quota.state).toMatchObject({ statusCode: 429, body: { error: 'quota d’essai atteint', code: 'rate_limited' } });

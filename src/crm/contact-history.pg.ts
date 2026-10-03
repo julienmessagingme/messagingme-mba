@@ -277,7 +277,8 @@ export class PgContactHistoryStore {
    *  - Un parcours = un envoi de campagne, borné comme `engage` : jusqu'au prochain envoi (`p.fin`), et au plus
    *    24 h. Sans ces bornes, le dernier parcours avalerait la conversation qui suit, ou la campagne suivante.
    *  - Seuls les sortants automatiques comptent comme sollicitation (`sender_user_id is null`, et non `origin`,
-   *    nul sur les sortants anciens) : un opérateur qui discute ne fait pas avancer un scénario.
+   *    nul sur les sortants anciens) : un opérateur qui discute ne fait pas avancer un scénario. Une réponse de
+   *    Claude par le MCP (`origin = 'mcp'`) non plus, signée ou non : elle répond dans la fenêtre ouverte.
    *  - Une réaction est un entrant ou un clic attribué, comme `engage`. La profondeur est un `max` ;
    *    `entonnoirEngagement` en fait un cumul.
    *  - Les départs sont dédupliqués et bornés à `MAX_SENDS`, la population de la liste d'envois.
@@ -328,6 +329,9 @@ export class PgContactHistoryStore {
              join conversation_messages m on m.conversation_id = cv.id
             where m.direction = 'out'
               and m.sender_user_id is null
+              -- Une réponse de Claude par le MCP répond dans la fenêtre ouverte : c'est une discussion, pas une
+              -- sollicitation, qu'elle soit signée d'une personne (OAuth) ou non (clé d'API).
+              and m.origin is distinct from 'mcp'
               and m.created_at >= p.debut
               and m.created_at < least(coalesce(p.fin, 'infinity'::timestamptz), p.debut + interval '24 hours')
          ),

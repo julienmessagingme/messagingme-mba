@@ -6,7 +6,7 @@ import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { ContactV1, FicheApi, ServiceContactsV1 } from '../src/api/contacts-v1';
 import { contactsV1Muets } from './aide/contacts-v1';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 
 /** Fake du lookup de clé : mappe des clés claires -> {tenantId, scopes} via leur hash sha256. */
 class FakeApiKeys implements ApiKeyLookup {
@@ -45,7 +45,7 @@ function app(over: Partial<ServiceContactsV1> = {}) {
     lireFiche: async (tenant, id) => { cap.lus.push({ tenant, id }); return id === ID ? FICHE : null; },
     ...over,
   });
-  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts } }), cap, keys };
+  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, oauth: aucunJetonOauth, contacts } }), cap, keys };
 }
 const auth = (key: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` } });
 const champs = (n: number): Record<string, string> => Object.fromEntries(Array.from({ length: n }, (_, i) => [`c${i}`, 'v']));

@@ -1,22 +1,45 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
-import { traiterMessage, erreurDeParsing, lotRefuse, VERSION_PROTOCOLE } from '../mcp/serveur';
+import { traiterMessage, erreurDeParsing, lotRefuse, VERSION_PROTOCOLE, type ContexteMcp } from '../mcp/serveur';
 import type { DepsMcp } from '../mcp/outils';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
+import { enTeteWwwAuthenticate } from '../oauth/metadonnees';
+import { PREFIXE_ACCES } from '../oauth/jetons';
 
 /**
  * La route MCP : `POST /mcp`, un seul chemin, sans état, relayée par le front comme `/api/backend/*`.
- * 🔴 L'autorisation est celle de `/v1` : une clé d'API en Bearer, avec des scopes, révocable et limitée en débit.
- * Un grant OAuth délégué posé à moitié donnerait l'illusion d'un contrôle d'accès par personne.
+ * 🔴 L'autorisation est celle de `/v1` : une clé d'API en Bearer, ou un jeton d'accès OAuth de notre serveur
+ * (migration 0204), avec des scopes, révocables et limités en débit. Un jeton porte une personne, admin de
+ * l'espace, relue à chaque appel : c'est elle qui signe les écritures.
+ *
+ * `base` : l'adresse publique de l'API (`PUBLIC_API_URL`), `null` quand elle n'est pas posée. Elle décide du
+ * `WWW-Authenticate` du 401, qui fait ouvrir la connexion OAuth à Claude. 🔴 Posé seulement quand l'hôte appelé
+ * est celui de `base` : sur `mba.messagingme.app`, la ressource annoncée (`api.`) ne correspondrait pas à
+ * l'adresse appelée (RFC 9728, 3.3), et un client à clé révoquée partirait vers une connexion qui ne peut pas
+ * aboutir. Jamais sur `/v1`, ni sur un 403 ou un 429 : seul ce 401 ouvre une connexion.
  */
-export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: PreHandler[], usage: ApiUsageGuard): void {
-  const opts = { preHandler: prehandlers };
+export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: PreHandler[], usage: ApiUsageGuard, base: string | null): void {
+  const hote = base === null ? null : new URL(base).host.toLowerCase();
+  /**
+   * Un crochet de route, et pas la garde : la garde sert aussi `/v1` et le relais. Il voit aussi le 401 rendu par
+   * la garde, puisqu'il appartient à la route.
+   */
+  const annoncerConnexion = async (req: FastifyRequest, reply: FastifyReply, payload: unknown): Promise<unknown> => {
+    if (base !== null && reply.statusCode === 401 && req.host.toLowerCase() === hote) {
+      // `invalid_token` seulement quand un jeton OAuth a été présenté : sans authentification, la RFC 6750 veut un
+      // en-tête sans code d'erreur, et une clé refusée n'est pas un jeton.
+      const jeton = req.headers.authorization?.startsWith(`Bearer ${PREFIXE_ACCES}`) === true;
+      reply.header('www-authenticate', enTeteWwwAuthenticate(base, jeton ? 'invalid_token' : undefined));
+    }
+    return payload;
+  };
+  const opts = { preHandler: prehandlers, onSend: annoncerConnexion };
 
   app.post('/mcp', opts, async (req, reply) => {
-    // 🔴 L'espace vient de la clé résolue, jamais d'un paramètre : impossible de désigner l'espace d'un autre.
+    // 🔴 L'espace vient de la clé ou du jeton résolu, jamais d'un paramètre : impossible de désigner l'espace d'un autre.
     const tenantId = req.auth?.tenantId;
     if (!tenantId) return reply.code(401).send({ error: 'clé d’API requise' });
-    const ctx = { tenantId, scopes: req.apiScopes ?? [] };
+    const ctx: ContexteMcp = { tenantId, scopes: req.apiScopes ?? [], personne: req.apiPersonne ?? null };
 
     // Un message par requête, donc une unité : c'est le refus du lot JSON-RPC, plus bas, qui rend ce compte honnête.
     if (!await compterOuRefuser(usage, req, reply, 'mcp.call')) return reply;

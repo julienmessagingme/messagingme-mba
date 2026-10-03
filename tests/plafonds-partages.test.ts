@@ -9,7 +9,7 @@ import type { CompteurDebit } from '../src/db/debit';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { AuthUser, EmailIdentity, UserAuthStore } from '../src/auth/store';
 import type { ImportRouteDeps } from '../src/http/import';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { MfaEnMemoire, UtilisateursFaux, comptesDe } from './mfa';
 import { exploitationInerte, opsInerte } from './routes-inertes';
@@ -44,7 +44,7 @@ function copieApi(o: { debit?: CompteurDebit; parMinute: number; ops?: ReturnTyp
     queue: new FakeQueue(),
     ...(o.debit ? { debit: o.debit } : {}),
     plafonds: { apiParMinute: o.parMinute, apiParHeure: 100_000 },
-    v1: { apiKeys: cles, contacts: contactsV1Muets() },
+    v1: { apiKeys: cles, oauth: aucunJetonOauth, contacts: contactsV1Muets() },
     ...(o.ops ? {
       auth: o.ops.auth,
       ops: { ...opsInerte, exploitation: { ...exploitationInerte, getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [] } },

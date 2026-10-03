@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { capturerJournal } from './journal';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { exploitationInerte, opsInerte } from './routes-inertes';
@@ -44,6 +44,7 @@ function monter(statut: string | undefined) {
     queue: new FakeQueue(),
     v1: {
       apiKeys: new FauxCles(CLE, statut),
+      oauth: aucunJetonOauth,
       contacts: contactsV1Muets(),
       mcp: {} as never,
     },

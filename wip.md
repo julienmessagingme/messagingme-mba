@@ -19,6 +19,37 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : LIVRAISON 2a ÉCRITE, PAS DÉPLOYÉE
+
+Spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, plan `docs/superpowers/plans/2026-10-03-oauth-mcp.md`.
+La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp` »).
+
+- ✅ **2a écrite (tâches 1 à 8)** : migration 0204 (`oauth_autorisations`, `oauth_codes`), le noyau `src/oauth/`, la
+  garde de `/mcp` qui accepte un jeton `mbo_`, le 401 qui annonce la connexion, les routes `/oauth/*` et le
+  consentement (`src/http/oauth.ts`, `src/http/oauth-consentement.ts`), la purge `retention-oauth`, le script
+  `npm run oauth:fiches` (les deux fiches de Claude relues CONFORMES le 2026-10-03). Tests unitaires et auto-attaque
+  verts ; les tests d'intégration du magasin ne tournent qu'en CI.
+- ✅ **Relecture indépendante de 2a : aucun rouge.** Corrigés dans le lot, chacun avec son test vérifié dans les deux
+  sens : une réponse de Claude signée d'une personne restait comptée comme humaine par l'analyse et comme une
+  sollicitation par le bilan du contact ; la ressource d'un renouvellement n'était tenue par aucun test ; deux
+  clés étrangères de 0204 sans index ; une phrase fausse de `documentation.md` sur les 5xx de `/oauth/token`.
+- 🟡 **Ouverts** : deux renouvellements SIMULTANÉS du même jeton révoquent l'autorisation (à observer à l'essai
+  réel, une fenêtre de grâce sinon) ; un code présenté deux fois est refusé sans révoquer l'autorisation (OAuth 2.1
+  le recommande) ; chaque jeton d'accès neuf coûte une unité du budget des empreintes inconnues de chaque copie ;
+  la liste « Applications autorisées » montre encore celles d'un admin rétrogradé (elles ne marchent plus).
+- ⏳ **Ordre de déploiement 2a** : `compose build mba-api`, `migrate` (0204 est BLOQUANTE : sans elle, un jeton `mbo_`
+  bien formé, même inventé, rend 500 au lieu de 401) et relecture en base, PUIS `up -d --build` de `mba-api` et des
+  workers, rechargement NPM après `mba-api` sain, contrôle public, `npm run oauth:fiches`.
+- ⏳ **Trois mesures après le `up`, sur la production** : `curl -sI https://api.messagingme.app/.well-known/oauth-authorization-server`
+  montre les en-têtes de l'API (pas une 404 de NPM) ; `curl -si -X POST https://api.messagingme.app/mcp` porte
+  `www-authenticate` (sinon NPM ne transmet pas le `Host` d'origine, et Claude ne lancera jamais la connexion) ;
+  `/oauth/token` répond 400 à un client en ligne de commande (sinon Cloudflare le bloque, et Julien pose la règle
+  « Skip » de la spec, section 7).
+- ⏳ **Livraison 2b (la console)** : la page `/autoriser` et « Applications autorisées », APRÈS le `up` de 2a
+  (elle appelle des routes neuves).
+- ⏳ **L'essai réel qui clôt le lot** (spec, section 8) : Claude Code sur le poste de Julien, `https://api.messagingme.app/mcp`
+  ajouté SANS clé, Google, « Autoriser », lecture d'un fil ; révocation depuis la console, nouvelle connexion exigée ;
+  une adresse Google jamais vue qui crée son espace ; le même serveur en connecteur dans claude.ai.
 ## LES ENVOIS D'UN BLOC SORTIS DU CÂBLAGE (DÉPLOYÉ LE 2026-10-03 À 11 H 46 UTC ; ESSAI RÉEL FAIT)
 
 - ✅ Refactor à comportement identique, plan `docs/superpowers/plans/2026-10-03-envois-de-bloc.md` : les quatre

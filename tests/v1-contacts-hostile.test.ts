@@ -6,7 +6,7 @@ import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { ContactV1 } from '../src/api/contacts-v1';
 import { contactsV1Muets } from './aide/contacts-v1';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 
 /**
  * CE QU'UN CORPS HOSTILE OU MALADROIT PROVOQUE SUR `/v1/contacts`, ET CE QU'IL DOIT PROVOQUER.
@@ -36,7 +36,7 @@ function app() {
   const contacts = contactsV1Muets({
     ecrireFiches: async (tenant, items) => { cap.calls.push({ tenant, items }); return items.map((_, i) => ({ index: i, status: 'created' as const, contactId: `c${i}` })); },
   });
-  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts } }), cap };
+  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, oauth: aucunJetonOauth, contacts } }), cap };
 }
 const auth = { headers: { 'content-type': 'application/json', authorization: `Bearer ${VALID}` } };
 

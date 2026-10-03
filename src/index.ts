@@ -29,6 +29,7 @@ import { PgUserStore } from './user/store.pg';
 import { PgAuthTokenStore } from './auth/token-store.pg';
 import { verifyGoogleIdToken } from './auth/google';
 import { PgApiKeyStore } from './auth/api-key-store.pg';
+import { PgOauthStore } from './oauth/store.pg';
 import { PgPlafondEspaceStore } from './auth/plafond-espace.pg';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { creerServiceContactsV1 } from './api/contacts-v1';
@@ -202,6 +203,7 @@ async function main(): Promise<void> {
   const userStore = new PgUserStore(pool);
   const authTokenStore = new PgAuthTokenStore(pool);
   const apiKeyStore = new PgApiKeyStore(pool);
+  const oauthStore = new PgOauthStore(pool);
   const reportStore = new PgWorkflowReportStore(pool);
   // L'email de l'acteur est résolu ICI, une fois, et écrit en clair dans le journal : une jointure sur `users`
   // rendrait l'historique illisible au premier départ d'un collaborateur.
@@ -2123,8 +2125,22 @@ async function main(): Promise<void> {
       audit: auditSink,
       cles: apiKeyStore,
     },
+    /**
+     * L'OAuth devant `/mcp` (migration 0204) : les routes publiques et celles de la console partagent le même
+     * magasin, les mêmes comptes et le même secret. Ne monte rien sans `PUBLIC_API_URL`.
+     */
+    oauth: {
+      store: oauthStore,
+      comptes: userStore,
+      verifyGoogle: (idToken) => verifyGoogleIdToken(idToken, config.GOOGLE_CLIENT_ID),
+      secret: config.AUTH_SECRET,
+      appUrl: config.APP_URL,
+      audit: auditSink,
+    },
+    oauthConsentement: { store: oauthStore, comptes: userStore, secret: config.AUTH_SECRET, audit: auditSink },
     v1: {
       apiKeys: apiKeyStore,
+      oauth: oauthStore,
       /**
        * Les catalogues de l'API publique. Ce bloc ne fait que brancher : le tri vit dans
        * `src/http/v1-catalogues.ts`, testé. `templates` passe par `catalogueTemplatesCache` (une minute) : un

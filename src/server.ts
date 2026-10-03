@@ -67,6 +67,8 @@ import type { V1MessagesRouteDeps } from './http/v1-messages';
 import { registerV1MessagesRcs } from './http/v1-messages-rcs';
 import type { V1MessagesRcsRouteDeps } from './http/v1-messages-rcs';
 import { registerMcp } from './http/mcp';
+import { registerOauth, type OauthRouteDeps } from './http/oauth';
+import { registerOauthConsentement, type OauthConsentementRouteDeps } from './http/oauth-consentement';
 import { registerMbaRelais, type MbaRelaisDeps } from './http/mba-relais';
 import { DROIT_RELAIS } from './mba/cle-relais';
 import type { DepsMcp } from './mcp/outils';
@@ -134,6 +136,8 @@ import type { HubspotInstallRouteDeps } from './http/hubspot-install';
 import type { MbaRouteDeps } from './http/mba';
 import type { EmailRoutesDeps } from './http/email';
 import type { ApiKeyLookup } from './auth/api-key-store.pg';
+import type { AccesOauthLookup } from './oauth/store.pg';
+import { baseOauth } from './oauth/metadonnees';
 import type { Queue } from './queue/queue';
 import { ENTETES_SECURITE_API } from './http/entetes-securite';
 import type { ApiUsageGuard } from './api/usage-guard';
@@ -162,6 +166,11 @@ export interface ServerDeps {
   verifyToken?: string;
   /** Défaut : config.META_APP_SECRET. Injectable en test. */
   appSecret?: string;
+  /**
+   * Défaut : config.PUBLIC_API_URL. Injectable en test. La base de l'OAuth (`baseOauth`) : vide, le 401 de `/mcp`
+   * n'annonce aucune connexion. Lue par `buildServer` et passée au registre en paramètre (`baseOauthApi`).
+   */
+  publicApiUrl?: string;
   /** Auth (login + secret JWT). Obligatoire dès qu'un module à routes `:tenantId` est exposé. */
   auth?: AuthRouteDeps;
   /**
@@ -290,12 +299,24 @@ export interface ServerDeps {
   /** CRUD des clés d'API (console admin, JWT), réservé aux admins. */
   apiKeys?: ApiKeysRouteDeps;
   /**
+   * Le serveur d'autorisation OAuth devant `/mcp` (migration 0204) : métadonnées, `/oauth/*`, consentement par
+   * Google. Public. Ne monte rien sans `PUBLIC_API_URL` (`baseOauthApi` du registre).
+   */
+  oauth?: OauthRouteDeps;
+  /** Le même consentement avec la session de la console, et les autorisations de l'espace, réservés aux admins. */
+  oauthConsentement?: OauthConsentementRouteDeps;
+  /**
    * L'API publique /v1 (clé d'API, autorité séparée du JWT, comme /ops). `usage` est retiré des dépendances
    * de chaque module : c'est `buildServer` qui injecte le garde d'usage, une seule fois, comme les limiteurs
    * de débit. L'appelant ne peut donc ni l'oublier ni en fournir un second.
    */
   v1?: {
     apiKeys: ApiKeyLookup;
+    /**
+     * Les jetons d'accès OAuth sur la même autorité (migration 0204), que la garde résout. Requis : un câblage
+     * qui l'oublierait ne compile pas, au lieu de refuser tout jeton en silence.
+     */
+    oauth: AccesOauthLookup;
     contacts: Omit<V1ContactsRouteDeps, 'usage'>;
     sends?: Omit<V1SendsRouteDeps, 'usage'>;
     /** Les trois catalogues (`GET /v1/templates`, `/v1/scenarios`, `/v1/rcs-messages`). */
@@ -382,7 +403,7 @@ export type ClasseDAcces =
    * vérifié, relus à chaque requête. Autorité séparée de la session d'espace, et délibérément cross-espace.
    */
   | 'session-ops'
-  /** Une clé d'API de client, autorité séparée elle aussi. */
+  /** Une clé d'API de client, ou un jeton d'accès OAuth émis par ce serveur (`mbo_`), autorité séparée elle aussi. */
   | 'cle-api';
 
 /** Les gardes que `buildServer` construit une fois et distribue aux modules. */
@@ -471,6 +492,13 @@ export function modulesDeRoutes(
    * des clés que ce registre lit, et `debit` n'en monte aucun. Le défaut sert qui exerce le registre sans serveur.
    */
   debit: CompteurDebit = new CompteurDebitMemoire(),
+  /**
+   * La base de l'OAuth (`baseOauth(PUBLIC_API_URL)`), `null` quand elle n'est pas posée. Reçue en paramètre et non
+   * lue dans `deps`, comme `debit` : c'est une configuration, pas les dépendances d'un module, et le registre ne
+   * doit lire dans `deps` que ce qui décide d'un montage (l'auto-attaque et `tests/scope-tenant.test.ts` le
+   * construisent sur des dépendances factices).
+   */
+  baseOauthApi: string | null = baseOauth(config.PUBLIC_API_URL),
 ): readonly ModuleMonte[] {
   /**
    * Un seul cache de réglages du plafond de l'API pour ses deux consommateurs : le limiteur de `/v1` le lit,
@@ -516,6 +544,9 @@ export function modulesDeRoutes(
     entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth, debit)),
     // Le formulaire de contact de la vitrine : public par nature, son plafond et son pot de miel sont dans le module.
     entree('contactVitrine', 'anonyme', deps.contactVitrine, (app, d) => registerContactVitrine(app, d)),
+    // L'OAuth devant `/mcp` : public par nature, personne n'a encore de jeton. Ses plafonds sont dans le module, et
+    // il ne monte rien sans `PUBLIC_API_URL` : l'émetteur annoncé serait l'adresse de la console.
+    entree('oauth', 'anonyme', deps.oauth, (app, d) => registerOauth(app, d, baseOauthApi, debit)),
     entree('import', 'tenant', deps.import, (app, d, g) => registerImport(app, d, g.admin, g.limiteCouteuse)),
     entree('campaigns', 'tenant', deps.campaigns, (app, d, g) => registerCampaigns(app, d, g.admin, g.limiteCouteuse)),
     // Bibliothèque RCS : montée avec `auth` et non `admin`, car la liste doit être lisible par un agent (bloc
@@ -586,6 +617,9 @@ export function modulesDeRoutes(
     entree('mba', 'tenant', deps.mba, (app, d, g) => registerMba(app, d, g.admin)),
     entree('email', 'tenant', deps.email, (app, d, g) => registerEmailRoutes(app, d, g.admin)),
     entree('apiKeys', 'tenant', deps.apiKeys, (app, d, g) => registerApiKeys(app, d, g.admin)),
+    // `admin` comme les clés d'API : seul un admin autorise Claude (décision du 2026-10-03), et la liste dit qui a
+    // ouvert l'espace.
+    entree('oauthConsentement', 'tenant', deps.oauthConsentement, (app, d, g) => registerOauthConsentement(app, d, g.admin, baseOauthApi)),
     entree('webhooksAdmin', 'tenant', deps.webhooksAdmin, (app, d, g) => registerWebhooksAdmin(app, d, g.admin)),
     /**
      * API publique /v1 et serveur MCP : une seule entrée pour tous leurs montages, parce qu'ils partagent
@@ -608,7 +642,7 @@ export function modulesDeRoutes(
        * (`CLE_BUDGET_SPECULATIF`), donc sa table ne porte qu'une entrée : pas de plafond de clés.
        */
       const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
-      const requireApiKey = makeRequireApiKey(v1.apiKeys, { espace: plafondEspace, relais: apiLimiter }, apiPrefiltre);
+      const requireApiKey = makeRequireApiKey(v1.apiKeys, { espace: plafondEspace, relais: apiLimiter }, apiPrefiltre, v1.oauth);
       // Deux droits, et une clé ne porte que ceux qu'on lui a donnés : lire une fiche (numéro, consentement,
       // joignabilité) n'est pas le droit d'en écrire une, ni l'inverse.
       registerV1Contacts(app, { ...v1.contacts, usage: usageApi }, {
@@ -628,7 +662,9 @@ export function modulesDeRoutes(
       // Serveur MCP : même `requireApiKey` que /v1, donc ses appels comptent dans le plafond de l'espace. Pas
       // de `requireScope` à la porte : il a deux droits (lecture, écriture) et c'est l'outil appelé qui décide
       // duquel il a besoin.
-      if (v1.mcp) registerMcp(app, v1.mcp, [requireApiKey], usageApi);
+      // Son 401 annonce la connexion OAuth (`WWW-Authenticate`) quand `PUBLIC_API_URL` est posée, et sur cet hôte
+      // seulement.
+      if (v1.mcp) registerMcp(app, v1.mcp, [requireApiKey], usageApi, baseOauthApi);
       // Le relais du Meta Business Agent : le même `requireApiKey`, qui reconnaît sa clé à son droit et la
       // compte par clé, hors du plafond de l'espace. Ce droit, seule la publication l'attribue (`DROIT_RELAIS`,
       // absent de `VALID_API_SCOPES`) : la même constante que celle qui crée la clé, un littéral recopié ici
@@ -670,7 +706,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   // Le registre vit au niveau du module (`modulesDeRoutes`) pour qu'un test puisse l'exercer sans monter le
   // serveur entier.
-  const registre = modulesDeRoutes(deps, usageApi, debit);
+  const registre = modulesDeRoutes(deps, usageApi, debit, baseOauth(deps.publicApiUrl ?? config.PUBLIC_API_URL));
 
   /**
    * 🔴 Aucune route portant `:tenantId` ne se monte sans authentification. La couverture est dérivée du

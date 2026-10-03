@@ -85,6 +85,19 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     expect(ctx!.signals).toEqual({ hasHumanOutbound: true });
   });
 
+  it('🔴 getContext : une réponse de Claude signée d’une personne (origine mcp, OAuth) n’est PAS humaine', async () => {
+    const store = new PgConversationAnalysisStore(pool);
+    const conv = await insertConv('33600100021');
+    await pool.query(`insert into conversation_messages (conversation_id, direction, type, body) values ($1,'in','text','Bonjour')`, [conv]);
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, sender_user_id, origin) values ($1,'out','text','Réponse de Claude', $2, 'mcp')`,
+      [conv, userId],
+    );
+    const ctx = await store.getContext(conv);
+    expect(ctx!.messages).toHaveLength(2);
+    expect(ctx!.signals).toEqual({ hasHumanOutbound: false });
+  });
+
   it('getContext : conversation inexistante -> null', async () => {
     const store = new PgConversationAnalysisStore(pool);
     expect(await store.getContext('00000000-0000-0000-0000-000000000000')).toBeNull();

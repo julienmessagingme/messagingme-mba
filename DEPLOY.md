@@ -229,6 +229,11 @@ la journée, présent au second, sur exactement la même commande. Un conteneur 
 200 ne disent RIEN de ce que voit un client. Le script sort en code non nul et rappelle le remède
 (`nginx -s reload`), qui n'est pas `docker network connect`.
 
+⚠️ **À chaque déploiement de l'API, relire les fiches des clients OAuth** (Claude Code et claude.ai), depuis le
+poste : `npm run oauth:fiches`. `src/oauth/clients.ts` les RECOPIE ; si Anthropic change une adresse de retour,
+les connexions de Claude échouent sans rien dire. Code 1 : mettre à jour `CLIENTS_OAUTH` (et le CHECK de 0204 si
+un identifiant change). Code 2 : claude.ai injoignable, à relancer.
+
 ## ⚠️ Deux gestes qu'on oublie, et leur symptôme
 
 **`up -d --build` OBLIGATOIRE dès que `web/next.config.mjs` bouge.** Les `rewrites` sont **gelés au build** de

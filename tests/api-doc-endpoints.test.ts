@@ -8,7 +8,7 @@ import { GardeUsageMemoire } from './aide/usage';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { gardesOuvertes } from './gardes';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 
 /**
  * L'INDEX DES ENDPOINTS DE LA DOC EST L'API QUE LE SERVEUR MONTE (lot 2 de la refonte de la doc, 2026-09-25).
@@ -42,7 +42,7 @@ async function monterV1() {
     cles.ajouter(cleSans(d), { id: `sans-${d}`, tenantId: `t-sans-${d}`, scopes: DROITS.filter((x) => x !== d) });
     cles.ajouter(cleSeul(d), { id: `seul-${d}`, tenantId: `t-seul-${d}`, scopes: [d] });
   }
-  const deps = { v1: { apiKeys: cles, contacts: {}, sends: {}, catalogues: {}, messages: {}, messagesRcs: {} } };
+  const deps = { v1: { apiKeys: cles, oauth: aucunJetonOauth, contacts: {}, sends: {}, catalogues: {}, messages: {}, messagesRcs: {} } };
   const v1 = modulesDeRoutes(deps as never, new GardeUsageMemoire()).find((m) => m.nom === 'v1');
   if (!v1) throw new Error('le registre n’a plus d’entrée v1');
   const app = Fastify({ logger: false });

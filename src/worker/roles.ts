@@ -87,6 +87,7 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'reprise-controle': 'principal',
   'retention-evenements-meta': 'principal',
   'retention-generale': 'principal',
+  'retention-oauth': 'principal',
   'retention-payloads-webhooks': 'principal',
   'reveil-parcours': 'principal',
   'risque-desengagement': 'principal',

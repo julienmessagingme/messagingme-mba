@@ -13,7 +13,7 @@ import { REPONSE_EN_COURS, REPONSE_MAISON } from '../src/mba/outils-maison';
 import type { AppelConnecteur } from '../src/agent/resolvers/http';
 import type { JournalAppels, OutilDefini } from '../src/agent/catalog';
 import type { EntreeResolveur } from '../src/agent/executor';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { baseDuRelais } from '../src/mba/relais';
 import { corpsOutilMeta } from '../src/mba/publication';
 import { relaisMbaInerte } from './routes-inertes';
@@ -91,6 +91,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     queue: new FakeQueue(),
     v1: {
       apiKeys: cles,
+      oauth: aucunJetonOauth,
       contacts: contactsV1Muets(),
       mbaRelais,
     },

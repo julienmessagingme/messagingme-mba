@@ -18,7 +18,7 @@ import { RCS_TEXTE_MAX } from '../src/rcs/schema';
  */
 const cle: PreHandler = async (req) => {
   req.auth = { userId: 'apikey:k1', tenantId: 't1', role: 'api' };
-  req.apiKeyId = 'k1';
+  req.apiAcces = { type: 'cle', id: 'k1' };
 };
 
 const C1 = '11111111-1111-4111-8111-000000000001';

@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import { GardeUsageMemoire } from './aide/usage';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { PoolClient } from 'pg';
 import type { V1SendsRouteDeps } from '../src/http/v1-sends';
@@ -78,6 +78,7 @@ function monter() {
     usage,
     v1: {
       apiKeys: cles,
+      oauth: aucunJetonOauth,
       contacts: contactsV1Muets(),
       sends: sendsMuets,
       mcp: {} as DepsMcp,
@@ -241,6 +242,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
       usage: double,
       v1: {
         apiKeys: cles,
+        oauth: aucunJetonOauth,
         contacts: contactsV1Muets(),
         sends: sendsMuets,
         mcp: {} as DepsMcp,
@@ -261,7 +263,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
     const server = buildServer({
       queue: new FakeQueue(),
       usage: refusant,
-      v1: { apiKeys: cles, contacts: contactsV1Muets() },
+      v1: { apiKeys: cles, oauth: aucunJetonOauth, contacts: contactsV1Muets() },
     });
     const res = await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
     expect(res.statusCode).toBe(429);
@@ -288,7 +290,7 @@ describe('ce que /ops montre de l’usage', () => {
       usage,
       auth: acces.auth,
       ops: opsMuet,
-      v1: { apiKeys: cles, contacts: contactsV1Muets() },
+      v1: { apiKeys: cles, oauth: aucunJetonOauth, contacts: contactsV1Muets() },
     });
     await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
 
@@ -312,7 +314,7 @@ describe('ce que /ops montre de l’usage', () => {
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] });
     const server = buildServer({
       queue: new FakeQueue(), usage, auth: acces.auth, ops: opsMuet,
-      v1: { apiKeys: cles, contacts: contactsV1Muets() },
+      v1: { apiKeys: cles, oauth: aucunJetonOauth, contacts: contactsV1Muets() },
     });
     await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
     const res = await server.inject({ method: 'GET', url: '/ops/usage', headers: ops });
@@ -340,6 +342,7 @@ describe('le plafond des opérations LOURDES en vol', () => {
       usage,
       v1: {
         apiKeys: cles,
+        oauth: aucunJetonOauth,
         contacts: contactsV1Muets({
           ecrireFiches: async (_t, items) => {
             await enVol;
@@ -405,6 +408,7 @@ describe('le plafond des opérations LOURDES en vol', () => {
       usage,
       v1: {
         apiKeys: cles,
+        oauth: aucunJetonOauth,
         contacts: contactsV1Muets({
           ecrireFiches: async (_t, items) => {
             await enVol;

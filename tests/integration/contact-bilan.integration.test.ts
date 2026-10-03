@@ -65,10 +65,10 @@ describe.skipIf(!url)('l’entonnoir d’engagement d’un contact', () => {
        values ($1, $2, '+33600000777', 'sent', $3)`,
       [campaignId, contactId, quand],
     );
-    const message = async (sens: 'in' | 'out', quand: Date, humain = false) => pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, created_at, sender_user_id)
-       values ($1, $2, 'text', 'x', $3, $4)`,
-      [conversationId, sens, quand, humain ? operateur : null],
+    const message = async (sens: 'in' | 'out', quand: Date, humain = false, origine: string | null = null) => pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, created_at, sender_user_id, origin)
+       values ($1, $2, 'text', 'x', $3, $4, $5)`,
+      [conversationId, sens, quand, humain ? operateur : null, origine],
     );
 
     // PARCOURS A, à t0 : deux sollicitations automatiques, le contact réagit aux deux -> niveau 2.
@@ -80,6 +80,9 @@ describe.skipIf(!url)('l’entonnoir d’engagement d’un contact', () => {
     // ⚠️ UN SORTANT HUMAIN au milieu : il ne doit PAS compter comme une sollicitation de plus, sinon le
     // niveau grimperait au seul motif qu'un opérateur a discuté avec le contact.
     await message('out', a(20), true);
+    // ⚠️ UNE RÉPONSE DE CLAUDE par le MCP, sans expéditeur (clé d'API) : une discussion dans la fenêtre ouverte,
+    // pas une sollicitation. Comptée, elle ferait réagir l'entrant suivant et monter A au niveau 3.
+    await message('out', a(22), false, 'mcp');
     await message('in', a(25));
 
     // PARCOURS B, 3 h plus tard, donc DANS les 24 h du dernier message du parcours A.

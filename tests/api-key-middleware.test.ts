@@ -4,7 +4,7 @@ import { RateLimiter } from '../src/auth/rate-limit';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { plafondsDeTest } from './aide/plafonds';
 
 class FakeKeys implements ApiKeyLookup {
@@ -43,7 +43,7 @@ const prefiltreLarge = (): RateLimiter => new RateLimiter(1000, 60_000);
 
 describe('makeRequireApiKey', () => {
   it('clé valide -> pose req.auth synthétique role=api + apiScopes, touchLastUsed, headers', async () => {
-    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 5 }), prefiltreLarge());
+    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 5 }), prefiltreLarge(), aucunJetonOauth);
     const req = fakeReq(`Bearer ${CLE}`);
     const { reply, state } = fakeReply();
     await guard(req, reply);
@@ -54,7 +54,7 @@ describe('makeRequireApiKey', () => {
   });
 
   it('absente / mauvais préfixe / inconnue -> 401', async () => {
-    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 5 }), prefiltreLarge());
+    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 5 }), prefiltreLarge(), aucunJetonOauth);
     for (const h of [undefined, 'Bearer jwtish', `Bearer ${cleApiDeTest('inconnue')}`, 'Bearer mba_trop_court']) {
       const { reply, state } = fakeReply();
       await guard(fakeReq(h), reply);
@@ -63,7 +63,7 @@ describe('makeRequireApiKey', () => {
   });
 
   it('plafond de l’espace dépassé -> 429 + retry-after', async () => {
-    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 1 }), prefiltreLarge());
+    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 1 }), prefiltreLarge(), aucunJetonOauth);
     const first = fakeReply();
     await guard(fakeReq(`Bearer ${CLE}`), first.reply);
     expect(first.state.statusCode).toBeNull(); // 1re passe

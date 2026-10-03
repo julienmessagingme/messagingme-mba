@@ -39,6 +39,14 @@ export type AuditAction =
   | 'cle_api.creee'
   | 'cle_api.revoquee'
   /**
+   * L'OAuth devant `/mcp` (migration 0204) : une personne admin autorise Claude dans son espace, ou un admin
+   * révoque une autorisation depuis la console. Le détail ne porte ni jeton, ni code, ni empreinte, seulement le
+   * client et les droits. La révocation par le client lui-même (`POST /oauth/revoke`) n'est pas tracée : elle ne
+   * connaît que le jeton, pas l'espace.
+   */
+  | 'oauth.autorise'
+  | 'oauth.revoque'
+  /**
    * Les portes vers l'extérieur, en deux familles de sens opposés.
    * Un webhook est une porte d'entrée que nous exposons : le risque est l'ingestion par qui connaît l'adresse, et la
    * suppression, qui tarit une campagne vivante. Un connecteur est la sortie : il porte l'adresse du système du

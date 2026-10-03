@@ -78,8 +78,8 @@ export interface ComptesAuthDep {
  * écriture Postgres sur ce chemin transformerait un pool saturé en « identifiants refusés ». `?.` sur le
  * retour : dépendance absente, `undefined`, et `.catch` dessus lèverait.
  */
-function markLogin(deps: AuthRouteDeps, userId: string): void {
-  void deps.comptes?.touchLastLogin?.(userId)?.catch(() => {});
+function markLogin(comptes: ComptesAuthDep | undefined, userId: string): void {
+  void comptes?.touchLastLogin?.(userId)?.catch(() => {});
 }
 
 /**
@@ -107,7 +107,7 @@ async function suiteDeConnexion(deps: AuthRouteDeps, etape: EtapeConnexion, opti
   // Un seul espace : on y va, sans écran de plus.
   if (autres.length === 0) {
     const token = await signSession({ userId: premier.userId, tenantId: premier.tenantId, role: premier.role }, deps.secret);
-    markLogin(deps, premier.userId);
+    markLogin(deps.comptes, premier.userId);
     return { token, user: { email: etape.email, role: premier.role, tenantId: premier.tenantId } };
   }
   // Plusieurs espaces : on demande, choisir au hasard ferait entrer chez le mauvais client. 🔴 Aucun jeton de
@@ -191,7 +191,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
  * qu'on lui donne (un jeton Google entier ferait un kilo-octet par ligne). Posé ici, seul point par où passent
  * toutes les clés.
  */
-function rateKey(req: { ip: string }, discriminant: string): string {
+export function rateKey(req: { ip: string }, discriminant: string): string {
   return createHash('sha256').update(`${req.ip}::${discriminant}`).digest('hex');
 }
 
@@ -202,11 +202,33 @@ function rateKey(req: { ip: string }, discriminant: string): string {
  * un message qui dit que la vérification est impossible et non « trop de tentatives ». Une panne ne doit jamais
  * ouvrir un essai de plus contre un mot de passe ; la connexion elle-même a de toute façon besoin de la base.
  */
-async function freine(plafond: PlafondPartage, cle: string, reply: FastifyReply): Promise<boolean> {
+export async function freine(plafond: PlafondPartage, cle: string, reply: FastifyReply): Promise<boolean> {
   const c = await plafond.consommer(cle);
   if (c.accepte) return false;
   await refuserTropDeRequetes(reply, c.attenteMs, c.indisponible ? MESSAGE_PLAFOND_INDISPONIBLE : 'trop de tentatives, réessaie plus tard');
   return true;
+}
+
+/**
+ * L'espace et l'admin d'une adresse Google INCONNUE : « Espace de <nom Google> », sans mot de passe. Une seule
+ * fonction pour `/auth/google` et le consentement OAuth (`src/http/oauth.ts`) : deux copies finiraient par créer
+ * deux espaces différents pour la même personne selon la porte. Le nom construit passe par la règle de
+ * l'inscription (`nomEspace`) : un nom Google refusé donne « Mon espace », jamais un refus.
+ * Une inscription est une connexion (`markLogin`) : sinon le compte neuf s'afficherait « jamais connecté », donc
+ * « en attente », sur la page Équipe. Les appelants vérifient la présence de `createTenantWithAdmin` (503) : son
+ * absence ici lève, plutôt que de rendre un compte qui n'existe pas.
+ */
+export async function creerEspaceParGoogle(
+  comptes: ComptesAuthDep,
+  identity: Pick<GoogleIdentity, 'email' | 'name'>,
+): Promise<{ tenantId: string; userId: string; tenantName: string }> {
+  if (!comptes.createTenantWithAdmin) throw new Error('creerEspaceParGoogle : création d’espace non câblée');
+  const gname = (identity.name ?? '').slice(0, 60).trim();
+  const construit = nomEspace.safeParse(gname !== '' ? `Espace de ${gname}` : '');
+  const tenantName = construit.success ? construit.data : 'Mon espace';
+  const { tenantId, userId } = await comptes.createTenantWithAdmin(tenantName, { email: identity.email, name: identity.name, passwordHash: null });
+  markLogin(comptes, userId);
+  return { tenantId, userId, tenantName };
 }
 
 export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: Guard, compteur: CompteurDebit): void {
@@ -286,7 +308,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (!compte) return reply.code(403).send({ error: 'espace non autorisé pour cette adresse' });
 
     const token = await signSession({ userId: compte.userId, tenantId: compte.tenantId, role: compte.role }, deps.secret);
-    markLogin(deps, compte.userId);
+    markLogin(deps.comptes, compte.userId);
     return reply.code(200).send({ token, user: { email: choix.email, role: compte.role, tenantId: compte.tenantId } });
   });
 
@@ -343,20 +365,12 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
       const jwt = await signSession({ userId: existing.id, tenantId: existing.tenantId, role: existing.role }, deps.secret);
       // Après le contrôle `disabled` : un compte révoqué ne doit pas être crédité d'une connexion qui n'a pas eu
       // lieu.
-      markLogin(deps, existing.id);
+      markLogin(deps.comptes, existing.id);
       return reply.code(200).send({ token: jwt, user: { email: identity.email, role: existing.role, tenantId: existing.tenantId }, isNew: false });
     }
-    // Adresse inconnue : inscription libre via Google (espace et admin, sans mot de passe). Le nom construit
-    // passe par la règle de l'inscription (`nomEspace`) : un nom Google refusé donne « Mon espace », jamais un
-    // refus de connexion.
-    const gname = (identity.name ?? '').slice(0, 60).trim();
-    const construit = nomEspace.safeParse(gname !== '' ? `Espace de ${gname}` : '');
-    const workspaceName = construit.success ? construit.data : 'Mon espace';
-    const { tenantId, userId } = await deps.comptes.createTenantWithAdmin(workspaceName, { email: identity.email, name: identity.name, passwordHash: null });
+    // Adresse inconnue : inscription libre via Google (espace et admin, sans mot de passe).
+    const { tenantId, userId } = await creerEspaceParGoogle(deps.comptes, identity);
     const jwt = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
-    // Une inscription est une connexion : sinon le compte neuf s'afficherait « jamais connecté » sur la page
-    // Équipe.
-    markLogin(deps, userId);
     // isNew:true : le front envoie vers /accueil (onboarding « connecter ton numéro »).
     return reply.code(201).send({ token: jwt, user: { email: identity.email, role: 'admin', tenantId }, isNew: true });
   });

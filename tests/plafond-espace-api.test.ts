@@ -8,7 +8,7 @@ import {
 import { DROIT_RELAIS } from '../src/mba/cle-relais';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { plafondsDeTest } from './aide/plafonds';
 import { capturerJournal } from './journal';
 import { CompteurDebitMemoire } from '../src/db/debit.memoire';
@@ -315,14 +315,14 @@ describe('la garde de clé compte l’ESPACE, et le relais à part', () => {
   }
 
   it('🔴 deux clés du MÊME espace partagent un plafond : dix clés ne font plus dix fois le débit', async () => {
-    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ minute: 3 }), large());
+    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ minute: 3 }), large(), aucunJetonOauth);
     const codes: Array<number | null> = [];
     for (const cle of [A, B, A, B, A]) codes.push((await passer(garde, cle)).statusCode);
     expect(codes).toEqual([null, null, null, 429, 429]);
   });
 
   it('🔴 l’isolation : un espace au-delà de son plafond ne retire rien à un autre, ni ses en-têtes', async () => {
-    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ minute: 2 }), large());
+    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ minute: 2 }), large(), aucunJetonOauth);
     const codes: Array<number | null> = [];
     for (const cle of [A, B, A]) codes.push((await passer(garde, cle)).statusCode);
     // La preuve que l'espace t1 est bien à bout : sans elle, le cas passerait aussi sans aucun plafond.
@@ -333,7 +333,7 @@ describe('la garde de clé compte l’ESPACE, et le relais à part', () => {
   });
 
   it('🔴 LE RELAIS N’ENTRE PAS DANS LE PLAFOND DE L’ESPACE : un intégrateur qui l’épuise ne coupe pas l’agent de Meta', async () => {
-    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ minute: 2, relais: 50 }), large());
+    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ minute: 2, relais: 50 }), large(), aucunJetonOauth);
     expect((await passer(garde, A)).statusCode).toBeNull();
     expect((await passer(garde, B)).statusCode).toBeNull();
     expect((await passer(garde, A)).statusCode, 'l’espace est à bout').toBe(429);
@@ -344,7 +344,7 @@ describe('la garde de clé compte l’ESPACE, et le relais à part', () => {
   });
 
   it('🔴 et ses appels ne coûtent rien à l’espace', async () => {
-    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ minute: 2, relais: 50 }), large());
+    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ minute: 2, relais: 50 }), large(), aucunJetonOauth);
     for (let i = 0; i < 10; i += 1) expect((await passer(garde, RELAIS)).statusCode).toBeNull();
     expect((await passer(garde, A)).statusCode).toBeNull();
     expect((await passer(garde, B)).statusCode).toBeNull();
@@ -352,7 +352,7 @@ describe('la garde de clé compte l’ESPACE, et le relais à part', () => {
 
   it('🔴 le relais garde son PROPRE plafond par clé, refusé avant la base une fois connu', async () => {
     const cles = new FaussesCles();
-    const garde = makeRequireApiKey(cles, plafondsDeTest({ minute: 100, relais: 2 }), large());
+    const garde = makeRequireApiKey(cles, plafondsDeTest({ minute: 100, relais: 2 }), large(), aucunJetonOauth);
     const codes: Array<number | null> = [];
     for (let i = 0; i < 5; i += 1) codes.push((await passer(garde, RELAIS)).statusCode);
     expect(codes).toEqual([null, null, 429, 429, 429]);
@@ -363,7 +363,7 @@ describe('la garde de clé compte l’ESPACE, et le relais à part', () => {
 
   it('🔴 une clé d’espace au-delà du plafond est refusée AVANT la base, et ne paie aucune lecture', async () => {
     const cles = new FaussesCles();
-    const garde = makeRequireApiKey(cles, plafondsDeTest({ minute: 2 }), large());
+    const garde = makeRequireApiKey(cles, plafondsDeTest({ minute: 2 }), large(), aucunJetonOauth);
     for (let i = 0; i < 12; i += 1) await passer(garde, A);
     expect(cles.appels).toBe(2);
   });

@@ -97,14 +97,23 @@ export type AnnotationsMcp = { title: string; openWorldHint: boolean } & (
   | { readOnlyHint: false; destructiveHint: boolean; idempotentHint: boolean }
 );
 
+/** La personne qui a autorisé un jeton OAuth (migration 0204). Une clé d'API n'en a pas. */
+export interface PersonneMcp {
+  userId: string;
+}
+
 export interface OutilMcp {
   nom: string;
   description: string;
   scope: ScopeMcp;
   annotations: AnnotationsMcp;
   entree: SchemaEntree;
-  /** Rend l'objet à sérialiser pour l'agent, ou lève `RefusOutil` pour un refus explicable. */
-  executer(deps: DepsMcp, tenantId: string, args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Rend l'objet à sérialiser pour l'agent, ou lève `RefusOutil` pour un refus explicable. `personne` : qui signe
+   * une écriture faite avec un jeton OAuth, `null` avec une clé. Seuls les outils qui écrivent au nom de quelqu'un
+   * la déclarent.
+   */
+  executer(deps: DepsMcp, tenantId: string, args: Record<string, unknown>, personne: PersonneMcp | null): Promise<unknown>;
 }
 
 /**
@@ -473,16 +482,17 @@ export const OUTILS: OutilMcp[] = [
       },
       required: ['conversation_id', 'text'],
     },
-    async executer(deps, tenantId, args) {
+    async executer(deps, tenantId, args, personne) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       const texte = texteObligatoire(args, 'text', 4096);
-      // Deux champs, deux questions : `auteur = null` (aucun opérateur ne signe, pas de pastille dans l'inbox) et
-      // `origine = 'mcp'` (un agent tiers l'a écrit). Les déduire l'un de l'autre écrit une valeur fausse en base.
+      // Deux champs, deux questions : `auteur` (la personne qui a autorisé le jeton OAuth signe ; avec une clé,
+      // personne, donc pas de pastille dans l'inbox) et `origine = 'mcp'` (un agent tiers l'a écrit, dans les deux
+      // cas). Les déduire l'un de l'autre écrit une valeur fausse en base.
       // Le numéro délié sort en exception : traduit en refus, sinon l'agent lirait une panne et réessaierait en
       // consommant le plafond de l'espace.
       let res: Awaited<ReturnType<typeof repondreDansLaFenetre>>;
       try {
-        res = await repondreDansLaFenetre(deps, tenantId, id, texte, null, 'mcp');
+        res = await repondreDansLaFenetre(deps, tenantId, id, texte, personne?.userId ?? null, 'mcp');
       } catch (err) {
         if (err instanceof NumeroDelieError) throw new RefusOutil(MESSAGE_NUMERO_DELIE);
         throw err;
@@ -552,7 +562,7 @@ export const OUTILS: OutilMcp[] = [
       },
       required: ['conversation_id', 'member_id'],
     },
-    async executer(deps, tenantId, args) {
+    async executer(deps, tenantId, args, personne) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       const brut = args.member_id;
       // `null` explicite = libérer. Toute autre forme qu'une chaîne non vide est refusée, l'absence comprise : une
@@ -561,9 +571,11 @@ export const OUTILS: OutilMcp[] = [
         throw new RefusOutil('paramètre « member_id » invalide (identifiant de membre, ou null pour libérer)');
       }
       const membre = typeof brut === 'string' ? brut.trim() : null;
-      // Pas un collaborateur : un agent tiers. `assigned_by` reste nul, et la frise du panneau Détail le dit par
-      // sa cause au lieu d'afficher « ancien collaborateur ».
-      const ok = await deps.inbox.setAssignee(tenantId, id, membre, parCause('agent tiers (MCP)'));
+      // Avec un jeton OAuth, la personne qui l'a autorisé est l'acteur. Avec une clé, pas un collaborateur : un
+      // agent tiers. `assigned_by` reste nul, et la frise du panneau Détail le dit par sa cause au lieu d'afficher
+      // « ancien collaborateur ».
+      const par = personne ? { collaborateur: personne.userId } : parCause('agent tiers (MCP)');
+      const ok = await deps.inbox.setAssignee(tenantId, id, membre, par);
       if (!ok) throw new RefusOutil('conversation inconnue, ou membre étranger à cet espace');
       return { conversation_id: id, assigned_to: membre };
     },
@@ -571,8 +583,9 @@ export const OUTILS: OutilMcp[] = [
   /**
    * LES WIDGETS WHATSAPP (lot 5 de docs/superpowers/plans/2026-10-02-widget-whatsapp.md). Créer une bulle depuis
    * Claude Code est le cas d'usage : l'assistant qui travaille sur le site du client y pose aussi la balise. Ce que
-   * l'écran de la console réserve aux administrateurs, une clé d'API l'ouvre : ses droits sont donnés par un
-   * administrateur, la création de clé leur étant réservée.
+   * l'écran de la console réserve aux administrateurs, une clé d'API ou un jeton OAuth l'ouvre : leurs droits sont
+   * donnés par un administrateur, la création de clé et l'autorisation OAuth leur étant réservées (le rôle de la
+   * personne d'un jeton est relu à chaque appel).
    */
   {
     nom: 'list_widgets',

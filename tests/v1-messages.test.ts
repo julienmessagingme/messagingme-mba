@@ -9,7 +9,7 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { DepsRepondre } from '../src/inbox/repondre';
 import type { OrigineMessage } from '../src/inbox/origine';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
 
@@ -99,6 +99,7 @@ function app(over: Partial<Monde> = {}) {
     usage,
     v1: {
       apiKeys: keys,
+      oauth: aucunJetonOauth,
       contacts: contactsV1Muets(),
       messages: {
         repondre,

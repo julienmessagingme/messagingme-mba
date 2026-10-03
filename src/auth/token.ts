@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose';
+import { z } from 'zod';
 
 export interface Session {
   userId: string;
@@ -193,4 +194,70 @@ export async function verifySessionOps(token: string, secret: string): Promise<S
   } catch {
     return null;
   }
+}
+
+/**
+ * LES DEUX JETONS SIGNÉS DE L'OAUTH (migration 0204). Pas des sessions : leur `kind` fait que `verifySession` les
+ * refuse, et chaque vérification refuse le `kind` de l'autre. Le contenu relu passe par Zod (`safeParse`) : la
+ * signature prouve d'où il vient, pas qu'il a la forme attendue.
+ */
+async function signerKind(kind: string, corps: Record<string, unknown>, secret: string, expiresIn: string): Promise<string> {
+  return new SignJWT({ kind, ...corps })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(expiresIn)
+    .sign(key(secret));
+}
+
+async function verifierKind<T>(kind: string, schema: z.ZodType<T>, token: string, secret: string): Promise<T | null> {
+  try {
+    const { payload } = await jwtVerify(token, key(secret), { algorithms: ['HS256'] });
+    if (payload.kind !== kind) return null;
+    const lu = schema.safeParse(payload);
+    return lu.success ? lu.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * La demande d'autorisation vérifiée par `/oauth/authorize`, portée jusqu'à la page de consentement de la console
+ * dans son adresse : aucune table de demandes en attente. 10 minutes, le temps de se connecter et de choisir.
+ */
+const demandeOauth = z.object({
+  clientId: z.string(),
+  redirectUri: z.string(),
+  codeChallenge: z.string(),
+  scopes: z.array(z.string()).min(1),
+  state: z.string(),
+  resource: z.string(),
+});
+export type DemandeOauth = z.infer<typeof demandeOauth>;
+
+export function signDemandeOauth(d: DemandeOauth, secret: string): Promise<string> {
+  return signerKind('oauth_demande', {
+    clientId: d.clientId, redirectUri: d.redirectUri, codeChallenge: d.codeChallenge, scopes: d.scopes, state: d.state,
+    resource: d.resource,
+  }, secret, '10m');
+}
+export function verifyDemandeOauth(token: string, secret: string): Promise<DemandeOauth | null> {
+  return verifierKind('oauth_demande', demandeOauth, token, secret);
+}
+
+/**
+ * La preuve qu'une personne s'est authentifiée par Google sur la page de consentement : son adresse vérifiée, et
+ * l'empreinte du jeton de demande auquel elle répond (`demande`), pour qu'elle ne serve pas à une autre demande.
+ * 🔴 Ni rôle ni espace : le rôle se relit en base au moment d'émettre le code. 5 minutes, comme le choix d'espace.
+ */
+const choixOauth = z.object({
+  email: z.string().min(1),
+  demande: z.string().min(1),
+});
+export type ChoixOauth = z.infer<typeof choixOauth>;
+
+export function signChoixOauth(c: ChoixOauth, secret: string): Promise<string> {
+  return signerKind('oauth_choix', { email: c.email, demande: c.demande }, secret, '5m');
+}
+export function verifyChoixOauth(token: string, secret: string): Promise<ChoixOauth | null> {
+  return verifierKind('oauth_choix', choixOauth, token, secret);
 }

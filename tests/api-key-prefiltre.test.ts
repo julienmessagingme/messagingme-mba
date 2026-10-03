@@ -6,6 +6,7 @@ import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { DROIT_RELAIS } from '../src/mba/cle-relais';
 import { plafondsDeTest } from './aide/plafonds';
+import { aucunJetonOauth } from './aide/cle-api';
 
 /**
  * CE QU'UNE FAUSSE CLÉ COÛTE AVANT D'ÊTRE REFUSÉE.
@@ -66,7 +67,7 @@ function monter(valide: string | null, opts: { maxPreAuth?: number; maxMetier?: 
   const plafonds = plafondsDeTest({ minute: opts.maxMetier ?? 100, relais: opts.maxMetier ?? 100, relaisMaxCles: opts.maxClesMetier ?? 0 });
   // ⚠️ AUCUN PLAFOND DE CLÉS ICI : la clé du budget spéculatif est FIXE, donc la table ne grossit pas.
   const preAuth = new RateLimiter(opts.maxPreAuth ?? 100, 60_000);
-  return { store, preAuth, garde: makeRequireApiKey(store, plafonds, preAuth) };
+  return { store, preAuth, garde: makeRequireApiKey(store, plafonds, preAuth, aucunJetonOauth) };
 }
 
 describe('le pré-filtre des clés d’API', () => {
@@ -122,7 +123,7 @@ describe('le pré-filtre des clés d’API', () => {
     const vraiTake = espion.take.bind(espion);
     espion.take = (cle: string) => { vues.push(cle); return vraiTake(cle); };
     const store = new FauxStore(null);
-    const garde = makeRequireApiKey(store, plafondsDeTest(), espion);
+    const garde = makeRequireApiKey(store, plafondsDeTest(), espion, aucunJetonOauth);
 
     const bearer = cleBienFormee('secret_a_ne_pas_ecrire');
     await garde(requete(bearer), fausseReponse().reply);
@@ -278,7 +279,7 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
       },
       async touchLastUsed() {},
     };
-    const garde = makeRequireApiKey(store, plafonds, new RateLimiter(100, 60_000));
+    const garde = makeRequireApiKey(store, plafonds, new RateLimiter(100, 60_000), aucunJetonOauth);
     await garde(requete(relais), fausseReponse().reply);
     await garde(requete(client), fausseReponse().reply);
     expect(vues).toEqual([sha256Hex(relais), 't1']);
@@ -376,7 +377,7 @@ describe('le plafond est PAR espace', () => {
       },
       async touchLastUsed() {},
     };
-    const garde = makeRequireApiKey(store, plafondsDeTest({ minute: 2 }), new RateLimiter(100, 60_000));
+    const garde = makeRequireApiKey(store, plafondsDeTest({ minute: 2 }), new RateLimiter(100, 60_000), aucunJetonOauth);
     const codesA: Array<number | null> = [];
     for (let i = 0; i < 4; i += 1) {
       const r = fausseReponse();

@@ -15,6 +15,7 @@
     "migrate": "tsx db/migrate.ts",
     "seed": "tsx db/seed.ts",
     "auto-attaque": "tsx scripts/auto-attaque.mts",
+    "oauth:fiches": "tsx scripts/oauth-fiches.mts",
     "aide:carte": "tsx scripts/carte-console.ts",
     "aide:charger": "tsx db/charger-aide.ts",
     "aide:proposer": "tsx scripts/aide-proposer.ts"

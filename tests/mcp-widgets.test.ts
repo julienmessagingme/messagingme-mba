@@ -13,7 +13,7 @@ import type { NumeroDuWidget } from '../src/widgets/adresses';
 import type { WidgetInput, WidgetRow } from '../src/widgets/store.pg';
 import { newTrackingCode } from '../src/ids/code';
 import { lienWaMe } from '../src/lib/wa-me';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
 import { mcpInerte } from './routes-inertes';
@@ -127,7 +127,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
     .add(CLE_TOUT, { id: 'k1', tenantId: 't1', scopes: ['mcp:read', 'mcp:write'] })
     .add(CLE_LECTURE, { id: 'k2', tenantId: 't1', scopes: ['mcp:read'] })
     .add(CLE_AUTRE_ESPACE, { id: 'k3', tenantId: 't2', scopes: ['mcp:read', 'mcp:write'] });
-  const server = buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts: contactsV1Muets(), mcp } });
+  const server = buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, oauth: aucunJetonOauth, contacts: contactsV1Muets(), mcp } });
   return { server, cap, lignes };
 }
 

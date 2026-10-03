@@ -74,7 +74,10 @@ export class PgConversationAnalysisStore {
     // `created_at::text` : un Date JS tronque aux ms, la borne retomberait sous le dernier message et la
     // conversation serait réanalysée en boucle. La borne voyage donc en texte.
     const rows = await this.pool.query<{ direction: 'in' | 'out'; body: string | null; type: string | null; sender_user_id: string | null; created_at: string }>(
-      `select direction, body, type, sender_user_id, created_at::text as created_at from conversation_messages
+      // Une réponse écrite par Claude (origine mcp) n'est pas une réponse humaine, même signée de la personne qui
+      // l'a autorisé (OAuth, lot 2) : elle se lit comme sans expéditeur, exactement comme avec une clé d'API.
+      `select direction, body, type, case when origin = 'mcp' then null else sender_user_id end as sender_user_id,
+              created_at::text as created_at from conversation_messages
        where conversation_id = $1 and created_at > coalesce((select analyzed_at from conversations where id = $1), '-infinity'::timestamptz)
        order by created_at asc, id asc
        limit 500`,

@@ -36,7 +36,7 @@ export type OperationApi =
  */
 export interface DemandeUsage {
   tenantId: string;
-  /** `api_keys.id`. Jamais la clé, jamais son hash. */
+  /** `api_keys.id`, ou `oauth:<oauth_autorisations.id>` pour un jeton OAuth. Jamais la clé ni le jeton, jamais leur hash. */
   cleId: string;
   operation: OperationApi;
   /** Le travail demandé, dans l'unité de l'opération. Toujours ≥ 1 : un appel coûte au moins un appel. */
@@ -174,9 +174,11 @@ export async function compterOuRefuser(
   }
   const demande: DemandeUsage = {
     tenantId,
-    // « inconnue » ne devrait jamais arriver (le préhandler pose `apiKeyId` avec `req.auth`) : le repli garde
-    // le compteur honnête si une route est un jour montée derrière une autre autorité.
-    cleId: req.apiKeyId ?? 'inconnue',
+    // « inconnue » ne devrait jamais arriver (le préhandler pose `apiAcces` avec `req.auth`) : le repli garde
+    // le compteur honnête si une route est un jour montée derrière une autre autorité. Un jeton OAuth est rangé
+    // sous son autorisation, préfixée (`oauth:<id>`) : jamais confondue avec une clé, et sans `|`, que la clé du
+    // compteur réserve.
+    cleId: req.apiAcces ? (req.apiAcces.type === 'cle' ? req.apiAcces.id : `oauth:${req.apiAcces.id}`) : 'inconnue',
     operation,
     unites: unitesDe(operation, taille),
   };

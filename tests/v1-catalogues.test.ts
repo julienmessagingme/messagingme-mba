@@ -28,7 +28,7 @@ import { estLienTraceAvecJeton, lienDe, lienTraceAvecJeton } from '../src/links/
 import { MetaApiError } from '../src/meta/errors';
 import { buildServer, CORPS_OPAQUE_5XX } from '../src/server';
 import { FakeQueue } from './fake-queue';
-import { cleApiDeTest } from './aide/cle-api';
+import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 
 /**
@@ -418,7 +418,7 @@ function monter(debitParEspace = 60) {
   const app = Fastify({ logger: false });
   // La VRAIE garde de l'entrée /v1 : la clé, puis le droit. C'est elle, pas un faux, qui pose `req.auth`.
   registerV1Catalogues(app, deps, [
-    makeRequireApiKey(cles, plafondsDeTest({ minute: debitParEspace }), new RateLimiter(1000, 60_000)),
+    makeRequireApiKey(cles, plafondsDeTest({ minute: debitParEspace }), new RateLimiter(1000, 60_000), aucunJetonOauth),
     requireScope('sends:create'),
   ]);
   return { app, appels, usage };
@@ -545,6 +545,7 @@ describe('monté dans l’entrée /v1 du registre', () => {
       queue: new FakeQueue(),
       v1: {
         apiKeys: cles,
+        oauth: aucunJetonOauth,
         // Les routes de contacts sont montées mais jamais appelées ici : ce bloc éprouve le montage des
         // catalogues, pas les contacts (qui ont leurs propres tests).
         contacts: contactsV1Muets(),
