@@ -1,0 +1,15 @@
+-- 0203_idempotence_jeton.sql : le JETON DE GARDE d'une cle d'idempotence de l'API publique.
+--
+-- POURQUOI : une copie de l'API tuee entre la pose d'une cle et son scellement laissait la ligne "en cours"
+-- (send_id nul) pendant 24 h, et chaque rejeu rendait 409 (mesure par le second banc du 2026-10-03, trois arrets
+-- brutaux sur cinq). Le code neuf abandonne une cle en cours au-dela d'une borne ; ce jeton est ce qui rend
+-- l'abandon SUR : complete et release ne touchent que la ligne de LEUR jeton, donc un traitement lent qui depasse
+-- la borne ne peut ni sceller ni liberer la cle de celui qui l'a reprise.
+--
+-- PUREMENT ADDITIVE : une colonne nullable, sans defaut, sans index (toutes les lectures passent par la cle
+-- primaire). L'ancien code l'ignore ; le code neuf l'ECRIT a chaque pose, donc elle passe AVANT le deploiement,
+-- et AVANT que ce code n'arrive sur main.
+--
+-- null = une ligne posee par l'ancien code : scellee, elle rejoue son rapport comme aujourd'hui ; en cours, elle
+-- s'abandonne a la borne comme les autres, et aucun traitement neuf ne la scellera (jeton different).
+alter table api_idempotency add column if not exists jeton uuid;
