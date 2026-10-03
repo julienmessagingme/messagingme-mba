@@ -20,7 +20,15 @@ abandonnée ou repoussée sans date, la pastille se retire, elle ne se reformule
 jamais avec le pied de page.
 
 Ce document ne décrit pas ce qui tourne aujourd'hui (voir `documentation.md`). Il décrit **ce qu'on vise**,
-**les quatre chantiers à finir avant**, et **la séquence du jour J**.
+**les chantiers à finir avant**, et **la séquence du jour J**.
+
+✅ **Mis à jour le 2026-10-03, et c'est ce qui reste pour l'autoscaling.** Le code est prêt pour plusieurs copies
+d'API, et c'est PROUVÉ, plus seulement écrit : deux bancs à deux copies (§11), le correctif qu'ils ont imposé (une
+copie tuée ne coince plus aucune clé, §3.5), les deux workers en production (§5), le budget de connexions mesuré
+et tenu par un test (§7.5). Julien a tranché le même jour (§13) : **l'autoscaling se fait à Scaleway, pas sur le
+VPS**, où des copies se partageraient la même machine. Ce qui reste est donc l'INFRASTRUCTURE de la cible, dans la
+séquence du §10 : les conteneurs (minimum 1 copie), le budget recalculé sur la vraie base (§7.5), le nom de chaque
+copie dans `/ops` (§10, étape 7), et le second banc rejoué sur la cible (§11).
 
 ---
 
@@ -163,9 +171,12 @@ France**.
 
 ---
 
-## 3. 🔴 Les quatre chantiers à finir AVANT de basculer
+## 3. 🔴 Les chantiers à finir AVANT de basculer
 
-Tous les quatre ont la MÊME cause : **un état qui vit dans un processus, alors que le processus va devenir
+État au 2026-10-03 : §3.1 et §3.3 livrés ET éprouvés au banc, §3.4 retiré, §3.5 trouvé et corrigé par le banc ;
+§3.2 ne bloque la bascule que si un RÔLE de worker doit avoir deux copies (aujourd'hui, une copie par rôle).
+
+Les quatre premiers ont la MÊME cause : **un état qui vit dans un processus, alors que le processus va devenir
 multiple.** Aucun ne se voit aujourd'hui ; tous se découvriraient en production le jour du premier `scale`,
 c'est-à-dire au pire moment.
 
@@ -198,8 +209,9 @@ des files (des `select`). Le superviseur, l'écouteur de notifications et le pla
 ⚠️ **Poser aussi `migrate: false` sur l'API.** Sinon chaque copie vérifie et migre le schéma pg-boss au
 démarrage. C'est le worker qui migre.
 
-**Livré le 2026-09-28** (lot C de `docs/superpowers/plans/2026-09-28-api-multi-instances.md`, aucune migration) ;
-l'essai réel à deux copies, qui clôt le chantier, reste à faire. Revérifié dans la source de pg-boss **12.25.1**
+**Livré le 2026-09-28** (lot C de `docs/superpowers/plans/2026-09-28-api-multi-instances.md`, aucune migration), et
+**éprouvé au banc le 2026-10-03** (`scripts/banc-deux-api-2.mts`, épreuve `connexions`) : sous charge, chaque copie
+ouvre au plus son `DB_POOL_MAX`, et AUCUNE connexion en écoute côté API ; seul le worker écoute. Revérifié dans la source de pg-boss **12.25.1**
 (schéma 36) : `getDb()` rend `config.db` quand il est fourni (`dist/index.js`, l. 351), `start()` n'ouvre un pool
 que sur `_pgbdb` (l. 91), `migrate: false` remplace la migration par `Contractor.check()` (l. 95-100,
 `dist/contractor.js` l. 47-56). L'API construit `new PgBossQueue(pool)` : le prêt pose `db`, `migrate: false`,
@@ -213,6 +225,9 @@ option de pool ou d'écoute. Deux choses que ce paragraphe ne disait pas :
   attente se lit dans `pool_attentes` (ligne `api`), à regarder pendant l'essai réel.
 
 ### 3.2 Les balayages doivent être sérialisés (avant deux exemplaires d'un MÊME rôle)
+
+⏳ **Toujours ouvert, et pas un préalable tant que chaque rôle tourne en UNE copie** (règle écrite au-dessus de
+`WORKER_ROLE`, `src/config.ts`). L'autoscaling vise l'API ; il ne doit jamais multiplier un worker.
 
 **Le problème.** Les tâches minutées vivent dans le processus (`src/worker/taches.ts`). Deux exemplaires du
 même worker, deux exemplaires de chaque balayage : deux reprises de contrôle, deux réveils de parcours, deux
@@ -242,7 +257,10 @@ ne l'est plus au-delà de deux.
 
 **La solution : Postgres d'abord, Redis quand la mesure le demande.** Voir §9.
 
-**Livré le 2026-09-28** (lot B de `docs/superpowers/plans/2026-09-28-api-multi-instances.md`, migration 0186) ; l'essai réel à deux copies, qui clôt le chantier, reste à faire.
+**Livré le 2026-09-28** (lot B de `docs/superpowers/plans/2026-09-28-api-multi-instances.md`, migration 0186), et
+**éprouvé au banc le 2026-10-02** (`scripts/banc-deux-api.mts`) : le plafond par espace est global (54 appels
+acceptés et 76 refusés sur 130 tirs alternés entre les deux copies, plafond 60), et une clé révoquée est refusée
+tout de suite par les DEUX copies.
 Un compteur Postgres par fenêtre fixe (`compteurs_debit`, derrière l'interface `CompteurDebit` de
 `src/db/debit.ts` : le jour de Redis, c'est un adaptateur de plus), une écriture par appel compté, précédé dans
 chaque copie de la mémoire de ses fenêtres pleines (un refus répété ne coûte plus rien). Comptent au TOTAL : le
@@ -277,6 +295,17 @@ bouton « Joindre » (2026-09-24) ; elle est partie avec son magasin et l'opéra
 dépose par l'onglet Fichiers, qui l'envoie à Meta sans rien garder (lot A de
 `docs/superpowers/plans/2026-09-28-api-multi-instances.md`).
 
+### 3.5 Une copie tuée ne doit coincer aucune clé d'idempotence
+
+✅ **Trouvé par le second banc et corrigé le 2026-10-03** (`0c476865` puis `f74ebb59`, migration 0203). Une copie
+tuée net (SIGKILL) entre la pose d'une clé de `POST /v1/sends` et son scellement la laissait « en cours » 24 h :
+trois arrêts brutaux sur cinq. Avec l'autoscaling, chaque réduction du nombre de copies qui tue sans arrêt propre
+l'aurait reproduit. Le correctif donne à la clé les pièces d'un verrou (un bail de 5 min et un jeton de garde), et
+crée la campagne ET scelle la clé dans UNE transaction : jamais de campagne sans la clé qui la désigne. Rejoué au
+banc : la clé coupée aboutit une fois le bail passé, zéro campagne orpheline. ⚠️ Ce que la cible doit respecter :
+le délai d'arrêt d'une copie (SIGTERM puis SIGKILL) reste très en deçà du bail, et l'arrêt propre laisse finir ce
+qui est en vol (mesuré : zéro requête coupée sur 909 à l'arrêt propre).
+
 ---
 
 ## 4. Ce qui est DÉJÀ juste, et qu'il ne faut surtout pas casser
@@ -303,7 +332,11 @@ que ces sept propriétés sont déjà là, et aucune n'est un hasard.
 
 ---
 
-## 5. Deux workers : décidé par Julien le 2026-09-21
+## 5. Deux workers : décidé par Julien le 2026-09-21, en production depuis le 2026-10-03
+
+✅ **Déployés le 2026-10-03** (`WORKER_ROLE`, partition dans `src/worker/roles.ts`, un battement par rôle dans
+`/ops`). Essai réel fait le même jour : un message entrant traité par le principal, son analyse par l'autre. UNE
+copie par rôle, toujours (§3.2).
 
 « Je veux vraiment à terme deux workers. » **Deux RÔLES, pas deux microservices.**
 
@@ -461,6 +494,18 @@ clients), pas en connexions de la base, qui restent celles du pool du pooler.
 ⚠️ **Ne pas recopier `DB_POOL_MAX=8` sur chaque processus sans ce calcul.** Un pooler ne crée aucune capacité
 Postgres : il fait partager des connexions qui, sinon, resteraient occupées pour rien.
 
+🔴 **CE CALCUL EST DÉSORMAIS UN TEST, ET IL SE NOURRIT D'UNE MESURE** (2026-10-03). `tests/budget-pooler.test.ts`
+lit `docker-compose.yml`, où chaque service fixe ses tailles, et refuse un compose qui dépasse le pool du pooler,
+des sessions au-delà du même pool, ou un pire cas au-delà de 80 % des connexions de Postgres. Ce que la mesure a
+appris sur Supabase : la « capacité de 16 clients » était le réglage « Pool Size » (15, plus un), qui vaut par
+utilisateur, base et MODE, et que Julien a monté à 30 ; nos pools en promettaient déjà 19, et celui de l'API
+saturait 6 % de ses prises de connexion. **Sur la base Micro actuelle, le budget plafonne à DEUX copies d'API de 8
+connexions.** À la cible : relever la limite de connexions de l'offre (et l'éventuel pooler, dont le réglage se
+MESURE avec la sonde décrite en tête du test, puisqu'un réglage enregistré n'est pas un réglage appliqué), mettre
+à jour les constantes du test, et c'est lui qui donne le maximum de copies de l'autoscaler. ⚠️ pg-boss garde ses
+connexions en mode SESSION (écoute, supervision, migration) : la cible doit offrir des connexions directes aux
+workers, pas seulement un pooler en mode transaction.
+
 ### 7.6 Les webhooks de statut ne subissent JAMAIS les quotas des clients
 
 Le même limiteur de clé API protège volontairement `/v1/*`, `/mcp` et le relais d'outils du MBA
@@ -575,8 +620,11 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 
 **Prérequis, à valider AVANT de commencer :**
 
-1. Les quatre chantiers du §3 sont finis et déployés sur l'infrastructure actuelle (le §3.1 au minimum
-   éprouvé, le §3.3 au minimum ÉCRIT comme borné à deux copies).
+1. Les chantiers du §3 sont finis et déployés sur l'infrastructure actuelle. ✅ Fait au 2026-10-03 (§3.1, §3.3
+   et §3.5 éprouvés au banc, §3.4 retiré) ; §3.2 seulement si un rôle de worker passe à deux copies.
+1 bis. **La migration 0060** : elle est appliquée en production et son fichier a disparu du dépôt (`CLAUDE.md`,
+   compteur de migrations). Une base NEUVE ne l'applique donc jamais : vérifier, AVANT le jour J, que
+   `0062_email.sql` la recouvre exactement, en comparant le schéma de production à celui d'une base neuve.
 2. **pgvector existe chez la destination.** Seule extension non universelle dont ce produit dépend
    (`agent_knowledge.embedding`, fiches d'aide). `pg_trgm` et `unaccent` sont des contribs standard.
    `pgcrypto` ne sert qu'à `gen_random_uuid()`, natif depuis PostgreSQL 13.
@@ -587,7 +635,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 
 1. Créer le projet, le réseau privé et tous les composants dans **une seule région, PAR**.
 2. Créer la base managée, relever son nombre de connexions, **créer l'endpoint privé**, et refaire le calcul
-   du §7.5 avec le vrai chiffre.
+   du §7.5 avec le vrai chiffre : mesurer (la sonde), puis mettre à jour les constantes de
+   `tests/budget-pooler.test.ts` et les tailles de chaque service.
 3. Créer l'Object Storage privé et ses règles d'expiration.
 4. `npm run migrate` sur la base neuve. Vérifier `schema_migrations` et la présence de `french_sans_accent`.
 5. **Fenêtre de maintenance**, puis `pg_dump` / `pg_restore` des données.
@@ -595,9 +644,12 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    grandissant.** C'est un argument pour basculer TÔT : à 30 Go il faudra de la réplication logique, donc un
    chantier au lieu d'une commande. Sortir les fichiers de la base (§6) garde ce luxe plus longtemps.
 6. Poser la **Public Gateway**, puis déployer les deux rôles de worker sur des instances sans adresse publique.
-7. Déployer l'API : conteneur **privé**, **min 1 / max 2**, rattaché au réseau privé, secrets fournis par le
-   gestionnaire de secrets de Scaleway (jamais dans l'image), contrôle de vie léger qui ne dépend pas de la
-   base.
+7. Déployer l'API : conteneur **privé**, **min 1 / max donné par le budget du §7.5**, rattaché au réseau privé,
+   secrets fournis par le gestionnaire de secrets de Scaleway (jamais dans l'image), contrôle de vie léger qui ne
+   dépend pas de la base, délai d'arrêt très en deçà du bail de la clé d'idempotence (§3.5). ⚠️ **Le nom de chaque
+   copie dans `/ops`** (`API_COPIE`) : si l'hébergeur donne la même configuration à toutes les copies, leurs
+   attentes de pool se fondront dans une seule courbe ; dériver alors le nom du nom d'hôte de la copie (petit lot
+   de code à prévoir avant, `src/index.ts`).
 8. **Supprimer l'endpoint public de la base.**
 9. Brancher Cloudflare : pendant la validation du certificat chez Scaleway, l'enregistrement peut rester en
    « DNS only » ; ensuite, proxy activé, règle du jeton d'origine posée, et **vérifier que l'appel direct au
@@ -633,12 +685,17 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 - Un vrai message WhatsApp entrant est enregistré et traité.
 - De vrais statuts `sent`, `delivered` et `read` sont consommés.
 - Un vrai rappel RCS est traité, et un visuel RCS reste lisible pendant toute la durée qu'exige l'opérateur.
-- Une pièce jointe de l'assistant MBA est lisible depuis les DEUX copies d'API, puis disparaît à expiration.
+- ~~Une pièce jointe de l'assistant MBA est lisible depuis les DEUX copies d'API~~ : sans objet depuis le retrait
+  de ce magasin (§3.4).
 
 **L'API publique**
 - `/v1` applique ses plafonds et rend un `429`, **sans que les webhooks en soient affectés**.
 - Une clé révoquée est refusée par les DEUX copies d'API.
 - Une copie d'API de plus n'ajoute aucune connexion de session à la base (compte avant et après, §3.1).
+- **Le second banc rejoué sur la cible** (`scripts/banc-deux-api-2.mts`, ses cinq épreuves) : une clé, un envoi,
+  entre deux copies ; arrêt propre sans requête coupée ; arrêt brutal, toute clé coupée aboutit une fois le bail
+  passé, ZÉRO campagne orpheline ; webhooks acquittés sous pression de pool ; chaque copie sous son `DB_POOL_MAX`.
+  Sa recette de montage est en tête de `scripts/banc-deux-api.mts`.
 
 **Les deux workers**
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.
@@ -671,7 +728,8 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
   autre produit. Et l'Object Storage du §6 n'est pas une base métier.)
 - **Redis maintenant** (§9).
 - **Un troisième worker pour les accusés** sans mesure nouvelle (§5.4).
-- **Plus de deux copies d'API** sans avoir refait les deux arithmétiques du §2.
+- **Plus de deux copies d'API** sans avoir refait les deux arithmétiques du §2 ; le budget de connexions, lui,
+  est tenu par `tests/budget-pooler.test.ts` (§7.5), qui refuse une copie de trop.
 - **Un bucket public** pour simplifier une adresse, **des fichiers dans une seconde base PostgreSQL**, **un
   endpoint public de base laissé ouvert** « derrière une liste d'adresses ».
 - **Un plafond de débit global** qui toucherait aussi les webhooks (§7.6).
@@ -693,7 +751,9 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
    calcul). Aujourd'hui le quota par espace est OBSERVÉ et jamais appliqué (`plafondUnitesParEspace = 0`).
 2. **La durée de conservation des médias RCS**, et la purge qui va avec.
 3. **La durée des URL signées RCS**, qui doit couvrir un téléchargement tardif par l'opérateur.
-4. **Quand** les deux workers : la cible est décidée (§5), le moment ne l'est pas.
+4. **Quand** les deux workers : tranché, déployés le 2026-10-03 (§5).
+4 bis. **Où se fait l'autoscaling** : tranché par Julien le 2026-10-03, **à Scaleway**. Pas de seconde copie fixe
+   sur le VPS (elle n'y créerait aucune capacité, toutes les copies partageant la même machine).
 5. **Le niveau de disponibilité** acheté pour la base (développement, production, haute disponibilité) au
    premier client important.
 6. **L'utilité réelle des règles de rate limiting Cloudflare Pro.** Candidats : un fusible large sur l'API

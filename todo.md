@@ -24,14 +24,6 @@ répondu par son message de passage, en plein test. Le test démarre quand même
 parcours de TEST qui ne rend pas le fil en se terminant normalement (mais garde la réponse hors parcours), ou une
 consigne à l'agent sur les mots `test-…`. Parade : attendre la réponse de l'agent avant de relancer le lien.
 
-## 🟡 Le 502 public après chaque `up` de `mba-api` : faire résoudre NPM par le DNS de Docker (2026-10-03)
-
-NPM fige l'adresse IP de `mba-api` à son chargement : chaque recréation du conteneur rend un 502 public jusqu'au
-`nginx -s reload` (le geste que `DEPLOY.md` impose après chaque `up`). Un `resolver 127.0.0.11 valid=10s` avec un
-`proxy_pass` par variable ferait relire l'adresse à NPM tout seul, et préparerait au passage la répartition entre
-plusieurs copies (un alias réseau commun). Vaut même avec UNE copie. Touche le routage des webhooks de Meta
-(proxy hosts `api.` et 21) : à faire à une heure creuse, avec la configuration d'avant sous la main.
-
 ## 🟡 Un envoi refusé par Meta en pleine avance laisse le parcours en attente, en silence (vu le 2026-10-03)
 
 Pendant l'essai réel des envois de bloc, un bloc « formulaire » désignait un formulaire inexistant. Meta a refusé

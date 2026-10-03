@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-03 : plus de 502 durable après un `up` de l'API, et le document de bascule Scaleway remis à jour
+
+**Le 502 après chaque `up`, corrigé à la source.** Le diagnostic, lu dans les fichiers que NPM génère : l'hôte
+`api.` (24) nommait déjà `mba-api` par une variable (`set $server`), relue par le résolveur de Docker toutes les
+10 s ; l'hôte `mba.` (21), lui, écrivait `proxy_pass http://mba-api:8095` EN DUR dans ses quatre routes
+personnalisées (`/api/backend/`, `/r/`, `/m/`, `/mcp`), donc nginx figeait l'adresse au chargement, et c'est le
+chemin des webhooks de Meta. Les quatre routes passent par `set $mba_api mba-api`, et `/api/backend/` retire son
+préfixe par un `rewrite` (un `proxy_pass` par variable ne le retire pas).
+- **Éprouvé avant d'être appliqué**, sur un nginx jetable lancé dans le conteneur NPM (port 8099) : chaque route
+  atteint l'API, préfixe retiré, paramètres gardés.
+- **Appliqué par l'API de NPM**, configuration d'avant sauvegardée sur le VPS (`npm-backup-21-…`, `npm-backup-24-…`).
+- **L'essai réel** : `mba-api` recréé SANS recharger NPM, les deux portes relevées chaque seconde. 502 pendant les
+  4 à 5 s du redémarrage lui-même, puis 200 sur les deux dès que l'API est saine. Avant, `mba.` restait en 502
+  jusqu'au rechargement manuel. (Un premier essai n'avait rien prouvé : le `cd` était parti avec la boucle en
+  arrière-plan, et le conteneur n'avait pas été recréé. Le second compare l'identifiant du conteneur avant et après.)
+
+**Le document de bascule Scaleway** (`docs/ARCHITECTURE-CIBLE.md`) dit maintenant ce qui est prouvé (les deux bancs,
+les chantiers §3.1 et §3.3 éprouvés, le §3.5 trouvé et corrigé, les deux workers en production), ce que Julien a
+tranché (l'autoscaling à Scaleway, pas sur le VPS), et ce que le jour J doit refaire : le budget de connexions
+sur la vraie base (mesuré, puis inscrit dans le test), le nom de chaque copie dans `/ops`, la vérification de la
+migration 0060, et le second banc rejoué sur la cible.
+
+
 ## 2026-10-03 : « Tester le scénario » ne marque plus la conversation, et ce que les essais ont appris de l'agent
 
 **Le constat.** Après l'essai des envois de bloc, Julien a voulu que l'agent de Meta réponde quand il répond en

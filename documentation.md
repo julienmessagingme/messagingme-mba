@@ -104,8 +104,10 @@ ARRIÈRE et ne demande aucun geste chez Meta. Reconfigurer le webhook chez Meta 
 filet : le temps que Meta reprenne l'adresse, les messages entrants tombent.
 
 **Le routage par chemin de `mba.`** (`advanced_config` du proxy host NPM 21) : `/api/backend/*` va à
-`mba-api` **avec le préfixe retiré par nginx**, `/r/`, `/m/` et `/mcp` y vont directement, tout le reste va à
-`mba-web`. C'est ce qui a permis de migrer la console vers Vercel sans toucher à la configuration du webhook
+`mba-api` **avec le préfixe retiré par nginx** (`rewrite`), `/r/`, `/m/` et `/mcp` y vont directement, tout le
+reste va à `mba-web`. 🔴 **Chaque route nomme `mba-api` par une VARIABLE** (`set $mba_api mba-api`), résolue à
+l'exécution par le résolveur de Docker que NPM déclare (`127.0.0.11`, relu toutes les 10 s), comme le fait déjà
+l'hôte `api.` : un nom écrit en dur dans un `proxy_pass` est figé au chargement de nginx. C'est ce qui a permis de migrer la console vers Vercel sans toucher à la configuration du webhook
 chez Meta, et ce qui a retiré un conteneur de FRONT du chemin critique de réception des messages clients.
 
 🔴 **`engageme.` NE RELAIE RIEN VERS L'API.** Les rewrites de `web/next.config` (`/api/backend/*`, `/r/`,
@@ -2340,16 +2342,19 @@ de l'ouvrir.
   exists`, LIRE ce nom en base : un nom deviné à côté laisserait l'ancienne contrainte en place ET ajouterait
   la nouvelle, un `if exists` ne protégeant que de l'absence.
 
-### 🔴 Le 502 après un `up --build`, alors que le conteneur est `healthy`
+### 🔴 Le 502 après un `up --build` : la cause, et pourquoi il ne doit plus durer
 
-Recréer un conteneur lui donne une nouvelle IP sur `mcp-robot_default`, et nginx a résolu son amont au
-CHARGEMENT de sa configuration. ⚠️ **`docker network connect` ne répare PAS ça** : le conteneur est déjà sur
-le bon réseau, la commande ne fait rien, et c'est ce qui fait chercher du côté de l'application. Le remède est
-`nginx -s reload` dans le conteneur NPM.
+Recréer un conteneur lui donne une nouvelle IP sur `mcp-robot_default`. Un `proxy_pass` qui écrit le nom en dur
+est résolu au CHARGEMENT de nginx : il tape l'ancienne adresse jusqu'au `nginx -s reload`. C'était le cas des
+quatre routes de `mba.` (le chemin des webhooks de Meta) ; elles passent par une variable depuis le 2026-10-03,
+comme l'hôte `api.`, donc nginx relit l'adresse seul (au plus 10 s). Mesuré en recréant `mba-api` sans
+recharger NPM : 502 pendant les 4 à 5 s du redémarrage lui-même, puis 200 sur les deux portes. ⚠️ **`docker
+network connect` ne répare rien** : le conteneur est déjà sur le bon réseau. ⚠️ Une route ajoutée à
+`advanced_config` avec un nom écrit en dur RAMÈNE le défaut : toujours `set $var conteneur;` puis
+`proxy_pass http://$var:port;` (et un `rewrite` pour retirer un préfixe, qu'un `proxy_pass` par variable ne
+retire pas).
 
-🔴 **Il est INTERMITTENT** : absent au premier déploiement de la journée, présent au second, sur exactement la
-même commande. Le contrôle public est donc obligatoire après CHAQUE `up --build`, pas seulement quand on se
-méfie, et il se fait sur le BON chemin : sur un hôte à routage par chemin, une URL servie par un AUTRE
+🔴 **Le contrôle public reste obligatoire après CHAQUE `up --build`**, pas seulement quand on se méfie, et il se fait sur le BON chemin : sur un hôte à routage par chemin, une URL servie par un AUTRE
 conteneur rend 404 et ressemble à une panne qui n'existe pas. `node scripts/fumee.mjs` fait ce contrôle.
 
 ### Une porte à sens unique

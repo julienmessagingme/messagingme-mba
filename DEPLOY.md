@@ -194,7 +194,11 @@ Le savoir avant de déployer : la version du code
 (`sudo docker compose run --rm --no-deps mba-api node -p "require('./node_modules/pg-boss/package.json').pgboss.schema"`)
 contre celle de la base (`select version from pgboss.version`). Égales : rien à faire.
 
-## ⚠️ Le rechargement nginx doit venir APRÈS que les conteneurs soient sains, pas juste après `up -d`
+## ⚠️ Le rechargement nginx n'est plus nécessaire depuis le 2026-10-03, mais s'il sert, il vient APRÈS le `healthy`
+
+Les routes de `mba.` et d'`api.` nomment `mba-api` par une variable, que nginx relit seul (résolveur de Docker,
+10 s) : un `up` ne laisse plus de 502 durable (mesuré : 4 à 5 s pendant le redémarrage, puis 200, sans recharger).
+Le récit ci-dessous reste vrai pour un amont écrit EN DUR, par exemple une route ajoutée sans variable.
 
 Vécu le 2026-09-08 : `up -d --build && nginx -s reload` enchaînés dans la même commande ont laissé les quatre
 chemins d'API en 502, alors que le conteneur était `healthy` et répondait 200 en interne. La raison est le
@@ -245,6 +249,11 @@ chemin de retour. Ne pas le retirer tant que la confiance sur le multi-espaces n
 l'utiliser comme source : `findIdentity` lit l'identité, pas le compte.
 
 ## 🔴 502 public juste après un `up --build`, alors que le conteneur est sain : NPM tient l'ANCIENNE IP
+
+⚠️ **Corrigé à la source le 2026-10-03** : les quatre routes de `mba.` (`/api/backend/`, `/r/`, `/m/`, `/mcp`)
+passent par une variable (`set $mba_api mba-api`), comme l'hôte `api.`. Si un 502 dure encore après un `up`,
+chercher une route écrite EN DUR dans un `advanced_config`. La configuration d'avant est sauvegardée sur le VPS
+(`/home/ubuntu/npm-backup-21-20261003T173529.json`).
 
 Constaté le 2026-09-03. Après `up -d --build`, `mba-api` est `healthy`, mais `https://api.messagingme.app/health`
 rend **502**. Ce n'est pas l'application, c'est nginx : recréer un conteneur lui donne une **nouvelle IP** sur
