@@ -16,7 +16,7 @@ export interface OutilDocumente {
 export const OUTILS_MCP: OutilDocumente[] = [
   { nom: 'list_conversations', scope: 'mcp:read', quoi: ['Les conversations, la plus active en premier.', 'Conversations, most recently active first.'] },
   { nom: 'get_conversation', scope: 'mcp:read', quoi: ['Le détail d’un fil, et surtout si la fenêtre de 24 h est ouverte.', 'Thread details, and whether the 24 h window is open.'] },
-  { nom: 'get_messages', scope: 'mcp:read', quoi: ['Les messages d’un fil.', 'Messages of a thread.'] },
+  { nom: 'get_messages', scope: 'mcp:read', quoi: ['Les 50 derniers messages d’un fil, du plus ancien au plus récent.', 'The last 50 messages of a thread, oldest first.'] },
   { nom: 'search_contacts', scope: 'mcp:read', quoi: ['Chercher un contact par nom ou par numéro, avec sa dernière analyse.', 'Find a contact by name or number, with their latest analysis.'] },
   { nom: 'get_contact', scope: 'mcp:read', quoi: ['La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci.', 'A contact record from its number, with their latest analysis and its summary.'] },
   { nom: 'list_members', scope: 'mcp:read', quoi: ['Les membres de l’espace, pour pouvoir leur confier un fil.', 'Workspace members, to assign threads to them.'] },

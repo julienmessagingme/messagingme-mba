@@ -192,6 +192,51 @@ const UNREAD_SQL = `exists (
  */
 const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and ((c.last_direction is not null and c.last_direction <> 'out') or c.escaladee_le is not null) and c.traitee_le is null`;
 
+/**
+ * Ce qu'on lit d'un message du fil, et sa traduction en `ConversationMessage`, écrits UNE fois pour
+ * `getMessages` (la console) et `getDerniersMessages` (le serveur MCP) : ce `select` nomme des colonnes dont la
+ * migration doit précéder le code, et deux copies dériveraient. `m` = `conversation_messages`, `u` = l'auteur.
+ * sender_name : name, sinon la partie locale de l'email. curseur : cf. `ConversationMessage.curseur`. Les
+ * colonnes de traduction et de transcription sont nommées ici : leur migration passe avant le code.
+ */
+const SELECT_MESSAGES_SQL = `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
+              (m.media_id is not null) as a_media, m.transcription, m.transcription_langue,
+              -- 🔴 media_nom (migration 0160) est NOMMEE ici : la migration passe donc AVANT le deploiement,
+              -- sans quoi ce select rend 42703 et le fil entier tombe, toutes les 4 s.
+              (m.media_id is not null and ${MEDIA_EXPIRE_SQL}) as media_expire, m.media_nom,
+              m.traduction, m.traduction_langue, m.redaction_origine,
+              to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
+              coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
+       from conversation_messages m
+       left join users u on u.id = m.sender_user_id`;
+
+interface LigneMessage {
+  id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; media_expire: boolean; media_nom: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null;
+}
+
+function messageDeLigne(r: LigneMessage): ConversationMessage {
+  return {
+    id: r.id,
+    direction: r.direction,
+    type: r.type,
+    body: r.body,
+    buttonPayload: r.button_payload,
+    createdAt: r.created_at.toISOString(),
+    curseur: r.curseur,
+    senderName: r.sender_name,
+    // `channel` null en base (message ancien) -> WhatsApp.
+    channel: r.channel === 'rcs' ? 'rcs' : 'whatsapp',
+    aMedia: r.a_media === true,
+    mediaExpire: r.media_expire === true,
+    mediaNom: r.media_nom,
+    transcription: r.transcription,
+    transcriptionLangue: r.transcription_langue,
+    traduction: r.traduction,
+    traductionLangue: r.traduction_langue,
+    redactionOrigine: r.redaction_origine,
+  };
+}
+
 /** Voir `PgInboxStore.empreinteDuFil`. */
 export interface EmpreinteDuFil { detenteur: string | null; changeLe: string | null; dernierEnvoi: string | null }
 
@@ -1429,46 +1474,31 @@ export class PgInboxStore implements InboxStore {
    * même chose ; le tri doit être déterministe, l'ordre d'affichage de deux messages simultanés est indifférent.
    */
   async getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]> {
-    const res = await this.pool.query<{
-      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; media_expire: boolean; media_nom: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null;
-    }>(
-      // sender_name : name, sinon la partie locale de l'email. curseur : cf. `ConversationMessage.curseur`. Les
-      // colonnes de traduction et de transcription sont nommées ici : leur migration passe avant le code.
-      `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
-              (m.media_id is not null) as a_media, m.transcription, m.transcription_langue,
-              -- 🔴 media_nom (migration 0160) est NOMMEE ici : la migration passe donc AVANT le deploiement,
-              -- sans quoi ce select rend 42703 et le fil entier tombe, toutes les 4 s.
-              (m.media_id is not null and ${MEDIA_EXPIRE_SQL}) as media_expire, m.media_nom,
-              m.traduction, m.traduction_langue, m.redaction_origine,
-              to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
-              coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
-       from conversation_messages m
-       left join users u on u.id = m.sender_user_id
+    const res = await this.pool.query<LigneMessage>(
+      `${SELECT_MESSAGES_SQL}
        where m.conversation_id = $1
          and ($2::timestamptz is null or (m.created_at, m.id) > ($2::timestamptz, $3::uuid))
        order by m.created_at, m.id limit 500`,
       [conversationId, apres?.at ?? null, apres?.id ?? null],
     );
-    return res.rows.map((r) => ({
-      id: r.id,
-      direction: r.direction,
-      type: r.type,
-      body: r.body,
-      buttonPayload: r.button_payload,
-      createdAt: r.created_at.toISOString(),
-      curseur: r.curseur,
-      senderName: r.sender_name,
-      // `channel` null en base (message ancien) -> WhatsApp.
-      channel: r.channel === 'rcs' ? 'rcs' : 'whatsapp',
-      aMedia: r.a_media === true,
-      mediaExpire: r.media_expire === true,
-      mediaNom: r.media_nom,
-      transcription: r.transcription,
-      transcriptionLangue: r.transcription_langue,
-      traduction: r.traduction,
-      traductionLangue: r.traduction_langue,
-      redactionOrigine: r.redaction_origine,
-    }));
+    return res.rows.map(messageDeLigne);
+  }
+
+  /**
+   * Les `n` messages les plus RÉCENTS d'un fil, rendus dans l'ordre de `getMessages` : `(created_at, id)`
+   * croissant. Lus à rebours en SQL, puis retournés : `getMessages` lit le DÉBUT du fil, et un fil long y perdait
+   * sa fin (le serveur MCP résumait le passé en croyant lire le présent, 2026-10-03). Le tri à rebours porte les
+   * deux mêmes colonnes, donc deux messages simultanés tombent du même côté de la coupe que dans `getMessages`.
+   * ⚠️ Aucune garde d'espace ici, comme `getMessages` : l'appelant l'a posée avant (`getConversationContext`).
+   */
+  async getDerniersMessages(conversationId: string, n: number): Promise<ConversationMessage[]> {
+    const res = await this.pool.query<LigneMessage>(
+      `${SELECT_MESSAGES_SQL}
+       where m.conversation_id = $1
+       order by m.created_at desc, m.id desc limit $2`,
+      [conversationId, n],
+    );
+    return res.rows.reverse().map(messageDeLigne);
   }
 
   /**

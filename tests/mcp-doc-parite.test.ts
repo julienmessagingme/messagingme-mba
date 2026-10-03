@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { OUTILS } from '../src/mcp/outils';
+import { OUTILS, MAX_MESSAGES_MCP } from '../src/mcp/outils';
 
 /**
  * L'écran « Serveur MCP » et le catalogue réel disent-ils la même chose ?
@@ -34,5 +34,13 @@ describe('parité entre le catalogue MCP et l’écran qui le documente', () => 
       expect(reel, `outil documenté « ${d.nom} » absent du catalogue`).toBeDefined();
       expect(reel!.scope, `droit annoncé faux pour « ${d.nom} »`).toBe(d.scope);
     }
+  });
+
+  it('le nombre de messages que la page annonce pour get_messages est celui que l’outil rend', () => {
+    // La page l'écrit en toutes lettres (« Les 50 derniers messages ») : une copie, donc gardée ici.
+    const ligne = source.split('\n').find((l) => l.includes("nom: 'get_messages'"));
+    expect(ligne, 'entrée get_messages introuvable : la forme du fichier a changé').toBeDefined();
+    expect(ligne).toContain(`Les ${MAX_MESSAGES_MCP} derniers messages`);
+    expect(ligne).toContain(`The last ${MAX_MESSAGES_MCP} messages`);
   });
 });

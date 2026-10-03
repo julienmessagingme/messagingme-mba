@@ -41,9 +41,12 @@ function ko(id: string | number, code: number, message: string): ReponseRpc {
   return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
-/** La description d'un outil telle que MCP l'attend dans `tools/list`. */
+/**
+ * La description d'un outil telle que MCP l'attend dans `tools/list`. `title` est aussi au premier niveau : c'est là
+ * que la spécification 2025-06-18 le lit en premier, l'annotation n'étant que son repli.
+ */
 function descriptionOutil(o: OutilMcp): Record<string, unknown> {
-  return { name: o.nom, description: o.description, inputSchema: o.entree };
+  return { name: o.nom, title: o.annotations.title, description: o.description, inputSchema: o.entree, annotations: o.annotations };
 }
 
 /**

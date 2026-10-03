@@ -31,7 +31,8 @@ export type ScopeMcp = 'mcp:read' | 'mcp:write';
 export interface DepsMcp extends DepsRepondre {
   inbox: ConversationsRepondre & {
     listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
-    getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
+    /** Les `n` plus récents, dans l'ordre chronologique : le MCP ne lit jamais le DÉBUT d'un fil. */
+    getDerniersMessages(conversationId: string, n: number): Promise<ConversationMessage[]>;
     getControlOwner(tenantId: string, waId: string): Promise<ControlOwner>;
     getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
     setAssignee(tenantId: string, conversationId: string, assignee: string | null, par: AuteurDuChangement): Promise<boolean>;
@@ -69,6 +70,10 @@ interface ProprieteEntree {
   maxLength?: number;
   minimum?: number;
   maximum?: number;
+  /** Le schéma d'un élément, pour une liste : sans lui, un `array` ne dit pas ce qu'il contient. */
+  items?: Omit<ProprieteEntree, 'description'>;
+  minItems?: number;
+  maxItems?: number;
 }
 
 /** Un schéma JSON d'entrée, tel que MCP l'attend (sous-ensemble volontairement pauvre : objet et propriétés). */
@@ -80,10 +85,23 @@ interface SchemaEntree {
   additionalProperties?: false;
 }
 
+/**
+ * Les annotations MCP d'un outil (spécification 2025-06-18), rendues par `tools/list` : un client y lit s'il peut
+ * appeler sans demander. `readOnlyHint` vaut « le scope est `mcp:read` » (tenu par `tests/mcp-serveur.test.ts`).
+ * 🔴 Une ÉCRITURE déclare `destructiveHint` et `idempotentHint`, et le type l'exige : absentes, la spécification fait
+ * supposer `destructiveHint: true` et `idempotentHint: false`, donc un client demanderait confirmation pour poser un
+ * tag. `openWorldHint` : l'outil touche-t-il quelqu'un hors de l'espace (un message part chez une personne) ?
+ */
+export type AnnotationsMcp = { title: string; openWorldHint: boolean } & (
+  | { readOnlyHint: true }
+  | { readOnlyHint: false; destructiveHint: boolean; idempotentHint: boolean }
+);
+
 export interface OutilMcp {
   nom: string;
   description: string;
   scope: ScopeMcp;
+  annotations: AnnotationsMcp;
   entree: SchemaEntree;
   /** Rend l'objet à sérialiser pour l'agent, ou lève `RefusOutil` pour un refus explicable. */
   executer(deps: DepsMcp, tenantId: string, args: Record<string, unknown>): Promise<unknown>;
@@ -100,15 +118,22 @@ export class RefusOutil extends Error {
   }
 }
 
-/** Lit une chaîne obligatoire. Les entrées viennent d'un modèle : on ne suppose rien de leur forme. */
-function texteObligatoire(args: Record<string, unknown>, cle: string, maxi = 4096): string {
+/**
+ * Lit une chaîne obligatoire. Les entrées viennent d'un modèle : on ne suppose rien de leur forme. Le plafond est
+ * toujours écrit à l'appel, jamais par défaut : `tests/mcp-serveur.test.ts` le lit là et exige que le schéma de
+ * l'outil l'annonce (`minLength: 1`, `maxLength: maxi`).
+ */
+function texteObligatoire(args: Record<string, unknown>, cle: string, maxi: number): string {
   const v = args[cle];
   if (typeof v !== 'string' || v.trim() === '') throw new RefusOutil(`paramètre « ${cle} » requis (texte non vide)`);
   if (v.length > maxi) throw new RefusOutil(`paramètre « ${cle} » trop long (${maxi} caractères au plus)`);
   return v.trim();
 }
 
-/** Lit un entier borné. Absent : défaut. Hors bornes : ramené dedans, jamais refusé. */
+/**
+ * Lit un entier borné. Absent : défaut. Hors bornes : ramené dedans, jamais refusé. Le schéma de l'outil annonce
+ * `minimum: mini` et `maximum: maxi` (même test que `texteObligatoire`).
+ */
 function entierBorne(args: Record<string, unknown>, cle: string, defaut: number, mini: number, maxi: number): number {
   const v = args[cle];
   if (v === undefined || v === null) return defaut;
@@ -233,6 +258,20 @@ const CHAMPS_WIDGET = {
   },
 } satisfies Record<ChampWidget, ProprieteEntree>;
 
+/** L'identifiant de conversation, tel que cinq outils le lisent (`texteObligatoire(args, 'conversation_id', 100)`). */
+const CONVERSATION_ID: ProprieteEntree = {
+  type: 'string', minLength: 1, maxLength: 100, description: 'Identifiant rendu par list_conversations.',
+};
+
+/**
+ * Le nombre de messages que `get_messages` rend, au plus et par défaut : les plus RÉCENTS. Décision de Julien du
+ * 2026-10-03, « c'est déjà bien assez ». Exportée pour que le test des bornes la lise.
+ */
+export const MAX_MESSAGES_MCP = 50;
+
+/** Les annotations d'une lecture : rien n'est touché, ni dans l'espace ni au-dehors. */
+const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true, openWorldHint: false });
+
 export const OUTILS: OutilMcp[] = [
   {
     nom: 'list_conversations',
@@ -247,10 +286,11 @@ export const OUTILS: OutilMcp[] = [
       + 'Les conversations ARCHIVÉES depuis l’Inbox ne sont pas listées : elles existent toujours, elles '
       + 'sont simplement rangées, et un message du contact les fait revenir.',
     scope: 'mcp:read',
+    annotations: lecture('Lister les conversations'),
     entree: {
       type: 'object',
       properties: {
-        limit: { type: 'integer', description: 'Nombre de conversations (1 à 200, défaut 50).' },
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Nombre de conversations (1 à 200, défaut 50).' },
         a_traiter: { type: 'boolean', description: 'Ne garder que les conversations à traiter.' },
       },
     },
@@ -280,9 +320,10 @@ export const OUTILS: OutilMcp[] = [
       + 'fenêtre de service de 24 h est OUVERTE. Hors de cette fenêtre, WhatsApp interdit tout message libre : '
       + 'appelle cet outil avant d’essayer de répondre.',
     scope: 'mcp:read',
+    annotations: lecture('Lire une conversation'),
     entree: {
       type: 'object',
-      properties: { conversation_id: { type: 'string', description: 'Identifiant rendu par list_conversations.' } },
+      properties: { conversation_id: CONVERSATION_ID },
       required: ['conversation_id'],
     },
     async executer(deps, tenantId, args) {
@@ -304,31 +345,38 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'get_messages',
-    description: 'Les messages d’une conversation, du plus ancien au plus récent.',
+    description:
+      `Les messages les plus RÉCENTS d’une conversation, ${MAX_MESSAGES_MCP} au plus, rendus du plus ancien au plus `
+      + `récent. tronque = vrai : le fil a des messages plus anciens que ceux rendus ; au-delà des ${MAX_MESSAGES_MCP} `
+      + 'derniers, cet outil ne les lit pas.',
     scope: 'mcp:read',
+    annotations: lecture('Lire les derniers messages'),
     entree: {
       type: 'object',
       properties: {
-        conversation_id: { type: 'string', description: 'Identifiant rendu par list_conversations.' },
-        limit: { type: 'integer', description: 'Nombre de messages les plus RÉCENTS à rendre (1 à 200, défaut 50).' },
+        conversation_id: CONVERSATION_ID,
+        limit: {
+          type: 'integer', minimum: 1, maximum: MAX_MESSAGES_MCP,
+          description: `Nombre de messages les plus récents à rendre (1 à ${MAX_MESSAGES_MCP}, défaut ${MAX_MESSAGES_MCP}).`,
+        },
       },
       required: ['conversation_id'],
     },
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       await contexteOuRefus(deps, tenantId, id); // garde d'espace avant de lire les messages
-      const limit = entierBorne(args, 'limit', 50, 1, 200);
-      const tous = await deps.inbox.getMessages(id);
-      // La coupe garde les plus récents (la fin de l'échange), dans l'ordre chronologique.
+      const limit = entierBorne(args, 'limit', MAX_MESSAGES_MCP, 1, MAX_MESSAGES_MCP);
+      // Un de plus que rendu : c'est lui qui dit s'il en reste avant, sans compter le fil entier.
+      const lus = await deps.inbox.getDerniersMessages(id, limit + 1);
       return {
         conversation_id: id,
-        messages: tous.slice(-limit).map((m) => ({
+        messages: lus.slice(-limit).map((m) => ({
           direction: m.direction,
           type: m.type,
           body: m.body,
           at: m.createdAt,
         })),
-        tronque: tous.length > limit,
+        tronque: lus.length > limit,
       };
     },
   },
@@ -340,11 +388,12 @@ export const OUTILS: OutilMcp[] = [
       + '(last_analysis : intention, sentiment, satisfaction et urgence sur 10, résolue, sujet ; null s’il n’a jamais '
       + 'été analysé), sans le résumé : get_contact le rend.',
     scope: 'mcp:read',
+    annotations: lecture('Chercher des contacts'),
     entree: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Nom (ou fragment) ou suite de chiffres du numéro.' },
-        limit: { type: 'integer', description: 'Nombre de contacts (1 à 100, défaut 20).' },
+        query: { type: 'string', minLength: 1, maxLength: 120, description: 'Nom (ou fragment) ou suite de chiffres du numéro.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Nombre de contacts (1 à 100, défaut 20).' },
       },
       required: ['query'],
     },
@@ -366,9 +415,10 @@ export const OUTILS: OutilMcp[] = [
     description: 'La fiche d’un contact à partir de son numéro : international avec ou sans « + » (+33612345678, 33612345678), ou national (06 12 34 56 78). '
       + 'Elle porte la dernière analyse de ses conversations et son résumé (last_analysis, null s’il n’a jamais été analysé).',
     scope: 'mcp:read',
+    annotations: lecture('Lire la fiche d’un contact'),
     entree: {
       type: 'object',
-      properties: { phone: { type: 'string', description: 'Numéro au format E.164, avec l’indicatif.' } },
+      properties: { phone: { type: 'string', minLength: 1, maxLength: 32, description: 'Numéro au format E.164, avec l’indicatif.' } },
       required: ['phone'],
     },
     async executer(deps, tenantId, args) {
@@ -387,10 +437,11 @@ export const OUTILS: OutilMcp[] = [
       'Les membres de l’espace, avec leur identifiant. À appeler avant assign_conversation, qui a besoin de '
       + 'cet identifiant et non du nom.',
     scope: 'mcp:read',
+    annotations: lecture('Lister les membres'),
     entree: {
       type: 'object',
       properties: {
-        limit: { type: 'integer', description: 'Nombre de membres (1 à 200, défaut 100).' },
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Nombre de membres (1 à 200, défaut 100).' },
       },
     },
     /**
@@ -411,11 +462,14 @@ export const OUTILS: OutilMcp[] = [
       + 'template approuvé, qui n’est pas exposé ici. Envoyer PREND le fil : le scénario cesse d’avancer sur '
       + 'ce contact tant qu’un opérateur ne rend pas la main.',
     scope: 'mcp:write',
+    // Le monde ouvert : un message part chez une personne, et ne se reprend pas. Destructrice : l'envoi PREND le fil,
+    // le scénario cesse d'avancer, ce qui n'est pas un simple ajout.
+    annotations: { title: 'Répondre dans la fenêtre de 24 h', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     entree: {
       type: 'object',
       properties: {
-        conversation_id: { type: 'string', description: 'Identifiant rendu par list_conversations.' },
-        text: { type: 'string', description: 'Le message, tel que le contact le lira.' },
+        conversation_id: CONVERSATION_ID,
+        text: { type: 'string', minLength: 1, maxLength: 4096, description: 'Le message, tel que le contact le lira.' },
       },
       required: ['conversation_id', 'text'],
     },
@@ -458,11 +512,16 @@ export const OUTILS: OutilMcp[] = [
       'Pose un ou plusieurs tags sur le contact d’une conversation. ⚠️ Les automations qui écoutent la pose '
       + 'de tag ne sont PAS déclenchées par cet outil : un tag posé ici classe, il n’envoie rien.',
     scope: 'mcp:write',
+    // Ajouter n'écrase rien, et reposer un tag déjà là ne change rien.
+    annotations: { title: 'Poser des tags', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
-        conversation_id: { type: 'string', description: 'Identifiant rendu par list_conversations.' },
-        tags: { type: 'array', description: 'Les tags à ajouter (1 à 10).' },
+        conversation_id: CONVERSATION_ID,
+        tags: {
+          type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1, maxItems: 10,
+          description: 'Les tags à ajouter (1 à 10).',
+        },
       },
       required: ['conversation_id', 'tags'],
     },
@@ -483,20 +542,22 @@ export const OUTILS: OutilMcp[] = [
       'Confie une conversation à un membre de l’espace, ou la libère avec member_id = null. L’identifiant '
       + 'de membre vient de list_members.',
     scope: 'mcp:write',
+    // Destructrice : elle REMPLACE l'assignation en place, qui n'est gardée nulle part ailleurs.
+    annotations: { title: 'Confier une conversation', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
-        conversation_id: { type: 'string', description: 'Identifiant rendu par list_conversations.' },
-        member_id: { type: 'string', description: 'Identifiant du membre, ou null pour libérer la conversation.' },
+        conversation_id: CONVERSATION_ID,
+        member_id: { type: ['string', 'null'], description: 'Identifiant du membre, ou null pour libérer la conversation.' },
       },
-      required: ['conversation_id'],
+      required: ['conversation_id', 'member_id'],
     },
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       const brut = args.member_id;
-      // `null` explicite = libérer. Toute autre forme qu'une chaîne non vide est refusée : une valeur bancale ne
-      // doit pas devenir une libération silencieuse, qui rouvre le fil à tout le monde.
-      if (brut !== null && brut !== undefined && (typeof brut !== 'string' || brut.trim() === '')) {
+      // `null` explicite = libérer. Toute autre forme qu'une chaîne non vide est refusée, l'absence comprise : une
+      // valeur bancale ou oubliée ne doit pas devenir une libération silencieuse, qui rouvre le fil à tout le monde.
+      if (brut !== null && (typeof brut !== 'string' || brut.trim() === '')) {
         throw new RefusOutil('paramètre « member_id » invalide (identifiant de membre, ou null pour libérer)');
       }
       const membre = typeof brut === 'string' ? brut.trim() : null;
@@ -523,6 +584,7 @@ export const OUTILS: OutilMcp[] = [
       + 'numéro WhatsApp n’est relié), et scenarioSupprime (vrai = son scénario a été supprimé, il ne démarre plus '
       + 'rien : en désigner un autre avec update_widget).',
     scope: 'mcp:read',
+    annotations: lecture('Lister les widgets'),
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {
       return listerEnVue(deps.widgets, tenantId);
@@ -535,9 +597,10 @@ export const OUTILS: OutilMcp[] = [
       + 'version publiée, donc il peut démarrer). Un widget au devenir « scenario » ne peut désigner qu’un scénario '
       + 'publié : create_widget et update_widget refusent les autres.',
     scope: 'mcp:read',
+    annotations: lecture('Lister les scénarios'),
     entree: {
       type: 'object',
-      properties: { limit: { type: 'integer', description: 'Nombre de scénarios (1 à 200, défaut 100).' } },
+      properties: { limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Nombre de scénarios (1 à 200, défaut 100).' } },
     },
     /** Borné comme `list_members`, et pour la même raison : `tronque` dit qu'il en reste. */
     async executer(deps, tenantId, args) {
@@ -561,6 +624,8 @@ export const OUTILS: OutilMcp[] = [
       + `change jamais. ${LIMITE_WIDGETS_PAR_ESPACE} widgets au plus par espace. Les contrôles sont ceux de l’écran `
       + 'de la console : un refus dit sa raison.',
     scope: 'mcp:write',
+    // Ni destructrice ni idempotente : chaque appel qui réussit crée un widget de plus.
+    annotations: { title: 'Créer un widget', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     entree: { type: 'object', properties: CHAMPS_WIDGET, required: ['nom', 'phrase'], additionalProperties: false },
     async executer(deps, tenantId, args) {
       // La vue AVANT l'écriture, comme la route : une panne de la lecture du numéro après coup rendrait une erreur
@@ -576,10 +641,15 @@ export const OUTILS: OutilMcp[] = [
       + 'balise déjà posée sur le site, ne change jamais. Les contrôles sont ceux de la création. Un widget dont le '
       + 'scénario a été supprimé reste modifiable sans en choisir un autre.',
     scope: 'mcp:write',
+    // Destructrice : elle écrase les champs fournis, et `actif: false` éteint une bulle publique.
+    annotations: { title: 'Modifier un widget', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
-        widget_id: { type: 'string', format: 'uuid', description: 'L’identifiant (id) rendu par list_widgets ou create_widget.' },
+        widget_id: {
+          type: 'string', format: 'uuid', minLength: 1, maxLength: 100,
+          description: 'L’identifiant (id) rendu par list_widgets ou create_widget.',
+        },
         ...CHAMPS_WIDGET,
       },
       required: ['widget_id'],

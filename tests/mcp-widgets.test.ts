@@ -102,7 +102,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
       ...mcpInerte,
       listConversations: jamais('listConversations'),
       getConversationContext: jamais('getConversationContext'),
-      getMessages: jamais('getMessages'),
+      getDerniersMessages: jamais('getDerniersMessages'),
       recordOutbound: jamais('recordOutbound'),
     },
     repo: { getTenantPhoneNumberId: jamais('getTenantPhoneNumberId') },

@@ -263,3 +263,59 @@ describe.skipIf(!url)('PgInboxStore : delta du fil (Supabase)', () => {
     expect(await store.getMessages(conversationId, { at: dernier.createdAt, id: dernier.id })).toEqual([]);
   });
 });
+
+/**
+ * La FIN d'un fil, pour le serveur MCP (`getDerniersMessages`, lot 1 du plan 2026-10-03-mcp-remise-d-aplomb) :
+ * `get_messages` lisait les 500 PREMIERS messages, il lit désormais les plus récents.
+ *
+ * 🔴 En intégration pour la même raison que le delta : tout se joue dans le tri à rebours `(created_at, id) desc`
+ * puis son retournement. Les deux messages au MÊME horodatage sont à cheval sur la coupe (4e et 5e d'un fil de 7,
+ * coupe aux 3 derniers) : un tri à rebours sur `created_at` seul y choisirait l'un ou l'autre au hasard, et la fin
+ * rendue ne serait plus celle que la console affiche.
+ */
+describe.skipIf(!url)('PgInboxStore : les derniers messages d’un fil (Supabase)', () => {
+  let pool: Pool;
+  let store: PgInboxStore;
+  let tenantId = '';
+  let conversationId = '';
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
+    store = new PgInboxStore(pool);
+    tenantId = (await pool.query<{ id: string }>(
+      `insert into tenants (name) values ('itest-derniers-messages') returning id`,
+    )).rows[0]!.id;
+    conversationId = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at) values ($1, '33600000096', now()) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    // Sept messages, une seconde d'écart, sauf le 4e et le 5e, écrits au MÊME instant. Leurs identifiants sont
+    // posés à l'INVERSE de l'ordre d'écriture (le 4e en ffff, le 5e en 0000) : l'ordre `(created_at, id)` place
+    // donc le 5e avant le 4e, et un tri sur `created_at` seul, qui suivrait l'ordre d'écriture, se voit à coup sûr.
+    const secondes = [0, 1, 2, 3, 3, 4, 5];
+    const ids: Record<number, string> = { 3: 'ffffffff-ffff-4fff-bfff-fffffffff096', 4: '00000000-0000-4000-8000-000000000096' };
+    for (const [i, s] of secondes.entries()) {
+      await pool.query(
+        `insert into conversation_messages (id, conversation_id, direction, body, created_at)
+         values (coalesce($4::uuid, gen_random_uuid()), $1, 'in', $2, $3)`,
+        [conversationId, `message ${i + 1}`, new Date(Date.UTC(2026, 5, 1, 10, 0, s)).toISOString(), ids[i] ?? null],
+      );
+    }
+  });
+
+  afterAll(async () => {
+    if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
+    await pool.end();
+  });
+
+  it('🔴 les 3 derniers sont EXACTEMENT la fin de getMessages, dans le même ordre', async () => {
+    const tous = await store.getMessages(conversationId);
+    expect(tous).toHaveLength(7);
+    expect(tous.map((m) => m.body).slice(-3), 'le 5e passe avant le 4e, son jumeau').toEqual(['message 4', 'message 6', 'message 7']);
+    expect(await store.getDerniersMessages(conversationId, 3)).toEqual(tous.slice(-3));
+  });
+
+  it('un fil plus court que la demande est rendu en entier, comme getMessages', async () => {
+    expect(await store.getDerniersMessages(conversationId, 51)).toEqual(await store.getMessages(conversationId));
+  });
+});

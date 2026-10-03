@@ -9,6 +9,7 @@ import type { DepsMcp } from '../src/mcp/outils';
 import type { ContactRow } from '../src/crm/contact-store.pg';
 import type { AnalyseDeFiche } from '../src/analysis/fiche';
 import { OUTILS } from '../src/mcp/outils';
+import * as catalogue from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
@@ -68,10 +69,11 @@ function app(
         if (tenant !== 't1' || id !== 'cv1') return null;
         return { waId: '33600000001', lastInboundAt: '2026-09-01T09:00:00.000Z', windowOpen: true };
       },
-      getMessages: async () => [
+      // Comme le store : les `n` derniers d'un fil de deux messages, dans l'ordre chronologique.
+      getDerniersMessages: async (_id, n) => [
         { id: 'm1', direction: 'in', type: 'text', body: 'bonjour', createdAt: '2026-09-01T09:00:00.000Z' },
         { id: 'm2', direction: 'out', type: 'text', body: 'bonjour à vous', createdAt: '2026-09-01T09:01:00.000Z' },
-      ] as never,
+      ].slice(-n) as never,
       recordOutbound: async (_id, _body, _msg, origine, _type, _cat, _name, auteur) => { traces.journal.push({ origine, auteur }); },
       ...inbox,
     },
@@ -362,6 +364,70 @@ describe('serveur MCP : les outils', () => {
     await server.close();
   });
 
+  /**
+   * 🔴 get_messages LIT LA FIN DU FIL (lot 1 du plan 2026-10-03-mcp-remise-d-aplomb). Il lisait les 500 PREMIERS
+   * messages et en gardait la fin : sur un fil plus long, l'assistant résumait le passé en croyant lire le présent.
+   * Décision de Julien : les 50 plus récents, « c'est déjà bien assez ». Le faux store fait ce que fait le vrai
+   * (`getDerniersMessages`, tenu en intégration) : les `n` derniers d'un fil, dans l'ordre chronologique.
+   */
+  describe('🔴 get_messages : les plus récents, 50 au plus', () => {
+    /** Un fil de `n` messages, de « message 1 » (le plus ancien) à « message n ». */
+    function monterFil(n: number) {
+      const fil = Array.from({ length: n }, (_, i) => ({
+        id: `m${i + 1}`, direction: 'in' as const, type: 'text', body: `message ${i + 1}`, buttonPayload: null,
+        createdAt: new Date(Date.UTC(2026, 8, 1, 9, 0, i)).toISOString(),
+      }));
+      const demandes: number[] = [];
+      const { server } = app({ inbox: { getDerniersMessages: async (_id, k) => { demandes.push(k); return fil.slice(-k); } } });
+      const lire = async (args: Record<string, unknown>, cle = CLE_TOUT) => {
+        const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(cle), payload: appeler('get_messages', { conversation_id: 'cv1', ...args }) });
+        return contenu(res);
+      };
+      return { server, demandes, lire };
+    }
+    const corps = (texte: string) => JSON.parse(texte) as { messages: Array<{ body: string }>; tronque: boolean };
+
+    it('sans limite : demande 51 au store, rend les 50 DERNIERS du plus ancien au plus récent, et dit qu’il tronque', async () => {
+      const { server, demandes, lire } = monterFil(120);
+      const b = corps((await lire({})).texte);
+      expect(demandes).toEqual([51]);
+      expect(b.messages.map((m) => m.body)).toEqual(Array.from({ length: 50 }, (_, i) => `message ${71 + i}`));
+      expect(b.tronque).toBe(true);
+      await server.close();
+    });
+
+    it('une limite démesurée est RAMENÉE à 50, pas refusée', async () => {
+      const { server, demandes, lire } = monterFil(300);
+      const b = corps((await lire({ limit: 200 })).texte);
+      expect(demandes).toEqual([51]);
+      expect(b.messages).toHaveLength(50);
+      expect(b.messages[49]!.body).toBe('message 300');
+      await server.close();
+    });
+
+    it('🔴 tronque est juste dans les DEUX sens : 50 messages pile, faux ; 51, vrai', async () => {
+      const pile = monterFil(50);
+      const b50 = corps((await pile.lire({})).texte);
+      expect(b50.messages).toHaveLength(50);
+      expect(b50.tronque, 'le fil entier est rendu : rien ne manque').toBe(false);
+      await pile.server.close();
+      const unDePlus = monterFil(51);
+      const b51 = corps((await unDePlus.lire({})).texte);
+      expect(b51.messages[0]!.body).toBe('message 2');
+      expect(b51.tronque, 'le premier message n’est pas rendu').toBe(true);
+      await unDePlus.server.close();
+    });
+
+    it('🔴 la conversation d’un AUTRE espace est refusée, et RIEN n’est lu', async () => {
+      const { server, demandes, lire } = monterFil(10);
+      const c = await lire({}, CLE_AUTRE_ESPACE);
+      expect(c.isError).toBe(true);
+      expect(c.texte).toBe('conversation inconnue dans cet espace');
+      expect(demandes, 'la garde d’espace passe AVANT toute lecture').toEqual([]);
+      await server.close();
+    });
+  });
+
   it('tag_conversation rend ce qui a RÉELLEMENT changé', async () => {
     const { server } = app({ contacts: { addTagsByPhoneReturningNew: async () => ({ touched: 1, added: ['chaud'] }) } });
     const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('tag_conversation', { conversation_id: 'cv1', tags: ['chaud', 'vip'] }) });
@@ -380,6 +446,10 @@ describe('serveur MCP : les outils', () => {
     // Une valeur bancale ne doit PAS se traduire par une libération silencieuse, qui rouvrirait le fil à tous.
     const bancal = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('assign_conversation', { conversation_id: 'cv1', member_id: 42 }) });
     expect(contenu(bancal).isError).toBe(true);
+    expect(vus).toHaveLength(2);
+    // Un member_id OUBLIÉ non plus : seul un null écrit libère.
+    const oublie = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('assign_conversation', { conversation_id: 'cv1' }) });
+    expect(contenu(oublie).isError).toBe(true);
     expect(vus).toHaveLength(2);
     await server.close();
   });
@@ -409,7 +479,93 @@ describe('serveur MCP : cohérence du catalogue', () => {
       for (const requis of o.entree.required ?? []) {
         expect(Object.keys(o.entree.properties), `outil « ${o.nom} »`).toContain(requis);
       }
+      // Une liste dit ce qu'elle contient : sans `items`, un modèle ne sait pas quoi y mettre.
+      for (const [cle, p] of Object.entries(o.entree.properties)) {
+        if (p.type === 'array') expect(p.items, `${o.nom}.${cle}`).toBeDefined();
+      }
     }
+  });
+
+  /**
+   * 🔴 LES ANNOTATIONS MCP (spécification 2025-06-18) : c'est sur elles qu'un client décide d'appeler sans demander.
+   * Une lecture qui se dirait écriture ferait confirmer chaque lecture ; une écriture qui se dirait lecture
+   * s'appellerait sans confirmation. Et une écriture SANS `destructiveHint` est supposée destructrice par le client.
+   */
+  it('🔴 chaque écriture porte les valeurs DÉCIDÉES dans le plan (destructive, idempotent, monde ouvert)', () => {
+    // Recopiées du plan 2026-10-03-mcp-remise-d-aplomb : changer une valeur est une décision, pas un glissement.
+    const ecritures = Object.fromEntries(OUTILS.filter((o) => !o.annotations.readOnlyHint).map((o) => [
+      o.nom,
+      o.annotations.readOnlyHint ? null : [o.annotations.destructiveHint, o.annotations.idempotentHint, o.annotations.openWorldHint],
+    ]));
+    expect(ecritures).toEqual({
+      reply_in_open_window: [true, false, true],
+      tag_conversation: [false, true, false],
+      assign_conversation: [true, true, false],
+      create_widget: [false, false, false],
+      update_widget: [true, true, false],
+    });
+    for (const o of OUTILS.filter((x) => x.annotations.readOnlyHint)) {
+      expect(o.annotations.openWorldHint, `outil « ${o.nom} »`).toBe(false);
+    }
+  });
+
+  it('🔴 readOnlyHint vaut exactement « le scope est mcp:read », et chaque écriture déclare destructiveHint et idempotentHint', () => {
+    for (const o of OUTILS) {
+      expect(o.annotations.readOnlyHint, `outil « ${o.nom} »`).toBe(o.scope === 'mcp:read');
+      expect(o.annotations.title.trim(), `outil « ${o.nom} »`).not.toBe('');
+      expect(typeof o.annotations.openWorldHint, `outil « ${o.nom} »`).toBe('boolean');
+      if (o.scope === 'mcp:write') {
+        expect(o.annotations, `outil « ${o.nom} »`).toEqual(expect.objectContaining({
+          destructiveHint: expect.any(Boolean), idempotentHint: expect.any(Boolean),
+        }));
+      }
+    }
+  });
+
+  it('tools/list rend le titre et les annotations de chaque outil', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: rpc('tools/list') });
+    const listes = res.json<{ result: { tools: Array<{ name: string }> } }>().result.tools;
+    expect(listes).toHaveLength(OUTILS.length);
+    for (const o of OUTILS) {
+      expect(listes.find((t) => t.name === o.nom), `outil « ${o.nom} »`).toMatchObject({ title: o.annotations.title, annotations: o.annotations });
+    }
+    await server.close();
+  });
+});
+
+/**
+ * 🔴 CHAQUE BORNE QU'UN OUTIL APPLIQUE EST ANNONCÉE DANS SON SCHÉMA (règle du dépôt, 2026-09-17) : un modèle ne
+ * respecte que ce qu'on lui a dit. Les bornes appliquées vivent dans les appels `texteObligatoire` et `entierBorne`
+ * de chaque `executer` : on les lit dans SA source, et le schéma de CET outil doit les porter avec la même valeur.
+ * Un appel que l'extracteur ne sait pas lire le fait échouer, au lieu de passer à vide.
+ */
+describe('🔴 les bornes appliquées par un outil sont annoncées dans son schéma', () => {
+  /** Un nombre écrit à l'appel, ou une constante exportée par `src/mcp/outils.ts`. Rien d'autre. */
+  function valeur(brut: string): number {
+    const v = /^\d+$/.test(brut) ? Number(brut) : (catalogue as Record<string, unknown>)[brut];
+    if (typeof v !== 'number') throw new Error(`borne illisible : « ${brut} » n’est ni un nombre ni une constante exportée`);
+    return v;
+  }
+
+  it('texteObligatoire (minLength 1, maxLength) et entierBorne (minimum, maximum), avec la même valeur', () => {
+    let lus = 0;
+    for (const o of OUTILS) {
+      const source = o.executer.toString();
+      const props = o.entree.properties;
+      const textes = [...source.matchAll(/texteObligatoire\(\s*args\s*,\s*["'](\w+)["']\s*,\s*(\w+)\s*\)/g)];
+      const entiers = [...source.matchAll(/entierBorne\(\s*args\s*,\s*["'](\w+)["']\s*,\s*\w+\s*,\s*(\w+)\s*,\s*(\w+)\s*\)/g)];
+      expect(textes.length, `${o.nom} : un appel de texteObligatoire que l’extracteur ne lit pas`).toBe(source.split('texteObligatoire(').length - 1);
+      expect(entiers.length, `${o.nom} : un appel d’entierBorne que l’extracteur ne lit pas`).toBe(source.split('entierBorne(').length - 1);
+      for (const [, cle, maxi] of textes) {
+        expect(props[cle!], `${o.nom}.${cle}`).toMatchObject({ minLength: 1, maxLength: valeur(maxi!) });
+      }
+      for (const [, cle, mini, maxi] of entiers) {
+        expect(props[cle!], `${o.nom}.${cle}`).toMatchObject({ minimum: valeur(mini!), maximum: valeur(maxi!) });
+      }
+      lus += textes.length + entiers.length;
+    }
+    expect(lus, 'aucun appel lu : la forme de la source a changé, ce test est aveugle').toBeGreaterThan(0);
   });
 });
 
