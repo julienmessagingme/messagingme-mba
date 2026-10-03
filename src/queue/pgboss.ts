@@ -283,9 +283,11 @@ export class PgBossQueue implements Queue {
     handler: (data: unknown) => Promise<void>,
     opts?: { concurrency?: number; groupConcurrency?: number },
   ): Promise<void> {
-    // ⚠️ AVANT le `ensure`, et c est MESURE : les dix sites d `enqueue` du worker visent tous une file du
-    // MEME role (relus le 2026-10-03), donc aucun role n a besoin de CREER une file qu il ne consomme pas.
-    // L API n en a jamais cree : elle a toujours dependu du worker pour ca.
+    // ⚠️ AVANT le `ensure`, et c'est sans risque parce que `enqueue` fait SON PROPRE `ensure` (plus haut) :
+    // un rôle peut donc enfiler dans une file qu'il ne consomme pas, la première écriture la crée. Il le fait
+    // vraiment, par des chemins indirects : une analyse (rôle `analyse`) émet un signal ou déclenche une
+    // automation, qui enfilent dans des files du rôle `principal`. L'API fait de même depuis toujours.
+    // (Ce commentaire affirmait le contraire, « mesuré » sur les seuls appels DIRECTS : relecture du 2026-10-03.)
     if (this.travaille !== undefined && !this.travaille(name)) return;
     await this.ensure(name);
     this.travaillees.push(name);

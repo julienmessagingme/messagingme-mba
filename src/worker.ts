@@ -92,7 +92,7 @@ import type { Campaign } from './campaign/types';
 import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
 import { registreDeTaches } from './worker/taches';
-import { fileDuRole, tachesDuRole } from './worker/roles';
+import { fileDuRole, minuterieDuRole, nomDuProcessus, tachesDuRole } from './worker/roles';
 import { tenter } from './lib/tenter';
 import { messageDe, texteDe } from './lib/erreur';
 
@@ -125,7 +125,8 @@ async function main(): Promise<void> {
     const prev = lastAlertAt.get(key);
     if (prev !== undefined && now - prev < ALERT_THROTTLE_MS) return;
     lastAlertAt.set(key, now);
-    void sendTelegram(`[mba-worker] ${text}`); // no-op si TELEGRAM_* absent, ne throw jamais
+    // Le nom du processus, pas `mba-worker` : avec deux rôles, une alerte doit dire de quel conteneur elle vient.
+    void sendTelegram(`[mba-${nomDuProcessus(config.WORKER_ROLE)}] ${text}`); // no-op si TELEGRAM_* absent, ne throw jamais
   };
 
   // Le worker est le seul composant qui envoie les messages : un event `error` non capté le tuerait pendant
@@ -196,7 +197,8 @@ async function main(): Promise<void> {
    * jamais faire tomber ce qu'elle mesure.
    */
   taches.programmer('pool-attentes', 60_000, async () => {
-    await viderVersLaBase(poolAttentesStore, mesureAttentePool, 'worker', new Date(), (err) => {
+    // Un nom par rôle : sinon les attentes des deux workers fusionnent dans la même courbe de `/ops`.
+    await viderVersLaBase(poolAttentesStore, mesureAttentePool, nomDuProcessus(config.WORKER_ROLE), new Date(), (err) => {
       // eslint-disable-next-line no-console
       console.error('pool-attentes: écriture impossible:', messageDe(err));
     });
@@ -1131,17 +1133,23 @@ async function main(): Promise<void> {
    * Ce drapeau est la garde : l'échec du balayage empêche réellement la purge (un `catch` qui l'affirmerait
    * en commentaire la laisserait partir). Le worker démarre quand même : seule l'opération irréversible est
    * suspendue.
+   *
+   * ⚠️ Ce balayage du démarrage tourne HORS du registre, donc le filtre de `tachesDuRole` ne l'atteint pas :
+   * il se garde par le nom de la minuterie qu'il précède. Sans ça, le rôle `analyse` le jouait à chaque
+   * démarrage (une écriture en base pour rien, et une alerte « purge suspendue » sur un rôle qui ne purge pas).
    */
   let agregatsAJour = false;
-  try {
-    const n = await agregatsSweep();
-    agregatsAJour = true;
-    // eslint-disable-next-line no-console
-    if (n > 0) console.log(`agregats-analyse: ${n} journee(s) ecrite(s) ou mise(s) a jour`);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('agregats-analyse erreur:', messageDe(err));
-    alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE pour ce demarrage : ${messageDe(err)}`);
+  if (minuterieDuRole('agregats-analyse', config.WORKER_ROLE)) {
+    try {
+      const n = await agregatsSweep();
+      agregatsAJour = true;
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`agregats-analyse: ${n} journee(s) ecrite(s) ou mise(s) a jour`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('agregats-analyse erreur:', messageDe(err));
+      alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE pour ce demarrage : ${messageDe(err)}`);
+    }
   }
   taches.programmer('agregats-analyse', 6 * 60 * 60 * 1000, async () => {
     try {
@@ -1353,7 +1361,7 @@ async function main(): Promise<void> {
           }
         },
         statuts: phoneStatusStore,
-        alert: (msg) => { void sendTelegram(`[mba-worker] ${msg}`); },
+        alert: (msg) => { void sendTelegram(`[mba-${nomDuProcessus(config.WORKER_ROLE)}] ${msg}`); },
         alertedState: alertedPhones,
       });
       // eslint-disable-next-line no-console

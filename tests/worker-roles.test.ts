@@ -2,7 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { BASE_QUEUES } from '../src/queue/names';
-import { FILES_PAR_ROLE, TACHES_PAR_ROLE, assume, fileDuRole, tachesDuRole, type RoleWorker } from '../src/worker/roles';
+import {
+  FILES_PAR_ROLE,
+  TACHES_PAR_ROLE,
+  assume,
+  fileDuRole,
+  minuterieDuRole,
+  nomDuProcessus,
+  tachesDuRole,
+  type RoleWorker,
+} from '../src/worker/roles';
 import { registreDeTaches } from '../src/worker/taches';
 
 /**
@@ -102,5 +111,42 @@ describe('le filtre des deux coutures', () => {
     for (const r of ['principal', 'analyse', 'all'] as RoleWorker[]) {
       expect(fileDuRole('webhook', r)).toBe(r !== 'analyse');
     }
+  });
+});
+
+describe('ce qui tourne HORS du registre suit le même partage (relecture du 2026-10-03)', () => {
+  it('minuterieDuRole rend le partage de la table, et lève sur un nom inconnu', () => {
+    expect(minuterieDuRole('agregats-analyse', 'principal')).toBe(true);
+    expect(minuterieDuRole('agregats-analyse', 'analyse')).toBe(false);
+    expect(minuterieDuRole('agregats-analyse', 'all')).toBe(true);
+    for (const r of ['principal', 'analyse', 'all'] as RoleWorker[]) expect(minuterieDuRole('heartbeat', r)).toBe(true);
+    expect(() => minuterieDuRole('minuterie-fantome', 'principal')).toThrow(/TACHES_PAR_ROLE/);
+  });
+
+  it('🔴 le balayage d’agrégats du DÉMARRAGE est gardé par le rôle de sa minuterie', () => {
+    // Il est appelé une fois avant `taches.programmer('agregats-analyse', ...)`, donc hors du registre que
+    // `tachesDuRole` filtre : sans cette garde, le rôle `analyse` le jouait à chaque démarrage, en production.
+    const debut = SOURCE.indexOf('let agregatsAJour = false;');
+    const fin = SOURCE.indexOf("taches.programmer('agregats-analyse'");
+    expect(debut).toBeGreaterThan(0);
+    expect(fin).toBeGreaterThan(debut);
+    const demarrage = SOURCE.slice(debut, fin);
+    const garde = demarrage.indexOf("if (minuterieDuRole('agregats-analyse', config.WORKER_ROLE))");
+    const appel = demarrage.indexOf('await agregatsSweep()');
+    expect(garde, 'garde absente du balayage de démarrage').toBeGreaterThan(0);
+    expect(appel, 'garde posée APRÈS l’appel, donc décorative').toBeGreaterThan(garde);
+  });
+
+  it('nomDuProcessus : un nom par rôle, et `all` garde le nom d’avant', () => {
+    expect(nomDuProcessus('all')).toBe('worker');
+    const noms = (['principal', 'analyse'] as RoleWorker[]).map(nomDuProcessus);
+    expect(new Set([...noms, nomDuProcessus('all')]).size).toBe(3);
+  });
+
+  it('🔴 les attentes de pool et les alertes passent par le nom du processus, jamais par un nom en dur', () => {
+    // Un nom en dur fait fusionner les deux workers dans la même courbe de `/ops` et dans les mêmes alertes.
+    expect(SOURCE).not.toContain('[mba-worker]');
+    expect(SOURCE).toContain('viderVersLaBase(poolAttentesStore, mesureAttentePool, nomDuProcessus(config.WORKER_ROLE)');
+    expect(SOURCE.split('sendTelegram(`[mba-${nomDuProcessus(config.WORKER_ROLE)}]').length - 1).toBe(2);
   });
 });

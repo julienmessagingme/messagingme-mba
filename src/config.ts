@@ -106,8 +106,11 @@ export const schema = z.object({
   APP_DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
   /**
-   * Taille du pool applicatif (mode transaction, `APP_DATABASE_URL`), instancié par process : API et worker
-   * font 2 x 8 = 16 clients vers le pooler, sa capacité observée (au-delà, la latence double sans erreur).
+   * Taille du pool applicatif (mode transaction, `APP_DATABASE_URL`), instancié PAR PROCESS. API et worker
+   * faisaient 2 x 8 = 16 clients vers le pooler, sa capacité observée (au-delà, la latence double sans erreur).
+   * Depuis le second worker (2026-10-03), c'est 8 + 8 + 3 = 19 (`docker-compose.yml` le règle à 3 pour
+   * `mba-worker-analyse`) : au-dessus de l'observé, à surveiller sur `/ops`. Chaque copie de l'API ajoutée
+   * ajouterait encore 8, donc ce nombre se redimensionne AVANT de doubler quoi que ce soit.
    * Plus haut, l'attente passerait de notre pool, borné par `DB_CONN_TIMEOUT_MS`, à celle de Supavisor, qui
    * est muette. Le budget des ~15 sessions partagé avec mm-hubspot ne concerne que pg-boss (`PGBOSS_MAX`).
    * Côté API, ce pool porte AUSSI les enfilements (pg-boss l'emprunte), dont l'accusé des webhooks de Meta :
@@ -115,8 +118,9 @@ export const schema = z.object({
    */
   DB_POOL_MAX: z.coerce.number().default(8),
   /** Max de connexions du pool pg-boss du WORKER, resté en mode session : c'est lui qui vit dans le budget de
-   *  ~15 sessions partagé avec mm-hubspot (2 ici, plus l'écoute des notifications, + 2 x 2 chez lui). L'API ne
-   *  le lit plus : elle n'ouvre aucun pool pg-boss, donc le nombre de ses copies ne compte pas dans ce budget.
+   *  ~15 sessions partagé avec mm-hubspot (2 par worker plus l'écoute des notifications, soit 6 pour les DEUX
+   *  rôles depuis le 2026-10-03, + 2 x 2 chez lui). L'API ne le lit plus : elle n'ouvre aucun pool pg-boss,
+   *  donc le nombre de ses copies ne compte pas dans ce budget.
    *  Ne pas le relever sans refaire l'arithmétique de ce budget. */
   PGBOSS_MAX: z.coerce.number().default(2),
   /**

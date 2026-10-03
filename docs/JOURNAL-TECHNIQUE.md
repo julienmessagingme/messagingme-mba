@@ -35,6 +35,13 @@ chemins qui traversent le câblage** ; c'est la même famille que « un test uni
 `up`. Partition parfaite en production (7 files contre 3), deux battements de deux conteneurs, portes publiques à
 200. L'essai réel reste dû : aucun trafic ce samedi matin.
 
+**Les cinq jaunes de la relecture, corrigés le jour même** (non déployés, relus par le lot suivant) : le
+commentaire faux de `work()` réécrit sur sa vraie raison ; le balayage d'agrégats du DÉMARRAGE, qui tourne hors du
+registre, gardé par `minuterieDuRole` (le rôle `analyse` le jouait à chaque `up`) ; un nom de processus par rôle
+(`nomDuProcessus`) pour les attentes de pool et les alertes Telegram ; les commentaires de budget recalés sur le
+plafond qui mord, les sessions du pooler, et sur les 19 clients du mode transaction. Les deux gardes de câblage ont
+été vérifiées par mutation.
+
 ## 2026-10-02 et 03 : le widget WhatsApp, lots 3b à 5 et revue finale, tout en production
 
 **D'où ça vient.** Une bulle WhatsApp à poser sur le site d'un client, voulue par Julien pour TOUS les clients de la

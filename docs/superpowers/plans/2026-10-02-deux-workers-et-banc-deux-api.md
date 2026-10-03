@@ -97,10 +97,12 @@ APPARTENANCE et à filtrer dessus.
 
 ### Ce que la mesure du 2026-10-03 a tranché, et le bloqueur qu’elle a sorti
 
-✅ **La question du `ensure` est tranchée, par la mesure et pas par un raisonnement** : les DIX sites
-d’`enqueue` du worker ont été relus, et **tous visent une file du MÊME rôle**. Aucun rôle n’a donc besoin de
-CRÉER une file qu’il ne consomme pas, et le filtre peut se poser avant le `ensure`. L’API, elle, n’a jamais
-créé de file : elle a toujours dépendu du worker pour ça, et le découpage n’y change rien.
+✅ **Le filtre peut se poser avant le `ensure`, mais pas pour la raison écrite ici d’abord.** Ce paragraphe
+affirmait, « par la mesure », que les dix sites d’`enqueue` du worker visaient tous une file du même rôle. La
+relecture du 2026-10-03 l’a réfuté : la mesure ne couvrait que les appels DIRECTS, alors qu’une analyse (rôle
+`analyse`) émet des signaux et déclenche des automations qui enfilent dans des files du rôle `principal`. La
+vraie raison est plus simple : `enqueue` fait son propre `ensure`, donc la première écriture crée la file, quel
+que soit le rôle qui écrit. L’API enfile de la même façon depuis toujours.
 
 ✅ **Le filtre est posé DANS la file, pas aux enregistrements**, et c’est une révision sur donnée mesurée :
 renommer l’appel cassait **cinq gardes du dépôt d’un coup**, celles qui dérivent les files consommées du TEXTE

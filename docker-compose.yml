@@ -60,10 +60,14 @@ services:
     restart: unless-stopped
     environment:
       WORKER_ROLE: analyse
-      # DIMENSIONNÉ PETIT, ET C'EST MESURÉ (2026-10-03) : 60 connexions au maximum côté Postgres, 21 utilisées.
-      # La marge existe, mais sa charge est légère (trois files de fond, une analyse par espace à la fois) et un
-      # appel de modèle ne retient aucune connexion. Le principal garde les défauts : c'est lui qui porte les
-      # messages entrants, et on ne réduit pas le pool du chemin chaud pour en loger un autre.
+      # DIMENSIONNÉ PETIT, parce que le plafond qui mord est celui du POOLER, pas de Postgres (relecture du
+      # 2026-10-03). En mode session, Supavisor plafonne à ~15 sessions, partagées avec mm-hubspot : chaque
+      # worker en tient PGBOSS_MAX plus une pour l'écoute, donc ce conteneur en ajoute trois. En mode
+      # transaction, le pooler tenait 16 clients sans broncher (API 8 + worker 8, observé) : avec ces 3, on
+      # passe à 19, au-delà de ce qui a été observé. Les 60 connexions de Postgres (21 utilisées) sont un
+      # troisième plafond, le plus lâche. Sa charge est légère (trois files de fond, une analyse par espace à
+      # la fois) et un appel de modèle ne retient aucune connexion. Le principal garde les défauts : c'est lui
+      # qui porte les messages entrants, et on ne réduit pas le pool du chemin chaud pour en loger un autre.
       DB_POOL_MAX: "3"
       PGBOSS_MAX: "2"
     stop_grace_period: 30s

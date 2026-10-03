@@ -1597,12 +1597,14 @@ premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé.
   prise au pool, jamais sur celle d'une transaction ouverte : enfiler DANS une transaction (`enTransaction`) n'y
   inscrirait pas la tâche (comme avant) et prendrait une SECONDE connexion au même pool. Aucun code ne le fait
   (l'opt-out annonce après le `commit`).
-- **`DB_POOL_MAX`** est instancié **PAR PROCESS** : l'API et le worker importent le même module, donc le
-  double du réglage vers le pooler. Au-delà d'environ 16 clients simultanés, la latence double sans qu'aucune
+- **`DB_POOL_MAX`** est instancié **PAR PROCESS** : l'API et chaque worker importent le même module, donc
+  autant de pools que de processus (celui du worker d'analyse est plus petit, réglé dans `docker-compose.yml`).
+  Au-delà d'environ 16 clients simultanés (mesuré avec deux processus), la latence double sans qu'aucune
   erreur ne remonte. Monter plus haut déplacerait la file d'attente de NOTRE pool vers celle de Supavisor, où
   elle est MUETTE, et `DB_CONN_TIMEOUT_MS` ne protégerait plus de rien.
-- **`PGBOSS_MAX`** (worker seul) vit dans un budget d'environ 15 sessions **partagé avec mm-hubspot**, plus la
-  connexion d'écoute du worker. Ne pas le relever sans refaire cette arithmétique.
+- **`PGBOSS_MAX`** (workers seuls) vit dans un budget d'environ 15 sessions **partagé avec mm-hubspot**, plus la
+  connexion d'écoute de CHAQUE worker : un conteneur de worker de plus coûte `PGBOSS_MAX` + 1 sessions. Ne pas le
+  relever sans refaire cette arithmétique.
 - **`DB_CONN_TIMEOUT_MS`** : le défaut `pg` est une attente ILLIMITÉE, donc un pool saturé rend une requête
   HTTP qui ne répond jamais, sans erreur ni trace.
 

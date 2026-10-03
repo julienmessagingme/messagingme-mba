@@ -113,9 +113,7 @@ export function assume(role: RoleWorker, a: Appartenance): boolean {
 export function tachesDuRole(registre: RegistreDeTaches, role: RoleWorker): RegistreDeTaches {
   return {
     programmer(nom: string, intervalMs: number, passe: () => void | Promise<void>, options?: OptionsTache): void {
-      const a = TACHES_PAR_ROLE[nom];
-      if (a === undefined) throw new Error(`minuterie « ${nom} » sans rôle : la ranger dans TACHES_PAR_ROLE (src/worker/roles.ts)`);
-      if (!assume(role, a)) return;
+      if (!minuterieDuRole(nom, role)) return;
       registre.programmer(nom, intervalMs, passe, options);
     },
     arreterTout: () => registre.arreterTout(),
@@ -128,4 +126,30 @@ export function fileDuRole(nom: string, role: RoleWorker): boolean {
   const a = (FILES_PAR_ROLE as Record<string, Appartenance | undefined>)[nom];
   if (a === undefined) throw new Error(`file « ${nom} » sans rôle : la ranger dans FILES_PAR_ROLE (src/worker/roles.ts)`);
   return assume(role, a);
+}
+
+/**
+ * Ce rôle porte-t-il cette minuterie ? Même exigence que `fileDuRole` : un nom inconnu lève.
+ *
+ * 🔴 SERT AUSSI À CE QUI TOURNE HORS DU REGISTRE, et c'est la raison de son existence (relecture du 2026-10-03).
+ * Le balayage d'agrégats du DÉMARRAGE n'est pas une minuterie, il est appelé une fois avant elle : le filtre de
+ * `tachesDuRole` ne l'atteint donc pas, et il tournait aussi dans le rôle `analyse`, en production, où il écrivait
+ * un drapeau que personne ne lit. Le garder par le NOM de la minuterie qu'il précède, et non par un rôle écrit en
+ * dur, le fait suivre automatiquement le jour où la table la déplace.
+ */
+export function minuterieDuRole(nom: string, role: RoleWorker): boolean {
+  const a = TACHES_PAR_ROLE[nom];
+  if (a === undefined) throw new Error(`minuterie « ${nom} » sans rôle : la ranger dans TACHES_PAR_ROLE (src/worker/roles.ts)`);
+  return assume(role, a);
+}
+
+/**
+ * Le nom sous lequel ce processus se signale : les attentes de pool de `/ops` et les alertes Telegram.
+ *
+ * 🔴 UN NOM PAR RÔLE, sinon les deux workers fusionnent dans la même courbe d'attentes de pool, et le signal
+ * « pool saturé » ne dit plus de quel processus il vient : celui de l'analyse, à 3 connexions, saturerait plus
+ * souvent que le principal, et on accuserait le chemin chaud. `all` garde `worker`, le nom d'avant.
+ */
+export function nomDuProcessus(role: RoleWorker): string {
+  return role === 'all' ? 'worker' : `worker-${role}`;
 }
