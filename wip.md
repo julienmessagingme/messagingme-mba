@@ -141,8 +141,8 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
 1. ✅ **La latence HTTP par route** (2026-10-03) : déployée à 20 h 33 UTC (`22d01fe4`, migration 0205), essai réel
    fait en base (dix lignes du vrai trafic, aucune adresse réelle). Les jaunes de sa relecture sont poussés
    (`b1d3bc8a` : l'abandon par le client mesuré en 499, le rouge réservé aux webhooks et lectures de l'Inbox, un
-   plafond de lignes, l'écriture triée, un vidage final), PAS ENCORE DÉPLOYÉS. Reste à Julien : ouvrir `/ops` et
-   voir la carte. Le reste du § 11 de l'audit (CPU, mémoire et redémarrages par conteneur, connexions côté pooler
+   plafond de lignes, l'écriture triée, un vidage final), déployés à 20 h 47 UTC (`f7e9acd0`) ; l'écriture a continué à
+   travers le redémarrage. Reste à Julien : ouvrir `/ops` et voir la carte. Le reste du § 11 de l'audit (CPU, mémoire et redémarrages par conteneur, connexions côté pooler
    et Postgres, durée des gros balayages, volume des fichiers en base) n'est pas fait.
 2. Le banc « Inbox à 30 utilisateurs » (Postgres jetable, p95), et tuer un WORKER en plein travail sans perte ni
    doublon (les bancs n'ont tué que l'API).

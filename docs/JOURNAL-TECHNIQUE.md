@@ -17,6 +17,9 @@ routes, alors que deux seuils de l'audit sont des latences de routes. Plan :
 - **L'essai réel** : au premier vidage, dix lignes écrites par le vrai trafic (la console qui sonde l'Inbox,
   `/health`, `/live`, le webhook de Meta, `/mcp` et sa découverte OAuth), toutes sous un motif de route, aucune
   ne portant d'identifiant, et zéro erreur d'écriture dans les journaux de l'API.
+- **Les jaunes déployés à 20 h 47 UTC** (aucune migration) : CI verte job par job, chemins publics vérifiés, et
+  l'écriture a continué à travers le redémarrage (trois fenêtres de cinq minutes, 46 lignes, une seule forme de
+  tranches, aucune adresse réelle, zéro erreur). Le pire cas mesuré : 295 ms, le compteur de non-lus de l'Inbox.
 
 **Ce que la construction a appris.**
 - **Un p95 ne s'additionne pas**, ni entre copies ni entre fenêtres : la table garde des compteurs par tranche de
