@@ -89,7 +89,17 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   (essai du 3 à 16 h 38, une seule occurrence, journal du 2026-10-03). Deux essais suivants (16 h 53 et 16 h 54,
   réponse au modèle par un bouton puis par du texte) : l'agent n'a rien dit. Occurrence isolée, à surveiller.
 
-## UNE SEULE TRANSITION DE CONSENTEMENT (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES EN COURS)
+## UN POINT D'ENTRÉE PAR TYPE DE LANCEMENT DE SCÉNARIO (EN COURS, 2026-10-04)
+
+- ⏳ Piste 4 du rapport d'architecture du 2026-10-02 (`todo.md`). Cadrage en deux rondes avec Julien : les sept
+  lancements passent par `src/workflow/lancements.ts` (type fermé, table de politique), réglages de l'exécuteur
+  fermés, comportement IDENTIQUE, lectures de texte remplacées par une table qui exécute le module. Plan
+  `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md` (poussé avec le code). Implémenteur en cours dans
+  l'extraction `scratchpad/lanc` (base `4445eed1`), puis une relecture. **Production avant la démo du 7** (viser
+  lundi 5), essai réel en quatre gestes (Inbox, lien de test, mot-clé, campagne vers un seul numéro) ; un défaut en
+  production avant la démo se corrige sur place.
+
+## UNE SEULE TRANSITION DE CONSENTEMENT (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES POUSSÉS)
 
 - ✅ Plan `docs/superpowers/plans/2026-10-03-transition-consentement.md`, cadrage en trois rondes avec Julien.
   Serveur `1c4df5ec` (API et deux workers à 8 h 45 UTC, CI verte job par job, intégration comprise), console
@@ -99,11 +109,15 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   « 1 fiche a gardé son STOP » ; réabonnement par la fiche : passé.
 - ✅ Décision de Julien après coup : un refus venu de l'API publique reste annoncé au client (pas d'exception à la
   création ; aucun chemin ne crée une fiche directement `opted_out`, mesuré).
-- ⏳ **Les six jaunes, en cours dans l'extraction `scratchpad/consent-j`** (base `a34c88c3`) : textes « qui lève un
-  STOP » (écran, fiche d'aide `importer-mes-contacts`, `features.md`) qui oublient le CSV coché et le scénario ;
-  commentaires faux sur la création ; trace d'audit de la fiche écrite même sans changement ; quatre cas de table
-  manquants et des cas « gardé » à ancrer ; `tenant_id = $1` en ceinture dans la CTE `ecrit`. À pousser sans
-  relecture dédiée (la suivante les couvre), déployés au prochain `up`.
+- ✅ **Les six jaunes, poussés (`87931675`, CI verte job par job, intégration comprise)** : une phrase unique « qui
+  lève un STOP » (`quiLeveUnStop`) qui dit les quatre chemins, à l'écran, dans `features.md` et la fiche
+  `importer-mes-contacts` ; commentaires de création corrigés ; `applyEdits` rend `consentementChange` et la route
+  ne journalise qu'alors ; `tenant_id` reposé dans la CTE `ecrit` sur le paramètre que chaque écriture désigne ;
+  cas de table ajoutés, cas « gardé » des upserts ancrés sur une preuve. La console (texte seul) est publiée ; le
+  serveur part au prochain `up` (celui du lot des lancements), et la relecture de ce lot les couvre.
+- ⏳ **Même défaut ailleurs, relevé en passant** : `src/webhooks/flow-mapping.ts` journalise `contact.optin` dès que
+  `markOptedIn` rend un identifiant, même si le statut était déjà en place (un formulaire coché deux fois laisse deux
+  traces).
 
 ## « TESTER LE SCÉNARIO » NE MARQUE PLUS LA CONVERSATION (DÉPLOYÉ LE 2026-10-03 ; ESSAI RÉEL FAIT)
 
