@@ -5,6 +5,40 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-04 : une seule transition de consentement dans la fiche contact (piste 1 restante de l'audit)
+
+**Cadrage.** Trois rondes de questions fermées le 3 au soir, décisions de Julien :
+- une règle unique, avec les écarts corrigés ;
+- production avant la démo, table de cas sur vraie base, retrait si l'essai réel échoue.
+
+Qui lève un STOP : la fiche, l'import CSV case cochée, la personne (formulaire) et le bloc « Action » d'un scénario
+(gardé, à sa demande). Qui ne le lève plus : l'action en masse.
+
+**Livré.**
+- **Serveur, `1c4df5ec`** :
+  - la règle dans `src/crm/transition-consentement.ts`, dépliée en SQL, jamais un `case` écrit à la main ;
+  - l'autorité de chaque appelant, un type fermé et requis ;
+  - rien de réécrit ni d'annoncé quand le statut ne change pas ;
+  - l'annonce seulement pour les vrais passages à `opted_out` ;
+  - une table d'intégration (courses de deux STOP comprises) à la place des tests par expressions régulières.
+- **Relecture** : 0 rouge, 6 jaunes.
+- **CI verte job par job** : premier passage du nouveau SQL sur une vraie base.
+- **Déploiement** : API et deux workers, l'un après l'autre, à 8 h 45 UTC.
+- **Console, `a34c88c3`**, poussée APRÈS le `up` : sinon l'écran aurait annoncé « les STOP sont gardés » pendant que
+  l'ancienne API les levait encore.
+
+**Changements hors de la liste initiale, assumés.**
+- Un upsert qui redit `opted_in` ne remplace plus la source.
+- `affected` compte désormais les fiches changées.
+
+**Essai réel, le 4 vers 10 h 52 (Paris), sur la fiche de Julien.**
+- Désabonnement par la fiche.
+- Deux actions en masse « opt-in » : `affected 0, stopsGardes 1`, date du refus inchangée, message affiché.
+- Réabonnement par la fiche : passé.
+
+Décision finale sur l'API : un refus qu'elle envoie reste annoncé au client. Aucun chemin ne crée directement une
+fiche désabonnée, c'est mesuré.
+
 ## 2026-10-03 : le banc des trente espaces (Inbox, pic de messages, worker tué)
 
 Point 2 de ce qui restait de l'audit de performance du 2026-10-02, recadré par Julien : le cas réel n'est pas un

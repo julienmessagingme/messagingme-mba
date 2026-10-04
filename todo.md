@@ -1018,13 +1018,11 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
 
 **Les huit restantes**, de la plus forte à la plus spéculative :
 
-1. **Une seule transition de consentement dans la fiche contact** (fort). « Qui peut lever un STOP, et alors la
-   date et la source suivent » est réécrit en six CASE SQL dans `src/crm/contact-store.pg.ts`
-   (`upsertByPhoneReturningId`, `upsertManyByPhone`, `setOptInByWaId`, `ecrireConsentementParId`, `applyEdits`,
-   `applyEditsMany`) ; deux d'entre eux réabonnaient un contact STOP (738a7c3d), et le quatrième chemin de 0138
-   n'avait été trouvé qu'en revue. Approfondir À L'INTÉRIEUR du dépôt (compatible avec le refus du découpage) : un
-   fragment porte la transition et son annonce après écriture, les six chemins l'appellent. Tests aujourd'hui :
-   un faux pool qui reconnaît les requêtes par regex, et un seul test sur vraie base.
+1. ✅ **Une seule transition de consentement dans la fiche contact : FAIT et déployé le 2026-10-04** (`1c4df5ec`
+   serveur, `a34c88c3` console, plan `docs/superpowers/plans/2026-10-03-transition-consentement.md`). La règle vit
+   dans `src/crm/transition-consentement.ts`, les six écritures la composent, l'autorité de chaque appelant est un
+   type fermé. Écarts corrigés (décisions de Julien) : statut inchangé, rien de réécrit ni d'annoncé ; l'action en
+   masse ne lève plus un STOP et le dit. Une table d'intégration remplace les tests par expressions régulières.
 2. ✅ **Sortir l'envoi d'un bloc de scénario du câblage : FAIT et déployé le 2026-10-03** (`cdcbde3e`, plan
    `docs/superpowers/plans/2026-10-03-envois-de-bloc.md`). Les quatre envois vivent dans
    `src/workflow/envois-bloc.ts`, exécutés par `tests/workflow-envois-bloc.test.ts`. Pas couplé au point d'envoi

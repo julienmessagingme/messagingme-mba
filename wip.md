@@ -89,6 +89,22 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   (essai du 3 à 16 h 38, une seule occurrence, journal du 2026-10-03). Deux essais suivants (16 h 53 et 16 h 54,
   réponse au modèle par un bouton puis par du texte) : l'agent n'a rien dit. Occurrence isolée, à surveiller.
 
+## UNE SEULE TRANSITION DE CONSENTEMENT (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES EN COURS)
+
+- ✅ Plan `docs/superpowers/plans/2026-10-03-transition-consentement.md`, cadrage en trois rondes avec Julien.
+  Serveur `1c4df5ec` (API et deux workers à 8 h 45 UTC, CI verte job par job, intégration comprise), console
+  `a34c88c3` poussée APRÈS le `up` (l'écran annonce que la masse garde les STOP). Relecture : 0 rouge, 6 jaunes.
+- ✅ **Essai réel du 4 vers 10 h 52 (Paris)**, sur la fiche de Julien : désabonnement par la fiche ; action en masse
+  « Passer en opt-in » : STOP gardé, journal `affected 0, stopsGardes 1`, date du refus inchangée, l'écran a dit
+  « 1 fiche a gardé son STOP » ; réabonnement par la fiche : passé.
+- ✅ Décision de Julien après coup : un refus venu de l'API publique reste annoncé au client (pas d'exception à la
+  création ; aucun chemin ne crée une fiche directement `opted_out`, mesuré).
+- ⏳ **Les six jaunes, en cours dans l'extraction `scratchpad/consent-j`** (base `a34c88c3`) : textes « qui lève un
+  STOP » (écran, fiche d'aide `importer-mes-contacts`, `features.md`) qui oublient le CSV coché et le scénario ;
+  commentaires faux sur la création ; trace d'audit de la fiche écrite même sans changement ; quatre cas de table
+  manquants et des cas « gardé » à ancrer ; `tenant_id = $1` en ceinture dans la CTE `ecrit`. À pousser sans
+  relecture dédiée (la suivante les couvre), déployés au prochain `up`.
+
 ## « TESTER LE SCÉNARIO » NE MARQUE PLUS LA CONVERSATION (DÉPLOYÉ LE 2026-10-03 ; ESSAI RÉEL FAIT)
 
 - ✅ Décision de Julien (« ne mets plus jamais un flag test sur ma conversation »), plan
