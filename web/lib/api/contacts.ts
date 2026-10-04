@@ -224,15 +224,17 @@ export function countContacts(tenantId: string, filters: ContactFilters): Promis
   return request<{ total: number }>(`/tenants/${tenantId}/contacts/count${suffix ? `?${suffix}` : ''}`);
 }
 
-/** Action en masse du mini-CRM (admin) : ajouter/retirer un tag OU poser un champ, sur une cible (ids ou filtres).
- *  Renvoie le nombre de contacts touchés. */
+/** Action en masse du mini-CRM (admin) : ajouter/retirer un tag, poser un champ OU basculer le consentement, sur une
+ *  cible (ids ou filtres). Renvoie le nombre de contacts touchés, et pour le consentement `stopsGardes`, le nombre de
+ *  fiches dont le STOP a été gardé (l'action en masse ne lève pas un STOP). Absent d'une API plus ancienne : à lire
+ *  par `avisStopsGardes`, qui le tolère. */
 export type BulkAction =
   | { type: 'add_tag'; tags: string[] }
   | { type: 'remove_tag'; tags: string[] }
   | { type: 'set_field'; key: string; value: string }
   | { type: 'set_optin'; value: 'opted_in' | 'opted_out' };
-export function bulkContactAction(tenantId: string, target: BulkTarget, action: BulkAction): Promise<{ affected: number }> {
-  return request<{ affected: number }>(`/tenants/${tenantId}/contacts/bulk`, { method: 'POST', body: JSON.stringify({ target, action }) });
+export function bulkContactAction(tenantId: string, target: BulkTarget, action: BulkAction): Promise<{ affected: number; stopsGardes?: unknown }> {
+  return request<{ affected: number; stopsGardes?: unknown }>(`/tenants/${tenantId}/contacts/bulk`, { method: 'POST', body: JSON.stringify({ target, action }) });
 }
 
 /**

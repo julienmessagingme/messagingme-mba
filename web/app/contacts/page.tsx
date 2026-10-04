@@ -31,6 +31,7 @@ import { Modale } from '@/components/Modale';
 import { VoileMenu } from '@/components/Flottant';
 import { Squelette } from '@/components/Squelette';
 import { erreurDeChargement } from '@/lib/http';
+import { avisStopsGardes } from '@/lib/stops-gardes';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
@@ -149,10 +150,12 @@ function ContactsInner({ session }: { session: Session }) {
   // Cible d'action : par ids cochés, OU par filtres + exclusions (jamais un payload massif d'UUID).
   const currentTarget = (): BulkTarget => (allMode ? { filters, excludeIds: [...excluded] } : { ids: [...selected] });
 
-  async function onActionDone(affected: number) {
+  /** `avis` : ce que l'action a gardé en l'état et que l'opérateur doit savoir (des fiches restées en STOP). */
+  async function onActionDone(affected: number, avis: string | null) {
     setAction(null);
     setMenuOpen(false);
     clearSelection();
+    if (avis) setInfo(avis);
     await load();
     // Rafraîchit aussi les suggestions de tags (un add_tag a pu créer un nouveau tag).
     listTags(session.tenantId).then(({ tags }) => setTagSuggestions(tags.map((tg) => tg.tag))).catch(() => {});
@@ -513,7 +516,7 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
   count: number;
   userFields: UserFieldDef[];
   tagSuggestions: string[];
-  onDone: (affected: number) => void;
+  onDone: (affected: number, avis: string | null) => void;
   onClose: () => void;
 }) {
   const t = useT();
@@ -547,6 +550,7 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
     setError(null);
     try {
       let affected: number;
+      let avis: string | null = null;
       if (action === 'delete') {
         // `purges` = le nombre de PERSONNES supprimées, c'est ce que l'opérateur a demandé ; pas le nombre de
         // messages détruits au passage, qui serait un chiffre spectaculaire et sans rapport avec sa décision.
@@ -557,9 +561,11 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
           : action === 'optin' || action === 'optout'
             ? { type: 'set_optin', value: action === 'optin' ? 'opted_in' : 'opted_out' }
             : { type: action, tags: [tag.trim()] };
-        affected = (await bulkContactAction(tenantId, target, act)).affected;
+        const r = await bulkContactAction(tenantId, target, act);
+        affected = r.affected;
+        avis = avisStopsGardes(r, t);
       }
-      onDone(affected);
+      onDone(affected, avis);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Action impossible', 'Action failed'));
       setBusy(false);
@@ -592,7 +598,7 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
         )}
         {action === 'optin' && (
           <p className="rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800">
-            {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n’utiliser que si vous détenez une preuve de leur consentement.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent.`)}
+            {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n’utiliser que si vous détenez une preuve de leur consentement. Ceux qui ont répondu STOP le restent : un STOP ne se lève que depuis la fiche du contact.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent. Those who replied STOP stay unsubscribed: a STOP can only be lifted from the contact’s record.`)}
           </p>
         )}
         {action === 'optout' && (

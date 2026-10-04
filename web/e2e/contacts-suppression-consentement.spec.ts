@@ -17,8 +17,11 @@ const CONTACTS = [
   { id: 'c2', phoneE164: '+33622222222', bsuid: null, profileName: 'Bo', optInStatus: 'unknown', fields: {}, tags: [], createdAt: '2026-08-02T09:00:00.000Z' },
 ];
 
-/** Monte la page Contacts avec un backend simulé, et rend les corps reçus sur la suppression et sur /bulk. */
-async function monter(page: import('@playwright/test').Page) {
+/**
+ * Monte la page Contacts avec un backend simulé, et rend les corps reçus sur la suppression et sur /bulk. `reponseBulk` :
+ * ce que /bulk répond (par défaut, une API d'avant les STOP gardés, sans `stopsGardes`).
+ */
+async function monter(page: import('@playwright/test').Page, reponseBulk: Record<string, unknown> = { affected: 1 }) {
   const suppressions: Array<Record<string, unknown>> = [];
   const bulks: Array<Record<string, unknown>> = [];
   const patchs: Array<Record<string, unknown>> = [];
@@ -33,7 +36,7 @@ async function monter(page: import('@playwright/test').Page) {
     }
     if (req.method() === 'POST' && url.includes('/contacts/bulk')) {
       bulks.push((req.postDataJSON() ?? {}) as Record<string, unknown>);
-      return json({ affected: 1 });
+      return json(reponseBulk);
     }
     if (req.method() === 'PATCH' && url.includes('/contacts/')) {
       const body = (req.postDataJSON() ?? {}) as Record<string, unknown>;
@@ -120,6 +123,23 @@ test.describe('mini-CRM : bascule de consentement', () => {
 
     await expect.poll(() => bulks.length).toBe(1);
     expect(bulks[0]).toMatchObject({ action: { type: 'set_optin', value: 'opted_in' } });
+    // ⚠️ Une API qui ne renvoie pas `stopsGardes` (plus ancienne que la console) : l'écran ne dit rien de plus.
+    await expect(page.getByTestId('bulk-submit')).toHaveCount(0);
+    await expect(page.getByTestId('contact-info')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 L'ACTION EN MASSE NE LÈVE PAS UN STOP (2026-10-03). Le serveur garde ces fiches désabonnées et les compte ;
+   * sans ce message, l'opérateur croirait avoir réabonné toute sa sélection.
+   */
+  test('🔴 opt-in : l’écran dit combien de fiches ont gardé leur STOP', async ({ page }) => {
+    await monter(page, { affected: 0, stopsGardes: 1 });
+    await page.getByTestId('contacts-action').click();
+    await page.getByTestId('contacts-action-optin').click();
+    await expect(page.getByText(/Ceux qui ont répondu STOP le restent/)).toBeVisible();
+    await page.getByTestId('bulk-submit').click();
+
+    await expect(page.getByTestId('contact-info')).toContainText('1 fiche a gardé son STOP');
   });
 });
 
