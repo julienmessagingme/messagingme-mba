@@ -1862,6 +1862,49 @@ clique « Autoriser » dans un espace où elle est admin, et Claude reçoit un j
   `oauth.revoque` ne portent que le client et les droits. La révocation par le client lui-même n'est pas tracée :
   elle ne connaît que le jeton, pas l'espace.
 
+🔴 **LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT AGISSENT AU NOM D'UNE PERSONNE** (lot 8a, spec
+`docs/superpowers/specs/2026-10-03-mcp-agent-ia-design.md`). Les outils de `src/mcp/outils-agent.ts` permettent à
+Claude de créer un agent IA, d'écrire sa fiche, de lui donner sa connaissance et ses outils sûrs, de l'essayer, de
+l'activer, et d'ouvrir une recharge du crédit.
+- **Personne requise** : un outil `exigePersonne` n'est ni listé ni appelable quand `ContexteMcp.personne` est nul,
+  c'est-à-dire avec une clé d'API. `outilsPour(ctx)` (`src/mcp/outils.ts`) filtre `tools/list` ET `tools/call`, et le
+  refus est mot pour mot celui d'un outil inconnu. La raison : une clé `mcp:write` peut être branchée comme connecteur
+  d'un agent qui lit des messages de clients, et une injection y modifierait un agent ou ouvrirait un paiement. Toutes
+  les écritures de l'agent le portent ; ses lectures (`list_agents`, `get_agent`, `list_knowledge`, `get_credit`)
+  restent lisibles par une clé. La répartition est tenue par `tests/mcp-agent.test.ts`.
+  `preview_site` est une lecture (`mcp:read`) qui exige une personne, et la seule lecture en monde ouvert : il lit un
+  site tiers. La sonde 15 de l'auto-attaque le vérifie sur le serveur construit.
+- **Une seule vérité** : chaque outil appelle la fonction de la console (`src/agent/gestion.ts`, `connaissance.ts`,
+  `essai.ts`, `reglages.ts`, `src/stripe/paiement.ts`), sur les MÊMES objets que les routes (`src/index.ts`,
+  `agentsDeLaConsole` et ses voisins). Un refus devient un refus d'outil avec la phrase de l'écran, suivie de ses
+  détails en JSON (la liste des manques d'une activation, le code d'un refus de paiement) : `valeurOuRefus`,
+  `src/mcp/saisie.ts`.
+- 🔴 **Le plafond des opérations coûteuses est celui de la console** : `buildServer` construit UN `PlafondPartage`
+  (`Gardes.plafondCouteux`), dont dérive `limiteCouteuse`, et le pose dans les dépendances du MCP au montage
+  (`DepsMcp.couteux` ; le câblage fournit `CablageMcp`, sans lui). Même instance, même clé (l'espace) : les outils
+  coûteux (un essai facturé, un ajout ou une suppression de connaissance, un site, un document, un paiement) le
+  consomment avant leur fonction, en plus de l'unité de débit de l'appel MCP. Leur liste est tenue par
+  `tests/mcp-agent.test.ts`.
+- **`update_agent` filtre ses arguments** : objectif, ton, personnalité, règles de transfert, règles d'arrêt, modèle
+  (liste fermée) et `fiche_version`. Toute autre clé est REFUSÉE, pas ignorée : `modifierAgent` est la porte de
+  l'administrateur et accepte aussi les plafonds de coût, la mention d'IA, le libellé et le statut. Claude ne voit ni
+  les plafonds ni la mention d'IA (`get_agent` ne les rend pas).
+- **La personne signe** : la ligne `fiche_agent` de l'historique (origine `mcp`), l'activation des outils sûrs
+  (`active_par`), la suppression d'une fiche de connaissance (origine `mcp`, par `journaliserSuppressionDe`), et le
+  payeur d'une recharge. L'historique de la console l'affiche « par Claude ».
+- **`buy_credit` annonce le montant HORS TAXE** de l'offre : la taxe est calculée par Stripe Tax sur la page de
+  paiement, selon le pays et le numéro de TVA saisis, donc aucun TTC n'est connu avant le paiement. Seul le webhook
+  signé crédite.
+- **`import_document_text` suit le chemin d'un fichier texte déposé** (`importerTexteDocument`,
+  `src/agent/connaissance.ts`) : même `normaliser`, même découpe hors de la boucle sous la même échéance
+  (`LECTURE_DOCUMENT`, celle de `lireDocumentHorsBoucle`), même provenance et même remplacement par nom. Un caractère
+  nul est refusé en 400, comme le chemin fichier refuse un binaire : Postgres le refuse dans un `text`, et l'écriture
+  lèverait. `tests/agent-connaissance-texte.test.ts` compare les deux chemins.
+- **Les bornes de chaque saisie de la console sont annoncées dans le schéma de l'outil**, lues dans son Zod : l'extracteur
+  partagé `tests/aide/bornes-zod.ts`, appliqué par `tests/mcp-agent.test.ts` (et par `tests/mcp-widgets.test.ts`).
+- ⚠️ Un agent créé et activé par Claude ne répond à aucun client tant qu'un scénario publié ne le contient pas : les
+  descriptions des outils le disent, jusqu'au répondeur par défaut (lot 5).
+
 🔴 **LE CORS EST EN LISTE BLANCHE ET SANS `credentials`, et les deux comptent.** `CORS_ORIGINS` refuse `*` AU
 CHARGEMENT de la configuration. Jamais `credentials: true` : la session voyage dans un en-tête
 `Authorization`, jamais dans un cookie, donc **il n'y a aucun CSRF aujourd'hui** ; l'activer en créerait un de
@@ -1870,7 +1913,8 @@ toutes pièces. Vide = aucun en-tête CORS n'est posé, ce qui est le bon défau
 🔴 **Deux plafonds de débit, et 0 les désactive.** `RATE_LIMIT_USER_PAR_MINUTE` (clé = utilisateur, posé DANS
 `makeRequireAuth` donc hérité par tous les modules gardés) et `RATE_LIMIT_COUTEUX_PAR_MINUTE` (clé = ESPACE)
 sur import, aperçu, action en masse, purge, export, lancement de campagne, et les routes lourdes de la
-connaissance d'un agent (suppression en masse, import d'un document, aperçu et import d'un site). Mettre l'une à 0 est le levier
+connaissance d'un agent (suppression en masse, import d'un document, aperçu et import d'un site), plus les outils MCP
+coûteux de l'agent IA, sur la MÊME instance (`Gardes.plafondCouteux`, ci-dessus). Mettre l'une à 0 est le levier
 d'urgence : un mauvais calibrage couperait la console de tous les clients, et un `--force-recreate` va plus
 vite qu'un déploiement de code. ⚠️ Le premier reste LOCAL À LA COPIE, délibérément (ci-dessous) ; le second compte
 dans le compteur partagé : un espace a ses opérations coûteuses au TOTAL des copies.
@@ -1884,7 +1928,7 @@ construction) :
 | Plafond | Où il compte | Base muette |
 |---|---|---|
 | API publique par espace (`/v1` et `/mcp`, minute et heure), et ses `x-ratelimit-*` | compteur partagé | l'appel PASSE, sans en-têtes (refuser tous les intégrateurs sur une panne passagère déclencherait leurs rejeux au retour de la base, et la route a de toute façon besoin de la base) |
-| opérations coûteuses d'un espace (`RATE_LIMIT_COUTEUX_PAR_MINUTE`) | compteur partagé | l'opération PASSE (même raison) |
+| opérations coûteuses d'un espace (`RATE_LIMIT_COUTEUX_PAR_MINUTE`), routes de la console et outils MCP coûteux confondus | compteur partagé | l'opération PASSE (même raison) |
 | usage de l'API publique (`/ops/usage`, et le quota par espace le jour où il existera) | compteur partagé | l'appel PASSE (le garde observe, il ne devient pas la panne) |
 | connexion : `login` (et le choix d'espace), `signup`, `forgot-password`, `reset-password`, `invitations/accept`, `google`, clé = l’EMPREINTE de `ip::discriminant` (jamais l’adresse ni le jeton en clair : la clé vit en base, donc dans ses sauvegardes) | compteur partagé | la tentative est REFUSÉE (429, « vérification momentanément impossible ») : une panne n'ouvre jamais un essai de plus |
 | la minute entre deux demandes de code d'un numéro (`/numero/code`, le quota de Meta : dix requêtes sur 72 h) | verrou court `es-code:<numéro>`, jamais relâché | REFUSÉE (429), Meta n'est pas appelé |

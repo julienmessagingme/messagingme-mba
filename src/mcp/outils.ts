@@ -10,8 +10,12 @@ import {
   creerWidget, listerEnVue, miseEnVue, modifierWidget,
   type ChampWidget, type DepsWidgets,
 } from '../widgets/gestion';
-import type { Issue } from '../lib/issue';
 import type { WorkflowResumeRow } from '../workflow/store.pg';
+import type { PlafondPartage } from '../auth/plafond-partage';
+import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
+import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
+
+export { RefusOutil } from './saisie';
 
 /**
  * Le catalogue d'outils exposé aux agents tiers par le serveur MCP.
@@ -55,13 +59,28 @@ export interface DepsMcp extends DepsRepondre {
   widgets: DepsWidgets;
   /** Les scénarios de l'espace (`PgWorkflowStore.listResume`), pour qu'un assistant sache lequel un widget peut démarrer. */
   scenarios: { listResume(tenantId: string): Promise<Array<Pick<WorkflowResumeRow, 'id' | 'name' | 'nodeCount'>>> };
+  /**
+   * L'agent IA, sa connaissance, son bac à sable et le crédit (lot 8a) : les MÊMES objets que les routes de la
+   * console (`src/index.ts`). Les outils n'y ajoutent aucun contrôle.
+   */
+  agentIa: DepsAgentMcp;
+  /**
+   * 🔴 Le plafond des opérations coûteuses de la console, la MÊME instance que celle des routes, comptée par espace
+   * sous la même clé : sans lui, le serveur MCP serait la porte qui contourne les dix opérations lourdes par minute
+   * (un import de site, un essai facturé, un paiement). Posé par `buildServer` au montage, jamais par le câblage
+   * (`CablageMcp`), parce que c'est là qu'il est construit.
+   */
+  couteux: Pick<PlafondPartage, 'consommer'>;
 }
+
+/** Ce que le câblage fournit : tout, sauf le plafond coûteux, que `buildServer` ajoute (voir `couteux`). */
+export type CablageMcp = Omit<DepsMcp, 'couteux'>;
 
 /**
  * Une propriété d'un schéma d'entrée. 🔴 Toute borne que l'outil applique s'y annonce (longueur, motif, énumération,
  * intervalle) : un modèle ne respecte que ce qu'on lui a dit, et une borne tue ne se découvre qu'au refus.
  */
-interface ProprieteEntree {
+export interface ProprieteEntree {
   type: string | string[];
   description: string;
   enum?: Array<string | null>;
@@ -75,10 +94,14 @@ interface ProprieteEntree {
   items?: Omit<ProprieteEntree, 'description'>;
   minItems?: number;
   maxItems?: number;
+  /** Les champs d'un objet (un élément de liste qui en est un : une fiche, un message, une règle d'arrêt). */
+  properties?: Record<string, ProprieteEntree>;
+  required?: string[];
+  additionalProperties?: false;
 }
 
 /** Un schéma JSON d'entrée, tel que MCP l'attend (sous-ensemble volontairement pauvre : objet et propriétés). */
-interface SchemaEntree {
+export interface SchemaEntree {
   type: 'object';
   properties: Record<string, ProprieteEntree>;
   required?: string[];
@@ -110,46 +133,18 @@ export interface OutilMcp {
   annotations: AnnotationsMcp;
   entree: SchemaEntree;
   /**
+   * 🔴 L'outil agit au nom d'une personne nommée : il n'est ni listé ni appelable avec une clé d'API (`outilsPour`),
+   * seulement avec un jeton OAuth, dont la personne est un admin relu à chaque appel. Une clé `mcp:write` peut être
+   * branchée comme connecteur d'un agent qui lit des messages de clients : une injection y pourrait sinon modifier un
+   * agent ou ouvrir un paiement (spec du lot 8a, section 2).
+   */
+  exigePersonne?: true;
+  /**
    * Rend l'objet à sérialiser pour l'agent, ou lève `RefusOutil` pour un refus explicable. `personne` : qui signe
    * une écriture faite avec un jeton OAuth, `null` avec une clé. Seuls les outils qui écrivent au nom de quelqu'un
    * la déclarent.
    */
   executer(deps: DepsMcp, tenantId: string, args: Record<string, unknown>, personne: PersonneMcp | null): Promise<unknown>;
-}
-
-/**
- * Refus métier d'un outil (fenêtre fermée, conversation inconnue), par opposition à une panne. MCP le veut dans le
- * résultat avec `isError: true` : le modèle lit la raison et change de stratégie au lieu de croire l'outil cassé.
- */
-export class RefusOutil extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'RefusOutil';
-  }
-}
-
-/**
- * Lit une chaîne obligatoire. Les entrées viennent d'un modèle : on ne suppose rien de leur forme. Le plafond est
- * toujours écrit à l'appel, jamais par défaut : `tests/mcp-serveur.test.ts` le lit là et exige que le schéma de
- * l'outil l'annonce (`minLength: 1`, `maxLength: maxi`).
- */
-function texteObligatoire(args: Record<string, unknown>, cle: string, maxi: number): string {
-  const v = args[cle];
-  if (typeof v !== 'string' || v.trim() === '') throw new RefusOutil(`paramètre « ${cle} » requis (texte non vide)`);
-  if (v.length > maxi) throw new RefusOutil(`paramètre « ${cle} » trop long (${maxi} caractères au plus)`);
-  return v.trim();
-}
-
-/**
- * Lit un entier borné. Absent : défaut. Hors bornes : ramené dedans, jamais refusé. Le schéma de l'outil annonce
- * `minimum: mini` et `maximum: maxi` (même test que `texteObligatoire`).
- */
-function entierBorne(args: Record<string, unknown>, cle: string, defaut: number, mini: number, maxi: number): number {
-  const v = args[cle];
-  if (v === undefined || v === null) return defaut;
-  const n = typeof v === 'number' ? v : Number(v);
-  if (!Number.isFinite(n)) return defaut;
-  return Math.min(Math.max(Math.trunc(n), mini), maxi);
 }
 
 /** 🔴 La conversation, ou un refus : garde d'espace partagée. `getConversationContext` rend `null` pour une
@@ -198,16 +193,6 @@ async function analysesOuRien(deps: DepsMcp, tenantId: string, ids: string[]): P
     console.warn('mcp: dernière analyse illisible, fiches rendues sans elle:', e instanceof Error ? e.message : e);
     return null;
   }
-}
-
-/**
- * Un refus de la gestion des widgets devient un refus d'OUTIL, avec sa phrase telle que l'écran la montre : le modèle
- * lit pourquoi (phrase en conflit, scénario non publié, cinq widgets déjà) et corrige, au lieu de croire l'outil
- * cassé. Le statut HTTP ne sert qu'à la route.
- */
-function valeurOuRefus<T>(r: Issue<T>): T {
-  if (!r.ok) throw new RefusOutil(r.erreur);
-  return r.valeur;
 }
 
 /**
@@ -677,9 +662,15 @@ export const OUTILS: OutilMcp[] = [
       return { widget: vue(valeurOuRefus(await modifierWidget(deps.widgets.gestion, tenantId, id, corps))) };
     },
   },
+  // L'agent IA, sa connaissance et le crédit (lot 8a) : leur fichier, `src/mcp/outils-agent.ts`.
+  ...OUTILS_AGENT,
 ];
 
-/** Les outils qu'une clé porteuse de `scopes` a le droit d'appeler. */
-export function outilsPourScopes(scopes: string[]): OutilMcp[] {
-  return OUTILS.filter((o) => scopes.includes(o.scope));
+/**
+ * Les outils qu'un appel a le droit de voir et d'appeler : ceux de ses scopes, moins ceux qui exigent une personne
+ * quand il n'en a pas (une clé d'API). `tools/list` et `tools/call` passent par ici tous les deux : un outil écarté
+ * n'est pas listé, et son appel est refusé comme celui d'un outil qui n'existe pas.
+ */
+export function outilsPour(ctx: { scopes: readonly string[]; personne: PersonneMcp | null }): OutilMcp[] {
+  return OUTILS.filter((o) => ctx.scopes.includes(o.scope) && (o.exigePersonne !== true || ctx.personne != null));
 }

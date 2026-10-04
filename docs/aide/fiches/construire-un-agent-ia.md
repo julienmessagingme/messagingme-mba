@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 35ca4c
+source_empreinte: 411467
 ---
 # Construire un agent IA
 
@@ -25,6 +25,10 @@ plus le même périmètre que le « messages échangés » de l'Accueil et du Pe
 modèles envoyés. Vos essais depuis l'onglet Tester n'y entrent pas, et tant que ce nombre n'est pas connu,
 rien ne s'affiche. Le menu de la fiche se range en colonne à gauche du contenu ; sur un téléphone, il
 redevient la barre du haut.
+
+**Vous pouvez aussi le faire construire par Claude.** Une fois Claude connecté à votre espace (Developers >
+Serveur MCP), il crée l'agent, lit votre site, le teste et l'active, avec les mêmes contrôles que cet écran. Ses
+modifications apparaissent dans l'onglet Historique de l'agent, « par Claude ».
 
 **Commencez par lui parler.** Le premier onglet n'est pas un formulaire vide mais une conversation :
 décrivez votre métier, et l'assistant fait le tour du sujet en neuf points, une question à la fois (ce que
@@ -55,9 +59,10 @@ connaissance, lire la fiche du contact (ses champs, et sa dernière analyse : s'
 sait), poser une étiquette, enregistrer une information, envoyer un bloc de
 votre scénario, passer la main à un humain, terminer par une règle d'arrêt. Trois choses à retenir :
 
-- **Un outil n'est utilisable qu'une fois activé à la main.** Tant qu'il ne l'est pas, l'agent ne sait même
-  pas qu'il existe. Le cas qui coûte le plus cher est une base bien remplie avec l'outil de recherche resté
-  désactivé : l'agent transfère alors toutes les questions de fond, et l'écran a pourtant l'air en ordre.
+- **Un outil n'est utilisable qu'une fois activé**, par vous ou par Claude à votre nom. Tant qu'il ne l'est
+  pas, l'agent ne sait même pas qu'il existe. Le cas qui coûte le plus cher est une base bien remplie avec
+  l'outil de recherche resté désactivé : l'agent transfère alors toutes les questions de fond, et l'écran a
+  pourtant l'air en ordre.
 - **Les mots comptent beaucoup.** « Quand l'appeler » et « quand NE PAS l'appeler » sont deux champs
   séparés, et ce sont eux que le modèle lit pour décider.
 - **Une liste de valeurs autorisées vide ne restreint rien**, et l'écran vous le dit en jaune.

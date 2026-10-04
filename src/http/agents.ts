@@ -1,9 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { AgentComplet, AgentResume, PatchAgent } from '../agent/agent-store';
-import { avertissements, manquesAvantActivation } from '../agent/setup/lint';
 import type { ModeleProposable } from '../agent/modeles';
-import { creerAgent, modifierAgent, type DepsGestionAgents } from '../agent/gestion';
+import { creerAgent, manquesDeLAgent, modifierAgent, type DepsGestionAgents } from '../agent/gestion';
 import { corpsDuRefus } from '../lib/issue';
 import { espaceVerifie, estUuid } from './scope';
 import type { ConsommationAgent } from '../agent/session-store';
@@ -146,12 +145,10 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   app.get('/tenants/:tenantId/agents/:agentId/manques', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
-    if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
-    const etat = await deps.etatPourLint(tenant, agentId);
-    if (!etat) return reply.code(404).send({ error: 'agent introuvable' });
-    // Deux listes, un seul bandeau : les manques bloquent l'activation, les avertissements non (les fondre
-    // donnerait à un serveur tiers un droit de veto sur l'activation d'un agent).
-    return reply.code(200).send({ manques: manquesAvantActivation(etat), avertissements: avertissements(etat) });
+    // Deux listes, un seul bandeau (`manquesDeLAgent`, la lecture que les outils MCP de l'agent partagent).
+    const m = await manquesDeLAgent(deps, tenant, agentId);
+    if (!m) return reply.code(404).send({ error: 'agent introuvable' });
+    return reply.code(200).send({ manques: m.manques, avertissements: m.avertissements });
   });
 
   /**

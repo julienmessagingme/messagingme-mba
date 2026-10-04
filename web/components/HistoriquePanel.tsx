@@ -28,7 +28,8 @@ export interface LigneHistoriqueVue {
   libelle: string;
   avant: unknown;
   apres: unknown;
-  origine: 'assistant' | 'formulaire';
+  /** `mcp` : un agent tiers par le serveur MCP, toujours Claude derrière une connexion OAuth (lot 8a). */
+  origine: 'assistant' | 'formulaire' | 'mcp';
   acteurEmail: string | null;
   acteurId: string | null;
   at: string;
@@ -73,19 +74,35 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
   return (
     <div className={cardCls}>
       <h3 className="text-sm font-semibold text-ink-900">{t('Historique', 'History')}</h3>
-      {/* 🔴 CE TEXTE DIT CE QUE LA PAGE CONTIENT VRAIMENT, et il a été corrigé le 2026-09-15. Il annonçait
-          « tout ce qui a été changé » ; depuis les ONGLETS, seules les SUPPRESSIONS sont journalisées (choix
-          délibéré : chez Meta une suppression est définitive, une création ratée se refait). Une page qui
-          promet plus qu'elle ne montre fait conclure « ça n'a pas eu lieu » là où il faudrait lire « ce
-          n'est pas encore journalisé », et c'est le pire malentendu possible sur un journal. */}
-      <p className="mt-1 text-sm text-ink-500">
-        {t('Ce que l’assistant a appliqué, et ce qui a été supprimé depuis les onglets, avec son contenu. Rien n’est purgé.',
-          'What the assistant applied, and what was deleted from the tabs, with its content. Nothing is purged.')}
-      </p>
-      <p className="mt-1 text-xs text-ink-500">
-        {t('Les créations et les modifications faites à la main dans les onglets n’y figurent pas encore.',
-          'Creations and edits made by hand in the tabs are not listed yet.')}
-      </p>
+      {/* 🔴 CE TEXTE DIT CE QUE LA PAGE CONTIENT VRAIMENT, et il dépend de la surface. Pour l'agent de Meta, depuis
+          les ONGLETS, seules les SUPPRESSIONS sont journalisées (choix délibéré : chez Meta une suppression est
+          définitive, une création ratée se refait). Pour un agent IA, depuis le lot 8a, chaque modification de sa
+          fiche l'est aussi, d'où qu'elle vienne. Une page qui promet plus qu'elle ne montre fait conclure « ça n'a
+          pas eu lieu » là où il faudrait lire « ce n'est pas journalisé », et c'est le pire malentendu possible sur
+          un journal. */}
+      {surface === 'agent' ? (
+        <>
+          <p className="mt-1 text-sm text-ink-500">
+            {t('Chaque modification de l’agent (fiche, modèle, réglages, activation), et les fiches de connaissance supprimées avec leur contenu. Rien n’est purgé.',
+              'Every change to the agent (profile, model, settings, activation), and the deleted knowledge entries with their content. Nothing is purged.')}
+          </p>
+          <p className="mt-1 text-xs text-ink-500">
+            {t('Les fiches de connaissance ajoutées ou importées et les outils n’y figurent pas. Ce que l’assistant de construction applique passe par les onglets, et s’y affiche comme tel.',
+              'Added or imported knowledge entries and tools are not listed. What the building assistant applies goes through the tabs, and shows as such.')}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="mt-1 text-sm text-ink-500">
+            {t('Ce que l’assistant a appliqué, et ce qui a été supprimé depuis les onglets, avec son contenu. Rien n’est purgé.',
+              'What the assistant applied, and what was deleted from the tabs, with its content. Nothing is purged.')}
+          </p>
+          <p className="mt-1 text-xs text-ink-500">
+            {t('Les créations et les modifications faites à la main dans les onglets n’y figurent pas encore.',
+              'Creations and edits made by hand in the tabs are not listed yet.')}
+          </p>
+        </>
+      )}
 
       {erreur && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
 
@@ -115,7 +132,9 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
                     acteur, et lui en attribuer un serait faux. */}
                 {l.acteurEmail ?? t('auteur inconnu', 'unknown author')}
                 {' · '}
-                {l.origine === 'assistant' ? t('par l’assistant', 'by the assistant') : t('depuis les onglets', 'from the tabs')}
+                {l.origine === 'assistant' ? t('par l’assistant', 'by the assistant')
+                  : l.origine === 'mcp' ? t('par Claude', 'by Claude')
+                    : t('depuis les onglets', 'from the tabs')}
                 {l.operation === 'suppression' && l.avant != null && (
                   <>
                     {' · '}

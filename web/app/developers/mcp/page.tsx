@@ -106,6 +106,14 @@ function McpInner({ session }: { session: Session | null }) {
 
       <Section titre={t('Ce que l’assistant peut faire', 'What the assistant can do')}>
         <p>{t('Une clé en lecture seule ne voit pas les outils qui écrivent.', 'A read-only key does not see the tools that write.')}</p>
+        {/* 🔴 Les outils de l'agent IA et du crédit agissent au nom d'une personne (lot 8a) : une clé d'API ne les voit
+            pas, même avec le droit d'écrire. Le dire évite qu'un intégrateur cherche un outil que sa clé ne listera jamais. */}
+        <p>
+          {t(
+            'Les outils marqués « connexion OAuth requise » agissent au nom d’une personne : une clé d’API ne les voit pas. Ils s’ouvrent quand Claude se connecte à l’espace avec l’accord d’un administrateur, qui signe ce qu’ils font.',
+            'Tools marked "OAuth connection required" act on behalf of a person: an API key does not see them. They open when Claude connects to the workspace with an administrator’s consent, who signs what they do.',
+          )}
+        </p>
         {/* Les noms d'outils, en police fixe, ne se coupent pas : sur mobile, le tableau défile dans son cadre
             plutôt que de faire déborder la page entière (vu par l'e2e de la CI, 16 px). */}
         <Tableau
@@ -114,7 +122,10 @@ function McpInner({ session }: { session: Session | null }) {
             cle: o.nom,
             cellules: [
               <span key="n" className="whitespace-nowrap font-mono text-ink-900">{o.nom}</span>,
-              <span key="s" className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${o.scope === 'mcp:write' ? 'bg-brand-50 text-brand-700' : 'bg-ink-100 text-ink-500'}`}>{o.scope}</span>,
+              <span key="s" className="flex flex-col items-start gap-1">
+                <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${o.scope === 'mcp:write' ? 'bg-brand-50 text-brand-700' : 'bg-ink-100 text-ink-500'}`}>{o.scope}</span>
+                {o.oauth && <span className="whitespace-nowrap text-xs text-ink-500">{t('connexion OAuth requise', 'OAuth connection required')}</span>}
+              </span>,
               t(...o.quoi),
             ],
           }))}
@@ -140,8 +151,12 @@ function McpInner({ session }: { session: Session | null }) {
             {t('Un tag posé par l’assistant classe le contact, sans réveiller les automations qui écoutent ce tag.', 'A tag set by the assistant classifies the contact, without waking the automations listening for that tag.')}
           </li>
           <li>
-            <strong className="text-ink-900">{t('L’accès passe par une clé, pas par un compte.', 'Access goes through a key, not an account.')}</strong>{' '}
-            {t('La clé porte l’espace et les droits. Couper un assistant : révoquer sa clé dans « Clés d’API ».', 'The key carries the workspace and the scopes. To cut an assistant off: revoke its key under "API keys".')}
+            <strong className="text-ink-900">{t('Un agent IA ne répond pas seul.', 'An AI agent does not answer on its own.')}</strong>{' '}
+            {t('Créé et activé par l’assistant, il ne parle aux clients que dans un scénario publié qui le contient.', 'Created and activated by the assistant, it only talks to customers inside a published scenario that contains it.')}
+          </li>
+          <li>
+            <strong className="text-ink-900">{t('L’accès passe par une clé ou par une connexion OAuth.', 'Access goes through a key or an OAuth connection.')}</strong>{' '}
+            {t('L’une comme l’autre porte l’espace et les droits. Couper un assistant : révoquer sa clé ou son autorisation dans « Clés d’API ».', 'Either one carries the workspace and the scopes. To cut an assistant off: revoke its key or its authorization under "API keys".')}
           </li>
         </Liste>
       </Section>

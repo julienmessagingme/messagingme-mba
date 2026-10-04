@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { OUTILS, MAX_MESSAGES_MCP } from '../src/mcp/outils';
+import { MAX_FICHES_PAR_AJOUT } from '../src/agent/connaissance';
 
 /**
  * L'écran « Serveur MCP » et le catalogue réel disent-ils la même chose ?
@@ -36,11 +37,28 @@ describe('parité entre le catalogue MCP et l’écran qui le documente', () => 
     }
   });
 
+  it('🔴 la mention « connexion OAuth requise » est portée par exactement les outils qui exigent une personne', () => {
+    // Une clé d'API ne voit pas ces outils : la page qui les promettrait à une clé enverrait l'intégrateur chercher
+    // un outil invisible ; celle qui tairait la mention lui ferait conclure que le serveur est cassé.
+    const lignes = source.split('\n');
+    const avecOauth = documentes.filter((d) => lignes.find((l) => l.includes(`nom: '${d.nom}'`))?.includes('oauth: true')).map((d) => d.nom);
+    expect(avecOauth.sort()).toEqual(OUTILS.filter((o) => o.exigePersonne === true).map((o) => o.nom).sort());
+    expect(avecOauth.length, 'aucune mention lue : la forme du fichier a changé, ce test est aveugle').toBeGreaterThan(0);
+  });
+
   it('le nombre de messages que la page annonce pour get_messages est celui que l’outil rend', () => {
     // La page l'écrit en toutes lettres (« Les 50 derniers messages ») : une copie, donc gardée ici.
     const ligne = source.split('\n').find((l) => l.includes("nom: 'get_messages'"));
     expect(ligne, 'entrée get_messages introuvable : la forme du fichier a changé').toBeDefined();
     expect(ligne).toContain(`Les ${MAX_MESSAGES_MCP} derniers messages`);
     expect(ligne).toContain(`The last ${MAX_MESSAGES_MCP} messages`);
+  });
+
+  it('le nombre de fiches que la page annonce pour add_knowledge est celui que la console accepte', () => {
+    // Même copie écrite en toutes lettres (« 50 au plus par appel »), lue cette fois dans la saisie de la console.
+    const ligne = source.split('\n').find((l) => l.includes("nom: 'add_knowledge'"));
+    expect(ligne, 'entrée add_knowledge introuvable : la forme du fichier a changé').toBeDefined();
+    expect(ligne).toContain(`${MAX_FICHES_PAR_AJOUT} au plus par appel`);
+    expect(ligne).toContain(`up to ${MAX_FICHES_PAR_AJOUT} per call`);
   });
 });

@@ -11,6 +11,11 @@ export interface OutilDocumente {
   scope: 'mcp:read' | 'mcp:write';
   /** Description bilingue, passée telle quelle au traducteur de l'écran. */
   quoi: [string, string];
+  /**
+   * L'outil agit au nom d'une personne : une clé d'API ne le voit pas, seule une connexion OAuth l'ouvre (l'écran le
+   * dit). Miroir de `exigePersonne` côté serveur, tenu par `tests/mcp-doc-parite.test.ts`.
+   */
+  oauth?: true;
 }
 
 export const OUTILS_MCP: OutilDocumente[] = [
@@ -27,4 +32,20 @@ export const OUTILS_MCP: OutilDocumente[] = [
   { nom: 'list_scenarios', scope: 'mcp:read', quoi: ['Les scénarios, et lesquels sont publiés : un widget ne démarre qu’un scénario publié.', 'Scenarios, and which are published: a widget only starts a published scenario.'] },
   { nom: 'create_widget', scope: 'mcp:write', quoi: ['Créer un widget WhatsApp, avec les contrôles de l’écran, et recevoir sa balise.', 'Create a WhatsApp widget, with the screen’s checks, and get its tag.'] },
   { nom: 'update_widget', scope: 'mcp:write', quoi: ['Modifier un widget ; sa balise ne change jamais.', 'Edit a widget; its tag never changes.'] },
+  { nom: 'list_agents', scope: 'mcp:read', quoi: ['Les agents IA, leur statut, et ce qui manque encore avant de pouvoir les activer.', 'AI agents, their status, and what is still missing before they can be activated.'] },
+  { nom: 'get_agent', scope: 'mcp:read', quoi: ['Un agent IA : sa fiche, son modèle, ses outils, sa connaissance, ce qui lui manque, et les modèles proposés avec leur prix.', 'An AI agent: its profile, model, tools, knowledge, what it lacks, and the offered models with their price.'] },
+  { nom: 'create_agent', scope: 'mcp:write', oauth: true, quoi: ['Créer un agent IA en brouillon. Le premier agent d’un espace demande un peu de crédit.', 'Create a draft AI agent. A workspace’s first agent needs a little credit.'] },
+  { nom: 'update_agent', scope: 'mcp:write', oauth: true, quoi: ['Modifier la fiche d’un agent IA (objectif, ton, transferts, règles d’arrêt) et son modèle, journalisé au nom de la personne.', 'Edit an AI agent’s profile (goal, tone, handovers, stop rules) and its model, logged under the person’s name.'] },
+  { nom: 'set_agent_tools', scope: 'mcp:write', oauth: true, quoi: ['Ajouter et activer les quatre outils sûrs d’un agent IA (terminer, chercher, lire le contact, passer la main).', 'Add and enable an AI agent’s four safe tools (finish, search, read the contact, hand over).'] },
+  { nom: 'activate_agent', scope: 'mcp:write', oauth: true, quoi: ['Activer un agent IA complet, ou le désactiver. Il ne répond qu’à travers un scénario publié.', 'Activate a complete AI agent, or deactivate it. It only answers through a published scenario.'] },
+  { nom: 'test_agent', scope: 'mcp:write', oauth: true, quoi: ['Essayer un agent IA sur une conversation fictive. Chaque essai est débité du crédit.', 'Try an AI agent on a mock conversation. Each try is charged to the credit.'] },
+  { nom: 'list_knowledge', scope: 'mcp:read', quoi: ['Les fiches de connaissance d’un agent IA, avec leur provenance.', 'An AI agent’s knowledge entries, with their source.'] },
+  { nom: 'add_knowledge', scope: 'mcp:write', oauth: true, quoi: ['Ajouter des fiches de connaissance écrites, 50 au plus par appel.', 'Add written knowledge entries, up to 50 per call.'] },
+  { nom: 'delete_knowledge', scope: 'mcp:write', oauth: true, quoi: ['Supprimer des fiches de connaissance ; leur contenu reste dans l’historique.', 'Delete knowledge entries; their content stays in the history.'] },
+  { nom: 'preview_site', scope: 'mcp:read', oauth: true, quoi: ['Lire un site depuis le serveur et voir ce qu’un import en ferait, sans rien écrire.', 'Read a site from the server and see what an import would make of it, without writing anything.'] },
+  { nom: 'import_site', scope: 'mcp:write', oauth: true, quoi: ['Importer les pages d’un site en connaissance ; une page relue remplace ses fiches.', 'Import a site’s pages as knowledge; a page read again replaces its entries.'] },
+  { nom: 'import_document_text', scope: 'mcp:write', oauth: true, quoi: ['Importer le texte d’un document sous son nom, rangé comme un document déposé.', 'Import a document’s text under its name, filed like an uploaded document.'] },
+  { nom: 'set_transfer_mode', scope: 'mcp:write', oauth: true, quoi: ['Régler ce que les agents IA promettent de la disponibilité de l’équipe quand ils passent la main.', 'Set what AI agents promise about team availability when they hand over.'] },
+  { nom: 'get_credit', scope: 'mcp:read', quoi: ['Le solde du crédit IA et ses derniers mouvements.', 'The AI credit balance and its latest movements.'] },
+  { nom: 'buy_credit', scope: 'mcp:write', oauth: true, quoi: ['Ouvrir le paiement d’une recharge, montant hors taxe ; la personne paie elle-même sur la page de Stripe.', 'Open a top-up payment, amount before tax; the person pays on the Stripe page themselves.'] },
 ];

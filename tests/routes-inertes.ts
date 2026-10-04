@@ -445,3 +445,55 @@ export const mcpWidgetsInertes: Pick<DepsMcp, 'widgets' | 'scenarios'> = {
   },
   scenarios: { listResume: async () => [] },
 };
+
+/**
+ * L'agent IA et le crédit du MCP (lot 8a), pour les montages qui n'en parlent pas : les LECTURES rendent le vide (aucun
+ * agent, solde nul), les ÉCRITURES lèvent. Leurs outils ont leur propre fichier, `tests/mcp-agent.test.ts`.
+ */
+export const mcpAgentInerte: Pick<DepsMcp, 'agentIa'> = {
+  agentIa: {
+    gestion: {
+      agents: {
+        listToutes: async () => [],
+        complet: async () => null,
+        create: neDevraitPasEtreAppelee('agents.create'),
+        patch: neDevraitPasEtreAppelee('agents.patch'),
+      },
+      modeleParDefaut: 'modele-inerte',
+      etatPourLint: async () => null,
+      historique: { ecrire: neDevraitPasEtreAppelee('historique.ecrire') },
+      credits: { solde: async () => 0, historique: async () => [] },
+      modelesProposes: async () => [],
+    },
+    connaissance: {
+      connaissance: {
+        lister: async () => [],
+        creer: neDevraitPasEtreAppelee('connaissance.creer'),
+        modifier: neDevraitPasEtreAppelee('connaissance.modifier'),
+        supprimer: neDevraitPasEtreAppelee('connaissance.supprimer'),
+        remplacerSource: neDevraitPasEtreAppelee('connaissance.remplacerSource'),
+      },
+      journaliserSuppression: neDevraitPasEtreAppelee('journaliserSuppression'),
+    },
+    essai: {
+      essais: { lister: async () => [], ecrire: neDevraitPasEtreAppelee('essais.ecrire'), purger: async () => 0 },
+      disponible: false,
+      credits: { solde: async () => 0 },
+      debiter: neDevraitPasEtreAppelee('debiter'),
+    },
+    paiement: {
+      stripe: null,
+      clients: { clientDe: neDevraitPasEtreAppelee('clientDe'), retenirClient: neDevraitPasEtreAppelee('retenirClient') },
+      payeurAutorise: async () => false,
+    },
+    outils: {
+      listToutes: async () => [],
+      ajouter: neDevraitPasEtreAppelee('outils.ajouter'),
+      activer: neDevraitPasEtreAppelee('outils.activer'),
+    },
+    reglages: {
+      get: async () => ({ agentTransfertMode: null }),
+      setAgentTransfertMode: neDevraitPasEtreAppelee('setAgentTransfertMode'),
+    },
+  },
+};

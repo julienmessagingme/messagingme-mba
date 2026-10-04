@@ -2556,6 +2556,8 @@ il ne le remplace pas : les deux peuvent vivre sur le même numéro, et le clien
 
 ✅ **Livré et déployé** (2026-08-28) : la fiche, la base de connaissance, les outils, la construction en
 parlant, le bac à sable, le tour de production et le solde prépayé.
+➡️ **Claude peut aussi le construire**, connecté à l'espace : voir « Serveur MCP », « Construire un agent IA depuis
+Claude ».
 ⚠️ **Sans crédit, un agent ne répond pas** (voir « Le crédit » plus bas, et la page **Paramètres > Crédit IA**,
 où un admin le recharge). ⚠️ **Rien n'a encore tourné sur du vrai trafic** : un contact qui atteint un bloc agent, une
 réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario, tout cela reste à voir en vol.
@@ -2887,9 +2889,13 @@ Le même écran que côté Meta Business Agent, pour l'agent IA : **ce qui a cha
 
 - ✅ **Une fiche de connaissance supprimée y laisse son CONTENU**, y compris quand on en supprime cinquante
   d'un coup. Il n'y a pas de corbeille : cette ligne en est le seul exemplaire.
-- ✅ **Chaque ligne dit qui, quand, et d'où** (l'assistant ou un formulaire).
-  ⚠️ Comme côté MBA, **les créations et modifications faites à la main n'y figurent pas encore** : l'écran le
-  dit plutôt que de laisser croire à un journal complet.
+- ✅ **Chaque modification de l'agent y figure** (2026-10-03) : sa fiche, son modèle, ses réglages, son
+  activation, avec les champs qui ont changé. Un enregistrement qui ne change rien n'en laisse aucune.
+- ✅ **Chaque ligne dit qui, quand, et d'où** : depuis les onglets, ou par Claude quand il travaille dans
+  l'espace (voir « Serveur MCP »). Ce que l'assistant de construction applique passe par les onglets, et s'y
+  affiche comme tel.
+  ⚠️ **Les fiches de connaissance ajoutées ou importées, et les outils, n'y figurent pas** : l'écran le dit
+  plutôt que de laisser croire à un journal complet.
 - ✅ **Rien n'est purgé**, contrairement au journal d'audit RGPD.
 - ⚠️ **Réservé aux administrateurs.**
 
@@ -3609,8 +3615,10 @@ révoquer sa clé, ou son autorisation.
 **Ce que l'assistant peut faire.** Lire (`mcp:read`) : lister les conversations, ouvrir un fil et savoir si la
 fenêtre de 24 h est ouverte, lire les messages, chercher un contact, lister les membres, lister les widgets WhatsApp
 et les scénarios (en disant lesquels sont publiés). Agir (`mcp:write`) : répondre dans une conversation ouverte,
-poser des tags, confier un fil à un membre, créer et modifier un widget WhatsApp. Une fiche de contact lue par
-le serveur MCP porte sa dernière analyse et son résumé (`last_analysis`, 2026-10-02), `null` si le contact n'a
+poser des tags, confier un fil à un membre, créer et modifier un widget WhatsApp. Il lit aussi les agents IA, leur
+connaissance et le crédit IA ; les construire, les essayer, les activer et ouvrir une recharge ne s'ouvrent qu'à la
+connexion de Claude, jamais à une clé (voir « Construire un agent IA depuis Claude », plus bas). Une fiche de
+contact lue par le serveur MCP porte sa dernière analyse et son résumé (`last_analysis`, 2026-10-02), `null` si le contact n'a
 jamais été analysé : à la différence de l'API publique, l'assistant lit déjà les conversations, le résumé ne lui
 apprend rien qu'il ne puisse lire. La recherche porte la dernière analyse sans le résumé, `get_contact` les deux.
 ⚠️ Un agent qui répond aux clients et appelle `get_contact` doit lier le numéro à la fiche de celui qui écrit :
@@ -3672,10 +3680,51 @@ coupe l'accès dès l'appel suivant ; Claude redemande alors une connexion. Deux
 deux lignes, révocables séparément. Le journal des actions (menu Sécurité) garde qui a autorisé Claude, et qui a
 révoqué cet accès.
 
-**Ce qui ne change pas.** Les mêmes outils et les mêmes refus qu'avec une clé : rien hors de la fenêtre de 24 h,
-aucun envoi de template, aucune automation réveillée. Les appels comptent dans le plafond de l'API de l'espace.
-Une réponse envoyée ou une conversation confiée par Claude connecté ainsi porte le nom de la personne qui l'a
-autorisé. L'ancienne adresse `https://mba.messagingme.app/mcp` reste à clé seulement.
+**Ce qui ne change pas.** Les mêmes refus qu'avec une clé : rien hors de la fenêtre de 24 h, aucun envoi de
+template, aucune automation réveillée. Les appels comptent dans le plafond de l'API de l'espace. Une réponse
+envoyée ou une conversation confiée par Claude connecté ainsi porte le nom de la personne qui l'a autorisé.
+L'ancienne adresse `https://mba.messagingme.app/mcp` reste à clé seulement. Ce qui change : les outils de l'agent IA
+et du crédit (ci-dessous) ne s'ouvrent qu'à cette connexion.
+
+### Construire un agent IA depuis Claude (2026-10-04)
+
+**À quoi ça sert.** La personne décrit à Claude son activité, son site, le ton voulu et quand passer la main à
+l'équipe ; Claude crée l'agent IA, lit le site, le teste et l'active, sans qu'elle ouvre la console. Ce sont les
+fonctions de la console, avec les mêmes contrôles : l'agent se retrouve à l'identique dans le menu AI Agent.
+
+**Ce que Claude sait faire de l'agent.**
+- **Le lire** : la liste des agents et ce qui manque à chacun avant de pouvoir l'activer ; un agent, avec sa fiche,
+  son modèle, ses outils, sa connaissance et les modèles proposés avec leur prix ; ses fiches de connaissance et
+  leur provenance ; le solde du crédit IA et ses derniers mouvements.
+- **Le créer** en brouillon. Le premier agent d'un espace demande un peu de crédit (l'équivalent d'un dollar) : sans
+  lui, Claude le dit et propose une recharge.
+- **Écrire sa fiche** : objectif, ton, personnalité, quand passer la main, règles d'arrêt, et le modèle, choisi dans
+  la liste de la console. Sur un agent actif, une modification qui le rendrait incomplet est refusée, comme dans la
+  console. Chaque modification est journalisée au nom de la personne, et l'onglet Historique la dit « par Claude ».
+- **Lui donner sa connaissance** : lire un site depuis le serveur, voir ce qu'un import en ferait, puis l'importer
+  (une page relue remplace ses fiches) ; envoyer le texte d'un document, rangé comme un document déposé ; écrire des
+  fiches. Supprimer des fiches, dont le contenu reste dans l'historique.
+- **Lui donner ses outils sûrs**, activés au nom de la personne : terminer, chercher dans la connaissance, lire la
+  fiche du contact, passer la main à un humain.
+- **L'essayer** dans le bac à sable, et chaque essai est débité du crédit, comme depuis l'onglet Tester.
+- **L'activer**, ou le désactiver. Un agent incomplet est refusé, et Claude reçoit la liste de ce qui manque.
+- **Régler ce que les agents promettent** de la disponibilité de l'équipe (toujours, aux heures d'ouverture, jamais).
+- **Ouvrir une recharge** du crédit : Claude donne l'adresse de la page de paiement de Stripe, avec le montant hors
+  taxe ; la taxe est calculée sur cette page, et c'est la personne qui paie.
+
+**Les garde-fous.**
+- ✅ **Seulement avec la connexion de Claude**, jamais avec une clé d'API : une clé, même avec le droit d'écrire, ne
+  voit aucun de ces outils, à part la lecture des agents, de leur connaissance et du crédit (la lecture d'un site, elle,
+  demande la connexion). Une clé posée comme connecteur d'un agent qui lit les messages de
+  vos clients ne peut donc ni modifier un agent ni ouvrir un paiement.
+- ✅ **Les opérations lourdes de Claude comptent dans le compteur des opérations lourdes de la console** (essai, ajout,
+  import et suppression de connaissance, lecture d'un site, paiement) : une rafale de Claude ne contourne pas la limite
+  par minute de l'espace.
+- ✅ **Ce que Claude ne règle pas** : les plafonds de coût d'un agent, sa mention d'IA, l'autonomie sur une action
+  irréversible, l'envoi d'un bloc, les connecteurs. Ils restent des gestes de la console.
+- ⚠️ **Un agent actif ne répond encore à personne tout seul** : il ne parle que dans le bloc Agent IA d'un scénario
+  publié, à construire dans la console. Les descriptions des outils le disent à Claude, qui ne l'annoncera pas en
+  service.
 
 ## Plafonds d'usage (visible seulement si on force)
 

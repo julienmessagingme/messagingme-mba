@@ -3,7 +3,7 @@ import Papa from 'papaparse';
 import { separateurCsv } from '../../crm/csv';
 import { MAX_FICHES_PAR_PAGE, MAX_TITRE, empilerEnFiches, type FicheExtraite } from '../scrape';
 import { CORPS_MAX } from '../resolvers/connaissance';
-import { horsBoucle } from '../../lib/hors-boucle';
+import { horsBoucle, type OptionsLecture } from '../../lib/hors-boucle';
 
 /**
  * Une pièce jointe de la conversation de construction, transformée en texte puis en fiches de connaissance.
@@ -259,13 +259,20 @@ export async function lireDocument(bytes: Buffer, nom: string, plafondDocument: 
  * démarrage), et seules les fiches reviennent au fil principal, jamais le texte. 30 s d'échéance : un vrai gros PDF,
  * que la boucle supportait en la bloquant, ne doit pas devenir un refus.
  */
+export const LECTURE_DOCUMENT: OptionsLecture = { delaiMs: 30_000 };
 export function lireDocumentHorsBoucle(bytes: Buffer, nom: string, plafondDocument: number): Promise<DocumentLu> {
-  return horsBoucle(new URL(import.meta.url), 'lireDocument', [bytes, nom, plafondDocument], { delaiMs: 30_000 });
+  return horsBoucle(new URL(import.meta.url), 'lireDocument', [bytes, nom, plafondDocument], LECTURE_DOCUMENT);
 }
 
-/** `texteEnFiches` hors de la boucle : pour le texte qu'un modèle de vision a lu dans une image. */
-export function texteEnFichesHorsBoucle(texte: string, titreDefaut: string, nature: NaturePieceJointe): Promise<FicheExtraite[]> {
-  return horsBoucle(new URL(import.meta.url), 'texteEnFiches', [texte, titreDefaut, nature]);
+/**
+ * `texteEnFiches` hors de la boucle : pour le texte qu'un modèle de vision a lu dans une image (échéance par défaut),
+ * et pour le texte d'un document envoyé en clair, qui prend celle d'un document (`LECTURE_DOCUMENT`) : le même texte
+ * ne doit pas être refusé par un chemin et accepté par l'autre.
+ */
+export function texteEnFichesHorsBoucle(
+  texte: string, titreDefaut: string, nature: NaturePieceJointe, options: OptionsLecture = {},
+): Promise<FicheExtraite[]> {
+  return horsBoucle(new URL(import.meta.url), 'texteEnFiches', [texte, titreDefaut, nature], options);
 }
 
 /**

@@ -5,7 +5,7 @@ import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import type { DepsMcp } from '../src/mcp/outils';
+import type { CablageMcp } from '../src/mcp/outils';
 import type { ContactRow } from '../src/crm/contact-store.pg';
 import type { AnalyseDeFiche } from '../src/analysis/fiche';
 import { OUTILS } from '../src/mcp/outils';
@@ -13,7 +13,7 @@ import * as catalogue from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
-import { mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -44,15 +44,15 @@ interface Traces {
 }
 
 function app(
-  over: Partial<Omit<DepsMcp, 'inbox' | 'contacts'>> & {
-    inbox?: Partial<DepsMcp['inbox']>;
-    contacts?: Partial<DepsMcp['contacts']>;
+  over: Partial<Omit<CablageMcp, 'inbox' | 'contacts'>> & {
+    inbox?: Partial<CablageMcp['inbox']>;
+    contacts?: Partial<CablageMcp['contacts']>;
     membres?: Array<{ id: string; name: string; email: string; role: string }>;
   } = {},
 ) {
   const { inbox, contacts, membres, ...reste } = over;
   const traces: Traces = { contexte: [], envois: [], listes: [], journal: [] };
-  const mcp: DepsMcp = {
+  const mcp: CablageMcp = {
     estDesabonne: jamaisDesabonne,
     inbox: {
       ...mcpInerte,
@@ -92,6 +92,7 @@ function app(
     listerMembres: async () => membres ?? [{ id: 'u1', name: 'Jean', email: 'jean@test.fr', role: 'admin' }],
     // Les outils des widgets ont leur fichier (`tests/mcp-widgets.test.ts`) : ici, ils ne servent à rien.
     ...mcpWidgetsInertes,
+    ...mcpAgentInerte,
     ...reste,
   };
   const keys = new FakeApiKeys()
@@ -503,10 +504,22 @@ describe('serveur MCP : cohérence du catalogue', () => {
       assign_conversation: [true, true, false],
       create_widget: [false, false, false],
       update_widget: [true, true, false],
+      // L'agent IA et le crédit : la table de la spec du lot 8a (2026-10-03-mcp-agent-ia-design.md, section 1).
+      create_agent: [false, false, true],
+      update_agent: [true, true, false],
+      set_agent_tools: [false, true, false],
+      activate_agent: [true, true, false],
+      test_agent: [false, false, false],
+      add_knowledge: [false, false, false],
+      delete_knowledge: [true, true, false],
+      import_site: [true, true, true],
+      import_document_text: [true, true, false],
+      set_transfer_mode: [true, true, false],
+      buy_credit: [false, false, true],
     });
-    for (const o of OUTILS.filter((x) => x.annotations.readOnlyHint)) {
-      expect(o.annotations.openWorldHint, `outil « ${o.nom} »`).toBe(false);
-    }
+    // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
+    const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);
+    expect(lecturesEnMondeOuvert).toEqual(['preview_site']);
   });
 
   it('🔴 readOnlyHint vaut exactement « le scope est mcp:read », et chaque écriture déclare destructiveHint et idempotentHint', () => {
@@ -522,12 +535,15 @@ describe('serveur MCP : cohérence du catalogue', () => {
     }
   });
 
-  it('tools/list rend le titre et les annotations de chaque outil', async () => {
+  it('tools/list rend le titre et les annotations de chaque outil qu’une clé peut voir', async () => {
+    // Une clé ne voit pas les outils qui exigent une personne : ceux-là sont listés par un jeton OAuth
+    // (`tests/mcp-agent.test.ts`).
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: rpc('tools/list') });
     const listes = res.json<{ result: { tools: Array<{ name: string }> } }>().result.tools;
-    expect(listes).toHaveLength(OUTILS.length);
-    for (const o of OUTILS) {
+    const visibles = OUTILS.filter((o) => o.exigePersonne !== true);
+    expect(listes).toHaveLength(visibles.length);
+    for (const o of visibles) {
       expect(listes.find((t) => t.name === o.nom), `outil « ${o.nom} »`).toMatchObject({ title: o.annotations.title, annotations: o.annotations });
     }
     await server.close();

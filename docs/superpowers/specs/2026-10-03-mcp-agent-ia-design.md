@@ -43,7 +43,7 @@ exigent une personne nommée (section 2).
 | `import_document_text` | Claude envoie le TEXTE d'un document (extrait sur le poste) sous son nom ; traité comme un document de la console (découpage, provenance, remplacement) | `mcp:write` | oui |
 | `set_transfer_mode` | Ce que l'agent peut promettre de la disponibilité de l'équipe : `always`, `business_hours`, `never` | `mcp:write` | oui |
 | `get_credit` | Le solde en euros et les derniers mouvements | `mcp:read` | non |
-| `buy_credit` | Rend l'adresse d'une session Stripe Checkout (`refill_50` ou `refill_100`, montant TTC annoncé) ; le paiement reste un geste humain | `mcp:write` | oui |
+| `buy_credit` | Rend l'adresse d'une session Stripe Checkout (`refill_50` ou `refill_100`, montant HORS TAXE annoncé ; la taxe est calculée par Stripe sur la page de paiement) ; le paiement reste un geste humain | `mcp:write` | oui |
 
 **Annotations** `[destructive, idempotent, monde ouvert]`, à tenir par la table du test des annotations :
 
@@ -82,7 +82,8 @@ se lit par `preview_site` puis `import_site`, jamais en recopiant des pages dans
   admin relu à chaque appel, et elle signe : les outils activés le sont à son nom (l'activation l'exige déjà), la
   fiche est journalisée à son nom.
 - **Le plafond des opérations coûteuses** de la console (`PlafondPartage`, par espace) est consommé par `test_agent`,
-  `add_knowledge`, `preview_site`, `import_site`, `import_document_text` et `buy_credit`, en plus de l'unité de débit
+  `add_knowledge`, `delete_knowledge` (amendé le 2026-10-04 : il appelle la suppression en masse, que la console place
+  sous ce plafond), `preview_site`, `import_site`, `import_document_text` et `buy_credit`, en plus de l'unité de débit
   de l'appel MCP. Le serveur MCP ne contourne pas les dix opérations lourdes par minute.
 - **Ce que Claude ne voit pas** : les plafonds de coût d'un agent, la phrase et la fréquence de mention d'IA,
   l'autonomie sur une action irréversible, `envoyer_bloc`, les connecteurs, l'assistant de construction de la console
@@ -97,8 +98,11 @@ se lit par `preview_site` puis `import_site`, jamais en recopiant des pages dans
   ajout et suppression de fiches, ouverture d'un paiement. Chaque fonction rend une issue (`Issue<T>`) que la route
   traduit en statut HTTP et l'outil en refus lisible. Les routes gardent exactement leurs réponses : leurs tests
   existants sont le filet.
-- **Le contrôle de complétude se relance à chaque modification d'un agent ACTIF**, sur l'état effectif après
-  écriture. Aujourd'hui, vider l'objectif d'un agent actif passe sans rien dire ; la console en profite aussi.
+- **Le contrôle de complétude se relance à chaque modification de la fiche d'un agent ACTIF**, sur l'état effectif
+  après écriture, et il ne refuse que les manques que la modification INTRODUIT. Aujourd'hui, vider l'objectif d'un
+  agent actif passe sans rien dire ; la console en profite aussi. Un manque déjà là ne bloque pas : la connaissance
+  et les outils se retirent par d'autres routes, que rien ne garde, et refuser alors toute retouche de la fiche (un
+  renommage, un premier pas vers la correction) enfermerait le client. Activer refuse toujours sur tous les manques.
 - **Chaque modification de la fiche est journalisée** dans l'historique des réglages (élément `fiche_agent`, déjà
   déclaré et jamais écrit), avec l'origine `formulaire` depuis la console et `mcp` depuis Claude.
 
@@ -130,6 +134,11 @@ Essai réel depuis Claude Code, sur un espace qui a au moins 1 € de crédit : 
 l'espace par `preview_site` puis `import_site`, le tester dans le bac à sable, l'activer, et le retrouver identique
 dans la console (fiche, connaissance avec sa provenance, outils activés au nom de la personne, historique de la
 fiche). Puis vérifier qu'une clé d'API ne voit aucun de ces outils d'écriture.
+
+**Amendée le 2026-10-04**, à la livraison B, en deux points : le contrôle de complétude ne refuse que les manques
+qu'une modification introduit (section 3, décision de la livraison A validée par sa relecture) ; `buy_credit` annonce
+le montant HORS TAXE (section 1), parce que la taxe dépend du pays et du numéro de TVA que le payeur saisit sur la page
+de Stripe, donc aucun TTC n'est connu avant le paiement.
 
 ## Questions encore ouvertes
 

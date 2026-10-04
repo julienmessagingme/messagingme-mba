@@ -19,6 +19,41 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## LOT 8a DE « ENGAGE ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, LIVRAISON B À DÉPLOYER
+
+Spec `docs/superpowers/specs/2026-10-03-mcp-agent-ia-design.md`, plan `docs/superpowers/plans/2026-10-03-mcp-agent-ia.md`.
+La technique durable est dans `documentation.md` (§ 7, « Les outils MCP de l'agent IA et du crédit »), le
+fonctionnel dans `features.md` (« Construire un agent IA depuis Claude »).
+
+- ✅ **Livraison A relue (aucun rouge) et en production** (`b1b4c034`, 0206 appliquée avant le `up`) : la logique de
+  l'agent, de sa connaissance, du bac à sable et du paiement sortie des routes (`src/agent/gestion.ts`,
+  `connaissance.ts`, `essai.ts`, `reglages.ts`, `src/stripe/paiement.ts`), le contrôle de complétude sur la
+  modification d'un agent actif, la ligne `fiche_agent` de l'historique, et la migration 0206 (origine `mcp`).
+- ✅ **Livraison B écrite, à relire** : les outils de l'agent IA et du crédit (`src/mcp/outils-agent.ts`), le drapeau `exigePersonne`
+  (`outilsPour`), le plafond coûteux de la console posé dans le MCP par `buildServer`, la sonde 15 de
+  l'auto-attaque, la page « Serveur MCP » et la page « Autoriser » qui disent ces outils, l'historique qui affiche
+  « par Claude », et trois jaunes de la relecture de A (le 422 d'un agent actif lisible dans la console, les textes
+  de l'historique, le caractère nul refusé par l'import d'un texte et sa découpe sous l'échéance d'un fichier).
+  Aucune migration.
+- ✅ **Relecture indépendante de B : aucun rouge.** Corrigés avant le commit, chacun avec son test vérifié dans les deux
+  sens : les descriptions d'`activate_agent` et d'`update_agent` disent que désactiver COUPE l'agent dans ses
+  scénarios publiés et ne se fait que sur demande explicite (sinon un refus poussait Claude à le faire de lui-même) ;
+  le test des sept outils coûteux vérifie que rien n'est touché quand le plafond refuse (il ne le tenait que pour deux) ;
+  `list_knowledge` dit que ses extraits sont des données de tiers ; le refus du caractère nul est annoncé ; la garde de
+  personne échoue fermée sur `undefined` ; la page « Autoriser » nomme les gestes sur la connaissance.
+- ⏳ **Déploiement de B** : CI verte, puis `up -d --build` de `mba-api` (le serveur MCP) ; la console part avec le
+  push, sans fenêtre (des textes, aucune route neuve). Puis l'essai réel de la spec (section 7) depuis Claude Code,
+  sur un espace qui a au moins 1 € de crédit.
+- 🟡 **Ouverts, hors de ces deux livraisons** : l'assistant de construction journalise ses propositions « depuis les
+  onglets » (il passe par la même route) ; chaque modification de la fiche d'un agent actif relit toutes ses fiches
+  de connaissance (`etatPourLint`, un compte suffirait) ; `ajouterFiches` n'est pas atomique (un agent qui disparaît
+  au milieu laisse les premières fiches) ; un changement de statut est journalisé sous `fiche_agent` et pas
+  `activation` ; les lignes `fiche_agent` repoussent plus vite les suppressions hors des 200 lignes affichées ;
+  `list_agents` relit toutes les fiches de chaque agent pour les compter ; les refus de bornes de `modifierAgent`
+  nomment les champs de la console (`contenu.objectif`) et pas ceux de l'outil ; `src/mcp/outils-agent.ts` importe une
+  constante de `src/http/agents` ; sur une erreur qui n'est pas un 422 (verrou, 400), l'écran des agents laisse sa
+  liste de manques vide (antérieur à B).
+
 ## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : EN PRODUCTION, ESSAI RÉEL FAIT DEPUIS CLAUDE CODE
 
 - ✅ **Essai réel du 2026-10-03, vers 20 h 30 UTC, par Julien, depuis Claude Code 2.1.257 sous Windows** :

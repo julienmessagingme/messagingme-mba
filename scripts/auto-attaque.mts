@@ -47,7 +47,7 @@
  *   npx tsx scripts/auto-attaque.mts --cible=https://api.messagingme.app --je-sais-ce-que-je-fais \
  *     --jeton=<JWT d'un compte de test> --tenant=<son espace>
  */
-import { hash, randomBytes } from 'node:crypto';
+import { hash, randomBytes, randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import { buildServer, modulesDeRoutes } from '../src/server';
 import type { ClasseDAcces, Gardes, ServerDeps } from '../src/server';
@@ -66,6 +66,8 @@ import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
 import type { FastifyInstance } from 'fastify';
+import { plafondCoupe } from '../tests/gardes';
+import { OUTILS } from '../src/mcp/outils';
 
 // ---------------------------------------------------------------------------------------------------------
 // Arguments
@@ -392,7 +394,7 @@ function dependancesDuRegistre(): Record<string, unknown> {
  */
 async function classesDesRoutes(deps: Record<string, unknown>): Promise<Map<string, { classe: ClasseDAcces; module: string }>> {
   const passe: PreHandler = async () => undefined;
-  const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe], ops: passe };
+  const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe], ops: passe, plafondCouteux: plafondCoupe };
   const classes = new Map<string, { classe: ClasseDAcces; module: string }>();
   for (const m of modulesDeRoutes(deps as unknown as ServerDeps, bidon(), undefined, BASE_OAUTH)) {
     const seul = Fastify({ logger: false });
@@ -930,6 +932,53 @@ async function main(): Promise<void> {
       const n = (interrogations.get('oauth') ?? 0) - avant;
       verifier('14. les sondes OAuth atteignent leur magasin', 'oauth', n > 0, 'au moins une recherche', String(n));
     }
+  }
+
+  // --- Sonde 15 : /mcp, une clé d'API mcp:write devant les outils qui exigent une personne (lot 8a) ------
+  // Une clé `mcp:write` peut être branchée comme connecteur d'un agent qui lit des messages de clients : une injection
+  // ne doit pas pouvoir y modifier un agent ni ouvrir un paiement. Ces outils ne s'ouvrent qu'à un jeton OAuth, dont la
+  // personne signe. La clé de la sonde est RÉSOLUE (sinon le refus viendrait de la garde, et ne prouverait rien) : elle
+  // doit voir les autres outils, ne lister aucun de ceux-là, et chaque appel doit être refusé comme un outil inconnu,
+  // sans qu'aucune dépendance de l'agent soit seulement interrogée. Locale seulement : à distance, il faudrait une
+  // vraie clé d'écriture.
+  if (LOCAL) {
+    const cleSonde = `${API_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
+    const avant = interrogations.get('mcp.agentIa') ?? 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d: any = {
+      queue: new FakeQueue(),
+      v1: {
+        apiKeys: {
+          findActiveByHash: async (h: string) => (h === sha256Hex(cleSonde) ? { id: 'k-sonde', tenantId: tenantA, scopes: ['mcp:read', 'mcp:write'] } : null),
+          touchLastUsed: async () => undefined,
+        },
+        oauth: { resoudreAcces: async () => null },
+        contacts: bidon(),
+        mcp: { agentIa: inconnu('mcp.agentIa') },
+      },
+    };
+    const serveurMcp = buildServer(d);
+    await serveurMcp.ready();
+    const rpc = async (method: string, params?: unknown): Promise<{ result?: { tools?: Array<{ name: string }> }; error?: { code: number; message: string } }> => (await serveurMcp.inject({
+      method: 'POST', url: '/mcp', headers: { 'content-type': 'application/json', ...bearer(cleSonde) },
+      payload: { jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) },
+    })).json();
+    const listes = ((await rpc('tools/list')).result?.tools ?? []).map((t) => t.name);
+    verifier('15. la clé de la sonde est résolue', 'POST /mcp tools/list', listes.includes('list_agents'), 'les outils sans personne listés', listes.join(', ') || '(aucun)');
+    const exigent = OUTILS.filter((o) => o.exigePersonne === true).map((o) => o.nom);
+    verifier('15. des outils exigent une personne', 'OUTILS', exigent.length > 0, 'au moins un', String(exigent.length));
+    for (const nom of exigent) {
+      verifier('15. clé mcp:write : un outil qui exige une personne n’est pas listé', nom, !listes.includes(nom), 'absent de tools/list', 'listé');
+      const r = await rpc('tools/call', { name: nom, arguments: { agent_id: randomUUID(), offre: 'refill_50', mode: 'never' } });
+      verifier(
+        '15. clé mcp:write : un outil qui exige une personne est refusé comme un inconnu', nom,
+        r.error?.code === -32602 && /inconnu ou non autorisé/.test(r.error.message), '-32602 « inconnu ou non autorisé »',
+        r.error ? `${r.error.code} ${r.error.message}` : 'appelé',
+      );
+    }
+    const n = (interrogations.get('mcp.agentIa') ?? 0) - avant;
+    verifier('15. aucune dépendance de l’agent interrogée', 'mcp.agentIa', n === 0, '0', String(n));
+    await serveurMcp.close();
   }
 
   // --- Sonde 10 : jeton de CHOIX présenté pour un espace qui n'y est pas --------------------------------

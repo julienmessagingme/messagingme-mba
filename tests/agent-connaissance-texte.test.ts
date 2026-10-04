@@ -1,8 +1,25 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { FicheAEcrire, SourceFiche } from '../src/agent/knowledge';
+import type { OptionsLecture } from '../src/lib/hors-boucle';
 import { importerDocument, importerTexteDocument, type DepsConnaissance } from '../src/agent/connaissance';
 import { TAILLE_DOCUMENT_MAX } from '../src/agent/setup/piece-jointe';
 import { connaissanceInerte } from './routes-inertes';
+
+/**
+ * Les lectures hors de la boucle, ENREGISTRÉES puis faites pour de vrai : le découpage reste celui du worker, et le
+ * test voit sous quelle échéance chaque chemin l'a demandé.
+ */
+const lectures = vi.hoisted(() => [] as Array<{ fonction: string; options: OptionsLecture | undefined }>);
+vi.mock('../src/lib/hors-boucle', async (original) => {
+  const vrai = await original<typeof import('../src/lib/hors-boucle')>();
+  return {
+    ...vrai,
+    horsBoucle: (module: URL, fonction: string, args: unknown[], options?: OptionsLecture) => {
+      lectures.push({ fonction, options });
+      return vrai.horsBoucle(module, fonction, args, options);
+    },
+  };
+});
 
 /**
  * LE TEXTE D'UN DOCUMENT, ENVOYÉ EN CLAIR (outil MCP `import_document_text`, lot 8a).
@@ -91,6 +108,25 @@ describe('🔴 importer le TEXTE d’un document = déposer le même texte en fi
     expect(await importerTexteDocument(m.deps, 't1', AG, { nom: 'Vide', texte: ' \r\n ' })).toMatchObject({ ok: false, statut: 400 });
     expect(await importerTexteDocument(m.deps, 't1', AG, { nom: 'Court', texte: 'Bref.' })).toMatchObject({ ok: false, statut: 422 });
     expect(m.ecrits).toHaveLength(0);
+  });
+
+  it('🔴 un caractère nul est refusé en 400 avec une phrase lisible, comme le fichier binaire qu’il trahit, et rien n’est écrit', async () => {
+    // Postgres refuse ce caractère dans un `text` : sans ce refus, l'écriture lèverait (une erreur interne pour l'outil).
+    const m = monter();
+    const r = await importerTexteDocument(m.deps, 't1', AG, { nom: 'b.bin', texte: `${GARANTIES}\u0000` });
+    expect(r).toMatchObject({ ok: false, statut: 400 });
+    expect(r.ok ? '' : r.erreur).toMatch(/^texte illisible : il contient un caractère nul/);
+    expect(m.ecrits).toHaveLength(0);
+  });
+
+  it('🔴 la même échéance de découpe que le fichier : un texte refusé par un chemin ne doit pas passer par l’autre', async () => {
+    lectures.length = 0;
+    await importerDocument(monter().deps, 't1', AG, { nom: 'Garanties.txt', dataUrl: enDataUrl(GARANTIES) });
+    await importerTexteDocument(monter().deps, 't1', AG, { nom: 'Garanties.txt', texte: GARANTIES });
+    const fichier = lectures.find((l) => l.fonction === 'lireDocument');
+    const texte = lectures.find((l) => l.fonction === 'texteEnFiches');
+    expect(fichier?.options?.delaiMs, 'le chemin fichier n’est plus lu là où ce test le cherche').toBeGreaterThan(0);
+    expect(texte?.options?.delaiMs).toBe(fichier?.options?.delaiMs);
   });
 
   it('l’agent d’un autre espace, ou un identifiant mal formé : 404', async () => {

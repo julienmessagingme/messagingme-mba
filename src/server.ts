@@ -72,7 +72,7 @@ import { registerOauth, type OauthRouteDeps } from './http/oauth';
 import { registerOauthConsentement, type OauthConsentementRouteDeps } from './http/oauth-consentement';
 import { registerMbaRelais, type MbaRelaisDeps } from './http/mba-relais';
 import { DROIT_RELAIS } from './mba/cle-relais';
-import type { DepsMcp } from './mcp/outils';
+import type { CablageMcp } from './mcp/outils';
 import { registerHubspotImport } from './http/hubspot-import';
 import { registerHubspotPipelines } from './http/hubspot-pipelines';
 import { registerHubspotInstall } from './http/hubspot-install';
@@ -145,7 +145,7 @@ import type { ApiUsageGuard } from './api/usage-guard';
 import { GardeUsage } from './api/usage-guard.compteur';
 import { memoireDesPleines, type CompteurDebit } from './db/debit';
 import { CompteurDebitMemoire } from './db/debit.memoire';
-import { PlafondPartage } from './auth/plafond-partage';
+import { MESSAGE_OPERATIONS_LOURDES, PlafondPartage } from './auth/plafond-partage';
 import { journaliser } from './lib/journal';
 
 export interface ServerDeps {
@@ -331,7 +331,8 @@ export interface ServerDeps {
     messages?: Omit<V1MessagesRouteDeps, 'usage'>;
     /** Un simple texte en RCS à une fiche (`POST /v1/messages/rcs`). */
     messagesRcs?: Omit<V1MessagesRcsRouteDeps, 'usage'>;
-    mcp?: DepsMcp;
+    /** Le serveur MCP, moins son plafond coûteux : `buildServer` y pose le sien au montage (`DepsMcp.couteux`). */
+    mcp?: CablageMcp;
     /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1. */
     mbaRelais?: MbaRelaisDeps;
   };
@@ -429,6 +430,12 @@ export interface Gardes {
   readonly ops: PreHandler;
   /** Le second plafond de débit, composé route par route sur les seules routes coûteuses. */
   readonly limiteCouteuse?: PreHandler;
+  /**
+   * Le compteur derrière `limiteCouteuse`, pour qui le consomme hors d'une route : les outils MCP coûteux (lot 8a).
+   * La MÊME instance et la même clé (l'espace) : un import de site par Claude et un import depuis l'onglet comptent
+   * dans les mêmes dix opérations par minute. Désactivé (`max` à 0) quand `limiteCouteuse` est absente.
+   */
+  readonly plafondCouteux: PlafondPartage;
 }
 
 /**
@@ -632,7 +639,7 @@ export function modulesDeRoutes(
      * une autorité et un limiteur. Une seconde instance doublerait le quota d'un espace selon la porte
      * empruntée, sans que personne le voie.
      */
-    entree('v1', 'cle-api', deps.v1, (app, v1) => {
+    entree('v1', 'cle-api', deps.v1, (app, v1, g) => {
       /**
        * Le plafond de l'espace, commun à toutes ses clés, `/v1` et `/mcp` confondus, minute et heure, indexé
        * sur l'espace d'une clé résolue (`api-key.ts`), compté dans le compteur PARTAGÉ par les copies de l'API.
@@ -670,7 +677,8 @@ export function modulesDeRoutes(
       // duquel il a besoin.
       // Son 401 annonce la connexion OAuth (`WWW-Authenticate`) quand `PUBLIC_API_URL` est posée, et sur cet hôte
       // seulement.
-      if (v1.mcp) registerMcp(app, v1.mcp, [requireApiKey], usageApi, baseOauthApi);
+      // Son plafond coûteux est celui des routes de la console (`g.plafondCouteux`), posé ici et pas par le câblage.
+      if (v1.mcp) registerMcp(app, { ...v1.mcp, couteux: g.plafondCouteux }, [requireApiKey], usageApi, baseOauthApi);
       // Le relais du Meta Business Agent : le même `requireApiKey`, qui reconnaît sa clé à son droit et la
       // compte par clé, hors du plafond de l'espace. Ce droit, seule la publication l'attribue (`DROIT_RELAIS`,
       // absent de `VALID_API_SCOPES`) : la même constante que celle qui crée la clé, un littéral recopié ici
@@ -847,12 +855,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   const utilisateurParMinute = deps.plafonds?.utilisateurParMinute ?? config.RATE_LIMIT_USER_PAR_MINUTE;
   const plafondUtilisateur = utilisateurParMinute > 0 ? new RateLimiter(utilisateurParMinute, 60_000) : undefined;
   const couteuxParMinute = deps.plafonds?.couteuxParMinute ?? config.RATE_LIMIT_COUTEUX_PAR_MINUTE;
-  const limiteCouteuse = couteuxParMinute > 0
-    ? makeLimiteParTenant(
-      new PlafondPartage(debit, { nom: 'couteux', max: couteuxParMinute, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer' }),
-      'trop d’opérations lourdes sur cet espace, patientez une minute',
-    )
-    : undefined;
+  // Construit même à 0 (il est alors désactivé) : le serveur MCP le consomme sans avoir à savoir s'il est coupé.
+  const plafondCouteux = new PlafondPartage(debit, { nom: 'couteux', max: couteuxParMinute, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer' });
+  const limiteCouteuse = plafondCouteux.desactive ? undefined : makeLimiteParTenant(plafondCouteux, MESSAGE_OPERATIONS_LOURDES);
 
   /**
    * 🔴 Sans `deps.auth`, la garde vaut un refus, jamais `undefined` : une route montée sans garde serait
@@ -884,6 +889,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // Une seule instance pour `/ops` et le réglage du plafond de l'API. Sans `deps.auth`, elle refuse tout.
     ops: makeRequireOps(deps.auth, deps.surveillanceOps),
     limiteCouteuse,
+    plafondCouteux,
   };
   for (const m of registre) m.monte(app, gardes);
 

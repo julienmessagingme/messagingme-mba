@@ -4,7 +4,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import { OUTILS, type DepsMcp } from '../src/mcp/outils';
+import { OUTILS, type CablageMcp } from '../src/mcp/outils';
 import {
   DEVENIR_AGENT_A_VENIR, LIMITE_WIDGETS_PAR_ESPACE, SCENARIO_NON_PUBLIE, WIDGET_INCONNU,
   saisieDeCreation, saisieDeModification, type DepsGestionWidgets,
@@ -16,7 +16,8 @@ import { lienWaMe } from '../src/lib/wa-me';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpInerte } from './routes-inertes';
+import { mcpAgentInerte, mcpInerte } from './routes-inertes';
+import { bornesDesChamps, champsDe, muettes as bornesMuettes } from './aide/bornes-zod';
 
 /**
  * Les outils MCP des widgets WhatsApp (lot 5 de docs/superpowers/plans/2026-10-02-widget-whatsapp.md), montés par
@@ -96,7 +97,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
       return t === 't1' && id === WF_T1_NON_PUBLIE ? 'vide' : 'inconnu';
     },
   };
-  const mcp: DepsMcp = {
+  const mcp: CablageMcp = {
     estDesabonne: jamaisDesabonne,
     inbox: {
       ...mcpInerte,
@@ -122,6 +123,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
         return (o.scenarios ?? []).filter((s) => s.tenant === t);
       },
     },
+    ...mcpAgentInerte,
   };
   const keys = new FakeApiKeys()
     .add(CLE_TOUT, { id: 'k1', tenantId: 't1', scopes: ['mcp:read', 'mcp:write'] })
@@ -157,7 +159,8 @@ describe('le catalogue', () => {
     const { server, cap } = monter();
     const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: rpc('tools/list') });
     const noms = res.json<{ result: { tools: Array<{ name: string }> } }>().result.tools.map((t) => t.name).sort();
-    expect(noms).toEqual(OUTILS.filter((o) => o.scope === 'mcp:read').map((o) => o.nom).sort());
+    // Moins les lectures qui exigent une personne (`preview_site`) : une clé n'en a pas.
+    expect(noms).toEqual(OUTILS.filter((o) => o.scope === 'mcp:read' && o.exigePersonne !== true).map((o) => o.nom).sort());
     expect(noms).toContain('list_widgets');
     expect(noms).not.toContain('create_widget');
     const r = await appeler(server, CLE_LECTURE, 'create_widget', { nom: 'Blog', phrase: 'Je viens du blog' });
@@ -312,55 +315,13 @@ describe('list_widgets et list_scenarios', () => {
  * forme de borne qu'il ne connaît pas le fait échouer au lieu de passer à vide.
  */
 describe('🔴 les bornes de la saisie sont annoncées dans les schémas d’entrée, avec leur valeur', () => {
-  type Borne = [champ: string, cle: string, valeur: unknown];
-
-  function bornes(champ: string, s: any, out: Borne[]): Borne[] {
-    const d = s?._zod?.def;
-    if (!d) return out;
-    for (const c of d.checks ?? []) {
-      const cd = c?._zod?.def ?? c;
-      if (cd.check === 'overwrite') continue; // le `trim`, une transformation et pas une borne
-      else if (cd.check === 'min_length') { if (cd.minimum > 0) out.push([champ, 'minLength', cd.minimum]); }
-      else if (cd.check === 'max_length') out.push([champ, 'maxLength', cd.maximum]);
-      else if (cd.check === 'string_format' && cd.format === 'regex') out.push([champ, 'pattern', cd.pattern.source]);
-      else if (cd.check === 'string_format' && cd.format === 'uuid') out.push([champ, 'format', 'uuid']);
-      else if (cd.check === 'number_format' && cd.format === 'safeint') out.push([champ, 'type', 'integer']);
-      else if (cd.check === 'greater_than' && cd.inclusive) out.push([champ, 'minimum', cd.value]);
-      else if (cd.check === 'less_than' && cd.inclusive) out.push([champ, 'maximum', cd.value]);
-      else if (cd.check === 'custom') out.push([champ, 'pattern', '(raffinement)']);
-      else out.push([champ, `forme inconnue de l’extracteur : ${String(cd.check)}/${String(cd.format)}`, null]);
-    }
-    if (['optional', 'nonoptional', 'default'].includes(d.type)) return bornes(champ, d.innerType, out);
-    if (d.type === 'nullable') { out.push([champ, 'null', true]); return bornes(champ, d.innerType, out); }
-    if (d.type === 'pipe') return bornes(champ, d.in, out);
-    if (d.type === 'enum') out.push([champ, 'enum', Object.values(d.entries)]);
-    if (d.type === 'boolean') out.push([champ, 'type', 'boolean']);
-    return out;
-  }
-
   const schemaDe = (nom: string) => OUTILS.find((o) => o.nom === nom)!.entree;
 
-  function muettes(zod: any, nomOutil: string): string[] {
-    const annonce = schemaDe(nomOutil).properties as Record<string, any>;
-    const appliquees = Object.entries<any>(zod._zod.def.shape).flatMap(([champ, s]) => bornes(champ, s, []));
+  /** L'extracteur partagé (`tests/aide/bornes-zod.ts`), avec le plancher qui dit qu'il lit encore quelque chose. */
+  function muettes(zod: unknown, nomOutil: string): string[] {
+    const appliquees = bornesDesChamps(champsDe(zod));
     expect(appliquees.length, 'l’extracteur ne lit plus les bornes de Zod : c’est LUI qu’il faut réparer').toBeGreaterThanOrEqual(15);
-    const types = (p: any): string[] => (Array.isArray(p?.type) ? p.type : [p?.type]);
-    return appliquees.filter(([champ, cle, valeur]) => {
-      const p = annonce[champ];
-      if (!p) return true;
-      switch (cle) {
-        case 'null': return !types(p).includes('null');
-        case 'type': return !types(p).includes(valeur as string);
-        // Une énumération annoncée doit être INCLUSE dans celle que Zod accepte : plus stricte, jamais plus large.
-        // `agent` passe Zod pour être refusé avec sa raison, et n'est pas proposé au modèle.
-        case 'enum': {
-          const proposees = (p.enum ?? []).filter((v: unknown) => v !== null);
-          return proposees.length === 0 || proposees.some((v: string) => !(valeur as string[]).includes(v));
-        }
-        case 'pattern': return valeur === '(raffinement)' ? typeof p.pattern !== 'string' : p.pattern !== valeur;
-        default: return p[cle] !== valeur;
-      }
-    }).map(([champ, cle, valeur]) => `${champ}/${cle}=${JSON.stringify(valeur)}`);
+    return bornesMuettes(appliquees, schemaDe(nomOutil));
   }
 
   it('create_widget : chaque borne, avec sa valeur ; les champs requis ; aucune clé inconnue acceptée', () => {

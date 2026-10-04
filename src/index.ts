@@ -149,7 +149,12 @@ import { tenter } from './lib/tenter';
 import { messageDe } from './lib/erreur';
 import { PgStripeStore } from './stripe/store.pg';
 import { estCleLive, FetchTransportStripe } from './stripe/client';
-import { creerPayeurAutorise } from './http/credit-stripe';
+import { creerPayeurAutorise, type CreditPaiementRouteDeps } from './http/credit-stripe';
+import type { AgentsRouteDeps } from './http/agents';
+import type { AgentTestRouteDeps } from './http/agent-test';
+import type { AgentKnowledgeRouteDeps } from './http/agent-knowledge';
+import type { DepsConnaissance } from './agent/connaissance';
+import type { Origine } from './reglages/historique';
 import { creerOffreDeBienvenue } from './account/offre-bienvenue';
 
 /** Le nom de cette copie de l'API dans `/ops` et dans ses alertes : `api` seule, `api-<copie>` à plusieurs (`API_COPIE`). */
@@ -516,6 +521,141 @@ async function main(): Promise<void> {
     baseApi: adressesApi.avecPrefixe,
   };
 
+  /**
+   * L'agent IA, sa connaissance, son bac à sable et le paiement du crédit, pour leurs DEUX portes : les routes de la
+   * console et les outils MCP de l'agent (lot 8a). Un seul objet chacun, comme les widgets : un outil MCP n'est
+   * qu'un second appelant des fonctions de la console, avec les mêmes dépôts et la même clé de modèle.
+   */
+  const agentsDeLaConsole: AgentsRouteDeps = {
+    agents: agentStore,
+    // Le modèle d'un agent neuf vient de la configuration serveur ; le client choisira ensuite dans l'écran
+    // de réglage. `AGENT_MODEL` d'abord, `LLM_MODEL` en repli seulement (raison dans `src/config.ts`).
+    modeleParDefaut: config.AGENT_MODEL || config.LLM_MODEL,
+    // Lecture seule : le client voit ce qui lui reste, il ne se recharge pas lui-même (cf. /ops).
+    credits,
+    // Absente quand le provisionnement est éteint : la création d'agent se passe alors de clé propre.
+    ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
+    // Chaque modification de la fiche y laisse sa ligne `fiche_agent`, avec son auteur et sa porte.
+    historique: historiqueStore,
+    sessions: agentSessions,
+    // Le blocage dur avant activation (un agent activé finira par écrire à de vrais clients) : il lit la
+    // fiche, la connaissance, et les outils actifs avec leurs handlers, parce que le compte seul ne dit pas
+    // quel outil précis manque.
+    etatPourLint: async (tenant, agentId) => {
+      const fiche = await agentStore.complet(tenant, agentId);
+      if (!fiche) return null;
+      // Le troisième est un avertissement, pas un manque : un serveur tiers qui change son schéma éteint le
+      // consentement d'un outil, mais ne doit pas empêcher le client d'activer son agent.
+      const [fiches, outils, debranches] = await Promise.all([
+        knowledgeStore.lister(tenant, agentId),
+        toolCatalog.listActifs(tenant, agentId),
+        mcpStore.debranchesParRafraichissement(tenant, consommateurAgent(agentId)),
+      ]);
+      return {
+        fiche: fiche.contenu,
+        fichesConnaissance: fiches.length,
+        outilsActifs: outils.length,
+        handlersActifs: outils.map(handlerMaison).filter((h) => h !== ''),
+        outilsMcpDebranches: debranches,
+      };
+    },
+    /**
+     * Les modèles proposables et leur tarif. La liste est la nôtre (`MODELES_CHOISIS`), les prix viennent du
+     * Gateway en direct : figés dans le code, ils seraient faux au premier changement de tarif.
+     * 🔴 La clé du Gateway ne quitte jamais le serveur : la console reçoit des identifiants et des euros.
+     */
+    modelesProposes: () => catalogueModelesCache.lire('catalogue', () => lireCatalogueGateway(fetchGet, config.AI_GATEWAY_API_KEY))
+      .then((catalogue) => modelesProposables(catalogue, config.EUR_PER_USD, config.COMMISSION_MODELE_PCT)),
+  };
+
+  /**
+   * 🔴 Pas de corbeille : une fiche de connaissance supprimée disparaît de `agent_knowledge`, et cette ligne est le
+   * seul exemplaire de ce que le robot savait dire, et la seule réponse à « qui l'a retirée ? ». Une par porte :
+   * la console signe `formulaire`, le serveur MCP `mcp` (l'historique dit alors « par Claude »).
+   */
+  const journaliserSuppressionDe = (origine: Exclude<Origine, 'assistant'>): DepsConnaissance['journaliserSuppression'] =>
+    (tenant, agentId, l) => historiqueStore.ecrire(tenant, {
+      surface: 'agent', surfaceId: agentId, element: 'connaissance', operation: 'suppression',
+      cible: l.cible, libelle: l.libelle, avant: l.avant, apres: null,
+      origine, acteurEmail: null, acteurId: l.acteurId,
+    });
+  const connaissanceDeLaConsole: AgentKnowledgeRouteDeps = {
+    connaissance: knowledgeStore,
+    // Les suppressions d'abord, comme pour le MBA : une création ratée se refait, une suppression non.
+    journaliserSuppression: journaliserSuppressionDe('formulaire'),
+    fetchUrl: fetchUrlBorne(),
+  };
+
+  const essaiDeLaConsole: AgentTestRouteDeps = {
+    // L'historique des essais (14 j). Il ne conditionne rien : sans lui, l'essai marche et l'écran
+    // n'affiche aucune trace.
+    essais: essaisStore,
+    // Le modèle du bac à sable est celui de la fiche de l'agent : le seul prérequis est la clé du Gateway,
+    // sans lien avec LLM_MODEL (désactiver l'analyse de conversation ne doit pas couper /test).
+    disponible: gateway !== null,
+    // 🔴 Un essai consomme pour de vrai : les outils à effet sont simulés, l'appel de modèle ne l'est pas.
+    // Même solde et même garde qu'en production, sinon la console offrirait une porte gratuite sur un
+    // compte prépayé. Le mouvement n'a pas de session : la note l'explique dans le journal.
+    credits,
+    debiter: async (tenant, montant, note) => { await credits.debiter(tenant, montant, { note }); },
+    ...(gateway ? {
+      cerveau: {
+        client: gateway,
+        // Point de lecture partagé avec le tour de production : le bac à sable montre exactement ce que la
+        // production ferait, modèle et politiques compris.
+        contexte: (tenant, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, tenant, agentId),
+        // Même taux et même commission qu'en production : un essai annonce, et débite, ce que la conversation
+        // coûterait vraiment.
+        tauxEurParDollar: config.EUR_PER_USD,
+        commissionPct: config.COMMISSION_MODELE_PCT,
+        outils: {
+          catalogue: toolCatalog,
+          // Muet : les essais n'ont pas à apparaître comme des pannes dans le journal que le client consulte.
+          journal: JOURNAL_MUET,
+          // Le bac à sable reçoit la même recherche que la production : il n'a de valeur que s'il rend
+          // exactement ce qu'elle rendrait. Les trois origines sont simulées (le type impose la liste
+          // complète) : une origine non traitée arrêterait net un essai.
+          resolveurs: resolveursSimulation({ connaissance: knowledgeStore, ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}) }),
+          // Rien à compter : sans session, pas de compteur. Le plafond d'appels du tour est tenu en mémoire
+          // par la boucle du cerveau.
+          sessions: { compterAppel: async () => {} },
+          /**
+           * 🔴 Le bac à sable n'exécute aucun geste, même doctrine que `connecteurSimule` : un essai ne doit
+           * pas toucher les données réelles d'un client (vrai tag, vraie fiche).
+           * Dette assumée : il ne montre pas non plus les gestes qu'un moment déclencherait, alors qu'il
+           * promet « exactement ce que l'agent fera ». Suivi dans
+           * `docs/superpowers/plans/2026-09-18-moments-agent-ia.md`, section « État d'exécution ».
+           */
+          executerGeste: async () => {},
+        },
+        alerter: (m: string) => console.error(`[agent] ${m}`),
+      },
+    } : {}),
+  };
+
+  const paiementDeLaConsole: CreditPaiementRouteDeps = {
+    stripe: config.STRIPE_SECRET_KEY !== ''
+      ? {
+        cle: config.STRIPE_SECRET_KEY,
+        livemode: estCleLive(config.STRIPE_SECRET_KEY),
+        prix: { refill_50: config.STRIPE_PRIX_REFILL_50, refill_100: config.STRIPE_PRIX_REFILL_100 },
+        transport: new FetchTransportStripe(),
+        pageCredit: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres/credit`,
+      }
+      : null,
+    clients: stripeStore,
+    // 🔴 En mode test, seul un exploitant (`OPS_EMAILS`) paie : sinon, le temps des essais, n'importe quel admin
+    // client recevrait de vrais euros de modèle contre une carte de test. La règle et son test :
+    // `creerPayeurAutorise`, `tests/http-credit-stripe.test.ts`.
+    payeurAutorise: creerPayeurAutorise({
+      livemode: estCleLive(config.STRIPE_SECRET_KEY),
+      adresseDe: async (userId: string) => (await userStore.getById(userId))?.email ?? null,
+      estExploitant: (adresse: string) => estAdresseOps(opsEmails, adresse),
+    }),
+    // La facture d'un achat, relue dans les paiements de l'espace (lien « Facture » de la page Crédit IA).
+    factures: stripeStore,
+  };
+
   // La durée de chaque requête, par route normalisée : mesurée par le serveur, vidée en base avec l'attente du pool.
   const mesureLatence = new MesureLatenceHttp();
 
@@ -838,28 +978,7 @@ async function main(): Promise<void> {
      * que la console lit comme « recharge pas encore disponible ». Le retour de Stripe se fait sur la page Crédit IA
      * de la console, jamais sur l'API : il ne crédite rien, il fait relire le solde.
      */
-    creditPaiement: {
-      stripe: config.STRIPE_SECRET_KEY !== ''
-        ? {
-          cle: config.STRIPE_SECRET_KEY,
-          livemode: estCleLive(config.STRIPE_SECRET_KEY),
-          prix: { refill_50: config.STRIPE_PRIX_REFILL_50, refill_100: config.STRIPE_PRIX_REFILL_100 },
-          transport: new FetchTransportStripe(),
-          pageCredit: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres/credit`,
-        }
-        : null,
-      clients: stripeStore,
-      // 🔴 En mode test, seul un exploitant (`OPS_EMAILS`) paie : sinon, le temps des essais, n'importe quel admin
-      // client recevrait de vrais euros de modèle contre une carte de test. La règle et son test :
-      // `creerPayeurAutorise`, `tests/http-credit-stripe.test.ts`.
-      payeurAutorise: creerPayeurAutorise({
-        livemode: estCleLive(config.STRIPE_SECRET_KEY),
-        adresseDe: async (userId: string) => (await userStore.getById(userId))?.email ?? null,
-        estExploitant: (adresse: string) => estAdresseOps(opsEmails, adresse),
-      }),
-      // La facture d'un achat, relue dans les paiements de l'espace (lien « Facture » de la page Crédit IA).
-      factures: stripeStore,
-    },
+    creditPaiement: paiementDeLaConsole,
     // Le webhook de Stripe, monté seulement avec son secret (une signature sans secret ne prouverait rien). La
     // configuration refuse de démarrer avec le secret sans la clé, ou l'inverse : monté, il connaît donc le mode.
     ...(config.STRIPE_WEBHOOK_SECRET ? {
@@ -1044,47 +1163,7 @@ async function main(): Promise<void> {
       attendre: (ms) => dormir(ms),
     },
     // Agents IA, en lecture : la palette du builder a besoin de la liste pour proposer le bloc.
-    agents: {
-      agents: agentStore,
-      // Le modèle d'un agent neuf vient de la configuration serveur ; le client choisira ensuite dans l'écran
-      // de réglage. `AGENT_MODEL` d'abord, `LLM_MODEL` en repli seulement (raison dans `src/config.ts`).
-      modeleParDefaut: config.AGENT_MODEL || config.LLM_MODEL,
-      // Lecture seule : le client voit ce qui lui reste, il ne se recharge pas lui-même (cf. /ops).
-      credits,
-      // Absente quand le provisionnement est éteint : la création d'agent se passe alors de clé propre.
-      ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
-      // Chaque modification de la fiche y laisse sa ligne `fiche_agent`, avec son auteur et sa porte.
-      historique: historiqueStore,
-      sessions: agentSessions,
-      // Le blocage dur avant activation (un agent activé finira par écrire à de vrais clients) : il lit la
-      // fiche, la connaissance, et les outils actifs avec leurs handlers, parce que le compte seul ne dit pas
-      // quel outil précis manque.
-      etatPourLint: async (tenant, agentId) => {
-        const fiche = await agentStore.complet(tenant, agentId);
-        if (!fiche) return null;
-        // Le troisième est un avertissement, pas un manque : un serveur tiers qui change son schéma éteint le
-        // consentement d'un outil, mais ne doit pas empêcher le client d'activer son agent.
-        const [fiches, outils, debranches] = await Promise.all([
-          knowledgeStore.lister(tenant, agentId),
-          toolCatalog.listActifs(tenant, agentId),
-          mcpStore.debranchesParRafraichissement(tenant, consommateurAgent(agentId)),
-        ]);
-        return {
-          fiche: fiche.contenu,
-          fichesConnaissance: fiches.length,
-          outilsActifs: outils.length,
-          handlersActifs: outils.map(handlerMaison).filter((h) => h !== ''),
-          outilsMcpDebranches: debranches,
-        };
-      },
-      /**
-       * Les modèles proposables et leur tarif. La liste est la nôtre (`MODELES_CHOISIS`), les prix viennent du
-       * Gateway en direct : figés dans le code, ils seraient faux au premier changement de tarif.
-       * 🔴 La clé du Gateway ne quitte jamais le serveur : la console reçoit des identifiants et des euros.
-       */
-      modelesProposes: () => catalogueModelesCache.lire('catalogue', () => lireCatalogueGateway(fetchGet, config.AI_GATEWAY_API_KEY))
-        .then((catalogue) => modelesProposables(catalogue, config.EUR_PER_USD, config.COMMISSION_MODELE_PCT)),
-    },
+    agents: agentsDeLaConsole,
     /**
      * Le bot d'aide de la console. Il explique et il emmène, il n'écrit jamais rien.
      * 🔴 `gatewayAide` et non `gateway` : construit sans résolveur de clé par espace, il paie sur la nôtre. Les
@@ -1204,68 +1283,10 @@ async function main(): Promise<void> {
     // Le bac à sable : parler à son agent depuis la console avant de l'activer. Il fait tourner le vrai
     // cerveau (prompt, outils exposés, recherche de connaissance), mais les outils à effet sont simulés : il
     // n'y a ni contact, ni conversation, ni parcours, et poser un tag écrirait sur une vraie fiche.
-    agentTest: {
-      // L'historique des essais (14 j). Il ne conditionne rien : sans lui, l'essai marche et l'écran
-      // n'affiche aucune trace.
-      essais: essaisStore,
-      // Le modèle du bac à sable est celui de la fiche de l'agent : le seul prérequis est la clé du Gateway,
-      // sans lien avec LLM_MODEL (désactiver l'analyse de conversation ne doit pas couper /test).
-      disponible: gateway !== null,
-      // 🔴 Un essai consomme pour de vrai : les outils à effet sont simulés, l'appel de modèle ne l'est pas.
-      // Même solde et même garde qu'en production, sinon la console offrirait une porte gratuite sur un
-      // compte prépayé. Le mouvement n'a pas de session : la note l'explique dans le journal.
-      credits,
-      debiter: async (tenant, montant, note) => { await credits.debiter(tenant, montant, { note }); },
-      ...(gateway ? {
-        cerveau: {
-          client: gateway,
-          // Point de lecture partagé avec le tour de production : le bac à sable montre exactement ce que la
-          // production ferait, modèle et politiques compris.
-          contexte: (tenant, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, tenant, agentId),
-          // Même taux et même commission qu'en production : un essai annonce, et débite, ce que la conversation
-          // coûterait vraiment.
-          tauxEurParDollar: config.EUR_PER_USD,
-          commissionPct: config.COMMISSION_MODELE_PCT,
-          outils: {
-            catalogue: toolCatalog,
-            // Muet : les essais n'ont pas à apparaître comme des pannes dans le journal que le client consulte.
-            journal: JOURNAL_MUET,
-            // Le bac à sable reçoit la même recherche que la production : il n'a de valeur que s'il rend
-            // exactement ce qu'elle rendrait. Les trois origines sont simulées (le type impose la liste
-            // complète) : une origine non traitée arrêterait net un essai.
-            resolveurs: resolveursSimulation({ connaissance: knowledgeStore, ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}) }),
-            // Rien à compter : sans session, pas de compteur. Le plafond d'appels du tour est tenu en mémoire
-            // par la boucle du cerveau.
-            sessions: { compterAppel: async () => {} },
-            /**
-             * 🔴 Le bac à sable n'exécute aucun geste, même doctrine que `connecteurSimule` : un essai ne doit
-             * pas toucher les données réelles d'un client (vrai tag, vraie fiche).
-             * Dette assumée : il ne montre pas non plus les gestes qu'un moment déclencherait, alors qu'il
-             * promet « exactement ce que l'agent fera ». Suivi dans
-             * `docs/superpowers/plans/2026-09-18-moments-agent-ia.md`, section « État d'exécution ».
-             */
-            executerGeste: async () => {},
-          },
-          alerter: (m: string) => console.error(`[agent] ${m}`),
-        },
-      } : {}),
-    },
+    agentTest: essaiDeLaConsole,
     // Base de connaissance d'un agent : la seule source que l'agent a le droit d'utiliser. `fetchUrl` porte
     // la garde SSRF (le serveur vit dans le réseau Docker du VPS) et le plafond de taille.
-    agentKnowledge: {
-      connaissance: knowledgeStore,
-      /**
-       * 🔴 Pas de corbeille : une fiche supprimée disparaît de `agent_knowledge`, et cette ligne est le seul
-       * exemplaire de ce que le robot savait dire, et la seule réponse à « qui l'a retirée ? ». Les
-       * suppressions d'abord, comme pour le MBA : une création ratée se refait.
-       */
-      journaliserSuppression: (tenant, agentId, l) => historiqueStore.ecrire(tenant, {
-        surface: 'agent', surfaceId: agentId, element: 'connaissance', operation: 'suppression',
-        cible: l.cible, libelle: l.libelle, avant: l.avant, apres: null,
-        origine: 'formulaire', acteurEmail: null, acteurId: l.acteurId,
-      }),
-      fetchUrl: fetchUrlBorne(),
-    },
+    agentKnowledge: connaissanceDeLaConsole,
     // Outils d'un agent. L'activation et l'autonomie portent le nom de qui les a posées (exigé en base) :
     // c'est ce qui rend un incident instruisable.
     agentTools: {
@@ -2342,6 +2363,16 @@ async function main(): Promise<void> {
         // Les widgets de l'écran, le MÊME objet : un outil MCP n'est qu'un second appelant de leur gestion.
         widgets: widgetsDeLaConsole,
         scenarios: workflowStore,
+        // L'agent IA et le crédit : les MÊMES objets que leurs routes. Seul le journal des suppressions de
+        // connaissance change, pour signer l'origine `mcp`.
+        agentIa: {
+          gestion: agentsDeLaConsole,
+          connaissance: { ...connaissanceDeLaConsole, journaliserSuppression: journaliserSuppressionDe('mcp') },
+          essai: essaiDeLaConsole,
+          paiement: paiementDeLaConsole,
+          outils: toolCatalog,
+          reglages: settingsStore,
+        },
       },
     },
   });

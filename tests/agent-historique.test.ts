@@ -10,6 +10,7 @@ import { ENTRETIEN_VIERGE, type EntretienComplet } from '../src/agent/setup/entr
 import { ficheVide } from '../src/agent/fiche';
 import type { FicheConnaissance } from '../src/agent/knowledge';
 import { assistantAgentInerte, connaissanceInerte } from './routes-inertes';
+import { ORIGINES } from '../src/reglages/historique';
 
 /**
  * L'HISTORIQUE CÔTÉ AGENT IA.
@@ -191,10 +192,18 @@ describe('le vrai câblage', () => {
   const page = readFileSync(resolve(__dirname, '../web/app/agents/page.tsx'), 'utf8');
 
   it('🔴 la journalisation des fiches est fournie, et elle vise la surface « agent »', () => {
-    const bloc = index.slice(index.indexOf('agentKnowledge: {'), index.indexOf('agentTools: {'));
-    expect(bloc).toContain('journaliserSuppression');
+    // Depuis le lot 8a, la connaissance de la console est un objet nommé que le MCP partage : le journal y est posé
+    // par porte (`formulaire` pour la console, `mcp` pour Claude).
+    const debut = index.indexOf('const journaliserSuppressionDe');
+    const fin = index.indexOf('const essaiDeLaConsole');
+    expect(debut, 'le journal des suppressions n’est plus là où ce test le cherche').toBeGreaterThan(0);
+    expect(fin).toBeGreaterThan(debut);
+    const bloc = index.slice(debut, fin);
+    expect(bloc).toContain("journaliserSuppression: journaliserSuppressionDe('formulaire')");
     expect(bloc).toContain("surface: 'agent'");
     expect(bloc).toContain("element: 'connaissance'");
+    expect(index).toContain('agentKnowledge: connaissanceDeLaConsole,');
+    expect(index).toContain("journaliserSuppression: journaliserSuppressionDe('mcp')");
   });
 
   it('🔴 le résolveur d’adresses est fourni, sinon le fil reste anonyme', () => {
@@ -206,5 +215,15 @@ describe('le vrai câblage', () => {
     expect(page).toContain("'historique'");
     expect(page).toContain('surface="agent"');
     expect(page).toContain('agentId={ouvert.id}');
+  });
+
+  it('🔴 chaque origine que le serveur écrit a son libellé dans le panneau : une ligne de Claude ne se lit pas « depuis les onglets »', () => {
+    // `formulaire` est la branche par défaut du libellé ; toute autre origine doit être nommée, sinon elle s'afficherait
+    // comme un geste fait à la main (lot 8a, origine `mcp`).
+    const panneau = readFileSync(resolve(__dirname, '../web/components/HistoriquePanel.tsx'), 'utf8');
+    const type = /origine: ((?:'\w+'(?: \| )?)+);/.exec(panneau);
+    expect(type, 'le type de l’origine n’est plus là où ce test le cherche').not.toBeNull();
+    expect(type![1]!.split(' | ').map((o) => o.replace(/'/g, '')).sort()).toEqual([...ORIGINES].sort());
+    for (const o of ORIGINES.filter((x) => x !== 'formulaire')) expect(panneau, o).toContain(`l.origine === '${o}' ?`);
   });
 });

@@ -1,4 +1,4 @@
-import { outilsPourScopes, RefusOutil, type DepsMcp, type OutilMcp, type PersonneMcp } from './outils';
+import { outilsPour, RefusOutil, type DepsMcp, type OutilMcp, type PersonneMcp } from './outils';
 import { messageDe } from '../lib/erreur';
 
 /**
@@ -91,14 +91,16 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
     case 'ping':
       return ok(id, {});
     case 'tools/list':
-      // Un outil hors des scopes de la clé n'est même pas listé : la liste dit exactement ce que cette clé permet.
-      return ok(id, { tools: outilsPourScopes(ctx.scopes).map(descriptionOutil) });
+      // Un outil hors des scopes de la clé n'est même pas listé, ni un outil qui exige une personne derrière une clé :
+      // la liste dit exactement ce que cet appel permet.
+      return ok(id, { tools: outilsPour(ctx).map(descriptionOutil) });
     case 'tools/call': {
       const params = (m.params ?? {}) as { name?: unknown; arguments?: unknown };
       const nom = typeof params.name === 'string' ? params.name : '';
-      const outil = outilsPourScopes(ctx.scopes).find((o) => o.nom === nom);
+      const outil = outilsPour(ctx).find((o) => o.nom === nom);
       if (!outil) {
-        // Même message pour « n'existe pas » et « pas autorisé » : ne pas renseigner sur des capacités refusées.
+        // Même message pour « n'existe pas », « pas autorisé » et « exige une personne » : ne pas renseigner sur des
+        // capacités refusées.
         return ko(id, ERREUR.PARAMS_INVALIDES, `outil inconnu ou non autorisé par cette clé : ${nom || '(sans nom)'}`);
       }
       const args = (typeof params.arguments === 'object' && params.arguments !== null && !Array.isArray(params.arguments))

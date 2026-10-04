@@ -5,7 +5,7 @@ import {
   PAGES_MAX, dansLaPortee, liensDeLaPageHorsBoucle, normaliserUrl, porteeParDefaut, visiter, type PorteeImport,
 } from './crawl';
 import {
-  TAILLE_DOCUMENT_MAX, lireDocumentHorsBoucle, normaliser, texteEnFichesHorsBoucle, type NaturePieceJointe,
+  LECTURE_DOCUMENT, TAILLE_DOCUMENT_MAX, lireDocumentHorsBoucle, normaliser, texteEnFichesHorsBoucle, type NaturePieceJointe,
 } from './setup/piece-jointe';
 import { urlRecuperable, type PageDistante } from '../lib/page-distante';
 import { avecLecteur, type OptionsLecture } from '../lib/hors-boucle';
@@ -82,22 +82,28 @@ export const saisieDeTexteDocument = z.object({
 
 /** Plusieurs fiches tapées d'un coup : 50 au plus, un geste qu'on relit encore (outil `add_knowledge`). */
 export const MAX_FICHES_PAR_AJOUT = 50;
+/** La liste d'un ajout, lue avant ses fiches : son refus dit le nombre permis, celui d'une fiche ce qui lui manque. */
+export const saisieDeListeDeFiches = z.array(z.unknown()).min(1).max(MAX_FICHES_PAR_AJOUT);
 
 /**
  * Une suppression en masse, bornée : sans plafond, une liste arbitraire ferait une requête arbitrairement longue.
  * 200 couvre « je coche tout et je supprime », et le client peut recommencer.
  */
-export const saisieDeSuppression = z.object({ ids: z.array(z.string().trim()).min(1).max(200) });
+export const MAX_SUPPRESSIONS = 200;
+export const saisieDeSuppression = z.object({ ids: z.array(z.string().trim()).min(1).max(MAX_SUPPRESSIONS) });
 
-const PORTEE = z.enum(['page', 'sous-arbre', 'site']);
+/** Les portées d'un aperçu, et la longueur d'une adresse : exportées pour que l'outil MCP les annonce. */
+export const PORTEES = ['page', 'sous-arbre', 'site'] as const satisfies readonly PorteeImport[];
+export const MAX_URL_SITE = 2000;
+const PORTEE = z.enum(PORTEES);
 export const saisieDeSite = z.object({
-  url: z.string().trim().min(1).max(2000),
+  url: z.string().trim().min(1).max(MAX_URL_SITE),
   portee: PORTEE.optional(),
   /**
    * Les pages à importer, telles que l'aperçu les a rendues. Chacune est revalidée ici (garde SSRF, même origine
    * que `url`) : la liste vient du client. Absente, on importe la seule adresse fournie.
    */
-  pages: z.array(z.string().trim().min(1).max(2000)).max(PAGES_MAX).optional(),
+  pages: z.array(z.string().trim().min(1).max(MAX_URL_SITE)).max(PAGES_MAX).optional(),
 });
 
 /**
@@ -189,7 +195,7 @@ export async function ajouterFiches(
 ): Promise<Issue<FicheConnaissance[]>> {
   // Identifiant mal formé : 404, sinon Postgres lèverait sur la colonne `uuid` (donc un 500).
   if (!estUuid(agentId)) return refus(404, AGENT_INTROUVABLE);
-  const liste = z.array(z.unknown()).min(1).max(MAX_FICHES_PAR_AJOUT).safeParse(fiches);
+  const liste = saisieDeListeDeFiches.safeParse(fiches);
   if (!liste.success) return refus(400, `1 à ${MAX_FICHES_PAR_AJOUT} fiches par ajout`);
   const lues: FicheAEcrire[] = [];
   for (const brute of liste.data) {
@@ -299,8 +305,12 @@ export async function importerDocument(
 /**
  * Importe le TEXTE d'un document sous son nom (outil `import_document_text`) : traité exactement comme un fichier texte
  * déposé, même normalisation (`normaliser`, celle de `extraireTexte`), même découpage (`texteEnFichesHorsBoucle`,
- * hors de la boucle d'événements), même provenance `document` et même remplacement. Un CSV collé se découpe donc par
- * rangées, comme le même CSV déposé. `tests/agent-connaissance-texte.test.ts` compare les deux chemins.
+ * hors de la boucle d'événements, sous la même échéance que la lecture d'un fichier), même provenance `document` et
+ * même remplacement. Un CSV collé se découpe donc par rangées, comme le même CSV déposé.
+ * `tests/agent-connaissance-texte.test.ts` compare les deux chemins.
+ * 🔴 Un caractère nul se refuse, comme le chemin fichier refuse un fichier qui en porte (`reconnaitre` : du binaire,
+ * pas du texte) : Postgres le refuse dans un `text`, et l'écriture lèverait (500 pour la console, erreur interne pour
+ * l'outil) au lieu d'un refus que le modèle peut lire et corriger.
  */
 export async function importerTexteDocument(
   deps: DepsConnaissance, tenantId: string, agentId: string, corps: unknown,
@@ -308,8 +318,11 @@ export async function importerTexteDocument(
   if (!estUuid(agentId)) return refus(404, AGENT_INTROUVABLE);
   const lu = saisieDeTexteDocument.safeParse(corps ?? {});
   if (!lu.success) return refus(400, 'nom et texte requis');
+  if (lu.data.texte.includes('\u0000')) {
+    return refus(400, 'texte illisible : il contient un caractère nul, la marque d’un fichier binaire. Envoyez le texte extrait du document, pas le fichier.');
+  }
   if (Buffer.byteLength(lu.data.texte, 'utf8') > TAILLE_DOCUMENT_MAX) return refus(413, DOCUMENT_TROP_LOURD);
-  const fiches = await texteEnFichesHorsBoucle(normaliser(lu.data.texte), lu.data.nom, 'texte');
+  const fiches = await texteEnFichesHorsBoucle(normaliser(lu.data.texte), lu.data.nom, 'texte', LECTURE_DOCUMENT);
   return ecrireDocument(deps, tenantId, agentId, lu.data.nom, 'texte', fiches, 'ce texte est trop court pour faire une fiche');
 }
 

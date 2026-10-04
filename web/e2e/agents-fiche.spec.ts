@@ -224,3 +224,49 @@ test.describe('Agents IA : la fiche', () => {
     await expect.poll(() => patches.some((p) => p.maxTours === 12), { timeout: 5000 }).toBe(true);
   });
 });
+
+test.describe('Agents IA : la modification qui rendrait un agent actif incomplet', () => {
+  test('🔴 le refus dit sa phrase, et l’en-tête relit les VRAIS manques de l’agent', async ({ page }) => {
+    /**
+     * Depuis le lot 8a, le serveur refuse en 422 la modification de la fiche d'un agent ACTIF qui le rendrait
+     * incomplet, avec les seuls manques que la modification INTRODUIRAIT. L'écran les posait dans l'en-tête comme
+     * ceux d'une activation, sans la phrase : le champ gardait la saisie refusée (on croyait l'avoir enregistrée), et
+     * le compte d'étapes perdait les autres manques de l'agent jusqu'au rechargement.
+     */
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    const REFUS = 'agent actif : cette modification le rendrait incomplet. Complétez-la, ou désactivez l’agent avant de le remanier.';
+    const actif = {
+      ...AGENT, status: 'active',
+      contenu: { ...FICHE_VIDE, objectif: 'Conseiller les séjours.', reglesTransfert: 'Dès qu’on parle de remboursement.', sorties: [{ code: 'fini', label: 'Fini' }] },
+    };
+    const lectures: string[] = [];
+    await page.route('**/api/backend/**', async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      // Les vrais manques de l'agent : sa connaissance a été vidée après son activation.
+      if (/\/manques$/.test(url)) {
+        lectures.push(url);
+        return json({ manques: [{ onglet: 'connaissance', message: 'La base de connaissance est vide : l’agent transférerait toutes les questions de fond.' }], avertissements: [] });
+      }
+      if (req.method() === 'PATCH' && /\/agents\/ag1$/.test(url)) {
+        return json({ error: REFUS, manques: [{ onglet: 'objectif', message: 'L’objectif de l’agent est vide.' }] }, 422);
+      }
+      if (/\/agents\/ag1$/.test(url)) return json({ agent: actif });
+      if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: 'ag1', label: actif.label, status: 'active', sorties: actif.contenu.sorties, modele: 'anthropic/claude-haiku-4.5' }] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/agents?id=ag1&tab=objectif');
+    await expect(page.getByTestId('entete-etape-connaissance')).toBeVisible();
+    const avant = lectures.length;
+
+    await page.getByTestId('agent-objectif').fill('');
+    await page.getByTestId('agent-transferts').click(); // sortie du champ : l'enregistrement part
+    await expect(page.getByTestId('agent-erreur')).toContainText('agent actif : cette modification le rendrait incomplet');
+    await expect.poll(() => lectures.length, { timeout: 5000 }).toBeGreaterThan(avant);
+    // L'en-tête dit ce qui manque VRAIMENT à l'agent, pas le seul manque que la modification aurait introduit.
+    await expect(page.getByTestId('entete-etape-connaissance')).toBeVisible();
+    await expect(page.getByTestId('entete-etape-objectif')).toHaveCount(0);
+  });
+});

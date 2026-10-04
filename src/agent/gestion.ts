@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AgentComplet, PatchAgent, StatutAgent } from './agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from './agent-store';
 import { fichePatchSchema, type FicheAgentContenu } from './fiche';
-import { manquesAvantActivation, type EtatPourLint } from './setup/lint';
+import { avertissements, manquesAvantActivation, type EtatPourLint, type ManqueFiche } from './setup/lint';
 import { CreditInsuffisantPourCle, PLAFOND_GATEWAY_MIN_DOLLARS } from './provisionner-cle';
 import { IDS_MODELES_CHOISIS } from './modeles';
 import { estUuid, nonEmpty } from '../http/scope';
@@ -37,7 +37,9 @@ const MENTION_IA_DEFAUT = 'Vous échangez avec un assistant automatique.';
  *
  * Exportés pour UNE raison : les outils MCP annoncent chaque borne qu'ils appliquent, et la lisent ici.
  */
-const LABEL = z.string().trim().min(1).max(120);
+/** La longueur d'un libellé d'agent, à la création comme à la modification. */
+export const MAX_LABEL_AGENT = 120;
+const LABEL = z.string().trim().min(1).max(MAX_LABEL_AGENT);
 export const saisieDeModification = z.object({
   label: LABEL.optional(),
   status: z.enum(['draft', 'active', 'disabled']).optional(),
@@ -177,6 +179,22 @@ export async function modifierAgent(
   if (!agent) return refus(404, AGENT_INTROUVABLE);
   await journaliserFiche(deps, tenantId, courant, agent, patch, auteur);
   return { ok: true, valeur: agent };
+}
+
+/**
+ * Ce qui manque à un agent avant activation, et ce qu'on avertit sans bloquer, en lecture : la route `/manques` de la
+ * console et les outils MCP `list_agents` et `get_agent`. Les mêmes fonctions que la garde d'activation, jamais une
+ * seconde liste. `etat` part avec, pour qui en lit aussi le compte de fiches. `null` : agent inconnu dans cet espace.
+ */
+export async function manquesDeLAgent(
+  deps: Pick<DepsGestionAgents, 'etatPourLint'>, tenantId: string, agentId: string,
+): Promise<{ manques: ManqueFiche[]; avertissements: ManqueFiche[]; etat: EtatPourLint } | null> {
+  if (!estUuid(agentId)) return null;
+  const etat = await deps.etatPourLint(tenantId, agentId);
+  if (!etat) return null;
+  // Deux listes : les manques bloquent l'activation, les avertissements non (les fondre donnerait à un serveur tiers
+  // un droit de veto sur l'activation d'un agent).
+  return { manques: manquesAvantActivation(etat), avertissements: avertissements(etat), etat };
 }
 
 /** Activer ou désactiver : une modification du seul statut, donc les mêmes contrôles et la même ligne d'historique. */

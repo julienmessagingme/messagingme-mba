@@ -4,13 +4,13 @@ import { sha256Hex } from '../src/lib/signature';
 import { nouveauJeton, PREFIXE_ACCES } from '../src/oauth/jetons';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { AccesOauth, AccesOauthLookup } from '../src/oauth/store.pg';
-import type { DepsMcp } from '../src/mcp/outils';
+import type { CablageMcp } from '../src/mcp/outils';
 import type { AuteurDuChangement } from '../src/inbox/evenements';
 import { FakeQueue } from './fake-queue';
 import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 
 /**
  * `/mcp` ET L'OAUTH (tâche 5 du plan `2026-10-03-oauth-mcp.md`).
@@ -51,7 +51,7 @@ interface Traces {
 
 function monter(o: { publicApiUrl?: string; apiParMinute?: number } = {}) {
   const traces: Traces = { envois: [], assignations: [] };
-  const mcp: DepsMcp = {
+  const mcp: CablageMcp = {
     estDesabonne: jamaisDesabonne,
     inbox: {
       ...mcpInerte,
@@ -74,6 +74,7 @@ function monter(o: { publicApiUrl?: string; apiParMinute?: number } = {}) {
     },
     listerMembres: async () => [],
     ...mcpWidgetsInertes,
+    ...mcpAgentInerte,
   };
   const server = buildServer({
     queue: new FakeQueue(),

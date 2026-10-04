@@ -8,11 +8,11 @@ import type { AccesOauth, CodeConsomme, NouveauxJetons, NouvelleAutorisation, Au
 import type { OauthRouteDeps } from '../src/http/oauth';
 import type { OauthConsentementRouteDeps } from '../src/http/oauth-consentement';
 import type { GoogleIdentity } from '../src/auth/google';
-import type { DepsMcp } from '../src/mcp/outils';
+import type { CablageMcp } from '../src/mcp/outils';
 import { FakeQueue } from './fake-queue';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 
 /**
  * LES ROUTES OAUTH DEVANT `/mcp` (tâche 6 du plan `2026-10-03-oauth-mcp.md`), sur le serveur construit.
@@ -168,7 +168,7 @@ function monter(o: { publicApiUrl?: string } = {}) {
     appUrl: `${APP}/`,
     audit: async (tenant, acteur, action, cible, detail = {}) => { audits.push({ tenant, acteur: acteur.userId, action, cible: cible.id, detail }); },
   };
-  const mcp: DepsMcp = {
+  const mcp: CablageMcp = {
     estDesabonne: jamaisDesabonne,
     inbox: {
       ...mcpInerte,
@@ -188,6 +188,7 @@ function monter(o: { publicApiUrl?: string } = {}) {
     },
     listerMembres: async () => [],
     ...mcpWidgetsInertes,
+    ...mcpAgentInerte,
   };
   const server = buildServer({
     queue: new FakeQueue(),

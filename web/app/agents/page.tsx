@@ -299,8 +299,17 @@ function Ecran({ tenantId }: { tenantId: string }) {
       // 422 sur une activation : l'agent est incomplet. On montre la LISTE, pas « agent incomplet », qui
       // serait un refus sans mode d'emploi.
       const liste = err instanceof ApiError && err.status === 422 ? manquesDe(err.corps) : [];
-      if (liste.length > 0) setManques(liste);
-      else setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Unable to save'));
+      if (liste.length > 0 && patch.status === 'active') setManques(liste);
+      else {
+        /**
+         * 🔴 Un 422 qui n'est PAS une activation (lot 8a) : la modification de la fiche d'un agent ACTIF qui le rendrait
+         * incomplet. Sa liste ne porte que les manques que la modification INTRODUIRAIT : la poser dans l'en-tête
+         * effacerait les autres et fausserait le compte d'étapes. On dit la phrase du serveur (le champ garde la saisie
+         * refusée, et sans elle on croirait l'avoir enregistrée), et on relit les vrais manques de l'agent.
+         */
+        setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Unable to save'));
+        if (liste.length > 0) void rafraichirManques(ouvert.id);
+      }
     } finally {
       setBusy(false);
     }

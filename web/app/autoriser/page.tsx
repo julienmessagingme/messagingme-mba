@@ -235,8 +235,10 @@ function EtatFinal({ titre, testId, children }: { titre: string; testId: string;
 
 /**
  * Ce que Claude pourra lire et faire, droit par droit, et la phrase sur Anthropic. Les listes suivent les outils du
- * serveur MCP (`lib/mcp-outils.ts`) : lire les conversations, les contacts, les widgets, les scénarios et les membres ;
- * répondre dans la fenêtre de 24 h, poser des étiquettes, confier une conversation, créer et modifier des widgets.
+ * serveur MCP (`lib/mcp-outils.ts`) : lire les conversations, les contacts, les widgets, les scénarios, les membres, les
+ * agents IA, leur connaissance et le crédit IA ; répondre dans la fenêtre de 24 h, poser des étiquettes, confier une
+ * conversation, créer et modifier des widgets, construire, essayer et activer des agents IA, ouvrir une recharge.
+ * 🔴 Le consentement dit l'argent (lot 8a) : un essai d'agent est débité du crédit, et une recharge ouvre un paiement.
  */
 function Capacites({ client, droits }: { client: string; droits: string[] }) {
   const t = useT();
@@ -247,8 +249,8 @@ function Capacites({ client, droits }: { client: string; droits: string[] }) {
         <p>
           <span className="font-medium">{t(`${client} pourra lire`, `${client} will be able to read`)}</span>{' '}
           {t(
-            'vos conversations, vos contacts, vos widgets WhatsApp, vos scénarios et les membres de votre équipe.',
-            'your conversations, contacts, WhatsApp widgets, scenarios and team members.',
+            'vos conversations, vos contacts, vos widgets WhatsApp, vos scénarios, les membres de votre équipe, vos agents IA et leur connaissance, et le solde du crédit IA.',
+            'your conversations, contacts, WhatsApp widgets, scenarios, team members, AI agents and their knowledge, and the AI credit balance.',
           )}
         </p>
       )}
@@ -256,8 +258,8 @@ function Capacites({ client, droits }: { client: string; droits: string[] }) {
         <p>
           <span className="font-medium">{t(`${client} pourra`, `${client} will be able to`)}</span>{' '}
           {t(
-            'répondre dans une conversation ouverte (fenêtre de 24 h), poser des étiquettes, confier une conversation à un membre, créer et modifier vos widgets WhatsApp.',
-            'reply in an open conversation (24 h window), add tags, assign a conversation to a member, create and edit your WhatsApp widgets.',
+            'répondre dans une conversation ouverte (fenêtre de 24 h), poser des étiquettes, confier une conversation à un membre, créer et modifier vos widgets WhatsApp, créer, régler, essayer et activer vos agents IA (chaque essai est débité du crédit IA), ajouter, importer ou supprimer leur connaissance, et ouvrir le paiement d’une recharge, que vous réglez vous-même.',
+            'reply in an open conversation (24 h window), add tags, assign a conversation to a member, create and edit your WhatsApp widgets, create, configure, try and activate your AI agents (each try is charged to the AI credit), and open a top-up payment, which you complete yourself.',
           )}
         </p>
       )}

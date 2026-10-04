@@ -89,6 +89,12 @@ export class PlafondPartage {
   }
 }
 
+/**
+ * Le refus du plafond des opérations coûteuses d'un espace, le même par ses deux portes : la route de la console
+ * (`makeLimiteParTenant`, `src/server.ts`) et l'outil MCP qui le consomme (`src/mcp/outils-agent.ts`).
+ */
+export const MESSAGE_OPERATIONS_LOURDES = 'trop d’opérations lourdes sur cet espace, patientez une minute';
+
 /** Le refus d'un plafond qui n'a pas pu compter (`siLaBaseEchoue: 'refuser'`) : il ne dit pas « trop de tentatives ». */
 export const MESSAGE_PLAFOND_INDISPONIBLE = 'vérification momentanément impossible, réessaie dans un instant';
 

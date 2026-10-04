@@ -45,15 +45,18 @@ export interface DepsEssai {
   debiter(tenantId: string, montantMicroEur: number, note: string): Promise<void>;
 }
 
-const messageSchema = z.object({
-  role: z.enum(['user', 'assistant']),
-  content: z.string().trim().min(1).max(4000),
-});
 /**
- * Un essai n'est pas une conversation de production : on le borne plus court, il n'a pas à durer. Exporté pour UNE
- * raison : l'outil MCP annonce chaque borne qu'il applique, et la lit ici.
+ * Un essai n'est pas une conversation de production : on le borne plus court, il n'a pas à durer. Bornes et saisie
+ * exportées pour UNE raison : l'outil MCP annonce chaque borne qu'il applique, et la lit ici.
  */
-export const saisieDEssai = z.object({ messages: z.array(messageSchema).min(1).max(30) });
+export const MAX_MESSAGES_ESSAI = 30;
+export const MAX_CARACTERES_MESSAGE_ESSAI = 4000;
+export const ROLES_ESSAI = ['user', 'assistant'] as const;
+const messageSchema = z.object({
+  role: z.enum(ROLES_ESSAI),
+  content: z.string().trim().min(1).max(MAX_CARACTERES_MESSAGE_ESSAI),
+});
+export const saisieDEssai = z.object({ messages: z.array(messageSchema).min(1).max(MAX_MESSAGES_ESSAI) });
 
 /** Budget de temps d'un essai. Plus large qu'un tour de production (30 s) : ici un humain attend devant son
  *  écran et préfère une réponse lente à un échec, alors qu'en production un contact attend sur WhatsApp. */

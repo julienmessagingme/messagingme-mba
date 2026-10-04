@@ -1,5 +1,7 @@
 import type { PreHandler } from '../src/auth/middleware';
 import type { Gardes } from '../src/server';
+import { PlafondPartage } from '../src/auth/plafond-partage';
+import { CompteurDebitMemoire } from '../src/db/debit.memoire';
 
 /**
  * LA GARDE QUI LAISSE PASSER, ET ELLE A UN NOM (lot 2 du plan 2026-09-14).
@@ -16,10 +18,17 @@ import type { Gardes } from '../src/server';
  */
 export const gardeOuverte: PreHandler = async () => {};
 
-/** Les quatre gardes d'un `buildServer`, toutes ouvertes. Pour les tests qui montent un module à la main. */
+/** Le plafond des opérations coûteuses, COUPÉ (`max` à 0) : il laisse tout passer, et le dit par son nom. */
+export const plafondCoupe = new PlafondPartage(new CompteurDebitMemoire(), {
+  nom: 'couteux', max: 0, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer',
+});
+
+/** Les quatre gardes d'un `buildServer`, toutes ouvertes, et son plafond coûteux coupé. Pour les tests qui montent un
+ *  module à la main. */
 export const gardesOuvertes: Gardes = {
   auth: gardeOuverte,
   admin: gardeOuverte,
   encadrement: gardeOuverte,
   ops: gardeOuverte,
+  plafondCouteux: plafondCoupe,
 };
