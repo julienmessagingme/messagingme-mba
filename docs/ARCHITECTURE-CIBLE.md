@@ -390,6 +390,11 @@ pool, un heartbeat et une surface d'exploitation sans rien régler de mesuré.
 
 ## 6. Les fichiers sortent de Postgres : décidé par Julien le 2026-09-21
 
+📅 **Quand : APRÈS la bascule Scaleway, en lot séparé** (décidé par Julien le 2026-10-04). Les médias RCS partent
+donc dans le dump du jour J, ce qui ne coûte rien à notre taille (10 Mo pour 28 images, mesuré le 2026-10-04), et leur
+volume est suivi dans `/ops` (carte « Stockage en base », rouge au-delà de 500 Mo de fichiers) : c'est elle qui dira
+si le lot doit être avancé.
+
 « Avoir une base à part pour les fichiers RCS et MBA, ça nettoie l'architecture de la base Postgres. »
 
 **« À part » veut dire l'Object Storage, pas une seconde base PostgreSQL.** Une seconde base garderait tous
@@ -552,6 +557,25 @@ Cloudflare de demain.
 
 ## 8. Le connecteur HubSpot : sa propre base, et il dort quand personne ne s'en sert
 
+🔴 **Décidé par Julien le 2026-10-04 : le connecteur part sur sa propre base CHEZ SCALEWAY, EN PREMIER, comme
+RÉPÉTITION, quelques jours avant le jour J d'Engage Me (§10, étape 0).** Trois raisons :
+- c'est petit (un seul portail branché) et moins critique : on répète chez Scaleway les gestes du jour J (base
+  managée, réseau privé, endpoint privé, migrations, restauration, chaînes de connexion) sur un produit qui peut se
+  permettre un raté ;
+- ses connexions sortent du budget de la base principale AVANT qu'on refasse le calcul du §7.5 avec le vrai chiffre ;
+- 🔴 **jamais le même jour que la bascule de la base principale** (audit du 2026-10-02) : deux déménagements à la
+  fois, un incident devient impossible à attribuer et à annuler.
+
+⚠️ **Le préalable bloquant de cette étape** : `mba` lit le schéma `mmhs` en cross-schéma, en un seul point
+(`getHubspotPortal`, `src/account/store.pg.ts`, le portail lié à un espace) qui a deux consommateurs : l'écran du
+compte et l'interrupteur HubSpot des réglages (`hubspotPortalConnecte`, `src/index.ts`). 🔴 Ce second-là traduit
+`42P01` (schéma absent) en « aucun portail relié » : une fois `mmhs` sur une autre base, il affirmerait EN SILENCE
+qu'aucun espace n'a de portail, et laisserait éteindre HubSpot par-dessus un portail relié. Ce point doit donc
+passer par un appel au connecteur AVANT la répétition, en lot à part.
+
+Ce qui suit est le raisonnement d'origine, toujours juste sur le fond ; seule sa conclusion « c'est la présence de
+clients réels qui déclenche » est remplacée par la décision ci-dessus.
+
 **Le constat de Julien** : un client qui n'a pas HubSpot subit quand même les connexions du connecteur.
 C'est exact. Mesuré le 2026-09-15 : **un seul portail branché**, le portail cobaye, pour 4 connexions de
 session retenues (2 processus x 2).
@@ -573,7 +597,7 @@ serveur managé.
 ⚠️ **LA QUESTION N'EST DONC PAS TECHNIQUE, ELLE EST COMMERCIALE.** Tant que le connecteur est une démo à un
 portail, lui payer une machine pour libérer quelques connexions serait absurde ; on baisse sa consommation,
 c'est une variable d'environnement. Le jour où il porte de vrais clients, il prend sa machine et le couplage
-disparaît pour toujours. **C'est la présence de clients réels qui déclenche, pas la bascule Scaleway.**
+disparaît pour toujours. ~~C'est la présence de clients réels qui déclenche, pas la bascule Scaleway.~~ Remplacé par la décision du 2026-10-04, en tête de ce paragraphe.
 
 ⚠️ Vérifier avant, dans les deux cas : `mba` lit `mmhs` en cross-schéma aujourd'hui (voir `CLAUDE.md`), il
 faut savoir OÙ et remplacer ces lectures par un appel.
@@ -625,16 +649,22 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 2. **pgvector existe chez la destination.** Seule extension non universelle dont ce produit dépend
    (`agent_knowledge.embedding`, fiches d'aide). `pg_trgm` et `unaccent` sont des contribs standard.
    `pgcrypto` ne sert qu'à `gen_random_uuid()`, natif depuis PostgreSQL 13.
-3. On sait où `mba` lit le schéma `mmhs` en cross-schéma (§8a).
-4. Les fichiers sont déjà dans l'Object Storage, ou le seront dans la même fenêtre (§6).
+3. **Le connecteur HubSpot tourne déjà chez Scaleway, sur sa propre base** (étape 0 ci-dessous), et `mba` ne lit plus
+   `mmhs` en cross-schéma (§8).
+4. **Les fichiers RCS restent en base pour la bascule** (décidé le 2026-10-04) : ils partent dans le dump et sortent
+   vers l'Object Storage APRÈS, en lot séparé (§6).
 
 **La séquence :**
 
+0. **Quelques jours avant, la répétition : le connecteur HubSpot** sur sa propre base Scaleway (§8). Les mêmes gestes
+   qu'aux étapes 1, 2, 4, 5 et 8, sur ce seul produit ; puis vérifier dans `pg_stat_activity` de la base Engage Me
+   qu'il n'y ouvre plus aucune session, et qu'une synchronisation réelle passe dans les deux sens. Ce qui a coincé
+   s'écrit ici avant le jour J.
 1. Créer le projet, le réseau privé et tous les composants dans **une seule région, PAR**.
 2. Créer la base managée, relever son nombre de connexions, **créer l'endpoint privé**, et refaire le calcul
    du §7.5 avec le vrai chiffre : mesurer (la sonde), puis mettre à jour les constantes de
    `tests/budget-pooler.test.ts` et les tailles de chaque service.
-3. Créer l'Object Storage privé et ses règles d'expiration.
+3. ~~Créer l'Object Storage privé~~ : reporté au lot des fichiers, APRÈS la bascule (§6).
 4. `npm run migrate` sur la base neuve. Vérifier `schema_migrations` et la présence de `french_sans_accent`.
 5. **Fenêtre de maintenance**, puis `pg_dump` / `pg_restore` des données.
    🔴 **À notre taille (30 Mo), quelques minutes de fenêtre suffisent, et c'est un luxe qu'on perd en
@@ -654,7 +684,7 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 10. Garder `mba.messagingme.app` : `/api/backend/webhooks/meta` vers la nouvelle API (préfixe retiré), les
     anciens `/r/`, `/m/` et `/mcp` vers la nouvelle API, le reste du site vers `engageme.messagingme.app`
     (l'ancien conteneur `mba-web` disparaît).
-11. Le connecteur HubSpot part sur sa propre base (§8a), si des clients réels le justifient à cette date.
+11. ~~Le connecteur HubSpot~~ : déjà parti, à l'étape 0 (§8).
 12. Dérouler les **tests d'acceptation du §11**.
 13. **Ne couper OVH qu'après une période d'observation et un retour arrière ÉPROUVÉ**, pas seulement écrit.
 
@@ -744,8 +774,14 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 
 Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 
-1. **Les quotas par espace de l'API publique** (contacts écrits, destinataires créés, appels MCP, période de
-   calcul). Aujourd'hui le quota par espace est OBSERVÉ et jamais appliqué (`plafondUnitesParEspace = 0`).
+1. **Les quotas par espace de l'API publique** : tranché par Julien le 2026-10-04, **à implémenter**. Par espace et
+   par jour (remise à zéro à minuit, heure de Paris) : **2 000 envois** (destinataires de `/v1/sends` et messages
+   libres WhatsApp ou RCS) et **20 000 fiches écrites** (`/v1/contacts`, une par fiche d'un lot). Réglables par espace
+   depuis `/ops`, pour relever un client qui en a besoin ; refus lisible en 429 au-delà. Les lectures, les catalogues
+   et le MCP restent sous le plafond d'appels existant (60 par minute, 1 000 par heure). Les campagnes lancées depuis
+   la console ne comptent pas. Compteur en panne : l'appel passe, comme aujourd'hui, avec une alerte. Repères
+   mesurés le jour de la décision : nos numéros sont au palier Meta de 250 personnes par jour ou sans palier connu,
+   l'API sert 6 appels en deux heures, et sans quota une boucle pouvait viser 50 000 destinataires par heure.
 2. **La durée de conservation des médias RCS**, et la purge qui va avec.
 3. **La durée des URL signées RCS**, qui doit couvrir un téléchargement tardif par l'opérateur.
 4. **Quand** les deux workers : tranché, déployés le 2026-10-03 (§5).

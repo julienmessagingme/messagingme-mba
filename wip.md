@@ -271,10 +271,16 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
    appliquée avant le `up`, CI verte job par job, e2e complet vert). Essai réel fait : `mba-worker-analyse` arrêté à
    16 h 53, alerte Telegram à 16 h 56 min 37 s, retour à 16 h 57 min 40 s, les deux acceptés par Telegram (verrous lus
    en base). Ce qui reste est dans `todo.md`.
-5. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
-6. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant ». Leur volume est désormais
-   mesuré (`/ops`, rouge au-delà de 500 Mo de fichiers).
-7. Décision de Julien : les quotas par espace de l'API publique (à partir de `/ops/usage`).
+5. **mm-hubspot sur sa propre base : décidé par Julien le 2026-10-04, CHEZ SCALEWAY, EN PREMIER**, comme répétition
+   quelques jours avant le jour J d'Engage Me, jamais le même jour (`docs/ARCHITECTURE-CIBLE.md` §8 et §10 étape 0).
+   Préalable, en lot à part : remplacer la lecture cross-schéma de `mmhs` (`getHubspotPortal`) par un appel au
+   connecteur ; sans lui, l'interrupteur HubSpot affirmerait en silence qu'aucun portail n'est relié.
+6. **Les médias RCS hors de Postgres : APRÈS la bascule Scaleway**, en lot séparé (décidé le 2026-10-04, §6). Leur
+   volume est suivi dans `/ops` (10 Mo aujourd'hui, rouge à 500 Mo).
+7. **Les quotas par espace de l'API publique : tranchés par Julien le 2026-10-04, à implémenter.** Par espace et par
+   jour (minuit, heure de Paris) : 2 000 envois et 20 000 fiches écrites par l'API, réglables par espace depuis
+   `/ops`, refus 429 lisible ; lectures et MCP sous le plafond d'appels ; compteur en panne, l'appel passe avec une
+   alerte (§13.1).
 Le reste de l'audit (équité des campagnes, agrégats, Redis, temps réel, troisième worker) attend un seuil mesuré.
 
 ## L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)
