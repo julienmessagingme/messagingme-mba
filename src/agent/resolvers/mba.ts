@@ -63,6 +63,19 @@ function echec(raison: string): SortieResolveur {
 type Handler = (entree: EntreeResolveur, deps: DepsResolveurMba) => Promise<SortieResolveur>;
 
 /**
+ * Terminer par une sortie prédéfinie : le tronc commun remonte `sortie`, le tour clôt la session et le scénario
+ * reprend par ce handle. Le code est une énumération fermée déclarée par le client. Le `message` (imposé par le
+ * catalogue) remonte en `dernierMessage`, absent s'il est vide. Sans effet de bord : le bac à sable l'exécute
+ * tel quel (`resolvers/simulation.ts`), un terminer simulé qui jugerait autrement ne prouverait rien.
+ */
+export function terminerAvec(args: Record<string, unknown>): SortieResolveur {
+  const sortie = texte(args, 'sortie');
+  if (sortie === '') return echec('parametre « sortie » manquant');
+  const dernierMessage = texte(args, 'message');
+  return { contenu: { sortie }, sortie, ...(dernierMessage !== '' ? { dernierMessage } : {}) };
+}
+
+/**
  * La dernière analyse et son résumé, tels que le modèle les lit (`derniere_analyse`, `resume`). Les codes restent ceux
  * de l'analyse ; une note `null` dit « pas de mesure ». Rien à rendre sans copie : l'agent ne déduit rien d'un vide.
  */
@@ -91,13 +104,7 @@ async function analyseOuIndisponible(deps: DepsResolveurMba, ctx: { tenantId: st
 }
 
 const HANDLERS: Record<string, Handler> = {
-  /** Terminer par une sortie prédéfinie. Le tronc commun remonte `sortie`, le tour clôt la session et le
-   *  scénario reprend par ce handle. Le code de sortie est une énumération fermée déclarée par le client. */
-  terminer: async ({ args }) => {
-    const sortie = texte(args, 'sortie');
-    if (sortie === '') return echec('parametre « sortie » manquant');
-    return { contenu: { sortie }, sortie };
-  },
+  terminer: async ({ args }) => terminerAvec(args),
 
   /**
    * Escalader vers un humain. `rendu` dit au tour de s'arrêter ; `mainPrise` dit si c'est cette escalade qui a

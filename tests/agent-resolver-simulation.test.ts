@@ -71,6 +71,18 @@ describe('résolveur de simulation', () => {
     expect(r.sortie).toBe('rdv_pris');
   });
 
+  it('🔴 terminer rend son dernier message ROGNÉ, comme en production, et rien pour un message blanc', async () => {
+    // C'est ce que le bac à sable montre et archive : un terminer simulé qui le perdrait ferait croire au
+    // client que son agent sort en silence.
+    const resolveur = creerResolveurSimulation({ connaissance: store([]) });
+    expect(await resolveur(entree('terminer', { sortie: 'rdv_pris', message: ' Rendez-vous noté, à jeudi. ' })))
+      .toEqual({ contenu: { sortie: 'rdv_pris' }, sortie: 'rdv_pris', dernierMessage: 'Rendez-vous noté, à jeudi.' });
+    for (const vide of [{}, { message: '' }, { message: '   ' }]) {
+      expect(await resolveur(entree('terminer', { sortie: 'rdv_pris', ...vide })), JSON.stringify(vide))
+        .not.toHaveProperty('dernierMessage');
+    }
+  });
+
   it('lire le contact rend « inconnu », et c’est la VÉRITÉ du bac à sable', async () => {
     const r = await creerResolveurSimulation({ connaissance: store([]) })(entree('lire_contact'));
     expect(r.contenu).toEqual({ connu: false });

@@ -5,7 +5,10 @@ import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
 import { ficheVide } from '../src/agent/fiche';
 import { essayerAgent, type DepsEssai } from '../src/agent/essai';
 import type { EssaiAEcrire } from '../src/agent/test-runs';
-import { GESTE_MUET } from './gestes';
+import type { OutilDefini } from '../src/agent/catalog';
+import { outilMaison, paramsInitiaux } from '../src/agent/outils-maison';
+import { SANS_MCP } from './outils-mcp';
+import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 
 /**
  * L'ESSAI, HORS DE LA ROUTE (lot 8a) : ce que l'outil MCP `test_agent` recevra. La route est tenue par
@@ -77,5 +80,26 @@ describe('essayerAgent', () => {
     const m = monter(1_000_000);
     const messages = Array.from({ length: 31 }, () => ({ role: 'user', content: 'x' }));
     expect(await essayerAgent(m.deps, 't1', AG, { messages }, 'mcp')).toMatchObject({ ok: false, statut: 400 });
+  });
+
+  it('🔴 un « terminer » sans texte à côté : l’essai MONTRE et ARCHIVE son dernier message', async () => {
+    // Le bac à sable est l'endroit où le client voit comment son agent sort. Il lit le texte de la décision : le
+    // dernier message porté par `terminer` y arrive par le même chemin qu'en production, simulation comprise.
+    const m = monter(1_000_000);
+    const terminer: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
+      id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_terminer', description: 'Termine.',
+      params: paramsInitiaux(outilMaison('terminer')!), binding: { handler: 'terminer' }, sourceId: null, requestId: null,
+      nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'read', timeoutMs: 8000, maxBytes: 16384, autonome: false,
+    };
+    const cerveau = m.deps.cerveau!;
+    cerveau.contexte = async () => ({ ...AGENT, outilsActifs: [terminer] });
+    cerveau.outils.catalogue = { byName: async (_t, _a, n) => (n === terminer.name ? terminer : null), listActifs: async () => [terminer] };
+    cerveau.client.completer = async () => ({
+      ...REPONSE, texte: null, finish: 'tool_calls',
+      appelsOutils: [{ id: 'c1', nom: 'mba_terminer', argumentsJson: '{"sortie":"fini","message":"Merci, à très vite."}' }],
+    });
+    const r = await essayerAgent(m.deps, 't1', AG, { messages: [{ role: 'user', content: 'Je veux un devis' }] }, 'formulaire');
+    expect(r).toMatchObject({ ok: true, valeur: { texte: 'Merci, à très vite.', sortie: 'fini' } });
+    expect(m.cap.essais[0]).toMatchObject({ reponse: 'Merci, à très vite.', sortie: 'fini' });
   });
 });

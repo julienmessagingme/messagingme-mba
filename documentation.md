@@ -679,6 +679,27 @@ sont injectés par le runtime à l'appel. C'est la garde anti-IDOR du lot : un p
 être influencé par ce qu’un contact raconte. `reporterClouage` rejoue ces choix à chaque rafraîchissement,
 par `cheminMcp` : sans lui, un changement de schéma rouvrirait la garde en silence.
 
+🔴 **UN PARAMÈTRE IMPOSÉ PAR LE CATALOGUE N'EST JAMAIS STOCKÉ, ET L'EXPOSITION COMME LA VALIDATION LE LISENT.**
+`agent_tools.params` garde la copie des paramètres écrite à la pose d'un outil maison (`paramsInitiaux`) : un
+paramètre ajouté au catalogue n'atteindrait aucun outil déjà posé. `OutilCatalogue.paramsImposes`
+(`src/agent/outils-maison.ts`) porte ceux qui valent pour tous, et `paramsEffectifs` (la copie, plus les imposés
+qu'elle ne déclare pas, pour un outil maison seulement) est la lecture de l'exposition au modèle (`outilExpose`)
+ET de la validation des arguments (`executeTool`, étape 3) : lu d'un seul côté, un argument annoncé serait retiré
+par `z.object`, sans erreur. Ni `paramsInitiaux` ni le catalogue rendu à la console ne les portent ; le schéma « ce
+que le modèle voit » de l'onglet Outils les montre. Un imposé est ANNONCÉ requis et TOLÉRÉ absent, `null` ou
+vide : l'obligation fait poser la question à un modèle de raisonnement, et un appel refusé pour l'avoir oublié
+ferait boucler l'agent jusqu'au plafond. Les outils de l'agent de Meta, les connecteurs et les outils MCP n'en
+reçoivent aucun (`handlerMaison`), et leurs lecteurs (relais, publication, résolveur MCP) gardent `paramsOutil`.
+
+🔴 **UNE SORTIE PART AVEC SON DERNIER MESSAGE.** `terminer` porte l'imposé `message` : certains modèles appellent
+l'outil qui termine sans écrire de texte à côté, et le tour s'arrête sur l'appel. Le résolveur (le même en
+production et au bac à sable, `terminerAvec`, `src/agent/resolvers/mba.ts`) le rend rogné en `dernierMessage`,
+absent s'il est vide. Le cerveau (`texteDeSortie`, `src/agent/brain.gateway.ts`) envoie le texte de la réponse qui
+porte l'appel s'il n'est pas vide, sinon ce message, sinon rien ; un message qui porte nos délimiteurs est écarté
+et alerté, la sortie reste. `run-turn` l'envoie avant de faire sortir le parcours, comme tout texte de décision,
+et le bac à sable le montre et l'archive. ⚠️ Le texte écrit à côté d'un appel d'outil n'est, lui, pas passé à
+`ressembleAUnBlocOutil` : seule une réponse sans appel l'est.
+
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
 le gabarit est écrit par un administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse
 de base, segment par segment, après encodage. Le `wa_id` vient du TOUR, pas de la projection du contact : la
@@ -2841,6 +2862,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/modeles.ts` | les modèles proposables et leur tarif client : le menu ET la garde d'écriture y lisent |
 | `src/llm/errors.ts` -> `direPanneModele` | ce qu'un échec d'appel au modèle a le droit de dire au client, ou `null` : c'est alors NOTRE panne, que l'appelant RELANCE en 500 opaque. ⚠️ `fetch failed` et un abandon n'y sont attribués au modèle que parce que, dans ses quatre appelants, le seul `fetch` est l'appel au modèle |
 | `src/agent/llm/tool-schema.ts` -> `paramsOutil` | 🔴 la séparation des sources d'un paramètre (`modele` vs `contact` ou `fixe`). Deux lectures divergentes rendraient la cible au modèle, donc un IDOR |
+| `src/agent/outils-maison.ts` -> `paramsEffectifs` | 🔴 les paramètres d'un outil d'agent IA tels que le modèle les voit et que l'exécuteur les valide : la copie en base, plus les imposés du catalogue (`paramsImposes`), par `paramsOutil`. L'exposition et l'exécuteur la lisent tous deux : `paramsOutil(outil.params)` à leur place perdrait un imposé d'un seul côté |
 | `src/agent/setup/proposition.ts` | ce que l'IA de construction a le DROIT de proposer. 🔴 La FRONTIÈRE est la liste des CLÉS et les énumérations FERMÉES, jamais une longueur : les bornes sont de l'hygiène, et `assainirProposition` les RAMÈNE avant que Zod ne juge, au lieu de perdre le tour. ⚠️ Toute borne appliquée est annoncée dans le schéma envoyé au modèle, et un test le dérive plutôt que de le relire |
 | `src/crm/poser-etiquette.ts` | 🔴 poser une étiquette sur UN contact, le geste des cinq portes unitaires (agent IA et agent de Meta, bloc de scénario, widget, outil MCP `tag_conversation`, fiche contact) : nettoyer (`normaliserEtiquette`, `nettoyerEtiquettes` : espaces, 64 caractères, vides et doublons), poser, déclarer dans le référentiel (au mieux), et publier `tag_added` sur les seules nouvelles, SI l'appelant le demande (`publier`, requise). `apresPose` sert la fiche, qui pose dans la transaction d'`applyEdits` ; `publierEnDiffere`, l'exécuteur. Construit une fois par `buildWorkflowRuntime`, rendu à l'API et au worker. Les chemins de masse (import, API publique, action en masse) n'en prennent que le nettoyage |
 | `src/agent/contexte.ts` | ce que le cerveau doit savoir d'un agent (production ET bac à sable), et `lireContexteAvecReglages`, la lecture UNIQUE des réglages de l'espace pour ses deux politiques, branchée par le worker ET par l'API |

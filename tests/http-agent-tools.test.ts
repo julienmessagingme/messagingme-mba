@@ -145,6 +145,12 @@ describe('outils d’un agent : lecture et ajout', () => {
       const body = res.json();
       expect(body.outils[0].expose.parameters.properties.sortie.enum).toEqual(['besoin_cerne']);
       expect(body.catalogue.map((c: { handler: string }) => c.handler)).toContain('envoyer_bloc');
+      // 🔴 Le paramètre imposé de « terminer » : le modèle le voit (et l'écran le montre, c'est le schéma réel),
+      // mais le catalogue, qui dit au client ce qu'il peut régler, ne le porte pas : il n'y a rien à y régler.
+      expect(body.outils[0].expose.parameters.required).toEqual(['sortie', 'message']);
+      const terminer = body.catalogue.find((c: { handler: string }) => c.handler === 'terminer');
+      expect(terminer.params.map((p: { name: string }) => p.name)).toEqual(['sortie']);
+      expect(terminer).not.toHaveProperty('paramsImposes');
     });
   });
 

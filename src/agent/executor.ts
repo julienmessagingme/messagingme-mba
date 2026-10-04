@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { Geste } from './gestes';
 import type { JournalAppels, OrigineOutil, OutilDefini, StatutAppel, ToolCatalog } from './catalog';
-import { paramsOutil, type ParamOutil } from './llm/tool-schema';
+import type { ParamOutil } from './llm/tool-schema';
+import { paramsEffectifs } from './outils-maison';
 import { completerArguments } from './completer-arguments';
 import { tenter } from '../lib/tenter';
 import { messageDe, texteDe } from '../lib/erreur';
@@ -56,6 +57,11 @@ export interface SortieResolveur {
   erreur?: string;
   /** L'outil demande de sortir du bloc agent par ce handle (`mba_terminer`). */
   sortie?: string;
+  /**
+   * Avec `sortie` seulement (`mba_terminer`) : le dernier message au contact, rogné, absent s'il est vide. Le
+   * cerveau ne l'envoie que si la réponse qui porte l'appel n'a pas de texte.
+   */
+  dernierMessage?: string;
   /** L'outil a déjà rendu la main (escalade humaine) : le tour s'arrête, sans envoi ni autre sortie. */
   rendu?: boolean;
   /** Avec `rendu` seulement : c'est cet appel qui a pris la main, pas quelqu'un d'autre avant lui. Le tour
@@ -70,6 +76,8 @@ export interface ResultatOutil {
   /** Ce qui repart au modèle. Toujours présent, y compris sur un refus : c'est ce qui lui permet de se corriger. */
   contenu: unknown;
   sortie?: string;
+  /** Voir `SortieResolveur.dernierMessage`. */
+  dernierMessage?: string;
   rendu?: boolean;
   /** Voir `SortieResolveur.mainPrise`. */
   mainPrise?: boolean;
@@ -267,8 +275,10 @@ export async function executeTool(
     }
   }
 
-  // 3. Valider. `safeParse` : les arguments viennent du modèle, source non fiable.
-  const params = paramsOutil(outil.params);
+  // 3. Valider. `safeParse` : les arguments viennent du modèle, source non fiable. Contre les paramètres que le
+  // modèle a vus (`paramsEffectifs`, imposés du catalogue compris) : la seule copie en base ferait retirer par
+  // `z.object` un argument annoncé, en silence.
+  const params = paramsEffectifs(outil);
   const duModele = params.filter((p) => p.source === 'modele');
   let brut: unknown;
   try {
@@ -387,6 +397,7 @@ export async function executeTool(
     status,
     contenu,
     ...(sortie.sortie ? { sortie: sortie.sortie } : {}),
+    ...(sortie.dernierMessage ? { dernierMessage: sortie.dernierMessage } : {}),
     ...(sortie.rendu ? { rendu: true } : {}),
     ...(sortie.mainPrise ? { mainPrise: true } : {}),
   };

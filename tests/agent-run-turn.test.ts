@@ -13,6 +13,8 @@ import type { DecisionAgent } from '../src/agent/brain';
 import { TourInterrompu } from '../src/agent/brain';
 import type { AgentSession } from '../src/agent/session-store';
 import type { AgentTurnJob } from '../src/agent/turn-job';
+import { outilMaison, paramsInitiaux } from '../src/agent/outils-maison';
+import { creerResolveurMba } from '../src/agent/resolvers/mba';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 
@@ -512,5 +514,67 @@ describe('runTurn : la main rendue PAR CE TOUR', () => {
     );
     expect(await runTurn(JOB, deps)).toMatchObject({ fait: 'main_perdue' });
     expect(envois).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 LA SORTIE PART AVEC SON DERNIER MESSAGE, de bout en bout : le tour, le vrai cerveau, le vrai exécuteur et le
+ * vrai résolveur de production. Le modèle appelle `terminer` sans rien écrire à côté (ce que fait GPT-5 mini à
+ * chaque sortie) ; le message qu'il a mis dans l'outil doit partir AVANT que le scénario ne reprenne, comme tout
+ * texte de décision. L'outil porte la copie de paramètres d'un outil déjà posé : `sortie` seule.
+ */
+describe('runTurn : la sortie et son dernier message', () => {
+  const TERMINER: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
+    id: 'o2', tenantId: 't1', origin: 'mba', name: 'mba_terminer',
+    description: 'Termine.', params: paramsInitiaux(outilMaison('terminer')!),
+    binding: { handler: 'terminer' }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'read',
+    timeoutMs: 8000, maxBytes: 16384, autonome: false,
+  };
+  const RESOLVEUR_MBA = creerResolveurMba({
+    envoyerBloc: async () => ({ ok: true }), escaladerVersHumain: async () => true, poserTag: async () => {},
+    ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
+  });
+
+  function tour(argumentsJson: string) {
+    const journal: string[] = [];
+    const brain = creerCerveauGateway({
+      client: {
+        completer: async () => ({
+          texte: null, appelsOutils: [{ id: 'c1', nom: 'mba_terminer', argumentsJson }], finish: 'tool_calls',
+          usage: { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 }, generationId: null,
+        }),
+      },
+      contexte: async () => ({
+        modele: 'm', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session' as const, sorties: [{ code: 'fini', label: 'Fini' }],
+        contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [TERMINER],
+        plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
+      }),
+      commissionPct: 0,
+      outils: {
+        catalogue: { byName: async (_t: string, _a: string, n: string) => (n === TERMINER.name ? TERMINER : null), listActifs: async () => [TERMINER] } satisfies ToolCatalog,
+        journal: { ouvrir: async () => 'j1', clore: async () => {} },
+        resolveurs: { mba: RESOLVEUR_MBA },
+        sessions: { compterAppel: async () => {} },
+        executerGeste: GESTE_MUET,
+      },
+    });
+    const { deps } = make({
+      brain,
+      envoyer: async (_t, _w, texte) => { journal.push(`envoi:${texte}`); },
+      sortir: async (i) => { journal.push(`sortie:${i.sortie}`); },
+    });
+    return { deps, journal };
+  }
+
+  it('🔴 le message de « terminer » PART, puis le scénario reprend par la sortie', async () => {
+    const { deps, journal } = tour('{"sortie":"fini","message":"Merci, un conseiller vous rappelle demain."}');
+    expect(await runTurn(JOB, deps)).toEqual({ fait: 'sorti', sortie: 'fini' });
+    expect(journal).toEqual(['envoi:Merci, un conseiller vous rappelle demain.', 'sortie:fini']);
+  });
+
+  it('un « terminer » sans message sort quand même, sans rien envoyer', async () => {
+    const { deps, journal } = tour('{"sortie":"fini","message":""}');
+    expect(await runTurn(JOB, deps)).toEqual({ fait: 'sorti', sortie: 'fini' });
+    expect(journal).toEqual(['sortie:fini']);
   });
 });

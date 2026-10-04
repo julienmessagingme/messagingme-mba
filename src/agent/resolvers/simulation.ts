@@ -2,6 +2,7 @@ import type { ResolveurOutil, SortieResolveur } from '../executor';
 import type { OrigineOutil } from '../catalog';
 import type { KnowledgeStore } from '../knowledge';
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
+import { terminerAvec } from './mba';
 
 /**
  * Le résolveur du bac à sable, quand le client parle à son agent depuis la console : un outil qui lit
@@ -97,12 +98,10 @@ export function creerResolveurSimulation(deps: DepsResolveurSimulation): Resolve
       case 'lire_contact':
         return { contenu: { connu: false } };
 
-      // Terminer n'a aucun effet de bord : exécuté vraiment, le panneau montre par quelle règle l'agent sort.
-      case 'terminer': {
-        const sortie = texte(args, 'sortie');
-        if (sortie === '') return { ok: false, contenu: { erreur: 'parametre « sortie » manquant' }, erreur: 'sortie manquante' };
-        return { contenu: { sortie }, sortie };
-      }
+      // Terminer n'a aucun effet de bord : exécuté vraiment, par le handler de production, le panneau montre par
+      // quelle règle l'agent sort et avec quel dernier message.
+      case 'terminer':
+        return terminerAvec(args);
 
       // ---------- Ceux qui agissent, donc simulés ----------
 

@@ -36,6 +36,14 @@ export interface OutilCatalogue {
   nePasUtiliser: { fr: string; en: string };
   risk: RisqueOutil;
   params: ParamCatalogue[];
+  /**
+   * Les paramètres que le catalogue IMPOSE à chaque outil de ce modèle, déjà posés compris. Jamais stockés :
+   * `agent_tools.params` garde la copie écrite à la pose, donc un ajout à `params` n'atteindrait aucun outil
+   * existant. Ni `paramsInitiaux` ni le catalogue rendu à la console ne les lisent ; `paramsEffectifs` les
+   * ajoute. Tolérés absents à la validation, annoncés requis au modèle (`outilExpose`) : annoncer plus strict
+   * que ce qu'on applique ne crée aucune panne, l'inverse en crée.
+   */
+  paramsImposes?: readonly ParamOutil[];
 }
 
 const P = (
@@ -67,6 +75,12 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     params: [{
       ...P('sortie', 'Le code de la règle d’arrêt atteinte.'),
       edition: 'derive_des_sorties',
+    }],
+    // Un modèle peut appeler cet outil sans rien écrire à côté : le tour s'arrête sur l'appel, et le contact ne
+    // recevrait rien. Le cerveau envoie ce message quand la réponse qui porte l'appel n'a pas de texte.
+    paramsImposes: [{
+      name: 'message', type: 'string', source: 'modele',
+      description: 'Le dernier message au contact, à écrire ici s’il n’a pas déjà été écrit dans cette réponse, sinon vide.',
     }],
   },
   {
@@ -237,16 +251,43 @@ export function outilsExposes(outils: readonly OutilDefini[], sorties: readonly 
   return outils.map((o) => outilExpose(o, sorties)).filter((o): o is OutilExpose => o !== null);
 }
 
-/** Les paramètres d'un outil, énumérations dérivées appliquées, ou `null` si une dérivation est vide.
- *  Passe par `paramsOutil`, le point de passage unique de la séparation des sources. */
+/**
+ * Les paramètres effectifs d'un outil : sa copie en base, plus ceux que le catalogue impose et que la copie ne
+ * déclare pas (`paramsImposes`). 🔴 L'exposition au modèle ET la validation des arguments (`executeTool`, étape 3)
+ * les lisent ici : lu d'un seul côté, un paramètre imposé serait annoncé au modèle puis retiré de ses arguments
+ * par Zod, sans erreur. Passe par `paramsOutil`, le point de passage unique de la séparation des sources, et par
+ * `handlerMaison` : un outil qui n'est pas maison (connecteur, MCP, agent de Meta) ne reçoit rien.
+ */
+export function paramsEffectifs(outil: Pick<OutilDefini, 'origin' | 'binding' | 'params'>): ParamOutil[] {
+  const copie: unknown[] = Array.isArray(outil.params) ? outil.params : [];
+  const imposes = outilMaison(handlerMaison(outil))?.paramsImposes ?? [];
+  if (imposes.length === 0) return paramsOutil(copie);
+  // « Déclaré » se lit sur le brut, comme les noms réservés de `paramsOutil` : une entrée de la copie
+  // inutilisable garde son nom, et un imposé du même nom ne prend pas sa place.
+  const declares = new Set(copie.map((b) => {
+    const nom = b && typeof b === 'object' ? (b as { name?: unknown }).name : undefined;
+    return typeof nom === 'string' ? nom.trim() : '';
+  }));
+  return paramsOutil([...copie, ...imposes.filter((p) => !declares.has(p.name))]);
+}
+
+/** Les paramètres d'un outil, énumérations dérivées appliquées et imposés annoncés requis, ou `null` si une
+ *  dérivation est vide. Passe par `paramsEffectifs`, la lecture que la validation fait aussi. */
 function paramsAvecDerivations(outil: OutilDefini, codesSortie: string[]): ParamOutil[] | null {
   const modele = outilMaison(String(outil.binding.handler ?? ''));
-  const params = paramsOutil(outil.params);
+  const params = paramsEffectifs(outil);
   // Un handler sorti du catalogue (ligne ancienne) garde ses paramètres tels quels : il ne doit pas faire
   // tomber la construction du schéma de tout un tour.
   if (!modele) return params;
   const derives = new Set(modele.params.filter((p) => p.edition === 'derive_des_sorties').map((p) => p.name));
-  if (derives.size === 0) return params;
+  // Annoncé requis, toléré absent : c'est l'obligation qui fait poser la question à un modèle de raisonnement,
+  // et la validation, plus souple, ne refuse pas un appel qui l'oublie (il bouclerait jusqu'au plafond).
+  const imposes = new Set((modele.paramsImposes ?? []).map((p) => p.name));
+  if (derives.size === 0 && imposes.size === 0) return params;
   if (codesSortie.length === 0 && params.some((p) => derives.has(p.name))) return null;
-  return params.map((p) => (derives.has(p.name) ? { ...p, enum: codesSortie } : p));
+  return params.map((p) => ({
+    ...p,
+    ...(derives.has(p.name) ? { enum: codesSortie } : {}),
+    ...(imposes.has(p.name) ? { required: true } : {}),
+  }));
 }

@@ -544,6 +544,47 @@ describe('un parametre cloue a un champ personnalise (source: champ)', () => {
   });
 });
 
+/**
+ * 🔴 UN PARAMÈTRE IMPOSÉ PAR LE CATALOGUE (le `message` de `terminer`). La copie en base d'un outil déjà posé ne
+ * le déclare pas ; la validation qui ne lisait qu'elle le faisait retirer par `z.object`, alors que le modèle le
+ * voyait dans son schéma : le dernier message disparaissait sans aucune erreur.
+ */
+describe('terminer : le paramètre imposé « message »', () => {
+  // La copie qu'un outil posé avant ce lot porte en base : `sortie` seule.
+  const TERMINER: OutilDefini = {
+    ...OUTIL,
+    name: 'mba_terminer',
+    binding: { handler: 'terminer' },
+    params: [{ name: 'sortie', type: 'string', source: 'modele', required: true }],
+  };
+  const terminer = (a: unknown) => ({ name: 'mba_terminer', argumentsJson: args(a) });
+
+  it('🔴 « message » ATTEINT le résolveur : Zod ne le retire pas', async () => {
+    const { deps, vus } = harnais({ outil: TERMINER });
+    const r = await executeTool(terminer({ sortie: 'fini', message: 'Merci, à bientôt.' }), CTX, deps);
+    expect(r.status).toBe('ok');
+    expect(vus[0]?.args).toEqual({ sortie: 'fini', message: 'Merci, à bientôt.' });
+  });
+
+  it('🔴 un « terminer » sans message, à null ou vide est ACCEPTÉ : refusé, l’agent bouclerait jusqu’au plafond', async () => {
+    for (const a of [{ sortie: 'fini' }, { sortie: 'fini', message: null }, { sortie: 'fini', message: '' }]) {
+      const { deps, vus } = harnais({ outil: TERMINER });
+      const r = await executeTool(terminer(a), CTX, deps);
+      expect(r.status, JSON.stringify(a)).toBe('ok');
+      expect(vus, JSON.stringify(a)).toHaveLength(1);
+    }
+  });
+
+  it('le dernier message rendu par le résolveur remonte à l’appelant, avec la sortie', async () => {
+    const { deps } = harnais({
+      outil: TERMINER,
+      resolveur: async () => ({ contenu: { sortie: 'fini' }, sortie: 'fini', dernierMessage: 'Merci.' }),
+    });
+    expect(await executeTool(terminer({ sortie: 'fini', message: 'Merci.' }), CTX, deps))
+      .toMatchObject({ status: 'ok', sortie: 'fini', dernierMessage: 'Merci.' });
+  });
+});
+
 describe('un outil MCP dans le tronc commun', () => {
   const MCP: OutilDefini = {
     ...OUTIL,

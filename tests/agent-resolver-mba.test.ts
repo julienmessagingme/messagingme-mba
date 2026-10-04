@@ -47,6 +47,19 @@ describe('résolveur maison (tâche 16)', () => {
     expect(r.ok).not.toBe(false);
   });
 
+  it('🔴 « terminer » rend le dernier message ROGNÉ, et rien pour un message absent, vide ou blanc', async () => {
+    // Le cerveau l'envoie au contact quand le modèle a appelé l'outil sans rien écrire à côté. Une chaîne
+    // vide rendue ici ferait croire qu'il y a quelque chose à envoyer.
+    const { resolveur } = harnais();
+    const r = await resolveur(appel('terminer', { sortie: 'fini', message: '  Merci, à bientôt.\n' }));
+    expect(r).toEqual({ contenu: { sortie: 'fini' }, sortie: 'fini', dernierMessage: 'Merci, à bientôt.' });
+    for (const vide of [{}, { message: '' }, { message: '  \n ' }]) {
+      const sans = await resolveur(appel('terminer', { sortie: 'fini', ...vide }));
+      expect(sans, JSON.stringify(vide)).toEqual({ contenu: { sortie: 'fini' }, sortie: 'fini' });
+      expect(sans, JSON.stringify(vide)).not.toHaveProperty('dernierMessage');
+    }
+  });
+
   it('« poser_tag » et « ecrire_variable » agissent, et refusent proprement un parametre manquant', async () => {
     const { resolveur, journal } = harnais();
     await resolveur(appel('poser_tag', { tag: 'vip' }));

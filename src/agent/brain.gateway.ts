@@ -118,6 +118,22 @@ function dejaParle(transcript: unknown[]): boolean {
   return transcript.some((t) => (t as { role?: unknown } | null)?.role === 'agent');
 }
 
+/**
+ * Ce que le contact reçoit quand un outil fait sortir le tour : le texte de la réponse qui porte l'appel s'il n'est
+ * pas vide ; sinon le dernier message que `terminer` porte, pour un modèle qui appelle l'outil sans rien écrire à
+ * côté ; sinon rien. Un dernier message qui porte nos délimiteurs est écarté comme une réponse qui les imite, mais
+ * la sortie reste : la règle d'arrêt a été atteinte, seul le message est douteux.
+ */
+function texteDeSortie(ecrit: string | null, dernierMessage: string | undefined, signaler: () => void): string | null {
+  if (ecrit !== null && ecrit.trim() !== '') return ecrit;
+  if (dernierMessage === undefined) return null;
+  if (ressembleAUnBlocOutil(dernierMessage)) {
+    signaler();
+    return null;
+  }
+  return dernierMessage;
+}
+
 function versMessages(transcript: unknown[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const brut of transcript) {
@@ -287,7 +303,12 @@ async function boucler(
           ...(res.mainPrise ? { mainPriseParCeTour: true } : {}),
         };
       }
-      if (res.sortie) return { texte: reponse.texte ?? null, sortie: res.sortie, usage, appels };
+      if (res.sortie) {
+        const texte = texteDeSortie(reponse.texte, res.dernierMessage, () => deps.alerter?.(
+          `agent ${input.agentId} : le modèle a rendu un faux bloc de résultat d’outil comme dernier message`,
+        ));
+        return { texte, sortie: res.sortie, usage, appels };
+      }
 
       // Le résultat repart au modèle dans un bloc délimité : il vient d'une base remplie depuis un site
       // tiers, ou d'un connecteur, c'est de la donnée, jamais un ordre.

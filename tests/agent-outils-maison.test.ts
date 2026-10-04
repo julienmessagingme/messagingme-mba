@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { OUTILS_MAISON, outilExpose, outilMaison, outilsExposes, paramsInitiaux } from '../src/agent/outils-maison';
+import { OUTILS_MAISON, outilExpose, outilMaison, outilsExposes, paramsEffectifs, paramsInitiaux } from '../src/agent/outils-maison';
 import { HANDLERS_MAISON } from '../src/agent/resolvers/mba';
 import type { OutilDefini } from '../src/agent/catalog';
 import { SANS_MCP } from './outils-mcp';
@@ -170,6 +170,57 @@ describe('outilsExposes', () => {
       { name: 'wa_id', type: 'string', source: 'contact', contactPath: 'wa_id' },
     ]);
     const [expose] = outilsExposes([avecContact], [{ code: 'fini', label: 'Fini' }]);
-    expect(Object.keys(expose!.parameters.properties)).toEqual(['sortie']);
+    // `message` est imposé par le catalogue et rempli par le modèle : il est là, `wa_id` non.
+    expect(Object.keys(expose!.parameters.properties)).toEqual(['sortie', 'message']);
+  });
+});
+
+/**
+ * 🔴 LE DERNIER MESSAGE PORTÉ PAR `terminer`. Sous certains modèles, l'agent appelle l'outil sans rien écrire
+ * à côté : le tour s'arrête sur l'appel et le contact ne reçoit rien. Le paramètre `message` est IMPOSÉ par le
+ * catalogue, jamais stocké : les outils déjà posés gardent en base la copie de leurs paramètres (sans lui), et
+ * c'est elle que lisent à la fois l'exposition et la validation. Les deux doivent le voir.
+ */
+describe('terminer : le paramètre imposé « message »', () => {
+  const SORTIES = [{ code: 'fini', label: 'Fini' }];
+
+  it('🔴 il est EXPOSÉ requis à côté de « sortie », pour un outil dont la copie en base ne le déclare pas', () => {
+    // La copie telle qu'un outil posé avant ce lot la porte : `sortie` seule.
+    const pose = outil([{ name: 'sortie', type: 'string', source: 'modele', required: true }]);
+    const [expose] = outilsExposes([pose], SORTIES);
+    expect(Object.keys(expose!.parameters.properties)).toEqual(['sortie', 'message']);
+    expect(expose!.parameters.required).toEqual(['sortie', 'message']);
+    expect(expose!.parameters.properties.message).toEqual({
+      type: 'string',
+      description: 'Le dernier message au contact, à écrire ici s’il n’a pas déjà été écrit dans cette réponse, sinon vide.',
+    });
+  });
+
+  it('🔴 la validation le voit aussi, mais NON requis : annoncé requis, toléré absent', () => {
+    const effectifs = paramsEffectifs(outil(paramsInitiaux(outilMaison('terminer')!)));
+    expect(effectifs.map((p) => p.name)).toEqual(['sortie', 'message']);
+    expect(effectifs.find((p) => p.name === 'message')!.required).toBeUndefined();
+  });
+
+  it('une copie qui le déclare déjà garde SA déclaration, sans doublon', () => {
+    const effectifs = paramsEffectifs(outil([
+      { name: 'sortie', type: 'string', source: 'modele', required: true },
+      { name: 'message', type: 'string', source: 'modele', description: 'à moi' },
+    ]));
+    expect(effectifs.filter((p) => p.name === 'message')).toEqual([{ name: 'message', type: 'string', source: 'modele', description: 'à moi' }]);
+  });
+
+  it('🔴 il n’est JAMAIS écrit en base, ni montré au catalogue que la console édite', () => {
+    // `paramsInitiaux` est ce que la pose d'un outil écrit : le stocker recréerait la copie qui diverge.
+    expect(paramsInitiaux(outilMaison('terminer')!).map((p) => p.name)).toEqual(['sortie']);
+    expect(outilMaison('terminer')!.params.map((p) => p.name)).toEqual(['sortie']);
+  });
+
+  it('un outil qui n’est pas maison n’en reçoit aucun, même avec un `handler` « terminer » dans sa liaison', () => {
+    const mcp = { ...outil([{ name: 'q', type: 'string', source: 'modele' }]), origin: 'mcp' as const };
+    expect(paramsEffectifs(mcp).map((p) => p.name)).toEqual(['q']);
+    // Et les autres outils maison n'en ont pas.
+    const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true }], 'poser_tag');
+    expect(paramsEffectifs(tag).map((p) => p.name)).toEqual(['tag']);
   });
 });
