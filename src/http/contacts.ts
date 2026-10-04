@@ -18,7 +18,8 @@ import type { TravauxEnVol } from '../lib/en-vol';
 /** Ce que les routes lisent et écrivent des fiches de contact. */
 export interface ContactsDep {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
-   *  contact n'existe pas dans le tenant, ou s'il est supprimé. */
+   *  contact n'existe pas dans le tenant, ou s'il est supprimé. `consentementChange` : le statut demandé a été écrit
+   *  (faux s'il était déjà en place). */
   applyEdits(
     tenantId: string,
     contactId: string,
@@ -26,7 +27,7 @@ export interface ContactsDep {
       fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[];
       profileName?: string | null; optInStatus?: 'opted_in' | 'opted_out';
     },
-  ): Promise<{ contact: ContactRow; addedTags: string[] } | null>;
+  ): Promise<{ contact: ContactRow; addedTags: string[]; consentementChange: boolean } | null>;
   /**
    * Modération : bloque ou débloque un contact. Bloqué = plus aucun envoi, et sa conversation disparaît de
    * l'Inbox.
@@ -319,8 +320,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     });
     if (!updated) return reply.code(404).send({ error: 'contact inconnu' });
     // Journalisé comme la bascule en masse : c'est la même décision, prise sur une fiche au lieu d'une liste.
-    // Après l'écriture réussie, sinon on consignerait un consentement qu'on n'a pas posé.
-    if (optInStatus !== undefined) {
+    // Après l'écriture réussie, sinon on consignerait un consentement qu'on n'a pas posé. Et seulement s'il a changé :
+    // enregistrer une fiche dont le statut est déjà en place n'écrit rien, une trace dirait le contraire.
+    if (optInStatus !== undefined && updated.consentementChange) {
       await journal(tenant, req, optInStatus === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: contactId }, { source: 'fiche' });
     }
     // Automations « tag ajouté », sur les tags réellement nouveaux (reposer un tag présent ne change rien). Après

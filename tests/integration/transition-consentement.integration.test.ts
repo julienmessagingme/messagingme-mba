@@ -16,9 +16,14 @@ import type { StatutConsentement } from '../../src/crm/transition-consentement';
  * régulières : ceux-là prouvaient qu'une garde PART, pas qu'elle est JUSTE.
  *
  * 🔴 Les quatre changements du 2026-10-03 y sont tenus : (1) un statut inchangé ne réécrit rien et ne s'annonce pas,
- * partout ; (2) l'action en masse ne lève plus un STOP et compte les STOP gardés ; (3) une fiche créée `opted_out`
- * porterait sa date (aucun chemin n'en crée : mesuré, cf. le module) ; (4) l'annonce ne part que pour un vrai passage
- * à `opted_out`, après le `commit`. Plus la course de deux STOP simultanés : une seule annonce.
+ * partout ; (2) l'action en masse ne lève plus un STOP et compte les STOP gardés ; (3) aucune fiche n'est créée
+ * `opted_out` : seuls les types l'empêchent, et la branche `insert` d'un upsert n'y poserait PAS de date (cf. le
+ * module) ; l'API crée en `unknown` puis désabonne, passage daté et annoncé (décision de Julien) ; (4) l'annonce ne
+ * part que pour un vrai passage à `opted_out`, après le `commit`. Plus la course de deux STOP simultanés : une seule
+ * annonce.
+ *
+ * ⚠️ Un upsert qui GARDE l'état de départ (STOP gardé, statut en place) laisserait le même état s'il n'avait pas tourné
+ * du tout : ces cas exigent aussi la PREUVE qu'il a écrit la fiche (`preuve`, le champ `ville` qu'il pose).
  *
  * ⚠️ Chaque annonce relit le statut de ses fiches par UNE AUTRE connexion au moment où elle part : `opted_out` prouve
  * que l'écriture était déjà validée. Jamais joué en local (le DATABASE_URL local pointe la PRODUCTION), joué par le job
@@ -44,6 +49,8 @@ interface Attendu {
   annonce: boolean;
   /** 🔴 Rien n'est réécrit, `updated_at` compris (une écriture qui ne porte que le consentement). */
   intacte?: true;
+  /** L'upsert a TOURNÉ sur la fiche : le champ `ville` qu'il pose y est, alors que le consentement n'a pas bougé. */
+  preuve?: true;
 }
 
 interface Cas extends Attendu {
@@ -98,9 +105,11 @@ describe.skipIf(!url)('la transition du consentement (Postgres)', () => {
     return { id: r.rows[0]!.id, phone, waId };
   }
 
-  async function lire(phone: string): Promise<{ opt_in_status: string; opt_in_source: string | null; opt_out_at: Date | null; updated_at: Date } | null> {
-    const r = await pool.query<{ opt_in_status: string; opt_in_source: string | null; opt_out_at: Date | null; updated_at: Date }>(
-      'select opt_in_status, opt_in_source, opt_out_at, updated_at from contacts where tenant_id = $1 and phone_e164 = $2',
+  interface Lue { opt_in_status: string; opt_in_source: string | null; opt_out_at: Date | null; updated_at: Date; ville: string | null }
+  async function lire(phone: string): Promise<Lue | null> {
+    const r = await pool.query<Lue>(
+      `select opt_in_status, opt_in_source, opt_out_at, updated_at, fields->>'ville' as ville
+         from contacts where tenant_id = $1 and phone_e164 = $2`,
       [tenantId, phone],
     );
     return r.rows[0] ?? null;
@@ -122,6 +131,7 @@ describe.skipIf(!url)('la transition du consentement (Postgres)', () => {
       expect(l!.opt_out_at?.toISOString() ?? null, `${contexte} : date inchangée`).toBe(depart === 'opted_out' ? D0.toISOString() : null);
     }
     if (a.intacte) expect(l!.updated_at.toISOString(), `${contexte} : rien n'est réécrit`).toBe(D0.toISOString());
+    if (a.preuve) expect(l!.ville, `${contexte} : l'upsert a écrit la fiche (son champ est posé)`).toBe('Lyon');
   }
 
   // Les demandes des six écritures, avec leur autorité et leur source.
@@ -131,7 +141,7 @@ describe.skipIf(!url)('la transition du consentement (Postgres)', () => {
   });
   const lot = (autorite: 'import' | 'import_csv_coche', voulu: 'opted_in' | 'unknown', source: string) => (f: Fiche) => store.upsertManyByPhone({
     tenantId, autorite, optInStatus: voulu, ...(voulu === 'opted_in' ? { optInSource: source } : {}),
-    contacts: [{ phoneE164: f.phone, profileName: null, fields: {} }],
+    contacts: [{ phoneE164: f.phone, profileName: null, fields: { ville: 'Lyon' } }],
   });
   const parWaId = (statut: 'opted_in' | 'opted_out', autorite: 'personne' | 'scenario', source: string) =>
     (f: Fiche) => store.setOptInByWaId(tenantId, f.waId, statut, autorite, source, statut === 'opted_out' ? `wamid.${f.waId}` : undefined);
@@ -140,32 +150,34 @@ describe.skipIf(!url)('la transition du consentement (Postgres)', () => {
     (await store.applyEdits(tenantId, f.id, { fields: {}, addTags: [], removeTags: [], optInStatus: statut }))?.contact.optInStatus ?? null;
 
   const GARDE = { date: 'inchangee', source: SOURCE_D_ORIGINE, annonce: false } as const;
+  /** Un upsert qui garde l'état de départ : sans `preuve`, ce cas resterait vert si l'upsert n'avait pas tourné. */
+  const GARDE_UPSERT = { ...GARDE, preuve: true } as const;
 
   const CAS: Cas[] = [
     // ---- upsertByPhoneReturningId : webhook entrant et création à la main, autorité `webhook_ou_saisie` ----
     { ecriture: 'upsert unitaire', depart: 'absente', demande: 'opted_in', jouer: unitaire('opted_in'), statut: 'opted_in', date: 'nulle', source: 'webhook:crm', annonce: false },
     { ecriture: 'upsert unitaire', depart: 'absente', demande: 'unknown', jouer: unitaire('unknown'), statut: 'unknown', date: 'nulle', source: null, annonce: false },
     { ecriture: 'upsert unitaire', depart: 'unknown', demande: 'opted_in', jouer: unitaire('opted_in'), statut: 'opted_in', date: 'nulle', source: 'webhook:crm', annonce: false },
-    { ecriture: 'upsert unitaire', depart: 'unknown', demande: 'unknown', jouer: unitaire('unknown'), statut: 'unknown', ...GARDE },
+    { ecriture: 'upsert unitaire', depart: 'unknown', demande: 'unknown', jouer: unitaire('unknown'), statut: 'unknown', ...GARDE_UPSERT },
     // 🔴 Changement (1) : la source d'un consentement déjà posé n'est plus remplacée.
-    { ecriture: 'upsert unitaire', depart: 'opted_in', demande: 'opted_in', jouer: unitaire('opted_in'), statut: 'opted_in', ...GARDE },
-    { ecriture: 'upsert unitaire', depart: 'opted_in', demande: 'unknown', jouer: unitaire('unknown'), statut: 'opted_in', ...GARDE },
+    { ecriture: 'upsert unitaire', depart: 'opted_in', demande: 'opted_in', jouer: unitaire('opted_in'), statut: 'opted_in', ...GARDE_UPSERT },
+    { ecriture: 'upsert unitaire', depart: 'opted_in', demande: 'unknown', jouer: unitaire('unknown'), statut: 'opted_in', ...GARDE_UPSERT },
     // 🔴 Un STOP ne se lève pas par le webhook entrant ni par la création à la main : statut, date ET source gardés.
-    { ecriture: 'upsert unitaire', depart: 'opted_out', demande: 'opted_in', jouer: unitaire('opted_in'), statut: 'opted_out', ...GARDE },
-    { ecriture: 'upsert unitaire', depart: 'opted_out', demande: 'unknown', jouer: unitaire('unknown'), statut: 'opted_out', ...GARDE },
+    { ecriture: 'upsert unitaire', depart: 'opted_out', demande: 'opted_in', jouer: unitaire('opted_in'), statut: 'opted_out', ...GARDE_UPSERT },
+    { ecriture: 'upsert unitaire', depart: 'opted_out', demande: 'unknown', jouer: unitaire('unknown'), statut: 'opted_out', ...GARDE_UPSERT },
 
     // ---- upsertManyByPhone sans la case (HubSpot, import sans case), autorité `import` ----
     { ecriture: 'import (HubSpot)', depart: 'absente', demande: 'opted_in', jouer: lot('import', 'opted_in', 'hubspot_list'), statut: 'opted_in', date: 'nulle', source: 'hubspot_list', annonce: false },
     { ecriture: 'import (HubSpot)', depart: 'unknown', demande: 'opted_in', jouer: lot('import', 'opted_in', 'hubspot_list'), statut: 'opted_in', date: 'nulle', source: 'hubspot_list', annonce: false },
-    { ecriture: 'import (HubSpot)', depart: 'opted_in', demande: 'opted_in', jouer: lot('import', 'opted_in', 'hubspot_list'), statut: 'opted_in', ...GARDE },
-    { ecriture: 'import (HubSpot)', depart: 'opted_out', demande: 'opted_in', jouer: lot('import', 'opted_in', 'hubspot_list'), statut: 'opted_out', ...GARDE },
-    { ecriture: 'import sans case', depart: 'opted_out', demande: 'unknown', jouer: lot('import', 'unknown', ''), statut: 'opted_out', ...GARDE },
-    { ecriture: 'import sans case', depart: 'opted_in', demande: 'unknown', jouer: lot('import', 'unknown', ''), statut: 'opted_in', ...GARDE },
+    { ecriture: 'import (HubSpot)', depart: 'opted_in', demande: 'opted_in', jouer: lot('import', 'opted_in', 'hubspot_list'), statut: 'opted_in', ...GARDE_UPSERT },
+    { ecriture: 'import (HubSpot)', depart: 'opted_out', demande: 'opted_in', jouer: lot('import', 'opted_in', 'hubspot_list'), statut: 'opted_out', ...GARDE_UPSERT },
+    { ecriture: 'import sans case', depart: 'opted_out', demande: 'unknown', jouer: lot('import', 'unknown', ''), statut: 'opted_out', ...GARDE_UPSERT },
+    { ecriture: 'import sans case', depart: 'opted_in', demande: 'unknown', jouer: lot('import', 'unknown', ''), statut: 'opted_in', ...GARDE_UPSERT },
 
     // ---- upsertManyByPhone case cochée, autorité `import_csv_coche` : le seul import qui lève un STOP ----
     { ecriture: 'import CSV coché', depart: 'absente', demande: 'opted_in', jouer: lot('import_csv_coche', 'opted_in', 'csv_import'), statut: 'opted_in', date: 'nulle', source: 'csv_import', annonce: false },
     { ecriture: 'import CSV coché', depart: 'unknown', demande: 'opted_in', jouer: lot('import_csv_coche', 'opted_in', 'csv_import'), statut: 'opted_in', date: 'nulle', source: 'csv_import', annonce: false },
-    { ecriture: 'import CSV coché', depart: 'opted_in', demande: 'opted_in', jouer: lot('import_csv_coche', 'opted_in', 'csv_import'), statut: 'opted_in', ...GARDE },
+    { ecriture: 'import CSV coché', depart: 'opted_in', demande: 'opted_in', jouer: lot('import_csv_coche', 'opted_in', 'csv_import'), statut: 'opted_in', ...GARDE_UPSERT },
     { ecriture: 'import CSV coché', depart: 'opted_out', demande: 'opted_in', jouer: lot('import_csv_coche', 'opted_in', 'csv_import'), statut: 'opted_in', date: 'nulle', source: 'csv_import', annonce: false },
 
     // ---- setOptInByWaId, autorité `personne` : le mot STOP, le formulaire WhatsApp coché ----
@@ -180,6 +192,10 @@ describe.skipIf(!url)('la transition du consentement (Postgres)', () => {
     { ecriture: 'formulaire coché', depart: 'opted_out', demande: 'opted_in', jouer: (f) => store.markOptedIn(tenantId, f.waId, 'flow'), statut: 'opted_in', date: 'nulle', source: 'flow', annonce: false },
 
     // ---- setOptInByWaId, autorité `scenario` : le bloc « Action » ----
+    // Un numéro inconnu : rien n'est créé, rien n'est annoncé chez le client, dans les deux sens.
+    { ecriture: 'bloc Action', depart: 'absente', demande: 'opted_out', jouer: parWaId('opted_out', 'scenario', 'scenario'), rend: null, statut: null, date: 'nulle', source: null, annonce: false },
+    { ecriture: 'bloc Action', depart: 'absente', demande: 'opted_in', jouer: parWaId('opted_in', 'scenario', 'scenario'), rend: null, statut: null, date: 'nulle', source: null, annonce: false },
+    { ecriture: 'bloc Action', depart: 'unknown', demande: 'opted_out', jouer: parWaId('opted_out', 'scenario', 'scenario'), statut: 'opted_out', date: 'posee', source: 'scenario', annonce: true },
     { ecriture: 'bloc Action', depart: 'opted_in', demande: 'opted_out', jouer: parWaId('opted_out', 'scenario', 'scenario'), statut: 'opted_out', date: 'posee', source: 'scenario', annonce: true },
     { ecriture: 'bloc Action', depart: 'opted_out', demande: 'opted_out', jouer: parWaId('opted_out', 'scenario', 'scenario'), statut: 'opted_out', ...GARDE, intacte: true },
     { ecriture: 'bloc Action', depart: 'unknown', demande: 'opted_in', jouer: parWaId('opted_in', 'scenario', 'scenario'), statut: 'opted_in', date: 'nulle', source: 'scenario', annonce: false },
@@ -190,6 +206,8 @@ describe.skipIf(!url)('la transition du consentement (Postgres)', () => {
     { ecriture: 'API', depart: 'unknown', demande: 'opted_out', jouer: api('opted_out', 'api'), rend: 'change', statut: 'opted_out', date: 'posee', source: 'api', annonce: true },
     { ecriture: 'API', depart: 'opted_in', demande: 'opted_out', jouer: api('opted_out', 'api'), rend: 'change', statut: 'opted_out', date: 'posee', source: 'api', annonce: true },
     { ecriture: 'API', depart: 'opted_out', demande: 'opted_out', jouer: api('opted_out', 'api'), rend: 'inchange', statut: 'opted_out', ...GARDE, intacte: true },
+    // Une fiche absente rend `absente` dans les deux sens, jamais `inchange` : rien n'a été lu, donc rien n'est « en place ».
+    { ecriture: 'API', depart: 'absente', demande: 'opted_in', jouer: api('opted_in', 'formulaire-site'), rend: 'absente', statut: null, date: 'nulle', source: null, annonce: false },
     { ecriture: 'API', depart: 'unknown', demande: 'opted_in', jouer: api('opted_in', 'formulaire-site'), rend: 'change', statut: 'opted_in', date: 'nulle', source: 'formulaire-site', annonce: false },
     { ecriture: 'API', depart: 'opted_in', demande: 'opted_in', jouer: api('opted_in', 'formulaire-site'), rend: 'inchange', statut: 'opted_in', ...GARDE, intacte: true },
     { ecriture: 'API', depart: 'opted_out', demande: 'opted_in', jouer: api('opted_in', 'formulaire-site'), rend: 'refuse', statut: 'opted_out', ...GARDE, intacte: true },
@@ -200,6 +218,7 @@ describe.skipIf(!url)('la transition du consentement (Postgres)', () => {
     { ecriture: 'fiche', depart: 'opted_in', demande: 'opted_out', jouer: fiche('opted_out'), rend: 'opted_out', statut: 'opted_out', date: 'posee', source: 'crm', annonce: true },
     // 🔴 Changement (1) : se désabonner puis enregistrer à nouveau ne repousse pas la date et ne réannonce pas.
     { ecriture: 'fiche', depart: 'opted_out', demande: 'opted_out', jouer: fiche('opted_out'), rend: 'opted_out', statut: 'opted_out', ...GARDE, intacte: true },
+    { ecriture: 'fiche', depart: 'absente', demande: 'opted_in', jouer: fiche('opted_in'), rend: null, statut: null, date: 'nulle', source: null, annonce: false },
     { ecriture: 'fiche', depart: 'unknown', demande: 'opted_in', jouer: fiche('opted_in'), rend: 'opted_in', statut: 'opted_in', date: 'nulle', source: 'crm', annonce: false },
     { ecriture: 'fiche', depart: 'opted_in', demande: 'opted_in', jouer: fiche('opted_in'), rend: 'opted_in', statut: 'opted_in', ...GARDE, intacte: true },
     { ecriture: 'fiche', depart: 'opted_out', demande: 'opted_in', jouer: fiche('opted_in'), rend: 'opted_in', statut: 'opted_in', date: 'nulle', source: 'crm', annonce: false },
@@ -251,10 +270,25 @@ describe.skipIf(!url)('la transition du consentement (Postgres)', () => {
   });
 
   /**
+   * 🔴 `applyEdits` dit si le consentement a CHANGÉ, et la route ne journalise `contact.optin` ou `contact.optout`
+   * qu'alors : enregistrer une fiche dont le statut est déjà en place n'écrit rien, une trace dirait le contraire.
+   */
+  it('applyEdits rend `consentementChange` : vrai au changement, faux sur un statut en place ou sans consentement', async () => {
+    const f = await poser('opted_in');
+    const editer = async (optInStatus: 'opted_in' | 'opted_out') =>
+      (await store.applyEdits(tenantId, f.id, { fields: {}, addTags: [], removeTags: [], optInStatus }))?.consentementChange;
+    expect(await editer('opted_out'), 'abonné -> désabonné').toBe(true);
+    expect(await editer('opted_out'), 'déjà désabonné').toBe(false);
+    expect(await editer('opted_in'), 'désabonné -> abonné, par la fiche').toBe(true);
+    expect((await store.applyEdits(tenantId, f.id, { fields: {}, addTags: ['vip'], removeTags: [] }))?.consentementChange).toBe(false);
+  });
+
+  /**
    * ⚠️ Changement (3), mesuré : aucune écriture ne CRÉE une fiche `opted_out`. L'API publique crée en `unknown`
    * (`creerFicheApi`) puis écrit le consentement : le passage pose la date, et il s'annonce comme tout passage.
-   * ⚠️ Le plan voulait « aucune annonce » pour une fiche créée `opted_out` par l'API (le refus vient du système du
-   * client) ; ce cas fige le comportement mesuré, à trancher par Julien.
+   * 🔴 Décision de Julien, prise après coup sur ce comportement : un refus envoyé par l'API (création puis
+   * désabonnement, ou modification) reste annoncé au système du client, sans exception à la création. Le plan
+   * voulait « aucune annonce » à la création (un écho) ; c'est ce cas qui le tranche.
    */
   it('l’API qui crée une fiche puis la désabonne : la date est posée, le passage s’annonce', async () => {
     const f = await poser('absente');

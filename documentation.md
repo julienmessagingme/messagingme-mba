@@ -905,14 +905,18 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   pas. La règle vit en TypeScript (`issueDeLaTransition`) et le SQL en est DÉPLIÉ (la liste des couples
   « statut d'avant, statut voulu » qui écrivent), jamais réécrit.
   🔴 `ecritureDuConsentement` est l'instruction des quatre écritures dédiées : l'état d'avant lu SOUS VERROU
-  (`for update`, deux STOP simultanés n'annoncent qu'une fois), l'écriture gardée par le changement de statut, et
-  pour chaque fiche `ecrite`, `passe` (passée à `opted_out`, à annoncer APRÈS le `commit`) et `garde` (STOP gardé),
+  (`for update`, deux STOP simultanés n'annoncent qu'une fois), l'écriture gardée par le changement de statut et
+  par l'espace (`espace`, le paramètre de l'appelant qui le porte : il laisse Postgres servir l'index d'espace sur
+  une masse large), et pour chaque fiche `ecrite`, `passe` (passée à `opted_out`, à annoncer APRÈS le `commit`) et `garde` (STOP gardé),
   lus sur la copie verrouillée. L'action en masse prend le rendu `compte`, UNE ligne agrégée : elle rend
   `{ affected, stopsGardes }`, la route `set_optin` les renvoie et la console dit « N fiches ont gardé leur
   STOP » (en tolérant une réponse sans ce nombre). Un upsert ne demande jamais `opted_out` (types `ContactUpsert`
-  et `LotContacts`) : il n'a rien à annoncer. Aucun chemin ne crée une fiche `opted_out` : l'API crée en
-  `unknown` (`creerFicheApi`) puis écrit le consentement par la transition, qui pose la date et annonce le
-  passage. La table de cas : `tests/integration/transition-consentement.integration.test.ts`.
+  et `LotContacts`) : il n'a rien à annoncer. Aucun chemin ne crée une fiche `opted_out`, et seuls ces types
+  l'empêchent : la branche `insert` d'un upsert ne pose pas `opt_out_at`. L'API crée en `unknown`
+  (`creerFicheApi`) puis écrit le consentement par la transition, qui pose la date et annonce le passage (décision
+  de Julien du 2026-10-03 : un refus envoyé par l'API reste annoncé au système du client). La fiche de la console
+  (`applyEdits`) rend `consentementChange`, et la route ne journalise `contact.optin` ou `contact.optout` que
+  s'il est vrai. La table de cas : `tests/integration/transition-consentement.integration.test.ts`.
 - 🔴 **Un consentement posé par l'API passe par `ecrireConsentementParId`**, qui n'écrit RIEN quand la valeur
   ne change pas : un outil qui renvoie `opted_out` à chaque appel ne repousse pas la date du désabonnement et
   n'écrit pas une ligne d'audit par appel. Sur une fiche déjà `opted_in`, un `opted_in` d'une autre source ne
@@ -924,8 +928,8 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   clé rattachée : le refus tombe AVANT la résolution de la fiche, qui écrit (`clesDesignentUnStop`,
   `src/api/contacts-v1.ts`) ; dans `/v1/contacts/batch`, l'élément est en erreur `opted_out`. Un STOP arrivé
   pendant l'appel est refusé par le dépôt lui-même (`ecrireConsentementParId` rend `refuse`). Sur `/v1/sends`, le
-  destinataire est écarté `opted_out` et la fiche reste désabonnée. Lever un STOP est un geste d'opérateur,
-  depuis la fiche de la console, ou de la personne elle-même.
+  destinataire est écarté `opted_out` et la fiche reste désabonnée. Qui lève un STOP : les autorités de
+  `LEVE_UN_STOP` (plus haut), jamais l'API.
 - 🔴 **Les upserts par numéro ne lèvent pas un STOP non plus** (2026-09-26), sauf l'import CSV case cochée.
   `upsertByPhoneReturningId` (webhook entrant, création à la main) et `upsertManyByPhone` (import HubSpot, import
   CSV) gardent, sur une fiche `opted_out`, le statut, `opt_out_at` ET `opt_in_source` (la source dit le canal du

@@ -28,6 +28,12 @@ reconnaissent le SQL par expressions régulières (`tests/contacts-consentement-
 - **Une fiche CRÉÉE directement `opted_out`** (insertion d'un upsert, création par l'API) porte `opt_out_at` ;
   aucune annonce (le refus vient du système du client, le lui renvoyer serait un écho). **Changement** si un chemin
   de création ne posait pas la date : à mesurer en lisant chaque chemin.
+  **Mesuré, puis tranché par Julien après coup (2026-10-03)** : aucune création directe en `opted_out` n'existe.
+  Les upserts ne la demandent jamais, et seuls leurs types l'empêchent (`ContactUpsert`, `LotContacts`) : leur
+  branche `insert` ne pose PAS `opt_out_at`. L'API crée en `unknown` (`creerFicheApi`) puis désabonne par
+  `ecrireConsentementParId` : la date est posée, et **le signal est gardé**. Un refus envoyé par l'API (création
+  puis désabonnement, ou modification) reste annoncé au système du client, comme avant ; pas d'exception à la
+  création.
 - **L'action en masse dit combien de fiches ont gardé leur STOP** : la route rend ce nombre à côté de `affected`,
   et l'écran l'affiche. L'écran tolère une réponse sans ce nombre (Vercel publie la console avant le `up` de l'API).
 - **En production avant la démo**, essai réel d'ici le lundi 5 au soir, sinon le lot est retiré.

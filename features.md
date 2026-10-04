@@ -192,8 +192,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   **Passer en opt-in** rend la sélection destinataire des campagnes : à n'utiliser que si vous
   détenez une preuve du consentement, l'écran le dit. 🔴 **Elle ne lève pas un STOP** (2026-10-03) : un contact
   qui a répondu STOP reste désabonné, et l'écran dit combien de fiches ont gardé leur STOP (« 1 fiche a gardé son
-  STOP »). Seule la fiche du contact, ou la personne elle-même, lève un STOP : un geste sur une liste ne doit pas
-  annuler en série des refus exprimés un par un. **Passer en opt-out** exclut de toute
+  STOP ») : un geste sur une liste ne doit pas annuler en série des refus exprimés un par un. Un STOP se lève
+  depuis la fiche du contact, par la personne elle-même, par un import CSV case cochée ou par le bloc « Action »
+  d'un scénario. **Passer en opt-out** exclut de toute
   campagne, **y compris de celles déjà programmées**, sans toucher à la fiche ni à l'historique.
   Une fiche déjà au statut demandé n'est pas réécrite : la date et l'origine de son consentement, ou de son refus,
   restent celles du premier geste, et un contact déjà désabonné n'est pas annoncé une seconde fois à votre système.
@@ -270,9 +271,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   reste supprimable. Toujours sur la fiche : on **affecte ou retire un tag** (les tags existants sont suggérés à
   la saisie), on renseigne un champ déjà déclaré, et on peut **créer un champ entièrement nouveau (libellé + type)
   sans quitter la fiche** : il rejoint les champs de l'espace et sa valeur est posée sur ce contact dans la foulée.
-  Le **consentement** se règle aussi depuis la fiche, et c'est le seul geste de l'équipe qui lève un STOP (avec la
-  case cochée d'un import CSV). Se désabonner puis enregistrer à nouveau ne change rien : la date du refus reste
-  celle du premier, et il n'est annoncé qu'une fois.
+  Le **consentement** se règle aussi depuis la fiche, qui lève un STOP. Les autres chemins qui le lèvent : la
+  personne elle-même, un import CSV case cochée et le bloc « Action » d'un scénario ; jamais l'action en masse.
+  Se désabonner puis enregistrer à nouveau ne change rien : la date du refus reste celle du premier, il n'est
+  annoncé qu'une fois, et le journal des actions ne le consigne pas une seconde fois.
 - 🔁 **« Vos prix » A QUITTÉ l'écran Paramètres** (2026-09-23) : il y a désormais **une seule grille, pour
   tous les espaces**, réglée dans la console d'exploitation. Un client ne fixe plus, et ne voit plus, ce
   qu'on lui facture. La grille porte les mêmes six réglages qu'avant : la **marge** sur le tarif Meta

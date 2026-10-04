@@ -52,7 +52,10 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
         if (edits.removeFields && edits.removeFields.length) cap.removedFields.push(edits.removeFields);
         if (edits.profileName !== undefined) cap.names.push(edits.profileName);
         // Le store ne renvoie que les tags RÉELLEMENT nouveaux : ici, ceux qui ne sont pas déjà sur la fiche.
-        return { contact: result, addedTags: edits.addTags.filter((t) => !result.tags.includes(t)) };
+        return {
+          contact: result, addedTags: edits.addTags.filter((t) => !result.tags.includes(t)),
+          consentementChange: edits.optInStatus !== undefined,
+        };
       },
       applyEditsMany: async (_t, target, edits) => { cap.bulk.push({ target, edits }); return { affected: 3, stopsGardes: 0 }; },
     },

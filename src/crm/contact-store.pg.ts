@@ -425,7 +425,8 @@ export class PgContactStore implements ContactStore {
   ): Promise<string | null> {
     const res = await this.pool.query<Pick<FicheDeLEcriture, 'id' | 'passe'>>(
       ecritureDuConsentement({
-        cible: `where tenant_id = $1 ${MATCH_BY_WAID_SQL}`, voulu: '$3::text', source: '$4::text', autorite, rendu: 'par_fiche',
+        cible: `where tenant_id = $1 ${MATCH_BY_WAID_SQL}`, espace: '$1',
+        voulu: '$3::text', source: '$4::text', autorite, rendu: 'par_fiche',
       }),
       [tenantId, waId, statut, source],
     );
@@ -452,8 +453,8 @@ export class PgContactStore implements ContactStore {
   ): Promise<'change' | 'inchange' | 'refuse' | 'absente'> {
     const res = await this.pool.query<FicheDeLEcriture>(
       ecritureDuConsentement({
-        cible: 'where tenant_id = $1 and id = $2 and deleted_at is null', voulu: '$3::text', source: '$4::text',
-        autorite: 'api', rendu: 'par_fiche',
+        cible: 'where tenant_id = $1 and id = $2 and deleted_at is null', espace: '$1',
+        voulu: '$3::text', source: '$4::text', autorite: 'api', rendu: 'par_fiche',
       }),
       [tenantId, contactId, statut, source],
     );
@@ -1133,7 +1134,8 @@ export class PgContactStore implements ContactStore {
   /**
    * Édite un contact (fiche) en une transaction, ligne verrouillée : fusion des champs (seules les clés fournies),
    * ajout et retrait de tags. Rend le contact à jour, ou null s'il n'existe pas dans le tenant ou s'il est
-   * supprimé (404).
+   * supprimé (404). `consentementChange` : le statut demandé a réellement été écrit (faux s'il était déjà en place, ou
+   * sans `optInStatus`) ; la route ne journalise le consentement que dans ce cas.
    */
   async applyEdits(
     tenantId: string,
@@ -1144,7 +1146,7 @@ export class PgContactStore implements ContactStore {
       /** Consentement posé à la main depuis la fiche (voir l'écriture plus bas). */
       optInStatus?: 'opted_in' | 'opted_out';
     },
-  ): Promise<{ contact: ContactRow; addedTags: string[] } | null> {
+  ): Promise<{ contact: ContactRow; addedTags: string[]; consentementChange: boolean } | null> {
     const ecrit = await enTransaction(this.pool, async (client) => {
       // Les tags d'avant, lus sous le verrou : seul moyen de savoir lesquels sont réellement nouveaux, et « tag
       // ajouté » relance un scénario.
@@ -1171,14 +1173,18 @@ export class PgContactStore implements ContactStore {
       // `opted_out` posé ici d'un statut jamais renseigné. Un statut déjà en place ne réécrit ni sa date, ni sa source,
       // et ne s'annonce pas (`src/crm/transition-consentement.ts`).
       let passe = false;
+      let consentementChange = false;
       if (edits.optInStatus !== undefined) {
-        const r = await client.query<Pick<FicheDeLEcriture, 'passe'>>(
+        const r = await client.query<Pick<FicheDeLEcriture, 'ecrite' | 'passe'>>(
           ecritureDuConsentement({
-            cible: 'where id = $1 and tenant_id = $2', voulu: '$3::text', source: '$4::text', autorite: 'fiche', rendu: 'par_fiche',
+            cible: 'where id = $1 and tenant_id = $2', espace: '$2',
+            voulu: '$3::text', source: '$4::text', autorite: 'fiche', rendu: 'par_fiche',
           }),
           [contactId, tenantId, edits.optInStatus, 'crm'],
         );
         passe = r.rows[0]?.passe === true;
+        // Sans autre affectation, `ecrite` veut dire « le statut a changé » : c'est ce que la route journalise.
+        consentementChange = r.rows[0]?.ecrite === true;
       }
       if (edits.addTags.length > 0) {
         await client.query(`update contacts set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || $3::text[]) t), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.addTags]);
@@ -1187,7 +1193,7 @@ export class PgContactStore implements ContactStore {
         await client.query(`update contacts set tags = (select coalesce(array_agg(t), '{}') from unnest(tags) t where t <> all($3::text[])), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.removeTags]);
       }
       const res = await client.query(PgContactStore.SELECT_ONE, [contactId, tenantId]);
-      return { avant: exists.rows[0]?.tags ?? [], r: res.rows[0], passe };
+      return { avant: exists.rows[0]?.tags ?? [], r: res.rows[0], passe, consentementChange };
     });
     if (ecrit === null || !ecrit.r) return null;
     const avant = new Set(ecrit.avant);
@@ -1203,6 +1209,7 @@ export class PgContactStore implements ContactStore {
     return {
       contact,
       addedTags: edits.addTags.filter((t) => !avant.has(t) && apres.has(t)),
+      consentementChange: ecrit.consentementChange,
     };
   }
 
@@ -1293,7 +1300,7 @@ export class PgContactStore implements ContactStore {
 
     const sel = buildBulkSelector(tenantId, target);
     const params = [...sel.params];
-    const add = (v: unknown): string => { params.push(v); return `$${params.length}`; };
+    const add = (v: unknown): `$${number}` => { params.push(v); return `$${params.length}`; };
     const sets: string[] = [];
     if (addTags.length > 0 || removeTags.length > 0) {
       // Une seule assignation `tags =` (Postgres en refuse deux sur une colonne) : union dédupliquée puis retrait, en
@@ -1315,12 +1322,13 @@ export class PgContactStore implements ContactStore {
     /**
      * Le consentement, source 'crm' : une décision d'opérateur. Le rendu `compte` remonte UNE ligne : les deux nombres,
      * et les identités des seules fiches passées à `opted_out`, lues dans l'instruction (une relecture après coup
-     * pourrait viser d'autres contacts, la cible étant des filtres).
+     * pourrait viser d'autres contacts, la cible étant des filtres). L'espace part dans un paramètre à lui : le
+     * sélecteur ne garantit pas `$1` (une cible vide n'a aucun paramètre).
      */
     const res = await this.pool.query<CompteDeLEcriture>(
       ecritureDuConsentement({
-        cible: `where ${sel.where}`, voulu: `${add(optIn)}::text`, source: `${add('crm')}::text`,
-        autorite: 'action_en_masse', autres: sets, rendu: 'compte',
+        cible: `where ${sel.where}`, espace: add(tenantId), voulu: `${add(optIn)}::text`,
+        source: `${add('crm')}::text`, autorite: 'action_en_masse', autres: sets, rendu: 'compte',
       }),
       params,
     );

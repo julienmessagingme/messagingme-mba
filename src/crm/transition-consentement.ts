@@ -19,9 +19,11 @@
  *
  * Ce qui ne passe PAS par ici : le STOP RCS (`rcs_optout_at`), le blocage, la purge (qui garde ce qui dit non), et
  * `upsertFromInbound`, qui ne crée qu'en `unknown` et ne touche jamais au consentement d'une fiche existante.
- * ⚠️ Une fiche CRÉÉE `opted_out` porterait sa date ; aucun chemin n'en crée (mesuré le 2026-10-03) : les upserts ne
- * demandent que `opted_in` ou `unknown` (types `ContactUpsert` et `LotContacts`), et l'API publique crée en `unknown`
- * (`creerFicheApi`) puis écrit le consentement par `ecrireConsentementParId`, qui passe par ici.
+ * ⚠️ Aucun chemin ne CRÉE une fiche `opted_out` (mesuré le 2026-10-03), et seuls les types l'empêchent :
+ * `ContactUpsert` et `LotContacts` ne demandent que `opted_in` ou `unknown`. La branche `insert` d'un upsert écrit le
+ * statut et la source demandés mais jamais `opt_out_at` : une fiche créée `opted_out` par là n'aurait PAS de date.
+ * L'API publique crée en `unknown` (`creerFicheApi`) puis écrit le consentement par `ecrireConsentementParId`, qui
+ * passe par ici : la date est posée, et le passage s'annonce au système du client (décision de Julien du 2026-10-03).
  */
 
 /** Les trois statuts de `contacts.opt_in_status` (CHECK de 0001). */
@@ -185,10 +187,15 @@ export interface CompteDeLEcriture {
  *
  * `cible` est la fin d'un `select ... from contacts` (son `where`, et son `order by ... limit` s'il en a) : elle porte
  * le filtre d'espace, et `deleted_at is null` quand l'écriture en a besoin. Ses paramètres sont ceux de l'appelant.
+ * `espace` est celui de ces paramètres qui porte l'espace (`$1` ici, `$2` là : c'est l'appelant qui numérote).
+ * 🔴 `ecrit` le repose, alors qu'elle ne vise que des fiches de `avant`, déjà filtrées : sans lui, Postgres ne sert
+ * pas l'index d'espace sur une masse large, et l'écriture ne tient plus l'isolation que par `cible`. Typé `$<n>` : on
+ * y passe une référence de paramètre, jamais une valeur recopiée dans le SQL.
  * L'annonce n'est pas faite ici : elle part APRÈS le `commit`, jamais dedans (un `rollback` l'annulerait).
  */
 export function ecritureDuConsentement(o: DemandeConsentement & {
   cible: string;
+  espace: `$${number}`;
   autres?: readonly string[];
   rendu: 'par_fiche' | 'compte';
 }): string {
@@ -201,7 +208,7 @@ export function ecritureDuConsentement(o: DemandeConsentement & {
        ),
        ecrit as (
          update contacts set ${[...autres, ecr.affectations, 'updated_at = now()'].join(',\n         ')}
-          where id in (select id from avant)${autres.length === 0 ? ` and ${ecr.change}` : ''}
+          where tenant_id = ${o.espace} and id in (select id from avant)${autres.length === 0 ? ` and ${ecr.change}` : ''}
          returning id
        )`;
   const depuis = 'from avant left join ecrit on ecrit.id = avant.id';

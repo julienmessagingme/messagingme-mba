@@ -341,14 +341,17 @@ describe('consentement posé à la main sur la fiche', () => {
     optInStatus: 'opted_in', fields: {}, tags: [], createdAt: '2026-08-18T09:00:00.000Z',
   };
 
-  /** Câblage avec un `applyEdits` qui RÉPOND (celui du fichier renvoie null = contact inconnu). */
-  function avecFiche(over: Record<string, unknown> = {}) {
+  /**
+   * Câblage avec un `applyEdits` qui RÉPOND (celui du fichier renvoie null = contact inconnu). `consentementChange` :
+   * ce que le dépôt dit de l'écriture du statut (faux = il était déjà en place).
+   */
+  function avecFiche(over: Record<string, unknown> = {}, consentementChange = true) {
     const edits: Array<Record<string, unknown>> = [];
     const monte = app({
       contacts: {
         applyEdits: async (_t: string, _id: string, e: Record<string, unknown>) => {
           edits.push(e);
-          return { contact: CONTACT, addedTags: [] };
+          return { contact: CONTACT, addedTags: [], consentementChange };
         },
         ...over,
       },
@@ -373,6 +376,21 @@ describe('consentement posé à la main sur la fiche', () => {
     expect(edits[0]).toMatchObject({ optInStatus: 'opted_out' });
     expect(journal.map((t) => t.action)).toEqual(['contact.optout']);
     await server.close();
+  });
+
+  /**
+   * 🔴 Enregistrer une fiche dont le statut est déjà en place n'écrit rien (ni date, ni source) : une trace
+   * `contact.optout` à chaque enregistrement ferait croire, dans le journal, à autant de nouveaux refus.
+   */
+  it('🔴 statut déjà en place : la fiche s’enregistre, mais AUCUNE trace', async () => {
+    for (const optInStatus of ['opted_in', 'opted_out']) {
+      const { server, edits, journal } = avecFiche({}, false);
+      const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { optInStatus } });
+      expect(res.statusCode).toBe(200);
+      expect(edits[0], 'le statut part quand même au dépôt, qui décide').toMatchObject({ optInStatus });
+      expect(journal, `${optInStatus} déjà en place`).toEqual([]);
+      await server.close();
+    }
   });
 
   it('🔴 « inconnu » est REFUSÉ, comme toute valeur libre', async () => {

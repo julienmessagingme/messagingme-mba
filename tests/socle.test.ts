@@ -43,8 +43,10 @@ function banc() {
       requetes.push(sql);
       // L'espace a branché un outil : sans ça, l'émetteur n'enfile rien, et le test ne verrait pas le signal.
       if (sql.includes('from integration_batch')) return { rows: [{ tenant_id: TENANT }] };
-      // La fiche était abonnée : l'écriture la fait passer à `opted_out` (`passe`), donc l'annonce est due.
-      if (sql.includes('update contacts set opt_in_status')) return { rows: [{ id: 'fiche-1', passe: true }] };
+      // La fiche était abonnée : l'écriture la fait passer à `opted_out` (`passe`), donc l'annonce est due. Reconnue
+      // à ce qu'elle fait (elle écrit `contacts`) et à la colonne qu'on lui répond (`passe`), pas à l'ordre de ses
+      // affectations, que rien ne fixe.
+      if (/\bupdate contacts set\b/.test(sql) && /\bas passe\b/.test(sql)) return { rows: [{ id: 'fiche-1', passe: true }] };
       return { rows: [] };
     },
   } as unknown as Pool;

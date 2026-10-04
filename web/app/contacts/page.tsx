@@ -31,7 +31,7 @@ import { Modale } from '@/components/Modale';
 import { VoileMenu } from '@/components/Flottant';
 import { Squelette } from '@/components/Squelette';
 import { erreurDeChargement } from '@/lib/http';
-import { avisStopsGardes } from '@/lib/stops-gardes';
+import { avisStopsGardes, quiLeveUnStop } from '@/lib/stops-gardes';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
@@ -598,7 +598,7 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
         )}
         {action === 'optin' && (
           <p className="rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800">
-            {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n’utiliser que si vous détenez une preuve de leur consentement. Ceux qui ont répondu STOP le restent : un STOP ne se lève que depuis la fiche du contact.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent. Those who replied STOP stay unsubscribed: a STOP can only be lifted from the contact’s record.`)}
+            {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n’utiliser que si vous détenez une preuve de leur consentement. Ceux qui ont répondu STOP le restent : `, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent. Those who replied STOP stay unsubscribed: `) + quiLeveUnStop(t)}
           </p>
         )}
         {action === 'optout' && (
