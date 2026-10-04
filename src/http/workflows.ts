@@ -11,6 +11,7 @@ import { grapheEditable, WorkflowUtiliseParLienChaine } from '../workflow/store.
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { executerFonctionJs } from '../workflow/fonction-js';
+import { normaliserEtiquette } from '../crm/poser-etiquette';
 
 /**
  * La sauvegarde n'exige pas qu'un scénario commence par un template : un scénario qui ouvre sur un message de
@@ -61,7 +62,7 @@ export interface WorkflowRouteDeps {
   getDisplayPhoneNumber(tenantId: string): Promise<string | null>;
 }
 
-/** Tags saisis dans les blocs `tag` du graphe (dédupliqués, trim + tronqués à 64 comme la route Tags). */
+/** Tags saisis dans les blocs `tag` du graphe (dédupliqués, normalisés comme à la pose : `normaliserEtiquette`). */
 function tagsInGraph(graph: WorkflowGraph): string[] {
   const out = new Set<string>();
   for (const n of graph.nodes) {
@@ -70,7 +71,7 @@ function tagsInGraph(graph: WorkflowGraph): string[] {
     // Un retrait de tag (remove_tag) ne « dé-déclare » rien -> ignoré ici.
     const isTagAdd = n.type === 'tag' || (n.type === 'action' && d.actionKind === 'add_tag');
     if (!isTagAdd) continue;
-    const t = String(d.tag ?? '').trim().slice(0, 64);
+    const t = normaliserEtiquette(String(d.tag ?? ''));
     if (t !== '') out.add(t);
   }
   return [...out];

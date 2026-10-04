@@ -521,8 +521,9 @@ connecteur, mais le relais exécute son geste lui-même. Les invariants :
   consommateur `agent:` sur un outil `pour_agent_meta`. Son nom partage l'index unique de l'espace
   (`agent_tools_nom_espace_uidx`) : deux outils ne peuvent pas porter le même nom sous `EngageMe`.
 - **La cible est FIXÉE par l'administrateur** ; Meta ne fournit que la valeur d'un champ (`{"valeur": …}`,
-  bornée à la liste permise). Les gestes réutilisent `creerPoserTagAgent` (déclaration, `tag_added` si nouveau)
-  et `mergeFieldsByPhone`. Le journal ne porte que la nature du geste, jamais une valeur du client.
+  bornée à la liste permise). Les gestes réutilisent `poserTagDepuisAgent` (la pose commune,
+  `src/crm/poser-etiquette.ts`, en publiant : déclaration, `tag_added` si nouveau) et `mergeFieldsByPhone`. Le
+  journal ne porte que la nature du geste, jamais une valeur du client.
 - **Ce qui part chez Meta** se calcule dans `src/mba/outils-a-publier.ts` (appels de connecteur, gestes maison et
   outils MCP appelables), testé ; une action d'agent IA exposée par l'ancienne route, une cible illisible ou un MCP
   non activable ou disparu de son serveur ne partent pas. Un MCP sans description part sous « Outil <nom>. », Meta
@@ -2577,7 +2578,10 @@ suit est la règle, en une formulation courte.
 
 7. **L'émission d'un événement d'automation est gouvernée par le CHEMIN appelant**, jamais par la dépendance
    partagée. L'exécuteur de scénario sert AUSSI les campagnes : publier depuis la pose de tag ferait émettre
-   un événement par destinataire. Le défaut est « n'émet pas ».
+   un événement par destinataire. Le défaut est « n'émet pas ». La pose d'une étiquette sur UN contact
+   (`src/crm/poser-etiquette.ts`), commune aux cinq portes unitaires, n'a pas de défaut du tout : `publier` y
+   est une option REQUISE, que l'agent et la fiche passent à vrai, le widget, l'outil MCP et le bloc de scénario
+   à faux (l'exécuteur publiant à part, selon le lancement).
 8. **Aucun chemin de MASSE n'émet** (action en masse, import CSV, API publique, campagne). Ajouter une
    émission sur l'un d'eux = envoi de masse involontaire et facturé. ⚠️ UNE exception, décidée et bornée : le
    balayage du risque de désengagement émet `risque_eleve` (§ 6, « Les balayeurs du worker »).
@@ -2838,7 +2842,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/llm/errors.ts` -> `direPanneModele` | ce qu'un échec d'appel au modèle a le droit de dire au client, ou `null` : c'est alors NOTRE panne, que l'appelant RELANCE en 500 opaque. ⚠️ `fetch failed` et un abandon n'y sont attribués au modèle que parce que, dans ses quatre appelants, le seul `fetch` est l'appel au modèle |
 | `src/agent/llm/tool-schema.ts` -> `paramsOutil` | 🔴 la séparation des sources d'un paramètre (`modele` vs `contact` ou `fixe`). Deux lectures divergentes rendraient la cible au modèle, donc un IDOR |
 | `src/agent/setup/proposition.ts` | ce que l'IA de construction a le DROIT de proposer. 🔴 La FRONTIÈRE est la liste des CLÉS et les énumérations FERMÉES, jamais une longueur : les bornes sont de l'hygiène, et `assainirProposition` les RAMÈNE avant que Zod ne juge, au lieu de perdre le tour. ⚠️ Toute borne appliquée est annoncée dans le schéma envoyé au modèle, et un test le dérive plutôt que de le relire |
-| `src/agent/poser-tag.ts` | les TROIS effets de « poser un tag » depuis un agent |
+| `src/crm/poser-etiquette.ts` | 🔴 poser une étiquette sur UN contact, le geste des cinq portes unitaires (agent IA et agent de Meta, bloc de scénario, widget, outil MCP `tag_conversation`, fiche contact) : nettoyer (`normaliserEtiquette`, `nettoyerEtiquettes` : espaces, 64 caractères, vides et doublons), poser, déclarer dans le référentiel (au mieux), et publier `tag_added` sur les seules nouvelles, SI l'appelant le demande (`publier`, requise). `apresPose` sert la fiche, qui pose dans la transaction d'`applyEdits` ; `publierEnDiffere`, l'exécuteur. Construit une fois par `buildWorkflowRuntime`, rendu à l'API et au worker. Les chemins de masse (import, API publique, action en masse) n'en prennent que le nettoyage |
 | `src/agent/contexte.ts` | ce que le cerveau doit savoir d'un agent (production ET bac à sable), et `lireContexteAvecReglages`, la lecture UNIQUE des réglages de l'espace pour ses deux politiques, branchée par le worker ET par l'API |
 | `src/agent/fiche.ts` | les DEUX schémas de fiche : celui qui LIT, celui qui PATCHE |
 | `src/webhooks/json.ts` | `asArray`, `asRecord`, `texteNonVide`, `objetOuNull` : lecture défensive d'un JSON tiers (payload Meta, réponse MCP, schéma d'outil) |

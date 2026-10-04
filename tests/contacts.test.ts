@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
@@ -7,6 +7,7 @@ import type { ContactsRouteDeps } from '../src/http/contacts';
 import type { ContactRow, BulkTarget, BulkEdits } from '../src/crm/contact-store.pg';
 import type { UserFieldDef } from '../src/crm/types';
 import { contactsInertes, contactsDepInerte, historiqueContactInerte } from './routes-inertes';
+import { creerPoseEtiquette, type DepsPoseEtiquette } from '../src/crm/poser-etiquette';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -33,12 +34,21 @@ const FIELDS: UserFieldDef[] = [
 interface Cap {
   merged: Array<Record<string, string>>; added: string[][]; removed: string[][]; removedFields: string[][]; names: Array<string | null>;
   bulk: Array<{ target: BulkTarget; edits: BulkEdits }>; deleted: BulkTarget[];
-  /** Émissions « tag ajouté » vers la file d'automation (E.2) : doit rester VIDE sur les chemins de masse. */
-  emitted: string[][];
+  /** Émissions « tag ajouté » vers la file d'automation (E.2), une par étiquette : VIDE sur les chemins de masse. */
+  emitted: string[];
+  /** Étiquettes déclarées dans le référentiel de l'espace par la pose d'une fiche. */
+  declared: string[];
 }
 
-function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow | null } = {}) {
-  const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [], bulk: [], deleted: [], emitted: [] };
+/**
+ * La pose d'étiquettes de la fiche passe par le VRAI module (`src/crm/poser-etiquette.ts`), sur de faux dépôts : ce qui
+ * est déclaré et publié est ce que la production ferait. `opts.etiquettes` remplace une dépendance du module.
+ */
+function app(
+  over: Partial<ContactsRouteDeps> = {},
+  opts: { contact?: ContactRow | null; etiquettes?: Partial<DepsPoseEtiquette> } = {},
+) {
+  const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [], bulk: [], deleted: [], emitted: [], declared: [] };
   const deps: ContactsRouteDeps = {
     ...contactsInertes,
     contacts: {
@@ -67,7 +77,14 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
       getContactHistory: async () => ({ sends: [], conversations: [] }),
       listSendsForExport: async () => [],
     },
-    emitTagAdded: async (_t, _id, tags) => { cap.emitted.push(tags); },
+    etiquettes: creerPoseEtiquette({
+      // La fiche pose dans sa transaction (`applyEdits`, ci-dessus) : le module ne doit JAMAIS reposer.
+      ajouterAuContact: async () => { throw new Error('la fiche pose dans applyEdits, pas par le module'); },
+      waIdDeLaFiche: async (_t, id) => (id === 'c1' ? '33611' : null),
+      declarer: async (_t, tag) => { cap.declared.push(tag); },
+      emettre: async (_t, waId, tag) => { cap.emitted.push(`${waId}:${tag}`); },
+      ...opts.etiquettes,
+    }),
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), cap };
@@ -337,11 +354,14 @@ describe('POST /tenants/:t/contacts/bulk — action en masse', () => {
  * symétrie » et toute la suite resterait verte.
  */
 describe('routes contacts — émission « tag ajouté » (automations)', () => {
-  it('édition d’UNE fiche avec un tag NOUVEAU -> émet ce tag', async () => {
+  it('édition d’UNE fiche avec un tag NOUVEAU -> émet ce tag, et le déclare dans le référentiel', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['rappeler'] } });
     expect(res.statusCode).toBe(200);
-    expect(cap.emitted).toEqual([['rappeler']]);
+    expect(cap.emitted).toEqual(['33611:rappeler']);
+    // Changement voulu du 2026-10-04 : une étiquette ajoutée sur une fiche entre dans Contenu > Bibliothèque >
+    // Étiquettes, comme celle d'un scénario ou d'un agent.
+    expect(cap.declared).toEqual(['rappeler']);
     await server.close();
   });
 
@@ -351,6 +371,39 @@ describe('routes contacts — émission « tag ajouté » (automations)', () => 
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['vip'] } });
     expect(res.statusCode).toBe(200);
     expect(cap.emitted).toEqual([]);
+    // La déclaration, elle, reste : le référentiel est une union, comme pour l'agent.
+    expect(cap.declared).toEqual(['vip']);
+    await server.close();
+  });
+
+  it('🔴 seules les NOUVELLES sont publiées, toutes les posées sont déclarées, nettoyées comme toute pose', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok),
+      payload: { addTags: ['  rappeler  ', 'vip', 'rappeler', '   ', 'x'.repeat(70)] },
+    });
+    expect(res.statusCode).toBe(200);
+    const long = 'x'.repeat(64);
+    expect(cap.added).toEqual([['rappeler', 'vip', long]]);
+    expect(cap.declared).toEqual(['rappeler', 'vip', long]);
+    expect(cap.emitted).toEqual(['33611:rappeler', `33611:${long}`]);
+    await server.close();
+  });
+
+  it('une fiche sans identité joignable : déclarée, rien à déclencher', async () => {
+    const { server, cap } = app({}, { etiquettes: { waIdDeLaFiche: async () => null } });
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['rappeler'] } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.declared).toEqual(['rappeler']);
+    expect(cap.emitted).toEqual([]);
+    await server.close();
+  });
+
+  it('un référentiel injoignable n’empêche ni l’édition ni la publication', async () => {
+    const { server, cap } = app({}, { etiquettes: { declarer: async () => { throw new Error('référentiel injoignable'); } } });
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['rappeler'] } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.emitted).toEqual(['33611:rappeler']);
     await server.close();
   });
 
@@ -363,13 +416,19 @@ describe('routes contacts — émission « tag ajouté » (automations)', () => 
     expect(res.statusCode).toBe(200);
     expect(cap.bulk).toHaveLength(1);  // l'action en masse a bien eu lieu…
     expect(cap.emitted).toEqual([]);   // …mais sans déclencher la moindre automation
+    expect(cap.declared).toEqual([]);  // …et sans passer par la pose unitaire
     await server.close();
   });
 
   it('une file indisponible ne fait PAS échouer l’édition de fiche', async () => {
-    const { server } = app({ emitTagAdded: async () => { throw new Error('file indisponible'); } });
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { server, cap } = app({}, { etiquettes: { emettre: async () => { throw new Error('file indisponible'); } } });
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['rappeler'] } });
     expect(res.statusCode).toBe(200);
+    // La déclaration est passée avant, et l'échec de la file est JOURNALISÉ : une automation muette serait indébogable.
+    expect(cap.declared).toEqual(['rappeler']);
+    expect(erreurs).toHaveBeenCalledWith(expect.stringContaining('ignorée (best-effort)'), 'file indisponible');
+    erreurs.mockRestore();
     await server.close();
   });
 });

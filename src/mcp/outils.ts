@@ -4,6 +4,7 @@ import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } 
 import { parCause, type AuteurDuChangement } from '../inbox/evenements';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 import { e164DepuisSaisie } from '../crm/phone';
+import { LONGUEUR_MAX_ETIQUETTE, nettoyerEtiquettes, type PoseEtiquette } from '../crm/poser-etiquette';
 import {
   DEBUT_AVATAR, MAX_AVATAR_URL, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PAR_HEURE_WIDGET, MAX_PHRASE_WIDGET,
   MOTIF_COULEUR, POSITIONS_WIDGET, LIMITE_WIDGETS_PAR_ESPACE,
@@ -27,7 +28,8 @@ export { RefusOutil } from './saisie';
  * Lecture d'abord, écriture étroite : pas d'envoi de template ni de campagne, un mégaphone facturé sur un numéro
  * dont Meta note la qualité.
  * 🔴 Aucun outil n'émet d'événement d'automation : un agent qui boucle sur 500 conversations déclencherait 500
- * automations facturées. Un tag posé ici ne réveille rien, et la description le dit.
+ * automations facturées. Un tag posé ici ne réveille rien (la pose est appelée SANS publier), et la description le
+ * dit.
  */
 
 /** Le scope de clé d'API qu'un outil exige. Deux seulement : lire, et écrire. */
@@ -46,10 +48,14 @@ export interface DepsMcp extends DepsRepondre {
     /** Recherche de contacts (le même moteur de filtres que le mini-CRM). */
     query(tenantId: string, filtres: ContactFilters, limit: number, offset: number): Promise<ContactRow[]>;
     findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null>;
-    addTagsByPhoneReturningNew(tenantId: string, waId: string, tags: string[]): Promise<{ touched: number; added: string[] }>;
     /** La dernière analyse et son résumé pour une page de fiches, en une requête filtrée sur l'espace. */
     analysesEtResumes(tenantId: string, contactIds: readonly string[]): Promise<Map<string, AnalyseEtResume>>;
   };
+  /**
+   * La pose d'étiquettes sur un contact (`src/crm/poser-etiquette.ts`), le MÊME module que la fiche de la console et
+   * l'agent : nettoyage, pose, déclaration dans le référentiel de l'espace. Appelée SANS publier (voir l'en-tête).
+   */
+  etiquettes: Pick<PoseEtiquette, 'poser'>;
   /** Membres de l'espace, pour qu'un agent puisse confier une conversation à quelqu'un de nommé. */
   listerMembres(tenantId: string): Promise<Array<{ id: string; name: string | null; email: string; role: string }>>;
   /**
@@ -505,8 +511,9 @@ export const OUTILS: OutilMcp[] = [
   {
     nom: 'tag_conversation',
     description:
-      'Pose un ou plusieurs tags sur le contact d’une conversation. ⚠️ Les automations qui écoutent la pose '
-      + 'de tag ne sont PAS déclenchées par cet outil : un tag posé ici classe, il n’envoie rien.',
+      'Pose un ou plusieurs tags sur le contact d’une conversation, et les ajoute à la liste des tags de l’espace. '
+      + '⚠️ Les automations qui écoutent la pose de tag ne sont PAS déclenchées par cet outil : un tag posé ici '
+      + 'classe, il n’envoie rien.',
     scope: 'mcp:write',
     // Ajouter n'écrase rien, et reposer un tag déjà là ne change rien.
     annotations: { title: 'Poser des tags', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -515,8 +522,8 @@ export const OUTILS: OutilMcp[] = [
       properties: {
         conversation_id: CONVERSATION_ID,
         tags: {
-          type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1, maxItems: 10,
-          description: 'Les tags à ajouter (1 à 10).',
+          type: 'array', items: { type: 'string', minLength: 1, maxLength: LONGUEUR_MAX_ETIQUETTE }, minItems: 1, maxItems: 10,
+          description: 'Les tags à ajouter (1 à 10, 64 caractères au plus chacun).',
         },
       },
       required: ['conversation_id', 'tags'],
@@ -524,12 +531,14 @@ export const OUTILS: OutilMcp[] = [
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       const bruts = Array.isArray(args.tags) ? args.tags : [args.tags];
-      const tags = [...new Set(bruts.filter((x): x is string => typeof x === 'string').map((s) => s.trim()).filter((s) => s !== ''))].slice(0, 10);
+      // Le nettoyage de toute pose (espaces, 64 caractères, vides et doublons), puis la borne de CET outil : dix.
+      const tags = nettoyerEtiquettes(bruts.filter((x): x is string => typeof x === 'string'), 10);
       if (tags.length === 0) throw new RefusOutil('paramètre « tags » requis (au moins un tag non vide)');
       const ctx = await contexteOuRefus(deps, tenantId, id);
-      const { added } = await deps.contacts.addTagsByPhoneReturningNew(tenantId, ctx.waId, tags);
+      // 🔴 `publier: false` : un tag posé par un assistant classe, il ne réveille aucune automation (voir l'en-tête).
+      const { nouvelles } = await deps.etiquettes.poser(tenantId, ctx.waId, tags, { publier: false });
       // On rend ce qui a réellement changé : un agent qui repose un tag déjà là doit le voir, sinon il boucle.
-      return { conversation_id: id, tags_ajoutes: added, deja_presents: tags.filter((t) => !added.includes(t)) };
+      return { conversation_id: id, tags_ajoutes: nouvelles, deja_presents: tags.filter((t) => !nouvelles.includes(t)) };
     },
   },
   {

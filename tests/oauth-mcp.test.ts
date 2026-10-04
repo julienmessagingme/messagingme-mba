@@ -10,7 +10,7 @@ import { FakeQueue } from './fake-queue';
 import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpAgentInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 
 /**
  * `/mcp` ET L'OAUTH (tâche 5 du plan `2026-10-03-oauth-mcp.md`).
@@ -69,10 +69,10 @@ function monter(o: { publicApiUrl?: string; apiParMinute?: number } = {}) {
     contacts: {
       query: async () => [],
       findByPhone: async () => null,
-      addTagsByPhoneReturningNew: async () => ({ touched: 0, added: [] }),
       analysesEtResumes: async () => new Map(),
     },
     listerMembres: async () => [],
+    ...mcpEtiquettesInertes,
     ...mcpWidgetsInertes,
     ...mcpAgentInerte,
   };

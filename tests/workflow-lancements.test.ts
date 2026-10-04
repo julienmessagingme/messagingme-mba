@@ -12,6 +12,7 @@ import {
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { WorkflowRow } from '../src/workflow/store.pg';
 import type { ControlOwner } from '../src/inbox/store.pg';
+import { AUTOMATION_EVENT_QUEUE } from '../src/automation/event-job';
 
 /**
  * LES LANCEMENTS DE SCÉNARIO, EXÉCUTÉS TYPE PAR TYPE (plan `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md`).
@@ -96,9 +97,10 @@ function demandeDe(type: TypeDeLancement, v: Variante): DemandeDeLancement {
 /**
  * Le VRAI exécuteur et la VRAIE entrée de lancement, sur le VRAI contrôle du fil (`bancDuFil` : le module
  * `src/inbox/fil.ts` sur un faux Meta). `detenteur` : qui tient le fil au départ ; le contact est sur la liste de
- * l'agent de Meta, une reprise l'en retire, et c'est l'appel qu'on observe.
+ * l'agent de Meta, une reprise l'en retire, et c'est l'appel qu'on observe. `surcharges` remplace des dépendances de
+ * l'exécuteur, par exemple celles que donne le VRAI câblage.
  */
-function banc(detenteur: ControlOwner = 'app_workflow') {
+function banc(detenteur: ControlOwner = 'app_workflow', surcharges: Partial<WorkflowExecutorDeps> = {}) {
   const b = bancDuFil({ surLaListe: [WA], conversations: { [WA]: { owner: detenteur } } });
   const envois: string[] = [];
   const emis: string[] = [];
@@ -131,6 +133,7 @@ function banc(detenteur: ControlOwner = 'app_workflow') {
     emitTagAdded: async (_t, _w, tag) => { emis.push(tag); },
     mayAct: b.fil.peutAgir,
     reclaimControl: b.fil.reprendrePourLApp,
+    ...surcharges,
   };
   const executor = new WorkflowExecutor(deps);
   const lancements = creerLancements({
@@ -214,6 +217,50 @@ describe('la publication des étiquettes : jamais un chemin de masse', () => {
       const m = banc();
       expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }))).toBe(true);
       expect(m.emis).toEqual(publie ? ['vip'] : []);
+    });
+  }
+});
+
+/**
+ * LA MÊME TABLE, SUR LA VRAIE POSE D'ÉTIQUETTE (plan `docs/superpowers/plans/2026-10-04-poser-une-etiquette.md`). Les
+ * cas ci-dessus observent l'exécuteur sur des dépendances fausses ; ceux-ci lui donnent `applyTag` et `emitTagAdded`
+ * tels que `buildWorkflowRuntime` les construit sur le module commun (`src/crm/poser-etiquette.ts`), et lisent la
+ * FILE d'automations elle-même. 🔴 Une campagne ne publie toujours rien : si la pose du bloc publiait d'elle-même, 5 000
+ * destinataires démarreraient 5 000 scénarios facturés.
+ */
+function poseDuCablage() {
+  const file: Array<{ name: string; data: unknown }> = [];
+  const requetes: string[] = [];
+  const inerte = {} as never;
+  const { executor } = buildWorkflowRuntime({
+    pool: { query: async (sql: string) => { requetes.push(sql); return { rows: [], rowCount: 1 }; } } as never,
+    queue: { enqueue: async (name, data) => { file.push({ name, data }); } },
+    dryRun: true, repo: inerte,
+    contactStore: { addTagsByPhoneReturningNew: async (_t: string, _w: string, tags: string[]) => ({ touched: 1, added: tags }) } as never,
+    inboxStore: inerte, settingsStore: inerte, workflowStore: inerte, metaCredentials: inerte, metaFactory: inerte,
+    rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte, numeroDeLEspace: async () => null, runStore: inerte,
+    fil: inerte,
+  });
+  // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
+  const { applyTag, emitTagAdded } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
+  const publiees = () => file
+    .filter((j) => j.name === AUTOMATION_EVENT_QUEUE)
+    .map((j) => (j.data as { event: { kind: string; tag: string } }).event)
+    .map((e) => `${e.kind}:${e.tag}`);
+  const declarations = () => requetes.filter((q) => /insert into tags/.test(q)).length;
+  return { applyTag, emitTagAdded, file, publiees, declarations };
+}
+
+describe('la publication des étiquettes, sur la VRAIE pose du câblage', () => {
+  for (const type of TYPES_DE_LANCEMENT) {
+    const { publie } = ATTENDU[type];
+    it(`${type} : l’étiquette est posée et déclarée, et ${publie ? 'publie « tag ajouté » par la file' : 'RIEN n’entre dans la file'}`, async () => {
+      const p = poseDuCablage();
+      const m = banc('app_workflow', { applyTag: p.applyTag, emitTagAdded: p.emitTagAdded });
+      expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }))).toBe(true);
+      expect(p.declarations(), 'la déclaration ne dépend pas du lancement').toBe(1);
+      expect(p.publiees()).toEqual(publie ? ['tag_added:vip'] : []);
+      expect(p.file, 'rien d’autre n’est enfilé').toHaveLength(publie ? 1 : 0);
     });
   }
 });

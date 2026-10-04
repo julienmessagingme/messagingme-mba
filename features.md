@@ -207,7 +207,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   n'est reconnaissable. Il faut **taper le mot SUPPRIMER** pour confirmer.
   Une action en masse (et l'import CSV) **ne déclenche aucun scénario** : poser un tag sur 5 000 contacts d'un coup
   ne lance pas l'automation « tag ajouté », sinon ce serait autant de messages facturés. Seul un tag posé sur
-  **une** fiche la déclenche. Pour toucher une liste entière, c'est la campagne.
+  **une** fiche la déclenche. Pour toucher une liste entière, c'est la campagne. Un tag ajouté sur une fiche est
+  aussi déclaré dans Contenu > Bibliothèque > Étiquettes (2026-10-04), comme celui d'un scénario ou d'un agent :
+  il y reste listé même une fois retiré de la fiche.
 - ✅ **Les conversations sont conservées 90 jours** (durée abaissée depuis un an le 2026-09-17). Passé ce
   délai sans le moindre message, une conversation est effacée automatiquement, avec ses messages, son
   analyse qualitative et son résumé. La **fiche du contact reste** : c'est l'historique de discussion qui part,
@@ -3643,7 +3645,9 @@ depuis un assistant : elle reste un geste de la console.
   ouverte ; il ne lance pas d'envoi de masse.
 - **Hors de la fenêtre de 24 h, rien ne part.** L'outil refuse et dit pourquoi.
 - **Les automations ne se déclenchent pas.** Un tag posé par un assistant classe le contact, il ne réveille
-  pas les automations qui écoutent ce tag : un agent qui boucle sur 500 fils déclencherait 500 envois.
+  pas les automations qui écoutent ce tag : un agent qui boucle sur 500 fils déclencherait 500 envois. Comme
+  ailleurs dans la console, le tag est coupé à 64 caractères et déclaré dans Contenu > Bibliothèque >
+  Étiquettes (2026-10-04).
 - **Une clé de lecture ne VOIT même pas les outils qui écrivent** : ils ne sont pas listés.
 
 ### Connecter Claude à votre espace, sans clé (2026-10-03)

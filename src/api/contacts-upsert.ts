@@ -11,6 +11,7 @@ import type { UserFieldDef } from '../crm/types';
 import type { CountryCode } from 'libphonenumber-js';
 import { MAX_EXTERNAL_ID } from './fiche';
 import { estCleReservee } from '../crm/champs-fiche';
+import { nettoyerEtiquettes } from '../crm/poser-etiquette';
 
 /**
  * Les bornes de forme d'un contact poussé par l'API : champs et étiquettes par fiche, 20 à l'unité, 10 dans
@@ -126,8 +127,9 @@ export interface ApiUpsertOutcome {
   reason?: string;
 }
 
+/** Les étiquettes d'une fiche reçue par l'API, nettoyées comme toute pose (`nettoyerEtiquettes`) et bornées à 50. */
 export const normalizeTags = (v: unknown): string[] =>
-  Array.isArray(v) ? [...new Set(v.map((t) => String(t).trim().slice(0, 64)).filter((t) => t !== ''))].slice(0, 50) : [];
+  Array.isArray(v) ? nettoyerEtiquettes(v.map(String), 50) : [];
 
 /**
  * Combien d'upserts en vol à la fois : 4, MOINS que le pool de la copie (`DB_POOL_MAX` de `mba-api`, dans

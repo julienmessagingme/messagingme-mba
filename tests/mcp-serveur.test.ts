@@ -14,6 +14,7 @@ import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
 import { mcpAgentInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -41,7 +42,14 @@ interface Traces {
   envois: Array<{ tenant: string; to: string; texte: string }>;
   listes: string[];
   journal: Array<{ origine: string; auteur: string | null | undefined }>;
+  /** La pose d'étiquettes, sur le VRAI module (`src/crm/poser-etiquette.ts`) : ce qui est posé, déclaré, publié. */
+  poses: Array<{ tenant: string; waId: string; tags: string[] }>;
+  declarees: string[];
+  publiees: string[];
 }
+
+/** Ce que porte déjà la fiche du contact de `cv1` : reposer ces étiquettes ne change rien. */
+const DEJA_SUR_LA_FICHE = ['vip'];
 
 function app(
   over: Partial<Omit<CablageMcp, 'inbox' | 'contacts'>> & {
@@ -51,7 +59,7 @@ function app(
   } = {},
 ) {
   const { inbox, contacts, membres, ...reste } = over;
-  const traces: Traces = { contexte: [], envois: [], listes: [], journal: [] };
+  const traces: Traces = { contexte: [], envois: [], listes: [], journal: [], poses: [], declarees: [], publiees: [] };
   const mcp: CablageMcp = {
     estDesabonne: jamaisDesabonne,
     inbox: {
@@ -85,10 +93,19 @@ function app(
     contacts: {
       query: async () => [],
       findByPhone: async () => null,
-      addTagsByPhoneReturningNew: async () => ({ touched: 1, added: ['chaud'] }),
       analysesEtResumes: async () => new Map(),
       ...contacts,
     },
+    // Le VRAI module de pose, sur de faux dépôts : c'est lui que l'outil appelle en production.
+    etiquettes: creerPoseEtiquette({
+      ajouterAuContact: async (tenant, waId, tags) => {
+        traces.poses.push({ tenant, waId, tags });
+        return { added: tags.filter((t) => !DEJA_SUR_LA_FICHE.includes(t)) };
+      },
+      waIdDeLaFiche: async () => { throw new Error('la fiche contact n’est pas une porte du MCP'); },
+      declarer: async (tenant, tag) => { traces.declarees.push(`${tenant}:${tag}`); },
+      emettre: async (tenant, waId, tag) => { traces.publiees.push(`${tenant}:${waId}:${tag}`); },
+    }),
     listerMembres: async () => membres ?? [{ id: 'u1', name: 'Jean', email: 'jean@test.fr', role: 'admin' }],
     // Les outils des widgets ont leur fichier (`tests/mcp-widgets.test.ts`) : ici, ils ne servent à rien.
     ...mcpWidgetsInertes,
@@ -430,12 +447,41 @@ describe('serveur MCP : les outils', () => {
   });
 
   it('tag_conversation rend ce qui a RÉELLEMENT changé', async () => {
-    const { server } = app({ contacts: { addTagsByPhoneReturningNew: async () => ({ touched: 1, added: ['chaud'] }) } });
+    const { server, traces } = app();
     const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('tag_conversation', { conversation_id: 'cv1', tags: ['chaud', 'vip'] }) });
     // « vip » n'était pas nouveau : un agent qui repose un tag doit pouvoir s'en rendre compte, sinon il
     // boucle en croyant échouer.
     expect(JSON.parse(contenu(res).texte)).toMatchObject({ tags_ajoutes: ['chaud'], deja_presents: ['vip'] });
+    // Sur le contact de la conversation, dans l'espace de la clé.
+    expect(traces.poses).toEqual([{ tenant: 't1', waId: '33600000001', tags: ['chaud', 'vip'] }]);
     await server.close();
+  });
+
+  /**
+   * 🔴 LA POSE DE L'OUTIL EST CELLE DE TOUTES LES PORTES (plan du 2026-10-04) : la même coupe à 64 caractères que la
+   * fiche, le scénario et l'agent, et la déclaration dans le référentiel de l'espace. Mais SANS publier : un agent qui
+   * boucle sur 500 fils déclencherait 500 automations, et la description de l'outil promet qu'il n'envoie rien.
+   */
+  it('🔴 tag_conversation coupe à 64 caractères et déclare dans le référentiel, sans RIEN publier', async () => {
+    const { server, traces } = app();
+    const long = 'x'.repeat(LONGUEUR_MAX_ETIQUETTE);
+    // Deux saisies qui ne diffèrent qu'au-delà de la borne, et des espaces autour : UNE étiquette.
+    const res = await server.inject({
+      method: 'POST', url: '/mcp', ...auth(CLE_TOUT),
+      payload: appeler('tag_conversation', { conversation_id: 'cv1', tags: [`  ${long}yz  `, `${long}w`, 'nouveau'] }),
+    });
+    expect(contenu(res).isError).toBe(false);
+    expect(JSON.parse(contenu(res).texte)).toMatchObject({ tags_ajoutes: [long, 'nouveau'], deja_presents: [] });
+    expect(traces.poses).toEqual([{ tenant: 't1', waId: '33600000001', tags: [long, 'nouveau'] }]);
+    expect(traces.declarees).toEqual([`t1:${long}`, 't1:nouveau']);
+    expect(traces.publiees, 'un tag posé par un assistant ne réveille aucune automation').toEqual([]);
+    await server.close();
+  });
+
+  it('la borne de 64 caractères est ANNONCÉE dans le schéma de tag_conversation (un modèle ne respecte que ce qu’on lui dit)', () => {
+    const outil = OUTILS.find((o) => o.nom === 'tag_conversation');
+    expect(outil?.entree.properties.tags?.items).toMatchObject({ type: 'string', minLength: 1, maxLength: 64 });
+    expect(LONGUEUR_MAX_ETIQUETTE).toBe(64);
   });
 
   it('assign_conversation : null LIBÈRE, une valeur bancale est refusée', async () => {

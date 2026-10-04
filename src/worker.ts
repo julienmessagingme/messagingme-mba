@@ -242,7 +242,7 @@ async function main(): Promise<void> {
   // câblage choisit un TYPE, jamais un réglage de démarrage.
   const {
     executor: workflowExecutor, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
-    agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
+    agentSessions, envoyerTexteAgent, poserTagDepuisAgent, etiquettes,
   } = workflowRuntime;
 
   /**
@@ -502,9 +502,10 @@ async function main(): Promise<void> {
        * L'arrivée par un widget WhatsApp : l'étiquette de source, puis le devenir du widget, dont seul 'scenario'
        * agit (`src/widgets/arrivee.ts`). 🔴 `automationRunnerDeps`, l'objet MÊME des automations ci-dessus et pas une
        * copie : le scénario d'un widget démarre avec leurs gardes (contact bloqué, anti-rebond et plafond de
-       * l'instance, garde du fil) et leur `startWorkflow` de démarrage unitaire. Lu par `tests/widget-devenir.test.ts`.
+       * l'instance, garde du fil) et leur `startWorkflow` de démarrage unitaire. L'étiquette de source passe par la pose
+       * du socle (`etiquettes`), la même que l'agent et le bloc de scénario. Lu par `tests/widget-devenir.test.ts`.
        */
-      inboundWidget: arriveeParWidget(pool, { contacts: contactStore, runner: automationRunnerDeps }),
+      inboundWidget: arriveeParWidget(pool, { etiquettes, runner: automationRunnerDeps }),
     });
     // Concurrence des entrants : les deux options vont ensemble. `concurrency` seul remettrait le désordre entre
     // deux messages d'un même contact ; `groupConcurrency` seul serait un no-op. Le groupe est le couple numéro +

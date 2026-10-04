@@ -1471,16 +1471,11 @@ async function main(): Promise<void> {
       contactHistory: contactHistoryStore,
       // Le coût d'un contact, aux mêmes tarifs que la fiche de campagne : `src/stats/chiffrage.ts`.
       getBilanContact: chiffrage.getBilanContact,
-      // Automations « tag ajouté » : l'API ne démarre pas de scénario (le worker tient l'exécuteur), elle
-      // publie un événement par tag posé. Un contact sans identité joignable (ni numéro ni BSUID) n'a rien à
-      // déclencher.
-      emitTagAdded: async (tenant, contactId, tags) => {
-        const waId = await contactStore.waIdOfContact(tenant, contactId);
-        if (!waId) return;
-        for (const tag of tags) {
-          await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
-        }
-      },
+      // La pose d'étiquettes sur UNE fiche, le MÊME module que l'agent, le scénario, le widget et l'outil MCP : la
+      // déclaration dans le référentiel, et « tag ajouté » pour les nouvelles. L'API ne démarre pas de scénario (le
+      // worker tient l'exécuteur), elle publie un événement par étiquette nouvelle. Un contact sans identité joignable
+      // (ni numéro ni BSUID) n'a rien à déclencher.
+      etiquettes: workflowRuntime.etiquettes,
       // Les contacts purgés sortent de la liste de l'agent de Meta, après la purge (`src/mba/liste.ts`).
       listeDeLAgent,
       // Ce retrait part après la réponse : l'arrêt de cette copie l'attend avant de fermer le pool.
@@ -2341,6 +2336,8 @@ async function main(): Promise<void> {
       mcp: {
         ...depsRepondre,
         contacts: contactStore,
+        // La pose d'étiquettes de `tag_conversation` : le MÊME module que la fiche et l'agent, appelé SANS publier.
+        etiquettes: workflowRuntime.etiquettes,
         listerMembres: async (tenant) => (await userStore.list(tenant)).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
         // Les widgets de l'écran, le MÊME objet : un outil MCP n'est qu'un second appelant de leur gestion.
         widgets: widgetsDeLaConsole,

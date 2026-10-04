@@ -112,10 +112,10 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
     contacts: {
       query: jamais('query'),
       findByPhone: jamais('findByPhone'),
-      addTagsByPhoneReturningNew: jamais('addTagsByPhoneReturningNew'),
       analysesEtResumes: jamais('analysesEtResumes'),
     },
     listerMembres: jamais('listerMembres'),
+    etiquettes: { poser: jamais('etiquettes.poser') },
     widgets: { gestion, numero: async () => NUMERO, baseApi: BASE_API },
     scenarios: {
       listResume: async (t) => {

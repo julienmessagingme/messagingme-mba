@@ -10,6 +10,7 @@ import {
   type ArriveeParWidget,
 } from '../src/widgets/arrivee';
 import type { TirsDuWidget } from '../src/widgets/tirs.pg';
+import { creerPoseEtiquette } from '../src/crm/poser-etiquette';
 import type { WidgetRow } from '../src/widgets/store.pg';
 import { POSSESSEUR_WIDGET, type AutomationEvent } from '../src/automation/match';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
@@ -622,12 +623,14 @@ describe('🔴 l’émission d’événements d’automation est décidée par l
   it('🔴 l’étiquette de source n’émet RIEN : aucun module du widget ne publie d’événement d’automation', () => {
     // Le chemin de réception décide une fois qui prend la conversation : une publication « tag ajouté » laisserait
     // une automation démarrer un second scénario sur la même arrivée, par la file, hors de l'anti-rebond du widget.
+    // Depuis le 2026-10-04, la pose passe par le module commun (`src/crm/poser-etiquette.ts`), qui SAIT publier :
+    // `publier: true` est donc interdit ici aussi. Le cas qui l'exécute est l'assemblage de production, plus bas.
     const dossier = join(process.cwd(), 'src', 'widgets');
     const fichiers = readdirSync(dossier).filter((f) => f.endsWith('.ts'));
     expect(fichiers).toContain('arrivee.ts');
     for (const f of fichiers) {
       const code = sansCommentaires(readFileSync(join(dossier, f), 'utf8'));
-      expect(code, `${f} publie un événement d’automation`).not.toMatch(/tag_added|enfilerEvenementAutomation|emitTagAdded|AUTOMATION_EVENT_QUEUE/);
+      expect(code, `${f} publie un événement d’automation`).not.toMatch(/tag_added|enfilerEvenementAutomation|emitTagAdded|AUTOMATION_EVENT_QUEUE|publier:\s*true/);
     }
   });
 
@@ -661,7 +664,7 @@ describe('🔴 l’émission d’événements d’automation est décidée par l
 });
 
 describe('l’assemblage de production (`arriveeParWidget`), sur un faux pool', () => {
-  it('🔴 il pose l’étiquette par le dépôt des contacts, et chaque requête des tirs porte l’espace en $1', async () => {
+  it('🔴 il pose l’étiquette par le VRAI module de pose : déclarée, JAMAIS publiée ; et chaque requête des tirs porte l’espace en $1', async () => {
     const requetes: Array<{ sql: string; params: unknown[] }> = [];
     const brut = {
       id: 'w1', tenant_id: T, code: CODE, nom: 'Site vitrine', phrase: PHRASE, devenir: 'scenario', agent_id: null,
@@ -677,9 +680,17 @@ describe('l’assemblage de production (`arriveeParWidget`), sur un faux pool', 
       },
     } as unknown as Pool;
     const ajouts: Array<[string, string, string[]]> = [];
+    const declarees: string[] = [];
+    const publiees: string[] = [];
     const startWorkflow = vi.fn(async () => true);
     const arrivee = arriveeParWidget(pool, {
-      contacts: { addTagsByPhoneReturningNew: async (t, w, tags) => { ajouts.push([t, w, tags]); return { touched: 1, added: tags }; } },
+      // Le VRAI module (`src/crm/poser-etiquette.ts`), celui que `buildWorkflowRuntime` construit pour le worker.
+      etiquettes: creerPoseEtiquette({
+        ajouterAuContact: async (t, w, tags) => { ajouts.push([t, w, tags]); return { added: tags }; },
+        waIdDeLaFiche: async () => null,
+        declarer: async (t, tag) => { declarees.push(`${t}:${tag}`); },
+        emettre: async (t, w, tag) => { publiees.push(`${t}:${w}:${tag}`); },
+      }),
       runner: {
         automations: {
           listEnabled: async () => { throw new Error('lu les automations'); },
@@ -694,6 +705,9 @@ describe('l’assemblage de production (`arriveeParWidget`), sur un faux pool', 
     const m: InboundMessage = { phoneNumberId: 'pn1', waId: '33611', messageId: 'wamid.1', type: 'text', body: PHRASE, buttonPayload: null, profileName: null, field: 'messages' };
     expect(await arrivee(T, m)).toBe(true);
     expect(ajouts).toEqual([[T, '33611', [`widget-${CODE}`]]]);
+    expect(declarees).toEqual([`${T}:widget-${CODE}`]);
+    // L'étiquette était nouvelle, et rien n'est publié pour autant : c'est le chemin appelant qui décide.
+    expect(publiees).toEqual([]);
     expect(startWorkflow).toHaveBeenCalledTimes(1);
     const tirs = requetes.filter((r) => /widget_tirs/.test(r.sql));
     // Lecture de l'anti-rebond, compte du plafond, écriture du tir : les trois, chacune sous l'espace du message.
@@ -711,7 +725,9 @@ describe('🔴 le câblage réel du worker', () => {
   const worker = readFileSync(join(process.cwd(), 'src', 'worker.ts'), 'utf8');
 
   it('le job webhook passe l’arrivée par widget, avec l’objet MÊME des automations', () => {
-    expect(worker).toMatch(/inboundWidget: arriveeParWidget\(pool, \{ contacts: contactStore, runner: automationRunnerDeps \}\)/);
+    expect(worker).toMatch(/inboundWidget: arriveeParWidget\(pool, \{ etiquettes, runner: automationRunnerDeps \}\)/);
+    // `etiquettes` est la pose du socle, la même que celle de l'agent et du bloc de scénario.
+    expect(worker).toMatch(/poserTagDepuisAgent, etiquettes,\s*\} = workflowRuntime;/);
     // Le même objet que celui des automations déclenchées par un message : mêmes gardes, même `startWorkflow`.
     expect(worker).toMatch(/run: \(tenant, ev, opts\) => runAutomations\(tenant, ev, automationRunnerDeps, opts\)/);
   });

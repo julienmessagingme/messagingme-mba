@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { TagCount } from '../crm/tag-store.pg';
 import { espaceVerifie, nonEmpty } from './scope';
+import { normaliserEtiquette } from '../crm/poser-etiquette';
 
 export interface TagsRouteDeps {
   listDistinct(tenantId: string): Promise<TagCount[]>;
@@ -25,7 +26,7 @@ export function registerTags(app: FastifyInstance, deps: TagsRouteDeps, garde: G
     const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { name?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
-    const name = b.name.trim().slice(0, 64);
+    const name = normaliserEtiquette(b.name);
     const created = await deps.create(tenant, name);
     return reply.code(created ? 201 : 200).send({ name, created });
   });

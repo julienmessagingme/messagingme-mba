@@ -9,6 +9,7 @@ import { gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
+import { nettoyerEtiquettes } from '../crm/poser-etiquette';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /** Ce que les routes de liste lisent du dépôt des contacts, en plus de ce que l'import y écrit. */
@@ -161,7 +162,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
         ? body.tags.split(',')
         : [];
     // Normalise + borne : 64 car. max par tag, 50 tags max (évite un stockage aberrant).
-    const tags = [...new Set(rawTags.map((t) => t.trim().slice(0, 64)).filter((t) => t !== ''))].slice(0, 50);
+    const tags = nettoyerEtiquettes(rawTags, 50);
     // mapping fourni mais malformé (sans `columns` objet) -> 400, sinon Object.entries throw en 500.
     if (body.mapping !== undefined) {
       const cols = (body.mapping as { columns?: unknown }).columns;

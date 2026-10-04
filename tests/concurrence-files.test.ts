@@ -51,7 +51,10 @@ describe('l’enfilement pose le CLIENT comme clé de groupe', () => {
     const lire = (f: string): string => sansCommentaires(readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8'));
     const sites = Object.fromEntries(['index.ts', 'worker.ts', 'socle.ts', 'workflow/wiring.ts', 'engagement/cablage.ts']
       .map((f) => [f, (lire(f).match(/enfilerEvenementAutomation\(/g) ?? []).length]));
-    expect(sites).toEqual({ 'index.ts': 4, 'worker.ts': 1, 'socle.ts': 0, 'workflow/wiring.ts': 2, 'engagement/cablage.ts': 1 });
+    // Depuis le 2026-10-04, la fiche contact, le bloc de scénario et l'agent publient « tag ajouté » par UN point : la
+    // file de la pose d'étiquette (`src/crm/poser-etiquette.ts`), branchée dans `workflow/wiring.ts`. `index.ts` y a
+    // perdu celui de la fiche, `wiring.ts` les doublons du bloc et de l'agent.
+    expect(sites).toEqual({ 'index.ts': 3, 'worker.ts': 1, 'socle.ts': 0, 'workflow/wiring.ts': 1, 'engagement/cablage.ts': 1 });
     const masse = lire('engagement/cablage.ts');
     expect(masse).toMatch(/enfilerEvenementAutomation\(o\.file, \{ tenantId: t, event: \{ kind: 'risque_eleve', waId \} \}/);
     // Ni l'action en masse, ni l'import, ni l'API publique, ni le moteur de campagne n'enfilent.

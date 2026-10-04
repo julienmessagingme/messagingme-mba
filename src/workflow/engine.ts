@@ -7,6 +7,9 @@ import { prochaineOuverture } from '../lib/heures-ouvrees';
 // Le format de « maintenant » vit dans `src/agent/variables.ts` : un connecteur et un bloc de scénario doivent
 // poser la même valeur.
 import { formatMaintenant } from '../agent/variables';
+// La normalisation d'une étiquette vit dans le geste de pose (`src/crm/poser-etiquette.ts`) : la copie de travail doit
+// voir la même valeur que celle que l'exécuteur écrira sur le contact.
+import { normaliserEtiquette } from '../crm/poser-etiquette';
 
 /**
  * Moteur d'exécution d'un workflow, pur (aucune IO). Un run avance de bloc en bloc : les blocs synchrones
@@ -736,14 +739,14 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
  */
 /** Répercute une action synchrone (tag/field, ajout ou retrait) sur la copie de travail du contexte, pour
  *  qu'une condition plus loin dans le même walk la voie (l'écriture en base n'a lieu qu'après, via
- *  executor.apply). Même normalisation de tag que le worker (trim + slice 64, dédup). `clearField` retire la
- *  clé, comme le SQL `fields - key`. */
+ *  executor.apply). Même normalisation d'étiquette que la pose (`normaliserEtiquette`, dédup). `clearField`
+ *  retire la clé, comme le SQL `fields - key`. */
 function applyToWork(work: EvalContext, a: WorkflowAction): void {
   if (a.kind === 'tag') {
-    const t = a.tag.trim().slice(0, 64);
+    const t = normaliserEtiquette(a.tag);
     if (t !== '' && !work.tags.includes(t)) work.tags.push(t);
   } else if (a.kind === 'removeTag') {
-    const t = a.tag.trim().slice(0, 64);
+    const t = normaliserEtiquette(a.tag);
     work.tags = work.tags.filter((x) => x !== t);
   } else if (a.kind === 'field') {
     work.fields[a.key] = a.value;

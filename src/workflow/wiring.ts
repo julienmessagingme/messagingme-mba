@@ -37,7 +37,7 @@ import { decryptSecret } from '../crypto/secretbox';
 import { enfilerEvenementAutomation, type AutomationEventJob } from '../automation/event-job';
 import { AGENT_TURN_QUEUE, type AgentTurnJob } from '../agent/turn-job';
 import { PgAgentSessionStore } from '../agent/session-store.pg';
-import { creerPoserTagAgent } from '../agent/poser-tag';
+import { creerPoseEtiquette, normaliserEtiquette } from '../crm/poser-etiquette';
 import type { PgEmailTemplateStore } from '../email/template-store.pg';
 import type { EmailAccountResolver } from '../email/resolver';
 import { sendSmtpEmail } from '../email/smtp';
@@ -155,6 +155,20 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   );
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);
+
+  /**
+   * Poser une étiquette sur UN contact (`src/crm/poser-etiquette.ts`), construit ICI une seule fois : le bloc de
+   * scénario et l'agent ci-dessous, l'API (outil MCP, fiche contact) et le worker (widget) reçoivent le même. Ici on
+   * ne branche que les dépôts et la file ; la règle vit dans le module, et la décision de publier chez ses appelants.
+   */
+  const etiquettes = creerPoseEtiquette({
+    ajouterAuContact: (tenant, waId, tags) => contactStore.addTagsByPhoneReturningNew(tenant, waId, tags),
+    waIdDeLaFiche: (tenant, contactId) => contactStore.waIdOfContact(tenant, contactId),
+    declarer: async (tenant, tag) => { await tagStore.create(tenant, tag); },
+    emettre: async (tenant, waId, tag) => {
+      await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
+    },
+  });
 
   // Cache court du corps live d'un template (nb de variables + exemples) par WABA|nom|langue : évite un appel
   // Meta list() par destinataire d'une campagne workflow. Il porte aussi les cartes du carousel et l'en-tête
@@ -358,27 +372,15 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // du contact, on la lit au lieu de la déduire de la durée d'attente. Même calcul que l'inbox.
     isWindowOpen: async (tenant, waId) => (await inboxStore.getWindowOpenByWaIds(tenant, [waId])).get(waId) === true,
     getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
-    // Applique le tag au contact et le déclare dans le référentiel (un tag posé au runtime atterrit dans
-    // Contenus > Tags). La déclaration est best-effort.
-    applyTag: async (tenant, waId, tag) => {
-      // Même valeur normalisée (trim + slice 64) sur le contact et dans le référentiel : pas de doublon
-      // 'vip ' vs 'vip'.
-      const clean = tag.trim().slice(0, 64);
-      if (clean === '') return false;
-      const { added } = await contactStore.addTagsByPhoneReturningNew(tenant, waId, [clean]);
-      try { await tagStore.create(tenant, clean); } catch { /* déclaration best-effort */ }
-      // Dit à l'exécuteur si le tag était réellement nouveau : sinon un scénario qui repasse sur le même bloc
-      // relancerait une automation pour un non-événement.
-      return added.length > 0;
-    },
+    // Pose l'étiquette sur le contact et la déclare dans le référentiel (une étiquette posée au runtime atterrit
+    // dans Contenu > Bibliothèque > Étiquettes), SANS publier : la publication est `emitTagAdded`, que l'exécuteur
+    // décide. Dit si l'étiquette était réellement nouvelle : sinon un scénario qui repasse sur le même bloc
+    // relancerait une automation pour un non-événement.
+    applyTag: async (tenant, waId, tag) => (await etiquettes.poser(tenant, waId, [tag], { publier: false })).nouvelles.length > 0,
     // 🔴 Publication « tag ajouté », séparée de `applyTag` et appelée seulement sur un démarrage unitaire : sur
     // une campagne, 5 000 destinataires enfileraient 5 000 événements (et autant d'envois facturés). Passe par
     // la file pour qu'un scénario qui pose son propre tag déclencheur ne boucle pas en synchrone.
-    emitTagAdded: async (tenant, waId, tag) => {
-      const clean = tag.trim().slice(0, 64);
-      if (clean === '') return;
-      await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag: clean } } satisfies AutomationEventJob);
-    },
+    emitTagAdded: (tenant, waId, tag) => etiquettes.publierEnDiffere(tenant, waId, [tag]),
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
     /**
      * `appelHttp` (plus bas) : joue un appel de la bibliothèque et rend ce qu'il faut ranger dans un champ.
@@ -407,10 +409,10 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // d'écrire un champ.
       projectionContact: (t, waId) => contactStore.projectionPourTiers(t, waId),
     }),
-    // Retrait : même normalisation (trim + slice 64) que l'ajout. Le référentiel Tags n'est pas touché
-    // (retirer un tag d'un contact ne le dé-déclare pas).
+    // Retrait : même normalisation que l'ajout (`normaliserEtiquette`). Le référentiel n'est pas touché (retirer
+    // une étiquette d'un contact ne la dé-déclare pas).
     removeTag: async (tenant, waId, tag) => {
-      const clean = tag.trim().slice(0, 64);
+      const clean = normaliserEtiquette(tag);
       if (clean === '') return;
       await contactStore.removeTagsByPhone(tenant, waId, [clean]);
     },
@@ -458,15 +460,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: texte, messageId: res.messageId, type: 'text', origine: 'ia' }); } catch { /* best-effort */ }
   };
 
-  /** Poser un tag depuis un agent : les trois effets, et la règle qui les lie, vivent dans `agent/poser-tag`.
-   *  Ici on ne fait que brancher les stores. */
-  const poserTagDepuisAgent = creerPoserTagAgent({
-    ajouterAuContact: (tenant, waId, tag) => contactStore.addTagsByPhoneReturningNew(tenant, waId, [tag]),
-    declarer: async (tenant, tag) => { await tagStore.create(tenant, tag); },
-    emettre: async (tenant, waId, tag) => {
-      await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
-    },
-  });
+  /**
+   * Poser une étiquette depuis un agent (IA ou de Meta) : le geste du module, qui PUBLIE. Un tour d'agent est un
+   * démarrage unitaire (une session, un contact), et l'outil promet de pouvoir « déclencher une automation ».
+   */
+  const poserTagDepuisAgent = async (tenant: string, waId: string, tag: string): Promise<void> => {
+    await etiquettes.poser(tenant, waId, [tag], { publier: true });
+  };
 
   /**
    * Les lancements de scénario (`src/workflow/lancements.ts`), construits ICI sur l'exécuteur ci-dessus : l'API
@@ -476,5 +476,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    */
   const lancements = creerLancements({ executor: workflowExecutor, scenarios: workflowStore, contacts: contactStore });
 
-  return { executor: workflowExecutor, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
+  return { executor: workflowExecutor, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, agentSessions, envoyerTexteAgent, poserTagDepuisAgent, etiquettes };
 }

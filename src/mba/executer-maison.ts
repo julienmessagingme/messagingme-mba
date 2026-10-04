@@ -8,7 +8,8 @@ import type { VerrousCourts } from '../db/verrous-courts';
  * ce module choisit laquelle et traduit l'issue en ce que l'agent de Meta lit.
  */
 export interface DepsMaison {
-  /** `creerPoserTagAgent` : pose, déclaration dans Contenus > Tags, `tag_added` si l'étiquette est nouvelle. */
+  /** `poserTagDepuisAgent` (`src/crm/poser-etiquette.ts`, en publiant) : pose, déclaration dans le référentiel,
+   *  `tag_added` si l'étiquette est nouvelle. */
   poserTag(tenantId: string, waId: string, tag: string): Promise<void>;
   ecrireChamp(tenantId: string, waId: string, champ: string, valeur: string): Promise<void>;
   /**

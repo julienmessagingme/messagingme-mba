@@ -162,7 +162,7 @@ export const creationInerte: CampaignRepoLike = {
 };
 
 export const contactsInertes: Pick<ContactsRouteDeps,
-  'audit' | 'journal' | 'erreurs' | 'ensureSocleField' | 'createOneContact' | 'getBilanContact' | 'emitTagAdded' | 'listeDeLAgent' | 'enVol'> = {
+  'audit' | 'journal' | 'erreurs' | 'ensureSocleField' | 'createOneContact' | 'getBilanContact' | 'etiquettes' | 'listeDeLAgent' | 'enVol'> = {
   audit: journalMuet,
   journal: { list: async () => [] },
   erreurs: { lister: async () => [], listerEchecsSysteme: async () => [] },
@@ -170,8 +170,8 @@ export const contactsInertes: Pick<ContactsRouteDeps,
   ensureSocleField: async () => {},
   createOneContact: neDevraitPasEtreAppelee('createOneContact'),
   getBilanContact: async () => null,
-  // Absente : aucune émission.
-  emitTagAdded: async () => {},
+  // Absente : ni déclaration ni émission. Les cas qui les observent montent le vrai module (`tests/contacts.test.ts`).
+  etiquettes: { apresPose: async () => {} },
   // Aucun contact purgé n'est sur la liste de l'agent de Meta : rien à y retirer (la purge y est d'ailleurs inerte).
   listeDeLAgent: { oublierChezMeta: async () => {} },
   // Un vrai registre : le retrait d'après la purge y est suivi, et rien ne l'attend dans ces tests.
@@ -421,6 +421,14 @@ export const mcpInerte: Pick<DepsMcp['inbox'], 'getControlOwner' | 'getAssignee'
   getControlOwner: async () => 'app_workflow',
   getAssignee: async () => undefined,
   setAssignee: neDevraitPasEtreAppelee('setAssignee'),
+};
+
+/**
+ * La pose d'étiquettes de `tag_conversation`, pour les montages qui ne posent rien : une ÉCRITURE, donc elle lève. Le
+ * cas qui la regarde monte le vrai module (`tests/mcp-serveur.test.ts`).
+ */
+export const mcpEtiquettesInertes: Pick<DepsMcp, 'etiquettes'> = {
+  etiquettes: { poser: neDevraitPasEtreAppelee('etiquettes.poser') },
 };
 
 /**

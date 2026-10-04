@@ -7,6 +7,7 @@ import type { ContactHistory, ContactSend, ResumeContact } from '../crm/contact-
 import type { CoutContact, NiveauEngagement } from '../stats/cost';
 import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
 import { classerDemandeArret } from '../crm/consentement';
+import { nettoyerEtiquettes, type PoseEtiquette } from '../crm/poser-etiquette';
 import { espaceVerifie } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { makeJournal, type AuditSink } from '../audit/journal';
@@ -122,11 +123,12 @@ export interface ContactsRouteDeps {
    */
   getBilanContact(tenantId: string, contactId: string): Promise<{ cout: CoutContact; entonnoir: NiveauEngagement[] } | null>;
   /**
-   * Signale qu'un tag vient d'être posé sur un contact, pour les automations « tag ajouté ». Au mieux : l'édition
-   * a déjà réussi. 🔴 Absent de l'action en masse et de l'import : un tag posé sur des milliers de contacts
-   * déclencherait autant de scénarios, donc autant de messages facturés.
+   * La suite de la pose d'étiquettes d'UNE fiche (`src/crm/poser-etiquette.ts`), après l'écriture réussie : les
+   * déclarer dans le référentiel de l'espace, et publier « tag ajouté » pour les nouvelles, ce que la fiche DEMANDE.
+   * Au mieux : l'édition a déjà réussi. 🔴 Absente de l'action en masse et de l'import : un tag posé sur des
+   * milliers de contacts déclencherait autant de scénarios, donc autant de messages facturés.
    */
-  emitTagAdded(tenantId: string, contactId: string, tags: string[]): Promise<void>;
+  etiquettes: Pick<PoseEtiquette, 'apresPose'>;
   /**
    * 🔴 Retire chez Meta les contacts purgés qui étaient sur la liste de l'agent (`ListeDeLAgent.oublierChezMeta`) :
    * le numéro d'un contact effacé n'a rien à faire chez Meta. Requise : optionnelle, un câblage qui l'oublierait
@@ -186,8 +188,9 @@ export function parseBulkTarget(raw: unknown): BulkTarget | null {
   return null;
 }
 
+/** Une liste d'étiquettes reçue du navigateur, nettoyée comme toute pose (`nettoyerEtiquettes`) et bornée à 50. */
 const asStringArray = (v: unknown): string[] =>
-  Array.isArray(v) ? [...new Set(v.map(String).map((t) => t.trim().slice(0, 64)).filter((t) => t !== ''))].slice(0, 50) : [];
+  Array.isArray(v) ? nettoyerEtiquettes(v.map(String), 50) : [];
 
 /**
  * Définition d'un champ pour valider une valeur saisie. Un champ socle (`prenom`/`email`) absent est matérialisé
@@ -325,13 +328,15 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (optInStatus !== undefined && updated.consentementChange) {
       await journal(tenant, req, optInStatus === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: contactId }, { source: 'fiche' });
     }
-    // Automations « tag ajouté », sur les tags réellement nouveaux (reposer un tag présent ne change rien). Après
-    // l'écriture réussie et au mieux (un incident de file ne transforme pas l'édition en erreur), mais l'échec est
-    // journalisé : sans trace, une automation muette serait indébogable.
-    if (updated.addedTags.length > 0) {
-      await deps.emitTagAdded(tenant, contactId, updated.addedTags).catch((err: unknown) => {
+    // Les étiquettes posées entrent dans le référentiel, et les réellement nouvelles déclenchent les automations
+    // « tag ajouté » (reposer un tag présent ne change rien). Après l'écriture réussie, hors de sa transaction, et au
+    // mieux (un incident de file ne transforme pas l'édition en erreur), mais l'échec est journalisé : sans trace,
+    // une automation muette serait indébogable.
+    if (addTags.length > 0) {
+      const pose = { posees: addTags, nouvelles: updated.addedTags };
+      await deps.etiquettes.apresPose(tenant, contactId, pose, { publier: true }).catch((err: unknown) => {
         // eslint-disable-next-line no-console
-        console.error('emitTagAdded ignoré (best-effort):', messageDe(err));
+        console.error('publication « tag ajouté » ignorée (best-effort):', messageDe(err));
       });
     }
     return reply.code(200).send({ contact: updated.contact });

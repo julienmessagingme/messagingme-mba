@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import { POSSESSEUR_WIDGET, type AutomationRow } from '../automation/match';
 import { runAutomations, type AutomationRunnerDeps } from '../automation/runner';
-import { PgTagStore } from '../crm/tag-store.pg';
+import type { PoseEtiquette } from '../crm/poser-etiquette';
 import type { InboundMessage } from '../webhooks/inbound';
 import { tenter } from '../lib/tenter';
 import { reconnaissanceDesWidgets, type WidgetDuMessage } from './reconnaissance';
@@ -157,21 +157,20 @@ export function creerArriveeParWidget(deps: DepsArriveeParWidget): ArriveeParWid
 /**
  * L'assemblage de production, appelé par le câblage du job `webhook` (`src/worker.ts`). `runner` DOIT être l'objet
  * des automations du worker (`automationRunnerDeps`), pas une copie : c'est lui qui porte le `startWorkflow` des
- * démarrages unitaires et les valeurs de l'instance. `tests/widget-devenir.test.ts` lit le câblage.
+ * démarrages unitaires et les valeurs de l'instance. `etiquettes` est la pose du socle (`buildWorkflowRuntime`), la
+ * même que celle de l'agent et du bloc de scénario. `tests/widget-devenir.test.ts` lit le câblage.
  */
 export function arriveeParWidget(pool: Pool, d: {
-  contacts: { addTagsByPhoneReturningNew(tenantId: string, waId: string, tags: string[]): Promise<unknown> };
+  etiquettes: Pick<PoseEtiquette, 'poser'>;
   runner: AutomationRunnerDeps;
 }): ArriveeParWidget {
-  const tags = new PgTagStore(pool);
   const tirs = new PgWidgetTirsStore(pool);
   return creerArriveeParWidget({
     widgetDuMessage: reconnaissanceDesWidgets(new PgWidgetStore(pool)),
-    // La pose de `applyTag` (`src/workflow/wiring.ts`), sans sa publication : sur le contact, puis la déclaration
-    // dans le référentiel, best-effort.
+    // La pose d'étiquette de toutes les portes (`src/crm/poser-etiquette.ts`) : sur le contact, puis la déclaration
+    // dans le référentiel, au mieux. 🔴 SANS publier, voir l'en-tête.
     poserEtiquette: async (tenantId, waId, etiquette) => {
-      await d.contacts.addTagsByPhoneReturningNew(tenantId, waId, [etiquette]);
-      try { await tags.create(tenantId, etiquette); } catch { /* déclaration best-effort, comme applyTag */ }
+      await d.etiquettes.poser(tenantId, waId, [etiquette], { publier: false });
     },
     demarrerScenario: demarrageParLeRunner(d.runner, (tenantId) => tirs.pour(tenantId)),
   });

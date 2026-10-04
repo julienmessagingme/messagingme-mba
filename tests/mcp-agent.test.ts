@@ -33,7 +33,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { bornesDesChamps, bornesZod, champsDe, muettes, type Borne } from './aide/bornes-zod';
 import { jamaisDesabonne } from './consentement';
-import { mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 
@@ -303,10 +303,10 @@ function monter(o: Options = {}) {
     contacts: {
       query: async () => [],
       findByPhone: async () => null,
-      addTagsByPhoneReturningNew: async () => ({ touched: 0, added: [] }),
       analysesEtResumes: async () => new Map(),
     },
     listerMembres: async () => [],
+    ...mcpEtiquettesInertes,
     ...mcpWidgetsInertes,
     agentIa,
   };
