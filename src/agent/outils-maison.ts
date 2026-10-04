@@ -80,7 +80,7 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     // recevrait rien. Le cerveau envoie ce message quand la réponse qui porte l'appel n'a pas de texte.
     paramsImposes: [{
       name: 'message', type: 'string', source: 'modele',
-      description: 'Le dernier message au contact, à écrire ici s’il n’a pas déjà été écrit dans cette réponse, sinon vide.',
+      description: 'Ton dernier message au contact avant de rendre la main : récapitulatif, confirmation ou au revoir, dans le ton de la conversation. Toujours rempli.',
     }],
   },
   {
@@ -274,7 +274,9 @@ export function paramsEffectifs(outil: Pick<OutilDefini, 'origin' | 'binding' | 
 /** Les paramètres d'un outil, énumérations dérivées appliquées et imposés annoncés requis, ou `null` si une
  *  dérivation est vide. Passe par `paramsEffectifs`, la lecture que la validation fait aussi. */
 function paramsAvecDerivations(outil: OutilDefini, codesSortie: string[]): ParamOutil[] | null {
-  const modele = outilMaison(String(outil.binding.handler ?? ''));
+  // `handlerMaison`, comme `paramsEffectifs` : une liaison de connecteur ou d'outil MCP qui porterait un `handler`
+  // ne doit recevoir ni énumération dérivée ni obligation annoncée.
+  const modele = outilMaison(handlerMaison(outil));
   const params = paramsEffectifs(outil);
   // Un handler sorti du catalogue (ligne ancienne) garde ses paramètres tels quels : il ne doit pas faire
   // tomber la construction du schéma de tout un tour.

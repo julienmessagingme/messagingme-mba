@@ -192,7 +192,7 @@ describe('terminer : le paramètre imposé « message »', () => {
     expect(expose!.parameters.required).toEqual(['sortie', 'message']);
     expect(expose!.parameters.properties.message).toEqual({
       type: 'string',
-      description: 'Le dernier message au contact, à écrire ici s’il n’a pas déjà été écrit dans cette réponse, sinon vide.',
+      description: 'Ton dernier message au contact avant de rendre la main : récapitulatif, confirmation ou au revoir, dans le ton de la conversation. Toujours rempli.',
     });
   });
 
@@ -219,6 +219,9 @@ describe('terminer : le paramètre imposé « message »', () => {
   it('un outil qui n’est pas maison n’en reçoit aucun, même avec un `handler` « terminer » dans sa liaison', () => {
     const mcp = { ...outil([{ name: 'q', type: 'string', source: 'modele' }]), origin: 'mcp' as const };
     expect(paramsEffectifs(mcp).map((p) => p.name)).toEqual(['q']);
+    // Ni à l'exposition : un `message` déclaré par l'outil MCP lui-même n'y devient pas obligatoire.
+    const [exposeMcp] = outilsExposes([{ ...mcp, params: [{ name: 'message', type: 'string', source: 'modele' }] }], SORTIES);
+    expect(exposeMcp!.parameters.required ?? []).not.toContain('message');
     // Et les autres outils maison n'en ont pas.
     const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true }], 'poser_tag');
     expect(paramsEffectifs(tag).map((p) => p.name)).toEqual(['tag']);
