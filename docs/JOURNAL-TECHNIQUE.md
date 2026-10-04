@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-04 : les outils MCP de l'agent IA et du crédit (lot 8a), livraisons A et B
+
+**Livraison A en production en `00863361`** (migration 0206 appliquée avant le `up`, API et workers) : la logique de
+l'agent, de sa connaissance, du bac à sable, du paiement et des réglages sortie des routes vers des fonctions
+communes (`src/agent/gestion.ts`, `connaissance.ts`, `essai.ts`, `reglages.ts`, `src/stripe/paiement.ts`). Deux
+changements voulus : modifier un agent actif refuse les manques que la modification INTRODUIT (la règle littérale
+aurait bloqué toute retouche d'un agent dont la connaissance a été vidée après coup), et chaque modification de la
+fiche laisse une ligne `fiche_agent`, réduite aux champs qui ont changé (la console renvoie toujours la fiche
+entière). Vérifiée par un commit faussé : 0206 sans `mcp` fait échouer exactement les deux tests visés.
+
+**Livraison B en production en `5b6f4a1f`** (`mba-api` seul) : les seize outils, le drapeau `exigePersonne` (les
+outils de configuration et d'argent n'existent pas pour une clé d'API), le plafond coûteux de la console partagé
+par le serveur MCP. L'implémenteur a été coupé par une panne réseau après l'essentiel du travail : un second l'a
+repris sans repartir de zéro, puis la relecture. Le jaune le plus utile de cette relecture : notre propre refus
+(« désactivez l'agent avant de le remanier ») pouvait pousser Claude à couper un agent en production ; les
+descriptions disent désormais que désactiver coupe l'agent dans ses scénarios et ne se fait que sur demande.
+
 ## 2026-10-04 : les messages entrants ne restent plus en file, ni en rafale ni après un crash du worker
 
 Le correctif des deux défauts trouvés la veille par le banc des trente espaces, demandé par Julien (« lance le

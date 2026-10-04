@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 8a DE « ENGAGE ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, LIVRAISON B À DÉPLOYER
+## LOT 8a DE « ENGAGE ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, EN PRODUCTION, ESSAI RÉEL DÛ
 
 Spec `docs/superpowers/specs/2026-10-03-mcp-agent-ia-design.md`, plan `docs/superpowers/plans/2026-10-03-mcp-agent-ia.md`.
 La technique durable est dans `documentation.md` (§ 7, « Les outils MCP de l'agent IA et du crédit »), le
@@ -41,9 +41,14 @@ fonctionnel dans `features.md` (« Construire un agent IA depuis Claude »).
   le test des sept outils coûteux vérifie que rien n'est touché quand le plafond refuse (il ne le tenait que pour deux) ;
   `list_knowledge` dit que ses extraits sont des données de tiers ; le refus du caractère nul est annoncé ; la garde de
   personne échoue fermée sur `undefined` ; la page « Autoriser » nomme les gestes sur la connaissance.
-- ⏳ **Déploiement de B** : CI verte, puis `up -d --build` de `mba-api` (le serveur MCP) ; la console part avec le
-  push, sans fenêtre (des textes, aucune route neuve). Puis l'essai réel de la spec (section 7) depuis Claude Code,
-  sur un espace qui a au moins 1 € de crédit.
+- ✅ **Livraison B en production le 2026-10-04** (`5b6f4a1f`, `mba-api` seul, workers inchangés ; la console avec le
+  push). Mesuré en production avec la clé de lecture du poste : 12 outils (les 8 d'avant, plus `list_agents`,
+  `get_agent`, `list_knowledge`, `get_credit`), aucun outil réservé à une personne, `create_agent` refusé comme un
+  outil inconnu, `get_credit` et `list_agents` répondent.
+- ⏳ **L'essai réel** (spec, section 7), depuis Claude Code connecté par OAuth (une NOUVELLE session, pour qu'il relise
+  la liste des outils), sur un espace qui a au moins 1 € de crédit : créer un agent, `preview_site` puis
+  `import_site`, `test_agent`, `activate_agent`, et le retrouver identique dans la console (fiche, connaissance et sa
+  provenance, outils activés au nom de la personne, historique « par Claude »).
 - 🟡 **Ouverts, hors de ces deux livraisons** : l'assistant de construction journalise ses propositions « depuis les
   onglets » (il passe par la même route) ; chaque modification de la fiche d'un agent actif relit toutes ses fiches
   de connaissance (`etatPourLint`, un compte suffirait) ; `ajouterFiches` n'est pas atomique (un agent qui disparaît
