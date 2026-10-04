@@ -1486,12 +1486,22 @@ suivant par nom de file. ⚠️ Pas `burstWhenBatchFull` (il exige des lots de d
 tâche réussie du rejeu de sa voisine en échec), ni de seuil de rafale à zéro (refusé au démarrage, minimum 1).
 
 🔴 **CHAQUE FILE PORTE UN BATTEMENT DE CŒUR** (`BATTEMENT_SECONDES`, 20 s, rafraîchi toutes les 5 s pendant le
-traitement), posé par `updateQueue` puisque les files existent, et la surveillance de pg-boss passe toutes les
-`SURVEILLANCE_FILES_SECONDES` (10 s) sur l'instance qui dépile. Sans lui, la tâche en cours d'un worker mort
-(crash, mémoire, `docker kill`) attendait son expiration, 15 min, avant d'être rejouée (mesuré : 932 s ; avec
-lui : 29 s). Il reconnaît un worker MORT sans tuer une tâche LENTE, ce qu'une expiration courte ferait, et quatre
-battements manqués sont exigés avant de rejouer. ⚠️ Les tâches recopient le battement de leur file à leur
-création : celles déjà en file lors d'un déploiement gardent l'ancien comportement.
+traitement), posé par `updateQueue` puisque les files existent. La supervision de pg-boss passe toutes les
+`SURVEILLANCE_FILES_SECONDES` (10 s) et son moniteur toutes les 9 (pg-boss compare strictement), sur le SEUL worker
+principal (`superviseLesFiles`) : elle couvre toutes les files, et la doubler doublait l'egress de sa relecture de
+`pgboss.queue`. Le cache des files de chaque processus garde son défaut de 60 s, pour la même raison. Sans
+battement, la tâche en cours d'un worker mort (crash, mémoire, `docker kill`) attendait son expiration, 15 min,
+avant d'être rejouée (mesuré : 932 s ; avec lui : 29 s). Il reconnaît un worker MORT sans tuer une tâche LENTE, ce
+qu'une expiration courte ferait, et quatre battements manqués sont exigés avant de rejouer. ⚠️ Les tâches recopient
+le battement de leur file à leur création : celles déjà en file lors d'un déploiement gardent l'ancien comportement.
+⚠️ **Un retour arrière du code ne retire PAS le battement des files** (il vit dans `pgboss.queue`) : pg-boss
+continuerait de le rafraîchir à son défaut (la moitié du battement) et de surveiller toutes les 60 s, soit deux
+battements de marge seulement. Le retirer avec le code : `updateQueue(<file>, { heartbeatSeconds: null })`.
+
+🔴 **LA FILE VIDÉE EN CONTINU A UN DÉLAI DE REJEU** (`DELAI_REJEU_VIDAGE_SECONDES`, 10 s, doublé à chaque tentative).
+Les files sont créées sans délai : une tâche en échec est remise en file aussitôt, et le vidage la relit tout de
+suite. Sans ce délai, ses six tentatives s'enchaînaient en une seconde jusqu'à la file d'échec pendant une panne
+passagère de la base, là où le filet de 60 s les étalait sur plusieurs minutes.
 
 🔴 **Toute nouvelle file entre dans `BASE_QUEUES`**, sinon elle est invisible de `/ops` et sa DLQ n'est
 surveillée par personne. `tests/queue-names.test.ts` dérive la liste des `queue.work(...)` du worker et casse
@@ -1667,7 +1677,8 @@ premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé.
   reste dans `PgBossQueue`, pas au site d'appel : ni migration (c'est le worker ; pg-boss VÉRIFIE seulement la
   version du schéma au démarrage, et l'API refuse de démarrer si elle diffère, DEPLOY.md « Montée de version de
   pg-boss »), ni supervision, ni écoute, ni cron. Il reste, sur le pool prêté : quatre `select` au démarrage, le
-  cache des files (un `select` par minute) et les `send`. Conséquences : **une copie de l'API ne coûte plus aucune
+  cache des files (un `select` par minute), les `send`, et au premier enfilement de chaque file sa création et ses
+  réglages (`createQueue`, puis `updateQueue` pour le réveil, le battement et le délai de rejeu). Conséquences : **une copie de l'API ne coûte plus aucune
   session**, quel que soit leur nombre ; et **l'accusé d'un webhook de Meta attend sur le même pool que la
   console**, donc `pool_attentes` (ligne `api`, ou `api-<copie>` quand `API_COPIE` nomme une copie parmi
   plusieurs) mesure aussi la réception. ⚠️ Un `send` part sur une connexion

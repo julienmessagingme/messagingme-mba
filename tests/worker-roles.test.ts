@@ -9,6 +9,7 @@ import {
   fileDuRole,
   minuterieDuRole,
   nomDuProcessus,
+  superviseLesFiles,
   tachesDuRole,
   type RoleWorker,
 } from '../src/worker/roles';
@@ -115,6 +116,12 @@ describe('le filtre des deux coutures', () => {
 });
 
 describe('ce qui tourne HORS du registre suit le même partage (relecture du 2026-10-03)', () => {
+  it('🔴 un seul worker supervise les files : le principal (ou l’unique), jamais l’analyse', () => {
+    expect(superviseLesFiles('principal')).toBe(true);
+    expect(superviseLesFiles('all')).toBe(true);
+    expect(superviseLesFiles('analyse')).toBe(false);
+  });
+
   it('minuterieDuRole rend le partage de la table, et lève sur un nom inconnu', () => {
     expect(minuterieDuRole('agregats-analyse', 'principal')).toBe(true);
     expect(minuterieDuRole('agregats-analyse', 'analyse')).toBe(false);

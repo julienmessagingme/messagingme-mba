@@ -1,20 +1,20 @@
 # todo.md : backlog
 
-## 🟠 Un message entrant peut attendre 15 minutes (crash du worker) ou 60 secondes (réveil manqué) : trouvé par le banc des trente espaces (2026-10-03)
+## 🟡 Les files : ce qui reste après le battement de cœur et le vidage continu (relecture de `933557b7`, 2026-10-04)
 
-Mesuré sur le banc (`scripts/banc-trente-espaces.mts`, journal du 2026-10-03), code de production :
-- **Crash du worker principal** (`docker kill` en plein pic) : aucune perte, aucun doublon, mais le message dont la
-  tâche était EN COURS a attendu **932 s**. pg-boss 12 ne rejoue une tâche active qu'au bout de son délai d'expiration
-  (15 min par défaut), et aucune file de mba ne déclare `heartbeatSeconds`. Remède : un battement de cœur sur les
-  files (pg-boss l'envoie seul pendant chaque tâche, 10 s minimum) et un superviseur plus fréquent
-  (`superviseIntervalSeconds`, 60 s par défaut) : une orpheline repartirait en 20 à 30 s, sans tuer une tâche lente.
-- **Réveil manqué, intermittent** (une fois sur deux arrêts propres) : 22 messages arrivés dans les deux dernières
-  secondes du pic, 17 s après la relance du worker, n'ont été pris que **61,7 s** plus tard, tous ensemble, au filet de
-  60 s (`SONDAGE_FILET_NOTIFIE`, `src/queue/names.ts`). L'écoute du worker était en place (`LISTEN` ouvert avant
-  leur arrivée) et l'émetteur suit son chemin normal : la cause n'est pas trouvée. Remède qui n'en dépend pas : un
-  filet de quelques secondes pour la seule file `webhook` (trois boucles, une lecture chacune toutes les N s).
-- Les deux ont un essai réel tout prêt : rejouer `crash` et `arret` sur le banc, avec le code corrigé.
-
+Le défaut de rafale et l'attente de 15 min au crash sont corrigés et déployés (journal du 2026-10-04). Restent :
+- **Le même défaut de rafale sur `agent-turn`, `automation-event` et `campaign-run`** : chaque boucle repart dormir
+  60 s après une tâche si rien ne la réveille. Pas mesuré : une campagne avec un bloc agent peut produire plus de
+  douze tours d'un coup. À passer au banc (épreuve `rafale` adaptée), avant d'étendre `FILES_VIDEES_EN_CONTINU`
+  (`agent-turn` a douze boucles : un filet court y coûterait cher, le vidage non).
+- **Le démarrage à froid de l'API** : juste après un redémarrage, chaque premier enfilement d'une file refait sa
+  création et ses réglages (`ensure`), et une rafale fait ce travail en parallèle avant que le premier ne le mémorise.
+  Mesuré sur le banc : 845 prises de connexion pour 120 messages, 830 attentes de 230 ms au pire, une minute.
+  Remède : mémoriser la promesse en vol de `ensure` par file.
+- **Compter les reprises par battement** (« job heartbeat timeout ») dans `/ops` : c'est ce qui dira si de faux
+  orphelins existent (une tâche vivante dont les battements n'ont pas pu partir).
+- Le banc : programmer les sondages des onglets depuis le début du geste précédent (la console tire à heure fixe,
+  le banc attend la réponse), et garder un fichier d'orchestration de l'hôte versionné.
 ## 🟡 Meta a refusé deux fois de relancer l'agent sur une réponse « à côté », puis accepté : cause non établie (2026-10-03)
 
 Scénario lancé par le lien de test, sortie « Toute autre réponse » non reliée, réponse en texte libre : le parcours

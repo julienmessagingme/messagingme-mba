@@ -151,6 +151,16 @@ export function minuterieDuRole(nom: string, role: RoleWorker): boolean {
  * « pool saturé » ne dit plus de quel processus il vient : celui de l'analyse, à 3 connexions, saturerait plus
  * souvent que le principal, et on accuserait le chemin chaud. `all` garde `worker`, le nom d'avant.
  */
+/**
+ * 🔴 QUI SUPERVISE LES FILES : le worker principal (ou l'unique, `all`), pas celui de l'analyse. La supervision de
+ * pg-boss couvre TOUTES les files depuis n'importe quel processus (elle rejoue aussi les orphelines de l'analyse), et
+ * chaque passage relit la liste entière des files : la doubler sur deux workers doublait cet egress pour rien
+ * (relecture du 2026-10-04). Un principal tombé est relancé en quelques secondes (`restart: unless-stopped`).
+ */
+export function superviseLesFiles(role: RoleWorker): boolean {
+  return role !== 'analyse';
+}
+
 export function nomDuProcessus(role: RoleWorker): string {
   return role === 'all' ? 'worker' : `worker-${role}`;
 }

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   BASE_QUEUES, ALL_QUEUES, dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE,
   SEUILS_RAFALE, seuilRafalePour, SONDAGE_FILET_NOTIFIE, FILETS_NOTIFIES, BATTEMENT_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES,
-  SURVEILLANCE_FILES_SECONDES, videeEnContinu,
+  SURVEILLANCE_FILES_SECONDES, videeEnContinu, MONITEUR_FILES_SECONDES, DELAI_REJEU_VIDAGE_SECONDES,
 } from '../src/queue/names';
 import { FILE_SIGNAUX_BATCH } from '../src/signaux/batch';
 
@@ -160,6 +160,8 @@ describe('cadence de polling par file', () => {
     expect(api, 'l’API doit démarrer pg-boss sur son pool prêté, donc sans supervision (elle empile, elle ne dépile pas)')
       .toMatch(/new PgBossQueue\(pool, config\.PGBOSS_SCHEMA\)/);
     expect(worker, 'le worker doit rester le SEUL à superviser : pas de supervise: false ici').not.toMatch(/supervise:\s*false/);
+    // Et parmi les workers, le principal seulement (`superviseLesFiles`, `tests/worker-roles.test.ts`).
+    expect(worker, 'la supervision doit suivre le rôle du worker').toMatch(/supervise: superviseLesFiles\(config\.WORKER_ROLE\),/);
     expect(worker, 'le worker doit espacer la maintenance flow').toMatch(/flowIntervalSeconds:\s*60/);
     // Ancrée sur la ligne entière, comme le seuil de rafale plus bas : un `toMatch` sur le seul nom de
     // l'option passe aussi quand l'option est enfermée dans une condition morte. Vérifié.
@@ -276,6 +278,10 @@ describe('cadence de polling par file', () => {
     expect(BATTEMENT_SECONDES / RAFRAICHISSEMENT_BATTEMENT_SECONDES).toBeGreaterThanOrEqual(3);
     // La surveillance passe plus souvent que le battement : sinon elle doublerait le délai avant de rejouer.
     expect(SURVEILLANCE_FILES_SECONDES).toBeLessThanOrEqual(BATTEMENT_SECONDES);
+    // pg-boss compare strictement : un moniteur à la cadence de la supervision sauterait un passage sur deux.
+    expect(MONITEUR_FILES_SECONDES).toBeLessThan(SURVEILLANCE_FILES_SECONDES);
+    // Une file vidée en continu relit aussitôt une tâche en échec : il lui faut un délai de rejeu.
+    expect(DELAI_REJEU_VIDAGE_SECONDES).toBeGreaterThan(0);
   });
 
   it('🔴 le battement est branché : sur la file existante (updateQueue), rafraîchi pendant le traitement, surveillé souvent', () => {
@@ -286,10 +292,10 @@ describe('cadence de polling par file', () => {
     expect(wrapper, 'le battement pose sur createQueue serait un no-op silencieux sur toute file existante').not.toMatch(/createQueue\([^)]*heartbeat/s);
     expect(wrapper, 'le rafraichissement doit etre une propriete DIRECTE des options de boss.work')
       .toMatch(/^\s{8}heartbeatRefreshSeconds: RAFRAICHISSEMENT_BATTEMENT_SECONDES,$/m);
-    for (const option of ['superviseIntervalSeconds', 'monitorIntervalSeconds', 'queueCacheIntervalSeconds']) {
-      expect(wrapper, `${option} doit valoir SURVEILLANCE_FILES_SECONDES sur l instance qui depile`)
-        .toMatch(new RegExp(`^\\s{14}${option}: SURVEILLANCE_FILES_SECONDES,$`, 'm'));
-    }
+    expect(wrapper, 'la supervision doit etre resserree sur l instance qui depile').toMatch(/^\s{14}superviseIntervalSeconds: SURVEILLANCE_FILES_SECONDES,$/m);
+    expect(wrapper, 'le moniteur doit avoir sa propre cadence').toMatch(/^\s{14}monitorIntervalSeconds: MONITEUR_FILES_SECONDES,$/m);
+    // Le cache des files garde son défaut : le resserrer coûtait de l'egress pour un gain que le vidage rend inutile.
+    expect(wrapper).not.toMatch(/queueCacheIntervalSeconds: SURVEILLANCE_FILES_SECONDES/);
   });
 
   it('🔴 aucun seuil par file ne vaut zéro : ce serait la boucle à vide que la cadence avait fermée', () => {

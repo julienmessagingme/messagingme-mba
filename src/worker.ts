@@ -94,12 +94,12 @@ import type { Campaign } from './campaign/types';
 import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
 import { registreDeTaches } from './worker/taches';
-import { fileDuRole, minuterieDuRole, nomDuProcessus, tachesDuRole } from './worker/roles';
+import { fileDuRole, minuterieDuRole, nomDuProcessus, superviseLesFiles, tachesDuRole } from './worker/roles';
 import { tenter } from './lib/tenter';
 import { messageDe, texteDe } from './lib/erreur';
 
 async function main(): Promise<void> {
-  // Le worker est la seule instance qui supervise (défaut pg-boss) et qui dépile : c'est lui qui récupère les
+  // Le worker est la seule instance qui dépile, et son rôle principal la seule qui supervise : c'est lui qui récupère les
   // jobs expirés et qui écoute les notifications (sans réveil, une rafale d'entrants se viderait à la cadence
   // de l'horloge). L'API ne fait qu'empiler. `flowIntervalSeconds: 60` espace la maintenance « flow » (défaut
   // 5 s), inutile ici (aucun job bloquant ou parent) : ~16 000 requêtes/jour de moins sur une base facturée à
@@ -109,6 +109,8 @@ async function main(): Promise<void> {
     connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
     flowIntervalSeconds: 60,
     ecouteNotifications: true,
+    // Un seul worker supervise : le principal (`src/worker/roles.ts`).
+    supervise: superviseLesFiles(config.WORKER_ROLE),
   });
   // Le role de ce processus decide des files qu il consomme et des minuteries qu il programme
   // (`src/worker/roles.ts`). `WORKER_ROLE` absent = `all` = exactement le comportement d avant.

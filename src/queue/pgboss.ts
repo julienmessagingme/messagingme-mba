@@ -2,8 +2,8 @@ import { PgBoss } from 'pg-boss';
 import type { ConstructorOptions, MaintenanceOptions, SchedulingOptions, WorkOptions } from 'pg-boss';
 import type { Queue } from './queue';
 import {
-  BATTEMENT_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES, SURVEILLANCE_FILES_SECONDES, dlqName, filetNotifieSecondes, notifieePour,
-  pollingSecondsFor, seuilRafalePour, videeEnContinu,
+  BATTEMENT_SECONDES, DELAI_REJEU_VIDAGE_SECONDES, MONITEUR_FILES_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES, SURVEILLANCE_FILES_SECONDES,
+  dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, seuilRafalePour, videeEnContinu,
 } from './names';
 import { pgSsl } from '../db/ssl';
 
@@ -101,7 +101,10 @@ export function poolOptions(opts: PgBossPoolOpts): PgBossPoolOpts {
  * Options de concurrence passées à `boss.work`, pures et testées, même règle que `poolOptions`.
  *
  * `localGroupConcurrency` (plafond par groupe, par exemple par espace) est sans effet tant que `localConcurrency`
- * reste à 1 : les deux se posent ensemble. Suivi en mémoire (`local*`), gratuit avec un worker unique ; la
+ * reste à 1 dans UNE registration : les deux se posent ensemble. Exception, le vidage continu : une file enregistrée
+ * boucle par boucle (`localConcurrency: 1` chacune) partage son suivi par NOM de file, et le plafond y est effectif.
+ * ⚠️ Pour une telle file, un plafond par groupe supérieur à 1 ferait refuser le démarrage par pg-boss
+ * (`localGroupConcurrency > localConcurrency`). Suivi en mémoire (`local*`), gratuit avec un worker unique ; la
  * variante coordonnée par la base ne servirait qu'avec des réplicas et coûterait de l'egress.
  */
 export function workConcurrencyOptions(opts: {
@@ -177,11 +180,11 @@ export class PgBossQueue implements Queue {
             ssl: pgSsl(),
             ...poolOptions(opts),
             // La surveillance resserrée va avec le battement de cœur des files (`ensure`) : sans elle, une orpheline
-            // attendrait encore jusqu'à deux minutes de plus. Une valeur passée par l'appelant l'emporte.
+            // attendrait encore jusqu'à deux minutes de plus. Une valeur passée par l'appelant l'emporte, `supervise`
+            // compris (le worker d'analyse ne supervise pas, `superviseLesFiles`).
             ...maintenanceOptions({
               superviseIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
-              monitorIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
-              queueCacheIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
+              monitorIntervalSeconds: MONITEUR_FILES_SECONDES,
               ...opts,
             }),
             ...notifyOptions(opts),
@@ -265,6 +268,9 @@ export class PgBossQueue implements Queue {
     // Le battement de cœur, par `updateQueue` pour la même raison : posé sur `createQueue`, il n'atteindrait aucune
     // file existante. Les tâches le recopient de leur file à la création (`BATTEMENT_SECONDES`, `names.ts`).
     await this.boss.updateQueue(name, { heartbeatSeconds: BATTEMENT_SECONDES });
+    // Une file vidée en continu relit aussitôt une tâche en échec : sans délai, ses rejeux s'enchaîneraient en une
+    // seconde jusqu'à la file d'échec (`DELAI_REJEU_VIDAGE_SECONDES`).
+    if (videeEnContinu(name)) await this.boss.updateQueue(name, { retryDelay: DELAI_REJEU_VIDAGE_SECONDES });
     this.ensured.add(name);
   }
 
@@ -340,7 +346,8 @@ export class PgBossQueue implements Queue {
           try {
             await handler(job.data);
           } finally {
-            // Réussi ou non, le message est sorti de la file : il en reste peut-être d'autres, chaque boucle relit.
+            // Fini ou rejoué plus tard (`DELAI_REJEU_VIDAGE_SECONDES`), ce message ne bloque plus la file : chaque
+            // boucle relit, il en reste peut-être d'autres.
             if (vidage) for (const id of boucles) this.boss.notifyWorker(id);
           }
         }

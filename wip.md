@@ -193,9 +193,10 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
 2. ✅ **Le banc des trente espaces** (2026-10-03, recadré par Julien : 30 espaces de 2 personnes et 10 conversations,
    pas un client à 30 agents) : `charge` vert avec une marge énorme (p95 de l'Inbox 54 ms pour un seuil de 800, zéro
    attente du pool de l'API, 600 messages du pic écrits en 366 ms au pire) ; `crash` et `arret` sans perte ni doublon.
-   Deux défauts trouvés, dans `todo.md` (🟠, en tête) : 15 min d'attente pour le message en cours lors d'un crash, et
-   un réveil manqué intermittent de 60 s. Le banc reste MONTÉ sur le VPS (`banc=inbox30`) pour l'essai réel de ce
-   correctif ; le démonter s'il n'est pas fait (recette en tête du script).
+   Deux défauts trouvés, CORRIGÉS ET DÉPLOYÉS le 2026-10-04 (`933557b7`, puis ses jaunes) : le message en cours lors
+   d'un crash repart en 29 s (contre 932), une rafale de 120 messages passe en 8,6 s (contre 67). Ce qui reste est
+   dans `todo.md`. Le banc reste MONTÉ sur le VPS (`banc=inbox30`) le temps des jaunes ; le démonter ensuite (recette
+   en tête du script).
 3. Au plus 5 clés d'API actives par espace (sécurité, petit lot).
 4. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
 5. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant » ; au minimum leur volume dans `/ops`.

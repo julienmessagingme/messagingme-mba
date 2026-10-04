@@ -5,6 +5,38 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-04 : les messages entrants ne restent plus en file, ni en rafale ni après un crash du worker
+
+Le correctif des deux défauts trouvés la veille par le banc des trente espaces, demandé par Julien (« lance le
+correctif maintenant », puis « mets en prod quand la CI est verte »). Déployé à 11 h 01 UTC (`933557b7`), avec
+les jaunes de la transition de consentement d'une session voisine (`87931675`, CI verte), puis ses propres jaunes.
+
+**La cause de la rafale, trouvée en reproduisant à volonté.** Une épreuve `rafale` ajoutée au banc (120 messages de
+contacts différents d'un coup, puis plus rien) rendait 114 messages au-delà de 30 s, le pire à 67 s, à chaque fois.
+Lu dans la source de pg-boss 12 : une notification ne réveille chaque boucle que pour UNE lecture (le drapeau
+`beenNotified`), une boucle qui a traité un message repart dormir son filet de 60 s, et la rafale ne s'engage que sur
+un compte en cache. Un premier remède (filet de 5 s, seuil de rafale à 1, cache à 10 s) ne descendait qu'à 37 s ; le
+remède retenu vide `webhook` en continu : enregistrée boucle par boucle, chaque message traité les réveille toutes
+(`notifyWorker`). Même rafale : **8,6 s au pire**. Écartés : `burstWhenBatchFull` (lots de deux, donc une tâche en
+échec ferait rejouer sa voisine réussie) et un seuil de rafale à zéro (pg-boss refuse moins de 1 au démarrage).
+
+**Le crash.** Un battement de cœur de 20 s sur chaque file, la supervision à 10 s : le message en cours lors d'un
+`docker kill` repart en **29 s** (contre 932). L'arrêt propre reste propre (9,6 s au pire, rien d'abandonné).
+Vérifié en production juste après le `up` : les dix files portent `heartbeat_seconds = 20`, le moniteur passe à la
+nouvelle cadence, les portes publiques répondent.
+
+**La relecture, aucun rouge** (le plafond d'un message à la fois par contact tient, pg-boss le suivant par nom de
+file), et des jaunes introduits par le correctif lui-même, corrigés juste après : un message en échec était relu
+aussitôt et ses six tentatives partaient en file d'échec en une seconde (délai de rejeu de 10 s sur la file vidée) ;
+la surveillance à 10 s sur les deux workers et le cache à 10 s coûtaient de l'ordre de 150 Mo d'egress par jour
+(supervision sur le seul principal, cache rendu à 60 s, moniteur à 9 s parce que pg-boss compare strictement) ; et le
+plafond par contact est désormais prouvé sur le vrai pg-boss, dans les deux sens, contre la base jetable du banc.
+
+**Mesuré en passant.** Les 830 attentes du pool de l'API vues sur le banc venaient du démarrage à froid : juste après un
+redémarrage, chaque premier enfilement d'une file refait sa création et ses réglages en parallèle (845 prises pour
+120 messages, contre 121 une fois l'API chaude). Au backlog. Un test d'intégration existant (file d'échec) a échoué
+une fois pendant un lancement muté, et passé dix fois sur dix ailleurs, avec le correctif comme sans : non attribué.
+
 ## 2026-10-04 : une seule transition de consentement dans la fiche contact (piste 1 restante de l'audit)
 
 **Cadrage.** Trois rondes de questions fermées le 3 au soir, décisions de Julien :

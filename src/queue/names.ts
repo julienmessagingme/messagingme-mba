@@ -104,7 +104,8 @@ export function seuilRafalePour(nom: string): number {
  * `concurrence / pollingIntervalSeconds`, et les files à forte concurrence tapaient la base à vide plusieurs fois
  * par seconde (principale cause d'egress). Ce filet ne coûte aucune latence : `worker.notify()` annule le sommeil
  * en cours. Le repli est automatique : pg-boss réévalue `isNotifyActive()` à chaque tour et retombe sur
- * `pollingIntervalSeconds` si l'écouteur meurt.
+ * `pollingIntervalSeconds` si l'écouteur meurt. ⚠️ « Aucune latence » tant qu'un réveil arrive : une notification
+ * ne réveille chaque boucle que pour UNE lecture, et ce qui reste en file attend ce filet (`FILES_VIDEES_EN_CONTINU`).
  */
 export const SONDAGE_FILET_NOTIFIE = 60;
 
@@ -126,6 +127,15 @@ export const FILES_VIDEES_EN_CONTINU: readonly (typeof BASE_QUEUES)[number][] = 
 export function videeEnContinu(queue: string): boolean {
   return (FILES_VIDEES_EN_CONTINU as readonly string[]).includes(queue);
 }
+
+/**
+ * 🔴 Le délai avant de rejouer une tâche en échec d'une file vidée en continu (pg-boss le double à chaque tentative).
+ * Les files sont créées sans délai (`retry_delay = 0`) : une tâche en échec est remise en file aussitôt. Une boucle
+ * qui dort son filet l'étalait jusqu'ici sur plusieurs minutes ; le vidage continu la relit tout de suite, et les six
+ * tentatives s'enchaîneraient en une seconde jusqu'à la file d'échec, pendant une simple panne passagère de la base
+ * (relevé par la relecture du 2026-10-04). Environ 10, 20, 40, 80 puis 160 s : la fenêtre d'avant.
+ */
+export const DELAI_REJEU_VIDAGE_SECONDES = 10;
 
 /**
  * Le filet d'une file où le relâcher à 60 s coûte un contact qui attend, quand le défaut ne convient pas.
@@ -154,12 +164,16 @@ export const BATTEMENT_SECONDES = 20;
 export const RAFRAICHISSEMENT_BATTEMENT_SECONDES = 5;
 
 /**
- * La cadence de la surveillance de pg-boss (tâches expirées ou muettes, comptes des files) et du cache des files
- * qu'en lit chaque worker. Le défaut, 60 s, ajoutait jusqu'à deux minutes au battement avant de rejouer une
- * orpheline, et laissait la rafale décider sur un compte vieux d'une minute. Mesuré en production le 2026-10-03 :
- * quelques centaines de tâches par file, un recompte en 15 ms ; le passer de 60 à 10 s ne coûte rien de visible.
+ * La cadence de la supervision de pg-boss (tâches expirées ou muettes, comptes des files), sur le seul worker
+ * principal (`superviseLesFiles`, `src/worker/roles.ts`). Le défaut, 60 s, ajoutait jusqu'à deux minutes au
+ * battement avant de rejouer une orpheline. Le MONITEUR qu'elle lance a sa propre cadence, une seconde de moins :
+ * pg-boss compare strictement (`> secondes`), et à cadence égale un passage sur deux serait sauté.
+ * ⚠️ Le cache des files de chaque processus (`queueCacheIntervalSeconds`) reste à son défaut de 60 s : chaque
+ * rafraîchissement relit toutes les lignes de `pgboss.queue`, et le passer à 10 s sur deux workers coûtait de
+ * l'ordre de 150 Mo d'egress par jour (relecture du 2026-10-04). Le vidage continu n'en dépend pas.
  */
 export const SURVEILLANCE_FILES_SECONDES = 10;
+export const MONITEUR_FILES_SECONDES = SURVEILLANCE_FILES_SECONDES - 1;
 
 /**
  * Le filet d'une file, jamais plus court que sa cadence de base : pg-boss refuse au démarrage un filet plus court

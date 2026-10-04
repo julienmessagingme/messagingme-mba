@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import type { Db } from 'pg-boss';
 import { PgBossQueue, type PoolPrete } from '../src/queue/pgboss';
-import { BATTEMENT_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES, SURVEILLANCE_FILES_SECONDES } from '../src/queue/names';
+import {
+  BATTEMENT_SECONDES, DELAI_REJEU_VIDAGE_SECONDES, MONITEUR_FILES_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES, SURVEILLANCE_FILES_SECONDES,
+} from '../src/queue/names';
 
 /**
  * LA FILE DE L'API EMPRUNTE LE POOL APPLICATIF (lot C du plan `2026-09-28-api-multi-instances.md`).
@@ -135,9 +137,15 @@ describe('chaîne de connexion (le worker) : pg-boss garde SON pool', () => {
     new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
     expect(derniere()).toMatchObject({
       superviseIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
-      monitorIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
-      queueCacheIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
+      monitorIntervalSeconds: MONITEUR_FILES_SECONDES,
     });
+    // Le cache des files garde le défaut de pg-boss (egress, relecture du 2026-10-04).
+    expect(derniere()).not.toHaveProperty('queueCacheIntervalSeconds');
+  });
+
+  it('le choix de l’appelant l’emporte : le worker d’analyse éteint sa supervision', () => {
+    new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2, supervise: false });
+    expect(derniere()).toMatchObject({ supervise: false });
   });
 });
 
@@ -150,6 +158,9 @@ describe('🔴 le battement de cœur des tâches (banc des trente espaces, 2026-
     expect(etat.reglages).toContainEqual(['webhook', { notify: true }]);
     expect(etat.reglages).toContainEqual(['webhook-status', { heartbeatSeconds: BATTEMENT_SECONDES }]);
     expect(etat.reglages).not.toContainEqual(['webhook-status', { notify: true }]);
+    // Le délai de rejeu, sur la seule file vidée en continu : elle relirait aussitôt une tâche en échec.
+    expect(etat.reglages).toContainEqual(['webhook', { retryDelay: DELAI_REJEU_VIDAGE_SECONDES }]);
+    expect(etat.reglages.some(([nom, o]) => nom === 'webhook-status' && 'retryDelay' in o)).toBe(false);
   });
 
   it('🔴 la file des entrants : une boucle par registration, et chaque message traité réveille les trois', async () => {

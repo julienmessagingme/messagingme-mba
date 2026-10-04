@@ -71,6 +71,36 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
   });
 
   /**
+   * 🔴 LE VIDAGE CONTINU GARDE UN MESSAGE À LA FOIS PAR CONTACT (relecture du 2026-10-04). `webhook` est enregistrée
+   * boucle par boucle, et le plafond par groupe ne tient que parce que pg-boss le suit par NOM de file : une version
+   * qui l'indexerait par registration le casserait en silence (`pg-boss` est en `^12`). Prouvé ici sur le vrai
+   * pg-boss : deux messages d'un même contact ne se chevauchent jamais, deux contacts différents si (sans ce second
+   * point, une seule boucle passerait le test).
+   */
+  it('pg-boss : la file vidée en continu ne traite jamais deux messages d’un même contact ensemble', async () => {
+    const plages = new Map<string, Array<[number, number]>>();
+    let restants = 4;
+    let fini!: () => void;
+    const tout = new Promise<void>((r) => { fini = r; });
+    await queue.work('webhook', async (data) => {
+      const { g } = data as { g: string };
+      const debut = Date.now();
+      await new Promise((r) => setTimeout(r, 400));
+      plages.set(g, [...(plages.get(g) ?? []), [debut, Date.now()]]);
+      restants -= 1;
+      if (restants === 0) fini();
+    }, { concurrency: 3, groupConcurrency: 1 });
+    for (const g of ['c1', 'c1', 'c2', 'c2']) await queue.enqueue('webhook', { g }, { groupId: g });
+    await Promise.race([tout, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30_000))]);
+    const chevauche = (a: [number, number], b: [number, number]): boolean => a[0] < b[1] && b[0] < a[1];
+    const c1 = plages.get('c1')!;
+    const c2 = plages.get('c2')!;
+    expect(chevauche(c1[0]!, c1[1]!)).toBe(false);
+    expect(chevauche(c2[0]!, c2[1]!)).toBe(false);
+    expect(c1.some((a) => c2.some((b) => chevauche(a, b)))).toBe(true);
+  }, 40_000);
+
+  /**
    * Lot C du plan `2026-09-28-api-multi-instances.md` : l'API empile par son pool APPLICATIF prêté à pg-boss, le
    * worker dépile avec le sien, sur le même schéma, comme en production. La création de la file passe aussi par
    * le prêt : c'est le bloc `BEGIN; ...; COMMIT;` à plusieurs instructions, que `pg` n'accepte que sans valeurs.
