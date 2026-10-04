@@ -53,6 +53,19 @@ repris sans repartir de zéro, puis la relecture. Le jaune le plus utile de cett
 (« désactivez l'agent avant de le remanier ») pouvait pousser Claude à couper un agent en production ; les
 descriptions disent désormais que désactiver coupe l'agent dans ses scénarios et ne se fait que sur demande.
 
+## 2026-10-04 : l'essai réel du lot 8a, un agent IA monté de bout en bout depuis Claude Code
+
+Julien a demandé à Claude, dans une session neuve connectée par OAuth, de créer un agent de qualification pour Gan
+Prévoyance. Claude a posé ses questions une par une, créé « Gan PrevMCP », lu puis importé le site (150 fiches sur
+22 pages), réglé sa fiche et ses quatre outils, l'a essayé douze fois, puis l'a activé sur l'accord de Julien. Tout
+relu en base juste après, en lecture seule : historique d'origine `mcp` avec l'auteur, outils signés par l'admin,
+provenance des fiches, et un débit par essai égal à son coût (2,9 centimes au total).
+
+L'essai a trouvé un défaut qui n'est pas celui du lot : sous GPT-5 mini, l'agent termine sans écrire (5 sorties sur 5
+sans texte, même avec une consigne explicite), parce que le moteur arrête le tour sur l'appel de `mba_terminer` et ne
+garde que le texte de cette réponse-là. Gemini 2.5 Flash écrit son message dans la même réponse (2 sur 2). Claude a
+basculé l'agent sur Gemini, l'a dit à Julien avant d'activer, et le choix du correctif est ouvert dans `wip.md`.
+
 ## 2026-10-04 : les messages entrants ne restent plus en file, ni en rafale ni après un crash du worker
 
 Le correctif des deux défauts trouvés la veille par le banc des trente espaces, demandé par Julien (« lance le
