@@ -262,14 +262,15 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
    la console. Mesuré avant : un seul espace a des clés (2 actives), personne n'est au-delà. Test d'intégration
    prouvé dans les deux sens sur un Postgres jetable. Relu sans rouge, commité en `92652e5c`, CI verte job par job,
    `mba-api` seul déployé le 2026-10-04 à 13 h 38 UTC, fumée verte, essai réel en production fait (sans écriture).
-4. ⏳ **Le lot observabilité** (2026-10-04, décidé par Julien) : ferme les deux critères de sortie non tenus de l'audit.
+4. ✅ **Le lot observabilité** (2026-10-04, décidé par Julien) : ferme les deux critères de sortie non tenus de l'audit.
    Alerte Telegram quand un worker se tait OU redémarre en boucle (surveillance dans l'API) ; durée, lignes, échecs et
    tours sautés de chaque tâche de fond (migration 0207, carte de `/ops`) ; octets en base, fichiers compris
    (`GET /ops/stockage`, carte de `/ops` ; mesuré le 2026-10-04 : base de 45 Mo, dont 10 Mo pour 28 images RCS) ; les
    six passages « deux copies au plus » d'`ARCHITECTURE-CIBLE.md` ; le compteur « n sur 10 » des clés. Relu sans
-   rouge, ses jaunes réglés dans le lot. Reste : test d'intégration sur un Postgres jetable, e2e, commit, CI,
-   migration 0207 AVANT le `up` des workers, déploiement, et l'essai réel (arrêter `mba-worker-analyse`, recevoir
-   l'alerte puis le retour).
+   rouge, ses jaunes réglés dans le lot. EN PRODUCTION depuis le 2026-10-04 à 16 h 51 UTC (`e6711818`, migration 0207
+   appliquée avant le `up`, CI verte job par job, e2e complet vert). Essai réel fait : `mba-worker-analyse` arrêté à
+   16 h 53, alerte Telegram à 16 h 56 min 37 s, retour à 16 h 57 min 40 s, les deux acceptés par Telegram (verrous lus
+   en base). Ce qui reste est dans `todo.md`.
 5. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
 6. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant ». Leur volume est désormais
    mesuré (`/ops`, rouge au-delà de 500 Mo de fichiers).

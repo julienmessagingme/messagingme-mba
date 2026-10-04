@@ -28,6 +28,18 @@ alerte », et « le stockage RCS ne grossit plus sans métrique ». Décidé par
   (la plus grosse table, 22 % de la base), rien pour les brouillons de pub, 0,2 Mo pour les Flows. La mesure coûte une
   demi-seconde (le catalogue entier) : sa propre route, jamais avec la vue d'ensemble.
 - Les six passages « deux copies au plus » d'`ARCHITECTURE-CIBLE.md` corrigés (l'audit en comptait quatre).
+- **`origin/main` a bougé pendant la construction du commit en plomberie** (`8f2a8569`, le lot d'un pair) : l'index
+  temporaire était parti de l'état d'avant, et le diff contre `origin/main` montrait six fichiers de trop. Commiter
+  là-dessus aurait DÉFAIT le commit du pair. Parade : figer le SHA d'`origin` une fois (`rev-parse`), faire partir
+  `read-tree`, la fusion du journal et `commit-tree -p` de ce SHA, et vérifier que le diff contre lui contient
+  exactement ses propres fichiers avant de pousser. Typecheck de l'arbre fusionné réel, aussi, avant le push.
+- **En production en `e6711818`** (avec `8f2a8569` dessous, d'accord avec son auteur) : 0207 appliquée à 16 h 50 UTC
+  avant le `up` et relue en base ; principal, analyse, puis API. Dès la première minute, les deux workers écrivent
+  leurs mesures : les statistiques d'analyse du démarrage (262 ms, 10 lignes), la rétention générale (137 lignes), et
+  une découverte, le suivi du statut des numéros à 10 s.
+- **Essai réel** : `mba-worker-analyse` arrêté à 16 h 53 min 20 s (dernier battement 16 h 53 min 08 s), alerte à
+  16 h 56 min 37 s, worker relancé à 16 h 57, retour annoncé à 16 h 57 min 40 s avec « redémarré 16:56 UTC ». Les deux
+  messages acceptés par Telegram, prouvé par leurs verrous tenus en base (un envoi refusé relâche le sien).
 
 ## 2026-10-04 : le bail anti-double-envoi de l'exécuteur, requis (piste 8 de l'audit)
 
