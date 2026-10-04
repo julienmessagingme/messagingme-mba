@@ -167,6 +167,20 @@ repris sans repartir de zéro, puis la relecture. Le jaune le plus utile de cett
 (« désactivez l'agent avant de le remanier ») pouvait pousser Claude à couper un agent en production ; les
 descriptions disent désormais que désactiver coupe l'agent dans ses scénarios et ne se fait que sur demande.
 
+## 2026-10-04 : une sortie d'agent part avec son dernier message, et GPT-5 mini quitte la liste
+
+Le défaut trouvé par l'essai du lot 8a (sous GPT-5 mini, l'agent appelait l'outil qui termine sans écrire, et le contact
+ne recevait rien) est corrigé en `2674276b` : `terminer` porte un paramètre `message` imposé par le catalogue, jamais
+stocké (les outils déjà posés gardent leur copie de paramètres en base), annoncé requis et toléré absent, lu par
+l'exposition ET par la validation (sans la seconde, Zod l'aurait retiré en silence). Un implémenteur, une relecture sans
+rouge, quatorze mutations.
+
+Le premier essai réel a montré que ça ne suffisait pas : 2 sorties sur 3 avec leur message, mais le lead qualifié parti
+avec un message VIDE, parce que la description disait « sinon vide ». Reformulée (« toujours rempli », `866aae5c`), puis
+3 sur 3. La leçon : une description d'outil est une consigne, et un modèle de raisonnement prend au mot l'exception
+qu'on lui offre. Puis GPT-5 mini a quitté la liste (`1351821d`) : 2,5 fois le coût de Gemini 2.5 Flash à l'essai, sa
+réflexion invisible étant facturée, et le moins bon à comprendre l'implicite. Aucun agent ne l'utilisait.
+
 ## 2026-10-04 : l'essai réel du lot 8a, un agent IA monté de bout en bout depuis Claude Code
 
 Julien a demandé à Claude, dans une session neuve connectée par OAuth, de créer un agent de qualification pour Gan

@@ -19,6 +19,14 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, SPEC ÉCRITE
+
+Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré
+avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`. Réglage d'espace
+tenu par un CHECK (une seule voix), scénario système caché au graphe figé, branchement dans `fil.ts`, premier tour qui
+lit enfin le message déclencheur (défaut de tous les agents, mesuré dans le code), mémoire de 30 messages sur 30 jours,
+crédit épuisé vers l'équipe avec alerte. ⏳ Spec à valider par Julien, puis le plan.
+
 ## LOT 8a DE « ENGAGE ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, EN PRODUCTION, ESSAI RÉEL FAIT
 
 Spec `docs/superpowers/specs/2026-10-03-mcp-agent-ia-design.md`, plan `docs/superpowers/plans/2026-10-03-mcp-agent-ia.md`.
@@ -53,13 +61,17 @@ fonctionnel dans `features.md` (« Construire un agent IA depuis Claude »).
   lignes `fiche_agent` d'origine `mcp` avec leur auteur, l'activation comprise ; douze essais, chacun débité de son
   coût exact au prix client, note « essai depuis le serveur MCP » (2,9 centimes au total). La création elle-même ne
   laisse pas de ligne, comme dans la console.
-- 🟡 **À trancher, trouvé par l'essai : avec GPT-5 mini, l'agent se tait quand il termine.** Il appelle
-  `mba_terminer` sans écrire de message dans la même réponse, et le moteur (`src/agent/brain.gateway.ts`, branche
-  `res.sortie`) arrête le tour sur cet appel en gardant le seul texte de cette réponse : le contact ne reçoit rien.
-  Mesuré aux essais : 5 sorties sur 5 sans texte sous GPT-5 mini, y compris après une consigne explicite dans
-  l'objectif ; 2 sur 2 avec leur message sous Gemini 2.5 Flash. Touche tout espace qui choisit GPT-5 mini, depuis la
-  console comme depuis Claude (le défaut de l'instance est GLM 4.7 Flash, non mesuré ici). Deux pistes : un argument
-  `message` requis sur `mba_terminer`, ou rendre la main au modèle une fois après la sortie pour qu'il écrive.
+- ✅ **Corrigé et en production le 2026-10-04 : une sortie part avec son dernier message.** L'essai avait trouvé que sous
+  GPT-5 mini l'agent appelait `mba_terminer` sans écrire (5 sorties sur 5 muettes). `terminer` porte désormais le
+  paramètre imposé `message` (`2674276b`, relu sans rouge), dont la description demande un message toujours rempli
+  (`866aae5c`, après un premier essai où le lead qualifié partait encore vide). Essai réel sous GPT-5 mini sur Gan
+  PrevMCP, avec l'accord de Julien : 3 sorties sur 3 avec leur message, récapitulatif compris ; sous Gemini, le texte
+  écrit part seul, sans doublon. Puis **GPT-5 mini a quitté la liste des modèles** (`1351821d`, aucun agent ne
+  l'utilisait) : 2,5 fois le coût de Gemini 2.5 Flash à l'essai, pour un tarif affiché plus bas.
+- 🟡 **Restes de la relecture de ce correctif** : le message de repli part sans la mention d'IA quand elle est due
+  (constaté à l'essai sous GPT-5 mini, à fermer dans le lot 5, spec § 6) ; un dernier message refusé à l'envoi fait
+  sortir par « échec » et perd la règle d'arrêt (déjà vrai pour un texte écrit) ; le texte écrit à côté d'un appel qui
+  sort n'est pas passé à `ressembleAUnBlocOutil`, seul le message de repli l'est.
 - 🟡 **Ouverts, hors de ces deux livraisons** : l'assistant de construction journalise ses propositions « depuis les
   onglets » (il passe par la même route) ; chaque modification de la fiche d'un agent actif relit toutes ses fiches
   de connaissance (`etatPourLint`, un compte suffirait) ; `ajouterFiches` n'est pas atomique (un agent qui disparaît

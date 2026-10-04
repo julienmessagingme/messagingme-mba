@@ -2771,7 +2771,9 @@ d'aide.
   - **Envoyer un bloc de votre scénario** (irréversible) : pousser une photo, un message, un formulaire que
     vous avez dessinés. Le parcours ne bouge pas, l'agent garde la main.
   - **Passer la main à un humain** (écriture) : voir plus bas.
-  - **Terminer par une règle d'arrêt** (lecture) : rendre la main au scénario par la sortie choisie.
+  - **Terminer par une règle d'arrêt** (lecture) : rendre la main au scénario par la sortie choisie, après un dernier
+    message au contact (le texte de l'agent, ou à défaut le message qu'il joint à l'outil : certains modèles
+    terminent sans rien écrire à côté).
 - ✅ **Les mots d'un outil se règlent, et ils changent beaucoup son comportement** : « quand l'appeler » et
   « quand NE PAS l'appeler » sont deux champs séparés, et ce sont eux que le modèle lit pour décider.
   ⚠️ La clause « quand NE PAS l'appeler » **n'atteignait pas le modèle** jusqu'au 2026-08-29 : le client
