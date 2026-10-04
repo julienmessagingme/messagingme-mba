@@ -31,6 +31,12 @@ place d'une clé du client, ou serait refusé par elle). Les clés déjà au-del
   « 11 actives » à côté de « 10 au maximum ») ; le droit du relais, recopié en dur dans la console dont la règle
   d'exclusion dépend désormais, passe sous un test de parité ; deux commentaires précisés ; et l'e2e de l'écran
   (`web/e2e/cles-api-plafond.spec.ts` : bouton grisé à dix, actif à neuf plus le relais, 409 affiché tel quel).
+- **En production en `92652e5c`** : CI verte job par job, `mba-api` SEUL recréé à 13 h 38 UTC (sans migration ; entre
+  la production et `main`, seuls les deux fichiers serveur du lot changeaient), les workers intacts, fumée verte.
+- **Essai réel sans écriture** : dans le conteneur, le vrai `creerSousPlafond` sur le seul espace qui a des clés,
+  plafonné à ses 2 clés actives, rend `null` en 46 ms à travers le pooler, et le nombre de lignes ne bouge pas (9
+  avant, 9 après). Créer de vraies clés aurait laissé des lignes visibles dans la liste du client ; ce qui distingue
+  la clé du relais est prouvé par le test d'intégration.
 
 ## 2026-10-04 : un point d'entrée par type de lancement de scénario (piste 4 de l'audit)
 
