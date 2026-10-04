@@ -1011,9 +1011,10 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   destinataire. La colonne est REQUISE dans `WorkflowRunRow` et dans `DueRun`, donc le compilateur oblige
   chaque lecture de parcours à la transporter, balayage des endormis compris.
 - 🔴 **UN CONTACT RÉEL NE TOMBE JAMAIS DANS UN BROUILLON.** `grapheEditable(wf)` n'apparaît qu'à UN endroit
-  des câblages d'exécution (`startTestRun`, `src/worker.ts`) ; le lancement depuis l'Inbox (`src/index.ts`)
-  et les campagnes jouent `wf.graph`. Rien dans le langage ne le dit, `tests/workflow-graphe-fige.test.ts`
-  le tient.
+  des chemins d'exécution : l'entrée des lancements (`src/workflow/lancements.ts`), pour le seul type dont la
+  politique joue le brouillon (`lien_de_test`, `graphe: 'brouillon_fige'`) ; tous les autres types jouent
+  `wf.graph`. `tests/workflow-lancements.test.ts` exécute la colonne type par type, et l'inventaire de
+  `tests/workflow-graphe-fige.test.ts` tient le reste de `src/`.
 
 **Conversations**
 

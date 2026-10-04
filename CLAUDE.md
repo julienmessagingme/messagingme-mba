@@ -368,8 +368,9 @@ figeait sans un mot.
 
 🔴 **UN SEUL POINT DE PASSAGE, ET C'EST TOUT L'INTÉRÊT** : `grapheDuRun(run, lirePublie)`
 (`src/workflow/executor.ts`). Poser la préférence dans chacun des trois points de reprise ferait trois
-endroits où l'oublier, et le quatrième point ajouté demain ne l'aurait pas. Le figeage se DEMANDE
-(`runFrom(..., { figerLeGraphe: true })`), il n'est jamais implicite.
+endroits où l'oublier, et le quatrième point ajouté demain ne l'aurait pas. Le figeage se DEMANDE (la
+politique `graphe: 'brouillon_fige'` du type `lien_de_test`, `src/workflow/lancements.ts`), il n'est jamais
+implicite.
 
 ⚠️ **NULLABLE, ET `null` EST LE CAS NORMAL** : aucun parcours réel n'en porte. Figer le graphe de chaque
 destinataire d'une campagne de 5 000 personnes recopierait 5 000 fois le même objet. `null` = on lit le

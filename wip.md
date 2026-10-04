@@ -129,15 +129,14 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   (essai du 3 à 16 h 38, une seule occurrence, journal du 2026-10-03). Deux essais suivants (16 h 53 et 16 h 54,
   réponse au modèle par un bouton puis par du texte) : l'agent n'a rien dit. Occurrence isolée, à surveiller.
 
-## UN POINT D'ENTRÉE PAR TYPE DE LANCEMENT DE SCÉNARIO (EN COURS, 2026-10-04)
+## UN POINT D'ENTRÉE PAR TYPE DE LANCEMENT DE SCÉNARIO (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES POUSSÉS)
 
-- ⏳ Piste 4 du rapport d'architecture du 2026-10-02 (`todo.md`). Cadrage en deux rondes avec Julien : les sept
-  lancements passent par `src/workflow/lancements.ts` (type fermé, table de politique), réglages de l'exécuteur
-  fermés, comportement IDENTIQUE, lectures de texte remplacées par une table qui exécute le module. Plan
-  `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md` (poussé avec le code). Implémenteur en cours dans
-  l'extraction `scratchpad/lanc` (base `4445eed1`), puis une relecture. **Production avant la démo du 7** (viser
-  lundi 5), essai réel en quatre gestes (Inbox, lien de test, mot-clé, campagne vers un seul numéro) ; un défaut en
-  production avant la démo se corrige sur place.
+- ✅ Piste 4 du rapport d'architecture du 2026-10-02, plan `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md`.
+  Les sept lancements passent par `src/workflow/lancements.ts`, comportement identique (`b6e674ac`, CI verte job par
+  job). Relecture : 0 rouge, 4 jaunes, poussés après le déploiement. API puis workers (12 h 31 UTC, avec l'accord de
+  Julien pour les jaunes pg-boss d'une session voisine qu'ils emportaient).
+- ✅ **Essai réel du 4 entre 14 h 42 et 14 h 45 (Paris)**, relu en base : Inbox, lien de test (graphe figé), mot-clé,
+  campagne vers un seul numéro ; chacun a fait la même chose qu'avant. Récit au journal du 2026-10-04.
 
 ## UNE SEULE TRANSITION DE CONSENTEMENT (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES POUSSÉS)
 

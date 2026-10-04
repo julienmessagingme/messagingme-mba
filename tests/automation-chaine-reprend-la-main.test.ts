@@ -136,12 +136,24 @@ describe('un bouton de chaîne cliqué démarre son scénario même quand le fil
 const lire = (...bouts: string[]): string => readFileSync(join(process.cwd(), ...bouts), 'utf8');
 
 /**
- * LA CONSTANTE QUE LE SQL RECOPIE, et le type de lancement de chaque propriétaire. ⚠️ Le cas qui lisait le
- * câblage d'automation dans `src/worker.ts` (`ignoreHumanControl: opts.reprendLaMain`, `saufOperateur: ...`, jamais
- * `ignoreHumanControl: true`) n'a plus d'objet : le worker transmet la demande du runner sans rien y poser, et ce que
- * chaque type reprend est exécuté par `tests/workflow-lancements.test.ts`.
+ * LA CONSTANTE QUE LE SQL RECOPIE, le type de lancement de chaque propriétaire, et le câblage qui le transmet. Ce que
+ * chaque type reprend est exécuté par `tests/workflow-lancements.test.ts` ; ce que la table ne voit pas, c'est QUEL
+ * type le câblage d'automation de `src/worker.ts` passe, d'où le dernier cas.
  */
 describe('la constante que le SQL recopie, et le type de chaque propriétaire', () => {
+  it('🔴 le worker transmet la demande du RUNNER telle quelle, sans y poser de type', () => {
+    // Ce cas lisait `ignoreHumanControl: opts.reprendLaMain` et refusait un `true` en dur. Sa forme a changé, pas son
+    // objet : `lancements.lancer({ ...demande, type: 'automatisme_chaine' })` compile, ne rougit aucun test qui
+    // exécute la table, et ferait prendre le fil d'un opérateur par n'importe quel mot-clé (relecture du
+    // 2026-10-04, mutation essayée). Aucun test unitaire ne monte `main()`, donc on lit le worker.
+    const src = lire('src', 'worker.ts');
+    const i = src.indexOf('startWorkflow: async (demande: DemandeAutomatisme) =>');
+    expect(i, 'le câblage d’automation a changé de forme : ce test ne garde plus rien, le remettre à jour').toBeGreaterThan(-1);
+    const ligne = src.slice(i, src.indexOf('\n', i));
+    expect(ligne, 'le câblage ne transmet plus la demande du runner telle quelle : le type viendrait d’ailleurs que de `typeDeLancementDe`')
+      .toBe('startWorkflow: async (demande: DemandeAutomatisme) => (await lancements.lancer(demande)) ?? false,');
+  });
+
   it('🔴 la constante et les gardes SQL du store de liens disent la MÊME chaîne', () => {
     // `possede_par = 'channelsme_link'` vit en dur dans les requêtes de ce store, où c'est une garde miroir
     // (il ne peut toucher QUE ses propres automations). Un littéral SQL ne se paramètre pas sans transformer

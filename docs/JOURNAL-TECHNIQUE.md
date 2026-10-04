@@ -5,6 +5,37 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-04 : un point d'entrée par type de lancement de scénario (piste 4 de l'audit)
+
+**Cadrage.** Deux rondes de questions fermées, décisions de Julien : les sept lancements (le rapport en comptait cinq,
+l'agent de Meta et la campagne en ont chacun deux), réglages de l'exécuteur fermés, comportement IDENTIQUE, une table
+à la place des lectures de texte, production avant la démo du 7, un défaut en production se corrige sur place.
+
+**Livré, `b6e674ac`.**
+- `src/workflow/lancements.ts` : un type fermé (neuf valeurs), une table `POLITIQUE_DE_LANCEMENT` (reprise du fil,
+  publication des étiquettes, graphe joué, garde de fenêtre), une entrée `lancer` dont la demande est typée par type.
+- L'exécuteur n'a plus que `demarrer(type, ...)` : `start`, `startInWindow`, `startFromNode` et leurs réglages bruts
+  ont disparu. Le runner d'automations construit la demande entière, type compris (`typeDeLancementDe`).
+- `tests/workflow-lancements.test.ts` exécute la table sur le vrai module, le vrai exécuteur et le vrai contrôle du
+  fil ; les tests qui lisaient le texte des câblages sont retirés, leurs cas repris. Quatre mutations vérifiées dans
+  les deux sens (mot-clé qui prendrait le fil, publicité qui le prendrait à un opérateur, campagne qui publierait,
+  lien de test qui jouerait le publié).
+- **Relecture : 0 rouge, 4 jaunes.** Le plus utile : en retirant les lectures de texte, plus rien ne voyait un
+  câblage d'automation qui forcerait le type (`{ ...demande, type: 'automatisme_chaine' }` compilait et laissait tout
+  vert) ; une garde le relit de nouveau, vérifiée par cette mutation. Les autres : deux passages de doc devenus faux,
+  et un écart ancien mis au backlog (une automation qui démarre à un bloc ne vérifie pas la fenêtre).
+
+**Déploiement en deux temps.** L'API seule d'abord, puis les deux workers à 12 h 31 UTC, une fois que Julien a donné
+son accord : leur image emportait aussi les jaunes de supervision pg-boss d'une session voisine (`59ec71e2`), qui
+attendaient ce feu vert. La session voisine a relu ensuite en base le moniteur et le battement des dix files.
+
+**Essai réel, le 4 entre 14 h 42 et 14 h 45 (Paris), sur la conversation de Julien, relu en base.**
+- Inbox : parcours créé et relié à la fiche, graphe non figé, reprise du fil tracée (`prise_mba`).
+- Lien de test : parcours au graphe FIGÉ (le brouillon), conversation non marquée.
+- Mot-clé « Choucroute » : tir de l'automation, puis parcours, graphe non figé.
+- Campagne vers un seul numéro : destinataire `sent`, modèle parti, parcours en attente de réponse ; le parcours
+  précédent a été clos par ce démarrage, comme avant.
+
 ## 2026-10-04 : les outils MCP de l'agent IA et du crédit (lot 8a), livraisons A et B
 
 **Livraison A en production en `00863361`** (migration 0206 appliquée avant le `up`, API et workers) : la logique de

@@ -260,8 +260,8 @@ en production.
    - `/tenants/:id/conversations/:id/prendre` : une panne de base avant l'appel à Meta sort en 500 (Cloudflare
      mange le corps) au lieu de 409 ;
    - `FlowMappingDeps.audit` (trace du consentement capté par un Flow) reste optionnel.
-3. **Candidat 6 de la revue d'architecture** (un point d'entrée « lancer un scénario » qui porte la politique de
-   chaque type de lancement) : non fait, à reprendre seulement s'il gêne.
+3. ✅ **Candidat 6 de la revue d'architecture** (un point d'entrée « lancer un scénario » qui porte la politique de
+   chaque type de lancement) : fait le 2026-10-04, piste 4 du rapport du 2026-10-02 (plus bas).
 
 ## 🟠 Suites de la session du 2026-09-25 au 27 (MFA, audit ponytail, commentaires)
 
@@ -1033,12 +1033,20 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
    jeton lui-même, hors de la règle « le jeton ne sort en clair que par `jetonClair` » (`src/pubs/connexion.ts`).
    Rendre un accès déjà lié au compte publicitaire, construit dans le socle. À trancher en passant :
    `noterSiRefus` ne marque un jeton refusé que sur la connexion, pas sur la création ni la publication.
-4. **Un point d'entrée par type de lancement de scénario** (à explorer). C'est le **candidat 6** de « approfondir
-   la racine » (section des suites du 2026-09-27, plus haut), différé « à reprendre seulement s'il gêne » : il a
-   gêné une fois, `saufOperateur` (les leads publicitaires du 27) a atterri dans la racine. Cinq lancements
-   (Inbox, outil de l'agent de Meta, automation, jeton de test, campagne) décident dans une flèche de racine qui
-   reprend le fil, qui émet et quel graphe, et ce choix n'est gardé que par lecture de texte. Relire avant « Trois
-   lectures qu'un point d'envoi unique perdrait », plus bas.
+4. ✅ **Un point d'entrée par type de lancement de scénario : FAIT le 2026-10-04** (`b6e674ac`, plan
+   `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md`). Les sept lancements passent par
+   `src/workflow/lancements.ts` (type fermé, table `POLITIQUE_DE_LANCEMENT`), l'exécuteur n'a plus que
+   `demarrer(type, ...)`, comportement identique (décision de Julien), et `tests/workflow-lancements.test.ts`
+   exécute la table à la place des lectures de texte. C'était aussi le candidat 6 de « approfondir la racine ».
+   Reste, relevé par le lot et laissé tel quel :
+   - 🟡 **Une automation qui démarre à un BLOC lève la garde de fenêtre sans la vérifier** (politique
+     `bloc_ou_preuve`, héritée de l'ancien `startFromNode`), même pour un déclencheur qui n'est pas un message
+     (étiquette, date, risque) ; `src/http/automations.ts` ne valide rien à l'enregistrement. Si ce bloc est un
+     message de session et que la fenêtre est fermée, Meta refuse (131047) : rien n'est livré, et seul le journal
+     du worker le dit. Piste : vérifier la fenêtre comme `/v1/sends` (`ouvertureApi`), ou refuser ce réglage à
+     l'enregistrement pour un déclencheur qui n'est pas un message.
+   - 🟡 **Un commentaire de la console cite encore `ignoreHumanControl`** (`web/app/inbox/page.tsx`, vers la ligne
+     2374) : à corriger au prochain passage dans ce fichier (le toucher seul republie la console).
 5. **La réception RCS en module, comme sa jumelle WhatsApp** (à explorer). `onMo` (`src/index.ts`, rcsCallback)
    enchaîne STOP, opt-out, signal, journal, contact, automation et scénario dans une flèche qu'aucun test
    n'exécute (le test la remplace par un faux) ; la jumelle WhatsApp est un module (`src/webhooks/inbound.ts`).
