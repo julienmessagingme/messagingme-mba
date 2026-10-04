@@ -299,7 +299,7 @@ describe('les modèles se choisissent dans une LISTE', () => {
     const res = await srv.inject({ method: 'GET', url: '/tenants/t1/agents/modeles', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     const modeles = res.json<{ modeles: Array<{ id: string; prixEntree: number | null }> }>().modeles;
-    expect(modeles).toHaveLength(10);
+    expect(modeles).toHaveLength(9);
     expect(modeles.every((m) => m.prixEntree === null)).toBe(true);
   });
 

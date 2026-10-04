@@ -19,7 +19,7 @@ const gw = (id: string, input: string, output: string, outils = true): ModeleGat
   type: 'language',
 });
 
-/** Le catalogue réel, mesuré chez Vercel le 2026-09-09 (extrait : trois de nos dix). */
+/** Le catalogue réel, mesuré chez Vercel le 2026-09-09 (extrait : trois de nos neuf). */
 const CATALOGUE: ModeleGateway[] = [
   gw('zai/glm-4.7-flash', '0.00000007', '0.0000004'),
   gw('anthropic/claude-haiku-4.5', '0.000001', '0.000005'),
@@ -56,7 +56,7 @@ describe('prixParMillion : dollars par jeton -> euros par million, commission co
   });
 });
 
-describe('modelesProposables : l’intersection de NOS dix avec le catalogue réel', () => {
+describe('modelesProposables : l’intersection de NOS neuf avec le catalogue réel', () => {
   it('🔴 un modèle ABSENT du catalogue ne sort pas : il casserait l’agent au premier message', () => {
     const out = modelesProposables(CATALOGUE, 0.92, 10);
     expect(out.map((m) => m.id).sort()).toEqual(['anthropic/claude-haiku-4.5', 'mistral/mistral-small', 'zai/glm-4.7-flash']);
@@ -80,7 +80,7 @@ describe('modelesProposables : l’intersection de NOS dix avec le catalogue ré
     expect(out[0]!.prixSortie).toBeCloseTo(0.4048, 6);
   });
 
-  it('🔴 catalogue VIDE (Gateway injoignable) -> nos dix SANS prix, jamais un menu vide', () => {
+  it('🔴 catalogue VIDE (Gateway injoignable) -> nos neuf SANS prix, jamais un menu vide', () => {
     // Un menu vide interdirait le geste que ce lot vient d'ouvrir. Une tarification indisponible n'a pas à
     // empêcher un réglage.
     const out = modelesProposables([], 0.92, 10);
@@ -98,12 +98,18 @@ describe('modelesProposables : l’intersection de NOS dix avec le catalogue ré
     // Deux inventaires du même choix : le second sert la garde d'écriture, le premier le menu. Divergents,
     // on proposerait un modèle que le serveur refuserait d'enregistrer.
     expect([...IDS_MODELES_CHOISIS].sort()).toEqual(MODELES_CHOISIS.map((m) => m.id).sort());
-    expect(MODELES_CHOISIS).toHaveLength(10);
+    expect(MODELES_CHOISIS).toHaveLength(9);
   });
 
   it('🔴 le modèle qui tourne AUJOURD’HUI est dans la liste', () => {
     // Le retirer ferait afficher « en place, hors liste » sur tous les agents du parc d'un coup.
     expect(IDS_MODELES_CHOISIS.has('zai/glm-4.7-flash')).toBe(true);
+  });
+
+  it('GPT-5 mini n’est plus proposé, et ne doit pas revenir sans un nouvel essai', () => {
+    // Mesuré le 2026-10-04 sur un vrai agent : 2,5 fois le coût de Gemini 2.5 Flash et des sorties sans un mot au
+    // contact. Le remettre au menu se décide sur un essai, pas en recopiant la liste du Gateway.
+    expect(IDS_MODELES_CHOISIS.has('openai/gpt-5-mini')).toBe(false);
   });
 });
 
@@ -121,7 +127,7 @@ describe('lireCatalogueGateway : lecture DÉFENSIVE d’un JSON de tiers', () =>
   });
 
   it('🔴 une panne rend une liste VIDE, jamais une exception', async () => {
-    // C'est ce qui fait retomber le menu sur « nos dix sans prix » au lieu de faire tomber la fiche d'agent.
+    // C'est ce qui fait retomber le menu sur « nos neuf sans prix » au lieu de faire tomber la fiche d'agent.
     for (const r of [transport(new Error('réseau')), transport({ status: 500, json: null }), transport({ status: 401, json: { error: 'clé' } })]) {
       expect(await lireCatalogueGateway(r, 'vck_x')).toEqual([]);
     }

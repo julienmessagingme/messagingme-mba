@@ -28,7 +28,7 @@ export interface ModeleProposable {
 }
 
 /**
- * Les dix, du moins cher au plus cher. L'ordre du menu vient des prix réels (`modelesProposables`), pas de
+ * Les neuf, du moins cher au plus cher. L'ordre du menu vient des prix réels (`modelesProposables`), pas de
  * cet ordre-ci : deux sources d'ordre divergeraient au premier changement de tarif.
  */
 export const MODELES_CHOISIS: ReadonlyArray<{ id: string; nom: string }> = [
@@ -37,7 +37,8 @@ export const MODELES_CHOISIS: ReadonlyArray<{ id: string; nom: string }> = [
   // Européen et francophone de naissance, au prix du moins cher : le repli naturel si le français gêne.
   { id: 'mistral/mistral-small', nom: 'Mistral Small' },
   { id: 'google/gemini-2.5-flash-lite', nom: 'Gemini 2.5 Flash Lite' },
-  { id: 'openai/gpt-5-mini', nom: 'GPT-5 mini' },
+  // GPT-5 mini n'y est plus (2026-10-04) : modèle de raisonnement, il paie une réflexion qu'on ne voit pas (2,5 fois
+  // le coût de Gemini 2.5 Flash à l'essai réel, pour un tarif affiché plus bas) et terminait sans écrire au contact.
   { id: 'google/gemini-2.5-flash', nom: 'Gemini 2.5 Flash' },
   { id: 'openai/gpt-4.1-mini', nom: 'GPT-4.1 mini' },
   // Le grand frère du modèle par défaut, meilleur en sortie structurée (sert à la construction d'un agent).
@@ -69,10 +70,10 @@ export function prixParMillion(brutDollarsParJeton: string | number | undefined,
 }
 
 /**
- * La liste à proposer : l'intersection de nos dix avec le catalogue réel du Gateway, triée par prix d'entrée
+ * La liste à proposer : l'intersection de nos neuf avec le catalogue réel du Gateway, triée par prix d'entrée
  * croissant. Fonction pure, l'appel réseau est fait par l'appelant.
  *
- * Un catalogue vide (lecture en échec, clé absente) rend les dix sans prix plutôt qu'un menu vide : une panne
+ * Un catalogue vide (lecture en échec, clé absente) rend les neuf sans prix plutôt qu'un menu vide : une panne
  * de tarification n'interdit pas de changer de modèle. Un modèle sans gestion des outils est écarté.
  */
 export function modelesProposables(catalogue: ReadonlyArray<ModeleGateway>, tauxEurParDollar: number, commissionPct: number): ModeleProposable[] {
