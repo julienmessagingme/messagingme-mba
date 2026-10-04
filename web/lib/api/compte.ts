@@ -229,6 +229,34 @@ export interface OpsOverview {
   latences?: QueueLatenceRow[];
   /** La latence HTTP par route normalisée et code de retour, sur 24 h, toutes copies. Absente d'une API d'avant. */
   latencesHttp?: LatenceHttpRow[];
+  /** La durée et les lignes des tâches de fond des workers, sur 24 h (migration 0207). Absente d'une API d'avant. */
+  tachesFond?: TacheFondRow[];
+}
+
+/**
+ * Une tâche de fond d'un worker sur la fenêtre. `lignes` et `maxLignes` valent `null` pour une tâche qui ne compte
+ * rien : null n'est pas zéro. `derniere` est le début de la dernière heure où elle a tourné.
+ */
+export interface TacheFondRow {
+  process: string;
+  tache: string;
+  passes: number;
+  echecs: number;
+  /** Tours sautés parce que la passe précédente tournait encore : la trace d'une passe bloquée. */
+  sautees: number;
+  sommeMs: number;
+  maxMs: number;
+  lignes: number | null;
+  maxLignes: number | null;
+  derniere: string;
+}
+
+/** Les octets en base, fichiers compris (`GET /ops/stockage`). */
+export interface MesureStockage {
+  baseOctets: number;
+  familles: Array<{ famille: 'rcs' | 'pubs' | 'flows'; elements: number; octets: number; disqueOctets: number }>;
+  tables: Array<{ table: string; octets: number }>;
+  mesureLe: string;
 }
 
 /**
@@ -341,6 +369,11 @@ export function ecrireGrillePrixOps(sessionOps: string, prix: GrillePrix, note: 
 
 export function getOpsOverview(sessionOps: string): Promise<OpsOverview> {
   return appelOps(sessionOps, '/ops/overview');
+}
+
+/** Coûteux côté base : lu une fois à l'ouverture de l'écran, jamais avec la vue d'ensemble. */
+export function getOpsStockage(sessionOps: string): Promise<MesureStockage> {
+  return appelOps(sessionOps, '/ops/stockage');
 }
 
 // --- Support (formulaire de contact -> email Resend) ---

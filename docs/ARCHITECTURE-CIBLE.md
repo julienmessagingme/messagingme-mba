@@ -46,9 +46,9 @@ dépendent d'AUCUN fournisseur : elles valent chez Scaleway, chez Fly, chez n'im
 ferme de ce document.
 
 1. **Un tiers élastique doit avoir un nombre de connexions BORNÉ.** Le nombre de copies varie, le nombre de
-   connexions que la base accepte, non. Tant que le nombre de copies est plafonné bas (deux, §2), le budget
-   se calcule à la main (§7.5). Au-delà, **un pooler devient obligatoire** : sans lui, la dixième copie tue
-   la base au lieu d'ajouter de la capacité.
+   connexions que la base accepte, non. Tant que le maximum de copies déduit du budget tient dans les connexions
+   directes (§7.5 : deux copies sur la base Micro actuelle), le budget se calcule à la main. Au-delà, **un pooler
+   devient obligatoire** : sans lui, la dixième copie tue la base au lieu d'ajouter de la capacité.
 2. **Un tiers élastique ne peut tenir AUCUNE connexion de session.** Une connexion de session est retenue pour
    la vie du processus et ne se partage pas. Multipliée par un nombre de copies variable, elle donne une
    consommation que personne ne peut borner.
@@ -182,12 +182,9 @@ c'est-à-dire au pire moment.
 
 ### 3.1 L'API ne doit plus réserver de connexion
 
-⚠️ **RIEN N'EST CASSÉ AUJOURD'HUI, et il faut le dire avant tout le reste.** L'API réserve deux connexions
-pour rien : c'est du gaspillage, pas une panne, et ça ne coûte aucune performance tant qu'il y a UN exemplaire.
-Avec deux copies au plus (§2), la consommation reste bornée (quatre connexions de session) : ce chantier est
-donc **obligatoire avant de relever le plafond au-delà de deux**, et recommandé avant la bascule, parce que
-le chemin touché est celui du dépôt de TOUTES les tâches, donc de l'arrivée de tous les messages, et qu'il
-est plus sûr de l'éprouver sans trafic que le jour J.
+✅ **Livré et éprouvé au banc (voir la fin de ce paragraphe).** Une copie d'API n'ouvre plus aucune connexion de
+session pg-boss : ce point ne borne plus le nombre de copies, que seul le budget de connexions décide (§7.5). Ce
+qui suit décrit le problème tel qu'il se posait, et pourquoi la solution tient.
 
 **Le problème.** `src/index.ts` construit un client pg-boss sur `DATABASE_URL`, donc en mode SESSION, pour la
 seule raison qu'elle EMPILE des tâches. Elle n'en dépile aucune et ne fait aucune maintenance
@@ -251,9 +248,9 @@ le compteur par clé du relais du Meta Business Agent, le préfiltre, les opéra
 compteur d'usage de `/ops/usage` comptent en mémoire, par processus. N copies servent N fois le plafond annoncé,
 et `/ops` ne voit que la copie qu'il interroge.
 
-⚠️ **Avec deux copies au plus, le pire cas est un plafond DOUBLÉ, connu et borné** (par défaut, 120 appels par
-minute et 2 000 par heure pour un espace, au lieu de 60 et 1 000). C'est acceptable à condition d'être écrit ; ce
-ne l'est plus au-delà de deux.
+⚠️ **Tant que l'API était bornée à deux copies, le pire cas était un plafond DOUBLÉ, connu et borné** (120 appels
+par minute et 2 000 par heure pour un espace, au lieu de 60 et 1 000). Une API élastique n'a plus cette borne :
+d'où le passage en base des plafonds partagés, ci-dessous.
 
 **La solution : Postgres d'abord, Redis quand la mesure le demande.** Voir §9.
 
@@ -601,8 +598,8 @@ Postgres le tient sans difficulté à notre volume, et n'ajouter aucun composant
 possible.
 
 ⚠️ **Le mémo du 2026-09-19 tenait Redis pour OBLIGATOIRE avant deux copies d'API. Position non reprise** :
-avec deux copies au plus, le pire cas est un plafond doublé, connu et borné (§3.3), et Redis ajouterait un
-service payant et un mode de panne de plus pour le fermer.
+les plafonds partagés sont comptés en base au total des copies depuis le 2026-09-28 (§3.3), et Redis ajouterait
+un service payant et un mode de panne de plus sans rien fermer de plus.
 
 **Le déclencheur qui ferait passer à Redis** : quand l'écriture du compteur devient elle-même une charge
 visible, c'est-à-dire quand on mesure des écritures de plafond au même ordre de grandeur que le trafic métier.
@@ -728,8 +725,8 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
   autre produit. Et l'Object Storage du §6 n'est pas une base métier.)
 - **Redis maintenant** (§9).
 - **Un troisième worker pour les accusés** sans mesure nouvelle (§5.4).
-- **Plus de deux copies d'API** sans avoir refait les deux arithmétiques du §2 ; le budget de connexions, lui,
-  est tenu par `tests/budget-pooler.test.ts` (§7.5), qui refuse une copie de trop.
+- **Plus de copies d'API que le budget de connexions n'en permet** : il est tenu par `tests/budget-pooler.test.ts`
+  (§7.5), qui refuse une copie de trop (deux sur la base Micro actuelle).
 - **Un bucket public** pour simplifier une adresse, **des fichiers dans une seconde base PostgreSQL**, **un
   endpoint public de base laissé ouvert** « derrière une liste d'adresses ».
 - **Un plafond de débit global** qui toucherait aussi les webhooks (§7.6).
@@ -774,8 +771,8 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 - **« Redis est requis avant deux réplicas »** : non repris (§9).
 - **« `/ops` avec MFA, cible décidée »** : c'est une recommandation, pas une décision (§13.7).
 - **Les workers sans adresse publique, sans passerelle de sortie** : complété par la Public Gateway (§7.4).
-- **L'absence de pooler dans son schéma** : acceptable avec deux copies au plus, à la condition écrite au
-  §1.1 et au §2.
+- **L'absence de pooler dans son schéma** : acceptable tant que le maximum de copies déduit du budget tient dans
+  les connexions directes (§7.5), à la condition écrite au §1.1.
 
 ---
 

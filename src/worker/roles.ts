@@ -113,7 +113,7 @@ export function assume(role: RoleWorker, a: Appartenance): boolean {
  */
 export function tachesDuRole(registre: RegistreDeTaches, role: RoleWorker): RegistreDeTaches {
   return {
-    programmer(nom: string, intervalMs: number, passe: () => void | Promise<void>, options?: OptionsTache): void {
+    programmer(nom: string, intervalMs: number, passe: () => void | number | Promise<void | number>, options?: OptionsTache): void {
       if (!minuterieDuRole(nom, role)) return;
       registre.programmer(nom, intervalMs, passe, options);
     },

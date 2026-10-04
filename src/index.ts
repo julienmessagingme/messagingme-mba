@@ -43,6 +43,8 @@ import { envoyerRcsLibre, phraseOperateur, type DepsRcsLibre } from './rcs/envoy
 import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
 import { viderVersLaBase } from './ops/pool-attentes.pg';
 import { viderLatencesVersLaBase } from './ops/latence-http.pg';
+import { PgStockageStore } from './ops/stockage.pg';
+import { creerSurveillanceWorkers } from './ops/surveillance-workers';
 import { MesureLatenceHttp } from './ops/latence-http';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { lienDe, lienTraceAvecJeton } from './links/rewrite';
@@ -188,7 +190,7 @@ async function main(): Promise<void> {
   const {
     transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
-    httpLatencesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
+    httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
@@ -2022,6 +2024,8 @@ async function main(): Promise<void> {
       }),
       attentesPool: poolAttentesStore,
       latencesHttp: httpLatencesStore,
+      mesuresTaches: mesuresTachesStore,
+      stockage: new PgStockageStore(pool),
       // 🔴 Le solde prépayé d'un espace pour l'agent IA. La recharge est ici parce qu'un client ne doit
       // jamais pouvoir créditer son propre compte. L'espace est résolu d'abord : en lecture, un espace inconnu
       // rendrait un solde de zéro qu'on rechargerait ; en écriture, la clé étrangère lèverait un 500 masqué
@@ -2370,12 +2374,26 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-console
     console.error('latences-http: écriture impossible:', messageDe(err));
   });
+  /**
+   * La surveillance des workers (`src/ops/surveillance-workers.ts`) : l'API est le seul processus qui ne dépend pas
+   * d'eux, c'est donc elle qui prévient quand l'un se tait. Une alerte par épisode pour tout le service, même avec
+   * plusieurs copies : un verrou court en base décide qui envoie.
+   */
+  const surveillerWorkers = creerSurveillanceWorkers({
+    lister: () => heartbeatStore.lister(),
+    verrous: verrousCourts,
+    envoyer: (texte) => sendTelegram(`[mba-${NOM_API}] ${texte}`),
+  });
   const minuteriePoolAttentes = setInterval(() => {
     void viderVersLaBase(poolAttentesStore, mesureAttentePool, NOM_API, new Date(), (err) => {
       // eslint-disable-next-line no-console
       console.error('pool-attentes: écriture impossible:', messageDe(err));
     });
     void viderLatences();
+    void surveillerWorkers().catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error('surveillance-workers: lecture impossible:', messageDe(err));
+    });
   }, 60_000);
   minuteriePoolAttentes.unref?.();
 

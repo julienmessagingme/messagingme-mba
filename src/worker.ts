@@ -6,6 +6,8 @@ import { construireSocle } from './socle';
 import { fabriquerJeton } from './links/jeton-contact';
 import { RETENTION_ESSAIS_JOURS } from './agent/test-runs';
 import { RETENTION_LATENCES_JOURS } from './ops/latence-http';
+import { MesureTaches, RETENTION_TACHES_JOURS } from './ops/mesure-taches';
+import { viderMesuresTachesVersLaBase } from './ops/mesure-taches.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { todayParis, addDays } from './stats/range';
 import { handleWebhookJob } from './webhooks/handler';
@@ -120,7 +122,8 @@ async function main(): Promise<void> {
 
   // Alerte Telegram throttlée (mémoire process) sur les erreurs d'un worker vivant. Un worker mort (crash-loop
   // au boot) n'est pas auto-alerté : sa map en mémoire est perdue à chaque restart et il spammerait le chat.
-  // Ce cas est couvert par l'âge du heartbeat, lu par /ops et le cron watcher (qui déduplique).
+  // Ce cas est couvert par le battement : /ops le montre, et l'API alerte quand un rôle se tait ou redémarre en
+  // boucle (src/ops/surveillance-workers.ts), une fois par épisode pour tout le service.
   const ALERT_THROTTLE_MS = 5 * 60_000;
   const lastAlertAt = new Map<string, number>();
   const alert = (key: string, text: string): void => {
@@ -161,7 +164,7 @@ async function main(): Promise<void> {
   const {
     dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, httpLatencesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
+    poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
@@ -181,8 +184,13 @@ async function main(): Promise<void> {
     }
   };
   await beat(true);
-  // Registre des tâches périodiques : programmer et arrêter sont le même geste (voir `worker/taches.ts`).
-  const taches = tachesDuRole(registreDeTaches(), config.WORKER_ROLE);
+  // Registre des tâches périodiques : programmer et arrêter sont le même geste (voir `worker/taches.ts`). Il mesure
+  // chaque passe (durée, lignes rendues), vidée chaque minute avec les attentes du pool, plus bas.
+  const mesureTaches = new MesureTaches();
+  const taches = tachesDuRole(registreDeTaches({
+    passe: (tache, dureeMs, lignes, ok) => mesureTaches.noter(tache, dureeMs, lignes, ok),
+    saut: (tache) => mesureTaches.noterSaut(tache),
+  }), config.WORKER_ROLE);
   taches.programmer('heartbeat', config.HEARTBEAT_INTERVAL_MS, () => beat(false));
   /**
    * L'échec d'un balayage, au format commun : `<journal> erreur: <message>` dans les journaux, puis l'alerte
@@ -204,6 +212,12 @@ async function main(): Promise<void> {
     await viderVersLaBase(poolAttentesStore, mesureAttentePool, nomDuProcessus(config.WORKER_ROLE), new Date(), (err) => {
       // eslint-disable-next-line no-console
       console.error('pool-attentes: écriture impossible:', messageDe(err));
+    });
+    // Les mesures des tâches, dans la même passe : elle tourne sur les deux rôles (`tous`), et chaque worker vide
+    // les siennes, sous son nom.
+    await viderMesuresTachesVersLaBase(mesuresTachesStore, mesureTaches, nomDuProcessus(config.WORKER_ROLE), new Date(), (err) => {
+      // eslint-disable-next-line no-console
+      console.error('mesures-taches: écriture impossible:', messageDe(err));
     });
   });
 
@@ -1045,19 +1059,21 @@ async function main(): Promise<void> {
 
   // Purge des clés d'idempotence API plus vieilles que leur durée de vie (`DUREE_CLE_IDEMPOTENCE_MS`), la
   // même que celle du claim : une purge plus courte ferait envoyer deux fois.
-  const idempotencySweep = async (): Promise<void> => {
+  const idempotencySweep = async (): Promise<number> => {
     const n = await idempotencyStore.sweepOlderThan(DUREE_CLE_IDEMPOTENCE_MS);
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`idempotency-sweep: ${n} clé(s) d'idempotence purgée(s)`);
+    return n;
   };
   taches.programmer('idempotence-api', 60 * 60 * 1000, idempotencySweep, { immediat: true, enEchec: echecDeBalayage('idempotency-sweep', 'sweeper:idempotency') });
 
   // RGPD : le dernier payload d'un webhook entrant est du JSON tiers, potentiellement personnel. Il ne sert
   // qu'au mapping dans l'écran et au débogage ; après une semaine sans appel, il est effacé.
-  const webhookPayloadSweep = async (): Promise<void> => {
+  const webhookPayloadSweep = async (): Promise<number> => {
     const n = await webhookStore.purgeStalePayloads(config.WEBHOOK_PAYLOAD_RETENTION_DAYS);
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`webhook-payload-sweep: ${n} payload(s) dormant(s) effacé(s)`);
+    return n;
   };
   taches.programmer('retention-payloads-webhooks', 6 * 60 * 60 * 1000, webhookPayloadSweep, { immediat: true, enEchec: echecDeBalayage('webhook-payload-sweep', 'sweeper:webhook-payload') });
 
@@ -1065,10 +1081,11 @@ async function main(): Promise<void> {
   // messages, numéros). Elle ne sert qu'à l'idempotence (quelques minutes) et au débogage ; passé la
   // rétention, elle ne garde plus que des données personnelles. Toutes les heures : la purge est bornée par
   // passage (ni verrou long ni WAL gonflé), une première purge s'étale donc sur plusieurs passages.
-  const webhookEventsSweep = async (): Promise<void> => {
+  const webhookEventsSweep = async (): Promise<number> => {
     const n = await eventStore.purgeOlderThan(config.WEBHOOK_EVENTS_RETENTION_DAYS);
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`webhook-events-sweep: ${n} événement(s) Meta effacé(s) (rétention ${config.WEBHOOK_EVENTS_RETENTION_DAYS} j)`);
+    return n;
   };
   taches.programmer('retention-evenements-meta', 60 * 60 * 1000, webhookEventsSweep, { immediat: true, enEchec: echecDeBalayage('webhook-events-sweep', 'sweeper:webhook-events') });
 
@@ -1107,12 +1124,17 @@ async function main(): Promise<void> {
    */
   let agregatsAJour = false;
   if (minuterieDuRole('agregats-analyse', config.WORKER_ROLE)) {
+    // Mesurée à la main, sous le nom de la minuterie : hors du registre, et la périodique ne tombe que six heures après
+    // le démarrage, donc sans ceci la carte de `/ops` ne verrait ce balayage que les jours sans déploiement.
+    const debut = performance.now();
     try {
       const n = await agregatsSweep();
       agregatsAJour = true;
+      mesureTaches.noter('agregats-analyse', performance.now() - debut, n, true);
       // eslint-disable-next-line no-console
       if (n > 0) console.log(`agregats-analyse: ${n} journee(s) ecrite(s) ou mise(s) a jour`);
     } catch (err) {
+      mesureTaches.noter('agregats-analyse', performance.now() - debut, null, false);
       // eslint-disable-next-line no-console
       console.error('agregats-analyse erreur:', messageDe(err));
       alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE pour ce demarrage : ${messageDe(err)}`);
@@ -1124,19 +1146,22 @@ async function main(): Promise<void> {
       agregatsAJour = true;
       // eslint-disable-next-line no-console
       if (n > 0) console.log(`agregats-analyse: ${n} journee(s) ecrite(s) ou mise(s) a jour`);
+      return n;
     } catch (err) {
       // Le drapeau retombe : un balayage en échec suspend la purge à tout moment, pas seulement au démarrage.
       agregatsAJour = false;
       // eslint-disable-next-line no-console
       console.error('agregats-analyse erreur:', messageDe(err));
       alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE : ${messageDe(err)}`);
+      // Relancée pour que la mesure la compte en échec ; journal et alerte sont déjà faits.
+      throw err;
     }
-  });
+  }, { enEchec: () => {} });
   // RGPD : les conversations et, par cascade, leurs messages et leur analyse. La rétention la plus lourde de
   // conséquence du dépôt (elle efface du contenu que le client voit dans son inbox) : d'où une durée quatre
   // fois supérieure au plancher demandé, et un journal du nombre effacé à chaque passage. Toutes les 6 heures :
   // la rétention se compte en mois, et l'effacement est borné par passage.
-  const conversationSweep = async (): Promise<void> => {
+  const conversationSweep = async (): Promise<number | undefined> => {
     /**
      * La seule opération irréversible du dépôt ne part pas sans sa contrepartie : si les agrégats n'ont pas été
      * écrits, effacer une conversation détruirait son analyse en cascade, sans trace. On saute ce passage : six
@@ -1145,11 +1170,12 @@ async function main(): Promise<void> {
     if (!agregatsAJour) {
       // eslint-disable-next-line no-console
       console.warn('conversation-retention-sweep: SAUTE, les agregats journaliers ne sont pas a jour.');
-      return;
+      return undefined;
     }
     const n = await inboxStore.purgeConversationsOlderThan(config.CONVERSATION_RETENTION_DAYS);
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`conversation-retention-sweep: ${n} conversation(s) effacée(s) (rétention ${config.CONVERSATION_RETENTION_DAYS} j)`);
+    return n;
   };
   taches.programmer('retention-conversations', 6 * 60 * 60 * 1000, conversationSweep, { immediat: true, enEchec: echecDeBalayage('conversation-retention-sweep', 'sweeper:conversation-retention') });
 
@@ -1159,15 +1185,20 @@ async function main(): Promise<void> {
    * supprimés (ils sont la mesure des tableaux, sans statistique rétroactive) ; les parcours terminés, les
    * clics et le journal sont supprimés, personne ne les relit.
    */
-  const retentionSweep = async (): Promise<void> => {
+  const retentionSweep = async (): Promise<number> => {
+    // La somme des lignes de toutes les étapes, rendue au registre qui la mesure (une étape en échec compte zéro).
+    let total = 0;
+    const enEchec: string[] = [];
     const etape = async (nom: string, quoi: string, faire: () => Promise<number>): Promise<void> => {
       try {
         const n = await faire();
+        total += n;
         // eslint-disable-next-line no-console
         if (n > 0) console.log(`retention-sweep: ${n} ${quoi}`);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`retention-sweep (${nom}) erreur:`, messageDe(err));
+        enEchec.push(nom);
         alert(`sweeper:retention:${nom}`, `retention-sweep ${nom} en échec : ${messageDe(err)}`);
       }
     };
@@ -1189,6 +1220,8 @@ async function main(): Promise<void> {
       () => poolAttentesStore.purgeOlderThan(config.POOL_ATTENTES_RETENTION_DAYS));
     await etape('latences', `fenêtre(s) de latence HTTP effacée(s) (au-delà de ${RETENTION_LATENCES_JOURS} j)`,
       () => httpLatencesStore.purgeOlderThan(RETENTION_LATENCES_JOURS));
+    await etape('taches', `heure(s) de mesure des tâches effacée(s) (au-delà de ${RETENTION_TACHES_JOURS} j)`,
+      () => mesuresTachesStore.purgeOlderThan(RETENTION_TACHES_JOURS));
     // Les essais du bac à sable : rétention courte et en dur (14 j), ce ne sont pas des conversations de
     // clients (ni contact ni `wa_id`, seulement ce que l'administrateur a tapé).
     await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,
@@ -1196,8 +1229,12 @@ async function main(): Promise<void> {
     // Les verrous courts échus : ils ne tiennent plus rien, la prise suivante les reprendrait. Sans cette étape, la
     // table garderait une ligne par message de client ayant déclenché un envoi de l'agent de Meta.
     await etape('verrous', 'verrou(s) court(s) échu(s) effacé(s)', () => verrousCourts.purgerEchues());
+    // Les étapes sont indépendantes et chacune a déjà journalisé et alerté ; la passe lève à la fin pour que la
+    // mesure de `/ops` la compte en échec au lieu d'afficher « succès, 0 ligne ».
+    if (enEchec.length > 0) throw new Error(`étape(s) en échec : ${enEchec.join(', ')}`);
+    return total;
   };
-  taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep, { immediat: true });
+  taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep, { immediat: true, enEchec: () => {} });
 
   /**
    * Les fenêtres échues des plafonds de débit partagés (`compteurs_debit`, migration 0186), toutes les cinq minutes
@@ -1210,6 +1247,7 @@ async function main(): Promise<void> {
     const n = await compteurDebit.purgerEchues();
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`compteurs-debit: ${n} fenêtre(s) échue(s) effacée(s)`);
+    return n;
   }, { immediat: true, enEchec: echecDeBalayage('compteurs-debit', 'sweeper:compteurs-debit') });
 
   /**
@@ -1222,6 +1260,7 @@ async function main(): Promise<void> {
     const n = await oauthStore.purger();
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`retention-oauth: ${n} code(s) ou autorisation(s) OAuth effacé(s)`);
+    return n;
   }, { immediat: true, enEchec: echecDeBalayage('retention-oauth', 'sweeper:retention-oauth') });
 
   // Déclencheur « X avant la date d'un champ », le seul qui répond à l'écoulement du temps. Il publie dans la
@@ -1258,9 +1297,9 @@ async function main(): Promise<void> {
     journal: (m) => console.warn(m),
   });
   let dernierJourRisque: string | null = null;
-  const risqueSweep = async (): Promise<void> => {
+  const risqueSweep = async (): Promise<number | undefined> => {
     const jour = jourABalayer(new Date(), dernierJourRisque);
-    if (jour === null) return;
+    if (jour === null) return undefined;
     const bilans = await balayerRisque(depsRisque);
     // Après le tour des espaces : une liste d'espaces illisible sera retentée au quart d'heure suivant, tant
     // que la fenêtre de nuit est ouverte.
@@ -1277,6 +1316,8 @@ async function main(): Promise<void> {
       if (b.transitions > 0 || b.erreur !== undefined) console.log(`risque-sweep ${jour}: ${JSON.stringify(b)}`);
     }
     if (enEchec.length > 0) alert('sweeper:risque', `risque-sweep : ${enEchec.length} espace(s) en échec, dont ${enEchec[0]!.tenantId} : ${enEchec[0]!.erreur}`);
+    // Les fiches évaluées : c'est ce nombre qui grossit avec les espaces, et que le seuil de l'audit regarde.
+    return total.evalues;
   };
   taches.programmer('risque-desengagement', 15 * 60_000, risqueSweep, { enEchec: echecDeBalayage('risque-sweep', 'sweeper:risque') });
 

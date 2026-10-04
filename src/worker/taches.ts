@@ -1,4 +1,5 @@
 import { messageDe } from '../lib/erreur';
+import { lignesRendues } from '../ops/mesure-taches';
 /**
  * Registre des tâches périodiques du worker. Enregistrer une tâche et l'arrêter sont le même geste : on ne
  * peut plus en oublier une dans l'arrêt propre (une passe qui part pendant qu'on ferme le pool laisse une
@@ -22,9 +23,10 @@ export interface OptionsTache {
 export interface RegistreDeTaches {
   /**
    * Programme une passe périodique. La minuterie est `unref` (elle ne retient jamais le process) et elle est
-   * retenue pour l'arrêt.
+   * retenue pour l'arrêt. Une passe qui rend un nombre déclare les lignes qu'elle a traitées (écrites, effacées) :
+   * la mesure le garde. Sans nombre, la tâche est mesurée en durée seulement.
    */
-  programmer(nom: string, intervalMs: number, passe: () => void | Promise<void>, options?: OptionsTache): void;
+  programmer(nom: string, intervalMs: number, passe: () => void | number | Promise<void | number>, options?: OptionsTache): void;
   /** Arrête toutes les tâches programmées. Appelé une fois, dans l'arrêt propre du worker. */
   arreterTout(): void;
   /** Noms des tâches vivantes, dans l'ordre de programmation. Sert au diagnostic et aux tests. */
@@ -56,7 +58,19 @@ export function decalageDeLissage(indice: number, intervalMs: number): number {
   return (indice * DECALAGE_PAS_MS) % fenetre;
 }
 
-export function registreDeTaches(): RegistreDeTaches {
+/** Ce que le registre déclare à la mesure (`MesureTaches`, migration 0207). */
+export interface MesureRegistre {
+  /** Chaque passe terminée, réussie ou non. */
+  passe(tache: string, dureeMs: number, lignes: number | null, ok: boolean): void;
+  /** Chaque tour sauté parce que la passe précédente n'était pas finie : la seule trace d'une passe bloquée. */
+  saut(tache: string): void;
+}
+
+/**
+ * La mesure se pose ici, une fois, et non dans chaque tâche, pour qu'une tâche ajoutée demain soit mesurée sans
+ * qu'on y pense. Elle ne peut rien casser : si elle lève, l'erreur est avalée, et la passe suit son cours.
+ */
+export function registreDeTaches(mesure?: MesureRegistre): RegistreDeTaches {
   /**
    * Une tâche vit en deux temps (décalage de démarrage, puis minuterie périodique), retenus dans une seule
    * entrée posée avant le décalage : sinon, pendant l'attente, `noms()` la raterait et le refus de doublon
@@ -85,11 +99,19 @@ export function registreDeTaches(): RegistreDeTaches {
           enCours.set(nom, sautes + 1);
           // eslint-disable-next-line no-console
           console.warn(`tâche « ${nom} » : passe précédente encore en cours, tour sauté (${sautes + 1} d'affilée)`);
+          try { mesure?.saut(nom); } catch { /* une mesure ne casse rien */ }
           return;
         }
         enCours.set(nom, 0);
         const enEchec = options.enEchec;
-        let enVol = Promise.resolve().then(passe);
+        const debut = performance.now();
+        const noter = (lignes: number | null, ok: boolean): void => {
+          try { mesure?.passe(nom, performance.now() - debut, lignes, ok); } catch { /* une mesure ne casse rien */ }
+        };
+        let enVol = Promise.resolve().then(passe).then(
+          (resultat) => { noter(lignesRendues(resultat), true); },
+          (err: unknown) => { noter(null, false); throw err; },
+        );
         if (enEchec) enVol = enVol.catch(enEchec);
         void enVol
           // eslint-disable-next-line no-console

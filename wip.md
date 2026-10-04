@@ -262,11 +262,18 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
    la console. Mesuré avant : un seul espace a des clés (2 actives), personne n'est au-delà. Test d'intégration
    prouvé dans les deux sens sur un Postgres jetable. Relu sans rouge, commité en `92652e5c`, CI verte job par job,
    `mba-api` seul déployé le 2026-10-04 à 13 h 38 UTC, fumée verte, essai réel en production fait (sans écriture).
-4. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
-5. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant » ; au minimum leur volume dans `/ops`.
-6. Décision de Julien : les quotas par espace de l'API publique (à partir de `/ops/usage`).
-7. Reliquat de doc : trois passages de `docs/ARCHITECTURE-CIBLE.md` (§3.1, §3.3, §9) disent encore « deux copies au
-   plus » comme une limite actuelle.
+4. ⏳ **Le lot observabilité** (2026-10-04, décidé par Julien) : ferme les deux critères de sortie non tenus de l'audit.
+   Alerte Telegram quand un worker se tait OU redémarre en boucle (surveillance dans l'API) ; durée, lignes, échecs et
+   tours sautés de chaque tâche de fond (migration 0207, carte de `/ops`) ; octets en base, fichiers compris
+   (`GET /ops/stockage`, carte de `/ops` ; mesuré le 2026-10-04 : base de 45 Mo, dont 10 Mo pour 28 images RCS) ; les
+   six passages « deux copies au plus » d'`ARCHITECTURE-CIBLE.md` ; le compteur « n sur 10 » des clés. Relu sans
+   rouge, ses jaunes réglés dans le lot. Reste : test d'intégration sur un Postgres jetable, e2e, commit, CI,
+   migration 0207 AVANT le `up` des workers, déploiement, et l'essai réel (arrêter `mba-worker-analyse`, recevoir
+   l'alerte puis le retour).
+5. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
+6. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant ». Leur volume est désormais
+   mesuré (`/ops`, rouge au-delà de 500 Mo de fichiers).
+7. Décision de Julien : les quotas par espace de l'API publique (à partir de `/ops/usage`).
 Le reste de l'audit (équité des campagnes, agrégats, Redis, temps réel, troisième worker) attend un seuil mesuré.
 
 ## L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)

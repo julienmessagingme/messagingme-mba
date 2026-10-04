@@ -286,6 +286,7 @@ export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages'
 export const opsInerte: Pick<OpsRouteDeps,
   'deposerJetonPub' | 'lireGrillePrix' | 'reglages' | 'verrouillerEspace' | 'observerTenant'
   | 'file' | 'heartbeat' | 'soldeAgent' | 'rechargerAgent' | 'etatPoolInstantane' | 'attentesPool' | 'latencesHttp'
+  | 'mesuresTaches' | 'stockage'
   | 'balayerRisque' | 'reinitialiserMfa'> = {
   deposerJetonPub: neDevraitPasEtreAppelee('deposerJetonPub'),
   lireGrillePrix: neDevraitPasEtreAppelee('lireGrillePrix'),
@@ -301,6 +302,9 @@ export const opsInerte: Pick<OpsRouteDeps,
   etatPoolInstantane: () => ({ process: 'test', total: 0, libres: 0, enAttente: 0, max: 0, maxMsDepuisDemarrage: 0 }),
   attentesPool: { lireDernieresMinutes: async () => [] },
   latencesHttp: { lire: async () => [] },
+  mesuresTaches: { lire: async () => [] },
+  // Une base vide : aucune famille, aucune table.
+  stockage: { mesurer: async () => ({ baseOctets: 0, familles: [], tables: [], mesureLe: '1970-01-01T00:00:00.000Z' }) },
   balayerRisque: async () => null,
   reinitialiserMfa: async () => null,
 };

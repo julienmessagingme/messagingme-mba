@@ -1,5 +1,21 @@
 # todo.md : backlog
 
+## 🟡 L'observabilité : ce qui reste après la relecture du lot du 2026-10-04
+
+- **Les passes qui rattrapent leur propre erreur ne comptent pas en échec** dans la carte des tâches de fond : la
+  vectorisation et l'analyse des conversations (via `onError`). La rétention générale et les statistiques d'analyse
+  relancent la leur depuis ce lot. Les aligner demande de regarder ce que chacune fait de son erreur.
+- **Les moyennes de `risque-desengagement` et `retention-conversations` sont diluées** par leurs passes à vide (le
+  risque passe 96 fois par jour, une seule travaille). Le pire cas, lui, est juste ; une moyenne des passes « qui
+  ont travaillé » demanderait de distinguer une passe à vide.
+- **La dernière minute de mesures est perdue à chaque arrêt d'un worker** : aucun vidage dans l'arrêt propre, et une
+  passe en vol n'est pas mesurée.
+- **Sans Telegram configuré** (ou une API locale branchée sur la base de production), la surveillance des workers
+  prend et relâche un verrou par minute et par rôle silencieux, et journalise une ligne : sans effet, mais du bruit.
+- **Un schéma `pgboss_test` existe dans la base de production** (0,3 Mo, mesuré le 2026-10-04) : reste d'anciens tests
+  d'intégration lancés contre elle. Le supprimer est un geste de Julien (`drop schema pgboss_test cascade`), après
+  avoir vérifié que rien ne l'utilise.
+
 ## 🟡 Les files : ce qui reste après le battement de cœur et le vidage continu (relecture de `933557b7`, 2026-10-04)
 
 Le défaut de rafale et l'attente de 15 min au crash sont corrigés et déployés (journal du 2026-10-04). Restent :

@@ -111,7 +111,8 @@ function KeysInner({ session }: { session: Session }) {
   const fmt = (iso: string | null) => (iso ? `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}` : <Nd />);
   const active = keys.filter((k) => !k.revokedAt);
   // Le plafond ne compte pas la clé du relais, que la publication pose (même règle que le serveur).
-  const plafondAtteint = active.filter((k) => !k.scopes.includes(DROIT_RELAIS)).length >= MAX_CLES_API_ACTIVES;
+  const activesComptees = active.filter((k) => !k.scopes.includes(DROIT_RELAIS)).length;
+  const plafondAtteint = activesComptees >= MAX_CLES_API_ACTIVES;
 
   return (
     <div className="max-w-formulaire space-y-6">
@@ -128,7 +129,15 @@ function KeysInner({ session }: { session: Session }) {
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       <div className="rounded-carte border border-ink-200 bg-white p-4">
-        <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nouvelle clé', 'New key')}</label>
+        <div className="mb-1 flex items-baseline justify-between gap-3">
+          <label className="block text-sm font-medium text-ink-900">{t('Nouvelle clé', 'New key')}</label>
+          {/* Le compte que le plafond regarde : la clé « Agent de Meta » n'y entre pas. */}
+          {!loading && (
+            <span className="text-xs tabular-nums text-ink-500" data-testid="compte-cles">
+              {t(`${activesComptees} sur ${MAX_CLES_API_ACTIVES} clés actives`, `${activesComptees} of ${MAX_CLES_API_ACTIVES} active keys`)}
+            </span>
+          )}
+        </div>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}

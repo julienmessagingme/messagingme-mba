@@ -1949,9 +1949,9 @@ scénario, comment importer des contacts.
   simples, le suivi d'un envoi et les catalogues). Une clé peut aussi porter les droits du serveur MCP, décrits
   dans leur propre section (« Serveur MCP : brancher un assistant sur la console »).
   ⚠️ Les droits d'une clé se fixent à sa création et ne s'éditent pas : pour un droit de plus, on crée une clé.
-  ✅ **Dix clés actives au plus par espace** (2026-10-04) : au-delà, le bouton « Créer la clé » se grise et
-  l'écran explique qu'il faut en révoquer une. Les clés révoquées ne comptent pas, la clé « Agent de Meta »
-  non plus.
+  ✅ **Dix clés actives au plus par espace** (2026-10-04) : l'écran affiche « n sur 10 clés actives » ; à dix, le
+  bouton « Créer la clé » se grise et l'écran explique qu'il faut en révoquer une. Les clés révoquées ne comptent
+  pas, la clé « Agent de Meta » non plus.
 - ✅ **Une personne est une FICHE** (2026-09-24). L'intégrateur la désigne par ce qu'il a : l'identifiant de
   fiche (`contactId`, affiché sur la fiche du mini-CRM sous « Identifiant API » avec un bouton Copier), SON
   identifiant (`externalId`, gardé sur la fiche, unique par espace), le numéro ou le BSUID. Plusieurs clés
@@ -2544,9 +2544,20 @@ boîte par sous-menu.
   la réponse (code 499). Les webhooks entrants, l'Inbox et l'API publique en tête ; le 95e centile passe en rouge
   au-delà de 800 ms sur les webhooks et les lectures de l'Inbox, dès 20 requêtes. C'est le premier signal qui dira
   quand l'API a besoin d'une copie de plus.
-- ✅ **Signal de vie du worker** (le process qui envoie réellement les messages) : « Actif », « Silencieux » ou
-  « Aucun signal », affiché à côté du signal de charge des files. Distingue « les files ne se vident pas » de « le
-  process est mort », ce que la seule charge des files ne dit pas.
+- ✅ **Signal de vie des workers, un par rôle** (le principal, qui envoie réellement les messages, et celui des
+  analyses) : « Actif », « Silencieux » ou « Aucun signal », affiché à côté du signal de charge des files. Distingue
+  « les files ne se vident pas » de « le process est mort », ce que la seule charge des files ne dit pas.
+- ✅ **Une alerte Telegram quand un worker se tait ou redémarre en boucle** (2026-10-04) : au bout de trois minutes
+  sans signal de vie, avec ce qui s'arrête (messages entrants et campagnes, ou analyses), un rappel par heure tant que
+  ça dure, puis « reparti » à son retour ; ou dès cinq redémarrages en un quart d'heure. Une seule alerte même si
+  l'API tourne en plusieurs copies.
+- ✅ **Les tâches de fond des workers** (2026-10-04) : pour chaque tâche périodique (purges, statistiques
+  d'analyse, risque de désengagement, balayages de reprise...), le nombre de passes, les échecs, la durée moyenne et
+  la pire des dernières 24 heures, et les lignes traitées quand la tâche les compte. La plus lente en tête ; rouge au-delà
+  de cinq minutes, sur un échec, ou quand un tour a été sauté parce que la passe précédente tournait encore.
+- ✅ **Le stockage en base** (2026-10-04) : la taille de la base, ses plus grosses tables, et les fichiers qu'elle
+  garde (images RCS, visuels des brouillons de pub, images des Flows), en nombre et en octets. Rouge au-delà de
+  500 Mo de fichiers : le moment de les sortir vers un stockage objet.
 - ✅ **Solde prépayé de l'agent IA** : lecture du solde d'un client et de son journal de mouvements, et
   **rechargement** (la seule écriture de cette surface). Le rechargement est ici et pas dans la console parce
   qu'un client ne doit jamais pouvoir créditer son propre compte. Borné à 1000 € par opération, et une note

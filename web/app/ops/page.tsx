@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
-import { getOpsOverview, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
+import { getOpsOverview, getOpsStockage, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
   type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type LatenceHttpRow, type WorkerHeartbeat, type PoolInstantane,
-  type PoolAttentePoint, type GrillePrix, type EtapeSecondFacteur, type SessionOpsOuverte } from '@/lib/api';
+  type PoolAttentePoint, type GrillePrix, type EtapeSecondFacteur, type SessionOpsOuverte, type TacheFondRow, type MesureStockage } from '@/lib/api';
 import { ApiError } from '@/lib/http';
 import { GrillePrixChamps } from '@/components/GrillePrixChamps';
 import { enChamps, depuisChamps } from '@/lib/grille-saisie';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { ordonnerLatences, enAlerte, SEUIL_P95_MS, EFFECTIF_MIN, CODE_ABANDON } from '@/lib/latence-http';
+import { tacheEnAlerte, fichiersEnBase, fmtOctets, SEUIL_TACHE_LENTE_MS, SEUIL_FICHIERS_EN_BASE_OCTETS } from '@/lib/ops-mesures';
 import { useLocale, useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { saveSession, getSessionOps, saveSessionOps, clearSessionOps, type SessionOps } from '@/lib/session';
@@ -162,6 +163,8 @@ export default function OpsPage() {
             <QueueCard queues={data.queues} />
             <LatenceCard lignes={data.latences ?? []} />
             <LatenceHttpCard lignes={data.latencesHttp ?? []} />
+            <TachesFondCard taches={data.tachesFond ?? []} />
+            <StockageCard jeton={session.token} />
             <PoolCard instantane={data.poolInstantane ?? null} points={data.attentesPool ?? []} />
             <EquiteCard groupes={data.queuesParGroupe ?? []} />
 
@@ -777,6 +780,130 @@ function LatenceHttpCard({ lignes }: { lignes: LatenceHttpRow[] }) {
               )}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * LES TÂCHES DE FOND DES WORKERS (migration 0207, audit de performance du 2026-10-02, § 11). Toutes les tâches sont
+ * mesurées par le registre commun, la plus lente en tête. Rouge : une passe au-delà du seuil de l'audit, ou un échec.
+ * Les lignes n'existent que pour les tâches qui les comptent (statistiques d'analyse, risque, purges).
+ */
+function TachesFondCard({ taches }: { taches: TacheFondRow[] }) {
+  const t = useT();
+  const { locale } = useLocale();
+  return (
+    <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="taches-fond">
+      <h3 className="text-sm font-semibold text-ink-900">{t('Tâches de fond (24 h)', 'Background tasks (24 h)')}</h3>
+      <p className="mb-3 mt-1 text-xs text-ink-500">
+        {t(
+          `Chaque passe de chaque tâche des workers, la plus lente en tête. Rouge : une passe au-delà de ${fmtMs(SEUIL_TACHE_LENTE_MS)}, une passe en échec, ou un tour sauté parce que la passe précédente tournait encore.`,
+          `Every pass of every worker task, slowest first. Red: a pass over ${fmtMs(SEUIL_TACHE_LENTE_MS)}, a failed pass, or a run skipped because the previous one was still going.`,
+        )}
+      </p>
+      {taches.length === 0 ? (
+        <p className="text-xs text-ink-500">{t('Aucune passe mesurée sur la fenêtre.', 'No pass measured in this window.')}</p>
+      ) : (
+        <div className="grid gap-1.5">
+          {taches.map((tf) => (
+            <div key={`${tf.process} ${tf.tache}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-controle bg-ink-50 px-3 py-2">
+              <span className="min-w-0 break-all font-mono text-xs text-ink-900">
+                {tf.tache} <span className="text-ink-500">{tf.process.replace(/^worker-?/, '') || 'worker'}</span>
+              </span>
+              <span className="flex shrink-0 flex-wrap gap-3 text-xs tabular-nums">
+                <span className="text-ink-500">{fmtNum(tf.passes, locale)} {t('passe(s)', 'pass(es)')}</span>
+                {tf.echecs > 0 && <span className="font-medium text-danger">{fmtNum(tf.echecs, locale)} {t('échec(s)', 'failed')}</span>}
+                {tf.sautees > 0 && <span className="font-medium text-danger">{fmtNum(tf.sautees, locale)} {t('tour(s) sauté(s)', 'skipped run(s)')}</span>}
+                <span className="text-ink-500">{t('moy.', 'avg')} {fmtMs(tf.passes > 0 ? tf.sommeMs / tf.passes : 0)}</span>
+                <span data-testid={`tache-max-${tf.process}-${tf.tache}`} className={tacheEnAlerte(tf) ? 'font-medium text-danger' : 'text-ink-500'}>
+                  {t('pire', 'worst')} {fmtMs(tf.maxMs)}
+                </span>
+                {tf.lignes !== null && (
+                  <span className="text-ink-500">
+                    {fmtNum(tf.lignes, locale)} {t('ligne(s)', 'row(s)')}{tf.maxLignes !== null ? ` · ${t('max', 'max')} ${fmtNum(tf.maxLignes, locale)}` : ''}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * LES OCTETS EN BASE (audit de performance du 2026-10-02, § 9). Lus une fois à l'ouverture de l'écran, pas avec la
+ * vue d'ensemble : la mesure parcourt le catalogue. Rouge : les fichiers en base dépassent le seuil, il est temps de
+ * les sortir vers un stockage objet.
+ */
+function StockageCard({ jeton }: { jeton: string }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [mesure, setMesure] = useState<MesureStockage | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  useEffect(() => {
+    let vivant = true;
+    getOpsStockage(jeton)
+      // Une réponse sans la bonne forme ne doit pas faire tomber tout l'écran d'exploitation : la carte le dit.
+      .then((m) => {
+        if (!vivant) return;
+        if (Array.isArray(m?.familles) && Array.isArray(m?.tables)) setMesure(m);
+        else setErreur(t('Mesure indisponible sur cette version de l’API.', 'Measure unavailable on this API version.'));
+      })
+      .catch((e: unknown) => { if (vivant) setErreur(e instanceof Error ? e.message : t('Mesure impossible', 'Measure failed')); });
+    return () => { vivant = false; };
+  }, [jeton, t]);
+  const noms: Record<MesureStockage['familles'][number]['famille'], string> = {
+    rcs: t('Images RCS', 'RCS images'),
+    pubs: t('Visuels des brouillons de pub', 'Ad draft visuals'),
+    flows: t('Flows (JSON, images comprises)', 'Flows (JSON, images included)'),
+  };
+  const fichiers = mesure ? fichiersEnBase(mesure) : 0;
+  const auDela = fichiers >= SEUIL_FICHIERS_EN_BASE_OCTETS;
+  return (
+    <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="stockage-base">
+      <h3 className="text-sm font-semibold text-ink-900">{t('Stockage en base', 'Database storage')}</h3>
+      <p className="mb-3 mt-1 text-xs text-ink-500">
+        {t(
+          `Les fichiers gardés dans Postgres grossissent la base et ses sauvegardes. Rouge au-delà de ${fmtOctets(SEUIL_FICHIERS_EN_BASE_OCTETS, locale)} de fichiers : il est temps de les sortir vers un stockage objet.`,
+          `Files kept in Postgres grow the database and its backups. Red above ${fmtOctets(SEUIL_FICHIERS_EN_BASE_OCTETS, locale)} of files: time to move them to object storage.`,
+        )}
+      </p>
+      {erreur ? (
+        <p className="text-xs text-danger">{erreur}</p>
+      ) : !mesure ? (
+        <Squelette forme="lignes" lignes={3} />
+      ) : (
+        <div className="grid gap-3">
+          <p className="text-xs text-ink-900">
+            {t('Base entière', 'Whole database')} <span className="font-medium tabular-nums">{fmtOctets(mesure.baseOctets, locale)}</span>
+            {' · '}{t('dont fichiers', 'of which files')}{' '}
+            <span data-testid="stockage-fichiers" className={auDela ? 'font-medium text-danger tabular-nums' : 'font-medium tabular-nums'}>{fmtOctets(fichiers, locale)}</span>
+          </p>
+          <div className="grid gap-1.5">
+            {mesure.familles.map((fa) => (
+              <div key={fa.famille} className="flex items-center justify-between gap-3 rounded-controle bg-ink-50 px-3 py-2 text-xs">
+                <span className="text-ink-900">{noms[fa.famille]}</span>
+                <span className="tabular-nums text-ink-500">
+                  {fmtNum(fa.elements, locale)} · {fmtOctets(fa.octets, locale)}{' '}
+                  {/* Les Flows sont comptés compressés (`pg_column_size`), les images en taille brute : deux unités. */}
+                  {fa.famille === 'flows' ? t('stockés', 'stored') : t('utiles', 'payload')} · {fmtOctets(fa.disqueOctets, locale)} {t('sur disque', 'on disk')}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-1">
+            <p className="text-xs font-medium text-ink-900">{t('Les plus grosses tables', 'Largest tables')}</p>
+            {mesure.tables.map((ta) => (
+              <div key={ta.table} className="flex items-center justify-between gap-3 text-xs">
+                <span className="min-w-0 break-all font-mono text-ink-900">{ta.table}</span>
+                <span className="shrink-0 tabular-nums text-ink-500">{fmtOctets(ta.octets, locale)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

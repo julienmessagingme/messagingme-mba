@@ -6,6 +6,8 @@ import { journaliser } from '../lib/journal';
 import type { SortAncienAcces } from '../meta/pubs';
 import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
+import type { TacheMesureRow } from '../ops/mesure-taches';
+import type { MesureStockage } from '../ops/stockage.pg';
 import type { LatenceHttpRow } from '../ops/latence-http';
 import type { BilanRisque } from '../engagement/balayage';
 import { messageDe } from '../lib/erreur';
@@ -129,6 +131,13 @@ export interface OpsRouteDeps {
   attentesPool: { lireDernieresMinutes(minutes: number): Promise<unknown[]> };
   /** La latence HTTP par route normalisée et code de retour, toutes copies confondues. Au mieux, comme le pool. */
   latencesHttp: { lire(heures: number): Promise<LatenceHttpRow[]> };
+  /** La durée et les lignes des tâches de fond des workers (migration 0207). Au mieux, comme la latence. */
+  mesuresTaches: { lire(heures: number): Promise<TacheMesureRow[]> };
+  /**
+   * Les octets en base, fichiers compris. Coûteux (le catalogue entier) : servi par sa propre route, jamais par
+   * la vue d'ensemble, que l'écran recharge à chaque ouverture et sur demande.
+   */
+  stockage: { mesurer(): Promise<MesureStockage> };
   /**
    * Lance le balayage du risque de désengagement d'un espace, tout de suite. Rend son bilan, ou `null` si
    * l'espace est inconnu.
@@ -201,7 +210,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
   });
 
   app.get('/ops/overview', opts, async (_req, reply) => {
-    const [tenants, daily, queues, workers, queuesParGroupe, attentesPool, latences, latencesHttp] = await Promise.all([
+    const [tenants, daily, queues, workers, queuesParGroupe, attentesPool, latences, latencesHttp, tachesFond] = await Promise.all([
       deps.exploitation.getTenantOverview(),
       deps.exploitation.getGlobalDaily(14),
       deps.exploitation.getQueueLoad(),
@@ -217,10 +226,15 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
       deps.exploitation.getQueueLatence(24).catch(() => []),
       // La même fenêtre que les files, et la même doctrine : table absente ou lecture en échec, la carte reste vide.
       deps.latencesHttp.lire(24).catch(() => []),
+      // Les tâches de fond, même fenêtre, même doctrine.
+      deps.mesuresTaches.lire(24).catch(() => []),
     ]);
     const poolInstantane = deps.etatPoolInstantane();
-    return reply.code(200).send({ tenants, daily, queues, workers, queuesParGroupe, poolInstantane, attentesPool, latences, latencesHttp });
+    return reply.code(200).send({ tenants, daily, queues, workers, queuesParGroupe, poolInstantane, attentesPool, latences, latencesHttp, tachesFond });
   });
+
+  /** Les octets en base : lus une fois à l'ouverture de l'écran, pas à chaque chargement de la vue d'ensemble (voir `PgStockageStore`). */
+  app.get('/ops/stockage', opts, async (_req, reply) => reply.code(200).send(await deps.stockage.mesurer()));
 
   /**
    * Les jobs morts : les voir, puis décider de les rejouer. Un job qui épuise ses rejeux part en file d'échec, que

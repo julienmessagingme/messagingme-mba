@@ -1655,7 +1655,7 @@ automations, servis par le principal) : ça tient parce que `enqueue` crée sa f
 | `ops/dlq-sweep` | alerte Telegram sur les DLQ non vides |
 | `compteurs-debit` | toutes les 5 min, efface les fenêtres échues des plafonds partagés (`compteurs_debit`) : une tentative de connexion sur une adresse inventée écrit une ligne, six heures de rafale en garderaient des millions |
 | `retention-oauth` | toutes les 6 h (`principal`), efface les codes OAuth échus depuis une heure et les autorisations révoquées ou expirées depuis 30 jours, par paquets (`PgOauthStore.purger`) |
-| heartbeat | écrit `worker_heartbeat`, UNE LIGNE PAR RÔLE (clé = le rôle), lu par `/ops` pour voir un worker mort ; une ligne unique laisserait le survivant masquer la mort de l’autre |
+| heartbeat | écrit `worker_heartbeat`, UNE LIGNE PAR RÔLE (clé = le rôle), lu par `/ops` pour voir un worker mort et par l'API pour alerter quand il se tait ; une ligne unique laisserait le survivant masquer la mort de l’autre |
 
 🔴 **LE BALAYAGE DU RISQUE EST LE SEUL CHEMIN DE MASSE QUI ÉMET UN ÉVÉNEMENT D'AUTOMATION** (exception décidée,
 spec § 19, invariant 8). Ses bornes en sont la condition, et elles vivent au point d'émission
@@ -2557,6 +2557,46 @@ mesure chaque minute dans `http_latences` (fenêtres de cinq minutes, sous `NOM_
 - Rétention `RETENTION_LATENCES_JOURS`, purgée par le balayage de rétention du worker. Écriture et lecture au
   mieux : une mesure ne fait jamais tomber ce qu'elle mesure.
 - 🔴 Changer les bornes rend les lignes déjà en base incohérentes : vider la table dans le même déploiement.
+
+**Les tâches de fond des workers** (carte de `/ops/overview`, sur 24 h, migration 0207). Le registre des tâches
+(`src/worker/taches.ts`) mesure CHAQUE passe de CHAQUE tâche, réussie ou non, sans que la tâche y pense : une tâche
+ajoutée est mesurée d'office. Une passe qui rend un nombre déclare ses lignes (les purges, les statistiques
+d'analyse, le risque de désengagement) ; les autres n'ont que leur durée, et leurs lignes valent `null`, pas zéro.
+Chaque worker agrège en mémoire (`MesureTaches`) et vide chaque minute dans `taches_mesures`, par heure et sous le
+nom de son processus, dans la passe `pool-attentes` (elle tourne sur les deux rôles). La carte met la plus lente en
+tête et passe en rouge une passe au-delà de `SEUIL_TACHE_LENTE_MS` (cinq minutes, le déclencheur de l'audit) ou une
+passe en échec, ou un tour sauté (la passe précédente tournait encore : c'est la seule trace d'une passe bloquée,
+qui ne finit jamais et n'a donc pas de durée). La passe des statistiques d'analyse faite au DÉMARRAGE tourne hors du
+registre : elle est mesurée à la main, sous le même nom, sinon la carte ne la verrait que les jours sans déploiement.
+Rétention `RETENTION_TACHES_JOURS`, purgée par la rétention générale ; écriture et lecture au mieux.
+⚠️ Une passe qui rattrape sa propre erreur ne compte pas en échec. La rétention générale et les statistiques
+d'analyse relancent la leur après l'avoir journalisée et alertée (`enEchec` vide, pour ne pas journaliser deux fois) ;
+la vectorisation et l'analyse des conversations, non : leurs échecs se lisent dans leurs alertes.
+
+**Les octets en base** (`GET /ops/stockage`, carte de `/ops`). La taille de la base, les plus grosses tables, et les
+trois familles de fichiers gardées dans Postgres : images RCS (`rcs_media.bytes`), visuels des brouillons de pub
+(`pubs_brouillons.visuel_octets`), Flows (`flows.elements`, images en base64 comprises). Rouge au-delà de
+`SEUIL_FICHIERS_EN_BASE_OCTETS` (500 Mo) de fichiers : le moment de les sortir vers un stockage objet. ⚠️ Mesure
+coûteuse (le catalogue entier, une demi-seconde) : sa propre route, lue à l'ouverture de l'écran, jamais dans la vue
+d'ensemble. `octet_length` lit la taille dans l'en-tête de la valeur, sans charger les octets.
+
+**L'alerte quand un worker se tait ou redémarre en boucle** (`src/ops/surveillance-workers.ts`). L'API, le seul
+processus qui ne dépend pas des workers, lit le battement de chaque rôle à chaque minute. Deux signes :
+- **le silence** : au-delà de `SEUIL_SILENCE_WORKER_S` (trois minutes : plus large que le rouge de l'écran, pour ne
+  pas alerter à chaque déploiement), une alerte Telegram qui dit la conséquence (messages, campagnes, analyses), un
+  rappel par heure tant que dure le silence, puis le retour (« sans redémarrage » quand le worker était figé) ;
+- **la boucle** : le battement reste frais, chaque redémarrage le réécrit, mais l'heure de démarrage change
+  `SEUIL_BOUCLE_DEMARRAGES` fois en `FENETRE_BOUCLE_MS` (cinq en un quart d'heure, au-dessus de trois déploiements
+  rapprochés). Sans ce signe, un worker qui plante après son premier battement passerait pour vivant.
+
+🔴 Une alerte par épisode pour tout le service : un verrou court décide quelle copie envoie. La clé du silence porte
+l'ÉPISODE (`alerte-worker:<rôle>:<dernier battement>`) : un second silence est une autre clé, annoncé aussitôt, même
+par une copie de l'API qui vient de redémarrer et n'a rien en mémoire. Le retour, lui, n'est annoncé que par la copie
+qui a annoncé le silence. Une alerte que Telegram refuse relâche son verrou : la minute suivante réessaie.
+⚠️ Une ligne de battement abandonnée (un rôle retiré) alerte toutes les heures : l'effacer avec le changement de
+rôles, comme l'a fait 0202. ⚠️ La sonde `vps-watch` (dépôt
+messagingme-pilot) ne voit qu'un conteneur ARRÊTÉ, toutes les quinze minutes, et seulement sur le VPS : un worker
+figé ou qui redémarre en boucle n'était vu de personne.
 
 ---
 

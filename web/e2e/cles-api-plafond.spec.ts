@@ -36,6 +36,7 @@ test.describe('Clés d’API : le plafond de dix clés actives', () => {
     await monter(page, [...actives(10), RELAIS, ...REVOQUEES]);
     await page.goto('/developers/keys');
     await expect(page.getByRole('row')).toHaveCount(14);
+    await expect(page.getByTestId('compte-cles')).toHaveText('10 sur 10 clés actives');
     await page.getByPlaceholder('Nom (ex. « intégration site web »)').fill('Une de trop');
     await expect(page.getByRole('button', { name: 'Créer la clé' })).toBeDisabled();
     await expect(page.getByTestId('plafond-cles')).toHaveText('10 clés actives au maximum par espace (la clé « Agent de Meta » ne compte pas) : révoquez-en une pour en créer une autre.');
@@ -45,6 +46,8 @@ test.describe('Clés d’API : le plafond de dix clés actives', () => {
     await monter(page, [...actives(9), RELAIS, ...REVOQUEES]);
     await page.goto('/developers/keys');
     await expect(page.getByRole('row')).toHaveCount(13);
+    // Le relais et les révoquées hors du compte : neuf, pas douze.
+    await expect(page.getByTestId('compte-cles')).toHaveText('9 sur 10 clés actives');
     await page.getByPlaceholder('Nom (ex. « intégration site web »)').fill('La dixième');
     await expect(page.getByRole('button', { name: 'Créer la clé' })).toBeEnabled();
     await expect(page.getByTestId('plafond-cles')).toHaveCount(0);

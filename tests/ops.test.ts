@@ -72,6 +72,36 @@ describe('route /ops/overview', () => {
     await enPanne.close();
   });
 
+  it('porte les tâches de fond lues sur 24 h, et une lecture en échec ne fait pas tomber l’écran', async () => {
+    const ligne = { process: 'worker-principal', tache: 'agregats-analyse', passes: 4, echecs: 0, sautees: 0, sommeMs: 900, maxMs: 400, lignes: 12, maxLignes: 6, derniere: '2026-10-04T12:00:00.000Z' };
+    const heuresLues: number[] = [];
+    const lue = app({ mesuresTaches: { lire: async (h) => { heuresLues.push(h); return [ligne]; } } });
+    const res = await lue.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
+    expect(res.json<{ tachesFond: unknown[] }>().tachesFond).toEqual([ligne]);
+    expect(heuresLues).toEqual([24]);
+    await lue.close();
+    const enPanne = app({ mesuresTaches: { lire: async () => { throw new Error('relation "taches_mesures" does not exist'); } } });
+    const res2 = await enPanne.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
+    expect(res2.statusCode).toBe(200);
+    expect(res2.json<{ tachesFond: unknown[]; tenants: unknown[] }>()).toMatchObject({ tachesFond: [], tenants: [{ id: 't1' }] });
+    await enPanne.close();
+  });
+
+  it('🔴 le stockage a SA route, et la vue d’ensemble ne le mesure jamais (il parcourt le catalogue)', async () => {
+    const mesure = { baseOctets: 47_000_000, familles: [{ famille: 'rcs' as const, elements: 28, octets: 10_000_000, disqueOctets: 10_700_000 }], tables: [{ table: 'public.rcs_media', octets: 10_700_000 }], mesureLe: '2026-10-04T15:00:00.000Z' };
+    let mesures = 0;
+    const a = app({ stockage: { mesurer: async () => { mesures += 1; return mesure; } } });
+    await a.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
+    expect(mesures).toBe(0);
+    const res = await a.inject({ method: 'GET', url: '/ops/stockage', ...withTok(OPS) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(mesure);
+    expect(mesures).toBe(1);
+    // Sans session d'exploitation, rien.
+    expect((await a.inject({ method: 'GET', url: '/ops/stockage' })).statusCode).toBe(401);
+    await a.close();
+  });
+
   it('inclut UN battement PAR RÔLE quand le magasin en rend', async () => {
     const hb = [
       { role: 'analyse', beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:2', ageSeconds: 700 },

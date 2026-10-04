@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-04 : l'observabilité qui manquait à l'audit (alerte des workers, tâches de fond, stockage)
+
+Les deux critères de sortie de l'audit du 2026-10-02 que rien ne tenait : « chaque rôle a son heartbeat ET son
+alerte », et « le stockage RCS ne grossit plus sans métrique ». Décidé par Julien le même jour.
+
+- **Ce qu'on croyait couvert ne l'était pas.** Le worker affirmait qu'un worker mort était « couvert par l'âge du
+  heartbeat, lu par /ops et le cron watcher (qui déduplique) ». Vérifié : aucun surveillant ne lisait le battement.
+  La sonde `vps-watch` (messagingme-pilot) ne voit qu'un conteneur ARRÊTÉ, toutes les quinze minutes, et seulement
+  sur le VPS ; les workers n'ont pas de contrôle de santé Docker. Un worker figé ou en boucle n'était vu de personne.
+- **La surveillance vit dans l'API**, seul processus indépendant des workers, et portable vers Scaleway. Silence
+  (180 s) ou boucle (5 démarrages en 15 min). La relecture a trouvé le second signe manquant : un worker qui plante
+  APRÈS son premier battement le rafraîchit à chaque redémarrage, donc le silence n'arrive jamais.
+- **La clé d'alerte porte l'épisode** (`alerte-worker:<rôle>:<dernier battement>`) : la première version relâchait
+  le verrou au retour, depuis la mémoire de la copie qui avait alerté, et une API redémarrée pendant la panne aurait
+  laissé un second silence sans alerte pendant une heure (relevé par la relecture).
+- **Les tâches de fond sont mesurées par le registre**, pas une à une : durée, lignes rendues, échecs, tours sautés.
+  La relecture a trouvé que la tâche que vise le seuil de l'audit (les statistiques d'analyse) n'aurait presque jamais
+  été vue : sa passe utile est celle du démarrage, hors registre, et la périodique tombe six heures plus tard. Elle
+  est mesurée à la main.
+- **Mesuré en production avant d'écrire la carte du stockage** : base entière de 45 Mo, dont 10 Mo pour 28 images RCS
+  (la plus grosse table, 22 % de la base), rien pour les brouillons de pub, 0,2 Mo pour les Flows. La mesure coûte une
+  demi-seconde (le catalogue entier) : sa propre route, jamais avec la vue d'ensemble.
+- Les six passages « deux copies au plus » d'`ARCHITECTURE-CIBLE.md` corrigés (l'audit en comptait quatre).
+
 ## 2026-10-04 : le bail anti-double-envoi de l'exécuteur, requis (piste 8 de l'audit)
 
 Fait en direct, puis relu (décision de Julien : seulement les trois fonctions du bail, pas de déploiement dédié).
