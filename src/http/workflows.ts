@@ -16,7 +16,7 @@ import { executerFonctionJs } from '../workflow/fonction-js';
  * La sauvegarde n'exige pas qu'un scénario commence par un template : un scénario qui ouvre sur un message de
  * session est valide pour un déclenchement où la fenêtre est garantie. Les deux protections contre un envoi hors
  * fenêtre (Meta 131047) sont ailleurs : la garde de campagne (`http/campaigns.ts`, 400 si l'entrée n'est pas un
- * template) et la garde d'exécution (`workflow/executor.ts`, `allowSessionOpen`).
+ * template) et la garde d'exécution (`workflow/executor.ts`, levée selon le type de lancement : `fenetreLevee`).
  */
 
 /** Ce que les routes lisent et écrivent des scénarios. */

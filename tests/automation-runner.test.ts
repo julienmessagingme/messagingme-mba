@@ -3,6 +3,7 @@ import { runAutomations } from '../src/automation/runner';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 import type { EvalContext } from '../src/workflow/conditions';
+import type { TypeDeLancementAutomatisme } from '../src/workflow/lancements';
 import { NumeroDelieError } from '../src/meta/numero-delie';
 
 /**
@@ -31,7 +32,8 @@ const ctx = (over: Partial<EvalContext> = {}): EvalContext => ({
 const MSG: AutomationEvent = { kind: 'message', waId: '33611', body: 'je veux un rdv', isNewContact: false, channel: 'whatsapp' };
 
 interface Trace {
-  started: Array<{ workflowId: string; startNodeId: string | null; windowOpen: boolean; reprendLaMain: boolean }>;
+  /** La demande que le runner construit, réduite à ce qu'on vérifie : le bloc de départ, la preuve de fenêtre, le type. */
+  started: Array<{ workflowId: string; startNodeId: string | null; windowOpen: boolean; type: TypeDeLancementAutomatisme }>;
   fired: string[]; cleared: string[]; ctxCalls: number;
 }
 
@@ -50,7 +52,10 @@ function make(rows: AutomationRow[], over: Surcharges = {}): { deps: AutomationR
       ...surAutomations,
     },
     evalContext: async () => { trace.ctxCalls += 1; return ctx(); },
-    startWorkflow: async (_t, workflowId, _w, o) => { trace.started.push({ workflowId, ...o }); return true; },
+    startWorkflow: async (d) => {
+      trace.started.push({ workflowId: d.workflowId, startNodeId: d.blocDeDepart, windowOpen: d.fenetreOuverte, type: d.type });
+      return true;
+    },
     defaultCooldownSeconds: 3600,
     now: () => T,
     ...reste,
@@ -69,7 +74,7 @@ describe('runAutomations', () => {
     expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, deps)).toBe(1);
     expect(demandes).toEqual([['risque_eleve']]);
     // Le balayage ne prouve AUCUNE fenêtre de service : le scénario garde la garde d'ouverture.
-    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: false, reprendLaMain: false }]);
+    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: false, type: 'automatisme_ordinaire' }]);
   });
 
   it('🔴 une analyse charge « conversation analysée » ET « un champ d’analyse devient », et rien d’autre', async () => {
@@ -130,7 +135,7 @@ describe('runAutomations', () => {
   it('déclencheur qui correspond -> démarre le scénario et enregistre le tir', async () => {
     const { deps, trace } = make([auto()]);
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
-    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true, reprendLaMain: false }]);
+    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true, type: 'automatisme_ordinaire' }]);
     expect(trace.fired).toEqual(['a1']);
   });
 
@@ -163,7 +168,7 @@ describe('runAutomations', () => {
   it('démarre à un BLOC PRÉCIS quand l’automation en cible un', async () => {
     const { deps, trace } = make([auto({ startNodeId: 'n5' })]);
     await runAutomations('t1', MSG, deps);
-    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: 'n5', windowOpen: true, reprendLaMain: false }]);
+    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: 'n5', windowOpen: true, type: 'automatisme_ordinaire' }]);
   });
 
   describe('filtre de condition', () => {
@@ -226,7 +231,7 @@ describe('runAutomations', () => {
       automations: {
         lastFiredAt: async (id) => { if (id === 'ko') throw new Error('base indisponible'); return null; },
       },
-      startWorkflow: async (_t, wf) => { started.push(wf); return true; },
+      startWorkflow: async (d) => { started.push(d.workflowId); return true; },
     });
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
     expect(started).toEqual(['wf2']);
@@ -305,7 +310,7 @@ describe('runAutomations', () => {
       // contenu de ce test : le contrat n'expose plus de quoi bloquer.
       const { deps, trace } = make([auto()]);
       expect(await runAutomations('t1', MSG, deps)).toBe(1);
-      expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true, reprendLaMain: false }]);
+      expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: true, type: 'automatisme_ordinaire' }]);
       expect(trace.fired).toEqual(['a1']);
       // 🔴 LE VRAI CONTENU DU TEST : le contrat n'expose plus rien qui permette de bloquer. Un `hasWaitingRun`
       // réintroduit ailleurs redeviendrait invisible ici, alors qu'il rendrait le défaut à l'identique.

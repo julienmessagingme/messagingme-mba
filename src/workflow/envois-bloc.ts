@@ -220,7 +220,7 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
       return { messageId: res.messageId };
     },
     // Message rapide (node quick_message), hors template, toujours en fenêtre 24 h : `advance` (le contact
-    // vient de répondre) ou `startFromNode` (hors-fenêtre écartés en amont).
+    // vient de répondre) ou un démarrage dont la garde de fenêtre est levée (`fenetreLevee`, `workflow/lancements.ts`).
     sendQuickMessage: async (tenant, waId, body, buttons, mediaUrl, lien) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (body.trim() === '') return 'le bloc « message rapide » n\'a pas de texte';
@@ -292,8 +292,8 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: corps, messageId: res.messageId, type: 'text', origine: 'scenario' }); } catch { /* best-effort */ }
       return { messageId: res.messageId };
     },
-    // Formulaire (node flow), hors template, toujours en fenêtre 24 h (`advance`, ou `startFromNode` avec
-    // fenêtre vérifiée). La complétion revient en nfm_reply, mappée par _ref, indépendamment du canal d'envoi.
+    // Formulaire (node flow), hors template, toujours en fenêtre 24 h (`advance`, ou un démarrage dont la garde de
+    // fenêtre est levée). La complétion revient en nfm_reply, mappée par _ref, indépendamment du canal d'envoi.
     sendFlow: async (tenant, waId, flowId, body, cta) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (flowId.trim() === '') return 'le bloc « formulaire » ne désigne aucun formulaire'; // défense, actionOf filtre déjà

@@ -13,9 +13,11 @@ import type { RunState, WorkflowRunRow } from '../src/workflow/run-store.pg';
  *
  *  1. Un opérateur engagé GÈLE le scénario. C'est la raison d'être du bloc : aujourd'hui, sans ce garde,
  *     un humain qui répond dans l'inbox et un parcours qui continue écrivent au client en parallèle.
- *  2. Le gel vaut pour l'AVANCE (le contact répond) ET pour le DÉMARRAGE (une campagne lance un parcours).
- *     Le second chemin est passé inaperçu dans une première version du plan : `start` et `startFromNode`
- *     passent par `runFrom`, qui envoie sans consulter personne.
+ *  2. Le gel vaut pour l'AVANCE (le contact répond) ET pour le DÉMARRAGE (une automation lance un parcours).
+ *     Le second chemin est passé inaperçu dans une première version du plan : les démarrages passent par
+ *     `runFrom`, qui envoie sans consulter personne. ⚠️ Seuls les types de lancement qui ne reprennent pas le
+ *     fil s'y arrêtent (`automatisme_ordinaire`) : une campagne, l'Inbox ou un lien de test le reprennent, par
+ *     politique (`src/workflow/lancements.ts`, `tests/workflow-lancements.test.ts`).
  *  3. Le gel est TRANSITOIRE. Le run reste en attente, il repart tout seul quand le contrôle revient. Le
  *     clore ferait qu'un simple aller-retour avec un opérateur tuerait définitivement le parcours.
  *  4. Le blocage vaut aussi pour `mba` : quand l'agent de Meta tient le fil, notre scénario se tait.
@@ -78,17 +80,18 @@ describe('gel du scénario quand le fil ne nous appartient pas', () => {
     expect(trace.states).toEqual([]);
   });
 
-  it('DÉMARRAGE bloqué aussi : une campagne ne lance pas un parcours dans un fil détenu', async () => {
-    // Le trou de la première version du plan : le garde n'était que dans `advance`, alors que `start` et
-    // `startFromNode` envoient par `runFrom` sans passer par là.
+  it('DÉMARRAGE bloqué aussi : un déclenchement automatique ne lance pas un parcours dans un fil détenu', async () => {
+    // Le trou de la première version du plan : le garde n'était que dans `advance`, alors que les démarrages
+    // envoient par `runFrom` sans passer par là. ⚠️ Ce titre disait « une campagne » : faux depuis que la campagne
+    // reprend le fil (2026-09-02), le cas exercé a toujours été le démarrage SANS reprise.
     const trace: Trace = { sent: [], states: [] };
-    await executor(false, trace).start('t1', 'w1', GRAPH, { waId: '33611', contactId: 'c1' });
+    await executor(false, trace).demarrer('automatisme_ordinaire', 't1', 'w1', GRAPH, { waId: '33611', contactId: 'c1' });
     expect(trace.sent).toEqual([]);
   });
 
-  it('démarrage à un bloc précis bloqué aussi (cible node de /v1/sends)', async () => {
+  it('démarrage à un bloc précis bloqué aussi (automation à bloc de départ)', async () => {
     const trace: Trace = { sent: [], states: [] };
-    await executor(false, trace).startFromNode('t1', 'w1', GRAPH, { waId: '33611', contactId: 'c1' }, 'n2');
+    await executor(false, trace).demarrer('automatisme_ordinaire', 't1', 'w1', GRAPH, { waId: '33611', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'n2' });
     expect(trace.sent).toEqual([]);
   });
 

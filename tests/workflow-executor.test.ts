@@ -77,21 +77,21 @@ describe('WorkflowExecutor', () => {
       // est posee sur le passage COMMUN (`runFrom`), donc les quatre chemins de demarrage en heritent :
       // inbox, jeton de test, automation (le lien de chaine) et campagne.
       const { ex, runs } = make(linear);
-      await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+      await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
       expect(runs.fermetures).toEqual(['33600']);
     });
 
     it('🔴 A1bis : un demarrage AU BLOC (cible node de /v1/sends) ferme aussi', async () => {
       const { ex, runs } = make(linear);
-      await ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'tpl');
+      await ex.demarrer('campagne_bloc', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'tpl' });
       expect(runs.fermetures).toEqual(['33600']);
     });
 
-    it('🔴 A3 : le chemin Inbox / automation (startInWindow) ferme aussi', async () => {
+    it('🔴 A3 : le chemin Inbox / automation (fenêtre prouvée) ferme aussi', async () => {
       // Ce chemin fermait DEJA, mais chez son appelant (`src/index.ts`), pas dans l executeur. La copie a ete
       // retiree ; sans ce test, plus rien ne garderait le comportement pour l operateur.
       const { ex, runs } = make(linear);
-      await ex.startInWindow('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+      await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
       expect(runs.fermetures).toEqual(['33600']);
     });
 
@@ -106,7 +106,7 @@ describe('WorkflowExecutor', () => {
           clore: async (_t: string, id: string, statut: string) => { closes.push({ id, statut }); },
         } as unknown as WorkflowExecutorDeps['agentSessions'],
       });
-      await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+      await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
       expect(closes).toEqual([{ id: 'sess-1', statut: 'erreur' }]);
     });
 
@@ -116,7 +116,7 @@ describe('WorkflowExecutor', () => {
       // cours d un contact pour un demarrage qui n a jamais eu lieu, EN SILENCE : le contact se serait
       // retrouve sans rien, et personne n aurait su pourquoi. On ne remplace que ce qu on a remplace.
       const { ex, runs, calls } = make(linear, { mayAct: async () => false });
-      const issue = await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+      const issue = await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
       expect(typeof issue).toBe('string');
       expect(calls).toEqual([]);
       expect(runs.fermetures).toEqual([]);
@@ -124,7 +124,7 @@ describe('WorkflowExecutor', () => {
 
     it('🔴 un bloc de depart disparu ne ferme rien non plus', async () => {
       const { ex, runs } = make(linear);
-      const issue = await ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'bloc-supprime');
+      const issue = await ex.demarrer('campagne_bloc', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'bloc-supprime' });
       expect(typeof issue).toBe('string');
       expect(runs.fermetures).toEqual([]);
     });
@@ -132,7 +132,7 @@ describe('WorkflowExecutor', () => {
 
   it('start : pose le tag, envoie le template, run en attente au template', async () => {
     const { ex, runs, calls } = make(linear);
-    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:vip', 'tpl:promo']);
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
   });
@@ -143,13 +143,13 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 'a1', 'a2'), e('e2', 'a2', 'ib')],
     };
     const { ex, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['untag:vip', 'clear:statut']);
   });
 
   it('advance : le contact répond -> la conversation arrive en inbox (run terminé)', async () => {
     const { ex, runs, calls } = make(linear);
-    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'msg1');
     expect(runs.run).toMatchObject({ status: 'inbox', currentNode: null });
     expect(calls).toEqual(['tag:vip', 'tpl:promo']); // pas de nouvel envoi (inbox n'a pas d'action)
@@ -157,7 +157,7 @@ describe('WorkflowExecutor', () => {
 
   it('atteindre le node inbox escalade à un humain (escalateToHuman) ; pas d’escalade tant qu’on n’y est pas', async () => {
     const { ex, escalations, drapeaux } = make(linear);
-    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
     expect(escalations).toEqual([]); // start s'arrête au template (waiting), pas encore inbox
     await ex.advance('t1', '33600', 'msg1'); // le contact répond -> node inbox
     expect(escalations).toEqual(['33600']);
@@ -176,7 +176,7 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 't', 'ib')],
     };
     const { ex, escalations, drapeaux, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:vip']); // rien n'est parti chez le contact
     expect(escalations).toEqual(['33600']);
     expect(drapeaux).toEqual([false]);
@@ -190,18 +190,18 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 'qm', 'ib')],
     };
     const { ex, escalations, drapeaux, calls } = make(g);
-    await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
     expect(calls).toEqual(['qm:Un conseiller vous répond']);
     expect(escalations).toEqual(['33600']);
     expect(drapeaux).toEqual([true]);
   });
 
-  // Garde fenêtre 24 h (Lot 7) : `start` = chemin campagne, HORS fenêtre de service -> un scénario qui OUVRE
+  // Garde fenêtre 24 h (Lot 7) : `campagne_scenario` = chemin campagne, HORS fenêtre de service -> un scénario qui OUVRE
   // sur un message de session (quick_message/flow) est refusé en bloc (aucune action, aucun run).
   it('start : quick_message en OUVERTURE -> refusé (fenêtre 24 h), aucune action, aucun run', async () => {
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['Oui', 'Non'] })], edges: [] };
     const { ex, runs, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual([]);
     expect(runs.run).toBeNull();
   });
@@ -212,7 +212,7 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 't', 'f')],
     };
     const { ex, runs, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual([]);
     expect(runs.run).toBeNull();
   });
@@ -223,7 +223,7 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 'tpl', 'qm')],
     };
     const { ex, runs, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tpl:promo']);
     await ex.advance('t1', '33600', 'm1');
     expect(calls).toEqual(['tpl:promo', 'qm:Salut']);
@@ -236,7 +236,7 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 'tpl', 'f')],
     };
     const { ex, runs, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm1');
     expect(calls).toEqual(['tpl:promo', 'flow:fl1:Formulaire : RDV:Envoyer']);
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'f' });
@@ -248,7 +248,7 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 'tpl', 'f')],
     };
     const { ex, runs, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm1');
     expect(calls).toEqual(['tpl:promo']);
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'f' });
@@ -257,7 +257,7 @@ describe('WorkflowExecutor', () => {
   it('workflow 100% synchrone (tag seul) : action appliquée, AUCUN run persistant', async () => {
     const g: WorkflowGraph = { nodes: [n('t', 'tag', { tag: 'x' })], edges: [] };
     const { ex, runs, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:x']);
     expect(runs.run).toBeNull();
   });
@@ -269,7 +269,7 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 't', 'tpl1'), e('e2', 'tpl1', 'tpl2'), e('e3', 'tpl2', 'ib')],
     };
     const { ex, runs, calls } = make(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:a', 'tpl:t1']);
     await ex.advance('t1', '33600', 'm1'); // -> envoie t2, attend au tpl2
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl2', lastMessageId: 'm1' });
@@ -293,7 +293,7 @@ describe('WorkflowExecutor', () => {
 
   it('advance BRANCHE par bouton : btn:1 -> suit l\'arête de CE bouton', async () => {
     const { ex, runs, calls } = make(branched);
-    await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
     await ex.advance('t1', '33600', 'm1', 'btn:1'); // tape « Non »
     expect(calls).toContain('tag:non');
@@ -310,7 +310,7 @@ describe('WorkflowExecutor', () => {
       mbaActifPour: async () => true,
       releaseToMba: async (_t, w) => { releases.push(w); },
     });
-    await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm2', null);
     expect(calls).not.toContain('tag:oui');
     expect(calls).not.toContain('tag:non');
@@ -328,7 +328,7 @@ describe('WorkflowExecutor', () => {
       mbaActifPour: async () => true,
       releaseToMba: async (_t, w) => { releases.push(w); },
     });
-    await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm3', 'btn:9');
     expect(calls).not.toContain('tag:oui');
     expect(calls).not.toContain('tag:non');
@@ -346,7 +346,7 @@ describe('WorkflowExecutor', () => {
     // La distinction est tout l'intérêt du correctif : écrire au lieu de cliquer n'est pas un défaut du
     // scénario. Escalader là aussi noierait le signal sous des conversations parfaitement normales.
     const { ex, escalations } = make(branched);
-    await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm3', null);
     expect(escalations).toEqual([]);
     // Et un payload qui n est PAS un handle reliable (vieux template dont le payload porte le libelle du
@@ -364,7 +364,7 @@ describe('WorkflowExecutor', () => {
 
   it('advance HORS boutons : une arête LIBRE existe -> on la suit', async () => {
     const { ex, calls } = make(branchedAvecSortieLibre);
-    await ex.start('t1', 'wf1', branchedAvecSortieLibre, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', branchedAvecSortieLibre, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm4', null);
     expect(calls).toContain('tag:autre');
     expect(calls).not.toContain('tag:oui');
@@ -372,7 +372,7 @@ describe('WorkflowExecutor', () => {
 
   it('advance BRANCHE par bouton : le bouton câblé passe AVANT l\'arête libre', async () => {
     const { ex, calls } = make(branchedAvecSortieLibre);
-    await ex.start('t1', 'wf1', branchedAvecSortieLibre, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', branchedAvecSortieLibre, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm5', 'btn:1');
     expect(calls).toContain('tag:non');
     expect(calls).not.toContain('tag:autre');
@@ -405,33 +405,33 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 'tpl', 'ib')],
     };
     const { ex, captured } = makeCapturing(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, ['Julie']);
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', firstTemplateParams: ['Julie'] });
     expect(captured).toEqual([['Julie']]);
   });
 
-  // startFromNode (cible node de /v1/sends, D-1) : démarre à un bloc ARBITRAIRE, SANS la garde fenêtre 24 h
-  // (l'appelant a déjà écarté les contacts hors fenêtre). `start` garde la sienne : cf. tests plus haut.
-  describe('startFromNode', () => {
+  // `campagne_bloc` (cible node de /v1/sends, D-1) : démarre à un bloc ARBITRAIRE, SANS la garde fenêtre 24 h
+  // (l'appelant a déjà écarté les contacts hors fenêtre). `campagne_scenario` garde la sienne : cf. tests plus haut.
+  describe('démarrage au bloc (campagne_bloc)', () => {
     it('démarre à un bloc du MILIEU du graphe (les blocs amont ne sont pas rejoués)', async () => {
       const g: WorkflowGraph = {
         nodes: [n('t', 'tag', { tag: 'amont' }), n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('ib', 'inbox')],
         edges: [e('e1', 't', 'tpl'), e('e2', 'tpl', 'ib')],
       };
       const { ex, runs, calls } = make(g);
-      await ex.startFromNode('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, 'tpl');
+      await ex.demarrer('campagne_bloc', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'tpl' });
       expect(calls).toEqual(['tpl:promo']); // pas de 'tag:amont' : on a sauté l'entrée
       expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
     });
 
-    it('quick_message en cible : PART (contrairement à start qui le bloquerait)', async () => {
+    it('quick_message en cible : PART (contrairement à la campagne à scénario, qui le bloquerait)', async () => {
       const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['Oui', 'Non'] })], edges: [] };
       const { ex, runs, calls } = make(g);
-      await ex.startFromNode('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, 'qm');
+      await ex.demarrer('campagne_bloc', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'qm' });
       expect(calls).toEqual(['qm:Salut']);
       expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'qm' });
-      // NON-RÉGRESSION : le MÊME graphe via `start` reste refusé (garde 24 h intacte).
+      // NON-RÉGRESSION : le MÊME graphe depuis l'entrée d'une campagne reste refusé (garde 24 h intacte).
       const via = make(g);
-      await via.ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      await via.ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
       expect(via.calls).toEqual([]);
       expect(via.runs.run).toBeNull();
     });
@@ -439,7 +439,7 @@ describe('WorkflowExecutor', () => {
     it('flow en cible : PART aussi (message de session légitime en fenêtre ouverte)', async () => {
       const g: WorkflowGraph = { nodes: [n('f', 'flow', { flowId: 'fl1', flowName: 'RDV' })], edges: [] };
       const { ex, calls } = make(g);
-      await ex.startFromNode('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, 'f');
+      await ex.demarrer('campagne_bloc', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'f' });
       expect(calls).toEqual(['flow:fl1:Formulaire : RDV:Envoyer']);
     });
 
@@ -448,7 +448,7 @@ describe('WorkflowExecutor', () => {
       // Pas `true` = rien n'est parti : c'est ce que la campagne doit voir pour marquer le destinataire en échec
       // au lieu de le compter comme envoyé (revue Lot D). Depuis le 2026-08-15 le refus porte SA RAISON (une
       // chaîne) au lieu d'un simple `false`, pour que la campagne l'affiche telle quelle.
-      const refus = await ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'disparu');
+      const refus = await ex.demarrer('campagne_bloc', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'disparu' });
       expect(refus).not.toBe(true);
       expect(typeof refus).toBe('string');
       expect(calls).toEqual([]);
@@ -458,7 +458,7 @@ describe('WorkflowExecutor', () => {
     it('cible 100 % synchrone (tag en fin de chaîne) : action appliquée, aucun run persistant', async () => {
       const g: WorkflowGraph = { nodes: [n('t', 'tag', { tag: 'x' })], edges: [] };
       const { ex, runs, calls } = make(g);
-      await ex.startFromNode('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, 't');
+      await ex.demarrer('campagne_bloc', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 't' });
       expect(calls).toEqual(['tag:x']);
       expect(runs.run).toBeNull();
     });
@@ -471,7 +471,7 @@ describe('WorkflowExecutor', () => {
       edges: [e('e1', 'tpl1', 'tpl2'), e('e2', 'tpl2', 'ib')],
     };
     const { ex, captured } = makeCapturing(g);
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, ['Julie']);
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', firstTemplateParams: ['Julie'] });
     await ex.advance('t1', '33600', 'm1');
     expect(captured).toEqual([['Julie'], undefined]);
   });
@@ -524,12 +524,12 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
 
   it('start : condition à l\'entrée route selon le ctx (vrai -> gold)', async () => {
     const { ex, calls } = makeEval(condGraph, baseCtx({ tags: ['vip'] }));
-    await ex.start('t1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:gold']);
   });
   it('start : condition fausse -> branche std', async () => {
     const { ex, calls } = makeEval(condGraph, baseCtx({ tags: [] }));
-    await ex.start('t1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:std']);
   });
   it('advance : condition APRÈS un template route selon le ctx', async () => {
@@ -538,7 +538,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       edges: [e('e0', 'tpl', 'c'), eh('e1', 'c', 'g', 'true'), eh('e2', 'c', 's', 'false')],
     };
     const { ex, calls } = makeEval(g, baseCtx({ tags: ['vip'] }));
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tpl:promo']);
     await ex.advance('t1', '33600', 'm1');
     expect(calls).toEqual(['tpl:promo', 'tag:gold']);
@@ -548,14 +548,14 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
     // l'heure lue est enfin la bonne pour qui reçoit la valeur.
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'vu_le', valueKind: 'now' })], edges: [] };
     const { ex, calls } = makeEval(g, baseCtx({ now: new Date('2026-08-02T14:30:00Z') }));
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['field:vu_le=2026-08-02T16:30:00+02:00']);
   });
 
   it('start : bloc field DERNIÈRE SAISIE -> le message écrit par le contact, tel quel', async () => {
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'demande', valueKind: 'derniere_saisie' })], edges: [] };
     const { ex, calls } = makeEval(g, baseCtx({ derniereSaisie: 'je voudrais changer ma commande' }));
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['field:demande=je voudrais changer ma commande']);
   });
 
@@ -567,13 +567,13 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
     for (const [g, attendu] of [[avec, true], [sans, false]] as Array<[WorkflowGraph, boolean]>) {
       const besoins: Array<{ derniereSaisie: boolean } | undefined> = [];
       const { ex } = makeEval(g, baseCtx(), (b) => besoins.push(b));
-      await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
       expect(besoins[0]?.derniereSaisie, attendu ? 'réclamée' : 'pas réclamée').toBe(attendu);
     }
   });
   it('evalContext renvoie null (contact introuvable) -> branche false déterministe', async () => {
     const { ex, calls } = makeEval(condGraph, null);
-    await ex.start('t1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:std']);
   });
   it('start : une BRANCHE de condition qui OUVRE par quick_message reste refusée par la garde 24h (aucun envoi, aucun run)', async () => {
@@ -583,7 +583,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       edges: [eh('e1', 'c', 'q', 'true'), eh('e2', 'c', 'tpl', 'false')],
     };
     const { ex, runs, calls } = makeEval(g, baseCtx());
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual([]);
     expect(runs.run).toBeNull();
   });
@@ -606,7 +606,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       const appels: Array<{ derniereSaisie: boolean } | undefined> = [];
       const g = attente({ waitMode: 'heures_ouvrees' });
       const { ex, runs, calls } = makeEval(g, nuit(), (b) => appels.push(b), () => nuit().now.getTime());
-      await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
       expect(appels).toHaveLength(1); // sans la ligne de `buildCtx`, aucun appel : c'est la mutation qui compte
       expect(calls).toEqual([]); // le template ne part PAS maintenant
       expect(runs.dernierEtat?.status).toBe('sleeping');
@@ -617,7 +617,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       const appels: Array<{ derniereSaisie: boolean } | undefined> = [];
       const g = attente({ waitMode: 'date', waitDate: '2026-09-10T09:00' });
       const { ex, runs } = makeEval(g, nuit(), (b) => appels.push(b), () => nuit().now.getTime());
-      await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
       expect(appels).toHaveLength(1);
       expect(runs.dernierEtat?.resumeAt?.toISOString()).toBe('2026-09-10T07:00:00.000Z');
     });
@@ -628,7 +628,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       const appels: Array<{ derniereSaisie: boolean } | undefined> = [];
       const g = attente({ delay: 2, unit: 'hours' });
       const { ex, runs } = makeEval(g, nuit(), (b) => appels.push(b), () => nuit().now.getTime());
-      await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
       expect(appels).toHaveLength(0);
       expect(runs.dernierEtat?.status).toBe('sleeping');
     });
@@ -660,33 +660,33 @@ describe('publication « tag ajouté » : gouvernée par le CHEMIN, pas par l’
     return { ex: new WorkflowExecutor(deps), emitted };
   }
 
-  it('CAMPAGNE (start sans option) -> AUCUNE publication', async () => {
+  it('CAMPAGNE (campagne_scenario) -> AUCUNE publication', async () => {
     const { ex, emitted } = exec();
-    await ex.start('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', graphe, { waId: '33611', contactId: 'c1' });
     expect(emitted).toEqual([]);
   });
 
-  it('campagne ciblant un bloc (startFromNode sans option) -> AUCUNE publication', async () => {
+  it('campagne ciblant un bloc (campagne_bloc) -> AUCUNE publication', async () => {
     const { ex, emitted } = exec();
-    await ex.startFromNode('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, 't');
+    await ex.demarrer('campagne_bloc', 't1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { depuis: 'bloc', noeudId: 't' });
     expect(emitted).toEqual([]);
   });
 
-  it('démarrage UNITAIRE (automation / test) -> publication', async () => {
+  it('démarrage UNITAIRE (automation, fenêtre prouvée) -> publication', async () => {
     const { ex, emitted } = exec();
-    await ex.startInWindow('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { emitEvents: true });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
     expect(emitted).toEqual(['vip']);
   });
 
   it('tag DÉJÀ présent (applyTag renvoie false) -> aucune publication même en unitaire', async () => {
     const { ex, emitted } = exec({ applyTag: async () => false });
-    await ex.startInWindow('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { emitEvents: true });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
     expect(emitted).toEqual([]);
   });
 
   it('une publication qui échoue ne fait pas échouer le parcours', async () => {
     const { ex } = exec({ emitTagAdded: async () => { throw new Error('file indisponible'); } });
-    await expect(ex.startInWindow('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { emitEvents: true })).resolves.toBe(true);
+    await expect(ex.demarrer('automatisme_ordinaire', 't1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true })).resolves.toBe(true);
   });
 });
 
@@ -935,32 +935,32 @@ describe('WorkflowExecutor : remontée d’un envoi refusé', () => {
 
   it('start : la raison EXACTE remonte à l’appelant (c’est elle que la campagne affiche)', async () => {
     const { ex } = make(linear, { sendTemplate: async () => RAISON });
-    expect(await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(RAISON);
+    expect(await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(RAISON);
   });
 
   it('start refusé : AUCUN run en attente n’est laissé derrière', async () => {
     // Sinon il attendrait une réponse à un message jamais reçu, et le premier message du contact le ferait
     // repartir au bloc SUIVANT, sorti de nulle part.
     const { ex, runs } = make(linear, { sendTemplate: async () => RAISON });
-    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
     expect(runs.run).toBeNull();
   });
 
   it('start refusé : les actions synchrones déjà appliquées le restent (on ne les rejoue pas)', async () => {
     const { ex, calls } = make(linear, { sendTemplate: async () => RAISON });
-    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:vip']);
   });
 
   it('start qui PASSE : toujours `true`, run en attente au template (non-régression)', async () => {
     const { ex, runs } = make(linear);
-    expect(await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(true);
+    expect(await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(true);
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
   });
 
   it('une chaîne VIDE rendue par un câblage n’est pas un refus', async () => {
     const { ex, runs } = make(linear, { sendTemplate: async () => '' });
-    expect(await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(true);
+    expect(await ex.demarrer('campagne_scenario', 't1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(true);
     expect(runs.run).toMatchObject({ status: 'waiting' });
   });
 
@@ -971,7 +971,7 @@ describe('WorkflowExecutor : remontée d’un envoi refusé', () => {
     };
     let refuse = false;
     const { ex, runs, escalations } = make(g, { sendTemplate: async () => (refuse ? 'variable sans valeur pour ce contact' : undefined) });
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     refuse = true;
     await ex.advance('t1', '33600', 'm1');
     expect(runs.run).toMatchObject({ status: 'inbox', currentNode: null });
@@ -993,7 +993,7 @@ describe('WorkflowExecutor : un message rapide sans bouton ne bloque plus le par
       edges: [e('e1', 'qm', 'tg')],
     };
     const { ex, runs, calls } = make(g);
-    await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
     expect(calls).toEqual(['qm:re ganial', 'tag:genial']);
     expect(runs.run).toBeNull(); // parcours 100 % synchrone -> aucun run en attente à laisser derrière
   });
@@ -1009,7 +1009,7 @@ describe('WorkflowExecutor : un message rapide sans bouton ne bloque plus le par
       edges: [eh('e1', 'q1', 'q2', 'btn:0'), e('e2', 'q2', 'tg')],
     };
     const { ex, calls } = make(g);
-    await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
     expect(calls).toEqual(['qm:Ça te va ?']); // on attend le choix
     await ex.advance('t1', '33600', 'm1', 'btn:0');
     expect(calls).toEqual(['qm:Ça te va ?', 'qm:re ganial', 'tag:genial']);
@@ -1026,7 +1026,7 @@ describe('WorkflowExecutor : un message rapide sans bouton ne bloque plus le par
       edges: [e('e1', 'q1', 'tpl')],
     };
     const { ex, runs } = make(g, { sendTemplate: async () => 'template introuvable chez Meta' });
-    expect(await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' })).toBe(true);
+    expect(await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true })).toBe(true);
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
   });
 
@@ -1036,7 +1036,7 @@ describe('WorkflowExecutor : un message rapide sans bouton ne bloque plus le par
       edges: [],
     };
     const { ex, runs } = make(g, { sendTemplate: async () => 'template introuvable chez Meta' });
-    expect(await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' })).toBe('template introuvable chez Meta');
+    expect(await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' })).toBe('template introuvable chez Meta');
     expect(runs.run).toBeNull();
   });
 });
@@ -1305,7 +1305,7 @@ describe('runFrom : ouverture sur un bloc agent (tâche 12)', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { ouvertures, jobs, store, enqueueAgentTurn } = fake12();
     const { ex, runs } = make(ouvreSurAgent, { agentSessions: store, enqueueAgentTurn });
-    const out = await ex.start('t1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' });
+    const out = await ex.demarrer('campagne_scenario', 't1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' });
     expect(typeof out).toBe('string');
     expect(String(out)).toContain('agent IA');
     expect(ouvertures).toEqual([]);
@@ -1314,10 +1314,10 @@ describe('runFrom : ouverture sur un bloc agent (tâche 12)', () => {
     spy.mockRestore();
   });
 
-  it('en fenêtre garantie (startFromNode) : session ouverte et tour « demarrage » enfilé', async () => {
+  it('en fenêtre garantie (démarrage au bloc) : session ouverte et tour « demarrage » enfilé', async () => {
     const { ouvertures, jobs, store, enqueueAgentTurn } = fake12();
     const { ex, runs } = make(ouvreSurAgent, { agentSessions: store, enqueueAgentTurn });
-    expect(await ex.startFromNode('t1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' }, 'a')).toBe(true);
+    expect(await ex.demarrer('campagne_bloc', 't1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'a' })).toBe(true);
     expect(ouvertures).toHaveLength(1);
     expect(ouvertures[0]).toMatchObject({ tenantId: 't1', agentId: 'ag1', nodeId: 'a', waId: '33600' });
     expect(jobs).toHaveLength(1);
@@ -1328,7 +1328,7 @@ describe('runFrom : ouverture sur un bloc agent (tâche 12)', () => {
   it('🔴 la session porte l id du run CRÉÉ par runs.start (FK : elle ne peut pas naître avant)', async () => {
     const { ouvertures, jobs, store, enqueueAgentTurn } = fake12();
     const { ex, runs } = make(ouvreSurAgent, { agentSessions: store, enqueueAgentTurn });
-    await ex.startFromNode('t1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' }, 'a');
+    await ex.demarrer('campagne_bloc', 't1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'a' });
     expect(runs.run?.id).toBe('r1'); // l'id que FakeRuns.start attribue
     expect(ouvertures[0]).toMatchObject({ runId: 'r1' });
     expect(jobs[0]?.runId).toBe('r1');
@@ -1338,7 +1338,7 @@ describe('runFrom : ouverture sur un bloc agent (tâche 12)', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const g: WorkflowGraph = { nodes: [n('q', 'quick_message', { body: 'coucou' })], edges: [] };
     const { ex } = make(g);
-    const out = await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    const out = await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(typeof out).toBe('string');
     expect(String(out)).toContain('message rapide');
     spy.mockRestore();
@@ -1488,7 +1488,7 @@ describe('sortie d agent NON câblée (revue 13b)', () => {
 /**
  * Tâche 16 : `mba_envoyer_bloc` déclenche un bloc du scénario COURANT sans persister de run.
  *
- * 🔴 Le piège majeur est de passer par `startFromNode` : il passe par `runFrom`, qui CRÉE un run dès que le
+ * 🔴 Le piège majeur est de passer par `demarrer` : il passe par `runFrom`, qui CRÉE un run dès que le
  * repos n'est pas `done`. On aurait alors deux runs `waiting` pour le même contact, et comme
  * `findWaitingByWaId` ne rend que le plus récent, le run de l'agent deviendrait orphelin POUR TOUJOURS.
  */
@@ -1789,7 +1789,7 @@ describe('WorkflowExecutor : modèle refusé faute de retrait de la liste de l�
 
   it('🔴 l’erreur remonte, et le bloc suivant n’est pas joué', async () => {
     const { ex, escalations } = make(graphe, { sendTemplate: async () => { throw new RetraitDeLaListeRefuse(); } });
-    await expect(ex.start('t1', 'wf1', graphe, { waId: '33600', contactId: 'c1' })).rejects.toBeInstanceOf(RetraitDeLaListeRefuse);
+    await expect(ex.demarrer('campagne_scenario', 't1', 'wf1', graphe, { waId: '33600', contactId: 'c1' })).rejects.toBeInstanceOf(RetraitDeLaListeRefuse);
     expect(escalations).toEqual([]);
   });
 });
@@ -1807,7 +1807,7 @@ describe('bloc « Appel HTTP » à l’exécution', () => {
     const { ex, calls } = make(g, {
       appelHttp: async (_t, _w, id, lecture) => { vus.push(`${id}:${lecture}`); return { ok: true, valeur: '' }; },
     });
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(vus).toEqual(['req-1:pousse']);
     expect(calls.some((c) => c.startsWith('field:'))).toBe(false);
     expect(calls).toContain('tag:apres');
@@ -1819,7 +1819,7 @@ describe('bloc « Appel HTTP » à l’exécution', () => {
     const { ex, calls } = make(g, {
       appelHttp: async (_t, _w, id, lecture) => { vus.push(`${id}:${lecture}`); return { ok: true, valeur: 'expédiée' }; },
     });
-    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(vus).toEqual(['req-1:integre']);
     expect(calls).toContain('field:statut=expédiée');
   });

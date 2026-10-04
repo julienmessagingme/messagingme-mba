@@ -66,8 +66,8 @@ function monter(reclaim: boolean | void) {
 describe('un scénario ne démarre pas sur un fil que Meta a refusé de rendre', () => {
   it('🔴 REFUS : rien ne démarre, rien ne part, et la raison est rendue', async () => {
     const { ex, envois, demarrages } = monter(false);
-    const issue = await ex.startInWindow('t1', 'wf1', graphe, { waId: '33600000000', contactId: null },
-      { ignoreHumanControl: true });
+    const issue = await ex.demarrer('inbox', 't1', 'wf1', graphe, { waId: '33600000000', contactId: null },
+      { depuis: 'entree', fenetreOuverte: true });
 
     // La raison remonte en clair : c'est elle qui atterrit dans `campaign_recipients.error`, le seul
     // endroit où quelqu'un ira la lire. 🔴 Et elle dit ce qui a été refusé : le retrait de la liste de l'agent,
@@ -83,8 +83,8 @@ describe('un scénario ne démarre pas sur un fil que Meta a refusé de rendre',
 
   it('REPRISE RÉUSSIE : le scénario part normalement', async () => {
     const { ex, envois } = monter(true);
-    expect(await ex.startInWindow('t1', 'wf1', graphe, { waId: '33600000000', contactId: null },
-      { ignoreHumanControl: true })).toBe(true);
+    expect(await ex.demarrer('inbox', 't1', 'wf1', graphe, { waId: '33600000000', contactId: null },
+      { depuis: 'entree', fenetreOuverte: true })).toBe(true);
     // ⚠️ L'observable est l'ENVOI, pas la création d'un run : ce graphe d'un seul bloc se termine sans
     // attendre, donc il ne persiste aucun run. C'est ce qui distingue « parti » de « non parti ».
     expect(envois).toEqual(['Voici votre code : PROMO10']);
@@ -94,8 +94,8 @@ describe('un scénario ne démarre pas sur un fil que Meta a refusé de rendre',
     // ⚠️ Les tests et l'e2e câblent un `reclaimControl` qui ne rend rien. Le traiter comme un refus
     // casserait toute la suite sans qu'aucun défaut réel n'existe : seul `false` arrête.
     const { ex, envois } = monter(undefined);
-    expect(await ex.startInWindow('t1', 'wf1', graphe, { waId: '33600000000', contactId: null },
-      { ignoreHumanControl: true })).toBe(true);
+    expect(await ex.demarrer('inbox', 't1', 'wf1', graphe, { waId: '33600000000', contactId: null },
+      { depuis: 'entree', fenetreOuverte: true })).toBe(true);
     expect(envois).toEqual(['Voici votre code : PROMO10']);
   });
 });

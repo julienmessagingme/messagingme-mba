@@ -1695,7 +1695,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       sendQuestion: async (_t: string, _w: string, body: string) => { sends.push(`question:${body}`); },
     });
 
-    await ex.start(tenantId, wfId, graph, { waId, contactId: null });
+    await ex.demarrer('campagne_scenario', tenantId, wfId, graph, { waId, contactId: null });
     // tag posé sur le VRAI contact + template envoyé + run en attente au template.
     const tagsRow = (await pool.query<{ tags: string[] }>(`select tags from contacts where tenant_id = $1 and phone_e164 = $2`, [tenantId, phone])).rows[0]!;
     expect(tagsRow.tags).toContain('atelier');

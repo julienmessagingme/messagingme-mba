@@ -311,9 +311,9 @@ widgets de son espace (`reconnaissanceDesWidgets`). Un message TEXTE qui CONTIEN
 casse, aux accents et aux espaces près ; la plus longue gagne) reçoit l'étiquette `widget-<code>`, dérivée du code
 donc stable quand le widget est renommé, et qui n'émet AUCUN événement d'automation. Puis le devenir du widget :
 `scenario` démarre son scénario par le runner des automations et toutes ses gardes, sur une automation construite
-en mémoire dont le propriétaire est `POSSESSEUR_WIDGET` (`src/automation/match.ts`). Elle REPREND donc le fil à
-l'agent de Meta (`reprendLaMain`) et le LAISSE à un opérateur qui le tient (`epargneLOperateur`), comme une
-publicité ; un `standby` démarre comme un `messages`, la reprise retirant le contact de la liste de l'agent avant
+en mémoire dont le propriétaire est `POSSESSEUR_WIDGET` (`src/automation/match.ts`). Son type de lancement
+(`typeDeLancementDe` : `automatisme_publicite_ou_widget`) REPREND donc le fil à l'agent de Meta et le LAISSE à un
+opérateur qui le tient, comme une publicité ; un `standby` démarre comme un `messages`, la reprise retirant le contact de la liste de l'agent avant
 tout envoi, ou annulant le démarrage si Meta refuse. Le message qui démarre le scénario est CONSOMMÉ : ni
 automation, ni avance de parcours, ni remise à l'agent de Meta ne le voient. `mba`, `agent` (grisé « à venir » à
 l'écran et refusé par l'API) et `null` ne démarrent rien. Les tirs du widget vivent dans `widget_tirs`, pas dans
@@ -394,6 +394,19 @@ aucune fenêtre, c'est une règle de WhatsApp et pas du monde). Après une atten
 un message rapide, une question ou un formulaire seront refusés. Cette règle a **trois détenteurs** :
 `besoinsFenetre` (reprise), la garde de `runFrom` (ouverture à froid) et `ouvertureApi` (API publique,
 `src/workflow/ouverture-api.ts`, qui juge ce qui part en PREMIER depuis l'entrée ou depuis le bloc visé).
+
+🔴 **Un démarrage de parcours a un TYPE, et le type décide de tous ses réglages** (`src/workflow/lancements.ts`).
+`TypeDeLancement` est une liste fermée : Inbox, agent de Meta (scénario, bloc), automatisme (ordinaire, chaîne,
+publicité ou widget), lien de test, campagne (scénario, bloc). `POLITIQUE_DE_LANCEMENT` donne pour chacun la
+reprise du fil (`non` : arrêté par un fil tenu ; `oui` : repris même à un opérateur ; `sauf_operateur` : repris à
+l'agent de Meta seulement), la publication des étiquettes posées (jamais sur un chemin de masse), le graphe joué
+(publié, fourni par l'appelant, ou brouillon figé pour le seul lien de test) et la garde de fenêtre (gardée, selon
+la preuve de l'appelant, levée sur un bloc de départ d'automation, levée). `WorkflowExecutor.demarrer` lit la table
+lui-même : aucun câblage ne pose plus de réglage brut, il choisit un type et passe par l'entrée `creerLancements`,
+construite par `buildWorkflowRuntime` sur l'exécuteur du processus (l'API et le worker ont donc la même). Une
+automation reçoit son type de `typeDeLancementDe` (`src/automation/match.ts`), sur son propriétaire NOMMÉ ; le
+runner construit la demande et le worker la transmet telle quelle. `tests/workflow-lancements.test.ts` exécute la
+table type par type, sur le vrai contrôle du fil.
 
 ⚠️ **Répondre à un message RCS ne rouvre pas la fenêtre WhatsApp** : ce sont deux tuyaux distincts. Seul le
 formulaire reste impossible derrière un RCS, n'ayant aucun équivalent : le parcours ne fait pas semblant, il
@@ -551,10 +564,10 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
   (`nod_…`), dans un graphe RÉDUIT à lui seul, et seulement si ce graphe se termine sans rien attendre (`walk`,
   `mbaActif: true`). Un bloc à boutons, une question, un formulaire, une attente, un agent IA ou un bloc RCS sont
   refusés, avec leur raison. Vérifié à la création (route) et à CHAQUE appel du relais : le scénario PUBLIÉ a pu
-  changer. Le relais l'envoie par `startFromNode` (le chemin de l'API publique vers un bloc) : il REPREND le fil à
+  changer. Le relais l'envoie par un démarrage au bloc (le type de lancement `agent_meta_bloc`) : il REPREND le fil à
   l'agent de Meta, envoie, et le lui rend à l'accusé (0149). Hors fenêtre de 24 h, seul un bloc fait de modèles part.
-- **Lancer un scénario** passe par `lancerScenarioPourContact` (`src/index.ts`), le MÊME chemin que le bouton de
-  l'Inbox (fenêtre ouverte : `startInWindow`, fermée : `start`), et un scénario sans bloc publié est refusé.
+- **Lancer un scénario** passe par le type de lancement `agent_meta_scenario`, la MÊME politique que le bouton de
+  l'Inbox (fenêtre ouverte : garde levée, fermée : garde posée), et un scénario sans bloc publié est refusé.
 - 🔴 **TOUT ÉCHEC APRÈS LA REPRISE DU FIL LE REND, EXCEPTION COMPRISE** (`src/mba/gestes-envoi.ts`, testé) :
   `runFrom` reprend le fil puis peut refuser (désabonné, envoi refusé), et rend alors une raison SANS rendre la
   main, parce que ses autres appelants ont un opérateur ; il peut aussi LEVER (Meta refuse un modèle en pause,
@@ -2847,6 +2860,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/pubs/publicites.pg.ts` -> `coutParPub` | 🔴 le coût par engagé des publicités sur une PÉRIODE (carte Coûts) : la dépense des jours de la période (`pubs_depense_jour`, 0198) et les PERSONNES arrivées par la campagne dans la période. Un engagé a cliqué PUIS écrit, ce n'est pas un prospect qualifié. Les jours sont ceux du compte publicitaire, les arrivées bornées à l'heure de Paris |
 | `src/crm/transition-consentement.ts` | 🔴 LA transition du consentement WhatsApp d'une fiche : qui lève un STOP (`LEVE_UN_STOP`, par autorité typée), ce que deviennent statut, `opt_out_at` et `opt_in_source`, et qui est passé à `opted_out` (à annoncer). Les six écritures de `PgContactStore` la composent (`affectationsDUpsert`, `ecritureDuConsentement`) ; une septième copie divergerait, comme deux l'ont fait (738a7c3d) |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
+| `src/workflow/lancements.ts` -> `creerLancements`, `POLITIQUE_DE_LANCEMENT` | 🔴 le seul chemin pour démarrer un parcours : un TYPE de lancement (liste fermée) et sa politique (reprise du fil, publication des étiquettes, graphe joué, garde de fenêtre), lue par `WorkflowExecutor.demarrer`. Un câblage choisit un type, jamais un réglage ; `tests/workflow-lancements.test.ts` exécute la table |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |
 | `src/crm/render.ts` -> `escapeHtml` | l'échappement HTML du dépôt (gabarits d'e-mail, pages d'erreur des liens tracés) |
 | `src/stats/range.ts` -> `isValidDateStr` | une date `YYYY-MM-DD` qui EXISTE (aller-retour strict), lue aussi par la grille de prix |

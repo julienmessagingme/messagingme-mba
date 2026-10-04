@@ -13,12 +13,14 @@ import type { WorkflowGraph } from '../src/workflow/graph';
  * 🔴 Pourquoi ce fichier existe : le dépôt portait DEUX règles écrites en sens contraire. `src/inbox/repondre.ts`
  * affirmait « le fil est pris, une campagne ne l'écrasera pas », pendant que les trois câblages réels
  * (`worker.ts` pour la campagne workflow et la campagne node, `index.ts` pour le lancement depuis l'inbox)
- * passent `ignoreHumanControl: true`. Le comportement est le bon : la campagne est déclenchée par un
+ * passaient `ignoreHumanControl: true`. Le comportement est le bon : la campagne est déclenchée par un
  * opérateur, donc c'est un humain qui a la main. C'est le TEXTE qui mentait, et un texte périmé devient une
  * seconde spécification que la prochaine lecture prendra pour argent comptant.
  *
- * Le test ne se contente pas de l'exécuteur nu : il vérifie aussi le CÂBLAGE, parce que c'est là que la règle
- * se décide réellement et que rien dans le langage ne relie un commentaire à un appel.
+ * ⚠️ LE CÂBLAGE NE SE LIT PLUS ICI (lot « lancements de scénario », 2026-10-04). Les trois cas qui lisaient
+ * `ignoreHumanControl: true` dans `worker.ts` et `index.ts` (campagne à scénario, campagne à un bloc, lien de
+ * test, Inbox) sont devenus des lignes de `POLITIQUE_DE_LANCEMENT` (`src/workflow/lancements.ts`), exécutées sur
+ * le vrai contrôle du fil par `tests/workflow-lancements.test.ts`. Reste ici la règle sur l'exécuteur, et l'écran.
  */
 
 /**
@@ -65,19 +67,19 @@ function exec(over: Partial<WorkflowExecutorDeps> = {}) {
 }
 
 describe('campagne contre contrôle humain : une seule règle, et c’est celle du code', () => {
-  it('🔴 AVEC ignoreHumanControl (le chemin campagne), le scénario part MALGRÉ le fil tenu', async () => {
+  it('🔴 LA CAMPAGNE (`campagne_scenario`), le scénario part MALGRÉ le fil tenu', async () => {
     const { ex, envois, reprises } = exec();
-    const issue = await ex.start('t1', 'wf1', graphe, { waId: '33600', contactId: null }, undefined, { ignoreHumanControl: true });
+    const issue = await ex.demarrer('campagne_scenario', 't1', 'wf1', graphe, { waId: '33600', contactId: null });
     expect(issue).toBe(true);
     expect(envois).toEqual(['tpl:promo']);
     // Et il REPREND la conduite du fil : sans ça, le scénario partirait puis se bloquerait à la 1re réponse.
     expect(reprises).toEqual(['33600']);
   });
 
-  it('SANS le drapeau (déclenchement automatique), il ne part PAS, et le refus est explicite', async () => {
+  it('UN DÉCLENCHEMENT AUTOMATIQUE (`automatisme_ordinaire`), il ne part PAS, et le refus est explicite', async () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { ex, envois } = exec();
-    const issue = await ex.start('t1', 'wf1', graphe, { waId: '33600', contactId: null });
+    const issue = await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', graphe, { waId: '33600', contactId: null });
     spy.mockRestore();
     expect(envois).toEqual([]);
     // Une CHAÎNE, pas un `false` : la campagne affiche la raison exacte au lieu de laisser deviner.
@@ -86,58 +88,15 @@ describe('campagne contre contrôle humain : une seule règle, et c’est celle 
   });
 });
 
-/**
- * LE CÂBLAGE. Même idiome que `tests/web-rewrites-liens.test.ts` : on DÉRIVE la règle du code réel plutôt que
- * de la recopier ici. Un test qui n'interrogerait que l'exécuteur passerait au vert le jour où un câblage
- * cesserait de passer le drapeau, et la campagne se bloquerait alors en silence sur chaque contact dont un
- * opérateur a touché le fil.
- */
 const lire = (...bouts: string[]): string => readFileSync(join(process.cwd(), ...bouts), 'utf8');
 
-describe('les trois chemins déclenchés par un opérateur passent bien ignoreHumanControl', () => {
-  it('🔴 la campagne WORKFLOW et la campagne NODE, dans le worker', () => {
-    // ⚠️ L'ancre doit désigner LE câblage de campagne, et rien d'autre. Deux versions de ce test ont accusé
-    // le mauvais appel : `workflowExecutor.start(` apparaît six fois dans le worker, et `startWorkflow: async`
-    // deux fois (l'automation en pose un aussi, et celui-là ne doit SURTOUT pas passer le drapeau). Les
-    // signatures, elles, sont distinctes : `firstTemplateParams` n'existe que sur le chemin campagne.
-    const src = lire('src', 'worker.ts');
-    for (const dep of ['firstTemplateParams) => {', 'startWorkflowFromNode: async (tenant, workflowId, startNodeId, waId, contactId)']) {
-      const i = src.indexOf(dep);
-      expect(i, `la dépendance ${dep} a disparu du worker : ce test ne garde plus rien, il faut le remettre à jour`).toBeGreaterThan(-1);
-      expect(src.slice(i, i + 600), `${dep} ne passe plus ignoreHumanControl : une campagne se bloquera sur tout fil touché par un opérateur`)
-        .toContain('ignoreHumanControl: true');
-    }
-  });
-
-  it('le LIEN DE TEST d’un scénario, lui, ne le passe pas', () => {
-    // La moitié qui compte autant : le drapeau est une exception, pas un défaut. Le poser partout reviendrait
-    // à écrire dans le fil d'un client pendant qu'un humain lui parle.
-    //
-    // ⚠️ CE TEST S'APPELAIT « les déclenchements AUTOMATIQUES, eux, ne le passent pas », et son titre est
-    // devenu faux le 2026-09-08 : un clic sur un BOUTON DE CHAÎNE est un déclenchement automatique, et il
-    // reprend désormais la main (décision de Julien, gardée dans les deux sens par
-    // `tests/automation-chaine-reprend-la-main.test.ts`). Son ancre, elle, n'a jamais désigné les automations :
-    // elle désigne `startTestRun`, le lien de test. Un titre plus large que ce qu'un test mesure finit par
-    // faire croire à une garantie qu'il n'apporte pas, ce qui est exactement le défaut que ce fichier existe
-    // pour corriger.
-    // ⚠️ L'ANCRE A CHANGÉ LE 2026-09-16, ET LE CAS MESURÉ AUSSI (voir le commentaire du test). Elle désignait la ligne
-    // `startInWindow(tenant, workflowId, grapheEditable(wf)`, que le lot « tester depuis un bloc » a
-    // réécrite en deux branches (`startInWindow` ou `startFromNode` selon le bloc désigné). On lit
-    // désormais le BLOC de câblage entier, ce qui couvre les deux branches au lieu d'une seule.
-    const src = lire('src', 'worker.ts');
-    const debut = src.indexOf('startTestRun: async (');
-    expect(debut).toBeGreaterThan(-1);
-    const fin = src.indexOf('\n        },', debut);
-    expect(fin).toBeGreaterThan(debut);
-    expect(src.slice(debut, fin)).toContain('ignoreHumanControl: true');
-  });
-
-  it('🔴 le lancement depuis l’INBOX, dans index.ts', () => {
-    // L'opérateur y détient presque toujours le fil, puisqu'il vient d'y écrire.
-    expect(lire('src', 'index.ts')).toContain('ignoreHumanControl: true');
-  });
-
-  it('🔴 et l’ÉCRAN ne promet pas le contraire à l’opérateur', () => {
+/**
+ * L'ÉCRAN. Les chemins déclenchés par un opérateur (campagne, Inbox) et le lien de test reprennent le fil : la
+ * règle est tenue par la table des lancements (`tests/workflow-lancements.test.ts`). Ce qui ne s'y voit pas, c'est
+ * ce que l'infobulle en DIT à l'opérateur.
+ */
+describe('ce que l’écran dit à l’opérateur de la règle des campagnes', () => {
+  it('🔴 l’ÉCRAN ne promet pas le contraire à l’opérateur', () => {
     // Le dernier endroit où le mensonge avait survécu, et le pire des trois : ce n'est pas un commentaire de
     // code, c'est l'infobulle du badge « vous avez la main », affichée à l'opérateur sur CHAQUE conversation
     // qu'il détient, en français et en anglais. Elle affirmait que les campagnes ne l'enverraient pas. Un

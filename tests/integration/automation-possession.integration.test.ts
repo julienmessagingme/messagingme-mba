@@ -79,8 +79,8 @@ describe.skipIf(!url)('automations possedees par un lien de chaine : hors de por
     // L'automation ordinaire n'a pas de plafond propre : c'est celui de l'instance qui s'applique.
     expect(chaud.find((a) => a.id === idNormale)?.maxFiresPerHour).toBeNull();
     // 🔴 ET SON PROPRIETAIRE FAIT L ALLER-RETOUR, contre un VRAI Postgres (2026-09-08). C'est lui qui decide
-    // qu'un clic sur un bouton de chaine REPREND la main sur le fil (`vientDuneChaine`, puis
-    // `ignoreHumanControl` dans le worker). Un test de texte SQL ne prouve pas qu'une valeur revient : il a
+    // qu'un clic sur un bouton de chaine REPREND la main sur le fil (`typeDeLancementDe`, puis la politique du
+    // type `automatisme_chaine`). Un test de texte SQL ne prouve pas qu'une valeur revient : il a
     // suffi que la colonne manque de `COLS` pour que `possedePar` soit nul partout sans qu'aucun type ne
     // bouge, et les boutons de chaine auraient cesse de demarrer des qu'un fil est tenu.
     expect(chaud.find((a) => a.id === idPossedee)?.possedePar).toBe(POSSESSEUR_LIEN_CHAINE);

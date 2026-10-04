@@ -22,6 +22,7 @@ import { MetaCredentialsResolver } from '../meta/credentials';
 import { TemplateMediaPreparer } from '../meta/template-media';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { WorkflowExecutor } from './executor';
+import { creerLancements } from './lancements';
 import { creerEnvoisDeBloc, type TplInfo } from './envois-bloc';
 import { buildRcsStack } from '../rcs/factory';
 import { urlRappelRcs } from '../rcs/callback';
@@ -335,9 +336,10 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // conversations des autres attendent derrière les siennes.
     enqueueAgentTurn: (job: AgentTurnJob) => queue.enqueue(AGENT_TURN_QUEUE, job, { groupId: job.tenantId }),
     /**
-     * Reprise de main par l'app quand un parcours est lancé délibérément, empruntée par tous les chemins qui posent
-     * `ignoreHumanControl` (campagne, Inbox, automation qui reprend la main, `/v1/sends`). Meta d'abord, notre
-     * colonne ensuite, un rejeu : le geste est `ControleDuFil.reprendrePourLApp`.
+     * Reprise de main par l'app quand un parcours est lancé délibérément, empruntée par tous les types de lancement
+     * dont la politique reprend le fil (campagne, Inbox, automation qui reprend la main, `/v1/sends`, lien de test,
+     * agent de Meta ; `src/workflow/lancements.ts`). Meta d'abord, notre colonne ensuite, un rejeu : le geste est
+     * `ControleDuFil.reprendrePourLApp`.
      */
     reclaimControl: fil.reprendrePourLApp,
     // L'agent de Meta est-il allumé chez ce client ? Décide qu'une étape sans choix cesse de bloquer le
@@ -466,5 +468,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
+  /**
+   * Les lancements de scénario (`src/workflow/lancements.ts`), construits ICI sur l'exécuteur ci-dessus : l'API
+   * (Inbox, relais de l'agent de Meta) et le worker (automations, lien de test, campagnes) reçoivent le même, et
+   * aucun câblage ne pose plus de réglage de démarrage. Tenu par `tests/workflow-lancements.test.ts`, qui monte ce
+   * câblage.
+   */
+  const lancements = creerLancements({ executor: workflowExecutor, scenarios: workflowStore, contacts: contactStore });
+
+  return { executor: workflowExecutor, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
 }

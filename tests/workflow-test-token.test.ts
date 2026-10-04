@@ -180,7 +180,7 @@ describe('processTestTokens', () => {
      * opérateur sera pas en train de répondre au mec qui est en train de faire des tests ».
      *
      * Le cas qu'exerçait l'ancien test est donc conservé, RETOURNÉ : le détenteur du fil ne bloque plus rien,
-     * et c'est l'exécuteur qui reprend le fil chez Meta (`ignoreHumanControl`, posé par le câblage). Ce que
+     * et c'est l'exécuteur qui reprend le fil chez Meta (la politique du type `lien_de_test`). Ce que
      * l'ancien test protégeait vraiment, lui, n'a pas bougé : on ne casse aucun état pour un test qui ne
      * partirait pas, puisqu'il part toujours.
      */

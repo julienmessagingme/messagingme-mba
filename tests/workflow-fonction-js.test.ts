@@ -158,7 +158,7 @@ describe('🔴 le bloc « Fonction JS » à l’exécution', () => {
       now: new Date(), timeZone: 'UTC', businessHours: { lundi: { closed: true, open: '09:00', close: '18:00' } } as never,
     });
     const ex = new WorkflowExecutor(deps({ setField, executerJs, evalContext }) as WorkflowExecutorDeps);
-    await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: null });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: null });
     // ⚠️ LE CHAMP SOURCE VOYAGE JUSQU'AU MOTEUR depuis le 2026-09-14 : c'est lui qui donne son nom au
     // paramètre de la fonction, en plus de `valeur`. Le cas exercé ici est inchangé (la valeur est RELUE
     // à l'exécution, pas prise au walk) ; seule l'attente suit le troisième argument.
@@ -178,7 +178,7 @@ describe('🔴 le bloc « Fonction JS » à l’exécution', () => {
         now: new Date(), timeZone: 'UTC', businessHours: { lundi: { closed: true, open: '09:00', close: '18:00' } } as never,
       }),
     } as Partial<WorkflowExecutorDeps>) as WorkflowExecutorDeps);
-    await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: null });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: null });
     expect(setField).toHaveBeenCalledWith('t1', '33600000001', 'propre', '');
   });
 
@@ -187,7 +187,7 @@ describe('🔴 le bloc « Fonction JS » à l’exécution', () => {
     // instance minimale) traverse le bloc sans écrire.
     const setField = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(deps({ setField }) as WorkflowExecutorDeps);
-    await expect(ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: null })).resolves.toBeDefined();
+    await expect(ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: null })).resolves.toBeDefined();
     expect(setField).not.toHaveBeenCalled();
   });
 });

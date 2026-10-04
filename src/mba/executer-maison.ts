@@ -19,7 +19,7 @@ export interface DepsMaison {
   /** Le contact est-il bloqué dans l'Inbox ? Un contact bloqué ne reçoit rien de nous, pas plus d'un outil. */
   contacts: { isBlockedByWaId(tenantId: string, waId: string): Promise<boolean> };
   /**
-   * Envoie le bloc seul (`blocSeul`), par le chemin d'un envoi à un bloc de l'API publique (`startFromNode`) : il
+   * Envoie le bloc seul (`blocSeul`), par un démarrage au bloc (le type de lancement `agent_meta_bloc`) : il
    * reprend le fil à l'agent de Meta, envoie, et le lui rend à l'accusé. Rend `true`, ou la raison du refus lue
    * par l'agent.
    */

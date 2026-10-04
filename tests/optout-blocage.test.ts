@@ -64,13 +64,13 @@ function deps(over: Partial<WorkflowExecutorDeps> = {}): WorkflowExecutorDeps {
 /**
  * Démarre le parcours dans les conditions du cas le plus large : la fenêtre de service est OUVERTE.
  *
- * ⚠️ `startInWindow` ET NON `start`, et ce n'est pas un détail de confort : `start` refuse d'ouvrir par un
- * message de SESSION (message rapide, question, formulaire), ce qui viderait les témoins de la moitié des
- * canaux. C'est le chemin d'une automation déclenchée par un message entrant, donc celui où un contact
- * désabonné est le plus susceptible d'être atteint.
+ * ⚠️ FENÊTRE PROUVÉE ET NON CAMPAGNE, et ce n'est pas un détail de confort : la campagne à scénario refuse
+ * d'ouvrir par un message de SESSION (message rapide, question, formulaire), ce qui viderait les témoins de la
+ * moitié des canaux. C'est le chemin d'une automation déclenchée par un message entrant (`automatisme_ordinaire`),
+ * donc celui où un contact désabonné est le plus susceptible d'être atteint.
  */
 async function demarrer(d: WorkflowExecutorDeps, g: WorkflowGraph): Promise<void> {
-  await new WorkflowExecutor(d).startInWindow('t1', 'wf1', g, { waId: '33600000000', contactId: 'c1' });
+  await new WorkflowExecutor(d).demarrer('automatisme_ordinaire', 't1', 'wf1', g, { waId: '33600000000', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
 }
 
 describe('la garde d’opt-out des envois automatiques', () => {

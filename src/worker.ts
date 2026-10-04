@@ -42,8 +42,7 @@ import {
   ensureFieldByKey,
   CTWA_AD_ID_FIELD_KEY, CTWA_AD_ID_FIELD_LABEL, CTWA_AD_TITLE_FIELD_KEY, CTWA_AD_TITLE_FIELD_LABEL,
 } from './crm/fields';
-import { grapheEditable } from './workflow/store.pg';
-import { blocDesigne } from './workflow/test-token';
+import type { DemandeAutomatisme } from './workflow/lancements';
 import { runAutomations } from './automation/runner';
 import { runDateSweep } from './automation/date-sweep';
 import { balayerRisque, jourABalayer } from './engagement/balayage';
@@ -239,9 +238,10 @@ async function main(): Promise<void> {
   const noteDeQualite = creerNoteDeQualite((pn) => qualiteStore.getRating(pn));
 
   // Exécuteur de scénarios et ce qui l'accompagne, construit par le socle : l'API lance un scénario depuis
-  // l'Inbox avec la même sémantique.
+  // l'Inbox avec la même sémantique. Tout lancement passe par `lancements` (`src/workflow/lancements.ts`) : un
+  // câblage choisit un TYPE, jamais un réglage de démarrage.
   const {
-    executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
+    executor: workflowExecutor, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
     agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
   } = workflowRuntime;
 
@@ -273,28 +273,12 @@ async function main(): Promise<void> {
     automations: automationStore,
     maxFiresPerHour: config.AUTOMATION_MAX_FIRES_PER_HOUR,
     evalContext: buildEvalContext,
-    startWorkflow: async (tenant: string, workflowId: string, waId: string, opts: {
-      startNodeId: string | null; windowOpen: boolean; reprendLaMain: boolean; saufOperateur?: boolean;
-    }) => {
-      const wf = await workflowStore.getById(workflowId, tenant);
-      if (!wf) return false;
-      // Le contact existe déjà (l'upsert d'inbound a tourné juste avant) : on relie le run à sa fiche.
-      const contactId = await contactStore.findIdByWaId(tenant, waId);
-      const contact = { waId, contactId };
-      // Démarrage unitaire : les tags posés par ce parcours publient à leur tour (l'anti-rebond du runner borne
-      // l'enchaînement). `ignoreHumanControl` seulement pour les automations nées d'un geste explicite du contact
-      // (bouton de chaîne, clic sur une publicité), déjà tranché par le runner (`reprendLaMain`) : partout
-      // ailleurs, un mot-clé écrirait dans le fil pendant qu'un opérateur répond. Gardé dans les deux sens par
-      // `tests/campagne-controle-humain.test.ts`. `saufOperateur` (clic sur une publicité) : la reprise prend le fil
-      // à l'agent de Meta, jamais à un opérateur qui le tient.
-      const unitaire = { emitEvents: true, ignoreHumanControl: opts.reprendLaMain, saufOperateur: opts.saufOperateur === true };
-      if (opts.startNodeId) return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, contact, opts.startNodeId, unitaire);
-      // Fenêtre prouvée ouverte (le contact vient d'écrire) : le scénario peut ouvrir par un message rapide ou
-      // un formulaire. Sinon, garde normale.
-      return opts.windowOpen
-        ? workflowExecutor.startInWindow(tenant, workflowId, wf.graph, contact, unitaire)
-        : workflowExecutor.start(tenant, workflowId, wf.graph, contact, undefined, unitaire);
-    },
+    // La demande arrive du runner TELLE QUELLE, type de lancement compris (`typeDeLancementDe` : seuls le bouton de
+    // chaîne, la publicité et le widget reprennent le fil, et les deux derniers jamais à un opérateur). Démarrage
+    // unitaire : les étiquettes posées publient à leur tour, l'anti-rebond du runner borne l'enchaînement. Ici on ne
+    // choisit rien : reprise, publication et fenêtre sont dans la table des lancements, exécutée par
+    // `tests/workflow-lancements.test.ts`. Un scénario inconnu (supprimé) rend `false`, comme avant.
+    startWorkflow: async (demande: DemandeAutomatisme) => (await lancements.lancer(demande)) ?? false,
     defaultCooldownSeconds: config.AUTOMATION_COOLDOWN_SECONDS,
   };
 
@@ -483,27 +467,12 @@ async function main(): Promise<void> {
           return wf ? { workflowId: wf.id, tenantId: wf.tenantId } : null;
         },
         // Un testeur qui relance son lien repart du début : le parcours resté en attente est clos, sinon il resterait
-        // orphelin (l'avance ne retrouve qu'un run à la fois par contact).
-        startTestRun: async (tenant, workflowId, waId, nodeId) => {
-          const wf = await workflowStore.getById(workflowId, tenant);
-          if (!wf) return false;
-          const contactId = await contactStore.findIdByWaId(tenant, waId);
-          // Le test joue le brouillon, seul chemin d'exécution à le faire (tester avant de publier est la raison
-          // d'être du brouillon), et le fige dans le parcours, sinon les points de reprise reliraient le publié. Seul
-          // appelant qui fige : figer pour chaque destinataire d'une campagne recopierait le graphe autant de fois.
-          const graphe = grapheEditable(wf);
-          // `ignoreHumanControl` : un jeton de test reprend le fil quel que soit son détenteur, sinon l'agent de Meta
-          // répondrait au testeur à la place du scénario. Le déclencheur est un humain qui tient le téléphone ; la
-          // prise échoue lisiblement si Meta la refuse.
-          const options = { emitEvents: true, figerLeGraphe: true, ignoreHumanControl: true };
-          // Pas de garde « ce bloc existe-t-il ? » ici : `runFrom` la porte déjà, journalise et rend une raison
-          // lisible.
-          return nodeId === null
-            ? workflowExecutor.startInWindow(tenant, workflowId, graphe, { waId, contactId }, options)
-            // `blocDesigne` rend l'identifiant exact du bloc, en tolérant la casse ; sinon le suffixe tel quel, que
-            // `runFrom` refuse lisiblement.
-            : workflowExecutor.startFromNode(tenant, workflowId, graphe, { waId, contactId }, blocDesigne(graphe, nodeId), options);
-        },
+        // orphelin (l'avance ne retrouve qu'un run à la fois par contact). Le type `lien_de_test` joue le BROUILLON
+        // et le fige (seul type à le faire), reprend le fil quel que soit son détenteur (sinon l'agent de Meta
+        // répondrait au testeur à la place du scénario), et démarre au bloc que le jeton désigne, casse tolérée : tout
+        // est dans la table des lancements. Un scénario inconnu rend `false`, comme avant.
+        startTestRun: async (tenant, workflowId, waId, nodeId) =>
+          (await lancements.lancer({ type: 'lien_de_test', tenantId: tenant, workflowId, waId, blocDuJeton: nodeId })) ?? false,
       },
       // Mesure par bloc : les accusés Meta (délivré / lu / échec) retrouvent ici le bloc qui a envoyé le message.
       // Un identifiant hors scénario ne crée rien.
@@ -632,22 +601,16 @@ async function main(): Promise<void> {
       dureeMaxMs: config.CAMPAIGN_RUN_MAX_MS,
       // Campagne workflow : démarre le workflow pour chaque destinataire, avec les variables du 1er template déjà
       // résolues (paramMapping). Un démarrage refusé (scénario supprimé, fil tenu, graphe non lançable) marque le
-      // destinataire en échec au lieu de le compter envoyé.
-      startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams) => {
-        const wf = await workflowStore.getById(workflowId, tenant);
-        if (!wf) return false;
-        // Envoi voulu par un opérateur : un fil tenu ne le bloque pas (l'opérateur est celui qui a la main), et le
-        // scénario reprend la conduite du fil pour pouvoir avancer.
-        return workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId }, firstTemplateParams, { ignoreHumanControl: true });
-      },
-      // Campagne node (/v1/sends) : démarre au bloc ciblé, sans garde de fenêtre dans l'executor. La fenêtre a
-      // été vérifiée destinataire par destinataire à la création de l'envoi quand le bloc ouvre par un message de
-      // session (`ouvertureApi`).
-      startWorkflowFromNode: async (tenant, workflowId, startNodeId, waId, contactId) => {
-        const wf = await workflowStore.getById(workflowId, tenant);
-        if (!wf) return false;
-        return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, { waId, contactId }, startNodeId, { ignoreHumanControl: true });
-      },
+      // destinataire en échec au lieu de le compter envoyé. Le type `campagne_scenario` : envoi voulu par un
+      // opérateur, il reprend la conduite du fil (l'opérateur est celui qui a la main), ne publie AUCUNE étiquette
+      // (chemin de masse) et garde la fenêtre (il écrit à froid).
+      startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams) =>
+        (await lancements.lancer({ type: 'campagne_scenario', tenantId: tenant, workflowId, waId, contactId, firstTemplateParams })) ?? false,
+      // Campagne node (/v1/sends) : démarre au bloc ciblé, sans garde de fenêtre dans l'executor (`campagne_bloc`). La
+      // fenêtre a été vérifiée destinataire par destinataire à la création de l'envoi quand le bloc ouvre par un
+      // message de session (`ouvertureApi`).
+      startWorkflowFromNode: async (tenant, workflowId, startNodeId, waId, contactId) =>
+        (await lancements.lancer({ type: 'campagne_bloc', tenantId: tenant, workflowId, waId, contactId, noeudId: startNodeId })) ?? false,
       // Cartes du carousel du template, relues une fois par run via le même cache court que les variables. null =
       // pas de carousel. Absente en DRY_RUN : ce mode ne doit déclencher aucun appel Meta.
       ...(dryRun ? {} : ({

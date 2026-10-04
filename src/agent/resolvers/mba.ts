@@ -14,7 +14,7 @@ import type { AnalyseEtResume } from '../../crm/contact-store.pg';
 export interface DepsResolveurMba {
   /**
    * Déclenche un bloc du scénario courant (`mba_envoyer_bloc`), par `WorkflowExecutor.envoyerBlocDepuisAgent`
-   * (qui porte pourquoi elle ne passe pas par `startFromNode`).
+   * (qui porte pourquoi elle ne passe pas par `demarrer`).
    */
   envoyerBloc(input: {
     tenantId: string; waId: string; runId: string; workflowId: string; code: string;

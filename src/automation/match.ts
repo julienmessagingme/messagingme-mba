@@ -1,6 +1,7 @@
 import type { ConditionGroup } from '../workflow/conditions';
 import type { AnalyseDeFiche } from '../analysis/fiche';
 import { estCleFiltrable, evaluerFiltreFiche, lireFiltreFiche, type FiltreFiche } from '../crm/filtre-fiche';
+import type { TypeDeLancementAutomatisme } from '../workflow/lancements';
 
 /**
  * Décide si un événement déclenche une automation, plus le garde-fou anti-rebond. Module pur, testable sans
@@ -66,24 +67,21 @@ export function vientDuneChaine(a: AutomationRow): boolean {
 }
 
 /**
- * Ce démarrage reprend-il la conduite du fil, même tenu par un opérateur ou par l'agent de Meta ? Trois
- * propriétaires nommés (bouton de chaîne, publicité, widget), pas « un propriétaire quelconque » : un futur
- * propriétaire hériterait sinon d'un pouvoir que personne ne lui a accordé. Le lead d'une pub, comme le visiteur
- * d'un widget, arrive souvent sur un fil que l'agent de Meta tient : sans reprise, le scénario ne démarrerait
- * jamais sur son clic. Une automation ordinaire vaut toujours `false`.
+ * Le type de lancement d'une automation (`src/workflow/lancements.ts`), qui décide si son démarrage reprend la
+ * conduite du fil. Trois propriétaires NOMMÉS, pas « un propriétaire quelconque » : un futur propriétaire hériterait
+ * sinon d'un pouvoir que personne ne lui a accordé, d'où le repli sur `automatisme_ordinaire`, qui ne reprend rien.
+ *
+ * - La publicité et le widget reprennent le fil à l'agent de Meta, jamais à un opérateur qui le tient : c'est le
+ *   client qui déclenche (un clic payé, un clic sur la bulle), et un opérateur en train de lui répondre garde la
+ *   conversation, son message arrivant dans l'Inbox. Sans la reprise, le lead d'une pub comme le visiteur d'un
+ *   widget, qui arrivent souvent sur un fil que l'agent de Meta tient, ne démarreraient jamais leur scénario.
+ * - Le bouton de chaîne reprend le fil même à un opérateur : lancement explicite au même titre qu'une campagne.
+ * - Une automation ordinaire ne reprend rien : un mot-clé écrirait sinon par-dessus l'opérateur qui répond.
  */
-export function reprendLaMain(a: AutomationRow): boolean {
-  return vientDuneChaine(a) || a.possedePar === POSSESSEUR_PUBLICITE || a.possedePar === POSSESSEUR_WIDGET;
-}
-
-/**
- * Cette reprise laisse-t-elle la main à un opérateur qui la tient ? Oui pour la publicité et le widget : c'est le
- * client qui déclenche (un clic payé, un clic sur la bulle), et un opérateur en train de lui répondre garde la
- * conversation, son message arrivant dans l'Inbox. Non pour le bouton de chaîne, lancement explicite au même titre
- * qu'une campagne.
- */
-export function epargneLOperateur(a: AutomationRow): boolean {
-  return a.possedePar === POSSESSEUR_PUBLICITE || a.possedePar === POSSESSEUR_WIDGET;
+export function typeDeLancementDe(a: AutomationRow): TypeDeLancementAutomatisme {
+  if (a.possedePar === POSSESSEUR_PUBLICITE || a.possedePar === POSSESSEUR_WIDGET) return 'automatisme_publicite_ou_widget';
+  if (vientDuneChaine(a)) return 'automatisme_chaine';
+  return 'automatisme_ordinaire';
 }
 
 export interface AutomationRow {

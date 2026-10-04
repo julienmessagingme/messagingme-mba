@@ -89,7 +89,7 @@ describe('bloc RCS a l execution', () => {
   it('envoie et met le run EN ATTENTE sur le bloc quand le numero est joignable', async () => {
     const g = graphe();
     const { provider, etats, executor } = monter(g);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
 
     expect(provider.sent).toHaveLength(1);
     expect(provider.sent[0]).toMatchObject({ agentId: 'agent-1', e164: '+33600000002', msg: { kind: 'text', text: 'Bonjour en RCS' } });
@@ -99,7 +99,7 @@ describe('bloc RCS a l execution', () => {
   it('n envoie RIEN et part sur la branche de repli WhatsApp quand le numero n est pas joignable', async () => {
     const g = graphe();
     const { provider, templates, executor } = monter(g, ['+33600000001']);
-    await executor.start('t1', 'w1', g, { waId: '+33600000001', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000001', contactId: 'c1' });
 
     expect(provider.sent).toHaveLength(0);
     expect(templates).toEqual(['relance']);
@@ -108,7 +108,7 @@ describe('bloc RCS a l execution', () => {
   it('part sur la branche de repli quand le canal RCS n est pas cable du tout', async () => {
     const g = graphe();
     const { templates, executor } = monter(g, [], false);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(templates).toEqual(['relance']);
   });
 
@@ -121,7 +121,7 @@ describe('bloc RCS a l execution', () => {
       edges: [{ id: 'e1', source: 'r', target: 'suite', sourceHandle: 'sent' }],
     })!;
     const { provider, tags, etats, executor } = monter(g, ['+33600000001']);
-    await executor.start('t1', 'w1', g, { waId: '+33600000001', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000001', contactId: 'c1' });
 
     expect(provider.sent).toHaveLength(0);
     // La sortie 'sent' ne doit PAS être volée par le repli absent.
@@ -138,7 +138,7 @@ describe('bloc RCS a l execution', () => {
       edges: [{ id: 'e2', source: 'r', target: 'repli', sourceHandle: 'unreachable' }],
     })!;
     const { provider, templates, executor } = monter(g);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
 
     expect(provider.sent).toHaveLength(0);
     expect(templates).toEqual(['relance']);
@@ -159,7 +159,7 @@ describe('bloc RCS a l execution', () => {
       edges: [],
     })!;
     const { provider, executor } = monter(g);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
 
     expect(provider.sent).toHaveLength(1);
     // `postbackData` REECRIT en `btn:0` a l'envoi, alors que le bloc porte 'oui' : c'est ce nom-la que le
@@ -178,7 +178,7 @@ describe('bloc RCS a l execution', () => {
       edges: [],
     })!;
     const { provider, executor } = monter(g);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(provider.sent[0]!.msg).toEqual({ kind: 'text', text: 'Bonjour' });
   });
 
@@ -225,7 +225,7 @@ describe('bloc RCS a l execution', () => {
       edges: [],
     })!;
     const { provider, executor } = monter(g);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     // Dans la carte, le bouton s'affiche en pleine largeur et y reste ; sous le message il ne serait qu'une
     // pastille ephemere. Et sa charge utile est bien renumerotee `btn:0` MEME dans la carte, sans quoi le clic
     // ne retrouverait plus sa branche.
@@ -246,7 +246,7 @@ describe('bloc RCS a l execution', () => {
       edges: [],
     })!;
     const { provider, executor } = monter(g, [], true, undefined, { prenom: 'Julien', ville: null });
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     // `ville` sans valeur laisse un BLANC : un message part toujours, jamais bloque par une fiche incomplete.
     expect(provider.sent[0]!.msg).toEqual({ kind: 'text', text: 'Bonjour Julien, a  ?' });
   });
@@ -264,7 +264,7 @@ describe('bloc RCS a l execution', () => {
       ...deps,
       rcs: { ...deps.rcs!, varsFor: async () => { lectures += 1; return {}; } },
     });
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(provider.sent).toHaveLength(1);
     expect(lectures).toBe(0);
   });
@@ -420,11 +420,11 @@ describe('bloc RCS a l execution', () => {
   it('le parcours passe sur le canal RCS SEULEMENT si le message est parti', async () => {
     const g = graphe();
     const { etats, executor } = monter(g);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(etats.at(-1)).toMatchObject({ channel: 'rcs' });
 
     const { etats: etats2, executor: executor2 } = monter(g, ['+33600000002']);
-    await executor2.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor2.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(etats2.at(-1)).toMatchObject({ channel: 'whatsapp' });
   });
 
@@ -464,7 +464,7 @@ describe('bloc RCS a l execution', () => {
   it('journalise le message RCS d un bloc dans le FIL de conversation', async () => {
     const g = graphe();
     const { fil, executor } = monter(g);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(fil).toHaveLength(1);
     expect(fil[0]!.body).toBe('Bonjour en RCS');
     expect(fil[0]!.messageId).not.toBe('');
@@ -487,7 +487,7 @@ describe('bloc RCS a l execution', () => {
   it('n ecrit RIEN dans le fil quand l envoi est saute', async () => {
     const g = graphe();
     const { fil, executor } = monter(g, ['+33600000002']);
-    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    await executor.demarrer('campagne_scenario', 't1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(fil).toEqual([]);
   });
 });

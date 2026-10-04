@@ -12,6 +12,7 @@ import { runAutomations, type AutomationRunnerDeps } from '../src/automation/run
 import { POSSESSEUR_LIEN_CHAINE, POSSESSEUR_PUBLICITE } from '../src/automation/match';
 import type { AutomationEvent, AutomationRow } from '../src/automation/match';
 import { WorkflowExecutor, type WorkflowExecutorDeps } from '../src/workflow/executor';
+import { creerLancements } from '../src/workflow/lancements';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { IssueRoutage } from '../src/pubs/routage';
 import { bancDuFil, type EtatDuFil, type OptionsBanc } from './banc-du-fil';
@@ -567,7 +568,10 @@ describe('décision 5 : un lead ne prend pas la main à un opérateur', () => {
     kind: 'message', waId: WA, body: 'Bonjour', isNewContact: false, channel: 'whatsapp', adId: 'ad-1', campagneId: 'camp-1',
   };
 
-  /** Le vrai exécuteur, dont la prise et la lecture du fil sont celles du module, et le câblage du worker. */
+  /**
+   * Le vrai exécuteur et la vraie entrée des lancements, dont la prise et la lecture du fil sont celles du module,
+   * et le câblage du worker (la demande du runner transmise telle quelle).
+   */
   function monter(depart: ControlOwner, rows: AutomationRow[]) {
     // Le contact est sur la liste de l'agent : une reprise l'en retire, et c'est l'appel qu'on observe.
     const b = bancDuFil({ surLaListe: [WA], conversations: { [WA]: { owner: depart } } });
@@ -594,15 +598,19 @@ describe('décision 5 : un lead ne prend pas la main à un opérateur', () => {
       reclaimControl: b.fil.reprendrePourLApp,
     };
     const ex = new WorkflowExecutor(execDeps);
+    const lancements = creerLancements({
+      executor: ex,
+      scenarios: { getById: async () => ({ graph: graphe }) },
+      contacts: { findIdByWaId: async () => null },
+    });
     const runner: AutomationRunnerDeps = {
       automations: { listEnabled: async () => rows, lastFiredAt: async () => null, markFired: async () => true, clearFired: async () => {} },
       evalContext: async () => null,
       // Le MÊME câblage que `src/worker.ts`.
-      startWorkflow: async (t, workflowId, waId, opts) => ex.startInWindow(t, workflowId, graphe, { waId, contactId: null },
-        { emitEvents: true, ignoreHumanControl: opts.reprendLaMain, saufOperateur: opts.saufOperateur === true }),
+      startWorkflow: async (demande) => (await lancements.lancer(demande)) ?? false,
       defaultCooldownSeconds: 0,
     };
-    return { b, ex, envois, runner };
+    return { b, lancements, envois, runner };
   }
 
   it('🔴 lead publicitaire sur une conversation d’opérateur : le scénario de la pub ne démarre pas, rien n’est pris', async () => {
@@ -630,7 +638,7 @@ describe('décision 5 : un lead ne prend pas la main à un opérateur', () => {
 
   it('⚠️ un lancement depuis l’Inbox aussi : l’opérateur l’a déclenché', async () => {
     const m = monter('app_human', []);
-    expect(await m.ex.startInWindow('t1', 'wf1', graphe, { waId: WA, contactId: null }, { ignoreHumanControl: true })).toBe(true);
+    expect(await m.lancements.lancer({ type: 'inbox', tenantId: 't1', workflowId: 'wf1', waId: WA, fenetreOuverte: true })).toBe(true);
     expect(m.envois).toEqual(['Merci pour votre clic !']);
     expect(m.b.appels).toEqual([`retrait:${WA}`]);
     expect(m.b.etat(WA)?.owner).toBe('app_workflow');

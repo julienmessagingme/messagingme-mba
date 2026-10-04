@@ -5,9 +5,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runAutomations } from '../src/automation/runner';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
-import { POSSESSEUR_LIEN_CHAINE, POSSESSEUR_PUBLICITE, POSSESSEUR_WIDGET, epargneLOperateur, reprendLaMain } from '../src/automation/match';
+import { POSSESSEUR_LIEN_CHAINE, POSSESSEUR_PUBLICITE, POSSESSEUR_WIDGET, typeDeLancementDe } from '../src/automation/match';
 import type { AutomationEvent, AutomationRow } from '../src/automation/match';
 import { WorkflowExecutor } from '../src/workflow/executor';
+import { creerLancements } from '../src/workflow/lancements';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
 
@@ -50,9 +51,10 @@ const clic: AutomationEvent = {
 };
 
 /**
- * Le VRAI exécuteur, avec un fil TENU par quelqu'un d'autre (`mayAct` faux) : c'est tout le sujet. Le câblage
- * du runner reproduit celui du worker, et c'est justement pourquoi le dernier `describe` va lire le worker :
- * un faux câblage bouge avec le code qu'il est censé garder.
+ * Le VRAI exécuteur et la VRAIE entrée de lancement, avec un fil TENU par quelqu'un d'autre (`mayAct` faux) :
+ * c'est tout le sujet. Le runner construit la demande, type de lancement compris (`typeDeLancementDe`), et le
+ * câblage la transmet telle quelle, comme `src/worker.ts` : il n'y a plus de réglage à recopier dans un faux
+ * câblage, donc plus rien à aller lire dans le worker.
  */
 function monter(rows: AutomationRow[]) {
   const envois: string[] = [];
@@ -80,6 +82,11 @@ function monter(rows: AutomationRow[]) {
     reclaimControl: async (_t, waId) => { reprises.push(waId); },
   };
   const ex = new WorkflowExecutor(execDeps);
+  const lancements = creerLancements({
+    executor: ex,
+    scenarios: { getById: async () => ({ graph: graphe }) },
+    contacts: { findIdByWaId: async () => null },
+  });
   const deps: AutomationRunnerDeps = {
     automations: {
       listEnabled: async () => rows,
@@ -88,11 +95,8 @@ function monter(rows: AutomationRow[]) {
       clearFired: async () => {},
     },
     evalContext: async () => null,
-    // Le MÊME câblage que `src/worker.ts` : le drapeau vient du runner, il n'est jamais posé en dur.
-    startWorkflow: async (tenant, workflowId, waId, opts) => ex.startInWindow(
-      tenant, workflowId, graphe, { waId, contactId: null },
-      { emitEvents: true, ignoreHumanControl: opts.reprendLaMain },
-    ),
+    // Le MÊME câblage que `src/worker.ts` : la demande vient du runner, rien n'est choisi ici.
+    startWorkflow: async (demande) => (await lancements.lancer(demande)) ?? false,
     defaultCooldownSeconds: 0,
   };
   return { deps, envois, reprises };
@@ -132,26 +136,12 @@ describe('un bouton de chaîne cliqué démarre son scénario même quand le fil
 const lire = (...bouts: string[]): string => readFileSync(join(process.cwd(), ...bouts), 'utf8');
 
 /**
- * LE CÂBLAGE ET LA CONSTANTE. Même idiome que `tests/campagne-controle-humain.test.ts` : on DÉRIVE la règle
- * du code réel. Les tests du haut montent un faux câblage, et un faux bouge avec le code qu'il garde.
+ * LA CONSTANTE QUE LE SQL RECOPIE, et le type de lancement de chaque propriétaire. ⚠️ Le cas qui lisait le
+ * câblage d'automation dans `src/worker.ts` (`ignoreHumanControl: opts.reprendLaMain`, `saufOperateur: ...`, jamais
+ * `ignoreHumanControl: true`) n'a plus d'objet : le worker transmet la demande du runner sans rien y poser, et ce que
+ * chaque type reprend est exécuté par `tests/workflow-lancements.test.ts`.
  */
-describe('le câblage réel, et la constante que le SQL recopie', () => {
-  it('🔴 le worker passe le drapeau du RUNNER, jamais un `true` en dur', () => {
-    const src = lire('src', 'worker.ts');
-    const i = src.indexOf('startWorkflow: async (tenant: string, workflowId: string, waId: string, opts: {');
-    expect(i, 'le câblage d’automation a changé de signature : ce test ne garde plus rien, le remettre à jour').toBeGreaterThan(-1);
-    const bloc = src.slice(i, i + 1800);
-    expect(bloc, 'le câblage ne transmet plus la reprise de main : un bouton de chaîne cessera de démarrer sur un fil tenu')
-      .toContain('ignoreHumanControl: opts.reprendLaMain');
-    // L'autre sens, et il compte autant : posé en dur, TOUTE automation écraserait l'opérateur.
-    expect(bloc, 'le câblage pose la reprise de main en dur : n’importe quel mot-clé écraserait un opérateur')
-      .not.toContain('ignoreHumanControl: true');
-    // Et l'exception de l'opérateur : sans elle, une publicité ou un widget écrirait par-dessus l'opérateur qui
-    // répond. Les bancs des tests la retapent à la main, donc seul ce test voit sa disparition du worker.
-    expect(bloc, 'le câblage ne transmet plus l’exception de l’opérateur : une publicité ou un widget lui prendrait la main')
-      .toContain('saufOperateur: opts.saufOperateur === true');
-  });
-
+describe('la constante que le SQL recopie, et le type de chaque propriétaire', () => {
   it('🔴 la constante et les gardes SQL du store de liens disent la MÊME chaîne', () => {
     // `possede_par = 'channelsme_link'` vit en dur dans les requêtes de ce store, où c'est une garde miroir
     // (il ne peut toucher QUE ses propres automations). Un littéral SQL ne se paramètre pas sans transformer
@@ -178,27 +168,19 @@ describe('le câblage réel, et la constante que le SQL recopie', () => {
     expect(store).toContain(`possede_par = '${POSSESSEUR_PUBLICITE}'`);
   });
 
-  it('🔴 les TROIS propriétaires reprennent la main, et eux seuls', () => {
+  it('🔴 les TROIS propriétaires reprennent la main, eux seuls, et deux d’entre eux épargnent l’opérateur', () => {
     // La règle est NOMINATIVE, pas « possède un propriétaire quelconque » : un futur propriétaire (un autre
     // canal, un connecteur) hériterait sinon d'un pouvoir que personne ne lui a accordé, sans qu'aucun type
     // ne bouge. Les trois cas du haut de ce fichier gardent le sens inverse, celui qui protège un opérateur.
-    const p = (possedePar: string | null): AutomationRow => auto({ possedePar });
-    expect(reprendLaMain(p(POSSESSEUR_LIEN_CHAINE))).toBe(true);
-    expect(reprendLaMain(p(POSSESSEUR_PUBLICITE))).toBe(true);
-    // Le widget (lot 3b) : son visiteur arrive souvent sur un fil que l'agent de Meta tient.
-    expect(reprendLaMain(p(POSSESSEUR_WIDGET))).toBe(true);
-    expect(reprendLaMain(p(null))).toBe(false);
-    expect(reprendLaMain(p('un_autre_proprietaire'))).toBe(false);
-  });
-
-  it('🔴 la publicité et le widget laissent la main à un opérateur ; la chaîne, non', () => {
     // C'est le CLIENT qui déclenche une publicité ou un widget (il clique) : un opérateur en train de lui répondre
     // garde la conversation. Le bouton de chaîne, lancement explicite comme une campagne, la lui prend.
+    // Remplace `reprendLaMain` et `epargneLOperateur`, et leurs cinq valeurs chacune.
     const p = (possedePar: string | null): AutomationRow => auto({ possedePar });
-    expect(epargneLOperateur(p(POSSESSEUR_PUBLICITE))).toBe(true);
-    expect(epargneLOperateur(p(POSSESSEUR_WIDGET))).toBe(true);
-    expect(epargneLOperateur(p(POSSESSEUR_LIEN_CHAINE))).toBe(false);
-    expect(epargneLOperateur(p(null))).toBe(false);
-    expect(epargneLOperateur(p('un_autre_proprietaire'))).toBe(false);
+    expect(typeDeLancementDe(p(POSSESSEUR_LIEN_CHAINE))).toBe('automatisme_chaine');
+    expect(typeDeLancementDe(p(POSSESSEUR_PUBLICITE))).toBe('automatisme_publicite_ou_widget');
+    // Le widget (lot 3b) : son visiteur arrive souvent sur un fil que l'agent de Meta tient.
+    expect(typeDeLancementDe(p(POSSESSEUR_WIDGET))).toBe('automatisme_publicite_ou_widget');
+    expect(typeDeLancementDe(p(null))).toBe('automatisme_ordinaire');
+    expect(typeDeLancementDe(p('un_autre_proprietaire'))).toBe('automatisme_ordinaire');
   });
 });

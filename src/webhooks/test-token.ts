@@ -26,8 +26,8 @@ export interface TestTokenDeps {
    * pas parti, et l'appelant journalise la raison.
    *
    * Pas de garde « le fil appartient-il au scénario ? » : un jeton est un geste délibéré de qui tient le
-   * téléphone, même quand l'agent de Meta tient le fil. L'exécuteur prend le fil (`ignoreHumanControl`) et refuse
-   * lisiblement si Meta ne le rend pas.
+   * téléphone, même quand l'agent de Meta tient le fil. L'exécuteur prend le fil (la politique du type de lancement
+   * `lien_de_test`) et refuse lisiblement si Meta ne le rend pas.
    */
   startTestRun(tenantId: string, workflowId: string, waId: string, nodeId: string | null): Promise<boolean | string>;
 }

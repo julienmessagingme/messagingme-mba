@@ -19,6 +19,7 @@ import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
 import { MOTIF_DESABONNE } from '../campaign/guardrails';
 import { messageDe, texteDe } from '../lib/erreur';
+import { POLITIQUE_DE_LANCEMENT, fenetreLevee, type DepartDuParcours, type PolitiqueDeLancement, type TypeDeLancement } from './lancements';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une chaîne = pas parti, avec la raison exacte (pour que la
@@ -172,7 +173,7 @@ export interface WorkflowExecutorDeps {
   verifierNumeroWhatsApp(tenantId: string): Promise<void>;
   /** Envoie un message hors template : interactif (texte + réponses rapides, ou un bouton de lien), image
    *  légendée, ou simple texte. Toujours en fenêtre 24 h (atteint après une réponse du contact, ou par
-   *  `startFromNode` après vérification de la fenêtre).
+   *  un démarrage à un bloc dont l'appelant a vérifié la fenêtre).
    *
    *  `mediaUrl` = visuel hébergé chez nous, téléversé chez Meta et posé en en-tête (ou image légendée sans
    *  bouton). `lien` = bouton de lien, exclusif des réponses rapides (l'action arrive alors avec `buttons`
@@ -514,7 +515,7 @@ export class WorkflowExecutor {
     canalEntrant: RunChannel = 'whatsapp',
     /**
      * Le tour est-il encore à nous ? Posée avant chaque effet, pas une fois à l'entrée : une liste d'effets
-     * peut durer plusieurs minutes. Absente pour les chemins qui ne réservent pas de tour (`start`, `runFrom`).
+     * peut durer plusieurs minutes. Absente pour les chemins qui ne réservent pas de tour (`demarrer`, `runFrom`).
      */
     garde?: GardeDuTour,
   ): Promise<{ refus: string | null; partis: number; canal: RunChannel }> {
@@ -1007,12 +1008,13 @@ export class WorkflowExecutor {
 
   /**
    * Corps commun des démarrages : parcourt depuis `startNodeId`, applique les actions, persiste l'état (sauf
-   * 100 % synchrone -> done).
+   * 100 % synchrone -> done). Ses réglages viennent de la POLITIQUE du type de lancement
+   * (`POLITIQUE_DE_LANCEMENT`, `src/workflow/lancements.ts`), jamais d'un appelant : seul `demarrer` l'appelle.
    *
-   * `opts.allowSessionOpen` est la seule façon de lever la garde fenêtre 24 h : `startInWindow` (un entrant
-   * récent prouve la fenêtre) et `startFromNode` (cible node de /v1/sends, fenêtre vérifiée destinataire par
-   * destinataire quand le bloc ouvre par un message de session). Le défaut (`start`, campagne) la garde : ne
-   * jamais l'inverser.
+   * `opts.fenetreLevee` est la seule façon de lever la garde fenêtre 24 h, et elle se calcule sur la politique
+   * (`fenetreLevee`, même module) : un entrant récent qui prouve la fenêtre, un bloc dont l'appelant a vérifié la
+   * fenêtre (cible node de /v1/sends, bloc de l'agent de Meta), un lien de test. La campagne à scénario la garde :
+   * ne jamais l'inverser.
    *
    * Rend la raison lisible quand le run n'a pas démarré (bloc de départ absent, fil tenu par un humain ou MBA,
    * message de session hors fenêtre), pour que la campagne ne compte pas « envoyé » un destinataire qui n'a
@@ -1024,18 +1026,18 @@ export class WorkflowExecutor {
     graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     startNodeId: string,
-    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[]; emitEvents?: boolean; ignoreHumanControl?: boolean; saufOperateur?: boolean; figerLeGraphe?: boolean } = {},
+    opts: { politique: PolitiqueDeLancement; fenetreLevee: boolean; firstTemplateParams?: string[] },
   ): Promise<StartOutcome> {
+    const { politique } = opts;
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA, sinon les deux écriraient au
-    // client. `ignoreHumanControl` : le déclencheur est lui-même le geste explicite (un opérateur qui lance une
-    // campagne ou un scénario depuis l'Inbox, un contact qui clique un bouton de chaîne), et on reprend la main
-    // pour l'app, sinon le scénario se bloquerait à la première réponse. Réservé aux automations nées d'un lien
-    // de chaîne, d'une publicité ou d'un widget : une automation par mot-clé ordinaire écraserait l'opérateur qui
-    // répond. Gardé dans les deux sens par `tests/automation-chaine-reprend-la-main.test.ts`. `saufOperateur` (la
-    // publicité, le widget) : le clic du client reprend le fil à l'agent de Meta, jamais à un opérateur qui le
-    // tient ; c'est le client qui déclenche, pas l'équipe.
-    if (opts.ignoreHumanControl) {
-      const reprise = await this.deps.reclaimControl(tenantId, contact.waId, { saufOperateur: opts.saufOperateur === true });
+    // client. Une reprise (`oui`, `sauf_operateur`) : le déclencheur est lui-même le geste explicite (un opérateur
+    // qui lance une campagne ou un scénario depuis l'Inbox, un contact qui clique un bouton de chaîne), et on
+    // reprend la main pour l'app, sinon le scénario se bloquerait à la première réponse. Refusée à l'automation
+    // ordinaire (`non`) : un mot-clé écraserait l'opérateur qui répond. Gardé dans les deux sens par
+    // `tests/workflow-lancements.test.ts`. `sauf_operateur` (la publicité, le widget) : le clic du client reprend
+    // le fil à l'agent de Meta, jamais à un opérateur qui le tient ; c'est le client qui déclenche, pas l'équipe.
+    if (politique.reprise !== 'non') {
+      const reprise = await this.deps.reclaimControl(tenantId, contact.waId, { saufOperateur: politique.reprise === 'sauf_operateur' });
       if (reprise === 'operateur') {
         // eslint-disable-next-line no-console
         console.log(`workflow ${workflowId}: fil tenu par un opérateur, run non démarré pour ${contact.waId}`);
@@ -1066,12 +1068,12 @@ export class WorkflowExecutor {
     // `sendKey` aléatoire : le run n'existe pas encore en base. Ce qui protège d'un double envoi ici, c'est le
     // claim atomique du destinataire côté campagne, pas l'idempotence RBM.
     const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, contact.waId, graph, startNodeId, ctx, randomUUID());
-    // Garde fenêtre 24 h : sans `allowSessionOpen`, un message de session en ouverture serait rejeté par Meta
+    // Garde fenêtre 24 h : sans `fenetreLevee`, un message de session en ouverture serait rejeté par Meta
     // (131047). `POST /campaigns` refuse déjà un tel scénario ; ceci est le filet à l'exécution. Le bloc agent
     // ne produit aucune action mais écrit du texte libre : on teste aussi le repos, sinon l'agent enverrait hors
     // fenêtre après que le modèle a été payé.
     const ouvreParUnAgent = rest.status === 'agent_turn';
-    if (!opts.allowSessionOpen && (ouvreParUnAgent || actions.some((e) => e.action.kind === 'sendFlow' || e.action.kind === 'sendQuickMessage' || e.action.kind === 'sendQuestion'))) {
+    if (!opts.fenetreLevee && (ouvreParUnAgent || actions.some((e) => e.action.kind === 'sendFlow' || e.action.kind === 'sendQuickMessage' || e.action.kind === 'sendQuestion'))) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide/question/agent) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
       return ouvreParUnAgent
@@ -1092,7 +1094,7 @@ export class WorkflowExecutor {
     if (envoieParWhatsApp(actions, apresWalk)) {
       await this.deps.verifierNumeroWhatsApp(tenantId);
     }
-    const { refus, partis, canal } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true, workflowId, apresWalk);
+    const { refus, partis, canal } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, politique.publieLesEtiquettes, workflowId, apresWalk);
     // Refus alors que rien n'est parti : on ne persiste pas de run en attente (il attendrait une réponse à un
     // message jamais reçu, et le message suivant du contact le ferait avancer au bloc suivant). La raison
     // remonte telle quelle vers la campagne. Si un message est parti, le parcours vit et le refus reste au log.
@@ -1128,10 +1130,10 @@ export class WorkflowExecutor {
     // `workflow_runs`, donc la session ne peut pas naître avant le run. Ordre obligatoire : apply, start, la
     // session, puis l'enfilage.
     //
-    // Le figeage se demande, il n'est jamais implicite : seuls les démarrages de test le posent (figer le
+    // Le figeage se demande, il n'est jamais implicite : seule la politique du lien de test le pose (figer le
     // graphe de chaque destinataire d'une campagne le recopierait des milliers de fois).
     const cree = state.status !== 'done'
-      ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state, opts.figerLeGraphe === true ? graph : null)
+      ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state, politique.graphe === 'brouillon_fige' ? graph : null)
       : null;
     // Bloc `inbox` atteint -> la conversation passe explicitement à un humain. L'escalade (collante : le
     // balayage ne rend plus le fil à l'agent de Meta tant que personne n'a répondu) exige `partis > 0` : sur une
@@ -1149,52 +1151,37 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Démarre un run depuis l'entrée. `firstTemplateParams` (campagne workflow) = variables du 1er template
-   * déjà résolues par contact, passées sans re-résolution via les hints. Garde fenêtre 24 h appliquée. Rend
-   * la raison du refus si le run n'a pas démarré (cf. `runFrom`), y compris sur un graphe vide.
-   */
-  async start(
-    tenantId: string, workflowId: string, graph: WorkflowGraph,
-    contact: { waId: string; contactId: string | null },
-    firstTemplateParams?: string[],
-    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; saufOperateur?: boolean } = {},
-  ): Promise<StartOutcome> {
-    const entry = entryNode(graph);
-    if (!entry) return 'le scénario est vide';
-    return this.runFrom(tenantId, workflowId, graph, contact, entry, { ...(firstTemplateParams ? { firstTemplateParams } : {}), ...opts });
-  }
-
-  /**
-   * Démarre un run depuis l'entrée, pour un contact dont la fenêtre de service est garantie ouverte parce
-   * qu'il vient d'écrire : le scénario peut alors ouvrir par un message rapide ou un formulaire. À n'appeler
-   * que sur un chemin où un entrant récent prouve la fenêtre ; sinon `start()`.
+   * LE démarrage d'un parcours, et le seul : le TYPE de lancement décide des réglages (reprise du fil,
+   * publication des étiquettes, graphe figé, garde de fenêtre), lus dans `POLITIQUE_DE_LANCEMENT`
+   * (`src/workflow/lancements.ts`). Plus aucun appelant ne pose de réglage brut : posés câblage par câblage, ils ne
+   * se gardaient qu'en lisant le texte des câblages. Les lancements de production passent par l'entrée
+   * `creerLancements`, qui lit le scénario et la fiche ; les tests de l'exécuteur appellent cette méthode avec le
+   * type le plus proche de ce qu'ils exercent.
    *
-   * `ignoreHumanControl` sert au lancement depuis l'Inbox : l'opérateur y détient presque toujours le fil, et
-   * c'est lui qui demande le scénario. « Avoir la main » empêche le scénario d'avancer seul et MBA de
-   * répondre, jamais un opérateur d'envoyer.
+   * `depart` : l'entrée du graphe (défaut), ou un bloc désigné. Rend la raison du refus si le run n'a pas démarré
+   * (cf. `runFrom`), y compris sur un graphe vide depuis l'entrée.
    */
-  async startInWindow(
+  async demarrer(
+    type: TypeDeLancement,
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
-    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; saufOperateur?: boolean; figerLeGraphe?: boolean } = {},
+    depart: DepartDuParcours = { depuis: 'entree' },
   ): Promise<StartOutcome> {
-    const entry = entryNode(graph);
-    if (!entry) return 'le scénario est vide';
-    return this.runFrom(tenantId, workflowId, graph, contact, entry, { allowSessionOpen: true, ...opts });
-  }
-
-  /**
-   * Démarre un run à un bloc arbitraire du graphe (cible `node` de /v1/sends). Sans garde fenêtre 24 h : quand
-   * ce qui part en premier est un message de session (`ouvertureApi`), l'appelant a déjà écarté les contacts
-   * hors fenêtre (`window_closed`). `figerLeGraphe` est réservé aux démarrages de test, qui jouent le
-   * brouillon : sans lui, le parcours reprendrait sur le publié à la première réponse.
-   */
-  async startFromNode(
-    tenantId: string, workflowId: string, graph: WorkflowGraph,
-    contact: { waId: string; contactId: string | null }, startNodeId: string,
-    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; saufOperateur?: boolean; figerLeGraphe?: boolean } = {},
-  ): Promise<StartOutcome> {
-    return this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true, ...opts });
+    const politique = POLITIQUE_DE_LANCEMENT[type];
+    let startNodeId: string;
+    if (depart.depuis === 'bloc') {
+      // Pas de garde « ce bloc existe-t-il ? » ici : `runFrom` la porte, journalise et rend une raison lisible.
+      startNodeId = depart.noeudId;
+    } else {
+      const entry = entryNode(graph);
+      if (!entry) return 'le scénario est vide';
+      startNodeId = entry;
+    }
+    return this.runFrom(tenantId, workflowId, graph, contact, startNodeId, {
+      politique,
+      fenetreLevee: fenetreLevee(politique, depart),
+      ...(depart.depuis === 'entree' && depart.firstTemplateParams ? { firstTemplateParams: depart.firstTemplateParams } : {}),
+    });
   }
 
   /**
@@ -1244,7 +1231,7 @@ export class WorkflowExecutor {
 
   /**
    * Déclenche un bloc du scénario courant depuis un outil d'agent (`mba_envoyer_bloc`) : `walk` + `apply`
-   * bornés, sans persister de run. Pas `startFromNode` : `runFrom` clorait le run de l'agent qui l'appelle,
+   * bornés, sans persister de run. Pas `demarrer` : `runFrom` clorait le run de l'agent qui l'appelle,
    * et la session d'où part cet outil.
    *
    * Un sous-parcours qui rend la main est refusé avant tout envoi, aucun run ne pouvant le porter :

@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { jamaisDesabonne } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { WorkflowExecutor, grapheDuRun } from '../src/workflow/executor';
@@ -95,17 +93,17 @@ describe('grapheDuRun : le point de passage unique', () => {
 });
 
 describe('le figeage à la création du parcours', () => {
-  it('🔴 `figerLeGraphe` transmet le graphe JOUÉ au dépôt', async () => {
+  it('🔴 le lien de test (`brouillon_fige`) transmet le graphe JOUÉ au dépôt', async () => {
     const brouillon = avecReponse('version brouillon');
     const { ex, runs } = monter(avecReponse('version publiee'));
-    await ex.startFromNode('t1', 'wf1', brouillon, { waId: '33600', contactId: 'c1' }, 'tpl', { figerLeGraphe: true });
+    await ex.demarrer('lien_de_test', 't1', 'wf1', brouillon, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'tpl' });
     expect(runs.grapheFigeEcrit).toEqual(brouillon);
   });
 
-  it('⚠️ SANS l’option, rien n’est figé : une campagne de 5 000 destinataires ne recopie pas 5 000 graphes', async () => {
+  it('⚠️ une campagne ne fige rien : 5 000 destinataires ne recopient pas 5 000 graphes', async () => {
     const publie = avecReponse('version publiee');
     const { ex, runs } = monter(publie);
-    await ex.start('t1', 'wf1', publie, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', publie, { waId: '33600', contactId: 'c1' });
     expect(runs.grapheFigeEcrit).toBeNull();
   });
 });
@@ -115,7 +113,7 @@ describe('les points de reprise jouent le graphe figé', () => {
     // Le défaut d'avant : le démarrage jouait le brouillon, la réponse du contact rebasculait sur le publié.
     const brouillon = avecReponse('version brouillon');
     const { ex, calls, luPublie } = monter(avecReponse('version publiee'));
-    await ex.startFromNode('t1', 'wf1', brouillon, { waId: '33600', contactId: 'c1' }, 'tpl', { figerLeGraphe: true });
+    await ex.demarrer('lien_de_test', 't1', 'wf1', brouillon, { waId: '33600', contactId: 'c1' }, { depuis: 'bloc', noeudId: 'tpl' });
     await ex.advance('t1', '33600', 'm1');
     expect(calls).toEqual(['tpl:promo', 'qm:version brouillon']);
     expect(luPublie, 'aucune lecture du publié sur tout le parcours').toEqual([]);
@@ -160,34 +158,16 @@ describe('les points de reprise jouent le graphe figé', () => {
 });
 
 /**
- * LE CÂBLAGE, parce que c'est là que la règle se décide vraiment.
+ * SEUL LE LIEN DE TEST JOUE LE BROUILLON, ET LUI SEUL LE FIGE.
  *
- * Un câblage n'a par construction aucun dépendant : la seule question à lui poser est l'inverse, « qu'est-ce
- * qu'il suppose du module qu'on vient de changer ? ». Ici il suppose que le figeage est une EXCEPTION, posée
- * sur le seul chemin qui joue un brouillon. Rien dans le langage ne relie un commentaire à un appel, d'où ce
- * test qui lit la source, sur le modèle de `tests/campagne-controle-humain.test.ts`.
+ * ⚠️ LE CÂBLAGE NE SE LIT PLUS ICI (lot « lancements de scénario », 2026-10-04). Les cas qui lisaient le bloc
+ * `startTestRun` de `src/worker.ts` (il fige, il joue `grapheEditable(wf)`, il résout le bloc par `blocDesigne` et
+ * démarre au bloc quand le jeton en désigne un, et `figerLeGraphe` n'apparaît qu'une fois dans le worker) sont
+ * devenus la colonne « graphe » de `POLITIQUE_DE_LANCEMENT`, exécutée type par type, et le cas du bloc désigné du
+ * lien de test, dans `tests/workflow-lancements.test.ts`. Reste ici l'inventaire de `src/`, que la table ne voit
+ * pas : un chemin d'exécution qui appellerait `grapheEditable` sans passer par les lancements.
  */
-describe('le figeage est cable sur le lien de test, et NULLE PART ailleurs', () => {
-  const worker = readFileSync(join(process.cwd(), 'src', 'worker.ts'), 'utf8');
-
-  /**
-   * ⚠️ L'ANCRE EST LE BLOC DE CÂBLAGE, PAS UNE LIGNE D'APPEL. Elle a d'abord désigné
-   * `startInWindow(tenant, workflowId, grapheEditable(wf)`, que le lot du 2026-09-16 a réécrit en deux
-   * branches : le test tombait alors sur un changement parfaitement légitime. Un test qui lit la source
-   * doit s'accrocher à ce qu'il mesure (« ce câblage-ci »), pas à la forme d'une ligne.
-   */
-  const cablageDuLienDeTest = (): string => {
-    const debut = worker.indexOf('startTestRun: async (');
-    expect(debut, 'le câblage du lien de test a disparu de worker.ts').toBeGreaterThan(-1);
-    const fin = worker.indexOf('\n        },', debut);
-    expect(fin, 'fin du bloc startTestRun introuvable').toBeGreaterThan(debut);
-    return worker.slice(debut, fin);
-  };
-
-  it('🔴 le lien de test fige', () => {
-    expect(cablageDuLienDeTest()).toContain('figerLeGraphe: true');
-  });
-
+describe('SEUL le lien de test joue le brouillon : l’inventaire de `grapheEditable` dans `src/`', () => {
   /**
    * 🔴 L'INVARIANT LE PLUS CHER DU LOT, ET IL N'ÉTAIT GARDÉ NULLE PART (relevé en revue globale, 2026-09-16).
    *
@@ -204,7 +184,7 @@ describe('le figeage est cable sur le lien de test, et NULLE PART ailleurs', () 
     const attendus = new Map([
       ['src/workflow/store.pg.ts', 'la DÉFINITION de `grapheEditable`'],
       ['src/http/workflows.ts', 'la DUPLICATION d’un scénario : on recopie le travail en cours, on n’exécute rien'],
-      ['src/worker.ts', 'le LIEN DE TEST, seul chemin d’exécution qui joue le brouillon'],
+      ['src/workflow/lancements.ts', 'l’entrée des lancements, pour le seul type dont la politique joue le brouillon (`lien_de_test`)'],
     ]);
     // ⚠️ `--untracked` N'EST PAS DÉCORATIF (mesuré par la seconde passe de revue) : sans lui, `git grep` ne
     // voit que les fichiers SUIVIS, et un nouvel appelant pas encore `git add` passait en VERT chez son
@@ -219,32 +199,5 @@ describe('le figeage est cable sur le lien de test, et NULLE PART ailleurs', () 
     expect(new Set(trouves),
       `un nouvel appelant de grapheEditable dans src/ : est-ce un chemin d’EXÉCUTION ? S’il l’est, il ferait jouer un BROUILLON à un vrai contact. Inventaire attendu : ${[...attendus].map(([f, r]) => `${f} (${r})`).join(' | ')}`)
       .toEqual(new Set(attendus.keys()));
-
-    // Et dans le worker, c'est bien le bloc du lien de test qui le porte, une seule fois.
-    expect(worker.split('grapheEditable(').length - 1).toBe(1);
-    expect(cablageDuLienDeTest()).toContain('grapheEditable(wf)');
-  });
-
-  it('🔴 et il résout le bloc avant de démarrer, en tolérant la casse', () => {
-    // `blocDesigne` est une fonction pure, testée à part ; ce qui ne se voit nulle part ailleurs, c'est qu'elle
-    // est bien POSÉE sur le chemin du lien de test. Sans elle, un testeur qui recopie son mot en capitales ne
-    // retrouve pas son bloc, et un identifiant à majuscule non plus.
-    expect(cablageDuLienDeTest()).toContain('blocDesigne(graphe, nodeId)');
-  });
-
-  it('🔴 et il démarre AU BLOC quand le jeton en désigne un', () => {
-    // Le câblage est la seule pièce qui traduit `nodeId` en chemin d'exécution, et aucun test unitaire ne
-    // peut monter `main()`. Sans cette garde, revenir à un `startInWindow` inconditionnel ferait démarrer
-    // TOUS les tests à l'entrée du scénario, en silence : le bouton d'un bloc enverrait le premier message.
-    const bloc = cablageDuLienDeTest();
-    expect(bloc).toContain('nodeId === null');
-    expect(bloc).toContain('startFromNode');
-    expect(bloc).toContain('startInWindow');
-  });
-
-  it('🔴 et c’est le SEUL : une campagne ne recopie pas son graphe par destinataire', () => {
-    // Le compte vaut la règle : deux occurrences voudraient dire qu'un second chemin fige, et le seul autre
-    // candidat de ce fichier est la campagne (`start`, `startFromNode`), qui envoie à des contacts RÉELS.
-    expect(worker.split('figerLeGraphe').length - 1).toBe(1);
   });
 });

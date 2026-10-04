@@ -359,7 +359,7 @@ export class PgWorkflowStore {
  * de passage unique : tout le reste du dépôt lit `row.graph` (le publié), et un contact réel ne doit jamais
  * tomber dans un brouillon.
  */
-export function grapheEditable(row: WorkflowRow): WorkflowGraph {
+export function grapheEditable(row: Pick<WorkflowRow, 'graph' | 'draftGraph'>): WorkflowGraph {
   return row.draftGraph ?? row.graph;
 }
 

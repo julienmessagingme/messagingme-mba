@@ -230,14 +230,16 @@ describe('processTestTokens transmet le bloc', () => {
  * conversation même pas marquée comme test). Sa règle : « quand y a un jeton, le MBA ne marche pas ».
  */
 describe('un jeton de test désenclenche l’agent de Meta', () => {
-  it('🔴 le CÂBLAGE reprend le fil, quel que soit son détenteur', () => {
-    // Aucun test unitaire ne monte `main()` : la seule façon de garder ce câblage est de le lire. Sans ce
-    // drapeau, l'agent de Meta garde le fil et répond au testeur à la place du scénario.
+  it('🔴 le CÂBLAGE ne pose aucune garde du fil avant de lancer le test', () => {
+    // ⚠️ La reprise du fil quel que soit son détenteur ne se lit plus ici : c'est la politique du type
+    // `lien_de_test` (`src/workflow/lancements.ts`), exécutée sur le vrai contrôle du fil, agent de Meta et
+    // opérateur, par `tests/workflow-lancements.test.ts`. Ce cas lisait `ignoreHumanControl: true` dans le bloc
+    // `startTestRun` du worker. Reste ce que la table ne peut pas voir : une garde posée DANS le câblage, avant
+    // même d'appeler les lancements. Aucun test unitaire ne monte `main()`, donc on lit le worker.
     const worker = readFileSync(join(process.cwd(), 'src', 'worker.ts'), 'utf8');
-    const debut = worker.indexOf('startTestRun: async (');
-    const bloc = worker.slice(debut, worker.indexOf(String.fromCharCode(10) + '        },', debut));
-    expect(bloc).toContain('ignoreHumanControl: true');
-    expect(bloc, 'la garde `mayStart` a été retirée : elle refusait de démarrer dès que le fil était tenu')
+    expect(worker, 'le câblage du lien de test a disparu, ou ne passe plus par le type `lien_de_test`')
+      .toMatch(/startTestRun: async \(tenant, workflowId, waId, nodeId\) =>\s+\(await lancements\.lancer\(\{ type: 'lien_de_test'/);
+    expect(worker, 'la garde `mayStart` a été retirée : elle refusait de démarrer dès que le fil était tenu')
       .not.toContain('mayStart');
   });
 

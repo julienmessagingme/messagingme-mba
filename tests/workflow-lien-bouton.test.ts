@@ -123,14 +123,14 @@ describe('bouton de lien : ce qui arrive à la couche d’envoi', () => {
     // module d'envoi et à travers le vrai câblage.
     const sendQuickMessage = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(deps({ sendQuickMessage }));
-    await ex.startInWindow('t1', 'wf1', graphe({ body: 'La brochure', lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }), { waId: '336', contactId: null });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', graphe({ body: 'La brochure', lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }), { waId: '336', contactId: null }, { depuis: 'entree', fenetreOuverte: true });
     expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'La brochure', [], undefined, { texte: 'Voir', url: 'https://exemple.fr' });
   });
 
   it('⚠️ les variables du corps sont résolues comme sur n’importe quel message rapide', async () => {
     const sendQuickMessage = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(deps({ sendQuickMessage, varsFor: async () => ({ prenom: 'Camille' }) }));
-    await ex.startInWindow('t1', 'wf1', graphe({ body: 'Bonjour {{prenom}}', lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }), { waId: '336', contactId: null });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', graphe({ body: 'Bonjour {{prenom}}', lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }), { waId: '336', contactId: null }, { depuis: 'entree', fenetreOuverte: true });
     expect(sendQuickMessage).toHaveBeenCalledWith('t1', '336', 'Bonjour Camille', [], undefined, expect.anything());
   });
 });

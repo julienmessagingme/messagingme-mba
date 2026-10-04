@@ -61,7 +61,7 @@ function toRow(r: Raw): AutomationRow | null {
     cooldownSeconds: r.cooldown_seconds,
     maxFiresPerHour: r.max_fires_per_hour,
     // Lu par le chemin chaud : un déclenchement né d'un geste explicite du contact (bouton de chaîne, clic sur
-    // une publicité ; le widget, lui, n'est pas en base) reprend la main sur le fil (`reprendLaMain`).
+    // une publicité ; le widget, lui, n'est pas en base) reprend la main sur le fil (`typeDeLancementDe`).
     possedePar: r.possede_par,
   };
 }

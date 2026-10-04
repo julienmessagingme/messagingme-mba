@@ -82,7 +82,6 @@ import { fetchUrlBorne } from './lib/page-distante';
 import { signSession } from './auth/token';
 import { ecrireHandoffEnabled } from './mba/handoff';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
-import type { StartOutcome } from './workflow/executor';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
 import { urlImageRcs } from './rcs/image';
@@ -390,32 +389,6 @@ async function main(): Promise<void> {
     return { comptePubId: etat.comptePubId, pageId: etat.pageId, jeton: await connexionPub.jetonClair(t) };
   };
 
-  /**
-   * Lancer un scénario pour un contact, comme le bouton de l'Inbox. Deux appelants : l'Inbox et l'outil
-   * « Lancer un scénario » de l'agent de Meta. La fermeture du parcours en cours, la reprise du fil et la
-   * garde de fenêtre vivent dans `runFrom`.
-   *
-   * La fenêtre décide de la porte d'entrée :
-   *  - ouverte -> `startInWindow` : le scénario peut ouvrir par un message rapide ou un formulaire ;
-   *  - fermée  -> `start` : la garde de fenêtre s'applique et rend la raison si le scénario ouvre par un
-   *    message de session, ce que Meta refuserait (131047).
-   *
-   * `ignoreHumanControl` : geste délibéré, et celui qui déclenche détient presque toujours le fil (même règle
-   * qu'au lancement d'une campagne). `emitEvents` : un lancement unitaire, donc ses tags publient.
-   */
-  const lancerScenarioPourContact = async (
-    tenant: string, workflowId: string, waId: string, windowOpen: boolean,
-  ): Promise<StartOutcome | null> => {
-    const wf = await workflowStore.getById(workflowId, tenant);
-    if (!wf) return null;
-    const contactId = await contactStore.findIdByWaId(tenant, waId);
-    const contact = { waId, contactId };
-    const opts = { emitEvents: true, ignoreHumanControl: true };
-    return windowOpen
-      ? workflowRuntime.executor.startInWindow(tenant, workflowId, wf.graph, contact, opts)
-      : workflowRuntime.executor.start(tenant, workflowId, wf.graph, contact, undefined, opts);
-  };
-
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
   const sendAuthEmail = config.RESEND_API_KEY
     ? async ({ to, subject, text, html }: { to: string; subject: string; text: string; html?: string }) => {
@@ -503,7 +476,8 @@ async function main(): Promise<void> {
      * Écrire suffit côté Meta (« Sending a message to a conversation takes control implicitly », et mesuré) :
      * retirer le contact de la liste de l'agent sur un chemin d'envoi serait une redondance payante ; c'est le
      * geste de « Reprendre la main » (`reprendreLaMain`). Une campagne part quand même : un opérateur l'a déclenchée, et elle reprend la
-     * conduite du fil (`ignoreHumanControl`, cf. `tests/campagne-controle-humain.test.ts`).
+     * conduite du fil (la politique de `campagne_scenario`, `src/workflow/lancements.ts`, tenue par
+     * `tests/workflow-lancements.test.ts`).
      * `app_human` aussi pour une machine (API publique, agent tiers par MCP) : `ControlOwner` n'a que trois
      * valeurs et celle-ci produit l'effet voulu. Qui a parlé est porté par l'origine du message (`api`, `mcp`).
      */
@@ -925,8 +899,14 @@ async function main(): Promise<void> {
        */
       reprendreLaMain: fil.reprendreLaMain,
       releaseControl: fil.rendreLaMain,
-      /** Lancement d'un scénario depuis l'Inbox, par le chemin partagé avec l'agent de Meta. */
-      startWorkflow: lancerScenarioPourContact,
+      /**
+       * Lancement d'un scénario depuis l'Inbox (type `inbox`, `src/workflow/lancements.ts`) : la fenêtre ouverte
+       * laisse le scénario ouvrir par un message rapide ou un formulaire, fermée elle garde ce que Meta refuserait
+       * (131047) ; geste délibéré, il reprend le fil (l'opérateur le détient presque toujours) et ses étiquettes
+       * publient. La fermeture du parcours en cours et les gardes vivent dans `runFrom`. `null` = scénario inconnu.
+       */
+      startWorkflow: (tenant, workflowId, waId, fenetreOuverte) =>
+        workflowRuntime.lancements.lancer({ type: 'inbox', tenantId: tenant, workflowId, waId, fenetreOuverte }),
       sendTemplateMessage: async (tenant, phoneNumberId, to, tpl) => {
         const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token par tenant, repli global
         const components = buildTemplateComponents({
@@ -2243,10 +2223,12 @@ async function main(): Promise<void> {
             graphePublie: async (t, id) => (await workflowStore.getById(id, t))?.graph ?? null,
             fenetreOuverte: async (t, waId) => (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true,
             contacts: contactStore,
-            envoyerDepuisBloc: (t, workflowId, graphe, contact, noeudId) => workflowRuntime.executor.startFromNode(
-              t, workflowId, graphe, contact, noeudId, { ignoreHumanControl: true, emitEvents: false },
-            ),
-            lancerScenario: (t, workflowId, waId, ouverte) => lancerScenarioPourContact(t, workflowId, waId, ouverte),
+            // Les deux types de l'agent de Meta (`src/workflow/lancements.ts`) : le bloc part du graphe réduit, sans
+            // garde de fenêtre (vérifiée juste avant) ni publication ; le scénario suit la règle du bouton de l'Inbox.
+            envoyerDepuisBloc: (t, workflowId, graphe, contact, noeudId) =>
+              workflowRuntime.lancements.lancer({ type: 'agent_meta_bloc', tenantId: t, workflowId, graphe, contact, noeudId }),
+            lancerScenario: (t, workflowId, waId, ouverte) =>
+              workflowRuntime.lancements.lancer({ type: 'agent_meta_scenario', tenantId: t, workflowId, waId, fenetreOuverte: ouverte }),
             fil,
             // On ne prend le fil qu'une fois le tour de l'agent de Meta fini.
             attendreFinDuTour: creerAttendreFinDuTour({

@@ -105,9 +105,9 @@ export async function repondreDansLaFenetre(
 
   const messageId = await deps.sendReply(tenantId, phoneNumberId, ctx.waId, texte);
   // Le fil est pris : le scénario cesse d'avancer tout seul sur ce contact et MBA cesse de répondre, quel que
-  // soit le tiers qui écrit. Ce que ça n'arrête pas : une campagne (`ignoreHumanControl` dans `executor.ts`,
-  // déclenchée par un opérateur) et un clic sur un bouton de chaîne (geste explicite de l'abonné). Une
-  // automation ordinaire par mot-clé reste arrêtée.
+  // soit le tiers qui écrit. Ce que ça n'arrête pas : une campagne (déclenchée par un opérateur) et un clic sur un
+  // bouton de chaîne (geste explicite de l'abonné), dont le type de lancement reprend le fil
+  // (`POLITIQUE_DE_LANCEMENT`, `src/workflow/lancements.ts`). Une automation ordinaire par mot-clé reste arrêtée.
   await deps.takeControl(tenantId, ctx.waId, auteurDeLEnvoi(origine, auteur)).catch(() => {});
   await deps.inbox.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
   return { messageId };

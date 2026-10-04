@@ -1,7 +1,8 @@
 import { evaluateConditionGroup } from '../workflow/conditions';
 import type { EvalContext } from '../workflow/conditions';
-import { matchesTrigger, isInCooldown, reprendLaMain, epargneLOperateur, antiRebondParDefaut } from './match';
+import { matchesTrigger, isInCooldown, typeDeLancementDe, antiRebondParDefaut } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
+import type { DemandeAutomatisme } from '../workflow/lancements';
 import { NumeroDelieError } from '../meta/numero-delie';
 import { messageDe } from '../lib/erreur';
 
@@ -50,25 +51,12 @@ export interface AutomationRunnerDeps {
    * Démarre le scénario. `true` = parti ; `false` ou une chaîne (la raison du refus) = pas parti (fil détenu,
    * bloc absent, scénario supprimé).
    *
-   * Les options voyagent dans un objet : une flèche à cinq paramètres reste assignable à un contrat qui en
-   * déclare six, et le sixième serait avalé en silence par un câblage écrit pour l'ancienne signature.
+   * La demande est construite ICI, type de lancement compris (`typeDeLancementDe`) : le câblage la transmet telle
+   * quelle à l'entrée des lancements (`src/workflow/lancements.ts`), qui en tire la reprise du fil, la publication
+   * des étiquettes et la garde de fenêtre. Un seul objet, et pas des paramètres : une flèche à moins de paramètres
+   * reste assignable à un contrat qui en déclare plus, et le dernier serait avalé en silence.
    */
-  startWorkflow(tenantId: string, workflowId: string, waId: string, opts: {
-    startNodeId: string | null;
-    /** La fenêtre de service 24 h est prouvée ouverte (le contact vient d'écrire). */
-    windowOpen: boolean;
-    /**
-     * Ce démarrage reprend la conduite du fil, même tenu par un opérateur ou par l'agent de Meta. Réservé aux
-     * automations possédées nées d'un geste explicite du contact (`reprendLaMain` : bouton de chaîne, clic sur
-     * une publicité, arrivée par un widget) ; une automation ordinaire reste bloquée par un fil tenu.
-     */
-    reprendLaMain: boolean;
-    /**
-     * La reprise laisse la main à un opérateur qui la tient (`epargneLOperateur` : la publicité, le widget). Présent
-     * seulement quand c'est vrai : une automation ordinaire ou de chaîne ne le porte pas.
-     */
-    saufOperateur?: true;
-  }): Promise<boolean | string>;
+  startWorkflow(demande: DemandeAutomatisme): Promise<boolean | string>;
   /** Anti-rebond appliqué aux automations qui n'ont rien réglé (`cooldownSeconds` null). */
   defaultCooldownSeconds: number;
   /**
@@ -188,14 +176,16 @@ export async function runAutomations(
         console.log(`automation ${a.id} : rappel déjà tiré pour cette échéance chez ${ev.waId}, ignoré`);
         continue;
       }
-      const issue = await deps.startWorkflow(tenantId, a.workflowId, ev.waId, {
-        startNodeId: a.startNodeId,
-        windowOpen,
-        // Seuls la chaîne, la publicité et le widget reprennent la main : l'agent de Meta tenant souvent le fil, un
-        // clic ne lancerait sinon rien, en silence.
-        reprendLaMain: reprendLaMain(a),
-        // Le clic sur une publicité ou sur un widget ne prend pas la main à un opérateur qui la tient.
-        ...(epargneLOperateur(a) ? { saufOperateur: true as const } : {}),
+      const issue = await deps.startWorkflow({
+        // Seuls la chaîne, la publicité et le widget reprennent la main (l'agent de Meta tenant souvent le fil, un
+        // clic ne lancerait sinon rien, en silence), et le clic sur une publicité ou sur un widget ne la prend pas à
+        // un opérateur qui la tient : tout est dans le type.
+        type: typeDeLancementDe(a),
+        tenantId,
+        workflowId: a.workflowId,
+        waId: ev.waId,
+        blocDeDepart: a.startNodeId,
+        fenetreOuverte: windowOpen,
       });
       // `false` ou une chaîne = pas parti ; tester la simple vérité JS compterait une chaîne comme un succès, et
       // l'anti-rebond avalerait la prochaine vraie demande. Tout le reste = parti, comme le moteur de campagne.

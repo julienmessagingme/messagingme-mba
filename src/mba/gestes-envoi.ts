@@ -20,11 +20,11 @@ export interface DepsGestesEnvoi {
     /** Le contact est-il bloqué dans l'Inbox ? Relu après l'attente : il a pu l'être pendant. */
     isBlockedByWaId(tenantId: string, waId: string): Promise<boolean>;
   };
-  /** `startFromNode` : reprend le fil, envoie, et le rend à l'accusé. */
+  /** Le type de lancement `agent_meta_bloc` : reprend le fil, envoie, et le rend à l'accusé. */
   envoyerDepuisBloc(
     tenantId: string, workflowId: string, graphe: WorkflowGraph, contact: { waId: string; contactId: string | null }, noeudId: string,
   ): Promise<StartOutcome>;
-  /** `lancerScenarioPourContact`, le chemin du bouton de l'Inbox. `null` = scénario inconnu. */
+  /** Le type de lancement `agent_meta_scenario`, la règle du bouton de l'Inbox. `null` = scénario inconnu. */
   lancerScenario(tenantId: string, workflowId: string, waId: string, fenetreOuverte: boolean): Promise<StartOutcome | null>;
   /** Le contrôle du fil (`src/inbox/fil.ts`) : la fin de parcours rend le fil à l'agent de Meta. */
   fil: { rendreApresParcours(tenantId: string, waId: string): Promise<void> };
@@ -39,7 +39,7 @@ export interface DepsGestesEnvoi {
 
 /**
  * Ce que l'agent de Meta lit quand la conversation a changé de main pendant l'attente de fin de tour (jusqu'à
- * 15 s) : l'envoi part avec `ignoreHumanControl`, et passerait par-dessus un opérateur ou un parcours.
+ * 15 s) : l'envoi reprend le fil quel que soit son détenteur, et passerait par-dessus un opérateur ou un parcours.
  */
 export const FIL_CHANGE_PENDANT_ATTENTE =
   'la conversation a changé de main pendant l’attente (un opérateur ou un parcours l’a prise) : rien n’a été envoyé';

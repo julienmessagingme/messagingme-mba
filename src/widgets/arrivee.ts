@@ -77,11 +77,12 @@ export const MOTIF_ETIQUETTE_WIDGET = `^${PREFIXE_ETIQUETTE_WIDGET}[0-9a-hjkmnp-
  * comprises.
  *
  * - `possedePar: POSSESSEUR_WIDGET` (lot 3b, décision de Julien du 2026-10-02) : comme la publicité, le scénario du
- *   widget REPREND le fil à l'agent de Meta (`reprendLaMain`) et le LAISSE à un opérateur qui le tient
- *   (`epargneLOperateur`) : c'est le visiteur qui déclenche, en cliquant la bulle. Sans la reprise, sur tout espace où
- *   l'agent de Meta tient le fil, le devenir 'scenario' ne démarrerait jamais. La reprise a lieu au démarrage, dans
- *   l'exécuteur, donc APRÈS l'anti-rebond, le plafond et le contact bloqué du runner. Un refus qui la suit (contact
- *   désabonné, numéro délié) laisse le fil à l'app jusqu'au balayage de contrôle, comme pour le bouton de chaîne.
+ *   widget REPREND le fil à l'agent de Meta et le LAISSE à un opérateur qui le tient (son type de lancement,
+ *   `automatisme_publicite_ou_widget`) : c'est le visiteur qui déclenche, en cliquant la bulle. Sans la reprise,
+ *   sur tout espace où l'agent de Meta tient le fil, le devenir 'scenario' ne démarrerait jamais. La reprise a lieu
+ *   au démarrage, dans l'exécuteur, donc APRÈS l'anti-rebond, le plafond et le contact bloqué du runner. Un refus
+ *   qui la suit (contact désabonné, numéro délié) laisse le fil à l'app jusqu'au balayage de contrôle, comme pour le
+ *   bouton de chaîne.
  * - `cooldownSeconds: null` : l'anti-rebond de l'instance (`AUTOMATION_COOLDOWN_SECONDS`), aucun réglage propre.
  * - `maxFiresPerHour` = `max_par_heure` ; `null` = le plafond de l'instance (`AUTOMATION_MAX_FIRES_PER_HOUR`), même
  *   convention des deux côtés. Le CHECK `widgets_max_par_heure_chk` exclut 0, qui voudrait dire « aucun plafond ».

@@ -92,7 +92,7 @@ describe('bloc Question : l’envoi et l’échéance', () => {
     // `waiting`, ce qu'aucun autre bloc ne fait.
     const cap = capture();
     const { ex } = monter(GRAPHE, null, cap);
-    await ex.startInWindow('t1', 'wf1', GRAPHE, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', GRAPHE, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
     expect(cap.envois).toEqual(['Ça vous convient ?|Répondre|Oui,Non']);
     const etat = cap.etats.at(-1)?.state;
     expect(etat?.status).toBe('waiting');
@@ -104,15 +104,15 @@ describe('bloc Question : l’envoi et l’échéance', () => {
     const g: WorkflowGraph = { ...GRAPHE, nodes: GRAPHE.nodes.map((x) => (x.id === 'q' ? n('q', 'question', { body: 'Q', rows: [{ title: 'Oui' }] }) : x)) };
     const cap = capture();
     const { ex } = monter(g, null, cap);
-    await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.demarrer('automatisme_ordinaire', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' }, { depuis: 'entree', fenetreOuverte: true });
     expect(cap.etats.at(-1)?.state.resumeAt).toBeUndefined();
   });
 
   it('🔴 hors fenêtre de 24 h, la question ne part PAS (c’est un message de session)', async () => {
     const cap = capture();
     const { ex } = monter(GRAPHE, null, cap, { isWindowOpen: async () => false });
-    // `allowSessionOpen` absent : c'est le chemin d'une campagne, qui part à froid.
-    const refus = await ex.start('t1', 'wf1', GRAPHE, { waId: '33600', contactId: 'c1' });
+    // La campagne à scénario garde la fenêtre : c'est le chemin qui part à froid.
+    const refus = await ex.demarrer('campagne_scenario', 't1', 'wf1', GRAPHE, { waId: '33600', contactId: 'c1' });
     expect(cap.envois).toEqual([]);
     expect(String(refus)).toContain('question');
   });

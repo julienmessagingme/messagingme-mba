@@ -14,6 +14,7 @@ import type { WidgetRow } from '../src/widgets/store.pg';
 import { POSSESSEUR_WIDGET, type AutomationEvent } from '../src/automation/match';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
 import { WorkflowExecutor, type WorkflowExecutorDeps } from '../src/workflow/executor';
+import { creerLancements, type TypeDeLancementAutomatisme } from '../src/workflow/lancements';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { aucunStop } from './consentement';
@@ -95,7 +96,7 @@ function banc(o: {
   const posees: Array<[string, string, string]> = [];
   const tirs = new Map<string, Date>();
   const effaces: string[] = [];
-  const declenches: Array<{ reprendLaMain: boolean; saufOperateur: boolean; windowOpen: boolean }> = [];
+  const declenches: Array<{ type: TypeDeLancementAutomatisme; fenetreOuverte: boolean }> = [];
   const reprises: string[] = [];
 
   const execDeps: WorkflowExecutorDeps = {
@@ -128,6 +129,11 @@ function banc(o: {
     },
   };
   const ex = new WorkflowExecutor(execDeps);
+  const lancements = creerLancements({
+    executor: ex,
+    scenarios: { getById: async () => ({ graph: graphe }) },
+    contacts: { findIdByWaId: async () => null },
+  });
 
   /** Les dépendances des automations du worker, telles que `src/worker.ts` les câble. */
   const runner: AutomationRunnerDeps = {
@@ -141,14 +147,11 @@ function banc(o: {
       clearFired: async () => { throw new Error('le widget a effacé un tir d’automation'); },
     },
     evalContext: async () => null,
-    // Le MÊME câblage que `src/worker.ts` : fenêtre prouvée ouverte, démarrage unitaire, drapeau de reprise venu du
-    // runner et jamais posé en dur.
-    startWorkflow: async (tenant, workflowId, waId, opts) => {
-      declenches.push({ reprendLaMain: opts.reprendLaMain, saufOperateur: opts.saufOperateur === true, windowOpen: opts.windowOpen });
-      const unitaire = { emitEvents: true, ignoreHumanControl: opts.reprendLaMain, saufOperateur: opts.saufOperateur === true };
-      return opts.windowOpen
-        ? ex.startInWindow(tenant, workflowId, graphe, { waId, contactId: null }, unitaire)
-        : ex.start(tenant, workflowId, graphe, { waId, contactId: null }, undefined, unitaire);
+    // Le MÊME câblage que `src/worker.ts` : la demande du runner (type de lancement et preuve de fenêtre compris) est
+    // transmise telle quelle à l'entrée des lancements, rien n'est posé ici.
+    startWorkflow: async (demande) => {
+      declenches.push({ type: demande.type, fenetreOuverte: demande.fenetreOuverte });
+      return (await lancements.lancer(demande)) ?? false;
     },
     defaultCooldownSeconds: 3600,
     maxFiresPerHour: o.plafondInstance ?? 200,
@@ -338,7 +341,7 @@ describe('le devenir à l’arrivée', () => {
     expect(b.envois).toEqual(['33611:Bienvenue ! Que cherchez-vous ?']);
     expect([...r.prisParUnWidget]).toEqual(['wamid.w']);
     // Comme la publicité (lot 3b) : fenêtre prouvée ouverte, reprise du fil, opérateur épargné.
-    expect(b.declenches).toEqual([{ reprendLaMain: true, saufOperateur: true, windowOpen: true }]);
+    expect(b.declenches).toEqual([{ type: 'automatisme_publicite_ou_widget', fenetreOuverte: true }]);
     expect(b.reprises).toEqual(['33611']);
     expect(b.tirs.size).toBe(1);
   });
@@ -438,7 +441,7 @@ describe('le devenir à l’arrivée', () => {
     const r = await traiter(lot([texte('wamid.s', PHRASE)], 'standby'), b.arrivee);
     expect(b.posees).toHaveLength(1);
     expect(b.envois).toEqual(['33611:Bienvenue ! Que cherchez-vous ?']);
-    expect(b.declenches).toEqual([{ reprendLaMain: true, saufOperateur: true, windowOpen: true }]);
+    expect(b.declenches).toEqual([{ type: 'automatisme_publicite_ou_widget', fenetreOuverte: true }]);
     expect(b.reprises).toEqual(['33611']);
     expect([...r.prisParUnWidget]).toEqual(['wamid.s']);
   });
@@ -642,7 +645,9 @@ describe('🔴 l’émission d’événements d’automation est décidée par l
     const m: InboundMessage = { phoneNumberId: 'pn1', waId: '33611', messageId: 'wamid.1', type: 'text', body: PHRASE, buttonPayload: null, profileName: null, field: 'messages' };
     const partis = await demarrageParLeRunner(runner, () => tirs)(T, widget({ devenir: 'scenario', workflowId: 'wf1' }), 'wf1', m);
     expect(partis).toBe(1);
-    expect(startWorkflow).toHaveBeenCalledWith(T, 'wf1', '33611', { startNodeId: null, windowOpen: true, reprendLaMain: true, saufOperateur: true });
+    expect(startWorkflow).toHaveBeenCalledWith({
+      type: 'automatisme_publicite_ou_widget', tenantId: T, workflowId: 'wf1', waId: '33611', blocDeDepart: null, fenetreOuverte: true,
+    });
   });
 
   it('l’automation équivalente : mot-clé = la phrase en contains, son scénario, son plafond, le widget pour propriétaire', () => {

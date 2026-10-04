@@ -77,7 +77,7 @@ describe('executor : le node email est best-effort', () => {
     const applyTag = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(makeDeps(sendEmail, applyTag));
 
-    const outcome = await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
+    const outcome = await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
 
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sendEmail).toHaveBeenCalledWith(
@@ -99,7 +99,7 @@ describe('executor : le node email est best-effort', () => {
     const applyTag = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(makeDeps(sendEmail, applyTag));
 
-    await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
 
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(applyTag).toHaveBeenCalledTimes(1);
@@ -109,7 +109,7 @@ describe('executor : le node email est best-effort', () => {
     const applyTag = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(makeDeps(undefined, applyTag));
 
-    const outcome = await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
+    const outcome = await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
 
     expect(applyTag).toHaveBeenCalledTimes(1);
     expect(outcome).toBe(true);
@@ -132,7 +132,7 @@ describe('executor : le bloc mail rend son issue et se mesure', () => {
     const applyTag = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(makeDeps(sendEmail, applyTag, async (e) => { evenements.push({ nodeId: e.nodeId, kind: e.kind }); }));
 
-    const outcome = await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
+    const outcome = await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
 
     expect(evenements).toEqual([{ nodeId: 'em', kind: 'failed' }]);
     expect(applyTag).toHaveBeenCalledTimes(1); // le parcours continue : best-effort strict conservé
@@ -145,7 +145,7 @@ describe('executor : le bloc mail rend son issue et se mesure', () => {
     const applyTag = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(makeDeps(sendEmail, applyTag, async (e) => { evenements.push({ kind: e.kind }); }));
 
-    await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
     expect(evenements).toEqual([{ kind: 'failed' }]);
   });
 
@@ -155,7 +155,7 @@ describe('executor : le bloc mail rend son issue et se mesure', () => {
     const applyTag = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(makeDeps(sendEmail, applyTag, async (e) => { evenements.push({ kind: e.kind }); }));
 
-    await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
     expect(evenements).toEqual([{ kind: 'sent' }]);
   });
 
@@ -166,7 +166,7 @@ describe('executor : le bloc mail rend son issue et se mesure', () => {
     const applyTag = vi.fn().mockResolvedValue(undefined);
     const ex = new WorkflowExecutor(makeDeps(undefined, applyTag, async (e) => { evenements.push({ kind: e.kind }); }));
 
-    await ex.start('t1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
+    await ex.demarrer('campagne_scenario', 't1', 'wf1', graph, { waId: '33600000001', contactId: 'c1' });
     expect(evenements).toEqual([]);
     expect(applyTag).toHaveBeenCalledTimes(1);
   });

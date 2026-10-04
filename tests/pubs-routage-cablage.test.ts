@@ -4,6 +4,7 @@ import { processTriggers } from '../src/webhooks/triggers';
 import { runAutomations } from '../src/automation/runner';
 import { POSSESSEUR_PUBLICITE } from '../src/automation/match';
 import type { AutomationEvent, AutomationRow } from '../src/automation/match';
+import { POLITIQUE_DE_LANCEMENT, type DemandeAutomatisme } from '../src/workflow/lancements';
 import type { IssueRoutage, PubDuLead } from '../src/pubs/routage';
 import { entrantsDe } from './webhook-fixtures';
 
@@ -295,8 +296,9 @@ describe('la restriction écarte réellement les autres automations', () => {
           clearFired: async () => {},
         },
         evalContext: async () => null,
-        startWorkflow: async (_t: string, _w: string, _waId: string, o: { reprendLaMain: boolean }) => {
-          partis.push(`${_w}:${o.reprendLaMain ? 'reprise' : 'sans'}`);
+        // La reprise que le type de la demande vaut (`POLITIQUE_DE_LANCEMENT`), lue là où elle se décide.
+        startWorkflow: async (d: DemandeAutomatisme) => {
+          partis.push(`${d.workflowId}:${POLITIQUE_DE_LANCEMENT[d.type].reprise === 'non' ? 'sans' : 'reprise'}`);
           return true;
         },
         defaultCooldownSeconds: 0,

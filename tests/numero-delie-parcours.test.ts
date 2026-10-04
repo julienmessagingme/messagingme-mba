@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { jamaisDesabonne } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { WorkflowExecutor, envoieParWhatsApp } from '../src/workflow/executor';
+import { creerLancements } from '../src/workflow/lancements';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { WorkflowRunRow, RunState } from '../src/workflow/run-store.pg';
@@ -77,7 +78,14 @@ function monde(graph: WorkflowGraph, o: { avecVerification?: boolean } = {}) {
     sendEmail: async (_t, waId) => { effets.push(`e-mail ${waId}`); },
     ...(o.avecVerification === false ? {} : { verifierNumeroWhatsApp: async () => { garde(); } }),
   };
-  return { executor: new WorkflowExecutor(deps), delie, effets, runs };
+  const executor = new WorkflowExecutor(deps);
+  // L'entrée des lancements, comme le socle la construit : les câblages de campagne et d'automation passent par elle.
+  const lancements = creerLancements({
+    executor,
+    scenarios: { getById: async () => ({ graph }) },
+    contacts: { findIdByWaId: async () => null },
+  });
+  return { executor, lancements, delie, effets, runs };
 }
 
 const emails = (effets: readonly string[]) => effets.filter((e) => e.startsWith('e-mail'));
@@ -106,18 +114,18 @@ describe('envoieParWhatsApp (la question que runFrom pose avant tout effet)', ()
 describe('le vrai exécuteur sur un numéro délié', () => {
   it('🔴 « e-mail, puis modèle » : refusé AVANT l’e-mail, aucun parcours persisté, et l’exception remonte telle quelle', async () => {
     const m = monde(EMAIL_PUIS_MODELE);
-    await expect(m.executor.start('t1', 'wf1', EMAIL_PUIS_MODELE, { waId: '33611', contactId: 'c1' })).rejects.toBeInstanceOf(NumeroDelieError);
+    await expect(m.executor.demarrer('campagne_scenario', 't1', 'wf1', EMAIL_PUIS_MODELE, { waId: '33611', contactId: 'c1' })).rejects.toBeInstanceOf(NumeroDelieError);
     expect(m.effets, 'l’e-mail est parti avant l’envoi refusé').toEqual([]);
     expect(m.runs.demarres).toEqual([]);
     // Relié : le même démarrage fait tout, dans l'ordre.
     m.delie.vrai = false;
-    expect(await m.executor.start('t1', 'wf1', EMAIL_PUIS_MODELE, { waId: '33611', contactId: 'c1' })).toBe(true);
+    expect(await m.executor.demarrer('campagne_scenario', 't1', 'wf1', EMAIL_PUIS_MODELE, { waId: '33611', contactId: 'c1' })).toBe(true);
     expect(m.effets).toEqual(['e-mail 33611', 'modèle rappel 33611']);
   });
 
   it('🔴 un scénario SANS WhatsApp continue de tourner sur un numéro délié', async () => {
     const m = monde(EMAIL_SEUL);
-    expect(await m.executor.start('t1', 'wf1', EMAIL_SEUL, { waId: '33611', contactId: 'c1' })).toBe(true);
+    expect(await m.executor.demarrer('campagne_scenario', 't1', 'wf1', EMAIL_SEUL, { waId: '33611', contactId: 'c1' })).toBe(true);
     expect(m.effets).toEqual(['e-mail 33611', 'tag relance 33611']);
   });
 });
@@ -168,9 +176,9 @@ describe('campagne de scénario, numéro délié puis relié, avec le vrai exéc
       },
       recipients: destinataires, campaigns: campagnes,
       quality: { getRating: async () => 'GREEN' },
-      // Le câblage du worker : un démarrage de campagne reprend le fil (`ignoreHumanControl`).
-      startWorkflow: (tenant, wf, waId, contactId, params) =>
-        m.executor.start(tenant, wf, EMAIL_PUIS_MODELE, { waId, contactId }, params, { ignoreHumanControl: true }),
+      // Le câblage du worker : un démarrage de campagne (`campagne_scenario`) reprend le fil.
+      startWorkflow: async (tenant, wf, waId, contactId, params) =>
+        (await m.lancements.lancer({ type: 'campagne_scenario', tenantId: tenant, workflowId: wf, waId, contactId, firstTemplateParams: params })) ?? false,
       numerosDelies: { pauserCampagne: async (id) => { pauses.push(id); return m.delie.vrai; } },
     };
     return { m, destinataires, campagnes, pauses, run: () => lancerCampagne(CAMPAGNE, deps) };
@@ -230,8 +238,8 @@ function runner(rows: AutomationRow[], m: ReturnType<typeof monde>, registre: Re
       clearFired: registre.clearFired,
     },
     evalContext: async () => null,
-    // Le câblage du worker : un démarrage hors fenêtre passe par `start`.
-    startWorkflow: (tenant, wf, waId) => m.executor.start(tenant, wf, EMAIL_PUIS_MODELE, { waId, contactId: null }, undefined, { emitEvents: true }),
+    // Le câblage du worker : la demande du runner transmise telle quelle (un tag posé ne prouve pas la fenêtre).
+    startWorkflow: async (demande) => (await m.lancements.lancer(demande)) ?? false,
     // Un anti-rebond COURT : c'est le cas où l'effacement du tir rend la main au prochain événement.
     defaultCooldownSeconds: 60,
     now: () => T,
