@@ -259,18 +259,6 @@ describe('avance concurrente : le tour est RÉSERVÉ avant tout envoi', () => {
     expect(runs.jetonsEcriture).toEqual(['jeton-0']);
   });
 
-  it('un store SANS réservation garde le comportement d’avant (fixtures, e2e)', async () => {
-    // La dépendance est optionnelle : une instance qui ne la câble pas ne doit pas cesser d'avancer.
-    const runs = new RunsConditionnels();
-    // Les méthodes vivent sur le PROTOTYPE : on les masque sur l'instance plutôt que de recopier l'objet,
-    // ce qui perdrait toutes les autres (`findWaitingByWaId` la première).
-    const nu = runs as unknown as Record<string, unknown>;
-    nu.reserverAvance = undefined;
-    nu.libererAvance = undefined;
-    const { ex, calls } = exec(runs);
-    await ex.advance('t1', '33600', 'msg1');
-    expect(calls).toEqual(['qm:B']);
-  });
 });
 
 

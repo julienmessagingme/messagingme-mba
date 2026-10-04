@@ -112,16 +112,22 @@ export interface WorkflowExecutorDeps {
     setStateSiEncoreSur(tenantId: string, id: string, nodeId: string | null, state: RunState, token?: string | null): Promise<boolean>;
     /**
      * Réserve le tour d'avance avant tout envoi. `null` = un autre traitement le tient, l'appelant sort sans
-     * rien faire : c'est ce qui ferme le double envoi. Optionnelle : absente, aucune réservation (fixtures, e2e).
+     * rien faire : c'est ce qui ferme le double envoi. 🔴 Requise, comme ses deux voisines : optionnelles, un
+     * câblage qui les oublierait compilait et envoyait deux fois la réponse à deux messages simultanés du même
+     * contact (piste 8 du rapport d'architecture du 2026-10-02). Les fixtures passent `avecGardesDEtatInertes`
+     * (`tests/executeur-inerte.ts`), qui accorde toujours le tour.
      */
-    reserverAvance?(tenantId: string, id: string, nodeId: string | null, bailSecondes: number): Promise<string | null>;
+    reserverAvance(tenantId: string, id: string, nodeId: string | null, bailSecondes: number): Promise<string | null>;
     /**
      * Prolonge le bail tant que l'avance travaille (`false` = tour repris, on cesse de battre ; cf.
-     * `bail-avance.ts`). Optionnelle : absente, aucun renouvellement.
+     * `bail-avance.ts`). Requise ; fixtures : `avecGardesDEtatInertes`.
      */
-    prolongerAvance?(id: string, token: string, bailSecondes: number): Promise<boolean>;
-    /** Rend le tour. Le jeton garantit qu'un porteur de bail périmé ne libère pas le verrou d'un autre. */
-    libererAvance?(id: string, token: string): Promise<void>;
+    prolongerAvance(id: string, token: string, bailSecondes: number): Promise<boolean>;
+    /**
+     * Rend le tour. Le jeton garantit qu'un porteur de bail périmé ne libère pas le verrou d'un autre. Requise ;
+     * fixtures : `avecGardesDEtatInertes`.
+     */
+    libererAvance(id: string, token: string): Promise<void>;
   };
   getGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
   /** Pose un tag. Rend idéalement `true` si le tag était réellement nouveau : c'est ce qui décide d'émettre
@@ -1321,11 +1327,8 @@ export class WorkflowExecutor {
      * cas normal quand deux messages du même contact arrivent ensemble (le gagnant traite la suite) : on sort,
      * en le journalisant.
      */
-    const peutReserver = this.deps.runs.reserverAvance !== undefined;
-    const jeton = peutReserver
-      ? await this.deps.runs.reserverAvance!(tenantId, run.id, run.currentNode, BAIL_AVANCE_S)
-      : null;
-    if (peutReserver && jeton === null) {
+    const jeton = await this.deps.runs.reserverAvance(tenantId, run.id, run.currentNode, BAIL_AVANCE_S);
+    if (jeton === null) {
       // eslint-disable-next-line no-console
       console.warn(`workflow ${run.workflowId}: avance IGNOREE pour ${waId} (run ${run.id}), un autre traitement tient le tour sur le bloc ${run.currentNode ?? 'null'} (message ${messageId})`);
       return;
@@ -1335,19 +1338,17 @@ export class WorkflowExecutor {
      * Le bail est renouvelé tant qu'on travaille : un seul envoi Meta peut durer ~154 s, et sans battement un
      * autre traitement reprendrait le tour pendant qu'on envoie encore (cf. `bail-avance.ts`).
      */
-    const battement = jeton !== null && this.deps.runs.prolongerAvance
-      ? renouvelerLeBail({
-          prolonger: () => this.deps.runs.prolongerAvance!(run.id, jeton, BAIL_AVANCE_S),
-          perdu: () => {
-            // eslint-disable-next-line no-console
-            console.warn(`workflow ${run.workflowId}: bail d'avance PERDU pour ${waId} (run ${run.id}), un autre traitement a repris le tour pendant le traitement du message ${messageId}`);
-          },
-          echec: (err) => {
-            // eslint-disable-next-line no-console
-            console.warn(`workflow ${run.workflowId}: renouvellement du bail en ECHEC pour le run ${run.id} (on continue de battre):`, err);
-          },
-        })
-      : null;
+    const battement = renouvelerLeBail({
+      prolonger: () => this.deps.runs.prolongerAvance(run.id, jeton, BAIL_AVANCE_S),
+      perdu: () => {
+        // eslint-disable-next-line no-console
+        console.warn(`workflow ${run.workflowId}: bail d'avance PERDU pour ${waId} (run ${run.id}), un autre traitement a repris le tour pendant le traitement du message ${messageId}`);
+      },
+      echec: (err) => {
+        // eslint-disable-next-line no-console
+        console.warn(`workflow ${run.workflowId}: renouvellement du bail en ECHEC pour le run ${run.id} (on continue de battre):`, err);
+      },
+    });
     try {
 
     /**
@@ -1444,7 +1445,7 @@ export class WorkflowExecutor {
       //
       // 🔴 Même garde que devant un envoi : enfiler un tour commande un appel modèle facturé, et le nouveau
       // porteur du tour a commandé le sien. `return` sec, sans écrire `lastMessageId`.
-      const perduAvantTour = battement?.perduPourquoi() ?? null;
+      const perduAvantTour = battement.perduPourquoi();
       if (perduAvantTour !== null) {
         // eslint-disable-next-line no-console
         console.warn(`workflow ${run.workflowId}: tour d'agent NON enfilé pour ${waId} (run ${run.id}) : ${perduAvantTour}`);
@@ -1506,9 +1507,9 @@ export class WorkflowExecutor {
       return;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
-    const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id, run.channel ?? 'whatsapp', battement ?? undefined);
+    const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id, run.channel ?? 'whatsapp', battement);
     // Un contact qui répond est unitaire par nature : ses tags publient.
-    const { refus, partis, canal } = await this.apply(tenantId, waId, actions, undefined, true, run.workflowId, apresWalk, battement ?? undefined);
+    const { refus, partis, canal } = await this.apply(tenantId, waId, actions, undefined, true, run.workflowId, apresWalk, battement);
     // Même règle qu'au réveil : un envoi refusé n'attend aucune réponse. On clôt le run (en gardant
     // `lastMessageId`, sinon le même message serait re-traité) et on remonte la conversation à un humain.
     if (refus !== null) {
@@ -1561,12 +1562,10 @@ export class WorkflowExecutor {
     } finally {
       // Le battement s'arrête avant la libération, dans tous les cas : un renouvellement qui survit à son avance
       // tiendrait un tour que plus personne ne travaille.
-      battement?.arreter();
+      battement.arreter();
       // Libération best-effort (au pire l'attente du bail), dans le `finally` pour que le tour soit rendu même si
       // un envoi jette, sans faire attendre le message suivant du contact.
-      if (jeton !== null && this.deps.runs.libererAvance) {
-        await this.deps.runs.libererAvance(run.id, jeton).catch(() => {});
-      }
+      await this.deps.runs.libererAvance(run.id, jeton).catch(() => {});
     }
   }
 }

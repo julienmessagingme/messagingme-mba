@@ -73,7 +73,7 @@ export const rcsSansAgent: WorkflowExecutorDeps['rcs'] = {
 };
 
 type Runs = WorkflowExecutorDeps['runs'];
-type GardesDEtat = Pick<Runs, 'setStateSiVivant' | 'setStateSiEncoreSur'>;
+type GardesDEtat = Pick<Runs, 'setStateSiVivant' | 'setStateSiEncoreSur' | 'reserverAvance' | 'prolongerAvance' | 'libererAvance'>;
 
 /**
  * Les deux écritures GARDÉES d'un faux `runs`, quand il ne les porte pas : leur absence valait un `setState`
@@ -97,12 +97,31 @@ async function setStateSiEncoreSurInerte(
   await this.setState(id, state);
   return true;
 }
+/**
+ * Le bail d'avance d'un faux `runs`, quand il ne le porte pas : son absence valait « aucune réservation », donc un
+ * tour toujours accordé et jamais disputé. Le jeton inerte reproduit ça avec les écritures gardées INERTES, qui
+ * ignorent le jeton : la réservation réussit, le battement dit « toujours à nous », la libération ne fait rien.
+ * ⚠️ Pas avec un faux qui apporte sa PROPRE écriture gardée et compare le jeton : il recevra `'jeton-inerte'` et non
+ * plus `null`, donc il doit apporter aussi sa réservation (`workflow-avance-concurrente.test.ts`, qui exerce la
+ * dispute du tour, le fait).
+ */
+const JETON_INERTE = 'jeton-inerte';
+async function reserverAvanceInerte(): Promise<string | null> {
+  return JETON_INERTE;
+}
+async function prolongerAvanceInerte(): Promise<boolean> {
+  return true;
+}
+async function libererAvanceInerte(): Promise<void> {}
 // `NoInfer` : sans lui, le compilateur déduirait `R` du type ATTENDU au point d'appel (le `runs` complet) au lieu
-// du faux qu'on lui passe, et exigerait du faux les deux gardes qu'on est justement en train d'ajouter.
+// du faux qu'on lui passe, et exigerait du faux les cinq gardes qu'on est justement en train d'ajouter.
 export function avecGardesDEtatInertes<R extends Pick<Runs, 'setState'> & Partial<GardesDEtat>>(runs: R): NoInfer<R> & GardesDEtat {
   return Object.assign(runs, {
     setStateSiVivant: runs.setStateSiVivant ?? setStateSiVivantInerte,
     setStateSiEncoreSur: runs.setStateSiEncoreSur ?? setStateSiEncoreSurInerte,
+    reserverAvance: runs.reserverAvance ?? reserverAvanceInerte,
+    prolongerAvance: runs.prolongerAvance ?? prolongerAvanceInerte,
+    libererAvance: runs.libererAvance ?? libererAvanceInerte,
   });
 }
 

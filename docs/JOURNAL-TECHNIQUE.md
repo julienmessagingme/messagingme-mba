@@ -5,6 +5,21 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-04 : le bail anti-double-envoi de l'exécuteur, requis (piste 8 de l'audit)
+
+Fait en direct, puis relu (décision de Julien : seulement les trois fonctions du bail, pas de déploiement dédié).
+`reserverAvance`, `prolongerAvance` et `libererAvance` étaient optionnelles « pour les fixtures » : un câblage qui
+les oubliait compilait et l'avance d'un parcours partait sans réservation. Elles sont requises ; les fixtures
+reçoivent un bail inerte par `avecGardesDEtatInertes`, et `tests/workflow-bail-requis.test.ts` fait échouer le
+typecheck si l'UNE redevient optionnelle (une directive `@ts-expect-error` par fonction, vérifiée une à une dans les
+deux sens). Aucun changement en production : `PgWorkflowRunStore` les portait toutes.
+
+**Relecture : 0 rouge, 4 jaunes, corrigés avant de pousser** (rien ne se déployait). Le plus utile : un test intitulé
+« un store SANS réservation garde le comportement d'avant » était resté vert alors que son sens avait changé (le
+jeton inerte arrivait à une écriture gardée qui le refusait, le parcours n'avançait plus, et le test n'assurait que
+les envois) ; il est retiré, le cas étant devenu impossible au typecheck. Plus deux restes du battement optionnel
+dans `advance`, un nom de classe faux dans la doc, et des commentaires.
+
 ## 2026-10-04 : un seul geste pour poser une étiquette (piste 6 de l'audit)
 
 **Cadrage.** Deux rondes de questions fermées, décisions de Julien : cinq portes passent par le module (l'agent, le bloc

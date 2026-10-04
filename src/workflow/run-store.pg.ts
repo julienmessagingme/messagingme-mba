@@ -206,9 +206,11 @@ export class PgWorkflowRunStore {
    * avec une échéance, que `claimDueQuestions` réveillerait plus tard en parallèle du nouveau parcours. Le
    * jeton empêche en plus un porteur de bail périmé d'écrire par-dessus celui qui a repris le tour.
    *
-   * `token` à `null` = aucune réservation n'a eu lieu (câblages de test, stores sans `reserverAvance`) : la
-   * garde du jeton ne s'applique pas. Le `is null` porte sur le paramètre, pas sur la colonne : un appelant qui
-   * tient un jeton est toujours confronté à celui de la ligne.
+   * `token` à `null` = l'appelant ne tient pas de réservation (l'échéance d'inactivité écrite par un tour d'agent,
+   * `majRun` dans `src/worker.ts`) : la garde du jeton ne s'applique pas. L'avance d'un parcours, elle, réserve
+   * toujours (`reserverAvance` est requise depuis la piste 8 du rapport d'architecture du 2026-10-02). Le
+   * `is null` porte sur le paramètre, pas sur la colonne : un appelant qui tient un jeton est toujours confronté à
+   * celui de la ligne.
    */
   async setStateSiEncoreSur(tenantId: string, id: string, nodeId: string | null, state: RunState, token: string | null = null): Promise<boolean> {
     const res = await this.pool.query(

@@ -1071,10 +1071,12 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
 7. **Le cerveau de l'agent IA construit deux fois** (spéculatif). `src/index.ts` (bac à sable) et `src/worker.ts`
    (production) recopient la moitié commune de `creerCerveauGateway`, alignées par deux tests de texte ; l'écart du
    2026-09-16 (bac à sable sans résolveur) venait de là. Une fabrique « production / essai » dans `src/agent/`.
-8. **Le bail anti-double-envoi de l'exécuteur, requis** (spéculatif). `reserverAvance`, `prolongerAvance`,
-   `libererAvance` sont optionnels « pour les fixtures » (`src/workflow/executor.ts`) ; un câblage qui les
-   oublierait compilerait. Les rendre requis, les fixtures passant par `avecGardesDEtatInertes`. Rejoint le
-   **candidat 6 du rapport du 2026-09-14** (dépendances optionnelles).
+8. ✅ **Le bail anti-double-envoi de l'exécuteur, requis : FAIT le 2026-10-04** (plan
+   `docs/superpowers/plans/2026-10-04-bail-avance-requis.md`). `reserverAvance`, `prolongerAvance` et
+   `libererAvance` sont requises ; les fixtures reçoivent un bail inerte par `avecGardesDEtatInertes`, et
+   `tests/workflow-bail-requis.test.ts` fait échouer le typecheck si l'une redevient optionnelle. Aucun changement
+   en production (`PgWorkflowRunStore` les portait toutes). Le reste du **candidat 6 du rapport du 2026-09-14**
+   (dépendances optionnelles) demeure.
 
 Écartée : les deux journaux du sortant de `PgInboxStore`, déjà décrits plus bas (« un échec du JOURNAL »).
 
