@@ -1,7 +1,7 @@
 ---
 ecran: securite-consentement
 source_section: Sécurité & compliance (menu Sécurité)
-source_empreinte: 195566
+source_empreinte: d5213f
 ---
 # Savoir qui s'est désabonné, et prévenir mes systèmes
 
@@ -23,7 +23,9 @@ dit aussi sur combien de messages il a regardé.
 
 **On ne réabonne pas d'un clic depuis cette liste.** Cela se fait depuis la fiche du contact, là où vous
 voyez à qui vous avez affaire : un bouton sur une liste rendrait trop facile d'annuler en série des refus
-que des personnes ont exprimés.
+que des personnes ont exprimés. Pour la même raison, l'action en masse « Passer en opt-in » de l'écran Contacts
+ne lève pas un STOP. Et la date et l'origine d'un refus restent celles du premier : désabonner à nouveau quelqu'un
+qui l'est déjà ne réécrit rien.
 
 **Ce qu'un désabonnement bloque vraiment.** Tous les envois automatiques : campagne, API, mais aussi
 scénario, automation et agent IA. Depuis l'Inbox, un modèle de catégorie Marketing est refusé, un modèle de
@@ -33,8 +35,9 @@ réception du désabonnement. La machine se tait, la personne peut encore répon
 
 **Prévenir votre propre système à chaque désabonnement.** Sur ce même écran, un administrateur choisit un
 appel déjà déclaré dans Tools > Connecteurs API, et il est joué à chaque refus, quel qu'en soit le chemin.
-Votre CRM ou votre back-office apprennent donc le refus, avec le numéro de la personne. C'est ce qui évite
-qu'un refus enregistré ici vous laisse continuer à écrire à cette personne depuis vos autres outils.
+Votre CRM ou votre back-office apprennent donc le refus, avec le numéro de la personne, une seule fois par refus.
+C'est ce qui évite qu'un refus enregistré ici vous laisse continuer à écrire à cette personne depuis vos autres
+outils.
 
 Quatre points sur ce branchement :
 

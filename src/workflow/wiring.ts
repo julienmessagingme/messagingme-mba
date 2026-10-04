@@ -413,9 +413,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       await contactStore.removeTagsByPhone(tenant, waId, [clean]);
     },
     clearField: async (tenant, waId, key) => { await contactStore.clearFieldsByPhone(tenant, waId, [key]); },
-    // Source `scenario` : distingue un consentement posé par un parcours de celui saisi à la main (`crm`) ou
-    // coché dans un Flow (`flow`).
-    setOptIn: async (tenant, waId, value) => { await contactStore.setOptInByWaId(tenant, waId, value, 'scenario'); },
+    // Autorité `scenario` (elle lève un STOP, `LEVE_UN_STOP`), et source `scenario` : distingue un consentement posé
+    // par un parcours de celui saisi à la main (`crm`) ou coché dans un Flow (`flow`).
+    setOptIn: async (tenant, waId, value) => { await contactStore.setOptInByWaId(tenant, waId, value, 'scenario', 'scenario'); },
     /**
      * 🔴 La garde d'opt-out des envois d'un parcours (scénario, automation, outils d'agent qui passent par
      * `apply`) : sans elle, un contact qui a écrit STOP recevrait encore leurs messages. La réponse d'un agent

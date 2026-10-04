@@ -159,8 +159,9 @@ export function signalDuClic(contactId: string, code: string): Signal {
  * `messageDuStop`, l'identifiant du message qui a dit STOP, est la clé naturelle du refus : un STOP redélivré par
  * Meta ou un job rejoué rend le même `em_event_id`, et l'outil peut dédupliquer. Sans message connu (fiche, action
  * en masse, API, bloc de scénario), un aléa figé dans le job, donc stable pour un job rejoué.
- * Le doublon est borné ailleurs : un désabonnement n'est annoncé que si le statut change (`setOptInByWaId`,
- * `ecrireConsentementParId`). Un STOP reconnu seulement par une automation part donc sous un identifiant aléatoire.
+ * Le doublon est borné ailleurs : un désabonnement n'est annoncé que si le statut change, sur tous les chemins
+ * (`src/crm/transition-consentement.ts`). Un STOP reconnu seulement par une automation part donc sous un identifiant
+ * aléatoire.
  */
 export function signalDesabonnement(waId: string, canal: CanalSignal, messageDuStop?: string): Signal {
   return { nom: 'em_opted_out', id: idSignal('em_opted_out', messageDuStop), le: maintenant(), waId, canal };

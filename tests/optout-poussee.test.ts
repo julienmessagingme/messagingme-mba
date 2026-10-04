@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { Pool } from 'pg';
 import type { SourceAppel } from '../src/agent/sources';
 import { PgContactStore } from '../src/crm/contact-store.pg';
+import type { ContactUpsert, LotContacts } from '../src/crm/import';
 import {
   lotsDePoussee,
   creerAnnonceOptOut,
@@ -30,30 +31,30 @@ function journal() {
   return { evenements, noter: (e: string) => { evenements.push(e); } };
 }
 
+/**
+ * Un faux pool qui répond aux écritures du consentement. Ce qu'il rend tient lieu de ce que la base aurait décidé :
+ * QUI est passé à `opted_out` se décide dans le SQL (`src/crm/transition-consentement.ts`), joué contre une vraie
+ * base par `tests/integration/transition-consentement.integration.test.ts`. Ici on ne vérifie que ce que le dépôt
+ * en FAIT : l'ordre, l'absorption d'une panne, les identités transmises.
+ *
+ * ⚠️ ON DISCRIMINE SUR LA FORME DU RENDU : l'action en masse agrège (`json_agg`, une ligne pour toute la sélection),
+ * le mot-clé entrant rend sa fiche.
+ */
 function fauxPool(j: ReturnType<typeof journal>, opts: {
-  idTouche?: string | null;
-  lignesBulk?: Array<{ id: string; phone_e164: string | null; bsuid: string | null }>;
-  /** Le statut AVANT l'écriture du mot-clé, tel que `setOptInByWaId` le lit dans la même instruction. */
-  avant?: 'opted_in' | 'opted_out' | 'unknown';
+  /** La fiche que rend l'écriture par `wa_id`, ou `null` pour un numéro inconnu. */
+  fiche?: { id: string; passe: boolean } | null;
+  passes?: Array<{ phone_e164: string | null; bsuid: string | null }>;
 } = {}) {
-  const idTouche = opts.idTouche === undefined ? 'c1' : opts.idTouche;
-  const avant = opts.avant ?? 'opted_in';
-  const lignesBulk = opts.lignesBulk ?? [{ id: 'c1', phone_e164: '+33600000001', bsuid: null }];
+  const fiche = opts.fiche === undefined ? { id: 'c1', passe: true } : opts.fiche;
+  const passes = opts.passes ?? [{ phone_e164: '+33600000001', bsuid: null }];
   const query = async (sql: string) => {
-    /**
-     * ⚠️ ON DISCRIMINE SUR LA CIBLE, PAS SUR LE `returning`. Les deux requêtes commencent par
-     * `update contacts set opt_in_status` ; seul le mot-clé entrant vise UN contact résolu par sous-requête
-     * (`where id = (select ...)`), l'action en masse visant un ensemble. Discriminer sur `returning` a
-     * marché une heure, puis a cessé le jour où le `returning` de l'action en masse est devenu CONDITIONNEL :
-     * le test du réabonnement en masse mesurait alors le mauvais chemin, et il l'a dit.
-     */
-    if (/update contacts set opt_in_status/i.test(sql)) {
-      if (/where id = \(/i.test(sql)) {
-        j.noter('ecriture:setOptInByWaId');
-        return { rows: idTouche === null ? [] : [{ id: idTouche, avant }], rowCount: idTouche === null ? 0 : 1 };
+    if (/^\s*with avant as/i.test(sql)) {
+      if (/json_agg/i.test(sql)) {
+        j.noter('ecriture:applyEditsMany');
+        return { rows: [{ ecrites: passes.length, gardes: 0, passes }], rowCount: 1 };
       }
-      j.noter('ecriture:applyEditsMany');
-      return { rows: /returning/i.test(sql) ? lignesBulk : [], rowCount: lignesBulk.length };
+      j.noter('ecriture:setOptInByWaId');
+      return { rows: fiche === null ? [] : [fiche], rowCount: fiche === null ? 0 : 1 };
     }
     return { rows: [], rowCount: 0 };
   };
@@ -74,7 +75,7 @@ function fauxPoolTransactionnel(j: ReturnType<typeof journal>) {
     query: async (sql: string) => {
       if (/^commit/i.test(sql)) { j.noter('commit'); return { rows: [], rowCount: 0 }; }
       if (/select tags from contacts/i.test(sql)) return { rows: [{ tags: [] }], rowCount: 1 };
-      if (/update contacts set opt_in_status/i.test(sql)) { j.noter('ecriture:applyEdits'); return { rows: [], rowCount: 1 }; }
+      if (/^\s*with avant as/i.test(sql)) { j.noter('ecriture:applyEdits'); return { rows: [{ passe: true }], rowCount: 1 }; }
       if (/select id, phone_e164, bsuid/i.test(sql)) return { rows: [ligne], rowCount: 1 };
       return { rows: [], rowCount: 0 };
     },
@@ -96,7 +97,7 @@ describe('le dépôt ANNONCE le refus, après l’avoir écrit', () => {
     const j = journal();
     const recu: Array<{ tenantId: string; waIds: string[] }> = [];
     const store = new PgContactStore(fauxPool(j), annonceQuiNote(j, recu));
-    const id = await store.setOptInByWaId(TENANT, '33600000001', 'opted_out', 'whatsapp_stop');
+    const id = await store.setOptInByWaId(TENANT, '33600000001', 'opted_out', 'personne', 'whatsapp_stop');
 
     expect(id).toBe('c1');
     expect(j.evenements).toEqual(['ecriture:setOptInByWaId', 'annonce']);
@@ -113,104 +114,62 @@ describe('le dépôt ANNONCE le refus, après l’avoir écrit', () => {
     const recu: Array<{ tenantId: string; waIds: string[] }> = [];
     const store = new PgContactStore(fauxPool(j), annonceQuiNote(j, recu, true));
 
-    const id = await store.setOptInByWaId(TENANT, '33600000001', 'opted_out', 'whatsapp_stop');
+    const id = await store.setOptInByWaId(TENANT, '33600000001', 'opted_out', 'personne', 'whatsapp_stop');
     expect(id, 'l’écriture est faite et l’identifiant remonte, malgré l’annonce en échec').toBe('c1');
     expect(j.evenements).toEqual(['ecriture:setOptInByWaId', 'annonce']);
   });
 
   /**
-   * ⚠️ LE TÉMOIN DANS L'AUTRE SENS. Un `not.toHaveBeenCalled()` passe aussi quand rien ne se produit : sans
-   * le cas `opted_out` juste au-dessus, ce test-ci validerait un dépôt qui n'annonce JAMAIS rien. La leçon
-   * est celle du 2026-09-13, payée sur `tests/optout-blocage.test.ts`.
+   * ⚠️ LE TÉMOIN DANS L'AUTRE SENS : sans passage (fiche déjà désabonnée, ou réabonnement), la fiche est rendue et
+   * l'annonce ne part pas. Le premier cas de ce bloc est le témoin qui prouve qu'elle part quand `passe` est vrai.
+   * QUAND `passe` est vrai, c'est la table d'intégration qui le dit, cas par cas.
    */
-  it('⚠️ un RÉabonnement n’annonce rien : ce n’est pas un refus', async () => {
+  it('⚠️ sans passage à `opted_out`, la fiche est rendue et rien ne s’annonce', async () => {
     const j = journal();
     const recu: Array<{ tenantId: string; waIds: string[] }> = [];
-    const store = new PgContactStore(fauxPool(j), annonceQuiNote(j, recu));
-    await store.setOptInByWaId(TENANT, '33600000001', 'opted_in', 'scenario');
-
-    expect(j.evenements).toEqual(['ecriture:setOptInByWaId']);
-    expect(recu).toEqual([]);
-  });
-
-  /**
-   * 🔴 UN SEUL STOP, UNE SEULE ANNONCE. Avec l'ancien contournement (une automation sur le mot STOP vers un bloc
-   * « Action »), le même refus était écrit deux fois et annoncé deux fois, dont une à identifiant aléatoire. Le
-   * dépôt lit l'ancien statut dans la même instruction (le SQL est tenu en intégration) et n'annonce que s'il
-   * CHANGE. Le premier cas de ce bloc (ancien statut `opted_in`, le défaut du faux) est le témoin dans l'autre sens.
-   * ⚠️ Depuis le lot 7, l'instruction ne RÉÉCRIT pas non plus un statut déjà en place (cas suivant, et
-   * `tests/integration/poussee-optout.integration.test.ts`) : elle part, lit sous verrou, et rend la fiche.
-   */
-  it('🔴 une fiche DÉJÀ désabonnée : la fiche est rendue, l’annonce ne part pas', async () => {
-    const j = journal();
-    const recu: Array<{ tenantId: string; waIds: string[] }> = [];
-    const store = new PgContactStore(fauxPool(j, { avant: 'opted_out' }), annonceQuiNote(j, recu));
-    const id = await store.setOptInByWaId(TENANT, '33600000001', 'opted_out', 'scenario');
+    const store = new PgContactStore(fauxPool(j, { fiche: { id: 'c1', passe: false } }), annonceQuiNote(j, recu));
+    const id = await store.setOptInByWaId(TENANT, '33600000001', 'opted_out', 'scenario', 'scenario');
 
     expect(id).toBe('c1');
     expect(j.evenements).toEqual(['ecriture:setOptInByWaId']);
     expect(recu).toEqual([]);
   });
 
-  it('🔴 le SQL lit l’ancien statut DANS l’instruction, sous verrou : deux STOP simultanés n’annoncent pas deux fois', () => {
-    // Sans les commentaires : celui qui EXPLIQUE le verrou le cite, et ferait passer une requête qui l'a perdu
-    // (mesuré en retirant le `for update` : ce cas restait vert tant que les commentaires étaient lus).
-    const source = readFileSync(new URL('../src/crm/contact-store.pg.ts', import.meta.url), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
-    const debut = source.indexOf('async setOptInByWaId(');
-    const corps = source.slice(debut, source.indexOf('async ecrireConsentementParId(', debut));
-    expect(corps).toMatch(/with avant as \(/);
-    expect(corps).toMatch(/for update/);
-    expect(corps).toMatch(/select id, opt_in_status as avant from avant/);
-  });
-
-  /**
-   * 🔴 UN STATUT DÉJÀ EN PLACE N'EST PAS RÉÉCRIT (lot 7 de l'API publique). Avec l'ancien contournement (une
-   * automation sur le mot STOP vers un bloc « Action »), le second passage remplaçait la source `whatsapp_stop` par
-   * `scenario` et repoussait la date du refus. Or la source est relue au moment de pousser le signal : l'outil du
-   * client apprenait un désabonnement par scénario, sans canal, alors que la personne avait écrit STOP.
-   *
-   * ⚠️ LU DANS LE CODE, faute de base en local : c'est la garde elle-même (`is distinct from $4` sur l'écriture)
-   * qu'on tient ici, et elle se mute. Le comportement (source et date gardées, puis un réabonnement qui écrit) est
-   * joué contre une vraie base par `tests/integration/poussee-optout.integration.test.ts`, en CI.
-   */
-  it('🔴 l’écriture est GARDÉE : un statut déjà en place ne remplace ni sa source ni sa date', () => {
-    const source = readFileSync(new URL('../src/crm/contact-store.pg.ts', import.meta.url), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
-    const debut = source.indexOf('async setOptInByWaId(');
-    const corps = source.slice(debut, source.indexOf('async ecrireConsentementParId(', debut));
-    const ecriture = /update contacts set opt_in_status = \$4, opt_in_source = \$3[\s\S]*?returning id/.exec(corps)?.[0] ?? '';
-    expect(ecriture, 'l’écriture du consentement est introuvable : le test ne mesure plus rien').not.toBe('');
-    expect(ecriture).toMatch(/where id = \(select id from avant\) and opt_in_status is distinct from \$4/);
-  });
-
   it('⚠️ un numéro INCONNU n’annonce rien : il n’y a personne à pousser chez le client', async () => {
     const j = journal();
     const recu: Array<{ tenantId: string; waIds: string[] }> = [];
-    const store = new PgContactStore(fauxPool(j, { idTouche: null }), annonceQuiNote(j, recu));
-    const id = await store.setOptInByWaId(TENANT, '33699999999', 'opted_out', 'whatsapp_stop');
+    const store = new PgContactStore(fauxPool(j, { fiche: null }), annonceQuiNote(j, recu));
+    const id = await store.setOptInByWaId(TENANT, '33699999999', 'opted_out', 'personne', 'whatsapp_stop');
 
     expect(id).toBeNull();
     expect(recu).toEqual([]);
   });
 
-  it('l’action en masse annonce TOUTES les identités touchées, en un seul geste', async () => {
+  it('l’action en masse annonce TOUTES les identités passées, en un seul geste', async () => {
     const j = journal();
     const recu: Array<{ tenantId: string; waIds: string[] }> = [];
-    const lignesBulk = [
-      { id: 'c1', phone_e164: '+33600000001', bsuid: null },
-      { id: 'c2', phone_e164: null, bsuid: 'BSUID-XYZ' },
+    const passes = [
+      { phone_e164: '+33600000001', bsuid: null },
+      { phone_e164: null, bsuid: 'BSUID-XYZ' },
     ];
-    const store = new PgContactStore(fauxPool(j, { lignesBulk }), annonceQuiNote(j, recu));
+    const store = new PgContactStore(fauxPool(j, { passes }), annonceQuiNote(j, recu));
     const n = await store.applyEditsMany(TENANT, { ids: ['c1', 'c2'] }, { setOptIn: 'opted_out' });
 
-    expect(n, 'le compte remonté ne change pas : `returning` ne remplace pas `rowCount`').toBe(2);
+    expect(n, 'les deux nombres remontent tels que la base les compte').toEqual({ affected: 2, stopsGardes: 0 });
     expect(j.evenements).toEqual(['ecriture:applyEditsMany', 'annonce']);
     // ⚠️ Le BSUID est une identité aussi valable qu'un numéro : l'écarter laisserait hors de la poussée
     // exactement les contacts qui n'ont pas partagé leur téléphone.
     expect(recu[0]?.waIds).toEqual(['33600000001', 'BSUID-XYZ']);
+  });
+
+  it('⚠️ ...et une action en masse sans aucun passage n’appelle pas l’annonce', async () => {
+    const j = journal();
+    const recu: Array<{ tenantId: string; waIds: string[] }> = [];
+    const store = new PgContactStore(fauxPool(j, { passes: [] }), annonceQuiNote(j, recu));
+    await store.applyEditsMany(TENANT, { ids: ['c1'] }, { setOptIn: 'opted_out' });
+
+    expect(j.evenements).toEqual(['ecriture:applyEditsMany']);
+    expect(recu).toEqual([]);
   });
 
   it('la fiche contact annonce APRÈS le `commit`, avec l’identité RÉELLEMENT enregistrée', async () => {
@@ -226,42 +185,22 @@ describe('le dépôt ANNONCE le refus, après l’avoir écrit', () => {
     expect(recu[0]?.waIds).toEqual(['33600000001']);
   });
 
-  it('⚠️ ...et une fiche contact qui RÉabonne n’annonce rien', async () => {
-    const j = journal();
-    const recu: Array<{ tenantId: string; waIds: string[] }> = [];
-    const store = new PgContactStore(fauxPoolTransactionnel(j), annonceQuiNote(j, recu));
-    await store.applyEdits(TENANT, 'c1', { fields: {}, addTags: [], removeTags: [], optInStatus: 'opted_in' });
-
-    expect(j.evenements).toEqual(['ecriture:applyEdits', 'commit']);
-    expect(recu).toEqual([]);
-  });
-
   /**
-   * ⚠️ LE `returning` EST CONDITIONNEL, ET C'EST UNE QUESTION DE COÛT. Une action en masse pose souvent une
-   * étiquette sur des milliers de fiches ; ramener une ligne par contact pour n'en rien faire serait de
-   * l'egress pur sur une base facturée à l'egress, invisible de tout écran (même famille que le sondage à
-   * vide de `src/queue/names.ts`, qui pesait 88 % du trafic).
+   * ⚠️ LE `returning` EST RÉSERVÉ AU CONSENTEMENT, ET C'EST UNE QUESTION DE COÛT. Une action en masse pose souvent
+   * une étiquette sur des milliers de fiches ; ramener une ligne par contact pour n'en rien faire serait de l'egress
+   * pur sur une base facturée à l'egress, invisible de tout écran (même famille que le sondage à vide de
+   * `src/queue/names.ts`, qui pesait 88 % du trafic). Le consentement, lui, remonte UNE ligne agrégée.
    */
-  it('⚠️ une action en masse SANS opt-out ne ramène aucune ligne', async () => {
+  it('⚠️ une action en masse SANS consentement ne ramène aucune ligne', async () => {
     const sqls: string[] = [];
     const pool = { query: async (sql: string) => { sqls.push(sql); return { rows: [], rowCount: 3 }; } } as unknown as Pool;
     const store = new PgContactStore(pool, async () => {});
-    await store.applyEditsMany(TENANT, { ids: ['c1'] }, { addTags: ['vip'] });
+    expect(await store.applyEditsMany(TENANT, { ids: ['c1'] }, { addTags: ['vip'] })).toEqual({ affected: 3, stopsGardes: 0 });
     expect(sqls[0]).not.toMatch(/returning/i);
 
-    // TÉMOIN : la MÊME méthode, avec un opt-out, ramène bien les identités.
+    // TÉMOIN : la MÊME méthode, avec un opt-out, porte bien un `returning` (interne à l'instruction).
     await store.applyEditsMany(TENANT, { ids: ['c1'] }, { setOptIn: 'opted_out' });
-    expect(sqls[1]).toMatch(/returning id, phone_e164, bsuid/i);
-  });
-
-  it('⚠️ ...et une action en masse qui RÉabonne n’annonce rien', async () => {
-    const j = journal();
-    const recu: Array<{ tenantId: string; waIds: string[] }> = [];
-    const store = new PgContactStore(fauxPool(j), annonceQuiNote(j, recu));
-    await store.applyEditsMany(TENANT, { ids: ['c1'] }, { setOptIn: 'opted_in' });
-
-    expect(j.evenements).toEqual(['ecriture:applyEditsMany']);
-    expect(recu).toEqual([]);
+    expect(sqls[1]).toMatch(/returning id/i);
   });
 });
 
@@ -271,28 +210,48 @@ describe('le dépôt ANNONCE le refus, après l’avoir écrit', () => {
  * Une liste écrite à la main dérive dès qu'on ajoute un chemin d'écriture, MÊME quand elle est le garde-fou :
  * la leçon a été payée deux fois en une soirée le 2026-09-13 (l'inventaire des méthodes d'envoi, qui en
  * citait six sur huit ; et la migration 0138, dont l'invariant ne tenait que sur trois écritures sur quatre).
- * Ce test lit `contact-store.pg.ts`, y trouve toute requête capable de poser une DATE de désabonnement, et
- * exige que sa méthode figure dans la liste de celles qui annoncent.
+ * Depuis le 2026-10-03, seule la transition (`src/crm/transition-consentement.ts`) écrit le statut et sa date :
+ * un opt-out ne s'écrit que par `ecritureDuConsentement`, qui rend `passe`, et les upserts ne demandent jamais
+ * `opted_out`. Ce test lit `contact-store.pg.ts` et exige que les méthodes qui l'appellent soient celles qui annoncent.
  */
 describe('🔴 tout chemin qui écrit un opt-out ANNONCE, et la liste est dérivée du fichier', () => {
   /** Les méthodes dont les tests ci-dessus prouvent qu'elles annoncent. */
   const METHODES_QUI_ANNONCENT = ['setOptInByWaId', 'applyEdits', 'applyEditsMany', 'ecrireConsentementParId'];
+  /** Le fichier sans ses commentaires : une explication qui cite le code ne compte pas. */
+  const source = readFileSync(new URL('../src/crm/contact-store.pg.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/^\s*--.*$/gm, '');
 
-  it('les méthodes qui posent `opt_out_at = now()` sont EXACTEMENT celles qui annoncent', () => {
-    const source = readFileSync(new URL('../src/crm/contact-store.pg.ts', import.meta.url), 'utf8');
-    const lignes = source.split('\n');
+  function methodesQui(motif: RegExp): string[] {
     let methode: string | null = null;
     const trouvees = new Set<string>();
-    for (const ligne of lignes) {
+    for (const ligne of source.split('\n')) {
       const m = /^\s{2}(?:private\s+|public\s+)?(?:static\s+)?async\s+([A-Za-z0-9_]+)\s*\(/.exec(ligne);
       if (m) methode = m[1]!;
-      // Une écriture qui POSE la date (donc un passage en `opted_out`). Les upserts, qui ne savent que la
-      // REMETTRE à null, n'écrivent jamais `now()` sur cette colonne et sont donc hors de portée : ils ne
-      // peuvent pas faire régresser un statut, c'est l'invariant du chemin d'import et de l'API publique.
-      if (/opt_out_at\s*=[^;]*now\(\)/.test(ligne) && methode !== null) trouvees.add(methode);
+      if (motif.test(ligne) && methode !== null) trouvees.add(methode);
     }
-    expect(trouvees.size, 'le balayage ne trouve plus aucune écriture : c’est le test qui est cassé').toBeGreaterThan(0);
-    expect([...trouvees].sort()).toEqual([...METHODES_QUI_ANNONCENT].sort());
+    return [...trouvees].sort();
+  }
+
+  it('les méthodes qui écrivent par `ecritureDuConsentement` sont EXACTEMENT celles qui annoncent', () => {
+    const ecrivent = methodesQui(/ecritureDuConsentement\(/);
+    expect(ecrivent.length, 'le balayage ne trouve plus aucune écriture : c’est le test qui est cassé').toBeGreaterThan(0);
+    expect(ecrivent).toEqual([...METHODES_QUI_ANNONCENT].sort());
+    expect(methodesQui(/this\.annoncer\(/)).toEqual([...METHODES_QUI_ANNONCENT].sort());
+  });
+
+  it('🔴 aucune affectation du statut ni de sa date hors du module', () => {
+    // La purge vide `opt_in_source` (ce qui DÉCRIT la personne) et garde le statut et sa date (ce qui dit NON).
+    expect(source).not.toMatch(/opt_out_at\s*=/);
+    expect(source).not.toMatch(/set\s+opt_in_status/);
+    expect(source).not.toMatch(/(opt_in_status|opt_in_source)\s*=\s*case/);
+  });
+
+  it('🔴 un upsert ne demande jamais `opted_out` : il n’a rien à annoncer (tenu par le compilateur)', () => {
+    type DemandeDUpsert = ContactUpsert['optInStatus'] | LotContacts['optInStatus'];
+    const jamaisOptOut: [Extract<DemandeDUpsert, 'opted_out'>] extends [never] ? true : false = true;
+    expect(jamaisOptOut).toBe(true);
   });
 });
 

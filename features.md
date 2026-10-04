@@ -190,8 +190,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   **ajouter un champ** (une valeur sur toute la sélection), **passer en opt-in**, **passer en
   opt-out**, **supprimer**.
   **Passer en opt-in** rend la sélection destinataire des campagnes : à n'utiliser que si vous
-  détenez une preuve du consentement, l'écran le dit. **Passer en opt-out** exclut de toute
+  détenez une preuve du consentement, l'écran le dit. 🔴 **Elle ne lève pas un STOP** (2026-10-03) : un contact
+  qui a répondu STOP reste désabonné, et l'écran dit combien de fiches ont gardé leur STOP (« 1 fiche a gardé son
+  STOP »). Seule la fiche du contact, ou la personne elle-même, lève un STOP : un geste sur une liste ne doit pas
+  annuler en série des refus exprimés un par un. **Passer en opt-out** exclut de toute
   campagne, **y compris de celles déjà programmées**, sans toucher à la fiche ni à l'historique.
+  Une fiche déjà au statut demandé n'est pas réécrite : la date et l'origine de son consentement, ou de son refus,
+  restent celles du premier geste, et un contact déjà désabonné n'est pas annoncé une seconde fois à votre système.
   **Supprimer est IRRÉVERSIBLE et unique** (2026-08-19) : la fiche, la conversation dans l'Inbox,
   ses messages, son analyse **et les événements bruts reçus de Meta la concernant** (2026-08-31) sont
   détruits d'un seul geste. Ces événements bruts, qui portent le texte de ce que la personne a écrit, sont
@@ -249,7 +254,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   motif des lignes en erreur).
   **Case opt-in cochée, l'import réabonne aussi un contact qui avait répondu STOP** (2026-09-26) : c'est
   l'opérateur qui l'affirme, pour tout le fichier. C'est le seul ajout qui le peut : l'ajout à la main d'un
-  numéro déjà connu, une liste HubSpot et un webhook entrant ne réabonnent jamais un contact qui a dit STOP.
+  numéro déjà connu, une liste HubSpot et un webhook entrant ne réabonnent jamais un contact qui a dit STOP. Un
+  import qui redit le consentement d'un contact déjà opt-in garde la source d'origine de ce consentement.
   **Gros fichiers (2026-08-31)** : un CSV allant jusqu'à environ 150 000 contacts passe désormais en un seul
   import, là où le choix du fichier échouait déjà vers 14 000 lignes. Au-delà d'environ 8 000 lignes, le nombre
   de lignes annoncé avant l'import devient une **estimation**, affichée avec un « ≈ » (l'écran n'analyse plus
@@ -264,6 +270,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   reste supprimable. Toujours sur la fiche : on **affecte ou retire un tag** (les tags existants sont suggérés à
   la saisie), on renseigne un champ déjà déclaré, et on peut **créer un champ entièrement nouveau (libellé + type)
   sans quitter la fiche** : il rejoint les champs de l'espace et sa valeur est posée sur ce contact dans la foulée.
+  Le **consentement** se règle aussi depuis la fiche, et c'est le seul geste de l'équipe qui lève un STOP (avec la
+  case cochée d'un import CSV). Se désabonner puis enregistrer à nouveau ne change rien : la date du refus reste
+  celle du premier, et il n'est annoncé qu'une fois.
 - 🔁 **« Vos prix » A QUITTÉ l'écran Paramètres** (2026-09-23) : il y a désormais **une seule grille, pour
   tous les espaces**, réglée dans la console d'exploitation. Un client ne fixe plus, et ne voit plus, ce
   qu'on lui facture. La grille porte les mêmes six réglages qu'avant : la **marge** sur le tarif Meta
@@ -2431,7 +2440,10 @@ boîte par sous-menu.
     élargie. L'écran dit aussi sur combien de messages il a regardé.
   - ⚠️ **On ne réabonne pas d'un clic depuis cette liste** : ça se fait depuis la fiche du contact, là où l'on
     voit à qui l'on a affaire. Un bouton sur une liste rendrait trop facile d'annuler en série des refus que
-    des personnes ont exprimés.
+    des personnes ont exprimés. Pour la même raison, l'action en masse « Passer en opt-in » ne lève pas un STOP
+    (2026-10-03).
+  - 🔴 **La date et l'origine d'un refus sont celles du PREMIER refus** : désabonner à nouveau un contact déjà
+    désabonné (depuis sa fiche, en masse, par un scénario ou par l'API) ne réécrit rien.
 - ✅ **Un désabonnement bloque réellement tous les envois automatiques** (2026-09-13) : campagne, API, mais
   aussi **scénario, automation et agent IA**, qui passaient jusque-là. Un envoi de **modèle** depuis l'Inbox
   est refusé s'il est de catégorie Marketing, autorisé s'il est de catégorie Service (une livraison, un
@@ -2442,7 +2454,9 @@ boîte par sous-menu.
 - ✅ **Prévenir votre propre système à chaque désabonnement** (2026-09-13) : sur l'écran Consentement, un
   administrateur choisit un appel déjà déclaré dans **Tools > Connecteurs API**, et Engage Me le joue à chaque
   refus, quel qu'en soit le chemin (« stop » reçu, case cochée dans la fiche, action en masse). Votre CRM, votre
-  back-office ou votre routeur d'e-mails apprennent donc le refus, avec le numéro de la personne.
+  back-office ou votre routeur d'e-mails apprennent donc le refus, avec le numéro de la personne. **Une fois par
+  refus** : un contact déjà désabonné qu'on désabonne à nouveau ne repart pas chez vous, et deux STOP reçus en même
+  temps n'en font qu'un.
   - 🔴 **Pourquoi ça compte** : un refus qui ne vit que chez nous vous laisse continuer à écrire à cette
     personne depuis vos autres outils, et c'est vous qui en répondez.
   - 🔴 **Votre système en panne ne bloque JAMAIS le désabonnement.** Le refus est enregistré d'abord, l'appel

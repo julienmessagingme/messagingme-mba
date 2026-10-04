@@ -222,13 +222,14 @@ describe('annoncerAussiAuxSignaux : le désabonnement', () => {
     expect(signalDesabonnement('336', 'whatsapp').id).not.toBe(signalDesabonnement('336', 'whatsapp').id);
   });
 
-  it('🔴 un STOP que Meta REDÉLIVRE : le dépôt écrit deux fois, l’outil reçoit deux fois le MÊME em_event_id', async () => {
-    // Le chemin réel du mot-clé entrant : `setOptInByWaId` n'écrit pas « seulement si le statut change », donc
-    // la redélivrance repasse jusqu'à l'annonce. C'est l'identifiant qui permet à l'outil de dédupliquer.
+  it('🔴 un STOP annoncé deux fois pour le MÊME message : l’outil reçoit deux fois le MÊME em_event_id', async () => {
+    // Le faux dépôt fait passer la fiche à `opted_out` les deux fois (`passe`). La base, elle, ne réannonce pas un
+    // statut déjà en place (`tests/integration/transition-consentement.integration.test.ts`) ; si l'annonce repart
+    // pour le même message, c'est l'identifiant qui permet à l'outil de dédupliquer.
     const { emetteur, jobs } = emetteurDeTest();
-    const pool = { query: async () => ({ rows: [{ id: 'c1' }], rowCount: 1 }) } as unknown as Pool;
+    const pool = { query: async () => ({ rows: [{ id: 'c1', passe: true }], rowCount: 1 }) } as unknown as Pool;
     const store = new PgContactStore(pool, annoncerAussiAuxSignaux(async () => {}, emetteur));
-    for (let i = 0; i < 2; i += 1) await store.setOptInByWaId(T, '33612345678', 'opted_out', 'whatsapp_stop', 'wamid.STOP');
+    for (let i = 0; i < 2; i += 1) await store.setOptInByWaId(T, '33612345678', 'opted_out', 'personne', 'whatsapp_stop', 'wamid.STOP');
     const ids = jobs.flatMap((j) => j.job.signaux.map((s) => s.id));
     expect(ids).toHaveLength(2);
     expect(ids[1]).toBe(ids[0]);

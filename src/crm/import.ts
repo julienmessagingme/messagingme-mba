@@ -4,6 +4,7 @@ import { estCleReservee } from './champs-fiche';
 import type { UserFieldStore } from './fields';
 import type { ColumnMapping, ImportReport, UserFieldDef } from './types';
 import type { CountryCode } from 'libphonenumber-js';
+import type { AutoriteImport } from './transition-consentement';
 
 export interface ContactUpsert {
   tenantId: string;
@@ -40,11 +41,11 @@ export interface LotContacts {
   /** Tags appliqués à tous les contacts du lot (union avec l'existant, jamais d'écrasement). */
   tags?: string[];
   /**
-   * 🔴 Ce lot peut-il réabonner quelqu'un qui a dit STOP ? Seul l'import CSV case cochée le peut, à la demande
-   * de l'opérateur. Absent = non, le défaut sûr : un appelant qui l'oublie garde le STOP. L'import HubSpot ne le
-   * pose jamais.
+   * 🔴 Qui importe, donc ce lot peut-il réabonner quelqu'un qui a dit STOP ? Seul l'import CSV case cochée
+   * (`import_csv_coche`) le peut, à la demande de l'opérateur ; l'import sans case et l'import HubSpot (`import`)
+   * gardent le STOP. Requise : un appelant qui l'oublierait ne compile pas (`src/crm/transition-consentement.ts`).
    */
-  peutLeverStop?: boolean;
+  autorite: AutoriteImport;
   contacts: ContactDeLot[];
 }
 
@@ -74,8 +75,8 @@ export interface ImportInput {
   optInSource?: string;
   /** Tags appliqués à tous les contacts de cet import (union avec l'existant). */
   tags?: string[];
-  /** Cet import peut-il réabonner quelqu'un qui a dit STOP ? Seule la route CSV, case cochée. Cf. `LotContacts`. */
-  peutLeverStop?: boolean;
+  /** Qui importe : `import_csv_coche` (la route CSV, case cochée) lève un STOP, `import` jamais. Cf. `LotContacts`. */
+  autorite: AutoriteImport;
 }
 
 export interface ImportDeps {
@@ -185,7 +186,7 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
     optInStatus: (input.optIn ? 'opted_in' : 'unknown') as 'opted_in' | 'unknown',
     ...(input.optIn ? { optInSource: input.optInSource ?? 'csv_import' } : {}),
     ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
-    ...(input.peutLeverStop ? { peutLeverStop: true } : {}),
+    autorite: input.autorite,
   };
   for (let d = 0; d < aEcrire.length; d += TAILLE_LOT) {
     const res = await deps.contacts.upsertManyByPhone({ ...commun, contacts: aEcrire.slice(d, d + TAILLE_LOT) });

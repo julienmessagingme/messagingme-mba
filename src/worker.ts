@@ -509,7 +509,7 @@ async function main(): Promise<void> {
       // 🔴 Opt-out par mot-clé sur WhatsApp (STOP, désabonner...) : sans lui, un contact qui répond STOP
       // resterait `opted_in` et recevrait la campagne suivante. La source `whatsapp_stop` le distingue d'un refus
       // posé à la main. Le wamid du STOP suit jusqu'au signal : un STOP redélivré garde le même `em_event_id`.
-      inboundOptOut: (tenant, waId, messageId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP, messageId),
+      inboundOptOut: (tenant, waId, messageId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', 'personne', SOURCE_STOP_WHATSAPP, messageId),
       /**
        * Répartition d'une réponse de campagne (`campaigns.assignation`). Le tour de rôle se joue à l'arrivée de
        * la réponse, pas au lancement : répartir d'avance attribuerait des conversations qui n'existeront jamais.

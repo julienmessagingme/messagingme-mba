@@ -113,6 +113,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
     const res = await store.upsertManyByPhone({
       tenantId,
+      autorite: 'import_csv_coche',
       optInStatus: 'opted_in',
       optInSource: 'csv_import',
       tags: ['salon-2026'],
@@ -145,6 +146,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // préalable, cette requête LÈVE, et tout import contenant un doublon échouerait.
     const res = await store.upsertManyByPhone({
       tenantId,
+      autorite: 'import',
       optInStatus: 'unknown',
       contacts: [
         { phoneE164: phone, profileName: 'Julie', fields: { ville: 'Lyon' } },
@@ -168,13 +170,13 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
   it('PgContactStore.upsertManyByPhone : lot vide -> aucune requête, aucun résultat', async () => {
     const store = new PgContactStore(pool);
-    expect(await store.upsertManyByPhone({ tenantId, optInStatus: 'unknown', contacts: [] })).toEqual([]);
+    expect(await store.upsertManyByPhone({ tenantId, autorite: 'import', optInStatus: 'unknown', contacts: [] })).toEqual([]);
   });
 
   /**
    * 🔴 UN STOP NE SE LÈVE PAS PAR UPSERT (2026-09-26). Une liste HubSpot, un webhook entrant ou une création à la
    * main qui portaient `opted_in` réabonnaient quelqu'un qui avait dit STOP, et effaçaient la source et la date de
-   * son refus. Seul l'import CSV case cochée le peut encore (`peutLeverStop`, décision de Julien du 2026-09-26).
+   * son refus. Seul l'import CSV case cochée le peut encore (`import_csv_coche`, décision de Julien du 2026-09-26).
    */
   it('🔴 PgContactStore : un upsert opted_in ne lève pas un STOP, sauf le lot CSV case cochée', async () => {
     const store = new PgContactStore(pool);
@@ -192,10 +194,10 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
     // Le webhook entrant et la création à la main (upsert unitaire) : jamais.
     await store.upsertByPhoneReturningId({ tenantId, phoneE164: unitaire, profileName: null, fields: { ville: 'Lyon' }, optInStatus: 'opted_in', optInSource: 'webhook:crm', tags: ['entrant'] });
-    // Une liste HubSpot (lot sans `peutLeverStop`) : jamais.
-    await store.upsertManyByPhone({ tenantId, optInStatus: 'opted_in', optInSource: 'hubspot_list', tags: ['HubSpot: Salon'], contacts: [{ phoneE164: hubspot, profileName: null, fields: { ville: 'Nice' } }] });
+    // Une liste HubSpot (autorité `import`) : jamais.
+    await store.upsertManyByPhone({ tenantId, autorite: 'import', optInStatus: 'opted_in', optInSource: 'hubspot_list', tags: ['HubSpot: Salon'], contacts: [{ phoneE164: hubspot, profileName: null, fields: { ville: 'Nice' } }] });
     // L'import CSV case cochée : oui, c'est l'opérateur qui le demande.
-    await store.upsertManyByPhone({ tenantId, optInStatus: 'opted_in', optInSource: 'csv_import', peutLeverStop: true, contacts: [{ phoneE164: csv, profileName: null, fields: {} }] });
+    await store.upsertManyByPhone({ tenantId, autorite: 'import_csv_coche', optInStatus: 'opted_in', optInSource: 'csv_import', contacts: [{ phoneE164: csv, profileName: null, fields: {} }] });
 
     for (const [phone, tag, ville] of [[unitaire, 'entrant', 'Lyon'], [hubspot, 'HubSpot: Salon', 'Nice']] as const) {
       const fiche = await lu(phone);

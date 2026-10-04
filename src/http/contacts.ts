@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
-import type { ContactRow, ContactFilters, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
+import type { ContactRow, ContactFilters, BulkTarget, BulkEdits, IssueActionEnMasse } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend, ResumeContact } from '../crm/contact-history.pg';
 import type { CoutContact, NiveauEngagement } from '../stats/cost';
@@ -45,8 +45,11 @@ export interface ContactsDep {
     scannes: number;
     messages: Array<{ messageId: string; conversationId: string; contactId: string | null; waId: string; profileName: string | null; body: string; recuLe: string }>;
   }>;
-  /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
-  applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
+  /**
+   * Action en masse (tags +/-, poser un champ, consentement) sur une cible (ids ou filtres). Rend le nombre de fiches
+   * écrites, et celui des fiches dont le STOP a été gardé : l'action en masse ne lève pas un STOP.
+   */
+  applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<IssueActionEnMasse>;
   /**
    * 🔴 Suppression : efface le contenu (fil, messages, analyse qualitative) et anonymise ce qui porte les
    * compteurs. Irréversible. `listeAgent` : les entrées de la liste de l'agent de Meta dont la ligne vient de
@@ -445,7 +448,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       const tags = asStringArray(action.tags);
       if (tags.length === 0) return reply.code(400).send({ error: 'tag(s) requis' });
       const edits: BulkEdits = action.type === 'add_tag' ? { addTags: tags } : { removeTags: tags };
-      const affected = await deps.contacts.applyEditsMany(tenant, target, edits);
+      const { affected } = await deps.contacts.applyEditsMany(tenant, target, edits);
       return reply.code(200).send({ affected });
     }
 
@@ -456,19 +459,20 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       if (!def) return reply.code(400).send({ error: `champ inconnu : ${key}` });
       const val = String(action.value ?? '');
       if (!validateFieldValue(def.type, val)) return reply.code(400).send({ error: `valeur invalide pour « ${def.label} » (${def.type})` });
-      const affected = await deps.contacts.applyEditsMany(tenant, target, { setField: { key, value: canonicalizeFieldValue(def.type, val) } });
+      const { affected } = await deps.contacts.applyEditsMany(tenant, target, { setField: { key, value: canonicalizeFieldValue(def.type, val) } });
       return reply.code(200).send({ affected });
     }
 
     if (action.type === 'set_optin') {
       // L'import ne fait jamais régresser un statut. `opted_out` se pose ici (action en masse), sur la fiche,
       // par le mot-clé entrant ou par l'API publique (`consent`) : la liste qui fait foi est dérivée par
-      // `tests/optout-poussee.test.ts`.
+      // `tests/optout-poussee.test.ts`. 🔴 L'action en masse ne lève pas un STOP : `stopsGardes` dit combien de
+      // fiches l'ont gardé, et l'écran le montre (il tolère une réponse sans ce nombre, celle d'une API plus ancienne).
       const value = action.value === 'opted_in' || action.value === 'opted_out' ? action.value : null;
       if (value === null) return reply.code(400).send({ error: 'valeur requise (opted_in | opted_out)' });
-      const affected = await deps.contacts.applyEditsMany(tenant, target, { setOptIn: value });
-      await journal(tenant, req, value === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: 'lot' }, { affected });
-      return reply.code(200).send({ affected });
+      const { affected, stopsGardes } = await deps.contacts.applyEditsMany(tenant, target, { setOptIn: value });
+      await journal(tenant, req, value === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: 'lot' }, { affected, stopsGardes });
+      return reply.code(200).send({ affected, stopsGardes });
     }
 
     return reply.code(400).send({ error: 'action inconnue (add_tag | remove_tag | set_field | set_optin)' });

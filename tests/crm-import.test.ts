@@ -55,7 +55,7 @@ describe('importContacts', () => {
       { tel: '06 12 34 56 78', nom: 'Julie B', ville: 'Lyon', interne: 'y' }, // même numéro -> update
       { tel: '0700000000', nom: 'Marc', ville: 'Paris', interne: 'z' },
     ];
-    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: true }, { contacts, userFields });
+    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: true, autorite: 'import' }, { contacts, userFields });
 
     expect(report).toMatchObject({ created: 2, updated: 1, skipped: 0 });
     expect(contacts.byPhone.size).toBe(2); // dédup
@@ -73,7 +73,7 @@ describe('importContacts', () => {
       columns: { tel: { target: 'phone' }, sentiment: { target: 'custom', key: 'analyse_sentiment' }, ville: { target: 'custom', key: 'ville' } },
     };
     const report = await importContacts(
-      { rows: [{ tel: '0612345678', sentiment: 'positif', ville: 'Lyon' }], mapping: mappingReserve, tenantId: 't1', optIn: false },
+      { rows: [{ tel: '0612345678', sentiment: 'positif', ville: 'Lyon' }], mapping: mappingReserve, tenantId: 't1', optIn: false, autorite: 'import' },
       { contacts, userFields },
     );
     expect(userFields.defs.map((d) => d.key)).toEqual(['ville']);
@@ -85,7 +85,7 @@ describe('importContacts', () => {
     const contacts = new FakeContactStore();
     const userFields = new FakeFieldStore();
     const rows = [{ tel: '0612345678', nom: 'Julie', ville: 'Lyon', interne: '' }];
-    await importContacts({ rows, mapping, tenantId: 't1', optIn: true, tags: ['salon-2026', 'prospect'] }, { contacts, userFields });
+    await importContacts({ rows, mapping, tenantId: 't1', optIn: true, autorite: 'import', tags: ['salon-2026', 'prospect'] }, { contacts, userFields });
     expect(contacts.byPhone.get('t1|+33612345678')?.tags).toEqual(['salon-2026', 'prospect']);
   });
 
@@ -98,7 +98,7 @@ describe('importContacts', () => {
       { tel: '0612345678', optin: 'Oui' },
       { tel: '0700000000', optin: 'bof' }, // non reconnu -> brut, mais la ligne passe quand même
     ];
-    const report = await importContacts({ rows, mapping: boolMapping, tenantId: 't1', optIn: false }, { contacts, userFields });
+    const report = await importContacts({ rows, mapping: boolMapping, tenantId: 't1', optIn: false, autorite: 'import' }, { contacts, userFields });
     expect(report.created).toBe(2);
     expect(report.skipped).toBe(0);
     expect(contacts.byPhone.get('t1|+33612345678')?.fields).toEqual({ consent: 'true' });
@@ -116,7 +116,7 @@ describe('importContacts', () => {
     const rows = Array.from({ length: 1200 }, (_, i) => ({
       tel: `+336${String(i).padStart(8, '0')}`, nom: `Nom ${i}`, ville: 'Lyon', interne: '',
     }));
-    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: true }, { contacts, userFields });
+    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: true, autorite: 'import' }, { contacts, userFields });
 
     expect(report).toMatchObject({ created: 1200, updated: 0, skipped: 0 });
     expect(contacts.byPhone.size).toBe(1200);
@@ -130,7 +130,7 @@ describe('importContacts', () => {
       { tel: '0612345678', nom: 'Ok', ville: '', interne: '' },
       { tel: 'pas un numéro', nom: 'Non', ville: '', interne: '' },
     ];
-    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: false }, { contacts, userFields });
+    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: false, autorite: 'import' }, { contacts, userFields });
     expect(report).toMatchObject({ created: 1, skipped: 1 });
     expect(contacts.lots).toBe(1);
     expect(contacts.byPhone.size).toBe(1);
@@ -142,7 +142,7 @@ describe('importContacts', () => {
     const contacts = new FakeContactStore();
     const userFields = new FakeFieldStore();
     const rows = Array.from({ length: 300 }, () => ({ tel: '', nom: 'X', ville: '', interne: '' }));
-    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: false }, { contacts, userFields });
+    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: false, autorite: 'import' }, { contacts, userFields });
     expect(report.skipped).toBe(300);
     expect(report.errors).toHaveLength(100);
   });
@@ -151,7 +151,7 @@ describe('importContacts', () => {
     const contacts = new FakeContactStore();
     const userFields = new FakeFieldStore();
     const report = await importContacts(
-      { rows: [{ tel: '', nom: 'SansTel', ville: '', interne: '' }], mapping, tenantId: 't1', optIn: false },
+      { rows: [{ tel: '', nom: 'SansTel', ville: '', interne: '' }], mapping, tenantId: 't1', optIn: false, autorite: 'import' },
       { contacts, userFields },
     );
     expect(report.skipped).toBe(1);
@@ -166,7 +166,7 @@ describe('importContacts', () => {
       { tel: '123', nom: 'Invalide', ville: '', interne: '' },
       { tel: '0612345678', nom: 'Ok', ville: '', interne: '' },
     ];
-    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: false }, { contacts, userFields });
+    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: false, autorite: 'import' }, { contacts, userFields });
     expect(report.created).toBe(1);
     expect(report.skipped).toBe(2);
     expect(report.errors).toHaveLength(2);

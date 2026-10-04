@@ -57,7 +57,7 @@ function app(
 ) {
   const contacts: ContactsRouteDeps = {
     ...contactsInertes,
-    contacts: { ...contactsDepInerte, applyEdits: async () => null, applyEditsMany: async () => 0 },
+    contacts: { ...contactsDepInerte, applyEdits: async () => null, applyEditsMany: async () => ({ affected: 0, stopsGardes: 0 }) },
     champs: { list: async () => [] },
     contactHistory: {
       getContactHistory: history,

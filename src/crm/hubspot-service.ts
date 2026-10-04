@@ -100,7 +100,7 @@ export async function fetchHubspotLists(deps: ConnectorDeps, tenantId: string, q
  * Importe les contacts d'une liste HubSpot, taggés « HubSpot: <nom> ». Ils arrivent `opted_in`, source
  * `hubspot_list` : le consentement est géré et prouvé dans HubSpot, et `optInAllows` exige un opt-in explicite
  * pour le marketing. 🔴 Sauf qui a dit STOP : il reste désabonné, la base refusant de lever le STOP
- * (`upsertManyByPhone` sans `peutLeverStop`). Rend le rapport d'import, plus `truncated` et `skippedNoPhone`.
+ * (autorité `import`, `src/crm/transition-consentement.ts`). Rend le rapport d'import, plus `truncated` et `skippedNoPhone`.
  */
 export async function importHubspotList(
   connector: ConnectorDeps,
@@ -119,6 +119,6 @@ export async function importHubspotList(
   // `tags` = source de vérité unique du tag posé : le front s'en sert pour filtrer, il doit correspondre exactement
   // à ce qui est stocké plutôt que d'être reconstruit côté front.
   const tags = [`HubSpot: ${listName}`];
-  const report = await importContacts({ rows, mapping, tenantId, optIn: true, optInSource: 'hubspot_list', tags }, importDeps);
+  const report = await importContacts({ rows, mapping, tenantId, optIn: true, optInSource: 'hubspot_list', tags, autorite: 'import' }, importDeps);
   return { report, truncated: data.truncated, skippedNoPhone: data.skippedNoPhone, tags };
 }

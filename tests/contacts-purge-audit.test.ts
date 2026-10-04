@@ -41,7 +41,7 @@ function app(over: Partial<Omit<ContactsRouteDeps, 'contacts'>> & { contacts?: P
   const deps = {
     contacts: {
       applyEdits: async () => null,
-      applyEditsMany: async (_t: string, _target: unknown, edits: unknown) => { editsRecus.push(edits); return 4; },
+      applyEditsMany: async (_t: string, _target: unknown, edits: unknown) => { editsRecus.push(edits); return { affected: 4, stopsGardes: 1 }; },
       contactIdsForTarget: async (_t: string, target: unknown) => ('ids' in (target as { ids?: string[] }) ? (target as { ids: string[] }).ids : ['c-filtre']),
       purgeMany: async (_t: string, ids: readonly string[]) => {
         purges.push([...ids]);
@@ -230,17 +230,25 @@ describe('bascule du consentement (le seul chemin qui sait écrire opted_out)', 
     const { server, journal, editsRecus } = app();
     const res = await server.inject({ method: 'POST', url: bulk, ...h(adminTok), payload: { target: { ids: ['c1', 'c2'] }, action: { type: 'set_optin', value: 'opted_out' } } });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ affected: 4 });
+    // `stopsGardes` voyage tel que le dépôt le rend : la réponse et la trace le portent.
+    expect(res.json()).toEqual({ affected: 4, stopsGardes: 1 });
     expect(editsRecus).toEqual([{ setOptIn: 'opted_out' }]);
-    expect(journal.find((t) => t.action === 'contact.optout')?.detail).toEqual({ affected: 4 });
+    expect(journal.find((t) => t.action === 'contact.optout')?.detail).toEqual({ affected: 4, stopsGardes: 1 });
     await server.close();
   });
 
-  it('opt-in : même chemin, action `contact.optin`', async () => {
+  /**
+   * 🔴 L'ACTION EN MASSE NE LÈVE PAS UN STOP (2026-10-03) : le dépôt garde ces fiches désabonnées et les compte. La
+   * route rend ce nombre, l'écran le dit (« 1 fiche a gardé son STOP »), et la trace le garde. La règle elle-même est
+   * jouée contre une vraie base (`tests/integration/transition-consentement.integration.test.ts`).
+   */
+  it('opt-in : même chemin, action `contact.optin`, et les STOP gardés remontent', async () => {
     const { server, journal, editsRecus } = app();
-    await server.inject({ method: 'POST', url: bulk, ...h(adminTok), payload: { target: { ids: ['c1'] }, action: { type: 'set_optin', value: 'opted_in' } } });
+    const res = await server.inject({ method: 'POST', url: bulk, ...h(adminTok), payload: { target: { ids: ['c1'] }, action: { type: 'set_optin', value: 'opted_in' } } });
     expect(editsRecus).toEqual([{ setOptIn: 'opted_in' }]);
+    expect(res.json()).toEqual({ affected: 4, stopsGardes: 1 });
     expect(journal.map((t) => t.action)).toEqual(['contact.optin']);
+    expect(journal[0]?.detail).toEqual({ affected: 4, stopsGardes: 1 });
     await server.close();
   });
 

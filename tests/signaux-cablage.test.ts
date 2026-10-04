@@ -41,7 +41,7 @@ describe('le câblage des signaux dans le worker', () => {
   it('🔴 le wamid du STOP suit jusqu’au dépôt : une flèche qui l’oublierait compilerait quand même', () => {
     // `InboundOptOut` déclare trois paramètres, et une flèche à deux lui reste assignable : le typage ne voit pas
     // l'oubli, et l'`em_event_id` du désabonnement redeviendrait un aléa.
-    expect(worker).toMatch(/inboundOptOut: \(tenant, waId, messageId\) => contactStore\.setOptInByWaId\(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP, messageId\)/);
+    expect(worker).toMatch(/inboundOptOut: \(tenant, waId, messageId\) => contactStore\.setOptInByWaId\(tenant, waId, 'opted_out', 'personne', SOURCE_STOP_WHATSAPP, messageId\)/);
   });
 
   it('🔴 les DEUX files qui voient des accusés passent le puits, et la réponse n’arrive que par une', () => {

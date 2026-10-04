@@ -890,6 +890,29 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   filtrée par `deleted_at is null`, sans transaction ni client dédié. Une fiche purgée entre la résolution et
   l'écriture n'est donc pas réécrite (`unknown_contact`), et un lot ne retient pas une connexion par élément.
   `applyEdits` (la fiche de la console) pose le même filtre sous son verrou : une fiche purgée y rend 404.
+- 🔴 **La transition du consentement est écrite UNE fois : `src/crm/transition-consentement.ts`.** Les six
+  écritures de `PgContactStore` qui posent `opt_in_status` (`upsertByPhoneReturningId`, `upsertManyByPhone`,
+  `setOptInByWaId`, `ecrireConsentementParId`, `applyEdits`, `applyEditsMany`) composent ses fragments ; aucune
+  n'écrit `opt_out_at` ni un `case` de consentement elle-même (gardé par `tests/optout-poussee.test.ts`). Trois
+  règles : un statut inchangé ne réécrit RIEN (ni la date, ni la source, ni `updated_at` d'une écriture qui ne porte
+  que le consentement) et ne s'annonce pas ; un STOP (`opted_out` vers `opted_in`) ne se lève que par une autorité
+  de `LEVE_UN_STOP` ; `unknown` n'est jamais une destination. **Qui lève un STOP** : la fiche de la console
+  (`fiche`), l'import CSV case cochée (`import_csv_coche`), la personne (mot STOP, formulaire coché : `personne`)
+  et le bloc « Action » d'un scénario (`scenario`) ; **jamais** l'action en masse (`action_en_masse`, décision du
+  2026-10-03), l'import sans case et HubSpot (`import`), le webhook entrant et la création à la main
+  (`webhook_ou_saisie`), ni l'API publique (`api`, qui rend `refuse`). L'autorité est un type fermé, passée par
+  l'appelant quand elle varie (`setOptInByWaId`, `LotContacts.autorite`) : un appelant qui l'oublie ne compile
+  pas. La règle vit en TypeScript (`issueDeLaTransition`) et le SQL en est DÉPLIÉ (la liste des couples
+  « statut d'avant, statut voulu » qui écrivent), jamais réécrit.
+  🔴 `ecritureDuConsentement` est l'instruction des quatre écritures dédiées : l'état d'avant lu SOUS VERROU
+  (`for update`, deux STOP simultanés n'annoncent qu'une fois), l'écriture gardée par le changement de statut, et
+  pour chaque fiche `ecrite`, `passe` (passée à `opted_out`, à annoncer APRÈS le `commit`) et `garde` (STOP gardé),
+  lus sur la copie verrouillée. L'action en masse prend le rendu `compte`, UNE ligne agrégée : elle rend
+  `{ affected, stopsGardes }`, la route `set_optin` les renvoie et la console dit « N fiches ont gardé leur
+  STOP » (en tolérant une réponse sans ce nombre). Un upsert ne demande jamais `opted_out` (types `ContactUpsert`
+  et `LotContacts`) : il n'a rien à annoncer. Aucun chemin ne crée une fiche `opted_out` : l'API crée en
+  `unknown` (`creerFicheApi`) puis écrit le consentement par la transition, qui pose la date et annonce le
+  passage. La table de cas : `tests/integration/transition-consentement.integration.test.ts`.
 - 🔴 **Un consentement posé par l'API passe par `ecrireConsentementParId`**, qui n'écrit RIEN quand la valeur
   ne change pas : un outil qui renvoie `opted_out` à chaque appel ne repousse pas la date du désabonnement et
   n'écrit pas une ligne d'audit par appel. Sur une fiche déjà `opted_in`, un `opted_in` d'une autre source ne
@@ -907,9 +930,10 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   `upsertByPhoneReturningId` (webhook entrant, création à la main) et `upsertManyByPhone` (import HubSpot, import
   CSV) gardent, sur une fiche `opted_out`, le statut, `opt_out_at` ET `opt_in_source` (la source dit le canal du
   STOP au signal) ; le nom, les champs et les tags se mettent à jour quand même. La seule exception est un lot
-  `peutLeverStop`, que pose la route CSV quand la case opt-in est cochée (décision de Julien du 2026-09-26 : c'est
-  l'opérateur qui le demande, pour tout le fichier). Absent vaut non : un nouvel appelant garde le STOP.
-  ⚠️ Le bloc « Action » d'un scénario (`setOptInByWaId`) lève encore un STOP : non tranché.
+  d'autorité `import_csv_coche`, que pose la route CSV quand la case opt-in est cochée (décision de Julien du
+  2026-09-26 : c'est l'opérateur qui le demande, pour tout le fichier). Un upsert qui redit `opted_in` sur une fiche
+  déjà `opted_in` garde la source d'origine. Le bloc « Action » d'un scénario (`setOptInByWaId`, autorité
+  `scenario`) lève un STOP (décision de Julien du 2026-10-03).
 - **Dans `/v1/contacts/batch`, les éléments d'une même personne s'écrivent DANS L'ORDRE** : deux éléments qui
   partagent une clé normalisée forment une chaîne séquentielle (`enChaines`, `src/api/contacts-v1.ts`), les
   chaînes partant par vagues bornées. En parallèle, le second pouvait se résoudre avant que le premier ait
@@ -2742,6 +2766,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; `round2`, l'arrondi au centime des coûts |
 | `src/meta/pubs-creation.ts` -> `lireDepenses` | le suivi d'une publicité en UN appel par paquet de 50 campagnes : le cumul (dépense, clics sur le lien, impressions, couverture) et, sous l'alias `.as(jours)` de la même expansion `insights`, la dépense jour par jour (forme mesurée le 2026-09-30). Les jours sont lus À PART du cumul (une forme inattendue ne le fait pas perdre) ; les comptes passent par `entierOuRien`, une colonne entière refusant `2.5` ferait tomber le balayage de l'espace |
 | `src/pubs/publicites.pg.ts` -> `coutParPub` | 🔴 le coût par engagé des publicités sur une PÉRIODE (carte Coûts) : la dépense des jours de la période (`pubs_depense_jour`, 0198) et les PERSONNES arrivées par la campagne dans la période. Un engagé a cliqué PUIS écrit, ce n'est pas un prospect qualifié. Les jours sont ceux du compte publicitaire, les arrivées bornées à l'heure de Paris |
+| `src/crm/transition-consentement.ts` | 🔴 LA transition du consentement WhatsApp d'une fiche : qui lève un STOP (`LEVE_UN_STOP`, par autorité typée), ce que deviennent statut, `opt_out_at` et `opt_in_source`, et qui est passé à `opted_out` (à annoncer). Les six écritures de `PgContactStore` la composent (`affectationsDUpsert`, `ecritureDuConsentement`) ; une septième copie divergerait, comme deux l'ont fait (738a7c3d) |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |
 | `src/crm/render.ts` -> `escapeHtml` | l'échappement HTML du dépôt (gabarits d'e-mail, pages d'erreur des liens tracés) |

@@ -9,6 +9,9 @@ import type { LigneDeLaListe } from '../mba/liste';
 import type { CleFicheFixe } from './champs-fiche';
 import { clauseFiltreFiche, estCleFiltrable, estOperateurFicheSeul, type OperateurFicheSeul } from './filtre-fiche';
 import { COLONNES_ANALYSE_FICHE, analyseDeLaLigne, type AnalyseDeFiche, type LigneAnalyseFiche } from '../analysis/fiche';
+import {
+  affectationsDUpsert, ecritureDuConsentement, type AutoriteParWaId, type CompteDeLEcriture, type FicheDeLEcriture,
+} from './transition-consentement';
 
 export interface ContactRow {
   id: string;
@@ -204,11 +207,18 @@ export interface BulkEdits {
   removeTags?: string[];
   setField?: { key: string; value: string };
   /**
-   * Bascule du consentement marketing depuis le mini-CRM, en masse. L'upsert d'import ne fait jamais régresser un
-   * statut : un refus s'écrit par une méthode dédiée (celle-ci, `applyEdits`, `setOptInByWaId`,
-   * `ecrireConsentementParId`), liste dérivée par `tests/optout-poussee.test.ts`.
+   * Bascule du consentement marketing depuis le mini-CRM, en masse. 🔴 Elle ne lève pas un STOP (autorité
+   * `action_en_masse`, `src/crm/transition-consentement.ts`). L'upsert d'import ne fait jamais régresser un statut :
+   * un refus s'écrit par une méthode dédiée (celle-ci, `applyEdits`, `setOptInByWaId`, `ecrireConsentementParId`),
+   * liste dérivée par `tests/optout-poussee.test.ts`.
    */
   setOptIn?: 'opted_in' | 'opted_out';
+}
+
+/** Ce que rend une action en masse : les fiches écrites, et celles dont le STOP a été gardé (bascule en opt-in). */
+export interface IssueActionEnMasse {
+  affected: number;
+  stopsGardes: number;
 }
 
 /**
@@ -217,7 +227,8 @@ export interface BulkEdits {
  */
 export class PgContactStore implements ContactStore {
   /**
-   * @param annoncerDesabonnement appelée après chaque écriture qui pose `opted_out`, avec les `wa_id` touchés.
+   * @param annoncerDesabonnement appelée après chaque écriture qui fait PASSER des fiches à `opted_out`, avec leurs
+   *   `wa_id` ; une fiche déjà désabonnée n'est pas réannoncée (`src/crm/transition-consentement.ts`).
    *   🔴 Ici et pas chez les appelants : l'invariant « un refus se pousse vers le système du client » couvre ainsi
    *   par construction toutes les méthodes qui écrivent `opted_out` (liste dérivée par `tests/optout-poussee.test.ts`).
    *   Appelée après le `commit`, et ce qu'elle lève est absorbé : elle ne peut pas faire échouer l'écriture.
@@ -262,26 +273,10 @@ export class PgContactStore implements ContactStore {
          -- coalesce, et pas une affectation seche : un upsert SANS bsuid (webhook entrant, création à la main dans la console) ne doit pas
          -- effacer l'identifiant d'un contact arrivé par l'inbound sans numéro partagé.
          bsuid = coalesce(excluded.bsuid, contacts.bsuid),
-         -- UN STOP NE SE LEVE PAS ICI (2026-09-26). Le webhook entrant (un outil tiers) et la creation a la
-         -- main dans la console passent par cet upsert ; avec un opted_in, ils reabonnaient quelqu un qui avait
-         -- dit STOP. Sur une fiche opted_out, le statut, la date ET la source restent ceux du refus : la source
-         -- dit le canal du STOP au signal (completerSignal). Le nom, les champs et les tags se mettent a jour
-         -- quand meme. Seuls la fiche de la console, la personne elle-meme et l import CSV case cochee levent
-         -- un STOP. Les trois affectations lisent contacts.* AVANT la mise a jour : leur ordre est indifferent.
-         opt_in_status = case
-           when excluded.opt_in_status = 'opted_in' and contacts.opt_in_status <> 'opted_out' then 'opted_in'
-           else contacts.opt_in_status
-         end,
-         -- La date de desabonnement suit le statut (migration 0138) : remise a null seulement quand le
-         -- statut passe a opted_in.
-         opt_out_at = case
-           when excluded.opt_in_status = 'opted_in' and contacts.opt_in_status <> 'opted_out' then null
-           else contacts.opt_out_at
-         end,
-         opt_in_source = case
-           when contacts.opt_in_status = 'opted_out' then contacts.opt_in_source
-           else coalesce(excluded.opt_in_source, contacts.opt_in_source)
-         end,
+         -- UN STOP NE SE LEVE PAS ICI (2026-09-26) : le webhook entrant (un outil tiers) et la creation a la main
+         -- dans la console reabonnaient quelqu un qui avait dit STOP. Le nom, les champs et les tags se mettent a
+         -- jour quand meme.
+         ${affectationsDUpsert('webhook_ou_saisie')},
          -- Union dédupliquée : les nouveaux tags s'ajoutent, jamais d'écrasement.
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          -- Ré-ajouter un contact (webhook entrant, création à la main dans la console) le RESSUSCITE : re-poser le numéro
@@ -307,7 +302,7 @@ export class PgContactStore implements ContactStore {
   /**
    * Upsert d'un lot en une requête, avec les règles d'écriture de `upsertByPhoneReturningId` : fusion jsonb des
    * champs, nom conservé faute de nouveau, opt-in qui ne régresse jamais, STOP gardé, union des tags, résurrection
-   * d'un contact supprimé. Seule différence : un lot `peutLeverStop` (import CSV case cochée) lève un STOP.
+   * d'un contact supprimé. Seule différence : un lot d'autorité `import_csv_coche` (import CSV case cochée) lève un STOP.
    * Le lot voyage en un seul paramètre JSON (`jsonb_to_recordset`) : un tableau de fragments JSON devrait être
    * échappé comme littéral de tableau Postgres, piège à la moindre accolade ou virgule.
    * Déduplication obligatoire : Postgres refuse qu'un `on conflict do update` touche deux fois la même ligne dans
@@ -347,31 +342,17 @@ export class PgContactStore implements ContactStore {
        do update set
          fields = contacts.fields || excluded.fields,
          profile_name = coalesce(excluded.profile_name, contacts.profile_name),
-         -- UN STOP NE SE LEVE PAS PAR IMPORT, SAUF LA CASE COCHEE D UN CSV ($6, decision de Julien du
-         -- 2026-09-26). Une liste HubSpot qui contenait quelqu un qui avait dit STOP le reabonnait. Sans $6,
-         -- une fiche opted_out garde le statut, la date ET la source de son refus (la source dit le canal du
-         -- STOP au signal, completerSignal) ; le nom, les champs et les tags se mettent a jour quand meme.
-         opt_in_status = case
-           when excluded.opt_in_status = 'opted_in' and (contacts.opt_in_status <> 'opted_out' or $6::boolean) then 'opted_in'
-           else contacts.opt_in_status
-         end,
-         -- La date de desabonnement suit le statut (migration 0138) : remise a null seulement quand le
-         -- statut passe a opted_in, y compris quand la case cochee leve un STOP.
-         opt_out_at = case
-           when excluded.opt_in_status = 'opted_in' and (contacts.opt_in_status <> 'opted_out' or $6::boolean) then null
-           else contacts.opt_out_at
-         end,
-         opt_in_source = case
-           when contacts.opt_in_status = 'opted_out' and not $6::boolean then contacts.opt_in_source
-           else coalesce(excluded.opt_in_source, contacts.opt_in_source)
-         end,
+         -- UN STOP NE SE LEVE PAS PAR IMPORT, SAUF LA CASE COCHEE D UN CSV (autorite du lot, decision de Julien du
+         -- 2026-09-26) : une liste HubSpot qui contenait quelqu un qui avait dit STOP le reabonnait. Le nom, les
+         -- champs et les tags se mettent a jour quand meme.
+         ${affectationsDUpsert(lot.autorite)},
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          deleted_at = null,
          updated_at = now()
        returning phone_e164, (xmax = 0) as created`,
       // `bsuid` n'est pas écrit : un import n'en porte jamais, et ne pas toucher la colonne préserve l'identifiant d'un
-      // contact arrivé sans numéro partagé. $6 : `=== true`, jamais une coercition ; absent vaut non, et garde le STOP.
-      [lot.tenantId, lot.optInStatus, lot.optInSource ?? null, lot.tags ?? [], JSON.stringify(lignes), lot.peutLeverStop === true],
+      // contact arrivé sans numéro partagé.
+      [lot.tenantId, lot.optInStatus, lot.optInSource ?? null, lot.tags ?? [], JSON.stringify(lignes)],
     );
 
     const creePar = new Map(res.rows.map((r) => [r.phone_e164, r.created] as const));
@@ -420,56 +401,48 @@ export class PgContactStore implements ContactStore {
    * d'audit, le numéro ruinerait la purge.
    */
   async markOptedIn(tenantId: string, waId: string, source: string): Promise<string | null> {
-    return this.setOptInByWaId(tenantId, waId, 'opted_in', source);
+    return this.setOptInByWaId(tenantId, waId, 'opted_in', 'personne', source);
   }
 
   /**
-   * Écrit le consentement d'un contact désigné par son `wa_id`, dans les deux sens : bloc « Action » d'un scénario,
-   * mot-clé STOP, et consentement d'un Flow (`markOptedIn`). Une seule écriture et une seule copie de
-   * `MATCH_BY_WAID_SQL`. Rend l'identifiant du contact touché, `null` s'il est inconnu ; ne crée aucune fiche.
-   * `messageDuStop` : l'identifiant du message STOP, pour que le signal reste stable si Meta le redélivre.
+   * Écrit le consentement d'un contact désigné par son `wa_id`, dans les deux sens : bloc « Action » d'un scénario
+   * (autorité `scenario`), mot-clé STOP et consentement d'un Flow (`personne`, `markOptedIn`). Une seule écriture et
+   * une seule copie de `MATCH_BY_WAID_SQL`. Rend l'identifiant du contact, écrit ou non, `null` s'il est inconnu ; ne
+   * crée aucune fiche. `messageDuStop` : l'identifiant du message STOP, pour que le signal reste stable si Meta le
+   * redélivre.
    *
-   * 🔴 Rien n'est écrit ni annoncé quand le statut ne change pas : le premier geste garde sa source et sa date
-   * (la source, relue pour pousser le signal, dit le canal du STOP), et un seul STOP ne s'annonce qu'une fois.
+   * 🔴 Rien n'est écrit ni annoncé quand le statut ne change pas : le premier geste garde sa source et sa date, et un
+   * seul STOP ne s'annonce qu'une fois, même deux STOP simultanés (`ecritureDuConsentement`, ancien statut lu sous
+   * verrou).
    */
   async setOptInByWaId(
     tenantId: string,
     waId: string,
     statut: 'opted_in' | 'opted_out',
+    autorite: AutoriteParWaId,
     source: string,
     messageDuStop?: string,
   ): Promise<string | null> {
-    const res = await this.pool.query<{ id: string; avant: string | null }>(
-      // 🔴 `opt_out_at` suit le statut dans les deux sens : posée au désabonnement, remise à null au réabonnement.
-      // L'ancien statut est lu dans la même instruction, sous verrou (`for update`) : deux STOP simultanés liraient
-      // sinon tous deux « abonné » et annonceraient deux fois. L'écriture est gardée par `is distinct from` : un statut
-      // déjà en place n'est pas réécrit. La fiche est rendue par `avant`, écrite ou non.
-      `with avant as (
-         select id, opt_in_status from contacts where tenant_id = $1
-         ${MATCH_BY_WAID_SQL}
-         for update
-       ),
-       ecrit as (
-         update contacts set opt_in_status = $4, opt_in_source = $3, updated_at = now(),
-                opt_out_at = case when $4 = 'opted_out' then now() else null end
-         where id = (select id from avant) and opt_in_status is distinct from $4
-         returning id
-       )
-       select id, opt_in_status as avant from avant`,
-      [tenantId, waId, source, statut],
+    const res = await this.pool.query<Pick<FicheDeLEcriture, 'id' | 'passe'>>(
+      ecritureDuConsentement({
+        cible: `where tenant_id = $1 ${MATCH_BY_WAID_SQL}`, voulu: '$3::text', source: '$4::text', autorite, rendu: 'par_fiche',
+      }),
+      [tenantId, waId, statut, source],
     );
-    const id = res.rows[0]?.id ?? null;
-    // L'annonce vient après l'écriture, et seulement si elle a touché quelqu'un et changé son statut : ni personne
-    // inconnue poussée chez le client, ni deux événements pour un seul STOP.
-    if (statut === 'opted_out' && id !== null && res.rows[0]?.avant !== 'opted_out') await this.annoncer(tenantId, [waId], messageDuStop);
-    return id;
+    const r = res.rows[0];
+    // L'annonce vient après l'écriture (une instruction, donc validée), et seulement pour un vrai passage à
+    // `opted_out` : ni personne inconnue poussée chez le client, ni deux événements pour un seul STOP.
+    if (r?.passe) await this.annoncer(tenantId, [waId], messageDuStop);
+    return r?.id ?? null;
   }
 
   /**
-   * Le consentement posé par l'API publique sur une fiche désignée par son identifiant (`appliquerConsentement`).
-   * N'écrit que si le statut change (`is distinct from`) : un outil qui renvoie le même consentement ne repousse
-   * pas la date d'un désabonnement et n'annonce pas dix fois le même refus. `opt_out_at` suit le statut. La
-   * seconde requête, qui distingue `inchange` d'`absente`, ne part que si la première n'a rien touché.
+   * Le consentement posé par l'API publique sur une fiche désignée par son identifiant (`appliquerConsentement`),
+   * autorité `api`. N'écrit que si le statut change : un outil qui renvoie le même consentement ne repousse pas la
+   * date d'un désabonnement, ne remplace pas la source d'origine et n'annonce pas dix fois le même refus.
+   * 🔴 Un STOP ne se lève pas par machine (une synchronisation périmée réabonnerait quelqu'un qui a dit stop) : rend
+   * `refuse`. La garde est dans l'instruction, sous verrou, pour tenir un STOP arrivé entre la vérification du service
+   * et l'écriture. Une fiche absente, d'un autre espace ou supprimée rend `absente`.
    */
   async ecrireConsentementParId(
     tenantId: string,
@@ -477,31 +450,20 @@ export class PgContactStore implements ContactStore {
     statut: 'opted_in' | 'opted_out',
     source: string,
   ): Promise<'change' | 'inchange' | 'refuse' | 'absente'> {
-    // 🔴 Un STOP ne se lève pas par machine : cette écriture ne fait jamais passer `opted_out` à `opted_in` (une
-    // synchronisation périmée réabonnerait quelqu'un qui a dit stop). La garde est dans la requête, pour tenir un
-    // STOP arrivé entre la vérification et l'écriture. Seul un opérateur (`applyEdits`) ou la personne le lève.
-    const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null }>(
-      `update contacts set opt_in_status = $3, opt_in_source = $4, updated_at = now(),
-              opt_out_at = case when $3 = 'opted_out' then now() else null end
-        where tenant_id = $1 and id = $2 and deleted_at is null and opt_in_status is distinct from $3
-          and not ($3 = 'opted_in' and opt_in_status = 'opted_out')
-        returning phone_e164, bsuid`,
+    const res = await this.pool.query<FicheDeLEcriture>(
+      ecritureDuConsentement({
+        cible: 'where tenant_id = $1 and id = $2 and deleted_at is null', voulu: '$3::text', source: '$4::text',
+        autorite: 'api', rendu: 'par_fiche',
+      }),
       [tenantId, contactId, statut, source],
     );
     const r = res.rows[0];
-    if (r) {
-      // Après l'écriture, jamais avant : ce qui part vers le système du client décrit ce qui est enregistré.
-      if (statut === 'opted_out') await this.annoncer(tenantId, [waIdOf(r.phone_e164, r.bsuid)]);
-      return 'change';
-    }
-    // La relecture dit pourquoi rien n'a bougé : fiche partie, STOP à respecter, ou statut déjà en place.
-    const existe = await this.pool.query<{ opt_in_status: string }>(
-      'select opt_in_status from contacts where tenant_id = $1 and id = $2 and deleted_at is null',
-      [tenantId, contactId],
-    );
-    const ligne = existe.rows[0];
-    if (!ligne) return 'absente';
-    return statut === 'opted_in' && ligne.opt_in_status === 'opted_out' ? 'refuse' : 'inchange';
+    if (!r) return 'absente';
+    if (r.garde) return 'refuse';
+    if (!r.ecrite) return 'inchange';
+    // Après l'écriture, jamais avant : ce qui part vers le système du client décrit ce qui est enregistré.
+    if (r.passe) await this.annoncer(tenantId, [waIdOf(r.phone_e164, r.bsuid)]);
+    return 'change';
   }
 
   /**
@@ -1205,17 +1167,18 @@ export class PgContactStore implements ContactStore {
         // Nom (profile_name) éditable ; null = vider. Le téléphone et le BSUID (clés d'identité/routage) restent hors édition.
         await client.query('update contacts set profile_name = $3, updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, edits.profileName]);
       }
+      // Une décision d'opérateur devant la fiche (autorité `fiche`, qui lève un STOP). La source 'crm' distingue un
+      // `opted_out` posé ici d'un statut jamais renseigné. Un statut déjà en place ne réécrit ni sa date, ni sa source,
+      // et ne s'annonce pas (`src/crm/transition-consentement.ts`).
+      let passe = false;
       if (edits.optInStatus !== undefined) {
-        // Écriture directe du statut, y compris à la baisse : une décision d'opérateur devant la fiche. La source
-        // 'crm' distingue un `opted_out` posé ici d'un statut jamais renseigné. Aucun retour à « inconnu » : ce statut
-        // veut dire « rien n'a jamais été enregistré ».
-        await client.query(
-          // `opt_out_at` suit le statut dans les deux sens, cf. `setOptInByWaId`.
-          `update contacts set opt_in_status = $3, opt_in_source = 'crm', updated_at = now(),
-                  opt_out_at = case when $3 = 'opted_out' then now() else null end
-             where id = $1 and tenant_id = $2`,
-          [contactId, tenantId, edits.optInStatus],
+        const r = await client.query<Pick<FicheDeLEcriture, 'passe'>>(
+          ecritureDuConsentement({
+            cible: 'where id = $1 and tenant_id = $2', voulu: '$3::text', source: '$4::text', autorite: 'fiche', rendu: 'par_fiche',
+          }),
+          [contactId, tenantId, edits.optInStatus, 'crm'],
         );
+        passe = r.rows[0]?.passe === true;
       }
       if (edits.addTags.length > 0) {
         await client.query(`update contacts set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || $3::text[]) t), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.addTags]);
@@ -1224,7 +1187,7 @@ export class PgContactStore implements ContactStore {
         await client.query(`update contacts set tags = (select coalesce(array_agg(t), '{}') from unnest(tags) t where t <> all($3::text[])), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.removeTags]);
       }
       const res = await client.query(PgContactStore.SELECT_ONE, [contactId, tenantId]);
-      return { avant: exists.rows[0]?.tags ?? [], r: res.rows[0] };
+      return { avant: exists.rows[0]?.tags ?? [], r: res.rows[0], passe };
     });
     if (ecrit === null || !ecrit.r) return null;
     const avant = new Set(ecrit.avant);
@@ -1233,8 +1196,8 @@ export class PgContactStore implements ContactStore {
     const apres = new Set(PgContactStore.rowToContact(ecrit.r).tags);
     const contact = PgContactStore.rowToContact(ecrit.r);
     // Après le `commit`, jamais dans la transaction : on n'annonce que ce qui est enregistré, pas un refus qu'un
-    // `rollback` viendrait d'annuler.
-    if (edits.optInStatus === 'opted_out') {
+    // `rollback` viendrait d'annuler. Et seulement un vrai passage à `opted_out`.
+    if (ecrit.passe) {
       await this.annoncer(tenantId, [waIdOf(contact.phoneE164, contact.bsuid)]);
     }
     return {
@@ -1316,15 +1279,17 @@ export class PgContactStore implements ContactStore {
 
   /**
    * Action en masse du mini-CRM sur la cible (ids ou filtres re-résolus, avec exclusions) : tags, un champ perso,
-   * consentement. Une seule requête UPDATE ensembliste, scopée `tenant_id` et `deleted_at is null`. La valeur de
-   * champ arrive validée et canonicalisée par la route. Rend le nombre touché ; aucune mutation -> 0.
+   * consentement. Une seule instruction ensembliste, scopée `tenant_id` et `deleted_at is null`. La valeur de champ
+   * arrive validée et canonicalisée par la route. Rend le nombre de fiches écrites (aucune mutation -> 0) et celui des
+   * fiches dont le STOP a été gardé : 🔴 l'action en masse ne lève pas un STOP (autorité `action_en_masse`), et une
+   * bascule de consentement seule n'écrit que les fiches dont le statut change.
    */
-  async applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number> {
+  async applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<IssueActionEnMasse> {
     const addTags = [...new Set((edits.addTags ?? []).map((t) => t.trim()).filter((t) => t !== ''))];
     const removeTags = [...new Set((edits.removeTags ?? []).map((t) => t.trim()).filter((t) => t !== ''))];
     const hasSet = edits.setField !== undefined && edits.setField.key.trim() !== '';
     const optIn = edits.setOptIn === 'opted_in' || edits.setOptIn === 'opted_out' ? edits.setOptIn : undefined;
-    if (addTags.length === 0 && removeTags.length === 0 && !hasSet && optIn === undefined) return 0;
+    if (addTags.length === 0 && removeTags.length === 0 && !hasSet && optIn === undefined) return { affected: 0, stopsGardes: 0 };
 
     const sel = buildBulkSelector(tenantId, target);
     const params = [...sel.params];
@@ -1341,27 +1306,29 @@ export class PgContactStore implements ContactStore {
       // Fusion jsonb : n'écrase que la clé posée.
       sets.push(`fields = fields || ${add(JSON.stringify({ [edits.setField!.key]: edits.setField!.value }))}::jsonb`);
     }
-    if (optIn !== undefined) {
-      // Écriture directe du statut, y compris à la baisse : une décision d'opérateur, source 'crm'. `opt_out_at` suit
-      // le statut ; une action en masse n'en porte qu'un, d'où la date posée sans `case`.
-      sets.push(`opt_in_status = ${add(optIn)}`, `opt_in_source = ${add('crm')}`,
-        `opt_out_at = ${optIn === 'opted_out' ? 'now()' : 'null'}`);
+    if (optIn === undefined) {
+      // Sans consentement, aucune ligne ne remonte : un `returning` remonterait une ligne par fiche pour toute action
+      // en masse, un coût d'egress invisible.
+      const res = await this.pool.query(`update contacts set ${sets.join(', ')}, updated_at = now() where ${sel.where}`, params);
+      return { affected: res.rowCount ?? 0, stopsGardes: 0 };
     }
-    sets.push('updated_at = now()');
     /**
-     * `returning` seulement pour un opt-out : l'annonce a besoin des identités touchées (une relecture après coup
-     * pourrait viser d'autres contacts, la cible étant des filtres), mais un `returning` systématique remonterait
-     * une ligne par fiche pour toute action en masse, un coût d'egress invisible.
+     * Le consentement, source 'crm' : une décision d'opérateur. Le rendu `compte` remonte UNE ligne : les deux nombres,
+     * et les identités des seules fiches passées à `opted_out`, lues dans l'instruction (une relecture après coup
+     * pourrait viser d'autres contacts, la cible étant des filtres).
      */
-    const estOptOut = optIn === 'opted_out';
-    const res = await this.pool.query<{ id: string; phone_e164: string | null; bsuid: string | null }>(
-      `update contacts set ${sets.join(', ')} where ${sel.where}${estOptOut ? ' returning id, phone_e164, bsuid' : ''}`,
+    const res = await this.pool.query<CompteDeLEcriture>(
+      ecritureDuConsentement({
+        cible: `where ${sel.where}`, voulu: `${add(optIn)}::text`, source: `${add('crm')}::text`,
+        autorite: 'action_en_masse', autres: sets, rendu: 'compte',
+      }),
       params,
     );
-    if (estOptOut && res.rows.length > 0) {
-      await this.annoncer(tenantId, res.rows.map((r) => waIdOf(r.phone_e164, r.bsuid)));
+    const compte = res.rows[0];
+    if (compte && compte.passes.length > 0) {
+      await this.annoncer(tenantId, compte.passes.map((p) => waIdOf(p.phone_e164, p.bsuid)));
     }
-    return res.rowCount ?? 0;
+    return { affected: compte?.ecrites ?? 0, stopsGardes: compte?.gardes ?? 0 };
   }
 
   /**

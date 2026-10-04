@@ -54,7 +54,7 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
         // Le store ne renvoie que les tags RÉELLEMENT nouveaux : ici, ceux qui ne sont pas déjà sur la fiche.
         return { contact: result, addedTags: edits.addTags.filter((t) => !result.tags.includes(t)) };
       },
-      applyEditsMany: async (_t, target, edits) => { cap.bulk.push({ target, edits }); return 3; },
+      applyEditsMany: async (_t, target, edits) => { cap.bulk.push({ target, edits }); return { affected: 3, stopsGardes: 0 }; },
     },
     champs: {
       list: async () => FIELDS,

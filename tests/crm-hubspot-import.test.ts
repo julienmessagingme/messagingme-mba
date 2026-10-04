@@ -5,8 +5,6 @@ import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import type { ContactStore, ContactUpsert, LotContacts } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef } from '../src/crm/types';
-import type { Pool } from 'pg';
-import { PgContactStore } from '../src/crm/contact-store.pg';
 
 const SECRET = 'svc-secret';
 
@@ -20,7 +18,10 @@ class FakeTransport implements HttpTransport {
 }
 class FakeContactStore implements ContactStore {
   readonly upserts: ContactUpsert[] = [];
+  /** L'autorité de chaque lot reçu : c'est elle qui décide si un STOP se lève. */
+  readonly autorites: Array<LotContacts['autorite']> = [];
   async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
+    this.autorites.push(lot.autorite);
     // Le lot est re-deplie en upserts unitaires : c'est cette forme que les tests inspectent.
     for (const c of lot.contacts) {
       this.upserts.push({
@@ -131,20 +132,16 @@ describe('importHubspotList', () => {
     expect(t.posts[0]!.url).toBe('http://connector/service/lists/contacts');
   });
   /**
-   * 🔴 L'OPT-IN ACCORDÉ NE LÈVE PAS UN STOP (2026-09-26). L'import demande `opted_in` (test du dessus), et c'est
-   * la base qui refuse de réabonner quelqu'un qui a dit STOP : ce test suit la liste jusqu'au SQL envoyé par le
-   * VRAI dépôt, sans quoi un faux dépôt dirait vert sur un import qui lève le STOP.
+   * 🔴 L'OPT-IN ACCORDÉ NE LÈVE PAS UN STOP (2026-09-26). L'import demande `opted_in` (test du dessus), sous l'autorité
+   * `import`, et c'est la transition qui refuse de réabonner quelqu'un qui a dit STOP sous cette autorité : la table
+   * `tests/integration/transition-consentement.integration.test.ts` le joue contre une vraie base (« import (HubSpot) :
+   * opted_out + opted_in »). Ce test-ci tient l'autre moitié de la chaîne : HubSpot ne passe jamais l'autorité qui lève.
    */
-  it('🔴 un contact qui a dit STOP le reste : le lot HubSpot ne peut pas lever un STOP', async () => {
+  it('🔴 un contact qui a dit STOP le reste : le lot HubSpot part sous l’autorité `import`, qui ne lève pas un STOP', async () => {
     const t = new FakeTransport(() => ({ status: 200, json: { contacts: [{ phone: '+33612345678', name: 'Jean' }], truncated: false, skippedNoPhone: 0 } }));
-    const appels: Array<{ sql: string; params: unknown[] }> = [];
-    const pool = {
-      query: async (sql: string, params: unknown[] = []) => { appels.push({ sql: sql.replace(/\s+/g, ' '), params }); return { rows: [], rowCount: 0 }; },
-    } as unknown as Pool;
-    await importHubspotList(connector(t), { contacts: new PgContactStore(pool), userFields: new FakeFieldStore() }, 't1', 'L1', 'Ma liste');
-    const upsert = appels.find((a) => a.sql.includes('insert into contacts'))!;
-    expect(upsert.sql).toMatch(/when excluded\.opt_in_status = 'opted_in' and \(contacts\.opt_in_status <> 'opted_out' or \$6::boolean\)/);
-    expect(upsert.params[5]).toBe(false); // $6 : ce lot ne peut pas lever un STOP
+    const contacts = new FakeContactStore();
+    await importHubspotList(connector(t), { contacts, userFields: new FakeFieldStore() }, 't1', 'L1', 'Ma liste');
+    expect(contacts.autorites).toEqual(['import']);
   });
   it('remonte truncated + skippedNoPhone', async () => {
     const t = new FakeTransport(() => ({ status: 200, json: { contacts: [{ phone: '+33612345678', name: null }], truncated: true, skippedNoPhone: 7 } }));

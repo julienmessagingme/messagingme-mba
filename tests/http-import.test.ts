@@ -25,11 +25,11 @@ class FakeContacts implements ContactStore {
   readonly upserts: ContactUpsert[] = [];
   /** Nombre de lots recus : un import ne doit plus faire une requete par ligne (R9). */
   lots = 0;
-  /** `peutLeverStop` de chaque lot reçu. */
-  readonly leveStop: Array<boolean | undefined> = [];
+  /** L'autorité de chaque lot reçu. */
+  readonly autorites: Array<LotContacts['autorite']> = [];
   async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
     this.lots += 1;
-    this.leveStop.push(lot.peutLeverStop);
+    this.autorites.push(lot.autorite);
     for (const c of lot.contacts) {
       this.upserts.push({
         tenantId: lot.tenantId,
@@ -312,8 +312,8 @@ describe('POST /tenants/:tenantId/contacts/import', { timeout: 30_000 }, () => {
       expect(res.statusCode).toBe(200);
       await app.close();
     }
-    expect(coche.leveStop).toEqual([true]);
-    expect(decoche.leveStop).not.toContain(true);
+    expect(coche.autorites).toEqual(['import_csv_coche']);
+    expect(decoche.autorites).toEqual(['import']);
   });
 
   // RBAC (Feature 2) : les contacts (PII : téléphones E164, opt-in) sont réservés aux admins.

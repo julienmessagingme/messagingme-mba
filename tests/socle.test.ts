@@ -43,8 +43,8 @@ function banc() {
       requetes.push(sql);
       // L'espace a branché un outil : sans ça, l'émetteur n'enfile rien, et le test ne verrait pas le signal.
       if (sql.includes('from integration_batch')) return { rows: [{ tenant_id: TENANT }] };
-      // La fiche était abonnée : l'écriture la fait passer à `opted_out`, donc l'annonce est due.
-      if (sql.includes('update contacts set opt_in_status')) return { rows: [{ id: 'fiche-1', avant: 'opted_in' }] };
+      // La fiche était abonnée : l'écriture la fait passer à `opted_out` (`passe`), donc l'annonce est due.
+      if (sql.includes('update contacts set opt_in_status')) return { rows: [{ id: 'fiche-1', passe: true }] };
       return { rows: [] };
     },
   } as unknown as Pool;
@@ -59,7 +59,7 @@ describe('le socle commun aux deux processus', () => {
   it('🔴 un STOP écrit par le dépôt de contacts du socle part vers le connecteur ET vers les signaux', async () => {
     const { socle, enfiles } = banc();
 
-    await socle.contactStore.setOptInByWaId(TENANT, WA_ID, 'opted_out', SOURCE_STOP_WHATSAPP, 'wamid.STOP');
+    await socle.contactStore.setOptInByWaId(TENANT, WA_ID, 'opted_out', 'personne', SOURCE_STOP_WHATSAPP, 'wamid.STOP');
 
     const annonces = enfiles.filter((e) => e.file === FILE_POUSSEE_OPTOUT);
     expect(annonces, 'aucune annonce d’opt-out : le connecteur du client ne serait jamais prévenu').toHaveLength(1);

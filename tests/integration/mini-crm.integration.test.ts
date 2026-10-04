@@ -52,13 +52,13 @@ describe.skipIf(!url)('mini-CRM — actions en masse + soft-delete', () => {
   });
 
   it('applyEditsMany par ids : add_tag ciblé sur A seulement', async () => {
-    const affected = await store.applyEditsMany(tenantId, { ids: [ids.A!] }, { addTags: ['gold'] });
+    const { affected } = await store.applyEditsMany(tenantId, { ids: [ids.A!] }, { addTags: ['gold'] });
     expect(affected).toBe(1);
     expect(await names({ tags: ['gold'] })).toEqual(['A']);
   });
 
   it('applyEditsMany par filtres + excludeIds : set_field appliqué à B seulement (A exclu)', async () => {
-    const affected = await store.applyEditsMany(
+    const { affected } = await store.applyEditsMany(
       tenantId,
       { filters: { fieldFilters: [{ key: 'ville', op: 'not_empty', value: '' }] }, excludeIds: [ids.A!] },
       { setField: { key: 'ville', value: 'Marseille' } },
@@ -75,7 +75,7 @@ describe.skipIf(!url)('mini-CRM — actions en masse + soft-delete', () => {
   });
 
   it('applyEditsMany add + remove tags dans le MÊME appel (une seule assignation SQL, pas de crash)', async () => {
-    const affected = await store.applyEditsMany(tenantId, { ids: [ids.A!] }, { addTags: ['nouveau'], removeTags: ['vip'] });
+    const { affected } = await store.applyEditsMany(tenantId, { ids: [ids.A!] }, { addTags: ['nouveau'], removeTags: ['vip'] });
     expect(affected).toBe(1);
     expect(await names({ tags: ['nouveau'] })).toEqual(['A']); // ajouté
     expect(await names({ tags: ['vip'] })).toEqual([]);        // retiré (A était le seul « vip »)
@@ -149,23 +149,23 @@ describe.skipIf(!url)('mini-CRM — actions en masse + soft-delete', () => {
         'select opt_in_status, opt_in_source from contacts where id = $1', [ids.A!],
       )).rows[0]!;
 
-    expect(await store.setOptInByWaId(tenantId, '33600000101', 'opted_out', 'scenario')).toBe(ids.A);
+    expect(await store.setOptInByWaId(tenantId, '33600000101', 'opted_out', 'scenario', 'scenario')).toBe(ids.A);
     expect(await lu()).toEqual({ opt_in_status: 'opted_out', opt_in_source: 'scenario' });
 
-    expect(await store.setOptInByWaId(tenantId, '33600000101', 'opted_in', 'scenario')).toBe(ids.A);
+    expect(await store.setOptInByWaId(tenantId, '33600000101', 'opted_in', 'scenario', 'scenario')).toBe(ids.A);
     expect((await lu()).opt_in_status).toBe('opted_in');
   });
 
   it('setOptInByWaId sur un numero inconnu -> null, aucune fiche creee (merge-only)', async () => {
     const avant = await store.count(tenantId, {});
-    expect(await store.setOptInByWaId(tenantId, '33699999997', 'opted_out', 'scenario')).toBeNull();
+    expect(await store.setOptInByWaId(tenantId, '33699999997', 'opted_out', 'scenario', 'scenario')).toBeNull();
     expect(await store.count(tenantId, {})).toBe(avant);
   });
 
   it('isolation tenant : une action sur un AUTRE tenant ne touche pas nos contacts', async () => {
     const other = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-minicrm-other') returning id`)).rows[0]!.id;
     try {
-      const affected = await store.applyEditsMany(other, { ids: [ids.A!, ids.B!] }, { addTags: ['leak'] });
+      const { affected } = await store.applyEditsMany(other, { ids: [ids.A!, ids.B!] }, { addTags: ['leak'] });
       expect(affected).toBe(0); // ids d'un autre tenant -> 0 touché
       expect(await names({ tags: ['leak'] })).toEqual([]);
     } finally {

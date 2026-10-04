@@ -97,7 +97,7 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
     const c = await contacts.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600000103', profileName: 'C', fields: {}, optInStatus: 'opted_in' });
 
     const n = await contacts.applyEditsMany(tenantId, { ids: [a.id, b.id] }, { setOptIn: 'opted_out' });
-    expect(n).toBe(2);
+    expect(n).toEqual({ affected: 2, stopsGardes: 0 });
     expect(annonces).toHaveLength(1);
     expect([...annonces[0]!.waIds].sort()).toEqual(['33600000101', '33600000102']);
     expect(annonces[0]!.tenantId).toBe(tenantId);
@@ -127,13 +127,13 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
     const contacts = new PgContactStore(pool, async (_t, waIds, message) => { annonces.push({ waIds, ...(message ? { message } : {}) }); });
     await contacts.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600000104', profileName: 'D', fields: {}, optInStatus: 'opted_in' });
 
-    expect(await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'whatsapp_stop', 'wamid.stop-1')).not.toBeNull();
-    expect(await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'scenario')).not.toBeNull();
+    expect(await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'personne', 'whatsapp_stop', 'wamid.stop-1')).not.toBeNull();
+    expect(await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'scenario', 'scenario')).not.toBeNull();
     expect(annonces).toEqual([{ waIds: ['33600000104'], message: 'wamid.stop-1' }]);
 
     // Le témoin dans l'autre sens : réabonné puis de nouveau STOP, c'est un NOUVEAU refus, annoncé.
-    await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_in', 'flow');
-    await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'whatsapp_stop', 'wamid.stop-2');
+    await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_in', 'personne', 'flow');
+    await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'personne', 'whatsapp_stop', 'wamid.stop-2');
     expect(annonces.map((a) => a.message)).toEqual(['wamid.stop-1', 'wamid.stop-2']);
   });
 
@@ -149,13 +149,13 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
       'select opt_in_status, opt_in_source, opt_out_at, updated_at from contacts where tenant_id = $1 and id = $2', [tenantId, id],
     )).rows[0]!;
 
-    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_out', 'whatsapp_stop', 'wamid.stop-3')).toBe(id);
+    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_out', 'personne', 'whatsapp_stop', 'wamid.stop-3')).toBe(id);
     const premier = await lire();
     expect(premier.opt_in_source).toBe('whatsapp_stop');
     expect(premier.opt_out_at).not.toBeNull();
 
     // Le second passage rend la fiche (elle existe), mais n'écrit RIEN : ni la source, ni la date, ni `updated_at`.
-    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_out', 'scenario')).toBe(id);
+    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_out', 'scenario', 'scenario')).toBe(id);
     const second = await lire();
     expect(second.opt_in_status).toBe('opted_out');
     expect(second.opt_in_source).toBe('whatsapp_stop');
@@ -163,7 +163,7 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
     expect(second.updated_at.toISOString()).toBe(premier.updated_at.toISOString());
 
     // Le témoin dans l'autre sens : un statut qui CHANGE s'écrit, source et date comprises.
-    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_in', 'flow')).toBe(id);
+    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_in', 'personne', 'flow')).toBe(id);
     const reabonne = await lire();
     expect(reabonne).toMatchObject({ opt_in_status: 'opted_in', opt_in_source: 'flow', opt_out_at: null });
   });

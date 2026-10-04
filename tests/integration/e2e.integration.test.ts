@@ -49,7 +49,7 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
     // 1) Import CSV -> contacts en base.
     const parsed = parseCsv(CSV);
     const report = await importContacts(
-      { rows: parsed.rows, mapping: mappingFromHeaders(parsed.headers), tenantId, optIn: true },
+      { rows: parsed.rows, mapping: mappingFromHeaders(parsed.headers), tenantId, optIn: true, autorite: 'import_csv_coche' },
       { contacts: new PgContactStore(pool), userFields: new PgUserFieldStore(pool), defaultCountry: 'FR' },
     );
     expect(report.created).toBe(2);

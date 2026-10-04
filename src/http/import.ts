@@ -179,7 +179,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
     // 🔴 La case cochée réabonne aussi qui a dit STOP : c'est le seul import qui le peut, parce que l'opérateur le
     // demande. HubSpot, le webhook entrant et la création à la main gardent le STOP.
     const report = await importContacts(
-      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn, tags, peutLeverStop: optIn },
+      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn, tags, autorite: optIn ? 'import_csv_coche' : 'import' },
       deps,
     );
     // Une ligne par lot, pas par contact : un import de 50 000 lignes noierait l'historique. L'opt-in est consigné
