@@ -5,6 +5,36 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-04 : un seul geste pour poser une étiquette (piste 6 de l'audit)
+
+**Cadrage.** Deux rondes de questions fermées, décisions de Julien : cinq portes passent par le module (l'agent, le bloc
+de scénario, le widget, l'outil MCP `tag_conversation` ET la fiche contact de la console) ; l'outil MCP pose et
+ajoute à la liste de l'espace, sans déclencher d'automatisme ; production avant la démo du 7 ; un défaut se corrige
+sur place.
+
+**Livré, `93e321b5`.**
+- `src/crm/poser-etiquette.ts` remplace `src/agent/poser-tag.ts` : nettoyage commun, pose, déclaration au mieux dans
+  le référentiel, publication `tag_added` seulement si l'appelant la demande (option requise, aucun défaut).
+- Changements voulus : l'outil MCP coupe à 64 caractères (borne annoncée dans son schéma) et déclare ; la fiche
+  déclare ses étiquettes. Tout le reste à l'identique, publication comprise (agent oui, scénario selon la politique
+  du lancement, fiche oui sur les nouvelles, widget et MCP non).
+- Les chemins de masse (import, API publique, action en masse) importent le nettoyage, sans changement.
+- Mutations vérifiées dans les deux sens (MCP qui publierait, fiche qui ne déclarerait pas, campagne qui publierait,
+  MCP sans la borne) ; une table par type de lancement lit la vraie file et prouve qu'une campagne ne publie rien.
+- **Relecture : 0 rouge, 7 jaunes.** Corrigés juste après : la fiche ne déclare plus une étiquette ajoutée puis
+  retirée dans le même envoi (le faux d'`applyEdits` rend désormais l'état final, comme le dépôt), et les deux
+  bornes recopiées en dur prennent la constante. Au backlog : la création d'un contact à la main ne déclare pas,
+  une déclaration coûte deux requêtes, la borne compte en unités UTF-16, deux tests lisent un champ privé.
+
+**Déploiement.** API puis deux workers, à 14 h 15 UTC, avec le lot des clés d'API d'une session voisine (`92652e5c`,
+déjà en production sur l'API).
+
+**Essai réel, le 4 vers 16 h 35 (Paris), relu en base.**
+- Claude, par le connecteur : `essai-claude` sur la fiche et dans le référentiel, AUCUNE publication.
+- La fiche contact : `essai-fiche` sur la fiche et dans le référentiel, une publication `tag_added`.
+- Un scénario lancé depuis l'Inbox : `essai-scenario` posé et publié (lancement unitaire) ; il était déjà au
+  référentiel, déclaré à l'enregistrement du scénario.
+
 ## 2026-10-04 : au plus dix clés d'API actives par espace (point 3 de l'audit)
 
 Décidé par Julien à dix (l'audit du 2026-10-02 proposait cinq). La onzième création est refusée en 409 avec un

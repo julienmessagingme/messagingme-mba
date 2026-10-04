@@ -140,6 +140,15 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
   (essai du 3 à 16 h 38, une seule occurrence, journal du 2026-10-03). Deux essais suivants (16 h 53 et 16 h 54,
   réponse au modèle par un bouton puis par du texte) : l'agent n'a rien dit. Occurrence isolée, à surveiller.
 
+## UN SEUL GESTE « POSER UNE ÉTIQUETTE » (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES POUSSÉS)
+
+- ✅ Piste 6 du rapport d'architecture du 2026-10-02, plan `docs/superpowers/plans/2026-10-04-poser-une-etiquette.md`.
+  Cinq portes passent par `src/crm/poser-etiquette.ts` (`93e321b5`, CI verte job par job) ; l'outil MCP coupe à 64
+  et déclare, la fiche déclare. Relecture : 0 rouge, 7 jaunes, dont deux corrigés après le déploiement, les autres
+  au backlog (`todo.md`, piste 6). API et workers à 14 h 15 UTC.
+- ✅ **Essai réel du 4 vers 16 h 35 (Paris)**, relu en base : par Claude (aucune publication), par la fiche
+  (publiée), par un scénario lancé depuis l'Inbox (publiée) ; les trois dans Contenus > Étiquettes. Récit au journal.
+
 ## UN POINT D'ENTRÉE PAR TYPE DE LANCEMENT DE SCÉNARIO (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES POUSSÉS)
 
 - ✅ Piste 4 du rapport d'architecture du 2026-10-02, plan `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md`.

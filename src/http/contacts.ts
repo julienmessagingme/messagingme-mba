@@ -333,7 +333,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     // mieux (un incident de file ne transforme pas l'édition en erreur), mais l'échec est journalisé : sans trace,
     // une automation muette serait indébogable.
     if (addTags.length > 0) {
-      const pose = { posees: addTags, nouvelles: updated.addedTags };
+      // Déclarées : celles qui FINISSENT sur la fiche. Une étiquette ajoutée puis retirée dans le même envoi n'y est
+      // pas, et n'a rien à faire dans le référentiel (relecture du 2026-10-04).
+      const pose = { posees: addTags.filter((t) => updated.contact.tags.includes(t)), nouvelles: updated.addedTags };
       await deps.etiquettes.apresPose(tenant, contactId, pose, { publier: true }).catch((err: unknown) => {
         // eslint-disable-next-line no-console
         console.error('publication « tag ajouté » ignorée (best-effort):', messageDe(err));

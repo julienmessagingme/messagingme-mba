@@ -9,6 +9,7 @@ import { espaceVerifie, estUuid } from './scope';
 import { blocSeul, type BlocPropose, type CibleMaison } from '../mba/outils-maison';
 import { outilsMcpProposables, vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
 import { entryNode } from '../workflow/engine';
+import { LONGUEUR_MAX_ETIQUETTE } from '../crm/poser-etiquette';
 import type { WorkflowGraph } from '../workflow/graph';
 
 /**
@@ -68,7 +69,7 @@ const texte = (max: number) => z.string().trim().min(1).max(max);
  * Les bornes de la saisie, appliquées aussi par l'écran avant l'envoi (`BORNES_OUTIL`) pour dire ce qui manque
  * au lieu d'un 400 ; `tests/mba-outils-parite.test.ts` tient les deux listes égales.
  */
-export const BORNES_OUTIL_MBA = { titre: 120, texte: 2000, tag: 64, champ: 64, valeur: 120, valeurs: 50 } as const;
+export const BORNES_OUTIL_MBA = { titre: 120, texte: 2000, tag: LONGUEUR_MAX_ETIQUETTE, champ: 64, valeur: 120, valeurs: 50 } as const;
 const B = BORNES_OUTIL_MBA;
 
 /** La cible saisie à l'écran. `connecteur` désigne un appel ; les autres deviennent un `binding` maison. */

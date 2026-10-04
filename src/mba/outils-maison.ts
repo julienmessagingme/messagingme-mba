@@ -4,6 +4,7 @@ import type { RisqueOutil } from '../agent/catalog';
 import { walk } from '../workflow/engine';
 import type { WorkflowGraph, WorkflowNode } from '../workflow/graph';
 import { CODE_BLOC_RE, summarize } from '../workflow/node-list';
+import { LONGUEUR_MAX_ETIQUETTE } from '../crm/poser-etiquette';
 
 /**
  * Les gestes de l'agent de Meta : ce que le relais exécute lui-même, sans système tiers.
@@ -23,7 +24,7 @@ export type TypeOutilMba = 'tag' | 'champ' | 'bloc' | 'scenario' | 'connecteur';
  * écriture l'a produit, et un outil qu'on ne comprend pas ne s'exécute pas.
  */
 export const cibleMaisonSchema = z.discriminatedUnion('handler', [
-  z.object({ handler: z.literal('tag_fixe'), tag: z.string().trim().min(1).max(64) }).strict(),
+  z.object({ handler: z.literal('tag_fixe'), tag: z.string().trim().min(1).max(LONGUEUR_MAX_ETIQUETTE) }).strict(),
   z.object({
     handler: z.literal('champ_fixe'),
     champ: z.string().trim().min(1).max(64),

@@ -61,9 +61,12 @@ function app(
         if (edits.removeTags.length) cap.removed.push(edits.removeTags);
         if (edits.removeFields && edits.removeFields.length) cap.removedFields.push(edits.removeFields);
         if (edits.profileName !== undefined) cap.names.push(edits.profileName);
-        // Le store ne renvoie que les tags RÉELLEMENT nouveaux : ici, ceux qui ne sont pas déjà sur la fiche.
+        // Comme le store : la fiche rendue est l'état FINAL (le retrait s'applique après l'ajout), et `addedTags` ne
+        // porte que les tags RÉELLEMENT nouveaux, absents avant et présents à la fin.
+        const finales = [...new Set([...result.tags, ...edits.addTags])].filter((t) => !edits.removeTags.includes(t));
         return {
-          contact: result, addedTags: edits.addTags.filter((t) => !result.tags.includes(t)),
+          contact: { ...result, tags: finales },
+          addedTags: edits.addTags.filter((t) => !result.tags.includes(t) && finales.includes(t)),
           consentementChange: edits.optInStatus !== undefined,
         };
       },
@@ -387,6 +390,20 @@ describe('routes contacts — émission « tag ajouté » (automations)', () => 
     expect(cap.added).toEqual([['rappeler', 'vip', long]]);
     expect(cap.declared).toEqual(['rappeler', 'vip', long]);
     expect(cap.emitted).toEqual(['33611:rappeler', `33611:${long}`]);
+    await server.close();
+  });
+
+  it('une étiquette ajoutée PUIS retirée dans le même envoi n’entre pas dans le référentiel', async () => {
+    // Le retrait s'applique après l'ajout (`applyEdits`) : elle ne finit pas sur la fiche, la déclarer peuplerait la
+    // liste de l'espace d'une étiquette que personne ne porte. L'autre, posée, est déclarée : preuve que la suite a tourné.
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok),
+      payload: { addTags: ['fantome', 'rappeler'], removeTags: ['fantome'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(cap.declared).toEqual(['rappeler']);
+    expect(cap.emitted).toEqual(['33611:rappeler']);
     await server.close();
   });
 

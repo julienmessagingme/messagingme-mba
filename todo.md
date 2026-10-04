@@ -1051,11 +1051,23 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
    enchaîne STOP, opt-out, signal, journal, contact, automation et scénario dans une flèche qu'aucun test
    n'exécute (le test la remplace par un faux) ; la jumelle WhatsApp est un module (`src/webhooks/inbound.ts`).
    Peu modifiée : le coût est un risque sur le consentement, pas une fréquence.
-6. **Un seul geste « poser une étiquette »** (à explorer). `src/agent/poser-tag.ts` est le vrai module, mais le
-   scénario (`wiring.ts`), le widget (`src/widgets/arrivee.ts`) et l'outil MCP `tag_conversation`
-   (`src/mcp/outils.ts`, sans la borne de 64 caractères ni le référentiel des étiquettes) le réimplémentent ;
-   `trim().slice(0, 64)` apparaît dans dix fichiers et `mergeFieldsByPhone` est câblé à la main quatre fois.
-   Étendre le module aux autres portes, l'émission restant au choix du chemin appelant.
+6. ✅ **Un seul geste « poser une étiquette » : FAIT le 2026-10-04** (`93e321b5`, plan
+   `docs/superpowers/plans/2026-10-04-poser-une-etiquette.md`). `src/crm/poser-etiquette.ts` remplace
+   `src/agent/poser-tag.ts` ; l'agent, le bloc de scénario, le widget, l'outil MCP `tag_conversation` et la fiche
+   contact y passent, la publication restant demandée par chaque porte. Changements voulus (décisions de Julien) :
+   l'outil MCP coupe à 64 et déclare dans le référentiel, la fiche déclare. Restent, de la relecture :
+   - 🟡 **La création d'un contact à la main avec des étiquettes** (`POST /tenants/:id/contacts`) ne déclare rien,
+     alors que la fiche déclare désormais : une sixième porte unitaire, hors du plan, à trancher par Julien.
+   - 🟡 **Une déclaration coûte deux requêtes en série** (`resolveTenantCode` puis l'`insert`, `PgTagStore.create`),
+     étiquette par étiquette : 100 allers-retours pour une fiche envoyée avec 50 étiquettes (la console en envoie
+     une à la fois). Piste : un seul `insert ... select unnest($2::text[]) on conflict do nothing`.
+   - 🟡 **La borne de 64 se compte en unités UTF-16** (`normaliserEtiquette`) quand le schéma de l'outil MCP annonce
+     `maxLength: 64` en points de code : une étiquette à émojis peut être coupée au milieu d'un émoji, et se redire
+     « nouvelle » à chaque pose. Antérieur au lot pour les autres portes. Piste : couper sur les points de code.
+   - 🟡 **Deux tests lisent un champ privé de l'exécuteur** (`Reflect.get(executor, 'deps')`) et recopient le même
+     faux `buildWorkflowRuntime` (`tests/workflow-lancements.test.ts`, `tests/crm-poser-etiquette.test.ts`) : un
+     utilitaire partagé dans `tests/` éviterait la copie.
+   - 🟡 **`mergeFieldsByPhone` est câblé à la main quatre fois** (constat du rapport, hors de ce lot).
 7. **Le cerveau de l'agent IA construit deux fois** (spéculatif). `src/index.ts` (bac à sable) et `src/worker.ts`
    (production) recopient la moitié commune de `creerCerveauGateway`, alignées par deux tests de texte ; l'écart du
    2026-09-16 (bac à sable sans résolveur) venait de là. Une fabrique « production / essai » dans `src/agent/`.
