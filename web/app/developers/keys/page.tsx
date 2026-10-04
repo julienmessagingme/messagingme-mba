@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listApiKeys, createApiKey, revokeApiKey, API_SCOPES, API_SCOPES_PAR_DEFAUT, type ApiKeyRow, type ApiKeyCreated, type ApiScope } from '@/lib/api';
+import { listApiKeys, createApiKey, revokeApiKey, API_SCOPES, API_SCOPES_PAR_DEFAUT, MAX_CLES_API_ACTIVES, DROIT_RELAIS, type ApiKeyRow, type ApiKeyCreated, type ApiScope } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
@@ -47,9 +47,6 @@ function KeysInner({ session }: { session: Session }) {
   }, [session.tenantId, t]);
 
   useEffect(() => { void load(); }, [load]);
-
-  /** Le droit de la clé que la publication pose chez Meta (`src/mba/cle-relais.ts`). */
-  const DROIT_RELAIS = 'mba:relais';
 
   // Typé sur `ApiScope` : un droit ajouté à la liste sans libellé ne compile pas.
   const SCOPE_LABEL: Record<ApiScope, string> = {
@@ -113,6 +110,8 @@ function KeysInner({ session }: { session: Session }) {
 
   const fmt = (iso: string | null) => (iso ? `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}` : <Nd />);
   const active = keys.filter((k) => !k.revokedAt);
+  // Le plafond ne compte pas la clé du relais, que la publication pose (même règle que le serveur).
+  const plafondAtteint = active.filter((k) => !k.scopes.includes(DROIT_RELAIS)).length >= MAX_CLES_API_ACTIVES;
 
   return (
     <div className="max-w-formulaire space-y-6">
@@ -147,11 +146,19 @@ function KeysInner({ session }: { session: Session }) {
         </div>
         <Bouton enCours={busy}
           onClick={() => { void create(); }}
-          disabled={busy || !name.trim() || scopes.size === 0}
+          disabled={busy || plafondAtteint || !name.trim() || scopes.size === 0}
           className="mt-3"
         >
           {busy ? t('Création…', 'Creating…') : t('Créer la clé', 'Create key')}
         </Bouton>
+        {plafondAtteint && (
+          <p className="mt-2 text-sm text-ink-500" data-testid="plafond-cles">
+            {t(
+              `${MAX_CLES_API_ACTIVES} clés actives au maximum par espace (la clé « Agent de Meta » ne compte pas) : révoquez-en une pour en créer une autre.`,
+              `${MAX_CLES_API_ACTIVES} active keys at most per workspace (the “Agent de Meta” key does not count): revoke one to create another.`,
+            )}
+          </p>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">

@@ -4,7 +4,8 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ApiKeysRouteDeps } from '../src/http/api-keys';
-import type { ApiKeyRow } from '../src/auth/api-key-store.pg';
+import type { ApiKeyRow, PlafondCles } from '../src/auth/api-key-store.pg';
+import type { AuditSink } from '../src/audit/journal';
 import { journalMuet } from './routes-inertes';
 
 const SECRET = 'test-secret';
@@ -20,11 +21,15 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 function app(over: Partial<ApiKeysRouteDeps> = {}) {
-  const cap = { created: [] as Array<{ name: string; scopes: string[] }>, revoked: [] as string[] };
+  const cap = { created: [] as Array<{ name: string; scopes: string[] }>, revoked: [] as string[], plafonds: [] as PlafondCles[] };
   const deps: ApiKeysRouteDeps = {
     audit: journalMuet,
     cles: {
-      create: async (_t, name, scopes) => { cap.created.push({ name, scopes }); return { id: 'k1', key: 'mba_secret_shown_once' }; },
+      creerSousPlafond: async (_t, name, scopes, plafond) => {
+        cap.plafonds.push(plafond);
+        cap.created.push({ name, scopes });
+        return { id: 'k1', key: 'mba_secret_shown_once' };
+      },
       listByTenant: async (): Promise<ApiKeyRow[]> => [{ id: 'k1', name: 'CI', scopes: ['contacts:write'], createdAt: '2026-07-17T00:00:00.000Z', lastUsedAt: null, revokedAt: null }],
       revoke: async (_t, id) => { cap.revoked.push(id); return id === 'k1'; },
     },
@@ -40,6 +45,32 @@ describe('routes api-keys (admin)', () => {
     expect(res.statusCode).toBe(201);
     expect(res.json<{ id: string; key: string }>()).toMatchObject({ id: 'k1', key: 'mba_secret_shown_once' });
     expect(cap.created[0]).toEqual({ name: 'Intégration', scopes: ['contacts:write', 'sends:create'] });
+    await server.close();
+  });
+
+  it('🔴 la création passe le plafond de dix clés, la clé du relais mise à part', async () => {
+    const { server, cap } = app();
+    await server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
+    expect(cap.plafonds).toEqual([{ max: 10, horsDroit: 'mba:relais' }]);
+    await server.close();
+  });
+
+  it('🔴 plafond atteint -> 409 lisible, aucune clé rendue, rien au journal', async () => {
+    const journal: Array<string> = [];
+    const audit: AuditSink = async (_t, _a, action) => { journal.push(action); };
+    const { server } = app({
+      audit,
+      cles: {
+        creerSousPlafond: async () => null,
+        listByTenant: async () => [],
+        revoke: async () => false,
+      },
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toMatch(/10 clés actives au maximum.*révoquez-en une/);
+    expect(res.json()).not.toHaveProperty('key');
+    expect(journal).toEqual([]);
     await server.close();
   });
 

@@ -1947,6 +1947,9 @@ scénario, comment importer des contacts.
   simples, le suivi d'un envoi et les catalogues). Une clé peut aussi porter les droits du serveur MCP, décrits
   dans leur propre section (« Serveur MCP : brancher un assistant sur la console »).
   ⚠️ Les droits d'une clé se fixent à sa création et ne s'éditent pas : pour un droit de plus, on crée une clé.
+  ✅ **Dix clés actives au plus par espace** (2026-10-04) : au-delà, le bouton « Créer la clé » se grise et
+  l'écran explique qu'il faut en révoquer une. Les clés révoquées ne comptent pas, la clé « Agent de Meta »
+  non plus.
 - ✅ **Une personne est une FICHE** (2026-09-24). L'intégrateur la désigne par ce qu'il a : l'identifiant de
   fiche (`contactId`, affiché sur la fiche du mini-CRM sous « Identifiant API » avec un bouton Copier), SON
   identifiant (`externalId`, gardé sur la fiche, unique par espace), le numéro ou le BSUID. Plusieurs clés

@@ -5,6 +5,33 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-04 : au plus dix clés d'API actives par espace (point 3 de l'audit)
+
+Décidé par Julien à dix (l'audit du 2026-10-02 proposait cinq). La onzième création est refusée en 409 avec un
+message qui dit de révoquer une clé ; la console grise le bouton et le dit avant. Ne comptent pas : les clés
+révoquées, et la clé du relais de l'agent de Meta (posée par la publication, sinon publier un agent prendrait la
+place d'une clé du client, ou serait refusé par elle). Les clés déjà au-delà ne sont pas révoquées.
+
+- **Mesuré en production avant d'écrire** (lecture seule) : un seul espace a des clés, 2 actives créées depuis la
+  console, 1 du relais, 6 révoquées. La borne ne gêne personne aujourd'hui.
+- **La raison n'est PAS le débit**, et le commentaire écrit d'abord le prétendait : « sans plafond, un espace
+  multiplie son débit en multipliant les clés » était vrai le 2026-09-14 et faux depuis le 2026-09-25, quand le
+  plafond de l'API est devenu commun à toutes les clés d'un espace. Relevé en relisant `features.md` avant de
+  commiter, corrigé : la borne limite l'exposition (moins de secrets oubliés), comme le disait l'audit.
+- **Le compte et l'insertion sont atomiques** (`PgApiKeyStore.creerSousPlafond`, verrou consultatif
+  `api_keys:<espace>`, préfixé pour ne pas sérialiser avec les bascules HubSpot verrouillées sur l'identifiant nu).
+  Prouvé dans les deux sens sur un Postgres jetable du VPS (accord de Julien) : verrou retiré, douze créations
+  simultanées passent TOUTES et le test du verrou tombe ; relais compté, la dixième clé du client est refusée.
+  Version correcte : vert trois fois de suite, avec le test d'intégration du relais.
+- **La route n'a plus accès à la création sans plafond** : `ClesApiDep` porte `creerSousPlafond` à la place de
+  `create`, qui reste réservé à la clé du relais. Le compilateur a trouvé une fixture que le grep avait manquée
+  (`tests/audit-acces.test.ts`).
+- **Relu par un relecteur indépendant, aucun rouge.** Ses jaunes, réglés dans le même lot avant le premier push :
+  le message dit que la clé « Agent de Meta » ne compte pas (l'en-tête de la liste, lui, la compte, et lisait
+  « 11 actives » à côté de « 10 au maximum ») ; le droit du relais, recopié en dur dans la console dont la règle
+  d'exclusion dépend désormais, passe sous un test de parité ; deux commentaires précisés ; et l'e2e de l'écran
+  (`web/e2e/cles-api-plafond.spec.ts` : bouton grisé à dix, actif à neuf plus le relais, 409 affiché tel quel).
+
 ## 2026-10-04 : un point d'entrée par type de lancement de scénario (piste 4 de l'audit)
 
 **Cadrage.** Deux rondes de questions fermées, décisions de Julien : les sept lancements (le rapport en comptait cinq,

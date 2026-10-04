@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { Pool } from 'pg';
 import { sha256Hex } from '../lib/signature';
+import { enTransaction } from '../db/transaction';
 
 export interface ApiKeyRow {
   id: string;
@@ -27,20 +28,59 @@ export interface ApiKeyLookup {
 export const API_KEY_PREFIX = 'mba_';
 
 /**
- * Clés d'API par tenant. `create` rend la clé en clair une seule fois et 🔴 ne persiste que son hash
+ * Le plafond d'une création : au plus `max` clés actives dans l'espace, sans compter celles qui portent
+ * `horsDroit` (la clé du relais, posée par la publication et non par le client).
+ */
+export interface PlafondCles {
+  max: number;
+  horsDroit: string;
+}
+
+/** Une clé neuve et son empreinte, seul générateur de clés d'API. */
+function nouvelleCle(): { key: string; hash: string } {
+  const key = `${API_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
+  return { key, hash: sha256Hex(key) };
+}
+
+const INSERER_CLE = `insert into api_keys (tenant_id, key_hash, name, scopes) values ($1, $2, $3, $4) returning id`;
+
+/**
+ * Clés d'API par tenant. `create` et `creerSousPlafond` rendent la clé en clair une seule fois et 🔴 ne persistent que son hash
  * sha256 ; le lookup se fait par hash sur un index unique, sans comparaison en mémoire d'un secret.
  * `listByTenant` ne rend jamais le hash.
  */
 export class PgApiKeyStore implements ApiKeyLookup {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Sans plafond. La route de la console n'y a pas accès (son type ne porte que `creerSousPlafond`) ; en production,
+   * seule la publication du relais s'en sert (`src/mba/cle-relais.ts`).
+   */
   async create(tenantId: string, name: string, scopes: string[]): Promise<{ id: string; key: string }> {
-    const key = `${API_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
-    const res = await this.pool.query<{ id: string }>(
-      `insert into api_keys (tenant_id, key_hash, name, scopes) values ($1, $2, $3, $4) returning id`,
-      [tenantId, sha256Hex(key), name, scopes],
-    );
+    const { key, hash } = nouvelleCle();
+    const res = await this.pool.query<{ id: string }>(INSERER_CLE, [tenantId, hash, name, scopes]);
     return { id: res.rows[0]!.id, key };
+  }
+
+  /**
+   * Crée une clé si l'espace en a moins de `plafond.max` actives hors `plafond.horsDroit`. `null` = plafond
+   * atteint, rien n'est créé.
+   * 🔴 Le compte et l'insertion se font sous un verrou consultatif PAR ESPACE : sans lui, deux créations
+   * simultanées liraient chacune le même compte et dépasseraient le plafond. La clé du verrou porte le préfixe
+   * `api_keys:`, pour ne pas sérialiser avec les bascules HubSpot, verrouillées sur l'identifiant nu de l'espace.
+   */
+  async creerSousPlafond(tenantId: string, name: string, scopes: string[], plafond: PlafondCles): Promise<{ id: string; key: string } | null> {
+    return enTransaction(this.pool, async (client) => {
+      await client.query(`select pg_advisory_xact_lock(hashtext('api_keys:' || $1))`, [tenantId]);
+      const actives = await client.query<{ n: number }>(
+        `select count(*)::int as n from api_keys where tenant_id = $1 and revoked_at is null and not ($2 = any(scopes))`,
+        [tenantId, plafond.horsDroit],
+      );
+      if ((actives.rows[0]?.n ?? 0) >= plafond.max) return null;
+      const { key, hash } = nouvelleCle();
+      const res = await client.query<{ id: string }>(INSERER_CLE, [tenantId, hash, name, scopes]);
+      return { id: res.rows[0]!.id, key };
+    });
   }
 
   async findActiveByHash(hash: string): Promise<{ id: string; tenantId: string; scopes: string[]; tenantStatus?: string } | null> {

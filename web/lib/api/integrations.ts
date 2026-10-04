@@ -24,6 +24,17 @@ export const API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'm
  */
 export const API_SCOPES_PAR_DEFAUT = ['contacts:write', 'sends:create'] as const;
 export type ApiScope = (typeof API_SCOPES)[number];
+/**
+ * Au plus dix clés actives par espace, la clé du relais de l'agent de Meta mise à part. Le serveur refuse la
+ * onzième en 409 ; l'écran le dit avant. Parité avec `MAX_CLES_API_ACTIVES` (`src/http/api-keys.ts`) tenue par
+ * `tests/api-droits-parite.test.ts`.
+ */
+export const MAX_CLES_API_ACTIVES = 10;
+/**
+ * Le droit de la clé que la publication pose chez Meta (`src/mba/cle-relais.ts`) : absent d'`API_SCOPES`, il n'est
+ * attribuable par personne, et cette clé ne compte pas dans le plafond. Parité tenue par `tests/api-droits-parite.test.ts`.
+ */
+export const DROIT_RELAIS = 'mba:relais';
 
 export interface ApiKeyRow {
   id: string;

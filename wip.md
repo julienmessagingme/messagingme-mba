@@ -248,7 +248,10 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
    dans `todo.md`. Les jaunes (`59ec71e2`) sont partis avec le redémarrage des workers sur `b6e674ac` ; relu en base
    juste après (battement à 20 s sur les dix files, rejeu à 10 s sur `webhook`, moniteur à jour). Le banc a été
    DÉMONTÉ du VPS le 2026-10-04 ; la recette pour le remonter est en tête de `scripts/banc-trente-espaces.mts`.
-3. Au plus 5 clés d'API actives par espace (sécurité, petit lot).
+3. ✅ **Au plus DIX clés d'API actives par espace** (Julien a remonté le chiffre de 5 à 10 le 2026-10-04) : la
+   onzième refusée en 409, la clé du relais de l'agent de Meta et les révoquées non comptées, le bouton grisé dans
+   la console. Mesuré avant : un seul espace a des clés (2 actives), personne n'est au-delà. Test d'intégration
+   prouvé dans les deux sens sur un Postgres jetable. Commit, relecture et déploiement : voir le journal technique.
 4. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
 5. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant » ; au minimum leur volume dans `/ops`.
 6. Décision de Julien : les quotas par espace de l'API publique (à partir de `/ops/usage`).

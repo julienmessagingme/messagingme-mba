@@ -356,9 +356,11 @@ les sept acceptés. C'est exactement ce que cette tâche existe pour produire.
   sont peu coûteux : **journaliser** le repli au lieu de le faire en silence, et décider si un envoi RCS
   **déclenché par l'API publique** doit exiger une clé d'espace.
 - 🔲 **Les seuils de quota**, après la période d'observation de la tâche 5.
-- 🔲 **Un plafond du nombre de clés actives par espace.** Mesuré : aucun. Un espace avec N clés dispose de
-  **N × 60** requêtes/minute. ⚠️ Une clé ne peut PAS en créer d'autres (vérifié : 401), c'est un geste
-  d'admin de la console, donc la défense est secondaire — le vrai levier est le quota par ESPACE (tâche 4).
+- ✅ **Un plafond du nombre de clés actives par espace** : dix, depuis le 2026-10-04 (`MAX_CLES_API_ACTIVES`,
+  `src/http/api-keys.ts`). ⚠️ Le « N × 60 requêtes/minute » écrit ici n'est plus vrai depuis le 2026-09-25 : le
+  plafond de l'API est commun à toutes les clés d'un espace. La borne de clés limite donc l'EXPOSITION (secrets
+  oubliés chez d'anciens intégrateurs), pas le débit. Une clé ne peut toujours pas en créer d'autres (geste
+  d'admin de la console).
 - 🔲 **Ce qu'on fait des coûts qui sont à notre charge par décision** : transcription, bot d'aide, analyse
   de conversation. ⚠️ Et un quatrième que l'audit n'avait pas vu : la **recherche sémantique** (embeddings
   et rerank) tourne sur la clé maison **sans aucun compteur**.

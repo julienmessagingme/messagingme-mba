@@ -498,7 +498,8 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
   chez Meta (Meta ne rend jamais un secret) ; toute écriture du connecteur pose une clé NEUVE dans l'ordre
   de `src/mba/cle-relais.ts` (créer, écrire chez Meta, retenir après l'accusé, révoquer TOUTE autre clé
   `mba:relais` de l'espace ; après un échec, plus aucune n'est retenue, donc la publication suivante en
-  repose une). Chaque création et révocation est auditée (`cle_api.creee`, `cle_api.revoquee`).
+  repose une). Chaque création et révocation est auditée (`cle_api.creee`, `cle_api.revoquee`). Elle se crée
+  SANS plafond (`PgApiKeyStore.create`) et ne compte pas dans les dix clés actives de l'espace (§ 7).
 - 🔴 **Une seule publication à la fois par espace** (`POST /mba-publication` rend 409 à la seconde) : deux
   poses de clé entrelacées se révoqueraient l'une l'autre. Le verrou est un verrou COURT en base
   (`mba-publication:<espace>`, `src/db/verrous-courts.ts`), donc commun à toutes les copies de l'API ; son jeton
@@ -2122,6 +2123,13 @@ outil qui reçoit les signaux (la table de son adaptateur, dans `src/signaux/`),
 **Hachés, jamais stockés en clair** : les clés d'API publiques (`api_keys`, sha256), les jetons d'invitation et
 de réinitialisation (`auth_tokens`), les secrets de webhook entrant, les codes de secours du second facteur
 (`mfa_codes_secours`, sha256), les jetons et codes OAuth (`oauth_autorisations`, `oauth_codes`, sha256).
+
+**Au plus dix clés d'API actives par espace** (`MAX_CLES_API_ACTIVES`, `src/http/api-keys.ts`) : la onzième
+est refusée en 409, les révoquées ne comptent pas, la clé du relais de l'agent de Meta non plus. C'est une borne
+d'exposition (moins de secrets oubliés chez d'anciens intégrateurs), pas de débit : le plafond de l'API est
+déjà commun à toutes les clés de l'espace. 🔴 Le compte et l'insertion se font sous un verrou consultatif par
+espace (`creerSousPlafond`, clé `api_keys:<espace>`) : sans lui, des créations simultanées dépassent le
+plafond. La route n'a accès qu'à cette création ; `create`, sans plafond, ne sert que la clé du relais.
 
 🔴 **`/ops` EST NOMINATIF, AVEC SECOND FACTEUR** (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
 Plus de jeton partagé : `OPS_TOKEN` n'existe plus, et il n'y a aucun accès de secours. `OPS_EMAILS` (des

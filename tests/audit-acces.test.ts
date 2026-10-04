@@ -131,7 +131,7 @@ describe('les CLÉS D’API laissent une trace', () => {
     monterAvecEtapeEspace(app, () => registerApiKeys(app, {
       audit,
       cles: {
-        create: async () => ({ id: 'k1', key: 'mm_secret_en_clair' }),
+        creerSousPlafond: async () => ({ id: 'k1', key: 'mm_secret_en_clair' }),
         listByTenant: async () => [],
         revoke: async () => revoqueOk,
       },
