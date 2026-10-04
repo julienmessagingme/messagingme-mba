@@ -1,7 +1,10 @@
 import { PgBoss } from 'pg-boss';
 import type { ConstructorOptions, MaintenanceOptions, SchedulingOptions, WorkOptions } from 'pg-boss';
 import type { Queue } from './queue';
-import { dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, seuilRafalePour } from './names';
+import {
+  BATTEMENT_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES, SURVEILLANCE_FILES_SECONDES, dlqName, filetNotifieSecondes, notifieePour,
+  pollingSecondsFor, seuilRafalePour, videeEnContinu,
+} from './names';
 import { pgSsl } from '../db/ssl';
 
 export interface PgBossPoolOpts {
@@ -33,6 +36,11 @@ export interface PgBossMaintenanceOpts {
   supervise?: boolean;
   /** Cadence (s) de la maintenance « flow » (jobs bloquants / parents). Défaut pg-boss : 5 s, inutile ici. */
   flowIntervalSeconds?: number;
+  /** Cadence (s) de la supervision, et du moniteur qu'elle lance (tâches expirées ou muettes, comptes). Défaut : 60 s. */
+  superviseIntervalSeconds?: number;
+  monitorIntervalSeconds?: number;
+  /** Cadence (s) du cache des files de l'instance (le compte qui décide de la rafale). Défaut pg-boss : 60 s. */
+  queueCacheIntervalSeconds?: number;
 }
 
 /** Option d'écoute des notifications de l'instance pg-boss. */
@@ -71,6 +79,9 @@ export function maintenanceOptions(opts: PgBossMaintenanceOpts): SchedulingOptio
     schedule: false,
     ...(opts.supervise !== undefined ? { supervise: opts.supervise } : {}),
     ...(opts.flowIntervalSeconds !== undefined ? { flowIntervalSeconds: opts.flowIntervalSeconds } : {}),
+    ...(opts.superviseIntervalSeconds !== undefined ? { superviseIntervalSeconds: opts.superviseIntervalSeconds } : {}),
+    ...(opts.monitorIntervalSeconds !== undefined ? { monitorIntervalSeconds: opts.monitorIntervalSeconds } : {}),
+    ...(opts.queueCacheIntervalSeconds !== undefined ? { queueCacheIntervalSeconds: opts.queueCacheIntervalSeconds } : {}),
   };
 }
 
@@ -165,7 +176,14 @@ export class PgBossQueue implements Queue {
             schema,
             ssl: pgSsl(),
             ...poolOptions(opts),
-            ...maintenanceOptions(opts),
+            // La surveillance resserrée va avec le battement de cœur des files (`ensure`) : sans elle, une orpheline
+            // attendrait encore jusqu'à deux minutes de plus. Une valeur passée par l'appelant l'emporte.
+            ...maintenanceOptions({
+              superviseIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
+              monitorIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
+              queueCacheIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
+              ...opts,
+            }),
             ...notifyOptions(opts),
           }
         : {
@@ -244,6 +262,9 @@ export class PgBossQueue implements Queue {
     // `createQueue` est un `ON CONFLICT DO NOTHING` : sur une file qui existe déjà, `notify: true` n'y ferait rien,
     // en silence. Le drapeau se pose donc par `updateQueue`, que pg-boss applique à une file existante.
     if (notifieePour(name)) await this.boss.updateQueue(name, { notify: true });
+    // Le battement de cœur, par `updateQueue` pour la même raison : posé sur `createQueue`, il n'atteindrait aucune
+    // file existante. Les tâches le recopient de leur file à la création (`BATTEMENT_SECONDES`, `names.ts`).
+    await this.boss.updateQueue(name, { heartbeatSeconds: BATTEMENT_SECONDES });
     this.ensured.add(name);
   }
 
@@ -295,7 +316,13 @@ export class PgBossQueue implements Queue {
     // Cadences, filet et rafale viennent de `names.ts`, source unique : une file ajoutée sans y penser retombe sur
     // un défaut sûr. Le filet (`notifyPollingIntervalSeconds`) est sûr parce que `pollingIntervalSeconds` ne bouge
     // pas : pg-boss y retombe seul si l'écouteur meurt. Concurrence par groupe : voir `workConcurrencyOptions`.
-    await this.boss.work<unknown>(
+    //
+    // 🔴 VIDAGE CONTINU (`FILES_VIDEES_EN_CONTINU`, `names.ts`) : la file est enregistrée boucle par boucle, pour en
+    // connaître chaque identifiant, et chaque message traité les réveille toutes. Le plafond par contact
+    // (`localGroupConcurrency`) tient toujours : pg-boss le suit par NOM de file, quelle que soit la registration.
+    const vidage = videeEnContinu(name);
+    const boucles: string[] = [];
+    const enregistrer = (): Promise<string> => this.boss.work<unknown>(
       name,
       {
         batchSize: 1,
@@ -304,13 +331,22 @@ export class PgBossQueue implements Queue {
         // La rafale : sans elle, le débit d'une file vaut `concurrence / cadence de sondage`, absurde sous retard.
         // Seuil par file (`SEUIL_RAFALE`, `SEUILS_RAFALE` dans `names.ts`).
         burstWhenReadyExceeds: seuilRafalePour(name),
-        ...workConcurrencyOptions(opts ?? {}),
+        // Le rafraîchissement du battement pendant le traitement (cf. `BATTEMENT_SECONDES`).
+        heartbeatRefreshSeconds: RAFRAICHISSEMENT_BATTEMENT_SECONDES,
+        ...workConcurrencyOptions(vidage ? { ...opts, concurrency: 1 } : (opts ?? {})),
       },
       async (jobs) => {
         for (const job of jobs) {
-          await handler(job.data);
+          try {
+            await handler(job.data);
+          } finally {
+            // Réussi ou non, le message est sorti de la file : il en reste peut-être d'autres, chaque boucle relit.
+            if (vidage) for (const id of boucles) this.boss.notifyWorker(id);
+          }
         }
       },
     );
+    const nombre = vidage ? Math.max(1, opts?.concurrency ?? 1) : 1;
+    for (let i = 0; i < nombre; i += 1) boucles.push(await enregistrer());
   }
 }

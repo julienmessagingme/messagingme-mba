@@ -2,6 +2,7 @@ import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { PgBossQueue } from '../../src/queue/pgboss';
+import { BATTEMENT_SECONDES } from '../../src/queue/names';
 import { PgEventStore } from '../../src/webhooks/store';
 import { handleWebhookJob } from '../../src/webhooks/handler';
 import { pgSsl } from '../../src/db/ssl';
@@ -49,6 +50,24 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000)),
     ])) as { ping?: string };
     expect(data.ping).toBe('pong');
+  });
+
+  /**
+   * 🔴 LE BATTEMENT DE CŒUR ATTEINT LA FILE ET SES TÂCHES (banc des trente espaces, 2026-10-03). Sans lui, une tâche
+   * dont le worker meurt attend 15 min avant d'être rejouée. Lu en base, parce que tout le piège est là : posé sur
+   * `createQueue` (un ON CONFLICT DO NOTHING), il n'atteindrait aucune file existante ; et la tâche ne le recopie de
+   * sa file qu'à sa création.
+   */
+  it('pg-boss : la file porte son battement de cœur, et une tâche créée le recopie', async () => {
+    await queue.enqueue('itest-battement', { ping: 'battement' });
+    const file = await pool.query<{ heartbeat_seconds: number | null }>(
+      'select heartbeat_seconds from pgboss_test.queue where name = $1', ['itest-battement'],
+    );
+    expect(file.rows[0]?.heartbeat_seconds).toBe(BATTEMENT_SECONDES);
+    const tache = await pool.query<{ heartbeat_seconds: number | null }>(
+      `select heartbeat_seconds from pgboss_test.job where name = $1 and data->>'ping' = 'battement'`, ['itest-battement'],
+    );
+    expect(tache.rows[0]?.heartbeat_seconds).toBe(BATTEMENT_SECONDES);
   });
 
   /**

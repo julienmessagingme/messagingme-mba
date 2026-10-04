@@ -1467,7 +1467,27 @@ seconde, pas `1 / cadence`. `agent-turn` (concurrence 12, cadence 2 s) tapait ai
 seconde pour une file vide. C'est pourquoi le FILET de sondage, celui qui s'applique quand la notification
 est vivante, vaut `SONDAGE_FILET_NOTIFIE` (60 s) et non la cadence de base : la notification annule le
 sommeil du worker à l'instant (vérifié dans la source de pg-boss et mesuré à 37 ms sur 102 jobs réels), et
-`pollingIntervalSeconds` reste le repli automatique si l'écouteur meurt.
+`pollingIntervalSeconds` reste le repli automatique si l'écouteur meurt. Seule `webhook` a un filet court
+(`FILETS_NOTIFIES`, 5 s), la ceinture du vidage continu ci-dessous ; `agent-turn` garde 60 s, ses douze boucles
+rendraient un filet court coûteux.
+
+🔴 **UNE NOTIFICATION NE RÉVEILLE CHAQUE BOUCLE QUE POUR UNE LECTURE**, d'où le vidage continu de `webhook`
+(`FILES_VIDEES_EN_CONTINU`). Plusieurs notifications reçues pendant un traitement se fondent en un seul drapeau,
+et une boucle qui a traité un message repart dormir son filet si rien ne l'a notifiée entre-temps ; la rafale ne
+s'engage que sur un compte mis en cache. Ce qui arrive plus vite que le worker ne traite restait donc en file
+jusqu'au filet (mesuré sur le banc des trente espaces : 120 messages d'un coup, le pire à 67 s). `webhook` est
+donc enregistrée boucle par boucle, et chaque message traité les réveille toutes (`notifyWorker`) jusqu'à une
+lecture vide : 8,6 s au pire sur la même rafale. Le plafond d'un message à la fois par contact tient, pg-boss le
+suivant par nom de file. ⚠️ Pas `burstWhenBatchFull` (il exige des lots de deux, et `batchSize: 1` protège une
+tâche réussie du rejeu de sa voisine en échec), ni de seuil de rafale à zéro (refusé au démarrage, minimum 1).
+
+🔴 **CHAQUE FILE PORTE UN BATTEMENT DE CŒUR** (`BATTEMENT_SECONDES`, 20 s, rafraîchi toutes les 5 s pendant le
+traitement), posé par `updateQueue` puisque les files existent, et la surveillance de pg-boss passe toutes les
+`SURVEILLANCE_FILES_SECONDES` (10 s) sur l'instance qui dépile. Sans lui, la tâche en cours d'un worker mort
+(crash, mémoire, `docker kill`) attendait son expiration, 15 min, avant d'être rejouée (mesuré : 932 s ; avec
+lui : 29 s). Il reconnaît un worker MORT sans tuer une tâche LENTE, ce qu'une expiration courte ferait, et quatre
+battements manqués sont exigés avant de rejouer. ⚠️ Les tâches recopient le battement de leur file à leur
+création : celles déjà en file lors d'un déploiement gardent l'ancien comportement.
 
 🔴 **Toute nouvelle file entre dans `BASE_QUEUES`**, sinon elle est invisible de `/ops` et sa DLQ n'est
 surveillée par personne. `tests/queue-names.test.ts` dérive la liste des `queue.work(...)` du worker et casse

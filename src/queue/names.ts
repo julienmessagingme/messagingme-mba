@@ -109,11 +109,64 @@ export function seuilRafalePour(nom: string): number {
 export const SONDAGE_FILET_NOTIFIE = 60;
 
 /**
+ * 🔴 LES FILES VIDÉES EN CONTINU : chaque message traité réveille toutes les boucles de sa file, qui relisent jusqu'à
+ * ce qu'une lecture revienne vide (`PgBossQueue.work`, par `notifyWorker`, l'API publique de pg-boss).
+ *
+ * Sans lui, une notification ne réveille chaque boucle que pour UNE lecture (plusieurs notifications reçues pendant
+ * un traitement se fondent en un seul drapeau), et une boucle qui a traité un message repart dormir son filet si rien
+ * ne l'a notifiée entre-temps. Ce qui arrive plus vite que le worker ne traite restait donc en file jusqu'au filet,
+ * et la rafale de pg-boss ne s'engage que sur un compte MIS EN CACHE, vieux de plusieurs dizaines de secondes. Mesuré
+ * sur le banc des trente espaces le 2026-10-03 : 120 messages d'un coup, 114 au-delà de 30 s, le pire à 67 s ; avec
+ * un filet de 5 s et une rafale à 1, encore 37 s. Coût : au plus une lecture à vide par boucle après le dernier
+ * message d'une série. ⚠️ Pas `burstWhenBatchFull`, le vidage instantané de pg-boss : il exige des lots de deux,
+ * et `batchSize: 1` est ce qui empêche une tâche en échec de faire rejouer sa voisine réussie.
+ */
+export const FILES_VIDEES_EN_CONTINU: readonly (typeof BASE_QUEUES)[number][] = ['webhook'];
+
+export function videeEnContinu(queue: string): boolean {
+  return (FILES_VIDEES_EN_CONTINU as readonly string[]).includes(queue);
+}
+
+/**
+ * Le filet d'une file où le relâcher à 60 s coûte un contact qui attend, quand le défaut ne convient pas.
+ *
+ * `webhook` : la ceinture du vidage continu, si un réveil se perd quand même (une tâche remise en file parce que son
+ * contact avait déjà un message en cours, par exemple). Coût au repos : trois boucles (sa concurrence), une lecture à
+ * vide chacune toutes les 5 s. ⚠️ `agent-turn` reste au défaut, délibérément : douze boucles, plus de
+ * 200 000 lectures à vide par jour à 5 s, et ses arrivées (une par message d'une conversation tenue par un agent) ne
+ * dépassent pas son débit.
+ */
+export const FILETS_NOTIFIES: Partial<Record<(typeof BASE_QUEUES)[number], number>> = {
+  webhook: 5,
+};
+
+/**
+ * 🔴 LE BATTEMENT DE CŒUR DES TÂCHES. Sans lui, une tâche dont le worker meurt (crash, mémoire, `docker kill`) reste
+ * « active » jusqu'à son délai d'expiration, 15 min par défaut, avant d'être rejouée : mesuré sur le banc des trente
+ * espaces le 2026-10-03, 932 s pour le message en cours. pg-boss rafraîchit le battement SEUL pendant le
+ * traitement (toutes les `RAFRAICHISSEMENT_BATTEMENT_SECONDES`), et sa surveillance rejoue une tâche dont le
+ * battement s'est tu depuis `BATTEMENT_SECONDES` : il reconnaît un worker MORT sans tuer une tâche LENTE, ce qu'un
+ * délai d'expiration court ferait (et la rejouerait en parallèle de celle qui tourne encore).
+ * ⚠️ Quatre battements manqués avant de déclarer la tâche orpheline : un battement en retard (pool de pg-boss
+ * occupé) ne doit pas la faire rejouer pendant qu'elle tourne. 10 s est le minimum de pg-boss.
+ */
+export const BATTEMENT_SECONDES = 20;
+export const RAFRAICHISSEMENT_BATTEMENT_SECONDES = 5;
+
+/**
+ * La cadence de la surveillance de pg-boss (tâches expirées ou muettes, comptes des files) et du cache des files
+ * qu'en lit chaque worker. Le défaut, 60 s, ajoutait jusqu'à deux minutes au battement avant de rejouer une
+ * orpheline, et laissait la rafale décider sur un compte vieux d'une minute. Mesuré en production le 2026-10-03 :
+ * quelques centaines de tâches par file, un recompte en 15 ms ; le passer de 60 à 10 s ne coûte rien de visible.
+ */
+export const SURVEILLANCE_FILES_SECONDES = 10;
+
+/**
  * Le filet d'une file, jamais plus court que sa cadence de base : pg-boss refuse au démarrage un filet plus court
  * (`assert notifyPollingInterval >= pollingInterval`), le worker planterait au boot.
  */
 export function filetNotifieSecondes(queue: string): number {
-  return Math.max(SONDAGE_FILET_NOTIFIE, pollingSecondsFor(queue));
+  return Math.max(FILETS_NOTIFIES[queue as (typeof BASE_QUEUES)[number]] ?? SONDAGE_FILET_NOTIFIE, pollingSecondsFor(queue));
 }
 
 /**

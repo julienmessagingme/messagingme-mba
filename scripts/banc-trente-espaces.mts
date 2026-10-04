@@ -9,7 +9,11 @@
  * - `preparer` : vérifie les 30 espaces semés et y crée les conversations par un premier message entrant chacune ;
  * - `charge` : cinq minutes de sondage par les onglets, avec le pic à la deuxième minute ;
  * - `crash` : le même pic, pendant lequel l'hôte tue le worker principal (`docker kill`) ;
- * - `arret` : le même pic, pendant lequel l'hôte l'arrête proprement (`docker stop -t 30`, le geste d'un déploiement).
+ * - `arret` : le même pic, pendant lequel l'hôte l'arrête proprement (`docker stop -t 30`, le geste d'un déploiement) ;
+ * - `rafale` : un worker au repos reçoit d'un coup `BANC_RAFALE` messages de contacts tous différents, puis plus
+ *   rien. C'est l'épreuve du réveil : une notification ne réveille chaque boucle que pour UNE lecture, et une boucle
+ *   qui a traité un message repart dormir son filet de sondage si rien ne l'a notifiée entre-temps ; ce qui arrive
+ *   plus vite que le worker ne traite reste alors en file jusqu'au filet (vu le 2026-10-03 : 61,7 s).
  * Les deux dernières exigent un geste que ce script ne peut pas faire depuis son conteneur : l'hôte le commande
  * quand le script écrit sa ligne `GESTE MAINTENANT` (au milieu du pic), et le script PROUVE ensuite qu'il a eu lieu
  * (l'heure de démarrage du worker principal, `worker_heartbeat.booted_at`, doit tomber dans le pic).
@@ -68,6 +72,8 @@ const PIC_A_MS = Number(process.env.BANC_PIC_A_S ?? 120) * 1000;
 /** Le pic dure une minute : chaque message part à un instant tiré dans cette minute. */
 const PIC_DUREE_MS = 60_000;
 const PIC_MESSAGES = Number(process.env.BANC_PIC_MESSAGES ?? 2);
+/** La taille de la rafale : des contacts tous différents, pour qu'aucune sérialisation par contact ne s'en mêle. */
+const RAFALE = Number(process.env.BANC_RAFALE ?? 120);
 /** Combien de temps on attend que chaque message du pic soit écrit. Le crash peut exiger le délai d'expiration de pg-boss. */
 const ATTENTE_MAX_MS = Number(process.env.BANC_ATTENTE_MAX_S ?? (EPREUVE === 'crash' ? 1200 : 180)) * 1000;
 const SCHEMA_BOSS = process.env.PGBOSS_SCHEMA ?? 'pgboss';
@@ -81,7 +87,7 @@ if (/supabase/i.test(URL_BASE)) throw new Error('DATABASE_URL ressemble a la PRO
 if (API === '') throw new Error('BANC_API manquant');
 if (/messagingme\.app/i.test(API)) throw new Error('BANC_API ressemble a la PRODUCTION : banc interdit.');
 if (SECRET_AUTH === '' || SECRET_META === '') throw new Error('AUTH_SECRET et META_APP_SECRET du banc requis (sessions et signatures).');
-const EPREUVES = ['preparer', 'charge', 'crash', 'arret'] as const;
+const EPREUVES = ['preparer', 'charge', 'crash', 'arret', 'rafale'] as const;
 type Epreuve = (typeof EPREUVES)[number];
 if (!(EPREUVES as readonly string[]).includes(EPREUVE)) throw new Error(`BANC_EPREUVE parmi ${EPREUVES.join(', ')}`);
 
@@ -386,10 +392,11 @@ async function rapportFile(pool: Pool, run: string, depuis: Date): Promise<{ rej
   dire('--- la file des messages entrants (pg-boss) ---');
   // Une tâche expirée est RÉINSÉRÉE sous le même identifiant (pg-boss 12, `failJobsByTimeout`), et sa trace « job timed
   // out » peut être écrasée quand elle finit. Le compteur de rejeu ne monte qu'à la reprise, quelle qu'en soit la cause
-  // (une simple erreur du traitement aussi) : seule une reprise APRÈS le délai d'expiration prouve une tâche orpheline.
+  // (une simple erreur du traitement aussi, reprise sans délai) : seule une reprise APRÈS le délai qui déclare une tâche
+  // orpheline la prouve, soit son battement de cœur quand la file en porte un (`heartbeat_seconds`), soit son expiration.
   const r = await pool.query<{ rejouees: string; expirees: string; orphelines: string; echec: string; attente_p95: number | null; total_p95: number | null }>(
     `select count(*) filter (where retry_count > 0)::text as rejouees,
-            count(*) filter (where retry_count > 0 and started_on - created_on >= expire_seconds * interval '1s')::text as expirees,
+            count(*) filter (where retry_count > 0 and started_on - created_on >= least(expire_seconds, coalesce(heartbeat_seconds, expire_seconds)) * interval '1s')::text as expirees,
             count(*) filter (where state in ('created', 'retry', 'active'))::text as orphelines,
             count(*) filter (where state = 'failed')::text as echec,
             percentile_cont(0.95) within group (order by extract(epoch from (started_on - created_on)) * 1000) as attente_p95,
@@ -402,14 +409,46 @@ async function rapportFile(pool: Pool, run: string, depuis: Date): Promise<{ rej
     [depuis],
   );
   const x = r.rows[0]!;
-  dire(`taches : attente p95 ${ms(x.attente_p95 ?? 0)}, bout en bout p95 ${ms(x.total_p95 ?? 0)} | rejouees ${x.rejouees} (apres expiration ${x.expirees}) | pas encore terminees ${x.orphelines} | en echec ${x.echec} | file d echec ${dlq.rows[0]!.n}`);
+  dire(`taches : attente p95 ${ms(x.attente_p95 ?? 0)}, bout en bout p95 ${ms(x.total_p95 ?? 0)} | rejouees ${x.rejouees} (orphelines reprises ${x.expirees}) | pas encore terminees ${x.orphelines} | en echec ${x.echec} | file d echec ${dlq.rows[0]!.n}`);
   return { rejouees: Number(x.rejouees), expirees: Number(x.expirees), orphelines: Number(x.orphelines), echec: Number(x.echec), dlq: Number(dlq.rows[0]!.n) };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// ÉPREUVE `rafale` : tout d'un coup, puis plus rien, sur un worker au repos.
+// ---------------------------------------------------------------------------------------------------------------
+async function rafale(pool: Pool): Promise<void> {
+  const espaces = await lesEspaces(pool, true);
+  if (RAFALE > espaces.length * CONVERSATIONS) throw new Error(`BANC_RAFALE au plus ${espaces.length * CONVERSATIONS} (un message par contact)`);
+  const run = randomUUID().slice(0, 8);
+  const depuis = new Date();
+  debutBanc = Date.now();
+  // Un contact par message : espace après espace, conversation après conversation.
+  const cibles = Array.from({ length: RAFALE }, (_, n) => ({ e: espaces[n % espaces.length]!, j: Math.floor(n / espaces.length) }));
+  dire(`lancement ${run} : rafale de ${RAFALE} messages de contacts differents, envoyes d un coup, puis plus rien`);
+  const envois = new Map<string, number>();
+  await Promise.all(cibles.map(async ({ e, j }) => {
+    const wamid = `wamid.banc30.${run}.${e.rang}.${j}.0`;
+    envois.set(wamid, Date.now());
+    noter('POST /webhooks/meta', await poster(webhook(e.numero, wamid, telephone(e.rang, j), 'Message de la rafale')), false);
+  }));
+  dire(`rafale envoyee en ${ms(Date.now() - debutBanc)} ; attente de l ecriture (au plus ${Math.round(ATTENTE_MAX_MS / 1000)} s)`);
+  const ecrits = await attendreEcrits(pool, `wamid.banc30.${run}.`, envois.size, ATTENTE_MAX_MS);
+  const { perdus, delais } = rapportEntrants(envois, ecrits);
+  const file = await rapportFile(pool, run, depuis);
+  const acquittes = mesures.filter((m) => m.route === 'POST /webhooks/meta' && m.statut === 200).length;
+  dire('--- verdicts ---');
+  poser('webhooks acquittes', acquittes === envois.size ? 'ok' : 'echec', `${acquittes}/${envois.size}`);
+  poser('aucun message perdu', perdus === 0 ? 'ok' : 'echec', perdus === 0 ? `${envois.size} ecrits` : `${perdus} jamais ecrit(s)`);
+  poser('file d echec vide', file.dlq === 0 && file.echec === 0 ? 'ok' : 'echec', `${file.dlq} en file d echec, ${file.echec} en echec`);
+  const auDela = delais.filter((d) => d > SLO_ENTRANT_MS).length;
+  poser('SLO des messages entrants (30 s)', auDela + perdus === 0 && delais.length > 0 ? 'ok' : 'echec',
+    auDela + perdus === 0 ? `pire ${ms(Math.max(0, ...delais))}` : `${auDela} message(s) au-dela de 30 s, le pire a ${ms(Math.max(0, ...delais))}`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // LE DÉROULÉ
 // ---------------------------------------------------------------------------------------------------------------
-async function derouler(pool: Pool, epreuve: Exclude<Epreuve, 'preparer'>): Promise<void> {
+async function derouler(pool: Pool, epreuve: Exclude<Epreuve, 'preparer' | 'rafale'>): Promise<void> {
   const espaces = await lesEspaces(pool, true);
   const run = randomUUID().slice(0, 8);
   const depuis = new Date();
@@ -471,8 +510,8 @@ async function derouler(pool: Pool, epreuve: Exclude<Epreuve, 'preparer'>): Prom
   const auDela = delais.filter((d) => d > SLO_ENTRANT_MS).length;
   if (epreuve === 'crash') {
     // La preuve que le crash a frappé une tâche en vol : pg-boss l'a reprise APRÈS son délai d'expiration.
-    if (file.expirees === 0) poser('le crash a frappe des taches en vol', 'non_eprouve', `aucune tache reprise apres expiration (${file.rejouees} reprise(s) d une autre cause) : soit rien n etait en vol, soit l attente a ete trop courte`);
-    else poser('le crash a frappe des taches en vol', 'ok', `${file.expirees} tache(s) reprise(s) apres expiration`);
+    if (file.expirees === 0) poser('le crash a frappe des taches en vol', 'non_eprouve', `aucune tache orpheline reprise (${file.rejouees} reprise(s) d une autre cause) : soit rien n etait en vol, soit l attente a ete trop courte`);
+    else poser('le crash a frappe des taches en vol', 'ok', `${file.expirees} tache(s) orpheline(s) reprise(s), apres leur battement ou leur expiration`);
     poser('chaque tache finie apres le crash', file.orphelines === 0 ? 'ok' : 'echec', `${file.orphelines} tache(s) encore en vol ou en attente`);
   }
   if (epreuve === 'arret') {
@@ -490,7 +529,8 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: URL_BASE, max: 2, application_name: 'banc30-script' });
   try {
     if (EPREUVE === 'preparer') await preparer(pool);
-    else await derouler(pool, EPREUVE as Exclude<Epreuve, 'preparer'>);
+    else if (EPREUVE === 'rafale') await rafale(pool);
+    else await derouler(pool, EPREUVE as Exclude<Epreuve, 'preparer' | 'rafale'>);
   } finally {
     await pool.end();
   }

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import type { Db } from 'pg-boss';
 import { PgBossQueue, type PoolPrete } from '../src/queue/pgboss';
+import { BATTEMENT_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES, SURVEILLANCE_FILES_SECONDES } from '../src/queue/names';
 
 /**
  * LA FILE DE L'API EMPRUNTE LE POOL APPLICATIF (lot C du plan `2026-09-28-api-multi-instances.md`).
@@ -14,6 +15,10 @@ import { PgBossQueue, type PoolPrete } from '../src/queue/pgboss';
 const etat = vi.hoisted(() => ({
   options: [] as Array<Record<string, unknown>>,
   echecDemarrage: null as Error | null,
+  /** Ce que la file demande à pg-boss : réglages de file (`updateQueue`) et options de traitement (`work`). */
+  reglages: [] as Array<[string, Record<string, unknown>]>,
+  travaux: [] as Array<[string, Record<string, unknown>, (jobs: Array<{ data: unknown }>) => Promise<void>]>,
+  reveils: [] as string[],
 }));
 
 vi.mock('pg-boss', () => ({
@@ -22,6 +27,14 @@ vi.mock('pg-boss', () => ({
       etat.options.push(options);
     }
     on(): void {}
+    async createQueue(): Promise<void> {}
+    async updateQueue(nom: string, o: Record<string, unknown>): Promise<void> { etat.reglages.push([nom, o]); }
+    async send(): Promise<string> { return 'id'; }
+    async work(nom: string, o: Record<string, unknown>, h: (jobs: Array<{ data: unknown }>) => Promise<void>): Promise<string> {
+      etat.travaux.push([nom, o, h]);
+      return `boucle-${etat.travaux.length}`;
+    }
+    notifyWorker(id: string): void { etat.reveils.push(id); }
     async start(): Promise<void> {
       if (etat.echecDemarrage) throw etat.echecDemarrage;
     }
@@ -32,6 +45,9 @@ vi.mock('pg-boss', () => ({
 beforeEach(() => {
   etat.options.length = 0;
   etat.echecDemarrage = null;
+  etat.reglages.length = 0;
+  etat.travaux.length = 0;
+  etat.reveils.length = 0;
 });
 
 /** Un pool qui note chaque appel et rend un résultat reconnaissable. */
@@ -111,6 +127,58 @@ describe('chaîne de connexion (le worker) : pg-boss garde SON pool', () => {
     expect(o).not.toHaveProperty('db');
     expect(o).not.toHaveProperty('migrate');
     expect(o).not.toHaveProperty('supervise');
+  });
+
+  it('🔴 surveille ses files toutes les SURVEILLANCE_FILES_SECONDES (orphelines, comptes, cache de la rafale)', () => {
+    // Sans elle, le battement de cœur ne sert à rien : pg-boss ne contrôle une file qu'une fois par
+    // `monitorIntervalSeconds` (60 s par défaut), lu dans sa source (`boss.js`, `#monitor`).
+    new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    expect(derniere()).toMatchObject({
+      superviseIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
+      monitorIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
+      queueCacheIntervalSeconds: SURVEILLANCE_FILES_SECONDES,
+    });
+  });
+});
+
+describe('🔴 le battement de cœur des tâches (banc des trente espaces, 2026-10-03)', () => {
+  it('chaque file reçoit son battement par updateQueue (la file existe déjà en production), le réveil reste aux files notifiées', async () => {
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q.enqueue('webhook', {});
+    await q.enqueue('webhook-status', {});
+    expect(etat.reglages).toContainEqual(['webhook', { heartbeatSeconds: BATTEMENT_SECONDES }]);
+    expect(etat.reglages).toContainEqual(['webhook', { notify: true }]);
+    expect(etat.reglages).toContainEqual(['webhook-status', { heartbeatSeconds: BATTEMENT_SECONDES }]);
+    expect(etat.reglages).not.toContainEqual(['webhook-status', { notify: true }]);
+  });
+
+  it('🔴 la file des entrants : une boucle par registration, et chaque message traité réveille les trois', async () => {
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q.work('webhook', async () => {}, { concurrency: 3, groupConcurrency: 1 });
+    expect(etat.travaux).toHaveLength(3);
+    for (const [nom, o] of etat.travaux) {
+      expect(nom).toBe('webhook');
+      // Le plafond par contact reste posé sur chaque registration : pg-boss le suit par nom de file.
+      expect(o).toMatchObject({ localConcurrency: 1, localGroupConcurrency: 1, heartbeatRefreshSeconds: RAFRAICHISSEMENT_BATTEMENT_SECONDES, notifyPollingIntervalSeconds: 5 });
+    }
+    await etat.travaux[1]![2]([{ data: {} }]);
+    expect(etat.reveils.sort()).toEqual(['boucle-1', 'boucle-2', 'boucle-3']);
+  });
+
+  it('un message en échec réveille aussi la file (il en est sorti), et l’échec remonte à pg-boss', async () => {
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q.work('webhook', async () => { throw new Error('panne'); }, { concurrency: 3, groupConcurrency: 1 });
+    await expect(etat.travaux[0]![2]([{ data: {} }])).rejects.toThrow('panne');
+    expect(etat.reveils).toHaveLength(3);
+  });
+
+  it('une autre file garde UNE registration à sa concurrence, sans réveil par message', async () => {
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q.work('agent-turn', async () => {}, { concurrency: 12, groupConcurrency: 1 });
+    expect(etat.travaux).toHaveLength(1);
+    expect(etat.travaux[0]![1]).toMatchObject({ localConcurrency: 12, heartbeatRefreshSeconds: RAFRAICHISSEMENT_BATTEMENT_SECONDES });
+    await etat.travaux[0]![2]([{ data: {} }]);
+    expect(etat.reveils).toEqual([]);
   });
 });
 

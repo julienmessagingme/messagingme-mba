@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { BASE_QUEUES, ALL_QUEUES, dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE, SEUILS_RAFALE, seuilRafalePour, SONDAGE_FILET_NOTIFIE } from '../src/queue/names';
+import {
+  BASE_QUEUES, ALL_QUEUES, dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE,
+  SEUILS_RAFALE, seuilRafalePour, SONDAGE_FILET_NOTIFIE, FILETS_NOTIFIES, BATTEMENT_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES,
+  SURVEILLANCE_FILES_SECONDES, videeEnContinu,
+} from '../src/queue/names';
 import { FILE_SIGNAUX_BATCH } from '../src/signaux/batch';
 
 /**
@@ -198,7 +202,11 @@ describe('cadence de polling par file', () => {
     for (const q of BASE_QUEUES) {
       expect(filetNotifieSecondes(q), q).toBeGreaterThanOrEqual(pollingSecondsFor(q));
     }
-    expect(filetNotifieSecondes('webhook')).toBe(SONDAGE_FILET_NOTIFIE);
+    // `webhook` a SON filet, court (un contact attend, mesuré sur le banc des trente espaces) ; les autres gardent le
+    // défaut, `agent-turn` compris malgré son contact qui attend : douze boucles, le filet court coûterait trop.
+    expect(filetNotifieSecondes('webhook')).toBe(FILETS_NOTIFIES.webhook);
+    expect(FILETS_NOTIFIES.webhook).toBeLessThan(SONDAGE_FILET_NOTIFIE);
+    expect(filetNotifieSecondes('agent-turn')).toBe(SONDAGE_FILET_NOTIFIE);
     expect(filetNotifieSecondes('analyze-conversation')).toBe(SONDAGE_FILET_NOTIFIE);
     // Une file dont la cadence de base DEPASSERAIT le filet garde sa cadence, elle ne l'accelere pas.
     expect(filetNotifieSecondes('file-hypothetique-lente')).toBe(SONDAGE_FILET_NOTIFIE);
@@ -249,6 +257,39 @@ describe('cadence de polling par file', () => {
     // Une file inconnue retombe sur le défaut plutôt que sur `undefined`, qui désactiverait la rafale en
     // silence : `burstWhenReadyExceeds: undefined` est accepté par pg-boss et ne rafale JAMAIS.
     expect(seuilRafalePour('file-hypothetique')).toBe(SEUIL_RAFALE);
+  });
+
+  it('🔴 la file des messages entrants se vide en continu, avec un filet court pour ceinture', () => {
+    // Mesuré sur le banc des trente espaces (2026-10-03) : une notification ne réveille chaque boucle que pour UNE
+    // lecture ; 120 messages arrivés d'un coup en laissaient 114 au-delà de 30 s.
+    expect(videeEnContinu('webhook')).toBe(true);
+    expect(filetNotifieSecondes('webhook')).toBeLessThanOrEqual(10);
+    // Les autres files ne paient pas un réveil par message sans mesure qui le justifie (`agent-turn` : douze boucles).
+    for (const q of BASE_QUEUES.filter((x) => x !== 'webhook')) expect(videeEnContinu(q), q).toBe(false);
+  });
+
+  it('🔴 le battement de cœur : jamais sous le minimum de pg-boss, et plusieurs battements manqués avant de rejouer', () => {
+    // pg-boss refuse un battement sous 10 s, et un rafraîchissement qui ne lui est pas strictement inférieur.
+    expect(BATTEMENT_SECONDES).toBeGreaterThanOrEqual(10);
+    expect(RAFRAICHISSEMENT_BATTEMENT_SECONDES).toBeLessThan(BATTEMENT_SECONDES);
+    // Une tâche vivante dont UN battement est en retard ne doit pas être rejouée en parallèle d'elle-même.
+    expect(BATTEMENT_SECONDES / RAFRAICHISSEMENT_BATTEMENT_SECONDES).toBeGreaterThanOrEqual(3);
+    // La surveillance passe plus souvent que le battement : sinon elle doublerait le délai avant de rejouer.
+    expect(SURVEILLANCE_FILES_SECONDES).toBeLessThanOrEqual(BATTEMENT_SECONDES);
+  });
+
+  it('🔴 le battement est branché : sur la file existante (updateQueue), rafraîchi pendant le traitement, surveillé souvent', () => {
+    // Même piège que le réveil : posé sur `createQueue` (un ON CONFLICT DO NOTHING), il n'atteindrait aucune file de la
+    // production, qui existent toutes.
+    const wrapper = sansCommentaires(readFileSync(new URL('../src/queue/pgboss.ts', import.meta.url), 'utf8'));
+    expect(wrapper, 'le battement doit passer par updateQueue').toMatch(/updateQueue\(\s*name,\s*\{\s*heartbeatSeconds:\s*BATTEMENT_SECONDES\s*\}\s*\)/);
+    expect(wrapper, 'le battement pose sur createQueue serait un no-op silencieux sur toute file existante').not.toMatch(/createQueue\([^)]*heartbeat/s);
+    expect(wrapper, 'le rafraichissement doit etre une propriete DIRECTE des options de boss.work')
+      .toMatch(/^\s{8}heartbeatRefreshSeconds: RAFRAICHISSEMENT_BATTEMENT_SECONDES,$/m);
+    for (const option of ['superviseIntervalSeconds', 'monitorIntervalSeconds', 'queueCacheIntervalSeconds']) {
+      expect(wrapper, `${option} doit valoir SURVEILLANCE_FILES_SECONDES sur l instance qui depile`)
+        .toMatch(new RegExp(`^\\s{14}${option}: SURVEILLANCE_FILES_SECONDES,$`, 'm'));
+    }
   });
 
   it('🔴 aucun seuil par file ne vaut zéro : ce serait la boucle à vide que la cadence avait fermée', () => {
