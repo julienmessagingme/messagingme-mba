@@ -235,8 +235,9 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
    attente du pool de l'API, 600 messages du pic écrits en 366 ms au pire) ; `crash` et `arret` sans perte ni doublon.
    Deux défauts trouvés, CORRIGÉS ET DÉPLOYÉS le 2026-10-04 (`933557b7`, puis ses jaunes) : le message en cours lors
    d'un crash repart en 29 s (contre 932), une rafale de 120 messages passe en 8,6 s (contre 67). Ce qui reste est
-   dans `todo.md`. Le banc reste MONTÉ sur le VPS (`banc=inbox30`) le temps des jaunes ; le démonter ensuite (recette
-   en tête du script).
+   dans `todo.md`. Les jaunes (`59ec71e2`) sont partis avec le redémarrage des workers sur `b6e674ac` ; relu en base
+   juste après (battement à 20 s sur les dix files, rejeu à 10 s sur `webhook`, moniteur à jour). Le banc a été
+   DÉMONTÉ du VPS le 2026-10-04 ; la recette pour le remonter est en tête de `scripts/banc-trente-espaces.mts`.
 3. Au plus 5 clés d'API actives par espace (sécurité, petit lot).
 4. mm-hubspot sur sa propre base, lot autonome, avant Scaleway et jamais le même jour.
 5. Les médias RCS hors de Postgres : Julien a dit « on laisse tomber pour l'instant » ; au minimum leur volume dans `/ops`.
