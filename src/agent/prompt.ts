@@ -5,9 +5,10 @@ import { blocDelimite } from './bloc-donnees';
 /**
  * Le prompt système d'un agent, dérivé de sa fiche.
  *
- * 🔴 La mention d'IA (AI Act, article 50), quand elle est due, est la première consigne, pour que le modèle
- * ne puisse pas la noyer. Elle n'est ni dans la fiche jsonb ni proposable par l'IA de construction : une IA
- * ne supprime pas la phrase qui annonce qu'elle est une IA.
+ * 🔴 La mention d'IA (AI Act, article 50) n'est plus confiée au modèle : le code la pose devant sa réponse
+ * (`pourLeContact`, `brain.gateway.ts`), parce qu'il l'oubliait dès qu'il appelait un outil avant de répondre. La
+ * consigne la lui annonce en tête, au tour où elle part, pour qu'il ne la répète pas. Elle n'est ni dans la fiche
+ * jsonb ni proposable par l'IA de construction : une IA ne supprime pas la phrase qui annonce qu'elle est une IA.
  *
  * La consigne anti-hallucination n'est pas le mécanisme : c'est le seuil en code (`ficheEstPertinente`) et le
  * handle `sortie:sans_source`. Elle évite seulement de payer un tour pour rien.
@@ -17,7 +18,7 @@ import { blocDelimite } from './bloc-donnees';
 export interface ContexteAgent {
   mentionIa: string;
   /**
-   * L'agent doit-il annoncer qu'il est une IA dans ce tour-ci ? Un booléen décidé par le code, jamais le régime
+   * La phrase part-elle devant la réponse de ce tour-ci ? Un booléen décidé par le code, jamais le régime
    * (`session`, `chaque_message`) : le modèle ne sait pas où commence une conversation, le tour le sait.
    */
   annoncerIa: boolean;
@@ -38,11 +39,10 @@ function section(titre: string, valeur: string): string[] {
 export function promptSysteme(ctx: ContexteAgent): string {
   const c = ctx.contenu;
   const blocs: string[] = [
-    // En tête. L'annonce n'est pas conditionnelle pour le modèle : on la lui demande maintenant ou on n'en
-    // parle pas, sinon on lui rendrait la décision.
+    // En tête, au tour où la phrase part, et nulle part aux autres : le modèle ne décide rien, il apprend seulement
+    // que le contact la lira avant sa réponse.
     ctx.annoncerIa
-      ? `Tu es un assistant automatique qui répond sur WhatsApp. Commence ta réponse par exactement cette phrase, seule, avant tout le reste :
-« ${ctx.mentionIa.trim()} »`
+      ? `Tu es un assistant automatique qui répond sur WhatsApp. La plateforme ajoute elle-même cette mention devant ta réponse : « ${ctx.mentionIa.trim()} ». Ne l’écris pas.`
       : 'Tu es un assistant automatique qui répond sur WhatsApp.',
     ...section('Ton objectif :', c.objectif),
     ...section('Ton nom :', c.nom),
@@ -63,6 +63,8 @@ export function promptSysteme(ctx: ContexteAgent): string {
     '- Avant de répondre à toute question de fond, cherche dans ta base de connaissance. Ne réponds JAMAIS de mémoire.',
     '- Si la recherche ne rend aucune source, ne devine pas : dis que tu ne sais pas et passe la main.',
     '- Réponds court. Un message WhatsApp se lit sur un téléphone.',
+    // Le cerveau convertit le gras et les titres qui passent quand même (`markdownVersWhatsApp`), pas un tableau.
+    '- Écris du texte WhatsApp, pas du Markdown : ni titre (#), ni tableau, ni double étoile. Pour le gras, une seule étoile de chaque côté : *comme ceci*.',
     // Le contact est dit ici parce que ça change ce que l'agent a le droit de faire.
     ctx.contactConnu
       ? '- Tu sais à qui tu parles : sa fiche est lisible par un outil.'

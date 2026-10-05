@@ -37,8 +37,9 @@ import { choisirRepondeur, type DepsReglageRepondeur } from '../repondeur/reglag
  * 🔴 Les écritures exigent une PERSONNE (`exigePersonne`) : invisibles derrière une clé d'API, elles ne s'ouvrent
  * qu'avec un jeton OAuth, dont la personne est un admin relu à chaque appel et signe ce qu'elle fait.
  *
- * Ce que Claude ne voit pas : les plafonds de coût d'un agent, sa mention d'IA, l'autonomie sur une action
- * irréversible, `envoyer_bloc`, les connecteurs, l'assistant de construction de la console (il ferait double emploi).
+ * Ce que Claude ne lit ni ne règle : les plafonds de coût d'un agent, sa mention d'IA (`test_agent` la rend pourtant en
+ * tête de la réponse, comme le contact la lira), l'autonomie sur une action irréversible, `envoyer_bloc`, les
+ * connecteurs, l'assistant de construction de la console (il ferait double emploi).
  */
 
 /**

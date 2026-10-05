@@ -105,4 +105,25 @@ describe('essayerAgent', () => {
     expect(r).toMatchObject({ ok: true, valeur: { texte: attendu, sortie: 'fini' } });
     expect(m.cap.essais[0]).toMatchObject({ reponse: attendu, sortie: 'fini' });
   });
+
+  it('🔴 l’essai montre ce que le contact recevra : la phrase devant une réponse qui suit un outil, le gras converti', async () => {
+    // Le cas mesuré le 2026-10-05 par `test_agent` : l'agent appelle d'abord un outil, puis répond sans la phrase.
+    const m = monter(1_000_000);
+    const poserTag: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
+      id: 'o2', tenantId: 't1', origin: 'mba', name: 'mba_poser_tag', description: 'Tague.',
+      params: [{ name: 'tag', type: 'string', source: 'modele', required: true }], binding: { handler: 'poser_tag' }, sourceId: null,
+      requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write', timeoutMs: 8000, maxBytes: 16384, autonome: false,
+    };
+    const cerveau = m.deps.cerveau!;
+    cerveau.contexte = async () => ({ ...AGENT, outilsActifs: [poserTag] });
+    cerveau.outils.catalogue = { byName: async (_t, _a, n) => (n === poserTag.name ? poserTag : null), listActifs: async () => [poserTag] };
+    let allerRetour = 0;
+    cerveau.client.completer = async () => (allerRetour++ === 0
+      ? { ...REPONSE, texte: null, finish: 'tool_calls', appelsOutils: [{ id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"devis"}' }] }
+      : { ...REPONSE, texte: 'Votre demande de **devis** est notée.' });
+    const r = await essayerAgent(m.deps, 't1', AG, { messages: [{ role: 'user', content: 'Je veux un devis' }] }, 'mcp');
+    const attendu = `${AGENT.mentionIa}\n\nVotre demande de *devis* est notée.`;
+    expect(r).toMatchObject({ ok: true, valeur: { texte: attendu, sortie: null } });
+    expect(m.cap.essais[0]).toMatchObject({ reponse: attendu });
+  });
 });

@@ -585,7 +585,9 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     const { server, cap } = monter();
     const r = await appeler(server, JETON.brut, 'test_agent', ARGS.test_agent);
     expect(r.isError, r.texte).toBe(false);
-    expect(r.json()).toMatchObject({ texte: 'Bonjour !', cout_eur: expect.any(Number) });
+    // Premier message d'une conversation neuve, régime « session » : la phrase d'annonce part devant, posée par le code
+    // (2026-10-05). Claude voit ce que le contact recevra.
+    expect(r.json()).toMatchObject({ texte: 'Vous échangez avec un assistant automatique.\n\nBonjour !', cout_eur: expect.any(Number) });
     expect(cap.debits).toHaveLength(1);
     expect(cap.debits[0]).toMatchObject({ tenant: 't1', note: 'essai depuis le serveur MCP' });
     expect(r.json().cout_eur).toBe(Math.round(cap.debits[0]!.montant / 10_000) / 100);

@@ -111,18 +111,21 @@ export interface DecisionTracee extends DecisionAgent {
 }
 
 /**
- * L'agent a-t-il déjà pris la parole dans cette session ? Un contact qui revient ouvre une nouvelle session, et
+ * La phrase d'annonce est-elle déjà partie dans cette session ? Un message de l'agent qui COMMENCE par elle le prouve :
+ * c'est le code qui l'y pose (`pourLeContact`). Un autre sortant n'a rien annoncé, même en rôle `agent` (le câblage y
+ * range tout ce qui n'est pas entrant) : un bloc envoyé par l'outil `mba_envoyer_bloc`, la réponse d'un opérateur.
+ * Compté, il faisait taire l'annonce pour toute la session. Un contact qui revient ouvre une nouvelle session, et
  * l'annonce se refait. Le transcript du tour déborde la session (trente jours de mémoire, `MEMOIRE_JOURS`) : seules
  * comptent les entrées datées (`at`) de son ouverture ou après. Une entrée sans date compte (le bac à sable, dont la
  * conversation entière est la session) ; une date illisible ne compte pas : dans le doute, l'annonce se refait.
  */
-export function dejaParle(transcript: unknown[], sessionOuverteLe?: string): boolean {
+export function dejaAnnonce(transcript: unknown[], phrase: string, sessionOuverteLe?: string): boolean {
   const borne = sessionOuverteLe === undefined ? null : Date.parse(sessionOuverteLe);
   return transcript.some((t) => {
-    const e = t as { role?: unknown; at?: unknown } | null;
-    if (e?.role !== 'agent') return false;
-    if (borne === null || typeof e.at !== 'string') return true;
-    return Date.parse(e.at) >= borne;
+    const e = t as { role?: unknown; texte?: unknown; at?: unknown } | null;
+    if (e?.role !== 'agent' || typeof e.texte !== 'string') return false;
+    if (borne !== null && typeof e.at === 'string' && !(Date.parse(e.at) >= borne)) return false;
+    return commencePar(e.texte, phrase);
   });
 }
 
@@ -130,16 +133,11 @@ export function dejaParle(transcript: unknown[], sessionOuverteLe?: string): boo
  * Ce que le contact reçoit quand un outil fait sortir le tour : le texte de la réponse qui porte l'appel s'il n'est
  * pas vide ; sinon le dernier message que `terminer` porte, pour un modèle qui appelle l'outil sans rien écrire à
  * côté ; sinon rien. Un dernier message qui porte nos délimiteurs est écarté comme une réponse qui les imite, mais
- * la sortie reste : la règle d'arrêt a été atteinte, seul le message est douteux.
- *
- * 🔴 `mention` : la phrase d'annonce d'IA quand elle est due à ce tour, sinon `null`. La consigne système demande au
- * modèle de l'écrire dans SON texte ; le paramètre `message` de `terminer` échappe à cette consigne, et le répondeur
- * parle souvent à un inconnu dès son premier message, celui où l'annonce compte (constaté à l'essai réel du
- * 2026-10-04). Elle est donc ajoutée devant, ici, en code, sauf si le message la porte déjà. Le texte que le modèle
- * écrit lui-même n'est pas touché : il suit la consigne.
+ * la sortie reste : la règle d'arrêt a été atteinte, seul le message est douteux. L'annonce d'IA se pose ensuite, sur
+ * ce texte comme sur tous les autres (`pourLeContact`).
  */
 export function texteDeSortie(
-  ecrit: string | null, dernierMessage: string | undefined, signaler: () => void, mention: string | null,
+  ecrit: string | null, dernierMessage: string | undefined, signaler: () => void,
 ): string | null {
   if (ecrit !== null && ecrit.trim() !== '') return ecrit;
   if (dernierMessage === undefined) return null;
@@ -147,9 +145,56 @@ export function texteDeSortie(
     signaler();
     return null;
   }
-  const phrase = mention?.trim() ?? '';
-  if (phrase !== '' && !dernierMessage.toLowerCase().includes(phrase.toLowerCase())) return `${phrase}\n\n${dernierMessage}`;
   return dernierMessage;
+}
+
+/**
+ * Le Markdown qu'écrit un modèle, ramené à ce que WhatsApp affiche : WhatsApp met en gras entre UNE étoile et n'a pas
+ * de titres. `**gras**` devient `*gras*`, les marques de titre (`#` à `######` en début de ligne) tombent et le titre
+ * reste. Rien d'autre ne bouge : une étoile seule, une puce, un `#` collé (« le #1 ») ou un `**` qui ne ferme rien
+ * restent tels quels. Un tableau ne se convertit pas sans casser : la consigne l'interdit (`promptSysteme`).
+ */
+export function markdownVersWhatsApp(texte: string): string {
+  return texte
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '')
+    .replace(/\*\*([^*\s](?:[^*\n]*?[^*\s])?)\*\*/g, '*$1*');
+}
+
+/** Ce qu'un modèle change en recopiant une phrase, retiré avant de comparer : la casse, l'apostrophe typographique et
+ *  les espaces (insécables compris). */
+function comparable(s: string): string {
+  return s.toLowerCase().replace(/[’‘]/g, '\'').replace(/\s+/g, ' ');
+}
+
+/**
+ * Le texte COMMENCE-t-il par la phrase, en mots entiers ? Comparés par `comparable`, et sans la ponctuation finale de
+ * la phrase, qu'un modèle qui la recopie oublie volontiers. En tête et en mots entiers, parce qu'une phrase courte se
+ * trouve ailleurs dans des mots ordinaires (« IA » dans « spécialiste », « Bot » au début de « Bottes ») : prise pour
+ * l'annonce, elle taisait une mention due. Dans le doute, l'annonce se refait.
+ */
+function commencePar(texte: string, phrase: string): boolean {
+  const t = comparable(texte.trimStart());
+  const p = comparable(phrase.trim()).replace(/[\s.!?…:;,]+$/u, '');
+  return p !== '' && t.startsWith(p) && !/[\p{L}\p{N}]/u.test(t.charAt(p.length));
+}
+
+/**
+ * Ce que le contact reçoit, quel que soit le chemin qui a produit le texte (réponse simple, réponse après un outil,
+ * sortie, escalade) : le Markdown du modèle ramené à WhatsApp, puis la phrase d'annonce d'IA DEVANT quand elle est due
+ * à ce tour (`mention`, sinon `null`), sauf si le texte commence déjà par elle (`commencePar`). La phrase est celle du
+ * client : elle n'est pas convertie.
+ *
+ * 🔴 L'annonce est posée ICI, par le code, plus par le modèle (AI Act, article 50). Demandée dans la consigne, elle
+ * disparaissait dès qu'il appelait un outil avant de répondre : une réponse sur cinq la portait, mesuré le 2026-10-05
+ * sur un agent en production. Un tour qui n'envoie rien ne la porte pas : elle n'est pas partie (`dejaAnnonce`), elle
+ * partira avec le premier texte de l'agent.
+ */
+function pourLeContact(texte: string | null, mention: string | null): string | null {
+  if (texte === null || texte.trim() === '') return texte;
+  const lisible = markdownVersWhatsApp(texte);
+  const phrase = mention?.trim() ?? '';
+  if (phrase === '' || commencePar(lisible, phrase)) return lisible;
+  return `${phrase}\n\n${lisible.trimStart()}`;
 }
 
 function versMessages(transcript: unknown[]): ChatMessage[] {
@@ -173,15 +218,29 @@ export async function penserTrace(
   tour: ContexteTour,
   deps: GatewayBrainDeps,
 ): Promise<DecisionTracee> {
+  const agent = await deps.contexte(input.tenantId, input.agentId);
+  if (!agent) throw new AgentIntrouvable(input.agentId);
+  /**
+   * Le régime d'annonce devient ici une décision, sur le transcript de la session en cours :
+   *   - `jamais`         : on n'en parle pas ;
+   *   - `chaque_message` : à tous les tours ;
+   *   - `session`        : au premier tour où l'agent prend la parole, et à celui-là seulement.
+   * Une seule décision pour la consigne et pour le texte qui part (`pourLeContact`).
+   */
+  const annoncerIa = agent.mentionIaFrequence === 'chaque_message'
+    || (agent.mentionIaFrequence === 'session' && !dejaAnnonce(input.transcript, agent.mentionIa, tour.sessionOuverteLe));
   // Le compteur vit hors de la boucle, pour survivre à son échec : chaque aller-retour est facturé, et
   // une exception nue emporterait ce que les précédents ont coûté. On le repasse à l'appelant dans l'erreur.
   const usage = { tokensIn: 0, tokensOut: 0, coutMicroEur: 0 };
+  let decision: DecisionTracee;
   try {
-    return await boucler(input, tour, deps, usage);
+    decision = await boucler(input, tour, deps, usage, agent, annoncerIa);
   } catch (err) {
     if (usage.coutMicroEur > 0) throw new TourInterrompu(err, usage);
     throw err;
   }
+  // La boucle a plusieurs sorties ; le texte n'en a qu'une : un chemin ajouté demain y passe aussi.
+  return { ...decision, texte: pourLeContact(decision.texte, annoncerIa ? agent.mentionIa : null) };
 }
 
 /** La boucle elle-même. `usage` est muté : c'est ce qui permet à `penserTrace` de le rattraper quand la
@@ -191,21 +250,11 @@ async function boucler(
   tour: ContexteTour,
   deps: GatewayBrainDeps,
   usage: { tokensIn: number; tokensOut: number; coutMicroEur: number },
+  agent: ContexteAgentComplet,
+  annoncerIa: boolean,
 ): Promise<DecisionTracee> {
-  const agent = await deps.contexte(input.tenantId, input.agentId);
-  if (!agent) throw new AgentIntrouvable(input.agentId);
   // Le contact est lu une fois par tour : il sert au prompt et à l'autorisation de chaque outil.
   const contact = deps.contacts ? await deps.contacts.projectionPourTiers(input.tenantId, tour.waId) : null;
-
-  /**
-   * Le régime d'annonce devient ici une décision, sur le transcript de la session en cours :
-   *   - `jamais`         : on n'en parle pas ;
-   *   - `chaque_message` : à tous les tours ;
-   *   - `session`        : au premier tour où l'agent prend la parole, et à celui-là seulement.
-   * Une seule décision pour la consigne et pour le dernier message d'une sortie (`texteDeSortie`).
-   */
-  const annoncerIa = agent.mentionIaFrequence === 'chaque_message'
-    || (agent.mentionIaFrequence === 'session' && !dejaParle(input.transcript, tour.sessionOuverteLe));
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -311,14 +360,13 @@ async function boucler(
          * peut. Dans le répondeur, aucune branche ne parle (`ContexteTourAgent.repondeur`) : jetée, la phrase laissait
          * le contact sans rien (essai réel du 2026-10-05). Gardée, elle passe par `texteDeSortie`, comme celle de
          * `terminer` : le `message` imposé quand le modèle n'a rien écrit (plusieurs modèles proposés escaladent sans
-         * un mot, mesuré le même jour), l'annonce d'IA quand elle est due. Un espace sans réglage est en `always`, donc
-         * inchangé.
+         * un mot, mesuré le même jour). Un espace sans réglage est en `always`, donc inchangé.
          */
         const equipeMuette = agent.equipe !== undefined && !agent.equipe.disponible;
         return {
           texte: equipeMuette || tour.repondeur ? texteDeSortie(reponse.texte, res.dernierMessage, () => deps.alerter?.(
             `agent ${input.agentId} : le modèle a rendu un faux bloc de résultat d’outil comme dernier message`,
-          ), annoncerIa ? agent.mentionIa : null) : null,
+          )) : null,
           sortie: null,
           usage,
           appels,
@@ -332,7 +380,7 @@ async function boucler(
       if (res.sortie) {
         const texte = texteDeSortie(reponse.texte, res.dernierMessage, () => deps.alerter?.(
           `agent ${input.agentId} : le modèle a rendu un faux bloc de résultat d’outil comme dernier message`,
-        ), annoncerIa ? agent.mentionIa : null);
+        ));
         return { texte, sortie: res.sortie, usage, appels };
       }
 

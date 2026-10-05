@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AgentIntrouvable, MAX_ALLERS_RETOURS, creerCerveauGateway, dejaParle, penserTrace, type ContexteAgentComplet, type ContexteTour, type GatewayBrainDeps } from '../src/agent/brain.gateway';
+import { AgentIntrouvable, MAX_ALLERS_RETOURS, creerCerveauGateway, dejaAnnonce, markdownVersWhatsApp, penserTrace, type ContexteAgentComplet, type ContexteTour, type GatewayBrainDeps } from '../src/agent/brain.gateway';
 import type { ChatMessage, ReponseChat } from '../src/agent/llm/chat-client';
 import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catalog';
 import type { ResolveurOutil } from '../src/agent/executor';
@@ -40,6 +40,17 @@ const AGENT: ContexteAgentComplet = {
   plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 },
   contactInconnu: 'tous',
 };
+
+/**
+ * Pour les cas qui parlent d'autre chose que l'annonce d'IA. Depuis le 2026-10-05, le code la pose devant toute première
+ * réponse quand elle est due (« une fois par session » sur un transcript neuf, le cas d'`AGENT`) : sans ce réglage, ils
+ * vérifieraient la phrase en plus de leur sujet. L'annonce a ses propres cas, plus bas.
+ */
+const SANS_ANNONCE: ContexteAgentComplet = { ...AGENT, mentionIaFrequence: 'jamais' };
+/** Ce que la consigne dit au modèle au tour où la phrase part (`promptSysteme`), et à celui-là seulement. */
+const CONSIGNE_ANNONCE = 'La plateforme ajoute elle-même cette mention';
+/** Un message de l'agent qui a déjà annoncé, tel que le code l'envoie : la phrase en tête (`dejaAnnonce`). */
+const DEJA_ANNONCE = { role: 'agent', texte: `${AGENT.mentionIa}\n\nBonjour !` };
 
 const TOUR: ContexteTour = {
   sessionId: 's1', runId: 'r1', workflowId: 'w1', waId: '33600000000',
@@ -95,7 +106,7 @@ const entree = (transcript: unknown[] = [{ role: 'contact', texte: 'Bonjour' }])
 
 describe('penserTrace', () => {
   it('rend le texte du modèle quand il n’appelle aucun outil', async () => {
-    const { cap, d } = deps([texte('Bonjour, comment puis-je aider ?')]);
+    const { cap, d } = deps([texte('Bonjour, comment puis-je aider ?')], undefined, SANS_ANNONCE);
     const r = await penserTrace(entree(), TOUR, d);
     expect(r).toMatchObject({ texte: 'Bonjour, comment puis-je aider ?', sortie: null });
     expect(r.appels).toEqual([]);
@@ -107,7 +118,7 @@ describe('penserTrace', () => {
   it('🔴 le résultat d’un outil repart au modèle DANS UN BLOC DÉLIMITÉ', async () => {
     // Dette D3(c). Le contenu vient d'une base de connaissance qu'un site tiers a remplie : c'est de la
     // donnée, jamais un ordre.
-    const { cap, d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')]);
+    const { cap, d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')], undefined, SANS_ANNONCE);
     const r = await penserTrace(entree(), TOUR, d);
     expect(r.texte).toBe('C’est noté.');
     const second = cap.messages[1]!;
@@ -157,7 +168,7 @@ describe('penserTrace', () => {
       usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 },
       generationId: null,
     };
-    const ferme = { ...AGENT, equipe: { disponible: false, reouverture: 'lundi 21 septembre à 9 h' } };
+    const ferme = { ...SANS_ANNONCE, equipe: { disponible: false, reouverture: 'lundi 21 septembre à 9 h' } };
     const { d } = deps([avecTexte, texte('jamais atteint')], escalade, ferme);
     const r = await penserTrace(entree(), TOUR, d);
     expect(r).toMatchObject({ texte: 'Nous sommes fermés, l’équipe vous répond lundi matin.', sortie: null });
@@ -186,9 +197,9 @@ describe('penserTrace', () => {
     // Aucune branche ne parle après une escalade dans le répondeur (`src/repondeur/graphe.ts`) : jetée, la phrase
     // laissait le contact sans rien, alors que la conversation passait bien à l'équipe.
     const escalade: ResolveurOutil = async () => ({ contenu: { escalade: true }, rendu: true });
-    const ouvert = { ...AGENT, equipe: { disponible: true, reouverture: null } };
+    const ouvert = { ...SANS_ANNONCE, equipe: { disponible: true, reouverture: null } };
     const avecTexte: ReponseChat = { ...appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte: 'Je te passe un conseiller.' };
-    for (const agent of [ouvert, AGENT]) {
+    for (const agent of [ouvert, SANS_ANNONCE]) {
       const { d } = deps([avecTexte, texte('jamais atteint')], escalade, agent);
       expect(await penserTrace(entree(), { ...TOUR, repondeur: true }, d)).toMatchObject({ texte: 'Je te passe un conseiller.', sortie: null });
     }
@@ -199,8 +210,8 @@ describe('penserTrace', () => {
 
   it('🔴 le modèle escalade SANS UN MOT : le `message` imposé part à sa place (mesuré le 2026-10-05 sur trois modèles)', async () => {
     const escalade: ResolveurOutil = async () => ({ contenu: { escalade: true }, rendu: true, dernierMessage: 'Un conseiller prend le relais.' });
-    // L'agent a déjà parlé dans cette session : l'annonce d'IA n'est plus due, la phrase part telle quelle.
-    const suite = entree([{ role: 'agent', texte: 'Bonjour !' }, { role: 'contact', texte: 'Je veux un conseiller.' }]);
+    // L'agent a déjà annoncé dans cette session : l'annonce d'IA n'est plus due, la phrase part telle quelle.
+    const suite = entree([DEJA_ANNONCE, { role: 'contact', texte: 'Je veux un conseiller.' }]);
     const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('jamais atteint')], escalade, AGENT);
     expect(await penserTrace(suite, { ...TOUR, repondeur: true }, d)).toMatchObject({ texte: 'Un conseiller prend le relais.' });
     // Équipe fermée, hors répondeur : même règle, la phrase est gardée.
@@ -282,17 +293,18 @@ describe('penserTrace', () => {
 
   /**
    * LE RÉGIME D'ANNONCE D'IA (migration 0126). C'est le TOUR qui décide, plus le modèle : il lit le
-   * transcript de la session, où « l'agent a-t-il déjà parlé » se voit sans requête.
+   * transcript de la session, où « l'agent a-t-il déjà parlé » se voit sans requête. Et depuis le 2026-10-05, c'est le
+   * code qui pose la phrase : la décision se lit donc sur le texte qui part, la consigne ne fait que la suivre.
    */
-  it('🔴 « session » : l’annonce est demandée au premier tour, et à celui-là seulement', async () => {
+  it('🔴 « session » : l’annonce part au premier tour, et à celui-là seulement', async () => {
     const { cap, d } = deps([texte('bonjour')]);
-    await penserTrace(entree(), TOUR, d);
-    expect(JSON.stringify(cap.messages[0])).toContain('Commence ta réponse par exactement cette phrase');
+    expect((await penserTrace(entree(), TOUR, d)).texte).toBe(`${AGENT.mentionIa}\n\nbonjour`);
+    expect(JSON.stringify(cap.messages[0])).toContain(CONSIGNE_ANNONCE);
 
-    // Le MÊME agent, mais l'agent a déjà parlé dans cette session : plus d'annonce.
+    // Le MÊME agent, mais l'agent a déjà annoncé dans cette session : plus d'annonce.
     const { cap: cap2, d: d2 } = deps([texte('et ensuite')]);
-    await penserTrace({ ...entree(), transcript: [{ role: 'agent', texte: 'deja dit' }] }, TOUR, d2);
-    expect(JSON.stringify(cap2.messages[0])).not.toContain('Commence ta réponse par exactement cette phrase');
+    expect((await penserTrace({ ...entree(), transcript: [DEJA_ANNONCE] }, TOUR, d2)).texte).toBe('et ensuite');
+    expect(JSON.stringify(cap2.messages[0])).not.toContain(CONSIGNE_ANNONCE);
   });
 
   it('🔴 « jamais » ne l’annonce pas, « chaque_message » l’annonce même après avoir parlé', async () => {
@@ -300,13 +312,14 @@ describe('penserTrace', () => {
     // ci-dessus (« session » est le défaut) sans que personne le voie.
     const jamais = { ...AGENT, mentionIaFrequence: 'jamais' as const };
     const { cap, d } = deps([texte('bonjour')], undefined, jamais);
-    await penserTrace(entree(), TOUR, d);
-    expect(JSON.stringify(cap.messages[0])).not.toContain('Commence ta réponse par exactement cette phrase');
+    expect((await penserTrace(entree(), TOUR, d)).texte).toBe('bonjour');
+    expect(JSON.stringify(cap.messages[0])).not.toContain(CONSIGNE_ANNONCE);
 
     const toujours = { ...AGENT, mentionIaFrequence: 'chaque_message' as const };
     const { cap: c2, d: d2 } = deps([texte('et ensuite')], undefined, toujours);
-    await penserTrace({ ...entree(), transcript: [{ role: 'agent', texte: 'deja dit' }] }, TOUR, d2);
-    expect(JSON.stringify(c2.messages[0])).toContain('Commence ta réponse par exactement cette phrase');
+    expect((await penserTrace({ ...entree(), transcript: [{ role: 'agent', texte: 'deja dit' }] }, TOUR, d2)).texte)
+      .toBe(`${AGENT.mentionIa}\n\net ensuite`);
+    expect(JSON.stringify(c2.messages[0])).toContain(CONSIGNE_ANNONCE);
   });
 
   it('🔴 le BUDGET arrête aussi les allers-retours, pas seulement les outils', async () => {
@@ -398,7 +411,7 @@ describe('penserTrace', () => {
   it('un agent sans outil actif parle quand même', async () => {
     // Il ne peut rien faire, mais il n'y a aucune raison qu'il soit muet : le lint d'activation, lui,
     // refusera de le rendre proposable dans un scénario.
-    const muet = { ...AGENT, outilsActifs: [] };
+    const muet = { ...SANS_ANNONCE, outilsActifs: [] };
     const { cap, d } = deps([texte('Bonjour.')], undefined, muet);
     const r = await penserTrace(entree(), TOUR, d);
     expect(r.texte).toBe('Bonjour.');
@@ -414,7 +427,7 @@ describe('penserTrace', () => {
   it('`creerCerveauGateway` délègue à la même boucle, et retire la trace', async () => {
     // Le tour de production n'a que faire des appels d'outils, et le contrat `AgentBrain` ne les porte pas.
     // Trois lignes, mais non testées elles laisseraient un doute sur ce que le tour recevra.
-    const { d } = deps([texte('Bonjour.')]);
+    const { d } = deps([texte('Bonjour.')], undefined, SANS_ANNONCE);
     const decision = await creerCerveauGateway(d).penser({ ...entree(), tour: TOUR });
     expect(decision).toMatchObject({ texte: 'Bonjour.', sortie: null });
     expect(decision).not.toHaveProperty('appels');
@@ -439,8 +452,6 @@ describe('penserTrace : le dernier message d’une sortie', () => {
     contenu: { sortie: 'fini' }, sortie: 'fini', ...(dernierMessage !== undefined ? { dernierMessage } : {}),
   });
   const appelEcrit = (t: string | null): ReponseChat => ({ ...appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte: t });
-  /** Ces cas parlent du message, pas de l'annonce d'IA, qui a les siens plus bas (lot 5) : elle n'est pas due ici. */
-  const SANS_ANNONCE: ContexteAgentComplet = { ...AGENT, mentionIaFrequence: 'jamais' };
 
   it('🔴 réponse SANS texte : le dernier message part, avec la sortie', async () => {
     const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec('Merci, un conseiller vous rappelle demain.'), SANS_ANNONCE);
@@ -493,9 +504,10 @@ describe('penserTrace : le dernier message d’une sortie', () => {
   });
 
   /**
-   * 🔴 LA MENTION D'IA SUR LE DERNIER MESSAGE (lot 5, A7). La consigne demande au modèle d'annoncer dans SON texte ;
-   * le paramètre `message` de `terminer` lui échappe, et le répondeur parle souvent à un inconnu dès son premier
-   * message (constaté à l'essai réel du 2026-10-04). Quand l'annonce est due, le code l'ajoute devant.
+   * 🔴 LA MENTION D'IA SUR LE DERNIER MESSAGE (lot 5, A7). Le paramètre `message` de `terminer` échappait à la
+   * consigne, et le répondeur parle souvent à un inconnu dès son premier message (constaté à l'essai réel du
+   * 2026-10-04) : le code l'ajoutait devant. Depuis le 2026-10-05, il le fait pour TOUT texte, celui que le modèle écrit
+   * compris (`describe` suivant).
    */
   const MENTION = AGENT.mentionIa;
   it('🔴 annonce due et absente du message : la phrase est ajoutée DEVANT', async () => {
@@ -513,37 +525,157 @@ describe('penserTrace : le dernier message d’une sortie', () => {
     const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec('Merci.'), SANS_ANNONCE);
     expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: 'Merci.' });
     const { d: d2 } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec('Merci.'));
-    expect(await penserTrace(entree([{ role: 'agent', texte: 'deja dit' }]), TOUR, d2)).toMatchObject({ texte: 'Merci.' });
+    expect(await penserTrace(entree([DEJA_ANNONCE]), TOUR, d2)).toMatchObject({ texte: 'Merci.' });
   });
 
-  it('annonce due, mais le texte vient du MODÈLE : rien n’est ajouté (il suit la consigne, ce chemin ne change pas)', async () => {
+  it('🔴 annonce due et texte écrit par le MODÈLE à côté de l’outil : la phrase part devant aussi (2026-10-05)', async () => {
+    // Ce cas affirmait « rien n'est ajouté, il suit la consigne » : c'est précisément ce que le modèle ne faisait pas.
     const { d } = deps([appelEcrit('Parfait, je note votre demande.')], sortieAvec('Autre chose.'));
-    expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: 'Parfait, je note votre demande.' });
+    expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: `${MENTION}\n\nParfait, je note votre demande.`, sortie: 'fini' });
   });
 });
 
 /**
- * 🔴 L'ANNONCE « UNE FOIS PAR SESSION » NE COMPTE QUE LA SESSION (lot 5). La mémoire du tour déborde la session
- * (trente jours, `MEMOIRE_JOURS`) : un modèle de campagne ou la réponse d'un humain d'il y a trois jours y figurent en
- * rôle `agent`. Comptés, ils feraient taire l'annonce au premier tour d'une session neuve.
+ * 🔴 L'ANNONCE « UNE FOIS PAR SESSION » NE COMPTE QUE LA SESSION (lot 5), ET QUE LA PHRASE (2026-10-05). La mémoire du
+ * tour déborde la session (trente jours, `MEMOIRE_JOURS`) : un modèle de campagne ou la réponse d'un humain d'il y a
+ * trois jours y figurent en rôle `agent`. Et dans la session, tout sortant n'annonce pas : un bloc envoyé par l'outil
+ * `mba_envoyer_bloc` y figure aussi en rôle `agent`, sans la phrase. Compté, il faisait taire l'annonce pour toute la
+ * session. Seul un message qui COMMENCE par la phrase prouve qu'elle est partie, et c'est le code qui l'y pose.
  */
-describe('dejaParle : la session, pas la mémoire', () => {
+describe('dejaAnnonce : la phrase dans la session, pas un sortant quelconque', () => {
   const OUVERTURE = '2026-10-05T10:00:00.000Z';
-  it('🔴 un message sortant d’AVANT l’ouverture ne compte pas ; un message de la session compte', () => {
-    const avant = [{ role: 'contact', texte: 'Bonjour', at: '2026-10-05T09:59:59.000Z' }, { role: 'agent', texte: 'Modèle de campagne', at: '2026-10-02T08:00:00.000Z' }];
-    expect(dejaParle(avant, OUVERTURE)).toBe(false);
-    expect(dejaParle([...avant, { role: 'agent', texte: 'Bonjour !', at: OUVERTURE }], OUVERTURE)).toBe(true);
+  const P = AGENT.mentionIa;
+  it('🔴 un message d’AVANT l’ouverture ne compte pas, même avec la phrase ; un message de la session qui l’a compte', () => {
+    const avant = [{ role: 'contact', texte: 'Bonjour', at: '2026-10-05T09:59:59.000Z' }, { role: 'agent', texte: `${P}\n\nModèle de campagne`, at: '2026-10-02T08:00:00.000Z' }];
+    expect(dejaAnnonce(avant, P, OUVERTURE)).toBe(false);
+    expect(dejaAnnonce([...avant, { role: 'agent', texte: `${P}\n\nBonjour !`, at: OUVERTURE }], P, OUVERTURE)).toBe(true);
   });
 
-  it('sans ouverture (le bac à sable), ou une entrée sans date : tout compte, comme avant', () => {
-    expect(dejaParle([{ role: 'agent', texte: 'x', at: '2026-10-02T08:00:00.000Z' }])).toBe(true);
-    expect(dejaParle([{ role: 'agent', texte: 'x' }], OUVERTURE)).toBe(true);
+  it('🔴 un sortant de la session SANS la phrase en tête (un bloc, un opérateur) n’a rien annoncé', () => {
+    expect(dejaAnnonce([{ role: 'agent', texte: 'Voici notre brochure tarifaire.', at: OUVERTURE }], P, OUVERTURE)).toBe(false);
+    // La phrase ailleurs qu'en tête ne compte pas non plus : dans le doute, l'annonce se refait.
+    expect(dejaAnnonce([{ role: 'agent', texte: `Bonjour ! ${P}`, at: OUVERTURE }], P, OUVERTURE)).toBe(false);
+  });
+
+  it('sans ouverture (le bac à sable), ou une entrée sans date : la phrase en tête compte ; une date illisible, non', () => {
+    expect(dejaAnnonce([{ role: 'agent', texte: `${P} Bonjour`, at: '2026-10-02T08:00:00.000Z' }], P)).toBe(true);
+    expect(dejaAnnonce([{ role: 'agent', texte: `${P} Bonjour` }], P, OUVERTURE)).toBe(true);
+    expect(dejaAnnonce([{ role: 'agent', texte: `${P} Bonjour`, at: 'pas une date' }], P, OUVERTURE)).toBe(false);
+  });
+
+  it('🔴 de bout en bout : un bloc envoyé par l’agent puis un tour muet n’empêchent pas l’annonce de son premier texte', async () => {
+    // Le trou relevé par la relecture du 2026-10-05, plus ancien que la pose en code : le bloc partait sans la phrase,
+    // et au tour suivant l'agent passait pour avoir déjà parlé.
+    const { d } = deps([texte('Votre devis est prêt.')]);
+    const transcript = [
+      { role: 'contact', texte: 'Un devis ?', at: '2026-10-05T10:00:01.000Z' },
+      { role: 'agent', texte: 'Brochure tarifaire', at: '2026-10-05T10:00:05.000Z' },
+      { role: 'contact', texte: 'Merci', at: '2026-10-05T10:01:00.000Z' },
+    ];
+    expect((await penserTrace(entree(transcript), { ...TOUR, sessionOuverteLe: OUVERTURE }, d)).texte).toBe(`${P}\n\nVotre devis est prêt.`);
   });
 
   it('🔴 de bout en bout : un sortant d’avant la session n’empêche pas l’annonce du premier tour', async () => {
     const { cap, d } = deps([texte('bonjour')]);
     const transcript = [{ role: 'agent', texte: 'Modèle de campagne', at: '2026-10-02T08:00:00.000Z' }, { role: 'contact', texte: 'Bonjour', at: '2026-10-05T09:59:59.000Z' }];
-    await penserTrace(entree(transcript), { ...TOUR, sessionOuverteLe: OUVERTURE }, d);
-    expect(JSON.stringify(cap.messages[0])).toContain('Commence ta réponse par exactement cette phrase');
+    expect((await penserTrace(entree(transcript), { ...TOUR, sessionOuverteLe: OUVERTURE }, d)).texte).toBe(`${AGENT.mentionIa}\n\nbonjour`);
+    expect(JSON.stringify(cap.messages[0])).toContain(CONSIGNE_ANNONCE);
+  });
+});
+
+/**
+ * 🔴 L'ANNONCE D'IA EST POSÉE PAR LE CODE, PLUS PAR LE MODÈLE (2026-10-05). La consigne lui demandait d'ouvrir sa
+ * réponse par la phrase. Mesuré sur un agent en production (Claude Haiku 4.5, cinq conversations neuves d'un message
+ * par `test_agent`) : il ne l'a écrite que dans la seule réponse sans appel d'outil. Quand il cherche d'abord dans sa
+ * base, il répond ensuite sans elle. L'AI Act (article 50) ne se tient pas à une réponse sur cinq.
+ */
+describe('penserTrace : l’annonce d’IA posée par le code', () => {
+  const MENTION = AGENT.mentionIa;
+  const escalade: ResolveurOutil = async () => ({ contenu: { escalade: true }, rendu: true });
+
+  it('🔴 réponse écrite APRÈS un appel d’outil : la phrase part devant, au bac à sable comme en production', async () => {
+    const reponses = [appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('Votre contrat couvre ce litige.')];
+    const attendu = `${MENTION}\n\nVotre contrat couvre ce litige.`;
+    expect((await penserTrace(entree(), TOUR, deps(reponses).d)).texte).toBe(attendu);
+    // Le tour de production passe par le même cerveau, sans la trace.
+    expect((await creerCerveauGateway(deps(reponses).d).penser({ ...entree(), tour: TOUR })).texte).toBe(attendu);
+  });
+
+  it('🔴 réponse sans outil, escalade du répondeur : devant aussi (la sortie a son cas plus haut)', async () => {
+    expect((await penserTrace(entree(), TOUR, deps([texte('Bonjour !')]).d)).texte).toBe(`${MENTION}\n\nBonjour !`);
+    const passe = { ...appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte: 'Je vous passe un conseiller.' };
+    expect((await penserTrace(entree(), { ...TOUR, repondeur: true }, deps([passe], escalade).d)).texte)
+      .toBe(`${MENTION}\n\nJe vous passe un conseiller.`);
+  });
+
+  it('🔴 la consigne ne demande plus la phrase au modèle : elle lui dit que la plateforme l’ajoute', async () => {
+    const { cap, d } = deps([texte('bonjour')]);
+    await penserTrace(entree(), TOUR, d);
+    const systeme = String(cap.messages[0]![0]!.content);
+    expect(systeme).not.toContain('Commence ta réponse par');
+    expect(systeme).toContain(`« ${MENTION} »`);
+    expect(systeme).toContain('Ne l’écris pas');
+  });
+
+  it('déjà écrite par le modèle (il imite ses messages précédents) : elle n’apparaît qu’une fois', async () => {
+    // « À chaque message », chaque réponse précédente commence par la phrase, et le modèle la recopie. Apostrophe
+    // typographique et espace insécable ne la font pas doubler.
+    const groupama = { ...AGENT, mentionIaFrequence: 'chaque_message' as const, mentionIa: 'Vous parlez à l\'assistant de Groupama !' };
+    const imite = 'Vous parlez à l’assistant de Groupama !\n\nVotre dossier est complet.';
+    const r = await penserTrace(entree([{ role: 'agent', texte: 'deja dit' }]), TOUR, deps([texte(imite)], undefined, groupama).d);
+    expect(r.texte).toBe(imite);
+  });
+
+  it('pas due (« jamais », ou l’agent a déjà parlé dans la session) : la réponse part sans elle', async () => {
+    const reponses = [appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')];
+    const jamais = { ...AGENT, mentionIaFrequence: 'jamais' as const };
+    expect((await penserTrace(entree(), TOUR, deps(reponses, undefined, jamais).d)).texte).toBe('C’est noté.');
+    const suite = entree([DEJA_ANNONCE, { role: 'contact', texte: 'Et ensuite ?' }]);
+    expect((await penserTrace(suite, TOUR, deps(reponses).d)).texte).toBe('C’est noté.');
+  });
+
+  it('🔴 une phrase COURTE n’est pas « déjà là » parce qu’un mot la contient (relecture du 2026-10-05)', async () => {
+    // « IA » est dans « spécialiste », « Bot » au début de « Bottes » : pris pour l'annonce, la mention due ne partait pas.
+    for (const [mention, reponse] of [['IA', 'Un spécialiste vous rappelle demain.'], ['Bot', 'Bottes et sabots sont en stock.']] as const) {
+      const court = { ...AGENT, mentionIa: mention };
+      expect((await penserTrace(entree(), TOUR, deps([texte(reponse)], undefined, court).d)).texte, mention).toBe(`${mention}\n\n${reponse}`);
+    }
+  });
+
+  it('recopiée en tête sans son point final : une seule fois ; un texte qui commence par un saut de ligne n’en ajoute pas', async () => {
+    const recopie = 'Vous échangez avec un assistant automatique\n\nBonjour !';
+    expect((await penserTrace(entree(), TOUR, deps([texte(recopie)]).d)).texte).toBe(recopie);
+    expect((await penserTrace(entree(), TOUR, deps([texte('\n\nBonjour !')]).d)).texte).toBe(`${MENTION}\n\nBonjour !`);
+  });
+});
+
+/**
+ * 🔴 CE QUE LE MODÈLE ÉCRIT EN MARKDOWN PART TEL QUEL SUR WHATSAPP (2026-10-05). WhatsApp met en gras entre UNE étoile
+ * et n'a pas de titres : `**gras**` et `## Titre` arrivaient avec leurs signes chez le contact. La consigne l'interdit
+ * désormais, et le cerveau convertit ce qui passe quand même, sur la réponse de l'agent seulement.
+ */
+describe('markdownVersWhatsApp', () => {
+  it('🔴 le gras Markdown devient le gras de WhatsApp, une seule étoile', () => {
+    expect(markdownVersWhatsApp('Votre **garantie** couvre **les litiges de la consommation**.'))
+      .toBe('Votre *garantie* couvre *les litiges de la consommation*.');
+  });
+
+  it('🔴 les titres perdent leurs dièses, leur texte reste', () => {
+    expect(markdownVersWhatsApp('## Vos garanties\nTexte.\n### **Détail**\n# Fin')).toBe('Vos garanties\nTexte.\n*Détail*\nFin');
+  });
+
+  it('preuve inverse : ce que WhatsApp affiche déjà, et ce qui n’est pas du Markdown, ne bouge pas', () => {
+    for (const t of ['*déjà en gras*', '* une puce\n- une autre', 'Le #1 des ventes', 'Ticket # 42', '5 ** 2', '**pas fermé', '** espaces **', '_italique_ et ~barré~']) {
+      expect(markdownVersWhatsApp(t), t).toBe(t);
+    }
+  });
+
+  it('🔴 sur le chemin de la réponse : le texte du modèle est converti, la phrase d’annonce du client non', async () => {
+    const forme = '## Garanties\nVotre **contrat** couvre ce litige.';
+    expect((await penserTrace(entree(), TOUR, deps([texte(forme)], undefined, { ...AGENT, mentionIaFrequence: 'jamais' }).d)).texte)
+      .toBe('Garanties\nVotre *contrat* couvre ce litige.');
+    const client = { ...AGENT, mentionIa: 'Je suis **Léa**, assistante automatique.' };
+    expect((await penserTrace(entree(), TOUR, deps([texte(forme)], undefined, client).d)).texte)
+      .toBe('Je suis **Léa**, assistante automatique.\n\nGaranties\nVotre *contrat* couvre ce litige.');
   });
 });

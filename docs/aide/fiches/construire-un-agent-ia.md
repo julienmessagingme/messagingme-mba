@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 824852
+source_empreinte: df9134
 ---
 # Construire un agent IA
 
@@ -118,4 +118,6 @@ sortie à brancher, pas un réglage de confort.
 
 **La mention d'IA**, enfin, est obligatoire et ne peut jamais être vide. La phrase appartient à l'agent, le
 moment où elle est dite appartient à votre espace et se règle dans Sécurité > IA : jamais, une fois par
-session, ou à chaque message. L'agent de Meta n'est pas concerné, il appose déjà la sienne.
+session, ou à chaque message. C'est la plateforme qui la place en tête du message de l'agent, pas le modèle :
+elle part même quand l'agent consulte sa base avant de répondre, et l'onglet Tester vous la montre telle que le
+contact la lira. L'agent de Meta n'est pas concerné, il appose déjà la sienne.

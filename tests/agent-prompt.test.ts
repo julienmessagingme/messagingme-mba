@@ -31,8 +31,21 @@ describe('promptSysteme', () => {
   it('🔴 quand elle doit être dite, la mention d’IA est en TÊTE et rien ne l’en déloge', () => {
     const p = promptSysteme({ ...CTX(), annoncerIa: true });
     expect(p.indexOf('Vous échangez avec un assistant automatique.')).toBeLessThan(200);
-    // Même sur une fiche entièrement vide : aucune section absente ne peut la repousser.
-    expect(p).toContain('Commence ta réponse par exactement cette phrase');
+    // Même sur une fiche entièrement vide : aucune section absente ne peut la repousser. Depuis le 2026-10-05, la
+    // consigne ne la DEMANDE plus au modèle (il l'oubliait après un appel d'outil) : elle lui dit que la plateforme la
+    // pose devant sa réponse (`pourLeContact`, `src/agent/brain.gateway.ts`), pour qu'il ne la répète pas.
+    expect(p).not.toContain('Commence ta réponse par');
+    // « Mention » et pas « phrase » : la consigne de l'équipe fermée dit « écris ta phrase AVANT d'appeler l'outil ».
+    expect(p).toContain('La plateforme ajoute elle-même cette mention devant ta réponse');
+    expect(p).toContain('Ne l’écris pas');
+  });
+
+  it('🔴 la consigne interdit le Markdown, et dit comment WhatsApp met en gras', () => {
+    // WhatsApp met en gras entre UNE étoile et n'a ni titre ni tableau. Le cerveau convertit ce qui passe quand même
+    // (`markdownVersWhatsApp`), mais un tableau ne se convertit pas : seule la consigne l'évite.
+    const p = promptSysteme(CTX());
+    expect(p).toContain('pas du Markdown : ni titre (#), ni tableau, ni double étoile');
+    expect(p).toContain('*comme ceci*');
   });
 
   it('🔴 la preuve inverse : quand elle ne doit PAS être dite, la phrase n’apparaît nulle part', () => {

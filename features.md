@@ -2603,6 +2603,10 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 - ✅ **L'agent tient la conversation sur plusieurs tours.** Tant qu'il l'a, les réponses du contact lui
   reviennent à LUI et le scénario n'avance pas. On n'en ressort que par une des sorties du bloc, jamais par
   une sortie libre. Ses messages apparaissent dans le fil de l'Inbox comme n'importe quel autre.
+- ✅ **Ce que l'agent écrit arrive lisible sur WhatsApp** (2026-10-05). Un modèle écrit volontiers en Markdown, que
+  WhatsApp n'affiche pas : la plateforme convertit le gras (`**mot**` devient `*mot*`, la seule forme que WhatsApp
+  met en gras) et retire les marques de titre (`#`). Un tableau ne se convertit pas : la consigne de l'agent le lui
+  interdit. Les messages que votre équipe écrit dans l'Inbox ne sont jamais touchés.
 - ✅ **Le bloc est grisé tant qu'aucun agent n'est actif** (« Disponible dès qu'un agent IA est actif »), même
   doctrine que les blocs RCS et Email. Un bloc agent sans agent derrière ne pourrait tenir aucune conversation.
 - ✅ **Un agent désactivé après coup est signalé sur le bloc** : « cet agent n'est plus actif, ce bloc ne
@@ -3072,6 +3076,13 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 
 - ✅ **Chaque agent porte une phrase qui annonce au contact qu'il parle à une IA.** Pré-remplie
   (« Vous échangez avec un assistant automatique. »), modifiable, mais **elle ne peut jamais être vide**.
+- 🔴 **C'est la plateforme qui l'écrit, pas le modèle** (2026-10-05) : elle part en tête du message de l'agent,
+  suivie d'une ligne vide, dans la même bulle, au moment que le réglage prévoit. Avant, on demandait au modèle de
+  l'écrire, et il l'oubliait dès qu'il consultait sa base de connaissance avant de répondre : mesuré sur un agent en
+  production, une réponse sur cinq la portait. Si le modèle l'écrit quand même en tête, elle n'apparaît qu'une fois.
+  « Une fois par session » veut dire : tant qu'aucun message de l'agent n'est parti avec elle. Un tour où l'agent
+  n'envoie rien, ou seulement un bloc de votre scénario, ne compte pas : elle part en tête de son premier texte. Le
+  bac à sable et l'essai depuis Claude la montrent telle que le contact la recevra.
 - ✅ **QUAND elle est dite est un RÉGLAGE du client** (2026-09-09), à trois régimes : **jamais**,
   **une fois par session** (le défaut) ou **à chaque message**. La question lui est posée à la construction
   du bot, elle n'est pas cachée dans un écran qu'on ne trouve pas.

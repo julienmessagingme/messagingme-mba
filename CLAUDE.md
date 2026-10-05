@@ -761,6 +761,10 @@ MODÈLE devait deviner depuis un transcript. Il ne sait pas où commence une ses
 fois par session » posé sur cette base n'aurait jamais pu être tenu. **C'est le code qui choisit désormais
 l'instruction avant l'appel** : dire la phrase maintenant, ou ne pas en parler. Le modèle n'a plus de
 décision à prendre.
+🔴 **MAIS LE TEXTE RESTAIT AU MODÈLE, ET IL L'OUBLIAIT** dès qu'il appelait un outil avant de répondre (une
+réponse sur cinq la portait, mesuré le 2026-10-05 par `test_agent` sur un agent en production). Depuis ce jour,
+c'est le code qui écrit la phrase devant la réponse (`pourLeContact`, `src/agent/brain.gateway.ts`) : une
+obligation légale ne se confie pas à une consigne.
 
 ⚠️ **`jamais` est un choix EXPLICITE du client, obtenu en le lui demandant à la construction du bot**
 (décision de Julien du 2026-09-09 : « par principe non, on ne demande pas à l'IA de dire systématiquement je

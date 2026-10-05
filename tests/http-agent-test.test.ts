@@ -52,6 +52,10 @@ const AGENT: ContexteAgentComplet = {
   contactInconnu: 'tous',
 };
 
+/** Un essai est une conversation neuve, en régime « session » : sa réponse part avec la phrase devant, posée par le code
+ *  (2026-10-05). Le bac à sable montre ce que le contact recevra. */
+const ANNONCE = `${AGENT.mentionIa}\n\n`;
+
 const texte = (t: string): ReponseChat => ({
   texte: t, appelsOutils: [], finish: 'stop',
   usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 }, generationId: null,
@@ -142,7 +146,7 @@ describe('bac à sable de l’agent', () => {
     const { cap, srv } = app();
     const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ texte: 'Bonjour, comment puis-je aider ?', sortie: null, appels: [] });
+    expect(res.json()).toMatchObject({ texte: `${ANNONCE}Bonjour, comment puis-je aider ?`, sortie: null, appels: [] });
     expect(res.json().usage.tokensIn).toBe(10);
     // Le VRAI prompt, avec la mention légale d'IA : c'est ce que le client vient éprouver.
     expect(cap.messages[0]![0]!.content).toContain('Vous échangez avec un assistant automatique.');
@@ -155,7 +159,7 @@ describe('bac à sable de l’agent', () => {
     expect(body.appels).toHaveLength(1);
     expect(body.appels[0]).toMatchObject({ nom: 'mba_poser_tag', arguments: '{"tag":"vip"}', status: 'ok' });
     expect(body.appels[0].contenu.simule).toBe(true);
-    expect(body.texte).toBe('C’est noté.');
+    expect(body.texte).toBe(`${ANNONCE}C’est noté.`);
   });
 
   it('🔴 rien n’est journalisé : il n’y a AUCUNE session à référencer', async () => {
@@ -379,7 +383,7 @@ describe('bac à sable de l’agent', () => {
       expect(cap.essaisEcrits[0]).toMatchObject({ tenant: 't1', agent: AG });
       expect(cap.essaisEcrits[0]!.essai).toMatchObject({
         messages: bonjour.messages,
-        reponse: 'C’est noté.',
+        reponse: `${ANNONCE}C’est noté.`,
         // Le NOM et le STATUT de chaque outil : c'est ce qui distingue « il n'a pas trouvé » de « il n'a
         // même pas cherché », la première question qu'on se pose devant une mauvaise réponse.
         appels: [{ nom: 'mba_poser_tag', status: 'ok' }],
@@ -397,7 +401,7 @@ describe('bac à sable de l’agent', () => {
       const { cap, srv } = app({ historiqueCasse: true, solde: 5_000_000 });
       const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
       expect(res.statusCode).toBe(200);
-      expect(res.json().texte).toBe('Bonjour, comment puis-je aider ?');
+      expect(res.json().texte).toBe(`${ANNONCE}Bonjour, comment puis-je aider ?`);
       expect(cap.debits).toEqual([{ montant: 10, note: 'essai depuis la console' }]);
     });
 

@@ -434,21 +434,36 @@ ligne depuis le panneau passe par un événement que le BUILDER traite, parce qu
 bloc agent atteint -> executor ouvre une session -> job `agent-turn`
    run-turn : garde de solde (à l'ENTRÉE du tour, jamais à l'écriture)
      brain.gateway.penserTrace :   <- LA boucle, partagée par la production ET le bac à sable
-       prompt : mention d'IA EN TÊTE, si le régime de l'ESPACE la demande pour CE tour (0126, remontée à
+       annonce d'IA due à CE tour ? décidée par le code, sur le régime de l'ESPACE (0126, remontée à
        l'espace par 0140 : l'obligation pèse sur la marque déployante, pas sur chaque robot)
+       prompt : la phrase annoncée EN TÊTE au tour où elle part, pour que le modèle ne l'écrive pas
        appel du modèle (Vercel AI Gateway, seul chemin livré aujourd'hui)
        si appel d'outil : executor d'outil (validation, injection, budget de temps, journal, troncature)
          résultat encadré par `blocResultatOutil`, jamais concaténé au prompt
        jusqu'à une SORTIE nommée, un plafond, ou une erreur
+       texte qui part : `pourLeContact` (Markdown ramené à WhatsApp, puis la phrase d'annonce DEVANT)
    -> le parcours repart par le handle `sortie:<code>`, et la frise note la règle (`sortie_agent`)
 ```
+
+🔴 **LA PHRASE D'ANNONCE D'IA EST ÉCRITE PAR LE CODE, JAMAIS PAR LE MODÈLE** (AI Act, article 50 ; 2026-10-05).
+`penserTrace` n'a qu'une sortie pour le texte, quel que soit le chemin de la boucle (réponse simple, réponse après un
+outil, texte ou `message` d'une sortie, phrase d'une escalade) : `pourLeContact`, qui pose la phrase devant, suivie
+d'une ligne vide, quand elle est due, sauf si le texte COMMENCE déjà par elle, en mots entiers (`commencePar` :
+sans casse, apostrophe, espace insécable ni ponctuation finale ; une sous-chaîne quelconque ne suffit pas, « IA » est
+dans « spécialiste »). La demander au modèle ne tenait pas : mesuré sur un agent en production, il ne l'écrivait que
+dans la réponse sans appel d'outil, une sur cinq. « Une fois par session » se décide sur la même preuve : `dejaAnnonce`
+ne compte qu'un message de l'agent qui commence par la phrase, jamais un autre sortant (un bloc de `mba_envoyer_bloc`,
+une réponse d'opérateur), sans quoi un bloc envoyé en premier la taisait pour toute la session. Un tour qui n'envoie
+rien ne la porte pas, elle part avec le premier texte. Le même passage ramène le Markdown du modèle à WhatsApp
+(`markdownVersWhatsApp` : `**gras**` devient `*gras*`, les marques de titre tombent) ; la phrase du client, elle, n'est
+pas convertie, et les messages de l'Inbox ne passent jamais par là.
 
 🔴 **CE QUE LIT CHAQUE TOUR : LES TRENTE DERNIERS MESSAGES DU CONTACT, SUR TRENTE JOURS**, pour tous les agents,
 quelle que soit la conversation (`MEMOIRE_JOURS`, `src/agent/run-turn.ts` ; `MESSAGES_DE_CONTEXTE`, `src/worker.ts` ;
 `PgInboxStore.messagesDepuis`, qui garde les plus récents et les rend dans l'ordre). La borne n'est pas l'ouverture
 de la session : le message qui déclenche un parcours est enregistré AVANT qu'elle s'ouvre, et le premier tour doit
 le lire. Chaque entrée porte son instant (`at`) : l'annonce d'IA « une fois par session » ne compte que les sorties
-datées de l'ouverture de la session ou après (`dejaParle`, `src/agent/brain.gateway.ts` ; le tour passe
+datées de l'ouverture de la session ou après (`dejaAnnonce`, `src/agent/brain.gateway.ts` ; le tour passe
 `sessionOuverteLe`), sinon un modèle de campagne de la veille la ferait taire.
 
 🔴 **LE RÉPONDEUR DE L'ESPACE** (`src/repondeur/`, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) :
@@ -757,8 +772,7 @@ l'outil qui termine sans écrire de texte à côté, et le tour s'arrête sur l'
 production et au bac à sable, `terminerAvec`, `src/agent/resolvers/mba.ts`) le rend rogné en `dernierMessage`,
 absent s'il est vide. Le cerveau (`texteDeSortie`, `src/agent/brain.gateway.ts`) envoie le texte de la réponse qui
 porte l'appel s'il n'est pas vide, sinon ce message, sinon rien ; un message qui porte nos délimiteurs est écarté
-et alerté, la sortie reste. 🔴 Quand l'annonce d'IA est due à ce tour, sa phrase est ajoutée DEVANT ce message, sauf
-s'il la porte déjà : la consigne système ne couvre que le texte que le modèle écrit lui-même, que rien ne touche.
+et alerté, la sortie reste. La phrase d'annonce d'IA s'y ajoute ensuite comme sur tout texte (`pourLeContact`, § 4.4).
 `run-turn` l'envoie avant de faire sortir le parcours, comme tout texte de décision, et le bac à sable le montre
 et l'archive. ⚠️ Le texte écrit à côté d'un appel d'outil n'est, lui, pas passé à
 `ressembleAUnBlocOutil` : seule une réponse sans appel l'est.
@@ -2011,8 +2025,9 @@ l'activer, et d'ouvrir une recharge du crédit.
   `tests/mcp-agent.test.ts`.
 - **`update_agent` filtre ses arguments** : objectif, ton, personnalité, règles de transfert, règles d'arrêt, modèle
   (liste fermée) et `fiche_version`. Toute autre clé est REFUSÉE, pas ignorée : `modifierAgent` est la porte de
-  l'administrateur et accepte aussi les plafonds de coût, la mention d'IA, le libellé et le statut. Claude ne voit ni
-  les plafonds ni la mention d'IA (`get_agent` ne les rend pas).
+  l'administrateur et accepte aussi les plafonds de coût, la mention d'IA, le libellé et le statut. Claude ne lit ni
+  les plafonds ni la mention d'IA (`get_agent` ne les rend pas), même si `test_agent` rend la phrase en tête de la
+  réponse, comme le contact la lira.
 - **La personne signe** : la ligne `fiche_agent` de l'historique (origine `mcp`), l'activation des outils sûrs
   (`active_par`), la suppression d'une fiche de connaissance (origine `mcp`, par `journaliserSuppressionDe`), et le
   payeur d'une recharge. L'historique de la console l'affiche « par Claude ».

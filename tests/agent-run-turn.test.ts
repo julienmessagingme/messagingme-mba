@@ -381,7 +381,20 @@ describe('le tour, branché sur le VRAI cerveau', () => {
     const { deps, envois } = make({ brain });
     const res = await runTurn(JOB, deps);
     expect(res.fait).toBe('repondu');
-    expect(envois).toEqual(['Bonjour !']);
+    // Premier tour d'une session neuve, régime « session » : la phrase d'annonce part devant (2026-10-05).
+    expect(envois).toEqual(['Je suis une IA.\n\nBonjour !']);
+  });
+
+  it('🔴 la réponse qui SUIT un appel d’outil part avec la phrase devant : le cas qui partait sans elle (2026-10-05)', async () => {
+    // Le défaut mesuré en production : le modèle cherchait dans sa base, puis répondait sans la phrase que la consigne
+    // lui demandait. Ici, le vrai tour et le vrai cerveau : c'est ce texte-là que `envoyer` remet à WhatsApp.
+    const { brain } = cerveauReel([
+      { texte: null, appelsOutils: [{ id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' }], finish: 'tool_calls', usage: { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 }, generationId: null },
+      reponseTexte('Votre **contrat** couvre ce litige.'),
+    ]);
+    const { deps, envois } = make({ brain });
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
+    expect(envois).toEqual(['Je suis une IA.\n\nVotre *contrat* couvre ce litige.']);
   });
 
   it('🔴 et ce contexte désigne la BONNE conversation, jusque dans les outils', async () => {
