@@ -257,6 +257,23 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
   return calls;
 }
 
+/**
+ * Un espace dont l'agent IA « Léa » est le répondeur (lot 5) : la liste des agents le dit, comme la lit `lireRepondeurIa`
+ * au moment d'allumer l'agent de Meta (J7). À passer en `custom`. `tenue` : la liste ne répond qu'une fois la promesse
+ * résolue, pour voir l'écran PENDANT la lecture.
+ */
+export function repondeurIa(tenue?: Promise<void>): NonNullable<MbaFixtures['custom']> {
+  return async (route, method, url) => {
+    if (method !== 'GET' || !new URL(url).pathname.endsWith('/agents')) return false;
+    if (tenue) await tenue;
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ agents: [{ id: 'ag-lea', label: 'Léa', status: 'active', sorties: [], modele: 'm' }], repondeurAgentId: 'ag-lea' }),
+    });
+    return true;
+  };
+}
+
 /** Appels MBA d'une méthode donnée dont l'URL contient `fragment`. */
 export function appelsMba(calls: Appel[], method: string, fragment: string): Appel[] {
   return calls.filter((c) => c.method === method && c.url.includes('/mba/') && c.url.includes(fragment));

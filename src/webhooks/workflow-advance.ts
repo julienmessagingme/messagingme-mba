@@ -11,8 +11,12 @@ export interface WorkflowAdvanceDeps {
    * côté » déjà transmise à l'agent par la fin du scénario lui était confiée de nouveau, et un clic qui finissait un
    * parcours ouvrait une demande fantôme du Quantitatif > Performance dans l'état d'attente de fin de parcours.
    * `void` ou `false` : aucun parcours n'attendait, la remise décide.
+   *
+   * `entrant.reaction` : le message est une réaction (un emoji posé sur un de nos messages, ou son retrait), lu sur
+   * son TYPE. Un agent IA en pleine conversation ne lui répond pas (`WorkflowExecutor.advance`, relecture du lot 5,
+   * J1) : son `buttonPayload` est l'identifiant du message visé, qui ne dit rien de ce qu'il est.
    */
-  advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null): Promise<boolean | void>;
+  advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null, entrant: { reaction: boolean }): Promise<boolean | void>;
   /**
    * Consigne un échec d'avance là où quelqu'un le verra : l'isolation par message reste, mais un acquittement
    * silencieux laisserait le contact bloqué sur son bloc sans rejeu ni trace. Optionnelle et best-effort :
@@ -64,7 +68,9 @@ export async function processWorkflowAdvance(entrants: readonly EntrantRattache[
     if (m.field && m.field !== 'messages') continue;
     // Isolation par message : une erreur sur un contact ne prive pas les autres du même webhook.
     try {
-      if ((await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload)) === true) parParcours.add(m.messageId);
+      if ((await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload, { reaction: m.type === 'reaction' })) === true) {
+        parParcours.add(m.messageId);
+      }
     } catch (err) {
       const erreur = texteDe(err);
       // eslint-disable-next-line no-console

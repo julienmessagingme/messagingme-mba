@@ -1,7 +1,7 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: f8ca7a
+source_empreinte: bd16bc
 ---
 # Lancer une campagne
 
@@ -33,8 +33,10 @@ campagne : il part en validation chez WhatsApp, et il est choisi tout seul dès 
 étage n'a pas son contenu, l'écran vous le dit et ne vous laisse pas avancer.
 
 Dans le cadre de chaque étage qui n'ouvre pas un scénario, une question vous est posée : ce qui se passe
-quand un contact répond à CET étage, c'est-à-dire l'agent de Meta, ou votre Inbox. Elle se règle étage par
-étage. Puis, une fois tout le contenu choisi, une dernière question apparaît, mais seulement si au moins un
+quand un contact répond à CET étage. « Le répondeur automatique prend la main » laisse la réponse au répondeur
+de votre espace, l'agent de Meta ou l'agent IA que vous avez choisi comme répondeur ; ce choix est grisé, avec sa
+raison, si votre espace n'a ni l'un ni l'autre. L'autre choix envoie la conversation dans votre Inbox. Elle se
+règle étage par étage. Puis, une fois tout le contenu choisi, une dernière question apparaît, mais seulement si au moins un
 étage renvoie vers l'Inbox : à qui la conversation revient, personne en particulier, une personne désignée,
 ou à tour de rôle.
 

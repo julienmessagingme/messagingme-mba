@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 4c535b
+source_empreinte: 7d7360
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -94,16 +94,18 @@ apparaissent ici.
 
 Chaque publicité le choisit, et c'est l'un ou l'autre :
 
-- **un scénario** : c'est lui qui parle, seul. Si l'agent de Meta répond d'habitude sur ce numéro, il sera
-  écarté des personnes venues de cette publicité. Seule exception : si quelqu'un de votre équipe parle déjà à
-  cette personne, elle reste à lui, son message arrive dans son Inbox et le scénario ne part pas ;
-- **l'agent de Meta** : proposé seulement s'il est allumé pour votre espace. La conversation d'un prospect lui
-  est confiée dès son premier message, et il y répond. Ses messages restent facturés au jeton, même pendant les
-  72 heures gratuites qui suivent un clic.
+- **un scénario** : c'est lui qui parle, seul. Si le répondeur automatique répond d'habitude sur ce numéro, il
+  sera écarté des personnes venues de cette publicité. Seule exception : si quelqu'un de votre équipe parle déjà
+  à cette personne, elle reste à lui, son message arrive dans son Inbox et le scénario ne part pas ;
+- **le répondeur automatique** : le répondeur de votre espace, c'est-à-dire l'agent de Meta s'il est allumé, ou
+  l'agent IA que vous avez choisi comme répondeur (menu AI Agent > Other AI agent). Proposé seulement si votre
+  espace en a un. La conversation d'un prospect lui est confiée dès son premier message, et il y répond. Ses
+  réponses restent facturées, même pendant les 72 heures gratuites qui suivent un clic : au jeton pour l'agent
+  de Meta, sur votre crédit IA pour un agent IA.
 
-⚠️ S'il n'est pas proposé, l'écran dit pourquoi, et les deux raisons ne se confondent pas : soit l'agent
-de Meta n'est pas allumé pour votre espace, soit **nous n'avons pas pu lire son état** (dans ce cas,
-rechargez la page). Nous préférons ne pas vous le proposer quand nous ne savons pas, plutôt que de
+⚠️ S'il n'est pas proposé, l'écran dit pourquoi, et les deux raisons ne se confondent pas : soit votre espace
+n'a pas de répondeur automatique (ni l'agent de Meta allumé, ni un agent IA répondeur), soit **nous n'avons pas
+pu le lire** (dans ce cas, rechargez la page). Nous préférons ne pas vous le proposer quand nous ne savons pas, plutôt que de
 vous laisser créer une publicité dont personne ne répondrait aux prospects.
 
 ⚠️ Pour les personnes venues d'une publicité que vous pilotez ici, **aucune autre automation ne part**, ni
@@ -141,10 +143,11 @@ qu'une seule raison quand Meta en donne plusieurs : c'est par ce lien que vous v
 tout ce que cet écran ne montre pas (qui Meta a réellement visé avec Advantage+, placements, historique de
 diffusion).
 
-⚠️ **Si vous aviez choisi « l'agent de Meta répond » et que vous l'éteignez ensuite**, la publicité vous le
-dit. Ces prospects-là ne sont pas comptés parmi les non pris en charge, parce que l'entonnoir suppose qu'un
-agent leur répond : sans ce message, l'écran vous montrerait une publicité qui marche alors que personne
-n'est en face. Rallumez l'agent, ou changez la destination de la publicité.
+⚠️ **Si vous aviez choisi « le répondeur automatique » et que votre espace n'en a plus** (l'agent de Meta éteint
+et aucun agent IA répondeur), la publicité vous le dit. Ces prospects-là ne sont pas comptés parmi les non pris
+en charge, parce que l'entonnoir suppose qu'un agent leur répond : sans ce message, l'écran vous montrerait une
+publicité qui marche alors que personne n'est en face. Allumez l'agent de Meta ou choisissez un agent IA
+répondeur, ou changez la destination de la publicité.
 
 ## Marquer une personne comme qualifiée
 

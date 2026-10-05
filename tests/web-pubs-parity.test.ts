@@ -349,33 +349,33 @@ describe('le bandeau de l’agent de Meta éteint', () => {
   const source = (): string => readFileSync(join(process.cwd(), 'web/components/PubsListe.tsx'), 'utf8');
 
   it('🔴 l’écran reçoit l’état de l’agent, et pose le bandeau sur les pubs qui en dépendent', () => {
-    expect(source()).toContain("p.destination === 'agent_meta' && agentMetaOuvert === false");
+    expect(source()).toContain("p.destination === 'agent_meta' && repondeurOuvert === false");
   });
 
   it('🔴 la page passe l’ÉTAT LU à la LISTE, pas un littéral', () => {
     /**
      * ⚠️ L'ASSERTION EST ANCRÉE SUR LE BLOC DE PROPS DE `PubsListe`, et c'est tout l'intérêt. Sa version
-     * précédente cherchait `agentMetaOuvert={agentMetaOuvert}` N'IMPORTE OÙ dans le fichier : le
+     * précédente cherchait `repondeurOuvert={repondeurOuvert}` N'IMPORTE OÙ dans le fichier : le
      * `<PubFormulaire>` en portait une occurrence, donc remplacer celle de la LISTE par un littéral
      * laissait les 18 tests verts. Une relecture à froid l'a montré en posant la mutation.
      */
     const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
-    expect(page).toContain('comptePubId={etat.connexion.comptePubId} agentMetaOuvert={agentMetaOuvert}');
+    expect(page).toContain('comptePubId={etat.connexion.comptePubId} repondeurOuvert={repondeurOuvert}');
   });
 
   it('🔴 `null` NE VAUT PAS « éteint » : le bandeau exige un FAUX lu', () => {
-    // Le défaut corrigé : `!agentMetaOuvert` sortait aussi sur `null`, donc l'avertissement paraissait
+    // Le défaut corrigé : `!repondeurOuvert` sortait aussi sur `null`, donc l'avertissement paraissait
     // sur le chemin nominal avant que le réglage soit lu, et restait à demeure si la lecture échouait.
     // ⚠️ LES DEUX FICHIERS, pas seulement la liste : le défaut a vécu dans le FORMULAIRE la dernière
     // fois, et cette assertion ne regardait que l'écran de liste, donc pas là où il était.
     const form = readFileSync(join(process.cwd(), 'web/components/PubFormulaire.tsx'), 'utf8');
-    for (const fichier of [source(), form]) expect(fichier).not.toContain('!agentMetaOuvert');
+    for (const fichier of [source(), form]) expect(fichier).not.toContain('!repondeurOuvert');
     const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
     // ⚠️ ANCRÉES SUR LE SYMBOLE, pas sur un fragment qui traîne. `useState<boolean | null>(null)` seul
     // serait satisfait par le premier AUTRE tri-état ajouté à cet écran, et la garde redeviendrait
     // décorative sans que personne ne la touche : c'est exactement ce qui venait d'arriver à sa voisine.
-    expect(page).toContain('const [agentMetaOuvert, setAgentMetaOuvert] = useState<boolean | null>(null)');
-    expect(page).toContain('.catch(() => setAgentMetaOuvert(null))');
+    expect(page).toContain('const [repondeurOuvert, setRepondeurOuvert] = useState<boolean | null>(null)');
+    expect(page).toContain('.catch(() => setRepondeurOuvert(null))');
   });
 
   it('🔴 LE FORMULAIRE SE FERME SUR L’INCONNU, ET NE L’ANNONCE PAS COMME UNE PANNE', () => {
@@ -386,9 +386,9 @@ describe('le bandeau de l’agent de Meta éteint', () => {
      * client, alors que nous avons seulement échoué à lire NOTRE réglage.
      */
     const form = readFileSync(join(process.cwd(), 'web/components/PubFormulaire.tsx'), 'utf8');
-    expect(form).toContain("agentMetaOuvert === true && <option value=\"agent_meta\"");
-    expect(form).toContain('agentMetaOuvert === false && (');
-    expect(form).toContain('agentMetaOuvert === null && (');
+    expect(form).toContain("repondeurOuvert === true && <option value=\"agent_meta\"");
+    expect(form).toContain('repondeurOuvert === false && (');
+    expect(form).toContain('repondeurOuvert === null && (');
     /**
      * Et la page passe l'ÉTAT À SES DEUX CONSOMMATEURS, jamais une expression qui l'écrase.
      *
@@ -398,22 +398,26 @@ describe('le bandeau de l’agent de Meta éteint', () => {
      * occurrence transmette la variable nue.
      */
     const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
-    const passages = [...page.matchAll(/agentMetaOuvert=\{([^}]*)\}/g)].map((m) => m[1] ?? '');
+    const passages = [...page.matchAll(/repondeurOuvert=\{([^}]*)\}/g)].map((m) => m[1] ?? '');
     // ÉGALITÉ STRICTE, pas « au moins deux » : un troisième consommateur doit faire TOMBER ce test,
     // pour qu'on aille regarder ce qu'il fait de l'état, au lieu de passer inaperçu.
-    // ⚠️ CE COMPTE NE TRAVERSE PAS UN SPREAD : un `{...{ agentMetaOuvert }}` n'est pas vu, comme le
+    // ⚠️ CE COMPTE NE TRAVERSE PAS UN SPREAD : un `{...{ repondeurOuvert }}` n'est pas vu, comme le
     // contrôle des propriétés en trop du compilateur. C'est la limite connue de cette garde, et ce
     // qui la rend insuffisante à elle seule : le comportement, lui, est tenu par les cas Playwright.
     expect(passages).toHaveLength(2);
     // `trim`, parce qu'une espace ou un retour à la ligne dans le JSX ne change rien : une garde qui
     // tombe sur une remise en forme envoie chercher un écrasement de `null` qui n'existe pas.
-    for (const p of passages) expect(p.trim()).toBe('agentMetaOuvert');
+    for (const p of passages) expect(p.trim()).toBe('repondeurOuvert');
     /**
      * 🔴 ET L'ÉCRASEMENT PEUT REMONTER AU SETTER, ce que les passages ne voient pas : remettre
      * `r.mbaEnabled === true` à la lecture laisse les deux passages nus et refait le défaut une ligne
      * plus haut. C'est exactement le déplacement qui a produit ce lot, dans l'autre sens.
+     *
+     * ⚠️ LOT 5 : la lecture passe par `repondeurAutomatique` (`web/lib/repondeur.ts`, l'agent de Meta OU l'agent IA
+     * répondeur), et c'est elle qui garde le tri-état : `null` sans `mbaEnabled` lisible, tenu par
+     * `web/lib/repondeur.test.ts`. Le setter la reçoit nue.
      */
-    expect(page).toContain("typeof r.mbaEnabled === 'boolean' ? r.mbaEnabled : null");
+    expect(page).toContain('.then((r) => setRepondeurOuvert(repondeurAutomatique(r)))');
   });
 });
 

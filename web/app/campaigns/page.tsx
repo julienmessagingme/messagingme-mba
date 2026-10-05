@@ -764,8 +764,9 @@ function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
   const canal = (c: string) => (c === 'whatsapp' ? 'WhatsApp' : c === 'rcs' ? 'RCS' : t('E-mail', 'Email'));
   const devenir = (d?: string) => (d === 'inbox'
     ? t('les réponses reviennent à l’équipe', 'replies come back to the team')
+    // `mba` en base : le répondeur automatique de l'espace, l'agent de Meta ou l'agent IA désigné (lot 5).
     : d === 'mba'
-      ? t('l’agent de Meta répond', 'Meta’s agent replies')
+      ? t('le répondeur automatique répond', 'the automatic responder replies')
       : null);
 
   return (

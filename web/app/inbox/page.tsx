@@ -2365,7 +2365,8 @@ function ControlBadge({ owner }: { owner: ControlOwner }) {
     app_workflow: {
       label: t('scénario', 'scenario'),
       cls: 'bg-ink-100 text-ink-500',
-      title: t('Le scénario automatique répond.', 'The automated scenario is responding.'),
+      // Le répondeur automatique d'un espace qui a désigné un agent IA (lot 5) tient aussi le fil sous cette valeur.
+      title: t('Un scénario, ou l’agent IA répondeur de l’espace, répond.', 'A scenario, or the workspace’s AI responder agent, is responding.'),
     },
     app_human: {
       label: t('vous avez la main', 'you have the hand'),

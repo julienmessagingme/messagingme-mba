@@ -20,6 +20,9 @@ import {
 import { DOT_HEX } from '@/lib/ui';
 import { PastilleNumero } from '@/components/PastilleNumero';
 import { getMbaStatus, getMbaMessages, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
+import { lireRepondeurIa } from '@/lib/api-agent';
+import { avertissementAllumageMeta } from '@/lib/repondeur';
+import { useConfirmation } from '@/components/Confirmation';
 import { ChiffreMessagesTenus } from '@/components/EnteteAgent';
 import { agentMetaRepond, lireMessagesMba, type MessagesEcritsMba } from '@/lib/chiffres-canaux';
 import { useConnexionNumero, type ConnexionNumero } from '@/lib/connexion-numero';
@@ -57,6 +60,7 @@ interface Kpis {
 function AccueilInner({ session }: { session: Session }) {
   const t = useT();
   const { locale } = useLocale();
+  const confirmer = useConfirmation();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [account, setAccount] = useState<AccountStatusResponse | null>(null);
   const [mbaEnabled, setMbaEnabled] = useState(false);
@@ -240,9 +244,25 @@ function AccueilInner({ session }: { session: Session }) {
    * optimiste à défaire : on envoie une intention, on affiche ce que le serveur a réellement fait.
    */
   async function toggleMba() {
-    if (!isAdmin) return;
+    if (!isAdmin || savingMba) return;
+    // Occupé DÈS la lecture du répondeur : un second clic pendant qu'elle court lancerait un second geste.
     setSavingMba(true);
     setErreurMba(null);
+    /**
+     * 🔴 ALLUMER L'AGENT DE META RETIRE L'AGENT IA RÉPONDEUR DE CE RÔLE (lot 5 ; relecture de la livraison A, J7) : une
+     * seule voix, le serveur le remet à nul dans l'instruction même qui allume (`setMbaEnabled`). On le dit avant, en le
+     * nommant. Lu au moment du geste, pas au chargement : c'est l'état d'à présent qui compte. Une lecture ratée (compte
+     * non administrateur, route absente) n'empêche rien : le geste reste celui d'avant le lot.
+     */
+    if (!mbaEnabled) {
+      const avertissement = avertissementAllumageMeta(await lireRepondeurIa(session.tenantId).catch(() => null), t);
+      if (avertissement !== null && !(await confirmer({
+        titre: t('Allumer l’agent de Meta', 'Turn Meta’s agent on'), message: avertissement, confirmer: t('Allumer', 'Turn on'),
+      }))) {
+        setSavingMba(false);
+        return;
+      }
+    }
     try {
       const r = await putMbaActivation(session.tenantId, !mbaEnabled);
       setMbaEnabled(r.enabled);

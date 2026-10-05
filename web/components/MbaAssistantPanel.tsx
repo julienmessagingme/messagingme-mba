@@ -12,6 +12,11 @@ import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { lireRepondeurIa } from '@/lib/api-agent';
+import { avertissementAllumageMeta } from '@/lib/repondeur';
+
+/** L'opération qui allume l'agent de Meta (`activation.mettreEnService`, `src/mba/assistant/proposition.ts`). */
+const OPERATION_MISE_EN_SERVICE = 'activation.mettreEnService';
 
 /**
  * L'ASSISTANT DU META BUSINESS AGENT : on lui parle, il propose, on accepte.
@@ -66,7 +71,22 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [budgetEpuise, setBudgetEpuise] = useState(false);
+  /**
+   * Ce que la mise en service proposée retire, lu seulement quand le diff la porte (lot 5 ; relecture de la livraison
+   * A, J7) : allumer l'agent de Meta retire l'agent IA répondeur de ce rôle. Le diff NOMME ce qu'il va faire, c'est sa
+   * seule protection (pas de seconde confirmation, décision de Julien du 2026-09-14) : il doit donc le dire aussi.
+   */
+  const [miseEnServiceRetire, setMiseEnServiceRetire] = useState<string | null>(null);
   const finDuFil = useRef<HTMLDivElement>(null);
+  const metEnService = diff.some((o) => o.type === OPERATION_MISE_EN_SERVICE);
+  useEffect(() => {
+    if (!metEnService) { setMiseEnServiceRetire(null); return; }
+    let vivant = true;
+    void lireRepondeurIa(tenantId)
+      .then((r) => { if (vivant) setMiseEnServiceRetire(avertissementAllumageMeta(r, t)); })
+      .catch(() => { if (vivant) setMiseEnServiceRetire(null); });
+    return () => { vivant = false; };
+  }, [metEnService, tenantId, t]);
 
   const charger = useCallback(async () => {
     setChargement(true);
@@ -264,7 +284,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
         <div ref={finDuFil} />
       </div>
 
-      {diff.length > 0 && <Diff operations={diff} busy={busy} onAppliquer={() => { void appliquer(); }} />}
+      {diff.length > 0 && <Diff operations={diff} busy={busy} miseEnServiceRetire={miseEnServiceRetire} onAppliquer={() => { void appliquer(); }} />}
       {resultat && <Resultat resultat={resultat} />}
 
       {/*
@@ -327,9 +347,11 @@ function Bulle({ role, children }: { role: 'user' | 'assistant'; children: React
  * chaque ligne NOMME ce qu'elle va faire. Une suppression est signalée à part, parce qu'elle est la seule
  * chose qu'on ne peut pas défaire : Meta n'a pas de corbeille.
  */
-function Diff({ operations, busy, onAppliquer }: {
+function Diff({ operations, busy, miseEnServiceRetire, onAppliquer }: {
   operations: OperationAssistantMba[];
   busy: boolean;
+  /** Ce que la mise en service retire (l'agent IA répondeur), dit sur sa ligne ; `null` = rien à dire. */
+  miseEnServiceRetire: string | null;
   onAppliquer: () => void;
 }) {
   const t = useT();
@@ -346,6 +368,11 @@ function Diff({ operations, busy, onAppliquer }: {
               {suppression && (
                 <span className="ml-1 text-xs text-ink-500">
                   {t('(définitif : Meta ne garde pas de copie)', '(permanent: Meta keeps no copy)')}
+                </span>
+              )}
+              {o.type === OPERATION_MISE_EN_SERVICE && miseEnServiceRetire !== null && (
+                <span className="mt-0.5 block text-xs text-alerte-800" data-testid="mba-assistant-repondeur-retire">
+                  {miseEnServiceRetire}
                 </span>
               )}
             </li>

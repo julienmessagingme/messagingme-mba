@@ -419,9 +419,10 @@ async function main(): Promise<void> {
       workflowAdvance: {
         // `true` si un parcours attendait ce contact : lu AVANT l'avance, qui peut le terminer (réponse « à côté »,
         // dernier bloc). La remise à l'agent de Meta, dans le même job, laisse alors ce message au parcours.
-        advance: async (t, w, m, bp) => {
+        // `entrant` dit si c'est une réaction : un agent IA en pleine conversation ne répond pas à un emoji (lot 5, J1).
+        advance: async (t, w, m, bp, entrant) => {
           const enAttente = await runStore.findWaitingByWaId(t, w);
-          await workflowExecutor.advance(t, w, m, bp);
+          await workflowExecutor.advance(t, w, m, bp, 'whatsapp', entrant);
           return enAttente !== null;
         },
         // Une avance qui échoue atterrit dans le journal des erreurs que l'écran montre : sinon le job finirait en

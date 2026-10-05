@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: aab219
+source_empreinte: fee128
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -22,6 +22,11 @@ la liste, pour que sa réponse revienne au scénario : pendant un scénario, l'a
 lui confie la conversation, et il répond au message suivant du client ; « Reprendre la main » fait sortir le
 contact de la liste. Une conversation que l'agent n'a pas pu prendre (un client qui n'a pas partagé son numéro,
 par exemple) passe à votre équipe, dans « À traiter ».
+
+**Un agent IA peut le remplacer.** Un espace n'a qu'un répondeur : l'agent de Meta, ou un agent IA que vous
+choisissez comme répondeur de l'espace (menu AI Agent > Other AI agent), et choisir un agent IA éteint l'agent de
+Meta. À l'inverse, **allumer l'agent de Meta retire l'agent IA de ce rôle** : l'interrupteur de l'Accueil et celui
+des paramètres vous le disent avant, en le nommant, et l'assistant le précise sur la ligne de mise en service.
 
 Sous le menu AI Agent, l'entrée **MBA** ouvre ses **paramètres**, qui le règlent pour de vrai.
 

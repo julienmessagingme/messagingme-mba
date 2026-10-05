@@ -1,5 +1,6 @@
 import { request } from './http';
 import { lireMessagesTenus, type MessagesTenus } from './chiffres-canaux';
+import { lireReglageRepondeur, lireRepondeurAgentId, type ReglageRepondeur } from './repondeur';
 
 /** Une règle d'arrêt déclarée sur la fiche d'un agent. Son `code` devient le handle `sortie:<code>` du bloc. */
 export interface SortieAgent {
@@ -72,9 +73,46 @@ export type PatchAgent = Partial<Omit<AgentComplet, 'id' | 'contenu' | 'ficheVer
  * par `tests/web-logos-llm.test.ts`), donc la ligne retombe sur son repli sans rien casser.
  */
 export async function listAgents(tenantId: string, opts: { tous?: boolean } = {}): Promise<AgentResume[]> {
+  return (await listAgentsEtRepondeur(tenantId, opts)).agents;
+}
+
+/**
+ * La liste ET le répondeur de l'espace (lot 5), rendus par la même route : l'écran des agents dit lequel répond à tous
+ * les messages que personne ne tient. `repondeurAgentId` à `undefined` = une API qui ne le rend pas : on ne sait pas,
+ * et l'écran n'affiche pas le choix plutôt que d'annoncer « Aucun ».
+ */
+export async function listAgentsEtRepondeur(
+  tenantId: string, opts: { tous?: boolean } = {},
+): Promise<{ agents: AgentResume[]; repondeurAgentId: string | null | undefined }> {
   const q = opts.tous ? '?statut=tous' : '';
-  const r = await request<{ agents?: AgentResume[] }>(`/tenants/${tenantId}/agents${q}`);
-  return (r.agents ?? []).map((a) => ({ ...a, modele: a.modele ?? '' }));
+  const r = await request<{ agents?: AgentResume[]; repondeurAgentId?: unknown }>(`/tenants/${tenantId}/agents${q}`);
+  return {
+    agents: (r.agents ?? []).map((a) => ({ ...a, modele: a.modele ?? '' })),
+    repondeurAgentId: lireRepondeurAgentId(r.repondeurAgentId),
+  };
+}
+
+/**
+ * Désigne l'agent IA répondeur de l'espace, ou n'en désigne aucun (`null`). 🔴 Si l'agent de Meta est allumé, le
+ * serveur L'ÉTEINT pour tous les contacts de l'espace (une seule voix) : l'écran le fait confirmer avant. `null` en
+ * retour = une réponse illisible, l'écran relit la liste.
+ */
+export async function choisirRepondeur(tenantId: string, agentId: string | null): Promise<ReglageRepondeur | null> {
+  const r = await request<unknown>(`/tenants/${tenantId}/agents/repondeur`, {
+    method: 'PUT',
+    body: JSON.stringify({ agentId }),
+  });
+  return lireReglageRepondeur(r);
+}
+
+/**
+ * L'agent IA répondeur de l'espace, avec son nom, ou `null` s'il n'y en a pas. Lu au moment d'allumer l'agent de Meta,
+ * qui le retire de ce rôle (J7) : par la liste des agents ACTIFS, puisque seul un actif peut l'être.
+ */
+export async function lireRepondeurIa(tenantId: string): Promise<{ id: string; label: string } | null> {
+  const { agents, repondeurAgentId } = await listAgentsEtRepondeur(tenantId);
+  if (typeof repondeurAgentId !== 'string') return null;
+  return { id: repondeurAgentId, label: agents.find((a) => a.id === repondeurAgentId)?.label ?? '' };
 }
 
 /**

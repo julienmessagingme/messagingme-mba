@@ -245,19 +245,21 @@ export function heuresDOuvertureReglees(
  *
  * 🔴 IL SUIT L'ESPACE, ET LE CONTRAIRE ÉTAIT UN DÉFAUT (relevé en revue le 2026-09-14).
  *
- * AVEC l'agent de Meta : `mba`, parce que c'est le comportement RÉEL sans réglage (il est le répondeur
- * primaire du numéro, donc ne rien faire revient à le laisser répondre). Un défaut `inbox` ferait prendre le
- * fil sur toute campagne dont personne n'a touché la question, ce qui changerait le produit en silence.
+ * AVEC un répondeur automatique (l'agent de Meta, ou depuis le lot 5 un agent IA désigné répondeur de l'espace) :
+ * `mba`, « le répondeur automatique prend la main », parce que c'est le comportement RÉEL sans réglage (la remise
+ * « personne ne suit » lui confie la réponse, donc ne rien faire revient à le laisser répondre). Un défaut `inbox`
+ * ferait prendre le fil sur toute campagne dont personne n'a touché la question, ce qui changerait le produit en
+ * silence.
  *
- * SANS lui : `inbox`, sinon le défaut désigne une option que l'écran GRISE au même moment. Le client ne
+ * SANS répondeur : `inbox`, sinon le défaut désigne une option que l'écran GRISE au même moment. Le client ne
  * pouvait pas en sortir sans y penser, et ses réponses n'allaient nulle part : ni robot pour répondre, ni
  * équipe à qui les confier. C'est le pire des trois états possibles.
  *
  * ⚠️ ELLE VIT ICI ET NON DANS LE CADRE D'ÉTAGE, pour être éprouvée : la suite unitaire du front est scopée
  * aux fonctions pures de `lib/`, par conception.
  */
-export function devenirParDefaut(mbaEnabled: boolean): 'mba' | 'inbox' {
-  return mbaEnabled ? 'mba' : 'inbox';
+export function devenirParDefaut(repondeurAutomatique: boolean): 'mba' | 'inbox' {
+  return repondeurAutomatique ? 'mba' : 'inbox';
 }
 
 export function assignationProposable(

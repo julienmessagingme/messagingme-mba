@@ -88,14 +88,15 @@ function pourcent(v: number | null, t: T): string {
 }
 
 export function PubsListe({
-  tenantId, publicites, recharger, comptePubId, agentMetaOuvert,
+  tenantId, publicites, recharger, comptePubId, repondeurOuvert,
   brouillons, ouvrirBrouillon, jeterBrouillon,
 }: {
   tenantId: string; publicites: Publicite[]; recharger: () => Promise<void>;
   /** Le compte publicitaire connecté, pour ouvrir la campagne dans le Gestionnaire de Meta. */
   comptePubId: string | null;
   /**
-   * L'agent de Meta répond-il ENCORE sur ce numéro ?
+   * Un répondeur automatique répond-il ENCORE sur ce numéro : l'agent de Meta, ou l'agent IA répondeur de l'espace
+   * (lot 5) ? La destination `agent_meta` ne prend rien, elle laisse les prospects à celui des deux qui répond.
    *
    * 🔴 IL PEUT S'ÉTEINDRE APRÈS LA CRÉATION, et c'est le seul état où cet écran ment sans le savoir. Le
    * formulaire ne propose « l'agent de Meta répond » que si l'agent est ouvert POUR DE BON (lu à `true`),
@@ -109,7 +110,7 @@ export function PubsListe({
    * ouverture de l'écran, avant que le réglage soit lu, puis disparaissait ; et il restait à demeure si
    * la lecture échouait. Même règle que `enPauseChezMeta` : on n'invente pas un état qu'on n'a pas lu.
    */
-  agentMetaOuvert: boolean | null;
+  repondeurOuvert: boolean | null;
   /** Les brouillons de l'espace, sans leurs visuels : ils forment le premier groupe de la liste. */
   brouillons: BrouillonPub[];
   ouvrirBrouillon: (id: string) => Promise<void>;
@@ -237,7 +238,7 @@ export function PubsListe({
               <p className="mt-0.5 text-xs text-ink-500" data-testid={`pub-statut-${p.id}`}>
                 {libelleLigne(p, phase(p), t)}
                 {' · '}
-                {p.destination === 'scenario' ? t('Scénario', 'Scenario') : t('Agent de Meta', 'Meta agent')}
+                {p.destination === 'scenario' ? t('Scénario', 'Scenario') : t('Répondeur automatique', 'Automatic responder')}
                 {p.budgetTotal !== null ? ` · ${t('budget')} ${arrondi(p.budgetTotal)}` : ''}
               </p>
               {periode(p, locale, t) !== null && (
@@ -246,15 +247,15 @@ export function PubsListe({
               {p.motifRefus !== null && (
                 <p className="mt-1 text-xs text-danger-700" data-testid="pub-motif">{p.motifRefus}</p>
               )}
-              {p.destination === 'agent_meta' && agentMetaOuvert === false && (
+              {p.destination === 'agent_meta' && repondeurOuvert === false && (
                 /* 🔴 PLUS PERSONNE NE RÉPOND, ET RIEN D'AUTRE NE LE DIRAIT. Ces prospects ne sont pas
                    comptés « non pris en charge » (l'entonnoir suppose qu'un agent répond), donc sans ce
                    bandeau l'écran affiche une publicité qui marche alors que ses prospects n'ont personne
                    en face. ⚠️ Il ne regarde PAS si elle diffuse : la phrase a dit « pendant qu'elle brûle
                    du budget » jusqu'à ce qu'une relecture note qu'elle sort aussi sur une pub en pause. */
                 <p className="mt-1 text-xs text-alerte-700" data-testid={`pub-agent-eteint-${p.id}`}>
-                  {t('Cette publicité confie ses prospects à l’agent de Meta, qui ne répond plus sur ce numéro. Rallumez-le, ou changez la destination de la publicité.',
-                     'This ad hands its leads to the Meta agent, which no longer answers on this number. Turn it back on, or change the ad’s destination.')}
+                  {t('Cette publicité confie ses prospects au répondeur automatique, et plus personne ne répond sur ce numéro (ni l’agent de Meta, ni un agent IA répondeur). Allumez l’un des deux, ou changez la destination de la publicité.',
+                     'This ad hands its leads to the automatic responder, and nobody answers on this number anymore (neither Meta’s agent nor an AI responder agent). Turn one of them on, or change the ad’s destination.')}
                 </p>
               )}
               {lienGestionnaireMeta(comptePubId, p.campagneId) !== null && (

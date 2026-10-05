@@ -61,4 +61,17 @@ describe('parité entre le catalogue MCP et l’écran qui le documente', () => 
     expect(ligne).toContain(`${MAX_FICHES_PAR_AJOUT} au plus par appel`);
     expect(ligne).toContain(`up to ${MAX_FICHES_PAR_AJOUT} per call`);
   });
+
+  /**
+   * 🔴 RELECTURE DE LA LIVRAISON B DU LOT 5 (JB6). Depuis `set_default_responder`, un agent IA PEUT répondre seul, comme
+   * répondeur de l'espace. La page publique (section « Ce qu'il ne fait pas ») et `features.md` affirmaient l'inverse,
+   * et la description de l'outil, listé dans le tableau de la même page, les contredisait.
+   */
+  it('🔴 ni la page ni `features.md` ne disent plus qu’un agent IA ne répond jamais seul : set_default_responder y est nommé', () => {
+    const page = readFileSync(new URL('../web/app/developers/mcp/page.tsx', import.meta.url), 'utf8');
+    expect(page).not.toMatch(/ne répond pas seul|does not answer on its own|que dans un scénario publié/);
+    expect(page).toContain('set_default_responder');
+    const features = readFileSync(new URL('../features.md', import.meta.url), 'utf8');
+    expect(features).not.toMatch(/ne répond encore à personne tout seul|il ne parle que dans le bloc Agent IA/);
+  });
 });

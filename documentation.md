@@ -469,7 +469,17 @@ scénario construit par le client. Les invariants :
   rendrait alors `false`, et la dernière phrase de l'agent serait jetée.
 - **Le démarreur** (`creerDemarreurRepondeur`, `src/repondeur/demarrer.ts`) lit l'agent (actif) et le solde AVANT de
   démarrer : à sec, rien ne démarre (ni parcours, ni session), la conversation passe à l'équipe et l'alerte part. Le
-  parcours naît en ayant reçu le message déclencheur (`last_message_id`) : redélivré, il n'enfile pas un second tour.
+  parcours naît en ayant reçu le message déclencheur (`last_message_id`, le dernier du contact qui n'est pas une
+  réaction) : redélivré, il n'enfile pas un second tour.
+- 🔴 **UNE RÉACTION NE FAIT PAS PARLER UN AGENT IA**, comme l'agent de Meta se tait sur un pouce levé. Elle ne démarre
+  pas le répondeur (la remise « personne ne suit », `reactionsSeules`), et en pleine conversation elle n'enfile pas
+  de tour : la porte Meta
+  passe le TYPE du message à l'avance (`WorkflowAdvanceDeps.advance`, `entrant.reaction`, câblé dans `src/worker.ts`),
+  et la branche agent de `WorkflowExecutor.advance` sort sans réveiller l'agent ni RIEN écrire : `setStateSiEncoreSur`
+  réécrit `resume_at` sans coalesce, et l'échéance d'inactivité posée par le dernier tour (la sortie `timeout`) serait
+  effacée sans qu'aucun tour ne la repose. Une réaction redélivrée rentre et ressort de même (sa mesure compte double).
+  Son `buttonPayload` (l'identifiant du message visé) ne suffit pas à la reconnaître : un retrait de réaction n'a pas
+  d'emoji, une réaction peut arriver sans identifiant.
   Le contrôle du fil se construit avant l'exécuteur : le socle branche le démarreur par une liaison tardive qui LÈVE
   tant qu'elle n'est pas faite (`src/socle.ts`, tenue par `tests/socle.test.ts`).
 - **L'alerte de crédit épuisé** (`src/repondeur/alerte-credit.ts`) : un e-mail Resend aux admins actifs de l'espace,
@@ -1311,7 +1321,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   « personne ne suit » garde les mêmes gardes, dans le même ordre (délai de l'équipe, parcours en attente, fil de
   test, contact désabonné ou bloqué, numéro), puis démarre l'agent IA (`DepsControleDuFil.repondeur`, REQUIS) au
   lieu de confier à Meta. Un fil de l'équipe dont le délai est écoulé revient d'abord à `app_workflow` (le
-  lancement du répondeur ne le prend jamais à un opérateur). Un message redélivré par Meta ne démarre rien. Si
+  lancement du répondeur ne le prend jamais à un opérateur). Un message redélivré par Meta ne démarre rien, une
+  RÉACTION non plus (un emoji, ou son retrait : `reactionsSeules`, lu sur le TYPE par la remise, jamais sur un texte
+  vide, puisque le message « à côté » confié plus bas arrive sans texte). Si
   l'agent ne peut pas répondre (crédit épuisé, modèle absent, agent inactif, lancement refusé), la conversation
   passe à l'équipe avec une demande. Les autres gestes ne changent pas : `mba_enabled` est faux par construction,
   donc « Rendre la main », la fin de parcours et le balayage laissent le fil à `app_workflow`, et le prochain

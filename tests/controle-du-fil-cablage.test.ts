@@ -138,6 +138,30 @@ describe('le câblage d’un scénario nomme le scénario à CHAQUE passage à l
 });
 
 /**
+ * 🔴 LE MESSAGE « À CÔTÉ » CONFIÉ AU RÉPONDEUR IA EST NOMMÉ (lot 5 ; relecture de la livraison A, J4). La fin d'un
+ * parcours confie au répondeur le message que l'avance a reçu (`confierAuRepondeur`) : le parcours du répondeur doit
+ * naître en l'ayant reçu, sinon une redélivrance de ce message enfile un second tour, donc une seconde réponse. Monté
+ * comme le cas du dessus, et exécuté : un câblage qui oublierait `messageDeclencheur` compilerait (il est optionnel
+ * dans `EntreeDuContact`).
+ */
+describe('le câblage d’un scénario confie le message « à côté » au répondeur EN LE NOMMANT', () => {
+  it('🔴 `confierAuRepondeur` passe le message à la remise, sans texte et sans réouverture', async () => {
+    const appels: unknown[][] = [];
+    const inerte = {} as never;
+    const { executor } = buildWorkflowRuntime({
+      pool: inerte, queue: { enqueue: async () => {} }, dryRun: true, repo: inerte, contactStore: inerte,
+      inboxStore: inerte, settingsStore: inerte, workflowStore: inerte,
+      metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
+      numeroDeLEspace: async () => null, runStore: inerte,
+      fil: { remettreSiPersonneNeSuit: async (...a: unknown[]) => { appels.push(a); } } as never,
+    });
+    const { confierAuRepondeur } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
+    await confierAuRepondeur('t1', '33600000001', 'wamid.C');
+    expect(appels).toEqual([['t1', '33600000001', '', { rouverte: false, messageDeclencheur: 'wamid.C' }]]);
+  });
+});
+
+/**
  * 🔴 LES TROIS CHEMINS D'ESCALADE POSENT LE MÊME DRAPEAU (arbitrage de Julien du 2026-09-23, migration 0164).
  *
  * L'agent de Meta, le bloc « passer à un humain » d'un scénario et l'escalade d'un agent IA promettent la même

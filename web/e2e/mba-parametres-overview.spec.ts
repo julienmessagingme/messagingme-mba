@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockMba, appelsMba } from './support/mba';
+import { mockMba, appelsMba, repondeurIa } from './support/mba';
 import { repondre } from './aide/confirmation';
 
 /**
@@ -33,6 +33,36 @@ test.describe('MBA Paramètres : vue d’ensemble', () => {
     // L'assertion qui compte : sans remontée de la réponse dans l'état, l'appel partirait et l'écran
     // continuerait d'afficher « éteint ». L'opérateur ne saurait pas si son geste a pris.
     await expect(page.getByTestId('mba-rollout-toggle')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * 🔴 LOT 5, RELECTURE DE LA LIVRAISON A (J7), TENU DEPUIS LA RELECTURE DE B (JB3 b) : allumer l'agent de Meta retire
+   * l'agent IA répondeur de ce rôle, et la confirmation de CET interrupteur le dit en le nommant, comme l'Accueil.
+   */
+  test('🔴 J7 : avec un agent IA répondeur, la confirmation d’allumage le nomme, et un refus n’envoie rien', async ({ page }) => {
+    const calls = await mockMba(page, { custom: repondeurIa() });
+    await page.goto('/mba/parametres');
+    await page.getByTestId('mba-rollout-toggle').click();
+    await repondre(page, false, /L’agent IA « Léa » est aujourd’hui le répondeur de l’espace. Allumer l’agent de Meta le retire de ce rôle/);
+    await expect.poll(() => appelsMba(calls, 'PUT', '/rollout').length).toBe(0);
+  });
+
+  /**
+   * 🔴 JB8 : OCCUPÉ DÈS LA LECTURE DU RÉPONDEUR, comme l'Accueil. Libre pendant cette lecture, l'interrupteur acceptait
+   * un second clic, donc deux confirmations, et deux bascules si on acceptait les deux.
+   */
+  test('🔴 JB8 : l’interrupteur est indisponible pendant la lecture du répondeur, puis libre si on refuse', async ({ page }) => {
+    let liberer: () => void = () => {};
+    const tenue = new Promise<void>((r) => { liberer = r; });
+    await mockMba(page, { custom: repondeurIa(tenue) });
+    await page.goto('/mba/parametres');
+    const toggle = page.getByTestId('mba-rollout-toggle');
+    await expect(toggle).toBeEnabled();
+    await toggle.click();
+    await expect(toggle).toBeDisabled();
+    liberer();
+    await repondre(page, false, /« Léa »/);
+    await expect(toggle).toBeEnabled();
   });
 
   test('🔴 un refus de Meta s’affiche tel quel et la page tient debout', async ({ page }) => {

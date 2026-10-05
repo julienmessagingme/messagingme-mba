@@ -11,9 +11,10 @@ import { logoDuModele, pastilleDuModele } from '@/lib/logos-llm';
 import { useT, useLocale } from '@/lib/i18n';
 import { cardCls, inputCls, kickerCls } from '@/lib/ui';
 import {
-  createAgent, deleteAgent, getAgent, getSoldeAgent, listAgents, patchAgent,
+  createAgent, deleteAgent, getAgent, getSoldeAgent, listAgentsEtRepondeur, patchAgent,
   type AgentComplet, type AgentResume, type PatchAgent, type SortieAgent,
 } from '@/lib/api-agent';
+import { RepondeurEspace } from '@/components/RepondeurEspace';
 import { eurosDepuisMicro, SOLDE_BAS_MICRO_EUR } from '@/lib/agent-solde';
 import { CodeSortieInput } from '@/components/AgentSorties';
 import { AgentConnaissance } from '@/components/AgentConnaissance';
@@ -55,10 +56,21 @@ function libellePrix(m: ModeleProposable, locale: Locale, t: (fr: string, en?: s
  * Écran de réglage d'un agent IA, calqué sur celui de l'agent Meta : une liste, puis une fiche à onglets.
  *
  * 🔴 CE QUE « ACTIVÉ » VEUT DIRE ICI, et ce n'est pas ce qu'on croit. Un agent actif n'est pas un agent qui
- * « répond à tout » : c'est un agent PROPOSABLE dans un scénario. Il ne parle que là où le client a posé un
- * bloc agent et l'y a désigné. C'est pour ça que l'activation vit sur la fiche, agent par agent, et non sur
- * un interrupteur d'accueil comme l'agent de Meta, qui lui est unique par workspace.
+ * « répond à tout » : c'est un agent PROPOSABLE dans un scénario, ou comme répondeur de l'espace. Il ne parle que là
+ * où le client a posé un bloc agent et l'y a désigné, ou partout si le client en a fait le répondeur de l'espace
+ * (`RepondeurEspace`, lot 5), un choix UNIQUE par espace, comme l'agent de Meta qu'il remplace alors. C'est pour ça
+ * que l'activation vit sur la fiche, agent par agent, et le répondeur au-dessus de la liste.
  */
+
+/**
+ * Ce que perd l'espace quand son agent RÉPONDEUR est supprimé : le serveur le retire de ce rôle (la clé étrangère, en
+ * `on delete set null`), et plus aucun agent IA ne répond aux messages que personne ne tient. Dit AVANT le geste (revue
+ * du plan du lot 5, cas 3), comme sa désactivation (`changerStatut`).
+ */
+const QUITTE_LE_ROLE = (t: (fr: string, en?: string) => string): string => t(
+  'Il est aussi le répondeur de l’espace : plus aucun agent IA ne répondra aux messages que personne ne tient.',
+  'It is also the workspace responder: no AI agent will answer the messages nobody handles anymore.',
+);
 
 type Onglet = 'construction' | 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele'
   | 'historique' | 'tester';
@@ -111,12 +123,20 @@ function Ecran({ tenantId }: { tenantId: string }) {
   // Le solde prépayé du workspace. `null` = aucun solde sur cette instance, on n'affiche rien plutôt que
   // d'annoncer « 0 € » à un client dont le compte n'est simplement pas branché.
   const [solde, setSolde] = useState<number | null>(null);
+  /**
+   * Le répondeur de l'espace (lot 5), rendu avec la liste. `undefined` = on ne sait pas (API qui ne le rend pas) :
+   * le choix n'est alors pas affiché, plutôt que d'annoncer « Aucun » sur un réglage qu'on n'a pas lu.
+   */
+  const [repondeurAgentId, setRepondeurAgentId] = useState<string | null | undefined>(undefined);
 
   const charger = useCallback(async () => {
     // `tous: true` : c'est l'écran qui CRÉE les agents, il doit voir ses propres brouillons. Le builder, lui,
     // n'appelle jamais avec ce drapeau.
     try {
-      setAgents(await listAgents(tenantId, { tous: true }));
+      const liste = await listAgentsEtRepondeur(tenantId, { tous: true });
+      setAgents(liste.agents);
+      // Relu à chaque rechargement : désactiver ou supprimer l'agent répondeur le retire de ce rôle, côté serveur.
+      setRepondeurAgentId(liste.repondeurAgentId);
       setSolde(await getSoldeAgent(tenantId));
     } catch (err) {
       setErreur(erreurDeChargement(err, t));
@@ -254,7 +274,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
     if (!(await confirmer({ titre: t('Supprimer l’agent', 'Delete the agent'), message: t(
       `Supprimer « ${cible.label} » ? Ses conversations, ses outils et sa base de connaissance partent avec lui, et les blocs de scénario qui l’utilisent cesseront de répondre.`,
       `Delete “${cible.label}”? Its conversations, tools and knowledge base go with it, and the scenario blocks using it will stop answering.`,
-    ), confirmer: t('Supprimer', 'Delete') }))) return;
+    ) + (cible.id === repondeurAgentId ? ` ${QUITTE_LE_ROLE(t)}` : ''), confirmer: t('Supprimer', 'Delete') }))) return;
     setBusy(true);
     setErreur(null);
     try {
@@ -315,6 +335,24 @@ function Ecran({ tenantId }: { tenantId: string }) {
     }
   }
 
+  /**
+   * Activer ou désactiver, depuis l'en-tête de la fiche. 🔴 Désactiver l'agent RÉPONDEUR de l'espace le retire de ce
+   * rôle (le serveur, `oublierRepondeur`) : plus aucun agent IA ne répond alors aux messages que personne ne tient. On
+   * le fait confirmer, comme la suppression ; tout autre changement de statut part sans question, comme avant.
+   */
+  async function changerStatut(status: AgentComplet['status']) {
+    if (!ouvert || busy) return;
+    if (status !== 'active' && ouvert.id === repondeurAgentId && !(await confirmer({
+      titre: t('Désactiver l’agent', 'Deactivate the agent'),
+      message: t(
+        `« ${ouvert.label} » est le répondeur de l’espace : le désactiver le retire de ce rôle, et plus aucun agent IA ne répondra aux messages que personne ne tient.`,
+        `“${ouvert.label}” is the workspace responder: deactivating it removes it from that role, and no AI agent will answer the messages nobody handles anymore.`,
+      ),
+      confirmer: t('Désactiver', 'Deactivate'),
+    }))) return;
+    await enregistrer({ status });
+  }
+
   if (ouvert) {
     return (
       <div className="mx-auto flex max-w-liste flex-col gap-4">
@@ -349,7 +387,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
           pastille={pastilleDuModele(ouvert.modele)}
           nom={ouvert.label}
           precision={ouvert.modele}
-          etat={<Activation agent={ouvert} busy={busy} onChange={(status) => void enregistrer({ status })} />}
+          etat={<Activation agent={ouvert} busy={busy} onChange={(status) => void changerStatut(status)} />}
           etapes={manques}
           messagesTenus={messages}
           onOnglet={(cle) => aller(ouvert.id, lireOnglet(cle))}
@@ -474,12 +512,28 @@ function Ecran({ tenantId }: { tenantId: string }) {
         <TitrePage>{t('Vos agents', 'Your agents')}</TitrePage>
         <IntroPage>
           {t(
-            'Un agent ne répond que là où vous posez un bloc « Agent IA » dans un scénario.',
-            'An agent only answers where you place an “AI agent” block in a scenario.',
+            'Un agent répond là où vous posez un bloc « Agent IA » dans un scénario, et à tout message que personne ne tient si vous en faites le répondeur de l’espace.',
+            'An agent answers where you place an “AI agent” block in a scenario, and every message nobody handles if you make it the workspace responder.',
           )}
         </IntroPage>
       </div>
       {erreur && <MbaNotice kind="error" testid="agent-erreur">{erreur}</MbaNotice>}
+      {/* Le répondeur, une fois la liste lue : il propose les agents actifs de CETTE liste, et ne s'affiche pas tant qu'on
+          ne sait pas lequel l'est (`undefined`), plutôt que d'annoncer « Aucun » sur un réglage qu'on n'a pas lu. */}
+      {agents !== null && repondeurAgentId !== undefined && (
+        <RepondeurEspace
+          tenantId={tenantId}
+          agents={agents}
+          repondeurAgentId={repondeurAgentId}
+          soldeEpuise={solde !== null && solde <= 0}
+          onChange={(r) => {
+            // Une réponse illisible, ou une erreur : on relit, on ne suppose pas. L'état de l'agent de Meta, le bloc le
+            // relit lui-même (au geste, après une erreur, et à chaque réussite).
+            if (r === null) { void charger(); return; }
+            setRepondeurAgentId(r.repondeurAgentId);
+          }}
+        />
+      )}
       <div className={`${cardCls} flex flex-col gap-3`}>
         <label className="text-sm font-medium text-ink-900">{t('Créer un agent', 'Create an agent')}</label>
         <div className="flex flex-wrap gap-2">

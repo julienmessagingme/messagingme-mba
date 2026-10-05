@@ -372,6 +372,14 @@ export interface CapacitesEspace {
    */
   mbaEnabled: boolean;
   /**
+   * Un RÉPONDEUR AUTOMATIQUE répond-il aux messages que personne ne tient : l'agent de Meta allumé, ou un agent IA
+   * désigné répondeur de l'espace (lot 5, `repondeurAutomatique`, `lib/repondeur.ts`) ? C'est lui, et pas `mbaEnabled`,
+   * qui décide du choix « le répondeur automatique prend la main » d'un étage : ce choix ne prend rien, il laisse la
+   * réponse à la remise « personne ne suit », qui la confie au répondeur de l'espace, quel qu'il soit. `mbaEnabled`
+   * reste pour le bloc de l'agent de Meta des scénarios créés en ligne.
+   */
+  repondeurAutomatique: boolean;
+  /**
    * Le connecteur HubSpot est-il branché sur cet espace ? Faux = la source HubSpot n'est pas AFFICHÉE.
    *
    * ⚠️ MASQUÉE ET NON GRISÉE, à l'inverse du RCS, et c'est une demande de Julien du 2026-08-26 reprise
@@ -633,7 +641,7 @@ export function AssistantCampagne({
    */
   const modifierContenu = (rang: number, patch: Partial<ContenuEtage>): void => setEtat((e) => ({
     ...e,
-    contenus: { ...e.contenus, [rang]: { ...(e.contenus[rang] ?? contenuVide(capacites.mbaEnabled)), ...patch } },
+    contenus: { ...e.contenus, [rang]: { ...(e.contenus[rang] ?? contenuVide(capacites.repondeurAutomatique)), ...patch } },
   }));
 
   /**

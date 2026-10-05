@@ -16,6 +16,7 @@ import type { AgentSession, AgentSessionStatus, AgentSessionStore } from '../src
 import type { AgentTurnJob } from '../src/agent/turn-job';
 import { runTurn, type RunTurnDeps } from '../src/agent/run-turn';
 import { processRemiseMbaEntrant } from '../src/webhooks/remise-mba-entrant';
+import { processWorkflowAdvance } from '../src/webhooks/workflow-advance';
 import { requalifierLesStandby } from '../src/webhooks/standby-hors-liste';
 import { runControlSweep } from '../src/inbox/control-sweep';
 import { unRepondeurRepond } from '../src/inbox/fil';
@@ -97,7 +98,9 @@ describe('le démarreur : l’agent peut-il répondre ?', () => {
 /** Un espace dont l'agent IA est le répondeur : l'agent de Meta éteint, comme le CHECK d'une seule voix l'impose. */
 const repondeur = (o: OptionsBanc = {}) => bancDuFil({ mbaEnabled: false, repondeurAgentId: AGENT, ...o });
 const MSG = 'Bonjour, vous livrez à Lyon ?';
-const entree = (o: { rouverte?: boolean; redelivre?: boolean } = {}) => ({ rouverte: o.rouverte ?? false, messageDeclencheur: 'wamid.1', redelivre: o.redelivre ?? false });
+const entree = (o: { rouverte?: boolean; redelivre?: boolean; reactionsSeules?: boolean } = {}) => ({
+  rouverte: o.rouverte ?? false, messageDeclencheur: 'wamid.1', redelivre: o.redelivre ?? false, reactionsSeules: o.reactionsSeules ?? false,
+});
 
 describe('la remise « personne ne suit » démarre le répondeur IA, après les mêmes gardes que l’agent de Meta', () => {
   it('🔴 sans répondeur, rien ne change : l’agent de Meta reçoit le message, le démarreur n’est jamais appelé', async () => {
@@ -123,6 +126,11 @@ describe('la remise « personne ne suit » démarre le répondeur IA, après les
     { nom: 'une conversation de test, sur ce chemin automatique', o: { conversations: { w: { owner: 'app_workflow', test: true } } } },
     { nom: 'aucun numéro connecté', o: { numero: null } },
     { nom: 'un message redélivré par Meta', o: {}, e: { redelivre: true } },
+    // Relecture du lot 5, J1 : un pouce levé (ou son retrait) n'appelle pas de réponse, comme chez l'agent de Meta.
+    { nom: 'rien que des réactions', o: {}, e: { reactionsSeules: true } },
+    // 🔴 JB2 (RS1) : la garde passe AVANT la bascule `app_human -> app_workflow`. Après, un pouce posé une fois le délai
+    // de l'équipe écoulé sortirait la conversation d'« À traiter » sans que personne ne réponde.
+    { nom: 'rien que des réactions, sur un fil de l’équipe au délai écoulé', o: { conversations: { w: { owner: 'app_human', changedAt: null } } }, e: { reactionsSeules: true } },
   ];
   for (const g of GARDES) {
     it(`🔴 ${g.nom} : l’agent IA ne démarre pas, le fil ne bouge pas`, async () => {
@@ -177,14 +185,37 @@ describe('la remise « personne ne suit » démarre le répondeur IA, après les
   });
 });
 
-describe('ce que la remise dit au répondeur : le dernier message, et la redélivrance', () => {
-  const LOT = (messages: Array<{ id: string; body: string }>): unknown => ({
-    object: 'whatsapp_business_account',
-    entry: [{ id: 'waba1', changes: [{ field: 'messages', value: {
-      messaging_product: 'whatsapp', metadata: { display_phone_number: '33525680250', phone_number_id: 'pn1' },
-      messages: messages.map((m) => ({ from: WA, id: m.id, timestamp: '1789465356', type: 'text', text: { body: m.body } })),
-    } }] }],
-  });
+/**
+ * Un message du contact tel que Meta l'envoie : un texte, ou une RÉACTION (un emoji posé sur un de nos messages,
+ * `vise`). `reaction: ''` est un retrait de réaction ; `vise: null`, une réaction sans identifiant du message visé.
+ */
+type MessageDuLot = { id: string; body: string } | { id: string; reaction: string; vise?: string | null } | { id: string; sansTexte: keyof typeof SANS_TEXTE };
+const POUCE = String.fromCodePoint(0x1f44d);
+/**
+ * Des messages SANS TEXTE qui ne sont pas des réactions : `contentOf` rend `body: null` pour une fiche de contact, une
+ * commande du catalogue ou un type que Meta ne sait pas transmettre. Le client a écrit quelque chose, on lui doit une
+ * réponse : c'est ce qui interdit de reconnaître une réaction à son texte vide.
+ */
+const SANS_TEXTE = {
+  contacts: { contacts: [{ name: { formatted_name: 'Léa Martin' }, phones: [{ phone: '+33 6 00 00 00 00' }] }] },
+  order: { order: { catalog_id: 'cat-1', product_items: [{ product_retailer_id: 'sku-1', quantity: 1, item_price: 12, currency: 'EUR' }] } },
+  unsupported: { errors: [{ code: 131051, title: 'Message type unknown' }] },
+} as const;
+const messageMeta = (m: MessageDuLot): Record<string, unknown> => {
+  const base = { from: WA, id: m.id, timestamp: '1789465356' };
+  if ('reaction' in m) return { ...base, type: 'reaction', reaction: { ...(m.vise === null ? {} : { message_id: m.vise ?? 'wamid.out' }), emoji: m.reaction } };
+  if ('sansTexte' in m) return { ...base, type: m.sansTexte, ...SANS_TEXTE[m.sansTexte] };
+  return { ...base, type: 'text', text: { body: m.body } };
+};
+const LOT = (messages: MessageDuLot[]): unknown => ({
+  object: 'whatsapp_business_account',
+  entry: [{ id: 'waba1', changes: [{ field: 'messages', value: {
+    messaging_product: 'whatsapp', metadata: { display_phone_number: '33525680250', phone_number_id: 'pn1' },
+    messages: messages.map(messageMeta),
+  } }] }],
+});
+
+describe('ce que la remise dit au répondeur : le dernier message, la redélivrance, les réactions', () => {
   const remises = () => {
     const vues: Array<{ waId: string; contenu: string; entree: unknown }> = [];
     return { vues, deps: { remettre: async (_t: string, waId: string, contenu: string, e: unknown) => { vues.push({ waId, contenu, entree: e }); } } };
@@ -193,7 +224,34 @@ describe('ce que la remise dit au répondeur : le dernier message, et la redéli
   it('🔴 deux messages du même contact dans un lot : UNE remise, le DERNIER message nommé', async () => {
     const r = remises();
     await processRemiseMbaEntrant(await entrantsDe(LOT([{ id: 'wamid.1', body: 'Bonjour' }, { id: 'wamid.2', body: 'Vous livrez ?' }])), r.deps);
-    expect(r.vues).toEqual([{ waId: WA, contenu: 'Bonjour\nVous livrez ?', entree: { rouverte: false, messageDeclencheur: 'wamid.2', redelivre: false } }]);
+    expect(r.vues).toEqual([{
+      waId: WA, contenu: 'Bonjour\nVous livrez ?', entree: { rouverte: false, messageDeclencheur: 'wamid.2', redelivre: false, reactionsSeules: false },
+    }]);
+  });
+
+  /**
+   * 🔴 RELECTURE DU LOT 5, J1 : UNE RÉACTION SE RECONNAÎT À SON TYPE. Un pouce levé, ou son retrait (emoji vide), n'a
+   * pas de texte ; mais la réponse « à côté » d'un parcours qui finit n'en a pas non plus quand elle arrive à la remise.
+   * Seul le type sépare les deux.
+   */
+  it('🔴 rien que des réactions (un pouce, puis son retrait) : `reactionsSeules`', async () => {
+    const r = remises();
+    await processRemiseMbaEntrant(await entrantsDe(LOT([{ id: 'wamid.r1', reaction: POUCE }, { id: 'wamid.r2', reaction: '' }])), r.deps);
+    expect(r.vues).toEqual([{ waId: WA, contenu: '', entree: { rouverte: false, messageDeclencheur: 'wamid.r2', redelivre: false, reactionsSeules: true } }]);
+  });
+
+  it('🔴 JB2 (RS3) : un message SANS TEXTE qui n’est pas une réaction (contact, commande, type inconnu) n’est pas `reactionsSeules`', async () => {
+    for (const sansTexte of Object.keys(SANS_TEXTE) as Array<keyof typeof SANS_TEXTE>) {
+      const r = remises();
+      await processRemiseMbaEntrant(await entrantsDe(LOT([{ id: 'wamid.v', sansTexte }])), r.deps);
+      expect(r.vues, sansTexte).toEqual([{ waId: WA, contenu: '', entree: { rouverte: false, messageDeclencheur: 'wamid.v', redelivre: false, reactionsSeules: false } }]);
+    }
+  });
+
+  it('🔴 un texte et une réaction : on lui doit une réponse, et le déclencheur est le TEXTE, même suivi d’une réaction', async () => {
+    const r = remises();
+    await processRemiseMbaEntrant(await entrantsDe(LOT([{ id: 'wamid.1', body: 'Merci' }, { id: 'wamid.r', reaction: POUCE }])), r.deps);
+    expect(r.vues).toEqual([{ waId: WA, contenu: 'Merci', entree: { rouverte: false, messageDeclencheur: 'wamid.1', redelivre: false, reactionsSeules: false } }]);
   });
 
   it('🔴 redélivré : seulement si TOUS ses messages étaient déjà connus ; un seul neuf suffit à ce qu’on lui réponde', async () => {
@@ -205,13 +263,16 @@ describe('ce que la remise dit au répondeur : le dernier message, et la redéli
   });
 });
 
-/** Les parcours et les sessions en mémoire, pour le bout en bout. */
+/**
+ * Les parcours et les sessions en mémoire, pour le bout en bout. `resumeAt` est gardé comme la base le garde : écrit
+ * à chaque `setState`, SANS coalesce (`resume_at = $7`), donc un état écrit sans échéance l'efface.
+ */
 function moteur() {
-  const lignes: WorkflowRunRow[] = [];
+  const lignes: (WorkflowRunRow & { resumeAt: Date | null })[] = [];
   const runs = avecGardesDEtatInertes({
     start: async (t: string, w: string, waId: string, _c: string | null, s: RunState, fige: WorkflowGraph | null) => {
       const id = `r${lignes.length + 1}`;
-      lignes.push({ id, workflowId: w, tenantId: t, waId, currentNode: s.currentNode, status: s.status, lastMessageId: s.lastMessageId ?? null, grapheFige: fige });
+      lignes.push({ id, workflowId: w, tenantId: t, waId, currentNode: s.currentNode, status: s.status, lastMessageId: s.lastMessageId ?? null, grapheFige: fige, resumeAt: s.resumeAt ?? null });
       return { id };
     },
     findWaitingByWaId: async (t: string, waId: string) => [...lignes].reverse().find((l) => l.tenantId === t && l.waId === waId && l.status === 'waiting') ?? null,
@@ -221,6 +282,7 @@ function moteur() {
       l.currentNode = s.currentNode;
       l.status = s.status;
       if (s.lastMessageId !== undefined) l.lastMessageId = s.lastMessageId;
+      l.resumeAt = s.resumeAt ?? null;
     },
     closeActiveByWaId: async (t: string, waId: string) => {
       const ids: string[] = [];
@@ -247,6 +309,12 @@ const CAMPAGNE: WorkflowGraph = {
   edges: [],
 };
 
+/** La même campagne, dont toute réponse libre pose une étiquette puis finit, sans rien envoyer. */
+const CAMPAGNE_SUITE: WorkflowGraph = {
+  nodes: [...CAMPAGNE.nodes, { id: 'vu', type: 'tag', position: { x: 0, y: 0 }, data: { tag: 'a-repondu' } }],
+  edges: [{ id: 'e1', source: 'tpl', target: 'vu' }],
+};
+
 /**
  * Le fil, l'exécuteur, les lancements et le VRAI démarreur, branchés comme le socle le fait (liaison tardive : le fil
  * est construit avant l'exécuteur). Le contact écrit dans un espace sans scénario, l'agent IA répond.
@@ -265,7 +333,7 @@ function bout() {
     estDesabonne: jamaisDesabonne,
     runs: mo.runs,
     // Le scénario d'une campagne se relit ; celui du répondeur, jamais (son parcours porte son graphe figé).
-    getGraph: async (id) => (id === 'wf-campagne' ? CAMPAGNE : null),
+    getGraph: async (id) => (id === 'wf-campagne' ? CAMPAGNE : id === 'wf-suite' ? CAMPAGNE_SUITE : null),
     applyTag: async () => true, setField: async () => {}, removeTag: async () => {}, clearField: async () => {},
     sendTemplate: async () => {}, sendQuickMessage: async () => {}, sendFlow: async () => {}, sendQuestion: async () => {},
     agentSessions: mo.agentSessions,
@@ -287,20 +355,19 @@ function bout() {
   });
   /**
    * Un job de webhook, dans l'ordre du handler : l'avance des parcours, puis la remise de ce qu'aucun n'a pris
-   * (`src/webhooks/handler.ts`). `dejaVus` : ce que Meta avait déjà livré.
+   * (`src/webhooks/handler.ts`). `dejaVus` : ce que Meta avait déjà livré. L'avance passe par la vraie porte
+   * (`processWorkflowAdvance`, qui lit le TYPE du message) et par le câblage du worker, recopié ici parce que
+   * `src/worker.ts` ne se monte pas : sa source est relue plus bas.
    */
-  const job = async (messages: Array<{ id: string; body: string }>, dejaVus: ReadonlySet<string> = new Set()) => {
-    const entrants = await entrantsDe({
-      object: 'whatsapp_business_account',
-      entry: [{ id: 'waba1', changes: [{ field: 'messages', value: {
-        messaging_product: 'whatsapp', metadata: { display_phone_number: '33525680250', phone_number_id: 'pn1' },
-        messages: messages.map((m) => ({ from: WA, id: m.id, timestamp: '1789465356', type: 'text', text: { body: m.body } })),
-      } }] }],
+  const job = async (messages: MessageDuLot[], dejaVus: ReadonlySet<string> = new Set()) => {
+    const entrants = await entrantsDe(LOT(messages));
+    const pris = await processWorkflowAdvance(entrants, {
+      advance: async (t, w, id, bp, entrant) => {
+        const enAttente = await mo.runs.findWaitingByWaId(t, w);
+        await executor.advance(t, w, id, bp, 'whatsapp', entrant);
+        return enAttente !== null;
+      },
     });
-    const pris = new Set<string>();
-    for (const { message: m } of entrants) {
-      if (await mo.runs.findWaitingByWaId(ESPACE, WA)) { await executor.advance(ESPACE, WA, m.messageId, null); pris.add(m.messageId); }
-    }
     await processRemiseMbaEntrant(entrants, { remettre: b.fil.remettreSiPersonneNeSuit }, pris, new Set(), dejaVus);
   };
   return { b, mo, jobs, executor, job };
@@ -400,6 +467,120 @@ describe('🔴 de bout en bout : un espace sans scénario, l’agent IA répond'
     await m.job([{ id: 'wamid.2', body: 'Toujours là ?' }]);
     expect(m.jobs.map((j) => j.raison)).toEqual(['demarrage', 'message']);
     expect(m.mo.lignes, 'le même parcours, aucun second démarrage').toHaveLength(1);
+  });
+
+  /**
+   * 🔴 RELECTURE DU LOT 5, J1 : UNE RÉACTION NE FAIT PAS PARLER L'AGENT IA. L'agent de Meta se tait sur un pouce levé ;
+   * le répondeur aussi, en pleine conversation (l'avance du bloc agent) comme après sa conclusion (la remise). Sans
+   * ça, un client qui met un pouce sur « votre rendez-vous est confirmé » recevait un nouveau message de l'IA, débité
+   * du crédit, et chaque retrait de réaction aussi.
+   */
+  it('🔴 J1 : une réaction en pleine conversation, ou son retrait, n’enfile aucun tour ; le texte suivant, si', async () => {
+    const m = bout();
+    await m.job([{ id: 'wamid.1', body: 'Bonjour' }]);
+    // Le premier tour a répondu et pose l'échéance d'inactivité, comme `majRun` (`src/worker.ts`) : une écriture
+    // gardée sans jeton, que `restToState` remplit pour un agent qui attend.
+    const echeance = new Date('2026-10-05T10:30:00.000Z');
+    const run = m.mo.lignes[0]!;
+    await m.mo.runs.setStateSiEncoreSur(ESPACE, run.id, run.currentNode, { currentNode: run.currentNode, status: 'waiting', resumeAt: echeance });
+    await m.job([{ id: 'wamid.r1', reaction: POUCE, vise: 'wamid.out1' }]);
+    await m.job([{ id: 'wamid.r2', reaction: '', vise: 'wamid.out1' }]);
+    expect(m.jobs.map((j) => j.raison), 'ni le pouce ni son retrait ne réveillent l’agent').toEqual(['demarrage']);
+    // 🔴 JB1 : aucun tour ne repose l'échéance après une réaction, donc elle doit SURVIVRE. Effacée, la sortie `timeout`
+    // ne partait jamais : run et session vivants pour toujours après un pouce.
+    expect(run.resumeAt, 'l’échéance d’inactivité survit à la réaction').toEqual(echeance);
+    // Rien n'est écrit (la remise du même job les laisse au parcours, qui attend toujours) : le dernier message
+    // consommé reste le texte, dont la redélivrance reste dédupliquée.
+    expect(m.mo.lignes.map((l) => [l.status, l.lastMessageId])).toEqual([['waiting', 'wamid.1']]);
+    await m.job([{ id: 'wamid.2', body: 'Et pour samedi ?' }]);
+    expect(m.jobs.map((j) => j.raison)).toEqual(['demarrage', 'message']);
+  });
+
+  it('🔴 JB2 (RS3) : une fiche de contact, une commande ou un type inconnu, sans texte, démarre bien le répondeur', async () => {
+    for (const sansTexte of Object.keys(SANS_TEXTE) as Array<keyof typeof SANS_TEXTE>) {
+      const m = bout();
+      await m.job([{ id: 'wamid.v', sansTexte }]);
+      expect(m.mo.lignes.map((l) => [l.workflowId, l.status, l.lastMessageId]), sansTexte).toEqual([['w-sys', 'waiting', 'wamid.v']]);
+      expect(m.jobs.map((j) => j.raison), sansTexte).toEqual(['demarrage']);
+    }
+  });
+
+  it('🔴 J1 : une réaction après que l’agent a conclu ne relance rien ; le texte suivant, si', async () => {
+    const m = bout();
+    await m.job([{ id: 'wamid.1', body: 'Bonjour' }]);
+    await m.executor.sortirDuBlocAgent(ESPACE, WA, 's1', 'rdv_pris');
+    await m.job([{ id: 'wamid.r1', reaction: POUCE }]);
+    await m.job([{ id: 'wamid.r2', reaction: '' }]);
+    expect(m.mo.lignes, 'aucun second parcours').toHaveLength(1);
+    expect(m.mo.sessions, 'aucune seconde session').toHaveLength(1);
+    await m.job([{ id: 'wamid.2', body: 'Merci, et demain ?' }]);
+    expect(m.mo.lignes).toHaveLength(2);
+    expect(m.jobs.map((j) => j.raison)).toEqual(['demarrage', 'demarrage']);
+  });
+
+  it('🔴 J1 : une réaction « à côté » d’un modèle de campagne finit le parcours, sans être confiée au répondeur', async () => {
+    // `vise: null` : sans identifiant du message visé, la réaction n'a pas de `buttonPayload`, exactement comme un
+    // texte. Seul son type la distingue de la réponse « à côté » qu'on confie au répondeur.
+    const m = bout();
+    expect(await m.executor.demarrer('campagne_scenario', ESPACE, 'wf-campagne', CAMPAGNE, { waId: WA, contactId: 'c-1' })).toBe(true);
+    await m.job([{ id: 'wamid.r', reaction: POUCE, vise: null }]);
+    expect(m.mo.lignes.map((l) => [l.workflowId, l.status])).toEqual([['wf-campagne', 'done']]);
+    expect(m.jobs).toEqual([]);
+  });
+
+  it('🔴 J1 : une réaction qui fait finir une chaîne sans réponse n’est pas confiée non plus', async () => {
+    // L'autre sortie de l'avance : la chaîne suit son arête libre, ne répond rien, et finit. Un texte serait confié au
+    // répondeur (la chaîne ne lui a rien répondu) ; une réaction, non.
+    const m = bout();
+    expect(await m.executor.demarrer('campagne_scenario', ESPACE, 'wf-suite', CAMPAGNE_SUITE, { waId: WA, contactId: 'c-1' })).toBe(true);
+    await m.job([{ id: 'wamid.r', reaction: POUCE, vise: null }]);
+    expect(m.mo.lignes.map((l) => [l.workflowId, l.status])).toEqual([['wf-suite', 'done']]);
+    expect(m.jobs).toEqual([]);
+    // Et le texte, lui, l'est : la garde porte sur le type, pas sur l'absence de réponse.
+    const t = bout();
+    await t.executor.demarrer('campagne_scenario', ESPACE, 'wf-suite', CAMPAGNE_SUITE, { waId: WA, contactId: 'c-1' });
+    await t.job([{ id: 'wamid.t', body: 'Ok' }]);
+    expect(t.mo.lignes.map((l) => [l.workflowId, l.status])).toEqual([['wf-suite', 'done'], ['w-sys', 'waiting']]);
+  });
+});
+
+/**
+ * 🔴 RELECTURE DU LOT 5, J4 : DES TROUS DE TESTS SUR DES CHEMINS JUSTES, dont chacun protège d'une double réponse.
+ */
+describe('J4 : ce que rien ne tenait', () => {
+  it('🔴 agent de Meta allumé, la réponse « à côté » lui est transmise, et JAMAIS confiée au répondeur IA', async () => {
+    // Les deux voix ne coexistent pas (CHECK de 0209), mais l'exécuteur ne doit pas compter sur le réglage pour se taire :
+    // confier aussi le message au répondeur le ferait démarrer un agent IA, ou passer la main à l'équipe, par-dessus
+    // l'agent de Meta qui vient de le recevoir.
+    const mo = moteur();
+    const transmis: string[] = [];
+    const confies: string[] = [];
+    const ex = new WorkflowExecutor({
+      ...depsInertes,
+      estDesabonne: jamaisDesabonne,
+      runs: mo.runs,
+      getGraph: async () => CAMPAGNE,
+      applyTag: async () => true, setField: async () => {}, removeTag: async () => {}, clearField: async () => {},
+      sendTemplate: async () => {}, sendQuickMessage: async () => {}, sendFlow: async () => {}, sendQuestion: async () => {},
+      mbaActifPour: async () => true,
+      transmettreHorsParcours: async (_t, _w, id) => { transmis.push(id); },
+      confierAuRepondeur: async (_t, _w, id) => { confies.push(id); },
+    });
+    expect(await ex.demarrer('campagne_scenario', ESPACE, 'wf-campagne', CAMPAGNE, { waId: WA, contactId: 'c-1' })).toBe(true);
+    await ex.advance(ESPACE, WA, 'wamid.c', null);
+    expect(mo.lignes.map((l) => l.status)).toEqual(['done']);
+    expect(transmis).toEqual(['wamid.c']);
+    expect(confies).toEqual([]);
+  });
+
+  it('🔴 le worker nomme le message déclencheur quand il rend un fil pris pour rien, et passe le TYPE à l’avance', () => {
+    // `src/worker.ts` démarre un processus quand on l'importe : son câblage se lit dans sa source. Sans le dernier lead,
+    // le parcours du répondeur ne naît pas en l'ayant reçu, et l'avance du même job (qui suit le routage) enfile un
+    // second tour. Sans `entrant`, l'exécuteur ne sait plus qu'un message est une réaction (J1).
+    const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    expect(worker).toContain('rendreLeFil: (t, waId, contenu, dernierLead) => fil.remettreSiPersonneNeSuit(t, waId, contenu, { rouverte: false, messageDeclencheur: dernierLead }),');
+    expect(worker).toContain('advance: async (t, w, m, bp, entrant) => {');
+    expect(worker).toContain("await workflowExecutor.advance(t, w, m, bp, 'whatsapp', entrant);");
   });
 });
 

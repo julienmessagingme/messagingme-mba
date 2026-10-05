@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockAccueil } from './support/accueil';
+import { repondre } from './aide/confirmation';
 
 /**
  * F1 : la carte Meta Business Agent est remontée en tête. La reprise après opérateur, elle, a quitté cet
@@ -72,6 +73,26 @@ test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * 🔴 LOT 5, RELECTURE DE LA LIVRAISON A (J7) : ALLUMER L'AGENT DE META RETIRE L'AGENT IA RÉPONDEUR DE CE RÔLE. Une
+   * seule voix : le serveur remet le répondeur IA à nul dans l'instruction même qui allume. L'écran le dit AVANT, en
+   * nommant l'agent ; refusé, rien ne part. Sans répondeur IA, le geste reste sans question (le cas du dessus).
+   */
+  test('🔴 J7 : avec un agent IA répondeur, allumer l’agent de Meta le dit avant, et un refus n’envoie rien', async ({ page }) => {
+    const activations: boolean[] = [];
+    await mockAccueil(page, { repondeurIa: { id: 'ag-lea', label: 'Léa' }, activations });
+    const toggle = page.getByTestId('mba-toggle');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await toggle.click();
+    await repondre(page, false, /« Léa » est aujourd’hui le répondeur de l’espace/);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(activations).toEqual([]);
+    await toggle.click();
+    await repondre(page, true, /Allumer l’agent de Meta le retire de ce rôle/);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(activations).toEqual([true]);
   });
 
   test('🔴 un refus du serveur ne bascule RIEN, et il le DIT', async ({ page }) => {

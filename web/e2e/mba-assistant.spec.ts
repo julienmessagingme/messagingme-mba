@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockMba } from './support/mba';
+import { mockMba, repondeurIa } from './support/mba';
 
 /**
  * L'ONGLET ASSISTANT DE L'AGENT DE META : ce qu'il a l'air d'être, et ce qu'il ne propose plus.
@@ -78,6 +78,36 @@ test.describe('MBA Assistant : ce que l ecran propose', () => {
     await page.goto('/mba/parametres?tab=assistant');
     await expect(page.getByTestId('mba-assistant-etat')).toContainText('1 étape');
     await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
+  });
+
+  /**
+   * 🔴 LOT 5, RELECTURE DE LA LIVRAISON A (J7), TENU DEPUIS LA RELECTURE DE B (JB3 c) : la mise en service que
+   * l'assistant propose allume l'agent de Meta, donc retire l'agent IA répondeur de ce rôle. Sa ligne du diff le dit,
+   * en le nommant ; pas de seconde confirmation (décision de Julien du 2026-09-14), c'est le diff qui protège.
+   */
+  test('🔴 J7 : la ligne « mise en service » du diff dit que l’agent IA répondeur quitte ce rôle', async ({ page }) => {
+    const repondeur = repondeurIa();
+    await mockMba(page, {
+      custom: async (route, method, url, body) => {
+        if (method === 'POST' && new URL(url).pathname.endsWith('/mba/assistant')) {
+          await route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({
+              message: 'Je peux le mettre en service.',
+              operations: [{ type: 'activation.mettreEnService', libelle: 'Mettre l’agent en service' }],
+            }),
+          });
+          return true;
+        }
+        return repondeur(route, method, url, body);
+      },
+    });
+    await page.goto('/mba/parametres?tab=assistant');
+    await page.getByTestId('mba-assistant-saisie').fill('Mets l’agent en service');
+    await page.getByTestId('mba-assistant-envoyer').click();
+    await expect(page.getByTestId('mba-assistant-diff')).toContainText('Mettre l’agent en service');
+    await expect(page.getByTestId('mba-assistant-repondeur-retire'))
+      .toContainText('L’agent IA « Léa » est aujourd’hui le répondeur de l’espace. Allumer l’agent de Meta le retire de ce rôle');
   });
 
   test('🔴 une etape FACULTATIVE a faire ne se dit jamais « obligatoire »', async ({ page }) => {

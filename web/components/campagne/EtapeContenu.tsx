@@ -193,7 +193,7 @@ export function EtapeContenu({
             else suivant.add(etage.rang);
             return suivant;
           })}
-          contenu={etat.contenus[etage.rang] ?? contenuVide(capacites.mbaEnabled)}
+          contenu={etat.contenus[etage.rang] ?? contenuVide(capacites.repondeurAutomatique)}
           references={references}
           {...(rechargerTemplates ? { rechargerTemplates } : {})}
           {...(rechargerScenarios ? { rechargerScenarios } : {})}
@@ -239,10 +239,10 @@ export function EtapeContenu({
 }
 
 /** Un contenu d'étage vierge. Les suggestions partent VIDES : cf. `CadreRcs`. */
-export function contenuVide(mbaEnabled = true): ContenuEtage {
+export function contenuVide(repondeurAutomatique = true): ContenuEtage {
   // ⚠️ LA RÈGLE DU DÉFAUT VIT DANS `lib/campagne-chaine.ts` (`devenirParDefaut`), pas ici : c'est la seule
   // façon de l'éprouver, la suite unitaire du front étant scopée aux fonctions pures de `lib/`.
-  return { formule: 'seul', devenir: devenirParDefaut(mbaEnabled), suggestions: [] };
+  return { formule: 'seul', devenir: devenirParDefaut(repondeurAutomatique), suggestions: [] };
 }
 
 function CadreEtage({
@@ -361,6 +361,11 @@ function CadreEtage({
 /**
  * QUI RÉPOND QUAND LE CONTACT RÉPOND À CET ÉTAGE. Deux choix, exclusifs.
  *
+ * 🔴 « LE RÉPONDEUR AUTOMATIQUE PREND LA MAIN » (lot 5) : la valeur reste `mba` en base, mais elle ne prend rien, elle
+ * laisse la réponse à la remise « personne ne suit », qui la confie au répondeur de l'espace, l'agent de Meta OU l'agent
+ * IA désigné (`src/inbox/fil.ts`). Le libellé disait « l'agent de Meta » ; il est grisé quand l'espace n'a NI l'un NI
+ * l'autre (`capacites.repondeurAutomatique`), sinon la réponse n'irait à personne.
+ *
  * 🔴 IL N'Y A PAS DE TROISIÈME OPTION « un agent IA prend la main », et son retrait est une CORRECTION.
  * Elle existait, faisait choisir un agent précis dans une liste, et ne produisait aucun effet : ni
  * `devenir` ni `agentId` ne quittaient le navigateur. En allant la câbler, le fait qui l'interdit est
@@ -384,9 +389,9 @@ function BlocDevenirEtage({
       <div className="mt-3 space-y-2">
         <Radio
           groupe={`devenir-${rang}`}
-          libelle="L’agent de Meta prend la main"
+          libelle="Le répondeur automatique prend la main"
           coche={contenu.devenir === 'mba'}
-          desactive={!capacites.mbaEnabled}
+          desactive={!capacites.repondeurAutomatique}
           onCheck={() => onChange({ devenir: 'mba' })}
         />
         <Radio
@@ -398,14 +403,14 @@ function BlocDevenirEtage({
       </div>
       {/* ⚠️ GRISÉ AVEC SA RAISON, comme les canaux de l'étape précédente : une option absente ferait croire
           que la fonctionnalité n'existe pas. */}
-      {!capacites.mbaEnabled && (
+      {!capacites.repondeurAutomatique && (
         <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
-          L’agent de Meta n’est pas activé sur cet espace.
+          Cet espace n’a pas de répondeur automatique : ni l’agent de Meta, ni un agent IA répondeur.
         </p>
       )}
       {contenu.devenir === 'inbox' && (
         <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
-          L’agent de Meta ne répondra pas : la conversation revient à votre équipe.
+          Le répondeur automatique ne répondra pas : la conversation revient à votre équipe.
         </p>
       )}
     </div>

@@ -269,8 +269,8 @@ function ApercuReponse({ reponse, messagePreRempli }: { reponse: EtatReponse; me
 
       {reponse.etat === 'agent_meta' && (
         <p className="mt-2 text-[11px] text-ink-500" data-testid="pub-apercu-reponse-note">
-          {t('Exemple d’échange. L’agent de Meta compose lui-même sa réponse à partir de sa configuration : l’allure sera celle-ci, les mots non.',
-             'Sample exchange. The Meta agent composes its own answer from its configuration: the shape will look like this, the words will not.')}
+          {t('Exemple d’échange. Le répondeur automatique (l’agent de Meta, ou votre agent IA répondeur) compose lui-même sa réponse à partir de sa configuration : l’allure sera celle-ci, les mots non.',
+             'Sample exchange. The automatic responder (Meta’s agent, or your AI responder agent) composes its own answer from its configuration: the shape will look like this, the words will not.')}
         </p>
       )}
       {reponse.etat === 'connue' && reponse.reponse.genre === 'message' && (

@@ -195,15 +195,15 @@ function CarteWidget({ widget: w, scenarios, onModifier, onBasculer, onSupprimer
   const t = useT();
   const [copie, setCopie] = useState(false);
 
+  // `mba` : le répondeur automatique de l'espace, l'agent de Meta ou l'agent IA désigné (lot 5). `agent`, que le serveur
+  // refuse désormais à l'écriture, n'existe qu'en base : il répond comme le réglage de l'espace, et se dit comme lui.
   const devenir = w.devenir === 'mba'
-    ? t('L’agent de Meta répond.', 'Meta’s agent answers.')
+    ? t('Le répondeur automatique répond.', 'The automatic responder answers.')
     : w.devenir === 'scenario'
       ? (w.workflowId !== null
         ? t(`Démarre le scénario « ${scenarios.find((s) => s.id === w.workflowId)?.name ?? 'inconnu'} ».`, `Starts the scenario “${scenarios.find((s) => s.id === w.workflowId)?.name ?? 'unknown'}”.`)
         : null)
-      : w.devenir === 'agent'
-        ? t('Un agent IA (à venir) : traité comme le réglage de l’espace.', 'An AI agent (coming soon): handled as the workspace setting.')
-        : t('Répond comme les autres conversations (le réglage de l’espace).', 'Answered like other conversations (the workspace setting).');
+      : t('Répond comme les autres conversations (le réglage de l’espace).', 'Answered like other conversations (the workspace setting).');
 
   function copier(): void {
     if (!navigator.clipboard) return;

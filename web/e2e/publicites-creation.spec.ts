@@ -69,8 +69,10 @@ interface Options {
    * Ce que rend `/settings`. `'vide'` = un 200 SANS la clé `mbaEnabled`, `'panne'` = un 500.
    *
    * 🔴 LES DEUX SONT LE MÊME ÉTAT CÔTÉ ÉCRAN : « nous ne savons pas », qui n'est PAS « éteint ».
+   *
+   * `'repondeur'` (lot 5) : l'agent de Meta éteint, et un agent IA désigné répondeur de l'espace.
    */
-  reglages?: boolean | 'vide' | 'panne';
+  reglages?: boolean | 'vide' | 'panne' | 'repondeur';
   /**
    * Les scénarios rendus par la LISTE. Vide par défaut, comme avant : l'écran ne propose que les scénarios
    * EN LIGNE, et il le juge sur `nodeCount`, calculé en base sur le graphe PUBLIÉ (`graph->'nodes'`).
@@ -247,6 +249,7 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
       lecturesReglages += 1;
       if (o.reglages === 'panne') return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
       if (o.reglages === 'vide') return json({});
+      if (o.reglages === 'repondeur') return json({ mbaEnabled: false, repondeurAgentId: 'ag-repondeur' });
       return json({ mbaEnabled: o.reglages ?? true });
     }
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
@@ -279,17 +282,36 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
     await ouvrirLeFormulaire(page);
     await expect(page.getByTestId('pub-agent-indispo')).toHaveCount(0);
     await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
-    await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(1);
+    await expect(page.getByRole('option', { name: /répondeur automatique|automatic responder/ })).toHaveCount(1);
     // La quatrieme branche du tri-etat, celle que personne ne rendait.
+    await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(1);
+  });
+
+  /**
+   * 🔴 LOT 5 : LE CHOIX S'APPELLE « LE RÉPONDEUR AUTOMATIQUE », ET UN AGENT IA RÉPONDEUR LE REND POSSIBLE. La
+   * destination `agent_meta` ne prend rien : elle laisse le prospect à la remise « personne ne suit », qui le confie
+   * au répondeur de l'espace, l'agent de Meta OU l'agent IA désigné. Agent de Meta éteint mais agent IA répondeur :
+   * l'option existe, aucun avertissement ne sort, et la liste ne crie pas « plus personne ne répond ».
+   */
+  test('🔴 lot 5 : agent de Meta éteint mais un agent IA répondeur, l’option existe et rien ne dit « personne »', async ({ page }) => {
+    await brancher(page, { reglages: 'repondeur', publicites: [{ ...PUB_PUBLIEE, id: 'pub-am', destination: 'agent_meta' }] });
+    // Ancre positive : la liste est rendue, donc un bandeau absent ne veut pas dire « page vide ».
+    await expect(page.getByTestId('pubs-liste')).toContainText(PUB_PUBLIEE.nom);
+    await expect(page.getByTestId('pub-statut-pub-am')).toContainText(/Répondeur automatique|Automatic responder/);
+    await expect(page.getByTestId('pub-agent-eteint-pub-am')).toHaveCount(0);
+    await ouvrirLeFormulaire(page);
+    await expect(page.getByTestId('pub-agent-indispo')).toHaveCount(0);
+    await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
+    await expect(page.getByRole('option', { name: /répondeur automatique|automatic responder/ })).toHaveCount(1);
     await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(1);
   });
 
   test('🔴 agent ÉTEINT : l’option disparaît, et l’écran dit que c’est leur numéro', async ({ page }) => {
     await brancher(page, { reglages: false });
     await ouvrirLeFormulaire(page);
-    await expect(page.getByTestId('pub-agent-indispo')).toContainText(/pas allumé pour cet espace|not turned on for this space/);
+    await expect(page.getByTestId('pub-agent-indispo')).toContainText(/pas de répondeur automatique|no automatic responder/);
     await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
-    await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
+    await expect(page.getByRole('option', { name: /répondeur automatique|automatic responder/ })).toHaveCount(0);
     // Ancre : ce testid ne naît que sous la destination « scénario », donc un `0` dirait aussi bien
     // « le sous-bloc n'est pas rendu ». Sans elle, l'assertion se viderait le jour où le défaut
     // change.
@@ -306,7 +328,7 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
       await attendreLectureRetombee(page);
       await ouvrirLeFormulaire(page);
       // Le geste d'erreur est bon : l'option reste fermée.
-      await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
+      await expect(page.getByRole('option', { name: /répondeur automatique|automatic responder/ })).toHaveCount(0);
       // Mais la PHRASE change, et c'est tout le sujet : on ne déclare pas éteint ce qu'on n'a pas lu.
       await expect(page.getByTestId('pub-agent-inconnu')).toContainText(/n’avons pas pu lire|could not read/);
       await expect(page.getByTestId('pub-agent-indispo')).toHaveCount(0);
@@ -314,7 +336,7 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
       // configuration. Sans ce sens-là, la passer en `!== false` ne faisait tomber aucun test.
       await expect(page.getByTestId('pub-scenario')).toBeVisible();
       await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(0);
-      await expect(page.locator('body')).not.toContainText(/pas allumé pour cet espace|not turned on for this space/);
+      await expect(page.locator('body')).not.toContainText(/pas de répondeur automatique|no automatic responder/);
     });
   }
 
@@ -327,7 +349,7 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
     const pubAgent = { ...PUB_PUBLIEE, id: 'pub-am', destination: 'agent_meta' };
     await brancher(page, { reglages: false, publicites: [pubAgent] });
     await expect(page.getByTestId('pub-agent-eteint-pub-am'))
-      .toContainText(/ne répond plus sur ce numéro|no longer answers on this number/);
+      .toContainText(/plus personne ne répond sur ce numéro|nobody answers on this number anymore/);
 
     await brancher(page, { reglages: 'panne', publicites: [pubAgent] });
     await attendreLectureRetombee(page);

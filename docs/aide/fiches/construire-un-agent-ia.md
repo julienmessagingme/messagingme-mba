@@ -1,18 +1,38 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 418310
+source_empreinte: 096891
 ---
 # Construire un agent IA
 
-Un agent IA est un répondeur que vous construisez vous-même et que vous **posez là où vous en avez besoin**,
-dans un scénario. Ce n'est pas un cerveau qui répond à tout : un agent ne parle que dans le bloc
-« Agent IA » où vous l'avez désigné, et nulle part ailleurs. Il complète le répondeur de Meta, il ne le
-remplace pas, et les deux peuvent vivre sur le même numéro.
+Un agent IA est un répondeur que vous construisez vous-même et que vous **posez là où vous en avez besoin** :
+dans le bloc « Agent IA » d'un scénario, ou comme **répondeur de l'espace**, pour répondre à tout message que
+personne ne tient, comme le fait l'agent de Meta. Hors de ces deux places, il ne parle pas.
 
-**Un agent naît en brouillon** et n'apparaît dans le constructeur de scénario qu'une fois **activé**, quand
-vous avez relu ce qu'il dira. Ici, « activé » veut dire « proposable dans un scénario », pas « il répond à
-tout ». L'activation refuse un agent incomplet, mais elle vous dit quoi faire : chaque manque est une ligne
+**Le répondeur de l'espace.** En haut de la liste des agents, le bloc « Répondeur de l'espace » propose
+« Aucun » ou un de vos agents actifs (un brouillon ou un agent désactivé n'y figure pas) : choisissez, puis
+cliquez sur **Enregistrer** (la seule sélection ne change rien). L'agent choisi répond à tout message que ni un
+scénario, ni un mot-clé, ni un membre de votre équipe ne tient, sans scénario à construire, et en tenant compte
+de ce que le contact vient d'écrire. Votre espace n'a qu'un répondeur : si l'agent de Meta est allumé, le bloc
+le dit (avec un lien vers son écran), et choisir un agent IA vous demande confirmation, parce que **l'agent de
+Meta sera éteint pour tous vos contacts de cet espace** ; son état est relu au moment d'enregistrer, même s'il a
+été rallumé depuis un autre écran. Si Meta refuse de retirer certains contacts de la liste de son agent, l'écran
+vous dit combien : ceux-là n'ont plus de réponse automatique, et vous les retrouvez dans l'Inbox. À l'inverse,
+allumer l'agent de Meta retire l'agent IA de ce rôle. Revenir à « Aucun » vous demande aussi confirmation : plus
+aucun agent IA ne répondra aux messages que personne ne tient.
+
+Sans scénario derrière, une règle d'arrêt ou « Pas de réponse » termine la conversation de l'agent ;
+« Transfert à un humain », « Aucune source », « Plafond atteint » et « Échec technique » la passent à votre
+équipe, dans « À traiter ». Le panneau Détail de l'Inbox note chaque sortie (« L'agent IA a terminé », avec la
+règle), et le prochain message du contact relance l'agent (après un transfert, une fois que votre équipe a rendu
+la main). Un pouce levé, ou une autre réaction à un message, ne le fait pas répondre. **Crédit épuisé, chaque
+message passe à votre équipe**, sans réponse automatique, et les administrateurs reçoivent une alerte par e-mail,
+une par jour au plus. Désactiver ou supprimer l'agent répondeur le retire de ce rôle, et l'écran vous le dit
+avant. Le répondeur ne répond qu'aux messages WhatsApp.
+
+**Un agent naît en brouillon** et n'apparaît dans le constructeur de scénario, ou dans le choix du répondeur,
+qu'une fois **activé**, quand vous avez relu ce qu'il dira. Ici, « activé » veut dire « proposable », pas « il
+répond à tout » : répondre à tout est le choix du répondeur de l'espace. L'activation refuse un agent incomplet, mais elle vous dit quoi faire : chaque manque est une ligne
 cliquable qui ouvre l'onglet où cela se corrige, et l'en-tête de la fiche vous les liste dès l'ouverture,
 sans attendre que vous cliquiez sur « activer ».
 
@@ -79,6 +99,9 @@ avec ce qu'il a demandé et ce qu'il a reçu, parce que « il n'a pas trouvé »
 ne sont pas le même défaut. Les actions qui touchent le monde réel y sont simulées. Vos essais sont gardés
 quatorze jours, et « Reprendre » repose exactement la même question à l'agent tel qu'il est réglé
 maintenant : c'est ainsi qu'on voit si une consigne a servi à quelque chose.
+
+**Ce qu'il lit.** À chaque tour, un agent relit les 30 derniers messages échangés avec le contact, sur 30 jours,
+quelle que soit la conversation, et son premier tour lit le message qui l'a déclenché.
 
 **Le crédit.** Chaque espace a un solde prépayé, affiché en haut de la liste des agents et libellé en euros.
 Le solde descend à chaque tour, au tarif affiché dans la liste des

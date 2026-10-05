@@ -13,6 +13,7 @@ import {
   type EtatPubs, type Publicite,
 } from '@/lib/api-pubs';
 import { listWorkflows, estEnLigne, getSettings, type WorkflowSummary } from '@/lib/api';
+import { repondeurAutomatique } from '@/lib/repondeur';
 import { PubsListe } from '@/components/PubsListe';
 import { PubFormulaire } from '@/components/PubFormulaire';
 import { Bouton } from '@/components/Bouton';
@@ -95,6 +96,10 @@ function PublicitesInner({ session }: { session: Session }) {
   /** Le brouillon qu'on vient d'ouvrir, visuel compris. `null` = formulaire neuf. */
   const [brouillonOuvert, setBrouillonOuvert] = useState<BrouillonPubComplet | null>(null);
   /**
+   * UN RÉPONDEUR AUTOMATIQUE RÉPOND-IL AUX PROSPECTS ? L'agent de Meta allumé, ou depuis le lot 5 un agent IA désigné
+   * répondeur de l'espace (`repondeurAutomatique`, `lib/repondeur.ts`) : la destination `agent_meta` ne prend rien, elle
+   * laisse le prospect à la remise « personne ne suit », qui le confie au répondeur de l'espace, quel qu'il soit.
+   *
    * 🔴 TROIS ÉTATS, PAS DEUX : `null` VEUT DIRE « PAS ENCORE LU ». À `false` par défaut, l'écran
    * affichait « l'agent de Meta ne répond plus, rallumez-le » sur le chemin NOMINAL, pendant les deux
    * allers-retours que met `chargerContexte` à lire le réglage, puis le retirait. Et un échec de lecture
@@ -102,7 +107,7 @@ function PublicitesInner({ session }: { session: Session }) {
    * C'est exactement ce que `enPauseChezMeta` interdit deux fichiers plus loin : on n'invente pas un
    * état qu'on n'a pas lu.
    */
-  const [agentMetaOuvert, setAgentMetaOuvert] = useState<boolean | null>(null);
+  const [repondeurOuvert, setRepondeurOuvert] = useState<boolean | null>(null);
   /**
    * 🔴 L'API DÉPLOYÉE N'A PAS ENCORE LA ROUTE DES PUBLICITÉS, ET L'ÉCRAN DOIT LE DIRE.
    *
@@ -194,10 +199,10 @@ function PublicitesInner({ session }: { session: Session }) {
     await getSettings(session.tenantId)
       // ⚠️ UNE CLÉ ABSENTE VAUT INCONNU, PAS « éteint » : la réponse n'est pas validée, et c'est le même
       // cas que le 200 sans la clé décrit trente lignes plus haut.
-      .then((r) => setAgentMetaOuvert(typeof r.mbaEnabled === 'boolean' ? r.mbaEnabled : null))
+      .then((r) => setRepondeurOuvert(repondeurAutomatique(r)))
       // ⚠️ `null`, PAS `false` : un échec de lecture ne dit pas que l'agent est éteint, il dit qu'on ne
       // sait pas. Écrire `false` ici posait un avertissement définitif sur une panne passagère.
-      .catch(() => setAgentMetaOuvert(null));
+      .catch(() => setRepondeurOuvert(null));
   }, [session.tenantId]);
 
   /**
@@ -440,7 +445,7 @@ function PublicitesInner({ session }: { session: Session }) {
               /* Il reçoit les TROIS états : il se ferme sur l'inconnu, ce qui est le bon sens d'erreur,
                  mais il ne doit pas ANNONCER que l'agent de Meta est éteint quand nous avons seulement
                  échoué à lire notre réglage. Un `=== true` ici lui ôtait le moyen de faire la différence. */
-              agentMetaOuvert={agentMetaOuvert}
+              repondeurOuvert={repondeurOuvert}
               /* Pour l'APERÇU seulement : le prospect lit le nom de la Page, jamais son identifiant. La
                  publicité, elle, part sur le `pageId` que le serveur relit dans la connexion. */
               nomPage={etat.connexion.pageNom}
@@ -463,7 +468,7 @@ function PublicitesInner({ session }: { session: Session }) {
             ) : (
               <PubsListe
                 tenantId={session.tenantId} publicites={pubs} recharger={chargerPubs}
-                comptePubId={etat.connexion.comptePubId} agentMetaOuvert={agentMetaOuvert}
+                comptePubId={etat.connexion.comptePubId} repondeurOuvert={repondeurOuvert}
                 brouillons={brouillons} ouvrirBrouillon={ouvrirBrouillon} jeterBrouillon={jeterBrouillon}
               />
             )}

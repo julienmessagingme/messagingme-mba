@@ -678,6 +678,12 @@ export interface TenantSettings {
   /** Quand l'agent de Meta passe la main à un humain. null = jamais réglé (l'écran montre le défaut usine). */
   mbaHandoffMode: MbaHandoffMode | null;
   mbaEnabled: boolean;
+  /**
+   * L'agent IA répondeur de l'espace (lot 5, migration 0209), exclusif de `mbaEnabled`. ⚠️ OPTIONNEL À LA LECTURE :
+   * une API antérieure ne le rend pas, et `undefined` veut alors dire « aucun agent IA répondeur », le comportement
+   * d'avant. Lu par `repondeurAutomatique` (`lib/repondeur.ts`), jamais directement.
+   */
+  repondeurAgentId?: string | null;
   /** Canal RCS exploitable : vrai dès qu'un agent RCS est rattaché au tenant. DÉRIVÉ de l'état réel du dépôt,
    *  pas un réglage à basculer. Absent (backend plus ancien que le front) = éteint. */
   rcsEnabled?: boolean;

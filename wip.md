@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, LIVRAISON A EN PRODUCTION
+## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, LIVRAISON A EN PRODUCTION, B ÉCRITE ET RELUE
 
 Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré
 avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`, plan
@@ -37,9 +37,8 @@ avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-pa
 - ✅ **Relue sans rouge**, CI verte job par job, et les tests d'intégration vérifiés DANS LES DEUX SENS par deux commits
   mutés sur étiquettes jetables (quatorze mutations : chaque test visé tombe, aucun masquage). Aucun espace n'a encore de
   répondeur : rien n'a changé pour personne tant que personne ne le désigne.
-- 🟡 **Jaunes de la relecture de A** : (J1) une RÉACTION (pouce) du contact relance l'agent IA là où l'agent de Meta se
-  tait, à corriger dans la livraison B, AVANT l'essai réel (décider sur le type du message, pas sur un texte vide :
-  `confierAuRepondeur` passe un contenu vide par construction) ; (J3) la bascule depuis l'agent de Meta est synchrone
+- 🟡 **Jaunes de la relecture de A** (J1, J4, J6 et J7 traités dans B, ci-dessous) : (J1) une RÉACTION (pouce) du
+  contact relance l'agent IA là où l'agent de Meta se tait ; (J3) la bascule depuis l'agent de Meta est synchrone
   (un appel Meta par contact de sa liste) : lire la taille de `mba_liste` de l'espace de l'essai avant ; (J4) trous de
   tests sur l'exécuteur qui confierait le « à côté » au répondeur agent de Meta allumé, et sur le câblage du worker qui
   ne nommerait pas le message déclencheur (`rendreLeFil`, `confierAuRepondeur`) ; (J5) deux résidus de double tour
@@ -47,10 +46,38 @@ avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-pa
   de retirer de sa liste restent muets, la console B doit l'afficher ; (J7) allumer l'agent de Meta efface le répondeur
   IA sans ligne d'historique, la console B doit l'annoncer ; (J8) l'alerte de crédit marque le jour avant l'envoi ;
   (J9) la mémoire de 30 jours donne au modèle nos sortants (opérateur, campagne) en rôle agent.
-- ⏳ **Livraison B (la console)**, poussée APRÈS le déploiement de A : le bloc « Répondeur de l'espace » sur la page des
-  agents, les libellés « le répondeur automatique prend la main », l'aide et `features.md`. Le type `sortie_agent` et
-  sa phrase sont déjà dans `web/lib/inbox-detail.ts` (la parité avec le serveur l'exige), comme l'outil MCP sur la
-  page qui documente le serveur MCP (`web/lib/mcp-outils.ts`).
+- ✅ **Livraison B écrite** (2026-10-05, extraction de `f64dddeb`) : le bloc « Répondeur de l'espace » sur la
+  page des agents (`web/components/RepondeurEspace.tsx` : « Aucun » ou un agent ACTIF, l'agent de Meta allumé dit avec
+  un lien vers son écran, la confirmation « l'agent de Meta sera éteint pour tous vos contacts de cet espace », les
+  contacts que Meta n'a pas retirés COMPTÉS) ; la désactivation et la suppression de l'agent répondeur confirmées ; les
+  libellés « Le répondeur automatique prend la main » des campagnes, du widget et des publicités, qui suivent désormais
+  l'agent de Meta OU l'agent IA répondeur (`repondeurAutomatique`, `web/lib/repondeur.ts`), le choix grisé « agent IA
+  (à venir) » du widget retiré ; `features.md` (Agent IA, Campagnes, Publicités, Widget, MBA) et leurs cinq fiches
+  d'aide, empreintes à jour. Aucune migration. Un e2e neuf (`web/e2e/agents-repondeur.spec.ts`).
+- ✅ **Jaunes de A traités dans B** : (J1) une réaction ne démarre plus le répondeur (la remise passe
+  `reactionsSeules`, lu sur le TYPE) et ne fait plus répondre un agent IA en pleine conversation (la porte Meta passe
+  `entrant.reaction` à `WorkflowExecutor.advance`, câblé dans `src/worker.ts`) ; (J4) l'exécuteur qui confierait le
+  « à côté » au répondeur agent de Meta allumé, le câblage `confierAuRepondeur` (monté et exécuté) et `rendreLeFil` du
+  worker (lu dans sa source) sont tenus par des tests ; (J6) l'écran compte les contacts non retirés ; (J7) allumer
+  l'agent de Meta (Accueil, paramètres, assistant) dit avant que l'agent IA quitte le rôle de répondeur. ⚠️ B touche
+  donc aussi le SERVEUR (J1 dans le worker, plus deux textes de l'API : la description MCP du devenir d'un widget et
+  le refus du devenir `agent`) : `up` de l'API ET des deux workers. La console n'appelle aucune route neuve (celle du
+  répondeur est en production depuis A), elle peut partir avec le push.
+- ✅ **B relue sans rouge, ses jaunes traités** (2026-10-05, même extraction, chacun avec son test vérifié dans les
+  deux sens) : (JB1) une réaction sur un bloc agent sort SANS RIEN ÉCRIRE, l'échéance d'inactivité survit
+  (`setStateSiEncoreSur` réécrit `resume_at` sans coalesce, et aucun tour ne la reposait) ; (JB2) deux tests tiennent
+  la garde `reactionsSeules` AVANT la bascule `app_human -> app_workflow`, et la réaction lue au TYPE (une fiche de
+  contact, une commande, un type inconnu, sans texte, démarrent le répondeur) ; (JB4, JB5) le bloc relit l'état de
+  l'agent de Meta au moment d'enregistrer et après une erreur, le dit éteint sur toute réussite qui désigne un agent,
+  et le choix ne part plus qu'au bouton « Enregistrer » (« Aucun » se confirme : plus aucun agent IA ne répondra) ;
+  (JB3) un état illisible fait confirmer, et la phrase J7 de l'interrupteur des paramètres et de l'assistant de
+  l'agent de Meta sont tenues par des e2e ; (JB6) la page MCP publique et `features.md` ne disent plus qu'un agent IA
+  ne répond jamais seul ; (JB8) l'interrupteur des paramètres de l'agent de Meta est occupé dès la lecture du
+  répondeur ; (JB9) le refus du devenir `agent` d'un widget ne nomme plus un scénario. Reste (JB7) : ce n'est pas une
+  livraison console seule, `src/worker.ts` change (annonce aux autres sessions avant le commit, câblage partagé) et
+  J1 ne vaut qu'après le `up` du worker : faire le `up` de l'API et des deux workers avant l'essai réel.
+- 🟡 **Toujours ouverts de la relecture de A** : J3 (bascule synchrone ; le bouton dit seulement « Enregistrement… »
+  pendant qu'elle dure), J5, J8, J9, la ligne d'historique de J7 côté serveur, RA, MX5.
 - ⏳ **Essai réel qui clôt** : celui du plan (Gan PrevMCP répondeur d'un espace sans scénario, depuis le téléphone de
   Julien), après B.
 

@@ -20,7 +20,10 @@ import {
  * ne décide rien.
  */
 
-/** Le choix « qui répond », tel que l'écran le présente. `espace` est le `null` du serveur. */
+/**
+ * Le choix « qui répond », tel que l'écran le présente. `espace` est le `null` du serveur ; `mba` est « le répondeur
+ * automatique » (lot 5 : l'agent de Meta, ou l'agent IA répondeur de l'espace ; la valeur en base ne change pas).
+ */
 type ChoixDevenir = 'espace' | 'mba' | 'scenario';
 
 interface Brouillon {
@@ -145,7 +148,7 @@ export function WidgetFormulaire({ initial, scenarios, enCours, onAnnuler, onEnr
             </label>
             <label className="flex items-center gap-2">
               <input type="radio" name="devenir" checked={b.devenir === 'mba'} onChange={() => maj({ devenir: 'mba' })} data-testid="widget-devenir-mba" />
-              {t('L’agent de Meta', 'Meta’s agent')}
+              {t('Le répondeur automatique', 'The automatic responder')}
             </label>
             <label className="flex items-center gap-2">
               <input type="radio" name="devenir" checked={b.devenir === 'scenario'} onChange={() => maj({ devenir: 'scenario' })} data-testid="widget-devenir-scenario" />
@@ -169,11 +172,8 @@ export function WidgetFormulaire({ initial, scenarios, enCours, onAnnuler, onEnr
                 )}
               </div>
             )}
-            {/* Décision de Julien du 2026-10-02 : visible, pour qu'on sache que ça viendra, et impossible à choisir. */}
-            <label className="flex items-center gap-2 text-ink-400" title={t('À venir', 'Coming soon')}>
-              <input type="radio" name="devenir" disabled data-testid="widget-devenir-agent" />
-              {t('Un agent IA (à venir)', 'An AI agent (coming soon)')}
-            </label>
+            {/* Le choix grisé « Un agent IA (à venir) » a disparu (lot 5) : un agent IA répond désormais par le répondeur
+                de l'espace (« Le répondeur automatique », ou le réglage de l'espace), et le serveur refuse `agent`. */}
           </div>
         </fieldset>
 

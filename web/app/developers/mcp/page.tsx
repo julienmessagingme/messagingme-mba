@@ -151,8 +151,8 @@ function McpInner({ session }: { session: Session | null }) {
             {t('Un tag posé par l’assistant classe le contact, sans réveiller les automations qui écoutent ce tag.', 'A tag set by the assistant classifies the contact, without waking the automations listening for that tag.')}
           </li>
           <li>
-            <strong className="text-ink-900">{t('Un agent IA ne répond pas seul.', 'An AI agent does not answer on its own.')}</strong>{' '}
-            {t('Créé et activé par l’assistant, il ne parle aux clients que dans un scénario publié qui le contient.', 'Created and activated by the assistant, it only talks to customers inside a published scenario that contains it.')}
+            <strong className="text-ink-900">{t('Activer un agent IA ne le fait pas répondre.', 'Activating an AI agent does not make it answer.')}</strong>{' '}
+            {t('Créé et activé par l’assistant, il parle aux clients dans un scénario publié qui le contient, ou une fois désigné répondeur de l’espace (set_default_responder) : il répond alors à tout message que personne ne tient, et l’agent de Meta est éteint.', 'Created and activated by the assistant, it talks to customers inside a published scenario that contains it, or once made the workspace responder (set_default_responder): it then answers every message nobody handles, and Meta’s agent is turned off.')}
           </li>
           <li>
             <strong className="text-ink-900">{t('L’accès passe par une clé ou par une connexion OAuth.', 'Access goes through a key or an OAuth connection.')}</strong>{' '}

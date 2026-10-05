@@ -40,7 +40,7 @@ describe('ecartsDeSaisie', () => {
 });
 
 describe('saisieDuWidget', () => {
-  it('le devenir « agent » (grisé, à venir) ne se saisit pas : le formulaire part du réglage de l’espace', () => {
+  it('le devenir « agent » (refusé par le serveur, absent de l’écran) ne se saisit pas : le formulaire part du réglage de l’espace', () => {
     expect(saisieDuWidget({ ...WIDGET, devenir: 'agent' }).devenir).toBeNull();
   });
 });

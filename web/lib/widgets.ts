@@ -32,7 +32,11 @@ export const COULEUR_PAR_DEFAUT = '#25d366';
 export const POSITIONS_WIDGET = ['bas_droite', 'bas_gauche', 'haut_droite', 'haut_gauche'] as const;
 export type PositionWidget = (typeof POSITIONS_WIDGET)[number];
 
-/** `agent` existe en base et à l'écran (grisé, « à venir ») ; le serveur le refuse à l'écriture. */
+/**
+ * `agent` existe en base, plus à l'écran (lot 5 : le choix grisé « à venir » a disparu, un agent IA répond désormais
+ * par le répondeur de l'espace) ; le serveur le refuse à l'écriture. `mba` est « le répondeur automatique » : il ne
+ * prend rien, le réglage de l'espace répond (l'agent de Meta, ou l'agent IA répondeur).
+ */
 export type DevenirWidget = 'agent' | 'mba' | 'scenario';
 
 // --- Les formes rendues par le serveur --------------------------------------------------------------
@@ -94,8 +98,8 @@ export function saisieDuWidget(w: Widget): SaisieWidget {
   return {
     nom: w.nom,
     phrase: w.phrase,
-    // `agent` ne se saisit pas (grisé, « à venir ») : un tel widget n'existe qu'en base, et le serveur refusera de le
-    // modifier tant qu'un autre devenir n'est pas choisi.
+    // `agent` ne se saisit pas (le serveur le refuse) : un tel widget n'existe qu'en base, et le formulaire part du
+    // réglage de l'espace, qui lui répond déjà de la même façon.
     devenir: w.devenir === 'agent' ? null : w.devenir,
     workflowId: w.workflowId,
     couleur: w.couleur,

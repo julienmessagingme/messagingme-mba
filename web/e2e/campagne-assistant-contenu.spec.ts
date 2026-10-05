@@ -45,7 +45,11 @@ const USERS = [
 
 async function monter(
   page: Page,
-  sur: { canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[]; sansContenu?: boolean; sansCanal?: boolean; mbaEnabled?: boolean } = {},
+  sur: {
+    canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[]; sansContenu?: boolean; sansCanal?: boolean; mbaEnabled?: boolean;
+    /** L'agent IA répondeur de l'espace (lot 5) ; absent = aucun, comme une API d'avant le lot. */
+    repondeurAgentId?: string;
+  } = {},
 ): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -54,6 +58,7 @@ async function monter(
     if (chemin.endsWith('/settings')) {
       return json({
         controlHandbackSeconds: null, mbaHandoffMode: null, mbaEnabled: sur.mbaEnabled ?? true, rcsEnabled: true,
+        ...(sur.repondeurAgentId ? { repondeurAgentId: sur.repondeurAgentId } : {}),
         hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: true,
         timezone: 'Europe/Paris', businessHours: {},
       });
@@ -252,15 +257,30 @@ test('le RCS garde ses BOUTONS, il ne se reduit pas a un lien', async ({ page })
  * `agent_sessions.run_id` est NOT NULL, un agent IA ne sait pas exister hors d'un scenario. Julien : « si
  * le user veut que ca aille vers son autre agent IA, il faut qu il fasse un scenario ».
  *
- * Ce qui reste a garantir : l'option a bien disparu, et l'agent de Meta est grise AVEC SA RAISON quand il
- * n'est pas actif, ce qui est la regle que l'ancien cas protegeait vraiment.
+ * Ce qui reste a garantir : l'option a bien disparu, et le repondeur automatique est grise AVEC SA RAISON quand
+ * l'espace n'en a pas, ce qui est la regle que l'ancien cas protegeait vraiment.
+ *
+ * ⚠️ LOT 5 (2026-10-05) : l'option « l'agent de Meta prend la main » s'appelle « Le repondeur automatique prend la
+ * main ». Sa valeur reste `mba` ; elle ne prend rien, elle laisse la reponse a la remise « personne ne suit », qui la
+ * confie au repondeur de l'espace : l'agent de Meta, OU l'agent IA designe. D'ou le second cas.
  */
-test('🔴 plus d option « agent IA », et l agent de Meta est grise AVEC SA RAISON', async ({ page }) => {
+test('🔴 plus d option « agent IA », et le répondeur automatique est grisé AVEC SA RAISON', async ({ page }) => {
   await monter(page, { agents: [], mbaEnabled: false });
   await page.getByTestId('etage-1').click();
   await expect(page.getByRole('radio', { name: 'Un agent IA prend la main' })).toHaveCount(0);
-  await expect(page.getByTestId('bloc-devenir-1').getByRole('radio', { name: /agent de Meta/ })).toBeDisabled();
-  await expect(page.getByTestId('bloc-devenir-1').getByText(/agent de Meta n.est pas activ/i)).toBeVisible();
+  await expect(page.getByTestId('bloc-devenir-1').getByRole('radio', { name: 'Le répondeur automatique prend la main' })).toBeDisabled();
+  await expect(page.getByTestId('bloc-devenir-1').getByText(/pas de répondeur automatique/i)).toBeVisible();
+  // Sans répondeur, le défaut est l'équipe : un défaut sur une option grisée n'irait à personne.
+  await expect(page.getByTestId('bloc-devenir-1').getByRole('radio', { name: /Inbox/ })).toBeChecked();
+});
+
+test('🔴 lot 5 : agent de Meta éteint mais un agent IA répondeur, le répondeur automatique est proposé et choisi par défaut', async ({ page }) => {
+  await monter(page, { agents: [], mbaEnabled: false, repondeurAgentId: 'ag1' });
+  await page.getByTestId('etage-1').click();
+  const repondeur = page.getByTestId('bloc-devenir-1').getByRole('radio', { name: 'Le répondeur automatique prend la main' });
+  await expect(repondeur).toBeEnabled();
+  await expect(repondeur).toBeChecked();
+  await expect(page.getByTestId('bloc-devenir-1').getByText(/pas de répondeur automatique/i)).toHaveCount(0);
 });
 
 // 🔴 L'ÉTAPE LA PLUS EXPOSÉE AU DÉBORDEMENT : trois cadres d'étage, un éditeur de modèle, un

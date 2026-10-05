@@ -16,10 +16,14 @@ export interface RemiseMbaEntrantDeps {
    * câblage (`ControleDuFil.remettreSiPersonneNeSuit`) ; ce module ne sait que lire un payload Meta. `entree.rouverte` :
    * un message de ce contact vient de sortir la conversation de « Traité » ou d'Archivé, ce qui ouvre une demande
    * quand l'équipe garde le fil. `entree.messageDeclencheur` : le dernier message retenu du contact ;
-   * `entree.redelivre` : Meta les avait tous déjà livrés (`alreadySeen`). Le répondeur IA en a besoin pour ne pas
-   * répondre deux fois au même message ; l'agent de Meta les ignore.
+   * `entree.redelivre` : Meta les avait tous déjà livrés (`alreadySeen`) ; `entree.reactionsSeules` : ce ne sont que
+   * des réactions (un emoji posé sur un de nos messages, ou son retrait). Le répondeur IA en a besoin pour ne pas
+   * répondre deux fois au même message, ni à un pouce levé ; l'agent de Meta les ignore.
    */
-  remettre(tenantId: string, waId: string, contenu: string, entree: { rouverte: boolean; messageDeclencheur: string | null; redelivre: boolean }): Promise<void>;
+  remettre(
+    tenantId: string, waId: string, contenu: string,
+    entree: { rouverte: boolean; messageDeclencheur: string | null; redelivre: boolean; reactionsSeules: boolean },
+  ): Promise<void>;
 }
 
 /**
@@ -47,6 +51,13 @@ function texteDuMessage(m: InboundMessage): string {
  *
  * `dejaVus` : les messages que Meta avait déjà livrés (`alreadySeen` du handler). Un contact est dit redélivré si TOUS
  * ses messages retenus l'étaient : un seul message neuf suffit à ce que quelqu'un lui doive une réponse.
+ *
+ * 🔴 UNE RÉACTION SE RECONNAÎT À SON TYPE, JAMAIS À UN TEXTE VIDE (relecture du lot 5, J1). Un contact n'a que des
+ * réactions dans ce lot : `reactionsSeules`, et le répondeur IA ne démarre pas (l'agent de Meta, prévenu d'un texte
+ * vide, se tait de même). Le texte ne suffit pas à le dire : la réponse « à côté » d'un parcours qui finit arrive à la
+ * remise avec un contenu vide par construction (`confierAuRepondeur`), et à elle, il faut répondre. Le message
+ * déclencheur est le dernier qui n'est PAS une réaction : redélivré, c'est lui que le parcours du répondeur doit
+ * reconnaître comme déjà reçu.
  */
 export async function processRemiseMbaEntrant(
   entrants: readonly EntrantRattache[],
@@ -57,6 +68,7 @@ export async function processRemiseMbaEntrant(
 ): Promise<void> {
   const parContact = new Map<string, {
     tenantId: string; waId: string; textes: string[]; rouverte: boolean; dernier: string | null; redelivre: boolean;
+    reactionsSeules: boolean;
   }>();
   for (const { message: m, tenantId } of entrants) {
     if (consumed?.has(m.messageId)) continue;
@@ -64,18 +76,22 @@ export async function processRemiseMbaEntrant(
     if (m.field && m.field !== 'messages') continue;
     if (!tenantId) continue;
     const cle = `${tenantId}:${m.waId}`;
-    const contact = parContact.get(cle) ?? { tenantId, waId: m.waId, textes: [], rouverte: false, dernier: null, redelivre: true };
+    const contact = parContact.get(cle)
+      ?? { tenantId, waId: m.waId, textes: [], rouverte: false, dernier: null, redelivre: true, reactionsSeules: true };
     const texte = texteDuMessage(m);
     if (texte !== '') contact.textes.push(texte);
-    if (m.type !== 'reaction' && rouvertes.has(m.messageId)) contact.rouverte = true;
-    // Le dernier dans l'ordre du lot, celui de Meta : c'est lui que le parcours du répondeur naît en ayant reçu.
-    contact.dernier = m.messageId;
+    const reaction = m.type === 'reaction';
+    if (!reaction && rouvertes.has(m.messageId)) contact.rouverte = true;
+    if (!reaction) contact.reactionsSeules = false;
+    // Le dernier dans l'ordre du lot, celui de Meta, en sautant les réactions dès que le contact a écrit autre chose :
+    // c'est lui que le parcours du répondeur naît en ayant reçu.
+    if (!reaction || contact.reactionsSeules) contact.dernier = m.messageId;
     if (!dejaVus.has(m.messageId)) contact.redelivre = false;
     parContact.set(cle, contact);
   }
-  for (const { tenantId, waId, textes, rouverte, dernier, redelivre } of parContact.values()) {
+  for (const { tenantId, waId, textes, rouverte, dernier, redelivre, reactionsSeules } of parContact.values()) {
     try {
-      await deps.remettre(tenantId, waId, textes.join('\n'), { rouverte, messageDeclencheur: dernier, redelivre });
+      await deps.remettre(tenantId, waId, textes.join('\n'), { rouverte, messageDeclencheur: dernier, redelivre, reactionsSeules });
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('processRemiseMbaEntrant: remise ignorée:', messageDe(err));

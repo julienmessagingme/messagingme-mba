@@ -186,12 +186,16 @@ export interface DepsControleDuFil {
  * Ce que la remise « personne ne suit » sait des messages qu'elle remet. `rouverte` : l'un d'eux vient de sortir la
  * conversation de « Traité » ou d'Archivé. Les deux autres ne servent que le répondeur IA, et leur absence vaut
  * « inconnu » : `messageDeclencheur`, le dernier message du contact (le parcours du répondeur naît en l'ayant reçu,
- * sa redélivrance n'enfile pas un second tour) ; `redelivre`, tous ses messages étaient déjà connus.
+ * sa redélivrance n'enfile pas un second tour) ; `redelivre`, tous ses messages étaient déjà connus ;
+ * `reactionsSeules`, ce ne sont que des réactions (un emoji, ou son retrait), décidé sur leur TYPE par la remise
+ * (`src/webhooks/remise-mba-entrant.ts`) et jamais sur un texte vide : la réponse « à côté » que confie la fin d'un
+ * parcours (`confierAuRepondeur`) arrive sans texte, et il faut y répondre.
  */
 export interface EntreeDuContact {
   rouverte: boolean;
   messageDeclencheur?: string | null;
   redelivre?: boolean;
+  reactionsSeules?: boolean;
 }
 
 /**
@@ -249,7 +253,8 @@ export interface ControleDuFil {
    * l'agent IA démarre (`DepsControleDuFil.repondeur`) ; s'il ne le peut pas (crédit épuisé, modèle absent, agent
    * inactif, lancement refusé), la conversation passe à l'équipe avec une demande. `entree.messageDeclencheur` : le
    * dernier message du contact, que le parcours naît en ayant reçu ; `entree.redelivre` : tous ses messages étaient
-   * déjà connus (redélivrance de Meta), rien ne démarre. Le reste de ce commentaire est le chemin de l'agent de Meta.
+   * déjà connus (redélivrance de Meta), rien ne démarre ; `entree.reactionsSeules` : rien que des réactions, rien ne
+   * démarre non plus. Le reste de ce commentaire est le chemin de l'agent de Meta.
    *
    * La conversation est confiée à l'agent, qui y répond tout de suite
    * (événement `message_sans_suite`, avec `contenu`, le texte du ou des messages reçus). Gardes : agent allumé,
@@ -494,6 +499,9 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         // `confier` sur un chemin automatique, dans leur ordre.
         // Redélivré par Meta : le premier passage a démarré l'agent, ou passé la main à l'équipe.
         if (entree.redelivre === true) return;
+        // Un pouce levé sur « votre rendez-vous est confirmé », ou son retrait, n'appelle pas de réponse : l'agent de
+        // Meta, prévenu d'un texte vide, se tait (`prevenir`). Le répondeur IA aussi, sans parcours ni tour facturé.
+        if (entree.reactionsSeules === true) return;
         if (await depot.estConversationDeTest(tenantId, waId)) return laisserALEquipe();
         // Un contact désabonné ou bloqué n'est jamais confié à une machine : l'agent lui parlerait.
         if ((await deps.consentement.estDesabonne(tenantId, waId)) || (await deps.consentement.estBloque(tenantId, waId))) {

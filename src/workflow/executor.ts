@@ -1359,8 +1359,15 @@ export class WorkflowExecutor {
    *
    * `canalRetour` = le tuyau d'où vient le retour. Défaut `whatsapp` : la porte Meta
    * (webhooks/workflow-advance.ts) ne reçoit que du WhatsApp ; les portes RCS le passent explicitement.
+   *
+   * `entrant.reaction` = le message est une réaction (un emoji, ou son retrait), lu sur son TYPE par la porte Meta.
+   * Sur un bloc agent, elle ne réveille pas l'agent ; ailleurs, elle n'est jamais transmise comme un message « à
+   * côté ». Défaut : pas une réaction (les portes RCS et les reprises internes n'en portent jamais).
    */
-  async advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null, canalRetour: RunChannel = 'whatsapp'): Promise<void> {
+  async advance(
+    tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null, canalRetour: RunChannel = 'whatsapp',
+    entrant: { reaction: boolean } = { reaction: false },
+  ): Promise<void> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
     if (!run || run.lastMessageId === messageId) return; // dédup at-least-once
 
@@ -1481,6 +1488,18 @@ export class WorkflowExecutor {
         await this.deps.escalateToHuman(tenantId, waId, null, finDeliberee, run.workflowId);
         return;
       }
+      /**
+       * 🔴 UNE RÉACTION NE RÉVEILLE PAS L'AGENT (relecture du lot 5, J1). Un pouce levé sur sa dernière phrase n'est pas
+       * une question, et l'agent de Meta n'y répond pas : un tour ici enverrait un message que la référence n'envoie
+       * pas, débité du crédit. Décidé sur le TYPE (son `buttonPayload` est l'identifiant du message visé, un retrait
+       * n'a même pas d'emoji).
+       *
+       * 🔴 RIEN N'EST ÉCRIT (relecture de la livraison B, JB1) : `setStateSiEncoreSur` réécrit `resume_at` sans
+       * coalesce, donc l'échéance d'inactivité que le dernier tour a posée serait effacée, et aucun tour ne la reposerait.
+       * La sortie `timeout` ne partirait jamais : run et session vivants pour toujours après un pouce. Une redélivrance
+       * de la réaction rentre et ressort de même ; seule sa mesure se compte deux fois.
+       */
+      if (entrant.reaction) return;
       // On enfile avant de marquer le message consommé (l'effet réel d'abord, `lastMessageId` ensuite) : si
       // l'enfilage lève, une redélivrance n'est pas dédupliquée et le tour finit par partir. Dans l'autre sens
       // (enfilage réussi, `setState` en échec), un rejeu réémet un job au même `tours`, que le verrou optimiste de
@@ -1543,8 +1562,9 @@ export class WorkflowExecutor {
         await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId);
       } else {
         // (a) : son message part aussi chez l'agent de Meta, qui y répond. Seulement un vrai message WhatsApp :
-        // cette branche reçoit aussi des réactions et des rapports RCS, qui ne sont pas des messages du client.
-        const unMessage = buttonPayload === null && canalRetour === 'whatsapp';
+        // cette branche reçoit aussi des réactions et des rapports RCS, qui ne sont pas des messages du client. Une
+        // réaction se reconnaît à son type : une réaction sans identifiant de message visé n'a pas de `buttonPayload`.
+        const unMessage = buttonPayload === null && canalRetour === 'whatsapp' && !entrant.reaction;
         await this.rendreLaMainAMba(tenantId, waId, unMessage ? { transmettre: messageId } : {});
       }
       return;
@@ -1583,7 +1603,7 @@ export class WorkflowExecutor {
        * part quand même. Une détection incomplète laisse l'agent parler, jamais l'inverse.
        */
       const aLuLaSaisie = actions.some((a) => graph.nodes.find((n) => n.id === a.nodeId)?.data.valueKind === 'derniere_saisie');
-      const sansReponse = buttonPayload === null && canalRetour === 'whatsapp' && partis === 0 && !aLuLaSaisie;
+      const sansReponse = buttonPayload === null && canalRetour === 'whatsapp' && !entrant.reaction && partis === 0 && !aLuLaSaisie;
       await this.rendreLaMainAMba(tenantId, waId, sansReponse ? { transmettre: messageId } : {});
     }
     // Transition fraîche vers un bloc agent (distincte de la branche du haut, où le run y était déjà) : la

@@ -224,8 +224,10 @@ const CHAMPS_WIDGET = {
   devenir: {
     type: ['string', 'null'], enum: ['mba', 'scenario', null],
     description: 'Qui répond aux conversations du widget. null (défaut) : comme les autres conversations, le réglage '
-      + 'de l’espace décide. « mba » : l’agent de Meta, s’il est allumé. « scenario » : un scénario démarre à '
-      + 'l’arrivée du message, il exige workflowId. Confier à un agent IA n’est pas encore possible.',
+      + 'de l’espace décide. « mba » : le répondeur automatique de l’espace, l’agent de Meta s’il est allumé ou '
+      + 'l’agent IA désigné répondeur (set_default_responder). « scenario » : un scénario démarre à l’arrivée du '
+      + 'message, il exige workflowId. Un agent IA répond aux conversations d’un widget en étant le répondeur de '
+      + 'l’espace, pas par ce champ.',
   },
   workflowId: {
     type: ['string', 'null'], format: 'uuid',

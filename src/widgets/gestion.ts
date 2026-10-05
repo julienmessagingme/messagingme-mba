@@ -126,7 +126,7 @@ function messageDeSaisie(erreur: z.ZodError): string {
 
 export const WIDGET_INCONNU = 'Widget inconnu dans cet espace.';
 export const DEVENIR_AGENT_A_VENIR =
-  'Confier les conversations d’un widget à un agent IA est à venir : choisissez l’agent de Meta, un scénario, ou le réglage de l’espace.';
+  'Un widget ne se confie pas à un agent IA précis : faites de l’agent le répondeur de l’espace, puis choisissez le répondeur automatique pour ce widget.';
 const SCENARIO_A_CHOISIR = 'Choisissez le scénario que ce widget démarre.';
 const SCENARIO_SANS_DEVENIR = 'Un scénario ne se désigne qu’avec le devenir « scénario ».';
 const SCENARIO_INCONNU = 'Ce scénario n’existe pas dans cet espace.';

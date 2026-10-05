@@ -12,6 +12,7 @@ import {
 } from '@/lib/api';
 import { listAgents } from '@/lib/api-agent';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
+import { repondeurAutomatique } from '@/lib/repondeur';
 import {
   AssistantCampagne, REFERENCES_VIDES,
   type CapacitesEspace, type EtapeAssistant, type ReferencesContenu,
@@ -128,6 +129,9 @@ function AssistantInner({ session }: { session: Session }) {
         setCapacites({
           rcsEnabled: s.rcsEnabled === true,
           mbaEnabled: s.mbaEnabled === true,
+          // L'agent de Meta OU un agent IA répondeur (lot 5) : ce qui rend le choix « le répondeur automatique prend la
+          // main » d'un étage vrai. Un réglage illisible vaut « aucun », la réponse prudente (l'option se grise).
+          repondeurAutomatique: repondeurAutomatique(s) === true,
           /**
            * 🔴 DEUX QUESTIONS, PAS UNE, ET IL FALLAIT LES DEUX (lot 9, 2026-09-23). L'interrupteur
            * `hubspotListsEnabled` dit « ce client VEUT cette source » ; le portail dit « elle est seulement
@@ -144,7 +148,7 @@ function AssistantInner({ session }: { session: Session }) {
           ...(s.businessHours ? { businessHours: s.businessHours as BusinessHours } : {}),
         });
       })
-      .catch(() => { if (vivant) setCapacites({ rcsEnabled: false, mbaEnabled: false, hubspotListes: false, hubspotEnPause: false }); });
+      .catch(() => { if (vivant) setCapacites({ rcsEnabled: false, mbaEnabled: false, repondeurAutomatique: false, hubspotListes: false, hubspotEnPause: false }); });
     return () => { vivant = false; };
   }, [session.tenantId]);
 

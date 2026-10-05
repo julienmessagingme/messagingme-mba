@@ -107,16 +107,18 @@ function memeVisuel(a: VisuelEnvoye, b: VisuelEnvoye): boolean {
 }
 
 export function PubFormulaire({
-  tenantId, scenarios, agentMetaOuvert, nomPage, brouillon, brouillonsIndisponibles,
+  tenantId, scenarios, repondeurOuvert, nomPage, brouillon, brouillonsIndisponibles,
   fermer, creee, brouillonsChanges,
 }: {
   tenantId: string;
   /** Les scénarios publiés de l'espace, pour choisir qui répond. */
   scenarios: Array<{ id: string; name: string }>;
   /**
-   * L'agent de Meta répond-il à tout le monde sur ce numéro ?
+   * Un répondeur automatique répond-il sur ce numéro : l'agent de Meta allumé, ou l'agent IA répondeur de l'espace
+   * (lot 5) ? La destination `agent_meta` (« le répondeur automatique ») ne prend rien : elle laisse le prospect à
+   * celui des deux qui répond.
    *
-   * 🔴 QUAND IL EST ÉTEINT, LE CHOIX N'EST PAS PROPOSÉ, et l'écran dit pourquoi. Le proposer quand même
+   * 🔴 QUAND IL N'Y EN A AUCUN, LE CHOIX N'EST PAS PROPOSÉ, et l'écran dit pourquoi. Le proposer quand même
    * créerait une publicité dont les prospects n'arriveraient nulle part : c'est le « proposé mais inerte »
    * que le produit s'interdit.
    */
@@ -126,7 +128,7 @@ export function PubFormulaire({
    * mais il ne l'AFFIRME pas : dire « l'agent de Meta n'est pas ouvert sur ce numéro » est un énoncé sur
    * la configuration Meta du client, et nous n'avons fait qu'échouer à lire NOTRE réglage.
    */
-  agentMetaOuvert: boolean | null;
+  repondeurOuvert: boolean | null;
   /**
    * Le nom de la Page connectée, pour l'aperçu seulement (migration 0169).
    *
@@ -910,28 +912,29 @@ export function PubFormulaire({
         data-testid="pub-destination"
       >
         <option value="scenario">{t('Un scénario', 'A scenario')}</option>
-        {/* 🔴 PROPOSÉ SEULEMENT SI L'AGENT DE META RÉPOND VRAIMENT. Sinon, les prospects de cette publicité
-            n'arriveraient nulle part, et rien ne le dirait. */}
-        {agentMetaOuvert === true && <option value="agent_meta">{t('L’agent de Meta', 'The Meta agent')}</option>}
+        {/* 🔴 PROPOSÉ SEULEMENT SI UN RÉPONDEUR RÉPOND VRAIMENT (l'agent de Meta, ou l'agent IA répondeur, lot 5).
+            Sinon, les prospects de cette publicité n'arriveraient nulle part, et rien ne le dirait. La valeur reste
+            `agent_meta` en base : seul le libellé a changé. */}
+        {repondeurOuvert === true && <option value="agent_meta">{t('Le répondeur automatique', 'The automatic responder')}</option>}
       </select>
-      {agentMetaOuvert === false && (
+      {repondeurOuvert === false && (
         <p className="mt-1 text-xs text-ink-500" data-testid="pub-agent-indispo">
-          {t('L’agent de Meta n’est pas allumé pour cet espace : il ne peut pas répondre à ces prospects.',
-             'The Meta agent is not turned on for this space: it cannot answer these leads.')}
+          {t('Cet espace n’a pas de répondeur automatique (ni l’agent de Meta, ni un agent IA répondeur) : personne ne répondrait à ces prospects.',
+             'This space has no automatic responder (neither Meta’s agent nor an AI responder agent): nobody would answer these leads.')}
         </p>
       )}
-      {agentMetaOuvert === null && (
+      {repondeurOuvert === null && (
         /* ⚠️ ON DIT NOTRE IGNORANCE, PAS UN VERDICT SUR LEUR NUMÉRO. L'option reste cachée, ce qui est le
            bon sens d'erreur, mais la phrase décrit CE QUI S'EST PASSÉ CHEZ NOUS. */
         <p className="mt-1 text-xs text-ink-500" data-testid="pub-agent-inconnu">
-          {t('Nous n’avons pas pu lire l’état de l’agent de Meta pour cet espace : rechargez la page pour le proposer.',
-             'We could not read the Meta agent state for this space: reload the page to offer it.')}
+          {t('Nous n’avons pas pu lire le répondeur automatique de cet espace : rechargez la page pour le proposer.',
+             'We could not read this space’s automatic responder: reload the page to offer it.')}
         </p>
       )}
       {destination === 'agent_meta' && (
         <p className="mt-1 text-xs text-alerte-700">
-          {t('Ses messages restent facturés au jeton, même pendant les 72 heures gratuites.',
-             'Its messages are still billed per token, even during the free 72 hours.')}
+          {t('Ses réponses restent facturées, même pendant les 72 heures gratuites : au jeton pour l’agent de Meta, sur le crédit IA pour un agent IA répondeur.',
+             'Its answers are still billed, even during the free 72 hours: per token for Meta’s agent, on the AI credit for an AI responder agent.')}
         </p>
       )}
 
@@ -944,10 +947,10 @@ export function PubFormulaire({
           </select>
           {/* ⚠️ `=== true` ET PAS UNE VÉRACITÉ : `null` est falsy, donc le comportement serait le même,
               mais c'est précisément la forme qui a effacé la distinction trois fois dans ce lot. */}
-          {agentMetaOuvert === true && (
+          {repondeurOuvert === true && (
             <p className="mt-1 text-xs text-ink-500" data-testid="pub-agent-ecarte">
-              {t('L’agent de Meta sera écarté des prospects de cette publicité : c’est le scénario qui répond.',
-                 'The Meta agent will be kept away from this ad’s leads: the scenario answers.')}
+              {t('Le répondeur automatique sera écarté des prospects de cette publicité : c’est le scénario qui répond.',
+                 'The automatic responder will be kept away from this ad’s leads: the scenario answers.')}
             </p>
           )}
         </>

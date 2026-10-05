@@ -228,6 +228,12 @@ describe('créer', () => {
     await server.close();
   });
 
+  it('le refus du devenir agent dit le seul chemin vers un agent IA : le répondeur de l’espace, jamais un scénario', () => {
+    // Relecture de la livraison B du lot 5 (JB9) : un widget au devenir « scénario » ne confie rien à un agent IA.
+    expect(DEVENIR_AGENT_A_VENIR).toContain('faites de l’agent le répondeur de l’espace, puis choisissez le répondeur automatique');
+    expect(DEVENIR_AGENT_A_VENIR).not.toMatch(/scénario/);
+  });
+
   it('le devenir et son scénario vont ensemble, dans les deux sens', async () => {
     const { server, cap } = monter();
     expect((await creer(server, { nom: 'Blog', phrase: 'Je viens du blog', devenir: 'scenario' })).statusCode).toBe(400);

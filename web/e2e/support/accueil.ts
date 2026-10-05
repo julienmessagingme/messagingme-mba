@@ -48,6 +48,13 @@ export async function mockAccueil(
     numbersCount?: number; mbaStatus?: unknown;
     /** Fait échouer `PUT /mba-activation` en 409 avec ce message : le cas « on n'a pas pu lire chez Meta ». */
     activationRefusee?: string;
+    /** Rempli par le mock : l'intention (`enabled`) de chaque `PUT /mba-activation` reçu. */
+    activations?: boolean[];
+    /**
+     * L'agent IA répondeur de l'espace (lot 5), rendu par `GET /agents`. Absent : la route rend `{}`, comme toute route
+     * que ce support ne connaît pas, donc aucun répondeur IA.
+     */
+    repondeurIa?: { id: string; label: string };
     /** Fait échouer `POST /numero/code` en 422 avec ce message (refus de Meta, quota, numéro déjà vérifié). */
     codeNumeroRefus?: string;
     /** Fait échouer `POST /numero/activer` en 422 avec ce message (code faux, register refusé). */
@@ -194,6 +201,7 @@ export async function mockAccueil(
         return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: over.activationRefusee }) });
       }
       const b = (route.request().postDataJSON() ?? {}) as { enabled?: boolean };
+      over.activations?.push(b.enabled === true);
       return json({ enabled: b.enabled === true, chezMeta: 'applique', phoneNumberId: 'PN1' });
     }
     // « Activer le numéro » (2026-09-22). Le mock fait l'ÉCHO du canal reçu, il ne le devine pas : c'est ce
@@ -206,6 +214,10 @@ export async function mockAccueil(
     if (url.endsWith('/numero/activer')) {
       if (over.activerNumeroRefus) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: over.activerNumeroRefus }) });
       return json({ actif: true });
+    }
+    if (over.repondeurIa && new URL(url).pathname.endsWith('/agents')) {
+      const r = over.repondeurIa;
+      return json({ agents: [{ id: r.id, label: r.label, status: 'active', sorties: [], modele: '' }], repondeurAgentId: r.id });
     }
     if (url.includes('/account-status')) return json(account);
     if (url.includes('/settings')) return json(settings); // GET + PUT + PATCH control-handback : même forme
