@@ -42,6 +42,7 @@ function make(fiche: FicheAgent = FICHE, decision?: DecisionAgent, session: Agen
   const etats: Array<{ runId: string; nodeId: string; state: RunState }> = [];
   const deps: RunTurnDeps = {
     estDesabonne: jamaisDesabonne,
+    estRepondeur: async () => false,
     sessions: {
       prendreLeTour: async () => session,
       clore: async () => {},

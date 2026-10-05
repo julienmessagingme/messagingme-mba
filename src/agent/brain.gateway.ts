@@ -305,14 +305,20 @@ async function boucler(
       // L'escalade a déjà rendu la main : le tour s'arrête ici.
       if (res.rendu) {
         /**
-         * La dernière phrase est gardée seulement si l'équipe est indisponible. Équipe joignable : c'est la branche
-         * `humain` du scénario qui parle, une seule voix. Équipe fermée : cette branche est un bloc statique, qui ne
-         * peut pas dire « nous reprenons lundi 9 h » ; l'agent, qui a reçu la date dans sa consigne, le peut. Un
-         * espace sans réglage est en `always`, donc inchangé.
+         * La dernière phrase est gardée seulement si l'équipe est indisponible, ou dans le répondeur. Équipe joignable :
+         * c'est la branche `humain` du scénario qui parle, une seule voix. Équipe fermée : cette branche est un bloc
+         * statique, qui ne peut pas dire « nous reprenons lundi 9 h » ; l'agent, qui a reçu la date dans sa consigne, le
+         * peut. Dans le répondeur, aucune branche ne parle (`ContexteTourAgent.repondeur`) : jetée, la phrase laissait
+         * le contact sans rien (essai réel du 2026-10-05). Gardée, elle passe par `texteDeSortie`, comme celle de
+         * `terminer` : le `message` imposé quand le modèle n'a rien écrit (plusieurs modèles proposés escaladent sans
+         * un mot, mesuré le même jour), l'annonce d'IA quand elle est due. Un espace sans réglage est en `always`, donc
+         * inchangé.
          */
         const equipeMuette = agent.equipe !== undefined && !agent.equipe.disponible;
         return {
-          texte: equipeMuette ? (reponse.texte ?? null) : null,
+          texte: equipeMuette || tour.repondeur ? texteDeSortie(reponse.texte, res.dernierMessage, () => deps.alerter?.(
+            `agent ${input.agentId} : le modèle a rendu un faux bloc de résultat d’outil comme dernier message`,
+          ), annoncerIa ? agent.mentionIa : null) : null,
           sortie: null,
           usage,
           appels,

@@ -14,7 +14,7 @@ import type { AgentComplet, PatchAgent } from '../src/agent/agent-store';
 import { ficheVide } from '../src/agent/fiche';
 import type { LigneHistorique } from '../src/reglages/historique';
 import { agentsInertes } from './routes-inertes';
-import { listeEnMemoire, metaFactice } from './banc-du-fil';
+import { bancDuFil, listeEnMemoire, metaFactice } from './banc-du-fil';
 
 /**
  * LE RÉGLAGE DU RÉPONDEUR (lot 5, A2) : une seule voix, garantie par la base ET rendue vraie chez Meta.
@@ -35,7 +35,7 @@ const AUTEUR = { userId: 'u1', origine: 'formulaire' as const };
 /** Le réglage et ses dépendances en mémoire, chaque geste noté dans l'ordre. */
 function monter(o: {
   mba?: boolean; repondeur?: string | null; statut?: AgentComplet['status'] | null; gateway?: boolean;
-  extinction?: Error; ecriture?: Error;
+  extinction?: Error; ecriture?: Error; reprise?: Error;
 } = {}) {
   const etat = { mbaEnabled: o.mba === true, repondeurAgentId: o.repondeur ?? null };
   const journal: string[] = [];
@@ -61,6 +61,13 @@ function monter(o: {
     },
     liste: { toutRetirer: async () => { journal.push('liste:videe'); return { retires: 3, refuses: 1 }; } },
     historique: { ecrire: async (_t, l) => { lignes.push(l); } },
+    fils: {
+      reprendreLesFilsDeMeta: async () => {
+        journal.push('fils:repris');
+        if (o.reprise) throw o.reprise;
+        return 2;
+      },
+    },
   };
   return { deps, etat, journal, lignes };
 }
@@ -70,18 +77,35 @@ describe('choisirRepondeur : une seule voix', () => {
     const m = monter({ mba: true });
     const r = await choisirRepondeur(m.deps, T, AG, AUTEUR);
     expect(r).toEqual({ ok: true, valeur: { repondeurAgentId: AG, agentDeMetaEteint: true, liste: { retires: 3, refuses: 1 } } });
-    expect(m.journal).toEqual(['meta:eteint', 'liste:videe', `reglage:${AG}`]);
+    expect(m.journal).toEqual(['meta:eteint', 'liste:videe', `reglage:${AG}`, 'fils:repris']);
     expect(m.etat).toEqual({ mbaEnabled: false, repondeurAgentId: AG });
     expect(m.lignes).toMatchObject([{
       surface: 'agent', surfaceId: AG, element: 'repondeur', operation: 'modification', origine: 'formulaire', acteurId: 'u1',
-      avant: { repondeurAgentId: null, mbaEnabled: true },
+      avant: { repondeurAgentId: null, mbaEnabled: true }, apres: { fils: 2 },
     }]);
+  });
+
+  it('🔴 les fils que notre colonne donnait à l’agent de Meta reviennent aux robots, APRÈS le réglage (essai réel du 2026-10-05)', async () => {
+    // Laissé `mba`, un fil n'était plus tenu par personne : le parcours qui attendait le contact gelait, la remise
+    // refusait l'agent IA, et le client n'avait plus aucune réponse. Repris AVANT le réglage, le fil trouverait
+    // l'agent de Meta éteint et aucun répondeur, le même silence.
+    const m = monter({ mba: true });
+    expect((await choisirRepondeur(m.deps, T, AG, AUTEUR)).ok).toBe(true);
+    expect(m.journal.indexOf('fils:repris')).toBeGreaterThan(m.journal.indexOf(`reglage:${AG}`));
+  });
+
+  it('🔴 une reprise des fils en échec ne défait pas le geste : réglage écrit, ligne d’historique écrite, `fils: null`', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = monter({ mba: true, reprise: new Error('pooler injoignable') });
+    expect(await choisirRepondeur(m.deps, T, AG, AUTEUR)).toMatchObject({ ok: true, valeur: { repondeurAgentId: AG } });
+    expect(m.etat.repondeurAgentId).toBe(AG);
+    expect(m.lignes).toMatchObject([{ element: 'repondeur', apres: { fils: null } }]);
   });
 
   it('agent de Meta déjà éteint : rien chez Meta, mais la liste est vidée quand même (des contacts peuvent y rester)', async () => {
     const m = monter();
     expect((await choisirRepondeur(m.deps, T, AG, AUTEUR)).ok).toBe(true);
-    expect(m.journal).toEqual(['liste:videe', `reglage:${AG}`]);
+    expect(m.journal).toEqual(['liste:videe', `reglage:${AG}`, 'fils:repris']);
   });
 
   it('🔴 un agent en brouillon, désactivé, inconnu ou mal formé est refusé, sans RIEN éteindre ni écrire', async () => {
@@ -134,6 +158,37 @@ describe('choisirRepondeur : une seule voix', () => {
     expect((await choisirRepondeur(m.deps, T, AG, AUTEUR)).ok).toBe(true);
     expect(m.journal).toEqual([]);
     expect(m.lignes).toEqual([]);
+  });
+});
+
+describe('🔴 les fils de l’agent de Meta reviennent aux robots, par le contrôle du fil réel (essai réel du 2026-10-05)', () => {
+  it('chaque fil `mba` passe à `app_workflow`, par paquets, avec sa cause ; un fil d’opérateur ou de scénario n’est pas touché', async () => {
+    const tenus = Array.from({ length: 205 }, (_, i) => `336${String(i).padStart(8, '0')}`);
+    // Les lectures, notées : dans le faux comme en base, un fil repris sort de l'ensemble `mba`, donc sans les compter
+    // un paquet unique sans curseur passerait aussi.
+    const lectures: Array<{ apres: string | null; limite: number }> = [];
+    let lire: ((t: string, apres: string | null, limite: number) => Promise<string[]>) | null = null;
+    const banc = bancDuFil({
+      depot: { filsDeLAgentDeMeta: (t, apres, limite) => { lectures.push({ apres, limite }); return lire!(t, apres, limite); } },
+      mbaEnabled: false, repondeurAgentId: AG,
+      conversations: {
+        ...Object.fromEntries(tenus.map((w) => [w, { owner: 'mba' as const }])),
+        '33700000001': { owner: 'app_human' },
+        '33700000002': { owner: 'app_workflow' },
+      },
+    });
+    // Fidèle à `PgInboxStore.filsDeLAgentDeMeta`, sur les lignes du banc.
+    lire = async (_t, apres, limite) => [...banc.lignes]
+      .filter(([waId, l]) => l.owner === 'mba' && (apres === null || waId > apres))
+      .map(([waId]) => waId).sort().slice(0, limite);
+    expect(await banc.fil.reprendreLesFilsDeMeta(T)).toBe(tenus.length);
+    for (const w of tenus) expect(banc.etat(w)?.owner, w).toBe('app_workflow');
+    expect(banc.etat('33700000001')?.owner).toBe('app_human');
+    expect(lectures).toEqual([{ apres: null, limite: 200 }, { apres: tenus[199], limite: 200 }]);
+    expect(banc.ecritures.map((e) => e.waId).sort()).toEqual(tenus);
+    expect(banc.ecritures[0]?.opts).toMatchObject({ only: ['mba'], par: { cause: 'automatique : l’agent de Meta est éteint, le répondeur automatique prend la suite' } });
+    // Aucun geste chez Meta : son agent est éteint, et ses contacts viennent d'être retirés de sa liste.
+    expect(banc.appels).toEqual([]);
   });
 });
 

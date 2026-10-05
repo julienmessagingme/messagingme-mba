@@ -122,6 +122,7 @@ export const repondeurInerte: DepsReglageRepondeur = {
   eteindreAgentDeMeta: neDevraitPasEtreAppelee('eteindreAgentDeMeta'),
   liste: { toutRetirer: neDevraitPasEtreAppelee('toutRetirer') },
   historique: { ecrire: neDevraitPasEtreAppelee('historique.ecrire') },
+  fils: { reprendreLesFilsDeMeta: neDevraitPasEtreAppelee('reprendreLesFilsDeMeta') },
 };
 
 export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes' | 'historique' | 'oublierRepondeur' | 'repondeur'> = {

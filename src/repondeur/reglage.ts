@@ -3,6 +3,7 @@ import type { AuteurModification } from '../agent/gestion';
 import { EtatMetaIllisible, MetaARefuse, type ResultatActivation } from '../mba/activation';
 import type { ListeDeLAgent } from '../mba/liste';
 import type { HistoriqueStore } from '../reglages/historique';
+import type { ControleDuFil } from '../inbox/fil';
 import { estUuid } from '../http/scope';
 import { refus, type Issue } from '../lib/issue';
 import { journaliser } from '../lib/journal';
@@ -17,6 +18,8 @@ import { journaliser } from '../lib/journal';
  * liste de l'agent de Meta tous les contacts qu'il tenait (`toutRetirer`) : sans ce retrait, Meta continuerait de
  * ranger en `standby` les messages de ces contacts, que nos étapes ignorent. Le réglage s'écrit EN DERNIER : écrit
  * avant, le CHECK lèverait (l'agent de Meta encore allumé), ou deux voix répondraient le temps de l'extinction.
+ * Puis les fils que notre colonne donnait encore à l'agent de Meta reviennent aux robots (`reprendreLesFilsDeMeta`) :
+ * sans ça, un parcours qui attendait l'un de ces contacts gelait, et personne ne lui répondait plus.
  *
  * UNE SEULE VÉRITÉ, DEUX PORTES, comme la gestion d'un agent (`src/agent/gestion.ts`) : la route de la console
  * (`PUT /tenants/:tenantId/agents/repondeur`) et l'outil MCP `set_default_responder` appellent CETTE fonction.
@@ -40,6 +43,8 @@ export interface DepsReglageRepondeur {
   liste: Pick<ListeDeLAgent, 'toutRetirer'>;
   /** L'historique des réglages : le changement de répondeur y laisse sa ligne, avec son auteur et sa porte. */
   historique: Pick<HistoriqueStore, 'ecrire'>;
+  /** Le contrôle du fil (`src/inbox/fil.ts`), le seul qui écrit le détenteur d'une conversation. */
+  fils: Pick<ControleDuFil, 'reprendreLesFilsDeMeta'>;
 }
 
 /** Ce que le geste a fait, rendu tel quel à l'écran et à l'outil MCP. */
@@ -114,9 +119,24 @@ export async function choisirRepondeur(
     if (c?.code === '23503') return refus(404, INTROUVABLE);
     throw err;
   }
+  const fils = await reprendreLesFils(deps, tenantId);
   const libelle = `Répondeur de l’espace : ${agent.label}${agentDeMetaEteint ? ' (l’agent de Meta est éteint)' : ''}`;
-  await journaliserLigne(deps, tenantId, agentId, libelle, avant, { repondeurAgentId: agentId, mbaEnabled: false, liste }, auteur);
+  await journaliserLigne(deps, tenantId, agentId, libelle, avant, { repondeurAgentId: agentId, mbaEnabled: false, liste, fils }, auteur);
   return { ok: true, valeur: { repondeurAgentId: agentId, agentDeMetaEteint, liste } };
+}
+
+/**
+ * Les fils encore donnés à l'agent de Meta reviennent aux robots, APRÈS le réglage : écrite avant, une conversation
+ * reprise trouverait l'agent de Meta éteint et aucun répondeur, le silence qu'on répare. 🔴 Au mieux, pour la même
+ * raison que le journal : le réglage est écrit, un échec ici ne doit pas faire réessayer le geste. `null` = échec.
+ */
+async function reprendreLesFils(deps: DepsReglageRepondeur, tenantId: string): Promise<number | null> {
+  try {
+    return await deps.fils.reprendreLesFilsDeMeta(tenantId);
+  } catch (err) {
+    journaliser('error', 'repondeur_fils_de_meta_non_repris', { err, tenantId });
+    return null;
+  }
 }
 
 /**

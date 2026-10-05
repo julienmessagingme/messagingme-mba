@@ -205,6 +205,26 @@ describe.skipIf(!url)('le journal des événements d’une conversation', () => 
   });
 
   describe('le détenteur du fil : l’agent de Meta, et les bornes des demandes (0194)', () => {
+    it('🔴 `filsDeLAgentDeMeta` : les seuls fils `mba` de l’espace, par `wa_id` croissant, après la clé donnée', async () => {
+      // La lecture de `ControleDuFil.reprendreLesFilsDeMeta`, quand le répondeur IA remplace l'agent de Meta (essai réel
+      // du 2026-10-05) : un fil laissé `mba` n'était plus tenu par personne.
+      for (const [n, w] of [[60, '33600000601'], [61, '33600000602'], [62, '33600000603']] as const) await entrant(`wamid.ev-${n}`, 'text', w);
+      await pool.query(`update conversations set control_owner = 'mba' where tenant_id = $1 and wa_id in ('33600000601', '33600000603')`, [tenantId]);
+      // Un fil `mba` d'un autre espace n'est jamais rendu.
+      await store.recordInbound(autreTenantId, {
+        phoneNumberId: 'pn-itest', waId: '33600000604', messageId: 'wamid.ev-67', type: 'text', body: 'bonjour',
+        buttonPayload: null, profileName: null, field: 'messages',
+      });
+      await pool.query(`update conversations set control_owner = 'mba' where tenant_id = $1`, [autreTenantId]);
+      expect(await store.filsDeLAgentDeMeta(tenantId, null, 10)).toEqual(['33600000601', '33600000603']);
+      expect(await store.filsDeLAgentDeMeta(tenantId, null, 1)).toEqual(['33600000601']);
+      expect(await store.filsDeLAgentDeMeta(tenantId, '33600000601', 10)).toEqual(['33600000603']);
+      // La reprise passe par le seul écrivain du détenteur : `prise_mba`, avec sa cause.
+      expect(await store.setControlOwner(tenantId, '33600000601', 'app_workflow', { par: AUTO, only: ['mba'] })).toBe(true);
+      expect(await journal(await idDe('33600000601'))).toEqual([{ type: 'prise_mba', acteur_id: null, cible_id: null, cause: 'automatique : test' }]);
+      expect(await store.filsDeLAgentDeMeta(tenantId, null, 10)).toEqual(['33600000603']);
+    });
+
     it('🔴 prise à l’agent par un opérateur, rendue au scénario puis à l’agent par une cause', async () => {
       await entrant('wamid.ev-40');
       const id = await idDe();

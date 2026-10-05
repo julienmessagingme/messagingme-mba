@@ -103,6 +103,10 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
       const l = lignes.get(waId);
       if (l?.owner === 'app_human') l.changedAt = new Date();
     },
+    // Fidèle à `PgInboxStore.filsDeLAgentDeMeta` : `mba` seulement, par `wa_id` croissant, strictement après `apres`.
+    filsDeLAgentDeMeta: async (_t, apres, limite) => [...lignes]
+      .filter(([waId, l]) => l.owner === 'mba' && (apres === null || waId > apres))
+      .map(([waId]) => waId).sort().slice(0, limite),
   };
   return { depot, lignes, ecritures, demandes, etat: (waId: string): EtatDuFil | undefined => lignes.get(waId) };
 }

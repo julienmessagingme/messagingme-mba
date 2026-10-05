@@ -97,6 +97,13 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     },
     risk: 'write',
     params: [],
+    // Même défaut que `terminer`, mesuré le 2026-10-05 sur la même demande de conseiller : Mistral Small escalade sans
+    // un mot 10 fois sur 10, Claude Sonnet 4.5 9 sur 10, Gemini 2.5 Flash Lite 7 sur 8. Le cerveau envoie ce message
+    // quand la réponse qui porte l'appel n'a pas de texte, là où la phrase de l'agent est dite (`brain.gateway.ts`).
+    paramsImposes: [{
+      name: 'message', type: 'string', source: 'modele',
+      description: 'Ta phrase au contact avant de passer la main, dans le ton de la conversation : qui prend le relais, ou quand l’équipe reprend si elle n’est pas joignable. Toujours rempli.',
+    }],
   },
   {
     handler: 'chercher_connaissance',

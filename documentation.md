@@ -458,15 +458,21 @@ scénario construit par le client. Les invariants :
   seulement, et l'outil MCP `set_default_responder`, qui exige une personne) refuse un agent absent ou inactif et une
   instance sans modèle ; agent de Meta allumé, il l'éteint par le chemin de l'Accueil (`activationPour`,
   `src/http/mba.ts`), puis retire de sa liste TOUS les contacts (`ListeDeLAgent.toutRetirer`, par paquets, un refus
-  compté sans arrêter les autres), PUIS écrit le réglage, et laisse sa ligne `repondeur` dans l'historique des
-  réglages. Un agent qui quitte le statut actif cesse d'être le répondeur (`modifierAgent`, `oublierRepondeur`).
+  compté sans arrêter les autres), PUIS écrit le réglage, puis rend aux robots (`app_workflow`) les fils que notre
+  colonne donnait encore à l'agent de Meta (`ControleDuFil.reprendreLesFilsDeMeta`, un `prise_mba` chacun dans la
+  frise) : laissés `mba`, plus personne ne les tenait, un parcours en attente gelait et la remise refusait l'agent IA.
+  Cette reprise est au mieux : un échec ne défait pas le geste (`fils: null` dans sa ligne). Le geste laisse sa ligne
+  `repondeur` dans l'historique des réglages. Un agent qui quitte le statut actif cesse d'être le répondeur
+  (`modifierAgent`, `oublierRepondeur`).
   `GET /agents` et `list_agents` disent lequel l'est.
 - **Un scénario système caché par espace pour ancre** (§ 5), et un graphe construit à CHAQUE démarrage depuis la
   fiche de l'agent (`grapheDuRepondeur`, `src/repondeur/graphe.ts`), figé dans le parcours (type de lancement
   `repondeur`, `fourni_fige`). Ses règles d'arrêt, `humain` et `timeout` mènent à une fin silencieuse ; `echec`,
   `plafond` et `sans_source` n'ont pas d'arête, donc la conversation passe à l'équipe (`boutonSansSuite`). 🔴 `humain`
   est câblée : non câblée, le moteur passerait la main pendant la sortie, AVANT l'escalade de l'agent, dont la bascule
-  rendrait alors `false`, et la dernière phrase de l'agent serait jetée.
+  rendrait alors `false`, et la dernière phrase de l'agent serait jetée. 🔴 Et le tour GARDE cette phrase dans le
+  répondeur (`ContexteTourAgent.repondeur`, lu par `estRepondeur` sur le scénario du job) : ailleurs, équipe
+  joignable, il la jette parce que la branche `humain` du scénario parle à sa place ; ici, rien ne parle après lui.
 - **Le démarreur** (`creerDemarreurRepondeur`, `src/repondeur/demarrer.ts`) lit l'agent (actif) et le solde AVANT de
   démarrer : à sec, rien ne démarre (ni parcours, ni session), la conversation passe à l'équipe et l'alerte part. Le
   parcours naît en ayant reçu le message déclencheur (`last_message_id`, le dernier du contact qui n'est pas une
@@ -734,7 +740,9 @@ par `cheminMcp` : sans lui, un changement de schéma rouvrirait la garde en sile
 🔴 **UN PARAMÈTRE IMPOSÉ PAR LE CATALOGUE N'EST JAMAIS STOCKÉ, ET L'EXPOSITION COMME LA VALIDATION LE LISENT.**
 `agent_tools.params` garde la copie des paramètres écrite à la pose d'un outil maison (`paramsInitiaux`) : un
 paramètre ajouté au catalogue n'atteindrait aucun outil déjà posé. `OutilCatalogue.paramsImposes`
-(`src/agent/outils-maison.ts`) porte ceux qui valent pour tous, et `paramsEffectifs` (la copie, plus les imposés
+(`src/agent/outils-maison.ts`) porte ceux qui valent pour tous (le `message` de `terminer` et celui de l'escalade, que
+le tour envoie quand le modèle appelle l'outil sans rien écrire : plusieurs modèles proposés escaladent sans un mot),
+et `paramsEffectifs` (la copie, plus les imposés
 qu'elle ne déclare pas, pour un outil maison seulement) est la lecture de l'exposition au modèle (`outilExpose`)
 ET de la validation des arguments (`executeTool`, étape 3) : lu d'un seul côté, un argument annoncé serait retiré
 par `z.object`, sans erreur. Ni `paramsInitiaux` ni le catalogue rendu à la console ne les portent ; le schéma « ce
@@ -3025,7 +3033,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/pubs/publicites.pg.ts` -> `coutParPub` | 🔴 le coût par engagé des publicités sur une PÉRIODE (carte Coûts) : la dépense des jours de la période (`pubs_depense_jour`, 0198) et les PERSONNES arrivées par la campagne dans la période. Un engagé a cliqué PUIS écrit, ce n'est pas un prospect qualifié. Les jours sont ceux du compte publicitaire, les arrivées bornées à l'heure de Paris |
 | `src/crm/transition-consentement.ts` | 🔴 LA transition du consentement WhatsApp d'une fiche : qui lève un STOP (`LEVE_UN_STOP`, par autorité typée), ce que deviennent statut, `opt_out_at` et `opt_in_source`, et qui est passé à `opted_out` (à annoncer). Les six écritures de `PgContactStore` la composent (`affectationsDUpsert`, `ecritureDuConsentement`) ; une septième copie divergerait, comme deux l'ont fait (738a7c3d) |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
-| `src/repondeur/reglage.ts` -> `choisirRepondeur` | 🔴 le seul geste qui désigne ou retire le répondeur de l'espace, pour la console et le MCP : agent actif et modèle exigés, agent de Meta éteint puis sa liste vidée AVANT d'écrire le réglage, ligne d'historique |
+| `src/repondeur/reglage.ts` -> `choisirRepondeur` | 🔴 le seul geste qui désigne ou retire le répondeur de l'espace, pour la console et le MCP : agent actif et modèle exigés, agent de Meta éteint puis sa liste vidée AVANT d'écrire le réglage, ses fils `mba` rendus aux robots APRÈS, ligne d'historique |
 | `src/workflow/lancements.ts` -> `creerLancements`, `POLITIQUE_DE_LANCEMENT` | 🔴 le seul chemin pour démarrer un parcours : un TYPE de lancement (liste fermée) et sa politique (reprise du fil, publication des étiquettes, graphe joué, garde de fenêtre), lue par `WorkflowExecutor.demarrer`. Un câblage choisit un type, jamais un réglage ; `tests/workflow-lancements.test.ts` exécute la table |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |
 | `src/crm/render.ts` -> `escapeHtml` | l'échappement HTML du dépôt (gabarits d'e-mail, pages d'erreur des liens tracés) |

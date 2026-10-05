@@ -459,6 +459,7 @@ describe('🔴 de bout en bout : un espace sans scénario, l’agent IA répond'
       agents: { byId: async () => fiche },
       mayAct: m.b.fil.peutAgir,
       estDesabonne: jamaisDesabonne,
+      estRepondeur: async () => true,
       envoyer: async (_t, _w, texte) => { envois.push(texte); },
     };
     expect(await runTurn(m.jobs[0]!, tour)).toMatchObject({ fait: 'main_perdue' });

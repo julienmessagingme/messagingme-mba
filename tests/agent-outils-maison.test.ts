@@ -216,6 +216,16 @@ describe('terminer : le paramètre imposé « message »', () => {
     expect(outilMaison('terminer')!.params.map((p) => p.name)).toEqual(['sortie']);
   });
 
+  it('🔴 « escalader » le reçoit aussi : exposé requis, toléré absent, jamais stocké (mesuré le 2026-10-05)', () => {
+    // Le même défaut que `terminer` : Mistral Small, Claude Sonnet 4.5 et Gemini 2.5 Flash Lite passent la main sans un mot.
+    const pose = outil([], 'escalader');
+    const [expose] = outilsExposes([pose], []);
+    expect(expose!.parameters.required).toEqual(['message']);
+    expect(expose!.parameters.properties.message).toMatchObject({ type: 'string' });
+    expect(paramsEffectifs(pose).find((p) => p.name === 'message')!.required).toBeUndefined();
+    expect(paramsInitiaux(outilMaison('escalader')!)).toEqual([]);
+  });
+
   it('un outil qui n’est pas maison n’en reçoit aucun, même avec un `handler` « terminer » dans sa liaison', () => {
     const mcp = { ...outil([{ name: 'q', type: 'string', source: 'modele' }]), origin: 'mcp' as const };
     expect(paramsEffectifs(mcp).map((p) => p.name)).toEqual(['q']);

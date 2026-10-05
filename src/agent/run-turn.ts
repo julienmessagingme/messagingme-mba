@@ -57,6 +57,12 @@ export interface RunTurnDeps {
   /** Le fil est-il encore à nous ? Absent -> considéré comme oui (suites à deps minimales). */
   mayAct?(tenantId: string, waId: string): Promise<boolean>;
   /**
+   * 🔴 Ce scénario est-il le répondeur de l'espace (`workflows.systeme`) ? Le cerveau y garde la phrase d'une escalade,
+   * qu'aucune branche ne dit après lui (`ContexteTourAgent.repondeur`). Requise : un câblage qui l'oublierait
+   * laisserait le contact du répondeur sans aucune réponse à sa demande d'humain.
+   */
+  estRepondeur(tenantId: string, workflowId: string): Promise<boolean>;
+  /**
    * 🔴 Ce contact a-t-il demandé à ne plus rien recevoir ? La réponse de l'agent ne passe pas par
    * `WorkflowExecutor.apply` mais par `deps.envoyer` : elle a donc sa propre garde. Lue au rang des plafonds,
    * avant le modèle, pour ne pas payer un appel dont on jetterait la réponse. Requise : les tests déclarent
@@ -254,6 +260,12 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     return { fait: 'desabonne', repos };
   }
 
+  /**
+   * Le parcours est-il le répondeur de l'espace ? Lu HORS du `try` du cerveau, comme la fiche et le solde : un raté de
+   * la base fait rejouer le job par pg-boss, au lieu de clore la session en erreur et de sortir par `echec`.
+   */
+  const repondeur = await deps.estRepondeur(job.tenantId, job.workflowId);
+
   // 4. Le cerveau, sous une échéance dure.
   let decision;
   try {
@@ -285,6 +297,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
         coutDejaMicroEur: session.coutMicroEur,
         // La mémoire déborde la session : l'annonce d'IA, elle, ne compte que ce qui suit son ouverture.
         sessionOuverteLe: session.ouvertLe,
+        repondeur,
       },
     });
   } catch (err) {

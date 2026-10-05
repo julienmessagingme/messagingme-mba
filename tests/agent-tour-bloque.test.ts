@@ -155,6 +155,7 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
     const journal: string[] = [];
     const deps: RunTurnDeps = {
       estDesabonne: jamaisDesabonne,
+      estRepondeur: async () => false,
       sessions: {
         prendreLeTour: async () => SESSION,
         clore: async (_t: string, id: string, _st: string, _so?: string, opts?: { sortieDue?: boolean }) => {

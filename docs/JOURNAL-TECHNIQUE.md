@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-05 : l'essai réel du répondeur, trois défauts, et ce que la mesure a corrigé de mes correctifs
+
+Sur l'espace « Messaging Me Tech SANDBOX », Julien désigne Gan PrevMCP depuis la console (15 h 29) et écrit depuis son
+téléphone. Rien ne répond. Deux causes, lues en base : un scénario de test de la veille attendait encore sa réponse
+(priorité aux scénarios, voulu), et la conversation restait marquée `mba` (rendue par le délai de reprise à 14 h 42).
+L'agent de Meta étant éteint, plus personne ne la tenait : le parcours gelait, la remise refusait l'agent IA. Après
+deux écritures sur cette seule conversation (accord de Julien, collées par lui, l'écriture en production m'étant
+refusée par le garde-fou), le répondeur démarre et répond en contexte.
+
+La demande d'un conseiller : l'agent répond « un conseiller va prendre le relais » et sort par sa règle d'arrêt
+`transfert_humain`, qui mène à une fin muette dans le répondeur. Règle retirée de la fiche : l'escalade passe, la
+conversation arrive dans « À traiter », mais le contact ne reçoit rien, parce que le tour JETTE la phrase de
+l'escalade quand l'équipe est joignable (dans un scénario, la branche `humain` parle à sa place). Le retour de
+l'équipe fonctionne une fois qu'un humain a vraiment répondu (sans réponse, l'agent relit la demande d'humain dans sa
+mémoire et repasse la main, ce que Julien a gardé tel quel). Une réaction ne déclenche rien.
+
+Les mesures (Gateway, même conversation rejouée, clé maison, rien écrit) ont corrigé deux fois mes correctifs. Sur
+Gemini 2.5 Flash, 31 escalades sur 31 portaient leur phrase : j'ai retiré le `message` imposé que je venais d'ajouter.
+Sur les autres modèles proposés, Mistral Small escaladait sans un mot 10 fois sur 10 et Claude Sonnet 4.5 9 sur 10 : je
+l'ai remis. La phrase de consigne qui devait empêcher la sortie par une règle de transfert, elle, faisait inventer des
+noms d'outil à Flash Lite (7 sur 20 avec les deux changements) pour un défaut rare (1 sur 48) : abandonnée. Et la même
+entrée, rejouée sur le même modèle, a donné 0 sur 8 puis 6 sur 10 « sans appel d'outil » : une passe ne prouve rien,
+seules les passes alternées avec la référence comparent.
+
 ## 2026-10-05 : les quotas quotidiens de l'API publique
 
 Le dernier trou de l'audit du 2026-10-02 sur l'API publique : le plafond d'appels (0181) protège l'infrastructure,

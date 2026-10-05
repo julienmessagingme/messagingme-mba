@@ -454,6 +454,20 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * Les contacts dont notre colonne dit le fil tenu par l'agent de Meta, par `wa_id` croissant, strictement après
+   * `apres` (`ControleDuFil.reprendreLesFilsDeMeta`, quand le répondeur IA remplace l'agent de Meta).
+   */
+  async filsDeLAgentDeMeta(tenantId: string, apres: string | null, limite: number): Promise<string[]> {
+    const res = await this.pool.query<{ wa_id: string }>(
+      `select wa_id from conversations
+        where tenant_id = $1 and control_owner = 'mba' and ($2::text is null or wa_id > $2)
+        order by wa_id limit $3`,
+      [tenantId, apres, limite],
+    );
+    return res.rows.map((r) => r.wa_id);
+  }
+
+  /**
    * Le fil tel que la remise « personne ne suit » le lit (`ControleDuFil.remettreSiPersonneNeSuit`) : détenteur,
    * temps écoulé depuis `control_changed_at` (mesuré par la base, comme l'instant qu'elle a posé ; `null` = non daté)
    * et escalade sans réponse. L'absence de conversation vaut `app_workflow`, comme `getControlOwner`.

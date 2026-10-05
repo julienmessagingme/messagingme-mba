@@ -316,6 +316,7 @@ function monter(o: Options = {}) {
       },
       liste: { toutRetirer: async (t) => { cap.vidages.push(t); return { retires: 2, refuses: 0 }; } },
       historique: { ecrire: async (_t, l) => { cap.historique.push(l); } },
+      fils: { reprendreLesFilsDeMeta: async () => 0 },
     },
   };
 

@@ -127,6 +127,17 @@ describe('résolveur maison (tâche 16)', () => {
     expect(r.mainPrise).toBe(true);
   });
 
+  it('🔴 « escalader » rend le `message` imposé, ROGNÉ, en dernier message ; rien pour un message absent, vide ou blanc', async () => {
+    // Même contrat que « terminer » : le cerveau l'envoie quand le modèle n'a rien écrit à côté de l'appel.
+    const { resolveur } = harnais();
+    expect(await resolveur(appel('escalader', { message: '  Un conseiller prend le relais.\n' }))).toMatchObject({
+      rendu: true, mainPrise: true, dernierMessage: 'Un conseiller prend le relais.',
+    });
+    for (const vide of [{}, { message: '' }, { message: '  \n ' }]) {
+      expect(await resolveur(appel('escalader', vide)), JSON.stringify(vide)).not.toHaveProperty('dernierMessage');
+    }
+  });
+
   it('🔴 « escalader » quand un OPÉRATEUR avait déjà la main : `mainPrise` est faux', async () => {
     // La preuve inverse, et elle est le contrat entier de ce booléen. `setControlOwner` rend `false` quand le
     // fil n'était pas `app_workflow` : le tour doit alors se taire, exactement comme avant, plutôt que

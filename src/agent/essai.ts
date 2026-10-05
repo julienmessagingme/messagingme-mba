@@ -72,6 +72,8 @@ const TOUR_BAC_A_SABLE: Omit<ContexteTour, 'appelsDejaFaits' | 'coutDejaMicroEur
   runId: 'bac-a-sable',
   workflowId: 'bac-a-sable',
   waId: 'bac-a-sable',
+  // L'escalade y est simulée sans rendre la main (`resolvers/simulation.ts`) : la question ne se pose pas.
+  repondeur: false,
 };
 
 /** La note du mouvement de crédit, par porte : c'est la seule explication du débit dans le journal du solde. */

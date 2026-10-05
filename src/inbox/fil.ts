@@ -137,6 +137,8 @@ export interface DepsControleDuFil {
      * si le fil n'est pas à l'équipe.
      */
     relancerLeDelai(tenantId: string, waId: string): Promise<void>;
+    /** Les contacts dont notre colonne dit le fil tenu par l'agent de Meta, par `wa_id` croissant, après `apres`. */
+    filsDeLAgentDeMeta(tenantId: string, apres: string | null, limite: number): Promise<string[]>;
   };
   /**
    * Les réglages de l'espace : l'agent de Meta allumé, l'agent IA répondeur (`null` = aucun), et le délai de reprise
@@ -317,6 +319,15 @@ export interface ControleDuFil {
   rendreApresInactivite(tenantId: string, waId: string, detenteur: ControlOwner, vers: 'mba' | 'app_workflow'): Promise<boolean>;
   /** Un scénario ou un agent IA peut-il écrire dans ce fil ? Seulement s'il est `app_workflow`. */
   peutAgir(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * L'agent de Meta vient d'être remplacé par le répondeur IA (`src/repondeur/reglage.ts`) : chaque fil que notre
+   * colonne lui donnait revient aux robots (`app_workflow`), un événement `prise_mba` chacun. Laissé `mba`, le fil
+   * n'est plus tenu par personne : un parcours qui attend ce contact gèle (« le fil ne nous appartient pas ») et
+   * la remise refuse de lui donner l'agent IA, donc le client n'a plus aucune réponse (essai réel du 2026-10-05).
+   * Aucun appel à Meta : son agent est éteint, et ses contacts viennent d'être retirés de sa liste. Rend le nombre
+   * de fils repris.
+   */
+  reprendreLesFilsDeMeta(tenantId: string): Promise<number>;
 }
 
 /**
@@ -336,8 +347,11 @@ const CAUSES = {
   inactivite: parCause('délai de reprise écoulé'),
   creditEpuise: parCause('crédit IA épuisé, le répondeur automatique ne peut pas répondre'),
   repondeurIndisponible: parCause('le répondeur automatique ne peut pas répondre'),
+  agentDeMetaRemplace: parCause('l’agent de Meta est éteint, le répondeur automatique prend la suite'),
 } satisfies Record<string, AuteurDuChangement>;
 const CAUSE_PASSATION = automatique('agent de Meta');
+/** La taille d'un paquet de `reprendreLesFilsDeMeta` : une lecture par paquet, une écriture gardée par fil. */
+const PAQUET_FILS_DE_META = 200;
 /** La demande qu'ouvre un client en rouvrant une conversation que l'équipe tient encore (`remettreSiPersonneNeSuit`). */
 export const CAUSE_REOUVERTURE = automatique('le contact réécrit après « Traité » ou l’archivage');
 
@@ -622,6 +636,20 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
 
     async peutAgir(tenantId, waId) {
       return (await depot.getControlOwner(tenantId, waId)) === 'app_workflow';
+    },
+
+    async reprendreLesFilsDeMeta(tenantId) {
+      let repris = 0;
+      let apres: string | null = null;
+      for (;;) {
+        const paquet: string[] = await depot.filsDeLAgentDeMeta(tenantId, apres, PAQUET_FILS_DE_META);
+        for (const waId of paquet) {
+          // `only` : un fil qu'un opérateur ou un scénario a pris entre la lecture et l'écriture reste à lui.
+          if (await depot.setControlOwner(tenantId, waId, 'app_workflow', { par: CAUSES.agentDeMetaRemplace, only: ['mba'] })) repris += 1;
+        }
+        if (paquet.length < PAQUET_FILS_DE_META) return repris;
+        apres = paquet[paquet.length - 1] ?? null;
+      }
     },
   };
 }

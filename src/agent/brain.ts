@@ -73,6 +73,12 @@ export interface ContexteTourAgent {
    * sable, dont la conversation entière EST la session) : tout le transcript compte.
    */
   sessionOuverteLe?: string;
+  /**
+   * Ce parcours est le répondeur de l'espace (le scénario système, lot 5) : aucune branche ne parle après une escalade
+   * (son graphe relie `humain` à une fin muette, `src/repondeur/graphe.ts`), la dernière phrase de l'agent est donc la
+   * seule que le contact recevra. `false` dans un scénario du client et dans le bac à sable.
+   */
+  repondeur: boolean;
 }
 
 export interface AgentBrain {

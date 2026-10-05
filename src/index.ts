@@ -515,6 +515,7 @@ async function main(): Promise<void> {
     ),
     liste: listeDeLAgent,
     historique: historiqueStore,
+    fils: fil,
   };
 
   /**

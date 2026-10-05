@@ -43,7 +43,7 @@ const AGENT: ContexteAgentComplet = {
 
 const TOUR: ContexteTour = {
   sessionId: 's1', runId: 'r1', workflowId: 'w1', waId: '33600000000',
-  appelsDejaFaits: 0, coutDejaMicroEur: 0,
+  appelsDejaFaits: 0, coutDejaMicroEur: 0, repondeur: false,
 };
 
 const texte = (t: string): ReponseChat => ({
@@ -180,6 +180,33 @@ describe('penserTrace', () => {
     // Et sans le champ du tout, c'est-à-dire pour tout câblage qui ne l'a pas encore : même comportement.
     const { d: d2 } = deps([avecTexte, texte('jamais atteint')], escalade, AGENT);
     expect(await penserTrace(entree(), TOUR, d2)).toMatchObject({ texte: null });
+  });
+
+  it('🔴 dans le RÉPONDEUR, la phrase de l’escalade part, équipe joignable ou non (essai réel du 2026-10-05)', async () => {
+    // Aucune branche ne parle après une escalade dans le répondeur (`src/repondeur/graphe.ts`) : jetée, la phrase
+    // laissait le contact sans rien, alors que la conversation passait bien à l'équipe.
+    const escalade: ResolveurOutil = async () => ({ contenu: { escalade: true }, rendu: true });
+    const ouvert = { ...AGENT, equipe: { disponible: true, reouverture: null } };
+    const avecTexte: ReponseChat = { ...appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte: 'Je te passe un conseiller.' };
+    for (const agent of [ouvert, AGENT]) {
+      const { d } = deps([avecTexte, texte('jamais atteint')], escalade, agent);
+      expect(await penserTrace(entree(), { ...TOUR, repondeur: true }, d)).toMatchObject({ texte: 'Je te passe un conseiller.', sortie: null });
+    }
+    // Hors répondeur, équipe joignable : toujours jeté, c'est la branche `humain` du scénario qui parle.
+    const { d: d2 } = deps([avecTexte, texte('jamais atteint')], escalade, ouvert);
+    expect(await penserTrace(entree(), TOUR, d2)).toMatchObject({ texte: null });
+  });
+
+  it('🔴 le modèle escalade SANS UN MOT : le `message` imposé part à sa place (mesuré le 2026-10-05 sur trois modèles)', async () => {
+    const escalade: ResolveurOutil = async () => ({ contenu: { escalade: true }, rendu: true, dernierMessage: 'Un conseiller prend le relais.' });
+    // L'agent a déjà parlé dans cette session : l'annonce d'IA n'est plus due, la phrase part telle quelle.
+    const suite = entree([{ role: 'agent', texte: 'Bonjour !' }, { role: 'contact', texte: 'Je veux un conseiller.' }]);
+    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('jamais atteint')], escalade, AGENT);
+    expect(await penserTrace(suite, { ...TOUR, repondeur: true }, d)).toMatchObject({ texte: 'Un conseiller prend le relais.' });
+    // Équipe fermée, hors répondeur : même règle, la phrase est gardée.
+    const ferme = { ...AGENT, equipe: { disponible: false, reouverture: 'lundi 9 h' } };
+    const { d: d2 } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('jamais atteint')], escalade, ferme);
+    expect(await penserTrace(suite, TOUR, d2)).toMatchObject({ texte: 'Un conseiller prend le relais.' });
   });
 
   it('🔴 une erreur de PROTOCOLE alerte et arrête le tour', async () => {

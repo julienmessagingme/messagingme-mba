@@ -1611,6 +1611,8 @@ async function main(): Promise<void> {
       majRun: async (t, runId, nodeId, state) => { await runStore.setStateSiEncoreSur(t, runId, nodeId, state); },
       // Le fil est-il encore à nous ? Relu par le tour juste avant l'envoi, pas seulement à son entrée.
       mayAct: fil.peutAgir,
+      // Le répondeur de l'espace est le scénario système (`workflows.systeme`) : une lecture par clé primaire par tour.
+      estRepondeur: async (t, workflowId) => (await workflowStore.designation(workflowId, t))?.systeme === 'repondeur',
       /**
        * 🔴 La garde d'opt-out de l'agent IA : sa réponse part par `envoyerTexteAgent`, qui appelle
        * `client.sendText` directement, sans passer par `WorkflowExecutor.apply`. Même dépendance que l'exécuteur

@@ -57,6 +57,7 @@ function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
   const brain = new FakeAgentBrain(decision ?? { texte: 'Bonjour', sortie: null });
   const deps: RunTurnDeps = {
     estDesabonne: jamaisDesabonne,
+    estRepondeur: async () => false,
     sessions: {
       ...sessionsOk(),
       clore: async (_t: string, _id: string, status: string, sortie?: string) => { clotures.push({ status, ...(sortie ? { sortie } : {}) }); },
@@ -261,6 +262,31 @@ describe('la MÉMOIRE du tour', () => {
     expect(MEMOIRE_JOURS).toBe(30);
     expect(bornes[0]).toEqual({ waId: JOB.waId, depuis: '2026-09-05T12:00:00.000Z' });
     expect(vus).toEqual([SESSION.ouvertLe]);
+  });
+
+  it('🔴 le cerveau sait si le parcours est le RÉPONDEUR, lu sur le scénario du job (essai réel du 2026-10-05)', async () => {
+    // Dans le répondeur, aucune branche ne parle après une escalade : le cerveau y garde la phrase de l'agent.
+    const lus: string[] = [];
+    const vus: Array<boolean | undefined> = [];
+    for (const estLe of [true, false]) {
+      const { deps } = make({
+        estRepondeur: async (t, wf) => { lus.push(`${t}/${wf}`); return estLe; },
+        brain: { penser: async (i) => { vus.push(i.tour?.repondeur); return { texte: 'ok', sortie: null }; } },
+      });
+      await runTurn(JOB, deps);
+    }
+    expect(lus).toEqual([`${JOB.tenantId}/${JOB.workflowId}`, `${JOB.tenantId}/${JOB.workflowId}`]);
+    expect(vus).toEqual([true, false]);
+  });
+
+  it('🔴 cette lecture en échec fait REJOUER le job : ni cerveau, ni clôture, ni sortie par l’échec', async () => {
+    // Comme la fiche et le solde : un raté de la base n'est pas un échec de la conversation. Lue dans le `try` du
+    // cerveau, elle clôturait la session et sortait par `echec`, donc chez l'équipe dans le répondeur.
+    const { deps, brain, clotures, sorties } = make({ estRepondeur: async () => { throw new Error('pooler injoignable'); } });
+    await expect(runTurn(JOB, deps)).rejects.toThrow('pooler injoignable');
+    expect(brain.appels).toEqual([]);
+    expect(clotures).toEqual([]);
+    expect(sorties).toEqual([]);
   });
 
   it('🔴 le PREMIER tour lit le message qui l’a déclenché, enregistré AVANT l’ouverture de la session', async () => {

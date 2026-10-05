@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, LIVRAISONS A ET B EN PRODUCTION, ESSAI RÉEL DÛ
+## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 
 Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré
 avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`, plan
@@ -79,8 +79,43 @@ avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-pa
   J1 ne vaut qu'après le `up` du worker : faire le `up` de l'API et des deux workers avant l'essai réel.
 - 🟡 **Toujours ouverts de la relecture de A** : J3 (bascule synchrone ; le bouton dit seulement « Enregistrement… »
   pendant qu'elle dure), J5, J8, J9, la ligne d'historique de J7 côté serveur, RA, MX5.
-- ⏳ **Essai réel qui clôt** : celui du plan (Gan PrevMCP répondeur d'un espace sans scénario, depuis le téléphone de
-  Julien), après B.
+- ✅ **Essai réel fait le 2026-10-05** (espace « Messaging Me Tech SANDBOX », Gan PrevMCP répondeur, téléphone de
+  Julien ; détail daté dans le journal) : premier message pris en compte, retour de l'équipe puis reprise par l'agent,
+  réaction sans réponse ni débit, aucun doublon de l'agent de Meta. La demande d'humain arrive dans « À traiter », mais
+  seulement après deux correctifs (ci-dessous). Le répondeur est retiré et l'agent de Meta rallumé sur cet espace le
+  même jour, à la demande de Julien. La mémoire de trente jours reste à vérifier lors d'un prochain essai.
+- ⏳ **Livraison C, les correctifs de l'essai : ÉCRITE, NON DÉPLOYÉE.** Méthode : en direct, chaque test vérifié dans
+  les deux sens par mutation, une relecture indépendante. Aucune migration.
+  (1) Désigner le répondeur laissait `mba` sur les fils que l'agent de Meta tenait : un parcours en attente gelait et
+  la remise refusait l'agent IA, donc plus aucune réponse. `ControleDuFil.reprendreLesFilsDeMeta`, appelé APRÈS le
+  réglage, les rend aux robots (`prise_mba` dans la frise). (2) Dans le répondeur, l'escalade jetait la phrase de
+  l'agent (dans un scénario, c'est la branche `humain` qui parle ; ici rien) : `ContexteTourAgent.repondeur`, lu par
+  `estRepondeur` sur le scénario du job. (3) Un `message` imposé sur l'outil d'escalade, comme sur `terminer` :
+  Mistral Small escalade sans un mot 10 fois sur 10, Claude Sonnet 4.5 9 sur 10, Gemini 2.5 Flash Lite 7 sur 8 ; avec
+  lui, plus aucune escalade muette. ⚠️ Le contact de Julien est revenu à l'agent de Meta : rien à réparer en base.
+- ✅ **Relue sans rouge** (une relecture indépendante). Traités avant le commit, chacun avec son test vérifié par
+  mutation : la lecture `estRepondeur` sort du `try` du cerveau (un raté de la base fait rejouer le job au lieu de
+  sortir par `echec`) ; le `message` de l'escalade ne promet plus un conseiller quand l'équipe est fermée (remesuré :
+  aucune escalade muette sur Mistral Small ni Claude Sonnet 4.5) ; le test des paquets compte ses lectures ; un
+  identifiant de message libre dans le test d'intégration.
+- 🟡 **Jaunes ouverts de la relecture de C** : (JC3) re-désigner le même agent ne relance pas la reprise des fils, et
+  `fils` ne remonte ni à l'écran ni à l'outil MCP (le balayage de 24 h les rend de toute façon) ; (JC6) un fil `mba`
+  dont le dernier message est ENTRANT sort d'« À traiter » à la reprise, sans réponse tant que le contact ne réécrit
+  pas (décision produit : le donner à l'équipe ?) ; (JC7) aucun test de l'annonce d'IA sur le `message` d'une escalade,
+  ni du lien réel entre `systeme = 'repondeur'` et `estRepondeur` (lambda du worker) ; (JC8) le bac à sable simule
+  l'escalade sans rendre la main, il ne montre donc pas la phrase que le contact du répondeur recevrait.
+- ❌ **Abandonné, mesure à l'appui** : une phrase de consigne « passe la main par l'outil d'escalade, jamais par une
+  règle d'arrêt » (l'agent était sorti par la règle « Passage à un conseiller humain » de sa fiche, retirée depuis).
+  Ce choix arrive 1 fois sur 48 sur Gemini 2.5 Flash, et la phrase faisait INVENTER des noms d'outil à Flash Lite
+  (`escalader_humain`). Reste un conseil de fiche : pas de règle d'arrêt qui passe la main à un humain.
+- ⏳ **À trancher par Julien : la fausse promesse.** Sur la même demande « je veux parler à un conseiller », le modèle
+  écrit « un conseiller va prendre le relais » SANS appeler aucun outil : personne n'est prévenu. Mesuré sur 10 appels :
+  GLM 4.7 Flash 7, Gemini 2.5 Flash 3 (2 à 6 selon les passes), GPT-4.1 mini 1, Gemini 2.5 Flash Lite 1, Claude Haiku
+  4.5, Claude Sonnet 4.5 et Mistral Small 0. Une consigne plus ferme n'y change rien (4 sur 20 contre 5 sur 20). Défaut
+  de TOUS les agents IA, pas seulement du répondeur.
+- 🟡 **L'Inbox dit « agent Meta » quand c'est l'agent IA qui a la main** (remarque de Julien pendant l'essai). Pendant
+  l'essai, c'était vrai de notre colonne (défaut 1) ; une fois réparé, le libellé doit dire « agent IA » quand le
+  répondeur IA tient le fil.
 
 ## LOT 8a DE « ENGAGE ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, EN PRODUCTION, ESSAI RÉEL FAIT
 

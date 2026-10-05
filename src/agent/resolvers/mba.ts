@@ -110,11 +110,13 @@ const HANDLERS: Record<string, Handler> = {
    * Escalader vers un humain. `rendu` dit au tour de s'arrêter ; `mainPrise` dit si c'est cette escalade qui a
    * basculé le fil (voir `DecisionAgent.mainPriseParCeTour`), sans quoi la dernière phrase serait jetée.
    */
-  escalader: async ({ ctx }, deps) => {
+  escalader: async ({ args, ctx }, deps) => {
     const mainPrise = await deps.escaladerVersHumain({
       tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, sessionId: ctx.sessionId, agentId: ctx.agentId,
     });
-    return { contenu: { escalade: true }, rendu: true, mainPrise };
+    // Le `message` imposé par le catalogue, comme celui de `terminer` : le tour l'envoie quand le modèle n'a rien écrit.
+    const dernierMessage = texte(args, 'message');
+    return { contenu: { escalade: true }, rendu: true, mainPrise, ...(dernierMessage !== '' ? { dernierMessage } : {}) };
   },
 
   poser_tag: async ({ args, ctx }, deps) => {

@@ -344,6 +344,7 @@ describe('l’agent IA se tait devant un contact désabonné', () => {
       lireRun: async () => ({ status: 'waiting', currentNode: 'a' }),
       agents: { byId: async () => FICHE },
       envoyer: async (_t: string, _w: string, texte: string) => { envois.push(texte); },
+      estRepondeur: async () => false,
       ...over,
     } as unknown as RunTurnDeps;
     return { deps, brain, envois, clotures };
