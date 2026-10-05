@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ContexteTour, DecisionTracee, GatewayBrainDeps } from './brain.gateway';
-import { AgentIntrouvable, penserTrace } from './brain.gateway';
+import { AgentIntrouvable, TEXTE_WHATSAPP_MAX, penserTrace } from './brain.gateway';
 import { TourInterrompu, type UsageTour } from './brain';
 import type { TestRunStore } from './test-runs';
 import { direPanneModele } from '../llm/errors';
@@ -50,7 +50,9 @@ export interface DepsEssai {
  * exportées pour UNE raison : l'outil MCP annonce chaque borne qu'il applique, et la lit ici.
  */
 export const MAX_MESSAGES_ESSAI = 30;
-export const MAX_CARACTERES_MESSAGE_ESSAI = 4000;
+/** Un message d'essai porte au plus ce que WhatsApp porte : la réponse de l'agent, phrase d'annonce comprise, doit
+ *  pouvoir être renvoyée dans l'essai suivant. */
+export const MAX_CARACTERES_MESSAGE_ESSAI = TEXTE_WHATSAPP_MAX;
 export const ROLES_ESSAI = ['user', 'assistant'] as const;
 const messageSchema = z.object({
   role: z.enum(ROLES_ESSAI),

@@ -2605,8 +2605,11 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   une sortie libre. Ses messages apparaissent dans le fil de l'Inbox comme n'importe quel autre.
 - ✅ **Ce que l'agent écrit arrive lisible sur WhatsApp** (2026-10-05). Un modèle écrit volontiers en Markdown, que
   WhatsApp n'affiche pas : la plateforme convertit le gras (`**mot**` devient `*mot*`, la seule forme que WhatsApp
-  met en gras) et retire les marques de titre (`#`). Un tableau ne se convertit pas : la consigne de l'agent le lui
-  interdit. Les messages que votre équipe écrit dans l'Inbox ne sont jamais touchés.
+  met en gras), retire les marques de titre (`#`) et réécrit un lien Markdown (texte entre crochets, adresse entre
+  parenthèses) en « texte : adresse ». Un
+  tableau ne se convertit pas : la consigne de l'agent le lui interdit. Une réponse plus longue que ce que WhatsApp
+  porte (4 096 caractères) est coupée plutôt que perdue. Les messages que votre équipe écrit dans l'Inbox ne sont
+  jamais touchés.
 - ✅ **Le bloc est grisé tant qu'aucun agent n'est actif** (« Disponible dès qu'un agent IA est actif »), même
   doctrine que les blocs RCS et Email. Un bloc agent sans agent derrière ne pourrait tenir aucune conversation.
 - ✅ **Un agent désactivé après coup est signalé sur le bloc** : « cet agent n'est plus actif, ce bloc ne

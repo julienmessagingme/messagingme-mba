@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AgentIntrouvable, MAX_ALLERS_RETOURS, creerCerveauGateway, dejaAnnonce, markdownVersWhatsApp, penserTrace, type ContexteAgentComplet, type ContexteTour, type GatewayBrainDeps } from '../src/agent/brain.gateway';
+import { AgentIntrouvable, MAX_ALLERS_RETOURS, TEXTE_WHATSAPP_MAX, creerCerveauGateway, dejaAnnonce, markdownVersWhatsApp, penserTrace, type ContexteAgentComplet, type ContexteTour, type GatewayBrainDeps } from '../src/agent/brain.gateway';
 import type { ChatMessage, ReponseChat } from '../src/agent/llm/chat-client';
 import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catalog';
 import type { ResolveurOutil } from '../src/agent/executor';
@@ -658,6 +658,30 @@ describe('markdownVersWhatsApp', () => {
   it('🔴 le gras Markdown devient le gras de WhatsApp, une seule étoile', () => {
     expect(markdownVersWhatsApp('Votre **garantie** couvre **les litiges de la consommation**.'))
       .toBe('Votre *garantie* couvre *les litiges de la consommation*.');
+  });
+
+  it('un lien Markdown devient « texte : adresse », et le gras-italique le gras-italique de WhatsApp (relecture du 2026-10-05)', () => {
+    // L'agent cite volontiers une source de sa base par un lien : WhatsApp montrait les crochets et les parenthèses.
+    expect(markdownVersWhatsApp('Voir [nos tarifs](https://exemple.fr/tarifs).')).toBe('Voir nos tarifs : https://exemple.fr/tarifs.');
+    expect(markdownVersWhatsApp('[https://exemple.fr](https://exemple.fr)')).toBe('https://exemple.fr');
+    expect(markdownVersWhatsApp('***Attention*** et **gras**')).toBe('*_Attention_* et *gras*');
+    // Des crochets qui ne sont pas un lien ne bougent pas.
+    expect(markdownVersWhatsApp('Article [1](note) et [voir plus]')).toBe('Article [1](note) et [voir plus]');
+  });
+
+  it('🔴 un texte trop long pour WhatsApp est coupé, pas perdu : la phrase d’annonce reste entière en tête', async () => {
+    // Au-delà de 4 096 caractères, Meta refuse l'envoi : le contact ne recevait rien et le tour restait en vol.
+    const long = 'a'.repeat(5000);
+    const sans = (await penserTrace(entree(), TOUR, deps([texte(long)], undefined, SANS_ANNONCE).d)).texte!;
+    expect(sans.length).toBe(TEXTE_WHATSAPP_MAX);
+    expect(sans.endsWith('…')).toBe(true);
+    const avec = (await penserTrace(entree(), TOUR, deps([texte(long)]).d)).texte!;
+    expect(avec.length).toBe(TEXTE_WHATSAPP_MAX);
+    expect(avec.startsWith(`${AGENT.mentionIa}\n\naaa`)).toBe(true);
+    // Un émoji n'est jamais coupé en deux à la limite.
+    const emojis = (await penserTrace(entree(), TOUR, deps([texte('🙂'.repeat(3000))], undefined, SANS_ANNONCE).d)).texte!;
+    expect(emojis.length).toBeLessThanOrEqual(TEXTE_WHATSAPP_MAX);
+    expect(emojis.endsWith('🙂…')).toBe(true);
   });
 
   it('🔴 les titres perdent leurs dièses, leur texte reste', () => {

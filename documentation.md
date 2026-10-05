@@ -455,8 +455,12 @@ dans la réponse sans appel d'outil, une sur cinq. « Une fois par session » se
 ne compte qu'un message de l'agent qui commence par la phrase, jamais un autre sortant (un bloc de `mba_envoyer_bloc`,
 une réponse d'opérateur), sans quoi un bloc envoyé en premier la taisait pour toute la session. Un tour qui n'envoie
 rien ne la porte pas, elle part avec le premier texte. Le même passage ramène le Markdown du modèle à WhatsApp
-(`markdownVersWhatsApp` : `**gras**` devient `*gras*`, les marques de titre tombent) ; la phrase du client, elle, n'est
-pas convertie, et les messages de l'Inbox ne passent jamais par là.
+(`markdownVersWhatsApp` : `**gras**` devient `*gras*`, `***fort***` `*_fort_*`, les marques de titre tombent, un lien
+`[texte](https://...)` devient « texte : adresse ») ; la phrase du client, elle, n'est pas convertie, et les messages
+de l'Inbox ne passent jamais par là. Et il borne le tout à `TEXTE_WHATSAPP_MAX` (4 096) : c'est la réponse du modèle
+qui est coupée, jamais la phrase, entre deux caractères entiers. Trop long, Meta refusait l'envoi, et comme
+`envoyerTexteAgent` lève, le job était rejoué jusqu'au balayage sans que le contact reçoive rien. Un message d'essai
+suit la même borne (`MAX_CARACTERES_MESSAGE_ESSAI`), pour qu'une réponse se renvoie dans l'essai suivant.
 
 🔴 **CE QUE LIT CHAQUE TOUR : LES TRENTE DERNIERS MESSAGES DU CONTACT, SUR TRENTE JOURS**, pour tous les agents,
 quelle que soit la conversation (`MEMOIRE_JOURS`, `src/agent/run-turn.ts` ; `MESSAGES_DE_CONTEXTE`, `src/worker.ts` ;

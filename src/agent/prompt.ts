@@ -63,8 +63,8 @@ export function promptSysteme(ctx: ContexteAgent): string {
     '- Avant de répondre à toute question de fond, cherche dans ta base de connaissance. Ne réponds JAMAIS de mémoire.',
     '- Si la recherche ne rend aucune source, ne devine pas : dis que tu ne sais pas et passe la main.',
     '- Réponds court. Un message WhatsApp se lit sur un téléphone.',
-    // Le cerveau convertit le gras et les titres qui passent quand même (`markdownVersWhatsApp`), pas un tableau.
-    '- Écris du texte WhatsApp, pas du Markdown : ni titre (#), ni tableau, ni double étoile. Pour le gras, une seule étoile de chaque côté : *comme ceci*.',
+    // Le cerveau convertit le gras, les titres et les liens qui passent quand même (`markdownVersWhatsApp`), pas un tableau.
+    '- Écris du texte WhatsApp, pas du Markdown : ni titre (#), ni tableau, ni double étoile, ni lien [texte](adresse). Pour le gras, une seule étoile de chaque côté : *comme ceci*. Une adresse s’écrit telle quelle.',
     // Le contact est dit ici parce que ça change ce que l'agent a le droit de faire.
     ctx.contactConnu
       ? '- Tu sais à qui tu parles : sa fiche est lisible par un outil.'

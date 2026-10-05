@@ -149,15 +149,34 @@ export function texteDeSortie(
 }
 
 /**
- * Le Markdown qu'écrit un modèle, ramené à ce que WhatsApp affiche : WhatsApp met en gras entre UNE étoile et n'a pas
- * de titres. `**gras**` devient `*gras*`, les marques de titre (`#` à `######` en début de ligne) tombent et le titre
- * reste. Rien d'autre ne bouge : une étoile seule, une puce, un `#` collé (« le #1 ») ou un `**` qui ne ferme rien
- * restent tels quels. Un tableau ne se convertit pas sans casser : la consigne l'interdit (`promptSysteme`).
+ * Le Markdown qu'écrit un modèle, ramené à ce que WhatsApp affiche : WhatsApp met en gras entre UNE étoile et n'a ni
+ * titres ni liens. `**gras**` devient `*gras*` et `***fort***` `*_fort_*` ; les marques de titre (`#` à `######` en
+ * début de ligne) tombent et le titre reste ; un lien `[texte](https://...)` devient « texte : adresse », que WhatsApp
+ * rend cliquable. Rien d'autre ne bouge : une étoile seule, une puce, un `#` collé (« le #1 »), un `**` qui ne ferme
+ * rien ou des crochets qui ne sont pas un lien restent tels quels. Un tableau ne se convertit pas sans casser : la
+ * consigne l'interdit (`promptSysteme`).
  */
 export function markdownVersWhatsApp(texte: string): string {
   return texte
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '')
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, libelle: string, url: string) => (libelle === url ? url : `${libelle} : ${url}`))
+    .replace(/\*\*\*([^*\s](?:[^*\n]*?[^*\s])?)\*\*\*/g, '*_$1_*')
     .replace(/\*\*([^*\s](?:[^*\n]*?[^*\s])?)\*\*/g, '*$1*');
+}
+
+/** Le plus long texte que WhatsApp accepte : au-delà, Meta refuse l'envoi, et le contact ne reçoit rien. */
+export const TEXTE_WHATSAPP_MAX = 4096;
+
+/** Le texte ramené à `max` unités, « … » en dernier quand il est coupé. Coupé entre deux caractères entiers : un émoji
+ *  (deux unités) ne l'est jamais en deux. */
+function borne(texte: string, max: number): string {
+  if (texte.length <= max) return texte;
+  let garde = '';
+  for (const c of texte) {
+    if (garde.length + c.length > max - 1) break;
+    garde += c;
+  }
+  return `${garde}…`;
 }
 
 /** Ce qu'un modèle change en recopiant une phrase, retiré avant de comparer : la casse, l'apostrophe typographique et
@@ -188,13 +207,17 @@ function commencePar(texte: string, phrase: string): boolean {
  * disparaissait dès qu'il appelait un outil avant de répondre : une réponse sur cinq la portait, mesuré le 2026-10-05
  * sur un agent en production. Un tour qui n'envoie rien ne la porte pas : elle n'est pas partie (`dejaAnnonce`), elle
  * partira avec le premier texte de l'agent.
+ *
+ * Le tout tient dans un message WhatsApp (`TEXTE_WHATSAPP_MAX`) : c'est la réponse du modèle qui est coupée, jamais la
+ * phrase. Coupé, le texte arrive ; trop long, il était refusé par Meta, et le contact ne recevait rien.
  */
 function pourLeContact(texte: string | null, mention: string | null): string | null {
   if (texte === null || texte.trim() === '') return texte;
   const lisible = markdownVersWhatsApp(texte);
   const phrase = mention?.trim() ?? '';
-  if (phrase === '' || commencePar(lisible, phrase)) return lisible;
-  return `${phrase}\n\n${lisible.trimStart()}`;
+  if (phrase === '' || commencePar(lisible, phrase)) return borne(lisible, TEXTE_WHATSAPP_MAX);
+  const tete = `${phrase}\n\n`;
+  return tete + borne(lisible.trimStart(), TEXTE_WHATSAPP_MAX - tete.length);
 }
 
 function versMessages(transcript: unknown[]): ChatMessage[] {

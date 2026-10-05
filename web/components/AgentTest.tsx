@@ -104,8 +104,8 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
             key={`${i}-${tour.content.slice(0, 24)}`}
             data-testid={`test-tour-${tour.role}`}
             className={tour.role === 'user'
-              ? 'self-end max-w-[85%] rounded-carte bg-brand-600 px-3 py-2 text-sm text-white'
-              : 'self-start max-w-[85%] rounded-carte bg-ink-100 px-3 py-2 text-sm text-ink-900'}
+              ? 'self-end max-w-[85%] whitespace-pre-line rounded-carte bg-brand-600 px-3 py-2 text-sm text-white'
+              : 'self-start max-w-[85%] whitespace-pre-line rounded-carte bg-ink-100 px-3 py-2 text-sm text-ink-900'}
           >
             {tour.content}
           </div>

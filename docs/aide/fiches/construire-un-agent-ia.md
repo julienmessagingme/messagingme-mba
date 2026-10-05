@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: df9134
+source_empreinte: ec2f49
 ---
 # Construire un agent IA
 

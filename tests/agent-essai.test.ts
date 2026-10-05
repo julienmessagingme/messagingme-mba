@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ContexteAgentComplet, GatewayBrainDeps } from '../src/agent/brain.gateway';
+import { TEXTE_WHATSAPP_MAX, type ContexteAgentComplet, type GatewayBrainDeps } from '../src/agent/brain.gateway';
 import type { ReponseChat } from '../src/agent/llm/chat-client';
 import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
 import { ficheVide } from '../src/agent/fiche';
@@ -80,6 +80,16 @@ describe('essayerAgent', () => {
     const m = monter(1_000_000);
     const messages = Array.from({ length: 31 }, () => ({ role: 'user', content: 'x' }));
     expect(await essayerAgent(m.deps, 't1', AG, { messages }, 'mcp')).toMatchObject({ ok: false, statut: 400 });
+  });
+
+  it('une réponse d’agent, la plus longue que WhatsApp porte, se renvoie dans l’essai suivant ; un caractère de plus, 400', async () => {
+    // La phrase d'annonce allonge la réponse : bornée à 4 000, une réponse longue ne pouvait plus être rejouée.
+    const m = monter(1_000_000);
+    const avec = (n: number) => ({ messages: [
+      { role: 'user', content: 'Bonjour' }, { role: 'assistant', content: 'a'.repeat(n) }, { role: 'user', content: 'Et ensuite ?' },
+    ] });
+    expect(await essayerAgent(m.deps, 't1', AG, avec(TEXTE_WHATSAPP_MAX), 'mcp')).toMatchObject({ ok: true });
+    expect(await essayerAgent(m.deps, 't1', AG, avec(TEXTE_WHATSAPP_MAX + 1), 'mcp')).toMatchObject({ ok: false, statut: 400 });
   });
 
   it('🔴 un « terminer » sans texte à côté : l’essai MONTRE et ARCHIVE son dernier message', async () => {
