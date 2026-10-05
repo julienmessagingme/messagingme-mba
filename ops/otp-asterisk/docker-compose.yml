@@ -16,6 +16,8 @@ services:
       - ./pjsip.conf:/etc/asterisk/pjsip.conf:ro
       - ./extensions.conf:/etc/asterisk/extensions.conf:ro
       - ./rtp.conf:/etc/asterisk/rtp.conf:ro
+      # Ne charge pas l'IAX2, qui ouvrirait 4569/udp au monde (voir le fichier).
+      - ./modules.conf:/etc/asterisk/modules.conf:ro
       - ./envoyer-otp.sh:/otp/envoyer-otp.sh:ro
       # Le secret partage avec l'API (OTP_PONT_SECRET), une ligne, lisible par le seul conteneur.
       - ./secret-pont:/otp/secret:ro

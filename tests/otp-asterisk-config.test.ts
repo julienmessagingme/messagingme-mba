@@ -64,4 +64,12 @@ describe('le point d’entrée SIP du pont', () => {
     expect(section).toContain('identify_by = ip');
     expect(section.some((l) => /^auth\s*=/.test(l))).toBe(false);
   });
+
+  it('🔴 aucun autre canal n’écoute : l’IAX2 n’est pas chargé, et le fichier qui le dit est bien monté', () => {
+    // En network_mode host, chan_iax2 (chargé par défaut) ouvrait 4569/udp au monde (relecture RSSI, 2026-10-05).
+    const modules = lignes(lire('modules.conf'));
+    expect(modules).toContain('noload = chan_iax2.so');
+    expect(modules).toContain('noload = chan_sip.so');
+    expect(lire('docker-compose.yml')).toContain('./modules.conf:/etc/asterisk/modules.conf:ro');
+  });
 });

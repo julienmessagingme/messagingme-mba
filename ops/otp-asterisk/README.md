@@ -15,6 +15,7 @@ Il tourne sur le VPS, dans `/home/ubuntu/otp-asterisk`, hors du dépôt de l'app
 | `envoyer-otp.sh` | signer et poster l'enregistrement, l'effacer sur un 2xx (exécutable) |
 | `pjsip.conf.example` | le gabarit SIP : l'Asterisk s'enregistre chez DIDWW sur le port 5080 |
 | `rtp.conf` | la plage des ports RTP |
+| `modules.conf` | celui de l'image, sans l'IAX2 : le conteneur n'écoute qu'en SIP (5080) et en RTP |
 
 Deux fichiers ne sont JAMAIS dans le dépôt : `pjsip.conf` (les identifiants SIP du trunk, relevés dans le portail
 DIDWW) et `secret-pont` (le secret partagé avec l'API, `OTP_PONT_SECRET` de `.env.prod`, une ligne).
