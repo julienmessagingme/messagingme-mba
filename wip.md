@@ -84,8 +84,9 @@ avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-pa
   réaction sans réponse ni débit, aucun doublon de l'agent de Meta. La demande d'humain arrive dans « À traiter », mais
   seulement après deux correctifs (ci-dessous). Le répondeur est retiré et l'agent de Meta rallumé sur cet espace le
   même jour, à la demande de Julien. La mémoire de trente jours reste à vérifier lors d'un prochain essai.
-- ⏳ **Livraison C, les correctifs de l'essai : ÉCRITE, NON DÉPLOYÉE.** Méthode : en direct, chaque test vérifié dans
-  les deux sens par mutation, une relecture indépendante. Aucune migration.
+- ✅ **Livraison C, les correctifs de l'essai : EN PRODUCTION le 2026-10-05** (`fad9a0c6`, API et deux workers, CI verte
+  job par job, aucune migration). Méthode : en direct, chaque test vérifié dans les deux sens par mutation, une
+  relecture indépendante. ⏳ Essai réel dû : redemander un conseiller au répondeur et recevoir la phrase de transfert.
   (1) Désigner le répondeur laissait `mba` sur les fils que l'agent de Meta tenait : un parcours en attente gelait et
   la remise refusait l'agent IA, donc plus aucune réponse. `ControleDuFil.reprendreLesFilsDeMeta`, appelé APRÈS le
   réglage, les rend aux robots (`prise_mba` dans la frise). (2) Dans le répondeur, l'escalade jetait la phrase de
