@@ -5,6 +5,49 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-05 : un champ imbriqué d'un connecteur atteint enfin le modèle, et le bac à sable appelle pour de vrai un connecteur qui lit
+
+Lu dans le code avant d'être prouvé : `creerAppelConnecteur` filtrait la réponse d'un connecteur par les champs
+cochés et rendait des clés À PLAT (`tarifs.integrale`), puis l'exécuteur refiltrait par les mêmes champs en
+DESCENDANT dans l'objet, cherchait `contenu.tarifs` et jetait le champ. Mesuré en base de production, en lecture
+seule : un seul outil au monde coche des champs, `obtenir_tarif` de Groupama PJ, dont trois imbriqués
+(`tarifs.essentielle`, `tarifs.confort`, `tarifs.integrale`). Son seul appel réel, à 17 h 21 UTC, a rendu
+288 octets au modèle : les quatre champs du premier niveau, aucun tarif. Le même refiltre vidait en `{}`
+l'enveloppe d'échec de tout outil qui intègre (le modèle ne savait pas que le système du client n'avait pas
+répondu), et celle du bac à sable : c'est le `contenu: {}` constaté le matin même avec `test_agent`, note « Test
+hors ligne » et marque « simulé » comprises.
+
+Pourquoi aucun test ne l'a vu : ceux du résolveur l'interrogeaient seul, et les deux tests de l'exécuteur qui
+« prouvaient » son filtre lui faisaient rendre, par un faux résolveur, une réponse BRUTE que le vrai ne rend
+jamais. Le test qui l'attrape fait traverser la sortie réelle du résolveur dans l'exécuteur
+(`tests/agent-resolveur-http-nature.test.ts`). Correctif : l'étape 7 ne fait plus que borner. Vérifié dans les
+deux sens : l'exécuteur d'origine remis, huit tests tombent, chacun avec son symptôme.
+
+Décision de Julien, posée en une question : au bac à sable, un connecteur en lecture part pour de vrai
+(`connecteurEssai`), par le résolveur de production ; le reste est simulé. La relecture indépendante (aucun rouge)
+a précisé ce que « lire » veut dire, et ses jaunes sont partis avec le lot : un GET qui POUSSE reste simulé (un
+webhook appelé en GET aurait créé un faux lead depuis un essai), comme un GET qui a besoin du contact (`wa_id` y
+vaudrait `bac-a-sable`) ; la note simulée nomme l'appel par son libellé et plus par son chemin, qui part chez le
+fournisseur du modèle et porte parfois le jeton d'un webhook ; un essai n'écrit plus l'épreuve de la source ; et
+`test_agent` passe en monde ouvert. La note disait aussi « l'appel ? ? » pour tout connecteur : le `binding` d'un
+connecteur est vide (mesuré, deux outils HTTP sur deux). Neuf mutations au total, chacune attrapée par son test.
+
+Déployé : `099fd6c1`. Sa CI de `main` a été annulée par le push suivant d'un pair (`cancel-in-progress`) : le
+verdict a été lu sur le commit EXACT, rejoué sur une étiquette jetable, job par job (unit, intégration, sécurité,
+puis le front). `merge --ff-only` sur le VPS, `up` de l'API, du worker principal et de l'ancienne console à 18 h 50
+UTC, puis du worker d'analyse après « démarré » ; le changement relu DANS chaque conteneur, les fiches d'aide
+rechargées, la santé à 200 en interne et sur les trois portes publiques, aucune erreur dans les journaux. Le
+déploiement a emporté `e34d8433` (les jaunes de la mention d'IA), relu comme intervalle, avec le feu vert de son
+auteur.
+
+Essai réel dans la foulée, par `test_agent` sur « Groupama santé animale » : « un devis pour mon chien, un
+labrador de 3 ans ». `obtenir_tarif` est parti pour de vrai (`{espece: chien, race: labrador, age_mois: 36}`), a
+rendu ses sept champs, dont les trois `tarifs.*` (15,65 €, 26,15 €, 41,90 €), et l'agent a donné les trois
+formules. Coût de l'essai : 0,01 €.
+
+⚠️ Laissé à une tâche à part, relevé par la même relecture et antérieur au lot : changer la MÉTHODE d'une requête
+ne recalcule pas le risque des outils branchés dessus (un GET passé en DELETE garde `read`).
+
 ## 2026-10-05 : la mention d'IA posée par le code, et le Markdown ramené à WhatsApp
 
 La mesure de Julien (`test_agent`, agent « Groupama santé animale » sur Claude Haiku 4.5, cinq conversations neuves
