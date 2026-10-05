@@ -117,6 +117,22 @@ describe.skipIf(!url)('les compteurs de débit, en base', () => {
     expect(neuf.fenetres[0]!.compte).toBe(1);
   });
 
+  it('🔴 une ORIGINE de fenêtre (le jour de Paris d’un quota) : la ligne commence à l’origine, et finit à son terme', async () => {
+    // Le jour civil de Paris en cours : la base doit poser la fenêtre à son minuit, pas à minuit UTC.
+    const { comptageQuota } = await import('../../src/api/quotas');
+    const c = { ...comptageQuota('fiches', 'itest', 3, 2, Date.now()), cle: cle('quota-paris') };
+    const v = await copieA.compter([c]);
+    expect(v.accepte).toBe(true);
+    expect(v.fenetres[0]!.finMs).toBe(c.origineMs! + c.dureeMs);
+    const ligne = await poolA.query<{ debut: string }>(
+      'select (extract(epoch from fenetre) * 1000)::bigint::text as debut from compteurs_debit where cle = $1', [c.cle],
+    );
+    expect(Number(ligne.rows[0]!.debut)).toBe(c.origineMs);
+    // Tout ou rien : deux de plus dépasseraient trois, refusé, et la seconde copie voit le même compte.
+    expect((await copieB.compter([c])).accepte).toBe(false);
+    expect((await copieB.compter([{ ...c, pas: 1 }])).accepte).toBe(true);
+  });
+
   it('🔴 un pas plus grand que le plafond ne s’écrit même pas', async () => {
     const k = cle('gros-pas');
     expect((await copieA.compter([{ cle: k, dureeMs: 60_000, max: 10, pas: 11 }])).accepte).toBe(false);

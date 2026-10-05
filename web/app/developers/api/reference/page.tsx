@@ -99,8 +99,23 @@ function Reference() {
           <li>{t('Au dépassement :', 'On overflow:')}{' '}<Refus c="rate_limited" />{t('. Un appel refusé ne compte pas.', '. A refused call does not count.')}</li>
           <li>{t('Clé inconnue (401) : aucun de ces en-têtes.', 'Unknown key (401): none of these headers.')}</li>
         </Liste>
+        <p id="quotas">{t('En plus du débit, un quota QUOTIDIEN par espace compte le travail DEMANDÉ (un destinataire écarté ensuite compte quand même) :', 'On top of the rate limit, a DAILY quota per workspace counts the work REQUESTED (a recipient skipped later still counts):')}</p>
+        <Tableau
+          entetes={[t('Quota par défaut, par espace et par jour', 'Default quota, per workspace and per day'), t('Valeur', 'Value')]}
+          lignes={[
+            { cle: 'envois', cellules: [t('Envois : destinataires d’un envoi, et messages libres WhatsApp ou RCS', 'Sends: recipients of a send, and free WhatsApp or RCS messages'), String(BORNES.quotaEnvoisJour)] },
+            { cle: 'fiches', cellules: [t('Fiches écrites (une par fiche d’un lot)', 'Written contacts (one per contact, multi-contact calls included)'), String(BORNES.quotaFichesJour)] },
+          ]}
+        />
+        <Liste>
+          <li>{t('Remise à zéro à minuit, heure de Paris.', 'Reset at midnight, Paris time.')}</li>
+          <li>{t('Une requête qui dépasserait le quota est refusée en entier :', 'A request that would exceed the quota is refused entirely:')}{' '}<Refus c="quota_exceeded" />{t(', avec retry-after jusqu’à minuit. Un lot plus petit peut encore passer.', ', with retry-after until midnight. A smaller request may still go through.')}</li>
+          <li>{t('Un nouvel appel avec la même clé d’idempotence compte à nouveau, qu’il rejoue un envoi fini ou tombe sur un envoi en cours (409) : espacez vos relances.', 'A new call with the same idempotency key counts again, whether it replays a finished send or hits one in progress (409): space out your retries.')}</li>
+          <li>{t('Les lectures, les catalogues et le serveur MCP n’ont pas de quota ; les campagnes lancées depuis la console non plus.', 'Reads, catalogs and the MCP server have no quota; neither do campaigns launched from the console.')}</li>
+          <li>{t('Quota différent pour un espace : sur demande.', 'Different quota for a workspace: on request.')}</li>
+        </Liste>
         <Encadre sorte="note">
-          <p>{t('Compteur tenu en mémoire du serveur : il repart à zéro à chaque déploiement.', 'Counter held in server memory: it resets on every deploy.')}</p>
+          <p>{t('Compteurs tenus en base et partagés par toutes les copies du serveur : un déploiement ne les remet pas à zéro.', 'Counters kept in the database and shared by every server copy: a deploy does not reset them.')}</p>
         </Encadre>
       </Section>
 
@@ -126,7 +141,7 @@ function Reference() {
             { cle: '404', cellules: ['404', t('Fiche, envoi ou cible introuvable.', 'Record, send or target not found.')] },
             { cle: '409', cellules: ['409', t('L’état de la fiche ou de l’espace interdit l’opération : désabonnée, bloquée, sans consentement, clés contradictoires, canal ou numéro absent, nom de scénario ambigu, clé d’idempotence en cours.', 'The state of the record or workspace forbids the operation: opted out, blocked, no consent, contradictory keys, channel or number missing, ambiguous scenario name, idempotency key in use.')] },
             { cle: '422', cellules: ['422', t('Corps valide, mais l’envoi est impossible en l’état : fenêtre fermée, cible non envoyable, catégorie illisible, fiche sans numéro, numéro injoignable en RCS, clé d’idempotence déjà utilisée, refus de Meta.', 'Valid body, but sending is impossible as things stand: window closed, unsendable target, unreadable category, record without a number, number unreachable over RCS, idempotency key already used, Meta refusal.')] },
-            { cle: '429', cellules: ['429', t('Débit dépassé.', 'Rate limit exceeded.')] },
+            { cle: '429', cellules: ['429', t('Débit ou quota quotidien dépassé.', 'Rate limit or daily quota exceeded.')] },
           ]}
         />
         <Encadre sorte="attention">

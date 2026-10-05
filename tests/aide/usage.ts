@@ -17,6 +17,7 @@ export class GardeUsageMemoire extends GardeUsage {
     maxLourdesSimultanees = 1,
     compteur: CompteurDebit = new CompteurDebitMemoire(maintenant),
   ) {
-    super(compteur, { minutesGardees, plafondUnitesParEspace, maxLourdesSimultanees });
+    // Sans quotas quotidiens, dit explicitement : les tests des quotas construisent `GardeUsage` avec les leurs.
+    super(compteur, null, { minutesGardees, plafondUnitesParEspace, maxLourdesSimultanees });
   }
 }

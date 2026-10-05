@@ -40,6 +40,9 @@ export const STATUT_PAR_CODE = {
   idempotency_in_progress: 409,
   idempotency_key_reused: 422,
   rate_limited: 429,
+  // Le quota QUOTIDIEN de l'espace (envois ou fiches, `src/api/quotas.ts`) : distinct de `rate_limited`, parce que
+  // l'intégrateur ne réessaie pas dans une minute mais au minuit suivant (heure de Paris), que dit `retry-after`.
+  quota_exceeded: 429,
 } as const satisfies Record<string, number | null>;
 
 export type CodeApi = keyof typeof STATUT_PAR_CODE;

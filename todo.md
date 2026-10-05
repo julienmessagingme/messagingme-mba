@@ -761,13 +761,15 @@ Les trois premiers points viennent du mémo, dont le reste est fusionné dans `d
 n'y ont pas leur place (ils ne dépendent pas de la bascule) et n'étaient consignés nulle part. Le quatrième
 vient d'une décision de Julien.
 
-- **Le quota par espace est OBSERVÉ, jamais appliqué** (`plafondUnitesParEspace = 0`,
-  `src/api/usage-guard.compteur.ts`, compté au total des copies depuis le lot B du 2026-09-28 : le jour où il
-  sera posé, il tiendra quel que soit le nombre de copies). Le plafond par clé ne le remplace pas : plusieurs clés multiplient la
-  capacité, et une requête peut porter 50 contacts ou 50 destinataires. ⚠️ **Les valeurs sont une décision
-  de Julien** (`ARCHITECTURE-CIBLE.md` § 13.1) : observer l'usage réel, fixer des budgets par nature
-  (destinataires, contacts écrits), puis activer un plafond généreux, refusé en `429` lisible, AVANT de
-  distribuer largement des clés.
+- ✅ **Les quotas quotidiens par espace sont posés** (2026-10-05, `src/api/quotas.ts`, `ARCHITECTURE-CIBLE.md` § 13.1) :
+  2 000 envois et 20 000 fiches par jour. Ce qui reste, de la relecture du lot :
+  - **Compter le quota d'un envoi APRÈS le `claim` d'idempotence** : aujourd'hui un rejeu, ou une relance qui tombe
+    sur un envoi en cours (409), consomme `recipients.length` (documenté publiquement). Le faire demande de libérer la
+    clé si le quota refuse ensuite : sur le chemin d'envoi, donc en lot à part.
+  - **Le 429 de quota de bout en bout sur `/v1/sends` et `/v1/messages/*`** : la famille de chaque opération est testée,
+    pas l'opération que chaque route déclare (seul `/v1/contacts` l'est, par le vrai câblage).
+  - **Le compte du jour dans `GET /ops/plafond-api`** : la consommation n'est pas visible ; on ne sait qu'un espace a
+    atteint son quota que par l'alerte (une par espace, famille et jour).
 - **L'usage de `/v1` ne vit que deux heures** (`/ops/usage`, en base depuis le lot B du 2026-09-28 :
   `compteurs_debit`, une écriture par appel ACCEPTÉ, bornée par le plafond de l'espace), et rien n'alerte sur une
   série de `429`, l'épuisement du préfiltre ou la saturation des opérations lourdes. À faire : des agrégats par

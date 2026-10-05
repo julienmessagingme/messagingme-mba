@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { PLAFOND_DESTINATAIRES_DEFAUT } from './campaign/plafond';
 import { PLAFOND_API_DEFAUT } from './auth/plafond-espace';
+import { QUOTAS_API_DEFAUT } from './api/quotas';
 
 /** Exporté pour les tests : `config` est parsé à l'import, donc inutilisable pour vérifier les fail-fast ;
  *  le schéma, lui, se parse à la demande. */
@@ -180,6 +181,13 @@ export const schema = z.object({
    */
   API_PLAFOND_MINUTE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.minute),
   API_PLAFOND_HEURE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.heure),
+  /**
+   * Les quotas QUOTIDIENS par espace de l'API publique (décision de Julien du 2026-10-04, `src/api/quotas.ts`) : les
+   * envois (destinataires et messages libres) et les fiches écrites, par jour civil de Paris. Un réglage d'espace
+   * (`/ops/plafond-api`, migration 0208) l'emporte. `0` le désactive pour tous : le levier d'urgence, sans déployer.
+   */
+  API_QUOTA_ENVOIS_JOUR: z.coerce.number().int().min(0).default(QUOTAS_API_DEFAUT.envois),
+  API_QUOTA_FICHES_JOUR: z.coerce.number().int().min(0).default(QUOTAS_API_DEFAUT.fiches),
   /**
    * Pré-filtre des clés d'API : ce qu'un porteur non résolu peut coûter, par minute.
    * Le plafond ci-dessus ne compte que des clés résolues : sans ce budget, chaque fausse clé coûte un SHA-256

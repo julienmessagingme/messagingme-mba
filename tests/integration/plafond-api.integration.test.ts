@@ -39,32 +39,39 @@ describe.skipIf(!url)('le plafond de l’API par espace, en base', () => {
   });
 
   it('🔴 un espace SANS ligne de réglages se lit au défaut, un espace inexistant rend null', async () => {
-    expect(await store.lire(autreTenantId)).toEqual({ minute: null, heure: null });
+    expect(await store.lire(autreTenantId)).toEqual({ minute: null, heure: null, envoisJour: null, fichesJour: null });
     expect(await store.lire(INCONNU)).toBeNull();
   });
 
   it('🔴 l’écriture fait l’aller-retour, en entiers, et n’écrase aucun autre réglage', async () => {
     await reglages.setMbaEnabled(tenantId, true);
-    expect(await store.ecrire(tenantId, { minute: 600, heure: null })).toBe(true);
-    expect(await store.lire(tenantId)).toEqual({ minute: 600, heure: null });
+    expect(await store.ecrire(tenantId, { minute: 600, heure: null, envoisJour: null, fichesJour: null })).toBe(true);
+    expect(await store.lire(tenantId)).toEqual({ minute: 600, heure: null, envoisJour: null, fichesJour: null });
     expect((await reglages.get(tenantId)).mbaEnabled, 'upsert ciblé : le réglage voisin n’a pas bougé').toBe(true);
-    expect(await store.ecrire(tenantId, { minute: null, heure: 20_000 })).toBe(true);
-    expect(await store.lire(tenantId)).toEqual({ minute: null, heure: 20_000 });
+    expect(await store.ecrire(tenantId, { minute: null, heure: 20_000, envoisJour: null, fichesJour: null })).toBe(true);
+    expect(await store.lire(tenantId)).toEqual({ minute: null, heure: 20_000, envoisJour: null, fichesJour: null });
+  });
+
+  it('🔴 les quotas quotidiens (0208) font l’aller-retour, et le CHECK refuse 0', async () => {
+    expect(await store.ecrire(tenantId, { minute: null, heure: null, envoisJour: 5000, fichesJour: 40_000 })).toBe(true);
+    expect(await store.lire(tenantId)).toEqual({ minute: null, heure: null, envoisJour: 5000, fichesJour: 40_000 });
+    await expect(store.ecrire(tenantId, { minute: null, heure: null, envoisJour: 0, fichesJour: null })).rejects.toThrow(/api_quota_envois_jour_positif/);
+    expect(await store.ecrire(tenantId, { minute: null, heure: null, envoisJour: null, fichesJour: null })).toBe(true);
   });
 
   it('🔴 un espace SANS ligne de réglages en reçoit une, et l’espace voisin ne bouge pas', async () => {
     const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-plafond-api-neuf') returning id`)).rows[0]!.id;
     try {
-      expect(await store.ecrire(t, { minute: 5, heure: 50 })).toBe(true);
-      expect(await store.lire(t)).toEqual({ minute: 5, heure: 50 });
-      expect(await store.lire(autreTenantId)).toEqual({ minute: null, heure: null });
+      expect(await store.ecrire(t, { minute: 5, heure: 50, envoisJour: null, fichesJour: null })).toBe(true);
+      expect(await store.lire(t)).toEqual({ minute: 5, heure: 50, envoisJour: null, fichesJour: null });
+      expect(await store.lire(autreTenantId)).toEqual({ minute: null, heure: null, envoisJour: null, fichesJour: null });
     } finally {
       await pool.query('delete from tenants where id = $1', [t]);
     }
   });
 
   it('🔴 un espace inconnu n’écrit rien, et ne lève pas sur la clé étrangère', async () => {
-    expect(await store.ecrire(INCONNU, { minute: 5, heure: 50 })).toBe(false);
+    expect(await store.ecrire(INCONNU, { minute: 5, heure: 50, envoisJour: null, fichesJour: null })).toBe(false);
     const n = await pool.query('select 1 from tenant_settings where tenant_id = $1', [INCONNU]);
     expect(n.rowCount).toBe(0);
   });

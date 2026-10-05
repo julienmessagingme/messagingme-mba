@@ -32,6 +32,13 @@ export interface Comptage {
   readonly pas?: number;
   /** Combien de temps garder la ligne après la fin de sa fenêtre (0 par défaut) : ce que `lister` peut encore montrer. */
   readonly garderMs?: number;
+  /**
+   * L'origine des fenêtres, en millisecondes depuis l'époque (l'époque par défaut). Elle sert une fenêtre qui doit
+   * commencer à une heure civile : le jour d'un quota commence à minuit, heure de Paris, et non à minuit UTC. La clé
+   * porte alors la date, la durée est celle de CE jour (23, 24 ou 25 h au changement d'heure) et l'origine son minuit :
+   * la fenêtre finit pile au minuit suivant, ce que dit le délai de réessai.
+   */
+  readonly origineMs?: number | null;
 }
 
 /** Un comptage validé, tel que les adaptateurs l'écrivent. */
@@ -41,6 +48,8 @@ export interface ComptageNormalise {
   readonly max: number | null;
   readonly pas: number;
   readonly garderMs: number;
+  /** `null` = l'époque : les fenêtres des plafonds par minute ou par heure tombent sur les minutes et heures pleines. */
+  readonly origineMs: number | null;
 }
 
 /** Une fenêtre, après l'appel. */
@@ -91,9 +100,9 @@ export interface CompteurDebit {
   lister(prefixe: string, depuisMs: number): Promise<LigneCompteur[]>;
 }
 
-/** Le début de la fenêtre qui contient `maintenantMs`. Le même calcul que la base (`floor(ms / durée) * durée`). */
-export function debutDeFenetre(maintenantMs: number, dureeMs: number): number {
-  return Math.floor(maintenantMs / dureeMs) * dureeMs;
+/** Le début de la fenêtre qui contient `maintenantMs`. Le même calcul que la base (`origine + floor((ms - origine) / durée) * durée`). */
+export function debutDeFenetre(maintenantMs: number, dureeMs: number, origineMs = 0): number {
+  return origineMs + Math.floor((maintenantMs - origineMs) / dureeMs) * dureeMs;
 }
 
 const entierPositif = (v: number): boolean => Number.isInteger(v) && v > 0;
@@ -109,13 +118,14 @@ export function normaliserComptages(comptages: ReadonlyArray<Comptage>): Comptag
   return comptages.map((c) => {
     const pas = c.pas ?? 1;
     const garderMs = c.garderMs ?? 0;
+    const origineMs = c.origineMs ?? null;
     if (c.cle === '' || vues.has(c.cle)) throw new Error(`compteur de débit : clé vide ou en double (${c.cle})`);
     if (!entierPositif(c.dureeMs) || !entierPositif(pas) || (c.max !== null && !entierPositif(c.max))
-      || !Number.isInteger(garderMs) || garderMs < 0) {
-      throw new Error(`compteur de débit : durée, pas, plafond ou conservation invalide (${c.cle})`);
+      || !Number.isInteger(garderMs) || garderMs < 0 || (origineMs !== null && !Number.isInteger(origineMs))) {
+      throw new Error(`compteur de débit : durée, pas, plafond, conservation ou origine invalide (${c.cle})`);
     }
     vues.add(c.cle);
-    return { cle: c.cle, dureeMs: c.dureeMs, max: c.max, pas, garderMs };
+    return { cle: c.cle, dureeMs: c.dureeMs, max: c.max, pas, garderMs, origineMs };
   });
 }
 
@@ -179,7 +189,7 @@ export function memoireDesPleines(
             const p = deja[i];
             return p
               ? { cle: c.cle, max: c.max, pleine: true, compte: null, finMs: p.finMs }
-              : { cle: c.cle, max: c.max, pleine: false, compte: null, finMs: debutDeFenetre(maintenantMs, c.dureeMs) + c.dureeMs };
+              : { cle: c.cle, max: c.max, pleine: false, compte: null, finMs: debutDeFenetre(maintenantMs, c.dureeMs, c.origineMs ?? 0) + c.dureeMs };
           }),
         };
       }

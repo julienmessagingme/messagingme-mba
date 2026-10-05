@@ -289,7 +289,8 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
    connecteur ; sans lui, l'interrupteur HubSpot affirmerait en silence qu'aucun portail n'est relié.
 6. **Les médias RCS hors de Postgres : APRÈS la bascule Scaleway**, en lot séparé (décidé le 2026-10-04, §6). Leur
    volume est suivi dans `/ops` (10 Mo aujourd'hui, rouge à 500 Mo).
-7. **Les quotas par espace de l'API publique : tranchés par Julien le 2026-10-04, à implémenter.** Par espace et par
+7. ⏳ **Les quotas par espace de l'API publique : tranchés par Julien le 2026-10-04, implémentés le 2026-10-05** (relus
+   sans rouge, jaunes réglés dans le lot ; usage réel mesuré avant : au plus 4 destinataires par jour). Par espace et par
    jour (minuit, heure de Paris) : 2 000 envois et 20 000 fiches écrites par l'API, réglables par espace depuis
    `/ops`, refus 429 lisible ; lectures et MCP sous le plafond d'appels ; compteur en panne, l'appel passe avec une
    alerte (§13.1).

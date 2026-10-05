@@ -92,7 +92,7 @@ import type { Guard, PreHandler } from './auth/middleware';
 import { monterAvecEtapeEspace } from './http/scope';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
-import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore } from './auth/plafond-espace';
+import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore, type PlafondsParDefaut } from './auth/plafond-espace';
 import { registerOpsPlafondApi } from './http/ops-plafond-api';
 import { MetaApiError } from './meta/errors';
 import { FlowJsonInvalidError } from './meta/flows';
@@ -184,11 +184,20 @@ export interface ServerDeps {
    * (`RATE_LIMIT_USER_PAR_MINUTE`, `RATE_LIMIT_COUTEUX_PAR_MINUTE`). 0 désactive le plafond concerné.
    * Injectables pour que les tests visent un plafond bas sans dépendre de l'environnement.
    * `apiParMinute` et `apiParHeure` : les défauts du plafond de l'API par espace (`API_PLAFOND_*`).
+   * `quotaEnvoisJour` et `quotaFichesJour` : les défauts des quotas quotidiens par espace (`API_QUOTA_*`).
    */
-  plafonds?: { utilisateurParMinute?: number; couteuxParMinute?: number; apiParMinute?: number; apiParHeure?: number };
+  plafonds?: {
+    utilisateurParMinute?: number; couteuxParMinute?: number; apiParMinute?: number; apiParHeure?: number;
+    quotaEnvoisJour?: number; quotaFichesJour?: number;
+  };
   /**
-   * Le réglage du plafond de l'API par espace. Ici plutôt que dans `v1` ou `ops` parce qu'il sert deux
-   * consommateurs : le limiteur de `/v1` et `/mcp` le lit (à travers un cache court), la route
+   * Prévient l'exploitation (Telegram en production, `src/index.ts`). Sert aux quotas quotidiens quand leur compteur ne
+   * répond pas. Absente : l'alerte part dans le journal, ce qui suffit à un serveur de test.
+   */
+  alerter?: (texte: string) => void;
+  /**
+   * Le réglage du plafond et des quotas de l'API par espace. Ici plutôt que dans `v1` ou `ops` parce qu'il sert trois
+   * consommateurs : le limiteur de `/v1` et `/mcp` et le garde d'usage le lisent (à travers un cache court), la route
    * `/ops/plafond-api/:tenantId` l'écrit et vide ce même cache. Absent -> tous les espaces au défaut de la
    * configuration, et la route n'est pas montée.
    */
@@ -486,6 +495,29 @@ function entree<D>(
   };
 }
 
+/** Le cache des réglages par espace (plafond d'appels, quotas quotidiens) et leurs défauts, partagés. */
+export interface ReglagesEtDefauts {
+  readonly reglages: ReglagesPlafondEnCache;
+  readonly defauts: () => PlafondsParDefaut;
+}
+
+/**
+ * Construit le cache sur `deps.plafondApi` (absent : tous les espaces au défaut), et les défauts depuis `deps.plafonds`
+ * ou la configuration. Les défauts se lisent dans une closure, comme avant, pour qu'un test les pose après coup.
+ */
+function reglagesEtDefauts(deps: ServerDeps): ReglagesEtDefauts {
+  const source = deps.plafondApi;
+  return {
+    reglages: new ReglagesPlafondEnCache(source ? (t) => source.lire(t) : async () => SANS_REGLAGE),
+    defauts: () => ({
+      minute: deps.plafonds?.apiParMinute ?? config.API_PLAFOND_MINUTE,
+      heure: deps.plafonds?.apiParHeure ?? config.API_PLAFOND_HEURE,
+      envoisJour: deps.plafonds?.quotaEnvoisJour ?? config.API_QUOTA_ENVOIS_JOUR,
+      fichesJour: deps.plafonds?.quotaFichesJour ?? config.API_QUOTA_FICHES_JOUR,
+    }),
+  };
+}
+
 /**
  * Le registre des modules de routes, exporté pour être exercé.
  *
@@ -512,20 +544,13 @@ export function modulesDeRoutes(
    * construisent sur des dépendances factices).
    */
   baseOauthApi: string | null = baseOauth(config.PUBLIC_API_URL),
-): readonly ModuleMonte[] {
   /**
-   * Un seul cache de réglages du plafond de l'API pour ses deux consommateurs : le limiteur de `/v1` le lit,
-   * la route d'exploitation y pose ce qu'elle vient d'écrire. Avec deux instances, un plafond relevé ne
-   * prendrait effet qu'à l'expiration du cache, sans que rien ne le dise.
-   * `deps.plafondApi` est lu ici parce que le script d'auto-attaque déduit les modules des clés que ce
-   * registre lit en construisant sa liste. Les défauts (`deps.plafonds`) se lisent dans les closures.
+   * Le cache des réglages du plafond et des quotas, et leurs défauts : construits UNE fois par `buildServer`, qui les
+   * donne aussi au garde d'usage (les quotas). Le défaut sert qui exerce le registre sans serveur.
    */
-  const sourcePlafond = deps.plafondApi;
-  const reglagesPlafond = new ReglagesPlafondEnCache(sourcePlafond ? (t) => sourcePlafond.lire(t) : async () => SANS_REGLAGE);
-  const defautsPlafond = () => ({
-    minute: deps.plafonds?.apiParMinute ?? config.API_PLAFOND_MINUTE,
-    heure: deps.plafonds?.apiParHeure ?? config.API_PLAFOND_HEURE,
-  });
+  plafond: ReglagesEtDefauts = reglagesEtDefauts(deps),
+): readonly ModuleMonte[] {
+  const { reglages: reglagesPlafond, defauts: defautsPlafond } = plafond;
   return [
     // La réception des webhooks Meta : autorité = la signature du corps, vérifiée dans le module.
     entree('receiver', 'signature-meta', deps.queue, (app, queue) => registerReceiver(app, queue, {
@@ -716,11 +741,22 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * tomber le pool avec elle).
    */
   const debit = memoireDesPleines(deps.debit ?? new CompteurDebitMemoire());
-  const usageApi = deps.usage ?? new GardeUsage(debit, { maxLourdesSimultanees: config.API_MAX_LOURDES_SIMULTANEES });
+  /**
+   * Le cache des réglages par espace (plafond d'appels et quotas quotidiens) et leurs défauts : UNE instance pour ses
+   * trois consommateurs, le limiteur de `/v1`, le garde d'usage (les quotas) et la route d'exploitation qui y pose ce
+   * qu'elle vient d'écrire. Avec deux instances, un réglage relevé ne prendrait effet qu'à l'expiration du cache.
+   */
+  const plafond = reglagesEtDefauts(deps);
+  const defauts = plafond.defauts();
+  const usageApi = deps.usage ?? new GardeUsage(debit, {
+    reglages: plafond.reglages,
+    defauts: { envois: defauts.envoisJour, fiches: defauts.fichesJour },
+    alerter: deps.alerter ?? ((texte) => journaliser('error', 'quota_api_alerte', { texte })),
+  }, { maxLourdesSimultanees: config.API_MAX_LOURDES_SIMULTANEES });
 
   // Le registre vit au niveau du module (`modulesDeRoutes`) pour qu'un test puisse l'exercer sans monter le
   // serveur entier.
-  const registre = modulesDeRoutes(deps, usageApi, debit, baseOauth(deps.publicApiUrl ?? config.PUBLIC_API_URL));
+  const registre = modulesDeRoutes(deps, usageApi, debit, baseOauth(deps.publicApiUrl ?? config.PUBLIC_API_URL), plafond);
 
   /**
    * 🔴 Aucune route portant `:tenantId` ne se monte sans authentification. La couverture est dérivée du

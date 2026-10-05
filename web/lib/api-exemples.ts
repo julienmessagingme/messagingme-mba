@@ -322,6 +322,7 @@ export const CODES_DOCUMENTES = [
   { code: 'idempotency_in_progress', statut: 409, ecart: false, quoi: ['Un envoi avec cette clé est en cours.', 'A send with this key is in progress.'] },
   { code: 'idempotency_key_reused', statut: 422, ecart: false, quoi: ['Cette clé a déjà servi pour un autre corps.', 'This key was already used for a different body.'] },
   { code: 'rate_limited', statut: 429, ecart: false, quoi: ['Débit dépassé : attendez la durée de retry-after.', 'Rate limit exceeded: wait for retry-after.'] },
+  { code: 'quota_exceeded', statut: 429, ecart: false, quoi: ['Quota quotidien de l’espace atteint (envois ou fiches écrites), ou dépassé par ce lot : retry-after donne l’attente jusqu’à minuit, heure de Paris. Un lot plus petit peut encore passer.', 'Daily workspace quota reached (sends or written contacts), or exceeded by this request: retry-after gives the wait until midnight, Paris time. A smaller request may still go through.'] },
 ] as const satisfies readonly CodeDocumente[];
 
 export type NomDeCode = (typeof CODES_DOCUMENTES)[number]['code'];
@@ -358,6 +359,9 @@ export const BORNES = {
   /** Le plafond de l'API PAR ESPACE (2026-09-25), tenus égaux à `PLAFOND_API_DEFAUT` par `tests/api-exemples.test.ts`. */
   plafondEspaceMinute: 60,
   plafondEspaceHeure: 1000,
+  /** Les quotas QUOTIDIENS par espace (2026-10-04), tenus égaux à `QUOTAS_API_DEFAUT` par `tests/api-exemples.test.ts`. */
+  quotaEnvoisJour: 2000,
+  quotaFichesJour: 20000,
   /** Les tableaux de champs (`api-champs.ts`) : la source du consentement, et les variables d'un destinataire. */
   consentSource: 100,
   cleIdempotence: 255,

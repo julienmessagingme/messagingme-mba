@@ -2024,6 +2024,18 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   son plafond. `0` en configuration éteint la fenêtre pour les espaces sans réglage (levier d'urgence) ; un
   réglage d'espace reste appliqué. ⚠️ Le cache du réglage, lui, reste par copie : un plafond relevé par `/ops`
   s'applique tout de suite sur la copie qui a servi l'écriture, dans les 30 s sur les autres.
+- **Les quotas QUOTIDIENS par espace** (`src/api/quotas.ts`, migration 0208, décision du 2026-10-04) : le plafond
+  compte des appels, le quota le TRAVAIL d'un jour civil de Paris, en deux familles, les envois (`sends.create` en
+  destinataires, `messages.send`) et les fiches (`contacts.batch` en fiches, `contacts.upsert`). Défauts
+  `API_QUOTA_ENVOIS_JOUR` et `API_QUOTA_FICHES_JOUR` (`QUOTAS_API_DEFAUT`, 2 000 et 20 000 ; `0` éteint, levier
+  d'urgence), réglage d'espace `tenant_settings.api_quota_envois_jour` et `_fiches_jour` (`null` = défaut, CHECK
+  > 0), lu dans le MÊME cache que le plafond et réglé par la même route `PUT /ops/plafond-api/:tenantId` (quatre
+  champs requis). Compté par le garde d'usage dans la MÊME opération que l'usage : refusé, rien n'est compté, et un
+  lot qui dépasserait est refusé en entier. La fenêtre est un jour de Paris (la date dans la clé, l'origine à son
+  minuit, sa durée de 23, 24 ou 25 h : `origineMs` du compteur partagé), donc `Retry-After` dit l'attente jusqu'au
+  minuit suivant. Refus : 429 `quota_exceeded`. ⚠️ Compté AVANT la clé d'idempotence : un rejeu compte à nouveau
+  (écrit dans la documentation publique). Compteur en panne : l'appel passe, comme tout le garde, et une alerte
+  Telegram (`ServerDeps.alerter`) dit, au plus toutes les 30 min, que les quotas ne sont plus tenus.
 - La clé du relais du Meta Business Agent (droit `mba:relais`, attribué par la seule publication) n'entre PAS
   dans ce plafond : elle garde un compteur PAR CLÉ (`API_KEY_RATE_LIMIT_MAX`, sur l'empreinte), pour qu'un
   intégrateur qui charge l'API ne coupe pas les outils de l'agent de Meta en pleine conversation.
@@ -2201,7 +2213,7 @@ produit**, là précisément pour qu'un client ne puisse pas créditer son propr
 `POST /ops/pubs/connexion/:tenantId`, `POST /ops/dlq/replay` et `POST /ops/risque/:tenantId` (le balayage
 du risque de désengagement d'un espace, lancé tout de suite : il écrit les fiches, émet les signaux et peut
 déclencher des automations, sous le plafond du JOUR qu'il partage avec la nuit), plus
-`PUT /ops/plafond-api/:tenantId` (le plafond de l'API d'un espace), qui vit dans `src/http/ops-plafond-api.ts`.
+`PUT /ops/plafond-api/:tenantId` (le plafond et les quotas quotidiens de l'API d'un espace), qui vit dans `src/http/ops-plafond-api.ts`.
 Compté dans ces deux fichiers le 2026-09-25.
 
 🔴 **LA NOTE OBLIGATOIRE N'EST PAS UN INVARIANT DE `/ops` : SIX SUR NEUF L'EXIGENT.** Mesuré route

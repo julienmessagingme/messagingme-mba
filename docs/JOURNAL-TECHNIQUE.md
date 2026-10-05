@@ -5,6 +5,31 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-05 : les quotas quotidiens de l'API publique
+
+Le dernier trou de l'audit du 2026-10-02 sur l'API publique : le plafond d'appels (0181) protège l'infrastructure,
+pas les destinataires. Sous lui, une boucle chez un intégrateur pouvait viser 50 000 destinataires par heure. Valeurs
+décidées par Julien le 2026-10-04 (`ARCHITECTURE-CIBLE.md` § 13.1).
+
+- **Deux familles, par espace et par jour civil de Paris** : 2 000 envois (destinataires de `/v1/sends`, messages
+  libres WhatsApp et RCS) et 20 000 fiches écrites (`/v1/contacts`, une par une ou par lot). Lectures, catalogues, MCP
+  et campagnes de la console n'y entrent pas. Réglables par espace (migration 0208, la même route
+  `/ops/plafond-api`) ; 0 dans la configuration désactive le défaut sans déployer.
+- **Mesuré avant de fixer** : au plus 4 destinataires par jour sur `/v1/sends` et 2 messages libres par jour au plus ;
+  aucun espace ne porte de plafond d'appels propre. Personne n'est bloqué par ces valeurs.
+- **Le compteur partagé gagne une origine de fenêtre.** `compteurs_debit` découpait le temps en fenêtres alignées
+  sur l'époque Unix : un « jour » y finissait à 1 h ou 2 h du matin à Paris. `origineMs` (minuit de Paris) et la date
+  dans la clé : un jour de 23 ou 25 heures, au changement d'heure, reste un jour.
+- **Compté dans la même opération atomique que l'usage de la minute** : refusé, l'appel n'est compté nulle part, et
+  un lot qui dépasserait le quota est refusé en entier (`429 quota_exceeded`, `retry-after` jusqu'à minuit de Paris).
+- **Relecture : aucun rouge.** Les jaunes traités avant de pousser. Un réglage illisible (base en panne, cache vide)
+  retombait au défaut : un espace relevé à 50 000 envois aurait été bloqué à 2 000 pendant la panne. Le cache rend
+  désormais un réglage INCONNU, et le quota laisse passer, comme sur un compteur muet. Les en-têtes `x-ratelimit-*`
+  de la minute contredisaient le refus du jour : retirés de ce refus. Une alerte Telegram à la première butée d'un
+  espace dans la journée. `lock_timeout` de 5 s sur 0208, `tenant_settings` étant sur le chemin chaud.
+- **Restent** (`todo.md`) : compter un envoi après le `claim` d'idempotence (un rejeu consomme aujourd'hui), le 429
+  de bout en bout sur `/v1/sends` et `/v1/messages/*`, la consommation du jour dans `/ops`.
+
 ## 2026-10-04 : l'observabilité qui manquait à l'audit (alerte des workers, tâches de fond, stockage)
 
 Les deux critères de sortie de l'audit du 2026-10-02 que rien ne tenait : « chaque rôle a son heartbeat ET son

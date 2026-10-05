@@ -36,25 +36,51 @@ export const FENETRE_HEURE_MS = 3_600_000;
  */
 export const DUREE_CACHE_REGLAGE_MS = 30_000;
 
-/** Le réglage d'un espace (`tenant_settings.api_plafond_minute` et `_heure`). `null` = le défaut de la configuration. */
+/**
+ * Le réglage d'un espace : son plafond d'appels (`tenant_settings.api_plafond_minute` et `_heure`, 0181) et ses quotas
+ * quotidiens (`api_quota_envois_jour` et `api_quota_fiches_jour`, 0208, `src/api/quotas.ts`). `null` = le défaut de la
+ * configuration. Une seule lecture par espace sert les deux : le limiteur d'appels et le garde d'usage.
+ */
 export interface ReglagePlafondApi {
   readonly minute: number | null;
   readonly heure: number | null;
+  readonly envoisJour: number | null;
+  readonly fichesJour: number | null;
 }
 
-export const SANS_REGLAGE: ReglagePlafondApi = { minute: null, heure: null };
+export const SANS_REGLAGE: ReglagePlafondApi = { minute: null, heure: null, envoisJour: null, fichesJour: null };
 
-/** Les plafonds de la configuration. `0` = pas de plafond sur cette fenêtre, la convention du dépôt. */
-export interface PlafondsParDefaut {
+/**
+ * Le réglage d'un espace qu'on n'a PAS PU lire (première lecture en échec, aucun réglage connu avant) : les mêmes
+ * valeurs que `SANS_REGLAGE`, mais une autre instance, que le garde d'usage reconnaît par identité. Le limiteur
+ * d'appels y lit les défauts (une minute de trop au pire) ; le quota, lui, laisse passer (`estReglageInconnu`) : un
+ * espace dont on a relevé le quota retomberait sinon au défaut, et son intégrateur, qui respecte `retry-after`,
+ * s'arrêterait jusqu'à minuit pour une lecture ratée.
+ */
+export const REGLAGE_INCONNU: ReglagePlafondApi = { minute: null, heure: null, envoisJour: null, fichesJour: null };
+
+/** Le réglage rendu est-il un repli sur une lecture ratée ? */
+export function estReglageInconnu(r: unknown): boolean {
+  return r === REGLAGE_INCONNU;
+}
+
+/** Les plafonds d'appels de la configuration. `0` = pas de plafond sur cette fenêtre, la convention du dépôt. */
+export interface PlafondsAppelsParDefaut {
   readonly minute: number;
   readonly heure: number;
+}
+
+/** Les plafonds et les quotas quotidiens de la configuration. `0` = pas de quota. */
+export interface PlafondsParDefaut extends PlafondsAppelsParDefaut {
+  readonly envoisJour: number;
+  readonly fichesJour: number;
 }
 
 /** Ce que la route d'exploitation lit et écrit (`PgPlafondEspaceStore`). */
 export interface PlafondApiStore {
   /** Le réglage de l'espace, ou `null` si l'espace n'existe pas. Un espace sans réglage rend `SANS_REGLAGE`. */
   lire(tenantId: string): Promise<ReglagePlafondApi | null>;
-  /** Écrit les deux colonnes d'un coup. `false` si l'espace n'existe pas. */
+  /** Écrit les quatre colonnes d'un coup (plafond et quotas). `false` si l'espace n'existe pas. */
   ecrire(tenantId: string, reglage: ReglagePlafondApi): Promise<boolean>;
 }
 
@@ -93,7 +119,7 @@ export class ReglagesPlafondEnCache implements LecteurReglagePlafond {
           this.dernierAvertissement = t;
           journaliser('warn', 'plafond_api_reglage_illisible', { tenantId, err });
         }
-        return precedent ?? SANS_REGLAGE;
+        return precedent ?? REGLAGE_INCONNU;
       },
     );
     this.entrees.set(tenantId, { valeur, expire: t + this.dureeMs });
@@ -119,7 +145,7 @@ export class PlafondEspace {
   private dernierAvertissement = Number.NEGATIVE_INFINITY;
 
   constructor(
-    private readonly defauts: PlafondsParDefaut,
+    private readonly defauts: PlafondsAppelsParDefaut,
     private readonly reglages: LecteurReglagePlafond,
     /** Le compteur partagé par les copies de l'API. Aucun plafond de clés : la clé est l'espace d'une clé résolue. */
     private readonly compteur: CompteurDebit,

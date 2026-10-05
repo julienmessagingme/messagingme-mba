@@ -32,7 +32,8 @@ export class CompteurDebitMemoire implements CompteurDebit {
     const t = this.maintenant();
     this.oublierLesEchues(t);
     const lues = demandes.map((c) => {
-      const debutMs = this.origine + debutDeFenetre(t - this.origine, c.dureeMs);
+      // Une origine donnée (le minuit d'un jour civil) est absolue, comme en base ; sinon celle de la création.
+      const debutMs = c.origineMs !== null ? debutDeFenetre(t, c.dureeMs, c.origineMs) : this.origine + debutDeFenetre(t - this.origine, c.dureeMs);
       const id = `${c.cle}\u0000${debutMs}`;
       const n = this.lignes.get(id)?.n ?? 0;
       return { c, debutMs, id, n, tient: c.max === null || n + c.pas <= c.max };

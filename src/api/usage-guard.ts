@@ -43,15 +43,19 @@ export interface DemandeUsage {
   unites: number;
 }
 
-/** Le verdict du garde. `raison` n'est renseignée que sur un refus, et elle est destinée à l'appelant. */
+/**
+ * Le verdict du garde. `raison` n'est renseignée que sur un refus, et elle est destinée à l'appelant. Un refus de
+ * quota quotidien porte son code et l'attente jusqu'à sa remise à zéro ; les autres sont des `rate_limited` d'une minute.
+ */
 export interface VerdictUsage {
   accepte: boolean;
   raison?: string;
+  quota?: { attenteMs: number };
 }
 
 /**
- * Un compteur agrégé, tel que `/ops` le montre : une ligne par (minute, espace, clé, opération). `refusees`
- * dira, le jour où un seuil sera posé, s'il mord sur de vrais clients.
+ * Un compteur agrégé, tel que `/ops` le montre : une ligne par (minute, espace, clé, opération). `refusees` dit si un
+ * quota ou une place lourde mord sur de vrais clients.
  */
 export interface CompteurUsage {
   /** Début de la minute agrégée, en millisecondes depuis l'époque. */
@@ -121,6 +125,15 @@ async function demanderOuRefuser(
 ): Promise<boolean> {
   const verdict = await usage.demander(demande);
   if (verdict.accepte) return true;
+  if (verdict.quota) {
+    // Sans `retry-after`, un client réessaie aussitôt, et un quota du jour se rejouerait toute la nuit. Les en-têtes
+    // `x-ratelimit-*` posés par le plafond d'appels décrivent la MINUTE : laissés ici, ils diraient de réessayer dans la
+    // minute, à côté d'un `retry-after` de plusieurs heures.
+    for (const e of ['x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset']) reply.removeHeader(e);
+    reply.header('retry-after', String(Math.max(1, Math.ceil(verdict.quota.attenteMs / 1000))));
+    await reply.code(429).send({ error: verdict.raison ?? 'quota quotidien atteint', code: 'quota_exceeded' satisfies CodeApi });
+    return false;
+  }
   await reply.code(429).send({ error: verdict.raison ?? 'quota d’usage atteint', code: 'rate_limited' satisfies CodeApi });
   return false;
 }

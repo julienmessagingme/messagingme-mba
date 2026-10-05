@@ -642,6 +642,11 @@ async function main(): Promise<void> {
      * seule, sans erreur. `tests/debit-cablage.test.ts` tient cette ligne.
      */
     debit: compteurDebit,
+    /**
+     * L'alerte d'exploitation : les quotas quotidiens de l'API publique la lèvent quand leur compteur ne répond pas (les
+     * appels passent alors, les quotas ne sont plus tenus). Absente, elle partirait seulement dans le journal.
+     */
+    alerter: (texte) => { void sendTelegram(`[mba-${NOM_API}] ${texte}`); },
     mesureLatence,
     /**
      * 🔴 Surveillance de `/ops`, qui ouvre la lecture de toutes les conversations de tous les clients alors

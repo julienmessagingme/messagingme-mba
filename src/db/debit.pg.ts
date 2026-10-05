@@ -28,8 +28,8 @@ export class PgCompteurDebit implements CompteurDebit {
     const res = await this.pool.query<{ maintenant_ms: number; cle: string | null; n: number | null; debut_ms: number | null }>(
       `with h as (select (extract(epoch from now()) * 1000)::float8 as ms),
        t as (
-         select u.cle, u.duree, u.pas, u.maxi, u.garde, floor(h.ms / u.duree) * u.duree as debut
-         from unnest($1::text[], $2::float8[], $3::int[], $4::int[], $5::float8[]) as u(cle, duree, pas, maxi, garde), h
+         select u.cle, u.duree, u.pas, u.maxi, u.garde, u.origine + floor((h.ms - u.origine) / u.duree) * u.duree as debut
+         from unnest($1::text[], $2::float8[], $3::int[], $4::int[], $5::float8[], $6::float8[]) as u(cle, duree, pas, maxi, garde, origine), h
        ),
        compte as (
          insert into compteurs_debit as c (cle, fenetre, n, expire_le)
@@ -43,7 +43,7 @@ export class PgCompteurDebit implements CompteurDebit {
          returning c.cle, c.n, (extract(epoch from c.fenetre) * 1000)::float8 as debut_ms
        )
        select h.ms as maintenant_ms, compte.cle, compte.n, compte.debut_ms from h left join compte on true`,
-      [cles, demandes.map((c) => c.dureeMs), demandes.map((c) => c.pas), plafonds, demandes.map((c) => c.garderMs)],
+      [cles, demandes.map((c) => c.dureeMs), demandes.map((c) => c.pas), plafonds, demandes.map((c) => c.garderMs), demandes.map((c) => c.origineMs ?? 0)],
     );
     const maintenantMs = Number(res.rows[0]?.maintenant_ms);
     const comptees = new Map<string, { n: number; debutMs: number }>();
@@ -76,7 +76,7 @@ export class PgCompteurDebit implements CompteurDebit {
       maintenantMs,
       fenetres: demandes.map((c) => {
         const vue = comptees.get(c.cle);
-        const debutMs = vue?.debutMs ?? debutDeFenetre(maintenantMs, c.dureeMs);
+        const debutMs = vue?.debutMs ?? debutDeFenetre(maintenantMs, c.dureeMs, c.origineMs ?? 0);
         return {
           cle: c.cle,
           max: c.max,

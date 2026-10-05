@@ -2026,6 +2026,11 @@ scénario, comment importer des contacts.
   minute ou l'heure qui est pleine. L'exploitation peut régler le plafond d'un espace précis sans toucher les
   autres. L'agent de Meta n'est jamais privé de ses outils par un intégrateur qui charge l'API : sa clé a son
   propre compteur.
+- ✅ **Quotas quotidiens de l'API publique, par espace** (2026-10-05) : 2 000 envois (destinataires d'un envoi et
+  messages libres WhatsApp ou RCS) et 20 000 fiches écrites par jour, remise à zéro à minuit (heure de Paris). Une
+  requête qui dépasserait est refusée en entier : 429 `quota_exceeded`, avec `Retry-After` jusqu'à minuit et un
+  message qui le dit ; un lot plus petit peut encore passer. Les lectures, les catalogues, le serveur MCP et les
+  campagnes lancées depuis la console n'ont pas de quota. L'exploitation peut relever le quota d'un espace précis.
 - ✅ **Les fonctions HubSpot disparaissent quand aucun portail n'est relié** (2026-09-23) : la source
   « HubSpot » d'une campagne et le déclencheur « un deal HubSpot atteint une étape » d'une automation ne
   s'affichent plus du tout tant que votre espace n'a pas de portail HubSpot lié. Une intégration qu'on n'a

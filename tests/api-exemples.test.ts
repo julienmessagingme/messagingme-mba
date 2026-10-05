@@ -26,6 +26,7 @@ import { MAX_OPT_IN_SOURCE, MAX_PAR_FICHE, MAX_PAR_FICHE_EN_LOT } from '../src/a
 import { VALEUR_VARIABLE_MAX, VARIABLES_MAX } from '../src/api/variables';
 import { STATUT_PAR_CODE, type CodeApi } from '../src/api/erreurs';
 import { PLAFOND_API_DEFAUT } from '../src/auth/plafond-espace';
+import { QUOTAS_API_DEFAUT } from '../src/api/quotas';
 import { CODES_ECART } from '../src/api/sends-build';
 import type { FicheApi, LastAnalysis, ResultatFiche } from '../src/api/contacts-v1';
 import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
@@ -211,6 +212,7 @@ describe('les bornes affichées sont celles des routes', () => {
 
   it('le plafond de l’espace affiché est le défaut de la configuration (minute ET heure)', () => {
     expect({ minute: BORNES.plafondEspaceMinute, heure: BORNES.plafondEspaceHeure }).toEqual(PLAFOND_API_DEFAUT);
+    expect({ envois: BORNES.quotaEnvoisJour, fiches: BORNES.quotaFichesJour }).toEqual(QUOTAS_API_DEFAUT);
   });
 
   it('longueurs de texte et d’identifiant externe : ce que les validateurs acceptent, pas un caractère de plus', () => {

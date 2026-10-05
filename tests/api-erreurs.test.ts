@@ -21,7 +21,7 @@ describe('les codes d’erreur de l’API publique', () => {
       scenario_not_found: 404, node_not_found: 404, template_not_found: 404, rcs_message_not_found: 404, send_not_found: 404,
       scenario_ambiguous: 409, unsendable_target: 422, template_category_unknown: 422,
       idempotency_key_required: 400, idempotency_in_progress: 409, idempotency_key_reused: 422,
-      rate_limited: 429,
+      rate_limited: 429, quota_exceeded: 429,
     });
   });
 

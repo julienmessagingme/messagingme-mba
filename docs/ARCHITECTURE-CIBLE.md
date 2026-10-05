@@ -774,7 +774,8 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 
 Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 
-1. **Les quotas par espace de l'API publique** : tranché par Julien le 2026-10-04, **à implémenter**. Par espace et
+1. **Les quotas par espace de l'API publique** : tranché par Julien le 2026-10-04, **implémenté le 2026-10-05**
+   (`src/api/quotas.ts`, migration 0208, `documentation.md` § 7). Par espace et
    par jour (remise à zéro à minuit, heure de Paris) : **2 000 envois** (destinataires de `/v1/sends` et messages
    libres WhatsApp ou RCS) et **20 000 fiches écrites** (`/v1/contacts`, une par fiche d'un lot). Réglables par espace
    depuis `/ops`, pour relever un client qui en a besoin ; refus lisible en 429 au-delà. Les lectures, les catalogues

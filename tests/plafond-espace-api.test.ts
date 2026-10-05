@@ -167,7 +167,7 @@ describe('les copies de l’API partagent le plafond (lot B, 2026-09-28)', () =>
 
 describe('le réglage d’un espace', () => {
   it('🔴 relève SON plafond sans toucher celui des autres', async () => {
-    const p = new PlafondEspace({ minute: 2, heure: 100 }, { reglage: async (t) => (t === 't1' ? { minute: 5, heure: null } : SANS_REGLAGE) }, new CompteurDebitMemoire());
+    const p = new PlafondEspace({ minute: 2, heure: 100 }, { reglage: async (t) => (t === 't1' ? { minute: 5, heure: null, envoisJour: null, fichesJour: null } : SANS_REGLAGE) }, new CompteurDebitMemoire());
     const codes = async (t: string, n: number) => {
       const r: Array<number | null> = [];
       for (let i = 0; i < n; i += 1) r.push((await appel(p, t)).statusCode);
@@ -179,7 +179,7 @@ describe('le réglage d’un espace', () => {
 
   it('🔴 `null` = le défaut de la configuration, fenêtre par fenêtre', async () => {
     const h = horloge();
-    const p = new PlafondEspace({ minute: 2, heure: 100 }, { reglage: async () => ({ minute: null, heure: 3 }) }, new CompteurDebitMemoire(h.now));
+    const p = new PlafondEspace({ minute: 2, heure: 100 }, { reglage: async () => ({ minute: null, heure: 3, envoisJour: null, fichesJour: null }) }, new CompteurDebitMemoire(h.now));
     expect((await appel(p, 't1')).headers['x-ratelimit-limit'], 'la minute par défaut').toBe('2');
     await appel(p, 't1');
     expect((await appel(p, 't1')).body).toMatchObject({ error: expect.stringContaining('2 appels par minute') });
@@ -189,7 +189,7 @@ describe('le réglage d’un espace', () => {
   });
 
   it('⚠️ un défaut à 0 éteint la fenêtre (le levier d’urgence), un réglage d’espace reste appliqué', async () => {
-    const p = new PlafondEspace({ minute: 0, heure: 0 }, { reglage: async (t) => (t === 't1' ? { minute: 1, heure: null } : SANS_REGLAGE) }, new CompteurDebitMemoire());
+    const p = new PlafondEspace({ minute: 0, heure: 0 }, { reglage: async (t) => (t === 't1' ? { minute: 1, heure: null, envoisJour: null, fichesJour: null } : SANS_REGLAGE) }, new CompteurDebitMemoire());
     for (let i = 0; i < 20; i += 1) {
       const r = await appel(p, 't2');
       expect(r.ok).toBe(true);
@@ -219,9 +219,9 @@ describe('le cache du réglage', () => {
 
   it('🔴 une lecture par espace et par durée de cache, pas une par appel', async () => {
     const h = horloge();
-    const s = source(new Map([['t1', { minute: 5, heure: null }]]));
+    const s = source(new Map([['t1', { minute: 5, heure: null, envoisJour: null, fichesJour: null }]]));
     const cache = new ReglagesPlafondEnCache(s.lire, 30_000, h.now);
-    for (let i = 0; i < 10; i += 1) expect(await cache.reglage('t1')).toEqual({ minute: 5, heure: null });
+    for (let i = 0; i < 10; i += 1) expect(await cache.reglage('t1')).toEqual({ minute: 5, heure: null, envoisJour: null, fichesJour: null });
     expect(s.lectures).toEqual(['t1']);
     h.avancer(30_000);
     await cache.reglage('t1');
@@ -229,20 +229,20 @@ describe('le cache du réglage', () => {
   });
 
   it('🔴 une rafale simultanée partage UNE lecture', async () => {
-    const s = source(new Map([['t1', { minute: 5, heure: null }]]));
+    const s = source(new Map([['t1', { minute: 5, heure: null, envoisJour: null, fichesJour: null }]]));
     const cache = new ReglagesPlafondEnCache(s.lire);
     await Promise.all(Array.from({ length: 20 }, () => cache.reglage('t1')));
     expect(s.lectures).toEqual(['t1']);
   });
 
   it('🔴 `poser` applique le réglage écrit TOUT DE SUITE, à cet espace seul, sans relire la base', async () => {
-    const valeurs = new Map<string, ReglagePlafondApi | null | Error>([['t1', { minute: 5, heure: null }], ['t2', SANS_REGLAGE]]);
+    const valeurs = new Map<string, ReglagePlafondApi | null | Error>([['t1', { minute: 5, heure: null, envoisJour: null, fichesJour: null }], ['t2', SANS_REGLAGE]]);
     const s = source(valeurs);
     const cache = new ReglagesPlafondEnCache(s.lire);
     await cache.reglage('t1');
     await cache.reglage('t2');
-    cache.poser('t1', { minute: 50, heure: 500 });
-    expect(await cache.reglage('t1')).toEqual({ minute: 50, heure: 500 });
+    cache.poser('t1', { minute: 50, heure: 500, envoisJour: null, fichesJour: null });
+    expect(await cache.reglage('t1')).toEqual({ minute: 50, heure: 500, envoisJour: null, fichesJour: null });
     expect(await cache.reglage('t2')).toEqual(SANS_REGLAGE);
     expect(s.lectures).toEqual(['t1', 't2']);
   });
@@ -258,16 +258,16 @@ describe('le cache du réglage', () => {
     const s = source(valeurs);
     const cache = new ReglagesPlafondEnCache(s.lire, 30_000, h.now);
     expect(await cache.reglage('t1')).toEqual(SANS_REGLAGE);
-    cache.poser('t1', { minute: 600, heure: null });
+    cache.poser('t1', { minute: 600, heure: null, envoisJour: null, fichesJour: null });
     valeurs.set('t1', new Error('connexion perdue'));
     h.avancer(30_000);
     const { resultat } = await capturerJournal(async () => cache.reglage('t1'));
-    expect(resultat).toEqual({ minute: 600, heure: null });
+    expect(resultat).toEqual({ minute: 600, heure: null, envoisJour: null, fichesJour: null });
   });
 
   it('🔴 une lecture qui échoue garde le dernier réglage connu, sinon le défaut, et le dit une fois par minute', async () => {
     const h = horloge();
-    const valeurs = new Map<string, ReglagePlafondApi | null | Error>([['t1', { minute: 5, heure: null }], ['t2', new Error('column "api_plafond_minute" does not exist')]]);
+    const valeurs = new Map<string, ReglagePlafondApi | null | Error>([['t1', { minute: 5, heure: null, envoisJour: null, fichesJour: null }], ['t2', new Error('column "api_plafond_minute" does not exist')]]);
     const s = source(valeurs);
     const cache = new ReglagesPlafondEnCache(s.lire, 30_000, h.now);
     await cache.reglage('t1');
@@ -277,7 +277,7 @@ describe('le cache du réglage', () => {
       await cache.reglage('t1'),
       await cache.reglage('t2'),
     ]);
-    expect(resultat).toEqual([{ minute: 5, heure: null }, SANS_REGLAGE]);
+    expect(resultat).toEqual([{ minute: 5, heure: null, envoisJour: null, fichesJour: null }, SANS_REGLAGE]);
     // Deux échecs dans la même minute : UNE ligne, jamais une par appel.
     expect(lignes.filter((l) => l.msg === 'plafond_api_reglage_illisible')).toHaveLength(1);
   });

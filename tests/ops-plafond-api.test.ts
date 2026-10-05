@@ -43,7 +43,7 @@ class Cles implements ApiKeyLookup {
 class MagasinMemoire implements PlafondApiStore {
   lectures = 0;
   readonly ecritures: Array<{ tenantId: string; reglage: ReglagePlafondApi }> = [];
-  readonly reglages = new Map<string, ReglagePlafondApi>([[T1, { minute: null, heure: null }], [T2, { minute: null, heure: null }]]);
+  readonly reglages = new Map<string, ReglagePlafondApi>([[T1, { minute: null, heure: null, envoisJour: null, fichesJour: null }], [T2, { minute: null, heure: null, envoisJour: null, fichesJour: null }]]);
   async lire(t: string) { this.lectures += 1; return this.reglages.get(t) ?? null; }
   async ecrire(t: string, r: ReglagePlafondApi) {
     if (!this.reglages.has(t)) return false;
@@ -68,12 +68,12 @@ beforeAll(async () => {
   await s.close();
 });
 
-function monter(apiParMinute = 2) {
+function monter(apiParMinute = 2, quotaFichesJour = 300) {
   const magasin = new MagasinMemoire();
   const server = buildServer({
     queue: new FakeQueue(),
     auth: acces.auth,
-    plafonds: { apiParMinute, apiParHeure: 1000 },
+    plafonds: { apiParMinute, apiParHeure: 1000, quotaEnvoisJour: 30, quotaFichesJour },
     plafondApi: magasin,
     v1: { apiKeys: new Cles(), oauth: aucunJetonOauth, contacts: contactsV1Muets(), mcp: {} as never, mbaRelais: relaisMuet },
   });
@@ -135,6 +135,40 @@ describe('le plafond de l’espace, par le vrai câblage', () => {
   });
 });
 
+describe('🔴 le quota quotidien de l’espace, par le vrai câblage', () => {
+  it('les fiches au-delà du quota du jour : 429 quota_exceeded, retry-after jusqu’à minuit, l’espace voisin intact', async () => {
+    const { server } = monter(100, 3);
+    for (let i = 0; i < 3; i += 1) expect((await contact(server, CLE_A)).statusCode).toBe(200);
+    const refus = await contact(server, CLE_B);
+    expect(refus.statusCode).toBe(429);
+    expect(refus.json()).toMatchObject({ code: 'quota_exceeded' });
+    expect(refus.json<{ error: string }>().error).toMatch(/3 fiches écrites par jour, remise à zéro à minuit \(heure de Paris\)/);
+    const attente = Number(refus.headers['retry-after']);
+    expect(attente).toBeGreaterThan(0);
+    expect(attente).toBeLessThanOrEqual(25 * 3600);
+    // Les en-têtes de la minute ne contredisent pas le quota du jour.
+    expect(refus.headers['x-ratelimit-reset']).toBeUndefined();
+    expect(refus.headers['x-ratelimit-remaining']).toBeUndefined();
+    expect((await contact(server, CLE_T2)).statusCode).toBe(200);
+    await server.close();
+  });
+
+  it('🔴 un quota relevé par /ops vaut AU PROCHAIN appel', async () => {
+    const { server } = monter(100, 1);
+    expect((await contact(server, CLE_A)).statusCode).toBe(200);
+    expect((await contact(server, CLE_A)).statusCode).toBe(429);
+    const pose = await server.inject({
+      method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops,
+      payload: { minute: null, heure: null, envoisJour: null, fichesJour: 2, note: 'intégrateur à fort volume' },
+    });
+    expect(pose.statusCode).toBe(200);
+    expect(pose.json()).toMatchObject({ fichesJour: { reglage: 2, defaut: 1, effectif: 2 } });
+    expect((await contact(server, CLE_A)).statusCode).toBe(200);
+    expect((await contact(server, CLE_A)).statusCode).toBe(429);
+    await server.close();
+  });
+});
+
 describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
   it('🔴 sans la session d’exploitation, ou avec un faux : 401, rien n’est lu ni écrit', async () => {
     const { server, magasin } = monter();
@@ -142,7 +176,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
       expect((await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: entetes })).statusCode).toBe(401);
       expect((await server.inject({
         method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: { ...entetes, 'content-type': 'application/json' },
-        payload: { minute: 500, heure: null, note: 'intégrateur à fort volume' },
+        payload: { minute: 500, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
       })).statusCode).toBe(401);
     }
     expect([magasin.lectures, magasin.ecritures.length]).toEqual([0, 0]);
@@ -151,30 +185,36 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
 
   it('GET rend le réglage, le défaut et ce qui s’applique ; 404 sur un espace inconnu ou mal formé', async () => {
     const { server, magasin } = monter(2);
-    magasin.reglages.set(T1, { minute: 10, heure: null });
+    magasin.reglages.set(T1, { minute: 10, heure: null, envoisJour: null, fichesJour: null });
     const res = await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: ops });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       tenantId: T1,
       minute: { reglage: 10, defaut: 2, effectif: 10 },
       heure: { reglage: null, defaut: 1000, effectif: 1000 },
+      envoisJour: { reglage: null, defaut: 30, effectif: 30 },
+      fichesJour: { reglage: null, defaut: 300, effectif: 300 },
     });
     expect((await server.inject({ method: 'GET', url: `/ops/plafond-api/${INCONNU}`, headers: ops })).statusCode).toBe(404);
     expect((await server.inject({ method: 'GET', url: '/ops/plafond-api/pas-un-uuid', headers: ops })).statusCode).toBe(404);
     await server.close();
   });
 
-  it('🔴 PUT exige une NOTE et deux valeurs valides : sinon 400, et rien n’est écrit', async () => {
+  it('🔴 PUT exige une NOTE et quatre valeurs valides : sinon 400, et rien n’est écrit', async () => {
     const { server, magasin } = monter();
     const corps = [
-      { minute: 500, heure: null },
-      { minute: 500, heure: null, note: '  ' },
-      { minute: 0, heure: null, note: 'intégrateur à fort volume' },
-      { minute: -1, heure: null, note: 'intégrateur à fort volume' },
-      { minute: 1.5, heure: null, note: 'intégrateur à fort volume' },
-      { minute: '500', heure: null, note: 'intégrateur à fort volume' },
-      { minute: 500, note: 'intégrateur à fort volume' },
-      { minute: 2_147_483_648, heure: null, note: 'intégrateur à fort volume' },
+      { minute: 500, heure: null, envoisJour: null, fichesJour: null },
+      { minute: 500, heure: null, envoisJour: null, fichesJour: null, note: '  ' },
+      { minute: 0, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: -1, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 1.5, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: '500', heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 500, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      // Les quotas aussi : absents, à 0 ou négatifs, refusés.
+      { minute: 500, heure: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 500, heure: null, envoisJour: 0, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 500, heure: null, envoisJour: null, fichesJour: -5, note: 'intégrateur à fort volume' },
+      { minute: 2_147_483_648, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
     ];
     for (const payload of corps) {
       const res = await server.inject({ method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops, payload });
@@ -192,16 +232,16 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
     expect((await mcp(server, CLE_A)).statusCode).toBe(429);
 
     const { resultat: res, lignes } = await capturerJournal(() => server.inject({
-      method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops, payload: { minute: 4, heure: null, note: 'intégrateur à fort volume' },
+      method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops, payload: { minute: 4, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
     }));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ tenantId: T1, minute: { reglage: 4, defaut: 2, effectif: 4 } });
-    expect(magasin.ecritures).toEqual([{ tenantId: T1, reglage: { minute: 4, heure: null } }]);
+    expect(magasin.ecritures).toEqual([{ tenantId: T1, reglage: { minute: 4, heure: null, envoisJour: null, fichesJour: null } }]);
     const traces = lignes.filter((l) => l.msg === 'ops_plafond_api');
     expect(traces).toHaveLength(1);
     expect(traces[0]).toMatchObject({
       lvl: 'warn', tenantId: T1, note: 'intégrateur à fort volume', par: ADRESSE_OPS,
-      avant: { minute: null, heure: null }, apres: { minute: 4, heure: null },
+      avant: { minute: null, heure: null, envoisJour: null, fichesJour: null }, apres: { minute: 4, heure: null, envoisJour: null, fichesJour: null },
     });
 
     // Deux places de plus dans la MÊME minute, tout de suite : le cache a été vidé.
@@ -218,7 +258,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
   it('PUT sur un espace inconnu : 404, rien d’écrit ni de journalisé', async () => {
     const { server, magasin } = monter();
     const { resultat: res, lignes } = await capturerJournal(() => server.inject({
-      method: 'PUT', url: `/ops/plafond-api/${INCONNU}`, headers: ops, payload: { minute: 4, heure: 40, note: 'intégrateur à fort volume' },
+      method: 'PUT', url: `/ops/plafond-api/${INCONNU}`, headers: ops, payload: { minute: 4, heure: 40, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
     }));
     expect(res.statusCode).toBe(404);
     expect(magasin.ecritures).toEqual([]);
