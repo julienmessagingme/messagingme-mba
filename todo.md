@@ -1,5 +1,14 @@
 # todo.md : backlog
 
+## 🟡 La mention d'IA et la forme WhatsApp : à trancher (relecture de `6d6e47dc`, 2026-10-05)
+
+- **`reply_in_open_window` (outil MCP, `src/mcp/outils.ts`) envoie un texte écrit par Claude**, sans mention d'IA ni
+  conversion Markdown (`pourLeContact`, `src/agent/brain.gateway.ts`). C'est le seul autre chemin par lequel un texte
+  de modèle part sur WhatsApp, mais c'est un membre de l'équipe qui répond par Claude : l'annonce s'y applique-t-elle ?
+  Décision de Julien, puis, si oui, brancher l'outil sur la même sortie.
+- Suggestion de la relecture, non faite : dire dans la consigne commune « si on te demande si tu es une IA, réponds
+  honnêtement », y compris au régime « jamais » (`promptSysteme`, `src/agent/prompt.ts`).
+
 ## 🟠 Le pont du code (lot 3a) : les restes (2026-10-05)
 
 - 🟠 **Remplacer la clé DIDWW** : elle a transité par une conversation le 2026-10-05. En créer une neuve chez DIDWW

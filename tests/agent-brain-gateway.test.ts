@@ -608,6 +608,13 @@ describe('penserTrace : l’annonce d’IA posée par le code', () => {
       .toBe(`${MENTION}\n\nJe vous passe un conseiller.`);
   });
 
+  it('le `message` imposé d’une escalade MUETTE porte aussi la phrase (JC7 de la relecture du lot 5, livraison C)', async () => {
+    // Le répondeur parle souvent à un inconnu dès son premier message : une escalade sans un mot y est ce premier message.
+    const muette: ResolveurOutil = async () => ({ contenu: { escalade: true }, rendu: true, dernierMessage: 'Un conseiller prend le relais.' });
+    expect((await penserTrace(entree(), { ...TOUR, repondeur: true }, deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], muette).d)).texte)
+      .toBe(`${MENTION}\n\nUn conseiller prend le relais.`);
+  });
+
   it('🔴 la consigne ne demande plus la phrase au modèle : elle lui dit que la plateforme l’ajoute', async () => {
     const { cap, d } = deps([texte('bonjour')]);
     await penserTrace(entree(), TOUR, d);
