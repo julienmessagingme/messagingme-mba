@@ -1,6 +1,6 @@
 ---
 source_section: Navigation (trois onglets en haut, barre latérale par onglet)
-source_empreinte: b530dd
+source_empreinte: 5055d3
 ---
 # Me repérer dans la console
 
@@ -38,8 +38,10 @@ avant de vous connecter.
 
 **Paramètres > Général** porte le fuseau horaire de votre espace et vos heures d'ouverture, jour par jour, avec une
 heure de début, une heure de fin, ou « fermé ». C'est la base sur laquelle s'appuient toutes les conditions
-de temps de vos scénarios et l'option qui limite une campagne à vos heures d'ouverture. Un jour dont l'heure
-de fin précède l'heure de début est signalé en rouge et bloque l'enregistrement. Un manager n'y voit qu'un
+de temps de vos scénarios et l'option qui limite une campagne à vos heures d'ouverture. Vos heures d'ouverture
+s'enregistrent d'elles-mêmes, sans bouton, moins d'une seconde après chaque modification : à côté du titre,
+« enregistré » vous le confirme, et en cas d'échec un « réessayer » renvoie la semaine. Un jour dont l'heure de
+fin précède l'heure de début est signalé en rouge, et rien n'est enregistré tant qu'il n'est pas corrigé. Un manager n'y voit qu'un
 seul réglage, celui qui autorise vos agents à prendre eux-mêmes une conversation. **Paramètres > Crédit IA**
 montre le crédit prépayé de l'espace, permet à un administrateur de le recharger, et liste ce qui l'a fait
 bouger.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { useT, useLocale } from '@/lib/i18n';
 import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, agentsPeuventPrendre as apiAgentsPeuventPrendre, setAgentsPeuventPrendre as apiSetAgentsPeuventPrendre, type BusinessHours } from '@/lib/api';
@@ -161,17 +161,57 @@ function Parametres({ tenantId }: { tenantId: string }) {
     apiSetTimezone(tenantId, iana).then(() => setTzStatus('saved')).catch(() => setTzStatus('error'));
   }, [tenantId]);
 
+  /**
+   * 🔴 LES HORAIRES S'ENREGISTRENT D'EUX-MÊMES (2026-10-05). Ils attendaient un clic sur « Enregistrer les
+   * horaires », et rien ne disait qu'il manquait : sur Groupama PJ, l'écran montrait du lundi au vendredi de
+   * 9 h à 18 h quand la base portait `null`. Comme le fuseau juste au-dessus et la fiche d'un agent, chaque
+   * modification VALIDE part donc seule, 800 ms après la dernière (une heure tapée chiffre par chiffre change de
+   * valeur à chaque frappe). Les garde-fous sont ceux de l'enregistrement d'un scénario
+   * (`useEnregistrementScenario`) : un seul envoi en vol, aucune relance après un échec, et un vidage au
+   * démontage comme à la fermeture de l'onglet, sans lequel la toute dernière modification se perdrait.
+   * ⚠️ Seul `patchDay`, donc un geste de l'utilisateur, planifie un envoi : le chargement n'écrit jamais rien.
+   */
+  const aEnvoyer = useRef<BusinessHours | null>(null);
+  const enVol = useRef(false);
+  const minuteur = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const envoyer = useCallback(async (keepalive = false) => {
+    if (minuteur.current) { clearTimeout(minuteur.current); minuteur.current = null; }
+    // Un envoi déjà en vol enverra, à son retour, la version la plus récente : c'est la boucle ci-dessous.
+    if (!aEnvoyer.current || enVol.current) return;
+    enVol.current = true;
+    try {
+      for (let h: BusinessHours | null = aEnvoyer.current; h; h = aEnvoyer.current) {
+        aEnvoyer.current = null;
+        setBhStatus('saving');
+        await apiSetBusinessHours(tenantId, h, { keepalive });
+      }
+      setBhStatus('saved');
+    } catch {
+      setBhStatus('error');
+    } finally {
+      enVol.current = false;
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    const vider = () => { void envoyer(true); };
+    window.addEventListener('beforeunload', vider);
+    return () => { window.removeEventListener('beforeunload', vider); vider(); };
+  }, [envoyer]);
+
   const patchDay = (d: string, patch: Partial<{ closed: boolean; open: string; close: string }>) => {
-    setBhStatus('idle');
-    setHours((h) => ({ ...h, [d]: { ...h[d]!, ...patch } }));
+    const suivant = { ...hours, [d]: { ...hours[d]!, ...patch } };
+    setHours(suivant);
+    if (minuteur.current) clearTimeout(minuteur.current);
+    // Un jour faux n'envoie rien : la semaine part entière, ou pas du tout.
+    if (!DAY_ORDER.every((j) => dayValid(suivant[j]!))) { aEnvoyer.current = null; return; }
+    aEnvoyer.current = suivant;
+    setBhStatus('saving');
+    minuteur.current = setTimeout(() => { void envoyer(); }, 800);
   };
 
   const allValid = DAY_ORDER.every((d) => dayValid(hours[d]!));
-  const saveHours = () => {
-    if (!allValid) return;
-    setBhStatus('saving');
-    apiSetBusinessHours(tenantId, hours).then(() => setBhStatus('saved')).catch(() => setBhStatus('error'));
-  };
 
   const cardCls = 'rounded-carte border border-ink-200 bg-white p-5';
   const kicker = 'text-xs font-medium text-ink-500';
@@ -206,13 +246,21 @@ function Parametres({ tenantId }: { tenantId: string }) {
           </section>
 
           {/* Heures d'ouverture */}
-          <section className={cardCls}>
+          <section className={cardCls} data-testid="param-hours">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-ink-900">{t('Heures d’ouverture', 'Business hours')}</h3>
-                <p className="text-xs text-ink-500">{t('Par jour : heure de début et de fin, ou fermé.', 'Per day: opening and closing time, or closed.')}</p>
+                <p className="text-xs text-ink-500">{t('Par jour : heure de début et de fin, ou fermé. Chaque modification s’enregistre d’elle-même.', 'Per day: opening and closing time, or closed. Every change is saved automatically.')}</p>
               </div>
-              <span className={`text-xs ${bhStatus === 'error' ? 'text-danger' : 'text-ink-500'}`}>{statusText(bhStatus)}</span>
+              {/* Tant qu'un jour est faux, rien ne part : un « enregistré » resté affiché mentirait. */}
+              <div className="flex shrink-0 items-center gap-2">
+                <span data-testid="param-hours-statut" className={`text-xs ${bhStatus === 'error' ? 'text-danger' : 'text-ink-500'}`}>{statusText(allValid ? bhStatus : 'idle')}</span>
+                {allValid && bhStatus === 'error' && (
+                  <Bouton variante="discret" taille="petite" data-testid="param-hours-reessayer" onClick={() => { aEnvoyer.current = hours; void envoyer(); }}>
+                    {t('réessayer', 'retry')}
+                  </Bouton>
+                )}
+              </div>
             </div>
             {/* Un jour par ligne, séparés par un filet : sept petites cartes dans la carte des horaires en
                 faisaient un empilement de cadres. */}
@@ -224,14 +272,14 @@ function Parametres({ tenantId }: { tenantId: string }) {
                   <div key={d} className="flex flex-wrap items-center gap-3 py-2">
                     <span className="w-24 shrink-0 text-sm font-medium text-ink-900">{t(...DAY_LABELS[d]!)}</span>
                     <label className="flex items-center gap-1.5 text-sm text-ink-500">
-                      <input type="checkbox" checked={day.closed} onChange={(e) => patchDay(d, { closed: e.target.checked })} className="h-4 w-4 rounded-controle border-ink-300" />
+                      <input type="checkbox" data-testid={`param-hours-${d}-ferme`} checked={day.closed} onChange={(e) => patchDay(d, { closed: e.target.checked })} className="h-4 w-4 rounded-controle border-ink-300" />
                       {t('Fermé', 'Closed')}
                     </label>
                     {!day.closed && (
                       <div className="flex items-center gap-2">
-                        <input type="time" value={day.open} onChange={(e) => patchDay(d, { open: e.target.value })} className={`${inputClsAuto} bg-white`} />
+                        <input type="time" data-testid={`param-hours-${d}-debut`} value={day.open} onChange={(e) => patchDay(d, { open: e.target.value })} className={`${inputClsAuto} bg-white`} />
                         <span className="text-sm text-ink-500">{t('à', 'to')}</span>
-                        <input type="time" value={day.close} onChange={(e) => patchDay(d, { close: e.target.value })} className={`${inputClsAuto} bg-white`} />
+                        <input type="time" data-testid={`param-hours-${d}-fin`} value={day.close} onChange={(e) => patchDay(d, { close: e.target.value })} className={`${inputClsAuto} bg-white`} />
                         {invalid && <span className="text-xs text-danger">{t('l’heure de fin doit suivre le début', 'end time must be after start')}</span>}
                       </div>
                     )}
@@ -239,16 +287,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
                 );
               })}
             </div>
-            <div className="mt-4 flex items-center gap-3">
-              <Bouton
-                data-testid="param-save-hours"
-                onClick={saveHours}
-                disabled={!allValid || bhStatus === 'saving'}
-              >
-                {t('Enregistrer les horaires', 'Save hours')}
-              </Bouton>
-              {!allValid && <span className="text-xs text-danger">{t('Corrigez les jours en rouge avant d’enregistrer.', 'Fix the days in red before saving.')}</span>}
-            </div>
+            {!allValid && <p className="mt-3 text-xs text-danger" data-testid="param-hours-invalide">{t('Corrigez les jours en rouge : vos modifications ne sont pas enregistrées tant qu’ils restent faux.', 'Fix the days in red: your changes are not saved while they are wrong.')}</p>}
           </section>
 
           {/* ⚠️ « Relancer automatiquement les échecs » N'EST PLUS ICI (lot 3 de la liste du 2026-09-23, migration

@@ -107,12 +107,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Paramètres (menu « Paramètres » > Général, admin ; un manager n'y voit que le réglage « Je m'en occupe »)** : le
   **fuseau horaire** de l'espace et les **heures d'ouverture**
   jour par jour (heure de début, heure de fin, ou « fermé »). C'est la base sur laquelle s'appuient les conditions
-  de temps des scénarios (l'heure qu'il est, le jour de la semaine, « dans les heures d'ouverture »). Un jour dont
-  l'heure de fin précède l'heure de début est signalé en rouge et bloque l'enregistrement.
-  La page porte aussi le **journal des actions** (ajouts, suppressions, effacements, bascules de consentement),
-  désormais **exportable en CSV** (2026-08-20) : l'export relit le journal jusqu'à 1000 lignes au lieu des 100
-  affichées, avec des dates en ISO pour qu'un tableur puisse trier. Comme à l'écran, il ne porte **aucun numéro**,
-  seulement l'identifiant interne du contact.
+  de temps des scénarios (l'heure qu'il est, le jour de la semaine, « dans les heures d'ouverture »).
+  **Les heures d'ouverture s'enregistrent d'elles-mêmes** (2026-10-05), comme le fuseau : chaque modification part
+  moins d'une seconde après la dernière, sans bouton, et l'état affiché à côté du titre dit « enregistrement… »,
+  « enregistré » ou « erreur », avec un « réessayer ». Il fallait auparavant cliquer « Enregistrer les horaires », et
+  rien ne signalait l'oubli : l'écran d'un espace montrait des horaires que la base ne portait pas. Un jour dont
+  l'heure de fin précède l'heure de début est signalé en rouge, et rien n'est enregistré tant qu'il n'est pas corrigé.
+  Le **journal des actions** n'est plus sur cette page : il est dans **Sécurité** (« Journaux et traces »).
 
 ## Comptes & authentification
 

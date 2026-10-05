@@ -787,7 +787,11 @@ export function setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promi
 export function setTimezone(tenantId: string, timezone: string): Promise<{ timezone: string }> {
   return request(`/tenants/${tenantId}/settings/timezone`, { method: 'PATCH', body: JSON.stringify({ timezone }) });
 }
-/** Heures d'ouverture par jour (corps `{ '0'..'6': { closed, open 'HH:MM', close 'HH:MM' } }`, 7 jours requis). */
-export function setBusinessHours(tenantId: string, businessHours: BusinessHours): Promise<{ businessHours: BusinessHours }> {
-  return request(`/tenants/${tenantId}/settings/business-hours`, { method: 'PATCH', body: JSON.stringify({ businessHours }) });
+/**
+ * Heures d'ouverture par jour (corps `{ '0'..'6': { closed, open 'HH:MM', close 'HH:MM' } }`, 7 jours requis).
+ * `keepalive` : la requête survit au déchargement de la page (vidage de l'enregistrement automatique à la
+ * fermeture de l'onglet), comme `updateWorkflow`.
+ */
+export function setBusinessHours(tenantId: string, businessHours: BusinessHours, opts?: { keepalive?: boolean }): Promise<{ businessHours: BusinessHours }> {
+  return request(`/tenants/${tenantId}/settings/business-hours`, { method: 'PATCH', body: JSON.stringify({ businessHours }), ...(opts?.keepalive ? { keepalive: true } : {}) });
 }

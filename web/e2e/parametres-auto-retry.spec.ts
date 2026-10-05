@@ -33,7 +33,7 @@ test.describe('Relancer automatiquement les échecs : plus un réglage d’espac
   test('🔴 il n’est PLUS dans les Paramètres, même quand l’espace l’avait activé', async ({ page }) => {
     await monter(page);
     // La page a VRAIMENT rendu ses sections d'administrateur...
-    await expect(page.getByTestId('param-save-hours')).toBeVisible();
+    await expect(page.getByTestId('param-hours')).toBeVisible();
     // ... et l'interrupteur n'y est plus.
     await expect(page.getByTestId('param-auto-retry-card')).toHaveCount(0);
     await expect(page.getByTestId('param-auto-retry-toggle')).toHaveCount(0);
