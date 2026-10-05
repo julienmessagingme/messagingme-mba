@@ -139,17 +139,20 @@ export function getEsConfig(tenantId: string): Promise<EsConfig> {
 export interface EsCompleteResult {
   connected: boolean;
   wabaId: string;
-  phoneNumberId: string;
+  /** Absent quand le compte est revenu SANS numéro (`sansNumero`). */
+  phoneNumberId?: string;
   displayPhoneNumber: string | null;
   /** Le numéro est rattaché mais PAS activable : la v4 laisse finir le parcours sans vérification par code. */
   aActiver?: boolean;
+  /** Le compte est relié SANS numéro (fenêtre finie sans numéro, lot 3b) : `connected` est faux. */
+  sansNumero?: boolean;
   warnings?: string[];
 }
 /** `wabaId`/`phoneNumberId` FACULTATIFS : la popup ne les annonce pas sur un parcours déjà abouti chez Meta,
  *  le serveur les retrouve alors depuis le token (sinon le client resterait bloqué sans recours). */
 export function completeEmbeddedSignup(
   tenantId: string,
-  input: { code: string; wabaId?: string; phoneNumberId?: string },
+  input: { code: string; wabaId?: string; phoneNumberId?: string; evenement?: string },
 ): Promise<EsCompleteResult> {
   return request<EsCompleteResult>(`/tenants/${tenantId}/embedded-signup/complete`, { method: 'POST', body: JSON.stringify(input) });
 }

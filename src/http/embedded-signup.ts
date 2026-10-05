@@ -39,6 +39,12 @@ export interface EmbeddedSignupRouteDeps {
   meta: MetaInscriptionDep;
   inscriptions: {
     linkTenant(input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }): Promise<void>;
+    /**
+     * Relie à l'espace un compte WhatsApp revenu de la fenêtre SANS numéro (lot 3b : le numéro fourni, que le serveur
+     * ajoute ensuite). Lève `TenantConflictError` (compte d'un autre espace) ou `SecondNumeroRefuseError` (l'espace a
+     * déjà un numéro).
+     */
+    lierCompteSansNumero(input: { tenantId: string; wabaId: string }): Promise<void>;
   };
   /**
    * Le crédit de bienvenue (5 €, décision de Julien du 2026-09-29), pour un numéro de cet espace que Meta dit
@@ -107,6 +113,14 @@ export interface EmbeddedSignupRouteDeps {
  */
 export const DELAI_ENTRE_CODES_MS = 60_000;
 
+/**
+ * Un seul numéro par espace : le message dit ce qui est déjà là et quoi faire, sinon l'opérateur conclut à une panne et
+ * recommence. Rendu en 409 et non en 5xx, sinon Cloudflare remplace le corps par sa page.
+ */
+function messageSecondNumero(err: SecondNumeroRefuseError): string {
+  return `Cet espace utilise déjà le numéro ${err.dejaRattache}. Un espace ne peut piloter qu'un seul numéro WhatsApp : pour en connecter un autre, crée un second espace, ou détache d'abord le numéro actuel.`;
+}
+
 /** La clé du délai d'un numéro dans les verrous courts, préfixée pour ne croiser aucun autre usage. */
 export function cleDemandeCode(phoneNumberId: string): string {
   return `es-code:${phoneNumberId}`;
@@ -154,7 +168,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
   app.post('/tenants/:tenantId/embedded-signup/complete', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (deps.configId === '') return reply.code(503).send({ error: 'Embedded Signup non configuré (META_ES_CONFIG_ID)' });
-    const b = (req.body ?? {}) as { code?: unknown; wabaId?: unknown; phoneNumberId?: unknown };
+    const b = (req.body ?? {}) as { code?: unknown; wabaId?: unknown; phoneNumberId?: unknown; evenement?: unknown };
     // `wabaId` / `phoneNumberId` sont facultatifs : la popup ne les annonce que lorsqu'elle exécute vraiment la
     // configuration, et un client qui rouvre un parcours abouti n'obtient qu'un code. Absents -> retrouvés (1 bis).
     if (!nonEmpty(b.code)) return reply.code(400).send({ error: 'code requis' });
@@ -178,6 +192,8 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     //        rattacher le mauvais numéro serait bien pire qu'un message d'erreur.
     let wabaId = nonEmpty(b.wabaId) ? b.wabaId.trim() : '';
     let phoneNumberId = nonEmpty(b.phoneNumberId) ? b.phoneNumberId.trim() : '';
+    // Le compte n'a aucun numéro : le client a fini la fenêtre sans en ajouter (étape 1 ter).
+    let sansNumero = false;
     if (wabaId === '' || phoneNumberId === '') {
       try {
         if (wabaId === '') {
@@ -194,22 +210,67 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
         }
         if (phoneNumberId === '') {
           const phones = await deps.meta.listPhones(wabaId, businessToken);
-          if (phones.length === 0) {
-            return reply.code(422).send({ error: 'ce compte WhatsApp ne contient aucun numéro. Ajoute-le dans le parcours Meta.' });
-          }
           if (phones.length > 1) {
             return reply.code(409).send({ error: `ce compte WhatsApp contient ${phones.length} numéros : impossible de deviner lequel rattacher.` });
           }
-          phoneNumberId = phones[0]!.id;
+          if (phones.length === 0) sansNumero = true;
+          else phoneNumberId = phones[0]!.id;
         }
         // eslint-disable-next-line no-console
-        console.info(`embedded-signup: identifiants retrouvés depuis le token (waba=${wabaId}, numéro=${phoneNumberId}) faute d'annonce par la popup`);
+        console.info(`embedded-signup: identifiants retrouvés depuis le token (waba=${wabaId}, numéro=${sansNumero ? 'aucun' : phoneNumberId}) faute d'annonce par la popup`);
       } catch (err) {
         const msg = texteDe(err);
         // eslint-disable-next-line no-console
         console.error(`embedded-signup: repêchage des identifiants impossible (tenant ${tenant}) : ${msg}`);
         return reply.code(422).send({ error: `lecture du compte WhatsApp impossible : ${msg}` });
       }
+    }
+
+    // 1 ter. Compte SANS numéro (lot 3b) : en v4, la fenêtre laisse finir sans numéro, et c'est le parcours du
+    //        numéro fourni, où le serveur ajoute ensuite le nôtre. On relie le compte et on garde son jeton, sans
+    //        lequel rien ne pourra plus y être ajouté ; rien n'est offert, aucun numéro n'existe encore. Même preuve
+    //        d'appartenance et mêmes refus qu'avec un numéro. Le jeton se garde APRÈS la liaison : sa table
+    //        référence le compte.
+    if (sansNumero) {
+      try {
+        await deps.meta.verifyWaba(wabaId, businessToken);
+      } catch (err) {
+        const msg = texteDe(err);
+        // eslint-disable-next-line no-console
+        console.error(`embedded-signup: preuve d'appartenance refusée (tenant ${tenant}, waba ${wabaId}, sans numéro) : ${msg}`);
+        return reply.code(422).send({ error: `le compte Meta connecté ne donne pas accès à ce compte WhatsApp : ${msg}` });
+      }
+      try {
+        await deps.inscriptions.lierCompteSansNumero({ tenantId: tenant, wabaId });
+      } catch (err) {
+        if (err instanceof TenantConflictError) {
+          return reply.code(409).send({ error: 'ce compte WhatsApp est déjà rattaché à un autre workspace' });
+        }
+        if (err instanceof SecondNumeroRefuseError) return reply.code(409).send({ error: messageSecondNumero(err) });
+        throw err;
+      }
+      const avertissements: string[] = [];
+      try {
+        await deps.meta.subscribeApp(wabaId, businessToken);
+      } catch (err) {
+        avertissements.push(`abonnement webhooks : ${texteDe(err)}`);
+      }
+      await deps.saveCredentials(wabaId, tenant, businessToken, null);
+      await journal(tenant, req, 'compte.relie_sans_numero', { kind: 'waba', id: wabaId }, { avertissements: avertissements.length });
+      // L'événement que la fenêtre a annoncé (`FINISH_ONLY_WABA` attendu) : ce que Meta renvoie sur une fin sans
+      // numéro n'est pas documenté, la tâche 0 du plan le mesure. Majuscules et soulignés seulement.
+      const evenement = typeof b.evenement === 'string' && /^[A-Z_]{1,40}$/.test(b.evenement) ? b.evenement : 'aucun';
+      // eslint-disable-next-line no-console
+      console.info(`embedded-signup: compte relié SANS numéro (tenant ${tenant}, waba ${wabaId}, événement de la fenêtre ${evenement})`);
+      return reply.code(200).send({
+        connected: false,
+        sansNumero: true,
+        wabaId,
+        warnings: [
+          'Ton compte WhatsApp est relié, sans numéro pour l’instant. Pour connecter ton propre numéro, relance « Connecter » et saisis-le dans la fenêtre Meta.',
+          ...avertissements,
+        ],
+      });
     }
 
     // 2. 🔴 Preuve d'appartenance (garde anti-hijack entre espaces) : le business token ne peut lire le WABA et le
@@ -236,13 +297,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       if (err instanceof TenantConflictError) {
         return reply.code(409).send({ error: 'ce numéro ou ce WABA est déjà rattaché à un autre workspace' });
       }
-      // Un seul numéro par espace. Le message dit ce qui est déjà là et quoi faire, sinon l'opérateur conclut à une
-      // panne et recommence. 409 et non 5xx, sinon Cloudflare remplace le corps par sa page.
-      if (err instanceof SecondNumeroRefuseError) {
-        return reply.code(409).send({
-          error: `Cet espace utilise déjà le numéro ${err.dejaRattache}. Un espace ne peut piloter qu'un seul numéro WhatsApp : pour en connecter un autre, crée un second espace, ou détache d'abord le numéro actuel.`,
-        });
-      }
+      if (err instanceof SecondNumeroRefuseError) return reply.code(409).send({ error: messageSecondNumero(err) });
       throw err;
     }
 

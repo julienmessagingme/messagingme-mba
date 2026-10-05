@@ -26,14 +26,17 @@ interface Cap {
   saved: Array<{ wabaId: string; tenantId: string; token: string; pin: string | null }>;
   /** Les numéros pour lesquels la route a demandé le crédit de bienvenue. */
   offerts: Array<{ tenantId: string; phoneNumberId: string }>;
+  /** Les comptes WhatsApp reliés SANS numéro (fin de fenêtre sans numéro, lot 3b). */
+  sansNumero: Array<{ tenantId: string; wabaId: string }>;
 }
 
 function app(
   over: Partial<MetaInscriptionDep> & { configId?: string } = {},
   linkTenant?: EmbeddedSignupRouteDeps['inscriptions']['linkTenant'],
   offrirCredit?: EmbeddedSignupRouteDeps['offrirCredit'],
+  lierCompteSansNumero?: EmbeddedSignupRouteDeps['inscriptions']['lierCompteSansNumero'],
 ) {
-  const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [], offerts: [] };
+  const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [], offerts: [], sansNumero: [] };
   const { configId = 'cfg-123', ...meta } = over;
   const deps: EmbeddedSignupRouteDeps = {
     ...signupInerte,
@@ -51,6 +54,7 @@ function app(
     },
     inscriptions: {
       linkTenant: linkTenant ?? (async (input) => { cap.linked.push({ tenantId: input.tenantId, wabaId: input.wabaId, phoneNumberId: input.phoneNumberId, displayPhoneNumber: input.displayPhoneNumber }); }),
+      lierCompteSansNumero: lierCompteSansNumero ?? (async (input) => { cap.sansNumero.push({ tenantId: input.tenantId, wabaId: input.wabaId }); }),
     },
     saveCredentials: async (wabaId, tenantId, token, pin) => { cap.saved.push({ wabaId, tenantId, token, pin }); },
     offrirCredit: offrirCredit ?? (async (tenantId, phoneNumberId) => { cap.offerts.push({ tenantId, phoneNumberId }); }),
@@ -285,6 +289,80 @@ describe('POST /embedded-signup/complete sans identifiants (parcours déjà abou
     const { server } = app(repechage);
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(agentTok), payload: JSON.stringify({ code: 'code-abc' }) });
     expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+});
+
+/**
+ * 🔴 UN COMPTE WHATSAPP SANS NUMÉRO EST GARDÉ, PLUS REFUSÉ (lot 3b, spec 2026-10-05-numero-fourni-design.md).
+ *
+ * En v4, la fenêtre de Meta laisse le client finir SANS numéro (`FINISH_ONLY_WABA`) ; c'est le parcours du numéro
+ * fourni, où le serveur ajoute ensuite le nôtre à son compte. La route rendait 422 (« ce compte WhatsApp ne contient
+ * aucun numéro ») et jetait le jeton : sans lui, rien ne peut plus être ajouté au compte du client. Elle relie
+ * désormais le compte à l'espace, sans numéro, et garde son jeton, après la même preuve d'appartenance.
+ */
+describe('POST /embedded-signup/complete : compte WhatsApp SANS numéro', () => {
+  const sansNumero = { listPhones: async () => [] };
+  const COMPLET = '/tenants/t1/embedded-signup/complete';
+
+  it('🔴 compte annoncé, aucun numéro : relié sans numéro, jeton gardé, abonné ; ni numéro, ni register, ni offre', async () => {
+    const { server, cap } = app(sansNumero);
+    const res = await server.inject({ method: 'POST', url: COMPLET, ...h(adminTok), payload: JSON.stringify({ code: 'code-abc', wabaId: 'waba-1', evenement: 'FINISH_ONLY_WABA' }) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ connected: false, sansNumero: true, wabaId: 'waba-1' });
+    expect(res.json().warnings?.[0]).toContain('sans numéro');
+    expect(cap.verifiedWaba).toEqual(['waba-1']);
+    expect(cap.sansNumero).toEqual([{ tenantId: 't1', wabaId: 'waba-1' }]);
+    expect(cap.saved).toEqual([{ wabaId: 'waba-1', tenantId: 't1', token: 'BIZ_TOKEN', pin: null }]);
+    expect(cap.subscribed).toEqual(['waba-1']);
+    expect(cap.linked).toHaveLength(0);
+    expect(cap.registered).toHaveLength(0);
+    expect(cap.offerts).toHaveLength(0);
+    await server.close();
+  });
+
+  it('code SEUL, compte retrouvé depuis le jeton et sans numéro : même chemin', async () => {
+    const { server, cap } = app({ ...sansNumero, wabasForToken: async () => ['waba-decouvert'] });
+    const res = await server.inject({ method: 'POST', url: COMPLET, ...h(adminTok), payload: JSON.stringify({ code: 'code-abc' }) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ sansNumero: true, wabaId: 'waba-decouvert' });
+    expect(cap.sansNumero).toEqual([{ tenantId: 't1', wabaId: 'waba-decouvert' }]);
+    await server.close();
+  });
+
+  it('🔴 preuve d’appartenance refusée -> 422, RIEN n’est relié ni gardé', async () => {
+    const { server, cap } = app({ ...sansNumero, verifyWaba: async () => { throw new Error('(#100) no permission'); } });
+    const res = await server.inject({ method: 'POST', url: COMPLET, ...h(adminTok), payload: JSON.stringify({ code: 'c', wabaId: 'waba-x' }) });
+    expect(res.statusCode).toBe(422);
+    expect(cap.sansNumero).toHaveLength(0);
+    expect(cap.saved).toHaveLength(0);
+    await server.close();
+  });
+
+  it('compte d’un AUTRE espace -> 409, jeton non gardé', async () => {
+    const { server, cap } = app(sansNumero, undefined, undefined, async () => { throw new TenantConflictError('waba', 'waba-1'); });
+    const res = await server.inject({ method: 'POST', url: COMPLET, ...h(adminTok), payload: JSON.stringify({ code: 'c', wabaId: 'waba-1' }) });
+    expect(res.statusCode).toBe(409);
+    expect(cap.saved).toHaveLength(0);
+    expect(cap.subscribed).toHaveLength(0);
+    await server.close();
+  });
+
+  it('espace qui a DÉJÀ un numéro -> 409 qui le nomme, jeton non gardé', async () => {
+    const { server, cap } = app(sansNumero, undefined, undefined, async () => { throw new SecondNumeroRefuseError('+33 5 25 68 02 50', ''); });
+    const res = await server.inject({ method: 'POST', url: COMPLET, ...h(adminTok), payload: JSON.stringify({ code: 'c', wabaId: 'waba-1' }) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('+33 5 25 68 02 50');
+    expect(cap.saved).toHaveLength(0);
+    await server.close();
+  });
+
+  it('abonnement des webhooks refusé -> 200 avec avertissement, le jeton est quand même gardé', async () => {
+    const { server, cap } = app({ ...sansNumero, subscribeApp: async () => { throw new Error('boom'); } });
+    const res = await server.inject({ method: 'POST', url: COMPLET, ...h(adminTok), payload: JSON.stringify({ code: 'c', wabaId: 'waba-1' }) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().warnings.join(' ')).toContain('boom');
+    expect(cap.saved).toHaveLength(1);
     await server.close();
   });
 });

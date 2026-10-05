@@ -58,7 +58,7 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
       subscribeApp: async () => {},
       register: async () => {},
     },
-    inscriptions: { linkTenant: async () => {} },
+    inscriptions: { linkTenant: async () => {}, lierCompteSansNumero: async () => {} },
     saveCredentials: async () => {},
     offrirCredit: async (_t, phoneNumberId) => { cap.offerts.push(phoneNumberId); },
     numeroDuTenant: async () => 'pn-1',

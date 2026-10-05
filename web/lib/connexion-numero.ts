@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getEsConfig, completeEmbeddedSignup, type EsConfig } from '@/lib/api';
 import { loadFbSdk } from '@/lib/fb-sdk';
+import { lireMessageEs, retenirMessageEs, type MessageEs } from '@/lib/message-es';
 import { useT } from '@/lib/i18n';
 
 /**
@@ -47,25 +48,24 @@ export function useConnexionNumero(tenantId: string, onConnected: (avertissement
   const [cfg, setCfg] = useState<EsConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // waba_id / phone_number_id arrivent par postMessage, PAS par le callback FB.login -> stash dans une ref.
-  const idsRef = useRef<{ wabaId: string; phoneNumberId: string } | undefined>(undefined);
+  // waba_id / phone_number_id arrivent par postMessage, PAS par le callback FB.login -> stash dans une ref. Le
+  // compte peut arriver SEUL : la fenêtre finie sans numéro (lot 3b, `lireMessageEs`).
+  const idsRef = useRef<MessageEs | undefined>(undefined);
 
   useEffect(() => {
     getEsConfig(tenantId).then(setCfg).catch(() => setCfg({ enabled: false, appId: '', configId: '', graphVersion: '' }));
   }, [tenantId]);
 
   useEffect(() => {
-    // Origine ANCRÉE sur la frontière de point : accepte www./business.facebook.com, REJETTE evilfacebook.com
-    // (endsWith('facebook.com') l'aurait laissé passer -> injection d'ids forgés via postMessage).
+    // L'origine, le type du message et la lecture des identifiants : `lireMessageEs` (`@/lib/message-es`).
     const FB_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*facebook\.com$/;
-    const asStr = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : typeof v === 'number' ? String(v) : undefined);
     /** Contenu d'un message, en texte, pour la trace de diagnostic. Ne throw jamais (données arbitraires). */
     const brut = (v: unknown): string => {
       if (typeof v === 'string') return v;
       try { return JSON.stringify(v) ?? String(v); } catch { return '[non sérialisable]'; }
     };
     function onMsg(e: MessageEvent) {
-      // ⚠️ Trace AVANT les trois filtres ci-dessous. Ils retournent en SILENCE (origine, JSON illisible,
+      // ⚠️ Trace AVANT les filtres de `lireMessageEs`. Ils rendent `null` en SILENCE (origine, JSON illisible,
       // étiquette inattendue), ce qui rendait impossible de distinguer « Meta n'a rien envoyé » de « Meta a
       // envoyé quelque chose qu'on a jeté ». Cette confusion a coûté un aller-retour de diagnostic sur un
       // embarquement bloqué (2026-08-17) : sans cette trace, on cherche du côté de Meta un défaut qui est chez
@@ -76,25 +76,13 @@ export function useConnexionNumero(tenantId: string, onConnected: (avertissement
         // eslint-disable-next-line no-console
         console.info('[ES] message reçu | origine =', e.origin, '| contenu =', texte.slice(0, 400));
       }
-      if (typeof e.origin !== 'string' || !FB_ORIGIN.test(e.origin)) return;
-      // `e.data` peut être une CHAÎNE JSON (SDK) OU déjà un objet selon le canal -> on gère les deux.
-      let d: { type?: string; event?: string; data?: Record<string, unknown> } & Record<string, unknown>;
-      try {
-        d = typeof e.data === 'string' ? JSON.parse(e.data) : (e.data as typeof d);
-      } catch { return; /* message non-JSON du SDK */ }
-      if (!d || d.type !== 'WA_EMBEDDED_SIGNUP') return;
+      // On capture les identifiants dès qu'ils sont présents, QUEL QUE SOIT l'événement (FINISH, FINISH_ONLY_WABA...),
+      // en chaîne OU en nombre (Meta n'est pas constant) -> plus de « popup n'a rien renvoyé » à tort.
+      const lu = lireMessageEs(e.origin, e.data);
+      if (!lu) return;
+      idsRef.current = retenirMessageEs(idsRef.current, lu);
       // eslint-disable-next-line no-console
-      console.info('[ES] message', d.event, d.data ?? d);
-      // On capture les ids dès qu'ils sont présents, QUEL QUE SOIT l'event (FINISH, etc.), et qu'ils soient
-      // envoyés en string OU en number (Meta n'est pas constant) -> plus de « popup n'a rien renvoyé » à tort.
-      const p = (d.data ?? d) as { waba_id?: unknown; phone_number_id?: unknown };
-      const wabaId = asStr(p.waba_id);
-      const phoneNumberId = asStr(p.phone_number_id);
-      if (wabaId && phoneNumberId) {
-        idsRef.current = { wabaId, phoneNumberId };
-        // eslint-disable-next-line no-console
-        console.info('[ES] ids capturés', wabaId, phoneNumberId);
-      }
+      console.info('[ES] identifiants capturés', lu.evenement ?? '', lu.wabaId, lu.phoneNumberId ?? 'sans numéro');
     }
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);

@@ -35,6 +35,16 @@ export class SecondNumeroRefuseError extends Error {
 }
 
 /**
+ * 🔴 UN COMPTE SANS NUMÉRO EST PROVISOIRE (lot 3b). Relier un compte à l'espace (`$2`) retire ses AUTRES comptes qui
+ * n'ont aucun numéro, et leur jeton par la cascade : sinon l'espace en porterait deux, et `getTenantWabaId` (le
+ * premier créé) ferait partir les modèles vers celui qui n'a pas de numéro. Un compte qui porte un numéro n'est
+ * jamais retiré. Avant le lot 3b, aucun compte sans numéro ne pouvait exister.
+ */
+export const RETIRER_COMPTE_SANS_NUMERO = `delete from waba w
+  where w.tenant_id = $1 and w.id <> $2
+    and not exists (select 1 from phone_numbers p where p.waba_id = w.id)`;
+
+/**
  * Persistance de l'Embedded Signup : rattache le WABA et le numéro à l'espace, et conserve le token business
  * (chiffré en amont par l'appelant) dans `waba_credentials`.
  * 🔴 Chaque upsert porte `where <table>.tenant_id = excluded.tenant_id` : un conflit avec un autre espace ne met
@@ -92,6 +102,31 @@ export class PgEmbeddedSignupStore {
         [input.phoneNumberId, input.wabaId, input.tenantId, input.displayPhoneNumber, input.verifiedName],
       );
       if ((phoneRes.rowCount ?? 0) === 0) throw new TenantConflictError('phone_number', input.phoneNumberId);
+      await client.query(RETIRER_COMPTE_SANS_NUMERO, [input.tenantId, input.wabaId]);
+    });
+  }
+
+  /**
+   * Relie à l'espace un compte WhatsApp revenu de la fenêtre SANS numéro (lot 3b), pour que le serveur y ajoute le
+   * numéro fourni. Mêmes refus que `linkTenant` : le compte d'un autre espace, un espace qui a déjà son numéro.
+   * Rejouer est sans effet ; un compte sans numéro relié avant, sous un autre identifiant, est remplacé.
+   */
+  async lierCompteSansNumero(input: { tenantId: string; wabaId: string }): Promise<void> {
+    await enTransaction(this.pool, async (client) => {
+      const dejaLa = await client.query<{ id: string }>(
+        `select id from phone_numbers where tenant_id = $1 limit 1`,
+        [input.tenantId],
+      );
+      const existant = dejaLa.rows[0];
+      if (existant) throw new SecondNumeroRefuseError(existant.id, '');
+      const wabaRes = await client.query(
+        `insert into waba (id, tenant_id) values ($1, $2)
+         on conflict (id) do update set tenant_id = excluded.tenant_id
+         where waba.tenant_id = excluded.tenant_id`,
+        [input.wabaId, input.tenantId],
+      );
+      if ((wabaRes.rowCount ?? 0) === 0) throw new TenantConflictError('waba', input.wabaId);
+      await client.query(RETIRER_COMPTE_SANS_NUMERO, [input.tenantId, input.wabaId]);
     });
   }
 

@@ -88,6 +88,11 @@ export async function mockAccueil(
       /** Rempli par le mock : « VERBE chemin » de chaque geste reçu. */
       gestes?: string[];
     };
+    /**
+     * L'inscription par la fenêtre Meta (lot 3b) : la configuration allumée, et la réponse de `POST
+     * /embedded-signup/complete`. Absente : `{}`, donc le bouton de connexion reste éteint.
+     */
+    inscription?: { complete: unknown; posts?: unknown[] };
   } = {},
 ): Promise<void> {
   await page.addInitScript((s) => {
@@ -218,6 +223,13 @@ export async function mockAccueil(
     if (over.repondeurIa && new URL(url).pathname.endsWith('/agents')) {
       const r = over.repondeurIa;
       return json({ agents: [{ id: r.id, label: r.label, status: 'active', sorties: [], modele: '' }], repondeurAgentId: r.id });
+    }
+    if (over.inscription && url.endsWith('/embedded-signup/config')) {
+      return json({ enabled: true, appId: 'app-e2e', configId: 'cfg-e2e', graphVersion: 'v25.0' });
+    }
+    if (over.inscription && url.endsWith('/embedded-signup/complete')) {
+      over.inscription.posts?.push(route.request().postDataJSON());
+      return json(over.inscription.complete);
     }
     if (url.includes('/account-status')) return json(account);
     if (url.includes('/settings')) return json(settings); // GET + PUT + PATCH control-handback : même forme

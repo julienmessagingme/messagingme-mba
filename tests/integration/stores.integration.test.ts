@@ -35,7 +35,7 @@ import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
 import { DUREE_CLE_EN_COURS_MAX_MS } from '../../src/api/idempotence';
 import { resolveScenario } from '../../src/ids/resolve';
 import { PgTenantSettingsStore, DEFAULT_TIMEZONE, DEFAULT_BUSINESS_HOURS } from '../../src/settings/store.pg';
-import { PgEmbeddedSignupStore, TenantConflictError, SecondNumeroRefuseError } from '../../src/account/es-store.pg';
+import { PgEmbeddedSignupStore, TenantConflictError, SecondNumeroRefuseError, RETIRER_COMPTE_SANS_NUMERO } from '../../src/account/es-store.pg';
 import { SANS_CREDIT_OFFERT } from '../credit-offert';
 import { PgPhoneStatusStore } from '../../src/account/store.pg';
 
@@ -1888,6 +1888,86 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     } finally {
       await pool.query('delete from phone_numbers where tenant_id = $1', [t]);
       await pool.query('delete from waba where id = $1', [wabaId]);
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
+  /**
+   * 🔴 LE COMPTE SANS NUMÉRO (lot 3b) : la fenêtre de Meta finie sans numéro relie le compte à l'espace, sans ligne
+   * `phone_numbers`, pour que le serveur y ajoute ensuite le numéro fourni. Il est PROVISOIRE : relier un numéro sur un
+   * AUTRE compte le remplace, sinon l'espace porterait deux comptes et `getTenantWabaId` (le premier créé) ferait
+   * partir les modèles vers celui qui n'a pas de numéro.
+   */
+  it('PgEmbeddedSignupStore : un compte SANS numéro se relie, et les mêmes refus tiennent', async () => {
+    const es = new PgEmbeddedSignupStore(pool, SANS_CREDIT_OFFERT);
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-sans-numero') returning id`)).rows[0]!.id;
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-sans-numero-autre') returning id`)).rows[0]!.id;
+    try {
+      await es.lierCompteSansNumero({ tenantId: t, wabaId: 'waba-sn-1' });
+      // Rejouer est sans effet ; le jeton peut alors être gardé (sa table référence le compte).
+      await es.lierCompteSansNumero({ tenantId: t, wabaId: 'waba-sn-1' });
+      await es.saveCredentials('waba-sn-1', t, 'jeton-chiffre', null);
+      expect((await pool.query(`select id from waba where tenant_id = $1`, [t])).rows).toEqual([{ id: 'waba-sn-1' }]);
+      expect((await pool.query(`select 1 from phone_numbers where tenant_id = $1`, [t])).rows).toHaveLength(0);
+
+      // Le compte d'un autre espace : refusé, la ligne n'a pas bougé.
+      await expect(es.lierCompteSansNumero({ tenantId: autre, wabaId: 'waba-sn-1' })).rejects.toBeInstanceOf(TenantConflictError);
+      expect((await pool.query(`select tenant_id from waba where id = 'waba-sn-1'`)).rows).toEqual([{ tenant_id: t }]);
+
+      // Un espace qui a déjà son numéro : refusé, aucun second compte.
+      await es.linkTenant({ tenantId: autre, wabaId: 'waba-sn-autre', phoneNumberId: 'pn-sn-autre', displayPhoneNumber: '+33500000301', verifiedName: 'Autre' });
+      await expect(es.lierCompteSansNumero({ tenantId: autre, wabaId: 'waba-sn-2' })).rejects.toBeInstanceOf(SecondNumeroRefuseError);
+      expect((await pool.query(`select id from waba where tenant_id = $1`, [autre])).rows).toEqual([{ id: 'waba-sn-autre' }]);
+    } finally {
+      await pool.query('delete from waba where tenant_id = any($1)', [[t, autre]]);
+      await pool.query('delete from tenants where id = any($1)', [[t, autre]]);
+    }
+  });
+
+  /**
+   * La clause « jamais un compte qui porte un numéro » n'est pas atteignable par les méthodes du magasin (les refus
+   * partent avant elle) : elle est éprouvée ici directement, sur un espace monté à la main avec deux comptes porteurs
+   * d'un numéro et un compte sans numéro (relecture de la livraison A).
+   */
+  it('🔴 RETIRER_COMPTE_SANS_NUMERO : seul le compte sans numéro part, jamais un compte qui porte un numéro, jamais celui qu’on relie', async () => {
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-retrait') returning id`)).rows[0]!.id;
+    try {
+      await pool.query(`insert into waba (id, tenant_id) values ('waba-ret-a', $1), ('waba-ret-b', $1), ('waba-ret-vide', $1), ('waba-ret-relie', $1)`, [t]);
+      await pool.query(`insert into phone_numbers (id, waba_id, tenant_id) values ('pn-ret-a', 'waba-ret-a', $1), ('pn-ret-b', 'waba-ret-b', $1)`, [t]);
+      await pool.query(RETIRER_COMPTE_SANS_NUMERO, [t, 'waba-ret-relie']);
+      expect((await pool.query(`select id from waba where tenant_id = $1 order by id`, [t])).rows.map((r) => r.id))
+        .toEqual(['waba-ret-a', 'waba-ret-b', 'waba-ret-relie']);
+    } finally {
+      await pool.query('delete from waba where tenant_id = $1', [t]);
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
+  it('🔴 PgEmbeddedSignupStore : relier un numéro sur un AUTRE compte retire le compte sans numéro, et son jeton', async () => {
+    const es = new PgEmbeddedSignupStore(pool, SANS_CREDIT_OFFERT);
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-orphelin') returning id`)).rows[0]!.id;
+    try {
+      // Un second compte sans numéro remplace le premier : un seul compte provisoire par espace.
+      await es.lierCompteSansNumero({ tenantId: t, wabaId: 'waba-orph-ancien' });
+      await es.lierCompteSansNumero({ tenantId: t, wabaId: 'waba-orph-vide' });
+      expect((await pool.query(`select id from waba where tenant_id = $1`, [t])).rows).toEqual([{ id: 'waba-orph-vide' }]);
+      await es.saveCredentials('waba-orph-vide', t, 'jeton-vide', null);
+      await es.linkTenant({ tenantId: t, wabaId: 'waba-orph-plein', phoneNumberId: 'pn-orph', displayPhoneNumber: '+33500000401', verifiedName: 'Plein' });
+      expect((await pool.query(`select id from waba where tenant_id = $1 order by id`, [t])).rows).toEqual([{ id: 'waba-orph-plein' }]);
+      expect((await pool.query(`select 1 from waba_credentials where waba_id = 'waba-orph-vide'`)).rows).toHaveLength(0);
+
+      // Le numéro fourni s'ajoute au compte SANS numéro lui-même : ce compte reste, il n'est plus orphelin.
+      const u = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-orphelin-2') returning id`)).rows[0]!.id;
+      try {
+        await es.lierCompteSansNumero({ tenantId: u, wabaId: 'waba-orph-fourni' });
+        await es.linkTenant({ tenantId: u, wabaId: 'waba-orph-fourni', phoneNumberId: 'pn-orph-fourni', displayPhoneNumber: '+441235000001', verifiedName: 'Fourni' });
+        expect((await pool.query(`select id from waba where tenant_id = $1`, [u])).rows).toEqual([{ id: 'waba-orph-fourni' }]);
+      } finally {
+        await pool.query('delete from waba where tenant_id = $1', [u]);
+        await pool.query('delete from tenants where id = $1', [u]);
+      }
+    } finally {
+      await pool.query('delete from waba where tenant_id = $1', [t]);
       await pool.query('delete from tenants where id = $1', [t]);
     }
   });

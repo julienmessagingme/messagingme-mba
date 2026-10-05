@@ -520,7 +520,17 @@ function AccueilInner({ session }: { session: Session }) {
               </Bouton>
             </div>
           ) : account && !account.hasNumber ? (
-            <ConnectNumberZone isAdmin={isAdmin} connexion={connexionNumero} />
+            <>
+              <ConnectNumberZone isAdmin={isAdmin} connexion={connexionNumero} />
+              {/* 🔴 Le compte peut revenir de la fenêtre Meta SANS numéro (lot 3b) : l'espace n'a toujours pas de
+                  numéro, donc c'est cette branche qui s'affiche, et l'avertissement qui dit quoi faire doit y être.
+                  Sans lui, la fenêtre se fermait sans un mot. Titre neutre : rien n'est « connecté ». */}
+              {avertissementsConnexion.length > 0 && (
+                <div data-testid="avertissements-connexion" className="mt-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
+                  {t('À savoir', 'Note')} : {avertissementsConnexion.join(' · ')}
+                </div>
+              )}
+            </>
           ) : (
             <div data-testid="numero-card" className="rounded-carte border border-ink-200 bg-white p-5">
               <div className="mb-3 flex items-center justify-between">

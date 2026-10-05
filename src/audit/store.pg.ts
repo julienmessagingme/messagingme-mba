@@ -61,6 +61,8 @@ export type AuditAction =
   | 'connecteur.modifie'
   | 'connecteur.supprime'
   | 'numero.connecte'
+  /** Un compte WhatsApp revenu de la fenêtre Meta SANS numéro, relié à l'espace avec son jeton (lot 3b). */
+  | 'compte.relie_sans_numero'
   /** Le numéro a été activé depuis la console (vérification par code si besoin, puis register Cloud API). */
   | 'numero.active'
   /**

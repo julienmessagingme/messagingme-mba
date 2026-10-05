@@ -1558,6 +1558,7 @@ async function main(): Promise<void> {
         meta: esClient,
         inscriptions: {
           linkTenant: (input) => esCredentialsStore.linkTenant(input),
+          lierCompteSansNumero: (input) => esCredentialsStore.lierCompteSansNumero(input),
         },
         /**
          * Le crédit de bienvenue, que la route n'appelle que pour un numéro que Meta dit vérifié. 🔴 Un espace qui a
