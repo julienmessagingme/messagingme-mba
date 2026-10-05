@@ -27,9 +27,14 @@ DIDWW) et `secret-pont` (le secret partagé avec l'API, `OTP_PONT_SECRET` de `.e
 3. `docker compose up -d --force-recreate` : les fichiers sont montés seuls, un rechargement d'Asterisk relirait
    les anciens sans rien signaler.
 4. Vérifier `asterisk -rx "pjsip show registrations"` (`Registered`), puis les trois prérequis du script, qui
-   échoueraient en silence au premier appel : `docker exec -u asterisk otp-asterisk sh -c 'command -v curl openssl &&
-   test -r /otp/secret && test -x /otp/envoyer-otp.sh && echo ok'`. Un `secret-pont` absent fait créer à Docker un
+   échoueraient en silence au premier appel : `docker exec -u asterisk otp-asterisk sh -c 'command -v curl &&
+   command -v openssl && test -r /otp/secret && test -x /otp/envoyer-otp.sh && echo ok'` (un `command -v` par
+   commande : celui de `sh` ne regarde que son premier argument). Un `secret-pont` absent fait créer à Docker un
    DOSSIER à sa place : le poser avant le premier `up`.
+5. Prouver la signature sans attendre un appel : depuis le conteneur, le script sur un faux fichier et un numéro hors
+   réserve (`head -c 2048 /dev/urandom > /tmp/x.wav && /otp/envoyer-otp.sh 449990000001 1.1 /tmp/x.wav`). L'API doit
+   répondre 404 (« hors réserve »), ce qui n'arrive qu'après une signature acceptée ; un 401 dit que `secret-pont` et
+   `OTP_PONT_SECRET` diffèrent. Rien n'est écrit, effacer `/tmp/x.wav` ensuite.
 
 ## Rejouer un envoi à la main
 

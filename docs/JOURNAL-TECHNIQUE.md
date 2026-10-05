@@ -5,6 +5,19 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-05 : le pont du code en production (lot 3a), et sa signature prouvée sans attendre Meta
+
+`2ecd261b` déployé : CI verte job par job, 0210 appliquée à 16 h 49 UTC avant le `up` de l'API et des deux workers,
+relue en base. Puis l'Asterisk du VPS mis au montage du dépôt, avec le correctif du rouge de la relecture appliqué aussi
+à sa configuration privée (`identify_by = ip` dans `pjsip.conf`, qui n'est pas versionné), relu par
+`pjsip show endpoint didww`.
+
+Deux mesures à garder. **La signature se prouve avant le premier appel** : le vrai script, lancé depuis le conteneur
+sur un faux fichier et un numéro hors réserve, a reçu 404. La route ne répond « hors réserve » qu'après avoir accepté
+la signature, donc le secret monté, l'adresse et le format sont justes, sans rien écrire et sans attendre que Meta
+appelle. **`command -v a b` sous `sh` (dash) ne regarde que `a`** : le contrôle des prérequis du README annonçait
+`openssl` absent alors qu'il est là. Corrigé en un `command -v` par commande.
+
 ## 2026-10-05 : l'essai réel du répondeur, trois défauts, et ce que la mesure a corrigé de mes correctifs
 
 Sur l'espace « Messaging Me Tech SANDBOX », Julien désigne Gan PrevMCP depuis la console (15 h 29) et écrit depuis son
