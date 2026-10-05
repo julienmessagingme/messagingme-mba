@@ -29,6 +29,18 @@ décidées par Julien le 2026-10-04 (`ARCHITECTURE-CIBLE.md` § 13.1).
   espace dans la journée. `lock_timeout` de 5 s sur 0208, `tenant_settings` étant sur le chemin chaud.
 - **Restent** (`todo.md`) : compter un envoi après le `claim` d'idempotence (un rejeu consomme aujourd'hui), le 429
   de bout en bout sur `/v1/sends` et `/v1/messages/*`, la consommation du jour dans `/ops`.
+- **En production en `fb070954`** : CI verte job par job (unit, intégration, sécurité, console). 0208 appliquée à 8 h 56 UTC
+  AVANT le `up`, après `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenant_settings`) et la
+  liste des migrations de l'image ; relue en base (deux `integer` nullables sans défaut, les deux CHECK sous leur nom,
+  aucun espace avec un quota propre). `mba-api` seul relancé : les workers utilisent le compteur partagé, mais la requête
+  modifiée leur rend le même résultat (origine 0). Les deux portes publiques à 200 du premier coup.
+- **Essai réel** dans un conteneur de l'image déployée, le vrai garde sur le vrai compteur, un espace FICTIF à 2 envois et
+  5 fiches : deux envois acceptés, le troisième refusé avec une attente de 46 989 s, exactement jusqu'à minuit de Paris
+  calculé à part ; un lot de 6 fiches refusé en entier, un lot de 5 accepté, la fiche suivante refusée ; une alerte par
+  famille ; en base, la fenêtre du quota part de 22 h UTC la veille et expire à 22 h UTC, et les refus ne sont comptés que
+  dans `refusees`. Les huit lignes de l'essai effacées ensuite. La page de référence publique affiche les quotas.
+- **Deux e2e instables sous charge, sans lien** : `workflow-sorties-multiples.spec.ts:148` (deux échecs sur quatre passages,
+  8 sur 8 seul) et `agents-connaissance.spec.ts:127` (un sur quatre) ; aucun de ces écrans n'importe un module du lot.
 
 ## 2026-10-04 : l'observabilité qui manquait à l'audit (alerte des workers, tâches de fond, stockage)
 
