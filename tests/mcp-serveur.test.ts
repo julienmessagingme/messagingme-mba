@@ -555,7 +555,9 @@ describe('serveur MCP : cohérence du catalogue', () => {
       update_agent: [true, true, false],
       set_agent_tools: [false, true, false],
       activate_agent: [true, true, false],
-      test_agent: [false, false, false],
+      // Monde ouvert depuis le 2026-10-05 (décision de Julien) : un connecteur GET qui intègre y interroge pour de
+      // vrai le système du client.
+      test_agent: [false, false, true],
       add_knowledge: [false, false, false],
       delete_knowledge: [true, true, false],
       import_site: [true, true, true],

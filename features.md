@@ -2199,6 +2199,9 @@ scénario, comment importer des contacts.
   🔴 **Ce que l'agent lit se décide AGENT PAR AGENT.** Deux agents peuvent piocher dans le même appel et lire
   des choses différentes. Les champs cochés sur l'appel ne font que pré-remplir, et **changer ce défaut ne
   touche aucun agent déjà en service**.
+  🔴 **Un champ rangé dans un autre (`tarifs.integrale`) arrive bien à l'agent** (réparé le 2026-10-05). Avant,
+  seuls les champs du premier niveau lui parvenaient : les autres disparaissaient en route, sans erreur, et
+  quand votre système ne répondait pas, l'agent recevait une réponse vide au lieu de l'apprendre.
   ⚠️ **Un appel qui pousse ne rend RIEN à l'agent, même en cas de succès.** C'est volontaire : la réponse d'une
   création ou d'une modification porte souvent la fiche entière de votre client, son e-mail, ses identifiants
   internes. Un agent qui n'en a pas besoin n'a aucune raison de les envoyer au fournisseur du modèle.
@@ -3020,6 +3023,13 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   savoir si elle vient de la base de connaissance ou de l'imagination du modèle.
 - ✅ **Les actions qui touchent le monde réel sont simulées**, et c'est dit à chaque appel : poser un tag,
   envoyer un bloc, passer la main. Il n'y a ni contact, ni conversation, ni parcours dans un test.
+- ✅ **Un connecteur API qui ne fait que LIRE votre système est appelé pour de vrai** (2026-10-05) : une requête
+  `GET`, donnée à l'agent en « il récupère de l'information », et qui n'envoie aucune donnée du contact (il n'y a
+  pas de contact dans un test). C'est ce qui permet d'éprouver un devis sans conversation WhatsApp. Il passe par
+  les mêmes gardes qu'en production, et l'agent n'en lit que les champs cochés. ⚠️ Chaque fois que l'agent s'en
+  sert pendant un essai, votre système est donc interrogé, comme avec le bouton **Essayer** d'un appel. Tout
+  autre connecteur est simulé : l'agent reçoit les champs cochés avec une valeur d'exemple, et une note qui nomme
+  l'appel qui n'a pas eu lieu ; l'écran le marque « simulé ».
 - ✅ **La sortie est annoncée** quand l'agent en prend une : « l'agent est SORTI par X, dans un scénario c'est
   cette branche qui prendrait la suite ».
 - 🔴 **« Plafond atteint » ne veut pas toujours dire qu'un plafond est atteint, et l'écran le dit désormais**

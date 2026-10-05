@@ -107,7 +107,7 @@ import { creerRecapRedige, creerRedacteurRecap, gabarit } from './aide/recap-ren
 import { creerTraducteur, type LangueConsole } from './traduction/traduire';
 import { PgTraductionStore } from './traduction/traduire.pg';
 import { traduireFil } from './traduction/fil';
-import { creerAppelConnecteur } from './agent/resolvers/http';
+import { creerAppelConnecteur, creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { lireContexteAvecReglages } from './agent/contexte';
 import { transcrireMessage } from './inbox/transcrire';
@@ -629,9 +629,25 @@ async function main(): Promise<void> {
           // Muet : les essais n'ont pas à apparaître comme des pannes dans le journal que le client consulte.
           journal: JOURNAL_MUET,
           // Le bac à sable reçoit la même recherche que la production : il n'a de valeur que s'il rend
-          // exactement ce qu'elle rendrait. Les trois origines sont simulées (le type impose la liste
-          // complète) : une origine non traitée arrêterait net un essai.
-          resolveurs: resolveursSimulation({ connaissance: knowledgeStore, ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}) }),
+          // exactement ce qu'elle rendrait. Les trois origines ont leur résolveur (le type impose la liste
+          // complète) : une origine non traitée arrêterait net un essai. Un connecteur qui lit part pour de vrai,
+          // par le même résolveur que la production (`creerResolveurHttp`, comme `src/worker.ts`) ; le reste est simulé.
+          resolveurs: resolveursSimulation({
+            connaissance: knowledgeStore,
+            ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}),
+            connecteurs: {
+              requetes: agentRequetes,
+              reel: creerResolveurHttp({
+                // Muette elle aussi : un essai ne note pas la santé de la source. Réussi, il effacerait la dernière
+                // erreur réelle de production ; raté faute de contact, il afficherait une panne qui n'en est pas une.
+                sources: { pourAppel: (t, id) => agentSources.pourAppel(t, id), marquerEpreuve: async () => {} },
+                requetes: agentRequetes,
+                inbox: inboxStore,
+                fiche: contactStore,
+                fuseau: async (t) => (await settingsStore.get(t)).timezone,
+              }),
+            },
+          }),
           // Rien à compter : sans session, pas de compteur. Le plafond d'appels du tour est tenu en mémoire
           // par la boucle du cerveau.
           sessions: { compterAppel: async () => {} },

@@ -405,7 +405,9 @@ DÉFAUT de pré-remplissage, et ne gouverne plus rien à l'exécution.
 justification (« la REQUÊTE les porte, les remplir en double créerait deux vérités ») juste pour l'ancienne
 conception. Deux vérités existaient pourtant : `connecteurSimule` bouclait DÉJÀ sur cette colonne vide et
 rendait zéro champ, alors que le bac à sable promet « exactement ce que l'agent recevra ». **Il mentait depuis
-le 2026-09-02** ; remplir la colonne le répare, et deux tests empêchent la promesse de redevenir fausse.
+le 2026-09-02** ; remplir la colonne ne le réparait qu'à moitié : l'exécuteur refiltrait ensuite le résultat simulé
+et le vidait, jusqu'au 2026-10-05, et les deux tests interrogeaient `connecteurSimule` seul. La promesse est tenue
+par un test de bout en bout (`tests/agent-resolveur-http-nature.test.ts`).
 
 Avant elle : **0149**, le 2026-09-15 au matin (`conversations.release_mba_apres_message` : le fil
 attend l'accusé de NOTRE dernier envoi avant de repartir chez l'agent de Meta).

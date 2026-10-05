@@ -17,8 +17,9 @@ const url = process.env.DATABASE_URL ?? '';
  * 🔴 CE QUE ÇA RÉPARE AU PASSAGE, mesuré le 2026-09-15. `agent_tools.output_paths` existe depuis la migration
  * 0086 et l'insertion y écrivait `'{}'::text[]` en toutes lettres, avec une justification (« la REQUÊTE les
  * porte ») juste pour l'ancienne conception. Or le bac à sable (`connecteurSimule`) bouclait DÉJÀ sur cette
- * colonne, donc il rendait un objet VIDE en promettant « exactement ce que l'agent recevra ». La remplir rend
- * cette promesse vraie.
+ * colonne, donc il rendait un objet VIDE en promettant « exactement ce que l'agent recevra ». La remplir était
+ * nécessaire, pas suffisant : l'exécuteur vidait encore le résultat simulé jusqu'au 2026-10-05 (de bout en bout :
+ * `tests/agent-resolveur-http-nature.test.ts`).
  */
 describe.skipIf(!url)('la nature d un outil de connecteur (Postgres)', () => {
   let pool: Pool;

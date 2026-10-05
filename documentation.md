@@ -793,9 +793,25 @@ la garde d'autonomie sur une action irréversible.
 🔴 **Le filtre de sortie est obligatoire.** `outputPaths` dit ce que l'agent a le droit de lire d'une réponse
 client. Sur un outil maison, c'est nous qui écrivons la réponse ; sur un connecteur, non.
 
-⚠️ **Le bac à sable SIMULE un connecteur.** Un essai depuis la console ne doit pas taper sur le système de
-production d'un client, même en lecture : il consommerait son quota, apparaîtrait dans ses journaux, et un
-connecteur mal déclaré ferait un dégât réel pendant qu'on croit essayer.
+🔴 **Il s'applique UNE fois, là où la réponse brute est lue** : `creerAppelConnecteur` (étape 9), qui rend des clés
+À PLAT portant le chemin entier (`tarifs.integrale`), forme que le bloc « Appel HTTP » d'un scénario range telle
+quelle dans un champ. L'exécuteur ne refiltre pas (`executeTool`, étape 7, ne fait que borner) : un second filtre
+qui DESCEND dans l'objet jette tout champ imbriqué, l'enveloppe d'un échec et celle du bac à sable, sans erreur. Un
+test du résolveur seul ne le voit pas ; celui qui fait traverser sa sortie réelle dans l'exécuteur, si
+(`tests/agent-resolveur-http-nature.test.ts`).
+
+⚠️ **Le bac à sable n'appelle pour de vrai qu'un connecteur qui LIT** (`connecteurEssai`,
+`src/agent/resolvers/simulation.ts`), par le résolveur de production, donc avec ses gardes et son filtre : c'est le
+seul moyen d'éprouver un devis sans conversation réelle (décision de Julien, 2026-10-05). « Qui lit » se juge sur
+quatre faits : la requête est un GET (ce qui part sur le réseau, lu sur la REQUÊTE : le `binding` d'un connecteur est
+vide) ; l'outil intègre la réponse (« il pousse » est la seule déclaration du client qu'il agit) ; son risque est
+resté `read` (dérivé de la méthode à la création, il ne suit pas une requête qui en change ensuite) ; aucune variable
+ne vient du contact (il n'y en a pas au bac à sable, et `wa_id` y vaudrait `bac-a-sable`, une valeur inventée). Le
+reste est simulé (`connecteurSimule`) : les champs déclarés avec une valeur d'exemple, et une note qui nomme l'appel
+par le LIBELLÉ et la méthode de sa requête, jamais par son chemin, qui part chez le fournisseur du modèle et porte
+parfois le jeton d'un webhook. Un essai n'écrit ni notre journal (`JOURNAL_MUET`) ni l'épreuve de la source
+(`marquerEpreuve` muet, câblé dans `src/index.ts`). Le coût accepté : un essai consomme du quota chez le client et
+apparaît dans SES journaux, comme le bouton « Essayer » d'une requête ; `test_agent` est donc en monde ouvert.
 
 **Deux modèles, deux métiers** : `AGENT_SETUP_MODEL` (l'assistant de construction, sortie structurée
 imbriquée, tourne rarement) et `AGENT_MODEL` (le runtime, à chaque message). Le boot REFUSE la clé du Gateway

@@ -182,8 +182,8 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
       // entière, l'agent n'a aucune raison de l'envoyer au fournisseur du modèle.
       if (outil.nature === 'pousse') return { ok: true, contenu: { ok: true } };
 
-      // Le texte part entier : le filtre par chemins ne s'applique pas à un retour textuel (voir
-      // `src/agent/executor.ts`), il rendrait `{}`.
+      // Le texte part entier : un filtre par chemins rendrait `{}` sur un retour textuel, et l'exécuteur n'en
+      // applique aucun (`executeTool`, étape 7).
       return { ok: true, contenu: { texte: resultat.texte } };
     } finally {
       // Fermer est un geste de politesse envers le serveur, jamais une étape dont dépend le résultat : il n'est donc

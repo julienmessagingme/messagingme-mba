@@ -1041,8 +1041,9 @@ probablement l'afficher en lien bleu. Ça ne change pas le texte envoyé, mais p
 
 Donner `testadd` (`POST /subscriber/add-tag`) à un agent IA en « ça pousse », l'essayer depuis le bac à sable,
 puis **vérifier dans UChat que l'étiquette est réellement posée**. Refaire avec un appel qui intègre, cocher un
-champ, vérifier que la valeur remonte mot pour mot. ⚠️ Le bac à sable est à revérifier en particulier : il
-rendait zéro champ pour tout outil de connecteur depuis le 2026-09-02.
+champ, vérifier que la valeur remonte mot pour mot. ⚠️ Un `POST` reste SIMULÉ au bac à sable (seul un GET qui
+intègre, sans donnée du contact, y part pour de vrai depuis le 2026-10-05) : l'étiquette ne se vérifie que dans une
+vraie conversation. Le bac à sable rendait zéro champ pour tout connecteur jusqu'au 2026-10-05 : réparé.
 
 ## UN POINT D'ÉCRAN QUI RESTE À FAIRE
 

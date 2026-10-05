@@ -87,8 +87,8 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
     <div className="flex flex-col gap-4">
       <MbaNotice kind="warning">
         {t(
-          'Vous parlez au vrai agent. Seules les actions qui touchent le monde réel (poser un tag, envoyer un bloc, passer la main) sont simulées, et c’est dit à chaque fois.',
-          'You are talking to the real agent. Only actions that touch the real world (tagging, sending a block, handing over) are simulated, and it is stated each time.',
+          'Vous parlez au vrai agent. Seules les actions qui touchent le monde réel (poser un tag, envoyer un bloc, passer la main) sont simulées, et c’est dit à chaque fois. Un connecteur API qui récupère une information par GET interroge, lui, votre système pour de vrai.',
+          'You are talking to the real agent. Only actions that touch the real world (tagging, sending a block, handing over) are simulated, and it is stated each time. An API connector that fetches information with a GET does query your system for real.',
         )}
       </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="test-erreur">{erreur}</MbaNotice>}

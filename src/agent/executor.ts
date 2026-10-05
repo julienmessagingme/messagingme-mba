@@ -49,7 +49,7 @@ export interface EntreeResolveur {
 }
 
 export interface SortieResolveur {
-  /** Ce qui repart au modèle. */
+  /** Ce qui repart au modèle, tel quel une fois borné : un résolveur qui lit une réponse distante la filtre lui-même. */
   contenu: unknown;
   /** `false` = échec métier de l'outil (statut `erreur_outil`) : le modèle doit le savoir et peut réessayer. */
   ok?: boolean;
@@ -137,22 +137,6 @@ export function rediger(args: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
     out[k] = typeof v === 'string' && v.length > REDACTION_MAX ? `${v.slice(0, REDACTION_MAX)}...` : v;
-  }
-  return out;
-}
-
-/** Extraction par `output_paths`. Aucun chemin -> la réponse entière (bornée juste après). Un chemin absent
- *  est simplement omis : rendre `undefined` au modèle serait du bruit qu'il paierait à chaque tour. */
-function extraire(valeur: unknown, chemins: string[]): unknown {
-  if (chemins.length === 0) return valeur;
-  const out: Record<string, unknown> = {};
-  for (const chemin of chemins) {
-    let courant: unknown = valeur;
-    for (const cle of chemin.split('.')) {
-      courant = courant && typeof courant === 'object' ? (courant as Record<string, unknown>)[cle] : undefined;
-      if (courant === undefined) break;
-    }
-    if (courant !== undefined) out[chemin] = courant;
   }
   return out;
 }
@@ -365,7 +349,7 @@ export async function executeTool(
   } catch (err) {
     // Un résolveur qui lève est un cas nominal : le modèle reçoit la raison et peut se corriger. Ce message peut
     // être écrit par le distant : il est borné ici comme à l'étape 7, sans dépendre de la discipline de chaque
-    // résolveur. Pas d'`extraire` : `output_paths` décrit une réponse réussie, pas une enveloppe d'erreur.
+    // résolveur.
     const raison = texteDe(err);
     const { contenu: borne } = borner({ erreur: raison }, outil.maxBytes);
     await clore(journalId, 'erreur_outil', { erreur: raison.slice(0, MAX_RAISON_JOURNAL) });
@@ -375,15 +359,15 @@ export async function executeTool(
     if (minuteur) clearTimeout(minuteur);
   }
 
-  // 7. Assainir : extraction par `output_paths` puis borne de taille (une ligne de facturation directe).
-  // L'encadrement en bloc délimité est fait par l'appelant, sur `ResultatOutil.contenu` : l'encadrer deux fois
-  // serait pire.
+  // 7. Assainir : borne de taille (une ligne de facturation directe). L'encadrement en bloc délimité est fait par
+  // l'appelant, sur `ResultatOutil.contenu` : l'encadrer deux fois serait pire.
   /**
-   * Pas de filtre par chemins sur un outil MCP : il rend du texte, et `extraire` rendrait `{}` dès que
-   * `outputPaths` n'est pas vide, sans erreur. Tenu ici, au point de passage, plutôt que par l'import seul.
+   * 🔴 Pas de filtre par `outputPaths` ici. Il est fait par le résolveur, le seul à lire la réponse brute
+   * (`creerAppelConnecteur`, étape 9), qui rend des clés À PLAT portant le chemin entier. Refiltrer ici en
+   * descendant dans l'objet jetait tout champ imbriqué, l'enveloppe d'un échec et celle du bac à sable, sans
+   * erreur (2026-10-05). Un outil MCP rend du texte, un outil maison ne déclare aucun chemin.
    */
-  const aFiltrer = outil.origin === 'mcp' ? sortie.contenu : extraire(sortie.contenu, outil.outputPaths);
-  const { contenu, taille } = borner(aFiltrer, outil.maxBytes);
+  const { contenu, taille } = borner(sortie.contenu, outil.maxBytes);
 
   // 8. Clore : statut, durée, taille, et compteur de session.
   const status: StatutAppel = sortie.ok === false ? 'erreur_outil' : 'ok';

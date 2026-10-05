@@ -345,7 +345,8 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       return { contenu: { reponse }, httpStatus: res.status };
     }
 
-    // 9. Le filtre. Ce qui repart au modèle est exactement ce que le client a listé, et rien d'autre.
+    // 9. Le filtre. Ce qui repart au modèle est exactement ce que le client a listé, et rien d'autre. C'est le SEUL
+    // filtre (l'exécuteur ne refiltre pas), et ses clés sont À PLAT : le bloc « Appel HTTP » les range telles quelles.
     let json: unknown;
     try {
       json = JSON.parse(brut) as unknown;

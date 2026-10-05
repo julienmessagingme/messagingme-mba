@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 6a5c1f
+source_empreinte: b58905
 ---
 # Construire un agent IA
 
@@ -97,7 +97,10 @@ réponse** (le contact s'est tu), **Aucune source**, **Transfert à un humain**,
 **Essayez-le avant de l'activer.** L'onglet Tester vous fait parler au vrai agent, avec son objectif, son
 ton, ses outils et sa vraie base : ce qu'il répond là est ce qu'il répondra. Chaque appel d'outil est montré
 avec ce qu'il a demandé et ce qu'il a reçu, parce que « il n'a pas trouvé » et « il n'a même pas cherché »
-ne sont pas le même défaut. Les actions qui touchent le monde réel y sont simulées. Vos essais sont gardés
+ne sont pas le même défaut. Les actions qui touchent le monde réel y sont simulées, sauf un appel de
+connecteur API qui ne fait que lire votre système (une requête GET donnée à l'agent en « il récupère de
+l'information », sans donnée du contact) : celui-là part pour de vrai, pour que vous voyiez un vrai devis. Vos
+essais sont gardés
 quatorze jours, et « Reprendre » repose exactement la même question à l'agent tel qu'il est réglé
 maintenant : c'est ainsi qu'on voit si une consigne a servi à quelque chose.
 

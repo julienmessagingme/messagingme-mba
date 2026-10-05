@@ -338,12 +338,14 @@ describe('tronc commun : journaliser, appeler, assainir, clore (étapes 5 à 8)'
     expect(journal[0]?.status).toBe('erreur_protocole');
   });
 
-  it('output_paths : seuls les chemins declares repartent au modele', async () => {
-    const { deps } = harnais({
-      outil: { ...OUTIL, nature: 'integre' as const, outputPaths: ['data.statut', 'data.absent'] },
-      resolveur: async () => ({ contenu: { data: { statut: 'expediee', secret: 'ne pas exposer' }, meta: { taille: 12 } } }),
-    });
-    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, CTX, deps);
+  it('🔴 output_paths : l executeur ne REFILTRE pas, une cle a plat qui porte un chemin imbrique traverse', async () => {
+    // Le filtre est celui du résolveur, le seul à lire la réponse brute (`creerAppelConnecteur`, étape 9) : il rend
+    // des clés À PLAT. Ce test faisait rendre la réponse BRUTE à un faux résolveur, ce que le vrai ne fait jamais,
+    // et validait ainsi un second filtre qui jetait tout champ imbriqué (2026-10-05). Que seuls les chemins
+    // déclarés repartent au modèle se prouve désormais avec le vrai résolveur : `agent-resolveur-http-nature.test.ts`.
+    const http: OutilDefini = { ...OUTIL, origin: 'http', sourceId: 'src1', params: [], outputPaths: ['data.statut'] };
+    const { deps } = harnais({ outil: http, origines: { http: async () => ({ contenu: { 'data.statut': 'expediee' } }) } });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({}) }, CTX, deps);
     expect(r.contenu).toEqual({ 'data.statut': 'expediee' });
   });
 
@@ -593,8 +595,8 @@ describe('un outil MCP dans le tronc commun', () => {
     binding: { outilDistant: 'search' },
     params: [],
     // 🔴 LE CAS QUI COMPTE : des chemins de sortie NON VIDES sur un outil MCP. Ils ne devraient jamais
-    // exister, mais une ecriture SQL directe ou un second chemin d import les produirait, et le filtre
-    // rendrait alors `{}` a l agent, sans erreur et sans trace.
+    // exister, mais une ecriture SQL directe ou un second chemin d import les produirait, et un filtre par
+    // chemins dans l executeur rendrait alors `{}` a l agent, sans erreur et sans trace.
     outputPaths: ['statut'],
   };
 
@@ -608,8 +610,8 @@ describe('un outil MCP dans le tronc commun', () => {
   });
 
   it('🔴 le filtre par chemins NE S APPLIQUE PAS a un outil MCP', async () => {
-    // 🔴 Sans la garde de l executeur, `extraire({texte}, ['statut'])` rendrait `{}` : l agent recevrait
-    // RIEN, en croyant avoir recu la reponse. C est mot pour mot le defaut de 0150, par une autre porte.
+    // 🔴 Un filtre par chemins dans l executeur rendrait `{}` ici : l agent recevrait RIEN, en croyant avoir
+    // recu la reponse. C est mot pour mot le defaut de 0150, par une autre porte.
     const { deps } = harnais({
       outil: MCP,
       origines: { mcp: async () => ({ ok: true, contenu: { texte: 'la vraie reponse' } }) },
@@ -619,16 +621,19 @@ describe('un outil MCP dans le tronc commun', () => {
     expect(JSON.stringify(r.contenu)).toContain('la vraie reponse');
   });
 
-  it('⚠️ et il s applique toujours a un outil HTTP : on ne retire pas le filtre pour tout le monde', async () => {
-    // Elargir une reparation sans regarder ce qu elle emporte est le motif n°1 de ce depot.
+  it('⚠️ et pour un outil HTTP, le filtre est dans le RESOLVEUR : une enveloppe d echec atteint le modele', async () => {
+    // Ce test gardait ici un filtre HTTP qui doublait celui du résolveur, sur une réponse brute qu'aucun vrai
+    // résolveur ne rend. Refiltrée, l'enveloppe d'échec arrivait en `{}` : le modèle ne savait pas que le système
+    // du client n'avait pas répondu. Que `CRM-9182` ne traverse pas se prouve avec le vrai résolveur, de bout en
+    // bout : `tests/agent-resolveur-http-nature.test.ts`.
     const http: OutilDefini = { ...OUTIL, origin: 'http', sourceId: 'src1', params: [], outputPaths: ['statut'] };
     const { deps } = harnais({
       outil: http,
-      origines: { http: async () => ({ ok: true, contenu: { statut: 'ok', interne: 'CRM-9182' } }) },
+      origines: { http: async () => ({ ok: false, contenu: { erreur: 'le système du client n’a pas répondu' }, erreur: 'http_503' }) },
     });
     const r = await executeTool({ name: OUTIL.name, argumentsJson: args({}) }, CTX, deps);
-    expect(r.contenu).toEqual({ statut: 'ok' });
-    expect(JSON.stringify(r.contenu)).not.toContain('CRM-9182');
+    expect(r.status).toBe('erreur_outil');
+    expect(r.contenu).toEqual({ erreur: 'le système du client n’a pas répondu' });
   });
 });
 

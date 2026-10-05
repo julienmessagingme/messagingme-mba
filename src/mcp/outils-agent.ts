@@ -403,12 +403,14 @@ export const OUTILS_AGENT: OutilMcp[] = [
       `Bac à sable : envoie une conversation fictive (1 à ${MAX_MESSAGES_ESSAI} messages, role « user » pour le client et `
       + '« assistant » pour l’agent, le dernier venant du client) et rend la réponse de l’agent, sa sortie et la trace '
       + 'de ses appels d’outils. Le vrai modèle répond, avec la vraie base de connaissance ; les outils à effet sont '
-      + 'simulés et aucun client n’est contacté. Chaque essai DÉBITE le crédit du client au prix du modèle (cout_eur), '
+      + 'simulés et aucun contact n’est joint, mais un connecteur API qui récupère une information par GET interroge '
+      + 'réellement le système du client. Chaque essai DÉBITE le crédit du client au prix du modèle (cout_eur), '
       + 'et il est refusé quand le solde est épuisé. ' + LOURDE,
     scope: 'mcp:write',
     exigePersonne: true,
-    // Ni destructrice ni idempotente : chaque essai débite le crédit et s'ajoute à l'historique des essais.
-    annotations: ecriture('Essayer un agent IA', false, false, false),
+    // Ni destructrice ni idempotente : chaque essai débite le crédit et s'ajoute à l'historique des essais. Monde
+    // ouvert : un connecteur qui lit y part pour de vrai vers le système du client (`connecteurEssai`).
+    annotations: ecriture('Essayer un agent IA', false, false, true),
     entree: {
       type: 'object',
       properties: {

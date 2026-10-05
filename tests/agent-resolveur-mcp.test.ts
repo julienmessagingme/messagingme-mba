@@ -289,17 +289,28 @@ describe('le bac a sable, et le libelle qui affichait deux points d interrogatio
     expect(JSON.stringify(r.contenu)).toContain('exemple de ce que');
   });
 
-  it('un connecteur HTTP garde son libelle d avant', async () => {
-    // Reecrire un comportement doit CONSERVER le cas qu il exercait.
+  it('un connecteur HTTP nomme l appel par le LIBELLE et la methode de sa requete, jamais par son chemin', async () => {
+    // Reecrire un comportement doit CONSERVER le cas qu il exercait. ⚠️ Ce cas lisait `binding.methode`, que le
+    // `binding` d un connecteur ne porte pas : vide en production (mesure du 2026-10-05, aucun des deux outils
+    // HTTP), la note y disait donc AUSSI « l appel ? ? ». Le libelle et la methode vivent sur la requete ; le
+    // chemin n y entre pas, il part chez le fournisseur du modele et peut porter le jeton d un webhook.
     const { connecteurSimule } = await import('../src/agent/resolvers/simulation');
-    const r = connecteurSimule({ origin: 'http', binding: { methode: 'POST', chemin: '/x' }, outputPaths: ['statut'] });
+    const r = connecteurSimule({ origin: 'http', binding: {}, outputPaths: ['statut'] }, { label: 'Poser une etiquette', methode: 'POST' });
     const texte = JSON.stringify(r.contenu);
-    expect(texte).toContain('POST');
+    expect(texte).toContain('« Poser une etiquette » (POST)');
     expect(texte).toContain('exemple(statut)');
+    // Requete introuvable : la note se tait sur l appel plutot que d afficher deux points d interrogation.
+    expect(JSON.stringify(connecteurSimule({ origin: 'http', binding: {}, outputPaths: [] }).contenu)).not.toContain('? ?');
   });
 });
 
 describe('le CABLAGE du bac a sable, qui rendait la simulation inatteignable', () => {
+  /** Ces cas n eprouvent que l origine `mcp` : aucune requete HTTP n existe, et rien ne doit partir. */
+  const AUCUN_CONNECTEUR = {
+    requetes: { parId: async () => null },
+    reel: async () => { throw new Error('aucun connecteur HTTP dans ce test'); },
+  };
+
   it('🔴 les TROIS origines ont un resolveur, pas seulement `mba`', async () => {
     // 🔴 LE DEFAUT QUE CE CAS FERME, ET IL ETAIT VIVANT. `src/index.ts` n enregistrait la simulation que
     // sous la cle `mba`. L executeur dispatche sur `resolveurs[outil.origin]` : un outil de CONNECTEUR y
@@ -310,13 +321,13 @@ describe('le CABLAGE du bac a sable, qui rendait la simulation inatteignable', (
     // eprouvaient la fonction et jamais le chemin. C est pour ca que la promesse de 0150 restait fausse
     // apres avoir ete reparee : elle l avait ete dans la fonction, pas dans le cablage.
     const { resolveursSimulation } = await import('../src/agent/resolvers/simulation');
-    const r = resolveursSimulation({ connaissance: { chercher: async () => [] } });
+    const r = resolveursSimulation({ connaissance: { chercher: async () => [] }, connecteurs: AUCUN_CONNECTEUR });
     expect(Object.keys(r).sort()).toEqual(['http', 'mba', 'mcp']);
   });
 
   it('et chacune SIMULE au lieu de tomber : le chemin est reellement branche', async () => {
     const { resolveursSimulation } = await import('../src/agent/resolvers/simulation');
-    const r = resolveursSimulation({ connaissance: { chercher: async () => [] } });
+    const r = resolveursSimulation({ connaissance: { chercher: async () => [] }, connecteurs: AUCUN_CONNECTEUR });
     const sortie = await r.mcp!(entree(OUTIL()));
     expect(JSON.stringify(sortie.contenu)).toContain('search');
     // Rien n est parti chez le serveur : c est tout l interet du bac a sable.
