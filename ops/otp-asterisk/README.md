@@ -16,6 +16,7 @@ Il tourne sur le VPS, dans `/home/ubuntu/otp-asterisk`, hors du dépôt de l'app
 | `pjsip.conf.example` | le gabarit SIP : l'Asterisk s'enregistre chez DIDWW sur le port 5080 |
 | `rtp.conf` | la plage des ports RTP |
 | `modules.conf` | celui de l'image, sans l'IAX2 : le conteneur n'écoute qu'en SIP (5080) et en RTP |
+| `pare-feu.sh` | le 5080 et la plage RTP fermés à tout ce qui n'est pas DIDWW, lancé au démarrage du VPS |
 
 Deux fichiers ne sont JAMAIS dans le dépôt : `pjsip.conf` (les identifiants SIP du trunk, relevés dans le portail
 DIDWW) et `secret-pont` (le secret partagé avec l'API, `OTP_PONT_SECRET` de `.env.prod`, une ligne).
@@ -36,6 +37,18 @@ DIDWW) et `secret-pont` (le secret partagé avec l'API, `OTP_PONT_SECRET` de `.e
    réserve (`head -c 2048 /dev/urandom > /tmp/x.wav && /otp/envoyer-otp.sh 449990000001 1.1 /tmp/x.wav`). L'API doit
    répondre 404 (« hors réserve »), ce qui n'arrive qu'après une signature acceptée ; un 401 dit que `secret-pont` et
    `OTP_PONT_SECRET` diffèrent. Rien n'est écrit, effacer `/tmp/x.wav` ensuite.
+
+## Le pare-feu
+
+Le VPS n'a pas de pare-feu actif (`ufw` inactif, `INPUT` en `ACCEPT`), et le conteneur est en `network_mode: host` :
+sans `pare-feu.sh`, le 5080 et la plage RTP sont ouverts au monde. Un scanneur y envoyait des INVITE le jour même de
+la mise en service. Le script n'ajoute que des règles ciblées sur ces ports : jamais de `ufw default deny`, qui
+couperait le 22 s'il n'est pas autorisé avant. Les règles iptables ne survivent pas à un redémarrage, d'où la ligne
+`@reboot sh /home/ubuntu/otp-asterisk/pare-feu.sh` dans la crontab de root. Poser une persistance système revient à
+Julien, pas à un agent.
+
+⚠️ Ses plages sont celles de la section `identify` de `pjsip.conf` : changer l'une sans l'autre ferait passer un appel
+que l'Asterisk refuse, ou jeter un appel qu'il attend. `tests/otp-asterisk-config.test.ts` les compare.
 
 ## Rejouer un envoi à la main
 

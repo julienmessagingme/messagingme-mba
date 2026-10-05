@@ -72,4 +72,17 @@ describe('le point d’entrée SIP du pont', () => {
     expect(modules).toContain('noload = chan_sip.so');
     expect(lire('docker-compose.yml')).toContain('./modules.conf:/etc/asterisk/modules.conf:ro');
   });
+
+  it('🔴 le pare-feu laisse passer exactement les plages que l’Asterisk reconnaît, et ferme le SIP comme le son', () => {
+    const plagesIdentify = lignes(lire('pjsip.conf.example'))
+      .map((l) => /^match\s*=\s*([0-9.]+\/[0-9]+)$/.exec(l)?.[1])
+      .filter((p): p is string => p !== undefined)
+      .sort();
+    const script = lire('pare-feu.sh');
+    const plagesPareFeu = [...script.matchAll(/^\s*for plage in ([^;]+);/gm)].flatMap((m) => m[1]!.trim().split(/\s+/)).sort();
+    expect(plagesIdentify.length).toBeGreaterThan(0);
+    expect(plagesPareFeu).toEqual(plagesIdentify);
+    expect(script).toMatch(/^for port in 5080 20000:20100;/m);
+    expect(lignes(lire('rtp.conf'))).toEqual(expect.arrayContaining(['rtpstart=20000', 'rtpend=20100']));
+  });
 });
