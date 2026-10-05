@@ -7,6 +7,12 @@
   la garde d'autonomie des actions irréversibles, ni le refus `lecture_seule` face à un contact inconnu. Le bac à
   sable, lui, relit la méthode à chaque appel (`connecteurEssai`). Correctif attendu : remonter le risque au plancher
   de la nouvelle méthode, jamais le descendre, dans la transaction de la modification. Une tâche a été proposée.
+- **Même racine, autre symptôme** (vu le 2026-10-05, lot « Modifier un appel de connecteur ») : les PARAMÈTRES qu'un
+  outil expose au modèle (`agent_tools.params`) sont dérivés des variables « décidée par l'agent » de la requête à la
+  CRÉATION (`POST .../tools/connecteur`) et ne suivent pas la requête ensuite (`outilExpose` lit `outil.params`). Une
+  telle variable REQUISE ajoutée après coup n'est jamais demandée au modèle, et chaque appel est refusé
+  (« information manquante pour interroger le système du client »). « Modifier » ne la recalcule pas non plus. À
+  traiter avec le risque : recalculer ce que l'outil dérive de sa requête dans la transaction qui la modifie.
 - 🟡 Laissés délibérément par le même lot : le câblage construit deux fois le même objet de dépendances d'un
   connecteur (`src/index.ts`, bac à sable et relais de l'agent de Meta) ; et un GET qui « intègre » mais AGIT
   partirait encore au bac à sable (la déclaration du client fait foi, question produit si un cas réel se présente).
