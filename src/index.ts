@@ -79,6 +79,9 @@ import { RateLimiter } from './auth/rate-limit';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { setTimeout as dormir } from 'node:timers/promises';
+import { appliquerActivation } from './mba/activation';
+import { activationPour } from './http/mba';
+import type { DepsReglageRepondeur } from './repondeur/reglage';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fetchUrlBorne } from './lib/page-distante';
 import { signSession } from './auth/token';
@@ -498,6 +501,23 @@ async function main(): Promise<void> {
   };
 
   /**
+   * Le répondeur de l'espace (lot 5, `src/repondeur/reglage.ts`), pour ses DEUX portes : la route de la console et
+   * l'outil MCP `set_default_responder`. Il éteint l'agent de Meta par le chemin de l'Accueil (`activationPour`, la
+   * même construction que `PUT .../mba-activation`) et retire ses contacts de sa liste par le seul module qui la touche.
+   * Le modèle est disponible quand la clé du Gateway est posée : la condition à laquelle le worker consomme les tours.
+   */
+  const repondeurDeLaConsole: DepsReglageRepondeur = {
+    agents: agentStore,
+    reglages: settingsStore,
+    gatewayDisponible: config.AI_GATEWAY_API_KEY !== '',
+    eteindreAgentDeMeta: (tenant) => appliquerActivation(
+      activationPour({ repo, meta: metaFactory, reglages: settingsStore, attendre: (ms) => dormir(ms) }), tenant, false,
+    ),
+    liste: listeDeLAgent,
+    historique: historiqueStore,
+  };
+
+  /**
    * L'agent IA, sa connaissance, son bac à sable et le paiement du crédit, pour leurs DEUX portes : les routes de la
    * console et les outils MCP de l'agent (lot 8a). Un seul objet chacun, comme les widgets : un outil MCP n'est
    * qu'un second appelant des fonctions de la console, avec les mêmes dépôts et la même clé de modèle.
@@ -513,6 +533,9 @@ async function main(): Promise<void> {
     ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
     // Chaque modification de la fiche y laisse sa ligne `fiche_agent`, avec son auteur et sa porte.
     historique: historiqueStore,
+    // Un agent qui quitte le statut actif cesse d'être le répondeur de l'espace (lot 5).
+    oublierRepondeur: (tenant, agentId) => settingsStore.oublierRepondeurSi(tenant, agentId),
+    repondeur: repondeurDeLaConsole,
     sessions: agentSessions,
     // Le blocage dur avant activation (un agent activé finira par écrire à de vrais clients) : il lit la
     // fiche, la connaissance, et les outils actifs avec leurs handlers, parce que le compte seul ne dit pas
@@ -2360,6 +2383,7 @@ async function main(): Promise<void> {
           paiement: paiementDeLaConsole,
           outils: toolCatalog,
           reglages: settingsStore,
+          repondeur: repondeurDeLaConsole,
         },
       },
     },

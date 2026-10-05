@@ -561,6 +561,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       import_site: [true, true, true],
       import_document_text: [true, true, false],
       set_transfer_mode: [true, true, false],
+      // Le répondeur (lot 5) : il peut éteindre l'agent de Meta chez Meta, pour tous les contacts de l'espace.
+      set_default_responder: [true, true, true],
       buy_credit: [false, false, true],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.

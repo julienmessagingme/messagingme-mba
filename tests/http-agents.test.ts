@@ -98,8 +98,9 @@ describe('routes agents : lecture', () => {
     // Le défaut est le plus restrictif : un appelant distrait ne doit pas proposer un brouillon dans un
     // scénario. C'est l'écran de réglage qui demande explicitement à voir ses brouillons.
     const { cap, srv } = app();
-    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents', ...h(adminTok) })).json()).toEqual({ agents: ACTIFS });
-    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents?statut=tous', ...h(adminTok) })).json()).toEqual({ agents: TOUTES });
+    // `repondeurAgentId` : le répondeur de l'espace, à côté de la liste (lot 5) ; aucun ici.
+    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents', ...h(adminTok) })).json()).toEqual({ agents: ACTIFS, repondeurAgentId: null });
+    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents?statut=tous', ...h(adminTok) })).json()).toEqual({ agents: TOUTES, repondeurAgentId: null });
     expect(cap.listes).toEqual(['actifs:t1', 'toutes:t1']);
   });
 

@@ -7,7 +7,7 @@ import { MEDIA_EXPIRE_SQL } from './media-entrant';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
 import type { EcritureDuFil } from './fil';
 import {
-  CAUSE_MESSAGE_DU_CONTACT, HISTORIQUE_MAX, acteurSql, borner, colonnesAuteur,
+  CAUSE_MESSAGE_DU_CONTACT, HISTORIQUE_MAX, acteurSql, automatique, borner, colonnesAuteur,
   type AuteurDuChangement, type DetailConversation, type EvenementConversation, type QuiEvenement, type TypeEvenement,
 } from './evenements';
 
@@ -509,6 +509,24 @@ export class PgInboxStore implements InboxStore {
        )
        insert into conversation_evenements (tenant_id, conversation_id, type, cause)
        select $1, maj.id, 'escaladee', $3::text from maj`,
+      [tenantId, waId, auteur.cause],
+    );
+  }
+
+  /**
+   * Un agent IA vient de terminer par une règle d'arrêt (`WorkflowExecutor.sortirDuBlocAgent`) : la frise du panneau
+   * Détail le dit (`sortie_agent`, migration 0209), avec la règle dans sa cause (« automatique : règle d'arrêt
+   * rdv_pris »). Pour tout agent, celui d'un scénario comme le répondeur de l'espace. Aucun changement de colonne : un
+   * événement seul, comme `ouvrirUneDemande`, dans sa propre requête. 🔴 Scopé espace (`tenant_id = $1`) : le numéro
+   * d'un contact peut écrire à deux espaces. Aucune conversation (un parcours sans fil) : rien.
+   */
+  async noterSortieAgent(tenantId: string, waId: string, code: string): Promise<void> {
+    const auteur = colonnesAuteur({ cause: automatique(`règle d’arrêt ${code}`) });
+    await this.pool.query(
+      `insert into conversation_evenements (tenant_id, conversation_id, type, cause)
+       select $1, c.id, 'sortie_agent', $3::text
+         from conversations c
+        where c.tenant_id = $1 and c.wa_id = $2`,
       [tenantId, waId, auteur.cause],
     );
   }
@@ -1538,14 +1556,15 @@ export class PgInboxStore implements InboxStore {
    * changerait la signature du chemin le plus chaud.
    *
    * 🔴 `tenant_id` est dans le `where` : cette lecture part dans le contexte d'un modèle, un fil du mauvais
-   * client serait recopié chez le fournisseur. Bornée dans le temps (depuis l'ouverture de la session) et en
-   * nombre (le contexte se paie à chaque tour) ; les plus récents, rendus dans l'ordre chronologique.
+   * client serait recopié chez le fournisseur. Bornée dans le temps (le tour passe trente jours, `MEMOIRE_JOURS`) et
+   * en nombre (le contexte se paie à chaque tour) ; les plus récents, rendus dans l'ordre chronologique. `at` : l'instant
+   * du message, qui dit au tour ce qui précède l'ouverture de sa session (l'annonce d'IA ne compte que la session).
    */
   async messagesDepuis(
     tenantId: string, waId: string, depuis: string, limite: number,
-  ): Promise<Array<{ direction: 'in' | 'out'; body: string }>> {
-    const res = await this.pool.query<{ direction: 'in' | 'out'; body: string | null }>(
-      `select direction, body from (
+  ): Promise<Array<{ direction: 'in' | 'out'; body: string; at: string }>> {
+    const res = await this.pool.query<{ direction: 'in' | 'out'; body: string | null; created_at: Date }>(
+      `select direction, body, created_at from (
          select m.direction, m.body, m.created_at
            from conversation_messages m
            join conversations c on c.id = m.conversation_id
@@ -1556,7 +1575,7 @@ export class PgInboxStore implements InboxStore {
        ) recents order by created_at`,
       [tenantId, waId, depuis, Math.max(1, Math.floor(limite))],
     );
-    return res.rows.map((r) => ({ direction: r.direction, body: r.body ?? '' }));
+    return res.rows.map((r) => ({ direction: r.direction, body: r.body ?? '', at: r.created_at.toISOString() }));
   }
 
   /**

@@ -50,7 +50,7 @@ function app(branche: string | null = null) {
     reglages: {
       ...reglagesDepInertes,
       get: async () => ({
-        mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        mbaEnabled: false, repondeurAgentId: null, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
         controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: courant, mentionIaFrequence: null, prix: GRILLE_DEFAUT,
         timezone: 'Europe/Paris', businessHours: {},
       }),

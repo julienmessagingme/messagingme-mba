@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AgentIntrouvable, MAX_ALLERS_RETOURS, creerCerveauGateway, penserTrace, type ContexteAgentComplet, type ContexteTour, type GatewayBrainDeps } from '../src/agent/brain.gateway';
+import { AgentIntrouvable, MAX_ALLERS_RETOURS, creerCerveauGateway, dejaParle, penserTrace, type ContexteAgentComplet, type ContexteTour, type GatewayBrainDeps } from '../src/agent/brain.gateway';
 import type { ChatMessage, ReponseChat } from '../src/agent/llm/chat-client';
 import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catalog';
 import type { ResolveurOutil } from '../src/agent/executor';
@@ -412,18 +412,20 @@ describe('penserTrace : le dernier message d’une sortie', () => {
     contenu: { sortie: 'fini' }, sortie: 'fini', ...(dernierMessage !== undefined ? { dernierMessage } : {}),
   });
   const appelEcrit = (t: string | null): ReponseChat => ({ ...appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte: t });
+  /** Ces cas parlent du message, pas de l'annonce d'IA, qui a les siens plus bas (lot 5) : elle n'est pas due ici. */
+  const SANS_ANNONCE: ContexteAgentComplet = { ...AGENT, mentionIaFrequence: 'jamais' };
 
   it('🔴 réponse SANS texte : le dernier message part, avec la sortie', async () => {
-    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec('Merci, un conseiller vous rappelle demain.'));
+    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec('Merci, un conseiller vous rappelle demain.'), SANS_ANNONCE);
     expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: 'Merci, un conseiller vous rappelle demain.', sortie: 'fini' });
   });
 
   it('réponse ÉCRITE : c’est elle qui part, le dernier message est ignoré (comportement d’avant)', async () => {
-    const { d } = deps([appelEcrit('Parfait, je note votre demande.')], sortieAvec('Autre chose.'));
+    const { d } = deps([appelEcrit('Parfait, je note votre demande.')], sortieAvec('Autre chose.'), SANS_ANNONCE);
     expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: 'Parfait, je note votre demande.', sortie: 'fini' });
     // Un texte vide ou blanc n'est pas une réponse écrite : le dernier message prend sa place.
     for (const vide of ['', '  \n']) {
-      const { d: d2 } = deps([appelEcrit(vide)], sortieAvec('Merci.'));
+      const { d: d2 } = deps([appelEcrit(vide)], sortieAvec('Merci.'), SANS_ANNONCE);
       expect(await penserTrace(entree(), TOUR, d2), JSON.stringify(vide)).toMatchObject({ texte: 'Merci.', sortie: 'fini' });
     }
   });
@@ -449,7 +451,7 @@ describe('penserTrace : le dernier message d’une sortie', () => {
       ...OUTIL, name: 'mba_terminer', binding: { handler: 'terminer' }, risk: 'read',
       params: paramsInitiaux(outilMaison('terminer')!),
     };
-    const agent = { ...AGENT, outilsActifs: [terminer] };
+    const agent = { ...SANS_ANNONCE, outilsActifs: [terminer] };
     const { d } = deps([], creerResolveurSimulation({ connaissance: { chercher: async () => [] } }), agent);
     d.outils.catalogue = { byName: async (_t, _a, n) => (n === terminer.name ? terminer : null), listActifs: async () => [terminer] };
     const vus: unknown[] = [];
@@ -461,5 +463,60 @@ describe('penserTrace : le dernier message d’une sortie', () => {
     expect(vus[0]).toMatchObject([{ name: 'mba_terminer', parameters: { required: ['sortie', 'message'] } }]);
     expect(r).toMatchObject({ texte: 'Merci, à bientôt !', sortie: 'fini' });
     expect(r.appels[0]!.status).toBe('ok');
+  });
+
+  /**
+   * 🔴 LA MENTION D'IA SUR LE DERNIER MESSAGE (lot 5, A7). La consigne demande au modèle d'annoncer dans SON texte ;
+   * le paramètre `message` de `terminer` lui échappe, et le répondeur parle souvent à un inconnu dès son premier
+   * message (constaté à l'essai réel du 2026-10-04). Quand l'annonce est due, le code l'ajoute devant.
+   */
+  const MENTION = AGENT.mentionIa;
+  it('🔴 annonce due et absente du message : la phrase est ajoutée DEVANT', async () => {
+    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec('Votre rendez-vous est pris.'));
+    expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: `${MENTION}\n\nVotre rendez-vous est pris.`, sortie: 'fini' });
+  });
+
+  it('annonce due mais déjà dans le message (casse comprise) : pas doublée', async () => {
+    const message = `${MENTION.toUpperCase()} Votre rendez-vous est pris.`;
+    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec(message));
+    expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: message });
+  });
+
+  it('annonce non due (« jamais », ou l’agent a déjà parlé dans la session) : le message part tel quel', async () => {
+    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec('Merci.'), SANS_ANNONCE);
+    expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: 'Merci.' });
+    const { d: d2 } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')], sortieAvec('Merci.'));
+    expect(await penserTrace(entree([{ role: 'agent', texte: 'deja dit' }]), TOUR, d2)).toMatchObject({ texte: 'Merci.' });
+  });
+
+  it('annonce due, mais le texte vient du MODÈLE : rien n’est ajouté (il suit la consigne, ce chemin ne change pas)', async () => {
+    const { d } = deps([appelEcrit('Parfait, je note votre demande.')], sortieAvec('Autre chose.'));
+    expect(await penserTrace(entree(), TOUR, d)).toMatchObject({ texte: 'Parfait, je note votre demande.' });
+  });
+});
+
+/**
+ * 🔴 L'ANNONCE « UNE FOIS PAR SESSION » NE COMPTE QUE LA SESSION (lot 5). La mémoire du tour déborde la session
+ * (trente jours, `MEMOIRE_JOURS`) : un modèle de campagne ou la réponse d'un humain d'il y a trois jours y figurent en
+ * rôle `agent`. Comptés, ils feraient taire l'annonce au premier tour d'une session neuve.
+ */
+describe('dejaParle : la session, pas la mémoire', () => {
+  const OUVERTURE = '2026-10-05T10:00:00.000Z';
+  it('🔴 un message sortant d’AVANT l’ouverture ne compte pas ; un message de la session compte', () => {
+    const avant = [{ role: 'contact', texte: 'Bonjour', at: '2026-10-05T09:59:59.000Z' }, { role: 'agent', texte: 'Modèle de campagne', at: '2026-10-02T08:00:00.000Z' }];
+    expect(dejaParle(avant, OUVERTURE)).toBe(false);
+    expect(dejaParle([...avant, { role: 'agent', texte: 'Bonjour !', at: OUVERTURE }], OUVERTURE)).toBe(true);
+  });
+
+  it('sans ouverture (le bac à sable), ou une entrée sans date : tout compte, comme avant', () => {
+    expect(dejaParle([{ role: 'agent', texte: 'x', at: '2026-10-02T08:00:00.000Z' }])).toBe(true);
+    expect(dejaParle([{ role: 'agent', texte: 'x' }], OUVERTURE)).toBe(true);
+  });
+
+  it('🔴 de bout en bout : un sortant d’avant la session n’empêche pas l’annonce du premier tour', async () => {
+    const { cap, d } = deps([texte('bonjour')]);
+    const transcript = [{ role: 'agent', texte: 'Modèle de campagne', at: '2026-10-02T08:00:00.000Z' }, { role: 'contact', texte: 'Bonjour', at: '2026-10-05T09:59:59.000Z' }];
+    await penserTrace(entree(transcript), { ...TOUR, sessionOuverteLe: OUVERTURE }, d);
+    expect(JSON.stringify(cap.messages[0])).toContain('Commence ta réponse par exactement cette phrase');
   });
 });

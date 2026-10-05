@@ -111,11 +111,19 @@ export interface DecisionTracee extends DecisionAgent {
 }
 
 /**
- * L'agent a-t-il déjà pris la parole dans cette session ? Lu sur le transcript de la session, pas sur
- * l'historique : un contact qui revient ouvre une nouvelle session, et l'annonce se refait.
+ * L'agent a-t-il déjà pris la parole dans cette session ? Un contact qui revient ouvre une nouvelle session, et
+ * l'annonce se refait. Le transcript du tour déborde la session (trente jours de mémoire, `MEMOIRE_JOURS`) : seules
+ * comptent les entrées datées (`at`) de son ouverture ou après. Une entrée sans date compte (le bac à sable, dont la
+ * conversation entière est la session) ; une date illisible ne compte pas : dans le doute, l'annonce se refait.
  */
-function dejaParle(transcript: unknown[]): boolean {
-  return transcript.some((t) => (t as { role?: unknown } | null)?.role === 'agent');
+export function dejaParle(transcript: unknown[], sessionOuverteLe?: string): boolean {
+  const borne = sessionOuverteLe === undefined ? null : Date.parse(sessionOuverteLe);
+  return transcript.some((t) => {
+    const e = t as { role?: unknown; at?: unknown } | null;
+    if (e?.role !== 'agent') return false;
+    if (borne === null || typeof e.at !== 'string') return true;
+    return Date.parse(e.at) >= borne;
+  });
 }
 
 /**
@@ -123,14 +131,24 @@ function dejaParle(transcript: unknown[]): boolean {
  * pas vide ; sinon le dernier message que `terminer` porte, pour un modèle qui appelle l'outil sans rien écrire à
  * côté ; sinon rien. Un dernier message qui porte nos délimiteurs est écarté comme une réponse qui les imite, mais
  * la sortie reste : la règle d'arrêt a été atteinte, seul le message est douteux.
+ *
+ * 🔴 `mention` : la phrase d'annonce d'IA quand elle est due à ce tour, sinon `null`. La consigne système demande au
+ * modèle de l'écrire dans SON texte ; le paramètre `message` de `terminer` échappe à cette consigne, et le répondeur
+ * parle souvent à un inconnu dès son premier message, celui où l'annonce compte (constaté à l'essai réel du
+ * 2026-10-04). Elle est donc ajoutée devant, ici, en code, sauf si le message la porte déjà. Le texte que le modèle
+ * écrit lui-même n'est pas touché : il suit la consigne.
  */
-function texteDeSortie(ecrit: string | null, dernierMessage: string | undefined, signaler: () => void): string | null {
+export function texteDeSortie(
+  ecrit: string | null, dernierMessage: string | undefined, signaler: () => void, mention: string | null,
+): string | null {
   if (ecrit !== null && ecrit.trim() !== '') return ecrit;
   if (dernierMessage === undefined) return null;
   if (ressembleAUnBlocOutil(dernierMessage)) {
     signaler();
     return null;
   }
+  const phrase = mention?.trim() ?? '';
+  if (phrase !== '' && !dernierMessage.toLowerCase().includes(phrase.toLowerCase())) return `${phrase}\n\n${dernierMessage}`;
   return dernierMessage;
 }
 
@@ -179,19 +197,21 @@ async function boucler(
   // Le contact est lu une fois par tour : il sert au prompt et à l'autorisation de chaque outil.
   const contact = deps.contacts ? await deps.contacts.projectionPourTiers(input.tenantId, tour.waId) : null;
 
+  /**
+   * Le régime d'annonce devient ici une décision, sur le transcript de la session en cours :
+   *   - `jamais`         : on n'en parle pas ;
+   *   - `chaque_message` : à tous les tours ;
+   *   - `session`        : au premier tour où l'agent prend la parole, et à celui-là seulement.
+   * Une seule décision pour la consigne et pour le dernier message d'une sortie (`texteDeSortie`).
+   */
+  const annoncerIa = agent.mentionIaFrequence === 'chaque_message'
+    || (agent.mentionIaFrequence === 'session' && !dejaParle(input.transcript, tour.sessionOuverteLe));
   const messages: ChatMessage[] = [
     {
       role: 'system',
-      /**
-       * Le régime d'annonce devient ici une décision, sur le transcript de la session en cours :
-       *   - `jamais`         : on n'en parle pas ;
-       *   - `chaque_message` : à tous les tours ;
-       *   - `session`        : au premier tour où l'agent prend la parole, et à celui-là seulement.
-       */
       content: promptSysteme({
         mentionIa: agent.mentionIa,
-        annoncerIa: agent.mentionIaFrequence === 'chaque_message'
-          || (agent.mentionIaFrequence === 'session' && !dejaParle(input.transcript)),
+        annoncerIa,
         contenu: agent.contenu,
         contactConnu: contact !== null,
         equipe: agent.equipe,
@@ -306,7 +326,7 @@ async function boucler(
       if (res.sortie) {
         const texte = texteDeSortie(reponse.texte, res.dernierMessage, () => deps.alerter?.(
           `agent ${input.agentId} : le modèle a rendu un faux bloc de résultat d’outil comme dernier message`,
-        ));
+        ), annoncerIa ? agent.mentionIa : null);
         return { texte, sortie: res.sortie, usage, appels };
       }
 

@@ -64,6 +64,9 @@ import { creerListeDeLAgent } from './mba/liste';
 import { PgListeStore } from './mba/liste.pg';
 import { PgVerrousCourts } from './db/verrous-courts.pg';
 import { PgCompteurDebit } from './db/debit.pg';
+import { creerDemarreurRepondeur, type DemarreurRepondeur } from './repondeur/demarrer';
+import { PgAlertesCreditStore, creerAlerteCreditEpuise } from './repondeur/alerte-credit';
+import { ResendClient } from './support/resend';
 
 /**
  * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
@@ -72,7 +75,7 @@ import { PgCompteurDebit } from './db/debit.pg';
 export type ConfigSocle = Pick<Config,
   | 'DRY_RUN' | 'PGBOSS_SCHEMA' | 'ENCRYPTION_KEY' | 'META_ACCESS_TOKEN' | 'META_APP_ID' | 'META_APP_SECRET'
   | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER' | 'CREDIT_OFFERT_MICRO_EUR'
-  | 'CONTROL_HUMAN_TIMEOUT_MS'
+  | 'CONTROL_HUMAN_TIMEOUT_MS' | 'AI_GATEWAY_API_KEY' | 'RESEND_API_KEY' | 'SUPPORT_FROM' | 'APP_URL'
 >;
 
 export interface DepsSocle {
@@ -300,6 +303,31 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const runStore = new PgWorkflowRunStore(pool);
 
   /**
+   * L'alerte de crédit épuisé (`src/repondeur/alerte-credit.ts`) : une par jour et par espace, tenue en base, aux admins
+   * de l'espace par Resend (le canal des e-mails transactionnels, même expéditeur que les liens de connexion). Sans
+   * Resend, elle se journalise seulement. Le démarreur du répondeur la déclenche, le tour d'un agent aussi (worker).
+   */
+  const alertesCredit = new PgAlertesCreditStore(pool);
+  const alerteCredit = creerAlerteCreditEpuise({
+    marquerLeJour: (t, jour) => alertesCredit.marquerLeJour(t, jour),
+    fuseau: async (t) => (await settingsStore.get(t)).timezone,
+    admins: (t) => alertesCredit.admins(t),
+    envoyer: config.RESEND_API_KEY
+      ? async (m) => { await new ResendClient(config.RESEND_API_KEY).send({ from: `Messaging Me <${config.SUPPORT_FROM}>`, ...m }); }
+      : null,
+    pageCredit: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres/credit`,
+  });
+
+  /**
+   * 🔴 LA LIAISON TARDIVE DU RÉPONDEUR. Le contrôle du fil se construit AVANT l'exécuteur (qui le reçoit), et le
+   * démarreur du répondeur a besoin des lancements que l'exécuteur porte : le fil reçoit donc une fonction qui délègue
+   * à un démarreur branché plus bas, et qui LÈVE tant qu'il ne l'est pas. Une liaison oubliée ne laisse pas chaque
+   * contact d'un espace à répondeur IA sans réponse en silence : elle fait échouer la remise, journalisée, au premier
+   * message, et `tests/socle.test.ts` vérifie que le socle la branche.
+   */
+  let demarreurRepondeur: DemarreurRepondeur | null = null;
+
+  /**
    * Le contrôle du fil (`src/inbox/fil.ts`) : le seul endroit qui confie une conversation à l'agent de Meta ou la
    * lui reprend (sa liste, `thread_control`) et écrit qui détient une conversation. Ici parce que les deux processus
    * s'en servent : l'Inbox de l'API (« Reprendre la main », « Rendre la main », un opérateur qui écrit), le worker
@@ -318,6 +346,12 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
       estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
     },
     meta: metaFactory,
+    repondeur: {
+      demarrer: (t, waId, o) => {
+        if (!demarreurRepondeur) throw new Error('répondeur : le démarreur n’est pas branché (src/socle.ts)');
+        return demarreurRepondeur.demarrer(t, waId, o);
+      },
+    },
   });
 
   /**
@@ -328,6 +362,20 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
     emailTemplates, emailResolver, numeroDeLEspace, runStore, fil,
+  });
+
+  /**
+   * Le démarreur du répondeur, branché sur les lancements de CET exécuteur, juste après sa construction (voir la
+   * liaison plus haut). Le modèle est disponible quand la clé du Gateway est posée : c'est la condition à laquelle le
+   * worker consomme la file des tours (`src/worker.ts`).
+   */
+  demarreurRepondeur = creerDemarreurRepondeur({
+    agents: agentStore,
+    credits,
+    scenarios: workflowStore,
+    lancements: workflowRuntime.lancements,
+    gatewayDisponible: config.AI_GATEWAY_API_KEY !== '',
+    alerteCredit,
   });
 
   /**
@@ -349,7 +397,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
-    connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil,
+    connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit,
   };
 }
 

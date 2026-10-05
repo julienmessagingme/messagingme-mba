@@ -39,6 +39,11 @@ export const TYPES_DE_LANCEMENT = [
   'campagne_scenario',
   /** Une campagne qui démarre à un bloc (cible `node` de `/v1/sends`). */
   'campagne_bloc',
+  /**
+   * Le répondeur de l'espace : un agent IA désigné prend le message que personne ne tient
+   * (`src/repondeur/demarrer.ts`), dans le scénario système caché de l'espace, sur un graphe construit au démarrage.
+   */
+  'repondeur',
 ] as const;
 export type TypeDeLancement = (typeof TYPES_DE_LANCEMENT)[number];
 
@@ -73,8 +78,12 @@ export interface PolitiqueDeLancement {
    * - `brouillon_fige` : le brouillon (`grapheEditable`), figé dans le parcours, sinon les points de reprise
    *   reliraient le publié. 🔴 Seul le lien de test : un contact réel ne tombe jamais dans un brouillon, et figer
    *   le graphe de chaque destinataire d'une campagne le recopierait des milliers de fois.
+   * - `fourni_fige` : celui de l'appelant, figé dans le parcours. Le répondeur : sa ligne de scénario n'est qu'une
+   *   ancre au graphe vide (`assurerScenarioSysteme`), et le parcours doit garder le graphe avec lequel il a commencé
+   *   même si l'agent désigné change entre-temps. Un parcours par conversation, pas par destinataire de masse.
+   * Qu'un graphe se fige ne se décide qu'à un endroit : `grapheAFiger`.
    */
-  graphe: 'publie' | 'fourni' | 'brouillon_fige';
+  graphe: 'publie' | 'fourni' | 'brouillon_fige' | 'fourni_fige';
   /**
    * La garde de fenêtre 24 h de `runFrom` (un message de session en ouverture, refusé par Meta en 131047).
    * - `gardee` : toujours posée (une campagne écrit à froid).
@@ -103,16 +112,33 @@ export const POLITIQUE_DE_LANCEMENT = {
   lien_de_test: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'brouillon_fige', fenetre: 'levee' },
   campagne_scenario: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'gardee' },
   campagne_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'levee' },
+  /**
+   * Le répondeur (lot 5, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) : jamais à un
+   * opérateur qui tient le fil (c'est le client qui écrit, comme un clic sur une publicité) ; ses étiquettes publient
+   * (un contact, ici et maintenant) ; la fenêtre est prouvée par l'entrant qui le démarre.
+   */
+  repondeur: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'fourni_fige', fenetre: 'selon_preuve' },
 } as const satisfies Record<TypeDeLancement, PolitiqueDeLancement>;
+
+/**
+ * Le graphe de ce lancement se fige-t-il dans le parcours (`workflow_runs.graphe_fige`) ? La SEULE réponse du dépôt :
+ * l'exécuteur la lit à la création du parcours. Deux comparaisons écrites chacune ailleurs finiraient par diverger, et
+ * un parcours non figé relirait la ligne de scénario (le publié) à sa première reprise.
+ */
+export function grapheAFiger(politique: PolitiqueDeLancement): boolean {
+  return politique.graphe === 'brouillon_fige' || politique.graphe === 'fourni_fige';
+}
 
 /** Où le parcours commence. Une donnée du lancement, pas un réglage : c'est la politique qui dit ce qu'elle lève. */
 export type DepartDuParcours =
   /**
    * À l'entrée du graphe. `fenetreOuverte` : le contact vient d'écrire, lue seulement par une fenêtre
    * `selon_preuve` ou `bloc_ou_preuve`. `firstTemplateParams` : les variables du premier modèle, déjà résolues par
-   * la campagne à la construction de ses destinataires (pas de re-résolution à l'envoi).
+   * la campagne à la construction de ses destinataires (pas de re-résolution à l'envoi). `messageDeclencheur` : le
+   * message entrant qui démarre le parcours, inscrit comme déjà reçu (`last_message_id`) : redélivré par Meta, il
+   * n'est pas pris pour une réponse du contact par `advance`, qui enfilerait un second tour d'agent.
    */
-  | { depuis: 'entree'; fenetreOuverte?: boolean; firstTemplateParams?: string[] }
+  | { depuis: 'entree'; fenetreOuverte?: boolean; firstTemplateParams?: string[]; messageDeclencheur?: string }
   /** À un bloc désigné du graphe. Un bloc absent est refusé lisiblement par `runFrom`. */
   | { depuis: 'bloc'; noeudId: string };
 
@@ -145,6 +171,20 @@ export interface DemandeEnvoiDeBloc extends DemandeDeBase {
   noeudId: string;
 }
 
+/**
+ * Le répondeur de l'espace (`src/repondeur/demarrer.ts`) : le graphe est fourni (construit depuis le réglage par
+ * `grapheDuRepondeur`) et figé ; la ligne de scénario n'est que l'ancre, jamais lue. La fenêtre est toujours prouvée :
+ * seul un message entrant démarre le répondeur.
+ */
+export interface DemandeRepondeur extends DemandeDeBase {
+  type: 'repondeur';
+  waId: string;
+  graphe: WorkflowGraph;
+  fenetreOuverte: true;
+  /** Le dernier message du contact qui le démarre ; `null` = inconnu (aucune déduplication possible). */
+  messageDeclencheur: string | null;
+}
+
 /** Ce qu'une automation demande : le runner la construit (`src/automation/runner.ts`), le worker la transmet telle quelle. */
 export interface DemandeAutomatisme extends DemandeDeBase {
   type: TypeDeLancementAutomatisme;
@@ -168,7 +208,8 @@ export type DemandeDeLancement =
   | (DemandeDeBase & { type: 'lien_de_test'; waId: string; blocDuJeton: string | null })
   /** La fiche est connue : la campagne l'a lue en construisant ses destinataires, on ne la recherche pas. */
   | (DemandeDeBase & { type: 'campagne_scenario'; waId: string; contactId: string | null; firstTemplateParams?: string[] })
-  | (DemandeDeBase & { type: 'campagne_bloc'; waId: string; contactId: string | null; noeudId: string });
+  | (DemandeDeBase & { type: 'campagne_bloc'; waId: string; contactId: string | null; noeudId: string })
+  | DemandeRepondeur;
 
 export interface DepsLancements {
   /** L'exécuteur du processus, celui que `buildWorkflowRuntime` construit : jamais un second exemplaire. */
@@ -184,14 +225,14 @@ export interface Lancements {
    * Lance un scénario. `true` = parti ; une chaîne = pas parti, avec la raison exacte (fil tenu, bloc absent,
    * fenêtre, désabonnement) ; `null` = scénario inconnu, que chaque appelant traduit comme il le faisait (l'Inbox
    * et l'agent de Meta le disent, l'automation, la campagne et le lien de test rendent `false`). L'envoi d'un bloc
-   * ne lit aucun scénario, donc ne rend jamais `null`.
+   * et le répondeur ne lisent aucun scénario, donc ne rendent jamais `null`.
    */
-  lancer(demande: DemandeEnvoiDeBloc): Promise<StartOutcome>;
+  lancer(demande: DemandeEnvoiDeBloc | DemandeRepondeur): Promise<StartOutcome>;
   lancer(demande: DemandeDeLancement): Promise<StartOutcome | null>;
 }
 
 /** Le départ que chaque type tire de sa demande. Le graphe est déjà choisi : le lien de test y cherche son bloc. */
-function departDe(demande: Exclude<DemandeDeLancement, DemandeEnvoiDeBloc>, graphe: WorkflowGraph): DepartDuParcours {
+function departDe(demande: Exclude<DemandeDeLancement, DemandeEnvoiDeBloc | DemandeRepondeur>, graphe: WorkflowGraph): DepartDuParcours {
   switch (demande.type) {
     case 'inbox':
     case 'agent_meta_scenario':
@@ -223,12 +264,22 @@ function departDe(demande: Exclude<DemandeDeLancement, DemandeEnvoiDeBloc>, grap
  * réglages, l'exécuteur les tire lui-même du type.
  */
 export function creerLancements(deps: DepsLancements): Lancements {
-  function lancer(demande: DemandeEnvoiDeBloc): Promise<StartOutcome>;
+  function lancer(demande: DemandeEnvoiDeBloc | DemandeRepondeur): Promise<StartOutcome>;
   function lancer(demande: DemandeDeLancement): Promise<StartOutcome | null>;
   async function lancer(demande: DemandeDeLancement): Promise<StartOutcome | null> {
     if (demande.type === 'agent_meta_bloc') {
       return deps.executor.demarrer(demande.type, demande.tenantId, demande.workflowId, demande.graphe, demande.contact,
         { depuis: 'bloc', noeudId: demande.noeudId });
+    }
+    if (demande.type === 'repondeur') {
+      // La ligne de scénario n'est pas lue : son graphe est vide par construction, le joué est celui de la demande.
+      const contactId = await deps.contacts.findIdByWaId(demande.tenantId, demande.waId);
+      return deps.executor.demarrer(demande.type, demande.tenantId, demande.workflowId, demande.graphe,
+        { waId: demande.waId, contactId },
+        {
+          depuis: 'entree', fenetreOuverte: demande.fenetreOuverte,
+          ...(demande.messageDeclencheur !== null ? { messageDeclencheur: demande.messageDeclencheur } : {}),
+        });
     }
     const wf = await deps.scenarios.getById(demande.workflowId, demande.tenantId);
     if (!wf) return null;

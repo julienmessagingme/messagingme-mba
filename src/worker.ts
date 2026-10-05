@@ -72,6 +72,7 @@ import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { automatique } from './inbox/evenements';
+import { unRepondeurRepond } from './inbox/fil';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { analyseDeLaConversation } from './analysis/fiche';
@@ -167,7 +168,7 @@ async function main(): Promise<void> {
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
-    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
+    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit,
   } = construireSocle({ pool, queue, config });
 
   // Heartbeat : le worker écrit un signal de vie best-effort, dont /ops/overview lit l'âge. Il prouve que le
@@ -407,7 +408,9 @@ async function main(): Promise<void> {
         // Filet du fil pris pour rien : on prend le fil avant de savoir si l'automation démarre ; si elle ne démarre
         // pas, ce geste le rend, avec ses gardes (agent éteint, parcours en attente, opérateur). `rouverte: false` :
         // le routage vient de reprendre le fil pour le scénario, l'équipe ne le tient donc pas, aucune demande à ouvrir.
-        rendreLeFil: (t, waId, contenu) => fil.remettreSiPersonneNeSuit(t, waId, contenu, { rouverte: false }),
+        // Le dernier lead : le parcours du répondeur IA, s'il démarre ici, naît en l'ayant reçu (l'avance du même job
+        // ne le lui renvoie pas). Jamais redélivré : le routage écarte déjà ce que Meta redélivre.
+        rendreLeFil: (t, waId, contenu, dernierLead) => fil.remettreSiPersonneNeSuit(t, waId, contenu, { rouverte: false, messageDeclencheur: dernierLead }),
         noterIssue: (t, messageId, v) => arriveesPubStore.noterIssue(t, messageId, v),
       },
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi, et
@@ -454,7 +457,9 @@ async function main(): Promise<void> {
        * tout le reste (`src/webhooks/standby-hors-liste.ts`). La liste, et les réglages de l'espace sans cache.
        */
       listeALArrivee: {
-        agentAllume: async (t) => (await settingsStore.get(t)).mbaEnabled,
+        // Un répondeur, l'agent de Meta ou l'agent IA qui l'a remplacé : après la désignation, un contact que Meta
+        // croit encore tenir arrive en `standby`, et c'est le répondeur IA qui lui doit la réponse (lot 5).
+        agentAllume: async (t) => unRepondeurRepond(await settingsStore.get(t)),
         presents: (t, waIds) => listeDeLAgent.presents(t, waIds),
       },
       // Bascules de contrôle et messages de l'agent de Meta.
@@ -1586,16 +1591,19 @@ async function main(): Promise<void> {
       // que le tour a réellement coûté.
       credits,
       debiterTenant: async (t, montant, sessionId) => { await credits.debiter(t, montant, { sessionId }); },
+      // L'alerte aux admins quand le tour sort faute de crédit : une par jour et par espace, tenue en base (socle).
+      alerterCreditEpuise: (t) => alerteCredit.alerter(t),
       lireRun: async (t, runId) => {
         const run = await runStore.byId(t, runId);
         return run ? { status: run.status, currentNode: run.currentNode } : null;
       },
       agents: agentStore,
-      // La mémoire de l'agent : la conversation depuis l'ouverture de sa session (sinon il redemande son nom au
-      // contact à chaque message). Lue et non reçue : `advance` ne porte pas le texte du message.
+      // La mémoire de l'agent : les derniers messages du contact sur la borne que le tour pose (`MEMOIRE_JOURS`), le
+      // message qui l'a déclenché compris. Lue et non reçue : `advance` ne porte pas le texte du message. `at` dit au
+      // cerveau ce qui précède sa session (l'annonce d'IA ne compte qu'elle).
       lireConversation: async (t, waId, depuis) => {
         const messages = await inboxStore.messagesDepuis(t, waId, depuis, MESSAGES_DE_CONTEXTE);
-        return messages.map((m) => ({ role: m.direction === 'in' ? 'contact' : 'agent', texte: m.body }));
+        return messages.map((m) => ({ role: m.direction === 'in' ? 'contact' : 'agent', texte: m.body, at: m.at }));
       },
       // Écriture conditionnelle de l'échéance d'inactivité : un run tué en cours de tour ressusciterait sinon
       // avec une échéance, et le balayeur déclencherait la branche « pas de réponse » d'un parcours fermé exprès.

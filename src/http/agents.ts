@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import type { AgentComplet, AgentResume, PatchAgent } from '../agent/agent-store';
 import type { ModeleProposable } from '../agent/modeles';
@@ -7,6 +8,7 @@ import { corpsDuRefus } from '../lib/issue';
 import { espaceVerifie, estUuid } from './scope';
 import type { ConsommationAgent } from '../agent/session-store';
 import type { LigneHistorique } from '../agent/credits';
+import { choisirRepondeur, type DepsReglageRepondeur } from '../repondeur/reglage';
 
 /**
  * La fenêtre du suivi de consommation : trente jours, assez pour voir une tendance, assez court pour que
@@ -53,7 +55,12 @@ export interface AgentsRouteDeps extends DepsGestionAgents {
    * tarif quand la tarification est indisponible : son absence n'interdit pas un réglage.
    */
   modelesProposes(): Promise<ModeleProposable[]>;
+  /** Le répondeur de l'espace (`src/repondeur/reglage.ts`) : le MÊME objet que l'outil MCP `set_default_responder`. */
+  repondeur: DepsReglageRepondeur;
 }
+
+/** Le corps de `PUT .../agents/repondeur` : un agent, ou `null` pour n'en désigner aucun. */
+const corpsRepondeur = z.object({ agentId: z.string().max(100).nullable() });
 
 /**
  * Les agents IA d'un espace, réservés aux administrateurs (comme le builder qu'ils servent). Création et
@@ -116,8 +123,26 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     // `?statut=tous` : l'écran de réglage voit ses brouillons, le builder ne voit que les actifs. Le défaut
     // est le plus restrictif, pour qu'un appelant distrait ne propose pas un brouillon dans un scénario.
     const tous = (req.query as { statut?: string }).statut === 'tous';
-    const agents = tous ? await deps.agents.listToutes(tenant) : await deps.agents.listActifs(tenant);
-    return reply.code(200).send({ agents });
+    const [agents, reglages] = await Promise.all([
+      tous ? deps.agents.listToutes(tenant) : deps.agents.listActifs(tenant),
+      deps.repondeur.reglages.get(tenant),
+    ]);
+    // Le répondeur de l'espace, à côté de la liste : l'écran dit lequel répond à tous les messages.
+    return reply.code(200).send({ agents, repondeurAgentId: reglages.repondeurAgentId });
+  });
+
+  /**
+   * Désigne l'agent IA répondeur de l'espace, ou n'en désigne aucun (`agentId: null`). Admins seulement (la garde du
+   * module). Désigner un agent alors que l'agent de Meta est allumé L'ÉTEINT pour tous les contacts de l'espace : la
+   * réponse le dit (`agentDeMetaEteint`), et la console le confirme avant. L'auteur vient de la session.
+   */
+  app.put('/tenants/:tenantId/agents/repondeur', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const lu = corpsRepondeur.safeParse(req.body ?? {});
+    if (!lu.success) return reply.code(400).send({ error: 'agentId requis : l’identifiant d’un agent actif, ou null' });
+    const r = await choisirRepondeur(deps.repondeur, tenant, lu.data.agentId, { userId: req.auth?.userId ?? null, origine: 'formulaire' });
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send(r.valeur);
   });
 
   app.get('/tenants/:tenantId/agents/:agentId', opts, async (req, reply) => {

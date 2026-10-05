@@ -99,7 +99,10 @@ describe('essayerAgent', () => {
       appelsOutils: [{ id: 'c1', nom: 'mba_terminer', argumentsJson: '{"sortie":"fini","message":"Merci, à très vite."}' }],
     });
     const r = await essayerAgent(m.deps, 't1', AG, { messages: [{ role: 'user', content: 'Je veux un devis' }] }, 'formulaire');
-    expect(r).toMatchObject({ ok: true, valeur: { texte: 'Merci, à très vite.', sortie: 'fini' } });
-    expect(m.cap.essais[0]).toMatchObject({ reponse: 'Merci, à très vite.', sortie: 'fini' });
+    // Premier message de l'agent dans l'essai, régime « session » : l'annonce d'IA part devant, comme en production
+    // (lot 5, A7). Le bac à sable montre ce que le contact recevra.
+    const attendu = `${AGENT.mentionIa}\n\nMerci, à très vite.`;
+    expect(r).toMatchObject({ ok: true, valeur: { texte: attendu, sortie: 'fini' } });
+    expect(m.cap.essais[0]).toMatchObject({ reponse: attendu, sortie: 'fini' });
   });
 });

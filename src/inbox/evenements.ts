@@ -18,8 +18,8 @@
 import type { OrigineMessage } from './origine';
 
 /**
- * Les types, dans l'ordre du cadrage. Miroir du CHECK en vigueur, celui de 0194, tenu par
- * `tests/migration-0194.test.ts` ; les douze premiers sont ceux de 0192.
+ * Les types, dans l'ordre du cadrage. Miroir du CHECK en vigueur, celui de 0209, tenu par
+ * `tests/migration-0209.test.ts` ; les douze premiers sont ceux de 0192, les deux suivants ceux de 0194.
  *
  * Les deux derniers (0194) datent ce que le Quantitatif > Performance mesure : `escaladee`, une demande s'ouvre pour
  * l'équipe, soit qu'un robot lui passe la main (un scénario ou un agent IA, drapeau d'escalade ou non, et la réponse à
@@ -27,11 +27,14 @@ import type { OrigineMessage } from './origine';
  * contact rouvre une conversation « Traité » ou archivée qu'elle tient encore (`ControleDuFil.remettreSiPersonneNeSuit`,
  * sans bascule) ; `rendue_scenario`, l'équipe rend le fil à un scénario. Comment ils ouvrent et ferment une demande :
  * `src/stats/performance.ts`.
+ *
+ * Le dernier (0209) : `sortie_agent`, un agent IA a terminé par une règle d'arrêt, que sa cause nomme
+ * (`PgInboxStore.noterSortieAgent`). Il n'ouvre ni ne ferme aucune demande : c'est la bascule qui suit, s'il y en a une.
  */
 export const TYPES_EVENEMENT = [
   'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
   'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
-  'escaladee', 'rendue_scenario',
+  'escaladee', 'rendue_scenario', 'sortie_agent',
 ] as const;
 export type TypeEvenement = (typeof TYPES_EVENEMENT)[number];
 

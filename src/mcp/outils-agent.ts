@@ -23,6 +23,7 @@ import { ouvrirPaiement, type DepsPaiement } from '../stripe/paiement';
 import { OFFRES_RECHARGE, definitionOffre } from '../stripe/offres';
 import { LIGNES_HISTORIQUE } from '../http/agents';
 import { estUuid } from '../http/scope';
+import { choisirRepondeur, type DepsReglageRepondeur } from '../repondeur/reglage';
 
 /**
  * LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT (lot 8a, `docs/superpowers/specs/2026-10-03-mcp-agent-ia-design.md`).
@@ -72,23 +73,27 @@ export interface DepsAgentMcp {
     get(tenantId: string): Promise<{ agentTransfertMode: ModeTransfert | null }>;
     setAgentTransfertMode(tenantId: string, mode: ModeTransfert): Promise<void>;
   };
+  /** Le répondeur de l'espace : le MÊME objet que la route de la console (`PUT .../agents/repondeur`). */
+  repondeur: DepsReglageRepondeur;
 }
 
 /**
- * Ce que la description de chaque outil qui crée ou active un agent doit dire (spec, section 1) : sans scénario, un
- * agent actif ne parle à personne, et un modèle qui l'ignorerait annoncerait à la personne un agent en service.
+ * Ce que la description de chaque outil qui crée ou active un agent doit dire (spec, section 1) : un agent actif ne
+ * parle à personne de lui-même, et un modèle qui l'ignorerait annoncerait à la personne un agent en service. Depuis le
+ * lot 5, il parle aussi comme répondeur de l'espace, une fois désigné par `set_default_responder`.
  */
-const SANS_SCENARIO_MUET = 'Un agent actif ne répond à aucun client de lui-même : il ne parle que dans le bloc Agent IA '
-  + 'd’un scénario publié qui le contient, construit dans la console. Aucun outil ne le fait encore répondre à tous '
-  + 'les messages.';
+const SANS_SCENARIO_MUET = 'Un agent actif ne répond à aucun client de lui-même : il parle dans le bloc Agent IA d’un '
+  + 'scénario publié qui le contient, ou, une fois désigné par set_default_responder, comme répondeur de l’espace, à '
+  + 'tout message que personne ne tient.';
 
 /**
- * 🔴 Désactiver coupe l'agent dans ses scénarios publiés : les contacts en cours n'ont plus de réponse. Un refus de
- * modification ne doit jamais devenir une raison de le faire de soi-même (relecture de la livraison B).
+ * 🔴 Désactiver coupe l'agent dans ses scénarios publiés, et lui retire le rôle de répondeur : les contacts en cours
+ * n'ont plus de réponse. Un refus de modification ne doit jamais devenir une raison de le faire de soi-même
+ * (relecture de la livraison B).
  */
-const DESACTIVER_SUR_DEMANDE = 'Désactiver un agent le COUPE dans les scénarios publiés qui le contiennent : ses '
-  + 'contacts n’ont plus de réponse. Ne le faire que sur la demande explicite de la personne, jamais pour faire '
-  + 'passer une modification refusée.';
+const DESACTIVER_SUR_DEMANDE = 'Désactiver un agent le COUPE dans les scénarios publiés qui le contiennent, et lui '
+  + 'retire le rôle de répondeur de l’espace : ses contacts n’ont plus de réponse. Ne le faire que sur la demande '
+  + 'explicite de la personne, jamais pour faire passer une modification refusée.';
 
 /** Ce qu'un outil coûteux dit de son plafond, une fois pour toutes les descriptions. */
 const LOURDE = 'Compte dans les opérations lourdes de l’espace, plafonnées par minute (comme dans la console).';
@@ -141,18 +146,22 @@ export const OUTILS_AGENT: OutilMcp[] = [
   {
     nom: 'list_agents',
     description:
-      'Les agents IA de l’espace, brouillons, actifs et désactivés : identifiant (id), libellé, statut, et le nombre '
-      + 'de manques qui bloquent encore leur activation (get_agent en donne la liste). ' + SANS_SCENARIO_MUET,
+      'Les agents IA de l’espace, brouillons, actifs et désactivés : identifiant (id), libellé, statut, le nombre '
+      + 'de manques qui bloquent encore leur activation (get_agent en donne la liste), et repondeur = true sur celui '
+      + 'qui répond à tous les messages de l’espace (set_default_responder). ' + SANS_SCENARIO_MUET,
     scope: 'mcp:read',
     annotations: lecture('Lister les agents IA'),
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {
       const g = deps.agentIa.gestion;
-      const agents = await g.agents.listToutes(tenantId);
+      const [agents, reglages] = await Promise.all([g.agents.listToutes(tenantId), deps.agentIa.repondeur.reglages.get(tenantId)]);
       // La lecture de la console (`/manques`), agent par agent : un espace en porte quelques-uns.
       const manques = await Promise.all(agents.map((a) => manquesDeLAgent(g, tenantId, a.id)));
       return {
-        agents: agents.map((a, i) => ({ id: a.id, label: a.label, status: a.status, nb_manques: manques[i]?.manques.length ?? null })),
+        agents: agents.map((a, i) => ({
+          id: a.id, label: a.label, status: a.status, nb_manques: manques[i]?.manques.length ?? null,
+          repondeur: a.id === reglages.repondeurAgentId,
+        })),
       };
     },
   },
@@ -351,6 +360,38 @@ export const OUTILS_AGENT: OutilMcp[] = [
       const auteur = { userId: signataire(personne), origine: 'mcp' as const };
       const agent = valeurOuRefus(await changerStatut(deps.agentIa.gestion, tenantId, id, args.active ? 'active' : 'disabled', auteur));
       return { agent: vueAgent(agent) };
+    },
+  },
+  {
+    nom: 'set_default_responder',
+    description:
+      'Fait d’un agent IA ACTIF le répondeur de l’espace : il répond à tout message entrant que ni un scénario, ni un '
+      + 'mot-clé, ni un humain ne tient, sans scénario à construire. agent_id null : plus aucun agent IA ne répond par '
+      + 'défaut. Si l’agent de Meta est allumé, ce geste l’ÉTEINT pour tous les contacts de l’espace (une seule voix '
+      + 'répond, agent_de_meta_eteint le dit) : le dire à la personne et ne le faire que sur sa demande explicite. '
+      + 'Refusé pour un agent en brouillon ou désactivé (activate_agent d’abord). list_agents dit lequel est le répondeur.',
+    scope: 'mcp:write',
+    exigePersonne: true,
+    // Destructrice et ouverte : elle peut éteindre l'agent de Meta chez Meta, pour tous les contacts.
+    annotations: ecriture('Choisir le répondeur de l’espace', true, true, true),
+    entree: {
+      type: 'object',
+      properties: {
+        agent_id: {
+          type: ['string', 'null'], format: 'uuid', maxLength: 100,
+          description: 'L’identifiant (id) d’un agent actif, rendu par list_agents ; null pour n’en désigner aucun.',
+        },
+      },
+      required: ['agent_id'],
+    },
+    async executer(deps, tenantId, args, personne) {
+      const brut = args.agent_id;
+      if (brut !== null && (typeof brut !== 'string' || brut.trim() === '' || brut.length > 100)) {
+        throw new RefusOutil('paramètre « agent_id » requis : l’identifiant d’un agent actif, ou null');
+      }
+      const auteur = { userId: signataire(personne), origine: 'mcp' as const };
+      const r = valeurOuRefus(await choisirRepondeur(deps.agentIa.repondeur, tenantId, brut === null ? null : brut.trim(), auteur));
+      return { repondeur_agent_id: r.repondeurAgentId, agent_de_meta_eteint: r.agentDeMetaEteint, liste_meta: r.liste };
     },
   },
   {

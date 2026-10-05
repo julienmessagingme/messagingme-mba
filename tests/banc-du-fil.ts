@@ -3,6 +3,7 @@ import { creerListeDeLAgent, type EntreeDeLaListe, type ListeDeLAgent, type List
 import type { EvenementAgent } from '../src/mba/evenement';
 import type { ControlOwner } from '../src/inbox/store.pg';
 import { MetaApiError } from '../src/meta/errors';
+import type { IssueRepondeur } from '../src/repondeur/demarrer';
 
 /**
  * LE BANC DU CONTRÔLE DU FIL : le VRAI module (`src/inbox/fil.ts`) et la VRAIE liste de l'agent de Meta
@@ -106,6 +107,14 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
   return { depot, lignes, ecritures, demandes, etat: (waId: string): EtatDuFil | undefined => lignes.get(waId) };
 }
 
+/**
+ * Un espace sans répondeur IA (`repondeurAgentId: null`) : la remise ne doit jamais démarrer l'agent IA. Le faux le
+ * DIT en levant, au lieu de rendre une issue qu'aucun test ne regarderait.
+ */
+export const aucunRepondeur: DepsControleDuFil['repondeur'] = {
+  demarrer: async () => { throw new Error('aucunRepondeur : le démarreur du répondeur ne devrait pas être appelé'); },
+};
+
 /** L'identifiant que le faux Meta donne à l'entrée d'un contact : on retrouve le contact en le lisant. */
 export const entreeDe = (waId: string): string => `entree-${waId}`;
 
@@ -124,6 +133,8 @@ export function listeEnMemoire(initial: readonly string[] = [], o: { poserEchoue
       lignes.set(waId, { phoneNumberId, entreeId });
     },
     supprimer: async (_t, waId) => { lignes.delete(waId); },
+    // Fidèle à `PgListeStore.lister` : par `wa_id` croissant, strictement après la dernière clé lue.
+    lister: async (_t, apres, limite) => [...lignes.keys()].sort().filter((w) => apres === null || w > apres).slice(0, limite),
   };
   return { store, lignes };
 }
@@ -201,6 +212,17 @@ export interface OptionsBanc {
   surLaListe?: string[];
   /** L'agent de Meta est-il allumé ? Défaut : oui. */
   mbaEnabled?: boolean;
+  /**
+   * L'agent IA répondeur de l'espace (lot 5) ; `null` = aucun. Défaut : aucun. 🔴 Le banc ne tient pas le CHECK d'une
+   * seule voix : un test du répondeur pose aussi `mbaEnabled: false`, comme la base l'impose.
+   */
+  repondeurAgentId?: string | null;
+  /** Ce que rend le démarreur du répondeur. Défaut : `parti`. Ses appels sont notés dans `demarrages`. */
+  demarrage?: IssueRepondeur | Error;
+  /** Remplace le démarreur factice (un vrai démarreur, branché par liaison tardive dans le test). */
+  repondeur?: DepsControleDuFil['repondeur'];
+  /** Remplace la lecture « un parcours attend-il ce contact ? » (de vrais parcours en mémoire). Prime sur `enAttente`. */
+  parcours?: DepsControleDuFil['parcours'];
   /** Le délai de reprise réglé par l'espace, en secondes (0 = jamais). Défaut : aucun, le délai par défaut s'applique. */
   delaiRepriseSecondes?: number | null;
   /** Le numéro de l'espace ; `null` = aucun numéro connecté. Défaut : un numéro. */
@@ -241,6 +263,8 @@ export function bancDuFil(o: OptionsBanc = {}): {
   attentes: number[];
   /** Le faux client Meta lui-même, pour câbler un autre module sur le même journal (`agentEvent`, ...). */
   client: ReturnType<typeof metaFactice>['client'];
+  /** Les démarrages demandés au répondeur IA, dans l'ordre. */
+  demarrages: Array<{ waId: string; agentId: string; messageDeclencheur: string | null }>;
 } {
   const memoire = depotEnMemoire(o.conversations);
   const table = listeEnMemoire(o.surLaListe, { poserEchoue: o.poserEchoue === true });
@@ -257,11 +281,12 @@ export function bancDuFil(o: OptionsBanc = {}): {
     clientMba: async () => faux.client,
     attendre: async (ms) => { attentes.push(ms); },
   });
+  const demarrages: Array<{ waId: string; agentId: string; messageDeclencheur: string | null }> = [];
   const fil = creerControleDuFil({
     depot: { ...memoire.depot, ...o.depot },
-    reglages: { get: async () => ({ mbaEnabled: o.mbaEnabled ?? true, controlHandbackSeconds: o.delaiRepriseSecondes ?? null }) },
+    reglages: { get: async () => ({ mbaEnabled: o.mbaEnabled ?? true, repondeurAgentId: o.repondeurAgentId ?? null, controlHandbackSeconds: o.delaiRepriseSecondes ?? null }) },
     delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
-    parcours: { findWaitingByWaId: async () => (o.enAttente ? { id: 'run-1' } : null) },
+    parcours: o.parcours ?? { findWaitingByWaId: async () => (o.enAttente ? { id: 'run-1' } : null) },
     numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? 'pn1' : o.numero) },
     liste,
     consentement: {
@@ -269,9 +294,17 @@ export function bancDuFil(o: OptionsBanc = {}): {
       estBloque: async (_t, waId) => (o.bloques ?? []).includes(waId),
     },
     meta: faux.meta,
+    repondeur: {
+      demarrer: async (t, waId, d) => {
+        demarrages.push({ waId, agentId: d.agentId, messageDeclencheur: d.messageDeclencheur });
+        if (o.repondeur) return o.repondeur.demarrer(t, waId, d);
+        if (o.demarrage instanceof Error) throw o.demarrage;
+        return o.demarrage ?? 'parti';
+      },
+    },
   });
   return {
     fil, liste, etat: memoire.etat, lignes: memoire.lignes, table: table.lignes, ecritures: memoire.ecritures, demandes: memoire.demandes,
-    appels: faux.appels, evenements: faux.evenements, attentes, client: faux.client,
+    appels: faux.appels, evenements: faux.evenements, attentes, client: faux.client, demarrages,
   };
 }

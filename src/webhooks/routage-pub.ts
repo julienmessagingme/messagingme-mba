@@ -42,9 +42,11 @@ export interface RoutagePubDeps {
   /**
    * Rend la conversation à l'agent de Meta, quand on l'a prise et que personne n'a finalement parlé, avec le texte
    * du lead pour qu'il y réponde. C'est `ControleDuFil.remettreSiPersonneNeSuit` (`src/inbox/fil.ts`), qui porte déjà
-   * ses gardes (agent éteint, parcours en attente, opérateur) : câblé, non réécrit.
+   * ses gardes (agent éteint, parcours en attente, opérateur) : câblé, non réécrit. Avec un agent IA répondeur, c'est
+   * lui qui démarre ; `dernierLead`, le dernier message du lot, naît alors reçu par son parcours, pour que l'avance du
+   * même job ne le lui renvoie pas en second tour.
    */
-  rendreLeFil(tenantId: string, waId: string, contenu: string): Promise<void>;
+  rendreLeFil(tenantId: string, waId: string, contenu: string, dernierLead: string): Promise<void>;
   /**
    * Inscrit sur l'arrivée déjà écrite ce que le routage a décidé, seulement si l'issue est encore nulle : un
    * webhook redélivré ne doit pas réécrire l'histoire d'un lead déjà routé, ni déplacer l'heure de reprise.
@@ -188,7 +190,7 @@ export async function rendreLesFilsSansReponse(
   }
   for (const { tenantId, waId, textes, leads } of parContact.values()) {
     try {
-      await deps.rendreLeFil(tenantId, waId, textes.join('\n'));
+      await deps.rendreLeFil(tenantId, waId, textes.join('\n'), leads[leads.length - 1] ?? '');
       // eslint-disable-next-line no-console
       console.warn(`routage pub : fil repris pour le lead ${leads.join(', ')} mais aucun scénario n’a démarré, il est rendu à l’agent de Meta`);
     } catch (err) {

@@ -43,4 +43,14 @@ export class PgListeStore implements ListeStore {
   async supprimer(tenantId: string, waId: string): Promise<void> {
     await this.pool.query(`delete from mba_liste where tenant_id = $1 and wa_id = $2`, [tenantId, waId]);
   }
+
+  /** Servie par la clé primaire `(tenant_id, wa_id)` : la page suivante repart de la dernière clé lue. */
+  async lister(tenantId: string, apres: string | null, limite: number): Promise<string[]> {
+    const res = await this.pool.query<{ wa_id: string }>(
+      `select wa_id from mba_liste where tenant_id = $1 and ($2::text is null or wa_id > $2::text)
+        order by wa_id limit $3::int`,
+      [tenantId, apres, Math.max(1, Math.floor(limite))],
+    );
+    return res.rows.map((r) => r.wa_id);
+  }
 }

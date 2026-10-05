@@ -75,14 +75,17 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
  * scénario, le fil et l'affectation parlent, et on appelle la dépendance `escalateToHuman` qu'il a donnée à
  * l'exécuteur. Ce que le geste écrit ensuite : `tests/fil.test.ts` et `tests/inbox-evenements.test.ts`.
  */
-function cablageDuScenario(lireNom: () => Promise<{ name: string } | null> = async () => ({ name: 'Bienvenue' })) {
+function cablageDuScenario(
+  lireNom: () => Promise<{ nom: string; systeme: 'repondeur' | null } | null> = async () => ({ nom: 'Bienvenue', systeme: null }),
+) {
   const appels: unknown[][] = [];
   const inerte = {} as never;
   const { executor } = buildWorkflowRuntime({
     pool: inerte, queue: { enqueue: async () => {} }, dryRun: true, repo: inerte, contactStore: inerte,
     inboxStore: { setAssigneeByWaId: async (...a: unknown[]) => { appels.push(['affecter', ...a]); return true; } } as never,
     settingsStore: inerte,
-    workflowStore: { getById: async (id: string, t: string) => { appels.push(['nom', id, t]); return lireNom(); } } as never,
+    // `designation` et pas `getById` : celle-ci cache le scénario système du répondeur (lot 5).
+    workflowStore: { designation: async (id: string, t: string) => { appels.push(['nom', id, t]); return lireNom(); } } as never,
     metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
     numeroDeLEspace: async () => null, runStore: inerte,
     fil: { passerAUnHumain: async (...a: unknown[]) => { appels.push(['passer', ...a]); return true; } } as never,
@@ -115,6 +118,14 @@ describe('le câblage d’un scénario nomme le scénario à CHAQUE passage à l
       ['passer', 't1', 'w', { escalade: true, cause: 'automatique : scénario Bienvenue' }],
       ['affecter', 't1', 'w', 'u-marie', 'automatique : scénario Bienvenue'],
     ]);
+  });
+
+  it('🔴 le scénario système du répondeur (lot 5) se dit « Répondeur automatique », jamais par son identifiant', async () => {
+    // Le magasin le cache à toutes ses lectures publiques : lu par `getById`, il serait introuvable, et la frise
+    // dirait « scénario <uuid> » quand l'agent répondeur passe la main à l'équipe.
+    const { escalateToHuman, appels } = cablageDuScenario(async () => ({ nom: 'Répondeur automatique', systeme: 'repondeur' }));
+    await escalateToHuman('t1', 'w', null, false, 'wf-sys');
+    expect(appels.at(-1)).toEqual(['passer', 't1', 'w', { escalade: false, cause: 'automatique : Répondeur automatique' }]);
   });
 
   it('un scénario introuvable, ou une lecture en panne, ne bloque rien : il est dit par son identifiant', async () => {

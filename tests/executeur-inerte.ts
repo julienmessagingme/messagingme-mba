@@ -49,6 +49,10 @@ export const filJamaisRendu = async (): Promise<void> => {};
 export const rienATransmettre = async (): Promise<void> => {};
 /** `emitTagAdded` absent : aucune publication « tag ajouté ». */
 export const aucunEvenement = async (): Promise<void> => {};
+/** `noterSortieAgent` (0209) : avant lui, aucune sortie d'agent n'était notée dans la frise. */
+export const aucuneSortieNotee = async (): Promise<void> => {};
+/** `confierAuRepondeur` (lot 5) : avant lui, un message « à côté » sans agent de Meta n'allait à personne. */
+export const aucunRepondeurHorsParcours = async (): Promise<void> => {};
 /** `rcs.recordOutbound` absent : l'envoi RCS n'était pas écrit dans le fil. */
 export const filRcsNonJournalise = async (): Promise<void> => {};
 /** `rcs.jetonPour` absent : les liens partaient tracés mais anonymes. */
@@ -143,5 +147,7 @@ export const depsInertes = {
   releaseToMba: filJamaisRendu,
   transmettreHorsParcours: rienATransmettre,
   emitTagAdded: aucunEvenement,
+  noterSortieAgent: aucuneSortieNotee,
+  confierAuRepondeur: aucunRepondeurHorsParcours,
   rcs: rcsSansAgent,
 } satisfies Partial<WorkflowExecutorDeps>;

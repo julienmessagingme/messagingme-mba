@@ -56,7 +56,7 @@ type Reprise = 'bloque_par_un_fil_tenu' | 'reprend' | 'reprend_sauf_operateur';
 type Fenetre = 'gardee' | 'selon_preuve' | 'bloc_ou_preuve' | 'levee';
 
 /** 🔴 LE TABLEAU DU PLAN, recopié. Chaque ligne est le comportement d'avant le lot (décision de Julien du 2026-10-04). */
-const ATTENDU: Record<TypeDeLancement, { reprise: Reprise; publie: boolean; graphe: 'publie' | 'fourni' | 'brouillon_fige'; fenetre: Fenetre }> = {
+const ATTENDU: Record<TypeDeLancement, { reprise: Reprise; publie: boolean; graphe: 'publie' | 'fourni' | 'brouillon_fige' | 'fourni_fige'; fenetre: Fenetre }> = {
   inbox: { reprise: 'reprend', publie: true, graphe: 'publie', fenetre: 'selon_preuve' },
   agent_meta_scenario: { reprise: 'reprend', publie: true, graphe: 'publie', fenetre: 'selon_preuve' },
   agent_meta_bloc: { reprise: 'reprend', publie: false, graphe: 'fourni', fenetre: 'levee' },
@@ -66,6 +66,10 @@ const ATTENDU: Record<TypeDeLancement, { reprise: Reprise; publie: boolean; grap
   lien_de_test: { reprise: 'reprend', publie: true, graphe: 'brouillon_fige', fenetre: 'levee' },
   campagne_scenario: { reprise: 'reprend', publie: false, graphe: 'publie', fenetre: 'gardee' },
   campagne_bloc: { reprise: 'reprend', publie: false, graphe: 'publie', fenetre: 'levee' },
+  // Le lot 5 (spec du répondeur, § 4) : la seule ligne neuve, pas un comportement d'avant. Le client écrit, comme un
+  // clic sur une publicité : jamais à un opérateur ; le graphe vient de l'appelant et SE FIGE (la ligne de scénario
+  // n'est qu'une ancre) ; la fenêtre est prouvée par l'entrant.
+  repondeur: { reprise: 'reprend_sauf_operateur', publie: true, graphe: 'fourni_fige', fenetre: 'selon_preuve' },
 };
 
 /** Où commence le parcours, pour les types qui en laissent le choix. Un type qui n'a pas ce choix l'ignore. */
@@ -91,6 +95,9 @@ function demandeDe(type: TypeDeLancement, v: Variante): DemandeDeLancement {
       return { ...base, type, waId: WA, contactId: 'c-campagne' };
     case 'campagne_bloc':
       return { ...base, type, waId: WA, contactId: 'c-campagne', noeudId: bloc };
+    case 'repondeur':
+      // Toujours démarré par un message entrant : la preuve de fenêtre n'est pas un choix de l'appelant.
+      return { ...base, type, waId: WA, graphe: FOURNI[v.workflowId] ?? session, fenetreOuverte: true, messageDeclencheur: null };
   }
 }
 
@@ -276,11 +283,14 @@ describe('le graphe joué : seul le lien de test joue le brouillon, et lui seul 
     it(`${type} : graphe ${graphe}`, async () => {
       const m = banc();
       expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }))).toBe(true);
-      const version = graphe === 'brouillon_fige' ? 'brouillon' : graphe === 'fourni' ? 'fourni' : 'publie';
+      const fourni = graphe === 'fourni' || graphe === 'fourni_fige';
+      const version = graphe === 'brouillon_fige' ? 'brouillon' : fourni ? 'fourni' : 'publie';
       expect(m.envois).toEqual([`tpl:${version}`]);
-      expect(m.crees.map((c) => c.fige)).toEqual([graphe === 'brouillon_fige' ? modele('brouillon') : null]);
-      // Le graphe fourni ne demande aucune lecture : le bloc vient d'être relu par l'appelant, sur le publié.
-      expect(m.lectures).toEqual(graphe === 'fourni' ? [] : [`${ESPACE}/wf-modele`]);
+      const fige = graphe === 'brouillon_fige' ? modele('brouillon') : graphe === 'fourni_fige' ? modele('fourni') : null;
+      expect(m.crees.map((c) => c.fige)).toEqual([fige]);
+      // Le graphe fourni ne demande aucune lecture : le bloc vient d'être relu par l'appelant, sur le publié ; celui du
+      // répondeur vient d'être construit depuis le réglage, sa ligne de scénario n'en porte aucun.
+      expect(m.lectures).toEqual(fourni ? [] : [`${ESPACE}/wf-modele`]);
     });
   }
 });
@@ -306,6 +316,7 @@ describe('la garde de fenêtre de 24 h', () => {
     lien_de_test: [{ workflowId: 'wf-session' }, { workflowId: 'wf-session', auBloc: true }],
     campagne_scenario: [{ workflowId: 'wf-session' }],
     campagne_bloc: [{ workflowId: 'wf-session', auBloc: true }],
+    repondeur: [{ workflowId: 'wf-session', fenetreOuverte: true }],
   };
   /** La règle du plan, écrite à part de `fenetreLevee` : la comparer à elle-même ne prouverait rien. */
   const levee = (regle: Fenetre, v: Variante): boolean =>
@@ -344,7 +355,8 @@ describe('ce que l’entrée lit, et ce qu’elle transmet', () => {
 
   it('un scénario inconnu rend `null`, avant toute recherche et tout envoi (l’appelant le traduit comme avant)', async () => {
     for (const type of TYPES_DE_LANCEMENT) {
-      if (type === 'agent_meta_bloc') continue;
+      // L'envoi de bloc et le répondeur fournissent leur graphe : ils ne lisent aucun scénario.
+      if (type === 'agent_meta_bloc' || type === 'repondeur') continue;
       const m = banc();
       expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-supprime' })), type).toBeNull();
       expect(m.recherches, type).toEqual([]);

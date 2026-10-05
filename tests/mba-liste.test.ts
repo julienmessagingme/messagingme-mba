@@ -7,7 +7,7 @@ import {
 import { creerControleDuFil } from '../src/inbox/fil';
 import { MetaApiError, classify, estPlafondNumero } from '../src/meta/errors';
 import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-directives';
-import { DELAI_REPRISE_DEFAUT_MS, depotEnMemoire, listeEnMemoire } from './banc-du-fil';
+import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, depotEnMemoire, listeEnMemoire } from './banc-du-fil';
 import { jamaisBloque, jamaisDesabonne } from './consentement';
 
 /**
@@ -310,7 +310,8 @@ describe('confier et reprendre, dans l’ordre (`src/inbox/fil.ts` sur `src/mba/
         ...memoire.depot,
         setControlOwner: async (t, w, owner, opts) => { journal.push(`colonne:${owner}`); return memoire.depot.setControlOwner(t, w, owner, opts); },
       },
-      reglages: { get: async () => ({ mbaEnabled: true, controlHandbackSeconds: null }) },
+      reglages: { get: async () => ({ mbaEnabled: true, repondeurAgentId: null, controlHandbackSeconds: null }) },
+      repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },
       numeros: { getTenantPhoneNumberId: async () => PN },
@@ -361,7 +362,7 @@ describe('migration 0195', () => {
   it('🔴 chaque requête du magasin est scopée à l’espace', () => {
     const magasin = readFileSync(new URL('../src/mba/liste.pg.ts', import.meta.url), 'utf8');
     const requetes = [...magasin.matchAll(/`((?:select|insert|delete|update)[^`]*mba_liste[^`]*)`/g)].map((r) => r[1]!);
-    expect(requetes).toHaveLength(4);
+    expect(requetes).toHaveLength(5); // `lister` (lot 5) compris : la cinquième passe la même garde.
     for (const q of requetes) expect(q, q).toMatch(/tenant_id = \$1|values \(\$1/);
   });
 });

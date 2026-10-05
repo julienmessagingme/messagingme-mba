@@ -24,6 +24,7 @@ import type { TemplateRouteDeps } from '../src/http/templates';
 import type { MembresDep, UsersRouteDeps } from '../src/http/users';
 import type { ScenariosDep, WorkflowRouteDeps } from '../src/http/workflows';
 import type { DepsMcp } from '../src/mcp/outils';
+import type { DepsReglageRepondeur } from '../src/repondeur/reglage';
 import { MODELES_CHOISIS } from '../src/agent/modeles';
 import { SANS_PLAFOND } from '../src/campaign/pacing';
 import { PLAFOND_DESTINATAIRES_DEFAUT } from '../src/campaign/plafond';
@@ -109,7 +110,21 @@ export const essaiAgentInerte: Pick<AgentTestRouteDeps, 'essais' | 'credits' | '
   debiter: sansDebit,
 };
 
-export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes' | 'historique'> = {
+/**
+ * Le répondeur de l'espace (lot 5), pour les montages qui n'en parlent pas : aucun répondeur désigné, agent de Meta
+ * éteint (la lecture de `GET /agents`), et toute ÉCRITURE lève. Ses portes ont leurs propres cas,
+ * `tests/repondeur-reglage.test.ts`.
+ */
+export const repondeurInerte: DepsReglageRepondeur = {
+  agents: { complet: async () => null },
+  reglages: { get: async () => ({ mbaEnabled: false, repondeurAgentId: null }), setRepondeur: neDevraitPasEtreAppelee('setRepondeur') },
+  gatewayDisponible: false,
+  eteindreAgentDeMeta: neDevraitPasEtreAppelee('eteindreAgentDeMeta'),
+  liste: { toutRetirer: neDevraitPasEtreAppelee('toutRetirer') },
+  historique: { ecrire: neDevraitPasEtreAppelee('historique.ecrire') },
+};
+
+export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes' | 'historique' | 'oublierRepondeur' | 'repondeur'> = {
   credits: { solde: async () => 0, historique: async () => [] },
   sessions: {
     consommation: neDevraitPasEtreAppelee('consommation'),
@@ -121,6 +136,9 @@ export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etat
   modelesProposes: async () => MODELES_CHOISIS.map((m) => ({ ...m, prixEntree: null, prixSortie: null })),
   // Absent : aucune modification de fiche n'était journalisée (lot 8a). Un journal muet dit la même chose.
   historique: { ecrire: async () => {} },
+  // Avant le lot 5, rien n'était désigné répondeur : désactiver un agent n'en retirait aucun.
+  oublierRepondeur: async () => false,
+  repondeur: repondeurInerte,
 };
 
 export const campagnesInertes: Pick<CampaignRouteDeps,
@@ -474,6 +492,7 @@ export const mcpAgentInerte: Pick<DepsMcp, 'agentIa'> = {
       modeleParDefaut: 'modele-inerte',
       etatPourLint: async () => null,
       historique: { ecrire: neDevraitPasEtreAppelee('historique.ecrire') },
+      oublierRepondeur: neDevraitPasEtreAppelee('oublierRepondeur'),
       credits: { solde: async () => 0, historique: async () => [] },
       modelesProposes: async () => [],
     },
@@ -507,5 +526,6 @@ export const mcpAgentInerte: Pick<DepsMcp, 'agentIa'> = {
       get: async () => ({ agentTransfertMode: null }),
       setAgentTransfertMode: neDevraitPasEtreAppelee('setAgentTransfertMode'),
     },
+    repondeur: repondeurInerte,
   },
 };

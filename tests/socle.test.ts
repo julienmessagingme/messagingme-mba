@@ -33,6 +33,11 @@ const configuration: ConfigSocle = {
   RCS_PROVIDER: 'fake',
   CREDIT_OFFERT_MICRO_EUR: 0,
   CONTROL_HUMAN_TIMEOUT_MS: 2 * 60 * 60 * 1000,
+  // Sans modèle ni Resend : le démarreur du répondeur rend `indisponible` sans lire la base, l'alerte se journalise.
+  AI_GATEWAY_API_KEY: '',
+  RESEND_API_KEY: '',
+  SUPPORT_FROM: 'test@exemple.test',
+  APP_URL: 'https://console.exemple.test',
 };
 
 /** Un faux pool qui répond aux deux lectures du chemin (la fiche avant l'écriture, les espaces branchés), et une file qui garde ce qu'on lui confie. */
@@ -76,6 +81,32 @@ describe('le socle commun aux deux processus', () => {
     const { requetes, enfiles } = banc();
     expect(requetes).toEqual([]);
     expect(enfiles).toEqual([]);
+  });
+
+  /**
+   * 🔴 LA LIAISON TARDIVE DU RÉPONDEUR (lot 5). Le fil se construit avant l'exécuteur, le démarreur du répondeur a
+   * besoin des lancements de l'exécuteur : le socle branche le démarreur APRÈS, et le fil lève tant qu'il ne l'est
+   * pas. Ce cas fait passer un message d'un espace à répondeur IA par le fil du VRAI socle : il doit atteindre le
+   * démarreur (sans modèle configuré ici, il rend `indisponible` et la conversation passe à l'équipe), pas lever
+   * « non branché ».
+   */
+  it('🔴 le socle BRANCHE le démarreur du répondeur : un message d’un espace à répondeur IA l’atteint', async () => {
+    const requetes: string[] = [];
+    const pool = {
+      query: async (sql: string) => {
+        requetes.push(sql);
+        if (/from tenant_settings where tenant_id = \$1/.test(sql)) {
+          return { rows: [{ mba_enabled: false, repondeur_agent_id: '22222222-2222-4222-8222-222222222222', control_handback_seconds: null }] };
+        }
+        if (/from phone_numbers where tenant_id = \$1/.test(sql)) return { rows: [{ id: 'pn1' }] };
+        return { rows: [] };
+      },
+    } as unknown as Pool;
+    const socle = construireSocle({ pool, queue: { enqueue: async () => {} }, config: configuration });
+    await expect(socle.fil.remettreSiPersonneNeSuit(TENANT, WA_ID, 'Bonjour', { rouverte: false })).resolves.toBeUndefined();
+    // Le démarreur a répondu (`indisponible`) : la conversation passe à l'équipe, avec la cause qui le dit.
+    const bascule = requetes.find((q) => /update conversations/.test(q) && /'app_human'|\$3/.test(q));
+    expect(bascule, 'la conversation passe à l’équipe').toBeDefined();
   });
 });
 

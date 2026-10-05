@@ -51,6 +51,12 @@ export interface ListeStore {
   /** Idempotent : deux ajouts concurrents du même contact nomment la même entrée chez Meta. */
   poser(tenantId: string, waId: string, phoneNumberId: string, entreeId: string): Promise<void>;
   supprimer(tenantId: string, waId: string): Promise<void>;
+  /**
+   * Les contacts de la liste de l'espace, par `waId` croissant, strictement après `apres` (`null` = depuis le début),
+   * au plus `limite`. Une pagination par clé et pas par rang : un contact qu'on n'a pas pu retirer reste sur la liste,
+   * et une page par rang le rendrait à chaque tour.
+   */
+  lister(tenantId: string, apres: string | null, limite: number): Promise<string[]>;
 }
 
 /** Ce que ce module demande au client MBA (`src/mba/client.ts`). Les réponses sont lues par `safeParse`. */
@@ -100,7 +106,18 @@ export interface ListeDeLAgent {
    * lève jamais. Le numéro d'un contact effacé n'a rien à faire chez Meta.
    */
   oublierChezMeta(tenantId: string, lignes: readonly LigneDeLaListe[]): Promise<void>;
+  /**
+   * Retire TOUS les contacts de la liste de l'espace, par paquets (`PAQUET_LISTE`), chacun par `retirer` (un rejeu,
+   * jamais deux). Un refus de Meta est journalisé par `retirer` et n'arrête pas les autres : le contact reste sur la
+   * liste, compté dans `refuses`. Sert la désignation d'un agent IA répondeur (`src/repondeur/reglage.ts`) : sans elle,
+   * Meta continuerait de ranger en `standby` les messages des contacts qu'il croyait encore tenir. Lève sur une panne
+   * de notre table, comme `retirer`.
+   */
+  toutRetirer(tenantId: string): Promise<{ retires: number; refuses: number }>;
 }
+
+/** La taille d'un paquet de `toutRetirer` : une lecture de la table par paquet, un geste chez Meta par contact. */
+export const PAQUET_LISTE = 100;
 
 /**
  * Le retrait d'un contact de la liste a été refusé avant un modèle : le modèle n'est pas parti. Une `MetaApiError`
@@ -248,6 +265,21 @@ export function creerListeDeLAgent(deps: DepsListe): ListeDeLAgent {
       // Une lecture pour toutes les formes du numéro, un retrait par ligne trouvée (presque toujours aucune).
       for (const forme of await store.presents(tenantId, formesDuNumero(waId))) {
         if (!(await retirer(tenantId, forme))) throw new RetraitDeLaListeRefuse();
+      }
+    },
+
+    async toutRetirer(tenantId) {
+      let retires = 0;
+      let refuses = 0;
+      let apres: string | null = null;
+      for (;;) {
+        const paquet: string[] = await store.lister(tenantId, apres, PAQUET_LISTE);
+        for (const waId of paquet) {
+          if (await retirer(tenantId, waId)) retires += 1;
+          else refuses += 1;
+        }
+        if (paquet.length < PAQUET_LISTE) return { retires, refuses };
+        apres = paquet[paquet.length - 1] ?? null;
       }
     },
 

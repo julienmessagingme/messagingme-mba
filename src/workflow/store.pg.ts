@@ -104,6 +104,26 @@ const EMPTY_GRAPH: WorkflowGraph = { nodes: [], edges: [] };
 const COLS = 'id, tenant_id, name, code, graph, draft_graph, published_at, created_at, updated_at';
 
 /**
+ * Les scénarios SYSTÈME (`workflows.systeme`, migration 0209), liste fermée, miroir du CHECK
+ * `workflows_systeme_chk` (tenu par `tests/migration-0209.test.ts`). Un seul aujourd'hui : l'ancre des parcours du
+ * répondeur de l'espace (`src/repondeur/demarrer.ts`), une ligne par espace, jamais montrée.
+ */
+export const SYSTEMES_SCENARIO = ['repondeur'] as const;
+export type SystemeScenario = (typeof SYSTEMES_SCENARIO)[number];
+
+/** Le nom qu'une ligne système porte, et celui que la frise et le journal des échecs disent à sa place. */
+export const NOM_SCENARIO_SYSTEME: Readonly<Record<SystemeScenario, string>> = { repondeur: 'Répondeur automatique' };
+
+/**
+ * 🔴 LE FILTRE DE TOUTES LES LECTURES ET ÉCRITURES PUBLIQUES DE CE MAGASIN : une ligne système n'existe pour aucun
+ * appelant. Posé ici, une fois, et pas chez les appelants : `GET /workflows`, `/nodes`, la détection de doublon de
+ * nom, la résolution `/v1` par nom ou par code, le catalogue `/v1`, l'outil MCP `list_scenarios`, les outils de
+ * l'agent de Meta, le lien de test, la publication et la suppression passent tous par ces méthodes. Seules
+ * `assurerScenarioSysteme` et `designation` voient la ligne, et elles disent pourquoi.
+ */
+const PUBLIC = 'systeme is null';
+
+/**
  * Résultat d'un enregistrement de l'éditeur. `brouillon` est l'état après écriture : un enregistrement
  * identique au publié ne laisse aucun brouillon (cf. `update`), et l'éditeur ne doit pas proposer de publier
  * le vide.
@@ -168,7 +188,7 @@ export class PgWorkflowStore {
               jsonb_array_length(coalesce(graph->'nodes', '[]'::jsonb)) as node_count,
               (draft_graph is not null) as has_draft,
               graph
-         from workflows where tenant_id = $1 order by created_at desc`,
+         from workflows where tenant_id = $1 and ${PUBLIC} order by created_at desc`,
       [tenantId],
     );
     return res.rows.map((r) => ({
@@ -200,7 +220,7 @@ export class PgWorkflowStore {
     const res = await this.pool.query<{ code: string | null; name: string; published_at: Date | null; graph: WorkflowGraph }>(
       `select code, name, published_at, graph
          from workflows
-        where tenant_id = $1
+        where tenant_id = $1 and ${PUBLIC}
           and jsonb_array_length(coalesce(graph->'nodes', '[]'::jsonb)) > 0
         order by name, created_at`,
       [tenantId],
@@ -215,7 +235,7 @@ export class PgWorkflowStore {
 
   async list(tenantId: string): Promise<WorkflowRow[]> {
     const res = await this.pool.query<Row>(
-      `select ${COLS} from workflows where tenant_id = $1 order by created_at desc`,
+      `select ${COLS} from workflows where tenant_id = $1 and ${PUBLIC} order by created_at desc`,
       [tenantId],
     );
     return res.rows.map(toRow);
@@ -223,7 +243,7 @@ export class PgWorkflowStore {
 
   async getById(id: string, tenantId: string): Promise<WorkflowRow | null> {
     const res = await this.pool.query<Row>(
-      `select ${COLS} from workflows where id = $1 and tenant_id = $2 limit 1`,
+      `select ${COLS} from workflows where id = $1 and tenant_id = $2 and ${PUBLIC} limit 1`,
       [id, tenantId],
     );
     const r = res.rows[0];
@@ -245,7 +265,7 @@ export class PgWorkflowStore {
            'nodes', (select coalesce(jsonb_agg(n - 'position' order by ord), '[]'::jsonb)
                        from jsonb_array_elements(coalesce(w.graph->'nodes', '[]'::jsonb)) with ordinality as t(n, ord))
          ) as forme
-         from workflows w where w.id = $1 and w.tenant_id = $2
+         from workflows w where w.id = $1 and w.tenant_id = $2 and w.${PUBLIC}
        ),
        neuf as (
          select $4::jsonb as g, jsonb_build_object(
@@ -274,7 +294,7 @@ export class PgWorkflowStore {
          end,
          updated_at = now()
        from sans_positions c, neuf n
-       where w.id = $1 and w.tenant_id = $2
+       where w.id = $1 and w.tenant_id = $2 and w.${PUBLIC}
        returning w.draft_graph is not null as brouillon`,
       [id, tenantId, patch.name ?? null, patch.graph ? JSON.stringify(patch.graph) : null],
     );
@@ -302,7 +322,7 @@ export class PgWorkflowStore {
          published_at = case when draft_graph is not null then now() else published_at end,
          draft_graph = null,
          updated_at = now()
-       where id = $1 and tenant_id = $2
+       where id = $1 and tenant_id = $2 and ${PUBLIC}
        returning ${COLS}`,
       [id, tenantId],
     );
@@ -317,7 +337,7 @@ export class PgWorkflowStore {
    */
   async remove(id: string, tenantId: string): Promise<boolean> {
     try {
-      const res = await this.pool.query(`delete from workflows where id = $1 and tenant_id = $2`, [id, tenantId]);
+      const res = await this.pool.query(`delete from workflows where id = $1 and tenant_id = $2 and ${PUBLIC}`, [id, tenantId]);
       return (res.rowCount ?? 0) > 0;
     } catch (err) {
       if ((err as { code?: string } | null)?.code === '23503') throw new WorkflowUtiliseParLienChaine();
@@ -333,7 +353,7 @@ export class PgWorkflowStore {
   async ensureTestToken(id: string, tenantId: string, token: string): Promise<string | null> {
     const res = await this.pool.query<{ test_token: string }>(
       `update workflows set test_token = coalesce(test_token, $3), updated_at = updated_at
-       where id = $1 and tenant_id = $2 returning test_token`,
+       where id = $1 and tenant_id = $2 and ${PUBLIC} returning test_token`,
       [id, tenantId, token],
     );
     return res.rows[0]?.test_token ?? null;
@@ -346,12 +366,67 @@ export class PgWorkflowStore {
    */
   async findByTestToken(token: string): Promise<WorkflowRow | null> {
     const res = await this.pool.query<Row>(
-      `select ${COLS} from workflows where test_token = $1 limit 1`,
+      `select ${COLS} from workflows where test_token = $1 and ${PUBLIC} limit 1`,
       [token],
     );
     const r = res.rows[0];
     return r ? toRow(r) : null;
   }
+
+  /**
+   * L'identifiant du scénario système de l'espace, créé à sa première utilisation (nom `NOM_SCENARIO_SYSTEME`,
+   * graphe publié vide par défaut, aucun brouillon). Il n'est que l'ancre que `workflow_runs.workflow_id` exige : le
+   * graphe joué est construit à chaque démarrage et figé dans le parcours, rien ne s'écrit jamais sur cette ligne.
+   *
+   * Sans course : la lecture d'abord (le cas de tous les démarrages sauf le premier), puis une insertion arbitrée
+   * par l'index unique partiel `workflows_systeme_uidx`. Deux premiers démarrages simultanés insèrent chacun ; le
+   * second attend la validation du premier, ne fait rien (`do nothing`), et relit la ligne de l'autre. 🔴 Le
+   * prédicat du `on conflict` est celui de l'index, mot pour mot : sans lui, Postgres ne trouve aucun index à
+   * arbitrer et l'insertion lève (`tests/migration-0209.test.ts` compare les deux).
+   */
+  async assurerScenarioSysteme(tenantId: string, systeme: SystemeScenario): Promise<string> {
+    const lire = async (): Promise<string | null> => (await this.pool.query<{ id: string }>(
+      `select id from workflows where tenant_id = $1 and systeme = $2 limit 1`,
+      [tenantId, systeme],
+    )).rows[0]?.id ?? null;
+    const existant = await lire();
+    if (existant !== null) return existant;
+    const code = makeCode('scn', await resolveTenantCode(this.pool, tenantId));
+    const cree = await this.pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name, code, systeme) values ($1, $2, $3, $4)
+       on conflict (tenant_id) where systeme = 'repondeur' do nothing
+       returning id`,
+      [tenantId, NOM_SCENARIO_SYSTEME[systeme], code, systeme],
+    );
+    const id = cree.rows[0]?.id ?? await lire();
+    if (id === null) throw new Error(`scénario système ${systeme} introuvable après sa création (${tenantId})`);
+    return id;
+  }
+
+  /**
+   * Comment la frise et les journaux désignent un scénario, ligne système comprise : c'est la seule lecture de ce
+   * magasin qui la voit, parce qu'un parcours du répondeur qui passe la main à l'équipe doit dire « Répondeur
+   * automatique » et pas un identifiant. Rien d'autre qu'un libellé n'en sort. `null` : inconnu dans cet espace.
+   */
+  async designation(id: string, tenantId: string): Promise<{ nom: string; systeme: SystemeScenario | null } | null> {
+    const res = await this.pool.query<{ name: string; systeme: string | null }>(
+      `select name, systeme from workflows where id = $1 and tenant_id = $2 limit 1`,
+      [id, tenantId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    const systeme = SYSTEMES_SCENARIO.find((x) => x === r.systeme) ?? null;
+    return { nom: r.name, systeme };
+  }
+}
+
+/**
+ * Ce que la frise du panneau Détail dit d'un scénario qui passe la main : « scénario Bienvenue », ou le nom d'un
+ * scénario système (« Répondeur automatique »), ou l'identifiant d'un scénario introuvable (supprimé depuis).
+ */
+export function designationDuScenario(d: { nom: string; systeme: SystemeScenario | null } | null, workflowId: string): string {
+  if (d?.systeme) return NOM_SCENARIO_SYSTEME[d.systeme];
+  return `scénario ${d?.nom ?? workflowId}`;
 }
 
 /**

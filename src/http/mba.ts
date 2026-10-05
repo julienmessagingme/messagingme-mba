@@ -10,7 +10,7 @@ import type { PageDistante } from '../lib/page-distante';
 import { espaceVerifie, nonEmpty } from './scope';
 import { MetaApiError } from '../meta/errors';
 import { calculerCompletion } from '../mba/completion';
-import { appliquerActivation, EtatMetaIllisible, MetaARefuse } from '../mba/activation';
+import { appliquerActivation, EtatMetaIllisible, MetaARefuse, type ActivationDeps } from '../mba/activation';
 
 /**
  * Configuration du Meta Business Agent depuis la console : base de connaissance (informations business, FAQ,
@@ -268,6 +268,26 @@ async function extraire(
   }
 
   return { error: 'source requise : items, csv ou url', code: 400 };
+}
+
+/**
+ * Ce que l'allumage et l'extinction de l'agent de Meta demandent (`appliquerActivation`), construit UNE fois pour ses
+ * deux appelants : l'interrupteur de l'Accueil (`PUT .../mba-activation`, plus bas) et la désignation d'un agent IA
+ * répondeur, qui éteint l'agent de Meta par ce même chemin (`src/repondeur/reglage.ts`, câblé dans `src/index.ts`).
+ * Une seconde construction écrirait un jour chez Meta autrement que l'Accueil.
+ */
+export function activationPour(deps: Pick<MbaRouteDeps, 'repo' | 'meta' | 'reglages' | 'attendre'>): ActivationDeps {
+  return {
+    // Par l'objet, jamais la méthode détachée : une méthode de classe y perdrait son `this`.
+    numeroDuTenant: (t) => deps.repo.getTenantPhoneNumberId(t),
+    eligible: async (t, pn) => (await deps.meta.mbaClientForTenant(t)).isEligible(pn),
+    // `ecrireRollout` relit puis n'écrit que `rollout` et l'audience, dans l'ordre que Meta prescrit : un modèle
+    // typé fermé effacerait `never_say_phrases`, `followup` et tout champ que Meta ajouterait.
+    ecrireChezMeta: async (t, pn, enabled) => {
+      await ecrireRollout(await deps.meta.mbaClientForTenant(t), pn, enabled, { attendre: (ms) => deps.attendre(ms) });
+    },
+    ecrireDrapeau: (t, enabled) => deps.reglages.setMbaEnabled(t, enabled),
+  };
 }
 
 export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Guard): void {
@@ -844,17 +864,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const b = (req.body ?? {}) as { enabled?: unknown };
     if (typeof b.enabled !== 'boolean') return reply.code(400).send({ error: 'enabled booléen requis' });
     try {
-      const r = await appliquerActivation({
-        // Par l'objet, jamais la méthode détachée : une méthode de classe y perdrait son `this`.
-        numeroDuTenant: (t) => deps.repo.getTenantPhoneNumberId(t),
-        eligible: async (t, pn) => (await deps.meta.mbaClientForTenant(t)).isEligible(pn),
-        // `ecrireRollout` relit puis n'écrit que `rollout` et l'audience, dans l'ordre que Meta prescrit : un modèle
-        // typé fermé effacerait `never_say_phrases`, `followup` et tout champ que Meta ajouterait.
-        ecrireChezMeta: async (t, pn, enabled) => {
-          await ecrireRollout(await deps.meta.mbaClientForTenant(t), pn, enabled, { attendre: (ms) => deps.attendre(ms) });
-        },
-        ecrireDrapeau: (t, enabled) => deps.reglages.setMbaEnabled(t, enabled),
-      }, tenant, b.enabled);
+      const r = await appliquerActivation(activationPour(deps), tenant, b.enabled);
       return reply.code(200).send(r);
     } catch (err) {
       /**

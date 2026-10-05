@@ -19,6 +19,13 @@ export const DEFAULT_BUSINESS_HOURS: BusinessHours = {
 
 export interface TenantSettings {
   mbaEnabled: boolean;
+  /**
+   * L'agent IA répondeur de l'espace (migration 0209) : il répond à tout message que ni un scénario, ni un mot-clé,
+   * ni un humain ne tient (`src/repondeur/`). `null` = le comportement d'avant : l'agent de Meta s'il est allumé,
+   * sinon personne. 🔴 Exclusif de `mbaEnabled`, tenu par la base (`tenant_settings_repondeur_une_voix_chk`) : deux
+   * répondeurs ne coexistent jamais.
+   */
+  repondeurAgentId: string | null;
   /** Fuseau IANA du tenant (ex. 'Europe/Paris'). Défaut serveur si non réglé. Base de NOW / weekday / horaires. */
   timezone: string;
   /** Heures d'ouverture par jour ('0'..'6', 0 = dimanche). Défaut serveur si non réglé. */
@@ -98,7 +105,7 @@ export type MbaHandoffMode = 'always' | 'business_hours' | 'never';
 type ColonneReglage =
   | 'hubspot_actif' | 'salesforce_actif' | 'mba_relais_cle_id' | 'agents_peuvent_prendre' | 'mention_ia_frequence'
   | 'optout_request_id' | 'mba_handoff_mode' | 'agent_transfert_mode' | 'timezone' | 'business_hours'
-  | 'mba_enabled' | 'control_handback_seconds' | 'hubspot_lists_enabled';
+  | 'control_handback_seconds' | 'hubspot_lists_enabled' | 'repondeur_agent_id';
 
 /** Réglages par espace, un upsert ciblé par réglage. */
 export class PgTenantSettingsStore {
@@ -127,6 +134,8 @@ export class PgTenantSettingsStore {
     const r = res.rows[0];
     return {
       mbaEnabled: r?.mba_enabled ?? false,
+      // Une base en retard ne rend pas la colonne (`select *`) : personne n'est répondeur, le comportement d'avant.
+      repondeurAgentId: typeof r?.repondeur_agent_id === 'string' ? r.repondeur_agent_id : null,
       hubspotListsEnabled: r?.hubspot_lists_enabled ?? false,
       campaignsPaused: r?.campaigns_paused ?? false,
       autoRetryEnabled: r?.auto_retry_enabled ?? false,
@@ -239,8 +248,44 @@ export class PgTenantSettingsStore {
     await this.poser(tenantId, 'business_hours', JSON.stringify(hours));
   }
 
+  /**
+   * 🔴 LE SEUL ÉCRIVAIN DE `mba_enabled` (ses appelants : les deux interrupteurs de `src/http/mba.ts`, les réglages,
+   * l'assistant de l'agent de Meta). Allumer remet le répondeur IA à `null` DANS LA MÊME INSTRUCTION : le geste qui
+   * allume l'un éteint l'autre, et le CHECK d'une seule voix (0209) ne voit jamais deux répondeurs, donc jamais de
+   * 500. Éteindre ne touche pas au répondeur. Hors de `poser`, qui n'écrit qu'une colonne.
+   */
   async setMbaEnabled(tenantId: string, enabled: boolean): Promise<void> {
-    await this.poser(tenantId, 'mba_enabled', enabled);
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, mba_enabled, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set
+         mba_enabled = excluded.mba_enabled,
+         repondeur_agent_id = case when excluded.mba_enabled then null else tenant_settings.repondeur_agent_id end,
+         updated_at = now()`,
+      [tenantId, enabled],
+    );
+  }
+
+  /**
+   * Désigne (ou retire, avec `null`) l'agent IA répondeur. 🔴 La route vérifie que l'agent est de cet espace et actif,
+   * et éteint l'agent de Meta AVANT (`src/repondeur/reglage.ts`) : la clé étrangère ne refuse qu'un agent inexistant,
+   * et le CHECK d'une seule voix lève 23514 si l'agent de Meta est allumé.
+   */
+  async setRepondeur(tenantId: string, agentId: string | null): Promise<void> {
+    await this.poser(tenantId, 'repondeur_agent_id', agentId);
+  }
+
+  /**
+   * Retire le répondeur SI c'est cet agent : il vient de quitter le statut actif (`modifierAgent`). Une seule
+   * instruction gardée : un autre agent désigné entre-temps n'est pas touché. Rend `true` si l'espace a perdu son
+   * répondeur.
+   */
+  async oublierRepondeurSi(tenantId: string, agentId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update tenant_settings set repondeur_agent_id = null, updated_at = now()
+        where tenant_id = $1 and repondeur_agent_id = $2`,
+      [tenantId, agentId],
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 
   /**

@@ -13,11 +13,18 @@ import { journaliser } from '../lib/journal';
  * l'avance d'un scénario (texte et boutons), les automations, la remise à l'agent quand personne ne suit, le routage
  * publicitaire, l'arrivée publicitaire, et la correction du détenteur, qui n'écrit plus `mba` pour ce message.
  *
- * Contact présent sur la liste : rien ne change, l'agent parle. Espace sans agent allumé : rien ne change non plus,
+ * Contact présent sur la liste : rien ne change, l'agent parle. Espace sans répondeur : rien ne change non plus,
  * un `standby` y veut dire qu'une autre application tient le fil. Le champ reçu reste lisible (`fieldRecu`).
+ *
+ * Avec un agent IA répondeur (lot 5), l'agent de Meta est éteint mais Meta peut croire encore tenir le fil d'un
+ * contact qu'il servait avant la désignation : son message arrive en `standby`, et c'est le répondeur IA qui lui doit
+ * la réponse. Sinon il serait perdu, puisque toutes nos étapes ignorent un `standby`.
  */
 export interface ListeALArrivee {
-  /** L'agent de Meta est-il allumé pour cet espace (`tenant_settings.mba_enabled`) ? */
+  /**
+   * Un répondeur tient-il les messages de cet espace : l'agent de Meta allumé, ou un agent IA désigné
+   * (`unRepondeurRepond`, `src/inbox/fil.ts`) ?
+   */
   agentAllume(tenantId: string): Promise<boolean>;
   /** Les contacts de `waIds` présents sur la liste de l'agent, en une lecture (`ListeDeLAgent.presents`). */
   presents(tenantId: string, waIds: readonly string[]): Promise<Set<string>>;

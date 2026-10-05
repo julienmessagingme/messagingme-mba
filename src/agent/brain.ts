@@ -67,6 +67,12 @@ export interface ContexteTourAgent {
   waId: string;
   appelsDejaFaits: number;
   coutDejaMicroEur: number;
+  /**
+   * L'ouverture de la session (ISO). La mémoire du tour déborde la session (`MEMOIRE_JOURS`, `src/agent/run-turn.ts`) ;
+   * l'annonce d'IA « une fois par session » ne compte que les entrées datées de ce moment ou après. Absente (le bac à
+   * sable, dont la conversation entière EST la session) : tout le transcript compte.
+   */
+  sessionOuverteLe?: string;
 }
 
 export interface AgentBrain {

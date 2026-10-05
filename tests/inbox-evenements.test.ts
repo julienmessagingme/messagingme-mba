@@ -73,6 +73,7 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
     'async setAssignee(',
     'async prendreSiLibre(',
     'async ouvrirUneDemande(',
+    'async noterSortieAgent(',
   ])('%s', (signature) => {
     const c = corps(signature);
     const requetes = compte(c, 'this.pool.query');

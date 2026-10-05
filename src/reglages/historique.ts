@@ -7,10 +7,13 @@
  * Module pur ; l'implémentation Postgres vit dans `./historique.pg.ts`.
  */
 
-/** Ce sur quoi une ligne porte (`element` est un `text` libre en base). */
+/**
+ * Ce sur quoi une ligne porte (`element` est un `text` libre en base). `repondeur` : l'agent devient (ou cesse d'être)
+ * le répondeur de l'espace (`src/repondeur/reglage.ts`).
+ */
 export const ELEMENTS = [
   'business_info', 'faq', 'competence', 'site', 'fichier', 'outil', 'activation',
-  'fiche_agent', 'connaissance',
+  'fiche_agent', 'connaissance', 'repondeur',
 ] as const;
 export type Element = (typeof ELEMENTS)[number];
 

@@ -121,7 +121,7 @@ describe('le mode de transfert de l’agent IA', () => {
         reglages: {
           ...reglagesDepInertes,
           get: async () => ({
-            mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+            mbaEnabled: false, repondeurAgentId: null, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
             controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false,
             hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null,
             timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,

@@ -171,7 +171,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Automations** | déclencher un scénario sur un événement | `src/automation/` | `/automations` | `automations`, `automation_fires` | `automation-event`, `date-sweep` |
 | **Inbox** | la conversation, son détenteur, son affectation, l'archivage | `src/inbox/` | `/inbox` | `conversations`, `conversation_messages` | `control-sweep` |
 | **Traduction** | lire les entrants dans sa langue, traduire un sortant avant l'envoi | `src/traduction/` | `/inbox` | `conversation_messages` (`traduction`), `contacts` (`langue_detectee`) | |
-| **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils | `src/agent/` | `/agents` | `agents`, `agent_tools`, `agent_tool_consommateurs`, `agent_sessions`, `agent_knowledge`, `agent_credits` | `agent-turn` |
+| **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils, ou le répondeur de l'espace (§ 4.4) | `src/agent/`, `src/repondeur/` | `/agents` | `agents`, `agent_tools`, `agent_tool_consommateurs`, `agent_sessions`, `agent_knowledge`, `agent_credits`, `repondeur_alertes_credit` | `agent-turn` |
 | **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main | `src/mba/` | `/mba` | `tenant_settings` | `handoff-sweep` |
 | **Canal RCS** | deuxième canal, agent de marque chez smsmode | `src/rcs/`, `src/channels-me/` | `/rcs-messages`, `/chaine` | `rcs_agents`, `rcs_media` | |
 | **Canal e-mail** | troisième canal, SMTP par workspace | `src/email/` | `/email-templates` | `email_accounts`, `email_templates` | |
@@ -223,9 +223,12 @@ ABSENT de la liste de l'agent (`requalifierLesStandby`, `src/webhooks/standby-ho
 réglages et une de la liste par espace et par lot, qui lève en échec et fait rejouer le job). L'avance (texte et
 bouton), les automations, la remise « personne ne suit », le routage et l'arrivée publicitaires le traitent
 comme un message ordinaire, et la correction du détenteur n'écrit pas `mba`. Le champ reçu reste sur l'entrant
-(`fieldRecu`) et au journal (`standby_hors_liste`). Contact PRÉSENT sur la liste, ou agent éteint : le
-`standby` reste un `standby`, et la garde `field !== 'messages'` (automations, avance, jeton de test) le fait
-taire, l'agent lui parlant. `WebhookJobDeps` rend `listeALArrivee` obligatoire avec `inbox`.
+(`fieldRecu`) et au journal (`standby_hors_liste`). Contact PRÉSENT sur la liste, ou espace sans répondeur (ni
+agent de Meta allumé, ni agent IA désigné, `unRepondeurRepond`, `src/inbox/fil.ts`) : le `standby` reste un
+`standby`, et la garde `field !== 'messages'` (automations, avance, jeton de test) le fait taire, l'agent lui
+parlant. Avec un agent IA répondeur, l'agent de Meta est éteint, mais Meta peut croire encore tenir le fil d'un
+contact qu'il servait : son `standby` est requalifié comme les autres, et c'est le répondeur IA qui lui répond.
+`WebhookJobDeps` rend `listeALArrivee` obligatoire avec `inbox`.
 
 ⚠️ **ET ON N'EN DÉDUIT PLUS LE DÉTENTEUR** (2026-09-15). `accorderLeDetenteur` écrivait `app_workflow` sur
 chaque entrant qu'on croyait tenu par l'agent, donc sur chaque message de chaque client : c'est la valeur que
@@ -264,7 +267,8 @@ Meta -> POST /webhooks/meta (mba-api)
              et le routage publicitaire peut n'en autoriser QU'UNE, ou aucune
           4. rendu des fils pris pour rien (le routage a pris le fil, rien n'a démarré)
           5. avance de scénario     (le contact a répondu, sur ce qui reste)
-          6. remise à l'agent de Meta quand personne ne suit (règle 2 du mode liste)
+          6. remise au répondeur de l'espace quand personne ne suit : l'agent de Meta
+             (règle 2 du mode liste), ou l'agent IA désigné (§ 4.4)
 ```
 
 🔴 **LE ROUTAGE PUBLICITAIRE EST ENCADRÉ PAR SES DEUX VOISINS, ET C'EST LA MOITIÉ DE SON COMPORTEMENT.**
@@ -397,11 +401,12 @@ un message rapide, une question ou un formulaire seront refusés. Cette règle a
 
 🔴 **Un démarrage de parcours a un TYPE, et le type décide de tous ses réglages** (`src/workflow/lancements.ts`).
 `TypeDeLancement` est une liste fermée : Inbox, agent de Meta (scénario, bloc), automatisme (ordinaire, chaîne,
-publicité ou widget), lien de test, campagne (scénario, bloc). `POLITIQUE_DE_LANCEMENT` donne pour chacun la
-reprise du fil (`non` : arrêté par un fil tenu ; `oui` : repris même à un opérateur ; `sauf_operateur` : repris à
+publicité ou widget), lien de test, campagne (scénario, bloc), répondeur. `POLITIQUE_DE_LANCEMENT` donne pour chacun
+la reprise du fil (`non` : arrêté par un fil tenu ; `oui` : repris même à un opérateur ; `sauf_operateur` : repris à
 l'agent de Meta seulement), la publication des étiquettes posées (jamais sur un chemin de masse), le graphe joué
-(publié, fourni par l'appelant, ou brouillon figé pour le seul lien de test) et la garde de fenêtre (gardée, selon
-la preuve de l'appelant, levée sur un bloc de départ d'automation, levée). `WorkflowExecutor.demarrer` lit la table
+(publié ; fourni par l'appelant ; brouillon figé pour le seul lien de test ; fourni et figé pour le seul répondeur)
+et la garde de fenêtre (gardée, selon la preuve de l'appelant, levée sur un bloc de départ d'automation, levée). Qu'un
+graphe se fige ne se décide qu'à un endroit, `grapheAFiger`, que l'exécuteur lit à la création du parcours. `WorkflowExecutor.demarrer` lit la table
 lui-même : aucun câblage ne pose plus de réglage brut, il choisit un type et passe par l'entrée `creerLancements`,
 construite par `buildWorkflowRuntime` sur l'exécuteur du processus (l'API et le worker ont donc la même). Une
 automation reçoit son type de `typeDeLancementDe` (`src/automation/match.ts`), sur son propriétaire NOMMÉ ; le
@@ -434,8 +439,45 @@ bloc agent atteint -> executor ouvre une session -> job `agent-turn`
        si appel d'outil : executor d'outil (validation, injection, budget de temps, journal, troncature)
          résultat encadré par `blocResultatOutil`, jamais concaténé au prompt
        jusqu'à une SORTIE nommée, un plafond, ou une erreur
-   -> le parcours repart par le handle `sortie:<code>`
+   -> le parcours repart par le handle `sortie:<code>`, et la frise note la règle (`sortie_agent`)
 ```
+
+🔴 **CE QUE LIT CHAQUE TOUR : LES TRENTE DERNIERS MESSAGES DU CONTACT, SUR TRENTE JOURS**, pour tous les agents,
+quelle que soit la conversation (`MEMOIRE_JOURS`, `src/agent/run-turn.ts` ; `MESSAGES_DE_CONTEXTE`, `src/worker.ts` ;
+`PgInboxStore.messagesDepuis`, qui garde les plus récents et les rend dans l'ordre). La borne n'est pas l'ouverture
+de la session : le message qui déclenche un parcours est enregistré AVANT qu'elle s'ouvre, et le premier tour doit
+le lire. Chaque entrée porte son instant (`at`) : l'annonce d'IA « une fois par session » ne compte que les sorties
+datées de l'ouverture de la session ou après (`dejaParle`, `src/agent/brain.gateway.ts` ; le tour passe
+`sessionOuverteLe`), sinon un modèle de campagne de la veille la ferait taire.
+
+🔴 **LE RÉPONDEUR DE L'ESPACE** (`src/repondeur/`, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) :
+un agent IA désigné répond à tout message entrant que ni un scénario, ni un mot-clé, ni un humain ne tient, sans
+scénario construit par le client. Les invariants :
+- **Une seule voix** (`tenant_settings.repondeur_agent_id`, CHECK d'exclusion avec `mba_enabled`). Le geste
+  (`choisirRepondeur`, `src/repondeur/reglage.ts`, partagé par `PUT /tenants/:tenantId/agents/repondeur`, admins
+  seulement, et l'outil MCP `set_default_responder`, qui exige une personne) refuse un agent absent ou inactif et une
+  instance sans modèle ; agent de Meta allumé, il l'éteint par le chemin de l'Accueil (`activationPour`,
+  `src/http/mba.ts`), puis retire de sa liste TOUS les contacts (`ListeDeLAgent.toutRetirer`, par paquets, un refus
+  compté sans arrêter les autres), PUIS écrit le réglage, et laisse sa ligne `repondeur` dans l'historique des
+  réglages. Un agent qui quitte le statut actif cesse d'être le répondeur (`modifierAgent`, `oublierRepondeur`).
+  `GET /agents` et `list_agents` disent lequel l'est.
+- **Un scénario système caché par espace pour ancre** (§ 5), et un graphe construit à CHAQUE démarrage depuis la
+  fiche de l'agent (`grapheDuRepondeur`, `src/repondeur/graphe.ts`), figé dans le parcours (type de lancement
+  `repondeur`, `fourni_fige`). Ses règles d'arrêt, `humain` et `timeout` mènent à une fin silencieuse ; `echec`,
+  `plafond` et `sans_source` n'ont pas d'arête, donc la conversation passe à l'équipe (`boutonSansSuite`). 🔴 `humain`
+  est câblée : non câblée, le moteur passerait la main pendant la sortie, AVANT l'escalade de l'agent, dont la bascule
+  rendrait alors `false`, et la dernière phrase de l'agent serait jetée.
+- **Le démarreur** (`creerDemarreurRepondeur`, `src/repondeur/demarrer.ts`) lit l'agent (actif) et le solde AVANT de
+  démarrer : à sec, rien ne démarre (ni parcours, ni session), la conversation passe à l'équipe et l'alerte part. Le
+  parcours naît en ayant reçu le message déclencheur (`last_message_id`) : redélivré, il n'enfile pas un second tour.
+  Le contrôle du fil se construit avant l'exécuteur : le socle branche le démarreur par une liaison tardive qui LÈVE
+  tant qu'elle n'est pas faite (`src/socle.ts`, tenue par `tests/socle.test.ts`).
+- **L'alerte de crédit épuisé** (`src/repondeur/alerte-credit.ts`) : un e-mail Resend aux admins actifs de l'espace,
+  avec le lien de recharge, une fois par jour du fuseau de l'espace au plus. 🔴 Le « une par jour » est la clé
+  primaire de `repondeur_alertes_credit` : seule l'insertion qui prend la journée envoie, quelle que soit la copie.
+  Le démarreur la déclenche, et le tour de tout agent qui sort faute de CRÉDIT (le solde, ou le plafond de la clé
+  chez le Gateway), jamais sur un plafond de conversation. Sans Resend : journalisée, rien ne part, rien n'échoue.
+- RCS : hors périmètre, le répondeur ne répond qu'aux entrants WhatsApp.
 
 ⚠️ **LE FOURNISSEUR IA N'EST PAS ENCORE INTERCHANGEABLE.** `GatewayChatClient`, le catalogue, le coût rendu
 par le Gateway et les clés par espace sont spécifiques à Vercel. La cible prévoit une route Azure OpenAI
@@ -696,8 +738,10 @@ l'outil qui termine sans écrire de texte à côté, et le tour s'arrête sur l'
 production et au bac à sable, `terminerAvec`, `src/agent/resolvers/mba.ts`) le rend rogné en `dernierMessage`,
 absent s'il est vide. Le cerveau (`texteDeSortie`, `src/agent/brain.gateway.ts`) envoie le texte de la réponse qui
 porte l'appel s'il n'est pas vide, sinon ce message, sinon rien ; un message qui porte nos délimiteurs est écarté
-et alerté, la sortie reste. `run-turn` l'envoie avant de faire sortir le parcours, comme tout texte de décision,
-et le bac à sable le montre et l'archive. ⚠️ Le texte écrit à côté d'un appel d'outil n'est, lui, pas passé à
+et alerté, la sortie reste. 🔴 Quand l'annonce d'IA est due à ce tour, sa phrase est ajoutée DEVANT ce message, sauf
+s'il la porte déjà : la consigne système ne couvre que le texte que le modèle écrit lui-même, que rien ne touche.
+`run-turn` l'envoie avant de faire sortir le parcours, comme tout texte de décision, et le bac à sable le montre
+et l'archive. ⚠️ Le texte écrit à côté d'un appel d'outil n'est, lui, pas passé à
 `ressembleAUnBlocOutil` : seule une réponse sans appel l'est.
 
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
@@ -1022,16 +1066,26 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 - `workflows` (`graph jsonb`, plus un brouillon : l'enregistrement automatique n'atteint pas les contacts,
   seul « Publier » met en ligne), `workflow_runs` (`status` ∈ waiting | sleeping | inbox | done, `resume_at`,
-  `channel`, `last_message_id` pour la dédup d'avance), `workflow_node_events`.
+  `channel`, `last_message_id` pour la dédup d'avance, posé dès la naissance quand le lancement nomme le message
+  qui le déclenche), `workflow_node_events`.
+- 🔴 **UN SCÉNARIO SYSTÈME N'EXISTE POUR AUCUNE LECTURE PUBLIQUE** (`workflows.systeme`, liste fermée
+  `SYSTEMES_SCENARIO`, une ligne par espace par l'index unique partiel `workflows_systeme_uidx`). Le seul est
+  `repondeur`, l'ancre des parcours du répondeur de l'espace, nommée « Répondeur automatique », graphe vide. Le
+  filtre `systeme is null` est posé DANS le magasin (`PgWorkflowStore`), sur chacune de ses lectures et écritures
+  publiques : listes, détail, résolution `/v1` par nom ou code, catalogue `/v1`, outils MCP et de l'agent de Meta,
+  jeton de test, modification, publication, suppression. Seules `assurerScenarioSysteme` (la crée ou la rend, sans
+  course : son `on conflict` porte le prédicat exact de l'index) et `designation` (la frise et le journal disent
+  « Répondeur automatique ») la voient. `tests/workflow-store-systeme.test.ts` inventorie les méthodes de la classe :
+  une méthode ajoutée doit y être rangée, filtrée ou non.
 - 🔴 **Un run endormi est CLOS par le démarrage suivant, pas préservé.** `closeActiveByWaId` couvre `waiting`
   ET `sleeping` et efface `resume_at`. Sans les deux, une automation lancerait un second parcours en parallèle
   et les deux écriraient au réveil.
 - 🔴 **UN PARCOURS JOUE LE MÊME GRAPHE DU DÉBUT À LA FIN**, et un seul point de passage le décide :
   `grapheDuRun(run, lirePublie)` (`src/workflow/executor.ts`), lu par les TROIS reprises (`resume`,
   `runEnAttenteSur`, `advance`). Il rend `workflow_runs.graphe_fige` s'il y en a un, le publié sinon.
-  `graphe_fige` est `null` pour tout parcours réel : seul le LIEN DE TEST le pose, parce qu'il est le seul
-  chemin d'exécution à jouer le brouillon. La poser par campagne recopierait le même objet une fois par
-  destinataire. La colonne est REQUISE dans `WorkflowRunRow` et dans `DueRun`, donc le compilateur oblige
+  `graphe_fige` est `null` pour tout parcours de scénario du client : le LIEN DE TEST le pose, parce qu'il est le
+  seul chemin d'exécution à jouer le brouillon, et le RÉPONDEUR, dont le graphe est construit au démarrage et que
+  sa ligne de scénario ne porte pas. La poser par campagne recopierait le même objet une fois par destinataire. La colonne est REQUISE dans `WorkflowRunRow` et dans `DueRun`, donc le compilateur oblige
   chaque lecture de parcours à la transporter, balayage des endormis compris.
 - 🔴 **UN CONTACT RÉEL NE TOMBE JAMAIS DANS UN BROUILLON.** `grapheEditable(wf)` n'apparaît qu'à UN endroit
   des chemins d'exécution : l'entrée des lancements (`src/workflow/lancements.ts`), pour le seul type dont la
@@ -1046,7 +1100,8 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   (migration 0192, le journal que lit le panneau Détail de l'Inbox).
 - 🔴 **LE JOURNAL DES ÉVÉNEMENTS D'UNE CONVERSATION** (`conversation_evenements`, `src/inbox/evenements.ts`) :
   assignée, désassignée, prise à l'agent de Meta, rendue à l'agent, passée à l'équipe par l'agent, traitée,
-  archivée, signalée et leurs inverses, rouverte par un message du contact. Lu par
+  archivée, signalée et leurs inverses, rouverte par un message du contact, et terminée par un agent IA
+  (`sortie_agent`, sa règle d'arrêt dans la cause, écrit par `sortirDuBlocAgent`). Lu par
   `GET /tenants/:tenantId/conversations/:conversationId/detail` (`PgInboxStore.detailConversation`), les 50
   derniers, sous la visibilité de `src/inbox/assignment.ts` (`visibiliteSql`) : un agent ne lit que les siennes
   et le pot commun, sinon 404. Deux règles d'écriture, tenues par `PgInboxStore` et par lui seul :
@@ -1252,6 +1307,16 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   inverse, une première réponse de campagne « Inbox » arrivée en `standby` était prise pour l'équipe, puis réécrite
   `mba` par ce même `standby`, alors que Meta venait de nous céder le fil ; la prise n'ayant lieu qu'une fois, rien
   ne la refaisait.
+- 🔴 **LE RÉPONDEUR IA PASSE PAR LA MÊME REMISE QUE L'AGENT DE META.** Avec un agent IA désigné, la remise
+  « personne ne suit » garde les mêmes gardes, dans le même ordre (délai de l'équipe, parcours en attente, fil de
+  test, contact désabonné ou bloqué, numéro), puis démarre l'agent IA (`DepsControleDuFil.repondeur`, REQUIS) au
+  lieu de confier à Meta. Un fil de l'équipe dont le délai est écoulé revient d'abord à `app_workflow` (le
+  lancement du répondeur ne le prend jamais à un opérateur). Un message redélivré par Meta ne démarre rien. Si
+  l'agent ne peut pas répondre (crédit épuisé, modèle absent, agent inactif, lancement refusé), la conversation
+  passe à l'équipe avec une demande. Les autres gestes ne changent pas : `mba_enabled` est faux par construction,
+  donc « Rendre la main », la fin de parcours et le balayage laissent le fil à `app_workflow`, et le prochain
+  message relance l'agent. Seul le message « à côté » d'un parcours qui finit, que la fin de parcours transmettait à
+  l'agent de Meta, va au répondeur IA (`WorkflowExecutorDeps.confierAuRepondeur`, par cette même remise).
 - 🔴 **L'AGENT DE META EST TOUJOURS EN MODE LISTE, ET C'EST LA PLATEFORME QUI TIENT LA LISTE** (mesuré le
   2026-09-29). Un contact absent de la liste n'entend jamais l'agent, même quand Meta lui a rendu le fil : c'est
   le seul interrupteur par contact que Meta nous donne. L'action `take` de `thread_control` ne nous rendait rien
@@ -1351,6 +1416,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | Colonne | Ce qu'elle gouverne |
 |---|---|
 | `mba_enabled` | l'agent Meta Business Agent est actif sur cet espace |
+| `repondeur_agent_id` | l'agent IA répondeur de l'espace (§ 4.4), `null` = aucun. 🔴 Exclusif de `mba_enabled`, par le CHECK `tenant_settings_repondeur_une_voix_chk` ; le seul écrivain de `mba_enabled` (`setMbaEnabled`) le remet à `null` en allumant, dans la même instruction. Clé étrangère en `on delete set null` : supprimer l'agent laisse l'espace sans répondeur |
 | `hubspot_lists_enabled` | l'import de contacts HubSpot (pas les étapes de deal) |
 | `hubspot_actif` | l'interrupteur HubSpot de l'espace (0179, Paramètres > Intégrations) : allumé, le bloc HubSpot de l'Accueil s'affiche, numéro ou pas. `false` par défaut ; la reprise de 0179 l'a allumé pour les espaces reliés à un portail (`mmhs.tenant_portals` joint à `mmhs.portals`, la lecture de `getHubspotPortal`), gardée par `to_regclass` parce qu'une base sans connecteur n'a pas ce schéma. 🔴 **On ne l'éteint pas tant qu'un portail est relié** : `PATCH /settings/hubspot-actif` rend 409, sinon les analyses continueraient de partir vers HubSpot depuis un espace où il paraît éteint. 🔴 Et une lecture du portail en ÉCHEC refuse l'extinction (503, « réessayez »), elle ne vaut jamais « pas relié » ici : seul un schéma du connecteur absent (`42P01`) rend `false` dans le câblage (`src/index.ts`), toute autre erreur remonte, et seul l'affichage (`GET /settings`) la rattrape en « pas relié ». On délie d'abord (« Déconnexion complète »), et un espace SANS numéro le fait par `POST /hubspot/deconnexion`, la même fonction que la porte d'un numéro. ⚠️ Il ne gouverne PAS le masquage des fonctions HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`). ⚠️ Côté console, `undefined` (API plus ancienne) n'est pas `false` : `affichageHubspotAccueil` (`web/lib/hubspot-actif.ts`) garde alors l'ancien comportement |
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
@@ -1939,8 +2005,8 @@ l'activer, et d'ouvrir une recharge du crédit.
   lèverait. `tests/agent-connaissance-texte.test.ts` compare les deux chemins.
 - **Les bornes de chaque saisie de la console sont annoncées dans le schéma de l'outil**, lues dans son Zod : l'extracteur
   partagé `tests/aide/bornes-zod.ts`, appliqué par `tests/mcp-agent.test.ts` (et par `tests/mcp-widgets.test.ts`).
-- ⚠️ Un agent créé et activé par Claude ne répond à aucun client tant qu'un scénario publié ne le contient pas : les
-  descriptions des outils le disent, jusqu'au répondeur par défaut (lot 5).
+- ⚠️ Un agent créé et activé par Claude ne répond à aucun client tant qu'un scénario publié ne le contient pas, ou
+  qu'il n'est pas désigné répondeur de l'espace (`set_default_responder`) : les descriptions des outils le disent.
 
 🔴 **LE CORS EST EN LISTE BLANCHE ET SANS `credentials`, et les deux comptent.** `CORS_ORIGINS` refuse `*` AU
 CHARGEMENT de la configuration. Jamais `credentials: true` : la session voyage dans un en-tête
@@ -2947,6 +3013,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/pubs/publicites.pg.ts` -> `coutParPub` | 🔴 le coût par engagé des publicités sur une PÉRIODE (carte Coûts) : la dépense des jours de la période (`pubs_depense_jour`, 0198) et les PERSONNES arrivées par la campagne dans la période. Un engagé a cliqué PUIS écrit, ce n'est pas un prospect qualifié. Les jours sont ceux du compte publicitaire, les arrivées bornées à l'heure de Paris |
 | `src/crm/transition-consentement.ts` | 🔴 LA transition du consentement WhatsApp d'une fiche : qui lève un STOP (`LEVE_UN_STOP`, par autorité typée), ce que deviennent statut, `opt_out_at` et `opt_in_source`, et qui est passé à `opted_out` (à annoncer). Les six écritures de `PgContactStore` la composent (`affectationsDUpsert`, `ecritureDuConsentement`) ; une septième copie divergerait, comme deux l'ont fait (738a7c3d) |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
+| `src/repondeur/reglage.ts` -> `choisirRepondeur` | 🔴 le seul geste qui désigne ou retire le répondeur de l'espace, pour la console et le MCP : agent actif et modèle exigés, agent de Meta éteint puis sa liste vidée AVANT d'écrire le réglage, ligne d'historique |
 | `src/workflow/lancements.ts` -> `creerLancements`, `POLITIQUE_DE_LANCEMENT` | 🔴 le seul chemin pour démarrer un parcours : un TYPE de lancement (liste fermée) et sa politique (reprise du fil, publication des étiquettes, graphe joué, garde de fenêtre), lue par `WorkflowExecutor.demarrer`. Un câblage choisit un type, jamais un réglage ; `tests/workflow-lancements.test.ts` exécute la table |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |
 | `src/crm/render.ts` -> `escapeHtml` | l'échappement HTML du dépôt (gabarits d'e-mail, pages d'erreur des liens tracés) |

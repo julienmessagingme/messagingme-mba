@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { processInbound, type DepsEntrants, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
 import { creerControleDuFil } from '../src/inbox/fil';
 import { creerListeDeLAgent } from '../src/mba/liste';
-import { DELAI_REPRISE_DEFAUT_MS, bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
+import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
 import { aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop, jamaisBloque, jamaisDesabonne } from './consentement';
 
@@ -168,7 +168,8 @@ function monterBouton(o: {
   const liste = creerListeDeLAgent({ store: table.store, clientMba: async () => client, attendre: async () => {} });
   const fil = creerControleDuFil({
     depot: memoire.depot,
-    reglages: { get: async () => ({ mbaEnabled: true, controlHandbackSeconds: null }) },
+    reglages: { get: async () => ({ mbaEnabled: true, repondeurAgentId: null, controlHandbackSeconds: null }) },
+    repondeur: aucunRepondeur,
     delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
     parcours: { findWaitingByWaId: async () => null },
     numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? '1234840649713976' : o.numero) },

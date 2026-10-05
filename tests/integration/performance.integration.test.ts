@@ -8,7 +8,7 @@ import { addDays, todayParis } from '../../src/stats/range';
 import type { DemandeBrute } from '../../src/stats/performance';
 import { CAUSE_REOUVERTURE, creerControleDuFil } from '../../src/inbox/fil';
 import { creerListeDeLAgent } from '../../src/mba/liste';
-import { DELAI_REPRISE_DEFAUT_MS, listeEnMemoire, metaFactice } from '../banc-du-fil';
+import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, listeEnMemoire, metaFactice } from '../banc-du-fil';
 import { jamaisBloque, jamaisDesabonne } from '../consentement';
 
 /**
@@ -383,7 +383,8 @@ describe.skipIf(!url)('les demandes du Quantitatif > Performance', () => {
     const faux = metaFactice();
     const fil = () => creerControleDuFil({
       depot: inbox,
-      reglages: { get: async () => ({ mbaEnabled: true, controlHandbackSeconds: null }) },
+      reglages: { get: async () => ({ mbaEnabled: true, repondeurAgentId: null, controlHandbackSeconds: null }) },
+      repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },
       numeros: { getTenantPhoneNumberId: async () => 'pn-itest' },

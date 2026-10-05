@@ -1,6 +1,6 @@
 import { jamaisDesabonne } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
-import { runTurn } from '../src/agent/run-turn';
+import { MEMOIRE_JOURS, runTurn } from '../src/agent/run-turn';
 import { creerCerveauGateway } from '../src/agent/brain.gateway';
 import type { ReponseChat } from '../src/agent/llm/chat-client';
 import type { OutilDefini, ToolCatalog } from '../src/agent/catalog';
@@ -11,6 +11,7 @@ import type { FicheAgent } from '../src/agent/agent-store';
 import { FakeAgentBrain } from './fake-agent-brain';
 import type { DecisionAgent } from '../src/agent/brain';
 import { TourInterrompu } from '../src/agent/brain';
+import { PlafondModeleAtteint } from '../src/llm/errors';
 import type { AgentSession } from '../src/agent/session-store';
 import type { AgentTurnJob } from '../src/agent/turn-job';
 import { outilMaison, paramsInitiaux } from '../src/agent/outils-maison';
@@ -246,15 +247,39 @@ describe('la MÉMOIRE du tour', () => {
     expect(vus[0]).toEqual([{ role: 'contact', texte: 'Bonjour' }, { role: 'agent', texte: 'Bonjour !' }]);
   });
 
-  it('🔴 elle est bornée par l’OUVERTURE de la session, pas par tout l’historique du contact', async () => {
-    // Un contact qui écrit depuis des mois ferait sinon payer tout son historique à chaque tour, et l'agent
-    // répondrait à des questions déjà traitées par un humain.
+  it('🔴 elle est bornée à TRENTE JOURS (lot 5), et le cerveau reçoit l’ouverture de la session pour l’annonce d’IA', async () => {
+    // Un contact qui écrit depuis des mois ferait sinon payer tout son historique à chaque tour (le câblage borne
+    // aussi le NOMBRE, trente messages). La borne n'est plus l'ouverture de la session : voir le cas suivant.
     const bornes: Array<{ waId: string; depuis: string }> = [];
+    const vus: Array<string | undefined> = [];
     const { deps } = make({
+      now: () => Date.parse('2026-10-05T12:00:00.000Z'),
       lireConversation: async (_t, waId, depuis) => { bornes.push({ waId, depuis }); return []; },
+      brain: { penser: async (i) => { vus.push(i.tour?.sessionOuverteLe); return { texte: 'ok', sortie: null }; } },
     });
     await runTurn(JOB, deps);
-    expect(bornes[0]).toEqual({ waId: JOB.waId, depuis: SESSION.ouvertLe });
+    expect(MEMOIRE_JOURS).toBe(30);
+    expect(bornes[0]).toEqual({ waId: JOB.waId, depuis: '2026-09-05T12:00:00.000Z' });
+    expect(vus).toEqual([SESSION.ouvertLe]);
+  });
+
+  it('🔴 le PREMIER tour lit le message qui l’a déclenché, enregistré AVANT l’ouverture de la session', async () => {
+    // Le défaut que le lot 5 répare, pour tous les agents : `recordInbound` écrit le message, PUIS le parcours
+    // démarre et ouvre la session. Bornée à l'ouverture, la lecture l'excluait et l'agent parlait à froid, sans le
+    // message auquel il répondait. Le faux filtre comme le SQL (`created_at >= depuis`).
+    const fil = [
+      { role: 'agent', texte: 'Modèle d’il y a quarante jours', at: '2026-08-26T10:00:00.000Z' },
+      { role: 'contact', texte: 'Vous livrez à Lyon ?', at: '2026-10-05T11:59:59.000Z' },
+    ];
+    const vus: unknown[][] = [];
+    const { deps } = make({
+      now: () => Date.parse('2026-10-05T12:00:00.000Z'),
+      sessions: { ...sessionsOk(), prendreLeTour: async () => ({ ...SESSION, ouvertLe: '2026-10-05T12:00:00.000Z' }) },
+      lireConversation: async (_t, _w, depuis) => fil.filter((m) => m.at >= depuis),
+      brain: { penser: async (i) => { vus.push(i.transcript); return { texte: 'Oui', sortie: null }; } },
+    });
+    await runTurn(JOB, deps);
+    expect(vus[0]).toEqual([{ role: 'contact', texte: 'Vous livrez à Lyon ?', at: '2026-10-05T11:59:59.000Z' }]);
   });
 
   it('🔴 une lecture EN ÉCHEC ne tue pas le tour : l’agent parle sans mémoire', async () => {
@@ -398,6 +423,33 @@ describe('le budget, relié à la consommation', () => {
     const { deps, envois } = make({ credits: { solde: async () => 1 } });
     expect((await runTurn(JOB, deps)).fait).toBe('repondu');
     expect(envois).toHaveLength(1);
+  });
+
+  /**
+   * 🔴 L'ALERTE DE CRÉDIT (lot 5, A8) : un tour qui sort faute de CRÉDIT prévient les admins (une fois par jour, tenu
+   * par l'alerte elle-même). Faute de crédit seulement : un plafond de la conversation ne dit rien du crédit, et
+   * l'alerte enverrait un e-mail faux.
+   */
+  it('🔴 solde épuisé ou plafond de la clé chez le Gateway : l’alerte part ; un plafond de tours : rien', async () => {
+    const alertes: string[] = [];
+    const alerterCreditEpuise = async (t: string) => { alertes.push(t); };
+    const { deps } = make({ credits: { solde: async () => 0 }, alerterCreditEpuise });
+    expect((await runTurn(JOB, deps)).fait).toBe('plafond');
+    expect(alertes).toEqual(['t1']);
+
+    const { deps: gateway } = make({
+      credits: { solde: async () => 30_000 }, alerterCreditEpuise,
+      brain: { penser: async () => { throw new PlafondModeleAtteint(429, 'quota'); } },
+    });
+    expect((await runTurn(JOB, gateway)).fait).toBe('plafond');
+    expect(alertes).toEqual(['t1', 't1']);
+
+    const { deps: tours } = make({
+      credits: { solde: async () => 30_000 }, alerterCreditEpuise,
+      sessions: { ...sessionsOk(), prendreLeTour: async () => ({ ...SESSION, tours: 99 }) },
+    });
+    expect((await runTurn(JOB, tours)).fait).toBe('plafond');
+    expect(alertes, 'un plafond de tours n’est pas un crédit épuisé').toEqual(['t1', 't1']);
   });
 
   it('🔴 une écriture de comptage EN ÉCHEC ne fait pas échouer le tour', async () => {
@@ -569,7 +621,9 @@ describe('runTurn : la sortie et son dernier message', () => {
   it('🔴 le message de « terminer » PART, puis le scénario reprend par la sortie', async () => {
     const { deps, journal } = tour('{"sortie":"fini","message":"Merci, un conseiller vous rappelle demain."}');
     expect(await runTurn(JOB, deps)).toEqual({ fait: 'sorti', sortie: 'fini' });
-    expect(journal).toEqual(['envoi:Merci, un conseiller vous rappelle demain.', 'sortie:fini']);
+    // Premier tour de la session, régime « session » : l'annonce d'IA est due, et le code la pose DEVANT le message
+    // de l'outil, que la consigne ne couvre pas (lot 5, A7).
+    expect(journal).toEqual(['envoi:Je suis une IA.\n\nMerci, un conseiller vous rappelle demain.', 'sortie:fini']);
   });
 
   it('un « terminer » sans message sort quand même, sans rien envoyer', async () => {

@@ -6,7 +6,7 @@ import { executerFonctionJs } from './fonction-js';
 import { PgSourceStore } from '../agent/sources.pg';
 import { PgRequeteStore } from '../agent/requetes.pg';
 import { PgJournalAppels } from '../agent/catalog.pg';
-import { PgWorkflowStore } from './store.pg';
+import { PgWorkflowStore, designationDuScenario } from './store.pg';
 import { PgWorkflowNodeEventStore } from './node-events.pg';
 import { PgTagStore } from '../crm/tag-store.pg';
 import { PgTemplateHintStore } from '../crm/template-hints.pg';
@@ -337,8 +337,11 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // l'événement, drapeau d'escalade ou non (`ouvreUneDemande`, `src/inbox/fil.ts`). Un scénario introuvable ne
       // bloque rien, il est dit par son identifiant. Tenu par un test qui monte ce câblage
       // (`tests/controle-du-fil-cablage.test.ts`).
-      const nom = (await workflowStore.getById(workflowId, tenant).catch(() => null))?.name;
-      const cause = automatique(`scénario ${nom ?? workflowId}`);
+      // `designation` et pas `getById` : le magasin cache le scénario système du répondeur à toutes ses lectures
+      // publiques, et c'est lui qui passe la main quand son agent sort par une règle non câblée (« Répondeur
+      // automatique »).
+      const designe = await workflowStore.designation(workflowId, tenant).catch(() => null);
+      const cause = automatique(designationDuScenario(designe, workflowId));
       await fil.passerAUnHumain(tenant, waId, { escalade, cause });
       if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA, cause);
     },
@@ -365,6 +368,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      */
     releaseToMba: fil.rendreApresParcours,
     transmettreHorsParcours,
+    // Agent de Meta éteint : le message « à côté » va au répondeur IA de l'espace, par la remise et ses gardes (lot 5).
+    // Le dernier message nommé : son parcours naît en l'ayant reçu.
+    confierAuRepondeur: (tenant, waId, messageId) => fil.remettreSiPersonneNeSuit(tenant, waId, '', { rouverte: false, messageDeclencheur: messageId }),
     // Contexte d'évaluation des conditions et des valeurs dynamiques. Contact introuvable -> null -> le
     // moteur prend la branche 'false'.
     evalContext: buildEvalContext,
@@ -381,6 +387,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // une campagne, 5 000 destinataires enfileraient 5 000 événements (et autant d'envois facturés). Passe par
     // la file pour qu'un scénario qui pose son propre tag déclencheur ne boucle pas en synchrone.
     emitTagAdded: (tenant, waId, tag) => etiquettes.publierEnDiffere(tenant, waId, [tag]),
+    // La règle d'arrêt d'un agent IA, dans la frise du panneau Détail (`sortie_agent`, migration 0209).
+    noterSortieAgent: (tenant, waId, sortie) => inboxStore.noterSortieAgent(tenant, waId, sortie),
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
     /**
      * `appelHttp` (plus bas) : joue un appel de la bibliothèque et rend ce qu'il faut ranger dans un champ.

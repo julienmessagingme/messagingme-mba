@@ -19,13 +19,29 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, SPEC ÉCRITE
+## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, LIVRAISON A ÉCRITE, À RELIRE
 
 Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré
-avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`. Réglage d'espace
-tenu par un CHECK (une seule voix), scénario système caché au graphe figé, branchement dans `fil.ts`, premier tour qui
-lit enfin le message déclencheur (défaut de tous les agents, mesuré dans le code), mémoire de 30 messages sur 30 jours,
-crédit épuisé vers l'équipe avec alerte. ⏳ Spec à valider par Julien, puis le plan.
+avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`, plan
+`docs/superpowers/plans/2026-10-05-repondeur-par-defaut.md`. La technique durable est dans `documentation.md` (§ 4.4,
+« Le répondeur de l'espace »).
+
+- ✅ **Livraison A écrite (le serveur), à relire** : la migration 0209 (ÉCRITE, PAS ENCORE APPLIQUÉE ; elle passe AVANT
+  le `up` de l'API et des deux workers), le réglage et son geste unique (`src/repondeur/reglage.ts`, route
+  `PUT /tenants/:tenantId/agents/repondeur`, outil MCP `set_default_responder`), le scénario système caché par le
+  magasin, le type de lancement `repondeur` au graphe fourni et figé, le démarreur branché dans la remise « personne ne
+  suit » par une liaison tardive du socle, la mémoire de trente messages sur trente jours pour tous les agents, la
+  mention d'IA sur le dernier message d'une sortie, l'événement de frise `sortie_agent`, l'alerte de crédit épuisé.
+  Deux pièces que le plan ne listait pas : le message « à côté » d'un parcours qui finit va au répondeur IA
+  (`confierAuRepondeur`), et un `standby` arrivé après la bascule est requalifié (`unRepondeurRepond`).
+- ⏳ **Relecture indépendante de A**, puis CI job par job (les tests d'intégration ne tournent qu'en CI), puis
+  déploiement : 0209 lue sous `pg_stat_activity`, appliquée et relue en base AVANT le `up`.
+- ⏳ **Livraison B (la console)**, poussée APRÈS le déploiement de A : le bloc « Répondeur de l'espace » sur la page des
+  agents, les libellés « le répondeur automatique prend la main », l'aide et `features.md`. Le type `sortie_agent` et
+  sa phrase sont déjà dans `web/lib/inbox-detail.ts` (la parité avec le serveur l'exige), comme l'outil MCP sur la
+  page qui documente le serveur MCP (`web/lib/mcp-outils.ts`).
+- ⏳ **Essai réel qui clôt** : celui du plan (Gan PrevMCP répondeur d'un espace sans scénario, depuis le téléphone de
+  Julien), après B.
 
 ## LOT 8a DE « ENGAGE ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, EN PRODUCTION, ESSAI RÉEL FAIT
 

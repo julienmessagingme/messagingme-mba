@@ -19,7 +19,7 @@ import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
 import { MOTIF_DESABONNE } from '../campaign/guardrails';
 import { messageDe, texteDe } from '../lib/erreur';
-import { POLITIQUE_DE_LANCEMENT, fenetreLevee, type DepartDuParcours, type PolitiqueDeLancement, type TypeDeLancement } from './lancements';
+import { POLITIQUE_DE_LANCEMENT, fenetreLevee, grapheAFiger, type DepartDuParcours, type PolitiqueDeLancement, type TypeDeLancement } from './lancements';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une chaîne = pas parti, avec la raison exacte (pour que la
@@ -331,10 +331,25 @@ export interface WorkflowExecutorDeps {
    */
   transmettreHorsParcours(tenantId: string, waId: string, messageId: string): Promise<void>;
   /**
+   * Le pendant de `transmettreHorsParcours` quand l'agent de Meta est éteint (lot 5) : le message « à côté » d'un
+   * parcours qui vient de finir va à l'agent IA répondeur de l'espace, s'il y en a un, qui démarre en l'ayant reçu.
+   * Sans lui, ce message serait perdu : l'avance l'a reçu, donc la remise « personne ne suit » du même job le laisse
+   * au parcours. C'est `ControleDuFil.remettreSiPersonneNeSuit`, avec ses gardes ; sans répondeur, il ne fait rien.
+   * Requise ; fixtures : `aucunRepondeurHorsParcours`.
+   */
+  confierAuRepondeur(tenantId: string, waId: string, messageId: string): Promise<void>;
+  /**
    * Publie « ce tag vient d'être posé » pour les automations. Seulement sur un démarrage unitaire (réponse
    * d'un contact, automation, test), jamais depuis une campagne : voir `apply`. Fixtures : `aucunEvenement`.
    */
   emitTagAdded(tenantId: string, waId: string, tag: string): Promise<void>;
+  /**
+   * Note dans la frise du panneau Détail qu'un agent IA a terminé, avec sa règle d'arrêt (`sortie_agent`, migration
+   * 0209, `PgInboxStore.noterSortieAgent`). Appelée par `sortirDuBlocAgent`, le point de passage de TOUTES les sorties
+   * d'un bloc agent (le tour, l'escalade, le balayage des tours bloqués) : agent de scénario comme répondeur. Requise ;
+   * fixtures : `aucuneSortieNotee`.
+   */
+  noterSortieAgent(tenantId: string, waId: string, sortie: string): Promise<void>;
 }
 
 /** Message RCS porté par un bloc. null = bloc non configuré : on ne devine pas un contenu, on part en repli. */
@@ -922,7 +937,19 @@ export class WorkflowExecutor {
    * ferait échouer un envoi déjà parti.
    */
   private async rendreLaMainAMba(tenantId: string, waId: string, opts: { transmettre?: string } = {}): Promise<void> {
-    if (!(await this.mbaActif(tenantId))) return; // gate : aucun appel Meta si l'agent n'est pas allumé
+    if (!(await this.mbaActif(tenantId))) {
+      // Aucun appel Meta si l'agent n'est pas allumé. Le message « à côté », lui, va au répondeur IA s'il y en a un
+      // (lot 5) ; sans message, le fil reste aux robots, et c'est le prochain message du contact qui relance l'agent.
+      if (opts.transmettre !== undefined) {
+        try {
+          await this.deps.confierAuRepondeur(tenantId, waId, opts.transmettre);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error(`message hors parcours non confié au répondeur pour ${waId}:`, messageDe(err));
+        }
+      }
+      return;
+    }
     try {
       await this.deps.releaseToMba(tenantId, waId);
       // Après le release, jamais avant : tant que nous tenons le fil, l'agent de Meta n'a pas la parole.
@@ -1032,7 +1059,7 @@ export class WorkflowExecutor {
     graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     startNodeId: string,
-    opts: { politique: PolitiqueDeLancement; fenetreLevee: boolean; firstTemplateParams?: string[] },
+    opts: { politique: PolitiqueDeLancement; fenetreLevee: boolean; firstTemplateParams?: string[]; messageDeclencheur?: string },
   ): Promise<StartOutcome> {
     const { politique } = opts;
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA, sinon les deux écriraient au
@@ -1120,8 +1147,12 @@ export class WorkflowExecutor {
      * avancerait à la prochaine réponse.
      */
     // Le canal est persisté dès la naissance : un scénario qui ouvre par un bloc RCS naît sur RCS, et son
-    // message rapide suivant part en RCS.
-    const state = { ...restToState(rest, this.now()), channel: canal };
+    // message rapide suivant part en RCS. Le message qui a démarré le parcours, quand l'appelant le nomme, naît déjà
+    // reçu : redélivré, `advance` le reconnaît (`lastMessageId`) au lieu de le prendre pour une réponse.
+    const state = {
+      ...restToState(rest, this.now()), channel: canal,
+      ...(opts.messageDeclencheur !== undefined ? { lastMessageId: opts.messageDeclencheur } : {}),
+    };
     if (partis > 0 || state.status !== 'done') {
       const closPrecedent = await this.deps.runs.closeActiveByWaId(tenantId, contact.waId);
       // La session d'agent suit son parcours : sinon elle reste `en_cours` avec un tour jamais commencé,
@@ -1136,10 +1167,10 @@ export class WorkflowExecutor {
     // `workflow_runs`, donc la session ne peut pas naître avant le run. Ordre obligatoire : apply, start, la
     // session, puis l'enfilage.
     //
-    // Le figeage se demande, il n'est jamais implicite : seule la politique du lien de test le pose (figer le
-    // graphe de chaque destinataire d'une campagne le recopierait des milliers de fois).
+    // Le figeage se demande, il n'est jamais implicite : seules les politiques du lien de test et du répondeur le
+    // posent (`grapheAFiger`) ; figer le graphe de chaque destinataire d'une campagne le recopierait des milliers de fois.
     const cree = state.status !== 'done'
-      ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state, politique.graphe === 'brouillon_fige' ? graph : null)
+      ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state, grapheAFiger(politique) ? graph : null)
       : null;
     // Bloc `inbox` atteint -> la conversation passe explicitement à un humain. L'escalade (collante : le
     // balayage ne rend plus le fil à l'agent de Meta tant que personne n'a répondu) exige `partis > 0` : sur une
@@ -1187,6 +1218,7 @@ export class WorkflowExecutor {
       politique,
       fenetreLevee: fenetreLevee(politique, depart),
       ...(depart.depuis === 'entree' && depart.firstTemplateParams ? { firstTemplateParams: depart.firstTemplateParams } : {}),
+      ...(depart.depuis === 'entree' && depart.messageDeclencheur !== undefined ? { messageDeclencheur: depart.messageDeclencheur } : {}),
     });
   }
 
@@ -1229,6 +1261,17 @@ export class WorkflowExecutor {
   async sortirDuBlocAgent(tenantId: string, waId: string, sessionId: string, sortie: string): Promise<boolean> {
     const attente = await this.runEnAttenteSur(tenantId, waId, 'agent');
     if (!attente) return false;
+    /**
+     * La frise dit la règle d'arrêt AVANT la suite du parcours : une sortie non câblée passe la main à l'équipe dans
+     * `advance`, et l'ordre des lignes doit être celui des gestes. Au mieux : une ligne de frise ne fait jamais
+     * échouer une sortie. Un rejeu dont le parcours a déjà avancé sort plus haut, sans seconde ligne.
+     */
+    try {
+      await this.deps.noterSortieAgent(tenantId, waId, sortie);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`workflow ${attente.run.workflowId}: sortie d'agent « ${sortie} » non notée dans la frise pour ${waId}:`, messageDe(err));
+    }
     // Le canal du parcours est repassé tel quel : un bloc agent peut suivre un bloc RCS, et la garde
     // d'étanchéité d'`advance` écarterait un retour annoncé sur le mauvais tuyau.
     await this.advance(tenantId, waId, `agent:${sessionId}:${sortie}`, `sortie:${sortie}`, attente.run.channel ?? 'whatsapp');

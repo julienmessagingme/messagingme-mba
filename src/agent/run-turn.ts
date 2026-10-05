@@ -39,11 +39,19 @@ export interface RunTurnDeps {
   /**
    * La conversation telle que le cerveau doit la lire : la mémoire de l'agent. Lue en base plutôt que reçue,
    * `advance` ne portant pas le texte entrant ; `recordInbound` tourne toujours avant, le fil est à jour.
-   * Bornée par `depuis` (l'ouverture de la session). Absente : l'agent parle sans mémoire.
+   * Bornée par `depuis`, que le tour pose à `MEMOIRE_JOURS` en arrière (le câblage borne le nombre). Une entrée peut
+   * porter son instant (`at`) : le cerveau y lit ce qui précède la session. Absente : l'agent parle sans mémoire.
    */
   lireConversation?(tenantId: string, waId: string, depuis: string): Promise<unknown[]>;
   /** Le solde prépayé du workspace, en micro-euros. Absent : aucun plafond de workspace. */
   credits?: { solde(tenantId: string): Promise<number> };
+  /**
+   * Prévient les admins que le crédit est épuisé (`src/repondeur/alerte-credit.ts`, une fois par jour et par espace),
+   * quand le tour sort faute de CRÉDIT : le solde de l'espace, ou le plafond de sa clé chez le Gateway. Pas sur un
+   * plafond de la conversation (tours, appels, budget de la fiche), qui ne dit rien du crédit. Ne lève jamais.
+   * Absente : aucune alerte (suites à deps minimales).
+   */
+  alerterCreditEpuise?(tenantId: string): Promise<void>;
   /** Retire du solde ce que ce tour a coûté. Absent -> rien n'est débité. */
   debiterTenant?(tenantId: string, montantMicroEur: number, sessionId: string): Promise<void>;
   /** Le fil est-il encore à nous ? Absent -> considéré comme oui (suites à deps minimales). */
@@ -101,6 +109,14 @@ export function reposApresReponse(nodeId: string, inactiviteMinutes: number): Re
 
 /** Budget de temps d'un tour. Au-delà, on préfère une sortie propre à une conversation qui pend. */
 const DEADLINE_MS = 30_000;
+
+/**
+ * 🔴 LA MÉMOIRE D'UN AGENT, pour TOUS les agents (lot 5, amendement du plan du 2026-10-05) : les derniers messages
+ * échangés avec le contact, sur trente jours, quelle que soit la conversation (le câblage en garde trente, les plus
+ * récents). La borne était l'ouverture de la session : le message qui déclenche un parcours est enregistré AVANT
+ * qu'elle s'ouvre, et le premier tour parlait donc à froid, sans le message auquel il répondait.
+ */
+export const MEMOIRE_JOURS = 30;
 
 /**
  * Persiste le repos du parcours par `restToState`, qui porte le piège du zéro. Best-effort : l'agent a déjà
@@ -220,6 +236,8 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     || session.tours > fiche.plafonds.maxTours
     || session.appelsOutils > fiche.plafonds.maxAppelsOutils
     || session.coutMicroEur >= fiche.plafonds.budgetMicroEur) {
+    // Faute de crédit, et seulement alors : les admins l'apprennent par e-mail (une fois par jour).
+    if (soldeEpuise) await deps.alerterCreditEpuise?.(job.tenantId);
     await cloreEtSortir(job, session.id, 'plafond', SORTIE_PLAFOND, deps);
     return { fait: 'plafond', sortie: SORTIE_PLAFOND };
   }
@@ -244,7 +262,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     let transcript: unknown[] = [];
     if (deps.lireConversation) {
       try {
-        transcript = await deps.lireConversation(job.tenantId, job.waId, session.ouvertLe);
+        transcript = await deps.lireConversation(job.tenantId, job.waId, new Date(maintenant - MEMOIRE_JOURS * 86_400_000).toISOString());
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error(`agent: conversation illisible pour la session ${session.id}, tour sans mémoire`, messageDe(err));
@@ -265,6 +283,8 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
         waId: job.waId,
         appelsDejaFaits: session.appelsOutils,
         coutDejaMicroEur: session.coutMicroEur,
+        // La mémoire déborde la session : l'annonce d'IA, elle, ne compte que ce qui suit son ouverture.
+        sessionOuverteLe: session.ouvertLe,
       },
     });
   } catch (err) {
@@ -275,6 +295,8 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     // côté. L'erreur peut voyager emballée dans `TourInterrompu`.
     const cause = err instanceof TourInterrompu ? err.erreur : err;
     if (cause instanceof PlafondModeleAtteint) {
+      // Le plafond de la clé de l'espace est le crédit acheté, vu par le Gateway : c'est un crédit épuisé.
+      await deps.alerterCreditEpuise?.(job.tenantId);
       await cloreEtSortir(job, session.id, 'plafond', SORTIE_PLAFOND, deps);
       return { fait: 'plafond', sortie: SORTIE_PLAFOND };
     }

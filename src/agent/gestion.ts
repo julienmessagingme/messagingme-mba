@@ -81,6 +81,13 @@ export interface DepsGestionAgents {
    * `fiche_agent`. Requis : un câblage qui l'oublierait ne compile pas, au lieu de ne rien journaliser en silence.
    */
   historique: Pick<HistoriqueStore, 'ecrire'>;
+  /**
+   * Retire le répondeur de l'espace SI c'est cet agent (`PgTenantSettingsStore.oublierRepondeurSi`) : un agent qui
+   * quitte le statut actif cesse de répondre à tous les messages de l'espace (lot 5). Rend `true` si l'espace a perdu
+   * son répondeur. Requis : oublié, un agent désactivé resterait désigné, et chaque message entrant partirait à
+   * l'équipe au lieu de rester au comportement d'un espace sans répondeur.
+   */
+  oublierRepondeur(tenantId: string, agentId: string): Promise<boolean>;
 }
 
 /**
@@ -178,6 +185,10 @@ export async function modifierAgent(
   }
   if (!agent) return refus(404, AGENT_INTROUVABLE);
   await journaliserFiche(deps, tenantId, courant, agent, patch, auteur);
+  // Désactivé ou remis en brouillon : il n'est plus le répondeur de l'espace. Après l'écriture, sur le statut écrit.
+  if (patch.status !== undefined && agent.status !== 'active' && await deps.oublierRepondeur(tenantId, agent.id)) {
+    journaliser('info', 'repondeur_retire_par_desactivation', { tenantId, agentId: agent.id });
+  }
   return { ok: true, valeur: agent };
 }
 

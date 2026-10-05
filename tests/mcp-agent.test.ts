@@ -138,6 +138,10 @@ interface Options {
   solde?: number;
   creditInsuffisant?: boolean;
   payeurAutorise?: boolean;
+  /** L'agent de Meta est allumé sur l'espace (lot 5, le répondeur). */
+  mbaAllume?: boolean;
+  /** L'agent IA déjà répondeur de l'espace. */
+  repondeurAgentId?: string | null;
   outilsPoses?: OutilComplet[];
   fiches?: FicheConnaissance[];
 }
@@ -164,8 +168,14 @@ function monter(o: Options = {}) {
     debits: [] as Array<{ tenant: string; montant: number; note: string }>,
     payeurs: [] as string[],
     modes: [] as Array<{ tenant: string; mode: ModeTransfert }>,
+    oublis: [] as string[],
+    extinctions: [] as string[],
+    vidages: [] as string[],
+    repondeurs: [] as Array<string | null>,
   };
   const poses = [...(o.outilsPoses ?? [])];
+  /** Les réglages de l'espace qui portent le répondeur : un seul objet, que les deux portes lisent et écrivent. */
+  const reglagesRepondeur = { mbaEnabled: o.mbaAllume === true, repondeurAgentId: o.repondeurAgentId ?? null };
 
   const gestion: DepsAgentMcp['gestion'] = {
     agents: {
@@ -193,6 +203,12 @@ function monter(o: Options = {}) {
     } : null),
     ...(o.creditInsuffisant ? { assurerCleModele: async () => { throw new CreditInsuffisantPourCle(100); } } : {}),
     historique: { ecrire: async (_t, l) => { cap.historique.push(l); } },
+    oublierRepondeur: async (_t, id) => {
+      cap.oublis.push(id);
+      if (reglagesRepondeur.repondeurAgentId !== id) return false;
+      reglagesRepondeur.repondeurAgentId = null;
+      return true;
+    },
     credits: {
       solde: async () => o.solde ?? 1_234_567,
       historique: async () => [{ id: 'm1', deltaMicroEur: 50_000_000, raison: 'achat', jour: null, at: '2026-10-03T09:00:00.000Z', paiementId: 'cs_1', facture: true }],
@@ -286,6 +302,21 @@ function monter(o: Options = {}) {
       get: async () => ({ agentTransfertMode: 'business_hours' }),
       setAgentTransfertMode: async (t, mode) => { cap.modes.push({ tenant: t, mode }); },
     },
+    repondeur: {
+      agents: { complet: (t, id) => gestion.agents.complet(t, id) },
+      reglages: {
+        get: async () => ({ ...reglagesRepondeur }),
+        setRepondeur: async (_t, id) => { cap.repondeurs.push(id); reglagesRepondeur.repondeurAgentId = id; },
+      },
+      gatewayDisponible: true,
+      eteindreAgentDeMeta: async (t) => {
+        cap.extinctions.push(t);
+        reglagesRepondeur.mbaEnabled = false;
+        return { enabled: false, chezMeta: 'applique', phoneNumberId: 'pn1' };
+      },
+      liste: { toutRetirer: async (t) => { cap.vidages.push(t); return { retires: 2, refuses: 0 }; } },
+      historique: { ecrire: async (_t, l) => { cap.historique.push(l); } },
+    },
   };
 
   const mcp: CablageMcp = {
@@ -358,6 +389,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
   import_site: { agent_id: AG, url: 'https://exemple.fr/tarifs' },
   import_document_text: { agent_id: AG, nom: 'Tarifs.txt', texte: 'Le cottage deux personnes coûte 89 euros la nuit, petit-déjeuner compris, toute l’année.' },
   set_transfer_mode: { mode: 'never' },
+  set_default_responder: { agent_id: AG },
   get_credit: {},
   buy_credit: { offre: 'refill_50' },
 };
@@ -366,7 +398,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
 const touche = (cap: ReturnType<typeof monter>['cap']) => Object.entries(cap).filter(([, v]) => v.length > 0).map(([k]) => k);
 
 describe('🔴 la personne requise : une clé d’API ne voit ni n’appelle les outils qui écrivent au nom de quelqu’un', () => {
-  it('seize outils, et la répartition de la spec : quatre lectures sans personne, douze outils qui l’exigent', () => {
+  it('dix-sept outils : quatre lectures sans personne, treize outils qui l’exigent (le répondeur compris, lot 5)', () => {
     const agent = OUTILS.filter((o) => Object.hasOwn(ARGS, o.nom));
     expect(agent.map((o) => o.nom).sort()).toEqual(Object.keys(ARGS).sort());
     expect(agent.filter((o) => o.exigePersonne !== true).map((o) => o.nom).sort())
@@ -654,7 +686,7 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
   it('list_agents et get_agent : les manques comptés et listés, sans plafonds ni mention d’IA', async () => {
     const { server, cap } = monter({ fichesConnaissance: 0, outilsPoses: [outil('terminer', true)] });
     const liste = await appeler(server, CLE_ECRITURE, 'list_agents');
-    expect(liste.json()).toEqual({ agents: [{ id: AG, label: 'Conseiller', status: 'draft', nb_manques: 1 }] });
+    expect(liste.json()).toEqual({ agents: [{ id: AG, label: 'Conseiller', status: 'draft', nb_manques: 1, repondeur: false }] });
     expect(cap.lectures).toEqual(['t1']);
     const r = (await appeler(server, CLE_ECRITURE, 'get_agent', { agent_id: AG })).json();
     expect(r.agent).toEqual({ id: AG, label: 'Conseiller', status: 'draft', modele: 'modele-config', fiche: FICHE_COMPLETE, fiche_version: 4 });
@@ -664,6 +696,52 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     expect(r.modeles).toHaveLength(2);
     expect(JSON.stringify(r)).not.toMatch(/budgetMicroEur|maxTours|mentionIa/);
     expect((await appeler(server, JETON_T2.brut, 'get_agent', { agent_id: AG })).texte).toBe('agent introuvable');
+    await server.close();
+  });
+});
+
+describe('🔴 le répondeur de l’espace (lot 5) : set_default_responder et list_agents, par la fonction de la console', () => {
+  it('désigne un agent ACTIF, éteint l’agent de Meta allumé, vide sa liste, et signe la ligne d’historique « mcp »', async () => {
+    const { server, cap } = monter({ statut: 'active', mbaAllume: true });
+    const r = await appeler(server, JETON.brut, 'set_default_responder', { agent_id: AG });
+    expect(r.isError, r.texte).toBe(false);
+    expect(r.json()).toEqual({ repondeur_agent_id: AG, agent_de_meta_eteint: true, liste_meta: { retires: 2, refuses: 0 } });
+    // L'ordre de la fonction : Meta éteint, sa liste vidée, PUIS le réglage (le CHECK d'une seule voix).
+    expect(cap.extinctions).toEqual(['t1']);
+    expect(cap.vidages).toEqual(['t1']);
+    expect(cap.repondeurs).toEqual([AG]);
+    expect(cap.historique).toMatchObject([{ element: 'repondeur', origine: 'mcp', acteurId: PERSONNE, surfaceId: AG }]);
+    // Et list_agents le dit.
+    expect((await appeler(server, JETON.brut, 'list_agents')).json().agents).toEqual([
+      { id: AG, label: 'Conseiller', status: 'active', nb_manques: 0, repondeur: true },
+    ]);
+    await server.close();
+  });
+
+  it('🔴 un agent en brouillon est refusé, sans rien éteindre ni écrire', async () => {
+    const { server, cap } = monter({ statut: 'draft', mbaAllume: true });
+    const r = await appeler(server, JETON.brut, 'set_default_responder', { agent_id: AG });
+    expect(r.isError).toBe(true);
+    expect(r.texte).toMatch(/seul un agent actif peut être le répondeur/);
+    expect([cap.extinctions, cap.vidages, cap.repondeurs]).toEqual([[], [], []]);
+    await server.close();
+  });
+
+  it('null retire le répondeur ; un agent d’un autre espace est inconnu ; agent_id manquant est refusé', async () => {
+    const { server, cap } = monter({ statut: 'active', repondeurAgentId: AG });
+    expect((await appeler(server, JETON.brut, 'set_default_responder', { agent_id: null })).json().repondeur_agent_id).toBeNull();
+    expect(cap.repondeurs).toEqual([null]);
+    expect((await appeler(server, JETON_T2.brut, 'set_default_responder', { agent_id: AG })).texte).toBe('agent introuvable');
+    expect((await appeler(server, JETON.brut, 'set_default_responder', {})).isError).toBe(true);
+    expect(cap.repondeurs).toEqual([null]);
+    await server.close();
+  });
+
+  it('🔴 désactiver l’agent répondeur par activate_agent lui retire le rôle', async () => {
+    const { server, cap } = monter({ statut: 'active', repondeurAgentId: AG });
+    expect((await appeler(server, JETON.brut, 'activate_agent', { agent_id: AG, active: false })).isError).toBe(false);
+    expect(cap.oublis).toEqual([AG]);
+    expect((await appeler(server, JETON.brut, 'list_agents')).json().agents[0].repondeur).toBe(false);
     await server.close();
   });
 });

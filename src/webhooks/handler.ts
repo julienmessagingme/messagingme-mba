@@ -278,7 +278,8 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
    * le balayage reste le filet.
    */
   if (remiseMbaEntrant) {
-    await tenter('handleWebhookJob: remise à l’agent de Meta ignorée:', () => processRemiseMbaEntrant(entrants, remiseMbaEntrant, consumed, rouvertes));
+    // `alreadySeen` : un message que Meta redélivre ne démarre pas une seconde fois le répondeur IA de l'espace.
+    await tenter('handleWebhookJob: remise à l’agent de Meta ignorée:', () => processRemiseMbaEntrant(entrants, remiseMbaEntrant, consumed, rouvertes, alreadySeen));
   }
   /**
    * Bascules de contrôle et messages de l'agent de Meta. Isolé : ces événements sont les moins bien documentés, et
