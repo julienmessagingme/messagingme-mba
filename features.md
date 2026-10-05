@@ -2548,7 +2548,7 @@ boîte par sous-menu.
   journal), et l'observation d'un espace (la session d'observation elle-même porte l'adresse de
   l'observateur). La note reste demandée là où elle l'était : elle dit POURQUOI, l'adresse dit QUI.
 - ✅ **Un lien « Exploitation » dans le menu du compte**, visible seulement pour une adresse de la liste.
-- ⏳ **Les numéros fournis** (lot 3a, 2026-10-05, en cours de déploiement) : un numéro acheté chez DIDWW se déclare
+- ✅ **Les numéros fournis** (lot 3a, 2026-10-05) : un numéro acheté chez DIDWW se déclare
   dans la carte « Numéros fournis » ; le serveur le branche sur l'Asterisk et l'ajoute à la réserve. Quand Meta appelle
   ce numéro pour le vérifier, le code qu'il dicte est capté automatiquement et s'affiche en face du numéro, avec ce qui
   a été entendu. La carte compte les numéros encore libres. Les clients n'y ont pas encore accès : la page « Connecter

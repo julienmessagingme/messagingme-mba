@@ -19,39 +19,6 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 3a DE « ENGAGE ME POUR CLAUDE CODE » : LE PONT DU CODE ET LA RÉSERVE DE NUMÉROS, EN PRODUCTION, ESSAI RÉEL DÛ
-
-Engage Me fournit un numéro WhatsApp à un client qui n'en a pas ; Meta le vérifie en appelant et en dictant un code, et
-c'est notre Asterisk qui décroche. Cadré avec Julien le 2026-10-05 (abonnement Stripe mensuel en 3c, numéros achetés par
-Julien et branchés par le serveur, code visible dans /ops, lot 3 découpé en 3a, 3b, 3c). Spec
-`docs/superpowers/specs/2026-10-05-pont-du-code-design.md`, plan `docs/superpowers/plans/2026-10-05-pont-du-code.md`.
-
-- ✅ **Écrit (le 2026-10-05)** : la migration 0210 (deux tables), le magasin (`src/otp/`),
-  l'extraction du code en français et en anglais, le client DIDWW (lire et brancher, rien d'autre), la route signée du
-  pont, la section « Numéros fournis » de /ops, la purge de sept jours, et le montage de l'Asterisk versé au dépôt
-  (`ops/otp-asterisk/`, sans identifiants). Tests unitaires, intégration en CI, auto-attaque sans trouvaille.
-- ✅ **Relu : un rouge, corrigé avant le commit.** Le plan de numérotation collait le numéro appelé (`${EXTEN}`, écrit
-  par l'appelant SIP) dans `System()`, exécuté par `sh`, et le point d'entrée sans mot de passe était reconnu par son
-  NOM, d'où que vienne l'appel : un INVITE forgé sur le port 5080 aurait exécuté une commande dans le conteneur.
-  Deux verrous : `FILTER` (chiffres seuls) avant tout usage, et `identify_by = ip` ; `tests/otp-asterisk-config.test.ts`
-  tombe sur chacune des trois mutations. Jaunes traités : une transcription en panne rend 503 et se rejoue (le code
-  n'est plus perdu), un appel déjà lu ne se retranscrit pas, plafond de 10 appels par numéro et par heure, en-tête de
-  signature exigé avant de lire le corps, tests à 1,5 Mo et au-delà de 4 Mo, purge des enregistrements gardés plus d'un
-  jour, bouton « Rafraîchir » de la carte.
-- 🟡 **Reste** : le pare-feu du port SIP 5080 et de la plage RTP aux seules plages de DIDWW (un second verrou, commande
-  à Julien) ; le secret du pont passe en argument d'openssl le temps du calcul (documenté).
-- ✅ **Prérequis posés le 2026-10-05** : la clé DIDWW de production (lit l'inventaire, mesuré : 200), le trunk et le
-  secret du pont dans `.env.prod` (sauvegarde `.env.prod.avant-3a`), le secret pour l'Asterisk ; numéro d'essai acheté
-  par Julien, `+441235619343`. ⚠️ La clé a transité par la conversation : à remplacer chez DIDWW après l'essai.
-- ✅ **En production le 2026-10-05** (`2ecd261b`) : CI verte job par job (back et front), 0210 appliquée à 16 h 49 UTC
-  AVANT le `up` de l'API et des deux workers et relue en base, les deux portes publiques à 200, les deux routes neuves
-  à 401 sans signature ni session, la clé DIDWW lue entière par l'API. L'Asterisk au montage du dépôt :
-  `identify_by = ip` ajouté à sa configuration privée (sauvegarde `pjsip.conf.avant-3a`) et lu par
-  `pjsip show endpoint didww`, `Registered`, plan de numérotation filtré chargé, et la chaîne de signature PROUVÉE par
-  le vrai script depuis le conteneur (404 « hors réserve », donc signature acceptée, rien écrit).
-- ⏳ **Essai réel qui clôt** : le numéro déclaré dans /ops, ajouté dans le WhatsApp Manager en méthode « Appel », le
-  code affiché dans /ops en moins d'une minute.
-
 ## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 
 Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré

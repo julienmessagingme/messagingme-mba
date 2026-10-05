@@ -1,5 +1,18 @@
 # todo.md : backlog
 
+## 🟠 Le pont du code (lot 3a) : les restes (2026-10-05)
+
+- 🟠 **Remplacer la clé DIDWW** : elle a transité par une conversation le 2026-10-05. En créer une neuve chez DIDWW
+  (limitée au VPS), la poser dans `.env.prod` (`DIDWW_API_KEY`), `--force-recreate` de `mba-api`, puis révoquer
+  l'ancienne. Geste de Julien.
+- 🟡 **Le secret du pont passe en argument d'`openssl`** (`-hmac`) le temps du calcul, lisible dans la liste des
+  processus de l'hôte. Documenté dans `envoyer-otp.sh` ; la ligne de commande d'openssl n'offre pas mieux.
+- 🟡 **`Record()` cherche un son « beep » que l'image n'a pas** : un avertissement à chaque appel, sans effet sur
+  l'enregistrement. L'option `q` le ferait taire.
+- 🟡 **Un nouvel essai par Meta ne demande aucun achat** : le portefeuille de test « Gerermonchantier » n'est pas
+  vérifié et porte déjà deux numéros, la limite de Meta (le bouton « Add phone number » est grisé). Un essai suivant
+  supprime puis réajoute un numéro existant.
+
 ## 🟡 L'observabilité : ce qui reste après la relecture du lot du 2026-10-04
 
 - **Les passes qui rattrapent leur propre erreur ne comptent pas en échec** dans la carte des tâches de fond : la

@@ -2461,6 +2461,13 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   ni acheter ni résilier), puis l'inscrit `libre`. Sans `DIDWW_API_KEY` ou `DIDWW_TRUNK_OTP_ID`, la déclaration rend
   503. ⚠️ La configuration ne refuse PAS de démarrer sur une clé sans trunk : `.env.prod` porte encore la ligne d'une
   clé révoquée, et une garde au démarrage aurait coupé l'API au premier déploiement.
+- 🔴 **Côté Asterisk, trois verrous, parce que le conteneur est en `network_mode: host` sur un VPS sans pare-feu
+  actif** : le numéro appelé (écrit par l'appelant SIP) n'entre dans `System()` qu'après `FILTER` ; le point d'entrée
+  sans mot de passe n'est reconnu que par l'adresse (`identify_by = ip`) ; et `ops/otp-asterisk/pare-feu.sh` ne laisse
+  arriver le SIP (5080) et le son (20000-20100) que des plages de DIDWW, relancé au démarrage par la crontab de root.
+  Les plages du pare-feu et celles de la section `identify` restent identiques, et l'IAX2 (chargé par défaut par
+  l'image, 4569/udp) reste déchargé : `tests/otp-asterisk-config.test.ts` tient les deux. ⚠️ `pjsip.conf` (les
+  identifiants) n'est pas versionné : un correctif qui le touche s'applique aussi à la main sur le VPS.
 
 🔴 **LA RECHARGE PAR STRIPE** (lot 2, 2026-09-29, `src/http/credit-stripe.ts`, `src/stripe/`). Le client REST
 est écrit sans SDK (formulaire `x-www-form-urlencoded`, `Stripe-Version` épinglée sur celle de la destination

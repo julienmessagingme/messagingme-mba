@@ -5,6 +5,22 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-05 : le pont du code éprouvé par un vrai appel, et l'Asterisk fermé à tout ce qui n'est pas DIDWW
+
+Julien appelle `+44 1235 619343` depuis son portable et dicte un code. À 17 h 09, l'appel arrive sur l'Asterisk par
+le trunk que le serveur a branché lors de la déclaration dans /ops ; huit secondes d'enregistrement, puis l'extension
+`h` lance le script. À 17 h 10 min 01 s, deux secondes après le raccroché, l'API a transcrit « Here is the code
+345679, 345679. », écrit 345679, et le fichier son est effacé. Julien voit le code dans /ops : le lot 3a est clos.
+Le vrai appel de Meta sur ce numéro n'a pas été fait : la voix de Meta était prouvée le matin même, et le portefeuille
+de test était plein (deux numéros, la limite d'un portefeuille non vérifié). Il viendra avec le parcours du lot 3b.
+
+Ce que l'appel a montré en plus. Un inconnu (`179.43.134.194`) envoyait des INVITE au 5080 toutes les quatre minutes,
+tous rejetés par `identify_by = ip` (« No matching endpoint found »). La session RSSI relève ensuite l'IAX2, chargé
+par défaut, qui ouvrait 4569/udp : `modules.conf` monté sans lui (`cb41a7f5`). Puis le pare-feu (`5a9b5812`) : des
+règles ciblées sur le 5080 et la plage RTP, aux plages MESURÉES pendant l'appel (SIP de `185.238.173.49`, son de
+`46.19.210.39`, et les deux adresses de `sip.didww.com` dans les mêmes plages). Julien l'a posé, avec la ligne
+`@reboot` : le garde-fou m'a refusé de poser une persistance système, qui revient à l'humain.
+
 ## 2026-10-05 : le pont du code en production (lot 3a), et sa signature prouvée sans attendre Meta
 
 `2ecd261b` déployé : CI verte job par job, 0210 appliquée à 16 h 49 UTC avant le `up` de l'API et des deux workers,
