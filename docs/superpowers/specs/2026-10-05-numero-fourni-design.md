@@ -61,8 +61,10 @@ l'activation par code saisi). Seul le montant du crédit offert dépend désorma
   demander le code par appel, puis attendre le code capté. C'est le pont du 3a qui relance la file quand il écrit un
   code pour un numéro attribué en attente ; une échéance de 3 minutes déclare le code absent. Puis `verify_code`,
   `register` (PIN tiré et gardé chiffré comme aujourd'hui), liaison de l'espace, crédit offert.
-- **L'état vit sur la ligne du numéro** (`numeros_fournis`) : l'étape, la cause d'un échec, l'identifiant du numéro
-  chez Meta, celui du compte, l'heure de la demande de code. Un numéro fourni par espace, donc pas de table de plus.
+- **L'état vit dans une ligne par espace** (`connexions_numero`) : l'étape, la cause d'un échec, l'identifiant du
+  numéro chez Meta, celui du compte, l'heure de la demande de code. Pas sur la ligne du numéro (corrigé en écrivant le
+  plan) : un numéro peut quitter l'espace en cours de route (refusé par Meta, abandonné), et le client doit quand même
+  voir pourquoi.
 - **L'attribution** est atomique : une instruction prend une ligne `libre` (`for update skip locked`) et pose
   ensemble `attribue`, l'espace et l'heure, sans quoi `numeros_fournis_espace_chk` refuse.
 - **Le compte sans numéro** : `/embedded-signup/complete` rend aujourd'hui 422 sur un compte WhatsApp sans numéro.
@@ -72,7 +74,8 @@ l'activation par code saisi). Seul le montant du crédit offert dépend désorma
   interrogée en boucle, donc hors plafond coûteux), relancer après un échec. Elles ne rendent jamais le code ni la
   transcription : le serveur soumet le code lui-même.
 - **Les échecs** ont chacun leur cause et leur message :
-  - compte plein (deux numéros) : le numéro retourne à la réserve ;
+  - compte plein (deux numéros) : le numéro reste attribué jusqu'à « Réessayer » (le client a libéré une place) ou
+    « Abandonner », qui le rend à la réserve ;
   - numéro refusé par Meta (déjà actif ailleurs, un numéro DIDWW recyclé) : il sort de la réserve et Julien est
     prévenu, pour ne pas le donner au client suivant ;
   - code absent après 3 minutes : bouton « Relancer », dans les limites de Meta ;
@@ -84,9 +87,9 @@ l'activation par code saisi). Seul le montant du crédit offert dépend désorma
   (`CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR`, 1 € par défaut) à côté de `CREDIT_OFFERT_MICRO_EUR`. Aucune reprise des
   espaces existants : ils restent `console`.
 - **Migration 0211** (numéro relu dans le dossier d'origin au moment de l'écrire ; d'autres sessions écrivent aussi
-  des migrations) : l'origine de l'espace, les colonnes d'état du numéro fourni, l'unicité « un numéro attribué par
-  espace » (index unique partiel), et le statut `bloque` pour un numéro que Meta refuse. Elle ajoute et relâche :
-  elle passe AVANT le `up`.
+  des migrations) : l'origine de l'espace, la table `connexions_numero`, l'unicité « un numéro attribué par espace »
+  (index unique partiel), et le statut `bloque` pour un numéro que Meta refuse. Elle ajoute et relâche : elle passe
+  AVANT le `up`.
 
 ## 5. La console
 
