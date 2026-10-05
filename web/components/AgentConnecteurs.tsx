@@ -6,11 +6,11 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import { listSources, type SourceAgent } from '@/lib/api-agent-sources';
 import { listRequetes, testerBrouillon, type RequeteApi } from '@/lib/api-agent-requetes';
-import { activerOutil, ajouterConnecteur, raisonInappelable, retirerOutil, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
+import { activerOutil, ajouterConnecteur, patchOutil, raisonInappelable, retirerOutil, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
 import { Bouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
-import { erreurDeChargement } from '@/lib/http';
+import { ApiError, erreurDeChargement } from '@/lib/http';
 import { Icone } from '@/components/Icone';
 import { libelleValeurSysteme } from '@/lib/valeurs-systeme';
 
@@ -22,8 +22,9 @@ import { libelleValeurSysteme } from '@/lib/valeurs-systeme';
  * appartiennent au client et que plusieurs agents s'en servent. Un appel décrit ici était redécrit pour
  * chaque agent, et le corriger quelque part ne le corrigeait pas ailleurs.
  *
- * Ici on ne fait plus qu'une chose : choisir un appel déjà ÉPROUVÉ et lui donner les mots de CET agent. Deux
- * agents peuvent donc utiliser le même appel avec des consignes différentes, ce qui est le besoin réel.
+ * Ici on ne fait plus qu'une chose : choisir un appel déjà ÉPROUVÉ et lui donner les mots de CET agent, puis les
+ * corriger (« Modifier »). Deux agents peuvent donc utiliser le même appel avec des consignes différentes, ce qui
+ * est le besoin réel.
  *
  * 🔴 CE QUE L'ÉCRAN DOIT RENDRE ÉVIDENT, et qui n'est pas décoratif : **ce qui partira dans la requête**. Le
  * client confirme au moment de brancher, parce que c'est le seul moment où il peut s'apercevoir qu'un appel
@@ -45,7 +46,17 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
   const [libellesFiche, setLibellesFiche] = useState<Record<string, readonly [string, string]>>({});
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  /**
+   * LE FORMULAIRE OUVERT : l'identifiant de la REQUÊTE qu'on donne à l'agent, ou celui de l'OUTIL qu'on modifie.
+   * Un seul état pour les deux, donc un seul formulaire à l'écran, et ses `data-testid` restent uniques.
+   */
   const [ouvert, setOuvert] = useState<string | null>(null);
+  /** Le refus d'un enregistrement, dit DANS le formulaire : en haut du bloc, il tombait loin de la saisie. */
+  const [erreurForm, setErreurForm] = useState<string | null>(null);
+  const basculer = (id: string): void => {
+    setErreurForm(null);
+    setOuvert((v) => (v === id ? null : id));
+  };
 
   const charger = useCallback(async () => {
     try {
@@ -62,22 +73,45 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
   }, [tenantId, t]);
   useEffect(() => { void charger(); }, [charger]);
 
-  /** 🔴 REND UN VERDICT : c'est lui qui empêche un formulaire de se refermer sur une saisie perdue. */
-  async function agir(travail: () => Promise<void>): Promise<boolean> {
+  /**
+   * 🔴 REND UN VERDICT : c'est lui qui empêche un formulaire de se refermer sur une saisie perdue. Le refus va là
+   * où l'on regarde : en haut du bloc pour un geste de ligne, dans le formulaire pour un enregistrement.
+   */
+  async function agir(travail: () => Promise<void>, signaler: (m: string | null) => void = setErreur): Promise<boolean> {
     if (busy) return false;
     setBusy(true);
-    setErreur(null);
+    signaler(null);
     try {
       await travail();
       await charger();
       await onChange();
       return true;
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Opération impossible', 'Operation failed'));
+      signaler(err instanceof Error ? err.message : t('Opération impossible', 'Operation failed'));
       return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Enregistre depuis le formulaire, qui ne se ferme que si ça a marché. Un 409 n'y vient que d'un nom déjà pris
+   * (`NomOutilDejaPris`, à la création comme à la modification) : on dit quoi faire, pas seulement le constat.
+   */
+  function enregistrer(travail: () => Promise<unknown>): void {
+    void agir(async () => {
+      try {
+        await travail();
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          throw new Error(t(
+            'Ce nom technique est déjà celui d’un autre outil de cet espace : choisissez-en un autre.',
+            'This technical name is already used by another tool in this workspace: pick another one.',
+          ));
+        }
+        throw err;
+      }
+    }, setErreurForm).then((ok) => { if (ok) setOuvert(null); });
   }
 
   const appels = outils.filter((o) => o.origin !== 'mba');
@@ -103,6 +137,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
 
       {requetes.map((rq) => {
         const siens = appels.filter((o) => o.requestId === rq.id);
+        const enModification = siens.find((o) => o.id === ouvert);
         return (
           <div key={rq.id} className={`${cardCls} flex flex-col gap-2`} data-testid={`agent-requete-${rq.id}`}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -150,6 +185,16 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
                         >
                           {o.actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
                         </Bouton>
+                        {/* Corriger ses mots SANS le retirer : retirer puis redonner l'appel perdait son activation
+                            et ses gestes (2026-10-05, agent Groupama). */}
+                        <button
+                          data-testid={`connecteur-modifier-${o.id}`}
+                          disabled={busy}
+                          onClick={() => basculer(o.id)}
+                          className="rounded-controle px-2 py-1 text-xs text-ink-700 hover:bg-ink-100 disabled:opacity-40"
+                        >
+                          {ouvert === o.id ? t('Annuler', 'Cancel') : t('Modifier', 'Edit')}
+                        </button>
                         <button
                           data-testid={`connecteur-retirer-${o.id}`}
                           disabled={busy}
@@ -172,32 +217,50 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
               </ul>
             )}
 
+            {enModification && (
+              <FormulaireAppel
+                key={enModification.id}
+                tenantId={tenantId}
+                requete={rq}
+                outil={enModification}
+                libellesFiche={libellesFiche}
+                busy={busy}
+                erreur={erreurForm}
+                // ⚠️ Les QUATRE mots seulement : la route de modification ne connaît pas encore la nature ni les
+                // champs lus (lot 2 du plan du 2026-10-05), et un champ qu'elle ignore serait perdu sans erreur.
+                onEnregistrer={({ name, title, description, nePasUtiliser }) => {
+                  enregistrer(() => patchOutil(tenantId, agentId, enModification.id, { name, title, description, nePasUtiliser }));
+                }}
+              />
+            )}
+
             {/* L'ajout n'est proposé qu'à un agent qui ne se sert pas encore de cet appel : sinon on recréait sous le
                 même nom un outil déjà posé, et le refus « porte déjà ce nom » désignait un outil qu'on croyait perdu. */}
             {siens.length === 0 && (
               <button
                 data-testid={`requete-nouvel-outil-${rq.id}`}
-                onClick={() => setOuvert((v) => (v === rq.id ? null : rq.id))}
+                onClick={() => basculer(rq.id)}
                 className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline"
               >
                 {ouvert === rq.id ? t('Annuler', 'Cancel') : <><Icone nom="ajouter" taille="petite" />{t('Ajouter à cet agent', 'Add to this agent')}</>}
               </button>
             )}
             {ouvert === rq.id && siens.length === 0 && (
-              <NouvelAppel
+              <FormulaireAppel
                 tenantId={tenantId}
                 requete={rq}
+                outil={null}
                 libellesFiche={libellesFiche}
                 busy={busy}
+                erreur={erreurForm}
                 /**
                  * 🔴 LE FORMULAIRE NE SE FERME QUE SI ÇA A MARCHÉ. Il se refermait dans la foulée de l'appel,
                  * sans attendre son résultat : un refus du serveur affichait son message au-dessus d'un
                  * formulaire disparu, avec la saisie dedans. Même défaut que celui de l'écran des connecteurs,
                  * réparé le même jour, et pour la même raison : `agir` rend désormais un verdict.
                  */
-                onCreer={(mots) => {
-                  void agir(async () => { await ajouterConnecteur(tenantId, agentId, { ...mots, requeteId: rq.id }); })
-                    .then((ok) => { if (ok) setOuvert(null); });
+                onEnregistrer={(mots) => {
+                  enregistrer(() => ajouterConnecteur(tenantId, agentId, { ...mots, requeteId: rq.id }));
                 }}
               />
             )}
@@ -225,21 +288,33 @@ function libelleOrigine(o: RequeteApi['variables'][number]['origine'], libellesF
   return [`valeur fixe « ${String(o.valeur)} »`, `fixed value “${String(o.valeur)}”`];
 }
 
-function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
+/**
+ * DONNER un appel à l'agent, ou MODIFIER celui qu'il a déjà : un seul formulaire pour les deux, pour que la
+ * correction montre exactement ce que l'ajout a demandé.
+ */
+function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur, onEnregistrer }: {
   tenantId: string;
   requete: RequeteApi;
+  /**
+   * L'outil qu'on modifie, qui pré-remplit tout, ou `null` quand on donne l'appel. ⚠️ En modification, la nature et
+   * les champs lus se montrent sans se changer : la route de modification ne les connaît pas encore.
+   */
+  outil: OutilAgent | null;
   libellesFiche: Record<string, readonly [string, string]>;
   busy: boolean;
-  onCreer: (mots: {
+  /** Le refus du dernier enregistrement, montré au-dessus du bouton, là où l'on regarde après avoir cliqué. */
+  erreur: string | null;
+  onEnregistrer: (mots: {
     name: string; title: string; description: string; nePasUtiliser: string;
     nature: NatureOutil; outputPaths: string[];
   }) => void;
 }) {
   const t = useT();
-  const [name, setName] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [nePasUtiliser, setNePasUtiliser] = useState('');
+  const figee = outil !== null;
+  const [name, setName] = useState(outil?.name ?? '');
+  const [title, setTitle] = useState(outil?.title ?? '');
+  const [description, setDescription] = useState(outil?.description ?? '');
+  const [nePasUtiliser, setNePasUtiliser] = useState(outil?.nePasUtiliser ?? '');
 
   /**
    * 🔴 LA QUESTION QUI A REMPLACÉ LA CASE « C'EST BIEN CE QUE JE VEUX ENVOYER » (2026-09-15).
@@ -250,10 +325,10 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
    * consentement qu'on a déjà par construction ; celle-ci demande un fait que seul le client connaît.
    *
    * ⚠️ PRÉ-REMPLIE PAR L'APPEL, JAMAIS VERROUILLÉE : la requête porte un défaut, et chaque agent peut s'en
-   * écarter. C'est tout l'objet de la migration 0150.
+   * écarter. C'est tout l'objet de la migration 0150. En modification, c'est l'outil qui pré-remplit.
    */
-  const [nature, setNature] = useState<NatureOutil>(requete.outputPaths.length > 0 ? 'integre' : 'pousse');
-  const [champs, setChamps] = useState<string[]>(requete.outputPaths);
+  const [nature, setNature] = useState<NatureOutil>(outil?.nature ?? (requete.outputPaths.length > 0 ? 'integre' : 'pousse'));
+  const [champs, setChamps] = useState<string[]>(outil?.outputPaths ?? requete.outputPaths);
   /** Les chemins que le dernier essai a réellement trouvés. Vides tant qu'on n'a pas essayé. */
   const [trouves, setTrouves] = useState<string[]>([]);
   const [essai, setEssai] = useState(false);
@@ -294,14 +369,18 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
       : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
         : description.trim() === '' ? t('Dites à quoi ça sert.', 'Say what it does.')
           : nePasUtiliser.trim() === '' ? t('Dites quand ne pas l’appeler.', 'Say when not to call it.')
-            : nature === 'integre' && champs.length === 0
+            // Figée, la lecture n'est pas à corriger ici : l'exiger bloquerait la correction des mots sans issue.
+            : nature === 'integre' && champs.length === 0 && !figee
               ? t('Choisissez au moins une information à récupérer, ou dites que cet appel pousse seulement.',
                 'Pick at least one piece of information to read, or say this call only pushes.')
               : busy ? t('Enregistrement en cours…', 'Saving…')
                 : null;
 
-  /** Ce qu'on propose à cocher : ce que l'essai a trouvé, plus ce que l'appel déclarait déjà. */
-  const proposes = [...new Set([...trouves, ...requete.outputPaths])];
+  /**
+   * Ce qu'on propose à cocher : ce que l'outil lit déjà (un essai a pu trouver un champ que l'appel ne déclare
+   * pas), ce que l'essai vient de trouver, et ce que l'appel déclarait.
+   */
+  const proposes = [...new Set([...(outil?.outputPaths ?? []), ...trouves, ...requete.outputPaths])];
 
   return (
     <div className="mt-1 flex flex-col gap-3 rounded-carte border border-ink-200 p-3">
@@ -335,7 +414,7 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
         </p>
         <label className="flex items-start gap-2 text-xs text-ink-900">
           <input
-            type="radio" name={`nature-${requete.id}`} data-testid="nature-pousse" className="mt-0.5"
+            type="radio" name={`nature-${requete.id}`} data-testid="nature-pousse" className="mt-0.5" disabled={figee}
             checked={nature === 'pousse'} onChange={() => { setNature('pousse'); setChamps([]); }}
           />
           <span>
@@ -348,7 +427,7 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
         </label>
         <label className="flex items-start gap-2 text-xs text-ink-900">
           <input
-            type="radio" name={`nature-${requete.id}`} data-testid="nature-integre" className="mt-0.5"
+            type="radio" name={`nature-${requete.id}`} data-testid="nature-integre" className="mt-0.5" disabled={figee}
             checked={nature === 'integre'} onChange={() => { setNature('integre'); setChamps(requete.outputPaths); }}
           />
           <span>
@@ -369,7 +448,7 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
               {t('Que doit-il récupérer ?', 'What should it read?')}
             </p>
             <Bouton variante="secondaire" taille="petite" enCours={essai}
-              data-testid="outil-essayer" disabled={essai}
+              data-testid="outil-essayer" disabled={essai || figee}
               onClick={() => { void essayer(); }}
             >
               {essai ? t('Essai…', 'Trying…') : t('Essayer pour voir la réponse', 'Try it to see the response')}
@@ -388,7 +467,7 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
               {proposes.map((c) => (
                 <label key={c} className="flex items-center gap-2 text-xs text-ink-900">
                   <input
-                    type="checkbox" data-testid={`outil-champ-${c}`} checked={champs.includes(c)}
+                    type="checkbox" data-testid={`outil-champ-${c}`} checked={champs.includes(c)} disabled={figee}
                     onChange={(e) => setChamps((v) => (e.target.checked ? [...v, c] : v.filter((x) => x !== c)))}
                   />
                   <code>{c}</code>
@@ -420,6 +499,8 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-nepasutiliser" value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
       </label>
 
+      {erreur !== null && <p className="text-xs text-danger" data-testid="outil-erreur">{erreur}</p>}
+
       {/* 🔴 LA RAISON EST VISIBLE, PAS SEULEMENT EN INFOBULLE. Une infobulle suppose qu'on survole un bouton
           gris, ce que personne ne fait : on cherche ailleurs ce qu'on a raté. Le titre reste, pour le clavier. */}
       <div className="flex flex-wrap items-center gap-2">
@@ -427,7 +508,7 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
           data-testid="outil-creer"
           disabled={manque !== null}
           title={manque ?? ''}
-          onClick={() => onCreer({
+          onClick={() => onEnregistrer({
             name: name.trim(), title: title.trim(), description: description.trim(), nePasUtiliser: nePasUtiliser.trim(),
             // ⚠️ Un `pousse` envoie une liste VIDE quoi qu'il y ait dans l'état : le serveur la force aussi,
             // et deux endroits qui écrivent la même cohérence valent mieux qu'un seul qui l'oublie.

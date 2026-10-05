@@ -68,6 +68,12 @@ export interface OutilAgent {
    * produite. D'où les libellés par défaut, qui disent « demandé » et jamais « pris ».
    */
   gestes: GesteMoment[];
+  /**
+   * Ce que l'agent fait de la réponse, et les champs qu'il lit (migration 0150). Le serveur les envoie pour tout
+   * outil ; ils ne veulent dire quelque chose que pour un connecteur API, dont ils pré-remplissent la modification.
+   */
+  nature: NatureOutil;
+  outputPaths: string[];
   params: unknown;
   binding: Record<string, unknown>;
   risk: RisqueOutil;
