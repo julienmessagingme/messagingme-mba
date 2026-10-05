@@ -204,6 +204,22 @@ repris sans repartir de zéro, puis la relecture. Le jaune le plus utile de cett
 (« désactivez l'agent avant de le remanier ») pouvait pousser Claude à couper un agent en production ; les
 descriptions disent désormais que désactiver coupe l'agent dans ses scénarios et ne se fait que sur demande.
 
+## 2026-10-05 : le répondeur par défaut, livraison A (le serveur) en production
+
+Un agent IA désigné par l'espace répond à tout message que personne ne tient, comme l'agent de Meta (`1f28aee7`,
+migration 0209 appliquée à 10 h 41 UTC avant le `up`). Un implémenteur, une relecture sans rouge (douze jaunes), puis
+quatorze mutations des tests d'intégration jouées en CI sur deux commits jetables : chaque test visé tombe.
+
+Ce que le plan ne voyait pas et que l'implémenteur a ajouté, chaque fois sur un cas mesurable : le message déclencheur
+naît reçu dans le parcours (sinon une redélivrance de Meta lançait un second tour) ; la réponse « à côté » d'une campagne
+va au répondeur IA (sans agent de Meta, personne n'y répondait) ; un `standby` arrivé après la bascule est requalifié
+(sinon perdu) ; l'annonce d'IA ne compte que la session (la mémoire de 30 jours la faisait taire).
+
+Deux faits mesurés ont simplifié le plan : aucune session d'agent IA n'avait jamais existé en production, donc tous les
+agents lisent la même mémoire ; et avec l'agent de Meta éteint, trois des quatre gestes du fil faisaient déjà ce qu'il
+fallait. La migration a dû être renumérotée au commit (0208 prise entre-temps par les quotas de l'API) : le dossier
+tranche sur ce qui est pris, et la ligne du compteur s'écrit dans le commit qui prend le numéro.
+
 ## 2026-10-04 : une sortie d'agent part avec son dernier message, et GPT-5 mini quitte la liste
 
 Le défaut trouvé par l'essai du lot 8a (sous GPT-5 mini, l'agent appelait l'outil qui termine sans écrire, et le contact
