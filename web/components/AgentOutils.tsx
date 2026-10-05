@@ -107,7 +107,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
    */
   /**
    * Les outils MCP que le serveur permet d'ajouter à cet agent. Le jumeau exact de `restants` pour les outils
-   * maison, et de « Donner cet appel à l'agent » pour les connecteurs API. 🔴 Aucun filtre ici, sinon l'origine (cette
+   * maison, et de « Ajouter à cet agent » pour les connecteurs API. 🔴 Aucun filtre ici, sinon l'origine (cette
    * section ne montre que le MCP) : enregistré, appelable et pas déjà à lui sont décidés par le catalogue.
    */
   const mcpARattacher = offrables.filter((o) => o.origin === 'mcp');

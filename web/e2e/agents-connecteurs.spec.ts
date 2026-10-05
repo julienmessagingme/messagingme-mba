@@ -55,7 +55,8 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
     const req = route.request();
     const url = req.url();
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
-    if (req.method() === 'POST' || req.method() === 'PATCH' || req.method() === 'DELETE') {
+    // PUT aussi : c'est la méthode de l'ACTIVATION d'un outil, qu'on doit voir partir.
+    if (req.method() === 'POST' || req.method() === 'PATCH' || req.method() === 'PUT' || req.method() === 'DELETE') {
       capture.posts.push({ url, body: req.postDataJSON() ?? null });
       if (url.includes('/epreuve')) return json(over.epreuve ?? { ok: true, httpStatus: 200 });
       // L ESSAI depuis l ecran de l agent (migration 0150) : il rend les chemins REELLEMENT trouves dans la
@@ -312,6 +313,39 @@ test.describe('Agent : brancher le système du client', () => {
     await expect(page.getByTestId('outil-champs')).toHaveCount(0);
     // Et il ne reste que les mots a saisir : rien ne bloque.
     await expect(page.getByTestId('outil-creer-manque')).toContainText(/nom technique|technical name/);
+  });
+
+  test('🔴 un outil de connecteur inactif s’active depuis SA ligne, sans être recréé', async ({ page }) => {
+    /**
+     * Le 2026-10-05, sur l'agent Groupama : l'outil naît inactif, et cet écran n'offrait AUCUN moyen de
+     * l'activer (le bouton n'existait que pour les outils maison et MCP). Le recréer butait sur son propre
+     * nom, « un outil de cet espace porte déjà ce nom », pour un outil que l'on croyait perdu.
+     */
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    const outil = (id: string, inappelable: unknown) => ({
+      id, origin: 'http', sourceId: SRC, requestId: RQ, name: `outil_${id}`, title: 'Lire', description: 'd', nePasUtiliser: 'n',
+      params: [], binding: {}, risk: 'read', actif: false, activeLe: null, autonome: false, autonomeLe: null,
+      expose: null, gestes: [], inappelable,
+    });
+    await mock(page, capture, { outils: [outil('o5', null), outil('o6', { cause: 'source_inactive' })] });
+    await ongletOutils(page);
+    // L'appel est déjà posé sur cet agent : l'ajout n'est plus proposé, donc plus de doublon possible.
+    await expect(page.getByTestId(`requete-nouvel-outil-${RQ}`)).toHaveCount(0);
+    // Un outil dont le système est éteint ne s'active pas : la ligne dit pourquoi.
+    await expect(page.getByTestId('connecteur-activer-o6')).toBeDisabled();
+    await page.getByTestId('connecteur-activer-o5').click();
+    await expect.poll(() => capture.posts.find((p) => p.url.includes('/o5/activation'))?.body ?? null).toEqual({ valeur: true });
+  });
+
+  test('🔴 un système s’active depuis la LISTE, sans déplier son détail', async ({ page }) => {
+    // Julien, 2026-10-05 : le bouton vivait dans le détail déplié, et un système resté en brouillon
+    // empêchait d'activer ses outils sans qu'on sache où l'allumer.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture, { sources: [{ ...SOURCE, status: 'draft' }] });
+    await page.goto('/connecteurs');
+    await expect(page.getByTestId(`source-${SRC}`)).toHaveCount(0);
+    await page.getByTestId(`source-statut-${SRC}`).click();
+    await expect.poll(() => capture.posts.find((p) => p.url.includes(`/agent-sources/${SRC}`))?.body ?? null).toMatchObject({ status: 'active' });
   });
 
   test('🔴 la bibliothèque dit combien d’AGENTS tapent dans un système', async ({ page }) => {

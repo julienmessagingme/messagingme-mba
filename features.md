@@ -2851,6 +2851,11 @@ d'aide.
   exactement ce qu'il était.
   ⚠️ **Piège de vocabulaire** : le menu **Tools** de la barre de gauche et l'onglet **Outils** d'un agent ne
   parlent pas de la même chose. Le système appartient à l'espace, l'appel appartient à l'agent.
+  ✅ **Un appel posé sur l'agent s'active, se désactive et se retire depuis SA ligne** (2026-10-05). Il naît
+  inactif, et ce bouton manquait : un appel de connecteur restait inactif pour toujours, et le recréer butait
+  sur son propre nom. Le formulaire s'enregistre par « Enregistrer », et « Ajouter à cet agent » n'est proposé
+  que tant que l'agent ne se sert pas déjà de cet appel. Dans **Tools > Connecteurs API**, un système
+  s'active et se désactive depuis la liste, sans déplier son détail.
 - ➡️ **Les outils d'un serveur MCP se branchent de la même façon**, une fois le serveur déclaré dans
   **Tools > Connecteurs MCP** et ses outils importés. L'onglet Outils de l'agent les montre à côté des
   appels de connecteur API.

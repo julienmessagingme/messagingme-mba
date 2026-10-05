@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 096891
+source_empreinte: 824852
 ---
 # Construire un agent IA
 
@@ -82,7 +82,8 @@ votre scénario, passer la main à un humain, terminer par une règle d'arrêt. 
 - **Un outil n'est utilisable qu'une fois activé**, par vous ou par Claude à votre nom. Tant qu'il ne l'est
   pas, l'agent ne sait même pas qu'il existe. Le cas qui coûte le plus cher est une base bien remplie avec
   l'outil de recherche resté désactivé : l'agent transfère alors toutes les questions de fond, et l'écran a
-  pourtant l'air en ordre.
+  pourtant l'air en ordre. Un appel de connecteur API naît inactif lui aussi : il s'active depuis sa ligne,
+  sous « Vos systèmes ».
 - **Les mots comptent beaucoup.** « Quand l'appeler » et « quand NE PAS l'appeler » sont deux champs
   séparés, et ce sont eux que le modèle lit pour décider.
 - **Une liste de valeurs autorisées vide ne restreint rien**, et l'écran vous le dit en jaune.

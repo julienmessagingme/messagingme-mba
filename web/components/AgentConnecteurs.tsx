@@ -6,8 +6,9 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import { listSources, type SourceAgent } from '@/lib/api-agent-sources';
 import { listRequetes, testerBrouillon, type RequeteApi } from '@/lib/api-agent-requetes';
-import { ajouterConnecteur, raisonInappelable, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
+import { activerOutil, ajouterConnecteur, raisonInappelable, retirerOutil, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
 import { Bouton } from '@/components/Bouton';
+import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { erreurDeChargement } from '@/lib/http';
 import { Icone } from '@/components/Icone';
@@ -37,6 +38,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
   onChange: () => Promise<void> | void;
 }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [sources, setSources] = useState<SourceAgent[] | null>(null);
   const [requetes, setRequetes] = useState<RequeteApi[]>([]);
   // Les libellés des champs de la fiche, venus du catalogue du SERVEUR (aucune copie ici).
@@ -114,7 +116,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
             {siens.length === 0 ? (
               <p className="text-xs text-ink-500">{t('Cet agent ne s’en sert pas.', 'This agent does not use it.')}</p>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="flex flex-col gap-2">
                 {siens.map((o) => {
                   /**
                    * 🔴 UN APPEL DONT LE SYSTÈME EST ÉTEINT LE DIT (relecture du 2026-10-02). L'agent ne le voit plus
@@ -123,26 +125,65 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
                    */
                   const mort = raisonInappelable(o);
                   return (
-                    <li key={o.id} className="text-xs text-ink-500">
-                      <code>{o.name}</code>
-                      {!o.actif && <span className="ml-1 text-ink-500">{t('(inactif)', '(inactive)')}</span>}
-                      {mort !== null && (
-                        <span data-testid={`connecteur-mort-${o.id}`} className="ml-1 text-danger">{t(mort.fr, mort.en)}</span>
-                      )}
+                    <li key={o.id} data-testid={`connecteur-outil-${o.id}`} className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-ink-500">
+                        <code>{o.name}</code>
+                        <span className={`rounded-controle px-1.5 py-0.5 text-xs ${o.actif ? 'bg-succes-100 text-succes-700' : 'bg-ink-100 text-ink-500'}`}>
+                          {o.actif ? t('actif', 'active') : t('inactif', 'inactive')}
+                        </span>
+                        {mort !== null && (
+                          <span data-testid={`connecteur-mort-${o.id}`} className="text-danger">{t(mort.fr, mort.en)}</span>
+                        )}
+                      </span>
+                      {/**
+                        * 🔴 L'OUTIL NAÎT INACTIF ET CE BOUTON ÉTAIT LE SEUL MOYEN DE L'ACTIVER, ET IL N'EXISTAIT PAS
+                        * (2026-10-05, agent Groupama). La route d'activation est la même que pour un outil maison,
+                        * mais cet écran ne l'offrait qu'aux outils maison et MCP : un outil de connecteur restait
+                        * inactif pour toujours, et le recréer butait sur son propre nom. Même règle que le bouton
+                        * des outils maison : pas d'activation sur un outil que la ligne déclare mort.
+                        */}
+                      <span className="flex shrink-0 items-center gap-2">
+                        <Bouton taille="petite" variante={o.actif ? 'secondaire' : 'principal'}
+                          data-testid={`connecteur-activer-${o.id}`}
+                          disabled={busy || (!o.actif && mort !== null)}
+                          onClick={() => { void agir(async () => { await activerOutil(tenantId, agentId, o.id, !o.actif); }); }}
+                        >
+                          {o.actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
+                        </Bouton>
+                        <button
+                          data-testid={`connecteur-retirer-${o.id}`}
+                          disabled={busy}
+                          onClick={async () => {
+                            // Un connecteur que plus aucun agent n'utilise part avec son retrait (`PgToolCatalog.detacher`).
+                            if (!(await confirmer({ titre: t('Retirer l’outil', 'Remove the tool'), message: t(
+                              `Retirer « ${o.name} » de cet agent ? Ses réglages seront supprimés s’il ne sert à aucun autre agent.`,
+                              `Remove “${o.name}” from this agent? Its settings are deleted if no other agent uses it.`,
+                            ), confirmer: t('Retirer', 'Remove') }))) return;
+                            void agir(async () => { await retirerOutil(tenantId, agentId, o.id); });
+                          }}
+                          className="rounded-controle px-2 py-1 text-xs text-danger hover:bg-danger-50 disabled:opacity-40"
+                        >
+                          {t('Retirer', 'Remove')}
+                        </button>
+                      </span>
                     </li>
                   );
                 })}
               </ul>
             )}
 
-            <button
-              data-testid={`requete-nouvel-outil-${rq.id}`}
-              onClick={() => setOuvert((v) => (v === rq.id ? null : rq.id))}
-              className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline"
-            >
-              {ouvert === rq.id ? t('Annuler', 'Cancel') : <><Icone nom="ajouter" taille="petite" />{t('Donner cet appel à l’agent', 'Give this call to the agent')}</>}
-            </button>
-            {ouvert === rq.id && (
+            {/* L'ajout n'est proposé qu'à un agent qui ne se sert pas encore de cet appel : sinon on recréait sous le
+                même nom un outil déjà posé, et le refus « porte déjà ce nom » désignait un outil qu'on croyait perdu. */}
+            {siens.length === 0 && (
+              <button
+                data-testid={`requete-nouvel-outil-${rq.id}`}
+                onClick={() => setOuvert((v) => (v === rq.id ? null : rq.id))}
+                className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline"
+              >
+                {ouvert === rq.id ? t('Annuler', 'Cancel') : <><Icone nom="ajouter" taille="petite" />{t('Ajouter à cet agent', 'Add to this agent')}</>}
+              </button>
+            )}
+            {ouvert === rq.id && siens.length === 0 && (
               <NouvelAppel
                 tenantId={tenantId}
                 requete={rq}
@@ -394,7 +435,7 @@ function NouvelAppel({ tenantId, requete, libellesFiche, busy, onCreer }: {
           })}
           className="self-start"
         >
-          {t('Donner cet appel à l’agent', 'Give this call to the agent')}
+          {t('Enregistrer', 'Save')}
         </Bouton>
         {manque !== null && <span className="text-xs text-ink-500" data-testid="outil-creer-manque">{manque}</span>}
       </div>

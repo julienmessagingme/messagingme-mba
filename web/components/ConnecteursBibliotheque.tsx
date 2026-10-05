@@ -103,14 +103,15 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
         <div key={s.id} className="flex flex-col gap-3">
           {/* LA LIGNE : ce qu'on lit d'un coup d'oeil pour choisir. Le détail et les appels sont dessous, à
               la demande. */}
+          <div className={`flex w-full items-center rounded-carte border transition-colors duration-150 ${
+            ouvert === s.id ? 'border-brand-500 bg-brand-50/40' : 'border-ink-200 bg-white hover:bg-ink-50'
+          }`}>
           <button
             type="button"
             data-testid={`source-ligne-${s.id}`}
             aria-expanded={ouvert === s.id}
             onClick={() => setOuvert((v) => (v === s.id ? null : s.id))}
-            className={`flex w-full items-center gap-3 rounded-carte border px-4 py-3 text-left transition-colors duration-150 ${
-              ouvert === s.id ? 'border-brand-500 bg-brand-50/40' : 'border-ink-200 bg-white hover:bg-ink-50'
-            }`}
+            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left"
           >
             <Icone nom="deplier" taille="petite" className={`text-ink-400 transition-transform duration-150 ${ouvert === s.id ? '' : '-rotate-90'}`} />
             <span className="min-w-0 flex-1">
@@ -133,6 +134,19 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
               </span>
             </span>
           </button>
+          {/* 🔴 ACTIVER SE FAIT DEPUIS LA LISTE (Julien, 2026-10-05). Le bouton vivait dans le détail déplié : un
+              système resté en brouillon empêchait d'activer ses outils, et il fallait deviner où l'allumer. Il
+              est HORS du bouton de la ligne, qui déplie : un bouton dans un bouton n'est pas cliquable à part. */}
+          <div className="shrink-0 pr-3">
+            <Bouton variante="secondaire" taille="petite"
+              data-testid={`source-statut-${s.id}`}
+              disabled={busy}
+              onClick={() => agir(async () => { await patchSource(tenantId, s.id, { status: s.status === 'active' ? 'disabled' : 'active' }); })}
+            >
+              {s.status === 'active' ? t('Désactiver', 'Disable') : t('Activer', 'Activate')}
+            </Bouton>
+          </div>
+          </div>
 
           {ouvert === s.id && (
             <>
@@ -194,13 +208,7 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Bouton variante="secondaire"
-            data-testid={`source-statut-${source.id}`}
-            disabled={busy}
-            onClick={() => onPatch({ status: source.status === 'active' ? 'disabled' : 'active' })}
-          >
-            {source.status === 'active' ? t('Désactiver', 'Disable') : t('Activer', 'Activate')}
-          </Bouton>
+          {/* Activer et désactiver vivent dans la LIGNE, au-dessus : ici ne reste que la suppression. */}
           <button
             data-testid={`source-supprimer-${source.id}`}
             disabled={busy}
