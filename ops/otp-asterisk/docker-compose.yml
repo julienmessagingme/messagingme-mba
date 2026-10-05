@@ -1,0 +1,22 @@
+# L'Asterisk du pont du code (lot 3a) : capter l'appel de verification que Meta passe a un numero de la reserve
+# DIDWW, puis poster l'enregistrement a l'API (envoyer-otp.sh). Vit sur le VPS dans /home/ubuntu/otp-asterisk, hors
+# du depot de l'application : ce dossier est la source, recopiee la-bas (voir README.md).
+# network_mode host parce que le RTP arrive sur des ports dynamiques (rtp.conf les borne).
+# Le SIP ecoute sur 5080 et non 5060 : 5060 est balaye en permanence. C'est nous qui initions le REGISTER, donc DIDWW
+# repond sur le port qu'il a appris.
+services:
+  asterisk:
+    image: andrius/asterisk:20-cert
+    container_name: otp-asterisk
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      # ⚠️ Fichiers montes SEULS : apres une edition, recreer le conteneur (docker compose up -d --force-recreate).
+      # Un sed -i ecrit un nouveau fichier, et le conteneur reste accroche a l'ancien.
+      - ./pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./rtp.conf:/etc/asterisk/rtp.conf:ro
+      - ./envoyer-otp.sh:/otp/envoyer-otp.sh:ro
+      # Le secret partage avec l'API (OTP_PONT_SECRET), une ligne, lisible par le seul conteneur.
+      - ./secret-pont:/otp/secret:ro
+      - ./monitor:/var/spool/asterisk/monitor

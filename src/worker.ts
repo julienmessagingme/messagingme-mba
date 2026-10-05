@@ -5,6 +5,7 @@ import { pool, mesureAttentePool } from './db/pool';
 import { construireSocle } from './socle';
 import { fabriquerJeton } from './links/jeton-contact';
 import { RETENTION_ESSAIS_JOURS } from './agent/test-runs';
+import { PgNumerosFournisStore, RETENTION_CODES_VERIFICATION_JOURS } from './otp/store.pg';
 import { RETENTION_LATENCES_JOURS } from './ops/latence-http';
 import { MesureTaches, RETENTION_TACHES_JOURS } from './ops/mesure-taches';
 import { viderMesuresTachesVersLaBase } from './ops/mesure-taches.pg';
@@ -170,6 +171,8 @@ async function main(): Promise<void> {
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit,
   } = construireSocle({ pool, queue, config });
+  // Les appels captés par le pont du code (lot 3a) : le worker ne fait que les purger (balayage de rétention).
+  const numerosFournisStore = new PgNumerosFournisStore(pool);
 
   // Heartbeat : le worker écrit un signal de vie best-effort, dont /ops/overview lit l'âge. Il prouve que le
   // process tourne (event loop non bloquée), pas que pg-boss dépile : pour des files gelées, c'est le backlog
@@ -1232,6 +1235,10 @@ async function main(): Promise<void> {
     // clients (ni contact ni `wa_id`, seulement ce que l'administrateur a tapé).
     await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,
       () => essaisStore.purger(RETENTION_ESSAIS_JOURS));
+    // Les appels captés par le pont du code (lot 3a) : un code ne vaut que dix minutes, la transcription ne sert plus
+    // qu'au dépannage. Rétention courte et en dur, comme les essais.
+    await etape('codes', `appel(s) capté(s) effacé(s) (au-delà de ${RETENTION_CODES_VERIFICATION_JOURS} j)`,
+      () => numerosFournisStore.purgerAvant(RETENTION_CODES_VERIFICATION_JOURS));
     // Les verrous courts échus : ils ne tiennent plus rien, la prise suivante les reprendrait. Sans cette étape, la
     // table garderait une ligne par message de client ayant déclenché un envoi de l'agent de Meta.
     await etape('verrous', 'verrou(s) court(s) échu(s) effacé(s)', () => verrousCourts.purgerEchues());

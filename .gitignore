@@ -41,3 +41,9 @@ docs/prive/
 /BILAN-*.md
 /MEMO-*.md
 /PLAN-REDUCTION-*.md
+
+# Le pont du code (ops/otp-asterisk, lot 3a) : les identifiants SIP du trunk et le secret partage avec l'API ne vont
+# JAMAIS dans un depot PUBLIC. Ni les enregistrements d'appels.
+ops/otp-asterisk/pjsip.conf
+ops/otp-asterisk/secret-pont
+ops/otp-asterisk/monitor/

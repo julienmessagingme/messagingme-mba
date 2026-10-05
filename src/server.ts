@@ -94,6 +94,8 @@ import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
 import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore, type PlafondsParDefaut } from './auth/plafond-espace';
 import { registerOpsPlafondApi } from './http/ops-plafond-api';
+import { registerOpsNumeros, type OpsNumerosDeps } from './http/ops-numeros';
+import { registerOtpPont, type OtpPontRouteDeps } from './http/otp-pont';
 import { MetaApiError } from './meta/errors';
 import { FlowJsonInvalidError } from './meta/flows';
 import type { AuthRouteDeps } from './auth/routes';
@@ -247,6 +249,13 @@ export interface ServerDeps {
    * un service. Monté seulement quand le secret de signature est posé.
    */
   stripeWebhook?: StripeWebhookRouteDeps;
+  /**
+   * Le pont du code de vérification des numéros fournis (lot 3a, `src/http/otp-pont.ts`). Signé par le script de
+   * l'Asterisk, pas authentifié par un jeton : l'appelant est un service. Monté seulement quand le secret est posé.
+   */
+  otpPont?: OtpPontRouteDeps;
+  /** La réserve de numéros fournis dans `/ops` (lot 3a). Même autorité que `/ops`, module à part. */
+  opsNumeros?: OpsNumerosDeps;
   /** Stats du dashboard (séries 1 pt/jour). */
   stats?: StatsRouteDeps;
   /** Réglages tenant (toggle MBA). */
@@ -565,6 +574,8 @@ export function modulesDeRoutes(
     entree('plafondApi', 'session-ops', deps.plafondApi, (app, d, g) => registerOpsPlafondApi(
       app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond() }, g.ops,
     )),
+    // La réserve de numéros fournis (lot 3a) : même autorité que `/ops`, dans un module à part.
+    entree('opsNumeros', 'session-ops', deps.opsNumeros, (app, d, g) => registerOpsNumeros(app, d, g.ops)),
     // Redirection des liens tracés : publique (un destinataire clique depuis WhatsApp, sans session), montée
     // avant les gardes d'auth.
     entree('links', 'code-url', deps.links, (app, d) => registerLinks(app, d)),
@@ -606,6 +617,8 @@ export function modulesDeRoutes(
     entree('hubspotEvents', 'signature-service', deps.hubspotEvents, (app, d) => registerHubspotEvents(app, d)),
     // Le webhook de Stripe : autorité = la signature du corps brut, vérifiée dans le module avant toute lecture.
     entree('stripeWebhook', 'signature-service', deps.stripeWebhook, (app, d) => registerStripeWebhook(app, d)),
+    // Le pont du code (lot 3a) : l'Asterisk du VPS y poste chaque enregistrement, signé avec `OTP_PONT_SECRET`.
+    entree('otpPont', 'signature-service', deps.otpPont, (app, d) => registerOtpPont(app, d)),
     entree('stats', 'tenant', deps.stats, (app, d, g) => registerStats(app, d, g.admin)),
     entree('settings', 'tenant', deps.settings, (app, d, g) => registerSettings(app, d, g.admin, g.encadrement)),
     entree('admin', 'tenant', deps.admin, (app, d, g) => registerUsers(app, d, g.admin)),

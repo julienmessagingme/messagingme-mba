@@ -64,6 +64,7 @@ import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
+import type { OtpPontRouteDeps } from '../src/http/otp-pont';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
 import type { FastifyInstance } from 'fastify';
 import { plafondCoupe } from '../tests/gardes';
@@ -264,6 +265,15 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     paiements: { crediterPaiement: async () => 'espace_inconnu' },
     apresCredit: async () => undefined,
   } satisfies StripeWebhookRouteDeps,
+  // Le pont du code (lot 3a) : un VRAI secret aussi, et une réserve vide. Une signature fausse ou absente doit tomber
+  // avant la réserve (sonde 12).
+  otpPont: {
+    secret: SECRET_SERVICE,
+    numeros: { parNumero: async () => null, ecrireCode: async () => false, appelDejaLu: async () => false, appelsRecents: async () => 0 },
+    transcrire: async () => { throw new Error('auto-attaque : aucune transcription'); },
+  } satisfies OtpPontRouteDeps,
+  // La réserve de numéros fournis : même session d'exploitation que `/ops`, vérifiée avant toute dépendance.
+  opsNumeros: inconnu('opsNumeros'),
   // Clé d'API : aucune clé ne se résout. `inconnu()` étant une fonction, donc une valeur vraie, les quatre
   // montages de l'entrée (`/v1`, les envois, `/mcp`, le relais du Meta Business Agent) ont bien lieu.
   v1: inconnu('v1'),

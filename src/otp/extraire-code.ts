@@ -1,8 +1,13 @@
 /**
- * Extraction du code de vérification à 6 chiffres depuis la transcription d'un appel Meta. Module pur.
+ * Extraction du code de vérification à 6 chiffres depuis la transcription d'un appel Meta. Module pur, partagé par
+ * les deux ponts : le numéro Zadarma (français) et les numéros fournis de DIDWW (anglais, lot 3a).
  *
  * Meta énonce le code deux fois, et une reconnaissance vocale française rend la même suite d'au moins trois
  * façons : « 123456 », « 1 2 3 4 5 6 », « douze trente-quatre cinquante-six » (regroupement par deux spontané).
+ * Sur un numéro britannique, Meta dicte en anglais, chiffre par chiffre (« your verification code is 8 6 3 8 0 1 »,
+ * mesuré le 2026-10-05), que la transcription rend en chiffres ou en mots (« eight six three... », « oh » pour zéro).
+ * Les homophones (« for », « to ») ne sont PAS lus comme des chiffres : la suite se coupe, et l'extraction échoue du
+ * bon côté (aucun code plutôt qu'un code faux).
  *
  * 🔴 Unanimité ou rien : Meta plafonne à 10 demandes par numéro sur 72 h et un code faux consomme une tentative.
  * Deux suites de six chiffres différentes : `null`, et l'humain lit la transcription.
@@ -14,6 +19,8 @@ const CODE_LEN = 6;
 const UNITES: Record<string, number> = {
   zero: 0, un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9,
   dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16,
+  // L'anglais de Meta, chiffre par chiffre : « zero » et « six » s'écrivent déjà comme en français.
+  oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5, seven: 7, eight: 8, nine: 9,
 };
 const DIZAINES: Record<string, number> = { vingt: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60 };
 

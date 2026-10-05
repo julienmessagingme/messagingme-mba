@@ -111,6 +111,9 @@ import { creerAppelConnecteur } from './agent/resolvers/http';
 import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { lireContexteAvecReglages } from './agent/contexte';
 import { transcrireMessage } from './inbox/transcrire';
+import { transcrire } from './agent/llm/transcription';
+import { PgNumerosFournisStore } from './otp/store.pg';
+import { creerClientDidww } from './didww/client';
 import { lireMediaRecu } from './inbox/media-entrant';
 import type { DepsRepondre } from './inbox/repondre';
 import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
@@ -498,6 +501,19 @@ async function main(): Promise<void> {
     gestion: gestionDesWidgetsEnBase(pool),
     numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
     baseApi: adressesApi.avecPrefixe,
+  };
+
+  /**
+   * Les numéros fournis (lot 3a) : la réserve, lue et écrite par `/ops`, et le pont du code, que l'Asterisk appelle.
+   * La transcription d'un appel de Meta part sur NOTRE clé, comme celle des vocaux : ce n'est la dépense d'aucun client.
+   */
+  const numerosFournis = new PgNumerosFournisStore(pool);
+  const transcrireAppelOtp = async (audio: Buffer): Promise<string> => {
+    if (!config.AI_GATEWAY_API_KEY || !config.TRANSCRIPTION_MODELE) throw new Error('transcription non configurée');
+    const r = await transcrire(new FetchTransport(HTTP_TIMEOUT_MODELE_MS), {
+      cle: config.AI_GATEWAY_API_KEY, modele: config.TRANSCRIPTION_MODELE, bytes: audio, mime: 'audio/wav',
+    });
+    return r.texte;
   };
 
   /**
@@ -990,6 +1006,10 @@ async function main(): Promise<void> {
      * de la console, jamais sur l'API : il ne crédite rien, il fait relire le solde.
      */
     creditPaiement: paiementDeLaConsole,
+    // Le pont du code (lot 3a), monté seulement avec son secret : une signature sans secret ne prouverait rien.
+    ...(config.OTP_PONT_SECRET ? {
+      otpPont: { secret: config.OTP_PONT_SECRET, numeros: numerosFournis, transcrire: transcrireAppelOtp },
+    } : {}),
     // Le webhook de Stripe, monté seulement avec son secret (une signature sans secret ne prouverait rien). La
     // configuration refuse de démarrer avec le secret sans la clé, ou l'inverse : monté, il connaît donc le mode.
     ...(config.STRIPE_WEBHOOK_SECRET ? {
@@ -2121,6 +2141,13 @@ async function main(): Promise<void> {
     },
     // Le réglage du plafond de l'API par espace : lu par le limiteur de `/v1` et `/mcp`, écrit par `/ops`.
     plafondApi: new PgPlafondEspaceStore(pool),
+    // La réserve de numéros fournis (lot 3a). Sans clé DIDWW ou sans trunk, la déclaration rend 503 et la lecture marche.
+    opsNumeros: {
+      numeros: numerosFournis,
+      didww: config.DIDWW_API_KEY && config.DIDWW_TRUNK_OTP_ID
+        ? { client: creerClientDidww({ cle: config.DIDWW_API_KEY, url: config.DIDWW_API_URL }), trunkId: config.DIDWW_TRUNK_OTP_ID }
+        : null,
+    },
     support: {
       enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
       getUserEmail: async (userId) => (await userStore.getById(userId))?.email ?? null,

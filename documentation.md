@@ -186,6 +186,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **API publique v1** | ce qu'un intégrateur du client appelle | `src/api/`, `src/http/v1-*.ts` | `/developers` | `api_keys`, `api_idempotency` | |
 | **Serveur MCP et son OAuth** | Claude (Claude Code, claude.ai) lit et agit dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes` | `retention-oauth` |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log` | `dlq-sweep` |
+| **Numéros fournis** | la réserve de numéros DIDWW, et le pont qui lit le code que Meta dicte en appelant (lot 3a) | `src/otp/`, `src/didww/`, `src/http/otp-pont.ts`, `src/http/ops-numeros.ts`, `ops/otp-asterisk/` | `/ops` | `numeros_fournis`, `codes_verification` | purge du balayage de rétention |
 | **Auth et comptes** | connexion, invitations, rôles, multi-espace | `src/auth/`, `src/user/` | `/login`, `/admin` | `users`, `identities`, `auth_tokens` | |
 
 ---
@@ -2443,6 +2444,23 @@ l'offre s'y récoltait par script. Les raisons de mouvement sont listées par `R
 branches (les tours d'agent agrégés par jour, et le reste tel qu'écrit) : l'index `(tenant_id, at desc)` ne
 connaît pas la raison, donc une branche sans fenêtre parcourait tous les mouvements de l'espace. Une ligne
 `achat` porte son paiement (`paiementId`, la session Stripe) et s'il a une facture (`facture`).
+
+🔴 **LE PONT DU CODE DES NUMÉROS FOURNIS** (lot 3a, `src/http/otp-pont.ts`, spec
+`docs/superpowers/specs/2026-10-05-pont-du-code-design.md`). Meta vérifie un numéro que nous fournissons en l'appelant ;
+l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enregistrement à
+`POST /internes/otp/appels/:numero/:appel` (classe `signature-service`).
+- 🔴 **L'adresse est publique** (l'API n'est que sur le réseau Docker, l'Asterisk passe par `api.messagingme.app`) :
+  c'est la signature qui la ferme, au format de nos services (`x-mm-service-signature`, `verifyRequest`), sur le corps
+  brut, la méthode et le CHEMIN, qui porte le numéro et l'identifiant d'appel. Elle est vérifiée avant tout. Le script
+  et `signRequest` signent à l'identique, tenu par `tests/otp-asterisk-signature.test.ts`, qui exécute le vrai script.
+- La route transcrit sur NOTRE clé (le service des vocaux), extrait le code (`src/otp/extraire-code.ts`, français et
+  anglais, « unanimité ou rien ») et écrit l'appel dans `codes_verification`, unique par `appel_id`. Un appel sans
+  code certain s'écrit aussi, avec sa cause, et rend 200 : le rejouer donnerait le même résultat.
+- `OTP_PONT_SECRET` vide : la route n'est pas montée. La réserve se remplit par `/ops` (`src/http/ops-numeros.ts`) :
+  le serveur retrouve le numéro chez DIDWW et le branche sur le trunk de l'Asterisk (`src/didww/client.ts`, qui ne sait
+  ni acheter ni résilier), puis l'inscrit `libre`. Sans `DIDWW_API_KEY` ou `DIDWW_TRUNK_OTP_ID`, la déclaration rend
+  503. ⚠️ La configuration ne refuse PAS de démarrer sur une clé sans trunk : `.env.prod` porte encore la ligne d'une
+  clé révoquée, et une garde au démarrage aurait coupé l'API au premier déploiement.
 
 🔴 **LA RECHARGE PAR STRIPE** (lot 2, 2026-09-29, `src/http/credit-stripe.ts`, `src/stripe/`). Le client REST
 est écrit sans SDK (formulaire `x-www-form-urlencoded`, `Stripe-Version` épinglée sur celle de la destination

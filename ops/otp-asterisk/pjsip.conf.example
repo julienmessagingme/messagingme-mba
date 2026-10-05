@@ -1,0 +1,55 @@
+; GABARIT du pont du code (lot 3a). Asterisk ne lit PAS les variables d environnement dans ce fichier : on recopie ce
+; gabarit en pjsip.conf (ignore par git, jamais commite) et on y ecrit les deux identifiants en clair. Ils sont generes
+; par DIDWW et releves dans son portail, page Inbound Trunks, en cliquant le nom du trunk.
+; Le point d'entree ne demande AUCUN mot de passe a l'appelant (outbound_auth seulement) : exiger auth ici faisait
+; repondre 401 aux sondes OPTIONS de DIDWW (corrige le 2026-10-02).
+; 🔴 IL N'EST DONC RECONNU QUE PAR L'ADRESSE (identify_by = ip), jamais par le nom : par defaut, Asterisk reconnait aussi
+; un appelant au nom d'utilisateur de son From, d'ou qu'il vienne, et un endpoint sans auth l'accepte sans verification.
+; Avec identify_by = ip, seuls les appels venus des plages de DIDWW (section identify) entrent dans otp-entrant, qui
+; enregistre puis lance un script (relecture du lot 3a). Le pare-feu du port 5080 est un second verrou, pas le premier.
+
+[transport-udp]
+type = transport
+protocol = udp
+bind = 0.0.0.0:5080
+
+[didww-auth]
+type = auth
+auth_type = userpass
+username = REMPLACER_IDENTIFIANT
+password = REMPLACER_MOT_DE_PASSE
+
+[didww]
+type = registration
+transport = transport-udp
+outbound_auth = didww-auth
+server_uri = sip:sip.didww.com
+client_uri = sip:REMPLACER_IDENTIFIANT@sip.didww.com
+retry_interval = 60
+forbidden_retry_interval = 600
+expiration = 300
+
+[didww]
+type = aor
+contact = sip:sip.didww.com
+
+[didww]
+type = endpoint
+identify_by = ip
+transport = transport-udp
+context = otp-entrant
+disallow = all
+allow = alaw,ulaw
+aors = didww
+outbound_auth = didww-auth
+direct_media = no
+rtp_symmetric = yes
+force_rport = yes
+dtmf_mode = rfc4733
+
+[didww]
+type = identify
+endpoint = didww
+match = 46.19.208.0/21
+match = 185.238.172.0/22
+match = sip.didww.com

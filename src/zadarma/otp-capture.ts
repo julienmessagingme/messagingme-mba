@@ -1,4 +1,4 @@
-import { extraireCodeOtp } from './otp-extract';
+import { extraireCodeOtp } from '../otp/extraire-code';
 import type { AppelEntrant, Transcription } from './api';
 
 /**

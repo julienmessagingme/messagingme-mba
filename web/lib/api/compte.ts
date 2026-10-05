@@ -376,6 +376,42 @@ export function getOpsStockage(sessionOps: string): Promise<MesureStockage> {
   return appelOps(sessionOps, '/ops/stockage');
 }
 
+/** Un numéro de la réserve des numéros fournis (lot 3a), avec le dernier appel que le pont du code a capté dessus. */
+export interface NumeroFourniOps {
+  id: string;
+  /** Chiffres seuls, au format `wa_id`. */
+  numero: string;
+  didwwDidId: string;
+  statut: 'libre' | 'attribue' | 'resilie';
+  tenantId: string | null;
+  attribueLe: string | null;
+  creeLe: string;
+  dernierCode: {
+    appelId: string;
+    recuLe: string;
+    /** `null` = aucun code certain : `cause` dit pourquoi. */
+    code: string | null;
+    transcription: string;
+    cause: 'transcription_indisponible' | 'code_introuvable' | null;
+  } | null;
+}
+
+export interface ReserveNumerosOps {
+  /** `false` = la clé DIDWW ou le trunk manquent sur le serveur : déclarer rend 503. */
+  configure: boolean;
+  libres: number;
+  numeros: NumeroFourniOps[];
+}
+
+export function lireNumerosFournis(sessionOps: string): Promise<ReserveNumerosOps> {
+  return appelOps(sessionOps, '/ops/numeros-fournis');
+}
+
+/** Retrouve le numéro chez DIDWW, le branche sur le trunk de l'Asterisk, puis l'inscrit dans la réserve. */
+export function declarerNumeroFourni(sessionOps: string, numero: string, note: string): Promise<{ cree: boolean }> {
+  return appelOps(sessionOps, '/ops/numeros-fournis', { method: 'POST', corps: { numero, note } });
+}
+
 // --- Support (formulaire de contact -> email Resend) ---
 
 /** Le reply-to n'est PAS envoye par le client : le serveur le resout depuis le compte authentifie. */

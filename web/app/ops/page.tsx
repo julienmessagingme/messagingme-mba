@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, getOpsStockage, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
+  lireNumerosFournis, declarerNumeroFourni, type ReserveNumerosOps,
   type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type LatenceHttpRow, type WorkerHeartbeat, type PoolInstantane,
   type PoolAttentePoint, type GrillePrix, type EtapeSecondFacteur, type SessionOpsOuverte, type TacheFondRow, type MesureStockage } from '@/lib/api';
 import { ApiError } from '@/lib/http';
@@ -181,6 +182,8 @@ export default function OpsPage() {
             )}
 
             <GrillePrixCard token={session.token} />
+
+            <NumerosFournisCard token={session.token} />
 
             <TenantTable onObserver={(id, nom) => { void observer(id, nom); }} tenants={data.tenants} />
           </>
@@ -901,6 +904,119 @@ function StockageCard({ jeton }: { jeton: string }) {
               <div key={ta.table} className="flex items-center justify-between gap-3 text-xs">
                 <span className="min-w-0 break-all font-mono text-ink-900">{ta.table}</span>
                 <span className="shrink-0 tabular-nums text-ink-500">{fmtOctets(ta.octets, locale)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * LA RÉSERVE DES NUMÉROS FOURNIS (lot 3a, spec `docs/superpowers/specs/2026-10-05-pont-du-code-design.md`). Julien
+ * achète un numéro chez DIDWW, puis le déclare ici : le serveur le branche sur le trunk de l'Asterisk et l'inscrit
+ * libre. La carte montre aussi le dernier appel capté par numéro, le seul endroit où lire le code tant que la page
+ * « Connecter WhatsApp » n'existe pas.
+ *
+ * ⚠️ Elle tolère une API qui n'a pas encore la route (déployée après la console, ou l'inverse) : la carte le dit, et
+ * le reste de l'écran d'exploitation reste debout.
+ */
+function NumerosFournisCard({ token }: { token: string }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [reserve, setReserve] = useState<ReserveNumerosOps | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [numero, setNumero] = useState('');
+  const [note, setNote] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+  const [retour, setRetour] = useState<{ ok: boolean; texte: string } | null>(null);
+
+  const charger = useCallback(() => {
+    lireNumerosFournis(token)
+      .then((r) => {
+        if (Array.isArray(r?.numeros)) { setReserve(r); setErreur(null); } else setErreur(t('Réserve illisible sur cette version de l’API.', 'Reserve unreadable on this API version.'));
+      })
+      .catch((e: unknown) => {
+        setErreur(e instanceof ApiError && e.status === 404
+          ? t('La réserve n’existe pas encore sur cette version de l’API.', 'The reserve does not exist yet on this API version.')
+          : e instanceof Error ? e.message : t('Lecture impossible', 'Read failed'));
+      });
+  }, [token, t]);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function declarer() {
+    if (envoi) return;
+    setEnvoi(true);
+    setRetour(null);
+    try {
+      const r = await declarerNumeroFourni(token, numero, note);
+      setRetour({ ok: true, texte: r.cree ? t('Numéro branché et ajouté à la réserve.', 'Number connected and added to the reserve.') : t('Ce numéro était déjà dans la réserve.', 'This number was already in the reserve.') });
+      setNumero('');
+      setNote('');
+      charger();
+    } catch (e: unknown) {
+      setRetour({ ok: false, texte: e instanceof Error ? e.message : t('Déclaration impossible', 'Declaration failed') });
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  const statuts: Record<ReserveNumerosOps['numeros'][number]['statut'], string> = {
+    libre: t('libre', 'free'), attribue: t('attribué', 'assigned'), resilie: t('résilié', 'terminated'),
+  };
+  const causes: Record<'transcription_indisponible' | 'code_introuvable', string> = {
+    transcription_indisponible: t('transcription indisponible', 'transcription unavailable'),
+    code_introuvable: t('aucun code certain', 'no certain code'),
+  };
+
+  return (
+    <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="numeros-fournis">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-ink-900">{t('Numéros fournis', 'Provided numbers')}</h3>
+        <Bouton variante="secondaire" taille="petite" onClick={charger}>{t('Rafraîchir', 'Refresh')}</Bouton>
+      </div>
+      <p className="mb-3 mt-1 text-xs text-ink-500">
+        {t(
+          'Un numéro acheté chez DIDWW se déclare ici : le serveur le branche sur l’Asterisk et l’ajoute à la réserve. Le dernier code dicté par Meta s’affiche en face de chaque numéro.',
+          'A number bought from DIDWW is declared here: the server connects it to the Asterisk and adds it to the reserve. The last code dictated by Meta shows next to each number.',
+        )}
+      </p>
+      {erreur ? (
+        <p className="text-xs text-danger">{erreur}</p>
+      ) : !reserve ? (
+        <Squelette forme="lignes" lignes={3} />
+      ) : (
+        <div className="grid gap-3">
+          <p className="text-xs text-ink-900">
+            {t('Numéros libres', 'Free numbers')} <span className="font-medium tabular-nums" data-testid="numeros-libres">{fmtNum(reserve.libres, locale)}</span>
+            {!reserve.configure && <span className="text-danger">{' · '}{t('DIDWW n’est pas configuré sur ce serveur', 'DIDWW is not configured on this server')}</span>}
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <input className={inputCls} value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="+44 20 7123 4567" aria-label={t('Numéro', 'Number')} />
+            <input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('Note : d’où vient ce numéro', 'Note: where this number comes from')} aria-label={t('Note', 'Note')} />
+            <Bouton enCours={envoi} disabled={envoi || numero.trim() === '' || note.trim() === ''} onClick={() => { void declarer(); }}>
+              {t('Déclarer', 'Declare')}
+            </Bouton>
+          </div>
+          {retour && <p className={retour.ok ? 'text-xs text-succes-700' : 'text-xs text-danger'}>{retour.texte}</p>}
+          <div className="grid gap-1.5">
+            {reserve.numeros.length === 0 && <p className="text-xs text-ink-500">{t('Aucun numéro dans la réserve.', 'No number in the reserve.')}</p>}
+            {reserve.numeros.map((n) => (
+              <div key={n.id} className="grid gap-1 rounded-controle bg-ink-50 px-3 py-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-mono text-ink-900">+{n.numero}</span>
+                  <span className="text-ink-500">{statuts[n.statut]}{n.tenantId ? ` · ${n.tenantId}` : ''}</span>
+                </div>
+                {n.dernierCode && (
+                  <div className="text-ink-500">
+                    {formatDate(n.dernierCode.recuLe, locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}{' · '}
+                    {n.dernierCode.code
+                      ? <span className="font-mono font-medium text-ink-900" data-testid="dernier-code">{n.dernierCode.code}</span>
+                      : <span className="text-danger">{n.dernierCode.cause ? causes[n.dernierCode.cause] : ''}</span>}
+                    {n.dernierCode.transcription && <span className="block break-words">« {n.dernierCode.transcription} »</span>}
+                  </div>
+                )}
               </div>
             ))}
           </div>

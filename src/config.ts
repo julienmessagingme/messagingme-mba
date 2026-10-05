@@ -503,6 +503,19 @@ export const schema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().default(''),
   STRIPE_PRIX_REFILL_50: z.string().default(''),
   STRIPE_PRIX_REFILL_100: z.string().default(''),
+  /**
+   * Les numéros fournis (lot 3a, `src/otp/`). 🔴 Côté serveur uniquement.
+   * `DIDWW_API_KEY` : la clé d'API DIDWW de PRODUCTION, limitée à l'adresse du VPS. Elle ne sert qu'à retrouver un
+   * numéro et à le brancher sur le trunk de l'Asterisk (`DIDWW_TRUNK_OTP_ID`), jamais à acheter, bien qu'elle le
+   * puisse : c'est Julien qui achète. Vide : déclarer un numéro dans /ops rend 503.
+   * `OTP_PONT_SECRET` : le secret partagé avec le script de l'Asterisk, qui signe chaque enregistrement au format
+   * `x-mm-service-signature` (`src/lib/signature.ts`). Vide : la route du pont n'est pas montée.
+   */
+  DIDWW_API_KEY: z.string().default(''),
+  // Vide : la production. Une adresse posée doit être une URL (vide, `.url()` aurait refusé de démarrer l'API).
+  DIDWW_API_URL: z.string().default('').transform((v) => v.trim() || 'https://api.didww.com/v3').pipe(z.string().url()),
+  DIDWW_TRUNK_OTP_ID: z.string().default(''),
+  OTP_PONT_SECRET: z.string().default(''),
   /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est inerte (aucun job enfilé). */
   CONNECTOR_PUSH_URL: z.string().default(''),
   /** Secret HMAC partagé avec le connecteur (== INGEST_SECRET). Signe le push. */
@@ -637,6 +650,12 @@ export const schema = z.object({
     // ne connaît pas le mode de la clé, donc ne peut pas refuser un événement de l'autre mode.
     if ((c.STRIPE_SECRET_KEY === '') !== (c.STRIPE_WEBHOOK_SECRET === '')) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [c.STRIPE_SECRET_KEY === '' ? 'STRIPE_SECRET_KEY' : 'STRIPE_WEBHOOK_SECRET'], message: 'STRIPE_SECRET_KEY et STRIPE_WEBHOOK_SECRET se posent ensemble (ou aucun des deux)' });
+    }
+    // Le pont du code : un secret court se devinerait. ⚠️ AUCUNE garde au démarrage sur la paire clé DIDWW et trunk :
+    // `.env.prod` porte encore la ligne `DIDWW_API_KEY` d'une clé révoquée (mesuré le 2026-10-02), et la garde aurait
+    // refusé de démarrer l'API au premier déploiement. Il manque l'une ou l'autre : la déclaration rend 503.
+    if (c.OTP_PONT_SECRET !== '' && c.OTP_PONT_SECRET.length < 32) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['OTP_PONT_SECRET'], message: 'OTP_PONT_SECRET doit faire au moins 32 caractères' });
     }
     // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).
     if (c.CONNECTOR_PUSH_URL !== '' && c.CONNECTOR_PUSH_SECRET === '') {

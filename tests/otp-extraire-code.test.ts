@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extraireCodeOtp } from '../src/zadarma/otp-extract';
+import { extraireCodeOtp } from '../src/otp/extraire-code';
 
 /**
  * Le maillon dont dépend toute l'automatisation de l'OTP. On ne sait pas encore comment la reconnaissance
@@ -55,5 +55,30 @@ describe('extraireCodeOtp', () => {
 
   it('ponctuation, majuscules et accents ne changent rien', () => {
     expect(extraireCodeOtp('CODE : Un, Deux, Trois, Quatre. Cinq/Six !')).toBe('123456');
+  });
+});
+
+/**
+ * 🔴 L'ANGLAIS DES NUMÉROS FOURNIS (lot 3a). Sur un numéro britannique de DIDWW, Meta dicte en anglais, chiffre par
+ * chiffre : la transcription réelle du 2026-10-05 portait « your verification code is 8 6 3 8 0 1 ».
+ */
+describe('extraireCodeOtp : l’anglais de Meta', () => {
+  it('la transcription réelle du 2026-10-05, chiffres espacés et répétés', () => {
+    expect(extraireCodeOtp('Your verification code is 8 6 3 8 0 1. Again, your verification code is 8 6 3 8 0 1.')).toBe('863801');
+  });
+
+  it('les chiffres en mots, « oh » et « zero » pour zéro, avec ou sans tirets', () => {
+    expect(extraireCodeOtp('your code is eight six three eight oh one')).toBe('863801');
+    expect(extraireCodeOtp('Your code is: eight-six-three-eight-zero-one.')).toBe('863801');
+    expect(extraireCodeOtp('One, two, three, four, five, six.')).toBe('123456');
+  });
+
+  it('🔴 un homophone n’est pas un chiffre : la suite se coupe, aucun code plutôt qu’un code faux', () => {
+    // « for » lu 4 fabriquerait un code de six chiffres là où Meta n'en a dicté que cinq de lisibles.
+    expect(extraireCodeOtp('your code is for eight three eight zero one')).toBeNull();
+  });
+
+  it('🔴 deux énoncés qui diffèrent -> null, en anglais aussi', () => {
+    expect(extraireCodeOtp('your code is 863801, again your code is 863807')).toBeNull();
   });
 });
