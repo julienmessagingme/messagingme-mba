@@ -1,5 +1,16 @@
 # todo.md : backlog
 
+## 🟠 Connecteurs : la méthode d'une requête change sans recalculer le risque de ses outils (relecture de `099fd6c1`, 2026-10-05)
+
+- Modifier la MÉTHODE d'une requête (`PATCH`, `src/http/agent-requetes.ts`) ne remonte pas le `risk` des outils déjà
+  branchés dessus : un GET passé en DELETE garde `read`. En production, l'exécuteur (étape 2) ne leur applique alors ni
+  la garde d'autonomie des actions irréversibles, ni le refus `lecture_seule` face à un contact inconnu. Le bac à
+  sable, lui, relit la méthode à chaque appel (`connecteurEssai`). Correctif attendu : remonter le risque au plancher
+  de la nouvelle méthode, jamais le descendre, dans la transaction de la modification. Une tâche a été proposée.
+- 🟡 Laissés délibérément par le même lot : le câblage construit deux fois le même objet de dépendances d'un
+  connecteur (`src/index.ts`, bac à sable et relais de l'agent de Meta) ; et un GET qui « intègre » mais AGIT
+  partirait encore au bac à sable (la déclaration du client fait foi, question produit si un cas réel se présente).
+
 ## 🟡 La mention d'IA et la forme WhatsApp : à trancher (relecture de `6d6e47dc`, 2026-10-05)
 
 - **`reply_in_open_window` (outil MCP, `src/mcp/outils.ts`) envoie un texte écrit par Claude**, sans mention d'IA ni
