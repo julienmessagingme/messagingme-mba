@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, LIVRAISON A EN PRODUCTION, B ÉCRITE ET RELUE
+## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, LIVRAISONS A ET B EN PRODUCTION, ESSAI RÉEL DÛ
 
 Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré
 avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`, plan
@@ -46,7 +46,8 @@ avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-pa
   de retirer de sa liste restent muets, la console B doit l'afficher ; (J7) allumer l'agent de Meta efface le répondeur
   IA sans ligne d'historique, la console B doit l'annoncer ; (J8) l'alerte de crédit marque le jour avant l'envoi ;
   (J9) la mémoire de 30 jours donne au modèle nos sortants (opérateur, campagne) en rôle agent.
-- ✅ **Livraison B écrite** (2026-10-05, extraction de `f64dddeb`) : le bloc « Répondeur de l'espace » sur la
+- ✅ **Livraison B en production le 2026-10-05** (`8e907531`, API et deux workers relancés, aucune migration, CI verte
+  job par job) : le bloc « Répondeur de l'espace » sur la
   page des agents (`web/components/RepondeurEspace.tsx` : « Aucun » ou un agent ACTIF, l'agent de Meta allumé dit avec
   un lien vers son écran, la confirmation « l'agent de Meta sera éteint pour tous vos contacts de cet espace », les
   contacts que Meta n'a pas retirés COMPTÉS) ; la désactivation et la suppression de l'agent répondeur confirmées ; les

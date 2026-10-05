@@ -204,6 +204,15 @@ repris sans repartir de zéro, puis la relecture. Le jaune le plus utile de cett
 (« désactivez l'agent avant de le remanier ») pouvait pousser Claude à couper un agent en production ; les
 descriptions disent désormais que désactiver coupe l'agent dans ses scénarios et ne se fait que sur demande.
 
+## 2026-10-05 : le répondeur par défaut, livraison B (la console) en production
+
+`8e907531`, API et deux workers relancés, aucune migration. Le bloc « Répondeur de l'espace » sur la page des agents,
+les libellés « le répondeur automatique » des campagnes, du widget et des publicités, et le correctif des réactions : un
+pouce du contact ne démarre plus le répondeur et ne réveille plus un agent en cours. La relecture a trouvé que ce
+correctif lui-même effaçait l'échéance d'inactivité du bloc agent (une réaction écrivait l'état sans `resume_at`, et
+aucun tour ne la reposait) : corrigé avant le commit en ne rien écrivant du tout, avec son test. La leçon tient en une
+phrase : une branche qui sort d'un chemin AVANT le tour qui répare l'état ne doit pas écrire cet état.
+
 ## 2026-10-05 : le répondeur par défaut, livraison A (le serveur) en production
 
 Un agent IA désigné par l'espace répond à tout message que personne ne tient, comme l'agent de Meta (`1f28aee7`,
