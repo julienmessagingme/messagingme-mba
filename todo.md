@@ -26,6 +26,15 @@
 - Suggestion de la relecture, non faite : dire dans la consigne commune « si on te demande si tu es une IA, réponds
   honnêtement », y compris au régime « jamais » (`promptSysteme`, `src/agent/prompt.ts`).
 
+## 🟡 Le numéro fourni (lot 3b) : les jaunes de la relecture de la livraison A (2026-10-05)
+
+- 🟡 **Un compte sans numéro reste attaché au premier espace qui l'a relié** : relancer la fenêtre depuis un autre
+  espace rend 409, et aucun geste de la console ne le libère (« Délier » exige un numéro). À traiter avec la page du 3b.
+- 🟡 **Le cache de 60 s de `wabaDeLEspace`** (`src/meta/numero-espace.ts`) peut rendre un compte que `linkTenant` vient
+  de retirer : l'activation et le statut échouent jusqu'à 60 s. Invalider l'espace après la liaison.
+- 🟡 **`waitFor` s'arrête au premier compte seul** (`web/lib/connexion-numero.ts`) : si Meta envoie le compte seul
+  AVANT le couple compte et numéro, le serveur repêche par `listPhones`, et rend 409 sur un compte à deux numéros.
+
 ## 🟠 Le pont du code (lot 3a) : les restes (2026-10-05)
 
 - 🟠 **Remplacer la clé DIDWW** : elle a transité par une conversation le 2026-10-05. En créer une neuve chez DIDWW
