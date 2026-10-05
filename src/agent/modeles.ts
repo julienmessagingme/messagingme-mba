@@ -49,6 +49,16 @@ export const MODELES_CHOISIS: ReadonlyArray<{ id: string; nom: string }> = [
   { id: 'anthropic/claude-sonnet-4.5', nom: 'Claude Sonnet 4.5' },
 ];
 
+/**
+ * Le modèle d'un agent créé par Claude Code (l'outil MCP `create_agent`), décision de Julien du 2026-10-05 : un
+ * vibe coder ne choisit pas son modèle, la console laisse son client le choisir et garde le défaut du serveur.
+ * Mesuré le même jour sur la qualification d'un vrai agent : sur « je veux parler à un conseiller », Gemini 2.5 Flash
+ * écrivait « un conseiller va prendre le relais » SANS appeler l'outil de transfert 3 fois sur 10 (GLM 4.7 Flash 7),
+ * Claude Haiku 4.5 jamais ; il cherchait aussi dans la connaissance avant de répondre et fermait chaque sortie. Environ
+ * quatre fois le prix par appel de Gemini 2.5 Flash.
+ */
+export const MODELE_AGENT_CLAUDE_CODE = 'anthropic/claude-haiku-4.5';
+
 /** Les identifiants seuls, pour la garde d'écriture. */
 export const IDS_MODELES_CHOISIS: ReadonlySet<string> = new Set(MODELES_CHOISIS.map((m) => m.id));
 

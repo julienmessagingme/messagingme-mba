@@ -21,7 +21,7 @@ import {
 import { saisieDEssai, type DepsEssai } from '../src/agent/essai';
 import { saisieDOutilsSurs } from '../src/agent/reglages';
 import { MODES_TRANSFERT, type ModeTransfert } from '../src/agent/disponibilite-equipe';
-import { MODELES_CHOISIS } from '../src/agent/modeles';
+import { MODELES_CHOISIS, MODELE_AGENT_CLAUDE_CODE } from '../src/agent/modeles';
 import { saisieDePaiement, type DepsPaiement } from '../src/stripe/paiement';
 import type { ReponseStripe, TransportStripe } from '../src/stripe/client';
 import type { OutilComplet } from '../src/agent/catalog';
@@ -485,8 +485,9 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     const { server, cap } = monter();
     const r = await appeler(server, JETON.brut, 'create_agent', { label: 'Accueil', tenantId: 't2' });
     expect(r.isError).toBe(false);
-    expect(cap.creations).toEqual([{ tenant: 't1', label: 'Accueil', modele: 'modele-config' }]);
-    expect(r.json().agent).toEqual({ id: AG_NEUF, label: 'Accueil', status: 'draft', modele: 'modele-config', fiche: ficheVide(), fiche_version: 1 });
+    // Le modèle des agents de Claude Code, et non le défaut du serveur (`modele-config`) que garde la console.
+    expect(cap.creations).toEqual([{ tenant: 't1', label: 'Accueil', modele: MODELE_AGENT_CLAUDE_CODE }]);
+    expect(r.json().agent).toEqual({ id: AG_NEUF, label: 'Accueil', status: 'draft', modele: MODELE_AGENT_CLAUDE_CODE, fiche: ficheVide(), fiche_version: 1 });
     await server.close();
   });
 

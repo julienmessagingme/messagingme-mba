@@ -13,7 +13,7 @@ import { MAX_CARACTERES_MESSAGE_ESSAI, MAX_MESSAGES_ESSAI, ROLES_ESSAI, essayerA
 import { OUTILS_SURS, ajouterOutilsSurs, reglerModeTransfert, type OutilsSurs } from '../agent/reglages';
 import { MODES_TRANSFERT, MODE_TRANSFERT_DEFAUT, type ModeTransfert } from '../agent/disponibilite-equipe';
 import { BORNES_FICHE, CODE_SORTIE_RE, MAX_SORTIES, type FicheAgentContenu } from '../agent/fiche';
-import { MODELES_CHOISIS, type ModeleProposable } from '../agent/modeles';
+import { MODELES_CHOISIS, MODELE_AGENT_CLAUDE_CODE, type ModeleProposable } from '../agent/modeles';
 import { MAX_CORPS, MAX_TITRE } from '../agent/scrape';
 import { PAGES_MAX } from '../agent/crawl';
 import { handlerMaison, outilMaison } from '../agent/outils-maison';
@@ -205,7 +205,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
     nom: 'create_agent',
     description:
       'Crée un agent IA en brouillon, par la fonction de la console. Seul le libellé se choisit ici : le modèle est '
-      + 'celui par défaut et la fiche est vide (update_agent la remplit, set_agent_tools lui donne ses outils, la '
+      + 'Claude Haiku 4.5 (update_agent peut en choisir un autre) et la fiche est vide (update_agent la remplit, set_agent_tools lui donne ses outils, la '
       + 'connaissance vient de preview_site et import_site ou de add_knowledge). Le premier agent d’un espace lui '
       + `ouvre une clé de modèle facturée sur son crédit : il faut au moins l’équivalent de ${PLAFOND_GATEWAY_MIN_DOLLARS} $ `
       + 'de crédit (moins d’un euro), sinon la création est refusée et buy_credit ouvre une recharge (get_credit '
@@ -225,7 +225,9 @@ export const OUTILS_AGENT: OutilMcp[] = [
       required: ['label'],
     },
     async executer(deps, tenantId, args) {
-      return { agent: vueAgent(valeurOuRefus(await creerAgent(deps.agentIa.gestion, tenantId, { label: args.label }))) };
+      // Le modèle des agents de Claude Code, pas le défaut du serveur que garde la console (`MODELE_AGENT_CLAUDE_CODE`).
+      const gestion = { ...deps.agentIa.gestion, modeleParDefaut: MODELE_AGENT_CLAUDE_CODE };
+      return { agent: vueAgent(valeurOuRefus(await creerAgent(gestion, tenantId, { label: args.label }))) };
     },
   },
   {

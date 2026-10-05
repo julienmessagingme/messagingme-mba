@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { prixParMillion, modelesProposables, MODELES_CHOISIS, IDS_MODELES_CHOISIS, type ModeleGateway } from '../src/agent/modeles';
+import { prixParMillion, modelesProposables, MODELES_CHOISIS, IDS_MODELES_CHOISIS, MODELE_AGENT_CLAUDE_CODE, type ModeleGateway } from '../src/agent/modeles';
 import { lireCatalogueGateway } from '../src/agent/llm/modeles-gateway';
 import type { HttpGet } from '../src/lib/http-get';
 
@@ -110,6 +110,10 @@ describe('modelesProposables : l’intersection de NOS neuf avec le catalogue r�
     // Mesuré le 2026-10-04 sur un vrai agent : 2,5 fois le coût de Gemini 2.5 Flash et des sorties sans un mot au
     // contact. Le remettre au menu se décide sur un essai, pas en recopiant la liste du Gateway.
     expect(IDS_MODELES_CHOISIS.has('openai/gpt-5-mini')).toBe(false);
+  });
+
+  it('🔴 le modèle des agents de Claude Code est dans la liste : sinon chaque agent qu’il crée serait « hors liste »', () => {
+    expect(IDS_MODELES_CHOISIS.has(MODELE_AGENT_CLAUDE_CODE)).toBe(true);
   });
 });
 

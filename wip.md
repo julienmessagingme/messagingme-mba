@@ -110,7 +110,12 @@ avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-pa
   règle d'arrêt » (l'agent était sorti par la règle « Passage à un conseiller humain » de sa fiche, retirée depuis).
   Ce choix arrive 1 fois sur 48 sur Gemini 2.5 Flash, et la phrase faisait INVENTER des noms d'outil à Flash Lite
   (`escalader_humain`). Reste un conseil de fiche : pas de règle d'arrêt qui passe la main à un humain.
-- ⏳ **À trancher par Julien : la fausse promesse.** Sur la même demande « je veux parler à un conseiller », le modèle
+- ✅ **Tranché par Julien le 2026-10-05 : les agents créés par Claude Code passent sur Claude Haiku 4.5**
+  (`MODELE_AGENT_CLAUDE_CODE`, l'outil MCP `create_agent`), Gan PrevMCP aussi ; la console garde son défaut, son
+  client choisit le modèle. Mesuré sur la qualification de Gan PrevMCP (5 essais par situation) : Haiku cherche dans
+  la connaissance avant de répondre, ferme chaque sortie et escalade sans fausse promesse ; Gemini 2.5 Flash répond de
+  mémoire, ferme « hors cible » 3 fois sur 5 et promet un conseiller sans le prévenir 3 fois sur 5. Environ quatre
+  fois le prix par appel. Le défaut, mesuré avant la décision : Sur la même demande « je veux parler à un conseiller », le modèle
   écrit « un conseiller va prendre le relais » SANS appeler aucun outil : personne n'est prévenu. Mesuré sur 10 appels :
   GLM 4.7 Flash 7, Gemini 2.5 Flash 3 (2 à 6 selon les passes), GPT-4.1 mini 1, Gemini 2.5 Flash Lite 1, Claude Haiku
   4.5, Claude Sonnet 4.5 et Mistral Small 0. Une consigne plus ferme n'y change rien (4 sur 20 contre 5 sur 20). Défaut
