@@ -443,7 +443,7 @@ export class PgToolCatalog implements ToolCatalog {
     });
   }
 
-  /** Corrige les mots d'un outil. Rend `null` s'il n'est pas de ce couple (tenant, agent). */
+  /** Corrige les mots d'un outil, et ce qu'il lit. Rend `null` s'il n'est pas de ce couple (tenant, agent). */
   async patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null> {
     return this.patchConsommateur(tenantId, consommateurAgent(agentId), outilId, patch);
   }
@@ -475,6 +475,13 @@ export class PgToolCatalog implements ToolCatalog {
          -- vide est un CHOIX du client (il a retire tous ses gestes) et doit s ecrire, quand null veut
          -- dire que ce patch ne parle pas des gestes. Les confondre rendrait un geste ineffacable.
          gestes = coalesce($9::jsonb, gestes),
+         -- Ce que l agent fait de la reponse (lot 2 du 2026-10-05). La liste SUIT la nature, dans la meme
+         -- instruction : videe sur pousse (meme si l appelant en passe une, comme a la creation), remplacee sur
+         -- integre, intouchee quand ce patch ne parle pas de nature (celui de l agent de Meta, par exemple).
+         nature = coalesce($10::text, nature),
+         output_paths = case when $10::text is null then output_paths
+                             when $10::text = 'pousse' then '{}'::text[]
+                             else coalesce($11::text[], output_paths) end,
          updated_at = now()
        where agent_tools.tenant_id = $1 and agent_tools.id = $3
          and exists (select 1 from agent_tool_consommateurs c
@@ -484,7 +491,8 @@ export class PgToolCatalog implements ToolCatalog {
       [tenantId, consommateur, outilId, patch.name ?? null, patch.title ?? null,
         patch.description ?? null, patch.nePasUtiliser ?? null,
         patch.enums ? JSON.stringify(patch.enums) : null,
-        patch.gestes ? JSON.stringify(patch.gestes) : null],
+        patch.gestes ? JSON.stringify(patch.gestes) : null,
+        patch.nature ?? null, patch.outputPaths ? [...patch.outputPaths] : null],
     ).catch(surNomDejaPris);
     const r = res.rows[0];
     return r ? this.complet(tenantId, consommateur, r.id) : null;

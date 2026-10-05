@@ -198,6 +198,13 @@ export interface PatchOutil {
   nePasUtiliser?: string;
   /** Valeurs autorisées, paramètre par paramètre. Seuls les paramètres que le catalogue ouvre sont écrits. */
   enums?: Record<string, string[]>;
+  /**
+   * Ce que l'agent fait de la réponse d'un connecteur API, et les champs qu'il lit. La liste SUIT la nature :
+   * vidée sur `pousse`, remplacée par `outputPaths` sur `integre`, intouchée sans nature. La route les exige
+   * ensemble et refuse une paire incohérente (mêmes règles qu'à la création).
+   */
+  nature?: NatureOutil;
+  outputPaths?: string[];
 }
 
 /**

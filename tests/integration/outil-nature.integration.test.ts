@@ -117,6 +117,55 @@ describe.skipIf(!url)('la nature d un outil de connecteur (Postgres)', () => {
     expect(outil!.outputPaths).toEqual([]);
   });
 
+  /**
+   * MODIFIER CE QUE FAIT UN APPEL DÉJÀ POSÉ (lot 2 du plan du 2026-10-05). La liste SUIT la nature, dans la même
+   * instruction : vidée sur « pousse », remplacée sur « intègre », intouchée quand le patch ne parle pas de nature.
+   * Relue par le chemin chaud (`listToutes`), comme plus haut : un `returning` généreux masquerait une colonne
+   * non écrite.
+   */
+  it('🔴 passer en « pousse » VIDE la liste des champs lus', async () => {
+    const outil = await catalogue.ajouterConnecteur(tenantId, agentId, {
+      ...base('modifier_un'), nature: 'integre', outputPaths: ['statut', 'email'],
+    });
+    expect(await catalogue.patch(tenantId, agentId, outil!.id, { nature: 'pousse' })).not.toBeNull();
+    const relu = (await catalogue.listToutes(tenantId, agentId)).find((o) => o.id === outil!.id);
+    expect(relu?.nature).toBe('pousse');
+    expect(relu?.outputPaths).toEqual([]);
+  });
+
+  it('🔴 passer en « intègre » ÉCRIT les champs choisis, pas ceux de l appel', async () => {
+    const outil = await catalogue.ajouterConnecteur(tenantId, agentId, {
+      ...base('modifier_deux'), nature: 'pousse', outputPaths: [],
+    });
+    await catalogue.patch(tenantId, agentId, outil!.id, { nature: 'integre', outputPaths: ['interne'] });
+    const relu = (await catalogue.listToutes(tenantId, agentId)).find((o) => o.id === outil!.id);
+    expect(relu?.nature).toBe('integre');
+    expect(relu?.outputPaths).toEqual(['interne']);
+  });
+
+  it('🔴 des champs passés avec « pousse » sont IGNORÉS par le magasin, comme à la création', async () => {
+    // La route les refuse déjà ; le magasin tient la même cohérence pour tout appelant qui ne passerait pas par elle.
+    const outil = await catalogue.ajouterConnecteur(tenantId, agentId, {
+      ...base('modifier_trois'), nature: 'integre', outputPaths: ['statut'],
+    });
+    await catalogue.patch(tenantId, agentId, outil!.id, { nature: 'pousse', outputPaths: ['email'] });
+    const relu = (await catalogue.listToutes(tenantId, agentId)).find((o) => o.id === outil!.id);
+    expect(relu?.nature).toBe('pousse');
+    expect(relu?.outputPaths).toEqual([]);
+  });
+
+  it('⚠️ un patch qui ne parle QUE des mots ne touche ni à la nature ni aux champs', async () => {
+    // C'est le patch de l'agent de Meta (`modifierConnecteur`) et celui de l'assistant de construction.
+    const outil = await catalogue.ajouterConnecteur(tenantId, agentId, {
+      ...base('modifier_quatre'), nature: 'integre', outputPaths: ['statut', 'email'],
+    });
+    await catalogue.patch(tenantId, agentId, outil!.id, { title: 'Nouveau titre' });
+    const relu = (await catalogue.listToutes(tenantId, agentId)).find((o) => o.id === outil!.id);
+    expect(relu?.title).toBe('Nouveau titre');
+    expect(relu?.nature).toBe('integre');
+    expect(relu?.outputPaths).toEqual(['statut', 'email']);
+  });
+
   it('⚠️ la base REFUSE une nature inconnue : le CHECK est la ceinture du type TypeScript', async () => {
     // Le type ne protège que le code compilé ici. Une migration future, un script d'exploitation ou un
     // `psql` à la main passeraient à côté.

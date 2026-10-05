@@ -326,6 +326,88 @@ describe('outils d’un agent : correction, retrait, isolation', () => {
 });
 
 /**
+ * CE QUE FAIT UN APPEL DÉJÀ POSÉ, MODIFIÉ APRÈS COUP (lot 2 du plan du 2026-10-05).
+ *
+ * 🔴 LA NATURE ET LES CHAMPS LUS VOYAGENT ENSEMBLE, et c'est ce qui rend la garde sûre : la cohérence se juge sur
+ * la requête seule, sans relire l'outil, donc sans fenêtre entre une lecture et l'écriture. Mêmes règles et mêmes
+ * messages qu'à la création : un appel qui intègre lit au moins un champ, un appel qui pousse n'en lit aucun.
+ */
+describe('outils d’un agent : ce que fait un appel, modifié après coup', () => {
+  const CONNECTEUR: OutilComplet = {
+    ...OUTIL, origin: 'http', name: 'lire_commande', sourceId: SRC, requestId: RQ, binding: {},
+    nature: 'integre', outputPaths: ['statut'],
+  };
+  async function patcher(payload: Record<string, unknown>, liste: OutilComplet[] = [CONNECTEUR]) {
+    const { cap, srv } = app(SORTIES, liste);
+    const res = await srv.inject({ method: 'PATCH', url: `${base('t1')}/${OUT}`, ...h(adminTok), payload });
+    return { cap, res };
+  }
+
+  it('🔴 passer en « pousse » part au magasin, seul : c’est lui qui vide la liste', async () => {
+    const { cap, res } = await patcher({ nature: 'pousse' });
+    expect(res.statusCode).toBe(200);
+    expect(cap.patches[0]!.patch).toEqual({ nature: 'pousse' });
+  });
+
+  it('🔴 « intègre » part AVEC ses champs, qui remplacent les anciens', async () => {
+    const { cap, res } = await patcher({ nature: 'integre', outputPaths: ['statut', 'livraison.date'] });
+    expect(res.statusCode).toBe(200);
+    expect(cap.patches[0]!.patch).toEqual({ nature: 'integre', outputPaths: ['statut', 'livraison.date'] });
+  });
+
+  it('🔴 le corps EXACT de la console passe tel quel : les quatre mots, et « pousse » avec une liste vide', async () => {
+    // L'e2e de l'écran simule le serveur : ce contrat-là n'est tenu que par ce cas.
+    const corps = {
+      name: 'lire_commande', title: 'Lire', description: 'Lit une commande.', nePasUtiliser: 'Jamais pour annuler.',
+      nature: 'pousse', outputPaths: [],
+    };
+    const { cap, res } = await patcher(corps);
+    expect(res.statusCode).toBe(200);
+    expect(cap.patches[0]!.patch).toEqual(corps);
+  });
+
+  it('🔴 « intègre » sans champ est refusé, comme à la création, et rien n’est écrit', async () => {
+    // L'outil refuserait chaque appel en pleine conversation (`ce connecteur ne déclare aucun champ à lire`).
+    for (const payload of [{ nature: 'integre' }, { nature: 'integre', outputPaths: [] }]) {
+      const { cap, res } = await patcher(payload);
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(res.json().error).toMatch(/au moins une information/);
+      expect(cap.patches).toHaveLength(0);
+    }
+  });
+
+  it('🔴 des champs cochés sur un « pousse » sont refusés : l’écran ne promet pas une lecture qui n’a pas lieu', async () => {
+    const { cap, res } = await patcher({ nature: 'pousse', outputPaths: ['statut'] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/ne lit aucun champ/);
+    expect(cap.patches).toHaveLength(0);
+  });
+
+  it('🔴 des champs SANS la nature sont refusés : la paire voyage ensemble', async () => {
+    // Sinon la cohérence dépendrait de la nature EN BASE, donc d'une lecture faite avant l'écriture. ⚠️ Le
+    // message est vérifié : l'ancienne route rendait déjà 400 ici, mais parce qu'elle ignorait le champ.
+    const { cap, res } = await patcher({ outputPaths: ['statut'] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/vont avec sa nature/);
+    expect(cap.patches).toHaveLength(0);
+  });
+
+  it('🔴 une nature sur un outil qui n’est pas un connecteur API est refusée', async () => {
+    // Un outil maison n'a rien à lire : la colonne y serait écrite pour rien, et ferait croire à un réglage.
+    const { cap, res } = await patcher({ nature: 'pousse' }, [OUTIL]);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/connecteur API/);
+    expect(cap.patches).toHaveLength(0);
+  });
+
+  it('une nature sur un outil que cet agent n’a pas rend 404, et rien n’est écrit', async () => {
+    const { cap, res } = await patcher({ nature: 'pousse' }, []);
+    expect(res.statusCode).toBe(404);
+    expect(cap.patches).toHaveLength(0);
+  });
+});
+
+/**
  * Brancher une REQUÊTE de la bibliothèque sur un agent (migration 0105).
  *
  * 🔴 L'APPEL N'EST PLUS DÉCRIT ICI, et c'est tout le changement : la méthode, le chemin, le corps, les

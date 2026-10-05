@@ -88,8 +88,28 @@ const patchSchema = z.object({
    * est un effacement volontaire, l'absence du champ ne touche à rien. Même schéma que le runtime, importé.
    */
   gestes: gestesSchema.optional(),
+  /**
+   * Ce que l'agent fait de la réponse d'un connecteur API, et les champs qu'il lit (lot 2 du 2026-10-05). La paire
+   * voyage ENSEMBLE : sa cohérence se juge sur la requête seule, sans relire l'outil, donc sans fenêtre entre une
+   * lecture et l'écriture. Mêmes bornes qu'à la création.
+   */
+  nature: z.enum(['pousse', 'integre']).optional(),
+  outputPaths: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
 });
 const drapeauSchema = z.object({ valeur: z.boolean() });
+
+/**
+ * La cohérence de ce qu'un appel fait de la réponse, LA MÊME à la création et à la modification : « intègre » sans
+ * champ ferait un outil qui refuse chaque appel en pleine conversation, et des champs cochés sur un « pousse »
+ * seraient ignorés en silence. `null` = cohérent. On refuse ici, là où le client corrige.
+ */
+function refusLecture(nature: 'pousse' | 'integre', champs: readonly string[]): string | null {
+  if (nature === 'integre' && champs.length === 0) {
+    return 'choisissez au moins une information à récupérer, ou déclarez que cet appel pousse seulement';
+  }
+  if (nature === 'pousse' && champs.length > 0) return 'un appel qui pousse ne lit aucun champ';
+  return null;
+}
 
 /**
  * Brancher une requête de la bibliothèque sur cet agent. L'appel n'est pas décrit ici : on ne saisit que les
@@ -186,18 +206,9 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     const requete = await deps.requetes.parId(ctx.tenant, d.requeteId);
     if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
 
-    /**
-     * Garde de cohérence : « intègre » sans champ ferait un outil qui refuse chaque appel en pleine conversation,
-     * et des champs cochés sur un « pousse » seraient ignorés en silence. On refuse ici, là où le client corrige.
-     */
-    if (d.nature === 'integre' && d.outputPaths.length === 0) {
-      return reply.code(400).send({
-        error: 'choisissez au moins une information à récupérer, ou déclarez que cet appel pousse seulement',
-      });
-    }
-    if (d.nature === 'pousse' && d.outputPaths.length > 0) {
-      return reply.code(400).send({ error: 'un appel qui pousse ne lit aucun champ' });
-    }
+    // Garde de cohérence de la lecture, la même que pour une modification (`refusLecture`).
+    const refus = refusLecture(d.nature, d.outputPaths);
+    if (refus) return reply.code(400).send({ error: refus });
 
     const plancher = risqueSelonMethode(requete.methode as MethodeConnecteur);
     const risk = d.risk ?? plancher;
@@ -250,17 +261,36 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
       return reply.code(400).send({ error: `champs invalides : ${detail}` });
     }
     if (Object.keys(parse.data).length === 0) return reply.code(400).send({ error: 'aucun champ à modifier' });
-    // Une énumération ne se pose que sur un paramètre que le catalogue ouvre : sinon un appel direct pourrait
-    // restreindre `requete` ou `valeur` et rendre l'outil inappelable, sans écran pour le défaire.
-    if (parse.data.enums) {
+    const d = parse.data;
+    // La paire voyage ensemble : des champs sans nature se jugeraient sur la nature EN BASE, lue avant d'écrire.
+    if (d.outputPaths !== undefined && d.nature === undefined) {
+      return reply.code(400).send({ error: 'dites aussi ce que fait l’appel : les champs lus vont avec sa nature' });
+    }
+    if (d.nature) {
+      const refus = refusLecture(d.nature, d.outputPaths ?? []);
+      if (refus) return reply.code(400).send({ error: refus });
+    }
+    // L'outil visé, lu seulement quand le patch en dépend. Ni son origine ni son `handler` ne changent après coup :
+    // cette lecture n'ouvre aucune fenêtre avec l'écriture qui suit.
+    if (d.enums || d.nature) {
       const outils = await deps.outils.listToutes(ctx.tenant, ctx.agentId);
       const cible = outils.find((o) => o.id === outilId);
       if (!cible) return reply.code(404).send({ error: 'outil introuvable' });
-      const modele = outilMaison(String(cible.binding.handler ?? ''));
-      const ouverts = new Set((modele?.params ?? []).filter((p) => p.edition === 'enum').map((p) => p.name));
-      const refuses = Object.keys(parse.data.enums).filter((n) => !ouverts.has(n));
-      if (refuses.length > 0) {
-        return reply.code(400).send({ error: `paramètre sans liste de valeurs : ${refuses.join(', ')}` });
+      // La nature ne se modifie ici que pour un connecteur API : un outil maison n'a rien à lire (elle y ferait croire
+      // à un réglage sans effet), et un outil MCP est importé « intègre », sans écran qui le règle, bien que son
+      // résolveur respecte « pousse ».
+      if (d.nature && cible.origin !== 'http') {
+        return reply.code(400).send({ error: 'seule la nature d’un appel de connecteur API se modifie ici' });
+      }
+      // Une énumération ne se pose que sur un paramètre que le catalogue ouvre : sinon un appel direct pourrait
+      // restreindre `requete` ou `valeur` et rendre l'outil inappelable, sans écran pour le défaire.
+      if (d.enums) {
+        const modele = outilMaison(String(cible.binding.handler ?? ''));
+        const ouverts = new Set((modele?.params ?? []).filter((p) => p.edition === 'enum').map((p) => p.name));
+        const refuses = Object.keys(d.enums).filter((n) => !ouverts.has(n));
+        if (refuses.length > 0) {
+          return reply.code(400).send({ error: `paramètre sans liste de valeurs : ${refuses.join(', ')}` });
+        }
       }
     }
     try {
