@@ -25,8 +25,11 @@ const PLUS_QUE_LE_DELAI = 1500;
 type Patch = { url: string; body: Record<string, unknown> };
 type Jour = { closed: boolean; open: string; close: string };
 
-/** Monte la page et rend les PATCH reçus. `refus` : combien d'enregistrements d'horaires échouent (500) d'abord. */
-async function monter(page: Page, o: { refus?: number } = {}): Promise<Patch[]> {
+/**
+ * Monte la page et rend les PATCH reçus. `refus` : combien d'enregistrements d'horaires échouent (500) d'abord ;
+ * `lectureRatee` : la lecture des réglages échoue.
+ */
+async function monter(page: Page, o: { refus?: number; lectureRatee?: boolean } = {}): Promise<Patch[]> {
   const patches: Patch[] = [];
   let refus = o.refus ?? 0;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
@@ -45,12 +48,12 @@ async function monter(page: Page, o: { refus?: number } = {}): Promise<Patch[]> 
       if (refus > 0) { refus -= 1; return json({ error: 'panne' }, 500); }
       return json({ businessHours: body.businessHours });
     }
-    if (url.includes('/settings')) return json(SETTINGS);
+    if (url.includes('/settings')) return o.lectureRatee ? json({ error: 'panne' }, 500) : json(SETTINGS);
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
   await page.goto('/parametres');
-  await expect(page.getByTestId('param-hours')).toBeVisible();
+  if (!o.lectureRatee) await expect(page.getByTestId('param-hours')).toBeVisible();
   return patches;
 }
 
@@ -106,10 +109,13 @@ test.describe('Paramètres : fuseau + heures d’ouverture', () => {
     await expect.poll(() => horaires(patches).length).toBe(1);
     expect(jour(horaires(patches)[0]!, '1')).toMatchObject({ close: '19:00' });
     await expect(page.getByTestId('param-hours-invalide')).toHaveCount(0);
+    await expect(page.getByTestId('param-hours-statut')).toHaveText('enregistré');
 
-    // Ouvrir le samedi sans ses heures : faux aussi, donc rien ne part tant qu'elles manquent.
+    // Ouvrir le samedi sans ses heures : faux aussi, donc rien ne part tant qu'elles manquent, et le
+    // « enregistré » d'avant se masque (constaté APRÈS l'avoir vu, sinon l'état initial suffirait).
     await page.getByTestId('param-hours-6-ferme').uncheck();
     await expect(page.getByTestId('param-hours-invalide')).toBeVisible();
+    await expect(page.getByTestId('param-hours-statut')).toHaveText('');
     await page.waitForTimeout(PLUS_QUE_LE_DELAI);
     expect(horaires(patches)).toHaveLength(1);
     await page.getByTestId('param-hours-6-debut').fill('10:00');
@@ -130,6 +136,14 @@ test.describe('Paramètres : fuseau + heures d’ouverture', () => {
     expect(horaires(patches)).toHaveLength(2);
     expect(jour(horaires(patches)[1]!, '1')).toMatchObject({ close: '19:00' });
     await expect(page.getByTestId('param-hours-reessayer')).toHaveCount(0);
+  });
+
+  test('🔴 une lecture ratée ne montre aucun éditeur : aucune valeur par défaut ne peut partir', async ({ page }) => {
+    const patches = await monter(page, { lectureRatee: true });
+    await expect(page.getByTestId('param-lecture-ratee')).toBeVisible();
+    await expect(page.getByTestId('param-hours')).toHaveCount(0);
+    await expect(page.getByTestId('param-timezone')).toHaveCount(0);
+    expect(patches).toHaveLength(0);
   });
 
   test('🔴 une modification faite juste avant de recharger la page part quand même', async ({ page }) => {

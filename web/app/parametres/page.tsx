@@ -141,6 +141,9 @@ function Parametres({ tenantId }: { tenantId: string }) {
   const [loading, setLoading] = useState(true);
   const [tzStatus, setTzStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [bhStatus, setBhStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // 🔴 Lecture ratée = aucun éditeur : il montrerait les défauts (7 jours fermés), et l'enregistrement automatique
+  // écraserait les vrais réglages à la première frappe.
+  const [lectureRatee, setLectureRatee] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -150,7 +153,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
         setTz(s.timezone ?? DEFAULT_TIMEZONE);
         setHours(normalize(s.businessHours));
       })
-      .catch(() => {})
+      .catch(() => { if (alive) setLectureRatee(true); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [tenantId]);
@@ -231,6 +234,11 @@ function Parametres({ tenantId }: { tenantId: string }) {
         <Squelette forme="carte" />
       ) : (
         <>
+          {lectureRatee ? (
+            <p className={`${cardCls} text-sm text-danger`} data-testid="param-lecture-ratee">
+              {t('Impossible de lire le fuseau et les heures d’ouverture : rechargez la page. Ils restent masqués d’ici là, pour qu’aucune valeur par défaut n’écrase vos réglages.', 'Could not read the time zone and business hours: reload the page. They stay hidden until then, so no default value overwrites your settings.')}
+            </p>
+          ) : (<>
           {/* Fuseau horaire */}
           <section className={cardCls}>
             <div className="mb-3 flex items-center justify-between">
@@ -289,6 +297,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
             </div>
             {!allValid && <p className="mt-3 text-xs text-danger" data-testid="param-hours-invalide">{t('Corrigez les jours en rouge : vos modifications ne sont pas enregistrées tant qu’ils restent faux.', 'Fix the days in red: your changes are not saved while they are wrong.')}</p>}
           </section>
+          </>)}
 
           {/* ⚠️ « Relancer automatiquement les échecs » N'EST PLUS ICI (lot 3 de la liste du 2026-09-23, migration
               0165) : la relance obéit à la case « Réessayer les envois qui échouent » de chaque campagne. */}
