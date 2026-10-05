@@ -5,6 +5,31 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-05 : la mention d'IA posée par le code, et le Markdown ramené à WhatsApp
+
+La mesure de Julien (`test_agent`, agent « Groupama santé animale » sur Claude Haiku 4.5, cinq conversations neuves
+d'un message) : la phrase d'annonce n'est partie que dans la réponse sans appel d'outil. La consigne la demandait au
+modèle ; dès qu'il cherchait dans sa base, il répondait sans elle. Julien a choisi le préfixe dans le même message
+plutôt qu'une bulle à part. `penserTrace` n'a plus qu'une sortie pour le texte (`pourLeContact`) : Markdown converti,
+puis la phrase devant quand elle est due, et la consigne dit seulement que la plateforme l'ajoute.
+
+La relecture indépendante a trouvé un rouge que nos tests ne voyaient pas : la détection « déjà là » cherchait une
+sous-chaîne, et prenait « IA » dans « spécialiste » pour l'annonce. Corrigé en tête et en mots entiers
+(`commencePar`). Elle a aussi trouvé un trou plus ancien : `dejaParle` comptait tout sortant en rôle `agent`, donc un
+bloc envoyé par `mba_envoyer_bloc` taisait l'annonce pour toute la session. Remplacé par `dejaAnnonce`, qui exige un
+message commençant par la phrase. Déployé en `6d6e47dc` (API et deux workers, sans migration) : fumée publique verte,
+fiches OAuth conformes.
+
+L'essai réel, juste après, a rejoué la même mesure : cinq conversations neuves, cinq réponses ouvertes par la phrase,
+dont les trois qui avaient d'abord appelé `mba_chercher_connaissance`, et le gras à une étoile. Une recherche y a
+expiré (cinq essais lancés en parallèle), sans rapport avec le lot. Les jaunes de la relecture (`e34d8433`) sont
+poussés, à déployer avec le prochain lot relu : le texte borné à 4 096 caractères (la phrase entière, la réponse
+coupée), l'essai borné pareil, les liens Markdown réécrits, les sauts de ligne visibles dans le Tester.
+
+⚠️ Le worktree de la session était extrait en CRLF sur un millier de fichiers. Un test qui lit un fichier texte y
+échoue (`migration-directives`), et un fichier édité garde ses CRLF, si bien que le diff le montre modifié en entier :
+le repasser en LF avant de commiter.
+
 ## 2026-10-05 : le pont du code éprouvé par un vrai appel, et l'Asterisk fermé à tout ce qui n'est pas DIDWW
 
 Julien appelle `+44 1235 619343` depuis son portable et dicte un code. À 17 h 09, l'appel arrive sur l'Asterisk par
