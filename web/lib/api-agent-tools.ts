@@ -176,7 +176,11 @@ export async function ajouterOutil(tenantId: string, agentId: string, handler: s
 
 export async function patchOutil(
   tenantId: string, agentId: string, outilId: string,
-  patch: { name?: string; title?: string; description?: string; nePasUtiliser?: string; enums?: Record<string, string[]>; gestes?: GesteMoment[] },
+  patch: {
+    name?: string; title?: string; description?: string; nePasUtiliser?: string; enums?: Record<string, string[]>; gestes?: GesteMoment[];
+    /** Un connecteur API seulement, et ENSEMBLE : le serveur refuse des champs sans nature (lot 2 du 2026-10-05). */
+    nature?: NatureOutil; outputPaths?: string[];
+  },
 ): Promise<OutilAgent> {
   const r = await request<{ outil: OutilAgent }>(`${base(tenantId, agentId)}/${outilId}`, {
     method: 'PATCH', body: JSON.stringify(patch),

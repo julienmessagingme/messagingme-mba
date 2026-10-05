@@ -188,7 +188,10 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
             'Declared once for the workspace in Tools > API connectors, and shared by all your agents. Here you say what THIS agent may call there.',
           )}
         </p>
-        <AgentConnecteurs tenantId={tenantId} agentId={agentId} outils={vue?.outils ?? []} onChange={charger} />
+        {/* `onChange` AUSSI, et pas seulement `charger` : depuis que la ligne d'un appel s'active (362dde63), activer
+            le premier outil depuis ici laissait « Aucun outil actif » dans l'en-tête de la page (cf. plus haut). */}
+        <AgentConnecteurs tenantId={tenantId} agentId={agentId} outils={vue?.outils ?? []}
+          onChange={async () => { await charger(); onChange?.(); }} />
       </div>
 
       {/**

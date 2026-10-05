@@ -80,6 +80,9 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
   async function agir(travail: () => Promise<void>, signaler: (m: string | null) => void = setErreur): Promise<boolean> {
     if (busy) return false;
     setBusy(true);
+    // Le bandeau du haut se vide à CHAQUE geste, enregistrement compris : sinon un échec d'avant (un Retirer en panne
+    // réseau) survivait à une réussite.
+    setErreur(null);
     signaler(null);
     try {
       await travail();
@@ -185,8 +188,8 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
                         >
                           {o.actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
                         </Bouton>
-                        {/* Corriger ses mots SANS le retirer : retirer puis redonner l'appel perdait son activation
-                            et ses gestes (2026-10-05, agent Groupama). */}
+                        {/* Corriger l'appel SANS le retirer : retirer puis le redonner perdait son activation
+                            (2026-10-05, agent Groupama). */}
                         <button
                           data-testid={`connecteur-modifier-${o.id}`}
                           disabled={busy}
@@ -226,11 +229,9 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
                 libellesFiche={libellesFiche}
                 busy={busy}
                 erreur={erreurForm}
-                // ⚠️ Les QUATRE mots seulement : la route de modification ne connaît pas encore la nature ni les
-                // champs lus (lot 2 du plan du 2026-10-05), et un champ qu'elle ignore serait perdu sans erreur.
-                onEnregistrer={({ name, title, description, nePasUtiliser }) => {
-                  enregistrer(() => patchOutil(tenantId, agentId, enModification.id, { name, title, description, nePasUtiliser }));
-                }}
+                // Tout ce que l'ajout a demandé, nature et champs lus compris. ⚠️ Cet écran ne se pousse qu'APRÈS
+                // l'API qui les accepte : une API plus ancienne les ignorait sans erreur (`z.object`).
+                onEnregistrer={(mots) => { enregistrer(() => patchOutil(tenantId, agentId, enModification.id, mots)); }}
               />
             )}
 
@@ -239,8 +240,11 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
             {siens.length === 0 && (
               <button
                 data-testid={`requete-nouvel-outil-${rq.id}`}
+                // Pas pendant un enregistrement : sa fin refermerait ce formulaire-ci, ou y afficherait un refus
+                // qui ne le concerne pas.
+                disabled={busy}
                 onClick={() => basculer(rq.id)}
-                className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline"
+                className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline disabled:opacity-40"
               >
                 {ouvert === rq.id ? t('Annuler', 'Cancel') : <><Icone nom="ajouter" taille="petite" />{t('Ajouter à cet agent', 'Add to this agent')}</>}
               </button>
@@ -295,10 +299,7 @@ function libelleOrigine(o: RequeteApi['variables'][number]['origine'], libellesF
 function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur, onEnregistrer }: {
   tenantId: string;
   requete: RequeteApi;
-  /**
-   * L'outil qu'on modifie, qui pré-remplit tout, ou `null` quand on donne l'appel. ⚠️ En modification, la nature et
-   * les champs lus se montrent sans se changer : la route de modification ne les connaît pas encore.
-   */
+  /** L'outil qu'on modifie, qui pré-remplit tout (nature et champs lus compris), ou `null` quand on donne l'appel. */
   outil: OutilAgent | null;
   libellesFiche: Record<string, readonly [string, string]>;
   busy: boolean;
@@ -310,7 +311,6 @@ function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur
   }) => void;
 }) {
   const t = useT();
-  const figee = outil !== null;
   const [name, setName] = useState(outil?.name ?? '');
   const [title, setTitle] = useState(outil?.title ?? '');
   const [description, setDescription] = useState(outil?.description ?? '');
@@ -369,8 +369,7 @@ function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur
       : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
         : description.trim() === '' ? t('Dites à quoi ça sert.', 'Say what it does.')
           : nePasUtiliser.trim() === '' ? t('Dites quand ne pas l’appeler.', 'Say when not to call it.')
-            // Figée, la lecture n'est pas à corriger ici : l'exiger bloquerait la correction des mots sans issue.
-            : nature === 'integre' && champs.length === 0 && !figee
+            : nature === 'integre' && champs.length === 0
               ? t('Choisissez au moins une information à récupérer, ou dites que cet appel pousse seulement.',
                 'Pick at least one piece of information to read, or say this call only pushes.')
               : busy ? t('Enregistrement en cours…', 'Saving…')
@@ -414,7 +413,7 @@ function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur
         </p>
         <label className="flex items-start gap-2 text-xs text-ink-900">
           <input
-            type="radio" name={`nature-${requete.id}`} data-testid="nature-pousse" className="mt-0.5" disabled={figee}
+            type="radio" name={`nature-${requete.id}`} data-testid="nature-pousse" className="mt-0.5"
             checked={nature === 'pousse'} onChange={() => { setNature('pousse'); setChamps([]); }}
           />
           <span>
@@ -427,8 +426,14 @@ function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur
         </label>
         <label className="flex items-start gap-2 text-xs text-ink-900">
           <input
-            type="radio" name={`nature-${requete.id}`} data-testid="nature-integre" className="mt-0.5" disabled={figee}
-            checked={nature === 'integre'} onChange={() => { setNature('integre'); setChamps(requete.outputPaths); }}
+            type="radio" name={`nature-${requete.id}`} data-testid="nature-integre" className="mt-0.5"
+            // En modification, revenir à « intègre » retrouve ce que l'OUTIL lisait : les défauts de l'appel feraient
+            // revenir un champ exclu exprès, qui partirait chez le fournisseur du modèle.
+            checked={nature === 'integre'}
+            onChange={() => {
+              setNature('integre');
+              setChamps(outil?.nature === 'integre' && outil.outputPaths.length > 0 ? outil.outputPaths : requete.outputPaths);
+            }}
           />
           <span>
             {t('Il récupère de l’information, que l’agent intègre à la conversation',
@@ -448,7 +453,7 @@ function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur
               {t('Que doit-il récupérer ?', 'What should it read?')}
             </p>
             <Bouton variante="secondaire" taille="petite" enCours={essai}
-              data-testid="outil-essayer" disabled={essai || figee}
+              data-testid="outil-essayer" disabled={essai}
               onClick={() => { void essayer(); }}
             >
               {essai ? t('Essai…', 'Trying…') : t('Essayer pour voir la réponse', 'Try it to see the response')}
@@ -467,7 +472,7 @@ function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur
               {proposes.map((c) => (
                 <label key={c} className="flex items-center gap-2 text-xs text-ink-900">
                   <input
-                    type="checkbox" data-testid={`outil-champ-${c}`} checked={champs.includes(c)} disabled={figee}
+                    type="checkbox" data-testid={`outil-champ-${c}`} checked={champs.includes(c)}
                     onChange={(e) => setChamps((v) => (e.target.checked ? [...v, c] : v.filter((x) => x !== c)))}
                   />
                   <code>{c}</code>
@@ -498,6 +503,15 @@ function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur
         {t('Quand ne pas l’appeler', 'When not to call it')}
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-nepasutiliser" value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
       </label>
+
+      {/* La définition est PARTAGÉE : un autre agent (ou l'agent de Meta) qui se sert de cet outil change avec lui,
+          comme le dit déjà la confirmation du retrait. */}
+      {outil !== null && (
+        <p className="text-xs text-ink-500">
+          {t('Ces réglages sont ceux de l’outil : ils valent aussi pour tout autre agent qui s’en sert.',
+            'These settings belong to the tool: they also apply to any other agent using it.')}
+        </p>
+      )}
 
       {erreur !== null && <p className="text-xs text-danger" data-testid="outil-erreur">{erreur}</p>}
 

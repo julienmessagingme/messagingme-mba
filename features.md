@@ -2867,7 +2867,9 @@ d'aide.
   butait sur son propre nom. **« Modifier »** rouvre le formulaire, pré-rempli : on y corrige le nom technique,
   le titre, « à quoi ça sert » et « quand ne pas l'appeler » sans retirer l'appel, donc sans perdre son
   activation. Un nom déjà pris est signalé dans le formulaire, et la saisie reste. Ce que fait l'appel (il
-  pousse ou il intègre) et les champs qu'il lit s'y affichent, sans pouvoir s'y changer. Le formulaire
+  pousse ou il intègre) et les champs qu'il lit s'y changent aussi, avec les règles de l'ajout : un appel qui
+  intègre lit au moins un champ, un appel qui pousse n'en lit aucun. Ces réglages sont ceux de l'outil : ils
+  valent pour tout autre agent qui s'en sert. Le formulaire
   s'enregistre par « Enregistrer », et « Ajouter à cet agent » n'est proposé que tant que l'agent ne se sert pas
   déjà de cet appel. Dans **Tools > Connecteurs API**, un système s'active et se désactive depuis la liste, sans
   déplier son détail.

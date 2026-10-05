@@ -49,7 +49,7 @@ const AGENT = {
   inactiviteMinutes: 30, contactInconnu: 'lecture_seule',
 };
 
-async function mock(page: import('@playwright/test').Page, capture: { posts: Array<{ url: string; body: unknown; method?: string }> }, over: { sources?: unknown[]; outils?: unknown[]; epreuve?: unknown; requetes?: unknown[]; refusPatch?: { status: number; error: string } } = {}) {
+async function mock(page: import('@playwright/test').Page, capture: { posts: Array<{ url: string; body: unknown; method?: string }> }, over: { sources?: unknown[]; outils?: unknown[]; epreuve?: unknown; requetes?: unknown[]; refus?: { methode: string; status: number; error: string }; manquesJusquaActivation?: boolean } = {}) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -58,9 +58,9 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
     // PUT aussi : c'est la méthode de l'ACTIVATION d'un outil, qu'on doit voir partir.
     if (req.method() === 'POST' || req.method() === 'PATCH' || req.method() === 'PUT' || req.method() === 'DELETE') {
       capture.posts.push({ url, body: req.postDataJSON() ?? null, method: req.method() });
-      // Le refus d'une modification, tel que la route le rend (un nom déjà pris : 409, `NomOutilDejaPris`).
-      if (req.method() === 'PATCH' && over.refusPatch) {
-        return route.fulfill({ status: over.refusPatch.status, contentType: 'application/json', body: JSON.stringify({ error: over.refusPatch.error }) });
+      // Un refus, tel que la route le rend (un nom déjà pris : 409, `NomOutilDejaPris` ; un nom invalide : 400).
+      if (over.refus && req.method() === over.refus.methode) {
+        return route.fulfill({ status: over.refus.status, contentType: 'application/json', body: JSON.stringify({ error: over.refus.error }) });
       }
       if (url.includes('/epreuve')) return json(over.epreuve ?? { ok: true, httpStatus: 200 });
       // L ESSAI depuis l ecran de l agent (migration 0150) : il rend les chemins REELLEMENT trouves dans la
@@ -89,6 +89,17 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
         }) });
       }
       return json({ ok: true });
+    }
+    // Ce qui manque à la fiche, relu par la page après chaque geste du panneau Outils. Le serveur dit la vérité du
+    // moment : tant qu'aucune activation n'est partie, « Aucun outil actif ».
+    if (/\/manques$/.test(url)) {
+      const active = capture.posts.some((p) => /\/activation$/.test(p.url));
+      return json({
+        manques: over.manquesJusquaActivation && !active
+          ? [{ onglet: 'outils', message: 'Aucun outil actif : l’agent peut parler mais ne peut rien faire, pas même terminer.' }]
+          : [],
+        avertissements: [],
+      });
     }
     if (url.includes('/agent-requetes')) return json({ requetes: over.requetes ?? [REQUETE], champs: ['ville'], catalogue: { contact: ['wa_id', 'nom'], systeme: ['derniere_saisie', 'maintenant'], entetesReserves: ['authorization'] } });
     if (url.includes('/agent-sources')) return json({ sources: over.sources ?? [SOURCE] });
@@ -394,7 +405,7 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
   /**
    * Julien, le 2026-10-05, sur l'agent Groupama : « je peux pas le modifier, y a pas un bouton pour le
    * modifier ? ». La ligne portait Activer, Désactiver et Retirer : corriger un mot obligeait à retirer l'appel
-   * puis à le redonner, ce qui perdait son activation et ses gestes.
+   * puis à le redonner, ce qui perdait son activation.
    */
   const POSE = {
     id: 'o5', origin: 'http', sourceId: SRC, requestId: RQ, name: 'lire_commande', title: 'Lire une commande',
@@ -404,8 +415,10 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     params: [], binding: {}, risk: 'read', actif: true, activeLe: '2026-10-05T00:00:00.000Z', autonome: false,
     autonomeLe: null, expose: null, gestes: [], inappelable: null,
   };
+  const corpsDuPatch = (capture: { posts: Array<{ body: unknown; method?: string }> }) =>
+    capture.posts.find((p) => p.method === 'PATCH')?.body ?? null;
 
-  test('🔴 Modifier rouvre le formulaire PRÉ-REMPLI et n’envoie que les quatre mots', async ({ page }) => {
+  test('🔴 Modifier rouvre le formulaire PRÉ-REMPLI par l’outil, et l’enregistre tout entier', async ({ page }) => {
     const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
     await mock(page, capture, { outils: [POSE] });
     await ongletOutils(page);
@@ -415,17 +428,20 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     await expect(page.getByTestId('outil-titre')).toHaveValue('Lire une commande');
     await expect(page.getByTestId('outil-description')).toHaveValue('Quand le client demande où en est sa commande.');
     await expect(page.getByTestId('outil-nepasutiliser')).toHaveValue('Jamais pour annuler.');
-    // Ce que l'appel FAIT se lit, mais ne se change pas encore ici.
+    // Ce que l'appel FAIT vient de L'OUTIL, pas de l'appel : `livraison.date`, que l'appel propose par défaut, n'est
+    // pas coché, et `lignes`, que seul l'outil lit, l'est.
     await expect(page.getByTestId('nature-integre')).toBeChecked();
-    await expect(page.getByTestId('nature-integre')).toBeDisabled();
+    await expect(page.getByTestId('nature-integre')).toBeEnabled();
     await expect(page.getByTestId('outil-champ-lignes')).toBeChecked();
+    await expect(page.getByTestId('outil-champ-livraison.date')).not.toBeChecked();
 
     await page.getByTestId('outil-titre').fill('Lire la commande du client');
+    await page.getByTestId('outil-champ-statut').uncheck();
     await page.getByTestId('outil-creer').click();
-    // Les QUATRE mots, et rien d'autre : ni la nature ni les champs, que la route ne sait pas encore changer.
-    await expect.poll(() => capture.posts.find((p) => p.method === 'PATCH')?.body ?? null).toEqual({
+    await expect.poll(() => corpsDuPatch(capture)).toEqual({
       name: 'lire_commande', title: 'Lire la commande du client',
       description: 'Quand le client demande où en est sa commande.', nePasUtiliser: 'Jamais pour annuler.',
+      nature: 'integre', outputPaths: ['lignes'],
     });
     expect(capture.posts.find((p) => p.method === 'PATCH')!.url).toMatch(/\/tools\/o5$/);
     // Le même outil, corrigé : rien n'est recréé.
@@ -433,10 +449,34 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     await expect(page.getByTestId('outil-nom')).toHaveCount(0);
   });
 
+  test('🔴 un appel qui intègre peut passer en « ça pousse », et ne lit alors plus rien', async ({ page }) => {
+    const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
+    await mock(page, capture, { outils: [POSE] });
+    await ongletOutils(page);
+    await page.getByTestId('connecteur-modifier-o5').click();
+    await page.getByTestId('nature-pousse').check();
+    await expect(page.getByTestId('outil-champs')).toHaveCount(0);
+    await page.getByTestId('outil-creer').click();
+    await expect.poll(() => corpsDuPatch(capture)).toMatchObject({ nature: 'pousse', outputPaths: [] });
+  });
+
+  test('🔴 repasser en « intègre » retrouve les champs de L’OUTIL, pas les défauts de l’appel', async ({ page }) => {
+    // Sans ça, un champ volontairement exclu (`livraison.date`) revenait coché, et partait chez le fournisseur du
+    // modèle si l'on enregistrait sans regarder (relecture du lot 2).
+    const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
+    await mock(page, capture, { outils: [POSE] });
+    await ongletOutils(page);
+    await page.getByTestId('connecteur-modifier-o5').click();
+    await page.getByTestId('nature-pousse').check();
+    await page.getByTestId('nature-integre').check();
+    await expect(page.getByTestId('outil-champ-lignes')).toBeChecked();
+    await expect(page.getByTestId('outil-champ-livraison.date')).not.toBeChecked();
+  });
+
   test('🔴 un nom déjà pris se lit DANS le formulaire, et la saisie reste', async ({ page }) => {
     // Le refus s'affichait en haut du bloc, loin du champ, et ne disait pas quoi faire.
     const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
-    await mock(page, capture, { outils: [POSE], refusPatch: { status: 409, error: 'un outil de cet espace porte déjà ce nom' } });
+    await mock(page, capture, { outils: [POSE], refus: { methode: 'PATCH', status: 409, error: 'un outil de cet espace porte déjà ce nom' } });
     await ongletOutils(page);
 
     await page.getByTestId('connecteur-modifier-o5').click();
@@ -444,5 +484,45 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     await page.getByTestId('outil-creer').click();
     await expect(page.getByTestId('outil-erreur')).toContainText(/déjà celui d’un autre outil|already used by another tool/);
     await expect(page.getByTestId('outil-nom')).toHaveValue('lire_stock');
+  });
+
+  test('un nom invalide est dit dans le formulaire, avec le message du serveur', async ({ page }) => {
+    const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
+    await mock(page, capture, { outils: [POSE], refus: { methode: 'PATCH', status: 400, error: 'champs invalides : name : minuscules, chiffres et tirets bas, 64 au plus' } });
+    await ongletOutils(page);
+    await page.getByTestId('connecteur-modifier-o5').click();
+    await page.getByTestId('outil-nom').fill('Lire Stock');
+    await page.getByTestId('outil-creer').click();
+    await expect(page.getByTestId('outil-erreur')).toContainText('minuscules');
+    await expect(page.getByTestId('outil-nom')).toHaveValue('Lire Stock');
+  });
+
+  test('🔴 un nom déjà pris À L’AJOUT se lit aussi dans le formulaire', async ({ page }) => {
+    // Même refus, même endroit : il s'affichait en haut du bloc jusqu'au lot 1.
+    const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
+    await mock(page, capture, { refus: { methode: 'POST', status: 409, error: 'un outil de cet espace porte déjà ce nom' } });
+    await ongletOutils(page);
+    await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
+    await page.getByTestId('outil-nom').fill('lire_commande');
+    await page.getByTestId('outil-titre').fill('Lire');
+    await page.getByTestId('outil-description').fill('lit');
+    await page.getByTestId('outil-nepasutiliser').fill('jamais');
+    await page.getByTestId('outil-creer').click();
+    await expect(page.getByTestId('outil-erreur')).toContainText(/déjà celui d’un autre outil|already used by another tool/);
+    await expect(page.getByTestId('outil-nom')).toHaveValue('lire_commande');
+  });
+
+  test('🔴 activer un appel depuis sa ligne fait partir « Aucun outil actif » sur-le-champ', async ({ page }) => {
+    /**
+     * Le défaut du bandeau fantôme des outils maison (agents-construction, 2026-09-11), revenu par la ligne neuve
+     * de 362dde63 : le panneau des connecteurs rechargeait sa liste sans prévenir la page, et l'en-tête gardait
+     * « Aucun outil actif » après l'activation du premier outil.
+     */
+    const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
+    await mock(page, capture, { outils: [{ ...POSE, actif: false, activeLe: null }], manquesJusquaActivation: true });
+    await ongletOutils(page);
+    await expect(page.getByTestId('entete-etape-outils')).toBeVisible();
+    await page.getByTestId('connecteur-activer-o5').click();
+    await expect(page.getByTestId('entete-etape-outils')).toHaveCount(0);
   });
 });

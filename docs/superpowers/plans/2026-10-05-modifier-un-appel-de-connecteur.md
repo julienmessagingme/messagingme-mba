@@ -13,7 +13,9 @@ lit au moins un. Le lot 1 ne touche que la console (la route `PATCH` existe en p
 l'invariant, avec sa propre relecture.
 
 **Essai réel qui clôt** : Julien, sur l'agent « Groupama santé animale », clique Modifier, change un mot,
-enregistre, rouvre. Au lot 2, il change la nature de l'appel et revient.
+enregistre, rouvre. Au lot 2, la nature se change sur un appel de TEST, enregistrée puis remise. ⚠️ Pas sur
+`obtenir_tarif` de l'agent en service : un « pousse » enregistré efface par conception ses trois chemins
+`tarifs.*`, et l'agent ne lirait plus le tarif jusqu'à ce qu'on les recoche (relecture du lot 2).
 
 ## Lot 1 : le bouton Modifier (console seule)
 

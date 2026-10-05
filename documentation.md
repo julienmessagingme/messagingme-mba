@@ -800,6 +800,14 @@ qui DESCEND dans l'objet jette tout champ imbriqué, l'enveloppe d'un échec et 
 test du résolveur seul ne le voit pas ; celui qui fait traverser sa sortie réelle dans l'exécuteur, si
 (`tests/agent-resolveur-http-nature.test.ts`).
 
+⚠️ **La nature et les champs lus d'un appel déjà posé se modifient ENSEMBLE** (`PATCH .../tools/:outilId`,
+2026-10-05) : des champs sans nature sont refusés, `integre` exige au moins un champ, `pousse` n'en lit aucun (la
+même `refusLecture` qu'à la création), et une nature hors d'un connecteur API est refusée. La cohérence se juge donc
+sur la requête, sans lire l'outil avant d'écrire, et `patchConsommateur` fait suivre la liste à la nature dans la
+même instruction : vidée sur `pousse`, remplacée sur `integre`, intouchée sans nature (le patch de l'agent de Meta
+n'en porte pas). La définition étant partagée, la modifier depuis un agent change ce que lisent tous ses
+consommateurs.
+
 ⚠️ **Le bac à sable n'appelle pour de vrai qu'un connecteur qui LIT** (`connecteurEssai`,
 `src/agent/resolvers/simulation.ts`), par le résolveur de production, donc avec ses gardes et son filtre : c'est le
 seul moyen d'éprouver un devis sans conversation réelle (décision de Julien, 2026-10-05). « Qui lit » se juge sur
