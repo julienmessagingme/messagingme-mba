@@ -644,7 +644,7 @@ describe('runTurn : la sortie et son dernier message', () => {
     timeoutMs: 8000, maxBytes: 16384, autonome: false,
   };
   const RESOLVEUR_MBA = creerResolveurMba({
-    envoyerBloc: async () => ({ ok: true }), escaladerVersHumain: async () => true, marquerUrgente: async () => true, poserTag: async () => {},
+    envoyerBloc: async () => ({ ok: true }), lancerScenario: async () => ({ ok: true }), escaladerVersHumain: async () => true, marquerUrgente: async () => true, poserTag: async () => {},
     ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
   });
 
@@ -711,7 +711,7 @@ describe('runTurn : marquer la conversation urgente, puis continuer', () => {
   it('🔴 l’agent marque, puis répond : ni sortie, ni clôture de session, et le bon contact', async () => {
     const journal: string[] = [];
     const resolveur = creerResolveurMba({
-      envoyerBloc: async () => ({ ok: true }), escaladerVersHumain: async () => true, poserTag: async () => {},
+      envoyerBloc: async () => ({ ok: true }), lancerScenario: async () => ({ ok: true }), escaladerVersHumain: async () => true, poserTag: async () => {},
       marquerUrgente: async (i) => { journal.push(`urgent:${i.tenantId}:${i.waId}:${i.agentId}`); return true; },
       ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
     });
@@ -746,5 +746,92 @@ describe('runTurn : marquer la conversation urgente, puis continuer', () => {
     expect(envois).toEqual(['Je suis une IA.\n\nJe transmets en priorité à l’équipe.']);
     expect(sorties).toEqual([]);
     expect(clotures).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 LANCER UN SCÉNARIO EST TERMINAL (RC4, décision de Julien du 2026-10-06), de bout en bout : le tour, le vrai cerveau,
+ * le vrai exécuteur et le vrai résolveur de production. Le scénario fixé prend la conversation, l'agent se retire : le
+ * modèle n'est PAS rappelé, rien n'est envoyé par-dessus le scénario, aucune échéance n'est reposée sur le parcours de
+ * l'agent et AUCUNE sortie du bloc agent n'est empruntée. La clôture de la session et du parcours est la dépendance de
+ * l'outil (`creerGestesEnvoiAgent`, `tests/agent-gestes-envoi.test.ts`).
+ */
+describe('runTurn : lancer un scénario, puis se taire', () => {
+  const WF_CIBLE = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
+  const LANCER: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
+    id: 'o4', tenantId: 't1', origin: 'mba', name: 'mba_lancer_scenario',
+    description: 'Lance.', params: paramsInitiaux(outilMaison('lancer_scenario')!),
+    binding: { handler: 'lancer_scenario', workflowId: WF_CIBLE }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'irreversible',
+    // Irréversible : le client a coché l'autonomie, sinon le tronc commun refuse l'appel.
+    timeoutMs: 8000, maxBytes: 16384, autonome: true,
+  };
+  const usage = { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 };
+
+  function tour(lancement: { ok: boolean; raison?: string }) {
+    const journal: string[] = [];
+    const resolveur = creerResolveurMba({
+      envoyerBloc: async () => ({ ok: true }), escaladerVersHumain: async () => true, marquerUrgente: async () => true,
+      poserTag: async () => {}, ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
+      lancerScenario: async (i) => { journal.push(`lance:${i.workflowId}:${i.runId}:${i.sessionId}:${i.waId}`); return lancement; },
+    });
+    let appelsModele = 0;
+    const brain = creerCerveauGateway({
+      client: {
+        completer: async () => {
+          appelsModele += 1;
+          // Le modèle écrit À CÔTÉ de l'appel : ce texte ne doit pas partir, le scénario parle déjà.
+          return appelsModele === 1
+            ? { texte: 'Je vous lance la prise de rendez-vous.', appelsOutils: [{ id: 'c1', nom: LANCER.name, argumentsJson: '{"workflowId":"autre"}' }], finish: 'tool_calls', usage, generationId: null }
+            : { texte: 'Je ne peux pas lancer ce parcours, je reste avec vous.', appelsOutils: [], finish: 'stop', usage, generationId: null };
+        },
+      },
+      contexte: async () => ({
+        modele: 'm', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session' as const, sorties: [{ code: 'fini', label: 'Fini' }],
+        contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [LANCER],
+        plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
+      }),
+      commissionPct: 0,
+      outils: {
+        catalogue: { byName: async (_t: string, _a: string, nom: string) => (nom === LANCER.name ? LANCER : null), listActifs: async () => [LANCER] } satisfies ToolCatalog,
+        journal: { ouvrir: async () => 'j1', clore: async () => {} },
+        resolveurs: { mba: resolveur },
+        sessions: { compterAppel: async () => {} },
+        executerGeste: GESTE_MUET,
+      },
+    });
+    const ecritures: string[] = [];
+    const fin: string[] = [];
+    const m = make({
+      brain,
+      majRun: async (_t, runId) => { ecritures.push(runId); },
+      sessions: {
+        ...sessionsOk(),
+        finirLeTour: async () => { fin.push('finirLeTour'); },
+      } as unknown as RunTurnDeps['sessions'],
+    });
+    return { ...m, journal, ecritures, fin, appelsModele: () => appelsModele };
+  }
+
+  it('🔴 lancé : la session ne rappelle PAS le modèle, rien n’est envoyé, aucune sortie du bloc ne repart', async () => {
+    const t = tour({ ok: true });
+    expect(await runTurn(JOB, t.deps)).toEqual({ fait: 'scenario_lance' });
+    // Le scénario FIXÉ, pas celui que le modèle a glissé dans ses arguments ; le parcours et la session du tour.
+    expect(t.journal).toEqual([`lance:${WF_CIBLE}:${JOB.runId}:${JOB.sessionId}:${JOB.waId}`]);
+    expect(t.appelsModele()).toBe(1);
+    expect(t.envois).toEqual([]);
+    expect(t.sorties).toEqual([]);
+    expect(t.ecritures, 'aucune échéance reposée sur le parcours de l’agent').toEqual([]);
+    expect(t.fin, 'la marque de tour n’est pas touchée : la session est déjà close').toEqual([]);
+  });
+
+  it('🔴 refusé (scénario dépublié) : la session CONTINUE, le modèle lit la raison et répond', async () => {
+    const t = tour({ ok: false, raison: 'le scénario est vide' });
+    expect(await runTurn(JOB, t.deps)).toMatchObject({ fait: 'repondu' });
+    expect(t.appelsModele()).toBe(2);
+    expect(t.envois).toEqual(['Je suis une IA.\n\nJe ne peux pas lancer ce parcours, je reste avec vous.']);
+    expect(t.sorties).toEqual([]);
+    expect(t.clotures).toEqual([]);
+    // Le parcours attend toujours l'agent : son échéance d'inactivité est reposée, comme après toute réponse.
+    expect(t.ecritures).toEqual([JOB.runId]);
   });
 });

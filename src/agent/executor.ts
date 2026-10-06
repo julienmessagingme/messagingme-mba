@@ -67,6 +67,12 @@ export interface SortieResolveur {
   /** Avec `rendu` seulement : c'est cet appel qui a pris la main, pas quelqu'un d'autre avant lui. Le tour
    *  s'en sert pour savoir s'il peut écrire une dernière phrase. */
   mainPrise?: boolean;
+  /**
+   * L'outil a lancé un scénario qui a pris la conversation (`mba_lancer_scenario`, RC4) : la session de l'agent est
+   * déjà close et son parcours fini. Le tour s'arrête SANS rappeler le modèle et sans rien envoyer : c'est le
+   * scénario qui parle.
+   */
+  scenarioLance?: boolean;
 }
 
 export type ResolveurOutil = (entree: EntreeResolveur) => Promise<SortieResolveur>;
@@ -81,6 +87,8 @@ export interface ResultatOutil {
   rendu?: boolean;
   /** Voir `SortieResolveur.mainPrise`. */
   mainPrise?: boolean;
+  /** Voir `SortieResolveur.scenarioLance`. */
+  scenarioLance?: boolean;
   /**
    * Erreur de protocole : bug de notre client, le tour s'arrête et on n'en reparle pas au modèle. L'alerte est
    * du ressort de l'appelant (le canal d'alerte est une dep du worker) : le tour alerte sur `fatal: true`.
@@ -343,7 +351,19 @@ export async function executeTool(
     if (course === ECHEANCE) {
       await clore(journalId, 'timeout', { erreur: `delai de ${delai} ms depasse` });
       await compter();
-      return { status: 'timeout', contenu: { erreur: 'delai depasse, l outil n a pas repondu a temps' } };
+      /**
+       * 🔴 « Lancer un scénario » au-delà de son délai : son issue est INCONNUE, le lancement continue (`runFrom`
+       * n'écoute pas le signal). Rappeler le modèle l'inviterait à relancer (les messages du scénario partiraient
+       * deux fois, facturés) ou à écrire par-dessus le scénario. Le tour s'arrête donc comme sur un lancement abouti ;
+       * si le lancement aboutit, c'est lui qui clôt la session (`sessionRemplacee: 'retiree'`), sinon le prochain
+       * message du contact rouvre la conversation avec l'agent. Relevé par la relecture de RC4.
+       */
+      const issueInconnue = String(outil.binding.handler ?? '') === 'lancer_scenario';
+      return {
+        status: 'timeout',
+        contenu: { erreur: 'delai depasse, l outil n a pas repondu a temps' },
+        ...(issueInconnue ? { scenarioLance: true } : {}),
+      };
     }
     sortie = course;
   } catch (err) {
@@ -384,5 +404,7 @@ export async function executeTool(
     ...(sortie.dernierMessage ? { dernierMessage: sortie.dernierMessage } : {}),
     ...(sortie.rendu ? { rendu: true } : {}),
     ...(sortie.mainPrise ? { mainPrise: true } : {}),
+    // Seulement sur un succès : un lancement refusé laisse la session vivante, le modèle lit la raison et répond.
+    ...(sortie.scenarioLance && status === 'ok' ? { scenarioLance: true } : {}),
   };
 }

@@ -1,10 +1,9 @@
 import type { ChatMessage } from '../llm/chat-client';
-import { OUTILS_MAISON } from '../outils-maison';
 import { neutraliserDelimiteurs } from '../bloc-donnees';
 import {
   ordreDuJour, pointsSansContenu, prochainsPoints, pistesDe, type EtatEntretien, type Inventaire,
 } from './couverture';
-import { LIBELLES_MENTION, dureeEnClair, type EtatCourant } from './proposition';
+import { LIBELLES_MENTION, OUTILS_PROPOSABLES, dureeEnClair, type EtatCourant } from './proposition';
 
 /**
  * Les messages envoyés à l'IA de construction.
@@ -291,7 +290,10 @@ function etat(ctx: ContexteConstruction): string {
     outilsPoses(ctx.outils),
     connecteursPoses(ctx.connecteurs ?? []),
     catalogueDeLEspace(ctx.catalogue ?? []),
-    `Outils disponibles au catalogue : ${OUTILS_MAISON.map((o) => o.handler).join(', ')}`,
+    `Outils disponibles au catalogue : ${OUTILS_PROPOSABLES.map((o) => o.handler).join(', ')}`,
+    // RC4 : les outils à cible ne se proposent pas, mais le client peut en avoir besoin. L'assistant sait où les poser.
+    'Poser un tag précis, enregistrer une information, envoyer un bloc ou lancer un scénario : à poser par le client '
+      + 'dans l’onglet Outils de l’agent, en choisissant ce que l’outil vise. Tu ne peux pas les proposer, dis-lui où.',
     `Fiches de connaissance (titres) : ${ctx.titresConnaissance.length === 0
       ? '(aucune, l’agent transférera toutes les questions de fond)'
       : ctx.titresConnaissance.slice(0, MAX_TITRES_CONNAISSANCE).join(' | ')}`,

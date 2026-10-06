@@ -96,7 +96,7 @@ export interface ReposApresTour {
 
 /** Ce que le tour a fait, pour le journal et les tests. Jamais une exception sur un cas métier. */
 export interface ResultatTour {
-  fait: 'rejeu' | 'run_mort' | 'plafond' | 'main_perdue' | 'desabonne' | 'numero_bloque' | 'repondu' | 'sorti' | 'erreur';
+  fait: 'rejeu' | 'run_mort' | 'plafond' | 'main_perdue' | 'desabonne' | 'numero_bloque' | 'repondu' | 'sorti' | 'scenario_lance' | 'erreur';
   sortie?: string;
   /**
    * Le repos posé sur le parcours, quand le tour s'est terminé en attente. Pour le journal et les tests
@@ -339,6 +339,15 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
   // Le coût est enregistré juste après la décision : tous les chemins qui suivent l'ont déjà engagé chez le
   // fournisseur.
   await enregistrerCout(job, session.id, decision.usage?.coutMicroEur ?? 0, deps);
+
+  /**
+   * 🔴 4bis. UN OUTIL A LANCÉ UN SCÉNARIO (RC4, `mba_lancer_scenario`) : il a pris la conversation, et la dépendance de
+   * l'outil a déjà clos la session et le parcours de l'agent (`creerGestesEnvoiAgent`). Plus rien à faire ici : ni
+   * envoi (c'est le scénario qui parle), ni échéance (le parcours n'attend plus), ni sortie du bloc. Faire sortir le
+   * bloc ferait repartir le parcours de l'agent DERRIÈRE le scénario lancé, ou avancer un autre parcours qui attend
+   * sur un bloc agent.
+   */
+  if (decision.scenarioLance) return { fait: 'scenario_lance' };
 
   // 5. Relire `mayAct` juste avant d'envoyer : un opérateur a pu prendre la main pendant le tour. On ne clôt
   // pas la session (gel transitoire), mais on pose l'échéance d'inactivité, qu'`advance` vient d'effacer,

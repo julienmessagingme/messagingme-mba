@@ -653,7 +653,7 @@ describe('conversation de construction', () => {
       mentionIa: 'Vous parlez à un humain.',
       maxTours: 999,
       status: 'active',
-      outils: [{ handler: 'poser_tag', description: 'Tague.', nePasUtiliser: 'Jamais au hasard.', actif: true }],
+      outils: [{ handler: 'marquer_urgent', description: 'Marque urgent.', nePasUtiliser: 'Jamais au hasard.', actif: true }],
     }));
     const res = await app({ reponse: r, entretien: ENTRETIEN_FINI }).srv
       .inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });

@@ -2,6 +2,7 @@ import type { EntreeResolveur, ResolveurOutil, SortieResolveur } from '../execut
 import type { KnowledgeStore } from '../knowledge';
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
 import type { AnalyseEtResume } from '../../crm/contact-store.pg';
+import { lireCibleOutilAgent, type CibleOutilAgent, type HandlerACible } from '../outils-maison';
 
 /**
  * Le résolveur des outils maison : une table `handler` vers fonction TypeScript, sans réseau.
@@ -9,15 +10,29 @@ import type { AnalyseEtResume } from '../../crm/contact-store.pg';
  * Le `handler` est lu dans `binding`, jamais déduit du nom exposé, que le client peut renommer. Comme tout
  * résolveur, il ne lève pas sur un cas métier : il rend `ok: false` avec une raison que le tronc commun
  * repasse au modèle.
+ *
+ * 🔴 LA CIBLE AUSSI EST LUE DANS `binding`, JAMAIS DANS LES ARGUMENTS DU MODÈLE (RC4) : le tag, le champ, le bloc et
+ * le scénario sont fixés par l'administrateur. Un modèle qui passe `tag: "autre"` pose quand même le tag fixé (la
+ * validation retire d'ailleurs l'argument, que l'outil ne déclare pas). Une cible illisible refuse l'appel au lieu
+ * d'agir, et le refus est journalisé par le tronc commun (`agent_tool_calls`).
  */
 
 export interface DepsResolveurMba {
   /**
-   * Déclenche un bloc du scénario courant (`mba_envoyer_bloc`), par `WorkflowExecutor.envoyerBlocDepuisAgent`
-   * (qui porte pourquoi elle ne passe pas par `demarrer`).
+   * Envoie SEUL le bloc fixé d'un scénario publié de l'espace (`mba_envoyer_bloc`), sans faire bouger le parcours de
+   * l'agent : `creerGestesEnvoiAgent` (`src/agent/gestes-envoi.ts`), puis `WorkflowExecutor.envoyerBlocDepuisAgent`.
    */
   envoyerBloc(input: {
     tenantId: string; waId: string; runId: string; workflowId: string; code: string;
+  }): Promise<{ ok: boolean; raison?: string }>;
+
+  /**
+   * Lance le scénario fixé (`mba_lancer_scenario`, RC4), qui prend la conversation, puis clôt la session de l'agent et
+   * son parcours (`creerGestesEnvoiAgent`). `ok: false` = rien n'est parti, la session continue, et la raison va au
+   * modèle. Requise : un câblage qui l'oublierait ne compile pas.
+   */
+  lancerScenario(input: {
+    tenantId: string; waId: string; runId: string; sessionId: string; workflowId: string;
   }): Promise<{ ok: boolean; raison?: string }>;
 
   /**
@@ -65,6 +80,25 @@ function texte(args: Record<string, unknown>, cle: string): string {
 
 function echec(raison: string): SortieResolveur {
   return { ok: false, contenu: { erreur: raison }, erreur: raison };
+}
+
+/** Ce que le modèle lit d'un outil dont la cible ne se lit pas : il ne peut rien y corriger, l'administrateur si. */
+export const CIBLE_ILLISIBLE = 'outil mal configuré : sa cible ne se lit pas, il faut le refaire dans l’onglet Outils de l’agent';
+
+/**
+ * Le refus d'un outil dont la cible ne se lit pas pour son handler, journalisé : un outil posé avant RC4, ou un
+ * `binding` réécrit à la main, refuse chaque appel, et l'exploitation doit pouvoir le voir. Partagé avec le bac à
+ * sable, qui juge la cible de la même façon.
+ */
+export function refusCible(entree: Pick<EntreeResolveur, 'outil'>, handler: HandlerACible): SortieResolveur {
+  // eslint-disable-next-line no-console
+  console.warn(`agent: outil ${entree.outil.id} (${handler}) sans cible lisible, appel refusé`);
+  return echec(CIBLE_ILLISIBLE);
+}
+
+/** La cible fixée de l'outil (`binding`), lue contre le schéma du catalogue. Le handler se compare chez l'appelant. */
+export function cibleLue(entree: Pick<EntreeResolveur, 'outil'>): CibleOutilAgent | null {
+  return lireCibleOutilAgent(entree.outil.binding);
 }
 
 type Handler = (entree: EntreeResolveur, deps: DepsResolveurMba) => Promise<SortieResolveur>;
@@ -136,11 +170,15 @@ const HANDLERS: Record<string, Handler> = {
     return marquee ? { contenu: { urgente: true } } : echec('aucune conversation a marquer pour ce contact');
   },
 
-  poser_tag: async ({ args, ctx }, deps) => {
-    const tag = texte(args, 'tag');
-    if (tag === '') return echec('parametre « tag » manquant');
-    await deps.poserTag(ctx.tenantId, ctx.waId, tag);
-    return { contenu: { pose: tag } };
+  /**
+   * Le tag FIXÉ par l'administrateur (RC4), jamais un argument du modèle. Le modèle ne lit pas son nom en retour :
+   * un nom interne, qu'il répéterait au contact (même règle que l'agent de Meta, `REPONSE_MAISON`).
+   */
+  poser_tag: async (entree, deps) => {
+    const cible = cibleLue(entree);
+    if (cible?.handler !== 'poser_tag') return refusCible(entree, 'poser_tag');
+    await deps.poserTag(entree.ctx.tenantId, entree.ctx.waId, cible.tag);
+    return { contenu: { pose: true } };
   },
 
   /** 🔴 La fiche contact telle que le tour l'a déjà lue : aucun moyen de désigner la fiche de quelqu'un
@@ -149,13 +187,36 @@ const HANDLERS: Record<string, Handler> = {
     ctx.contact === null ? { contenu: { connu: false } } : { contenu: { connu: true, champs: ctx.contact, ...await analyseOuIndisponible(deps, ctx) } }
   ),
 
-  envoyer_bloc: async ({ args, ctx }, deps) => {
-    const code = texte(args, 'code');
-    if (code === '') return echec('parametre « code » manquant');
+  /** Le bloc FIXÉ (RC4) : son scénario et son code viennent de la cible, jamais du modèle ni du parcours en cours. */
+  envoyer_bloc: async (entree, deps) => {
+    const cible = cibleLue(entree);
+    if (cible?.handler !== 'envoyer_bloc') return refusCible(entree, 'envoyer_bloc');
+    const { ctx } = entree;
     const res = await deps.envoyerBloc({
-      tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, workflowId: ctx.workflowId, code,
+      tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, workflowId: cible.workflowId, code: cible.code,
     });
-    return res.ok ? { contenu: { envoye: code } } : echec(res.raison ?? 'le bloc n a pas pu etre envoye');
+    return res.ok ? { contenu: { envoye: true } } : echec(res.raison ?? 'le bloc n a pas pu etre envoye');
+  },
+
+  /**
+   * 🔴 LANCER LE SCÉNARIO FIXÉ (RC4), et se retirer. TERMINAL sur un succès : `scenarioLance` arrête le tour sans
+   * rappeler le modèle (`brain.gateway.ts`), la dépendance a déjà clos la session et le parcours de l'agent. Un refus
+   * (scénario dépublié ou supprimé, contact désabonné, fil tenu) laisse la session vivante : le modèle lit la raison.
+   * Relancer le scénario où l'agent parle est refusé : il retomberait sur l'agent, qui pourrait le relancer encore.
+   */
+  lancer_scenario: async (entree, deps) => {
+    const cible = cibleLue(entree);
+    if (cible?.handler !== 'lancer_scenario') return refusCible(entree, 'lancer_scenario');
+    const { ctx } = entree;
+    if (cible.workflowId === ctx.workflowId) {
+      return echec('ce scénario est celui où tu parles déjà : le relancer recommencerait la conversation, continue sans cet outil');
+    }
+    const res = await deps.lancerScenario({
+      tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, sessionId: ctx.sessionId, workflowId: cible.workflowId,
+    });
+    return res.ok
+      ? { contenu: { lance: true }, scenarioLance: true }
+      : echec(res.raison ?? 'le scénario n’a pas pu être lancé');
   },
 
   /**
@@ -170,16 +231,20 @@ const HANDLERS: Record<string, Handler> = {
   },
 
   /**
-   * La clé vient du modèle. La portée est bornée (champs libres du contact courant, jamais l'opt-in), mais une
-   * injection peut écraser le champ sur lequel une condition du scénario branche : déclarer `cle` en
-   * énumération fermée.
+   * 🔴 Le champ est FIXÉ par l'administrateur (RC4) : une injection ne peut plus viser le champ sur lequel une
+   * condition du scénario branche. La valeur vient du modèle, bornée à la liste permise quand il y en a une : la
+   * validation l'applique déjà (`paramsEffectifs`), la revérifier ici ne coûte rien et ne dépend d'aucun câblage.
    */
-  ecrire_variable: async ({ args, ctx }, deps) => {
-    const cle = texte(args, 'cle');
-    const valeur = texte(args, 'valeur');
-    if (cle === '') return echec('parametre « cle » manquant');
-    await deps.ecrireChamp(ctx.tenantId, ctx.waId, cle, valeur);
-    return { contenu: { ecrit: cle } };
+  ecrire_variable: async (entree, deps) => {
+    const cible = cibleLue(entree);
+    if (cible?.handler !== 'ecrire_variable') return refusCible(entree, 'ecrire_variable');
+    const valeur = texte(entree.args, 'valeur');
+    if (valeur === '') return echec('parametre « valeur » manquant');
+    if (cible.valeurs.length > 0 && !cible.valeurs.includes(valeur)) {
+      return echec(`valeur refusée : choisir parmi ${cible.valeurs.join(', ')}`);
+    }
+    await deps.ecrireChamp(entree.ctx.tenantId, entree.ctx.waId, cible.champ, valeur);
+    return { contenu: { ecrit: true } };
   },
 };
 

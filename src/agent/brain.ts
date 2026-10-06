@@ -51,6 +51,12 @@ export interface DecisionAgent {
    * qui rouvrirait la course.
    */
   mainPriseParCeTour?: boolean;
+  /**
+   * Un outil vient de lancer un scénario qui a pris la conversation (`mba_lancer_scenario`, RC4) : la session est
+   * close et le parcours de l'agent fini. `run-turn` s'arrête là, sans rien envoyer, sans poser d'échéance et sans
+   * faire sortir le bloc : aucune sortie du bloc agent ne repart derrière le scénario lancé.
+   */
+  scenarioLance?: boolean;
 }
 
 /**

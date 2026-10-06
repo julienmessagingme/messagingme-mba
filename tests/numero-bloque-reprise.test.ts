@@ -99,7 +99,9 @@ describe('🔴 un parcours qui REPREND sur un numéro bloqué ne rejoue rien', (
       edges: [{ id: 'e1', source: 'em', target: 'tpl' }],
     };
     const m = monde(graphe, { ...RUN, currentNode: 'a' });
-    const pousser = () => m.executor.envoyerBlocDepuisAgent('t1', '33611', { runId: 'run-1', workflowId: 'wf1', code: 'nod_t1_BLOC' });
+    // Le graphe fourni est celui du scénario entier (le bloc seul n'est pas en jeu ici) : ce qui compte est l'ordre de
+    // la garde du numéro et de l'e-mail.
+    const pousser = () => m.executor.envoyerBlocDepuisAgent('t1', '33611', { runId: 'run-1', workflowId: 'wf1', graphe, noeudId: 'em' });
     await expect(pousser()).rejects.toBeInstanceOf(NumeroSuspenduError);
     expect(emails(m.effets), 'l’e-mail part avant le modèle refusé').toEqual([]);
     m.bloque.vrai = false;

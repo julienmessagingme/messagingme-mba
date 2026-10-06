@@ -51,7 +51,7 @@ function entree(args: Record<string, unknown>): EntreeResolveur {
 function lesDeux(fiches: FicheTrouvee[]) {
   const connaissance = store(fiches);
   const prod: DepsResolveurMba = {
-    envoyerBloc: async () => ({ ok: true }),
+    envoyerBloc: async () => ({ ok: true }), lancerScenario: async () => ({ ok: true }),
     escaladerVersHumain: async () => true,
     marquerUrgente: async () => true,
     poserTag: async () => {},

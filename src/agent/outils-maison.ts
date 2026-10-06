@@ -1,13 +1,16 @@
+import { z } from 'zod';
 import type { OutilDefini, RisqueOutil } from './catalog';
 import type { SortieAgent } from './agent-store';
 import { paramsOutil, toolParamsToJsonSchema, type ParamOutil, type SchemaObjet } from './llm/tool-schema';
+import { LONGUEUR_MAX_ETIQUETTE } from '../crm/poser-etiquette';
+import { CODE_BLOC_RE } from '../workflow/node-list';
 
 /**
  * Le catalogue des outils maison, et ce que le modèle voit d'un outil.
  *
  * Un catalogue plutôt qu'un formulaire libre : le comportement vient de `binding.handler`, et seuls existent
  * les handlers de `resolvers/mba.ts`. Un handler libre produirait un outil actif qui refuse à chaque appel.
- * Le client ne compose que le nom, les mots et les valeurs autorisées. Miroir de `HANDLERS`, tenu par
+ * Le client compose le nom, les mots et, pour quatre d'entre eux, la cible (`cibleOutilAgentSchema`). Miroir de `HANDLERS`, tenu par
  * `tests/agent-outils-maison.test.ts`.
  */
 
@@ -15,7 +18,10 @@ import { paramsOutil, toolParamsToJsonSchema, type ParamOutil, type SchemaObjet 
 export type EditionParam =
   /** Rien : le paramètre est ce qu'il est. */
   | 'aucune'
-  /** Le client liste les valeurs autorisées (les codes de ses blocs, les noms de ses champs). */
+  /**
+   * Le client liste les valeurs autorisées. Aucune entrée du catalogue ne l'emploie depuis RC4 (les tags, champs et
+   * blocs sont des cibles fixes, `cibleOutilAgentSchema`) : la route refuse donc toute liste (`PATCH`, `enums`).
+   */
   | 'enum'
   /** L'énumération dérive de la fiche de l'agent et n'est jamais stockée (voir `outilsExposes`). */
   | 'derive_des_sorties';
@@ -53,8 +59,13 @@ const P = (
 });
 
 /**
- * Les huit outils maison. `envoyer_bloc` est déclaré irréversible : un message parti ne se rappelle pas et
- * il est facturé, donc le tronc commun le refuse tant que le client n'a pas coché l'autonomie sur cet outil.
+ * Les neuf outils maison. `envoyer_bloc` et `lancer_scenario` sont déclarés irréversibles : un message parti ne se
+ * rappelle pas et il est facturé, donc le tronc commun les refuse tant que le client n'a pas coché l'autonomie sur
+ * l'outil.
+ *
+ * 🔴 QUATRE D'ENTRE EUX AGISSENT SUR UNE CIBLE FIXÉE PAR L'ADMINISTRATEUR (RC4, alignés sur l'agent de Meta) : un tag,
+ * un champ, un bloc, un scénario par outil, dans `binding` (`cibleOutilAgentSchema`). Le modèle ne décide que du
+ * moment et, pour un champ, de la valeur ; il ne désigne jamais la cible.
  */
 export const OUTILS_MAISON: readonly OutilCatalogue[] = [
   {
@@ -155,53 +166,48 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     params: [],
   },
   {
+    // RC4 : le tag est FIXÉ à la pose (`binding.tag`), un outil par tag. Aucun paramètre : le modèle ne choisit que
+    // le moment, jamais l'étiquette.
     handler: 'poser_tag',
     nomDefaut: 'mba_poser_tag',
     titre: { fr: 'Poser un tag sur le contact', en: 'Tag the contact' },
     description: {
-      fr: 'Marque le contact, pour le retrouver ensuite dans le mini-CRM ou déclencher une automation.',
-      en: 'Marks the contact, to find them later in the mini-CRM or trigger an automation.',
+      fr: 'Pose sur le contact le tag prévu pour cet outil, pour le retrouver ensuite dans le mini-CRM ou déclencher une automation.',
+      en: 'Sets the tag planned for this tool on the contact, to find them later in the mini-CRM or trigger an automation.',
     },
     nePasUtiliser: {
-      fr: 'Ne pas inventer de tag hors de la liste autorisée.',
-      en: 'Do not invent a tag outside the allowed list.',
+      fr: 'Ne pas l’appeler tant que la situation qui justifie ce tag n’est pas arrivée.',
+      en: 'Do not call it until the situation that warrants this tag has happened.',
     },
     risk: 'write',
-    params: [P(
-      'tag', 'Le tag à poser.', 'enum',
-      { fr: 'Les tags que cet agent a le droit de poser. Vide, il peut en poser n’importe lequel.', en: 'The tags this agent may set. Left empty, it can set any.' },
-    )],
+    params: [],
   },
   {
+    // RC4 : le champ est FIXÉ à la pose (`binding.champ`) ; la valeur vient du modèle, bornée à `binding.valeurs`
+    // quand l'administrateur en donne (`paramsEffectifs` l'annonce et la validation l'applique).
     handler: 'ecrire_variable',
     nomDefaut: 'mba_ecrire_variable',
     titre: { fr: 'Enregistrer une information sur le contact', en: 'Record information about the contact' },
     description: {
-      fr: 'Écrit une valeur dans un champ du contact, pour qu’un bloc plus loin dans le scénario la réutilise.',
-      en: 'Writes a value into a contact field, so a later block in the scenario can reuse it.',
+      fr: 'Enregistre sur la fiche du contact l’information prévue pour cet outil, pour qu’un bloc plus loin dans le scénario la réutilise.',
+      en: 'Records on the contact record the information planned for this tool, so a later block in the scenario can reuse it.',
     },
     nePasUtiliser: {
-      fr: 'Ne pas écrire dans un champ absent de la liste autorisée.',
-      en: 'Do not write into a field missing from the allowed list.',
+      fr: 'Ne pas l’appeler tant que le contact n’a pas donné cette information.',
+      en: 'Do not call it until the contact has given this information.',
     },
     risk: 'write',
-    params: [
-      // La clé vient du modèle : une injection peut viser le champ sur lequel une condition du scénario
-      // branche. L'énumération fermée est la parade, d'où sa mise en avant à l'écran.
-      P(
-        'cle', 'Le champ à renseigner.', 'enum',
-        { fr: 'Les champs que cet agent a le droit d’écrire. À remplir : sans liste, il peut écrire dans n’importe lequel.', en: 'The fields this agent may write. Fill it in: without a list, it can write into any of them.' },
-      ),
-      P('valeur', 'La valeur à enregistrer.'),
-    ],
+    params: [P('valeur', 'La valeur à enregistrer, telle que le contact l’a donnée.')],
   },
   {
+    // RC4 : le bloc est FIXÉ à la pose (`binding.workflowId` et `binding.code`), et part SEUL, comme chez l'agent de
+    // Meta (`blocSeul`) : ce qui le suit dans son scénario ne part pas.
     handler: 'envoyer_bloc',
     nomDefaut: 'mba_envoyer_bloc',
     titre: { fr: 'Envoyer un bloc de votre scénario', en: 'Send a block from your scenario' },
     description: {
-      fr: 'Envoie un bloc que vous avez dessiné : une photo, un message, un formulaire. Le parcours ne bouge pas, l’agent garde la main.',
-      en: 'Sends a block you designed: a photo, a message, a form. The journey does not move, the agent keeps the floor.',
+      fr: 'Envoie au contact le bloc prévu pour cet outil : une photo, un message, un modèle. Tu gardes la main ensuite.',
+      en: 'Sends the contact the block planned for this tool: a photo, a message, a template. You keep the floor afterwards.',
     },
     nePasUtiliser: {
       fr: 'Ne pas appeler pour dire ce qu’un message écrit dirait aussi bien.',
@@ -209,13 +215,66 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     },
     // Irréversible : un message parti ne se rappelle pas, et il est facturé.
     risk: 'irreversible',
-    // L'aide fait cocher les blocs dans une liste (`ChoixDeBlocs`) : le client ne voit nulle part leurs codes.
-    params: [P(
-      'code', 'Le code du bloc à envoyer.', 'enum',
-      { fr: 'Les blocs que cet agent a le droit d’envoyer. Cochez-les ci-dessous : seuls ceux d’un scénario contenant un bloc Agent IA peuvent partir.', en: 'The blocks this agent may send. Tick them below: only those in a scenario containing an AI Agent block can be sent.' },
-    )],
+    params: [],
+  },
+  {
+    // RC4 : le scénario est FIXÉ à la pose (`binding.workflowId`). TERMINAL : le scénario prend la conversation, la
+    // session de l'agent se clôt, et le modèle n'est plus rappelé (`scenarioLance`, `brain.gateway.ts`).
+    handler: 'lancer_scenario',
+    nomDefaut: 'mba_lancer_scenario',
+    titre: { fr: 'Lancer un scénario', en: 'Start a scenario' },
+    description: {
+      fr: 'Lance le scénario prévu pour cet outil : il prend la conversation et tu te retires. N’écris rien à côté, c’est le scénario qui parle au contact.',
+      en: 'Starts the scenario planned for this tool: it takes over the conversation and you step back. Write nothing alongside, the scenario talks to the contact.',
+    },
+    nePasUtiliser: {
+      fr: 'Ne pas l’appeler tant que le contact n’a pas exprimé le besoin que ce scénario traite.',
+      en: 'Do not call it until the contact has expressed the need this scenario handles.',
+    },
+    // Irréversible : le scénario envoie des messages, qui ne se rappellent pas et sont facturés.
+    risk: 'irreversible',
+    params: [],
   },
 ];
+
+/**
+ * 🔴 LA CIBLE D'UN OUTIL MAISON QUI AGIT SUR QUELQUE CHOSE (RC4), dans `binding`, à côté du `handler`. Calquée sur
+ * celle de l'agent de Meta (`cibleMaisonSchema`, `src/mba/outils-maison.ts`) sans en partager les noms : un outil
+ * d'un agent qui atteindrait l'autre tomberait sur un handler inconnu (disjonction tenue par
+ * `tests/mba-outils-maison.test.ts`). `.strict()` : le `binding` est un jsonb que rien d'autre ne contraint, une clé
+ * en trop veut dire qu'une autre écriture l'a produit, et un outil qu'on ne comprend pas ne s'exécute pas.
+ */
+export const BORNES_CIBLE = { tag: LONGUEUR_MAX_ETIQUETTE, champ: 64, valeur: 120, valeurs: 50 } as const;
+export const cibleOutilAgentSchema = z.discriminatedUnion('handler', [
+  z.object({ handler: z.literal('poser_tag'), tag: z.string().trim().min(1).max(BORNES_CIBLE.tag) }).strict(),
+  z.object({
+    handler: z.literal('ecrire_variable'),
+    champ: z.string().trim().min(1).max(BORNES_CIBLE.champ),
+    valeurs: z.array(z.string().trim().min(1).max(BORNES_CIBLE.valeur)).max(BORNES_CIBLE.valeurs),
+  }).strict(),
+  // Un bloc se désigne par son code public (`nod_…`), pas par l'identifiant du nœud : le code survit à la réécriture
+  // du graphe par l'éditeur.
+  z.object({ handler: z.literal('envoyer_bloc'), workflowId: z.string().uuid(), code: z.string().regex(CODE_BLOC_RE) }).strict(),
+  z.object({ handler: z.literal('lancer_scenario'), workflowId: z.string().uuid() }).strict(),
+]);
+export type CibleOutilAgent = z.infer<typeof cibleOutilAgentSchema>;
+export type HandlerACible = CibleOutilAgent['handler'];
+
+/** Les handlers dont la pose EXIGE une cible, lus sur le schéma : une cible ajoutée plus haut entre ici seule. */
+export const HANDLERS_A_CIBLE: readonly HandlerACible[] = cibleOutilAgentSchema.options.map((o) => o.shape.handler.value);
+
+export function exigeUneCible(handler: string): handler is HandlerACible {
+  return (HANDLERS_A_CIBLE as readonly string[]).includes(handler);
+}
+
+/**
+ * La cible d'un outil relu en base, ou `null` : un outil sans cible lisible n'est ni exposé au modèle ni exécuté.
+ * Le `handler` fait partie de la cible : l'appelant le compare à celui qu'il sert.
+ */
+export function lireCibleOutilAgent(binding: unknown): CibleOutilAgent | null {
+  const r = cibleOutilAgentSchema.safeParse(binding);
+  return r.success ? r.data : null;
+}
 
 const PAR_HANDLER = new Map(OUTILS_MAISON.map((o) => [o.handler, o]));
 
@@ -254,7 +313,8 @@ export interface OutilExpose {
  * L'énumération de `terminer` est posée ici, depuis `fiche.sorties` seule : la fiche fait autorité, et une
  * copie dans `agent_tools.params` divergerait. Une dérivation vide retire l'outil au lieu de l'exposer sans
  * énumération, sinon le modèle inventerait un code que le bloc ne dessine pas. À distinguer d'une liste vide
- * remplie par le client (les tags autorisés), qui veut dire « aucune restriction ».
+ * remplie par le client (les valeurs permises d'un champ fixé), qui veut dire « aucune restriction ». Un outil à cible
+ * sans cible lisible est retiré de même.
  */
 export function outilExpose(outil: OutilDefini, sorties: readonly SortieAgent[]): OutilExpose | null {
   const params = paramsAvecDerivations(outil, sorties.map((s) => s.code));
@@ -286,15 +346,28 @@ export function outilsExposes(outils: readonly OutilDefini[], sorties: readonly 
  */
 export function paramsEffectifs(outil: Pick<OutilDefini, 'origin' | 'binding' | 'params'>): ParamOutil[] {
   const copie: unknown[] = Array.isArray(outil.params) ? outil.params : [];
-  const imposes = outilMaison(handlerMaison(outil))?.paramsImposes ?? [];
-  if (imposes.length === 0) return paramsOutil(copie);
+  const handler = handlerMaison(outil);
+  const imposes = outilMaison(handler)?.paramsImposes ?? [];
+  if (imposes.length === 0) return avecValeursDuChamp(outil.binding, handler, paramsOutil(copie));
   // « Déclaré » se lit sur le brut, comme les noms réservés de `paramsOutil` : une entrée de la copie
   // inutilisable garde son nom, et un imposé du même nom ne prend pas sa place.
   const declares = new Set(copie.map((b) => {
     const nom = b && typeof b === 'object' ? (b as { name?: unknown }).name : undefined;
     return typeof nom === 'string' ? nom.trim() : '';
   }));
-  return paramsOutil([...copie, ...imposes.filter((p) => !declares.has(p.name))]);
+  return avecValeursDuChamp(outil.binding, handler, paramsOutil([...copie, ...imposes.filter((p) => !declares.has(p.name))]));
+}
+
+/**
+ * 🔴 LES VALEURS PERMISES D'UN CHAMP FIXÉ (RC4), dérivées de la cible et jamais recopiées dans `params` : une copie
+ * divergerait à la première modification de la liste. Posées ici, donc annoncées au modèle ET appliquées par la
+ * validation de `executeTool` (règle « toute borne appliquée est annoncée »). Une liste vide = toute valeur.
+ */
+function avecValeursDuChamp(binding: unknown, handler: string, params: ParamOutil[]): ParamOutil[] {
+  if (handler !== 'ecrire_variable') return params;
+  const cible = lireCibleOutilAgent(binding);
+  if (cible?.handler !== 'ecrire_variable' || cible.valeurs.length === 0) return params;
+  return params.map((p) => (p.name === 'valeur' ? { ...p, enum: [...cible.valeurs] } : p));
 }
 
 /** Les paramètres d'un outil, énumérations dérivées appliquées et imposés annoncés requis, ou `null` si une
@@ -307,6 +380,9 @@ function paramsAvecDerivations(outil: OutilDefini, codesSortie: string[]): Param
   // Un handler sorti du catalogue (ligne ancienne) garde ses paramètres tels quels : il ne doit pas faire
   // tomber la construction du schéma de tout un tour.
   if (!modele) return params;
+  // 🔴 Un outil à cible sans cible lisible (ligne d'avant RC4, binding réécrit) est RETIRÉ, pas offert : il refuserait
+  // à chaque appel, et le modèle croirait pouvoir poser un tag qui ne partira jamais.
+  if (exigeUneCible(modele.handler) && lireCibleOutilAgent(outil.binding)?.handler !== modele.handler) return null;
   const derives = new Set(modele.params.filter((p) => p.edition === 'derive_des_sorties').map((p) => p.name));
   // Annoncé requis, toléré absent : c'est l'obligation qui fait poser la question à un modèle de raisonnement,
   // et la validation, plus souple, ne refuse pas un appel qui l'oublie (il bouclerait jusqu'au plafond).

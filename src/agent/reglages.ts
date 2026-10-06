@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import type { OutilComplet } from './catalog';
 import { NomOutilDejaPris, OutilNonActivable } from './catalog';
-import { handlerMaison, outilMaison, paramsInitiaux } from './outils-maison';
+import {
+  exigeUneCible, handlerMaison, lireCibleOutilAgent, outilMaison, paramsInitiaux,
+  type CibleOutilAgent, type HandlerACible,
+} from './outils-maison';
 import { estModeTransfert, MODES_TRANSFERT, type ModeTransfert } from './disponibilite-equipe';
 import { refus, type Issue } from '../lib/issue';
 import { estUuid } from '../http/scope';
@@ -19,17 +22,44 @@ import type { OutilsAgentDep } from '../http/agent-tools';
 export type OutilsSurs = Pick<OutilsAgentDep, 'listToutes' | 'ajouter' | 'activer'>;
 
 /**
+ * La cible saisie pour un outil maison, lue contre le schéma du catalogue, `handler` imposé par l'outil et jamais par
+ * la saisie (une cible de scénario ne se glisse pas sous un outil de tag). `null` = absente ou invalide. Le texte du
+ * refus dit ce qu'il fallait, sans détailler Zod.
+ */
+export function lireCibleSaisie(handler: HandlerACible, saisie: unknown): CibleOutilAgent | null {
+  if (!saisie || typeof saisie !== 'object' || Array.isArray(saisie)) return null;
+  return lireCibleOutilAgent({ ...saisie, handler });
+}
+
+/** Ce qu'il faut pour chaque cible, dit au client quand elle manque ou ne tient pas. */
+export const CIBLE_REQUISE: Readonly<Record<HandlerACible, string>> = {
+  poser_tag: 'cible requise : le tag à poser',
+  ecrire_variable: 'cible requise : le champ à renseigner, et au plus 50 valeurs permises',
+  envoyer_bloc: 'cible requise : le scénario et le code du bloc à envoyer',
+  lancer_scenario: 'cible requise : le scénario à lancer',
+};
+
+/**
  * Ajoute à l'agent un outil maison du catalogue, INACTIF. 🔴 Le modèle d'outil vient du catalogue, jamais de
- * l'appelant : titre, mots, paramètres et risque avec lui ; l'appelant ne choisit que le handler et, au plus, le nom.
+ * l'appelant : titre, mots, paramètres et risque avec lui ; l'appelant ne choisit que le handler, au plus le nom, et
+ * la CIBLE quand le handler en exige une (RC4 : un tag, un champ, un bloc, un scénario fixés par l'administrateur).
+ * Une cible absente ou invalide est refusée (400) : un outil posé sans cible refuserait chaque appel. L'existence de
+ * ce qu'elle vise dans l'espace (champ, bloc, scénario) est vérifiée par la route, qui en a les dépôts.
  */
 export async function ajouterOutilMaison(
-  outils: Pick<OutilsAgentDep, 'ajouter'>, tenantId: string, agentId: string, handler: string, nom?: string,
+  outils: Pick<OutilsAgentDep, 'ajouter'>, tenantId: string, agentId: string, handler: string, nom?: string, saisieCible?: unknown,
 ): Promise<Issue<OutilComplet>> {
   const modele = outilMaison(handler);
   if (!modele) return refus(400, 'outil inconnu');
+  let cible: CibleOutilAgent | null = null;
+  if (exigeUneCible(modele.handler)) {
+    cible = lireCibleSaisie(modele.handler, saisieCible);
+    if (!cible) return refus(400, CIBLE_REQUISE[modele.handler]);
+  }
   try {
     const outil = await outils.ajouter(tenantId, agentId, {
       handler: modele.handler,
+      cible,
       name: nom ?? modele.nomDefaut,
       title: modele.titre.fr,
       description: modele.description.fr,
@@ -46,8 +76,9 @@ export async function ajouterOutilMaison(
 
 /**
  * Les quatre outils qu'un agent tiers peut donner à un agent IA (spec du lot 8a, section 1). 🔴 Ni `envoyer_bloc`
- * (irréversible : il envoie un message hors de la conversation), ni les outils qui écrivent sur la fiche d'un
- * contact (`poser_tag`, `ecrire_variable`), ni l'autonomie, ni un connecteur : ceux-là restent un geste d'écran.
+ * (irréversible : il envoie un message hors de la conversation), ni `lancer_scenario` (irréversible, et terminal), ni
+ * les outils qui écrivent sur la fiche d'un contact (`poser_tag`, `ecrire_variable`), ni l'autonomie, ni un
+ * connecteur : ceux-là restent un geste d'écran. Aucun n'exige de cible, ce que `ajouterOutilMaison` refuserait.
  */
 export const OUTILS_SURS = ['terminer', 'chercher_connaissance', 'lire_contact', 'escalader'] as const;
 

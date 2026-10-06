@@ -102,7 +102,7 @@ export interface TraceAppel {
  * sortie `plafond` est câblée dans les scénarios, et un handle que personne n'a câblé ferait partir le
  * parcours par la première arête venue. Le motif voyage à côté, seul le bac à sable le lit.
  */
-export type MotifArret = 'plafond_allers_retours' | 'reponse_non_conforme';
+export type MotifArret = 'plafond_allers_retours' | 'reponse_non_conforme' | 'scenario_lance';
 
 export interface DecisionTracee extends DecisionAgent {
   appels: TraceAppel[];
@@ -399,6 +399,14 @@ async function boucler(
            */
           ...(res.mainPrise ? { mainPriseParCeTour: true } : {}),
         };
+      }
+      /**
+       * 🔴 UN SCÉNARIO VIENT DE PRENDRE LA CONVERSATION (RC4) : le tour s'arrête ici, sans rappeler le modèle. Ni texte
+       * (il arriverait APRÈS les premiers messages du scénario, déjà partis), ni sortie (le parcours de l'agent est
+       * fini). Le motif ne sert qu'au bac à sable, qui le dit à l'écran ; la production lit `scenarioLance`.
+       */
+      if (res.scenarioLance) {
+        return { texte: null, sortie: null, usage, appels, scenarioLance: true, motif: 'scenario_lance' };
       }
       if (res.sortie) {
         const texte = texteDeSortie(reponse.texte, res.dernierMessage, () => deps.alerter?.(

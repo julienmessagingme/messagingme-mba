@@ -72,6 +72,7 @@ import { creerTravailSignauxBatch } from './signaux/travail-batch';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { creerResolveurMba } from './agent/resolvers/mba';
+import { creerGestesEnvoiAgent } from './agent/gestes-envoi';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { automatique } from './inbox/evenements';
 import { unRepondeurRepond } from './inbox/fil';
@@ -1586,11 +1587,26 @@ async function main(): Promise<void> {
       }),
     });
 
+    /**
+     * Les deux outils qui envoient sur une cible fixée (RC4, `src/agent/gestes-envoi.ts`) : le bloc seul d'un scénario
+     * PUBLIÉ, sans faire bouger le parcours de l'agent ; le scénario lancé par le type `agent_ia_scenario`, puis la
+     * session et le parcours de l'agent clos sans qu'aucune sortie du bloc ne reparte derrière.
+     */
+    const gestesEnvoiAgent = creerGestesEnvoiAgent({
+      graphePublie: async (t, workflowId) => (await workflowStore.getById(workflowId, t))?.graph ?? null,
+      envoyerDepuisAgent: (t, waId, input) => workflowExecutor.envoyerBlocDepuisAgent(t, waId, input),
+      lancer: (demande) => lancements.lancer(demande),
+      fenetreOuverte: async (t, waId) => (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true,
+      estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
+      sessions: agentSessions,
+      parcours: { clore: (t, runId) => runStore.setStateSiVivant(t, runId, { currentNode: null, status: 'done' }) },
+    });
+
     // Les vrais outils maison, à comparer à `resolvers/simulation.ts` (bac à sable) : ici chaque dépendance
     // touche le monde réel.
     const resolveurMba = creerResolveurMba({
-      envoyerBloc: ({ tenantId, waId, runId, workflowId, code }) =>
-        workflowExecutor.envoyerBlocDepuisAgent(tenantId, waId, { runId, workflowId, code }),
+      envoyerBloc: gestesEnvoiAgent.envoyerBloc,
+      lancerScenario: gestesEnvoiAgent.lancerScenario,
       escaladerVersHumain,
       // `mba_marquer_urgent` (migration 0216) : la conversation du contact du tour, jamais une autre, et l'agent nommé
       // dans la cause (`urgente_par` reste nul, il n'est pas un collaborateur). Aucun effet sur le fil : il continue.
@@ -1599,8 +1615,8 @@ async function main(): Promise<void> {
       // Trois effets, pas un : le contact, le référentiel Tags et la file d'automations. L'outil promet de
       // pouvoir « déclencher une automation », un appel direct au store le ferait mentir.
       poserTag: poserTagDepuisAgent,
-      // 🔴 La clé vient du modèle : portée bornée aux champs libres du contact courant (jamais l'opt-in, jamais
-      // un autre contact), et l'énumération fermée proposée par la console sur ce paramètre pare une injection.
+      // 🔴 Le champ est fixé par l'administrateur (RC4, `binding.champ`), jamais par le modèle : portée bornée aux
+      // champs libres du contact courant (jamais l'opt-in, jamais un autre contact).
       ecrireChamp: async (t, waId, cle, valeur) => { await contactStore.mergeFieldsByPhone(t, waId, { [cle]: valeur }); },
       // `mba_lire_contact` : la dernière analyse et son résumé, lus pour le contact du tour seulement.
       lireAnalyse: (t, waId) => contactStore.analyseEtResumeParWaId(t, waId),

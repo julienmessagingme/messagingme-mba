@@ -5,8 +5,10 @@ import type { Guard } from '../auth/middleware';
 import type { OutilBibliotheque, OutilComplet, PatchOutil, Rattachement } from '../agent/catalog';
 import { NomOutilDejaPris, messageDuRefus, refusIntrouvable } from '../agent/catalog';
 import { consommateurAgent } from '../agent/consommateur';
-import { OUTILS_MAISON, outilExpose, outilMaison, type OutilExpose } from '../agent/outils-maison';
-import { ajouterOutilMaison } from '../agent/reglages';
+import {
+  OUTILS_MAISON, exigeUneCible, handlerMaison, outilExpose, outilMaison, type CibleOutilAgent, type OutilExpose,
+} from '../agent/outils-maison';
+import { CIBLE_REQUISE, ajouterOutilMaison, lireCibleSaisie } from '../agent/reglages';
 import { corpsDuRefus } from '../lib/issue';
 import { risqueAuMoins, risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import type { SortieAgent } from '../agent/agent-store';
@@ -27,8 +29,13 @@ import { gestesSchema } from '../agent/gestes';
 /** Ce que les routes lisent et écrivent des outils d'un agent. */
 export interface OutilsAgentDep {
   listToutes(tenantId: string, agentId: string): Promise<OutilComplet[]>;
+  /**
+   * `cible` : la cible fixée d'un outil qui en exige une (RC4), écrite comme `binding`, ou `null`. Requise : un
+   * câblage qui l'oublierait poserait un outil de tag sans tag. `null` = agent inconnu de cet espace, ou scénario de
+   * la cible inconnu de cet espace (404), plutôt qu'un outil qui refuserait à chaque appel.
+   */
   ajouter(tenantId: string, agentId: string, outil: {
-    handler: string; name: string; title: string; description: string; nePasUtiliser: string;
+    handler: string; cible: CibleOutilAgent | null; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: OutilComplet['risk'];
   }): Promise<OutilComplet | null>;
   /**
@@ -75,8 +82,14 @@ export interface AgentToolsRouteDeps {
 *  refuserait de toute façon, mais en 500, dont Cloudflare remplace le corps. */
 const NOM = z.string().trim().regex(/^[a-z0-9_]{1,64}$/, 'minuscules, chiffres et tirets bas, 64 au plus');
 const TEXTE = (max: number) => z.string().trim().max(max);
-const ajoutSchema = z.object({ handler: z.string().trim().min(1).max(64), name: NOM.optional() });
+/**
+ * `cible` est lue contre le schéma du catalogue (`lireCibleSaisie`), pas ici : son `handler` vient de l'outil, jamais
+ * du corps. Absente pour un outil qui n'en a pas ; une cible donnée à un tel outil est refusée (400).
+ */
+const ajoutSchema = z.object({ handler: z.string().trim().min(1).max(64), name: NOM.optional(), cible: z.unknown().optional() });
 const patchSchema = z.object({
+  /** La cible fixée d'un outil qui en a une (RC4). Même lecture qu'à la pose, `handler` imposé par l'outil. */
+  cible: z.unknown().optional(),
   name: NOM.optional(),
   title: TEXTE(120).min(1).optional(),
   description: TEXTE(2000).min(1).optional(),
@@ -178,10 +191,19 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
     const parse = ajoutSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'handler requis, nom au format [a-z0-9_]' });
+    // Une cible offerte à un outil qui n'en a pas serait ignorée en silence : on la refuse.
+    if (parse.data.cible !== undefined && !exigeUneCible(parse.data.handler)) {
+      return reply.code(400).send({ error: 'cet outil n’a pas de cible à fixer' });
+    }
     // 🔴 Le modèle d'outil vient du catalogue, jamais du corps (`ajouterOutilMaison`, que l'outil MCP
-    // `set_agent_tools` appelle aussi) : titre, mots, paramètres et risque avec lui.
-    const r = await ajouterOutilMaison(deps.outils, ctx.tenant, ctx.agentId, parse.data.handler, parse.data.name);
-    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    // `set_agent_tools` appelle aussi) : titre, mots, paramètres et risque avec lui, et la cible exigée (RC4). Le
+    // scénario d'une cible est cherché DANS L'ESPACE par l'écriture elle-même (`PgToolCatalog.ajouter`) : un scénario
+    // d'un autre espace rend 404, comme un agent inconnu.
+    const r = await ajouterOutilMaison(deps.outils, ctx.tenant, ctx.agentId, parse.data.handler, parse.data.name, parse.data.cible);
+    if (!r.ok) {
+      const scenarioEnJeu = r.statut === 404 && (parse.data.handler === 'envoyer_bloc' || parse.data.handler === 'lancer_scenario');
+      return reply.code(r.statut).send(scenarioEnJeu ? { error: 'agent ou scénario introuvable' } : corpsDuRefus(r));
+    }
     const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];
     return reply.code(201).send({ outil: vue(r.valeur, sorties) });
   });
@@ -272,10 +294,20 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     }
     // L'outil visé, lu seulement quand le patch en dépend. Ni son origine ni son `handler` ne changent après coup :
     // cette lecture n'ouvre aucune fenêtre avec l'écriture qui suit.
-    if (d.enums || d.nature) {
+    let cibleFixee: CibleOutilAgent | undefined;
+    if (d.enums || d.nature || d.cible !== undefined) {
       const outils = await deps.outils.listToutes(ctx.tenant, ctx.agentId);
       const cible = outils.find((o) => o.id === outilId);
       if (!cible) return reply.code(404).send({ error: 'outil introuvable' });
+      // La cible (RC4) se lit sous le `handler` de l'outil, jamais sous celui du corps : un outil de tag ne devient
+      // pas un lancement de scénario. L'écriture le revérifie (`PgToolCatalog.patchConsommateur`).
+      if (d.cible !== undefined) {
+        const handler = handlerMaison(cible);
+        if (!exigeUneCible(handler)) return reply.code(400).send({ error: 'cet outil n’a pas de cible à fixer' });
+        const lue = lireCibleSaisie(handler, d.cible);
+        if (!lue) return reply.code(400).send({ error: CIBLE_REQUISE[handler] });
+        cibleFixee = lue;
+      }
       // La nature ne se modifie ici que pour un connecteur API : un outil maison n'a rien à lire (elle y ferait croire
       // à un réglage sans effet), et un outil MCP est importé « intègre », sans écran qui le règle, bien que son
       // résolveur respecte « pousse ».
@@ -293,9 +325,11 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
         }
       }
     }
+    const { cible: _saisie, ...mots } = d;
     try {
-      const outil = await deps.outils.patch(ctx.tenant, ctx.agentId, outilId, parse.data);
-      if (!outil) return reply.code(404).send({ error: 'outil introuvable' });
+      const outil = await deps.outils.patch(ctx.tenant, ctx.agentId, outilId, { ...mots, ...(cibleFixee ? { cible: cibleFixee } : {}) });
+      // Un scénario de cible inconnu de cet espace ne s'écrit pas (`PgToolCatalog.patchConsommateur`).
+      if (!outil) return reply.code(404).send({ error: cibleFixee ? 'outil ou scénario introuvable' : 'outil introuvable' });
       const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];
       return reply.code(200).send({ outil: vue(outil, sorties) });
     } catch (err) {

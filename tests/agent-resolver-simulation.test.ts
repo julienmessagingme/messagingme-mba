@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
 import type { EntreeResolveur } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
@@ -25,10 +25,19 @@ const FICHE = (over: Partial<FicheTrouvee> = {}): FicheTrouvee => ({
   termesTrouves: 3, couverture: 1, proximiteTitre: 0.9, ...over,
 });
 
-function entree(handler: string, args: Record<string, unknown> = {}): EntreeResolveur {
+/** Les cibles fixées (RC4), telles que la pose les écrit dans `binding`. */
+const WF = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
+const CIBLES: Record<string, Record<string, unknown>> = {
+  poser_tag: { handler: 'poser_tag', tag: 'vip' },
+  ecrire_variable: { handler: 'ecrire_variable', champ: 'ville', valeurs: [] },
+  envoyer_bloc: { handler: 'envoyer_bloc', workflowId: WF, code: 'nod_t1_01HZX5Y6Z7A8B9C0D1E2F3G4H5' },
+  lancer_scenario: { handler: 'lancer_scenario', workflowId: WF },
+};
+
+function entree(handler: string, args: Record<string, unknown> = {}, binding: Record<string, unknown> = CIBLES[handler] ?? { handler }): EntreeResolveur {
   const outil: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
     id: 'o1', tenantId: 't1', origin: 'mba', name: `mba_${handler}`,
-    description: '', params: [], binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',
+    description: '', params: [], binding, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',
     timeoutMs: 8000, maxBytes: 16384, autonome: true,
   };
   return {
@@ -91,9 +100,9 @@ describe('résolveur de simulation', () => {
   it('🔴 les outils à EFFET sont simulés, et le DISENT', async () => {
     const resolveur = creerResolveurSimulation({ connaissance: store([]) });
     for (const [handler, args] of [
-      ['poser_tag', { tag: 'vip' }],
-      ['ecrire_variable', { cle: 'ville', valeur: 'Lyon' }],
-      ['envoyer_bloc', { code: 'nod_photo' }],
+      ['poser_tag', {}],
+      ['ecrire_variable', { valeur: 'Lyon' }],
+      ['envoyer_bloc', {}],
       ['escalader', {}],
     ] as const) {
       const r = await resolveur(entree(handler, args));
@@ -113,9 +122,31 @@ describe('résolveur de simulation', () => {
     expect(r.rendu).toBeUndefined();
   });
 
-  it('les arguments simulés sont RENDUS, pour que l’écran les montre', async () => {
-    const r = await creerResolveurSimulation({ connaissance: store([]) })(entree('poser_tag', { tag: 'vip' }));
-    expect(r.contenu).toMatchObject({ tag: 'vip' });
+  it('les cibles simulées sont RENDUES, pour que l’écran les montre, et viennent de la cible, pas du modèle (RC4)', async () => {
+    const simulation = creerResolveurSimulation({ connaissance: store([]) });
+    expect((await simulation(entree('poser_tag', { tag: 'autre' }))).contenu).toMatchObject({ tag: 'vip' });
+    expect((await simulation(entree('ecrire_variable', { cle: 'opt_in', valeur: 'Lyon' }))).contenu).toMatchObject({ champ: 'ville', valeur: 'Lyon' });
+    expect((await simulation(entree('envoyer_bloc', { code: 'nod_autre' }))).contenu).toMatchObject({ code: 'nod_t1_01HZX5Y6Z7A8B9C0D1E2F3G4H5' });
+  });
+
+  it('🔴 RC4 : un outil à cible mal configuré refuse au bac à sable comme en production', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const simulation = creerResolveurSimulation({ connaissance: store([]) });
+    for (const h of ['poser_tag', 'ecrire_variable', 'envoyer_bloc', 'lancer_scenario']) {
+      const r = await simulation(entree(h, {}, { handler: h }));
+      expect(r.ok, h).toBe(false);
+      expect(JSON.stringify(r.contenu), h).toContain('outil mal configuré');
+    }
+  });
+
+  it('🔴 RC4 : « lancer un scénario » simulé est TERMINAL comme en production, et dit qu’il n’a rien lancé', async () => {
+    // Un essai qui continuerait montrerait l'agent parler par-dessus un scénario, ce que la production ne fait jamais.
+    const r = await creerResolveurSimulation({ connaissance: store([]) })(entree('lancer_scenario'));
+    expect(r.scenarioLance).toBe(true);
+    expect(r.contenu).toMatchObject({ simule: true, workflowId: WF });
+    expect(JSON.stringify(r.contenu)).toContain('PAS été lancé');
+    expect(r.sortie).toBeUndefined();
+    expect(r.rendu).toBeUndefined();
   });
 
   it('un handler inconnu est un échec métier lisible, jamais une exception', async () => {

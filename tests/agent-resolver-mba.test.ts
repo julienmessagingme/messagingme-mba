@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { creerResolveurMba, type DepsResolveurMba } from '../src/agent/resolvers/mba';
 import type { ContexteAppel } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
@@ -16,15 +16,26 @@ const CTX: ContexteAppel = {
   contactInconnu: 'tous', appelsRestants: 5, budgetRestantMicroEur: 10_000, deadline: Date.now() + 30_000,
 };
 
-const outil = (handler: string): OutilDefini => ({ ...SANS_MCP, ...AUCUN_GESTE(),
+const outil = (handler: string, binding: Record<string, unknown> = { handler }): OutilDefini => ({ ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'to1', tenantId: 't1', origin: 'mba', name: `mba_${handler}`, description: '',
-  params: [], binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,
+  params: [], binding, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,
 });
+
+/** Les cibles fixées par l'administrateur (RC4), telles que la pose les écrit dans `binding`. */
+const WF_CIBLE = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
+const CIBLES = {
+  tag: { handler: 'poser_tag', tag: 'rdv_pris' },
+  champ: { handler: 'ecrire_variable', champ: 'statut', valeurs: [] as string[] },
+  champBorne: { handler: 'ecrire_variable', champ: 'statut', valeurs: ['client', 'prospect'] },
+  bloc: { handler: 'envoyer_bloc', workflowId: WF_CIBLE, code: 'nod_t1_01HZX5Y6Z7A8B9C0D1E2F3G4H5' },
+  scenario: { handler: 'lancer_scenario', workflowId: WF_CIBLE },
+} as const;
 
 function harnais(over: Partial<DepsResolveurMba> = {}) {
   const journal: string[] = [];
   const deps: DepsResolveurMba = {
-    envoyerBloc: async (i) => { journal.push(`bloc:${i.code}`); return { ok: true }; },
+    envoyerBloc: async (i) => { journal.push(`bloc:${i.workflowId}:${i.code}`); return { ok: true }; },
+    lancerScenario: async (i) => { journal.push(`scenario:${i.workflowId}:${i.runId}:${i.sessionId}`); return { ok: true }; },
     escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}:${i.agentId}`); return true; },
     marquerUrgente: async (i) => { journal.push(`urgent:${i.tenantId}:${i.waId}:${i.agentId}`); return true; },
     poserTag: async (_t, _w, tag) => { journal.push(`tag:${tag}`); },
@@ -39,6 +50,10 @@ function harnais(over: Partial<DepsResolveurMba> = {}) {
 
 const appel = (handler: string, args: Record<string, unknown> = {}, ctx: ContexteAppel = CTX) =>
   ({ outil: outil(handler), args, ctx, signal: new AbortController().signal });
+
+/** Un appel d'outil à cible : le `binding` porte la cible fixée, les arguments sont ceux du modèle. */
+const appelCible = (cible: { handler: string }, args: Record<string, unknown> = {}, ctx: ContexteAppel = CTX) =>
+  ({ outil: outil(cible.handler, { ...cible }), args, ctx, signal: new AbortController().signal });
 
 describe('résolveur maison (tâche 16)', () => {
   it('« terminer » remonte la sortie, que le tour transformera en handle sortie:<code>', async () => {
@@ -86,17 +101,50 @@ describe('résolveur maison (tâche 16)', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('« poser_tag » et « ecrire_variable » agissent, et refusent proprement un parametre manquant', async () => {
+  it('🔴 RC4 : chaque handler à cible agit sur SA cible, quels que soient les arguments du modèle', async () => {
+    // Le modèle glisse une autre cible dans ses arguments (injection réussie, ou simple invention) : le tag, le champ,
+    // le bloc et le scénario restent ceux que l'administrateur a fixés.
     const { resolveur, journal } = harnais();
-    await resolveur(appel('poser_tag', { tag: 'vip' }));
-    await resolveur(appel('ecrire_variable', { cle: 'statut', valeur: 'client' }));
-    expect(journal).toEqual(['tag:vip', 'champ:statut=client']);
+    expect((await resolveur(appelCible(CIBLES.tag, { tag: 'autre' }))).ok).not.toBe(false);
+    expect((await resolveur(appelCible(CIBLES.champ, { cle: 'opt_in', champ: 'opt_in', valeur: 'client' }))).ok).not.toBe(false);
+    expect((await resolveur(appelCible(CIBLES.bloc, { code: 'nod_t1_AUTRE', workflowId: 'wf-autre' }))).ok).not.toBe(false);
+    const lance = await resolveur(appelCible(CIBLES.scenario, { workflowId: 'wf-autre' }));
+    expect(lance.ok).not.toBe(false);
+    expect(journal).toEqual([
+      'tag:rdv_pris',
+      'champ:statut=client',
+      `bloc:${WF_CIBLE}:nod_t1_01HZX5Y6Z7A8B9C0D1E2F3G4H5`,
+      `scenario:${WF_CIBLE}:r1:s1`,
+    ]);
+  });
 
-    // Les arguments sont déjà validés par le tronc commun, mais contre une DÉCLARATION qui vient du client :
-    // un handler ne suppose jamais que sa déclaration est bien faite.
-    const sansTag = await resolveur(appel('poser_tag', {}));
-    expect(sansTag.ok).toBe(false);
-    expect(journal).toEqual(['tag:vip', 'champ:statut=client']); // rien de plus n'a été fait
+  it('🔴 RC4 : le modèle ne lit jamais le nom du tag ni du champ (des noms internes qu’il répéterait au contact)', async () => {
+    const { resolveur } = harnais();
+    expect((await resolveur(appelCible(CIBLES.tag))).contenu).toEqual({ pose: true });
+    expect((await resolveur(appelCible(CIBLES.champ, { valeur: 'client' }))).contenu).toEqual({ ecrit: true });
+  });
+
+  it('🔴 RC4 : une cible illisible, absente ou d’un autre handler REFUSE l’appel, sans rien faire', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { resolveur, journal } = harnais();
+    // Un outil posé avant RC4 : `binding` ne porte que le handler.
+    for (const h of ['poser_tag', 'ecrire_variable', 'envoyer_bloc', 'lancer_scenario']) {
+      const r = await resolveur(appel(h, { tag: 'vip', cle: 'statut', valeur: 'x', code: 'nod_t1_X' }));
+      expect(r.ok, h).toBe(false);
+      expect(r.contenu, h).toEqual({ erreur: expect.stringContaining('outil mal configuré') });
+    }
+    // Une cible d'un autre handler sous ce handler (binding réécrit à la main), et une clé en trop.
+    expect((await resolveur({ ...appel('poser_tag'), outil: outil('poser_tag', { ...CIBLES.scenario, handler: 'poser_tag' }) })).ok).toBe(false);
+    expect((await resolveur({ ...appel('poser_tag'), outil: outil('poser_tag', { ...CIBLES.tag, intrus: 1 }) })).ok).toBe(false);
+    expect(journal).toEqual([]);
+  });
+
+  it('« ecrire_variable » : une valeur hors de la liste permise est refusée, une valeur vide aussi', async () => {
+    const { resolveur, journal } = harnais();
+    expect((await resolveur(appelCible(CIBLES.champBorne, { valeur: 'inventee' }))).ok).toBe(false);
+    expect((await resolveur(appelCible(CIBLES.champ, { valeur: '  ' }))).ok).toBe(false);
+    expect((await resolveur(appelCible(CIBLES.champBorne, { valeur: 'prospect' }))).ok).not.toBe(false);
+    expect(journal).toEqual(['champ:statut=prospect']);
   });
 
   it('« lire_contact » rend la fiche DEJA lue par le tour, sans jamais accepter d identifiant du modele', async () => {
@@ -174,15 +222,34 @@ describe('résolveur maison (tâche 16)', () => {
     expect(r.mainPrise).toBe(false);
   });
 
-  it('« envoyer_bloc » passe le code, et rend le refus du parcours au modele', async () => {
-    const ok = harnais();
-    expect((await ok.resolveur(appel('envoyer_bloc', { code: 'nod_x_1' }))).ok).not.toBe(false);
-    expect(ok.journal).toEqual(['bloc:nod_x_1']);
-
-    const ko = harnais({ envoyerBloc: async () => ({ ok: false, raison: 'code de bloc inconnu' }) });
-    const r = await ko.resolveur(appel('envoyer_bloc', { code: 'inventé' }));
+  it('« envoyer_bloc » rend le refus du parcours au modele', async () => {
+    const ko = harnais({ envoyerBloc: async () => ({ ok: false, raison: 'ce bloc attend une réponse du client' }) });
+    const r = await ko.resolveur(appelCible(CIBLES.bloc));
     expect(r.ok).toBe(false);
-    expect(r.contenu).toEqual({ erreur: 'code de bloc inconnu' });
+    expect(r.contenu).toEqual({ erreur: 'ce bloc attend une réponse du client' });
+  });
+
+  it('🔴 « lancer_scenario » réussi est TERMINAL : `scenarioLance`, ni sortie ni main rendue', async () => {
+    const { resolveur } = harnais();
+    const r = await resolveur(appelCible(CIBLES.scenario));
+    expect(r).toEqual({ contenu: { lance: true }, scenarioLance: true });
+  });
+
+  it('🔴 « lancer_scenario » refusé (dépublié, supprimé, désabonné) : la raison au modèle, et RIEN de terminal', async () => {
+    const { resolveur } = harnais({ lancerScenario: async () => ({ ok: false, raison: 'le scénario est vide' }) });
+    const r = await resolveur(appelCible(CIBLES.scenario));
+    expect(r.ok).toBe(false);
+    expect(r.contenu).toEqual({ erreur: 'le scénario est vide' });
+    expect(r).not.toHaveProperty('scenarioLance');
+  });
+
+  it('🔴 « lancer_scenario » refuse de relancer le scénario où l’agent parle, sans rien lancer', async () => {
+    // Le scénario retomberait sur l'agent, qui pourrait le relancer encore : une boucle facturée sans message du contact.
+    const { resolveur, journal } = harnais();
+    const r = await resolveur(appelCible(CIBLES.scenario, {}, { ...CTX, workflowId: WF_CIBLE }));
+    expect(r.ok).toBe(false);
+    expect(r).not.toHaveProperty('scenarioLance');
+    expect(journal).toEqual([]);
   });
 
   it('un handler inconnu ou absent est refuse proprement, jamais une exception', async () => {
@@ -207,9 +274,9 @@ describe('résolveur maison (tâche 16)', () => {
     // Le client peut renommer un outil dans sa console (un nom parlant fait un meilleur agent) : le
     // comportement ne doit pas suivre le nom.
     const { resolveur, journal } = harnais();
-    const renomme = { ...appel('poser_tag', { tag: 'vip' }), outil: { ...outil('poser_tag'), name: 'marquer_le_client' } };
+    const renomme = { ...appelCible(CIBLES.tag), outil: { ...outil('poser_tag', { ...CIBLES.tag }), name: 'marquer_le_client' } };
     await resolveur(renomme);
-    expect(journal).toEqual(['tag:vip']);
+    expect(journal).toEqual(['tag:rdv_pris']);
   });
 
 });

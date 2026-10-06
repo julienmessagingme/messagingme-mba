@@ -4,7 +4,7 @@ import {
   BORNES_FICHE, CODE_SORTIE_RE, fichePatchSchema, MAX_SORTIES, normaliserCodeSortie,
   type FicheAgentContenu,
 } from '../fiche';
-import { OUTILS_MAISON } from '../outils-maison';
+import { OUTILS_MAISON, exigeUneCible } from '../outils-maison';
 import { ACTIONS, CHOIX_ACTION, CODES_POINTS } from './couverture';
 
 /**
@@ -18,7 +18,14 @@ import { ACTIONS, CHOIX_ACTION, CODES_POINTS } from './couverture';
  * erreur (`safeParse` sans `.strict()`) : du bruit ne fait pas échouer le tour, il n'obtient rien.
  */
 
-const HANDLERS = OUTILS_MAISON.map((o) => o.handler) as [string, ...string[]];
+/**
+ * 🔴 LES OUTILS QUE L'ASSISTANT PEUT PROPOSER : ceux du catalogue SANS cible (RC4). Un tag, un champ, un bloc ou un
+ * scénario se fixent à l'écran, dans des listes (tags, champs du mini-CRM, scénarios publiés) que l'assistant ne voit
+ * pas : il en inventerait l'identifiant, et un outil posé sans cible refuserait chaque appel. Le schéma annoncé et le
+ * schéma appliqué lisent cette même liste ; `assainirProposition` retire un outil à cible proposé quand même.
+ */
+export const OUTILS_PROPOSABLES = OUTILS_MAISON.filter((o) => !exigeUneCible(o.handler));
+const HANDLERS = OUTILS_PROPOSABLES.map((o) => o.handler) as [string, ...string[]];
 
 /**
  * Les bornes, nommées une fois, pour le schéma Zod qui refuse, le schéma JSON annoncé au modèle, et
@@ -35,7 +42,7 @@ export const BORNES_PROPOSITION = {
   bascules: 24,
   moment: 400,
   moyen: 2000,
-  outils: OUTILS_MAISON.length,
+  outils: OUTILS_PROPOSABLES.length,
   connecteurs: 20,
   /** Le nom exposé d'un connecteur, même alphabet que les noms d'outils. */
   nomConnecteur: 64,
@@ -242,9 +249,14 @@ export function assainirProposition(brut: unknown): unknown {
     p.fiche = sansCleAjoutee(f, p.fiche);
   }
 
-  // Un outil proposé deux fois ferait deux lignes de diff sous la même clé : on garde le premier.
+  // Un outil proposé deux fois ferait deux lignes de diff sous la même clé : on garde le premier. Un outil À CIBLE du
+  // catalogue (RC4) est retiré, jamais posé sans sa cible : l'assistant ne peut pas la connaître. Retiré AVANT la borne
+  // de longueur, qui ne compte que les proposables. Un handler inconnu reste, et Zod le refuse : c'est la frontière.
   const handlers = new Set<string>();
-  p.outils = entrees(p.outils, BORNES_PROPOSITION.outils, (o) => {
+  const sansCible = Array.isArray(p.outils)
+    ? p.outils.filter((o) => !(estObjet(o) && typeof o.handler === 'string' && exigeUneCible(o.handler)))
+    : p.outils;
+  p.outils = entrees(sansCible, BORNES_PROPOSITION.outils, (o) => {
     couper(o, 'description', BORNES_PROPOSITION.description);
     couper(o, 'nePasUtiliser', BORNES_PROPOSITION.nePasUtiliser);
     if (typeof o.handler !== 'string' || handlers.has(o.handler)) return null;
@@ -412,7 +424,9 @@ export const SCHEMA_PROPOSITION = {
     outils: {
       type: 'array',
       maxItems: BORNES_PROPOSITION.outils,
-      description: 'Les outils du catalogue que tu proposes, avec leurs mots.',
+      description: 'Les outils du catalogue que tu proposes, avec leurs mots. Poser un tag précis, enregistrer une '
+        + 'information, envoyer un bloc et lancer un scénario n’en font pas partie : ils se posent à l’écran, avec ce '
+        + 'qu’ils visent.',
       items: {
         type: 'object',
         properties: {

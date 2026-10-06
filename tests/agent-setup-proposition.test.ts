@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  differences, propositionSchema, SCHEMA_PROPOSITION, type EtatCourant,
+  assainirProposition, differences, OUTILS_PROPOSABLES, propositionSchema, SCHEMA_PROPOSITION, type EtatCourant,
 } from '../src/agent/setup/proposition';
 import { ficheVide } from '../src/agent/fiche';
 import { OUTILS_MAISON } from '../src/agent/outils-maison';
@@ -37,7 +37,7 @@ describe('propositionSchema', () => {
       modele: 'un-modele-a-moi',
       status: 'active',
       fiche: { objectif: 'Aider.', mentionIa: 'menteur', sorties: [] },
-      outils: [{ handler: 'poser_tag', description: 'Tague.', nePasUtiliser: 'Jamais au hasard.', actif: true, risk: 'read', autonome: true }],
+      outils: [{ handler: 'escalader', description: 'Passe la main.', nePasUtiliser: 'Jamais au hasard.', actif: true, risk: 'read', autonome: true }],
     });
     expect(r.success).toBe(true);
     const data = r.success ? r.data : null;
@@ -152,9 +152,31 @@ describe('SCHEMA_PROPOSITION', () => {
     }
   });
 
-  it('🔴 l’énumération des handlers est celle du catalogue', () => {
+  it('🔴 l’énumération des handlers est celle du catalogue, MOINS les outils à cible (RC4)', () => {
     expect([...SCHEMA_PROPOSITION.properties.outils.items.properties.handler.enum].sort())
-      .toEqual(OUTILS_MAISON.map((o) => o.handler).sort());
+      .toEqual(OUTILS_PROPOSABLES.map((o) => o.handler).sort());
+    // Un tag, un champ, un bloc ou un scénario se fixent à l'écran, dans des listes que l'assistant ne voit pas.
+    expect(OUTILS_PROPOSABLES.map((o) => o.handler).sort()).toEqual(
+      OUTILS_MAISON.map((o) => o.handler).filter((h) => !['poser_tag', 'ecrire_variable', 'envoyer_bloc', 'lancer_scenario'].includes(h)).sort(),
+    );
+  });
+
+  it('🔴 RC4 : un outil à cible proposé quand même est RETIRÉ par l’assainissement, jamais posé sans cible', () => {
+    // Retiré, pas refusé : le reste de la proposition (et le message du client) survit. Un handler inventé, lui, reste
+    // et Zod le refuse : c'est la frontière.
+    const brut = {
+      message: 'Voici.',
+      outils: [
+        { handler: 'poser_tag', description: 'Tague.' },
+        { handler: 'lancer_scenario', description: 'Lance.' },
+        { handler: 'escalader', description: 'Passe la main.' },
+      ],
+    };
+    const r = propositionSchema.safeParse(assainirProposition(brut));
+    expect(r.success).toBe(true);
+    expect(r.success ? r.data.outils!.map((o) => o.handler) : null).toEqual(['escalader']);
+    // Sans assainissement, le schéma appliqué le refuse : c'est le même que celui qu'on annonce.
+    expect(propositionSchema.safeParse(brut).success).toBe(false);
   });
 
   it('ne porte aucun bruit numérique', () => {

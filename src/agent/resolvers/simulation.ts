@@ -3,7 +3,7 @@ import type { OrigineOutil } from '../catalog';
 import type { KnowledgeStore } from '../knowledge';
 import type { RequeteConnecteur, RequeteStore, VariableDeclaree } from '../requetes';
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
-import { terminerAvec } from './mba';
+import { cibleLue, refusCible, terminerAvec } from './mba';
 
 /**
  * Le résolveur du bac à sable, quand le client parle à son agent depuis la console : un outil qui lit
@@ -145,12 +145,40 @@ export function creerResolveurSimulation(deps: DepsResolveurSimulation): Resolve
 
       // ---------- Ceux qui agissent, donc simulés ----------
 
-      case 'poser_tag':
-        return simule('la pose du tag', { tag: texte(args, 'tag') });
-      case 'ecrire_variable':
-        return simule('l ecriture du champ', { cle: texte(args, 'cle'), valeur: texte(args, 'valeur') });
-      case 'envoyer_bloc':
-        return simule('l envoi du bloc', { code: texte(args, 'code') });
+      // Les cibles fixées (RC4) sont lues comme en production (`cibleLue`) : un outil mal configuré refuse ici aussi,
+      // un bac à sable plus indulgent cacherait ce que l'agent ferait vraiment.
+      case 'poser_tag': {
+        const cible = cibleLue({ outil });
+        if (cible?.handler !== 'poser_tag') return refusCible({ outil }, 'poser_tag');
+        return simule('la pose du tag', { tag: cible.tag });
+      }
+      case 'ecrire_variable': {
+        const cible = cibleLue({ outil });
+        if (cible?.handler !== 'ecrire_variable') return refusCible({ outil }, 'ecrire_variable');
+        return simule('l ecriture du champ', { champ: cible.champ, valeur: texte(args, 'valeur') });
+      }
+      case 'envoyer_bloc': {
+        const cible = cibleLue({ outil });
+        if (cible?.handler !== 'envoyer_bloc') return refusCible({ outil }, 'envoyer_bloc');
+        return simule('l envoi du bloc', { code: cible.code });
+      }
+      /**
+       * Terminal, comme en production : l'essai s'arrête sur le lancement, sans rappeler le modèle, et l'écran le dit
+       * (motif `scenario_lance`). Un essai qui continuerait montrerait l'agent parler par-dessus un scénario, ce que la
+       * production ne fait jamais.
+       */
+      case 'lancer_scenario': {
+        const cible = cibleLue({ outil });
+        if (cible?.handler !== 'lancer_scenario') return refusCible({ outil }, 'lancer_scenario');
+        return {
+          contenu: {
+            simule: true,
+            workflowId: cible.workflowId,
+            note: 'Test hors ligne : le scénario n’a PAS été lancé. En production, il prend la conversation et l’agent se tait.',
+          },
+          scenarioLance: true,
+        };
+      }
       case 'escalader':
         // `rendu` n'est pas posé : il n'y a personne à qui passer la main, et arrêter le tour cacherait ce que
         // l'agent aurait dit ensuite.

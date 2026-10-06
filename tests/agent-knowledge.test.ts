@@ -39,7 +39,7 @@ const fiche = (titre: string, mesures: Partial<FicheTrouvee> = {}): FicheTrouvee
 function harnais(rendu: FicheTrouvee[] | (() => never)) {
   const vues: Array<{ tenantId: string; agentId: string; requete: string; limite: number }> = [];
   const deps: DepsResolveurMba = {
-    envoyerBloc: async () => ({ ok: true }),
+    envoyerBloc: async () => ({ ok: true }), lancerScenario: async () => ({ ok: true }),
     escaladerVersHumain: async () => true,
     marquerUrgente: async () => true,
     poserTag: async () => {},

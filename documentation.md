@@ -401,12 +401,15 @@ un message rapide, une question ou un formulaire seront refusés. Cette règle a
 `src/workflow/ouverture-api.ts`, qui juge ce qui part en PREMIER depuis l'entrée ou depuis le bloc visé).
 
 🔴 **Un démarrage de parcours a un TYPE, et le type décide de tous ses réglages** (`src/workflow/lancements.ts`).
-`TypeDeLancement` est une liste fermée : Inbox, agent de Meta (scénario, bloc), automatisme (ordinaire, chaîne,
-publicité ou widget), lien de test, campagne (scénario, bloc), répondeur. `POLITIQUE_DE_LANCEMENT` donne pour chacun
+`TypeDeLancement` est une liste fermée : Inbox, agent de Meta (scénario, bloc), agent IA (scénario), automatisme
+(ordinaire, chaîne, publicité ou widget), lien de test, campagne (scénario, bloc), répondeur. `POLITIQUE_DE_LANCEMENT` donne pour chacun
 la reprise du fil (`non` : arrêté par un fil tenu ; `oui` : repris même à un opérateur ; `sauf_operateur` : repris à
 l'agent de Meta seulement), la publication des étiquettes posées (jamais sur un chemin de masse), le graphe joué
 (publié ; fourni par l'appelant ; brouillon figé pour le seul lien de test ; fourni et figé pour le seul répondeur)
-et la garde de fenêtre (gardée, selon la preuve de l'appelant, levée sur un bloc de départ d'automation, levée). Qu'un
+et la garde de fenêtre (gardée, selon la preuve de l'appelant, levée sur un bloc de départ d'automation, levée), et
+comment se clôt la session d'agent IA du parcours que le démarrage remplace (`sessionRemplacee` : `interrompue`, close en
+`erreur`, pour tous les types sauf `agent_ia_scenario`, où elle est `retiree`, close en `sortie` avec le motif
+`scenario_lance`, qui n'est PAS un handle du bloc). Dans les deux cas le parcours remplacé est CLOS, jamais avancé. Qu'un
 graphe se fige ne se décide qu'à un endroit, `grapheAFiger`, que l'exécuteur lit à la création du parcours. `WorkflowExecutor.demarrer` lit la table
 lui-même : aucun câblage ne pose plus de réglage brut, il choisit un type et passe par l'entrée `creerLancements`,
 construite par `buildWorkflowRuntime` sur l'exécuteur du processus (l'API et le worker ont donc la même). Une
@@ -798,6 +801,44 @@ et alerté, la sortie reste. La phrase d'annonce d'IA s'y ajoute ensuite comme s
 et l'archive. ⚠️ Le texte écrit à côté d'un appel d'outil n'est, lui, pas passé à
 `ressembleAUnBlocOutil` : seule une réponse sans appel l'est.
 
+🔴 **LES OUTILS À CIBLE D'UN AGENT IA (RC4, 2026-10-06), alignés sur ceux de l'agent de Meta.** `poser_tag`,
+`ecrire_variable`, `envoyer_bloc` et `lancer_scenario` agissent sur une cible FIXÉE par l'administrateur, écrite dans
+`binding` à côté du `handler` et lue à CHAQUE usage par `cibleOutilAgentSchema` (`src/agent/outils-maison.ts`,
+`.strict()`, en `safeParse`) : `{ tag }`, `{ champ, valeurs }`, `{ workflowId, code }`, `{ workflowId }`. Les handlers
+restent disjoints de ceux de l'agent de Meta (`tag_fixe`…), seuls les champs se ressemblent. Les invariants :
+- **La pose exige la cible** (`ajouterOutilMaison`, `src/agent/reglages.ts`, 400 lisible sinon), son `handler` est
+  celui de l'outil et jamais celui du corps, à la pose comme à la correction (`PATCH .../tools/:id`, `cible`).
+  Plusieurs outils du même handler sur un agent sont permis, un par cible, sous des noms distincts (0211). Le
+  scénario d'une cible est cherché dans l'espace par l'écriture elle-même (`PgToolCatalog.ajouter` et
+  `patchConsommateur`, un `exists` sur `workflows`) : un scénario d'un autre espace rend 404. ⚠️ Le CONTENU de la
+  cible (bloc envoyable seul, scénario non vide, champ déclaré) n'est pas revérifié à la pose, faute de dépôt câblé
+  dans la route (`src/index.ts`) : l'écran ne propose que des cibles valides, et l'appel refuse lisiblement le reste.
+- **Le résolveur lit la cible, jamais les arguments du modèle** (`resolvers/mba.ts`, `cibleLue`) : un modèle qui
+  passe `tag: "autre"` pose le tag fixé. Une cible illisible refuse l'appel (`CIBLE_ILLISIBLE`, journalisé) au lieu
+  d'agir, et l'outil n'est pas exposé (`outilExpose` rend `null`). Le bac à sable lit la cible de la même façon.
+- **Le modèle ne remplit qu'une valeur**, celle d'une information : `poser_tag`, `envoyer_bloc` et
+  `lancer_scenario` n'ont aucun paramètre ; `ecrire_variable` garde `valeur`, ÉNUMÉRÉE par `paramsEffectifs` quand
+  `valeurs` n'est pas vide, donc annoncée au modèle ET appliquée par la validation, jamais recopiée dans `params`.
+- **Un bloc part SEUL** (`creerGestesEnvoiAgent`, `src/agent/gestes-envoi.ts`) : relu dans le graphe PUBLIÉ de son
+  scénario, réduit par `blocSeul` (la règle de l'agent de Meta), puis envoyé par `envoyerBlocDepuisAgent` sur ce
+  graphe fourni, sans faire bouger le parcours de l'agent. Le bloc peut venir d'un autre scénario que celui où
+  l'agent parle (le répondeur n'en a aucun).
+- 🔴 **LANCER UN SCÉNARIO EST TERMINAL.** La dépendance de l'outil vérifie le désabonnement, lance par le type
+  `agent_ia_scenario` (fenêtre prouvée par l'état de la conversation), puis clôt la session (`sortie`,
+  `scenario_lance`) et le parcours de l'agent s'il vit encore (un scénario fait d'actions muettes ne remplace
+  rien). Le résolveur rend `scenarioLance`, le cerveau s'arrête sans rappeler le modèle et sans texte (le scénario
+  parle déjà), et `runTurn` rend `scenario_lance` sans envoi, sans échéance, sans `sortir` : aucune sortie du bloc
+  agent ne repart derrière le scénario lancé, et aucune fin de parcours ne rend la main à l'agent de Meta entre
+  les deux. Un refus (scénario dépublié, supprimé, contact désabonné, fil tenu) ne clôt rien : le modèle lit la
+  raison et répond. Relancer le scénario où l'agent parle est refusé (il retomberait sur l'agent). ⚠️ Un lancement
+  plus long que le délai de l'outil (8 s par défaut) est rendu en `timeout` au modèle alors qu'il aboutit ensuite :
+  le modèle répond par-dessus le scénario, risque résiduel connu.
+- **L'assistant de construction ne propose aucun outil à cible** (`OUTILS_PROPOSABLES`,
+  `src/agent/setup/proposition.ts`) : il ne voit ni tags, ni champs, ni scénarios, et en inventerait l'identifiant.
+  Schéma annoncé et schéma appliqué lisent la même liste ; `assainirProposition` retire un outil à cible proposé
+  quand même, sans faire tomber le tour.
+- Les deux outils qui envoient sont `irreversible` : sans l'autonomie cochée, le tronc commun refuse chaque appel.
+
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
 le gabarit est écrit par un administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse
 de base, segment par segment, après encodage. Le `wa_id` vient du TOUR, pas de la projection du contact : la
@@ -808,9 +849,9 @@ projection part chez le fournisseur de modèle et ne porte donc pas le numéro.
 la garde d'autonomie sur une action irréversible. Il SUIT la méthode quand la requête en change :
 `PgRequeteStore.patch` monte au nouveau plancher, dans la transaction de l'écriture, les outils branchés qui sont en
 dessous, et ne redescend jamais les autres (rien ne distingue un risque dérivé d'un risque monté par le client).
-⚠️ La ligne d'un connecteur n'offre pas la case d'autonomie : un connecteur irréversible, né sur un DELETE ou monté
-par un changement de méthode, est refusé à chaque appel d'un agent IA (étape 2 de l'exécuteur), sans que la ligne de
-l'outil le dise (`todo.md`).
+⚠️ Un connecteur irréversible, né sur un DELETE ou monté par un changement de méthode, est refusé à chaque appel d'un
+agent IA (étape 2 de l'exécuteur) tant que l'autonomie n'est pas cochée : depuis RC4, sa ligne le dit, et « Modifier »
+offre la case.
 
 🔴 **Le filtre de sortie est obligatoire.** `outputPaths` dit ce que l'agent a le droit de lire d'une réponse
 client. Sur un outil maison, c'est nous qui écrivons la réponse ; sur un connecteur, non.

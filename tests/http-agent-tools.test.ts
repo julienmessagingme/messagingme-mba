@@ -29,6 +29,10 @@ const AUTRE = '33333333-3333-4333-8333-333333333333';
 const USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SRC = '44444444-4444-4444-8444-444444444444';
 const RQ = '55555555-5555-4555-8555-555555555555';
+/** Les scénarios d'une cible (RC4) : le premier est de l'espace, le second d'un autre (le dépôt rend `null`). */
+const WF = '66666666-6666-4666-8666-666666666666';
+const WF_ETRANGER = '77777777-7777-4777-8777-777777777777';
+const CODE = 'nod_t1_01HZX5Y6Z7A8B9C0D1E2F3G4H5';
 let adminTok = '';
 let agentTok = '';
 beforeAll(async () => {
@@ -91,12 +95,15 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
       ajouter: async (tenant, agentId, outil) => {
         cap.ajouts.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
         if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
-        return agentId === AG ? { ...OUTIL, ...outil, params: outil.params } : null;
+        // Comme le vrai dépôt : un scénario de cible d'un autre espace n'écrit rien (garde d'isolation en SQL).
+        const etranger = outil.cible !== null && 'workflowId' in outil.cible && outil.cible.workflowId === WF_ETRANGER;
+        return agentId === AG && !etranger ? { ...OUTIL, ...outil, params: outil.params, binding: outil.cible ?? { handler: outil.handler } } : null;
       },
       patch: async (tenant, agentId, id, patch) => {
         cap.patches.push({ tenant, agentId, id, patch });
         if (patch.name === 'deja_pris') throw new NomOutilDejaPris();
-        return id === OUT ? { ...OUTIL, ...patch } : null;
+        const etranger = patch.cible !== undefined && 'workflowId' in patch.cible && patch.cible.workflowId === WF_ETRANGER;
+        return id === OUT && !etranger ? { ...OUTIL, ...patch } : null;
       },
       activer: async (tenant, _a, id, actif, par) => {
         cap.activations.push({ tenant, id, actif, par });
@@ -174,24 +181,81 @@ describe('outils d’un agent : lecture et ajout', () => {
     const { cap, srv } = app();
     const res = await srv.inject({
       method: 'POST', url: base('t1'), ...h(adminTok),
-      // Un corps qui essaie de se donner un risque anodin et des paramètres à lui.
-      payload: { handler: 'envoyer_bloc', risk: 'read', params: [{ name: 'x', type: 'string', source: 'modele' }], title: 'Inoffensif' },
+      // Un corps qui essaie de se donner un risque anodin et des paramètres à lui, et de glisser un autre handler dans
+      // la cible.
+      payload: {
+        handler: 'envoyer_bloc', risk: 'read', params: [{ name: 'x', type: 'string', source: 'modele' }], title: 'Inoffensif',
+        cible: { handler: 'lancer_scenario', workflowId: WF, code: CODE },
+      },
     });
     expect(res.statusCode).toBe(201);
     expect(cap.ajouts[0]!.outil.risk).toBe('irreversible');
     expect(cap.ajouts[0]!.outil.title).not.toBe('Inoffensif');
-    expect(cap.ajouts[0]!.outil.params).toEqual([
-      { name: 'code', type: 'string', source: 'modele', required: true, description: 'Le code du bloc à envoyer.' },
-    ]);
+    // RC4 : le bloc est fixé, le modèle ne remplit aucun paramètre.
+    expect(cap.ajouts[0]!.outil.params).toEqual([]);
+    // Le handler de la cible est celui de l'outil, jamais celui du corps.
+    expect(cap.ajouts[0]!.outil.cible).toEqual({ handler: 'envoyer_bloc', workflowId: WF, code: CODE });
+  });
+
+  it('🔴 RC4 : un outil à cible EXIGE sa cible, lisible, et rien n’est écrit sans elle', async () => {
+    const { cap, srv } = app();
+    for (const [payload, attendu] of [
+      [{ handler: 'poser_tag' }, 'cible requise : le tag à poser'],
+      [{ handler: 'poser_tag', cible: { tag: '   ' } }, 'cible requise : le tag à poser'],
+      [{ handler: 'poser_tag', cible: { tag: 'vip', intrus: 1 } }, 'cible requise : le tag à poser'],
+      [{ handler: 'ecrire_variable', cible: { champ: 'statut' } }, 'cible requise : le champ'],
+      [{ handler: 'envoyer_bloc', cible: { workflowId: WF, code: 'pas_un_code' } }, 'cible requise : le scénario et le code'],
+      [{ handler: 'lancer_scenario', cible: { workflowId: 'pas-un-uuid' } }, 'cible requise : le scénario à lancer'],
+      [{ handler: 'lancer_scenario', cible: 'wf' }, 'cible requise : le scénario à lancer'],
+    ] as const) {
+      const res = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(res.json().error, JSON.stringify(payload)).toContain(attendu);
+    }
+    expect(cap.ajouts).toHaveLength(0);
+  });
+
+  it('🔴 RC4 : une cible offerte à un outil qui n’en a pas est refusée, pas ignorée', async () => {
+    const { cap, srv } = app();
+    const res = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload: { handler: 'terminer', cible: { tag: 'vip' } } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.ajouts).toHaveLength(0);
+  });
+
+  it('🔴 RC4 : un scénario de cible d’un autre espace rend 404', async () => {
+    const { srv } = app();
+    for (const payload of [
+      { handler: 'lancer_scenario', cible: { workflowId: WF_ETRANGER } },
+      { handler: 'envoyer_bloc', cible: { workflowId: WF_ETRANGER, code: CODE } },
+    ]) {
+      const res = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload });
+      expect(res.statusCode, payload.handler).toBe(404);
+      expect(res.json().error, payload.handler).toBe('agent ou scénario introuvable');
+    }
+  });
+
+  it('🔴 RC4 : plusieurs outils du même handler sur un agent, un par cible', async () => {
+    const { cap, srv } = app();
+    for (const [name, tag] of [['tag_vip', 'vip'], ['tag_relance', 'relance']]) {
+      const res = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload: { handler: 'poser_tag', name, cible: { tag } } });
+      expect(res.statusCode, name).toBe(201);
+    }
+    expect(cap.ajouts.map((a) => a.outil.cible)).toEqual([{ handler: 'poser_tag', tag: 'vip' }, { handler: 'poser_tag', tag: 'relance' }]);
+  });
+
+  it('🔴 RC4 : les valeurs permises d’un champ fixé sont ce que le modèle voit', async () => {
+    const champ = { ...OUTIL, params: [{ name: 'valeur', type: 'string', source: 'modele', required: true }], binding: { handler: 'ecrire_variable', champ: 'statut', valeurs: ['client', 'prospect'] } };
+    const res = await app(SORTIES, [champ]).srv.inject({ method: 'GET', url: base('t1'), ...h(adminTok) });
+    expect(res.json().outils[0].expose.parameters.properties.valeur.enum).toEqual(['client', 'prospect']);
   });
 
   it('accepte un nom exposé choisi par le client, et refuse un nom hors alphabet', async () => {
     const { cap, srv } = app();
-    const ok = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload: { handler: 'poser_tag', name: 'tague_le' } });
+    const ok = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload: { handler: 'poser_tag', name: 'tague_le', cible: { tag: 'vip' } } });
     expect(ok.statusCode).toBe(201);
     expect(cap.ajouts[0]!.outil.name).toBe('tague_le');
     for (const name of ['Majuscule', 'avec-tiret', 'avec espace', 'a'.repeat(65)]) {
-      const res = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload: { handler: 'poser_tag', name } });
+      const res = await srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload: { handler: 'poser_tag', name, cible: { tag: 'vip' } } });
       expect(res.statusCode, name).toBe(400);
     }
   });
@@ -199,7 +263,7 @@ describe('outils d’un agent : lecture et ajout', () => {
   it('un nom déjà pris rend 409, pas 500', async () => {
     // 500 signifierait une page Cloudflare à la place du message, sur un geste aussi banal qu'ajouter deux
     // fois le même outil.
-    const res = await app().srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload: { handler: 'poser_tag', name: 'deja_pris' } });
+    const res = await app().srv.inject({ method: 'POST', url: base('t1'), ...h(adminTok), payload: { handler: 'poser_tag', name: 'deja_pris', cible: { tag: 'vip' } } });
     expect(res.statusCode).toBe(409);
   });
 
@@ -260,14 +324,45 @@ describe('outils d’un agent : activation et autonomie', () => {
 });
 
 describe('outils d’un agent : correction, retrait, isolation', () => {
-  it('corrige les mots et les valeurs autorisées', async () => {
-    const { cap, srv } = app(SORTIES, [{ ...OUTIL, binding: { handler: 'poser_tag' } }]);
+  it('corrige les mots', async () => {
+    const { cap, srv } = app(SORTIES, [{ ...OUTIL, binding: { handler: 'poser_tag', tag: 'vip' } }]);
     const res = await srv.inject({
       method: 'PATCH', url: `${base('t1')}/${OUT}`, ...h(adminTok),
-      payload: { description: 'Appelle-moi quand c’est fini.', enums: { tag: ['vip', 'relance'] } },
+      payload: { description: 'Appelle-moi quand c’est fini.' },
     });
     expect(res.statusCode).toBe(200);
-    expect(cap.patches[0]!.patch.enums).toEqual({ tag: ['vip', 'relance'] });
+    expect(cap.patches[0]!.patch).toEqual({ description: 'Appelle-moi quand c’est fini.' });
+  });
+
+  it('🔴 RC4 : depuis les cibles fixes, aucun paramètre du catalogue n’ouvre de liste de valeurs', async () => {
+    // Le tag de `poser_tag` est une CIBLE, plus un paramètre : une liste posée sur lui rendrait un outil qui ne le
+    // déclare plus. La liste d'un champ fixé passe par la cible (`valeurs`).
+    const { cap, srv } = app(SORTIES, [{ ...OUTIL, binding: { handler: 'poser_tag', tag: 'vip' } }]);
+    const res = await srv.inject({ method: 'PATCH', url: `${base('t1')}/${OUT}`, ...h(adminTok), payload: { enums: { tag: ['vip'] } } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.patches).toHaveLength(0);
+  });
+
+  it('🔴 RC4 : la cible se corrige, sous le handler de l’OUTIL, jamais celui du corps', async () => {
+    const { cap, srv } = app(SORTIES, [{ ...OUTIL, binding: { handler: 'lancer_scenario', workflowId: WF } }]);
+    const autre = '88888888-8888-4888-8888-888888888888';
+    const res = await srv.inject({
+      method: 'PATCH', url: `${base('t1')}/${OUT}`, ...h(adminTok),
+      payload: { cible: { handler: 'poser_tag', workflowId: autre }, title: 'Lancer la prise de rendez-vous' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(cap.patches[0]!.patch).toEqual({ title: 'Lancer la prise de rendez-vous', cible: { handler: 'lancer_scenario', workflowId: autre } });
+  });
+
+  it('🔴 RC4 : une cible illisible, ou posée sur un outil sans cible, est refusée ; un scénario d’ailleurs rend 404', async () => {
+    const lancer = { ...OUTIL, binding: { handler: 'lancer_scenario', workflowId: WF } };
+    const mal = await app(SORTIES, [lancer]).srv.inject({ method: 'PATCH', url: `${base('t1')}/${OUT}`, ...h(adminTok), payload: { cible: { workflowId: 'x' } } });
+    expect(mal.statusCode).toBe(400);
+    expect(mal.json().error).toBe('cible requise : le scénario à lancer');
+    const sansCible = await app().srv.inject({ method: 'PATCH', url: `${base('t1')}/${OUT}`, ...h(adminTok), payload: { cible: { tag: 'vip' } } });
+    expect(sansCible.statusCode).toBe(400);
+    const etranger = await app(SORTIES, [lancer]).srv.inject({ method: 'PATCH', url: `${base('t1')}/${OUT}`, ...h(adminTok), payload: { cible: { workflowId: WF_ETRANGER } } });
+    expect(etranger.statusCode).toBe(404);
   });
 
   it('🔴 une énumération sur un paramètre que le catalogue n ouvre PAS est refusée', async () => {
@@ -302,7 +397,7 @@ describe('outils d’un agent : correction, retrait, isolation', () => {
     const { cap, srv } = app();
     for (const [method, url, payload] of [
       ['GET', base('t2'), undefined],
-      ['POST', base('t2'), { handler: 'poser_tag' }],
+      ['POST', base('t2'), { handler: 'poser_tag', cible: { tag: 'vip' } }],
       ['PATCH', `${base('t2')}/${OUT}`, { title: 'X' }],
       ['PUT', `${base('t2')}/${OUT}/activation`, { valeur: true }],
       ['PUT', `${base('t2')}/${OUT}/autonomie`, { valeur: true }],

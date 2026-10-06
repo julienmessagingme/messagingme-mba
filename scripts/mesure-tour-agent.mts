@@ -30,7 +30,7 @@ import { GatewayChatClient } from '../src/agent/llm/chat-client';
 import type { ChatMessage } from '../src/agent/llm/chat-client';
 import { promptSysteme } from '../src/agent/prompt';
 import { outilsExposes } from '../src/agent/outils-maison';
-import { OUTILS_MAISON } from '../src/agent/outils-maison';
+import { OUTILS_MAISON, exigeUneCible } from '../src/agent/outils-maison';
 
 const cle = process.env.AI_GATEWAY_API_KEY ?? '';
 const modele = process.env.AGENT_MODEL ?? 'zai/glm-4.7-flash';
@@ -91,10 +91,11 @@ const systeme = promptSysteme({
  * partie de ce qu on mesure. On construit ici la ligne `agent_tools` que la console ecrirait quand un client
  * active un outil maison, en reprenant les libelles francais du catalogue.
  *
- * `envoyer_bloc` est ecarte : il n a de sens qu attache a un bloc de scenario reel.
+ * Les outils a cible (tag, champ, bloc, scenario fixes, RC4) sont ecartes : sans cible reelle, `outilsExposes` les
+ * retire de toute facon, et une cible inventee mesurerait un schema que personne n a pose.
  */
 const outils = outilsExposes(
-  OUTILS_MAISON.filter((o) => o.handler !== 'envoyer_bloc').map((o, i) => ({
+  OUTILS_MAISON.filter((o) => !exigeUneCible(o.handler)).map((o, i) => ({
     id: `banc-${i}`,
     tenantId: 'banc',
     agentId: 'banc',

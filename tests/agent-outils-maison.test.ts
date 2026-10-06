@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { OUTILS_MAISON, outilExpose, outilMaison, outilsExposes, paramsEffectifs, paramsInitiaux } from '../src/agent/outils-maison';
+import {
+  HANDLERS_A_CIBLE, OUTILS_MAISON, lireCibleOutilAgent, outilExpose, outilMaison, outilsExposes, paramsEffectifs, paramsInitiaux,
+} from '../src/agent/outils-maison';
 import { HANDLERS_MAISON } from '../src/agent/resolvers/mba';
 import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
 import { OUTILS_SURS } from '../src/agent/reglages';
@@ -18,11 +20,18 @@ import { AUCUN_GESTE } from './gestes';
  * qui remonte en inbox sans que personne comprenne pourquoi.
  */
 
-const outil = (params: unknown, handler = 'terminer'): OutilDefini => ({ ...SANS_MCP, ...AUCUN_GESTE(),
+const outil = (params: unknown, handler = 'terminer', binding: Record<string, unknown> = { handler }): OutilDefini => ({ ...SANS_MCP, ...AUCUN_GESTE(),
   id: 'o1', tenantId: 't1', origin: 'mba', name: 'mba_terminer',
-  description: 'Termine.', params, binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'read',
+  description: 'Termine.', params, binding, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'read',
   timeoutMs: 8000, maxBytes: 16384, autonome: false,
 });
+
+/** Des cibles valides (RC4), telles que la pose les écrit dans `binding`. */
+const WF = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
+const CIBLE_TAG = { handler: 'poser_tag', tag: 'vip' };
+const cibleChamp = (valeurs: string[]) => ({ handler: 'ecrire_variable', champ: 'statut', valeurs });
+const CIBLE_BLOC = { handler: 'envoyer_bloc', workflowId: WF, code: 'nod_t1_01HZX5Y6Z7A8B9C0D1E2F3G4H5' };
+const CIBLE_SCENARIO = { handler: 'lancer_scenario', workflowId: WF };
 
 describe('catalogue des outils maison', () => {
   it('🔴 le catalogue et les handlers du résolveur se correspondent EXACTEMENT', () => {
@@ -93,6 +102,35 @@ describe('catalogue des outils maison', () => {
     }
   });
 
+  it('🔴 RC4 : les outils à cible n’exposent au modèle AUCUN paramètre qui désigne la cible', () => {
+    // Le tag, le bloc et le scénario sont fixés à la pose : le modèle ne choisit que le moment. Le champ aussi ; seule la
+    // valeur vient de lui.
+    expect(outilMaison('poser_tag')?.params).toEqual([]);
+    expect(outilMaison('envoyer_bloc')?.params).toEqual([]);
+    expect(outilMaison('lancer_scenario')?.params).toEqual([]);
+    expect(outilMaison('ecrire_variable')?.params.map((p) => p.name)).toEqual(['valeur']);
+    expect(HANDLERS_A_CIBLE.slice().sort()).toEqual(['ecrire_variable', 'envoyer_bloc', 'lancer_scenario', 'poser_tag']);
+  });
+
+  it('🔴 RC4 : « lancer un scénario » est irréversible, et hors des outils sûrs du MCP', () => {
+    const lancer = outilMaison('lancer_scenario');
+    expect(lancer?.nomDefaut).toBe('mba_lancer_scenario');
+    expect(lancer?.risk).toBe('irreversible');
+    expect((OUTILS_SURS as readonly string[]).includes('lancer_scenario')).toBe(false);
+    // Aucun outil sûr n'exige de cible : `set_agent_tools` ne pourrait pas en donner une.
+    expect(OUTILS_SURS.filter((h) => (HANDLERS_A_CIBLE as readonly string[]).includes(h))).toEqual([]);
+  });
+
+  it('🔴 RC4 : la cible se lit en `.strict()`, et son handler en fait partie', () => {
+    expect(lireCibleOutilAgent(CIBLE_TAG)).toEqual(CIBLE_TAG);
+    expect(lireCibleOutilAgent({ ...CIBLE_TAG, intrus: true })).toBeNull();
+    expect(lireCibleOutilAgent({ handler: 'poser_tag' })).toBeNull();
+    expect(lireCibleOutilAgent({ handler: 'tag_fixe', tag: 'vip' })).toBeNull(); // le handler de l'agent de Meta
+    expect(lireCibleOutilAgent({ ...CIBLE_BLOC, code: 'pas_un_code' })).toBeNull();
+    expect(lireCibleOutilAgent({ ...CIBLE_SCENARIO, workflowId: 'pas-un-uuid' })).toBeNull();
+    expect(lireCibleOutilAgent(cibleChamp(Array.from({ length: 51 }, (_, i) => `v${i}`)))).toBeNull();
+  });
+
   it('un handler inventé n’existe pas', () => {
     expect(outilMaison('rm_rf')).toBeUndefined();
     expect(outilMaison('constructor')).toBeUndefined();
@@ -155,7 +193,7 @@ describe('outilsExposes', () => {
     // d'elle qu'« elle évite les appels de trop ». Mais `outilExpose` ne construisait que la description, et
     // la requête du runtime ne lisait même pas la colonne. Le client faisait un travail sans aucun effet, sur
     // le seul levier qui décide quand un outil se déclenche.
-    const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true }], 'poser_tag');
+    const tag = outil([], 'poser_tag', CIBLE_TAG);
     const avecClause = { ...tag, description: 'Tague un contact intéressé.', nePasUtiliser: 'Jamais sur un contact déjà tagué.' };
     const [expose] = outilsExposes([avecClause], []);
     expect(expose!.description).toContain('Tague un contact intéressé.');
@@ -181,20 +219,45 @@ describe('outilsExposes', () => {
   });
 
   it('une clause VIDE n’ajoute aucune rubrique : on ne paie pas du contexte pour ne rien dire', () => {
-    const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true }], 'poser_tag');
+    const tag = outil([], 'poser_tag', CIBLE_TAG);
     const [expose] = outilsExposes([{ ...tag, description: 'Tague.', nePasUtiliser: '   ' }], []);
     expect(expose!.description).toBe('Tague.');
   });
 
   it('une liste vide REMPLIE PAR LE CLIENT ne retire rien : vide y veut dire « aucune restriction »', () => {
-    const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true }], 'poser_tag');
-    const [expose] = outilsExposes([tag], []);
+    // RC4 : les valeurs permises d'un champ fixé. Vide, toute valeur passe, et l'outil reste offert.
+    const champ = outil(paramsInitiaux(outilMaison('ecrire_variable')!), 'ecrire_variable', cibleChamp([]));
+    const [expose] = outilsExposes([champ], []);
     expect(expose!.name).toBe('mba_terminer');
-    expect(expose!.parameters.properties.tag?.enum).toBeUndefined();
+    expect(expose!.parameters.properties.valeur?.enum).toBeUndefined();
+  });
+
+  it('🔴 RC4 : les valeurs permises d’un champ fixé sont ANNONCÉES au modèle ET APPLIQUÉES par la validation', () => {
+    // Dérivées de la cible, jamais recopiées dans `params` : la même lecture (`paramsEffectifs`) sert l'exposition et
+    // `executeTool`. Une borne appliquée sans être annoncée ferait refuser un modèle coopératif.
+    const champ = outil(paramsInitiaux(outilMaison('ecrire_variable')!), 'ecrire_variable', cibleChamp(['client', 'prospect']));
+    expect(paramsEffectifs(champ).find((p) => p.name === 'valeur')?.enum).toEqual(['client', 'prospect']);
+    const [expose] = outilsExposes([champ], []);
+    expect(expose!.parameters.properties.valeur?.enum).toEqual(['client', 'prospect']);
+    // Les paramètres stockés n'en portent rien.
+    expect(paramsInitiaux(outilMaison('ecrire_variable')!)[0]).not.toHaveProperty('enum');
+  });
+
+  it('🔴 RC4 : un outil à cible SANS cible lisible est RETIRÉ, pas offert (il refuserait chaque appel)', () => {
+    for (const h of ['poser_tag', 'ecrire_variable', 'envoyer_bloc', 'lancer_scenario']) {
+      expect(outilExpose(outil(paramsInitiaux(outilMaison(h)!), h), []), h).toBeNull();
+    }
+    // Une cible d'un autre handler ne vaut pas.
+    expect(outilExpose(outil([], 'poser_tag', { ...CIBLE_SCENARIO, handler: 'poser_tag' }), [])).toBeNull();
+    // Et chacun revient avec sa cible.
+    expect(outilsExposes([
+      outil([], 'poser_tag', CIBLE_TAG), outil(paramsInitiaux(outilMaison('ecrire_variable')!), 'ecrire_variable', cibleChamp([])),
+      outil([], 'envoyer_bloc', CIBLE_BLOC), outil([], 'lancer_scenario', CIBLE_SCENARIO),
+    ], [])).toHaveLength(4);
   });
 
   it('les autres outils ne sont pas touchés par la dérivation', () => {
-    const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true, enum: ['vip'] }], 'poser_tag');
+    const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true, enum: ['vip'] }], 'poser_tag', CIBLE_TAG);
     const [expose] = outilsExposes([tag], [{ code: 'besoin_cerne', label: 'B' }]);
     expect(expose!.parameters.properties.tag?.enum).toEqual(['vip']);
   });

@@ -25,6 +25,12 @@ export const TYPES_DE_LANCEMENT = [
   'inbox',
   /** L'agent de Meta lance un scénario par son outil « Lancer un scénario » (le chemin du bouton de l'Inbox). */
   'agent_meta_scenario',
+  /**
+   * Un agent IA lance le scénario fixé de son outil « Lancer un scénario » (RC4, `src/agent/gestes-envoi.ts`) : le
+   * scénario prend la conversation et l'agent se retire. Le parcours qui portait l'agent est remplacé ici, comme par
+   * tout démarrage, et sa session close en `sortie` (`sessionRemplacee: 'retiree'`).
+   */
+  'agent_ia_scenario',
   /** L'agent de Meta envoie un bloc par son outil « Envoyer un bloc », dans un graphe réduit à ce bloc. */
   'agent_meta_bloc',
   /** Une automation ordinaire : mot-clé, étiquette posée, date, analyse, webhook, risque. */
@@ -95,7 +101,23 @@ export interface PolitiqueDeLancement {
    *   parce que le testeur vient d'écrire son jeton.
    */
   fenetre: 'gardee' | 'selon_preuve' | 'bloc_ou_preuve' | 'levee';
+  /**
+   * La session d'agent IA du parcours que ce démarrage REMPLACE (`runFrom` clôt tout parcours en cours du contact).
+   * - `interrompue` : close en `erreur`, l'agent a été coupé par un démarrage venu d'ailleurs (le comportement d'avant
+   *   RC4, pour tous les autres types).
+   * - `retiree` : close en `sortie`, motif `MOTIF_SCENARIO_LANCE` : c'est l'agent IA lui-même qui a lancé ce scénario
+   *   par son outil, et il s'est retiré. Seul `agent_ia_scenario`.
+   * Aucune sortie du bloc agent n'est empruntée dans les deux cas : le parcours remplacé est clos, pas avancé.
+   */
+  sessionRemplacee: 'interrompue' | 'retiree';
 }
+
+/**
+ * Le motif d'une session d'agent IA close parce que l'agent a lancé un scénario (RC4). Écrit dans
+ * `agent_sessions.sortie`, mais PAS un handle du bloc : aucune arête ne part par lui, d'où sa place ici et non dans
+ * `src/agent/sorties.ts`.
+ */
+export const MOTIF_SCENARIO_LANCE = 'scenario_lance';
 
 /**
  * 🔴 LA TABLE. Une ligne par type, et chaque ligne reproduit À L'IDENTIQUE ce que faisait le câblage d'avant
@@ -103,21 +125,30 @@ export interface PolitiqueDeLancement {
  * exécuteur. Changer une valeur change le comportement de chaque scénario lancé par ce chemin en production.
  */
 export const POLITIQUE_DE_LANCEMENT = {
-  inbox: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve' },
-  agent_meta_scenario: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve' },
-  agent_meta_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'fourni', fenetre: 'levee' },
-  automatisme_ordinaire: { reprise: 'non', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve' },
-  automatisme_chaine: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve' },
-  automatisme_publicite_ou_widget: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve' },
-  lien_de_test: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'brouillon_fige', fenetre: 'levee' },
-  campagne_scenario: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'gardee' },
-  campagne_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'levee' },
+  inbox: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  agent_meta_scenario: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  /**
+   * L'outil « Lancer un scénario » d'un agent IA (RC4) : calqué sur celui de l'agent de Meta (un contact ici et
+   * maintenant, le publié, la fenêtre prouvée par la conversation en cours), et la session de l'agent qu'il remplace se
+   * clôt comme un retrait, pas comme une panne. 🔴 Mais il ne reprend PAS le fil à un opérateur : un humain peut prendre
+   * la main pendant que le modèle réfléchit, et le scénario lui écrirait alors par-dessus (relecture de RC4). C'est la
+   * fenêtre que `run-turn` ferme en `main_perdue` pour un message écrit ; le lancement la ferme de la même façon que le
+   * répondeur.
+   */
+  agent_ia_scenario: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'retiree' },
+  agent_meta_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'fourni', fenetre: 'levee', sessionRemplacee: 'interrompue' },
+  automatisme_ordinaire: { reprise: 'non', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue' },
+  automatisme_chaine: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue' },
+  automatisme_publicite_ou_widget: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue' },
+  lien_de_test: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'brouillon_fige', fenetre: 'levee', sessionRemplacee: 'interrompue' },
+  campagne_scenario: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'gardee', sessionRemplacee: 'interrompue' },
+  campagne_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'levee', sessionRemplacee: 'interrompue' },
   /**
    * Le répondeur (lot 5, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) : jamais à un
    * opérateur qui tient le fil (c'est le client qui écrit, comme un clic sur une publicité) ; ses étiquettes publient
    * (un contact, ici et maintenant) ; la fenêtre est prouvée par l'entrant qui le démarre.
    */
-  repondeur: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'fourni_fige', fenetre: 'selon_preuve' },
+  repondeur: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'fourni_fige', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
 } as const satisfies Record<TypeDeLancement, PolitiqueDeLancement>;
 
 /**
@@ -201,7 +232,7 @@ export interface DemandeAutomatisme extends DemandeDeBase {
  * est lue). Un câblage ne peut donc pas passer une donnée qu'aucune politique ne lira.
  */
 export type DemandeDeLancement =
-  | (DemandeDeBase & { type: 'inbox' | 'agent_meta_scenario'; waId: string; fenetreOuverte: boolean })
+  | (DemandeDeBase & { type: 'inbox' | 'agent_meta_scenario' | 'agent_ia_scenario'; waId: string; fenetreOuverte: boolean })
   | DemandeEnvoiDeBloc
   | DemandeAutomatisme
   /** `blocDuJeton` : le suffixe du jeton, tel que le testeur l'a écrit (casse tolérée par `blocDesigne`), ou `null`. */
@@ -236,6 +267,7 @@ function departDe(demande: Exclude<DemandeDeLancement, DemandeEnvoiDeBloc | Dema
   switch (demande.type) {
     case 'inbox':
     case 'agent_meta_scenario':
+    case 'agent_ia_scenario':
       return { depuis: 'entree', fenetreOuverte: demande.fenetreOuverte };
     case 'automatisme_ordinaire':
     case 'automatisme_chaine':

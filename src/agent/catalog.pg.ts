@@ -9,7 +9,13 @@ import { lireGestes } from './gestes';
 import { asRecord } from '../webhooks/json';
 import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
 import { RISQUE_MAISON, type CibleMaison } from '../mba/outils-maison';
+import type { CibleOutilAgent } from './outils-maison';
 import { enTransaction } from '../db/transaction';
+
+/** Le scénario que vise la cible d'un outil d'agent IA (RC4), pour la garde d'isolation de l'écriture, ou `null`. */
+function scenarioDeLaCible(cible: CibleOutilAgent | null): string | null {
+  return cible?.handler === 'envoyer_bloc' || cible?.handler === 'lancer_scenario' ? cible.workflowId : null;
+}
 
 interface Ligne {
   /** jsonb opaque, relu par `lireGestes` : un contenu corrompu rend un tableau vide. */
@@ -244,26 +250,32 @@ export class PgToolCatalog implements ToolCatalog {
   /** Ajoute un outil maison à un agent, inactif. Rend `null` si l'agent n'existe pas ou appartient à un
    *  autre tenant. Lève `NomOutilDejaPris` si le nom exposé est déjà porté par un outil de cet agent. */
   async ajouter(tenantId: string, agentId: string, outil: {
-    handler: string; name: string; title: string; description: string; nePasUtiliser: string;
+    handler: string; cible: CibleOutilAgent | null; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil;
   }): Promise<OutilComplet | null> {
     // `actif` reste faux par défaut : un outil actif d'emblée serait exposé au modèle avant qu'on relise ses
     // mots. Deux écritures, donc une transaction : une définition sans rattachement n'apparaîtrait nulle part.
     return enTransaction(this.pool, async (client) => {
       const res = await client.query<{ id: string }>(
-        /** `agent_id` renseigné : une action appartient à son agent (un connecteur, à l'espace), et son nom n'est
-         *  unique que par agent. */
+        /**
+         * `agent_id` renseigné : une action appartient à son agent (un connecteur, à l'espace), et son nom n'est
+         * unique que par agent. Les deux `exists` sont la garde d'isolation : l'agent ET le scénario d'une cible (RC4,
+         * `envoyer_bloc`, `lancer_scenario`) sont de cet espace, sinon aucune ligne (404) plutôt qu'un outil qui
+         * viserait le scénario d'un autre client (le résolveur le refuserait à chaque appel, sans rien dire à l'écran).
+         */
         `insert into agent_tools
            (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
          select $1, $9, 'mba', $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8
           where exists (select 1 from agents where id = $9 and tenant_id = $1)
+            and ($10::uuid is null or exists (select 1 from workflows where id = $10 and tenant_id = $1))
          returning id`,
         [
           tenantId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
           JSON.stringify(outil.params ?? []),
-          // `binding.handler` donne son comportement à l'outil, jamais le nom exposé, que le client peut changer.
-          JSON.stringify({ handler: outil.handler }),
-          outil.risk, agentId,
+          // `binding.handler` donne son comportement à l'outil, jamais le nom exposé, que le client peut changer. La
+          // cible fixée (RC4) vit à côté de lui, dans le même objet, comme chez l'agent de Meta.
+          JSON.stringify(outil.cible ?? { handler: outil.handler }),
+          outil.risk, agentId, scenarioDeLaCible(outil.cible),
         ],
       ).catch(surNomDejaPris);
       const id = res.rows[0]?.id;
@@ -486,17 +498,24 @@ export class PgToolCatalog implements ToolCatalog {
          output_paths = case when $10::text is null then output_paths
                              when $10::text = 'pousse' then '{}'::text[]
                              else coalesce($11::text[], output_paths) end,
+         -- La cible fixée d un outil maison (RC4) : tout le binding, handler compris, jamais un autre handler.
+         binding = coalesce($12::jsonb, binding),
          updated_at = now()
        where agent_tools.tenant_id = $1 and agent_tools.id = $3
          and exists (select 1 from agent_tool_consommateurs c
                       where c.tool_id = agent_tools.id and c.tenant_id = agent_tools.tenant_id
                         and c.consommateur = $2)
+         -- Une cible ne change pas le comportement de l outil, et son scenario est de cet espace (garde d isolation,
+         -- comme a la pose). Sinon aucune ligne : 404.
+         and ($12::jsonb is null or (agent_tools.origin = 'mba' and agent_tools.binding->>'handler' = $12::jsonb->>'handler'))
+         and ($13::uuid is null or exists (select 1 from workflows w where w.id = $13 and w.tenant_id = $1))
        returning id`,
       [tenantId, consommateur, outilId, patch.name ?? null, patch.title ?? null,
         patch.description ?? null, patch.nePasUtiliser ?? null,
         patch.enums ? JSON.stringify(patch.enums) : null,
         patch.gestes ? JSON.stringify(patch.gestes) : null,
-        patch.nature ?? null, patch.outputPaths ? [...patch.outputPaths] : null],
+        patch.nature ?? null, patch.outputPaths ? [...patch.outputPaths] : null,
+        patch.cible ? JSON.stringify(patch.cible) : null, scenarioDeLaCible(patch.cible ?? null)],
     ).catch(surNomDejaPris);
     const r = res.rows[0];
     return r ? this.complet(tenantId, consommateur, r.id) : null;

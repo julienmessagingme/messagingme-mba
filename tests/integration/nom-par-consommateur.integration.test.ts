@@ -72,7 +72,7 @@ describe.skipIf(!url)('un agent ne voit jamais deux outils du même nom (Postgre
   });
 
   const action = (name: string) => ({
-    handler: 'terminer', name, title: 'Terminer', description: 'Termine.', nePasUtiliser: '',
+    handler: 'terminer', cible: null, name, title: 'Terminer', description: 'Termine.', nePasUtiliser: '',
     params: [], risk: 'read' as const,
   });
   const appel = (name: string) => ({

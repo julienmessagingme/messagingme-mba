@@ -34,7 +34,7 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
   let sourceHttp: string;
 
   const outil = (name: string) => ({
-    handler: 'terminer', name, title: 'Terminer', description: 'Termine.', nePasUtiliser: '',
+    handler: 'terminer', cible: null, name, title: 'Terminer', description: 'Termine.', nePasUtiliser: '',
     params: [], risk: 'read' as const,
   });
 

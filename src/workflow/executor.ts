@@ -19,7 +19,10 @@ import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
 import { MOTIF_DESABONNE } from '../campaign/guardrails';
 import { messageDe, texteDe } from '../lib/erreur';
-import { POLITIQUE_DE_LANCEMENT, fenetreLevee, grapheAFiger, type DepartDuParcours, type PolitiqueDeLancement, type TypeDeLancement } from './lancements';
+import {
+  MOTIF_SCENARIO_LANCE, POLITIQUE_DE_LANCEMENT, fenetreLevee, grapheAFiger,
+  type DepartDuParcours, type PolitiqueDeLancement, type TypeDeLancement,
+} from './lancements';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une chaîne = pas parti, avec la raison exacte (pour que la
@@ -1161,8 +1164,12 @@ export class WorkflowExecutor {
     if (partis > 0 || state.status !== 'done') {
       const closPrecedent = await this.deps.runs.closeActiveByWaId(tenantId, contact.waId);
       // La session d'agent suit son parcours : sinon elle reste `en_cours` avec un tour jamais commencé,
-      // invisible de la reprise des tours bloqués.
-      for (const runId of closPrecedent) await this.cloreSessionDuRun(tenantId, runId, 'erreur');
+      // invisible de la reprise des tours bloqués. Close comme une panne, sauf quand c'est l'agent lui-même qui a lancé
+      // ce scénario (RC4, `sessionRemplacee`) : un retrait. Dans les deux cas, aucune sortie du bloc n'est empruntée.
+      for (const runId of closPrecedent) {
+        if (politique.sessionRemplacee === 'retiree') await this.cloreSessionDuRun(tenantId, runId, 'sortie', MOTIF_SCENARIO_LANCE);
+        else await this.cloreSessionDuRun(tenantId, runId, 'erreur');
+      }
       if (closPrecedent.length > 0) {
         // eslint-disable-next-line no-console
         console.log(`workflow ${workflowId}: ${closPrecedent.length} parcours en cours clos, remplacé pour ${contact.waId}`);
@@ -1284,43 +1291,41 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Déclenche un bloc du scénario courant depuis un outil d'agent (`mba_envoyer_bloc`) : `walk` + `apply`
-   * bornés, sans persister de run. Pas `demarrer` : `runFrom` clorait le run de l'agent qui l'appelle,
-   * et la session d'où part cet outil.
+   * Envoie un bloc depuis un outil d'agent IA (`mba_envoyer_bloc`) : `walk` + `apply` bornés, sans persister de run.
+   * Pas `demarrer` : `runFrom` clorait le run de l'agent qui l'appelle, et la session d'où part cet outil.
    *
-   * Un sous-parcours qui rend la main est refusé avant tout envoi, aucun run ne pouvant le porter :
-   * `agent_turn` (une seconde session lèverait 23505 sur l'index « une seule session vivante par
-   * parcours »), `inbox` (notre run resterait planté sur le bloc agent), `sleeping` (l'échéance n'est écrite
-   * nulle part, la suite ne partirait jamais) et `rcs_send` (son IO partirait avant qu'on puisse refuser). Le
-   * modèle reçoit la raison.
+   * 🔴 LE GRAPHE EST FOURNI PAR L'APPELANT (RC4) : le bloc FIXÉ de l'outil, pris dans le graphe PUBLIÉ de son scénario
+   * et réduit à lui seul (`blocSeul`, `src/agent/gestes-envoi.ts`), comme chez l'agent de Meta. Ce qui le suit dans son
+   * scénario ne part pas, et le bloc peut venir d'un autre scénario que celui où l'agent parle (le répondeur n'en a
+   * aucun). `workflowId` est celui du bloc, pour les journaux de l'envoi.
    *
-   * Le repos `waiting` est normal et non persisté : l'agent garde la conversation, la réponse du contact lui
-   * revient par `advance`. `emitEvents` faux : un tag posé ici ne démarre pas d'automation pendant que
-   * l'agent tient le fil.
+   * Un sous-parcours qui rend la main reste refusé avant tout envoi, aucun run ne pouvant le porter (ceinture : le bloc
+   * seul les écarte déjà) : `agent_turn` (une seconde session lèverait 23505 sur l'index « une seule session vivante
+   * par parcours »), `inbox` (notre run resterait planté sur le bloc agent), `sleeping` (l'échéance n'est écrite nulle
+   * part) et `rcs_send` (son IO partirait avant qu'on puisse refuser). Le modèle reçoit la raison.
+   *
+   * `emitEvents` faux : un tag posé ici ne démarre pas d'automation pendant que l'agent tient le fil.
    */
   async envoyerBlocDepuisAgent(
     tenantId: string,
     waId: string,
-    input: { runId: string; workflowId: string; code: string },
+    input: { runId: string; workflowId: string; graphe: WorkflowGraph; noeudId: string },
   ): Promise<{ ok: boolean; raison?: string }> {
     const attente = await this.runEnAttenteSur(tenantId, waId, 'agent');
-    // Le run doit être celui de l'agent qui appelle, scénario compris : un outil ne pousse pas un bloc dans
-    // un parcours qui attend autre chose.
-    if (!attente || attente.run.id !== input.runId || attente.run.workflowId !== input.workflowId) {
+    // Le run doit être celui de l'agent qui appelle : un outil ne pousse pas un bloc pendant qu'un autre parcours tient
+    // le contact, ni après que le sien a été remplacé.
+    if (!attente || attente.run.id !== input.runId) {
       return { ok: false, raison: 'aucun parcours d agent en cours pour ce contact' };
     }
-    const { run, graph } = attente;
-    // Préfixe exigé comme dans `src/ids/resolve.ts` : sans lui, un code vide correspondrait au premier bloc
-    // dépourvu de code, et l'outil enverrait un bloc pris au hasard.
-    if (!input.code.startsWith('nod_')) return { ok: false, raison: `code de bloc inconnu : ${input.code}` };
-    const cible = graph.nodes.find((n) => String(n.data.code ?? '') === input.code);
-    if (!cible) return { ok: false, raison: `code de bloc inconnu : ${input.code}` };
+    if (!input.graphe.nodes.some((n) => n.id === input.noeudId)) {
+      return { ok: false, raison: 'ce bloc n existe plus dans le scenario' };
+    }
     if (!(await this.deps.mayAct(tenantId, waId))) {
       return { ok: false, raison: 'le fil est tenu par quelqu un d autre' };
     }
-    const canal: RunChannel = run.channel ?? 'whatsapp';
-    const ctx = await this.buildCtx(tenantId, waId, graph);
-    const { actions, rest } = walk(graph, cible.id, ctx, { mbaActif: await this.mbaActif(tenantId) });
+    const canal: RunChannel = attente.run.channel ?? 'whatsapp';
+    const ctx = await this.buildCtx(tenantId, waId, input.graphe);
+    const { actions, rest } = walk(input.graphe, input.noeudId, ctx, { mbaActif: await this.mbaActif(tenantId) });
     const refusDeRepos: Partial<Record<WalkRest['status'], string>> = {
       agent_turn: 'ce bloc redonne la main a un agent, impossible depuis un agent',
       inbox: 'ce bloc remonte la conversation a un humain, utilisez l outil d escalade',
@@ -1335,7 +1340,7 @@ export class WorkflowExecutor {
       return { ok: false, raison: 'ce bloc attend une reponse avec un delai, non disponible depuis un outil' };
     }
     if (envoieParWhatsApp(actions, canal)) await this.deps.verifierNumeroWhatsApp(tenantId);
-    const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, false, run.workflowId, canal);
+    const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, false, input.workflowId, canal);
     if (partis === 0 && refus !== null) return { ok: false, raison: refus };
     return { ok: true };
   }

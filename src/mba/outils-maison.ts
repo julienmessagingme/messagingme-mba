@@ -135,7 +135,8 @@ const RAISON_REPOS: Record<string, string> = {
   agent_turn: 'ce bloc passe la main à un agent IA : utilisez « Lancer un scénario »',
   inbox: 'ce bloc remonte la conversation à un humain : utilisez « Lancer un scénario »',
   sleeping: 'ce bloc contient une attente : utilisez « Lancer un scénario »',
-  rcs_send: 'ce bloc envoie en RCS, l’agent de Meta parle en WhatsApp',
+  // Sans nommer l'agent de Meta : la règle du bloc seul sert aussi l'outil « Envoyer un bloc » des agents IA (RC4).
+  rcs_send: 'ce bloc envoie en RCS, l’agent parle en WhatsApp',
 };
 
 export const BLOC_DISPARU = 'ce bloc n’existe plus dans le scénario';

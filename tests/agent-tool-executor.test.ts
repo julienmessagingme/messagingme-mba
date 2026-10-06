@@ -322,6 +322,20 @@ describe('tronc commun : journaliser, appeler, assainir, clore (étapes 5 à 8)'
     expect(journal[0]?.status).toBe('timeout');
   }, 10_000);
 
+  it('🔴 « Lancer un scénario » coupé à l échéance est TERMINAL : issue inconnue, le modèle n est pas rappelé', async () => {
+    // Le lancement continue malgré la coupure : rappeler le modèle l'inviterait à relancer (messages envoyés deux fois)
+    // ou à écrire par-dessus le scénario. Un autre outil coupé reste un timeout ordinaire (vérifié juste après).
+    const pend = () => new Promise<never>(() => {});
+    const lancer = harnais({ outil: { ...OUTIL, timeoutMs: 200, binding: { handler: 'lancer_scenario' } }, resolveur: pend });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, CTX, lancer.deps);
+    expect(r.status).toBe('timeout');
+    expect(r.scenarioLance).toBe(true);
+    const autre = harnais({ outil: { ...OUTIL, timeoutMs: 200 }, resolveur: pend });
+    const r2 = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, CTX, autre.deps);
+    expect(r2.status).toBe('timeout');
+    expect(r2.scenarioLance).toBeUndefined();
+  }, 10_000);
+
   it('echeance du tour DEJA depassee -> timeout immediat, le resolveur n est pas appele', async () => {
     const { deps, vus } = harnais();
     const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, { ...CTX, deadline: 999_000 }, deps);

@@ -59,6 +59,9 @@ type Fenetre = 'gardee' | 'selon_preuve' | 'bloc_ou_preuve' | 'levee';
 const ATTENDU: Record<TypeDeLancement, { reprise: Reprise; publie: boolean; graphe: 'publie' | 'fourni' | 'brouillon_fige' | 'fourni_fige'; fenetre: Fenetre }> = {
   inbox: { reprise: 'reprend', publie: true, graphe: 'publie', fenetre: 'selon_preuve' },
   agent_meta_scenario: { reprise: 'reprend', publie: true, graphe: 'publie', fenetre: 'selon_preuve' },
+  // RC4 : la seule ligne neuve du lot, calquée sur l'agent de Meta (le geste explicite d'un agent qui se retire), SAUF
+  // qu'elle ne reprend pas le fil à un opérateur qui l'a pris pendant le tour (relecture de RC4).
+  agent_ia_scenario: { reprise: 'reprend_sauf_operateur', publie: true, graphe: 'publie', fenetre: 'selon_preuve' },
   agent_meta_bloc: { reprise: 'reprend', publie: false, graphe: 'fourni', fenetre: 'levee' },
   automatisme_ordinaire: { reprise: 'bloque_par_un_fil_tenu', publie: true, graphe: 'publie', fenetre: 'bloc_ou_preuve' },
   automatisme_chaine: { reprise: 'reprend', publie: true, graphe: 'publie', fenetre: 'bloc_ou_preuve' },
@@ -82,6 +85,7 @@ function demandeDe(type: TypeDeLancement, v: Variante): DemandeDeLancement {
   switch (type) {
     case 'inbox':
     case 'agent_meta_scenario':
+    case 'agent_ia_scenario':
       return { ...base, type, waId: WA, fenetreOuverte: v.fenetreOuverte === true };
     case 'agent_meta_bloc':
       return { ...base, type, graphe: FOURNI[v.workflowId] ?? session, contact: { waId: WA, contactId: 'c-appelant' }, noeudId: bloc };
@@ -300,6 +304,7 @@ describe('la garde de fenêtre de 24 h', () => {
   const VARIANTES: Record<TypeDeLancement, Variante[]> = {
     inbox: [{ workflowId: 'wf-session', fenetreOuverte: false }, { workflowId: 'wf-session', fenetreOuverte: true }],
     agent_meta_scenario: [{ workflowId: 'wf-session', fenetreOuverte: false }, { workflowId: 'wf-session', fenetreOuverte: true }],
+    agent_ia_scenario: [{ workflowId: 'wf-session', fenetreOuverte: false }, { workflowId: 'wf-session', fenetreOuverte: true }],
     agent_meta_bloc: [{ workflowId: 'wf-session', auBloc: true }],
     automatisme_ordinaire: [
       { workflowId: 'wf-session', fenetreOuverte: false }, { workflowId: 'wf-session', fenetreOuverte: true },
@@ -385,6 +390,82 @@ describe('ce que l’entrée lit, et ce qu’elle transmet', () => {
     expect(await absent.lancements.lancer({ type: 'lien_de_test', tenantId: ESPACE, workflowId: 'wf-modele', waId: WA, blocDuJeton: 'zzz' }))
       .toBe('le bloc de départ n’existe plus dans le scénario');
     expect(absent.envois).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 LA SESSION D'AGENT DU PARCOURS REMPLACÉ (RC4, `sessionRemplacee`). Tout démarrage clôt le parcours en cours du
+ * contact ; c'est la seule ligne de la table où cette clôture est un RETRAIT (l'agent IA a lancé ce scénario par son
+ * outil) et pas une panne. Dans les deux cas, la session est close et aucune sortie du bloc agent n'est empruntée : le
+ * parcours remplacé est clos, pas avancé, et la main n'est pas rendue à l'agent de Meta entre les deux.
+ */
+describe('la session d’agent du parcours remplacé', () => {
+  for (const type of TYPES_DE_LANCEMENT) {
+    const retiree = type === 'agent_ia_scenario';
+    it(`${type} : la session du parcours remplacé se clôt ${retiree ? 'en RETRAIT (sortie, scenario_lance)' : 'en panne (erreur)'}`, async () => {
+      const clotures: Array<[string, string, string | undefined]> = [];
+      const sorties: string[] = [];
+      const m = banc('app_workflow', {
+        runs: avecGardesDEtatInertes({
+          start: async () => ({ id: 'r-neuf' }),
+          findWaitingByWaId: async () => null,
+          setState: async () => {},
+          // Le parcours de l'agent, qui attendait sur son bloc, est remplacé par ce démarrage.
+          closeActiveByWaId: async () => ['r-agent'],
+        }),
+        agentSessions: {
+          byRun: async (_t, runId) => (runId === 'r-agent'
+            ? { id: 's-agent', tenantId: ESPACE, runId, agentId: 'ag1', nodeId: 'a', waId: WA, tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours', ouvertLe: '2026-10-06T08:00:00.000Z' }
+            : null),
+          clore: async (_t, id, statut, sortie) => { clotures.push([id, statut, sortie]); },
+          open: async () => { throw new Error('aucune session à ouvrir ici'); },
+          prendreLeTour: async () => null,
+          ajouterAuTranscript: async () => {},
+          compterAppel: async () => {},
+          ajouterCout: async () => {},
+        },
+        // L'agent de Meta est allumé : une fin de parcours lui rendrait la main, et c'est ce qu'on guette.
+        mbaActifPour: async () => true,
+        releaseToMba: async (_t: string, w: string) => { sorties.push(`rendu:${w}`); },
+      });
+      expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }))).toBe(true);
+      expect(clotures).toEqual([['s-agent', retiree ? 'sortie' : 'erreur', retiree ? 'scenario_lance' : undefined]]);
+      // `wf-modele` finit sur son modèle : c'est SA fin qui rend la main à l'agent de Meta, après le démarrage.
+      expect(sorties).toEqual([`rendu:${WA}`]);
+    });
+  }
+
+  it('🔴 agent_ia_scenario : rien n’est rendu à l’agent de Meta entre le parcours remplacé et le scénario lancé', async () => {
+    // Le scénario lancé attend une réponse (message à bouton) : il tient le fil, et la clôture du parcours de l'agent ne
+    // rend la main à personne. La seule session close est celle de l'agent, en retrait.
+    const clotures: Array<[string, string, string | undefined]> = [];
+    const sorties: string[] = [];
+    const m = banc('app_workflow', {
+      runs: avecGardesDEtatInertes({
+        start: async () => ({ id: 'r-neuf' }),
+        findWaitingByWaId: async () => null,
+        setState: async () => {},
+        closeActiveByWaId: async () => ['r-agent'],
+      }),
+      agentSessions: {
+        byRun: async (_t, runId) => (runId === 'r-agent'
+          ? { id: 's-agent', tenantId: ESPACE, runId, agentId: 'ag1', nodeId: 'a', waId: WA, tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours', ouvertLe: '2026-10-06T08:00:00.000Z' }
+          : null),
+        clore: async (_t, id, statut, sortie) => { clotures.push([id, statut, sortie]); },
+        open: async () => { throw new Error('aucune session à ouvrir ici'); },
+        prendreLeTour: async () => null,
+        ajouterAuTranscript: async () => {},
+        compterAppel: async () => {},
+        ajouterCout: async () => {},
+      },
+      mbaActifPour: async () => true,
+      releaseToMba: async (_t: string, w: string) => { sorties.push(`rendu:${w}`); },
+    });
+    expect(await m.lancements.lancer(demandeDe('agent_ia_scenario', { workflowId: 'wf-session', fenetreOuverte: true }))).toBe(true);
+    expect(m.envois).toEqual(['qm:Bonjour']);
+    expect(clotures).toEqual([['s-agent', 'sortie', 'scenario_lance']]);
+    expect(sorties).toEqual([]);
+    expect(m.b.etat(WA)?.owner).toBe('app_workflow');
   });
 });
 

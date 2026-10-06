@@ -121,7 +121,7 @@ describe('essayerAgent', () => {
     const m = monter(1_000_000);
     const poserTag: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
       id: 'o2', tenantId: 't1', origin: 'mba', name: 'mba_poser_tag', description: 'Tague.',
-      params: [{ name: 'tag', type: 'string', source: 'modele', required: true }], binding: { handler: 'poser_tag' }, sourceId: null,
+      params: [{ name: 'tag', type: 'string', source: 'modele', required: true }], binding: { handler: 'poser_tag', tag: 'devis' }, sourceId: null,
       requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write', timeoutMs: 8000, maxBytes: 16384, autonome: false,
     };
     const cerveau = m.deps.cerveau!;

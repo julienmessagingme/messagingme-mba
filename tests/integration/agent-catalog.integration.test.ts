@@ -212,7 +212,8 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
   let adminId: string;
 
   const modele = {
-    handler: 'poser_tag', name: 'mba_poser_tag', title: 'Poser un tag',
+    // `cible: null` : la cible d'un outil à cible est exigée par `ajouterOutilMaison`, pas par le dépôt (RC4).
+    handler: 'poser_tag', cible: null, name: 'mba_poser_tag', title: 'Poser un tag',
     description: 'Marque le contact.', nePasUtiliser: 'Pas de tag invente.',
     params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
     risk: 'write' as const,
@@ -271,6 +272,57 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
       [`agent:${agentDeLAutre}`],
     );
     expect(Number(n.rows[0]!.n)).toBe(0);
+  });
+
+  /**
+   * 🔴 RC4 : LA CIBLE FIXÉE D'UN OUTIL D'AGENT IA. Elle s'écrit dans `binding`, à côté du handler, et le scénario qu'elle
+   * vise est cherché DANS L'ESPACE par l'écriture elle-même (un `exists` sur `workflows`), à la pose comme à la
+   * correction. Une correction ne change jamais le handler de l'outil.
+   */
+  describe('la cible fixée (RC4)', () => {
+    const scenario = async (t: string, nom: string): Promise<string> => (await pool.query<{ id: string }>(
+      'insert into workflows (tenant_id, name) values ($1, $2) returning id', [t, nom],
+    )).rows[0]!.id;
+    const lancer = (workflowId: string, name: string) => ({
+      handler: 'lancer_scenario', cible: { handler: 'lancer_scenario' as const, workflowId }, name, title: 'Lancer',
+      description: 'Lance.', nePasUtiliser: 'Pas au hasard.', params: [], risk: 'irreversible' as const,
+    });
+
+    it('🔴 la pose écrit la cible ENTIÈRE dans binding, et refuse le scénario d’un autre espace', async () => {
+      const wf = await scenario(tenantId, `itest-cible-${Date.now()}`);
+      const outil = await catalogue.ajouter(tenantId, agentId, lancer(wf, 'lancer_rdv'));
+      expect(outil!.binding).toEqual({ handler: 'lancer_scenario', workflowId: wf });
+
+      const ailleurs = await scenario(autreTenantId, `itest-cible-autre-${Date.now()}`);
+      expect(await catalogue.ajouter(tenantId, agentId, lancer(ailleurs, 'lancer_ailleurs'))).toBeNull();
+      // Rien n'est écrit : ni définition, ni liaison.
+      const n = await pool.query<{ n: string }>(
+        'select count(*) as n from agent_tools where tenant_id = $1 and name = $2', [tenantId, 'lancer_ailleurs'],
+      );
+      expect(Number(n.rows[0]!.n)).toBe(0);
+      await retirerCompletement(tenantId, agentId, outil!.id);
+    });
+
+    it('🔴 la correction réécrit la cible, jamais vers un autre handler ni vers le scénario d’un autre espace', async () => {
+      const wf = await scenario(tenantId, `itest-cible-a-${Date.now()}`);
+      const wf2 = await scenario(tenantId, `itest-cible-b-${Date.now()}`);
+      const ailleurs = await scenario(autreTenantId, `itest-cible-c-${Date.now()}`);
+      const outil = (await catalogue.ajouter(tenantId, agentId, lancer(wf, 'lancer_corrige')))!;
+
+      const corrige = await catalogue.patch(tenantId, agentId, outil.id, { cible: { handler: 'lancer_scenario', workflowId: wf2 } });
+      expect(corrige!.binding).toEqual({ handler: 'lancer_scenario', workflowId: wf2 });
+      // Une cible d'un autre handler n'écrit rien : l'outil ne devient pas un outil de tag.
+      expect(await catalogue.patch(tenantId, agentId, outil.id, { cible: { handler: 'poser_tag', tag: 'vip' } })).toBeNull();
+      // Le scénario d'un autre espace n'écrit rien non plus.
+      expect(await catalogue.patch(tenantId, agentId, outil.id, { cible: { handler: 'lancer_scenario', workflowId: ailleurs } })).toBeNull();
+      const relu = await pool.query<{ binding: unknown }>('select binding from agent_tools where id = $1', [outil.id]);
+      expect(relu.rows[0]!.binding).toEqual({ handler: 'lancer_scenario', workflowId: wf2 });
+      // Un patch sans cible ne touche pas au binding.
+      await catalogue.patch(tenantId, agentId, outil.id, { title: 'Lancer la prise de rendez-vous' });
+      const encore = await pool.query<{ binding: unknown }>('select binding from agent_tools where id = $1', [outil.id]);
+      expect(encore.rows[0]!.binding).toEqual({ handler: 'lancer_scenario', workflowId: wf2 });
+      await retirerCompletement(tenantId, agentId, outil.id);
+    });
   });
 
   it('deux outils du meme ESPACE ne peuvent pas porter le meme nom expose', async () => {

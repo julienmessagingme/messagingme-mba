@@ -8,6 +8,7 @@
  */
 
 import type { Geste } from './gestes';
+import type { CibleOutilAgent } from './outils-maison';
 
 export type OrigineOutil = 'mba' | 'http' | 'mcp';
 
@@ -192,6 +193,11 @@ export function refusIntrouvable(r: RefusRattachement): boolean {
  *  catalogue, et les changer ferait un outil dont le comportement ne suit plus le nom. */
 export interface PatchOutil {
   name?: string;
+  /**
+   * La cible fixée d'un outil maison qui en exige une (RC4), écrite comme `binding`. Son `handler` est celui de
+   * l'outil : l'écriture refuse une cible d'un autre handler, et un scénario d'un autre espace.
+   */
+  cible?: CibleOutilAgent;
   /** Les gestes du moment. Absent = inchangé ; `[]` = le client les a tous retirés, ce qui est un choix. */
   gestes?: Geste[];
   title?: string;
