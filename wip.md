@@ -19,6 +19,22 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : CADRÉS AVEC JULIEN, PLANS ÉCRITS, RC1 EN COURS
+
+Douze demandes de Julien regroupées en huit lots, cadrées le 2026-10-06 par une série de questions ; les décisions sont
+écrites dans chaque plan (`docs/superpowers/plans/2026-10-06-rc*.md`). Ordre retenu : du plus petit au plus structurel.
+
+| Lot | Contenu | Méthode |
+|---|---|---|
+| RC1 | Textes d'aide retirés (la liste de Julien), compteurs 0/20 et 0/24, Widget WhatsApp sous Tools | En direct |
+| RC2 | Statut « urgent » (dossier, pastille, en tête de « À traiter »), outil de l'agent IA | Revue du diff |
+| RC3 | Changer d'espace depuis le menu du compte | Revue du diff |
+| RC4 | Outils de l'agent IA présentés comme ceux du MBA, « Lancer un scénario », cibles fixes | Revue du diff |
+| RC5 | Condition à familles nommées, champs système, bloc « Aller à », bouton « copier le code » | Revue du diff |
+| RC6 | Qui répond : MBA, agent IA, scénario ou équipe ; MBA en veille ; bloc « Envoyer au MBA » | Revue du diff |
+| RC7 | Champ du contact dans l'URL d'un bouton de template, rempli au clic | Revue du diff |
+| RC8 | Supprimer un espace depuis /ops, ménage chez les tiers, liens Stripe | Revue du diff |
+
 ## UN AGENT NE VOIT JAMAIS DEUX OUTILS DU MÊME NOM (0211, 0213) : LES DEUX LOTS EN PRODUCTION, ESSAIS D'ÉCRAN DUS
 
 Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; récit et mesures :
