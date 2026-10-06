@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 1ebb0b
+source_empreinte: 13baa0
 ---
 # Construire un agent IA
 
@@ -74,22 +74,30 @@ fiches, la suite d'une page ou d'un document n'est pas lue, et l'écran le dit, 
 est écrite sous chaque fiche, et une fiche que personne n'a touchée depuis plus de quatre-vingt-dix jours porte
 une pastille « À relire ».
 
-**Les outils sont ce qu'il a le droit de FAIRE**, en plus de parler : chercher dans sa base de
-connaissance, lire la fiche du contact (ses champs, et sa dernière analyse : s'il est mécontent, l'agent le
-sait), poser une étiquette, enregistrer une information, envoyer un bloc de
-votre scénario, passer la main à un humain, marquer la conversation urgente (elle apparaît dans le dossier « Urgent » de
-votre Inbox, et l'agent continue de répondre), terminer par une règle d'arrêt. Trois choses à retenir :
+**Les outils sont ce qu'il a le droit de FAIRE**, en plus de parler. L'onglet Outils a la forme de celui de
+l'agent de Meta. En tête, **« Toujours là »** : les gestes propres à l'agent IA, avec un interrupteur chacun
+(terminer par une règle d'arrêt, passer la main à un humain, chercher dans sa base de connaissance, lire la
+fiche du contact, marquer la conversation urgente) ; allumer pose l'outil puis l'active, éteindre le désactive,
+et « Régler » ouvre ses consignes. Puis **« Ajouter un outil »** ouvre la grille « Quel outil ajouter ? » :
+poser un tag, enregistrer une information, envoyer un bloc, lancer un scénario, appeler un connecteur API,
+appeler un outil MCP. Enfin, la liste des outils posés, chacun avec son état, « Activer », « Modifier » et
+« Supprimer ». Quatre choses à retenir :
 
+- **Le tag, l'information, le bloc et le scénario sont choisis par vous**, un par outil : l'agent ne décide que
+  du moment, et pour une information, de la valeur (bornée à la liste que vous donnez, si vous en donnez une).
+  « Lancer un scénario » fait **prendre la conversation au scénario** : l'agent se retire et n'écrit plus rien ;
+  un scénario dépublié ou supprimé est refusé, et l'agent continue. « Envoyer un bloc » envoie le bloc seul,
+  sans ce qui le suit, et l'agent garde la main.
 - **Un outil n'est utilisable qu'une fois activé**, par vous ou par Claude à votre nom. Tant qu'il ne l'est
   pas, l'agent ne sait même pas qu'il existe. Le cas qui coûte le plus cher est une base bien remplie avec
-  l'outil de recherche resté désactivé : l'agent transfère alors toutes les questions de fond, et l'écran a
-  pourtant l'air en ordre. Un appel de connecteur API naît inactif lui aussi : il s'active depuis sa ligne,
-  sous « Vos systèmes », et « Modifier » y corrige son nom, ses consignes et ce qu'il lit, sans avoir à le
-  retirer. Un agent ne porte jamais deux outils du même nom, action ou appel de connecteur : le second est
-  refusé, parce que le modèle refuserait toute la liste et que l'agent ne répondrait plus.
+  l'outil de recherche resté éteint : l'agent transfère alors toutes les questions de fond, et l'écran a
+  pourtant l'air en ordre. Un outil posé par la grille naît éteint lui aussi, et s'active depuis sa ligne. Un
+  agent ne porte jamais deux outils du même nom : le second est refusé, parce que le modèle refuserait toute la
+  liste et que l'agent ne répondrait plus.
+- **Ce qui part chez le client demande votre accord** : sur « Envoyer un bloc » et « Lancer un scénario »,
+  cochez « autoriser l'agent à faire ça seul », sinon chaque appel est refusé, et la ligne de l'outil le dit.
 - **Les mots comptent beaucoup.** « Quand l'appeler » et « quand NE PAS l'appeler » sont deux champs
   séparés, et ce sont eux que le modèle lit pour décider.
-- **Une liste de valeurs autorisées vide ne restreint rien**, et l'écran vous le dit en jaune.
 
 **Les règles d'arrêt dessinent les sorties du bloc.** Une règle d'arrêt, c'est « quand l'agent a fini de
 faire ça, il sort par là » : vous lui donnez un code et un libellé, et chacune devient une sortie à relier

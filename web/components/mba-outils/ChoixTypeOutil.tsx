@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { listUserFields } from '@/lib/api';
 import { listRequetes } from '@/lib/api-agent-requetes';
 import type { TypeOutilMba } from '@/lib/api-mba-outils';
-import { TEXTES_PAR_TYPE } from '@/lib/mba-outils';
+import { textesDuType, type ConsommateurOutil } from '@/lib/mba-outils';
 import { IconeOutil } from '@/components/IconeOutil';
 import { useT } from '@/lib/i18n';
 
@@ -23,11 +23,16 @@ export const TYPES_PROPOSES: readonly TypeOutilMba[] = ['tag', 'champ', 'bloc', 
  * déclarer ce qu'il a déjà.
  */
 type Compte = number | null | 'erreur';
-export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp }: {
+export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp, pour = 'mba' }: {
   tenantId: string; onChoisir: (type: TypeOutilMba) => void; onAnnuler: () => void;
-  /** Combien d'outils MCP enregistrés l'agent de Meta n'a pas encore. Lu par la liste de l'onglet. */
+  /** Combien d'outils MCP enregistrés l'agent n'a pas encore. Lu par la liste de l'onglet. */
   mcpDisponibles: number;
   onChoisirMcp: () => void;
+  /**
+   * Qui reçoit l'outil (RC4) : l'agent de Meta, ou un agent IA, dont l'onglet Outils reprend cette grille. Seuls les
+   * MOTS des cartes changent (`textesDuType`) ; les cartes, leur ordre et leurs liens sont les mêmes.
+   */
+  pour?: ConsommateurOutil;
 }) {
   const t = useT();
   const [appels, setAppels] = useState<Compte>(null);
@@ -61,7 +66,7 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles,
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {TYPES_PROPOSES.map((type) => {
-          const x = TEXTES_PAR_TYPE[type];
+          const x = textesDuType(type, pour);
           const compte = compteDe(type);
           const indisponible = compte === 0;
           const enAttente = compte === null;

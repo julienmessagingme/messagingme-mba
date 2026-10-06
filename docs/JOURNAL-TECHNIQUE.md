@@ -88,6 +88,16 @@ route derrière une garde qui laisse passer l'emprunt, vérifié dans les deux s
 une bascule vers un compte admin sans second facteur, cohérente avec la connexion Google (`todo.md`). Écrit dans
 `documentation.md` : un jeton volé ouvre désormais tous les espaces de son adresse, jusqu'à son échéance.
 
+**RC4, les outils de l'agent IA** (serveur `8ea06c8e`, déployé après le lot 4 B du numéro fourni, sans migration ;
+console ensuite) : cibles fixes dans `binding`, « Lancer un scénario » terminal, écran façon MBA. Mesuré avant :
+zéro outil à aligner en production ; après le déploiement, par le vrai code, les deux agents réels exposent les mêmes
+outils qu'avant. Relu : zéro rouge, deux jaunes corrigés avant la production car ils envoyaient de vrais messages par
+erreur : un lancement plus long que le délai de l'outil (8 s) laissait le modèle relancer (messages envoyés deux fois)
+ou écrire par-dessus, il est désormais terminal ; et le lancement reprenait le fil à un opérateur qui l'avait pris
+pendant le tour, il est passé en `sauf_operateur`. ⚠️ Incident de session, sans dégât : un `node -e` entre guillemets
+doubles contenant des accents graves a fait exécuter trois fichiers du dépôt comme scripts shell ; vérifié (rien de
+créé ni de tronqué, `.env` intact), la leçon est dans la mémoire du projet.
+
 ## 2026-10-06 : le numéro branché depuis Claude Code, et son abonnement (lot 3c, livraisons A et B)
 
 **A, le lien et l'attente** (`d20dea6b`, jaunes `f8708b65`, console `b4f81ec4`) : `start_whatsapp_connection` donne

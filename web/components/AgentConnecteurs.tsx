@@ -6,9 +6,8 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import { listSources, type SourceAgent } from '@/lib/api-agent-sources';
 import { listRequetes, testerBrouillon, type RequeteApi } from '@/lib/api-agent-requetes';
-import { activerOutil, ajouterConnecteur, patchOutil, raisonInappelable, retirerOutil, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
+import { ajouterConnecteur, patchOutil, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
 import { Bouton } from '@/components/Bouton';
-import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { ApiError, erreurDeChargement } from '@/lib/http';
 import { Icone } from '@/components/Icone';
@@ -19,51 +18,29 @@ import { libelleValeurSysteme } from '@/lib/valeurs-systeme';
  *
  * 🔴 IL NE DÉCRIT PLUS AUCUN APPEL. L'adresse, l'authentification, la méthode, le chemin, le corps et les
  * variables vivent dans la BIBLIOTHÈQUE du workspace (menu Tools > Connecteurs API), parce qu'ils
- * appartiennent au client et que plusieurs agents s'en servent. Un appel décrit ici était redécrit pour
- * chaque agent, et le corriger quelque part ne le corrigeait pas ailleurs.
+ * appartiennent au client et que plusieurs agents s'en servent. Ici on ne fait que deux choses : choisir un appel déjà
+ * ÉPROUVÉ et lui donner les mots de CET agent (la carte « Appeler un connecteur API » de « Quel outil ajouter ? »,
+ * `ChoixAppel`), puis les corriger (« Modifier » sur la ligne de l'outil, `ModificationAppel`).
  *
- * Ici on ne fait plus qu'une chose : choisir un appel déjà ÉPROUVÉ et lui donner les mots de CET agent, puis les
- * corriger (« Modifier »). Deux agents peuvent donc utiliser le même appel avec des consignes différentes, ce qui
- * est le besoin réel.
+ * 🔴 RC4 : LES OUTILS DE CONNECTEUR N'ONT PLUS LEUR SECTION. Ils entrent dans la liste des outils de l'agent, comme les
+ * autres (`LigneOutilAgent`), avec leur activation, leur état et leur retrait.
  *
  * 🔴 CE QUE L'ÉCRAN DOIT RENDRE ÉVIDENT, et qui n'est pas décoratif : **ce qui partira dans la requête**. Le
- * client confirme au moment de brancher, parce que c'est le seul moment où il peut s'apercevoir qu'un appel
+ * client le voit au moment de brancher, parce que c'est le seul moment où il peut s'apercevoir qu'un appel
  * enverra le dernier message de ses contacts à un système tiers.
  */
 
-export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
-  tenantId: string;
-  agentId: string;
-  /** Les outils déjà posés sur CET agent : on n'en garde que les connecteurs. */
-  outils: OutilAgent[];
-  onChange: () => Promise<void> | void;
-}) {
+/** La bibliothèque d'appels de l'espace, et les libellés des champs de la fiche (catalogue du SERVEUR, aucune copie ici). */
+function useBibliotheque(tenantId: string) {
   const t = useT();
-  const confirmer = useConfirmation();
   const [sources, setSources] = useState<SourceAgent[] | null>(null);
-  const [requetes, setRequetes] = useState<RequeteApi[]>([]);
-  // Les libellés des champs de la fiche, venus du catalogue du SERVEUR (aucune copie ici).
+  const [requetes, setRequetes] = useState<RequeteApi[] | null>(null);
   const [libellesFiche, setLibellesFiche] = useState<Record<string, readonly [string, string]>>({});
-  const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  /**
-   * LE FORMULAIRE OUVERT : l'identifiant de la REQUÊTE qu'on donne à l'agent, ou celui de l'OUTIL qu'on modifie.
-   * Un seul état pour les deux, donc un seul formulaire à l'écran, et ses `data-testid` restent uniques.
-   */
-  const [ouvert, setOuvert] = useState<string | null>(null);
-  /** Le refus d'un enregistrement, dit DANS le formulaire : en haut du bloc, il tombait loin de la saisie. */
-  const [erreurForm, setErreurForm] = useState<string | null>(null);
-  const basculer = (id: string): void => {
-    setErreurForm(null);
-    setOuvert((v) => (v === id ? null : id));
-  };
-
   const charger = useCallback(async () => {
     try {
       const [s, r] = await Promise.all([listSources(tenantId), listRequetes(tenantId)]);
-      // ⚠️ Défensif des DEUX côtés : une réponse mal formée doit dégrader, jamais blanchir l'écran. Un
-      // `.map` sur `undefined` fait planter le rendu de TOUT l'onglet, y compris la liste des outils
-      // maison, qui n'a rien à voir. Même précaution que la liste des conversations de l'inbox.
+      // ⚠️ Défensif des DEUX côtés : une réponse mal formée doit dégrader, jamais blanchir l'écran.
       setSources(Array.isArray(s) ? s : []);
       setRequetes(Array.isArray(r?.requetes) ? r.requetes : []);
       setLibellesFiche(Object.fromEntries((r?.catalogue?.fiche ?? []).map((c) => [c.cle, c.libelle])));
@@ -72,63 +49,72 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
     }
   }, [tenantId, t]);
   useEffect(() => { void charger(); }, [charger]);
+  return { sources, requetes, libellesFiche, erreur };
+}
 
-  /**
-   * 🔴 REND UN VERDICT : c'est lui qui empêche un formulaire de se refermer sur une saisie perdue. Le refus va là
-   * où l'on regarde : en haut du bloc pour un geste de ligne, dans le formulaire pour un enregistrement.
-   */
-  async function agir(travail: () => Promise<void>, signaler: (m: string | null) => void = setErreur): Promise<boolean> {
+/**
+ * Enregistre depuis le formulaire, qui ne se ferme que si ça a marché. Un 409 n'y vient que d'un nom déjà pris
+ * (`NomOutilDejaPris`, à la création comme à la modification) : on dit quoi faire, pas seulement le constat.
+ */
+function useEnregistrement(onChange: () => Promise<void> | void) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const enregistrer = async (travail: () => Promise<unknown>): Promise<boolean> => {
     if (busy) return false;
     setBusy(true);
-    // Le bandeau du haut se vide à CHAQUE geste, enregistrement compris : sinon un échec d'avant (un Retirer en panne
-    // réseau) survivait à une réussite.
     setErreur(null);
-    signaler(null);
     try {
       await travail();
-      await charger();
       await onChange();
       return true;
     } catch (err) {
-      signaler(err instanceof Error ? err.message : t('Opération impossible', 'Operation failed'));
+      setErreur(err instanceof ApiError && err.status === 409
+        ? t('Ce nom technique est déjà celui d’un autre outil de cet espace : choisissez-en un autre.',
+          'This technical name is already used by another tool in this workspace: pick another one.')
+        : err instanceof Error ? err.message : t('Opération impossible', 'Operation failed'));
       return false;
     } finally {
       setBusy(false);
     }
-  }
+  };
+  return { busy, erreur, enregistrer };
+}
 
-  /**
-   * Enregistre depuis le formulaire, qui ne se ferme que si ça a marché. Un 409 n'y vient que d'un nom déjà pris
-   * (`NomOutilDejaPris`, à la création comme à la modification) : on dit quoi faire, pas seulement le constat.
-   */
-  function enregistrer(travail: () => Promise<unknown>): void {
-    void agir(async () => {
-      try {
-        await travail();
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 409) {
-          throw new Error(t(
-            'Ce nom technique est déjà celui d’un autre outil de cet espace : choisissez-en un autre.',
-            'This technical name is already used by another tool in this workspace: pick another one.',
-          ));
-        }
-        throw err;
-      }
-    }, setErreurForm).then((ok) => { if (ok) setOuvert(null); });
-  }
-
-  const appels = outils.filter((o) => o.origin !== 'mba');
+/**
+ * « APPELER UN CONNECTEUR API » : les appels de la bibliothèque, chacun avec « Ajouter à cet agent ». L'ajout n'est
+ * proposé qu'à un appel dont l'agent ne se sert pas encore : sinon on recréait sous le même nom un outil déjà posé.
+ */
+export function ChoixAppel({ tenantId, agentId, outils, onAnnuler, onChange }: {
+  tenantId: string;
+  agentId: string;
+  /** Les outils déjà posés sur CET agent : on n'en garde que les connecteurs. */
+  outils: OutilAgent[];
+  onAnnuler: () => void;
+  /** Appelé après un ajout réussi : le parent relit sa liste et referme ce panneau. */
+  onChange: () => Promise<void> | void;
+}) {
+  const t = useT();
+  const { sources, requetes, libellesFiche, erreur } = useBibliotheque(tenantId);
+  const { busy, erreur: erreurForm, enregistrer } = useEnregistrement(onChange);
+  const [ouvert, setOuvert] = useState<string | null>(null);
   const libelleSource = (id: string): string => sources?.find((s) => s.id === id)?.label ?? '';
+  const utilises = new Set(outils.filter((o) => o.origin === 'http').map((o) => o.requestId ?? ''));
 
   return (
-    <div className="flex flex-col gap-3">
+    <section className="flex flex-col gap-3 rounded-carte border border-ink-200 bg-white p-4" data-testid="agent-choix-appel">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-ink-900">{t('Quel appel donner à cet agent ?', 'Which call to give this agent?')}</p>
+        <button type="button" data-testid="agent-choix-appel-annuler" onClick={onAnnuler} className="text-xs text-ink-500 hover:underline">
+          {t('Annuler', 'Cancel')}
+        </button>
+      </div>
       {erreur && <MbaNotice kind="error" testid="connecteurs-erreur">{erreur}</MbaNotice>}
+      {requetes === null && erreur === null && <Squelette forme="lignes" />}
 
-      {sources === null && <Squelette forme="lignes" />}
-
-      {/* Rien dans la bibliothèque : on ne propose pas d'y remédier ICI, on dit où ça se passe. Mettre au
-          point un appel demande de l'éprouver, ce qui est un geste de workspace, pas un geste d'agent. */}
-      {sources !== null && requetes.length === 0 && (
+      {/* Rien dans la bibliothèque : on ne propose pas d'y remédier ICI, on dit où ça se passe. Mettre au point un
+          appel demande de l'éprouver, ce qui est un geste de workspace, pas un geste d'agent. */}
+      {requetes !== null && requetes.length === 0 && (
         <p data-testid="connecteurs-aucune-requete" className="text-sm text-ink-500">
           {t(
             'Aucun appel API prêt : mettez-en un au point dans Tools > Connecteurs API, il servira à tous vos agents.',
@@ -138,140 +124,68 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
         </p>
       )}
 
-      {requetes.map((rq) => {
-        const siens = appels.filter((o) => o.requestId === rq.id);
-        const enModification = siens.find((o) => o.id === ouvert);
-        return (
-          <div key={rq.id} className={`${cardCls} flex flex-col gap-2`} data-testid={`agent-requete-${rq.id}`}>
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-medium text-ink-900">{rq.label}</p>
-              <p className="text-xs text-ink-500">
-                <span className="rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{rq.methode}</span>{' '}
-                {libelleSource(rq.sourceId)} {rq.chemin}
-              </p>
-            </div>
-
-            {siens.length === 0 ? (
-              <p className="text-xs text-ink-500">{t('Cet agent ne s’en sert pas.', 'This agent does not use it.')}</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {siens.map((o) => {
-                  /**
-                   * 🔴 UN APPEL DONT LE SYSTÈME EST ÉTEINT LE DIT (relecture du 2026-10-02). L'agent ne le voit plus
-                   * (règle unique du catalogue) : sans cette ligne, la panne était muette, aucun appel n'étant plus
-                   * tenté ni journalisé.
-                   */
-                  const mort = raisonInappelable(o);
-                  return (
-                    <li key={o.id} data-testid={`connecteur-outil-${o.id}`} className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-ink-500">
-                        <code>{o.name}</code>
-                        <span className={`rounded-controle px-1.5 py-0.5 text-xs ${o.actif ? 'bg-succes-100 text-succes-700' : 'bg-ink-100 text-ink-500'}`}>
-                          {o.actif ? t('actif', 'active') : t('inactif', 'inactive')}
-                        </span>
-                        {mort !== null && (
-                          <span data-testid={`connecteur-mort-${o.id}`} className="text-danger">{t(mort.fr, mort.en)}</span>
-                        )}
-                      </span>
-                      {/**
-                        * 🔴 L'OUTIL NAÎT INACTIF ET CE BOUTON ÉTAIT LE SEUL MOYEN DE L'ACTIVER, ET IL N'EXISTAIT PAS
-                        * (2026-10-05, agent Groupama). La route d'activation est la même que pour un outil maison,
-                        * mais cet écran ne l'offrait qu'aux outils maison et MCP : un outil de connecteur restait
-                        * inactif pour toujours, et le recréer butait sur son propre nom. Même règle que le bouton
-                        * des outils maison : pas d'activation sur un outil que la ligne déclare mort.
-                        */}
-                      <span className="flex shrink-0 items-center gap-2">
-                        <Bouton taille="petite" variante={o.actif ? 'secondaire' : 'principal'}
-                          data-testid={`connecteur-activer-${o.id}`}
-                          disabled={busy || (!o.actif && mort !== null)}
-                          onClick={() => { void agir(async () => { await activerOutil(tenantId, agentId, o.id, !o.actif); }); }}
-                        >
-                          {o.actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
-                        </Bouton>
-                        {/* Corriger l'appel SANS le retirer : retirer puis le redonner perdait son activation
-                            (2026-10-05, agent Groupama). */}
-                        <button
-                          data-testid={`connecteur-modifier-${o.id}`}
-                          disabled={busy}
-                          onClick={() => basculer(o.id)}
-                          className="rounded-controle px-2 py-1 text-xs text-ink-700 hover:bg-ink-100 disabled:opacity-40"
-                        >
-                          {ouvert === o.id ? t('Annuler', 'Cancel') : t('Modifier', 'Edit')}
-                        </button>
-                        <button
-                          data-testid={`connecteur-retirer-${o.id}`}
-                          disabled={busy}
-                          onClick={async () => {
-                            // Un connecteur que plus aucun agent n'utilise part avec son retrait (`PgToolCatalog.detacher`).
-                            if (!(await confirmer({ titre: t('Retirer l’outil', 'Remove the tool'), message: t(
-                              `Retirer « ${o.name} » de cet agent ? Ses réglages seront supprimés s’il ne sert à aucun autre agent.`,
-                              `Remove “${o.name}” from this agent? Its settings are deleted if no other agent uses it.`,
-                            ), confirmer: t('Retirer', 'Remove') }))) return;
-                            void agir(async () => { await retirerOutil(tenantId, agentId, o.id); });
-                          }}
-                          className="rounded-controle px-2 py-1 text-xs text-danger hover:bg-danger-50 disabled:opacity-40"
-                        >
-                          {t('Retirer', 'Remove')}
-                        </button>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-
-            {enModification && (
-              <FormulaireAppel
-                key={enModification.id}
-                tenantId={tenantId}
-                requete={rq}
-                outil={enModification}
-                libellesFiche={libellesFiche}
-                busy={busy}
-                erreur={erreurForm}
-                // Tout ce que l'ajout a demandé, nature et champs lus compris. ⚠️ Cet écran ne se pousse qu'APRÈS
-                // l'API qui les accepte : une API plus ancienne les ignorait sans erreur (`z.object`).
-                onEnregistrer={(mots) => { enregistrer(() => patchOutil(tenantId, agentId, enModification.id, mots)); }}
-              />
-            )}
-
-            {/* L'ajout n'est proposé qu'à un agent qui ne se sert pas encore de cet appel : sinon on recréait sous le
-                même nom un outil déjà posé, et le refus « porte déjà ce nom » désignait un outil qu'on croyait perdu. */}
-            {siens.length === 0 && (
-              <button
-                data-testid={`requete-nouvel-outil-${rq.id}`}
-                // Pas pendant un enregistrement : sa fin refermerait ce formulaire-ci, ou y afficherait un refus
-                // qui ne le concerne pas.
-                disabled={busy}
-                onClick={() => basculer(rq.id)}
-                className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline disabled:opacity-40"
-              >
-                {ouvert === rq.id ? t('Annuler', 'Cancel') : <><Icone nom="ajouter" taille="petite" />{t('Ajouter à cet agent', 'Add to this agent')}</>}
-              </button>
-            )}
-            {ouvert === rq.id && siens.length === 0 && (
-              <FormulaireAppel
-                tenantId={tenantId}
-                requete={rq}
-                outil={null}
-                libellesFiche={libellesFiche}
-                busy={busy}
-                erreur={erreurForm}
-                /**
-                 * 🔴 LE FORMULAIRE NE SE FERME QUE SI ÇA A MARCHÉ. Il se refermait dans la foulée de l'appel,
-                 * sans attendre son résultat : un refus du serveur affichait son message au-dessus d'un
-                 * formulaire disparu, avec la saisie dedans. Même défaut que celui de l'écran des connecteurs,
-                 * réparé le même jour, et pour la même raison : `agir` rend désormais un verdict.
-                 */
-                onEnregistrer={(mots) => {
-                  enregistrer(() => ajouterConnecteur(tenantId, agentId, { ...mots, requeteId: rq.id }));
-                }}
-              />
-            )}
+      {(requetes ?? []).map((rq) => (
+        <div key={rq.id} className={`${cardCls} flex flex-col gap-2`} data-testid={`agent-requete-${rq.id}`}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-sm font-medium text-ink-900">{rq.label}</p>
+            <p className="text-xs text-ink-500">
+              <span className="rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{rq.methode}</span>{' '}
+              {libelleSource(rq.sourceId)} {rq.chemin}
+            </p>
           </div>
-        );
-      })}
-    </div>
+          {utilises.has(rq.id) ? (
+            <p className="text-xs text-ink-500" data-testid={`requete-deja-${rq.id}`}>
+              {t('Cet agent s’en sert déjà : corrigez-le avec « Modifier » dans la liste de ses outils.',
+                'This agent already uses it: fix it with “Edit” in its tool list.')}
+            </p>
+          ) : (
+            <button
+              data-testid={`requete-nouvel-outil-${rq.id}`}
+              disabled={busy}
+              onClick={() => setOuvert((v) => (v === rq.id ? null : rq.id))}
+              className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline disabled:opacity-40"
+            >
+              {ouvert === rq.id ? t('Annuler', 'Cancel') : <><Icone nom="ajouter" taille="petite" />{t('Ajouter à cet agent', 'Add to this agent')}</>}
+            </button>
+          )}
+          {ouvert === rq.id && !utilises.has(rq.id) && (
+            <FormulaireAppel
+              tenantId={tenantId} requete={rq} outil={null} libellesFiche={libellesFiche} busy={busy} erreur={erreurForm}
+              onEnregistrer={(mots) => { void enregistrer(() => ajouterConnecteur(tenantId, agentId, { ...mots, requeteId: rq.id })); }}
+            />
+          )}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/**
+ * « MODIFIER » UN OUTIL DE CONNECTEUR depuis sa ligne : le formulaire de l'ajout, PRÉ-REMPLI par l'outil (nature et
+ * champs lus compris). Corriger l'appel SANS le retirer : retirer puis le redonner perdait son activation (2026-10-05).
+ */
+export function ModificationAppel({ tenantId, agentId, outil, onChange }: {
+  tenantId: string; agentId: string; outil: OutilAgent; onChange: () => Promise<void> | void;
+}) {
+  const t = useT();
+  const { requetes, libellesFiche, erreur } = useBibliotheque(tenantId);
+  const { busy, erreur: erreurForm, enregistrer } = useEnregistrement(onChange);
+  if (erreur) return <MbaNotice kind="error" testid="connecteurs-erreur">{erreur}</MbaNotice>;
+  if (requetes === null) return <Squelette forme="lignes" />;
+  const rq = requetes.find((r) => r.id === outil.requestId);
+  if (!rq) {
+    return (
+      <p className="text-xs text-danger" data-testid={`connecteur-appel-supprime-${outil.id}`}>
+        {t('L’appel de cet outil a été supprimé dans Connecteurs API : retirez l’outil.', 'This tool’s call was deleted in API connectors: remove the tool.')}
+      </p>
+    );
+  }
+  return (
+    <FormulaireAppel
+      key={outil.id} tenantId={tenantId} requete={rq} outil={outil} libellesFiche={libellesFiche} busy={busy} erreur={erreurForm}
+      // Tout ce que l'ajout a demandé, nature et champs lus compris.
+      onEnregistrer={(mots) => { void enregistrer(() => patchOutil(tenantId, agentId, outil.id, mots)); }}
+    />
   );
 }
 
@@ -296,7 +210,7 @@ function libelleOrigine(o: RequeteApi['variables'][number]['origine'], libellesF
  * DONNER un appel à l'agent, ou MODIFIER celui qu'il a déjà : un seul formulaire pour les deux, pour que la
  * correction montre exactement ce que l'ajout a demandé.
  */
-function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur, onEnregistrer }: {
+export function FormulaireAppel({ tenantId, requete, outil, libellesFiche, busy, erreur, onEnregistrer }: {
   tenantId: string;
   requete: RequeteApi;
   /** L'outil qu'on modifie, qui pré-remplit tout (nature et champs lus compris), ou `null` quand on donne l'appel. */

@@ -7,8 +7,8 @@ import { test, expect } from '@playwright/test';
  *  - un AGENT n'y déclare que les APPELS qu'il a le droit de faire, avec ses mots à lui.
  *
  * 🔴 CE QUE SEUL UN TEST DE BOUT EN BOUT VOIT ICI :
- *  - la section des connecteurs est SÉPARÉE du catalogue maison (le client ne doit pas confondre ce qu'on
- *    garantit et ce qu'il branche lui-même) ;
+ *  - un appel se donne à l'agent par la carte « Appeler un connecteur API », et son outil entre dans la liste des
+ *    outils de l'agent comme les autres (RC4 : la section « Vos systèmes » a disparu) ;
  *  - le secret saisi part au serveur mais n'est JAMAIS réaffiché ;
  *  - l'outil déclaré porte son gabarit, ses champs de sortie et le fait qu'il naît INACTIF ;
  *  - l'épreuve rend un verdict lisible, y compris quand elle échoue.
@@ -136,7 +136,17 @@ async function deplier(page: import('@playwright/test').Page, id: string) {
 /** L'onglet Outils d'un agent. Il ne déclare AUCUN système : il puise dans la bibliothèque. */
 async function ongletOutils(page: import('@playwright/test').Page) {
   await page.goto(`/agents?id=${AG}&tab=outils`);
-  await expect(page.getByTestId(`agent-requete-${RQ}`).or(page.getByTestId('connecteurs-aucune-requete'))).toBeVisible();
+  await expect(page.getByTestId('outils-poses')).toBeVisible();
+}
+
+/**
+ * RC4 : un appel se donne à l'agent par la carte « Appeler un connecteur API » de « Quel outil ajouter ? », comme chez
+ * l'agent de Meta. La section « Vos systèmes » a disparu : ses appels sont dans ce panneau, ses outils dans la liste.
+ */
+async function choixAppel(page: import('@playwright/test').Page) {
+  await page.getByTestId('agent-outils-ajouter').click();
+  await page.getByTestId('mba-type-connecteur').click();
+  await expect(page.getByTestId(`agent-requete-${RQ}`)).toBeVisible();
 }
 
 test.describe('Agent : brancher le système du client', () => {
@@ -209,6 +219,7 @@ test.describe('Agent : brancher le système du client', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture);
     await ongletOutils(page);
+    await choixAppel(page);
 
     await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
     await page.getByTestId('outil-nom').fill('lire_commande');
@@ -239,6 +250,7 @@ test.describe('Agent : brancher le système du client', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture);
     await ongletOutils(page);
+    await choixAppel(page);
     await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
 
     const resume = page.getByTestId('envoi-resume');
@@ -277,6 +289,7 @@ test.describe('Agent : brancher le système du client', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture);
     await ongletOutils(page);
+    await choixAppel(page);
     await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
     await page.getByTestId('nature-pousse').check();
     // La seconde question disparait : elle ne se pose que quand on integre.
@@ -294,6 +307,7 @@ test.describe('Agent : brancher le système du client', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture);
     await ongletOutils(page);
+    await choixAppel(page);
     await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
     await page.getByTestId('nature-integre').check();
     // Les champs de l APPEL pre-remplissent, ils ne verrouillent pas : on peut tout decocher.
@@ -323,6 +337,7 @@ test.describe('Agent : brancher le système du client', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture, { requetes: [{ ...REQUETE, outputPaths: [] }] });
     await ongletOutils(page);
+    await choixAppel(page);
     await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
     await expect(page.getByTestId('nature-pousse')).toBeChecked();
     await expect(page.getByTestId('outil-champs')).toHaveCount(0);
@@ -345,10 +360,13 @@ test.describe('Agent : brancher le système du client', () => {
     await mock(page, capture, { outils: [outil('o5', null), outil('o6', { cause: 'source_inactive' })] });
     await ongletOutils(page);
     // L'appel est déjà posé sur cet agent : l'ajout n'est plus proposé, donc plus de doublon possible.
+    await choixAppel(page);
+    await expect(page.getByTestId(`requete-deja-${RQ}`)).toBeVisible();
     await expect(page.getByTestId(`requete-nouvel-outil-${RQ}`)).toHaveCount(0);
-    // Un outil dont le système est éteint ne s'active pas : la ligne dit pourquoi.
-    await expect(page.getByTestId('connecteur-activer-o6')).toBeDisabled();
-    await page.getByTestId('connecteur-activer-o5').click();
+    // RC4 : l'outil de connecteur est une ligne de la liste, comme les autres. Un outil dont le système est éteint ne
+    // s'active pas : la ligne dit pourquoi.
+    await expect(page.getByTestId('outil-activer-o6')).toBeDisabled();
+    await page.getByTestId('outil-activer-o5').click();
     await expect.poll(() => capture.posts.find((p) => p.url.includes('/o5/activation'))?.body ?? null).toEqual({ valeur: true });
   });
 
@@ -378,8 +396,11 @@ test.describe('Agent : brancher le système du client', () => {
     // agent ferait croire que l appel lui appartient, et il serait redecrit pour chaque agent.
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture, { sources: [], requetes: [] });
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('connecteurs-aucune-requete')).toBeVisible();
+    await ongletOutils(page);
+    // RC4 : la carte « Appeler un connecteur API » est grisée, et dit où mettre un appel au point.
+    await page.getByTestId('agent-outils-ajouter').click();
+    await expect(page.getByTestId('mba-type-connecteur')).toBeDisabled();
+    await expect(page.getByTestId('mba-type-connecteur-lien')).toHaveAttribute('href', '/connecteurs');
     // Et le formulaire de declaration d un systeme n est PAS sur cette page.
     await expect(page.getByTestId('source-creer')).toHaveCount(0);
   });
@@ -396,8 +417,8 @@ test.describe('Agent : un appel dont le système est éteint (règle unique du c
     });
     await mock(page, capture, { outils: [appel('o7', 'lire_commande', { cause: 'source_inactive' }), appel('o8', 'lire_stock', null)] });
     await ongletOutils(page);
-    await expect(page.getByTestId('connecteur-mort-o7')).toContainText('Connecteurs API');
-    await expect(page.getByTestId('connecteur-mort-o8')).toHaveCount(0);
+    await expect(page.getByTestId('outil-mort-o7')).toContainText('Connecteurs API');
+    await expect(page.getByTestId('outil-mort-o8')).toHaveCount(0);
   });
 });
 
@@ -423,7 +444,7 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     await mock(page, capture, { outils: [POSE] });
     await ongletOutils(page);
 
-    await page.getByTestId('connecteur-modifier-o5').click();
+    await page.getByTestId('outil-modifier-o5').click();
     await expect(page.getByTestId('outil-nom')).toHaveValue('lire_commande');
     await expect(page.getByTestId('outil-titre')).toHaveValue('Lire une commande');
     await expect(page.getByTestId('outil-description')).toHaveValue('Quand le client demande où en est sa commande.');
@@ -453,7 +474,7 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
     await mock(page, capture, { outils: [POSE] });
     await ongletOutils(page);
-    await page.getByTestId('connecteur-modifier-o5').click();
+    await page.getByTestId('outil-modifier-o5').click();
     await page.getByTestId('nature-pousse').check();
     await expect(page.getByTestId('outil-champs')).toHaveCount(0);
     await page.getByTestId('outil-creer').click();
@@ -466,7 +487,7 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
     await mock(page, capture, { outils: [POSE] });
     await ongletOutils(page);
-    await page.getByTestId('connecteur-modifier-o5').click();
+    await page.getByTestId('outil-modifier-o5').click();
     await page.getByTestId('nature-pousse').check();
     await page.getByTestId('nature-integre').check();
     await expect(page.getByTestId('outil-champ-lignes')).toBeChecked();
@@ -479,7 +500,7 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     await mock(page, capture, { outils: [POSE], refus: { methode: 'PATCH', status: 409, error: 'un outil de cet espace porte déjà ce nom' } });
     await ongletOutils(page);
 
-    await page.getByTestId('connecteur-modifier-o5').click();
+    await page.getByTestId('outil-modifier-o5').click();
     await page.getByTestId('outil-nom').fill('lire_stock');
     await page.getByTestId('outil-creer').click();
     await expect(page.getByTestId('outil-erreur')).toContainText(/déjà celui d’un autre outil|already used by another tool/);
@@ -490,7 +511,7 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
     await mock(page, capture, { outils: [POSE], refus: { methode: 'PATCH', status: 400, error: 'champs invalides : name : minuscules, chiffres et tirets bas, 64 au plus' } });
     await ongletOutils(page);
-    await page.getByTestId('connecteur-modifier-o5').click();
+    await page.getByTestId('outil-modifier-o5').click();
     await page.getByTestId('outil-nom').fill('Lire Stock');
     await page.getByTestId('outil-creer').click();
     await expect(page.getByTestId('outil-erreur')).toContainText('minuscules');
@@ -502,6 +523,7 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
     await mock(page, capture, { refus: { methode: 'POST', status: 409, error: 'un outil de cet espace porte déjà ce nom' } });
     await ongletOutils(page);
+    await choixAppel(page);
     await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
     await page.getByTestId('outil-nom').fill('lire_commande');
     await page.getByTestId('outil-titre').fill('Lire');
@@ -510,6 +532,18 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     await page.getByTestId('outil-creer').click();
     await expect(page.getByTestId('outil-erreur')).toContainText(/déjà celui d’un autre outil|already used by another tool/);
     await expect(page.getByTestId('outil-nom')).toHaveValue('lire_commande');
+  });
+
+  test('🔴 un appel IRRÉVERSIBLE (DELETE) dit sur sa ligne qu’il est refusé, et « Modifier » offre l’autonomie', async ({ page }) => {
+    // RC4 : la ligne d'un connecteur ne montrait ni le risque ni la case, et l'outil était refusé à chaque appel sans
+    // qu'aucun geste ne permette de l'autoriser.
+    const capture = { posts: [] as Array<{ url: string; body: unknown; method?: string }> };
+    await mock(page, capture, { outils: [{ ...POSE, risk: 'irreversible' }] });
+    await ongletOutils(page);
+    await expect(page.getByTestId('outil-sans-autonomie-o5')).toBeVisible();
+    await page.getByTestId('outil-modifier-o5').click();
+    await page.getByTestId('outil-autonomie-o5').getByRole('checkbox').click();
+    await expect.poll(() => capture.posts.find((p) => p.url.includes('/o5/autonomie'))?.body ?? null).toEqual({ valeur: true });
   });
 
   test('🔴 activer un appel depuis sa ligne fait partir « Aucun outil actif » sur-le-champ', async ({ page }) => {
@@ -522,7 +556,7 @@ test.describe('Agent : modifier un appel déjà posé (2026-10-05)', () => {
     await mock(page, capture, { outils: [{ ...POSE, actif: false, activeLe: null }], manquesJusquaActivation: true });
     await ongletOutils(page);
     await expect(page.getByTestId('entete-etape-outils')).toBeVisible();
-    await page.getByTestId('connecteur-activer-o5').click();
+    await page.getByTestId('outil-activer-o5').click();
     await expect(page.getByTestId('entete-etape-outils')).toHaveCount(0);
   });
 });

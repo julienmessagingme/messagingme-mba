@@ -1,5 +1,19 @@
 # todo.md : backlog
 
+## 🟡 RC4, les outils de l'agent IA : ce qui reste (2026-10-06)
+
+- **À valider par Julien : l'assistant de construction ne propose aucun outil à cible fixe** (tag, information, bloc,
+  scénario), écart avec le plan : il ne voit ni les étiquettes, ni les champs, ni les scénarios de l'espace, et en
+  inventerait l'identifiant. Le client les pose depuis la grille. Pour les lui ouvrir : lui donner la liste des cibles
+  possibles dans son contexte, et la borne dans le schéma annoncé.
+- **Le contenu d'une cible n'est pas revérifié à la pose** (un bloc envoyable seul, un scénario non vide, un champ
+  déclaré) : l'écran ne propose que des cibles valides et l'appel refuse lisiblement le reste, mais une ligne d'outil
+  posée par l'API peut refuser chaque appel sans le signaler. Câbler un dépôt dans `src/index.ts` pour la pose.
+- **Un cycle entre scénarios** (un agent dans A lance B, un agent dans B relance A) n'est borné que par le crédit :
+  chaque saut est une décision du modèle, et les plafonds repartent à zéro à chaque session.
+- `scripts/mesure-tour-agent.mts` exclut désormais aussi `poser_tag` et `ecrire_variable` : ses mesures de latence et
+  de jetons ne sont plus comparables à celles d'avant RC4.
+
 ## 🟡 RC3, changer d'espace : ce qui reste (2026-10-06)
 
 - **À trancher par Julien : une bascule vers un espace où l'on est admin, sans second facteur actif.** Une personne
@@ -99,14 +113,11 @@ jeton du lien (`signLienNumero`) et exiger dans la garde `adminOuLien` qu'elle n
   RISQUE, lui, suit la méthode depuis le 2026-10-06 (`PgRequeteStore.patch`, monté dans la transaction de
   l'écriture) : le recalcul des paramètres s'y branche, et leur dérivation est écrite deux fois
   (`src/http/agent-tools.ts`, `src/http/mba-outils.ts`).
-- **Un connecteur irréversible n'a aucune case d'autonomie** : la ligne d'un connecteur
-  (`web/components/AgentConnecteurs.tsx`) ne montre ni le risque ni la case, que `AgentOutils.tsx` n'offre qu'aux
-  outils maison et MCP. Un outil né sur un DELETE, ou monté par un changement de méthode, est donc refusé à chaque
-  appel d'un agent IA (« action irreversible non autorisee en autonomie »), sans que la ligne de l'outil le dise.
-  Montrer le risque et la case quand `risk === 'irreversible'` (`PUT .../autonomie` et
-  `autonomieOutil` existent). Le jour où la case existe, faire tomber `autonome` des outils montés à `irreversible`
-  dans la même transaction : un consentement posé sur un outil `write` (la route l'accepte sur tout risque) ne doit
-  pas passer en silence à une action devenue irréversible (même règle que le rafraîchissement MCP).
+- **Un connecteur monté à `irreversible` garde son autonomie** : depuis RC4 (2026-10-06), la ligne d'un connecteur
+  irréversible le dit et « Modifier » offre la case. Reste à faire tomber `autonome` des outils montés à
+  `irreversible` par un changement de méthode, dans la même transaction (`PgRequeteStore.patch`) : un consentement
+  posé sur un outil `write` (la route l'accepte sur tout risque) ne doit pas passer en silence à une action devenue
+  irréversible (même règle que le rafraîchissement MCP).
 - 🟡 Une fenêtre reste ouverte sur le risque, de l'ordre de la milliseconde : la création d'un outil lit la méthode
   AVANT sa transaction (`POST .../tools/connecteur`), et ni l'insertion ni le patch ne voient l'écriture non validée
   de l'autre. La fermer : dans la transaction de `creerOutilConnecteur`, lire la méthode de la requête `for share`

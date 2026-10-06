@@ -37,9 +37,10 @@ export interface ReponseEssai {
    * même mot dans les deux cas envoie chercher un réglage qui n'existe pas. Vécu par Julien le 2026-09-08.
    *
    * Optionnel : une API plus ancienne que ce champ ne l'envoie pas, et l'écran retombe alors sur la sortie
-   * seule plutôt que d'inventer un motif.
+   * seule plutôt que d'inventer un motif. `scenario_lance` (RC4) arrive SANS sortie : l'agent a lancé un scénario
+   * (simulé au bac à sable), qui prend la conversation, et il se tait.
    */
-  motif?: 'plafond_allers_retours' | 'reponse_non_conforme';
+  motif?: 'plafond_allers_retours' | 'reponse_non_conforme' | 'scenario_lance';
   appels: AppelTrace[];
   usage: { tokensIn: number; tokensOut: number; coutMicroEur: number };
 }

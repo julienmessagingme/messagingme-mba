@@ -136,6 +136,25 @@ test.describe('Agents IA : tester', () => {
     await expect(page.getByTestId('test-sortie')).toContainText('c’est cette branche du bloc qui prendrait la suite');
   });
 
+  test('🔴 « Lancer un scénario » arrête l’essai SANS sortie, et l’écran dit pourquoi l’agent se tait (RC4)', async ({ page }) => {
+    // Comme en production : le scénario prend la conversation, l'agent ne parle plus. Sans ce bandeau, l'essai finissait
+    // sur une réponse vide, sans explication, et sans le bandeau de sortie (il n'y en a pas).
+    await mock(page, [], {
+      status: 200,
+      body: {
+        texte: null, sortie: null, motif: 'scenario_lance',
+        appels: [{ nom: 'mba_lancer_scenario', arguments: '{}', status: 'ok', contenu: { simule: true, note: 'Test hors ligne : le scénario n’a PAS été lancé.' } }],
+        usage: { tokensIn: 300, tokensOut: 10, coutMicroEur: 8 },
+      },
+    });
+    await page.goto(`/agents?id=${AG}&tab=tester`);
+    await page.getByTestId('test-saisie').fill('Je veux prendre rendez-vous');
+    await page.getByTestId('test-envoyer').click();
+    await expect(page.getByTestId('test-scenario-lance')).toContainText('le scénario prend la main');
+    await expect(page.getByTestId('test-sortie')).toHaveCount(0);
+    await expect(page.getByTestId('test-appel-0')).toContainText('mba_lancer_scenario');
+  });
+
   test('l’historique est renvoyé à chaque tour, pour que l’agent suive la conversation', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels);

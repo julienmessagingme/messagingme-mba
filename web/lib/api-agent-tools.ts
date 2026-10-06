@@ -165,11 +165,17 @@ export async function ajouterConnecteur(tenantId: string, agentId: string, outil
   return request(`${base(tenantId, agentId)}/connecteur`, { method: 'POST', body: JSON.stringify(outil) });
 }
 
-/** Ajoute un outil du catalogue. Le titre, les mots, les paramètres et le RISQUE viennent du serveur. */
-export async function ajouterOutil(tenantId: string, agentId: string, handler: string, name?: string): Promise<OutilAgent> {
+/**
+ * Ajoute un outil du catalogue. Le titre, les mots, les paramètres et le RISQUE viennent du serveur. `cible` : ce que
+ * l'outil vise (RC4 : un tag, un champ, un bloc ou un scénario fixés), EXIGÉE par le serveur pour ces quatre handlers et
+ * refusée pour les autres ; son handler est celui de l'outil, le serveur l'impose (`corpsDeLaCible`).
+ */
+export async function ajouterOutil(
+  tenantId: string, agentId: string, handler: string, opts: { name?: string; cible?: Record<string, unknown> } = {},
+): Promise<OutilAgent> {
   const r = await request<{ outil: OutilAgent }>(base(tenantId, agentId), {
     method: 'POST',
-    body: JSON.stringify(name ? { handler, name } : { handler }),
+    body: JSON.stringify({ handler, ...(opts.name ? { name: opts.name } : {}), ...(opts.cible ? { cible: opts.cible } : {}) }),
   });
   return r.outil;
 }
@@ -178,6 +184,8 @@ export async function patchOutil(
   tenantId: string, agentId: string, outilId: string,
   patch: {
     name?: string; title?: string; description?: string; nePasUtiliser?: string; enums?: Record<string, string[]>; gestes?: GesteMoment[];
+    /** La cible fixée d'un outil qui en a une (RC4), au format de `corpsDeLaCible`. */
+    cible?: Record<string, unknown>;
     /** Un connecteur API seulement, et ENSEMBLE : le serveur refuse des champs sans nature (lot 2 du 2026-10-05). */
     nature?: NatureOutil; outputPaths?: string[];
   },

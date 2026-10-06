@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { estEnLigne, listTags, listUserFields, listWorkflows, type TagCount, type UserFieldDef, type WorkflowSummary } from '@/lib/api';
 import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
 import { listerBlocsMba, type BlocPropose } from '@/lib/api-mba-outils';
-import { BORNES_OUTIL, METHODES_IRREVERSIBLES, valeursPermises } from '@/lib/mba-outils';
+import { BORNES_OUTIL, METHODES_IRREVERSIBLES, valeursPermises, type ConsommateurOutil } from '@/lib/mba-outils';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
@@ -17,9 +17,12 @@ import { Bouton } from '@/components/Bouton';
  * écran l'a appris à ses dépens (une réponse sans `requetes` faisait tomber tout l'onglet). Une lecture RATÉE,
  * elle, n'est PAS vide pour les champs et les appels : elle le dit, avec « réessayer », au lieu d'annoncer un
  * champ disparu ou un appel supprimé (relecture du 2026-09-22). Les étiquettes restent une simple suggestion.
+ *
+ * RC4 : l'onglet Outils d'un agent IA reprend ces cibles (`pour: 'agent'`). Seuls les textes qui décrivent la
+ * mécanique de l'agent de Meta changent ; les champs, leurs bornes et leurs `data-testid` restent les mêmes.
  */
-export function CibleTag({ tenantId, valeur, onChange }: {
-  tenantId: string; valeur: string; onChange: (v: string) => void;
+export function CibleTag({ tenantId, valeur, onChange, pour = 'mba' }: {
+  tenantId: string; valeur: string; onChange: (v: string) => void; pour?: ConsommateurOutil;
 }) {
   const t = useT();
   const [tags, setTags] = useState<TagCount[]>([]);
@@ -36,18 +39,22 @@ export function CibleTag({ tenantId, valeur, onChange }: {
       <input className={`${inputCls} mt-1`} list="mba-tags" data-testid="mba-cible-tag" value={valeur} maxLength={BORNES_OUTIL.tag}
         onChange={(e) => onChange(e.target.value)} placeholder="client_vip" />
       <datalist id="mba-tags">{tags.map((x) => <option key={x.tag} value={x.tag} />)}</datalist>
-      <span className="mt-1 block text-xs text-ink-500" data-testid="mba-cible-tag-note">
-        {t(
-          'Ne comptez pas sur vos automations « tag ajouté » : l’agent de Meta tient alors la conversation, le scénario qu’elles lanceraient ne démarre pas, et il n’est pas rejoué ensuite.',
-          'Do not rely on your “tag added” automations: Meta’s agent holds the conversation then, the scenario they would start does not start, and it is not replayed later.',
-        )}
-      </span>
+      {/* La note décrit l'agent de Meta, qui tient le fil quand il pose le tag : elle ne vaut pas pour un agent IA. */}
+      {pour === 'mba' && (
+        <span className="mt-1 block text-xs text-ink-500" data-testid="mba-cible-tag-note">
+          {t(
+            'Ne comptez pas sur vos automations « tag ajouté » : l’agent de Meta tient alors la conversation, le scénario qu’elles lanceraient ne démarre pas, et il n’est pas rejoué ensuite.',
+            'Do not rely on your “tag added” automations: Meta’s agent holds the conversation then, the scenario they would start does not start, and it is not replayed later.',
+          )}
+        </span>
+      )}
     </label>
   );
 }
 
-export function CibleChamp({ tenantId, champ, valeurs, onChange }: {
+export function CibleChamp({ tenantId, champ, valeurs, onChange, pour = 'mba' }: {
   tenantId: string; champ: string; valeurs: string[]; onChange: (champ: string, valeurs: string[]) => void;
+  pour?: ConsommateurOutil;
 }) {
   const t = useT();
   // `'erreur'` n'est pas `[]` : une lecture RATÉE affichait « ce champ n'existe plus, supprimez l'outil » d'un
@@ -94,8 +101,11 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange }: {
       )}
       {disparu && (
         <p className="text-xs text-danger" data-testid="mba-cible-champ-disparu">
-          {t('Ce champ n’existe plus : l’agent de Meta ne peut plus l’enregistrer. Choisissez-en un autre, ou supprimez l’outil.',
-            'This field no longer exists: Meta’s agent can no longer save it. Pick another one, or delete the tool.')}
+          {pour === 'mba'
+            ? t('Ce champ n’existe plus : l’agent de Meta ne peut plus l’enregistrer. Choisissez-en un autre, ou supprimez l’outil.',
+              'This field no longer exists: Meta’s agent can no longer save it. Pick another one, or delete the tool.')
+            : t('Ce champ n’existe plus dans le mini-CRM : choisissez-en un autre, ou supprimez l’outil.',
+              'This field no longer exists in the mini-CRM: pick another one, or delete the tool.')}
         </p>
       )}
       <label className="text-xs text-ink-500">
@@ -308,8 +318,9 @@ export function CibleBloc({ tenantId, workflowId, code, onChange }: {
  * sont proposés : un brouillon jamais publié ne ferait rien partir. La conversation revient à l'agent de Meta à
  * la fin du parcours.
  */
-export function CibleScenario({ tenantId, workflowId, onChange }: {
+export function CibleScenario({ tenantId, workflowId, onChange, pour = 'mba' }: {
   tenantId: string; workflowId: string; onChange: (workflowId: string, nom: string | null) => void;
+  pour?: ConsommateurOutil;
 }) {
   const t = useT();
   const [scenarios, setScenarios] = useState<WorkflowSummary[] | null | 'erreur'>(null);
@@ -342,9 +353,13 @@ export function CibleScenario({ tenantId, workflowId, onChange }: {
           {t('Lecture des scénarios impossible : réessayer', 'Could not read the scenarios: retry')}
         </button>
       )}
-      <p className="text-xs text-ink-500">
-        {t('Messaging Me prend la conversation le temps du parcours, puis la rend à l’agent de Meta.',
-          'Messaging Me takes the conversation for the journey, then hands it back to Meta’s agent.')}
+      <p className="text-xs text-ink-500" data-testid="mba-cible-scenario-note">
+        {pour === 'mba'
+          ? t('Messaging Me prend la conversation le temps du parcours, puis la rend à l’agent de Meta.',
+            'Messaging Me takes the conversation for the journey, then hands it back to Meta’s agent.')
+          // RC4 : l'agent IA se RETIRE, le scénario ne lui rend pas la main (`agent_ia_scenario`).
+          : t('Le scénario prend la conversation depuis son début, et l’agent se retire : c’est le scénario qui parle ensuite.',
+            'The scenario takes the conversation from its start, and the agent steps back: the scenario does the talking from then on.')}
       </p>
     </div>
   );

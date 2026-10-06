@@ -36,6 +36,8 @@ export function signeDuHandler(handler: string): SigneOutil | null {
     case 'poser_tag': return 'tag';
     case 'ecrire_variable': return 'info';
     case 'envoyer_bloc': return 'bloc';
+    // RC4 : le même geste que « Lancer un scénario » chez l'agent de Meta, donc le même dessin.
+    case 'lancer_scenario': return 'scenario';
     case 'chercher_connaissance': return 'recherche';
     case 'lire_contact': return 'contact';
     case 'escalader': return 'humain';

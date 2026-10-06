@@ -2,75 +2,76 @@ import { test, expect } from '@playwright/test';
 import { repondre } from './aide/confirmation';
 
 /**
- * Onglet OUTILS d'un agent IA.
+ * Onglet OUTILS d'un agent IA, présenté comme celui de l'agent de Meta (RC4, décision de Julien du 2026-10-06).
  *
- * Ce qu'on vérifie vraiment ici : donner un outil et l'ACTIVER sont deux gestes séparés (l'activation est le
- * consentement humain que la spec MCP demande avant l'invocation d'un outil, et que notre agent n'a pas au
- * runtime), l'autonomie sur une action irréversible en est un troisième, et le client peut lire le schéma
- * RÉEL envoyé au modèle, parce que ce sont ses mots qui pilotent l'appel de fonction.
+ * Ce qu'on vérifie vraiment ici :
+ *  - « Toujours là » : un interrupteur par geste propre à l'agent IA ; allumer POSE l'outil s'il manque puis l'ACTIVE,
+ *    éteindre le désactive sans le retirer ;
+ *  - « Quel outil ajouter ? » : la grille de l'agent de Meta, ses six cartes, et une CIBLE fixée par l'administrateur
+ *    pour le tag, l'information, le bloc et le scénario ; l'outil naît inactif ;
+ *  - la liste des outils posés, au format des lignes de l'agent de Meta, connecteurs API et outils MCP compris ;
+ *  - ce que l'agent IA a en plus est gardé : l'autonomie d'une action irréversible (un troisième geste), les gestes du
+ *    moment, et le schéma RÉEL envoyé au modèle, parce que ce sont les mots du client qui pilotent l'appel de fonction.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 const AG = '11111111-1111-4111-8111-111111111111';
+const WF = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
+const RQ = '33333333-3333-4333-8333-333333333333';
+const SRC = '22222222-2222-4222-8222-222222222222';
+const CODE_PHOTO = 'nod_te2e_01HZX5Y6Z7A8B9C0D1E2F3G4H5';
 
+const modele = (handler: string, titre: string, risk: string, params: unknown[] = []) => ({
+  handler, nomDefaut: `mba_${handler}`, titre: { fr: titre, en: titre }, description: { fr: `${titre}.`, en: `${titre}.` },
+  nePasUtiliser: { fr: 'Pas au hasard.', en: 'Not at random.' }, risk, params,
+});
 const CATALOGUE = [
-  {
-    handler: 'poser_tag', nomDefaut: 'mba_poser_tag',
-    titre: { fr: 'Poser un tag sur le contact', en: 'Tag the contact' },
-    description: { fr: 'Marque le contact.', en: 'Marks the contact.' },
-    nePasUtiliser: { fr: 'Pas de tag inventé.', en: 'No invented tag.' },
-    risk: 'write',
-    params: [{ name: 'tag', edition: 'enum', aideEnum: { fr: 'Les tags autorisés.', en: 'Allowed tags.' } }],
-  },
-  {
-    handler: 'envoyer_bloc', nomDefaut: 'mba_envoyer_bloc',
-    titre: { fr: 'Envoyer un bloc de votre scénario', en: 'Send a block from your scenario' },
-    description: { fr: 'Envoie un bloc que vous avez dessiné.', en: 'Sends a block you designed.' },
-    nePasUtiliser: { fr: 'Pas pour dire ce qu’un message dirait.', en: 'Not for what a message would say.' },
-    risk: 'irreversible',
-    params: [{ name: 'code', edition: 'enum' }],
-  },
+  modele('terminer', 'Terminer par une règle d’arrêt', 'read', [{ name: 'sortie', edition: 'derive_des_sorties' }]),
+  modele('escalader', 'Passer la main à un humain', 'write'),
+  modele('marquer_urgent', 'Marquer la conversation urgente', 'write'),
+  modele('chercher_connaissance', 'Chercher dans la base de connaissance', 'read', [{ name: 'requete', edition: 'aucune' }]),
+  modele('lire_contact', 'Lire la fiche du contact', 'read'),
+  modele('poser_tag', 'Poser un tag sur le contact', 'write'),
+  modele('ecrire_variable', 'Enregistrer une information sur le contact', 'write', [{ name: 'valeur', edition: 'aucune' }]),
+  modele('envoyer_bloc', 'Envoyer un bloc de votre scénario', 'irreversible'),
+  modele('lancer_scenario', 'Lancer un scénario', 'irreversible'),
 ];
 
+const base = {
+  origin: 'mba', sourceId: null, requestId: null, description: 'Marque le contact.', nePasUtiliser: 'Pas de tag inventé.',
+  params: [], gestes: [], actif: false, activeLe: null, autonome: false, autonomeLe: null, inappelable: null,
+};
+const SCHEMA = { type: 'object', properties: {}, required: [], additionalProperties: false };
 const TAG = {
-  // `origin` et `sourceId` : le serveur les rend toujours depuis le lot L2, et l'écran s'en sert pour
-  // séparer les outils MAISON des connecteurs du client. Un fixe qui les omettrait ne testerait plus la
-  // même page que celle qui tourne.
-  id: 'o1', origin: 'mba', sourceId: null, name: 'mba_poser_tag', title: 'Poser un tag sur le contact',
-  description: 'Marque le contact.', nePasUtiliser: 'Pas de tag inventé.',
-  params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
-  binding: { handler: 'poser_tag' }, risk: 'write',
-  actif: false, activeLe: null, autonome: false, autonomeLe: null,
-  expose: { name: 'mba_poser_tag', description: 'Marque le contact.', parameters: { type: 'object', properties: { tag: { type: 'string' } }, required: ['tag'], additionalProperties: false } },
+  ...base, id: 'o1', name: 'tag_rdv', title: 'Tag rendez-vous', binding: { handler: 'poser_tag', tag: 'rdv_pris' }, risk: 'write',
+  expose: { name: 'tag_rdv', description: 'Marque le contact.', parameters: SCHEMA },
 };
 const BLOC = {
-  ...TAG, id: 'o2', name: 'mba_envoyer_bloc', title: 'Envoyer un bloc de votre scénario',
-  binding: { handler: 'envoyer_bloc' }, risk: 'irreversible', params: [{ name: 'code', type: 'string', source: 'modele', required: true }],
+  ...base, id: 'o2', name: 'envoyer_photo', title: 'Envoyer la photo', risk: 'irreversible',
+  binding: { handler: 'envoyer_bloc', workflowId: WF, code: CODE_PHOTO },
+  expose: { name: 'envoyer_photo', description: 'Envoie.', parameters: SCHEMA },
 };
-/**
- * 🔴 UN OUTIL MCP MORT, SUR L ECRAN OU LE CLIENT REDONNE SON AUTORISATION. Le serveur envoyait deja ces
- * deux champs, le type front ne les declarait pas : un outil dont le schema n est plus representable, ou
- * qui a DISPARU du serveur distant, ressemblait exactement a un outil vivant. Or c est precisement
- * l ecran que le recit anti-IDOR nomme (« le client le redonne depuis AI Agent > Outils, qui n est PAS
- * l ecran de clouage »), et le client ne l apprenait qu en recevant un refus.
- */
-const MCP_MORT = {
-  ...TAG, id: 'o4', origin: 'mcp', sourceId: 's1', name: 'notion_lignes', title: 'Lire les lignes',
-  /**
-   * ⚠️ IL TIENT LE CONTRAT D UN VRAI OUTIL MCP. Construit par `...TAG`, il heritait d un
-   * `binding: { handler: 'poser_tag' }` et d un `expose.name: 'mba_poser_tag'`, c est-a-dire d un outil
-   * MAISON portant un nom MCP. Un faux qui ne tient pas le contrat du vrai masquerait toute logique
-   * indexee sur `binding.handler`, et ce depot a deja paye ce defaut cinq fois aujourd hui.
-   */
-  binding: { outilDistant: 'lignes' },
-  requestId: null,
-  expose: { name: 'notion_lignes', description: 'Lire les lignes', parameters: { type: 'object', properties: {}, required: [], additionalProperties: false } },
-  mcpNonActivable: 'le paramètre « lignes » est un tableau', mcpIndisponibleLe: null,
-};
-
 /** Actif, mais le modèle n'en voit RIEN : c'est le cas de « terminer » sans règle d'arrêt sur la fiche. */
 const MUET = {
-  ...TAG, id: 'o3', name: 'mba_terminer', title: 'Terminer par une règle d’arrêt',
-  binding: { handler: 'terminer' }, risk: 'read', actif: true, activeLe: '2026-08-28T10:00:00.000Z', expose: null,
+  ...base, id: 'o3', name: 'mba_terminer', title: 'Terminer par une règle d’arrêt', binding: { handler: 'terminer' },
+  risk: 'read', actif: true, activeLe: '2026-08-28T10:00:00.000Z', expose: null,
+};
+/**
+ * 🔴 UN OUTIL MCP MORT, SUR L'ÉCRAN OÙ LE CLIENT REDONNE SON AUTORISATION : il tient le contrat d'un vrai outil MCP
+ * (`binding.outilDistant`, aucun `handler`), sans quoi il masquerait toute logique indexée sur `binding.handler`.
+ */
+const MCP_MORT = {
+  ...base, id: 'o4', origin: 'mcp', sourceId: 's1', name: 'notion_lignes', title: 'Lire les lignes', risk: 'read',
+  binding: { outilDistant: 'lignes' },
+  expose: { name: 'notion_lignes', description: 'Lire les lignes', parameters: SCHEMA },
+  mcpNonActivable: 'le paramètre « lignes » est un tableau', mcpIndisponibleLe: null,
+  inappelable: { cause: 'non_activable', detail: 'le paramètre « lignes » est un tableau' },
+};
+
+const REQUETE = {
+  id: RQ, tenantId: 't-e2e', sourceId: SRC, label: 'Chercher une commande', methode: 'GET', chemin: '/commandes/{ref}',
+  parametres: [], entetes: [], corps: { mode: 'aucun' },
+  variables: [{ nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true }],
+  outputPaths: ['statut'], valeursTest: {}, outils: 0, updatedAt: '2026-09-02T00:00:00.000Z',
 };
 
 const AGENT = {
@@ -83,40 +84,77 @@ const AGENT = {
 };
 
 type Appel = { method: string; url: string; body: unknown };
+type Outil = Record<string, unknown> & { id: string };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], outils: unknown[], offrables: unknown[] = []) {
+/**
+ * Un serveur EN MÉMOIRE : ce qu'on pose, active, modifie ou retire se relit à la ligne suivante. Sans cet état, un test
+ * « l'outil apparaît dans la liste » passerait sur une liste figée, donc ne prouverait rien.
+ */
+async function mock(page: import('@playwright/test').Page, appels: Appel[], depart: Outil[], offrables: unknown[] = []) {
+  const outils: Outil[] = depart.map((o) => ({ ...o }));
+  let n = 0;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const url = req.url();
     const method = req.method();
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
-    // CE QUE LE SERVEUR PERMET D AJOUTER a cet agent (la regle unique du 2026-10-02) : c est elle qui porte les
-    // outils MCP importes mais pas encore rattaches. Avant `/tools`, qu elle prolonge. La bibliotheque de l espace
-    // rend la meme liste, pour les ecrans qui la lisent encore.
+    const corps = (method === 'GET' ? null : req.postDataJSON()) as Record<string, unknown> | null;
+    if (method !== 'GET') appels.push({ method, url, body: corps });
+
     if (/\/tools\/offrables(\?|$)/.test(url)) return json({ outils: offrables });
-    if (/\/agent-tools(\?|$)/.test(url)) return json({ outils: offrables });
-    if (/\/tools/.test(url)) {
-      if (method === 'GET') return json({ outils, catalogue: CATALOGUE });
-      appels.push({ method, url, body: req.postDataJSON() });
-      if (method === 'DELETE') return route.fulfill({ status: 204, body: '' });
-      if (method === 'POST') return json({ outil: TAG }, 201);
-      const corps = (req.postDataJSON() ?? {}) as Record<string, unknown>;
-      if (/\/activation$/.test(url)) return json({ outil: { ...TAG, actif: corps.valeur === true } });
-      if (/\/autonomie$/.test(url)) return json({ outil: { ...BLOC, autonome: corps.valeur === true } });
-      return json({ outil: { ...TAG, ...corps } });
+    if (/\/tools\/connecteur$/.test(url)) {
+      const cree: Outil = {
+        ...base, id: `n${++n}`, origin: 'http', sourceId: SRC, requestId: RQ, name: String(corps?.name), title: String(corps?.title),
+        description: String(corps?.description), nePasUtiliser: String(corps?.nePasUtiliser), binding: {}, risk: 'read',
+        nature: corps?.nature, outputPaths: corps?.outputPaths, expose: null,
+      };
+      outils.push(cree);
+      return json({ outil: cree, envoi: [] }, 201);
     }
-    /* Les blocs des scénarios, d'où le choisisseur tire sa liste. `sce-b` n'a AUCUN bloc agent : il ne doit
-       donc jamais apparaître, l'outil ne pouvant envoyer que dans le scénario où le contact se trouve. */
-    if (/\/nodes(\?|$)/.test(url)) {
-      return json({ nodes: [
-        { code: null, type: 'agent', name: 'Le conseiller', workflowId: 'w1', workflowName: 'Séjours', summary: 'Agent IA' },
-        { code: 'nod_photo', type: 'template', name: 'La photo de la résidence', workflowId: 'w1', workflowName: 'Séjours', summary: 'Modèle photo' },
-        { code: 'nod_form', type: 'flow', name: '', workflowId: 'w1', workflowName: 'Séjours', summary: 'Formulaire de rappel' },
-        { code: 'nod_attente', type: 'wait', name: 'Patienter 2 h', workflowId: 'w1', workflowName: 'Séjours', summary: 'Attente' },
-        { code: 'nod_autre', type: 'template', name: 'Bloc d un scénario sans agent', workflowId: 'w2', workflowName: 'Relances', summary: 'Modèle' },
+    const sur = /\/tools\/([^/?]+)(\/[a-z]+)?$/.exec(url);
+    if (/\/tools(\?|$)/.test(url)) {
+      if (method === 'GET') return json({ outils, catalogue: CATALOGUE });
+      // POST : la cible fixée vit dans `binding`, à côté du handler, comme la pose du serveur l'écrit.
+      const handler = String(corps?.handler);
+      const m = CATALOGUE.find((x) => x.handler === handler)!;
+      const cible = (corps?.cible ?? {}) as Record<string, unknown>;
+      const cree: Outil = {
+        ...base, id: `n${++n}`, name: String(corps?.name ?? m.nomDefaut), title: m.titre.fr, description: m.description.fr,
+        binding: { ...cible, handler }, risk: m.risk, expose: { name: String(corps?.name ?? m.nomDefaut), description: '', parameters: SCHEMA },
+      };
+      outils.push(cree);
+      return json({ outil: cree }, 201);
+    }
+    if (sur && sur[2] === '/rattachement') {
+      // Rattacher : l'outil offert entre dans la liste de CET agent, inactif.
+      const offert = (offrables as Outil[]).find((x) => x.id === sur[1]);
+      if (offert) outils.push({ ...offert, actif: false });
+      return json({ rattache: true });
+    }
+    if (sur) {
+      const o = outils.find((x) => x.id === sur[1]);
+      if (!o) return json({ error: 'outil introuvable' }, 404);
+      if (method === 'DELETE') { outils.splice(outils.indexOf(o), 1); return route.fulfill({ status: 204, body: '' }); }
+      if (sur[2] === '/activation') Object.assign(o, { actif: corps?.valeur === true });
+      else if (sur[2] === '/autonomie') Object.assign(o, { autonome: corps?.valeur === true });
+      else {
+        const { cible, ...reste } = corps ?? {};
+        Object.assign(o, reste, cible ? { binding: { ...(cible as object), handler: (o.binding as { handler: string }).handler } } : {});
+      }
+      return json({ outil: o });
+    }
+    if (/\/mba-outils\/blocs/.test(url)) {
+      return json({ blocs: [
+        { workflowId: WF, scenario: 'Prise de rendez-vous', code: CODE_PHOTO, nom: 'La photo de la résidence', type: 'template', envoyable: true, raison: null },
+        { workflowId: WF, scenario: 'Prise de rendez-vous', code: 'nod_te2e_01HZX5Y6Z7A8B9C0D1E2F3G4H6', nom: 'Un choix', type: 'quick_message', envoyable: false, raison: 'ce bloc attend une réponse du client : utilisez « Lancer un scénario »' },
       ] });
     }
+    if (/\/workflows(\?|$)/.test(url)) return json({ workflows: [{ id: WF, name: 'Prise de rendez-vous', nodeCount: 3 }] });
+    if (/\/user-fields(\?|$)/.test(url)) return json({ fields: [{ key: 'statut', label: 'Statut', type: 'text' }] });
+    if (/\/tags(\?|$)/.test(url)) return json({ tags: [{ tag: 'rdv_pris', count: 3 }] });
+    if (url.includes('/agent-requetes')) return json({ requetes: [REQUETE], champs: [], catalogue: { contact: [], systeme: [], entetesReserves: [] } });
+    if (url.includes('/agent-sources')) return json({ sources: [{ id: SRC, kind: 'http', label: 'ERP', status: 'active' }] });
     if (new RegExp(`/agents/${AG}$`).test(url)) return json({ agent: AGENT });
     if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
@@ -124,269 +162,288 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], outi
   });
 }
 
-test.describe('Agents IA : les outils', () => {
-  test('🔴 donner un outil et l ACTIVER sont deux gestes séparés', async ({ page }) => {
-    // Un outil actif est exécutable par le modèle, donc par un texte qu'un contact influence. L'activation
-    // est le consentement humain que la spec MCP demande, déplacé du runtime vers la configuration.
+const onglet = async (page: import('@playwright/test').Page) => {
+  await page.goto(`/agents?id=${AG}&tab=outils`);
+  await expect(page.getByTestId('outils-toujours-la')).toBeVisible();
+};
+const postsOutil = (appels: Appel[]) => appels.filter((a) => a.method === 'POST' && /\/tools$/.test(a.url));
+
+test.describe('Agents IA : « Toujours là »', () => {
+  test('🔴 allumer « Marquer urgent » le POSE puis l’ACTIVE ; l’éteindre le désactive sans le retirer', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels, []);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await onglet(page);
+    // Les cinq gestes propres à l'agent IA sont là, éteints, avant même d'avoir rien posé.
+    for (const h of ['terminer', 'escalader', 'chercher_connaissance', 'lire_contact', 'marquer_urgent']) {
+      await expect(page.getByTestId(`toujours-${h}`)).not.toBeChecked();
+    }
 
-    await expect(page.getByTestId('outils-vide')).toBeVisible();
-    await page.getByTestId('outil-ajouter-poser_tag').click();
-    await expect.poll(() => appels.some((a) => a.method === 'POST' && (a.body as { handler?: string })?.handler === 'poser_tag'), { timeout: 5000 }).toBe(true);
-    // Ajouté, il n'est PAS actif : le serveur le crée inactif et l'écran le dit.
-    expect(appels.filter((a) => /activation$/.test(a.url))).toHaveLength(0);
+    await page.getByTestId('toujours-marquer_urgent').click();
+    await expect.poll(() => appels.map((a) => `${a.method} ${a.url.replace(/^.*\/tools/, '/tools')}`), { timeout: 5000 })
+      .toEqual(['POST /tools', 'PUT /tools/n1/activation']);
+    expect(postsOutil(appels)[0]!.body).toEqual({ handler: 'marquer_urgent' });
+    expect(appels[1]!.body).toEqual({ valeur: true });
+    await expect(page.getByTestId('toujours-marquer_urgent')).toBeChecked();
+
+    await page.getByTestId('toujours-marquer_urgent').click();
+    await expect.poll(() => appels.at(-1)?.body, { timeout: 5000 }).toEqual({ valeur: false });
+    expect(appels.at(-1)!.url).toMatch(/\/tools\/n1\/activation$/);
+    // Éteint, pas retiré : aucune suppression, et l'outil garde ses réglages.
+    expect(appels.some((a) => a.method === 'DELETE')).toBe(false);
+    await expect(page.getByTestId('toujours-marquer_urgent')).not.toBeChecked();
+  });
+
+  test('🔴 un « terminer » actif que le modèle ne VOIT PAS est signalé, et « Régler » montre pourquoi', async ({ page }) => {
+    await mock(page, [], [MUET]);
+    await onglet(page);
+    await expect(page.getByTestId('toujours-muet-terminer')).toContainText('le modèle n’en voit rien');
+    await page.getByTestId('toujours-regler-terminer').click();
+    await page.getByTestId('outil-schema-bouton-o3').click();
+    await expect(page.getByTestId('outil-schema-o3')).toContainText('aucune valeur possible');
+  });
+
+  test('🔴 le nom vu par le modèle est NORMALISÉ sous les yeux du client', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, [MUET]);
+    await onglet(page);
+    await page.getByTestId('toujours-regler-terminer').click();
+    await page.getByTestId('outil-nom-o3').fill('Terminer la conversâtion');
+    await expect(page.getByTestId('outil-nom-normalise-o3')).toHaveText('terminer_la_conversation');
+    await page.getByTestId('outil-description-o3').click(); // sortie du champ
+    await expect.poll(() => appels.some((a) => a.method === 'PATCH' && (a.body as { name?: string })?.name === 'terminer_la_conversation'), { timeout: 5000 }).toBe(true);
   });
 
   /**
-   * 🔴 LE CAS EST CONSERVÉ, SA RÉPONSE A CHANGÉ (2026-09-18).
-   *
-   * Ce test vérifiait qu'un outil déjà déclaré dans l'espace se BRANCHE au lieu de se recréer, parce que le
-   * nom était unique par ESPACE et que « Ajouter » se faisait refuser en 409. La migration 0157 a supprimé
-   * la CAUSE : une ACTION appartient désormais à l'agent, deux agents peuvent chacun avoir leur
-   * « terminer », et la collision n'existe plus.
-   *
-   * ⚠️ CE QUI EST CONSERVÉ : la préoccupation du client, « l'écran ne doit pas me proposer un geste qui
-   * échouera ». CE QUI CHANGE : la bonne réponse n'est plus de brancher, c'est de créer, et de réussir.
+   * 🔴 LES GESTES DU MOMENT, ET LA PHRASE QUI LES ACCOMPAGNE (migration 0158) : l'écran dit qu'ils partent MÊME SI
+   * l'appel échoue, sans quoi le client écrit « rendez-vous pris » dans son mini-CRM sur un appel raté.
    */
-  test('🔴 une définition du MÊME handler dans l espace n empeche plus l ajout', async ({ page }) => {
+  test('🔴 on ajoute un geste au moment, et l’écran DIT qu’il part même si l’appel échoue', async ({ page }) => {
     const appels: Appel[] = [];
-    const dansLEspace = {
-      id: 'o7', name: 'mba_poser_tag', title: 'Poser un tag sur le contact',
-      description: 'Marque le contact.', origin: 'mba', risk: 'write', sourceId: null,
-      mcpNonActivable: null, mcpIndisponibleLe: null, consommateurs: [],
-    };
-    await mock(page, appels, [], [dansLEspace]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-
-    // Pas de bouton « Brancher » : ce chemin n'a plus de raison d'exister, et un chemin qui ne peut plus se
-    // produire est un chemin qui mentira le jour où quelqu'un s'y fiera.
-    await expect(page.getByTestId('outil-brancher-poser_tag')).toHaveCount(0);
-    await page.getByTestId('outil-ajouter-poser_tag').click();
-    await expect.poll(() => appels.some((a) => a.method === 'POST' && (a.body as { handler?: string })?.handler === 'poser_tag'), { timeout: 5000 }).toBe(true);
-  });
-
-  /**
-   * 🔴 LES GESTES DU MOMENT, ET LA PHRASE QUI LES ACCOMPAGNE (migration 0158).
-   *
-   * Un moment porte UNE réponse principale, que le modèle appelle, et des gestes que NOUS exécutons. L'écran
-   * doit dire qu'ils partent MÊME SI l'appel échoue, sans quoi le client écrit « rendez-vous pris » et met
-   * dans son mini-CRM une vérité fausse sur laquelle une automation partira ensuite.
-   */
-  test('🔴 on ajoute un geste au moment, et l ecran DIT qu il part meme si l appel echoue', async ({ page }) => {
-    const appels: Appel[] = [];
-    await mock(page, appels, [TAG]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-
-    await expect(page.getByTestId(`outil-gestes-${TAG.id}`)).toContainText('même si l’appel ci-dessus échoue');
-    await expect(page.getByTestId(`outil-gestes-${TAG.id}`)).toContainText('rendez-vous demandé');
-
-    await page.getByTestId(`outil-geste-valeur-${TAG.id}`).fill('rendez_vous_demande');
-    await page.getByTestId(`outil-geste-ajouter-${TAG.id}`).click();
+    await mock(page, appels, [MUET]);
+    await onglet(page);
+    await page.getByTestId('toujours-regler-terminer').click();
+    await expect(page.getByTestId('outil-gestes-o3')).toContainText('même si l’appel ci-dessus échoue');
+    await page.getByTestId('outil-geste-valeur-o3').fill('rendez_vous_demande');
+    await page.getByTestId('outil-geste-ajouter-o3').click();
     await expect.poll(() => appels.find((a) => a.method === 'PATCH' && (a.body as { gestes?: unknown })?.gestes !== undefined)?.body, { timeout: 5000 })
       .toEqual({ gestes: [{ type: 'tag', valeur: 'rendez_vous_demande' }] });
   });
 
   test('un geste « écrire dans un champ » porte SON champ, pas seulement une valeur', async ({ page }) => {
-    // La preuve inverse du cas précédent : sans le champ, les deux types de geste produiraient le même
-    // corps, et l'écriture partirait dans le vide.
     const appels: Appel[] = [];
-    await mock(page, appels, [TAG]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await page.getByTestId(`outil-geste-type-${TAG.id}`).selectOption('variable');
-    await page.getByTestId(`outil-geste-champ-${TAG.id}`).fill('origine');
-    await page.getByTestId(`outil-geste-valeur-${TAG.id}`).fill('agent');
-    await page.getByTestId(`outil-geste-ajouter-${TAG.id}`).click();
+    await mock(page, appels, [MUET]);
+    await onglet(page);
+    await page.getByTestId('toujours-regler-terminer').click();
+    await page.getByTestId('outil-geste-type-o3').selectOption('variable');
+    await page.getByTestId('outil-geste-champ-o3').fill('origine');
+    await page.getByTestId('outil-geste-valeur-o3').fill('agent');
+    await page.getByTestId('outil-geste-ajouter-o3').click();
     await expect.poll(() => appels.find((a) => a.method === 'PATCH' && (a.body as { gestes?: unknown })?.gestes !== undefined)?.body, { timeout: 5000 })
       .toEqual({ gestes: [{ type: 'variable', champ: 'origine', valeur: 'agent' }] });
   });
+});
 
+test.describe('Agents IA : « Quel outil ajouter ? »', () => {
+  test('🔴 la grille de l’agent de Meta, ses six cartes, et aucun mot sur l’agent de Meta', async ({ page }) => {
+    await mock(page, [], []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    for (const type of ['tag', 'champ', 'bloc', 'scenario', 'connecteur', 'mcp']) {
+      await expect(page.getByTestId(`mba-type-${type}`)).toBeVisible();
+    }
+    await expect(page.getByTestId('mba-types')).not.toContainText('agent de Meta');
+    await expect(page.getByTestId('mba-type-scenario')).toContainText('l’agent se retire');
+  });
 
-  test('l activation est un aller-retour, et le geste porte sur cet outil', async ({ page }) => {
+  test('🔴 poser un tag FIXE par la grille : il part avec sa cible, naît inactif, et entre dans la liste', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-tag').click();
+    await page.getByTestId('mba-cible-tag').fill('rdv_pris');
+    // La note sur les automations décrit l'agent de Meta : elle ne vaut pas pour un agent IA.
+    await expect(page.getByTestId('mba-cible-tag-note')).toHaveCount(0);
+    await page.getByTestId('agent-outil-form-titre').fill('Rendez-vous demandé');
+    await expect(page.getByTestId('agent-outil-form-nom')).toHaveValue('rendez_vous_demande');
+    await expect(page.getByTestId('agent-outil-form-enregistrer')).toBeDisabled();
+    await page.getByTestId('agent-outil-form-quand').fill('Appelle cet outil dès que le contact demande un rendez-vous.');
+    await page.getByTestId('agent-outil-form-enregistrer').click();
+
+    await expect.poll(() => postsOutil(appels).map((a) => a.body), { timeout: 5000 })
+      .toEqual([{ handler: 'poser_tag', name: 'rendez_vous_demande', cible: { tag: 'rdv_pris' } }]);
+    await expect.poll(() => appels.find((a) => a.method === 'PATCH')?.body).toMatchObject({
+      title: 'Rendez-vous demandé', description: 'Appelle cet outil dès que le contact demande un rendez-vous.',
+    });
+    // Né inactif : l'activation reste un geste séparé.
+    expect(appels.some((a) => /activation$/.test(a.url))).toBe(false);
+    await expect(page.getByTestId('outil-cible-n1')).toHaveText('Tag : rdv_pris');
+    await expect(page.getByTestId('outil-etat-n1')).toContainText('inactif');
+  });
+
+  test('🔴 poser « Lancer un scénario » : le scénario FIXÉ, l’agent qui se retire, et l’autonomie demandée', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-scenario').click();
+    await page.getByTestId('mba-cible-scenario').selectOption(WF);
+    await expect(page.getByTestId('mba-cible-scenario-note')).toContainText('l’agent se retire');
+    // Le titre suit le scénario choisi.
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveValue('Prise de rendez-vous');
+    await page.getByTestId('agent-outil-form-quand').fill('Appelle cet outil dès que le contact veut prendre rendez-vous.');
+    await page.getByTestId('agent-outil-form-autonomie').getByRole('checkbox').check();
+    await page.getByTestId('agent-outil-form-enregistrer').click();
+
+    await expect.poll(() => postsOutil(appels).map((a) => a.body), { timeout: 5000 })
+      .toEqual([{ handler: 'lancer_scenario', name: 'prise_de_rendez_vous', cible: { workflowId: WF } }]);
+    await expect.poll(() => appels.find((a) => /\/autonomie$/.test(a.url))?.body).toEqual({ valeur: true });
+    await expect(page.getByTestId('outil-cible-n1')).toHaveText('Scénario : Prise de rendez-vous');
+  });
+
+  test('🔴 « Envoyer un bloc » : le scénario, puis UN bloc de ce scénario, qui part seul', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-bloc').click();
+    await page.getByTestId('mba-cible-bloc-scenario').selectOption(WF);
+    // Un bloc qui attend une réponse ne part pas seul : grisé, avec sa raison.
+    await expect(page.getByTestId('mba-cible-bloc-nod_te2e_01HZX5Y6Z7A8B9C0D1E2F3G4H6')).toBeDisabled();
+    await page.getByTestId(`mba-cible-bloc-${CODE_PHOTO}`).check();
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveValue('La photo de la résidence');
+    await page.getByTestId('agent-outil-form-quand').fill('Appelle cet outil dès que le contact veut voir la résidence.');
+    await page.getByTestId('agent-outil-form-enregistrer').click();
+    await expect.poll(() => postsOutil(appels).map((a) => a.body), { timeout: 5000 })
+      .toEqual([{ handler: 'envoyer_bloc', name: 'la_photo_de_la_residence', cible: { workflowId: WF, code: CODE_PHOTO } }]);
+    await expect(page.getByTestId('outil-cible-n1')).toHaveText('Bloc « La photo de la résidence » du scénario Prise de rendez-vous');
+  });
+
+  test('🔴 un connecteur API ajouté par sa carte apparaît dans la liste, comme les autres outils', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-connecteur').click();
+    await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
+    await page.getByTestId('outil-nom').fill('lire_commande');
+    await page.getByTestId('outil-titre').fill('Lire une commande');
+    await page.getByTestId('outil-description').fill('Quand le client demande où en est sa commande.');
+    await page.getByTestId('outil-nepasutiliser').fill('Jamais pour annuler.');
+    await page.getByTestId('outil-creer').click();
+    await expect.poll(() => appels.some((a) => /\/tools\/connecteur$/.test(a.url)), { timeout: 5000 }).toBe(true);
+    await expect(page.getByTestId('outil-type-n1')).toContainText('Connecteur API');
+    await expect(page.getByTestId('outil-cible-n1')).toHaveText('Appel : Chercher une commande');
+    // La section « Vos systèmes » a disparu en tant que section : le panneau de choix s'est refermé.
+    await expect(page.getByTestId('agent-choix-appel')).toHaveCount(0);
+  });
+
+  test('🔴 un outil MCP importé mais PAS ENCORE donné est proposé par sa carte, et le clic le rattache', async ({ page }) => {
+    const appels: Appel[] = [];
+    const IMPORTE = { ...MCP_MORT, id: 'o9', name: 'notion_search', title: 'Chercher Notion', mcpNonActivable: null, inappelable: null };
+    await mock(page, appels, [TAG], [IMPORTE]);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-mcp').click();
+    await expect(page.getByTestId('mcp-a-rattacher')).toBeVisible();
+    await page.getByTestId('mcp-rattacher-o9').click();
+    await expect.poll(() => appels.some((a) => /o9\/rattachement$/.test(a.url) && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 }).toBe(true);
+    await expect(page.getByTestId('outil-type-o9')).toContainText('MCP');
+  });
+
+  test('🔴 la carte MCP montre CE QUE LE SERVEUR OFFRE, sans refiltrer (règle unique du 2026-10-02)', async ({ page }) => {
+    const appels: Appel[] = [];
+    const OFFERT = { ...MCP_MORT, id: 'o8', name: 'notion_offert', title: 'Offert par le serveur', mcpNonActivable: null, mcpPropose: false, inappelable: null };
+    await mock(page, appels, [TAG], [OFFERT]);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-mcp').click();
+    await expect(page.getByTestId('mcp-rattacher-o8')).toBeVisible();
+    // Montrer ne rattache rien.
+    expect(appels).toEqual([]);
+  });
+});
+
+test.describe('Agents IA : la liste des outils posés', () => {
+  test('l’activation d’une ligne est un aller-retour, et le geste porte sur cet outil', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels, [TAG]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await onglet(page);
+    await expect(page.getByTestId('outil-cible-o1')).toHaveText('Tag : rdv_pris');
     await page.getByTestId('outil-activer-o1').click();
     await expect.poll(() => appels.some((a) => /o1\/activation$/.test(a.url) && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 }).toBe(true);
   });
 
-  test('🔴 un outil MCP importé mais PAS ENCORE rattaché est proposé, et le clic le rattache', async ({ page }) => {
-    /**
-     * 🔴 SANS CETTE LISTE, LA SECTION « Vos serveurs MCP » EST VIDE POUR TOUJOURS, et c est la troisieme
-     * porte sans producteur de ce chantier. L autorisation se fait en DEUX gestes, rattacher puis
-     * activer : la section ne livrait que le second. Or `listOutils` fait une jointure INTERNE sur les
-     * consommateurs (delibere : cet ecran montre ce que CET agent utilise), et l import n ecrit aucune
-     * ligne de consommateur. Un client declarait son serveur, importait ses outils, ouvrait
-     * AI Agent > Outils, et ne voyait RIEN, sans aucun bouton pour en sortir.
-     */
-    const appels: Appel[] = [];
-    const IMPORTE = { ...MCP_MORT, id: 'o9', name: 'notion_search', title: 'Chercher Notion', mcpNonActivable: null };
-    // Le serveur l offre, la liste de CET agent ne le porte pas : il est importe, pas rattache.
-    await mock(page, appels, [TAG], [IMPORTE]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-
-    await expect(page.getByTestId('mcp-a-rattacher')).toBeVisible();
-    await page.getByTestId('mcp-rattacher-o9').click();
-    await expect
-      .poll(() => appels.some((a) => /o9\/rattachement$/.test(a.url)
-        && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 })
-      .toBe(true);
-  });
-  test('🔴 un outil MCP MORT le DIT, sur l ecran meme ou l on redonne son autorisation', async ({ page }) => {
-    /**
-     * Le serveur envoyait deja l etat MCP, le type front ne le declarait pas : un outil non activable ou
-     * disparu du serveur distant ressemblait exactement a un outil vivant, et le client ne l apprenait
-     * qu en cliquant « activer » et en recevant un 409. C est le motif « une capacite cablee sur deux
-     * consommateurs sur trois » : la bibliotheque de l espace montrait la pastille, cet ecran-ci non.
-     */
-    const appels: Appel[] = [];
-    await mock(page, appels, [TAG, MCP_MORT]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('agent-outils-mcp'), 'la section MCP existe').toBeVisible();
-    await expect(page.getByTestId('outil-mcp-mort-o4')).toBeVisible();
-    // La RAISON vient du serveur : le client ne peut pas la corriger, mais il doit pouvoir la montrer.
-    await expect(page.getByTestId('outil-mcp-mort-o4')).toContainText('lignes');
-    // ⚠️ LA PREUVE INVERSE : sans elle, un bandeau affiche en permanence passerait le test.
-    await expect(page.getByTestId('outil-mcp-mort-o1')).toHaveCount(0);
-  });
-
-  test('🔴 la section MCP montre CE QUE LE SERVEUR OFFRE, sans refiltrer (règle unique du 2026-10-02)', async ({ page }) => {
-    /**
-     * L ecran filtrait la bibliotheque lui-meme (« enregistre ») sans savoir qu un outil etait mort, et proposait
-     * donc un outil que l agent ne pouvait pas appeler. La regle vit au serveur : un outil que le serveur offre
-     * est montre, quoi que portent ses autres champs. Si un filtre revenait ici, cet outil disparaitrait.
-     */
-    const appels: Appel[] = [];
-    const OFFERT = { ...MCP_MORT, id: 'o8', name: 'notion_offert', title: 'Offert par le serveur', mcpNonActivable: null, mcpPropose: false };
-    await mock(page, appels, [TAG], [OFFERT]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('mcp-rattacher-o8')).toBeVisible();
-    // Montrer ne rattache rien : aucune écriture tant qu'on n'a pas cliqué.
-    expect(appels).toEqual([]);
-  });
-
-  test('🔴 un outil dont le SERVEUR est éteint le dit, et ne s active pas', async ({ page }) => {
-    // La cause vient du serveur (`inappelable`) : le modele ne voit plus cet outil, le client peut le retirer.
-    const appels: Appel[] = [];
-    const ETEINT = { ...MCP_MORT, id: 'o5', mcpNonActivable: null, inappelable: { cause: 'source_inactive' } };
-    await mock(page, appels, [TAG, ETEINT]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('outil-mcp-mort-o5')).toContainText('Connecteurs MCP');
-    await expect(page.getByTestId('outil-activer-o5')).toBeDisabled();
-    // La preuve inverse : un outil vivant n a ni bandeau ni bouton grise.
-    await expect(page.getByTestId('outil-mcp-mort-o1')).toHaveCount(0);
+  test('🔴 un outil MCP MORT le DIT sur sa ligne, et ne s’active pas', async ({ page }) => {
+    await mock(page, [], [TAG, MCP_MORT]);
+    await onglet(page);
+    await expect(page.getByTestId('outil-mort-o4')).toContainText('lignes');
+    await expect(page.getByTestId('outil-activer-o4')).toBeDisabled();
+    // ⚠️ LA PREUVE INVERSE : sans elle, un bandeau affiché en permanence passerait le test.
+    await expect(page.getByTestId('outil-mort-o1')).toHaveCount(0);
     await expect(page.getByTestId('outil-activer-o1')).toBeEnabled();
   });
 
-  test('🔴 l autonomie n est proposée QUE sur une action irréversible', async ({ page }) => {
-    // Un message parti chez un contact ne se rappelle pas, et il est facturé. Proposer la case ailleurs
-    // banaliserait le geste ; ne pas la proposer là rendrait l'outil inutilisable sans explication.
+  test('🔴 un outil dont le SERVEUR est éteint le dit', async ({ page }) => {
+    const ETEINT = { ...MCP_MORT, id: 'o5', mcpNonActivable: null, inappelable: { cause: 'source_inactive' } };
+    await mock(page, [], [TAG, ETEINT]);
+    await onglet(page);
+    await expect(page.getByTestId('outil-mort-o5')).toContainText('Connecteurs MCP');
+    await expect(page.getByTestId('outil-activer-o5')).toBeDisabled();
+  });
+
+  test('🔴 l’autonomie n’est proposée QUE sur une action irréversible, et son absence se DIT sur la ligne', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels, [TAG, BLOC]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('outil-autonomie-o1')).toHaveCount(0);
-    await expect(page.getByTestId('outil-autonomie-o2')).toBeVisible();
+    await onglet(page);
+    // Sans autonomie, le tronc commun refuse chaque appel : la ligne le dit, sans attendre qu'on l'ouvre.
+    await expect(page.getByTestId('outil-sans-autonomie-o2')).toBeVisible();
+    await expect(page.getByTestId('outil-sans-autonomie-o1')).toHaveCount(0);
 
-    // `click` et non `check` : la liste est rechargée après l'appel, et le double de test rend toujours la
-    // même liste, donc la case revient à son état d'origine. C'est l'APPEL qu'on vérifie, pas le pixel.
+    await page.getByTestId('outil-modifier-o1').click();
+    await expect(page.getByTestId('agent-outil-form')).toBeVisible();
+    await expect(page.getByTestId('outil-autonomie-o1')).toHaveCount(0);
+    await page.getByTestId('outil-modifier-o2').click();
     await page.getByTestId('outil-autonomie-o2').getByRole('checkbox').click();
     await expect.poll(() => appels.some((a) => /o2\/autonomie$/.test(a.url) && (a.body as { valeur?: boolean })?.valeur === true), { timeout: 5000 }).toBe(true);
   });
 
-  test('🔴 un outil actif que le modèle ne VOIT PAS est signalé', async ({ page }) => {
-    // « terminer » sans règle d'arrêt sur la fiche : actif, mais rien à offrir. Sans ce message, le client
-    // croit son agent réglé et ne comprend pas pourquoi il ne termine jamais.
-    await mock(page, [], [MUET]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByText('le modèle n’en voit rien')).toBeVisible();
-    await page.getByTestId('outil-schema-bouton-o3').click();
-    await expect(page.getByTestId('outil-schema-o3')).toContainText('aucune valeur possible');
+  test('🔴 « Modifier » rouvre le formulaire PRÉ-REMPLI, et la cible changée part sous le handler de l’outil', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, [TAG]);
+    await onglet(page);
+    await page.getByTestId('outil-modifier-o1').click();
+    await expect(page.getByTestId('mba-cible-tag')).toHaveValue('rdv_pris');
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveValue('Tag rendez-vous');
+    await page.getByTestId('mba-cible-tag').fill('rdv_confirme');
+    await page.getByTestId('agent-outil-form-enregistrer').click();
+    await expect.poll(() => appels.find((a) => a.method === 'PATCH')?.body, { timeout: 5000 }).toEqual({
+      title: 'Tag rendez-vous', description: 'Marque le contact.', nePasUtiliser: 'Pas de tag inventé.', cible: { tag: 'rdv_confirme' },
+    });
+    await expect(page.getByTestId('outil-cible-o1')).toHaveText('Tag : rdv_confirme');
   });
 
   test('le schéma réellement envoyé au modèle est consultable', async ({ page }) => {
     await mock(page, [], [TAG]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await onglet(page);
+    await page.getByTestId('outil-modifier-o1').click();
     await page.getByTestId('outil-schema-bouton-o1').click();
     await expect(page.getByTestId('outil-schema-o1')).toContainText('"additionalProperties": false');
   });
 
-  test('🔴 le nom vu par le modèle est NORMALISÉ sous les yeux du client', async ({ page }) => {
-    // La base n'accepte que [a-z0-9_] : montrer la règle en direct vaut mieux qu'un 400 sur un champ que le
-    // client croyait bon.
+  test('retirer un outil le retire, après confirmation', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels, [TAG]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await page.getByTestId('outil-nom-o1').fill('Poser un tâg');
-    await expect(page.getByTestId('outil-nom-normalise-o1')).toHaveText('poser_un_tag');
-    await page.getByTestId('outil-description-o1').click(); // sortie du champ
-    await expect.poll(() => appels.some((a) => a.method === 'PATCH' && (a.body as { name?: string })?.name === 'poser_un_tag'), { timeout: 5000 }).toBe(true);
-  });
-
-  test('les valeurs autorisées d un paramètre s ajoutent et se retirent', async ({ page }) => {
-    const appels: Appel[] = [];
-    await mock(page, appels, [{ ...TAG, params: [{ name: 'tag', type: 'string', source: 'modele', required: true, enum: ['vip'] }] }]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('outil-valeur-o1-vip')).toBeVisible();
-
-    await page.getByTestId('outil-valeur-saisie-o1-tag').fill('relance');
-    await page.getByTestId('outil-valeur-ajouter-o1-tag').click();
-    await expect.poll(
-      () => appels.some((a) => a.method === 'PATCH' && JSON.stringify((a.body as { enums?: unknown })?.enums) === JSON.stringify({ tag: ['vip', 'relance'] })),
-      { timeout: 5000 },
-    ).toBe(true);
-  });
-
-  test('retirer une action la retire, après confirmation : elle est supprimée avec ses réglages', async ({ page }) => {
-    const appels: Appel[] = [];
-    await mock(page, appels, [TAG]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await onglet(page);
     // Refusée : rien ne part.
     await page.getByTestId('outil-retirer-o1').click();
     await repondre(page, false, 'supprimés');
     expect(appels.some((a) => a.method === 'DELETE')).toBe(false);
-    // Acceptée : le retrait part.
+    // Acceptée : le retrait part, et la ligne s'en va.
     await page.getByTestId('outil-retirer-o1').click();
     await repondre(page, true);
     await expect.poll(() => appels.some((a) => a.method === 'DELETE'), { timeout: 5000 }).toBe(true);
-  });
-});
-
-test.describe('Agents IA : choisir le bloc que l agent peut envoyer', () => {
-  test('🔴 les blocs se COCHENT dans une liste, ils ne se tapent plus en « nod_… »', async ({ page }) => {
-    /**
-     * Question de Julien, le 2026-09-11 : « comment le user choisit le bloc ? ». Il ne pouvait pas. Le
-     * paramètre réclamait des codes « nod_… » qui ne sont écrits nulle part dans la console.
-     */
-    const appels: Appel[] = [];
-    await mock(page, appels, [BLOC]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-
-    // Le bloc du scénario QUI A un agent est proposé, avec son nom lisible et non son seul code.
-    await expect(page.getByTestId('outil-bloc-o2-nod_photo')).toContainText('La photo de la résidence');
-    // Un bloc sans nom retombe sur son résumé : une ligne vide ne se choisit pas.
-    await expect(page.getByTestId('outil-bloc-o2-nod_form')).toContainText('Formulaire de rappel');
-
-    // 🔴 LES PREUVES INVERSES, sans lesquelles « tout afficher » passerait le test.
-    // Une Attente : l'exécuteur la refuse à coup sûr, la proposer promettrait un geste qui échoue toujours.
-    await expect(page.getByTestId('outil-bloc-o2-nod_attente')).toHaveCount(0);
-    // Un bloc d'un scénario SANS agent : le contact n'y sera jamais quand l'agent tient le fil.
-    await expect(page.getByTestId('outil-bloc-o2-nod_autre')).toHaveCount(0);
-    await expect(page.getByText('Relances')).toHaveCount(0);
-
-    await page.getByTestId('outil-bloc-o2-nod_photo').click();
-    await expect.poll(
-      () => appels.some((a) => JSON.stringify((a.body as { enums?: unknown })?.enums ?? {}).includes('nod_photo')),
-      { timeout: 5000 },
-    ).toBe(true);
-  });
-
-  test('🔴 un code enregistré qui n’existe plus reste RETIRABLE', async ({ page }) => {
-    // Sinon il resterait invisible sur un outil qui échouerait en silence, sans aucun moyen de le corriger.
-    const appels: Appel[] = [];
-    const avecFantome = { ...BLOC, params: [{ name: 'code', type: 'string', source: 'modele', required: true, enum: ['nod_disparu'] }] };
-    await mock(page, appels, [avecFantome]);
-    await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('outil-bloc-inconnu-nod_disparu')).toContainText(/n’existe plus/);
+    await expect(page.getByTestId('outil-ligne-o1')).toHaveCount(0);
+    await expect(page.getByTestId('outils-vide')).toBeVisible();
   });
 });

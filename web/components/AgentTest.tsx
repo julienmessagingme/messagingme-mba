@@ -153,6 +153,17 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
         </MbaNotice>
       )}
 
+      {/* RC4 : « Lancer un scénario » arrête l'essai sans sortie, comme en production où le scénario prend la conversation
+          et l'agent se tait. Sans ce bandeau, l'essai finirait sur une réponse vide, sans explication. */}
+      {motif === 'scenario_lance' && (
+        <MbaNotice kind="success" testid="test-scenario-lance">
+          {t(
+            'L’agent a lancé un scénario (rien n’est parti : c’est un essai). En conversation réelle, le scénario prend la main et l’agent se tait.',
+            'The agent started a scenario (nothing was sent: this is a test). In a real conversation, the scenario takes over and the agent goes quiet.',
+          )}
+        </MbaNotice>
+      )}
+
       {appels.length > 0 && (
         <div data-testid="test-appels" className={`${cardCls} flex flex-col gap-2`}>
           <p className="text-sm font-medium text-ink-900">{t('Ce que l’agent a fait', 'What the agent did')}</p>

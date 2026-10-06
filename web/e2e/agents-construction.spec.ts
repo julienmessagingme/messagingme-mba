@@ -335,7 +335,8 @@ test.describe('Agents IA : construire en parlant', () => {
     await expect(page.getByTestId('entete-etape-outils')).toBeVisible();
     const avant = manques.length;
 
-    await page.getByTestId('outil-activer-o1').click();
+    // RC4 : « Chercher dans la base de connaissance » est un geste de « Toujours là », allumé par son interrupteur.
+    await page.getByTestId('toujours-chercher_connaissance').click();
 
     // 🔴 SANS QUITTER L'AGENT : c'est tout le défaut. L'étape part parce que les manques ont été RELUS, et
     // l'en-tête bascule sur « Tout est réglé », qui prouve que la lecture a bien abouti (une étape absente

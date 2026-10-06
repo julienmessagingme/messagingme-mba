@@ -188,3 +188,66 @@ export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
     pasQuand: ['N’appelle pas cet outil si le client ne l’a pas demandé.', 'Do not call this tool if the customer did not ask for it.'],
   },
 };
+
+/** Qui reçoit l'outil : l'agent de Meta (défaut, l'écran d'origine) ou un agent IA (RC4). */
+export type ConsommateurOutil = 'mba' | 'agent';
+
+/**
+ * 🔴 LES MOTS DES MÊMES CARTES POUR UN AGENT IA (RC4). La carte, le badge et le dessin sont les mêmes que chez l'agent de
+ * Meta (on reconnaît le même geste d'un écran à l'autre) ; l'aide et les consignes pré-remplies, non : elles nommaient
+ * l'agent de Meta et décrivaient SA mécanique (la main rendue à la fin du parcours, l'envoi après son tour). Un agent IA
+ * se retire quand il lance un scénario, et c'est le scénario qui parle.
+ */
+export const TEXTES_AGENT_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
+  tag: {
+    ...TEXTES_PAR_TYPE.tag,
+    quand: [
+      `Appelle cet outil dès que le contact ${PLACEHOLDER}. Il sait déjà qui est le contact : ne lui demande rien.`,
+      `Call this tool as soon as the contact ${PLACEHOLDER_EN}. It already knows who the contact is: ask nothing.`,
+    ],
+    pasQuand: ['N’appelle pas cet outil tant que ce n’est pas arrivé.', 'Do not call this tool until it has happened.'],
+  },
+  champ: {
+    ...TEXTES_PAR_TYPE.champ,
+    quand: [
+      `Appelle cet outil dès que le contact te donne ${PLACEHOLDER}. Passe la valeur telle qu’il l’a donnée.`,
+      `Call this tool as soon as the contact gives you ${PLACEHOLDER_EN}. Pass the value as given.`,
+    ],
+    pasQuand: [
+      'N’appelle pas cet outil tant que le contact n’a pas donné l’information : ne l’invente jamais.',
+      'Do not call this tool until the contact has given the detail: never make it up.',
+    ],
+  },
+  bloc: {
+    ...TEXTES_PAR_TYPE.bloc,
+    quand: [
+      `Appelle cet outil dès que le contact ${PLACEHOLDER}. Le message part aussitôt : n’en répète pas le contenu.`,
+      `Call this tool as soon as the contact ${PLACEHOLDER_EN}. The message is sent right away: do not repeat its content.`,
+    ],
+    pasQuand: ['N’appelle pas cet outil deux fois pour le même message du contact.', 'Do not call this tool twice for the same contact message.'],
+  },
+  scenario: {
+    ...TEXTES_PAR_TYPE.scenario,
+    aide: ['Du début : le scénario prend la conversation, l’agent se retire', 'From the start: the scenario takes over, the agent steps back'],
+    quand: [
+      `Appelle cet outil dès que le contact ${PLACEHOLDER}. Le scénario prend alors la conversation et tu te retires : n’écris rien à côté.`,
+      `Call this tool as soon as the contact ${PLACEHOLDER_EN}. The scenario then takes the conversation and you step back: write nothing alongside.`,
+    ],
+    pasQuand: [
+      'N’appelle pas cet outil tant que le contact n’a pas exprimé ce besoin.',
+      'Do not call this tool until the contact has expressed this need.',
+    ],
+  },
+  connecteur: {
+    ...TEXTES_PAR_TYPE.connecteur,
+    quand: [
+      `Appelle cet outil dès que le contact ${PLACEHOLDER}. Il sait déjà qui est le contact. Dis-lui ensuite ce que la réponse indique.`,
+      `Call this tool as soon as the contact ${PLACEHOLDER_EN}. It already knows who the contact is. Then tell them what the response says.`,
+    ],
+  },
+};
+
+/** Les mots d'une carte pour celui qui reçoit l'outil. */
+export function textesDuType(type: TypeOutilMba, pour: ConsommateurOutil): TextesType {
+  return pour === 'agent' ? TEXTES_AGENT_PAR_TYPE[type] : TEXTES_PAR_TYPE[type];
+}

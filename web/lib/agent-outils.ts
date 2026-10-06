@@ -32,3 +32,78 @@ export function normaliserNomOutil(brut: string): string {
   // des noms parfaitement valides, on ne peut donc pas se contenter de dépouiller les extrémités.
   return /[a-z0-9]/.test(propre) ? propre : '';
 }
+
+/**
+ * 🔴 LES OUTILS PROPRES À L'AGENT IA, SECTION « TOUJOURS LÀ » (RC4, décision de Julien du 2026-10-06) : terminer,
+ * passer à l'équipe, chercher dans la connaissance, lire la fiche, marquer urgent. Un interrupteur chacun, au-dessus de
+ * la grille « Quel outil ajouter ? ». Aucun n'a de cible : ils se posent tels quels. L'ordre est celui de l'écran.
+ * `tests/web-agent-outils.test.ts` les tient égaux aux handlers SANS cible du catalogue serveur.
+ */
+export const TOUJOURS_LA = ['terminer', 'escalader', 'chercher_connaissance', 'lire_contact', 'marquer_urgent'] as const;
+export type HandlerToujoursLa = (typeof TOUJOURS_LA)[number];
+
+export function estToujoursLa(handler: string): handler is HandlerToujoursLa {
+  return (TOUJOURS_LA as readonly string[]).includes(handler);
+}
+
+/**
+ * Les cartes de la grille qui posent un outil maison À CIBLE, et le handler qu'elles posent (RC4, alignés sur l'agent de
+ * Meta : un tag, un champ, un bloc, un scénario fixés par l'administrateur). Tenu égal à `HANDLERS_A_CIBLE` du serveur
+ * par `tests/web-agent-outils.test.ts`.
+ */
+export const HANDLER_DU_TYPE = {
+  tag: 'poser_tag', champ: 'ecrire_variable', bloc: 'envoyer_bloc', scenario: 'lancer_scenario',
+} as const;
+export type TypeACible = keyof typeof HANDLER_DU_TYPE;
+
+/** Le type de carte d'un handler à cible, ou `null`. */
+export function typeDuHandler(handler: string): TypeACible | null {
+  const trouve = (Object.keys(HANDLER_DU_TYPE) as TypeACible[]).find((t) => HANDLER_DU_TYPE[t] === handler);
+  return trouve ?? null;
+}
+
+/** Une cible telle que l'écran la saisit (le format des composants de l'agent de Meta), pour un handler à cible. */
+export type CibleSaisieAgent =
+  | { type: 'tag'; tag: string }
+  | { type: 'champ'; champ: string; valeurs: string[] }
+  | { type: 'bloc'; workflowId: string; code: string }
+  | { type: 'scenario'; workflowId: string };
+
+const texte = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/**
+ * La cible d'un outil posé, lue DÉFENSIVEMENT dans son `binding` (un jsonb opaque) : un champ absent devient vide, et
+ * l'écran le montre comme une cible à refaire plutôt que de planter. `null` = handler sans cible.
+ */
+export function cibleDeLOutil(binding: Record<string, unknown>): CibleSaisieAgent | null {
+  switch (typeDuHandler(texte(binding.handler))) {
+    case 'tag': return { type: 'tag', tag: texte(binding.tag) };
+    case 'champ': return {
+      type: 'champ', champ: texte(binding.champ),
+      valeurs: Array.isArray(binding.valeurs) ? binding.valeurs.filter((v): v is string => typeof v === 'string') : [],
+    };
+    case 'bloc': return { type: 'bloc', workflowId: texte(binding.workflowId), code: texte(binding.code) };
+    case 'scenario': return { type: 'scenario', workflowId: texte(binding.workflowId) };
+    case null: return null;
+  }
+}
+
+/** Le corps `cible` des routes de l'agent IA : sans `type` ni `handler`, que le serveur tire de l'outil. */
+export function corpsDeLaCible(c: CibleSaisieAgent): Record<string, unknown> {
+  switch (c.type) {
+    case 'tag': return { tag: c.tag.trim() };
+    case 'champ': return { champ: c.champ, valeurs: c.valeurs };
+    case 'bloc': return { workflowId: c.workflowId, code: c.code };
+    case 'scenario': return { workflowId: c.workflowId };
+  }
+}
+
+/** La cible est-elle assez remplie pour partir ? (le serveur refuse le reste en 400, l'écran le dit avant). */
+export function cibleComplete(c: CibleSaisieAgent): boolean {
+  switch (c.type) {
+    case 'tag': return c.tag.trim() !== '';
+    case 'champ': return c.champ !== '';
+    case 'bloc': return c.workflowId !== '' && c.code !== '';
+    case 'scenario': return c.workflowId !== '';
+  }
+}

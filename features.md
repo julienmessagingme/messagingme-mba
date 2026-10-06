@@ -2248,8 +2248,9 @@ scénario, comment importer des contacts.
 - ✅ **Une pastille qui ne désigne aucune donnée est signalée pendant que vous écrivez**, avec un bouton pour
   la déclarer sur place. Avant, le problème n'apparaissait qu'au moment où l'agent passait l'appel, donc en
   pleine conversation avec un client.
-- ✅ **Dans CHAQUE agent** (onglet Outils), choisir un appel de la bibliothèque et lui donner SES mots : le nom
-  vu par l'agent, à quoi ça sert, quand ne pas l'appeler. Deux agents peuvent utiliser le même appel avec des
+- ✅ **Dans CHAQUE agent** (onglet Outils, carte « Appeler un connecteur API » de « Ajouter un outil »), choisir
+  un appel de la bibliothèque et lui donner SES mots : le nom vu par l'agent, à quoi ça sert, quand ne pas
+  l'appeler. Deux agents peuvent utiliser le même appel avec des
   consignes différentes, et le corriger une fois le corrige partout.
 - ✅ **« Ça pousse ou ça intègre ? »**, la question posée quand vous donnez un appel à un agent (2026-09-15).
   Deux réponses possibles, et la seconde question n'apparaît que si elle sert :
@@ -2347,9 +2348,9 @@ importez ce qu'il propose.
   « Ce qui a changé sans vous ». Sans ça, l’agent perdait une capacité du jour au lendemain sans cause
   visible nulle part. ⚠️ Ça n'empêche PAS d'activer l'agent : un serveur tiers n'a pas à décider ça.
 - ✅ **Un serveur utilisé ne se supprime pas** tant qu'un outil actif en dépend.
-- ✅ **Chaque agent choisit ce qu'il a le droit d'appeler**, dans **AI Agent > Outils**, section « Vos
-  serveurs MCP » : les outils proposés ici y apparaissent à côté des outils maison et des appels de
-  connecteur, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
+- ✅ **Chaque agent choisit ce qu'il a le droit d'appeler**, dans **AI Agent > Outils**, par la carte « Appeler
+  un outil MCP » de « Ajouter un outil » : les outils proposés ici y apparaissent, puis entrent dans la liste des
+  outils de l'agent à côté des autres, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
   Connecteurs MCP.
 - ✅ **Un outil qui ne peut pas servir n'est proposé nulle part** (2026-10-02) : ni à un agent IA, ni à
   l'assistant de construction, ni à l'agent de Meta. C'est le cas d'un outil que son schéma rend inutilisable,
@@ -2882,82 +2883,85 @@ d'aide.
 
 ### Les outils : ce que l'agent a le droit de FAIRE
 
+L'onglet Outils d'un agent IA a la forme de celui de l'agent de Meta (2026-10-06) : une section « Toujours là »,
+un gros bouton « Ajouter un outil », et la liste des outils posés.
+
 - ✅ **Un outil n'est utilisable qu'une fois ACTIVÉ à la main.** Tant qu'il ne l'est pas, l'agent ne sait même
   pas qu'il existe. L'activation est un geste séparé de l'ajout, et elle garde le nom de qui l'a donnée.
   ⚠️ **Sans aucun outil actif, l'agent peut parler mais ne peut rien faire, pas même terminer.**
-- ✅ **L'outil appartient à l'ESPACE, l'autorisation appartient à l'agent** (2026-09-10). Le même outil sert
-  plusieurs agents sans être redécrit : ses mots se corrigent une fois et sont corrigés partout. Ce qui reste
-  propre à chaque agent, c'est de s'en servir ou non, et l'activation.
-  ⚠️ **Conséquence à connaître** : changer la description d'un outil partagé change ce que voient TOUS les
-  agents qui l'utilisent. L'onglet Outils de l'agent de Meta nomme les agents IA qui partagent un connecteur,
-  justement pour qu'on le sache avant. (L'écran « bibliothèque de l'espace », Tools > Outils, n'existe plus.)
-- ✅ **Huit outils maison** au catalogue, chacun étiqueté **lecture**, **écriture** ou **irréversible** :
+- ✅ **« Toujours là »**, en tête de l'onglet : les gestes propres à l'agent IA, **un interrupteur chacun**.
+  Allumer pose l'outil s'il manque, puis l'active ; éteindre le désactive (il reste posé, avec ses réglages). Ses
+  réglages (le nom vu par le modèle, quand l'appeler, quand ne pas l'appeler, les gestes « Et en plus, faire
+  ceci ») sont derrière « Régler ». Ces cinq gestes :
+  - **Terminer par une règle d'arrêt** (lecture) : rendre la main au scénario par la sortie choisie, après un
+    dernier message au contact (le texte de l'agent, ou à défaut le message qu'il joint à l'outil : certains
+    modèles terminent sans rien écrire à côté).
+  - **Passer la main à un humain** (écriture) : voir plus bas.
   - **Chercher dans la base de connaissance** (lecture) : à appeler avant toute question de fond.
   - **Lire la fiche du contact** (lecture) : ce qu'on sait déjà de lui, son nom, ses champs, et (2026-10-02) sa
     dernière analyse avec son résumé : sentiment, satisfaction, urgence, sujet, résolue ou non. L'agent sait
     ainsi qu'il parle à un client mécontent. Jamais la fiche de quelqu'un d'autre.
-  - **Poser un tag sur le contact** (écriture) : pour le retrouver dans le mini-CRM, ou déclencher une
-    automation.
-  - **Enregistrer une information sur le contact** (écriture) : écrire dans un champ, pour qu'un bloc plus
-    loin dans le scénario le réutilise.
-  - **Envoyer un bloc de votre scénario** (irréversible) : pousser une photo, un message, un formulaire que
-    vous avez dessinés. Le parcours ne bouge pas, l'agent garde la main.
-  - **Passer la main à un humain** (écriture) : voir plus bas.
-  - **Marquer la conversation urgente** (écriture, 2026-10-06, pas encore déployé) : la conversation passe dans le
-    dossier « Urgent » de l'Inbox (et en tête de « À traiter » dès que l'équipe la tient), et **l'agent continue de
-    répondre** (ce n'est pas un
-    transfert). Sans paramètre : il ne marque jamais que la conversation en cours. Posé sur **aucun** agent à la
-    livraison, il s'ajoute à la main ; un assistant branché par MCP ne peut pas le donner. Au bac à sable, il est
-    simulé.
-  - **Terminer par une règle d'arrêt** (lecture) : rendre la main au scénario par la sortie choisie, après un dernier
-    message au contact (le texte de l'agent, ou à défaut le message qu'il joint à l'outil : certains modèles
-    terminent sans rien écrire à côté).
+  - **Marquer la conversation urgente** (écriture, 2026-10-06) : la conversation passe dans le dossier « Urgent »
+    de l'Inbox (et en tête de « À traiter » dès que l'équipe la tient), et **l'agent continue de répondre** (ce
+    n'est pas un transfert). Il ne marque jamais que la conversation en cours. Un assistant branché par MCP ne
+    peut pas le donner. Au bac à sable, il est simulé.
+- ✅ **« Ajouter un outil » ouvre la grille « Quel outil ajouter ? »**, la même que chez l'agent de Meta, avec
+  ses six cartes : **Poser un tag**, **Enregistrer une information**, **Envoyer un bloc**, **Lancer un
+  scénario**, **Appeler un connecteur API**, **Appeler un outil MCP**. Une carte sans rien à choisir est grisée,
+  avec le lien vers l'écran où le créer (aucun appel déclaré, aucun champ dans le mini-CRM, aucun outil MCP).
+- ✅ **Le tag, l'information, le bloc et le scénario sont FIXÉS par vous**, comme chez l'agent de Meta : un outil
+  par tag, par champ, par bloc, par scénario. L'agent ne décide que du **moment**, et pour une information, de
+  la **valeur**, bornée à la liste des valeurs permises si vous en donnez une. Il ne peut donc ni inventer un
+  tag, ni écrire dans le champ sur lequel une condition de votre scénario branche. Un outil se pose avec un
+  titre, un nom technique (vu par le modèle) et ses deux consignes, et il naît éteint.
+  - **Poser un tag** (écriture) : pour retrouver le contact dans le mini-CRM, ou déclencher une automation.
+  - **Enregistrer une information** (écriture) : un champ du mini-CRM, pour qu'un bloc plus loin dans le
+    scénario le réutilise.
+  - **Envoyer un bloc** (part chez le client) : un message d'un de vos scénarios publiés, choisi en deux temps
+    (le scénario, puis le bloc). **Il part seul**, sans ce qui le suit ; un bloc qui attend une réponse, ouvre
+    un agent ou part en RCS est grisé, avec sa raison. L'agent garde la main.
+  - **Lancer un scénario** (part chez le client) : un scénario publié, depuis son début. **Le scénario prend la
+    conversation et l'agent se retire** : il n'écrit plus rien, aucune sortie de son bloc n'est empruntée, et sa
+    session se clôt. Un scénario dépublié ou supprimé, ou un contact désabonné, est refusé, et l'agent continue
+    la conversation. L'agent ne peut pas relancer le scénario où il parle.
+- ✅ **La liste des outils posés**, au format des lignes de l'agent de Meta : titre et ce que l'outil vise, son
+  type, son état (actif ou inactif) avec « Activer » / « Désactiver », « Modifier » et « Supprimer ». Les appels
+  de connecteur API et les outils MCP y entrent comme les autres. La ligne dit aussi ce qui empêche un outil de
+  servir : son système éteint, une action qui part chez le client sans autonomie accordée, ce qu'il vise qui ne
+  se lit plus.
+- ✅ **L'outil appartient à l'ESPACE, l'autorisation appartient à l'agent** (2026-09-10) pour un appel de
+  connecteur ou un outil MCP : le même outil sert plusieurs agents sans être redécrit, et ses mots se corrigent
+  une fois pour tous. Ce qui reste propre à chaque agent, c'est de s'en servir ou non, et l'activation.
+  ⚠️ **Conséquence à connaître** : changer la description d'un outil partagé change ce que voient TOUS les
+  agents qui l'utilisent. L'onglet Outils de l'agent de Meta nomme les agents IA qui partagent un connecteur,
+  justement pour qu'on le sache avant.
 - ✅ **Les mots d'un outil se règlent, et ils changent beaucoup son comportement** : « quand l'appeler » et
   « quand NE PAS l'appeler » sont deux champs séparés, et ce sont eux que le modèle lit pour décider.
-  ⚠️ La clause « quand NE PAS l'appeler » **n'atteignait pas le modèle** jusqu'au 2026-08-29 : le client
-  faisait un travail sans effet sur le seul levier qui décide du déclenchement d'un outil. Corrigé.
-- ✅ **Les valeurs autorisées se listent**, outil par outil : les tags que cet agent peut poser, les champs
-  qu'il peut écrire, les codes de blocs qu'il peut envoyer. **Une liste vide ne restreint rien**, et l'écran
-  le dit en jaune : c'est ce qui empêche l'agent d'écrire dans le champ sur lequel une condition de votre
-  scénario branche.
-- ✅ **Une action irréversible demande une autorisation de plus** : sur « Envoyer un bloc », une case
-  « autoriser l'agent à faire ça SEUL ». Non cochée, l'action est refusée à chaque appel. Un message parti
-  chez un contact ne se rappelle pas, et il est facturé.
+- ✅ **Une action qui part chez le client demande une autorisation de plus** : sur « Envoyer un bloc » et
+  « Lancer un scénario », une case « autoriser l'agent à faire ça SEUL ». Non cochée, l'action est refusée à
+  chaque appel, et la ligne le dit. Un message parti chez un contact ne se rappelle pas, et il est facturé.
 - ✅ **« Voir ce que le modèle voit »** : chaque outil montre, à la demande, la forme exacte sous laquelle il
   est proposé au modèle. Les mots du client pilotent un appel réel, il doit pouvoir les relire sous leur vraie
   forme.
-- ✅ **Vos propres systèmes** (onglet Outils, en bas) : les connecteurs API déclarés une fois pour l'espace
-  dans **Tools > Connecteurs API** et partagés par tous vos agents. Ici on ne fait qu'une chose, dire quels
-  appels CET agent a le droit d'y faire. Détail dans la section « Brancher vos systèmes ».
-  ⚠️ **Rien n'est branché tant qu'un client n'a pas déclaré de système** : sans système, l'onglet Outils est
-  exactement ce qu'il était.
+- ✅ **Vos propres systèmes** : la carte « Appeler un connecteur API » propose les appels déclarés une fois pour
+  l'espace dans **Tools > Connecteurs API** et partagés par tous vos agents ; « Ajouter à cet agent » lui donne
+  SES mots. Détail dans la section « Brancher vos systèmes ».
   ⚠️ **Piège de vocabulaire** : le menu **Tools** de la barre de gauche et l'onglet **Outils** d'un agent ne
   parlent pas de la même chose. Le système appartient à l'espace, l'appel appartient à l'agent.
   ✅ **Un appel posé sur l'agent s'active, se désactive, se modifie et se retire depuis SA ligne** (2026-10-05).
-  Il naît inactif, et ce bouton manquait : un appel de connecteur restait inactif pour toujours, et le recréer
-  butait sur son propre nom. **« Modifier »** rouvre le formulaire, pré-rempli : on y corrige le nom technique,
-  le titre, « à quoi ça sert » et « quand ne pas l'appeler » sans retirer l'appel, donc sans perdre son
-  activation. Un nom déjà pris est signalé dans le formulaire, et la saisie reste. **Un agent ne porte jamais
-  deux outils du même nom**, action ou appel de connecteur (2026-10-06) : le fournisseur du modèle refuserait la
-  liste entière, et l'agent ne répondrait plus. Le refus vaut aussi pour un connecteur partagé qu'on renomme du
-  nom d'une action d'un AUTRE agent qui s'en sert, et pour un outil qu'on donne à un agent qui en porte déjà le
-  nom. Ce que fait l'appel (il
-  pousse ou il intègre) et les champs qu'il lit s'y changent aussi, avec les règles de l'ajout : un appel qui
-  intègre lit au moins un champ, un appel qui pousse n'en lit aucun. Ces réglages sont ceux de l'outil : ils
-  valent pour tout autre agent qui s'en sert. Le formulaire
-  s'enregistre par « Enregistrer », et « Ajouter à cet agent » n'est proposé que tant que l'agent ne se sert pas
-  déjà de cet appel. Dans **Tools > Connecteurs API**, un système s'active et se désactive depuis la liste, sans
-  déplier son détail.
-- ➡️ **Les outils d'un serveur MCP se branchent de la même façon**, une fois le serveur déclaré dans
-  **Tools > Connecteurs MCP** et ses outils importés. L'onglet Outils de l'agent les montre à côté des
-  appels de connecteur API.
-
-#### Choisir les blocs que l'agent peut envoyer
-
-L'outil « Envoyer un bloc de votre scénario » se règle en **cochant les blocs dans une liste**, groupés par
-scénario et nommés en clair. ⚠️ Seuls les scénarios **contenant un bloc Agent IA** sont proposés : cet outil
-envoie un bloc du scénario où le contact se trouve déjà, donc un bloc pris ailleurs ne pourrait jamais
-partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les refusant à coup sûr.
+  **« Modifier »** rouvre le formulaire, pré-rempli : on y corrige le nom technique, le titre, « à quoi ça sert »
+  et « quand ne pas l'appeler » sans retirer l'appel, donc sans perdre son activation. Un nom déjà pris est
+  signalé dans le formulaire, et la saisie reste. **Un agent ne porte jamais deux outils du même nom**, action
+  ou appel de connecteur (2026-10-06) : le fournisseur du modèle refuserait la liste entière, et l'agent ne
+  répondrait plus. Ce que fait l'appel (il pousse ou il intègre) et les champs qu'il lit s'y changent aussi,
+  avec les règles de l'ajout. Ces réglages sont ceux de l'outil : ils valent pour tout autre agent qui s'en sert.
+  « Ajouter à cet agent » n'est proposé que tant que l'agent ne se sert pas déjà de cet appel.
+- ✅ **Les outils d'un serveur MCP se branchent de la même façon**, une fois le serveur déclaré dans
+  **Tools > Connecteurs MCP** et ses outils importés : la carte « Appeler un outil MCP » propose ceux que l'agent
+  n'a pas encore, et leurs paramètres se règlent là-bas.
+- ⚠️ **L'assistant de construction ne pose pas d'outil à cible** : il ne voit ni vos tags, ni vos champs, ni vos
+  scénarios, et inventerait ce que l'outil vise. Il propose les mots des gestes de « Toujours là », et vous dit
+  où poser le reste.
 
 ### Les règles d'arrêt, et les sorties du bloc
 
