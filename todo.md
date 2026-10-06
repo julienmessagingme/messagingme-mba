@@ -1,18 +1,27 @@
 # todo.md : backlog
 
-## 🟠 Connecteurs : la méthode d'une requête change sans recalculer le risque de ses outils (relecture de `099fd6c1`, 2026-10-05)
+## 🟠 Connecteurs : les paramètres d'un outil ne suivent pas les variables de sa requête (relecture de `099fd6c1`, 2026-10-05)
 
-- Modifier la MÉTHODE d'une requête (`PATCH`, `src/http/agent-requetes.ts`) ne remonte pas le `risk` des outils déjà
-  branchés dessus : un GET passé en DELETE garde `read`. En production, l'exécuteur (étape 2) ne leur applique alors ni
-  la garde d'autonomie des actions irréversibles, ni le refus `lecture_seule` face à un contact inconnu. Le bac à
-  sable, lui, relit la méthode à chaque appel (`connecteurEssai`). Correctif attendu : remonter le risque au plancher
-  de la nouvelle méthode, jamais le descendre, dans la transaction de la modification. Une tâche a été proposée.
 - **Même racine, autre symptôme** (vu le 2026-10-05, lot « Modifier un appel de connecteur ») : les PARAMÈTRES qu'un
   outil expose au modèle (`agent_tools.params`) sont dérivés des variables « décidée par l'agent » de la requête à la
   CRÉATION (`POST .../tools/connecteur`) et ne suivent pas la requête ensuite (`outilExpose` lit `outil.params`). Une
   telle variable REQUISE ajoutée après coup n'est jamais demandée au modèle, et chaque appel est refusé
-  (« information manquante pour interroger le système du client »). « Modifier » ne la recalcule pas non plus. À
-  traiter avec le risque : recalculer ce que l'outil dérive de sa requête dans la transaction qui la modifie.
+  (« information manquante pour interroger le système du client »). « Modifier » ne la recalcule pas non plus. Le
+  RISQUE, lui, suit la méthode depuis le 2026-10-06 (`PgRequeteStore.patch`, monté dans la transaction de
+  l'écriture) : le recalcul des paramètres s'y branche, et leur dérivation est écrite deux fois
+  (`src/http/agent-tools.ts`, `src/http/mba-outils.ts`).
+- **Un connecteur irréversible n'a aucune case d'autonomie** : la ligne d'un connecteur
+  (`web/components/AgentConnecteurs.tsx`) ne montre ni le risque ni la case, que `AgentOutils.tsx` n'offre qu'aux
+  outils maison et MCP. Un outil né sur un DELETE, ou monté par un changement de méthode, est donc refusé à chaque
+  appel d'un agent IA (« action irreversible non autorisee en autonomie »), sans que la ligne de l'outil le dise.
+  Montrer le risque et la case quand `risk === 'irreversible'` (`PUT .../autonomie` et
+  `autonomieOutil` existent). Le jour où la case existe, faire tomber `autonome` des outils montés à `irreversible`
+  dans la même transaction : un consentement posé sur un outil `write` (la route l'accepte sur tout risque) ne doit
+  pas passer en silence à une action devenue irréversible (même règle que le rafraîchissement MCP).
+- 🟡 Une fenêtre reste ouverte sur le risque, de l'ordre de la milliseconde : la création d'un outil lit la méthode
+  AVANT sa transaction (`POST .../tools/connecteur`), et ni l'insertion ni le patch ne voient l'écriture non validée
+  de l'autre. La fermer : dans la transaction de `creerOutilConnecteur`, lire la méthode de la requête `for share`
+  (qui attend un patch en cours) et monter le risque à son plancher ; couvre `agent-tools.ts` et `mba-outils.ts`.
 - 🟡 Laissés délibérément par le même lot : le câblage construit deux fois le même objet de dépendances d'un
   connecteur (`src/index.ts`, bac à sable et relais de l'agent de Meta) ; et un GET qui « intègre » mais AGIT
   partirait encore au bac à sable (la déclaration du client fait foi, question produit si un cas réel se présente).

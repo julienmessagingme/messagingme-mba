@@ -91,8 +91,9 @@ const duContact = (v: VariableDeclaree): boolean =>
  * devis sans conversation réelle (décision de Julien, 2026-10-05). Le reste est simulé.
  *
  * 🔴 « Qui lit » se juge sur quatre faits : la requête est un GET (ce qui part sur le réseau), l'outil intègre la
- * réponse (« il pousse » est la déclaration du client qu'il agit), son risque est resté `read` (dérivé de la
- * méthode à la création, il ne suit pas une requête qui en change ensuite), et aucune variable ne vient du contact.
+ * réponse (« il pousse » est la déclaration du client qu'il agit), son risque est resté `read` (il monte avec la
+ * méthode et ne redescend jamais : une requête repassée en GET garde des outils simulés), et aucune variable ne
+ * vient du contact.
  */
 function connecteurEssai(c: ConnecteursEssai): ResolveurOutil {
   return async (entree) => {

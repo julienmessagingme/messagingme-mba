@@ -1,5 +1,7 @@
 import type { Pool } from 'pg';
-import type { MethodeConnecteur } from './http-cible';
+import { enTransaction } from '../db/transaction';
+import { verrouillerDefinitions } from './catalog.pg';
+import { risqueSelonMethode, risquesSous, type MethodeConnecteur } from './http-cible';
 import type { GabaritCorps, EnTete, ParametreUrl } from './requete-http';
 import { normaliserOrigine } from './variables';
 import {
@@ -188,27 +190,51 @@ export class PgRequeteStore implements RequeteStore {
       valeursTest: patch.valeursTest ?? courant.valeursTest,
     };
     const c = corpsEnColonnes(fusion.corps);
-    const res = await this.pool.query(
-      `update connector_requests set
-         -- 🔴 LA MEME GARDE QUE SUR creer, ET L OUBLIER ICI LA RENDAIT CONTOURNABLE. patchSchema
-         -- accepte sourceId, donc un PATCH avec l identifiant d un serveur MCP ecrivait exactement
-         -- l etat que le commentaire de creer declare impossible : une requete HTTP rattachee a un
-         -- serveur MCP, que le resolveur refuse en pleine conversation. Une garde posee sur une ecriture
-         -- sur deux n est pas une garde.
-         source_id = (select s.id from agent_tool_sources s
-                       where s.id = $3 and s.tenant_id = $1 and s.kind = 'http'),
-         label = $4, method = $5, path = $6, query = $7::jsonb, headers = $8::jsonb,
-         body_mode = $9, body_json = $10, body_champs = $11::jsonb, variables = $12::jsonb,
-         output_paths = $13::text[], valeurs_test = $14::jsonb, updated_at = now()
-       where tenant_id = $1 and id = $2`,
-      [
-        tenantId, id, fusion.sourceId, fusion.label, fusion.methode, fusion.chemin,
-        JSON.stringify(fusion.parametres), JSON.stringify(fusion.entetes),
-        c.mode, c.json, JSON.stringify(c.champs),
-        JSON.stringify(fusion.variables), fusion.outputPaths, JSON.stringify(fusion.valeursTest),
-      ],
-    ).catch(traduire(fusion.label));
-    if (res.rowCount === 0) return null;
+    const plancher = risqueSelonMethode(fusion.methode);
+    const ecrite = await enTransaction(this.pool, async (client) => {
+      const res = await client.query(
+        `update connector_requests set
+           -- 🔴 LA MEME GARDE QUE SUR creer, ET L OUBLIER ICI LA RENDAIT CONTOURNABLE. patchSchema
+           -- accepte sourceId, donc un PATCH avec l identifiant d un serveur MCP ecrivait exactement
+           -- l etat que le commentaire de creer declare impossible : une requete HTTP rattachee a un
+           -- serveur MCP, que le resolveur refuse en pleine conversation. Une garde posee sur une ecriture
+           -- sur deux n est pas une garde.
+           source_id = (select s.id from agent_tool_sources s
+                         where s.id = $3 and s.tenant_id = $1 and s.kind = 'http'),
+           label = $4, method = $5, path = $6, query = $7::jsonb, headers = $8::jsonb,
+           body_mode = $9, body_json = $10, body_champs = $11::jsonb, variables = $12::jsonb,
+           output_paths = $13::text[], valeurs_test = $14::jsonb, updated_at = now()
+         where tenant_id = $1 and id = $2`,
+        [
+          tenantId, id, fusion.sourceId, fusion.label, fusion.methode, fusion.chemin,
+          JSON.stringify(fusion.parametres), JSON.stringify(fusion.entetes),
+          c.mode, c.json, JSON.stringify(c.champs),
+          JSON.stringify(fusion.variables), fusion.outputPaths, JSON.stringify(fusion.valeursTest),
+        ],
+      ).catch(traduire(fusion.label));
+      if (res.rowCount === 0) return false;
+      /**
+       * 🔴 Le risque des outils branchés SUIT la méthode, vers le haut seulement, dans la même transaction. Il se
+       * dérive de la méthode à la création de l'outil : sans ces instructions, un GET passé en DELETE gardait des
+       * outils `read`, que l'exécuteur (étape 2) laissait passer sans la garde d'autonomie ni le refus
+       * `lecture_seule`. Jamais redescendu : rien ne distingue un risque dérivé d'un risque monté par le client.
+       * Les définitions se verrouillent par identifiant avant d'être écrites (`verrouillerDefinitions`) : un
+       * `update` nu les prendrait dans l'ordre physique et interbloquerait avec `PgAgentStore.remove`.
+       */
+      const sous = risquesSous(plancher);
+      const aMonter = (await client.query<{ id: string }>(
+        'select id from agent_tools where tenant_id = $1 and request_id = $2 and risk = any($3::text[])',
+        [tenantId, id, sous],
+      )).rows.map((r) => r.id);
+      await verrouillerDefinitions(client, tenantId, aMonter);
+      await client.query(
+        `update agent_tools set risk = $3, updated_at = now()
+          where tenant_id = $1 and id = any($2::uuid[]) and risk = any($4::text[])`,
+        [tenantId, aMonter, plancher, sous],
+      );
+      return true;
+    });
+    if (!ecrite) return null;
     return this.parId(tenantId, id);
   }
 

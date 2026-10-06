@@ -163,3 +163,8 @@ const ECHELLE: Record<RisqueOutil, number> = { read: 0, write: 1, irreversible: 
 export function risqueAuMoins(plancher: RisqueOutil, declare: RisqueOutil): boolean {
   return ECHELLE[declare] >= ECHELLE[plancher];
 }
+
+/** Les risques sous `plancher` : ceux que les outils d'une requête passée à cette méthode montent au plancher. */
+export function risquesSous(plancher: RisqueOutil): RisqueOutil[] {
+  return (Object.keys(ECHELLE) as RisqueOutil[]).filter((r) => !risqueAuMoins(plancher, r));
+}

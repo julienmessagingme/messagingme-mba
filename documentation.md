@@ -788,7 +788,12 @@ projection part chez le fournisseur de modèle et ne porte donc pas le numéro.
 
 🔴 **Le risque d'un outil est DÉRIVÉ de la méthode HTTP** (`GET` -> read, `POST`/`PUT`/`PATCH` -> write,
 `DELETE` -> irréversible) et ne peut être que MONTÉ. Un client qui déclarerait `read` un `DELETE` désarmerait
-la garde d'autonomie sur une action irréversible.
+la garde d'autonomie sur une action irréversible. Il SUIT la méthode quand la requête en change :
+`PgRequeteStore.patch` monte au nouveau plancher, dans la transaction de l'écriture, les outils branchés qui sont en
+dessous, et ne redescend jamais les autres (rien ne distingue un risque dérivé d'un risque monté par le client).
+⚠️ La ligne d'un connecteur n'offre pas la case d'autonomie : un connecteur irréversible, né sur un DELETE ou monté
+par un changement de méthode, est refusé à chaque appel d'un agent IA (étape 2 de l'exécuteur), sans que la ligne de
+l'outil le dise (`todo.md`).
 
 🔴 **Le filtre de sortie est obligatoire.** `outputPaths` dit ce que l'agent a le droit de lire d'une réponse
 client. Sur un outil maison, c'est nous qui écrivons la réponse ; sur un connecteur, non.
@@ -813,13 +818,14 @@ consommateurs.
 seul moyen d'éprouver un devis sans conversation réelle (décision de Julien, 2026-10-05). « Qui lit » se juge sur
 quatre faits : la requête est un GET (ce qui part sur le réseau, lu sur la REQUÊTE : le `binding` d'un connecteur est
 vide) ; l'outil intègre la réponse (« il pousse » est la seule déclaration du client qu'il agit) ; son risque est
-resté `read` (dérivé de la méthode à la création, il ne suit pas une requête qui en change ensuite) ; aucune variable
-ne vient du contact (il n'y en a pas au bac à sable, et `wa_id` y vaudrait `bac-a-sable`, une valeur inventée). Le
-reste est simulé (`connecteurSimule`) : les champs déclarés avec une valeur d'exemple, et une note qui nomme l'appel
-par le LIBELLÉ et la méthode de sa requête, jamais par son chemin, qui part chez le fournisseur du modèle et porte
-parfois le jeton d'un webhook. Un essai n'écrit ni notre journal (`JOURNAL_MUET`) ni l'épreuve de la source
-(`marquerEpreuve` muet, câblé dans `src/index.ts`). Le coût accepté : un essai consomme du quota chez le client et
-apparaît dans SES journaux, comme le bouton « Essayer » d'une requête ; `test_agent` est donc en monde ouvert.
+resté `read` (il monte avec la méthode et ne redescend jamais : une requête repassée en GET garde des outils
+simulés) ; aucune variable ne vient du contact (il n'y en a pas au bac à sable, et `wa_id` y vaudrait
+`bac-a-sable`, une valeur inventée). Le reste est simulé (`connecteurSimule`) : les champs déclarés avec une valeur
+d'exemple, et une note qui nomme l'appel par le LIBELLÉ et la méthode de sa requête, jamais par son chemin, qui
+part chez le fournisseur du modèle et porte parfois le jeton d'un webhook. Un essai n'écrit ni notre journal
+(`JOURNAL_MUET`) ni l'épreuve de la source (`marquerEpreuve` muet, câblé dans `src/index.ts`). Le coût accepté :
+un essai consomme du quota chez le client et apparaît dans SES journaux, comme le bouton « Essayer » d'une
+requête ; `test_agent` est donc en monde ouvert.
 
 **Deux modèles, deux métiers** : `AGENT_SETUP_MODEL` (l'assistant de construction, sortie structurée
 imbriquée, tourne rarement) et `AGENT_MODEL` (le runtime, à chaque message). Le boot REFUSE la clé du Gateway

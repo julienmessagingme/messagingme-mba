@@ -79,6 +79,7 @@ export interface RequeteStore {
   lister(tenantId: string): Promise<RequeteConnecteur[]>;
   parId(tenantId: string, id: string): Promise<RequeteConnecteur | null>;
   creer(tenantId: string, input: CreationRequete): Promise<RequeteConnecteur>;
+  /** Monte au plancher de la méthode écrite le risque des outils branchés, sans jamais le redescendre. */
   patch(tenantId: string, id: string, patch: PatchRequete): Promise<RequeteConnecteur | null>;
   /** `false` = introuvable. Le refus « des outils la désignent » est porté par la route, comme pour une source. */
   supprimer(tenantId: string, id: string): Promise<boolean>;

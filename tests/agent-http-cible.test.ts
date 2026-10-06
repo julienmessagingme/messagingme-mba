@@ -148,6 +148,15 @@ describe('risqueSelonMethode', () => {
     expect(risqueAuMoins('write', 'write')).toBe(true);
     expect(risqueAuMoins('write', 'read')).toBe(false);
   });
+
+  it('🔴 sous un plancher, exactement les risques plus faibles : ceux qu’un changement de méthode monte', async () => {
+    // `PgRequeteStore.patch` monte ces outils-là et aucun autre ; un plancher qui oublierait `write` laisserait un
+    // POST passé en DELETE sans la garde d'autonomie (`tests/integration/requete-methode-risque.integration.test.ts`).
+    const { risquesSous } = await import('../src/agent/http-cible');
+    expect(risquesSous('read')).toEqual([]);
+    expect(risquesSous('write')).toEqual(['read']);
+    expect(risquesSous('irreversible')).toEqual(['read', 'write']);
+  });
 });
 
 describe('enTetesAuthSource', () => {

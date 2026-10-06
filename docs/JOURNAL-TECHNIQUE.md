@@ -5,6 +5,44 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : la méthode d'une requête change, le risque de ses outils suit (vers le haut seulement)
+
+Relevé par la relecture de `099fd6c1` : le risque d'un outil de connecteur se dérivait de la méthode de sa requête à
+la CRÉATION de l'outil, puis plus jamais. Une requête passée de GET à DELETE gardait des outils `read` : en
+production, l'exécuteur (étape 2) ne leur appliquait ni la garde d'autonomie des actions irréversibles, ni le refus
+`lecture_seule` face à un contact inconnu. Le bac à sable, lui, relisait la méthode à chaque appel.
+
+Mesuré d'abord en base de production, en lecture seule (client dédié, `begin read only` puis `rollback`, aucun SET de
+session) : deux outils branchés sur une requête au total, un GET en `read` et un POST en `write`, aucun sous le
+plancher de sa méthode, aucun dont la requête serait d'un autre espace. Le défaut était armé et n'avait jamais servi :
+aucune reprise de données.
+
+Correctif : `PgRequeteStore.patch` écrit la requête puis monte au plancher de la méthode écrite (`risqueSelonMethode`)
+les outils branchés qui sont en dessous (`risquesSous`), dans la même transaction, après les avoir verrouillés par
+identifiant (`verrouillerDefinitions`). Jamais redescendu : rien ne distingue un risque dérivé d'un risque monté par
+le client à la création. Conséquence assumée au bac à sable : un outil dont la requête repasse en GET reste simulé.
+
+Prouvé par la CI sur des étiquettes jetables, lue job par job. Le test seul
+(`tests/integration/requete-methode-risque.integration.test.ts`, sans correctif) rend exactement cinq échecs, tous
+dans ce fichier, chacun avec son symptôme (`read` au lieu de `irreversible` ou de `write`, `write` au lieu de
+`irreversible`), les 1256 autres tests d'intégration passant. Le commit passe en entier (1261, dont les cinq). Un
+correctif FAUX, qui ramène au plancher tous les outils de l'espace, fait tomber les trois gardes qu'il viole :
+l'aller-retour GET, DELETE, GET redescendu à `read`, l'outil déjà irréversible ramené à `write`, et l'outil d'une
+autre requête monté. `risquesSous` a aussi son test unitaire, vérifié dans les deux sens en local.
+
+Relecture indépendante : aucun rouge. Appliqués avant de pousser : le verrouillage par identifiant (un `update` nu
+prenait les définitions dans l'ordre physique et pouvait interbloquer avec `PgAgentStore.remove`, donc un 500), le
+cas POST vers DELETE, et le test « ne redescend jamais » ancré sur un aller-retour qui part de `read`, pour ne pas
+attendre l'état de départ.
+
+Laissé au backlog (`todo.md`) : la ligne d'un connecteur n'offre pas la case d'autonomie, donc un connecteur
+irréversible, né sur un DELETE ou monté par ce correctif, est refusé à chaque appel d'un agent IA ; les paramètres
+d'un outil ne suivent pas non plus les variables de sa requête (même racine) ; et une fenêtre de l'ordre de la
+milliseconde entre la lecture de la méthode à la création d'un outil et son insertion.
+
+Poussé sur `main`, pas encore déployé : aucune migration, et seule l'API emprunte ce chemin (la route `PATCH` des
+requêtes).
+
 ## 2026-10-05 : un champ imbriqué d'un connecteur atteint enfin le modèle, et le bac à sable appelle pour de vrai un connecteur qui lit
 
 Lu dans le code avant d'être prouvé : `creerAppelConnecteur` filtrait la réponse d'un connecteur par les champs

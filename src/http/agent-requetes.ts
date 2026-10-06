@@ -276,7 +276,8 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     /**
      * Pas de garde contre le fait de vider les champs d'un appel déjà utilisé : ces champs ne gouvernent plus
      * l'exécution. Chaque outil porte sa propre liste, copiée au rattachement ; celle de l'appel n'est qu'un défaut
-     * de pré-remplissage, et la changer ne touche aucun agent en service.
+     * de pré-remplissage, et la changer ne touche aucun agent en service. La MÉTHODE, elle, les touche : le magasin
+     * monte le risque des outils branchés dans la transaction de l'écriture (`PgRequeteStore.patch`).
      */
     try {
       const requete = await deps.requetes.patch(tenant, id, parse.data);
