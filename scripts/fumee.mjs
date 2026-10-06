@@ -30,7 +30,7 @@ const CONTROLES = [
   { url: 'https://mba.messagingme.app/api/backend/health', attendu: [200], quoi: "l'API par le routage historique" },
   { url: 'https://mba.messagingme.app/api/backend/webhooks/meta', attendu: [403], quoi: 'le webhook Meta À SON ADRESSE ACTUELLE, celle que Meta appelle' },
   { url: 'https://mba.messagingme.app/', attendu: [200], quoi: "l'ancienne console" },
-  { url: 'https://engageme.messagingme.app/', attendu: [200, 401, 307, 308], quoi: 'la console Vercel' },
+  { url: 'https://console.messagingme.app/', attendu: [200, 401, 307, 308], quoi: 'la console Vercel' },
 ];
 
 const DELAI_MS = 20_000;
@@ -38,7 +38,7 @@ const DELAI_MS = 20_000;
 async function code(url) {
   const abandon = AbortSignal.timeout(DELAI_MS);
   try {
-    // `redirect: manual` : une redirection est une REPONSE, et sur `engageme.` c'en est une legitime
+    // `redirect: manual` : une redirection est une REPONSE, et sur `console.` c'en est une legitime
     // (renvoi vers la connexion). La suivre masquerait le code qu'on veut justement observer.
     const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: abandon });
     return res.status;

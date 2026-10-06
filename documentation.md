@@ -75,7 +75,7 @@ sait, et personne ne doit l'affirmer sans avoir posé la question.
         |                                    |
         | (en direct, SANS Cloudflare)   Cloudflare (Proxied : api. et mba.)
         |                            /                        \
-engageme.messagingme.app  api.messagingme.app   mba.messagingme.app
+console.messagingme.app   api.messagingme.app   mba.messagingme.app
    la console                 l'API                l'ANCIENNE console
      VERCEL             un NOM, pas une machine    + toutes les adresses
   (root dir = web/)     -> VPS OVH aujourd'hui       déjà distribuées
@@ -86,7 +86,7 @@ engageme.messagingme.app  api.messagingme.app   mba.messagingme.app
 
 | Nom | Sert | Où | Déploiement |
 |---|---|---|---|
-| `engageme.messagingme.app` | la console | **Vercel**, projet `messagingme-mba`, Root Directory `web` | automatique à chaque `git push` |
+| `console.messagingme.app` | la console | **Vercel**, projet `messagingme-mba`, Root Directory `web` | automatique à chaque `git push` |
 | `api.messagingme.app` | l'API et le worker | VPS OVH, Docker | `git pull` + `compose up -d --build` |
 | `mba.messagingme.app` | l'ancienne console, plus les adresses historiques | VPS, `mba-web` + routage NPM | idem |
 
@@ -110,7 +110,7 @@ l'exécution par le résolveur de Docker que NPM déclare (`127.0.0.11`, relu to
 l'hôte `api.` : un nom écrit en dur dans un `proxy_pass` est figé au chargement de nginx. C'est ce qui a permis de migrer la console vers Vercel sans toucher à la configuration du webhook
 chez Meta, et ce qui a retiré un conteneur de FRONT du chemin critique de réception des messages clients.
 
-🔴 **`engageme.` NE RELAIE RIEN VERS L'API.** Les rewrites de `web/next.config` (`/api/backend/*`, `/r/`,
+🔴 **`console.` NE RELAIE RIEN VERS L'API.** Les rewrites de `web/next.config` (`/api/backend/*`, `/r/`,
 `/m/`) visent `BACKEND_URL`, absente chez Vercel : elles retombent sur `localhost` et rendent
 `404 DNS_HOSTNAME_RESOLVED_PRIVATE` (mesuré sur les trois le 2026-09-21). Une adresse que le produit DISTRIBUE
 (lien tracé, visuel, rappel d'un fournisseur, webhook entrant) se construit donc TOUJOURS par
@@ -2264,7 +2264,7 @@ pas de SVG, qui est du XML exécutable. La réponse porte `nosniff` et le type r
 
 Mesuré : par l'URL publique, un `502 {"error":"..."}` revient en `text/html` de 6 429 octets, la page de
 Cloudflare, notre corps disparu. **Les deux noms qui servent l'API (`api.` et `mba.`) sont Proxied** ; la
-console `engageme.`, servie en direct par Vercel, ne l'est pas, et ne porte aucune réponse de l'API. Un refus lisible
+console `console.`, servie en direct par Vercel, ne l'est pas, et ne porte aucune réponse de l'API. Un refus lisible
 sort donc en **422** (409 pour une ambiguïté, 400 pour une saisie invalide), et il est **journalisé côté
 serveur** en plus : le corps peut être détruit en route, le log reste.
 

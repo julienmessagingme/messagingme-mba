@@ -30,7 +30,7 @@ Une phrase trouvée dedans se revérifie dans le manuel avant d'être crue.
 ```
  navigateur                         Meta, contacts, opérateur télécom
      |                                           |
- engageme.messagingme.app                    Cloudflare
+ console.messagingme.app                     Cloudflare
  console, Vercel direct                   /              \
                             api.messagingme.app    mba.messagingme.app
                              API + worker VPS       ancienne console

@@ -13,8 +13,8 @@
 
 ## Développeurs
 
-- [Documentation de l’API](https://engageme.messagingme.app/developers/api)
-- [Serveur MCP](https://engageme.messagingme.app/developers/mcp)
+- [Documentation de l’API](https://console.messagingme.app/developers/api)
+- [Serveur MCP](https://console.messagingme.app/developers/mcp)
 
 ## Contact
 
