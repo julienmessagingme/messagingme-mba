@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgToolCatalog } from '../../src/agent/catalog.pg';
 import { NomOutilDejaPris } from '../../src/agent/catalog';
+import { consommateurAgent } from '../../src/agent/consommateur';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -28,6 +29,7 @@ describe.skipIf(!url)('un agent ne voit jamais deux outils du même nom (Postgre
   let agentB: string;
   let sourceId: string;
   let requeteId: string;
+  let userId: string;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
@@ -43,6 +45,11 @@ describe.skipIf(!url)('un agent ne voit jamais deux outils du même nom (Postgre
     )).rows[0]!.id;
     agentA = await creerAgent('itest-a');
     agentB = await creerAgent('itest-b');
+    // L'administrateur au nom de qui naît un outil maison de l'agent de Meta (`atc_actif_humain_chk`).
+    userId = (await pool.query<{ id: string }>(
+      `insert into users (tenant_id, email, role, password_hash) values ($1, $2, 'admin', 'x') returning id`,
+      [tenantId, `itest-nom-par-consommateur-${Date.now()}@example.test`],
+    )).rows[0]!.id;
     // Une source ACTIVE : le rattachement refuse un outil dont le système est éteint (`CAUSE_INAPPELABLE`).
     sourceId = (await pool.query<{ id: string }>(
       `insert into agent_tool_sources (tenant_id, kind, label, base_url, auth_kind, status)
@@ -131,6 +138,17 @@ describe.skipIf(!url)('un agent ne voit jamais deux outils du même nom (Postgre
     expect(await catalogue.rattacher(tenantId, agentB, autre!.id)).toEqual({ ok: true });
   });
 
+  it('🔴 l’offre dit quand l’agent porte déjà le nom, et la bibliothèque entière ne le dit jamais', async () => {
+    // L'assistant de construction écarte une telle offre : branchée après l'écriture de la fiche, la porte la refuserait.
+    const facture = await catalogue.ajouterConnecteur(tenantId, agentA, appel('facture'));
+    const avoir = await catalogue.ajouterConnecteur(tenantId, agentA, appel('avoir'));
+    expect(await catalogue.ajouter(tenantId, agentB, action('facture'))).not.toBeNull();
+    const offre = await catalogue.offrablesPour(tenantId, consommateurAgent(agentB));
+    expect(offre.find((o) => o.id === facture!.id)?.nomPris).toBe(true);
+    expect(offre.find((o) => o.id === avoir!.id)?.nomPris).toBe(false);
+    expect((await catalogue.listCatalogue(tenantId)).find((o) => o.id === facture!.id)?.nomPris).toBe(false);
+  });
+
   it('🔴 une action et un appel du même nom créés EN MÊME TEMPS : un seul passe', async () => {
     // La raison d'un index plutôt que d'une vérification lue puis écrite : les deux lectures verraient le nom libre.
     for (const nom of ['course_1', 'course_2', 'course_3', 'course_4', 'course_5']) {
@@ -161,9 +179,13 @@ describe.skipIf(!url)('un agent ne voit jamais deux outils du même nom (Postgre
   });
 
   it('🔴 toute liaison écrite par le catalogue porte le nom de son outil', async () => {
-    // Une liaison sans nom échappe à l'index (`null` n'égale rien) : c'est la fenêtre que la migration du lot 2 fermera. Le chemin de
-    // l'agent de Meta est joué ici, ceux des agents IA l'ont été plus haut.
+    // Une liaison sans nom échapperait à l'index (`null` n'égale rien), et depuis 0213 la base la refuse. Les deux
+    // chemins de l'agent de Meta sont joués ici, ceux des agents IA l'ont été plus haut : les quatre insertions.
     expect(await catalogue.ajouterConnecteurPourMba(tenantId, '1234567890', appel('appel_meta'))).not.toBeNull();
+    expect(await catalogue.ajouterMaisonPourMba(tenantId, '1234567890', {
+      name: 'marquer_vip_meta', title: 'VIP', description: 'Pose vip.', nePasUtiliser: '',
+      cible: { handler: 'tag_fixe', tag: 'vip' },
+    }, userId)).not.toBeNull();
     const r = await pool.query<{ total: string; sans_nom: string; fausses: string }>(
       `select count(*) as total,
               count(*) filter (where c.tool_name is null) as sans_nom,

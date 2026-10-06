@@ -348,7 +348,7 @@ describe('les outils MCP de la bibliothèque, proposés à l’agent de Meta (20
   const MCP = '44444444-4444-4444-8444-444444444444';
   const entree = (over: Partial<OutilBibliotheque> = {}): OutilBibliotheque => ({
     id: MCP, name: 'notion_search', title: 'Chercher', description: 'd', nePasUtiliser: 'p', origin: 'mcp', risk: 'read',
-    sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, consommateurs: [], ...over,
+    sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, nomPris: false, consommateurs: [], ...over,
   });
   const avec = (e: OutilBibliotheque, over: Parameters<typeof monter>[0] = {}) => monter({
     bibliotheque: async () => [e], offrables: async () => [e], serveurs: async () => new Map([['s1', { label: 'notion' }]]), ...over,

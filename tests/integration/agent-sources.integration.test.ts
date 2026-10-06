@@ -169,8 +169,8 @@ describe.skipIf(!url)('sources externes d outils (Postgres)', () => {
       [tenantId, s.id],
     );
     await pool.query(
-      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
-       values ($1, $2, $3, true, $4, now())`,
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name, actif, active_par, active_le)
+       values ($1, $2, $3, (select name from agent_tools where id = $2), true, $4, now())`,
       [tenantId, outil.rows[0]!.id, `agent:${agentId}`, userId],
     );
     expect((await sources.parId(tenantId, s.id))!.outilsActifs).toBe(1);

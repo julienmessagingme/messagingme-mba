@@ -202,8 +202,9 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     const partage = await outil('itest_partage', 'http', http);
     const importe = await outil('itest_mcp', 'mcp', mcp);
     await pool.query(
-      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
-       values ($1, $2, $5), ($1, $3, $5), ($1, $3, $6), ($1, $4, $5)`,
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name)
+       values ($1, $2, $5, (select name from agent_tools where id = $2)), ($1, $3, $5, (select name from agent_tools where id = $3)),
+              ($1, $3, $6, (select name from agent_tools where id = $3)), ($1, $4, $5, (select name from agent_tools where id = $4))`,
       [tenantId, seul, partage, importe, `agent:${partant.id}`, `agent:${voisin.id}`],
     );
     expect(await agents.remove(tenantId, partant.id)).toBe(true);
@@ -270,7 +271,7 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     );
     const toolId = outil.rows[0]!.id;
     await pool.query(
-      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2))',
       [tenantId, toolId, `agent:${agent!.id}`],
     );
 

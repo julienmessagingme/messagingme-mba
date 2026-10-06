@@ -168,17 +168,18 @@ function avancement(etat: EntretienComplet, ctx: ContexteConstruction | null): {
 /**
  * Ce que l'assistant voit de la bibliothèque de l'espace, pour un agent : chaque outil, et s'il est branché sur lui.
  * 🔴 SEULS Y SONT CE QU'ON PEUT LUI OFFRIR (`offrables`, la règle unique du catalogue) ET CE QU'IL A DÉJÀ (pour qu'on
- * puisse proposer de le débrancher). Cette fonction ne filtre rien elle-même : elle filtrait l'enregistrement d'un outil
- * MCP et pas sa mort, donc l'assistant proposait de brancher un outil que l'agent ne pouvait pas appeler, et
+ * puisse proposer de le débrancher). Cette fonction ne recalcule rien elle-même : elle filtrait l'enregistrement d'un
+ * outil MCP et pas sa mort, donc l'assistant proposait de brancher un outil que l'agent ne pouvait pas appeler, et
  * l'application échouait APRÈS avoir écrit la fiche. `brancheables` écarte ensuite tout nom absent d'ici : c'est la
- * ceinture, côté application.
+ * ceinture, côté application. Pour la même raison, une offre dont l'agent porte déjà le nom (`nomPris`, 0211) n'y est
+ * pas : la porte la refuserait, sur une fiche déjà enregistrée. Le drapeau vient du catalogue, rien n'est recalculé ici.
  */
 export function catalogueBranchable(
   bibliotheque: readonly Pick<OutilBibliotheque, 'name' | 'title' | 'consommateurs'>[],
-  offrables: readonly Pick<OutilBibliotheque, 'name'>[],
+  offrables: readonly Pick<OutilBibliotheque, 'name' | 'nomPris'>[],
   agentId: string,
 ): NonNullable<ContexteConstruction['catalogue']> {
-  const offrable = new Set(offrables.map((o) => o.name));
+  const offrable = new Set(offrables.filter((o) => !o.nomPris).map((o) => o.name));
   return bibliotheque
     .map((o) => ({ o, branche: o.consommateurs.some((c) => c.agentId === agentId) }))
     .filter(({ o, branche }) => branche || offrable.has(o.name))

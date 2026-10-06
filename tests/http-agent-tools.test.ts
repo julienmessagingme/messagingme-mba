@@ -49,7 +49,7 @@ const OUTIL: OutilComplet = { ...SANS_MCP, ...AUCUN_GESTE(),
 /** Un outil de la bibliothèque que le catalogue offre à l'agent `AG` (la règle elle-même est prouvée en intégration). */
 const OFFRABLE: OutilBibliotheque = {
   id: AUTRE, name: 'notion_search', title: 'Chercher dans Notion', description: 'd', nePasUtiliser: '', origin: 'mcp',
-  risk: 'read', sourceId: SRC, mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null,
+  risk: 'read', sourceId: SRC, mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, nomPris: false,
   consommateurs: [],
 };
 

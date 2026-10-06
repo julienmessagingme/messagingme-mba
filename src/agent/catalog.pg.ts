@@ -663,10 +663,10 @@ export class PgToolCatalog implements ToolCatalog {
   /**
    * 🔴 CE QU'ON PEUT OFFRIR À CE CONSOMMATEUR, MAINTENANT : un outil de la bibliothèque, enregistré s'il est MCP,
    * appelable, et pas déjà à lui. C'est la liste « ajouter un outil » de l'agent de Meta, de la page d'un agent IA et
-   * de l'assistant de construction ; aucun d'eux ne filtre plus rien lui-même. La porte (`rattacherConsommateur`)
+   * de l'assistant de construction ; aucun d'eux ne recalcule rien lui-même. La porte (`rattacherConsommateur`)
    * applique les mêmes fragments : ce qu'une liste offre se rattache. ⚠️ Sauf un outil dont ce consommateur porte déjà
-   * le nom (0211) : il reste offert, et la porte le refuse en disant quoi renommer, quand le cacher ici ne dirait
-   * pas pourquoi il manque.
+   * le nom (0211) : il reste offert, marqué `nomPris`, et la porte le refuse en disant quoi renommer, quand le cacher
+   * ici ne dirait pas pourquoi il manque. L'assistant de construction, lui, écarte une offre marquée.
    */
   async offrablesPour(tenantId: string, consommateur: string): Promise<OutilBibliotheque[]> {
     return this.lireBibliotheque(tenantId, consommateur);
@@ -678,10 +678,18 @@ export class PgToolCatalog implements ToolCatalog {
       id: string; name: string; title: string; description: string; ne_pas_utiliser: string;
       origin: OutilDefini['origin']; risk: OutilDefini['risk']; source_id: string | null;
       mcp_non_activable: string | null; mcp_indisponible_le: Date | null; mcp_propose: boolean; cause: string | null;
+      nom_pris: boolean;
       consommateurs: Array<{ cle: string; actif: boolean; agent_label: string | null }> | null;
     }>(
       `select t.id, t.name, t.title, t.description, t.ne_pas_utiliser, t.origin, t.risk, t.source_id,
               t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_propose, (${CAUSE_INAPPELABLE}) as cause,
+              -- Ce consommateur porte deja un AUTRE outil de ce nom (0211) : la porte refuserait. Lu sur le nom de
+              -- l outil, la verite que la copie de la liaison suit (0213 la rend obligatoire).
+              ($2::text is not null and exists (
+                 select 1 from agent_tool_consommateurs c2
+                   join agent_tools t2 on t2.id = c2.tool_id and t2.tenant_id = c2.tenant_id
+                  where c2.tenant_id = t.tenant_id and c2.consommateur = $2 and t2.name = t.name and t2.id <> t.id
+              )) as nom_pris,
               coalesce(
                 (select jsonb_agg(jsonb_build_object('cle', c.consommateur, 'actif', c.actif,
                                                      'agent_label', a.label) order by c.consommateur)
@@ -713,6 +721,7 @@ export class PgToolCatalog implements ToolCatalog {
       mcpIndisponibleLe: r.mcp_indisponible_le ? r.mcp_indisponible_le.toISOString() : null,
       mcpPropose: r.origin !== 'mcp' || r.mcp_propose,
       inappelable: lireInappelable(r.cause, r.mcp_non_activable),
+      nomPris: r.nom_pris,
       consommateurs: (r.consommateurs ?? []).map((c) => ({
         cle: c.cle,
         actif: c.actif,

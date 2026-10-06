@@ -181,7 +181,7 @@ describe('le vrai câblage', () => {
 describe('🔴 l assistant ne propose que ce que le catalogue offre (règle unique du 2026-10-02)', () => {
   const outil = (name: string, over: Partial<OutilBibliotheque> = {}): OutilBibliotheque => ({
     id: name, name, title: name, description: 'd', nePasUtiliser: '', origin: 'mcp', risk: 'read', sourceId: 's1',
-    mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, consommateurs: [], ...over,
+    mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, nomPris: false, consommateurs: [], ...over,
   });
   const branche = [{ cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' }];
 
@@ -198,6 +198,14 @@ describe('🔴 l assistant ne propose que ce que le catalogue offre (règle uniq
     expect(cat.map((c) => c.nom)).toEqual(['notion_search', 'erp_commandes']);
     // Et la ceinture : même si le modèle les nommait, brancheables les écarte.
     expect(brancheables(cat, ['notion_decoche', 'notion_mort'], false)).toEqual([]);
+  });
+
+  it('🔴 une offre dont l agent porte déjà le nom (0211) n entre pas au catalogue de l assistant', () => {
+    // La porte la refuserait (`nom_pris`) APRÈS l'écriture de la fiche. Le drapeau vient du catalogue, prouvé contre
+    // une vraie base (`tests/integration/nom-par-consommateur.integration.test.ts`) ; « stock » est l'ancre positive.
+    const bibliotheque = [outil('devis', { origin: 'http' }), outil('stock', { origin: 'http' })];
+    const offrables = [outil('devis', { origin: 'http', nomPris: true }), outil('stock', { origin: 'http' })];
+    expect(catalogueBranchable(bibliotheque, offrables, 'a1').map((c) => c.nom)).toEqual(['stock']);
   });
 
   it('un outil plus offrable mais encore BRANCHÉ sur cet agent reste, pour qu on puisse le débrancher', () => {

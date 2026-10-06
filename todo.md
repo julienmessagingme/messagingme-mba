@@ -771,6 +771,17 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
   liste de l'onglet : sinon il promettrait un nom libre qui ne l'est pas. Et depuis 0211
   (`atc_nom_par_consommateur_uidx`), les autres outils de chaque consommateur concerné : les actions et les appels
   de l'agent à une création, CHAQUE consommateur de l'outil à un renommage.
+- 🟡 **L'assistant de construction ne voit plus un outil dont l'agent porte déjà le nom, et ne peut pas dire
+  pourquoi** (relecture du lot 2 de 0211, 2026-10-06). `catalogueBranchable` écarte une offre `nomPris` : si c'est le
+  seul outil, l'assistant lit une bibliothèque vide. C'est le choix déjà fait pour un outil inappelable ; pour le
+  corriger, garder l'outil dans la liste avec l'état « nom déjà pris, à renommer » et le refuser dans `brancheables`.
+- 🟡 **Dans la bibliothèque entière, `nomPris: false` veut dire « non calculé »** (publié par
+  `GET /tenants/:id/agent-tools`), et ne se distingue pas d'un nom libre. Un type d'offre réservé à `offrablesPour`
+  l'en retirerait.
+- 🟡 **L'application d'une proposition de l'assistant branche HORS du `try` qui dit « La fiche est enregistrée »**
+  (`web/lib/api-agent-setup.ts`, préexistant) : un refus tardif (une course, une source éteinte entre la proposition
+  et le clic) remonte sans cette phrase. Le cas symétrique de 0211 n'est pas écarté en amont non plus : une ACTION
+  proposée (`mba_*`) dont un connecteur de l'agent porte déjà le nom, que ce `try` rattrape lisiblement.
 - 🟡 **DÉCISION ATTENDUE (Julien) : un outil MCP disparu de son serveur ne se supprime plus qu'avec toute sa
   source.** Le retrait de `DELETE /agent-tools/:outilId` (lot 2, avec l'ancienne bibliothèque) a emporté le seul
   geste qui l'effaçait seul ; un outil MCP disparu est marqué (`mcp_indisponible_le`), jamais supprimé, et la

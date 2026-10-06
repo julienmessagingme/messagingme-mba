@@ -262,6 +262,13 @@ export interface OutilBibliotheque {
   mcpPropose: boolean;
   /** Pourquoi le résolveur refuserait cet outil, ou `null`. Calculé par le catalogue, jamais par l'appelant. */
   inappelable: Inappelable | null;
+  /**
+   * Le consommateur pour qui l'offre est lue porte déjà un AUTRE outil de ce nom (0211) : la porte refuserait le
+   * rattachement (`nom_pris`). `false` dans la bibliothèque entière, lue pour aucun consommateur. Les écrans humains
+   * gardent l'outil (la porte dit quoi renommer) ; l'assistant de construction l'écarte, lui qui branche APRÈS avoir
+   * écrit la fiche.
+   */
+  nomPris: boolean;
   consommateurs: Array<{
     cle: string;
     actif: boolean;

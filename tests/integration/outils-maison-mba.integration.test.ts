@@ -162,7 +162,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
       [tenantId, sourceMcp],
     )).rows[0]!.id;
     await pool.query(
-      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2))',
       [tenantId, id, consommateurMba(PN)],
     );
     expect(await cat.retirerDeMba(tenantId, PN, id)).toBe('detache');
@@ -217,7 +217,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
     avecConnexion(async (autre) => {
       await autre.query('begin');
       await autre.query(
-        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2))',
         [tenantId, id, consommateur],
       );
       const enCours = effacement();
@@ -516,7 +516,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
           [id, tenantId, source, `${label}_${suffixe}`, JSON.stringify({ outilDistant: `${label}_${suffixe}` })],
         );
         await pool.query(
-          'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+          'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2))',
           [tenantId, id, consommateurAgent(agent)],
         );
       }

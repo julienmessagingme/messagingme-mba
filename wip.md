@@ -29,7 +29,7 @@ Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; réc
   connecteur, « Modifier » l'appel et lui donner le nom technique de l'action, puis Enregistrer : le refus s'affiche
   dans le formulaire, rien ne change ; l'onglet Tester répond toujours.
 - ⏳ **Lot 2** : la migration NOT NULL (un contrôle qui dit quoi renommer si un doublon s'est glissé, la reprise, puis
-  `set not null`), APRÈS le `up` ; les fixtures qui écrivent une liaison à la main ; `ajouterMaisonPourMba` dans le
+  `set not null`), après le `up` du lot 1 (fait) et avant celui du lot 2 ; les fixtures qui écrivent une liaison à la main ; `ajouterMaisonPourMba` dans le
   cas « toute liaison porte son nom » ; l'assistant de construction écarte un outil dont l'agent porte déjà le nom
   (drapeau calculé par le catalogue sur l'offre, les écrans humains inchangés).
 - 🟡 **Laissés, avec leur raison** : le 409 ne nomme ni l'outil ni l'agent en conflit (le nom est celui qu'on vient de

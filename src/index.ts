@@ -1261,7 +1261,8 @@ async function main(): Promise<void> {
           // brancher. La définition appartient à l'espace, le consentement au couple (outil, consommateur) ;
           // l'assistant n'agit que sur le second et ne crée jamais rien.
           toolCatalog.listCatalogue(tenant),
-          // Ce que le catalogue permet de lui offrir : la règle unique, que l'assistant ne refiltre pas.
+          // Ce que le catalogue permet de lui offrir : la règle unique, que l'assistant ne recalcule pas. Il écarte
+          // seulement ce que le catalogue marque `nomPris` (0211).
           toolCatalog.offrablesPour(tenant, consommateurAgent(agentId)),
         ]);
         return {

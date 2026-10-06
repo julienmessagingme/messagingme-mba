@@ -281,7 +281,7 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
       [tenantId, sourceHttp],
     )).rows[0]!.id;
     await pool.query(
-      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3), ($1, $2, $4)',
+      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2)), ($1, $2, $4, (select name from agent_tools where id = $2))',
       [tenantId, id, `agent:${agentA}`, `agent:${agentB}`],
     );
     const reste = async (): Promise<number> => (await pool.query(
@@ -352,7 +352,7 @@ describe.skipIf(!url)('une action appartient à l’agent (Postgres)', () => {
       )).rows[0]!.id;
       const consentir = async (id: string, cle: string): Promise<void> => {
         await client.query(
-          'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+          'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2))',
           [tenantId, id, cle],
         );
       };

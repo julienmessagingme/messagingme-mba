@@ -547,8 +547,8 @@ tenue par une clé étrangère composite `(tool_id, tool_name)` en `on update ca
 `tool_name` ; un renommage suit par la cascade, et l'index refuse celui qui ferait un doublon chez N'IMPORTE QUEL
 consommateur de l'outil, pas seulement chez l'agent dont l'écran renomme. Le refus rend `NomOutilDejaPris`
 (création, renommage) ou le refus de rattachement `nom_pris`, en 409. ⚠️ Un index, pas une vérification lue puis
-écrite : deux créations simultanées passeraient toutes les deux. ⚠️ `tool_name` reste nullable tant que la migration du
-lot 2 (reprise, puis `not null`) n'est pas passée, et une liaison sans nom échappe à l'index.
+écrite : deux créations simultanées passeraient toutes les deux. `tool_name` est NOT NULL depuis 0213 :
+une insertion de liaison qui l'oublierait échoue en 23502, au lieu d'échapper à l'index en silence.
 
 ⚠️ **LE CONSOMMATEUR EST UNE CLÉ TEXTE**, `agent:<uuid>` ou `mba:<phone_number_id>`, fabriquée par
 `src/agent/consommateur.ts` et jamais concaténée ailleurs ; sa FORME est verrouillée par un CHECK, parce
@@ -735,6 +735,8 @@ rattachement concurrent, puis relire `mcp_propose`. Un `for no key update` rouvr
 La porte (`rattacherConsommateur`) applique les mêmes fragments et rend sa raison (`Rattachement`, texte par
 `messageDuRefus`). ⚠️ Une exception, délibérée : un outil dont le consommateur porte déjà le nom (0211) reste
 offert, et la porte le refuse (`nom_pris`) en disant quoi renommer ; le cacher ne dirait pas pourquoi il manque.
+L'offre le dit (`nomPris`, calculé par le catalogue) : l'assistant de construction l'écarte, lui qui branche APRÈS
+avoir écrit la fiche (`catalogueBranchable`).
 L'activation (`activerConsommateur`) refuse un outil inappelable ; `listActifs`, ce que voit le
 modèle d'un agent IA, n'en rend aucun. ⚠️ `listActifsConsommateur` reste NON filtré : le relais de l'agent de Meta y
 cherche l'outil que Meta appelle, et refuse lui-même un outil mort. ⚠️ Côté agent de Meta, un connecteur HTTP sur une

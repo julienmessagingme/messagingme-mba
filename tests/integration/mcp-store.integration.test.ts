@@ -93,8 +93,8 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     // L'activation porte le nom de qui l'a faite : la contrainte de 0086 l'exige sur un consentement ACTIF.
     const u = userId;
     await pool.query(
-      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
-       values ($1, $2, $3, true, $4, now())`,
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name, actif, active_par, active_le)
+       values ($1, $2, $3, (select name from agent_tools where id = $2), true, $4, now())`,
       [tenantId, outilId, `agent:${agentId}`, u],
     );
   }
@@ -270,8 +270,8 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     });
     const cible = (await store.outilsDuServeur(tenantId, sourceMcp)).find((o) => o.nomDistant === 'jamais')!;
     await pool.query(
-      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif)
-       values ($1, $2, $3, false)`,
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name, actif)
+       values ($1, $2, $3, (select name from agent_tools where id = $2), false)`,
       [tenantId, cible.id, `agent:${agentId}`],
     );
     expect(await store.debranchesParRafraichissement(tenantId, `agent:${agentId}`)).not.toContain('notion_jamais');
@@ -389,7 +389,7 @@ describe.skipIf(!url)('l écriture d un import MCP (Postgres)', () => {
     });
     const cible = (await store.outilsDuServeur(tenantId, sourceMcp)).find((o) => o.nomDistant === 'refuse')!;
     await pool.query(
-      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif) values ($1, $2, $3, false)`,
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name, actif) values ($1, $2, $3, (select name from agent_tools where id = $2), false)`,
       [tenantId, cible.id, `agent:${agentId}`],
     );
     await expect(

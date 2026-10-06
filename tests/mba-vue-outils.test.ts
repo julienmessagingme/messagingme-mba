@@ -20,7 +20,7 @@ const ctx = (over: Partial<ContexteVue> = {}): ContexteVue => ({
 });
 const entreeBiblio = (over: Partial<OutilBibliotheque>): OutilBibliotheque => ({
   id: 'o1', name: 'notion_search', title: 'Chercher', description: 'd', nePasUtiliser: 'p', origin: 'mcp', risk: 'read',
-  sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, consommateurs: [], ...over,
+  sourceId: 's1', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, nomPris: false, consommateurs: [], ...over,
 });
 
 describe('la ligne d’un outil dans l’onglet', () => {
@@ -44,7 +44,7 @@ describe('la ligne d’un outil dans l’onglet', () => {
   it('🔴 un connecteur partagé NOMME les agents IA qui s’en servent, pas l’agent de Meta', () => {
     const entree: OutilBibliotheque = {
       id: 'o1', name: 'n', title: 'T', description: 'd', nePasUtiliser: 'p', origin: 'http', risk: 'write',
-      sourceId: 's', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null,
+      sourceId: 's', mcpNonActivable: null, mcpIndisponibleLe: null, mcpPropose: true, inappelable: null, nomPris: false,
       consommateurs: [
         { cle: 'agent:a1', actif: true, agentId: 'a1', agentLabel: 'Support' },
         { cle: 'mba:pn1', actif: true, agentId: null, agentLabel: null },

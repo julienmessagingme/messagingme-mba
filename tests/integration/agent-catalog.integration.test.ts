@@ -74,8 +74,8 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
         JSON.stringify({ handler: 'lire_contact' }), agentId],
     );
     await pool.query(
-      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
-       values ($1, $2, $3, true, $4, now())`,
+      `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name, actif, active_par, active_le)
+       values ($1, $2, $3, (select name from agent_tools where id = $2), true, $4, now())`,
       [tenantId, actif.rows[0]!.id, `agent:${agentId}`, adminId],
     );
     const eteint = await pool.query<{ id: string }>(
@@ -84,7 +84,7 @@ describe.skipIf(!url)('catalogue d outils et journal d appels (Postgres)', () =>
       [tenantId, agentId],
     );
     await pool.query(
-      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+      'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2))',
       [tenantId, eteint.rows[0]!.id, `agent:${agentId}`],
     );
 
@@ -517,7 +517,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
         [tenantId, source],
       )).rows[0]!.id;
       await pool.query(
-        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3), ($1, $2, $4)',
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2)), ($1, $2, $4, (select name from agent_tools where id = $2))',
         [tenantId, id, `agent:${agentId}`, `agent:${voisin}`],
       );
       const existe = async (): Promise<boolean> =>
@@ -545,7 +545,7 @@ describe.skipIf(!url)('ecriture du catalogue d outils (Postgres)', () => {
         [tenantId, source],
       )).rows[0]!.id;
       await pool.query(
-        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2))',
         [tenantId, id, `agent:${agentId}`],
       );
       expect(await catalogue.detacher(tenantId, agentId, id)).toBe(true);
@@ -767,7 +767,7 @@ describe.skipIf(!url)('la règle unique : offrable, appelable, rattachable (Post
     const id = ids[nom]!;
     const conso = consommateurAgent(agentActivation);
     // Rattaché par la base, hors de la porte : c'est le cas d'un outil donné vivant, qui meurt ensuite.
-    await pool.query('insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)', [tenantId, id, conso]);
+    await pool.query('insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, (select name from agent_tools where id = $2))', [tenantId, id, conso]);
     if (cause === null) {
       expect(await catalogue.activerConsommateur(tenantId, conso, id, true, adminId)).not.toBeNull();
     } else {
