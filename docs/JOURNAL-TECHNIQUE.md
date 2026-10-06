@@ -40,8 +40,11 @@ irréversible, né sur un DELETE ou monté par ce correctif, est refusé à chaq
 d'un outil ne suivent pas non plus les variables de sa requête (même racine) ; et une fenêtre de l'ordre de la
 milliseconde entre la lecture de la méthode à la création d'un outil et son insertion.
 
-Poussé sur `main`, pas encore déployé : aucune migration, et seule l'API emprunte ce chemin (la route `PATCH` des
-requêtes).
+Déployé : `8b1060ba`, sans migration (seule l'API emprunte ce chemin, la route `PATCH` des requêtes), parti avec le
+lot 0211 d'une session voisine, qui a mené le déploiement avec l'accord de Julien : VPS sur `e37cc43d`, API et deux
+workers recréés vers 7 h 05 UTC, après l'application de 0211. Le code a été relu DANS le conteneur de l'API
+(`risquesSous` présent), les deux portes publiques rendent 200, et aucune erreur dans les journaux depuis le `up`.
+Aucune donnée n'a bougé au déploiement : le risque ne monte qu'au prochain changement de méthode d'une requête.
 
 ## 2026-10-05 : un champ imbriqué d'un connecteur atteint enfin le modèle, et le bac à sable appelle pour de vrai un connecteur qui lit
 
