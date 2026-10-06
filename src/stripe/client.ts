@@ -64,7 +64,7 @@ async function lireReponse(res: Response): Promise<ReponseStripe> {
 /** Stripe a refusé, ou n'a pas répondu. `type` et `code` sont ceux de Stripe quand il les donne. */
 export class StripeError extends Error {
   constructor(
-    readonly operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail',
+    readonly operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail' | 'resiliation',
     readonly status: number | null,
     readonly type: string | null,
     readonly code: string | null,
@@ -97,7 +97,7 @@ const sessionSchema = z.object({ id: z.string().startsWith('cs_'), url: z.string
  */
 async function appeler<T>(
   transport: TransportStripe,
-  operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail',
+  operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail' | 'resiliation',
   chemin: string,
   champs: Record<string, string> | null,
   o: { cle: string; idempotence?: string },
@@ -284,6 +284,20 @@ export async function creerSessionPortail(transport: TransportStripe, o: { cle: 
     cle: o.cle, idempotence: `portail-${o.customerId}-${Date.now()}`,
   }, portailSchema);
   return { url: r.url };
+}
+
+const finProgrammeeSchema = z.object({ id: z.string().startsWith('sub_'), cancel_at_period_end: z.literal(true) });
+
+/**
+ * Programme la fin d'un abonnement à la fin de la période payée (`cancel_at_period_end=true`, lot 4, livraison B :
+ * « Abandonner » d'un abonné). La clé restreinte doit pouvoir ÉCRIRE les abonnements. La réponse doit dire
+ * `cancel_at_period_end: true` : un succès qui ne le dit pas est un refus. Rejouable : l'idempotence est l'abonnement.
+ */
+export async function programmerFinAbonnement(transport: TransportStripe, o: { cle: string; abonnementId: string }): Promise<void> {
+  const r = await appeler(transport, 'resiliation', `/subscriptions/${encodeURIComponent(o.abonnementId)}`, { cancel_at_period_end: 'true' }, {
+    cle: o.cle, idempotence: `fin-${o.abonnementId}`,
+  }, finProgrammeeSchema);
+  if (r.id !== o.abonnementId) throw new StripeError('resiliation', 200, null, null, 'reponse pour un autre abonnement');
 }
 
 /** Le mode d'une clé, lu sur son préfixe (vérifié au démarrage, `src/config.ts`). */

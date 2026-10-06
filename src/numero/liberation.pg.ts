@@ -1,0 +1,122 @@
+import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
+
+/**
+ * LA LIBÉRATION D'UN NUMÉRO FOURNI (lot 4, livraison B, spec `docs/superpowers/specs/2026-10-06-numero-impaye-design.md`
+ * § 4.1). Sept jours après la fin d'un abonnement, le numéro fourni quitte l'espace :
+ *  - vu de Meta (connecté, ou un code de Meta capté pour lui) : retiré de l'espace, résilié chez DIDWW, puis `resilie`
+ *    dans la réserve. Meta met un numéro retiré en quarantaine : il ne servira plus à personne ;
+ *  - jamais vu de Meta : `libre` dans la réserve, sans rien chez DIDWW ;
+ *  - aucun numéro attribué (rendu par « Abandonner ») : seule la date de libération se pose.
+ *
+ * 🔴 RETIRÉ, ET NON DÉLIÉ (rouge 1 de la relecture de la livraison B). La ligne `phone_numbers` du numéro quitte l'espace :
+ * un espace n'a droit qu'à UN numéro (`linkTenant`, `lierCompteSansNumero`, et la route du paiement qui lit le numéro
+ * connecté), et une ligne déliée gardée lui interdisait pour toujours d'en connecter un autre. Aucune clé étrangère ne
+ * la référence ; l'espace redevient sans numéro, comme un nouveau client.
+ *
+ * 🔴 UNE SEULE TRANSACTION, APPEL DIDWW COMPRIS. Un échec chez DIDWW annule le retrait et la réserve : rien n'est à moitié
+ * fait, le numéro reste suspendu (la garde coupe toujours ses envois), et le balayage suivant rejoue. Les verrous tiennent
+ * au plus le délai du client DIDWW (15 s).
+ *
+ * 🔴 LA LIBÉRATION PART DE L'ABONNEMENT COURANT : un espace réabonné (un abonnement vivant) ne se libère pas, même si sa
+ * vieille ligne résiliée remplit les conditions. Et le retrait ne touche QUE le numéro aux chiffres du numéro fourni (ou
+ * aux chiffres inconnus) : un numéro que le client a apporté ne quitte jamais l'espace par la libération.
+ *
+ * ⚠️ La preuve « un code de Meta capté » tient parce que la purge des codes épargne ceux d'un numéro ATTRIBUÉ (rouge 2 de
+ * la même relecture) : sans quoi, purgés à 7 jours, ils manquaient toujours à la libération.
+ */
+
+export type IssueLiberation =
+  | { fait: 'rien' }
+  | { fait: 'sans_numero' }
+  | { fait: 'libre'; numero: string }
+  | { fait: 'resilie'; numero: string; retire: boolean };
+
+/** La libération demande DIDWW et la clé n'est pas posée dans ce processus : une panne d'exploitation, à signaler. */
+export class DidwwNonConfigure extends Error {
+  constructor() {
+    super('DIDWW n’est pas configuré dans ce processus (DIDWW_API_KEY) : la libération ne peut pas résilier le numéro');
+    this.name = 'DidwwNonConfigure';
+  }
+}
+
+export class PgLiberationStore {
+  constructor(private readonly pool: Pool) {}
+
+  /**
+   * Libère l'abonnement `abonnementId` de l'espace s'il est fini depuis 7 jours et pas encore libéré. `resilier` : le
+   * geste DIDWW (`null` = non configuré, ce qui lève `DidwwNonConfigure` si le numéro doit être résilié). Toute erreur
+   * remonte et annule la transaction.
+   */
+  async liberer(
+    tenantId: string, abonnementId: string, resilier: ((didId: string) => Promise<void>) | null, maintenant: Date = new Date(),
+  ): Promise<IssueLiberation> {
+    return enTransaction(this.pool, async (client) => {
+      const due = await client.query(
+        `select 1 from abonnements_numero
+          where stripe_subscription_id = $1 and tenant_id = $2 and libere_le is null
+            and fini_le is not null and fini_le <= $3::timestamptz - interval '7 days'
+          for update skip locked`,
+        [abonnementId, tenantId, maintenant],
+      );
+      if ((due.rowCount ?? 0) === 0) return { fait: 'rien' } as const;
+      // Réabonné entre-temps : l'espace garde son numéro.
+      const vivant = await client.query(
+        `select 1 from abonnements_numero where tenant_id = $1 and statut <> 'resilie' limit 1`, [tenantId],
+      );
+      if ((vivant.rowCount ?? 0) > 0) return { fait: 'rien' } as const;
+      const poserLaDate = () => client.query(
+        `update abonnements_numero set libere_le = now(), maj_le = now() where stripe_subscription_id = $1 and tenant_id = $2`,
+        [abonnementId, tenantId],
+      );
+      const f = await client.query<{ id: string; numero: string; didww_did_id: string }>(
+        `select id, numero, didww_did_id from numeros_fournis where tenant_id = $1 and statut = 'attribue' for update`,
+        [tenantId],
+      );
+      const fourni = f.rows[0];
+      if (!fourni) {
+        await poserLaDate();
+        return { fait: 'sans_numero' } as const;
+      }
+      const connectes = await client.query<{ id: string }>(
+        `select id from phone_numbers
+          where tenant_id = $1 and regexp_replace(coalesce(display_phone_number, ''), '[^0-9]', '', 'g') in ('', $2)`,
+        [tenantId, fourni.numero],
+      );
+      const code = await client.query(`select 1 from codes_verification where numero_id = $1 limit 1`, [fourni.id]);
+      const vuDeMeta = (connectes.rowCount ?? 0) > 0 || (code.rowCount ?? 0) > 0;
+      if (!vuDeMeta) {
+        await client.query(
+          `update numeros_fournis set statut = 'libre', tenant_id = null, attribue_le = null where id = $1`, [fourni.id],
+        );
+        await poserLaDate();
+        return { fait: 'libre', numero: fourni.numero } as const;
+      }
+      const retire = (connectes.rowCount ?? 0) > 0;
+      if (retire) {
+        // Les campagnes WhatsApp vivantes passent en pause `numero_delie`, comme à un « Délier », et celles que la
+        // suspension avait arrêtées changent de motif : sans quoi le balayage, voyant l'espace libéré et non plus
+        // suspendu, lèverait leur pause. Elles attendent un numéro que l'espace n'a plus.
+        await client.query(
+          `update campaigns c set status = 'paused', pause_reason = 'numero_delie', paused_until = null
+            where c.tenant_id = $1
+              and (c.status in ('running', 'scheduled') or (c.status = 'paused' and c.pause_reason = 'numero_suspendu'))
+              and (c.channel = 'whatsapp'
+                   or exists (select 1 from campaign_etages e where e.campaign_id = c.id and e.canal = 'whatsapp'))`,
+          [tenantId],
+        );
+        await client.query(
+          `delete from phone_numbers where tenant_id = $1 and id = any($2::text[])`,
+          [tenantId, connectes.rows.map((r) => r.id)],
+        );
+      }
+      if (resilier === null) throw new DidwwNonConfigure();
+      await resilier(fourni.didww_did_id);
+      await client.query(
+        `update numeros_fournis set statut = 'resilie', tenant_id = null, attribue_le = null where id = $1`, [fourni.id],
+      );
+      await poserLaDate();
+      return { fait: 'resilie', numero: fourni.numero, retire } as const;
+    });
+  }
+}

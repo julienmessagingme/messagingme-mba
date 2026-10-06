@@ -29,6 +29,8 @@ function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre
   const client: ClientDidww = {
     trouverDid: async (numero) => { gestes.push(`trouver:${numero}`); return numero === '442071234567' ? { id: 'did-1', numero } : null; },
     brancher: async (didId, trunkId) => { gestes.push(`brancher:${didId}:${trunkId}`); },
+    // /ops ne résilie jamais : la résiliation appartient à la libération (lot 4, livraison B).
+    resilier: async (didId) => { gestes.push(`resilier:${didId}`); },
     ...o.didww,
   };
   const deps: OpsNumerosDeps = {

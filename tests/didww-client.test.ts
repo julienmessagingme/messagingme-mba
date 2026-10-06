@@ -77,3 +77,28 @@ describe('brancher', () => {
     expect((err as ErreurDidww).statut).toBeNull();
   });
 });
+
+describe('resilier (lot 4, livraison B)', () => {
+  const resilie = (id: string, terminated: boolean) => ({ data: { id, type: 'dids', attributes: { number: '441259797311', terminated } } });
+
+  it('🔴 un PATCH de l’attribut `terminated` (mesuré sur le compte réel le 2026-10-06 : l’attribut existe, à false)', async () => {
+    const { client, appels } = faux([{ status: 200, corps: resilie('d1', true) }]);
+    await client.resilier('d1');
+    expect(appels[0]!.method).toBe('PATCH');
+    expect(appels[0]!.url).toBe('https://api.didww.test/v3/dids/d1');
+    expect(appels[0]!.headers['Content-Type']).toBe('application/vnd.api+json');
+    expect(JSON.parse(appels[0]!.body!)).toEqual({ data: { id: 'd1', type: 'dids', attributes: { terminated: true } } });
+  });
+
+  it('🔴 un succès qui ne dit pas `terminated: true`, ou un autre numéro, ou rien de lisible : un refus', async () => {
+    await expect(faux([{ status: 200, corps: resilie('d1', false) }]).client.resilier('d1')).rejects.toBeInstanceOf(ErreurDidww);
+    await expect(faux([{ status: 200, corps: resilie('d2', true) }]).client.resilier('d1')).rejects.toBeInstanceOf(ErreurDidww);
+    await expect(faux([{ status: 200, corps: undefined }]).client.resilier('d1')).rejects.toBeInstanceOf(ErreurDidww);
+  });
+
+  it('un refus de DIDWW remonte avec son statut', async () => {
+    const err = await faux([{ status: 403, corps: { errors: [{ detail: 'Access denied' }] } }]).client.resilier('d1').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ErreurDidww);
+    expect((err as ErreurDidww).statut).toBe(403);
+  });
+});

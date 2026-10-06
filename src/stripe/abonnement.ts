@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { creerClientStripe, creerSessionAbonnement, creerSessionPortail, lirePrixStripe, StripeError } from './client';
+import { creerClientStripe, creerSessionAbonnement, creerSessionPortail, lirePrixStripe, programmerFinAbonnement, StripeError } from './client';
 import type { DepsPaiement, StripeConfigure } from './paiement';
 import { journaliser } from '../lib/journal';
 import { refus, type Issue } from '../lib/issue';
@@ -102,5 +102,25 @@ export async function ouvrirPortail(
   } catch (err) {
     if (!(err instanceof StripeError)) throw err;
     return refusDeStripe(err, tenantId, 'portail');
+  }
+}
+
+/**
+ * « Abandonner » d'un abonné (lot 4, livraison B) : la fin de l'abonnement programmée à la fin de la période payée.
+ * Un refus (clé sans le droit d'écrire les abonnements, abonnement inconnu) est rendu, jamais levé : l'abandon se fait
+ * quand même, et la route prévient Julien pour résilier à la main.
+ */
+export async function programmerFinDuNumero(d: DepsAbonnement, abonnementId: string): Promise<Issue<true>> {
+  const s = d.stripe;
+  if (s === null) return ABONNEMENT_INDISPONIBLE;
+  try {
+    await programmerFinAbonnement(s.transport, { cle: s.cle, abonnementId });
+    return { ok: true, valeur: true };
+  } catch (err) {
+    if (!(err instanceof StripeError)) throw err;
+    journaliser('error', 'stripe_fin_abonnement_impossible', {
+      abonnementId, operation: err.operation, status: err.status, type: err.type, code: err.code, err: err.message,
+    });
+    return refus(422, 'La fin de l’abonnement n’a pas pu être programmée chez Stripe.', { code: 'fin_impossible' });
   }
 }

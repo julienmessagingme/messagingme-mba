@@ -1,4 +1,4 @@
-import { runCampaign, RAISON_NUMERO_RELIE_ENTRE_TEMPS } from './engine';
+import { runCampaign, raisonPauseNonEcrite } from './engine';
 import type {
   MessageSender,
   RecipientStore,
@@ -237,7 +237,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
          */
         if (err instanceof NumeroBloqueError) {
           if (!(await deps.numerosDelies.pauserCampagne(campaign.id, campaign.tenantId, err.phoneNumberId, err.motif))) {
-            return { sent: 0, skipped: 0, failed: 0, paused: false, reason: RAISON_NUMERO_RELIE_ENTRE_TEMPS };
+            return { sent: 0, skipped: 0, failed: 0, paused: false, reason: raisonPauseNonEcrite(err.motif) };
           }
           return { sent: 0, skipped: 0, failed: 0, paused: true, reason: messageDePause(err.motif, null, undefined) };
         }

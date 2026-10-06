@@ -11,7 +11,8 @@ const il_y_a = (ms: number) => new Date(MAINTENANT.getTime() - ms);
 const HEURE = 3_600_000;
 const JOUR = 24 * HEURE;
 const base: LigneEtat = { statut: 'actif', premierEchecLe: null, finPrevueLe: null, finiLe: null, libereLe: null };
-const etat = (l: Partial<LigneEtat>, numeroAttribue = true) => etatAbonnement({ ...base, ...l }, { maintenant: MAINTENANT, numeroAttribue });
+const etat = (l: Partial<LigneEtat>, numeroAttribue = true, numeroApporte = false) =>
+  etatAbonnement({ ...base, ...l }, { maintenant: MAINTENANT, numeroAttribue, numeroApporte });
 
 describe('etatAbonnement', () => {
   it('les délais de la spec : 7 jours avant la coupure, 7 jours avant la libération', () => {
@@ -56,6 +57,14 @@ describe('etatAbonnement', () => {
   it('un impayé sans numéro attribué reste dû : en retard puis suspendu', () => {
     expect(etat({ statut: 'en_retard', premierEchecLe: il_y_a(JOUR) }, false)).toBe('en_retard');
     expect(etat({ statut: 'en_retard', premierEchecLe: il_y_a(8 * JOUR) }, false)).toBe('suspendu');
+  });
+
+  it('🔴 un AUTRE numéro connecté (le sien) : rien de chez nous n’est coupé, jamais « suspendu » (jaune 1 de la relecture de A)', () => {
+    // Fini : le numéro fourni n'envoie pas, rien à suspendre ; la libération le rendra à J+7.
+    expect(etat({ statut: 'resilie', finiLe: il_y_a(HEURE) }, true, true)).toBe('libere');
+    // Impayé depuis 8 jours : c'est dû, mais le numéro qui envoie n'est pas le nôtre et n'est pas coupé.
+    expect(etat({ statut: 'en_retard', premierEchecLe: il_y_a(8 * JOUR) }, true, true)).toBe('en_retard');
+    expect(etat({ statut: 'en_retard', premierEchecLe: il_y_a(8 * JOUR) }, false, true)).toBe('en_retard');
   });
 
   it('une fin prévue sur un abonnement fini ne ressuscite rien : suspendu', () => {

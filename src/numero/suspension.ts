@@ -24,7 +24,9 @@ export function creerLectureSuspension(d: DepsSuspension): (phoneNumberId: strin
     const tel = await d.telephone(phoneNumberId);
     if (tel === null) return false;
     const [fourni, etat] = await Promise.all([d.numeroFourni(tel.tenantId), d.etat(tel.tenantId)]);
-    return fourni !== null && fourni === tel.chiffres && etat?.etat === 'suspendu';
+    // Des chiffres inconnus (affichage vide, Meta pas lu à la liaison) sont ceux du numéro fourni, comme pour
+    // « Abandonner » et la lecture de l'état : sans quoi ce numéro ne serait jamais coupé (jaune 3 de la relecture de A).
+    return fourni !== null && (tel.chiffres === '' || fourni === tel.chiffres) && etat?.etat === 'suspendu';
   };
 }
 

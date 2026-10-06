@@ -51,27 +51,36 @@ libération.
   de l'Inbox CONFIENT encore un fil à l'agent de Meta pendant une suspension : seule la remise « personne ne suit »
   est gardée.
 
-**Les jaunes de la relecture de la livraison A** (2026-10-06, à corriger après son déploiement) :
-- **Le bandeau, le rappel MCP et l'alerte disent « envois coupés » à un espace qui a connecté son PROPRE numéro**
-  et garde un numéro fourni attribué avec un abonnement fini : la garde ne le coupe pas (juste), l'affichage si.
-  `etatDeLEspace` doit faire la même comparaison de chiffres que la garde. Et `resubscribe_number` ouvre un paiement
-  sans le contrôle `memeNumero` de la route : lui donner les mêmes refus.
-- **« Se réabonner » sur « Connecter WhatsApp »** s'affiche pour tout abonnement résilié, numéro apporté compris
-  (409 au clic) : exiger aussi que le numéro connecté soit le numéro fourni.
-- **La garde laisse passer un numéro dont `display_phone_number` est vide** (Meta pas lu à la liaison) : traiter
-  `''` comme le numéro fourni, comme `abandonner`.
+**Les jaunes de la relecture de la livraison B** (2026-10-06, à corriger après son déploiement ; les deux rouges sont
+corrigés) :
+- **« Abandonner » deux fois** : la clé d'idempotence de la fin chez Stripe est fixe (`fin-<abonnement>`). Abandonner,
+  annuler la résiliation dans le portail, puis abandonner de nouveau dans les 24 h : Stripe rejoue l'ancienne réponse
+  sans rien appliquer, et la page dit « rien ne vous sera plus prélevé ». Le geste est idempotent de lui-même : un aléa
+  dans la clé suffit. Et `noterFinPrevue(periodeFin ?? maintenant)` peut écraser la date juste du webhook : n'écrire que
+  si elle est vide.
+- **Après « Abandonner » avec la fin programmée**, la page propose encore « Obtenir mon numéro » (un numéro coupé en fin
+  de période) ; le bouton discret « Abandonner » résilie désormais l'abonnement SANS confirmation ; et sur un abonnement
+  en retard, Stripe relance la facture ouverte, donc « rien ne vous sera plus prélevé » est faux.
+- **Course entre un réabonnement et la libération** : `attribuerAvec` lit le numéro attribué sans verrou ; un paiement
+  confirmé pendant l'appel à DIDWW (une seconde) garde un numéro que la libération résilie ensuite.
+- **Les chiffres vides à moitié traités** : la route du paiement (`memeNumero`) refuse `''`, la garde et l'état non. Et
+  un espace aux chiffres vides qui a un numéro apporté ET un fourni attribué voit son propre numéro suspendu puis retiré.
+- **Un espace qui envoie par son propre numéro** reçoit à J+7 l'e-mail « votre numéro a été libéré » alors que le sien
+  marche ; `resubscribe_number` le renvoie vers `start_whatsapp_connection`, qui le refuse.
+- **Une libération en échec alerte Telegram toutes les 15 minutes, sans fin**, et un 404 de DIDWW (numéro déjà retiré)
+  n'est pas traité comme une résiliation faite.
+- **Un worker arrêté plusieurs jours** envoie suspension, rappel et libération dans le même tour ; l'alerte de
+  `customer.subscription.deleted` dit « le numéro est gardé 7 jours » même quand il n'y en a plus (après « Abandonner »).
+- **Resend sans délai côté worker** : un appel bloqué fait sauter les tours du balayage (garde de ré-entrance).
+- **Tests manquants** : deux libérations concurrentes (spec § 7), la fenêtre de 2 jours d'`aSurveiller`.
+- **Même invariant, une autre porte** : « Abandonner » remet en `libre` un numéro dont un code a été capté (vu de Meta).
+- **Un numéro fourni résilié peut être RECONNECTÉ** par l'Embedded Signup (il reste dans le compte WhatsApp du client
+  chez Meta) : `linkTenant` devrait refuser un numéro de la réserve qui n'est pas attribué à cet espace.
+
+**Le jaune de la relecture de la livraison A qui reste** (les autres sont corrigés dans la livraison B) :
 - **`customer.subscription.updated` : le dernier arrivé gagne** (une annulation de résiliation reçue avant la
-  résiliation laisse un faux « se termine le ») ; affichage seulement.
-- **L'alerte de suspension part une fois par abonnement**, et l'avis est noté AVANT l'envoi : une seconde suspension
-  du même abonnement ne prévient plus, et un Telegram en échec est perdu.
-- **Le rappel MCP** : `.then(f, () => null)` n'attrape pas une exception du formateur (`.then(f).catch(...)`), et
-  `get_number_subscription` échoue en entier si la lecture de l'état échoue.
-- **Libellé** : une pause `numero_suspendu` refusée parce qu'un opérateur a déjà arrêté la campagne est rapportée
-  comme « numéro relié entre-temps » (`engine.ts`, `run-job.ts`).
-- **Tests manquants** : deux `updated` dans le désordre.
-- **Pour la livraison B** : `aSurveiller` garde pour toujours les vieilles lignes résiliées d'un espace réabonné (la
-  libération doit partir de l'état courant), et `delier(tenantId)` délie TOUS les numéros de l'espace, donc
-  couperait le numéro apporté du premier jaune.
+  résiliation laisse un faux « se termine le ») ; affichage seulement. Le corriger demande de comparer la date de
+  l'événement, et le test qui le tiendrait (deux `updated` dans le désordre) manque.
 
 ## Lot 3c : un lien déjà donné survit à la révocation de l'accès de Claude (jaune de la relecture, 2026-10-06)
 

@@ -44,8 +44,11 @@ const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() 
 export function rappelDeLAbonnement(a: EtatDeLEspace | null): string | null {
   if (a === null) return null;
   if (a.etat === 'en_retard') {
-    return `Rappel : le renouvellement de l’abonnement du numéro WhatsApp a échoué. Sans paiement, ses envois seront coupés le ${jour(a.coupureLe) ?? 'bientôt'}. `
-      + 'resubscribe_number donne le lien pour régler.';
+    // Sans date de coupure, rien ne sera coupé (un autre numéro que le numéro fourni envoie) : aucune date inventée.
+    return a.coupureLe === null
+      ? 'Rappel : le renouvellement de l’abonnement du numéro WhatsApp fourni a échoué. resubscribe_number donne le lien pour régler.'
+      : `Rappel : le renouvellement de l’abonnement du numéro WhatsApp a échoué. Sans paiement, ses envois seront coupés le ${jour(a.coupureLe)}. `
+        + 'resubscribe_number donne le lien pour régler.';
   }
   if (a.etat === 'suspendu') {
     return a.finiLe !== null
@@ -108,7 +111,8 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     annotations: { title: 'Lire l’abonnement du numéro', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {}, additionalProperties: false },
     async executer(deps: DepsMcp, tenantId) {
-      const [e, a] = await Promise.all([deps.numero.etat(tenantId), deps.numero.abonnement(tenantId)]);
+      // L'état calculé est un complément : une lecture qui échoue ne prive pas Claude du statut (jaune 7 de A).
+      const [e, a] = await Promise.all([deps.numero.etat(tenantId), deps.numero.abonnement(tenantId).catch(() => null)]);
       return {
         abonnement: e.abonnement?.statut ?? null,
         prochaine_echeance: e.abonnement?.periodeFin ?? null,

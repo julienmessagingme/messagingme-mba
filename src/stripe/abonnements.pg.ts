@@ -40,6 +40,8 @@ export interface EtatDeLEspace {
   coupureLe: Date | null;
   /** La fin effective : suspendu PARCE QUE fini (un nouveau paiement rend le même numéro), et non faute de paiement. */
   finiLe: Date | null;
+  /** La libération faite (livraison B) : le balayage envoie alors l'e-mail et l'alerte de libération. */
+  libereLe: Date | null;
 }
 
 /** Les avis qui ne partent qu'une fois par abonnement (CHECK `abonnements_numero_avis_chk`, 0215). */
@@ -130,8 +132,11 @@ export class PgAbonnementsNumeroStore {
   async majStatut(
     abonnementId: string, statut: StatutAbonnement, periodeFin: Date | null, finFactureEchouee: Date | null = null,
   ): Promise<AbonnementNumero | null> {
+    // Un abonnement qui redevient actif (payé) oublie ses avis de suspension, dans la même instruction : une seconde
+    // suspension du même abonnement doit prévenir de nouveau (jaune 6 de la relecture de la livraison A).
     const res = await this.pool.query<Ligne>(
-      `update abonnements_numero
+      `with maj as (
+       update abonnements_numero
           set statut = case when statut = 'resilie' then statut else $2 end,
               periode_fin = greatest(periode_fin, $3::timestamptz),
               premier_echec_le = case
@@ -144,7 +149,13 @@ export class PgAbonnementsNumeroStore {
         where stripe_subscription_id = $1
           and not ($2::text = 'en_retard' and $4::timestamptz is not null
                    and periode_fin is not null and periode_fin >= $4::timestamptz)
-        returning ${COLONNES}`,
+        returning ${COLONNES}
+       ), oubli as (
+         delete from abonnements_numero_avis v using maj
+          where $2::text = 'actif' and maj.statut = 'actif' and v.stripe_subscription_id = maj.stripe_subscription_id
+            and v.avis in ('suspension_telegram', 'suspension_mail')
+       )
+       select * from maj`,
       [abonnementId, statut, periodeFin, finFactureEchouee],
     );
     return res.rows[0] ? versAbonnement(res.rows[0]) : null;
@@ -167,11 +178,31 @@ export class PgAbonnementsNumeroStore {
    * qui n'est pas libéré. Lecture de toute la table, délibérément : c'est le worker, pas un espace, qui la demande.
    */
   async aSurveiller(): Promise<string[]> {
+    // L'abonnement COURANT de chaque espace, dans l'ordre de `deLEspace` : la vieille ligne résiliée d'un espace
+    // réabonné ne le fait plus surveiller pour toujours (relecture de la livraison A).
+    // Et un espace libéré depuis moins de 2 jours tant que l'e-mail ou l'alerte de libération n'est pas parti : un
+    // envoi raté se rejoue au tour suivant (livraison B).
     const res = await this.pool.query<{ tenant_id: string }>(
-      `select distinct tenant_id from abonnements_numero
-        where libere_le is null and (premier_echec_le is not null or fini_le is not null or statut = 'resilie')`,
+      `select tenant_id from (
+         select distinct on (tenant_id) tenant_id, stripe_subscription_id, statut, premier_echec_le, fini_le, libere_le
+           from abonnements_numero
+          order by tenant_id, (statut <> 'resilie') desc, cree_le desc
+       ) a
+        where (libere_le is null and (premier_echec_le is not null or fini_le is not null or statut = 'resilie'))
+           or (libere_le > now() - interval '2 days'
+               and (select count(*) from abonnements_numero_avis v
+                     where v.stripe_subscription_id = a.stripe_subscription_id
+                       and v.avis in ('liberation_mail', 'liberation_telegram')) < 2)`,
     );
     return res.rows.map((r) => r.tenant_id);
+  }
+
+  /** Cet avis est-il déjà parti pour cet abonnement ? Lu AVANT l'envoi : l'avis ne se note qu'une fois l'envoi réussi. */
+  async avisDejaParti(abonnementId: string, avis: AvisAbonnement): Promise<boolean> {
+    const res = await this.pool.query(
+      `select 1 from abonnements_numero_avis where stripe_subscription_id = $1 and avis = $2`, [abonnementId, avis],
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 
   /** Un avis (alerte ou e-mail) ne part qu'une fois par abonnement : `true` la première fois seulement. */
@@ -190,15 +221,27 @@ export class PgAbonnementsNumeroStore {
   async etatDeLEspace(tenantId: string, maintenant: Date = new Date()): Promise<EtatDeLEspace | null> {
     const a = await this.deLEspace(tenantId);
     if (a === null) return null;
-    const n = await this.pool.query(`select 1 from numeros_fournis where tenant_id = $1 and statut = 'attribue'`, [tenantId]);
-    const etat = etatAbonnement(a, { maintenant, numeroAttribue: (n.rowCount ?? 0) > 0 });
+    // Le numéro fourni attribué et le numéro WhatsApp relié, en chiffres. Des chiffres inconnus (affichage vide, Meta pas
+    // lu à la liaison) sont ceux du numéro fourni, comme pour « Abandonner » et la garde d'envoi (jaune 3).
+    const n = await this.pool.query<{ fourni: string | null; relie: string | null }>(
+      `select (select numero from numeros_fournis where tenant_id = $1 and statut = 'attribue' limit 1) as fourni,
+              (select regexp_replace(coalesce(display_phone_number, ''), '[^0-9]', '', 'g') from phone_numbers
+                where tenant_id = $1 limit 1) as relie`,
+      [tenantId],
+    );
+    const { fourni, relie } = n.rows[0] ?? { fourni: null, relie: null };
+    // Un AUTRE numéro que le numéro fourni envoie (jaune 1) : rien de chez nous n'est coupé.
+    const numeroApporte = relie !== null && relie !== '' && relie !== fourni;
+    const etat = etatAbonnement(a, { maintenant, numeroAttribue: fourni !== null, numeroApporte });
     return {
       abonnementId: a.abonnementId,
       etat,
       finPrevueLe: a.finPrevueLe,
       liberationLe: liberationPrevue(a),
-      coupureLe: etat === 'en_retard' && a.premierEchecLe !== null ? new Date(a.premierEchecLe.getTime() + DELAI_COUPURE_IMPAYE_MS) : null,
+      coupureLe: etat === 'en_retard' && a.premierEchecLe !== null && !numeroApporte
+        ? new Date(a.premierEchecLe.getTime() + DELAI_COUPURE_IMPAYE_MS) : null,
       finiLe: a.finiLe,
+      libereLe: a.libereLe,
     };
   }
 
@@ -220,6 +263,8 @@ export class PgAbonnementsNumeroStore {
     const res = await this.pool.query<{ tenant_id: string }>(
       `select a.tenant_id from abonnements_numero a
         where a.statut = 'actif'
+          -- Une fin programmée (« Abandonner », ou le portail) : l'abonné ne veut plus de numéro (lot 4, livraison B).
+          and a.fin_prevue_le is null
           and not exists (select 1 from numeros_fournis n where n.tenant_id = a.tenant_id and n.statut = 'attribue')
           and not exists (select 1 from phone_numbers p where p.tenant_id = a.tenant_id)
         order by a.cree_le`,

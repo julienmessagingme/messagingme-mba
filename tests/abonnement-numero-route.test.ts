@@ -34,7 +34,7 @@ describe('GET /tenants/:tenantId/abonnement-numero', () => {
   it('🔴 un membre (pas seulement un admin) lit l’état et ses dates, en ISO', async () => {
     const { server, lus } = monter({
       abonnementId: 'sub_1', etat: 'suspendu', finPrevueLe: null, coupureLe: null,
-      finiLe: new Date('2026-10-06T15:14:51Z'), liberationLe: new Date('2026-10-13T15:14:51Z'),
+      finiLe: new Date('2026-10-06T15:14:51Z'), liberationLe: new Date('2026-10-13T15:14:51Z'), libereLe: null,
     });
     for (const jeton of [admin, agent]) {
       const res = await lire(server, jeton);

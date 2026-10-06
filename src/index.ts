@@ -88,7 +88,7 @@ import { fetchUrlBorne } from './lib/page-distante';
 import { signSession, signLienNumero } from './auth/token';
 import { lireEtatConnexion } from './otp/etat-connexion';
 import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
-import { ouvrirAbonnement, ouvrirPortail, type DepsAbonnement } from './stripe/abonnement';
+import { ouvrirAbonnement, ouvrirPortail, programmerFinDuNumero, type DepsAbonnement } from './stripe/abonnement';
 import { ecrireHandoffEnabled } from './mba/handoff';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
@@ -2210,6 +2210,8 @@ async function main(): Promise<void> {
       abonnement: {
         ouvrir: (tenant, retour, payeur) => ouvrirAbonnement(abonnementDuNumero, tenant, retour, payeur),
         portail: (tenant, payeur) => ouvrirPortail(abonnementDuNumero, tenant, 'console', payeur),
+        // « Abandonner » d'un abonné (lot 4, B) : la clé restreinte doit pouvoir écrire les abonnements.
+        programmerFin: (abonnementId) => programmerFinDuNumero(abonnementDuNumero, abonnementId),
       },
     },
     // L'état de l'abonnement du numéro (lot 4), pour le bandeau de la console : la seule lecture.

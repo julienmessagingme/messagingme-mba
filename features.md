@@ -1902,7 +1902,13 @@ scénario, comment importer des contacts.
   geste (« Régler » ouvre le portail de Stripe, « Se réabonner » un nouveau paiement qui rend le MÊME numéro, sans
   refaire la fenêtre de Meta), un membre est invité à prévenir un admin. Une résiliation programmée dans le portail
   s'affiche aussi, en bandeau discret avec sa date. Julien reçoit une alerte Telegram par suspension. Rien ne
-  change chez Meta : si l'agent de Meta est allumé, il continue de répondre.
+  change chez Meta : si l'agent de Meta est allumé, il continue de répondre. Un espace qui envoie par son PROPRE numéro
+  n'est jamais coupé par l'abonnement du numéro fourni, et le bandeau ne le prétend pas.
+  **Et 7 jours après la fin** (lot 4, livraison B) : sans réabonnement, le numéro fourni est libéré. Vu de Meta, il quitte
+  l'espace et il est résilié chez notre opérateur de numéros : l'espace redevient sans numéro et peut en connecter un
+  autre, comme un nouveau client ; jamais vu de Meta, il retourne à la réserve. Les admins de l'espace reçoivent un e-mail à la suspension, 2 jours avant la
+  libération et à la libération ; Julien, une alerte à la libération. « Abandonner » un numéro fourni dont l'abonnement
+  court programme sa fin à la fin de la période payée (rien n'est plus prélevé ensuite), et la page le dit.
 - ✅ **Recommencer l'embarquement fonctionne** (2026-08-17) : si un client relance la connexion après un premier
   essai déjà abouti côté Meta, ça marche quand même. Avant, il était bloqué sans recours, avec un message qui
   l'invitait à réessayer alors que réessayer ne pouvait rien changer. Il n'a rien à ressaisir et pas de nouvel

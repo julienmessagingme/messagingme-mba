@@ -2626,10 +2626,31 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   publique `/paiement-recu`) quand l'abonnement est fini, le portail quand il est impayé ou que sa fin est
   programmée, et refuse sinon. Le paiement d'un espace qui a déjà son
   numéro n'est permis que si ce numéro est CELUI qu'on lui avait fourni (`memeNumero`, mêmes chiffres) : c'est le
-  réabonnement, qui rend le même numéro sans la fenêtre de Meta. Le balayage `abonnements-numero` (rôle
-  `principal`, toutes les 15 minutes et au démarrage, `src/numero/balayage-abonnements.ts`) ne décide de rien : il
-  envoie l'alerte Telegram de suspension une fois par abonnement (`abonnements_numero_avis`, clé `(abonnement,
-  avis)`) et lève les pauses `numero_suspendu` des espaces qui ne sont plus suspendus.
+  réabonnement, qui rend le même numéro sans la fenêtre de Meta. Un AUTRE numéro relié que le numéro fourni (le
+  sien) n'est jamais « suspendu » (`numeroApporte` : fini, il est `libere` ; impayé, `en_retard` sans date de
+  coupure), et des chiffres inconnus (affichage vide) comptent pour le numéro fourni, ici comme dans la garde. Le
+  balayage `abonnements-numero` (rôle `principal`, toutes les 15 minutes et au démarrage,
+  `src/numero/balayage-abonnements.ts`) part de l'abonnement COURANT de chaque espace (`aSurveiller`, dans l'ordre de
+  `deLEspace`) et ne fait que des gestes, chacun noté une fois dans `abonnements_numero_avis` APRÈS avoir réussi (un
+  envoi raté se rejoue ; un paiement efface les avis de suspension, pour qu'une seconde suspension prévienne) :
+  l'alerte Telegram et l'e-mail aux admins à la suspension, le rappel 2 jours avant la libération, la libération
+  elle-même à J+7 puis son alerte et son e-mail (`src/numero/avis-abonnement.ts`, Resend, chaque admin actif), et la
+  levée des pauses `numero_suspendu` des espaces qui ne sont plus suspendus.
+  🔴 **La libération** (`PgLiberationStore.liberer`, `src/numero/liberation.pg.ts`) tient l'abonnement (`for update
+  skip locked`), le numéro fourni et le délié dans UNE transaction, appel DIDWW compris (`ClientDidww.resilier`,
+  `PATCH /dids/{id}` avec `terminated: true`, réponse exigée à `terminated: true`) : un échec chez DIDWW annule tout et
+  se rejoue, le numéro restant suspendu. Vu de Meta (relié aux mêmes chiffres, ou un code capté pour lui) : sa ligne
+  `phone_numbers` est SUPPRIMÉE (les campagnes WhatsApp vivantes et celles en pause `numero_suspendu` passent d'abord en
+  pause `numero_delie`), résilié chez DIDWW, `resilie` dans la réserve ; jamais vu : `libre`, et il sert d'abord un
+  abonné qui attend ; sans numéro : la date seule. 🔴 Supprimé et non délié : un espace n'a droit qu'à UN numéro
+  (`linkTenant`, `lierCompteSansNumero`, la route du paiement), et une ligne déliée gardée lui interdisait pour toujours
+  d'en connecter un autre ; aucune clé étrangère ne la référence. Un espace réabonné ne se libère pas. Seul un numéro aux
+  chiffres du fourni quitte l'espace : un numéro apporté jamais. 🔴 La preuve « code capté » tient parce que la purge
+  des codes (`purgerAvant`, 7 jours) épargne ceux d'un numéro ATTRIBUÉ. Le worker reçoit la clé DIDWW
+  (`DIDWW_API_KEY`) ; absente, une libération à résilier échoue et le dit. « Abandonner » d'un abonné programme la fin chez Stripe (`programmerFinAbonnement`,
+  `cancel_at_period_end=true`, la clé restreinte doit pouvoir écrire les abonnements) et la note aussitôt
+  (`noterFinPrevue`) : `enAttenteDeNumero` exclut une fin programmée. Un refus de Stripe n'empêche pas l'abandon et
+  prévient Julien.
   ⚠️ Ces attentes de 25 s entrent dans `http_latences` sous la route `/mcp`, avec les autres outils : un p95 de `/mcp`
   qui grimpe sur /ops ne dit pas une régression tant qu'on ne l'a pas lu par outil.
 - 🔴 **Le crédit offert dépend de l'origine de l'espace** (`tenants.origine`, migration 0212) : `claude_code` quand

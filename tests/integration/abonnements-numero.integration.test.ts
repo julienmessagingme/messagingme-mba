@@ -211,6 +211,62 @@ describe.skipIf(!url)('l’abonnement du numéro fourni : les dates du lot 4 (02
     expect(await abonnements.etatDeLEspace(t)).toBeNull();
   });
 
+  it('🔴 un paiement oublie les avis de suspension : une seconde suspension prévient de nouveau (livraison B, jaune 6)', async () => {
+    await abonnements.enregistrer({ tenantId: t, abonnementId: 'sub_lot4g', livemode: false, periodeFin: null });
+    await abonnements.majStatut('sub_lot4g', 'en_retard', null);
+    expect(await abonnements.noterAvis('sub_lot4g', 'suspension_telegram')).toBe(true);
+    expect(await abonnements.noterAvis('sub_lot4g', 'suspension_mail')).toBe(true);
+    expect(await abonnements.noterAvis('sub_lot4g', 'rappel_liberation_mail')).toBe(true);
+    expect(await abonnements.avisDejaParti('sub_lot4g', 'suspension_telegram')).toBe(true);
+    await abonnements.majStatut('sub_lot4g', 'actif', null);
+    expect(await abonnements.avisDejaParti('sub_lot4g', 'suspension_telegram')).toBe(false);
+    expect(await abonnements.avisDejaParti('sub_lot4g', 'suspension_mail')).toBe(false);
+    // Les autres avis ne bougent pas, et un abonnement fini (qui ne redevient jamais actif) garde les siens.
+    expect(await abonnements.avisDejaParti('sub_lot4g', 'rappel_liberation_mail')).toBe(true);
+    await abonnements.noterAvis('sub_lot4g', 'suspension_telegram');
+    await abonnements.majStatut('sub_lot4g', 'resilie', null);
+    await abonnements.majStatut('sub_lot4g', 'actif', null);
+    expect(await abonnements.avisDejaParti('sub_lot4g', 'suspension_telegram')).toBe(true);
+  });
+
+  it('🔴 un abonné dont la fin est programmée (« Abandonner ») n’attend plus de numéro', async () => {
+    await abonnements.enregistrer({ tenantId: t, abonnementId: 'sub_lot4k', livemode: false, periodeFin: null });
+    await numeros.rendre(t);
+    expect(await abonnements.enAttenteDeNumero()).toContain(t);
+    await abonnements.noterFinPrevue('sub_lot4k', new Date('2026-11-06T14:51:15Z'));
+    expect(await abonnements.enAttenteDeNumero()).not.toContain(t);
+  });
+
+  it('🔴 la surveillance suit l’abonnement COURANT : un espace réabonné ne l’est plus pour sa vieille ligne', async () => {
+    await abonnements.enregistrer({ tenantId: t, abonnementId: 'sub_lot4h', livemode: false, periodeFin: null });
+    await abonnements.majStatut('sub_lot4h', 'resilie', null);
+    expect(await abonnements.aSurveiller()).toContain(t);
+    await abonnements.enregistrer({ tenantId: t, abonnementId: 'sub_lot4i', livemode: false, periodeFin: null });
+    expect(await abonnements.aSurveiller()).not.toContain(t);
+  });
+
+  it('🔴 un AUTRE numéro relié (le sien) : jamais « suspendu » ; des chiffres inconnus comptent pour le numéro fourni', async () => {
+    const waba = `itest-lot4-waba-${t.slice(0, 8)}`;
+    const pn = `itest-lot4-pn-${t.slice(0, 8)}`;
+    await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'itest')`, [waba, t]);
+    try {
+      await abonnements.enregistrer({ tenantId: t, abonnementId: 'sub_lot4j', livemode: false, periodeFin: null });
+      await abonnements.majStatut('sub_lot4j', 'resilie', null);
+      await pool.query(
+        `insert into phone_numbers (id, tenant_id, waba_id, display_phone_number, status) values ($1, $2, $3, '+33 6 12 34 56 78', 'CONNECTED')`,
+        [pn, t, waba],
+      );
+      expect(await abonnements.etatDeLEspace(t)).toMatchObject({ etat: 'libere' });
+      await pool.query(`update phone_numbers set display_phone_number = null where id = $1`, [pn]);
+      expect(await abonnements.etatDeLEspace(t)).toMatchObject({ etat: 'suspendu' });
+      await pool.query(`update phone_numbers set display_phone_number = '+44 999 0000013' where id = $1`, [pn]);
+      expect(await abonnements.etatDeLEspace(t)).toMatchObject({ etat: 'suspendu' });
+    } finally {
+      await pool.query('delete from phone_numbers where tenant_id = $1', [t]);
+      await pool.query('delete from waba where tenant_id = $1', [t]);
+    }
+  });
+
   it('🔴 le CHECK des pauses de campagne accepte le motif `numero_suspendu`', async () => {
     const def = await pool.query<{ def: string }>(
       `select pg_get_constraintdef(oid) as def from pg_constraint where conname = 'campaigns_pause_reason_check'`,

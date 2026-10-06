@@ -28,13 +28,21 @@ export interface LigneEtat {
 /**
  * L'état à `maintenant`. `numeroAttribue` : l'espace a-t-il encore un numéro fourni attribué ? Un abonnement fini SANS
  * numéro (rendu par « Abandonner ») n'a rien à suspendre ; un impayé sans numéro reste dû, lui.
+ *
+ * `numeroApporte` (jaune 1 de la relecture de la livraison A) : l'espace envoie par un AUTRE numéro que le numéro
+ * fourni, le sien. La garde ne coupe que le numéro fourni : « suspendu » serait alors faux partout où il s'affiche
+ * (bandeau, rappel MCP, alerte), et ouvrirait un réabonnement inutile. Fini : « libéré » ; impayé : « en retard », dû
+ * mais sans coupure.
  */
-export function etatAbonnement(l: LigneEtat, o: { maintenant: Date; numeroAttribue: boolean }): EtatAbonnementNumero {
+export function etatAbonnement(
+  l: LigneEtat, o: { maintenant: Date; numeroAttribue: boolean; numeroApporte: boolean },
+): EtatAbonnementNumero {
   if (l.libereLe !== null) return 'libere';
   // Fini : la fin compte, même sans date (une ligne `resilie` d'avant la reprise de 0215).
-  if (l.finiLe !== null || l.statut === 'resilie') return o.numeroAttribue ? 'suspendu' : 'libere';
+  if (l.finiLe !== null || l.statut === 'resilie') return o.numeroAttribue && !o.numeroApporte ? 'suspendu' : 'libere';
   if (l.premierEchecLe !== null) {
-    return o.maintenant.getTime() - l.premierEchecLe.getTime() >= DELAI_COUPURE_IMPAYE_MS ? 'suspendu' : 'en_retard';
+    const coupe = o.maintenant.getTime() - l.premierEchecLe.getTime() >= DELAI_COUPURE_IMPAYE_MS;
+    return coupe && !o.numeroApporte ? 'suspendu' : 'en_retard';
   }
   // Un échec sans date (ligne d'avant le lot 4) : en retard, jamais suspendu sur une date inventée.
   if (l.statut === 'en_retard') return 'en_retard';

@@ -102,12 +102,13 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
       },
       numeroConnecte: async () => null,
       verrous: { prendre: async () => null },
-      alertes: { reserveBasse: async () => {}, numeroBloque: async () => {} },
+      alertes: { reserveBasse: async () => {}, numeroBloque: async () => {}, finNonProgrammee: async () => {} },
       seuilReserve: 3,
-      abonnements: { deLEspace: async () => null, enAttenteDeNumero: async () => [] },
+      abonnements: { deLEspace: async () => null, enAttenteDeNumero: async () => [], noterFinPrevue: async () => false },
       abonnement: {
         ouvrir: async () => ({ ok: true as const, valeur: { url: 'https://x' } }),
         portail: async () => ({ ok: true as const, valeur: { url: 'https://x' } }),
+        programmerFin: async () => ({ ok: true as const, valeur: true as const }),
       },
     };
     return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET, getUserState: async (userId) => ({ role: userId === 'u2' ? 'agent' : 'admin', disabled: false }) }, numeroFourni: deps });

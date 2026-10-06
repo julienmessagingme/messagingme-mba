@@ -108,8 +108,10 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
         ? params.arguments as Record<string, unknown>
         : {};
       // Lot 4 : le rappel de l'abonnement du numéro, sur CHAQUE réponse d'outil de l'espace tant qu'il est en retard ou
-      // suspendu. Une lecture qui échoue ne prive pas l'appel de sa réponse : pas de rappel, c'est tout.
-      const rappel = await deps.numero.abonnement(ctx.tenantId).then(rappelDeLAbonnement, () => null);
+      // suspendu. Une lecture qui échoue ne prive pas l'appel de sa réponse : pas de rappel, c'est tout. Le `catch` est
+      // APRÈS le `then` : il attrape aussi une exception du formateur (une date illisible), que le second argument de
+      // `then` laisserait passer (jaune 7 de la relecture de la livraison A).
+      const rappel = await deps.numero.abonnement(ctx.tenantId).then(rappelDeLAbonnement).catch(() => null);
       const blocs = (texte: string) => [{ type: 'text', text: texte }, ...(rappel !== null ? [{ type: 'text', text: rappel }] : [])];
       try {
         const resultat = await outil.executer(deps, ctx.tenantId, args, ctx.personne);

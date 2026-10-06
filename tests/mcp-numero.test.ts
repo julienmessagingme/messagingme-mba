@@ -162,7 +162,7 @@ describe('les outils de l’abonnement du numéro (livraison B)', () => {
 
 const DATE = (iso: string) => new Date(iso);
 const etatAbo = (e: Partial<EtatDeLEspace>): EtatDeLEspace => ({
-  abonnementId: 'sub_1', etat: 'actif', finPrevueLe: null, liberationLe: null, coupureLe: null, finiLe: null, ...e,
+  abonnementId: 'sub_1', etat: 'actif', finPrevueLe: null, liberationLe: null, coupureLe: null, finiLe: null, libereLe: null, ...e,
 });
 
 describe('le lot 4 : l’état de l’abonnement pour Claude, et le réabonnement', () => {
@@ -208,6 +208,18 @@ describe('le lot 4 : l’état de l’abonnement pour Claude, et le réabonnemen
     for (const e of [null, etatAbo({ etat: 'actif' }), etatAbo({ etat: 'fin_prevue' }), etatAbo({ etat: 'libere' })]) {
       expect(rappelDeLAbonnement(e)).toBeNull();
     }
+  });
+
+  it('🔴 en retard SANS date de coupure (un autre numéro envoie, rien ne sera coupé) : aucune date inventée', () => {
+    const r = rappelDeLAbonnement(etatAbo({ etat: 'en_retard', coupureLe: null }));
+    expect(r).toMatch(/resubscribe_number/);
+    expect(r).not.toMatch(/coupés|bientôt/);
+  });
+
+  it('🔴 get_number_subscription répond même si la lecture de l’état échoue (jaune 7 de A)', async () => {
+    const { deps } = monter(() => VIDE);
+    deps.numero = { ...deps.numero, abonnement: async () => { throw new Error('pooler injoignable'); } };
+    expect(await outil('get_number_subscription').executer(deps, 't1', {}, null)).toMatchObject({ etat: null, liberation_le: null });
   });
 });
 

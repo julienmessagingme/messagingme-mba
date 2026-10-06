@@ -160,10 +160,17 @@ export class PgNumerosFournisStore {
     return res.rows[0]?.n ?? 0;
   }
 
-  /** Les appels de plus de `jours` jours : ils ne servent plus qu'au dépannage, et un code n'est valable que dix minutes. */
+  /**
+   * Les appels de plus de `jours` jours : ils ne servent plus qu'au dépannage, et un code n'est valable que dix minutes.
+   * 🔴 SAUF ceux d'un numéro encore ATTRIBUÉ : un code capté prouve que Meta a vu ce numéro, et la libération (lot 4,
+   * livraison B), qui arrive au plus tôt 7 jours après la fin de l'abonnement, s'en sert pour le résilier plutôt que le
+   * remettre en réserve (rouge 2 de la relecture de B). Ils partent à la purge suivant la sortie du numéro.
+   */
   async purgerAvant(jours: number): Promise<number> {
     const res = await this.pool.query(
-      `delete from codes_verification where recu_le < now() - make_interval(days => $1::int)`,
+      `delete from codes_verification
+        where recu_le < now() - make_interval(days => $1::int)
+          and numero_id not in (select id from numeros_fournis where statut = 'attribue')`,
       [Math.max(1, Math.floor(jours))],
     );
     return res.rowCount ?? 0;

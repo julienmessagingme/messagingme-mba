@@ -252,6 +252,17 @@ export interface EngineDeps {
 export const RAISON_NUMERO_RELIE_ENTRE_TEMPS =
   'numéro WhatsApp relié entre-temps, ou campagne qui ne tourne plus : run arrêté sans écrire de pause ; en cours, le balayage de reprise la relance dans la minute';
 
+/**
+ * La même chose pour un numéro SUSPENDU (lot 4) : sa pause s'écrit sans relecture du numéro, donc seule une campagne
+ * qui ne tourne plus (arrêtée par un opérateur, ou finie) la refuse. Rien n'a été « relié » (jaune 8 de la relecture de A).
+ */
+export const RAISON_SUSPENDU_SANS_PAUSE =
+  'numéro WhatsApp suspendu, mais la campagne ne tourne plus : run arrêté sans écrire de pause';
+
+/** La raison d'un arrêt sur un numéro bloqué dont la pause n'a pas été écrite, selon le motif du blocage. */
+export const raisonPauseNonEcrite = (motif: MotifBlocage): string =>
+  (motif === 'numero_suspendu' ? RAISON_SUSPENDU_SANS_PAUSE : RAISON_NUMERO_RELIE_ENTRE_TEMPS);
+
 /** Défaut du pas de relecture du statut : au pire une requête indexée toutes les 5 s par run en cours. */
 const DEFAULT_STATUS_POLL_MS = 5_000;
 
@@ -476,7 +487,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   const arreterSurNumeroDelie = async (err: NumeroBloqueError): Promise<RunReport> => {
     if (deps.numerosDelies) {
       if (!(await deps.numerosDelies.pauserCampagne(campaign.id, campaign.tenantId, err.phoneNumberId, err.motif))) {
-        report.reason = RAISON_NUMERO_RELIE_ENTRE_TEMPS;
+        report.reason = raisonPauseNonEcrite(err.motif);
         return report;
       }
     } else {

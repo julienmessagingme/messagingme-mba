@@ -103,6 +103,11 @@ import { tenter } from './lib/tenter';
 import { messageDe, texteDe } from './lib/erreur';
 import { balayerAbonnements } from './numero/balayage-abonnements';
 import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
+import { PgLiberationStore } from './numero/liberation.pg';
+import { creerAvisAbonnement } from './numero/avis-abonnement';
+import { creerClientDidww } from './didww/client';
+import { PgAlertesCreditStore } from './repondeur/alerte-credit';
+import { ResendClient } from './support/resend';
 
 async function main(): Promise<void> {
   // Le worker est la seule instance qui dépile, et son rôle principal la seule qui supervise : c'est lui qui récupère les
@@ -960,18 +965,42 @@ async function main(): Promise<void> {
   taches.programmer('campagnes-gelees', 60_000, repriseSweep, { immediat: true, enEchec: echecDeBalayage('reprise', 'sweeper:reprise', 'balayage de reprise des campagnes') });
 
   /**
-   * Les abonnements du numéro fourni (lot 4) : l'alerte de suspension à Julien, une fois par abonnement, et la levée
-   * des pauses `numero_suspendu` d'un espace payé entre-temps. L'état se calcule sur des dates : ce balayage ne fait
-   * que les gestes (`src/numero/balayage-abonnements.ts`).
+   * Les abonnements du numéro fourni (lot 4) : à la suspension, l'alerte à Julien et l'e-mail aux admins ; 2 jours
+   * avant la libération, le rappel ; à J+7, la libération (délié, résilié chez DIDWW) et ses avis ; et la levée des
+   * pauses `numero_suspendu` d'un espace payé entre-temps. L'état se calcule sur des dates : ce balayage ne fait que les
+   * gestes (`src/numero/balayage-abonnements.ts`).
    */
   const abonnementsDuNumero = new PgAbonnementsNumeroStore(pool);
+  const liberations = new PgLiberationStore(pool);
+  // La clé DIDWW du worker (livraison B) : la même que l'API, limitée à l'adresse du VPS. Absente, une libération qui
+  // doit résilier échoue, se signale, et se rejoue.
+  const clientDidww = config.DIDWW_API_KEY ? creerClientDidww({ cle: config.DIDWW_API_KEY, url: config.DIDWW_API_URL }) : null;
+  const adminsDesEspaces = new PgAlertesCreditStore(pool);
+  const mailsAbonnement = creerAvisAbonnement({
+    admins: (t) => adminsDesEspaces.admins(t),
+    fuseau: async (t) => (await settingsStore.get(t)).timezone,
+    envoyer: config.RESEND_API_KEY
+      ? async (m) => { await new ResendClient(config.RESEND_API_KEY).send({ from: `Messaging Me <${config.SUPPORT_FROM}>`, ...m }); }
+      : null,
+    pageNumero: `${config.APP_URL.trim().replace(/\/+$/, '')}/connecter-whatsapp`,
+    avisDejaParti: (abonnementId, avis) => abonnementsDuNumero.avisDejaParti(abonnementId, avis),
+    noterAvis: (abonnementId, avis) => abonnementsDuNumero.noterAvis(abonnementId, avis),
+  });
   taches.programmer('abonnements-numero', 15 * 60_000, () => balayerAbonnements({
     aSurveiller: () => abonnementsDuNumero.aSurveiller(),
     etat: (t) => abonnementsDuNumero.etatDeLEspace(t),
+    avisDejaParti: (abonnementId, avis) => abonnementsDuNumero.avisDejaParti(abonnementId, avis),
     noterAvis: (abonnementId, avis) => abonnementsDuNumero.noterAvis(abonnementId, avis),
     // Pas `alert`, limitée à une par clé et par cinq minutes : deux suspensions rapprochées en perdraient une. Le
-    // dédoublonnage est la table des avis.
-    alerter: async (texte) => { await sendTelegram(`[mba-${nomDuProcessus(config.WORKER_ROLE)}] ${texte}`); },
+    // dédoublonnage est la table des avis, notée seulement si Telegram a pris le message.
+    alerter: (texte) => sendTelegram(`[mba-${nomDuProcessus(config.WORKER_ROLE)}] ${texte}`),
+    mails: mailsAbonnement,
+    liberer: (t, abonnementId) => liberations.liberer(t, abonnementId, clientDidww ? (didId) => clientDidww.resilier(didId) : null),
+    // Un numéro rendu à la réserve va d'abord à l'abonné qui attend le sien, comme une déclaration dans /ops.
+    servirAbonneEnAttente: async (sauf) => {
+      const suivant = (await abonnementsDuNumero.enAttenteDeNumero()).find((t) => t !== sauf);
+      if (suivant !== undefined) await numerosFournisStore.attribuer(suivant);
+    },
     espacesEnPauseSuspension: () => numeroDelieStore.espacesEnPauseSuspension(),
     leverPausesSuspension: (t) => numeroDelieStore.leverPausesSuspension(t),
   }), { immediat: true, enEchec: echecDeBalayage('abonnements-numero', 'sweeper:abonnements-numero', 'balayage des abonnements du numéro') });

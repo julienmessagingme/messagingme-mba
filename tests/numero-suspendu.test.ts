@@ -49,6 +49,12 @@ describe('creerLectureSuspension', () => {
     expect(await lecture({ fourni: null }).lire('pn1')).toBe(false);
   });
 
+  it('🔴 des chiffres INCONNUS (affichage vide, Meta pas lu à la liaison) comptent pour le numéro fourni (jaune 3 de A)', async () => {
+    expect(await lecture({ telephone: { tenantId: 't1', chiffres: '' } }).lire('pn1')).toBe(true);
+    // Sans numéro fourni attribué, rien à suspendre, même avec des chiffres inconnus.
+    expect(await lecture({ telephone: { tenantId: 't1', chiffres: '' }, fourni: null }).lire('pn1')).toBe(false);
+  });
+
   it('en retard, actif, fin prévue, libéré, ou sans abonnement : pas suspendu', async () => {
     for (const etat of ['en_retard', 'actif', 'fin_prevue', 'libere', null] as const) {
       expect(await lecture({ etat }).lire('pn1')).toBe(false);
@@ -220,6 +226,21 @@ describe('campagne et numéro suspendu', () => {
     expect(destinataires.gestes).toEqual(['claim r1', 'relacher r1']);
     expect(report).toMatchObject({ failed: 0, paused: true, reason: messageDePause('numero_suspendu', null, undefined) });
     expect(appels).toEqual(['numero_suspendu']);
+  });
+
+  it('🔴 la pause non écrite (campagne arrêtée par un opérateur entre-temps) ne prétend pas que le numéro a été relié (jaune 8 de A)', async () => {
+    const deps: RunJobDeps = {
+      repo: { getCampaign: async () => whatsapp },
+      senderFor: async (_c, pn) => { throw new NumeroSuspenduError(pn); },
+      recipients: new Destinataires(DEUX),
+      campaigns: new Campagnes(),
+      quality: qualite,
+      numerosDelies: { pauserCampagne: async () => false },
+    };
+    const report = await campaignRunJob({ campaignId: 'c1' }, deps);
+    expect(report).toMatchObject({ paused: false });
+    expect(report.reason).not.toMatch(/relié/);
+    expect(report.reason).toMatch(/ne tourne plus/);
   });
 
   it('le message dit que la campagne reprend d’elle-même au paiement', () => {

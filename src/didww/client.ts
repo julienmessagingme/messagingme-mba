@@ -3,8 +3,9 @@ import { z } from 'zod';
 /**
  * LE CLIENT DIDWW DES NUMÉROS FOURNIS (lot 3a, spec `docs/superpowers/specs/2026-10-05-pont-du-code-design.md`).
  *
- * Il ne sait que DEUX gestes : retrouver un numéro de notre inventaire, et le brancher sur le trunk de l'Asterisk. Il
- * n'achète rien et ne résilie rien, délibérément : c'est Julien qui achète (décision du 2026-10-05), et la clé, qui le
+ * Il sait TROIS gestes : retrouver un numéro de notre inventaire, le brancher sur le trunk de l'Asterisk, et le
+ * résilier quand l'abonnement de son espace est fini depuis 7 jours (lot 4, livraison B, décision de Julien du
+ * 2026-10-06). Il n'achète rien, délibérément : c'est Julien qui achète (décision du 2026-10-05), et la clé, qui le
  * pourrait, est limitée à l'adresse du VPS.
  *
  * Mesuré sur le compte réel (`docs/prive/2026-10-02-engageme-claude-code.md`, « DIDWW : ce qui est vérifié ») : l'API
@@ -33,7 +34,7 @@ export class ErreurDidww extends Error {
 
 const didSchema = z.object({
   id: z.string().min(1),
-  attributes: z.object({ number: z.string().min(1) }),
+  attributes: z.object({ number: z.string().min(1), terminated: z.boolean().optional() }),
 });
 const listeSchema = z.object({ data: z.array(didSchema) });
 /** Le corps d'un refus, au format JSON:API. */
@@ -50,6 +51,12 @@ export interface ClientDidww {
   trouverDid(numero: string): Promise<DidDidww | null>;
   /** Branche le numéro sur le trunk : les appels qu'il reçoit vont désormais à l'Asterisk. */
   brancher(didId: string, trunkId: string): Promise<void>;
+  /**
+   * Résilie le numéro (`terminated: true`) : DIDWW le retire à la fin de son cycle de facturation, et le geste est
+   * réversible d'ici là. La réponse doit DIRE `terminated: true` (attribut mesuré sur le compte réel le 2026-10-06) :
+   * un succès qui ne le dit pas est un refus, jamais une résiliation supposée.
+   */
+  resilier(didId: string): Promise<void>;
 }
 
 export function creerClientDidww(config: ConfigDidww, fetchImpl: typeof fetch = fetch): ClientDidww {
@@ -100,6 +107,14 @@ export function creerClientDidww(config: ConfigDidww, fetchImpl: typeof fetch = 
       });
       const lu = unSchema.safeParse(await appeler(`/dids/${encodeURIComponent(didId)}`, { method: 'PATCH', body: corps }));
       if (!lu.success || lu.data.data.id !== didId) throw new ErreurDidww(200, 'réponse de branchement DIDWW illisible');
+    },
+
+    async resilier(didId) {
+      const corps = JSON.stringify({ data: { id: didId, type: 'dids', attributes: { terminated: true } } });
+      const lu = unSchema.safeParse(await appeler(`/dids/${encodeURIComponent(didId)}`, { method: 'PATCH', body: corps }));
+      if (!lu.success || lu.data.data.id !== didId || lu.data.data.attributes.terminated !== true) {
+        throw new ErreurDidww(200, 'réponse de résiliation DIDWW illisible ou sans terminated: true');
+      }
     },
   };
 }

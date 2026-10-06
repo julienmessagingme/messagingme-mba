@@ -134,7 +134,7 @@ function contenu(res: { json: <T>() => T }): { texte: string; isError: boolean }
 describe('serveur MCP : le rappel de l’abonnement du numéro (lot 4)', () => {
   const suspendu = {
     abonnementId: 'sub_1', etat: 'suspendu' as const, finPrevueLe: null, coupureLe: null,
-    finiLe: new Date('2026-10-06T15:14:51Z'), liberationLe: new Date('2026-10-13T15:14:51Z'),
+    finiLe: new Date('2026-10-06T15:14:51Z'), liberationLe: new Date('2026-10-13T15:14:51Z'), libereLe: null,
   };
   const avecAbonnement = (lire: () => Promise<typeof suspendu | null>) => ({ numero: { ...mcpNumeroInerte.numero, abonnement: lire } });
 
@@ -146,6 +146,15 @@ describe('serveur MCP : le rappel de l’abonnement du numéro (lot 4)', () => {
     expect(blocs[1]!.text).toMatch(/resubscribe_number/);
     const refus = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('get_conversation', { conversation_id: 'cv-jamais-vue' }) });
     expect(refus.json<{ result: { content: Array<{ text: string }> } }>().result.content.at(-1)!.text).toMatch(/resubscribe_number/);
+    await server.close();
+  });
+
+  it('🔴 un rappel qui LÈVE en se formant (une date illisible) n’empêche pas l’outil non plus (jaune 7 de A)', async () => {
+    const illisible = { ...suspendu, liberationLe: new Date(Number.NaN) };
+    const { server } = app(avecAbonnement(async () => illisible as typeof suspendu));
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_conversations') });
+    expect(res.json<{ result: { content: unknown[]; isError: boolean } }>().result).toMatchObject({ isError: false });
+    expect(res.json<{ result: { content: unknown[] } }>().result.content).toHaveLength(1);
     await server.close();
   });
 

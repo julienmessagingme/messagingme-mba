@@ -41,6 +41,8 @@ export interface NumeroFourniRouteDeps {
     reserveBasse(libres: number): Promise<void>;
     /** Meta a refusé ce numéro (déjà actif ailleurs) : il est sorti de la réserve, à résilier ou à garder. */
     numeroBloque(numero: string, tenantId: string): Promise<void>;
+    /** « Abandonner » n'a pas pu programmer la fin de l'abonnement chez Stripe : à résilier à la main (lot 4, B). */
+    finNonProgrammee(abonnementId: string, tenantId: string): Promise<void>;
   };
   /** Sous ce nombre de numéros libres, Julien est prévenu (`ALERTE_RESERVE_SEUIL`). */
   seuilReserve: number;
@@ -48,7 +50,7 @@ export interface NumeroFourniRouteDeps {
    * L'abonnement du numéro (lot 3c, livraison B, migration 0214). 🔴 Un numéro ne s'attribue plus sans abonnement vivant
    * (`actif` ou `en_retard`) : il se paie d'abord, et le webhook l'attribue à la confirmation.
    */
-  abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace' | 'enAttenteDeNumero'>;
+  abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace' | 'enAttenteDeNumero' | 'noterFinPrevue'>;
   /**
    * Ouvrir le paiement de l'abonnement (`ouvrirAbonnement`) et le portail client de Stripe (`ouvrirPortail`,
    * `src/stripe/abonnement.ts`) : une adresse, ou un refus.
@@ -56,6 +58,8 @@ export interface NumeroFourniRouteDeps {
   abonnement: {
     ouvrir(tenantId: string, retour: RetourAbonnement, payeur: string): Promise<Issue<{ url: string }>>;
     portail(tenantId: string, payeur: string): Promise<Issue<{ url: string }>>;
+    /** La fin de l'abonnement programmée à la fin de la période (`programmerFinDuNumero`, lot 4, B). */
+    programmerFin(abonnementId: string): Promise<Issue<true>>;
   };
 }
 
@@ -89,6 +93,9 @@ export function creerAlertesReserve(o: {
     },
     numeroBloque: async (numero, tenant) => {
       await o.envoyer(`Numéro fourni refusé par Meta et bloqué : +${numero} (espace ${tenant}). À résilier chez DIDWW, ou à garder.`);
+    },
+    finNonProgrammee: async (abonnementId, tenant) => {
+      await o.envoyer(`« Abandonner » sans résiliation chez Stripe : abonnement ${abonnementId} (espace ${tenant}). Le numéro est rendu, mais l'abonnement continue : à résilier à la main en fin de période.`);
     },
   };
 }
@@ -244,8 +251,31 @@ export function registerNumeroFourni(
     }
     const rendu = await deps.numeros.rendre(tenant);
     if (rendu !== null) await servirUnAbonneEnAttente(tenant);
-    return reply.code(200).send({ rendu: rendu !== null });
+    return reply.code(200).send({ rendu: rendu !== null, finProgrammee: await programmerLaFin(tenant) });
   });
+
+  /**
+   * « Abandonner » d'un abonné (lot 4, livraison B) : l'abonnement qui court prend fin à la fin de la période payée chez
+   * Stripe, et la fin se note tout de suite chez nous (sans attendre le webhook) : l'espace ne compte plus parmi les
+   * abonnés qui attendent un numéro. Un refus de Stripe n'empêche pas l'abandon, Julien résilie à la main. Ne lève pas.
+   */
+  async function programmerLaFin(tenant: string): Promise<boolean> {
+    try {
+      const a = await deps.abonnements.deLEspace(tenant);
+      if (a === null || !vivant(a)) return false;
+      const r = await deps.abonnement.programmerFin(a.abonnementId);
+      if (!r.ok) {
+        await deps.alertes.finNonProgrammee(a.abonnementId, tenant);
+        return false;
+      }
+      await deps.abonnements.noterFinPrevue(a.abonnementId, a.periodeFin ?? new Date());
+      return true;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`numero-fourni : la fin de l'abonnement n'a pas pu être programmée : ${texteDe(err)}`);
+      return false;
+    }
+  }
 
   /**
    * Un numéro rendu va d'abord à l'abonné qui attend le sien depuis le plus longtemps (jaune 7 de la relecture de la

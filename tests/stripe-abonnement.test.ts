@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReponseStripe, TransportStripe } from '../src/stripe/client';
-import { ouvrirAbonnement, ouvrirPortail, ABONNEMENT_INDISPONIBLE, PRIX_NUMERO_HT_CENTIMES, type DepsAbonnement } from '../src/stripe/abonnement';
+import { ouvrirAbonnement, ouvrirPortail, programmerFinDuNumero, ABONNEMENT_INDISPONIBLE, PRIX_NUMERO_HT_CENTIMES, type DepsAbonnement } from '../src/stripe/abonnement';
 
 /**
  * OUVRIR L'ABONNEMENT DU NUMÉRO FOURNI, ET SON PORTAIL (lot 3c, livraison B). Le prix configuré est relu chez Stripe
@@ -93,5 +93,27 @@ describe('ouvrirPortail', () => {
 
   it('un espace sans client Stripe n’a rien à gérer : 409', async () => {
     expect(await ouvrirPortail(deps({ client: null }).d, T1, 'console', 'u1')).toMatchObject({ ok: false, statut: 409 });
+  });
+});
+
+describe('programmerFinDuNumero (« Abandonner » d’un abonné, lot 4, livraison B)', () => {
+  it('🔴 POST sur l’abonnement, `cancel_at_period_end=true`, et la réponse doit le dire', async () => {
+    const { d, transport } = deps({ reponses: [{ status: 200, json: { id: 'sub_1', cancel_at_period_end: true } }] });
+    expect(await programmerFinDuNumero(d, 'sub_1')).toEqual({ ok: true, valeur: true });
+    expect(transport.posts[0]!.url).toBe('https://api.stripe.com/v1/subscriptions/sub_1');
+    expect(transport.posts[0]!.corps.get('cancel_at_period_end')).toBe('true');
+  });
+
+  it('🔴 un succès qui ne dit pas `cancel_at_period_end: true`, ou un refus (clé sans le droit d’écrire) : un refus rendu, jamais levé', async () => {
+    const muet = deps({ reponses: [{ status: 200, json: { id: 'sub_1', cancel_at_period_end: false } }] });
+    expect(await programmerFinDuNumero(muet.d, 'sub_1')).toMatchObject({ ok: false, statut: 422 });
+    const interdit = deps({ reponses: [{ status: 403, json: { error: { type: 'invalid_request_error', message: 'The provided key does not have the required permissions' } } }] });
+    expect(await programmerFinDuNumero(interdit.d, 'sub_1')).toMatchObject({ ok: false, statut: 422 });
+  });
+
+  it('Stripe non configuré : indisponible, sans appel', async () => {
+    const { d, transport } = deps();
+    expect(await programmerFinDuNumero({ ...d, stripe: null }, 'sub_1')).toEqual(ABONNEMENT_INDISPONIBLE);
+    expect(transport.posts).toEqual([]);
   });
 });

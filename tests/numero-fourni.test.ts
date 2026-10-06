@@ -7,7 +7,7 @@ import { creerAlertesReserve, type NumeroFourniRouteDeps } from '../src/http/num
 import type { CleDemandee, Prise } from '../src/db/verrous-courts';
 import type { NumeroFourni } from '../src/otp/store.pg';
 import type { StatutAbonnement } from '../src/stripe/abonnements.pg';
-import type { Issue } from '../src/lib/issue';
+import { refus, type Issue } from '../src/lib/issue';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec docs/superpowers/specs/2026-10-05-numero-fourni-design.md) : la page
@@ -52,6 +52,8 @@ function monter(o: {
   /** Les espaces abonnés qui attendent leur numéro, du plus ancien au plus récent (jaune 7 de la livraison B). */
   attente?: string[];
   portail?: Issue<{ url: string }>;
+  /** La résiliation en fin de période chez Stripe (lot 4, livraison B). */
+  fin?: Issue<true>;
 } = {}) {
   const cap = {
     attribues: 0, rendus: 0, remplaces: 0, alertesReserve: [] as number[], bloques: [] as string[],
@@ -59,6 +61,10 @@ function monter(o: {
     /** Les AUTRES espaces servis par une attribution (un abonné en attente). */
     servis: [] as string[],
     portails: [] as Array<{ tenantId: string; payeur: string }>,
+    /** Les abonnements dont la fin a été programmée chez Stripe, et notée chez nous. */
+    fins: [] as string[],
+    finsNotees: [] as string[],
+    alertesFin: [] as string[],
   };
   const statut = o.abonnement === undefined ? 'actif' : o.abonnement;
   const reserve = [...(o.reserve ?? ['441235619343'])];
@@ -92,11 +98,13 @@ function monter(o: {
     alertes: {
       reserveBasse: async (libres) => { cap.alertesReserve.push(libres); },
       numeroBloque: async (numero) => { cap.bloques.push(numero); },
+      finNonProgrammee: async (abonnementId) => { cap.alertesFin.push(abonnementId); },
     },
     seuilReserve: 3,
     abonnements: {
       deLEspace: async (tenantId) => (statut === null ? null : { abonnementId: 'sub_1', tenantId, livemode: false, statut, periodeFin: null, premierEchecLe: null, finPrevueLe: null, finiLe: null, libereLe: null }),
       enAttenteDeNumero: async () => [...(o.attente ?? [])],
+      noterFinPrevue: async (abonnementId) => { cap.finsNotees.push(abonnementId); return true; },
     },
     abonnement: {
       ouvrir: async (tenantId, retour, payeur) => {
@@ -107,6 +115,7 @@ function monter(o: {
         cap.portails.push({ tenantId, payeur });
         return o.portail ?? { ok: true, valeur: { url: 'https://billing.stripe.com/p/session/test_1' } };
       },
+      programmerFin: async (abonnementId) => { cap.fins.push(abonnementId); return o.fin ?? { ok: true, valeur: true }; },
     },
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, numeroFourni: deps }), cap };
@@ -307,7 +316,8 @@ describe('remplacer et abandonner', () => {
     const { server, cap } = monter({ attribue: '441235619343' });
     const res = await server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ rendu: true });
+    // L'abonnement de la fixture court : sa fin est programmée (lot 4, livraison B).
+    expect(res.json()).toEqual({ rendu: true, finProgrammee: true });
     expect(cap.rendus).toBe(1);
     await server.close();
   });
@@ -396,7 +406,7 @@ describe('les jaunes de la relecture de la livraison B (lot 3c)', () => {
     const { server, cap } = monter({ attribue: '441235619343', attente: ['t1', 't9', 't8'] });
     const res = await server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ rendu: true });
+    expect(res.json()).toEqual({ rendu: true, finProgrammee: true });
     expect(cap.servis).toEqual(['t9']);
     await server.close();
   });
@@ -407,7 +417,7 @@ describe('les jaunes de la relecture de la livraison B (lot 3c)', () => {
     expect(seul.cap.servis).toEqual([]);
     await seul.server.close();
     const rien = monter({ attente: ['t9'] });
-    expect((await rien.server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' })).json()).toEqual({ rendu: false });
+    expect((await rien.server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' })).json()).toEqual({ rendu: false, finProgrammee: true });
     expect(rien.cap.servis).toEqual([]);
     await rien.server.close();
   });
@@ -429,5 +439,40 @@ describe('le lot 4 : se réabonner au MÊME numéro', () => {
     expect(res.json()).toMatchObject({ cause: 'deja_un_numero' });
     expect(cap.ouvertures).toEqual([]);
     await server.close();
+  });
+});
+
+describe('« Abandonner » d’un abonné (lot 4, livraison B)', () => {
+  it('🔴 l’abonnement court : sa fin est programmée chez Stripe (fin de période), et notée chez nous tout de suite', async () => {
+    const { server, cap } = monter({ attribue: '441235619343' });
+    const res = await server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ rendu: true, finProgrammee: true });
+    expect(cap.fins).toEqual(['sub_1']);
+    // Noté sans attendre le webhook : l'abonné qui a rendu son numéro ne compte plus parmi ceux qui attendent le leur.
+    expect(cap.finsNotees).toEqual(['sub_1']);
+    expect(cap.alertesFin).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 Stripe refuse : l’abandon se fait quand même, et Julien est prévenu pour résilier à la main', async () => {
+    const { server, cap } = monter({ attribue: '441235619343', fin: refus(422, 'refus de Stripe') });
+    const res = await server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ rendu: true, finProgrammee: false });
+    expect(cap.rendus).toBe(1);
+    expect(cap.alertesFin).toEqual(['sub_1']);
+    expect(cap.finsNotees).toEqual([]);
+    await server.close();
+  });
+
+  it('sans abonnement, ou déjà résilié : rien chez Stripe', async () => {
+    for (const abonnement of [null, 'resilie'] as const) {
+      const { server, cap } = monter({ attribue: '441235619343', abonnement });
+      const res = await server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
+      expect(res.json()).toEqual({ rendu: true, finProgrammee: false });
+      expect(cap.fins).toEqual([]);
+      await server.close();
+    }
   });
 });

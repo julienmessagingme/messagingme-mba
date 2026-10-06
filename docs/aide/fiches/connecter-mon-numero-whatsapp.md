@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 70a7ff
+source_empreinte: 2be0bd
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -28,7 +28,13 @@ IA, API) : les campagnes en cours se mettent en pause et reprennent d'elles-mêm
 terminé, « Se réabonner » (sur le bandeau ou sur la page « Connecter WhatsApp ») vous rend le MÊME numéro, sans
 repasser par la fenêtre de Meta ; sans réabonnement, le bandeau donne la date à laquelle le numéro sera libéré. Seul
 un administrateur a ces boutons ; les autres membres voient le bandeau et l'invitation à le prévenir. Depuis Claude
-Code, demandez à Claude de vous réabonner.
+Code, demandez à Claude de vous réabonner. Les administrateurs reçoivent aussi un e-mail à la suspension, 2 jours
+avant la libération, puis à la libération. Libéré, 7 jours après la fin de l'abonnement, le numéro quitte votre espace
+pour de bon : votre espace redevient sans numéro, et vous pouvez en connecter un autre pour continuer sur WhatsApp. Si
+vous envoyez par votre propre numéro, l'abonnement du numéro fourni ne le coupe jamais.
+
+**Rendre un numéro fourni.** « Abandonner » rend le numéro à la réserve ; si son abonnement court, sa fin est
+programmée à la fin de la période déjà payée, et plus rien n'est prélevé ensuite.
 
 Pour le premier numéro de votre espace, **5 € de crédit IA vous sont offerts** (1 € si l'espace a été créé depuis
 Claude Code) dès que Meta l'a vérifié, une seule
