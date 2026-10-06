@@ -12,6 +12,7 @@ import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import { RcsPreview } from '@/components/RcsPreview';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
+import { ChampCompte } from '@/components/ChampCompte';
 import { ConditionBuilder, type ConditionGroup } from '@/components/ConditionBuilder';
 import { sortiesDuBloc, type EmailRecipientData, type RFNode } from '@/lib/workflow-canevas';
 import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
@@ -242,9 +243,6 @@ export function ConfigPanel({
                   <option value="days">{t('jours', 'days')}</option>
                 </select>
               </div>
-              <p className="mt-1 text-xs text-ink-500">
-                {t("Le délai est tenu à la minute près environ (le réveil des parcours se fait par balayage). Maximum 30 jours.", 'The delay is accurate to about a minute (parcours are woken by a sweep). Maximum 30 days.')}
-              </p>
             </>
           )}
 
@@ -269,11 +267,11 @@ export function ConfigPanel({
             </p>
           )}
 
-          <p className="mt-1 text-xs text-alerte-700">
-            {mode === 'delai'
-              ? t("Après une attente, seul un envoi de template peut encore partir : la fenêtre de 24 h aura le plus souvent expiré. Un message rapide ou un formulaire placé après ne partira pas.", 'After a wait, only a template can still be sent: the 24h window will usually have expired. A quick message or a form placed after will not be sent.')
-              : t("La durée de cette attente n’est pas connue d’avance : elle est donc comptée pour une attente longue. Seul un envoi de template peut encore partir derrière ; un message rapide ou un formulaire placé après sera refusé à la publication.", 'The length of this wait is not known in advance, so it counts as a long wait. Only a template can still be sent after it; a quick message or a form placed after will be refused at publication.')}
-          </p>
+          {mode !== 'delai' && (
+            <p className="mt-1 text-xs text-alerte-700">
+              {t("La durée de cette attente n’est pas connue d’avance : elle est donc comptée pour une attente longue. Seul un envoi de template peut encore partir derrière ; un message rapide ou un formulaire placé après sera refusé à la publication.", 'The length of this wait is not known in advance, so it counts as a long wait. Only a template can still be sent after it; a quick message or a form placed after will be refused at publication.')}
+            </p>
+          )}
         </div>
         );
       })()}
@@ -445,11 +443,6 @@ export function ConfigPanel({
                 className={cls}
                 placeholder={t('Choisir', 'Choose')}
               />
-              {rows.length === 0 && (
-                <p className="mt-1 text-xs text-ink-500">
-                  {t('Ce bouton n’apparaît que si vous proposez des réponses ci-dessous.', 'This button only appears if you offer answers below.')}
-                </p>
-              )}
             </div>
 
             <div>
@@ -458,9 +451,9 @@ export function ConfigPanel({
                 {rows.map((r, i) => (
                   <div key={i} className="rounded-controle border border-ink-200 p-1.5">
                     <div className="flex items-center gap-1.5">
-                      <input
+                      <ChampCompte
                         value={r.title}
-                        maxLength={24}
+                        max={24}
                         onChange={(e) => { const next = [...rows]; next[i] = { ...r, title: e.target.value }; patchRows(next); }}
                         data-testid={`question-row-title-${i}`}
                         className={cls}
@@ -486,9 +479,6 @@ export function ConfigPanel({
                   <Icone nom="ajouter" taille="petite" />{t('Réponse', 'Answer')}
                 </button>
               )}
-              <p className="mt-1 text-xs text-ink-500">
-                {t('Maximum 10 réponses, 24 caractères chacune. Chaque réponse devient une sortie à relier. Sans aucune réponse, la question part en texte simple et attend une réponse écrite.', 'Maximum 10 answers, 24 characters each. Each answer becomes an output to connect. With no answer at all, the question goes out as plain text and waits for a written reply.')}
-              </p>
             </div>
 
             <div>
@@ -509,13 +499,9 @@ export function ConfigPanel({
                 </select>
               </div>
               <p className="mt-1 text-xs text-ink-500">
-                {t('0 = on attend sans limite. Au-delà de 0, une sortie « Pas de réponse » apparaît sur le bloc : reliez-la pour prévoir ce cas. Maximum 30 jours.', '0 = wait with no limit. Above 0, a “No reply” output appears on the block: connect it to handle that case. Maximum 30 days.')}
+                {t('0 = on attend sans limite. Au-delà de 0, une sortie « Pas de réponse » apparaît sur le bloc.', '0 = wait with no limit. Above 0, a “No reply” output appears on the block.')}
               </p>
             </div>
-
-            <p className="text-xs text-alerte-700">
-              {t('Ce bloc part sur WhatsApp uniquement, et exige que le contact ait écrit dans les 24 h : il ne peut donc pas ouvrir une campagne.', 'This block goes out on WhatsApp only, and requires the contact to have written within 24 hours: it cannot open a campaign.')}
-            </p>
           </div>
         );
       })()}
@@ -548,9 +534,6 @@ export function ConfigPanel({
                 max={lienActif || qr.some((x) => x.trim() !== '') ? 1024 : 4096}
                 compact
               />
-              <p className="mt-1 text-xs text-ink-500">
-                {t('« Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“Variable” inserts a contact field, filled in from their record at send time.')}
-              </p>
             </div>
             {/* MÊME composant et MÊME champ (`imageUrl`) que le bloc RCS : un seul téléversement, un seul
                 format de stockage, et le visuel sert aux DEUX canaux. En WhatsApp il devient l'en-tête du
@@ -565,7 +548,7 @@ export function ConfigPanel({
                 compact
               />
               <p className="mt-1 text-xs text-ink-500">
-                {t('JPEG, PNG ou GIF, 2 Mo maximum. Le message part alors avec le visuel en en-tête. Sans aucune réponse rapide, il part en image légendée.', 'JPEG, PNG or GIF, 2 MB maximum. The message then goes out with the visual as its header. With no quick reply at all, it goes out as a captioned image.')}
+                {t('2 Mo maximum.', '2 MB maximum.')}
               </p>
             </div>
             {/* BOUTON DE LIEN. 🔴 EXCLUSIF DES RÉPONSES RAPIDES, et ce n'est pas notre choix : chez Meta,
@@ -626,7 +609,7 @@ export function ConfigPanel({
               <div className="space-y-1.5">
                 {qr.map((r, i) => (
                   <div key={i} className="flex items-center gap-1.5">
-                    <input value={r} maxLength={20} onChange={(e) => { const next = [...qr]; next[i] = e.target.value; onPatch({ quickReplies: next }); }} className={cls} placeholder={`${t('Réponse', 'Reply')} ${i + 1}`} />
+                    <ChampCompte value={r} max={20} onChange={(e) => { const next = [...qr]; next[i] = e.target.value; onPatch({ quickReplies: next }); }} className={cls} placeholder={`${t('Réponse', 'Reply')} ${i + 1}`} />
                     <button type="button" onClick={() => onPatch({ quickReplies: qr.filter((_, j) => j !== i) })} className="shrink-0 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
                   </div>
                 ))}
@@ -634,7 +617,6 @@ export function ConfigPanel({
               {qr.length < 3 && (
                 <button type="button" onClick={() => onPatch({ quickReplies: [...qr, ''] })} className="mt-1.5 inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"><Icone nom="ajouter" taille="petite" />{t('Réponse rapide', 'Quick reply')}</button>
               )}
-              <p className="mt-1 text-xs text-ink-500">{t('Max 3, 20 caractères. Chaque réponse devient une sortie à relier (point à droite du bloc).', 'Max 3, 20 characters. Each reply becomes an output to connect (dot on the right of the block).')}</p>
               </>)}
             </div>
           </div>
@@ -721,7 +703,6 @@ export function ConfigPanel({
       })()}
       {wfType === 'condition' && (
         <div className="space-y-2">
-          <p className="text-xs leading-snug text-ink-500">{t('Le contact tire le fil « Si réunie » (vert) quand la condition est vraie, sinon « Sinon » (rouge). Reliez chaque sortie à un bloc.', 'The contact follows “If met” (green) when the condition is true, otherwise “Otherwise” (red). Connect each output to a block.')}</p>
           <ConditionBuilder
             tenantId={tenantId}
             group={{ match: (d.match as 'all' | 'any') ?? 'all', clauses: Array.isArray(d.clauses) ? (d.clauses as ConditionGroup['clauses']) : [] }}
@@ -733,12 +714,6 @@ export function ConfigPanel({
       )}
       {wfType === 'inbox' && (
         <div className="flex flex-col gap-2">
-          <p className="text-xs leading-relaxed text-ink-500">
-            {t(
-              "Le fil passe à un humain : le scénario s’arrête ici et la conversation apparaît dans « À traiter » dans l’Inbox. À placer après le message qui annonce le conseiller, c’est lui qui fait taire l’agent automatique.",
-              "The thread goes to a human: the scenario stops here and the conversation shows up under “To handle” in the Inbox. Place it after the message announcing the advisor, that message is what silences the automatic agent.",
-            )}
-          </p>
           <label className="text-xs font-medium text-ink-900">{t('Affecter à', 'Assign to')}</label>
           <select
             data-testid="inbox-node-assignee"
@@ -768,12 +743,6 @@ export function ConfigPanel({
               )}
             </p>
           )}
-          <p className="text-xs text-ink-500">
-            {t(
-              'Au pot commun, tout le monde la voit et peut répondre. Affectée, elle n’allume la pastille que de cette personne, et d’un manager ou d’un administrateur.',
-              'In the shared pool, everyone sees it and can reply. Assigned, it only lights up that person\'s badge, plus a manager\'s or an admin\'s.',
-            )}
-          </p>
         </div>
       )}
       {wfType === 'js' && (

@@ -102,6 +102,12 @@ test.describe('Éditeur : le bloc Question', () => {
 
     await page.getByTestId('question-add-row').click();
     await page.getByTestId('question-row-title-2').fill('Peut-être');
+    // Le compteur du champ suit la frappe, et passe en alerte au plafond (RC1, 2026-10-06).
+    const ligne = page.getByTestId('question-row-title-2').locator('..');
+    await expect(ligne.getByText('9/24')).toBeVisible();
+    await page.getByTestId('question-row-title-1').fill('abcdefghijklmnopqrstuvwx');
+    await expect(page.getByTestId('question-row-title-1').locator('..').getByText('24/24')).toHaveClass(/text-danger/);
+    await page.getByTestId('question-row-title-1').fill('Non');
     await page.getByTestId('question-node-button').fill('Voir');
 
     await expect.poll(

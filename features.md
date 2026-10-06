@@ -3685,7 +3685,7 @@ une campagne qui dépense. Rien ne change chez Meta, rien n'est effacé.
 détaillé (centres d'intérêt, langues), les emplacements, les catégories spéciales, et toute modification d'une
 publicité déjà créée.
 
-## Widget WhatsApp (menu Widget WhatsApp)
+## Widget WhatsApp (menu Tools > Widget WhatsApp)
 
 🚧 **Écran et outils MCP livrés, essai réel à venir** (lots 4 et 5, 2026-10-02). Ce qui clôt la fonctionnalité n'est pas un test : la
 balise posée sur un vrai site, un message envoyé depuis un vrai téléphone, la conversation qui arrive marquée de la

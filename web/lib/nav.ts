@@ -208,9 +208,6 @@ const icons = {
   // Publicites : une cible. Surtout PAS le porte-voix de Campagnes : une campagne parle a des contacts
   // qu on possede deja, une publicite va en chercher qu on ne connait pas.
   pubs: 'publicites',
-  // Widget : un clic. Ni la bulle de Chaine ni la cible de Publicites : le widget est le geste du VISITEUR d'un
-  // site, qui clique pour ouvrir la conversation lui-meme.
-  widget: 'clic',
   content: 'contenu',
   analytics: 'analytics',
   flow: 'scenario',
@@ -268,8 +265,6 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // Juste apres Chaine : les trois entrees repondent a « comment j'atteins des gens ». La publicite est
     // la seule des trois qui va chercher quelqu'un qui ne nous connait pas encore.
     { key: 'publicites', href: '/publicites', label: t('Publicités', 'Ads'), icone: icons.pubs },
-    // Juste apres Publicites, et pour la meme question : le widget amene celui qui visite le site du client.
-    { key: 'widgets', href: '/widgets', label: t('Widget WhatsApp', 'WhatsApp widget'), icone: icons.widget },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), icone: icons.automation },
     /**
      * Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA) et le nôtre. Deux FEUILLES
@@ -328,8 +323,8 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
         { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
       ] },
     ] },
-    // Tools : ce qui BRANCHE la console sur l'extérieur. Les webhooks entrants, et les systèmes que les
-    // agents IA interrogent. Les connecteurs sont ICI et pas dans un agent : un système appartient au CLIENT,
+    // Tools : ce qui BRANCHE la console sur l'extérieur. Les webhooks entrants, les systèmes que les
+    // agents IA interrogent, et le widget posé sur le site du client. Les connecteurs sont ICI et pas dans un agent : un système appartient au CLIENT,
     // plusieurs agents tapent dans la même bibliothèque, et le déclarer dans un agent ferait croire qu'il lui
     // appartient. Les serveurs MCP y sont depuis le 2026-09-17, à côté des connecteurs API : même place,
     // même raison, et la même bibliothèque d'outils derrière.
@@ -348,6 +343,9 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       // seraient indistinguables a la lecture. « Connecteurs » dit la meme chose que « Connecteurs API »
       // juste au-dessus : on va chercher ailleurs.
       { key: 'connecteurs-mcp', href: '/connecteurs-mcp', label: t('Connecteurs MCP', 'MCP connectors') },
+      // Sous Tools depuis le 2026-10-06 (demande de Julien, RC1) : le widget est un outil posé sur le site du
+      // client. L'adresse `/widgets` ne bouge pas.
+      { key: 'widgets', href: '/widgets', label: t('Widget WhatsApp', 'WhatsApp widget') },
     ] },
   ];
   // Second tableau, rendu dans son propre conteneur COLLÉ EN BAS de la barre. La nav n'a aucun mécanisme de

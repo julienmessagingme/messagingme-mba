@@ -5,6 +5,21 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : les retours console du 6 octobre, cadrés en huit lots ; RC1, le ménage de l'éditeur
+
+**Le cadrage** : douze demandes de Julien, passées au grill le même jour, regroupées en huit lots (RC1 à RC8), chacun
+avec son plan (`docs/superpowers/plans/2026-10-06-rc*.md`, `9b2ede4e`). Deux mesures ont changé la forme des plans : le
+bloc Condition combinait déjà plusieurs conditions en ET/OU et lisait déjà étiquettes et champs déclarés (seules
+manquaient les familles et trois champs système) ; aucun agent IA ne porte d'outil « tag », « information » ou « bloc »
+en production (lu en lecture seule), donc les aligner sur le MBA ne demande aucune reprise.
+
+**RC1, console seule** : les textes d'aide listés par Julien retirés des blocs Message rapide, Question, Condition,
+Attente (mode délai) et Assigner ; un compteur `n/max` dans les champs de réponse (`ChampCompte`, 20 et 24) ; « Widget
+WhatsApp » rangé sous Tools (la carte de l'aide régénérée, le titre de sa section de `features.md` et le
+`source_section` de sa fiche suivent). Relu : zéro rouge ; le jaune « pas de test du compteur » corrigé dans le lot
+(l'e2e de la Question vérifie `9/24` et l'alerte à `24/24`). Un e2e sans lien, celui des boîtes du Centre de sécurité,
+a échoué une fois sur quatre passages sous charge et passé trois fois seul : signalé à part.
+
 ## 2026-10-06 : le numéro branché depuis Claude Code, et son abonnement (lot 3c, livraisons A et B)
 
 **A, le lien et l'attente** (`d20dea6b`, jaunes `f8708b65`, console `b4f81ec4`) : `start_whatsapp_connection` donne
