@@ -14,12 +14,14 @@ ligne, ou dans une fenêtre qui dit les conséquences), plus par la boîte grise
 attente montrent la forme de ce qui arrive. Une valeur inconnue s'affiche « n/d ». Une icône par geste, la même
 partout. Plus aucun écran principal ne déborde sur un téléphone.
 
-✅ **La plateforme s'appelle « Messaging Me »** (2026-09-03). Le nom s'affiche à l'onglet du navigateur, sur
-l'écran de connexion, dans l'en-tête à côté du logo (le logo lui-même n'a pas changé) et comme titre du
+✅ **La plateforme s'appelle « Messaging Me »** (« Engage Me » du 2026-09-03 au 2026-10-06). Le logo complet de la
+marque (l'icône et le nom) s'affiche sur l'écran de connexion, dans l'en-tête et sur les docs publiques ; le nom, à
+l'onglet du navigateur, dans les e-mails, l'appli d'authentification, le badge du widget et comme titre du
 serveur MCP. Accroche : « La plateforme conversationnelle qui comprend chaque conversation. »
 ⚠️ « Meta Business Agent » et « MBA » restent tels quels : c'est le produit de Meta, pas le nôtre.
 
-✅ **La console est servie depuis `engageme.messagingme.app`** (2026-09-03). `mba.messagingme.app` continue de
+✅ **La console est servie depuis `console.messagingme.app`** (2026-10-06). L'ancienne adresse
+`engageme.messagingme.app` y redirige, chemin compris, et la vitrine est sur `app.messagingme.fr`. `mba.messagingme.app` continue de
 répondre en parallèle, comme secours et pour toutes les adresses déjà distribuées (liens tracés, visuels RCS,
 webhook Meta, MCP). Rien de ce qui a été envoyé à un client ne cesse de fonctionner.
 

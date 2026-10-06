@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : Engage Me redevient Messaging Me, vitrine sur `app.messagingme.fr`, console sur `console.messagingme.app`
+
+**Le nom et le logo.** `4224fe36` renomme le produit partout où un client le lit : console, API (prompts de
+l'aide, émetteur TOTP, titre du serveur MCP, badge et script inerte du widget, messages Salesforce), vitrine, doc
+courante. Le motif est borné au mot (`engage ?me` attrapait « engagement ») et traite les élisions (« d'Engage Me »
+devient « de Messaging Me »). L'icône est redessinée en SVG d'après le PNG de la marque (1 % d'écart mesuré) ;
+`eeb2b803` pose le logo COMPLET en PNG (`LogoComplet`, `site/messagingme-logo-blanc.png`), Julien ayant refusé
+l'icône suivie du nom composé dans la police de la console. Ce commit a rendu le job front rouge
+(`nav-rangement.spec.ts` cherchait le nom en texte), réparé par `6bcefa3d`.
+
+**Restent `engageme` à dessein** : le connecteur `EngageMe` chez Meta (le renommer forcerait chaque espace à
+republier, décision de Julien), le namespace Salesforce `engagemeapp`, le projet Vercel `engageme-site`, les
+archives datées et les migrations. Le tuto Salesforce dit déjà « Messaging Me », le package reste à renommer.
+Les quatre films de la vitrine montrent encore l'ancien nom.
+
+**Les domaines.** La vitrine passe sur `app.messagingme.fr` (CNAME OVH vers Vercel) ; `engageme.messagingme.fr`
+y redirige par une règle d'hôte de `site/vercel.json`, et `VITRINE` suit. La console passe sur
+`console.messagingme.app` (`07a2a7cd`, CNAME Cloudflare en « DNS only ») : Google Sign-In (client « MBA Web »)
+et Meta Embedded Signup (app « Messaging Me MBA ») déclarent le nouveau nom, `APP_URL` le prend sur le VPS et
+`CORS_ORIGINS` accepte les deux (copie d'avant : `.env.prod.avant-console-202610060822`), l'API et les deux
+workers recréés, contrôlés de l'extérieur. `engageme.messagingme.app` redirige en 308 par Vercel.
+`mba.messagingme.app` sert toujours l'ancienne console, inchangé.
+
 ## 2026-10-06 : le numéro fourni côté client (lot 3b), essai réel fait
 
 Livraison A `a1bb1c63`, livraison B `790accb8` puis `cc884ae6` (serveur, migration 0212) et `477ab86c` (console, page
