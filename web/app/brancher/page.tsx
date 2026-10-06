@@ -25,6 +25,8 @@ export default function BrancherPage() {
   const [lien, setLien] = useState<{ jeton: string; lu: LienLu } | null | undefined>(undefined);
   const [refuse, setRefuse] = useState(false);
   const [connecte, setConnecte] = useState(false);
+  /** Relié, mais Meta ne l'a pas encore activé : ce n'est pas « connecté », la vérification reste à finir. */
+  const [aActiver, setAActiver] = useState(false);
   const [avertissements, setAvertissements] = useState<string[]>([]);
 
   useEffect(() => {
@@ -47,7 +49,11 @@ export default function BrancherPage() {
     if (!api || connecte || refuse) return undefined;
     let vivant = true;
     const lire = () => {
-      api.etat().then((r) => { if (vivant && r.etat.connecte) setConnecte(true); }).catch((err: unknown) => {
+      api.etat().then((r) => {
+        if (!vivant) return;
+        setAActiver(r.etat.connecte?.aActiver === true);
+        if (r.etat.connecte && !r.etat.connecte.aActiver) setConnecte(true);
+      }).catch((err: unknown) => {
         if (vivant && err instanceof LienRefuse) setRefuse(true);
       });
     };
@@ -79,6 +85,14 @@ export default function BrancherPage() {
         ) : (
           <>
             <IntroPage>{t('La connexion de votre numéro WhatsApp, ouverte par Claude Code.', 'Your WhatsApp number connection, opened by Claude Code.')}</IntroPage>
+            {aActiver && (
+              <p data-testid="brancher-a-activer" className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
+                {t(
+                  'Votre numéro est relié, mais Meta ne l’a pas encore activé : la vérification n’est pas allée au bout. Claude vous dira comment la terminer.',
+                  'Your number is linked, but Meta has not activated it yet: verification did not complete. Claude will tell you how to finish it.',
+                )}
+              </p>
+            )}
             <ParcoursNumero
               tenantId={lien.lu.tenantId}
               api={api}

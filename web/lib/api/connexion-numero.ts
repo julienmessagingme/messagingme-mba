@@ -34,10 +34,14 @@ export function apiDeLaSession(tenantId: string): ApiConnexionNumero {
 export interface EtatConnexion {
   fourni: string | null;
   code: { code: string; recuLe: string } | null;
-  connecte: { chiffres: string } | null;
+  /** `aActiver` : relié, mais Meta ne l'a pas encore activé ; il n'est pas « connecté ». */
+  connecte: { chiffres: string; aActiver: boolean } | null;
 }
 
-/** Le serveur a refusé le lien (401) : expiré, révoqué, ou forgé. La page dit de le redemander à Claude. */
+/**
+ * Le serveur a refusé le lien : 401 (expiré, révoqué, forgé) ou 403 (son auteur n'est plus admin, l'espace est suspendu).
+ * La page dit de le redemander à Claude, plutôt que de laisser un bouton grisé sans un mot.
+ */
 export class LienRefuse extends Error {}
 
 /**
@@ -51,7 +55,7 @@ export function apiDuLien(tenantId: string, jeton: string): ApiConnexionNumero &
     headers.set('authorization', `Bearer ${jeton}`);
     const res = await fetch(`${BASE}/tenants/${encodeURIComponent(tenantId)}${chemin}`, { ...init, headers });
     const corps = (await res.json().catch(() => null)) as unknown;
-    if (res.status === 401) throw new LienRefuse(messageDErreur(401, corps, langue()));
+    if (res.status === 401 || res.status === 403) throw new LienRefuse(messageDErreur(res.status, corps, langue()));
     if (!res.ok) throw new ApiError(res.status, messageDErreur(res.status, corps, langue()), corps);
     return corps as T;
   }

@@ -3830,7 +3830,7 @@ et du crédit (ci-dessous) ne s'ouvrent qu'à cette connexion.
 
 ### Brancher son numéro WhatsApp depuis Claude (2026-10-06)
 
-⏳ **Livraison A écrite, pas encore en production** (lot 3c). **À quoi ça sert.** Le client ne passe jamais par la
+✅ **Livraison A en production le 2026-10-06, essai réel dû** (lot 3c). **À quoi ça sert.** Le client ne passe jamais par la
 console : Claude lui donne un lien, il clique, et la page de connexion de son numéro s'ouvre dans son espace, sans
 écran de connexion. Il y fait la fenêtre de Meta ; pendant ce temps, Claude suit le branchement, affiche dans le
 terminal le code de vérification d'un numéro fourni, et annonce le numéro connecté.
@@ -3839,7 +3839,10 @@ terminal le code de vérification d'un numéro fourni, et annonce le numéro con
 numéro est connecté ; passé l'heure, Claude en donne un autre. Il n'ouvre que la connexion du numéro de cet espace,
 rien d'autre de la console. Il est donné au nom de la personne connectée à Claude, qui doit être admin de l'espace :
 si elle cesse de l'être, le lien ne sert plus. Deux outils pour Claude : `start_whatsapp_connection` (numéro fourni
-ou apporté) et `watch_whatsapp_connection`, invisibles derrière une clé d'API.
+ou apporté) et `watch_whatsapp_connection`, invisibles derrière une clé d'API. Un numéro relié que Meta n'a pas encore
+activé n'est pas annoncé « connecté » : Claude dit qu'il reste à finir la vérification. ⚠️ Révoquer l'accès de Claude
+(« Applications autorisées ») ne coupe pas un lien déjà donné : il sert jusqu'à son heure, ou jusqu'à la connexion du
+numéro.
 
 ### Construire un agent IA depuis Claude (2026-10-04)
 

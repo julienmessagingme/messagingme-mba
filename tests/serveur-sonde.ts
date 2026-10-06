@@ -54,6 +54,14 @@ export interface ServeurSonde {
 /** Un identifiant bien formé pour les paramètres autres que l'espace : un uuid mal formé rendrait 404 tôt. */
 const UUID = '22222222-2222-4222-8222-222222222222';
 
+/** Un utilisateur par rôle : le chargeur d'état du serveur-sonde rend le rôle de celui qui appelle. */
+const UTILISATEUR_DU_ROLE = {
+  admin: '11111111-1111-4111-8111-111111111111',
+  manager: '11111111-1111-4111-8111-111111111112',
+  agent: '11111111-1111-4111-8111-111111111113',
+} as const;
+const ROLE_DE: Record<string, string> = Object.fromEntries(Object.entries(UTILISATEUR_DU_ROLE).map(([role, id]) => [id, role]));
+
 /** L'adresse concrète d'une route : l'espace demandé, un uuid pour tout autre paramètre. */
 export const adresse = (chemin: string, espace: string): string =>
   chemin.replace(':tenantId', espace).replace(/:[A-Za-z_]+(\.[a-z]+)?/g, UUID);
@@ -74,7 +82,9 @@ export async function serveurSonde(): Promise<ServeurSonde> {
   const deps: Record<string, unknown> = Object.fromEntries([...cles].map((c) => [c, bouchon()]));
   Object.assign(deps, {
     queue: new FakeQueue(),
-    auth: { users: { findIdentity: async () => null }, secret },
+    // Le chargeur d'état rend le rôle signé par `jeton` : le lien de connexion du numéro n'est jamais accepté sans
+    // relecture de son auteur (lot 3c), et les sessions gardent le rôle de leur jeton.
+    auth: { users: { findIdentity: async () => null }, secret, getUserState: async (userId: string) => (ROLE_DE[userId] ? { role: ROLE_DE[userId]!, disabled: false } : null) },
     // Des centaines d'appels avec la même session : le plafond par utilisateur rendrait des 429.
     plafonds: { utilisateurParMinute: 0, couteuxParMinute: 0 },
   });
@@ -120,7 +130,7 @@ export async function serveurSonde(): Promise<ServeurSonde> {
     appelsDeps: () => appels,
     atteint: (r) => atteints.has(r.options as RouteOptions),
     remettreAZero: () => { appels = 0; atteints.clear(); },
-    jeton: (tenantId, role) => signSession({ userId: '11111111-1111-4111-8111-111111111111', tenantId, role }, secret),
-    lien: (tenantId) => signLienNumero({ userId: '11111111-1111-4111-8111-111111111111', tenantId, mode: 'fourni' }, secret),
+    jeton: (tenantId, role) => signSession({ userId: UTILISATEUR_DU_ROLE[role], tenantId, role }, secret),
+    lien: (tenantId) => signLienNumero({ userId: UTILISATEUR_DU_ROLE.admin, tenantId, mode: 'fourni' }, secret),
   };
 }

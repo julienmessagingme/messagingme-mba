@@ -14,7 +14,7 @@ function jeton(mode: 'fourni' | 'apporte' = 'fourni'): string {
 }
 
 /** Le serveur de la page : le numéro fourni, la fenêtre de Meta et l'état. Chaque en-tête Authorization est gardé. */
-async function simuler(page: Page, o: { refus401?: boolean; connecte?: boolean; lecturesAvantCode?: number } = {}) {
+async function simuler(page: Page, o: { refus401?: boolean; refus403?: boolean; connecte?: boolean; aActiver?: boolean; lecturesAvantCode?: number } = {}) {
   const s = { numero: null as string | null, lectures: 0, autorisations: [] as string[], connecte: o.connecte === true };
   const json = (body: unknown, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body) });
   await page.route('**/api/backend/**', async (route) => {
@@ -22,9 +22,11 @@ async function simuler(page: Page, o: { refus401?: boolean; connecte?: boolean; 
     const chemin = new URL(req.url()).pathname;
     s.autorisations.push(req.headers().authorization ?? '(aucune)');
     if (o.refus401) return route.fulfill(json({ error: 'lien révoqué : redemandez-en un à Claude' }, 401));
+    if (o.refus403) return route.fulfill(json({ error: 'réservé aux admins de l’espace' }, 403));
     if (chemin.endsWith('/embedded-signup/config')) return route.fulfill(json({ enabled: true, appId: 'app-e2e', configId: 'cfg-e2e', graphVersion: 'v25.0' }));
     if (chemin.endsWith('/connexion-numero')) {
-      return route.fulfill(json({ etat: { fourni: s.numero, code: null, connecte: s.connecte ? { chiffres: '441235619343' } : null }, empreinte: '0123456789abcdef' }));
+      const relie = s.connecte || o.aActiver === true;
+      return route.fulfill(json({ etat: { fourni: s.numero, code: null, connecte: relie ? { chiffres: '441235619343', aActiver: o.aActiver === true } : null }, empreinte: '0123456789abcdef' }));
     }
     if (req.method() === 'POST' && chemin.endsWith('/numero-fourni')) {
       s.numero = '+441235619343';
@@ -101,6 +103,19 @@ test('sans jeton : redemander le lien à Claude, et aucun appel', async ({ page 
   await page.goto('/brancher');
   await expect(page.getByTestId('brancher-sans-lien')).toContainText('Claude');
   expect(s.autorisations).toEqual([]);
+});
+
+test('🔴 auteur rétrogradé ou espace suspendu (403) : redemander le lien, pas un bouton grisé sans un mot', async ({ page }) => {
+  await simuler(page, { refus403: true });
+  await page.goto(`/brancher#${jeton()}`);
+  await expect(page.getByTestId('brancher-sans-lien')).toContainText('Claude');
+});
+
+test('🔴 relié mais pas encore activé par Meta : ni « connecté », ni « retournez dans Claude Code »', async ({ page }) => {
+  await simuler(page, { aActiver: true });
+  await page.goto(`/brancher#${jeton()}`);
+  await expect(page.getByTestId('brancher-a-activer')).toBeVisible();
+  await expect(page.getByTestId('brancher-connecte')).toHaveCount(0);
 });
 
 test('lien refusé par le serveur (401) : redemander le lien à Claude', async ({ page }) => {

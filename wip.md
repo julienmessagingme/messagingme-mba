@@ -43,8 +43,12 @@ Le client ne passe jamais par la console : Claude Code lui donne un lien qui ouv
 sans connexion, suit le branchement et affiche le code. Spec `docs/superpowers/specs/2026-10-06-lien-attente-abonnement-design.md`,
 validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien-attente-abonnement.md`.
 
-- ⏳ **Livraison A** : le jeton du lien (un genre à part, une heure, mort à la connexion), sa garde sur les seules
-  routes de la page, la page `/brancher`, `start_whatsapp_connection` et `watch_whatsapp_connection`. Aucune migration.
+- ✅ **Livraison A en production le 2026-10-06** : API `d20dea6b` (aucune migration), console `b4f81ec4` poussée après
+  le `up`. Relue : zéro rouge ; les jaunes (numéro relié non activé, 403 sur la page, chargeur d'état exigé, « Abandonner »
+  après la connexion d'un autre numéro, test d'isolation resserré) corrigés dans le commit suivant ; la révocation de
+  l'accès de Claude qui ne coupe pas un lien déjà donné est dans `todo.md`.
+- ⏳ **Essai réel de A** (Julien) : depuis Claude Code, sur un espace neuf, le lien, la page sans connexion, le code dans
+  le terminal, le numéro connecté. Il faut un numéro dans la réserve, vide depuis l'essai du 3b.
 - ⏳ **Livraison B** : l'abonnement à 3,50 € HT par mois (prix `price_1UNUMXF67GfPqM0XcYpVkdhS`, lu chez Stripe),
   le numéro attribué par le webhook après paiement, trois événements, trois outils. Pour tous les clients.
 

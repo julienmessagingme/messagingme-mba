@@ -2548,11 +2548,14 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   aucune route d'espace ne s'ouvre avec lui. Seule la garde `adminOuLien` (`makeRequireAdminOuLien`) l'accepte, et
   elle n'est posée que sur les modules `numeroFourni` et `embeddedSignup` : `tests/scope-tenant.test.ts` appelle
   chaque route d'espace avec ce jeton et exige un refus partout ailleurs. À chaque appel, l'utilisateur qui l'a
-  demandé est relu (actif, admin) ; une écriture est refusée (409 `lien_termine`) dès que l'espace a un numéro
-  connecté. Le jeton voyage après le `#` du lien, la page le garde dans `sessionStorage` et n'envoie jamais la
+  demandé est relu (actif, admin), et sans chargeur d'état aucun lien n'est accepté ; une écriture est refusée (409
+  `lien_termine`) dès que l'espace a un numéro connecté ET activé (`status = CONNECTED`, la règle de l'Accueil), sauf
+  « Abandonner » le numéro fourni, qui juge lui-même. « Délier » et « relier » restent sur la seule garde admin. Le jeton voyage après le `#` du lien, la page le garde dans `sessionStorage` et n'envoie jamais la
   session de la console. L'état de la connexion (`lireEtatConnexion`, `src/otp/etat-connexion.ts`) est la MÊME
   lecture pour la page (`GET /tenants/:tenantId/connexion-numero`) et pour `watch_whatsapp_connection`, qui rend la
   main au plus tard à 25 s : le proxy de `api.messagingme.app` coupe une réponse à 45 (`proxy_read_timeout`).
+  ⚠️ Ces attentes de 25 s entrent dans `http_latences` sous la route `/mcp`, avec les autres outils : un p95 de `/mcp`
+  qui grimpe sur /ops ne dit pas une régression tant qu'on ne l'a pas lu par outil.
 - 🔴 **Le crédit offert dépend de l'origine de l'espace** (`tenants.origine`, migration 0212) : `claude_code` quand
   l'espace naît par la connexion OAuth de Claude Code (`src/http/oauth.ts`), `console` sinon ; 1 €
   (`CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR`) contre 5 € (`CREDIT_OFFERT_MICRO_EUR`), lus dans la transaction de l'offre.

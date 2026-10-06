@@ -183,8 +183,12 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
  * Pour le jeton, à chaque appel :
  *  - le plafond par utilisateur, sur celui qui a demandé le lien, comme pour une session ;
  *  - 🔴 l'utilisateur relu en base : révoqué, supprimé ou rétrogradé, le lien ne sert plus ; l'espace suspendu non plus ;
- *  - 🔴 une écriture refusée (409 `lien_termine`) dès que l'espace a un numéro connecté : c'est ce qui fait mourir le
- *    lien. Les lectures restent permises jusqu'à son échéance, pour que la page affiche « connecté ».
+ *  - 🔴 une écriture refusée (409 `lien_termine`) dès que l'espace a un numéro connecté ET activé : c'est ce qui fait
+ *    mourir le lien. Un numéro relié que Meta n'a pas encore activé le laisse vivre (l'activation reste à faire), et
+ *    `ecrituresApresConnexion` nomme les routes qui jugent elles-mêmes (« Abandonner » le numéro fourni quand c'est un
+ *    AUTRE numéro qui s'est connecté). Les lectures restent permises jusqu'à son échéance, pour que la page affiche
+ *    « connecté ».
+ *  - 🔴 sans chargeur d'état, aucun lien n'est accepté : jamais de lien sans relecture de son auteur.
  * Elle pose `req.auth` sur l'espace DU JETON : l'étape d'espace, posée après elle au montage, compare ensuite l'URL,
  * comme pour une session. ⚠️ Elle n'est posée que sur les modules de la page (`src/server.ts`) : c'est la liste
  * qu'éprouve `tests/scope-tenant.test.ts`, un jeton de lien présenté ailleurs étant refusé par `verifySession`.
@@ -192,9 +196,12 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
 export function makeRequireAdminOuLien(o: {
   requireAdmin: PreHandler[];
   secret: string;
-  loadState?: UserStateLoader;
+  loadState: UserStateLoader | undefined;
   limiteur?: RateLimiter;
-  numeroConnecte(tenantId: string): Promise<object | null>;
+  /** L'espace a-t-il un numéro connecté ET activé (`status = CONNECTED`) ? */
+  numeroActif(tenantId: string): Promise<boolean>;
+  /** Les adresses de route (`/tenants/:tenantId/...`) dont l'écriture reste permise au lien après la connexion. */
+  ecrituresApresConnexion: ReadonlySet<string>;
 }): PreHandler {
   return async function adminOuLien(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;
@@ -209,23 +216,26 @@ export function makeRequireAdminOuLien(o: {
       return;
     }
     if (o.limiteur && !(await consommerAvecEntetes(o.limiteur, lien.userId, reply))) return;
-    if (o.loadState) {
-      const etat = await o.loadState(lien.userId, lien.tenantId);
-      if (!etat || etat.disabled) {
-        await reply.code(401).send({ error: 'lien révoqué : redemandez-en un à Claude' });
-        return;
-      }
-      if (etat.tenantStatus === 'locked') {
-        await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
-        return;
-      }
-      if (etat.role !== 'admin') {
-        await reply.code(403).send({ error: 'réservé aux admins de l’espace' });
-        return;
-      }
+    if (!o.loadState) {
+      await reply.code(401).send({ error: 'lien non vérifiable : redemandez-en un à Claude' });
+      return;
+    }
+    const etat = await o.loadState(lien.userId, lien.tenantId);
+    if (!etat || etat.disabled) {
+      await reply.code(401).send({ error: 'lien révoqué : redemandez-en un à Claude' });
+      return;
+    }
+    if (etat.tenantStatus === 'locked') {
+      await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
+      return;
+    }
+    if (etat.role !== 'admin') {
+      await reply.code(403).send({ error: 'réservé aux admins de l’espace' });
+      return;
     }
     const methode = req.method.toUpperCase();
-    if (methode !== 'GET' && methode !== 'HEAD' && (await o.numeroConnecte(lien.tenantId))) {
+    const ecriture = methode !== 'GET' && methode !== 'HEAD';
+    if (ecriture && !o.ecrituresApresConnexion.has(req.routeOptions.url ?? '') && (await o.numeroActif(lien.tenantId))) {
       await reply.code(409).send({ error: 'le numéro est connecté : ce lien ne sert plus', code: 'lien_termine' });
       return;
     }

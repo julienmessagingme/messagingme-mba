@@ -25,7 +25,7 @@ export interface NumeroFourniRouteDeps {
    * 🔴 Un espace qui a déjà un numéro n'en reçoit pas d'autre (un seul numéro par espace), et le numéro fourni ne
    * retourne pas à la réserve s'il EST celui qui est connecté ; un espace qui a connecté le sien le rend, lui.
    */
-  numeroConnecte(tenantId: string): Promise<{ chiffres: string } | null>;
+  numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean } | null>;
   /** Un remplacement par heure et par espace : « En obtenir un autre » ne vide pas la réserve partagée. */
   verrous: Pick<VerrousCourts, 'prendre'>;
   /** Prévenir Julien. Ne lèvent jamais (le câblage borne leur fréquence). */

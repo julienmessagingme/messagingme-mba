@@ -11,13 +11,16 @@ export interface EtatConnexion {
   fourni: string | null;
   /** Le dernier code capté pour ce numéro depuis son attribution, dans la fenêtre de `codeDeLEspace` (15 minutes). */
   code: { code: string; recuLe: string } | null;
-  /** Le numéro WhatsApp connecté à l'espace, en chiffres (`''` si son affichage est inconnu). */
-  connecte: { chiffres: string } | null;
+  /**
+   * Le numéro WhatsApp relié à l'espace, en chiffres (`''` si son affichage est inconnu). `aActiver` : relié, mais Meta
+   * ne l'a pas encore activé (`status` lu et différent de `CONNECTED`, la règle de l'Accueil) ; il n'est pas « connecté ».
+   */
+  connecte: { chiffres: string; aActiver: boolean } | null;
 }
 
 export interface DepsEtatConnexion {
   numeros: Pick<PgNumerosFournisStore, 'numeroDeLEspace' | 'codeDeLEspace'>;
-  numeroConnecte(tenantId: string): Promise<{ chiffres: string } | null>;
+  numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean } | null>;
 }
 
 export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: string): Promise<EtatConnexion> {
@@ -37,6 +40,6 @@ export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: strin
  * ne laisse pas lire le code.
  */
 export function empreinteEtat(e: EtatConnexion): string {
-  const forme = JSON.stringify([e.fourni, e.code?.recuLe ?? null, e.code?.code ?? null, e.connecte?.chiffres ?? null]);
+  const forme = JSON.stringify([e.fourni, e.code?.recuLe ?? null, e.code?.code ?? null, e.connecte?.chiffres ?? null, e.connecte?.aActiver ?? null]);
   return createHash('sha256').update(forme).digest('hex').slice(0, 16);
 }

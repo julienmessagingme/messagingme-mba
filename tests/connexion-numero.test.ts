@@ -18,14 +18,14 @@ const NUMERO = (numero: string): NumeroFourni => ({
   id: `id-${numero}`, numero, didwwDidId: `did-${numero}`, statut: 'attribue', tenantId: 't1', attribueLe: new Date(), creeLe: new Date(),
 });
 
-function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; connecte?: string }) {
+function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; connecte?: string; aActiver?: boolean }) {
   const lus: string[] = [];
   const deps = {
     numeros: {
       numeroDeLEspace: async (t: string) => { lus.push(`numero:${t}`); return o.attribue ? NUMERO(o.attribue) : null; },
       codeDeLEspace: async (t: string) => { lus.push(`code:${t}`); return o.code ?? null; },
     },
-    numeroConnecte: async (t: string) => { lus.push(`connecte:${t}`); return o.connecte !== undefined ? { chiffres: o.connecte } : null; },
+    numeroConnecte: async (t: string) => { lus.push(`connecte:${t}`); return o.connecte !== undefined ? { chiffres: o.connecte, aActiver: o.aActiver === true } : null; },
   };
   return { deps, lus };
 }
@@ -43,7 +43,9 @@ describe('lireEtatConnexion', () => {
     expect(await lireEtatConnexion(etatDe({ attribue: '441235619343', code: { code: '123456', recuLe } }).deps, 't1'))
       .toEqual({ fourni: '+441235619343', code: { code: '123456', recuLe: '2026-10-06T08:53:01.000Z' }, connecte: null });
     expect(await lireEtatConnexion(etatDe({ attribue: '441235619343', connecte: '441235619343' }).deps, 't1'))
-      .toEqual({ fourni: '+441235619343', code: null, connecte: { chiffres: '441235619343' } });
+      .toEqual({ fourni: '+441235619343', code: null, connecte: { chiffres: '441235619343', aActiver: false } });
+    expect((await lireEtatConnexion(etatDe({ connecte: '441235619343', aActiver: true }).deps, 't1')).connecte)
+      .toEqual({ chiffres: '441235619343', aActiver: true });
   });
 
   it('chaque lecture est filtrée sur l’espace demandé', async () => {
@@ -58,11 +60,12 @@ describe('empreinteEtat', () => {
   const attribue: EtatConnexion = { ...vide, fourni: '+441235619343' };
   const avecCode: EtatConnexion = { ...attribue, code: { code: '123456', recuLe: '2026-10-06T08:53:01.000Z' } };
   const autreCode: EtatConnexion = { ...attribue, code: { code: '654321', recuLe: '2026-10-06T08:55:01.000Z' } };
-  const connecte: EtatConnexion = { ...avecCode, connecte: { chiffres: '441235619343' } };
+  const aActiver: EtatConnexion = { ...avecCode, connecte: { chiffres: '441235619343', aActiver: true } };
+  const connecte: EtatConnexion = { ...avecCode, connecte: { chiffres: '441235619343', aActiver: false } };
 
   it('change à chaque étape, et un second code compte comme un changement', () => {
-    const e = [vide, attribue, avecCode, autreCode, connecte].map(empreinteEtat);
-    expect(new Set(e).size).toBe(5);
+    const e = [vide, attribue, avecCode, autreCode, aActiver, connecte].map(empreinteEtat);
+    expect(new Set(e).size).toBe(6);
   });
 
   it('reste la même pour le même état, et ne laisse pas lire le code', () => {
@@ -93,7 +96,7 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
       alertes: { reserveBasse: async () => {}, numeroBloque: async () => {} },
       seuilReserve: 3,
     };
-    return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, numeroFourni: deps });
+    return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET, getUserState: async (userId) => ({ role: userId === 'u2' ? 'agent' : 'admin', disabled: false }) }, numeroFourni: deps });
   };
   const lire = (server: ReturnType<typeof monter>, tenant: string, jeton: string) =>
     server.inject({ method: 'GET', url: `/tenants/${tenant}/connexion-numero`, headers: { authorization: `Bearer ${jeton}` } });

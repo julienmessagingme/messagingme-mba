@@ -950,7 +950,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       secret: deps.auth.secret,
       loadState: deps.auth.getUserState,
       limiteur: plafondUtilisateur,
-      numeroConnecte: (tenantId) => numeroFourni.numeroConnecte(tenantId),
+      numeroActif: async (tenantId) => {
+        const n = await numeroFourni.numeroConnecte(tenantId);
+        return n !== null && !n.aActiver;
+      },
+      // « Abandonner » le numéro fourni juge lui-même : refusé si c'est LUI qui est connecté, permis si c'en est un autre.
+      ecrituresApresConnexion: new Set(['/tenants/:tenantId/numero-fourni/abandonner']),
     })
     : requireAdmin;
 

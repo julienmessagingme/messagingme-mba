@@ -58,7 +58,8 @@ function vueEtat(e: EtatConnexion): Record<string, unknown> {
   return {
     numero_fourni: e.fourni,
     code_recu_le: e.code?.recuLe ?? null,
-    connecte: e.connecte !== null,
+    connecte: e.connecte !== null && !e.connecte.aActiver,
+    a_activer: e.connecte?.aActiver === true,
     numero_connecte: e.connecte ? (e.connecte.chiffres ? `+${e.connecte.chiffres}` : null) : null,
   };
 }
@@ -88,9 +89,12 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       const userId = signataire(personne);
       const mode = args.mode;
       if (mode !== 'fourni' && mode !== 'apporte') throw new RefusOutil('mode : « fourni » ou « apporte »');
-      if ((await deps.numero.etat(tenantId)).connecte) {
-        throw new RefusOutil('Cet espace a déjà un numéro WhatsApp connecté : il n’y a rien à brancher.');
+      const relie = (await deps.numero.etat(tenantId)).connecte;
+      if (relie?.aActiver) {
+        throw new RefusOutil('Un numéro est déjà relié à cet espace, mais Meta ne l’a pas encore activé : il reste à finir sa '
+          + 'vérification, dans l’Accueil de la console (« Activer le numéro »).');
       }
+      if (relie) throw new RefusOutil('Cet espace a déjà un numéro WhatsApp connecté : il n’y a rien à brancher.');
       const jeton = await deps.numero.signerLien({ tenantId, userId, mode });
       return {
         url: `${deps.numero.urlConsole.replace(/\/+$/, '')}/brancher#${jeton}`,
@@ -139,9 +143,12 @@ export const OUTILS_NUMERO: OutilMcp[] = [
             etat: vueEtat(e),
             code: e.code?.code ?? null,
             empreinte,
-            suite: e.connecte
-              ? 'Le numéro est connecté : le branchement est fini.'
-              : 'Rappelle watch_whatsapp_connection avec etat_connu égal à cette empreinte pour attendre la suite.',
+            suite: e.connecte?.aActiver
+              ? 'Le numéro est relié, mais Meta ne l’a pas encore activé : la vérification n’est pas allée au bout. Dis-le à la '
+                + 'personne : elle peut la terminer dans l’Accueil de la console (« Activer le numéro »).'
+              : e.connecte
+                ? 'Le numéro est connecté : le branchement est fini.'
+                : 'Rappelle watch_whatsapp_connection avec etat_connu égal à cette empreinte pour attendre la suite.',
           };
         }
         await deps.numero.attendre(PAS_ATTENTE_MS);

@@ -347,8 +347,9 @@ describe('🔴 sur le serveur construit : chaque route :tenantId refuse une sess
     for (const r of sondees()) {
       s.remettreAZero();
       const res = await appeler(r, A, jeton);
+      // Sur la page, le handler est ATTEINT, écritures comprises : un 409 de la garde ne prouverait pas qu'elle les ouvre.
       const juste = duLien(r)
-        ? res.statusCode !== 401 && res.statusCode !== 403
+        ? s.atteint(r) && res.statusCode !== 401 && res.statusCode !== 403
         : res.statusCode === 401 && !s.atteint(r) && s.appelsDeps() === 0;
       if (!juste) fautes.push(`${r.module} ${r.methode} ${r.chemin} -> ${res.statusCode} handler=${s.atteint(r)}`);
     }

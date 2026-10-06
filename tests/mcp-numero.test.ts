@@ -51,7 +51,7 @@ describe('start_whatsapp_connection', () => {
   });
 
   it('🔴 refuse quand un numéro est déjà connecté, et un mode inconnu', async () => {
-    const { deps } = monter(() => ({ ...VIDE, connecte: { chiffres: '33600000000' } }));
+    const { deps } = monter(() => ({ ...VIDE, connecte: { chiffres: '33600000000', aActiver: false } }));
     await expect(outil('start_whatsapp_connection').executer(deps, 't1', { mode: 'fourni' }, PERSONNE)).rejects.toBeInstanceOf(RefusOutil);
     const vide = monter(() => VIDE).deps;
     await expect(outil('start_whatsapp_connection').executer(vide, 't1', { mode: 'autre' }, PERSONNE)).rejects.toBeInstanceOf(RefusOutil);
@@ -93,11 +93,19 @@ describe('watch_whatsapp_connection', () => {
     expect(DELAI_ATTENTE_MS).toBeLessThanOrEqual(30_000);
   });
 
+  it('🔴 relié mais pas encore activé par Meta : ni « connecté » ni « fini », et Claude le dit', async () => {
+    const { deps } = monter(() => ({ ...ATTRIBUE, connecte: { chiffres: '441235619343', aActiver: true } }));
+    const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
+    expect(r.etat).toMatchObject({ connecte: false, a_activer: true });
+    expect(String(r.suite)).toMatch(/activ/);
+    expect(String(r.suite)).not.toMatch(/fini/);
+  });
+
   it('pas de code tant qu’il n’est pas arrivé ; le numéro connecté est dit', async () => {
-    const { deps } = monter(() => ({ ...ATTRIBUE, connecte: { chiffres: '441235619343' } }));
+    const { deps } = monter(() => ({ ...ATTRIBUE, connecte: { chiffres: '441235619343', aActiver: false } }));
     const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
     expect(r.code).toBeNull();
-    expect(r.etat).toMatchObject({ numero_fourni: '+441235619343', numero_connecte: '+441235619343' });
+    expect(r.etat).toMatchObject({ numero_fourni: '+441235619343', numero_connecte: '+441235619343', connecte: true, a_activer: false });
   });
 });
 

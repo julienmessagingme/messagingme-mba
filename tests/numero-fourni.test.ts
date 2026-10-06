@@ -67,7 +67,7 @@ function monter(o: {
       rendre: async () => { cap.rendus += 1; const r = attribue; attribue = null; return r; },
       compterLibres: async () => o.libresApres ?? reserve.length,
     },
-    numeroConnecte: async () => (o.connecte !== undefined ? { chiffres: o.connecte } : null),
+    numeroConnecte: async () => (o.connecte !== undefined ? { chiffres: o.connecte, aActiver: false } : null),
     verrous: fauxVerrous(),
     alertes: {
       reserveBasse: async (libres) => { cap.alertesReserve.push(libres); },

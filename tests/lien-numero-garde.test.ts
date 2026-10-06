@@ -17,6 +17,7 @@ describe('la garde adminOuLien', () => {
   let app: FastifyInstance;
   const etats = new Map<string, Etat>();
   const connectes = new Set<string>();
+  const aActiver = new Set<string>();
   const lectures: string[] = [];
   const loadState: UserStateLoader = async (userId, tenantId) => { lectures.push(`${userId}@${tenantId}`); return etats.get(userId) ?? null; };
 
@@ -26,11 +27,21 @@ describe('la garde adminOuLien', () => {
       requireAdmin: [requireAuth, makeRequireRole(['admin'])],
       secret: SECRET,
       loadState,
-      numeroConnecte: async (tenantId) => (connectes.has(tenantId) ? { chiffres: '33600000000' } : null),
+      numeroActif: async (tenantId) => connectes.has(tenantId) && !aActiver.has(tenantId),
+      ecrituresApresConnexion: new Set(['/abandonner']),
+    });
+    const sansChargeur = makeRequireAdminOuLien({
+      requireAdmin: [requireAuth, makeRequireRole(['admin'])],
+      secret: SECRET,
+      loadState: undefined,
+      numeroActif: async () => false,
+      ecrituresApresConnexion: new Set(),
     });
     app = Fastify();
     app.get('/x', { preHandler: garde }, async (req) => ({ auth: req.auth }));
     app.post('/x', { preHandler: garde }, async (req) => ({ auth: req.auth }));
+    app.post('/abandonner', { preHandler: garde }, async () => ({ ok: true }));
+    app.get('/sans-chargeur', { preHandler: sansChargeur }, async () => ({ ok: true }));
     await app.ready();
   });
   afterAll(async () => { await app.close(); });
@@ -81,6 +92,25 @@ describe('la garde adminOuLien', () => {
     expect((await appeler('GET', jeton)).statusCode).toBe(200);
     // Le numéro pas encore connecté : l'écriture passe.
     expect((await appeler('POST', await lien('u-admin', 't-1'))).statusCode).toBe(200);
+  });
+
+  it('un numéro relié mais pas encore activé ne tue pas le lien : l’activation reste possible', async () => {
+    etats.set('u-admin', { role: 'admin', disabled: false });
+    connectes.add('t-3');
+    aActiver.add('t-3');
+    expect((await appeler('POST', await lien('u-admin', 't-3'))).statusCode).toBe(200);
+  });
+
+  it('« Abandonner » reste permis après la connexion d’un AUTRE numéro : la route juge elle-même', async () => {
+    etats.set('u-admin', { role: 'admin', disabled: false });
+    connectes.add('t-4');
+    const r = await app.inject({ method: 'POST', url: '/abandonner', headers: { authorization: `Bearer ${await lien('u-admin', 't-4')}` }, payload: {} });
+    expect(r.statusCode).toBe(200);
+  });
+
+  it('🔴 sans chargeur d’état, le lien est refusé : jamais de lien sans relecture de son auteur', async () => {
+    const r = await app.inject({ method: 'GET', url: '/sans-chargeur', headers: { authorization: `Bearer ${await lien()}` } });
+    expect(r.statusCode).toBe(401);
   });
 
   it('une session d’admin écrit toujours, même numéro connecté : la mort du lien ne touche que le lien', async () => {

@@ -1,5 +1,12 @@
 # todo.md : backlog
 
+## Lot 3c : un lien déjà donné survit à la révocation de l'accès de Claude (jaune de la relecture, 2026-10-06)
+
+Révoquer Claude dans « Applications autorisées » ne coupe pas un lien de connexion du numéro déjà donné : il sert jusqu'à
+son heure, ou jusqu'à la connexion du numéro. Correction prévue : porter l'identifiant de l'autorisation OAuth dans le
+jeton du lien (`signLienNumero`) et exiger dans la garde `adminOuLien` qu'elle ne soit pas révoquée. Dit dans
+`features.md` en attendant.
+
 ## 🟠 Connecteurs : les paramètres d'un outil ne suivent pas les variables de sa requête (relecture de `099fd6c1`, 2026-10-05)
 
 - **Même racine, autre symptôme** (vu le 2026-10-05, lot « Modifier un appel de connecteur ») : les PARAMÈTRES qu'un

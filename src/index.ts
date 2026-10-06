@@ -514,9 +514,11 @@ async function main(): Promise<void> {
    * Le numéro WhatsApp connecté à un espace, en chiffres (`''` si son affichage est inconnu). Le MÊME pour la page du
    * numéro fourni, la garde du lien de Claude Code (qui meurt à la connexion) et son outil d'attente (lot 3c).
    */
-  const numeroConnecte = async (tenant: string): Promise<{ chiffres: string } | null> => {
+  const numeroConnecte = async (tenant: string): Promise<{ chiffres: string; aActiver: boolean } | null> => {
     const pn = await phoneStatusStore.getPhoneNumber(tenant);
-    return pn ? { chiffres: (pn.displayPhoneNumber ?? '').replace(/[^0-9]/g, '') } : null;
+    if (!pn) return null;
+    // « À activer » : la règle de l'Accueil, un statut lu et différent de `CONNECTED`.
+    return { chiffres: (pn.displayPhoneNumber ?? '').replace(/[^0-9]/g, ''), aActiver: pn.status != null && pn.status !== 'CONNECTED' };
   };
   const transcrireAppelOtp = async (audio: Buffer): Promise<string> => {
     if (!config.AI_GATEWAY_API_KEY || !config.TRANSCRIPTION_MODELE) throw new Error('transcription non configurée');
