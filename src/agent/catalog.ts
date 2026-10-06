@@ -165,7 +165,7 @@ export function messageInappelable(i: Inappelable, origine: OrigineOutil): strin
  */
 export type Rattachement =
   | { ok: true }
-  | { ok: false; refus: 'introuvable' | 'agent_introuvable' | 'reserve_agent_meta' | 'non_enregistre' | 'deja_rattache' }
+  | { ok: false; refus: 'introuvable' | 'agent_introuvable' | 'reserve_agent_meta' | 'non_enregistre' | 'deja_rattache' | 'nom_pris' }
   | { ok: false; refus: 'inappelable'; inappelable: Inappelable; origine: OrigineOutil };
 
 export type RefusRattachement = Extract<Rattachement, { ok: false }>;
@@ -178,6 +178,7 @@ export function messageDuRefus(r: RefusRattachement): string {
     case 'reserve_agent_meta': return 'cet outil est réservé à l’agent de Meta';
     case 'non_enregistre': return 'cet outil n’est pas proposé aux agents : cochez-le dans Tools > Connecteurs MCP';
     case 'deja_rattache': return 'cet outil est déjà donné à cet agent';
+    case 'nom_pris': return 'cet agent a déjà un outil de ce nom : renommez l’un des deux';
     case 'inappelable': return messageInappelable(r.inappelable, r.origine);
   }
 }
@@ -220,12 +221,16 @@ export class OutilNonActivable extends Error {
 }
 
 /**
- * Le nom exposé est déjà pris, dans l'espace (connecteur) ou chez l'agent (action). La portée se lit sur la
- * contrainte violée, pas chez l'appelant : `patch` renomme un outil sans connaître son origine.
+ * Le nom exposé est déjà pris : dans l'espace (connecteur), chez l'agent (action), ou chez un consommateur qui
+ * porterait sinon deux outils de ce nom, une action et une définition d'espace (0211). La portée se lit sur la
+ * contrainte violée, pas chez l'appelant : `patch` renomme un outil sans connaître son origine ni ses consommateurs.
  */
 export class NomOutilDejaPris extends Error {
-  constructor(portee: 'espace' | 'agent' = 'espace') {
-    super(`un outil de cet ${portee} porte déjà ce nom`);
+  constructor(portee: 'espace' | 'agent' | 'consommateur' = 'espace') {
+    super(portee === 'consommateur'
+      // Le seul texte vrai dans tous les cas : renommer un connecteur partagé peut buter chez un AUTRE agent.
+      ? 'deux outils d’un même agent porteraient ce nom'
+      : `un outil de cet ${portee} porte déjà ce nom`);
     this.name = 'NomOutilDejaPris';
   }
 }

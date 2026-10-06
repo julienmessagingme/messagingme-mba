@@ -532,10 +532,23 @@ rangées, sous la même borne. Plus longue, une fiche serait retenue pour une ph
 porte sa propre copie de `CORPS_MAX` et ne tient pas encore cet invariant (`todo.md`).
 
 🔴 **LA DÉFINITION D'UN OUTIL APPARTIENT À L'ESPACE, LE CONSENTEMENT AU COUPLE (outil, consommateur).**
-`agent_tools` porte ce qu'un outil EST (son nom, unique par espace, sa description, ses paramètres, sa
-liaison, son risque, ses plafonds) ; `agent_tool_consommateurs` porte qui a le droit de s'en servir. Les
-tenir ensemble obligeait à redécrire le même outil pour chaque agent, donc à corriger ses mots à N endroits,
-et rendait impossible de l'exposer au Meta Business Agent sans lui inventer une fiche d'agent.
+`agent_tools` porte ce qu'un outil EST (son nom, unique par espace pour une définition d'espace et par agent
+pour une action depuis 0157, sa description, ses paramètres, sa liaison, son risque, ses plafonds) ;
+`agent_tool_consommateurs` porte qui a le droit de s'en servir. Les tenir ensemble obligeait à redécrire le même
+outil pour chaque agent, donc à corriger ses mots à N endroits, et rendait impossible de l'exposer au Meta
+Business Agent sans lui inventer une fiche d'agent.
+
+🔴 **UN CONSOMMATEUR NE VOIT JAMAIS DEUX OUTILS DU MÊME NOM (0211).** Les deux index partiels de 0157 ne se
+recoupent pas : une action et un appel de connecteur pouvaient porter le même nom, et un agent qui utilise les
+deux recevait deux fonctions homonymes. Les trois fournisseurs du Gateway refusent alors le tour ENTIER en 400 non
+rejouable (mesuré le 2026-10-05). La garde est dans la base : `agent_tool_consommateurs.tool_name`, copie du nom
+tenue par une clé étrangère composite `(tool_id, tool_name)` en `on update cascade`, et l'index unique
+`atc_nom_par_consommateur_uidx` sur `(tenant_id, consommateur, tool_name)`. Toute insertion de liaison écrit
+`tool_name` ; un renommage suit par la cascade, et l'index refuse celui qui ferait un doublon chez N'IMPORTE QUEL
+consommateur de l'outil, pas seulement chez l'agent dont l'écran renomme. Le refus rend `NomOutilDejaPris`
+(création, renommage) ou le refus de rattachement `nom_pris`, en 409. ⚠️ Un index, pas une vérification lue puis
+écrite : deux créations simultanées passeraient toutes les deux. ⚠️ `tool_name` reste nullable tant que 0212 n'est
+pas passée, et une liaison sans nom échappe à l'index.
 
 ⚠️ **LE CONSOMMATEUR EST UNE CLÉ TEXTE**, `agent:<uuid>` ou `mba:<phone_number_id>`, fabriquée par
 `src/agent/consommateur.ts` et jamais concaténée ailleurs ; sa FORME est verrouillée par un CHECK, parce
@@ -720,7 +733,9 @@ rattachement concurrent, puis relire `mcp_propose`. Un `for no key update` rouvr
 - **publiable** (chez Meta) : donné à l'agent de Meta, activé, et appelable (`outilsAPublier` lit `inappelable`).
 
 La porte (`rattacherConsommateur`) applique les mêmes fragments et rend sa raison (`Rattachement`, texte par
-`messageDuRefus`) ; l'activation (`activerConsommateur`) refuse un outil inappelable ; `listActifs`, ce que voit le
+`messageDuRefus`). ⚠️ Une exception, délibérée : un outil dont le consommateur porte déjà le nom (0211) reste
+offert, et la porte le refuse (`nom_pris`) en disant quoi renommer ; le cacher ne dirait pas pourquoi il manque.
+L'activation (`activerConsommateur`) refuse un outil inappelable ; `listActifs`, ce que voit le
 modèle d'un agent IA, n'en rend aucun. ⚠️ `listActifsConsommateur` reste NON filtré : le relais de l'agent de Meta y
 cherche l'outil que Meta appelle, et refuse lui-même un outil mort. ⚠️ Côté agent de Meta, un connecteur HTTP sur une
 source qui n'est pas active est refusé AVANT d'être créé (`ajouterConnecteurPourMba`) : créer puis activer y est un

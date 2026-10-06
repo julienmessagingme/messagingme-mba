@@ -268,10 +268,11 @@ export class PgToolCatalog implements ToolCatalog {
       ).catch(surNomDejaPris);
       const id = res.rows[0]?.id;
       if (!id) return null;
+      // `tool_name` (0211) : l'agent utilise peut-être déjà un connecteur de ce nom, que l'index de l'action ignore.
       await client.query(
-        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
-        [tenantId, id, consommateurAgent(agentId)],
-      );
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, $4)',
+        [tenantId, id, consommateurAgent(agentId), outil.name],
+      ).catch(surNomDejaPris);
       return this.completAvecClient(client, tenantId, consommateurAgent(agentId), id);
     });
   }
@@ -325,10 +326,11 @@ export class PgToolCatalog implements ToolCatalog {
       ).catch(surNomDejaPris);
       const id = res.rows[0]?.id;
       if (!id) return null;
+      // `tool_name` (0211) : l'agent a peut-être une action de ce nom, que l'index de l'espace ignore.
       await client.query(
-        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)',
-        [tenantId, id, consommateur],
-      );
+        'insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, $4)',
+        [tenantId, id, consommateur, outil.name],
+      ).catch(surNomDejaPris);
       return this.completAvecClient(client, tenantId, consommateur, id);
     });
   }
@@ -385,10 +387,10 @@ export class PgToolCatalog implements ToolCatalog {
       const id = res.rows[0]?.id;
       if (!id) return null;
       await client.query(
-        `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, actif, active_par, active_le)
-         values ($1, $2, $3, true, $4, now())`,
-        [tenantId, id, consommateur, parUtilisateur],
-      );
+        `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name, actif, active_par, active_le)
+         values ($1, $2, $3, $4, true, $5, now())`,
+        [tenantId, id, consommateur, outil.name, parUtilisateur],
+      ).catch(surNomDejaPris);
       return this.completAvecClient(client, tenantId, consommateur, id);
     });
   }
@@ -453,7 +455,9 @@ export class PgToolCatalog implements ToolCatalog {
     tenantId: string, consommateur: string, outilId: string, patch: PatchOutil,
   ): Promise<OutilComplet | null> {
     // Les énumérations sont réécrites dans le jsonb, en une instruction : une lecture suivie d'une écriture
-    // laisserait deux administrateurs se recouvrir en silence.
+    // laisserait deux administrateurs se recouvrir en silence. Un renommage suit chez chaque consommateur par la
+    // cascade de `tool_name` (0211), et l'index refuse celui qui ferait un doublon chez l'un d'eux, même un AUTRE
+    // agent que celui dont l'écran renomme.
     const res = await this.pool.query<{ id: string }>(
       // Pas d'alias ni de `returning ${COLONNES_ADMIN}` : ses préfixes `t.` et `c.` n'existent pas dans un
       // UPDATE. L'`exists` sur la liaison borne le périmètre : sans lui, l'écran d'un agent corrigerait les
@@ -570,7 +574,8 @@ export class PgToolCatalog implements ToolCatalog {
   /**
    * 🔴 LA PORTE DE RATTACHEMENT, pour un agent IA comme pour l'agent de Meta. Elle applique la même règle que les
    * listes « ajouter un outil » (`offrablesPour`) : un outil MCP non enregistré, ou un outil qui n'est pas
-   * appelable, ne se rattache pas, et le refus dit pourquoi.
+   * appelable, ne se rattache pas, et le refus dit pourquoi. Ni un outil dont ce consommateur porte déjà le nom
+   * (0211) : c'est l'index qui le refuse, les listes ne le filtrent pas.
    *
    * Ordre des verrous : l'agent d'abord (`verrouillerAgentDuConsommateur`, jamais de consentement fantôme), puis la
    * définition en `for key share`. Ce verrou attend un « proposer » (`PgMcpStore.proposer`, `for update`) ou un
@@ -586,10 +591,10 @@ export class PgToolCatalog implements ToolCatalog {
         return { ok: false, refus: 'agent_introuvable' };
       }
       const lu = await client.query<{
-        pour_agent_meta: boolean; enregistre: boolean; cause: string | null; mcp_non_activable: string | null;
+        name: string; pour_agent_meta: boolean; enregistre: boolean; cause: string | null; mcp_non_activable: string | null;
         origin: OutilDefini['origin'];
       }>(
-        `select t.pour_agent_meta, ${ENREGISTRE} as enregistre, (${CAUSE_INAPPELABLE}) as cause,
+        `select t.name, t.pour_agent_meta, ${ENREGISTRE} as enregistre, (${CAUSE_INAPPELABLE}) as cause,
                 t.mcp_non_activable, t.origin
            from agent_tools t
           where t.id = $2 and t.tenant_id = $1
@@ -603,12 +608,18 @@ export class PgToolCatalog implements ToolCatalog {
       if (!t.enregistre) return { ok: false, refus: 'non_enregistre' };
       const inappelable = lireInappelable(t.cause, t.mcp_non_activable);
       if (inappelable) return { ok: false, refus: 'inappelable', inappelable, origine: t.origin };
+      // `tool_name` (0211), lu sous le verrou : un renommage l'attend (`FOR UPDATE` contre `for key share`).
       const res = await client.query(
-        `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur) values ($1, $2, $3)
+        `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur, tool_name) values ($1, $2, $3, $4)
          on conflict (tool_id, consommateur) do nothing`,
-        [tenantId, outilId, consommateur],
+        [tenantId, outilId, consommateur, t.name],
       );
       return (res.rowCount ?? 0) > 0 ? { ok: true } : { ok: false, refus: 'deja_rattache' };
+    }).catch((err: unknown): Rattachement => {
+      // Ce consommateur porte déjà un AUTRE outil de ce nom. `on conflict` ne vise que la liaison elle-même : le
+      // doublon de nom remonte en erreur, et la transaction est déjà annulée.
+      if (estNomPrisChezUnConsommateur(err)) return { ok: false, refus: 'nom_pris' };
+      throw err;
     });
   }
 
@@ -653,7 +664,9 @@ export class PgToolCatalog implements ToolCatalog {
    * 🔴 CE QU'ON PEUT OFFRIR À CE CONSOMMATEUR, MAINTENANT : un outil de la bibliothèque, enregistré s'il est MCP,
    * appelable, et pas déjà à lui. C'est la liste « ajouter un outil » de l'agent de Meta, de la page d'un agent IA et
    * de l'assistant de construction ; aucun d'eux ne filtre plus rien lui-même. La porte (`rattacherConsommateur`)
-   * applique les mêmes fragments : ce qu'une liste offre se rattache.
+   * applique les mêmes fragments : ce qu'une liste offre se rattache. ⚠️ Sauf un outil dont ce consommateur porte déjà
+   * le nom (0211) : il reste offert, et la porte le refuse en disant quoi renommer, quand le cacher ici ne dirait
+   * pas pourquoi il manque.
    */
   async offrablesPour(tenantId: string, consommateur: string): Promise<OutilBibliotheque[]> {
     return this.lireBibliotheque(tenantId, consommateur);
@@ -734,14 +747,29 @@ export class PgToolCatalog implements ToolCatalog {
 }
 
 /**
- * Les index uniques de nom, traduits en erreur métier (409 plutôt que 500). Deux index : une action est
- * unique par agent (`agent_tools_nom_agent_uidx`), une définition d'espace par espace. La portée se lit sur
- * la contrainte violée ; le repli est « espace », qui fait chercher trop large plutôt qu'à côté.
+ * 🔴 L'index de 0211 : un consommateur ne voit jamais deux outils du même nom, sinon le fournisseur refuse le tour
+ * entier en 400. Une insertion de liaison le heurte directement ; un renommage, par la cascade de `tool_name`.
+ */
+const INDEX_NOM_PAR_CONSOMMATEUR = 'atc_nom_par_consommateur_uidx';
+
+function estNomPrisChezUnConsommateur(err: unknown): boolean {
+  const e = err as { code?: string; constraint?: string } | null;
+  return e?.code === '23505' && e.constraint === INDEX_NOM_PAR_CONSOMMATEUR;
+}
+
+/**
+ * Les index uniques de nom, traduits en erreur métier (409 plutôt que 500). Trois index : une action est unique
+ * par agent (`agent_tools_nom_agent_uidx`), une définition d'espace par espace, et un nom une seule fois par
+ * consommateur (0211). La portée se lit sur la contrainte violée ; le repli est « espace », qui fait chercher trop
+ * large plutôt qu'à côté.
  */
 function surNomDejaPris(err: unknown): never {
   const e = err as { code?: string; constraint?: string } | null;
   if (e?.code === '23505') {
-    throw new NomOutilDejaPris(e.constraint === 'agent_tools_nom_agent_uidx' ? 'agent' : 'espace');
+    throw new NomOutilDejaPris(
+      e.constraint === 'agent_tools_nom_agent_uidx' ? 'agent'
+        : estNomPrisChezUnConsommateur(err) ? 'consommateur' : 'espace',
+    );
   }
   throw err;
 }

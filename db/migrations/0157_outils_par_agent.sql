@@ -47,8 +47,10 @@ alter table agent_tools add constraint agent_tools_agent_origin_chk
 -- régimes sans les faire se marcher dessus :
 --   - une définition d'ESPACE reste unique par espace, comme avant ;
 --   - une action d'AGENT est unique par agent, donc deux agents peuvent chacun avoir leur « terminer ».
--- ⚠️ Un nom peut donc exister à la fois en définition d'espace et en action d'un agent. C'est voulu et sans
--- conséquence : le résolveur lit la ligne, jamais le nom seul, et l'exposition au modèle se fait par agent.
+-- ⚠️ Un nom peut donc exister à la fois en définition d'espace et en action d'un agent. C'est voulu, MAIS PAS
+-- « sans conséquence » comme cette ligne l'a dit jusqu'au 2026-10-06 : un agent qui utilise les deux expose au
+-- modèle deux fonctions homonymes, et les fournisseurs refusent le tour entier en 400. 0211 l'interdit par
+-- consommateur. (Commentaire corrigé après application : le runner suit les migrations par leur nom.)
 create unique index if not exists agent_tools_nom_espace_uidx
   on agent_tools (tenant_id, name) where agent_id is null;
 create unique index if not exists agent_tools_nom_agent_uidx
