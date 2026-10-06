@@ -223,10 +223,11 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
   const enregistrer = async (a: { tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }): Promise<void> => {
     const issue = await deps.numero.enregistrer(a);
     if (issue.etat === 'doublon') {
-      await deps.numero.alerter(`Abonnement en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui en a déjà un. À annuler et rembourser chez Stripe.`);
-    } else if (issue.numero === null) {
+      await deps.numero.alerter(`Abonnement en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui en a déjà un. À annuler et rembourser chez Stripe. Tant qu'il ne l'est pas, chacune de ses factures redonne cette alerte.`);
+    } else if (issue.etat === 'enregistre' && issue.numero === null) {
       await deps.numero.alerter(`URGENT : l'espace ${a.tenantId} a payé son numéro (${a.abonnementId}) mais la réserve est vide. Déclare un numéro dans /ops : il lui sera attribué.`);
     }
+    // `resilie` : un événement en retard pour un abonnement déjà résilié (jaune 3 de la relecture de la livraison B).
   };
 
   async function traiterAbonnement(evenement: string, type: string, livemode: boolean, objet: unknown, reply: FastifyReply) {

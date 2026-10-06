@@ -673,7 +673,8 @@ export function modulesDeRoutes(
     entree('widgets', 'tenant', deps.widgets, (app, d, g) => registerWidgets(app, d, g.admin)),
     // La page de connexion du numéro : `adminOuLien`, la session d'admin OU le lien que donne Claude Code (lot 3c).
     entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.adminOuLien, g.admin, g.limiteCouteuse)),
-    entree('numeroFourni', 'tenant', deps.numeroFourni, (app, d, g) => registerNumeroFourni(app, d, g.adminOuLien, g.limiteCouteuse)),
+    // Le portail de Stripe, lui, reste à la session d'admin : `g.admin`.
+    entree('numeroFourni', 'tenant', deps.numeroFourni, (app, d, g) => registerNumeroFourni(app, d, g.adminOuLien, g.admin, g.limiteCouteuse)),
     entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin)),
     entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin)),
     entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin)),

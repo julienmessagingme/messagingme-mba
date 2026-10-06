@@ -53,7 +53,10 @@ validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien
   workers sur `c9973f44` (12 h 25), console `7c1ede29` poussée après le `up`. Réglages Stripe faits par Julien avant le
   `up` : `STRIPE_PRIX_NUMERO` (posé par Claude avec son accord), les trois événements ajoutés au webhook (relus chez
   Stripe), le portail client actif. Relue : un rouge (« Remplacer » attribuait sans abonnement) corrigé, test vu rouge
-  puis vert ; les jaunes partent dans le commit suivant.
+  puis vert. Ses huit jaunes sont corrigés le même jour, chacun avec son test vu rouge puis vert : le portail de Stripe
+  dans la console (route à la session d'admin seule), le texte après « Abandonner », le retour de Stripe qui rouvre le
+  numéro fourni (et « Payer » si l'abonnement est résilié), la course de « Remplacer », les numéros libres dus d'abord
+  aux abonnés en attente (paiement, alerte, et un numéro rendu qui les sert), et les deux fausses alertes du webhook.
 - ⏳ **Essai réel commun A et B** (Julien) : un numéro racheté chez DIDWW et déclaré dans /ops ; depuis Claude Code, sur
   un espace neuf, le lien, « Payer 3,50 € HT par mois », un vrai paiement, le numéro attribué par le webhook, le code dans
   le terminal, la connexion ; puis une résiliation par le portail et l'alerte Telegram.

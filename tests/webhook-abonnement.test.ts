@@ -88,6 +88,12 @@ describe('le webhook Stripe et l’abonnement du numéro', () => {
     expect(cap.alertes[0]).toMatch(/sub_1/);
   });
 
+  it('🟡 une session rejouée pour un abonnement RÉSILIÉ : rien d’attribué, et aucune fausse alerte « réserve vide »', async () => {
+    const { srv, cap } = monter({ issue: { etat: 'resilie' } });
+    expect((await envoyer(srv, evenement(sessionAbonnement(), 'checkout.session.completed'))).statusCode).toBe(200);
+    expect(cap.alertes).toEqual([]);
+  });
+
   it('une session pas encore payée, ou qui n’est pas la nôtre : rien', async () => {
     const { srv, cap } = monter();
     await envoyer(srv, evenement(sessionAbonnement({ payment_status: 'unpaid' }), 'checkout.session.completed'));

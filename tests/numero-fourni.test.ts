@@ -49,18 +49,29 @@ function monter(o: {
   /** L'abonnement du numéro (livraison B) : `actif` par défaut, pour que les cas du 3b gardent leur sens. */
   abonnement?: StatutAbonnement | null;
   ouverture?: Issue<{ url: string }>;
+  /** Les espaces abonnés qui attendent leur numéro, du plus ancien au plus récent (jaune 7 de la livraison B). */
+  attente?: string[];
+  portail?: Issue<{ url: string }>;
 } = {}) {
   const cap = {
     attribues: 0, rendus: 0, remplaces: 0, alertesReserve: [] as number[], bloques: [] as string[],
     ouvertures: [] as Array<{ tenantId: string; retour: string; payeur: string }>,
+    /** Les AUTRES espaces servis par une attribution (un abonné en attente). */
+    servis: [] as string[],
+    portails: [] as Array<{ tenantId: string; payeur: string }>,
   };
   const statut = o.abonnement === undefined ? 'actif' : o.abonnement;
   const reserve = [...(o.reserve ?? ['441235619343'])];
   let attribue: string | null = o.attribue ?? null;
   const deps: NumeroFourniRouteDeps = {
     numeros: {
-      attribuer: async () => {
+      attribuer: async (tenantId) => {
         cap.attribues += 1;
+        if (tenantId !== 't1') {
+          cap.servis.push(tenantId);
+          const n = reserve.shift();
+          return n ? NUMERO(n) : null;
+        }
         if (attribue) return NUMERO(attribue);
         attribue = reserve.shift() ?? null;
         return attribue ? NUMERO(attribue) : null;
@@ -73,7 +84,7 @@ function monter(o: {
         attribue = reserve.shift() ?? null;
         return { bloque, nouveau: attribue ? NUMERO(attribue) : null };
       },
-      rendre: async () => { cap.rendus += 1; const r = attribue; attribue = null; return r; },
+      rendre: async () => { cap.rendus += 1; const r = attribue; attribue = null; if (r) reserve.push(r); return r; },
       compterLibres: async () => o.libresApres ?? reserve.length,
     },
     numeroConnecte: async () => (o.connecte !== undefined ? { chiffres: o.connecte, aActiver: false } : null),
@@ -85,11 +96,16 @@ function monter(o: {
     seuilReserve: 3,
     abonnements: {
       deLEspace: async (tenantId) => (statut === null ? null : { abonnementId: 'sub_1', tenantId, livemode: false, statut, periodeFin: null }),
+      enAttenteDeNumero: async () => [...(o.attente ?? [])],
     },
     abonnement: {
       ouvrir: async (tenantId, retour, payeur) => {
         cap.ouvertures.push({ tenantId, retour, payeur });
         return o.ouverture ?? { ok: true, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_test_1' } };
+      },
+      portail: async (tenantId, payeur) => {
+        cap.portails.push({ tenantId, payeur });
+        return o.portail ?? { ok: true, valeur: { url: 'https://billing.stripe.com/p/session/test_1' } };
       },
     },
   };
@@ -331,5 +347,68 @@ describe('creerAlertesReserve : prévenir Julien sans le noyer, et sans se taire
     expect(envois[1]).toContain('vide');
     await a.reserveBasse(0);
     expect(envois).toHaveLength(2);
+  });
+});
+
+describe('les jaunes de la relecture de la livraison B (lot 3c)', () => {
+  it('🟡 le portail Stripe depuis la console : l’adresse, pour CET espace et le payeur de la session', async () => {
+    const { server, cap } = monter();
+    const res = await server.inject({ method: 'POST', url: `${URL}/portail`, ...h(adminTok), payload: '{}' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ url: 'https://billing.stripe.com/p/session/test_1' });
+    expect(cap.portails).toEqual([{ tenantId: 't1', payeur: 'u1' }]);
+    await server.close();
+  });
+
+  it('🟡 le portail : un refus passe tel quel ; un agent reçoit 403 sans rien ouvrir', async () => {
+    const refus = monter({ portail: { ok: false, statut: 409, erreur: 'Cet espace n’a aucun abonnement à gérer.', details: { code: 'aucun_abonnement' } } });
+    const r = await refus.server.inject({ method: 'POST', url: `${URL}/portail`, ...h(adminTok), payload: '{}' });
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toMatchObject({ code: 'aucun_abonnement' });
+    await refus.server.close();
+    const agent = monter();
+    expect((await agent.server.inject({ method: 'POST', url: `${URL}/portail`, ...h(agentTok), payload: '{}' })).statusCode).toBe(403);
+    expect(agent.cap.portails).toEqual([]);
+    await agent.server.close();
+  });
+
+  it('🟡 les numéros libres sont DUS aux abonnés qui attendent : pas de paiement neuf qu’on ne pourrait pas servir', async () => {
+    const pris = monter({ abonnement: null, reserve: ['441235619343'], attente: ['t9'] });
+    const r = await pris.server.inject({ method: 'POST', url: `${URL}/abonnement`, ...h(adminTok), payload: { retour: 'console' } });
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toMatchObject({ cause: 'reserve_vide' });
+    expect(pris.cap.ouvertures).toEqual([]);
+    await pris.server.close();
+    // Un numéro de plus que d'abonnés en attente : le paiement s'ouvre.
+    const reste = monter({ abonnement: null, reserve: ['441235619343', '441235619344'], attente: ['t9'] });
+    expect((await reste.server.inject({ method: 'POST', url: `${URL}/abonnement`, ...h(adminTok), payload: { retour: 'console' } })).statusCode).toBe(200);
+    await reste.server.close();
+  });
+
+  it('🟡 l’alerte de réserve compte ce qui reste APRÈS les abonnés en attente', async () => {
+    const { server, cap } = monter({ libresApres: 5, attente: ['t7', 't8', 't9'] });
+    await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' });
+    expect(cap.alertesReserve).toEqual([2]);
+    await server.close();
+  });
+
+  it('🟡 « Abandonner » sert d’office le plus ancien abonné en attente, jamais l’espace qui vient de rendre', async () => {
+    const { server, cap } = monter({ attribue: '441235619343', attente: ['t1', 't9', 't8'] });
+    const res = await server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ rendu: true });
+    expect(cap.servis).toEqual(['t9']);
+    await server.close();
+  });
+
+  it('« Abandonner » sans abonné en attente, ou sans numéro rendu : personne n’est servi', async () => {
+    const seul = monter({ attribue: '441235619343' });
+    await seul.server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
+    expect(seul.cap.servis).toEqual([]);
+    await seul.server.close();
+    const rien = monter({ attente: ['t9'] });
+    expect((await rien.server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' })).json()).toEqual({ rendu: false });
+    expect(rien.cap.servis).toEqual([]);
+    await rien.server.close();
   });
 });

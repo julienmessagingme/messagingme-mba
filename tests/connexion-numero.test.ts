@@ -104,8 +104,11 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
       verrous: { prendre: async () => null },
       alertes: { reserveBasse: async () => {}, numeroBloque: async () => {} },
       seuilReserve: 3,
-      abonnements: { deLEspace: async () => null },
-      abonnement: { ouvrir: async () => ({ ok: true as const, valeur: { url: 'https://x' } }) },
+      abonnements: { deLEspace: async () => null, enAttenteDeNumero: async () => [] },
+      abonnement: {
+        ouvrir: async () => ({ ok: true as const, valeur: { url: 'https://x' } }),
+        portail: async () => ({ ok: true as const, valeur: { url: 'https://x' } }),
+      },
     };
     return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET, getUserState: async (userId) => ({ role: userId === 'u2' ? 'agent' : 'admin', disabled: false }) }, numeroFourni: deps });
   };

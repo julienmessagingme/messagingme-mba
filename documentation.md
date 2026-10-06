@@ -2060,7 +2060,8 @@ l'activer, et d'ouvrir une recharge du crédit.
   refus est mot pour mot celui d'un outil inconnu. La raison : une clé `mcp:write` peut être branchée comme connecteur
   d'un agent qui lit des messages de clients, et une injection y modifierait un agent ou ouvrirait un paiement. Toutes
   les écritures de l'agent le portent ; ses lectures (`list_agents`, `get_agent`, `list_knowledge`, `get_credit`)
-  restent lisibles par une clé. La répartition est tenue par `tests/mcp-agent.test.ts`.
+  restent lisibles par une clé, comme `get_number_subscription` (un statut et une échéance, rien qui engage). La
+  répartition est tenue par `tests/mcp-agent.test.ts` et `tests/mcp-numero.test.ts`.
   `preview_site` est une lecture (`mcp:read`) qui exige une personne, et la seule lecture en monde ouvert : il lit un
   site tiers. La sonde 15 de l'auto-attaque le vérifie sur le serveur construit.
 - **Une seule vérité** : chaque outil appelle la fonction de la console (`src/agent/gestion.ts`, `connaissance.ts`,
@@ -2557,15 +2558,22 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   🔴 **L'abonnement du numéro fourni** (lot 3c, livraison B, migration 0214, `src/stripe/abonnement.ts`,
   `src/stripe/abonnements.pg.ts`). 3,50 € HT par mois en abonnement Stripe (`STRIPE_PRIX_NUMERO`, relu chez Stripe
   avant chaque paiement : récurrent, mensuel, euros, 350 centimes). `POST /tenants/:tenantId/numero-fourni/abonnement`
-  n'ouvre rien chez Stripe si l'espace a un numéro, un abonnement vivant ou une réserve vide ; `POST .../numero-fourni`
+  n'ouvre rien chez Stripe si l'espace a un numéro, un abonnement vivant, ou si la réserve n'a plus de numéro que
+  personne n'attend (les libres sont dus d'abord aux abonnés en attente, `enAttenteDeNumero`) ; `POST .../numero-fourni`
   n'attribue plus sans abonnement vivant (`actif` ou `en_retard`), sauf un numéro déjà attribué. Le webhook
   (`checkout.session.completed` en mode abonnement, `invoice.paid`, `invoice.payment_failed`,
   `customer.subscription.deleted`) appelle `enregistrer`, qui écrit l'abonnement ET attribue le numéro dans la même
   transaction ; l'ordre d'arrivée ne change pas l'état final (une facture payée arrivée d'abord enregistre depuis
   `parent.subscription_details.metadata`), `resilie` est terminal, la fin de période ne recule jamais. Un second
   abonnement vivant pour un espace (deux onglets) échoue sur `abonnements_numero_un_par_espace` et prévient Julien.
-  Payé sans numéro (réserve vidée entre-temps) : Julien est prévenu, et le prochain numéro déclaré dans /ops revient à
-  l'abonné le plus ancien. Rien n'est coupé sur le statut avant le lot 4.
+  ⚠️ La session et la facture du MÊME abonnement arrivées ensemble peuvent aussi heurter cet index (il n'arbitre pas
+  le `on conflict`) : `enregistrer` réessaie une fois quand la ligne de CET abonnement existe. Un événement rejoué pour
+  un abonnement résilié n'attribue rien et ne prévient personne (`etat: 'resilie'`).
+  Payé sans numéro (réserve vidée entre-temps) : Julien est prévenu, et le prochain numéro déclaré dans /ops, ou rendu
+  par « Abandonner » d'un autre espace, revient à l'abonné le plus ancien. Le portail client de Stripe (carte,
+  factures, résiliation) s'ouvre depuis la console par `POST .../numero-fourni/portail`, à la session d'admin SEULE :
+  le lien de Claude Code ne l'ouvre pas (`tests/scope-tenant.test.ts`), Claude a `manage_number_subscription`. Rien
+  n'est coupé sur le statut avant le lot 4.
   ⚠️ Ces attentes de 25 s entrent dans `http_latences` sous la route `/mcp`, avec les autres outils : un p95 de `/mcp`
   qui grimpe sur /ops ne dit pas une régression tant qu'on ne l'a pas lu par outil.
 - 🔴 **Le crédit offert dépend de l'origine de l'espace** (`tenants.origine`, migration 0212) : `claude_code` quand

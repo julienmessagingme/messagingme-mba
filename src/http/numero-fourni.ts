@@ -3,6 +3,7 @@ import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import type { VerrousCourts } from '../db/verrous-courts';
 import { espaceVerifie } from './scope';
 import { texteDe } from '../lib/erreur';
+import { journaliser } from '../lib/journal';
 import type { PgNumerosFournisStore } from '../otp/store.pg';
 import { lireEtatConnexion, empreinteEtat } from '../otp/etat-connexion';
 import { z } from 'zod';
@@ -20,7 +21,8 @@ import { corpsDuRefus, type Issue } from '../lib/issue';
  * numéro (mesuré le 2026-10-06), d'où ce parcours.
  *
  * Toutes les lectures et écritures sont filtrées sur l'espace (`espaceVerifie`), admin seulement : obtenir un numéro
- * engage notre réserve, et le code donne la main sur un numéro.
+ * engage notre réserve, et le code donne la main sur un numéro. Une seule exception, délibérée : un numéro rendu va
+ * d'office à l'abonné qui attend le sien (la réserve est à nous, comme dans /ops).
  */
 export interface NumeroFourniRouteDeps {
   numeros: Pick<PgNumerosFournisStore, 'attribuer' | 'numeroDeLEspace' | 'codeDeLEspace' | 'remplacerNumero' | 'rendre' | 'compterLibres'>;
@@ -45,9 +47,15 @@ export interface NumeroFourniRouteDeps {
    * L'abonnement du numéro (lot 3c, livraison B, migration 0214). 🔴 Un numéro ne s'attribue plus sans abonnement vivant
    * (`actif` ou `en_retard`) : il se paie d'abord, et le webhook l'attribue à la confirmation.
    */
-  abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace'>;
-  /** Ouvrir le paiement de l'abonnement (`ouvrirAbonnement`, `src/stripe/abonnement.ts`) : une adresse, ou un refus. */
-  abonnement: { ouvrir(tenantId: string, retour: RetourAbonnement, payeur: string): Promise<Issue<{ url: string }>> };
+  abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace' | 'enAttenteDeNumero'>;
+  /**
+   * Ouvrir le paiement de l'abonnement (`ouvrirAbonnement`) et le portail client de Stripe (`ouvrirPortail`,
+   * `src/stripe/abonnement.ts`) : une adresse, ou un refus.
+   */
+  abonnement: {
+    ouvrir(tenantId: string, retour: RetourAbonnement, payeur: string): Promise<Issue<{ url: string }>>;
+    portail(tenantId: string, payeur: string): Promise<Issue<{ url: string }>>;
+  };
 }
 
 const saisieAbonnement = z.object({ retour: z.enum(['brancher', 'console']) });
@@ -92,15 +100,32 @@ const RESERVE_VIDE = {
 /** `+` devant les chiffres : c'est la forme que le client tape dans la fenêtre de Meta. */
 const affiche = (numero: string) => `+${numero}`;
 
-export function registerNumeroFourni(app: FastifyInstance, deps: NumeroFourniRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
+export function registerNumeroFourni(
+  app: FastifyInstance,
+  deps: NumeroFourniRouteDeps,
+  /** `adminOuLien` : la session d'admin, ou le lien que donne Claude Code (lot 3c). */
+  garde: Guard,
+  /** La session d'admin SEULE : le portail de Stripe (carte, factures, résiliation) n'est pas une étape de la connexion. */
+  gardeAdmin: Guard,
+  limiteCouteuse?: PreHandler,
+): void {
   const opts = { preHandler: garde };
   // Les trois gestes engagent la réserve partagée : la limite coûteuse, comme l'inscription.
   const couteux = gardeEtendue(garde, limiteCouteuse);
 
+  /**
+   * Les numéros libres que personne n'attend (jaune 7 de la relecture de la livraison B) : un abonné en attente a payé,
+   * les libres lui sont dus d'abord. Ouvrir un paiement neuf sur un numéro déjà dû ferait payer pour rien.
+   */
+  const disponibles = async (): Promise<number> => {
+    const [libres, attente] = await Promise.all([deps.numeros.compterLibres(), deps.abonnements.enAttenteDeNumero()]);
+    return Math.max(0, libres - attente.length);
+  };
+
   /** La réserve après une attribution : sous le seuil, Julien est prévenu. Jamais bloquant pour le client. */
   const surveillerReserve = async (): Promise<void> => {
     try {
-      const libres = await deps.numeros.compterLibres();
+      const libres = await disponibles();
       if (libres < deps.seuilReserve) await deps.alertes.reserveBasse(libres);
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -139,11 +164,21 @@ export function registerNumeroFourni(app: FastifyInstance, deps: NumeroFourniRou
     if (vivant(await deps.abonnements.deLEspace(tenant))) {
       return reply.code(409).send({ error: 'Le numéro de cet espace est déjà payé.', cause: 'deja_abonne' });
     }
-    if ((await deps.numeros.compterLibres()) === 0) {
+    if ((await disponibles()) === 0) {
       await surveillerReserve();
       return reply.code(409).send(RESERVE_VIDE);
     }
     const r = await deps.abonnement.ouvrir(tenant, lu.data.retour, req.auth?.userId ?? '');
+    return r.ok ? reply.code(200).send(r.valeur) : reply.code(r.statut).send(corpsDuRefus(r));
+  });
+
+  /**
+   * Le portail client de Stripe (jaune 1 de la relecture de la livraison B) : changer de carte, lire les factures,
+   * résilier, depuis la console. La session d'admin seule : le lien de Claude Code n'ouvre que la connexion du numéro,
+   * et Claude a son outil (`manage_number_subscription`). Il appelle Stripe : la limite coûteuse.
+   */
+  app.post('/tenants/:tenantId/numero-fourni/portail', gardeEtendue(gardeAdmin, limiteCouteuse), async (req, reply) => {
+    const r = await deps.abonnement.portail(espaceVerifie(req), req.auth?.userId ?? '');
     return r.ok ? reply.code(200).send(r.valeur) : reply.code(r.statut).send(corpsDuRefus(r));
   });
 
@@ -199,6 +234,25 @@ export function registerNumeroFourni(app: FastifyInstance, deps: NumeroFourniRou
     if (connecte && fourni && (connecte.chiffres === '' || connecte.chiffres === fourni.numero)) {
       return reply.code(409).send({ error: 'Le numéro de cet espace est déjà connecté.', cause: 'deja_un_numero' });
     }
-    return reply.code(200).send({ rendu: (await deps.numeros.rendre(tenant)) !== null });
+    const rendu = await deps.numeros.rendre(tenant);
+    if (rendu !== null) await servirUnAbonneEnAttente(tenant);
+    return reply.code(200).send({ rendu: rendu !== null });
   });
+
+  /**
+   * Un numéro rendu va d'abord à l'abonné qui attend le sien depuis le plus longtemps (jaune 7 de la relecture de la
+   * livraison B), comme une déclaration dans /ops, et jamais à l'espace qui vient de le rendre. Un échec ne change pas
+   * la réponse : le numéro est rendu, et /ops servira l'abonné à la prochaine déclaration.
+   */
+  async function servirUnAbonneEnAttente(sauf: string): Promise<void> {
+    try {
+      const suivant = (await deps.abonnements.enAttenteDeNumero()).find((t) => t !== sauf);
+      if (suivant === undefined) return;
+      const n = await deps.numeros.attribuer(suivant);
+      journaliser('warn', 'numero_rendu_attribue_a_un_abonne', { tenantId: suivant, numero: n?.numero ?? null, renduPar: sauf });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`numero-fourni : le numéro rendu n'a pas pu servir l'abonné en attente : ${texteDe(err)}`);
+    }
+  }
 }

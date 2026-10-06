@@ -23,9 +23,10 @@ export interface AbonnementNumero {
 /**
  * Ce que l'enregistrement a produit. `numero` : le numéro attribué (déjà attribué ou neuf), `null` si la réserve s'est
  * vidée entre l'ouverture du paiement et sa confirmation. `doublon` : l'espace a déjà un AUTRE abonnement vivant (deux
- * paiements ouverts en même temps) ; rien n'est écrit, Julien l'annule chez Stripe.
+ * paiements ouverts en même temps) ; rien n'est écrit, Julien l'annule chez Stripe. `resilie` : un événement en retard
+ * pour un abonnement déjà résilié ; rien n'est attribué, et il n'y a rien à signaler.
  */
-export type IssueEnregistrement = { etat: 'enregistre'; numero: string | null } | { etat: 'doublon' };
+export type IssueEnregistrement = { etat: 'enregistre'; numero: string | null } | { etat: 'doublon' } | { etat: 'resilie' };
 
 interface Ligne {
   stripe_subscription_id: string;
@@ -47,27 +48,42 @@ export class PgAbonnementsNumeroStore {
    * reste (un événement en retard ne le ressuscite pas, et ne lui attribue rien).
    */
   async enregistrer(a: { tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }): Promise<IssueEnregistrement> {
-    try {
-      return await enTransaction(this.pool, async (client) => {
-        const res = await client.query<{ statut: StatutAbonnement; tenant_id: string }>(
-          `insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, periode_fin)
-           values ($1, $2, $3, 'actif', $4)
-           on conflict (stripe_subscription_id) do update
-             set periode_fin = greatest(abonnements_numero.periode_fin, excluded.periode_fin), maj_le = now()
-           returning statut, tenant_id`,
-          [a.abonnementId, a.tenantId, a.livemode, a.periodeFin],
-        );
-        const l = res.rows[0]!;
-        if (l.statut === 'resilie') return { etat: 'enregistre' as const, numero: null };
-        // L'espace de la ligne, jamais celui de l'événement rejoué : un abonnement appartient à son premier espace.
-        const n = await attribuerAvec(client, l.tenant_id);
-        return { etat: 'enregistre' as const, numero: n?.numero ?? null };
-      });
-    } catch (err) {
-      const e = err as { code?: unknown; constraint?: unknown };
-      if (e.code === '23505' && e.constraint === 'abonnements_numero_un_par_espace') return { etat: 'doublon' };
-      throw err;
+    for (let essai = 0; ; essai += 1) {
+      try {
+        return await this.enregistrerUneFois(a);
+      } catch (err) {
+        const e = err as { code?: unknown; constraint?: unknown };
+        if (e.code !== '23505' || e.constraint !== 'abonnements_numero_un_par_espace') throw err;
+        // 🟡 La session et la première facture du MÊME abonnement arrivent ensemble (jaune 4 de la relecture de la
+        // livraison B) : l'index d'espace, qui n'arbitre pas le `on conflict`, peut refuser la seconde avant que la
+        // clé primaire ne la voie. Si la ligne de CET abonnement existe, ce n'est pas un doublon : un seul nouvel essai,
+        // qui passe par la mise à jour. Sinon, un AUTRE abonnement vivant tient l'espace.
+        if (essai > 0 || !(await this.existe(a.abonnementId))) return { etat: 'doublon' };
+      }
     }
+  }
+
+  private async existe(abonnementId: string): Promise<boolean> {
+    const res = await this.pool.query(`select 1 from abonnements_numero where stripe_subscription_id = $1`, [abonnementId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  private async enregistrerUneFois(a: { tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }): Promise<IssueEnregistrement> {
+    return enTransaction(this.pool, async (client) => {
+      const res = await client.query<{ statut: StatutAbonnement; tenant_id: string }>(
+        `insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, periode_fin)
+         values ($1, $2, $3, 'actif', $4)
+         on conflict (stripe_subscription_id) do update
+           set periode_fin = greatest(abonnements_numero.periode_fin, excluded.periode_fin), maj_le = now()
+         returning statut, tenant_id`,
+        [a.abonnementId, a.tenantId, a.livemode, a.periodeFin],
+      );
+      const l = res.rows[0]!;
+      if (l.statut === 'resilie') return { etat: 'resilie' as const };
+      // L'espace de la ligne, jamais celui de l'événement rejoué : un abonnement appartient à son premier espace.
+      const n = await attribuerAvec(client, l.tenant_id);
+      return { etat: 'enregistre' as const, numero: n?.numero ?? null };
+    });
   }
 
   /**

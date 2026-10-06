@@ -2203,7 +2203,10 @@ async function main(): Promise<void> {
       alertes: creerAlertesReserve({ verrous: verrousCourts, envoyer: (texte) => sendTelegram(`[mba-${NOM_API}] ${texte}`) }),
       seuilReserve: config.ALERTE_RESERVE_SEUIL,
       abonnements: abonnementsNumero,
-      abonnement: { ouvrir: (tenant, retour, payeur) => ouvrirAbonnement(abonnementDuNumero, tenant, retour, payeur) },
+      abonnement: {
+        ouvrir: (tenant, retour, payeur) => ouvrirAbonnement(abonnementDuNumero, tenant, retour, payeur),
+        portail: (tenant, payeur) => ouvrirPortail(abonnementDuNumero, tenant, 'console', payeur),
+      },
     },
     // La réserve de numéros fournis (lot 3a). Sans clé DIDWW ou sans trunk, la déclaration rend 503 et la lecture marche.
     opsNumeros: {
