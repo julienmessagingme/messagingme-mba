@@ -133,6 +133,33 @@ export interface EsConfig {
   configId: string;
   graphVersion: string;
 }
+// --- Le numéro fourni (lot 3b) : un numéro de notre réserve, et le code que l'Asterisk capte quand Meta l'appelle ---
+
+/** L'état du numéro fourni de l'espace : tout est nul tant qu'aucun numéro n'est attribué. */
+export interface NumeroFourniEtat {
+  /** Avec son « + », la forme que le client tape dans la fenêtre de Meta. */
+  numero: string | null;
+  /** Le dernier code capté sur ce numéro, depuis l'attribution et dans les 15 dernières minutes. */
+  code: string | null;
+  codeRecuLe: string | null;
+}
+/** Attribue un numéro de la réserve à l'espace (ou rend celui déjà attribué). 409 : déjà un numéro, ou réserve vide. */
+export function obtenirNumeroFourni(tenantId: string): Promise<{ numero: string }> {
+  return request(`/tenants/${tenantId}/numero-fourni`, { method: 'POST', body: JSON.stringify({}) });
+}
+/** Interrogée toutes les 3 secondes par la page pendant que la fenêtre de Meta est ouverte. */
+export function lireNumeroFourni(tenantId: string): Promise<NumeroFourniEtat> {
+  return request(`/tenants/${tenantId}/numero-fourni`);
+}
+/** Meta refuse ce numéro (déjà actif ailleurs) : il sort de la réserve et un autre est attribué. */
+export function remplacerNumeroFourni(tenantId: string): Promise<{ numero: string }> {
+  return request(`/tenants/${tenantId}/numero-fourni/remplacer`, { method: 'POST', body: JSON.stringify({}) });
+}
+/** Rend le numéro à la réserve (refusé une fois le numéro connecté). */
+export function abandonnerNumeroFourni(tenantId: string): Promise<{ rendu: boolean }> {
+  return request(`/tenants/${tenantId}/numero-fourni/abandonner`, { method: 'POST', body: JSON.stringify({}) });
+}
+
 export function getEsConfig(tenantId: string): Promise<EsConfig> {
   return request<EsConfig>(`/tenants/${tenantId}/embedded-signup/config`);
 }

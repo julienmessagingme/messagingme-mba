@@ -382,7 +382,7 @@ export interface NumeroFourniOps {
   /** Chiffres seuls, au format `wa_id`. */
   numero: string;
   didwwDidId: string;
-  statut: 'libre' | 'attribue' | 'resilie';
+  statut: 'libre' | 'attribue' | 'resilie' | 'bloque';
   tenantId: string | null;
   attribueLe: string | null;
   creeLe: string;

@@ -894,6 +894,10 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
           <p className="mt-0.5 text-xs text-ink-500">
             {t('Vous choisissez l’entreprise et le numéro dans la fenêtre de Meta, nous faisons le reste.', 'You pick the business and the number in the Meta window, we handle the rest.')}
           </p>
+          {/* Le numéro fourni (lot 3b) : un numéro de notre réserve, pour qui n'en a pas. */}
+          <Link href="/connecter-whatsapp" data-testid="lien-numero-fourni" className="mt-1 inline-block text-xs font-semibold text-ink-900 underline">
+            {t('Pas de numéro ? Nous vous en fournissons un', 'No number? We provide one')}
+          </Link>
         </div>
       </div>
       {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{error}</p>}

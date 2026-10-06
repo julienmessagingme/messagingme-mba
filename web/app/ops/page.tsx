@@ -964,6 +964,8 @@ function NumerosFournisCard({ token }: { token: string }) {
 
   const statuts: Record<ReserveNumerosOps['numeros'][number]['statut'], string> = {
     libre: t('libre', 'free'), attribue: t('attribué', 'assigned'), resilie: t('résilié', 'terminated'),
+    // Refusé par Meta (déjà actif ailleurs) : sorti de la réserve, à résilier ou à garder, à toi de voir.
+    bloque: t('bloqué (refusé par Meta)', 'blocked (refused by Meta)'),
   };
   const causes: Record<'transcription_indisponible' | 'code_introuvable', string> = {
     transcription_indisponible: t('transcription indisponible', 'transcription unavailable'),
