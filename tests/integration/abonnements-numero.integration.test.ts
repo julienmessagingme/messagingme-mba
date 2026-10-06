@@ -81,8 +81,10 @@ describe.skipIf(!url)('l’abonnement du numéro fourni (0214)', () => {
     // Un paiement arrivé en retard ne ressuscite pas un abonnement résilié, ni ne lui attribue un numéro.
     expect(await abonnements.majStatut('sub_itest5', 'actif', null)).toMatchObject({ statut: 'resilie' });
     await numeros.declarer(N1, 'did-itest-ab-1');
+    // Rejoué pour un abonnement résilié : `resilie`, rien d'attribué, et donc pas de fausse alerte « réserve vide ».
     expect(await abonnements.enregistrer({ tenantId: t2, abonnementId: 'sub_itest5', livemode: false, periodeFin: null }))
-      .toEqual({ etat: 'enregistre', numero: null });
+      .toEqual({ etat: 'resilie' });
+    expect(await numeros.parNumero(N1)).toMatchObject({ statut: 'libre', tenantId: null });
     expect(await abonnements.majStatut('sub_inconnu', 'actif', null)).toBeNull();
     // Résilié, l'espace peut se réabonner.
     expect(await abonnements.enregistrer({ tenantId: t2, abonnementId: 'sub_itest6', livemode: false, periodeFin: null }))
