@@ -48,7 +48,7 @@ describe('le jeton reçu en standby part après le tour de l’agent', () => {
 });
 
 /** Une horloge fausse : `attendre` avance le temps, et l'agent « répond » au moment voulu. */
-function attente(opts: { repondA?: number; refuse?: boolean; leveAuLancement?: boolean } = {}) {
+function attente(opts: { repondA?: number; refuse?: boolean; leveAuLancement?: boolean; lectureRateeA?: number } = {}) {
   let maintenant = 0;
   const ordre: string[] = [];
   const evenements: EvenementAgent[] = [];
@@ -61,7 +61,10 @@ function attente(opts: { repondA?: number; refuse?: boolean; leveAuLancement?: b
       ordre.push('consigne');
       return { status: 'accepted' };
     },
-    dernierMessageDeLAgent: async () => (opts.repondA !== undefined && maintenant >= opts.repondA ? 'echo-2' : 'echo-1'),
+    dernierMessageDeLAgent: async () => {
+      if (opts.lectureRateeA !== undefined && maintenant === opts.lectureRateeA) throw new Error('pool saturé');
+      return opts.repondA !== undefined && maintenant >= opts.repondA ? 'echo-2' : 'echo-1';
+    },
     attendre: async (ms) => { maintenant += ms; },
     maintenant: () => maintenant,
     journal: (l) => journal.push(l),
@@ -103,5 +106,24 @@ describe('l’attente du tour de l’agent', () => {
     const a = attente({ repondA: 5_000, leveAuLancement: true });
     await expect(a.apres('t1', '33611', a.lancer)).resolves.toBeUndefined();
     expect(a.journal.at(-1)).toContain('base indisponible');
+  });
+
+  it('🔴 une lecture ratée ne lance pas le test en plein tour : on continue d’attendre (relecture du 2026-10-06)', async () => {
+    const a = attente({ repondA: 15_000, lectureRateeA: 2_000 });
+    await a.apres('t1', '33611', a.lancer);
+    expect(a.ordre).toEqual(['consigne', 'lance a 15000']);
+  });
+
+  it('🔴 deux liens pendant l’attente : UN seul lancement, celui du dernier lien (relecture du 2026-10-06)', async () => {
+    const a = attente({ repondA: 15_000 });
+    const lances: string[] = [];
+    const premier = a.apres('t1', '33611', async () => { lances.push('premier'); });
+    await a.apres('t1', '33611', async () => { lances.push('second'); });
+    await premier;
+    expect(lances).toEqual(['second']);
+    expect(a.evenements).toHaveLength(1);
+    // La clé est libérée : un lien suivant attend de nouveau.
+    await a.apres('t1', '33611', async () => { lances.push('troisieme'); });
+    expect(lances).toEqual(['second', 'troisieme']);
   });
 });

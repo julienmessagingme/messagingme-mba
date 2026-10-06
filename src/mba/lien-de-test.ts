@@ -28,34 +28,61 @@ export interface DepsApresLAgent {
   journal(ligne: string): void;
 }
 
-/** Rend la promesse de l'attente, pour les tests ; l'appelant de production ne l'attend pas. */
+/**
+ * Rend la promesse de l'attente, pour les tests ; l'appelant de production ne l'attend pas.
+ *
+ * Une seule attente par contact (relecture du 2026-10-06) : un second clic sur un lien pendant l'attente REMPLACE le
+ * lancement prévu, sinon les deux partaient ensemble au premier écho, deux parcours et deux modèles facturés. Le
+ * dernier lien cliqué gagne. Et une lecture ratée ne coupe plus l'attente : lancer tout de suite reprendrait le fil à
+ * l'agent en plein tour, le défaut même qu'on corrige. Faute de lecture, on attend le délai entier.
+ */
 export function creerApresLAgent(deps: DepsApresLAgent) {
-  return (tenantId: string, waId: string, lancer: () => Promise<void>): Promise<void> => (async () => {
-    const debut = deps.maintenant();
-    let fin = 'delai';
-    try {
-      const avant = await deps.dernierMessageDeLAgent(tenantId, waId);
-      const pn = await deps.numero(tenantId);
-      if (pn) {
-        // Un refus n'arrête rien : l'agent a reçu le mot quoi qu'il arrive, il faut toujours attendre son tour.
+  const enAttente = new Map<string, () => Promise<void>>();
+  return (tenantId: string, waId: string, lancer: () => Promise<void>): Promise<void> => {
+    const cle = `${tenantId}:${waId}`;
+    if (enAttente.has(cle)) {
+      enAttente.set(cle, lancer);
+      deps.journal(`lien-de-test: un autre lien pour ${waId} pendant l’attente, il remplace le précédent`);
+      return Promise.resolve();
+    }
+    enAttente.set(cle, lancer);
+    return (async () => {
+      const debut = deps.maintenant();
+      const lire = async (): Promise<{ id: string | null } | null> => {
         try {
-          deps.journal(`lien-de-test: consigne envoyée à l’agent pour ${waId} : ${traceReponse(await deps.envoyer(tenantId, pn, destinataireAgentEvent(waId), evenementLienDeTest()))}`);
+          return { id: await deps.dernierMessageDeLAgent(tenantId, waId) };
         } catch (err) {
-          deps.journal(`lien-de-test: consigne REFUSÉE pour ${waId}, on attend quand même la fin du tour : ${messageDe(err)}`);
+          deps.journal(`lien-de-test: lecture de l’écho ratée pour ${waId}, on continue d’attendre : ${messageDe(err)}`);
+          return null;
         }
+      };
+      let fin = 'delai';
+      const avant = await lire();
+      try {
+        const pn = await deps.numero(tenantId);
+        // Un refus n'arrête rien : l'agent a reçu le mot quoi qu'il arrive, il faut toujours attendre son tour.
+        if (pn) deps.journal(`lien-de-test: consigne envoyée à l’agent pour ${waId} : ${traceReponse(await deps.envoyer(tenantId, pn, destinataireAgentEvent(waId), evenementLienDeTest()))}`);
+      } catch (err) {
+        deps.journal(`lien-de-test: consigne REFUSÉE pour ${waId}, on attend quand même la fin du tour : ${messageDe(err)}`);
       }
-      while (deps.maintenant() - debut < ATTENTE_AGENT_MAX_MS) {
-        await deps.attendre(ATTENTE_AGENT_PAS_MS);
-        if ((await deps.dernierMessageDeLAgent(tenantId, waId)) !== avant) { fin = 'reponse'; break; }
+      try {
+        while (deps.maintenant() - debut < ATTENTE_AGENT_MAX_MS) {
+          await deps.attendre(ATTENTE_AGENT_PAS_MS);
+          const lu = await lire();
+          if (avant !== null && lu !== null && lu.id !== avant.id) { fin = 'reponse'; break; }
+        }
+      } catch (err) {
+        // Jamais sortir sans lancer ni libérer la clé : un contact resterait « en attente » pour toujours.
+        fin = `attente interrompue (${messageDe(err)})`;
       }
-    } catch (err) {
-      fin = `illisible (${messageDe(err)})`;
-    }
-    deps.journal(`lien-de-test: fin du tour de l’agent pour ${waId} : ${fin} en ${Math.round((deps.maintenant() - debut) / 1000)} s, le test démarre`);
-    try {
-      await lancer();
-    } catch (err) {
-      deps.journal(`lien-de-test: le test n’a pas démarré pour ${waId} : ${messageDe(err)}`);
-    }
-  })();
+      deps.journal(`lien-de-test: fin du tour de l’agent pour ${waId} : ${fin} en ${Math.round((deps.maintenant() - debut) / 1000)} s, le test démarre`);
+      const aLancer = enAttente.get(cle) ?? lancer;
+      enAttente.delete(cle);
+      try {
+        await aLancer();
+      } catch (err) {
+        deps.journal(`lien-de-test: le test n’a pas démarré pour ${waId} : ${messageDe(err)}`);
+      }
+    })();
+  };
 }
