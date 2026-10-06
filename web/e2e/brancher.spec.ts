@@ -14,8 +14,9 @@ function jeton(mode: 'fourni' | 'apporte' = 'fourni'): string {
 }
 
 /** Le serveur de la page : le numéro fourni, la fenêtre de Meta et l'état. Chaque en-tête Authorization est gardé. */
-async function simuler(page: Page, o: { refus401?: boolean; refus403?: boolean; connecte?: boolean; aActiver?: boolean; lecturesAvantCode?: number } = {}) {
-  const s = { numero: null as string | null, lectures: 0, autorisations: [] as string[], connecte: o.connecte === true };
+async function simuler(page: Page, o: { refus401?: boolean; refus403?: boolean; connecte?: boolean; aActiver?: boolean; lecturesAvantCode?: number; abonnement?: 'actif' | null } = {}) {
+  const s = { numero: null as string | null, lectures: 0, autorisations: [] as string[], connecte: o.connecte === true, retours: [] as string[] };
+  const abonnement = o.abonnement === undefined ? { statut: 'actif', periodeFin: null } : (o.abonnement ? { statut: o.abonnement, periodeFin: null } : null);
   const json = (body: unknown, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body) });
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -26,7 +27,11 @@ async function simuler(page: Page, o: { refus401?: boolean; refus403?: boolean; 
     if (chemin.endsWith('/embedded-signup/config')) return route.fulfill(json({ enabled: true, appId: 'app-e2e', configId: 'cfg-e2e', graphVersion: 'v25.0' }));
     if (chemin.endsWith('/connexion-numero')) {
       const relie = s.connecte || o.aActiver === true;
-      return route.fulfill(json({ etat: { fourni: s.numero, code: null, connecte: relie ? { chiffres: '441235619343', aActiver: o.aActiver === true } : null }, empreinte: '0123456789abcdef' }));
+      return route.fulfill(json({ etat: { fourni: s.numero, code: null, connecte: relie ? { chiffres: '441235619343', aActiver: o.aActiver === true } : null, abonnement }, empreinte: '0123456789abcdef' }));
+    }
+    if (req.method() === 'POST' && chemin.endsWith('/numero-fourni/abonnement')) {
+      s.retours.push((req.postDataJSON() as { retour: string }).retour);
+      return route.fulfill(json({ url: '/brancher?abonnement=recu' }));
     }
     if (req.method() === 'POST' && chemin.endsWith('/numero-fourni')) {
       s.numero = '+441235619343';
@@ -73,6 +78,17 @@ test('le parcours fourni : le numéro, puis le code capté, sans rien recharger'
   await expect(page.getByTestId('numero-fourni')).toHaveText('+441235619343');
   await expect(page.getByTestId('code-capte')).toContainText('345679', { timeout: 12_000 });
   await expect(page.getByTestId('ouvrir-fenetre-meta')).toBeEnabled();
+});
+
+test('🔴 sans abonnement, le lien paie avec SON jeton et revient sur /brancher, qui garde le jeton de l’onglet', async ({ page }) => {
+  const s = await simuler(page, { abonnement: null });
+  const j = jeton();
+  await page.goto(`/brancher#${j}`);
+  await page.getByTestId('payer-numero').click();
+  await expect(page).toHaveURL(/\/brancher\?abonnement=recu/);
+  await expect(page.getByTestId('paiement-en-confirmation')).toBeVisible();
+  expect(s.retours).toEqual(['brancher']);
+  expect(new Set(s.autorisations)).toEqual(new Set([`Bearer ${j}`]));
 });
 
 test('le mode apporté ouvre directement la fenêtre de Meta', async ({ page }) => {

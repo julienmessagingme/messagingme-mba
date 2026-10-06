@@ -97,6 +97,7 @@ export default function BrancherPage() {
               tenantId={lien.lu.tenantId}
               api={api}
               choixInitial={lien.lu.mode}
+              retour="brancher"
               connecte={connecte}
               // « Connecté » vient de l'état relu, pas de la fin de la fenêtre : un compte relié sans numéro n'est pas connecté.
               surConnexion={setAvertissements}

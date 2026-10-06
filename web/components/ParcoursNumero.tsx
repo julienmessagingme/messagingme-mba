@@ -19,9 +19,11 @@ import type { ApiConnexionNumero } from '@/lib/api/connexion-numero';
  * ⚠️ EN v4, RIEN NE FAIT SAUTER L'ÉCRAN DU NUMÉRO DE LA FENÊTRE DE META (mesuré le 2026-10-06) : le client y tape donc
  * le numéro, d'où les consignes. La fenêtre vérifie le code, puis la suite actuelle relie et active le numéro.
  */
-export function ParcoursNumero({ tenantId, api, choixInitial, connecte, surConnexion }: {
+export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, surConnexion }: {
   tenantId: string;
   api: ApiConnexionNumero;
+  /** Où Stripe renvoie après le paiement : cette page-ci (`/brancher` ou `/connecter-whatsapp`). */
+  retour: 'brancher' | 'console';
   /** Le choix déjà fait (le mode du lien de Claude Code), ou `null` pour proposer les deux. */
   choixInitial: 'fourni' | 'apporte' | null;
   /** Le numéro est connecté : la lecture du code s'arrête. */
@@ -36,7 +38,32 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, surConne
   const [copie, setCopie] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+  /** L'abonnement du numéro (lot 3c) : `undefined` tant qu'il n'est pas lu (ou sur une API sans la route). */
+  const [abonnement, setAbonnement] = useState<{ statut: string } | null | undefined>(undefined);
+  /** Retour de la page de Stripe (`?abonnement=recu`) : la confirmation arrive par le webhook, on ne repaie pas. */
+  const [paiementRecu, setPaiementRecu] = useState(false);
   const connexion = useConnexionNumero(tenantId, api, surConnexion);
+
+  useEffect(() => {
+    setPaiementRecu(new URLSearchParams(window.location.search).get('abonnement') === 'recu');
+  }, []);
+
+  // Tant qu'un numéro fourni n'est pas là, l'abonnement et le numéro se relisent : le webhook les écrit ensemble.
+  useEffect(() => {
+    if (choix !== 'fourni' || numero !== null || connecte) return undefined;
+    let vivant = true;
+    const lire = () => {
+      api.etat().then((r) => {
+        if (!vivant) return;
+        setAbonnement(r.etat.abonnement);
+        if (r.etat.fourni) { setNumero(r.etat.fourni); setCode(r.etat.code?.code ?? null); }
+      }).catch(() => {});
+    };
+    lire();
+    const minuterie = setInterval(lire, INTERVALLE_CODE_MS);
+    return () => { vivant = false; clearInterval(minuterie); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [choix, numero, connecte, tenantId]);
 
   // Au retour sur la page (rechargement, onglet rouvert), un numéro déjà attribué reprend où il en était. Une API qui
   // n'a pas encore la route rend une erreur : le parcours reste au choix, sans message.
@@ -67,6 +94,8 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, surConne
   const obtenir = () => geste(async () => { setNumero((await api.obtenir()).numero); setCode(null); });
   const remplacer = () => geste(async () => { setNumero(null); setCode(null); setNumero((await api.remplacer()).numero); });
   const abandonner = () => geste(async () => { await api.abandonner(); setNumero(null); setCode(null); setChoix(choixInitial); });
+  const payer = () => geste(async () => { window.location.assign((await api.payer(retour)).url); });
+  const abonne = abonnement !== undefined && abonnement !== null && abonnement.statut !== 'resilie';
   const copier = async () => {
     if (!numero) return;
     try { await navigator.clipboard.writeText(numero); setCopie(true); } catch { setCopie(false); }
@@ -79,7 +108,7 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, surConne
     </Bouton>
   );
   // Le lien de Claude Code arrive avec son choix : pas de retour vers un choix qu'il n'a pas proposé.
-  const retour = choixInitial === null
+  const boutonRetour = choixInitial === null
     ? <Bouton type="button" variante="discret" onClick={() => setChoix(null)}>{t('Retour', 'Back')}</Bouton>
     : null;
 
@@ -89,7 +118,7 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, surConne
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <button type="button" data-testid="choix-fourni" onClick={() => setChoix('fourni')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
             <div className="text-base font-semibold text-ink-900">{t('Fournissez-moi un numéro', 'Provide me a number')}</div>
-            <p className="mt-1 text-xs text-ink-500">{t('Un numéro dédié, prêt pour WhatsApp. Rien à acheter de votre côté.', 'A dedicated number, ready for WhatsApp. Nothing to buy on your side.')}</p>
+            <p className="mt-1 text-xs text-ink-500">{t('Un numéro dédié, prêt pour WhatsApp : 3,50 € HT par mois.', 'A dedicated number, ready for WhatsApp: €3.50 excl. VAT per month.')}</p>
           </button>
           <button type="button" data-testid="choix-apporte" onClick={() => setChoix('apporte')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
             <div className="text-base font-semibold text-ink-900">{t('J’ai déjà un numéro', 'I already have a number')}</div>
@@ -101,17 +130,33 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, surConne
           <p className="text-sm text-ink-700">{t('Dans la fenêtre de Meta, choisissez votre entreprise, saisissez votre numéro et le code reçu.', 'In the Meta window, pick your business, enter your number and the code you receive.')}</p>
           <div className="mt-4 flex items-center gap-3">
             {boutonFenetre}
-            {retour}
+            {boutonRetour}
           </div>
         </div>
       ) : numero === null ? (
         <div data-testid="choix-fourni-ouvert" className="mt-6 rounded-carte border border-ink-200 bg-white p-5">
           <p className="text-sm text-ink-700">{t('Nous vous attribuons un numéro britannique dédié, que vous connecterez dans la fenêtre de Meta.', 'We assign you a dedicated UK number, which you then connect in the Meta window.')}</p>
+          {abonne ? (
+            // Payé, mais sans numéro : la réserve était vide au moment du paiement. Le bouton réessaie l'attribution.
+            <p data-testid="numero-en-preparation" className="mt-3 text-sm text-ink-700">
+              {t('Paiement reçu : votre numéro est en préparation, il s’affichera ici dès qu’il sera prêt.', 'Payment received: your number is being prepared and will show here as soon as it is ready.')}
+            </p>
+          ) : paiementRecu && abonnement !== undefined ? (
+            <p data-testid="paiement-en-confirmation" className="mt-3 text-sm text-ink-700">
+              {t('Paiement en cours de confirmation… votre numéro s’affichera ici dans quelques secondes.', 'Payment being confirmed… your number will show here in a few seconds.')}
+            </p>
+          ) : null}
           <div className="mt-4 flex items-center gap-3">
-            <Bouton type="button" enCours={enCours} disabled={enCours} onClick={() => { void obtenir(); }} data-testid="obtenir-numero">
-              {t('Obtenir mon numéro', 'Get my number')}
-            </Bouton>
-            {retour}
+            {abonnement === undefined || abonne ? (
+              <Bouton type="button" enCours={enCours} disabled={enCours} onClick={() => { void obtenir(); }} data-testid="obtenir-numero">
+                {t('Obtenir mon numéro', 'Get my number')}
+              </Bouton>
+            ) : paiementRecu ? null : (
+              <Bouton type="button" enCours={enCours} disabled={enCours} onClick={() => { void payer(); }} data-testid="payer-numero">
+                {t('Payer 3,50 € HT par mois', 'Pay €3.50 excl. VAT per month')}
+              </Bouton>
+            )}
+            {boutonRetour}
           </div>
         </div>
       ) : (

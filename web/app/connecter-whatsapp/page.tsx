@@ -51,6 +51,7 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
           tenantId={tenantId}
           api={api}
           choixInitial={null}
+          retour="console"
           connecte={connecte}
           surConnexion={(av) => { setAvertissements(av); chargerCompte(); }}
         />

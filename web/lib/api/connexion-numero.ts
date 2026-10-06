@@ -1,4 +1,4 @@
-import { BASE, ApiError, messageDErreur, langue } from '../http';
+import { BASE, ApiError, messageDErreur, langue, request } from '../http';
 import {
   obtenirNumeroFourni, lireNumeroFourni, remplacerNumeroFourni, abandonnerNumeroFourni, getEsConfig, completeEmbeddedSignup,
   type EsConfig, type EsCompleteResult, type NumeroFourniEtat,
@@ -16,6 +16,10 @@ export interface ApiConnexionNumero {
   lire(): Promise<NumeroFourniEtat>;
   remplacer(): Promise<{ numero: string }>;
   abandonner(): Promise<{ rendu: boolean }>;
+  /** Où en est la connexion du numéro, abonnement compris (`GET /tenants/:tenantId/connexion-numero`). */
+  etat(): Promise<{ etat: EtatConnexion; empreinte: string }>;
+  /** Ouvrir le paiement de l'abonnement du numéro (lot 3c) : l'adresse de la page de Stripe. */
+  payer(retour: 'brancher' | 'console'): Promise<{ url: string }>;
 }
 
 /** La session de la console : les appels d'hier, inchangés. */
@@ -27,6 +31,8 @@ export function apiDeLaSession(tenantId: string): ApiConnexionNumero {
     lire: () => lireNumeroFourni(tenantId),
     remplacer: () => remplacerNumeroFourni(tenantId),
     abandonner: () => abandonnerNumeroFourni(tenantId),
+    etat: () => request(`/tenants/${tenantId}/connexion-numero`),
+    payer: (retour) => request(`/tenants/${tenantId}/numero-fourni/abonnement`, { method: 'POST', body: JSON.stringify({ retour }) }),
   };
 }
 
@@ -36,6 +42,8 @@ export interface EtatConnexion {
   code: { code: string; recuLe: string } | null;
   /** `aActiver` : relié, mais Meta ne l'a pas encore activé ; il n'est pas « connecté ». */
   connecte: { chiffres: string; aActiver: boolean } | null;
+  /** L'abonnement du numéro fourni (lot 3c) : `actif`, `en_retard` ou `resilie`, `null` sans abonnement. */
+  abonnement: { statut: 'actif' | 'en_retard' | 'resilie'; periodeFin: string | null } | null;
 }
 
 /**
@@ -48,7 +56,7 @@ export class LienRefuse extends Error {}
  * Le jeton du lien. 🔴 Il ne lit JAMAIS la session de la console : un navigateur qui porte les deux (un admin qui teste)
  * enverrait sinon la session, et la page ne prouverait rien du lien. Un 401 n'efface aucune session non plus.
  */
-export function apiDuLien(tenantId: string, jeton: string): ApiConnexionNumero & { etat(): Promise<{ etat: EtatConnexion; empreinte: string }> } {
+export function apiDuLien(tenantId: string, jeton: string): ApiConnexionNumero {
   async function appel<T>(chemin: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set('content-type', 'application/json');
@@ -68,5 +76,6 @@ export function apiDuLien(tenantId: string, jeton: string): ApiConnexionNumero &
     remplacer: () => poster('/numero-fourni/remplacer'),
     abandonner: () => poster('/numero-fourni/abandonner'),
     etat: () => appel('/connexion-numero'),
+    payer: (retour) => poster('/numero-fourni/abonnement', { retour }),
   };
 }
