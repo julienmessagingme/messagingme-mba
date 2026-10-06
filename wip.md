@@ -37,7 +37,7 @@ Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; réc
   relevés par la relecture (la migration contre trois chemins rares, deux renommages croisés simultanés), en 500 sur
   une requête au pire.
 
-## LOT 3c DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO BRANCHÉ DEPUIS CLAUDE CODE, SPEC VALIDÉE, PLAN ÉCRIT
+## LOT 3c DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO BRANCHÉ DEPUIS CLAUDE CODE, EN PRODUCTION, ESSAI RÉEL FAIT
 
 Le client ne passe jamais par la console : Claude Code lui donne un lien qui ouvre la page de connexion du numéro
 sans connexion, suit le branchement et affiche le code. Spec `docs/superpowers/specs/2026-10-06-lien-attente-abonnement-design.md`,
@@ -47,8 +47,6 @@ validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien
   le `up`. Relue : zéro rouge ; les jaunes (numéro relié non activé, 403 sur la page, chargeur d'état exigé, « Abandonner »
   après la connexion d'un autre numéro, test d'isolation resserré) corrigés dans le commit suivant ; la révocation de
   l'accès de Claude qui ne coupe pas un lien déjà donné est dans `todo.md`.
-- ⏳ **Essai réel de A** (Julien) : depuis Claude Code, sur un espace neuf, le lien, la page sans connexion, le code dans
-  le terminal, le numéro connecté. Il faut un numéro dans la réserve, vide depuis l'essai du 3b.
 - ✅ **Livraison B en production le 2026-10-06** : migration 0214 appliquée à 12 h 24 UTC et relue en base, API et
   workers sur `c9973f44` (12 h 25), console `7c1ede29` poussée après le `up`. Réglages Stripe faits par Julien avant le
   `up` : `STRIPE_PRIX_NUMERO` (posé par Claude avec son accord), les trois événements ajoutés au webhook (relus chez
@@ -59,10 +57,17 @@ validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien
   aux abonnés en attente (paiement, alerte, et un numéro rendu qui les sert), et les deux fausses alertes du webhook.
   En production le même jour : API et workers sur `6050fdb7` (aucune migration ; la route du portail rend 401 sans
   session, contre 404 pour une route inconnue), console `fbae4608` poussée après, CI verte job par job.
-- ⏳ **Essai réel commun A et B** (Julien) : un numéro racheté chez DIDWW (+44 1259 797311, acheté le 2026-10-06) et
-  déclaré dans /ops ; depuis Claude Code, sur un espace neuf (l'espace de l'essai du 3b a été supprimé à la demande de
-  Julien ; son numéro est en « bloqué », à résilier chez DIDWW), le lien, « Payer 3,50 € HT par mois », un vrai paiement, le numéro attribué par le webhook, le code dans
-  le terminal, la connexion ; puis une résiliation par le portail et l'alerte Telegram.
+- ✅ **Essai réel commun A et B fait le 2026-10-06** (Julien, vérifié en base, chez Meta et chez DIDWW en lecture
+  seule) : +44 1259 797311 acheté chez DIDWW, déclaré dans /ops à 14 h 41 UTC (libre, branché sur le trunk de
+  l'Asterisk) ; espace neuf né de la connexion de Claude Code à 14 h 45 (`claude_code`, avec le Gmail de l'essai du 3b,
+  dont l'espace avait été supprimé) ; un vrai paiement : l'abonnement `actif` en mode réel et le numéro attribué dans la
+  MÊME transaction à 14 h 52, la facture payée juste après pose la fin de période ; le code de Meta capté et affiché
+  dans le terminal de Claude Code ; le numéro relié à 14 h 57, `CONNECTED` et `VERIFIED` chez Meta ; 1 € offert.
+  Meta a imposé le SMS : la ligne fixe l'a lu à voix haute, code non retenu (« ### to ### ») ; le code redemandé est
+  arrivé par appel. La résiliation par le portail ne donne rien avant la fin de période (aucun événement écouté) ; annulé ensuite
+  immédiatement dans Stripe : `resilie` à 15 h 14, l'alerte Telegram reçue (Julien), le numéro reste attribué (rien
+  n'est coupé avant le lot 4). Ce qu'il a montré est dans `todo.md`. Reste à Julien : résilier chez DIDWW le numéro de
+  l'essai du 3b (+44 1235 619343, en `bloque`), puis le passer en `resilie`.
 
 ## LOT 5 DE « MESSAGING ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 

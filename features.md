@@ -3840,7 +3840,10 @@ et du crédit (ci-dessous) ne s'ouvrent qu'à cette connexion.
 
 ### Brancher son numéro WhatsApp depuis Claude (2026-10-06)
 
-✅ **Livraison A en production le 2026-10-06, essai réel dû** (lot 3c). **À quoi ça sert.** Le client ne passe jamais par la
+✅ **LIVE et éprouvé le 2026-10-06** (lot 3c, livraisons A et B) : un espace neuf créé depuis Claude Code, le lien,
+un vrai paiement de l'abonnement, le numéro attribué par le paiement, le code affiché dans le terminal, le numéro
+connecté et vérifié chez Meta, puis la résiliation et son alerte. ⚠️ Une résiliation par le portail prend effet en fin
+de période : d'ici là, l'abonnement se lit « actif », sans sa date de fin (à corriger, `todo.md`). **À quoi ça sert.** Le client ne passe jamais par la
 console : Claude lui donne un lien, il clique, et la page de connexion de son numéro s'ouvre dans son espace, sans
 écran de connexion. Il y fait la fenêtre de Meta ; pendant ce temps, Claude suit le branchement, affiche dans le
 terminal le code de vérification d'un numéro fourni, et annonce le numéro connecté.

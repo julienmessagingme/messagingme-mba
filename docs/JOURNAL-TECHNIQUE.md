@@ -29,6 +29,17 @@ lecture), le retour de Stripe. ⚠️ `e0f51c43` a rendu le job `integration` ro
 retour d'`enregistrer` pour un abonnement résilié. Les tests d'intégration ne tournent qu'en CI ; changer ce que rend un
 store, c'est chercher l'ancien littéral dans `tests/integration/` avant de pousser.
 
+**L'essai réel commun A et B** (Julien, l'après-midi) : un numéro acheté chez DIDWW et déclaré dans /ops, un espace
+neuf né de la connexion de Claude Code, un vrai paiement (l'abonnement et le numéro écrits dans la même transaction),
+le code affiché dans le terminal, le numéro `CONNECTED` et `VERIFIED` chez Meta, puis une résiliation. Trois
+constats : la résiliation du portail est programmée en fin de période et Stripe ne la signale que par
+`customer.subscription.updated`, que nous n'écoutons pas, d'où un abonnement lu « actif » sans sa fin ; l'annulation
+immédiate, elle, rend `resilie` et l'alerte ; et la fenêtre de Meta n'a pas laissé choisir la vérification : elle a
+envoyé le code par SMS, qu'une ligne fixe britannique ne reçoit pas, et l'opérateur l'a lu à voix haute par un appel
+(« You have a new message from WhatsApp… press 1 to replay »), le tiret du code prononcé « to » (« ### to ### ») : la
+lecture prudente ne l'a pas retenu. Julien a redemandé le code, Meta a appelé, et cet appel a donné un code neuf. La clé restreinte de l'API ne lit pas
+les abonnements chez Stripe (`subscription_read` absent) : voulu, rien n'en a besoin.
+
 **Le ménage avant l'essai commun** : l'espace de l'essai du 3b a été supprimé à la demande de Julien, par un script relu
 à blanc puis lancé par lui (une suppression définitive en production) et vérifié en base. Les clés étrangères vers
 `tenants` étaient toutes en cascade sauf `numeros_fournis` (`set null`) : le numéro a été passé en `bloque` AVANT la
