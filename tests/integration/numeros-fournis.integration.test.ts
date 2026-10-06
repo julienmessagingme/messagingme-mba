@@ -157,7 +157,9 @@ describe.skipIf(!url)('la réserve de numéros fournis (0210)', () => {
       await store.ecrireCode(n2.id, { appelId: 'itest.33', code: '222222', transcription: 'autre' });
       expect(await store.codeDeLEspace(tenantId)).toMatchObject({ code: '863801' });
       expect(await store.codeDeLEspace(autre)).toMatchObject({ code: '222222' });
-      // La borne des 15 minutes, éprouvée SEULE : l'attribution reculée d'une heure, le code reste après elle.
+      // La borne des 15 minutes, éprouvée SEULE : l'attribution reculée d'une heure, le code reste après elle. L'appel
+      // d'AVANT l'attribution recule de deux heures, sinon il repasserait après elle et masquerait la mesure.
+      await pool.query(`update codes_verification set recu_le = now() - interval '2 hours' where appel_id = 'itest.30'`);
       await pool.query(`update numeros_fournis set attribue_le = now() - interval '1 hour' where numero = $1`, [N1]);
       await pool.query(`update codes_verification set recu_le = now() - interval '14 minutes' where appel_id = 'itest.32'`);
       expect(await store.codeDeLEspace(tenantId)).toMatchObject({ code: '863801' });
