@@ -1,8 +1,12 @@
 # CLAUDE.md : messagingme-mba
 
-**Produit : « Engage Me »** (renommé le 2026-09-03 ; le dépôt garde son nom technique
-`messagingme-mba`, comme l'identifiant du serveur MCP, qui ne doit PAS changer sous peine de casser
-les connexions déjà configurées). Console SaaS plug-and-play qui déploie et pilote la stack native
+**Produit : « Messaging Me »** (« Engage Me » du 2026-09-03 au 2026-10-06, revenu au nom historique ; le
+dépôt garde son nom technique `messagingme-mba`, comme l'identifiant du serveur MCP, qui ne doit PAS changer sous
+peine de casser les connexions déjà configurées). ⚠️ **Restent `engageme` à dessein** : le connecteur `EngageMe`
+publié chez Meta pour chaque espace (le renommer oblige chaque espace à republier, décision de Julien), le
+namespace Salesforce `engagemeapp`, le projet Vercel `engageme-site` et l'hôte de la console
+`engageme.messagingme.app`. La vitrine est passée sur `app.messagingme.fr` ; `engageme.messagingme.fr` y redirige
+en 301 (`site/vercel.json`). Console SaaS plug-and-play qui déploie et pilote la stack native
 Meta pour WhatsApp (Cloud API + Marketing Messages API/MM Lite + Meta Business Agent) pour des clients.
 Accroche du produit : « La plateforme conversationnelle qui comprend chaque conversation. »
 
@@ -57,7 +61,7 @@ local avant de pousser.
 | `engageme.messagingme.app` | la console | **Vercel** (projet `messagingme-mba`, Root Directory `web`) | automatique à chaque `git push` |
 | `api.messagingme.app` | l'API et le worker | VPS Docker (`mba-api`, `mba-worker`) | `git pull` + `compose up -d --build` |
 | `mba.messagingme.app` | l'ANCIENNE console, plus toutes les adresses historiques | VPS (`mba-web` + routage NPM) | idem |
-| `engageme.messagingme.fr` | la VITRINE publique (`site/`, HTML statique) | **Vercel** (projet `engageme-site`, Root Directory `site`, CNAME chez OVH) | automatique au `git push` qui touche `site/` (Ignored Build Step dans `site/vercel.json`, sur `VERCEL_GIT_PREVIOUS_SHA`) |
+| `app.messagingme.fr` | la VITRINE publique (`site/`, HTML statique) | **Vercel** (projet `engageme-site`, Root Directory `site`, CNAME chez OVH) | automatique au `git push` qui touche `site/` (Ignored Build Step dans `site/vercel.json`, sur `VERCEL_GIT_PREVIOUS_SHA`) |
 
 ⚠️ **La vitrine n'a AUCUNE variable d'environnement, et elle ne doit pas en avoir.** À l'import, Vercel
 propose les 31 variables du `.env.example` RACINE (le backend), même avec `site` pour Root Directory : on les

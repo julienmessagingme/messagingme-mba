@@ -5,7 +5,7 @@ import { encryptSecret, decryptSecret } from '../crypto/secretbox';
  * LE STORE DU CONNECTEUR SALESFORCE (plan 2026-09-26, lot L1), seul à lire et écrire le schéma `salesforce`.
  *
  * 🔴 AUCUN AUTRE FICHIER NE NOMME UNE TABLE `salesforce.*`, et ce fichier ne nomme AUCUNE table de `public` :
- * c'est ce qui rend le schéma extractible vers sa propre base (spec, § « Dans Engage Me »). Le store reçoit son
+ * c'est ce qui rend le schéma extractible vers sa propre base (spec, § « Dans Messaging Me »). Le store reçoit son
  * pool par le constructeur, c'est la couture. `tests/salesforce-isolation.test.ts` tient les deux règles.
  *
  * 🔴 `tenant_id = $1` SUR CHAQUE REQUÊTE, sauf DEUX lectures transverses nommées ici et comptées par le test :

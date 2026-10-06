@@ -1,4 +1,4 @@
-# documentation.md : le manuel technique d'Engage Me
+# documentation.md : le manuel technique de Messaging Me
 
 > **Ce fichier décrit le système TEL QU'IL EST.** Il ne raconte pas comment on y est arrivé : ça, c'est
 > [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md), qui ne fait jamais autorité sur le présent.
@@ -24,7 +24,7 @@
 
 ## 1. Objet, public, et qui dit la vérité
 
-**Engage Me** est une console SaaS qui déploie et pilote la stack conversationnelle d'un client : WhatsApp
+**Messaging Me** est une console SaaS qui déploie et pilote la stack conversationnelle d'un client : WhatsApp
 (Cloud API, Marketing Messages, Meta Business Agent), RCS, e-mail. Un client y branche son numéro, importe ses
 contacts, construit des scénarios, envoie des campagnes, répond dans une boîte de réception, et laisse un
 agent IA tenir une partie des conversations.
@@ -517,7 +517,7 @@ scénario construit par le client. Les invariants :
 
 ⚠️ **LE FOURNISSEUR IA N'EST PAS ENCORE INTERCHANGEABLE.** `GatewayChatClient`, le catalogue, le coût rendu
 par le Gateway et les clés par espace sont spécifiques à Vercel. La cible prévoit une route Azure OpenAI
-régionale France activable manuellement pour certains contrats, sans bouton dans Engage Me ; tant que le lot
+régionale France activable manuellement pour certains contrats, sans bouton dans Messaging Me ; tant que le lot
 n'est pas livré et testé, elle reste une option d'architecture et non une capacité de production. La source
 unique de cette cible et de ses limites est `docs/ARCHITECTURE-CIBLE.md`, §2.1.
 
@@ -564,7 +564,7 @@ runtime, donc le consentement est déplacé du runtime vers la CONFIGURATION. Il
 depuis 0086 : les perdre en remontant la définition aurait vidé 0086 de son contenu sans que rien ne le
 signale.
 
-🔴 **CE QU'ENGAGE ME A, META L'A : la publication ÉCRASE** (décision de Julien du 2026-09-10). La
+🔴 **CE QUE MESSAGING ME A, META L'A : la publication ÉCRASE** (décision de Julien du 2026-09-10). La
 réconciliation se fait sur les NOMS, jamais sur un identifiant Meta qu'on stockerait (une table de
 correspondance dériverait dès qu'un client supprime un connecteur dans WhatsApp Manager). Corollaire assumé :
 renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau », et l'aperçu le dit avant le clic.

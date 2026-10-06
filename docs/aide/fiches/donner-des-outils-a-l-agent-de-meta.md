@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: 2429c2
+source_empreinte: a632f0
 ---
 # Donner des outils à l'agent de Meta
 
@@ -35,7 +35,7 @@ administrateurs.
 enregistrez ceux que vos agents peuvent recevoir. « Appeler un outil MCP » montre ceux que l'agent de Meta n'a
 pas encore ; « Ajouter » le lui donne et l'envoie chez Meta. L'agent ne remplit que les paramètres
 décidés par lui : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe, réglé dans Connecteurs
-MCP, est posé par Engage Me. Leurs mots et leurs paramètres sont partagés avec vos agents IA : ils se règlent
+MCP, est posé par Messaging Me. Leurs mots et leurs paramètres sont partagés avec vos agents IA : ils se règlent
 là-bas (« Régler »), pas ici. Un outil disparu de son serveur, inutilisable, ou dont le serveur est éteint, passe en
 rouge et ne part pas chez Meta ; il ne vous est pas proposé non plus.
 
@@ -73,13 +73,13 @@ est proposée par type, et l'outil ne s'enregistre pas tant que le trou à compl
   Tout effacement chez Meta que ce geste n'a pas demandé vous est demandé en le nommant, parce que Meta ne
   rend jamais un outil effacé.
 
-**Engage Me fait foi, et la publication écrase.** Un outil ajouté à la main dans WhatsApp Manager sera
+**Messaging Me fait foi, et la publication écrase.** Un outil ajouté à la main dans WhatsApp Manager sera
 supprimé à la publication suivante. L'écran le dit, et l'aperçu vous le montre avant le clic. Publier deux
 fois de suite ne produit en revanche aucun geste.
 
 **Comment ça marche, en un paragraphe.** L'agent de Meta n'appelle pas votre système directement : il passe
-par Engage Me. Nous reconnaissons votre client à son numéro WhatsApp (que WhatsApp transmet lui-même, l'agent
+par Messaging Me. Nous reconnaissons votre client à son numéro WhatsApp (que WhatsApp transmet lui-même, l'agent
 ne peut pas l'inventer), nous remplissons les valeurs que nous connaissons déjà, puis nous faisons l'appel
 avec les mêmes contrôles et le même journal que pour vos agents IA. Votre clé d'accès ne quitte donc jamais
-Engage Me. Une clé « Agent de Meta » apparaît dans la liste de vos clés d'API : c'est celle que l'agent nous
+Messaging Me. Une clé « Agent de Meta » apparaît dans la liste de vos clés d'API : c'est celle que l'agent nous
 présente. Elle ne se crée pas à la main, et la révoquer coupe ses outils jusqu'au prochain envoi.

@@ -48,7 +48,7 @@ export type ConfigScript = ScriptServi | ScriptGrise;
  * est éteint », et un code inventé n'apprend rien. Un commentaire, donc rien ne s'exécute. Court, et il le reste :
  * l'auto-attaque le compare octet pour octet, sur un corps qu'elle tronque à 300 caractères.
  */
-export const SCRIPT_INERTE = '/* Engage Me : aucune bulle à afficher pour ce code. */\n';
+export const SCRIPT_INERTE = '/* Messaging Me : aucune bulle à afficher pour ce code. */\n';
 
 /** Le texte de la bulle grisée, en `title` et `aria-label` seulement : aucun texte visible au premier lot. */
 export const TEXTE_INDISPONIBLE = 'Messagerie WhatsApp momentanément indisponible';
@@ -234,7 +234,7 @@ function monter() {
   if (D.badge) {
     var badge = document.createElement('p');
     badge.className = 'badge';
-    badge.textContent = 'Propulsé par Engage Me';
+    badge.textContent = 'Propulsé par Messaging Me';
     boite.appendChild(badge);
   }
   document.body.appendChild(hote);

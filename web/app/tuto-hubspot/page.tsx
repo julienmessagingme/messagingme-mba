@@ -54,7 +54,7 @@ export default function TutoHubspotPage() {
       </div>
       <div className="w-full max-w-formulaire">
         <div className="mb-8 text-center">
-          <Logo className="mx-auto mb-3 h-12 w-12" />
+          <Logo className="mx-auto mb-4 h-9 w-auto" />
           <TitrePage>
             {t('Configurer HubSpot avec Messaging Me', 'Set up HubSpot with Messaging Me')}
           </TitrePage>

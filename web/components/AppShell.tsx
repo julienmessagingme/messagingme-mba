@@ -321,8 +321,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             </button>
           )}
           <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex min-w-0 shrink items-center gap-2" title={t('Accueil', 'Home')}>
-            <Logo className="h-8 w-8 shrink-0" />
-            <span className="hidden truncate text-sm font-semibold text-ink-900 sm:inline">Engage Me</span>
+            <Logo className="h-6 w-auto shrink-0" />
+            <span className="hidden truncate text-sm font-semibold text-ink-900 sm:inline">Messaging Me</span>
           </Link>
         </div>
         {/**
@@ -332,12 +332,12 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           *
           * ⚠️ LA CASSE HAUTE ET L'INTERLETTRAGE ONT ÉTÉ RETIRÉS LE 2026-09-25 (passe « anti-slop » de la
           * console) : des majuscules espacées pour structurer sont un marqueur d'interface générée. L'onglet se
-          * distingue désormais de « Engage Me » par sa graisse (medium contre semi-bold), sa couleur (gris
+          * distingue désormais de « Messaging Me » par sa graisse (medium contre semi-bold), sa couleur (gris
           * secondaire, la marque est en encre) et la pastille de l'onglet actif, sans changer de famille.
           */}
         {/* ⚠️ `ml-4 lg:ml-0` : à partir de `lg`, la zone de gauche porte sa largeur et le séparateur DOIT
             tomber pile sur les 240 px, donc aucune marge. En dessous, cette largeur n'existe pas et une
-            marge nulle collerait le trait au mot « Engage Me » : c'est précisément le reproche de Julien
+            marge nulle collerait le trait au mot « Messaging Me » : c'est précisément le reproche de Julien
             du 2026-09-08 (« positionné beaucoup trop proche du logo »), qu'on réintroduirait sur toute la
             plage tablette sans le voir depuis un grand écran. */}
         <span aria-hidden="true" data-testid="entete-separateur" className="ml-4 hidden h-6 w-px shrink-0 bg-ink-200 sm:block lg:ml-0" />

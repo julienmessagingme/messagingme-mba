@@ -161,7 +161,7 @@ export function BoutonAide({ tenantId, ecranCourant, role, dansEntete = false }:
         >
           <div className="flex items-center justify-between border-b border-ink-100 bg-white px-4 py-3">
             <span className="flex items-center gap-2 text-sm font-semibold text-ink-900">
-              <Logo className="h-5 w-5 shrink-0" />
+              <Logo className="h-3.5 w-auto shrink-0" />
               {t('Aide', 'Help')}
             </span>
             <button type="button" onClick={() => setOuvert(false)} className="text-ink-400 hover:text-ink-900" aria-label={t('Fermer', 'Close')}><Icone nom="fermer" taille="petite" /></button>
@@ -183,7 +183,7 @@ export function BoutonAide({ tenantId, ecranCourant, role, dansEntete = false }:
                 <span className="relative inline-flex h-14 w-14 items-center justify-center">
                   {/* Le halo : il pose la marque sur un fond, sinon le logo flotte. */}
                   <span aria-hidden="true" className="absolute inset-0 rounded-full bg-brand-50" />
-                  <Logo className="relative h-8 w-8" />
+                  <Logo className="relative h-5 w-auto" />
                 </span>
                 <p className="text-sm font-semibold text-ink-900">{t('Je suis là pour vous aider', 'I am here to help')}</p>
                 {/* ⚠️ LE LIBELLÉ DIT CE QU'IL FAIT. « Récap du jour » pour un récap de la veille laisserait

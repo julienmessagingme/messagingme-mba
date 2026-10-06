@@ -8,7 +8,7 @@ import { corpsOutilMeta, corpsConnecteurRelais } from '../src/mba/publication';
 /**
  * Ce qui va changer chez Meta si l'on publie.
  *
- * 🔴 CE FICHIER PROTÈGE UN ENGAGEMENT PRIS DEVANT LE CLIENT : « Engage Me fait foi, la publication écrase ».
+ * 🔴 CE FICHIER PROTÈGE UN ENGAGEMENT PRIS DEVANT LE CLIENT : « Messaging Me fait foi, la publication écrase ».
  * Écraser n'est acceptable que si l'on montre QUOI avant de le faire. Le plan est donc calculé sans aucune
  * IO, et c'est la moitié qui porte tous les arbitrages ; celle qui appelle Meta est mécanique.
  *
@@ -144,7 +144,7 @@ describe('planifierPublication', () => {
     expect(g[0]).toMatchObject({ type: 'outil_supprimer', connecteurId: 'c1', nom: 'add_tag' });
   });
 
-  it('🔴 un outil que Meta a en trop est SUPPRIMÉ : c’est ça, « Engage Me fait foi »', () => {
+  it('🔴 un outil que Meta a en trop est SUPPRIMÉ : c’est ça, « Messaging Me fait foi »', () => {
     const enTrop: EtatMeta = {
       ...ALIGNE,
       outilsParConnecteur: { c1: [...ALIGNE.outilsParConnecteur.c1!, { id: 't9', name: 'ajoute_a_la_main' }] },

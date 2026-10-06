@@ -206,7 +206,7 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
             { cle: 'business_info', requise: true, etat: 'faite' },
             { cle: 'faq', requise: true, etat: 'a_faire', raison: 'Aucune question enregistrée.' },
             { cle: 'competences', requise: true, etat: 'inconnue', raison: 'Lecture impossible chez Meta pour l’instant.' },
-            { cle: 'connecteurs', requise: false, etat: 'inconnue', raison: 'Pas encore piloté depuis Engage Me.' },
+            { cle: 'connecteurs', requise: false, etat: 'inconnue', raison: 'Pas encore piloté depuis Messaging Me.' },
           ],
           faites: 1, total: 2, indeterminees: 1,
         });

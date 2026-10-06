@@ -6,7 +6,7 @@ import { objetOuNull } from '../webhooks/json';
 import { VERSION_PROTOCOLE, SERVEUR_INFO as IDENTITE_PRODUIT } from './serveur';
 
 /**
- * Le client MCP : Engage Me va chercher des outils chez un tiers (`serveur.ts` fait l'inverse). Tout ce qui en
+ * Le client MCP : Messaging Me va chercher des outils chez un tiers (`serveur.ts` fait l'inverse). Tout ce qui en
  * sort est du tiers : chaque champ est vérifié avant d'être cru, jamais un `as` sur une réponse.
  *
  * La spec impose `initialize` puis `notifications/initialized` avant toute requête, et un `Mcp-Session-Id` assigné

@@ -1,5 +1,5 @@
-# Vitrine Engage Me : tout est ouvert aux robots, ceux des assistants IA compris.
+# Vitrine Messaging Me : tout est ouvert aux robots, ceux des assistants IA compris.
 User-agent: *
 Allow: /
 
-Sitemap: https://engageme.messagingme.fr/sitemap.xml
+Sitemap: https://app.messagingme.fr/sitemap.xml

@@ -85,7 +85,7 @@
   };
   var demo = DEMOS[new URLSearchParams(location.search).get('demo')];
   var message = form.querySelector('textarea[name="message"]');
-  if (demo && message && !message.value) message.value = 'Bonjour, je souhaite une démo d’Engage Me : ' + demo + '.';
+  if (demo && message && !message.value) message.value = 'Bonjour, je souhaite une démo de Messaging Me : ' + demo + '.';
   form.addEventListener('input', function () {
     var b = {};
     champs.forEach(function (c) { b[c.name] = c.value; });

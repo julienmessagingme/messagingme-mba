@@ -410,7 +410,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('mba-outil-irreversible-o9')).not.toContainText('irréversible');
   });
 
-  test('🔴 choisir un appel montre ce qu’Engage Me remplit et ce que l’agent de Meta demandera', async ({ page }) => {
+  test('🔴 choisir un appel montre ce que Messaging Me remplit et ce que l’agent de Meta demandera', async ({ page }) => {
     await monterOutils(page, {
       requetes: [REQ('REQ2', 'Poser', [
         { nom: 'user', type: 'string', origine: { type: 'champ', cle: 'user_ns' } },

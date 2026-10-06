@@ -71,7 +71,7 @@ async function monter(
     if (chemin.endsWith('/agents')) return json({ agents: [] });
     if (chemin.endsWith('/tags')) return json({ tags: [] });
     if (chemin.endsWith('/user-fields')) return json({ fields: CHAMPS });
-    if (chemin.endsWith('/phone-numbers')) return json({ phoneNumbers: [{ id: 'pn1', displayPhoneNumber: '+33 5 25 68 02 50', verifiedName: 'Engage Me' }] });
+    if (chemin.endsWith('/phone-numbers')) return json({ phoneNumbers: [{ id: 'pn1', displayPhoneNumber: '+33 5 25 68 02 50', verifiedName: 'Messaging Me' }] });
     if (chemin.endsWith('/rcs-agents')) return json({ agents: [{ agentId: 'ag1', brandName: 'Marque', status: 'LAUNCHED' }] });
     if (chemin.endsWith('/campaigns') && route.request().method() === 'POST') {
       espion.corps = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>;

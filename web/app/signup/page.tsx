@@ -67,7 +67,7 @@ export default function SignupPage() {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <Logo className="mx-auto mb-3 h-14 w-14" />
+          <Logo className="mx-auto mb-4 h-10 w-auto" />
           <TitrePage>{t('Créer votre espace', 'Create your workspace')}</TitrePage>
           <p className="mt-1 text-sm text-ink-500">{t('Votre espace WhatsApp Business en quelques secondes.', 'Your WhatsApp Business workspace in seconds.')}</p>
         </div>

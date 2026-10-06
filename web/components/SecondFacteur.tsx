@@ -351,7 +351,7 @@ export function CodesSecours({ codes, onContinuer }: { codes: readonly string[];
     const url = URL.createObjectURL(new Blob([texteCodesSecours(codes, locale !== 'en')], { type: 'text/plain;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'engage-me-codes-de-secours.txt';
+    a.download = 'messaging-me-codes-de-secours.txt';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

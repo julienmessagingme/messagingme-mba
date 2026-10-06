@@ -115,7 +115,7 @@ export function uriOtpauth(emetteur: string, email: string, secret: string): str
 }
 
 /** Le nom qui apparaît dans l'application d'authentification. */
-export const EMETTEUR_TOTP = 'Engage Me';
+export const EMETTEUR_TOTP = 'Messaging Me';
 
 // ---------------------------------------------------------------------------------------------------------
 // Codes de secours

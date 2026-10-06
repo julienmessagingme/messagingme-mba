@@ -63,7 +63,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <Logo className="mx-auto mb-3 h-14 w-14" />
+          <Logo className="mx-auto mb-4 h-10 w-auto" />
           <TitrePage>{t("Rejoindre l’espace", 'Join the workspace')}</TitrePage>
           <p className="mt-1 text-sm text-ink-500">{t('Choisissez votre mot de passe pour activer votre compte.', 'Choose a password to activate your account.')}</p>
         </div>

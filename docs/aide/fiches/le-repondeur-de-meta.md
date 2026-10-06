@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: fee128
+source_empreinte: 2a380f
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -14,8 +14,8 @@ qui l'obtient. Si quelqu'un de votre équipe travaille sur la conversation dans 
 Et le fil lui repasse au moment où le message arrive, pas avant : Meta ne peut se voir confier une
 conversation que s'il en existe une d'ouverte, et elle s'ouvre exactement quand la personne écrit.
 
-**L'agent ne parle qu'aux conversations qu'Engage Me lui confie.** Il ne répond qu'aux contacts de sa liste,
-et c'est Engage Me qui la tient : vous n'avez ni audience à choisir, ni numéros à y ajouter. Quand un client
+**L'agent ne parle qu'aux conversations que Messaging Me lui confie.** Il ne répond qu'aux contacts de sa liste,
+et c'est Messaging Me qui la tient : vous n'avez ni audience à choisir, ni numéros à y ajouter. Quand un client
 écrit et que personne ne lui répond, la conversation lui est confiée et il répond tout de suite ; quand un
 client répond à côté d'un scénario, aussi. Avant chaque modèle (scénario, campagne, Inbox), le contact sort de
 la liste, pour que sa réponse revienne au scénario : pendant un scénario, l'agent se tait. « Rendre la main »

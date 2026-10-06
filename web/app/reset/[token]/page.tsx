@@ -43,7 +43,7 @@ export default function ResetPage({ params }: { params: Promise<{ token: string 
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <Logo className="mx-auto mb-3 h-14 w-14" />
+          <Logo className="mx-auto mb-4 h-10 w-auto" />
           <TitrePage>{t('Nouveau mot de passe', 'New password')}</TitrePage>
         </div>
         {done ? (

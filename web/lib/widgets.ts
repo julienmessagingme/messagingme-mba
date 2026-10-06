@@ -55,7 +55,7 @@ export interface Widget {
   position: PositionWidget;
   libelle: string | null;
   avatarUrl: string | null;
-  /** « Propulsé par Engage Me ». Pas modifiable depuis la console : il tient à l'offre, pas à un réglage. */
+  /** « Propulsé par Messaging Me ». Pas modifiable depuis la console : il tient à l'offre, pas à un réglage. */
   badge: boolean;
   actif: boolean;
   /** null = le plafond de l'instance, pas « zéro ». */

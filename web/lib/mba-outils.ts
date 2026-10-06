@@ -67,7 +67,7 @@ export function valeursPermises(texte: string): string[] {
 export const BORNES_OUTIL = { titre: 120, texte: 2000, tag: 64, champ: 64, valeur: 120, valeurs: 50 } as const;
 
 /**
- * Le connecteur unique d'Engage Me chez Meta. Recopie de `NOM_CONNECTEUR_RELAIS` (`src/mba/publication.ts`),
+ * Le connecteur unique de Messaging Me chez Meta. Recopie de `NOM_CONNECTEUR_RELAIS` (`src/mba/publication.ts`),
  * tenue égale par `tests/mba-outils-parite.test.ts`.
  */
 export const CONNECTEUR_RELAIS = 'EngageMe';
@@ -168,8 +168,8 @@ export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
     // l'a lu comme « déjà lancé plus tôt dans la conversation », s'est interdit l'outil, et a passé la main à un
     // humain faute d'autre moyen. La borne est le MESSAGE du client, pas la conversation.
     quand: [
-      `Appelle cet outil dès que le client ${PLACEHOLDER}, même si tu l’as déjà fait plus tôt dans la conversation. Engage Me prend alors la conversation et te la rend à la fin du parcours : dis seulement au client, en une phrase courte, que tu lances ça pour lui, puis n’écris plus rien. Ne passe pas la main pour cette demande.`,
-      `Call this tool as soon as the customer ${PLACEHOLDER_EN}, even if you already did earlier in the conversation. Engage Me then takes the conversation and hands it back at the end of the journey: just tell the customer, in one short sentence, that you are starting it, then write nothing more. Do not hand over for this request.`,
+      `Appelle cet outil dès que le client ${PLACEHOLDER}, même si tu l’as déjà fait plus tôt dans la conversation. Messaging Me prend alors la conversation et te la rend à la fin du parcours : dis seulement au client, en une phrase courte, que tu lances ça pour lui, puis n’écris plus rien. Ne passe pas la main pour cette demande.`,
+      `Call this tool as soon as the customer ${PLACEHOLDER_EN}, even if you already did earlier in the conversation. Messaging Me then takes the conversation and hands it back at the end of the journey: just tell the customer, in one short sentence, that you are starting it, then write nothing more. Do not hand over for this request.`,
     ],
     pasQuand: [
       'N’appelle pas cet outil deux fois pour le même message du client.',

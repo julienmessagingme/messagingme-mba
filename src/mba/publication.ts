@@ -1,5 +1,5 @@
 /**
- * Ce qui va changer chez Meta si l'on publie, calculé avant de rien écrire. Engage Me fait foi et la publication
+ * Ce qui va changer chez Meta si l'on publie, calculé avant de rien écrire. Messaging Me fait foi et la publication
  * écrase : ce module compare ce que nous avons à ce que Meta a, et rend la liste des gestes, que le client voit
  * avant qu'on écrive.
  *
@@ -235,7 +235,7 @@ export function corpsConnecteurRelais(baseUrl: string, cle: string): {
 } {
   return {
     name: NOM_CONNECTEUR_RELAIS,
-    description: 'Engage Me : les outils de cet espace, appelés avec les valeurs de son carnet de contacts.',
+    description: 'Messaging Me : les outils de cet espace, appelés avec les valeurs de son carnet de contacts.',
     base_url: baseUrl,
     auth_type: 'API_KEY',
     auth_config: authConfigRelais(cle),

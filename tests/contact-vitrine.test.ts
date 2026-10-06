@@ -28,7 +28,7 @@ describe('POST /vitrine/contact (formulaire de la vitrine)', () => {
     expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe(`${VITRINE}/contact/merci/`);
     expect(envois).toHaveLength(1);
-    expect(envois[0]!.sujet).toBe('[Vitrine Engage Me] Léa Martin, Odalys');
+    expect(envois[0]!.sujet).toBe('[Vitrine Messaging Me] Léa Martin, Odalys');
     expect(envois[0]!.repondreA).toBe('lea@exemple.fr');
     expect(envois[0]!.texte).toContain('Téléphone : 06 12 34 56 78');
     expect(envois[0]!.texte).toContain('Bonjour,\nune démo des chaînes ?');
@@ -37,7 +37,7 @@ describe('POST /vitrine/contact (formulaire de la vitrine)', () => {
   it('un retour à la ligne dans le nom ne passe pas dans le sujet', async () => {
     const { app, envois } = monter();
     await poster(app, champs({ nom: 'Léa\r\nBcc: x@y.fr', societe: '' }));
-    expect(envois[0]!.sujet).toBe('[Vitrine Engage Me] Léa Bcc: x@y.fr');
+    expect(envois[0]!.sujet).toBe('[Vitrine Messaging Me] Léa Bcc: x@y.fr');
   });
 
   it.each([

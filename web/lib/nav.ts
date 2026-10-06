@@ -441,7 +441,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
      * « Analyse des conversations » dit ce que l'écran montre. `/dashboard/quali` et la clé `dashboard-quali`
      * ne bougent pas : trois specs Playwright et d'éventuels signets y pointent, et personne ne lit jamais
      * cette adresse. Le dépôt vit déjà avec un nom technique qui ne colle plus au produit, il s'appelle
-     * `messagingme-mba` et le produit s'appelle Engage Me.
+     * `messagingme-mba` et le produit s'appelle Messaging Me.
      */
     { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Analyse des conversations', 'Conversation analysis') },
     { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports') },

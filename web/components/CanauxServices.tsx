@@ -429,7 +429,7 @@ function Confirmation({ geste, onAnnuler, onConfirmer }: { geste: Geste; onAnnul
     deconnecter_publicites: {
       titre: t('Déconnecter le compte publicitaire ?', 'Disconnect the ad account?'),
       corps: [
-        t('Engage Me retire son accès à votre compte publicitaire : plus de création, de publication ni de suivi des publicités depuis la console.', 'Engage Me removes its access to your ad account: no more creating, publishing or tracking ads from the console.'),
+        t('Messaging Me retire son accès à votre compte publicitaire : plus de création, de publication ni de suivi des publicités depuis la console.', 'Messaging Me removes its access to your ad account: no more creating, publishing or tracking ads from the console.'),
         t('Les publicités déjà en ligne ne sont pas arrêtées par ce geste.', 'Ads already running are not stopped by this action.'),
       ],
       bouton: t('Déconnecter', 'Disconnect'),

@@ -174,7 +174,7 @@ const texteSchema = z.object({ texte: z.string() });
 
 function consigne(langue: 'fr' | 'en'): string {
   return [
-    'Tu rédiges le récap quotidien de la console Engage Me, qui sert à parler aux clients par WhatsApp.',
+    'Tu rédiges le récap quotidien de la console Messaging Me, qui sert à parler aux clients par WhatsApp.',
     `RÉDIGE EN ${langue === 'en' ? 'ANGLAIS' : 'FRANÇAIS'}, en deux ou trois phrases, sans titre ni liste à puces.`,
     '',
     'RÈGLE ABSOLUE : tu ne calcules RIEN. Tu ne cites que des nombres présents tels quels dans les données',

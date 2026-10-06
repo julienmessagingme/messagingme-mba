@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 7d7360
+source_empreinte: 6d55f8
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 

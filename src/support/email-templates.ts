@@ -80,7 +80,7 @@ ${pre ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hid
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
                 <td valign="middle" style="padding-right:12px;">
-                  <img src="${LOGO_URL}" width="40" height="40" alt="Messaging Me" style="display:block;border:0;outline:none;text-decoration:none;width:40px;height:40px;" />
+                  <img src="${LOGO_URL}" width="48" height="24" alt="Messaging Me" style="display:block;border:0;outline:none;text-decoration:none;width:48px;height:24px;" />
                 </td>
                 <td valign="middle">
                   <div style="font-family:${FONT};font-size:18px;line-height:20px;font-weight:700;color:${NAVY};letter-spacing:-0.2px;">Messaging Me</div>

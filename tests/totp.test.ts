@@ -90,12 +90,12 @@ describe('TOTP (RFC 6238, annexe B, SHA-1, ramené à 6 chiffres)', () => {
   });
 
   it('l’URI porte le secret, l’émetteur et l’adresse, et rien d’exotique', () => {
-    const brute = uriOtpauth('Engage Me', 'julie@exemple.fr', 'MZXW6YTBOI');
+    const brute = uriOtpauth('Messaging Me', 'julie@exemple.fr', 'MZXW6YTBOI');
     // Le libellé est « émetteur:adresse », chaque moitié encodée : c'est ce que les applications affichent.
-    expect(brute.startsWith('otpauth://totp/Engage%20Me:julie%40exemple.fr?')).toBe(true);
+    expect(brute.startsWith('otpauth://totp/Messaging%20Me:julie%40exemple.fr?')).toBe(true);
     const uri = new URL(brute);
     expect(Object.fromEntries(uri.searchParams)).toEqual({
-      secret: 'MZXW6YTBOI', issuer: 'Engage Me', algorithm: 'SHA1', digits: '6', period: '30',
+      secret: 'MZXW6YTBOI', issuer: 'Messaging Me', algorithm: 'SHA1', digits: '6', period: '30',
     });
   });
 });

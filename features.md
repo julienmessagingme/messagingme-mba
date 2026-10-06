@@ -14,7 +14,7 @@ ligne, ou dans une fenêtre qui dit les conséquences), plus par la boîte grise
 attente montrent la forme de ce qui arrive. Une valeur inconnue s'affiche « n/d ». Une icône par geste, la même
 partout. Plus aucun écran principal ne déborde sur un téléphone.
 
-✅ **La plateforme s'appelle « Engage Me »** (2026-09-03). Le nom s'affiche à l'onglet du navigateur, sur
+✅ **La plateforme s'appelle « Messaging Me »** (2026-09-03). Le nom s'affiche à l'onglet du navigateur, sur
 l'écran de connexion, dans l'en-tête à côté du logo (le logo lui-même n'a pas changé) et comme titre du
 serveur MCP. Accroche : « La plateforme conversationnelle qui comprend chaque conversation. »
 ⚠️ « Meta Business Agent » et « MBA » restent tels quels : c'est le produit de Meta, pas le nôtre.
@@ -640,7 +640,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   seulement si l'attribution est activée côté WhatsApp Business : à vérifier dans les réglages avant la
   première campagne publicitaire.
   🔴 **CE DÉCLENCHEUR A CHANGÉ DE COMPORTEMENT LE 2026-09-23, y compris pour les automations DÉJÀ créées.**
-  Dès qu'une publicité est **pilotée depuis Engage Me** (elle a sa fiche, et elle dit qui répond à ses leads),
+  Dès qu'une publicité est **pilotée depuis Messaging Me** (elle a sa fiche, et elle dit qui répond à ses leads),
   ses leads ne sont plus évalués que par **le scénario de cette publicité** : une automation réglée sur
   « toutes les pubs », ou sur « premier message d'un nouveau contact », ne part plus pour eux. C'est
   volontaire, et c'est ce qui permet à une publicité de promettre un scénario précis : sans cette règle, le
@@ -2301,9 +2301,9 @@ importez ce qu'il propose.
   bandeau rouge qui dit pourquoi : l'agent ne le voit plus, et on peut le désactiver ou le retirer. Rallumer le
   serveur le rend à nouveau disponible. Un refus dit toujours sa raison, au lieu d'un « introuvable ».
 - ✅ **L'agent de Meta reçoit aussi ces outils** (2026-10-02, **éprouvé en conversation réelle le soir même** :
-  Microsoft Learn, puis le serveur MCP d'Engage Me lui-même, l'agent lisant la fiche du client qui écrit et
+  Microsoft Learn, puis le serveur MCP de Messaging Me lui-même, l'agent lisant la fiche du client qui écrit et
   refusant celle d'un autre numéro), dans **Meta Business Agent > Paramètres >
-  Outils**, par « Ajouter un outil » > « Appeler un outil MCP », et l'écran de cette page le dit. Engage Me fait l'appel MCP
+  Outils**, par « Ajouter un outil » > « Appeler un outil MCP », et l'écran de cette page le dit. Messaging Me fait l'appel MCP
   pour lui : Meta n'appelle que notre relais, en HTTP. Les paramètres réglés ici s'appliquent à l'agent de Meta
   comme aux agents IA : ce qui vient de la fiche du client, d'un champ ou d'une valeur fixe est posé par Engage
   Me, jamais fourni par l'agent. ⚠️ Cette ligne a dit « pas encore » jusqu'à ce jour, en accusant d'abord Meta
@@ -2377,7 +2377,7 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   outils enregistrés dans Tools > Connecteurs MCP que l'agent de Meta n'a pas encore (grisée, avec le lien,
   quand il n'y en a aucun). « Ajouter » l'ajoute ET l'envoie chez Meta dans le même geste. Le cadre « Depuis vos
   serveurs MCP », en bas de la liste, a disparu le même jour : Julien ne l'y cherchait pas. L'agent ne remplit que les paramètres « décidés par
-  l'agent » ; ceux qui viennent de la fiche du client, d'un champ ou d'une valeur fixe sont posés par Engage Me.
+  l'agent » ; ceux qui viennent de la fiche du client, d'un champ ou d'une valeur fixe sont posés par Messaging Me.
   La ligne d'un outil MCP dit son serveur et mène à ses réglages (« Régler », pas de « Modifier ») : ses mots et
   ses paramètres sont partagés avec les agents IA. Un outil disparu de son serveur, que son schéma rend
   inutilisable, ou dont le serveur est éteint, passe en rouge et ne part pas chez Meta ; il n'est pas proposé non
@@ -2397,15 +2397,15 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
 
 ### Publier chez Meta
 
-- ✅ **L'AGENT DE META PASSE PAR ENGAGE ME** (le relais, en service depuis le 2026-09-21, éprouvé le jour
+- ✅ **L'AGENT DE META PASSE PAR MESSAGING ME** (le relais, en service depuis le 2026-09-21, éprouvé le jour
   même : une étiquette posée dans le CRM d'un client depuis une conversation WhatsApp ; migration 0161). Un appel se déclare UNE fois, dans Tools > Connecteurs API. Quand un outil est exposé à
-  l'agent de Meta, c'est Engage Me qu'il appelle : Engage Me reconnaît le client par son numéro WhatsApp
+  l'agent de Meta, c'est Messaging Me qu'il appelle : Messaging Me reconnaît le client par son numéro WhatsApp
   (que WhatsApp lui-même transmet, l'agent ne peut pas l'inventer), remplit les valeurs du **carnet de
   contacts** (un champ comme `tag_ns` ou `user_ns`), puis fait l'appel exactement comme pour vos agents IA,
   avec les mêmes contrôles et le même journal. L'agent de Meta ne demande au client que les valeurs
   « décidées par l'agent ».
   ⚠️ Avant le relais, Meta appelait votre système en direct : un appel qui envoyait un champ du contact
-  arrivait vide, et votre clé d'accès était posée chez Meta. Elle ne quitte plus Engage Me.
+  arrivait vide, et votre clé d'accès était posée chez Meta. Elle ne quitte plus Messaging Me.
   ⚠️ **L'agent de Meta reçoit la réponse ENTIÈRE de votre système**, plus un « succès : oui » explicite
   (choix du 2026-09-21 : un agent qui ne voit rien risque de conclure à un échec et de passer la main).
   ⛔ Les outils MCP ne sont pas encore relayés : un chantier suivant.
@@ -2413,9 +2413,9 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   Les anciens connecteurs, un par système, sont supprimés au premier « Envoyer » qui suit le déploiement ;
   la confirmation les nomme avant.
 - ✅ **Une clé « Agent de Meta »** apparaît dans la liste des clés d'API de l'espace. C'est elle que
-  l'agent de Meta présente à Engage Me. Elle ne se crée pas à la main ; la révoquer coupe les outils de
+  l'agent de Meta présente à Messaging Me. Elle ne se crée pas à la main ; la révoquer coupe les outils de
   l'agent de Meta jusqu'au prochain « Envoyer », qui en pose une neuve (la confirmation de révocation le dit).
-- ✅ **Le formulaire dit qui fournit chaque valeur** : « Engage Me remplit lui-même : … » et « L'agent de
+- ✅ **Le formulaire dit qui fournit chaque valeur** : « Messaging Me remplit lui-même : … » et « L'agent de
   Meta les obtient du client : … », dérivés de ce que l'appel déclare.
 - ⚠️ **Écrivez « Quand l'appeler » comme une CONSIGNE, pas comme un constat.** C'est cette phrase qui décide
   si l'agent de Meta appelle l'outil, et ses compétences (par exemple « passe la main si tu n'as pas de
@@ -2426,7 +2426,7 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
 - ✅ **Enregistrer envoie, et « À envoyer » renvoie** (depuis le 2026-09-21, voir l'onglet ci-dessus). L'envoi
   ne s'arrête pour demander confirmation que s'il doit SUPPRIMER chez Meta quelque chose que ce geste n'a pas
   demandé, en le nommant. Pendant l'aller-retour, l'écran le dit, et un second clic n'envoie rien.
-- ⚠️ **Engage Me fait foi, la publication ÉCRASE.** Un connecteur ou un outil ajouté à la main dans WhatsApp
+- ⚠️ **Messaging Me fait foi, la publication ÉCRASE.** Un connecteur ou un outil ajouté à la main dans WhatsApp
   Manager sera SUPPRIMÉ à la publication suivante. L'écran le dit, et l'aperçu le montre avant le clic.
 - ✅ **Publier deux fois de suite ne produit aucun geste** : la publication se réconcilie sur les noms, et
   compare la description, la clause « quand ne pas l'appeler » et ce que l'agent de Meta doit remplir.
@@ -2481,7 +2481,7 @@ boîte par sous-menu.
     accuser réception du désabonnement, ni répondre à une réclamation posée juste après. La machine se tait ;
     la personne peut encore répondre à la personne.
 - ✅ **Prévenir votre propre système à chaque désabonnement** (2026-09-13) : sur l'écran Consentement, un
-  administrateur choisit un appel déjà déclaré dans **Tools > Connecteurs API**, et Engage Me le joue à chaque
+  administrateur choisit un appel déjà déclaré dans **Tools > Connecteurs API**, et Messaging Me le joue à chaque
   refus, quel qu'en soit le chemin (« stop » reçu, case cochée dans la fiche, action en masse). Votre CRM, votre
   back-office ou votre routeur d'e-mails apprennent donc le refus, avec le numéro de la personne. **Une fois par
   refus** : un contact déjà désabonné qu'on désabonne à nouveau ne repart pas chez vous, et deux STOP reçus en même
@@ -3206,8 +3206,8 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
     parce que le produit croyait avoir confié le fil à Meta sans que Meta l'ait accepté, soit parce que la
     conversation n'apparaissait dans aucun dossier. Les deux sont corrigés.
 
-- ✅ **Pendant un scénario, l'agent se tait ; il ne parle qu'aux conversations qu'Engage Me lui confie**
-  (2026-09-29). L'agent de Meta ne répond qu'aux contacts de sa **liste**, et c'est Engage Me qui la tient :
+- ✅ **Pendant un scénario, l'agent se tait ; il ne parle qu'aux conversations que Messaging Me lui confie**
+  (2026-09-29). L'agent de Meta ne répond qu'aux contacts de sa **liste**, et c'est Messaging Me qui la tient :
   - **un client écrit et personne ne lui répond** (aucun scénario n'attend sa réponse, personne de l'équipe ne
     tient la conversation, ou son délai de reprise est écoulé) : la conversation est confiée à l'agent, qui répond
     **tout de suite** à ce message, même après plus de 24 heures de silence. Plusieurs messages envoyés d'affilée
@@ -3562,13 +3562,13 @@ indisponible, l'écran n'affiche RIEN plutôt qu'un zéro, qui se lirait « ce b
 ## Publicités Click-to-WhatsApp (menu Publicités)
 
 Créer une publicité Meta dont le bouton ouvre une conversation WhatsApp, et relier chaque prospect à un
-scénario. L'argent est TOUJOURS celui du client, sur SON compte publicitaire : Engage Me ne porte jamais un
+scénario. L'argent est TOUJOURS celui du client, sur SON compte publicitaire : Messaging Me ne porte jamais un
 euro de dépense publicitaire.
 
 **Connecter** (LIVE, 2026-09-23) : un bouton « Connecter mes publicités », puis le choix du compte
 publicitaire et de la Page Facebook parmi ceux que la connexion accorde. L'écran affiche leurs NOMS, pas
 leurs identifiants, et dit si le compte peut diffuser (actif, moyen de paiement en place). Déconnexion
-possible à tout moment ; si une publicité est active, elle continue de dépenser chez Meta et Engage Me ne
+possible à tout moment ; si une publicité est active, elle continue de dépenser chez Meta et Messaging Me ne
 pourra plus la mettre en pause, ce que l'écran annonce.
 ⚠️ **La liaison entre la Page et le numéro WhatsApp se fait chez Meta, à la main**, et aucune API ne permet
 de la vérifier : l'écran emmène le client là où Meta l'affiche plutôt que d'annoncer un verdict qu'il ne
@@ -3605,7 +3605,7 @@ approximative. Seules les audiences prêtes chez Meta se choisissent ; les autre
 Meta. 🔴 **Advantage+ audience est laissé à Meta**, et l'écran le dit : les audiences incluses lui servent de
 SUGGESTION (il peut diffuser au-delà), tandis que les exclusions, le lieu et l'âge minimum restent respectés.
 Avec Advantage+, Meta n'accepte qu'un âge minimum entre 18 et 25 ans et fixe le maximum à 65 : le formulaire
-propose donc 18 à 25, et affiche 65. Créer une audience depuis les contacts d'Engage Me n'existe pas encore.
+propose donc 18 à 25, et affiche 65. Créer une audience depuis les contacts de Messaging Me n'existe pas encore.
 🔴 **Le bouton Créer n'apparaît que quand créer a un sens**, et sinon l'écran dit ce qui manque : compte ou
 Page pas choisis, accès refusé par Meta, ou compte sans moyen de paiement. Ce dernier cas est le plus
 trompeur : la publicité se créerait, se publierait, et ne partirait jamais.
@@ -3615,7 +3615,7 @@ trompeur : la publicité se créerait, se publierait, et ne partirait jamais.
 ou l'agent IA désigné répondeur (voir « Agent IA »). Ce choix n'est proposé que si l'espace en a un (la conversation
 d'un prospect lui est alors confiée à son premier message, personne d'autre ne lui répondant), et l'écran rappelle
 que ses réponses restent facturées même pendant les 72 heures gratuites : au jeton pour l'agent de Meta, sur le
-crédit IA pour un agent IA. Sur un scénario, Engage Me **reprend la conversation au répondeur automatique** à
+crédit IA pour un agent IA. Sur un scénario, Messaging Me **reprend la conversation au répondeur automatique** à
 l'arrivée du prospect, pour que le scénario parle seul. Jamais
 à un opérateur (depuis le 2026-09-27) : si quelqu'un de l'équipe parle déjà à ce client, il garde la
 conversation, le message arrive dans son Inbox et le scénario de la publicité ne part pas.
@@ -3684,12 +3684,12 @@ ordinateur, elle montre un QR code à scanner et un lien.
 
 **Comment on le pose.** L'écran crée le widget (un nom, le message pré-rempli, qui répond, l'apparence), montre un
 **aperçu en direct** de la bulle dans son coin, puis donne **le code à copier** : une seule balise, à coller sur
-chaque page où la bulle doit apparaître. Elle se charge sans jamais ralentir la page : si Engage Me ne répond pas, la
+chaque page où la bulle doit apparaître. Elle se charge sans jamais ralentir la page : si Messaging Me ne répond pas, la
 bulle n'apparaît simplement pas. Le QR code et le lien WhatsApp de la bulle sont montrés sur la fiche, pour essayer.
 🔴 **Une balise posée ne doit jamais casser** : son adresse ne change pas, même si le widget est renommé.
 
 **L'apparence est bornée** : une couleur, un des quatre coins, un libellé court à côté de la bulle, un avatar (une
-image en https). Pas de style libre. « Propulsé par Engage Me » s'affiche sous la bulle ; il ne se retire pas depuis
+image en https). Pas de style libre. « Propulsé par Messaging Me » s'affiche sous la bulle ; il ne se retire pas depuis
 la console, il tient à l'offre.
 
 **Le message pré-rempli dit d'où vient la conversation.** Chaque arrivée par un widget porte une étiquette

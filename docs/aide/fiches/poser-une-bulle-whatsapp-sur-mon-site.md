@@ -1,7 +1,7 @@
 ---
 ecran: widgets
 source_section: Widget WhatsApp (menu Widget WhatsApp)
-source_empreinte: c2f12e
+source_empreinte: db8712
 ---
 # Poser une bulle WhatsApp sur mon site
 

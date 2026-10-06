@@ -79,7 +79,7 @@ test.describe('Barre : où sont rangées les entrées', () => {
     await page.goto('/accueil');
     const onglet = page.getByTestId('onglet-console');
     await expect(onglet).toHaveCSS('text-transform', 'none');
-    const logo = page.getByText('Engage Me');
+    const logo = page.getByText('Messaging Me');
     const graisse = (el: Element) => getComputedStyle(el).fontWeight;
     expect(await onglet.evaluate(graisse)).not.toBe(await logo.evaluate(graisse));
     const bLogo = (await logo.boundingBox())!;

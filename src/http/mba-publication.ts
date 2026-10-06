@@ -11,7 +11,7 @@ import type { Prise, VerrousCourts } from '../db/verrous-courts';
 
 /**
  * Publier le catalogue d'outils de l'espace chez Meta (le relais : un connecteur `EngageMe` par espace, dont les
- * outils appellent Engage Me ; plan pur dans `src/mba/publication.ts`).
+ * outils appellent Messaging Me ; plan pur dans `src/mba/publication.ts`).
  * Deux routes : le `GET` rend le plan (la publication écrase, donc on montre quoi avant), le `POST` l'exécute. Le
  * plan est recalculé au moment d'appliquer, jamais transmis par le navigateur : Meta a pu changer entre-temps.
  */

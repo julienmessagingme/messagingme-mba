@@ -1,7 +1,7 @@
 import type { Config } from 'tailwindcss';
 import { alerte, brand, danger, ink, navy, succes } from './lib/couleurs';
 
-// Design system Engage Me. Les valeurs vivent dans `lib/couleurs.ts` (le canevas de scénario les lit aussi) :
+// Design system Messaging Me. Les valeurs vivent dans `lib/couleurs.ts` (le canevas de scénario les lit aussi) :
 // `brand` = seul accent, `ink` = neutres navy-tintés, `danger` / `alerte` / `succes` = une teinte par état.
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],

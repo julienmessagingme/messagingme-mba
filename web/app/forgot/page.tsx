@@ -32,7 +32,7 @@ export default function ForgotPage() {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <Logo className="mx-auto mb-3 h-14 w-14" />
+          <Logo className="mx-auto mb-4 h-10 w-auto" />
           <TitrePage>{t('Mot de passe oublié', 'Forgot password')}</TitrePage>
         </div>
         {sent ? (

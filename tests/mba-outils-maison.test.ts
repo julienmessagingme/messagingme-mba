@@ -113,7 +113,7 @@ describe('la cible d’un bloc et d’un scénario', () => {
   });
 
   it('🔴 la réponse dit « c’est fait » et « ne rappelle pas cet outil » : sinon l’agent de Meta boucle', () => {
-    // Essai réel du 2026-09-22 : « Engage Me déroule maintenant un parcours… N'écris rien » a fait rappeler
+    // Essai réel du 2026-09-22 : « Messaging Me déroule maintenant un parcours… N'écris rien » a fait rappeler
     // l'outil sept fois dans le même tour. La réponse du tag, qui dit « c'est fait », avait marché du premier coup.
     for (const r of [REPONSE_MAISON.bloc_fixe, REPONSE_MAISON.scenario_fixe]) {
       expect(r.startsWith('C’est fait')).toBe(true);

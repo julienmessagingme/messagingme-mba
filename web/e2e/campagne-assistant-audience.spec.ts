@@ -62,7 +62,7 @@ async function monter(page: Page, sur: Options = {}): Promise<void> {
     if (chemin.endsWith('/templates')) return json({ templates: TEMPLATES });
     if (chemin.endsWith('/user-fields')) return json({ fields: CHAMPS });
     if (chemin.endsWith('/tags')) return json({ tags: [{ tag: 'vip', count: 1 }] });
-    if (chemin.endsWith('/phone-numbers')) return json({ phoneNumbers: [{ id: 'pn1', displayPhoneNumber: '+33 5 25 68 02 50', verifiedName: 'Engage Me' }] });
+    if (chemin.endsWith('/phone-numbers')) return json({ phoneNumbers: [{ id: 'pn1', displayPhoneNumber: '+33 5 25 68 02 50', verifiedName: 'Messaging Me' }] });
     if (chemin.endsWith('/campaigns') && route.request().method() === 'POST') {
       sur.creations?.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>);
       return json({ campaignId: 'camp-1', recipientCount: 2, skipped: [] });

@@ -3,7 +3,7 @@ import { ouvrirSessionMcp, type OutilAnnonce, type SessionMcp } from '../src/mcp
 import { AdresseInterdite } from '../src/lib/connexion-publique';
 
 /**
- * Le CLIENT MCP : Engage Me va chercher des outils chez un tiers.
+ * Le CLIENT MCP : Messaging Me va chercher des outils chez un tiers.
  *
  * 🔴 CES TESTS SONT ADOSSÉS AU TEXTE DE LA SPEC 2025-06-18, pas à ce qu'on suppose d'un serveur. Trois de
  * ses exigences décident de la moitié de ce module, et chacune a son cas ici : l'en-tête `Accept` qui doit

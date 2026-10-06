@@ -471,7 +471,7 @@ function AccueilInner({ session }: { session: Session }) {
               {/* ⚠️ DIRE CE QUE LE BOUTON PILOTE. Tant que Meta n'a pas ouvert, il ne commande que notre
                   cote, et se taire la-dessus est exactement ce qui a fait croire a une coupure. */}
               {mbaReel !== null && !mbaReel.eligible && (
-                <span className="text-xs text-ink-500">{t('(côté Engage Me seulement)', '(Engage Me side only)')}</span>
+                <span className="text-xs text-ink-500">{t('(côté Messaging Me seulement)', '(Messaging Me side only)')}</span>
               )}
             </div>
             {/* 🔴 `messagesMba !== null`, JAMAIS `?? 0` : un zéro dirait que l'agent n'a parlé à personne. */}

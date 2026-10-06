@@ -90,7 +90,7 @@ const CHAMPS = {
 };
 
 /**
- * ⚠️ `badge` N'EST PAS DANS LA SAISIE, délibérément. « Propulsé par Engage Me » disparaît en offre Pro (spec,
+ * ⚠️ `badge` N'EST PAS DANS LA SAISIE, délibérément. « Propulsé par Messaging Me » disparaît en offre Pro (spec,
  * section 4), et la colonne le dit : le retirer est un acte COMMERCIAL, qui doit se décider explicitement. Tant que
  * cette offre n'existe pas, ni l'écran ni le MCP ne peuvent l'éteindre ; une modification garde la valeur en base.
  *

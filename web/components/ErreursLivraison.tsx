@@ -155,7 +155,7 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
  *
  * 🔴 UNE SECTION À PART, ET PAS DES LIGNES DE PLUS DANS LA PRÉCÉDENTE. Les deux moitiés répondent à des
  * questions opposées : là-haut, « mon message n'est pas arrivé chez mon client » ; ici, « mon CRM a refusé
- * l'appel que Engage Me lui a passé ». Les mélanger obligerait chaque ligne à porter les colonnes vides de
+ * l'appel que Messaging Me lui a passé ». Les mélanger obligerait chaque ligne à porter les colonnes vides de
  * l'autre, et ferait chercher un numéro de téléphone là où il n'y en a jamais eu.
  *
  * 🔴 CE QUE CETTE SECTION RÉVÈLE ET QUE PERSONNE NE VOYAIT. Ces lignes sont écrites depuis la migration
@@ -222,8 +222,8 @@ export function ErreursSysteme({ tenantId }: { tenantId: string }) {
         <span className="text-sm font-semibold text-ink-900">{t('Erreurs système', 'System errors')}</span>
         <p className="mt-1 text-xs text-ink-500">
           {t(
-            'Les appels d’Engage Me vers vos systèmes (CRM, ERP, back-office) qui n’ont pas abouti. Aucun message de contact n’est en cause ici.',
-            'Calls from Engage Me to your systems (CRM, ERP, back-office) that did not succeed. No contact message is involved here.',
+            'Les appels de Messaging Me vers vos systèmes (CRM, ERP, back-office) qui n’ont pas abouti. Aucun message de contact n’est en cause ici.',
+            'Calls from Messaging Me to your systems (CRM, ERP, back-office) that did not succeed. No contact message is involved here.',
           )}
         </p>
       </div>

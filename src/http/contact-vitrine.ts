@@ -4,7 +4,7 @@ import { RateLimiter } from '../auth/rate-limit';
 import { texteDe } from '../lib/erreur';
 
 /**
- * Le formulaire de contact de la vitrine (engageme.messagingme.fr, HTML statique, `site/contact/`). Même chemin
+ * Le formulaire de contact de la vitrine (app.messagingme.fr, HTML statique, `site/contact/`). Même chemin
  * que le formulaire de support de la console : un e-mail envoyé par Resend à `SUPPORT_TO`.
  *
  * 🔴 UN FORMULAIRE HTML NATIF, PAS UN `fetch`. La page le poste en `application/x-www-form-urlencoded` et la route
@@ -22,7 +22,7 @@ export interface ContactVitrineDeps {
  * La seule destination des redirections, écrite ici et jamais lue dans la requête : une adresse de retour prise
  * dans le formulaire ferait de cette route une redirection ouverte.
  */
-export const VITRINE = 'https://engageme.messagingme.fr';
+export const VITRINE = 'https://app.messagingme.fr';
 
 /** Un champ d'une ligne : les retours à la ligne et les blancs répétés deviennent une espace (il finit dans un sujet). */
 const uneLigne = (s: string): string => s.replace(/\s+/g, ' ').trim();
@@ -41,9 +41,9 @@ export type DemandeContact = z.infer<typeof Demande>;
 /** Le courriel reçu par l'équipe. L'adresse est celle que le visiteur a TAPÉE : rien ne prouve qu'elle est à lui. */
 export function courrielDeContact(d: DemandeContact): { sujet: string; texte: string; repondreA: string } {
   return {
-    sujet: `[Vitrine Engage Me] ${d.nom}${d.societe ? `, ${d.societe}` : ''}`,
+    sujet: `[Vitrine Messaging Me] ${d.nom}${d.societe ? `, ${d.societe}` : ''}`,
     texte: [
-      'Nouvelle demande de contact (vitrine engageme.messagingme.fr)',
+      'Nouvelle demande de contact (vitrine app.messagingme.fr)',
       '',
       `Nom : ${d.nom}`,
       `Société : ${d.societe || 'non renseignée'}`,

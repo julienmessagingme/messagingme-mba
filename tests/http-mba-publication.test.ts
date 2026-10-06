@@ -13,7 +13,7 @@ import { verrousEnMemoire } from './verrous';
 /**
  * Publier le catalogue d'outils chez Meta.
  *
- * 🔴 CE QUE CE FICHIER PROTÈGE, c'est la promesse faite au client : « Engage Me fait foi, la publication
+ * 🔴 CE QUE CE FICHIER PROTÈGE, c'est la promesse faite au client : « Messaging Me fait foi, la publication
  * écrase ». Écraser n'est acceptable que si l'on montre QUOI avant de le faire, et si un échec en cours de
  * route se DIT au lieu de laisser un état à moitié publié dont personne ne connaît la forme.
  *

@@ -21,7 +21,7 @@ const CODE_INVALIDE = { status: 401, body: { error: 'Code invalide ou expiré.' 
 const ETAPE_EXPIREE = { status: 401, body: { error: 'Cette étape a expiré, reconnectez-vous.' } };
 const SESSION_ADMIN = { token: 'jeton-session', user: { email: 'a@b.co', role: 'admin', tenantId: 't1' } };
 const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
-const CLE = { secret: SECRET, uri: `otpauth://totp/Engage%20Me:a%40b.co?secret=${SECRET}&issuer=Engage%20Me&algorithm=SHA1&digits=6&period=30` };
+const CLE = { secret: SECRET, uri: `otpauth://totp/Messaging%20Me:a%40b.co?secret=${SECRET}&issuer=Messaging%20Me&algorithm=SHA1&digits=6&period=30` };
 /** Dix codes distincts, au format du serveur (`XXXXXXXX-XXXXXXXX`, alphabet base32). */
 const CODES = 'ABCDEFGHJK'.split('').map((l) => `${l.repeat(4)}2345-6723${l.repeat(4)}`);
 
@@ -183,7 +183,7 @@ test.describe('Enrôlement obligatoire d’un administrateur', () => {
     // Le presse-papiers de Windows rend les fins de ligne en `\r\n` : on compare ligne à ligne.
     expect((await page.evaluate(() => navigator.clipboard.readText())).split(/\r?\n/)).toEqual(CODES);
     const [telechargement] = await Promise.all([page.waitForEvent('download'), page.getByTestId('codes-secours-telecharger').click()]);
-    expect(telechargement.suggestedFilename()).toBe('engage-me-codes-de-secours.txt');
+    expect(telechargement.suggestedFilename()).toBe('messaging-me-codes-de-secours.txt');
     const fichier = readFileSync((await telechargement.path())!, 'utf8');
     for (const c of CODES) expect(fichier).toContain(c);
 

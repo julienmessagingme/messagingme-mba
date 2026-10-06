@@ -300,7 +300,7 @@ export interface ServerDeps {
   fields?: FieldsRouteDeps;
   /** Formulaire de support (envoi email via Resend), tout compte authentifié. */
   support?: SupportRouteDeps;
-  /** Formulaire de contact de la vitrine (engageme.messagingme.fr) : public, même envoi que le support. */
+  /** Formulaire de contact de la vitrine (app.messagingme.fr) : public, même envoi que le support. */
   contactVitrine?: ContactVitrineDeps;
   /** Le bot d'aide de la console : il explique et il emmène, il n'écrit jamais rien. */
   aide?: AideRouteDeps;

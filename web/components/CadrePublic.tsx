@@ -16,9 +16,9 @@ export function CadrePublic({ children }: { children: React.ReactNode }) {
   return (
     <main className="min-h-screen px-4 py-8">
       <header className="mx-auto mb-8 flex max-w-liste items-center justify-between gap-4">
-        <a href="https://engageme.messagingme.fr" className="flex items-center gap-2 text-base font-semibold text-ink-900">
-          <Logo className="h-7 w-7" />
-          Engage Me
+        <a href="https://app.messagingme.fr" className="flex items-center gap-2 text-base font-semibold text-ink-900">
+          <Logo className="h-6 w-auto" />
+          Messaging Me
         </a>
         <div className="flex items-center gap-3">
           <LocaleToggle />

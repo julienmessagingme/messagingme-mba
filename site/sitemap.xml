@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://engageme.messagingme.fr/</loc></url>
-  <url><loc>https://engageme.messagingme.fr/fonctionnalites/publicites-click-to-whatsapp/</loc></url>
-  <url><loc>https://engageme.messagingme.fr/fonctionnalites/chaines-whatsapp/</loc></url>
-  <url><loc>https://engageme.messagingme.fr/fonctionnalites/conversations-en-actions/</loc></url>
-  <url><loc>https://engageme.messagingme.fr/fonctionnalites/whatsapp-et-rcs/</loc></url>
-  <url><loc>https://engageme.messagingme.fr/contact/</loc></url>
+  <url><loc>https://app.messagingme.fr/</loc></url>
+  <url><loc>https://app.messagingme.fr/fonctionnalites/publicites-click-to-whatsapp/</loc></url>
+  <url><loc>https://app.messagingme.fr/fonctionnalites/chaines-whatsapp/</loc></url>
+  <url><loc>https://app.messagingme.fr/fonctionnalites/conversations-en-actions/</loc></url>
+  <url><loc>https://app.messagingme.fr/fonctionnalites/whatsapp-et-rcs/</loc></url>
+  <url><loc>https://app.messagingme.fr/contact/</loc></url>
 </urlset>

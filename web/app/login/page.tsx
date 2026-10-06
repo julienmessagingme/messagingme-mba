@@ -91,8 +91,8 @@ export default function LoginPage() {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <Logo className="mx-auto mb-3 h-14 w-14" />
-          <TitrePage>Engage Me</TitrePage>
+          <Logo className="mx-auto mb-4 h-10 w-auto" />
+          <TitrePage>Messaging Me</TitrePage>
           <p className="mt-1 text-balance text-sm text-ink-500">{t('La plateforme conversationnelle qui comprend chaque conversation.', 'The conversational platform that understands every conversation.')}</p>
         </div>
 

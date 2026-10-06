@@ -328,7 +328,7 @@ describe('POST /auth/mfa/enroler et /auth/mfa/activer (enrôlement obligatoire)'
     const b = (await post(app, '/auth/mfa/enroler', { enrolToken })).json<{ secret: string; uri: string }>();
     expect(b.secret).toMatch(/^[A-Z2-7]{32}$/);
     expect(b.uri).toContain(`secret=${b.secret}`);
-    expect(b.uri).toContain('issuer=Engage+Me');
+    expect(b.uri).toContain('issuer=Messaging+Me');
     const fin = await post(app, '/auth/mfa/activer', { enrolToken, code: codeAuPas(b.secret, pasDe(Date.now())) });
     expect(fin.statusCode).toBe(200);
     expect(mfa.estActif('admin@x.fr')).toBe(true);

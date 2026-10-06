@@ -8,7 +8,7 @@ import type { PositionWidget } from '@/lib/widgets';
  * L'APERÇU DE LA BULLE, sur une page de site esquissée : ce que le visiteur verra dans le coin de l'écran.
  *
  * Il suit la MISE EN PAGE du script servi (`src/widgets/script.ts`) : la pastille (avatar et libellé) à côté de la
- * bulle, du côté opposé au bord ; « Propulsé par Engage Me » sous la bulle, ou au-dessus quand elle est en haut.
+ * bulle, du côté opposé au bord ; « Propulsé par Messaging Me » sous la bulle, ou au-dessus quand elle est en haut.
  * Ce n'est pas le script lui-même : il s'exécute dans un Shadow DOM sur la page du client, et le monter ici
  * poserait une vraie bulle par-dessus la console.
  *
@@ -62,7 +62,7 @@ export function WidgetApercu({ couleur, position, libelle, avatarUrl, badge, gri
             <Icone nom="message" taille="grande" className="text-white" />
           </span>
         </div>
-        {badge && !grisee && <p className="text-xs text-ink-500">Propulsé par Engage Me</p>}
+        {badge && !grisee && <p className="text-xs text-ink-500">Propulsé par Messaging Me</p>}
       </div>
     </div>
   );

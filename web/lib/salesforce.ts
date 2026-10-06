@@ -97,7 +97,7 @@ export function phraseEtatOrg(org: OrgSalesforceVue | null, t: (fr: string, en: 
     case 'connectee': return t(`Reliée à ${hote}.`, `Connected to ${hote}.`);
     case 'connexion': return t(`Connexion à ${hote} inachevée : relancez « Connecter ».`, `Connection to ${hote} unfinished: run "Connect" again.`);
     case 'en_pause': return t(`Reliée à ${hote}, en pause.`, `Connected to ${hote}, paused.`);
-    case 'coupee': return t(`Coupée : ${hote} refuse l'accès d'Engage Me. Reconnectez l'org.`, `Cut off: ${hote} refuses Engage Me's access. Reconnect the org.`);
+    case 'coupee': return t(`Coupée : ${hote} refuse l'accès de Messaging Me. Reconnectez l'org.`, `Cut off: ${hote} refuses Messaging Me's access. Reconnect the org.`);
     default: {
       const inconnu: never = org.etat;
       return String(inconnu);

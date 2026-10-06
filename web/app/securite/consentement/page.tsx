@@ -242,8 +242,8 @@ function PousseeVersLeSysteme({ tenantId }: { tenantId: string }) {
         <span className="text-sm font-semibold text-ink-900">{t('Prévenir mon système', 'Notify my system')}</span>
         <p className="mt-1 text-xs text-ink-500">
           {t(
-            'À chaque refus, Engage Me peut appeler un connecteur de Tools pour que votre CRM ou votre back-office le sache aussi. Le refus est enregistré ici d’abord : si votre système ne répond pas, la personne cesse quand même de recevoir.',
-            'On each refusal, Engage Me can call a connector from Tools so your CRM or back-office knows too. The refusal is recorded here first: if your system does not answer, the person still stops receiving messages.',
+            'À chaque refus, Messaging Me peut appeler un connecteur de Tools pour que votre CRM ou votre back-office le sache aussi. Le refus est enregistré ici d’abord : si votre système ne répond pas, la personne cesse quand même de recevoir.',
+            'On each refusal, Messaging Me can call a connector from Tools so your CRM or back-office knows too. The refusal is recorded here first: if your system does not answer, the person still stops receiving messages.',
           )}
         </p>
       </div>

@@ -50,7 +50,7 @@ async function mock(page: Page, o: { requetes?: string[]; champsFiche?: 'ok' | 4
       return json({ mbaEnabled: false, rcsEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: true, timezone: 'Europe/Paris', businessHours: {} });
     }
     if (chemin.endsWith('/templates')) return json({ templates: [] });
-    if (chemin.endsWith('/phone-numbers')) return json({ phoneNumbers: [{ id: 'pn1', displayPhoneNumber: '+33 5 25 68 02 50', verifiedName: 'Engage Me' }] });
+    if (chemin.endsWith('/phone-numbers')) return json({ phoneNumbers: [{ id: 'pn1', displayPhoneNumber: '+33 5 25 68 02 50', verifiedName: 'Messaging Me' }] });
     return json({});
   });
 }

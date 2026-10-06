@@ -143,7 +143,7 @@ export function calculerCompletion(e: EntreeCompletion): CompletionMba {
       cle,
       requise: false,
       etat: 'inconnue',
-      raison: 'Pas encore piloté depuis Engage Me. Se règle dans WhatsApp Manager.',
+      raison: 'Pas encore piloté depuis Messaging Me. Se règle dans WhatsApp Manager.',
     });
   }
 

@@ -1,7 +1,7 @@
 ---
 ecran: securite-consentement
 source_section: Sécurité & compliance (menu Sécurité)
-source_empreinte: d5213f
+source_empreinte: cdec10
 ---
 # Savoir qui s'est désabonné, et prévenir mes systèmes
 

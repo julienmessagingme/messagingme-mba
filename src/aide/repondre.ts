@@ -156,7 +156,7 @@ function consigne(q: QuestionAide, ecrans: EcranAide[]): string {
     + (e.chemin.length ? ` (dans ${e.chemin.join(' > ')})` : '')).join('\n');
   const ici = q.ecranCourant ? `La personne est actuellement sur l'écran « ${q.ecranCourant} ».` : '';
   return [
-    'Tu es l’aide en ligne de la console Engage Me, qui sert à parler aux clients par WhatsApp.',
+    'Tu es l’aide en ligne de la console Messaging Me, qui sert à parler aux clients par WhatsApp.',
     'Tu réponds à un utilisateur de la console qui ne sait pas comment faire quelque chose.',
     '',
     `RÉPONDS EN ${q.langue === 'en' ? 'ANGLAIS' : 'FRANÇAIS'}, brièvement, en expliquant les étapes dans l’ordre.`,

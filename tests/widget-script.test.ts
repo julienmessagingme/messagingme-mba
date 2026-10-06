@@ -495,7 +495,7 @@ describe('le script exécuté', () => {
     expect(String(qr.src)).toBe(`data:image/svg+xml,${encodeURIComponent(String(SERVI.etat === 'servi' && SERVI.svgQr))}`);
     const web = noeuds.find((n) => n.className === 'web')!;
     expect([web.href, web.target]).toEqual([SERVI.lien, '_blank']);
-    expect(noeuds.find((n) => n.className === 'badge')?.textContent).toBe('Propulsé par Engage Me');
+    expect(noeuds.find((n) => n.className === 'badge')?.textContent).toBe('Propulsé par Messaging Me');
 
     const empecher = vi.fn();
     for (const f of ligne.ecouteurs.click ?? []) f({ preventDefault: empecher });

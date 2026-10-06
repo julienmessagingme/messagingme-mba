@@ -543,7 +543,7 @@ export const schema = z.object({
   HUBSPOT_CONNECTOR_PUBLIC_URL: z.string().default(''),
   /**
    * L'app Salesforce : identifiant et secret de notre External Client App (Consumer Key et Consumer Secret,
-   * lus dans le Dev Hub). Avec eux, Engage Me demande un jeton à l'org d'un client, au nom de l'utilisateur
+   * lus dans le Dev Hub). Avec eux, Messaging Me demande un jeton à l'org d'un client, au nom de l'utilisateur
    * d'intégration désigné par son admin. Vides : intégration non montée. Les deux se posent ensemble, et
    * exigent `ENCRYPTION_KEY` (le secret de chaque org est chiffré).
    * 🔴 Jamais en `NEXT_PUBLIC_`, jamais dans le dépôt (public) ni dans le package.

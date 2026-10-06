@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({ subsets: ['latin'], display: 'swap', variable: '-
 // Métadonnées STATIQUES (SSR) : titre = marque (neutre), description en anglais (audience internationale,
 // reviewers Meta). Le contenu de l'app, lui, est bilingue via LocaleProvider.
 export const metadata: Metadata = {
-  title: 'Engage Me',
-  description: 'Engage Me: WhatsApp contacts, campaigns and inbox console.',
+  title: 'Messaging Me',
+  description: 'Messaging Me: WhatsApp contacts, campaigns and inbox console.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

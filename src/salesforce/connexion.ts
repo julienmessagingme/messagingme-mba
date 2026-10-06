@@ -92,7 +92,7 @@ function traduire(err: unknown, etapeDuRefus: EtapeGuide): IssueConnexion {
       return manque('adresse', err.message);
     case 'jeton_refuse':
       return manque(etapeDuRefus, etapeDuRefus === 'run-as'
-        ? "L'org refuse de délivrer un jeton à Engage Me : vérifiez que le package est installé et que l'utilisateur d'intégration est désigné « Run As » de l'app Engage Me."
+        ? "L'org refuse de délivrer un jeton à Messaging Me : vérifiez que le package est installé et que l'utilisateur d'intégration est désigné « Run As » de l'app Messaging Me."
         : "Salesforce a refusé l'accès de l'utilisateur d'intégration.");
     case 'refus':
       return manque(etapeDuRefus, `Salesforce a refusé l'appel (${err.errorCode ?? err.status ?? 'refus'}).`);
@@ -138,20 +138,20 @@ export async function connecter(deps: DepsConnexion, tenantId: string, adresseBr
   let version: string;
   try {
     const etat = await deps.client.requete(adresse.origine, 'GET', CHEMIN_ETAT, schemaEtatPackage);
-    if (!etat.donnees) return manque('package', "Le package Engage Me n'a pas répondu : vérifiez qu'il est installé.");
+    if (!etat.donnees) return manque('package', "Le package Messaging Me n'a pas répondu : vérifiez qu'il est installé.");
     version = etat.donnees.version;
     if (!versionAuMoins(version, VERSION_PACKAGE_MIN)) {
-      return manque('package', `Le package Engage Me installé (${version}) est trop ancien : installez la dernière version.`);
+      return manque('package', `Le package Messaging Me installé (${version}) est trop ancien : installez la dernière version.`);
     }
     if (etat.donnees.manques.length > 0) {
       return { ok: false, manques: [{ etape: 'droits', message: `L'utilisateur d'intégration n'a pas tous les droits : ${etat.donnees.manques.join(', ')}.` }] };
     }
   } catch (err) {
     if (err instanceof SalesforceApiError && err.code === 'refus' && err.status === 404) {
-      return manque('package', "Le package Engage Me n'est pas installé dans cette org.");
+      return manque('package', "Le package Messaging Me n'est pas installé dans cette org.");
     }
     if (err instanceof SalesforceApiError && err.code === 'refus' && err.status === 403) {
-      return manque('droits', "L'utilisateur d'intégration n'a pas le jeu de permissions Engage Me.");
+      return manque('droits', "L'utilisateur d'intégration n'a pas le jeu de permissions Messaging Me.");
     }
     return traduire(err, 'package');
   }
@@ -160,7 +160,7 @@ export async function connecter(deps: DepsConnexion, tenantId: string, adresseBr
   const debut = await deps.store.commencerConnexion(tenantId, {
     orgId, myDomain: adresse.origine, sandbox, utilisateurIntegration: utilisateur, versionPackage: version, connecteePar: auteurId, secretClair: secret,
   });
-  if (debut === 'org_ailleurs') return manque('org', 'Cette org Salesforce est déjà reliée à un autre espace Engage Me.');
+  if (debut === 'org_ailleurs') return manque('org', 'Cette org Salesforce est déjà reliée à un autre espace Messaging Me.');
   if (debut === 'autre_org') return manque('org', 'Votre espace est relié à une autre org Salesforce : déconnectez-la d’abord.');
 
   try {

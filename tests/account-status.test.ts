@@ -457,7 +457,7 @@ describe('route account-status : le pull frais prime, le dernier connu comble', 
   const complet = {
     ok: true as const, status: 'CONNECTED', qualityRating: 'GREEN', messagingLimitTier: 'TIER_1K',
     displayPhoneNumber: '+33 5 25 68 02 50', nameStatus: 'APPROVED', codeVerificationStatus: 'VERIFIED',
-    throughputLevel: 'HIGH', verifiedName: 'Engage Me', wabaHealthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED',
+    throughputLevel: 'HIGH', verifiedName: 'Messaging Me', wabaHealthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED',
     businessVerificationStatus: 'verified', marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'SmartLink',
   };
   const champs = (b: Record<string, unknown>) => ({
@@ -475,7 +475,7 @@ describe('route account-status : le pull frais prime, le dernier connu comble', 
     expect(saved).toEqual([{ id: 'PN1', patch: enregistre }]);
     expect(champs(res.json())).toEqual({
       number: '+33 5 25 68 02 50', tier: 'TIER_1K', quality: 'GREEN', numberStatus: 'CONNECTED', nameStatus: 'APPROVED',
-      codeVerificationStatus: 'VERIFIED', throughputLevel: 'HIGH', verifiedName: 'Engage Me', wabaHealthStatus: 'AVAILABLE',
+      codeVerificationStatus: 'VERIFIED', throughputLevel: 'HIGH', verifiedName: 'Messaging Me', wabaHealthStatus: 'AVAILABLE',
       accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified', marketingMessagesLiteApiStatus: 'ONBOARDED',
       ownerBusinessName: 'SmartLink',
     });

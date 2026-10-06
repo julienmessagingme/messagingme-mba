@@ -296,7 +296,7 @@ en production.
 
 ## 🟠 Suites de la recharge Stripe et du panneau Détail (2026-09-29)
 
-- **Julien** : ajouter l'autorisation **Invoices : Lecture** à la clé restreinte « Engage Me console », puis
+- **Julien** : ajouter l'autorisation **Invoices : Lecture** à la clé restreinte « Messaging Me console », puis
   cliquer « Facture » sur l'achat ENGAGE100 de Paramètres > Crédit IA. Sans elle, le lien rend un refus lisible.
 - 🔴 **À VÉRIFIER : la lecture du fil n'a pas de garde de visibilité.** Relevé par l'implémenteur du panneau :
   la route de détail passe par `visibiliteSql`, la lecture des messages du fil non. Un agent qui ne voit que ses
@@ -309,10 +309,10 @@ en production.
 - 🟡 **Mode test Stripe** (produits, clé restreinte, destination webhook en test) : facultatif, l'essai final a
   été fait en live avec un code promo à 100 %.
 
-## 🟡 Vitrine (`engageme.messagingme.fr`) : restes du 2026-10-03
+## 🟡 Vitrine (`app.messagingme.fr`) : restes du 2026-10-03
 
 - **Search Console** (Julien) : déclarer la propriété du domaine (enregistrement TXT chez OVH, ou un fichier de
-  vérification que Claude pose), puis soumettre `https://engageme.messagingme.fr/sitemap.xml`. C'est ce qui
+  vérification que Claude pose), puis soumettre `https://app.messagingme.fr/sitemap.xml`. C'est ce qui
   déclenche l'indexation : un moteur de recherche ne trouvait aucune page du domaine le 2026-09-30.
 - **Un lien depuis messagingme.fr** vers la vitrine (aucun sur l'accueil du site mère), avec le travail sur le lien
   entre les deux sites.
@@ -622,7 +622,7 @@ pas qu'il est nul.
 ## 🟠 Pré-câbler la route Azure OpenAI France, sans bouton ni promesse prématurée (2026-09-21)
 
 **Décision de Julien :** Vercel AI Gateway reste le chemin ordinaire. Pour un contrat dont le RSSI exige une
-inférence OpenAI en France, Engage Me doit pouvoir appeler directement un déploiement Azure OpenAI régional
+inférence OpenAI en France, Messaging Me doit pouvoir appeler directement un déploiement Azure OpenAI régional
 France. Le choix est posé manuellement par l'exploitation pour l'espace ; il n'y a pas de toggle dans
 l'interface client. Source d'architecture et limites : `docs/ARCHITECTURE-CIBLE.md`, §2.1.
 
@@ -703,7 +703,7 @@ Reste à faire, par petits changements réversibles :
    d'origine avant de changer le DNS ;
 8. distinguer les preuves : les **Audit Logs** retracent les changements de configuration Cloudflare ; les
    **Security Events** montrent le trafic filtré mais leur rétention Pro est courte. Conserver captures et
-   exports de configuration, tandis que les journaux durables restent aujourd'hui dans Engage Me et, après
+   exports de configuration, tandis que les journaux durables restent aujourd'hui dans Messaging Me et, après
    la migration seulement, dans Cockpit ;
 9. ne pas acheter Cloudflare Business/Enterprise, Bot Management ou un second WAF Scaleway sans exigence ou
    incident précis.
@@ -1058,7 +1058,7 @@ campagnes quand on aura de gros volumes. » C'est le cas : l'avalanche rafale (2
 2026-09-10). Le retard des petits paquets est accepté ; ne pas lancer l'une des deux voies sans qu'il le
 redemande.
 
-**Deux voies, si le sujet revient** (détail et chiffres : artifact « La plomberie d'Engage Me », § 7) :
+**Deux voies, si le sujet revient** (détail et chiffres : artifact « La plomberie de Messaging Me », § 7) :
 - **par lots (recommandé)** : `batchSize` ~12 sur cette seule file, traitement SÉQUENTIEL dans l'ordre
   d'arrivée, un verdict par job via `perJobResults` (supporté par pg-boss 12.25). Zéro requête ajoutée, paquet
   traité en 30 s au plus. ⚠️ Touche l'invariant `batchSize: 1` de `PgBossQueue.work` (`src/queue/pgboss.ts`),
@@ -1314,7 +1314,7 @@ le Meta Business Agent.** On publie chez Meta l'adresse du système et le chemin
 système du client EN DIRECT et lit toute la réponse.** Nous ne sommes pas dans la boucle, donc ni la nature
 « pousse » ni les champs cochés ne s'y appliquent.
 
-⚠️ **Depuis le relais du 2026-09-21, Meta n'appelle plus le système du client en direct** : il appelle Engage Me,
+⚠️ **Depuis le relais du 2026-09-21, Meta n'appelle plus le système du client en direct** : il appelle Messaging Me,
 qui lui rend TOUTE la réponse (arbitrage de Julien, le jour du relais). La conclusion ne change pas, ni la nature
 « pousse » ni les champs cochés ne s'appliquent à l'agent de Meta. L'onglet « Outils » de l'agent de Meta ne le
 dit pas (la case « Exposé » de l'ancien écran n'existe plus). Arbitrage de Julien du 2026-09-15, à qui
@@ -1326,11 +1326,11 @@ une réponse qui porte des données personnelles, peut croire que la même prude
 pas. Une phrase sous la case suffirait (« Meta appelle votre système en direct et lit toute la réponse : ce
 que vous avez choisi ici ne s'y applique pas »).
 
-## ~~🟠 L'adresse d'origine du VPS n'est protégée que par le SILENCE (2026-09-15)~~ **FERMÉ le 2026-09-21** pour Engage Me
+## ~~🟠 L'adresse d'origine du VPS n'est protégée que par le SILENCE (2026-09-15)~~ **FERMÉ le 2026-09-21** pour Messaging Me
 
 `api.` et `mba.messagingme.app` n'acceptent plus que ce qui arrive par Cloudflare, par un filtre posé dans
 NPM sur ces deux hôtes seulement. Fonctionnement, piège de `X-Real-IP`, retour arrière : `DEPLOY.md`, en tête.
-⚠️ **Ce qui reste ouvert, hors du périmètre d'Engage Me** : les AUTRES hôtes du VPS (Odalys, Gan, Hyundai,
+⚠️ **Ce qui reste ouvert, hors du périmètre de Messaging Me** : les AUTRES hôtes du VPS (Odalys, Gan, Hyundai,
 Neoma, leadgen) restent joignables en direct. Même filtre possible, hôte par hôte, en ajoutant leur nom à la
 table de `/data/nginx/custom/http_top.conf`, après la même vérification des appelants directs dans leurs
 journaux.
@@ -2049,7 +2049,7 @@ brique réutilisable. Rien ne presse : sans appelant, elle ne coûte rien.
 
 ## Ce que le lot MCP du 2026-09-01 laisse ouvert
 
-**1. Le grant OAuth 2.1 délégué (le gros morceau).** ✅ **Fait le 2026-10-03** (lot 2 du plan « Engage Me pour
+**1. Le grant OAuth 2.1 délégué (le gros morceau).** ✅ **Fait le 2026-10-03** (lot 2 du plan « Messaging Me pour
 Claude Code », spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`), sans enregistrement dynamique : les deux
 clients Claude sont épinglés, la métadonnée de ressource et le consentement sont en place. Le texte qui suit est
 l'énoncé d'origine. Aujourd'hui l'accès MCP passe par une **clé d'API** à

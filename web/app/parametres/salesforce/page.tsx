@@ -86,8 +86,8 @@ function ConnexionSalesforce({ tenantId }: { tenantId: string }) {
     if (!(await confirmer({
       titre: t('Déconnecter Salesforce', 'Disconnect Salesforce'),
       message: t(
-        'Déconnecter cette org ? Engage Me cessera d’écrire dans Salesforce, et Salesforce de prévenir Engage Me. Les données déjà écrites dans Salesforce y restent.',
-        'Disconnect this org? Engage Me will stop writing to Salesforce, and Salesforce will stop notifying Engage Me. Data already written to Salesforce stays there.',
+        'Déconnecter cette org ? Messaging Me cessera d’écrire dans Salesforce, et Salesforce de prévenir Messaging Me. Les données déjà écrites dans Salesforce y restent.',
+        'Disconnect this org? Messaging Me will stop writing to Salesforce, and Salesforce will stop notifying Messaging Me. Data already written to Salesforce stays there.',
       ),
       confirmer: t('Déconnecter', 'Disconnect'),
     }))) return;
@@ -99,7 +99,7 @@ function ConnexionSalesforce({ tenantId }: { tenantId: string }) {
         genre: 'ok',
         texte: r.effaceDansOrg
           ? t('Org déconnectée.', 'Org disconnected.')
-          : t('Org déconnectée chez Engage Me. Salesforce ne répondait pas : le secret n’a pas pu y être effacé, désinstallez le package pour finir.', 'Org disconnected in Engage Me. Salesforce did not respond: the secret could not be erased there, uninstall the package to finish.'),
+          : t('Org déconnectée chez Messaging Me. Salesforce ne répondait pas : le secret n’a pas pu y être effacé, désinstallez le package pour finir.', 'Org disconnected in Messaging Me. Salesforce did not respond: the secret could not be erased there, uninstall the package to finish.'),
       });
       await recharger();
     } catch (e: unknown) {
@@ -129,13 +129,13 @@ function ConnexionSalesforce({ tenantId }: { tenantId: string }) {
       {lecture === 'echec' && <p className="text-sm text-danger">{t('La lecture a échoué : rechargez la page.', 'The read failed: reload the page.')}</p>}
 
       {vue && !vue.cleAppPosee && (
-        <p className="text-sm text-ink-500" data-testid="salesforce-sans-cle">{t('L’app Salesforce n’est pas encore disponible sur votre instance Engage Me.', 'The Salesforce app is not available on your Engage Me instance yet.')}</p>
+        <p className="text-sm text-ink-500" data-testid="salesforce-sans-cle">{t('L’app Salesforce n’est pas encore disponible sur votre instance Messaging Me.', 'The Salesforce app is not available on your Messaging Me instance yet.')}</p>
       )}
 
       {vue && vue.cleAppPosee && (
         <>
           <section className={cardCls} data-testid="salesforce-installation">
-            <h3 className="text-sm font-semibold text-ink-900">{t('1. Installer le package Engage Me', '1. Install the Engage Me package')}</h3>
+            <h3 className="text-sm font-semibold text-ink-900">{t('1. Installer le package Messaging Me', '1. Install the Messaging Me package')}</h3>
             {vue.liensInstallation ? (
               <div className="mt-2 flex flex-wrap gap-3 text-sm">
                 <a href={vue.liensInstallation.production} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">{t('Installer en production', 'Install in production')}</a>

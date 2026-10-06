@@ -37,7 +37,7 @@ Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; réc
   relevés par la relecture (la migration contre trois chemins rares, deux renommages croisés simultanés), en 500 sur
   une requête au pire.
 
-## LOT 3b DE « ENGAGE ME POUR CLAUDE CODE » : LE NUMÉRO FOURNI CÔTÉ CLIENT, LIVRAISON B ÉCRITE, À DÉPLOYER
+## LOT 3b DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO FOURNI CÔTÉ CLIENT, LIVRAISON B ÉCRITE, À DÉPLOYER
 
 La page attribue un numéro de la réserve et l'affiche ; le client le tape dans la fenêtre de Meta et choisit l'appel ;
 la page affiche le code capté par l'Asterisk. Spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`, plan
@@ -54,7 +54,7 @@ la page affiche le code capté par l'Asterisk. Spec `docs/superpowers/specs/2026
 - ⏳ **Essai réel** : un espace créé depuis Claude Code, « Fournissez-moi un numéro », le numéro tapé dans la fenêtre,
   le code affiché, le numéro connecté, 1 € offert, l'alerte Telegram (la réserve n'a qu'un numéro).
 
-## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
+## LOT 5 DE « MESSAGING ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 
 Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré
 avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`, plan
@@ -159,7 +159,7 @@ avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-pa
   l'essai, c'était vrai de notre colonne (défaut 1) ; une fois réparé, le libellé doit dire « agent IA » quand le
   répondeur IA tient le fil.
 
-## LOT 8a DE « ENGAGE ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, EN PRODUCTION, ESSAI RÉEL FAIT
+## LOT 8a DE « MESSAGING ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, EN PRODUCTION, ESSAI RÉEL FAIT
 
 Spec `docs/superpowers/specs/2026-10-03-mcp-agent-ia-design.md`, plan `docs/superpowers/plans/2026-10-03-mcp-agent-ia.md`.
 La technique durable est dans `documentation.md` (§ 7, « Les outils MCP de l'agent IA et du crédit »), le
@@ -213,7 +213,7 @@ fonctionnel dans `features.md` (« Construire un agent IA depuis Claude »).
   constante de `src/http/agents` ; sur une erreur qui n'est pas un 422 (verrou, 400), l'écran des agents laisse sa
   liste de manques vide (antérieur à B).
 
-## OAUTH DEVANT `/mcp` (LOT 2 DE « ENGAGE ME POUR CLAUDE CODE ») : EN PRODUCTION, ESSAI RÉEL FAIT DEPUIS CLAUDE CODE
+## OAUTH DEVANT `/mcp` (LOT 2 DE « MESSAGING ME POUR CLAUDE CODE ») : EN PRODUCTION, ESSAI RÉEL FAIT DEPUIS CLAUDE CODE
 
 - ✅ **Essai réel du 2026-10-03, vers 20 h 30 UTC, par Julien, depuis Claude Code 2.1.257 sous Windows** :
   `api.messagingme.app/mcp` ajouté sans clé, `/mcp`, Authenticate, page « Autoriser », retour vers Claude Code, et
@@ -415,7 +415,7 @@ leur battement par rôle, le cache Cloudflare du widget, le document de bascule.
    16 h 53, alerte Telegram à 16 h 56 min 37 s, retour à 16 h 57 min 40 s, les deux acceptés par Telegram (verrous lus
    en base). Ce qui reste est dans `todo.md`.
 5. **mm-hubspot sur sa propre base : décidé par Julien le 2026-10-04, CHEZ SCALEWAY, EN PREMIER**, comme répétition
-   quelques jours avant le jour J d'Engage Me, jamais le même jour (`docs/ARCHITECTURE-CIBLE.md` §8 et §10 étape 0).
+   quelques jours avant le jour J de Messaging Me, jamais le même jour (`docs/ARCHITECTURE-CIBLE.md` §8 et §10 étape 0).
    Préalable, en lot à part : remplacer la lecture cross-schéma de `mmhs` (`getHubspotPortal`) par un appel au
    connecteur ; sans lui, l'interrupteur HubSpot affirmerait en silence qu'aucun portail n'est relié.
 6. **Les médias RCS hors de Postgres : APRÈS la bascule Scaleway**, en lot séparé (décidé le 2026-10-04, §6). Leur
@@ -440,7 +440,7 @@ journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont
   `conversation_messages.origin = 'mba'`). Le bac à sable ne le montre pas (mesuré le 2026-10-02).
 - ⏳ **La carte « Agent de Meta »** de Performance Lab > Synthèse : la lire sur l'espace MessagingMe.
 - ✅ **Les outils MCP** : ÉPROUVÉS le 2026-10-02 au soir sur le numéro MessagingMe. Microsoft Learn (exemples de
-  code, `ok` en 0,9 s), puis le serveur MCP d'Engage Me : `get_contact`, le numéro posé par la console
+  code, `ok` en 0,9 s), puis le serveur MCP de Messaging Me : `get_contact`, le numéro posé par la console
   (`contact` / `wa_id`), a lu la fiche de Julien ; une question sur un autre numéro a été refusée par l'agent,
   sans appel. Trois défauts trouvés en route, corrigés et déployés le soir même (journal du 2026-10-02).
 - ⏳ **Une compétence « Périmètre »** à poser sur l'agent (Julien) : périmètre = l'activité ET tout ce que ses
@@ -633,7 +633,7 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
   gardés à la réception, 72 h gratuites exclues de toute lecture de coût, `ctwa_clid` effacé par la purge
   RGPD. Migration 0163 appliquée AVANT le `up` et relue en base point par point (le détail vit dans
   [CLAUDE.md](CLAUDE.md) § Déploiement, il ne se recopie pas ici). Revue finale : 0 rouge.
-- ✅ **UNE VRAIE CAMPAGNE, créée depuis Engage Me sur le compte publicitaire MessagingMe, diffuse depuis le
+- ✅ **UNE VRAIE CAMPAGNE, créée depuis Messaging Me sur le compte publicitaire MessagingMe, diffuse depuis le
   2026-09-29** : statut, dépense, clics, impressions, couverture et dépense jour par jour relus par le balayage ;
   dépense recoupée avec le Gestionnaire de Meta par Julien le 2026-10-01, et vue dans le coût par engagement de
   Performance lab.
@@ -712,7 +712,7 @@ comme le cadrage l'impose (routage, puis création, puis suivi), CI verte sur le
   reload`. La fenêtre Vercel est refermée : l'écran et les routes qu'il appelle sont en ligne ensemble.
 
 **Ce qui reste** : l'ESSAI RÉEL, qui seul clôt la feature, et qui appartient à Julien : première campagne
-MessagingMe créée depuis Engage Me, un vrai clic depuis un téléphone, l'agent de Meta qui se tait pendant
+MessagingMe créée depuis Messaging Me, un vrai clic depuis un téléphone, l'agent de Meta qui se tait pendant
 que le scénario parle, et les cinq mesures de la spec § 6. 🔴 Rien de ce qui précède ne le remplace : aucun
 mécanisme de ce lot n'a encore tourné sur de l'argent réel.
 
@@ -804,7 +804,7 @@ Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
 ## ✅ META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL FAIT)
 
 **Le relais** (spec `docs/superpowers/specs/2026-09-21-relais-mba-design.md`, plan
-`docs/superpowers/plans/2026-09-21-relais-mba.md`) : Meta appelle `POST /mba/relais/outils/:id`, Engage Me
+`docs/superpowers/plans/2026-09-21-relais-mba.md`) : Meta appelle `POST /mba/relais/outils/:id`, Messaging Me
 retrouve le contact par la macro `WHATSAPP_PHONE_NUMBER`, remplit les variables du mini-CRM et fait l'appel
 par `creerAppelConnecteur`. Déployé le 2026-09-21 (0161 appliquée avant, relue en base).
 
@@ -964,11 +964,11 @@ froid : c'est très exactement la dérive contre laquelle l'en-tête de ce fichi
 
 ## 🔴 CE QUI RESTE DÛ SUR LES CONNECTEURS MCP (déployés le 2026-09-17)
 
-**Engage Me sait se brancher sur un serveur MCP tiers, importer son catalogue et exposer ses outils à un
+**Messaging Me sait se brancher sur un serveur MCP tiers, importer son catalogue et exposer ses outils à un
 agent IA.** Le lot est EN PRODUCTION : routes montées et gardées (401 et non 404), migration 0152 déjà en
 base (`migrate` a répondu « à jour, rien à appliquer »), contrôle public vert.
 
-🔴 **L'ESSAI RÉEL N'A PAS ÉTÉ FAIT, ET IL SEUL CLÔT LA FEATURE.** Engage Me branché sur NOTRE propre serveur
+🔴 **L'ESSAI RÉEL N'A PAS ÉTÉ FAIT, ET IL SEUL CLÔT LA FEATURE.** Messaging Me branché sur NOTRE propre serveur
 MCP (`/mcp` sur `api.messagingme.app`), puis depuis un vrai WhatsApp : poser à l'agent une question dont la
 réponse exige l'appel, vérifier qu'il répond avec la donnée du BON contact, puis lui demander explicitement
 la donnée d'un AUTRE numéro et vérifier qu'il ne l'obtient pas. C'est la garde anti-IDOR du lot, et ni les

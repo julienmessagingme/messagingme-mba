@@ -11,7 +11,18 @@
           "value": "engageme-site.vercel.app"
         }
       ],
-      "destination": "https://engageme.messagingme.fr/:chemin",
+      "destination": "https://app.messagingme.fr/:chemin",
+      "permanent": true
+    },
+    {
+      "source": "/:chemin(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "engageme.messagingme.fr"
+        }
+      ],
+      "destination": "https://app.messagingme.fr/:chemin",
       "permanent": true
     },
     {

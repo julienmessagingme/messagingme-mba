@@ -31,7 +31,7 @@ export function grouperCle(secret: string): string {
  */
 export function texteCodesSecours(codes: readonly string[], fr: boolean): string {
   const tete = fr
-    ? ['Engage Me : codes de secours de la double authentification', 'Chaque code ne sert qu’une fois.']
-    : ['Engage Me: two-factor authentication backup codes', 'Each code works only once.'];
+    ? ['Messaging Me : codes de secours de la double authentification', 'Chaque code ne sert qu’une fois.']
+    : ['Messaging Me: two-factor authentication backup codes', 'Each code works only once.'];
   return [...tete, '', ...codes, ''].join('\n');
 }

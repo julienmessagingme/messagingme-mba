@@ -10,7 +10,7 @@
 > (§6) et **Cloudflare Pro retenu pour la cible** (§7.7).
 
 🔴 **DEPUIS LE 2026-09-25, LA VITRINE PUBLIQUE L'ANNONCE COMME FAIT.** Le pied de page de
-`engageme.messagingme.fr` (`site/index.html`, classe `heberge`) affiche « Vos données hébergées en France
+`app.messagingme.fr` (`site/index.html`, classe `heberge`) affiche « Vos données hébergées en France
 chez Scaleway », sur décision de Julien (« tu fais comme si c'était fait »). Or la base tourne encore sur
 `aws-1-eu-west-2`, à Londres. Cette bascule n'est donc plus seulement une architecture cible : c'est une
 promesse publique, et chaque semaine sans migration la rend fausse un peu plus longtemps. Si la bascule est
@@ -107,10 +107,10 @@ Le chemin qui existe aujourd'hui reste **Vercel AI Gateway**. Une deuxième rout
 qui imposent que l'inférence conversationnelle de l'agent soit traitée en France : **Azure OpenAI appelé
 directement depuis le worker**, avec un déploiement régional en France. Ce n'est ni une migration générale
 vers Azure, ni Azure Foundry Agent Service : l'orchestration, les outils, la mémoire, la base de connaissance,
-les conversations et les fichiers restent dans Engage Me sur Scaleway.
+les conversations et les fichiers restent dans Messaging Me sur Scaleway.
 
 ```text
-worker Engage Me, Scaleway France
+worker Messaging Me, Scaleway France
              |
              +-- route ordinaire --> Vercel AI Gateway --> modèles autorisés
              |
@@ -123,10 +123,10 @@ clés par espace sont encore couplés au Gateway Vercel. Tant que le lot corresp
 terminé et éprouvé contre une vraie ressource Azure, la réponse RSSI exacte est « option architecturée, non
 activée », jamais « disponible » ou « hébergée en France ».
 
-Le choix n'a pas besoin d'un bouton dans Engage Me. Il est posé par un opérateur, à la signature du contrat,
+Le choix n'a pas besoin d'un bouton dans Messaging Me. Il est posé par un opérateur, à la signature du contrat,
 dans une configuration backend rattachée à l'espace. Le défaut reste Vercel. Le secret et l'endpoint Azure
 restent côté serveur. Si plusieurs clients « France » partagent une ressource Azure, leurs plafonds et leur
-comptabilité restent séparés dans Engage Me ; une ressource Azure dédiée n'est créée que si le contrat paie
+comptabilité restent séparés dans Messaging Me ; une ressource Azure dédiée n'est créée que si le contrat paie
 et exige cette isolation.
 
 🔴 **Aucun repli silencieux d'Azure vers Vercel.** Pour un espace soumis à une résidence France, une panne
@@ -447,13 +447,13 @@ d'endpoint ne se desserre pas.
 ```
 Meta, opérateur RCS, client /v1
    -> api.messagingme.app -> Cloudflare (ajoute ou ÉCRASE X-Auth-Token)
-   -> conteneur Scaleway PRIVÉ -> API Engage Me
+   -> conteneur Scaleway PRIVÉ -> API Messaging Me
 ```
 
 - Le conteneur est **privé** : un appel direct sur son nom technique `*.scw.cloud`, sans le jeton, est refusé
   AVANT d'atteindre l'application. ⚠️ Le nom technique n'est pas un secret, il ne protège rien à lui seul.
 - Le jeton est **un secret technique d'ORIGINE**, sans rapport avec les clés `mba_...` des clients : le
-  premier autorise Cloudflare à joindre le conteneur, les secondes autorisent un client à se servir d'Engage Me.
+  premier autorise Cloudflare à joindre le conteneur, les secondes autorisent un client à se servir de Messaging Me.
 - **Solution retenue : une règle de réécriture d'en-tête (Request Header Transform Rule) sur le nom
   `api.messagingme.app`**, qui ÉCRASE `X-Auth-Token` (écraser, pas ajouter : sinon un client pourrait envoyer
   le sien). **Disponible sur l'offre gratuite de Cloudflare**, dix règles actives, vérifié le 2026-09-21.
@@ -536,7 +536,7 @@ Cloudflare de demain.
   clé et par espace avec la précision du code : Pro compte seulement par IP et ses compteurs ne sont pas exacts
   à la requête près. On ne configure pas deux règles pour remplir deux cases. Les deux candidats utiles sont
   un fusible large sur l'API externe (`/v1` **et** `/mcp`) et les seuls chemins anonymes d'authentification qui
-  écrivent. Les quotas et limites par discriminant restent dans Engage Me.
+  écrivent. Les quotas et limites par discriminant restent dans Messaging Me.
 - **Cloudflare voit bien l'IP du navigateur sur l'auth actuelle.** `engageme.` ne relaie rien : le navigateur
   appelle `api.` directement (`documentation.md`, §2). Le seuil doit néanmoins tolérer une entreprise entière
   derrière une IP partagée. La règle vise la liste exacte des POST sensibles, jamais `/auth/config` ni le
@@ -558,7 +558,7 @@ Cloudflare de demain.
 ## 8. Le connecteur HubSpot : sa propre base, et il dort quand personne ne s'en sert
 
 🔴 **Décidé par Julien le 2026-10-04 : le connecteur part sur sa propre base CHEZ SCALEWAY, EN PREMIER, comme
-RÉPÉTITION, quelques jours avant le jour J d'Engage Me (§10, étape 0).** Trois raisons :
+RÉPÉTITION, quelques jours avant le jour J de Messaging Me (§10, étape 0).** Trois raisons :
 - c'est petit (un seul portail branché) et moins critique : on répète chez Scaleway les gestes du jour J (base
   managée, réseau privé, endpoint privé, migrations, restauration, chaînes de connexion) sur un produit qui peut se
   permettre un raté ;
@@ -657,7 +657,7 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 **La séquence :**
 
 0. **Quelques jours avant, la répétition : le connecteur HubSpot** sur sa propre base Scaleway (§8). Les mêmes gestes
-   qu'aux étapes 1, 2, 4, 5 et 8, sur ce seul produit ; puis vérifier dans `pg_stat_activity` de la base Engage Me
+   qu'aux étapes 1, 2, 4, 5 et 8, sur ce seul produit ; puis vérifier dans `pg_stat_activity` de la base Messaging Me
    qu'il n'y ouvre plus aucune session, et qu'une synchronisation réelle passe dans les deux sens. Ce qui a coincé
    s'écrit ici avant le jour J.
 1. Créer le projet, le réseau privé et tous les composants dans **une seule région, PAR**.
@@ -762,9 +762,9 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 - **Un plafond de débit global** qui toucherait aussi les webhooks (§7.6).
 - **Cloudflare Business/Enterprise, Logpush ou Bot Management** sans exigence précise. Pro est la cible ; les
   étages supérieurs ne s'achètent que pour une preuve ou une capacité absente et contractuellement nécessaire.
-- **Un bouton de choix du fournisseur IA dans Engage Me.** C'est une option contractuelle posée par
+- **Un bouton de choix du fournisseur IA dans Messaging Me.** C'est une option contractuelle posée par
   l'exploitation, pas une préférence utilisateur.
-- **Azure Foundry Agent Service.** Engage Me possède déjà l'orchestration, la mémoire, les outils et la base
+- **Azure Foundry Agent Service.** Messaging Me possède déjà l'orchestration, la mémoire, les outils et la base
   de connaissance ; ajouter un deuxième moteur d'agents disperserait l'état sans répondre mieux au RSSI.
 - **Un fallback automatique Azure vers Vercel** pour un espace dont le contrat exige la France (§2.1).
 

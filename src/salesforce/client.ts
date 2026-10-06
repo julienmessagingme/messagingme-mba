@@ -183,7 +183,7 @@ export function creerClientSalesforce(deps: DepsClientSalesforce): ClientSalesfo
     if (!res.ok) {
       const e = schemaErreurOAuth.safeParse(json);
       // Le message de Salesforce reste dans `errorCode` ; la raison lisible ne cite rien de ce qu'il a renvoyé.
-      throw new SalesforceApiError('jeton_refuse', res.status, false, "L'org a refusé de délivrer un jeton à Engage Me.", e.success ? e.data.error : null);
+      throw new SalesforceApiError('jeton_refuse', res.status, false, "L'org a refusé de délivrer un jeton à Messaging Me.", e.success ? e.data.error : null);
     }
     const p = schemaJeton.safeParse(json);
     if (!p.success) throw new SalesforceApiError('reponse_illisible', res.status, false, "La réponse du jeton n'a pas la forme attendue.");

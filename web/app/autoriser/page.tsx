@@ -121,7 +121,7 @@ export default function AutoriserPage() {
         <LocaleToggle />
       </div>
       <div className="w-full max-w-md" data-testid="autoriser">
-        <Logo className="mx-auto mb-6 h-12 w-12" />
+        <Logo className="mx-auto mb-6 h-9 w-auto" />
         {ouverture === null ? (
           <Squelette forme="carte" />
         ) : ouverture.etat === 'absente' ? (

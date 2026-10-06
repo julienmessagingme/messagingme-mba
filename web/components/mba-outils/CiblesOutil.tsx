@@ -148,8 +148,8 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-ink-500">
-        {t('L’agent de Meta passe par Engage Me, qui appelle votre système et lui rend toute la réponse.',
-          'Meta’s agent goes through Engage Me, which calls your system and hands it the whole response.')}
+        {t('L’agent de Meta passe par Messaging Me, qui appelle votre système et lui rend toute la réponse.',
+          'Meta’s agent goes through Messaging Me, which calls your system and hands it the whole response.')}
       </p>
       <ul className="flex flex-col gap-1" data-testid="mba-cible-appels">
         {requetes.map((r) => (
@@ -182,7 +182,7 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
 }
 
 /**
- * QUI FOURNIT CHAQUE VALEUR DE L'APPEL (repris de l'ancien écran, relais du 2026-09-21) : Engage Me remplit le
+ * QUI FOURNIT CHAQUE VALEUR DE L'APPEL (repris de l'ancien écran, relais du 2026-09-21) : Messaging Me remplit le
  * mini-CRM, l'agent de Meta obtient le reste du client.
  */
 function ValeursDeLAppel({ requete }: { requete: RequeteApi }) {
@@ -194,7 +194,7 @@ function ValeursDeLAppel({ requete }: { requete: RequeteApi }) {
     <p className="text-xs text-ink-500" data-testid="mba-cible-valeurs-appel">
       {remplies.length > 0 && (
         <span data-testid="mba-cible-valeurs-remplies">
-          {t('Engage Me remplit lui-même : ', 'Engage Me fills in: ')}{remplies.join(', ')}.{' '}
+          {t('Messaging Me remplit lui-même : ', 'Messaging Me fills in: ')}{remplies.join(', ')}.{' '}
         </span>
       )}
       {demandees.length > 0 && (
@@ -343,8 +343,8 @@ export function CibleScenario({ tenantId, workflowId, onChange }: {
         </button>
       )}
       <p className="text-xs text-ink-500">
-        {t('Engage Me prend la conversation le temps du parcours, puis la rend à l’agent de Meta.',
-          'Engage Me takes the conversation for the journey, then hands it back to Meta’s agent.')}
+        {t('Messaging Me prend la conversation le temps du parcours, puis la rend à l’agent de Meta.',
+          'Messaging Me takes the conversation for the journey, then hands it back to Meta’s agent.')}
       </p>
     </div>
   );

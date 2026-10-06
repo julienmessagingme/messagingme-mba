@@ -46,7 +46,7 @@ export interface PageDoc {
 export const PAGES_DOC = [
   {
     cle: 'accueil', href: '/developers/api', fichier: 'web/app/developers/api/page.tsx', groupe: 'demarrer',
-    nav: ['Accueil', 'Overview'], titre: ['API Engage Me', 'Engage Me API'],
+    nav: ['Accueil', 'Overview'], titre: ['API Messaging Me', 'Messaging Me API'],
     ancres: ['premier-appel', 'endpoints', 'adresse', 'authentification'],
   },
   {

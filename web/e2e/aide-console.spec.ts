@@ -179,7 +179,7 @@ test.describe('Bouton d’aide de la console', () => {
 
 test.describe('L’accueil du cadre d’aide', () => {
   /**
-   * Demande de Julien, le 2026-09-11 : « là c'est hyper triste [...] a minima prends le logo Engage Me,
+   * Demande de Julien, le 2026-09-11 : « là c'est hyper triste [...] a minima prends le logo Messaging Me,
    * rajoute 2 ou 3 étoiles magiques genre IA et dis "Je suis là pour vous aider", pas un truc "posez votre
    * question sur la console" ».
    */

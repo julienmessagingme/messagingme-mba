@@ -79,7 +79,7 @@ export function ReglageSalesforce({ tenantId }: { tenantId: string }) {
             {!vue
               ? t('État inconnu : la lecture a échoué.', 'Unknown state: the read failed.')
               : !vue.cleAppPosee
-                ? t('L’app Salesforce n’est pas encore disponible sur votre instance Engage Me.', 'The Salesforce app is not available on your Engage Me instance yet.')
+                ? t('L’app Salesforce n’est pas encore disponible sur votre instance Messaging Me.', 'The Salesforce app is not available on your Messaging Me instance yet.')
                 : vue.actif
                   ? phraseEtatOrg(vue.org, t)
                   : t('Éteint : Salesforce n’est pas branché à cet espace.', 'Off: Salesforce is not connected to this workspace.')}

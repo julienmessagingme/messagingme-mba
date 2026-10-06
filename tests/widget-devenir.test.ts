@@ -40,7 +40,7 @@ import {
 
 const T = 't-widget';
 const AUTRE = 't-voisin';
-const PHRASE = 'Bonjour, je viens du site Engage Me';
+const PHRASE = 'Bonjour, je viens du site Messaging Me';
 const CODE = 'k3j4h5m6n7p8';
 
 function widget(sur: Partial<WidgetRow> = {}): WidgetRow {
