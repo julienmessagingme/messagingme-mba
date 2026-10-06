@@ -57,8 +57,11 @@ validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien
   dans la console (route à la session d'admin seule), le texte après « Abandonner », le retour de Stripe qui rouvre le
   numéro fourni (et « Payer » si l'abonnement est résilié), la course de « Remplacer », les numéros libres dus d'abord
   aux abonnés en attente (paiement, alerte, et un numéro rendu qui les sert), et les deux fausses alertes du webhook.
-- ⏳ **Essai réel commun A et B** (Julien) : un numéro racheté chez DIDWW et déclaré dans /ops ; depuis Claude Code, sur
-  un espace neuf, le lien, « Payer 3,50 € HT par mois », un vrai paiement, le numéro attribué par le webhook, le code dans
+  En production le même jour : API et workers sur `6050fdb7` (aucune migration ; la route du portail rend 401 sans
+  session, contre 404 pour une route inconnue), console `fbae4608` poussée après, CI verte job par job.
+- ⏳ **Essai réel commun A et B** (Julien) : un numéro racheté chez DIDWW (+44 1259 797311, acheté le 2026-10-06) et
+  déclaré dans /ops ; depuis Claude Code, sur un espace neuf (l'espace de l'essai du 3b a été supprimé à la demande de
+  Julien ; son numéro est en « bloqué », à résilier chez DIDWW), le lien, « Payer 3,50 € HT par mois », un vrai paiement, le numéro attribué par le webhook, le code dans
   le terminal, la connexion ; puis une résiliation par le portail et l'alerte Telegram.
 
 ## LOT 5 DE « MESSAGING ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS

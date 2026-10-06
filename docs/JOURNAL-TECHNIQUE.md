@@ -21,6 +21,20 @@ abonnement, corrigé avant le déploiement. Le compte Stripe sert aussi `verifie
 propres abonnements) : nos événements d'abonnement reçoivent ses factures, et le code ignore tout ce qui ne porte pas
 `produit: numero`.
 
+**Les jaunes de B** (serveur `e0f51c43` et `6050fdb7`, console `fbae4608`, tous en production le même jour) : le
+portail de Stripe dans la console (`POST .../numero-fourni/portail`, à la session d'admin seule, le test d'isolation
+refuse qu'il s'ouvre au lien), les numéros libres dus d'abord aux abonnés en attente, un numéro rendu qui les sert,
+les deux fausses alertes du webhook, la course de « Remplacer » côté console (vue rouge par un e2e qui retarde la
+lecture), le retour de Stripe. ⚠️ `e0f51c43` a rendu le job `integration` rouge : le test de 0214 affirmait l'ancien
+retour d'`enregistrer` pour un abonnement résilié. Les tests d'intégration ne tournent qu'en CI ; changer ce que rend un
+store, c'est chercher l'ancien littéral dans `tests/integration/` avant de pousser.
+
+**Le ménage avant l'essai commun** : l'espace de l'essai du 3b a été supprimé à la demande de Julien, par un script relu
+à blanc puis lancé par lui (une suppression définitive en production) et vérifié en base. Les clés étrangères vers
+`tenants` étaient toutes en cascade sauf `numeros_fournis` (`set null`) : le numéro a été passé en `bloque` AVANT la
+suppression, sinon il serait resté `attribue` sans espace. `credits_offerts`, sans clé étrangère, garde la trace du
+crédit offert sur ce numéro. L'identité Google survit : une nouvelle connexion avec la même adresse crée un espace neuf.
+
 **Appris** : Meta met un numéro libéré en quarantaine (Julien) : un numéro fourni ne revient jamais dans la réserve, et
 le lot 4 devra résilier chez DIDWW. L'essai réel de A est reporté à celui de B, pour ne brûler qu'un numéro.
 
