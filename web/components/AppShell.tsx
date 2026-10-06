@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSession, clearSession, type Session } from '@/lib/session';
 import { countUnreadConversations, SESSION_EXPIRED_EVENT } from '@/lib/api';
-import { Logo } from './Logo';
+import { Logo, LogoComplet } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { BoutonAide } from './BoutonAide';
 import { Icone } from './Icone';
@@ -321,8 +321,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             </button>
           )}
           <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex min-w-0 shrink items-center gap-2" title={t('Accueil', 'Home')}>
-            <Logo className="h-6 w-auto shrink-0" />
-            <span className="hidden truncate text-sm font-semibold text-ink-900 sm:inline">Messaging Me</span>
+            <Logo className="h-6 w-auto shrink-0 sm:hidden" />
+            <LogoComplet className="hidden h-5 w-auto shrink-0 sm:block" />
           </Link>
         </div>
         {/**

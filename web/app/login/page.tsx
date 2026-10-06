@@ -5,13 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { login, chooseWorkspace, isLoginChoice, estEtapeSecondFacteur, type LoginChoice, type EtapeSecondFacteur, type SuiteConnexion } from '@/lib/api';
 import { saveSession, pageDArrivee } from '@/lib/session';
-import { Logo } from '@/components/Logo';
+import { LogoComplet } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
-import { TitrePage } from '@/components/TitrePage';
 import { EtapesSecondFacteur } from '@/components/SecondFacteur';
 
 export default function LoginPage() {
@@ -91,8 +90,7 @@ export default function LoginPage() {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <Logo className="mx-auto mb-4 h-10 w-auto" />
-          <TitrePage>Messaging Me</TitrePage>
+          <h1><LogoComplet className="mx-auto mb-4 h-8 w-auto" /></h1>
           <p className="mt-1 text-balance text-sm text-ink-500">{t('La plateforme conversationnelle qui comprend chaque conversation.', 'The conversational platform that understands every conversation.')}</p>
         </div>
 

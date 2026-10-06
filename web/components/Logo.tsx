@@ -20,3 +20,12 @@ export function Logo({ className }: { className?: string }) {
     </svg>
   );
 }
+
+/**
+ * Le logo COMPLET (icône et nom), tel que la marque le fournit : le nom est dessiné dans la police du logo, pas
+ * composé dans celle de la console. Un PNG à 120 px de haut, affiché bien plus petit, donc net sur un écran dense.
+ */
+export function LogoComplet({ className }: { className?: string }) {
+  // eslint-disable-next-line @next/next/no-img-element -- un fichier de `public/`, sans transformation à faire
+  return <img src="/messagingme-logo.png" alt="Messaging Me" width={1007} height={120} className={className} />;
+}
