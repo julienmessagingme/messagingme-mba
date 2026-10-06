@@ -1,5 +1,25 @@
 # todo.md : backlog
 
+## Lot 3c, livraison B : les jaunes de la relecture, à pousser (2026-10-06)
+
+Relue avant le déploiement de `c9973f44` ; le seul rouge (« Remplacer » sans abonnement) est corrigé. Restent :
+1. **La console n'ouvre pas le portail Stripe** : un client de la console ne peut ni changer de carte ni résilier (seul
+   l'outil MCP `manage_number_subscription` le fait), et la fiche d'aide dit « se gère depuis Claude ». Ajouter un bouton
+   du portail sur `/connecter-whatsapp` (`ouvrirPortail`, `src/stripe/abonnement.ts`).
+2. **Après « Abandonner »**, un abonné continue de payer et la page lui dit « en préparation » : un texte distinct.
+3. **Fausse alerte « réserve vide »** : un `checkout.session.completed` rejoué pour un abonnement résilié rend `numero:
+   null` (`src/stripe/abonnements.pg.ts`) ; rendre un état `resilie` qui n'alerte pas.
+4. **Fausse alerte « doublon »** dans la course session et facture simultanées (l'index partiel n'arbitre pas le `on
+   conflict`) : dans la branche doublon, relire si l'abonnement existe déjà ; un vrai doublon re-alerte à chaque mois.
+5. **Course d'interface sur « Remplacer »** (`web/components/ParcoursNumero.tsx`) : une lecture de l'état partie avant
+   peut réafficher l'ancien numéro ; ignorer les réponses pendant un geste en cours.
+6. **Retour de Stripe sur `/connecter-whatsapp?abonnement=recu`** : il faut recliquer « Fournissez-moi un numéro »
+   (`setChoix('fourni')` quand `paiementRecu`), et `?abonnement=recu` masque « Payer » pour de bon si la confirmation ne
+   vient jamais (réafficher si l'abonnement est résilié).
+7. **Priorité des abonnés en attente** : un numéro rendu par « Abandonner » ne leur est pas servi d'office, et
+   `compterLibres() === 0` ne retranche pas les abonnés qui attendent.
+8. `get_number_subscription` se lit avec une clé d'API (sans personne) : voulu, comme `get_credit`, à consigner.
+
 ## Lot 4 : se réabonner, et ce que devient un numéro dont l'abonnement tombe (reporté du lot 3c, 2026-10-06)
 
 `resubscribe_number` n'a pas été fait au lot 3c : un abonnement résilié ou en retard ne coupe rien avant le lot 4, et se
