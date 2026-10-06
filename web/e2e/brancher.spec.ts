@@ -91,6 +91,13 @@ test('🔴 sans abonnement, le lien paie avec SON jeton et revient sur /brancher
   expect(new Set(s.autorisations)).toEqual(new Set([`Bearer ${j}`]));
 });
 
+test('🟡 le lien de Claude Code n’a pas le portail de Stripe, même abonné : c’est un outil de Claude', async ({ page }) => {
+  await simuler(page, { abonnement: 'actif' });
+  await page.goto(`/brancher#${jeton('fourni')}`);
+  await expect(page.getByTestId('numero-en-preparation')).toBeVisible();
+  await expect(page.getByTestId('gerer-abonnement')).toHaveCount(0);
+});
+
 test('le mode apporté ouvre directement la fenêtre de Meta', async ({ page }) => {
   await simuler(page);
   await page.goto(`/brancher#${jeton('apporte')}`);

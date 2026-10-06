@@ -20,6 +20,11 @@ export interface ApiConnexionNumero {
   etat(): Promise<{ etat: EtatConnexion; empreinte: string }>;
   /** Ouvrir le paiement de l'abonnement du numéro (lot 3c) : l'adresse de la page de Stripe. */
   payer(retour: 'brancher' | 'console'): Promise<{ url: string }>;
+  /**
+   * Le portail client de Stripe (carte, factures, résiliation) : la session de la console SEULE. Le lien de Claude
+   * Code ne l'a pas (le serveur le refuse) : Claude a son outil, `manage_number_subscription`.
+   */
+  portail?(): Promise<{ url: string }>;
 }
 
 /** La session de la console : les appels d'hier, inchangés. */
@@ -33,6 +38,7 @@ export function apiDeLaSession(tenantId: string): ApiConnexionNumero {
     abandonner: () => abandonnerNumeroFourni(tenantId),
     etat: () => request(`/tenants/${tenantId}/connexion-numero`),
     payer: (retour) => request(`/tenants/${tenantId}/numero-fourni/abonnement`, { method: 'POST', body: JSON.stringify({ retour }) }),
+    portail: () => request(`/tenants/${tenantId}/numero-fourni/portail`, { method: 'POST', body: '{}' }),
   };
 }
 

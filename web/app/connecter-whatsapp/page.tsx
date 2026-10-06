@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { TitrePage, IntroPage } from '@/components/TitrePage';
-import { ParcoursNumero } from '@/components/ParcoursNumero';
+import { ParcoursNumero, BoutonPortail } from '@/components/ParcoursNumero';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { getAccountStatus, type AccountStatusResponse } from '@/lib/api';
@@ -33,6 +33,12 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
   useEffect(() => { chargerCompte(); }, [chargerCompte]);
 
   const connecte = compte?.hasNumber === true;
+  // Connecté avec un numéro fourni payé : l'abonnement se gère encore d'ici (jaune 1 de la relecture de la livraison B).
+  const [abonne, setAbonne] = useState(false);
+  useEffect(() => {
+    if (!connecte || !isAdmin) return;
+    api.etat().then((r) => setAbonne(r.etat.abonnement !== null)).catch(() => {});
+  }, [connecte, isAdmin, api]);
   return (
     <div className="mx-auto max-w-formulaire">
       <TitrePage>{t('Connecter WhatsApp', 'Connect WhatsApp')}</TitrePage>
@@ -42,7 +48,10 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
         <div data-testid="numero-connecte" className="mt-6 rounded-carte border border-ink-200 bg-white p-5">
           <div className="text-lg font-semibold text-ink-900">{t('Votre numéro WhatsApp est connecté', 'Your WhatsApp number is connected')}</div>
           <p className="mt-1 text-sm text-ink-500">{compte?.number ?? ''}</p>
-          <Link href="/accueil" className="mt-4 inline-block text-sm font-semibold text-ink-900 underline">{t('Retour à l’accueil', 'Back to home')}</Link>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <Link href="/accueil" className="inline-block text-sm font-semibold text-ink-900 underline">{t('Retour à l’accueil', 'Back to home')}</Link>
+            {abonne && <BoutonPortail api={api} />}
+          </div>
         </div>
       ) : !isAdmin ? (
         <p className="mt-6 text-sm text-ink-500">{t('Réservé aux admins de l’espace.', 'Workspace admins only.')}</p>

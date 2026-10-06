@@ -1855,8 +1855,12 @@ scénario, comment importer des contacts.
   confirmé ; la page l'affiche alors, avec un bouton Copier ; le client le tape dans la fenêtre de Meta (« Enter a new phone number ») et choisit la vérification par
   appel ; le code que Meta dicte est capté par notre serveur et s'affiche sur la page en quelques secondes ; le client
   le recopie, et le numéro est connecté comme un autre. Si Meta refuse ce numéro, « En obtenir un autre » en donne un
-  nouveau ; « Abandonner » le rend à la réserve. Payé mais la réserve vide : la page dit « en préparation », et le
-  numéro arrive dès que Julien en déclare un. « J'ai déjà un numéro » ouvre la
+  nouveau ; « Abandonner » le rend à la réserve (si l'abonnement court encore, la page dit qu'il continue jusqu'à sa
+  résiliation), et un numéro rendu va d'abord à un abonné qui attend le sien. Payé mais la réserve vide : la page dit
+  « en préparation », et le numéro arrive dès que Julien en déclare un ; un paiement neuf n'est pas ouvert sur un
+  numéro déjà dû à un abonné qui attend. « Gérer mon abonnement » ouvre le portail de Stripe (carte, factures,
+  résiliation), sur la page comme une fois le numéro connecté ; depuis Claude Code, c'est Claude qui le fait. Au retour
+  de Stripe, la page reprend d'elle-même sur le numéro fourni. « J'ai déjà un numéro » ouvre la
   fenêtre de Meta comme le bouton de l'Accueil. ⚠️ La fenêtre de Meta impose l'écran du numéro, d'où la saisie.
   Éprouvé de bout en bout sur un espace créé depuis Claude Code : le numéro attribué, le code de Meta capté par l'appel
   et affiché sur la page, le numéro connecté et vérifié chez Meta, 1 € de crédit offert. ⚠️ La réserve ne compte

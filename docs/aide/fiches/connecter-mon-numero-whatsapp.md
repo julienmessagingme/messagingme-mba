@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 6878c0
+source_empreinte: 3354bd
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -16,7 +16,8 @@ s'affiche (code expiré, compte non partagé, plusieurs numéros à départager)
 **Vous n'avez pas de numéro ?** Le lien « Pas de numéro ? Nous vous en fournissons un » ouvre la page « Connecter
 WhatsApp » : « Fournissez-moi un numéro » vous propose un numéro britannique dédié à 3,50 € HT par mois. Vous payez sur
 la page de Stripe, puis le numéro s'affiche ; vous le tapez dans la fenêtre de Meta en choisissant la vérification par
-appel. Votre abonnement se gère depuis Claude (carte, factures, résiliation). Le code que Meta dicte s'affiche sur la page en quelques secondes :
+appel. « Gérer mon abonnement », sur cette page, ouvre le portail de Stripe (carte, factures, résiliation) ; depuis
+Claude Code, demandez-le à Claude. Le code que Meta dicte s'affiche sur la page en quelques secondes :
 recopiez-le dans la fenêtre, et le numéro est connecté. Si Meta refuse ce numéro, « En obtenir un autre » vous en
 donne un nouveau.
 

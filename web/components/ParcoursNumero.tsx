@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bouton } from '@/components/Bouton';
 import { useT } from '@/lib/i18n';
 import { useConnexionNumero } from '@/lib/connexion-numero';
@@ -42,10 +42,23 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   const [abonnement, setAbonnement] = useState<{ statut: string } | null | undefined>(undefined);
   /** Retour de la page de Stripe (`?abonnement=recu`) : la confirmation arrive par le webhook, on ne repaie pas. */
   const [paiementRecu, setPaiementRecu] = useState(false);
+  /** Le numéro vient d'être rendu (« Abandonner ») alors que l'abonnement court : il ne se « prépare » pas. */
+  const [rendu, setRendu] = useState(false);
   const connexion = useConnexionNumero(tenantId, api, surConnexion);
+  /**
+   * La course d'un geste et d'une lecture (jaune 5 de la relecture de la livraison B) : une lecture partie AVANT
+   * « Remplacer » revient avec l'ancien numéro ou son code. Chaque geste change de génération à son début et à sa fin,
+   * et une lecture n'est appliquée que si la génération n'a pas bougé depuis son départ ni un geste n'est en cours.
+   */
+  const generation = useRef(0);
+  const enGeste = useRef(false);
+  const fraiche = (depart: number) => depart === generation.current && !enGeste.current;
 
   useEffect(() => {
-    setPaiementRecu(new URLSearchParams(window.location.search).get('abonnement') === 'recu');
+    const recu = new URLSearchParams(window.location.search).get('abonnement') === 'recu';
+    setPaiementRecu(recu);
+    // Retour de Stripe : le client vient de payer le numéro fourni, il ne le rechoisit pas.
+    if (recu) setChoix((c) => c ?? 'fourni');
   }, []);
 
   // Tant qu'un numéro fourni n'est pas là, l'abonnement et le numéro se relisent : le webhook les écrit ensemble.
@@ -53,8 +66,9 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
     if (choix !== 'fourni' || numero !== null || connecte) return undefined;
     let vivant = true;
     const lire = () => {
+      const depart = generation.current;
       api.etat().then((r) => {
-        if (!vivant) return;
+        if (!vivant || !fraiche(depart)) return;
         setAbonnement(r.etat.abonnement);
         if (r.etat.fourni) { setNumero(r.etat.fourni); setCode(r.etat.code?.code ?? null); }
       }).catch(() => {});
@@ -68,9 +82,12 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   // Au retour sur la page (rechargement, onglet rouvert), un numéro déjà attribué reprend où il en était. Une API qui
   // n'a pas encore la route rend une erreur : le parcours reste au choix, sans message.
   useEffect(() => {
+    const depart = generation.current;
     api.lire().then((r) => {
-      if (r.numero) { setNumero(r.numero); setCode(r.code); setChoix('fourni'); }
+      if (r.numero && fraiche(depart)) { setNumero(r.numero); setCode(r.code); setChoix('fourni'); }
     }).catch(() => {});
+    // L'abonnement, même quand un numéro est déjà là : le portail et le texte après « Abandonner » en dépendent.
+    api.etat().then((r) => { if (fraiche(depart)) setAbonnement(r.etat.abonnement); }).catch(() => {});
     // `api` change d'identité à chaque rendu de la page : l'espace suffit à dire qu'il faut relire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
@@ -79,23 +96,33 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   useEffect(() => {
     if (choix !== 'fourni' || numero === null || connecte) return undefined;
     const minuterie = setInterval(() => {
-      api.lire().then((r) => setCode(r.code)).catch(() => {});
+      const depart = generation.current;
+      api.lire().then((r) => { if (fraiche(depart)) setCode(r.code); }).catch(() => {});
     }, INTERVALLE_CODE_MS);
     return () => clearInterval(minuterie);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [choix, numero, connecte, tenantId]);
 
   const geste = async (f: () => Promise<void>) => {
+    generation.current += 1;
+    enGeste.current = true;
     setEnCours(true);
     setErreur(null);
     try { await f(); } catch (err) { setErreur(err instanceof Error ? err.message : t('Une erreur est survenue', 'Something went wrong')); }
-    finally { setEnCours(false); }
+    finally { generation.current += 1; enGeste.current = false; setEnCours(false); }
   };
-  const obtenir = () => geste(async () => { setNumero((await api.obtenir()).numero); setCode(null); });
-  const remplacer = () => geste(async () => { setNumero(null); setCode(null); setNumero((await api.remplacer()).numero); });
-  const abandonner = () => geste(async () => { await api.abandonner(); setNumero(null); setCode(null); setChoix(choixInitial); });
-  const payer = () => geste(async () => { window.location.assign((await api.payer(retour)).url); });
   const abonne = abonnement !== undefined && abonnement !== null && abonnement.statut !== 'resilie';
+  const obtenir = () => geste(async () => { setNumero((await api.obtenir()).numero); setCode(null); setRendu(false); });
+  const remplacer = () => geste(async () => { setNumero(null); setCode(null); setNumero((await api.remplacer()).numero); });
+  const abandonner = () => geste(async () => {
+    await api.abandonner();
+    setNumero(null); setCode(null); setChoix(choixInitial); setRendu(true);
+  });
+  const payer = () => geste(async () => { window.location.assign((await api.payer(retour)).url); });
+  // Le portail se gère depuis la console ; sur la page du lien, c'est Claude qui résilie.
+  const portail = api.portail !== undefined && abonnement !== undefined && abonnement !== null
+    ? <BoutonPortail api={api} />
+    : null;
   const copier = async () => {
     if (!numero) return;
     try { await navigator.clipboard.writeText(numero); setCopie(true); } catch { setCopie(false); }
@@ -136,12 +163,19 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
       ) : numero === null ? (
         <div data-testid="choix-fourni-ouvert" className="mt-6 rounded-carte border border-ink-200 bg-white p-5">
           <p className="text-sm text-ink-700">{t('Nous vous attribuons un numéro britannique dédié, que vous connecterez dans la fenêtre de Meta.', 'We assign you a dedicated UK number, which you then connect in the Meta window.')}</p>
-          {abonne ? (
+          {abonne && rendu ? (
+            // Rendu par « Abandonner », mais l'abonnement court toujours : on le dit, avec ce qu'on peut en faire.
+            <p data-testid="numero-rendu" className="mt-3 text-sm text-ink-700">
+              {api.portail
+                ? t('Numéro rendu. Votre abonnement continue : obtenez un autre numéro ci-dessous, ou résiliez-le avec « Gérer mon abonnement ».', 'Number given back. Your subscription continues: get another number below, or cancel it with “Manage my subscription”.')
+                : t('Numéro rendu. Votre abonnement continue : obtenez un autre numéro ci-dessous, ou demandez à Claude de le résilier.', 'Number given back. Your subscription continues: get another number below, or ask Claude to cancel it.')}
+            </p>
+          ) : abonne ? (
             // Payé, mais sans numéro : la réserve était vide au moment du paiement. Le bouton réessaie l'attribution.
             <p data-testid="numero-en-preparation" className="mt-3 text-sm text-ink-700">
               {t('Paiement reçu : votre numéro est en préparation, il s’affichera ici dès qu’il sera prêt.', 'Payment received: your number is being prepared and will show here as soon as it is ready.')}
             </p>
-          ) : paiementRecu && abonnement !== undefined ? (
+          ) : paiementRecu && abonnement === null ? (
             <p data-testid="paiement-en-confirmation" className="mt-3 text-sm text-ink-700">
               {t('Paiement en cours de confirmation… votre numéro s’affichera ici dans quelques secondes.', 'Payment being confirmed… your number will show here in a few seconds.')}
             </p>
@@ -151,11 +185,13 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
               <Bouton type="button" enCours={enCours} disabled={enCours} onClick={() => { void obtenir(); }} data-testid="obtenir-numero">
                 {t('Obtenir mon numéro', 'Get my number')}
               </Bouton>
-            ) : paiementRecu ? null : (
+            ) : paiementRecu && abonnement === null ? null : (
+              // Sans abonnement, ou résilié : même revenu de Stripe, un abonnement résilié se repaie.
               <Bouton type="button" enCours={enCours} disabled={enCours} onClick={() => { void payer(); }} data-testid="payer-numero">
                 {t('Payer 3,50 € HT par mois', 'Pay €3.50 excl. VAT per month')}
               </Bouton>
             )}
+            {portail}
             {boutonRetour}
           </div>
         </div>
@@ -186,13 +222,42 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
             <Bouton type="button" variante="discret" taille="petite" disabled={enCours} onClick={() => { void remplacer(); }} data-testid="remplacer-numero">
               {t('Meta refuse ce numéro ? En obtenir un autre', 'Meta refuses this number? Get another one')}
             </Bouton>
-            <Bouton type="button" variante="discret" taille="petite" disabled={enCours} onClick={() => { void abandonner(); }}>
+            <Bouton type="button" variante="discret" taille="petite" disabled={enCours} onClick={() => { void abandonner(); }} data-testid="abandonner-numero">
               {t('Abandonner', 'Give up')}
             </Bouton>
+            {portail}
           </div>
         </div>
       )}
       {(erreur ?? connexion.error) && <p data-testid="erreur-connexion" className="mt-4 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{erreur ?? connexion.error}</p>}
+    </>
+  );
+}
+
+/**
+ * Le portail client de Stripe (jaune 1 de la relecture de la livraison B) : changer de carte, lire les factures,
+ * résilier. Rien sans `api.portail`, c'est-à-dire sur la page du lien de Claude Code.
+ */
+export function BoutonPortail({ api }: { api: ApiConnexionNumero }) {
+  const t = useT();
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const ouvrir = api.portail;
+  if (!ouvrir) return null;
+  const aller = async () => {
+    setEnCours(true);
+    setErreur(null);
+    try { window.location.assign((await ouvrir()).url); } catch (err) {
+      setErreur(err instanceof Error ? err.message : t('Une erreur est survenue', 'Something went wrong'));
+      setEnCours(false);
+    }
+  };
+  return (
+    <>
+      <Bouton type="button" variante="discret" taille="petite" enCours={enCours} disabled={enCours} onClick={() => { void aller(); }} data-testid="gerer-abonnement">
+        {t('Gérer mon abonnement', 'Manage my subscription')}
+      </Bouton>
+      {erreur && <span className="text-xs text-danger-700">{erreur}</span>}
     </>
   );
 }
