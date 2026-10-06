@@ -37,22 +37,21 @@ Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; réc
   relevés par la relecture (la migration contre trois chemins rares, deux renommages croisés simultanés), en 500 sur
   une requête au pire.
 
-## LOT 3b DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO FOURNI CÔTÉ CLIENT, LIVRAISON B ÉCRITE, À DÉPLOYER
+## LOT 3b DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO FOURNI CÔTÉ CLIENT, EN PRODUCTION, ESSAI RÉEL DÛ
 
-La page attribue un numéro de la réserve et l'affiche ; le client le tape dans la fenêtre de Meta et choisit l'appel ;
-la page affiche le code capté par l'Asterisk. Spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`, plan
-`docs/superpowers/plans/2026-10-05-numero-fourni.md`, réécrits le 2026-10-06 après la mesure de la fenêtre.
+La page « Connecter WhatsApp » attribue un numéro de la réserve et l'affiche ; le client le tape dans la fenêtre de
+Meta et choisit l'appel ; la page affiche le code capté par l'Asterisk. Spec
+`docs/superpowers/specs/2026-10-05-numero-fourni-design.md`, plan `docs/superpowers/plans/2026-10-05-numero-fourni.md`
+(réécrits le 2026-10-06 : en v4, rien ne fait sauter l'écran du numéro, Julien a choisi ce repli).
 
-- ✅ **Livraison A en production** (`a1bb1c63`) : un compte revenu sans numéro est gardé avec son jeton.
-- ✅ **Mesure (tâche 0), le 2026-10-06** : en v4, rien ne fait sauter l'écran du numéro ; le « sans numéro » de Meta
-  est un numéro virtuel en +1 555 avec 5 jours de revue ; la pré-vérification est réservée aux Solution Partners.
-  Julien a choisi le repli.
-- ⏳ **Livraison B écrite** : migration 0212 (`tenants.origine`, statut `bloque`, un numéro attribué par espace), le
-  magasin (`attribuer`, `codeDeLEspace`, `remplacerNumero`, `rendre`), le crédit selon l'origine (1 € Claude Code, 5 €
-  console), les routes `/numero-fourni` et l'alerte Telegram, la page `/connecter-whatsapp` et le lien de l'Accueil.
-  À relire, puis 0212 AVANT le `up`, puis `npm run aide:charger` (trois fiches d'aide changent).
-- ⏳ **Essai réel** : un espace créé depuis Claude Code, « Fournissez-moi un numéro », le numéro tapé dans la fenêtre,
-  le code affiché, le numéro connecté, 1 € offert, l'alerte Telegram (la réserve n'a qu'un numéro).
+- ✅ **Livraison A** (`a1bb1c63`) : un compte revenu sans numéro est gardé avec son jeton.
+- ✅ **Livraison B en production le 2026-10-06** : 0212 (`numero_fourni_client`, 0211 ayant été prise par une autre
+  session) appliquée à 7 h 50 UTC AVANT le `up`, relue en base ; API et workers sur `cc884ae6` ; fiches d'aide
+  rechargées (27) ; console `477ab86c` poussée après le `up`, page `/connecter-whatsapp` en ligne. Relu : zéro rouge,
+  jaunes 1, 2a, 5, 6a, 9 corrigés (chacun vu rouge puis vert), le reste dans `todo.md`.
+- ⏳ **Essai réel** (Julien) : un espace sans numéro, idéalement créé depuis Claude Code, « Fournissez-moi un numéro »,
+  le numéro tapé dans la fenêtre avec la vérification par appel, le code affiché sur la page, le numéro connecté, 1 €
+  offert, l'alerte Telegram « réserve vide » (la réserve n'a qu'un numéro, `+44 1235 619343`).
 
 ## LOT 5 DE « MESSAGING ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 
