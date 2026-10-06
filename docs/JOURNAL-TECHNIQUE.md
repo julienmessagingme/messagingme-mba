@@ -75,6 +75,13 @@ d'événements lit `web/lib/inbox-detail.ts`, qui est donc parti avec le serveur
 ne s'appuie plus sur l'index récent, sans coût aujourd'hui (17 conversations au plus gros espace), noté dans
 `todo.md`.
 
+**RC3, changer d'espace** (serveur `f739de42`, déployé après le lot 4 du numéro fourni, sans migration ; console
+ensuite) : deux routes montées avec `/me`, une bascule qui garde l'échéance du jeton présenté. Relu : zéro rouge. Le
+test « l'observation ne bascule pas » ne prouvait rien de la route (la garde refuse avant elle) : un test qui monte la
+route derrière une garde qui laisse passer l'emprunt, vérifié dans les deux sens. Laissé ouvert par décision de Julien :
+une bascule vers un compte admin sans second facteur, cohérente avec la connexion Google (`todo.md`). Écrit dans
+`documentation.md` : un jeton volé ouvre désormais tous les espaces de son adresse, jusqu'à son échéance.
+
 ## 2026-10-06 : le numéro branché depuis Claude Code, et son abonnement (lot 3c, livraisons A et B)
 
 **A, le lien et l'attente** (`d20dea6b`, jaunes `f8708b65`, console `b4f81ec4`) : `start_whatsapp_connection` donne

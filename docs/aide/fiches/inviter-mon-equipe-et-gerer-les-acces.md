@@ -1,6 +1,6 @@
 ---
 source_section: Comptes & authentification
-source_empreinte: 0b8201
+source_empreinte: 216d7a
 ---
 # Inviter mon équipe, et gérer les accès
 
@@ -23,7 +23,11 @@ personne d'autre que la personne concernée ne doit connaître le sien.
 **Une même adresse peut ouvrir plusieurs espaces**, avec un seul mot de passe pour tous. Si la vôtre n'en
 dessert qu'un, ce qui est le cas courant, vous entrez directement ; si elle en dessert plusieurs, un écran
 vous demande lequel ouvrir. Votre rôle peut différer d'un espace à l'autre : administrateur ici, agent
-ailleurs.
+ailleurs. **Une fois connecté, vous passez de l'un à l'autre** depuis le menu du compte, en haut à droite :
+« Changer d'espace », juste au-dessus de « Déconnexion », liste vos autres espaces. En choisir un vous y fait entrer
+directement, sans redonner votre mot de passe ni votre code, avec votre rôle dans cet espace. Le nom de l'espace où
+vous êtes s'affiche en tête de ce menu. Votre session n'en est pas prolongée : elle se termine à la même heure
+qu'avant. Un espace suspendu n'y est pas proposé.
 
 **Créer son propre espace** se fait depuis la page d'inscription : un nom d'espace, une adresse, un mot de
 passe, et vous en êtes l'administrateur. Vous pouvez aussi passer par Google, à l'inscription comme à la

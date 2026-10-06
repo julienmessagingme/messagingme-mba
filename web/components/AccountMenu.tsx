@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import type { Session } from '@/lib/session';
-import { getMe } from '@/lib/api';
+import { saveSession, pageDArrivee, type Session } from '@/lib/session';
+import { getMe, getEspaces, changerEspace, type EspaceDuCompte } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { Icone } from '@/components/Icone';
 
@@ -15,10 +15,19 @@ function initials(email: string): string {
   return s.toUpperCase();
 }
 
+/** Le libellé d'un rôle. Un manager n'est pas un agent : il affecte les conversations et lit la conformité. */
+function libelleRole(role: string, t: (fr: string, en: string) => string): string {
+  if (role === 'admin') return t('Administrateur', 'Administrator');
+  if (role === 'manager') return t('Manager', 'Manager');
+  if (role === 'agent') return t('Agent', 'Agent');
+  return role;
+}
+
 /**
  * Menu « Compte » en dropdown, à droite du header. Clic-dehors + Échap pour fermer. Items rôle-aware :
  * admin -> Compte (gestion équipe), Abonnement + Billing (désactivés, câblage Stripe hors lot), Déconnexion ;
- * agent -> Déconnexion seule. Tailwind pur, aucune dépendance.
+ * agent -> Déconnexion seule. Pour tous, « Changer d'espace » juste au-dessus de Déconnexion quand l'adresse en ouvre
+ * plusieurs, et le nom de l'espace actuel en tête. Tailwind pur, aucune dépendance.
  */
 export function AccountMenu({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
@@ -31,13 +40,41 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
    * deviné ici. Un confort d'accès : `/ops` a sa propre garde, et ce lien n'ouvre rien à lui seul.
    */
   const [exploitation, setExploitation] = useState(false);
+  /**
+   * Les espaces de l'adresse (RC3), lus à la première ouverture comme `/me`, jamais à chaque page. `[]` tant qu'ils ne
+   * sont pas lus, et pour toujours si la lecture échoue (API d'avant la route) : l'entrée n'apparaît simplement pas.
+   */
+  const [espaces, setEspaces] = useState<EspaceDuCompte[]>([]);
+  const [bascule, setBascule] = useState<string | null>(null);
+  const [erreurBascule, setErreurBascule] = useState<string | null>(null);
   const demande = useRef(false);
 
   useEffect(() => {
     if (!open || demande.current || session.observation) return;
     demande.current = true;
     getMe(session.tenantId).then((m) => setExploitation(m.exploitation === true)).catch(() => {});
+    getEspaces(session.tenantId).then(setEspaces).catch(() => {});
   }, [open, session.tenantId, session.observation]);
+
+  const actuel = espaces.find((e) => e.actuel);
+  const autres = espaces.filter((e) => !e.actuel);
+
+  /**
+   * Basculer : la session neuve REMPLACE l'ancienne, puis un rechargement complet vers la page d'arrivée de CE rôle,
+   * pour qu'aucun état de l'ancien espace ne survive en mémoire (listes, compteurs, brouillons).
+   */
+  async function basculer(cible: string): Promise<void> {
+    setBascule(cible);
+    setErreurBascule(null);
+    try {
+      const r = await changerEspace(session.tenantId, cible);
+      saveSession({ token: r.token, email: r.user.email, role: r.user.role, tenantId: r.user.tenantId });
+      window.location.assign(pageDArrivee(r.user.role));
+    } catch (e) {
+      setBascule(null);
+      setErreurBascule(e instanceof Error ? e.message : t('Changement d’espace impossible.', 'Could not switch workspace.'));
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -80,7 +117,8 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
         <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-carte border border-ink-200 bg-white py-1 shadow-mm-md" role="menu">
           <div className="border-b border-ink-100 px-3 py-2">
             <div className="truncate text-sm font-medium text-ink-900">{session.email}</div>
-            <div className="text-xs text-ink-500">{isAdmin ? t('Administrateur', 'Administrator') : t('Agent', 'Agent')}</div>
+            {actuel && <div className="truncate text-xs text-ink-700" data-testid="menu-espace-actuel">{actuel.tenantName}</div>}
+            <div className="text-xs text-ink-500">{libelleRole(session.role, t)}</div>
           </div>
           {/* Langue de l'interface (FR/EN), mémorisée par navigateur. */}
           <div className="flex items-center justify-between border-b border-ink-100 px-3 py-2">
@@ -113,6 +151,26 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
               {disabledItem(t('Abonnement', 'Subscription'))}
               {disabledItem(t('Billing', 'Billing'))}
             </>
+          )}
+          {/* Changer d'espace : seulement si l'adresse en ouvre un autre. Aucune preuve redemandée (décision de Julien) :
+              la connexion propose déjà ces espaces-là avec cette preuve-là. */}
+          {autres.length > 0 && (
+            <div className="border-t border-ink-100 py-1" data-testid="menu-changer-espace">
+              <div className="px-3 py-1 text-xs text-ink-500">{t('Changer d’espace', 'Switch workspace')}</div>
+              {autres.map((e) => (
+                <button
+                  key={e.tenantId}
+                  onClick={() => void basculer(e.tenantId)}
+                  disabled={bascule !== null}
+                  data-testid={`menu-espace-${e.tenantId}`}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink-900 hover:bg-ink-50 disabled:cursor-wait disabled:opacity-60"
+                >
+                  <span className="truncate">{e.tenantName}</span>
+                  <span className="shrink-0 text-xs text-ink-500">{bascule === e.tenantId ? t('Ouverture…', 'Opening…') : libelleRole(e.role, t)}</span>
+                </button>
+              ))}
+              {erreurBascule && <p className="px-3 py-1 text-xs text-danger" role="alert">{erreurBascule}</p>}
+            </div>
           )}
           <button onClick={onLogout} className="block w-full border-t border-ink-100 px-3 py-2 text-left text-sm text-danger hover:bg-ink-50">{t('Déconnexion', 'Log out')}</button>
         </div>

@@ -27,6 +27,23 @@ export function getMe(tenantId: string): Promise<MeResponse> {
   return request<MeResponse>(`/tenants/${tenantId}/me`);
 }
 
+// --- Changer d'espace sans se déconnecter (menu du compte) ---
+
+/** Un espace de l'identité de la session. `actuel` : celui de la session. */
+export interface EspaceDuCompte { tenantId: string; tenantName: string; role: string; actuel: boolean }
+/**
+ * Les espaces que l'adresse connectée peut ouvrir. Une réponse sans liste (API d'avant la route, corps inattendu)
+ * vaut aucune : le menu n'affiche alors simplement pas l'entrée.
+ */
+export async function getEspaces(tenantId: string): Promise<EspaceDuCompte[]> {
+  const r = await request<{ espaces?: unknown }>(`/tenants/${tenantId}/espaces`);
+  return Array.isArray(r.espaces) ? (r.espaces as EspaceDuCompte[]) : [];
+}
+/** Une session sur l'espace `cible`, de la même forme qu'une connexion, et qui expire quand l'actuelle expire. */
+export function changerEspace(tenantId: string, cible: string): Promise<LoginResult> {
+  return request<LoginResult>(`/tenants/${tenantId}/changer-espace`, { method: 'POST', body: JSON.stringify({ tenantId: cible }) });
+}
+
 export type AccountDot = 'green' | 'amber' | 'red' | 'grey';
 export interface AccountStatusResponse {
   hasNumber: boolean;

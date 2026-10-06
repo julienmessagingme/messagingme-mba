@@ -153,6 +153,15 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   espaces de travail. Un seul mot de passe pour tous, comme chez Slack ou Notion. À la connexion, si l'adresse
   n'en dessert qu'un (le cas courant), **rien ne change** : on entre directement. Si elle en dessert plusieurs,
   un écran demande lequel ouvrir. Le rôle peut différer d'un espace à l'autre : admin ici, agent là.
+- ✅ **Changer d'espace sans se déconnecter** (2026-10-06) : dans le menu du compte, en haut à droite, juste
+  au-dessus de « Déconnexion », **« Changer d'espace »** liste les autres espaces de l'adresse (leur nom, le rôle en
+  petit). En choisir un y fait entrer directement, **sans redemander le mot de passe ni le code**, avec le rôle qu'on
+  a dans cet espace, sur sa page d'arrivée (l'Accueil pour un administrateur, l'Inbox sinon), la page entière étant
+  rechargée pour que rien de l'espace quitté ne reste affiché. L'entrée n'apparaît **qu'à partir de deux espaces**.
+  Le **nom de l'espace où l'on est** s'affiche en tête du menu, sous l'adresse, avec le rôle (un manager y est
+  désormais affiché « Manager », plus « Agent »). La bascule **ne prolonge pas la session** : elle se termine à la
+  même heure qu'avant. Un espace suspendu n'est pas proposé, et une session d'observation (exploitation) ne bascule
+  pas.
 - ✅ **Observer l'espace d'un client** (2026-08-21, interne) : depuis la surface d'exploitation, on entre dans
   un espace pour voir exactement ce que le client voit. **En lecture seule** : aucune modification n'est
   possible, et regarder une conversation ne la marque pas comme lue chez lui. Un bandeau rappelle en
