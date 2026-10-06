@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import type { FastifyInstance, RouteOptions } from 'fastify';
 import { buildServer, modulesDeRoutes } from '../src/server';
 import type { ClasseDAcces, ServerDeps } from '../src/server';
-import { signSession } from '../src/auth/token';
+import { signSession, signLienNumero } from '../src/auth/token';
 import { FakeQueue } from './fake-queue';
 import { gardesOuvertes } from './gardes';
 
@@ -47,6 +47,8 @@ export interface ServeurSonde {
   remettreAZero(): void;
   /** Une session signée avec le secret de ce serveur. */
   jeton(tenantId: string, role: 'admin' | 'manager' | 'agent'): Promise<string>;
+  /** Le jeton du lien de connexion du numéro (lot 3c), signé avec le secret de ce serveur. */
+  lien(tenantId: string): Promise<string>;
 }
 
 /** Un identifiant bien formé pour les paramètres autres que l'espace : un uuid mal formé rendrait 404 tôt. */
@@ -119,5 +121,6 @@ export async function serveurSonde(): Promise<ServeurSonde> {
     atteint: (r) => atteints.has(r.options as RouteOptions),
     remettreAZero: () => { appels = 0; atteints.clear(); },
     jeton: (tenantId, role) => signSession({ userId: '11111111-1111-4111-8111-111111111111', tenantId, role }, secret),
+    lien: (tenantId) => signLienNumero({ userId: '11111111-1111-4111-8111-111111111111', tenantId, mode: 'fourni' }, secret),
   };
 }

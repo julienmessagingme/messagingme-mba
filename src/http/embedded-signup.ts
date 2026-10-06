@@ -138,9 +138,20 @@ export function cleDemandeCode(phoneNumberId: string): string {
  *    enregistre le numéro sur la Cloud API.
  * Les deux dernières existent parce que la fenêtre Meta peut se terminer sur un numéro non vérifié.
  */
-export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
+export function registerEmbeddedSignup(
+  app: FastifyInstance,
+  deps: EmbeddedSignupRouteDeps,
+  /**
+   * La garde des quatre routes de la connexion : `adminOuLien`, la session d'admin OU le lien que donne Claude Code
+   * (lot 3c). « Délier » et « relier » ne sont pas de la connexion : elles restent sur `gardeAdmin`.
+   */
+  garde: Guard,
+  gardeAdmin: Guard,
+  limiteCouteuse?: PreHandler,
+): void {
   const journal = makeJournal(deps.audit);
   const opts = { preHandler: garde };
+  const optsAdmin = { preHandler: gardeAdmin };
   // Les deux routes d'activation appellent Meta sur un quota étroit : elles portent la limite coûteuse, comme
   // l'import ou l'aperçu de site.
   const couteux = gardeEtendue(garde, limiteCouteuse);
@@ -499,7 +510,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
    * messages reçus ne sont plus enregistrés. Rien n'est touché chez Meta ni supprimé chez nous : « Relier » se
    * fait d'un clic. Admin seulement (`g.admin`).
    */
-  app.post('/tenants/:tenantId/numero/delier', opts, async (req, reply) => {
+  app.post('/tenants/:tenantId/numero/delier', optsAdmin, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const r = await deps.delierNumero(tenant);
     if (r === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
@@ -514,7 +525,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
    * « Délier » repartent : `running` pour celles qui tournaient (reprises par le balayage), `scheduled` pour les
    * programmées.
    */
-  app.post('/tenants/:tenantId/numero/relier', opts, async (req, reply) => {
+  app.post('/tenants/:tenantId/numero/relier', optsAdmin, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const r = await deps.relierNumero(tenant);
     if (r === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });

@@ -85,7 +85,8 @@ import { activationPour } from './http/mba';
 import type { DepsReglageRepondeur } from './repondeur/reglage';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fetchUrlBorne } from './lib/page-distante';
-import { signSession } from './auth/token';
+import { signSession, signLienNumero } from './auth/token';
+import { lireEtatConnexion } from './otp/etat-connexion';
 import { ecrireHandoffEnabled } from './mba/handoff';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
@@ -509,6 +510,14 @@ async function main(): Promise<void> {
    * La transcription d'un appel de Meta part sur NOTRE clé, comme celle des vocaux : ce n'est la dépense d'aucun client.
    */
   const numerosFournis = new PgNumerosFournisStore(pool);
+  /**
+   * Le numéro WhatsApp connecté à un espace, en chiffres (`''` si son affichage est inconnu). Le MÊME pour la page du
+   * numéro fourni, la garde du lien de Claude Code (qui meurt à la connexion) et son outil d'attente (lot 3c).
+   */
+  const numeroConnecte = async (tenant: string): Promise<{ chiffres: string } | null> => {
+    const pn = await phoneStatusStore.getPhoneNumber(tenant);
+    return pn ? { chiffres: (pn.displayPhoneNumber ?? '').replace(/[^0-9]/g, '') } : null;
+  };
   const transcrireAppelOtp = async (audio: Buffer): Promise<string> => {
     if (!config.AI_GATEWAY_API_KEY || !config.TRANSCRIPTION_MODELE) throw new Error('transcription non configurée');
     const r = await transcrire(new FetchTransport(HTTP_TIMEOUT_MODELE_MS), {
@@ -2165,10 +2174,7 @@ async function main(): Promise<void> {
     // jamais relâché, son échéance EST le silence, commun à toutes les copies de l'API.
     numeroFourni: {
       numeros: numerosFournis,
-      numeroConnecte: async (tenant: string) => {
-        const pn = await phoneStatusStore.getPhoneNumber(tenant);
-        return pn ? { chiffres: (pn.displayPhoneNumber ?? '').replace(/[^0-9]/g, '') } : null;
-      },
+      numeroConnecte,
       verrous: verrousCourts,
       alertes: creerAlertesReserve({ verrous: verrousCourts, envoyer: (texte) => sendTelegram(`[mba-${NOM_API}] ${texte}`) }),
       seuilReserve: config.ALERTE_RESERVE_SEUIL,
@@ -2444,6 +2450,15 @@ async function main(): Promise<void> {
           outils: toolCatalog,
           reglages: settingsStore,
           repondeur: repondeurDeLaConsole,
+        },
+        // La connexion du numéro depuis Claude Code (lot 3c) : le lien signé avec le secret des sessions, vers la page
+        // `/brancher` de la console, et la MÊME lecture de l'état que cette page.
+        numero: {
+          signerLien: (l) => signLienNumero(l, config.AUTH_SECRET),
+          etat: (tenant) => lireEtatConnexion({ numeros: numerosFournis, numeroConnecte }, tenant),
+          urlConsole: config.APP_URL,
+          attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+          maintenant: () => Date.now(),
         },
       },
     },

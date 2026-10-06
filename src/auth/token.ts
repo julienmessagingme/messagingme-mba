@@ -13,6 +13,11 @@ export interface Session {
   impersonated?: true;
   /** L'adresse de l'exploitant qui observe. N'existe que sur une session d'emprunt : c'est elle qui dit qui regardait. */
   observateur?: string;
+  /**
+   * Posé par la seule garde `adminOuLien` quand l'autorité vient du lien de connexion du numéro (lot 3c), jamais par
+   * un jeton : une trace d'audit dit ainsi que l'écriture vient du lien que Claude Code a donné.
+   */
+  viaLien?: true;
 }
 
 function key(secret: string): Uint8Array {
@@ -260,4 +265,26 @@ export function signChoixOauth(c: ChoixOauth, secret: string): Promise<string> {
 }
 export function verifyChoixOauth(token: string, secret: string): Promise<ChoixOauth | null> {
   return verifierKind('oauth_choix', choixOauth, token, secret);
+}
+
+/**
+ * LE LIEN DE CONNEXION DU NUMÉRO (lot 3c, livraison A). Claude Code le donne au client : il ouvre la page
+ * « Connecter WhatsApp » d'UN espace sans passer par la console. 🔴 Ce n'est pas une session : son `kind` fait que
+ * `verifySession` le refuse, donc aucune route d'espace ne s'ouvre avec lui. Seule la garde `adminOuLien`
+ * (`src/auth/middleware.ts`) le lit, sur les seules routes de la page, et relit l'utilisateur en base à chaque appel.
+ * Une heure, rouvrable : le temps de payer, de faire la fenêtre de Meta et d'attendre l'appel (décision de Julien).
+ */
+export const DUREE_LIEN_NUMERO_MS = 3_600_000;
+const lienNumero = z.object({
+  tenantId: z.string().min(1),
+  userId: z.string().min(1),
+  mode: z.enum(['fourni', 'apporte']),
+});
+export type LienNumero = z.infer<typeof lienNumero>;
+
+export function signLienNumero(l: LienNumero, secret: string): Promise<string> {
+  return signerKind('lien_numero', { tenantId: l.tenantId, userId: l.userId, mode: l.mode }, secret, `${DUREE_LIEN_NUMERO_MS / 1000}s`);
+}
+export function verifyLienNumero(token: string, secret: string): Promise<LienNumero | null> {
+  return verifierKind('lien_numero', lienNumero, token, secret);
 }

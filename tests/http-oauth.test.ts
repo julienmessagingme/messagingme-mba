@@ -12,7 +12,7 @@ import type { CablageMcp } from '../src/mcp/outils';
 import { FakeQueue } from './fake-queue';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpAgentInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 
 /**
  * LES ROUTES OAUTH DEVANT `/mcp` (tâche 6 du plan `2026-10-03-oauth-mcp.md`), sur le serveur construit.
@@ -189,6 +189,7 @@ function monter(o: { publicApiUrl?: string } = {}) {
     ...mcpEtiquettesInertes,
     ...mcpWidgetsInertes,
     ...mcpAgentInerte,
+    ...mcpNumeroInerte,
   };
   const server = buildServer({
     queue: new FakeQueue(),

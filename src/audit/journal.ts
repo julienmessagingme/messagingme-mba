@@ -16,7 +16,7 @@ export type AuditSink = (
 /** Ce qu'une route appelle. L'acteur est déduit de la requête, l'appelant n'a pas à le construire. */
 export type Journal = (
   tenantId: string,
-  req: { auth?: { userId: string } },
+  req: { auth?: { userId: string; viaLien?: true } },
   action: AuditAction,
   target: { kind: string; id: string },
   detail?: Record<string, unknown>,
@@ -30,6 +30,8 @@ export type Journal = (
 export function makeJournal(audit?: AuditSink): Journal {
   return async (tenantId, req, action, target, detail = {}) => {
     if (!audit) return;
-    await tenter('audit ignoré:', () => audit(tenantId, { userId: req.auth?.userId ?? null, email: null }, action, target, detail));
+    // Une écriture faite par le lien de connexion du numéro que donne Claude Code (lot 3c, garde `adminOuLien`) le dit.
+    const detailFinal = req.auth?.viaLien === true ? { ...detail, via: 'lien_claude_code' } : detail;
+    await tenter('audit ignoré:', () => audit(tenantId, { userId: req.auth?.userId ?? null, email: null }, action, target, detailFinal));
   };
 }

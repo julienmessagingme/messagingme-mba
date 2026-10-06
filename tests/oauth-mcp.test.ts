@@ -10,7 +10,7 @@ import { FakeQueue } from './fake-queue';
 import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpAgentInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 
 /**
  * `/mcp` ET L'OAUTH (tâche 5 du plan `2026-10-03-oauth-mcp.md`).
@@ -75,6 +75,7 @@ function monter(o: { publicApiUrl?: string; apiParMinute?: number } = {}) {
     ...mcpEtiquettesInertes,
     ...mcpWidgetsInertes,
     ...mcpAgentInerte,
+    ...mcpNumeroInerte,
   };
   const server = buildServer({
     queue: new FakeQueue(),

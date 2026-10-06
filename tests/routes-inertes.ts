@@ -481,6 +481,20 @@ export const mcpWidgetsInertes: Pick<DepsMcp, 'widgets' | 'scenarios'> = {
  * L'agent IA et le crédit du MCP (lot 8a), pour les montages qui n'en parlent pas : les LECTURES rendent le vide (aucun
  * agent, solde nul), les ÉCRITURES lèvent. Leurs outils ont leur propre fichier, `tests/mcp-agent.test.ts`.
  */
+/**
+ * La connexion du numéro du MCP (lot 3c), pour les montages qui n'en parlent pas : la LECTURE de l'état rend un espace
+ * sans rien, la signature d'un lien lève. Ses outils ont leur propre fichier, `tests/mcp-numero.test.ts`.
+ */
+export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
+  numero: {
+    signerLien: neDevraitPasEtreAppelee('numero.signerLien'),
+    etat: async () => ({ fourni: null, code: null, connecte: null }),
+    urlConsole: 'https://console.inerte.test',
+    attendre: async () => {},
+    maintenant: () => Date.now(),
+  },
+};
+
 export const mcpAgentInerte: Pick<DepsMcp, 'agentIa'> = {
   agentIa: {
     gestion: {

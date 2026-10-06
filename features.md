@@ -3788,8 +3788,9 @@ depuis un assistant : elle reste un geste de la console.
 
 ✅ **En production, essai réel fait depuis Claude Code le 2026-10-03** : le serveur ajouté sans clé, la connexion et
 « Autoriser », Claude qui liste les conversations, puis la révocation depuis la console et Claude qui redemande une
-connexion. Même parcours vérifié dans l'app de bureau de Claude (onglet Code, `/mcp` puis « Connecter »). Restent à
-essayer : une adresse Google jamais vue qui crée son espace, et le même serveur en connecteur dans claude.ai.
+connexion. Même parcours vérifié dans l'app de bureau de Claude (onglet Code, `/mcp` puis « Connecter »). Le 2026-10-06,
+une adresse Google jamais vue a créé son espace par cette connexion, marqué « créé depuis Claude Code ». Reste à
+essayer : le même serveur en connecteur dans claude.ai.
 
 **À quoi ça sert.** Claude Desktop et claude.ai ne savent pas porter une clé d'API, et un nouvel utilisateur de
 Claude Code devait d'abord ouvrir la console pour en créer une. Désormais, la personne ajoute
@@ -3826,6 +3827,19 @@ template, aucune automation réveillée. Les appels comptent dans le plafond de 
 envoyée ou une conversation confiée par Claude connecté ainsi porte le nom de la personne qui l'a autorisé.
 L'ancienne adresse `https://mba.messagingme.app/mcp` reste à clé seulement. Ce qui change : les outils de l'agent IA
 et du crédit (ci-dessous) ne s'ouvrent qu'à cette connexion.
+
+### Brancher son numéro WhatsApp depuis Claude (2026-10-06)
+
+⏳ **Livraison A écrite, pas encore en production** (lot 3c). **À quoi ça sert.** Le client ne passe jamais par la
+console : Claude lui donne un lien, il clique, et la page de connexion de son numéro s'ouvre dans son espace, sans
+écran de connexion. Il y fait la fenêtre de Meta ; pendant ce temps, Claude suit le branchement, affiche dans le
+terminal le code de vérification d'un numéro fourni, et annonce le numéro connecté.
+
+**Ce qu'il faut savoir.** Le lien vaut une heure, peut se rouvrir pendant ce temps, et cesse de servir dès que le
+numéro est connecté ; passé l'heure, Claude en donne un autre. Il n'ouvre que la connexion du numéro de cet espace,
+rien d'autre de la console. Il est donné au nom de la personne connectée à Claude, qui doit être admin de l'espace :
+si elle cesse de l'être, le lien ne sert plus. Deux outils pour Claude : `start_whatsapp_connection` (numéro fourni
+ou apporté) et `watch_whatsapp_connection`, invisibles derrière une clé d'API.
 
 ### Construire un agent IA depuis Claude (2026-10-04)
 

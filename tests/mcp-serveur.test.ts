@@ -13,7 +13,7 @@ import * as catalogue from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 
 /**
@@ -110,6 +110,7 @@ function app(
     // Les outils des widgets ont leur fichier (`tests/mcp-widgets.test.ts`) : ici, ils ne servent à rien.
     ...mcpWidgetsInertes,
     ...mcpAgentInerte,
+    ...mcpNumeroInerte,
     ...reste,
   };
   const keys = new FakeApiKeys()
@@ -566,6 +567,9 @@ describe('serveur MCP : cohérence du catalogue', () => {
       // Le répondeur (lot 5) : il peut éteindre l'agent de Meta chez Meta, pour tous les contacts de l'espace.
       set_default_responder: [true, true, true],
       buy_credit: [false, false, true],
+      // La connexion du numéro (lot 3c) : un lien signé de plus à chaque appel, et une attente qui ne change rien.
+      start_whatsapp_connection: [false, false, false],
+      watch_whatsapp_connection: [false, true, false],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
     const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);

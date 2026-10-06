@@ -2543,6 +2543,16 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   se lit que sur SON numéro, reçu après l'attribution et dans les 15 minutes, jamais avec sa transcription. Un numéro
   refusé par Meta passe en `bloque` (sorti de la réserve, pas résilié). Sous `ALERTE_RESERVE_SEUIL` numéros libres,
   Telegram, au plus une fois par jour (verrou court `numeros.reserve-basse`).
+- 🔴 **Le lien de connexion du numéro que donne Claude Code** (lot 3c, `start_whatsapp_connection`, page `/brancher`).
+  Un JWT d'un genre à part (`kind: 'lien_numero'`, `signLienNumero`, une heure) : `verifySession` le refuse, donc
+  aucune route d'espace ne s'ouvre avec lui. Seule la garde `adminOuLien` (`makeRequireAdminOuLien`) l'accepte, et
+  elle n'est posée que sur les modules `numeroFourni` et `embeddedSignup` : `tests/scope-tenant.test.ts` appelle
+  chaque route d'espace avec ce jeton et exige un refus partout ailleurs. À chaque appel, l'utilisateur qui l'a
+  demandé est relu (actif, admin) ; une écriture est refusée (409 `lien_termine`) dès que l'espace a un numéro
+  connecté. Le jeton voyage après le `#` du lien, la page le garde dans `sessionStorage` et n'envoie jamais la
+  session de la console. L'état de la connexion (`lireEtatConnexion`, `src/otp/etat-connexion.ts`) est la MÊME
+  lecture pour la page (`GET /tenants/:tenantId/connexion-numero`) et pour `watch_whatsapp_connection`, qui rend la
+  main au plus tard à 25 s : le proxy de `api.messagingme.app` coupe une réponse à 45 (`proxy_read_timeout`).
 - 🔴 **Le crédit offert dépend de l'origine de l'espace** (`tenants.origine`, migration 0212) : `claude_code` quand
   l'espace naît par la connexion OAuth de Claude Code (`src/http/oauth.ts`), `console` sinon ; 1 €
   (`CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR`) contre 5 € (`CREDIT_OFFERT_MICRO_EUR`), lus dans la transaction de l'offre.

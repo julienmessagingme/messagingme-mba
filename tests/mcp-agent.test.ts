@@ -8,6 +8,7 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { AccesOauth, AccesOauthLookup } from '../src/oauth/store.pg';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
 import { OUTILS, type CablageMcp } from '../src/mcp/outils';
+import { OUTILS_NUMERO } from '../src/mcp/outils-numero';
 import type { DepsAgentMcp } from '../src/mcp/outils-agent';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
@@ -33,7 +34,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { bornesDesChamps, bornesZod, champsDe, muettes, type Borne } from './aide/bornes-zod';
 import { jamaisDesabonne } from './consentement';
-import { mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpNumeroInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 
@@ -321,6 +322,7 @@ function monter(o: Options = {}) {
   };
 
   const mcp: CablageMcp = {
+    ...mcpNumeroInerte,
     estDesabonne: jamaisDesabonne,
     inbox: {
       ...mcpInerte,
@@ -372,7 +374,9 @@ async function lister(server: Serveur, bearer: string): Promise<string[]> {
   return res.json<{ result: { tools: Array<{ name: string }> } }>().result.tools.map((t) => t.name).sort();
 }
 
-const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true).map((o) => o.nom);
+/** Les outils de la connexion du numéro (lot 3c) exigent aussi une personne : ils ont leur fichier, `tests/mcp-numero.test.ts`. */
+const OUTILS_DU_NUMERO = new Set(OUTILS_NUMERO.map((o) => o.nom));
+const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);
 
 /** Des arguments valides pour chaque outil de l'agent : ce qu'un appel qui passerait la garde ferait. */
 const ARGS: Record<string, Record<string, unknown>> = {

@@ -265,6 +265,18 @@ describe('🔴 l’étape d’espace, l’accesseur et le poseur', () => {
  * (étape absente) ET la preuve dynamique aussi (500 de l'accesseur au lieu du 403) ; filtre `acces ===
  * 'tenant'` retiré, les routes `session-ops` portent l'étape et la chaîne finale échoue.
  */
+/**
+ * Les routes de la page de connexion du numéro, SEULES à accepter le jeton du lien (`src/server.ts`). ⚠️ Une liste de
+ * routes, pas de modules : le module de la fenêtre de Meta porte aussi « délier » et « relier », que le lien n'ouvre pas.
+ */
+const ROUTES_DU_LIEN = new Set([
+  'POST /tenants/:tenantId/numero-fourni', 'GET /tenants/:tenantId/numero-fourni', 'POST /tenants/:tenantId/numero-fourni/remplacer',
+  'POST /tenants/:tenantId/numero-fourni/abandonner', 'GET /tenants/:tenantId/connexion-numero',
+  'GET /tenants/:tenantId/embedded-signup/config', 'POST /tenants/:tenantId/embedded-signup/complete',
+  'POST /tenants/:tenantId/numero/code', 'POST /tenants/:tenantId/numero/activer',
+]);
+const duLien = (r: RouteSondee): boolean => ROUTES_DU_LIEN.has(`${r.methode} ${r.chemin}`);
+
 describe('🔴 sur le serveur construit : chaque route :tenantId refuse une session d’un autre espace', () => {
   const A = 'aaaaaaaa-0000-4000-8000-000000000001';
   const B = 'bbbbbbbb-0000-4000-8000-000000000002';
@@ -320,6 +332,35 @@ describe('🔴 sur le serveur construit : chaque route :tenantId refuse une sess
       if (!juste) fautes.push(`${r.methode} ${r.chemin} -> ${res.statusCode} ${res.body.slice(0, 60)} handler=${s.atteint(r)} deps=${s.appelsDeps()}`);
     }
     expect(fautes, `routes qui ne refusent pas l’espace étranger avant tout travail : ${fautes.join(' ; ')}`).toEqual([]);
+  }, 60_000);
+
+  /**
+   * 🔴 LE JETON DU LIEN DE CONNEXION DU NUMÉRO N'OUVRE QUE LES ROUTES DE SA PAGE (lot 3c, livraison A). Claude Code le
+   * donne dans un terminal, il peut traîner dans un historique : il ne doit rien ouvrir d'autre. Partout ailleurs,
+   * `verifySession` le refuse (401) avant tout travail ; sur les modules de la page, la garde `adminOuLien` le laisse
+   * passer (les écritures rendent 409 ici : la dépendance bouchonnée dit « numéro connecté ») ; et même là, pour un
+   * AUTRE espace que le sien, le handler n'est jamais atteint.
+   */
+  it('🔴 le jeton du lien : refusé partout, sauf sur les routes de la page, et jamais pour un autre espace', async () => {
+    const jeton = await s.lien(A);
+    const fautes: string[] = [];
+    for (const r of sondees()) {
+      s.remettreAZero();
+      const res = await appeler(r, A, jeton);
+      const juste = duLien(r)
+        ? res.statusCode !== 401 && res.statusCode !== 403
+        : res.statusCode === 401 && !s.atteint(r) && s.appelsDeps() === 0;
+      if (!juste) fautes.push(`${r.module} ${r.methode} ${r.chemin} -> ${res.statusCode} handler=${s.atteint(r)}`);
+    }
+    for (const r of sondees().filter(duLien)) {
+      s.remettreAZero();
+      await appeler(r, B, jeton);
+      if (s.atteint(r)) fautes.push(`${r.module} ${r.methode} ${r.chemin} : handler atteint pour un autre espace`);
+    }
+    expect(fautes, `le jeton du lien ouvre trop, ou pas assez : ${fautes.join(' ; ')}`).toEqual([]);
+    // Garde de la garde : chaque route de la liste existe bien sur le serveur construit.
+    const montees = new Set(sondees().map((r) => `${r.methode} ${r.chemin}`));
+    expect([...ROUTES_DU_LIEN].filter((r) => !montees.has(r))).toEqual([]);
   }, 60_000);
 
   it('le sens inverse : sur SON espace, l’étape laisse passer et le handler lit l’espace vérifié', async () => {

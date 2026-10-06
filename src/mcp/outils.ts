@@ -15,6 +15,7 @@ import type { WorkflowResumeRow } from '../workflow/store.pg';
 import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
+import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 
 export { RefusOutil } from './saisie';
 
@@ -70,6 +71,8 @@ export interface DepsMcp extends DepsRepondre {
    * console (`src/index.ts`). Les outils n'y ajoutent aucun contrôle.
    */
   agentIa: DepsAgentMcp;
+  /** La connexion du numéro depuis Claude Code (lot 3c) : le lien signé et l'état, la MÊME lecture que la page. */
+  numero: DepsNumeroMcp;
   /**
    * 🔴 Le plafond des opérations coûteuses de la console, la MÊME instance que celle des routes, comptée par espace
    * sous la même clé : sans lui, le serveur MCP serait la porte qui contourne les dix opérations lourdes par minute
@@ -675,6 +678,8 @@ export const OUTILS: OutilMcp[] = [
   },
   // L'agent IA, sa connaissance et le crédit (lot 8a) : leur fichier, `src/mcp/outils-agent.ts`.
   ...OUTILS_AGENT,
+  // La connexion du numéro depuis Claude Code (lot 3c) : leur fichier, `src/mcp/outils-numero.ts`.
+  ...OUTILS_NUMERO,
 ];
 
 /**

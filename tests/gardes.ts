@@ -29,6 +29,7 @@ export const gardesOuvertes: Gardes = {
   auth: gardeOuverte,
   admin: gardeOuverte,
   encadrement: gardeOuverte,
+  adminOuLien: gardeOuverte,
   ops: gardeOuverte,
   plafondCouteux: plafondCoupe,
 };

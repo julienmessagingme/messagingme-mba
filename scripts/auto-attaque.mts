@@ -404,7 +404,7 @@ function dependancesDuRegistre(): Record<string, unknown> {
  */
 async function classesDesRoutes(deps: Record<string, unknown>): Promise<Map<string, { classe: ClasseDAcces; module: string }>> {
   const passe: PreHandler = async () => undefined;
-  const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe], ops: passe, plafondCouteux: plafondCoupe };
+  const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe], adminOuLien: [passe], ops: passe, plafondCouteux: plafondCoupe };
   const classes = new Map<string, { classe: ClasseDAcces; module: string }>();
   for (const m of modulesDeRoutes(deps as unknown as ServerDeps, bidon(), undefined, BASE_OAUTH)) {
     const seul = Fastify({ logger: false });

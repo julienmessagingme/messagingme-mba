@@ -88,7 +88,7 @@ import { registerWidgets, type WidgetsRouteDeps } from './http/widgets';
 import { registerMba } from './http/mba';
 import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
-import { makeRequireAuth, makeRequireRole, makeLimiteParTenant, makeRequireOps } from './auth/middleware';
+import { makeRequireAuth, makeRequireRole, makeLimiteParTenant, makeRequireOps, makeRequireAdminOuLien } from './auth/middleware';
 import type { Guard, PreHandler } from './auth/middleware';
 import { monterAvecEtapeEspace } from './http/scope';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
@@ -448,6 +448,12 @@ export interface Gardes {
   readonly admin: Guard;
   /** `admin` ou `manager` : consulter n'est pas décider (écrans de conformité). */
   readonly encadrement: Guard;
+  /**
+   * `admin`, OU le jeton du lien de connexion du numéro que donne Claude Code (lot 3c, `makeRequireAdminOuLien`).
+   * 🔴 Posée sur les SEULS modules de la page de connexion du numéro : chaque autre module qui la recevrait ouvrirait
+   * ses routes au lien. `tests/scope-tenant.test.ts` tient la liste. Sans le module du numéro fourni, elle vaut `admin`.
+   */
+  readonly adminOuLien: Guard;
   /** La session d'exploitation, pour les modules `session-ops`. Sans `auth`, elle refuse tout. */
   readonly ops: PreHandler;
   /** Le second plafond de débit, composé route par route sur les seules routes coûteuses. */
@@ -665,8 +671,9 @@ export function modulesDeRoutes(
     // `admin`, lecture comprise : l'écran n'est ouvert qu'aux administrateurs, et poser une bulle sur le site d'un
     // client décide qui répond à ses visiteurs.
     entree('widgets', 'tenant', deps.widgets, (app, d, g) => registerWidgets(app, d, g.admin)),
-    entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.admin, g.limiteCouteuse)),
-    entree('numeroFourni', 'tenant', deps.numeroFourni, (app, d, g) => registerNumeroFourni(app, d, g.admin, g.limiteCouteuse)),
+    // La page de connexion du numéro : `adminOuLien`, la session d'admin OU le lien que donne Claude Code (lot 3c).
+    entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.adminOuLien, g.admin, g.limiteCouteuse)),
+    entree('numeroFourni', 'tenant', deps.numeroFourni, (app, d, g) => registerNumeroFourni(app, d, g.adminOuLien, g.limiteCouteuse)),
     entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin)),
     entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin)),
     entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin)),
@@ -931,6 +938,21 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * restent sur `requireAdmin`. Cette ouverture bouge avec `web/lib/nav.ts`.
    */
   const requireEncadrement: Guard = [requireAuth, makeRequireRole(['admin', 'manager'])];
+  /**
+   * La garde de la page de connexion du numéro (lot 3c) : la même chaîne admin, OU le jeton du lien. Elle a besoin de
+   * savoir si l'espace a déjà un numéro connecté (c'est ce qui fait mourir le lien) : sans le module du numéro fourni,
+   * aucun lien n'est accepté et elle vaut la garde admin. Échouer dans ce sens-là ferme, il n'ouvre rien.
+   */
+  const numeroFourni = deps.numeroFourni;
+  const requireAdminOuLien: Guard = deps.auth && numeroFourni
+    ? makeRequireAdminOuLien({
+      requireAdmin: [requireAuth, makeRequireRole(['admin'])],
+      secret: deps.auth.secret,
+      loadState: deps.auth.getUserState,
+      limiteur: plafondUtilisateur,
+      numeroConnecte: (tenantId) => numeroFourni.numeroConnecte(tenantId),
+    })
+    : requireAdmin;
 
   /**
    * Le montage, en une seule boucle sur le registre : le module, sa garde et sa couverture tenant vivent dans
@@ -940,6 +962,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     auth: requireAuth,
     admin: requireAdmin,
     encadrement: requireEncadrement,
+    adminOuLien: requireAdminOuLien,
     // Une seule instance pour `/ops` et le réglage du plafond de l'API. Sans `deps.auth`, elle refuse tout.
     ops: makeRequireOps(deps.auth, deps.surveillanceOps),
     limiteCouteuse,

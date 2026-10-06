@@ -4,6 +4,7 @@ import type { VerrousCourts } from '../db/verrous-courts';
 import { espaceVerifie } from './scope';
 import { texteDe } from '../lib/erreur';
 import type { PgNumerosFournisStore } from '../otp/store.pg';
+import { lireEtatConnexion, empreinteEtat } from '../otp/etat-connexion';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
@@ -110,6 +111,13 @@ export function registerNumeroFourni(app: FastifyInstance, deps: NumeroFourniRou
     if (!n) return reply.code(200).send({ numero: null, code: null, codeRecuLe: null });
     const c = await deps.numeros.codeDeLEspace(tenant);
     return reply.code(200).send({ numero: affiche(n.numero), code: c?.code ?? null, codeRecuLe: c ? c.recuLe.toISOString() : null });
+  });
+
+  // Où en est la connexion du numéro (lot 3c) : la page `/brancher` la relit, et l'outil d'attente de Claude Code lit la
+  // MÊME chose (`lireEtatConnexion`). Lecture seule, hors plafond coûteux.
+  app.get('/tenants/:tenantId/connexion-numero', opts, async (req, reply) => {
+    const etat = await lireEtatConnexion(deps, espaceVerifie(req));
+    return reply.code(200).send({ etat, empreinte: empreinteEtat(etat) });
   });
 
   app.post('/tenants/:tenantId/numero-fourni/remplacer', couteux, async (req, reply) => {

@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { verifySession, verifySessionOps } from './token';
+import { verifySession, verifySessionOps, verifyLienNumero } from './token';
 import type { Session } from './token';
 import type { MfaStore } from './mfa-store.pg';
 import { ipIndicative, type SurveillanceOps } from '../ops/tentatives';
@@ -174,6 +174,62 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
       session.role = state.role; // rôle frais : les changements de rôle sont immédiats
     }
     req.auth = session;
+  };
+}
+
+/**
+ * LA GARDE DES ROUTES DE LA CONNEXION DU NUMÉRO (lot 3c, livraison A) : une session d'admin, exactement comme la garde
+ * `admin` (la même chaîne, appelée telle quelle), OU le jeton du lien que donne Claude Code (`verifyLienNumero`).
+ * Pour le jeton, à chaque appel :
+ *  - le plafond par utilisateur, sur celui qui a demandé le lien, comme pour une session ;
+ *  - 🔴 l'utilisateur relu en base : révoqué, supprimé ou rétrogradé, le lien ne sert plus ; l'espace suspendu non plus ;
+ *  - 🔴 une écriture refusée (409 `lien_termine`) dès que l'espace a un numéro connecté : c'est ce qui fait mourir le
+ *    lien. Les lectures restent permises jusqu'à son échéance, pour que la page affiche « connecté ».
+ * Elle pose `req.auth` sur l'espace DU JETON : l'étape d'espace, posée après elle au montage, compare ensuite l'URL,
+ * comme pour une session. ⚠️ Elle n'est posée que sur les modules de la page (`src/server.ts`) : c'est la liste
+ * qu'éprouve `tests/scope-tenant.test.ts`, un jeton de lien présenté ailleurs étant refusé par `verifySession`.
+ */
+export function makeRequireAdminOuLien(o: {
+  requireAdmin: PreHandler[];
+  secret: string;
+  loadState?: UserStateLoader;
+  limiteur?: RateLimiter;
+  numeroConnecte(tenantId: string): Promise<object | null>;
+}): PreHandler {
+  return async function adminOuLien(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+    const header = req.headers.authorization;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
+    const lien = token ? await verifyLienNumero(token, o.secret) : null;
+    if (!lien) {
+      // Pas un lien : la garde admin, maillon par maillon, comme Fastify l'aurait déroulée.
+      for (const maillon of o.requireAdmin) {
+        await maillon(req, reply);
+        if (reply.sent) return;
+      }
+      return;
+    }
+    if (o.limiteur && !(await consommerAvecEntetes(o.limiteur, lien.userId, reply))) return;
+    if (o.loadState) {
+      const etat = await o.loadState(lien.userId, lien.tenantId);
+      if (!etat || etat.disabled) {
+        await reply.code(401).send({ error: 'lien révoqué : redemandez-en un à Claude' });
+        return;
+      }
+      if (etat.tenantStatus === 'locked') {
+        await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
+        return;
+      }
+      if (etat.role !== 'admin') {
+        await reply.code(403).send({ error: 'réservé aux admins de l’espace' });
+        return;
+      }
+    }
+    const methode = req.method.toUpperCase();
+    if (methode !== 'GET' && methode !== 'HEAD' && (await o.numeroConnecte(lien.tenantId))) {
+      await reply.code(409).send({ error: 'le numéro est connecté : ce lien ne sert plus', code: 'lien_termine' });
+      return;
+    }
+    req.auth = { userId: lien.userId, tenantId: lien.tenantId, role: 'admin', viaLien: true };
   };
 }
 
