@@ -15,7 +15,8 @@ import { corpsDuRefus, type Issue } from '../lib/issue';
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
  *
  * La page « Connecter WhatsApp » obtient un numéro de notre réserve DIDWW et l'affiche ; le client le tape dans la
- * fenêtre de Meta et choisit la vérification par appel ; notre Asterisk capte le code (lot 3a) ; la page le lit ici et
+ * fenêtre de Meta, par appel si Meta laisse choisir, sinon par SMS, que la ligne fixe lit à voix haute ; notre
+ * Asterisk capte le code dans les deux cas (lot 3a, `src/otp/extraire-code.ts`) ; la page le lit ici et
  * l'affiche, et le client le recopie. Aucune de ces routes ne parle à Meta : c'est la fenêtre qui vérifie, puis la
  * route actuelle de l'inscription qui relie et active le numéro. En Embedded Signup v4, rien ne fait sauter l'écran du
  * numéro (mesuré le 2026-10-06), d'où ce parcours.

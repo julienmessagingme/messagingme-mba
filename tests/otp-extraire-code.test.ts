@@ -82,3 +82,39 @@ describe('extraireCodeOtp : l’anglais de Meta', () => {
     expect(extraireCodeOtp('your code is 863801, again your code is 863807')).toBeNull();
   });
 });
+
+/**
+ * 🔴 LE SMS DE META, LU À VOIX HAUTE PAR LA LIGNE FIXE (essai réel du 2026-10-06). La fenêtre de Meta peut imposer le
+ * SMS ; un numéro fixe britannique ne le reçoit pas, et l'opérateur le lit par un appel. Le code y est dit par
+ * centaines, le tiret prononcé « to » (« 927-341 » devient « nine hundred twenty seven to three hundred forty one »).
+ * La transcription réelle portait des chiffres ; les voici remplacés par un code inventé.
+ */
+describe('extraireCodeOtp : le SMS lu à voix haute', () => {
+  const REEL = 'You have a new message from WhatsApp received at the 6th of October 2026, 2.55pm. Your WhatsApp code 927 to 341. '
+    + "Don't share this code with others. To replay the message, press 1. To save the message, press 2. For more options, "
+    + 'press 3. To replay the message, press 1. To save the message, press 2. For more options, press 3. Goodbye!';
+
+  it('la transcription réelle du 2026-10-06 : trois chiffres, « to », trois chiffres, après « code »', () => {
+    expect(extraireCodeOtp(REEL)).toBe('927341');
+  });
+
+  it('les centaines en toutes lettres, avec ou sans « and »', () => {
+    expect(extraireCodeOtp('Your WhatsApp code nine hundred twenty seven to three hundred forty one.')).toBe('927341');
+    expect(extraireCodeOtp('your whatsapp code is nine hundred and seven to one hundred twelve')).toBe('907112');
+    expect(extraireCodeOtp('your code six hundred to eight hundred five')).toBe('600805');
+  });
+
+  it('lu deux fois, le même code : accepté ; deux codes différents : null', () => {
+    expect(extraireCodeOtp(`${REEL} ${REEL}`)).toBe('927341');
+    expect(extraireCodeOtp('your code 927 to 341. your code 927 to 342.')).toBeNull();
+  });
+
+  it('🔴 « to » ne recolle QUE trois chiffres et trois chiffres, juste après « code »', () => {
+    // Un « two » dicté et mal lu donnerait 3 + 1 + 3 = 7 chiffres : jamais un code de Meta, donc jamais recollé à tort.
+    expect(extraireCodeOtp('your code 12 to 3456')).toBeNull();
+    expect(extraireCodeOtp('your code 123 to 4567')).toBeNull();
+    expect(extraireCodeOtp('from 123 to 456')).toBeNull();
+    expect(extraireCodeOtp('your code is 8 6 3 to 8 0 1')).toBe('863801');
+    expect(extraireCodeOtp('your code twenty seven to three hundred forty one')).toBeNull();
+  });
+});

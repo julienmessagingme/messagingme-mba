@@ -9,6 +9,13 @@
  * Les homophones (« for », « to ») ne sont PAS lus comme des chiffres : la suite se coupe, et l'extraction échoue du
  * bon côté (aucun code plutôt qu'un code faux).
  *
+ * Le SMS de Meta, LU À VOIX HAUTE par la ligne fixe (essai réel du 2026-10-06) : la fenêtre de Meta peut imposer le
+ * SMS, qu'un numéro fixe britannique ne reçoit pas ; l'opérateur le lit par un appel, le code dit par centaines et son
+ * tiret prononcé « to » (« your WhatsApp code nine hundred twenty seven to three hundred forty one »). Seule exception
+ * à la règle des homophones, et étroite : juste après « code », trois chiffres, « to », trois chiffres se recollent. Un
+ * « two » dicté et mal lu donnerait 3 + 1 + 3 = 7 chiffres, jamais un code de Meta : le recollage ne fabrique pas de
+ * code faux.
+ *
  * 🔴 Unanimité ou rien : Meta plafonne à 10 demandes par numéro sur 72 h et un code faux consomme une tentative.
  * Deux suites de six chiffres différentes : `null`, et l'humain lit la transcription.
  */
@@ -23,6 +30,13 @@ const UNITES: Record<string, number> = {
   oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5, seven: 7, eight: 8, nine: 9,
 };
 const DIZAINES: Record<string, number> = { vingt: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60 };
+
+/** L'anglais par centaines du SMS lu à voix haute (« nine hundred and twenty seven »). */
+const CHIFFRES_EN: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
+const ADOS_EN: Record<string, number> = {
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const DIZAINES_EN: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
 
 /** Minuscules, sans accents, traits d'union et ponctuation ramenés à des espaces. */
 function normalise(v: string): string {
@@ -77,21 +91,53 @@ function lireNombre(tokens: string[], i: number): { valeur: number; longueur: nu
 }
 
 /**
+ * Une centaine anglaise à partir de `tokens[i]` (« nine hundred », « nine hundred and seven », « nine hundred twenty
+ * seven », « one hundred twelve »), ou null : 100..999, donc toujours trois chiffres. Seule la forme du SMS lu à voix
+ * haute la porte ; Meta, au téléphone, dicte chiffre par chiffre et ne dit jamais « hundred ».
+ */
+function lireCentaine(tokens: string[], i: number): { valeur: number; longueur: number } | null {
+  const centaine = CHIFFRES_EN[tokens[i] ?? ''];
+  if (centaine === undefined || tokens[i + 1] !== 'hundred') return null;
+  const base = centaine * 100;
+  // « and » n'est qu'un liant : il n'est consommé que si un nombre le suit.
+  const j = tokens[i + 2] === 'and' ? i + 3 : i + 2;
+  const t = tokens[j] ?? '';
+  const ado = ADOS_EN[t];
+  if (ado !== undefined) return { valeur: base + ado, longueur: j + 1 - i };
+  const dizaine = DIZAINES_EN[t];
+  if (dizaine !== undefined) {
+    const unite = CHIFFRES_EN[tokens[j + 1] ?? ''];
+    return unite === undefined ? { valeur: base + dizaine, longueur: j + 1 - i } : { valeur: base + dizaine + unite, longueur: j + 2 - i };
+  }
+  const unite = CHIFFRES_EN[t];
+  if (unite !== undefined) return { valeur: base + unite, longueur: j + 1 - i };
+  return { valeur: base, longueur: 2 };
+}
+
+/** Une suite de chiffres contiguë, avec les jetons qu'elle couvre (`fin` exclu). */
+interface Suite { chiffres: string; debut: number; fin: number }
+
+/**
  * Suites de chiffres contiguës de la transcription. Un mot qui n'est pas un nombre coupe la suite, pour ne pas
  * recoller le code avec un numéro de téléphone cité juste après.
  */
-function suitesDeChiffres(texte: string): string[] {
-  const tokens = normalise(texte).split(' ').filter((t) => t !== '');
-  const suites: string[] = [];
+function suitesDeChiffres(tokens: string[]): Suite[] {
+  const suites: Suite[] = [];
   let courante = '';
+  let debut = 0;
+  const fermer = (fin: number) => {
+    if (courante !== '') suites.push({ chiffres: courante, debut, fin });
+    courante = '';
+  };
   for (let i = 0; i < tokens.length; ) {
     const t = tokens[i]!;
+    if (courante === '') debut = i;
     if (/^\d+$/.test(t)) {
       courante += t;
       i += 1;
       continue;
     }
-    const nombre = lireNombre(tokens, i);
+    const nombre = lireCentaine(tokens, i) ?? lireNombre(tokens, i);
     if (nombre) {
       // Un nombre à deux chiffres en apporte deux : « douze trente-quatre cinquante-six » vaut « 1 2 3 4 5 6 ».
       courante += String(nombre.valeur);
@@ -99,12 +145,38 @@ function suitesDeChiffres(texte: string): string[] {
       continue;
     }
     // Jeton non numérique : il ferme la suite (un « et » isolé aussi ; entre deux nombres, lireNombre l'a consommé).
-    if (courante !== '') suites.push(courante);
-    courante = '';
+    fermer(i);
     i += 1;
   }
-  if (courante !== '') suites.push(courante);
+  fermer(tokens.length);
   return suites;
+}
+
+/** La suite commence juste après « code » (ou « code is ») : la forme du SMS de Meta, « your WhatsApp code ... ». */
+const apresCode = (tokens: string[], debut: number): boolean =>
+  tokens[debut - 1] === 'code' || (tokens[debut - 1] === 'is' && tokens[debut - 2] === 'code');
+
+/**
+ * Les suites, avec le code du SMS lu à voix haute recollé : juste après « code », trois chiffres, le seul jeton « to »,
+ * trois chiffres. Aucune autre suite ne se recolle.
+ */
+function suitesRecollees(texte: string): string[] {
+  const tokens = normalise(texte).split(' ').filter((t) => t !== '');
+  const suites = suitesDeChiffres(tokens);
+  const sortie: string[] = [];
+  for (let k = 0; k < suites.length; k += 1) {
+    const a = suites[k]!;
+    const b = suites[k + 1];
+    const recollable = b !== undefined && a.chiffres.length === 3 && b.chiffres.length === 3
+      && tokens[a.fin] === 'to' && b.debut === a.fin + 1 && apresCode(tokens, a.debut);
+    if (recollable) {
+      sortie.push(a.chiffres + b.chiffres);
+      k += 1;
+    } else {
+      sortie.push(a.chiffres);
+    }
+  }
+  return sortie;
 }
 
 /**
@@ -119,7 +191,7 @@ function candidatsDe(suite: string): string[] {
 
 /** Le code à 6 chiffres de la transcription, ou `null` s'il n'y en a aucun ou plusieurs différents. */
 export function extraireCodeOtp(transcription: string): string | null {
-  const candidats = suitesDeChiffres(transcription).flatMap(candidatsDe);
+  const candidats = suitesRecollees(transcription).flatMap(candidatsDe);
   if (candidats.length === 0) return null;
   return candidats.every((c) => c === candidats[0]) ? candidats[0]! : null;
 }

@@ -50,7 +50,8 @@ function signataire(personne: PersonneMcp | null): string {
 const CONSIGNES = {
   fourni: 'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
     + 'heure. Sur la page : « Payer 3,50 € HT par mois », puis le numéro s’affiche ; ensuite la fenêtre de Meta, « Enter a '
-    + 'new phone number », le numéro affiché, et la vérification par appel (« Phone call »). Appelle ensuite watch_whatsapp_connection : le code '
+    + 'new phone number », le numéro affiché, et la vérification par appel (« Phone call ») si Meta laisse choisir ; '
+    + 'sinon Meta envoie un SMS, qui arrive aussi. Appelle ensuite watch_whatsapp_connection : le code '
     + 'arrivera ici, lis-le-lui pour qu’elle le recopie dans la fenêtre de Meta.',
   apporte: 'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
     + 'heure. Sur la page : la fenêtre de Meta, son numéro, et le code qu’elle reçoit elle-même. Appelle ensuite '

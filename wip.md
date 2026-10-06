@@ -64,7 +64,8 @@ validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien
   MÊME transaction à 14 h 52, la facture payée juste après pose la fin de période ; le code de Meta capté et affiché
   dans le terminal de Claude Code ; le numéro relié à 14 h 57, `CONNECTED` et `VERIFIED` chez Meta ; 1 € offert.
   Meta a imposé le SMS : la ligne fixe l'a lu à voix haute, code non retenu (« ### to ### ») ; le code redemandé est
-  arrivé par appel. La résiliation par le portail ne donne rien avant la fin de période (aucun événement écouté) ; annulé ensuite
+  arrivé par appel. Corrigé le même jour : `extraireCodeOtp` lit aussi le SMS lu (centaines anglaises, trois chiffres
+  « to » trois chiffres juste après « code »), et la page comme la consigne de Claude disent que le SMS arrive aussi. La résiliation par le portail ne donne rien avant la fin de période (aucun événement écouté) ; annulé ensuite
   immédiatement dans Stripe : `resilie` à 15 h 14, l'alerte Telegram reçue (Julien), le numéro reste attribué (rien
   n'est coupé avant le lot 4). Ce qu'il a montré est dans `todo.md`. Reste à Julien : résilier chez DIDWW le numéro de
   l'essai du 3b (+44 1235 619343, en `bloque`), puis le passer en `resilie`.

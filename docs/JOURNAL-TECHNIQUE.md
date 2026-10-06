@@ -37,7 +37,12 @@ constats : la résiliation du portail est programmée en fin de période et Stri
 immédiate, elle, rend `resilie` et l'alerte ; et la fenêtre de Meta n'a pas laissé choisir la vérification : elle a
 envoyé le code par SMS, qu'une ligne fixe britannique ne reçoit pas, et l'opérateur l'a lu à voix haute par un appel
 (« You have a new message from WhatsApp… press 1 to replay »), le tiret du code prononcé « to » (« ### to ### ») : la
-lecture prudente ne l'a pas retenu. Julien a redemandé le code, Meta a appelé, et cet appel a donné un code neuf. La clé restreinte de l'API ne lit pas
+lecture prudente ne l'a pas retenu. Julien a redemandé le code, Meta a appelé, et cet appel a donné un code neuf.
+Corrigé le même jour (Julien : « le mieux, ce serait d'écouter dès le premier ») : `extraireCodeOtp` lit les centaines
+anglaises et recolle trois chiffres, « to », trois chiffres, juste après « code ». C'est la seule exception à la règle
+des homophones, et elle ne peut pas fabriquer de faux code : un « two » dicté et mal lu ferait sept chiffres. Le test
+part de la vraie transcription, chiffres remplacés, et les deux garde-fous (après « code », trois et trois) ont été
+retirés tour à tour pour voir le test rougir. La clé restreinte de l'API ne lit pas
 les abonnements chez Stripe (`subscription_read` absent) : voulu, rien n'en a besoin.
 
 **Le ménage avant l'essai commun** : l'espace de l'essai du 3b a été supprimé à la demande de Julien, par un script relu

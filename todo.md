@@ -10,10 +10,6 @@
 - **Les codes promo, si Julien les veut** : `allow_promotion_codes` sur la session d'abonnement
   (`creerSessionAbonnement`), et un code à 100 % rend la session `no_payment_required`, que le webhook ignore
   aujourd'hui (seule la facture à 0 € enregistrerait l'abonnement) : traiter ce statut comme payé.
-- **Lire le code du SMS que la ligne fixe lit à voix haute** (Julien le veut, 2026-10-06) : la fenêtre de Meta peut
-  imposer le SMS ; l'opérateur britannique le lit par un appel, le tiret du code prononcé « to » (« ### to ### »), que
-  `extraireCodeOtp` ne retient pas. Recoller trois chiffres, « to », trois chiffres (un « two » mal lu donnerait sept
-  chiffres, jamais un code), et dire sur la page et dans la consigne de Claude que le code arrive par appel ou par SMS.
 - **Ménage** : le numéro de l'essai du 3b (+44 1235 619343, `bloque`) est à résilier chez DIDWW (Julien), puis à
   passer en `resilie` dans la réserve.
 
