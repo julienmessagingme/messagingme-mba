@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { OUTILS_MAISON, outilExpose, outilMaison, outilsExposes, paramsEffectifs, paramsInitiaux } from '../src/agent/outils-maison';
 import { HANDLERS_MAISON } from '../src/agent/resolvers/mba';
+import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
+import { OUTILS_SURS } from '../src/agent/reglages';
 import type { OutilDefini } from '../src/agent/catalog';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE } from './gestes';
@@ -46,6 +48,49 @@ describe('catalogue des outils maison', () => {
     // l'appel tant que le client n'a pas coché l'autonomie sur cet outil : c'est ce qui rend ce drapeau
     // vivant dès maintenant, au lieu d'un réglage en sommeil jusqu'aux familles HTTP et MCP.
     expect(outilMaison('envoyer_bloc')?.risk).toBe('irreversible');
+  });
+
+  it('🔴 « marquer la conversation urgente » (RC2) : une écriture sans paramètre, hors des outils sûrs du MCP', () => {
+    const urgent = outilMaison('marquer_urgent');
+    expect(urgent?.nomDefaut).toBe('mba_marquer_urgent');
+    expect(urgent?.risk).toBe('write');
+    // Aucun paramètre : le modèle ne peut désigner aucune autre conversation que celle du tour.
+    expect(urgent?.params).toEqual([]);
+    expect(urgent?.paramsImposes).toBeUndefined();
+    expect(urgent?.nePasUtiliser.fr).toBe('Ne pas l’appeler pour une simple demande d’information.');
+    // Décision par défaut du plan : un agent tiers ne le pose pas par MCP, le client l'ajoute à la main.
+    expect((OUTILS_SURS as readonly string[]).includes('marquer_urgent')).toBe(false);
+  });
+
+  it('🔴 le bac à sable SIMULE l’urgence : aucune conversation réelle n’est marquée, l’agent continue', async () => {
+    // Le résolveur du bac à sable ne reçoit aucune dépendance d'écriture : il ne peut rien marquer, et il le dit au
+    // modèle, sans `rendu` ni `sortie`.
+    const simulation = creerResolveurSimulation({ connaissance: { chercher: async () => [] } });
+    const r = await simulation({
+      outil: outil([], 'marquer_urgent'), args: {}, signal: new AbortController().signal,
+      ctx: {
+        tenantId: 't1', agentId: 'ag1', sessionId: 's1', runId: 'r1', workflowId: 'wf1', waId: 'bac-a-sable', contact: null,
+        contactInconnu: 'tous', appelsRestants: 5, budgetRestantMicroEur: 10_000, deadline: Date.now() + 30_000,
+      },
+    });
+    expect(r.ok).not.toBe(false);
+    expect(r.contenu).toMatchObject({ simule: true });
+    expect(r).not.toHaveProperty('rendu');
+    expect(r).not.toHaveProperty('sortie');
+  });
+
+  it('🔴 le bac à sable connaît CHAQUE outil du catalogue : un oubli y refuserait l’outil à chaque essai', async () => {
+    const simulation = creerResolveurSimulation({ connaissance: { chercher: async () => [] } });
+    for (const o of OUTILS_MAISON) {
+      const r = await simulation({
+        outil: outil([], o.handler), args: {}, signal: new AbortController().signal,
+        ctx: {
+          tenantId: 't1', agentId: 'ag1', sessionId: 's1', runId: 'r1', workflowId: 'wf1', waId: 'bac-a-sable', contact: null,
+          contactInconnu: 'tous', appelsRestants: 5, budgetRestantMicroEur: 10_000, deadline: Date.now() + 30_000,
+        },
+      });
+      expect(r.erreur, o.handler).not.toBe('handler inconnu');
+    }
   });
 
   it('un handler inventé n’existe pas', () => {

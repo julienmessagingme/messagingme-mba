@@ -70,6 +70,11 @@ export interface InboxDep extends ConversationsRepondre {
    */
   signalerConversation(tenantId: string, conversationId: string, signale: boolean, par: AuteurDuChangement): Promise<boolean>;
   /**
+   * Marque une conversation urgente, ou retire l'urgence (migration 0216). `false` = inconnue dans cet espace -> 404.
+   * Une décision, pas un constat : la note d'urgence de l'analyse n'y entre pour rien.
+   */
+  marquerUrgente(tenantId: string, conversationId: string, urgente: boolean, par: AuteurDuChangement): Promise<boolean>;
+  /**
    * Marque une conversation « Traité », ou retire ce statut. `false` = inconnue dans cet espace -> 404.
    */
   marquerTraitee(tenantId: string, conversationId: string, traitee: boolean, par: AuteurDuChangement): Promise<boolean>;
@@ -312,8 +317,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // Query string = entrée non fiable. Chaque paramètre est lu dans sa forme attendue et ignoré sinon : un
     // filtre mal formé doit rendre la page normale, jamais une page vide qui se lirait « aucune conversation ».
     const q = (req.query ?? {}) as {
-      limit?: unknown; beforeAt?: unknown; beforeId?: unknown; id?: unknown;
-      aTraiter?: unknown; signalees?: unknown; archivees?: unknown; traitees?: unknown; affectee?: unknown;
+      limit?: unknown; beforeAt?: unknown; beforeId?: unknown; beforeUrgente?: unknown; id?: unknown;
+      aTraiter?: unknown; urgentes?: unknown; signalees?: unknown; archivees?: unknown; traitees?: unknown; affectee?: unknown;
     };
     const opts: ListConversationsOptions = {};
     /**
@@ -325,6 +330,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const limit = Number(q.limit);
     if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
     if (q.aTraiter === '1' || q.aTraiter === 'true') opts.aTraiter = true;
+    // Le dossier « Urgent » (migration 0216).
+    if (q.urgentes === '1' || q.urgentes === 'true') opts.urgentes = true;
     if (q.signalees === '1' || q.signalees === 'true') opts.signalees = true;
     // Le dossier archivé. Absent = les dossiers ordinaires, qui excluent les archivées : c'est le défaut,
     // et c'est celui qu'un appelant qui ne connaît pas ce paramètre doit obtenir.
@@ -338,7 +345,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (typeof q.affectee === 'string' && q.affectee !== '') opts.affectee = q.affectee;
     // Le curseur n'a de sens qu'entier : une moitié rendrait une page arbitraire, donc on exige les deux.
     if (typeof q.beforeAt === 'string' && q.beforeAt !== '' && typeof q.beforeId === 'string' && q.beforeId !== '') {
-      opts.before = { at: q.beforeAt, id: q.beforeId };
+      // Le rang d'urgence du point de reprise, que seul « À traiter » lit (`ListConversationsOptions.before`). Absent
+      // ou mal formé = non urgent, le rang de toute conversation pour une console d'avant 0216.
+      opts.before = { at: q.beforeAt, id: q.beforeId, urgente: q.beforeUrgente === '1' || q.beforeUrgente === 'true' };
     }
     const conversations = await deps.inbox.listConversations(tenant, opts);
     // `assignedToMe` est calculé ici plutôt que déduit à l'écran : la session du navigateur ne porte pas
@@ -400,6 +409,23 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       }
       invaliderCompteurs(tenant); // le dossier « Signalé » vient de changer de contenu.
       return reply.code(200).send({ signalee: signale });
+    });
+  }
+
+  /**
+   * Marquer urgent / ne plus marquer urgent (migration 0216). Même forme que le signalement, ouvert à tout rôle : un
+   * agent peut alerter sur la conversation d'un collègue, comme il peut la signaler. 🔴 L'auteur est pris dans la
+   * session, jamais dans le corps. `estUuid` avant la base : un identifiant mal formé ferait lever Postgres.
+   */
+  for (const [chemin, urgente] of [['urgent', true], ['ne-plus-urgent', false]] as const) {
+    app.post(`/tenants/:tenantId/conversations/:conversationId/${chemin}`, opts, async (req, reply) => {
+      const tenant = espaceVerifie(req);
+      const { conversationId } = req.params as { conversationId: string };
+      if (!estUuid(conversationId) || !(await deps.inbox.marquerUrgente(tenant, conversationId, urgente, parLaSession(req)))) {
+        return reply.code(404).send({ error: 'conversation inconnue' });
+      }
+      invaliderCompteurs(tenant); // « Urgent » et l'ordre de « À traiter » viennent de changer.
+      return reply.code(200).send({ urgente });
     });
   }
 

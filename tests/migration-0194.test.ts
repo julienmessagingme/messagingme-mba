@@ -19,14 +19,14 @@ const instructions = decouperInstructions(SQL)
   .filter((i) => i !== '');
 
 describe('migration 0194', () => {
-  it('🔴 le CHECK des types est la liste du code, dans le même ordre, moins ce que 0209 a ajouté', () => {
+  it('🔴 le CHECK des types est la liste du code, dans le même ordre, moins ce que 0209 et 0216 ont ajouté', () => {
     // Un type que le code écrit et que la base refuse fait échouer la BASCULE elle-même (même requête) : une
-    // escalade perdue, en 23514, pour une ligne de journal. Le CHECK EN VIGUEUR est celui de 0209, dont la parité
-    // exacte est tenue par `tests/migration-0209.test.ts` ; ici, que 0194 en reste le préfixe (0209 n'a rien retiré).
+    // escalade perdue, en 23514, pour une ligne de journal. Le CHECK EN VIGUEUR est celui de 0216, dont la parité
+    // exacte est tenue par `tests/migration-0216.test.ts` ; ici, que 0194 en reste le préfixe (rien n'a été retiré).
     const pose = instructions.find((i) => i.includes('add constraint conversation_evenements_type_check'));
     expect(pose, 'la pose du CHECK est introuvable').toBeDefined();
     const types = [...(pose ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-    expect(types).toEqual(TYPES_EVENEMENT.filter((t) => t !== 'sortie_agent'));
+    expect(types).toEqual(TYPES_EVENEMENT.filter((t) => !['sortie_agent', 'urgente', 'urgence_levee'].includes(t)));
   });
 
   it('🔴 elle retire le CHECK sous le nom que 0192 a posé, juste avant de reposer le sien, et rien d’autre', () => {

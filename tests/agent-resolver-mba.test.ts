@@ -26,6 +26,7 @@ function harnais(over: Partial<DepsResolveurMba> = {}) {
   const deps: DepsResolveurMba = {
     envoyerBloc: async (i) => { journal.push(`bloc:${i.code}`); return { ok: true }; },
     escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}:${i.agentId}`); return true; },
+    marquerUrgente: async (i) => { journal.push(`urgent:${i.tenantId}:${i.waId}:${i.agentId}`); return true; },
     poserTag: async (_t, _w, tag) => { journal.push(`tag:${tag}`); },
     ecrireChamp: async (_t, _w, cle, valeur) => { journal.push(`champ:${cle}=${valeur}`); },
     lireAnalyse: async (t, w) => { journal.push(`analyse:${t}:${w}`); return null; },
@@ -58,6 +59,31 @@ describe('résolveur maison (tâche 16)', () => {
       expect(sans, JSON.stringify(vide)).toEqual({ contenu: { sortie: 'fini' }, sortie: 'fini' });
       expect(sans, JSON.stringify(vide)).not.toHaveProperty('dernierMessage');
     }
+  });
+
+  it('🔴 « marquer_urgent » marque la conversation du contact du TOUR, et d’aucun autre', async () => {
+    // L'outil n'a aucun paramètre : un numéro glissé dans les arguments (injection réussie) n'atteint pas l'écriture.
+    const { resolveur, journal } = harnais();
+    const r = await resolveur(appel('marquer_urgent', { wa_id: '33699999999', conversation_id: 'une-autre' }));
+    expect(r.ok).not.toBe(false);
+    expect(r.contenu).toEqual({ urgente: true });
+    expect(journal).toEqual(['urgent:t1:33600:ag1']);
+  });
+
+  it('🔴 « marquer_urgent » ne termine rien : ni sortie, ni main rendue, l’agent continue de répondre', async () => {
+    // Urgent n'est pas un transfert (décision de Julien du 2026-10-06) : `rendu` arrêterait le tour, `sortie` ferait
+    // quitter le bloc. La preuve de bout en bout : `tests/agent-run-turn.test.ts`.
+    const { resolveur } = harnais();
+    const r = await resolveur(appel('marquer_urgent'));
+    expect(r).not.toHaveProperty('rendu');
+    expect(r).not.toHaveProperty('sortie');
+    expect(r).not.toHaveProperty('mainPrise');
+  });
+
+  it('« marquer_urgent » sans conversation pour ce contact : un échec dit au modèle, jamais levé', async () => {
+    const { resolveur } = harnais({ marquerUrgente: async () => false });
+    const r = await resolveur(appel('marquer_urgent'));
+    expect(r.ok).toBe(false);
   });
 
   it('« poser_tag » et « ecrire_variable » agissent, et refusent proprement un parametre manquant', async () => {

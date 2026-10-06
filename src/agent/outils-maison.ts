@@ -53,7 +53,7 @@ const P = (
 });
 
 /**
- * Les sept outils maison. `envoyer_bloc` est déclaré irréversible : un message parti ne se rappelle pas et
+ * Les huit outils maison. `envoyer_bloc` est déclaré irréversible : un message parti ne se rappelle pas et
  * il est facturé, donc le tronc commun le refuse tant que le client n'a pas coché l'autonomie sur cet outil.
  */
 export const OUTILS_MAISON: readonly OutilCatalogue[] = [
@@ -104,6 +104,25 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
       name: 'message', type: 'string', source: 'modele',
       description: 'Ta phrase au contact avant de passer la main, dans le ton de la conversation : qui prend le relais, ou quand l’équipe reprend si elle n’est pas joignable. Toujours rempli.',
     }],
+  },
+  {
+    // RC2 (migration 0216) : la conversation passe dans le dossier « Urgent » (et en tête de « À traiter » dès que
+    // l'équipe la tient : tant que l'agent répond, le fil est `app_workflow`, que « À traiter » exclut), et l'agent
+    // CONTINUE de répondre (urgent n'est pas un transfert). Posé sur aucun agent à la livraison, et absent des outils
+    // qu'un agent tiers peut poser par MCP (`OUTILS_SURS`) : le client l'ajoute à la main.
+    handler: 'marquer_urgent',
+    nomDefaut: 'mba_marquer_urgent',
+    titre: { fr: 'Marquer la conversation urgente', en: 'Mark the conversation as urgent' },
+    description: {
+      fr: 'À appeler quand la demande du contact presse vraiment : un problème qui le bloque, une réclamation, un délai qui expire. La conversation apparaît dans le dossier « Urgent » de l’équipe ; tu continues de lui répondre.',
+      en: 'Call when the contact’s request is truly pressing: a blocking problem, a complaint, a deadline about to expire. The conversation shows up in the team’s “Urgent” folder; you keep answering them.',
+    },
+    nePasUtiliser: {
+      fr: 'Ne pas l’appeler pour une simple demande d’information.',
+      en: 'Do not call it for a mere request for information.',
+    },
+    risk: 'write',
+    params: [],
   },
   {
     handler: 'chercher_connaissance',

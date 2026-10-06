@@ -70,6 +70,7 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
     'async marquerEscalade(',
     'private async basculerRangement(',
     'async signalerConversation(',
+    'private async basculerUrgence(',
     'async setAssignee(',
     'async prendreSiLibre(',
     'async ouvrirUneDemande(',
@@ -115,7 +116,25 @@ describe('chaque écriture de l’Inbox porte son événement dans sa propre req
     // `for update` bloque aussi les insertions filles (message, événement, analyse), dont la clé étrangère pose
     // `for key share` sur la conversation. Le verrou juste est celui que l'update prend lui-même.
     expect(source).not.toMatch(/for update\) avant/);
-    expect(source.match(/for no key update\) avant/g)).toHaveLength(6);
+    expect(source.match(/for no key update\) avant/g)).toHaveLength(7);
+  });
+
+  it('« Marquer urgent » de la console et l’outil de l’agent IA passent par la même bascule', () => {
+    expect(corps('async marquerUrgente(')).toContain('this.basculerUrgence(');
+    expect(corps('async marquerUrgenteParWaId(')).toContain('this.basculerUrgence(');
+  });
+
+  /**
+   * 🔴 « TRAITÉ » ET L'ARCHIVAGE LÈVENT L'URGENCE (migration 0216, décision de Julien du 2026-10-06), dans la MÊME
+   * requête que le rangement, et leurs deux événements sortent d'un seul `insert` (le compte ci-dessus l'exige). Sans
+   * ce retrait, une conversation rangée resterait en tête de « À traiter » le jour où le client réécrit. Son effet en
+   * base : `tests/integration/inbox-urgent.integration.test.ts`.
+   */
+  it('🔴 « Traité » et « Archivé », quand ils se posent, lèvent l’urgence et journalisent `urgence_levee`', () => {
+    const c = corps('private async basculerRangement(');
+    expect(c).toContain('urgente_le = case when $3::boolean then null else c.urgente_le end');
+    expect(c).toContain('urgente_par = case when $3::boolean then null else c.urgente_par end');
+    expect(c).toContain("(case when $3::boolean and maj.avant_urgente is not null then 'urgence_levee' end)");
   });
 
   it('🔴 « rendre » à l’agent de Meta se classe AVANT la lecture des colonnes', () => {

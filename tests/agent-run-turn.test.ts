@@ -622,7 +622,7 @@ describe('runTurn : la sortie et son dernier message', () => {
     timeoutMs: 8000, maxBytes: 16384, autonome: false,
   };
   const RESOLVEUR_MBA = creerResolveurMba({
-    envoyerBloc: async () => ({ ok: true }), escaladerVersHumain: async () => true, poserTag: async () => {},
+    envoyerBloc: async () => ({ ok: true }), escaladerVersHumain: async () => true, marquerUrgente: async () => true, poserTag: async () => {},
     ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
   });
 
@@ -669,5 +669,60 @@ describe('runTurn : la sortie et son dernier message', () => {
     const { deps, journal } = tour('{"sortie":"fini","message":""}');
     expect(await runTurn(JOB, deps)).toEqual({ fait: 'sorti', sortie: 'fini' });
     expect(journal).toEqual(['sortie:fini']);
+  });
+});
+
+/**
+ * 🔴 MARQUER LA CONVERSATION URGENTE N'EST PAS UN TRANSFERT (RC2, décision de Julien du 2026-10-06), de bout en bout :
+ * le tour, le vrai cerveau, le vrai exécuteur et le vrai résolveur de production. Le modèle marque, puis répond au
+ * contact dans le même tour : rien ne sort du bloc, la session n'est pas close, et l'urgence vise le contact du TOUR.
+ */
+describe('runTurn : marquer la conversation urgente, puis continuer', () => {
+  const URGENT: OutilDefini = { ...SANS_MCP, ...AUCUN_GESTE(),
+    id: 'o3', tenantId: 't1', origin: 'mba', name: 'mba_marquer_urgent',
+    description: 'Urgent.', params: paramsInitiaux(outilMaison('marquer_urgent')!),
+    binding: { handler: 'marquer_urgent' }, sourceId: null, requestId: null, nePasUtiliser: '', nature: 'integre' as const, outputPaths: [], risk: 'write',
+    timeoutMs: 8000, maxBytes: 16384, autonome: false,
+  };
+  const usage = { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 };
+
+  it('🔴 l’agent marque, puis répond : ni sortie, ni clôture de session, et le bon contact', async () => {
+    const journal: string[] = [];
+    const resolveur = creerResolveurMba({
+      envoyerBloc: async () => ({ ok: true }), escaladerVersHumain: async () => true, poserTag: async () => {},
+      marquerUrgente: async (i) => { journal.push(`urgent:${i.tenantId}:${i.waId}:${i.agentId}`); return true; },
+      ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
+    });
+    let n = 0;
+    const brain = creerCerveauGateway({
+      client: {
+        completer: async () => {
+          n += 1;
+          return n === 1
+            ? { texte: null, appelsOutils: [{ id: 'c1', nom: URGENT.name, argumentsJson: '{}' }], finish: 'tool_calls', usage, generationId: null }
+            : { texte: 'Je transmets en priorité à l’équipe.', appelsOutils: [], finish: 'stop', usage, generationId: null };
+        },
+      },
+      contexte: async () => ({
+        modele: 'm', mentionIa: 'Je suis une IA.', mentionIaFrequence: 'session' as const, sorties: [{ code: 'fini', label: 'Fini' }],
+        contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [URGENT],
+        plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
+      }),
+      commissionPct: 0,
+      outils: {
+        catalogue: { byName: async (_t: string, _a: string, nom: string) => (nom === URGENT.name ? URGENT : null), listActifs: async () => [URGENT] } satisfies ToolCatalog,
+        journal: { ouvrir: async () => 'j1', clore: async () => {} },
+        resolveurs: { mba: resolveur },
+        sessions: { compterAppel: async () => {} },
+        executerGeste: GESTE_MUET,
+      },
+    });
+    const { deps, envois, clotures, sorties } = make({ brain });
+    expect(await runTurn(JOB, deps)).toMatchObject({ fait: 'repondu' });
+    // Le contact du tour, l'agent de la session : le modèle n'a rien pu désigner d'autre (l'outil n'a aucun paramètre).
+    expect(journal).toEqual([`urgent:${JOB.tenantId}:${JOB.waId}:${SESSION.agentId}`]);
+    expect(envois).toEqual(['Je suis une IA.\n\nJe transmets en priorité à l’équipe.']);
+    expect(sorties).toEqual([]);
+    expect(clotures).toEqual([]);
   });
 });

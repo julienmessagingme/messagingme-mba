@@ -82,10 +82,22 @@ describe('les phrases de la frise', () => {
   it('chaque type a sa phrase, dans les deux langues', () => {
     const en = (_f: string, e?: string): string => e ?? '';
     for (const type of ['assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba', 'traitee', 'non_traitee',
-      'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte', 'escaladee', 'rendue_scenario', 'sortie_agent'] as const) {
+      'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte', 'escaladee', 'rendue_scenario', 'sortie_agent',
+      'urgente', 'urgence_levee'] as const) {
       expect(libelleEvenement(ev({ type }), fr), type).not.toBe('');
       expect(libelleEvenement(ev({ type }), en), type).not.toBe('');
     }
+  });
+
+  it('l’urgence (0216) : marquée par un collaborateur, ou par un agent IA que sa cause nomme, puis levée', () => {
+    expect(libelleEvenement(ev({ type: 'urgente', acteur: { nom: 'Marie' } }), fr)).toBe('Marquée urgente');
+    expect(origineEvenement(ev({ type: 'urgente', acteur: { nom: 'Marie' } }), fr)).toBe('par Marie');
+    // L'agent IA n'est pas un collaborateur : pas d'acteur, une cause, et surtout pas « ancien collaborateur ».
+    const parAgent = ev({ type: 'urgente', acteur: null, cause: 'automatique : agent IA Sophie' });
+    expect(origineEvenement(parAgent, fr)).toBe('automatique : agent IA Sophie');
+    expect(libelleEvenement(ev({ type: 'urgence_levee' }), fr)).toBe('Urgence levée');
+    // Un événement d'urgence venu du serveur passe la validation : sinon la frise le perdrait sans rien dire.
+    expect(lireDetail({ ...DETAIL, historique: [{ ...DETAIL.historique[0]!, type: 'urgente' }] })?.historique).toHaveLength(1);
   });
 });
 

@@ -231,7 +231,7 @@ export const champsInertes: Pick<FieldsRouteDeps, 'tenantCode' | 'contacts'> = {
 export const priseDeFilSansEffet = async (): Promise<void> => {};
 
 /** `compterConversations` absente : la route rendait ces zéros. */
-export const COMPTEURS_VIDES = { tout: 0, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
+export const COMPTEURS_VIDES = { tout: 0, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
 
 export const inboxInerte: Pick<InboxRouteDeps,
   'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'reprendreLaMain' | 'releaseControl'
@@ -257,7 +257,7 @@ export const inboxInerte: Pick<InboxRouteDeps,
 
 export const inboxDepInerte: Pick<InboxDep,
   'effacerMessages' | 'ouvrirConversationDuContact' | 'countUnread' | 'countATraiter' | 'compterConversations'
-  | 'archiverConversation' | 'signalerConversation' | 'marquerTraitee' | 'getAssignee' | 'setAssignee'
+  | 'archiverConversation' | 'signalerConversation' | 'marquerUrgente' | 'marquerTraitee' | 'getAssignee' | 'setAssignee'
   | 'prendreSiLibre' | 'membresPourAffectation' | 'markConversationRead' | 'getControlOwner' | 'detailConversation'> = {
   effacerMessages: neDevraitPasEtreAppelee('effacerMessages'),
   ouvrirConversationDuContact: async () => null,
@@ -267,6 +267,8 @@ export const inboxDepInerte: Pick<InboxDep,
   compterConversations: async () => COMPTEURS_VIDES,
   archiverConversation: async () => false,
   signalerConversation: async () => false,
+  // Absente : la route n'existait pas ; `false` rend le 404 d'une conversation inconnue.
+  marquerUrgente: async () => false,
   marquerTraitee: async () => false,
   // Absente : personne n'était considéré comme affecté, tout le monde écrivait. `undefined` (conversation
   // inconnue) est précisément le cas où `refusAffectation` ne se prononce pas.

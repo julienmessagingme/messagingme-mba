@@ -8,17 +8,17 @@
 export type TypeEvenement =
   | 'assignee' | 'desassignee' | 'prise_mba' | 'rendue_mba' | 'passee_par_mba'
   | 'traitee' | 'non_traitee' | 'archivee' | 'desarchivee' | 'signalee' | 'designalee' | 'rouverte'
-  | 'escaladee' | 'rendue_scenario' | 'sortie_agent';
+  | 'escaladee' | 'rendue_scenario' | 'sortie_agent' | 'urgente' | 'urgence_levee';
 
 /**
- * ⚠️ Un type que l'API écrit doit être ICI avant qu'elle ne l'écrive (ceux de 0194, puis `sortie_agent` de 0209) :
- * un type inconnu de l'écran est écarté par `lireDetail`, et la frise perdrait la ligne sans rien dire. La console
- * part avant l'API, donc cet ordre est celui du déploiement.
+ * ⚠️ Un type que l'API écrit doit être ICI avant qu'elle ne l'écrive (ceux de 0194, `sortie_agent` de 0209, puis
+ * `urgente` et `urgence_levee` de 0216) : un type inconnu de l'écran est écarté par `lireDetail`, et la frise perdrait
+ * la ligne sans rien dire.
  */
 export const TYPES_EVENEMENT: readonly TypeEvenement[] = [
   'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
   'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
-  'escaladee', 'rendue_scenario', 'sortie_agent',
+  'escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee',
 ];
 
 /** Un collaborateur, un collaborateur supprimé depuis, ou personne (un changement automatique porte sa cause). */
@@ -166,6 +166,12 @@ export function libelleEvenement(e: EvenementConversation, t: T): string {
     // La cause nomme la règle d'arrêt (« automatique : règle d'arrêt rdv_pris ») : la phrase dit seulement le geste.
     case 'sortie_agent':
       return t('L’agent IA a terminé', 'The AI agent finished');
+    // L'origine dit qui (« par Marie », ou la cause « automatique : agent IA Sophie ») ; une urgence levée par « Traité »
+    // ou l'archivage porte le même auteur que le geste, dont la ligne est juste au-dessus.
+    case 'urgente':
+      return t('Marquée urgente', 'Marked as urgent');
+    case 'urgence_levee':
+      return t('Urgence levée', 'No longer urgent');
   }
 }
 

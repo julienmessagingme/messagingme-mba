@@ -55,14 +55,16 @@ describe('migration 0209', () => {
     expect(magasin).toContain("on conflict (tenant_id) where systeme = 'repondeur'");
   });
 
-  it('🔴 le CHECK des types est EXACTEMENT la liste du code, sous le nom que 0192 a posé', () => {
-    // Un type que le code écrit et que la base refuse fait échouer l'écriture qui le porte, en 23514.
+  it('🔴 le CHECK des types est la liste du code, sous le nom que 0192 a posé, moins ce que 0216 a ajouté', () => {
+    // Un type que le code écrit et que la base refuse fait échouer l'écriture qui le porte, en 23514. Le CHECK EN
+    // VIGUEUR est celui de 0216, dont la parité exacte est tenue par `tests/migration-0216.test.ts` ; ici, que 0209 en
+    // reste le préfixe (0216 n'a rien retiré).
     const i = instructions.indexOf('alter table conversation_evenements drop constraint if exists conversation_evenements_type_check');
     expect(i).toBeGreaterThan(-1);
     const pose = instructions[i + 1] ?? '';
     expect(pose).toMatch(/^alter table conversation_evenements add constraint conversation_evenements_type_check check \(type in \(/);
     const types = [...pose.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-    expect(types).toEqual([...TYPES_EVENEMENT]);
+    expect(types).toEqual(TYPES_EVENEMENT.filter((t) => t !== 'urgente' && t !== 'urgence_levee'));
   });
 
   it('la table des alertes : une ligne par espace et par jour, la clé primaire EST la garde du « une par jour »', () => {

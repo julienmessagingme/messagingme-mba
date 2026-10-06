@@ -376,7 +376,7 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     )).rows[0]!.id;
     try {
       const c = await store.compterConversations(autre);
-      expect(c).toEqual({ tout: 0, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
+      expect(c).toEqual({ tout: 0, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
     } finally {
       await pool.query('delete from tenants where id = $1', [autre]);
     }

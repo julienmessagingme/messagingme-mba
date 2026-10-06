@@ -605,7 +605,22 @@ describe('GET /conversations — pagination et filtre', () => {
       url: '/tenants/t1/conversations?limit=25&aTraiter=1&beforeAt=2026-08-21T10:00:00.000Z&beforeId=abc',
       ...auth(),
     });
-    expect(recus[0]).toEqual({ limit: 25, aTraiter: true, before: { at: '2026-08-21T10:00:00.000Z', id: 'abc' } });
+    // Sans `beforeUrgente`, le rang vaut « non urgent » : celui de toute conversation pour une console d'avant 0216.
+    expect(recus[0]).toEqual({ limit: 25, aTraiter: true, before: { at: '2026-08-21T10:00:00.000Z', id: 'abc', urgente: false } });
+    await a.close();
+  });
+
+  it('🔴 le rang d’urgence du curseur est transmis : sans lui, « À traiter » reprendrait au mauvais endroit', async () => {
+    const { a, recus } = espion();
+    await a.inject({
+      method: 'GET',
+      url: '/tenants/t1/conversations?aTraiter=1&beforeAt=2026-08-21T10:00:00.000Z&beforeId=abc&beforeUrgente=1',
+      ...auth(),
+    });
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?urgentes=1', ...auth() });
+    expect(recus[0]).toEqual({ aTraiter: true, before: { at: '2026-08-21T10:00:00.000Z', id: 'abc', urgente: true } });
+    // Le dossier « Urgent » : le maillon qu'on oublie entre le magasin et l'écran est la ROUTE.
+    expect(recus[1]).toEqual({ urgentes: true });
     await a.close();
   });
 
@@ -922,6 +937,53 @@ describe('signaler à la main, et prendre le fil', () => {
   });
 
   /**
+   * LE STATUT URGENT (migration 0216, RC2). Même forme que le signalement : deux adresses, l'auteur pris dans la session,
+   * ouvert à tout rôle. Ce que la requête écrit vraiment : `tests/integration/inbox-urgent.integration.test.ts`.
+   */
+  it('🔴 « urgent » passe l’auteur pris dans la SESSION, jamais dans le corps', async () => {
+    const vus: Array<{ id: string; urgente: boolean; par: AuteurDuChangement }> = [];
+    const a = app({ inbox: { marquerUrgente: async (_t, id, urgente, par) => { vus.push({ id, urgente, par }); return true; } } });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/urgent`, ...auth(), payload: { parUserId: 'u-quelqu-un-dautre' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ urgente: true });
+    expect(vus).toEqual([{ id: CONV, urgente: true, par: { collaborateur: 'u1' } }]);
+    await a.close();
+  });
+
+  it('« ne plus marquer urgent » est une adresse à part', async () => {
+    const vus: boolean[] = [];
+    const a = app({ inbox: { marquerUrgente: async (_t, _id, urgente) => { vus.push(urgente); return true; } } });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/ne-plus-urgent`, ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ urgente: false });
+    expect(vus).toEqual([false]);
+    await a.close();
+  });
+
+  it('🔴 un AGENT peut marquer urgente la conversation confiée à un collègue (même règle que le signalement)', async () => {
+    // L'affectation décide qui ÉCRIT au client, pas qui peut alerter l'équipe : la route ne la consulte pas.
+    let lue = false;
+    const a = app({ inbox: {
+      marquerUrgente: async () => true,
+      getAssignee: async () => { lue = true; return 'u-collegue'; },
+    } });
+    const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/urgent`, ...authAgent() });
+    expect(res.statusCode).toBe(200);
+    expect(lue).toBe(false);
+    await a.close();
+  });
+
+  it('conversation inconnue ou d’un autre espace -> 404 ; identifiant mal formé -> 404 sans toucher la base', async () => {
+    let appels = 0;
+    const a = app({ inbox: { marquerUrgente: async () => { appels += 1; return false; } } });
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/urgent`, ...auth() })).statusCode).toBe(404);
+    expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/pas-un-uuid/urgent`, ...auth() })).statusCode).toBe(404);
+    expect(appels).toBe(1);
+    expect((await a.inject({ method: 'POST', url: `/tenants/AUTRE/conversations/${CONV}/urgent`, ...auth() })).statusCode).toBe(403);
+    await a.close();
+  });
+
+  /**
    * Ces cas montent le VRAI geste (`src/inbox/fil.ts`) sur un faux dépôt et un faux Meta : la route n'appelle plus
    * qu'un geste, et l'ordre « Meta d'abord » vit dans le module. L'écriture locale est celle du dépôt.
    */
@@ -1086,7 +1148,7 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
         marquerTraitee: async () => true,
         compterConversations: async () => {
           lectures += 1;
-          return { tout: 1, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
+          return { tout: 1, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
         },
       },
     });

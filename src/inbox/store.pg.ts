@@ -59,12 +59,20 @@ export interface ConversationSummary {
    * geste inverse du menu. Optionnel, lu comme « pas traitée ».
    */
   traitee?: boolean;
+  /**
+   * Marquée urgente (migration 0216), par un collaborateur ou un agent IA : la pastille rouge, le geste inverse du
+   * menu, et le RANG du curseur de « À traiter » (`ListConversationsOptions.before.urgente`). Optionnel, lu comme
+   * « pas urgente ».
+   */
+  urgente?: boolean;
 }
 /** Les chiffres du menu de dossiers de l'Inbox, lus ensemble puisqu'ils sont affichés ensemble. */
 export interface CompteursInbox {
   /** Toutes les conversations non archivées de l'espace. */
   tout: number;
   aTraiter: number;
+  /** Non archivées et marquées urgentes (migration 0216). Elles sont aussi comptées dans `tout`. */
+  urgentes: number;
   signalees: number;
   archivees: number;
   /** Non archivées et marquées « Traité ». Elles sont aussi comptées dans `tout`. */
@@ -88,10 +96,16 @@ export interface ListConversationsOptions {
   /**
    * Curseur : reprendre strictement après cette conversation, dans l'ordre d'affichage. On passe le dernier
    * élément de la page précédente. `at` est l'horodatage de son dernier message, `id` départage les ex æquo.
+   * `urgente` est son RANG dans « À traiter », le seul dossier qui trie d'abord sur l'urgence : la valeur que la page
+   * précédente a rendue (`ConversationSummary.urgente`), jamais relue en base, sinon une urgence posée ou levée entre
+   * deux pages déplacerait le point de reprise et ferait sauter des conversations. Absent = `false`, le rang de toute
+   * conversation d'avant 0216 ; ignoré hors de « À traiter ».
    */
-  before?: { at: string; id: string };
+  before?: { at: string; id: string; urgente?: boolean };
   /** N'garder que les fils dont le scénario ne s'occupe plus (onglet « À traiter »). */
   aTraiter?: boolean;
+  /** Le dossier « Urgent » : non archivées, marquées urgentes. Pas exclusif : elles restent dans « Tout ». */
+  urgentes?: boolean;
   /** Le dossier archivé. Absent ou faux = les dossiers ordinaires, qui excluent les archivées. */
   archivees?: boolean;
   /** Le dossier « Traité » : non archivées, marquées « Traité ». Pas exclusif : elles restent dans « Tout ». */
@@ -926,24 +940,39 @@ export class PgInboxStore implements InboxStore {
       where.push(`(c.signalee_le is not null or exists (select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive))`);
     }
     if (opts.traitees === true) where.push('c.traitee_le is not null');
+    // Le prédicat de l'index partiel `conversations_urgentes_idx` (migration 0216), mot pour mot.
+    if (opts.urgentes === true) where.push('c.urgente_le is not null');
     if (opts.affectee === 'aucune') {
       where.push('c.assigned_to is null');
     } else if (opts.affectee !== undefined) {
       params.push(opts.affectee);
       where.push(`c.assigned_to = $${params.length}::uuid`);
     }
+    /**
+     * 🔴 « À TRAITER » MET LES URGENTES EN TÊTE (migration 0216), et c'est le SEUL dossier qui le fait : les autres
+     * gardent l'ordre et le curseur d'avant. Le tri et le curseur y portent le même premier terme, le rang d'urgence :
+     * un curseur sans lui reprendrait, à la frontière entre urgentes et non urgentes, au milieu des mauvaises lignes
+     * (des doublons d'un côté, un trou de l'autre).
+     */
+    const urgentesEnTete = opts.aTraiter === true;
     if (opts.before) {
       // Comparaison de tuple : `(a, b) < (x, y)` suit exactement l'ordre de tri, donc la page suivante reprend
-      // pile où la précédente s'est arrêtée, même quand deux fils partagent le même horodatage.
-      params.push(opts.before.at, opts.before.id);
-      where.push(`(c.last_message_at, c.id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`);
+      // pile où la précédente s'est arrêtée, même quand deux fils partagent le même horodatage. En tri descendant,
+      // `false < true` : une page commencée chez les urgentes passe ensuite aux autres.
+      if (urgentesEnTete) {
+        params.push(opts.before.urgente === true, opts.before.at, opts.before.id);
+        where.push(`((c.urgente_le is not null), c.last_message_at, c.id) < ($${params.length - 2}::boolean, $${params.length - 1}::timestamptz, $${params.length}::uuid)`);
+      } else {
+        params.push(opts.before.at, opts.before.id);
+        where.push(`(c.last_message_at, c.id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`);
+      }
     }
     params.push(limit);
 
     const res = await this.pool.query<{
       id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date; curseur: string;
       control_owner: ControlOwner; unread: boolean; assigned_to: string | null; assigned_name: string | null;
-      signalee_main: boolean; traitee: boolean;
+      signalee_main: boolean; traitee: boolean; urgente: boolean;
     }>(
       // curseur : le même instant que last_message_at, en texte à la microseconde (`ConversationSummary.curseur`).
       `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner,
@@ -955,12 +984,15 @@ export class PgInboxStore implements InboxStore {
               -- ⚠️ Aucun accent grave dans ce commentaire : il vit DANS un gabarit TypeScript.
               coalesce(u.name, u.email) as assigned_name,
               (c.signalee_le is not null) as signalee_main,
-              (c.traitee_le is not null) as traitee
+              (c.traitee_le is not null) as traitee,
+              -- 🔴 urgente_le (migration 0216) est NOMMEE ici et dans le tri : la migration passe donc AVANT le
+              -- deploiement, sans quoi cette liste rend 42703 et l Inbox entiere tombe a chaque rafraichissement.
+              (c.urgente_le is not null) as urgente
        from conversations c
        left join contacts ct on ct.id = c.contact_id
        left join users u on u.id = c.assigned_to
        where ${where.join(' and ')}
-       order by c.last_message_at desc, c.id desc
+       order by ${urgentesEnTete ? '(c.urgente_le is not null) desc, ' : ''}c.last_message_at desc, c.id desc
        limit $${params.length}`,
       params,
     );
@@ -977,6 +1009,7 @@ export class PgInboxStore implements InboxStore {
       assignedToName: r.assigned_name,
       signaleeMain: r.signalee_main === true,
       traitee: r.traitee === true,
+      urgente: r.urgente === true,
     }));
   }
 
@@ -1043,11 +1076,12 @@ export class PgInboxStore implements InboxStore {
    */
   async compterConversations(tenantId: string): Promise<CompteursInbox> {
     const res = await this.pool.query<{
-      tout: string; a_traiter: string; signalees: string; archivees: string; traitees: string; non_affectees: string;
+      tout: string; a_traiter: string; urgentes: string; signalees: string; archivees: string; traitees: string; non_affectees: string;
     }>(
       `select
          count(*) filter (where c.archived_at is null)::text as tout,
          count(*) filter (where c.archived_at is null and ${A_TRAITER_SQL})::text as a_traiter,
+         count(*) filter (where c.archived_at is null and c.urgente_le is not null)::text as urgentes,
          count(*) filter (where c.archived_at is null and (c.signalee_le is not null or exists (
            select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive)))::text as signalees,
          count(*) filter (where c.archived_at is not null)::text as archivees,
@@ -1078,6 +1112,7 @@ export class PgInboxStore implements InboxStore {
     return {
       tout: Number(r?.tout ?? 0),
       aTraiter: Number(r?.a_traiter ?? 0),
+      urgentes: Number(r?.urgentes ?? 0),
       signalees: Number(r?.signalees ?? 0),
       archivees: Number(r?.archivees ?? 0),
       traitees: Number(r?.traitees ?? 0),
@@ -1129,6 +1164,12 @@ export class PgInboxStore implements InboxStore {
    * à répondre ; « Archivé », sinon le fil quitte la liste sans que rien ne le rende jamais à l'agent (le balayage
    * saute les escalades).
    *
+   * 🔴 ET ILS LÈVENT L'URGENCE quand ils se posent (migration 0216, décision de Julien du 2026-10-06) : une conversation
+   * traitée ou rangée n'attend plus rien, une urgence laissée là resterait en tête de « À traiter » le jour où le client
+   * réécrit, pour une raison périmée. Dans la MÊME instruction, avec son événement `urgence_levee` (même acteur, même
+   * cause que le geste) seulement si l'urgence était posée : les deux événements sortent d'un seul `insert`, celui du
+   * geste écrit en dernier pour que la frise, du plus récent au plus ancien, le montre au-dessus.
+   *
    * Idempotent pour l'appelant (rendre `true` sur une conversation déjà rangée), mais pas pour le journal :
    * l'événement ne s'écrit que si la colonne passe de nulle à posée, ou l'inverse. `colonne` ne vient jamais
    * d'une entrée : c'est l'un des deux littéraux du type.
@@ -1156,16 +1197,22 @@ export class PgInboxStore implements InboxStore {
       // lu dans un sous-select VERROUILLÉ : c'est lui qui dit si le geste change quelque chose.
       `with maj as (
          update conversations c set ${colonne} = case when $3::boolean then now() else null end,
+                urgente_le = case when $3::boolean then null else c.urgente_le end,
+                urgente_par = case when $3::boolean then null else c.urgente_par end,
                 escaladee_le = case when $3::boolean then null else c.escaladee_le end${relance}
-           from (select id as avant_id, ${colonne} as avant_valeur
+           from (select id as avant_id, ${colonne} as avant_valeur, urgente_le as avant_urgente
                    from conversations where id = $1 and tenant_id = $2 for no key update) avant
           where c.id = avant.avant_id
-         returning c.id, avant.avant_valeur
+         returning c.id, avant.avant_valeur, avant.avant_urgente
        ),
        evenement as (
          insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cause)
-         select $2, maj.id, case when $3::boolean then $6::text else $7::text end, ${acteurSql('$4', '$2')}, $5::text
-           from maj where (maj.avant_valeur is null) = $3::boolean
+         select $2, maj.id, e.type, ${acteurSql('$4', '$2')}, $5::text
+           from maj cross join lateral (values
+             (case when $3::boolean and maj.avant_urgente is not null then 'urgence_levee' end),
+             (case when (maj.avant_valeur is null) = $3::boolean then case when $3::boolean then $6::text else $7::text end end)
+           ) e (type)
+          where e.type is not null
        )
        select id from maj`,
       [conversationId, tenantId, pose, auteur.acteur, auteur.cause, types[0], types[1]],
@@ -1200,6 +1247,66 @@ export class PgInboxStore implements InboxStore {
        )
        select id from maj`,
       [conversationId, tenantId, signale, auteur.acteur, auteur.cause],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Marque une conversation urgente, ou retire l'urgence (migration 0216), depuis la console. Même contrat que
+   * `signalerConversation` : `false` = inconnue dans cet espace (404), idempotent pour l'appelant, et un événement
+   * `urgente` / `urgence_levee` seulement si l'état change.
+   *
+   * 🔴 UNE DÉCISION, PAS UN CONSTAT : n'écrit ni ne lit `conversation_analysis.urgence`, la note de l'analyse, que
+   * chaque ré-analyse recalcule (même séparation que `signalee_le` et `abusive`).
+   */
+  async marquerUrgente(tenantId: string, conversationId: string, urgente: boolean, par: AuteurDuChangement): Promise<boolean> {
+    return this.basculerUrgence(tenantId, 'id', conversationId, urgente, par);
+  }
+
+  /**
+   * Marque urgente la conversation d'un numéro : l'outil `mba_marquer_urgent` d'un agent IA, qui ne connaît que le
+   * contact de son tour (`ContexteAppel.waId`), et la conversation est unique par `(tenant_id, wa_id)`. `par` porte la
+   * cause qui nomme l'agent : il n'est pas un collaborateur, donc `urgente_par` reste nul et c'est l'événement qui dit
+   * « agent IA ». `false` = aucune conversation pour ce numéro dans cet espace.
+   */
+  async marquerUrgenteParWaId(tenantId: string, waId: string, par: AuteurDuChangement): Promise<boolean> {
+    return this.basculerUrgence(tenantId, 'wa_id', waId, true, par);
+  }
+
+  /**
+   * Pose ou retire l'urgence, et son événement, dans la même requête. `cle` ne vient jamais d'une entrée : c'est l'un
+   * des deux littéraux du type. Poser une urgence déjà posée garde la PREMIÈRE (son heure et son auteur) : l'état n'a
+   * pas changé, la frise n'en dit rien, et `urgente_par` ne doit pas nommer quelqu'un que la frise ne nomme pas.
+   * L'auteur est effacé avec l'urgence, sinon il laisserait croire à une urgence active.
+   */
+  private async basculerUrgence(
+    tenantId: string,
+    cle: 'id' | 'wa_id',
+    valeur: string,
+    pose: boolean,
+    par: AuteurDuChangement,
+  ): Promise<boolean> {
+    const auteur = colonnesAuteur(par);
+    const res = await this.pool.query(
+      // L'état d'avant est lu dans un sous-select VERROUILLÉ : c'est lui qui dit si le geste change quelque chose.
+      `with maj as (
+         update conversations c
+            set urgente_le = case when $3::boolean then coalesce(c.urgente_le, now()) else null end,
+                urgente_par = case when $3::boolean
+                                   then (case when c.urgente_le is null then ${acteurSql('$4', '$2')} else c.urgente_par end)
+                                   else null end
+           from (select id as avant_id, urgente_le as avant_valeur
+                   from conversations where ${cle} = $1 and tenant_id = $2 for no key update) avant
+          where c.id = avant.avant_id
+         returning c.id, avant.avant_valeur
+       ),
+       evenement as (
+         insert into conversation_evenements (tenant_id, conversation_id, type, acteur_id, cause)
+         select $2, maj.id, case when $3::boolean then 'urgente' else 'urgence_levee' end, ${acteurSql('$4', '$2')}, $5::text
+           from maj where (maj.avant_valeur is null) = $3::boolean
+       )
+       select id from maj`,
+      [valeur, tenantId, pose, auteur.acteur, auteur.cause],
     );
     return (res.rowCount ?? 0) > 0;
   }

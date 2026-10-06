@@ -1,5 +1,17 @@
 # todo.md : backlog
 
+## 🟡 RC2, le statut urgent : ce qui reste (2026-10-06)
+
+- **Le tri de « À traiter » ne s'arrête plus tôt sur l'index.** « Urgentes en tête » trie sur
+  `(urgente_le is not null) desc, last_message_at desc, id desc`, qu'aucun index ne sert : la première page lit toutes
+  les conversations « à traiter » de l'espace avant de couper. Mesuré le 2026-10-06 : le plus gros espace a 17
+  conversations, dont une à traiter, donc rien à gagner aujourd'hui. Le jour où un espace en compte des dizaines de
+  milliers : `EXPLAIN (ANALYZE, BUFFERS)` de la première page, et au besoin deux lectures (les urgentes par
+  `conversations_urgentes_idx`, puis les autres par l'index récent).
+- **L'en-tête d'une conversation qui quitte « Urgent » par « Traité » garde sa copie d'avant** (pastille et « Plus
+  urgent » visibles jusqu'au rechargement) : comportement commun à toute conversation qui quitte son dossier, non
+  corrigé dans RC2.
+
 ## Lot 3c : ce que l'essai réel commun a montré (2026-10-06)
 
 - **Une résiliation programmée est invisible chez nous.** Le portail de Stripe résilie en fin de période (réglage du

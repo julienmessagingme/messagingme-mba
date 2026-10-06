@@ -1512,6 +1512,14 @@ async function main(): Promise<void> {
       taches.programmer('vectorisation', 60_000, vectoriser, { immediat: true });
     }
 
+    /**
+     * Ce que la frise du panneau Détail dit d'un geste d'un agent IA, qui n'est pas un collaborateur : son libellé, lu
+     * seulement au moment du geste ; un agent introuvable est dit par son identifiant plutôt que de retarder le geste
+     * d'une erreur. Partagée par l'escalade et l'urgence, pour que la frise nomme l'agent de la même façon.
+     */
+    const causeAgentIa = async (t: string, agentId: string): Promise<string> =>
+      automatique(`agent IA ${(await agentStore.complet(t, agentId).catch(() => null))?.label ?? agentId}`);
+
     // L'escalade vers un humain : trois effets dans un ordre contre-intuitif, que `escalade.ts` explique.
     const escaladerVersHumain = creerEscaladeVersHumain({
       sessions: agentSessions,
@@ -1523,11 +1531,10 @@ async function main(): Promise<void> {
       // (sinon la dernière phrase de l'agent serait muette quand l'équipe est fermée). `escalade: true` : un agent
       // IA qui passe la main promet une réponse, la conversation entre dans « À traiter » tout de suite.
       // La cause nomme l'agent (l'événement `escaladee`, migration 0194, ouvre une demande du Quantitatif >
-      // Performance et la frise du panneau Détail le raconte) : son libellé, lu seulement au moment d'escalader ;
-      // un agent introuvable est dit par son identifiant plutôt que de retarder la bascule d'une erreur.
+      // Performance et la frise du panneau Détail le raconte), par `causeAgentIa`.
       escalateToHuman: async (t, waId, agentId) => fil.passerAUnHumain(t, waId, {
         escalade: true,
-        cause: automatique(`agent IA ${(await agentStore.complet(t, agentId).catch(() => null))?.label ?? agentId}`),
+        cause: await causeAgentIa(t, agentId),
       }),
     });
 
@@ -1537,6 +1544,10 @@ async function main(): Promise<void> {
       envoyerBloc: ({ tenantId, waId, runId, workflowId, code }) =>
         workflowExecutor.envoyerBlocDepuisAgent(tenantId, waId, { runId, workflowId, code }),
       escaladerVersHumain,
+      // `mba_marquer_urgent` (migration 0216) : la conversation du contact du tour, jamais une autre, et l'agent nommé
+      // dans la cause (`urgente_par` reste nul, il n'est pas un collaborateur). Aucun effet sur le fil : il continue.
+      marquerUrgente: async ({ tenantId, waId, agentId }) =>
+        inboxStore.marquerUrgenteParWaId(tenantId, waId, { cause: await causeAgentIa(tenantId, agentId) }),
       // Trois effets, pas un : le contact, le référentiel Tags et la file d'automations. L'outil promet de
       // pouvoir « déclencher une automation », un appel direct au store le ferait mentir.
       poserTag: poserTagDepuisAgent,

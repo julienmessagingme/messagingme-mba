@@ -41,6 +41,7 @@ function harnais(rendu: FicheTrouvee[] | (() => never)) {
   const deps: DepsResolveurMba = {
     envoyerBloc: async () => ({ ok: true }),
     escaladerVersHumain: async () => true,
+    marquerUrgente: async () => true,
     poserTag: async () => {},
     ecrireChamp: async () => {},
     lireAnalyse: async () => null,

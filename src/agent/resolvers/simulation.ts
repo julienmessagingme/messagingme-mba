@@ -155,6 +155,9 @@ export function creerResolveurSimulation(deps: DepsResolveurSimulation): Resolve
         // `rendu` n'est pas posé : il n'y a personne à qui passer la main, et arrêter le tour cacherait ce que
         // l'agent aurait dit ensuite.
         return simule('le transfert vers un humain');
+      // Aucune conversation réelle à marquer : rien n'est écrit, et l'agent continue, comme en production.
+      case 'marquer_urgent':
+        return simule('le marquage urgent de la conversation');
 
       default:
         return { ok: false, contenu: { erreur: `outil maison inconnu : ${handler || '(handler absent)'}` }, erreur: 'handler inconnu' };

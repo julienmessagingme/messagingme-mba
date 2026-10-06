@@ -3,7 +3,8 @@
  *
  * Ce qui est arrivé à une conversation, qui l'a fait, et pourquoi quand personne ne l'a fait : les assignations,
  * les prises et les rendus à l'agent de Meta, « Traité », « Archivé », « Signalé » et leurs inverses, la
- * rouverture par un message du contact, et depuis 0194 le passage d'un robot à l'équipe et le retour à un scénario.
+ * rouverture par un message du contact, depuis 0194 le passage d'un robot à l'équipe et le retour à un scénario, et
+ * depuis 0216 l'urgence posée et levée.
  *
  * 🔴 DEUX RÈGLES D'ÉCRITURE, tenues par `PgInboxStore` et par lui seul :
  *  - l'événement s'écrit dans la MÊME requête que le changement qu'il décrit (une requête à CTE). Deux écritures
@@ -18,8 +19,8 @@
 import type { OrigineMessage } from './origine';
 
 /**
- * Les types, dans l'ordre du cadrage. Miroir du CHECK en vigueur, celui de 0209, tenu par
- * `tests/migration-0209.test.ts` ; les douze premiers sont ceux de 0192, les deux suivants ceux de 0194.
+ * Les types, dans l'ordre du cadrage. Miroir du CHECK en vigueur, celui de 0216, tenu par
+ * `tests/migration-0216.test.ts` ; les douze premiers sont ceux de 0192, les deux suivants ceux de 0194.
  *
  * Les deux derniers (0194) datent ce que le Quantitatif > Performance mesure : `escaladee`, une demande s'ouvre pour
  * l'équipe, soit qu'un robot lui passe la main (un scénario ou un agent IA, drapeau d'escalade ou non, et la réponse à
@@ -28,13 +29,17 @@ import type { OrigineMessage } from './origine';
  * sans bascule) ; `rendue_scenario`, l'équipe rend le fil à un scénario. Comment ils ouvrent et ferment une demande :
  * `src/stats/performance.ts`.
  *
- * Le dernier (0209) : `sortie_agent`, un agent IA a terminé par une règle d'arrêt, que sa cause nomme
+ * Celui de 0209 : `sortie_agent`, un agent IA a terminé par une règle d'arrêt, que sa cause nomme
  * (`PgInboxStore.noterSortieAgent`). Il n'ouvre ni ne ferme aucune demande : c'est la bascule qui suit, s'il y en a une.
+ *
+ * Les deux derniers (0216) : `urgente` et `urgence_levee`, la conversation marquée urgente (par un collaborateur, ou par
+ * un agent IA dont la cause dit le nom) et l'urgence retirée, à la main ou par « Traité » et l'archivage, qui la lèvent
+ * dans leur propre requête (`PgInboxStore.basculerRangement`). Aucun n'ouvre ni ne ferme de demande.
  */
 export const TYPES_EVENEMENT = [
   'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
   'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
-  'escaladee', 'rendue_scenario', 'sortie_agent',
+  'escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee',
 ] as const;
 export type TypeEvenement = (typeof TYPES_EVENEMENT)[number];
 

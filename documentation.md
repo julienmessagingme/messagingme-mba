@@ -1180,11 +1180,11 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 **Conversations**
 
 - `conversations` (`control_owner`, `assigned_to`, `archived_at`, `traitee_le`, `last_direction`,
-  `escaladee_le`), `conversation_messages` (`media_id`, `media_mime`, `media_nom`), `conversation_evenements`
+  `escaladee_le`, `urgente_le` et `urgente_par`), `conversation_messages` (`media_id`, `media_mime`, `media_nom`), `conversation_evenements`
   (migration 0192, le journal que lit le panneau Détail de l'Inbox).
 - 🔴 **LE JOURNAL DES ÉVÉNEMENTS D'UNE CONVERSATION** (`conversation_evenements`, `src/inbox/evenements.ts`) :
   assignée, désassignée, prise à l'agent de Meta, rendue à l'agent, passée à l'équipe par l'agent, traitée,
-  archivée, signalée et leurs inverses, rouverte par un message du contact, et terminée par un agent IA
+  archivée, signalée, urgente et leurs inverses, rouverte par un message du contact, et terminée par un agent IA
   (`sortie_agent`, sa règle d'arrêt dans la cause, écrit par `sortirDuBlocAgent`). Lu par
   `GET /tenants/:tenantId/conversations/:conversationId/detail` (`PgInboxStore.detailConversation`), les 50
   derniers, sous la visibilité de `src/inbox/assignment.ts` (`visibiliteSql`) : un agent ne lit que les siennes
@@ -1331,6 +1331,22 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   signalement humain (`signalee_le`, migration 0123). ⚠️ Les deux sources restent SÉPARÉES : `abusive` est
   recalculé à chaque ré-analyse, un signalement humain écrit dedans disparaîtrait au passage suivant. La
   liste rend `signaleeMain` pour que l'écran sache quoi proposer.
+- 🔴 **« URGENT » EST UNE DÉCISION, ÉCRITE, ET LA SEULE MARQUE QUI CHANGE UN ORDRE** (`urgente_le`, `urgente_par`,
+  migration 0216). Posée ou retirée par tout rôle de la console (`POST .../urgent` et `.../ne-plus-urgent`, auteur pris
+  dans la session) ou par l'outil `mba_marquer_urgent` d'un agent IA (`marquerUrgenteParWaId`, la conversation du
+  contact du tour, `urgente_par` nul et l'agent nommé dans la cause de l'événement ; il ne quitte pas sa session).
+  Poser une urgence déjà posée garde la première (heure, auteur) et n'écrit rien. Sans lien avec
+  `conversation_analysis.urgence`, la note de l'analyse : même séparation que `signalee_le` et `abusive`.
+  ⚠️ **« Traité » et l'archivage la lèvent** quand ils se posent (`basculerRangement`, dans la même requête, avec
+  `urgence_levee` au nom du même auteur, un seul `insert` pour les deux événements) ; les retirer ne la remet pas.
+  Le dossier « Urgent » lit `urgente_le is not null`, le prédicat exact de `conversations_urgentes_idx`, hors
+  archivées.
+- 🔴 **« À TRAITER » MET LES URGENTES EN TÊTE, ET C'EST LE SEUL DOSSIER QUI CHANGE D'ORDRE** : `order by
+  (urgente_le is not null) desc, last_message_at desc, id desc`, quand tous les autres gardent
+  `last_message_at desc, id desc`. Le curseur de ce dossier porte donc le RANG d'urgence en tête de son tuple
+  (`ListConversationsOptions.before.urgente`, paramètre `beforeUrgente`), tel que la page précédente l'a rendu et
+  jamais relu en base : sans lui, une page qui s'arrête à la frontière entre urgentes et non urgentes reprend au
+  mauvais endroit (des doublons d'un côté, un trou de l'autre), sans erreur. Absent, il vaut « non urgent ».
 - 🔴 **UN MESSAGE DU CONTACT ROUVRE, DANS L'ÉCRITURE QUI L'ENREGISTRE** (`upsertConversationByWaId`) : il
   sort d'Archivé et retire « Traité ». Le chemin appelant décide (`rouvre: { archive, traite }`), jamais la
   dépendance partagée : un envoi automatisé ne rouvre rien. ⚠️ Une RÉACTION emoji sort d'Archivé mais ne

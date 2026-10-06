@@ -174,8 +174,10 @@ describe('l’escalade est posée par les DEUX câblages, pas seulement par l’
   const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
 
   it('🔴 l’escalade d’un agent IA aussi, et elle REND toujours son verdict', () => {
-    // Sans accolades : la flèche rend la promesse de la bascule. La cause nomme l'agent (migration 0194).
-    expect(worker).toMatch(/escalateToHuman: async \(t, waId, agentId\) => fil\.passerAUnHumain\(t, waId, \{\s*escalade: true,\s*cause: automatique\(`agent IA /);
+    // Sans accolades : la flèche rend la promesse de la bascule. La cause nomme l'agent (migration 0194), par la même
+    // fonction que l'urgence posée par un agent IA (RC2, migration 0216).
+    expect(worker).toMatch(/escalateToHuman: async \(t, waId, agentId\) => fil\.passerAUnHumain\(t, waId, \{\s*escalade: true,\s*cause: await causeAgentIa\(t, agentId\),/);
+    expect(worker).toMatch(/const causeAgentIa = async \(t: string, agentId: string\): Promise<string> =>\s*automatique\(`agent IA /);
   });
 
   it('🔴 et la passation de l’agent de Meta passe, elle, par `marquerEscalade`', () => {

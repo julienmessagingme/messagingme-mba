@@ -26,6 +26,13 @@ export interface DepsResolveurMba {
    */
   escaladerVersHumain(input: { tenantId: string; waId: string; runId: string; sessionId: string; agentId: string }): Promise<boolean>;
 
+  /**
+   * Marque urgente la conversation du TOUR (`mba_marquer_urgent`, migration 0216), par `PgInboxStore.marquerUrgenteParWaId`.
+   * `agentId` : l'agent qui la pose, nommé dans la cause que la frise garde (il n'est pas un collaborateur). `false` =
+   * aucune conversation pour ce contact. Requise : un câblage qui l'oublierait ne compile pas.
+   */
+  marquerUrgente(input: { tenantId: string; waId: string; agentId: string }): Promise<boolean>;
+
   /** Pose un tag sur le contact (`mba_poser_tag`). */
   poserTag(tenantId: string, waId: string, tag: string): Promise<void>;
 
@@ -117,6 +124,16 @@ const HANDLERS: Record<string, Handler> = {
     // Le `message` imposé par le catalogue, comme celui de `terminer` : le tour l'envoie quand le modèle n'a rien écrit.
     const dernierMessage = texte(args, 'message');
     return { contenu: { escalade: true }, rendu: true, mainPrise, ...(dernierMessage !== '' ? { dernierMessage } : {}) };
+  },
+
+  /**
+   * Marquer la conversation urgente. 🔴 Toujours celle du contact du TOUR (`ctx.waId`) : l'outil n'a aucun paramètre,
+   * le modèle ne peut désigner aucune autre conversation. Ni `rendu` ni `sortie` : urgent n'est pas un transfert, la
+   * session continue et l'agent répond au contact dans le même tour.
+   */
+  marquer_urgent: async ({ ctx }, deps) => {
+    const marquee = await deps.marquerUrgente({ tenantId: ctx.tenantId, waId: ctx.waId, agentId: ctx.agentId });
+    return marquee ? { contenu: { urgente: true } } : echec('aucune conversation a marquer pour ce contact');
   },
 
   poser_tag: async ({ args, ctx }, deps) => {
