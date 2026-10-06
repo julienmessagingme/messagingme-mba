@@ -141,14 +141,14 @@ function monter(o: { publicApiUrl?: string } = {}) {
   const compteDe = (userId: string) => [...comptes.values()].flat().find((c) => c.id === userId);
   const magasin = new FauxMagasin(compteDe);
   const audits: Array<{ tenant: string; acteur: string | null; action: string; cible: string; detail: Record<string, unknown> }> = [];
-  const crees: Array<{ nom: string; email: string; passwordHash: string | null }> = [];
+  const crees: Array<{ nom: string; email: string; passwordHash: string | null; origine: string }> = [];
   const connexions: string[] = [];
   const deps: OauthRouteDeps & OauthConsentementRouteDeps = {
     store: magasin,
     comptes: {
       getByEmail: async (email) => comptes.get(email) ?? [],
-      createTenantWithAdmin: async (nom, admin) => {
-        crees.push({ nom, email: admin.email, passwordHash: admin.passwordHash });
+      createTenantWithAdmin: async (nom, admin, origine) => {
+        crees.push({ nom, email: admin.email, passwordHash: admin.passwordHash, origine });
         const c = { id: randomUUID(), tenantId: randomUUID(), tenantName: nom, role: 'admin', disabled: false };
         comptes.set(admin.email, [c]);
         return { tenantId: c.tenantId, userId: c.id };
@@ -471,7 +471,8 @@ describe('le parcours de Claude', () => {
     expect(g.statusCode).toBe(200);
     const corps = g.json<{ choix: string; nouveau: boolean; espaces: Array<{ tenantId: string; nom: string; admin: boolean }> }>();
     expect(corps.nouveau).toBe(true);
-    expect(crees).toEqual([{ nom: 'Espace de Alice', email: 'nouveau@x.fr', passwordHash: null }]);
+    // 🔴 L'espace né par la connexion de Claude Code porte cette origine (0212) : c'est elle qui fixe son crédit offert à 1 €.
+    expect(crees).toEqual([{ nom: 'Espace de Alice', email: 'nouveau@x.fr', passwordHash: null, origine: 'claude_code' }]);
     expect(corps.espaces).toEqual([{ tenantId: expect.any(String), nom: 'Espace de Alice', admin: true }]);
     // Marqué connecté, comme par /auth/google : sinon l'admin neuf s'afficherait « en attente » sur la page Équipe.
     expect(connexions).toHaveLength(1);

@@ -1844,6 +1844,14 @@ scénario, comment importer des contacts.
   Cloud API fait automatiquement (l'étape qui, ailleurs, oblige à cliquer un bouton pour sortir du « pending »).
   Prérequis Meta remplis : Tech Provider vérifié ET **inscrit** (l'inscription est une étape à part de la
   vérification, c'est elle qui débloquait), app publiée.
+- ⏳ **Un numéro fourni pour qui n'en a pas** (lot 3b, 2026-10-06, en cours de déploiement) : sur l'Accueil d'un
+  espace sans numéro, « Pas de numéro ? Nous vous en fournissons un » mène à la page « Connecter WhatsApp ».
+  « Fournissez-moi un numéro » attribue un numéro britannique dédié de notre réserve et l'affiche, avec un bouton
+  Copier ; le client le tape dans la fenêtre de Meta (« Enter a new phone number ») et choisit la vérification par
+  appel ; le code que Meta dicte est capté par notre serveur et s'affiche sur la page en quelques secondes ; le client
+  le recopie, et le numéro est connecté comme un autre. Si Meta refuse ce numéro, « En obtenir un autre » en donne un
+  nouveau ; « Abandonner » le rend à la réserve. Gratuit en attendant l'abonnement. « J'ai déjà un numéro » ouvre la
+  fenêtre de Meta comme le bouton de l'Accueil. ⚠️ La fenêtre de Meta impose l'écran du numéro, d'où la saisie.
 - ✅ **Recommencer l'embarquement fonctionne** (2026-08-17) : si un client relance la connexion après un premier
   essai déjà abouti côté Meta, ça marche quand même. Avant, il était bloqué sans recours, avec un message qui
   l'invitait à réessayer alors que réessayer ne pouvait rien changer. Il n'a rien à ressaisir et pas de nouvel
@@ -2555,8 +2563,8 @@ boîte par sous-menu.
 - ✅ **Les numéros fournis** (lot 3a, 2026-10-05) : un numéro acheté chez DIDWW se déclare
   dans la carte « Numéros fournis » ; le serveur le branche sur l'Asterisk et l'ajoute à la réserve. Quand Meta appelle
   ce numéro pour le vérifier, le code qu'il dicte est capté automatiquement et s'affiche en face du numéro, avec ce qui
-  a été entendu. La carte compte les numéros encore libres. Les clients n'y ont pas encore accès : la page « Connecter
-  WhatsApp » qui leur attribuera un numéro est le lot suivant.
+  a été entendu. La carte compte les numéros encore libres. Un numéro attribué à un espace (page « Connecter WhatsApp »,
+  lot 3b) y apparaît « attribué » avec son espace ; un numéro que Meta a refusé, « bloqué », à résilier ou à garder.
 - ✅ **La latence HTTP par route** (2026-10-03) : pour chaque route de l'API (sous sa forme générique, jamais une
   adresse réelle) et chaque code de retour, le nombre de requêtes, la médiane, le 95e centile et le pire cas des
   dernières 24 heures, toutes copies de l'API confondues, y compris les requêtes que le client a abandonnées avant
@@ -3070,7 +3078,8 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   la création d'un espace, où ils se récoltaient par script. **Seulement une fois que Meta dit le numéro vérifié** :
   à la connexion s'il l'est déjà, sinon dès que le code de vérification est accepté (« Activer le numéro » sur
   l'Accueil). Un numéro relié mais pas vérifié ne reçoit rien. Une fois par espace, et jamais deux fois pour le même
-  numéro, même s'il change d'espace ou d'identifiant chez Meta (c'est le numéro de téléphone qui compte). **Pas
+  numéro, même s'il change d'espace ou d'identifiant chez Meta (c'est le numéro de téléphone qui compte). **1 € au
+  lieu de 5 € pour un espace créé depuis Claude Code** (2026-10-05, décision de Julien). **Pas
   rétroactif** : les espaces qui avaient déjà un numéro n'en reçoivent pas. Aucune clé de modèle n'est ouverte à ce
   moment, elle s'ouvre au premier usage. Le montant est un réglage du serveur (0 l'éteint).
 - 🔴 **Sans crédit, rien ne démarre**, et c'est le bon défaut : un crédit implicite ferait payer une
@@ -3179,7 +3188,8 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   onglet, la facture hébergée par Stripe (consultation et PDF). Si elle ne s'ouvre pas, l'onglet vide se referme
   et la page le dit. Un achat payé avant ce lien, ou sans facture chez Stripe, n'en montre pas. On ne lit que les
   factures des achats de SON espace.
-- ✅ **5 € offerts au premier numéro WhatsApp de l'espace, une fois que Meta l'a vérifié**, une seule fois (voir
+- ✅ **5 € offerts au premier numéro WhatsApp de l'espace (1 € pour un espace créé depuis Claude Code), une fois que
+  Meta l'a vérifié**, une seule fois (voir
   « Agent IA », le crédit et les plafonds).
 - ⛔ Hors périmètre : recharge automatique, montant libre, abonnement, e-mail de solde bas, remboursement en ligne.
 

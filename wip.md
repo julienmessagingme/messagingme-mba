@@ -37,21 +37,22 @@ Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; réc
   relevés par la relecture (la migration contre trois chemins rares, deux renommages croisés simultanés), en 500 sur
   une requête au pire.
 
-## LOT 3b DE « ENGAGE ME POUR CLAUDE CODE » : LE NUMÉRO FOURNI CÔTÉ CLIENT, LIVRAISON A EN PRODUCTION, MESURE DUE
+## LOT 3b DE « ENGAGE ME POUR CLAUDE CODE » : LE NUMÉRO FOURNI CÔTÉ CLIENT, LIVRAISON B ÉCRITE, À DÉPLOYER
 
-Le client passe la fenêtre Meta sans numéro ; le serveur ajoute le nôtre à son compte, demande le code par appel, le
-fait lire par l'Asterisk, le soumet et active. Cadré avec Julien le 2026-10-05 (libre-service dès le 3b, alerte
-Telegram sous 3 numéros libres, crédit offert de 1 € pour un espace né depuis Claude Code et 5 € depuis la console).
-Spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`, plan `docs/superpowers/plans/2026-10-05-numero-fourni.md`.
+La page attribue un numéro de la réserve et l'affiche ; le client le tape dans la fenêtre de Meta et choisit l'appel ;
+la page affiche le code capté par l'Asterisk. Spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`, plan
+`docs/superpowers/plans/2026-10-05-numero-fourni.md`, réécrits le 2026-10-06 après la mesure de la fenêtre.
 
-- ✅ **Livraison A en production le 2026-10-05** (`a1bb1c63`, CI verte job par job, aucune migration) : un compte
-  WhatsApp revenu SANS numéro est gardé avec son jeton au lieu d'être refusé (`lierCompteSansNumero`), le parcours
-  avec numéro inchangé ; la console lit un compte seul (`web/lib/message-es.ts`) et l'Accueil affiche l'avertissement
-  sur un espace sans numéro. Relu : un rouge (l'écran restait muet), corrigé et tenu par un e2e vu rouge puis vert ;
-  mesuré en base avant le `up` : aucun compte sans numéro existant.
-- ⏳ **Tâche 0, la mesure chez Meta** : un espace neuf sans numéro, la fenêtre finie sans numéro dans un portefeuille
-  neuf, puis, avec l'accord de Julien, l'ajout du numéro de la réserve par le jeton du client, l'appel, le code lu,
-  la vérification et l'activation. Script prêt (hors dépôt). Elle décide de la livraison B, ou de son repli.
+- ✅ **Livraison A en production** (`a1bb1c63`) : un compte revenu sans numéro est gardé avec son jeton.
+- ✅ **Mesure (tâche 0), le 2026-10-06** : en v4, rien ne fait sauter l'écran du numéro ; le « sans numéro » de Meta
+  est un numéro virtuel en +1 555 avec 5 jours de revue ; la pré-vérification est réservée aux Solution Partners.
+  Julien a choisi le repli.
+- ⏳ **Livraison B écrite** : migration 0212 (`tenants.origine`, statut `bloque`, un numéro attribué par espace), le
+  magasin (`attribuer`, `codeDeLEspace`, `remplacerNumero`, `rendre`), le crédit selon l'origine (1 € Claude Code, 5 €
+  console), les routes `/numero-fourni` et l'alerte Telegram, la page `/connecter-whatsapp` et le lien de l'Accueil.
+  À relire, puis 0212 AVANT le `up`, puis `npm run aide:charger` (trois fiches d'aide changent).
+- ⏳ **Essai réel** : un espace créé depuis Claude Code, « Fournissez-moi un numéro », le numéro tapé dans la fenêtre,
+  le code affiché, le numéro connecté, 1 € offert, l'alerte Telegram (la réserve n'a qu'un numéro).
 
 ## LOT 5 DE « ENGAGE ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 

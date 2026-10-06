@@ -58,6 +58,7 @@ import { registerWorkflows } from './http/workflows';
 import { registerAutomations } from './http/automations';
 import { registerChannelsMeRoutes, type ChannelsMeRouteDeps } from './http/channels-me';
 import { registerEmbeddedSignup } from './http/embedded-signup';
+import { registerNumeroFourni } from './http/numero-fourni';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Sends } from './http/v1-sends';
@@ -130,6 +131,7 @@ import type { OpsRouteDeps } from './http/ops';
 import type { WorkflowRouteDeps } from './http/workflows';
 import type { AutomationRouteDeps } from './http/automations';
 import type { EmbeddedSignupRouteDeps } from './http/embedded-signup';
+import type { NumeroFourniRouteDeps } from './http/numero-fourni';
 import type { ApiKeysRouteDeps } from './http/api-keys';
 import type { V1ContactsRouteDeps } from './http/v1-contacts';
 import type { V1SendsRouteDeps } from './http/v1-sends';
@@ -320,6 +322,8 @@ export interface ServerDeps {
   automations?: AutomationRouteDeps;
   /** Embedded Signup Meta (connexion du numéro, Tech Provider), réservé aux admins. */
   embeddedSignup?: EmbeddedSignupRouteDeps;
+  /** Le numéro fourni côté client (lot 3b) : un numéro de la réserve et le code capté, réservé aux admins. */
+  numeroFourni?: NumeroFourniRouteDeps;
   /** CRUD des clés d'API (console admin, JWT), réservé aux admins. */
   apiKeys?: ApiKeysRouteDeps;
   /**
@@ -662,6 +666,7 @@ export function modulesDeRoutes(
     // client décide qui répond à ses visiteurs.
     entree('widgets', 'tenant', deps.widgets, (app, d, g) => registerWidgets(app, d, g.admin)),
     entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.admin, g.limiteCouteuse)),
+    entree('numeroFourni', 'tenant', deps.numeroFourni, (app, d, g) => registerNumeroFourni(app, d, g.admin, g.limiteCouteuse)),
     entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin)),
     entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin)),
     entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin)),

@@ -74,7 +74,7 @@ import { ResendClient } from './support/resend';
  */
 export type ConfigSocle = Pick<Config,
   | 'DRY_RUN' | 'PGBOSS_SCHEMA' | 'ENCRYPTION_KEY' | 'META_ACCESS_TOKEN' | 'META_APP_ID' | 'META_APP_SECRET'
-  | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER' | 'CREDIT_OFFERT_MICRO_EUR'
+  | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER' | 'CREDIT_OFFERT_MICRO_EUR' | 'CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR'
   | 'CONTROL_HUMAN_TIMEOUT_MS' | 'AI_GATEWAY_API_KEY' | 'RESEND_API_KEY' | 'SUPPORT_FROM' | 'APP_URL'
 >;
 
@@ -247,7 +247,10 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
   // Le crédit offert au premier numéro que Meta dit vérifié (`CREDIT_OFFERT_MICRO_EUR`, cf. `src/config.ts`) : seules
   // les routes de l'inscription et de l'activation le demandent (`offrirCredit`), jamais la liaison elle-même.
-  const esCredentialsStore = new PgEmbeddedSignupStore(pool, { creditOffertMicroEur: config.CREDIT_OFFERT_MICRO_EUR });
+  const esCredentialsStore = new PgEmbeddedSignupStore(pool, {
+    creditOffertMicroEur: config.CREDIT_OFFERT_MICRO_EUR,
+    creditOffertClaudeCodeMicroEur: config.CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR,
+  });
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,
     credentials: esCredentialsStore,

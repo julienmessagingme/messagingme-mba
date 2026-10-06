@@ -9,7 +9,8 @@ import type { PgNumerosFournisStore } from '../otp/store.pg';
  *
  * Meta vérifie un numéro que nous fournissons en l'appelant et en dictant un code. L'Asterisk du VPS décroche,
  * enregistre, puis son script (`ops/otp-asterisk/envoyer-otp.sh`) poste l'enregistrement ici. La route transcrit, lit
- * le code et l'écrit ; le lot 3b le lira pour le soumettre à Meta.
+ * le code et l'écrit ; la page « Connecter WhatsApp » (lot 3b) le lit et l'affiche au client, qui le recopie dans la
+ * fenêtre de Meta.
  *
  * 🔴 L'ADRESSE EST PUBLIQUE, ET C'EST LA SIGNATURE QUI LA FERME. L'API n'est pas joignable en local depuis l'Asterisk
  * (elle n'est que sur le réseau Docker) : le script passe par `api.messagingme.app`. La signature est celle de nos

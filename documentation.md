@@ -2532,6 +2532,20 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   Les plages du pare-feu et celles de la section `identify` restent identiques, et l'IAX2 (chargé par défaut par
   l'image, 4569/udp) reste déchargé : `tests/otp-asterisk-config.test.ts` tient les deux. ⚠️ `pjsip.conf` (les
   identifiants) n'est pas versionné : un correctif qui le touche s'applique aussi à la main sur le VPS.
+- 🔴 **Le numéro fourni côté client** (lot 3b, `src/http/numero-fourni.ts`, page `/connecter-whatsapp`). En
+  Embedded Signup v4, rien ne fait sauter l'écran du numéro de la fenêtre de Meta : le client y TAPE le numéro que la
+  page lui attribue, choisit la vérification par appel, et recopie le code que la page affiche. Aucune de ces routes
+  ne parle à Meta : la fenêtre vérifie, `/embedded-signup/complete` relie et active comme pour un numéro apporté.
+  L'attribution (`attribuer`) prend un `libre` en `for update skip locked` et pose ensemble statut, espace et heure ;
+  l'index `numeros_fournis_un_par_espace` tient deux demandes du même espace. Le code d'un espace (`codeDeLEspace`) ne
+  se lit que sur SON numéro, reçu après l'attribution et dans les 15 minutes, jamais avec sa transcription. Un numéro
+  refusé par Meta passe en `bloque` (sorti de la réserve, pas résilié). Sous `ALERTE_RESERVE_SEUIL` numéros libres,
+  Telegram, au plus une fois par jour (verrou court `numeros.reserve-basse`).
+- 🔴 **Le crédit offert dépend de l'origine de l'espace** (`tenants.origine`, migration 0212) : `claude_code` quand
+  l'espace naît par la connexion OAuth de Claude Code (`src/http/oauth.ts`), `console` sinon ; 1 €
+  (`CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR`) contre 5 € (`CREDIT_OFFERT_MICRO_EUR`), lus dans la transaction de l'offre.
+  `createTenantWithAdmin` exige l'origine dans le contrat des routes d'authentification : une porte d'entrée qui
+  l'oublierait ne compile pas.
 
 🔴 **LA RECHARGE PAR STRIPE** (lot 2, 2026-09-29, `src/http/credit-stripe.ts`, `src/stripe/`). Le client REST
 est écrit sans SDK (formulaire `x-www-form-urlencoded`, `Stripe-Version` épinglée sur celle de la destination

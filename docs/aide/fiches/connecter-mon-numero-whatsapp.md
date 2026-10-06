@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 5eba3f
+source_empreinte: 740f6a
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -13,7 +13,14 @@ choisissez votre compte professionnel et votre numéro, et tout le reste se fait
 déjà commencé une première fois, recommencer fonctionne : vous n'avez rien à ressaisir et aucun nouveau code
 à redemander, vous retrouvez le compte et le numéro existants. Quand Meta refuse, c'est SON motif qui
 s'affiche (code expiré, compte non partagé, plusieurs numéros à départager), pas un message d'erreur opaque.
-Pour le premier numéro de votre espace, **5 € de crédit IA vous sont offerts** dès que Meta l'a vérifié, une seule
+**Vous n'avez pas de numéro ?** Le lien « Pas de numéro ? Nous vous en fournissons un » ouvre la page « Connecter
+WhatsApp » : « Fournissez-moi un numéro » vous attribue un numéro britannique dédié, que vous tapez dans la fenêtre de
+Meta en choisissant la vérification par appel. Le code que Meta dicte s'affiche sur la page en quelques secondes :
+recopiez-le dans la fenêtre, et le numéro est connecté. Si Meta refuse ce numéro, « En obtenir un autre » vous en
+donne un nouveau.
+
+Pour le premier numéro de votre espace, **5 € de crédit IA vous sont offerts** (1 € si l'espace a été créé depuis
+Claude Code) dès que Meta l'a vérifié, une seule
 fois : à la connexion s'il l'est déjà, sinon quand vous l'activez avec le code de vérification. Ils paient vos
 agents IA et la traduction de l'Inbox (voir Paramètres > Crédit IA).
 

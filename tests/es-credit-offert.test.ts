@@ -18,11 +18,13 @@ import { SANS_CREDIT_OFFERT } from './credit-offert';
  * vérité en base est tenue par `tests/integration/agent-credits.integration.test.ts`, joué en CI. Ici, la base est
  * simulée et dit ce que la contrainte aurait dit (`offrePrend`).
  */
-function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean } = {}) {
+function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean; origine?: 'console' | 'claude_code' } = {}) {
   const surLePool: string[] = [];
   const surLaConnexion: Array<{ sql: string; params: unknown[] }> = [];
   const repondre = (sql: string) => {
     if (/insert into waba/i.test(sql)) return { rows: [], rowCount: 1 };
+    // L'origine de l'espace (0212) : absente de la fausse base, l'espace est `console`.
+    if (/select origine from tenants/i.test(sql)) return o.origine ? { rows: [{ origine: o.origine }], rowCount: 1 } : { rows: [], rowCount: 0 };
     if (/select id from phone_numbers/i.test(sql)) return { rows: [], rowCount: 0 };
     // L'upsert gardé du numéro : 0 ligne quand il appartient à un autre espace.
     if (/insert into phone_numbers/i.test(sql)) return { rows: [], rowCount: o.numeroDejaAilleurs ? 0 : 1 };
@@ -42,7 +44,7 @@ function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean } = 
 }
 
 const LIAISON = { tenantId: 't1', wabaId: 'waba-1', phoneNumberId: 'pn-1', displayPhoneNumber: '+33600000000', verifiedName: 'Démo' };
-const CINQ_EUROS = { creditOffertMicroEur: 5_000_000 };
+const CINQ_EUROS = { creditOffertMicroEur: 5_000_000, creditOffertClaudeCodeMicroEur: 1_000_000 };
 const indexDe = (b: ReturnType<typeof fausseBase>, re: RegExp) => b.surLaConnexion.findIndex((q) => re.test(q.sql));
 const premiersMots = (b: ReturnType<typeof fausseBase>) => b.surLaConnexion.map((q) => q.sql.trim().split(/\s+/)[0]!.toLowerCase());
 
@@ -74,6 +76,15 @@ describe('le crédit offert au premier numéro vérifié', () => {
     expect(b.surLaConnexion[offre]!.sql).toContain('numero_affiche');
     // (espace, montant, raison, session, note) : positif, `offert`, sans session.
     expect(b.surLaConnexion[credit]!.params).toEqual(['t1', 5_000_000, 'offert', null, NOTE_CREDIT_OFFERT, null]);
+  });
+
+  it('🔴 un espace né depuis Claude Code reçoit 1 €, pas 5 € (décision de Julien du 2026-10-05) ; la console garde 5 €', async () => {
+    const cc = fausseBase({ origine: 'claude_code' });
+    expect(await new PgEmbeddedSignupStore(cc.pool, CINQ_EUROS).offrirCredit('t1', 'pn-1')).toBe(1_000_000);
+    const offre = cc.surLaConnexion.find((q) => /insert into credits_offerts/i.test(q.sql));
+    expect(offre?.params).toContain(1_000_000);
+    const console_ = fausseBase({ origine: 'console' });
+    expect(await new PgEmbeddedSignupStore(console_.pool, CINQ_EUROS).offrirCredit('t1', 'pn-1')).toBe(5_000_000);
   });
 
   it('🔴 déjà servi (cet espace, ce numéro, ou ce numéro affiché ailleurs) : l’offre ne prend pas, RIEN n’est crédité', async () => {

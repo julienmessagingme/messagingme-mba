@@ -103,4 +103,91 @@ describe.skipIf(!url)('la réserve de numéros fournis (0210)', () => {
     const restants = await pool.query(`select appel_id from codes_verification where numero_id = $1`, [numero.id]);
     expect(restants.rows.map((r) => r.appel_id)).toEqual(['itest.11']);
   });
+
+  /**
+   * 🔴 LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, migration 0212). L'attribution est la seule écriture qui donne un numéro de
+   * la réserve à un espace : elle doit tenir deux espaces qui se disputent le dernier numéro libre, et deux demandes
+   * du MÊME espace (double clic). Le code d'un espace ne se lit que sur SON numéro, après l'attribution.
+   */
+  describe('l’attribution à un espace (0212)', () => {
+    let autre = '';
+    beforeAll(async () => {
+      autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-numeros-fournis-b') returning id`)).rows[0]!.id;
+    });
+    afterAll(async () => {
+      await pool.query(`delete from numeros_fournis where numero like '44999%'`);
+      if (autre) await pool.query('delete from tenants where id = $1', [autre]);
+    });
+    // ⚠️ Les comptes de numéros libres supposent une réserve qui ne contient que les numéros de ce fichier : c'est le cas
+    // en CI (base jetable, seul fichier qui écrit numeros_fournis, fichiers joués l'un après l'autre).
+
+    it('🔴 deux espaces, un seul numéro libre : un seul gagne, l’autre reçoit null', async () => {
+      await store.declarer(N1, 'did-itest-1');
+      const [a, b] = await Promise.all([store.attribuer(tenantId), store.attribuer(autre)]);
+      expect([a, b].filter((x) => x !== null)).toHaveLength(1);
+      expect(await store.compterLibres()).toBe(0);
+    });
+
+    it('🔴 rejouée par le même espace, elle rend le même numéro ; deux demandes simultanées aussi', async () => {
+      await store.declarer(N1, 'did-itest-1');
+      await store.declarer(N2, 'did-itest-2');
+      const [x, y] = await Promise.all([store.attribuer(tenantId), store.attribuer(tenantId)]);
+      expect(x?.numero).toBeDefined();
+      expect(y?.numero).toBe(x?.numero);
+      expect((await store.attribuer(tenantId))?.numero).toBe(x?.numero);
+      expect(await store.compterLibres()).toBe(1);
+      expect(await store.numeroDeLEspace(tenantId)).toMatchObject({ numero: x?.numero, statut: 'attribue', tenantId });
+    });
+
+    it('🔴 le code d’un espace : sur SON numéro seulement, après l’attribution, jamais un appel sans code', async () => {
+      const { numero: n1 } = await store.declarer(N1, 'did-itest-1');
+      const { numero: n2 } = await store.declarer(N2, 'did-itest-2');
+      // Un appel reçu AVANT l'attribution ne compte pas.
+      await store.ecrireCode(n1.id, { appelId: 'itest.30', code: '111111', transcription: 'avant' });
+      await pool.query(`update codes_verification set recu_le = now() - interval '1 minute' where appel_id = 'itest.30'`);
+      const pris = await store.attribuer(tenantId);
+      expect(pris?.numero).toBe(N1);
+      expect(await store.codeDeLEspace(tenantId)).toBeNull();
+      await store.ecrireCode(n1.id, { appelId: 'itest.31', code: null, transcription: 'rien', cause: 'code_introuvable' });
+      expect(await store.codeDeLEspace(tenantId)).toBeNull();
+      await store.ecrireCode(n1.id, { appelId: 'itest.32', code: '863801', transcription: 'your code is 863801' });
+      expect(await store.codeDeLEspace(tenantId)).toMatchObject({ code: '863801' });
+      // Le numéro d'un autre espace : son code n'est jamais vu ici.
+      await store.attribuer(autre);
+      await store.ecrireCode(n2.id, { appelId: 'itest.33', code: '222222', transcription: 'autre' });
+      expect(await store.codeDeLEspace(tenantId)).toMatchObject({ code: '863801' });
+      expect(await store.codeDeLEspace(autre)).toMatchObject({ code: '222222' });
+      // La borne des 15 minutes, éprouvée SEULE : l'attribution reculée d'une heure, le code reste après elle.
+      await pool.query(`update numeros_fournis set attribue_le = now() - interval '1 hour' where numero = $1`, [N1]);
+      await pool.query(`update codes_verification set recu_le = now() - interval '14 minutes' where appel_id = 'itest.32'`);
+      expect(await store.codeDeLEspace(tenantId)).toMatchObject({ code: '863801' });
+      await pool.query(`update codes_verification set recu_le = now() - interval '16 minutes' where appel_id = 'itest.32'`);
+      expect(await store.codeDeLEspace(tenantId)).toBeNull();
+    });
+
+    it('remplacer : l’actuel passe en bloque, sans espace, et un autre est attribué ; rendre le remet en réserve', async () => {
+      await store.declarer(N1, 'did-itest-1');
+      await store.declarer(N2, 'did-itest-2');
+      const premier = await store.attribuer(tenantId);
+      const r = await store.remplacerNumero(tenantId);
+      expect(r.bloque).toBe(premier?.numero);
+      expect(r.nouveau?.numero).not.toBe(premier?.numero);
+      expect(await store.parNumero(premier!.numero)).toMatchObject({ statut: 'bloque', tenantId: null });
+      // Plus rien de libre : remplacer encore bloque l'actuel et rend null.
+      expect(await store.remplacerNumero(tenantId)).toEqual({ bloque: r.nouveau?.numero, nouveau: null });
+      await store.declarer('449990000003', 'did-itest-3');
+      const t = await store.attribuer(tenantId);
+      expect(await store.rendre(tenantId)).toBe(t?.numero);
+      expect(await store.parNumero(t!.numero)).toMatchObject({ statut: 'libre', tenantId: null, attribueLe: null });
+      expect(await store.numeroDeLEspace(tenantId)).toBeNull();
+    });
+
+    it('🔴 l’index tient : un second numéro attribué au même espace est refusé par la base', async () => {
+      await store.declarer(N1, 'did-itest-1');
+      await store.declarer(N2, 'did-itest-2');
+      await store.attribuer(tenantId);
+      await expect(pool.query(`update numeros_fournis set statut = 'attribue', tenant_id = $1, attribue_le = now() where numero = $2`, [tenantId, N2]))
+        .rejects.toMatchObject({ code: '23505' });
+    });
+  });
 });

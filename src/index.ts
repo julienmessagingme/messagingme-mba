@@ -4,6 +4,7 @@ import { config } from './config';
 import { adressesPubliques } from './lib/adresses-publiques';
 import { surveillerOps } from './ops/tentatives';
 import { sendTelegram } from './ops/telegram';
+import { creerAlertesReserve } from './http/numero-fourni';
 import { PgBossQueue } from './queue/pgboss';
 import { pool, mesureAttentePool } from './db/pool';
 import { construireSocle } from './socle';
@@ -2158,6 +2159,19 @@ async function main(): Promise<void> {
     },
     // Le réglage du plafond de l'API par espace : lu par le limiteur de `/v1` et `/mcp`, écrit par `/ops`.
     plafondApi: new PgPlafondEspaceStore(pool),
+    // Le numéro fourni côté client (lot 3b) : la page « Connecter WhatsApp » obtient un numéro de la réserve et lit le
+    // code capté par l'Asterisk. Julien est prévenu sous le seuil, au plus une fois par jour : le verrou court n'est
+    // jamais relâché, son échéance EST le silence, commun à toutes les copies de l'API.
+    numeroFourni: {
+      numeros: numerosFournis,
+      numeroConnecte: async (tenant: string) => {
+        const pn = await phoneStatusStore.getPhoneNumber(tenant);
+        return pn ? { chiffres: (pn.displayPhoneNumber ?? '').replace(/[^0-9]/g, '') } : null;
+      },
+      verrous: verrousCourts,
+      alertes: creerAlertesReserve({ verrous: verrousCourts, envoyer: (texte) => sendTelegram(`[mba-${NOM_API}] ${texte}`) }),
+      seuilReserve: config.ALERTE_RESERVE_SEUIL,
+    },
     // La réserve de numéros fournis (lot 3a). Sans clé DIDWW ou sans trunk, la déclaration rend 503 et la lecture marche.
     opsNumeros: {
       numeros: numerosFournis,

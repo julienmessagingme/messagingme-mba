@@ -1,7 +1,7 @@
 ---
 ecran: parametres-credit
 source_section: Crédit IA (menu « Paramètres » > Crédit IA)
-source_empreinte: 1ab005
+source_empreinte: 437d3f
 ---
 # Recharger le crédit IA
 
@@ -33,7 +33,7 @@ facture de ce paiement, hébergée par Stripe, que vous pouvez consulter et tél
 s'ouvrir, l'écran vous le dit. Stripe vous l'envoie aussi par e-mail à chaque paiement.
 
 **5 € offerts.** Au premier numéro WhatsApp de votre espace, une fois que Meta l'a vérifié, 5 € de crédit vous
-sont offerts, une seule fois. Si votre numéro n'était pas encore vérifié à la connexion, ils arrivent quand vous
+sont offerts, une seule fois (1 € si l'espace a été créé depuis Claude Code). Si votre numéro n'était pas encore vérifié à la connexion, ils arrivent quand vous
 l'activez depuis l'Accueil.
 
 **Quand le crédit est bas**, un avertissement apparaît sous 0,50 €. **À zéro**, vos agents IA ne répondent

@@ -1,0 +1,147 @@
+import type { FastifyInstance } from 'fastify';
+import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
+import type { VerrousCourts } from '../db/verrous-courts';
+import { espaceVerifie } from './scope';
+import { texteDe } from '../lib/erreur';
+import type { PgNumerosFournisStore } from '../otp/store.pg';
+
+/**
+ * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
+ *
+ * La page « Connecter WhatsApp » obtient un numéro de notre réserve DIDWW et l'affiche ; le client le tape dans la
+ * fenêtre de Meta et choisit la vérification par appel ; notre Asterisk capte le code (lot 3a) ; la page le lit ici et
+ * l'affiche, et le client le recopie. Aucune de ces routes ne parle à Meta : c'est la fenêtre qui vérifie, puis la
+ * route actuelle de l'inscription qui relie et active le numéro. En Embedded Signup v4, rien ne fait sauter l'écran du
+ * numéro (mesuré le 2026-10-06), d'où ce parcours.
+ *
+ * Toutes les lectures et écritures sont filtrées sur l'espace (`espaceVerifie`), admin seulement : obtenir un numéro
+ * engage notre réserve, et le code donne la main sur un numéro.
+ */
+export interface NumeroFourniRouteDeps {
+  numeros: Pick<PgNumerosFournisStore, 'attribuer' | 'numeroDeLEspace' | 'codeDeLEspace' | 'remplacerNumero' | 'rendre' | 'compterLibres'>;
+  /**
+   * Le numéro WhatsApp connecté à l'espace, en chiffres (`''` si son affichage est inconnu), `null` s'il n'en a pas.
+   * 🔴 Un espace qui a déjà un numéro n'en reçoit pas d'autre (un seul numéro par espace), et le numéro fourni ne
+   * retourne pas à la réserve s'il EST celui qui est connecté ; un espace qui a connecté le sien le rend, lui.
+   */
+  numeroConnecte(tenantId: string): Promise<{ chiffres: string } | null>;
+  /** Un remplacement par heure et par espace : « En obtenir un autre » ne vide pas la réserve partagée. */
+  verrous: Pick<VerrousCourts, 'prendre'>;
+  /** Prévenir Julien. Ne lèvent jamais (le câblage borne leur fréquence). */
+  alertes: {
+    /** La réserve est passée sous le seuil, ou vide (`libres` = 0). */
+    reserveBasse(libres: number): Promise<void>;
+    /** Meta a refusé ce numéro (déjà actif ailleurs) : il est sorti de la réserve, à résilier ou à garder. */
+    numeroBloque(numero: string, tenantId: string): Promise<void>;
+  };
+  /** Sous ce nombre de numéros libres, Julien est prévenu (`ALERTE_RESERVE_SEUIL`). */
+  seuilReserve: number;
+}
+
+/** Le délai entre deux remplacements d'un même espace. Un numéro remplacé sort de la réserve pour de bon (`bloque`). */
+export const DELAI_ENTRE_REMPLACEMENTS_MS = 3_600_000;
+
+/**
+ * Les alertes de la réserve, avec leur fréquence : un message par jour au plus pour « basse », et une clé À PART pour
+ * « vide », sans quoi l'alerte basse de la veille ferait taire celle qui compte. Le verrou court n'est jamais relâché
+ * après un envoi réussi : son échéance EST le silence, commun à toutes les copies de l'API. Un envoi RATÉ (`false`,
+ * Telegram ne lève jamais) le relâche, pour que la prochaine attribution réessaie.
+ */
+export function creerAlertesReserve(o: {
+  verrous: Pick<VerrousCourts, 'prendre' | 'relacher'>;
+  envoyer(texte: string): Promise<boolean>;
+}): NumeroFourniRouteDeps['alertes'] {
+  return {
+    reserveBasse: async (libres) => {
+      const cle = libres === 0 ? 'numeros.reserve-vide' : 'numeros.reserve-basse';
+      const prise = await o.verrous.prendre([[cle, 24 * 3_600_000]]);
+      if (!prise) return;
+      const texte = libres === 0
+        ? 'Réserve de numéros fournis vide : plus aucun client ne peut en obtenir. Achète des numéros chez DIDWW, puis déclare-les dans /ops.'
+        : `Réserve de numéros fournis basse : ${libres} libre(s). Achète des numéros chez DIDWW, puis déclare-les dans /ops.`;
+      if (!(await o.envoyer(texte))) await o.verrous.relacher(prise);
+    },
+    numeroBloque: async (numero, tenant) => {
+      await o.envoyer(`Numéro fourni refusé par Meta et bloqué : +${numero} (espace ${tenant}). À résilier chez DIDWW, ou à garder.`);
+    },
+  };
+}
+
+const RESERVE_VIDE = {
+  error: 'Plus aucun numéro disponible pour le moment. Nous en ajoutons ; réessayez un peu plus tard.',
+  cause: 'reserve_vide',
+} as const;
+
+/** `+` devant les chiffres : c'est la forme que le client tape dans la fenêtre de Meta. */
+const affiche = (numero: string) => `+${numero}`;
+
+export function registerNumeroFourni(app: FastifyInstance, deps: NumeroFourniRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
+  const opts = { preHandler: garde };
+  // Les trois gestes engagent la réserve partagée : la limite coûteuse, comme l'inscription.
+  const couteux = gardeEtendue(garde, limiteCouteuse);
+
+  /** La réserve après une attribution : sous le seuil, Julien est prévenu. Jamais bloquant pour le client. */
+  const surveillerReserve = async (): Promise<void> => {
+    try {
+      const libres = await deps.numeros.compterLibres();
+      if (libres < deps.seuilReserve) await deps.alertes.reserveBasse(libres);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`numero-fourni : la réserve n'a pas pu être comptée : ${texteDe(err)}`);
+    }
+  };
+
+  app.post('/tenants/:tenantId/numero-fourni', couteux, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    if (await deps.numeroConnecte(tenant)) {
+      return reply.code(409).send({ error: 'Cet espace a déjà un numéro WhatsApp.', cause: 'deja_un_numero' });
+    }
+    const n = await deps.numeros.attribuer(tenant);
+    await surveillerReserve();
+    if (!n) return reply.code(409).send(RESERVE_VIDE);
+    return reply.code(200).send({ numero: affiche(n.numero) });
+  });
+
+  // Interrogée toutes les 3 secondes par la page pendant que la fenêtre de Meta est ouverte : lecture seule, hors
+  // plafond coûteux. Le code, jamais la transcription.
+  app.get('/tenants/:tenantId/numero-fourni', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const n = await deps.numeros.numeroDeLEspace(tenant);
+    if (!n) return reply.code(200).send({ numero: null, code: null, codeRecuLe: null });
+    const c = await deps.numeros.codeDeLEspace(tenant);
+    return reply.code(200).send({ numero: affiche(n.numero), code: c?.code ?? null, codeRecuLe: c ? c.recuLe.toISOString() : null });
+  });
+
+  app.post('/tenants/:tenantId/numero-fourni/remplacer', couteux, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    if (await deps.numeroConnecte(tenant)) {
+      return reply.code(409).send({ error: 'Le numéro de cet espace est déjà connecté.', cause: 'deja_un_numero' });
+    }
+    // Le verrou n'est jamais relâché : son échéance EST le délai, commun à toutes les copies de l'API.
+    if (!(await deps.verrous.prendre([[`numeros.remplacer:${tenant}`, DELAI_ENTRE_REMPLACEMENTS_MS]]))) {
+      return reply.code(429).send({ error: 'Un seul remplacement de numéro par heure. Si Meta refuse encore ce numéro, contactez-nous.', cause: 'trop_de_remplacements' });
+    }
+    const r = await deps.numeros.remplacerNumero(tenant);
+    if (r.bloque) {
+      try {
+        await deps.alertes.numeroBloque(r.bloque, tenant);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`numero-fourni : alerte du numéro bloqué non partie : ${texteDe(err)}`);
+      }
+    }
+    await surveillerReserve();
+    if (!r.nouveau) return reply.code(409).send(RESERVE_VIDE);
+    return reply.code(200).send({ numero: affiche(r.nouveau.numero) });
+  });
+
+  app.post('/tenants/:tenantId/numero-fourni/abandonner', couteux, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    // Refusé seulement si le numéro connecté EST le numéro fourni : un espace qui a connecté le sien rend celui-ci.
+    const [connecte, fourni] = await Promise.all([deps.numeroConnecte(tenant), deps.numeros.numeroDeLEspace(tenant)]);
+    if (connecte && fourni && (connecte.chiffres === '' || connecte.chiffres === fourni.numero)) {
+      return reply.code(409).send({ error: 'Le numéro de cet espace est déjà connecté.', cause: 'deja_un_numero' });
+    }
+    return reply.code(200).send({ rendu: (await deps.numeros.rendre(tenant)) !== null });
+  });
+}

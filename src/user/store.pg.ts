@@ -23,6 +23,12 @@ export interface UserRow {
 /** Résultat d'une mutation de compte gardée par l'invariant « au moins un admin actif par espace ». */
 export type UserMutation = 'ok' | 'last_admin' | 'not_found';
 
+/**
+ * D'où naît un espace (`tenants.origine`, migration 0212) : par la connexion OAuth de Claude Code, ou par la console.
+ * Fixée à la création, jamais recalculée ; le crédit offert au premier numéro en dépend.
+ */
+export type OrigineEspace = 'console' | 'claude_code';
+
 /** Email déjà pris (unicité globale de lower(email)). Traduit en 409 côté route. */
 export class DuplicateEmailError extends Error {
   constructor() {
@@ -227,10 +233,14 @@ export class PgUserStore {
    * 🔴 AUCUN CRÉDIT OFFERT ICI (décision de Julien du 2026-09-29) : offert à chaque espace qui naît, sans preuve,
    * il se récoltait par script. Il s'offre au premier numéro WhatsApp que Meta dit vérifié (`offrirAuNumeroVerifie`).
    */
-  async createTenantWithAdmin(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }> {
+  async createTenantWithAdmin(
+    workspaceName: string,
+    admin: { email: string; name: string | null; passwordHash: string | null },
+    origine: OrigineEspace = 'console',
+  ): Promise<{ tenantId: string; userId: string }> {
     try {
       return await enTransaction(this.pool, async (client) => {
-        const t = await client.query<{ id: string }>(`insert into tenants (name) values ($1) returning id`, [workspaceName]);
+        const t = await client.query<{ id: string }>(`insert into tenants (name, origine) values ($1, $2) returning id`, [workspaceName, origine]);
         const tenantId = t.rows[0]!.id;
         // Code client posé à la création (déterministe depuis l'uuid, immuable), puis code du premier admin.
         const tcode = deriveTenantCode(tenantId);

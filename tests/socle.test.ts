@@ -32,6 +32,7 @@ const configuration: ConfigSocle = {
   PHONE_RATE_PER_MINUTE_MAX: 80,
   RCS_PROVIDER: 'fake',
   CREDIT_OFFERT_MICRO_EUR: 0,
+  CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR: 0,
   CONTROL_HUMAN_TIMEOUT_MS: 2 * 60 * 60 * 1000,
   // Sans modèle ni Resend : le démarreur du répondeur rend `indisponible` sans lire la base, l'alerte se journalise.
   AI_GATEWAY_API_KEY: '',

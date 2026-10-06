@@ -74,7 +74,7 @@ désormais de l'origine.
   l'espace naît par la connexion OAuth de Claude Code, `console` sinon), et une seconde variable
   (`CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR`, 1 € par défaut) à côté de `CREDIT_OFFERT_MICRO_EUR`. Aucune reprise des
   espaces existants : ils restent `console`.
-- **Migration 0211** (numéro relu dans le dossier d'origin au moment de l'écrire ; d'autres sessions écrivent aussi
+- **Migration 0212** (numéro relu dans le dossier d'origin au moment de l'écrire ; d'autres sessions écrivent aussi
   des migrations) : l'origine de l'espace, le statut `bloque`, l'unicité « un numéro attribué par espace ». Elle
   ajoute et relâche : elle passe AVANT le `up`.
 

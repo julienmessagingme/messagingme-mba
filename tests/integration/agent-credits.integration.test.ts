@@ -207,7 +207,7 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
    * ici, on relie puis on offre, comme elle.
    */
   describe('le crédit offert au premier numéro vérifié', () => {
-    const CINQ = { creditOffertMicroEur: 5_000_000 };
+    const CINQ = { creditOffertMicroEur: 5_000_000, creditOffertClaudeCodeMicroEur: 1_000_000 };
     const suffixe = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     /** Un numéro affiché neuf à chaque appel, écrit comme Meta l'écrit (espaces compris). */
     const affiche = () => `+33 7 ${String(Math.floor(Math.random() * 1e8)).padStart(8, '0').replace(/(\d{2})(?=\d)/g, '$1 ')}`;
@@ -320,6 +320,20 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
       expect((await relier(c, { affiche: null })).offert).toBe(0);
       const offre = await pool.query('select 1 from credits_offerts where tenant_id = $1', [c]);
       expect(offre.rowCount).toBe(0);
+    });
+
+    it('🔴 un espace NÉ DEPUIS CLAUDE CODE reçoit 1 €, pas 5 € (tenants.origine, 0212)', async () => {
+      const email = `credit.claude.${suffixe()}@exemple.fr`;
+      const { tenantId: t } = await new PgUserStore(pool).createTenantWithAdmin('Espace itest Claude Code', { email, name: null, passwordHash: null }, 'claude_code');
+      espaces.push(t);
+      expect((await pool.query('select origine from tenants where id = $1', [t])).rows[0]).toEqual({ origine: 'claude_code' });
+      const r = await relier(t);
+      expect(r.offert).toBe(1_000_000);
+      expect(await credits.solde(t)).toBe(1_000_000);
+      // Un espace de la console, créé sans origine : 5 €.
+      const c = await espace('itest-offre-console');
+      expect((await pool.query('select origine from tenants where id = $1', [c])).rows[0]).toEqual({ origine: 'console' });
+      expect((await relier(c)).offert).toBe(5_000_000);
     });
 
     it('🔴 la LIAISON seule n offre rien : sans la preuve de Meta, pas de crédit', async () => {

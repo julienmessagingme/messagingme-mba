@@ -37,6 +37,15 @@
 
 ## 🟡 Le numéro fourni (lot 3b) : les jaunes de la relecture de la livraison A (2026-10-05)
 
+- 🟡 **Une attribution n'expire jamais** (relecture de la livraison B) : un espace qui obtient un numéro sans jamais le
+  connecter le garde. Un balayage qui rend à la réserve un numéro `attribue` non connecté après quelques jours.
+- 🟡 **Un numéro fourni relié mais NON vérifié reste sans code affiché** : si la fenêtre de Meta se termine sans
+  vérification, l'activation de l'Accueil demande le code par appel, l'Asterisk le capte, mais aucun écran ne le
+  montre (la page « Connecter WhatsApp » s'arrête dès que l'espace a un numéro). Afficher le code tant que le numéro
+  n'est pas vérifié.
+- 🟡 **La course « deux demandes du même espace » n'est pas garantie par le test d'intégration** (`Promise.all` peut ne
+  jamais se croiser) : la prouver avec une transaction tenue ouverte pendant la seconde attribution.
+
 - 🟡 **Un compte sans numéro reste attaché au premier espace qui l'a relié** : relancer la fenêtre depuis un autre
   espace rend 409, et aucun geste de la console ne le libère (« Délier » exige un numéro). À traiter avec la page du 3b.
 - 🟡 **Le cache de 60 s de `wabaDeLEspace`** (`src/meta/numero-espace.ts`) peut rendre un compte que `linkTenant` vient

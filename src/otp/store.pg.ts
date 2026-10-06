@@ -1,19 +1,21 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
+import { enTransaction } from '../db/transaction';
 
 /**
  * La réserve de numéros fournis et les codes de vérification captés (migration 0210, lot 3a, spec
  * `docs/superpowers/specs/2026-10-05-pont-du-code-design.md`).
  *
- * ⚠️ AUCUN FILTRE PAR ESPACE, ET C'EST DÉLIBÉRÉ : la réserve est à nous, pas à un client. Ses deux lecteurs sont
- * transverses par nature, la session d'exploitation de /ops et la route du pont, que l'Asterisk appelle pour un numéro
- * et non pour un espace. Le jour où un client lira son numéro (lot 3b), ce sera par une lecture filtrée sur
- * `tenant_id`, à écrire à côté de celles-ci.
+ * ⚠️ LA RÉSERVE EST À NOUS, PAS À UN CLIENT : `declarer`, `lister`, `ecrireCode` et la suite ne filtrent sur aucun
+ * espace, délibérément (la session d'exploitation de /ops et la route du pont, que l'Asterisk appelle pour un numéro
+ * et non pour un espace). Ce qu'un CLIENT lit ou écrit (lot 3b : `attribuer`, `numeroDeLEspace`, `codeDeLEspace`,
+ * `remplacerNumero`, `rendre`) est filtré sur `tenant_id`, sans exception.
  */
 
 /** Un code ne vaut que dix minutes ; la transcription sert au dépannage une semaine, puis le balayage l'efface. */
 export const RETENTION_CODES_VERIFICATION_JOURS = 7;
 
-export type StatutNumero = 'libre' | 'attribue' | 'resilie';
+/** `bloque` (0212) : refusé par Meta (déjà actif ailleurs), sorti de la réserve sans être résilié chez DIDWW. */
+export type StatutNumero = 'libre' | 'attribue' | 'resilie' | 'bloque';
 
 /** Pourquoi un appel n'a pas rendu de code : la transcription n'a pas abouti, ou aucun code certain n'y figure. */
 export type CauseSansCode = 'transcription_indisponible' | 'code_introuvable';
@@ -60,6 +62,9 @@ function versNumero(l: LigneNumero): NumeroFourni {
     attribueLe: l.attribue_le, creeLe: l.cree_le,
   };
 }
+
+/** Un code d'un espace ne vaut que le temps de le recopier dans la fenêtre de Meta (lot 3b). */
+export const VALIDITE_CODE_ESPACE_MINUTES = 15;
 
 /** Le numéro DIDWW est déjà déclaré sous un AUTRE numéro : une incohérence que la route rend en 409. */
 export class DidDejaDeclare extends Error {
@@ -163,4 +168,108 @@ export class PgNumerosFournisStore {
     );
     return res.rowCount ?? 0;
   }
+
+  // ----- Le numéro fourni côté client (lot 3b, migration 0212) : TOUT est filtré sur l'espace -----
+
+  /** Le numéro attribué à cet espace, `null` s'il n'en a pas. */
+  async numeroDeLEspace(tenantId: string): Promise<NumeroFourni | null> {
+    return lireAttribue(this.pool, tenantId);
+  }
+
+  /**
+   * Donne un numéro libre à l'espace, ou rend celui qu'il a déjà ; `null` = la réserve est vide. Une seule instruction
+   * pose ensemble le statut, l'espace et l'heure (sans quoi `numeros_fournis_espace_chk` refuse), sur une ligne prise
+   * en `for update skip locked` : deux espaces qui se disputent le dernier numéro n'en reçoivent pas deux. Deux
+   * demandes du MÊME espace : l'index `numeros_fournis_un_par_espace` fait échouer la seconde (23505), qui relit la
+   * première.
+   */
+  async attribuer(tenantId: string): Promise<NumeroFourni | null> {
+    try {
+      return await attribuerAvec(this.pool, tenantId);
+    } catch (err) {
+      if ((err as { code?: unknown }).code !== '23505') throw err;
+      return lireAttribue(this.pool, tenantId);
+    }
+  }
+
+  /**
+   * Le dernier code CERTAIN capté sur le numéro de cet espace, reçu après l'attribution et dans les
+   * `VALIDITE_CODE_ESPACE_MINUTES` dernières minutes. Jamais la transcription, jamais le code d'un autre espace.
+   */
+  async codeDeLEspace(tenantId: string): Promise<{ code: string; recuLe: Date } | null> {
+    const res = await this.pool.query<{ code: string; recu_le: Date }>(
+      `select c.code, c.recu_le
+         from codes_verification c join numeros_fournis n on n.id = c.numero_id
+        where n.tenant_id = $1 and n.statut = 'attribue' and c.code is not null
+          and c.recu_le >= n.attribue_le and c.recu_le > now() - make_interval(mins => $2::int)
+        order by c.recu_le desc limit 1`,
+      [tenantId, VALIDITE_CODE_ESPACE_MINUTES],
+    );
+    const l = res.rows[0];
+    return l ? { code: l.code, recuLe: l.recu_le } : null;
+  }
+
+  /**
+   * Meta refuse le numéro de cet espace (déjà actif sur WhatsApp ailleurs) : il passe en `bloque`, sans espace, et un
+   * autre est attribué, dans la même transaction. `bloque` = le numéro sorti (`null` si l'espace n'en avait pas),
+   * `nouveau` = le suivant (`null` si la réserve est vide).
+   */
+  async remplacerNumero(tenantId: string): Promise<{ bloque: string | null; nouveau: NumeroFourni | null }> {
+    try {
+      return await this.remplacerDansUneTransaction(tenantId);
+    } catch (err) {
+      // Une attribution concurrente du même espace (« Obtenir » et « Remplacer » en même temps) : la transaction est
+      // annulée, rien n'a été bloqué, et l'attribution qui a gagné est relue.
+      if ((err as { code?: unknown }).code !== '23505') throw err;
+      return { bloque: null, nouveau: await lireAttribue(this.pool, tenantId) };
+    }
+  }
+
+  private async remplacerDansUneTransaction(tenantId: string): Promise<{ bloque: string | null; nouveau: NumeroFourni | null }> {
+    return enTransaction(this.pool, async (client) => {
+      const b = await client.query<{ numero: string }>(
+        `update numeros_fournis set statut = 'bloque', tenant_id = null
+          where tenant_id = $1 and statut = 'attribue' returning numero`,
+        [tenantId],
+      );
+      return { bloque: b.rows[0]?.numero ?? null, nouveau: await attribuerAvec(client, tenantId) };
+    });
+  }
+
+  /** Rend le numéro de cet espace à la réserve ; rend le numéro rendu, `null` s'il n'y en avait pas. */
+  async rendre(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ numero: string }>(
+      `update numeros_fournis set statut = 'libre', tenant_id = null, attribue_le = null
+        where tenant_id = $1 and statut = 'attribue' returning numero`,
+      [tenantId],
+    );
+    return res.rows[0]?.numero ?? null;
+  }
+
+  /** Les numéros encore libres : l'alerte de réserve basse. */
+  async compterLibres(): Promise<number> {
+    const res = await this.pool.query<{ n: number }>(`select count(*)::int as n from numeros_fournis where statut = 'libre'`);
+    return res.rows[0]?.n ?? 0;
+  }
+}
+
+async function lireAttribue(db: Pool | PoolClient, tenantId: string): Promise<NumeroFourni | null> {
+  const res = await db.query<LigneNumero>(
+    `select ${COLONNES_NUMERO} from numeros_fournis n where n.tenant_id = $1 and n.statut = 'attribue'`,
+    [tenantId],
+  );
+  return res.rows[0] ? versNumero(res.rows[0]) : null;
+}
+
+/** L'attribution en une instruction : l'existant de l'espace, sinon le plus ancien numéro libre, pris sans attendre. */
+async function attribuerAvec(db: Pool | PoolClient, tenantId: string): Promise<NumeroFourni | null> {
+  const existant = await lireAttribue(db, tenantId);
+  if (existant) return existant;
+  const res = await db.query<LigneNumero>(
+    `update numeros_fournis n set statut = 'attribue', tenant_id = $1, attribue_le = now()
+      where n.id = (select id from numeros_fournis where statut = 'libre' order by cree_le, id limit 1 for update skip locked)
+     returning ${COLONNES_NUMERO}`,
+    [tenantId],
+  );
+  return res.rows[0] ? versNumero(res.rows[0]) : null;
 }

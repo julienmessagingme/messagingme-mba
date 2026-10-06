@@ -9,7 +9,7 @@ import { registerMfa, type MfaRouteDeps, type OptionsSuite } from './mfa-routes'
 import type { UserAuthStore } from './store';
 import { estAdresseOps, type UserStateLoader, type Guard } from './middleware';
 import type { GoogleIdentity } from './google';
-import { DuplicateEmailError } from '../user/store.pg';
+import { DuplicateEmailError, type OrigineEspace } from '../user/store.pg';
 import { nomEspace, MESSAGE_NOM_ESPACE_INVALIDE } from '../user/nom-espace';
 import { journaliser } from '../lib/journal';
 
@@ -55,7 +55,11 @@ export interface AuthRouteDeps extends MfaRouteDeps {
 /** Ce que les routes lisent et écrivent des comptes. Chaque méthode absente rend sa route 503. */
 export interface ComptesAuthDep {
   /** Inscription libre : crée un espace et son admin. `passwordHash` null = compte Google seul. */
-  createTenantWithAdmin?(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }>;
+  /**
+   * `origine` (migration 0212) : d'où naît l'espace, `claude_code` par la connexion OAuth de Claude Code, `console` sinon.
+   * Requise : elle fixe le crédit offert au premier numéro (1 € contre 5 €), et une porte qui l'oublierait ne compilerait pas.
+   */
+  createTenantWithAdmin?(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }, origine: OrigineEspace): Promise<{ tenantId: string; userId: string }>;
   /** Pose (écrase) le hash de mot de passe d'un compte (reset / changement). */
   setPassword?(userId: string, hash: string): Promise<boolean>;
   /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mdp. */
@@ -221,12 +225,13 @@ export async function freine(plafond: PlafondPartage, cle: string, reply: Fastif
 export async function creerEspaceParGoogle(
   comptes: ComptesAuthDep,
   identity: Pick<GoogleIdentity, 'email' | 'name'>,
+  origine: OrigineEspace,
 ): Promise<{ tenantId: string; userId: string; tenantName: string }> {
   if (!comptes.createTenantWithAdmin) throw new Error('creerEspaceParGoogle : création d’espace non câblée');
   const gname = (identity.name ?? '').slice(0, 60).trim();
   const construit = nomEspace.safeParse(gname !== '' ? `Espace de ${gname}` : '');
   const tenantName = construit.success ? construit.data : 'Mon espace';
-  const { tenantId, userId } = await comptes.createTenantWithAdmin(tenantName, { email: identity.email, name: identity.name, passwordHash: null });
+  const { tenantId, userId } = await comptes.createTenantWithAdmin(tenantName, { email: identity.email, name: identity.name, passwordHash: null }, origine);
   markLogin(comptes, userId);
   return { tenantId, userId, tenantName };
 }
@@ -369,7 +374,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
       return reply.code(200).send({ token: jwt, user: { email: identity.email, role: existing.role, tenantId: existing.tenantId }, isNew: false });
     }
     // Adresse inconnue : inscription libre via Google (espace et admin, sans mot de passe).
-    const { tenantId, userId } = await creerEspaceParGoogle(deps.comptes, identity);
+    const { tenantId, userId } = await creerEspaceParGoogle(deps.comptes, identity, 'console');
     const jwt = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
     // isNew:true : le front envoie vers /accueil (onboarding « connecter ton numéro »).
     return reply.code(201).send({ token: jwt, user: { email: identity.email, role: 'admin', tenantId }, isNew: true });
@@ -409,7 +414,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
       return reply.code(409).send({ error: 'un compte existe déjà avec cet email' });
     }
     try {
-      const { tenantId, userId } = await deps.comptes.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) });
+      const { tenantId, userId } = await deps.comptes.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) }, 'console');
       // L'inscription crée un admin : elle rend un jeton d'enrôlement, jamais une session ; une identité qui a
       // déjà un facteur actif donne son code.
       const facteur = await deps.mfa.lireParCompte(userId);

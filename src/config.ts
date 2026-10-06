@@ -486,6 +486,12 @@ export const schema = z.object({
    */
   CREDIT_OFFERT_MICRO_EUR: z.coerce.number().int().min(0).default(5_000_000),
   /**
+   * Le crédit offert au premier numéro vérifié d'un espace NÉ DEPUIS CLAUDE CODE (`tenants.origine = 'claude_code'`,
+   * migration 0212), à la place du précédent : 1 € (décision de Julien du 2026-10-05, « par Claude Code, si le mec
+   * fournit son numéro cela coûte zéro, donc on ne va pas lui filer 5 € à chaque fois »). Mêmes bornes, 0 l'éteint.
+   */
+  CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR: z.coerce.number().int().min(0).default(1_000_000),
+  /**
    * La recharge du crédit par Stripe (Checkout hébergé, puis webhook). Les quatre vides par défaut : la route de
    * paiement rend 503 et la console dit « recharge pas encore disponible », rien ne casse au démarrage.
    * 🔴 Côté serveur uniquement, jamais en `NEXT_PUBLIC_`. `STRIPE_SECRET_KEY` est une clé RESTREINTE (sessions
@@ -516,6 +522,11 @@ export const schema = z.object({
   DIDWW_API_URL: z.string().default('').transform((v) => v.trim() || 'https://api.didww.com/v3').pipe(z.string().url()),
   DIDWW_TRUNK_OTP_ID: z.string().default(''),
   OTP_PONT_SECRET: z.string().default(''),
+  /**
+   * Le numéro fourni côté client (lot 3b) : sous ce nombre de numéros libres dans la réserve, Julien est prévenu par
+   * Telegram, au plus une fois par jour. 0 éteint l'alerte (aucun compte n'est sous zéro).
+   */
+  ALERTE_RESERVE_SEUIL: z.coerce.number().int().min(0).default(3),
   /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est inerte (aucun job enfilé). */
   CONNECTOR_PUSH_URL: z.string().default(''),
   /** Secret HMAC partagé avec le connecteur (== INGEST_SECRET). Signe le push. */

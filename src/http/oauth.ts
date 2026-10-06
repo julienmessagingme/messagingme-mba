@@ -279,7 +279,8 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
       if (tous.length > 0 && actifs.length === 0) return reply.code(403).send({ error: 'compte révoqué' });
       const nouveau = tous.length === 0;
       if (nouveau) {
-        const cree = await creerEspaceParGoogle(deps.comptes, identite);
+        // L'espace naît ici par la connexion de Claude Code : son origine fixe le crédit offert à 1 € (0212).
+        const cree = await creerEspaceParGoogle(deps.comptes, identite, 'claude_code');
         actifs = [{ id: cree.userId, tenantId: cree.tenantId, tenantName: cree.tenantName, role: 'admin', disabled: false }];
       }
       const choix = await signChoixOauth({ email: identite.email, demande: sha256Hex(lu.data.demande) }, deps.secret);

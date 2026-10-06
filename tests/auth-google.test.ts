@@ -9,7 +9,7 @@ const SECRET = 'test-secret';
 const j = { headers: { 'content-type': 'application/json' } };
 
 interface Cap {
-  created: Array<{ name: string; email: string; passwordHash: string | null }>;
+  created: Array<{ name: string; email: string; passwordHash: string | null; origine?: string }>;
 }
 
 // Vérificateur Google FAKE : exerce le chemin réel de la route sans dépendre du vrai JWKS Google.
@@ -31,9 +31,9 @@ function app(over: Partial<Omit<AuthRouteDeps, 'comptes'>> & { comptes?: Partial
     secret: SECRET,
     getUserState: async () => ({ role: 'admin', disabled: false, tenantStatus: 'active' }),
     comptes: {
-      createTenantWithAdmin: async (name, admin) => {
+      createTenantWithAdmin: async (name, admin, origine) => {
         if (admin.email === 'taken@x.fr') throw new DuplicateEmailError();
-        cap.created.push({ name, email: admin.email, passwordHash: admin.passwordHash });
+        cap.created.push({ name, email: admin.email, passwordHash: admin.passwordHash, origine });
         return { tenantId: 'tNew', userId: 'uNew' };
       },
       getByEmail: async (email) => {
@@ -101,7 +101,8 @@ describe('POST /auth/google', () => {
     expect(body.token).toBeTruthy();
     expect(body.isNew).toBe(true);
     expect(body.user).toMatchObject({ role: 'admin', tenantId: 'tNew', email: 'new@x.fr' });
-    expect(cap.created).toEqual([{ name: 'Espace de Alice', email: 'new@x.fr', passwordHash: null }]);
+    // L'espace né par la connexion Google de la CONSOLE garde l'origine console (0212) : 5 € offerts, pas 1 €.
+    expect(cap.created).toEqual([{ name: 'Espace de Alice', email: 'new@x.fr', passwordHash: null, origine: 'console' }]);
     await server.close();
   });
 

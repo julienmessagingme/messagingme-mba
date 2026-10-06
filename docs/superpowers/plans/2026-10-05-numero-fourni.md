@@ -20,7 +20,7 @@ crédit offert de 1 € ; alerte Telegram de réserve basse reçue.
 
 - Aucun tiret long dans le code, les commentaires et les docs.
 - `tenant_id = $1` sur chaque requête d'espace ; dépendances requises, jamais optionnelles.
-- Migration écrite au numéro libre relu dans origin (0211 au 2026-10-06), appliquée AVANT le `up`.
+- Migration écrite au numéro libre relu dans origin (0212 au 2026-10-06), appliquée AVANT le `up`.
 - La console n'est poussée qu'après le déploiement de l'API qui porte ses routes.
 
 ## Points de vigilance (chacun avec son test dans sa tâche)
@@ -38,12 +38,12 @@ Faite le 2026-10-05 : un compte revenu sans numéro est gardé avec son jeton. *
 
 ## Livraison B : le repli
 
-**Tâche 1. Migration 0211 et magasin**
+**Tâche 1. Migration 0212 et magasin**
 - `tenants.origine` (`console` par défaut, CHECK `console` ou `claude_code`), sans reprise ; `numeros_fournis` : statut
   `bloque` ajouté au CHECK, index unique partiel `(tenant_id) where statut = 'attribue'`.
 - `src/otp/store.pg.ts` : `attribuer(tenantId)` (rend l'existant, sinon prend un `libre` en `for update skip locked`,
   `null` si la réserve est vide), `numeroDeLEspace(tenantId)`, `codeDeLEspace(tenantId)` (dernier code certain reçu
-  après l'attribution et dans les 15 minutes), `remplacer(tenantId)` (bloque l'actuel, en attribue un autre),
+  après l'attribution et dans les 15 minutes), `remplacerNumero(tenantId)` (bloque l'actuel, en attribue un autre),
   `rendre(tenantId)`, `compterLibres()`.
 - Tests d'intégration : deux espaces et un libre, un seul gagnant ; rejouer rend le même ; le code d'un autre espace
   et un code antérieur invisibles ; remplacer et rendre.
@@ -70,6 +70,6 @@ Faite le 2026-10-05 : un compte revenu sans numéro est gardé avec son jeton. *
 
 ## Ordre de déploiement
 
-1. Relecture, CI job par job ; migration 0211 AVANT le `up` de l'API et des deux workers, relue en base, compteur de
+1. Relecture, CI job par job ; migration 0212 AVANT le `up` de l'API et des deux workers, relue en base, compteur de
    `CLAUDE.md` mis à jour ; contrôle public ; puis push de la console.
 2. **Essai réel** (ci-dessus), puis la réserve réapprovisionnée par Julien.
