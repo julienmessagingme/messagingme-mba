@@ -91,8 +91,18 @@ cycle : c'est l'essai réel.
   libération (13 octobre), le refus dans l'Inbox, et dans Claude Code `get_number_subscription` « suspendu » et le
   rappel sur chaque réponse d'outil. Vérifié aussi par le code déployé, en lecture seule : ce numéro est suspendu,
   ceux de trois autres espaces non.
-- Reste : les jaunes de la relecture, puis la livraison B (la libération à J+7, « Abandonner », les e-mails), tâches 9
-  à 12. Sans B, l'espace de l'essai reste suspendu après le 13 octobre : rien ne le libère encore.
+- ✅ **Lot 4, livraison B (la libération, « Abandonner », les e-mails) en production le 2026-10-06 au soir : API et deux
+  workers sur `a2bf45c7` (le commit `40f8322e` et le correctif de son test d'intégration), console `7fe7c7e7`, aucune
+  migration, CI verte job par job.** Relue : deux rouges corrigés avant le
+  déploiement (après la libération, l'espace ne pouvait plus jamais connecter de numéro : la ligne est désormais
+  RETIRÉE et non déliée ; la purge des codes effaçait toujours la preuve « vu de Meta » : elle épargne un numéro
+  attribué), les jaunes dans `todo.md`. Les jaunes de A sont corrigés, sauf l'ordre des `customer.subscription.updated`.
+  Réglages de Julien faits : le droit d'écrire les abonnements sur la clé restreinte (vérifié sur un abonnement
+  inexistant : 404, pas 403). La clé DIDWW du worker est valide (lue, 200).
+- ✅ Dès le déploiement, l'e-mail de suspension est parti à l'admin de l'espace de l'essai (20 h 36 UTC), l'alerte
+  Telegram n'est pas repartie (déjà notée par A).
+- 🔜 **La première libération réelle** : l'espace de l'essai, le 13 octobre vers 15 h 14 UTC (rappel le 11). Julien a
+  accepté d'y perdre +44 1259 797311. Puis les jaunes de B.
 
 ## LOT 3c DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO BRANCHÉ DEPUIS CLAUDE CODE, EN PRODUCTION, ESSAI RÉEL FAIT
 

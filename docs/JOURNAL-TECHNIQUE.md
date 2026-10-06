@@ -5,6 +5,33 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : le numéro fourni libéré à J+7, « Abandonner » et les e-mails (lot 4, livraison B)
+
+**Ce qui part** (`40f8322e`, test `a2bf45c7`, console `7fe7c7e7`, aucune migration) : 7 jours après la fin d'un
+abonnement, le balayage libère le numéro fourni. Vu de Meta (relié, ou un code capté), il quitte l'espace et il est
+résilié chez DIDWW (`terminated: true`, attribut mesuré sur le compte réel avant d'écrire le client) ; jamais vu, il
+retourne `libre`. Une seule transaction, appel DIDWW compris : un refus de DIDWW annule tout et se rejoue. Les admins
+reçoivent un e-mail à la suspension, 2 jours avant la libération et à la libération ; chaque avis se note APRÈS un envoi
+réussi. « Abandonner » d'un abonné programme la fin chez Stripe (`cancel_at_period_end`), ce qui a demandé le droit
+d'écrire les abonnements sur la clé restreinte, vérifié sans rien modifier (une demande sur un abonnement inexistant
+rend 404 et non 403).
+
+**Relue : deux rouges, et ils disent la même chose : une règle juste vue d'ici, fausse vue d'ailleurs.**
+1. La spec disait « délié chez nous ». Délié mais gardé, le numéro occupait l'unique place de numéro de l'espace
+   (`linkTenant`, `lierCompteSansNumero`, la route du paiement) : l'espace n'aurait plus jamais pu en connecter un
+   autre, alors que l'e-mail l'y invitait. La ligne est désormais SUPPRIMÉE (aucune clé étrangère ne la référence).
+2. La preuve « un code de Meta a été capté » devait éviter de remettre en réserve un numéro que Meta a vu. Mais la
+   purge des codes, réglée à 7 jours pour une autre raison, l'effaçait toujours avant la libération (au plus tôt 7
+   jours après la fin). Elle épargne désormais les codes d'un numéro attribué.
+Leçon : **une preuve qu'on lit à J+7 doit vivre plus de 7 jours, et la durée de vie d'une donnée se relit chaque fois
+qu'un nouveau lecteur s'y appuie.**
+
+**La CI a trouvé ce que la relecture ne pouvait pas voir** : le test d'intégration de la libération insérait des
+abonnements `sub_lib_a`, refusés par `abonnements_numero_id_chk` (`^sub_[A-Za-z0-9]+$`) ; il n'exerçait donc rien. Le
+déploiement a attendu son correctif (`a2bf45c7`) et sa CI verte. Le sens rouge des deux correctifs n'a pas pu être vu en
+CI (le commit jetable a été refusé par le garde-fou) ; la condition du rouge 2 de A a été évaluée dans Postgres en
+lecture seule.
+
 ## 2026-10-06 : ce que devient un numéro fourni dont l'abonnement tombe (lot 4, livraison A, la suspension)
 
 **Le cadrage** (spec `docs/superpowers/specs/2026-10-06-numero-impaye-design.md`, plan

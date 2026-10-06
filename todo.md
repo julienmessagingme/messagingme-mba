@@ -49,14 +49,11 @@
 - **Ménage** : le numéro de l'essai du 3b (+44 1235 619343, `bloque`) est à résilier chez DIDWW (Julien), puis à
   passer en `resilie` dans la réserve.
 
-## Lot 4 : ce qui reste après la livraison A (2026-10-06)
+## Lot 4 : ce qui reste après les livraisons A et B (2026-10-06)
 
-La suspension (livraison A) est faite ; la libération et les e-mails (livraison B) suivent le plan
-`docs/superpowers/plans/2026-10-06-numero-impaye.md`, tâches 9 à 12 : libérer le numéro 7 jours après la fin (délié
-chez nous, résilié chez DIDWW, rien chez Meta : ⚠️ Meta met un numéro libéré en quarantaine, il ne revient JAMAIS dans
-la réserve), « Abandonner » d'un abonné qui résilie en fin de période (tranché par Julien le 2026-10-06 ; il faut le
-droit d'écriture sur les abonnements à la clé restreinte de Stripe), et les e-mails de suspension, de rappel et de
-libération.
+Les deux livraisons sont en production (la suspension, puis la libération, « Abandonner » et les e-mails). La première
+libération réelle est celle de l'espace de l'essai, le 13 octobre vers 15 h 14 UTC (rappel aux admins le 11) : à
+regarder ce jour-là (numéro résilié chez DIDWW, ligne retirée de l'espace, alerte, e-mail).
 
 - **Un fil déjà tenu par l'agent de Meta lui reste pendant une suspension** : rien ne change chez Meta, donc s'il est
   allumé il continue de répondre au client, alors que l'espace ne peut plus rien envoyer lui-même. Décidé « rien chez
