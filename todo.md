@@ -121,14 +121,6 @@ l'événement. À regarder si un refus se reproduit en production : `GET /{phone
 qu'aux événements acceptés ; garder la conversation, l'heure et l'état du fil. Parade pour une démo : « Reprendre la
 main » sur la conversation juste avant, pour partir d'un état propre.
 
-## 🟡 Enchaîner deux tests : l'agent de Meta réagit au mot du lien (jaune n°2 de la relecture de `0c4e2099`, vu le 2026-10-03)
-
-Un test qui finit chez l'agent (réponse hors parcours, fin de parcours) remet le contact sur sa liste. Le jeton du
-test suivant arrive donc à un agent qui tient le fil et a le contact sur sa liste : il l'a lu le 3 à 19 h 38 et a
-répondu par son message de passage, en plein test. Le test démarre quand même (le jeton reprend le fil). Pistes : un
-parcours de TEST qui ne rend pas le fil en se terminant normalement (mais garde la réponse hors parcours), ou une
-consigne à l'agent sur les mots `test-…`. Parade : attendre la réponse de l'agent avant de relancer le lien.
-
 ## 🟡 Un envoi refusé par Meta en pleine avance laisse le parcours en attente, en silence (vu le 2026-10-03)
 
 Pendant l'essai réel des envois de bloc, un bloc « formulaire » désignait un formulaire inexistant. Meta a refusé

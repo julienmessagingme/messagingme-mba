@@ -770,7 +770,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   **le panneau ne prévient pas** : décision de Julien, « tant pis, il ne se passe rien ».
 - ✅ **Un test DÉSENCLENCHE l'agent de Meta** (2026-09-16) : envoyer un lien de test reprend la conversation à
   l'agent, même s'il la tenait, et le scénario démarre. Avant, l'agent répondait « je n'ai pas bien compris
-  votre message » et le test ne partait jamais. Ensuite, la conversation suit les règles de toutes les autres
+  votre message » et le test ne partait jamais. Depuis le 2026-10-06, quand l'agent tenait la conversation, il
+  répond d'abord « Je lance le test. » et le scénario part après sa phrase (15 à 25 s) : coupé en plein tour, il
+  envoyait sinon son message de passage à un humain au milieu du scénario. Ensuite, la conversation suit les règles de toutes les autres
   (depuis le 2026-10-03) : l'agent se tait pendant le scénario, et une réponse que le scénario ne prend pas (un
   texte libre sur un bloc dont la sortie « Toute autre réponse » n'est pas reliée) lui est confiée, et il y
   répond. Les conversations marquées comme test avant cette date le restent : l'agent ne les reprend pas tout

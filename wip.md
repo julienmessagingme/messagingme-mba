@@ -331,9 +331,14 @@ La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp`
 - ✅ **Modèle PUIS texte libre : l'agent répond aussi** (23 h 01, après « Reprendre la main »). Deux refus de Meta
   plus tôt dans la soirée restent inexpliqués (`todo.md`). **Parade pour la démo du 7 : « Reprendre la main » sur la
   conversation juste avant de lancer le scénario.**
-- ⏳ **Enchaîner les tests : l'agent peut réagir au mot du lien** (jaune n°2 de la relecture, vu le 3 à 19 h 38) :
-  un essai fini chez l'agent remet le contact sur sa liste, et le jeton suivant lui arrive. Il a répondu par son
-  message de passage. Parade : attendre sa réponse avant de relancer le lien.
+- ⏳ **Le mot du lien reçu par l'agent de Meta** (vu le 3 à 19 h 38, revu cinq fois le 6 sur SANDBOX avec Geoffrey) :
+  si l'agent tient la conversation, Meta lui donne le mot `test-…` ; le test lui reprenait le fil en plein tour, et
+  son message de passage tombait 13 à 23 s plus tard au milieu du scénario. Correctif du 6 (`src/mba/lien-de-test.ts`) :
+  consigne « Je lance le test. » par `agent_event`, attente de son écho (40 s au plus, hors du job du webhook, l'écho
+  passant par la même file groupée par contact), puis lancement. **Essai réel dû** : lien de test sans « Reprendre la
+  main », conversation chez l'agent ; lire `lien-de-test:` dans le journal du worker. ⚠️ Inconnue à mesurer : l'agent
+  peut répondre DEUX fois (au mot, puis à la consigne) ; le second tour serait alors coupé, et son message de passage
+  reviendrait. Si c'est le cas, retirer la consigne et garder l'attente seule.
 
 ## DOUBLE WORKER, BANCS, CLÉ D'IDEMPOTENCE, POOLS (TOUT DÉPLOYÉ LE 2026-10-03 ; ESSAI RÉEL FAIT)
 

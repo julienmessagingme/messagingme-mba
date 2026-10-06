@@ -69,6 +69,7 @@ describe('processTestTokens', () => {
       deps: {
         findByTestToken: async (tok: string) => (tok === MOT_TEST ? { workflowId: 'wf1', tenantId: 't1' } : null),
         mayStart: async () => true,
+        apresLAgent: (_t: string, _w: string, lancer: () => Promise<void>) => lancer(),
         startTestRun: async (_t: string, wf: string) => { trace.started.push(wf); return true; },
         ...over,
       },

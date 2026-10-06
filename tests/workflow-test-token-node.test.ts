@@ -133,6 +133,7 @@ describe('processTestTokens transmet le bloc', () => {
       trace,
       deps: {
         findByTestToken: async (token: string) => { trace.cherche.push(token); return { workflowId: 'wf1', tenantId: 't1' }; },
+        apresLAgent: (_t: string, _w: string, lancer: () => Promise<void>) => lancer(),
         startTestRun: async (_t: string, wf: string, _w: string, nodeId: string | null) => {
           trace.demarres.push({ wf, nodeId });
           return true;

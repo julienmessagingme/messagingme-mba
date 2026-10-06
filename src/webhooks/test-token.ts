@@ -30,6 +30,11 @@ export interface TestTokenDeps {
    * `lien_de_test`) et refuse lisiblement si Meta ne le rend pas.
    */
   startTestRun(tenantId: string, workflowId: string, waId: string, nodeId: string | null): Promise<boolean | string>;
+  /**
+   * Un jeton reçu en `standby` est arrivé à l'agent de Meta avant nous : `lancer` ne part qu'après son tour
+   * (`src/mba/lien-de-test.ts`), sans être attendu ici, l'écho de l'agent passant par la même file que ce job.
+   */
+  apresLAgent(tenantId: string, waId: string, lancer: () => Promise<void>): unknown;
 }
 
 /** Ce qu'on met d'un identifiant de bloc dans une trace : de quoi le reconnaître, jamais un message entier. */
@@ -62,7 +67,7 @@ export async function processTestTokens(
     // les automations refusent toujours le `standby`.
     if (m.field === 'standby') {
       // eslint-disable-next-line no-console
-      console.log(`test-token: jeton reçu en « standby » (l'agent de Meta tient le fil pour ${m.waId}), le test va le lui reprendre`);
+      console.log(`test-token: jeton reçu en « standby » (l'agent de Meta tient le fil pour ${m.waId}), le test part après son tour`);
     }
     try {
       if (!tenantId) {
@@ -99,13 +104,17 @@ export async function processTestTokens(
       // La fermeture du parcours en cours se fait dans `runFrom` (`closeActiveByWaId`), après les gardes de
       // l'exécuteur : un test qui ne démarre pas ne tue pas le parcours, et un parcours endormi est fermé aussi.
       // Un refus se journalise : un lien permanent peut désigner un bloc supprimé depuis, que l'exécuteur refuse.
-      const issue = await deps.startTestRun(tenantId, wf.workflowId, m.waId, lu.nodeId);
-      if (issue !== true) {
-        // eslint-disable-next-line no-console
-        // Le bloc est tronqué dans la trace : le suffixe n'a pas de forme imposée, donc sa longueur n'est bornée
-        // par rien.
-        console.warn(`test-token: test NON démarré pour ${m.waId} sur le scénario ${wf.workflowId}${lu.nodeId ? ` au bloc ${extraitDeBloc(lu.nodeId)}` : ''} : ${issue === false ? 'refus sans raison' : issue}`);
-      }
+      const lancer = async (): Promise<void> => {
+        const issue = await deps.startTestRun(tenantId, wf.workflowId, m.waId, lu.nodeId);
+        if (issue !== true) {
+          // eslint-disable-next-line no-console
+          // Le bloc est tronqué dans la trace : le suffixe n'a pas de forme imposée, donc sa longueur n'est bornée
+          // par rien.
+          console.warn(`test-token: test NON démarré pour ${m.waId} sur le scénario ${wf.workflowId}${lu.nodeId ? ` au bloc ${extraitDeBloc(lu.nodeId)}` : ''} : ${issue === false ? 'refus sans raison' : issue}`);
+        }
+      };
+      if (m.field === 'standby') deps.apresLAgent(tenantId, m.waId, lancer);
+      else await lancer();
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('processTestTokens: jeton ignoré:', messageDe(err));

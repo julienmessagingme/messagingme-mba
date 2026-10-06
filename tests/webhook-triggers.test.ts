@@ -178,6 +178,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       inboundContactUpsert: async () => 'updated',
       triggers: { run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
       testTokens: {
+        apresLAgent: (_t: string, _w: string, lancer: () => Promise<void>) => lancer(),
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
@@ -203,6 +204,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       inboundContactUpsert: async () => 'updated',
       triggers: { run: async (_t, ev) => { triggered.push(ev.waId); return demarres; } },
       testTokens: {
+        apresLAgent: (_t: string, _w: string, lancer: () => Promise<void>) => lancer(),
         findByTestToken: async () => null,
         startTestRun: async () => true,
       },
@@ -243,6 +245,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
       inboundContactUpsert: async () => 'updated',
       testTokens: {
+        apresLAgent: (_t: string, _w: string, lancer: () => Promise<void>) => lancer(),
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
@@ -261,6 +264,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
       inboundContactUpsert: async () => 'updated',
       testTokens: {
+        apresLAgent: (_t: string, _w: string, lancer: () => Promise<void>) => lancer(),
         findByTestToken: async () => { throw new Error('base indisponible'); },
         startTestRun: async () => true,
       },

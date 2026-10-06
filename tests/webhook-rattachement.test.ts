@@ -78,6 +78,7 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
       noterIssue: async () => {},
     },
     testTokens: {
+      apresLAgent: (_t: string, _w: string, lancer: () => Promise<void>) => lancer(),
       findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
       startTestRun: async (t) => { vus.push(`test:${t}`); return true; },
     },

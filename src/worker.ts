@@ -12,6 +12,7 @@ import { viderMesuresTachesVersLaBase } from './ops/mesure-taches.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { todayParis, addDays } from './stats/range';
 import { handleWebhookJob } from './webhooks/handler';
+import { creerApresLAgent } from './mba/lien-de-test';
 import { PgEventStore } from './webhooks/store';
 import { PgCampaignStore, PgQualityProvider } from './campaign/store.pg';
 import { campaignRunJob, type CapacitesMoteur } from './campaign/run-job';
@@ -496,6 +497,16 @@ async function main(): Promise<void> {
         // est dans la table des lancements. Un scénario inconnu rend `false`, comme avant.
         startTestRun: async (tenant, workflowId, waId, nodeId) =>
           (await lancements.lancer({ type: 'lien_de_test', tenantId: tenant, workflowId, waId, blocDuJeton: nodeId })) ?? false,
+        // Le jeton arrivé à l'agent de Meta : sa phrase prévue, son tour fini, puis le test (`src/mba/lien-de-test.ts`).
+        apresLAgent: creerApresLAgent({
+          numero: (t) => repo.getTenantPhoneNumberId(t),
+          envoyer: async (t, pn, to, event) => (await metaFactory.mbaClientForTenant(t)).agentEvent(pn, to, event, AbortSignal.timeout(10_000)),
+          dernierMessageDeLAgent: (t, w) => inboxStore.dernierMessageDeLAgent(t, w),
+          attendre: (ms) => new Promise((r) => setTimeout(r, ms)),
+          maintenant: () => Date.now(),
+          // eslint-disable-next-line no-console
+          journal: (ligne) => console.log(ligne),
+        }),
       },
       // Mesure par bloc : les accusés Meta (délivré / lu / échec) retrouvent ici le bloc qui a envoyé le message.
       // Un identifiant hors scénario ne crée rien.

@@ -47,6 +47,20 @@ export function evenementMessageSansSuite(message: string): EvenementAgent {
 }
 
 /**
+ * Le mot d'un lien de test vient d'arriver à l'agent, et un scénario va démarrer (`src/mba/lien-de-test.ts`) : l'agent
+ * dit une phrase prévue et rien d'autre, puis le scénario prend la conversation après son tour. Sans payload utile :
+ * le mot du lien est un secret de scénario, il n'a rien à faire dans une consigne.
+ */
+export const TYPE_LIEN_DE_TEST = 'lien_de_test';
+export const PHRASE_LIEN_DE_TEST = 'Je lance le test.';
+export const DESCRIPTION_LIEN_DE_TEST =
+  `Le dernier message du client est le mot d’un lien de test : un scénario automatique va démarrer juste après ta réponse. Réponds exactement « ${PHRASE_LIEN_DE_TEST} » et rien d’autre, sans commenter le message ni poser de question.`;
+
+export function evenementLienDeTest(): EvenementAgent {
+  return { type: TYPE_LIEN_DE_TEST, description: DESCRIPTION_LIEN_DE_TEST, payload: '{}' };
+}
+
+/**
  * L'envoi demandé par l'agent de Meta a échoué après sa réponse : le relais n'attend un envoi que 1,5 s
  * (`DELAI_REPONSE_ENVOI_MS`), et l'agent resterait muet. La raison part dans le payload : des textes écrits pour
  * lui (`gestes-envoi.ts`, `erreurDePanne`).
