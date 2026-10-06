@@ -262,7 +262,12 @@ async function lireAttribue(db: Pool | PoolClient, tenantId: string): Promise<Nu
 }
 
 /** L'attribution en une instruction : l'existant de l'espace, sinon le plus ancien numéro libre, pris sans attendre. */
-async function attribuerAvec(db: Pool | PoolClient, tenantId: string): Promise<NumeroFourni | null> {
+/**
+ * L'attribution, sur une connexion donnée : `attribuer` la prend sur le pool, l'abonnement du numéro (lot 3c,
+ * `src/stripe/abonnements.pg.ts`) DANS la transaction qui enregistre le paiement, pour qu'un abonnement payé ait
+ * son numéro ou qu'aucun des deux ne soit écrit.
+ */
+export async function attribuerAvec(db: Pool | PoolClient, tenantId: string): Promise<NumeroFourni | null> {
   const existant = await lireAttribue(db, tenantId);
   if (existant) return existant;
   const res = await db.query<LigneNumero>(

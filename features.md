@@ -1850,11 +1850,13 @@ scénario, comment importer des contacts.
   vérification, c'est elle qui débloquait), app publiée.
 - ✅ **Un numéro fourni pour qui n'en a pas** (lot 3b, LIVE et éprouvé le 2026-10-06) : sur l'Accueil d'un
   espace sans numéro, « Pas de numéro ? Nous vous en fournissons un » mène à la page « Connecter WhatsApp ».
-  « Fournissez-moi un numéro » attribue un numéro britannique dédié de notre réserve et l'affiche, avec un bouton
-  Copier ; le client le tape dans la fenêtre de Meta (« Enter a new phone number ») et choisit la vérification par
+  « Fournissez-moi un numéro » se paie d'abord (3,50 € HT par mois, abonnement Stripe, lot 3c) : « Payer » mène à la
+  page de paiement de Stripe, et le numéro britannique dédié de notre réserve n'est attribué qu'une fois le paiement
+  confirmé ; la page l'affiche alors, avec un bouton Copier ; le client le tape dans la fenêtre de Meta (« Enter a new phone number ») et choisit la vérification par
   appel ; le code que Meta dicte est capté par notre serveur et s'affiche sur la page en quelques secondes ; le client
   le recopie, et le numéro est connecté comme un autre. Si Meta refuse ce numéro, « En obtenir un autre » en donne un
-  nouveau ; « Abandonner » le rend à la réserve. Gratuit en attendant l'abonnement. « J'ai déjà un numéro » ouvre la
+  nouveau ; « Abandonner » le rend à la réserve. Payé mais la réserve vide : la page dit « en préparation », et le
+  numéro arrive dès que Julien en déclare un. « J'ai déjà un numéro » ouvre la
   fenêtre de Meta comme le bouton de l'Accueil. ⚠️ La fenêtre de Meta impose l'écran du numéro, d'où la saisie.
   Éprouvé de bout en bout sur un espace créé depuis Claude Code : le numéro attribué, le code de Meta capté par l'appel
   et affiché sur la page, le numéro connecté et vérifié chez Meta, 1 € de crédit offert. ⚠️ La réserve ne compte
@@ -3844,7 +3846,10 @@ numéro est connecté ; passé l'heure, Claude en donne un autre. Il n'ouvre que
 rien d'autre de la console. Il est donné au nom de la personne connectée à Claude, qui doit être admin de l'espace :
 si elle cesse de l'être, le lien ne sert plus. Deux outils pour Claude : `start_whatsapp_connection` (numéro fourni
 ou apporté) et `watch_whatsapp_connection`, invisibles derrière une clé d'API. Un numéro relié que Meta n'a pas encore
-activé n'est pas annoncé « connecté » : Claude dit qu'il reste à finir la vérification. ⚠️ Révoquer l'accès de Claude
+activé n'est pas annoncé « connecté » : Claude dit qu'il reste à finir la vérification. Livraison B (l'abonnement à
+3,50 € HT par mois) : la page du lien porte le paiement, l'attente annonce le paiement confirmé, et deux outils de plus,
+`get_number_subscription` (le statut et la prochaine échéance) et `manage_number_subscription` (le portail de Stripe :
+carte, factures, résiliation). ⚠️ Révoquer l'accès de Claude
 (« Applications autorisées ») ne coupe pas un lien déjà donné : il sert jusqu'à son heure, ou jusqu'à la connexion du
 numéro.
 

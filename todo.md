@@ -1,5 +1,13 @@
 # todo.md : backlog
 
+## Lot 4 : se réabonner, et ce que devient un numéro dont l'abonnement tombe (reporté du lot 3c, 2026-10-06)
+
+`resubscribe_number` n'a pas été fait au lot 3c : un abonnement résilié ou en retard ne coupe rien avant le lot 4, et se
+réabonner alors qu'un numéro fourni est encore connecté demande de concevoir la coupure en même temps (la garde du lien
+refuse toute écriture une fois le numéro connecté, et la route du paiement refuse un espace qui a déjà un numéro). Le
+lot 4 fixe les délais de grâce, coupe au point d'envoi unique, puis résilie le numéro chez DIDWW : ⚠️ Meta met un numéro
+libéré en quarantaine, il ne revient JAMAIS dans la réserve (Julien, 2026-10-06).
+
 ## Lot 3c : un lien déjà donné survit à la révocation de l'accès de Claude (jaune de la relecture, 2026-10-06)
 
 Révoquer Claude dans « Applications autorisées » ne coupe pas un lien de connexion du numéro déjà donné : il sert jusqu'à

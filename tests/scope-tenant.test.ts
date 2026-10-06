@@ -272,6 +272,8 @@ describe('🔴 l’étape d’espace, l’accesseur et le poseur', () => {
 const ROUTES_DU_LIEN = new Set([
   'POST /tenants/:tenantId/numero-fourni', 'GET /tenants/:tenantId/numero-fourni', 'POST /tenants/:tenantId/numero-fourni/remplacer',
   'POST /tenants/:tenantId/numero-fourni/abandonner', 'GET /tenants/:tenantId/connexion-numero',
+  // Le paiement de l'abonnement du numéro (lot 3c, livraison B) : la page du lien le porte.
+  'POST /tenants/:tenantId/numero-fourni/abonnement',
   'GET /tenants/:tenantId/embedded-signup/config', 'POST /tenants/:tenantId/embedded-signup/complete',
   'POST /tenants/:tenantId/numero/code', 'POST /tenants/:tenantId/numero/activer',
 ]);

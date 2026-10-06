@@ -87,6 +87,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { fetchUrlBorne } from './lib/page-distante';
 import { signSession, signLienNumero } from './auth/token';
 import { lireEtatConnexion } from './otp/etat-connexion';
+import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
+import { ouvrirAbonnement, ouvrirPortail, type DepsAbonnement } from './stripe/abonnement';
 import { ecrireHandoffEnabled } from './mba/handoff';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
@@ -510,6 +512,8 @@ async function main(): Promise<void> {
    * La transcription d'un appel de Meta part sur NOTRE clé, comme celle des vocaux : ce n'est la dépense d'aucun client.
    */
   const numerosFournis = new PgNumerosFournisStore(pool);
+  /** L'abonnement du numéro fourni (lot 3c, livraison B, migration 0214) : écrit par le webhook, lu par la page et Claude. */
+  const abonnementsNumero = new PgAbonnementsNumeroStore(pool);
   /**
    * Le numéro WhatsApp connecté à un espace, en chiffres (`''` si son affichage est inconnu). Le MÊME pour la page du
    * numéro fourni, la garde du lien de Claude Code (qui meurt à la connexion) et son outil d'attente (lot 3c).
@@ -698,6 +702,18 @@ async function main(): Promise<void> {
     }),
     // La facture d'un achat, relue dans les paiements de l'espace (lien « Facture » de la page Crédit IA).
     factures: stripeStore,
+  };
+
+  /**
+   * L'abonnement du numéro fourni (lot 3c) : le MÊME Stripe, les MÊMES clients et la MÊME règle du mode test que la
+   * recharge, plus le prix mensuel du numéro et l'adresse de la console où Stripe renvoie.
+   */
+  const abonnementDuNumero: DepsAbonnement = {
+    stripe: paiementDeLaConsole.stripe,
+    clients: paiementDeLaConsole.clients,
+    payeurAutorise: paiementDeLaConsole.payeurAutorise,
+    prixNumero: config.STRIPE_PRIX_NUMERO,
+    urlConsole: config.APP_URL,
   };
 
   // La durée de chaque requête, par route normalisée : mesurée par le serveur, vidée en base avec l'attente du pool.
@@ -1052,6 +1068,12 @@ async function main(): Promise<void> {
           if (!provisionCle) return;
           await remonterPlafondApresRecharge(provisionCle, tenantId);
         })()),
+        // L'abonnement du numéro fourni (lot 3c, livraison B) : le magasin, et Julien prévenu sur Telegram (ne lève jamais).
+        numero: {
+          enregistrer: (a) => abonnementsNumero.enregistrer(a),
+          majStatut: (abonnementId, statut, periodeFin) => abonnementsNumero.majStatut(abonnementId, statut, periodeFin),
+          alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
+        },
       },
     } : {}),
     stats: {
@@ -2180,10 +2202,13 @@ async function main(): Promise<void> {
       verrous: verrousCourts,
       alertes: creerAlertesReserve({ verrous: verrousCourts, envoyer: (texte) => sendTelegram(`[mba-${NOM_API}] ${texte}`) }),
       seuilReserve: config.ALERTE_RESERVE_SEUIL,
+      abonnements: abonnementsNumero,
+      abonnement: { ouvrir: (tenant, retour, payeur) => ouvrirAbonnement(abonnementDuNumero, tenant, retour, payeur) },
     },
     // La réserve de numéros fournis (lot 3a). Sans clé DIDWW ou sans trunk, la déclaration rend 503 et la lecture marche.
     opsNumeros: {
       numeros: numerosFournis,
+      abonnes: abonnementsNumero,
       didww: config.DIDWW_API_KEY && config.DIDWW_TRUNK_OTP_ID
         ? { client: creerClientDidww({ cle: config.DIDWW_API_KEY, url: config.DIDWW_API_URL }), trunkId: config.DIDWW_TRUNK_OTP_ID }
         : null,
@@ -2457,10 +2482,11 @@ async function main(): Promise<void> {
         // `/brancher` de la console, et la MÊME lecture de l'état que cette page.
         numero: {
           signerLien: (l) => signLienNumero(l, config.AUTH_SECRET),
-          etat: (tenant) => lireEtatConnexion({ numeros: numerosFournis, numeroConnecte }, tenant),
+          etat: (tenant) => lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero }, tenant),
           urlConsole: config.APP_URL,
           attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
           maintenant: () => Date.now(),
+          ouvrirPortail: (tenant, payeur) => ouvrirPortail(abonnementDuNumero, tenant, 'console', payeur),
         },
       },
     },

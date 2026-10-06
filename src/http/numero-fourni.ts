@@ -5,6 +5,10 @@ import { espaceVerifie } from './scope';
 import { texteDe } from '../lib/erreur';
 import type { PgNumerosFournisStore } from '../otp/store.pg';
 import { lireEtatConnexion, empreinteEtat } from '../otp/etat-connexion';
+import { z } from 'zod';
+import type { PgAbonnementsNumeroStore } from '../stripe/abonnements.pg';
+import type { RetourAbonnement } from '../stripe/abonnement';
+import { corpsDuRefus, type Issue } from '../lib/issue';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
@@ -37,7 +41,19 @@ export interface NumeroFourniRouteDeps {
   };
   /** Sous ce nombre de numéros libres, Julien est prévenu (`ALERTE_RESERVE_SEUIL`). */
   seuilReserve: number;
+  /**
+   * L'abonnement du numéro (lot 3c, livraison B, migration 0214). 🔴 Un numéro ne s'attribue plus sans abonnement vivant
+   * (`actif` ou `en_retard`) : il se paie d'abord, et le webhook l'attribue à la confirmation.
+   */
+  abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace'>;
+  /** Ouvrir le paiement de l'abonnement (`ouvrirAbonnement`, `src/stripe/abonnement.ts`) : une adresse, ou un refus. */
+  abonnement: { ouvrir(tenantId: string, retour: RetourAbonnement, payeur: string): Promise<Issue<{ url: string }>> };
 }
+
+const saisieAbonnement = z.object({ retour: z.enum(['brancher', 'console']) });
+
+/** Un abonnement vivant : payé, ou en retard d'un renouvellement (rien n'est coupé avant le lot 4). */
+const vivant = (a: { statut: string } | null): boolean => a !== null && a.statut !== 'resilie';
 
 /** Le délai entre deux remplacements d'un même espace. Un numéro remplacé sort de la réserve pour de bon (`bloque`). */
 export const DELAI_ENTRE_REMPLACEMENTS_MS = 3_600_000;
@@ -97,10 +113,38 @@ export function registerNumeroFourni(app: FastifyInstance, deps: NumeroFourniRou
     if (await deps.numeroConnecte(tenant)) {
       return reply.code(409).send({ error: 'Cet espace a déjà un numéro WhatsApp.', cause: 'deja_un_numero' });
     }
+    // 🔴 Pas de numéro avant le paiement (lot 3c) : un numéro déjà attribué se rend toujours (un retour sur la page,
+    // l'essai du 3b), un nouveau exige un abonnement vivant. Le webhook attribue d'ordinaire à la confirmation.
+    if (!(await deps.numeros.numeroDeLEspace(tenant)) && !vivant(await deps.abonnements.deLEspace(tenant))) {
+      return reply.code(409).send({ error: 'Le numéro se paie d’abord : 3,50 € HT par mois.', cause: 'abonnement_requis' });
+    }
     const n = await deps.numeros.attribuer(tenant);
     await surveillerReserve();
     if (!n) return reply.code(409).send(RESERVE_VIDE);
     return reply.code(200).send({ numero: affiche(n.numero) });
+  });
+
+  /**
+   * Ouvrir le paiement de l'abonnement du numéro (lot 3c, livraison B). Rien n'est ouvert chez Stripe quand l'espace a
+   * déjà un numéro, déjà un abonnement vivant, ou quand la réserve est vide : il paierait pour un numéro qu'on ne peut
+   * pas lui donner. Le payeur est l'utilisateur de la session ou du lien, jamais une valeur du corps.
+   */
+  app.post('/tenants/:tenantId/numero-fourni/abonnement', couteux, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const lu = saisieAbonnement.safeParse(req.body ?? {});
+    if (!lu.success) return reply.code(400).send({ error: 'retour : « brancher » ou « console »' });
+    if (await deps.numeroConnecte(tenant)) {
+      return reply.code(409).send({ error: 'Cet espace a déjà un numéro WhatsApp.', cause: 'deja_un_numero' });
+    }
+    if (vivant(await deps.abonnements.deLEspace(tenant))) {
+      return reply.code(409).send({ error: 'Le numéro de cet espace est déjà payé.', cause: 'deja_abonne' });
+    }
+    if ((await deps.numeros.compterLibres()) === 0) {
+      await surveillerReserve();
+      return reply.code(409).send(RESERVE_VIDE);
+    }
+    const r = await deps.abonnement.ouvrir(tenant, lu.data.retour, req.auth?.userId ?? '');
+    return r.ok ? reply.code(200).send(r.valeur) : reply.code(r.statut).send(corpsDuRefus(r));
   });
 
   // Interrogée toutes les 3 secondes par la page pendant que la fenêtre de Meta est ouverte : lecture seule, hors
@@ -124,6 +168,11 @@ export function registerNumeroFourni(app: FastifyInstance, deps: NumeroFourniRou
     const tenant = espaceVerifie(req);
     if (await deps.numeroConnecte(tenant)) {
       return reply.code(409).send({ error: 'Le numéro de cet espace est déjà connecté.', cause: 'deja_un_numero' });
+    }
+    // 🔴 La même garde que l'attribution (relecture de la livraison B) : « Remplacer » attribue un numéro neuf, donc un
+    // espace sans numéro attribué ni abonnement vivant n'en reçoit pas ; sinon le numéro se prendrait sans payer.
+    if (!(await deps.numeros.numeroDeLEspace(tenant)) && !vivant(await deps.abonnements.deLEspace(tenant))) {
+      return reply.code(409).send({ error: 'Le numéro se paie d’abord : 3,50 € HT par mois.', cause: 'abonnement_requis' });
     }
     // Le verrou n'est jamais relâché : son échéance EST le délai, commun à toutes les copies de l'API.
     if (!(await deps.verrous.prendre([[`numeros.remplacer:${tenant}`, DELAI_ENTRE_REMPLACEMENTS_MS]]))) {

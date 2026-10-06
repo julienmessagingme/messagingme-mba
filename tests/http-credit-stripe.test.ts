@@ -382,6 +382,12 @@ function webhook(o: { paiements?: ReturnType<typeof fauxPaiements>; apresCredit?
     livemode: o.livemode ?? true,
     paiements,
     apresCredit: o.apresCredit ?? (async (tenantId) => { plafonds.push(tenantId); }),
+    // 🔴 Une recharge ne touche jamais l'abonnement du numéro (lot 3c) : ses dépendances lèvent si on les appelle.
+    numero: {
+      enregistrer: async () => { throw new Error('une recharge a touché l’abonnement du numéro'); },
+      majStatut: async () => { throw new Error('une recharge a touché l’abonnement du numéro'); },
+      alerter: async () => { throw new Error('une recharge a prévenu Julien'); },
+    },
     now: () => NOW,
   };
   const srv = buildServer({ queue: new FakeQueue(), stripeWebhook: deps });

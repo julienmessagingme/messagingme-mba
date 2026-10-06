@@ -23,7 +23,7 @@ beforeAll(async () => {
   await s.close();
 });
 
-function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre' } = {}) {
+function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre'; enAttente?: string[] } = {}) {
   const gestes: string[] = [];
   const inscrits: NumeroFourni[] = [];
   const client: ClientDidww = {
@@ -46,7 +46,12 @@ function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre
           dernierCode: { appelId: 'a1', recuLe: new Date(), code: '863801', transcription: 'your code is 8 6 3 8 0 1', cause: null } },
         { id: 'n2', numero: '442071234568', didwwDidId: 'did-2', statut: 'attribue', tenantId: 't1', attribueLe: new Date(), creeLe: new Date(), dernierCode: null },
       ],
+      attribuer: async (tenantId) => {
+        gestes.push(`attribuer:${tenantId}`);
+        return { id: 'n1', numero: '442071234567', didwwDidId: 'did-1', statut: 'attribue', tenantId, attribueLe: new Date(), creeLe: new Date() };
+      },
     },
+    abonnes: { enAttenteDeNumero: async () => o.enAttente ?? [] },
     didww: o.didww === null ? null : { client, trunkId: TRUNK },
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: acces.auth, opsNumeros: deps }), gestes, inscrits };
@@ -89,6 +94,26 @@ describe('/ops/numeros-fournis', () => {
     expect(r2.json()).toEqual({ error: 'DIDWW a refusé (422) : trunk inconnu' });
     expect(refuse.gestes).not.toContain('declarer:442071234567');
     await refuse.server.close();
+  });
+
+  it('🔴 un abonné attend son numéro (la réserve s’était vidée) : le numéro déclaré lui revient, au plus ancien d’abord', async () => {
+    const { server, gestes } = monter({ enAttente: ['t-ancien', 't-recent'] });
+    const res = await server.inject(declarer('+44 20 7123 4567'));
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ attribueA: 't-ancien' });
+    expect(gestes.at(-1)).toBe('attribuer:t-ancien');
+    await server.close();
+  });
+
+  it('personne n’attend, ou un numéro déjà déclaré : rien n’est attribué', async () => {
+    const libre = monter();
+    expect((await libre.server.inject(declarer('+44 20 7123 4567'))).json()).toMatchObject({ attribueA: null });
+    expect(libre.gestes.filter((g) => g.startsWith('attribuer'))).toEqual([]);
+    const deja = monter({ deja: 'meme', enAttente: ['t-ancien'] });
+    await deja.server.inject(declarer('+44 20 7123 4567'));
+    expect(deja.gestes.filter((g) => g.startsWith('attribuer'))).toEqual([]);
+    await libre.server.close();
+    await deja.server.close();
   });
 
   it('DIDWW non configuré : 503 à la déclaration, la lecture marche et le dit', async () => {

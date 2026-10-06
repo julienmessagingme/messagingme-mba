@@ -19,7 +19,12 @@ import { MIN_NOTE } from './ops';
  */
 
 export interface OpsNumerosDeps {
-  numeros: Pick<PgNumerosFournisStore, 'declarer' | 'lister'>;
+  numeros: Pick<PgNumerosFournisStore, 'declarer' | 'lister' | 'attribuer'>;
+  /**
+   * Les espaces qui ont payé leur numéro pendant que la réserve était vide (lot 3c, livraison B) : un numéro neuf leur
+   * revient d'abord, au plus ancien.
+   */
+  abonnes: { enAttenteDeNumero(): Promise<string[]> };
   /** `null` = la clé DIDWW ou le trunk ne sont pas configurés : la déclaration rend 503, la lecture marche. */
   didww: { client: ClientDidww; trunkId: string } | null;
 }
@@ -71,7 +76,14 @@ export function registerOpsNumeros(app: FastifyInstance, deps: OpsNumerosDeps, g
     try {
       const r = await deps.numeros.declarer(numero, did.id);
       journaliser('warn', 'ops_numero_declare', { numero, didId: did.id, cree: r.cree, par: auteurOps(req), note, at: new Date().toISOString() });
-      return reply.code(r.cree ? 201 : 200).send({ numero: r.numero, cree: r.cree });
+      // Un numéro NEUF revient d'abord à l'abonné qui l'attend le plus longtemps (la réserve s'était vidée entre son
+      // paiement et sa confirmation). Le webhook n'avait rien pu lui attribuer.
+      const attribueA = r.cree ? ((await deps.abonnes.enAttenteDeNumero())[0] ?? null) : null;
+      if (attribueA !== null) {
+        const n = await deps.numeros.attribuer(attribueA);
+        journaliser('warn', 'ops_numero_attribue_a_un_abonne', { tenantId: attribueA, numero: n?.numero ?? null, par: auteurOps(req) });
+      }
+      return reply.code(r.cree ? 201 : 200).send({ numero: r.numero, cree: r.cree, attribueA });
     } catch (err) {
       if (err instanceof DidDejaDeclare) return reply.code(409).send({ error: err.message });
       throw err;

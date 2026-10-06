@@ -510,6 +510,11 @@ export const schema = z.object({
   STRIPE_PRIX_REFILL_50: z.string().default(''),
   STRIPE_PRIX_REFILL_100: z.string().default(''),
   /**
+   * Le prix mensuel du numéro fourni (lot 3c, livraison B) : 3,50 EUR HT par mois, taxe en sus, relu chez Stripe avant
+   * chaque paiement. Vide : l'abonnement n'est pas en vente (la route rend 503).
+   */
+  STRIPE_PRIX_NUMERO: z.string().default(''),
+  /**
    * Les numéros fournis (lot 3a, `src/otp/`). 🔴 Côté serveur uniquement.
    * `DIDWW_API_KEY` : la clé d'API DIDWW de PRODUCTION, limitée à l'adresse du VPS. Elle ne sert qu'à retrouver un
    * numéro et à le brancher sur le trunk de l'Asterisk (`DIDWW_TRUNK_OTP_ID`), jamais à acheter, bien qu'elle le

@@ -570,6 +570,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       // La connexion du numéro (lot 3c) : un lien signé de plus à chaque appel, et une attente qui ne change rien.
       start_whatsapp_connection: [false, false, false],
       watch_whatsapp_connection: [false, true, false],
+      // L'abonnement du numéro (lot 3c, livraison B) : une session du portail est créée chez Stripe à chaque appel.
+      manage_number_subscription: [false, false, true],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
     const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);

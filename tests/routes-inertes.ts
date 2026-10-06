@@ -488,10 +488,11 @@ export const mcpWidgetsInertes: Pick<DepsMcp, 'widgets' | 'scenarios'> = {
 export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
   numero: {
     signerLien: neDevraitPasEtreAppelee('numero.signerLien'),
-    etat: async () => ({ fourni: null, code: null, connecte: null }),
+    etat: async () => ({ fourni: null, code: null, connecte: null, abonnement: null }),
     urlConsole: 'https://console.inerte.test',
     attendre: async () => {},
     maintenant: () => Date.now(),
+    ouvrirPortail: neDevraitPasEtreAppelee('numero.ouvrirPortail'),
   },
 };
 

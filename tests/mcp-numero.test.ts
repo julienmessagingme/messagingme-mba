@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { OUTILS, outilsPour, type DepsMcp, type OutilMcp } from '../src/mcp/outils';
 import { DELAI_ATTENTE_MS, PAS_ATTENTE_MS } from '../src/mcp/outils-numero';
 import { RefusOutil } from '../src/mcp/saisie';
+import type { Issue } from '../src/lib/issue';
 import { signLienNumero, verifyLienNumero, DUREE_LIEN_NUMERO_MS } from '../src/auth/token';
 import { empreinteEtat, type EtatConnexion } from '../src/otp/etat-connexion';
 
@@ -13,13 +14,15 @@ import { empreinteEtat, type EtatConnexion } from '../src/otp/etat-connexion';
  */
 const SECRET = randomBytes(32).toString('hex');
 const PERSONNE = { userId: 'u-admin' };
-const VIDE: EtatConnexion = { fourni: null, code: null, connecte: null };
+const VIDE: EtatConnexion = { fourni: null, code: null, connecte: null, abonnement: null };
 const outil = (nom: string): OutilMcp => OUTILS.find((o) => o.nom === nom)!;
 
 /** Une horloge simulée : `attendre` avance le temps, et chaque lecture de l'état est comptée avec son heure. */
-function monter(etats: (t: number) => EtatConnexion) {
+function monter(etats: (t: number) => EtatConnexion, o: { portail?: Issue<{ url: string }> } = {}) {
   let t = 1_000_000;
   const lectures: Array<{ tenant: string; t: number }> = [];
+  const portails: Array<{ tenant: string; payeur: string }> = [];
+  const couteux: string[] = [];
   const deps = {
     numero: {
       signerLien: (l: Parameters<typeof signLienNumero>[0]) => signLienNumero(l, SECRET),
@@ -27,9 +30,14 @@ function monter(etats: (t: number) => EtatConnexion) {
       urlConsole: 'https://console.exemple.test',
       attendre: async (ms: number) => { t += ms; },
       maintenant: () => t,
+      ouvrirPortail: async (tenant: string, payeur: string) => {
+        portails.push({ tenant, payeur });
+        return o.portail ?? { ok: true as const, valeur: { url: 'https://billing.stripe.com/p/session/x' } };
+      },
     },
+    couteux: { consommer: async (tenant: string) => { couteux.push(tenant); return { accepte: true, attenteMs: 0 }; } },
   } as unknown as DepsMcp;
-  return { deps, lectures, debut: t };
+  return { deps, lectures, debut: t, portails, couteux };
 }
 
 describe('start_whatsapp_connection', () => {
@@ -101,11 +109,44 @@ describe('watch_whatsapp_connection', () => {
     expect(String(r.suite)).not.toMatch(/fini/);
   });
 
+  it('le paiement confirmé réveille l’attente, et l’état dit l’abonnement et sa prochaine échéance', async () => {
+    const PAYE: EtatConnexion = { ...VIDE, abonnement: { statut: 'actif', periodeFin: '2026-11-06T09:00:00.000Z' } };
+    const { deps } = monter((t) => (t >= 1_000_000 + 4_000 ? PAYE : VIDE));
+    const r = await outil('watch_whatsapp_connection').executer(deps, 't1', { etat_connu: empreinteEtat(VIDE) }, PERSONNE) as Record<string, unknown>;
+    expect(r.change).toBe(true);
+    expect(r.etat).toMatchObject({ abonnement: 'actif', prochaine_echeance: '2026-11-06T09:00:00.000Z' });
+  });
+
   it('pas de code tant qu’il n’est pas arrivé ; le numéro connecté est dit', async () => {
     const { deps } = monter(() => ({ ...ATTRIBUE, connecte: { chiffres: '441235619343', aActiver: false } }));
     const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
     expect(r.code).toBeNull();
     expect(r.etat).toMatchObject({ numero_fourni: '+441235619343', numero_connecte: '+441235619343', connecte: true, a_activer: false });
+  });
+});
+
+describe('les outils de l’abonnement du numéro (livraison B)', () => {
+  it('get_number_subscription : le statut, la prochaine échéance, le numéro fourni ; et sans abonnement, null', async () => {
+    const { deps } = monter(() => ({ ...VIDE, fourni: '+441235619343', abonnement: { statut: 'en_retard', periodeFin: '2026-11-06T09:00:00.000Z' } }));
+    expect(await outil('get_number_subscription').executer(deps, 't1', {}, null))
+      .toEqual({ abonnement: 'en_retard', prochaine_echeance: '2026-11-06T09:00:00.000Z', numero_fourni: '+441235619343', prix: '3,50 € HT par mois' });
+    const sans = monter(() => VIDE).deps;
+    expect(await outil('get_number_subscription').executer(sans, 't1', {}, null)).toMatchObject({ abonnement: null, prochaine_echeance: null });
+  });
+
+  it('🔴 manage_number_subscription : le portail de Stripe au nom de la personne, compté dans les opérations lourdes', async () => {
+    const { deps, portails, couteux } = monter(() => VIDE);
+    expect(await outil('manage_number_subscription').executer(deps, 't1', {}, PERSONNE)).toEqual({ url: 'https://billing.stripe.com/p/session/x' });
+    expect(portails).toEqual([{ tenant: 't1', payeur: 'u-admin' }]);
+    expect(couteux).toEqual(['t1']);
+    const refus = monter(() => VIDE, { portail: { ok: false, statut: 409, erreur: 'Cet espace n’a aucun abonnement à gérer.' } }).deps;
+    await expect(outil('manage_number_subscription').executer(refus, 't1', {}, PERSONNE)).rejects.toBeInstanceOf(RefusOutil);
+  });
+
+  it('🔴 manage exige une personne ; get se lit avec une clé', () => {
+    expect(outil('manage_number_subscription')).toMatchObject({ scope: 'mcp:write', exigePersonne: true });
+    expect(outil('get_number_subscription')).toMatchObject({ scope: 'mcp:read' });
+    expect(outil('get_number_subscription').exigePersonne).toBeUndefined();
   });
 });
 

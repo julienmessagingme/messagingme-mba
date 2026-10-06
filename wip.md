@@ -49,8 +49,12 @@ validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien
   l'accès de Claude qui ne coupe pas un lien déjà donné est dans `todo.md`.
 - ⏳ **Essai réel de A** (Julien) : depuis Claude Code, sur un espace neuf, le lien, la page sans connexion, le code dans
   le terminal, le numéro connecté. Il faut un numéro dans la réserve, vide depuis l'essai du 3b.
-- ⏳ **Livraison B** : l'abonnement à 3,50 € HT par mois (prix `price_1UNUMXF67GfPqM0XcYpVkdhS`, lu chez Stripe),
-  le numéro attribué par le webhook après paiement, trois événements, trois outils. Pour tous les clients.
+- ⏳ **Livraison B codée, pas encore en production** : migration 0214, l'abonnement à 3,50 € HT par mois (prix
+  `price_1UNUMXF67GfPqM0XcYpVkdhS`, lu chez Stripe), le numéro attribué par le webhook après paiement, quatre événements,
+  `get_number_subscription` et `manage_number_subscription` (`resubscribe_number` reporté au lot 4), l'étape « Payer »
+  sur les deux pages. Avant le `up` : Julien pose `STRIPE_PRIX_NUMERO`, active le portail client, ajoute les trois
+  événements au webhook, et la clé restreinte doit pouvoir ouvrir une session du portail. Essai réel commun A et B : un
+  espace neuf depuis Claude Code, un numéro racheté chez DIDWW, un vrai paiement.
 
 ## LOT 5 DE « MESSAGING ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 

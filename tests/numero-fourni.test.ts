@@ -6,6 +6,8 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import { creerAlertesReserve, type NumeroFourniRouteDeps } from '../src/http/numero-fourni';
 import type { CleDemandee, Prise } from '../src/db/verrous-courts';
 import type { NumeroFourni } from '../src/otp/store.pg';
+import type { StatutAbonnement } from '../src/stripe/abonnements.pg';
+import type { Issue } from '../src/lib/issue';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec docs/superpowers/specs/2026-10-05-numero-fourni-design.md) : la page
@@ -44,8 +46,15 @@ function fauxVerrous() {
 function monter(o: {
   /** Les chiffres du numéro WhatsApp connecté à l'espace (aucun si absent). */
   connecte?: string; reserve?: string[]; libresApres?: number; attribue?: string | null; code?: { code: string; recuLe: Date } | null;
+  /** L'abonnement du numéro (livraison B) : `actif` par défaut, pour que les cas du 3b gardent leur sens. */
+  abonnement?: StatutAbonnement | null;
+  ouverture?: Issue<{ url: string }>;
 } = {}) {
-  const cap = { attribues: 0, rendus: 0, remplaces: 0, alertesReserve: [] as number[], bloques: [] as string[] };
+  const cap = {
+    attribues: 0, rendus: 0, remplaces: 0, alertesReserve: [] as number[], bloques: [] as string[],
+    ouvertures: [] as Array<{ tenantId: string; retour: string; payeur: string }>,
+  };
+  const statut = o.abonnement === undefined ? 'actif' : o.abonnement;
   const reserve = [...(o.reserve ?? ['441235619343'])];
   let attribue: string | null = o.attribue ?? null;
   const deps: NumeroFourniRouteDeps = {
@@ -74,6 +83,15 @@ function monter(o: {
       numeroBloque: async (numero) => { cap.bloques.push(numero); },
     },
     seuilReserve: 3,
+    abonnements: {
+      deLEspace: async (tenantId) => (statut === null ? null : { abonnementId: 'sub_1', tenantId, livemode: false, statut, periodeFin: null }),
+    },
+    abonnement: {
+      ouvrir: async (tenantId, retour, payeur) => {
+        cap.ouvertures.push({ tenantId, retour, payeur });
+        return o.ouverture ?? { ok: true, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_test_1' } };
+      },
+    },
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, numeroFourni: deps }), cap };
 }
@@ -123,6 +141,87 @@ describe('POST /numero-fourni : obtenir un numéro de la réserve', () => {
   });
 });
 
+describe('POST /numero-fourni sans abonnement (lot 3c, livraison B) : pas de numéro avant le paiement', () => {
+  it('🔴 sans abonnement, ou résilié : 409 « abonnement requis », rien n’est attribué', async () => {
+    for (const abonnement of [null, 'resilie'] as const) {
+      const { server, cap } = monter({ abonnement });
+      const res = await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' });
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ cause: 'abonnement_requis' });
+      expect(cap.attribues).toBe(0);
+      await server.close();
+    }
+  });
+
+  it('un numéro DÉJÀ attribué se rend toujours, abonnement ou pas (l’essai du 3b, un retour de page)', async () => {
+    const { server } = monter({ abonnement: null, attribue: '441235619343' });
+    const res = await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ numero: '+441235619343' });
+    await server.close();
+  });
+
+  it('un abonnement en retard de paiement garde son droit : le numéro s’attribue', async () => {
+    const { server } = monter({ abonnement: 'en_retard' });
+    expect((await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' })).statusCode).toBe(200);
+    await server.close();
+  });
+});
+
+describe('POST /numero-fourni/abonnement : ouvrir le paiement du numéro', () => {
+  const ABO = `${URL}/abonnement`;
+  it('🔴 l’adresse de paiement, pour CET espace, avec le retour demandé et le payeur de la session', async () => {
+    const { server, cap } = monter({ abonnement: null });
+    const res = await server.inject({ method: 'POST', url: ABO, ...h(adminTok), payload: { retour: 'console' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ url: 'https://checkout.stripe.com/c/pay/cs_test_1' });
+    expect(cap.ouvertures).toEqual([{ tenantId: 't1', retour: 'console', payeur: 'u1' }]);
+    await server.close();
+  });
+
+  it('🔴 réserve vide : 409 sans rien ouvrir chez Stripe', async () => {
+    const { server, cap } = monter({ abonnement: null, libresApres: 0 });
+    const res = await server.inject({ method: 'POST', url: ABO, ...h(adminTok), payload: { retour: 'brancher' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ cause: 'reserve_vide' });
+    expect(cap.ouvertures).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 déjà abonné (actif ou en retard), ou numéro déjà connecté : 409, pas de second paiement', async () => {
+    for (const o of [{ abonnement: 'actif' as const }, { abonnement: 'en_retard' as const }, { abonnement: null, connecte: '33525680250' }]) {
+      const { server, cap } = monter(o);
+      const res = await server.inject({ method: 'POST', url: ABO, ...h(adminTok), payload: { retour: 'brancher' } });
+      expect(res.statusCode).toBe(409);
+      expect(cap.ouvertures).toEqual([]);
+      await server.close();
+    }
+  });
+
+  it('résilié : on peut se réabonner', async () => {
+    const { server, cap } = monter({ abonnement: 'resilie' });
+    expect((await server.inject({ method: 'POST', url: ABO, ...h(adminTok), payload: { retour: 'brancher' } })).statusCode).toBe(200);
+    expect(cap.ouvertures).toHaveLength(1);
+    await server.close();
+  });
+
+  it('un retour inconnu : 400 ; un refus du paiement passe tel quel, avec son code', async () => {
+    const { server } = monter({ abonnement: null, ouverture: { ok: false, statut: 422, erreur: 'tarif en correction', details: { code: 'prix_incoherent' } } });
+    expect((await server.inject({ method: 'POST', url: ABO, ...h(adminTok), payload: { retour: 'ailleurs' } })).statusCode).toBe(400);
+    const res = await server.inject({ method: 'POST', url: ABO, ...h(adminTok), payload: { retour: 'console' } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({ error: 'tarif en correction', code: 'prix_incoherent' });
+    await server.close();
+  });
+
+  it('agent -> 403', async () => {
+    const { server, cap } = monter({ abonnement: null });
+    expect((await server.inject({ method: 'POST', url: ABO, ...h(agentTok), payload: { retour: 'console' } })).statusCode).toBe(403);
+    expect(cap.ouvertures).toEqual([]);
+    await server.close();
+  });
+});
+
 describe('GET /numero-fourni : le numéro et le code capté', () => {
   it('le numéro attribué et le dernier code, avec son heure ; jamais de transcription', async () => {
     const recuLe = new Date('2026-10-06T10:00:00.000Z');
@@ -142,6 +241,15 @@ describe('GET /numero-fourni : le numéro et le code capté', () => {
 });
 
 describe('remplacer et abandonner', () => {
+  it('🔴 « Remplacer » sans abonnement ni numéro attribué : 409, AUCUN numéro donné (relecture de la livraison B)', async () => {
+    const { server, cap } = monter({ abonnement: null });
+    const res = await server.inject({ method: 'POST', url: `${URL}/remplacer`, ...h(adminTok), payload: '{}' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ cause: 'abonnement_requis' });
+    expect(cap.remplaces).toBe(0);
+    await server.close();
+  });
+
   it('🔴 Meta refuse le numéro : il est bloqué, Julien prévenu, et un autre est attribué', async () => {
     const { server, cap } = monter({ attribue: '441235619343', reserve: ['442071234567'], libresApres: 5 });
     const res = await server.inject({ method: 'POST', url: `${URL}/remplacer`, ...h(adminTok), payload: '{}' });

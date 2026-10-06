@@ -1,5 +1,7 @@
 import type { AnnotationsMcp, DepsMcp, OutilMcp, PersonneMcp } from './outils';
-import { RefusOutil } from './saisie';
+import { RefusOutil, valeurOuRefus } from './saisie';
+import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
+import type { Issue } from '../lib/issue';
 import { DUREE_LIEN_NUMERO_MS, type LienNumero } from '../auth/token';
 import { empreinteEtat, type EtatConnexion } from '../otp/etat-connexion';
 
@@ -23,6 +25,8 @@ export interface DepsNumeroMcp {
   urlConsole: string;
   attendre(ms: number): Promise<void>;
   maintenant(): number;
+  /** Le portail client de Stripe pour l'espace (`ouvrirPortail`, livraison B) : une adresse, ou un refus. */
+  ouvrirPortail(tenantId: string, payeur: string): Promise<Issue<{ url: string }>>;
 }
 
 /**
@@ -45,8 +49,8 @@ function signataire(personne: PersonneMcp | null): string {
 
 const CONSIGNES = {
   fourni: 'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
-    + 'heure. Sur la page : « Obtenir mon numéro », puis la fenêtre de Meta, « Enter a new phone number », le numéro '
-    + 'affiché, et la vérification par appel (« Phone call »). Appelle ensuite watch_whatsapp_connection : le code '
+    + 'heure. Sur la page : « Payer 3,50 € HT par mois », puis le numéro s’affiche ; ensuite la fenêtre de Meta, « Enter a '
+    + 'new phone number », le numéro affiché, et la vérification par appel (« Phone call »). Appelle ensuite watch_whatsapp_connection : le code '
     + 'arrivera ici, lis-le-lui pour qu’elle le recopie dans la fenêtre de Meta.',
   apporte: 'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
     + 'heure. Sur la page : la fenêtre de Meta, son numéro, et le code qu’elle reçoit elle-même. Appelle ensuite '
@@ -60,16 +64,54 @@ function vueEtat(e: EtatConnexion): Record<string, unknown> {
     code_recu_le: e.code?.recuLe ?? null,
     connecte: e.connecte !== null && !e.connecte.aActiver,
     a_activer: e.connecte?.aActiver === true,
+    abonnement: e.abonnement?.statut ?? null,
+    prochaine_echeance: e.abonnement?.periodeFin ?? null,
     numero_connecte: e.connecte ? (e.connecte.chiffres ? `+${e.connecte.chiffres}` : null) : null,
   };
 }
 
 export const OUTILS_NUMERO: OutilMcp[] = [
   {
+    nom: 'get_number_subscription',
+    description:
+      'L’abonnement du numéro WhatsApp fourni (3,50 € HT par mois) : son statut (actif, en_retard après un paiement échoué, '
+      + 'resilie), la fin de la période payée, et le numéro. `abonnement: null` : l’espace n’a pas de numéro fourni payé.',
+    scope: 'mcp:read',
+    annotations: { title: 'Lire l’abonnement du numéro', readOnlyHint: true, openWorldHint: false },
+    entree: { type: 'object', properties: {}, additionalProperties: false },
+    async executer(deps: DepsMcp, tenantId) {
+      const e = await deps.numero.etat(tenantId);
+      return {
+        abonnement: e.abonnement?.statut ?? null,
+        prochaine_echeance: e.abonnement?.periodeFin ?? null,
+        numero_fourni: e.fourni,
+        prix: '3,50 € HT par mois',
+      };
+    },
+  },
+  {
+    nom: 'manage_number_subscription',
+    description:
+      'Rend l’adresse du portail client de Stripe pour l’abonnement du numéro : changer de carte, lire les factures, '
+      + 'résilier. À donner à la personne : le geste reste le sien. Compte dans les opérations lourdes de l’espace.',
+    scope: 'mcp:write',
+    exigePersonne: true,
+    // Monde ouvert : une session est créée chez Stripe. Une de plus à chaque appel.
+    annotations: { title: 'Gérer l’abonnement du numéro', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    entree: { type: 'object', properties: {}, additionalProperties: false },
+    async executer(deps: DepsMcp, tenantId, _args, personne) {
+      const payeur = signataire(personne);
+      const c = await deps.couteux.consommer(tenantId);
+      if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
+      return valeurOuRefus(await deps.numero.ouvrirPortail(tenantId, payeur));
+    },
+  },
+  {
     nom: 'start_whatsapp_connection',
     description:
       'Rend le lien qui ouvre la page de connexion du numéro WhatsApp de l’espace, sans passer par la console, valable '
-      + 'une heure : la personne y fait la fenêtre de Meta. `fourni` : on lui fournit un numéro dédié, dont le code de '
+      + 'une heure : la personne y fait la fenêtre de Meta. `fourni` : on lui fournit un numéro dédié (3,50 € HT par mois, '
+      + 'payé sur la page avant d’être attribué), dont le code de '
       + 'vérification arrive ici par watch_whatsapp_connection. `apporte` : son propre numéro ; demande-lui d’abord '
       + 's’il sert dans l’application WhatsApp, car la fenêtre de Meta le refuserait tant qu’il n’en est pas retiré. '
       + 'Refusé si l’espace a déjà un numéro connecté.',

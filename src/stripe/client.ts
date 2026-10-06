@@ -64,7 +64,7 @@ async function lireReponse(res: Response): Promise<ReponseStripe> {
 /** Stripe a refusé, ou n'a pas répondu. `type` et `code` sont ceux de Stripe quand il les donne. */
 export class StripeError extends Error {
   constructor(
-    readonly operation: 'prix' | 'facture' | 'client' | 'session',
+    readonly operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail',
     readonly status: number | null,
     readonly type: string | null,
     readonly code: string | null,
@@ -97,7 +97,7 @@ const sessionSchema = z.object({ id: z.string().startsWith('cs_'), url: z.string
  */
 async function appeler<T>(
   transport: TransportStripe,
-  operation: 'prix' | 'facture' | 'client' | 'session',
+  operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail',
   chemin: string,
   champs: Record<string, string> | null,
   o: { cle: string; idempotence?: string },
@@ -128,12 +128,16 @@ const prixSchema = z.object({
   id: z.string().startsWith('price_'),
   unit_amount: z.number().int().nullable(),
   currency: z.string(),
+  /** Absent ou nul pour un prix ponctuel (la recharge). */
+  recurring: z.object({ interval: z.string(), interval_count: z.number().int() }).nullable().optional(),
 });
 
 export interface PrixStripe {
   /** En centimes, `null` quand le prix n'a pas de montant unitaire fixe. */
   montantCentimes: number | null;
   devise: string;
+  /** La récurrence d'un prix d'abonnement (le numéro fourni), `null` pour un prix ponctuel. */
+  recurrence: { intervalle: string; nombre: number } | null;
 }
 
 /**
@@ -143,7 +147,11 @@ export interface PrixStripe {
  */
 export async function lirePrixStripe(transport: TransportStripe, o: { cle: string; prix: string }): Promise<PrixStripe> {
   const p = await appeler(transport, 'prix', `/prices/${encodeURIComponent(o.prix)}`, null, { cle: o.cle }, prixSchema);
-  return { montantCentimes: p.unit_amount, devise: p.currency };
+  return {
+    montantCentimes: p.unit_amount,
+    devise: p.currency,
+    recurrence: p.recurring ? { intervalle: p.recurring.interval, nombre: p.recurring.interval_count } : null,
+  };
 }
 
 /**
@@ -222,6 +230,60 @@ export async function creerSessionCheckout(transport: TransportStripe, d: Demand
     success_url: d.urlSucces,
     cancel_url: d.urlAbandon,
   }, { cle: d.cle, idempotence: d.idempotence }, sessionSchema);
+}
+
+export interface DemandeAbonnement {
+  cle: string;
+  tenantId: string;
+  prix: string;
+  customerId: string;
+  urlSucces: string;
+  urlAbandon: string;
+  /** Une clé par geste : elle protège d'un rejeu du même appel, pas de deux paiements voulus. */
+  idempotence: string;
+}
+
+/**
+ * Crée la session Checkout de l'ABONNEMENT d'un numéro fourni (lot 3c, livraison B) et rend son adresse. Même taxe, même
+ * TVA, même adresse que la recharge, même adaptive pricing éteint (un abonnement réglé en dollars ne serait pas le
+ * nôtre). Les métadonnées `tenant_id` et `produit: numero` sont posées sur la session ET sur l'abonnement
+ * (`subscription_data`) : le webhook relit la première à la confirmation, et les factures des renouvellements portent
+ * les secondes (`parent.subscription_details.metadata`). ⚠️ Pas de `invoice_creation` : en mode abonnement, Stripe émet
+ * la facture lui-même et refuse ce paramètre. Pas de code promo : rien n'a été décidé pour le numéro.
+ */
+export async function creerSessionAbonnement(transport: TransportStripe, d: DemandeAbonnement): Promise<{ id: string; url: string }> {
+  return appeler(transport, 'abonnement', '/checkout/sessions', {
+    mode: 'subscription',
+    customer: d.customerId,
+    'line_items[0][price]': d.prix,
+    'line_items[0][quantity]': '1',
+    'adaptive_pricing[enabled]': 'false',
+    'automatic_tax[enabled]': 'true',
+    'tax_id_collection[enabled]': 'true',
+    'customer_update[name]': 'auto',
+    'customer_update[address]': 'auto',
+    billing_address_collection: 'required',
+    'metadata[tenant_id]': d.tenantId,
+    'metadata[produit]': 'numero',
+    'subscription_data[metadata][tenant_id]': d.tenantId,
+    'subscription_data[metadata][produit]': 'numero',
+    client_reference_id: d.tenantId,
+    success_url: d.urlSucces,
+    cancel_url: d.urlAbandon,
+  }, { cle: d.cle, idempotence: d.idempotence }, sessionSchema);
+}
+
+const portailSchema = z.object({ url: z.string().url().startsWith('https://') });
+
+/**
+ * Une session du portail client de Stripe (carte, factures, résiliation) pour le client de l'espace. La clé restreinte
+ * doit pouvoir créer une session du portail, et le portail doit être activé dans le tableau de bord de Stripe.
+ */
+export async function creerSessionPortail(transport: TransportStripe, o: { cle: string; customerId: string; urlRetour: string }): Promise<{ url: string }> {
+  const r = await appeler(transport, 'portail', '/billing_portal/sessions', { customer: o.customerId, return_url: o.urlRetour }, {
+    cle: o.cle, idempotence: `portail-${o.customerId}-${Date.now()}`,
+  }, portailSchema);
+  return { url: r.url };
 }
 
 /** Le mode d'une clé, lu sur son préfixe (vérifié au démarrage, `src/config.ts`). */

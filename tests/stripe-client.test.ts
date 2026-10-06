@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import {
-  creerClientStripe, creerSessionCheckout, estCleLive, lireFactureStripe, lirePrixStripe, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
+  creerClientStripe, creerSessionAbonnement, creerSessionCheckout, creerSessionPortail, estCleLive, lireFactureStripe, lirePrixStripe, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
 } from '../src/stripe/client';
 import { creditDeLOffre, definitionOffre, estOffreRecharge } from '../src/stripe/offres';
 
@@ -105,7 +105,7 @@ describe('créer une session Checkout', () => {
 describe('lire un prix', () => {
   it('🔴 un GET sur le prix, clé en Bearer, version épinglée, SANS clé d’idempotence (une lecture ne crée rien)', async () => {
     const t = new FauxTransport([{ status: 200, json: { id: 'price_refill_50', unit_amount: 5_000, currency: 'eur', active: true } }]);
-    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_refill_50' })).toEqual({ montantCentimes: 5_000, devise: 'eur' });
+    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_refill_50' })).toEqual({ montantCentimes: 5_000, devise: 'eur', recurrence: null });
     expect(t.appels[0]!.url).toBe('https://api.stripe.com/v1/prices/price_refill_50');
     expect(t.appels[0]!.entetes).toEqual({ authorization: `Bearer ${CLE}`, 'stripe-version': VERSION_API_STRIPE });
   });
@@ -116,7 +116,7 @@ describe('lire un prix', () => {
       { status: 200, json: { id: 'pas_un_prix' } },
       { status: 404, json: { error: { type: 'invalid_request_error', code: 'resource_missing', message: 'No such price' } } },
     ]);
-    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).toEqual({ montantCentimes: null, devise: 'eur' });
+    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).toEqual({ montantCentimes: null, devise: 'eur', recurrence: null });
     await expect(lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).rejects.toBeInstanceOf(StripeError);
     await expect(lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).rejects.toMatchObject({ operation: 'prix', status: 404, code: 'resource_missing' });
   });
@@ -173,5 +173,58 @@ describe('les offres et le mode de la clé', () => {
     expect(estCleLive(['sk', 'live', 'x'].join('_'))).toBe(true);
     expect(estCleLive(['rk', 'live', 'x'].join('_'))).toBe(true);
     expect(estCleLive(CLE)).toBe(false);
+  });
+});
+
+describe('l’abonnement du numéro fourni (lot 3c, livraison B)', () => {
+  const ABONNEMENT_OK = { status: 200, json: { id: 'cs_test_2', url: 'https://checkout.stripe.com/c/pay/cs_test_2' } };
+  const demandeAbonnement = {
+    cle: CLE, tenantId: TENANT, prix: 'price_numero', customerId: 'cus_A',
+    urlSucces: 'https://console.exemple/brancher?abonnement=recu', urlAbandon: 'https://console.exemple/brancher?abonnement=abandon',
+    idempotence: 'abonnement-cle-1',
+  };
+
+  it('🔴 un prix récurrent se lit avec sa récurrence', async () => {
+    const t = new FauxTransport([{ status: 200, json: { id: 'price_numero', unit_amount: 350, currency: 'eur', type: 'recurring', recurring: { interval: 'month', interval_count: 1 } } }]);
+    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_numero' })).toEqual({ montantCentimes: 350, devise: 'eur', recurrence: { intervalle: 'month', nombre: 1 } });
+  });
+
+  it('🔴 la session d’abonnement : mode subscription, taxe et TVA, NOS métadonnées sur la session ET l’abonnement, sans facture à part', async () => {
+    const t = new FauxTransport([ABONNEMENT_OK]);
+    expect(await creerSessionAbonnement(t, demandeAbonnement)).toEqual({ id: 'cs_test_2', url: 'https://checkout.stripe.com/c/pay/cs_test_2' });
+    const a = t.appels[0]!;
+    expect(a.url).toBe('https://api.stripe.com/v1/checkout/sessions');
+    expect(a.entetes['idempotency-key']).toBe('abonnement-cle-1');
+    expect(Object.fromEntries(a.corps)).toEqual({
+      mode: 'subscription',
+      customer: 'cus_A',
+      'line_items[0][price]': 'price_numero',
+      'line_items[0][quantity]': '1',
+      'adaptive_pricing[enabled]': 'false',
+      'automatic_tax[enabled]': 'true',
+      'tax_id_collection[enabled]': 'true',
+      'customer_update[name]': 'auto',
+      'customer_update[address]': 'auto',
+      billing_address_collection: 'required',
+      'metadata[tenant_id]': TENANT,
+      'metadata[produit]': 'numero',
+      'subscription_data[metadata][tenant_id]': TENANT,
+      'subscription_data[metadata][produit]': 'numero',
+      client_reference_id: TENANT,
+      success_url: 'https://console.exemple/brancher?abonnement=recu',
+      cancel_url: 'https://console.exemple/brancher?abonnement=abandon',
+    });
+    // Une facture est émise par l'abonnement lui-même : `invoice_creation` est refusé par Stripe en mode abonnement.
+    expect(a.corps.has('invoice_creation[enabled]')).toBe(false);
+  });
+
+  it('le portail client : une session sur le client de l’espace, avec l’adresse de retour', async () => {
+    const t = new FauxTransport([{ status: 200, json: { id: 'bps_1', url: 'https://billing.stripe.com/p/session/x' } }]);
+    expect(await creerSessionPortail(t, { cle: CLE, customerId: 'cus_A', urlRetour: 'https://console.exemple/brancher' }))
+      .toEqual({ url: 'https://billing.stripe.com/p/session/x' });
+    expect(t.appels[0]!.url).toBe('https://api.stripe.com/v1/billing_portal/sessions');
+    expect(Object.fromEntries(t.appels[0]!.corps)).toEqual({ customer: 'cus_A', return_url: 'https://console.exemple/brancher' });
+    const refus = new FauxTransport([{ status: 403, json: { error: { type: 'invalid_request_error', message: 'restricted key' } } }]);
+    await expect(creerSessionPortail(refus, { cle: CLE, customerId: 'cus_A', urlRetour: 'https://x' })).rejects.toMatchObject({ operation: 'portail', status: 403 });
   });
 });

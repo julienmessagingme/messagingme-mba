@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { PgAbonnementsNumeroStore } from '../stripe/abonnements.pg';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { journaliser } from '../lib/journal';
@@ -143,11 +144,45 @@ export interface StripeWebhookRouteDeps {
    * le crédit est écrit.
    */
   apresCredit(tenantId: string): Promise<void>;
+  /**
+   * L'abonnement du numéro fourni (lot 3c, livraison B) : `enregistrer` (l'abonnement et le numéro, ensemble) et
+   * `majStatut` du magasin (`PgAbonnementsNumeroStore`), et `alerter`, qui prévient Julien (Telegram, ne lève jamais).
+   */
+  numero: Pick<PgAbonnementsNumeroStore, 'enregistrer' | 'majStatut'> & { alerter(texte: string): Promise<void> };
   now?: () => number;
 }
 
 /** Les deux événements qui créditent. Tout autre événement rend 200 sans effet. */
 const EVENEMENTS_CREDITANTS = new Set(['checkout.session.completed', 'checkout.session.async_payment_succeeded']);
+/** Les trois événements de l'abonnement du numéro ; la session payée (`checkout.session.completed`) en est le quatrième. */
+const EVENEMENTS_ABONNEMENT = new Set(['invoice.paid', 'invoice.payment_failed', 'customer.subscription.deleted']);
+
+/** Une session d'abonnement : seules les nôtres, `produit: numero`, nous concernent. */
+const sessionAbonnementSchema = z.object({
+  id: z.string().min(1),
+  mode: z.literal('subscription'),
+  payment_status: z.string(),
+  subscription: z.union([z.string().startsWith('sub_'), z.object({ id: z.string().startsWith('sub_') })]),
+  metadata: z.object({ tenant_id: z.uuid(), produit: z.literal('numero') }),
+});
+
+/**
+ * Une facture (version d'API `2025-11-17.clover`) : l'abonnement et ses métadonnées sont sous `parent.subscription_details`
+ * (lu dans la documentation de Stripe le 2026-10-06), la fin de la période payée sur ses lignes.
+ */
+const factureSchema = z.object({
+  id: z.string().startsWith('in_'),
+  parent: z.object({
+    subscription_details: z.object({
+      subscription: z.union([z.string(), z.object({ id: z.string() })]),
+      metadata: z.record(z.string(), z.string()).nullable().optional(),
+    }).nullable().optional(),
+  }).nullable().optional(),
+  lines: z.object({ data: z.array(z.object({ period: z.object({ end: z.number().int() }).optional() })) }).optional(),
+});
+const abonnementSchema = z.object({ id: z.string().startsWith('sub_') });
+const metaNumeroSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('numero') });
+const idDe = (v: string | { id: string }): string => (typeof v === 'string' ? v : v.id);
 
 const evenementSchema = z.object({
   id: z.string(),
@@ -179,6 +214,61 @@ const metadonneesSchema = z.object({
 export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookRouteDeps): void {
   const maintenant = deps.now ?? (() => Date.now());
 
+  /**
+   * L'abonnement du numéro fourni (lot 3c, livraison B). L'ordre d'arrivée des événements ne change pas l'état final :
+   * une facture payée arrivée avant la session enregistre l'abonnement depuis ses métadonnées, et la session qui suit
+   * ne fait que le retrouver. Rien n'est coupé avant le lot 4 : un retard ou une résiliation préviennent Julien. Un
+   * objet illisible rend 422 (Stripe rejoue) ; une panne de base lève, donc 5xx, et Stripe rejoue aussi.
+   */
+  const enregistrer = async (a: { tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }): Promise<void> => {
+    const issue = await deps.numero.enregistrer(a);
+    if (issue.etat === 'doublon') {
+      await deps.numero.alerter(`Abonnement en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui en a déjà un. À annuler et rembourser chez Stripe.`);
+    } else if (issue.numero === null) {
+      await deps.numero.alerter(`URGENT : l'espace ${a.tenantId} a payé son numéro (${a.abonnementId}) mais la réserve est vide. Déclare un numéro dans /ops : il lui sera attribué.`);
+    }
+  };
+
+  async function traiterAbonnement(evenement: string, type: string, livemode: boolean, objet: unknown, reply: FastifyReply) {
+    const illisible = () => {
+      journaliser('error', 'stripe_abonnement_illisible', { evenement, type });
+      return reply.code(422).send({ error: 'événement illisible' });
+    };
+    if (type === 'checkout.session.completed') {
+      const lu = sessionAbonnementSchema.safeParse(objet);
+      if (!lu.success) return illisible();
+      if (lu.data.payment_status !== 'paid') return reply.code(200).send({ recu: true });
+      await enregistrer({ tenantId: lu.data.metadata.tenant_id, abonnementId: idDe(lu.data.subscription), livemode, periodeFin: null });
+      return reply.code(200).send({ recu: true });
+    }
+    if (type === 'customer.subscription.deleted') {
+      const lu = abonnementSchema.safeParse(objet);
+      if (!lu.success) return illisible();
+      const a = await deps.numero.majStatut(lu.data.id, 'resilie', null);
+      if (a) await deps.numero.alerter(`Abonnement du numéro résilié : espace ${a.tenantId} (${a.abonnementId}). Le numéro reste attribué jusqu'au lot 4.`);
+      return reply.code(200).send({ recu: true });
+    }
+    const lu = factureSchema.safeParse(objet);
+    if (!lu.success) return illisible();
+    const details = lu.data.parent?.subscription_details;
+    // Une facture sans abonnement (une recharge) : pas la nôtre.
+    if (!details) return reply.code(200).send({ recu: true });
+    const abonnementId = idDe(details.subscription);
+    if (type === 'invoice.payment_failed') {
+      const a = await deps.numero.majStatut(abonnementId, 'en_retard', null);
+      if (a) await deps.numero.alerter(`Renouvellement du numéro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; rien n'est coupé avant le lot 4.`);
+      return reply.code(200).send({ recu: true });
+    }
+    // invoice.paid : la fin de la période payée, la plus lointaine des lignes.
+    const fins = (lu.data.lines?.data ?? []).map((l) => l.period?.end).filter((v): v is number => typeof v === 'number');
+    const periodeFin = fins.length > 0 ? new Date(Math.max(...fins) * 1000) : null;
+    if (await deps.numero.majStatut(abonnementId, 'actif', periodeFin)) return reply.code(200).send({ recu: true });
+    // Inconnu : arrivée avant la session. Seules nos métadonnées en font un abonnement du numéro.
+    const meta = metaNumeroSchema.safeParse(details.metadata ?? {});
+    if (meta.success) await enregistrer({ tenantId: meta.data.tenant_id, abonnementId, livemode, periodeFin });
+    return reply.code(200).send({ recu: true });
+  }
+
   app.post('/webhooks/stripe', async (req, reply) => {
     // 1. 🔴 La signature, sur le corps brut, AVANT de lire quoi que ce soit du corps.
     const brut = (req as AvecCorpsBrut).rawBody;
@@ -194,7 +284,9 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       journaliser('error', 'stripe_webhook_illisible', { issues: ev.error.issues.length });
       return reply.code(400).send({ error: 'événement illisible' });
     }
-    if (!EVENEMENTS_CREDITANTS.has(ev.data.type)) return reply.code(200).send({ recu: true });
+    const abonnement = EVENEMENTS_ABONNEMENT.has(ev.data.type)
+      || (ev.data.type === 'checkout.session.completed' && sessionAbonnementSchema.safeParse(ev.data.data.object).success);
+    if (!EVENEMENTS_CREDITANTS.has(ev.data.type) && !abonnement) return reply.code(200).send({ recu: true });
 
     // 2 bis. 🔴 Le mode de l'événement doit être celui de la clé configurée (relecture du 2026-09-29). Rejouer n'y
     //        changerait rien, donc 200, et une trace en erreur : c'est une destination mal déclarée chez Stripe.
@@ -202,6 +294,9 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       journaliser('error', 'stripe_mode_incoherent', { evenement: ev.data.id, type: ev.data.type, livemodeEvenement: ev.data.livemode, livemodeCle: deps.livemode });
       return reply.code(200).send({ recu: true, credite: false });
     }
+
+    // 2 ter. L'abonnement du numéro (lot 3c) : son propre chemin, qui ne crédite rien.
+    if (abonnement) return traiterAbonnement(ev.data.id, ev.data.type, ev.data.livemode, ev.data.data.object, reply);
 
     // 3. La session. Un événement qui crédite et qu'on ne sait pas lire est de l'argent encaissé sans crédit : 422,
     //    donc rejoué par Stripe pendant trois jours, le temps de corriger le code.
