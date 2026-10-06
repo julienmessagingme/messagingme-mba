@@ -69,19 +69,19 @@ test.describe('Barre : où sont rangées les entrées', () => {
     await expect(page).toHaveURL(/\/mba\/parametres$/);
   });
 
-  test('les onglets se distinguent du logo : une autre graisse, et un écart', async ({ page }) => {
+  test('les onglets se distinguent du logo : un écart', async ({ page }) => {
     // Julien : « la police n'est pas assez différenciante et c'est positionné beaucoup trop proche du logo ».
-    // Ce qui se vérifie sans juger du goût : une graisse différente de celle du nom du produit, et un écart
-    // réel entre ce nom et le premier onglet.
+    // Ce qui se vérifie sans juger du goût : un écart réel entre le logo et le premier onglet.
+    // ⚠️ Depuis le 2026-10-06, le nom du produit est DANS l'image du logo (le logo complet de la marque) : il n'a
+    // plus de graisse à comparer, la police n'est plus la même que celle des onglets par construction.
     // ⚠️ La casse haute qui les distinguait a été retirée le 2026-09-25 (passe « anti-slop » : des majuscules
     // espacées pour structurer). Ce cas garde qu'elle ne revient pas.
     await mock(page);
     await page.goto('/accueil');
     const onglet = page.getByTestId('onglet-console');
     await expect(onglet).toHaveCSS('text-transform', 'none');
-    const logo = page.getByText('Messaging Me');
-    const graisse = (el: Element) => getComputedStyle(el).fontWeight;
-    expect(await onglet.evaluate(graisse)).not.toBe(await logo.evaluate(graisse));
+    const logo = page.getByAltText('Messaging Me');
+    await expect(logo).toBeVisible();
     const bLogo = (await logo.boundingBox())!;
     const bOnglet = (await onglet.boundingBox())!;
     expect(bOnglet.x - (bLogo.x + bLogo.width)).toBeGreaterThan(20);
