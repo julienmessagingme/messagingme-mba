@@ -136,7 +136,17 @@ test.describe('Centre de sécurité & compliance', () => {
   test('🔴 chaque boite correspond a un sous-menu, et chaque sous-menu a une boite', async ({ page }) => {
     await monter(page);
     await page.goto('/securite');
-    const boites = await page.getByTestId(/^securite-boite-/).all();
+    /**
+     * ⚠️ `.all()` N'ATTEND RIEN : il photographie la page à l'instant où il est appelé. Or `AppShell` rend
+     * `null` tant que son effet n'a pas lu la session, et `goto` rend la main au `load`, AVANT cet effet.
+     * Sous charge, la photo tombait donc parfois sur une page vide (2026-10-06 : 0 échec sur 50 à vitesse
+     * normale, 9 sur 50 avec le processeur du navigateur ralenti de 4 à 10 fois). On attend la première
+     * boîte : elles sortent toutes du même rendu, donc la première visible garantit les autres. Si la
+     * page n'en rend aucune, cette attente échoue à sa place.
+     */
+    const lesBoites = page.getByTestId(/^securite-boite-/);
+    await expect(lesBoites.first(), 'la page n’affiche aucune boîte').toBeVisible();
+    const boites = await lesBoites.all();
     const cles = await Promise.all(boites.map(async (b) => (await b.getAttribute('data-testid'))!.replace('securite-boite-', '')));
     expect(cles.length).toBeGreaterThan(0);
     for (const cle of cles) {
