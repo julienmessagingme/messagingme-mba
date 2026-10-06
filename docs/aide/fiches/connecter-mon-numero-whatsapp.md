@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 9b71d3
+source_empreinte: 70a7ff
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 

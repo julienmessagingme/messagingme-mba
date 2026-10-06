@@ -74,12 +74,19 @@ rappel MCP) ; B, la libération (délié, résilié chez DIDWW) et les e-mails. 
 cycle : c'est l'essai réel.
 - ✅ Spec validée par Julien ; plan `docs/superpowers/plans/2026-10-06-numero-impaye.md` (12 tâches).
 - ✅ Migration 0215 poussée seule (`149db406`) et appliquée le 2026-10-06 à 16 h 57 UTC, relue en base.
-- 🔨 **Livraison A (la suspension) écrite et vérifiée** (tâches 1 à 8) : tests unitaires, e2e complets, typecheck,
-  auto-attaque. Reste : la relecture du lot, les commits (serveur, puis console après le `up`), le déploiement de
-  l'API et des deux workers, et l'essai réel sur l'espace de l'essai du 6 octobre, qui doit être suspendu dès le
-  déploiement (abonnement fini à 15 h 14). Avant le `up`, Julien ajoute `customer.subscription.updated` au webhook
-  de Stripe et règle « annuler l'abonnement » après la dernière relance.
-- Livraison B (la libération, « Abandonner », les e-mails) : tâches 9 à 12, après l'essai de A.
+- ✅ **Lot 4, livraison A (la suspension) en production le 2026-10-06 : migration 0215 appliquée à 16 h 57 UTC et relue
+  en base, API et deux workers sur `fca3d285` (premier balayage à 18 h 48 UTC), console `bef80514` publiée à 18 h 52
+  UTC, CI verte job par job.** Relue : deux rouges corrigés avant le déploiement,
+  chacun avec son test vu rouge puis vert ; neuf jaunes dans `todo.md`. Réglages Stripe faits par Julien avant le `up`
+  (`customer.subscription.updated` au webhook, relu chez Stripe ; « annuler l'abonnement » après la dernière relance
+  l'était déjà, pour tout le compte).
+- ✅ **Essai réel de A fait le 2026-10-06** (Julien, après le déploiement) sur l'espace de l'essai du 3c, dont
+  l'abonnement était fini depuis 15 h 14 : une seule alerte Telegram, le bandeau « envois coupés » avec la date de
+  libération (13 octobre), le refus dans l'Inbox, et dans Claude Code `get_number_subscription` « suspendu » et le
+  rappel sur chaque réponse d'outil. Vérifié aussi par le code déployé, en lecture seule : ce numéro est suspendu,
+  ceux de trois autres espaces non.
+- Reste : les jaunes de la relecture, puis la livraison B (la libération à J+7, « Abandonner », les e-mails), tâches 9
+  à 12. Sans B, l'espace de l'essai reste suspendu après le 13 octobre : rien ne le libère encore.
 
 ## LOT 3c DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO BRANCHÉ DEPUIS CLAUDE CODE, EN PRODUCTION, ESSAI RÉEL FAIT
 

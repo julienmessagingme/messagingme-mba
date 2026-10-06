@@ -50,6 +50,12 @@ urgent) avant ces essais, quatre fichiers étant communs.
    erreur : `tests/credit-cablage.test.ts` le tient.
 Les neuf jaunes sont dans `todo.md`.
 
+**En production** : API et deux workers sur `fca3d285` (VPS avancé par `merge --ff-only` sur ce SHA exact, pour ne
+pas emporter RC3 déjà poussé), console `bef80514`. La condition SQL du second rouge n'a pas pu être vue rouge en CI
+(le commit jetable a été refusé par le garde-fou) : elle a été évaluée dans Postgres en lecture seule sur des valeurs
+littérales, puis jouée verte sur une vraie table par le job `integration`. Essai réel le soir même par Julien :
+alerte unique, bandeau, refus dans l'Inbox, état et rappel dans Claude Code.
+
 ## 2026-10-06 : les retours console du 6 octobre, cadrés en huit lots ; RC1, le ménage de l'éditeur
 
 **Le cadrage** : douze demandes de Julien, passées au grill le même jour, regroupées en huit lots (RC1 à RC8), chacun

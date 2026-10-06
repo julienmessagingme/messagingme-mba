@@ -1894,7 +1894,7 @@ scénario, comment importer des contacts.
   Éprouvé de bout en bout sur un espace créé depuis Claude Code : le numéro attribué, le code de Meta capté par l'appel
   et affiché sur la page, le numéro connecté et vérifié chez Meta, 1 € de crédit offert. ⚠️ La réserve ne compte
   qu'autant de numéros que Julien en a achetés : vide, la page le dit et Julien reçoit une alerte Telegram.
-  **Quand l'abonnement tombe** (lot 4, livraison A) : un renouvellement qui échoue laisse 7 jours pour régler, et un
+  **Quand l'abonnement tombe** (lot 4, livraison A, LIVE et éprouvé le 2026-10-06) : un renouvellement qui échoue laisse 7 jours pour régler, et un
   bandeau sur toutes les pages de la console donne la date de la coupure ; passé ce délai, ou dès qu'un abonnement
   résilié prend fin, les envois du numéro sont coupés (Inbox, campagnes, scénarios, agents, API), les campagnes en
   cours se mettent en pause et reprennent d'elles-mêmes au paiement, et l'agent IA ne répond plus (aucun crédit
