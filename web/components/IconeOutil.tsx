@@ -20,7 +20,7 @@ export function IconeOutil({ signe, taille = 'ligne', className }: { signe: Sign
 }
 
 /**
- * Les neuf dessins. `Record` EXHAUSTIF : ajouter un signe sans son dessin ne compile pas, ce qui est
+ * Les dix dessins. `Record` EXHAUSTIF : ajouter un signe sans son dessin ne compile pas, ce qui est
  * exactement la garde qu'on veut ici (une icône manquante ne se voit pas en relisant du code).
  */
 const DESSINS: Record<SigneOutil, NomIcone> = {
@@ -32,5 +32,7 @@ const DESSINS: Record<SigneOutil, NomIcone> = {
   recherche: 'rechercher',
   contact: 'contact',
   humain: 'humain',
+  // Marquer la conversation urgente (RC2) : le signe d'alerte de la console.
+  urgent: 'attention',
   fin: 'fin',
 };

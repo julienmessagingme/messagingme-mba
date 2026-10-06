@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 844c82
+source_empreinte: 1ebb0b
 ---
 # Construire un agent IA
 
@@ -77,7 +77,8 @@ une pastille « À relire ».
 **Les outils sont ce qu'il a le droit de FAIRE**, en plus de parler : chercher dans sa base de
 connaissance, lire la fiche du contact (ses champs, et sa dernière analyse : s'il est mécontent, l'agent le
 sait), poser une étiquette, enregistrer une information, envoyer un bloc de
-votre scénario, passer la main à un humain, terminer par une règle d'arrêt. Trois choses à retenir :
+votre scénario, passer la main à un humain, marquer la conversation urgente (elle apparaît dans le dossier « Urgent » de
+votre Inbox, et l'agent continue de répondre), terminer par une règle d'arrêt. Trois choses à retenir :
 
 - **Un outil n'est utilisable qu'une fois activé**, par vous ou par Claude à votre nom. Tant qu'il ne l'est
   pas, l'agent ne sait même pas qu'il existe. Le cas qui coûte le plus cher est une base bien remplie avec

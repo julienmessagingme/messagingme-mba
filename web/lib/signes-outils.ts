@@ -21,6 +21,7 @@ export type SigneOutil =
   | 'recherche'
   | 'contact'
   | 'humain'
+  | 'urgent'
   | 'fin';
 
 /**
@@ -38,6 +39,7 @@ export function signeDuHandler(handler: string): SigneOutil | null {
     case 'chercher_connaissance': return 'recherche';
     case 'lire_contact': return 'contact';
     case 'escalader': return 'humain';
+    case 'marquer_urgent': return 'urgent';
     case 'terminer': return 'fin';
     default: return null;
   }

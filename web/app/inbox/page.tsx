@@ -47,6 +47,7 @@ import {
   releaseConversation,
   prendreConversation,
   signalerConversation,
+  marquerUrgente,
   lireMediaMessage,
   transcrireMessage,
   effacerConversation,
@@ -109,6 +110,10 @@ async function appliquerRangement(tenantId: string, conversationId: string, acti
     await signalerConversation(tenantId, conversationId, action === 'signaler');
     return null;
   }
+  if (action === 'urgent' || action === 'ne-plus-urgent') {
+    await marquerUrgente(tenantId, conversationId, action === 'urgent');
+    return null;
+  }
   if (action === 'traiter' || action === 'ne-plus-traiter') {
     await marquerTraitee(tenantId, conversationId, action === 'traiter');
     return null;
@@ -117,9 +122,10 @@ async function appliquerRangement(tenantId: string, conversationId: string, acti
   return null;
 }
 
-function dossierEnParams(d: DossierInbox): { aTraiter?: boolean; traitees?: boolean; signalees?: boolean; archivees?: boolean; affectee?: string | 'aucune' } {
+function dossierEnParams(d: DossierInbox): { aTraiter?: boolean; urgentes?: boolean; traitees?: boolean; signalees?: boolean; archivees?: boolean; affectee?: string | 'aucune' } {
   if (typeof d === 'object') return { affectee: d.membre };
   if (d === 'aTraiter') return { aTraiter: true };
+  if (d === 'urgentes') return { urgentes: true };
   if (d === 'traitees') return { traitees: true };
   if (d === 'signalees') return { signalees: true };
   if (d === 'archivees') return { archivees: true };
@@ -243,7 +249,7 @@ function InboxInner({ session }: { session: Session }) {
    * sélection faite dans un autre dossier ferait ranger des lignes qu'on ne voit plus.
    */
   const [cochees, setCochees] = useState<Set<string>>(new Set());
-  const [compteurs, setCompteurs] = useState<CompteursInbox>({ tout: 0, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
+  const [compteurs, setCompteurs] = useState<CompteursInbox>({ tout: 0, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
   const [rangementEnCours, setRangementEnCours] = useState(false);
   /**
    * Qui voit la charge par collaborateur.
@@ -311,7 +317,9 @@ function InboxInner({ session }: { session: Session }) {
         // d'arrêt. Elles n'apparaissaient sur aucune page, sans que rien ne le signale, et le dédoublonnage
         // ci-dessous n'y pouvait rien : il protège des doublons, pas des absences. Repli sur `lastMessageAt`
         // si le champ manque : c'est exactement le comportement d'avant, jamais pire.
-        before: { at: dernier.curseur ?? dernier.lastMessageAt, id: dernier.id },
+        // 🔴 ET SON RANG D'URGENCE, tel que le serveur l'a rendu : « À traiter » met les urgentes en tête, et une
+        // page qui s'arrête à la frontière reprendrait sinon au mauvais endroit (migration 0216).
+        before: { at: dernier.curseur ?? dernier.lastMessageAt, id: dernier.id, urgente: dernier.urgente === true },
         ...dossierEnParams(dossier),
       });
       const suite = Array.isArray(r?.conversations) ? r.conversations : [];
@@ -603,6 +611,8 @@ function InboxInner({ session }: { session: Session }) {
           <div className="px-4 py-10 text-center text-sm text-ink-500">
             {dossier === 'aTraiter'
               ? t('Rien à traiter : toutes les conversations sont gérées par le scénario.', 'Nothing to handle: every conversation is handled by the scenario.')
+              : dossier === 'urgentes'
+                ? t('Aucune conversation urgente : marquez-en une depuis « Ranger dans… » quand elle presse.', 'No urgent conversation: mark one from “File in…” when it is pressing.')
               : dossier === 'traitees'
                 ? t('Aucune conversation traitée : marquez « Traité » celles qui n’attendent plus rien.', 'No conversation marked as done: mark as done those that need nothing more.')
               : dossier === 'signalees'
@@ -701,8 +711,8 @@ function InboxInner({ session }: { session: Session }) {
                       >
                         {c.profileName ?? `+${c.waId}`}
                       </button>
-                      {/* 🔴 LA SEULE PASTILLE DE LA LISTE, et c'est un arbitrage explicite de Julien du 2026-09-19
-                          (« Traité » reste dans « Tout » AVEC une pastille), qui fait exception à celui du
+                      {/* 🔴 L'UNE DES DEUX PASTILLES DE LA LISTE, et c'est un arbitrage explicite de Julien du
+                          2026-09-19 (« Traité » reste dans « Tout » AVEC une pastille), qui fait exception à celui du
                           2026-09-11 (« plus aucun badge »). Sans elle, une conversation traitée serait
                           indiscernable dans « Tout » d'une conversation qui attend. Absente du dossier « Traité »,
                           dont le titre dit déjà la même chose. */}
@@ -712,6 +722,17 @@ function InboxInner({ session }: { session: Session }) {
                           className="ml-1.5 shrink-0 rounded-full bg-succes-100 px-1.5 py-px text-xs font-medium text-ink-500"
                         >
                           {t('Traité', 'Done')}
+                        </span>
+                      )}
+                      {/* L'autre : « Urgent », en rouge (RC2, décision de Julien du 2026-10-06). C'est elle qui dit,
+                          en tête de « À traiter », pourquoi une conversation ancienne passe devant une récente.
+                          Absente du dossier « Urgent », pour la même raison que « Traité ». */}
+                      {c.urgente === true && dossier !== 'urgentes' && (
+                        <span
+                          data-testid={`inbox-urgente-${c.id}`}
+                          className="ml-1.5 shrink-0 rounded-full bg-danger-50 px-1.5 py-px text-xs font-medium text-danger-700"
+                        >
+                          {t('Urgent', 'Urgent')}
                         </span>
                       )}
                     </span>
@@ -891,6 +912,7 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
   const archivee = dossier === 'archivees';
   const signaleeMain = conversation.signaleeMain === true;
   const traitee = conversation.traitee === true;
+  const urgente = conversation.urgente === true;
   /**
    * CE FIL A-T-IL DEJA PORTE UN MESSAGE ?
    *
@@ -943,6 +965,13 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
       {!archivee && (traitee
         ? <option value="ne-plus-traiter">{libelleRangement('ne-plus-traiter', t)}</option>
         : <option value="traiter">{libelleRangement('traiter', t)}</option>)}
+      {/* L'urgence (RC2), à côté du signalement, et pour la même raison que « Traité » rien depuis Archivé : le
+          dossier « Urgent » exclut les archivées, l'urgence n'y serait visible nulle part. */}
+      {/* Ni sur une conversation « Traité » : « Traité » lève l'urgence, la reposer ferait un état que la règle
+          interdit (une ligne « Traité » dans « Urgent », absente de « À traiter »). */}
+      {!archivee && (urgente
+        ? <option value="ne-plus-urgent">{libelleRangement('ne-plus-urgent', t)}</option>
+        : !traitee && <option value="urgent">{libelleRangement('urgent', t)}</option>)}
       {signaleeMain
         ? <option value="ne-plus-signaler">{libelleRangement('ne-plus-signaler', t)}</option>
         : <option value="signaler">{libelleRangement('signaler', t)}</option>}
@@ -1688,6 +1717,15 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
         <div className="min-w-0">
           <span className="text-sm font-semibold">{conversation.profileName ?? `+${conversation.waId}`}</span>
           <span className="ml-2 font-mono text-xs text-ink-500">+{conversation.waId}</span>
+          {/* La même pastille que sur la ligne (RC2) : elle suit la liste rechargée après chaque geste. */}
+          {conversation.urgente === true && (
+            <span
+              data-testid="thread-urgente"
+              className="ml-2 rounded-full bg-danger-50 px-1.5 py-px text-xs font-medium text-danger-700"
+            >
+              {t('Urgent', 'Urgent')}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
           {/*

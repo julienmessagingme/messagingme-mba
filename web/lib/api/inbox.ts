@@ -77,6 +77,12 @@ export interface Conversation {
    * pastille de la ligne et le geste inverse du menu. Absent (backend antérieur) = lu comme `false`.
    */
   traitee?: boolean;
+  /**
+   * Marquée urgente, par un collaborateur ou un agent IA (migration 0216) : la pastille rouge, le geste inverse du
+   * menu, et le RANG du point de reprise de « À traiter », à renvoyer dans `before.urgente`. Absent (backend
+   * antérieur) = lu comme `false`.
+   */
+  urgente?: boolean;
 }
 export interface InboxMessage {
   id: string;
@@ -148,7 +154,16 @@ export interface InboxMessage {
  */
 export function listConversations(
   tenantId: string,
-  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean; archivees?: boolean; traitees?: boolean; id?: string } = {},
+  opts: {
+    limit?: number;
+    /**
+     * Le point de reprise : le DERNIER élément reçu, tel que le serveur l'a rendu (`curseur`, `id`, `urgente`).
+     * 🔴 `urgente` compte dans « À traiter », qui met les urgentes en tête : sans lui, la page suivante reprendrait au
+     * mauvais endroit à la frontière entre urgentes et non urgentes.
+     */
+    before?: { at: string; id: string; urgente?: boolean };
+    aTraiter?: boolean; urgentes?: boolean; affectee?: string | 'aucune'; signalees?: boolean; archivees?: boolean; traitees?: boolean; id?: string;
+  } = {},
 ): Promise<{
   conversations: Conversation[];
   /**
@@ -165,6 +180,8 @@ export function listConversations(
   if (opts.id !== undefined) p.set('id', opts.id);
   if (opts.limit !== undefined) p.set('limit', String(opts.limit));
   if (opts.aTraiter) p.set('aTraiter', '1');
+  // Le dossier « Urgent » (migration 0216). Il n'exclut PAS de « Tout ».
+  if (opts.urgentes) p.set('urgentes', '1');
   if (opts.affectee !== undefined) p.set('affectee', opts.affectee);
   if (opts.signalees) p.set('signalees', '1');
   // Le dossier ARCHIVÉ. Absent = les dossiers ordinaires, qui excluent les archivées.
@@ -172,7 +189,11 @@ export function listConversations(
   // Le dossier « Traité » (migration 0160). Il n'exclut PAS de « Tout », contrairement à Archivé.
   if (opts.traitees) p.set('traitees', '1');
   // Le curseur part ENTIER ou pas du tout : le serveur ignore une moitié, autant ne pas l'envoyer.
-  if (opts.before) { p.set('beforeAt', opts.before.at); p.set('beforeId', opts.before.id); }
+  if (opts.before) {
+    p.set('beforeAt', opts.before.at);
+    p.set('beforeId', opts.before.id);
+    if (opts.before.urgente !== undefined) p.set('beforeUrgente', opts.before.urgente ? '1' : '0');
+  }
   const qs = p.toString();
   return request<{ conversations: Conversation[] }>(`/tenants/${tenantId}/conversations${qs ? `?${qs}` : ''}`);
 }
@@ -376,6 +397,8 @@ export function listBlockedContacts(tenantId: string): Promise<{ contacts: Block
 export interface CompteursInbox {
   tout: number;
   aTraiter: number;
+  /** Marquées urgentes et non archivées (migration 0216). Elles sont AUSSI dans `tout`. */
+  urgentes: number;
   signalees: number;
   archivees: number;
   /** Marquées « Traité » et non archivées. Elles sont AUSSI dans `tout`. */
@@ -389,7 +412,7 @@ export async function countConversationsParDossier(tenantId: string): Promise<Co
   const r = await request<Partial<CompteursInbox>>(`/tenants/${tenantId}/conversations/counts`);
   const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   return {
-    tout: n(r?.tout), aTraiter: n(r?.aTraiter), signalees: n(r?.signalees),
+    tout: n(r?.tout), aTraiter: n(r?.aTraiter), urgentes: n(r?.urgentes), signalees: n(r?.signalees),
     archivees: n(r?.archivees), traitees: n(r?.traitees), nonAffectees: n(r?.nonAffectees),
     // Vérifié et non casté : ce tableau vient du réseau, et l'écran fait `.map` dessus pendant le rendu.
     parMembre: Array.isArray(r?.parMembre) ? r.parMembre : [],
@@ -544,6 +567,13 @@ export function prendreConversation(tenantId: string, conversationId: string): P
  */
 export function signalerConversation(tenantId: string, conversationId: string, signale: boolean): Promise<{ signalee: boolean }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/${signale ? 'signaler' : 'ne-plus-signaler'}`, { method: 'POST' });
+}
+/**
+ * Marque une conversation urgente, ou retire l'urgence (migration 0216). Une DÉCISION, distincte de la note
+ * d'urgence de l'analyse. « Traité » et l'archivage la lèvent d'eux-mêmes, côté serveur.
+ */
+export function marquerUrgente(tenantId: string, conversationId: string, urgente: boolean): Promise<{ urgente: boolean }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/${urgente ? 'urgent' : 'ne-plus-urgent'}`, { method: 'POST' });
 }
 /** Surcharge de reprise de CE fil (C.4) : `resume` (repart au scénario), `inbox` (reste à l'humain), ou
  *  null (suit le défaut du tenant). Ne bascule pas le contrôle : réglage lu par le sweep de handback. */

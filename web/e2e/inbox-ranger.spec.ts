@@ -23,7 +23,7 @@ const THREAD = { messages: [], windowOpen: true, controlOwner: 'app_workflow' };
 const COMPTEURS = { tout: 1, aTraiter: 0, signalees: 0, archivees: 0, nonAffectees: 1, parMembre: [] };
 
 async function monter(page: import('@playwright/test').Page, opts: {
-  controlOwner?: string; signaleeMain?: boolean; traitee?: boolean; dossier?: string; appels?: string[];
+  controlOwner?: string; signaleeMain?: boolean; traitee?: boolean; urgente?: boolean; dossier?: string; appels?: string[];
   /**
    * Le fil n'a-t-il AUCUN message ? C'est l'etat d'un fil qu'un operateur vient d'ouvrir depuis la fiche
    * d'un contact (lot 6) : l'apercu est nul, parce que personne n'a encore parle.
@@ -40,6 +40,7 @@ async function monter(page: import('@playwright/test').Page, opts: {
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (/\/conversations\/counts/.test(url)) return json(COMPTEURS);
     if (/\/(signaler|ne-plus-signaler)$/.test(url)) return json({ signalee: true });
+    if (/\/(urgent|ne-plus-urgent)$/.test(url)) return json({ urgente: true });
     if (/\/(traiter|ne-plus-traiter)$/.test(url)) return json({ traitee: true });
     if (/\/prendre$/.test(url)) return json({ controlOwner: 'app_human' });
     if (/\/(archive|unarchive)$/.test(url)) return json({ archived: true });
@@ -47,6 +48,7 @@ async function monter(page: import('@playwright/test').Page, opts: {
     if (/\/conversations\?|\/conversations$/.test(url)) {
       return json({ conversations: [{
         ...CONV, controlOwner: owner, signaleeMain: opts.signaleeMain === true, traitee: opts.traitee === true,
+        urgente: opts.urgente === true,
         ...(opts.sansMessage === true ? { lastPreview: null } : {}),
       }] });
     }
@@ -71,8 +73,9 @@ async function destinations(page: import('@playwright/test').Page, testid = 'ran
 test.describe('Inbox : ranger la conversation ouverte', () => {
   test('🔴 le scénario tient le fil : « À traiter » est proposé, et le bouton « Rendre la main » est ABSENT', async ({ page }) => {
     const appels = await monter(page);
-    // « Traité » s'est ajouté le 2026-09-19 (migration 0160), juste après « À traiter ».
-    expect(await destinations(page)).toEqual(['À traiter', 'Traité', 'Signalé', 'Archivé']);
+    // « Traité » s'est ajouté le 2026-09-19 (migration 0160), juste après « À traiter » ; « Marquer urgent » le
+    // 2026-10-06 (RC2, migration 0216), à côté du signalement.
+    expect(await destinations(page)).toEqual(['À traiter', 'Traité', 'Marquer urgent', 'Signalé', 'Archivé']);
     await expect(page.getByTestId('inbox-rendre-la-main')).toHaveCount(0);
 
     await page.getByTestId('ranger-dans').selectOption('a-traiter');
@@ -85,14 +88,14 @@ test.describe('Inbox : ranger la conversation ouverte', () => {
     // traiter », que ce dossier exclut faute de message (arbitrage du 2026-09-23). L'écran annonçait donc
     // un succès sans effet visible : c'est le motif « offert-et-inerte » que ce produit s'interdit ailleurs.
     await monter(page, { sansMessage: true });
-    expect(await destinations(page)).toEqual(['Traité', 'Signalé', 'Archivé']);
+    expect(await destinations(page)).toEqual(['Traité', 'Marquer urgent', 'Signalé', 'Archivé']);
   });
 
   test('🔴 un opérateur tient le fil : « À traiter » DISPARAÎT du menu, le bouton prend le relais', async ({ page }) => {
     // La preuve inverse, et c'est elle qui empêche les deux endroits pour le même choix : sans elle, un menu
     // qui proposerait toujours « À traiter » passerait le cas ci-dessus.
     await monter(page, { controlOwner: 'app_human' });
-    expect(await destinations(page)).toEqual(['Traité', 'Signalé', 'Archivé']);
+    expect(await destinations(page)).toEqual(['Traité', 'Marquer urgent', 'Signalé', 'Archivé']);
     await expect(page.getByTestId('inbox-rendre-la-main')).toBeVisible();
   });
 
@@ -141,6 +144,28 @@ test.describe('Inbox : ranger la conversation ouverte', () => {
     expect(await destinations(page)).toEqual(['Ne plus marquer traité', 'Signalé', 'Archivé']);
     await page.getByTestId('ranger-dans').selectOption('ne-plus-traiter');
     await expect.poll(() => appels.filter((a) => /POST .*\/c1\/ne-plus-traiter$/.test(a)).length, { timeout: 10_000 }).toBe(1);
+  });
+
+  test('🔴 « Marquer urgent » poste sur la bonne adresse', async ({ page }) => {
+    const appels = await monter(page);
+    await page.getByTestId('ranger-dans').selectOption('urgent');
+    await expect.poll(() => appels.filter((a) => /POST .*\/c1\/urgent$/.test(a)).length, { timeout: 10_000 }).toBe(1);
+  });
+
+  test('🔴 une conversation URGENTE propose « Plus urgent », pas « Marquer urgent »', async ({ page }) => {
+    const appels = await monter(page, { urgente: true });
+    expect(await destinations(page)).toContain('Plus urgent');
+    expect(await destinations(page)).not.toContain('Marquer urgent');
+    await expect(page.getByTestId('thread-urgente')).toBeVisible();
+    await page.getByTestId('ranger-dans').selectOption('ne-plus-urgent');
+    await expect.poll(() => appels.filter((a) => /POST .*\/c1\/ne-plus-urgent$/.test(a)).length, { timeout: 10_000 }).toBe(1);
+  });
+
+  test('🔴 depuis Archivé, l’urgence n’est pas proposée : le dossier « Urgent » exclut les archivées', async ({ page }) => {
+    await monter(page, { dossier: 'archivees' });
+    const dest = await destinations(page);
+    expect(dest).not.toContain('Marquer urgent');
+    expect(dest).not.toContain('Plus urgent');
   });
 
   test('le menu retombe TOUJOURS sur son libellé : il déclenche une action, il ne porte pas un état', async ({ page }) => {

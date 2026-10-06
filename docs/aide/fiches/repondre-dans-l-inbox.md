@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: baca15
+source_empreinte: 426208
 ---
 # Répondre à un client dans l'Inbox
 
@@ -19,6 +19,9 @@ la conversation ouverte à droite.
   nouvelle demande pour votre équipe, et tant que personne ne lui a répondu, le robot ne la reprend pas, même passé
   le délai. Une simple réaction emoji (👍) ne la rouvre pas. Marquer « Traité » ne rend pas la main au robot :
   cela relance le délai au bout duquel il la reprend.
+- **Urgent** : celles qu'un collègue, ou un agent IA, a marquées urgentes. Celles qui attendent l'équipe passent
+  aussi en tête de « À traiter », avec une pastille rouge, même si leur dernier message est ancien. L'urgence tombe d'elle-même quand la
+  conversation est marquée « Traité » ou archivée. C'est votre décision, pas la note d'urgence de l'analyse.
 - **Signalé** : celles où un message insulte l'entreprise, repérées automatiquement, plus celles que vous
   avez signalées vous-même.
 - **Archivé** : ce que vous avez rangé. Contrairement à « Traité », une conversation archivée n'apparaît
@@ -28,7 +31,7 @@ la conversation ouverte à droite.
 personne (nom, téléphone, e-mail, ses tags, si elle s'est désabonnée ou si elle est bloquée), le résumé de
 l'analyse quand elle est passée, à qui la conversation est assignée, et son historique, du plus récent au plus
 ancien : les assignations (à qui, par qui), les prises et les rendus à l'agent de Meta, « Traité », « Archivé »,
-« Signalé », et quand le client l'a rouverte en écrivant. Un changement fait par un scénario ou une campagne dit
+« Signalé », « Urgent », et quand le client l'a rouverte en écrivant. Un changement fait par un scénario ou une campagne dit
 sa cause (« automatique : campagne Rentrée ») au lieu d'un nom, et un geste fait par une clé d'API le dit aussi.
 Quand un collègue prend une conversation pour lui, la ligne dit « Prise en charge », par lui. Le panneau ne sert
 qu'à lire : les gestes restent en haut de la conversation, et il se met à jour après chacun d'eux, comme après un
@@ -42,7 +45,8 @@ bouton « Ouvrir la conversation » crée le fil et vous y emmène. Un fil ouver
 « À traiter », parce que personne n'y attend de réponse ; vous le retrouvez dans « Tout », en haut.
 
 **Pour ranger une conversation**, le menu « Ranger dans… » en haut de la conversation ouverte propose les
-destinations qui auront un effet visible depuis l'endroit où vous êtes. Vous pouvez aussi cocher plusieurs
+destinations qui auront un effet visible depuis l'endroit où vous êtes. C'est aussi là qu'on la marque urgente
+(« Marquer urgent ») ou qu'on retire l'urgence (« Plus urgent »), et n'importe qui dans l'équipe peut le faire. Vous pouvez aussi cocher plusieurs
 conversations dans la liste : le même menu apparaît au-dessus et agit sur toute la sélection.
 
 **Pour confier une conversation à quelqu'un**, utilisez le sélecteur d'affectation, qui est indépendant du

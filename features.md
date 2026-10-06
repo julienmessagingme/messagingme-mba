@@ -1169,8 +1169,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   un badge « désabonné » ou « bloqué », le lien « Ouvrir la fiche »), **le résumé de l'analyse** (« pas encore
   analysée » tant qu'elle n'est pas passée), **à qui elle est assignée**, et **ce qui lui est arrivé** : une frise,
   du plus récent au plus ancien, des assignations (assignée, réassignée, désassignée : à qui, par qui), des prises
-  et des rendus à l'agent de Meta, de « Traité », « Archivé », « Signalé » et de leurs inverses, et de la
-  rouverture par un message du contact.
+  et des rendus à l'agent de Meta, de « Traité », « Archivé », « Signalé », « Urgent » et de leurs inverses, et de
+  la rouverture par un message du contact.
   - **Un changement automatique porte sa cause** au lieu d'un nom : « automatique : campagne Rentrée »,
     « automatique : scénario Bienvenue », « automatique : délai de reprise écoulé ». Un geste fait par une clé
     d'API porte « par une clé d'API ». Seul un collaborateur supprimé depuis s'affiche « ancien collaborateur ».
@@ -1240,6 +1240,23 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   (l'espace a du crédit, recharger n'y changerait rien) ou traduction pas encore activée sur le serveur
   (rien à faire côté client).
 
+- 🟡 **LE STATUT « URGENT »** (2026-10-06, écrit, pas encore déployé ; migration 0216). N'importe quel membre de
+  l'équipe (admin, manager ou agent, y compris sur une conversation confiée à un collègue) marque une conversation
+  **« Marquer urgent »** depuis le menu « Ranger dans… » de la conversation ouverte, et la retire par **« Plus
+  urgent »**. Marquée, elle a son dossier **« Urgent »**, juste sous « À traiter », une **pastille rouge** sur sa ligne
+  et dans l'en-tête de la conversation, et quand elle attend l'équipe elle passe **en tête de « À traiter »**, même si
+  son dernier message est ancien. Une conversation qu'un agent IA tient encore n'est pas « à traiter » : elle n'est que
+  dans « Urgent ». Rien ne part hors de la console : ni e-mail, ni notification.
+  - **Un agent IA peut la poser lui-même**, par l'outil « Marquer la conversation urgente » (voir Agent IA, les
+    outils). Il continue alors de répondre au client : urgent n'est pas un transfert. La frise du panneau Détail dit
+    « Marquée urgente », par la personne, ou « automatique : agent IA » suivi de son nom.
+  - **L'urgence tombe toute seule** quand la conversation est marquée **« Traité »** ou **archivée** : la frise dit
+    alors « Urgence levée », par la même personne. Retirer « Traité » ou désarchiver ne la remet pas.
+  - ⚠️ **C'est une décision, pas la note d'urgence de l'analyse** (0 à 10, dans le résumé) : les deux ne se touchent
+    pas, comme le signalement à la main et le constat d'injure.
+  - ⚠️ Une conversation archivée ou marquée « Traité » ne se marque pas urgente depuis la console : le dossier
+    « Urgent » n'en montre aucune. Et l'urgence
+    ne se pose pas sur une sélection de plusieurs conversations, seulement sur celle qu'on lit.
 - ✅ **LE STATUT « TRAITÉ »** (2026-09-19, déployé le jour même, essai réel fait le 2026-10-01). Pour les conversations
   où le client a écrit en dernier mais où il n'y a plus rien à lui répondre (« merci, bonne journée »). Marquée
   « Traité », la conversation **sort d'« À traiter »**, **reste dans « Tout »** avec une petite pastille
@@ -1278,6 +1295,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
     pas** : on ne reprenait un fil qu'en ENVOYANT un message, donc il fallait écrire au client pour un
     rangement interne. Le geste inverse (« Rendre la main » au scénario) est le bouton juste à côté, et les
     deux ne s'affichent jamais ensemble : c'est une bascule, pas deux réglages.
+  - **Marquer urgent / Plus urgent** (2026-10-06, voir « Le statut urgent » ci-dessus). Absent depuis
+    « Archivé ».
   - **Signalé / Ne plus signaler** : un signalement À LA MAIN. ⚠️ Il s'ajoute au constat de l'analyse (qui
     repère les injures toute seule) sans l'écraser : le dossier « Signalé » montre les deux, et une
     ré-analyse ne peut pas effacer votre signalement. Sur une conversation signalée par l'analyse, le menu
@@ -1301,8 +1320,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   constat n'est pas effaçable à la main, et prétendre le contraire ferait cliquer deux fois avant de
   conclure que l'écran est cassé.
 - ✅ **UN MENU DE DOSSIERS, FAÇON BOÎTE MAIL** (2026-09-08, **réellement à gauche depuis le 2026-09-09**).
-  Dans sa propre colonne, à gauche de la liste : **Tout**, **À traiter**, **Traité** (depuis le 2026-09-19),
-  **Signalé**, **Archivé**, chacun
+  Dans sa propre colonne, à gauche de la liste : **Tout**, **À traiter**, **Urgent** (depuis le 2026-10-06),
+  **Traité** (depuis le 2026-09-19), **Signalé**, **Archivé**, chacun
   avec son nombre entre parenthèses. Il remplace les trois boutons de filtre d'avant, qui ne portaient qu'un
   compteur sur trois.
   🔴 **Cette ligne annonçait « à gauche de la liste » et c'était FAUX** : le menu vivait AU-DESSUS d'elle,
@@ -2848,7 +2867,7 @@ d'aide.
   ⚠️ **Conséquence à connaître** : changer la description d'un outil partagé change ce que voient TOUS les
   agents qui l'utilisent. L'onglet Outils de l'agent de Meta nomme les agents IA qui partagent un connecteur,
   justement pour qu'on le sache avant. (L'écran « bibliothèque de l'espace », Tools > Outils, n'existe plus.)
-- ✅ **Sept outils maison** au catalogue, chacun étiqueté **lecture**, **écriture** ou **irréversible** :
+- ✅ **Huit outils maison** au catalogue, chacun étiqueté **lecture**, **écriture** ou **irréversible** :
   - **Chercher dans la base de connaissance** (lecture) : à appeler avant toute question de fond.
   - **Lire la fiche du contact** (lecture) : ce qu'on sait déjà de lui, son nom, ses champs, et (2026-10-02) sa
     dernière analyse avec son résumé : sentiment, satisfaction, urgence, sujet, résolue ou non. L'agent sait
@@ -2860,6 +2879,12 @@ d'aide.
   - **Envoyer un bloc de votre scénario** (irréversible) : pousser une photo, un message, un formulaire que
     vous avez dessinés. Le parcours ne bouge pas, l'agent garde la main.
   - **Passer la main à un humain** (écriture) : voir plus bas.
+  - **Marquer la conversation urgente** (écriture, 2026-10-06, pas encore déployé) : la conversation passe dans le
+    dossier « Urgent » de l'Inbox (et en tête de « À traiter » dès que l'équipe la tient), et **l'agent continue de
+    répondre** (ce n'est pas un
+    transfert). Sans paramètre : il ne marque jamais que la conversation en cours. Posé sur **aucun** agent à la
+    livraison, il s'ajoute à la main ; un assistant branché par MCP ne peut pas le donner. Au bac à sable, il est
+    simulé.
   - **Terminer par une règle d'arrêt** (lecture) : rendre la main au scénario par la sortie choisie, après un dernier
     message au contact (le texte de l'agent, ou à défaut le message qu'il joint à l'outil : certains modèles
     terminent sans rien écrire à côté).

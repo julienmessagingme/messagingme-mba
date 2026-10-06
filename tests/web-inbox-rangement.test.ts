@@ -79,8 +79,20 @@ describe('Inbox, les destinations proposées à une sélection', () => {
     expect(destinationsEnLot('nonAffectees', false, false, true)).toEqual(['a-traiter', 'traiter', 'signaler', 'archiver']);
   });
 
+  it('🔴 l’urgence (RC2) ne se propose JAMAIS en lot, et le dossier « Urgent » se range comme un dossier ordinaire', () => {
+    // Un jugement sur UNE conversation, posé depuis celle qu'on lit. « Traité » et « Archivé » y lèvent l'urgence.
+    expect(destinationsEnLot('urgentes', false, false, true)).toEqual(['a-traiter', 'traiter', 'signaler', 'archiver']);
+    for (const d of ['toutes', 'aTraiter', 'urgentes', 'traitees', 'signalees', 'archivees'] as const) {
+      for (const drapeau of [false, true]) {
+        const dest = destinationsEnLot(d, drapeau, drapeau, true);
+        expect(dest, d).not.toContain('urgent');
+        expect(dest, d).not.toContain('ne-plus-urgent');
+      }
+    }
+  });
+
   it('aucune destination n’est proposée deux fois', () => {
-    const dossiers: DossierLike[] = ['toutes', 'aTraiter', 'traitees', 'signalees', 'archivees', 'nonAffectees', { membre: 'u1' }];
+    const dossiers: DossierLike[] = ['toutes', 'aTraiter', 'urgentes', 'traitees', 'signalees', 'archivees', 'nonAffectees', { membre: 'u1' }];
     for (const d of dossiers) {
       for (const manuel of [false, true]) {
         for (const traitee of [false, true]) {
@@ -104,7 +116,9 @@ describe('Inbox, le vocabulaire du rangement', () => {
   });
 
   it('tous les gestes sont reconnus, et chacun a un libellé non vide', () => {
-    const actions: ActionRangement[] = ['a-traiter', 'traiter', 'ne-plus-traiter', 'signaler', 'ne-plus-signaler', 'archiver', 'desarchiver'];
+    const actions: ActionRangement[] = [
+      'a-traiter', 'traiter', 'ne-plus-traiter', 'urgent', 'ne-plus-urgent', 'signaler', 'ne-plus-signaler', 'archiver', 'desarchiver',
+    ];
     for (const a of actions) {
       expect(estActionRangement(a)).toBe(true);
       expect(libelleRangement(a, t)).not.toBe('');

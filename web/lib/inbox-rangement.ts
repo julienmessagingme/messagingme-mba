@@ -21,10 +21,11 @@
  * produit jamais autre chose.
  */
 export type ActionRangement =
-  | 'a-traiter' | 'traiter' | 'ne-plus-traiter' | 'signaler' | 'ne-plus-signaler' | 'archiver' | 'desarchiver';
+  | 'a-traiter' | 'traiter' | 'ne-plus-traiter' | 'urgent' | 'ne-plus-urgent' | 'signaler' | 'ne-plus-signaler'
+  | 'archiver' | 'desarchiver';
 
 const ACTIONS: readonly ActionRangement[] = [
-  'a-traiter', 'traiter', 'ne-plus-traiter', 'signaler', 'ne-plus-signaler', 'archiver', 'desarchiver',
+  'a-traiter', 'traiter', 'ne-plus-traiter', 'urgent', 'ne-plus-urgent', 'signaler', 'ne-plus-signaler', 'archiver', 'desarchiver',
 ];
 
 /** La valeur lue sur un `<select>` est-elle un geste connu ? Le libellé-titre (chaîne vide) rend `false`. */
@@ -40,7 +41,7 @@ export function estActionRangement(v: string): v is ActionRangement {
  * déclarer ici casse la COMPILATION. Sans ça, un dossier neuf hériterait en silence des destinations du cas
  * par défaut, qui n'ont aucune raison de lui convenir.
  */
-export type DossierLike = 'toutes' | 'aTraiter' | 'traitees' | 'signalees' | 'archivees' | 'nonAffectees' | { membre: string };
+export type DossierLike = 'toutes' | 'aTraiter' | 'urgentes' | 'traitees' | 'signalees' | 'archivees' | 'nonAffectees' | { membre: string };
 
 /** Le libellé d'un geste, écrit UNE fois pour les deux menus. */
 export function libelleRangement(a: ActionRangement, t: (fr: string, en?: string) => string): string {
@@ -51,6 +52,10 @@ export function libelleRangement(a: ActionRangement, t: (fr: string, en?: string
     // au dossier que son DERNIER MESSAGE désigne, et si c'est nous qui avons écrit en dernier, elle ne
     // revient PAS dans « À traiter ». Le libellé promettrait un effet qui n'a pas lieu.
     case 'ne-plus-traiter': return t('Ne plus marquer traité', 'Unmark as done');
+    // Les libellés du plan RC2 : un GESTE et non un dossier, parce que l'urgence ne range pas la conversation
+    // ailleurs, elle la fait passer devant (« Urgent » et en tête de « À traiter »).
+    case 'urgent': return t('Marquer urgent', 'Mark as urgent');
+    case 'ne-plus-urgent': return t('Plus urgent', 'No longer urgent');
     case 'signaler': return t('Signalé', 'Flagged');
     case 'ne-plus-signaler': return t('Ne plus signaler', 'Unflag');
     case 'archiver': return t('Archivé', 'Archived');
@@ -93,6 +98,10 @@ export function libelleRangement(a: ActionRangement, t: (fr: string, en?: string
  * celles-là (prendre le fil d'une conversation traitée ne la ferait pas entrer dans un dossier qui l'exclut),
  * et « Traité » n'a d'effet que sur elles : sur une sélection entièrement traitée, proposer l'un ou l'autre
  * serait offrir un geste inerte (revue du 2026-09-19).
+ *
+ * ⚠️ L'URGENCE N'EST PAS PROPOSÉE EN LOT, délibérément (RC2) : c'est un jugement porté sur UNE conversation, posé
+ * depuis celle qu'on lit (menu de la conversation ouverte). Depuis le dossier « Urgent », la sélection se range comme
+ * depuis un dossier ordinaire ; « Traité » et « Archivé » y lèvent l'urgence, côté serveur.
  */
 export function destinationsEnLot(
   dossier: DossierLike, avecSignalementManuel: boolean, avecTraitee: boolean, avecNonTraitee: boolean,

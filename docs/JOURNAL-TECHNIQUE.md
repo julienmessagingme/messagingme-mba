@@ -20,6 +20,16 @@ WhatsApp » rangé sous Tools (la carte de l'aide régénérée, le titre de sa 
 (l'e2e de la Question vérifie `9/24` et l'alerte à `24/24`). Un e2e sans lien, celui des boîtes du Centre de sécurité,
 a échoué une fois sur quatre passages sous charge et passé trois fois seul : signalé à part.
 
+**RC2, le statut urgent** (serveur `1edb12e3`, migration 0216 appliquée à 17 h 56 UTC avant le `up`, console
+ensuite) : écrit par un implémenteur, relu à part (zéro rouge). Deux jaunes corrigés avant la production : le texte
+que l'outil donne au modèle promettait « en tête de la liste de l'équipe », or un fil que l'agent tient encore est
+`app_workflow`, que « À traiter » exclut (il n'apparaît que dans « Urgent ») ; et la console proposait « Marquer
+urgent » sur une conversation « Traité », ce qui fabriquait l'état que la règle interdit. ⚠️ Le découpage serveur /
+console a été typé et testé moitié par moitié dans une extraction de l'arbre serveur : un test de PARITÉ des types
+d'événements lit `web/lib/inbox-detail.ts`, qui est donc parti avec le serveur. Mesuré : le tri « urgentes en tête »
+ne s'appuie plus sur l'index récent, sans coût aujourd'hui (17 conversations au plus gros espace), noté dans
+`todo.md`.
+
 ## 2026-10-06 : le numéro branché depuis Claude Code, et son abonnement (lot 3c, livraisons A et B)
 
 **A, le lien et l'attente** (`d20dea6b`, jaunes `f8708b65`, console `b4f81ec4`) : `start_whatsapp_connection` donne
