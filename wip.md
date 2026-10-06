@@ -56,13 +56,13 @@ Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; réc
   relevés par la relecture (la migration contre trois chemins rares, deux renommages croisés simultanés), en 500 sur
   une requête au pire.
 
-## LOT 4 DE « MESSAGING ME POUR CLAUDE CODE » : CE QUE DEVIENT UN NUMÉRO FOURNI DONT L'ABONNEMENT TOMBE, SPEC ÉCRITE
+## LOT 4 DE « MESSAGING ME POUR CLAUDE CODE » : CE QUE DEVIENT UN NUMÉRO FOURNI DONT L'ABONNEMENT TOMBE, PLAN ÉCRIT
 
 Cadré avec Julien le 2026-10-06 ; spec `docs/superpowers/specs/2026-10-06-numero-impaye-design.md`. Deux livraisons :
 A, la suspension (état calculé sur des dates, migration 0215, garde au point d'envoi unique, réabonnement, bandeau,
 rappel MCP) ; B, la libération (délié, résilié chez DIDWW) et les e-mails. L'espace de l'essai du 2026-10-06 suit le
 cycle : c'est l'essai réel.
-- ⏳ Relecture de la spec par Julien, puis le plan.
+- ✅ Spec validée par Julien ; plan `docs/superpowers/plans/2026-10-06-numero-impaye.md` (12 tâches), à relire.
 
 ## LOT 3c DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO BRANCHÉ DEPUIS CLAUDE CODE, EN PRODUCTION, ESSAI RÉEL FAIT
 
