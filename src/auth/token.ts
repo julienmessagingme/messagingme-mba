@@ -24,8 +24,12 @@ function key(secret: string): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-/** Signe un JWT de session HS256 (sub = userId, claims tenantId + role). */
-export async function signSession(s: Session, secret: string, expiresIn = '12h'): Promise<string> {
+/**
+ * Signe un JWT de session HS256 (sub = userId, claims tenantId + role).
+ * `expiresIn` : une durée (`'12h'`), ou un INSTANT absolu en secondes depuis l'epoch, celui d'une session qu'on
+ * remplace (le changement d'espace, `src/http/espaces.ts`) : la remplaçante ne vit pas plus longtemps que sa preuve.
+ */
+export async function signSession(s: Session, secret: string, expiresIn: string | number = '12h'): Promise<string> {
   const emprunt = s.impersonated ? { impersonated: true, ...(s.observateur ? { observateur: s.observateur } : {}) } : {};
   return new SignJWT({ tenantId: s.tenantId, role: s.role, ...emprunt })
     .setProtectedHeader({ alg: 'HS256' })
@@ -50,6 +54,20 @@ export async function verifySession(token: string, secret: string): Promise<Sess
       ? { impersonated: true as const, ...(typeof payload.observateur === 'string' ? { observateur: payload.observateur } : {}) }
       : {};
     return { userId: payload.sub, tenantId: payload.tenantId, role: payload.role, ...emprunt };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * L'échéance d'un jeton de session (`exp`, en secondes depuis l'epoch), signature vérifiée. `null` si le jeton est
+ * invalide, expiré, ou porte un `kind` (ce n'est pas une session). Sert au changement d'espace, dont la session neuve
+ * garde cette échéance.
+ */
+export async function echeanceSession(token: string, secret: string): Promise<number | null> {
+  try {
+    const { payload } = await jwtVerify(token, key(secret), { algorithms: ['HS256'] });
+    return payload.kind === undefined && typeof payload.exp === 'number' ? payload.exp : null;
   } catch {
     return null;
   }

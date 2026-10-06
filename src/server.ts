@@ -53,6 +53,7 @@ import { registerWorkflowReports } from './http/workflow-reports';
 import type { WorkflowReportsRouteDeps } from './http/workflow-reports';
 import { registerAccount } from './http/account';
 import { registerMe } from './http/me';
+import { registerEspaces } from './http/espaces';
 import { registerOps } from './http/ops';
 import { registerWorkflows } from './http/workflows';
 import { registerAutomations } from './http/automations';
@@ -744,7 +745,16 @@ export function modulesDeRoutes(
     // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
     // compte authentifié (générique, lit req.auth.userId).
     entree('account', 'tenant', deps.account, (app, d, g) => registerAccount(app, d, g.admin)),
-    entree('me', 'tenant', deps.me, (app, d, g) => registerMe(app, d, g.auth)),
+    /**
+     * Les espaces de l'identité et la bascule (RC3, `src/http/espaces.ts`) se montent AVEC `/me`, sur la même garde :
+     * une entrée à elles exigerait une clé de dépendances que le câblage ne fournit pas (un module d'espace est nommé
+     * par sa clé). Leur autorité est celle de la connexion, `deps.auth`, lue au montage : `buildServer` refuse de
+     * démarrer un module d'espace sans elle, elle est donc là chaque fois que ce module se monte.
+     */
+    entree('me', 'tenant', deps.me, (app, d, g) => {
+      registerMe(app, d, g.auth);
+      if (deps.auth) registerEspaces(app, deps.auth, g.auth);
+    }),
   ];
 }
 

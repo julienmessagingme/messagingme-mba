@@ -1985,6 +1985,25 @@ l'inscription d'une adresse déjà connue exige son mot de passe (`motDePasseDeL
 identité sans mot de passe). Sans ces deux gardes, s'inscrire avec l'adresse d'un autre puis changer « son » mot de
 passe ouvrait tous ses espaces (fermé le 2026-09-26).
 
+🔴 **CHANGER D'ESPACE REJOUE LE CHOIX DE LA CONNEXION, SANS NOUVELLE PREUVE, ET SANS PROLONGER LA SESSION** (RC3,
+2026-10-06, `src/http/espaces.ts`, monté avec `/me` sur la garde `g.auth`). `GET /tenants/:tenantId/espaces` rend les
+comptes de l'identité de la SESSION (son adresse par `getSessionUser`, puis `getByEmail`, sans les comptes révoqués
+comme `/auth/google`), moins ceux que `makeRequireAuth` refuserait (relus par le même `getUserState` : compte révoqué,
+espace suspendu), chacun avec `actuel`. `POST /tenants/:tenantId/changer-espace` `{ tenantId }` signe une session pour
+le compte de l'identité dans la cible, avec SON rôle, et rend la forme de `suiteDeConnexion`. Trois règles la tiennent :
+une cible hors de cette liste rend **404, jamais 403** (qui confirmerait qu'un espace existe) ; la session neuve garde
+**l'échéance (`exp`) du jeton présenté** (`echeanceSession`, puis `signSession` avec un instant absolu), sinon deux
+bascules par jour prolongeraient une session sans jamais repasser par une preuve ; une **session d'observation**
+(`/ops`) est refusée (403), elle ouvrirait les autres espaces de l'identité observée, et sa liste est vide. Aucune
+preuve n'est redemandée, par décision de Julien : la connexion propose déjà ces espaces-là avec cette preuve-là.
+⚠️ Un espace suspendu n'est ni listé ni ouvert : la session neuve y serait refusée dès son premier appel, et la
+personne ne pourrait même plus relire la liste pour revenir. La connexion, elle, le propose encore au choix.
+⚠️ **CE QUE LA BASCULE CHANGE POUR UN JETON VOLÉ** : « la même preuve que la connexion » vaut pour un mot de passe, pas pour un
+jeton. Avant RC3, un jeton de session (lisible par tout script de la page, il vit dans `localStorage`) n'ouvrait que SON
+espace ; il ouvre désormais tous les espaces de son adresse, admin compris, jusqu'à son échéance, que la bascule ne
+prolonge pas. C'est la conséquence assumée de la décision « sans nouvelle preuve ». La seule trace d'une bascule est la
+dernière connexion du compte cible (`markLogin`).
+
 ⚠️ **LE FACTEUR EST SUR L'IDENTITÉ, PAS SUR LE COMPTE** (`identities`, comme le mot de passe) : une personne
 admin dans deux espaces s'enrôle une fois. D'où la réinitialisation en deux portes : un admin d'espace
 (`DELETE /tenants/:tenantId/users/:userId/mfa`) ne peut pas toucher une identité qui a un compte ailleurs (409),

@@ -80,9 +80,10 @@ export interface ComptesAuthDep {
 /**
  * Marque une connexion réussie sans jamais bloquer ni faire échouer la réponse (fire-and-forget) : une
  * écriture Postgres sur ce chemin transformerait un pool saturé en « identifiants refusés ». `?.` sur le
- * retour : dépendance absente, `undefined`, et `.catch` dessus lèverait.
+ * retour : dépendance absente, `undefined`, et `.catch` dessus lèverait. Exportée pour le changement d'espace
+ * (`src/http/espaces.ts`), qui ouvre aussi une session.
  */
-function markLogin(comptes: ComptesAuthDep | undefined, userId: string): void {
+export function markLogin(comptes: ComptesAuthDep | undefined, userId: string): void {
   void comptes?.touchLastLogin?.(userId)?.catch(() => {});
 }
 

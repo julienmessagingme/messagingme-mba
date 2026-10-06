@@ -1,5 +1,20 @@
 # todo.md : backlog
 
+## 🟡 RC3, changer d'espace : ce qui reste (2026-10-06)
+
+- **À trancher par Julien : une bascule vers un espace où l'on est admin, sans second facteur actif.** Une personne
+  sans facteur, invitée comme admin dans un autre espace pendant sa session, y bascule en admin sans s'enrôler, alors que
+  la connexion par mot de passe l'y obligerait (`obligatoire` dès un compte admin). Pas fermé, délibérément : la
+  connexion par Google n'exige aucun facteur pour un espace, et la session ne dit pas par quel chemin elle a été ouverte,
+  donc refuser la bascule bloquerait un admin Google entre ses propres espaces. Pour le fermer sans ce défaut : porter
+  dans le jeton la façon dont il a été prouvé (`amr`), et refuser seulement une bascule vers un compte admin d'une
+  session ouverte par mot de passe sans facteur.
+- **Journaliser la bascule** (une ligne d'audit dans l'espace cible, l'espace d'origine en détail) : aujourd'hui sa
+  seule trace est la dernière connexion du compte cible.
+- **Deux onglets** : après une bascule, l'autre onglet garde l'ancien espace en mémoire et ses appels rendent 403
+  « tenant interdit » jusqu'au rechargement. Aucune fuite (l'étape d'espace refuse), un défaut d'ergonomie : un
+  écouteur `storage` qui recharge l'onglet suffirait.
+
 ## 🟡 RC2, le statut urgent : ce qui reste (2026-10-06)
 
 - **Le tri de « À traiter » ne s'arrête plus tôt sur l'index.** « Urgentes en tête » trie sur
