@@ -15,7 +15,8 @@ export interface ApiConnexionNumero {
   obtenir(): Promise<{ numero: string }>;
   lire(): Promise<NumeroFourniEtat>;
   remplacer(): Promise<{ numero: string }>;
-  abandonner(): Promise<{ rendu: boolean }>;
+  /** `finProgrammee` (lot 4, B) : la fin de l'abonnement est programmée chez Stripe ; absent sur une API plus ancienne. */
+  abandonner(): Promise<{ rendu: boolean; finProgrammee?: boolean }>;
   /** Où en est la connexion du numéro, abonnement compris (`GET /tenants/:tenantId/connexion-numero`). */
   etat(): Promise<{ etat: EtatConnexion; empreinte: string }>;
   /** Ouvrir le paiement de l'abonnement du numéro (lot 3c) : l'adresse de la page de Stripe. */

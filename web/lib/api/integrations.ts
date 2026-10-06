@@ -156,7 +156,7 @@ export function remplacerNumeroFourni(tenantId: string): Promise<{ numero: strin
   return request(`/tenants/${tenantId}/numero-fourni/remplacer`, { method: 'POST', body: JSON.stringify({}) });
 }
 /** Rend le numéro à la réserve (refusé une fois le numéro connecté). */
-export function abandonnerNumeroFourni(tenantId: string): Promise<{ rendu: boolean }> {
+export function abandonnerNumeroFourni(tenantId: string): Promise<{ rendu: boolean; finProgrammee?: boolean }> {
   return request(`/tenants/${tenantId}/numero-fourni/abandonner`, { method: 'POST', body: JSON.stringify({}) });
 }
 

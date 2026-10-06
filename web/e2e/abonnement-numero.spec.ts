@@ -8,7 +8,7 @@ import { test, expect, type Page } from '@playwright/test';
 const TENANT = 'tenant-e2e';
 type Etat = { etat: string | null; finPrevueLe: string | null; coupureLe: string | null; liberationLe: string | null; fini: boolean } | 'absent';
 
-async function monter(page: Page, o: { etat: Etat; role?: 'admin' | 'agent'; connecte?: boolean; statut?: string | null }) {
+async function monter(page: Page, o: { etat: Etat; role?: 'admin' | 'agent'; connecte?: boolean; statut?: string | null; chiffresConnectes?: string }) {
   const gestes: string[] = [];
   await page.addInitScript((s) => { window.localStorage.setItem('mba.session', JSON.stringify(s)); },
     { token: 'e2e-token', email: 'x@e2e.test', role: o.role ?? 'admin', tenantId: TENANT });
@@ -34,7 +34,11 @@ async function monter(page: Page, o: { etat: Etat; role?: 'admin' | 'agent'; con
     }
     if (chemin.endsWith('/connexion-numero')) {
       return route.fulfill(json({
-        etat: { fourni: '+441259797311', code: null, connecte: null, abonnement: o.statut ? { statut: o.statut, periodeFin: null } : null },
+        etat: {
+          fourni: '+441259797311', code: null,
+          connecte: o.connecte ? { chiffres: o.chiffresConnectes ?? '441259797311', aActiver: false } : null,
+          abonnement: o.statut ? { statut: o.statut, periodeFin: null } : null,
+        },
         empreinte: '0123456789abcdef',
       }));
     }
@@ -102,6 +106,21 @@ test('🔴 « Connecter WhatsApp », numéro connecté et abonnement résilié :
   await page.getByTestId('se-reabonner').click();
   await expect(page).toHaveURL(/abonnement=recu/);
   expect(gestes).toEqual(['payer:console']);
+});
+
+test('🔴 « Connecter WhatsApp », le numéro connecté est le SIEN et un vieil abonnement est résilié : pas de « Se réabonner » (jaune 2)', async ({ page }) => {
+  await monter(page, { etat: 'absent', connecte: true, statut: 'resilie', chiffresConnectes: '33612345678' });
+  await page.goto('/connecter-whatsapp');
+  await expect(page.getByTestId('numero-connecte')).toBeVisible();
+  await expect(page.getByTestId('se-reabonner')).toHaveCount(0);
+});
+
+test('🔴 en retard SANS date de coupure (un autre numéro envoie) : le bandeau ne promet aucune coupure', async ({ page }) => {
+  await monter(page, { etat: { etat: 'en_retard', finPrevueLe: null, coupureLe: null, liberationLe: null, fini: false } });
+  await page.goto('/compte');
+  const b = page.getByTestId('bandeau-abonnement');
+  await expect(b).toContainText(/réglez-le pour le garder/);
+  await expect(b).not.toContainText(/coupés/);
 });
 
 test('la page publique où Stripe renvoie après un réabonnement demandé à Claude, sans session', async ({ page }) => {

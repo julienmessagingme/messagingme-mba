@@ -14,6 +14,8 @@ async function simulerNumeroFourni(page: Page, o: {
   delaiLecture?: (numero: string) => number;
   /** Le code que rend la lecture de ce numéro, à la place du code qui arrive au fil des lectures. */
   codeDe?: (numero: string) => string | null;
+  /** « Abandonner » programme la fin de l'abonnement chez Stripe (lot 4, livraison B) ; absent = une API plus ancienne. */
+  finProgrammee?: boolean;
 } = {}) {
   const etat = {
     numero: null as string | null, lectures: 0, gestes: [] as string[],
@@ -42,7 +44,7 @@ async function simulerNumeroFourni(page: Page, o: {
       etat.gestes.push('abandonner');
       const rendu = etat.numero !== null;
       etat.numero = null;
-      return route.fulfill(json({ rendu }));
+      return route.fulfill(json(o.finProgrammee === undefined ? { rendu } : { rendu, finProgrammee: o.finProgrammee }));
     }
     if (req.method() === 'POST' && chemin.endsWith('/numero-fourni')) {
       etat.gestes.push('obtenir');
@@ -154,6 +156,18 @@ test('🟡 « Abandonner » pendant que l’abonnement court : un texte qui le d
   await expect(page.getByTestId('numero-en-preparation')).toHaveCount(0);
   await expect(page.getByTestId('gerer-abonnement')).toBeVisible();
   expect(etat.gestes).toEqual(['abandonner']);
+});
+
+test('🔴 « Abandonner » qui programme la fin chez Stripe (lot 4, B) : la page dit que l’abonnement prend fin', async ({ page }) => {
+  await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
+  const etat = await simulerNumeroFourni(page, { abonnement: 'actif', lecturesAvantCode: 100, finProgrammee: true });
+  etat.numero = '+441235619343';
+  await page.goto('/connecter-whatsapp');
+  await expect(page.getByTestId('numero-fourni')).toHaveText('+441235619343');
+  await page.getByTestId('abandonner-numero').click();
+  await page.getByTestId('choix-fourni').click();
+  await expect(page.getByTestId('numero-rendu')).toContainText(/prend fin/);
+  await expect(page.getByTestId('numero-rendu')).not.toContainText(/continue/);
 });
 
 test('🟡 le portail de Stripe s’ouvre depuis la console', async ({ page }) => {

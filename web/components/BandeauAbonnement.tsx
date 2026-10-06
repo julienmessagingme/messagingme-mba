@@ -40,8 +40,12 @@ export function BandeauAbonnement({ tenantId, admin }: { tenantId: string; admin
   };
   const reabonner = e.etat === 'suspendu' && e.fini;
   const texte = e.etat === 'en_retard'
-    ? t(`Le renouvellement de l’abonnement de votre numéro WhatsApp a échoué. Sans paiement, ses envois seront coupés le ${date(e.coupureLe)}.`,
-      `The renewal of your WhatsApp number subscription failed. Without payment, its messages will stop on ${date(e.coupureLe)}.`)
+    ? (e.coupureLe === null
+      // Sans date de coupure : le numéro qui envoie n'est pas le numéro fourni, rien ne sera coupé (lot 4, B).
+      ? t('Le renouvellement de l’abonnement de votre numéro WhatsApp fourni a échoué : réglez-le pour le garder.',
+        'The renewal of your provided WhatsApp number subscription failed: pay it to keep the number.')
+      : t(`Le renouvellement de l’abonnement de votre numéro WhatsApp a échoué. Sans paiement, ses envois seront coupés le ${date(e.coupureLe)}.`,
+        `The renewal of your WhatsApp number subscription failed. Without payment, its messages will stop on ${date(e.coupureLe)}.`))
     : e.etat === 'suspendu'
       ? (e.fini
         ? t(`Les envois de votre numéro WhatsApp sont coupés : son abonnement est terminé. Sans réabonnement, le numéro sera libéré le ${date(e.liberationLe)}.`,

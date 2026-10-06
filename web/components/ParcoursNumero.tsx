@@ -45,6 +45,8 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   const [paiementRecu, setPaiementRecu] = useState(false);
   /** Le numéro vient d'être rendu (« Abandonner ») alors que l'abonnement court : il ne se « prépare » pas. */
   const [rendu, setRendu] = useState(false);
+  /** La fin de l'abonnement est programmée à la fin de la période payée (lot 4, livraison B). */
+  const [finProgrammee, setFinProgrammee] = useState(false);
   const connexion = useConnexionNumero(tenantId, api, surConnexion);
   /**
    * La course d'un geste et d'une lecture (jaune 5 de la relecture de la livraison B) : une lecture partie AVANT
@@ -116,8 +118,8 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   const obtenir = () => geste(async () => { setNumero((await api.obtenir()).numero); setCode(null); setRendu(false); });
   const remplacer = () => geste(async () => { setNumero(null); setCode(null); setNumero((await api.remplacer()).numero); });
   const abandonner = () => geste(async () => {
-    await api.abandonner();
-    setNumero(null); setCode(null); setChoix(choixInitial); setRendu(true);
+    const r = await api.abandonner();
+    setNumero(null); setCode(null); setChoix(choixInitial); setRendu(true); setFinProgrammee(r.finProgrammee === true);
   });
   const payer = () => geste(async () => { window.location.assign((await api.payer(retour)).url); });
   // Le portail se gère depuis la console ; sur la page du lien, c'est Claude qui résilie.
@@ -167,7 +169,9 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
           {abonne && rendu ? (
             // Rendu par « Abandonner », mais l'abonnement court toujours : on le dit, avec ce qu'on peut en faire.
             <p data-testid="numero-rendu" className="mt-3 text-sm text-ink-700">
-              {api.portail
+              {finProgrammee
+                ? t('Numéro rendu. Votre abonnement prend fin à la fin de la période payée : rien ne vous sera plus prélevé.', 'Number given back. Your subscription ends at the end of the paid period: nothing more will be charged.')
+                : api.portail
                 ? t('Numéro rendu. Votre abonnement continue : obtenez un autre numéro ci-dessous, ou résiliez-le avec « Gérer mon abonnement ».', 'Number given back. Your subscription continues: get another number below, or cancel it with “Manage my subscription”.')
                 : t('Numéro rendu. Votre abonnement continue : obtenez un autre numéro ci-dessous, ou demandez à Claude de le résilier.', 'Number given back. Your subscription continues: get another number below, or ask Claude to cancel it.')}
             </p>

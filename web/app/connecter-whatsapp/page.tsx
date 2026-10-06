@@ -38,6 +38,8 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
   // Résilié (lot 4) : un nouveau paiement rend le MÊME numéro, sans refaire la fenêtre de Meta.
   const [statut, setStatut] = useState<string | null>(null);
   const abonne = statut !== null;
+  /** Le numéro connecté est-il le numéro fourni ? Seul ce numéro se réabonne (jaune 2 de la relecture du lot 4, A). */
+  const [numeroFourniConnecte, setNumeroFourniConnecte] = useState(false);
   const [reabonnement, setReabonnement] = useState<{ enCours: boolean; erreur: string | null }>({ enCours: false, erreur: null });
   const seReabonner = async () => {
     setReabonnement({ enCours: true, erreur: null });
@@ -47,7 +49,12 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
   };
   useEffect(() => {
     if (!connecte || !isAdmin) return;
-    api.etat().then((r) => setStatut(r.etat.abonnement?.statut ?? null)).catch(() => {});
+    api.etat().then((r) => {
+      setStatut(r.etat.abonnement?.statut ?? null);
+      const fourni = r.etat.fourni?.replace(/\D/g, '') ?? null;
+      const chiffres = r.etat.connecte?.chiffres ?? null;
+      setNumeroFourniConnecte(fourni !== null && chiffres !== null && (chiffres === '' || chiffres === fourni));
+    }).catch(() => {});
   }, [connecte, isAdmin, api]);
   return (
     <div className="mx-auto max-w-formulaire">
@@ -60,7 +67,7 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
           <p className="mt-1 text-sm text-ink-500">{compte?.number ?? ''}</p>
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <Link href="/accueil" className="inline-block text-sm font-semibold text-ink-900 underline">{t('Retour à l’accueil', 'Back to home')}</Link>
-            {statut === 'resilie' ? (
+            {statut === 'resilie' && numeroFourniConnecte ? (
               <Bouton type="button" taille="petite" enCours={reabonnement.enCours} disabled={reabonnement.enCours} onClick={() => { void seReabonner(); }} data-testid="se-reabonner">
                 {t('Se réabonner (3,50 € HT par mois)', 'Renew (€3.50 excl. VAT per month)')}
               </Bouton>
