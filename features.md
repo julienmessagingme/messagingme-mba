@@ -1844,7 +1844,7 @@ scénario, comment importer des contacts.
   Cloud API fait automatiquement (l'étape qui, ailleurs, oblige à cliquer un bouton pour sortir du « pending »).
   Prérequis Meta remplis : Tech Provider vérifié ET **inscrit** (l'inscription est une étape à part de la
   vérification, c'est elle qui débloquait), app publiée.
-- ⏳ **Un numéro fourni pour qui n'en a pas** (lot 3b, 2026-10-06, en cours de déploiement) : sur l'Accueil d'un
+- ✅ **Un numéro fourni pour qui n'en a pas** (lot 3b, LIVE et éprouvé le 2026-10-06) : sur l'Accueil d'un
   espace sans numéro, « Pas de numéro ? Nous vous en fournissons un » mène à la page « Connecter WhatsApp ».
   « Fournissez-moi un numéro » attribue un numéro britannique dédié de notre réserve et l'affiche, avec un bouton
   Copier ; le client le tape dans la fenêtre de Meta (« Enter a new phone number ») et choisit la vérification par
@@ -1852,6 +1852,9 @@ scénario, comment importer des contacts.
   le recopie, et le numéro est connecté comme un autre. Si Meta refuse ce numéro, « En obtenir un autre » en donne un
   nouveau ; « Abandonner » le rend à la réserve. Gratuit en attendant l'abonnement. « J'ai déjà un numéro » ouvre la
   fenêtre de Meta comme le bouton de l'Accueil. ⚠️ La fenêtre de Meta impose l'écran du numéro, d'où la saisie.
+  Éprouvé de bout en bout sur un espace créé depuis Claude Code : le numéro attribué, le code de Meta capté par l'appel
+  et affiché sur la page, le numéro connecté et vérifié chez Meta, 1 € de crédit offert. ⚠️ La réserve ne compte
+  qu'autant de numéros que Julien en a achetés : vide, la page le dit et Julien reçoit une alerte Telegram.
 - ✅ **Recommencer l'embarquement fonctionne** (2026-08-17) : si un client relance la connexion après un premier
   essai déjà abouti côté Meta, ça marche quand même. Avant, il était bloqué sans recours, avec un message qui
   l'invitait à réessayer alors que réessayer ne pouvait rien changer. Il n'a rien à ressaisir et pas de nouvel

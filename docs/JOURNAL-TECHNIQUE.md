@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : le numéro fourni côté client (lot 3b), essai réel fait
+
+Livraison A `a1bb1c63`, livraison B `790accb8` puis `cc884ae6` (serveur, migration 0212) et `477ab86c` (console, page
+`/connecter-whatsapp`). Essai réel par Julien le jour même, mesuré en base et chez Meta en lecture seule :
+
+- espace créé à 8 h 42 UTC par la connexion OAuth de Claude Code (Gmail neuf), `tenants.origine = 'claude_code'` ;
+- « Fournissez-moi un numéro » à 8 h 49 : le seul numéro de la réserve (`+44 1235 619343`) passe `attribue` ;
+- code de Meta capté par l'Asterisk à 8 h 53, APRÈS l'attribution, et affiché sur la page (le code reçu la veille
+  pendant l'essai du 3a, plus ancien que l'attribution, n'a pas été montré) ;
+- numéro relié à 8 h 54, `CONNECTED` et `VERIFIED` chez Meta, nom affiché en relecture ;
+- crédit offert de **1 €** (et non 5 €) à 8 h 55, une ligne `offert` au journal du crédit ;
+- verrou `numeros.reserve-vide` posé à 8 h 49 : il n'est gardé que si l'alerte Telegram est partie.
+
+Première fenêtre de Meta ouverte depuis `console.messagingme.app`, le nom déclaré le matin même : elle s'est ouverte.
+Ce que l'essai a appris : le client ne doit jamais passer par la console (Julien). Le lien signé qui ouvre la page
+sans connexion rejoint le lot 3c, avec l'outil d'attente. La réserve est vide après l'essai.
+
 ## 2026-10-06 : `tool_name` NOT NULL (0213), et l'assistant ne propose plus un outil dont l'agent porte le nom
 
 Lot 2 du plan `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` (`3cb96ab7`) : la copie `tool_name`
