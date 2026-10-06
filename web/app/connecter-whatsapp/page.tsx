@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { TitrePage, IntroPage } from '@/components/TitrePage';
 import { ParcoursNumero, BoutonPortail } from '@/components/ParcoursNumero';
+import { Bouton } from '@/components/Bouton';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { getAccountStatus, type AccountStatusResponse } from '@/lib/api';
@@ -34,10 +35,19 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
 
   const connecte = compte?.hasNumber === true;
   // Connecté avec un numéro fourni payé : l'abonnement se gère encore d'ici (jaune 1 de la relecture de la livraison B).
-  const [abonne, setAbonne] = useState(false);
+  // Résilié (lot 4) : un nouveau paiement rend le MÊME numéro, sans refaire la fenêtre de Meta.
+  const [statut, setStatut] = useState<string | null>(null);
+  const abonne = statut !== null;
+  const [reabonnement, setReabonnement] = useState<{ enCours: boolean; erreur: string | null }>({ enCours: false, erreur: null });
+  const seReabonner = async () => {
+    setReabonnement({ enCours: true, erreur: null });
+    try { window.location.assign((await api.payer('console')).url); } catch (err) {
+      setReabonnement({ enCours: false, erreur: err instanceof Error ? err.message : t('Une erreur est survenue', 'Something went wrong') });
+    }
+  };
   useEffect(() => {
     if (!connecte || !isAdmin) return;
-    api.etat().then((r) => setAbonne(r.etat.abonnement !== null)).catch(() => {});
+    api.etat().then((r) => setStatut(r.etat.abonnement?.statut ?? null)).catch(() => {});
   }, [connecte, isAdmin, api]);
   return (
     <div className="mx-auto max-w-formulaire">
@@ -50,7 +60,12 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
           <p className="mt-1 text-sm text-ink-500">{compte?.number ?? ''}</p>
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <Link href="/accueil" className="inline-block text-sm font-semibold text-ink-900 underline">{t('Retour à l’accueil', 'Back to home')}</Link>
-            {abonne && <BoutonPortail api={api} />}
+            {statut === 'resilie' ? (
+              <Bouton type="button" taille="petite" enCours={reabonnement.enCours} disabled={reabonnement.enCours} onClick={() => { void seReabonner(); }} data-testid="se-reabonner">
+                {t('Se réabonner (3,50 € HT par mois)', 'Renew (€3.50 excl. VAT per month)')}
+              </Bouton>
+            ) : abonne && <BoutonPortail api={api} />}
+            {reabonnement.erreur && <span className="text-xs text-danger-700">{reabonnement.erreur}</span>}
           </div>
         </div>
       ) : !isAdmin ? (

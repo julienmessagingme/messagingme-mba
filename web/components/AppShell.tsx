@@ -8,6 +8,7 @@ import { countUnreadConversations, SESSION_EXPIRED_EVENT } from '@/lib/api';
 import { Logo, LogoComplet } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { BoutonAide } from './BoutonAide';
+import { BandeauAbonnement } from './BandeauAbonnement';
 import { Icone } from './Icone';
 import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
@@ -442,6 +443,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             </div>
           </div>
         )}
+        {/* L'abonnement du numéro fourni (lot 4) : en retard, suspendu ou fin prévue, sur toutes les pages, pour tous les
+            membres (la suspension coupe aussi les réponses de l'Inbox). */}
+        <BandeauAbonnement tenantId={session.tenantId} admin={session.role === 'admin'} />
         <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-liste flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
       </div>
       </div>
