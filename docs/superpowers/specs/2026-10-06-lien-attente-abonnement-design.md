@@ -86,11 +86,11 @@ attribué (et son statut), le code reçu depuis l'attribution (`codeDeLEspace`, 
   numéro connecté. Pour `apporte`, sa description rappelle de demander si le numéro sert dans l'application WhatsApp,
   car la fenêtre de Meta le refuserait.
 - **`watch_whatsapp_connection`** (`etat_connu`, facultatif : l'empreinte rendue par l'appel précédent). Rend la main
-  dès que l'état diffère de `etat_connu`, sinon au bout de **45 secondes**, en relisant l'état toutes les 2 secondes.
+  dès que l'état diffère de `etat_connu`, sinon au bout de **25 secondes**, en relisant l'état toutes les 2 secondes.
   Il rend l'état, ce qui a changé, et le code en clair quand il est arrivé, pour que Claude l'affiche. Écriture
-  (il rend un code de vérification), réservé à un admin. 45 secondes passent sous le délai par défaut de nginx
-  (60 s) et sous celui de Cloudflare (100 s) : **mesuré sur `api.messagingme.app` pendant le lot**, la valeur se
-  règle sur la mesure.
+  (il rend un code de vérification), réservé à un admin. 25 secondes, parce que le proxy de l'API coupe une
+  réponse au bout de 45 (`proxy_read_timeout 45s` sur l'hôte `api.messagingme.app` de NPM, lu le 2026-10-06) ;
+  Cloudflare, à 100 secondes, ne borne pas. La marge couvre la dernière lecture et la réponse.
 
 Ni l'un ni l'autre ne passe par le plafond coûteux : ils ne créent rien chez un tiers.
 
@@ -146,8 +146,8 @@ Rien n'est coupé : le numéro continue d'envoyer jusqu'au lot 4.
 
 Le prix existe en production, lu chez Stripe le 2026-10-06 : `price_1UNUMXF67GfPqM0XcYpVkdhS`, produit « WhatsApp
 number » (`prod_VOGuX58b8RLLXE`, code de taxe des services fournis électroniquement), récurrent mensuel, 3,50 €, taxe
-en sus (`tax_behavior: exclusive`), conforme à la décision HT. Le code refuse au démarrage un prix qui ne serait pas
-récurrent, mensuel et en euros, lu chez Stripe comme le prix de la recharge.
+en sus (`tax_behavior: exclusive`), conforme à la décision HT. Avant d'ouvrir un paiement, le code relit le prix chez Stripe,
+comme celui de la recharge, et refuse un prix qui ne serait pas récurrent, mensuel et en euros.
 
 Il reste à Julien : poser ce prix dans une variable de `.env.prod`, activer le portail client, et ajouter les trois
 événements au webhook existant. Les étapes lui sont données.
