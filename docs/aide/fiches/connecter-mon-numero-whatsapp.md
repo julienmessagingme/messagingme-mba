@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 3354bd
+source_empreinte: ac6ea2
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -15,9 +15,9 @@ déjà commencé une première fois, recommencer fonctionne : vous n'avez rien �
 s'affiche (code expiré, compte non partagé, plusieurs numéros à départager), pas un message d'erreur opaque.
 **Vous n'avez pas de numéro ?** Le lien « Pas de numéro ? Nous vous en fournissons un » ouvre la page « Connecter
 WhatsApp » : « Fournissez-moi un numéro » vous propose un numéro britannique dédié à 3,50 € HT par mois. Vous payez sur
-la page de Stripe, puis le numéro s'affiche ; vous le tapez dans la fenêtre de Meta en choisissant la vérification par
-appel. « Gérer mon abonnement », sur cette page, ouvre le portail de Stripe (carte, factures, résiliation) ; depuis
-Claude Code, demandez-le à Claude. Le code que Meta dicte s'affiche sur la page en quelques secondes :
+la page de Stripe, puis le numéro s'affiche ; vous le tapez dans la fenêtre de Meta, en choisissant la vérification par
+appel si Meta vous laisse le choix (sinon, son SMS arrive aussi). « Gérer mon abonnement », sur cette page, ouvre le portail de Stripe (carte, factures, résiliation) ; depuis
+Claude Code, demandez-le à Claude. Le code de Meta s'affiche sur la page en quelques secondes :
 recopiez-le dans la fenêtre, et le numéro est connecté. Si Meta refuse ce numéro, « En obtenir un autre » vous en
 donne un nouveau.
 

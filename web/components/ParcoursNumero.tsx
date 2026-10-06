@@ -10,7 +10,8 @@ import type { ApiConnexionNumero } from '@/lib/api/connexion-numero';
  * LE PARCOURS DE CONNEXION DU NUMÉRO (lot 3b, sorti de `/connecter-whatsapp` au lot 3c pour servir aussi `/brancher`).
  *
  * Deux choix. « Fournissez-moi un numéro » : un numéro de notre réserve s'affiche ; le client le tape dans la fenêtre de
- * Meta et choisit la vérification par appel ; notre Asterisk capte le code que Meta dicte, et le parcours l'affiche
+ * Meta, par appel si Meta laisse choisir, sinon par SMS (la ligne fixe le lit à voix haute) ; notre Asterisk capte
+ * le code dans les deux cas, et le parcours l'affiche
  * pour qu'il le recopie. « J'ai déjà un numéro » : la fenêtre de Meta, comme depuis l'Accueil.
  *
  * Il ne connaît pas son autorité : `api` est celle de la session de la console ou celle du lien de Claude Code
@@ -205,8 +206,8 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
             </div>
             <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-ink-700">
               <li>{t('Ouvrez la fenêtre de Meta.', 'Open the Meta window.')}</li>
-              <li>{t('À l’écran du numéro, choisissez « Enter a new phone number », tapez ce numéro, et choisissez la vérification par appel (« Phone call »).', 'On the phone number screen, choose “Enter a new phone number”, type this number, and pick verification by phone call.')}</li>
-              <li>{t('Le code s’affiche ci-dessous dès que Meta appelle : recopiez-le dans la fenêtre.', 'The code shows below as soon as Meta calls: copy it into the window.')}</li>
+              <li>{t('À l’écran du numéro, choisissez « Enter a new phone number » et tapez ce numéro. Si Meta vous laisse choisir, prenez la vérification par appel (« Phone call ») ; sinon, son SMS arrive aussi.', 'On the phone number screen, choose “Enter a new phone number” and type this number. If Meta lets you choose, pick verification by phone call; otherwise its SMS comes through too.')}</li>
+              <li>{t('Le code s’affiche ci-dessous en quelques secondes, par appel comme par SMS : recopiez-le dans la fenêtre.', 'The code shows below within seconds, by call or by SMS: copy it into the window.')}</li>
             </ol>
             <div className="mt-4">{boutonFenetre}</div>
           </div>
