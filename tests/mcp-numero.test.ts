@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { OUTILS, outilsPour, type DepsMcp, type OutilMcp } from '../src/mcp/outils';
-import { DELAI_ATTENTE_MS, PAS_ATTENTE_MS } from '../src/mcp/outils-numero';
+import { DELAI_ATTENTE_MS, PAS_ATTENTE_MS, rappelDeLAbonnement } from '../src/mcp/outils-numero';
+import type { EtatDeLEspace } from '../src/stripe/abonnements.pg';
 import { RefusOutil } from '../src/mcp/saisie';
 import type { Issue } from '../src/lib/issue';
 import { signLienNumero, verifyLienNumero, DUREE_LIEN_NUMERO_MS } from '../src/auth/token';
@@ -18,10 +19,11 @@ const VIDE: EtatConnexion = { fourni: null, code: null, connecte: null, abonneme
 const outil = (nom: string): OutilMcp => OUTILS.find((o) => o.nom === nom)!;
 
 /** Une horloge simulée : `attendre` avance le temps, et chaque lecture de l'état est comptée avec son heure. */
-function monter(etats: (t: number) => EtatConnexion, o: { portail?: Issue<{ url: string }> } = {}) {
+function monter(etats: (t: number) => EtatConnexion, o: { portail?: Issue<{ url: string }>; abonnement?: EtatDeLEspace | null } = {}) {
   let t = 1_000_000;
   const lectures: Array<{ tenant: string; t: number }> = [];
   const portails: Array<{ tenant: string; payeur: string }> = [];
+  const paiements: Array<{ tenant: string; payeur: string }> = [];
   const couteux: string[] = [];
   const deps = {
     numero: {
@@ -34,10 +36,15 @@ function monter(etats: (t: number) => EtatConnexion, o: { portail?: Issue<{ url:
         portails.push({ tenant, payeur });
         return o.portail ?? { ok: true as const, valeur: { url: 'https://billing.stripe.com/p/session/x' } };
       },
+      abonnement: async () => (o.abonnement === undefined ? null : o.abonnement),
+      ouvrirAbonnement: async (tenant: string, payeur: string) => {
+        paiements.push({ tenant, payeur });
+        return { ok: true as const, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_reabo' } };
+      },
     },
     couteux: { consommer: async (tenant: string) => { couteux.push(tenant); return { accepte: true, attenteMs: 0 }; } },
   } as unknown as DepsMcp;
-  return { deps, lectures, debut: t, portails, couteux };
+  return { deps, lectures, debut: t, portails, couteux, paiements };
 }
 
 describe('start_whatsapp_connection', () => {
@@ -129,7 +136,10 @@ describe('les outils de l’abonnement du numéro (livraison B)', () => {
   it('get_number_subscription : le statut, la prochaine échéance, le numéro fourni ; et sans abonnement, null', async () => {
     const { deps } = monter(() => ({ ...VIDE, fourni: '+441235619343', abonnement: { statut: 'en_retard', periodeFin: '2026-11-06T09:00:00.000Z' } }));
     expect(await outil('get_number_subscription').executer(deps, 't1', {}, null))
-      .toEqual({ abonnement: 'en_retard', prochaine_echeance: '2026-11-06T09:00:00.000Z', numero_fourni: '+441235619343', prix: '3,50 € HT par mois' });
+      .toEqual({
+        abonnement: 'en_retard', prochaine_echeance: '2026-11-06T09:00:00.000Z', numero_fourni: '+441235619343', prix: '3,50 € HT par mois',
+        etat: null, fin_prevue: null, coupure_le: null, liberation_le: null,
+      });
     const sans = monter(() => VIDE).deps;
     expect(await outil('get_number_subscription').executer(sans, 't1', {}, null)).toMatchObject({ abonnement: null, prochaine_echeance: null });
   });
@@ -147,6 +157,57 @@ describe('les outils de l’abonnement du numéro (livraison B)', () => {
     expect(outil('manage_number_subscription')).toMatchObject({ scope: 'mcp:write', exigePersonne: true });
     expect(outil('get_number_subscription')).toMatchObject({ scope: 'mcp:read' });
     expect(outil('get_number_subscription').exigePersonne).toBeUndefined();
+  });
+});
+
+const DATE = (iso: string) => new Date(iso);
+const etatAbo = (e: Partial<EtatDeLEspace>): EtatDeLEspace => ({
+  abonnementId: 'sub_1', etat: 'actif', finPrevueLe: null, liberationLe: null, coupureLe: null, finiLe: null, ...e,
+});
+
+describe('le lot 4 : l’état de l’abonnement pour Claude, et le réabonnement', () => {
+  it('get_number_subscription dit l’état et ses dates (coupure, fin prévue, libération)', async () => {
+    const { deps } = monter(() => VIDE, { abonnement: etatAbo({ etat: 'suspendu', finiLe: DATE('2026-10-06T15:14:51Z'), liberationLe: DATE('2026-10-13T15:14:51Z') }) });
+    expect(await outil('get_number_subscription').executer(deps, 't1', {}, null)).toMatchObject({
+      etat: 'suspendu', liberation_le: '2026-10-13T15:14:51.000Z', coupure_le: null, fin_prevue: null,
+    });
+  });
+
+  it('🔴 resubscribe_number : abonnement FINI, numéro gardé -> un nouveau paiement, au nom de la personne, compté', async () => {
+    const { deps, paiements, portails, couteux } = monter(() => VIDE, { abonnement: etatAbo({ etat: 'suspendu', finiLe: DATE('2026-10-06T15:14:51Z') }) });
+    const r = await outil('resubscribe_number').executer(deps, 't1', {}, PERSONNE) as Record<string, string>;
+    expect(r.url).toBe('https://checkout.stripe.com/c/pay/cs_reabo');
+    expect(paiements).toEqual([{ tenant: 't1', payeur: 'u-admin' }]);
+    expect(portails).toEqual([]);
+    expect(couteux).toEqual(['t1']);
+  });
+
+  it('resubscribe_number : impayé (en retard ou suspendu sans fin) ou fin prévue -> le portail', async () => {
+    for (const e of [etatAbo({ etat: 'en_retard' }), etatAbo({ etat: 'suspendu' }), etatAbo({ etat: 'fin_prevue', finPrevueLe: DATE('2026-11-06T00:00:00Z') })]) {
+      const { deps, portails, paiements } = monter(() => VIDE, { abonnement: e });
+      expect((await outil('resubscribe_number').executer(deps, 't1', {}, PERSONNE) as Record<string, string>).url).toBe('https://billing.stripe.com/p/session/x');
+      expect([portails.length, paiements.length]).toEqual([1, 0]);
+    }
+  });
+
+  it('resubscribe_number : actif, libéré, ou aucun abonnement -> un refus qui dit quoi faire', async () => {
+    for (const [e, motif] of [[etatAbo({ etat: 'actif' }), /actif/], [etatAbo({ etat: 'libere' }), /start_whatsapp_connection/], [null, /start_whatsapp_connection/]] as const) {
+      const { deps } = monter(() => VIDE, { abonnement: e });
+      await expect(outil('resubscribe_number').executer(deps, 't1', {}, PERSONNE)).rejects.toThrow(motif);
+    }
+  });
+
+  it('🔴 resubscribe_number exige une personne (le paiement est son geste)', () => {
+    expect(outil('resubscribe_number')).toMatchObject({ scope: 'mcp:write', exigePersonne: true });
+  });
+
+  it('le rappel : en retard, avec la date de coupure ; suspendu, avec la libération si le numéro est gardé ; sinon rien', () => {
+    expect(rappelDeLAbonnement(etatAbo({ etat: 'en_retard', coupureLe: DATE('2026-10-20T10:00:00Z') }))).toMatch(/2026-10-20/);
+    expect(rappelDeLAbonnement(etatAbo({ etat: 'suspendu', finiLe: DATE('2026-10-06T15:14:51Z'), liberationLe: DATE('2026-10-13T15:14:51Z') }))).toMatch(/coupés[\s\S]*2026-10-13/);
+    expect(rappelDeLAbonnement(etatAbo({ etat: 'suspendu' }))).toMatch(/resubscribe_number/);
+    for (const e of [null, etatAbo({ etat: 'actif' }), etatAbo({ etat: 'fin_prevue' }), etatAbo({ etat: 'libere' })]) {
+      expect(rappelDeLAbonnement(e)).toBeNull();
+    }
   });
 });
 

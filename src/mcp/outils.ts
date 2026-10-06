@@ -2,7 +2,7 @@ import type { ConversationSummary, ConversationMessage, ListConversationsOptions
 import type { AnalyseEtResume, ContactRow, ContactFilters } from '../crm/contact-store.pg';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
 import { parCause, type AuteurDuChangement } from '../inbox/evenements';
-import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
+import { NumeroBloqueError } from '../meta/numero-delie';
 import { e164DepuisSaisie } from '../crm/phone';
 import { LONGUEUR_MAX_ETIQUETTE, nettoyerEtiquettes, type PoseEtiquette } from '../crm/poser-etiquette';
 import {
@@ -492,7 +492,7 @@ export const OUTILS: OutilMcp[] = [
       try {
         res = await repondreDansLaFenetre(deps, tenantId, id, texte, personne?.userId ?? null, 'mcp');
       } catch (err) {
-        if (err instanceof NumeroDelieError) throw new RefusOutil(MESSAGE_NUMERO_DELIE);
+        if (err instanceof NumeroBloqueError) throw new RefusOutil(err.message);
         throw err;
       }
       if ('refus' in res) {

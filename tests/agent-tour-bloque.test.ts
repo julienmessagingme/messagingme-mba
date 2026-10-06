@@ -1,4 +1,4 @@
-import { jamaisDesabonne } from './consentement';
+import { jamaisDesabonne, numeroJamaisBloque } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runTourBloqueSweep, AGE_TOUR_MORT_S, LOT_TOURS_BLOQUES } from '../src/agent/tour-bloque-sweep';
@@ -156,6 +156,7 @@ describe('runTurn : la marque de tour en vol est retirée sur les sorties VIVANT
     const deps: RunTurnDeps = {
       estDesabonne: jamaisDesabonne,
       estRepondeur: async () => false,
+      numeroBloque: numeroJamaisBloque,
       sessions: {
         prendreLeTour: async () => SESSION,
         clore: async (_t: string, id: string, _st: string, _so?: string, opts?: { sortieDue?: boolean }) => {

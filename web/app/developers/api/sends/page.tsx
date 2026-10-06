@@ -211,6 +211,7 @@ function Envois() {
             ['idempotency_in_progress', t('Envoi en cours avec cette clé.', 'Send in progress with this key.')],
             ['no_whatsapp_number', t('Aucun numéro WhatsApp sur l’espace (sauf message RCS).', 'No WhatsApp number on the workspace (except RCS message).')],
             ['number_unlinked', t('Numéro WhatsApp délié depuis l’Accueil, et premier message en WhatsApp. Rien n’est créé. Une cible qui ouvre en RCS part.', 'WhatsApp number unlinked from the Home page, and first message over WhatsApp. Nothing is created. A target opening with RCS goes out.')],
+            ['number_suspended', t('Abonnement du numéro fourni impayé ou terminé, et premier message en WhatsApp. Rien n’est créé.', 'Provided number subscription overdue or ended, and first message over WhatsApp. Nothing is created.')],
             ['template_not_found', t('Template absent, non approuvé, ou d’une autre langue.', 'Template missing, not approved, or in another language.')],
             ['template_category_unknown', t('Catégorie du template illisible, ou ni marketing ni utility.', 'Template category unreadable, or neither marketing nor utility.')],
             ['scenario_not_found', t('Scénario introuvable.', 'Scenario not found.')],

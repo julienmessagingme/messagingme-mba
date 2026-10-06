@@ -17,6 +17,12 @@ function sansCommentaires(source: string): string {
 const api = sansCommentaires(readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8'));
 
 describe('le câblage du crédit dans l’API', () => {
+  it('🔴 le webhook transmet au magasin la fin de la facture échouée (rouge 2 de la relecture du lot 4)', () => {
+    // Une flèche à trois paramètres est assignable à un contrat qui en déclare quatre, et le quatrième est avalé
+    // sans erreur : l'échec rejoué après le paiement repasserait alors l'espace en retard, puis le couperait.
+    expect(api).toMatch(/majStatut: \(abonnementId, statut, periodeFin, finFactureEchouee\) => abonnementsNumero\.majStatut\(abonnementId, statut, periodeFin, finFactureEchouee\),/);
+  });
+
   it('🔴 le payeur reçoit le MODE de la clé configurée, tel quel', () => {
     expect(api).toMatch(/payeurAutorise: creerPayeurAutorise\(\{\s*livemode: estCleLive\(config\.STRIPE_SECRET_KEY\),/);
   });

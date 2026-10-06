@@ -59,6 +59,7 @@ import { registerAutomations } from './http/automations';
 import { registerChannelsMeRoutes, type ChannelsMeRouteDeps } from './http/channels-me';
 import { registerEmbeddedSignup } from './http/embedded-signup';
 import { registerNumeroFourni } from './http/numero-fourni';
+import { registerAbonnementNumero, type AbonnementNumeroRouteDeps } from './http/abonnement-numero';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Sends } from './http/v1-sends';
@@ -324,6 +325,8 @@ export interface ServerDeps {
   embeddedSignup?: EmbeddedSignupRouteDeps;
   /** Le numéro fourni côté client (lot 3b) : un numéro de la réserve et le code capté, réservé aux admins. */
   numeroFourni?: NumeroFourniRouteDeps;
+  /** L'état de l'abonnement du numéro fourni, lisible par tout membre (lot 4, le bandeau de la console). */
+  abonnementNumero?: AbonnementNumeroRouteDeps;
   /** CRUD des clés d'API (console admin, JWT), réservé aux admins. */
   apiKeys?: ApiKeysRouteDeps;
   /**
@@ -675,6 +678,8 @@ export function modulesDeRoutes(
     entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.adminOuLien, g.admin, g.limiteCouteuse)),
     // Le portail de Stripe, lui, reste à la session d'admin : `g.admin`.
     entree('numeroFourni', 'tenant', deps.numeroFourni, (app, d, g) => registerNumeroFourni(app, d, g.adminOuLien, g.admin, g.limiteCouteuse)),
+    // `auth` et non `admin` : un agent de l'Inbox doit savoir pourquoi ses réponses ne partent plus (lot 4).
+    entree('abonnementNumero', 'tenant', deps.abonnementNumero, (app, d, g) => registerAbonnementNumero(app, d, g.auth)),
     entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin)),
     entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin)),
     entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin)),

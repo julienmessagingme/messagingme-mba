@@ -9,7 +9,7 @@ import type { HttpTransport } from './http';
 import type { MessageSender } from '../campaign/engine';
 import type { MetaCredentialsResolver, ResolvedToken } from './credentials';
 import type { ArbitreDeDebit } from './arbitre-debit';
-import { NumeroDelieError } from './numero-delie';
+import { NumeroDelieError, NumeroSuspenduError } from './numero-delie';
 import type { MarketingParams, TemplateSpec } from './types';
 import type { ListeDeLAgent } from '../mba/liste';
 
@@ -40,6 +40,12 @@ export interface MetaClientFactoryOpts {
    */
   numerosDelies: { estDelie(phoneNumberId: string): Promise<boolean> };
   /**
+   * Ce numéro est-il suspendu (lot 4 : l'abonnement de son numéro fourni est impayé depuis 7 jours, ou fini) ? Oui :
+   * `clientForTenant` lève `NumeroSuspenduError`. 🔴 Requise, pour la même raison que `numerosDelies`. Les fixtures
+   * disent leur hypothèse (`jamaisSuspendu`).
+   */
+  numerosSuspendus: { estSuspendu(phoneNumberId: string): Promise<boolean> };
+  /**
    * La liste de l'agent de Meta (`src/mba/liste.ts`) : le client d'envoi retire le destinataire de la liste avant
    * tout modèle (`sendTemplate`, `sendMarketing`), et un retrait refusé veut dire aucun envoi. Un modèle rend la
    * conversation à l'agent chez Meta (mesuré le 2026-09-29) : sur la liste, l'agent répondrait à la réponse du
@@ -59,11 +65,13 @@ export class MetaClientFactory {
   }
 
   /**
-   * Lève `NumeroDelieError` si ce numéro est délié, sans rien construire : la garde de `clientForTenant`, exposée
-   * pour qu'un appelant la pose avant un effet qui précède l'envoi (`verifierNumeroWhatsApp`). Même lecture, même cache.
+   * Lève `NumeroDelieError` si ce numéro est délié, `NumeroSuspenduError` s'il est suspendu (le délié prime : c'est
+   * le geste d'un administrateur), sans rien construire : la garde de `clientForTenant`, exposée pour qu'un appelant la
+   * pose avant un effet qui précède l'envoi (`verifierNumeroWhatsApp`, le tour d'un agent). Mêmes lectures, mêmes caches.
    */
   async verifierNumero(phoneNumberId: string): Promise<void> {
     if (await this.o.numerosDelies.estDelie(phoneNumberId)) throw new NumeroDelieError(phoneNumberId);
+    if (await this.o.numerosSuspendus.estSuspendu(phoneNumberId)) throw new NumeroSuspenduError(phoneNumberId);
   }
 
   /**

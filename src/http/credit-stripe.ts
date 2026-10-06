@@ -145,17 +145,27 @@ export interface StripeWebhookRouteDeps {
    */
   apresCredit(tenantId: string): Promise<void>;
   /**
-   * L'abonnement du numéro fourni (lot 3c, livraison B) : `enregistrer` (l'abonnement et le numéro, ensemble) et
-   * `majStatut` du magasin (`PgAbonnementsNumeroStore`), et `alerter`, qui prévient Julien (Telegram, ne lève jamais).
+   * L'abonnement du numéro fourni (lot 3c, livraison B) : `enregistrer` (l'abonnement et le numéro, ensemble),
+   * `majStatut` et `noterFinPrevue` (lot 4) du magasin (`PgAbonnementsNumeroStore`), `alerter`, qui prévient Julien
+   * (Telegram, ne lève jamais), et `reprendreCampagnes`, qui lève les pauses `numero_suspendu` de l'espace au paiement
+   * (lot 4 ; le balayage du worker rattrape une reprise manquée).
    */
-  numero: Pick<PgAbonnementsNumeroStore, 'enregistrer' | 'majStatut'> & { alerter(texte: string): Promise<void> };
+  numero: Pick<PgAbonnementsNumeroStore, 'enregistrer' | 'majStatut' | 'noterFinPrevue'> & {
+    alerter(texte: string): Promise<void>;
+    reprendreCampagnes(tenantId: string): Promise<void>;
+  };
   now?: () => number;
 }
 
 /** Les deux événements qui créditent. Tout autre événement rend 200 sans effet. */
 const EVENEMENTS_CREDITANTS = new Set(['checkout.session.completed', 'checkout.session.async_payment_succeeded']);
-/** Les trois événements de l'abonnement du numéro ; la session payée (`checkout.session.completed`) en est le quatrième. */
-const EVENEMENTS_ABONNEMENT = new Set(['invoice.paid', 'invoice.payment_failed', 'customer.subscription.deleted']);
+/**
+ * Les quatre événements de l'abonnement du numéro ; la session payée (`checkout.session.completed`) en est le
+ * cinquième. `customer.subscription.updated` (lot 4) porte la résiliation programmée.
+ */
+const EVENEMENTS_ABONNEMENT = new Set([
+  'invoice.paid', 'invoice.payment_failed', 'customer.subscription.deleted', 'customer.subscription.updated',
+]);
 
 /** Une session d'abonnement : seules les nôtres, `produit: numero`, nous concernent. */
 const sessionAbonnementSchema = z.object({
@@ -181,6 +191,18 @@ const factureSchema = z.object({
   lines: z.object({ data: z.array(z.object({ period: z.object({ end: z.number().int() }).optional() })) }).optional(),
 });
 const abonnementSchema = z.object({ id: z.string().startsWith('sub_') });
+/**
+ * Un abonnement modifié (version d'API `2025-11-17.clover`, lu dans la documentation de Stripe le 2026-10-06) : la
+ * résiliation programmée est `cancel_at` (une date) ou `cancel_at_period_end` (la fin de la période en cours, qui vit sur
+ * les lignes, `items.data[].current_period_end`, et plus à la racine).
+ */
+const abonnementModifieSchema = z.object({
+  id: z.string().startsWith('sub_'),
+  cancel_at: z.number().int().nullable().optional(),
+  cancel_at_period_end: z.boolean().optional(),
+  items: z.object({ data: z.array(z.object({ current_period_end: z.number().int().optional() })) }).optional(),
+  metadata: z.record(z.string(), z.string()).nullable().optional(),
+});
 const metaNumeroSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('numero') });
 const idDe = (v: string | { id: string }): string => (typeof v === 'string' ? v : v.id);
 
@@ -222,6 +244,8 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
    */
   const enregistrer = async (a: { tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }): Promise<void> => {
     const issue = await deps.numero.enregistrer(a);
+    // Un réabonnement payé rend le numéro : les campagnes en pause sur sa suspension repartent.
+    if (issue.etat === 'enregistre') await deps.numero.reprendreCampagnes(a.tenantId);
     if (issue.etat === 'doublon') {
       await deps.numero.alerter(`Abonnement en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui en a déjà un. À annuler et rembourser chez Stripe. Tant qu'il ne l'est pas, chacune de ses factures redonne cette alerte.`);
     } else if (issue.etat === 'enregistre' && issue.numero === null) {
@@ -246,7 +270,18 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       const lu = abonnementSchema.safeParse(objet);
       if (!lu.success) return illisible();
       const a = await deps.numero.majStatut(lu.data.id, 'resilie', null);
-      if (a) await deps.numero.alerter(`Abonnement du numéro résilié : espace ${a.tenantId} (${a.abonnementId}). Le numéro reste attribué jusqu'au lot 4.`);
+      if (a) await deps.numero.alerter(`Abonnement du numéro terminé : espace ${a.tenantId} (${a.abonnementId}). Ses envois sont coupés ; le numéro est gardé 7 jours pour un réabonnement, puis libéré.`);
+      return reply.code(200).send({ recu: true });
+    }
+    if (type === 'customer.subscription.updated') {
+      const lu = abonnementModifieSchema.safeParse(objet);
+      if (!lu.success) return illisible();
+      // Seules nos métadonnées en font un abonnement du numéro : le compte Stripe vend aussi autre chose.
+      if (!metaNumeroSchema.safeParse(lu.data.metadata ?? {}).success) return reply.code(200).send({ recu: true });
+      const fins = (lu.data.items?.data ?? []).map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
+      const finDePeriode = fins.length > 0 ? Math.max(...fins) : null;
+      const fin = lu.data.cancel_at ?? (lu.data.cancel_at_period_end === true ? finDePeriode : null);
+      await deps.numero.noterFinPrevue(lu.data.id, fin === null ? null : new Date(fin * 1000));
       return reply.code(200).send({ recu: true });
     }
     const lu = factureSchema.safeParse(objet);
@@ -255,15 +290,25 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
     // Une facture sans abonnement (une recharge) : pas la nôtre.
     if (!details) return reply.code(200).send({ recu: true });
     const abonnementId = idDe(details.subscription);
+    // La fin de la période que la facture couvre, la plus lointaine de ses lignes : payée, elle avance la période de
+    // l'abonnement ; échouée, elle dit si cette période est DÉJÀ payée.
+    const fins = (lu.data.lines?.data ?? []).map((l) => l.period?.end).filter((v): v is number => typeof v === 'number');
+    const finFacture = fins.length > 0 ? new Date(Math.max(...fins) * 1000) : null;
     if (type === 'invoice.payment_failed') {
-      const a = await deps.numero.majStatut(abonnementId, 'en_retard', null);
-      if (a) await deps.numero.alerter(`Renouvellement du numéro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; rien n'est coupé avant le lot 4.`);
+      // 🔴 Stripe ne garantit pas l'ordre : un échec rejoué APRÈS le paiement de la même facture ne repose rien, sans
+      // quoi un client qui a payé serait coupé sept jours plus tard (rouge 2 de la relecture du lot 4).
+      const a = await deps.numero.majStatut(abonnementId, 'en_retard', null, finFacture);
+      if (a) await deps.numero.alerter(`Renouvellement du numéro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; sans paiement, ses envois seront coupés 7 jours après le premier échec.`);
       return reply.code(200).send({ recu: true });
     }
-    // invoice.paid : la fin de la période payée, la plus lointaine des lignes.
-    const fins = (lu.data.lines?.data ?? []).map((l) => l.period?.end).filter((v): v is number => typeof v === 'number');
-    const periodeFin = fins.length > 0 ? new Date(Math.max(...fins) * 1000) : null;
-    if (await deps.numero.majStatut(abonnementId, 'actif', periodeFin)) return reply.code(200).send({ recu: true });
+    // invoice.paid : la fin de la période payée.
+    const periodeFin = finFacture;
+    const paye = await deps.numero.majStatut(abonnementId, 'actif', periodeFin);
+    if (paye) {
+      // Une facture payée en retard sur un abonnement fini ne rend rien : seul un abonnement actif rouvre les envois.
+      if (paye.statut === 'actif') await deps.numero.reprendreCampagnes(paye.tenantId);
+      return reply.code(200).send({ recu: true });
+    }
     // Inconnu : arrivée avant la session. Seules nos métadonnées en font un abonnement du numéro.
     const meta = metaNumeroSchema.safeParse(details.metadata ?? {});
     if (meta.success) await enregistrer({ tenantId: meta.data.tenant_id, abonnementId, livemode, periodeFin });

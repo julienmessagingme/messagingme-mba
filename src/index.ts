@@ -203,7 +203,7 @@ async function main(): Promise<void> {
     httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
-    numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
+    numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
   } = construireSocle({ pool, queue, config });
 
@@ -1071,7 +1071,11 @@ async function main(): Promise<void> {
         // L'abonnement du numéro fourni (lot 3c, livraison B) : le magasin, et Julien prévenu sur Telegram (ne lève jamais).
         numero: {
           enregistrer: (a) => abonnementsNumero.enregistrer(a),
-          majStatut: (abonnementId, statut, periodeFin) => abonnementsNumero.majStatut(abonnementId, statut, periodeFin),
+          // Les QUATRE paramètres : le dernier dit si l'échec porte sur une période déjà payée (lot 4).
+          majStatut: (abonnementId, statut, periodeFin, finFactureEchouee) => abonnementsNumero.majStatut(abonnementId, statut, periodeFin, finFactureEchouee),
+          // Lot 4 : la résiliation programmée, et les campagnes en pause sur la suspension reprises au paiement.
+          noterFinPrevue: (abonnementId, fin) => abonnementsNumero.noterFinPrevue(abonnementId, fin),
+          reprendreCampagnes: async (tenant) => { await numeroDelieStore.leverPausesSuspension(tenant); },
           alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
         },
       },
@@ -2208,6 +2212,8 @@ async function main(): Promise<void> {
         portail: (tenant, payeur) => ouvrirPortail(abonnementDuNumero, tenant, 'console', payeur),
       },
     },
+    // L'état de l'abonnement du numéro (lot 4), pour le bandeau de la console : la seule lecture.
+    abonnementNumero: { etat: (tenant) => abonnementsNumero.etatDeLEspace(tenant) },
     // La réserve de numéros fournis (lot 3a). Sans clé DIDWW ou sans trunk, la déclaration rend 503 et la lecture marche.
     opsNumeros: {
       numeros: numerosFournis,
@@ -2413,6 +2419,7 @@ async function main(): Promise<void> {
         repo,
         // La garde de ce process, celle dont « Délier » et « Relier » vident le cache.
         numerosDelies: gardeNumeroDelie,
+        numerosSuspendus: gardeNumeroSuspendu,
         // La résolution de fiche et l'écriture du consentement, sur les mêmes dépendances que `/v1/contacts`
         // (le dépôt des contacts et `depsConsentementDe`). Les quatre paramètres de chaque flèche sont gardés
         // par `tests/v1-cablage.test.ts`.
@@ -2490,6 +2497,9 @@ async function main(): Promise<void> {
           attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
           maintenant: () => Date.now(),
           ouvrirPortail: (tenant, payeur) => ouvrirPortail(abonnementDuNumero, tenant, 'console', payeur),
+          // Lot 4 : la seule lecture de l'état, et le réabonnement du même numéro (retour sur `/paiement-recu`).
+          abonnement: (tenant) => abonnementsNumero.etatDeLEspace(tenant),
+          ouvrirAbonnement: (tenant, payeur) => ouvrirAbonnement(abonnementDuNumero, tenant, 'claude', payeur),
         },
       },
     },

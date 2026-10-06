@@ -9,7 +9,7 @@ import type { DemandeBrute } from '../../src/stats/performance';
 import { CAUSE_REOUVERTURE, creerControleDuFil } from '../../src/inbox/fil';
 import { creerListeDeLAgent } from '../../src/mba/liste';
 import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, listeEnMemoire, metaFactice } from '../banc-du-fil';
-import { jamaisBloque, jamaisDesabonne } from '../consentement';
+import { jamaisBloque, jamaisDesabonne, numeroJamaisBloque } from '../consentement';
 
 /**
  * QUANTITATIF > PERFORMANCE : ce que la base rend comme DEMANDES (migration 0194, `PgPerformanceStore.lire`).
@@ -387,7 +387,7 @@ describe.skipIf(!url)('les demandes du Quantitatif > Performance', () => {
       repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },
-      numeros: { getTenantPhoneNumberId: async () => 'pn-itest' },
+      numeros: { getTenantPhoneNumberId: async () => 'pn-itest' , numeroBloque: numeroJamaisBloque },
       liste: creerListeDeLAgent({ store: listeEnMemoire().store, clientMba: async () => faux.client, attendre: async () => {} }),
       consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
       meta: faux.meta,

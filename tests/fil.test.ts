@@ -122,6 +122,7 @@ const TABLE: Cas[] = [
   { nom: '6. personne ne suit, agent éteint : rien', depart: { owner: 'app_workflow' }, banc: { mbaEnabled: false }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
   { nom: '6. personne ne suit, un parcours attend : rien', depart: { owner: 'app_workflow' }, banc: { enAttente: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
   { nom: '6. personne ne suit, aucun numéro : rien d’écrit', depart: { owner: 'app_workflow' }, banc: { numero: null }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
+  { nom: '6. personne ne suit, numéro bloqué (suspendu faute de paiement, lot 4) : ni liste, ni release, rien d’écrit', depart: { owner: 'app_workflow' }, banc: { numeroBloque: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
   { nom: '6. personne ne suit, fil de test : rien', depart: { owner: 'app_workflow', test: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
   // 🔴 Relecture du 2026-09-30 : laissée `app_workflow`, la conversation sortait d'« À traiter » sans que personne
   // réponde (un identifiant qui n'est pas un numéro est refusé à chaque ajout). Elle passe à l'équipe.

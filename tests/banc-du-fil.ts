@@ -231,6 +231,8 @@ export interface OptionsBanc {
   delaiRepriseSecondes?: number | null;
   /** Le numéro de l'espace ; `null` = aucun numéro connecté. Défaut : un numéro. */
   numero?: string | null;
+  /** Le numéro de l'espace est-il bloqué (délié, ou suspendu faute de paiement, lot 4) ? Défaut : non. */
+  numeroBloque?: boolean;
   /** Un parcours attend-il la réponse du contact ? Défaut : non. */
   enAttente?: boolean;
   /** Les contacts qui ont dit STOP. Défaut : aucun. */
@@ -291,7 +293,10 @@ export function bancDuFil(o: OptionsBanc = {}): {
     reglages: { get: async () => ({ mbaEnabled: o.mbaEnabled ?? true, repondeurAgentId: o.repondeurAgentId ?? null, controlHandbackSeconds: o.delaiRepriseSecondes ?? null }) },
     delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
     parcours: o.parcours ?? { findWaitingByWaId: async () => (o.enAttente ? { id: 'run-1' } : null) },
-    numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? 'pn1' : o.numero) },
+    numeros: {
+      getTenantPhoneNumberId: async () => (o.numero === undefined ? 'pn1' : o.numero),
+      numeroBloque: async () => o.numeroBloque === true,
+    },
     liste,
     consentement: {
       estDesabonne: async (_t, waId) => (o.desabonnes ?? []).includes(waId),

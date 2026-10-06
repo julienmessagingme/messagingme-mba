@@ -28,3 +28,9 @@ export const jamaisBloque = async (): Promise<boolean> => false;
  * journalisé « sans fiche contact », jamais écrit. Un test qui VÉRIFIE le refus câble sa propre écriture.
  */
 export const aucunStop = async (): Promise<string | null> => null;
+
+/**
+ * Le numéro de l'espace n'est jamais bloqué (ni délié, ni suspendu, lot 4) : l'hypothèse des suites qui ne portent pas
+ * sur lui, DITE plutôt qu'omise (la dépendance est requise).
+ */
+export const numeroJamaisBloque = async (): Promise<boolean> => false;

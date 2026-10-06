@@ -28,6 +28,9 @@ export const STATUT_PAR_CODE = {
   // Le numéro WhatsApp de l'espace est délié depuis l'Accueil : rien ne part avant qu'il soit relié. Distinct
   // de `no_whatsapp_number` : le numéro existe, et se relie d'un clic.
   number_unlinked: 409,
+  // L'abonnement du numéro fourni est impayé depuis 7 jours, ou terminé (lot 4) : rien ne part avant le paiement.
+  // Distinct de `number_unlinked` : ce n'est pas un administrateur qui le rend, c'est le renouvellement.
+  number_suspended: 409,
   scenario_not_found: 404,
   node_not_found: 404,
   template_not_found: 404,

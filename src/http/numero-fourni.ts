@@ -159,13 +159,20 @@ export function registerNumeroFourni(
     const tenant = espaceVerifie(req);
     const lu = saisieAbonnement.safeParse(req.body ?? {});
     if (!lu.success) return reply.code(400).send({ error: 'retour : « brancher » ou « console »' });
-    if (await deps.numeroConnecte(tenant)) {
+    const [connecte, fourni, abonnement] = await Promise.all([
+      deps.numeroConnecte(tenant), deps.numeros.numeroDeLEspace(tenant), deps.abonnements.deLEspace(tenant),
+    ]);
+    // Lot 4 : le numéro connecté EST le numéro fourni de l'espace, son abonnement est fini : c'est un réabonnement du
+    // MÊME numéro, que le paiement rend sans refaire la fenêtre de Meta. Un numéro apporté reste refusé.
+    const memeNumero = connecte !== null && fourni !== null && connecte.chiffres === fourni.numero;
+    if (connecte && !memeNumero) {
       return reply.code(409).send({ error: 'Cet espace a déjà un numéro WhatsApp.', cause: 'deja_un_numero' });
     }
-    if (vivant(await deps.abonnements.deLEspace(tenant))) {
+    if (vivant(abonnement)) {
       return reply.code(409).send({ error: 'Le numéro de cet espace est déjà payé.', cause: 'deja_abonne' });
     }
-    if ((await disponibles()) === 0) {
+    // Un numéro déjà attribué ne prend rien à la réserve : seul un numéro neuf la regarde.
+    if (fourni === null && (await disponibles()) === 0) {
       await surveillerReserve();
       return reply.code(409).send(RESERVE_VIDE);
     }

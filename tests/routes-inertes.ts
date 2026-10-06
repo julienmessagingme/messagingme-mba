@@ -495,6 +495,9 @@ export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
     attendre: async () => {},
     maintenant: () => Date.now(),
     ouvrirPortail: neDevraitPasEtreAppelee('numero.ouvrirPortail'),
+    // Lot 4 : aucun abonnement, donc aucun rappel dans les réponses d'outil.
+    abonnement: async () => null,
+    ouvrirAbonnement: neDevraitPasEtreAppelee('numero.ouvrirAbonnement'),
   },
 };
 

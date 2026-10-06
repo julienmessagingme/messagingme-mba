@@ -11,7 +11,7 @@ import type { OrigineMessage } from '../src/inbox/origine';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
-import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
+import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
 
 /**
  * `POST /v1/messages/whatsapp` : UN SIMPLE TEXTE, À UNE FICHE, DANS LA FENÊTRE DE 24 H (spec 2026-09-24, § 4).
@@ -55,6 +55,8 @@ interface Monde {
   numeroDeLEspace: string | null;
   /** Le numéro a été DÉLIÉ depuis l'Accueil (migration 0180) : le point de passage des envois lève `NumeroDelieError`. */
   numeroDelie: boolean;
+  /** L'abonnement du numéro fourni est suspendu (lot 4) : le point de passage lève `NumeroSuspenduError`. */
+  numeroSuspendu?: boolean;
 }
 
 const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', sansFil: false, fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1', numeroDelie: false };
@@ -83,6 +85,7 @@ function app(over: Partial<Monde> = {}) {
     repo: { getTenantPhoneNumberId: async () => m.numeroDeLEspace },
     sendReply: async (_t, pn, to, text) => {
       if (m.numeroDelie) throw new NumeroDelieError(pn);
+      if (m.numeroSuspendu) throw new NumeroSuspenduError(pn);
       envois.push({ to, text });
       return 'wamid.envoye';
     },
@@ -248,6 +251,16 @@ describe('POST /v1/messages/whatsapp', () => {
     const res = await post(server, { contactId: C1, text: 'x' });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: MESSAGE_NUMERO_DELIE, code: 'number_unlinked' });
+    expect(envois).toEqual([]);
+    expect(enregistres).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 numéro suspendu (lot 4) -> 409 number_suspended, la phrase dans `error`, et rien n’est enregistré', async () => {
+    const { server, envois, enregistres } = app({ numeroSuspendu: true });
+    const res = await post(server, { contactId: C1, text: 'x' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: MESSAGE_NUMERO_SUSPENDU, code: 'number_suspended' });
     expect(envois).toEqual([]);
     expect(enregistres).toEqual([]);
     await server.close();

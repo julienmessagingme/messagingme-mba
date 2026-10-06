@@ -20,7 +20,7 @@ import { lienTraceAvecJeton } from '../src/links/rewrite';
 import type { WorkflowGraph, WorkflowNode } from '../src/workflow/graph';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
-import { MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
+import { MESSAGE_NUMERO_DELIE, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
 
 /**
  * `POST /v1/sends` ET `GET /v1/sends/{sendId}` (spec 2026-09-24, § 3 et § 9).
@@ -179,6 +179,7 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
     numerosDelies: {
       estDelie: async () => false,
     },
+    numerosSuspendus: { estSuspendu: async () => false },
     /** Double de la résolution du lot 1 : par contactId, numéro ou BSUID ; crée sur un numéro si on le demande. */
     resoudreFiche: async (tenant, cles, o) => {
       cap.resolutions.push({ cles, creer: o.creer });
@@ -1125,6 +1126,17 @@ describe('POST /v1/sends : forme, numéro, débit, droits', () => {
     expect(cap.enqueued).toEqual([]);
     expect(cap.resolutions, 'aucune fiche ne doit être créée pour un envoi refusé').toEqual([]);
     expect(idem.has('i-delie'), 'la clé doit être rendue : le même appel repartira une fois le numéro relié').toBe(false);
+    await server.close();
+  });
+
+  it('🔴 numéro suspendu (lot 4), cible template -> 409 number_suspended, rien n’est créé, la clé est LIBÉRÉE', async () => {
+    const { server, cap, idem } = app({ numerosSuspendus: { estSuspendu: async () => true } });
+    const res = await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }] }, 'i-suspendu');
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: MESSAGE_NUMERO_SUSPENDU, code: 'number_suspended' });
+    expect(cap.sends).toEqual([]);
+    expect(cap.resolutions).toEqual([]);
+    expect(idem.has('i-suspendu')).toBe(false);
     await server.close();
   });
 

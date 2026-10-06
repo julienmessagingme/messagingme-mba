@@ -69,6 +69,12 @@ export interface RunTurnDeps {
    * `jamaisDesabonne` (`tests/consentement.ts`) au lieu de l'omettre.
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * 🔴 Le numéro de l'espace est-il bloqué (délié, ou suspendu faute de paiement, lot 4) ? Lu au rang des plafonds,
+   * avant le modèle : un tour dont la réponse ne pourrait pas partir ne se paie pas (`creerNumeroBloqueDeLEspace`).
+   * Requise : un câblage qui l'oublierait débiterait le crédit du client pour rien.
+   */
+  numeroBloque(tenantId: string): Promise<boolean>;
   /** Envoie le texte de l'agent, par la même dépendance que le reste du scénario (DRY_RUN honoré, message
    *  journalisé dans le fil). */
   envoyer(tenantId: string, waId: string, texte: string): Promise<ResultatEnvoi>;
@@ -90,7 +96,7 @@ export interface ReposApresTour {
 
 /** Ce que le tour a fait, pour le journal et les tests. Jamais une exception sur un cas métier. */
 export interface ResultatTour {
-  fait: 'rejeu' | 'run_mort' | 'plafond' | 'main_perdue' | 'desabonne' | 'repondu' | 'sorti' | 'erreur';
+  fait: 'rejeu' | 'run_mort' | 'plafond' | 'main_perdue' | 'desabonne' | 'numero_bloque' | 'repondu' | 'sorti' | 'erreur';
   sortie?: string;
   /**
    * Le repos posé sur le parcours, quand le tour s'est terminé en attente. Pour le journal et les tests
@@ -258,6 +264,17 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     await poserEcheance(job, repos, maintenant, deps);
     await finirLeTour(job, session.id, deps);
     return { fait: 'desabonne', repos };
+  }
+
+  /**
+   * 3ter. Le numéro bloqué (lot 4), de la même façon : sa réponse ne partirait pas, donc ni modèle ni débit. La session
+   * reste ouverte et le parcours attend : une fois l'abonnement renouvelé, le prochain message relance l'agent.
+   */
+  if (await deps.numeroBloque(job.tenantId)) {
+    const repos = reposApresReponse(job.nodeId, fiche.inactiviteMinutes);
+    await poserEcheance(job, repos, maintenant, deps);
+    await finirLeTour(job, session.id, deps);
+    return { fait: 'numero_bloque', repos };
   }
 
   /**

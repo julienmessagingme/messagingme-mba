@@ -8,6 +8,8 @@ import { listeEnMemoire } from './banc-du-fil';
 
 /** Aucun numéro délié (migration 0180) : ces tests ne portent pas sur le geste de l'Accueil, et le DISENT. */
 const jamaisDelie = async (): Promise<boolean> => false;
+/** Aucun numéro suspendu (lot 4) : ces tests ne portent pas sur l’abonnement du numéro, et le DISENT. */
+const jamaisSuspendu = async (): Promise<boolean> => false;
 /**
  * Aucun contact sur la liste de l'agent de Meta : le retrait avant un modèle ne fait rien, comme avant le mode liste.
  * Ces tests ne portent pas sur la liste, et le DISENT.
@@ -44,7 +46,7 @@ function resolver(over: {
 }
 
 function factory(r: MetaCredentialsResolver, transport: HttpTransport) {
-  return new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: listeToujoursVide });
+  return new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide });
 }
 
 describe('MetaClientFactory (B1 : câblage par tenant)', () => {
@@ -133,7 +135,7 @@ describe('MetaClientFactory : le frein par numéro est réellement câblé', () 
     const t = new FakeTransport();
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
     const espion = arbitreEspion();
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: listeToujoursVide });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide });
 
     const client = await f.clientForTenant('t1', 'pn-42');
     await client.sendText('33600000001', 'bonjour');
@@ -147,7 +149,7 @@ describe('MetaClientFactory : le frein par numéro est réellement câblé', () 
     const t = new FakeTransport();
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
     const espion = arbitreEspion();
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: listeToujoursVide });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide });
 
     // Deux constructions distinctes, comme le font le moteur de campagne et la route d'inbox.
     const campagne = await f.senderForTenant('t1', 'pn-42');
@@ -203,7 +205,7 @@ describe('MetaClientFactory : le destinataire quitte la liste de l’agent avant
       attendre: async () => {},
     });
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
-    const f = new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: liste });
+    const f = new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: liste });
     return { f, journal, table: table.lignes };
   }
   const MODELE = { name: 'promo', language: 'fr' };
@@ -265,7 +267,10 @@ describe('MetaClientFactory : le destinataire quitte la liste de l’agent avant
   it('🔴 la liste est REQUISE par le type de la fabrique', () => {
     const { resolver: r } = resolver();
     // @ts-expect-error `listeDeLAgent` manque : un câblage qui l'oublierait laisserait partir le modèle.
-    const sansListe = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie } });
+    const sansListe = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu } });
     expect(sansListe).toBeInstanceOf(MetaClientFactory);
+    // @ts-expect-error `numerosSuspendus` manque : un câblage qui l'oublierait enverrait depuis un numéro impayé (lot 4).
+    const sansSuspension = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: listeToujoursVide });
+    expect(sansSuspension).toBeInstanceOf(MetaClientFactory);
   });
 });

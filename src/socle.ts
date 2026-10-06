@@ -26,7 +26,10 @@ import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
 import { PgPhoneStatusStore } from './account/store.pg';
 import { PgNumeroDelieStore } from './account/numero-delie.pg';
-import { creerGardeNumeroDelie } from './meta/numero-delie';
+import { creerGardeNumeroDelie, creerGardeNumeroSuspendu } from './meta/numero-delie';
+import { creerLectureSuspension, creerNumeroBloqueDeLEspace } from './numero/suspension';
+import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
+import { PgNumerosFournisStore } from './otp/store.pg';
 import { PgOpsStore } from './ops/store.pg';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { PgWorkflowStore } from './workflow/store.pg';
@@ -245,6 +248,17 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    */
   const numeroDelieStore = new PgNumeroDelieStore(pool);
   const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
+  /**
+   * Le numéro suspendu (lot 4) : le numéro FOURNI de l'espace dont l'abonnement est impayé depuis 7 jours, ou fini.
+   * Même garde en cache court que le délié ; l'état vient de la seule lecture qui fait foi (`etatDeLEspace`).
+   */
+  const abonnementsDuNumero = new PgAbonnementsNumeroStore(pool);
+  const numerosFournisDuSocle = new PgNumerosFournisStore(pool);
+  const gardeNumeroSuspendu = creerGardeNumeroSuspendu(creerLectureSuspension({
+    telephone: (pn) => numeroDelieStore.telephone(pn),
+    numeroFourni: async (tenant) => (await numerosFournisDuSocle.numeroDeLEspace(tenant))?.numero ?? null,
+    etat: (tenant) => abonnementsDuNumero.etatDeLEspace(tenant),
+  }));
   // Le crédit offert au premier numéro que Meta dit vérifié (`CREDIT_OFFERT_MICRO_EUR`, cf. `src/config.ts`) : seules
   // les routes de l'inscription et de l'activation le demandent (`offrirCredit`), jamais la liaison elle-même.
   const esCredentialsStore = new PgEmbeddedSignupStore(pool, {
@@ -282,6 +296,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
       depsPorteDebitPg(pool),
     ),
     numerosDelies: gardeNumeroDelie,
+    numerosSuspendus: gardeNumeroSuspendu,
     listeDeLAgent,
   });
 
@@ -303,6 +318,11 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * le contrôle du fil à chaque geste chez Meta. Une instance, un cache.
    */
   const numeroDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantPhoneNumberId(t));
+  // Le numéro de l'espace est-il bloqué (délié, ou suspendu faute de paiement, lot 4) ? La fabrique le dit : le fil et
+  // le tour d'un agent le demandent avant de confier un message à un robot ou d'appeler un modèle.
+  const numeroBloqueDeLEspace = creerNumeroBloqueDeLEspace({
+    numeroDeLEspace, verifierNumero: (pn) => metaFactory.verifierNumero(pn),
+  });
   const runStore = new PgWorkflowRunStore(pool);
 
   /**
@@ -342,7 +362,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     // Le délai de reprise de l'équipe quand l'espace n'en a pas réglé : le même que celui du balayage (`src/worker.ts`).
     delaiRepriseParDefautMs: config.CONTROL_HUMAN_TIMEOUT_MS,
     parcours: runStore,
-    numeros: { getTenantPhoneNumberId: numeroDeLEspace },
+    numeros: { getTenantPhoneNumberId: numeroDeLEspace, numeroBloque: numeroBloqueDeLEspace },
     liste: listeDeLAgent,
     consentement: {
       estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
@@ -399,7 +419,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
-    wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
+    wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit,
   };
 }

@@ -264,7 +264,10 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     livemode: true,
     paiements: { crediterPaiement: async () => 'espace_inconnu' },
     apresCredit: async () => undefined,
-    numero: { enregistrer: async () => ({ etat: 'doublon' as const }), majStatut: async () => null, alerter: async () => undefined },
+    numero: {
+      enregistrer: async () => ({ etat: 'doublon' as const }), majStatut: async () => null, alerter: async () => undefined,
+      noterFinPrevue: async () => false, reprendreCampagnes: async () => undefined,
+    },
   } satisfies StripeWebhookRouteDeps,
   // Le pont du code (lot 3a) : un VRAI secret aussi, et une réserve vide. Une signature fausse ou absente doit tomber
   // avant la réserve (sonde 12).

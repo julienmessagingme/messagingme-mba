@@ -22,6 +22,10 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: 
     statuts: [] as Array<{ abonnementId: string; statut: StatutAbonnement; periodeFin: Date | null }>,
     alertes: [] as string[],
     credits: 0,
+    finsPrevues: [] as Array<{ abonnementId: string; fin: Date | null }>,
+    reprises: [] as string[],
+    /** La fin de la période facturée que chaque échec transmet (lot 4, rouge 2 de la relecture). */
+    finsEchouees: [] as Array<Date | null>,
   };
   const connus = new Set(o.connus ?? []);
   const deps: StripeWebhookRouteDeps = {
@@ -31,11 +35,14 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: 
     apresCredit: async () => {},
     numero: {
       enregistrer: async (a) => { cap.enregistres.push(a); connus.add(a.abonnementId); return o.issue ?? { etat: 'enregistre', numero: '441235619343' }; },
-      majStatut: async (abonnementId, statut, periodeFin): Promise<AbonnementNumero | null> => {
+      majStatut: async (abonnementId, statut, periodeFin, finFactureEchouee = null): Promise<AbonnementNumero | null> => {
         cap.statuts.push({ abonnementId, statut, periodeFin });
-        return connus.has(abonnementId) ? { abonnementId, tenantId: T1, livemode: true, statut, periodeFin } : null;
+        if (statut === 'en_retard') cap.finsEchouees.push(finFactureEchouee);
+        return connus.has(abonnementId) ? { abonnementId, tenantId: T1, livemode: true, statut, periodeFin, premierEchecLe: null, finPrevueLe: null, finiLe: null, libereLe: null } : null;
       },
       alerter: async (texte) => { cap.alertes.push(texte); },
+      noterFinPrevue: async (abonnementId, fin) => { cap.finsPrevues.push({ abonnementId, fin }); return connus.has(abonnementId); },
+      reprendreCampagnes: async (tenantId) => { cap.reprises.push(tenantId); },
     },
     now: () => NOW,
   };
@@ -134,6 +141,18 @@ describe('le webhook Stripe et l’abonnement du numéro', () => {
     expect(inconnu.cap.alertes).toEqual([]);
   });
 
+  it('🔴 un échec transmet la fin de la période facturée : rejoué APRÈS le paiement de la même facture, il ne repose rien', async () => {
+    // Stripe ne garantit pas l'ordre des événements. Le magasin compare cette date à la période déjà payée
+    // (`tests/integration/abonnements-numero.integration.test.ts`) ; le webhook doit la lui donner.
+    const { srv, cap } = monter({ connus: ['sub_1'] });
+    await envoyer(srv, evenement(facture(), 'invoice.paid'));
+    await envoyer(srv, evenement(facture(), 'invoice.payment_failed'));
+    expect(cap.finsEchouees).toEqual([new Date(FIN * 1000)]);
+    // Une facture sans lignes datées : rien à comparer, l'échec compte (le comportement d'avant).
+    await envoyer(srv, evenement(facture({ lines: { object: 'list', data: [{ id: 'il_2' }] } }), 'invoice.payment_failed'));
+    expect(cap.finsEchouees).toEqual([new Date(FIN * 1000), null]);
+  });
+
   it('🔴 un abonnement supprimé : résilié, et Julien est prévenu', async () => {
     const { srv, cap } = monter({ connus: ['sub_1'] });
     await envoyer(srv, evenement({ id: 'sub_1', object: 'subscription', status: 'canceled', metadata: { tenant_id: T1, produit: 'numero' } }, 'customer.subscription.deleted'));
@@ -152,5 +171,68 @@ describe('le webhook Stripe et l’abonnement du numéro', () => {
   it('une facture illisible : 422, Stripe la rejouera', async () => {
     const { srv } = monter();
     expect((await envoyer(srv, evenement({ object: 'invoice' }, 'invoice.paid'))).statusCode).toBe(422);
+  });
+});
+
+/**
+ * 🔴 LE LOT 4 : la résiliation programmée (`customer.subscription.updated`), et la reprise des campagnes au paiement.
+ * Version d'API 2025-11-17.clover : la fin de période vit sur les lignes de l'abonnement (`items.data[].current_period_end`),
+ * `cancel_at` porte une date de résiliation précise.
+ */
+const abonnement = (over: Record<string, unknown> = {}) => ({
+  id: 'sub_1', object: 'subscription', status: 'active', cancel_at: null, cancel_at_period_end: false,
+  items: { object: 'list', data: [{ id: 'si_1', current_period_end: FIN }] },
+  metadata: { tenant_id: T1, produit: 'numero' }, ...over,
+});
+
+describe('le webhook Stripe et le lot 4 du numéro', () => {
+  it('🔴 résiliation programmée en fin de période : la fin prévue est la fin de la période en cours', async () => {
+    const { srv, cap } = monter({ connus: ['sub_1'] });
+    expect((await envoyer(srv, evenement(abonnement({ cancel_at_period_end: true }), 'customer.subscription.updated'))).statusCode).toBe(200);
+    expect(cap.finsPrevues).toEqual([{ abonnementId: 'sub_1', fin: new Date(FIN * 1000) }]);
+  });
+
+  it('une date de résiliation précise (`cancel_at`) prime', async () => {
+    const { srv, cap } = monter({ connus: ['sub_1'] });
+    await envoyer(srv, evenement(abonnement({ cancel_at: FIN - 86_400 }), 'customer.subscription.updated'));
+    expect(cap.finsPrevues).toEqual([{ abonnementId: 'sub_1', fin: new Date((FIN - 86_400) * 1000) }]);
+  });
+
+  it('🔴 la résiliation annulée dans le portail retire la fin prévue', async () => {
+    const { srv, cap } = monter({ connus: ['sub_1'] });
+    await envoyer(srv, evenement(abonnement(), 'customer.subscription.updated'));
+    expect(cap.finsPrevues).toEqual([{ abonnementId: 'sub_1', fin: null }]);
+  });
+
+  it('un abonnement qui n’est pas le nôtre (autre produit) : rien ; illisible : 422', async () => {
+    const { srv, cap } = monter({ connus: ['sub_1'] });
+    await envoyer(srv, evenement(abonnement({ metadata: { autre: 'chose' } }), 'customer.subscription.updated'));
+    expect(cap.finsPrevues).toEqual([]);
+    expect((await envoyer(srv, evenement({ object: 'subscription' }, 'customer.subscription.updated'))).statusCode).toBe(422);
+  });
+
+  it('🔴 une facture payée reprend les campagnes en pause de l’espace ; un abonnement inconnu ne reprend rien', async () => {
+    const connu = monter({ connus: ['sub_1'] });
+    await envoyer(connu.srv, evenement(facture(), 'invoice.paid'));
+    expect(connu.cap.reprises).toEqual([T1]);
+    const echec = monter({ connus: ['sub_1'] });
+    await envoyer(echec.srv, evenement(facture(), 'invoice.payment_failed'));
+    expect(echec.cap.reprises).toEqual([]);
+  });
+
+  it('🔴 un réabonnement payé (nouvelle session) reprend aussi les campagnes', async () => {
+    const { srv, cap } = monter();
+    await envoyer(srv, evenement(sessionAbonnement(), 'checkout.session.completed'));
+    expect(cap.reprises).toEqual([T1]);
+  });
+
+  it('les alertes disent ce qui va se passer : coupure dans 7 jours, ou envois coupés et libération dans 7 jours', async () => {
+    const echec = monter({ connus: ['sub_1'] });
+    await envoyer(echec.srv, evenement(facture(), 'invoice.payment_failed'));
+    expect(echec.cap.alertes[0]).toMatch(/7 jours/);
+    const fin = monter({ connus: ['sub_1'] });
+    await envoyer(fin.srv, evenement({ id: 'sub_1', object: 'subscription', status: 'canceled', metadata: { tenant_id: T1, produit: 'numero' } }, 'customer.subscription.deleted'));
+    expect(fin.cap.alertes[0]).toMatch(/coupés/);
+    expect(fin.cap.alertes[0]).toMatch(/7 jours/);
   });
 });

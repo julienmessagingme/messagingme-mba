@@ -5,6 +5,51 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : ce que devient un numéro fourni dont l'abonnement tombe (lot 4, livraison A, la suspension)
+
+**Le cadrage** (spec `docs/superpowers/specs/2026-10-06-numero-impaye-design.md`, plan
+`docs/superpowers/plans/2026-10-06-numero-impaye.md`) : sept jours de grâce après le premier échec de paiement, puis
+suspension ; un abonnement fini suspend tout de suite, et le numéro est gardé sept jours avant d'être libéré
+(livraison B). Tous les envois sont coupés ; rien ne change chez Meta.
+
+**Le choix qui porte le lot : l'état se calcule, il ne s'écrit pas.** Le webhook ne pose que des DATES
+(`premier_echec_le`, `fin_prevue_le`, `fini_le`, migration 0215, poussée seule en `149db406` et appliquée à 16 h 57
+UTC) ; `etatAbonnement` en déduit l'état à la lecture. Un balayage qui aurait écrit `suspendu` à heure fixe aurait
+laissé une fenêtre où le paiement et le statut se contredisent, et aurait demandé un second balayage pour défaire.
+Le balayage qui existe (toutes les 15 minutes) ne fait que deux choses que le calcul ne peut pas faire : envoyer
+l'alerte une fois, et lever les pauses de campagne d'un espace redevenu sain.
+
+**La garde** vit au point d'envoi unique, à côté du délié, avec une erreur mère (`NumeroBloqueError`) que tous les
+appelants attrapent : un test d'inventaire l'exige, et chaque surface (API publique, MCP, automations, campagnes,
+tour d'agent, remise du fil) a été vérifiée dans les deux sens en remettant le code fautif. Elle ne vise que le
+numéro FOURNI (mêmes chiffres que le numéro attribué) : un client qui apporte son numéro ne peut pas être coupé par
+notre abonnement. Le tour d'un agent IA vérifie le numéro AVANT le modèle, sans quoi un espace suspendu payait des
+réponses que personne ne recevrait.
+
+**Côté client** : le bandeau de la console sur toutes les pages, le rappel MCP en second bloc de chaque réponse
+d'outil, `resubscribe_number`, `get_number_subscription` qui dit l'état et ses dates, et le réabonnement au MÊME
+numéro (la route du paiement accepte un espace dont le numéro connecté est celui qu'on lui avait fourni). Stripe
+renvoie le client de Claude sur une page publique, `/paiement-recu`, qui n'affirme rien du paiement : c'est le
+webhook qui le confirme.
+
+**Vérifié avant la relecture** : tests unitaires, suite e2e complète (1 390 verts, le bandeau étant monté sur toutes
+les pages), typecheck des deux paquets, auto-attaque. L'extraction a été recalée sur RC2 (`1edb12e3`, le statut
+urgent) avant ces essais, quatre fichiers étant communs.
+
+**Relue : deux rouges, corrigés avant le déploiement, chacun avec son test vu rouge puis vert.**
+1. Seul le démarrage d'un parcours vérifiait le numéro avant tout effet. Une REPRISE (réveil d'une attente, réponse
+   du contact, bloc poussé par un agent) faisait ses effets puis butait sur l'envoi : le bail de 15 minutes rejouait
+   « attente, e-mail, modèle » toutes les quinze minutes, soit 96 e-mails par jour pendant toute une suspension.
+   Le défaut existait pour le délié, mais un délié est un geste rare dont les entrants sont écartés à la porte ; la
+   suspension dure au moins sept jours et garde ses entrants. Leçon : **étendre un mécanisme à un cas neuf, c'est
+   relire ce que ses voisins supposaient du cas ancien.**
+2. Un échec de paiement rejoué APRÈS le paiement de la même facture repassait l'abonnement en retard avec une
+   nouvelle date de premier échec, et coupait sept jours plus tard un client qui avait payé. L'échec porte désormais
+   la fin de la période facturée, et le magasin l'ignore quand la période payée la couvre. Le câblage de
+   `src/index.ts` enveloppait `majStatut` dans une flèche à trois paramètres qui aurait avalé le quatrième sans
+   erreur : `tests/credit-cablage.test.ts` le tient.
+Les neuf jaunes sont dans `todo.md`.
+
 ## 2026-10-06 : les retours console du 6 octobre, cadrés en huit lots ; RC1, le ménage de l'éditeur
 
 **Le cadrage** : douze demandes de Julien, passées au grill le même jour, regroupées en huit lots (RC1 à RC8), chacun

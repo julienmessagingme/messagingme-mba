@@ -386,6 +386,8 @@ function webhook(o: { paiements?: ReturnType<typeof fauxPaiements>; apresCredit?
     numero: {
       enregistrer: async () => { throw new Error('une recharge a touché l’abonnement du numéro'); },
       majStatut: async () => { throw new Error('une recharge a touché l’abonnement du numéro'); },
+      noterFinPrevue: async () => { throw new Error('une recharge a touché l’abonnement du numéro'); },
+      reprendreCampagnes: async () => { throw new Error('une recharge a repris des campagnes'); },
       alerter: async () => { throw new Error('une recharge a prévenu Julien'); },
     },
     now: () => NOW,

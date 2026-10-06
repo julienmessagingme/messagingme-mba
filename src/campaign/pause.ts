@@ -9,13 +9,13 @@ import type { RaisonDePause } from '../meta/errors';
  * `numero_delie` n'a jamais d'échéance : seul le geste « Relier » le lève, le balayage de reprise ne le voit
  * pas (`reprendreCampagnesDues`, index `campaigns_reprise_idx`).
  */
-export type MotifDePause = RaisonDePause | 'hors_horaires' | 'numero_delie';
+export type MotifDePause = RaisonDePause | 'hors_horaires' | 'numero_delie' | 'numero_suspendu';
 
 /**
  * Tous les motifs, tenus par le compilateur. Le CHECK `campaigns_pause_reason_check` doit les porter tous
  * (un test le vérifie) : un motif refusé par la base ferait échouer la mise en pause en pleine campagne.
  */
-const MOTIFS: Record<MotifDePause, true> = { debit: true, qualite: true, hors_horaires: true, numero_delie: true };
+const MOTIFS: Record<MotifDePause, true> = { debit: true, qualite: true, hors_horaires: true, numero_delie: true, numero_suspendu: true };
 export const MOTIFS_DE_PAUSE = Object.keys(MOTIFS) as MotifDePause[];
 
 /**
@@ -56,6 +56,11 @@ export function messageDePause(raison: MotifDePause, reprise: Date | null, code:
     // démarrer le scénario. La phrase dit ce qui attend, rien de plus.
     return 'Numéro WhatsApp délié de cet espace : campagne mise en pause. Les destinataires qui n’avaient encore rien reçu '
       + 'restent en attente, et elle reprendra quand un administrateur reliera le numéro depuis l’Accueil.';
+  }
+  if (raison === 'numero_suspendu') {
+    // Lot 4 : la campagne reprend d'elle-même au paiement, personne n'a à la relancer.
+    return 'Abonnement du numéro WhatsApp impayé ou terminé : campagne mise en pause. Les destinataires qui n’avaient encore '
+      + 'rien reçu restent en attente, et elle reprendra d’elle-même dès que l’abonnement sera renouvelé.';
   }
   if (raison === 'hors_horaires') {
     // Le client l'a demandé : le dire, sinon la pause ressemble à une panne et l'opérateur relance contre sa

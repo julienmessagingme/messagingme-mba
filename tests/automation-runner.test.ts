@@ -4,7 +4,7 @@ import type { AutomationRunnerDeps } from '../src/automation/runner';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 import type { EvalContext } from '../src/workflow/conditions';
 import type { TypeDeLancementAutomatisme } from '../src/workflow/lancements';
-import { NumeroDelieError } from '../src/meta/numero-delie';
+import { NumeroDelieError, NumeroSuspenduError } from '../src/meta/numero-delie';
 
 /**
  * Orchestration d'un déclenchement (IO injectée).
@@ -357,6 +357,13 @@ describe('runAutomations', () => {
       const { deps, trace } = make([tag], { startWorkflow: async () => { throw new NumeroDelieError('pn1'); } });
       expect(await runAutomations('t1', { kind: 'tag_added', waId: '33611', tag: 'vip' }, deps)).toBe(0);
       expect(trace.fired).toEqual(['a1']);
+      expect(trace.cleared).toEqual(['a1']);
+    });
+
+    it('🔴 scénario refusé par le NUMÉRO SUSPENDU (lot 4) -> le tir est effacé aussi', async () => {
+      const tag = auto({ triggerKind: 'tag_added', triggerConfig: { tag: 'vip' } });
+      const { deps, trace } = make([tag], { startWorkflow: async () => { throw new NumeroSuspenduError('pn1'); } });
+      expect(await runAutomations('t1', { kind: 'tag_added', waId: '33611', tag: 'vip' }, deps)).toBe(0);
       expect(trace.cleared).toEqual(['a1']);
     });
 

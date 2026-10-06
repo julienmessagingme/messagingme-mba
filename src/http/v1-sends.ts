@@ -25,7 +25,7 @@ import { formaterSuiviEnvoi } from '../api/suivi-envoi';
 import type { RcsOutbound } from '../rcs/types';
 import { PREFIXE_ENVOI_API, resoudreCibleRcs, schemaCibleRcs, type DepsCibleRcs } from '../api/cible-rcs';
 import { destinataireAvecVariablesInterdites, schemaVariables } from '../api/variables';
-import { MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
+import { MESSAGE_NUMERO_DELIE, MESSAGE_NUMERO_SUSPENDU } from '../meta/numero-delie';
 import { messageDe } from '../lib/erreur';
 
 export interface V1SendCreateInput {
@@ -82,6 +82,8 @@ export interface V1SendsRouteDeps {
    * premier « Relier », parfois des jours plus tard.
    */
   numerosDelies: { estDelie(phoneNumberId: string): Promise<boolean> };
+  /** Le numéro est-il suspendu (lot 4, l'abonnement du numéro fourni) ? La garde du point d'envoi. Requise aussi. */
+  numerosSuspendus: { estSuspendu(phoneNumberId: string): Promise<boolean> };
   /** La résolution de fiche partagée (`resoudreFiche`), liée à ses dépendances par le câblage. */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
   /**
@@ -478,6 +480,9 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
        */
       if (cible.ouverture !== 'rcs' && await deps.numerosDelies.estDelie(numero.phoneNumberId)) {
         return await libererEtRefuser({ statut: 409, code: 'number_unlinked', message: MESSAGE_NUMERO_DELIE });
+      }
+      if (cible.ouverture !== 'rcs' && await deps.numerosSuspendus.estSuspendu(numero.phoneNumberId)) {
+        return await libererEtRefuser({ statut: 409, code: 'number_suspended', message: MESSAGE_NUMERO_SUSPENDU });
       }
       const { resolus, created, matched } = await resoudreDestinataires(
         deps, tenantId, corps.recipients, cible.ouverture === 'whatsapp_session' ? 'jamais' : 'phone',

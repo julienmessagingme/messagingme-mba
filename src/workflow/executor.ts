@@ -167,14 +167,16 @@ export interface WorkflowExecutorDeps {
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /**
-   * Lève `NumeroDelieError` si le numéro WhatsApp de l'espace est délié ; ne fait rien sinon, y compris sans
-   * numéro (l'envoi dira alors pourquoi il ne part pas).
+   * Lève `NumeroDelieError` si le numéro WhatsApp de l'espace est délié, `NumeroSuspenduError` s'il est suspendu
+   * (lot 4) ; ne fait rien sinon, y compris sans numéro (l'envoi dira alors pourquoi il ne part pas).
    *
    * Elle précède la garde, qui vit au point de passage des envois (`MetaClientFactory.clientForTenant`) et ne
    * se pose qu'au moment de l'envoi WhatsApp : un scénario « e-mail, puis modèle » enverrait l'e-mail,
-   * buterait sur le modèle, et renverrait l'e-mail à la reprise. `runFrom` l'appelle donc avant tout effet,
-   * dès que le parcours contient un envoi WhatsApp (`envoieParWhatsApp`). Requise (no-op en `DRY_RUN`) ;
-   * fixtures : `numeroJamaisDelie`.
+   * buterait sur le modèle, et renverrait l'e-mail à la reprise. Chaque point qui applique des effets l'appelle
+   * donc avant `apply`, dès que la liste contient un envoi WhatsApp (`envoieParWhatsApp`) : le démarrage
+   * (`runFrom`) ET les trois reprises (`resume`, `advance`, `envoyerBlocDepuisAgent`), sans quoi le bail de
+   * 15 minutes ou le message suivant du contact rejouerait l'e-mail tant que dure une suspension (relecture du
+   * lot 4, `tests/numero-bloque-reprise.test.ts`). Requise (no-op en `DRY_RUN`) ; fixtures : `numeroJamaisDelie`.
    */
   verifierNumeroWhatsApp(tenantId: string): Promise<void>;
   /** Envoie un message hors template : interactif (texte + réponses rapides, ou un bouton de lien), image
@@ -818,6 +820,9 @@ export class WorkflowExecutor {
       }
     }
 
+    // Le numéro avant tout effet, comme au démarrage : l'exception remonte au balayage sans rien avoir fait, et le
+    // parcours reste dû (bail de 15 minutes) jusqu'au paiement ou au « Relier ».
+    if (envoieParWhatsApp(aExecuter, apresWalk)) await this.deps.verifierNumeroWhatsApp(tenantId);
     // `emitEvents` vrai : un réveil est unitaire (un contact, ici et maintenant), comme `advance`. Sinon
     // « attendre 1 jour puis poser le tag » ne déclencherait pas l'automation branchée sur ce tag.
     const { refus, partis, canal } = await this.apply(tenantId, waId, aExecuter, undefined, true, run.workflowId, apresWalk);
@@ -1329,6 +1334,7 @@ export class WorkflowExecutor {
     if (rest.status === 'waiting' && rest.timeoutInMs) {
       return { ok: false, raison: 'ce bloc attend une reponse avec un delai, non disponible depuis un outil' };
     }
+    if (envoieParWhatsApp(actions, canal)) await this.deps.verifierNumeroWhatsApp(tenantId);
     const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, false, run.workflowId, canal);
     if (partis === 0 && refus !== null) return { ok: false, raison: refus };
     return { ok: true };
@@ -1571,6 +1577,10 @@ export class WorkflowExecutor {
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
     const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id, run.channel ?? 'whatsapp', battement);
+    // Le numéro avant tout effet : l'exception sort sans rien écrire, le parcours reste sur son bloc, et le message
+    // suivant du contact (après le paiement ou le « Relier ») le fera avancer. Sans elle, chaque message rejouerait
+    // l'e-mail ou l'appel API placés avant l'envoi refusé.
+    if (envoieParWhatsApp(actions, apresWalk)) await this.deps.verifierNumeroWhatsApp(tenantId);
     // Un contact qui répond est unitaire par nature : ses tags publient.
     const { refus, partis, canal } = await this.apply(tenantId, waId, actions, undefined, true, run.workflowId, apresWalk, battement);
     // Même règle qu'au réveil : un envoi refusé n'attend aucune réponse. On clôt le run (en gardant

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-directives';
-import { MOTIFS_DE_PAUSE } from '../src/campaign/pause';
 
 /**
  * LA MIGRATION 0180 (le numéro délié) ET LE CODE PARLENT DES MÊMES MOTIFS DE PAUSE.
@@ -18,10 +17,10 @@ const instructions = decouperInstructions(SQL).map(sansCommentaires).map((i) => 
 const codes = (texte: string): string[] => [...texte.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]!);
 
 describe('migration 0180', () => {
-  it('🔴 le CHECK des motifs de pause porte EXACTEMENT les motifs du code', () => {
+  it('🔴 le CHECK des motifs de pause porte les motifs de son époque (la DERNIÈRE définition est tenue par tests/numero-suspendu.test.ts)', () => {
     const i = instructions.find((x) => x.includes('add constraint campaigns_pause_reason_check'));
     expect(i).toBeDefined();
-    expect(codes(i!).sort()).toEqual([...MOTIFS_DE_PAUSE].sort());
+    expect(codes(i!).sort()).toEqual(['debit', 'hors_horaires', 'numero_delie', 'qualite']);
   });
 
   it('🔴 elle RETIRE l’ancien CHECK sous le nom posé par 0122, juste avant de reposer le sien', () => {

@@ -58,6 +58,7 @@ function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
   const deps: RunTurnDeps = {
     estDesabonne: jamaisDesabonne,
     estRepondeur: async () => false,
+    numeroBloque: async () => false,
     sessions: {
       ...sessionsOk(),
       clore: async (_t: string, _id: string, status: string, sortie?: string) => { clotures.push({ status, ...(sortie ? { sortie } : {}) }); },
@@ -73,6 +74,27 @@ function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
   };
   return { deps, brain, envois, clotures, sorties, mesures, transcript };
 }
+
+describe('runTurn : le numéro bloqué (lot 4)', () => {
+  it('🔴 numéro suspendu ou délié : ni modèle, ni débit, ni envoi ; le tour se finit et le parcours attend', async () => {
+    const debits: number[] = [];
+    const { deps, brain, envois, clotures } = make({ numeroBloque: async () => true, debiterTenant: async (_t, m) => { debits.push(m); } });
+    const r = await runTurn(JOB, deps);
+    expect(r.fait).toBe('numero_bloque');
+    expect(r.repos?.status).toBe('waiting');
+    expect(brain.appels).toEqual([]);
+    expect(debits).toEqual([]);
+    expect(envois).toEqual([]);
+    // La session n'est pas close : au paiement, le prochain message du contact relance l'agent.
+    expect(clotures).toEqual([]);
+  });
+
+  it('numéro libre : le tour suit son cours', async () => {
+    const { deps, envois } = make({ numeroBloque: async () => false });
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
+    expect(envois).toEqual(['Bonjour']);
+  });
+});
 
 describe('runTurn : les gardes du tour (tâche 13a)', () => {
   it('🔴 REJEU : le verrou optimiste rend null -> ni cerveau, ni envoi', async () => {

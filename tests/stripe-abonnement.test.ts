@@ -51,6 +51,10 @@ describe('ouvrirAbonnement', () => {
     const console_ = deps();
     await ouvrirAbonnement(console_.d, T1, 'console', 'u1');
     expect(console_.transport.posts.at(-1)!.corps.get('success_url')).toBe('https://console.exemple/connecter-whatsapp?abonnement=recu');
+    // Lot 4 : un réabonnement demandé à Claude revient sur une page publique, sans session de console.
+    const claude = deps();
+    await ouvrirAbonnement(claude.d, T1, 'claude', 'u1');
+    expect(claude.transport.posts.at(-1)!.corps.get('success_url')).toBe('https://console.exemple/paiement-recu?abonnement=recu');
   });
 
   it('🔴 un prix qui n’est pas 3,50 € HT par mois, en euros : refusé, RIEN créé chez Stripe', async () => {

@@ -54,6 +54,7 @@ function fabrique(delies: ReadonlySet<string>, transport: Transport, resolutions
   return new MetaClientFactory({
     resolver, transport, version: 'v25.0', marketingViaLite: false,
     numerosDelies: { estDelie: async (pn) => delies.has(pn) },
+    numerosSuspendus: { estSuspendu: async () => false },
     // Aucun contact sur la liste de l'agent de Meta : ces tests ne portent pas sur elle, et le DISENT.
     listeDeLAgent: { retirerAvantUnModele: async () => {} },
   });

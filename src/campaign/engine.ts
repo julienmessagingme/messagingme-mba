@@ -7,7 +7,7 @@ import { messagingTarget } from '../meta/types';
 import type { OrigineMessage } from '../inbox/origine';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError, raisonDePause } from '../meta/errors';
-import { NumeroDelieError } from '../meta/numero-delie';
+import { NumeroBloqueError, type MotifBlocage } from '../meta/numero-delie';
 import { instantDeReprise, messageDePause } from './pause';
 import type { MotifDePause } from './pause';
 import { withinBusinessHours } from '../workflow/conditions';
@@ -242,7 +242,7 @@ export interface EngineDeps {
    * la campagne tourne encore. `true` = écrite. Cf. `arreterSurNumeroDelie`. Absente (faux de test) : la pause
    * est écrite par `setStatus`, sur la foi du refus.
    */
-  numerosDelies?: { pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string): Promise<boolean> };
+  numerosDelies?: { pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string, motif: MotifBlocage): Promise<boolean> };
 }
 
 /**
@@ -472,17 +472,18 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
    *
    * L'appelant a déjà rendu à la file le destinataire en vol, rien ne lui étant parti par WhatsApp.
    */
-  const arreterSurNumeroDelie = async (err: NumeroDelieError): Promise<RunReport> => {
+  // Même arrêt pour un numéro suspendu (lot 4) : la pause `numero_suspendu` est levée au paiement.
+  const arreterSurNumeroDelie = async (err: NumeroBloqueError): Promise<RunReport> => {
     if (deps.numerosDelies) {
-      if (!(await deps.numerosDelies.pauserCampagne(campaign.id, campaign.tenantId, err.phoneNumberId))) {
+      if (!(await deps.numerosDelies.pauserCampagne(campaign.id, campaign.tenantId, err.phoneNumberId, err.motif))) {
         report.reason = RAISON_NUMERO_RELIE_ENTRE_TEMPS;
         return report;
       }
     } else {
-      await deps.campaigns.setStatus(campaign.id, 'paused', { raison: 'numero_delie', reprise: null });
+      await deps.campaigns.setStatus(campaign.id, 'paused', { raison: err.motif, reprise: null });
     }
     report.paused = true;
-    report.reason = messageDePause('numero_delie', null, undefined);
+    report.reason = messageDePause(err.motif, null, undefined);
     return report;
   };
 
@@ -685,7 +686,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
      * Ce scénario a buté sur le numéro délié. Le destinataire reste `sent`, mais le run s'arrête après lui : les
      * suivants recevraient leur message sans jamais leur suite.
      */
-    let scenarioSurNumeroDelie: NumeroDelieError | null = null;
+    let scenarioSurNumeroDelie: NumeroBloqueError | null = null;
     try {
       if (servi.sender) {
         // Le jeton de ce destinataire, pour savoir qui a cliqué. Absent : lien tracé mais anonyme, jamais cassé.
@@ -719,7 +720,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
               }
             } catch (e) {
               scenarioNonDemarre = `Scénario non démarré : ${texteDe(e)}`;
-              if (e instanceof NumeroDelieError) scenarioSurNumeroDelie = e;
+              if (e instanceof NumeroBloqueError) scenarioSurNumeroDelie = e;
             }
           }
         }
@@ -767,7 +768,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       // Numéro délié, levé par un scénario démarré pour ce destinataire : le refus vise le numéro, et un `failed`
       // ne serait pas repris par « Relier ». On le rend à la file et on s'arrête (`runFrom` vérifie le numéro
       // avant tout effet ; limite : la garde est en cache 5 s).
-      if (err instanceof NumeroDelieError) {
+      if (err instanceof NumeroBloqueError) {
         await deps.recipients.relacher(r.id);
         return arreterSurNumeroDelie(err);
       }

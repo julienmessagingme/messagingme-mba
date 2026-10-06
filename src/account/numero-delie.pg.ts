@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
+import type { MotifBlocage } from '../meta/numero-delie';
 
 /**
  * Délier et relier le numéro d'un espace. Délier ne supprime rien et ne demande rien à Meta (numéro, compte et
@@ -87,7 +88,18 @@ export class PgNumeroDelieStore {
    * attend l'autre, et le perdant voit l'état à jour. Aucun interblocage (aucune ligne de `campaigns` tenue).
    * 🔴 `tenant_id = $2` sur les deux tables : un numéro d'un espace ne décide jamais pour un autre.
    */
-  async pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string): Promise<boolean> {
+  async pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string, motif: MotifBlocage): Promise<boolean> {
+    if (motif === 'numero_suspendu') {
+      // La suspension (lot 4) ne se relit pas en SQL (elle se calcule sur des dates) : la pause est écrite sur la foi
+      // de la garde, et une pause devenue fausse (paiement dans la fenêtre du cache) est levée par le balayage des
+      // abonnements, toutes les 15 minutes, ou par le paiement lui-même. Toujours sur une campagne qui tourne encore.
+      const res = await this.pool.query(
+        `update campaigns c set status = 'paused', pause_reason = 'numero_suspendu', paused_until = null
+          where c.id = $1 and c.tenant_id = $2 and c.status in ('running', 'scheduled')`,
+        [campaignId, tenantId],
+      );
+      return (res.rowCount ?? 0) > 0;
+    }
     const res = await this.pool.query(
       `update campaigns c set status = 'paused', pause_reason = 'numero_delie', paused_until = null
         where c.id = $1 and c.tenant_id = $2 and c.status in ('running', 'scheduled')
@@ -97,6 +109,47 @@ export class PgNumeroDelieStore {
       [campaignId, tenantId, phoneNumberId],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Lève les pauses `numero_suspendu` de l'espace (lot 4) : son abonnement est payé de nouveau. Même reprise que
+   * `relier` (une campagne programmée redevient `scheduled`, les autres `running`, relancées par le balayage des
+   * campagnes gelées) ; seules ces pauses-là sont levées. Rend le nombre de campagnes reprises.
+   */
+  async leverPausesSuspension(tenantId: string): Promise<number> {
+    const c = await this.pool.query(
+      `update campaigns c
+          set status = case when c.scheduled_at is not null then 'scheduled' else 'running' end,
+              pause_reason = null, paused_until = null
+        where c.tenant_id = $1 and c.status = 'paused' and c.pause_reason = 'numero_suspendu'`,
+      [tenantId],
+    );
+    return c.rowCount ?? 0;
+  }
+
+  /**
+   * L'espace d'un numéro d'envoi et ses chiffres (lot 4, la lecture de la suspension) : `display_phone_number` porte
+   * le « + » et des espaces (« +44 1259 797311 »), le numéro fourni est en chiffres seuls. Inconnu : `null`.
+   */
+  async telephone(phoneNumberId: string): Promise<{ tenantId: string; chiffres: string } | null> {
+    const res = await this.pool.query<{ tenant_id: string; chiffres: string }>(
+      `select tenant_id, regexp_replace(coalesce(display_phone_number, ''), '[^0-9]', '', 'g') as chiffres
+         from phone_numbers where id = $1`,
+      [phoneNumberId],
+    );
+    const l = res.rows[0];
+    return l ? { tenantId: l.tenant_id, chiffres: l.chiffres } : null;
+  }
+
+  /**
+   * Les espaces qui ont une campagne en pause `numero_suspendu` (lot 4), pour le balayage qui lève celles d'un espace
+   * qui n'est plus suspendu. Toute la table, délibérément : c'est le worker qui la demande.
+   */
+  async espacesEnPauseSuspension(): Promise<string[]> {
+    const res = await this.pool.query<{ tenant_id: string }>(
+      `select distinct tenant_id from campaigns where status = 'paused' and pause_reason = 'numero_suspendu'`,
+    );
+    return res.rows.map((r) => r.tenant_id);
   }
 
   /** Le numéro est-il délié ? Lecture par clé primaire. Numéro inconnu : `false`. */

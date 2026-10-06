@@ -29,7 +29,7 @@ function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; c
     abonnements: {
       deLEspace: async (t: string) => {
         lus.push(`abonnement:${t}`);
-        return o.abonnement ? { abonnementId: 'sub_1', tenantId: t, livemode: false, statut: o.abonnement, periodeFin: new Date('2026-11-06T09:00:00Z') } : null;
+        return o.abonnement ? { abonnementId: 'sub_1', tenantId: t, livemode: false, statut: o.abonnement, periodeFin: new Date('2026-11-06T09:00:00Z'), premierEchecLe: null, finPrevueLe: null, finiLe: null, libereLe: null } : null;
       },
     },
   };

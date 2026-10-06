@@ -12,7 +12,7 @@ import { OUTILS } from '../src/mcp/outils';
 import * as catalogue from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
-import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
+import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
 import { mcpAgentInerte, mcpNumeroInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 
@@ -130,6 +130,35 @@ function contenu(res: { json: <T>() => T }): { texte: string; isError: boolean }
   const b = res.json<{ result?: { content?: Array<{ text: string }>; isError?: boolean } }>();
   return { texte: b.result?.content?.[0]?.text ?? '', isError: b.result?.isError === true };
 }
+
+describe('serveur MCP : le rappel de l’abonnement du numéro (lot 4)', () => {
+  const suspendu = {
+    abonnementId: 'sub_1', etat: 'suspendu' as const, finPrevueLe: null, coupureLe: null,
+    finiLe: new Date('2026-10-06T15:14:51Z'), liberationLe: new Date('2026-10-13T15:14:51Z'),
+  };
+  const avecAbonnement = (lire: () => Promise<typeof suspendu | null>) => ({ numero: { ...mcpNumeroInerte.numero, abonnement: lire } });
+
+  it('🔴 suspendu : chaque réponse d’outil porte le rappel, en second bloc, refus compris', async () => {
+    const { server } = app(avecAbonnement(async () => suspendu));
+    const ok = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_conversations') });
+    const blocs = ok.json<{ result: { content: Array<{ text: string }> } }>().result.content;
+    expect(blocs).toHaveLength(2);
+    expect(blocs[1]!.text).toMatch(/resubscribe_number/);
+    const refus = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('get_conversation', { conversation_id: 'cv-jamais-vue' }) });
+    expect(refus.json<{ result: { content: Array<{ text: string }> } }>().result.content.at(-1)!.text).toMatch(/resubscribe_number/);
+    await server.close();
+  });
+
+  it('actif ou sans abonnement : aucun rappel ; une lecture qui échoue n’empêche pas l’outil', async () => {
+    for (const lire of [async () => null, async () => { throw new Error('pooler injoignable'); }]) {
+      const { server } = app(avecAbonnement(lire as () => Promise<null>));
+      const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_conversations') });
+      expect(res.json<{ result: { content: unknown[]; isError: boolean } }>().result).toMatchObject({ isError: false });
+      expect(res.json<{ result: { content: unknown[] } }>().result.content).toHaveLength(1);
+      await server.close();
+    }
+  });
+});
 
 describe('serveur MCP : autorisation', () => {
   it('sans clé -> 401 ; clé inconnue -> 401', async () => {
@@ -365,6 +394,15 @@ describe('serveur MCP : les outils', () => {
     await server.close();
   });
 
+  it('🔴 numéro suspendu (lot 4) : un RÉSULTAT `isError` avec la phrase de la suspension', async () => {
+    const { server } = app({ sendReply: async (_t, pn) => { throw new NumeroSuspenduError(pn); } });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'coucou' }) });
+    const c = contenu(res);
+    expect(c.isError).toBe(true);
+    expect(c.texte).toBe(MESSAGE_NUMERO_SUSPENDU);
+    await server.close();
+  });
+
   it('un texte vide est refusé avant tout appel Meta', async () => {
     const { server, traces } = app();
     const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: '   ' }) });
@@ -572,6 +610,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       watch_whatsapp_connection: [false, true, false],
       // L'abonnement du numéro (lot 3c, livraison B) : une session du portail est créée chez Stripe à chaque appel.
       manage_number_subscription: [false, false, true],
+      // Lot 4 : une session de Stripe de plus à chaque appel, comme le portail.
+      resubscribe_number: [false, false, true],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
     const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);

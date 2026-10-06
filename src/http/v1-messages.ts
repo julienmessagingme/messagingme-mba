@@ -5,7 +5,7 @@ import { repondreDansLaFenetre, type DepsRepondre } from '../inbox/repondre';
 import { TEXTE_MAX_CARACTERES } from '../traduction/traduire';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { STATUT_PAR_CODE, refuser } from '../api/erreurs';
-import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
+import { NumeroBloqueError } from '../meta/numero-delie';
 import { MESSAGE_RESOLUTION, normaliserCles, schemaClesFiche, type ClesFiche, type ModeCreation, type ResolutionFiche } from '../api/fiche';
 import { messageDeForme } from '../api/forme';
 import type { FilDuContact } from '../inbox/store.pg';
@@ -114,7 +114,9 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
     try {
       res = await repondreDansLaFenetre(deps.repondre, tenantId, conversationId, text, null, 'api');
     } catch (err) {
-      if (err instanceof NumeroDelieError) return refuser(reply, 409, 'number_unlinked', MESSAGE_NUMERO_DELIE);
+      if (err instanceof NumeroBloqueError) {
+        return refuser(reply, 409, err.motif === 'numero_delie' ? 'number_unlinked' : 'number_suspended', err.message);
+      }
       throw err;
     }
     if (!('refus' in res)) return reply.code(200).send({ messageId: res.messageId, conversationId, channel: 'whatsapp' } satisfies ReponseMessageSimple);

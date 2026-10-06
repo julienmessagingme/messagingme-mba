@@ -6,7 +6,7 @@ import { creerControleDuFil } from '../src/inbox/fil';
 import { creerListeDeLAgent } from '../src/mba/liste';
 import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
 import { aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
-import { aucunStop, jamaisBloque, jamaisDesabonne } from './consentement';
+import { aucunStop, jamaisBloque, jamaisDesabonne, numeroJamaisBloque } from './consentement';
 
 /**
  * Qui détient le fil d'une conversation, et comment on l'apprend.
@@ -172,7 +172,7 @@ function monterBouton(o: {
     repondeur: aucunRepondeur,
     delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
     parcours: { findWaitingByWaId: async () => null },
-    numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? '1234840649713976' : o.numero) },
+    numeros: { getTenantPhoneNumberId: async () => (o.numero === undefined ? '1234840649713976' : o.numero) , numeroBloque: numeroJamaisBloque },
     liste,
     consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
     meta: { mbaClientForTenant: async () => { clientDemande = true; return client; } },

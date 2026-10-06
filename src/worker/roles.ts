@@ -72,6 +72,7 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'analyse-conversations': 'analyse',
   'hubspot-rattrapage': 'analyse',
   // Tout le reste : le produit, ses reprises, ses purges, son exploitation.
+  'abonnements-numero': 'principal',
   'agregats-analyse': 'principal',
   'retention-conversations': 'principal',
   'auto-relance-echecs': 'principal',

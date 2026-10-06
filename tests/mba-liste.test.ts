@@ -8,7 +8,7 @@ import { creerControleDuFil } from '../src/inbox/fil';
 import { MetaApiError, classify, estPlafondNumero } from '../src/meta/errors';
 import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-directives';
 import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, depotEnMemoire, listeEnMemoire } from './banc-du-fil';
-import { jamaisBloque, jamaisDesabonne } from './consentement';
+import { jamaisBloque, jamaisDesabonne, numeroJamaisBloque } from './consentement';
 
 /**
  * LA LISTE DE L'AGENT DE META, TENUE PAR LA PLATEFORME (`src/mba/liste.ts`, migration 0195).
@@ -314,7 +314,7 @@ describe('confier et reprendre, dans l’ordre (`src/inbox/fil.ts` sur `src/mba/
       repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },
-      numeros: { getTenantPhoneNumberId: async () => PN },
+      numeros: { getTenantPhoneNumberId: async () => PN , numeroBloque: numeroJamaisBloque },
       liste,
       consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
       meta: { mbaClientForTenant: async () => client },

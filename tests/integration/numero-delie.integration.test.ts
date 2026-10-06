@@ -139,21 +139,21 @@ describe.skipIf(!url)('Numéro délié (Postgres réel)', () => {
     const chezLAutre = await campagne(autre, { status: 'running' });
 
     // Numéro RELIÉ en base (la garde du run, en cache, disait encore « délié ») : rien n'est écrit.
-    expect(await store.pauserCampagne(enCours, tenant, PN)).toBe(false);
+    expect(await store.pauserCampagne(enCours, tenant, PN, 'numero_delie')).toBe(false);
     expect((await etat(enCours)).status).toBe('running');
 
     // Numéro délié, SANS toucher aux campagnes : c'est l'état que voit un run lancé juste après « Délier ».
     await pool.query(`update phone_numbers set delie_le = now() where id = $1`, [PN]);
-    expect(await store.pauserCampagne(enCours, tenant, PN)).toBe(true);
+    expect(await store.pauserCampagne(enCours, tenant, PN, 'numero_delie')).toBe(true);
     expect(await etat(enCours)).toMatchObject({ status: 'paused', pause_reason: 'numero_delie', paused_until: null });
 
     // La pause d'un opérateur garde SA raison : « Relier » ne la relancera pas.
-    expect(await store.pauserCampagne(pauseOperateur, tenant, PN)).toBe(false);
+    expect(await store.pauserCampagne(pauseOperateur, tenant, PN, 'numero_delie')).toBe(false);
     expect(await etat(pauseOperateur)).toMatchObject({ status: 'paused', pause_reason: null });
 
     // 🔴 L'isolation, dans les deux sens : la campagne d'un autre espace, ou le numéro d'un autre espace.
-    expect(await store.pauserCampagne(chezLAutre, tenant, PN)).toBe(false);
-    expect(await store.pauserCampagne(chezLAutre, autre, PN)).toBe(false);
+    expect(await store.pauserCampagne(chezLAutre, tenant, PN, 'numero_delie')).toBe(false);
+    expect(await store.pauserCampagne(chezLAutre, autre, PN, 'numero_delie')).toBe(false);
     expect((await etat(chezLAutre)).status).toBe('running');
 
     // « Relier » lève la pause écrite par le run, comme celle de « Délier ».
@@ -170,7 +170,7 @@ describe.skipIf(!url)('Numéro délié (Postgres réel)', () => {
       await client.query('begin');
       // La première écriture de `relier`, validée plus tard : elle tient la ligne du numéro.
       await client.query(`update phone_numbers set delie_le = null where tenant_id = $1`, [tenant]);
-      const pause = store.pauserCampagne(enCours, tenant, PN);
+      const pause = store.pauserCampagne(enCours, tenant, PN, 'numero_delie');
       const tot = await Promise.race([pause.then(() => 'fini'), new Promise<string>((r) => { setTimeout(() => r('attend'), 500); })]);
       expect(tot, 'la pause n’a pas attendu la fin de « Relier » : elle a lu l’ancien état').toBe('attend');
       await client.query('commit');
@@ -194,6 +194,36 @@ describe.skipIf(!url)('Numéro délié (Postgres réel)', () => {
     await store.relier(autre);
     expect((await store.numerosDelies([PN_AUTRE])).size).toBe(0);
     await pool.query(`update campaigns set status = 'completed' where tenant_id = $1`, [autre]);
+  });
+
+  it('🔴 lot 4 : la pause `numero_suspendu` sur une campagne qui tourne, levée au paiement ; rien d’autre ne bouge', async () => {
+    const enCours = await campagne(tenant, { status: 'running' });
+    const programmee = await campagne(tenant, { status: 'scheduled', scheduledAt: '2030-01-01T09:00:00Z' });
+    const pauseOperateur = await campagne(tenant, { status: 'paused' });
+    const deliee = await campagne(tenant, { status: 'paused', pauseReason: 'numero_delie' });
+    const chezLAutre = await campagne(autre, { status: 'running' });
+    expect(await store.pauserCampagne(enCours, tenant, PN, 'numero_suspendu')).toBe(true);
+    expect(await store.pauserCampagne(programmee, tenant, PN, 'numero_suspendu')).toBe(true);
+    expect(await etat(enCours)).toMatchObject({ status: 'paused', pause_reason: 'numero_suspendu', paused_until: null });
+    expect(await store.espacesEnPauseSuspension()).toContain(tenant);
+    expect(await store.espacesEnPauseSuspension()).not.toContain(autre);
+    // La pause d'un opérateur garde sa raison ; une campagne d'un autre espace n'est jamais touchée.
+    expect(await store.pauserCampagne(pauseOperateur, tenant, PN, 'numero_suspendu')).toBe(false);
+    expect(await store.pauserCampagne(chezLAutre, tenant, PN, 'numero_suspendu')).toBe(false);
+    expect((await etat(chezLAutre)).status).toBe('running');
+    // Le paiement : seules les pauses `numero_suspendu` de CET espace sont levées, au bon état.
+    expect(await store.leverPausesSuspension(tenant)).toBe(2);
+    expect(await etat(enCours)).toMatchObject({ status: 'running', pause_reason: null });
+    expect(await etat(programmee)).toMatchObject({ status: 'scheduled', pause_reason: null });
+    expect(await etat(pauseOperateur)).toMatchObject({ status: 'paused', pause_reason: null });
+    expect(await etat(deliee)).toMatchObject({ status: 'paused', pause_reason: 'numero_delie' });
+    expect(await store.leverPausesSuspension(autre)).toBe(0);
+    await pool.query(`update campaigns set status = 'completed' where tenant_id = any($1::uuid[])`, [[tenant, autre]]);
+  });
+
+  it('lot 4 : le numéro d’envoi, son espace et ses chiffres sans « + » ni espaces ; inconnu, `null`', async () => {
+    expect(await store.telephone(PN)).toEqual({ tenantId: tenant, chiffres: '33500000077' });
+    expect(await store.telephone('pn-inconnu')).toBeNull();
   });
 
   it('🔴 débrancher la chaîne oublie les identifiants de CET espace seulement', async () => {

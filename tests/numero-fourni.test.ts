@@ -95,7 +95,7 @@ function monter(o: {
     },
     seuilReserve: 3,
     abonnements: {
-      deLEspace: async (tenantId) => (statut === null ? null : { abonnementId: 'sub_1', tenantId, livemode: false, statut, periodeFin: null }),
+      deLEspace: async (tenantId) => (statut === null ? null : { abonnementId: 'sub_1', tenantId, livemode: false, statut, periodeFin: null, premierEchecLe: null, finPrevueLe: null, finiLe: null, libereLe: null }),
       enAttenteDeNumero: async () => [...(o.attente ?? [])],
     },
     abonnement: {
@@ -410,5 +410,24 @@ describe('les jaunes de la relecture de la livraison B (lot 3c)', () => {
     expect((await rien.server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' })).json()).toEqual({ rendu: false });
     expect(rien.cap.servis).toEqual([]);
     await rien.server.close();
+  });
+});
+
+describe('le lot 4 : se réabonner au MÊME numéro', () => {
+  it('🔴 le numéro connecté EST le numéro fourni, abonnement fini : le paiement s’ouvre, sans regarder la réserve', async () => {
+    const { server, cap } = monter({ abonnement: 'resilie', attribue: '441259797311', connecte: '441259797311', reserve: [], libresApres: 0 });
+    const res = await server.inject({ method: 'POST', url: `${URL}/abonnement`, ...h(adminTok), payload: { retour: 'console' } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.ouvertures).toEqual([{ tenantId: 't1', retour: 'console', payeur: 'u1' }]);
+    await server.close();
+  });
+
+  it('🔴 un numéro APPORTÉ connecté : toujours refusé, rien n’est ouvert chez Stripe', async () => {
+    const { server, cap } = monter({ abonnement: 'resilie', attribue: '441259797311', connecte: '33525680250' });
+    const res = await server.inject({ method: 'POST', url: `${URL}/abonnement`, ...h(adminTok), payload: { retour: 'console' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ cause: 'deja_un_numero' });
+    expect(cap.ouvertures).toEqual([]);
+    await server.close();
   });
 });

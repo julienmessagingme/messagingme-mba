@@ -1885,6 +1885,15 @@ scénario, comment importer des contacts.
   Éprouvé de bout en bout sur un espace créé depuis Claude Code : le numéro attribué, le code de Meta capté par l'appel
   et affiché sur la page, le numéro connecté et vérifié chez Meta, 1 € de crédit offert. ⚠️ La réserve ne compte
   qu'autant de numéros que Julien en a achetés : vide, la page le dit et Julien reçoit une alerte Telegram.
+  **Quand l'abonnement tombe** (lot 4, livraison A) : un renouvellement qui échoue laisse 7 jours pour régler, et un
+  bandeau sur toutes les pages de la console donne la date de la coupure ; passé ce délai, ou dès qu'un abonnement
+  résilié prend fin, les envois du numéro sont coupés (Inbox, campagnes, scénarios, agents, API), les campagnes en
+  cours se mettent en pause et reprennent d'elles-mêmes au paiement, et l'agent IA ne répond plus (aucun crédit
+  n'est débité). Le bandeau le dit, avec la date de libération du numéro quand l'abonnement est fini ; un admin a le
+  geste (« Régler » ouvre le portail de Stripe, « Se réabonner » un nouveau paiement qui rend le MÊME numéro, sans
+  refaire la fenêtre de Meta), un membre est invité à prévenir un admin. Une résiliation programmée dans le portail
+  s'affiche aussi, en bandeau discret avec sa date. Julien reçoit une alerte Telegram par suspension. Rien ne
+  change chez Meta : si l'agent de Meta est allumé, il continue de répondre.
 - ✅ **Recommencer l'embarquement fonctionne** (2026-08-17) : si un client relance la connexion après un premier
   essai déjà abouti côté Meta, ça marche quand même. Avant, il était bloqué sans recours, avec un message qui
   l'invitait à réessayer alors que réessayer ne pouvait rien changer. Il n'a rien à ressaisir et pas de nouvel
@@ -3882,7 +3891,11 @@ ou apporté) et `watch_whatsapp_connection`, invisibles derrière une clé d'API
 activé n'est pas annoncé « connecté » : Claude dit qu'il reste à finir la vérification. Livraison B (l'abonnement à
 3,50 € HT par mois) : la page du lien porte le paiement, l'attente annonce le paiement confirmé, et deux outils de plus,
 `get_number_subscription` (le statut et la prochaine échéance) et `manage_number_subscription` (le portail de Stripe :
-carte, factures, résiliation). ⚠️ Révoquer l'accès de Claude
+carte, factures, résiliation). Lot 4 (livraison A) : `get_number_subscription` dit aussi l'état (en retard, suspendu,
+fin prévue) et ses dates (coupure, fin, libération) ; tant que l'abonnement est en retard ou suspendu, CHAQUE réponse
+d'outil porte un rappel que Claude relaie, et `resubscribe_number` remet l'abonnement d'aplomb (un nouveau paiement qui
+rend le même numéro s'il est fini, le portail de Stripe s'il est impayé ou si sa fin est programmée) ; Stripe renvoie
+ensuite sur une page publique qui invite à retourner dans Claude. ⚠️ Révoquer l'accès de Claude
 (« Applications autorisées ») ne coupe pas un lien déjà donné : il sert jusqu'à son heure, ou jusqu'à la connexion du
 numéro.
 

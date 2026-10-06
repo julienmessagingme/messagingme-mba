@@ -101,6 +101,8 @@ import { registreDeTaches } from './worker/taches';
 import { fileDuRole, minuterieDuRole, nomDuProcessus, superviseLesFiles, tachesDuRole } from './worker/roles';
 import { tenter } from './lib/tenter';
 import { messageDe, texteDe } from './lib/erreur';
+import { balayerAbonnements } from './numero/balayage-abonnements';
+import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
 
 async function main(): Promise<void> {
   // Le worker est la seule instance qui dépile, et son rôle principal la seule qui supervise : c'est lui qui récupère les
@@ -170,7 +172,7 @@ async function main(): Promise<void> {
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
-    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit,
+    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace,
   } = construireSocle({ pool, queue, config });
   // Les appels captés par le pont du code (lot 3a) : le worker ne fait que les purger (balayage de rétention).
   const numerosFournisStore = new PgNumerosFournisStore(pool);
@@ -957,6 +959,23 @@ async function main(): Promise<void> {
   };
   taches.programmer('campagnes-gelees', 60_000, repriseSweep, { immediat: true, enEchec: echecDeBalayage('reprise', 'sweeper:reprise', 'balayage de reprise des campagnes') });
 
+  /**
+   * Les abonnements du numéro fourni (lot 4) : l'alerte de suspension à Julien, une fois par abonnement, et la levée
+   * des pauses `numero_suspendu` d'un espace payé entre-temps. L'état se calcule sur des dates : ce balayage ne fait
+   * que les gestes (`src/numero/balayage-abonnements.ts`).
+   */
+  const abonnementsDuNumero = new PgAbonnementsNumeroStore(pool);
+  taches.programmer('abonnements-numero', 15 * 60_000, () => balayerAbonnements({
+    aSurveiller: () => abonnementsDuNumero.aSurveiller(),
+    etat: (t) => abonnementsDuNumero.etatDeLEspace(t),
+    noterAvis: (abonnementId, avis) => abonnementsDuNumero.noterAvis(abonnementId, avis),
+    // Pas `alert`, limitée à une par clé et par cinq minutes : deux suspensions rapprochées en perdraient une. Le
+    // dédoublonnage est la table des avis.
+    alerter: async (texte) => { await sendTelegram(`[mba-${nomDuProcessus(config.WORKER_ROLE)}] ${texte}`); },
+    espacesEnPauseSuspension: () => numeroDelieStore.espacesEnPauseSuspension(),
+    leverPausesSuspension: (t) => numeroDelieStore.leverPausesSuspension(t),
+  }), { immediat: true, enEchec: echecDeBalayage('abonnements-numero', 'sweeper:abonnements-numero', 'balayage des abonnements du numéro') });
+
   // Balayage de réveil des parcours endormis sur un bloc Attente arrivé à échéance. La granularité du délai
   // vaut cet intervalle (une attente de 5 min repart entre 5 et 6 min, ce que l'UI annonce comme « environ »).
   // La garde de ré-entrance du registre évite qu'une passe lente voie la suivante re-réclamer des runs dont
@@ -1648,6 +1667,8 @@ async function main(): Promise<void> {
        * de scénario, sur le même dépôt : deux lectures du même fait finiraient par diverger.
        */
       estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
+      // 🔴 Lot 4 : un numéro délié ou suspendu ne paie pas un tour dont la réponse ne partirait pas.
+      numeroBloque: numeroBloqueDeLEspace,
       envoyer: (t, waId, texte) => envoyerTexteAgent(t, waId, texte),
       mesures: nodeEventStore,
       sortir: async ({ tenantId, waId, sessionId, sortie }) => {

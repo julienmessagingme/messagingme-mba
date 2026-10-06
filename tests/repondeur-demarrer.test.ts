@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { jamaisDesabonne } from './consentement';
+import { jamaisDesabonne, numeroJamaisBloque } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { bancDuFil, ESPACE, type OptionsBanc } from './banc-du-fil';
 import { entrantsDe } from './webhook-fixtures';
@@ -458,7 +458,7 @@ describe('🔴 de bout en bout : un espace sans scénario, l’agent IA répond'
       lireRun: async (_t, id) => { const l = m.mo.lignes.find((x) => x.id === id); return l ? { status: l.status, currentNode: l.currentNode } : null; },
       agents: { byId: async () => fiche },
       mayAct: m.b.fil.peutAgir,
-      estDesabonne: jamaisDesabonne,
+      estDesabonne: jamaisDesabonne, numeroBloque: numeroJamaisBloque,
       estRepondeur: async () => true,
       envoyer: async (_t, _w, texte) => { envois.push(texte); },
     };

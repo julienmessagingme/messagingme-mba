@@ -58,6 +58,7 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
   numerosDelies: {
     estDelie: async () => false,
   },
+  numerosSuspendus: { estSuspendu: async () => false },
   resoudreFiche: async () => ({ ok: false, code: 'unknown_contact' }),
   appliquerConsentement: async () => 'inchange',
   enqueue: async () => { /* rien */ },

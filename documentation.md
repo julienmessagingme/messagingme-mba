@@ -2578,7 +2578,7 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   personne n'attend (les libres sont dus d'abord aux abonnés en attente, `enAttenteDeNumero`) ; `POST .../numero-fourni`
   n'attribue plus sans abonnement vivant (`actif` ou `en_retard`), sauf un numéro déjà attribué. Le webhook
   (`checkout.session.completed` en mode abonnement, `invoice.paid`, `invoice.payment_failed`,
-  `customer.subscription.deleted`) appelle `enregistrer`, qui écrit l'abonnement ET attribue le numéro dans la même
+  `customer.subscription.updated`, `customer.subscription.deleted`) appelle `enregistrer`, qui écrit l'abonnement ET attribue le numéro dans la même
   transaction ; l'ordre d'arrivée ne change pas l'état final (une facture payée arrivée d'abord enregistre depuis
   `parent.subscription_details.metadata`), `resilie` est terminal, la fin de période ne recule jamais. Un second
   abonnement vivant pour un espace (deux onglets) échoue sur `abonnements_numero_un_par_espace` et prévient Julien.
@@ -2588,8 +2588,29 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   Payé sans numéro (réserve vidée entre-temps) : Julien est prévenu, et le prochain numéro déclaré dans /ops, ou rendu
   par « Abandonner » d'un autre espace, revient à l'abonné le plus ancien. Le portail client de Stripe (carte,
   factures, résiliation) s'ouvre depuis la console par `POST .../numero-fourni/portail`, à la session d'admin SEULE :
-  le lien de Claude Code ne l'ouvre pas (`tests/scope-tenant.test.ts`), Claude a `manage_number_subscription`. Rien
-  n'est coupé sur le statut avant le lot 4.
+  le lien de Claude Code ne l'ouvre pas (`tests/scope-tenant.test.ts`), Claude a `manage_number_subscription`.
+  🔴 **L'état de l'abonnement se CALCULE sur des dates, aucun balayage ne l'écrit** (lot 4, migration 0215,
+  `src/stripe/etat-abonnement.ts`). Le webhook pose trois dates sur `abonnements_numero` : `premier_echec_le` au
+  premier passage en `en_retard` (gardé par `coalesce`, effacé au retour en `actif`), `fini_le` au passage en
+  `resilie`, et `fin_prevue_le` depuis `customer.subscription.updated` (`cancel_at`, sinon la plus lointaine
+  `items.data[].current_period_end` quand `cancel_at_period_end` ; l'API `2025-11-17.clover` n'a plus la fin de
+  période à la racine). 🔴 Stripe ne garantit pas l'ordre des événements : un échec dont la facture couvre une
+  période DÉJÀ payée (`periode_fin` au moins égale à la fin de ses lignes) est un rejeu arrivé après le paiement, et
+  `majStatut` ne l'écrit pas ; sans quoi un client qui a payé serait coupé sept jours plus tard. `etatAbonnement` en déduit `libere` (`libere_le`, livraison B), `suspendu` (fini, ou impayé
+  depuis `DELAI_COUPURE_IMPAYE_MS`, 7 jours), `en_retard`, `fin_prevue` ou `actif` ; un abonnement fini dont
+  aucun numéro n'est attribué est `libere`. La date de libération vaut `fini_le` plus `DELAI_LIBERATION_MS`
+  (7 jours). Une seule lecture fait foi pour la console, le MCP et la garde d'envoi : `etatDeLEspace(tenantId)`.
+  `GET /tenants/:tenantId/abonnement-numero` (tout membre, `src/http/abonnement-numero.ts`) la rend pour le bandeau
+  de la console (`web/components/BandeauAbonnement.tsx`, dans `AppShell`, aucun bandeau si la route manque). Côté
+  MCP, `rappelDeLAbonnement` ajoute un second bloc de texte à CHAQUE réponse d'outil, refus compris, tant que
+  l'espace est en retard ou suspendu ; `resubscribe_number` ouvre un nouveau paiement (retour `claude`, page
+  publique `/paiement-recu`) quand l'abonnement est fini, le portail quand il est impayé ou que sa fin est
+  programmée, et refuse sinon. Le paiement d'un espace qui a déjà son
+  numéro n'est permis que si ce numéro est CELUI qu'on lui avait fourni (`memeNumero`, mêmes chiffres) : c'est le
+  réabonnement, qui rend le même numéro sans la fenêtre de Meta. Le balayage `abonnements-numero` (rôle
+  `principal`, toutes les 15 minutes et au démarrage, `src/numero/balayage-abonnements.ts`) ne décide de rien : il
+  envoie l'alerte Telegram de suspension une fois par abonnement (`abonnements_numero_avis`, clé `(abonnement,
+  avis)`) et lève les pauses `numero_suspendu` des espaces qui ne sont plus suspendus.
   ⚠️ Ces attentes de 25 s entrent dans `http_latences` sous la route `/mcp`, avec les autres outils : un p95 de `/mcp`
   qui grimpe sur /ops ne dit pas une régression tant qu'on ne l'a pas lu par outil.
 - 🔴 **Le crédit offert dépend de l'origine de l'espace** (`tenants.origine`, migration 0212) : `claude_code` quand
@@ -2967,10 +2988,12 @@ Ajouté par le lot 4 de l'API publique :
    chaque minute et rejouerait ce que le parcours a fait avant l'envoi refusé.
    `POST /v1/messages/whatsapp` rend ce refus en 409 `number_unlinked` dans l'enveloppe `{ error, code }` ;
    `POST /v1/sends` refuse avant de créer l'envoi, en 409 `number_unlinked`, quand le premier envoi est WhatsApp ; le
-   MCP le traduit en `RefusOutil` ; les routes de la console le rendent en 409 `{ error }`. Un parcours qui démarre
-   (`runFrom`) vérifie le numéro avant tout effet dès qu'il enverra par WhatsApp (`verifierNumeroWhatsApp`,
-   `envoieParWhatsApp`, câblé sur `MetaClientFactory.verifierNumero`) : l'e-mail et l'appel API qui précèdent ne
-   partent pas et ne se rejouent pas. Limite : le cache de 5 s.
+   MCP le traduit en `RefusOutil` ; les routes de la console le rendent en 409 `{ error }`. Un parcours vérifie le
+   numéro avant tout effet dès qu'il enverra par WhatsApp (`verifierNumeroWhatsApp`, `envoieParWhatsApp`, câblé sur
+   `MetaClientFactory.verifierNumero`), au démarrage (`runFrom`) comme à chaque reprise (`resume`, `advance`,
+   `envoyerBlocDepuisAgent`) : l'e-mail et l'appel API qui précèdent ne partent pas et ne se rejouent pas. Sans la
+   garde des reprises, le bail de 15 minutes d'un réveil (ou chaque message du contact) rejouait ces effets tant que
+   le numéro restait bloqué (`tests/numero-bloque-reprise.test.ts`). Limite : le cache de 5 s.
 39. **Délier met en pause `numero_delie` les campagnes `running` et `scheduled` de l'espace dont un étage est
    WhatsApp** (repli compris), `paused_until` à nul, `scheduled_at` gardé. Le balayage de reprise ne les voit
    jamais (motif hors du `where` de `reprendreCampagnesDues` et du prédicat de `campaigns_reprise_idx`, tenu par
@@ -3025,6 +3048,20 @@ Ajouté par le lot 4 de l'API publique :
    `{ kind: 'tenant', id }`, détail VIDE : un nom d'espace peut être celui d'une personne
    (« Espace de <nom complet> » à l'inscription Google), et `audit_log` est gardé deux ans. La carte « Espace » de Compte & équipe traduit le 404 d'une API pas encore déployée par un
    message au lieu d'une panne.
+42. **Un numéro fourni dont l'abonnement est SUSPENDU n'envoie rien, au même point que le délié** (lot 4,
+   `MetaClientFactory.verifierNumero`). La garde lit d'abord le délié, puis la suspension (le délié prime), et lève
+   `NumeroDelieError` ou `NumeroSuspenduError`, deux filles de `NumeroBloqueError` (`motif`, `statusCode = 409`) :
+   chaque appelant attrape la mère, et la route publique rend `number_unlinked` ou `number_suspended` selon le
+   motif (`POST /v1/messages/whatsapp`, et `POST /v1/sends` avant de créer l'envoi). La suspension ne vise que le
+   numéro FOURNI : `creerLectureSuspension` exige que le numéro connecté ait les chiffres du numéro attribué, sans
+   quoi un numéro apporté par le client n'est jamais coupé par notre abonnement. Cache de 5 s par process
+   (`creerGardeNumeroSuspendu`), REQUIS dans `MetaClientFactoryOpts` (`numerosSuspendus`). Les campagnes se mettent
+   en pause `numero_suspendu` (sans relecture en base, contrairement au délié) ; le webhook la lève au paiement
+   (`leverPausesSuspension`), et le balayage la lève aussi, ce qui rattrape une pause reposée par une copie dont le
+   cache disait encore « suspendu » juste après le paiement (au pire 15 minutes). Le tour d'un agent IA lit
+   `numeroBloque` AVANT le modèle : rien n'est débité, la session reste ouverte. La remise d'un fil que personne ne
+   suit le laisse à l'équipe, comme sans numéro. Un fil déjà tenu par l'agent de Meta lui reste : rien ne change
+   chez Meta.
 
 ### Sur les contrats externes
 

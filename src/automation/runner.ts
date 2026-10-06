@@ -3,7 +3,7 @@ import type { EvalContext } from '../workflow/conditions';
 import { matchesTrigger, isInCooldown, typeDeLancementDe, antiRebondParDefaut } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 import type { DemandeAutomatisme } from '../workflow/lancements';
-import { NumeroDelieError } from '../meta/numero-delie';
+import { NumeroBloqueError } from '../meta/numero-delie';
 import { messageDe } from '../lib/erreur';
 
 /**
@@ -214,7 +214,7 @@ export async function runAutomations(
        * Sauf `avant_date`, qui garde son tir : son balayage republierait chaque minute un rappel dont le marqueur a
        * disparu. Tenu par `tests/automation-runner.test.ts` et `tests/numero-delie-parcours.test.ts`.
        */
-      if (err instanceof NumeroDelieError && ev.kind !== 'avant_date') await deps.automations.clearFired(a.id, ev.waId).catch(() => {});
+      if (err instanceof NumeroBloqueError && ev.kind !== 'avant_date') await deps.automations.clearFired(a.id, ev.waId).catch(() => {});
     }
   }
   return started;

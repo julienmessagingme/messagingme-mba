@@ -1,5 +1,6 @@
 import { outilsPour, RefusOutil, type DepsMcp, type OutilMcp, type PersonneMcp } from './outils';
 import { messageDe } from '../lib/erreur';
+import { rappelDeLAbonnement } from './outils-numero';
 
 /**
  * Le transport MCP : du JSON-RPC 2.0 sur un seul POST, sans état.
@@ -106,12 +107,16 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
       const args = (typeof params.arguments === 'object' && params.arguments !== null && !Array.isArray(params.arguments))
         ? params.arguments as Record<string, unknown>
         : {};
+      // Lot 4 : le rappel de l'abonnement du numéro, sur CHAQUE réponse d'outil de l'espace tant qu'il est en retard ou
+      // suspendu. Une lecture qui échoue ne prive pas l'appel de sa réponse : pas de rappel, c'est tout.
+      const rappel = await deps.numero.abonnement(ctx.tenantId).then(rappelDeLAbonnement, () => null);
+      const blocs = (texte: string) => [{ type: 'text', text: texte }, ...(rappel !== null ? [{ type: 'text', text: rappel }] : [])];
       try {
         const resultat = await outil.executer(deps, ctx.tenantId, args, ctx.personne);
-        return ok(id, { content: [{ type: 'text', text: JSON.stringify(resultat, null, 2) }], isError: false });
+        return ok(id, { content: blocs(JSON.stringify(resultat, null, 2)), isError: false });
       } catch (err) {
         if (err instanceof RefusOutil) {
-          return ok(id, { content: [{ type: 'text', text: err.message }], isError: true });
+          return ok(id, { content: blocs(err.message), isError: true });
         }
         // Panne : journalisée côté serveur, sans renvoyer le message d'origine (fragment SQL ou réponse Meta possible).
         // eslint-disable-next-line no-console

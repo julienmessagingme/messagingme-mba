@@ -73,6 +73,7 @@ function Messages() {
             ['opted_out', t('Fiche désabonnée.', 'Record opted out.')],
             ['no_whatsapp_number', t('Espace sans numéro WhatsApp.', 'Workspace without a WhatsApp number.')],
             ['number_unlinked', t('Numéro délié depuis l’Accueil.', 'Number unlinked from the Home page.')],
+            ['number_suspended', t('Abonnement du numéro fourni impayé ou terminé.', 'Provided number subscription overdue or ended.')],
           ]}
         />
         <Sous>{notes}</Sous>

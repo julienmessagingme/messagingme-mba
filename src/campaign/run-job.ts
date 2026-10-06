@@ -14,7 +14,7 @@ import { RateLimiter } from '../meta/http';
 import { resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 import { BAIL_SECONDES, type CampaignRunLock } from './run-lock';
 import { TokenInvalidError } from '../meta/credentials';
-import { NumeroDelieError } from '../meta/numero-delie';
+import { NumeroBloqueError, type MotifBlocage } from '../meta/numero-delie';
 import { messageDePause } from './pause';
 import type { Campaign, RunReport } from './types';
 import type { CampaignSender } from './sender';
@@ -96,7 +96,7 @@ export interface RunJobDeps {
    * « Relier ». Écriture conditionnelle et non lecture puis écriture ; elle n'écrase pas une pause d'opérateur.
    * Transmise au moteur pour le même arrêt en cours de run, jamais par `CapacitesMoteur`.
    */
-  numerosDelies: { pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string): Promise<boolean> };
+  numerosDelies: { pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string, motif: MotifBlocage): Promise<boolean> };
   /**
    * Sérialisation des runs d'une même campagne (cf. `run-lock.ts`). Un seul objet : on ne câble pas le verrou
    * sans dimensionner son bail ni relancer le travail qu'il a écarté. Absent (tests) = aucune sérialisation ; en
@@ -235,11 +235,11 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
          * dire juste après « Relier ». Sinon rien n'est écrit, la campagne reste `running` sans run et le
          * balayage des campagnes gelées la relance dans la minute.
          */
-        if (err instanceof NumeroDelieError) {
-          if (!(await deps.numerosDelies.pauserCampagne(campaign.id, campaign.tenantId, err.phoneNumberId))) {
+        if (err instanceof NumeroBloqueError) {
+          if (!(await deps.numerosDelies.pauserCampagne(campaign.id, campaign.tenantId, err.phoneNumberId, err.motif))) {
             return { sent: 0, skipped: 0, failed: 0, paused: false, reason: RAISON_NUMERO_RELIE_ENTRE_TEMPS };
           }
-          return { sent: 0, skipped: 0, failed: 0, paused: true, reason: messageDePause('numero_delie', null, undefined) };
+          return { sent: 0, skipped: 0, failed: 0, paused: true, reason: messageDePause(err.motif, null, undefined) };
         }
         throw err;
       }

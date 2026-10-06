@@ -4,6 +4,7 @@ import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import type { Issue } from '../lib/issue';
 import { DUREE_LIEN_NUMERO_MS, type LienNumero } from '../auth/token';
 import { empreinteEtat, type EtatConnexion } from '../otp/etat-connexion';
+import type { EtatDeLEspace } from '../stripe/abonnements.pg';
 
 /**
  * LES OUTILS DE LA CONNEXION DU NUMÉRO (lot 3c, livraison A, spec `docs/superpowers/specs/2026-10-06-lien-attente-abonnement-design.md`).
@@ -27,6 +28,32 @@ export interface DepsNumeroMcp {
   maintenant(): number;
   /** Le portail client de Stripe pour l'espace (`ouvrirPortail`, livraison B) : une adresse, ou un refus. */
   ouvrirPortail(tenantId: string, payeur: string): Promise<Issue<{ url: string }>>;
+  /** L'état de l'abonnement et ses dates (lot 4) : la SEULE lecture (`PgAbonnementsNumeroStore.etatDeLEspace`). */
+  abonnement(tenantId: string): Promise<EtatDeLEspace | null>;
+  /** Un nouveau paiement de l'abonnement (lot 4, réabonnement du même numéro), retour sur `/paiement-recu`. */
+  ouvrirAbonnement(tenantId: string, payeur: string): Promise<Issue<{ url: string }>>;
+}
+
+const jour = (d: Date | null): string | null => (d === null ? null : d.toISOString().slice(0, 10));
+const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() : null);
+
+/**
+ * Le rappel que porte chaque réponse d'outil MCP de l'espace (lot 4) : en retard, la date de la coupure ; suspendu, la
+ * coupure et, si le numéro est gardé, sa libération. Rien dans les autres états. `src/mcp/serveur.ts` l'ajoute.
+ */
+export function rappelDeLAbonnement(a: EtatDeLEspace | null): string | null {
+  if (a === null) return null;
+  if (a.etat === 'en_retard') {
+    return `Rappel : le renouvellement de l’abonnement du numéro WhatsApp a échoué. Sans paiement, ses envois seront coupés le ${jour(a.coupureLe) ?? 'bientôt'}. `
+      + 'resubscribe_number donne le lien pour régler.';
+  }
+  if (a.etat === 'suspendu') {
+    return a.finiLe !== null
+      ? `Les envois du numéro WhatsApp sont coupés : son abonnement est terminé. Sans réabonnement, le numéro sera libéré le ${jour(a.liberationLe)}. `
+        + 'resubscribe_number donne le lien pour se réabonner au même numéro.'
+      : 'Les envois du numéro WhatsApp sont coupés : son abonnement est impayé. resubscribe_number donne le lien pour régler.';
+  }
+  return null;
 }
 
 /**
@@ -81,12 +108,17 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     annotations: { title: 'Lire l’abonnement du numéro', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {}, additionalProperties: false },
     async executer(deps: DepsMcp, tenantId) {
-      const e = await deps.numero.etat(tenantId);
+      const [e, a] = await Promise.all([deps.numero.etat(tenantId), deps.numero.abonnement(tenantId)]);
       return {
         abonnement: e.abonnement?.statut ?? null,
         prochaine_echeance: e.abonnement?.periodeFin ?? null,
         numero_fourni: e.fourni,
         prix: '3,50 € HT par mois',
+        // Lot 4 : l'état calculé (actif, fin_prevue, en_retard, suspendu, libere) et ses dates.
+        etat: a?.etat ?? null,
+        fin_prevue: iso(a?.finPrevueLe),
+        coupure_le: iso(a?.coupureLe),
+        liberation_le: iso(a?.liberationLe),
       };
     },
   },
@@ -105,6 +137,43 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       const c = await deps.couteux.consommer(tenantId);
       if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
       return valeurOuRefus(await deps.numero.ouvrirPortail(tenantId, payeur));
+    },
+  },
+  {
+    nom: 'resubscribe_number',
+    description:
+      'Renouvelle l’abonnement du numéro WhatsApp fourni quand il est impayé ou terminé, et rend l’adresse à donner à la '
+      + 'personne. Impayé (en retard, ou suspendu faute de paiement) : le portail de Stripe, pour payer la facture ouverte '
+      + 'ou changer de carte. Terminé, numéro encore gardé : un nouveau paiement, qui rend le MÊME numéro sans refaire la '
+      + 'fenêtre de Meta. Résiliation programmée : le portail, pour l’annuler. Compte dans les opérations lourdes de l’espace.',
+    scope: 'mcp:write',
+    exigePersonne: true,
+    // Monde ouvert : une session est créée chez Stripe.
+    annotations: { title: 'Renouveler l’abonnement du numéro', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    entree: { type: 'object', properties: {}, additionalProperties: false },
+    async executer(deps: DepsMcp, tenantId, _args, personne) {
+      const payeur = signataire(personne);
+      const a = await deps.numero.abonnement(tenantId);
+      if (a === null || a.etat === 'libere') {
+        throw new RefusOutil('Cet espace n’a plus d’abonnement de numéro à renouveler : pour un nouveau numéro fourni, '
+          + 'start_whatsapp_connection en mode « fourni ».');
+      }
+      if (a.etat === 'actif') throw new RefusOutil('L’abonnement du numéro est actif : rien à renouveler.');
+      const c = await deps.couteux.consommer(tenantId);
+      if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
+      if (a.etat === 'suspendu' && a.finiLe !== null) {
+        return {
+          ...valeurOuRefus(await deps.numero.ouvrirAbonnement(tenantId, payeur)),
+          consigne: 'Donne ce lien à la personne : le paiement rend le même numéro, et ses envois repartent dès que Stripe '
+            + 'l’a confirmé (get_number_subscription le dit).',
+        };
+      }
+      return {
+        ...valeurOuRefus(await deps.numero.ouvrirPortail(tenantId, payeur)),
+        consigne: a.etat === 'fin_prevue'
+          ? 'Donne ce lien à la personne : dans le portail de Stripe, elle peut annuler la résiliation programmée.'
+          : 'Donne ce lien à la personne : dans le portail de Stripe, elle paie la facture en attente ou change de carte.',
+      };
     },
   },
   {

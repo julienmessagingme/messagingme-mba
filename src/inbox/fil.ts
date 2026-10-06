@@ -152,8 +152,14 @@ export interface DepsControleDuFil {
   delaiRepriseParDefautMs: number;
   /** Un parcours attend-il la réponse de ce contact ? */
   parcours: { findWaitingByWaId(tenantId: string, waId: string): Promise<object | null> };
-  /** Numéro Meta de l'espace ; `null` = aucun numéro connecté. */
-  numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
+  /**
+   * Numéro Meta de l'espace ; `null` = aucun numéro connecté. `numeroBloque` : délié, ou suspendu faute de paiement
+   * (lot 4, `creerNumeroBloqueDeLEspace`) ; aucun robot ne prend alors le message.
+   */
+  numeros: {
+    getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
+    numeroBloque(tenantId: string): Promise<boolean>;
+  };
   /**
    * La liste de l'agent de Meta (`src/mba/liste.ts`) : confier y ajoute le contact, reprendre l'en retire. Requise :
    * sans elle, un geste compilerait et laisserait l'agent parler (ou se taire) à contre-emploi.
@@ -508,6 +514,10 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       if (tenuParLEquipe && !repriseDue(fil, delai)) return laisserALEquipe();
       // Donner à l'agent un fil qu'un parcours attend serait bien pire que le silence qu'on répare.
       if (await deps.parcours.findWaitingByWaId(tenantId, waId)) return laisserALEquipe();
+      // 🔴 Le numéro bloqué (lot 4 : suspendu faute de paiement) : ni le répondeur, qui ne pourrait pas répondre et dont
+      // le tour serait payé, ni l'agent de Meta, qui répondrait par Meta sur un numéro impayé. Comme sans numéro : rien
+      // n'est écrit, le message reste dans l'Inbox.
+      if (await deps.numeros.numeroBloque(tenantId)) return laisserALEquipe();
       if (repondeurIa !== null) {
         // 🔴 Le répondeur IA, après les MÊMES gardes que l'agent de Meta : celles qui précèdent, puis celles de
         // `confier` sur un chemin automatique, dans leur ordre.

@@ -22,9 +22,12 @@ export interface DepsAbonnement extends DepsPaiement {
   urlConsole: string;
 }
 
-/** D'où l'on vient, donc où Stripe renvoie : la page du lien de Claude Code, ou celle de la console. */
-export type RetourAbonnement = 'brancher' | 'console';
-const PAGE: Readonly<Record<RetourAbonnement, string>> = { brancher: '/brancher', console: '/connecter-whatsapp' };
+/**
+ * D'où l'on vient, donc où Stripe renvoie : la page du lien de Claude Code, celle de la console, ou (lot 4, un
+ * réabonnement demandé à Claude) une page publique qui dit « paiement reçu, retournez dans Claude ».
+ */
+export type RetourAbonnement = 'brancher' | 'console' | 'claude';
+const PAGE: Readonly<Record<RetourAbonnement, string>> = { brancher: '/brancher', console: '/connecter-whatsapp', claude: '/paiement-recu' };
 
 export const ABONNEMENT_INDISPONIBLE = refus(503, 'abonnement du numéro pas encore disponible', { code: 'abonnement_indisponible' });
 
