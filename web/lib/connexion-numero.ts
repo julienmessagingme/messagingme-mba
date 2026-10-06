@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { getEsConfig, completeEmbeddedSignup, type EsConfig } from '@/lib/api';
+import type { EsConfig } from '@/lib/api';
+import type { ApiConnexionNumero } from '@/lib/api/connexion-numero';
 import { loadFbSdk } from '@/lib/fb-sdk';
 import { lireMessageEs, retenirMessageEs, type MessageEs } from '@/lib/message-es';
 import { useT } from '@/lib/i18n';
@@ -43,7 +44,12 @@ function waitFor<T>(get: () => T | undefined, timeoutMs: number): Promise<T | nu
  * `phone_number_id` (via postMessage `WA_EMBEDDED_SIGNUP`). On poste les trois au backend qui échange, rattache
  * et abonne. Si META_ES_CONFIG_ID n'est pas posé côté serveur, `cfg.enabled` est faux et rien ne s'ouvre.
  */
-export function useConnexionNumero(tenantId: string, onConnected: (avertissements: string[]) => void): ConnexionNumero {
+export function useConnexionNumero(
+  tenantId: string,
+  /** L'autorité des appels : la session de la console (`apiDeLaSession`) ou le lien de Claude Code (`apiDuLien`, lot 3c). */
+  api: Pick<ApiConnexionNumero, 'config' | 'completer'>,
+  onConnected: (avertissements: string[]) => void,
+): ConnexionNumero {
   const t = useT();
   const [cfg, setCfg] = useState<EsConfig | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,9 +57,13 @@ export function useConnexionNumero(tenantId: string, onConnected: (avertissement
   // waba_id / phone_number_id arrivent par postMessage, PAS par le callback FB.login -> stash dans une ref. Le
   // compte peut arriver SEUL : la fenêtre finie sans numéro (lot 3b, `lireMessageEs`).
   const idsRef = useRef<MessageEs | undefined>(undefined);
+  // L'objet `api` change d'identité à chaque rendu de l'appelant : on lit toujours le dernier, l'espace décidant seul
+  // quand relire la configuration.
+  const apiRef = useRef(api);
+  apiRef.current = api;
 
   useEffect(() => {
-    getEsConfig(tenantId).then(setCfg).catch(() => setCfg({ enabled: false, appId: '', configId: '', graphVersion: '' }));
+    apiRef.current.config().then(setCfg).catch(() => setCfg({ enabled: false, appId: '', configId: '', graphVersion: '' }));
   }, [tenantId]);
 
   useEffect(() => {
@@ -111,7 +121,7 @@ export function useConnexionNumero(tenantId: string, onConnected: (avertissement
               // se retrouvait alors bloqué définitivement, sans aucun recours (mesuré le 2026-08-17). On envoie
               // donc le code seul, et le serveur retrouve le compte et le numéro à partir du token.
               const ids = await waitFor(() => idsRef.current, 6000);
-              const res = await completeEmbeddedSignup(tenantId, { code, ...(ids ?? {}) });
+              const res = await apiRef.current.completer({ code, ...(ids ?? {}) });
               // Les avertissements REMONTENT : la zone de connexion est démontée dès que l'espace a un numéro,
               // donc les garder ici reviendrait à les effacer au moment de les afficher.
               onConnected(res.warnings ?? []);

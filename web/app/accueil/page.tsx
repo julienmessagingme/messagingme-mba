@@ -26,6 +26,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { ChiffreMessagesTenus } from '@/components/EnteteAgent';
 import { agentMetaRepond, lireMessagesMba, type MessagesEcritsMba } from '@/lib/chiffres-canaux';
 import { useConnexionNumero, type ConnexionNumero } from '@/lib/connexion-numero';
+import { apiDeLaSession } from '@/lib/api/connexion-numero';
 import { lireHubspotActif, affichageHubspotAccueil } from '@/lib/hubspot-actif';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
 import { Bouton } from '@/components/Bouton';
@@ -364,7 +365,7 @@ function AccueilInner({ session }: { session: Session }) {
    * l'interrupteur du bloc « Canaux et services » : deux instances liraient deux états, et couper depuis
    * l'interrupteur laisserait la carte annoncer l'inverse.
    */
-  const connexionNumero = useConnexionNumero(session.tenantId, (avertissements) => {
+  const connexionNumero = useConnexionNumero(session.tenantId, apiDeLaSession(session.tenantId), (avertissements) => {
     setAvertissementsConnexion(avertissements);
     setLoading(true);
     void load();

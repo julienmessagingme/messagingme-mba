@@ -43,7 +43,7 @@ export const BASE = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '') 
  * `todo.md`. Seule exception, le corps opaque d'une panne (`OPAQUE_DU_SERVEUR`), remplacé par la phrase
  * traduite de `messageDErreur`.
  */
-function langue(): Locale {
+export function langue(): Locale {
   if (typeof window === 'undefined') return 'fr';
   try {
     return window.localStorage.getItem(LOCALE_STORAGE_KEY) === 'en' ? 'en' : 'fr';
