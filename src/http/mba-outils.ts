@@ -185,7 +185,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     if (!outil || outil.origin !== 'mcp') return reply.code(404).send({ error: 'outil MCP introuvable' });
     /**
      * 🔴 RIEN N'EST REVÉRIFIÉ ICI (règle unique du 2026-10-02) : la porte du catalogue refuse un outil non enregistré,
-     * mort ou déjà donné, et dit pourquoi. Elle refuse AVANT de rattacher un outil inappelable, donc l'activation qui
+     * mort, déjà donné ou dont l'agent de Meta porte déjà le nom (0211), et dit pourquoi. Elle refuse AVANT de rattacher un outil inappelable, donc l'activation qui
      * suit ne laisse plus de ligne éteinte qu'aucun geste ne rallume.
      */
     let r: Rattachement;

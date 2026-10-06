@@ -161,7 +161,7 @@ describe.skipIf(!url)('un agent ne voit jamais deux outils du même nom (Postgre
   });
 
   it('🔴 toute liaison écrite par le catalogue porte le nom de son outil', async () => {
-    // Une liaison sans nom échappe à l'index (`null` n'égale rien) : c'est la fenêtre que 0212 fermera. Le chemin de
+    // Une liaison sans nom échappe à l'index (`null` n'égale rien) : c'est la fenêtre que la migration du lot 2 fermera. Le chemin de
     // l'agent de Meta est joué ici, ceux des agents IA l'ont été plus haut.
     expect(await catalogue.ajouterConnecteurPourMba(tenantId, '1234567890', appel('appel_meta'))).not.toBeNull();
     const r = await pool.query<{ total: string; sans_nom: string; fausses: string }>(

@@ -21,7 +21,7 @@
 --
 -- ⚠️ NULLABLE, DÉLIBÉRÉMENT : le code déployé n'écrit pas la colonne, et il doit survivre à la migration, qui passe
 -- AVANT le `up` de l'API (le code neuf l'écrit). En MATCH SIMPLE, une liaison sans nom échappe à la clé et à
--- l'index (`null` n'égale rien) : c'est la fenêtre du déploiement, que 0212 referme (reprise, puis `not null`)
+-- l'index (`null` n'égale rien) : c'est la fenêtre du déploiement, que la migration du lot 2 referme (reprise, puis `not null`)
 -- APRÈS le `up`.
 --
 -- ⚠️ EFFET SUR LES VERROUS : `name` entre dans une contrainte unique non partielle, donc un renommage verrouille

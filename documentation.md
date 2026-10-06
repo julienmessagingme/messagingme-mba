@@ -547,8 +547,8 @@ tenue par une clé étrangère composite `(tool_id, tool_name)` en `on update ca
 `tool_name` ; un renommage suit par la cascade, et l'index refuse celui qui ferait un doublon chez N'IMPORTE QUEL
 consommateur de l'outil, pas seulement chez l'agent dont l'écran renomme. Le refus rend `NomOutilDejaPris`
 (création, renommage) ou le refus de rattachement `nom_pris`, en 409. ⚠️ Un index, pas une vérification lue puis
-écrite : deux créations simultanées passeraient toutes les deux. ⚠️ `tool_name` reste nullable tant que 0212 n'est
-pas passée, et une liaison sans nom échappe à l'index.
+écrite : deux créations simultanées passeraient toutes les deux. ⚠️ `tool_name` reste nullable tant que la migration du
+lot 2 (reprise, puis `not null`) n'est pas passée, et une liaison sans nom échappe à l'index.
 
 ⚠️ **LE CONSOMMATEUR EST UNE CLÉ TEXTE**, `agent:<uuid>` ou `mba:<phone_number_id>`, fabriquée par
 `src/agent/consommateur.ts` et jamais concaténée ailleurs ; sa FORME est verrouillée par un CHECK, parce

@@ -373,7 +373,8 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     const parse = drapeauSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'valeur booléenne requise' });
     if (parse.data.valeur) {
-      // Le refus de la porte porte sa raison : non enregistré, mort, réservé à l'agent de Meta, déjà donné.
+      // Le refus de la porte porte sa raison : non enregistré, mort, réservé à l'agent de Meta, déjà donné, ou nom
+      // déjà porté par un autre outil de cet agent (0211).
       const r = await deps.outils.rattacher(ctx.tenant, ctx.agentId, outilId);
       if (!r.ok) return reply.code(refusIntrouvable(r) ? 404 : 409).send({ error: messageDuRefus(r) });
       return reply.code(200).send({ rattache: true });

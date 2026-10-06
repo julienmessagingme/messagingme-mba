@@ -60,9 +60,14 @@ d'un appel de connecteur que l'agent utilise : refus 409 lisible, rien de créé
   avec la fiche qui cite la section, le compteur de `CLAUDE.md`.
 - **Ordre** : 0211 appliquée AVANT le `up` de l'API, qui écrit sa colonne. Seule l'API écrit des liaisons.
 
-## Lot 2 : `tool_name` NOT NULL (après le `up`)
+## Lot 2 : `tool_name` NOT NULL, et les 🟡 de la relecture du lot 1 (après le `up`)
 
-- 0212 : la reprise des liaisons écrites par l'ancien code pendant la fenêtre, puis `set not null`. Après le `up`,
-  jamais avant : l'ancien code n'y survit pas. Poussée seule, une fois le lot 1 en production.
+- La migration suivante (son numéro se prend en l'écrivant, jamais avant) : un contrôle qui refuse en disant quoi
+  renommer si la fenêtre a laissé passer un doublon (comme 0127), la reprise des liaisons que l'ancien code a écrites
+  sans nom, puis `set not null`. Après le `up`, jamais avant : l'ancien code n'y survit pas.
 - Les fixtures d'intégration qui écrivent une liaison à la main (`insert into agent_tool_consommateurs` dans
-  `tests/`) nomment l'outil.
+  `tests/`) nomment l'outil ; le cas « toute liaison porte son nom » joue aussi `ajouterMaisonPourMba`.
+- L'assistant de construction (`catalogueBranchable`, `src/http/agent-setup.ts`) ne propose plus un outil dont
+  l'agent porte déjà le nom : branché APRÈS l'écriture de la fiche, son refus `nom_pris` tomberait sur une fiche
+  déjà enregistrée, et l'assistant le reproposerait. Le catalogue le dit sur l'offre, l'assistant l'écarte, les
+  écrans humains le gardent (la porte y dit quoi renommer).

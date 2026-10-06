@@ -759,7 +759,9 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
 - 🟡 **Un nom d'outil déjà pris ne se signale qu'à l'enregistrement** (plan, écart 5) : la route rend 409 et le
   formulaire reste ouvert, mais la spec § 9.4 le voulait à la saisie. Un contrôle exact demande de lire TOUS les
   outils de l'espace sans agent (connecteurs des agents IA compris, `agent_tools_nom_espace_uidx`), pas la seule
-  liste de l'onglet : sinon il promettrait un nom libre qui ne l'est pas.
+  liste de l'onglet : sinon il promettrait un nom libre qui ne l'est pas. Et depuis 0211
+  (`atc_nom_par_consommateur_uidx`), les autres outils de chaque consommateur concerné : les actions et les appels
+  de l'agent à une création, CHAQUE consommateur de l'outil à un renommage.
 - 🟡 **DÉCISION ATTENDUE (Julien) : un outil MCP disparu de son serveur ne se supprime plus qu'avec toute sa
   source.** Le retrait de `DELETE /agent-tools/:outilId` (lot 2, avec l'ancienne bibliothèque) a emporté le seul
   geste qui l'effaçait seul ; un outil MCP disparu est marqué (`mcp_indisponible_le`), jamais supprimé, et la
