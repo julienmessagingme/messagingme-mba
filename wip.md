@@ -49,12 +49,14 @@ validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien
   l'accès de Claude qui ne coupe pas un lien déjà donné est dans `todo.md`.
 - ⏳ **Essai réel de A** (Julien) : depuis Claude Code, sur un espace neuf, le lien, la page sans connexion, le code dans
   le terminal, le numéro connecté. Il faut un numéro dans la réserve, vide depuis l'essai du 3b.
-- ⏳ **Livraison B codée, pas encore en production** : migration 0214, l'abonnement à 3,50 € HT par mois (prix
-  `price_1UNUMXF67GfPqM0XcYpVkdhS`, lu chez Stripe), le numéro attribué par le webhook après paiement, quatre événements,
-  `get_number_subscription` et `manage_number_subscription` (`resubscribe_number` reporté au lot 4), l'étape « Payer »
-  sur les deux pages. Avant le `up` : Julien pose `STRIPE_PRIX_NUMERO`, active le portail client, ajoute les trois
-  événements au webhook, et la clé restreinte doit pouvoir ouvrir une session du portail. Essai réel commun A et B : un
-  espace neuf depuis Claude Code, un numéro racheté chez DIDWW, un vrai paiement.
+- ✅ **Livraison B en production le 2026-10-06** : migration 0214 appliquée à 12 h 24 UTC et relue en base, API et
+  workers sur `c9973f44` (12 h 25), console `7c1ede29` poussée après le `up`. Réglages Stripe faits par Julien avant le
+  `up` : `STRIPE_PRIX_NUMERO` (posé par Claude avec son accord), les trois événements ajoutés au webhook (relus chez
+  Stripe), le portail client actif. Relue : un rouge (« Remplacer » attribuait sans abonnement) corrigé, test vu rouge
+  puis vert ; les jaunes partent dans le commit suivant.
+- ⏳ **Essai réel commun A et B** (Julien) : un numéro racheté chez DIDWW et déclaré dans /ops ; depuis Claude Code, sur
+  un espace neuf, le lien, « Payer 3,50 € HT par mois », un vrai paiement, le numéro attribué par le webhook, le code dans
+  le terminal, la connexion ; puis une résiliation par le portail et l'alerte Telegram.
 
 ## LOT 5 DE « MESSAGING ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 

@@ -5,6 +5,25 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : le numéro branché depuis Claude Code, et son abonnement (lot 3c, livraisons A et B)
+
+**A, le lien et l'attente** (`d20dea6b`, jaunes `f8708b65`, console `b4f81ec4`) : `start_whatsapp_connection` donne
+`console.messagingme.app/brancher#<jeton>`, un JWT `lien_numero` d'une heure que `verifySession` refuse ; la garde
+`adminOuLien` ne l'accepte que sur les routes de la page (le test d'isolation appelle chaque route d'espace avec ce
+jeton) ; `watch_whatsapp_connection` attend 25 s au plus, parce que le proxy de `api.messagingme.app` coupe une réponse
+à 45 (`proxy_read_timeout 45s`, mesuré dans NPM). Relue : zéro rouge.
+
+**B, l'abonnement** (`c9973f44`, migration 0214, console `7c1ede29`) : 3,50 € HT par mois, prix
+`price_1UNUMXF67GfPqM0XcYpVkdhS` relu chez Stripe (taxe en sus, décision de Julien). La forme des factures pour la
+version d'API `2025-11-17.clover` a été lue dans la documentation de Stripe avant d'écrire le webhook : l'abonnement est
+sous `parent.subscription_details`, plus à la racine. Relue : un rouge, « Remplacer » attribuait un numéro sans
+abonnement, corrigé avant le déploiement. Le compte Stripe sert aussi `verifiermondevis.fr` (un second webhook, ses
+propres abonnements) : nos événements d'abonnement reçoivent ses factures, et le code ignore tout ce qui ne porte pas
+`produit: numero`.
+
+**Appris** : Meta met un numéro libéré en quarantaine (Julien) : un numéro fourni ne revient jamais dans la réserve, et
+le lot 4 devra résilier chez DIDWW. L'essai réel de A est reporté à celui de B, pour ne brûler qu'un numéro.
+
 ## 2026-10-06 : Engage Me redevient Messaging Me, vitrine sur `app.messagingme.fr`, console sur `console.messagingme.app`
 
 **Le nom et le logo.** `4224fe36` renomme le produit partout où un client le lit : console, API (prompts de
