@@ -37,6 +37,17 @@ Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; réc
   relevés par la relecture (la migration contre trois chemins rares, deux renommages croisés simultanés), en 500 sur
   une requête au pire.
 
+## LOT 3c DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO BRANCHÉ DEPUIS CLAUDE CODE, SPEC ÉCRITE
+
+Le client ne passe jamais par la console : Claude Code lui donne un lien qui ouvre la page de connexion du numéro
+sans connexion, suit le branchement et affiche le code. Spec `docs/superpowers/specs/2026-10-06-lien-attente-abonnement-design.md`,
+cadrée avec Julien le 2026-10-06 ; relecture de la spec par Julien, puis le plan.
+
+- ⏳ **Livraison A** : le jeton du lien (un genre à part, une heure, mort à la connexion), sa garde sur les seules
+  routes de la page, la page `/brancher`, `start_whatsapp_connection` et `watch_whatsapp_connection`. Aucune migration.
+- ⏳ **Livraison B** : l'abonnement à 3,50 € HT par mois (prix `price_1UNUMXF67GfPqM0XcYpVkdhS`, lu chez Stripe),
+  le numéro attribué par le webhook après paiement, trois événements, trois outils. Pour tous les clients.
+
 ## LOT 5 DE « MESSAGING ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
 
 Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré
