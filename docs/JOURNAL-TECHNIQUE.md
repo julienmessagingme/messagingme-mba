@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : `tool_name` NOT NULL (0213), et l'assistant ne propose plus un outil dont l'agent porte le nom
+
+Lot 2 du plan `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` (`3cb96ab7`) : la copie `tool_name`
+devient NOT NULL, après un contrôle qui refuse en nommant un éventuel doublon ; l'offre porte `nomPris`, calculé par le
+catalogue, et l'assistant de construction écarte une offre marquée (il branche APRÈS avoir écrit la fiche) ; les
+fixtures nomment l'outil. Relu sans rouge. Vérifié dans les deux sens en CI sur étiquettes jetables : drapeau forcé à
+`false`, seul le cas de l'offre tombe ; une insertion sans `tool_name`, la base refuse en 23502 sur cinq cas.
+
+**Renumérotée en route.** Écrite sous 0212, que la session « numéro fourni » a poussée entre-temps : renommée 0213
+avant tout push, le dossier tranchant sur ce qui est pris. ⚠️ Et un quasi-accident : après un rebase sur un
+`origin/main` donné, un `git reset --soft origin/main` a pris un `origin/main` qu'une AUTRE session venait d'avancer
+(les références distantes sont communes à tous les worktrees). L'index portait alors l'ancienne version d'un test du
+pair, et le commit aurait défait son correctif. Vu au contrôle d'intrus sur `git diff --cached --name-status`, avant
+tout commit ; la parade est de figer le SHA une fois et de ne plus jamais nommer `origin/main` dans la plomberie.
+
+**Déployé le 2026-10-06** : 0213 appliquée à 8 h 01 UTC, APRÈS le `up` du lot 1 et AVANT celui de ce lot, après avoir
+lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur les deux tables) et vérifié dans l'image
+qu'elle seule serait appliquée ; relue en base juste après (`tool_name` en `text` NOT NULL sans défaut, 14 liaisons
+nommées et justes, aucun doublon). API, deux workers et `mba-web` recréés vers 8 h 03 UTC ; les deux portes publiques
+et `mba.messagingme.app/logo.png` à 200, journaux propres. Le `up` a embarqué, avec l'accord de Julien, le rebranding
+« Messaging Me » (`4224fe36`, relu, CI serveur verte, sans migration) et la console du lot 3b (`477ab86c`).
+
+**Reste** : les deux essais d'écran, que Julien fait (le plan les décrit), et trois jaunes de conception au backlog.
+
 ## 2026-10-06 : un agent ne voit jamais deux outils du même nom (0211)
 
 Relevé par la relecture du lot « Modifier un appel de connecteur » (2026-10-05) : une action (unique par agent) et
