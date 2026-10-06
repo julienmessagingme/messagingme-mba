@@ -5,6 +5,40 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-06 : un agent ne voit jamais deux outils du même nom (0211)
+
+Relevé par la relecture du lot « Modifier un appel de connecteur » (2026-10-05) : une action (unique par agent) et
+un appel de connecteur (unique par espace) pouvaient porter le même nom, parce que les deux index partiels de 0157 ne
+se recoupent pas. Un agent qui utilisait les deux recevait deux fonctions homonymes.
+
+**Mesuré avant d'écrire.** En production (lecture seule, 2026-10-05 à 21 h 18 UTC) : 26 outils, 14 liaisons, aucun
+consommateur ne voyait deux outils du même nom, donc le défaut était latent. Sur le Gateway, avec le corps de
+`chat-client.ts` envoyé depuis le conteneur `mba-api` (la clé ne quitte pas le serveur) : `zai/glm-4.7-flash` (servi
+par bedrock), `anthropic/claude-haiku-4.5` et `google/gemini-2.5-flash` (servi par vertex) refusent deux fonctions
+homonymes en 400 non rejouable, dans les deux ordres, quand le témoin à noms distincts rend 200. Aucun repli vers un
+autre fournisseur : chaque tour de cet agent aurait fini en échec technique.
+
+**Livré** (`2a6c2046`, ses jaunes textuels en `e37cc43d`) : 0211 recopie le nom sur la liaison (`tool_name`), tenu
+par une clé étrangère composite en `on update cascade`, sous un index unique `(tenant_id, consommateur, tool_name)` ;
+le catalogue écrit la copie et rend un 409. Le test d'intégration a été vérifié dans les deux sens sur étiquettes
+jetables : le commit muté, sans l'index, rougit sur les sept cas de refus et eux seuls, avec le symptôme attendu
+(aucun refus, un rattachement accepté, deux créations simultanées acceptées).
+
+**Déployé le 2026-10-06** : 0211 appliquée à 7 h 05 UTC, AVANT le `up` de l'API et des deux workers, après avoir lu
+`pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur les deux tables) et vérifié dans l'image
+qu'elle seule serait appliquée ; relue en base juste après (colonne `text` nullable sans défaut, clé étrangère en
+`confupdtype = 'c'` et MATCH SIMPLE, index unique valide, 14 liaisons toutes nommées et justes, aucun doublon). Les
+deux portes publiques ont rendu 200 sans recharger NPM. Le déploiement a embarqué `8b1060ba` (entrée suivante), relu
+et vert de son côté.
+
+⚠️ **La leçon** : deux index partiels complémentaires tiennent l'unicité dans chacun de leurs régimes, pas chez celui
+qui consomme les deux. Une unicité qui traverse deux tables se tient par une copie que maintient une clé étrangère
+composite en cascade, et un index sur la table qui porte le consommateur ; jamais par une vérification lue puis
+écrite.
+
+**Reste** : le lot 2 du plan (reprise puis `not null` après le `up`, et l'assistant de construction qui ne doit plus
+proposer un outil dont l'agent porte déjà le nom), et l'essai d'écran, que Julien fait lui-même.
+
 ## 2026-10-06 : la méthode d'une requête change, le risque de ses outils suit (vers le haut seulement)
 
 Relevé par la relecture de `099fd6c1` : le risque d'un outil de connecteur se dérivait de la méthode de sa requête à

@@ -19,6 +19,24 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## UN AGENT NE VOIT JAMAIS DEUX OUTILS DU MÊME NOM (0211) : LOT 1 EN PRODUCTION, ESSAI D'ÉCRAN DÛ, LOT 2 À FAIRE
+
+Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; récit et mesures :
+`docs/JOURNAL-TECHNIQUE.md` (2026-10-06).
+
+- ✅ **Lot 1** (`2a6c2046`, ses jaunes textuels `e37cc43d`) déployé le 2026-10-06 à 7 h 05 UTC, 0211 relue en base.
+- ⏳ **Essai d'écran, par Julien** : sur un agent de test qui a une action (par exemple `mba_terminer`) et un appel de
+  connecteur, « Modifier » l'appel et lui donner le nom technique de l'action, puis Enregistrer : le refus s'affiche
+  dans le formulaire, rien ne change ; l'onglet Tester répond toujours.
+- ⏳ **Lot 2** : la migration NOT NULL (un contrôle qui dit quoi renommer si un doublon s'est glissé, la reprise, puis
+  `set not null`), APRÈS le `up` ; les fixtures qui écrivent une liaison à la main ; `ajouterMaisonPourMba` dans le
+  cas « toute liaison porte son nom » ; l'assistant de construction écarte un outil dont l'agent porte déjà le nom
+  (drapeau calculé par le catalogue sur l'offre, les écrans humains inchangés).
+- 🟡 **Laissés, avec leur raison** : le 409 ne nomme ni l'outil ni l'agent en conflit (le nom est celui qu'on vient de
+  saisir ; nommer l'agent demanderait de lire le détail de l'erreur de Postgres) ; deux interblocages théoriques
+  relevés par la relecture (la migration contre trois chemins rares, deux renommages croisés simultanés), en 500 sur
+  une requête au pire.
+
 ## LOT 3b DE « ENGAGE ME POUR CLAUDE CODE » : LE NUMÉRO FOURNI CÔTÉ CLIENT, LIVRAISON A EN PRODUCTION, MESURE DUE
 
 Le client passe la fenêtre Meta sans numéro ; le serveur ajoute le nôtre à son compte, demande le code par appel, le
