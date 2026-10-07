@@ -1,5 +1,28 @@
 # todo.md : backlog
 
+## 🟡 RC6, qui répond au client : ce qui reste (2026-10-07)
+
+- **À relire par Julien : allumer le MBA en mode « Équipe » le fait passer en mode « MBA »** (règle par défaut du plan,
+  continuité avec avant). Elle s'applique aussi quand « Équipe » était un choix délibéré avec le MBA allumé pour le seul
+  bloc « Envoyer au MBA » : un cycle éteindre / rallumer de l'Aperçu ou de l'assistant suffit à basculer le mode.
+- **En veille, le MBA perd le contact au premier appel d'un de ses outils d'envoi** (bloc, scénario) : le lancement le
+  retire de sa liste et la fin du parcours ne le lui rend pas (`rendreLaMainAMba` est gardé par le mode), alors que le
+  chemin d'échec (`src/mba/gestes-envoi.ts`) le lui rend. À corriger, ou à dire au client avant d'annoncer le bloc à un
+  espace qui a des outils maison.
+- **Le bloc « Envoyer au MBA » n'attend pas l'accusé du dernier envoi** : `confier` fait le `release` juste après les
+  envois du parcours, la course mesurée en 0149. À réutiliser : `demanderReleaseMba`. L'essai réel du bloc se fait avec
+  un message AVANT lui. Voisins : `derniereSaisieDuContact` ignore les appuis de bouton, et après une attente le bloc peut
+  confier sur une fenêtre fermée.
+- **Les `standby` hors liste sont requalifiés dans les quatre modes** : un espace dont une autre application tiendrait
+  le fil par handover verrait ses messages passer par nos scénarios. À mesurer sur les webhooks `standby` des 30 derniers
+  jours avant de l'affirmer.
+- **Mode Équipe** : chaque nouvel épisode ouvre une demande du Quantitatif > Performance (y compris un « merci » de fin
+  de campagne), et un entrant d'un espace sans répondeur coûte environ six requêtes au lieu d'une.
+- **`choisirRepondeur`** : si `toutRetirer` lève après l'écriture du réglage, le réessai trouve le même réglage et ne
+  vide jamais la liste de Meta.
+- **L'aperçu de la première réponse** (`web/lib/apercu-reponse.ts`) lit un scénario qui commence par « Envoyer au MBA »
+  comme « aucun envoi ».
+
 ## 🟡 RC5 B, le bloc « Aller à » : ce qui reste (2026-10-07)
 
 - **L'entrée d'un scénario visé depuis un AUTRE scénario reste ambiguë.** Corrigé dans le scénario lui-même (un bloc
