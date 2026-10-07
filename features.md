@@ -2564,6 +2564,12 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   Corollaire : **renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau »**.
 - ✅ **Un échec en cours de publication s'ARRÊTE et le dit** : ce qui a été fait est listé, le reste n'est pas
   tenté. Relancer ne refait pas ce qui a réussi.
+- ✅ **Un appel qui lit sans rien savoir du client se teste dans l'onglet Tester** (2026-10-07), par exemple un
+  devis qui ne demande que l'espèce, la race et l'âge. Le bac à sable de Meta ne désigne aucun client, et Messaging
+  Me refusait jusque-là tout appel sans client identifié : l'agent de Meta passait la main. Il part désormais pour
+  de vrai, à la même règle que le bac à sable d'un agent IA (une lecture, sans aucune valeur de la fiche). Un appel
+  qui lit la fiche du client ou qui écrit, une étiquette, une information, un bloc, un scénario ou un outil MCP ne
+  partent toujours pas depuis l'onglet Tester : ils s'éprouvent en conversation réelle.
 - ⛔ **Sans numéro WhatsApp connecté, il n'y a pas d'agent Meta où publier** : l'aperçu est vide (ce n'est pas
   une panne) et la publication refuse en le disant.
 - ⛔ **Ce que Meta sait faire et que nous n'utilisons pas** : les transformations de réponse et

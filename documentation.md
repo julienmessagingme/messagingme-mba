@@ -733,7 +733,11 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
   `requireApiKey` et même limiteur que l'API publique), jamais de l'adresse ; l'outil doit être exposé ET
   actif pour `mba:<numéro de l'espace>`.
 - **Le contact vient d'un en-tête lié à la macro `WHATSAPP_PHONE_NUMBER`** (`X-Contact-WhatsApp`) : Meta le
-  remplit, son modèle ne le choisit pas. Pas de contact identifié, pas d'appel.
+  remplit, son modèle ne le choisit pas. Pas de contact identifié, pas d'appel, sauf un appel de connecteur qui LIT
+  sans rien savoir du contact (`litSansLeContact`, la règle du bac à sable d'un agent IA : un GET, une réponse
+  intégrée, un risque `read`, aucune variable de la fiche ni de la dernière saisie). Il part alors sans contact.
+  C'est ce qui fait marcher un devis dans le bac à sable de Meta (`agent_test`), dont la macro vaut 16 chiffres ne
+  désignant aucun client. Un geste maison, un outil MCP ou un appel qui lit la fiche restent refusés.
 - **Seules les variables `modele` sont déclarées chez Meta** et lues dans le corps (`lireValeursModele`, Zod) ;
   les autres viennent du mini-CRM, dans `creerAppelConnecteur`, avec la lecture `entier` (réponse complète,
   bornée) et le journal sous l'appelant `mba`. Un échec métier rend 200 `{ succes: false, erreur }`.

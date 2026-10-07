@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: 414215
+source_empreinte: 6a3a68
 ---
 # Donner des outils à l'agent de Meta
 
@@ -83,3 +83,9 @@ ne peut pas l'inventer), nous remplissons les valeurs que nous connaissons déj�
 avec les mêmes contrôles et le même journal que pour vos agents IA. Votre clé d'accès ne quitte donc jamais
 Messaging Me. Une clé « Agent de Meta » apparaît dans la liste de vos clés d'API : c'est celle que l'agent nous
 présente. Elle ne se crée pas à la main, et la révoquer coupe ses outils jusqu'au prochain envoi.
+
+**Ce qui se teste dans l'onglet Tester.** Le bac à sable de Meta ne désigne aucun client. Un appel qui lit votre
+système sans rien savoir du client, par exemple un devis qui ne demande que l'espèce, la race et l'âge, y part
+pour de vrai : vous voyez la vraie réponse. Un appel qui lit la fiche du client ou qui écrit, une étiquette, une
+information, un bloc, un scénario ou un outil MCP n'y partent pas : ils s'éprouvent dans une vraie conversation
+WhatsApp.

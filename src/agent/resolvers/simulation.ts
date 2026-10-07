@@ -1,5 +1,5 @@
 import type { ResolveurOutil, SortieResolveur } from '../executor';
-import type { OrigineOutil } from '../catalog';
+import type { OrigineOutil, OutilDefini } from '../catalog';
 import type { KnowledgeStore } from '../knowledge';
 import type { RequeteConnecteur, RequeteStore, VariableDeclaree } from '../requetes';
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
@@ -86,21 +86,31 @@ const duContact = (v: VariableDeclaree): boolean =>
   || (v.origine.type === 'systeme' && v.origine.cle === 'derniere_saisie');
 
 /**
+ * Un appel de connecteur qui LIT sans rien savoir du contact, donc qui peut partir sans vrai client. 🔴 Quatre faits :
+ * la requête est un GET (ce qui part sur le réseau), l'outil intègre la réponse (« il pousse » est la déclaration du
+ * client qu'il agit), son risque est resté `read` (il monte avec la méthode et ne redescend jamais : une requête
+ * repassée en GET garde des outils simulés), et aucune variable ne vient du contact.
+ * Deux appelants : le bac à sable d'un agent IA (`connecteurEssai`) et le relais de l'agent de Meta, dont le bac à
+ * sable ne désigne aucun client (`src/http/mba-relais.ts`).
+ */
+export function litSansLeContact(
+  requete: Pick<RequeteConnecteur, 'methode' | 'variables'>,
+  outil: Pick<OutilDefini, 'nature' | 'risk'>,
+): boolean {
+  return requete.methode === 'GET' && outil.nature === 'integre' && outil.risk === 'read'
+    && !requete.variables.some(duContact);
+}
+
+/**
  * Un connecteur HTTP au bac à sable. Un connecteur qui LIT part POUR DE VRAI, par le résolveur de production, donc
  * avec ses gardes (filtre de sortie, adresse interne, redirection, corps borné) : c'est le seul moyen d'éprouver un
  * devis sans conversation réelle (décision de Julien, 2026-10-05). Le reste est simulé.
- *
- * 🔴 « Qui lit » se juge sur quatre faits : la requête est un GET (ce qui part sur le réseau), l'outil intègre la
- * réponse (« il pousse » est la déclaration du client qu'il agit), son risque est resté `read` (il monte avec la
- * méthode et ne redescend jamais : une requête repassée en GET garde des outils simulés), et aucune variable ne
- * vient du contact.
  */
 function connecteurEssai(c: ConnecteursEssai): ResolveurOutil {
   return async (entree) => {
     const requestId = typeof entree.outil.requestId === 'string' ? entree.outil.requestId : '';
     const requete = requestId === '' ? null : await c.requetes.parId(entree.ctx.tenantId, requestId);
-    if (requete && requete.methode === 'GET' && entree.outil.nature === 'integre' && entree.outil.risk === 'read'
-      && !requete.variables.some(duContact)) return c.reel(entree);
+    if (requete && litSansLeContact(requete, entree.outil)) return c.reel(entree);
     return connecteurSimule(entree.outil, requete);
   };
 }

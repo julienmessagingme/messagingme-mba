@@ -193,6 +193,23 @@ La séquence est désormais prescrite, dans cet ordre :
 plateforme y ajoute les contacts qu'elle confie à l'agent et les en retire avant tout modèle
 (`src/mba/liste.ts`). Le choix d'audience et le panneau de liste ont quitté la console.
 
+### 🔴 MESURÉ le 2026-10-07 : le PREMIER allumage d'un numéro client passe par WhatsApp Manager
+
+Premier numéro client allumé par notre console (Groupama PJ, `phone_number_id=1412408368613377`), après
+l'acceptation des conditions dans WhatsApp Manager :
+
+- **L'agent existait sans `agent_onboarding`** (un `agent_id` dans `GET settings`), comme sur notre numéro le
+  2026-08-18 : l'acceptation des conditions le crée, aussi sur le compte d'un client.
+- **`PUT settings` avec `rollout.enabled: true` rendait 500, `Internal Server Error : Could not update settings for
+  channel`**, sur deux essais à 19 h 08, alors que l'audience valait bien `ALLOWLISTED_ONLY`. Ce n'était PAS le
+  moyen de paiement : il a été ajouté, et deux essais à 19 h 28 ont rendu la même erreur. Ce n'était pas non plus
+  la connaissance : la fiche entreprise, les FAQ et les compétences étaient vides quand l'allumage a réussi.
+- **Ce qui l'a débloqué** : le toggle « Allow AI agent to respond » de WhatsApp Manager (onglet Meta Business
+  Agent, la cinquième des tâches obligatoires de l'écran), activé entre 19 h 28 et 19 h 35. Notre allumage est
+  passé à 19 h 35, relu chez Meta : `rollout.enabled: true` et `ai_audience: ALLOWLISTED_ONLY`.
+- ⚠️ **Reste ouvert** : ce geste débloque-t-il notre allumage pour de bon, ou Meta avait-il déjà allumé l'agent,
+  notre appel ne faisant que réécrire `true` ? Un arrêt puis un rallumage depuis la console tranchent.
+
 ### 🆕 UI Skills : une surface entière que nous n'implémentons pas
 
 `reference/configure/ui-skills` (CRUD, jamais lue par notre corpus) + le guide `usage-guides/writing-ui-skills`
@@ -2826,8 +2843,10 @@ ATTENTION : ce sont les **trois seules** macros. La spec ne documente **rien** d
 
 **MESURÉ le 2026-09-21** (relais Engage Me, conversation WhatsApp réelle) : `WHATSAPP_PHONE_NUMBER`, lié à un
 **en-tête** d'un tool (`request_definition.headers`), est bien rempli par Meta, et vaut le numéro international
-**SANS « + »**, chiffres seuls (11 caractères pour un numéro français `33…`). Non mesuré : ce que vaut la macro
-dans le bac à sable (`run`, `agent_test`), et pour un client qui n'a qu'un nom d'utilisateur WhatsApp.
+**SANS « + »**, chiffres seuls (11 caractères pour un numéro français `33…`). **MESURÉ le 2026-10-07 dans le bac
+à sable (`agent_test`)** : Meta la remplit de **16 chiffres**, sans « + », ce qui ne désigne aucun numéro (E.164 en
+compte 15 au plus). Notre relais n'y reconnaît donc aucun client ; seul un appel qui lit sans rien savoir du contact
+y part (`litSansLeContact`). Non mesuré : sa valeur pour un client qui n'a qu'un nom d'utilisateur WhatsApp.
 
 ATTENTION, règle bloquante : « This cannot be provided for an "object" or "array" type node ». Un `binding` est interdit sur un nœud `object` ou `array`. Pour figer une valeur imbriquée, il faut poser le binding sur le nœud feuille scalaire.
 

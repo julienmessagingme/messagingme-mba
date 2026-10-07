@@ -5,6 +5,7 @@ import type { RequeteConnecteur } from '../agent/requetes';
 import type { AppelConnecteur } from '../agent/resolvers/http';
 import { borner, rediger, type ContexteAppel, type ResolveurOutil, type SortieResolveur } from '../agent/executor';
 import { paramsOutil } from '../agent/llm/tool-schema';
+import { litSansLeContact } from '../agent/resolvers/simulation';
 import { completerArguments } from '../agent/completer-arguments';
 import { variablesMcp } from '../mba/outils-a-publier';
 import { consommateurMba } from '../agent/consommateur';
@@ -43,7 +44,9 @@ export interface MbaRelaisDeps {
    * adresse publique, transport borné) ne sont pas recopiées ici (2026-10-02).
    */
   resolveurMcp: ResolveurOutil;
-  requetes: { parId(tenantId: string, id: string): Promise<Pick<RequeteConnecteur, 'variables'> | null> };
+  /** `methode` : un appel qui lit sans rien savoir du contact part aussi quand aucun client n'est identifié
+   *  (`litSansLeContact`). */
+  requetes: { parId(tenantId: string, id: string): Promise<Pick<RequeteConnecteur, 'variables' | 'methode'> | null> };
   /** La projection du contact `{nom, tags, champs}`, ou `null` s'il est inconnu. Jamais la ligne brute. */
   contacts: { projectionPourTiers(tenantId: string, waId: string): Promise<Record<string, unknown> | null> };
   appeler(p: AppelConnecteur): Promise<SortieResolveur>;
@@ -118,14 +121,25 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     if (cible === null && !estMcp && (outil.origin !== 'http' || !outil.requestId)) return refus(PAS_PROPOSE);
 
     // 2. Le contact, désigné par l'en-tête que Meta remplit lui-même (macro `WHATSAPP_PHONE_NUMBER`). On
-    //    n'appelle jamais le système du client sans contact identifié.
+    //    n'appelle jamais le système du client sans contact identifié, sauf un appel qui LIT sans rien savoir du
+    //    contact (`litSansLeContact`, la règle du bac à sable d'un agent IA) : il part sans contact. C'est le cas du
+    //    bac à sable de Meta (`agent_test`), qui remplit la macro de 16 chiffres ne désignant aucun client (mesuré le
+    //    2026-10-07). Un geste, un outil MCP ou un appel qui lit la fiche restent refusés.
     const brut = req.headers[ENTETE_CONTACT_META.toLowerCase()];
     const valeur = Array.isArray(brut) ? brut[0] : brut;
     deps.journaliserForme(formeEntete(valeur));
     const waId = waIdDepuisEntete(valeur);
-    if (waId === null) return refus('le client n’est pas identifié : son numéro WhatsApp manque');
-    const contact = await deps.contacts.projectionPourTiers(tenant, waId);
-    if (contact === null) return refus('ce client est introuvable dans le carnet de contacts');
+    const contact = waId === null ? null : await deps.contacts.projectionPourTiers(tenant, waId);
+    if (waId === null || contact === null) {
+      const requete = cible === null && !estMcp && outil.requestId
+        ? await deps.requetes.parId(tenant, outil.requestId) : null;
+      if (requete !== null && outil.requestId && litSansLeContact(requete, outil)) {
+        return appelerConnecteur(tenant, outil, outil.requestId, requete, '', null);
+      }
+      return refus(waId === null
+        ? 'le client n’est pas identifié : son numéro WhatsApp manque'
+        : 'ce client est introuvable dans le carnet de contacts');
+    }
 
     // 2 bis. Un geste maison : exécuté ici, journalisé comme un appel de connecteur (même table, même appelant).
     if (cible !== null) {
@@ -179,30 +193,40 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
     }
     if (estMcp) return appelerMcp(tenant, outil, waId, contact);
     if (!outil.requestId) return refus(PAS_PROPOSE);
-
-    // 3. Les valeurs du modèle, validées contre les variables `modele` déclarées, et elles seules. Le lecteur JSON
-    //    rend `{}` sur un corps illisible : on relit le corps brut (`rawBody`) pour ne pas le confondre avec un
-    //    corps vide. Seulement si l'outil lit un corps : sinon ce que Meta envoie n'est pas mesuré, et le refuser
-    //    casserait l'outil pour rien.
     const requete = await deps.requetes.parId(tenant, outil.requestId);
     if (requete === null) return refus('cet outil n’est pas configuré');
-    const litUnCorps = requete.variables.some((v) => v.origine.type === 'modele');
-    if (litUnCorps && corpsIllisible((req as { rawBody?: unknown }).rawBody)) {
-      return refus('le corps de la requête n’est pas du JSON lisible');
-    }
-    const lu = lireValeursModele(requete.variables, req.body);
-    if (!lu.ok) return refus(lu.erreur);
+    return appelerConnecteur(tenant, outil, outil.requestId, requete, waId, contact);
 
-    // 4. L'appel, par le point de passage partagé.
-    const sortie = await deps.appeler({
-      tenantId: tenant, waId, contact, requestId: outil.requestId, maxBytes: outil.maxBytes, args: lu.valeurs,
-      signal: AbortSignal.timeout(outil.timeoutMs),
-      journal: { journal: deps.journal, source: 'mba', nom: outil.name, sessionId: null, toolId: outil.id },
-      lecture: { nature: 'entier' },
-    });
-    if (sortie.ok === false) return refus(texteErreur(sortie.contenu));
-    const reponse = (sortie.contenu as { reponse?: unknown } | null)?.reponse ?? null;
-    return reply.code(200).send({ succes: true, statut: sortie.httpStatus ?? null, reponse });
+    /**
+     * Un appel de connecteur. `fiche` à `null` : un appel qui lit sans rien savoir du contact (étape 2) ; le point de
+     * passage refuse alors toute variable qui la réclamerait, jamais envoyée avec une valeur inventée.
+     */
+    async function appelerConnecteur(
+      t: string, o: OutilDefini, requestId: string, rq: Pick<RequeteConnecteur, 'variables'>,
+      wa: string, fiche: Record<string, unknown> | null,
+    ) {
+      // 3. Les valeurs du modèle, validées contre les variables `modele` déclarées, et elles seules. Le lecteur JSON
+      //    rend `{}` sur un corps illisible : on relit le corps brut (`rawBody`) pour ne pas le confondre avec un
+      //    corps vide. Seulement si l'outil lit un corps : sinon ce que Meta envoie n'est pas mesuré, et le refuser
+      //    casserait l'outil pour rien.
+      const litUnCorps = rq.variables.some((v) => v.origine.type === 'modele');
+      if (litUnCorps && corpsIllisible((req as { rawBody?: unknown }).rawBody)) {
+        return refus('le corps de la requête n’est pas du JSON lisible');
+      }
+      const lu = lireValeursModele(rq.variables, req.body);
+      if (!lu.ok) return refus(lu.erreur);
+
+      // 4. L'appel, par le point de passage partagé.
+      const sortie = await deps.appeler({
+        tenantId: t, waId: wa, contact: fiche, requestId, maxBytes: o.maxBytes, args: lu.valeurs,
+        signal: AbortSignal.timeout(o.timeoutMs),
+        journal: { journal: deps.journal, source: 'mba', nom: o.name, sessionId: null, toolId: o.id },
+        lecture: { nature: 'entier' },
+      });
+      if (sortie.ok === false) return refus(texteErreur(sortie.contenu));
+      const reponse = (sortie.contenu as { reponse?: unknown } | null)?.reponse ?? null;
+      return reply.code(200).send({ succes: true, statut: sortie.httpStatus ?? null, reponse });
+    }
 
     /**
      * Un outil MCP (2026-10-02, route A) : Meta parle HTTP à notre relais, nous parlons MCP au serveur du client. Le

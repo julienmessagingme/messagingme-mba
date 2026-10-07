@@ -60,6 +60,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     requetes: {
       parId: async (t, id) => (t === 't1' && id === 'rq1'
         ? {
+            methode: 'POST',
             variables: [
               { nom: 'user', type: 'string', origine: { type: 'modele' }, requis: true },
               { nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true },
@@ -151,6 +152,53 @@ describe('le relais du Meta Business Agent', () => {
     expect(appels).toHaveLength(0);
   });
 
+  /**
+   * Le bac à sable de Meta (`agent_test`) remplit la macro du numéro de 16 chiffres, qui ne désignent aucun client
+   * (mesuré le 2026-10-07 sur l'outil de devis de Groupama). Un devis : un GET qui lit, au risque `read`, dont les
+   * variables viennent du seul modèle.
+   */
+  const SANS_CLIENT = '1234567890123456';
+  const DEVIS = { ...OUTIL, nature: 'integre', risk: 'read' } as OutilDefini;
+  const requeteDevis = (over: Record<string, unknown> = {}) => ({
+    methode: 'GET', variables: [{ nom: 'race', type: 'string', origine: { type: 'modele' }, requis: true }], ...over,
+  });
+  const monterDevis = (rq: Record<string, unknown> = requeteDevis(), outil: OutilDefini = DEVIS) => monter({
+    catalogue: { listActifsConsommateur: async (t, c) => (t === 't1' && c === 'mba:pn1' ? [outil] : []) },
+    requetes: { parId: async (t, id) => (t === 't1' && id === 'rq1' ? rq : null) } as MbaRelaisDeps['requetes'],
+  });
+
+  it('🔴 sans client identifié (bac à sable de Meta), un appel qui LIT sans rien savoir du contact part, sans contact', async () => {
+    const { app, appels } = monterDevis();
+    const res = await poster(app, CLE_RELAIS, { race: 'berger australien' }, SANS_CLIENT);
+    expect(res.json()).toEqual({ succes: true, statut: 200, reponse: { success: true } });
+    expect(appels).toHaveLength(1);
+    expect(appels[0]!).toMatchObject({
+      tenantId: 't1', waId: '', contact: null, requestId: 'rq1', args: { race: 'berger australien' },
+      lecture: { nature: 'entier' }, journal: { source: 'mba', nom: 'add_tag', sessionId: null, toolId: 'o1' },
+    });
+    // Un numéro bien formé mais absent du carnet : même règle.
+    expect((await poster(app, CLE_RELAIS, { race: 'labrador' }, '+33700000000')).json().succes).toBe(true);
+    expect(appels).toHaveLength(2);
+  });
+
+  it('🔴 sans client identifié, un appel qui lit la fiche, qui écrit ou qui pousse reste refusé, sans rien appeler', async () => {
+    const cas: Array<[string, ReturnType<typeof monterDevis>]> = [
+      ['une variable de la fiche', monterDevis(requeteDevis({
+        variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }],
+      }))],
+      ['un POST', monterDevis(requeteDevis({ methode: 'POST' }))],
+      ['un outil qui pousse', monterDevis(requeteDevis(), { ...DEVIS, nature: 'pousse' } as OutilDefini)],
+      ['un risque d’écriture', monterDevis(requeteDevis(), { ...DEVIS, risk: 'write' } as OutilDefini)],
+    ];
+    for (const [quoi, { app, appels }] of cas) {
+      expect((await poster(app, CLE_RELAIS, { race: 'x' }, SANS_CLIENT)).json(), quoi)
+        .toEqual({ succes: false, erreur: 'le client n’est pas identifié : son numéro WhatsApp manque' });
+      expect((await poster(app, CLE_RELAIS, { race: 'x' }, '+33700000000')).json(), quoi)
+        .toEqual({ succes: false, erreur: 'ce client est introuvable dans le carnet de contacts' });
+      expect(appels, quoi).toHaveLength(0);
+    }
+  });
+
   it('un espace sans numéro WhatsApp n’expose rien', async () => {
     const { app, appels } = monter({ numeros: { getTenantPhoneNumberId: async () => null } });
     expect((await poster(app, CLE_RELAIS, { user: 'u1' })).json().succes).toBe(false);
@@ -194,7 +242,7 @@ describe('le relais du Meta Business Agent', () => {
     // pour tout le serveur, qui le laisse passer. Ce test tombe le jour où l'on change de lecteur.
     const { app, appels } = monter({
       requetes: {
-        parId: async () => ({ variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
+        parId: async () => ({ methode: 'POST', variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
       },
     });
     for (const payload of [undefined, '']) {
@@ -242,7 +290,7 @@ describe('le relais du Meta Business Agent', () => {
     // mesuré. Le refuser casserait l'outil pour un corps qu'on n'aurait de toute façon pas lu.
     const { app, appels } = monter({
       requetes: {
-        parId: async () => ({ variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
+        parId: async () => ({ methode: 'POST', variables: [{ nom: 'tag', type: 'string', origine: { type: 'champ', cle: 'tag_ns' }, requis: true }] }),
       },
     });
     const res = await app.inject({
@@ -315,6 +363,8 @@ describe('les outils maison de l’agent de Meta', () => {
     const { app, gestes } = avec([TAG]);
     const res = await poster(app, CLE_RELAIS, {}, null, 'o2');
     expect(res.json().succes).toBe(false);
+    // Les 16 chiffres du bac à sable de Meta non plus : un geste agit pour quelqu'un.
+    expect((await poster(app, CLE_RELAIS, {}, '1234567890123456', 'o2')).json().succes).toBe(false);
     expect(gestes).toEqual([]);
   });
 
@@ -706,6 +756,14 @@ describe('le relais et les outils MCP', () => {
     expect(vus[0]!.outil.id).toBe('m1');
     expect(vus[0]!.ctx.tenantId).toBe('t1');
     expect(vus[0]!.ctx.waId).toBe('33612345678');
+  });
+
+  it('🔴 sans client identifié (bac à sable de Meta), le serveur MCP n’est pas appelé', async () => {
+    const vus: EntreeResolveur[] = [];
+    const { app } = avecMcp(MCP, async (e) => { vus.push(e); return { ok: true, contenu: {} }; });
+    const res = await poster(app, CLE_RELAIS, { question: 'horaires ?' }, '1234567890123456', 'm1');
+    expect(res.json()).toEqual({ succes: false, erreur: 'le client n’est pas identifié : son numéro WhatsApp manque' });
+    expect(vus).toHaveLength(0);
   });
 
   it('journalise l’appel sous l’origine `mcp` et l’appelant `mba`, avec les seuls arguments du modèle', async () => {
