@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { isSendableButtonUrl } from '../meta/button-url';
 import { estClicAutomatique } from '../links/clic-automatique';
 import { estJeton } from '../links/jeton-contact';
+import { porteDesChamps, remplirChampsUrl } from '../links/champs-url';
 import type { DestinationLien } from '../links/tracked-links.pg';
 import { journaliser } from '../lib/journal';
 import { escapeHtml as echappe } from '../crm/render';
@@ -28,6 +29,12 @@ export interface LiensDep {
    * 🔴 `tenantId` vient du lien, pas de l'URL : le contact d'un autre espace ne s'attribue pas ce clic.
    */
   contactParJeton(tenantId: string, jeton: string): Promise<string | null>;
+  /**
+   * Les valeurs de la fiche qui porte ce jeton, pour remplir les champs `{cle}` d'une destination (`remplirChampsUrl`).
+   * `null` = jeton inconnu dans cet espace. Appelée seulement si la destination porte des champs.
+   * 🔴 `tenantId` vient du lien, pas de l'URL : la fiche d'un autre espace ne s'écrit jamais dans l'adresse.
+   */
+  champsParJeton(tenantId: string, jeton: string): Promise<Record<string, string | null> | null>;
 }
 
 export interface LinksRouteDeps {
@@ -119,9 +126,33 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       }
     }
 
+    // Une destination à champs (`https://site.fr/commande/{numero_commande}`) se remplit avec la fiche de celui qui
+    // clique, robot compris (le comptage seul dépend de `estClicAutomatique`). Sans champ : la destination telle
+    // quelle, sans aucune lecture de plus. Jeton absent, `anon`, inconnu ou lecture en échec : les champs sont retirés.
+    let location = lien.destination;
+    if (porteDesChamps(lien.destination)) {
+      let valeurs: Record<string, string | null> | null = null;
+      if (estJeton(jeton)) {
+        try {
+          valeurs = await deps.liens.champsParJeton(lien.tenantId, jeton);
+        } catch (err) {
+          journaliser('error', 'champs_lien_non_lus', { err, code: normalise, tenantId: lien.tenantId });
+        }
+      }
+      try {
+        location = remplirChampsUrl(lien.destination, valeurs);
+      } catch (err) {
+        // `encodeURIComponent` lève sur un demi-substitut isolé : jamais de 5xx ici, les champs sont retirés (sans
+        // valeur, rien n'est encodé).
+        journaliser('error', 'champs_lien_non_remplis', { err, code: normalise, tenantId: lien.tenantId });
+        location = remplirChampsUrl(lien.destination, null);
+      }
+    }
+
     // 302 et non 301 : un 301 est mis en cache par le navigateur, qui n'appellerait plus jamais notre route.
     // On perdrait tous les clics suivants de la même personne, et on ne pourrait plus changer la destination.
-    return reply.code(302).header('location', lien.destination).header('cache-control', 'no-store').send();
+    // `no-store` compte double pour une destination à champs : l'adresse rendue est propre à celui qui clique.
+    return reply.code(302).header('location', location).header('cache-control', 'no-store').send();
   };
 
   app.get('/r/:code', traiter);

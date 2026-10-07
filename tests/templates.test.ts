@@ -6,6 +6,7 @@ import type { FetchLike } from '../src/meta/templates';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import { aucuneCampagneActive, modelesInertes } from './routes-inertes';
+import type { CibleLien, LienTrace } from '../src/links/tracked-links.pg';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -693,7 +694,11 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
           destinations.set(`https://mba.messagingme.app/r/${code}`, destination);
           return code;
         },
-        liens: { confirm: async (_t: string, codes: readonly string[]) => { journal.push(`confirm:${codes.join(',')}`); } },
+        liens: {
+          confirm: async (_t: string, codes: readonly string[]) => { journal.push(`confirm:${codes.join(',')}`); },
+          deconfirmer: async (_t: string, codes: readonly string[]) => { journal.push(`deconfirmer:${codes.join(',')}`); },
+          listByTemplates: async () => [],
+        },
         lienDe: (code: string) => `https://mba.messagingme.app/r/${code}`,
         destinations: async () => destinations,
       },
@@ -755,7 +760,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
         repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive },
         tracking: {
           allocate: async () => { throw new Error('base indisponible'); },
-          liens: { confirm: async () => {} },
+          liens: { confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => [] },
           lienDe: (c: string) => `https://mba.messagingme.app/r/${c}`,
           destinations: async () => new Map(),
         },
@@ -790,6 +795,277 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/templates', ...h(token) });
     const body = res.json<{ templates: Array<{ buttons?: Array<{ url?: string }> }> }>();
     expect(body.templates[0]!.buttons![0]!.url).toBe('https://client.fr/promo');
+    await server.close();
+  });
+});
+
+/**
+ * Un faux `tracked_links` qui tient les règles de l'upsert réel (`allocate`, `src/links/tracked-links.pg.ts`) : un
+ * code par position de bouton, GARDÉ d'une réservation à l'autre ; destination et jeton mis à jour ; confirmation
+ * remise à zéro. C'est ce qui rend lisible ce que la table dit à l'ENVOI après une création ou une édition : les
+ * boutons confirmés `avecJeton` sont ceux qui recevront un composant `url` (131008 s'il manque, 132000 en trop).
+ */
+function tableDesLiens() {
+  type Ligne = LienTrace & { confirme: boolean };
+  const lignes: Ligne[] = [];
+  const journal: string[] = [];
+  const lienDe = (code: string, avecJeton: boolean): string => `https://api.messagingme.app/r/${code}${avecJeton ? '/{{1}}' : ''}`;
+  const dep = {
+    allocate: async (_t: string, cible: CibleLien, destination: string, avecJeton: boolean): Promise<string> => {
+      journal.push(`allocate:${cible.buttonIndex}:${destination}`);
+      let l = lignes.find((x) => x.templateName === cible.templateName && x.templateLanguage === cible.templateLanguage
+        && x.cardIndex === cible.cardIndex && x.buttonIndex === cible.buttonIndex);
+      if (!l) {
+        // Un code de la forme réelle (12 caractères de l'alphabet de `newTrackingCode`) : `codeDuLienTrace` le lit.
+        l = { code: `ab12cd34ef${String(lignes.length + 1).padStart(2, '0')}`, ...cible, destination, avecJeton, confirme: false };
+        lignes.push(l);
+      }
+      Object.assign(l, { destination, avecJeton, confirme: false });
+      return l.code;
+    },
+    liens: {
+      confirm: async (_t: string, codes: readonly string[]) => {
+        journal.push(`confirm:${codes.join(',')}`);
+        for (const l of lignes) if (codes.includes(l.code)) l.confirme = true;
+      },
+      deconfirmer: async (_t: string, codes: readonly string[]) => {
+        journal.push(`deconfirmer:${codes.join(',')}`);
+        for (const l of lignes) if (codes.includes(l.code)) l.confirme = false;
+      },
+      listByTemplates: async (_t: string, noms: readonly string[]): Promise<LienTrace[]> =>
+        lignes.filter((l) => l.confirme && noms.includes(l.templateName)).map(({ confirme: _c, ...l }) => l),
+    },
+    lienDe,
+    destinations: async () => new Map(lignes.flatMap((l) => [[lienDe(l.code, false), l.destination], [lienDe(l.code, true), l.destination]] as Array<[string, string]>)),
+  };
+  /** Ce que l'envoi lirait pour ce template : les boutons qui attendent le jeton du destinataire. */
+  const boutonsAJeton = (nom: string): number[] => lignes.filter((l) => l.confirme && l.avecJeton && l.cardIndex === null && l.templateName === nom).map((l) => l.buttonIndex);
+  return { lignes, journal, dep, boutonsAJeton, lienDe };
+}
+
+function serveurLiens(fn: FetchLike, t: ReturnType<typeof tableDesLiens>, champs: string[] = ['numero_commande'], lus: string[] = []) {
+  return buildServer({
+    queue: new FakeQueue(),
+    auth: { users: noUsers, secret: SECRET },
+    templates: {
+      ...modelesInertes,
+      champsDeclares: async (tenant) => { lus.push(tenant); return champs; },
+      meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fn) },
+      repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive },
+      tracking: t.dep,
+    },
+  });
+}
+
+type CorpsMeta = { components: Array<{ type: string; buttons?: Array<{ type: string; url?: string }> }> };
+const boutonsSoumis = (init: RequestInit): Array<{ type: string; url?: string }> =>
+  (JSON.parse(String(init.body)) as CorpsMeta).components.find((c) => c.type === 'BUTTONS')!.buttons!;
+
+describe('RC7 : un champ du contact dans l’adresse d’un bouton « Lien »', () => {
+  const avecUrl = (url: string, name = 'suivi_commande') => ({
+    name, language: 'fr', category: 'UTILITY', body: 'Votre commande est partie',
+    buttons: [{ type: 'URL', text: 'Suivre ma commande', url }],
+  });
+
+  it('🔴 Meta reçoit NOTRE lien à jeton, jamais le champ ; la destination le garde, tracée avec jeton', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+    const t = tableDesLiens();
+    const server = serveurLiens(fn, t);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: avecUrl('https://client.fr/commande/{numero_commande}') });
+    expect(res.statusCode).toBe(201);
+    expect(boutonsSoumis(calls[0]!.init)[0]!.url).toBe('https://api.messagingme.app/r/ab12cd34ef01/{{1}}');
+    expect(String(calls[0]!.init.body)).not.toContain('numero_commande');
+    expect(t.lignes[0]).toMatchObject({ destination: 'https://client.fr/commande/{numero_commande}', avecJeton: true, confirme: true });
+    await server.close();
+  });
+
+  it('🔴 un champ dans le schéma, l’utilisateur, l’hôte ou le port : refusé, rien n’est réservé ni soumis', async () => {
+    // Une valeur de fiche peut être écrite par le contact : dans l'hôte, elle ferait de notre domaine un redirecteur
+    // ouvert. `new URL` accepte `{x}` dans un nom d'hôte, d'où une règle lue sur le texte. Le port et le schéma
+    // tombent déjà sur la règle d'URL envoyable (`buttons invalides`) : on vérifie seulement qu'ils sont refusés.
+    const lisibles = ['https://{prenom}.client.fr/a', 'https://client.{prenom}/a', 'https://{prenom}@client.fr/a', 'https://client.fr{prenom}/a', 'https://client.fr\\{prenom}'];
+    for (const url of [...lisibles, 'https://client.fr:{prenom}/a', 'http{prenom}://client.fr/a']) {
+      const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+      const t = tableDesLiens();
+      const server = serveurLiens(fn, t);
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: avecUrl(url) });
+      expect(res.statusCode, url).toBe(400);
+      if (lisibles.includes(url)) expect(res.json<{ error: string }>().error, url).toMatch(/après le nom du site/);
+      expect(calls, url).toHaveLength(0);
+      expect(t.journal, url).toEqual([]);
+      await server.close();
+    }
+  });
+
+  it('une clé inconnue, une accolade orpheline, un champ vide, un mélange avec {{1}} : refus lisible', async () => {
+    const cas: Array<[string, RegExp]> = [
+      ['https://client.fr/commande/{inconnu}', /\{inconnu\} n'existe pas/],
+      ['https://client.fr/commande/{numero_commande', /accolade sans sa paire/],
+      ['https://client.fr/commande/numero_commande}', /accolade sans sa paire/],
+      ['https://client.fr/commande/{}', /champ vide/],
+      ['https://client.fr/commande/{numero-commande}', /n'est pas un champ du contact/],
+      ['https://client.fr/{prenom}/{{1}}', /variable \{\{1\}\}/],
+    ];
+    for (const [url, motif] of cas) {
+      const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+      const server = serveurLiens(fn, tableDesLiens());
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: avecUrl(url) });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.json<{ error: string }>().error, url).toMatch(/bouton 1/);
+      expect(res.json<{ error: string }>().error, url).toMatch(motif);
+      expect(calls, url).toHaveLength(0);
+      await server.close();
+    }
+  });
+
+  it('les champs de base passent sans être déclarés ; les champs déclarés ne sont lus que pour une adresse à accolade', async () => {
+    for (const url of ['https://client.fr/?p={prenom}&n={nom}#{telephone}', 'https://client.fr/promo']) {
+      const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+      const lus: string[] = [];
+      const server = serveurLiens(fn, tableDesLiens(), [], lus);
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: avecUrl(url) });
+      expect(res.statusCode, url).toBe(201);
+      expect(lus, url).toEqual(url.includes('{') ? ['t1'] : []);
+      await server.close();
+    }
+  });
+
+  it('🔴 un champ dans le lien d’une CARTE de carousel est refusé : tracée sans jeton, elle ne le remplirait jamais', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+    const server = serveurLiens(fn, tableDesLiens());
+    const carte = (url: string) => ({ headerHandle: 'h', buttons: [{ type: 'URL', text: 'Voir', url }] });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/templates', ...h(token),
+      payload: { name: 'caro', language: 'fr', category: 'MARKETING', body: 'Nos offres', carousel: { cards: [carte('https://client.fr/a/{prenom}'), carte('https://client.fr/b')] } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/carte 1, bouton 1 : un champ du contact ne peut pas/);
+    expect(calls).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 traçage en panne + bouton à champ : 422 lisible, et RIEN n’est soumis (le champ partirait en clair chez Meta)', async () => {
+    // Le repli d'un bouton sans champ (soumettre l'adresse saisie) est tenu par le test « une panne du traçage… ».
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+    const t = tableDesLiens();
+    t.dep.allocate = async () => { throw new Error('base indisponible'); };
+    const server = serveurLiens(fn, t);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: avecUrl('https://client.fr/commande/{numero_commande}') });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toMatch(/n'a pas été soumis/);
+    expect(calls).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 Meta REFUSE une création (nom déjà pris) : les liens du template en service restent confirmés', async () => {
+    // `allocate` remet la confirmation à zéro sur la même position : sans remise en l'état, l'envoi du template
+    // DÉJÀ approuvé partait sans son jeton, et Meta refusait chaque message (131008).
+    const t = tableDesLiens();
+    const cible = { templateName: 'suivi_commande', templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 };
+    const code = await t.dep.allocate('t1', cible, 'https://client.fr/suivi', true);
+    await t.dep.liens.confirm('t1', [code]);
+    const { fn } = makeFetch([{ ok: false, status: 400, json: { error: { message: 'Content in this language already exists' } } }]);
+    const server = serveurLiens(fn, t);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: avecUrl('https://client.fr/autre/{numero_commande}') });
+    expect(res.statusCode).toBe(422);
+    expect(t.boutonsAJeton('suivi_commande')).toEqual([0]);
+    expect(t.lignes).toEqual([{ ...cible, code, destination: 'https://client.fr/suivi', avecJeton: true, confirme: true }]);
+    await server.close();
+  });
+});
+
+describe('🔴 RC7 : l’ÉDITION (PATCH) repasse par le traçage', () => {
+  const nom = 'promo';
+  /** Le template tel que Meta le rend : ses boutons portent NOS liens, la console en réaffiche la destination. */
+  const chezMeta = (urls: string[]) => ({ ok: true, status: 200, json: { data: [{
+    id: 'TID', name: nom, status: 'APPROVED', category: 'MARKETING', language: 'fr',
+    components: [{ type: 'BODY', text: 'Ancien' }, { type: 'BUTTONS', buttons: urls.map((url, i) => ({ type: 'URL', text: `Lien ${i + 1}`, url })) }],
+  }] } });
+  /** Un template créé par la console : ses boutons sont tracés, confirmés, à jeton. */
+  async function dejaCree(destinations: string[]) {
+    const t = tableDesLiens();
+    const codes: string[] = [];
+    for (const [i, d] of destinations.entries()) codes.push(await t.dep.allocate('t1', { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: i }, d, true));
+    await t.dep.liens.confirm('t1', codes);
+    t.journal.length = 0;
+    return { t, codes };
+  }
+  const edition = (urls: string[]) => ({
+    language: 'fr', category: 'MARKETING', body: 'Nouveau',
+    buttons: urls.map((url, i) => ({ type: 'URL', text: `Lien ${i + 1}`, url })),
+  });
+
+  it('🔴 l’adresse SAISIE que renvoie la console ne remplace pas notre lien chez Meta', async () => {
+    // Le défaut : la console réaffiche la destination (`rehabillerTemplates`) et la renvoie telle quelle au PATCH.
+    // Meta recevait alors l'adresse brute, alors que `tracked_links` disait toujours ce bouton confirmé à jeton :
+    // chaque envoi ajoutait un composant `url` à un template qui n'avait plus de variable.
+    const { t, codes } = await dejaCree(['https://client.fr/promo']);
+    const { fn, calls } = makeFetch([chezMeta([t.lienDe(codes[0]!, true)]), { ok: true, status: 200, json: { success: true } }]);
+    const server = serveurLiens(fn, t);
+    const res = await server.inject({ method: 'PATCH', url: `/tenants/t1/templates/${nom}`, ...h(token), payload: edition(['https://client.fr/promo']) });
+    expect(res.statusCode).toBe(200);
+    expect(boutonsSoumis(calls[1]!.init)[0]!.url).toBe(t.lienDe(codes[0]!, true));
+    // Ce que l'envoi lira est cohérent avec ce que Meta porte : un bouton à jeton, confirmé.
+    expect(t.boutonsAJeton(nom)).toEqual([0]);
+    await server.close();
+  });
+
+  it('le code du bouton est GARDÉ et suit la destination à jour, champ compris : ce qui est déjà parti résout', async () => {
+    const { t, codes } = await dejaCree(['https://client.fr/promo']);
+    const { fn, calls } = makeFetch([chezMeta([t.lienDe(codes[0]!, true)]), { ok: true, status: 200, json: { success: true } }]);
+    const server = serveurLiens(fn, t);
+    const res = await server.inject({ method: 'PATCH', url: `/tenants/t1/templates/${nom}`, ...h(token), payload: edition(['https://client.fr/commande/{numero_commande}']) });
+    expect(res.statusCode).toBe(200);
+    expect(boutonsSoumis(calls[1]!.init)[0]!.url).toBe(t.lienDe(codes[0]!, true));
+    expect(t.lignes).toHaveLength(1);
+    expect(t.lignes[0]).toMatchObject({ code: codes[0], destination: 'https://client.fr/commande/{numero_commande}', confirme: true });
+    await server.close();
+  });
+
+  it('🔴 Meta REFUSE l’édition : les liens d’avant sont remis en l’état (sinon chaque envoi part sans son jeton)', async () => {
+    // Meta limite les éditions d'un template approuvé : un refus est un cas ordinaire, pas une panne.
+    const { t, codes } = await dejaCree(['https://client.fr/promo']);
+    const { fn } = makeFetch([chezMeta([t.lienDe(codes[0]!, true)]), { ok: false, status: 400, json: { error: { message: 'edit limit reached' } } }]);
+    const server = serveurLiens(fn, t);
+    const res = await server.inject({ method: 'PATCH', url: `/tenants/t1/templates/${nom}`, ...h(token), payload: edition(['https://client.fr/autre']) });
+    expect(res.statusCode).toBe(422);
+    expect(t.boutonsAJeton(nom)).toEqual([0]);
+    expect(t.lignes[0]).toMatchObject({ code: codes[0], destination: 'https://client.fr/promo', avecJeton: true, confirme: true });
+    await server.close();
+  });
+
+  it('🔴 notre lien réaffiché BRUT (ancien nom d’hôte, pas de ré-habillage) : ni retracé ni déconfirmé', async () => {
+    // Le ré-habillage ne connaît que l'hôte d'aujourd'hui : un template soumis sous `mba.` réaffiche notre lien brut,
+    // et l'édition le renvoie tel quel. Le retracer donnerait au code sa propre adresse (une boucle) ; le déconfirmer
+    // ferait partir chaque envoi sans son jeton, alors que Meta le porte toujours.
+    for (const avecJeton of [true, false]) {
+      const t = tableDesLiens();
+      const cible = { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 };
+      const code = await t.dep.allocate('t1', cible, 'https://client.fr/promo', avecJeton);
+      await t.dep.liens.confirm('t1', [code]);
+      t.journal.length = 0;
+      const brut = `https://mba.messagingme.app/r/${code}${avecJeton ? '/{{1}}' : ''}`;
+      const { fn, calls } = makeFetch([chezMeta([brut]), { ok: true, status: 200, json: { success: true } }]);
+      const server = serveurLiens(fn, t);
+      const res = await server.inject({ method: 'PATCH', url: `/tenants/t1/templates/${nom}`, ...h(token), payload: edition([brut]) });
+      expect(res.statusCode, brut).toBe(200);
+      expect(boutonsSoumis(calls[1]!.init)[0]!.url, brut).toBe(brut);
+      expect(t.journal, brut).toEqual([]);
+      expect(t.lignes, brut).toEqual([{ ...cible, code, destination: 'https://client.fr/promo', avecJeton, confirme: true }]);
+      await server.close();
+    }
+  });
+
+  it('🔴 une édition qui RETIRE un bouton tracé le déconfirme : l’envoi ne réclame plus de jeton pour un bouton disparu', async () => {
+    const { t, codes } = await dejaCree(['https://client.fr/a', 'https://client.fr/b']);
+    const { fn } = makeFetch([chezMeta(codes.map((c) => t.lienDe(c, true))), { ok: true, status: 200, json: { success: true } }]);
+    const server = serveurLiens(fn, t);
+    const res = await server.inject({ method: 'PATCH', url: `/tenants/t1/templates/${nom}`, ...h(token), payload: edition(['https://client.fr/a']) });
+    expect(res.statusCode).toBe(200);
+    expect(t.boutonsAJeton(nom)).toEqual([0]);
+    // La ligne RESTE (porte à sens unique : son code redirige toujours), elle n'est plus confirmée.
+    expect(t.lignes.find((l) => l.code === codes[1])).toMatchObject({ destination: 'https://client.fr/b', confirme: false });
+    expect(t.journal).toContain(`deconfirmer:${codes[1]}`);
     await server.close();
   });
 });

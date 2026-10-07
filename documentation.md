@@ -2084,6 +2084,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | Jeton d'accès OAuth (`mbo_`) dans `makeRequireApiKey`, relu en base à chaque appel | `/mcp` ; `/v1` et le relais le refusent faute de leurs droits | un Claude dont l'autorisation est révoquée ou échue, ou dont la personne n'est plus admin ou est désactivée |
 | Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée, et toute connexion d'exploitation (Google compris) | une session d'admin, ou d'exploitation, ouverte avec le seul mot de passe |
 | `urlRecuperable` + `resolutionPublique` | toute URL saisie par un client | le SSRF vers le réseau interne |
+| `analyserChampsUrl` à la création, `remplirChampsUrl` au clic (`src/links/champs-url.ts`) | destination d'un bouton « Lien » à champs du contact (§ 10) | une valeur de fiche, écrite par le contact, qui ferait de `/r/` un redirecteur ouvert |
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
 | Signature `ftyp`, bornes du morceau (`src/pubs/video.ts`), parseur d'octets muet | dépôt d'une vidéo publicitaire | autre chose qu'une vidéo envoyé chez Meta sous l'identité du client, et un corps tamponné avant l'authentification |
 | En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
@@ -3025,6 +3026,31 @@ TOUS, sans recours. Le retour arrière n'existe qu'avant le premier envoi tracé
 Une route publique nouvelle vaut mieux sous le rewrite attrape-tout `/api/backend/:path*`, qui lui n'est pas
 gelé.
 
+### Les destinations à champs du contact
+
+La destination d'un bouton « Lien » peut porter des champs du contact en accolades SIMPLES
+(`https://site.fr/commande/{numero_commande}`) : un champ déclaré de l'espace, ou `prenom`, `nom`, `telephone`
+(`CLES_DE_BASE_URL`). Elle est stockée telle quelle dans `tracked_links.destination`. Meta reçoit toujours le lien
+tracé à jeton (`/r/<code>/{{1}}`) et ne voit jamais le champ.
+
+- **Au clic**, si la destination porte des champs (`porteDesChamps`), la redirection lit la fiche par son jeton DANS
+  L'ESPACE DU LIEN (`champsParJeton` : `tenant_id` du lien, `deleted_at is null`) et remplace chaque `{cle}` par sa
+  valeur encodée (`remplirChampsUrl`, `src/links/champs-url.ts`) : `nom` est le nom du profil, `telephone` le numéro.
+  Valeur vide, jeton `anon`, inconnu, mal formé ou absent (forme `/r/:code`), lecture en échec : le champ est
+  retiré, et la redirection a lieu (302, `no-store`, jamais de 5xx). Le remplacement ne dépend pas du filtre des
+  clics automatiques, qui ne décide que du comptage.
+- 🔴 **Un champ ne se trouve qu'après l'hôte** (chemin, requête, fragment). Une valeur de fiche peut être écrite
+  par le contact : dans le schéma, l'utilisateur, l'hôte ou le port, elle ferait de notre domaine un redirecteur
+  ouvert. La règle se lit sur le TEXTE (`analyserChampsUrl`), parce que `new URL` accepte `{x}` dans un nom d'hôte.
+  Elle refuse à la création (`refusDesChamps`, `src/http/templates.ts`), et l'adresse remplie est revalidée au clic
+  (même origine que la destination sans ses champs, `isSendableButtonUrl`) ; sinon, 302 vers la destination sans
+  ses champs. Dupliquée dans `web/lib/champs-url.ts`, parité tenue par `tests/web-champs-url-parity.test.ts`.
+- Une destination sans champ, ou qui ne se laisse pas analyser (accolade dans l'hôte, orpheline, mêlée à `{{1}}`),
+  suit exactement le chemin d'avant, sans lecture de fiche.
+- Un bouton de carte de carousel est tracé sans jeton : un champ y est refusé à la création. Si le traçage échoue,
+  un bouton à champs fait REFUSER la soumission (422 lisible) au lieu du repli sur l'adresse saisie, qui enverrait
+  `{cle}` en clair chez Meta.
+
 ### Surveillance
 
 `/ops/verrou/:tenantId` (session d'exploitation, POST, note obligatoire) : pose ou retire le verrou d'un
@@ -3299,6 +3325,17 @@ Ajouté par le lot 4 de l'API publique :
    `numeroBloque` AVANT le modèle : rien n'est débité, la session reste ouverte. La remise d'un fil que personne ne
    suit le laisse à l'équipe, comme sans numéro. Un fil déjà tenu par l'agent de Meta lui reste : rien ne change
    chez Meta.
+43. **Un template à lien tracé reçoit son suffixe à CHAQUE envoi, quel que soit le chemin**, et `tracked_links`
+   décrit ce que Meta porte. Un bouton soumis en `/r/<code>/{{1}}` exige un composant `url` (131008 sans lui,
+   132000 en trop) : la campagne le calcule en lot, le bloc de scénario et l'envoi manuel de l'Inbox
+   (`src/inbox/envoi-modele.ts`) par `suffixesPourUnEnvoi` (`src/links/suffixes-envoi.ts`). Seuls les liens
+   CONFIRMÉS `avec_jeton` hors carte de carousel comptent. La création ET l'édition d'un template passent par
+   `soumettreAvecLiens` (`src/http/templates.ts`) : Meta accepte, les liens soumis sont confirmés et ceux d'avant
+   qui ne sont plus dans le template déconfirmés (`deconfirmer`, leur code redirige toujours) ; Meta refuse (quota
+   d'éditions, nom déjà pris), les liens d'avant sont remis dans leur état (même code, destination, jeton,
+   confirmés), parce qu'`allocate` remet la confirmation à zéro sur chaque position qu'il touche. Un bouton qui porte
+   déjà NOTRE lien (`codeDuLienTrace` : le ré-habillage ne connaît que l'hôte d'aujourd'hui, un template soumis sous
+   un ancien nom réaffiche donc notre lien brut) n'est ni retracé (son code pointerait vers lui-même) ni déconfirmé.
 
 ### Sur les contrats externes
 

@@ -303,9 +303,11 @@ export const inboxDepInerte: Pick<InboxDep,
 /** `campagneVivante` absente : aucune garde, donc aucune campagne au fil de l'eau n'était vue. */
 export const aucuneCampagneVivante = async (): Promise<string | null> => null;
 
-export const liensInertes: Pick<LiensDep, 'contactParJeton'> = {
+export const liensInertes: Pick<LiensDep, 'contactParJeton' | 'champsParJeton'> = {
   // Absente : les clics restaient anonymes.
   contactParJeton: async () => null,
+  // Aucune fiche : les champs d'une destination sont retirés (et une destination sans champ ne l'appelle jamais).
+  champsParJeton: async () => null,
 };
 
 export const relaisMbaInerte: Pick<MbaRelaisDeps, 'journaliserForme' | 'resolveurMcp'> = {
@@ -404,9 +406,11 @@ export const supportInerte: Pick<SupportRouteDeps, 'getUserEmail'> = {
   getUserEmail: async () => null,
 };
 
-export const modelesInertes: Pick<TemplateRouteDeps, 'getPublishedFlow' | 'indices' | 'tracking'> = {
+export const modelesInertes: Pick<TemplateRouteDeps, 'getPublishedFlow' | 'indices' | 'tracking' | 'champsDeclares'> = {
   // Absente : pas de pré-check, donc « publié ».
   getPublishedFlow: async () => true,
+  // Aucun champ déclaré : seuls les champs de base (`prenom`, `nom`, `telephone`) passent dans une adresse.
+  champsDeclares: async () => [],
   // Absents : propagation désactivée.
   indices: {
     save: async () => {},
@@ -419,7 +423,8 @@ export const modelesInertes: Pick<TemplateRouteDeps, 'getPublishedFlow' | 'indic
    */
   tracking: {
     allocate: async () => { throw new Error('valeur inerte : traçage des liens éteint'); },
-    liens: { confirm: async () => {} },
+    // Aucun lien en base : rien à remettre en l'état, rien de périmé.
+    liens: { confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => [] },
     lienDe: (code: string) => code,
     destinations: async () => new Map(),
   },

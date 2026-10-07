@@ -7,8 +7,9 @@ import { parseParamHints, countTemplateVariables } from '../crm/template';
 import type { ParamSource } from '../crm/template';
 import { isValidTemplateLanguage } from '../meta/languages';
 import { isSendableButtonUrl } from '../meta/button-url';
-import { boutonsTracables, appliquerLiens, cleBouton, rehabillerBoutons } from '../links/rewrite';
-import type { CibleLien } from '../links/tracked-links.pg';
+import { boutonsTracables, appliquerLiens, cleBouton, codeDuLienTrace, rehabillerBoutons } from '../links/rewrite';
+import { analyserChampsUrl, porteDesChamps, refusChampsUrl } from '../links/champs-url';
+import type { CibleLien, LienTrace } from '../links/tracked-links.pg';
 import { espaceVerifie, nonEmpty } from './scope';
 import { messageDe } from '../lib/erreur';
 
@@ -37,8 +38,14 @@ export interface TemplateRouteDeps {
     removeByName(tenantId: string, name: string): Promise<void>;
   };
   /**
+   * Les clés des champs de contact déclarés de l'espace : un bouton « Lien » ne peut porter que ceux-là (et les champs
+   * de base `CLES_DE_BASE_URL`). Lue seulement quand une adresse de bouton porte un champ `{cle}`.
+   */
+  champsDeclares(tenantId: string): Promise<string[]>;
+  /**
    * Traçage des liens : réserve un code par bouton URL et rend l'adresse de redirection à soumettre à Meta. Son échec
    * laisse partir le template avec les liens saisis : on ne soumet jamais une adresse qu'on ne saurait pas servir.
+   * Sauf pour un bouton à champs, qui ne se remplit qu'à notre redirection : son échec REFUSE la soumission.
    */
   tracking: {
     /** Réserve le code du bouton et enregistre sa destination. Rend le code. `avecJeton` décide si l'URL
@@ -47,6 +54,10 @@ export interface TemplateRouteDeps {
     liens: {
       /** Meta a accepté : ces liens sont bien ceux que porte le template. */
       confirm(tenantId: string, codes: readonly string[]): Promise<void>;
+      /** Ces liens ne sont plus dans le template chez Meta : l'envoi et les mesures cessent de les voir. */
+      deconfirmer(tenantId: string, codes: readonly string[]): Promise<void>;
+      /** Les liens CONFIRMÉS de ces templates (toutes langues), pour remettre en l'état ce que Meta a refusé. */
+      listByTemplates(tenantId: string, noms: readonly string[]): Promise<LienTrace[]>;
     };
     /** Adresse publique d'un code, avec ou sans son suffixe variable. */
     lienDe(code: string, avecJeton: boolean): string;
@@ -83,12 +94,16 @@ export const estAttribuable = (cardIndex: number | null): boolean => cardIndex =
  * Réserve un lien tracé par bouton URL et rend le template à soumettre. Si quoi que ce soit échoue, on rend le
  * template d'origine (non mesuré plutôt que refusé ou pointant une adresse qu'on ne sait pas servir). Les lignes
  * déjà réservées restent non confirmées, invisibles des mesures, et `allocate` (upsert) les réutilise.
+ *
+ * 🔴 SAUF SI UN BOUTON PORTE UN CHAMP (`{numero_commande}`) : il ne se remplit qu'au clic, par notre redirection.
+ * Soumis tel quel, `{numero_commande}` partirait en clair chez Meta et y resterait figé, un lien cassé pour toujours.
+ * Le template est alors refusé, avec une raison lisible (pas une 5xx : Cloudflare en mange le corps).
  */
 async function preparerLiens(
   deps: TemplateRouteDeps,
   tenant: string,
   input: CreateTemplateInput,
-): Promise<{ aSoumettre: CreateTemplateInput; codes: string[] }> {
+): Promise<{ aSoumettre: CreateTemplateInput; codes: string[] } | { refus: string }> {
   const cibles = boutonsTracables(input);
   if (cibles.length === 0) return { aSoumettre: input, codes: [] };
   try {
@@ -107,10 +122,133 @@ async function preparerLiens(
     }
     return { aSoumettre: appliquerLiens(input, liens), codes };
   } catch (err) {
+    const aChamps = cibles.find((c) => porteDesChamps(c.url));
+    if (aChamps) {
+      // eslint-disable-next-line no-console
+      console.error('traçage des liens impossible, template à champs refusé:', messageDe(err));
+      return { refus: `le lien de suivi du bouton ${aChamps.buttonIndex + 1} n'a pas pu être préparé, et un bouton qui porte un champ du contact ne peut pas partir sans lui : le template n'a pas été soumis, réessayez dans un instant` };
+    }
     // eslint-disable-next-line no-console
     console.error('traçage des liens ignoré (template soumis avec les liens saisis):', messageDe(err));
     return { aSoumettre: input, codes: [] };
   }
+}
+
+/** Les liens confirmés de ce template (nom ET langue), au mieux : illisibles, rien à remettre en l'état. */
+async function liensConfirmes(deps: TemplateRouteDeps, tenant: string, name: string, language: string): Promise<LienTrace[]> {
+  try {
+    return (await deps.tracking.liens.listByTemplates(tenant, [name])).filter((l) => l.templateLanguage === language);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('liens tracés du template illisibles avant soumission:', messageDe(err));
+    return [];
+  }
+}
+
+/**
+ * Soumet un template (création ou édition) avec ses liens tracés, et laisse `tracked_links` décrire ce que Meta porte
+ * VRAIMENT. Cette table seule dit à l'envoi quels boutons attendent le jeton du destinataire (liens confirmés
+ * `avec_jeton`) : en retard sur Meta, elle fait refuser CHAQUE envoi (131008 si le composant manque, 132000 s'il est
+ * en trop).
+ *  - Meta accepte : les liens soumis sont confirmés, et ceux d'avant qui ne sont plus dans le template (bouton retiré
+ *    ou déplacé par une édition, adresse soumise sans traçage) sont déconfirmés. Leur code redirige toujours.
+ *  - Meta refuse (édition au-delà de son quota, nom déjà pris...) ou le traçage refuse : `allocate` a remis à zéro
+ *    la confirmation des boutons qu'il a touchés, alors que Meta garde la version d'avant. On les remet dans leur
+ *    état d'avant (même code, même destination, même jeton, confirmés).
+ */
+async function soumettreAvecLiens<T>(
+  deps: TemplateRouteDeps,
+  tenant: string,
+  input: CreateTemplateInput,
+  soumettre: (aSoumettre: CreateTemplateInput) => Promise<T>,
+): Promise<{ refus: string } | { res: T }> {
+  const avant = await liensConfirmes(deps, tenant, input.name, input.language);
+  const restaurer = async (): Promise<void> => {
+    if (avant.length === 0) return;
+    try {
+      const codes: string[] = [];
+      for (const l of avant) {
+        const cible = { templateName: l.templateName, templateLanguage: l.templateLanguage, cardIndex: l.cardIndex, buttonIndex: l.buttonIndex };
+        codes.push(await deps.tracking.allocate(tenant, cible, l.destination, l.avecJeton));
+      }
+      await deps.tracking.liens.confirm(tenant, codes);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('liens tracés non remis en l’état après un refus:', messageDe(err));
+    }
+  };
+
+  const prep = await preparerLiens(deps, tenant, input);
+  if ('refus' in prep) {
+    await restaurer();
+    return prep;
+  }
+  let res: T;
+  try {
+    res = await soumettre(prep.aSoumettre);
+  } catch (err) {
+    await restaurer();
+    throw err;
+  }
+  // Au mieux, comme les indices de variables : un hoquet ici dégrade la mesure, il ne casse pas un template déjà soumis.
+  if (prep.codes.length > 0) {
+    try {
+      await deps.tracking.liens.confirm(tenant, prep.codes);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('confirmation des liens tracés ignorée:', messageDe(err));
+    }
+  }
+  // Un code que le template soumis porte encore tel quel (notre lien réaffiché brut, faute de ré-habillage sur un
+  // ancien nom d'hôte) reste dans le template chez Meta : il n'est pas périmé.
+  const soumis = new Set([...(prep.aSoumettre.buttons ?? []), ...(prep.aSoumettre.carousel?.cards ?? []).flatMap((c) => c.buttons ?? [])]
+    .map((b) => (b.type === 'URL' ? codeDuLienTrace(b.url ?? '') : null)));
+  const perimes = avant.map((l) => l.code).filter((c) => !prep.codes.includes(c) && !soumis.has(c));
+  if (perimes.length > 0) {
+    try {
+      await deps.tracking.liens.deconfirmer(tenant, perimes);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('liens tracés périmés non déconfirmés:', messageDe(err));
+    }
+  }
+  return { res };
+}
+
+/**
+ * Les champs du contact dans les adresses de boutons (`src/links/champs-url.ts`) : le refus lisible, ou `null`.
+ * Un bouton de premier niveau peut en porter ; un bouton de carte jamais : tracé sans jeton (`estAttribuable`), son
+ * champ ne serait jamais rempli. Les champs déclarés de l'espace ne sont lus que si une adresse porte une accolade.
+ */
+async function refusDesChamps(
+  deps: TemplateRouteDeps,
+  tenant: string,
+  fields: TemplateFields,
+): Promise<{ statut: 400 | 422; error: string } | null> {
+  for (const [ci, carte] of (fields.carousel?.cards ?? []).entries()) {
+    for (const [j, b] of (carte.buttons ?? []).entries()) {
+      if (b.type !== 'URL') continue;
+      const quoi = `carte ${ci + 1}, bouton ${j + 1}`;
+      const a = analyserChampsUrl(b.url ?? '');
+      if (!a.ok) return { statut: 400, error: refusChampsUrl(b.url ?? '', [], quoi)! };
+      if (a.cles.length > 0) return { statut: 400, error: `${quoi} : un champ du contact ne peut pas être utilisé dans le lien d'une carte de carousel` };
+    }
+  }
+  const urls = (fields.buttons ?? []).map((b, i) => ({ b, i })).filter(({ b }) => b.type === 'URL');
+  if (!urls.some(({ b }) => /[{}]/.test(b.url ?? ''))) return null;
+  let connues: string[];
+  try {
+    connues = await deps.champsDeclares(tenant);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('champs de l’espace illisibles:', messageDe(err));
+    return { statut: 422, error: 'les champs de contact de l’espace n’ont pas pu être lus pour vérifier les liens : réessayez dans un instant' };
+  }
+  for (const { b, i } of urls) {
+    const refus = refusChampsUrl(b.url ?? '', connues, `bouton ${i + 1}`);
+    if (refus) return { statut: 400, error: refus };
+  }
+  return null;
 }
 
 /**
@@ -305,6 +443,8 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const parsed = parseTemplateFields(b);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
     if (parseParamHints(b.paramHints) === null) return reply.code(400).send({ error: 'paramHints invalides' });
+    const refusChamps = await refusDesChamps(deps, tenant, parsed.fields);
+    if (refusChamps) return reply.code(refusChamps.statut).send({ error: refusChamps.error });
 
     const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
@@ -317,20 +457,11 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     // Substitution des liens juste avant la soumission : l'utilisateur a saisi son adresse, Meta reçoit la nôtre.
     // La destination est enregistrée avant l'appel à Meta : l'inverse laisserait, en cas de panne entre les deux,
     // un template approuvé pointant un code inexistant (un lien mort dans des messages livrés).
-    const { aSoumettre, codes } = await preparerLiens(deps, tenant, input);
-    const res = await (await deps.meta.templateClientForTenant(tenant)).create(wabaId, aSoumettre);
-    // Meta a accepté : les liens réservés sont bien ceux que porte le template. Au mieux, comme les indices de
-    // variables : un hoquet ici dégrade la mesure, il ne casse pas un template déjà créé.
-    if (codes.length > 0) {
-      try {
-        await deps.tracking.liens.confirm(tenant, codes);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('confirmation des liens tracés ignorée:', messageDe(err));
-      }
-    }
+    const client = await deps.meta.templateClientForTenant(tenant);
+    const issue = await soumettreAvecLiens(deps, tenant, input, (aSoumettre) => client.create(wabaId, aSoumettre));
+    if ('refus' in issue) return reply.code(422).send({ error: issue.refus });
     await saveHintsSafe(deps, tenant, b.name, b.language, b.paramHints);
-    return reply.code(201).send(res);
+    return reply.code(201).send(issue.res);
   });
 
   // Indices variable -> champ d'un template (pour pré-remplir le mapping d'une campagne). Lecture seule.
@@ -357,6 +488,8 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
     if (parseParamHints(b.paramHints) === null) return reply.code(400).send({ error: 'paramHints invalides' });
     if (parsed.fields.carousel) return reply.code(422).send({ error: 'édition d\'un carousel non supportée' });
+    const refusChamps = await refusDesChamps(deps, tenant, parsed.fields);
+    if (refusChamps) return reply.code(refusChamps.statut).send({ error: refusChamps.error });
 
     const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
@@ -383,16 +516,24 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
       return reply.code(400).send({ error: 'le flow référencé n\'est pas publié' });
     }
 
-    const res = await (await deps.meta.templateClientForTenant(tenant)).update(existing.id, {
-      category: parsed.fields.category,
-      body: parsed.fields.body,
-      ...(parsed.fields.header ? { header: parsed.fields.header } : {}),
-      ...(parsed.fields.footer ? { footer: parsed.fields.footer } : {}),
-      ...(parsed.fields.example ? { example: parsed.fields.example } : {}),
-      ...(parsed.fields.buttons ? { buttons: parsed.fields.buttons } : {}),
-    });
+    // 🔴 Les liens repassent par le traçage, comme à la création. La console réaffiche l'adresse SAISIE
+    // (`rehabillerTemplates`) : la renvoyer telle quelle à Meta remplaçait notre lien tracé par l'adresse brute, alors
+    // que `tracked_links` le disait toujours confirmé `avec_jeton`, donc chaque envoi ajoutait un composant de bouton
+    // que le template n'avait plus. Le code d'un bouton est gardé (upsert par position) : ce qui est déjà parti
+    // continue de résoudre, vers la destination à jour.
+    const client = await deps.meta.templateClientForTenant(tenant);
+    const existingId = existing.id;
+    const issue = await soumettreAvecLiens(deps, tenant, { name, language, ...parsed.fields }, (t) => client.update(existingId, {
+      category: t.category,
+      body: t.body,
+      ...(t.header ? { header: t.header } : {}),
+      ...(t.footer ? { footer: t.footer } : {}),
+      ...(t.example ? { example: t.example } : {}),
+      ...(t.buttons ? { buttons: t.buttons } : {}),
+    }));
+    if ('refus' in issue) return reply.code(422).send({ error: issue.refus });
     await saveHintsSafe(deps, tenant, name, language, b.paramHints);
-    return reply.code(200).send({ ...res, status: 'PENDING' });
+    return reply.code(200).send({ ...issue.res, status: 'PENDING' });
   });
 
   // Suppression par nom = toutes les langues chez Meta, donc garde-fou sur toutes les langues (langue omise).

@@ -70,6 +70,14 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
     pourquoi: 'Sender de canal RCS : il envoie ce que le moteur lui donne, à qui le moteur lui dit, et le moteur '
       + 'porte la garde (construction de la liste, puis réclamation au moment d’envoyer).',
   },
+  'src/inbox/envoi-modele.ts': {
+    verdict: 'delegue',
+    pourquoi: 'L’envoi d’un MODÈLE depuis l’Inbox (`POST .../send-template`, `src/http/inbox.ts`) : il compose les '
+      + 'composants (suffixes des boutons tracés compris) et envoie ce que la route lui donne. La garde est dans la '
+      + 'ROUTE, avant l’appel : un contact désabonné ne reçoit qu’un modèle de SERVICE, sur la catégorie lue chez '
+      + 'Meta (`categorieDuModele`). Mesuré en suivant l’appel : `creerEnvoiModeleInbox` n’est branchée que sur '
+      + '`sendTemplateMessage`, que seule cette route appelle.',
+  },
   'src/rcs/envoyer-libre.ts': {
     verdict: 'bloque',
     pourquoi: 'L’envoi d’un RCS libre, pour le bouton RCS de l’Inbox et `POST /v1/messages/rcs` : une origine '
@@ -108,7 +116,8 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
       + '(1) La réponse manuelle de l’Inbox : EXEMPTÉE, sans quoi un opérateur ne pourrait même plus accuser '
       + 'réception d’un opt-out. (2) L’envoi d’un MODÈLE depuis l’Inbox : un modèle n’est pas une réponse, il '
       + 'ROUVRE une conversation fermée, donc le MARKETING est refusé et le SERVICE passe, sur la catégorie '
-      + 'lue chez Meta et jamais dans le corps de la requête. (3) La réponse d’un agent tiers par MCP : '
+      + 'lue chez Meta et jamais dans le corps de la requête (son appel à Meta vit depuis le 2026-10-07 dans '
+      + '`src/inbox/envoi-modele.ts`, classé à part). (3) La réponse d’un agent tiers par MCP : '
       + 'BLOQUÉE, c’est une machine. La garde vit dans `src/inbox/repondre.ts`, visant la seule origine '
       + '`mcp` : c’est l’asymétrie de câblage qui fait l’exemption de l’opérateur.',
   },

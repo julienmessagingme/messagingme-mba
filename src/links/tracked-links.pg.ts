@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { DateRange } from '../stats/range';
 import { STATS_TZ, BOUNDS_CTE } from '../stats/range';
+import { valeursDeLaFiche } from './champs-url';
 
 /**
  * Liens de redirection tracés : la destination d'origine d'un bouton URL, et les clics qu'il a reçus.
@@ -91,6 +92,19 @@ export class PgTrackedLinkStore {
   }
 
   /**
+   * Ces liens ne décrivent plus ce que Meta porte (bouton retiré ou déplacé par une édition, adresse soumise sans
+   * traçage) : les mesures et l'envoi les ignorent. 🔴 La ligne reste, et son code continue de rediriger : une
+   * adresse `/r/<code>` déjà envoyée doit résoudre pour toujours.
+   */
+  async deconfirmer(tenantId: string, codes: readonly string[]): Promise<void> {
+    if (codes.length === 0) return;
+    await this.pool.query(
+      `update tracked_links set confirmed_at = null where tenant_id = $1 and code = any($2::text[])`,
+      [tenantId, [...new Set(codes)]],
+    );
+  }
+
+  /**
    * Destination d'un code, pour la redirection publique. Le code arrive d'une URL : normalisé en minuscules.
    * Ne filtre pas sur `confirmed_at` : si notre confirmation a échoué, le lien circule déjà dans des messages
    * livrés, et un lien qui marche sans être mesuré vaut mieux qu'un lien mort.
@@ -130,6 +144,24 @@ export class PgTrackedLinkStore {
       [tenantId, jeton],
     );
     return res.rows[0]?.id ?? null;
+  }
+
+  /**
+   * Les valeurs qu'un contact offre à l'adresse d'un bouton à champs (`valeursDeLaFiche`), retrouvé par son jeton
+   * public. `null` = aucun contact actif de cet espace ne porte ce jeton.
+   *
+   * 🔴 `tenant_id = $1`, l'espace du LIEN cliqué, jamais un espace venu de l'URL : sans ce filtre, le jeton d'un
+   * contact d'un autre client ferait écrire SA fiche dans l'adresse. Une fiche supprimée (`deleted_at`) ne prête
+   * plus ses valeurs ; une fiche purgée n'a plus de jeton.
+   */
+  async champsParJeton(tenantId: string, jeton: string): Promise<Record<string, string | null> | null> {
+    const res = await this.pool.query<{ profile_name: string | null; phone_e164: string | null; fields: Record<string, unknown> | null }>(
+      `select profile_name, phone_e164, fields from contacts
+        where tenant_id = $1 and jeton_public = $2 and deleted_at is null`,
+      [tenantId, jeton],
+    );
+    const r = res.rows[0];
+    return r ? valeursDeLaFiche(r) : null;
   }
 
   /**

@@ -347,6 +347,44 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
   });
 
+  it('🔴 PgTrackedLinkStore (RC7) : la fiche d’une adresse à champs se lit dans l’espace du LIEN, et un lien déconfirmé redirige encore', async () => {
+    const store = new PgTrackedLinkStore(pool);
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, profile_name, fields) values ($1, $2, 'Julie', $3::jsonb) returning id`,
+      [tenantId, `+3361${String(Date.now()).slice(-7)}`, JSON.stringify({ prenom: 'Julie', numero_commande: 'A1234', age: 30 })],
+    )).rows[0]!.id;
+    const jeton = (await store.jetonsPourContacts(tenantId, [contactId], fabriquerJeton)).get(contactId)!;
+
+    // Les champs de la fiche, plus `nom` (le nom du profil) et `telephone`.
+    const valeurs = await store.champsParJeton(tenantId, jeton);
+    expect(valeurs).not.toBeNull();
+    // Recopiée dans un objet ordinaire : la table rendue est sans prototype.
+    expect({ ...valeurs }).toMatchObject({ prenom: 'Julie', numero_commande: 'A1234', age: '30', nom: 'Julie' });
+    expect(valeurs?.telephone).toMatch(/^\+3361/);
+
+    // Un AUTRE espace ne lit jamais cette fiche, même avec le bon jeton.
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-champs-autre') returning id`)).rows[0]!.id;
+    try {
+      expect(await store.champsParJeton(autre, jeton), 'la fiche d’un autre espace ne doit jamais se lire').toBeNull();
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autre]).catch(() => {});
+    }
+    // Un jeton inconnu ne lit rien.
+    expect(await store.champsParJeton(tenantId, fabriquerJeton())).toBeNull();
+    // Une fiche supprimée ne prête plus ses valeurs.
+    await pool.query(`update contacts set deleted_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId]);
+    expect(await store.champsParJeton(tenantId, jeton)).toBeNull();
+
+    // Déconfirmer un lien le retire de ce que lisent l'envoi et les mesures, sans casser la redirection.
+    const nom = `champs.itest.${Date.now()}`;
+    const code = await store.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 }, 'https://client.fr/commande/{numero_commande}', true);
+    await store.confirm(tenantId, [code]);
+    expect(await store.listByTemplates(tenantId, [nom])).toHaveLength(1);
+    await store.deconfirmer(tenantId, [code]);
+    expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
+    expect(await store.getByCode(code)).toEqual({ tenantId, destination: 'https://client.fr/commande/{numero_commande}' });
+  });
+
   it('auth : createTenantWithAdmin (transaction) + createPending + setPassword + getAuthState(tenantStatus)', async () => {
     const users = new PgUserStore(pool);
     const email = `admin.itest.${Date.now()}@exemple.fr`;

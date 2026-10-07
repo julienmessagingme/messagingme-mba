@@ -92,7 +92,8 @@ import { lireEtatConnexion } from './otp/etat-connexion';
 import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
 import { ouvrirAbonnement, ouvrirPortail, programmerFinDuNumero, type DepsAbonnement } from './stripe/abonnement';
 import { ecrireHandoffEnabled } from './mba/handoff';
-import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
+import { carouselSendBlocker } from './meta/template-components';
+import { creerEnvoiModeleInbox } from './inbox/envoi-modele';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
 import { urlImageRcs } from './rcs/image';
@@ -892,6 +893,8 @@ async function main(): Promise<void> {
       repo,
       getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
       indices: templateHintStore,
+      // Les champs qu'un bouton « Lien » peut porter dans son adresse (`{numero_commande}`), avec les champs de base.
+      champsDeclares: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
       // Traçage des liens : l'adresse publique est celle qui part dans les messages, donc elle suit l'API
       // (`adressesPubliques`), pas la console.
       tracking: {
@@ -1016,17 +1019,12 @@ async function main(): Promise<void> {
        */
       startWorkflow: (tenant, workflowId, waId, fenetreOuverte) =>
         workflowRuntime.lancements.lancer({ type: 'inbox', tenantId: tenant, workflowId, waId, fenetreOuverte }),
-      sendTemplateMessage: async (tenant, phoneNumberId, to, tpl) => {
-        const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token par tenant, repli global
-        const components = buildTemplateComponents({
-          bodyParams: tpl.bodyParams,
-          ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),
-          ...(tpl.headerFormat ? { headerFormat: tpl.headerFormat } : {}),
-          ...(tpl.carousel ? { carousel: tpl.carousel } : {}),
-        });
-        const spec = { name: tpl.name, language: tpl.language, ...(components.length > 0 ? { components } : {}) };
-        return (await client.sendTemplate(to, spec)).messageId;
-      },
+      // Avec les suffixes des boutons tracés (`src/inbox/envoi-modele.ts`) : sans eux, un template à lien tracé
+      // partait sans son `{{1}}` et Meta le refusait (131008).
+      sendTemplateMessage: creerEnvoiModeleInbox({
+        client: (tenant, phoneNumberId) => metaFactory.clientForTenant(tenant, phoneNumberId), // token par tenant, repli global
+        trackedLinks: trackedLinkStore,
+      }),
       /**
        * 🔴 La garde d'opt-out de l'envoi de modèle depuis l'Inbox, en deux morceaux : le statut du contact
        * (`estDesabonne`, branché par `depsRepondre`) et la catégorie réelle du modèle. Le `templateCategory` du

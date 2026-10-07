@@ -41,6 +41,15 @@ export const lienTraceAvecJeton = (base: string, code: string): string => `${lie
 export const estLienTraceAvecJeton = (url: string): boolean => /\/r\/[0-9a-hjkmnp-tv-z]{12}\/\{\{1\}\}$/.test(url.trim());
 
 /**
+ * Le code de cette adresse si elle est l'un de NOS liens tracés (`/r/<code>` ou `/r/<code>/{{1}}`), quel que soit
+ * l'hôte, ou `null`. Le ré-habillage ne reconnaît que l'hôte d'aujourd'hui : un template soumis sous un ancien nom
+ * (`mba.`, puis `engageme.`) réaffiche donc notre lien brut dans la console, et une édition le renvoie tel quel.
+ */
+export function codeDuLienTrace(url: string): string | null {
+  return /^https?:\/\/[^/?#]+\/r\/([0-9a-hjkmnp-tv-z]{12})(?:\/\{\{1\}\})?$/i.exec(url.trim())?.[1]?.toLowerCase() ?? null;
+}
+
+/**
  * L'adresse d'un code avec le jeton d'un destinataire écrit dedans, celle des messages RCS : composés à l'envoi,
  * ils n'ont pas besoin du `{{1}}` de `lienTraceAvecJeton` (ni resoumission, ni risque de 132000).
  * Sans jeton, l'adresse nue : le clic est compté sans être rattaché. Dégrader la mesure, jamais l'envoi.
@@ -52,7 +61,9 @@ export const lienPourContact = (base: string, code: string, jeton?: string): str
  * Les boutons URL qu'on sait tracer, dans l'ordre du template puis des cartes. Sont exclues :
  *  - une URL qui porte déjà une variable (`{{1}}`) : aucun chemin d'envoi ne fournit sa valeur, la tracer
  *    fabriquerait un lien cassé ;
- *  - une URL que Meta refuserait : pas de ligne en base pour un template qui n'existera jamais.
+ *  - une URL que Meta refuserait : pas de ligne en base pour un template qui n'existera jamais ;
+ *  - une URL qui est déjà l'un de NOS liens (`codeDuLienTrace`), réaffichée faute de ré-habillage : la retracer à la
+ *    même position donnerait au code sa propre adresse pour destination, une redirection qui boucle.
  */
 export function boutonsTracables(input: CreateTemplateInput): CibleBouton[] {
   const out: CibleBouton[] = [];
@@ -62,6 +73,7 @@ export function boutonsTracables(input: CreateTemplateInput): CibleBouton[] {
       const url = (b.url ?? '').trim();
       if (url === '' || url.includes('{{')) return;
       if (!isSendableButtonUrl(url)) return;
+      if (codeDuLienTrace(url) !== null) return;
       out.push({ cardIndex, buttonIndex: i, url });
     });
   };

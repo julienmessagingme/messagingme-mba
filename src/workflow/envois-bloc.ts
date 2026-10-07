@@ -6,14 +6,13 @@ import type { MetaClient } from '../meta/client';
 import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import type { PgTrackedLinkStore } from '../links/tracked-links.pg';
-import { fabriquerJeton } from '../links/jeton-contact';
 import type { PgTemplateHintStore } from '../crm/template-hints.pg';
 import type { PgContactStore } from '../crm/contact-store.pg';
 import { renderText } from '../crm/render';
 import { logTemplateSent, type OutboundLogger } from '../inbox/outbound-log';
-// La même décision que sur le chemin des campagnes : un template tracé exige ses composants de bouton, quel
-// que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde.
-import { suffixesPourDestinataire } from '../campaign/engine';
+// La même décision que sur le chemin des campagnes et de l'Inbox : un template tracé exige ses composants de
+// bouton, quel que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde.
+import { suffixesPourUnEnvoi } from '../links/suffixes-envoi';
 import { messageDe } from '../lib/erreur';
 
 /**
@@ -141,11 +140,7 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
        */
       const suffixes = await (async (): Promise<{ suffixesBoutons?: Record<number, string> }> => {
         try {
-          const liens = await trackedLinks.listByTemplates(tenant, [name]);
-          const boutons = liens.filter((l) => l.avecJeton && l.cardIndex === null).map((l) => l.buttonIndex);
-          if (boutons.length === 0) return {};
-          const jeton = await trackedLinks.jetonPourE164(tenant, waId, fabriquerJeton).catch(() => null);
-          return suffixesPourDestinataire(boutons, jeton ?? undefined);
+          return await suffixesPourUnEnvoi(trackedLinks, tenant, name, waId);
         } catch (err) {
           // Illisible : on ne sait pas si ce template porte des variables de bouton. On part sans, et on le dit,
           // sinon un 131008 resterait inexpliqué.

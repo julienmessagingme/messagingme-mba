@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-07 : un champ du contact dans l'adresse d'un bouton « Lien » (RC7), et deux envois cassés réparés
+
+**Ce qui est écrit** (plan `docs/superpowers/plans/2026-10-06-rc7-lien-dynamique.md`, aucune migration) : une
+destination peut porter `{cle}` (`https://site.fr/commande/{numero_commande}`), stockée telle quelle ; Meta reçoit
+toujours notre lien à jeton, et la redirection remplit le champ au clic avec la fiche lue dans l'espace du lien. Un
+champ avant le chemin est refusé à la création (une valeur écrite par le contact ferait de `/r/` un redirecteur
+ouvert), et l'adresse remplie est revalidée avant le 302. Console : un bouton « Variable » sur l'adresse, un exemple
+dessous.
+
+**Les deux constats de lecture du plan, confirmés par un test qui échoue sans le correctif :**
+1. L'envoi manuel d'un template depuis l'Inbox partait sans le composant `url` d'un bouton tracé (131008 chez Meta) :
+   il passe désormais par `suffixesPourUnEnvoi`, partagé avec le bloc de scénario.
+2. Le PATCH d'un template renvoyait à Meta l'adresse SAISIE (celle que la console réaffiche) au lieu de notre lien,
+   alors que `tracked_links` la disait toujours confirmée à jeton. Il repasse par le traçage.
+
+**Ce que le correctif du PATCH a fait apparaître** : `allocate` remet la confirmation à zéro sur chaque position qu'il
+touche. Une édition refusée par Meta (quota d'éditions) aurait donc laissé un template APPROUVÉ sans liens confirmés,
+et chaque envoi sans son jeton ; une création refusée parce que le nom existe déjà faisait déjà la même chose au
+template en service. La création et l'édition remettent désormais les liens d'avant en l'état sur un refus, et
+déconfirment ceux qui ne sont plus dans le template sur un succès (`soumettreAvecLiens`).
+
 ## 2026-10-07 : les offres et leurs limites (lot 6, livraison A)
 
 **Ce qui part** : la migration 0218 seule (`45ad6976`, appliquée à 10 h 34 UTC avant le code, relue en base : les 9

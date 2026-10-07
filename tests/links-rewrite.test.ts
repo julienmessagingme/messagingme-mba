@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { boutonsTracables, appliquerLiens, cleBouton, lienDe, rehabillerBoutons } from '../src/links/rewrite';
+import { boutonsTracables, appliquerLiens, cleBouton, codeDuLienTrace, lienDe, rehabillerBoutons } from '../src/links/rewrite';
 import type { CreateTemplateInput } from '../src/meta/templates';
 
 const base = (over: Partial<CreateTemplateInput> = {}): CreateTemplateInput => ({
@@ -55,6 +55,24 @@ describe('boutonsTracables', () => {
       { cardIndex: 0, buttonIndex: 0, url: 'https://client.fr/a' },
       { cardIndex: 1, buttonIndex: 1, url: 'https://client.fr/b' },
     ]);
+  });
+
+  it('🔴 ne retrace pas NOTRE lien réaffiché brut (ancien nom d’hôte) : son code se redirigerait vers lui-même', () => {
+    const t = base({
+      buttons: [
+        { type: 'URL', text: 'Ancien', url: 'https://mba.messagingme.app/r/ab12cd34ef56' },
+        { type: 'URL', text: 'Champ', url: 'https://client.fr/commande/{numero_commande}' },
+      ],
+    });
+    expect(boutonsTracables(t)).toEqual([{ cardIndex: null, buttonIndex: 1, url: 'https://client.fr/commande/{numero_commande}' }]);
+  });
+
+  it('codeDuLienTrace reconnaît nos deux formes sur tout hôte, et rien d’autre', () => {
+    expect(codeDuLienTrace('https://mba.messagingme.app/r/ab12cd34ef56')).toBe('ab12cd34ef56');
+    expect(codeDuLienTrace(' https://api.messagingme.app/r/AB12CD34EF56/{{1}} ')).toBe('ab12cd34ef56');
+    expect(codeDuLienTrace('https://client.fr/r/ab12cd34ef56/suite')).toBeNull();
+    expect(codeDuLienTrace('https://client.fr/x/r/ab12cd34ef56')).toBeNull();
+    expect(codeDuLienTrace('https://client.fr/r/lien00000001')).toBeNull(); // hors alphabet des codes
   });
 
   it('un template sans bouton ne trace rien', () => {
