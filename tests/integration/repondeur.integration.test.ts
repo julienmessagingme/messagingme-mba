@@ -89,6 +89,10 @@ describe.skipIf(!url)('le répondeur par défaut (Postgres)', () => {
       await reglages().setRepondeur(tenantId, { mode: 'agent', agentId });
       await expect(pool.query(`update tenant_settings set repondeur_workflow_id = $2 where tenant_id = $1`, [tenantId, wf]))
         .rejects.toMatchObject({ code: '23514', constraint: 'tenant_settings_repondeur_scenario_chk' });
+      // Sans agent ni scénario, sinon un mode inconnu viole AUSSI le CHECK de l'agent, que Postgres signale en premier.
+      await reglages().setRepondeur(tenantId, { mode: 'equipe' });
+      // Le scénario de ce test ne doit pas survivre : le test du scénario système liste les scénarios de l'espace.
+      await pool.query('delete from workflows where id = $1 and tenant_id = $2', [wf, tenantId]);
       await expect(pool.query(`update tenant_settings set repondeur_mode = 'robot' where tenant_id = $1`, [tenantId]))
         .rejects.toMatchObject({ code: '23514', constraint: 'tenant_settings_repondeur_mode_chk' });
       for (const s of [3599, 2_592_001]) {
