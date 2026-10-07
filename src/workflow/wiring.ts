@@ -48,6 +48,8 @@ import type { ControleDuFil } from '../inbox/fil';
 import { creerTransmettreHorsParcours } from '../mba/transmettre-hors-parcours';
 import { cacheCourt } from '../lib/cache-court';
 import type { MetaClient } from '../meta/client';
+import { resolveNode } from '../ids/resolve';
+import { PgErreursLivraisonStore } from '../ops/erreurs-livraison.pg';
 
 /**
  * Câblage de l'exécuteur de scénarios : ses dépendances IO (contacts, tags, envois Meta, caches de
@@ -306,6 +308,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // second exemplaire (deux points de construction finissent par diverger sur une option).
   const agentSessions = new PgAgentSessionStore(pool);
 
+  // Le journal des échecs de scénario, où un « Aller à » qui n'a pas eu lieu est écrit (RC5).
+  const echecsDeScenario = new PgErreursLivraisonStore(pool);
+
   // La réponse « à côté » : les gardes vivent dans le module, testé.
   const transmettreHorsParcours = creerTransmettreHorsParcours({
     detenteur: (t, w) => inboxStore.getControlOwner(t, w),
@@ -399,6 +404,17 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     emitTagAdded: (tenant, waId, tag) => etiquettes.publierEnDiffere(tenant, waId, [tag]),
     // La règle d'arrêt d'un agent IA, dans la frise du panneau Détail (`sortie_agent`, migration 0209).
     noterSortieAgent: (tenant, waId, sortie) => inboxStore.noterSortieAgent(tenant, waId, sortie),
+    /**
+     * La cible d'un « Aller à » dans un autre scénario (RC5) : la même résolution que la cible `node` de `/v1/sends`
+     * (`resolveNode`), sur les graphes PUBLIÉS des scénarios de CET espace (`PgWorkflowStore.list`, scopé, système
+     * exclus). Un code d'un autre espace n'y est donc jamais trouvé.
+     */
+    resoudreBloc: async (tenant, code) => {
+      const r = await resolveNode(tenant, code, workflowStore);
+      return r.ok ? r.value : null;
+    },
+    // Un saut qui n'a pas lieu atterrit dans le journal des échecs de scénario, celui des avances qui échouent.
+    journaliserEchecSaut: (e) => echecsDeScenario.enregistrerEchecAvance({ ...e, canal: null }),
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
     /**
      * `appelHttp` (plus bas) : joue un appel de la bibliothèque et rend ce qu'il faut ranger dans un champ.

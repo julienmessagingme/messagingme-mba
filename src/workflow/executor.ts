@@ -23,6 +23,7 @@ import {
   MOTIF_SCENARIO_LANCE, POLITIQUE_DE_LANCEMENT, fenetreLevee, grapheAFiger,
   type DepartDuParcours, type PolitiqueDeLancement, type TypeDeLancement,
 } from './lancements';
+import { MAX_SAUTS_SANS_PAUSE, nomDuBloc } from './aller-a';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une chaîne = pas parti, avec la raison exacte (pour que la
@@ -356,6 +357,20 @@ export interface WorkflowExecutorDeps {
    * fixtures : `aucuneSortieNotee`.
    */
   noterSortieAgent(tenantId: string, waId: string, sortie: string): Promise<void>;
+  /**
+   * Le bloc d'un AUTRE scénario qu'un « Aller à » vise (RC5) : son scénario, son identifiant et le graphe PUBLIÉ qui le
+   * porte, ou `null` (bloc disparu, scénario dépublié, code inconnu). 🔴 Scopée à l'espace : un code d'un autre espace
+   * rend `null`, c'est le seul contrôle. Requise ; fixtures : `aucunBlocAilleurs`.
+   */
+  resoudreBloc(tenantId: string, code: string): Promise<{ workflowId: string; nodeId: string; graph: WorkflowGraph } | null>;
+  /**
+   * Écrit un saut qui n'a pas eu lieu dans le journal des échecs de scénario (`workflow_advance_failures`, que l'écran
+   * des erreurs de livraison montre) : cible disparue, boucle, scénario d'arrivée qui refuse de démarrer. Au mieux :
+   * un journal ne fait jamais échouer ce qu'il observe. Requise ; fixtures : `aucunEchecJournalise`.
+   */
+  journaliserEchecSaut(e: {
+    tenantId: string; waId: string; workflowId: string; runId: string | null; messageId: string | null; erreur: string;
+  }): Promise<void>;
 }
 
 /** Message RCS porté par un bloc. null = bloc non configuré : on ne devine pas un contenu, on part en repli. */
@@ -409,6 +424,9 @@ export function restToState(rest: WalkRest, now: number): RunState {
   // Bloc agent : le run attend sur le bloc, pour que `findWaitingByWaId` retrouve le parcours au message
   // suivant. Cas explicite : le `return` final le clorait en `done` au moment où l'agent prend la main.
   if (rest.status === 'agent_turn') return { currentNode: rest.nodeId, status: 'waiting' };
+  // « Aller à » vers un autre scénario : CE parcours est fini, la suite est un autre parcours (`sauter`), démarré APRÈS
+  // cette écriture. Cas explicite pour qu'un statut ajouté demain ne tombe pas ici par défaut sans qu'on l'ait voulu.
+  if (rest.status === 'aller_a') return { currentNode: null, status: 'done' };
   return { currentNode: null, status: 'done' };
 }
 
@@ -870,6 +888,14 @@ export class WorkflowExecutor {
     if (rest.status === 'agent_turn') {
       await this.demarrerTourAgent(tenantId, waId, { id: run.id, workflowId: run.workflowId }, graph, rest.nodeId);
     }
+    // « Aller à » vers un autre scénario au réveil, après l'écriture qui a clos ce parcours. 🔴 La preuve de fenêtre est
+    // l'état RÉEL de la fenêtre, jamais une déduction : une attente a passé, et le scénario d'arrivée qui ouvrirait par un
+    // message de session sans elle est refusé par sa propre garde (`runFrom`), puis la conversation va à l'équipe.
+    if (rest.status === 'aller_a') {
+      await this.sauter('aller_a', tenantId, { waId, contactId: run.contactId ?? null },
+        { workflowId: run.workflowId, graph, noeudId: rest.nodeId, runId: run.id }, rest.cible,
+        { fenetreOuverte: await this.deps.isWindowOpen(tenantId, waId), sauts: 1 });
+    }
     return true;
   }
 
@@ -1053,6 +1079,78 @@ export class WorkflowExecutor {
   }
 
   /**
+   * Le saut d'un bloc « Aller à » vers un AUTRE scénario (RC5). Le même scénario ne passe jamais ici : `walk` y suit le
+   * saut dans le même enchaînement.
+   *
+   * 🔴 L'APPELANT A DÉJÀ CLOS LE PARCOURS D'ORIGINE (son état est écrit en `done`, ou son démarrage n'en a créé aucun)
+   * et appliqué ses actions : ce qui suit ne peut ni renvoyer un message déjà parti, ni laisser deux parcours vivants.
+   * Le parcours d'arrivée démarre SUR le bloc visé, par `demarrer` et donc par toutes les gardes de `runFrom` (fil,
+   * fenêtre, numéro, désabonnement), avec le type `aller_a` (ou `aller_a_masse` depuis une campagne).
+   *
+   * 🔴 LA GARDE ANTI-BOUCLE ENTRE SCÉNARIOS : `depart.sauts` compte les sauts enchaînés sans pause, il voyage dans le
+   * départ du parcours d'arrivée (un appel direct, aucune file entre les deux), et repart à 1 après chaque pause.
+   * Au-delà de `MAX_SAUTS_SANS_PAUSE`, rien ne démarre.
+   *
+   * Un saut qui n'a pas lieu (boucle, aucune cible, cible disparue ou d'un autre espace, scénario d'arrivée qui refuse
+   * de démarrer, panne) est un trou de montage, comme un bouton qui ne mène nulle part : le contact attendait une suite.
+   * Il est écrit au journal des échecs, et la conversation passe à l'équipe (sans escalade : rien ne dit que le contact
+   * attend à cet instant, même règle que les échecs de réveil). Rend `true`, ou la raison. Le démarrage qui a franchi
+   * le saut, lui, a bien eu lieu : `runFrom` rend `true` dans les deux cas, la suite étant l'affaire du saut.
+   */
+  private async sauter(
+    type: 'aller_a' | 'aller_a_masse',
+    tenantId: string,
+    contact: { waId: string; contactId: string | null },
+    origine: { workflowId: string; graph: WorkflowGraph; noeudId: string; runId: string | null },
+    cible: string,
+    depart: { fenetreOuverte: boolean; sauts: number; messageDeclencheur?: string },
+  ): Promise<StartOutcome> {
+    const bloc = origine.graph.nodes.find((n) => n.id === origine.noeudId);
+    const nom = bloc ? nomDuBloc(bloc) : origine.noeudId;
+    const echouer = async (raison: string): Promise<string> => {
+      // eslint-disable-next-line no-console
+      console.error(`workflow ${origine.workflowId}: « Aller à » NON franchi pour ${contact.waId} : ${raison}`);
+      try {
+        await this.deps.journaliserEchecSaut({
+          tenantId, waId: contact.waId, workflowId: origine.workflowId, runId: origine.runId,
+          messageId: depart.messageDeclencheur ?? null, erreur: raison,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`journal de l’échec de saut ignoré pour ${contact.waId}:`, messageDe(err));
+      }
+      await this.deps.escalateToHuman(tenantId, contact.waId, null, false, origine.workflowId);
+      return raison;
+    };
+    if (depart.sauts > MAX_SAUTS_SANS_PAUSE) {
+      return echouer(`plus de ${MAX_SAUTS_SANS_PAUSE} « Aller à » enchaînés sans pause, arrêtés au bloc « ${nom} » : une boucle entre scénarios, la conversation passe à l’équipe`);
+    }
+    if (cible === '') return echouer(`le bloc « ${nom} » ne vise aucun bloc`);
+    let arrivee: { workflowId: string; nodeId: string; graph: WorkflowGraph } | null;
+    try {
+      arrivee = await this.deps.resoudreBloc(tenantId, cible);
+    } catch (err) {
+      return echouer(`la cible du bloc « ${nom} » n’a pas pu être lue (${messageDe(err)})`);
+    }
+    // Une cible de ce même scénario absente du graphe joué (bloc supprimé, ou un test qui joue un brouillon où il n'est
+    // plus) : on ne va pas la chercher dans une autre version du scénario.
+    if (!arrivee || arrivee.workflowId === origine.workflowId) {
+      return echouer(`le bloc « ${nom} » vise un bloc qui n’existe plus (${cible})`);
+    }
+    let issue: StartOutcome;
+    try {
+      issue = await this.demarrer(type, tenantId, arrivee.workflowId, arrivee.graph, contact, {
+        depuis: 'saut', noeudId: arrivee.nodeId, fenetreOuverte: depart.fenetreOuverte, sauts: depart.sauts,
+        ...(depart.messageDeclencheur !== undefined ? { messageDeclencheur: depart.messageDeclencheur } : {}),
+      });
+    } catch (err) {
+      return echouer(`le saut du bloc « ${nom} » a échoué (${messageDe(err)})`);
+    }
+    if (issue !== true) return echouer(`le saut du bloc « ${nom} » n’a pas démarré le scénario visé : ${issue}`);
+    return true;
+  }
+
+  /**
    * Corps commun des démarrages : parcourt depuis `startNodeId`, applique les actions, persiste l'état (sauf
    * 100 % synchrone -> done). Ses réglages viennent de la POLITIQUE du type de lancement
    * (`POLITIQUE_DE_LANCEMENT`, `src/workflow/lancements.ts`), jamais d'un appelant : seul `demarrer` l'appelle.
@@ -1072,7 +1170,11 @@ export class WorkflowExecutor {
     graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     startNodeId: string,
-    opts: { politique: PolitiqueDeLancement; fenetreLevee: boolean; firstTemplateParams?: string[]; messageDeclencheur?: string },
+    opts: {
+      politique: PolitiqueDeLancement; fenetreLevee: boolean; firstTemplateParams?: string[]; messageDeclencheur?: string;
+      /** Combien d'« Aller à » ont mené ici sans pause (départ `saut`), 0 pour tout autre démarrage. */
+      sauts?: number;
+    },
   ): Promise<StartOutcome> {
     const { politique } = opts;
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA, sinon les deux écriraient au
@@ -1166,7 +1268,10 @@ export class WorkflowExecutor {
       ...restToState(rest, this.now()), channel: canal,
       ...(opts.messageDeclencheur !== undefined ? { lastMessageId: opts.messageDeclencheur } : {}),
     };
-    if (partis > 0 || state.status !== 'done') {
+    // Un « Aller à » vers un autre scénario remplace aussi, même sans rien avoir envoyé : la conversation CONTINUE
+    // ailleurs, et c'est CE démarrage, avec sa politique, qui dit comment se clôt la session qu'il remplace (un agent IA
+    // qui lance un scénario commençant par un saut se retire, il n'est pas interrompu).
+    if (partis > 0 || state.status !== 'done' || rest.status === 'aller_a') {
       const closPrecedent = await this.deps.runs.closeActiveByWaId(tenantId, contact.waId);
       // La session d'agent suit son parcours : sinon elle reste `en_cours` avec un tour jamais commencé,
       // invisible de la reprise des tours bloqués. Close comme une panne, sauf quand c'est l'agent lui-même qui a lancé
@@ -1201,6 +1306,18 @@ export class WorkflowExecutor {
     if (rest.status === 'agent_turn' && cree) {
       await this.demarrerTourAgent(tenantId, contact.waId, { id: cree.id, workflowId }, graph, rest.nodeId);
     }
+    // « Aller à » vers un autre scénario sans pause depuis le démarrage : aucun parcours n'a été créé ici (`done`), le
+    // saut démarre le suivant. Il hérite de ce démarrage la preuve de fenêtre (le même instant) et la retenue d'un chemin
+    // de masse (`aller_a_masse` : une campagne ne publie pas les étiquettes du scénario d'arrivée), et compte un saut de
+    // plus. Son issue ne change pas la nôtre (cf. `sauter`).
+    if (rest.status === 'aller_a') {
+      await this.sauter(politique.publieLesEtiquettes ? 'aller_a' : 'aller_a_masse', tenantId, contact,
+        { workflowId, graph, noeudId: rest.nodeId, runId: null }, rest.cible,
+        {
+          fenetreOuverte: opts.fenetreLevee, sauts: (opts.sauts ?? 0) + 1,
+          ...(opts.messageDeclencheur !== undefined ? { messageDeclencheur: opts.messageDeclencheur } : {}),
+        });
+    }
     return true;
   }
 
@@ -1223,7 +1340,7 @@ export class WorkflowExecutor {
   ): Promise<StartOutcome> {
     const politique = POLITIQUE_DE_LANCEMENT[type];
     let startNodeId: string;
-    if (depart.depuis === 'bloc') {
+    if (depart.depuis === 'bloc' || depart.depuis === 'saut') {
       // Pas de garde « ce bloc existe-t-il ? » ici : `runFrom` la porte, journalise et rend une raison lisible.
       startNodeId = depart.noeudId;
     } else {
@@ -1235,7 +1352,8 @@ export class WorkflowExecutor {
       politique,
       fenetreLevee: fenetreLevee(politique, depart),
       ...(depart.depuis === 'entree' && depart.firstTemplateParams ? { firstTemplateParams: depart.firstTemplateParams } : {}),
-      ...(depart.depuis === 'entree' && depart.messageDeclencheur !== undefined ? { messageDeclencheur: depart.messageDeclencheur } : {}),
+      ...((depart.depuis === 'entree' || depart.depuis === 'saut') && depart.messageDeclencheur !== undefined ? { messageDeclencheur: depart.messageDeclencheur } : {}),
+      ...(depart.depuis === 'saut' ? { sauts: depart.sauts } : {}),
     });
   }
 
@@ -1336,6 +1454,8 @@ export class WorkflowExecutor {
       inbox: 'ce bloc remonte la conversation a un humain, utilisez l outil d escalade',
       sleeping: 'ce bloc contient une attente, non disponible depuis un outil',
       rcs_send: 'ce bloc envoie en RCS, non disponible depuis un outil',
+      // Un saut démarrerait un autre parcours, qui remplacerait celui de l'agent (ceinture : `blocSeul` l'écarte déjà).
+      aller_a: 'ce bloc saute vers un autre bloc, non disponible depuis un outil',
     };
     const refuse = refusDeRepos[rest.status];
     if (refuse) return { ok: false, raison: refuse };
@@ -1606,9 +1726,21 @@ export class WorkflowExecutor {
         return;
       }
     }
-    await ecrire({ ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
+    const ecrit = await ecrire({ ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
     if (rest.status === 'inbox') {
       await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true, run.workflowId);
+    }
+    /**
+     * « Aller à » vers un autre scénario, après l'écriture qui a clos CE parcours, et seulement si elle a réussi : perdue,
+     * un autre traitement tient le parcours, et sauter en démarrerait un second. Le message qui a déclenché le saut naît
+     * déjà reçu dans le parcours d'arrivée (sa redélivrance par Meta n'y serait pas prise pour une réponse). La preuve
+     * de fenêtre : un vrai message WhatsApp du contact, sinon (sortie d'agent, retour RCS, réaction) l'état réel.
+     */
+    if (rest.status === 'aller_a' && ecrit) {
+      const prouvee = canalRetour === 'whatsapp' && !sortieAgent && !entrant.reaction;
+      await this.sauter('aller_a', tenantId, { waId, contactId: run.contactId ?? null },
+        { workflowId: run.workflowId, graph, noeudId: rest.nodeId, runId: run.id }, rest.cible,
+        { fenetreOuverte: prouvee || await this.deps.isWindowOpen(tenantId, waId), sauts: 1, messageDeclencheur: messageId });
     }
     // Chaîne terminée sans attendre de choix : l'agent reprend (`waiting` garde la main, `inbox` la donne à un
     // humain). Si le client a écrit et que la chaîne n'a rien envoyé en retour, son message part chez l'agent,

@@ -21,7 +21,9 @@ export type CanalOuverture = 'whatsapp' | 'rcs' | null;
 
 export function canalDOuverture(graph: WorkflowGraph): CanalOuverture {
   const scan = scanOpening(graph);
-  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate) return null;
+  // Un « Aller à » vers un autre scénario avant tout envoi (RC5) : ce qui ouvre se joue dans un graphe que cet examen ne
+  // lit pas, donc on ne promet rien à une campagne.
+  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate || scan.sautsHorsScenario.length > 0) return null;
   if (scan.rcsOpen) return 'rcs';
   if (!scan.firstTemplate) return null;
   return String(scan.firstTemplate.data.templateName ?? '').trim() !== '' ? 'whatsapp' : null;

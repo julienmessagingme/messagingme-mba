@@ -50,6 +50,19 @@ export const TYPES_DE_LANCEMENT = [
    * (`src/repondeur/demarrer.ts`), dans le scénario système caché de l'espace, sur un graphe construit au démarrage.
    */
   'repondeur',
+  /**
+   * Un bloc « Aller à » (RC5) mène à un bloc d'un AUTRE scénario : le parcours d'origine est clos et un parcours du
+   * scénario visé démarre SUR le bloc visé. Lancé par l'exécuteur lui-même (`WorkflowExecutor.sauter`), jamais par un
+   * câblage : il n'a donc pas de demande dans `DemandeDeLancement`. Depuis un chemin UNITAIRE (une réponse, un réveil,
+   * un démarrage qui publie ses étiquettes).
+   */
+  'aller_a',
+  /**
+   * Le même saut, franchi pendant le démarrage d'un chemin de MASSE (une campagne, qui ne publie pas ses étiquettes) :
+   * le parcours d'arrivée hérite de cette retenue. 🔴 Sans cette ligne, le saut d'une campagne de 5 000 destinataires
+   * publierait 5 000 « tag ajouté », donc autant de scénarios et de messages facturés.
+   */
+  'aller_a_masse',
 ] as const;
 export type TypeDeLancement = (typeof TYPES_DE_LANCEMENT)[number];
 
@@ -149,6 +162,20 @@ export const POLITIQUE_DE_LANCEMENT = {
    * (un contact, ici et maintenant) ; la fenêtre est prouvée par l'entrant qui le démarre.
    */
   repondeur: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'fourni_fige', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  /**
+   * « Aller à » vers un autre scénario (RC5, plan `docs/superpowers/plans/2026-10-06-rc5-blocs-condition-aller-a.md`) :
+   * - `reprise: 'oui'` (décision du plan) : le saut CONTINUE un parcours qui avait déjà le droit d'écrire, à l'instant
+   *   même ; il n'a personne à qui demander la permission, et un refus laisserait le contact sans suite.
+   * - `graphe: 'publie'` : un autre scénario se lit dans sa version publiée, même depuis un test (le brouillon figé
+   *   d'un lien de test ne vaut que pour SON scénario, et `walk` y suit les sauts internes).
+   * - `fenetre: 'selon_preuve'` : la preuve voyage avec le saut (`DepartDuParcours` `saut`) : la même que le
+   *   démarrage qui l'a franchi, l'entrant qui l'a déclenché, ou l'état réel de la fenêtre au réveil.
+   * - `sessionRemplacee: 'interrompue'` : le parcours d'origine est clos AVANT le saut (son état est écrit, ou son
+   *   démarrage a déjà remplacé le parcours en cours), donc le saut ne remplace jamais une session d'agent vivante qui
+   *   serait la sienne. Ce qu'il remplacerait encore viendrait d'ailleurs : une interruption, comme pour tout démarrage.
+   */
+  aller_a: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  aller_a_masse: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
 } as const satisfies Record<TypeDeLancement, PolitiqueDeLancement>;
 
 /**
@@ -171,14 +198,22 @@ export type DepartDuParcours =
    */
   | { depuis: 'entree'; fenetreOuverte?: boolean; firstTemplateParams?: string[]; messageDeclencheur?: string }
   /** À un bloc désigné du graphe. Un bloc absent est refusé lisiblement par `runFrom`. */
-  | { depuis: 'bloc'; noeudId: string };
+  | { depuis: 'bloc'; noeudId: string }
+  /**
+   * Au bloc visé par un « Aller à » (RC5), le seul départ des types `aller_a` et `aller_a_masse`. À part de `bloc`,
+   * délibérément : il porte une preuve de fenêtre (`bloc` n'en porte aucune, et la lui ajouter changerait la règle des
+   * automations), le compteur de sauts sans pause (`MAX_SAUTS_SANS_PAUSE`, `src/workflow/aller-a.ts`), et le message
+   * qui a déclenché le saut (inscrit comme déjà reçu, sans quoi sa redélivrance par Meta ferait avancer le parcours
+   * neuf comme une réponse).
+   */
+  | { depuis: 'saut'; noeudId: string; fenetreOuverte: boolean; sauts: number; messageDeclencheur?: string };
 
 /**
  * La garde de fenêtre est-elle levée pour ce lancement ? Seul endroit où la politique et le départ se croisent.
  * Un `switch` sans `default` : une règle ajoutée demain ne compile pas tant qu'elle n'a pas sa branche.
  */
 export function fenetreLevee(politique: PolitiqueDeLancement, depart: DepartDuParcours): boolean {
-  const prouvee = depart.depuis === 'entree' && depart.fenetreOuverte === true;
+  const prouvee = (depart.depuis === 'entree' || depart.depuis === 'saut') && depart.fenetreOuverte === true;
   switch (politique.fenetre) {
     case 'gardee': return false;
     case 'selon_preuve': return prouvee;

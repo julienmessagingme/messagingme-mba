@@ -47,6 +47,12 @@ export function useEnregistrementScenario(
   edges: RFEdge[],
   /** Y avait-il déjà un brouillon en attente à l'ouverture ? (`draftGraph !== null` côté serveur) */
   brouillonInitial = false,
+  /**
+   * Les codes publics que le serveur vient de poser (`nod_…`, par identifiant de bloc), après chaque enregistrement
+   * réussi. Un bloc neuf n'en a qu'à partir de là : sans cette remontée, son bouton « copier le code » et le choix de
+   * la cible d'un « Aller à » resteraient vides jusqu'à la réouverture du scénario (RC5).
+   */
+  surCodes?: (codes: Map<string, string>) => void,
 ): EnregistrementScenario {
   const t = useT();
   const [enCours, setEnCours] = useState(false);
@@ -74,6 +80,11 @@ export function useEnregistrementScenario(
     try {
       const rep = await updateWorkflow(tenantId, workflowId, { graph: fromRF(graphRef.current.nodes, graphRef.current.edges) }, keepalive ? { keepalive: true } : undefined);
       setEnregistreA(new Date());
+      if (surCodes && Array.isArray(rep?.graph?.nodes)) {
+        const codes = new Map<string, string>();
+        for (const n of rep.graph.nodes) if (typeof n.data?.code === 'string' && n.data.code !== '') codes.set(n.id, n.data.code);
+        surCodes(codes);
+      }
       // Repli `true` si le serveur ne dit rien (backend plus ancien que le front) : on préfère proposer une
       // publication inutile, qui ne coûte rien, à masquer un bouton dont l'écran a besoin.
       setAPublier(typeof rep?.brouillon === 'boolean' ? rep.brouillon : true);
@@ -91,7 +102,7 @@ export function useEnregistrementScenario(
     // bouclait à l'infini, sans aucun délai, sur toute erreur persistante (session expirée en tête), et même
     // après démontage du composant. C'est le bouton « réessayer » et le prochain debounce qui reprennent.
     if (dirtyRef.current && !echoue) void doSave(keepalive);
-  }, [tenantId, workflowId, t]);
+  }, [tenantId, workflowId, t, surCodes]);
 
   // doSave via une ref : la planification du debounce ne dépend QUE de [nodes, edges] (pas de doSave), pour ne pas
   // relancer une sauvegarde au simple changement de langue (doSave dépend de `t`).

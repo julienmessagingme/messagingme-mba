@@ -26,6 +26,8 @@ export const NODE_META: Record<WorkflowNodeType, { icone: NomIcone; label: [stri
   // « Fonction » et non « JavaScript » : ce que le client fait, c'est transformer une valeur. Le langage est
   // un détail de l'écran, pas le sujet du bloc.
   js: { icone: 'fonction', label: ['Fonction JS', 'JS function'] },
+  // RC5 : le parcours continue sur un bloc de n'importe quel scénario de l'espace. Aucune sortie : la suite est là-bas.
+  aller_a: { icone: 'saut', label: ['Aller à', 'Go to'] },
   // Blocs RETIRÉS du produit. Ces entrées ne servent plus qu'à RENDRE lisiblement un ancien scénario qui en
   // contient encore : ils ne sont plus dans la palette, et le moteur les traverse sans rien faire.
   mba_handoff: { icone: 'supprimer', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
@@ -36,7 +38,8 @@ export const NODE_META: Record<WorkflowNodeType, { icone: NomIcone; label: [stri
 // `question` est dans la liste NORMALE, pas dans une quatrieme liste gatee : rien ne le conditionne, il
 // part sur le numero WhatsApp deja rattache. Une liste de plus aurait demande de mettre a jour ses TROIS
 // lecteurs (palette, menu du fil, puces de Contenu > Blocs), la derive exacte du commit c1b8441.
-export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'question', 'flow', 'action', 'condition', 'wait', 'inbox', 'js'];
+// `aller_a` aussi : il ne dépend d'aucun branchement, seulement d'un autre bloc de l'espace.
+export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'question', 'flow', 'action', 'condition', 'wait', 'inbox', 'aller_a', 'js'];
 
 // Bloc RCS : présenté à part et GRISÉ tant que le tenant n'a pas d'agent RCS rattaché. Même doctrine que les
 // blocs MBA. Le canal est construit de bout en bout, mais un agent doit être déposé et approuvé par Google et

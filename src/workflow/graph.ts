@@ -21,7 +21,10 @@
 // synchrone non bloquante ; le bloc désigne un appel de la bibliothèque, il ne le décrit pas.
 // `js` = « Fonction JS » : transforme un champ par du JavaScript du client, exécuté dans QuickJS (WebAssembly)
 // avec plafonds de temps et de mémoire (voir `src/workflow/fonction-js.ts`).
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http', 'js'] as const;
+// `aller_a` = « Aller à » (RC5) : `data.cible` porte le code public (`nod_…`) d'un bloc de n'importe quel scénario de
+// l'espace, et le parcours continue LÀ. Aucune sortie. Même scénario : `walk` suit le saut dans le même enchaînement.
+// Autre scénario : l'exécuteur clôt le parcours et en démarre un sur le bloc visé (`src/workflow/aller-a.ts`).
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http', 'js', 'aller_a'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

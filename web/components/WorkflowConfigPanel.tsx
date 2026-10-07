@@ -14,6 +14,7 @@ import { RcsPreview } from '@/components/RcsPreview';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { ChampCompte } from '@/components/ChampCompte';
 import { EditeurFamilles } from '@/components/ConditionBuilder';
+import { PanneauAllerA } from '@/components/PanneauAllerA';
 import { sortiesDuBloc, type EmailRecipientData, type RFNode } from '@/lib/workflow-canevas';
 import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
 import { useState } from 'react';
@@ -149,11 +150,14 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 export function ConfigPanel({
-  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, requetes, onCommitTag, onCreerChamp,
+  node, tenantId, workflowId, blocsDuScenario = [], isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, requetes, onCommitTag, onCreerChamp,
 }: {
   node: RFNode;
   /** Workspace courant : le champ visuel du bloc RCS téléverse dans SA médiathèque. */
   tenantId: string;
+  /** Le scénario édité, et ses blocs tels qu'on les édite : le bloc « Aller à » y choisit sa cible (RC5). */
+  workflowId?: string;
+  blocsDuScenario?: RFNode[];
   /** Ce bloc est-il la RACINE du scénario (sans arête entrante) ? C'est lui que la règle campagne regarde. */
   isRoot: boolean;
   /** Le scénario est-il lançable en campagne broadcast (ce qui OUVRE doit être un template configuré) ? */
@@ -745,6 +749,9 @@ export function ConfigPanel({
             </p>
           )}
         </div>
+      )}
+      {wfType === 'aller_a' && (
+        <PanneauAllerA tenantId={tenantId} workflowId={workflowId} nodeId={node.id} data={d} blocsDuScenario={blocsDuScenario} onPatch={onPatch} />
       )}
       {wfType === 'js' && (
         <FonctionJs

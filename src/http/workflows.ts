@@ -12,6 +12,7 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { executerFonctionJs } from '../workflow/fonction-js';
 import { normaliserEtiquette } from '../crm/poser-etiquette';
+import { refusDePublication, sautsDeLaCopie } from '../workflow/aller-a';
 
 /**
  * La sauvegarde n'exige pas qu'un scénario commence par un template : un scénario qui ouvre sur un message de
@@ -142,7 +143,8 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
       nodes: modele.nodes.map((node) => ({ ...node, data: { ...node.data, code: undefined } })),
       edges: modele.edges,
     };
-    const graph = mintNodeCodes(stripped, await deps.tenantCode(tenant));
+    // Les « Aller à » internes suivent la copie (RC5) : sans ça, ils viseraient les blocs de l'original.
+    const graph = sautsDeLaCopie(modele, mintNodeCodes(stripped, await deps.tenantCode(tenant)));
     const { id: newId } = await deps.scenarios.insert(tenant, name, graph);
     try { await deps.declareTags(tenant, tagsInGraph(graph)); } catch { /* best-effort */ }
     return reply.code(201).send({ id: newId, name, graph });
@@ -212,6 +214,17 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
+    /**
+     * 🔴 LES BLOCS « ALLER À » SE VÉRIFIENT AVANT LA MISE EN LIGNE (RC5) : une cible inexistante, et la fenêtre de 24 h
+     * qui suit le saut vers un autre scénario (`refusDePublication`). Seulement s'il y a un brouillon : sans lui, la
+     * publication ne change rien. Les autres scénarios se lisent ici, scopés à l'espace, dans leur version PUBLIÉE. Un
+     * scénario inconnu tombe plus bas, sur le 404 de `publish`, comme avant.
+     */
+    const avant = await deps.scenarios.getById(id, tenant);
+    if (avant?.draftGraph && avant.draftGraph.nodes.some((n) => n.type === 'aller_a')) {
+      const refus = refusDePublication(avant.draftGraph, id, await deps.scenarios.list(tenant));
+      if (refus !== null) return reply.code(422).send({ error: `Publication refusée : ${refus}.`, code: 'aller_a_invalide' });
+    }
     const row = await deps.scenarios.publish(id, tenant);
     if (!row) return reply.code(404).send({ error: 'workflow inconnu' });
     // Le journal porte qui a publié : la table `workflows`, elle, ne garde que la date. Détail non identifiant

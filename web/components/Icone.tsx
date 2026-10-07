@@ -1,9 +1,9 @@
 'use client';
 
 import {
-  AddressBookIcon, ArrowBendUpLeftIcon, BookOpenIcon, BuildingsIcon, CalendarBlankIcon, CaretDownIcon,
+  AddressBookIcon, ArrowBendDownRightIcon, ArrowBendUpLeftIcon, BookOpenIcon, BuildingsIcon, CalendarBlankIcon, CaretDownIcon,
   CaretLeftIcon, CaretRightIcon, ChartBarIcon, ChatCircleDotsIcon, ChatCircleIcon, CheckCircleIcon,
-  ClipboardTextIcon, CodeIcon, CursorClickIcon, DeviceMobileIcon, EnvelopeSimpleIcon, EyeIcon, FileArrowUpIcon, FlagIcon,
+  ClipboardTextIcon, CodeIcon, CopyIcon, CursorClickIcon, DeviceMobileIcon, EnvelopeSimpleIcon, EyeIcon, FileArrowUpIcon, FlagIcon,
   FileTextIcon, FlowArrowIcon, FunctionIcon, GearIcon, GitBranchIcon, HeadsetIcon, HourglassMediumIcon, HouseIcon,
   ImageIcon, LightbulbIcon, LightningIcon, LinkIcon, ListIcon, MagicWandIcon, MagnifyingGlassIcon, MapPinIcon, MapTrifoldIcon, MegaphoneIcon,
   MicrophoneIcon, MinusIcon, PaperPlaneTiltIcon, PaperclipIcon, PencilSimpleIcon, PhoneIcon, PlayIcon, PlugIcon, PlusIcon,
@@ -109,6 +109,9 @@ const ICONES = {
   fonction: FunctionIcon,
   bloc: PuzzlePieceIcon,
   connaissance: BookOpenIcon,
+  // Le bloc « Aller à » (RC5), et le bouton qui copie le code d'un bloc.
+  saut: ArrowBendDownRightIcon,
+  copier: CopyIcon,
   // Outils d'un agent (`components/IconeOutil.tsx`).
   rechercher: MagnifyingGlassIcon,
   contact: UserIcon,

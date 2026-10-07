@@ -127,13 +127,15 @@ export function refreshFlows(tenantId: string): Promise<FlowRefreshReport> {
 // Sorties : `row:<i>` par ligne du menu, `timeout` a l'echeance, et l'arete libre pour une reponse ecrite.
 // `http` : joue un appel DEJA mis au point dans Tools > Connecteurs API et range sa reponse dans un champ du
 // contact. Action synchrone non bloquante, comme `tag` ou `action`.
+// `aller_a` : « Aller à » (RC5). `data.cible` = le code public (`nod_…`) d'un bloc de n'importe quel scenario de
+// l'espace, `data.cibleLibelle` = son nom tel que l'ecran l'a choisi (« Menu principal, Question 2 »). Aucune sortie.
 // ⚠️ CETTE LISTE EST UN MIROIR de `WORKFLOW_NODE_TYPES` (`src/workflow/graph.ts`), qui FAIT AUTORITE : un
 // type present d'un seul cote produit soit un bloc que le serveur refuse d'enregistrer, soit un bloc que
 // l'ecran ne sait pas rendre. `tests/web-node-types-parity.test.ts` casse des que les deux divergent.
 /** Résultat d'un essai de « Fonction JS » : ce que le bac à sable a produit, ou la faute du client. */
 export interface EssaiJs { ok: boolean; valeur: string; erreur?: string }
 
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent' | 'http' | 'js';
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent' | 'http' | 'js' | 'aller_a';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
@@ -245,7 +247,11 @@ export function getWorkflow(tenantId: string, id: string): Promise<{ workflow: W
  * `brouillon` dans la réponse = reste-t-il quelque chose à publier après cette écriture ? La question se pose
  * au serveur parce qu'un enregistrement identique à la version en ligne n'y laisse aucun brouillon.
  */
-export function updateWorkflow(tenantId: string, id: string, patch: { name?: string; graph?: WorkflowGraph }, opts?: { keepalive?: boolean }): Promise<{ brouillon?: boolean }> {
+/**
+ * `graph` dans la réponse : le graphe tel que le serveur l'a enregistré, codes publics des blocs posés (`mintNodeCodes`).
+ * Un bloc neuf n'a son code qu'à partir de là : le constructeur le recopie sur sa carte (bouton « copier le code »).
+ */
+export function updateWorkflow(tenantId: string, id: string, patch: { name?: string; graph?: WorkflowGraph }, opts?: { keepalive?: boolean }): Promise<{ brouillon?: boolean; graph?: WorkflowGraph }> {
   // `keepalive` : la requête survit au déchargement de la page (flush auto-save sur beforeunload / fermeture d'onglet).
   return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'PATCH', body: JSON.stringify(patch), ...(opts?.keepalive ? { keepalive: true } : {}) });
 }

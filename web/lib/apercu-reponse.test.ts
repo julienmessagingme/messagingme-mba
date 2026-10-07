@@ -14,6 +14,16 @@ const n = (id: string, type: string, data: Record<string, unknown> = {}) => ({ i
 const g = (nodes: GraphLike['nodes'], edges: GraphLike['edges'] = []): GraphLike => ({ nodes, edges });
 
 describe('premiereReponse : ce qu’on sait vraiment', () => {
+  it('🔴 un « Aller à » vers un bloc du même scénario y mène, comme le moteur (RC5)', () => {
+    const graph = g([n('j', 'aller_a', { cible: 'nod_x_1' }), n('q', 'quick_message', { body: 'Me voici', code: 'nod_x_1' })]);
+    expect(premiereReponse(graph)).toEqual({ genre: 'message', texte: 'Me voici', boutons: [] });
+  });
+
+  it('🔴 un « Aller à » vers un autre scénario avoue au lieu de dire « rien ne part », et une boucle s’arrête', () => {
+    expect(premiereReponse(g([n('j', 'aller_a', { cible: 'nod_x_9', cibleLibelle: 'Menu, Question 2' })]))).toEqual({ genre: 'saut', cible: 'Menu, Question 2' });
+    expect(premiereReponse(g([n('j', 'aller_a', { cible: 'nod_x_3', code: 'nod_x_3' })]))).toEqual({ genre: 'aucun_envoi' });
+  });
+
   it('le bloc d’entrée envoie un message : on rend son texte et ses boutons', () => {
     const graph = g([n('a', 'quick_message', { body: 'Bonjour !', quickReplies: [{ text: 'Un devis' }, { text: 'Un rendez-vous' }] })]);
     expect(premiereReponse(graph)).toEqual({ genre: 'message', texte: 'Bonjour !', boutons: ['Un devis', 'Un rendez-vous'] });

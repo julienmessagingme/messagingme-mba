@@ -41,6 +41,11 @@ export function ouvertureApi(graph: WorkflowGraph, depuis?: string): VerdictOuve
   if (scan.unnamedOpeningTemplate) {
     return { ouverture: null, raison: 'un template d’ouverture n’a pas encore de modèle choisi' };
   }
+  // Un « Aller à » vers un autre scénario avant tout envoi (RC5) : ce qui part se joue ailleurs, et un envoi qui
+  // promettrait une ouverture sans l'avoir lue pourrait partir hors fenêtre.
+  if (scan.sautsHorsScenario.length > 0) {
+    return { ouverture: null, raison: 'un bloc « Aller à » vers un autre scénario précède le premier envoi : visez directement le bloc d’arrivée' };
+  }
   if (scan.sessionOpen) return { ouverture: 'whatsapp_session' };
   if (scan.rcsOpen) return { ouverture: 'rcs' };
   if (scan.firstTemplate && String(scan.firstTemplate.data.templateName ?? '').trim() !== '') {

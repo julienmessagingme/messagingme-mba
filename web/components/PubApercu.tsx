@@ -345,6 +345,11 @@ function corpsReponse(r: EtatReponse, t: (fr: string, en: string) => string): Re
       </Alerte>
     );
   }
+  if (p.genre === 'saut') {
+    return <Note>{p.cible !== ''
+      ? t(`Ce scénario continue dans un autre (« ${p.cible} ») : sa première réponse est celle de ce bloc.`, `This scenario continues in another one (“${p.cible}”): its first answer is that block’s.`)
+      : t('Ce scénario continue dans un autre scénario : sa première réponse est celle du bloc visé.', 'This scenario continues in another scenario: its first answer is the target block’s.')}</Note>;
+  }
   if (p.genre === 'indecidable') {
     return <Note>{t('Ce scénario commence par un embranchement : sa première réponse dépend du prospect, donc elle ne peut pas être montrée ici.',
                     'This scenario starts with a branch: its first answer depends on the lead, so it cannot be shown here.')}</Note>;

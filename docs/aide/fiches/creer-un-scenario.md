@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 8a7485
+source_empreinte: 446e15
 ---
 # Créer un scénario
 
@@ -26,6 +26,12 @@ Les blocs que vous utiliserez le plus :
 - **Attente** : met le parcours en pause, pour une durée, jusqu'à une date, ou jusqu'aux prochaines heures
   d'ouverture.
 - **Assigner à un agent** : passe la main à quelqu'un de votre équipe, qui reprend la conversation.
+- **Aller à** : envoie le contact sur un autre bloc, de ce scénario ou d'un autre, par exemple pour revenir au menu
+  après une réponse. Choisissez le scénario puis le bloc, ou collez le code du bloc. Ses réponses déjà données le
+  suivent, elles sont sur sa fiche. Vers un autre scénario, c'est sa version publiée qui joue : publiez-le d'abord.
+  Un scénario qui se renvoie sans fin vers un autre s'arrête au bout de vingt sauts, et la conversation passe à votre
+  équipe. La publication est refusée si le bloc visé n'existe pas, ou si un saut vers un autre scénario suit une
+  attente de 24 h ou plus et mène à autre chose qu'un modèle ; dans le même scénario, l'écran vous en avertit.
 
 Chaque bouton que vous proposez devient une **sortie à relier** : le petit point à droite du bloc. Un bouton
 que vous laissez débranché est un trou dans le parcours, le contact tape et ne reçoit rien. L'écran vous le
@@ -41,3 +47,6 @@ d'abord « Je lance le test. », et le scénario part quelques secondes après.
 Vous pouvez aussi l'essayer **à partir d'un bloc précis**, sans dérouler tout ce qui précède : le petit
 bouton lecture en haut à gauche d'un bloc ouvre le même lien, mais le scénario démarrera à ce bloc-là. Ce
 qui précède ce bloc n'est pas rejoué : les tags et les champs de ces étapes ne sont pas posés.
+
+Le petit bouton à côté, en haut à gauche de chaque bloc, **copie son code** : c'est lui qu'on colle dans un « Aller
+à », ou dans un appel à l'API. Il reste grisé tant que le bloc n'est pas enregistré, le temps d'une seconde.

@@ -1,5 +1,27 @@
 # todo.md : backlog
 
+## 🟡 RC5 B, le bloc « Aller à » : ce qui reste (2026-10-07)
+
+- **L'entrée d'un scénario visé depuis un AUTRE scénario reste ambiguë.** Corrigé dans le scénario lui-même (un bloc
+  visé par un « Aller à » de ce scénario n'est plus une racine), mais un bloc qui ne sert que de cible à un autre
+  scénario, créé avant le vrai premier bloc, devient l'entrée de la campagne et de l'API. Un graphe seul ne le voit pas :
+  il faudrait lire les sauts de tout l'espace, ou laisser le client désigner l'entrée.
+- **Campagne de masse vers une cible disparue** : chaque destinataire passe la conversation à l'équipe (une demande de
+  Performance par destinataire) ; pour `aller_a_masse`, journaliser sans passer à l'équipe, ou une ligne par campagne.
+  Et supprimer ou republier un scénario ciblé par un saut n'est vérifié nulle part (pas d'équivalent du 409 des liens
+  de chaîne).
+- **Deux écritures sans marque intermédiaire** (le parcours d'origine clos, puis l'arrivée démarrée) : un arrêt du
+  worker entre les deux laisse le contact sans suite ni trace. Démarrer avant de clore risquerait deux parcours
+  vivants ; le choix se défend, il est à écrire comme risque accepté.
+- **Le canal RCS ne suit pas un saut vers un autre scénario** (l'arrivée démarre en WhatsApp).
+- **Une arrivée qui finit sans rien envoyer** rend la main à l'agent de Meta sans lui transmettre le message du contact,
+  contrairement à `advance`.
+- **Tests à renforcer** : `&& ecrit` dans `advance` sans test qui le fasse échouer ; le refus de campagne de
+  `src/http/campaigns.ts` sans test HTTP ; l'assertion « redélivré par Meta » (vérifier aussi l'état et l'équipe).
+- **Doublons** : `nomDuBloc` (`src/workflow/aller-a.ts` et `src/mba/outils-maison.ts`), `blocDuCode` / `noeudDuCode`,
+  `CODE_BLOC_RE` recopié dans deux composants ; `contactId` optionnel dans `WorkflowRunRow` alors que la doctrine du
+  fichier le voudrait requis.
+
 ## 🟡 RC5 A, la Condition à familles : ce qui reste (2026-10-06)
 
 - **Une sortie de Condition non reliée n'est pas signalée.** Les sorties de Question, de bouton et d'agent portent le

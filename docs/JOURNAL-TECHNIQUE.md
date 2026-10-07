@@ -133,6 +133,17 @@ Relu : zéro rouge ; une cible de langue vide retenait tous les contacts sans la
 rien. Laissés documentés par décision de Julien : le dernier message reçu vaut « maintenant » quand un message lance
 le scénario, et les départements d'outre-mer ont leur propre indicatif.
 
+**RC5 B, le bloc « Aller à » et le bouton « copier le code »** (un seul commit, serveur et console, sans migration) :
+saut dans le même scénario par le `walk`, vers un autre par un parcours démarré sur le bloc visé (types `aller_a` et
+`aller_a_masse`, départ `saut` qui porte la preuve de fenêtre et le compteur de sauts, 20 au plus sans pause) ; la
+publication refuse une cible absente et un saut après une attente longue vers un message de session. Relu : zéro
+rouge ; un jaune corrigé avant la production, l'entrée d'un scénario (un bloc visé seulement par un « Aller à », créé
+avant le vrai premier bloc, devenait l'entrée de la campagne), vérifié dans les deux sens côté serveur et console.
+⚠️ Un seul commit et non deux : le test de parité des types de blocs lit la palette de la console, qui part donc avec
+le serveur, et la CI ne tourne que sur `main`. La fenêtre où la console connaît « Aller à » avant l'API (un
+enregistrement de scénario qui en contient un serait refusé) a été dite et réduite : déploiement de l'API dans la
+foulée de la CI.
+
 ## 2026-10-06 : le numéro branché depuis Claude Code, et son abonnement (lot 3c, livraisons A et B)
 
 **A, le lien et l'attente** (`d20dea6b`, jaunes `f8708b65`, console `b4f81ec4`) : `start_whatsapp_connection` donne

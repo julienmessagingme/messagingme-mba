@@ -322,6 +322,32 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
     await server.close();
   });
 
+  it('🔴 un « Aller à » interne vise le bloc de la COPIE, un « Aller à » vers un autre scénario ne bouge pas (RC5)', async () => {
+    const AILLEURS = 'nod_k7m2p3_01J00000000000000000000099';
+    const avecSauts = (): WorkflowRow => sampleRow({
+      name: 'Promo',
+      graph: {
+        nodes: [
+          { id: 'n1', type: 'template', position: { x: 0, y: 0 }, data: { code: SRC_CODE, templateName: 'x' } },
+          { id: 'j1', type: 'aller_a', position: { x: 0, y: 0 }, data: { cible: SRC_CODE } },
+          { id: 'j2', type: 'aller_a', position: { x: 0, y: 0 }, data: { cible: AILLEURS } },
+          { id: 'j3', type: 'aller_a', position: { x: 0, y: 0 }, data: { cible: '' } },
+        ],
+        edges: [],
+      },
+    });
+    const { server, cap } = app({ scenarios: { getById: async (id) => (id === W1 ? avecSauts() : null), list: async () => [avecSauts()] } });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(201);
+    const g = cap.created[0]!.graph as { nodes: Array<{ id: string; data: { code?: string; cible?: string } }> };
+    const par = (id: string) => g.nodes.find((x) => x.id === id)!;
+    expect(par('n1').data.code).not.toBe(SRC_CODE);
+    expect(par('j1').data.cible).toBe(par('n1').data.code);
+    expect(par('j2').data.cible).toBe(AILLEURS);
+    expect(par('j3').data.cible).toBe('');
+    await server.close();
+  });
+
   it('incrémente « (copie 2) » si le nom est déjà pris', async () => {
     const { server, cap } = app({ scenarios: { getById: async (id) => (id === W1 ? source() : null), list: async () => [source(), sampleRow({ name: 'Promo (copie)' })] } });
     const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
@@ -404,6 +430,54 @@ describe('POST /tenants/:t/workflows/:id/publish', () => {
     expect(agent.statusCode).toBe(403);
     expect(cross.statusCode).toBe(403);
     expect(cap.publies).toEqual([]);
+    await server.close();
+  });
+
+  /**
+   * 🔴 LES BLOCS « ALLER À » SE VÉRIFIENT AVANT LA MISE EN LIGNE (RC5). La règle elle-même est tenue par
+   * `tests/workflow-aller-a.test.ts` (`refusDePublication`) ; ici, que la route la pose AVANT `publish`, sur le
+   * BROUILLON, avec les scénarios de SON espace, et qu'un brouillon sans saut ne paie aucune lecture de plus.
+   */
+  it('🔴 un « Aller à » vers un bloc inexistant : 422, rien n’est publié, et la liste lue est celle de l’espace', async () => {
+    const lus: string[] = [];
+    const brouillon = { nodes: [{ id: 'j', type: 'aller_a' as const, position: { x: 0, y: 0 }, data: { name: 'Vers le menu', cible: 'nod_k7m2p3_01J00000000000000000000099' } }], edges: [] };
+    const { server, cap } = app({ scenarios: {
+      getById: async (id) => (id === W1 ? sampleRow({ draftGraph: brouillon }) : null),
+      list: async (t) => { lus.push(t); return [sampleRow()]; },
+    } });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/publish`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ code: string }>().code).toBe('aller_a_invalide');
+    expect(res.json<{ error: string }>().error).toContain('« Vers le menu » vise un bloc qui n’existe pas');
+    expect(cap.publies).toEqual([]);
+    expect(lus).toEqual(['t1']);
+    await server.close();
+  });
+
+  it('un « Aller à » vers un bloc publié d’un autre scénario de l’espace : publié', async () => {
+    const cible = 'nod_k7m2p3_01J00000000000000000000042';
+    const brouillon = { nodes: [{ id: 'j', type: 'aller_a' as const, position: { x: 0, y: 0 }, data: { cible } }], edges: [] };
+    const autre = sampleRow({ id: '33333333-3333-4333-8333-333333333333', name: 'Menu', graph: { nodes: [{ id: 'm', type: 'tag', position: { x: 0, y: 0 }, data: { tag: 'x', code: cible } }], edges: [] } });
+    const { server, cap } = app({ scenarios: {
+      getById: async (id) => (id === W1 ? sampleRow({ draftGraph: brouillon }) : null),
+      list: async () => [sampleRow(), autre],
+    } });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/publish`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(cap.publies).toEqual([W1]);
+    await server.close();
+  });
+
+  it('un brouillon sans « Aller à » ne lit pas les autres scénarios', async () => {
+    const lus: string[] = [];
+    const { server, cap } = app({ scenarios: {
+      getById: async (id) => (id === W1 ? sampleRow({ draftGraph: validGraph as WorkflowRow['graph'] }) : null),
+      list: async (t) => { lus.push(t); return []; },
+    } });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/publish`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(cap.publies).toEqual([W1]);
+    expect(lus).toEqual([]);
     await server.close();
   });
 

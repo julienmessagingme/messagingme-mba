@@ -46,8 +46,9 @@ describe('PgWorkflowRunStore : les réclamations du balayage de réveil', () => 
 
 describe('PgWorkflowRunStore : la lecture d’un run', () => {
   const lu = { ...ligne, status: 'waiting', channel: 'rcs' };
+  // `contactId` : la fiche du parcours, qu'un « Aller à » vers un autre scénario transmet au parcours qu'il démarre (RC5).
   const attendu = {
-    id: 'r1', workflowId: 'w1', tenantId: 't1', waId: '336', currentNode: 'n2', status: 'waiting',
+    id: 'r1', workflowId: 'w1', tenantId: 't1', waId: '336', contactId: 'c1', currentNode: 'n2', status: 'waiting',
     lastMessageId: 'wamid.1', channel: 'rcs', grapheFige: null,
   };
 
@@ -55,13 +56,13 @@ describe('PgWorkflowRunStore : la lecture d’un run', () => {
     const { pool, appels } = fauxPool([lu]);
     expect(await new PgWorkflowRunStore(pool).findWaitingByWaId('t1', '336')).toEqual(attendu);
     expect(appels[0]!.params).toEqual(['t1', '336']);
-    expect(appels[0]!.sql).toBe("select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige from workflow_runs where tenant_id = $1 and wa_id = $2 and status = 'waiting' order by created_at desc limit 1");
+    expect(appels[0]!.sql).toBe("select id, workflow_id, tenant_id, wa_id, contact_id, current_node, status, last_message_id, channel, graphe_fige from workflow_runs where tenant_id = $1 and wa_id = $2 and status = 'waiting' order by created_at desc limit 1");
   });
 
   it('byId : quel que soit son statut, et `null` quand il n’existe pas', async () => {
     const { pool, appels } = fauxPool([lu]);
     expect(await new PgWorkflowRunStore(pool).byId('t1', 'r1')).toEqual(attendu);
-    expect(appels[0]!.sql).toBe('select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige from workflow_runs where tenant_id = $1 and id = $2');
+    expect(appels[0]!.sql).toBe('select id, workflow_id, tenant_id, wa_id, contact_id, current_node, status, last_message_id, channel, graphe_fige from workflow_runs where tenant_id = $1 and id = $2');
     expect(await new PgWorkflowRunStore(fauxPool([]).pool).byId('t1', 'r1')).toBeNull();
   });
 });

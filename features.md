@@ -771,6 +771,21 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   message-là, donc « maintenant » : ce champ ne trie vraiment que dans une campagne, un envoi par l'API, ou un rappel
   avant une date. Et le pays est celui de l'indicatif : la Réunion, la Guadeloupe, la Guyane et la Martinique ont le
   leur, et ne sont pas comptées dans « France ».
+- ✅ **Bloc « Aller à »** (2026-10-07) : le contact continue sur **n'importe quel bloc de n'importe quel scénario** de
+  l'espace, par exemple revenir au menu après une réponse, ou passer à la question d'un autre scénario. La cible se
+  choisit dans le panneau (le scénario, puis le bloc, par son nom et son type) ou en **collant le code** d'un bloc. Le
+  bloc n'a pas de sortie : la suite est là où il mène, et sa carte nomme la cible (« → Menu principal, Question 2 »).
+  Les réponses déjà données **suivent le contact** : elles sont sur sa fiche, une condition de l'autre scénario les
+  lit. Vers un autre scénario, c'est sa **version publiée** qui joue, même pendant un test. Trois garde-fous : une
+  boucle sans pause (A renvoie à B qui renvoie à A) s'arrête au 21e saut, et la conversation passe à l'équipe ; une
+  cible disparue depuis arrête le parcours, passe la conversation à l'équipe et s'écrit dans le journal des erreurs ; la
+  **publication est refusée**, avec le nom du bloc, si la cible n'existe pas (ou pas encore en ligne dans l'autre
+  scénario), ou si un saut placé après une attente de 24 h ou plus mène à un message hors modèle, qui ne partirait
+  jamais. Une campagne ne peut pas ouvrir sur un saut vers un autre scénario : il faut choisir directement le scénario
+  d'arrivée.
+- ✅ **Copier le code d'un bloc** (2026-10-07) : sur chaque bloc, un bouton en haut à gauche copie son **code**
+  (`nod_…`), celui qu'on colle dans un « Aller à », dans l'API (`/v1/sends`) ou dans l'outil « Envoyer un bloc ». Il est
+  grisé tant que le bloc n'est pas enregistré ; l'enregistrement automatique lui donne son code une seconde après.
 - ✅ **Nommer un bloc** (2026-08-02) : chaque bloc a un champ **« Nom du bloc »** libre et optionnel (64
   caractères, ex. « Relance J+3 »). Le nom s'affiche sur la vignette du bloc à la place de son type, et se
   retrouve dans la colonne **Nom** de Contenu > Blocs, ce qui rend un gros scénario lisible d'un coup d'oeil.

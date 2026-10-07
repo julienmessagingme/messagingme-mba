@@ -380,6 +380,7 @@ repos ; `executor` fait l'IO et persiste.
 | `sleeping` + `resumeInMs` | bloc Attente : on attend le temps | `wake-sweep` |
 | `rcs_send` | main rendue : `walk` ne peut pas savoir si le numéro est joignable | l'executor, après l'IO |
 | `agent_turn` | main rendue : `walk` ne peut pas savoir ce que le modèle décidera | l'executor, après le tour |
+| `aller_a` + `cible` | main rendue : un « Aller à » vise un bloc d'un AUTRE scénario (ou aucun), que `walk` ne lit pas | l'executor, qui clôt le parcours puis saute (`sauter`) |
 | `inbox` | terminal, la conversation remonte à un humain | |
 | `done` | fin de chaîne | |
 
@@ -398,11 +399,13 @@ distinctes.** Peuvent ouvrir à froid : un **template** WhatsApp, ou un **bloc R
 aucune fenêtre, c'est une règle de WhatsApp et pas du monde). Après une attente, seul un template part encore ;
 un message rapide, une question ou un formulaire seront refusés. Cette règle a **trois détenteurs** :
 `besoinsFenetre` (reprise), la garde de `runFrom` (ouverture à froid) et `ouvertureApi` (API publique,
-`src/workflow/ouverture-api.ts`, qui juge ce qui part en PREMIER depuis l'entrée ou depuis le bloc visé).
+`src/workflow/ouverture-api.ts`, qui juge ce qui part en PREMIER depuis l'entrée ou depuis le bloc visé). Un
+« Aller à » vers un autre scénario passe par la deuxième : le parcours d'arrivée est un démarrage (voir plus bas).
 
 🔴 **Un démarrage de parcours a un TYPE, et le type décide de tous ses réglages** (`src/workflow/lancements.ts`).
 `TypeDeLancement` est une liste fermée : Inbox, agent de Meta (scénario, bloc), agent IA (scénario), automatisme
-(ordinaire, chaîne, publicité ou widget), lien de test, campagne (scénario, bloc), répondeur. `POLITIQUE_DE_LANCEMENT` donne pour chacun
+(ordinaire, chaîne, publicité ou widget), lien de test, campagne (scénario, bloc), répondeur, et le saut d'un « Aller
+à » (`aller_a`, `aller_a_masse`), le seul que l'exécuteur lance lui-même, sans demande à l'entrée de lancement. `POLITIQUE_DE_LANCEMENT` donne pour chacun
 la reprise du fil (`non` : arrêté par un fil tenu ; `oui` : repris même à un opérateur ; `sauf_operateur` : repris à
 l'agent de Meta seulement), la publication des étiquettes posées (jamais sur un chemin de masse), le graphe joué
 (publié ; fourni par l'appelant ; brouillon figé pour le seul lien de test ; fourni et figé pour le seul répondeur)
@@ -449,8 +452,8 @@ aucune autre. Une famille vraie mais non reliée arrête le parcours, comme une 
   deux miroirs, les mesures d'un scénario, les flèches du canevas d'Analytics) : un lecteur qui les nommerait encore
   ne verrait pas une famille neuve, sans aucune erreur. L'aperçu de première réponse, lui, ne lit aucune sortie : une
   Condition y reste indécidable, familles ou pas.
-- **Bornées au moteur, pas à la publication** : `parseGraph` ne lit pas `data`, et une publication ne valide rien de
-  `data` aujourd'hui. Au-delà de dix, le surplus est ignoré ; un code invalide, en double ou égal à `false` écarte sa
+- **Bornées au moteur, pas à la publication** : `parseGraph` ne lit pas `data`, et la publication ne valide de `data`
+  que les blocs « Aller à » (ci-dessous). Au-delà de dix, le surplus est ignoré ; un code invalide, en double ou égal à `false` écarte sa
   famille (`famillesDeCondition`). Même doctrine que `MAX_DESTINATAIRES_EMAIL` : un refus à l'enregistrement
   automatique bloquerait tout le scénario pour un bloc, et l'écran ne produit ni l'un ni l'autre.
 - **Les champs SYSTÈME** : trois clauses que la plateforme sait sans saisie. `dernier_message_recu` (les opérateurs
@@ -462,6 +465,43 @@ aucune autre. Une famille vraie mais non reliée arrête le parcours, comme une 
   se lit sur le numéro déjà dans le contexte. Absent veut dire VIDE, jamais une valeur inventée : un contact qui n'a
   jamais écrit n'est ni « plus vieux » ni « plus récent » que sept jours, une langue jamais apprise n'est pas
   « français », un contact sans numéro n'a aucun pays.
+
+🔴 **Le bloc « Aller à »** (RC5, `aller_a`, `src/workflow/aller-a.ts`). `data.cible` porte le code public d'un bloc
+(`nod_<client>_<ULID>`, `data.code`) de n'importe quel scénario de l'espace, `data.cibleLibelle` le nom que l'écran a
+retenu. Aucune sortie. Les réponses déjà données suivent le contact sans rien transporter : un parcours ne porte aucune
+variable propre, tout vit sur la fiche.
+- **Même scénario** : `walk` suit le saut comme une flèche (`blocDuCode` sur le graphe JOUÉ, le brouillon figé d'un test
+  compris), dans le même enchaînement. Un retour sur un bloc déjà visité est arrêté par sa garde `visited` : c'est la
+  réponse à une boucle sans pause, et une pause (une réponse, un réveil) la réarme. `scanOpening`,
+  `waitBeforeSessionMessage` et leurs miroirs console, l'aperçu de première réponse et les mesures le suivent pareil.
+- **Autre scénario** : `walk` rend `aller_a`. L'appelant (`runFrom`, `advance`, `resume`) applique les actions, ÉCRIT la
+  fin de CE parcours (`done`), puis `WorkflowExecutor.sauter` résout la cible (`resoudreBloc`, le `resolveNode` de
+  `/v1/sends`, sur les graphes PUBLIÉS de l'espace) et démarre un parcours du scénario visé SUR le bloc visé, par
+  `demarrer`, donc par toutes les gardes de `runFrom`. Type `aller_a` (reprise `oui`, publie, graphe publié, fenêtre
+  selon preuve), ou `aller_a_masse` quand le saut est franchi au démarrage d'une campagne : 🔴 sans lui, une campagne
+  publierait un « tag ajouté » par destinataire. Le départ `saut` porte la preuve de fenêtre (le démarrage qui l'a
+  franchi, l'entrant qui l'a déclenché, l'état RÉEL de la fenêtre au réveil), le compteur de sauts et le message
+  déclencheur (inscrit comme déjà reçu, sinon sa redélivrance avancerait le parcours neuf). Une cible de CE scénario
+  absente du graphe joué ne se cherche jamais dans une autre version.
+- 🔴 **Garde anti-boucle ENTRE scénarios** : `walk` ne voit qu'un graphe. Le compteur `sauts` voyage dans le départ
+  (un appel direct, aucune file), et au-delà de `MAX_SAUTS_SANS_PAUSE` (20) le saut n'a pas lieu.
+- **Un saut qui n'a pas lieu** (boucle, aucune cible, cible disparue ou d'un autre espace, scénario d'arrivée qui refuse
+  de démarrer, panne) est un trou de montage : une ligne au journal des échecs de scénario
+  (`workflow_advance_failures`, `journaliserEchecSaut`), et la conversation passe à l'équipe, sans escalade. Le
+  démarrage qui l'a franchi rend `true` : la suite est l'affaire du saut.
+- 🔴 **La publication refuse** (`refusDePublication`, 422 `aller_a_invalide`, seulement si le brouillon porte un saut) :
+  un saut sans cible, une cible ni dans le brouillon ni dans la version publiée d'un autre scénario de l'espace, et un
+  saut vers un autre scénario atteint après 24 h d'attente cumulée (`sautsApresAttenteLongue`) dont le bloc visé envoie
+  d'abord un message de session (`scanOpening` depuis lui, en suivant les sauts). La console ne voit pas le graphe d'à
+  côté, d'où un refus et non un avertissement ; le même montage DANS le scénario reste l'avertissement de l'écran. Une
+  campagne et l'API publique refusent un scénario dont un saut vers ailleurs précède le premier envoi
+  (`sautsHorsScenario`).
+- **Dupliquer un scénario** recale ses sauts internes sur les codes neufs de la copie (`sautsDeLaCopie`) : sans ça, la
+  copie enverrait ses contacts dans l'original. Un saut vers un autre scénario ne bouge pas.
+- **L'écran** : la palette « Aller à », un panneau qui choisit la cible par scénario puis bloc (ce scénario : ses blocs
+  du brouillon qui ont un code ; un autre : ses blocs publiés, `GET /nodes`) ou par un code collé, et sur chaque carte un
+  bouton qui copie `data.code`, grisé tant que le bloc n'en a pas. Le code d'un bloc neuf arrive par la réponse du
+  `PATCH` (`useEnregistrementScenario`, `surCodes`), recopiée sur la carte.
 
 ### 4.4 Un agent IA répond
 
@@ -3265,6 +3305,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/api/modele-envoi.ts` | ce qu'un envoi de l'API sait d'un template : `modeleLuDe` (la construction de la lecture partagée `templateVarInfo` ET du catalogue `/v1/templates`), `raisonNonEnvoyable` (ce qu'aucun envoi ne peut faire partir) et `verdictModele`. Le catalogue n'annonce que ce que l'envoi accepte |
 | `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée, comme l'étape d'espace (posée par `entree` sur les seuls modules `tenant`). Monter une route ailleurs la sort du garde-fou et de l'étape : si elle lit l'espace par `espaceVerifie`, elle rend un 500 au lieu de servir, sinon aucune erreur ne le dit |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | résoudre un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) |
+| `src/workflow/engine.ts` -> `cibleDuSaut`, `blocDuCode` ; `src/workflow/aller-a.ts` | 🔴 où mène un « Aller à » : dans le graphe joué d'abord, ailleurs par `resoudreBloc`. `aller-a.ts` porte ce qui lit plusieurs scénarios : `MAX_SAUTS_SANS_PAUSE` et `refusDePublication`. Voir § 4.3 |
 | `src/workflow/conditions.ts` -> `sortiesDeCondition`, `famillesDeCondition` | 🔴 les sorties d'un bloc Condition (une par famille, puis « Sinon ») et la lecture de ses familles, compatibilité des blocs d'avant comprise. Aucun lecteur du graphe n'écrit `true` / `false` : voir § 4.3 |
 | `src/crm/identity.ts` -> `waIdOfTarget` | la règle wa_id pour une cible d'envoi |
 | `src/api/fiche.ts` -> `resoudreFiche` | 🔴 trouver la fiche d'une personne à partir des clés reçues par l'API publique. Une seconde résolution divergerait sur la règle multi-clés, et une personne aurait deux fiches |

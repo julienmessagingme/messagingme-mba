@@ -107,6 +107,12 @@ export function summarize(type: WorkflowNodeType, data: Record<string, unknown>)
     // Les deux champs, pas le code : une liste de blocs doit tenir sur une ligne.
     case 'js': out = s(data.champSource) === '' || s(data.champCible) === '' ? '' : `${s(data.champSource)} -> ${s(data.champCible)}`; break;
     case 'agent': out = s(data.label); break;
+    // La cible telle que l'écran l'a nommée au choix (« Menu principal, Question 2 »), sinon son code.
+    case 'aller_a': {
+      const cible = s(data.cibleLibelle) || s(data.cible);
+      out = cible === '' ? '' : `-> ${cible}`;
+      break;
+    }
     default: out = '';
   }
   return out.slice(0, 120);

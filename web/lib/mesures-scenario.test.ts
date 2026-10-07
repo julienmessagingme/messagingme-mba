@@ -58,6 +58,16 @@ describe('ordre des blocs', () => {
   it('les blocs non-messages sont marqués comme tels (l’écran les grise)', () => {
     expect(blocsDuScenario(g, 'fr').map((b) => b.mesurable)).toEqual([true, true, false]);
   });
+  it('🔴 un « Aller à » vers un bloc du même scénario y mène sans flèche, et se nomme par sa cible (RC5)', () => {
+    // Le bloc visé n'a pas d'arête entrante : sans suivre le saut, il serait rangé en fin de liste comme un orphelin.
+    const saut: Graph = {
+      nodes: [n('a', 'template', { templateName: 'promo' }), n('j', 'aller_a', { cible: 'nod_x_1', cibleLibelle: 'Question 2' }), n('z', 'tag', { tag: 'x' }), n('q', 'question', { body: 'Et ensuite ?', code: 'nod_x_1' })],
+      edges: [{ source: 'a', target: 'j' }],
+    };
+    const blocs = blocsDuScenario(saut, 'fr');
+    expect(blocs.map((b) => b.id)).toEqual(['a', 'j', 'q', 'z']);
+    expect(blocs[1]).toMatchObject({ titre: '-> Question 2', titrePropre: true, mesurable: false });
+  });
 });
 
 describe('les choix proposés à la mesure', () => {

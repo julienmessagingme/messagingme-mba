@@ -52,6 +52,8 @@ function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
   // fiche au moment du choix (cf. `appliquerAgent`) ; en inventer ici dessinerait des branches que l'agent
   // ne saurait pas emprunter.
   if (wfType === 'agent') return { wfType, agentId: '', agentLabel: '', sorties: [] };
+  // « Aller à » : aucune cible au départ. La publication refuse un saut qui ne vise rien, l'écran le dit sur la carte.
+  if (wfType === 'aller_a') return { wfType, cible: '', cibleLibelle: '' };
   return { wfType };
 }
 
@@ -368,7 +370,17 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
 
   // Enregistrement automatique du scénario : debounce, un seul PATCH en vol, vidage au démontage et à la
   // fermeture d'onglet. Tout est dans `useEnregistrementScenario` (aucun de ces états ne touche le canevas).
-  const enregistrement = useEnregistrementScenario(tenantId, workflowId, nodes, edges, brouillonInitial);
+  /**
+   * Les codes que le serveur vient de poser, recopiés sur les blocs qui ne les portaient pas encore (RC5). Seuls les
+   * blocs dont le code CHANGE sont touchés : sinon chaque enregistrement relancerait le suivant. Le premier recopiage en
+   * provoque un de plus, identique, sans effet en base.
+   */
+  const surCodes = useCallback((codes: Map<string, string>) => {
+    setNodes((ns) => (ns.some((n) => codes.has(n.id) && n.data.code !== codes.get(n.id))
+      ? ns.map((n) => (codes.has(n.id) && n.data.code !== codes.get(n.id) ? { ...n, data: { ...n.data, code: codes.get(n.id) } } : n))
+      : ns));
+  }, [setNodes]);
+  const enregistrement = useEnregistrementScenario(tenantId, workflowId, nodes, edges, brouillonInitial, surCodes);
   // ⚠️ LE HOOK REND UN OBJET NEUF À CHAQUE RENDU : toute mémoïsation qui dépend de LUI est inerte. Ses
   // fonctions, elles, sont stables (`useCallback` sans dépendance mouvante) : on dépend donc de la FONCTION
   // dont on a besoin, jamais de l'objet qui la porte. Une ref ferait le travail aussi, mais elle se lit
@@ -761,7 +773,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           {!selected ? (
             <p className="text-sm text-ink-500">{t('Cliquez sur un bloc pour le configurer. Tirez une flèche depuis le point d’un bloc : lâchez-la sur un autre bloc pour les relier, ou dans le vide pour créer un bloc. Le ✕ en coin d’un bloc le supprime.', "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} requetes={requetes} onCommitTag={commitTag} onCreerChamp={creerChamp} />
+            <ConfigPanel node={selected} tenantId={tenantId} workflowId={workflowId} blocsDuScenario={nodes} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} requetes={requetes} onCommitTag={commitTag} onCreerChamp={creerChamp} />
           )}
         </div>
       </div>

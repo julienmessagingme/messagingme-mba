@@ -36,10 +36,28 @@ export interface GraphLike {
 export function entryNodeOf(graph: GraphLike): GraphNodeLike | null {
   if (graph.nodes.length === 0) return null;
   const hasIncoming = new Set(graph.edges.map((e) => e.target));
+  // Un bloc visé par un « Aller à » de CE scénario a une entrée, même sans flèche (miroir de `entryNode`, RC5 B).
+  for (const n of graph.nodes) {
+    if (n.type !== 'aller_a') continue;
+    const vise = blocViseIci(graph, n);
+    if (vise) hasIncoming.add(vise.id);
+  }
   return graph.nodes.find((n) => !hasIncoming.has(n.id)) ?? graph.nodes[0] ?? null;
 }
 
 const cible = (g: GraphLike, id: string): string | null => g.edges.find((e) => e.source === id)?.target ?? null;
+
+/**
+ * Le bloc de CE graphe que vise un « Aller à » (RC5), ou `null` (un autre scénario, un bloc disparu, aucune cible).
+ * Miroir de `blocDuCode(graph, cibleDuSaut(node))` côté serveur : le code visé est `data.cible`, comparé au code public
+ * des blocs (`data.code`).
+ */
+export function blocViseIci(g: GraphLike, node: GraphNodeLike): GraphNodeLike | null {
+  const code = typeof node.data.cible === 'string' ? node.data.cible.trim() : '';
+  if (code === '') return null;
+  return g.nodes.find((n) => n.data.code === code) ?? null;
+}
+const cibleDuSaut = (node: GraphNodeLike): string => (typeof node.data.cible === 'string' ? node.data.cible.trim() : '');
 const cibleParSortie = (g: GraphLike, id: string, handle: string): string | null =>
   g.edges.find((e) => e.source === id && e.sourceHandle === handle)?.target ?? null;
 
@@ -96,12 +114,17 @@ export interface OpeningScan {
   waitBeforeTemplate: boolean;
   /** Un template d'ouverture atteint n'a PAS de nom : sur cette branche, rien ne partirait. */
   unnamedOpeningTemplate: boolean;
+  /**
+   * Les cibles des « Aller à » atteints avant tout envoi et qui ne sont PAS dans ce graphe (un autre scénario, un bloc
+   * disparu, aucune cible). L'ouverture se joue alors ailleurs : on ne la juge pas d'ici. Miroir du serveur.
+   */
+  sautsHorsScenario: string[];
 }
 
 /** Miroir exact de `scanOpening` côté serveur. Parcours en LARGEUR : « le premier template » doit être le plus
  *  proche de l'entrée, pas le premier inséré dans le tableau de blocs. */
 export function scanOpening(graph: GraphLike): OpeningScan {
-  const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false };
+  const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false, sautsHorsScenario: [] };
   const entry = entryNodeOf(graph);
   if (!entry) return out;
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -163,6 +186,13 @@ export function scanOpening(graph: GraphLike): OpeningScan {
       }
       continue;
     }
+    if (node.type === 'aller_a') {
+      // Miroir exact du serveur : une cible de ce graphe se suit comme une flèche, une autre est notée.
+      const ici = blocViseIci(graph, node);
+      if (ici) queue.push(ici.id);
+      else out.sautsHorsScenario.push(cibleDuSaut(node));
+      continue;
+    }
     const nx = cible(graph, id);
     if (nx) queue.push(nx);
   }
@@ -199,7 +229,7 @@ export function isCampaignEligible(graph: GraphLike): boolean {
  */
 export function canalDOuvertureDuGraphe(graph: GraphLike): 'whatsapp' | 'rcs' | null {
   const scan = scanOpening(graph);
-  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate) return null;
+  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate || scan.sautsHorsScenario.length > 0) return null;
   if (scan.rcsOpen) return 'rcs';
   if (!scan.firstTemplate) return null;
   return String(scan.firstTemplate.data.templateName ?? '').trim() !== '' ? 'whatsapp' : null;
@@ -293,6 +323,13 @@ export function waitBeforeSessionMessage(graph: GraphLike): WaitThenSession | nu
     const node = byId.get(id);
     if (!node) continue;
     if (node.type === 'inbox') continue;
+    if (node.type === 'aller_a') {
+      // Miroir du serveur : un saut vers un bloc de CE graphe se suit, attente cumulée comprise. Vers un autre scénario,
+      // l'écran ne voit pas la suite : c'est la publication qui la vérifie, et la refuse si elle ne partira pas.
+      const ici = blocViseIci(graph, node);
+      if (ici) pile.push({ id: ici.id, cumul, dernierWait });
+      continue;
+    }
     if (node.type === 'question') {
       // Une question est un message de SESSION : apres 24 h d'attente cumulee, elle ne partira jamais.
       // Miroir exact du serveur, y compris le passe-plat quand elle n'est pas configuree.

@@ -313,6 +313,11 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (scan.waitBeforeTemplate) {
         return reply.code(400).send({ error: "Ce scénario attend avant son premier envoi : rien ne partirait au lancement. Pour différer une campagne, utilise « Plus tard » au moment de la lancer." });
       }
+      // Un « Aller à » vers un autre scénario avant tout envoi (RC5) : l'ouverture se joue dans un graphe que cette
+      // garde ne lit pas, et la campagne ne saurait ni quel template paramétrer, ni si un message de session part.
+      if (scan.sautsHorsScenario.length > 0) {
+        return reply.code(400).send({ error: "Ce scénario saute vers un autre scénario (« Aller à ») avant son premier envoi : une campagne doit ouvrir sur un envoi de ce scénario. Choisis directement le scénario d'arrivée." });
+      }
       // Un bloc RCS configuré ouvre à froid : il ne passe pas par WhatsApp, donc aucune fenêtre de 24 h ne
       // s'y applique. Exiger un template en ouverture fermait la porte à toute campagne RCS par scénario.
       if (!scan.firstTemplate && !scan.rcsOpen) {

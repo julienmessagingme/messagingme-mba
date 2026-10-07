@@ -3,7 +3,7 @@ import {
   entryNodeOf, isCampaignEligible, firstTemplateOf, scanOpening, waitBeforeSessionMessage, sessionMessageAfterRcs,
   canalDOuvertureDuGraphe,
 } from '../web/lib/campaign-eligibility';
-import { scanOpening as scanServeur, waitBeforeSessionMessage as waitBeforeSessionMessageServeur } from '../src/workflow/engine';
+import { entryNode, scanOpening as scanServeur, waitBeforeSessionMessage as waitBeforeSessionMessageServeur } from '../src/workflow/engine';
 import { canalDOuverture as canalServeur } from '../src/workflow/store.pg';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { GraphLike, GraphNodeLike } from '../web/lib/campaign-eligibility';
@@ -292,6 +292,14 @@ describe('parité front / serveur du parcours d’ouverture', () => {
       [e('c', 't1', 'famille:k2'), e('c', 't2', 'false')],
     )],
     ['condition à familles SANS sortie typée -> repli sur la 1re arête', g([n('c', 'condition', TROIS_FAMILLES), TPL('t')], [e('c', 't')])],
+    // 🔴 « ALLER À » (RC5) : un saut vers un bloc de CE graphe se suit comme une flèche ; ailleurs (un autre scénario,
+    // un bloc disparu, aucune cible), l'ouverture ne se juge pas d'ici. Les deux côtés doivent noter la même cible.
+    ['aller à un modèle du même scénario', g([n('j', 'aller_a', { cible: 'nod_x_1' }), n('t', 'template', { templateName: 'promo', code: 'nod_x_1' })])],
+    ['aller à un message rapide du même scénario', g([n('j', 'aller_a', { cible: 'nod_x_2' }), n('q', 'quick_message', { body: 'Salut', code: 'nod_x_2' })])],
+    ['tag puis aller dans un autre scénario', g([n('a', 'tag', { tag: 'v' }), n('j', 'aller_a', { cible: 'nod_x_9' })], [e('a', 'j')])],
+    ['aller nulle part', g([n('j', 'aller_a', {})])],
+    ['aller à soi-même', g([n('j', 'aller_a', { cible: 'nod_x_3', code: 'nod_x_3' })])],
+    ['condition -> modèle / aller ailleurs', g([n('c', 'condition', {}), TPL('t'), n('j', 'aller_a', { cible: 'nod_x_9' })], [e('c', 't', 'true'), e('c', 'j', 'false')])],
   ];
 
   it('même verdict des deux côtés sur chaque graphe', () => {
@@ -304,6 +312,7 @@ describe('parité front / serveur du parcours d’ouverture', () => {
       expect(web.waitBeforeTemplate, `waitBeforeTemplate sur « ${nom} »`).toBe(api.waitBeforeTemplate);
       expect(web.unnamedOpeningTemplate, `unnamedOpeningTemplate sur « ${nom} »`).toBe(api.unnamedOpeningTemplate);
       expect(web.firstTemplate?.id ?? null, `firstTemplate sur « ${nom} »`).toBe(api.firstTemplate?.id ?? null);
+      expect(web.sautsHorsScenario, `sautsHorsScenario sur « ${nom} »`).toEqual(api.sautsHorsScenario);
     }
   });
 });
@@ -368,6 +377,13 @@ describe('parité de la détection « attente >= 24 h puis message de session »
        n('w2', 'wait', { delay: 13, unit: 'hours' }), QM('q')],
       [e('w1', 'ql'), e('ql', 'w2'), e('w2', 'q')],
     )],
+    // « ALLER À » (RC5) : le saut vers un bloc de ce graphe porte l'attente cumulée ; ailleurs, l'écran ne voit rien.
+    ['attente 2 j, aller à un message rapide du même scénario', g(
+      [n('w', 'wait', { delay: 2, unit: 'days' }), n('j', 'aller_a', { cible: 'nod_x_2' }), { ...QM('q'), data: { body: 'Salut', quickReplies: ['Oui'], code: 'nod_x_2' } }],
+      [e('w', 'j')],
+    )],
+    ['attente 2 j, aller dans un autre scénario', g([n('w', 'wait', { delay: 2, unit: 'days' }), n('j', 'aller_a', { cible: 'nod_x_9' })], [e('w', 'j')])],
+    ['attente 2 j, aller à l’attente elle-même (boucle)', g([n('w', 'wait', { delay: 2, unit: 'days', code: 'nod_x_4' }), n('j', 'aller_a', { cible: 'nod_x_4' }), QM('q')], [e('w', 'j')])],
   ];
 
   it('front et serveur désignent le MÊME montage fautif (ou aucun)', () => {
@@ -407,6 +423,8 @@ describe('canalDOuvertureDuGraphe : la meme reponse des deux cotes', () => {
       [n('r', 'rcs_message', { text: 'Bonjour' }), n('t', 'template', { templateName: 'promo' })],
       [{ id: 'e', source: 'r', target: 't' }],
     )],
+    ['aller à un modèle du même scénario', g([n('j', 'aller_a', { cible: 'nod_x_1' }), n('t', 'template', { templateName: 'promo', code: 'nod_x_1' })])],
+    ['aller dans un autre scénario', g([n('j', 'aller_a', { cible: 'nod_x_9' })])],
   ];
 
   it('🔴 le navigateur et le serveur rendent le MEME canal, cas par cas', () => {
@@ -447,5 +465,29 @@ describe('éligibilité côté console : une famille ajoutée est une branche co
       [e('w', 'c'), e('c', 't', 'true'), e('c', 'q', 'famille:k2')],
     );
     expect(waitBeforeSessionMessage(graph)).toEqual({ waitNodeId: 'w', messageNodeId: 'q' });
+  });
+});
+
+describe('l’entrée d’un scénario qui porte un « Aller à » (RC5 B)', () => {
+  // 🔴 La sous-routine visée par un saut n'a aucune flèche entrante. Créée AVANT le vrai premier bloc, elle devenait
+  // l'entrée de la campagne : le contact recevait la relance au lieu de la bienvenue (relecture de RC5 B).
+  const graph: WorkflowGraph = {
+    nodes: [
+      { id: 'relance', type: 'template', position: { x: 0, y: 0 }, data: { code: 'nod_ab_01JRELANCE00000000000000', templateName: 'relance' } },
+      { id: 'bienvenue', type: 'template', position: { x: 0, y: 0 }, data: { code: 'nod_ab_01JBIENVENUE0000000000000', templateName: 'bienvenue' } },
+      { id: 'saut', type: 'aller_a', position: { x: 0, y: 0 }, data: { cible: 'nod_ab_01JRELANCE00000000000000' } },
+    ],
+    edges: [{ id: 'e1', source: 'bienvenue', target: 'saut' }],
+  };
+
+  it('le serveur et la console désignent le vrai premier bloc, pas la cible du saut', () => {
+    expect(entryNode(graph)).toBe('bienvenue');
+    expect(entryNodeOf(graph as unknown as GraphLike)?.id).toBe('bienvenue');
+  });
+
+  it('un saut vers un AUTRE scénario ne change rien à l’entrée', () => {
+    const autre: WorkflowGraph = { ...graph, nodes: graph.nodes.map((n) => (n.id === 'saut' ? { ...n, data: { cible: 'nod_zz_01JAILLEURS000000000000000' } } : n)) };
+    expect(entryNode(autre)).toBe('relance');
+    expect(entryNodeOf(autre as unknown as GraphLike)?.id).toBe('relance');
   });
 });

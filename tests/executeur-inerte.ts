@@ -53,6 +53,10 @@ export const aucunEvenement = async (): Promise<void> => {};
 export const aucuneSortieNotee = async (): Promise<void> => {};
 /** `confierAuRepondeur` (lot 5) : avant lui, un message « à côté » sans agent de Meta n'allait à personne. */
 export const aucunRepondeurHorsParcours = async (): Promise<void> => {};
+/** `resoudreBloc` (RC5) : aucun bloc d'un autre scénario n'est trouvé, donc un « Aller à » ailleurs n'a pas de cible. */
+export const aucunBlocAilleurs = async (): Promise<null> => null;
+/** `journaliserEchecSaut` (RC5) : aucun saut manqué n'est écrit. */
+export const aucunEchecJournalise = async (): Promise<void> => {};
 /** `rcs.recordOutbound` absent : l'envoi RCS n'était pas écrit dans le fil. */
 export const filRcsNonJournalise = async (): Promise<void> => {};
 /** `rcs.jetonPour` absent : les liens partaient tracés mais anonymes. */
@@ -149,5 +153,7 @@ export const depsInertes = {
   emitTagAdded: aucunEvenement,
   noterSortieAgent: aucuneSortieNotee,
   confierAuRepondeur: aucunRepondeurHorsParcours,
+  resoudreBloc: aucunBlocAilleurs,
+  journaliserEchecSaut: aucunEchecJournalise,
   rcs: rcsSansAgent,
 } satisfies Partial<WorkflowExecutorDeps>;

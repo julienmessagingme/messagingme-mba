@@ -21,7 +21,7 @@ function relireGrapheFige(brut: unknown, runId: string): WorkflowGraph | null {
 
 /** Une ligne de `workflow_runs` telle que la lisent `findWaitingByWaId` et `byId`. */
 interface LigneRun {
-  id: string; workflow_id: string; tenant_id: string; wa_id: string;
+  id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
   current_node: string | null; status: RunStatus; last_message_id: string | null;
   channel: RunChannel | null; graphe_fige: WorkflowGraph | null;
 }
@@ -29,6 +29,8 @@ interface LigneRun {
 function runDeLigne(r: LigneRun): WorkflowRunRow {
   return {
     id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
+    // La fiche du parcours : un « Aller à » vers un autre scénario la transmet au parcours qu'il démarre (RC5).
+    contactId: r.contact_id,
     currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
     channel: r.channel ?? 'whatsapp', grapheFige: relireGrapheFige(r.graphe_fige, r.id),
   };
@@ -101,7 +103,7 @@ export class PgWorkflowRunStore {
   /** Le run en attente d'un contact (par tenant + numéro). Un seul actif à la fois par contact. */
   async findWaitingByWaId(tenantId: string, waId: string): Promise<WorkflowRunRow | null> {
     const res = await this.pool.query<LigneRun>(
-      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige
+      `select id, workflow_id, tenant_id, wa_id, contact_id, current_node, status, last_message_id, channel, graphe_fige
        from workflow_runs where tenant_id = $1 and wa_id = $2 and status = 'waiting'
        order by created_at desc limit 1`,
       [tenantId, waId],
@@ -118,7 +120,7 @@ export class PgWorkflowRunStore {
    */
   async byId(tenantId: string, id: string): Promise<WorkflowRunRow | null> {
     const res = await this.pool.query<LigneRun>(
-      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige
+      `select id, workflow_id, tenant_id, wa_id, contact_id, current_node, status, last_message_id, channel, graphe_fige
        from workflow_runs where tenant_id = $1 and id = $2`,
       [tenantId, id],
     );

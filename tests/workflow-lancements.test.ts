@@ -3,7 +3,7 @@ import { jamaisDesabonne } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { bancDuFil, ESPACE } from './banc-du-fil';
 import { WorkflowExecutor } from '../src/workflow/executor';
-import type { WorkflowExecutorDeps } from '../src/workflow/executor';
+import type { StartOutcome, WorkflowExecutorDeps } from '../src/workflow/executor';
 import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import {
   POLITIQUE_DE_LANCEMENT, TYPES_DE_LANCEMENT, creerLancements,
@@ -73,13 +73,24 @@ const ATTENDU: Record<TypeDeLancement, { reprise: Reprise; publie: boolean; grap
   // clic sur une publicité : jamais à un opérateur ; le graphe vient de l'appelant et SE FIGE (la ligne de scénario
   // n'est qu'une ancre) ; la fenêtre est prouvée par l'entrant.
   repondeur: { reprise: 'reprend_sauf_operateur', publie: true, graphe: 'fourni_fige', fenetre: 'selon_preuve' },
+  // RC5 : le saut d'un « Aller à » vers un autre scénario. Le plan fixe reprise, graphe et fenêtre ; la seconde ligne
+  // existe pour la seule publication des étiquettes : un saut franchi pendant le démarrage d'une campagne ne publie pas.
+  aller_a: { reprise: 'reprend', publie: true, graphe: 'publie', fenetre: 'selon_preuve' },
+  aller_a_masse: { reprise: 'reprend', publie: false, graphe: 'publie', fenetre: 'selon_preuve' },
 };
 
-/** Où commence le parcours, pour les types qui en laissent le choix. Un type qui n'a pas ce choix l'ignore. */
-interface Variante { workflowId: string; fenetreOuverte?: boolean; auBloc?: boolean }
+/** Les deux types du saut : l'exécuteur les lance lui-même (`sauter`), sans demande à l'entrée de lancement. */
+type TypeDuSaut = 'aller_a' | 'aller_a_masse';
+const estUnSaut = (type: TypeDeLancement): type is TypeDuSaut => type === 'aller_a' || type === 'aller_a_masse';
+
+/**
+ * Où commence le parcours, pour les types qui en laissent le choix. Un type qui n'a pas ce choix l'ignore. `auSaut` :
+ * au bloc visé par un « Aller à », avec la preuve de fenêtre que le saut transporte (`fenetreOuverte`).
+ */
+interface Variante { workflowId: string; fenetreOuverte?: boolean; auBloc?: boolean; auSaut?: boolean }
 
 /** La demande que le câblage de ce type envoie, pour une variante. */
-function demandeDe(type: TypeDeLancement, v: Variante): DemandeDeLancement {
+function demandeDe(type: Exclude<TypeDeLancement, TypeDuSaut>, v: Variante): DemandeDeLancement {
   const base = { tenantId: ESPACE, workflowId: v.workflowId };
   const bloc = PREMIER_BLOC[v.workflowId] ?? 'inconnu';
   switch (type) {
@@ -155,6 +166,19 @@ function banc(detenteur: ControlOwner = 'app_workflow', surcharges: Partial<Work
   return { b, lancements, executor, envois, emis, crees, lectures, recherches };
 }
 
+/**
+ * Lance un type sur le VRAI exécuteur. Un saut n'a pas de demande à l'entrée : l'exécuteur le démarre lui-même
+ * (`sauter`), par `demarrer`, sur le graphe PUBLIÉ que `resoudreBloc` lui a rendu, la fiche du parcours d'origine et un
+ * départ `saut`. On fait ici exactement cet appel, sur le premier bloc du scénario.
+ */
+function lancerLeType(m: ReturnType<typeof banc>, type: TypeDeLancement, v: Variante): Promise<StartOutcome | null> {
+  if (!estUnSaut(type)) return m.lancements.lancer(demandeDe(type, v));
+  const wf = SCENARIOS[v.workflowId];
+  if (!wf) return Promise.resolve(null);
+  return m.executor.demarrer(type, ESPACE, v.workflowId, wf.graph, { waId: WA, contactId: 'c-saut' },
+    { depuis: 'saut', noeudId: PREMIER_BLOC[v.workflowId] ?? 'inconnu', fenetreOuverte: v.fenetreOuverte === true, sauts: 1 });
+}
+
 /** Les journaux des refus (fil tenu, fenêtre) ne polluent pas la sortie des tests. */
 function silence(): void {
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -180,7 +204,7 @@ describe('la reprise du fil, type par type, sur le vrai contrôle du fil', () =>
     it(`${type} : l’agent de Meta tient le fil -> ${reprise === 'bloque_par_un_fil_tenu' ? 'rien ne part, rien n’est demandé à Meta' : 'repris, le scénario part'}`, async () => {
       silence();
       const m = banc('mba');
-      const issue = await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }));
+      const issue = await lancerLeType(m, type, { workflowId: 'wf-modele' });
       if (reprise === 'bloque_par_un_fil_tenu') {
         expect(issue).toContain('ce déclenchement automatique n\'écrit pas dedans');
         expect(m.envois).toEqual([]);
@@ -205,7 +229,7 @@ describe('la reprise du fil, type par type, sur le vrai contrôle du fil', () =>
     it(`${type} : un opérateur tient le fil -> ${reprise === 'reprend' ? 'il le perd, le scénario part' : 'il le garde'}`, async () => {
       silence();
       const m = banc('app_human');
-      const issue = await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }));
+      const issue = await lancerLeType(m, type, { workflowId: 'wf-modele' });
       if (reprise === 'reprend') {
         expect(issue).toBe(true);
         expect(m.b.etat(WA)?.owner).toBe('app_workflow');
@@ -226,7 +250,7 @@ describe('la publication des étiquettes : jamais un chemin de masse', () => {
     const { publie } = ATTENDU[type];
     it(`${type} : l’étiquette posée ${publie ? 'publie « tag ajouté »' : 'ne publie RIEN'}`, async () => {
       const m = banc();
-      expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }))).toBe(true);
+      expect(await lancerLeType(m, type, { workflowId: 'wf-modele' })).toBe(true);
       expect(m.emis).toEqual(publie ? ['vip'] : []);
     });
   }
@@ -268,7 +292,7 @@ describe('la publication des étiquettes, sur la VRAIE pose du câblage', () => 
     it(`${type} : l’étiquette est posée et déclarée, et ${publie ? 'publie « tag ajouté » par la file' : 'RIEN n’entre dans la file'}`, async () => {
       const p = poseDuCablage();
       const m = banc('app_workflow', { applyTag: p.applyTag, emitTagAdded: p.emitTagAdded });
-      expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }))).toBe(true);
+      expect(await lancerLeType(m, type, { workflowId: 'wf-modele' })).toBe(true);
       expect(p.declarations(), 'la déclaration ne dépend pas du lancement').toBe(1);
       expect(p.publiees()).toEqual(publie ? ['tag_added:vip'] : []);
       expect(p.file, 'rien d’autre n’est enfilé').toHaveLength(publie ? 1 : 0);
@@ -286,15 +310,16 @@ describe('le graphe joué : seul le lien de test joue le brouillon, et lui seul 
     const { graphe } = ATTENDU[type];
     it(`${type} : graphe ${graphe}`, async () => {
       const m = banc();
-      expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }))).toBe(true);
+      expect(await lancerLeType(m, type, { workflowId: 'wf-modele' })).toBe(true);
       const fourni = graphe === 'fourni' || graphe === 'fourni_fige';
       const version = graphe === 'brouillon_fige' ? 'brouillon' : fourni ? 'fourni' : 'publie';
       expect(m.envois).toEqual([`tpl:${version}`]);
       const fige = graphe === 'brouillon_fige' ? modele('brouillon') : graphe === 'fourni_fige' ? modele('fourni') : null;
       expect(m.crees.map((c) => c.fige)).toEqual([fige]);
       // Le graphe fourni ne demande aucune lecture : le bloc vient d'être relu par l'appelant, sur le publié ; celui du
-      // répondeur vient d'être construit depuis le réglage, sa ligne de scénario n'en porte aucun.
-      expect(m.lectures).toEqual(fourni ? [] : [`${ESPACE}/wf-modele`]);
+      // répondeur vient d'être construit depuis le réglage, sa ligne de scénario n'en porte aucun. Un saut joue le
+      // publié que `resoudreBloc` vient de lire avec le bloc visé : l'entrée de lancement ne relit rien.
+      expect(m.lectures).toEqual(fourni || estUnSaut(type) ? [] : [`${ESPACE}/wf-modele`]);
     });
   }
 });
@@ -322,6 +347,9 @@ describe('la garde de fenêtre de 24 h', () => {
     campagne_scenario: [{ workflowId: 'wf-session' }],
     campagne_bloc: [{ workflowId: 'wf-session', auBloc: true }],
     repondeur: [{ workflowId: 'wf-session', fenetreOuverte: true }],
+    // RC5 : la preuve voyage avec le saut, au bloc visé (le départ `saut`, distinct de `bloc`, qui n'en porte aucune).
+    aller_a: [{ workflowId: 'wf-session', auSaut: true, fenetreOuverte: false }, { workflowId: 'wf-session', auSaut: true, fenetreOuverte: true }],
+    aller_a_masse: [{ workflowId: 'wf-session', auSaut: true, fenetreOuverte: false }, { workflowId: 'wf-session', auSaut: true, fenetreOuverte: true }],
   };
   /** La règle du plan, écrite à part de `fenetreLevee` : la comparer à elle-même ne prouverait rien. */
   const levee = (regle: Fenetre, v: Variante): boolean =>
@@ -330,11 +358,11 @@ describe('la garde de fenêtre de 24 h', () => {
   for (const type of TYPES_DE_LANCEMENT) {
     for (const v of VARIANTES[type]) {
       const ouverte = levee(ATTENDU[type].fenetre, v);
-      const libelle = `${v.auBloc === true ? 'au bloc' : 'à l’entrée'}${v.fenetreOuverte === undefined ? '' : v.fenetreOuverte ? ', fenêtre prouvée' : ', sans preuve'}`;
+      const libelle = `${v.auBloc === true ? 'au bloc' : v.auSaut === true ? 'au bloc visé par un saut' : 'à l’entrée'}${v.fenetreOuverte === undefined ? '' : v.fenetreOuverte ? ', fenêtre prouvée' : ', sans preuve'}`;
       it(`${type} (${libelle}) : un message de session en ouverture ${ouverte ? 'part' : 'est refusé'}`, async () => {
         silence();
         const m = banc();
-        const issue = await m.lancements.lancer(demandeDe(type, v));
+        const issue = await lancerLeType(m, type, v);
         if (ouverte) {
           expect(issue).toBe(true);
           expect(m.envois).toEqual(['qm:Bonjour']);
@@ -348,11 +376,11 @@ describe('la garde de fenêtre de 24 h', () => {
 });
 
 describe('ce que l’entrée lit, et ce qu’elle transmet', () => {
-  it('🔴 la fiche : cherchée par le numéro, sauf pour la campagne (qui la connaît) et l’envoi de bloc (qui la fournit)', async () => {
+  it('🔴 la fiche : cherchée par le numéro, sauf pour la campagne (qui la connaît), l’envoi de bloc et le saut (qui la fournissent)', async () => {
     for (const type of TYPES_DE_LANCEMENT) {
       const m = banc();
-      await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }));
-      const attendue = type === 'campagne_scenario' || type === 'campagne_bloc' ? 'c-campagne' : type === 'agent_meta_bloc' ? 'c-appelant' : 'c-fiche';
+      await lancerLeType(m, type, { workflowId: 'wf-modele' });
+      const attendue = type === 'campagne_scenario' || type === 'campagne_bloc' ? 'c-campagne' : type === 'agent_meta_bloc' ? 'c-appelant' : estUnSaut(type) ? 'c-saut' : 'c-fiche';
       expect(m.crees.map((c) => c.contactId), type).toEqual([attendue]);
       expect(m.recherches, type).toEqual(attendue === 'c-fiche' ? [`${ESPACE}/${WA}`] : []);
     }
@@ -360,8 +388,8 @@ describe('ce que l’entrée lit, et ce qu’elle transmet', () => {
 
   it('un scénario inconnu rend `null`, avant toute recherche et tout envoi (l’appelant le traduit comme avant)', async () => {
     for (const type of TYPES_DE_LANCEMENT) {
-      // L'envoi de bloc et le répondeur fournissent leur graphe : ils ne lisent aucun scénario.
-      if (type === 'agent_meta_bloc' || type === 'repondeur') continue;
+      // L'envoi de bloc, le répondeur et le saut reçoivent leur graphe : ils ne lisent aucun scénario.
+      if (type === 'agent_meta_bloc' || type === 'repondeur' || estUnSaut(type)) continue;
       const m = banc();
       expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-supprime' })), type).toBeNull();
       expect(m.recherches, type).toEqual([]);
@@ -428,7 +456,7 @@ describe('la session d’agent du parcours remplacé', () => {
         mbaActifPour: async () => true,
         releaseToMba: async (_t: string, w: string) => { sorties.push(`rendu:${w}`); },
       });
-      expect(await m.lancements.lancer(demandeDe(type, { workflowId: 'wf-modele' }))).toBe(true);
+      expect(await lancerLeType(m, type, { workflowId: 'wf-modele' })).toBe(true);
       expect(clotures).toEqual([['s-agent', retiree ? 'sortie' : 'erreur', retiree ? 'scenario_lance' : undefined]]);
       // `wf-modele` finit sur son modèle : c'est SA fin qui rend la main à l'agent de Meta, après le démarrage.
       expect(sorties).toEqual([`rendu:${WA}`]);

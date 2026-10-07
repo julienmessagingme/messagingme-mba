@@ -76,6 +76,8 @@ export const NOMS_ICONES = [
   'rechercher',
   'contact',
   'fin',
+  'saut',
+  'copier',
 ] as const;
 
 export type NomIcone = (typeof NOMS_ICONES)[number];

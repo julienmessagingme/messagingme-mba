@@ -107,6 +107,27 @@ export interface OpeningScan {
   /** Un template d'ouverture atteint n'a pas de nom : rien ne partirait sur cette branche, et le destinataire
    *  serait pourtant compté « envoyé ». Distinct de `firstTemplate === null` (aucun template du tout). */
   unnamedOpeningTemplate: boolean;
+  /**
+   * Les cibles des blocs « Aller à » atteints AVANT tout envoi et qui ne sont pas dans ce graphe (un autre scénario,
+   * un bloc disparu, ou aucune cible : `''`). Ce qui part alors se joue dans un autre graphe, que cet examen, pur, ne
+   * lit pas : une ouverture qui en contient ne se juge pas d'ici (campagne, API publique). Un saut vers un bloc de ce
+   * même graphe, lui, est suivi comme une flèche.
+   */
+  sautsHorsScenario: string[];
+}
+
+/** Le code visé par un bloc « Aller à » (`data.cible`), `''` s'il n'en vise aucun. Lu défensivement : `data` est opaque. */
+export function cibleDuSaut(node: WorkflowNode): string {
+  return typeof node.data.cible === 'string' ? node.data.cible.trim() : '';
+}
+
+/**
+ * Le bloc de CE graphe qui porte ce code public (`data.code`), ou `null`. C'est ce qui décide qu'un saut reste dans le
+ * même scénario : le graphe joué (le publié, ou le brouillon figé d'un test) fait foi, jamais une autre version.
+ */
+export function blocDuCode(graph: WorkflowGraph, code: string): WorkflowNode | null {
+  if (code === '') return null;
+  return graph.nodes.find((n) => n.data.code === code) ?? null;
 }
 
 /**
@@ -122,7 +143,7 @@ export interface OpeningScan {
  * avoir. Un `depuis` absent du graphe rend un examen vide : rien n'ouvre.
  */
 export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan {
-  const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false };
+  const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false, sautsHorsScenario: [] };
   const entry = depuis ?? entryNode(graph);
   if (!entry) return out;
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -191,6 +212,15 @@ export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan 
         const c = nextNodeByHandle(graph, id, h) ?? (h === SORTIE_SINON ? nextNode(graph, id) : null);
         if (c) queue.push(c);
       }
+      continue;
+    }
+    if (node.type === 'aller_a') {
+      // Même parcours que `walk` : une cible de ce graphe se suit comme une flèche ; une cible ailleurs (ou absente)
+      // est notée, l'ouverture se jouant alors hors de ce graphe.
+      const cible = cibleDuSaut(node);
+      const ici = blocDuCode(graph, cible);
+      if (ici) queue.push(ici.id);
+      else out.sautsHorsScenario.push(cible);
       continue;
     }
     // tag / field / action / wait : bloc synchrone -> explorer la suite
@@ -276,12 +306,45 @@ export interface WaitThenSession {
  * cumul strictement plus grand.
  */
 export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession | null {
+  return explorerLesAttentes(graph).premierMontage;
+}
+
+/** Un « Aller à » vers un AUTRE scénario (ou vers rien), atteint après une attente qui ferme forcément la fenêtre. */
+export interface SautApresAttente {
+  /** Le dernier bloc Attente traversé avant lui. */
+  waitNodeId: string;
+  /** Le bloc « Aller à ». */
+  sautNodeId: string;
+  /** Le code qu'il vise (`''` = aucun). */
+  cible: string;
+}
+
+/**
+ * Les « Aller à » qui quittent ce graphe après 24 h d'attente cumulée ou plus (RC5). `waitBeforeSessionMessage` ne
+ * peut pas dire ce qu'ils envoient : le message se trouve dans un autre scénario, que cette analyse pure ne lit pas.
+ * C'est la publication qui va voir (`refusDePublication`, `src/workflow/aller-a.ts`). Un saut vers un bloc de CE
+ * graphe, lui, est suivi par `waitBeforeSessionMessage` comme une flèche.
+ */
+export function sautsApresAttenteLongue(graph: WorkflowGraph): SautApresAttente[] {
+  return explorerLesAttentes(graph).sautsLongs;
+}
+
+/**
+ * Le parcours commun de `waitBeforeSessionMessage` et `sautsApresAttenteLongue` : une seule définition de « ce qui
+ * suit une attente », sinon les deux analyses divergeraient sur un bloc ajouté demain. Il explore TOUT le graphe
+ * (au lieu de s'arrêter au premier montage) pour relever aussi les sauts ; le premier montage relevé est le même
+ * qu'avant, puisque l'ordre de la pile ne change pas.
+ */
+function explorerLesAttentes(graph: WorkflowGraph): { premierMontage: WaitThenSession | null; sautsLongs: SautApresAttente[] } {
+  let premierMontage: WaitThenSession | null = null;
+  const sautsLongs: SautApresAttente[] = [];
+  const signaler = (m: WaitThenSession): void => { premierMontage ??= m; };
   // Chaque attente compte pour au moins un pas de balayage (60 s), la granularité réelle d'un réveil : sinon un
   // délai fractionnaire (`{delay: 0.001}`) dans un cycle demanderait des millions d'itérations.
   const PAS_MIN_MS = 60_000;
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const entry = entryNode(graph);
-  if (!entry) return null;
+  if (!entry) return { premierMontage, sautsLongs };
   const meilleur = new Map<string, number>();
   // pile de { bloc, attente cumulée jusqu'ici, dernier bloc Attente franchi }
   const pile: Array<{ id: string; cumul: number; dernierWait: string | null }> = [{ id: entry, cumul: 0, dernierWait: null }];
@@ -293,10 +356,19 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
     const node = byId.get(id);
     if (!node) continue;
     if (node.type === 'inbox') continue;
+    if (node.type === 'aller_a') {
+      // Un saut vers un bloc de CE graphe se suit comme une flèche, attente cumulée comprise : « attente de deux jours,
+      // Aller à la question du menu » est le même montage mort-né qu'une flèche vers elle. Ailleurs, il est relevé.
+      const cible = cibleDuSaut(node);
+      const ici = blocDuCode(graph, cible);
+      if (ici) pile.push({ id: ici.id, cumul, dernierWait });
+      else if (cumul >= FENETRE_SERVICE_MS && dernierWait) sautsLongs.push({ waitNodeId: dernierWait, sautNodeId: id, cible });
+      continue;
+    }
     if (node.type === 'question') {
       // Une question est un message de session : même signalement que pour un message rapide ou un formulaire.
       const a = actionOf(node);
-      if (a && cumul >= FENETRE_SERVICE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      if (a && cumul >= FENETRE_SERVICE_MS && dernierWait) signaler({ waitNodeId: dernierWait, messageNodeId: id });
       // Configurée, elle bloque (elle attend une réponse) : l'analyse s'arrête là. Non configurée, elle est un
       // passe-plat : on explore au-delà.
       if (a) continue;
@@ -307,7 +379,7 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
     if (node.type === 'agent') {
       // Le premier message de l'agent est un message de session : même signalement que pour un message rapide.
       const configure = String(node.data.agentId ?? '').trim() !== '';
-      if (configure && cumul >= FENETRE_SERVICE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      if (configure && cumul >= FENETRE_SERVICE_MS && dernierWait) signaler({ waitNodeId: dernierWait, messageNodeId: id });
       // Configuré, il bloque (il tient la conversation) : l'analyse s'arrête là. Non configuré, il est un
       // passe-plat, comme dans `walk` : on explore au-delà.
       if (configure) continue;
@@ -318,7 +390,7 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
     if (node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node);
       if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage') && cumul >= FENETRE_SERVICE_MS && dernierWait) {
-        return { waitNodeId: dernierWait, messageNodeId: id };
+        signaler({ waitNodeId: dernierWait, messageNodeId: id });
       }
       // Un message rapide sans bouton ne bloque pas le parcours (cf. `walk`) : on explore au-delà, sinon un
       // montage « attente, message sans bouton, attente, message rapide » ne serait jamais signalé. Un bloc
@@ -351,7 +423,7 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
     const nx = nextNode(graph, id);
     if (nx) pile.push({ id: nx, ...suivant });
   }
-  return null;
+  return { premierMontage, sautsLongs };
 }
 
 export type WalkRest =
@@ -374,6 +446,13 @@ export type WalkRest =
    * nœud sous la main quand il escalade, et une seconde lecture du graphe pourrait diverger.
    */
   | { status: 'inbox'; assigneA?: string | null }
+  /**
+   * Bloc « Aller à » dont la cible n'est PAS dans ce graphe (un autre scénario, un bloc disparu, ou aucune : `''`).
+   * Une main rendue, comme `agent_turn` : le walk est pur et ne lit qu'un graphe. L'exécuteur clôt le parcours et en
+   * démarre un sur la cible (`WorkflowExecutor.sauter`). Une cible de ce graphe ne produit jamais ce repos : `walk`
+   * la suit dans le même enchaînement.
+   */
+  | { status: 'aller_a'; nodeId: string; cible: string }
   | { status: 'done' }; // fin de chaîne (plus d'arête sortante)
 
 /** Unités proposées par le bloc Attente. */
@@ -522,6 +601,13 @@ export interface WalkResult {
 export function entryNode(graph: WorkflowGraph): string | null {
   if (graph.nodes.length === 0) return null;
   const hasIncoming = new Set(graph.edges.map((e) => e.target));
+  // Un bloc visé par un « Aller à » de CE scénario a une entrée, même sans flèche : sinon une sous-routine créée avant
+  // le vrai premier bloc deviendrait l'entrée de la campagne, de l'automation et de l'API (relecture de RC5 B).
+  for (const n of graph.nodes) {
+    if (n.type !== 'aller_a') continue;
+    const vise = blocDuCode(graph, cibleDuSaut(n));
+    if (vise) hasIncoming.add(vise.id);
+  }
   const root = graph.nodes.find((n) => !hasIncoming.has(n.id));
   return (root ?? graph.nodes[0]!).id;
 }
@@ -805,6 +891,18 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       // Le walk est pur : il ne sait pas si le numéro est joignable en RCS. Il rend la main à l'executor, qui
       // fera l'IO et reprendra par 'sent' ou 'unreachable'. Les actions accumulées partent maintenant.
       return { actions, rest: { status: 'rcs_send', nodeId: current } };
+    }
+    if (node.type === 'aller_a') {
+      // « Aller à » (RC5). Une cible de CE graphe : le parcours continue sur elle, dans le même enchaînement. Un retour
+      // sur un bloc déjà visité est arrêté par la garde ci-dessus (`visited`), et c'est la bonne réponse à une boucle
+      // sans pause. Ailleurs : la main est rendue à l'exécuteur, avec les actions accumulées.
+      const cible = cibleDuSaut(node);
+      const ici = blocDuCode(graph, cible);
+      if (ici) {
+        current = ici.id;
+        continue;
+      }
+      return { actions, rest: { status: 'aller_a', nodeId: current, cible } };
     }
     if (node.type === 'agent') {
       // Le walk est pur : il rend la main à l'executor, qui ouvrira la session et enfilera un tour. Les actions

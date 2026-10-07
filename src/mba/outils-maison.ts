@@ -137,6 +137,8 @@ const RAISON_REPOS: Record<string, string> = {
   sleeping: 'ce bloc contient une attente : utilisez « Lancer un scénario »',
   // Sans nommer l'agent de Meta : la règle du bloc seul sert aussi l'outil « Envoyer un bloc » des agents IA (RC4).
   rcs_send: 'ce bloc envoie en RCS, l’agent parle en WhatsApp',
+  // RC5 : un saut fait démarrer un autre parcours, qu'aucun bloc seul ne peut porter.
+  aller_a: 'ce bloc saute vers un autre bloc : utilisez « Lancer un scénario »',
 };
 
 export const BLOC_DISPARU = 'ce bloc n’existe plus dans le scénario';

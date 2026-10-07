@@ -1,6 +1,6 @@
 // ⚠️ IMPORTS RELATIFS, PAS L'ALIAS `@/`. Ce module est une lib PURE : il est chargé par vitest (ici et
 // depuis la suite racine, qui importe `../web/lib/...`), où l'alias de Next n'est pas résolu.
-import { entryNodeOf, envoieVraiment, type GraphLike } from './campaign-eligibility';
+import { blocViseIci, entryNodeOf, envoieVraiment, type GraphLike } from './campaign-eligibility';
 import { boutonsDe } from './mesures-scenario';
 
 /**
@@ -39,6 +39,11 @@ export type ReponsePrevue =
   | { genre: 'autre_canal'; type: string }
   /** Le parcours bute sur un embranchement avant d'avoir envoyé quoi que ce soit. */
   | { genre: 'indecidable'; type: string }
+  /**
+   * Un « Aller à » vers un AUTRE scénario (RC5) avant tout envoi : la première réponse est celle du bloc visé, dans un
+   * graphe que cet aperçu ne lit pas. `cible` est son nom tel que l'éditeur l'a retenu, vide s'il n'en a pas.
+   */
+  | { genre: 'saut'; cible: string }
   /** Le scénario ne contient aucun envoi atteignable depuis son entrée. */
   | { genre: 'aucun_envoi' }
   /** Graphe vide : rien n'est publié. */
@@ -84,6 +89,13 @@ export function premiereReponse(graph: GraphLike): ReponsePrevue {
     if (node.type === 'flow' && envoieVraiment(node)) return { genre: 'formulaire' };
     if (node.type === 'agent' && envoieVraiment(node)) return { genre: 'agent_ia' };
     if (node.type === 'condition') return { genre: 'indecidable', type: node.type };
+    // « Aller à » : une cible de ce scénario se suit comme le moteur la suit (garde de boucle comprise) ; ailleurs, on le
+    // dit plutôt que de prétendre que rien ne part.
+    if (node.type === 'aller_a') {
+      const ici = blocViseIci(graph, node);
+      if (ici) { id = ici.id; continue; }
+      return { genre: 'saut', cible: String(node.data.cibleLibelle ?? '').trim() };
+    }
 
     const sorties = graph.edges.filter((e) => e.source === id);
     // Zéro sortie : le parcours s'arrête sans avoir rien envoyé. Plusieurs sorties, ou une sortie TYPÉE

@@ -114,6 +114,8 @@ function titreDe(n: GraphNode, locale: Locale): { titre: string; propre: boolean
     // s'appelleraient « Question » et seraient impossibles à distinguer les uns des autres.
     : n.type === 'question' ? s(d.body).slice(0, 60)
     : n.type === 'flow' ? s(d.flowName)
+    // « Aller à » (RC5) : sa cible, sans quoi tous les sauts d'un scénario s'appelleraient « Aller à ».
+    : n.type === 'aller_a' ? (s(d.cibleLibelle) === '' ? '' : `-> ${s(d.cibleLibelle)}`)
     : '';
   if (saisi !== '') return { titre: saisi, propre: true };
   // Repli : le nom du TYPE. `template` et `quick_message` précisent en plus qu'ils sont vides, sinon on ne
@@ -241,6 +243,13 @@ export function blocsDuScenario(
     vus.add(id);
     ordre.push(id);
     for (const e of graph.edges) if (e.source === id) file.push(e.target);
+    // Un « Aller à » vers un bloc de CE scénario le mène là sans flèche (RC5) : l'entonnoir le suit comme le moteur.
+    const n = parId.get(id)!;
+    if (n.type === 'aller_a') {
+      const code = typeof n.data?.cible === 'string' ? n.data.cible.trim() : '';
+      const vise = code === '' ? undefined : graph.nodes.find((x) => x.data?.code === code);
+      if (vise) file.push(vise.id);
+    }
   }
   for (const n of graph.nodes) if (!vus.has(n.id)) ordre.push(n.id);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Handle, Position, BaseEdge, EdgeLabelRenderer, getBezierPath, useEdges, useUpdateNodeInternals,
   type NodeProps, type EdgeProps, type NodeTypes, type EdgeTypes,
@@ -102,6 +102,12 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     const label = String(data.agentLabel ?? '').trim();
     return label === '' ? t('choisir un agent IA…', 'choose an AI agent…') : label;
   }
+  if (wfType === 'aller_a') {
+    // La cible telle qu'elle a été choisie (« Menu principal, Question 2 »), sinon son code collé.
+    const libelle = String(data.cibleLibelle ?? '').trim();
+    const cible = String(data.cible ?? '').trim();
+    return libelle !== '' ? `→ ${libelle}` : cible !== '' ? `→ ${cible}` : t('choisir le bloc où aller…', 'choose the block to go to…');
+  }
   // MBA : pré-câblage inerte, le sous-titre le rappelle (le bloc ne fait rien tant que MBA n'est pas actif).
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
 }
@@ -126,6 +132,43 @@ export const TemplatesCtx = createContext<TemplateSummary[]>([]);
  * fonction la ferait voyager dans le graphe, où elle n'a rien à faire.
  */
 export const TestDepuisBlocCtx = createContext<((nodeId: string) => void) | null>(null);
+
+/** Le code public d'un bloc (`nod_<client>_<ULID>`), posé par le serveur au premier enregistrement. Miroir de
+ *  `CODE_BLOC_RE` (`src/workflow/node-list.ts`). */
+const CODE_BLOC_RE = /^nod_[0-9a-z]+_[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/**
+ * COPIER LE CODE DU BLOC (RC5). Le code sert à viser ce bloc depuis un « Aller à » d'un autre scénario, depuis l'API
+ * (`/v1/sends`, cible `node`) ou depuis l'outil « Envoyer un bloc ». Grisé tant que le bloc n'en a pas : un bloc neuf
+ * le reçoit à son premier enregistrement (automatique), et le constructeur le recopie alors sur la carte.
+ *
+ * Mêmes gardes que le bouton lecture : `nodrag` + `stopPropagation`, sinon le clic déplacerait ou sélectionnerait le bloc.
+ */
+function BoutonCopierCode({ id, code, decale }: { id: string; code: string; decale: boolean }) {
+  const t = useT();
+  const [copie, setCopie] = useState(false);
+  const titre = code === ''
+    ? t('Enregistrez pour obtenir le code', 'Save to get the code')
+    : copie ? t('Code copié', 'Code copied') : t(`Copier le code du bloc (${code})`, `Copy the block code (${code})`);
+  return (
+    <button
+      type="button"
+      data-testid={`node-copier-${id}`}
+      disabled={code === ''}
+      title={titre}
+      aria-label={titre}
+      className={`nodrag absolute ${decale ? 'left-4' : '-left-2'} -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-brand-600 shadow-mm-sm enabled:hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-300`}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (code === '' || !navigator.clipboard) return;
+        navigator.clipboard.writeText(code).then(() => { setCopie(true); setTimeout(() => setCopie(false), 1500); }, () => {});
+      }}
+    >
+      <Icone nom={copie ? 'valide' : 'copier'} taille="mini" />
+    </button>
+  );
+}
 
 /** Bloc du workflow : carré gris clair, handle cible (haut). Un bloc `template` montre l'APERÇU du message et
  *  expose UNE SORTIE PAR BOUTON quick-reply (handle à droite de la ligne, reliable) ; les boutons URL/formulaire
@@ -204,6 +247,9 @@ function WFNode({ id, data, selected }: NodeProps) {
   const isRcs = wfType === 'rcs_message';
   const isQuestion = wfType === 'question';
   const isAgent = wfType === 'agent';
+  // « Aller à » (RC5) : aucune sortie, la suite est là où il mène.
+  const isAllerA = wfType === 'aller_a';
+  const codeDuBloc = typeof data.code === 'string' && CODE_BLOC_RE.test(data.code) ? data.code : '';
   // Les règles d'arrêt COPIÉES de la fiche au moment du choix de l'agent. Le bloc est ainsi auto-suffisant :
   // le graphe se lit et se route sans aller relire la table des agents.
   const agentSorties = isAgent ? sortiesDuBloc(data) : [];
@@ -273,9 +319,9 @@ function WFNode({ id, data, selected }: NodeProps) {
       {extremite && (
         <span
           data-testid={`wf-extremite-${extremite}`}
-          // `left-5` quand le bouton lecture est là : sans ce décalage, l'étiquette passerait SOUS le bouton
-          // (qui déborde de 8 px à gauche et fait 20 px de large), et on ne lirait plus « départ » / « arrivée ».
-          className={`absolute -top-2 z-10 rounded-full bg-brand-600 px-1.5 py-0.5 text-[9px] font-medium leading-none text-white shadow-mm-sm ${testDepuisBloc ? 'left-5' : 'left-2'}`}
+          // Décalée à droite des boutons du coin (lecture, puis copier le code) : sans ce décalage, l'étiquette passerait
+          // SOUS eux (chacun déborde de 8 px à gauche et fait 20 px de large), et on ne lirait plus « départ » / « arrivée ».
+          className={`absolute -top-2 z-10 rounded-full bg-brand-600 px-1.5 py-0.5 text-[9px] font-medium leading-none text-white shadow-mm-sm ${testDepuisBloc ? 'left-11' : 'left-5'}`}
         >
           {extremite === 'depart' ? t('départ', 'from') : t('arrivée', 'to')}
         </span>
@@ -297,6 +343,8 @@ function WFNode({ id, data, selected }: NodeProps) {
           <Icone nom="ecouter" taille="petite" />
         </button>
       )}
+      {/* COPIER LE CODE, à côté du bouton lecture (ou à sa place quand l'hôte ne propose pas de test). */}
+      <BoutonCopierCode id={id} code={codeDuBloc} decale={testDepuisBloc !== null} />
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
       {/* Suppression directe du bloc (sans passer par le menu de droite). nodrag + stopPropagation : ne déclenche ni
           le drag ni la sélection du bloc. Même pattern que le ✕ des arêtes (CustomEvent -> listener parent). */}
@@ -553,6 +601,10 @@ function WFNode({ id, data, selected }: NodeProps) {
             <Handle type="source" id={SORTIE_SINON} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-danger" title={t('Sinon (aucune famille n’est vraie)', 'Otherwise (no group is true)')} />
           </div>
         </div>
+      ) : isAllerA ? (
+        // « Aller à » : AUCUNE poignée de sortie. Le parcours continue sur le bloc visé, nommé juste au-dessus ; une
+        // flèche tirée d'ici n'aurait aucun sens pour le moteur, qui ne la suivrait jamais.
+        null
       ) : (
         // Aucun quick-reply (0 bouton, ou seulement URL/formulaire) -> une seule sortie bas (le bloc peut
         // quand même mener au suivant après réponse). Les boutons URL/flow sont montrés grisés pour contexte.
