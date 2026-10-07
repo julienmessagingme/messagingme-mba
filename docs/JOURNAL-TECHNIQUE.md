@@ -125,6 +125,14 @@ pendant le tour, il est passé en `sauf_operateur`. ⚠️ Incident de session, 
 doubles contenant des accents graves a fait exécuter trois fichiers du dépôt comme scripts shell ; vérifié (rien de
 créé ni de tronqué, `.env` intact), la leçon est dans la mémoire du projet.
 
+**RC5 A, la Condition à familles et les champs système** (serveur `344e8c4d`, sans migration ; console ensuite) :
+jusqu'à dix familles nommées, la première vraie gagne ; un bloc sans familles se lit comme avant (le moteur neuf a
+été comparé à l'ancien sur 98 640 graphes tirés au hasard, zéro écart). Mesuré avant : aucun bloc Condition en
+production (131 blocs, onze types) ; après le déploiement, les 34 graphes réels passent le moteur neuf sans erreur.
+Relu : zéro rouge ; une cible de langue vide retenait tous les contacts sans langue apprise, elle ne contraint plus
+rien. Laissés documentés par décision de Julien : le dernier message reçu vaut « maintenant » quand un message lance
+le scénario, et les départements d'outre-mer ont leur propre indicatif.
+
 ## 2026-10-06 : le numéro branché depuis Claude Code, et son abonnement (lot 3c, livraisons A et B)
 
 **A, le lien et l'attente** (`d20dea6b`, jaunes `f8708b65`, console `b4f81ec4`) : `start_whatsapp_connection` donne

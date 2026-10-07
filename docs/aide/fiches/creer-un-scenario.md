@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 4f1c01
+source_empreinte: 8a7485
 ---
 # Créer un scénario
 
@@ -17,8 +17,12 @@ Les blocs que vous utiliserez le plus :
 - **Question** : une question avec un menu de réponses, ou une question ouverte. Le scénario attend la
   réponse avant de continuer.
 - **Action** : agit sur la fiche du contact, par exemple poser ou retirer un tag, remplir un champ.
-- **Condition** : aiguille le contact selon son état (ses tags, ses champs, sa dernière analyse, l'heure…), avec
-  deux suites possibles.
+- **Condition** : aiguille le contact selon son état (ses tags, ses champs, sa dernière analyse, l'heure…). Vous
+  pouvez y créer jusqu'à dix familles, chacune nommée et avec ses propres conditions : le contact suit la première
+  famille vraie, de haut en bas, et part sur « Sinon » si aucune ne l'est. Sous « Système », la liste des champs
+  propose aussi le dernier message reçu, la langue détectée et le pays de l'indicatif. Le dernier message reçu sert
+  surtout dans une campagne : quand c'est un message du contact qui lance le scénario, c'est ce message-là, donc
+  « maintenant ». Le pays suit l'indicatif : les départements d'outre-mer ont le leur, à cocher en plus de la France.
 - **Attente** : met le parcours en pause, pour une durée, jusqu'à une date, ou jusqu'aux prochaines heures
   d'ouverture.
 - **Assigner à un agent** : passe la main à quelqu'un de votre équipe, qui reprend la conversation.

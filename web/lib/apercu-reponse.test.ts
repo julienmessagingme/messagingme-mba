@@ -106,3 +106,20 @@ describe('premiereReponse : ce qu’on AVOUE ne pas savoir', () => {
     expect(premiereReponse(g([]))).toEqual({ genre: 'vide' });
   });
 });
+
+describe('premiereReponse : un bloc Condition à familles (RC5)', () => {
+  it('🔴 une Condition à trois familles reste INDÉCIDABLE : on ne devine pas laquelle le prospect prendra', () => {
+    // Sa sortie dépend du contact, qui n'existe pas encore. Choisir la première famille, ou « Sinon », montrerait
+    // un message que la moitié des prospects ne recevront pas.
+    const familles = { familles: [
+      { code: 'true', nom: 'France', groupe: { match: 'all', clauses: [] } },
+      { code: 'k2', nom: 'Anglais', groupe: { match: 'all', clauses: [] } },
+      { code: 'k3', nom: 'Endormi', groupe: { match: 'all', clauses: [] } },
+    ] };
+    const graph = g(
+      [n('c', 'condition', familles), n('a', 'quick_message', { body: 'Bonjour' }), n('b', 'quick_message', { body: 'Hello' })],
+      [{ source: 'c', target: 'a', sourceHandle: 'true' }, { source: 'c', target: 'b', sourceHandle: 'famille:k2' }],
+    );
+    expect(premiereReponse(graph)).toEqual({ genre: 'indecidable', type: 'condition' });
+  });
+});

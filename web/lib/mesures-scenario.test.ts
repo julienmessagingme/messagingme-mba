@@ -447,3 +447,34 @@ describe('clics sur un LIEN d’un bloc RCS', () => {
     expect(mesuresDisponibles(bloc, 'fr').some((m) => m.kind === 'url_click')).toBe(false);
   });
 });
+
+/**
+ * LES SORTIES D'UN BLOC CONDITION NE SONT PAS DES CHOIX DU CONTACT (RC5). `true` et `false` étaient écartés en dur ;
+ * une famille ajoutée (`famille:<code>`) serait sinon proposée comme un bouton « cliqué », un compteur qui ne
+ * bougerait jamais. Elles se lisent dans `sortiesDeCondition`, comme partout ailleurs.
+ */
+describe('mesures : les familles d’un bloc Condition', () => {
+  it('🔴 aucune sortie d’une Condition à trois familles n’est proposée comme un choix', () => {
+    const graph: Graph = {
+      nodes: [n('c', 'condition', { familles: [
+        { code: 'true', nom: 'VIP', groupe: { match: 'all', clauses: [] } },
+        { code: 'k2', nom: 'Gold', groupe: { match: 'all', clauses: [] } },
+        { code: 'k3', nom: 'Pro', groupe: { match: 'all', clauses: [] } },
+      ] }), n('a', 'tag'), n('b', 'tag'), n('p', 'tag'), n('s', 'tag')],
+      edges: [
+        { source: 'c', target: 'a', sourceHandle: 'true' }, { source: 'c', target: 'b', sourceHandle: 'famille:k2' },
+        { source: 'c', target: 'p', sourceHandle: 'famille:k3' }, { source: 'c', target: 's', sourceHandle: 'false' },
+      ],
+    };
+    const condition = blocsDuScenario(graph, 'fr').find((b) => b.id === 'c')!;
+    expect(condition.choix).toEqual([]);
+  });
+
+  it('un bloc d’avant les familles : `true` et `false` restent écartés, comme avant', () => {
+    const graph: Graph = {
+      nodes: [n('c', 'condition', { match: 'all', clauses: [] }), n('a', 'tag'), n('s', 'tag')],
+      edges: [{ source: 'c', target: 'a', sourceHandle: 'true' }, { source: 'c', target: 's', sourceHandle: 'false' }],
+    };
+    expect(blocsDuScenario(graph, 'fr').find((b) => b.id === 'c')!.choix).toEqual([]);
+  });
+});

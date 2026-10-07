@@ -16,6 +16,7 @@
  * aucun module. `tests/web-campaign-eligibility.test.ts` compare les deux implémentations sur les mêmes
  * graphes et casse dès qu'elles divergent.
  */
+import { sortiesDeCondition, SORTIE_SINON } from './condition-familles';
 
 /** Forme minimale d'un bloc, structurelle : `WorkflowNode` de `./api` la satisfait sans import. */
 export interface GraphNodeLike {
@@ -24,7 +25,7 @@ export interface GraphNodeLike {
   data: Record<string, unknown>;
 }
 /** Forme minimale d'un graphe (`WorkflowGraph` de `./api` la satisfait). `sourceHandle` compte : une condition
- *  a deux sorties nommées 'true'/'false' et les deux peuvent ouvrir le scénario. */
+ *  a une sortie nommée par famille, plus « Sinon » (`sortiesDeCondition`), et toutes peuvent ouvrir le scénario. */
 export interface GraphLike {
   nodes: GraphNodeLike[];
   edges: { source: string; target: string; id?: string; sourceHandle?: string | null }[];
@@ -155,10 +156,11 @@ export function scanOpening(graph: GraphLike): OpeningScan {
     }
     if (node.type === 'wait') out.waitBeforeTemplate = true;
     if (node.type === 'condition') {
-      const t = cibleParSortie(graph, id, 'true');
-      const f = cibleParSortie(graph, id, 'false') ?? cible(graph, id);
-      if (t) queue.push(t);
-      if (f) queue.push(f);
+      // Miroir exact du serveur : chaque famille dans l'ordre, puis « Sinon », qui retombe sur la 1re arête.
+      for (const h of sortiesDeCondition(node)) {
+        const c = cibleParSortie(graph, id, h) ?? (h === SORTIE_SINON ? cible(graph, id) : null);
+        if (c) queue.push(c);
+      }
       continue;
     }
     const nx = cible(graph, id);
@@ -324,11 +326,12 @@ export function waitBeforeSessionMessage(graph: GraphLike): WaitThenSession | nu
         ? { cumul: Math.min(cumul + Math.max(PAS_MIN_MS, dureeMs(node)), FENETRE_MS), dernierWait: dureeMs(node) > 0 ? id : dernierWait }
         : { cumul, dernierWait };
     if (node.type === 'condition') {
-      for (const h of ['true', 'false'] as const) {
+      const sorties = sortiesDeCondition(node);
+      for (const h of sorties) {
         const c = cibleParSortie(graph, id, h);
         if (c) pile.push({ id: c, ...suivant });
       }
-      if (!graph.edges.some((e) => e.source === id && (e.sourceHandle === 'true' || e.sourceHandle === 'false'))) {
+      if (!graph.edges.some((e) => e.source === id && typeof e.sourceHandle === 'string' && sorties.includes(e.sourceHandle))) {
         const repli = cible(graph, id);
         if (repli) pile.push({ id: repli, ...suivant });
       }

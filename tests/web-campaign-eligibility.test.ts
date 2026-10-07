@@ -22,6 +22,13 @@ import type { GraphLike, GraphNodeLike } from '../web/lib/campaign-eligibility';
 const g = (nodes: GraphNodeLike[], edges: GraphLike['edges'] = []): GraphLike => ({ nodes, edges });
 const n = (id: string, type: string, data: Record<string, unknown> = {}): GraphNodeLike => ({ id, type, data });
 
+/** Un bloc Condition à trois familles (RC5) : `true` (la première d'origine), `famille:k2`, `famille:k3`, puis « Sinon ». */
+const TROIS_FAMILLES = { familles: [
+  { code: 'true', nom: 'VIP', groupe: { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] } },
+  { code: 'k2', nom: 'Gold', groupe: { match: 'all', clauses: [] } },
+  { code: 'k3', nom: 'Pro', groupe: { match: 'all', clauses: [] } },
+] };
+
 describe('entryNodeOf', () => {
   it('entrée = bloc SANS arête entrante, même s’il n’est pas le premier du tableau', () => {
     // L'ordre du tableau ne fait pas foi : c'est la topologie qui décide (miroir du serveur).
@@ -274,6 +281,17 @@ describe('parité front / serveur du parcours d’ouverture', () => {
     ['agent NON configure puis template', g([n('a', 'agent', {}), TPL('t')], [e('a', 't')])],
     ['action puis agent', g([n('x', 'tag', { tag: 'v' }), n('a', 'agent', { agentId: 'ag1' })], [e('x', 'a')])],
     ['attente puis agent', g([n('w', 'wait', { delay: 2, unit: 'days' }), n('a', 'agent', { agentId: 'ag1' })], [e('w', 'a')])],
+    // 🔴 BLOC CONDITION À FAMILLES (RC5) : une famille AJOUTÉE sort par `famille:<code>`. Un côté qui ne lirait que
+    // `true` / `false` ne verrait pas la branche, et jugerait le scénario sur un chemin incomplet.
+    ['condition à trois familles, la 3e ouvre par un message rapide', g(
+      [n('c', 'condition', TROIS_FAMILLES), TPL('t1'), TPL('t2'), QM('q'), TPL('t3')],
+      [e('c', 't1', 'true'), e('c', 't2', 'famille:k2'), e('c', 'q', 'famille:k3'), e('c', 't3', 'false')],
+    )],
+    ['condition à trois familles, deux modèles différents', g(
+      [n('c', 'condition', TROIS_FAMILLES), TPL('t1', 'a'), TPL('t2', 'b')],
+      [e('c', 't1', 'famille:k2'), e('c', 't2', 'false')],
+    )],
+    ['condition à familles SANS sortie typée -> repli sur la 1re arête', g([n('c', 'condition', TROIS_FAMILLES), TPL('t')], [e('c', 't')])],
   ];
 
   it('même verdict des deux côtés sur chaque graphe', () => {
@@ -335,6 +353,15 @@ describe('parité de la détection « attente >= 24 h puis message de session »
        n('w2', 'wait', { delay: 13, unit: 'hours' }), QM('q')],
       [e('w1', 'ql'), e('ql', 'w2'), e('w2', 'q')],
     )],
+    // Une famille AJOUTÉE (RC5) mène au message mort-né : les deux côtés doivent la suivre.
+    ['attente 2 j, condition à familles, message rapide derrière la 3e', g(
+      [n('w', 'wait', { delay: 2, unit: 'days' }), n('c', 'condition', TROIS_FAMILLES), TPL('t'), QM('q')],
+      [e('w', 'c'), e('c', 't', 'true'), e('c', 'q', 'famille:k3')],
+    )],
+    ['attente 2 j, condition à familles sans sortie typée, message rapide', g(
+      [n('w', 'wait', { delay: 2, unit: 'days' }), n('c', 'condition', TROIS_FAMILLES), QM('q')],
+      [e('w', 'c'), e('c', 'q')],
+    )],
     ['attente, message à bouton de lien QUI GARDE ses réponses rapides, attente, message rapide', g(
       [n('w1', 'wait', { delay: 12, unit: 'hours' }),
        n('ql', 'quick_message', { body: 'La brochure', quickReplies: ['Oui', 'Non'], lienActif: true, lienTexte: 'Voir', lienUrl: 'https://exemple.fr' }),
@@ -392,5 +419,33 @@ describe('canalDOuvertureDuGraphe : la meme reponse des deux cotes', () => {
     for (const [nom, graph] of cas) {
       expect(canalDOuvertureDuGraphe(graph) !== null, nom).toBe(isCampaignEligible(graph));
     }
+  });
+});
+
+/**
+ * 🔴 LE MIROIR CONSOLE VOIT LES FAMILLES (RC5), PAS SEULEMENT « COMME LE SERVEUR ». La parité ci-dessus prouverait
+ * aussi deux côtés ÉGALEMENT aveugles à `famille:<code>` : ces cas affirment le verdict lui-même.
+ */
+describe('éligibilité côté console : une famille ajoutée est une branche comme une autre', () => {
+  it('un message rapide derrière la 3e famille rend le scénario inéligible', () => {
+    const graph = g(
+      [n('c', 'condition', TROIS_FAMILLES), TPL('t1'), QM('q'), TPL('t3')],
+      [e('c', 't1', 'true'), e('c', 'q', 'famille:k3'), e('c', 't3', 'false')],
+    );
+    expect(scanOpening(graph).sessionOpen).toBe(true);
+    expect(isCampaignEligible(graph)).toBe(false);
+  });
+
+  it('deux modèles différents derrière deux familles : ouverture ambiguë', () => {
+    const graph = g([n('c', 'condition', TROIS_FAMILLES), TPL('t1', 'a'), TPL('t2', 'b')], [e('c', 't1', 'true'), e('c', 't2', 'famille:k2')]);
+    expect(scanOpening(graph).ambiguousTemplate).toBe(true);
+  });
+
+  it('attente de 2 jours puis message rapide derrière une famille ajoutée : signalé', () => {
+    const graph = g(
+      [n('w', 'wait', { delay: 2, unit: 'days' }), n('c', 'condition', TROIS_FAMILLES), TPL('t'), QM('q')],
+      [e('w', 'c'), e('c', 't', 'true'), e('c', 'q', 'famille:k2')],
+    );
+    expect(waitBeforeSessionMessage(graph)).toEqual({ waitNodeId: 'w', messageNodeId: 'q' });
   });
 });

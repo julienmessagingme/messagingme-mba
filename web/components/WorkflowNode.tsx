@@ -6,8 +6,9 @@ import {
   type NodeProps, type EdgeProps, type NodeTypes, type EdgeTypes,
 } from '@xyflow/react';
 import type { TemplateSummary, WorkflowNodeType } from '@/lib/api';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
 import { AGENT_SORTIES_RESERVEES, nodeMetaOf } from '@/lib/nodeMeta';
+import { famillesDeCondition, nomDeFamille, poigneeDeFamille, SORTIE_SINON } from '@/lib/condition-familles';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { SORTIE_LIBRE } from '@/lib/workflow-sorties';
 import { ouvreUneSortie } from '@/lib/rcs-boutons';
@@ -70,6 +71,11 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     return `${t('attendre', 'wait')} ${n} ${lib}`;
   }
   if (wfType === 'condition') {
+    // Un bloc à familles (RC5) : leurs noms sont déjà sur ses sorties, juste en dessous ; on en dit le nombre.
+    if (Array.isArray(data.familles)) {
+      const nf = famillesDeCondition(data).length;
+      return nf === 1 ? t('1 famille, puis Sinon', '1 group, then Otherwise') : t(`${nf} familles, puis Sinon`, `${nf} groups, then Otherwise`);
+    }
     const n = Array.isArray(data.clauses) ? data.clauses.length : 0;
     if (n === 0) return t('définir une condition…', 'set a condition…');
     const m = data.match === 'any' ? t('au moins une', 'at least one') : t('toutes', 'all');
@@ -126,6 +132,7 @@ export const TestDepuisBlocCtx = createContext<((nodeId: string) => void) | null
  *  sont montrés grisés, non reliables (ils sortent de WhatsApp). Les autres blocs ont une seule sortie (bas). */
 function WFNode({ id, data, selected }: NodeProps) {
   const t = useT();
+  const { locale } = useLocale();
   const templates = useContext(TemplatesCtx);
   const testDepuisBloc = useContext(TestDepuisBlocCtx);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -192,6 +199,8 @@ function WFNode({ id, data, selected }: NodeProps) {
     'This button leads nowhere: the contact can tap it and get nothing back. Drag an arrow from this dot.',
   );
   const isCondition = wfType === 'condition';
+  // Les familles d'un bloc Condition, lues défensivement (un bloc d'avant RC5 en a une, « Si réunie »).
+  const famillesDuBloc = isCondition ? famillesDeCondition(data) : [];
   const isRcs = wfType === 'rcs_message';
   const isQuestion = wfType === 'question';
   const isAgent = wfType === 'agent';
@@ -522,18 +531,26 @@ function WFNode({ id, data, selected }: NodeProps) {
           </div>
         </div>
       ) : isCondition ? (
-        // Node condition : DEUX sorties fixes, à droite. Les id 'true'/'false' sont ceux que le moteur route
-        // (engine.walk). Chaque sortie se relie à un bloc différent.
+        // Node condition : une sortie par FAMILLE, à son nom, puis « Sinon », à droite. Les poignées sont celles que
+        // le moteur route (`sortiesDeCondition`) : `true` pour la famille d'origine (« Si réunie »), `famille:<code>`
+        // pour une famille ajoutée, `false` pour « Sinon ». Un bloc d'avant les familles dessine exactement ses
+        // deux sorties d'hier.
         <div className="border-t border-ink-200">
-          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-succes-700 first:border-t-0">
-            <Icone nom="valide" taille="mini" />
-            <span className="truncate">{t('Si réunie', 'If met')}</span>
-            <Handle type="source" id="true" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-succes-500" title={t('Si la condition est réunie', 'If the condition is met')} />
-          </div>
-          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-danger first:border-t-0">
+          {famillesDuBloc.map((f, i) => {
+            const h = poigneeDeFamille(f.code);
+            const nom = nomDeFamille(f, i, locale);
+            return (
+              <div key={h} data-testid={`condition-sortie-${h}`} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-succes-700 first:border-t-0">
+                <Icone nom="valide" taille="mini" />
+                <span className="truncate">{nom}</span>
+                <Handle type="source" id={h} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-succes-500" title={t(`Le contact passe ici quand « ${nom} » est la première famille vraie`, `The contact goes here when “${nom}” is the first true group`)} />
+              </div>
+            );
+          })}
+          <div data-testid={`condition-sortie-${SORTIE_SINON}`} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-danger first:border-t-0">
             <Icone nom="echec" taille="mini" />
             <span className="truncate">{t('Sinon', 'Otherwise')}</span>
-            <Handle type="source" id="false" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-danger" title={t('Sinon (condition non réunie)', 'Otherwise (condition not met)')} />
+            <Handle type="source" id={SORTIE_SINON} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-danger" title={t('Sinon (aucune famille n’est vraie)', 'Otherwise (no group is true)')} />
           </div>
         </div>
       ) : (

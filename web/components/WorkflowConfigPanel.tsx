@@ -13,7 +13,7 @@ import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import { RcsPreview } from '@/components/RcsPreview';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { ChampCompte } from '@/components/ChampCompte';
-import { ConditionBuilder, type ConditionGroup } from '@/components/ConditionBuilder';
+import { EditeurFamilles } from '@/components/ConditionBuilder';
 import { sortiesDuBloc, type EmailRecipientData, type RFNode } from '@/lib/workflow-canevas';
 import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
 import { useState } from 'react';
@@ -702,15 +702,16 @@ export function ConfigPanel({
         );
       })()}
       {wfType === 'condition' && (
-        <div className="space-y-2">
-          <ConditionBuilder
-            tenantId={tenantId}
-            group={{ match: (d.match as 'all' | 'any') ?? 'all', clauses: Array.isArray(d.clauses) ? (d.clauses as ConditionGroup['clauses']) : [] }}
-            onChange={(g) => onPatch({ match: g.match, clauses: g.clauses })}
-            fields={fields}
-            tags={tags.map((tg) => tg.tag)}
-          />
-        </div>
+        // Les familles du bloc (RC5) : un bloc d'avant en a une, « Si réunie », et s'écrit sous sa forme d'origine
+        // tant qu'on ne lui en ajoute pas d'autre (`ecrireFamilles`).
+        <EditeurFamilles
+          tenantId={tenantId}
+          nodeId={node.id}
+          data={d}
+          onPatch={onPatch}
+          fields={fields}
+          tags={tags.map((tg) => tg.tag)}
+        />
       )}
       {wfType === 'inbox' && (
         <div className="flex flex-col gap-2">

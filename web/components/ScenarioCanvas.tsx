@@ -3,8 +3,9 @@
 import '@xyflow/react/dist/style.css';
 import { useMemo } from 'react';
 import { ReactFlow, Background, Controls, Handle, Position, MarkerType, type Node, type Edge, type NodeProps, type NodeTypes } from '@xyflow/react';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
 import { nodeMetaOf } from '@/lib/nodeMeta';
+import { libelleSortieDeCondition } from '@/lib/condition-familles';
 import type { WorkflowNodeType } from '@/lib/api';
 import type { BlocMesurable } from '@/lib/mesures-scenario';
 import { ink } from '@/lib/couleurs';
@@ -94,6 +95,7 @@ const nodeTypes: NodeTypes = { lecture: CarteBloc };
 
 export function ScenarioCanvas({ graph, blocs, selectionne, onSelect, retenuesParBloc = {} }: ScenarioCanvasProps) {
   const t = useT();
+  const { locale } = useLocale();
   const parId = useMemo(() => new Map(blocs.map((b) => [b.id, b])), [blocs]);
 
   const nodes = useMemo<Node[]>(
@@ -126,8 +128,14 @@ export function ScenarioCanvas({ graph, blocs, selectionne, onSelect, retenuesPa
    * oblige l'opérateur à traduire mentalement ce que le scénario dit déjà en clair.
    */
   const libelleArete = (source: string, handle: string): string => {
+    // Une sortie de Condition porte le NOM de sa famille (RC5), « Si réunie » pour celle d'un bloc d'avant, et
+    // « Sinon » : lus par `libelleSortieDeCondition`, jamais en nommant `true` / `false` ici.
+    const bloc = graph.nodes.find((n) => n.id === source);
+    if (bloc?.type === 'condition') {
+      const libelle = libelleSortieDeCondition(bloc, handle, locale);
+      if (libelle) return libelle;
+    }
     const typees: Record<string, string> = {
-      true: t('si réunie', 'if met'), false: t('sinon', 'otherwise'),
       sent: t('envoyé', 'sent'), unreachable: t('non joignable', 'unreachable'),
     };
     if (typees[handle]) return typees[handle];
@@ -144,8 +152,8 @@ export function ScenarioCanvas({ graph, blocs, selectionne, onSelect, retenuesPa
       labelStyle: { fill: ink[400], fontSize: 10 },
       markerEnd: { type: MarkerType.ArrowClosed, color: ink[200] },
     })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `libelleArete` ne depend que de `parId` et `t`
-    [graph.edges, parId, t],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `libelleArete` ne depend que de `parId`, `t`, `locale` et des blocs
+    [graph.edges, graph.nodes, parId, t, locale],
   );
 
   if (graph.nodes.length === 0) {

@@ -18,6 +18,7 @@ import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, AGENT_NODE_ORD
 import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf, canalDOuvertureDuGraphe } from '@/lib/campaign-eligibility';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { EDGE_OPTS, toRF, fromRF, type RFNode, type RFEdge } from '@/lib/workflow-canevas';
+import { estPoigneeDeFamille } from '@/lib/condition-familles';
 import { useEnregistrementScenario } from '@/lib/use-enregistrement-scenario';
 import { TemplatesCtx, TestDepuisBlocCtx, nodeTypes, edgeTypes } from '@/components/WorkflowNode';
 import { ConfigPanel } from '@/components/WorkflowConfigPanel';
@@ -217,7 +218,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
       setSelectedId(nid);
       return [
         ...eds.filter((e) => e.id !== edgeId),
-        // La moitié AMONT hérite du sourceHandle d'origine ('true'/'false' d'une condition, 'card:i:btn:j' d'un
+        // La moitié AMONT hérite du sourceHandle d'origine (une famille ou « Sinon » d'une condition, 'card:i:btn:j' d'un
         // bouton) : sans ça, insérer un bloc sur la branche « Si réunie » la déconnecterait silencieusement.
         { id: uid(), source: edge.source, target: nid, ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}), ...EDGE_OPTS },
         { id: uid(), source: nid, target: edge.target, ...EDGE_OPTS },
@@ -315,6 +316,22 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
         return gardes.has(h);
       }));
     };
+    /**
+     * 🔴 RETIRER UNE FAMILLE D'UN BLOC CONDITION EMPORTE SON ARÊTE, ET AUCUNE AUTRE (RC5). Même contrat que
+     * `wf-agent-change` : le panneau annonce les poignées de famille qui RESTENT, et on retire les arêtes des
+     * familles disparues. Une famille sort par une poignée tirée de son CODE (`true` ou `famille:<code>`), jamais
+     * de sa place : retirer la deuxième ne décale pas la troisième, contrairement aux lignes de menu ci-dessus.
+     * « Sinon » (`false`) et les arêtes libres ne sont jamais touchés.
+     */
+    const onConditionFamilles = (ev: Event) => {
+      const { nodeId, poignees } = (ev as CustomEvent).detail as { nodeId: string; poignees: string[] };
+      const gardees = new Set(poignees);
+      setEdges((eds) => eds.filter((e) => {
+        if (e.source !== nodeId) return true;
+        const h = e.sourceHandle ?? '';
+        return !estPoigneeDeFamille(h) || gardees.has(h);
+      }));
+    };
     // Suppression d'un bloc via son ✕ : retire le node ET ses arêtes ; déselectionne si c'était lui.
     const onNodeDelete = (ev: Event) => {
       const nodeId = (ev as CustomEvent).detail as string;
@@ -327,7 +344,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
     window.addEventListener('wf-node-delete', onNodeDelete);
     window.addEventListener('wf-row-delete', onRowDelete);
     window.addEventListener('wf-agent-change', onAgentChange);
+    window.addEventListener('wf-condition-familles', onConditionFamilles);
     return () => {
+      window.removeEventListener('wf-condition-familles', onConditionFamilles);
       window.removeEventListener('wf-edge-insert', onInsert);
       window.removeEventListener('wf-edge-delete', onDelete);
       window.removeEventListener('wf-node-delete', onNodeDelete);

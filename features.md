@@ -755,6 +755,22 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   (celles réglées par le client), **heure de la journée**, **coordonnées** (a un téléphone, un email, un
   identifiant WhatsApp), **consentement**. Sans aucune condition posée, le contact part toujours sur « Si
   réunie » ; une branche laissée non reliée arrête simplement le parcours.
+- ✅ **Bloc « Condition » à familles** (2026-10-06) : un bloc peut aiguiller vers **jusqu'à 10 familles**, chacune
+  **nommée** (le nom s'affiche sur sa sortie) et chacune avec ses propres conditions, en **toutes** ou **au moins
+  une**. Le contact suit la **première famille vraie, de haut en bas** ; si aucune ne l'est, il part sur « Sinon »,
+  toujours en bas. Dans le panneau : « Ajouter une famille », monter / descendre, retirer. Retirer une famille
+  n'enlève que SA flèche : les autres restent reliées. Un bloc existant n'a qu'une famille, « Si réunie », et
+  continue de fonctionner exactement comme avant.
+- ✅ **Champs système dans une condition** (2026-10-06) : dans la liste des champs, sous **« Système »**, trois
+  informations que la plateforme connaît sans que le contact les ait saisies : le **dernier message reçu** (avant,
+  après, il y a plus / moins de N minutes, heures, jours, vide), la **langue détectée** (est, n'est pas, connue,
+  inconnue ; apprise des messages traduits) et le **pays de l'indicatif** (est l'un de, déduit du numéro). Ce qu'on ne
+  sait pas compte comme vide : un contact qui n'a jamais écrit n'est pas « silencieux depuis 7 jours », une langue
+  jamais apprise n'est pas le français, un contact sans numéro n'a pas de pays. ⚠️ Quand c'est un message du contact
+  qui lance le scénario (mot-clé, bouton de chaîne, publicité, widget, lien de test), son dernier message reçu est ce
+  message-là, donc « maintenant » : ce champ ne trie vraiment que dans une campagne, un envoi par l'API, ou un rappel
+  avant une date. Et le pays est celui de l'indicatif : la Réunion, la Guadeloupe, la Guyane et la Martinique ont le
+  leur, et ne sont pas comptées dans « France ».
 - ✅ **Nommer un bloc** (2026-08-02) : chaque bloc a un champ **« Nom du bloc »** libre et optionnel (64
   caractères, ex. « Relance J+3 »). Le nom s'affiche sur la vignette du bloc à la place de son type, et se
   retrouve dans la colonne **Nom** de Contenu > Blocs, ce qui rend un gros scénario lisible d'un coup d'oeil.

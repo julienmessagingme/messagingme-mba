@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : RC1 À RC4 EN PRODUCTION (ESSAIS RÉELS DUS), RC5 ENSUITE
+## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : RC1 À RC4 ET RC5 A EN PRODUCTION (ESSAIS RÉELS DUS), RC5 B ENSUITE
 
 ⏳ **Essai réel de RC1, par Julien** : ouvrir un scénario, vérifier que les textes listés ont disparu des cinq blocs,
 taper une réponse rapide et voir `0/20` se remplir, trouver « Widget WhatsApp » sous Tools.
@@ -39,6 +39,11 @@ la grille de six cartes ; poser un « Lancer un scénario » vers un scénario p
 l'autonomie du premier ; depuis un vrai téléphone, amener l'agent à les appeler : le tag est sur la fiche, le scénario
 part, l'agent se tait ensuite. ⚠️ À valider aussi : l'assistant de construction ne propose plus d'outil à cible
 (`todo.md`).
+
+⏳ **Essai réel de RC5 A, par Julien** : un scénario avec une Condition à trois familles (« pays est France »,
+« langue est anglais », une troisième au choix) testé depuis un vrai téléphone, qui sort par la bonne famille ; le
+champ « dernier message reçu » se teste par une campagne, pas par un lien de test (le message qui lance vaut
+« maintenant »).
 
 Douze demandes de Julien regroupées en huit lots, cadrées le 2026-10-06 par une série de questions ; les décisions sont
 écrites dans chaque plan (`docs/superpowers/plans/2026-10-06-rc*.md`). Ordre retenu : du plus petit au plus structurel.

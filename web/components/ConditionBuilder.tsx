@@ -1,12 +1,18 @@
 'use client';
 
-import { useT } from '@/lib/i18n';
+import { useState } from 'react';
+import { useLocale, useT } from '@/lib/i18n';
 import type { UserFieldDef, UserFieldKind } from '@/lib/api';
 import { SYSTEM_FIELDS } from '@/lib/fields';
 import { Icone } from '@/components/Icone';
 import { EditeurFiltreAnalyse } from '@/components/EditeurFiltreAnalyse';
 import { estFiltreAnalyse, filtreAnalyseParDefaut, type ChampFiltrable } from '@/lib/champs-fiche';
 import { useChampsFiltrables } from '@/lib/use-champs-filtrables';
+import { nomDeLangue } from '@/lib/langue-nom';
+import {
+  MAX_FAMILLES, ecrireFamilles, famillesDeCondition, nomDeFamille, nouveauCodeDeFamille, poigneeDeFamille,
+  type FamilleLike,
+} from '@/lib/condition-familles';
 
 // Types miroir (sous-ensemble v1) de src/workflow/conditions.ts. Le backend est défensif sur `data` opaque ;
 // on ne produit ici que des clauses bien formées. `valueType:'number'` force la comparaison numérique (eq inclus).
@@ -19,8 +25,32 @@ export type Clause =
   | { kind: 'business_hours'; op: 'within' | 'outside' }
   | { kind: 'time_of_day'; op: 'before' | 'after'; time: string }
   | { kind: 'identity'; op: 'has_phone' | 'has_bsuid' | 'has_email' }
-  | { kind: 'optin'; value: 'opted_in' | 'opted_out' | 'unknown' };
+  | { kind: 'optin'; value: 'opted_in' | 'opted_out' | 'unknown' }
+  // Les champs SYSTÈME (RC5) : proposés dans la liste des champs, sous l'intitulé « Système ».
+  | { kind: 'dernier_message_recu'; op: string; value?: string; amount?: number; unit?: TimeUnit }
+  | { kind: 'langue_detectee'; op: 'is' | 'is_not' | 'empty' | 'not_empty'; value?: string }
+  | { kind: 'pays'; op: 'is_one_of'; values: string[] };
 export interface ConditionGroup { match: 'all' | 'any'; clauses: Clause[] }
+
+/**
+ * Les champs que la PLATEFORME connaît sans que le contact les ait saisis. Ils sont dans la liste des champs, sous
+ * « Système », avec une valeur `systeme:<kind>` qu'aucune clé de champ ne peut porter (une clé n'a pas de « : »).
+ */
+const CHAMPS_SYSTEME: Array<{ kind: 'dernier_message_recu' | 'langue_detectee' | 'pays'; label: [string, string] }> = [
+  { kind: 'dernier_message_recu', label: ['Dernier message reçu', 'Last message received'] },
+  { kind: 'langue_detectee', label: ['Langue détectée', 'Detected language'] },
+  { kind: 'pays', label: ['Pays de l’indicatif', 'Country of the dialling code'] },
+];
+const PREFIXE_SYSTEME = 'systeme:';
+const estClauseSysteme = (c: Clause): c is Extract<Clause, { kind: 'dernier_message_recu' | 'langue_detectee' | 'pays' }> =>
+  c.kind === 'dernier_message_recu' || c.kind === 'langue_detectee' || c.kind === 'pays';
+
+/** La clause par défaut d'un champ système, choisie dans la liste des champs. */
+function defaultSystemClause(kind: (typeof CHAMPS_SYSTEME)[number]['kind']): Clause {
+  if (kind === 'dernier_message_recu') return { kind, op: 'older_than', amount: 7, unit: 'days' };
+  if (kind === 'langue_detectee') return { kind, op: 'is', value: 'en' };
+  return { kind: 'pays', op: 'is_one_of', values: ['FR'] };
+}
 
 /** Champs de BASE adressables par une condition (attributs + socles). `wa_id` exclu : le moteur ne le résout pas. */
 const BASE_FIELDS: { key: string; type: UserFieldKind }[] = [
@@ -33,18 +63,22 @@ function kindOf(c: Clause, champsAnalyse: readonly ChampFiltrable[]): Kind {
   // Une clause « champ » sur la dernière analyse s'édite dans SA rubrique : c'est la même clause pour le moteur
   // (`src/workflow/conditions.ts` la reconnaît à sa clé), mais pas les mêmes opérateurs.
   if (c.kind === 'field' && estFiltreAnalyse(c, champsAnalyse)) return 'analyse';
-  return c.kind === 'datetime' ? 'field' : (c.kind as Kind); // une clause sur un champ date/heure reste « Champ » dans l'UI
+  // Une clause sur un champ date/heure, ou sur un champ système, reste « Champ » dans l'UI.
+  return c.kind === 'datetime' || estClauseSysteme(c) ? 'field' : (c.kind as Kind);
 }
 
-export function ConditionBuilder({ tenantId, group, onChange, fields, tags }: {
+export function ConditionBuilder({ tenantId, group, onChange, fields, tags, nomSortie }: {
   /** L'espace : la rubrique « Dernière analyse » n'est offerte que si l'API décrit ses champs. */
   tenantId: string;
   group: ConditionGroup;
   onChange: (g: ConditionGroup) => void;
   fields: UserFieldDef[];
   tags: string[];
+  /** Le nom de la sortie que ces clauses ouvrent, pour les phrases d'aide. Absent : « Si réunie ». */
+  nomSortie?: string;
 }) {
   const t = useT();
+  const sortie = nomSortie ?? t('Si réunie', 'If met');
   const champsAnalyse = useChampsFiltrables(tenantId);
   const clauses = Array.isArray(group.clauses) ? group.clauses : [];
   const match = group.match === 'any' ? 'any' : 'all';
@@ -74,8 +108,11 @@ export function ConditionBuilder({ tenantId, group, onChange, fields, tags }: {
     else if (k === 'analyse' && champsAnalyse[0]) patch(i, { kind: 'field', ...filtreAnalyseParDefaut(champsAnalyse[0]) });
     else patch(i, defaultFieldClause(allFields[0]?.key ?? 'name', typeOfKey(allFields[0]?.key ?? 'name')));
   };
-  // Changement de champ -> reconstruit une clause adaptée au TYPE du nouveau champ.
-  const changeField = (i: number, key: string) => patch(i, defaultFieldClause(key, typeOfKey(key)));
+  // Changement de champ -> reconstruit une clause adaptée au TYPE du nouveau champ (ou au champ système choisi).
+  const changeField = (i: number, key: string) => {
+    const systeme = CHAMPS_SYSTEME.find((s) => `${PREFIXE_SYSTEME}${s.kind}` === key);
+    patch(i, systeme ? defaultSystemClause(systeme.kind) : defaultFieldClause(key, typeOfKey(key)));
+  };
 
   // `w-full min-w-0` : le panneau de configuration fait 280 px. Deux menus côte à côte n'y tiennent pas, et
   // les libellés (« Consentement (opt-in) », « est un jour de semaine (Lun-Ven) ») débordaient, l'un large,
@@ -89,7 +126,7 @@ export function ConditionBuilder({ tenantId, group, onChange, fields, tags }: {
         // Empilé et non en ligne : la phrase et son menu ne tiennent pas côte à côte dans 280 px, et sans
         // `flex-wrap` la ligne débordait du panneau au lieu de passer à la ligne.
         <div className="space-y-1 text-xs text-ink-500">
-          <span>{t('Le contact passe par « Si réunie » quand :', 'The contact takes “If met” when:')}</span>
+          <span>{t(`Le contact passe par « ${sortie} » quand :`, `The contact takes “${sortie}” when:`)}</span>
           <select value={match} onChange={(e) => onChange({ match: e.target.value === 'any' ? 'any' : 'all', clauses })} className={`${sel} py-1`}>
             <option value="all">{t('toutes les conditions sont vraies', 'all conditions are true')}</option>
             <option value="any">{t('au moins une condition est vraie', 'at least one condition is true')}</option>
@@ -97,7 +134,7 @@ export function ConditionBuilder({ tenantId, group, onChange, fields, tags }: {
         </div>
       )}
 
-      {clauses.length === 0 && <p className="text-xs text-ink-500">{t('Aucune condition : le contact part toujours sur « Si réunie ».', 'No condition: the contact always takes “If met”.')}</p>}
+      {clauses.length === 0 && <p className="text-xs text-ink-500">{t(`Aucune condition : le contact part toujours sur « ${sortie} ».`, `No condition: the contact always takes “${sortie}”.`)}</p>}
 
       {clauses.map((c, i) => (
         <div key={i} className="rounded-carte border border-ink-100 bg-ink-50/40 p-2">
@@ -207,15 +244,49 @@ function ClauseOperands({ c, i, patch, allFields, changeField, tags, sel, inp }:
     );
   }
 
-  // Champ (field ou datetime selon le type). Sélecteur de champ commun.
+  // Champ (field ou datetime selon le type, ou champ système). Sélecteur de champ commun : les champs de la fiche,
+  // puis, sous « Système », ce que la plateforme sait du contact.
   const fieldSelect = (
-    <select value={c.key} onChange={(e) => changeField(i, e.target.value)} className={sel}>
+    <select
+      data-testid="condition-champ"
+      value={estClauseSysteme(c) ? `${PREFIXE_SYSTEME}${c.kind}` : c.key}
+      onChange={(e) => changeField(i, e.target.value)}
+      className={sel}
+    >
       {allFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+      <optgroup label={t('Système', 'System')}>
+        {CHAMPS_SYSTEME.map((s) => <option key={s.kind} value={`${PREFIXE_SYSTEME}${s.kind}`}>{t(...s.label)}</option>)}
+      </optgroup>
     </select>
   );
-  const type = allFields.find((f) => f.key === c.key)?.type ?? 'text';
 
-  if (c.kind === 'datetime') {
+  if (c.kind === 'langue_detectee') {
+    const avecValeur = c.op === 'is' || c.op === 'is_not';
+    return (
+      <>
+        {fieldSelect}
+        <select value={c.op} onChange={(e) => patch(i, { ...c, op: e.target.value as 'is' | 'is_not' | 'empty' | 'not_empty' })} className={sel}>
+          <option value="is">{t('est', 'is')}</option>
+          <option value="is_not">{t('n’est pas', 'is not')}</option>
+          <option value="not_empty">{t('est connue', 'is known')}</option>
+          <option value="empty">{t('est inconnue', 'is unknown')}</option>
+        </select>
+        {avecValeur && <SaisieLangue valeur={c.value ?? ''} onChange={(v) => patch(i, { ...c, value: v })} inp={inp} />}
+      </>
+    );
+  }
+  if (c.kind === 'pays') {
+    return (
+      <>
+        {fieldSelect}
+        <SaisiePays valeurs={c.values} onChange={(values) => patch(i, { ...c, values })} inp={inp} />
+      </>
+    );
+  }
+
+  const type = c.kind === 'field' || c.kind === 'datetime' ? (allFields.find((f) => f.key === c.key)?.type ?? 'text') : 'text';
+
+  if (c.kind === 'datetime' || c.kind === 'dernier_message_recu') {
     const needsBase = c.op === 'before' || c.op === 'after';
     const needsRel = c.op === 'older_than' || c.op === 'newer_than';
     const isNow = c.value === 'now' || c.value === undefined;
@@ -313,6 +384,176 @@ function ClauseOperands({ c, i, patch, allFields, changeField, tags, sel, inp }:
         />
       )}
     </>
+  );
+}
+
+/** Les langues proposées d'office : celles qu'on rencontre le plus. Toute autre se tape (code ISO 639-1). */
+const LANGUES_COURANTES = ['fr', 'en', 'es', 'de', 'it', 'pt', 'nl', 'ar'];
+
+/**
+ * La langue à comparer, par son code ISO 639-1 (c'est ce que la traduction apprend), avec son nom en clair à côté pour
+ * qu'on sache ce qu'on a tapé.
+ */
+function SaisieLangue({ valeur, onChange, inp }: { valeur: string; onChange: (v: string) => void; inp: string }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const nom = nomDeLangue(valeur, locale);
+  return (
+    <div className="space-y-1">
+      <input
+        data-testid="condition-langue"
+        list="wf-langues"
+        value={valeur}
+        onChange={(e) => onChange(e.target.value.trim().toLowerCase())}
+        className={inp}
+        placeholder="en"
+      />
+      <datalist id="wf-langues">{LANGUES_COURANTES.map((l) => <option key={l} value={l}>{nomDeLangue(l, locale)}</option>)}</datalist>
+      <p className="text-xs text-ink-500">
+        {valeur.trim() === ''
+          ? t('Code de langue à deux lettres (en, es, de…).', 'Two-letter language code (en, es, de…).')
+          : `${nom} · ${t('apprise des messages du contact, inconnue tant qu’aucun n’a été traduit', 'learnt from the contact’s messages, unknown until one is translated')}`}
+      </p>
+    </div>
+  );
+}
+
+/** Le nom d'un pays dans la langue de la console, ou son code si le navigateur ne le connaît pas. */
+function nomDePays(code: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: 'region' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/**
+ * Les pays retenus, en codes à deux lettres séparés par des virgules (la même saisie que le ciblage d'une
+ * publicité). Le texte tapé vit dans un état LOCAL : relu depuis la liste à chaque frappe, « FR, » perdrait sa
+ * virgule avant qu'on ait tapé le pays suivant.
+ */
+function SaisiePays({ valeurs, onChange, inp }: { valeurs: string[]; onChange: (v: string[]) => void; inp: string }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const lire = (s: string): string[] => s.split(',').map((p) => p.trim().toUpperCase()).filter((p) => /^[A-Z]{2}$/.test(p));
+  const codes = (Array.isArray(valeurs) ? valeurs : []).filter((v) => /^[A-Z]{2}$/.test(v));
+  const [brut, setBrut] = useState(() => codes.join(', '));
+  // Le texte tapé tant qu'il dit la même liste que la clause ; sinon (clause voisine retirée, bloc rechargé) la liste.
+  const affiche = lire(brut).join(',') === codes.join(',') ? brut : codes.join(', ');
+  return (
+    <div className="space-y-1">
+      <input
+        data-testid="condition-pays"
+        value={affiche}
+        onChange={(e) => {
+          setBrut(e.target.value);
+          onChange(lire(e.target.value));
+        }}
+        className={inp}
+        placeholder="FR, BE, CH"
+      />
+      <p className="text-xs text-ink-500">
+        {codes.length === 0
+          ? t('Codes pays à deux lettres, séparés par des virgules. Le pays se déduit du numéro du contact.', 'Two-letter country codes, comma-separated. The country comes from the contact’s number.')
+          : `${t('est l’un de', 'is one of')} : ${codes.map((c) => nomDePays(c, locale)).join(', ')}`}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * LES FAMILLES D'UN BLOC CONDITION (RC5). Chaque famille a son nom (affiché sur sa sortie) et ses propres clauses en
+ * ET ou en OU ; le contact suit la PREMIÈRE vraie, de haut en bas, sinon « Sinon », fixe en bas.
+ *
+ * 🔴 RETIRER UNE FAMILLE EMPORTE SON ARÊTE, ET AUCUNE AUTRE. Ce panneau ne voit pas les arêtes : il annonce au
+ * constructeur les poignées qui RESTENT (`wf-condition-familles`, même contrat que `wf-agent-change`), et le
+ * constructeur retire celles d'une famille disparue. Les autres familles gardent leur poignée, tirée de leur code
+ * et non de leur place : ni le retrait ni le réordonnancement ne décrochent une flèche.
+ */
+export function EditeurFamilles({ tenantId, nodeId, data, onPatch, fields, tags }: {
+  tenantId: string;
+  nodeId: string;
+  data: Record<string, unknown>;
+  onPatch: (p: Record<string, unknown>) => void;
+  fields: UserFieldDef[];
+  tags: string[];
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const familles = famillesDeCondition(data);
+  const ecrire = (next: FamilleLike[]) => onPatch(ecrireFamilles(next));
+  const changer = (i: number, p: Partial<FamilleLike>) => ecrire(familles.map((f, j) => (j === i ? { ...f, ...p } : f)));
+  const deplacer = (i: number, vers: number) => {
+    const next = [...familles];
+    const [f] = next.splice(i, 1);
+    next.splice(vers, 0, f!);
+    ecrire(next);
+  };
+  const retirer = (i: number) => {
+    const next = familles.filter((_, j) => j !== i);
+    ecrire(next);
+    window.dispatchEvent(new CustomEvent('wf-condition-familles', {
+      detail: { nodeId, poignees: next.map((f) => poigneeDeFamille(f.code)) },
+    }));
+  };
+  const ajouter = () => ecrire([
+    ...familles,
+    { code: nouveauCodeDeFamille(familles.map((f) => f.code)), nom: '', groupe: { match: 'all', clauses: [] } },
+  ]);
+  const bouton = 'nodrag shrink-0 rounded-controle p-1 text-ink-400 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-30';
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-ink-500">
+        {t('Le contact suit la première famille vraie, de haut en bas. Si aucune ne l’est, il part sur « Sinon ».',
+          'The contact takes the first group that is true, top to bottom. If none is, they take “Otherwise”.')}
+      </p>
+      {familles.map((f, i) => {
+        const nom = nomDeFamille(f, i, locale);
+        return (
+          <div key={f.code} data-testid={`famille-${i}`} className="space-y-2 rounded-carte border border-ink-200 p-2">
+            <div className="flex items-center gap-1">
+              <input
+                data-testid={`famille-nom-${i}`}
+                value={f.nom}
+                maxLength={40}
+                onChange={(e) => changer(i, { nom: e.target.value })}
+                placeholder={nom}
+                aria-label={t('Nom de la famille', 'Group name')}
+                className="w-full min-w-0 rounded-controle border border-ink-300 px-2 py-1 text-sm font-medium outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+              />
+              <button type="button" data-testid={`famille-monter-${i}`} disabled={i === 0} onClick={() => deplacer(i, i - 1)} className={bouton} aria-label={t('Monter', 'Move up')} title={t('Monter', 'Move up')}>
+                <Icone nom="deplier" taille="petite" className="rotate-180" />
+              </button>
+              <button type="button" data-testid={`famille-descendre-${i}`} disabled={i === familles.length - 1} onClick={() => deplacer(i, i + 1)} className={bouton} aria-label={t('Descendre', 'Move down')} title={t('Descendre', 'Move down')}>
+                <Icone nom="deplier" taille="petite" />
+              </button>
+              {/* La dernière famille ne se retire pas : un bloc sans famille enverrait tout le monde sur « Sinon ». */}
+              <button type="button" data-testid={`famille-retirer-${i}`} disabled={familles.length === 1} onClick={() => retirer(i)} className={`${bouton} hover:text-danger`} aria-label={t('Retirer la famille', 'Remove the group')} title={t('Retirer la famille', 'Remove the group')}>
+                <Icone nom="fermer" taille="petite" />
+              </button>
+            </div>
+            <ConditionBuilder
+              tenantId={tenantId}
+              group={f.groupe as ConditionGroup}
+              onChange={(g) => changer(i, { groupe: g })}
+              fields={fields}
+              tags={tags}
+              nomSortie={nom}
+            />
+          </div>
+        );
+      })}
+      {familles.length < MAX_FAMILLES && (
+        <button type="button" data-testid="famille-ajouter" onClick={ajouter} className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline">
+          <Icone nom="ajouter" taille="petite" />{t('Ajouter une famille', 'Add a group')}
+        </button>
+      )}
+      <div data-testid="famille-sinon" className="rounded-carte border border-ink-200 bg-ink-50 px-2 py-1.5 text-xs text-ink-500">
+        <span className="font-medium text-danger">{t('Sinon', 'Otherwise')}</span>
+        {' : '}{t('aucune famille n’est vraie.', 'no group is true.')}
+      </div>
+    </div>
   );
 }
 

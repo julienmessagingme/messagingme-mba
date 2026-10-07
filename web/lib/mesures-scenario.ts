@@ -11,6 +11,7 @@
  */
 import type { Locale } from './locale';
 import { NODE_META } from './nodeMeta';
+import { sortiesDeCondition } from './condition-familles';
 import type { WorkflowNodeType } from './api';
 
 /** Libellé du TYPE de bloc, dans la langue voulue. Une seule source : `NODE_META`, déjà en paires [fr, en]. */
@@ -253,9 +254,12 @@ export function blocsDuScenario(
     const prefixe = n.type === 'question' ? 'row' : 'btn';
     const desBoutons = boutons.map((b, i) => ({ b, i })).filter((x) => x.b.type !== 'URL').map((x) => `${prefixe}:${x.i}`);
     const desAretes = graph.edges.filter((e) => e.source === id && e.sourceHandle).map((e) => e.sourceHandle!);
+    // Les sorties TYPÉES d'un bloc ne sont pas des choix du contact : elles décrivent une issue technique. Celles
+    // d'une Condition se lisent dans `sortiesDeCondition` (une par famille, puis « Sinon »), jamais en dur : une
+    // famille ajoutée apparaîtrait sinon comme un bouton que le contact aurait « cliqué ».
+    const typees = new Set(['sent', 'unreachable', 'timeout', ...(n.type === 'condition' ? sortiesDeCondition(n) : [])]);
     const tous = [...new Set([...desBoutons, ...desAretes, ...(handlesMesures[id] ?? [])])]
-      // Les sorties TYPÉES d'un bloc ne sont pas des choix du contact : elles décrivent une issue technique.
-      .filter((h) => !['true', 'false', 'sent', 'unreachable', 'timeout'].includes(h));
+      .filter((h) => !typees.has(h));
     const { titre, propre } = titreDe(n, locale);
     return {
       id,

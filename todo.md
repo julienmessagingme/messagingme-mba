@@ -1,5 +1,15 @@
 # todo.md : backlog
 
+## 🟡 RC5 A, la Condition à familles : ce qui reste (2026-10-06)
+
+- **Une sortie de Condition non reliée n'est pas signalée.** Les sorties de Question, de bouton et d'agent portent le
+  marqueur « orpheline » (`WorkflowNode.tsx`), celles de Condition non. Une famille ajoutée, laissée vide (donc
+  toujours vraie) et non reliée prend tous ceux que les familles d'avant n'ont pas retenus et arrête leur parcours, au
+  lieu de les laisser sur « Sinon ». Plus il y a de familles, plus ce trou est probable : marquer ces sorties, ou
+  avertir à la publication.
+- **Fenêtre de déploiement** : une console neuve devant une API ancienne écrirait des familles que l'ancien moteur lit
+  comme un groupe vide (tout le monde sur la première famille). Tenue en déployant l'API AVANT de pousser la console.
+
 ## 🟡 RC4, les outils de l'agent IA : ce qui reste (2026-10-06)
 
 - **À valider par Julien : l'assistant de construction ne propose aucun outil à cible fixe** (tag, information, bloc,
