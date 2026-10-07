@@ -5,7 +5,10 @@ import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import {
   useTemplateBody, TemplateBodyField, TemplateVariableExamples, labelForSource, unmappedVariablesMessage,
+  FieldPicker, type FieldOption,
 } from '@/components/TemplateBodyField';
+import { analyserChampsUrl, exempleUrl, type AnalyseChampsUrl } from '@/lib/champs-url';
+import { customFieldsOnly } from '@/lib/fields';
 import { listFlows, createTemplate, updateTemplate, uploadMedia, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type TemplateParamHint } from '@/lib/api';
 import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
 import { isSendableButtonUrl } from '@/lib/button-url';
@@ -89,6 +92,55 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
   const [pubFlows, setPubFlows] = useState<FlowSummary[]>([]);
   const [creatingFlow, setCreatingFlow] = useState(false);
   const hasFlow = buttons.some((b) => b.type === 'FLOW');
+  // Le champ « Lien » d'un bouton : quel sélecteur de champ est ouvert, et où est le curseur de chaque adresse.
+  const [urlPicker, setUrlPicker] = useState<number | null>(null);
+  const urlRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  /**
+   * Ce qu'une adresse peut porter : Prénom, Nom, Téléphone, puis les champs perso. Le même sélecteur que le corps, mais
+   * il insère `{cle}` en accolades SIMPLES : Meta ne voit jamais ce champ, notre redirection le remplit au clic avec la
+   * fiche de celui qui clique (`web/lib/champs-url.ts`).
+   */
+  const urlFieldOptions: FieldOption[] = [
+    { source: { type: 'field', key: 'prenom' }, label: t('Prénom', 'First name'), group: 'base' },
+    { source: { type: 'field', key: 'nom' }, label: t('Nom', 'Name'), group: 'base' },
+    { source: { type: 'field', key: 'telephone' }, label: t('Téléphone', 'Phone'), group: 'base' },
+    ...customFieldsOnly(bodyState.userFields).map((f): FieldOption => ({ source: { type: 'field', key: f.key }, label: f.label, fieldType: f.type, group: 'custom' })),
+  ];
+
+  /** Insère `{cle}` à la position du curseur de l'adresse du bouton `i`, puis y remet le curseur. */
+  function insererChampUrl(i: number, opt: FieldOption) {
+    const cle = opt.source.key ?? '';
+    const el = urlRefs.current[i];
+    const url = buttons[i]?.url ?? '';
+    const debut = el?.selectionStart ?? url.length;
+    const fin = el?.selectionEnd ?? debut;
+    const jeton = `{${cle}}`;
+    setButtons(buttons.map((x, j) => (j === i ? { ...x, url: url.slice(0, debut) + jeton + url.slice(fin) } : x)));
+    setUrlPicker(null);
+    requestAnimationFrame(() => {
+      const champ = urlRefs.current[i];
+      if (!champ) return;
+      champ.focus();
+      champ.setSelectionRange(debut + jeton.length, debut + jeton.length);
+    });
+  }
+
+  /** Pourquoi les champs de cette adresse sont refusés, en clair, ou `null`. Les clés inconnues, le serveur les nomme. */
+  function refusChampsUrl(a: AnalyseChampsUrl, rang: number): string | null {
+    if (a.ok) return null;
+    switch (a.raison) {
+      case 'avant_le_chemin':
+        return t(`l’adresse du bouton ${rang} : un champ du contact ne peut se trouver qu’après le nom du site (après « / »)`, `the address of button ${rang}: a contact field can only come after the site name (after "/")`);
+      case 'accolade':
+        return t(`l’adresse du bouton ${rang} : une accolade n’a pas sa paire (un champ s’écrit {cle})`, `the address of button ${rang}: a brace has no match (a field is written {key})`);
+      case 'champ_vide':
+        return t(`l’adresse du bouton ${rang} : un champ vide {}`, `the address of button ${rang}: an empty field {}`);
+      case 'cle_mal_formee':
+        return t(`l’adresse du bouton ${rang} : ${a.jeton ?? ''} n’est pas un champ du contact`, `the address of button ${rang}: ${a.jeton ?? ''} is not a contact field`);
+      case 'variable_meta':
+        return t(`l’adresse du bouton ${rang} : un champ du contact ne peut pas accompagner une variable {{1}}`, `the address of button ${rang}: a contact field cannot sit next to a {{1}} variable`);
+    }
+  }
 
   useEffect(() => {
     listFlows(tenantId)
@@ -221,7 +273,8 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
     }
   }
 
-  const urlKo = (b: { type: string; url?: string }): boolean => b.type === 'URL' && (b.url ?? '').trim() !== '' && !isSendableButtonUrl(b.url ?? '');
+  const urlKo = (b: { type: string; url?: string }): boolean => b.type === 'URL' && (b.url ?? '').trim() !== ''
+    && (!isSendableButtonUrl(b.url ?? '') || !analyserChampsUrl(b.url ?? '').ok);
   const headerReady =
     headerType === 'none' ||
     (headerType === 'TEXT' && headerText.trim() !== '') ||
@@ -260,6 +313,10 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           `the address of button ${rang} (it must start with https://)`,
         ));
       }
+      // 🔴 Un champ dans le nom du site ferait de notre domaine un redirecteur ouvert : refusé avant l'envoi, et le
+      // serveur le refuse aussi (même règle, parité tenue par un test).
+      const refusChamps = b.type === 'URL' ? refusChampsUrl(analyserChampsUrl(b.url ?? ''), rang) : null;
+      if (refusChamps) fautes.push(refusChamps);
       if (b.type === 'FLOW' && (b.flowId ?? '') === '') fautes.push(t(`le formulaire du bouton ${rang}`, `the form of button ${rang}`));
       return fautes;
     }),
@@ -405,27 +462,49 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                     </select>
                   </div>
                 ) : (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <span className="w-16 shrink-0 text-xs text-ink-500">{b.type === 'URL' ? t('lien', 'link') : t('réponse', 'reply')}</span>
-                    <input
-                      value={b.text}
-                      onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
-                      maxLength={25}
-                      data-testid={`template-bouton-texte-${i}`}
-                      className={`${inputCls} flex-1`}
-                      placeholder={t('Texte du bouton (25 car. max)', 'Button text (25 char. max)')}
-                    />
-                    {b.type === 'URL' && (
+                  <div key={i}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-16 shrink-0 text-xs text-ink-500">{b.type === 'URL' ? t('lien', 'link') : t('réponse', 'reply')}</span>
                       <input
-                        value={b.url ?? ''}
-                        onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
-                        data-testid={`template-bouton-url-${i}`}
-                        className={`${inputCls} min-w-0 flex-[2] ${urlKo(b) ? 'border-danger-500 focus:border-danger-500 focus:ring-danger-100' : ''}`}
-                        title={urlKo(b) ? t('Adresse incomplète : elle doit commencer par https://', 'Incomplete address: it must start with https://') : undefined}
-                        placeholder={t('https://exemple.fr/page', 'https://example.com/page')}
+                        value={b.text}
+                        onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
+                        maxLength={25}
+                        data-testid={`template-bouton-texte-${i}`}
+                        className={`${inputCls} flex-1`}
+                        placeholder={t('Texte du bouton (25 car. max)', 'Button text (25 char. max)')}
                       />
+                      {b.type === 'URL' && (
+                        <div className="relative flex min-w-0 flex-[2] items-center gap-1">
+                          <input
+                            ref={(el) => { urlRefs.current[i] = el; }}
+                            value={b.url ?? ''}
+                            onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
+                            data-testid={`template-bouton-url-${i}`}
+                            className={`${inputCls} min-w-0 flex-1 ${urlKo(b) ? 'border-danger-500 focus:border-danger-500 focus:ring-danger-100' : ''}`}
+                            title={urlKo(b) ? t('Adresse incomplète ou champ mal placé : voir ce qui manque, sous le formulaire', 'Incomplete address or misplaced field: see what is missing, below the form') : undefined}
+                            placeholder={t('https://exemple.fr/page', 'https://example.com/page')}
+                          />
+                          {/* Le même sélecteur que le corps : il insère {cle} au curseur. Nommé pour son bouton, pour ne
+                              pas se confondre avec le « Variable » du corps. */}
+                          <button
+                            type="button"
+                            onClick={() => setUrlPicker((o) => (o === i ? null : i))}
+                            data-testid={`template-bouton-url-variable-${i}`}
+                            aria-label={t(`Insérer un champ du contact dans l’adresse du bouton ${i + 1}`, `Insert a contact field in the address of button ${i + 1}`)}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-controle border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
+                          >
+                            <Icone nom="ajouter" taille="petite" />Variable
+                          </button>
+                          {urlPicker === i && <FieldPicker options={urlFieldOptions} onPick={(o) => insererChampUrl(i, o)} onClose={() => setUrlPicker(null)} />}
+                        </div>
+                      )}
+                      <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
+                    </div>
+                    {b.type === 'URL' && exempleUrl(b.url ?? '') !== null && (
+                      <p className="mt-1 break-all pl-[4.375rem] text-xs text-ink-500" data-testid={`template-bouton-url-exemple-${i}`}>
+                        {t('exemple :', 'example:')} {exempleUrl(b.url ?? '')}
+                      </p>
                     )}
-                    <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
                   </div>
                 )
               ))}

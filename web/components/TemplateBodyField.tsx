@@ -57,11 +57,12 @@ export function labelForSource(source: ParamSource, fields: UserFieldDef[], t: (
 }
 
 /** Une option du sélecteur de variable : champ de BASE (group 'base') ou champ perso (group 'custom'). */
-interface FieldOption { source: ParamSource; label: string; fieldType?: string; group: 'base' | 'custom' }
+export interface FieldOption { source: ParamSource; label: string; fieldType?: string; group: 'base' | 'custom' }
 
 /** Sélecteur de champ : insère une variable rattachée au champ choisi. Deux groupes (Champs de base / Mes champs)
- *  pour rester COHÉRENT avec le sélecteur de la campagne (VarsEditor). */
-function FieldPicker({ options, onPick, onClose }: {
+ *  pour rester COHÉRENT avec le sélecteur de la campagne (VarsEditor). Le champ « Lien » d'un bouton s'en sert aussi
+ *  (`TemplateForm`). */
+export function FieldPicker({ options, onPick, onClose }: {
   options: FieldOption[];
   onPick: (o: FieldOption) => void;
   onClose: () => void;

@@ -1,7 +1,7 @@
 ---
 ecran: templates
 source_section: Templates WhatsApp (menu Contenu)
-source_empreinte: cbeff9
+source_empreinte: c7e348
 ---
 # Créer un modèle et le faire approuver
 
@@ -25,3 +25,8 @@ motif.
 lien normalement, et la console vous remontre toujours le vôtre. Les compteurs se lisent dans Analytics.
 Deux limites, dites franchement : seuls les **boutons** sont suivis, pas un lien écrit dans le corps du
 message ; et un modèle déjà approuvé garde l'adresse figée chez WhatsApp, ses clics restent donc anonymes.
+
+**Un lien propre à chaque contact** : dans l'adresse d'un bouton de lien, le bouton « Variable » insère un champ
+de la fiche, par exemple un numéro de commande. Chaque contact arrive sur sa page : le champ est rempli au
+moment du clic, et simplement retiré s'il est vide. Un exemple, sous l'adresse, montre ce que le contact
+recevra. Le champ se place après le nom du site, jamais dedans, et pas dans les liens des cartes d'un carousel.

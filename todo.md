@@ -1,5 +1,33 @@
 # todo.md : backlog
 
+## 🟡 RC7, un champ du contact dans le lien d'un bouton : ce qui reste (2026-10-07)
+
+- **À faire par Julien, une fois RC7 en ligne : rééditer le modèle `lancement_napo_date_finale`** (espace de démo) dans
+  la console, sans rien changer. L'ancienne modification a remplacé chez Meta notre lien tracé par l'adresse brute
+  (`momrestaurant.fr/reservation/`) alors que `tracked_links` le dit toujours tracé à jeton : campagnes et scénarios
+  l'envoient avec un composant de bouton en trop, et l'Inbox, qui marchait par hasard faute de composant, fera de même.
+  La nouvelle modification le retrace (même code, clics gardés). Mesuré le 2026-10-07 par le vrai code : le seul écart
+  sur les 18 liens confirmés. Le déconfirmer en base réglerait l'envoi mais cacherait ses clics passés des mesures.
+- **Vie privée** : avec `{telephone}` ou `{nom}`, un message transféré mène un tiers vers une adresse remplie avec les
+  données du contact d'origine. Une phrase dans la fiche d'aide des modèles, et dans le commentaire de
+  `src/links/jeton-contact.ts` (« ne doit jamais servir d'authentification »).
+- **`codeDuLienTrace` accepte n'importe quel hôte** : une destination client de la forme `https://go.client.fr/r/<12
+  caractères>` n'est plus tracée (partie brute, sans mesure). À restreindre à nos hôtes (actuels et anciens).
+- **Langue ignorée à l'envoi** : `suffixesPourUnEnvoi` (et `worker.ts`, la campagne) lit les liens par nom seul, quand
+  `soumettreAvecLiens` raisonne par nom ET langue. Deux langues d'un même nom aux boutons différents recevraient un
+  composant en trop ou en moins. L'Inbox a la langue sous la main.
+- **Fenêtre pendant une modification** : `allocate` déconfirme avant l'appel à Meta, `confirm` ne passe qu'après ; un
+  envoi de ce modèle pendant l'appel part sans composant. Et `tracked_links` décrit la nouvelle version dès la
+  soumission, ce qui suppose que Meta bloque les envois pendant la revue d'une modification : à constater à l'essai réel
+  (modifier un modèle approuvé à lien, puis envoyer pendant le PENDING).
+- **Accolades d'avant** : un modèle dont l'URL porte des accolades que la règle refuse (`{a-b}`, orpheline) ne se
+  modifie plus sans réécrire l'URL. Aucun en base (0 destination à accolade sur 22, mesuré le 2026-10-07).
+- **`refusDesChamps`** lit les champs déclarés dès qu'une accolade apparaît, `{{1}}` seul compris : une panne de cette
+  lecture rend alors 422 sans raison pour ce cas.
+- **La console ne propose pas tous les champs que le serveur accepte** (un champ déclaré hors « Mes champs », comme
+  `email`), et une clé inconnue tapée à la main n'est refusée qu'au serveur.
+
+
 ## 🟡 Lot 6 : ce que la livraison A laisse pour plus tard (2026-10-07)
 
 - **En Base, trois écrans ouverts lisent encore une fonction fermée, en silence** (inventaire du 2026-10-07) : la

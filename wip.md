@@ -29,7 +29,7 @@ l'Inbox grisée, l'automation au-delà de la limite refusée.
 Ensuite B (le Pro chez Stripe, le numéro inclus, le gel) et C (les coûts selon l'offre). ⚠️ Un espace créé entre A
 et B est en Base sans moyen de payer : B suit A de près.
 
-## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : RC1 À RC6 EN PRODUCTION (ESSAIS RÉELS DUS), RC7 ENSUITE
+## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : RC1 À RC7 EN PRODUCTION (ESSAIS RÉELS DUS), RC8 ENSUITE
 
 ⏳ **Essai réel de RC1, par Julien** : ouvrir un scénario, vérifier que les textes listés ont disparu des cinq blocs,
 taper une réponse rapide et voir `0/20` se remplir, trouver « Widget WhatsApp » sous Tools.
@@ -65,6 +65,11 @@ lance le scénario, un second dans le délai arrive à l'équipe, et l'agent de 
 `todo.md`, la course de l'accusé) ; (3) « Agent IA » : l'agent répond, l'agent de Meta reste muet ; (4) « Équipe » : le
 message arrive dans « À traiter » ; (5) « MBA » : comportement d'avant. ⚠️ À relire aussi : allumer l'agent de Meta
 en mode « Équipe » fait passer en mode « MBA » (`todo.md`).
+
+⏳ **Essai réel de RC7, par Julien** : un modèle à bouton « Suivre ma commande » vers `https://…/{numero_commande}`,
+approuvé par Meta, envoyé par une campagne à deux vrais numéros dont les fiches portent deux numéros de commande
+différents, et depuis l'Inbox à l'un d'eux ; un clic sur chaque téléphone arrive sur SA page, et les clics sont comptés
+dans les mesures de la campagne. À faire aussi : rééditer `lancement_napo_date_finale` (`todo.md`).
 
 Douze demandes de Julien regroupées en huit lots, cadrées le 2026-10-06 par une série de questions ; les décisions sont
 écrites dans chaque plan (`docs/superpowers/plans/2026-10-06-rc*.md`). Ordre retenu : du plus petit au plus structurel.

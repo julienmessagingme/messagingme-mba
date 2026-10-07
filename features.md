@@ -444,6 +444,16 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   s'affichait comme n'ayant pas réagi.
   ⚠️ L'identifiant ne porte ni nom ni numéro, il ne dit rien à qui le lit. Et un message **transféré** attribue
   le clic au destinataire d'origine : c'est la limite de tout suivi de lien, elle n'a pas de solution.
+- ✅ **Un lien propre à chaque contact** (2026-10-07) : l'adresse d'un bouton « Lien » peut contenir un **champ du
+  contact**, inséré avec le bouton **« Variable »** placé à côté de l'adresse, par exemple
+  `https://monsite.fr/commande/{numero_commande}`. Chaque destinataire arrive sur SA page : le champ est rempli au
+  moment du clic, avec la valeur de sa fiche à cet instant, et le clic reste compté. Sous l'adresse, un exemple
+  montre ce que recevra un contact. Champs proposés : Prénom, Nom, Téléphone et tes champs perso. Vaut pour les
+  envois de campagne, de scénario et depuis l'Inbox.
+  ⚠️ Si la fiche n'a pas de valeur, ou si le message est parti sans contact connu, le champ est simplement retiré
+  de l'adresse. Le champ se place **après le nom du site** (dans le chemin, après « / », ou dans les paramètres) :
+  dans le nom du site lui-même, il est refusé, sans quoi un contact pourrait faire pointer le lien ailleurs. Pas
+  de champ dans les liens des cartes d'un carousel.
 - ✅ **Les liens des messages RCS sont comptés et attribués eux aussi** (2026-09-02), sur les quatre chemins
   d'envoi : campagne, bloc de scénario, réponse rapide et envoi manuel depuis l'inbox. Rien à faire pour toi,
   et **aucune des limites du WhatsApp ne s'applique** : un message RCS est composé au moment de l'envoi, donc
@@ -504,6 +514,8 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   **Bloquée** si le template a un **en-tête média** (image ou vidéo : Meta le supprimerait) ou s'il s'agit d'un
   **carousel**, ou s'il est utilisé par une **campagne active** (garde-fou anti envoi cassé). Un **pied de
   page** ou un **en-tête texte** n'empêchent pas l'édition. Nom et langue non modifiables (immuables chez Meta).
+  Les boutons « Lien » restent suivis après une édition, et un lien déjà envoyé continue de fonctionner, vers
+  l'adresse à jour. Si WhatsApp refuse l'édition, le template en service reste tel qu'il était.
 - ✅ **Pas d'édition tant que Meta n'a pas tranché** : un template encore en attente de validation n'est pas
   éditable (seuls approuvé, refusé et suspendu le sont). Le message le dit explicitement.
 - ✅ **Suppression** : par nom (toutes langues) ; bloquée si une campagne active l'utilise.
