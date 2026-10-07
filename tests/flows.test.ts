@@ -139,6 +139,7 @@ function app(
     ensureOptinField: async () => { cap.ensuredOptin += 1; },
     updateFlowRow: async (_t, id, name, _elements, ref) => { cap.updated.push({ id, name, ref }); return true; },
     insertExternalFlow: async (_t, f) => { cap.externals.push(f); return true; },
+    messagesInteractifsDuFormulaire: async () => [],
     ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, flows: deps }), cap };
@@ -473,6 +474,35 @@ describe('routes flows — suppression', () => {
     const { server } = app({}, { flow: draftFlow() });
     const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/flows/fdraft', ...h(agentTok) });
     expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it('🔴 DELETE d’un formulaire ouvert par un message interactif de l’agent de Meta -> 409 qui le nomme, rien supprimé', async () => {
+    const demandes: Array<[string, string]> = [];
+    const { server, cap } = app(
+      { messagesInteractifsDuFormulaire: async (t, f) => { demandes.push([t, f]); return ['formulaire-rdv']; } },
+      { flow: draftFlow({ id: 'fpub', status: 'PUBLISHED' }) },
+    );
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/flows/fpub', ...h(adminTok) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string; messages: string[] }>()).toMatchObject({ messages: ['formulaire-rdv'] });
+    expect(res.json<{ error: string }>().error).toContain('formulaire-rdv');
+    expect(demandes).toEqual([['t1', 'fpub']]);
+    expect(cap.metaCalls).toHaveLength(0); // ni deprecate ni delete chez Meta
+    expect(cap.removed).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 DELETE quand la vérification chez Meta échoue -> 422 lisible, rien supprimé', async () => {
+    const { server, cap } = app(
+      { messagesInteractifsDuFormulaire: async () => { throw new Error('Meta en panne'); } },
+      { flow: draftFlow({ id: 'fpub', status: 'PUBLISHED' }) },
+    );
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/flows/fpub', ...h(adminTok) });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toMatch(/Réessayez/);
+    expect(cap.metaCalls).toHaveLength(0);
+    expect(cap.removed).toHaveLength(0);
     await server.close();
   });
 });

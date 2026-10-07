@@ -13,7 +13,7 @@
  */
 export const ELEMENTS = [
   'business_info', 'faq', 'competence', 'site', 'fichier', 'outil', 'activation',
-  'fiche_agent', 'connaissance', 'repondeur',
+  'fiche_agent', 'connaissance', 'repondeur', 'message_interactif',
 ] as const;
 export type Element = (typeof ELEMENTS)[number];
 

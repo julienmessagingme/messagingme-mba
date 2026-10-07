@@ -459,7 +459,7 @@ depuis un vrai téléphone, lus dans `webhook_events`, puis supprimés.
 
 | Point | Mesure |
 | --- | --- |
-| `title` | 64 au plus (`title must not exceed 64 characters`) |
+| `title` | 64 au plus, **en octets** (40 « é » refusés comme « 71 »), et **un slug** : minuscules, chiffres et tirets, sans tiret au début ni à la fin, comme le titre d'une consigne (mesuré le soir du 2026-10-07 ; nos titres d'essai étaient déjà en slug, d'où l'oubli du matin) |
 | `instruction` | 20 000 au plus, **comptés en octets UTF-8** : 20 000 caractères dont 10 accentués sont refusés comme « 20010 » |
 | Formulaire en brouillon créé `enabled` | 400 : « A flow must be published before an enabled flow UI component can be created for it » ; créé `disabled`, il passe |
 | `flow` sans `flow_id` / `flow_id` sur un autre type | 400 : « A flow_id is required when component_type is flow » / « A flow_id is only supported when component_type is flow » |

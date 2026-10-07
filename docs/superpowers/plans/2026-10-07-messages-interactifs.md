@@ -69,7 +69,7 @@ range ses données de test en modules, comme `tests/webhook-fixtures.ts`),
 - [x] Ajouter à la veille (`ops/mba-docs-watch.mjs`) les pages de l'index de Meta qu'elle ne connaît pas.
 
 **Sortie, mesurée** (détail : `docs/MBA-API-REFERENCE.md`, relevé du 2026-10-07) : `TITRE_MAX` = 64 et `CONSIGNE_MAX` =
-20 000, **en octets UTF-8** ; un `PUT` qui change le type rend 200 et l'ignore ; la pagination suit `cursors.after`,
+20 000, **en octets UTF-8**, et le titre est un SLUG (mesuré le soir, après la relecture de la livraison A) ; un `PUT` qui change le type rend 200 et l'ignore ; la pagination suit `cursors.after`,
 jamais de `next` ; `flow_id` accepté en chaîne ; `agent_test` ne montre que la phrase d'accompagnement ; image et
 carrousels refusés avec de petits logos PNG, envoyés avec des JPEG d'environ 100 Ko ; les échos et les clics de
 chaque type dans `tests/echos-mba-fixtures.ts` ; l'Inbox n'enregistre aujourd'hui que la phrase d'accompagnement.
@@ -111,9 +111,9 @@ la dépendance neuve dans `src/index.ts` (annonce et plomberie), `tests/http-mba
   `GET {base}/messages-interactifs` rend `{ messages: MessageInteractif[] }` ; `POST` (corps `{ titre, type, consigne,
   formulaireId? }`) rend 201 et le message ; `PUT {base}/messages-interactifs/:id` (corps `{ titre?, consigne?,
   actif? }`) ; `DELETE {base}/messages-interactifs/:id` rend 204.
-- Chaque écriture écrit sa ligne d'historique (élément `message_interactif`, opération ajout, modification ou
-  suppression, contenu supprimé conservé). Le libellé d'historique « Compétence » de la route `/skills` devient
-  « Consigne ».
+- La suppression écrit sa ligne d'historique (élément `message_interactif`, contenu supprimé conservé), comme pour
+  les consignes : depuis l'onglet, seule la suppression se journalise (règle du câblage). Le libellé d'historique
+  « Compétence » de la route `/skills` devient « Consigne », et sa relecture cherche `title`, plus `name`.
 
 **Tests attendus :** écriture refusée sans le rôle admin ; ligne d'historique pour chacune des trois écritures, avec
 le contenu supprimé ; `formulaireId` d'un formulaire d'un autre espace refusé (400, Meta jamais appelé) ; formulaire en
@@ -130,7 +130,8 @@ plomberie), `tests/http-flows-suppression.test.ts`.
   des messages interactifs du numéro de l'espace qui portent ce `flow_id` ; `[]` sans agent de Meta (aucun appel) ;
   lève si Meta ne répond pas.
 - `DELETE /tenants/:tenantId/flows/:flowId` l'appelle AVANT toute dépréciation chez Meta : liste non vide, 409
-  `{ error, messages: string[] }` ; levée, 503 « impossible de vérifier les messages interactifs, réessayez ».
+  `{ error, messages: string[] }` ; levée, 422 « impossible de vérifier, réessayez » (pas 503 : Cloudflare masque
+  le corps d'un 5xx). Seuls 400, 403 et 404 valent « pas d'agent », sur les réglages comme sur la liste.
 
 **Tests attendus :** 409 qui nomme le message, et ni `deprecate` ni `delete` ni `remove` appelés ; 503 si la lecture
 lève, rien supprimé ; espace sans agent, aucun appel et suppression comme aujourd'hui ; formulaire non utilisé,
@@ -178,8 +179,9 @@ libellé égale le mot-clé d'une automation active ne démarre ni automation ni
 - L'application refuse un `formulaire` absent des formulaires publiés de l'espace, avec le message de T2 ;
   `elementDe` range les trois opérations sous `message_interactif` ; `libelleDe` les nomme, et dit
   « Consigne : … » au lieu de « Compétence : … » pour les trois opérations `competence.*`.
-- 🔴 Le paramètre `operations` de l'outil `proposer` est dérivé de l'union des opérations par `z.toJSONSchema`, pour
-  les onze opérations existantes comme pour les trois neuves.
+- 🔴 Le paramètre de l'outil `proposer` est `SCHEMA_PROPOSITION_MBA`, écrit à la main (une opération à plat, sans
+  `anyOf`, comme l'autre assistant), pour les onze opérations existantes comme pour les trois neuves, et tenu à la
+  parité avec Zod par `tests/mba-assistant-bornes.test.ts`.
 
 **Tests attendus :** les trois opérations acceptées et refusées sur leurs bornes ; le `refine` dans les deux sens ;
 formulaire d'un autre espace ou en brouillon refusé à l'application, Meta jamais appelé ; parité : chaque borne de Zod
@@ -218,7 +220,7 @@ ouvre la grille des neuf cartes (icône et nom sur une ligne, une phrase d'aide 
 lien vers `/flows` sans formulaire publié, « Lecture impossible : réessayer » si la lecture rate) ; la fiche ouverte
 après le choix (« Quand l'envoyer » d'abord, puis le contenu pré-rempli du canevas, le titre, le sélecteur des
 formulaires publiés ; type en lecture seule à la modification, avec la phrase « Pour changer de type ou de formulaire,
-supprimez ce message et recréez-le ») ; l'état d'attente identique à « Consignes » tant que l'agent n'existe pas ; sur « Tester », la phrase « Les
+supprimez ce message et recréez-le » ; le titre ramené en slug à la frappe, comme l'onglet Consignes) ; l'état d'attente identique à « Consignes » tant que l'agent n'existe pas ; sur « Tester », la phrase « Les
 messages interactifs ne s'affichent pas ici : essayez-les sur WhatsApp avec un numéro de la liste » (ajustée à la
 mesure de T0) ; le diff de l'assistant montre type, formulaire et consigne en entier. Renommage : chaque libellé
 « Compétence(s) » / « Skill(s) » des fichiers ci-dessus.

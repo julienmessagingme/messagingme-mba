@@ -158,6 +158,18 @@ export class PgFlowStore {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Les formulaires PUBLIÉS de l'espace, réduits à ce qu'un message interactif désigne (l'assistant de l'agent de Meta
+   * les lit à chaque tour) : `list` ramènerait le contenu entier, images base64 comprises.
+   */
+  async listPublies(tenantId: string): Promise<Array<{ id: string; nom: string }>> {
+    const res = await this.pool.query<{ id: string; name: string }>(
+      `select id, name from flows where tenant_id = $1 and status = 'PUBLISHED' order by created_at desc`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({ id: r.id, nom: r.name }));
+  }
+
   /** Le flow est-il publié pour cet espace ? (vérification préalable de la route des templates) */
   async isPublished(flowId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(`select 1 from flows where id = $1 and tenant_id = $2 and status = 'PUBLISHED'`, [flowId, tenantId]);

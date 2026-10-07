@@ -2,6 +2,10 @@ import { estSuppression, type Operation } from './proposition';
 import type { LigneHistorique } from '../../reglages/historique';
 import { messageDe, texteDe } from '../../lib/erreur';
 import { ecrireRollout } from '../client';
+import {
+  ID_MESSAGE_RE, validerCreation, validerModification,
+  type CreationMessageInteractif, type MessageInteractif, type ModificationMessageInteractif,
+} from '../messages-interactifs';
 
 /**
  * Appliquer un diff chez Meta, opération par opération, en s'arrêtant à la première erreur avec l'état exact :
@@ -27,6 +31,12 @@ export interface ApplicationDeps {
   drapeau: { setMbaEnabled(tenantId: string, enabled: boolean): Promise<void> };
   /** Attendre avant la seconde relecture de l'audience à l'allumage (`ecrireRollout`). Injectée : les tests ne dorment pas. */
   attendre(ms: number): Promise<void>;
+  /**
+   * 🔴 Ce formulaire est-il un formulaire PUBLIÉ de CET espace (`PgFlowStore.isPublished`) ? Le modèle choisit un
+   * identifiant dans la liste qu'on lui montre, mais rien ne l'empêche d'en écrire un autre : sans ce contrôle, un
+   * espace ferait ouvrir par son agent le formulaire d'un autre espace.
+   */
+  formulaires: { estPublie(tenantId: string, flowId: string): Promise<boolean> };
 }
 
 /** Ce que l'application attend du client Meta, sous-ensemble strict de `MbaClient`. */
@@ -52,6 +62,21 @@ export interface ClientMbaEcriture {
   putBusinessInfo(p: string, info: unknown): Promise<unknown>;
   getSettings(p: string): Promise<unknown>;
   putSettings(p: string, s: unknown, agentId?: string): Promise<unknown>;
+  listMessagesInteractifs(p: string): Promise<MessageInteractif[]>;
+  creerMessageInteractif(p: string, c: CreationMessageInteractif): Promise<unknown>;
+  modifierMessageInteractif(p: string, id: string, v: ModificationMessageInteractif): Promise<unknown>;
+  supprimerMessageInteractif(p: string, id: string): Promise<void>;
+}
+
+/**
+ * Un refus que NOUS opposons avant d'appeler Meta (une borne en octets, un formulaire qui n'est pas publié dans
+ * l'espace) : son message est déjà en français et destiné au client, `raisonLisible` le rend tel quel.
+ */
+export class RefusAvantMeta extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RefusAvantMeta';
+  }
 }
 
 export interface EchecOperation {
@@ -73,9 +98,12 @@ export function libelleDe(o: Operation): string {
     case 'faq.ajouter': return `FAQ : ${o.question}`;
     case 'faq.modifier': return `FAQ : ${o.question}`;
     case 'faq.supprimer': return `FAQ : ${o.libelle}`;
-    case 'competence.ajouter': return `Compétence : ${o.nom}`;
-    case 'competence.modifier': return `Compétence : ${o.nom}`;
-    case 'competence.supprimer': return `Compétence : ${o.libelle}`;
+    case 'competence.ajouter': return `Consigne : ${o.nom}`;
+    case 'competence.modifier': return `Consigne : ${o.nom}`;
+    case 'competence.supprimer': return `Consigne : ${o.libelle}`;
+    case 'message_interactif.ajouter': return `Message interactif : ${o.titre}`;
+    case 'message_interactif.modifier': return `Message interactif : ${o.titre}`;
+    case 'message_interactif.supprimer': return `Message interactif : ${o.libelle}`;
     case 'site.ajouter': return `Site : ${o.url}`;
     case 'site.supprimer': return `Site : ${o.libelle}`;
     case 'fichier.supprimer': return `Document : ${o.libelle}`;
@@ -90,7 +118,7 @@ export function elementDe(o: Operation): LigneHistorique['element'] {
   const famille = o.type.split('.')[0];
   return ({
     faq: 'faq', competence: 'competence', site: 'site', fichier: 'fichier',
-    business: 'business_info', activation: 'activation',
+    business: 'business_info', activation: 'activation', message_interactif: 'message_interactif',
   } as const)[famille as 'faq'] ?? 'faq';
 }
 
@@ -105,6 +133,7 @@ export function operationDe(o: Operation): LigneHistorique['operation'] {
  * dans les journaux serveur.
  */
 export function raisonLisible(err: unknown): string {
+  if (err instanceof RefusAvantMeta) return err.message;
   const brut = texteDe(err);
   if (/blocked/i.test(brut)) return 'Meta a refusé ce contenu. Reformulez-le, puis réessayez.';
   if (/rate|429|limit/i.test(brut)) return 'Meta nous a demandé de ralentir. Réessayez dans un instant.';
@@ -192,6 +221,7 @@ async function etatAvant(
   if (o.type === 'competence.supprimer') return (await client.listSkills(numero, agentId)).find((s) => s.id === cible) ?? { id: cible };
   if (o.type === 'site.supprimer') return (await client.listWebsites(numero)).find((w) => w.id === cible) ?? { id: cible };
   if (o.type === 'fichier.supprimer') return (await client.listFiles(numero)).find((f) => f.id === cible) ?? { id: cible };
+  if (o.type === 'message_interactif.supprimer') return (await client.listMessagesInteractifs(numero)).find((m) => m.id === cible) ?? { id: cible };
   return { id: cible };
 }
 
@@ -215,6 +245,27 @@ async function executer(
     case 'site.ajouter': await client.createWebsite(numero, o.url); return;
     case 'site.supprimer': await client.deleteWebsite(numero, o.cible); return;
     case 'fichier.supprimer': await client.deleteFile(numero, o.cible); return;
+    case 'message_interactif.ajouter': {
+      // La même validation que l'onglet (`src/http/mba.ts`), dont les bornes en OCTETS : Zod a borné en caractères.
+      const v = validerCreation({ titre: o.titre, type: o.composant, consigne: o.consigne, formulaireId: o.formulaire ?? null });
+      if (!v.ok) throw new RefusAvantMeta(v.erreur);
+      if (v.valeur.formulaireId !== null && !(await deps.formulaires.estPublie(tenantId, v.valeur.formulaireId))) {
+        throw new RefusAvantMeta('Ce formulaire n’est pas un formulaire publié de cet espace.');
+      }
+      await client.creerMessageInteractif(numero, v.valeur);
+      return;
+    }
+    case 'message_interactif.modifier': {
+      if (!ID_MESSAGE_RE.test(o.cible)) throw new RefusAvantMeta('Identifiant de message interactif invalide.');
+      const v = validerModification({ titre: o.titre, consigne: o.consigne });
+      if (!v.ok) throw new RefusAvantMeta(v.erreur);
+      await client.modifierMessageInteractif(numero, o.cible, v.valeur);
+      return;
+    }
+    case 'message_interactif.supprimer':
+      if (!ID_MESSAGE_RE.test(o.cible)) throw new RefusAvantMeta('Identifiant de message interactif invalide.');
+      await client.supprimerMessageInteractif(numero, o.cible);
+      return;
     case 'business.modifier': {
       // Lecture puis fusion : `putBusinessInfo` remplace, et envoyer le seul champ modifié effacerait les autres
       // (la description de l'activité). Même règle que `fusionnerBusinessInfo` (`src/mba/client.ts`).

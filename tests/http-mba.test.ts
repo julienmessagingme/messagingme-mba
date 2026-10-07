@@ -50,6 +50,10 @@ function fauxClient(over: Record<string, Methode> = {}) {
     uploadFile: (_pn: unknown, nom: unknown) => ({ id: 'file1', file_name: nom }),
     deleteFile: () => undefined,
     test: () => ({ agent_response: 'Bonjour', conversation_id: 'c1' }),
+    listMessagesInteractifs: () => [],
+    creerMessageInteractif: (_pn: unknown, c: unknown) => ({ id: 'm-neuf', actif: true, ...(c as object) }),
+    modifierMessageInteractif: (_pn: unknown, id: unknown, v: unknown) => ({ id, ...(v as object) }),
+    supprimerMessageInteractif: () => undefined,
   };
   const table = { ...defauts, ...over };
   const client: Record<string, Methode> = {};
@@ -645,16 +649,18 @@ describe('GET /tenants/:tenantId/mba-insights', () => {
 });
 
 /**
- * Les QUATRE suppressions (FAQ, compétence, site, fichier) lisent le contenu AVANT de supprimer et le
+ * Les CINQ suppressions (FAQ, consigne, site, fichier, message interactif) lisent le contenu AVANT de supprimer et le
  * journalisent APRÈS (`supprimerAvecTrace`, audit ponytail du 2026-09-25). Chez Meta une suppression est
  * définitive : la ligne d'historique est le seul exemplaire de ce qui a été effacé.
  */
 describe('routes MBA : une suppression laisse sa trace', () => {
   const cas = [
     { chemin: '/faq/f1', liste: 'listFaqs', supprime: 'deleteFaq', element: 'faq', cible: 'f1', objet: { id: 'f1', question: 'Horaires ?', answer: '9h' }, libelle: 'FAQ : Horaires ?' },
-    { chemin: '/skills/s1', liste: 'listSkills', supprime: 'deleteSkill', element: 'competence', cible: 's1', objet: { id: 's1', name: 'Réserver' }, libelle: 'Compétence : Réserver' },
+    // 🔴 Une consigne porte un `title` : jusqu'au 2026-10-07 la route cherchait `name`, et ce cas l'affirmait.
+    { chemin: '/skills/s1', liste: 'listSkills', supprime: 'deleteSkill', element: 'competence', cible: 's1', objet: { id: 's1', title: 'reserver' }, libelle: 'Consigne : reserver' },
     { chemin: '/websites/w1', liste: 'listWebsites', supprime: 'deleteWebsite', element: 'site', cible: 'w1', objet: { id: 'w1', url: 'https://bus.fr' }, libelle: 'Site : https://bus.fr' },
     { chemin: '/files/d1', liste: 'listFiles', supprime: 'deleteFile', element: 'fichier', cible: 'd1', objet: { id: 'd1', name: 'tarifs.pdf' }, libelle: 'Document : tarifs.pdf' },
+    { chemin: '/messages-interactifs/m1', liste: 'listMessagesInteractifs', supprime: 'supprimerMessageInteractif', element: 'message_interactif', cible: 'm1', objet: { id: 'm1', titre: 'boutons-rdv' }, libelle: 'Message interactif : boutons-rdv' },
   ] as const;
 
   for (const c of cas) {
@@ -700,4 +706,83 @@ describe('routes MBA : une suppression laisse sa trace', () => {
       await server.close();
     });
   }
+});
+
+/**
+ * Les messages interactifs (agent-ui-skills, spec `docs/superpowers/specs/2026-10-07-messages-interactifs-design.md`) :
+ * la validation passe AVANT Meta, et un formulaire doit être un formulaire publié DE CET espace.
+ */
+describe('routes MBA : messages interactifs', () => {
+  const corps = { titre: 'boutons-rdv', type: 'interactive_reply_buttons', consigne: 'Quand : le client veut un rendez-vous' };
+  const B = url('/messages-interactifs');
+
+  it('🔴 réservé aux administrateurs, et au numéro de SON espace', async () => {
+    const { server, appels } = app();
+    expect((await server.inject({ method: 'GET', url: B, ...h(agentTok) })).statusCode).toBe(403);
+    expect((await server.inject({ method: 'POST', url: B, payload: corps, ...h(agentTok) })).statusCode).toBe(403);
+    const autreNumero = `/tenants/t1/mba/999/messages-interactifs`;
+    expect((await server.inject({ method: 'GET', url: autreNumero, ...h(adminTok) })).statusCode).toBe(404);
+    expect(appels.map((a) => a.m)).not.toContain('listMessagesInteractifs');
+    await server.close();
+  });
+
+  it('liste les messages du numéro', async () => {
+    const { server, appels } = app({ listMessagesInteractifs: () => [{ id: 'm1', titre: 't', type: 'cta_url', actif: true }] });
+    const res = await server.inject({ method: 'GET', url: B, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ messages: [{ id: 'm1', titre: 't', type: 'cta_url', actif: true }] });
+    expect(appels.find((a) => a.m === 'listMessagesInteractifs')?.args).toEqual([PN]);
+    await server.close();
+  });
+
+  it('crée avec la valeur validée', async () => {
+    const { server, appels } = app();
+    const res = await server.inject({ method: 'POST', url: B, payload: corps, ...h(adminTok) });
+    expect(res.statusCode).toBe(201);
+    expect(appels.find((a) => a.m === 'creerMessageInteractif')?.args).toEqual([PN, { ...corps, formulaireId: null }]);
+    await server.close();
+  });
+
+  it('refuse un type inconnu ou une consigne trop longue en octets, sans appeler Meta', async () => {
+    const { server, appels } = app();
+    expect((await server.inject({ method: 'POST', url: B, payload: { ...corps, type: 'button' }, ...h(adminTok) })).statusCode).toBe(400);
+    const longue = 'é' + 'a'.repeat(19_999);
+    expect((await server.inject({ method: 'POST', url: B, payload: { ...corps, consigne: longue }, ...h(adminTok) })).statusCode).toBe(400);
+    expect(appels.map((a) => a.m)).not.toContain('creerMessageInteractif');
+    await server.close();
+  });
+
+  it('🔴 un formulaire doit être un formulaire PUBLIÉ de CET espace : la question est posée avec l’espace de la session', async () => {
+    const questions: Array<[string, string]> = [];
+    const { server, appels } = app({}, {
+      formulaires: { estPublie: async (tenant, flowId) => { questions.push([tenant, flowId]); return flowId === '111'; } },
+    });
+    const refuse = await server.inject({ method: 'POST', url: B, payload: { ...corps, type: 'flow', formulaireId: '222' }, ...h(adminTok) });
+    expect(refuse.statusCode).toBe(400);
+    expect(refuse.json().error).toMatch(/publié de cet espace/);
+    expect(appels.map((a) => a.m)).not.toContain('creerMessageInteractif');
+    const accepte = await server.inject({ method: 'POST', url: B, payload: { ...corps, type: 'flow', formulaireId: '111' }, ...h(adminTok) });
+    expect(accepte.statusCode).toBe(201);
+    expect(questions).toEqual([['t1', '222'], ['t1', '111']]);
+    await server.close();
+  });
+
+  it('refuse un identifiant de message qui pourrait sortir de son chemin, sans appeler Meta', async () => {
+    const { server, appels } = app();
+    expect((await server.inject({ method: 'PUT', url: `${B}/a..b%2F..`, payload: { actif: false }, ...h(adminTok) })).statusCode).toBe(400);
+    expect((await server.inject({ method: 'DELETE', url: `${B}/a%3Fb`, ...h(adminTok) })).statusCode).toBe(400);
+    expect(appels.map((a) => a.m)).not.toContain('modifierMessageInteractif');
+    expect(appels.map((a) => a.m)).not.toContain('supprimerMessageInteractif');
+    await server.close();
+  });
+
+  it('🔴 refuse de changer le type ou le formulaire (Meta l’ignorerait en silence), accepte l’état', async () => {
+    const { server, appels } = app();
+    expect((await server.inject({ method: 'PUT', url: `${B}/m1`, payload: { type: 'image' }, ...h(adminTok) })).statusCode).toBe(400);
+    expect(appels.map((a) => a.m)).not.toContain('modifierMessageInteractif');
+    const res = await server.inject({ method: 'PUT', url: `${B}/m1`, payload: { actif: false }, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(appels.find((a) => a.m === 'modifierMessageInteractif')?.args).toEqual([PN, 'm1', { actif: false }]);
+    await server.close();
+  });
 });

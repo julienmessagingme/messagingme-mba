@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { journaliser } from '../lib/journal';
 import type { FastifyInstance } from 'fastify';
 import { deriveScreens, fieldsOfScreens, isFlowFieldType, isChoiceFieldType, flowFieldToUserFieldType, DuplicateFieldKeyError, VisibleIfError, MAX_SCREENS } from '../meta/flow-json';
 import type { FlowElementInput, FlowScreenInput, FlowScreenDef, FlowFieldElInput, VisibleIfInput } from '../meta/flow-json';
@@ -43,6 +44,11 @@ export interface FlowRouteDeps {
   updateFlowRow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<boolean>;
   /** Réconciliation : enregistre un flow vu chez Meta et absent en local (structure inconnue). true si créé. */
   insertExternalFlow(tenantId: string, flow: { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean>;
+  /**
+   * Les titres des messages interactifs de l'agent de Meta qui ouvrent ce formulaire (`messagesInteractifsDuFormulaire`,
+   * `src/mba/messages-interactifs.ts`) : `[]` pour un espace sans agent, lève si Meta est en panne.
+   */
+  messagesInteractifsDuFormulaire(tenantId: string, flowId: string): Promise<string[]>;
 }
 
 const IMG_MAX = 400 * 1024; // base64 borné (~300 Ko binaire) : l'image Flow s'embarque dans le flow_json
@@ -351,6 +357,22 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     const { flowId } = req.params as { flowId: string };
     const flow = await deps.flows.getById(flowId, tenant);
     if (!flow) return reply.code(404).send({ error: 'flow inconnu' });
+    // 🔴 Un message interactif de l'agent de Meta qui ouvre ce formulaire l'enverrait encore après sa suppression : on
+    // refuse en le nommant. Une panne de Meta refuse aussi, en 422 et pas en 503 : Cloudflare remplace le corps d'un 5xx
+    // par sa propre page, et le message qui dit de réessayer serait perdu.
+    let utilisateurs: string[];
+    try {
+      utilisateurs = await deps.messagesInteractifsDuFormulaire(tenant, flowId);
+    } catch (err) {
+      journaliser('warn', 'formulaire_suppression_verification_impossible', { tenantId: tenant, flowId, err });
+      return reply.code(422).send({ error: 'Impossible de vérifier si l’agent de Meta utilise ce formulaire. Réessayez dans un instant.' });
+    }
+    if (utilisateurs.length > 0) {
+      return reply.code(409).send({
+        error: `Ce formulaire est utilisé par ${utilisateurs.length === 1 ? 'un message interactif' : `${utilisateurs.length} messages interactifs`} de l’agent de Meta (${utilisateurs.join(', ')}). Supprimez-les d’abord.`,
+        messages: utilisateurs,
+      });
+    }
     if (flow.status === 'PUBLISHED') await (await deps.meta.flowClientForTenant(tenant)).deprecate(flowId);
     else await (await deps.meta.flowClientForTenant(tenant)).delete(flowId);
     await deps.flows.remove(flowId, tenant);

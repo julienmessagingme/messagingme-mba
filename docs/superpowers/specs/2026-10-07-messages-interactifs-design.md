@@ -85,9 +85,11 @@ Les neuf types, nommés à l'écran :
 ## 4. Où vit la vérité
 
 Chez Meta, comme pour les consignes et la FAQ. Aucune table chez nous : une copie synchronisée ferait deux vérités, et
-rien ne la demande. La console lit et écrit chez Meta par nos routes ; chaque écriture laisse sa ligne dans
+rien ne la demande. La console lit et écrit chez Meta par nos routes ; une SUPPRESSION laisse sa ligne dans
 `reglages_historique` (élément `message_interactif`, colonne `text` libre, donc **aucune migration**), seul exemplaire
-d'un contenu que Meta ne garde pas.
+d'un contenu que Meta ne garde pas. ⚠️ Écart assumé à la livraison A : depuis l'onglet, seule la suppression se
+journalise, comme pour les consignes (règle écrite dans le câblage, `src/index.ts` : une création ratée se refait) ;
+l'assistant, lui, journalise tout.
 
 ## 5. Serveur
 
@@ -98,7 +100,8 @@ jamais par `as`. Le chemin ne porte pas d'`agent_id` : la référence n'en menti
 
 **La validation avant l'appel**, dans un module pur partagé par la route et l'assistant
 (`src/mba/messages-interactifs.ts`) : le type dans l'énumération fermée des neuf, `flow_id` présent si et seulement si
-le type est `flow`, titre et consigne non vides et bornés : titre 64, consigne 20 000, **comptés en octets UTF-8** comme le fait Meta
+le type est `flow`, titre en SLUG (minuscules, chiffres, tirets, mesuré le soir du 2026-10-07), titre et consigne
+non vides et bornés : titre 64, consigne 20 000, **comptés en octets UTF-8** comme le fait Meta
 (mesuré le 2026-10-07 : une consigne de 20 000 caractères dont 10 accentués est refusée comme « 20010 »).
 
 **Les routes**, dans `registerMba` (`src/http/mba.ts`, module `mba` de classe `tenant`, donc la garde et l'étape
@@ -119,8 +122,10 @@ route existante `GET /tenants/:tenantId/flows`, filtrée sur `PUBLISHED` côté 
 
 **La suppression d'un formulaire** (`DELETE /tenants/:tenantId/flows/:flowId`, `src/http/flows.ts:349`) lit d'abord
 les messages interactifs du numéro de l'espace quand l'agent de Meta y existe, et rend 409 en nommant chaque message
-qui utilise ce formulaire. Une lecture chez Meta qui échoue rend 503 avec un message lisible (« impossible de
-vérifier, réessayez ») : supprimer à l'aveugle pourrait casser un agent en service. Un espace sans agent de Meta ne
+qui utilise ce formulaire. Une lecture chez Meta qui échoue rend 422 avec un message lisible (« impossible de
+vérifier, réessayez ») : supprimer à l'aveugle pourrait casser un agent en service. (422 et non 503 : Cloudflare
+remplace le corps d'un 5xx par sa propre page, et le message serait perdu.) Seuls 400, 403 et 404 valent « pas
+d'agent » ; 408 et 429 refusent. Un espace sans agent de Meta ne
 fait aucun appel. Un formulaire supprimé directement dans le WhatsApp Manager reste hors de notre portée.
 
 ## 6. L'Inbox : l'écho d'un message interactif de l'agent
@@ -168,12 +173,12 @@ interactifs du numéro et les formulaires publiés de l'espace (identifiant et n
 (`application.ts`) refuse un `formulaire` absent des formulaires publiés de l'espace, avec le message de la route.
 
 🔴 **Les bornes que Zod applique sont annoncées dans le schéma envoyé au modèle.** L'outil `proposer`
-(`src/http/mba-assistant.ts`, `outilProposer`) annonce aujourd'hui `operations` comme des objets dont seul `type` est
-décrit : aucune borne, aucune énumération, pour aucune des onze opérations existantes. Le schéma annoncé des
-opérations est désormais DÉRIVÉ de `operationSchema` (`z.toJSONSchema`, Zod 4), ce qui ferme aussi l'écart existant ;
-un test de parité, sur le modèle de `tests/agent-setup-bornes.test.ts`, extrait les bornes de Zod et exige que le
-schéma annoncé les porte toutes. ⚠️ À vérifier au premier tour réel : le modèle de l'assistant accepte un schéma
-d'union discriminée.
+(`src/http/mba-assistant.ts`, `outilProposer`) annonçait `operations` comme des objets dont seul `type` est décrit :
+aucune borne, aucune énumération, pour aucune des onze opérations d'alors. Le schéma annoncé est désormais écrit à
+la main (`SCHEMA_PROPOSITION_MBA`), une opération à plat, sans `anyOf`, comme celui de l'autre assistant
+(`src/agent/setup/proposition.ts`, qui a écarté la dérivation par Zod pour son bruit) ; `tests/mba-assistant-bornes.test.ts`
+extrait les bornes de Zod et exige que le schéma annoncé les porte toutes, valeurs comprises. (Écart assumé : la
+spec prévoyait `z.toJSONSchema`.)
 
 ## 8. La console
 
@@ -192,7 +197,8 @@ d'union discriminée.
   avec un lien vers `/flows`, quand l'espace n'a aucun formulaire publié ; une lecture ratée le dit et propose de
   relire, comme la grille d'outils.
 - **La fiche** qui s'ouvre après le choix : « Quand l'envoyer » d'abord (la situation, en une phrase : « quand le
-  client demande à réserver »), puis le contenu pré-rempli du canevas du type, le titre, et pour un formulaire le
+  client demande à réserver »), puis le contenu pré-rempli du canevas du type, le titre (ramené en slug à la frappe,
+  comme le fait déjà l'onglet Consignes, `web/lib/mba-skills.ts`), et pour un formulaire le
   sélecteur des formulaires publiés de l'espace. Les deux champs forment la consigne envoyée à Meta,
   `Quand : <quand>` sur la première ligne puis le contenu ; à la relecture, une consigne qui commence par `Quand : `
   se sépare sur sa première ligne, une autre (écrite par l'assistant ou ailleurs) va entière dans le contenu, avec

@@ -28,6 +28,9 @@ export interface InventaireMba {
     sites: Array<{ url: string; pages: number }>;
     fichiers: string[];
     enService: boolean;
+    /** `null` = la lecture a échoué : « pas lu » n'est pas « aucun ». */
+    messagesInteractifs: Array<{ id: string; titre: string; type: string; actif: boolean }> | null;
+    formulairesPublies: Array<{ id: string; nom: string }> | null;
   };
 }
 
@@ -100,12 +103,25 @@ function etatEnTexte(inv: InventaireMba): string {
   // Borné à 40, et le total est dit : le contexte n'explose pas, et l'assistant sait qu'il n'en voit qu'une partie.
   r.faqs.slice(0, 40).forEach((f) => l.push(`  - ${f}`));
   if (r.faqs.length > 40) l.push(`  (… ${r.faqs.length - 40} autres non listées)`);
-  l.push(`Compétences (${r.competences.length}) :`);
+  l.push(`Consignes (${r.competences.length}) :`);
   r.competences.slice(0, 20).forEach((c) => l.push(`  - ${c.nom} [${c.etat}]`));
   l.push(`Sites (${r.sites.length}) :`);
   r.sites.forEach((s) => l.push(`  - ${s.url} (${s.pages} page(s) lue(s) par Meta)`));
   l.push(`Documents (${r.fichiers.length}) :`);
   r.fichiers.slice(0, 20).forEach((f) => l.push(`  - ${f}`));
+  // Les identifiants sont donnés ici, et seulement ici : modifier, supprimer ou désigner un formulaire les exige.
+  if (r.messagesInteractifs === null) l.push('Messages interactifs : (lecture impossible)');
+  else {
+    l.push(`Messages interactifs (${r.messagesInteractifs.length}) :`);
+    r.messagesInteractifs.slice(0, 30).forEach((m) => l.push(`  - ${m.titre} [${m.type}, ${m.actif ? 'actif' : 'inactif'}] (cible : ${m.id})`));
+    if (r.messagesInteractifs.length > 30) l.push(`  (… ${r.messagesInteractifs.length - 30} autres non listés)`);
+  }
+  if (r.formulairesPublies === null) l.push('Formulaires publiés : (lecture impossible)');
+  else {
+    l.push(`Formulaires publiés (${r.formulairesPublies.length}) :`);
+    r.formulairesPublies.slice(0, 30).forEach((f) => l.push(`  - ${f.nom} (formulaire : ${f.id})`));
+    if (r.formulairesPublies.length > 30) l.push(`  (… ${r.formulairesPublies.length - 30} autres non listés)`);
+  }
   return l.join('\n');
 }
 

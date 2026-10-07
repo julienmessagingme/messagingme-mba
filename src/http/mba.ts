@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { AudienceNonConfirmee, FENETRES_BUDGET, MbaClient, UNITES_BUDGET, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
 import type { BudgetAgent, BusinessInfo, Faq, FenetreBudget, Skill, UniteBudget } from '../mba/client';
+import { ID_MESSAGE_RE, validerCreation, validerModification } from '../mba/messages-interactifs';
 import { extraireDepuisCsvHorsBoucle, extraireDepuisHtmlHorsBoucle, extraireDepuisJson, normaliser, planifierImport } from '../mba/faq-import';
 import type { FaqRow } from '../mba/faq-import';
 import { isSendableButtonUrl } from '../meta/button-url';
@@ -27,7 +28,7 @@ export interface MbaRouteDeps {
    * suppression est définitive : la ligne écrite ici est le seul exemplaire du contenu effacé.
    */
   journaliserSuppression(tenantId: string, ligne: {
-    element: 'faq' | 'competence' | 'site' | 'fichier';
+    element: 'faq' | 'competence' | 'site' | 'fichier' | 'message_interactif';
     cible: string;
     libelle: string;
     avant: unknown;
@@ -68,6 +69,14 @@ export interface MbaRouteDeps {
   attendre(ms: number): Promise<void>;
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
   fetchUrl?(url: string): Promise<PageDistante>;
+  formulaires: {
+    /**
+     * 🔴 Ce formulaire est-il un formulaire PUBLIÉ de CET espace ? Filtré sur l'espace en base
+     * (`PgFlowStore.isPublished`) : sans ce filtre, un espace ferait ouvrir par son agent le formulaire d'un autre.
+     * Publié, parce que Meta refuse un message interactif actif sur un formulaire en brouillon (mesuré le 2026-10-07).
+     */
+    estPublie(tenantId: string, flowId: string): Promise<boolean>;
+  };
   stats: {
     /**
      * Les messages écrits par l'agent de Meta, depuis toujours. Par espace et non par numéro : `conversations`
@@ -196,7 +205,7 @@ async function supprimerAvecTrace(
   tenant: string,
   acteurId: string | null,
   o: {
-    element: 'faq' | 'competence' | 'site' | 'fichier';
+    element: 'faq' | 'competence' | 'site' | 'fichier' | 'message_interactif';
     cible: string;
     libelle: string;
     champ: string;
@@ -741,11 +750,61 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     if (!ctx) return;
     const { skillId } = req.params as { skillId: string };
     await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
-      element: 'competence', cible: skillId, libelle: 'Compétence', champ: 'name',
+      // 🔴 Le champ `title` : jusqu'au 2026-10-07 cette relecture cherchait un champ `name` qu'une consigne n'a pas, donc
+      // l'historique nommait une consigne supprimée par son seul identifiant. Le numéro en `agent_id` est accepté par
+      // Meta (mesuré le 2026-10-07 : mêmes consignes qu'avec le vrai `agent_id`).
+      element: 'competence', cible: skillId, libelle: 'Consigne', champ: 'title',
       lister: () => ctx.client.listSkills(ctx.pn, ctx.pn),
       supprimer: () => ctx.client.deleteSkill(ctx.pn, skillId),
     });
     return reply.code(200).send({ deleted: skillId });
+  });
+
+  // ---------- Messages interactifs (agent-ui-skills) ----------
+
+  /**
+   * Les composants WhatsApp que l'agent de Meta compose lui-même (`src/mba/messages-interactifs.ts`, spec
+   * `docs/superpowers/specs/2026-10-07-messages-interactifs-design.md`). La validation passe AVANT l'appel : type,
+   * bornes en octets, formulaire publié de l'espace. Comme les autres onglets, seule la suppression se journalise.
+   */
+  app.get(`${base}/messages-interactifs`, g, async (req, reply) => {
+    const ctx = await contexte(req, reply, deps);
+    if (!ctx) return;
+    return reply.code(200).send({ messages: await ctx.client.listMessagesInteractifs(ctx.pn) });
+  });
+
+  app.post(`${base}/messages-interactifs`, g, async (req, reply) => {
+    const ctx = await contexte(req, reply, deps);
+    if (!ctx) return;
+    const v = validerCreation((req.body ?? {}) as Record<string, unknown>);
+    if (!v.ok) return reply.code(400).send({ error: v.erreur });
+    if (v.valeur.formulaireId !== null && !(await deps.formulaires.estPublie(ctx.tenant, v.valeur.formulaireId))) {
+      return reply.code(400).send({ error: 'ce formulaire n’est pas un formulaire publié de cet espace' });
+    }
+    return reply.code(201).send(await ctx.client.creerMessageInteractif(ctx.pn, v.valeur));
+  });
+
+  app.put(`${base}/messages-interactifs/:messageId`, g, async (req, reply) => {
+    const ctx = await contexte(req, reply, deps);
+    if (!ctx) return;
+    const { messageId } = req.params as { messageId: string };
+    if (!ID_MESSAGE_RE.test(messageId)) return reply.code(400).send({ error: 'identifiant de message interactif invalide' });
+    const v = validerModification((req.body ?? {}) as Record<string, unknown>);
+    if (!v.ok) return reply.code(400).send({ error: v.erreur });
+    return reply.code(200).send(await ctx.client.modifierMessageInteractif(ctx.pn, messageId, v.valeur));
+  });
+
+  app.delete(`${base}/messages-interactifs/:messageId`, g, async (req, reply) => {
+    const ctx = await contexte(req, reply, deps);
+    if (!ctx) return;
+    const { messageId } = req.params as { messageId: string };
+    if (!ID_MESSAGE_RE.test(messageId)) return reply.code(400).send({ error: 'identifiant de message interactif invalide' });
+    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
+      element: 'message_interactif', cible: messageId, libelle: 'Message interactif', champ: 'titre',
+      lister: () => ctx.client.listMessagesInteractifs(ctx.pn),
+      supprimer: () => ctx.client.supprimerMessageInteractif(ctx.pn, messageId),
+    });
+    return reply.code(200).send({ deleted: messageId });
   });
 
   // ---------- Sites web ----------

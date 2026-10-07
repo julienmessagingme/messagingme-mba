@@ -3,6 +3,11 @@ import { MetaApiError } from '../meta/errors';
 import type { MetaErrorBody } from '../meta/errors';
 import type { FetchLike } from '../meta/templates';
 import type { EvenementAgent } from './evenement';
+import { journaliser } from '../lib/journal';
+import {
+  PAGES_MAX, depuisMeta, lirePage, versMetaCreation, versMetaModification,
+  type CreationMessageInteractif, type MessageInteractif, type ModificationMessageInteractif,
+} from './messages-interactifs';
 
 /**
  * Client de la surface Meta Business Agent (`agent_config/*`) : la base de connaissance et les réglages de
@@ -282,6 +287,71 @@ export class MbaClient {
 
   async deleteSkill(phoneNumberId: string, skillId: string): Promise<void> {
     await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/skills/${skillId}`);
+  }
+
+  // ---------- Messages interactifs (agent-ui-skills) ----------
+
+  /**
+   * Tous les messages interactifs du numéro (`src/mba/messages-interactifs.ts`). Sans `agent_id`, contrairement aux
+   * consignes : la référence de Meta n'en mentionne aucun sur cette surface. Un élément illisible (un dixième type
+   * que Meta ajouterait) est écarté et journalisé, plutôt que de rendre toute la liste illisible ; une PAGE illisible,
+   * elle, lève : on ne sait plus ce qu'elle contenait.
+   */
+  async listMessagesInteractifs(phoneNumberId: string): Promise<MessageInteractif[]> {
+    const tous: MessageInteractif[] = [];
+    let apres: string | null = null;
+    for (let page = 0; page < PAGES_MAX; page += 1) {
+      const curseur = apres === null ? '' : `&after=${encodeURIComponent(apres)}`;
+      const lu = lirePage(await this.appel<unknown>('GET', `${phoneNumberId}/agent-ui-skills?limit=25${curseur}`));
+      if (lu === null) throw new Error('réponse de Meta illisible pour la liste des messages interactifs');
+      for (const brut of lu.elements) {
+        const m = depuisMeta(brut);
+        if (m === null) journaliser('warn', 'message_interactif_illisible', { phoneNumberId, brut });
+        else tous.push(m);
+      }
+      apres = lu.apres;
+      if (apres === null) break;
+    }
+    return tous;
+  }
+
+  /**
+   * 🔴 UNE ÉCRITURE ACCEPTÉE (2xx) NE LÈVE JAMAIS, même si sa réponse est illisible : Meta a déjà écrit, et lever ferait
+   * croire à un échec (un 500 côté console, donc un second clic et un DOUBLON ; « refusée » côté assistant, sans ligne
+   * d'historique). Aucune réponse d'écriture n'a été relevée le 2026-10-07 : on relit par la liste, et à défaut on
+   * rend ce qu'on a envoyé, en le journalisant (relecture de la livraison A).
+   */
+  private async relireApresEcriture(phoneNumberId: string, brut: unknown, repli: MessageInteractif): Promise<MessageInteractif> {
+    const lu = depuisMeta(brut);
+    if (lu !== null) return lu;
+    journaliser('warn', 'message_interactif_reponse_illisible', { phoneNumberId, brut });
+    const id = typeof (brut as { id?: unknown } | null)?.id === 'string' ? (brut as { id: string }).id : repli.id;
+    if (id !== '') {
+      try {
+        const relu = (await this.listMessagesInteractifs(phoneNumberId)).find((m) => m.id === id);
+        if (relu) return relu;
+      } catch { /* la relecture est un confort : l'écriture a eu lieu */ }
+    }
+    return { ...repli, id };
+  }
+
+  async creerMessageInteractif(phoneNumberId: string, c: CreationMessageInteractif): Promise<MessageInteractif> {
+    const brut = await this.appel<unknown>('POST', `${phoneNumberId}/agent-ui-skills`, versMetaCreation(c));
+    return this.relireApresEcriture(phoneNumberId, brut, {
+      id: '', titre: c.titre, type: c.type, actif: true, consigne: c.consigne, formulaireId: c.formulaireId, creeLe: 0, modifieLe: 0,
+    });
+  }
+
+  async modifierMessageInteractif(phoneNumberId: string, id: string, v: ModificationMessageInteractif): Promise<MessageInteractif> {
+    const brut = await this.appel<unknown>('PUT', `${phoneNumberId}/agent-ui-skills/${encodeURIComponent(id)}`, versMetaModification(v));
+    // Le repli ne connaît que ce qui a changé : la console relit la liste après une écriture.
+    return this.relireApresEcriture(phoneNumberId, brut, {
+      id, titre: v.titre ?? '', type: 'cta_url', actif: v.actif ?? true, consigne: v.consigne ?? '', formulaireId: null, creeLe: 0, modifieLe: 0,
+    });
+  }
+
+  async supprimerMessageInteractif(phoneNumberId: string, id: string): Promise<void> {
+    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent-ui-skills/${encodeURIComponent(id)}`);
   }
 
   // ---------- Sites web ----------

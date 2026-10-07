@@ -172,7 +172,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Inbox** | la conversation, son détenteur, son affectation, l'archivage | `src/inbox/` | `/inbox` | `conversations`, `conversation_messages` | `control-sweep` |
 | **Traduction** | lire les entrants dans sa langue, traduire un sortant avant l'envoi | `src/traduction/` | `/inbox` | `conversation_messages` (`traduction`), `contacts` (`langue_detectee`) | |
 | **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils, ou le répondeur de l'espace (§ 4.4) | `src/agent/`, `src/repondeur/` | `/agents` | `agents`, `agent_tools`, `agent_tool_consommateurs`, `agent_sessions`, `agent_knowledge`, `agent_credits`, `repondeur_alertes_credit` | `agent-turn` |
-| **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main | `src/mba/` | `/mba` | `tenant_settings` | `handoff-sweep` |
+| **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main, consignes et messages interactifs (vivent chez Meta, aucune table chez nous) | `src/mba/` | `/mba` | `tenant_settings` | `handoff-sweep` |
 | **Canal RCS** | deuxième canal, agent de marque chez smsmode | `src/rcs/`, `src/channels-me/` | `/rcs-messages`, `/chaine` | `rcs_agents`, `rcs_media` | |
 | **Canal e-mail** | troisième canal, SMTP par workspace | `src/email/` | `/email-templates` | `email_accounts`, `email_templates` | |
 | **Formulaires (Flows)** | les WhatsApp Flows et leur mapping vers les fiches | `src/flow/`, `src/meta/flow-json.ts` | `/flows` | `flows` | |
@@ -234,6 +234,41 @@ tenir le fil d'un contact qu'il servait, et en mode « Équipe » l'équipe doit
 ⚠️ Avant RC6, un espace sans répondeur ne requalifiait rien (« une autre application tient le fil ») ; le `switch` sur
 le mode attend le futur mode « mon application répond », qui dira si un `standby` est pour lui.
 `WebhookJobDeps` rend `listeALArrivee` obligatoire avec `inbox`.
+
+🔴 **CE QUE L'AGENT DE META ENVOIE S'ENREGISTRE DANS L'INBOX, COMPOSANTS COMPRIS** (lot « messages interactifs »,
+2026-10-07). `processHandovers` (`src/webhooks/handover.ts`) enregistre chaque écho de l'agent sous `type = 'mba'` :
+le texte simple tel quel, sinon le texte lisible d'un composant (`texteDeLEcho`, `src/webhooks/echo-interactif.ts`) :
+le corps, puis `[Boutons : …]`, `[Liste « … » : …]`, `[Bouton lien « … » : <adresse>]`, `[Formulaire « … »]`,
+`[Carrousel : …]` ou `[Demande de position]` ; la légende d'une image ; le nom d'un lieu. Avant, un composant était
+INVISIBLE et l'opérateur lisait « Voir les détails ci-dessous. » puis « 10 h » sans voir la liste. Les formes sont
+mesurées (`tests/echos-mba-fixtures.ts`) : un formulaire part en `galaxy_message`, jamais `flow`, et chaque composant
+suit un écho texte d'accompagnement, parfois en anglais, qui s'enregistre aussi. Un sous-type inconnu s'enregistre
+en `[message interactif]` et son payload complet part au journal (`standby_echo_inconnu`). Le CLIC du client sur ce
+composant revient en `standby` (bouton `button_reply`, ligne `list_reply`, formulaire `nfm_reply`, carte d'un
+carrousel en `type: 'button'`), donc il reste à l'agent : ni automation ni avance de scénario ne le prend
+(`tests/webhook-triggers.test.ts`).
+
+⚠️ **LES MESSAGES INTERACTIFS VIVENT CHEZ META, COMME LES CONSIGNES** (`/{numéro}/agent-ui-skills`, client
+`src/mba/client.ts`, validation `src/mba/messages-interactifs.ts`). Ce que la mesure du 2026-10-07 impose au code :
+les bornes de Meta se comptent en OCTETS UTF-8 (titre 64, consigne 20 000), le titre est un SLUG comme celui d'une
+consigne (minuscules, chiffres, tirets ; `TITRE_RE`, gardé identique à `TITRE_SKILL_RE`), un `PUT` qui change le type rend 200 et
+l'IGNORE (le type et le formulaire ne se modifient donc pas, on supprime et on recrée), la pagination suit
+`paging.cursors.after` sans jamais de `next`. Un message de type formulaire n'ouvre qu'un formulaire PUBLIÉ de
+l'espace (`PgFlowStore.isPublished`, à la route comme à l'assistant), et supprimer un formulaire qu'un message
+interactif ouvre est refusé (409 qui le nomme ; 422 si Meta ne répond pas, jamais un 5xx dont Cloudflare masquerait
+le corps). Depuis l'onglet, seule la suppression se journalise, comme pour les consignes ; l'assistant journalise
+tout. Le schéma de l'outil `proposer` de l'assistant est écrit à la main (`SCHEMA_PROPOSITION_MBA`) et tenu à la
+parité avec Zod, valeurs comprises (`tests/mba-assistant-bornes.test.ts`). Une écriture acceptée par Meta (2xx) ne
+lève jamais, même si sa réponse est illisible : le client relit par la liste, sinon il rend ce qu'il a envoyé
+(`relireApresEcriture`), sans quoi un second clic créerait un doublon. La garde de suppression d'un formulaire ne
+prend pour « pas d'agent » que 400, 403 et 404 ; 408 et 429 refusent, sur les réglages comme sur la liste.
+
+⚠️ **DEUX EFFETS DES ÉCHOS DOUBLÉS, À CONNAÎTRE.** Un tour de l'agent qui envoie un composant enregistre désormais deux
+messages (la phrase, puis le composant) : `messagesEcritsParMba` les compte tous deux, donc l'estimation de coût de
+l'agent (messages × prix, `PRIX_MESSAGE_AGENT_USD`) les compte aussi, sans preuve que Meta facture la phrase et le
+composant séparément (la facture du Billing Hub fait foi). Et l'attente de fin de tour des outils maison
+(`creerAttendreFinDuTour`, `src/mba/fin-de-tour.ts`) s'arrête au premier écho neuf : le second, s'il arrive après son
+relevé, peut la faire conclure un peu tôt. Le journal `fin-de-tour:` le dira.
 
 ⚠️ **ET ON N'EN DÉDUIT PLUS LE DÉTENTEUR** (2026-09-15). `accorderLeDetenteur` écrivait `app_workflow` sur
 chaque entrant qu'on croyait tenu par l'agent, donc sur chaque message de chaque client : c'est la valeur que

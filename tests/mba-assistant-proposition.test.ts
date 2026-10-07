@@ -108,3 +108,47 @@ describe('estSuppression', () => {
     expect(estSuppression({ type: 'faq.ajouter', question: 'q', reponse: 'r' } as Operation)).toBe(false);
   });
 });
+
+describe('les messages interactifs (lot du 2026-10-07)', () => {
+  const ajout = { type: 'message_interactif.ajouter', titre: 'boutons-rdv', composant: 'interactive_reply_buttons', consigne: 'Quand : rdv' };
+
+  it('ajouter, modifier et supprimer un message interactif', () => {
+    expect(ok([ajout]).success).toBe(true);
+    expect(ok([{ type: 'message_interactif.modifier', cible: 'm1', titre: 'boutons-rdv', consigne: 'Quand : rdv\nTexte : ...' }]).success).toBe(true);
+    expect(ok([{ type: 'message_interactif.supprimer', cible: 'm1', libelle: 'boutons-rdv' }]).success).toBe(true);
+  });
+
+  it('le titre est un slug, comme celui d’une consigne', () => {
+    expect(ok([{ ...ajout, titre: 'Boutons RDV' }]).success).toBe(false);
+  });
+
+  it('🔴 un composant hors des neuf est refusé : c’est une énumération fermée', () => {
+    expect(ok([{ ...ajout, composant: 'catalog_message' }]).success).toBe(false);
+  });
+
+  it('🔴 un formulaire, et seulement pour un composant formulaire (les deux sens)', () => {
+    expect(ok([{ ...ajout, composant: 'flow' }]).success).toBe(false);
+    expect(ok([{ ...ajout, composant: 'flow', formulaire: '3234400576763440' }]).success).toBe(true);
+    expect(ok([{ ...ajout, formulaire: '3234400576763440' }]).success).toBe(false);
+    expect(ok([{ ...ajout, composant: 'flow', formulaire: '../autre-espace' }]).success).toBe(false);
+  });
+
+  it('🔴 le type et le formulaire ne passent pas par une modification', () => {
+    const r = propositionMbaSchema.safeParse({ message: 'x', operations: [{ type: 'message_interactif.modifier', cible: 'm1', titre: 't', consigne: 'c', composant: 'image' }] });
+    // La clé inconnue est ignorée (tolérance au bruit), donc elle ne peut rien changer : elle n'arrive pas à l'application.
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.operations[0]).not.toHaveProperty('composant');
+  });
+
+  it('⚠️ un entretien d’avant ce lot se relit à l’identique : les opérations competence.* gardent leur nom', () => {
+    expect(ok([{ type: 'competence.ajouter', nom: 'RDV', instruction: 'Prendre un rendez-vous' }]).success).toBe(true);
+    expect(ok([{ type: 'competence.supprimer', cible: 's1', libelle: 'RDV' }]).success).toBe(true);
+  });
+
+  it('une seule suppression par diff vaut aussi pour les messages interactifs', () => {
+    expect(ok([
+      { type: 'message_interactif.supprimer', cible: 'm1', libelle: 'a' },
+      { type: 'faq.supprimer', cible: 'f1', libelle: 'b' },
+    ]).success).toBe(false);
+  });
+});

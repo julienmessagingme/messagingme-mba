@@ -32,7 +32,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
         ...VIDE, settings: {} as never, businessInfo: { business_description: '' } as never,
         faqs: [], skills: [], websites: [], files: [],
       }),
-      resume: { description: '', faqs: [], competences: [], sites: [], fichiers: [], enService: false },
+      resume: { description: '', faqs: [], competences: [], sites: [], fichiers: [], enService: false, messagesInteractifs: [], formulairesPublies: [] },
     }),
     entretiens: {
       lire: async () => fil,
@@ -54,6 +54,7 @@ function monter(sur: Partial<MbaAssistantDeps> = {}, opts: { role?: string; depe
       meta: {
         mbaClientForTenant: async () => ({} as never),
       },
+      formulaires: { estPublie: async () => false },
       historique: {
         ecrire: async () => {},
       },

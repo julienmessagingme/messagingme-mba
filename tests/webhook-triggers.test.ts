@@ -4,6 +4,7 @@ import { processTriggers } from '../src/webhooks/triggers';
 import { agentEteintALArrivee, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 import type { AutomationEvent } from '../src/automation/match';
+import { CLICS_MBA } from './echos-mba-fixtures';
 
 /**
  * Câblage webhook -> automations. Ce que ces tests protègent, et qui n'est visible nulle part ailleurs :
@@ -48,6 +49,22 @@ describe('processTriggers', () => {
       run: async () => { ran += 1; return 0; },
     });
     expect(ran).toBe(0);
+  });
+
+  it('🔴 le CLIC sur un composant de l’agent de Meta (bouton, carte) arrive en standby et ne déclenche rien', async () => {
+    // Les clics réels relevés le 2026-10-07 (`tests/echos-mba-fixtures.ts`). Une automation dont le mot-clé serait
+    // « Option A » ne doit pas prendre la conversation à l'agent qui vient de proposer ce bouton.
+    const avec = (field: string, clic: Record<string, unknown>) => ({
+      entry: [{ changes: [{ field, value: { metadata: { phone_number_id: 'pn1' }, messages: [{ ...clic, from: '33611' }] } }] }],
+    });
+    const vus: AutomationEvent[] = [];
+    const deps = { isNewContact: async () => false, run: async (_t: string, ev: AutomationEvent) => { vus.push(ev); return 1; } };
+    await processTriggers(await entrantsDe(avec('standby', CLICS_MBA.clicBouton)), deps);
+    await processTriggers(await entrantsDe(avec('standby', CLICS_MBA.clicCarte)), deps);
+    expect(vus).toEqual([]);
+    // Témoin : le même clic hors standby déclenche bien, donc le silence ci-dessus vient du standby, pas du clic.
+    await processTriggers(await entrantsDe(avec('messages', CLICS_MBA.clicBouton)), deps);
+    expect(vus.map((e) => (e as { body?: string }).body)).toEqual(['Option A']);
   });
 
   it('une erreur sur un contact n’empêche pas les autres du même webhook', async () => {

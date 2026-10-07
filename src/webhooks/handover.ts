@@ -3,6 +3,7 @@ import { asArray, asRecord, texteNonVide } from './json';
 import { valeurEffective } from './change';
 import { journaliser } from '../lib/journal';
 import type { EspaceDuNumero } from './rattachement';
+import { ECHO_INCONNU, texteDeLEcho } from './echo-interactif';
 
 /**
  * Changements de contrôle du fil annoncés par Meta (`messaging_handovers`), et messages que l'agent de Meta a
@@ -156,8 +157,14 @@ export async function processHandovers(bascules: readonly Bascule[], deps: Hando
        */
       const contenu = asRecord(echo['message']);
       const waId = texteNonVide(contenu['to']) ?? texteNonVide(echo['to']) ?? texteNonVide(echo['recipient']) ?? texteNonVide(value['recipient']);
-      const body = texteNonVide(asRecord(contenu['text'])['body']) ?? texteNonVide(asRecord(echo['text'])['body']) ?? texteNonVide(echo['body']);
+      // Le texte simple d'abord, comme toujours ; sinon le texte lisible d'un message interactif (boutons, liste,
+      // formulaire...), invisible dans l'Inbox jusqu'au 2026-10-07 (`./echo-interactif.ts`).
+      const body = texteNonVide(asRecord(contenu['text'])['body']) ?? texteNonVide(asRecord(echo['text'])['body']) ?? texteNonVide(echo['body'])
+        ?? texteDeLEcho(contenu) ?? undefined;
       const messageId = texteNonVide(echo['id']) ?? texteNonVide(contenu['id']) ?? null;
+      // Un sous-type que nous ne savons pas lire : enregistré sous un libellé générique, et le payload journalisé en
+      // entier pour qu'on apprenne sa forme au lieu de la deviner.
+      if (body === ECHO_INCONNU) journaliser('info', 'standby_echo_inconnu', { tenantId, messageId, contenu });
       journaliser('info', 'standby_echo', { tenantId, waId: waId ?? null, messageId, aUnCorps: body !== undefined });
       if (waId && body && deps.recordAgentMessage) {
         await deps.recordAgentMessage(tenantId, waId, body, messageId);

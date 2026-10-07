@@ -554,6 +554,23 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
+  it('🔴 PgFlowStore.listPublies : les seuls formulaires PUBLIÉS de l’espace, réduits à id et nom', async () => {
+    const store = new PgFlowStore(pool);
+    const t = Date.now();
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-flows-autre') returning id`)).rows[0]!.id;
+    try {
+      await store.insertExternal({ id: `flow-pub-${t}`, tenantId, name: 'Publié', status: 'PUBLISHED' });
+      await store.insertExternal({ id: `flow-brouillon-${t}`, tenantId, name: 'Brouillon', status: 'DRAFT' });
+      await store.insertExternal({ id: `flow-autre-${t}`, tenantId: autre, name: 'Autre espace', status: 'PUBLISHED' });
+      const publies = (await store.listPublies(tenantId)).filter((f) => f.id.endsWith(String(t)));
+      expect(publies).toEqual([{ id: `flow-pub-${t}`, nom: 'Publié' }]);
+      expect(await store.isPublished(`flow-autre-${t}`, tenantId)).toBe(false);
+    } finally {
+      await pool.query('delete from flows where id = any($1)', [[`flow-pub-${t}`, `flow-brouillon-${t}`, `flow-autre-${t}`]]);
+      await pool.query('delete from tenants where id = $1', [autre]);
+    }
+  });
+
   it('PgFlowStore.insertExternal / alignFromMeta : réconciliation avec WhatsApp Manager (statut jamais dégradé)', async () => {
     const store = new PgFlowStore(pool);
     const id = `flow-ext-itest-${Date.now()}`;

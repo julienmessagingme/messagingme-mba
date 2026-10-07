@@ -16,6 +16,7 @@ const SKILL: Operation = { type: 'competence.ajouter', nom: 'RDV', instruction: 
 const SUPPR: Operation = { type: 'faq.supprimer', cible: 'f1', libelle: 'Horaires du dimanche' };
 
 function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | null } = {}) {
+  const questionsFormulaire: Array<[string, string]> = [];
   const journal: LigneHistorique[] = [];
   const faits: string[] = [];
   // Des réglages qui gardent ce qu'on y écrit, comme Meta : la mise en service relit l'audience qu'elle vient de poser.
@@ -36,6 +37,10 @@ function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | 
     putBusinessInfo: async (_p: string, info: unknown) => { faits.push(`put:${JSON.stringify(info)}`); },
     getSettings: async () => reglages,
     putSettings: async (_p: string, s: unknown) => { reglages = s; faits.push(`settings:${JSON.stringify(s)}`); },
+    listMessagesInteractifs: async () => [{ id: 'm1', titre: 'boutons-rdv', type: 'interactive_reply_buttons', actif: true, consigne: 'Quand : rdv', formulaireId: null, creeLe: 1, modifieLe: 2 }],
+    creerMessageInteractif: async (_p: string, c: unknown) => { faits.push(`creerMessage:${JSON.stringify(c)}`); },
+    modifierMessageInteractif: async (_p: string, id: string, v: unknown) => { faits.push(`modifierMessage:${id}:${JSON.stringify(v)}`); },
+    supprimerMessageInteractif: async (_p: string, id: string) => { faits.push(`supprimerMessage:${id}`); },
     ...sur,
   } as ClientMbaEcriture;
   const deps: ApplicationDeps = {
@@ -52,8 +57,9 @@ function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | 
     // Notre drapeau, dans le même journal que Meta : la mise en service l'écrit APRÈS Meta.
     drapeau: { setMbaEnabled: async (_t, enabled) => { faits.push(`drapeau:${enabled}`); } },
     attendre: async () => {},
+    formulaires: { estPublie: async (t, f) => { questionsFormulaire.push([t, f]); return f === '111'; } },
   };
-  return { deps, journal, faits };
+  return { deps, journal, faits, questionsFormulaire };
 }
 
 describe('l’ordre et l’arrêt', () => {
@@ -210,6 +216,7 @@ describe('quand le journal est indisponible', () => {
     meta: {
       mbaClientForTenant: async () => clientMuet(),
     },
+    formulaires: { estPublie: async () => false },
     historique: {
       ecrire: async () => { throw new Error('base indisponible'); },
     },
@@ -267,5 +274,69 @@ describe('l’élément et l’opération d’une ligne', () => {
     for (const [o, element, operation] of cas) {
       expect(`${o.type} -> ${elementDe(o)}/${operationDe(o)}`).toBe(`${o.type} -> ${element}/${operation}`);
     }
+  });
+});
+
+describe('les messages interactifs (lot du 2026-10-07)', () => {
+  const AJOUT: Operation = { type: 'message_interactif.ajouter', titre: 'boutons-rdv', composant: 'interactive_reply_buttons', consigne: 'Quand : rdv' };
+
+  it('crée avec la valeur validée, sans formulaire', async () => {
+    const m = monter();
+    const r = await appliquer(m.deps, 't1', 'ag1', [AJOUT]);
+    expect(r.echec).toBeNull();
+    expect(m.faits).toEqual([`creerMessage:${JSON.stringify({ titre: 'boutons-rdv', type: 'interactive_reply_buttons', consigne: 'Quand : rdv', formulaireId: null })}`]);
+    expect(m.journal[0]).toMatchObject({ element: 'message_interactif', operation: 'ajout', libelle: 'Message interactif : boutons-rdv', origine: 'assistant' });
+  });
+
+  it('🔴 un formulaire doit être un formulaire PUBLIÉ de CET espace : la question est posée avec l’espace', async () => {
+    const refuse = monter();
+    const r = await appliquer(refuse.deps, 't1', 'ag1', [{ ...AJOUT, composant: 'flow', formulaire: '222' }]);
+    expect(r.echec?.message).toBe('Ce formulaire n’est pas un formulaire publié de cet espace.');
+    expect(refuse.faits).toEqual([]);
+    expect(refuse.journal).toEqual([]);
+    expect(refuse.questionsFormulaire).toEqual([['t1', '222']]);
+
+    const accepte = monter();
+    expect((await appliquer(accepte.deps, 't1', 'ag1', [{ ...AJOUT, composant: 'flow', formulaire: '111' }])).echec).toBeNull();
+    expect(accepte.faits[0]).toContain('"formulaireId":"111"');
+  });
+
+  it('🔴 revalide AVANT Meta : un titre qui n’est pas un slug est refusé sans appel, une consigne accentuée valide passe', async () => {
+    // Zod borne la consigne à 4 000 caractères ; Meta compte 20 000 octets. Une consigne valide pour Zod passe ici.
+    const m = monter();
+    expect((await appliquer(m.deps, 't1', 'ag1', [{ ...AJOUT, consigne: 'é'.repeat(4000) }])).echec).toBeNull();
+    const n = monter();
+    const r = await appliquer(n.deps, 't1', 'ag1', [{ ...AJOUT, titre: 'Pas Un Slug' }]);
+    expect(r.echec?.message).toMatch(/titre invalide/);
+    expect(n.faits).toEqual([]);
+  });
+
+  it('refuse un identifiant de message qui pourrait sortir de son chemin, sans appeler Meta', async () => {
+    const m = monter();
+    const r = await appliquer(m.deps, 't1', 'ag1', [{ type: 'message_interactif.supprimer', cible: '../x', libelle: 'x' }]);
+    expect(r.echec?.message).toMatch(/Identifiant/);
+    expect(m.faits).toEqual([]);
+  });
+
+  it('modifie le titre et la consigne, jamais le type', async () => {
+    const m = monter();
+    await appliquer(m.deps, 't1', 'ag1', [{ type: 'message_interactif.modifier', cible: 'm1', titre: 'neuf', consigne: 'Quand : autre' }]);
+    expect(m.faits).toEqual([`modifierMessage:m1:${JSON.stringify({ titre: 'neuf', consigne: 'Quand : autre' })}`]);
+  });
+
+  it('🔴 supprime en gardant le contenu effacé dans l’historique, seul exemplaire', async () => {
+    const m = monter();
+    await appliquer(m.deps, 't1', 'ag1', [{ type: 'message_interactif.supprimer', cible: 'm1', libelle: 'boutons-rdv' }]);
+    expect(m.faits).toEqual(['supprimerMessage:m1']);
+    expect(m.journal[0]).toMatchObject({
+      element: 'message_interactif', operation: 'suppression', libelle: 'Message interactif : boutons-rdv',
+      avant: { id: 'm1', titre: 'boutons-rdv', consigne: 'Quand : rdv' },
+    });
+  });
+
+  it('les consignes s’appellent « Consigne » dans le diff et l’historique, sans changer d’opération', () => {
+    expect(libelleDe({ type: 'competence.ajouter', nom: 'RDV', instruction: 'x' })).toBe('Consigne : RDV');
+    expect(elementDe({ type: 'competence.ajouter', nom: 'RDV', instruction: 'x' })).toBe('competence');
+    expect(elementDe(AJOUT)).toBe('message_interactif');
   });
 });

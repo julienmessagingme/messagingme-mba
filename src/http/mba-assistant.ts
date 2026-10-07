@@ -8,7 +8,7 @@ import {
   type EntretienMba, type EntretienMbaStore, type TourMba,
 } from '../mba/assistant/entretien-store';
 import { construireMessagesMba, pointDuTourMba, type InventaireMba } from '../mba/assistant/conversation';
-import { propositionMbaSchema, type Operation } from '../mba/assistant/proposition';
+import { propositionMbaSchema, SCHEMA_PROPOSITION_MBA, type Operation } from '../mba/assistant/proposition';
 import { appliquer, libelleDe, type ApplicationDeps } from '../mba/assistant/application';
 import { accueilMba } from '../mba/assistant/couverture';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
@@ -234,26 +234,9 @@ function outilProposer(): unknown {
     function: {
       name: 'proposer',
       description: 'Répondre au client et, s’il y a lieu, proposer des modifications de son agent Meta.',
-      parameters: {
-        type: 'object',
-        properties: {
-          message: { type: 'string', description: 'Ce que tu dis au client, en français.' },
-          reponses: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: { point: { type: 'string' }, valeur: { type: 'string' } },
-              required: ['point'],
-            },
-          },
-          operations: {
-            type: 'array',
-            description: 'Les modifications à appliquer chez Meta. Vide si tu poses seulement une question.',
-            items: { type: 'object', properties: { type: { type: 'string' } }, required: ['type'] },
-          },
-        },
-        required: ['message'],
-      },
+      // Écrit à la main et tenu à la parité avec Zod (`tests/mba-assistant-bornes.test.ts`) : toute borne appliquée
+      // à la réponse est annoncée au modèle, qui ne peut sinon pas l'éviter.
+      parameters: SCHEMA_PROPOSITION_MBA,
     },
   };
 }

@@ -17,6 +17,7 @@ export interface ClientMbaLecture {
   listSkills(p: string, agentId: string): Promise<unknown[]>;
   listWebsites(p: string): Promise<unknown[]>;
   listFiles(p: string): Promise<unknown[]>;
+  listMessagesInteractifs(p: string): Promise<Array<{ id: string; titre: string; type: string; actif: boolean }>>;
 }
 
 /** `null` si la lecture échoue : l'appelant distingue « pas lu » de « vide ». */
@@ -28,14 +29,18 @@ export async function lireInventaireMba(
   client: ClientMbaLecture,
   phoneNumberId: string,
   agentId: string,
+  /** Les formulaires PUBLIÉS de l'espace, que l'assistant peut faire ouvrir par un message interactif. Lu chez nous. */
+  formulairesPublies: () => Promise<Array<{ id: string; nom: string }>>,
 ): Promise<InventaireMba> {
-  const [settings, businessInfo, faqs, skills, websites, files] = await Promise.all([
+  const [settings, businessInfo, faqs, skills, websites, files, messages, formulaires] = await Promise.all([
     ouNull(client.getSettings(phoneNumberId)),
     ouNull(client.getBusinessInfo(phoneNumberId)),
     ouNull(client.listFaqs(phoneNumberId)),
     ouNull(client.listSkills(phoneNumberId, agentId)),
     ouNull(client.listWebsites(phoneNumberId)),
     ouNull(client.listFiles(phoneNumberId)),
+    ouNull(client.listMessagesInteractifs(phoneNumberId)),
+    ouNull(formulairesPublies()),
   ]);
 
   const completion = calculerCompletion({
@@ -65,6 +70,10 @@ export async function lireInventaireMba(
       fichiers: ((files ?? []) as Array<Record<string, unknown>>)
         .map((f) => String(f.name ?? f.file_name ?? '')).filter((n) => n !== ''),
       enService: ((settings ?? {}) as { rollout?: { enabled?: boolean } }).rollout?.enabled === true,
+      // ⚠️ Avec leur identifiant, contrairement au reste du résumé : modifier ou supprimer un message interactif, et
+      // désigner un formulaire, exigent l'identifiant exact. `null` = pas lu, que le texte dit.
+      messagesInteractifs: messages === null ? null : messages.map((m) => ({ id: m.id, titre: m.titre, type: m.type, actif: m.actif })),
+      formulairesPublies: formulaires,
     },
   };
 }

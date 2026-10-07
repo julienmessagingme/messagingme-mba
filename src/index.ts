@@ -1,4 +1,5 @@
 import './charger-env';
+import { messagesInteractifsDuFormulaire } from './mba/messages-interactifs';
 import { buildServer } from './server';
 import { config } from './config';
 import { adressesPubliques } from './lib/adresses-publiques';
@@ -1347,7 +1348,8 @@ async function main(): Promise<void> {
           if (!phoneNumberId) return null;
           // L'« agentId » des routes MBA est le `phone_number_id`, comme dans `src/http/mba.ts` : un second
           // champ créerait une seconde vérité pour la même chose.
-          return lireInventaireMba(await metaFactory.mbaClientForTenant(tenant), phoneNumberId, phoneNumberId);
+          return lireInventaireMba(await metaFactory.mbaClientForTenant(tenant), phoneNumberId, phoneNumberId,
+            () => flowStore.listPublies(tenant));
         },
         entretiens: new PgEntretienMbaStore(pool),
         depenses: new PgDepenseStore(pool),
@@ -1364,6 +1366,8 @@ async function main(): Promise<void> {
           acteur,
           drapeau: settingsStore,
           attendre: (ms: number) => dormir(ms),
+          // 🔴 Filtré sur l'espace en base, comme la route de l'onglet.
+          formulaires: { estPublie: (t: string, flowId: string) => flowStore.isPublished(flowId, t) },
         }),
       },
     } : {}),
@@ -1388,6 +1392,8 @@ async function main(): Promise<void> {
       repo,
       fetchUrl: fetchUrlBorne(),
       reglages: settingsStore,
+      // 🔴 Filtré sur l'espace en base : un message interactif ne peut ouvrir que les formulaires publiés de SON espace.
+      formulaires: { estPublie: (tenant, flowId) => flowStore.isPublished(flowId, tenant) },
       stats: statsStore,
       attendre: (ms) => dormir(ms),
     },
@@ -1696,6 +1702,9 @@ async function main(): Promise<void> {
       ensureOptinField: async (tenant) => { await ensureFieldByKey(fieldStore, tenant, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL, 'boolean'); },
       updateFlowRow: (tenant, id, name, screens, ref, mapping, cta) => flowStore.update(id, tenant, { name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
       insertExternalFlow: (tenant, f) => flowStore.insertExternal({ ...f, tenantId: tenant }),
+      // Supprimer un formulaire qu'un message interactif de l'agent de Meta ouvre encore est refusé (lot messages interactifs).
+      messagesInteractifsDuFormulaire: (tenant, flowId) => messagesInteractifsDuFormulaire(
+        { numero: (x) => repo.getTenantPhoneNumberId(x), client: (x) => metaFactory.mbaClientForTenant(x) }, tenant, flowId),
     },
     media: mediaClient,
     tags: tagStore,

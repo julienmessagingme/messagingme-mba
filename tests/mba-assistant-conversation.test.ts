@@ -18,7 +18,7 @@ function inventaire(sur: Partial<InventaireMba['resume']> = {}, e: Partial<Entre
       faqs: [], skills: [], websites: [], files: [], ...e,
     }),
     resume: {
-      description: '', faqs: [], competences: [], sites: [], fichiers: [], enService: false, ...sur,
+      description: '', faqs: [], competences: [], sites: [], fichiers: [], enService: false, messagesInteractifs: [], formulairesPublies: [], ...sur,
     },
   };
 }
@@ -121,5 +121,31 @@ describe('la conduite de l’entretien', () => {
     expect(premier).not.toBe('');
     const suivant = /Le point du tour est « (\w+) »/.exec(systeme(inv, [premier]))?.[1] ?? '';
     expect(suivant).not.toBe(premier);
+  });
+});
+
+describe('ce que l’assistant voit des messages interactifs (lot du 2026-10-07)', () => {
+  it('les messages interactifs avec leur identifiant, et les formulaires publiés désignables', () => {
+    const texte = systeme(inventaire({
+      competences: [{ nom: 'politique-retour', etat: 'active' }],
+      messagesInteractifs: [{ id: 'pfbid0m1', titre: 'boutons-rdv', type: 'interactive_reply_buttons', actif: true }],
+      formulairesPublies: [{ id: '3234400576763440', nom: 'Demande de contact' }],
+    }));
+    expect(texte).toContain('Consignes (1)');
+    expect(texte).toContain('boutons-rdv [interactive_reply_buttons, actif] (cible : pfbid0m1)');
+    expect(texte).toContain('Demande de contact (formulaire : 3234400576763440)');
+  });
+
+  it('⚠️ une lecture ratée le dit, au lieu de laisser croire qu’il n’y a rien', () => {
+    const texte = systeme(inventaire({ messagesInteractifs: null, formulairesPublies: null }));
+    expect(texte).toContain('Messages interactifs : (lecture impossible)');
+    expect(texte).toContain('Formulaires publiés : (lecture impossible)');
+  });
+});
+
+describe('la liste des messages interactifs est bornée, et le dit', () => {
+  it('au-delà de 30, le texte annonce combien ne sont pas listés', () => {
+    const messages = Array.from({ length: 33 }, (_, i) => ({ id: `m${i}`, titre: `m-${i}`, type: 'cta_url', actif: true }));
+    expect(systeme(inventaire({ messagesInteractifs: messages }))).toContain('(… 3 autres non listés)');
   });
 });

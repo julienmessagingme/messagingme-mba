@@ -316,8 +316,9 @@ export const relaisMbaInerte: Pick<MbaRelaisDeps, 'journaliserForme' | 'resolveu
   resolveurMcp: neDevraitPasEtreAppelee('resolveurMcp'),
 };
 
-export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages' | 'stats' | 'attendre'> = {
+export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages' | 'stats' | 'attendre' | 'formulaires'> = {
   journaliserSuppression: async () => {},
+  formulaires: { estPublie: neDevraitPasEtreAppelee('formulaires.estPublie') },
   reglages: { setMbaEnabled: neDevraitPasEtreAppelee('setMbaEnabled') },
   stats: { messagesEcritsParMba: async () => 0 },
   // Sans attente : la seconde relecture de l'audience à l'allumage part tout de suite.
